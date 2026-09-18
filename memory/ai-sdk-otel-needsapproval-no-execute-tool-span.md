@@ -1,8 +1,20 @@
 ---
-name: ai-sdk-otel-needsapproval-no-execute-tool-span
-description: "@ai-sdk/otel 不给 needsApproval:true 的工具在批准后的真实执行产 execute_tool 类型 span——当年靠 span 派生事件的接法因此断不中这类工具;普通工具不受影响。span→事件派生这套 API 已整体撤除,gap 现在够不着断言"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: ai-sdk-otel-needsapproval-no-execute-tool-span
+title: ai-sdk-otel-needsapproval-no-execute-tool-span
+createdAt: 2026-07-03T20:16:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ai-sdk-otel-needsapproval-no-execute-tool-span.md
+  commit: e842f5e0d2544cd1091af51a10a0c0c490f2458d
+description: "@ai-sdk/otel 不给 needsApproval:true 的工具在批准后的真实执行产 execute_tool 类型
+  span——当年靠 span 派生事件的接法因此断不中这类工具;普通工具不受影响。span→事件派生这套 API 已整体撤除,gap 现在够不着断言"
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 > **API 时效(2026-07-24 复核)**:本条的现象与当年的修法都发生在「OTel span 派生

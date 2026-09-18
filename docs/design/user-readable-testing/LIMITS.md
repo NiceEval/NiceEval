@@ -1,6 +1,6 @@
 # 约束与候选
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md)
 
 本页只记载四个候选共同面对的契约、现状和历史事实。
 
@@ -92,11 +92,11 @@ fork PR 拿不到仓库 secrets；同仓 PR 代码同样可能读取它收到的
 
 ## 候选清单
 
-- [PLAN-1：场景元数据与媒介语义 matcher](PLAN-1/README.md)。
+- [PLAN-1：场景元数据与媒介语义 matcher](plans/plan-1/README.md)。
   保留现有测试位置和写法，用最小协议补上身份、索引与稳定观察。
-- [PLAN-2：用户任务规格与类型化可观察读面](PLAN-2/README.md)。
+- [PLAN-2：用户任务规格与类型化可观察读面](plans/plan-2/README.md)。
   建立用户行为主证明视图，同时让机制证明继续靠近源码。
-- [PLAN-3：声明式 Acceptance Case](PLAN-3/README.md)。
+- [PLAN-3：声明式 Acceptance Case](plans/plan-3/README.md)。
   把前置、动作和结果建模成数据，再由 unit 或 E2E driver 选择性执行。
-- [PLAN-4：真实场景 Repo 与原生结果断言](PLAN-4/README.md)（推荐）。
+- [PLAN-4：真实场景 Repo 与原生结果断言](plans/plan-4/README.md)（推荐）。
   用原生 Vitest 保留完整用户动作与独立预期，只让 repo manifest 负责本地 / CI 编排。

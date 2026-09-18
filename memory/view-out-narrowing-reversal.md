@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: view-out-narrowing-reversal
+title: 设计裁决:view --out 从「与收窄互斥」翻案为「收窄决定出站内容(有效根)」
+createdAt: 2026-07-17T16:17:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-out-narrowing-reversal.md
+  commit: dcb561b13954f052ca99ee4704a6f347bc9f06db
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:view --out 从「与收窄互斥」翻案为「收窄决定出站内容(有效根)」
 
 - **裁决**(2026-07-17):`view` 的位置参数 / `--exp` 是站点管线输入,把结果根滤成**有效根**;页面 Scope、烘进 HTML 的 viewData、`artifact/` 证据树一致地只含有效根,本地与导出零分叉。`view <收窄> --out` ≡ 对收窄后的根导出。同日 `--experiment` flag 更名 `--exp`(与 `niceeval exp` 同词)。

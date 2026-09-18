@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-tree-opens-dual-face-components
+title: Reports 收敛为受限 Source 与双面 Component；公共 CSS 使用完整 NiceEval 前缀
+createdAt: 2026-07-27T16:56:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-tree-opens-dual-face-components.md
+  commit: 7f0ea4b55bceb2a85202be4abaa504e464178c54
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Reports 收敛为受限 Source 与双面 Component；公共 CSS 使用完整 NiceEval 前缀
 
 **日期**：2026-07-27

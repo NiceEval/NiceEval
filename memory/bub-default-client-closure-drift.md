@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: bub-default-client-closure-drift
+title: 默认 Bub 的模型客户端闭包随安装日期漂移
+createdAt: 2026-08-19T15:00:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bub-default-client-closure-drift.md
+  commit: 5f5fc3e27607dc8e7a4aed99f776878cbe1231a2
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [bub-default-client-closure-drift](bub-default-client-closure-drift.md) —
+      默认 `bub==0.4.0` 未锁模型客户端使重装后请求协议突变；运行时、E2B 与 Vercel 现共用三行 override 和同一
+      marker，旧预制品严格 miss 后重装"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 默认 Bub 的模型客户端闭包随安装日期漂移
 
 **现象（2026-08-19）**：同一个 `bub==0.4.0` 配置此前能跑，重新安装后 session/recall 请求突然以

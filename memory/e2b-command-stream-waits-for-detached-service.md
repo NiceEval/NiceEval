@@ -1,8 +1,37 @@
 ---
-name: e2b-command-stream-waits-for-detached-service
-description: "E2B commands.run 的 wait 把直接 shell 退出与 stdout/stderr event stream EOF 绑定，nohup 后台服务继承输出管道会让正常任务永不 settle"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: e2b-command-stream-waits-for-detached-service
+title: e2b-command-stream-waits-for-detached-service
+createdAt: 2026-08-02T15:18:14+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-command-stream-waits-for-detached-service.md
+  commit: 0d24186331cc787226bccdc99c515ff8b7f331a6
+description: E2B commands.run 的 wait 把直接 shell 退出与 stdout/stderr event stream
+  EOF 绑定，nohup 后台服务继承输出管道会让正常任务永不 settle
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [e2b-command-stream-waits-for-detached-service](e2b-command-stream-waits-\
+      for-detached-service.md) — E2B `commands.run` 把 shell 退出和 stdout/stderr
+      EOF 绑死，`nohup ... &` 继承管道令任务永不 settle；修为直接 shell completion marker 后只断
+      transport，异常仍退休 VM"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象（2026-08-02，真实 Terminal-Bench `fibonacci`）**：官方解法在最后启动

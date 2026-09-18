@@ -58,15 +58,16 @@ pnpm e2e diagnose test --from artifacts/e2e/insight/summary.json --repo insight 
 pnpm e2e diagnose exec --from artifacts/e2e/insight/summary.json --repo insight \
   --timeout-seconds 15 -- pnpm exec niceeval query discover
 
+# 从当前 inventory/list 取得 case_selector（完整 path#neref 引用），不手写 ID
 # Owner 接管可靠性收据：inventory 决定 exact case，-- 后只补充其它原生参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo insight \
-  --selector 'e2e/insight/test/view-snapshot.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --selector "$case_selector" \
   --inventory <neinv_...> \
   --artifact-root artifacts/e2e/takeover-insight
 
 # 旧 candidate 的正式红灯；prepare、infra、cleanup 或零匹配失败不会签发 red receipt
 pnpm e2e evidence red --candidate artifacts/old-candidate.tgz --candidate-git-sha <sha> \
-  --repo insight --selector 'e2e/insight/test/view-snapshot.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --repo insight --selector "$case_selector" \
   --inventory <neinv_...> --artifact-root artifacts/e2e/red-insight
 
 # 仅本地结构化 release 核验；不发布、不调用 workflow 产品逻辑

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: init-bootstrap-install-first
+title: INIT 收缩成自举文件：先装后探，安装向导零线上文档链接
+createdAt: 2026-07-18T14:06:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/init-bootstrap-install-first.md
+  commit: 87c98ebdd756f27921cf4acec0ea6ee6b92e0ff7
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # INIT 收缩成自举文件：先装后探，安装向导零线上文档链接
 
 ## 裁决（2026-07-18）

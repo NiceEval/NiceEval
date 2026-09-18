@@ -1,3 +1,34 @@
+---
+format: concord.document/v1
+id: static-site-export-drops-sources
+title: 静态托管导出丢源码：code view 显示「源码未捕获」但 sources.json 明明存在
+createdAt: 2026-07-05T14:07:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/static-site-export-drops-sources.md
+  commit: b225837a7eb54fbd750c6d6d6a1bbb60ad649bdb
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修
+      [static-site-export-drops-sources](static-site-export-drops-sources.md) —
+      静态托管导出丢 sources.json,code view 显示"源码未捕获"(0.3.0 已修)'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 静态托管导出丢源码：code view 显示「源码未捕获」但 sources.json 明明存在
 
 ## 现象

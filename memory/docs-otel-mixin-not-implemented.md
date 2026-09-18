@@ -1,8 +1,39 @@
 ---
-name: docs-otel-mixin-not-implemented
-description: docs-site/zh/guides/connect-otel.mdx 把未落地的 otelEvents() 设计提案写成已实现功能，且链接到不存在的 examples/zh/before/* 目录
-metadata:
-  type: project
+format: concord.document/v1
+id: docs-otel-mixin-not-implemented
+title: docs-otel-mixin-not-implemented
+createdAt: 2026-07-03T05:24:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docs-otel-mixin-not-implemented.md
+  commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
+description: docs-site/zh/guides/connect-otel.mdx 把未落地的 otelEvents()
+  设计提案写成已实现功能，且链接到不存在的 examples/zh/before/* 目录
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**已修（2026-07-24 复核）**：走的是第 2 点里的第一条路——把 API
+      从用户文档里撤掉，而不是把它实现出来。判据：`otelEvents` 这个符号在
+      `src/`、`docs/`、`docs-site/`、`examples/`
+      全仓零命中，`docs-site/{,zh/}tutorials/connect-otel.mdx`（页面已从 `guides/` 移到
+      `tutorials/`）既不提 `otelEvents` 也不再链 `examples/zh/before/*`。设计文档
+      `docs/adapters/otel-mixin.md` 连同整个 `docs/adapters/`
+      目录也已不在，`docs/roadmap/adapters/` 只剩 README。"
+    proof: []
+    source:
+      path: memory/docs-otel-mixin-not-implemented.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:c7f411273cfe9cf4e06c7dddf647ca91d7add629fd534673db22030ffcd03ff7
 ---
 
 **现象**：`docs-site/zh/guides/connect-otel.mdx`（用户文档，非设计提案）把 `otelEvents()` / `import { otelEvents } from "niceeval/adapter"` 写成已经能用的功能，配了完整的 before/after 代码示例、`otel.aiSdk`/`otel.genAi` 等格式模块、双发 exporter 写法，还链接 `examples/zh/before/langgraph`、`.../openllmetry`、`.../openinference`、`.../custom-genai` 作为"可跑示例"。

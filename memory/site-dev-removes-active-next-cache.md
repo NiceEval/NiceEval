@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: site-dev-removes-active-next-cache
 title: 第二次产品站 dev 启动会删除仍在使用的 Next dev 目录
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 # 第二次产品站 dev 启动会删除仍在使用的 Next dev 目录
 

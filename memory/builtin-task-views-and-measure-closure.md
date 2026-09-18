@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: builtin-task-views-and-measure-closure
+title: 内建任务视图 failures/stability 与 measure 家族封口
+createdAt: 2026-07-28T17:15:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/builtin-task-views-and-measure-closure.md
+  commit: 68ffef113e67e58ac060a7f4b57f197ed6fe768a
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 内建任务视图 failures/stability 与 measure 家族封口
 
 日期：2026-07-28，紧接同日的组件文档重组与口径目录裁决。

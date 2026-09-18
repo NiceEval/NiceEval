@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: cli-insight
+title: CLI Insight protocol spike
+createdAt: 2026-08-25
+kind: research
+observedAt: 2026-08-25
+sources: []
+---
 # CLI Insight protocol spike
 
 > 观察日期：2026-08-25

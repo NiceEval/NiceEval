@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: e2e-browser-scenario-probe-loop-brittleness
+title: 浏览器交互场景：探测循环与隐藏类断言的脆性
+createdAt: 2026-07-29T22:20:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-browser-scenario-probe-loop-brittleness.md
+  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 浏览器交互场景：探测循环与隐藏类断言的脆性
 
 ## 现象

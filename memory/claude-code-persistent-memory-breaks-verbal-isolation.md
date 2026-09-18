@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: claude-code-persistent-memory-breaks-verbal-isolation
+title: claude-code 磁盘持久记忆使 session-isolation 的口头反证失效
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/claude-code-persistent-memory-breaks-verbal-isolation.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # claude-code 磁盘持久记忆使 session-isolation 的口头反证失效
 
 ## 现象

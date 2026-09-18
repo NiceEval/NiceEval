@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: docker-apple-silicon-amd64-emulation-slow
+title: 本机(Apple Silicon)docker 默认拉 amd64 镜像,沙箱型 eval 在模拟层下变慢好几倍
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-apple-silicon-amd64-emulation-slow.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 本机(Apple Silicon)docker 默认拉 amd64 镜像,沙箱型 eval 在模拟层下变慢好几倍
 
 **现象**：`dockerSandbox()` 用默认镜像(`node:24-slim` / `node:20-slim`)在 macOS(M 系列芯片)

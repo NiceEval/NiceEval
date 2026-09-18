@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: codex-no-native-skill-tool
+title: codex 没有原生 Skill 工具,不提示就几乎不会主动去读装好的 skill
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-no-native-skill-tool.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # codex 没有原生 Skill 工具,不提示就几乎不会主动去读装好的 skill
 
 **现象**：给 `codexAgent` 用 `skills: ["Effect-TS/skills"]` 装好 skill 后(实测落在

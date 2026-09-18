@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: benchmark
+title: Phase Timings 与安装基准
+createdAt: 2026-07-12T19:14:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/benchmark/README.md
+  commit: 695cbaf358f8296fe46dd94c9e3d416b04862d00
+kind: engineering
+---
 # Phase Timings 与安装基准
 
 本机制回答两个工程问题：一次 Attempt 慢在哪个阶段，以及不同 Sandbox provider / Agent adapter 的安装速度和成功率怎样比较。持久事实使用 owner-local named RecordAttachment；`bench/` 是不写 Record 的本地工程工具。

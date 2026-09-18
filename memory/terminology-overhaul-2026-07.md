@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: terminology-overhaul-2026-07
+title: 设计裁决:2026-07-11 术语大改名(Verdict / Provider / 首过即停等)
+createdAt: 2026-07-11T14:16:48+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/terminology-overhaul-2026-07.md
+  commit: 7f4efbb85666f6eadcbde4a06fa72914afb033da
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:2026-07-11 术语大改名(Verdict / Provider / 首过即停等)
 
 **裁决**(2026-07-11,用户逐项拍板):

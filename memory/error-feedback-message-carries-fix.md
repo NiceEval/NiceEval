@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: error-feedback-message-carries-fix
+title: 报错必带下一步:内嵌 message 收尾,不单列必填 fix 字段
+createdAt: 2026-07-15T21:45:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/error-feedback-message-carries-fix.md
+  commit: edcb83497d08d050184f3a37a80ec3e6d1d2eca6
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 报错必带下一步:内嵌 message 收尾,不单列必填 fix 字段
 
 ## 裁决(2026-07-15)

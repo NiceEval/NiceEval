@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: mintlify-npx-cache-corruption
+title: "`pnpm run docs:dev` / `docs:validate` fails with npm permission or
+  ENOTEMPTY errors — clear the npx cache dir, don't touch the scripts"
+createdAt: 2026-07-02T13:38:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/mintlify-npx-cache-corruption.md
+  commit: ac64bbbda30ad7cb6de15cec39ad94f7517c6885
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # `pnpm run docs:dev` / `docs:validate` fails with npm permission or ENOTEMPTY errors — clear the npx cache dir, don't touch the scripts
 
 **现象**：`docs:dev` 报 `npm error code ENOTEMPTY ... rename ... @mintlify/cli -> @mintlify/.cli-xxxx`；`docs:validate` 报 `sh: .../node_modules/.bin/mint: Permission denied`。两者都指向同一个目录 `~/.npm/_npx/<hash>/node_modules/@mintlify/cli`。

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: compose-project-namespace-escape-destabilizes-case-identity
+title: Compose 运行 nonce 进入声明身份，CaseKey 每次规划漂移
+createdAt: 2026-08-07T11:42:18+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/compose-project-namespace-escape-destabilizes-case-identity.md
+  commit: ea32e2ae961175fa1553df0cc33543e64b02c88e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Compose 运行 nonce 进入声明身份，CaseKey 每次规划漂移
 
 **现象**（2026-08-07）：Terminal-Bench 的 12 个 Compose Eval 中有 10 个在连续两次 `--dry` 时改变 CaseKey、template private identity 与 provider private identity，BuildKey 保持不变。`accept` 重锚后下一次规划仍立即 stale。

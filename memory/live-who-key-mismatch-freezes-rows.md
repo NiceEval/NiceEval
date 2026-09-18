@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: live-who-key-mismatch-freezes-rows
+title: 已修:live 表格行永久卡在"waiting for a slot",总数却在涨
+createdAt: 2026-07-11T14:16:48+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-who-key-mismatch-freezes-rows.md
+  commit: 7f4efbb85666f6eadcbde4a06fa72914afb033da
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '# 已修:live 表格行永久卡在"waiting for a slot",总数却在涨'
+    proof: []
+    source:
+      path: memory/live-who-key-mismatch-freezes-rows.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:9f4adbc0963de3244d5634709314313efd3813e5390b7fa14a49cfa33402c0d1
+---
 # 已修:live 表格行永久卡在"waiting for a slot",总数却在涨
 
 ## 现象

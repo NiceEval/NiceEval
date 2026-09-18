@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: hermes-secret-on-disk-exception
+title: Hermes 是「secret 不落盘」的唯一例外
+createdAt: 2026-07-26T11:36:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/hermes-secret-on-disk-exception.md
+  commit: 7c10af3044449490bb8e4f866b045a44bf6a053e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Hermes 是「secret 不落盘」的唯一例外
 
 裁决日期 2026-07-26。

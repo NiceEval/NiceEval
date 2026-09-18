@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: live-dashboard-active-row-elapsed-resets-per-phase
+title: live 面板 ACTIVE 行:时间列按 phase 计时,过阶段边界归零
+createdAt: 2026-07-24T22:11:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-dashboard-active-row-elapsed-resets-per-phase.md
+  commit: 2edc8e1a2ecb34b535bc7ea58f9650d94c86ca13
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [live-dashboard-active-row-elapsed-resets-per-phase](live-dashboard-activ\
+      e-row-elapsed-resets-per-phase.md) — ACTIVE 行时间列按当前 phase 计时,`eval.run`
+      跑几分钟后进 `workspace.diff` 回归 0s,读起来像这条 eval 重跑了,还与 cli.md「存活性由持续增长的 elapsed
+      证明」自相矛盾;修为 `ActiveAttempt.startedAt` 只在 `attempt:start`
+      写一次、阶段推进只换标签,阶段耗时不进 live 面板(归 `timing.phases`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # live 面板 ACTIVE 行:时间列按 phase 计时,过阶段边界归零
 
 ## 现象

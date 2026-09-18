@@ -13,10 +13,9 @@ import {
   inspectRunSummary,
 } from "./inspection.ts";
 
-// @concord-case necase_8QDV951NVHXK0G1W
-// @concord-owner docs/engineering/testing/e2e/eval.md#eval-custom-application
-// @concord-test-file e2e/eval/test/custom-application.test.ts
-test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用 [necase_8QDV951NVHXK0G1W]", async () => {
+// @use-case docs/feature/eval/use-case/eval-compare-implementations.md
+
+test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用", async () => {
   await evalE2E.case(
     "custom-application",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

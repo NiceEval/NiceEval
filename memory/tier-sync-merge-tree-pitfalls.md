@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: tier-sync-merge-tree-pitfalls
+title: tier-sync:同 base 三方合并的三个坑(重报冲突 / 链式脏树 / lockfile 参与合并)
+createdAt: 2026-07-07T13:14:50+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/tier-sync-merge-tree-pitfalls.md
+  commit: 24c725f7f3f3d2adf110475e0f454add6da2bec1
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # tier-sync:同 base 三方合并的三个坑(重报冲突 / 链式脏树 / lockfile 参与合并)
 
 ## 现象

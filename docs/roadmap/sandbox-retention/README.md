@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: sandbox-retention
+title: Sandbox 默认停驻与回收
+createdAt: 2026-08-07T09:46:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/sandbox-retention/README.md
+  commit: bf8e868586a9e0a90e6aedc2f9d3df2bb38f2794
+kind: roadmap
+state: planned
+---
 # Sandbox 默认停驻与回收
 
 一次运行结束后，用户不应提前猜中哪条 Attempt 会失败，才能保留一个可进入的 Sandbox 实例。

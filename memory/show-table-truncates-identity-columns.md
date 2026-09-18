@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: show-table-truncates-identity-columns
+title: show 的表格把 eval id 压成几个字符,`COLUMNS=200` 也不生效
+createdAt: 2026-07-25T10:27:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-table-truncates-identity-columns.md
+  commit: 3cd2cbe6e6aeca3763784bc44ab39446129ab37e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # show 的表格把 eval id 压成几个字符,`COLUMNS=200` 也不生效
 
 **现象。**(2026-07-25,MemoryBench 真实使用)想拿到「这一轮哪些 eval 失败了」的完整清单,

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: sandbox-carry-default-tolerant-identities
+title: Sandbox 身份未 pin 时默认沿用结果
+createdAt: 2026-08-03T18:11:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-carry-default-tolerant-identities.md
+  commit: 26a53cbdd3bd19728abd01b43cae4dc64a9ad371
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Sandbox 身份未 pin 时默认沿用结果
 
 ## 裁决

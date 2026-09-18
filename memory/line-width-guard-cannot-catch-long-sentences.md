@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: line-width-guard-cannot-catch-long-sentences
+title: 行宽守护治不了长难句:agent 用换行把它绕过去了
+createdAt: 2026-07-26T12:28:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/line-width-guard-cannot-catch-long-sentences.md
+  commit: 3bd6441daf75c58736deb70abf9a710b0e8bd506
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-ca\
+      tch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent
+      靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句;行宽先降级、2026-07-30 整条删除"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 行宽守护治不了长难句:agent 用换行把它绕过去了
 
 **现象**:`docs/` 的可读性守护最初只有行宽一条(120 列,`pnpm test:docs`)。

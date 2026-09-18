@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: repository-tools
+title: Repository Tools
+createdAt: 2026-08-23T12:48:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/repository-tools/README.md
+  commit: 7871a6b3939fef8c750ce18e733603a40afa22c7
+kind: engineering
+---
 # Repository Tools
 
 维护 CLI 的实现由独立的 `concord-sdlc` 包拥有。NiceEval 使用锁定版本的 `concord repo` repository profile；`@niceeval/repo-tools` 仅保留源码路径转发。沿用 pnpm repository profile 入口、文档与 Memory 领域；当前测试关系使用源码注释，新正式证据使用 v2，历史证据保留。
@@ -8,7 +19,7 @@
 
 ## 安装与按需指引
 
-仓库锁定已构建的 `tools/concord/concord-sdlc-0.3.0.tgz`，根包、repo-tools 与 e2e-runner 使用各自
+仓库锁定已构建的 `tools/concord/concord-sdlc-0.4.0.tgz`，根包、repo-tools 与 e2e-runner 使用各自
 相对路径的 `file:` dependency，lockfile 保存 integrity。`pnpm install --frozen-lockfile` 安装同一包；
 离线安装仍要求其它依赖已在 pnpm cache 中。Git checkout 或全局 link 不替代仓库锁定的 engine。
 
@@ -61,7 +72,7 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 `pnpm test` 仍是代码测试入口，包括 Unit 验证；它不承担 Test Trace 的发现和显示。
 
-Test inventory 的单 Repo 入口是 `pnpm run repo docs test inventory --repo <id>`。它与全仓 `audit` 共用 E2E registry、隔离复制、candidate/Testkit 注入、安装和原生 collection，只返回当前 CLI 可消费的 Git-private `neinv_...` ID。`case attach`、`case move`、formal evidence 与 regression 关系只接收该 ID，不接收任意 receipt 路径。
+Test inventory 的单 Repo 入口是 `pnpm run repo docs test inventory --repo <id>`。它与全仓 `audit` 共用 E2E registry、隔离复制、candidate/Testkit 注入、安装和原生 collection，只返回当前 CLI 可消费的 Git-private `neinv_...` ID。formal evidence 与 regression 关系只接收该 ID，不接收任意 receipt 路径。
 
 inventory 文件没有公开 format 或兼容期，也不是可编辑输入；CLI 实现变化、完整性检查失败或 ID 丢失时重新 collection。底层 runner adapter 不作为独立 CLI 暴露 `--cwd` collection。
 

@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: inspection-query-missing-overview-and-trace-detail
 title: Inspection Query 缺少 Overview 与稳定 trace detail
 createdAt: 2026-08-26T21:21:31+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 # Inspection Query 缺少 Overview 与稳定 trace detail
 

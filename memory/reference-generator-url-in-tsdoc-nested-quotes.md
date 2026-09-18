@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: reference-generator-url-in-tsdoc-nested-quotes
+title: 参考页生成器:TSDoc 里带引号的 URL 字面量会生成嵌套引号乱码
+createdAt: 2026-07-17T10:22:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reference-generator-url-in-tsdoc-nested-quotes.md
+  commit: f7d7d8ae59e6dd2817bc1322d1ace10e29fa4072
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [reference-generator-url-in-tsdoc-nested-quotes](reference-generator-url-\
+      in-tsdoc-nested-quotes.md) — TSDoc 里带引号的 URL 字面量经 docs:reference
+      的自动反引号包裹生成嵌套引号乱码;修法=TSDoc 不写带引号的 URL 示例,改文字描述"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 参考页生成器:TSDoc 里带引号的 URL 字面量会生成嵌套引号乱码
 
 ## 现象

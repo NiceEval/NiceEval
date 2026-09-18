@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: site-seo-lcp-and-stale-audit
+title: site SEO:LCP 瓶颈不在字体/图片,审计死链是旧数据
+createdAt: 2026-07-07T16:56:58+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/site-seo-lcp-and-stale-audit.md
+  commit: 06e4644ef1c42236dfa906b25d33977cfbab61b4
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [site-seo-lcp-and-stale-audit](site-seo-lcp-and-stale-audit.md)
+      — landing 移动端 LCP 慢在渲染阻塞 CSS + 启动 JS(prism 同
+      chunk),不是字体/图片,`inlineCss`+`next/dynamic` 修(5f1ba01);审计报 `/docs` 死链是 7-03
+      proxy 修复前的旧数据,先 curl 核实"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # site SEO:LCP 瓶颈不在字体/图片,审计死链是旧数据
 
 ## 现象

@@ -6,6 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result, Scope } from "effect";
 import { projectRepositorySources } from "concord-sdlc/repository/source-identity";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
+import { collectCaseInventory, type InventoryExecutor } from "./inventory.ts";
 import { formatCause } from "./format-cause.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
@@ -309,7 +310,15 @@ export const runCommand = (
     Effect.mapError((cause) => problem("<command>", "command", cause)),
   );
 
+export interface CaseSelectionExpectation {
+  readonly executor: InventoryExecutor;
+  readonly caseId: string;
+  readonly checkout: string;
+  readonly only: boolean;
+}
+
 export interface RunRepoOptions {
+  readonly caseSelection?: CaseSelectionExpectation;
   readonly sourceDir?: string;
   readonly runLabel?: string;
   readonly workdirKey?: string;
@@ -657,6 +666,16 @@ export const runRepoEffect = (
                 ? Effect.void
                 : Effect.gen(function* () {
                     if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-before-test-${attempt}`);
+                    if (options.caseSelection !== undefined) {
+                      const expected = options.caseSelection;
+                      const inventory = yield* collectCaseInventory({ executor: expected.executor, repo: id, cwd: copy, checkout: expected.checkout, nativeArgs }).pipe(
+                        Effect.mapError((cause) => problem(id, "run", `CaseSelectionInvalid: ${cause.detail}`)),
+                      );
+                      if (inventory.cases.filter((entry) => entry.caseId === expected.caseId).length !== 1 || (expected.only && inventory.cases.length !== 1) || inventory.unassignedCases.length > 0) {
+                        return yield* Effect.fail(problem(id, "run", `CaseSelectionMismatch: expected ${expected.only ? "only " : ""}${expected.caseId}, collected ${inventory.cases.length} cases`));
+                      }
+                      if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-collection-${attempt}`);
+                    }
                     const invocation = randomUUID();
                     invocationIds.push(invocation);
                     const command = [

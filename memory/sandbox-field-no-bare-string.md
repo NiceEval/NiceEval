@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: sandbox-field-no-bare-string
+title: "`sandbox` 字段不接受裸字符串,也没有默认值/按名字选"
+createdAt: 2026-07-02T14:51:50+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-field-no-bare-string.md
+  commit: 060a37aee41976739b9771304b98046dbd97f7ad
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # `sandbox` 字段不接受裸字符串,也没有默认值/按名字选
 
 **决定**(最终版,2026-07-02 同一次会话分两轮做的):`Config.sandbox` / `ExperimentDef.sandbox` 只接受工厂函数产出的 `SandboxSpec`(= `SandboxOption`)。以前支持的两条"隐式"路径全部去掉:

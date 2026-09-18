@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: docs-work
+title: 并行文档工作
+createdAt: 2026-08-23T12:48:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/docs-work/README.md
+  commit: 7871a6b3939fef8c750ce18e733603a40afa22c7
+kind: engineering
+---
 # 并行文档工作
 
 Docs Work 把已经定稿的文档目标切成互斥写集，并为每份交付复用正式 lint。它不启动、选择、暂停或关闭 Agent；Herdr 是唯一调度器，操作者仍负责把 work item 交给独立 Agent 并完成验收。

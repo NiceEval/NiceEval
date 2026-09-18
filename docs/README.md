@@ -54,6 +54,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 - [Roadmap](roadmap/README.md)：已定稿、尚未采用为当前契约的方向。
 - [Design](design/README.md)：多候选方案的比较与裁决存档。
 - [Research](research/README.md)：带观察日期的外部产品研究。
+- [Issue](issues/README.md)：保留用户观察原文及处理关系。
 - [Engineering](engineering/README.md)：仓库自身的测试、维护、同步与 benchmark 机制。
 - [文档模板](_template/README.md)：Feature Design Package 与 Design Decision 的受管创建材料。
 
@@ -212,3 +213,5 @@ Git hook 的检查与安装从 [Repository Setup skill](../.agents/skills/reposi
 - 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm run repo docs reference`。
 - 公开中文文档：按 [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) 更新并运行 `pnpm run repo docs site validate`、`pnpm run repo docs site links`。
 - 示例：按 [`examples/README.md`](../examples/README.md) 与对应示例目录说明验证。
+
+Issue 的观察原文属于调查事实，不是产品设计契约；保留报告者用语，不按设计文档的润色规则改写。其 metadata 由当前 Issue Schema 严格检查。

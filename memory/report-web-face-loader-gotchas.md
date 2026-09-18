@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: report-web-face-loader-gotchas
+title: view --report 装载:tsx 的 jsx 配置按 tsconfig 目录为界 + query 会破 vite-node
+createdAt: 2026-07-10T16:23:15+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-web-face-loader-gotchas.md
+  commit: 9621276771dce145a8cd36946e16d076942c2596
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "## 现象一:web 面渲染报 `React is not defined`(已修)"
+    proof: []
+    source:
+      path: memory/report-web-face-loader-gotchas.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:8980e85a10f3d72f23a4838166e587bd513e32a676684c938e039dccd8f19cfc
+---
 # view --report 装载:tsx 的 jsx 配置按 tsconfig 目录为界 + query 会破 vite-node
 
 ## 现象一:web 面渲染报 `React is not defined`(已修)

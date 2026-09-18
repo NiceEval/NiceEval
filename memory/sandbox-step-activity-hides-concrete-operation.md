@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: sandbox-step-activity-hides-concrete-operation
 title: Sandbox step activity hides the concrete operation
 createdAt: 2026-08-29
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 ## Observation
 

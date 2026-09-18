@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: view-attempt-detail-buries-failure
+title: view Attempt 详情把失败原因埋没:断言区缺失 + timing 树全展开压顶
+createdAt: 2026-07-16T10:15:06+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-attempt-detail-buries-failure.md
+  commit: 1cc22c6b637b1838e9a134a6ed06788b36fa3800
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "## 已修(2026-07-24 复核):整棵旧弹窗被换成 attempt-detail 组件族"
+    proof: []
+    source:
+      path: memory/view-attempt-detail-buries-failure.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:c213db20810cedef11c05f35dbbf4752b6f32acd826cb1dedacbb2e7a7ae14ef
+---
 # view Attempt 详情把失败原因埋没:断言区缺失 + timing 树全展开压顶
 
 ## 现象

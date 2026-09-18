@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: derive-callid-crossturn-overwrite
+title: deriveRunFacts 跨轮 callId 覆盖(已修)
+createdAt: 2026-07-24T12:53:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/derive-callid-crossturn-overwrite.md
+  commit: 67bacc46e6afb2b23e4b66496dc51d137ed41ee6
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# deriveRunFacts 跨轮 callId 覆盖(已修)"
+    proof: []
+    source:
+      path: memory/derive-callid-crossturn-overwrite.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:8439b83abcbc3a5a318eec1196be3c36c435214fafdb013dddf93215f97dbd2e
+---
 # deriveRunFacts 跨轮 callId 覆盖(已修)
 
 **现象**：续轮场景下 `t.calledTool` / `t.notCalledTool` 等 t 级(attempt 聚合)断言「只扫最后一轮」。真机复现于 db-gpt 记忆 eval：agent 第一轮读了 init 与 INDEX(事件 [21][57]),第二轮才给答复,`t.calledTool` 断言却 miss——执行是对的,分是冤的(该 11 分算成 9)。是续轮引入后才踩到的路径:单轮时不撞。

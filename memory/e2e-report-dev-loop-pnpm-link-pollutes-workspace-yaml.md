@@ -1,9 +1,20 @@
 ---
-name: e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml
-description: pnpm link 给 e2e/<repo> 做本地快速迭代会往 pnpm-workspace.yaml/pnpm-lock.yaml 写入持久 override，rm -rf node_modules 也不消失
-metadata:
-  node_type: memory
-  type: project
+format: concord.document/v1
+id: e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml
+title: e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml
+createdAt: 2026-07-22T08:08:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml.md
+  commit: 4de42b0162238fb9d0583f6df47d8bca1f2d732d
+description: pnpm link 给 e2e/<repo> 做本地快速迭代会往 pnpm-workspace.yaml/pnpm-lock.yaml
+  写入持久 override，rm -rf node_modules 也不消失
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：在 `e2e/report/`（或任意自成 workspace root 的 e2e 仓库）里跑

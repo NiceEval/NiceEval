@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: judge-precheck-run-level-line-not-transient
+title: judge 预检定性为运行级生命周期行,不是「运行级瞬时通知」
+createdAt: 2026-07-24T09:37:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/judge-precheck-run-level-line-not-transient.md
+  commit: fce3f25e92fd4e6dd803958036ddf27b7781e522
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # judge 预检定性为运行级生命周期行,不是「运行级瞬时通知」
 
 ## 现象

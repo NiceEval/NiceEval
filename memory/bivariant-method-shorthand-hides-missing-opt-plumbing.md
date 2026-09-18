@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: bivariant-method-shorthand-hides-missing-opt-plumbing
+title: 方法简写属性的双变检查,让漏接的新 opts 字段 typecheck 全绿
+createdAt: 2026-07-22T15:32:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bivariant-method-shorthand-hides-missing-opt-plumbing.md
+  commit: a5baf7718146e70b789188f4236132a64eb3351d
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- **已修**:`src/results/open.ts` 的 `makeResults()`
+      两个方法都已加宽并真正透传——`latest(opts?: { experiments?: string | string[]; fresh?:
+      boolean })` 与 `current(...)` 各自把 `fresh: opts?.fresh` 交给
+      `selectLatestResults`/`selectCurrentResults`。第 2
+      点建议的「接口方法签名全仓改箭头函数属性」仍未做,风险点照旧。"
+    proof: []
+    source:
+      path: memory/bivariant-method-shorthand-hides-missing-opt-plumbing.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:d8155784c11f9f26d92a5b346feb42d549dccb8dbe669375f68084b19c62d187
+---
 # 方法简写属性的双变检查,让漏接的新 opts 字段 typecheck 全绿
 
 - **现象**:给 `Results.latest`/`Results.current` 的 opts 类型加了 `fresh?: boolean` 后,`pnpm run typecheck` 全程零报错;但 `results.latest({ fresh: true })` 实际不生效——`fresh` 字段被静默丢弃,行为测试跑出来才发现 `fresh: true` 和不传完全一样。

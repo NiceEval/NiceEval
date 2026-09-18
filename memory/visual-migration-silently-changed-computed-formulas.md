@@ -1,8 +1,32 @@
 ---
-name: visual-migration-silently-changed-computed-formulas
+format: concord.document/v1
+id: visual-migration-silently-changed-computed-formulas
+title: visual-migration-silently-changed-computed-formulas
+createdAt: 2026-07-11T22:34:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/visual-migration-silently-changed-computed-formulas.md
+  commit: f98713aea9dc23b459ffa428b5cb32c56b438a4a
 description: 已修 — 视觉层重构把裸跑 UI 迁进 defaultReport 时未建行为矩阵,静默改了通过率/失败原因/组统计三处公式
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修 — 视觉层重构把裸跑 UI 迁进 defaultReport 时未建行为矩阵,静默改了通过率/失败原因/组统计三处公式
+    proof: []
+    source:
+      path: memory/visual-migration-silently-changed-computed-formulas.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:aad2db43874025e733689b9c1a07bbfd96bbf2d3793ff6dcea220450605708fa
 ---
 
 ## 现象

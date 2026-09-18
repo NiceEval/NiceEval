@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: config-hash-forks-per-eval-judge-declaration
+title: run.json 的 Run 级 configHash 曾把逐 eval judge 分叉当 bug 报错(已修)
+createdAt: 2026-08-04T19:32:31+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/config-hash-forks-per-eval-judge-declaration.md
+  commit: 57d0f153882b1a041c9fd4eaaca945d3e68dcab3
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# run.json 的 Run 级 configHash 曾把逐 eval judge 分叉当 bug 报错(已修)"
+    proof: []
+    source:
+      path: memory/config-hash-forks-per-eval-judge-declaration.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:46a16f76b2499f353f032c1fb96458781f61b794d73bfa87f91725edfa97e7df
+---
 # run.json 的 Run 级 configHash 曾把逐 eval judge 分叉当 bug 报错(已修)
 
 ## 现象

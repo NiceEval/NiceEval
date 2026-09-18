@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: compile-time-contracts-diagnostic-types
+title: 编译期作者契约:四项裁决
+createdAt: 2026-08-01T17:47:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/compile-time-contracts-diagnostic-types.md
+  commit: 184899f5e3790f1abc89e5ef053dc3323120e19f
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 编译期作者契约:四项裁决
 
 裁决日期 2026-08-01。落点 `docs/feature/compile-time-contracts/`(README / library / architecture / use-case)。

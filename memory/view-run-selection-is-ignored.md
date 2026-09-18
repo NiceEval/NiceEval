@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: view-run-selection-is-ignored
 title: view --run 未将 Insight Overview 收窄到所选 Run
 createdAt: 2026-08-29
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 ## Problem
 

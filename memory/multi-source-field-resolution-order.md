@@ -1,3 +1,34 @@
+---
+format: concord.document/v1
+id: multi-source-field-resolution-order
+title: 多来源字段的解析顺序没有单点声明 → `??` 链少一层没人会红
+createdAt: 2026-07-25T12:46:34+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/multi-source-field-resolution-order.md
+  commit: 49bb1f338f829de1261881760d6f7276e9591a5a
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**这条 memory 曾把修法写得像已完成**——2026-07-30 MemoryBench(niceeval
+      0.11.3)dogfooding 再次真机撞上同一 bug(声明 31 / 36 分钟的 eval 被 config 的 20
+      分钟掐死,报错无来源),回查才发现只有契约落了。docs 先于代码定稿是正常流程,但 memory 台账必须区分「契约已定」与「代码已修」。"
+    proof: []
+    source:
+      path: memory/multi-source-field-resolution-order.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:183446e7f6cc3ac80e5183a103731504596afe60f9b3b0755b82bd3cbc5edba5
+---
 # 多来源字段的解析顺序没有单点声明 → `??` 链少一层没人会红
 
 ## 现象

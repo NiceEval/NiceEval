@@ -1,8 +1,21 @@
 ---
-name: codex-cli-callid-collision-across-resumed-turns
-description: "codex exec --json 的 item.id 按单次进程调用从零编号;codex exec resume 续接的下一轮是新进程,同样从 item_0 开始——多轮会话拆成多个 t.send() 时,不同轮的工具调用可能巧合复用同一个 item 号,call ID 配对因此跨轮错位"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: codex-cli-callid-collision-across-resumed-turns
+title: codex-cli-callid-collision-across-resumed-turns
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-cli-callid-collision-across-resumed-turns.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: codex exec --json 的 item.id 按单次进程调用从零编号;codex exec resume
+  续接的下一轮是新进程,同样从 item_0 开始——多轮会话拆成多个 t.send() 时,不同轮的工具调用可能巧合复用同一个 item 号,call ID
+  配对因此跨轮错位
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**:`e2e/adapter/codex-cli` 的 MCP Eval 里,同一条会话先后调用两个不同 MCP 工具

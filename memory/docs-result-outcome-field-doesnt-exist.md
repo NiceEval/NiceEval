@@ -1,8 +1,34 @@
 ---
-name: docs-result-outcome-field-doesnt-exist
+format: concord.document/v1
+id: docs-result-outcome-field-doesnt-exist
+title: docs-result-outcome-field-doesnt-exist
+createdAt: 2026-07-12T17:22:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docs-result-outcome-field-doesnt-exist.md
+  commit: 308d23b208c6047ef78719ba5f10b7bbfd4e3d02
 description: 英文 docs-site 多篇示例代码用 result.outcome 判定通过/失败，真实字段名是 verdict，照抄会静默失效
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**：已修——三处代码示例 + Braintrust metadata 描述全部改回 `verdict`(在
+      attempt-evidence-feedback-loop 重构收尾的英文文档同步扫描中顺带发现并修复,与
+      locator/execution-tree 这批新概念无关,是更早就存在的独立文档 bug)。"
+    proof: []
+    source:
+      path: memory/docs-result-outcome-field-doesnt-exist.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:94bd62214636c14145ad10a2e5156c2ebf458d18abcf3f2f19743fe111598093
 ---
 
 **现象**：`docs-site/guides/custom-reports.mdx`、`docs-site/guides/reporters.mdx`、`docs-site/guides/results-data.mdx`

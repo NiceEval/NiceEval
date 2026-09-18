@@ -1,8 +1,33 @@
 ---
-name: sample-scope-experiments-per-id-fuzzy-match-bug
+format: concord.document/v1
+id: sample-scope-experiments-per-id-fuzzy-match-bug
+title: sample-scope-experiments-per-id-fuzzy-match-bug
+createdAt: 2026-07-31T11:47:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sample-scope-experiments-per-id-fuzzy-match-bug.md
+  commit: c0cbac0cfc51984e2d8e03a7bece83e637e79559
 description: Sample.scope({experiments}) 逐 id 单独求匹配丢失「精确 id 优先于前缀」规则,同族实验被误合并
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "已修。`Sample.scope({ experiments: [id] })` 内部把每个候选
+      `AttemptHandle.experimentId`"
+    proof: []
+    source:
+      path: memory/sample-scope-experiments-per-id-fuzzy-match-bug.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:f5a2788b16013d81620d057d5de795519dfe3b1c77ec2fb8f3633f1a392fc6c7
 ---
 
 已修。`Sample.scope({ experiments: [id] })` 内部把每个候选 `AttemptHandle.experimentId`

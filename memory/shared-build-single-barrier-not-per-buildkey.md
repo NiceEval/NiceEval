@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: shared-build-single-barrier-not-per-buildkey
+title: 共享构建做成了全局 barrier,不按 BuildKey 放行
+createdAt: 2026-07-31T09:21:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/shared-build-single-barrier-not-per-buildkey.md
+  commit: dc518d242fca32bc67b9c7ff2fdb6e58ba22676e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**:已修(2026-07-31)。协调器新增
+      `startSandboxBuilds()`(`src/sandbox/build-coordinator.ts`):启动后立即返回句柄,逐 key
+      的结算 promise 一 settle 就放行,`prepareSandboxBuilds()` 保留为「等全部
+      key」的薄封装。`src/runner/run.ts` 不再 await 整批构建,改在每条 attempt 的许可链最前面等
+      `awaitBuildsFor(evalId)`——只等本 eval 的 key,等待期间不占全局并发位;locators 在自己的 key
+      结算后才灌进 attempt,provenance 在调度收尾时从 `running.done` 取齐。"
+    proof: []
+    source:
+      path: memory/shared-build-single-barrier-not-per-buildkey.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:cbb0d239fbac906ae5da430b4f7a461bb2eeaee158f56ca83cf822afcdafa370
+---
 # 共享构建做成了全局 barrier,不按 BuildKey 放行
 
 **现象**:13 题批跑里 10 个镜像已 ready,仍显示 `0 running · 13 queued`,全体等最慢那个构建约 7 分钟才开始派发(2026-07-31 MemoryBench 真机)。

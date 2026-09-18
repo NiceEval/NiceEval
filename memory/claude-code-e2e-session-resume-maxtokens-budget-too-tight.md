@@ -1,8 +1,39 @@
 ---
-name: claude-code-e2e-session-resume-maxtokens-budget-too-tight
-description: e2e/adapter/claude-code 的 session-resume eval 用 t.maxTokens(80_000) 当"usage 非空"哨兵断言，真机第二次跑就在 90008 tokens 上假阳性判 regression；claude-code CLI 单轮 usage(含 cache read)本身在 24k~90k 区间正常浮动，80k 不是够用的上限
-metadata:
-  type: project
+format: concord.document/v1
+id: claude-code-e2e-session-resume-maxtokens-budget-too-tight
+title: claude-code-e2e-session-resume-maxtokens-budget-too-tight
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/claude-code-e2e-session-resume-maxtokens-budget-too-tight.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: e2e/adapter/claude-code 的 session-resume eval 用 t.maxTokens(80_000)
+  当"usage 非空"哨兵断言，真机第二次跑就在 90008 tokens 上假阳性判 regression；claude-code CLI 单轮
+  usage(含 cache read)本身在 24k~90k 区间正常浮动，80k 不是够用的上限
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [claude-code-e2e-session-resume-maxtokens-budget-too-tight](claude-code-e\
+      2e-session-resume-maxtokens-budget-too-tight.md) — `t.maxTokens(80_000)` 当
+      usage 非空哨兵时贴着真实采样值设上限,真机第二次跑就在 90008 tokens 假阳性判 regression;usage 哨兵上限要留
+      2~3 倍余量,不能按样本量 1 定(修在
+      `e2e/adapter/claude-code/evals/session-resume.eval.ts`,提到 200_000)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**：`pnpm e2e --repo claude-code` 第一次真跑（`.niceeval/coding` 此前从未落过盘，是这条 experiment 第一次经过完整 Docker 沙箱 + 真实 DeepSeek 代理跑通)全绿；同一份代码原样第二次跑（中间只改了另一个不相关的 eval），`session-resume`（`experiments/coding.ts`）在

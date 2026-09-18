@@ -1,3 +1,42 @@
+---
+format: concord.document/v1
+id: sandbox-case-addon-agent-provisioner
+title: 完整 Sandbox Case、Experiment Addon 与 AgentProvisioner 分工
+createdAt: 2026-07-31T12:23:19+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-case-addon-agent-provisioner.md
+  commit: 6f67cf2c6126f9dc632f45a697d7e9b9087b5c5d
+kind: memory
+memoryKind: decision
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 被后续裁决替代
+      [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provision\
+      er.md) — 翻案裁决(2026-07-31 三次):曾采用完整 Sandbox Case + Experiment Addon + 独立
+      AgentProvisioner;因只表达 Eval Base + Experiment Ensure 的单向组合而被 PLAN-4 包含
+      [requirements-base-case-ensure](requirements-base-case-ensure.md)
+      [template-layer-supersedes-environment-provision](template-layer-supersed\
+      es-environment-provision.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-31
+supersession:
+  statement: "- 被后续裁决替代
+    [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provisioner\
+    .md) — 翻案裁决(2026-07-31 三次):曾采用完整 Sandbox Case + Experiment Addon + 独立
+    AgentProvisioner;因只表达 Eval Base + Experiment Ensure 的单向组合而被 PLAN-4 包含"
+  source:
+    path: memory/INDEX.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 完整 Sandbox Case、Experiment Addon 与 AgentProvisioner 分工
 
 **已被后续裁决替代**:PLAN-4 把 Addon 保留为 Experiment Requirement helper,并允许 Eval 与 Experiment 任一侧提供 Base 或 Ensure。

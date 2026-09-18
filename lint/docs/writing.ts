@@ -9,6 +9,8 @@
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { parseDocument } from "yaml";
+import { IssueSchema, decode } from "concord-sdlc/model";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const RULES_FILE = "docs/writing-rules.json";
@@ -675,7 +677,19 @@ export function lintDocsWriting(): LintReport {
     const target = root.startsWith("apps/docs-site/") ? "docs-site" : "docs";
     const matchers = bannedMatchers(rules, target);
     for (const file of walkDocs(root, [".md", ".mdx"])) {
-      const sourceLines = readFileSync(join(ROOT, file), "utf8").split("\n");
+      const source = readFileSync(join(ROOT, file), "utf8");
+      if (/^docs\/issues\/[^/]+\.md$/u.test(file) && file !== "docs/issues/README.md") {
+        // Issue observations preserve the reporter's words; they are not design prose.
+        // Decode the current owner strictly instead of exempting arbitrary files by directory.
+        const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(source);
+        if (!frontmatter) throw new Error(`${file}: Issue frontmatter is required`);
+        const yaml = parseDocument(frontmatter[1]!, { uniqueKeys: true, merge: false });
+        if (yaml.errors.length > 0) throw new Error(`${file}: invalid Issue YAML`);
+        const issue = decode(IssueSchema, yaml.toJS({ maxAliasCount: 0 }) as unknown, file);
+        if (`docs/issues/${issue.id}.md` !== file) throw new Error(`${file}: Issue identity does not match its path`);
+        continue;
+      }
+      const sourceLines = source.split("\n");
       const lines = readableProseLines(file, sourceLines);
 
       for (const block of proseBlocks(lines)) {

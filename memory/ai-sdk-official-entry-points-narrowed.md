@@ -1,8 +1,21 @@
 ---
-name: ai-sdk-official-entry-points-narrowed
-description: 设计裁决——AI SDK 官方接入面从三个(fromAiSdk/aiSdkAgent/uiMessageStreamAgent)收窄到两个,aiSdkAgent 降级为进程内调用窄例外,不再是推荐入口;e2e/adapter/ai-sdk 删掉 in-process 覆盖,OTel 证明改挂 HTTP 路径
-metadata:
-  type: project
+format: concord.document/v1
+id: ai-sdk-official-entry-points-narrowed
+title: ai-sdk-official-entry-points-narrowed
+createdAt: 2026-07-19T10:46:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ai-sdk-official-entry-points-narrowed.md
+  commit: 084930f5129f9c0ac773fdeed8ca358fe2e97b5b
+description: 设计裁决——AI SDK
+  官方接入面从三个(fromAiSdk/aiSdkAgent/uiMessageStreamAgent)收窄到两个,aiSdkAgent
+  降级为进程内调用窄例外,不再是推荐入口;e2e/adapter/ai-sdk 删掉 in-process 覆盖,OTel 证明改挂 HTTP 路径
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决**(2026-07-19):`docs/feature/adapters/sdk/ai-sdk/README.md` 的「AI SDK 接入面」从三条收窄为两条——`uiMessageStreamAgent`(HTTP)与 `fromAiSdk`(结果转换器)。`aiSdkAgent` 从主表格移除,改成页面末尾一段说明:它仍是 `niceeval/adapter` 的合法导出,但只服务「被测循环本身就是目标边界、应用从未以 HTTP 形式部署」这条 [remote-agent.md 进程内调用](../docs/feature/adapters/library/remote-agent.md) 窄例外,不是 AI SDK 应用的推荐接入方式。

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: pending-tool-call-status-defaults-completed
+title: 派生事实对"已发起还没结果"的工具调用乐观默认 completed
+createdAt: 2026-07-07T16:12:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pending-tool-call-status-defaults-completed.md
+  commit: 747911c049af60e854a2db62b434fc4c239e5c79
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 派生事实对"已发起还没结果"的工具调用乐观默认 completed
 
 ## 现象

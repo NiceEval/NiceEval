@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: show-locator-scoped-to-current-sample
+title: show 的 `@<locator>` 曾被现刻水位收窄，历史 attempt 打不开
+createdAt: 2026-07-30T18:59:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-locator-scoped-to-current-sample.md
+  commit: 578597b60e86f281feee49106f3d1642483c61dd
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sa\
+      mple.md) — `show @<locator>` 曾在 resolveLocator 之后拿
+      `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史
+      attempt 一律报「outside the selected record
+      scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # show 的 `@<locator>` 曾被现刻水位收窄，历史 attempt 打不开
 
 ## 现象

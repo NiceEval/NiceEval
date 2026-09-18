@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: failure-chain-experiment-before-adapter
+title: 失败分类链:实验分类器前移到 adapter 之前(遮蔽风险裁决)
+createdAt: 2026-07-24T18:36:37+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/failure-chain-experiment-before-adapter.md
+  commit: aad15b85cb6075d67a49775b6a848d3934b23c85
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 失败分类链:实验分类器前移到 adapter 之前(遮蔽风险裁决)
 
 - **裁决**(2026-07-24):turn 失败分类链的决议序定为**抛出点 → 实验分类器 → adapter 分类器 → 保守兜底 → 受理证据门**,首个非 `undefined` 定案。契约单源 `docs/feature/error-classification/architecture.md#分类链`。

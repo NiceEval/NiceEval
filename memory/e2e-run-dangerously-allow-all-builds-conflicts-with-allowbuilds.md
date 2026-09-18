@@ -1,8 +1,35 @@
 ---
-name: e2e-run-dangerously-allow-all-builds-conflicts-with-allowbuilds
-description: "e2e/scripts/run.ts 的隔离安装用 --config.dangerouslyAllowAllBuilds=true,与仓库自己 pnpm-workspace.yaml 的 allowBuilds 白名单在 pnpm 10.33+/11 上互斥,ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES 直接判红整个 e2e matrix"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: e2e-run-dangerously-allow-all-builds-conflicts-with-allowbuilds
+title: e2e-run-dangerously-allow-all-builds-conflicts-with-allowbuilds
+createdAt: 2026-07-19T11:26:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-run-dangerously-allow-all-builds-conflicts-with-allowbuilds.md
+  commit: 5431ec33105ddc53403afac1d77a278648a11a45
+description: e2e/scripts/run.ts 的隔离安装用
+  --config.dangerouslyAllowAllBuilds=true,与仓库自己 pnpm-workspace.yaml 的
+  allowBuilds 白名单在 pnpm 10.33+/11
+  上互斥,ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES 直接判红整个 e2e matrix
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**相邻问题(均已修)**：install 修好后又暴露三层独立问题,全部在同一次排障里解决:"
+    proof: []
+    source:
+      path: memory/e2e-run-dangerously-allow-all-builds-conflicts-with-allowbuilds.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:112dd092cb7caef8e36445ba3640b17e7eb67e29d62e10beb27b8a18089e231c
 ---
 
 **现象**：`e2e.yml` push 到 `main` 后所有 matrix cell(ai-sdk/bub/claude-code/codex-cli)

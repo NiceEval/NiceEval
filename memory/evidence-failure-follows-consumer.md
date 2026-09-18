@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: evidence-failure-follows-consumer
+title: 裁决：证据采集失败后果跟随消费者
+createdAt: 2026-08-02T20:03:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/evidence-failure-follows-consumer.md
+  commit: 376b24a5a648ee84c3c31e188743be00aa2f86ad
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决：证据采集失败后果跟随消费者
 
 - **裁决**（2026-08-02）：证据通道是否能改变 Verdict，由本 Attempt 已登记的断言消费者决定，不由采集阶段或 artifact 名决定。非 optional 消费者使通道 required；optional 消费者与纯报告 artifact 是 supplemental。

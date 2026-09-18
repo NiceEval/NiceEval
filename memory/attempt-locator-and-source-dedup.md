@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: attempt-locator-and-source-dedup
+title: attempt-locator-and-source-dedup
+createdAt: 2026-07-12T14:39:22+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-locator-and-source-dedup.md
+  commit: b5b8ca92da72b52c6f543899fc56650156c1c9d0
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # attempt-locator-and-source-dedup
 
 裁决(2026-07-12):把独立设计好的 `AttemptLocator`(`src/results/locator.ts`)与 eval 源码捕获/

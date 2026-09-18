@@ -1,17 +1,37 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: legacy-record-recovery-guidance
 title: 旧项目状态拒绝写入后缺少可执行恢复指引
 createdAt: 2026-09-07
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - netake_259BAEE8AGKT46VX
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/legacy-record-recovery.test.ts#necase_CQYTFVY7A9TQCDFZ"]}
     proof:
       - netake_259BAEE8AGKT46VX
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/legacy-record-recovery.test.ts#necase_CQYTFVY7A9TQCDFZ"]}
-promotions: []
+    source:
+      path: memory/legacy-record-recovery-guidance.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:6a920029c93e602655a9ad8bd2e307858aa1b413d58680e18c5d28d729c1bf94
 ---
 # 旧项目状态拒绝写入后缺少可执行恢复指引
 

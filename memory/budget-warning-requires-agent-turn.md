@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: budget-warning-requires-agent-turn
+title: Budget warning 只能由真实 agent turn 触发
+createdAt: 2026-07-15T17:22:56+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/budget-warning-requires-agent-turn.md
+  commit: bd41e8479feddc631934008f7d2b251f5e95d247
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Budget warning 只能由真实 agent turn 触发
 
 **现象（2026-07-15）**：一批带 budget 的 E2B attempt 因模板名不存在，全部在 `sandbox.create` 以 `404 template not found` 结束。agent 从未启动、usage/cost 理应不存在，但 runner 把这些前置错误也累计进“完成但无成本”的样本；第三条之后额外发出 `budget-unenforceable`，把排查方向从模板配置误导到 adapter 计费。

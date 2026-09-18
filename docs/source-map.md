@@ -26,7 +26,7 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 
 ## 仓库维护 CLI
 
-下表的 `packages/repo-tools/src/` 路径是兼容转发入口，实际实现位于锁定的 `concord-sdlc/repository/` 同名模块。`concord.repository.json` 与 `packages/e2e-runner/src/concord-host.ts` 连接 NiceEval 自己的正式测试执行与证据；详见 [Repository Tools](engineering/repository-tools/README.md)。
+下表的 `packages/repo-tools/src/` 路径是锁定包导出入口，实际实现位于锁定的 `concord-sdlc/repository/` 同名模块。`concord.repository.json` 与 `packages/e2e-runner/src/concord-host.ts` 连接 NiceEval 自己的正式测试执行与证据；详见 [Repository Tools](engineering/repository-tools/README.md)。
 
 | 目标行为 | 当前源码区域 |
 |---|---|
@@ -34,8 +34,8 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 | `docs` contribution 的装配与显式 domain contribution protocol | `packages/repo-tools/src/docs/{command,contribution}.ts` |
 | Feature/Test Trace Schema、compiler、固定投影与各自 domain renderer | `packages/repo-tools/src/docs/{feature-command,test-command,trace}/` |
 | canonical RepoRef、target validation 与 Trace relation mutation 的共享锁/generation | `packages/repo-tools/src/docs/trace/{ref,relation-mutation}.ts` |
-| Feedback v2、adoption、Memory relation 与 Issue source | `packages/repo-tools/src/feedback/` |
-| structured Memory、promotion、supersession 与 E2E regression check | `packages/repo-tools/src/memory/` |
+| 当前 Issue owner、adoption、Memory relation 与远端 source | `packages/repo-tools/src/feedback/` |
+| 当前 Memory、promotion、supersession 与 E2E regression check | `packages/repo-tools/src/memory/` |
 
 这些命令属于仓库自身，不进入发布的 `niceeval` 产品 CLI。文档查询与维护入口从 `pnpm run repo docs` 进入：Feature/Test 发现分别是 `pnpm run repo docs feature` 与 `pnpm run repo docs test`；
 Feedback 与 Memory 仍各自使用 `pnpm feedback` 与 `pnpm memory`。领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。

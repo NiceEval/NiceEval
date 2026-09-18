@@ -1,3 +1,38 @@
+---
+format: concord.document/v1
+id: reuse-pool-retire-silently-swallows-root-guard
+title: 复用池归还静默吞 reset 失败，root 执行身份要等首次归还才被拒
+createdAt: 2026-08-04T17:23:30+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reuse-pool-retire-silently-swallows-root-guard.md
+  commit: b050b12b6fdc4938c31a0b378d68cfb81eb1f8f5
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [reuse-pool-retire-silently-swallows-root-guard](reuse-pool-retire-silent\
+      ly-swallows-root-guard.md) — 归还 finalizer 把 `resetToAnchor()` 的 root
+      身份安全守卫失败静默吞成退休换新,root 执行身份要到首次归还才被拒且零诊断;docker+r3 镜像无 `USER` 声明下 151 条复用记录
+      `reuseOrdinal` 全为 1;修为 `ChangeLedger.rootExecutionIdentity` 提前到 `create()`
+      派发前拒绝 + 归还 reset 失败发 `sandbox-reset-failed`
+      diagnostic(src/runner/ledger.ts、src/runner/sandbox-pool.ts)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 复用池归还静默吞 reset 失败，root 执行身份要等首次归还才被拒
 
 - **现象**(2026-08-04，MemoryBench 全历史 docker 复用记录复盘):`sandboxReuse: true` 在 Docker + `niceeval/codex:0.144.1-r3`(Hub 上该镜像无 `USER` 声明,容器默认 root 执行身份)下,151 条复用记录 `reuseOrdinal` 全部为 1(同期 e2b 最高 13)——每个实例都在第一次归还后被换新,从未真正复用,且现场没有任何报错或诊断指向原因。

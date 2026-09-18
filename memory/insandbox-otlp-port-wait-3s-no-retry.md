@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: insandbox-otlp-port-wait-3s-no-retry
+title: 沙箱内 OTLP collector 端口等待 3s 硬预算、零重试(已修)
+createdAt: 2026-07-24T14:38:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/insandbox-otlp-port-wait-3s-no-retry.md
+  commit: b470929876d224d8e1fd48d0a556bb1a321e07d0
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 沙箱内 OTLP collector 端口等待 3s 硬预算、零重试(已修)"
+    proof: []
+    source:
+      path: memory/insandbox-otlp-port-wait-3s-no-retry.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:25481f5caeae3ca6e29cb1a22e832ae0be9fc46d6eb3af92da156105e50fefc9
+---
 # 沙箱内 OTLP collector 端口等待 3s 硬预算、零重试(已修)
 
 **现象**：远程沙箱(e2b / vercel)上偶发 attempt 在 ~8s 就 errored,错误 message 为

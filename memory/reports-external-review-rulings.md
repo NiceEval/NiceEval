@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: reports-external-review-rulings
+title: 设计裁决:Reports 外部评审修订(2026-07-16,第三轮)
+createdAt: 2026-07-16T13:39:33+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reports-external-review-rulings.md
+  commit: c8e6252e990945d91c95c7ec4b0a658c6d5fe951
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:Reports 外部评审修订(2026-07-16,第三轮)
 
 三层重设计定稿([reports-component-page-report-redesign](reports-component-page-report-redesign.md))当天收到一份外部设计评审,逐条核对后按「接受 / 部分接受 / 否决」裁决。定稿形态已重写进 `docs/feature/reports/`、`docs/feature/results/library.md` 与两份 cases.md;实现对照清单在 `plan/reports-redesign-implementation.md`「2026-07-16 外部评审修订」节。本条只记翻案与否决的来龙去脉。

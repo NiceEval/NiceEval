@@ -1,8 +1,20 @@
 ---
-name: vm0-has-public-rest-contract
-description: vm0 其实有公开、版本化的 REST 契约可程序化接入(POST /api/agent/runs + 轮询 events),"无公开 API"的旧调研结论是错的;examples/zh/origin/vm0 已按此重写为真集成
-metadata:
-  type: project
+format: concord.document/v1
+id: vm0-has-public-rest-contract
+title: vm0-has-public-rest-contract
+createdAt: 2026-07-02T23:41:59Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/vm0-has-public-rest-contract.md
+  commit: 8e283b79a9f76d51beb7f75ebad884d7499e9479
+description: vm0 其实有公开、版本化的 REST 契约可程序化接入(POST /api/agent/runs + 轮询 events),"无公开
+  API"的旧调研结论是错的;examples/zh/origin/vm0 已按此重写为真集成
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**:`examples/zh/origin/vm0` 曾按"vm0 没有 npm SDK、没有公开文档化的 HTTP API"的调研结论做成 mock 占位(`docs/adapters/targets.md` 的 vm0 行也是同一结论)。用户指出实现是错的;2026-07-02 重新调研(直接读 `@vm0/cli@9.221.5` 的 bundle 源码 + vm0 仓库 `turbo/packages/api-contracts/`)证实旧结论只对了一半。

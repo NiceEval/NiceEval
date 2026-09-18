@@ -1,8 +1,19 @@
 ---
-name: carry-includes-failed-verdict
+format: concord.document/v1
+id: carry-includes-failed-verdict
+title: carry-includes-failed-verdict
+createdAt: 2026-07-11T18:50:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/carry-includes-failed-verdict.md
+  commit: fbe2538377a35f2362e8f5734268448445f0e2ff
 description: 设计裁决 — resume/carry 缓存现在同时携入 passed 与 failed,只有 errored 才重跑
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决**(2026-07-11):跨快照 resume(`src/runner/run.ts` 的 `priorRunKeys` 携入逻辑)的携入条件从「上次 `verdict === "passed"` 且 fingerprint 匹配」改为「上次 `verdict === "passed" || "failed"` 且 fingerprint 匹配」。`errored` 与 `skipped` 依旧总是重跑。

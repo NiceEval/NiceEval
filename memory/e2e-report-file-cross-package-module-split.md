@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: e2e-report-file-cross-package-module-split
+title: e2e/report 仓库里用 HEAD 的 bin/niceeval.js 跑自定义 --report 文件,locator 深链静默丢失
+createdAt: 2026-07-22T09:56:05+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-report-file-cross-package-module-split.md
+  commit: 8359408995eb3b09699b2081151abf319926a915
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # e2e/report 仓库里用 HEAD 的 bin/niceeval.js 跑自定义 --report 文件,locator 深链静默丢失
 
 ## 现象

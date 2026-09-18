@@ -9,7 +9,7 @@
     "typecheck": "tsc6 -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "concord-sdlc": "file:../../tools/concord/concord-sdlc-0.3.0.tgz"
+    "concord-sdlc": "file:../../tools/concord/concord-sdlc-0.4.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

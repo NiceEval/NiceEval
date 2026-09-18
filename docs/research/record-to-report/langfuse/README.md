@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: record-to-report-langfuse
+title: Langfuse：Observation、Score、Experiment 与 Dashboard
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources: []
+---
 # Langfuse：Observation、Score、Experiment 与 Dashboard
 
 > 观察日期：2026-08-14
@@ -68,11 +77,11 @@ Organization
 
 | 页 | 只回答什么 |
 |---|---|
-| [layers.md](layers.md) | 产品自己的 layer、component、resource、owner、引用与依赖 |
-| [execution.md](execution.md) | 一次请求或一次实验怎样发起、调度、执行、写入、完成、失败与 resume |
-| [storage.md](storage.md) | 公开 type、表、文件、信封与 API resource；权威 / 派生 / 投影 |
-| [reading-and-comparison.md](reading-and-comparison.md) | 历史怎样重开、query、filter、align、group、compare、render |
-| [schema-and-migration.md](schema-and-migration.md) | 版本轨道、兼容读取、migration、是否改写已保存数据 |
+| [layers.md](layers/README.md) | 产品自己的 layer、component、resource、owner、引用与依赖 |
+| [execution.md](execution/README.md) | 一次请求或一次实验怎样发起、调度、执行、写入、完成、失败与 resume |
+| [storage.md](storage/README.md) | 公开 type、表、文件、信封与 API resource；权威 / 派生 / 投影 |
+| [reading-and-comparison.md](reading-and-comparison/README.md) | 历史怎样重开、query、filter、align、group、compare、render |
+| [schema-and-migration.md](schema-and-migration/README.md) | 版本轨道、兼容读取、migration、是否改写已保存数据 |
 
 ## 对 NiceEval 的摘要
 

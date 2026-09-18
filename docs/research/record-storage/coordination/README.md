@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-storage-coordination
+title: SQLite Record Coordination research
+createdAt: 2026-08-26
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/record-storage/coordination/README.md
+  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
+kind: research
+sources: []
+---
 # SQLite Record Coordination research
 
 本目录保存 Record writer admission 与 snapshot barrier 的多进程采用证据。

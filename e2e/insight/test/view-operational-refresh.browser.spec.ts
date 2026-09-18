@@ -8,13 +8,11 @@ import {
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
+// @regression memory/view-refresh-candidate-replaced-by-polling.md
+// @regression memory/view-refresh-commit-races-with-navigation.md
 
-// @concord-case necase_77F5PRE3YTPSA078
-// @concord-owner docs/engineering/testing/e2e/insight.md#operational-revision-refresh
-// @concord-regression memory/view-refresh-candidate-replaced-by-polling.md
-// @concord-regression memory/view-refresh-commit-races-with-navigation.md
-// @concord-test-file e2e/insight/test/view-operational-refresh.browser.spec.ts
-test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt [necase_77F5PRE3YTPSA078]", async ({ page }) => {
+test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt", async ({ page }) => {
   await insightE2E.case(
     "view-operational-refresh",
     { artifacts: insightCaseArtifacts() },

@@ -87,11 +87,9 @@ async function exportImageRootfs(image: string, destination: string): Promise<vo
     expect(removed.exitCode, removed.diagnostic()).toBe(0);
   }
 }
+// @use-case docs/feature/experiments/use-case/lifecycle-bake-dependencies.md
 
-// @concord-case necase_5XE2074JF3RSYE4P
-// @concord-owner docs/engineering/testing/e2e/README.md#docker-profile-cold-build
-// @concord-test-file e2e/lifecycle/test/docker-profile-cold-build.test.ts
-test("profile-bound Dockerfile cold build starts the Attempt through the public CLI [necase_5XE2074JF3RSYE4P]", async () => {
+test("profile-bound Dockerfile cold build starts the Attempt through the public CLI", async () => {
   const scripts = process.env.NICEEVAL_E2E_DOCKER_PROFILE_HOST_SCRIPTS;
   expect(scripts, "runner must inject the actual Docker profile host scripts").toBeTruthy();
   const fixtureScript = resolve("fixtures/profile-host-fixture.py");

@@ -1,3 +1,38 @@
+---
+format: concord.document/v1
+id: rotating-flag-value-invalidates-whole-cache
+title: flags 里放轮换型坐标(隧道 URL),换一次全部缓存作废
+createdAt: 2026-07-24T23:42:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/rotating-flag-value-invalidates-whole-cache.md
+  commit: e924fd4a87040c2481c88240fad5b38e309ebce5
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalid\
+      ates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36
+      携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报
+      `ctx.fact()`(见
+      [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-co\
+      nfigurable.md))"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # flags 里放轮换型坐标(隧道 URL),换一次全部缓存作废
 
 **现象。** MemoryBench 的 `compare/codex-gpt-5.6-luna--nowledge` 跑到一半被止损闸停掉

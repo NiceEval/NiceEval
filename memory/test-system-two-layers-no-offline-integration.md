@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: test-system-two-layers-no-offline-integration
+title: 测试体系定稿两层：unit 确定性 + E2E 全真实，否决离线集成层
+createdAt: 2026-07-14T08:00:48Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/test-system-two-layers-no-offline-integration.md
+  commit: 6abccb8bd882c3dfa5b28df9b3ca15e00da0c650
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 测试体系定稿两层：unit 确定性 + E2E 全真实，否决离线集成层
 
 **裁决**（2026-07-14，用户定案）：测试体系只有两层——单元测试（fixture 驱动、确定性、无网络无 key）与 E2E（真实模型、真实协议、真实沙箱）。中间不设任何离线集成档，模型调用成本不构成测试设计约束。定稿落在 `docs/engineering/testing/README.md`（总览）、`docs/engineering/testing/unit/`（方法论 + harness + 每 Feature 架构/用例两页）、`docs/engineering/testing/e2e/README.md`（真实层 + 仓库 Eval 预算 + 破坏性变更矩阵修复）。

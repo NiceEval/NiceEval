@@ -23,7 +23,7 @@ interface CollectedSubject {
   readonly project?: string;
   readonly titlePath: readonly string[];
   readonly subjectDigest: `sha256:${string}`;
-  readonly caseId: `necase_${string}`;
+  readonly caseId: string;
 }
 
 export interface WorkspaceInventoryReceipt {
@@ -48,7 +48,7 @@ export class DuplicateCollectedSubject extends Data.TaggedError("DuplicateCollec
 }> {}
 
 export class DuplicateCollectedCaseId extends Data.TaggedError("DuplicateCollectedCaseId")<{
-  readonly caseId: `necase_${string}`;
+  readonly caseId: string;
   readonly subjects: readonly CollectedSubject[];
 }> {}
 
@@ -170,7 +170,7 @@ const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function*(chec
   const subjects = yield* collapseSourceWitnesses(prepared.flatMap((repo) => repo.subjects).sort(compareSubject));
   const byCaseId = new Map<string, CollectedSubject[]>();
   for (const subject of subjects) byCaseId.set(subject.caseId, [...(byCaseId.get(subject.caseId) ?? []), subject]);
-  for (const [caseId, witnesses] of byCaseId) if (witnesses.length > 1) return yield* new DuplicateCollectedCaseId({ caseId: caseId as `necase_${string}`, subjects: witnesses.sort(compareSubject) });
+  for (const [caseId, witnesses] of byCaseId) if (witnesses.length > 1) return yield* new DuplicateCollectedCaseId({ caseId, subjects: witnesses.sort(compareSubject) });
   const repos = prepared.map(({ id, receipts }) => ({ id, receipts })).sort((left, right) => left.id.localeCompare(right.id));
   const files = [...new Set(prepared.flatMap((repo) => repo.files))].sort();
   const cases: CollectedCase[] = subjects.map(({ subjectDigest: _subjectDigest, ...subject }) => subject).sort((left, right) => left.path.localeCompare(right.path) || left.caseId.localeCompare(right.caseId));

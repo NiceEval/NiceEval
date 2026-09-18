@@ -101,8 +101,8 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
   const sourceSnapshot = resolve(scratch, options.repoId);
   yield* copyRepoIsolated(repo.dir, sourceSnapshot).pipe(Effect.mapError(failure));
   const sourceIdentity = yield* Effect.try({ try: () => resolveRepositorySourceIdentity(repoRootDir(), sourceSnapshot, options.selector), catch: failure });
-  const nativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerPath, selected.caseId)];
-  const summary = yield* runEffect({ repoIds: [options.repoId], candidatePath: options.candidatePath, ...(options.artifactRoot === undefined ? {} : { artifactRoot: options.artifactRoot }), nativeArgs, keepWorkdir: false, repoConcurrency: 1, sourceDirs: { [options.repoId]: sourceSnapshot }, sourceSnapshotDigests: { [options.repoId]: sourceIdentity.projection.digest } }).pipe(Effect.mapError(failure));
+  const nativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerPath, selected.titlePath)];
+  const summary = yield* runEffect({ repoIds: [options.repoId], candidatePath: options.candidatePath, ...(options.artifactRoot === undefined ? {} : { artifactRoot: options.artifactRoot }), nativeArgs, keepWorkdir: false, repoConcurrency: 1, caseSelections: { [options.repoId]: { executor: inventory.executor.name, caseId: selected.caseId, checkout: inventory.checkout, only: true } }, sourceDirs: { [options.repoId]: sourceSnapshot }, sourceSnapshotDigests: { [options.repoId]: sourceIdentity.projection.digest } }).pipe(Effect.mapError(failure));
   if (summary.runner.category !== "pass" || summary.results.length !== 1) return yield* Effect.fail(new RedEvidenceError({ detail: "runner infrastructure or scratch cleanup failed" }));
   const repoResult = summary.results[0]!;
   const repoReceiptText = yield* fileSystem.readFileString(repoResult.receiptPath).pipe(Effect.mapError(failure));

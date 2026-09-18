@@ -1,8 +1,37 @@
 ---
-name: render-matrix-not-just-data-matrix
-description: 组件测试注册表要求"两面都渲染"时,只测 attempt*Data() 返回值形状是弱化替代,必须真正调用 renderToStaticMarkup/renderNodeToText
-metadata:
-  type: feedback
+format: concord.document/v1
+id: render-matrix-not-just-data-matrix
+title: render-matrix-not-just-data-matrix
+createdAt: 2026-07-19T15:41:35+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/render-matrix-not-just-data-matrix.md
+  commit: 4e451858bfb5b1e0b05fbbb2255eb7561df68e88
+description: 组件测试注册表要求"两面都渲染"时,只测 attempt*Data() 返回值形状是弱化替代,必须真正调用
+  renderToStaticMarkup/renderNodeToText
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修
+      [render-matrix-not-just-data-matrix](render-matrix-not-just-data-matrix.md)
+      — 注册表场景写"两面渲染输出"时只测 attempt*Data() 返回形状是弱化替代,typecheck/build/test 全绿也遮不住
+      9/11 叶子组件渲染函数从未被真正调用过;修法=表驱动直接 renderToStaticMarkup/renderNodeToText
+      两态各跑一遍(src/report/attempt-components.test.tsx)'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 `docs/engineering/testing/unit/reports.md` 第 249 行(Attempt 详情组件族非空/空证据矩阵)登记的场景原文是"零输出态断言两面都不产生可见节点,非零输出态断言两面都含预期字段"——这句话的主语是**两面渲染输出**,不是 data 函数返回值。

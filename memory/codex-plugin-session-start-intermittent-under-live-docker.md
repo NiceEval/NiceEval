@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: codex-plugin-session-start-intermittent-under-live-docker
+title: Codex Plugin SessionStart 在 Docker/live 高并发下偶发不进入 session
+createdAt: 2026-08-13T15:54:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-plugin-session-start-intermittent-under-live-docker.md
+  commit: bec7da031e886eb311c1292ec93b043f53772fb5
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [codex-plugin-session-start-intermittent-under-live-docker](codex-plugin-\
+      session-start-intermittent-under-live-docker.md) — Codex CLI 0.144.1 在
+      hook 子进程已退出后写 SessionStart stdin，BrokenPipe 被误判成整次 hook 失败并丢 stdout；官方
+      0.146.0 已忽略该竞态，NiceEval 在配置 plugins 时由 staged installer 选择修复版本"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Codex Plugin SessionStart 在 Docker/live 高并发下偶发不进入 session
 
 ## 现象

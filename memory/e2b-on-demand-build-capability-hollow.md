@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: e2b-on-demand-build-capability-hollow
+title: E2B 按需构建是空壳:类型齐全,无 build provider
+createdAt: 2026-07-31T09:21:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-on-demand-build-capability-hollow.md
+  commit: dc518d242fca32bc67b9c7ff2fdb6e58ba22676e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # E2B 按需构建是空壳:类型齐全,无 build provider
 
 **现象**:按需构建单 Dockerfile 的 caseKind、类型与能力矩阵都已存在,但没有任何 provider 实现这条构建路——docker 与 E2B 都只有 Compose 一条路能真构建。单容器题在 E2B 无法物化,MemoryBench 的 3 个 `*-e2b` 实验只能停用(逐题 template 覆盖表为空,启动即说明跑不了)(2026-07-31)。

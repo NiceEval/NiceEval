@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: fixed-activation-source-vs-packaged-helper-paths
 title: Fixed activation confuses source helpers with packaged wrappers
 createdAt: 2026-08-25T11:00:50+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 # Fixed activation confuses source helpers with packaged wrappers
 

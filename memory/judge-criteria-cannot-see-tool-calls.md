@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: judge-criteria-cannot-see-tool-calls
+title: judge criteria 要求「基于工具作答」→ 恒判 0,因为默认材料看不到工具调用
+createdAt: 2026-07-02T10:26:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/judge-criteria-cannot-see-tool-calls.md
+  commit: 665d237e6c6c036799688e907e318e2ac89e2d59
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # judge criteria 要求「基于工具作答」→ 恒判 0,因为默认材料看不到工具调用
 
 ## 现象

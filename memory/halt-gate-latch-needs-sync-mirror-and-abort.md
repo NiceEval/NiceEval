@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: halt-gate-latch-needs-sync-mirror-and-abort
+title: 止损闸不是「一把 Effect.Latch」:同步读与 Promise 世界的等待各要一个载体
+createdAt: 2026-07-24T20:09:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/halt-gate-latch-needs-sync-mirror-and-abort.md
+  commit: bd777b5abf7c0672bb58c1bb8276449bd19807e6
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 止损闸不是「一把 Effect.Latch」:同步读与 Promise 世界的等待各要一个载体
 
 ## 现象

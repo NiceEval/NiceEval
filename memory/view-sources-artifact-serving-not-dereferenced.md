@@ -1,3 +1,38 @@
+---
+format: concord.document/v1
+id: view-sources-artifact-serving-not-dereferenced
+title: view 的两条 sources.json 出口曾继续吐落盘引用格式,浏览器端代码视图静默判空
+createdAt: 2026-07-12T16:49:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-sources-artifact-serving-not-dereferenced.md
+  commit: 012cb77f674d5ad150f871ceb7961cf1b7016dcf
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [view-sources-artifact-serving-not-dereferenced](view-sources-artifact-se\
+      rving-not-dereferenced.md) — sources.json
+      落盘改两层去重存储后,`server.ts`/`index.ts` 的 artifact
+      出口仍原样转发/拷贝引用格式(`{path,sha256}[]`),浏览器端 guard 因缺 `content` 字段静默判空;修为两处都改经
+      `AttemptHandle.sources()` 解引用(`src/view/server.ts` + `src/view/index.ts` +
+      `src/view/data.ts` 的 `loadAttemptIndex`/`attemptsByBase`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # view 的两条 sources.json 出口曾继续吐落盘引用格式,浏览器端代码视图静默判空
 
 ## 现象

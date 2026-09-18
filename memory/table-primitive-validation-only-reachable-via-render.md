@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: table-primitive-validation-only-reachable-via-render
+title: Table primitive 的列/行 key 校验只长在渲染面函数体内,纯 resolve/validate 断言够不着
+createdAt: 2026-07-21T21:56:59+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/table-primitive-validation-only-reachable-via-render.md
+  commit: e5a5163e9ab11bad705c11754aefb2ee0897e277
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Table primitive 的列/行 key 校验只长在渲染面函数体内,纯 resolve/validate 断言够不着
 
 **现象**:测试体系重划 A4(`src/report/runtime/dual-render.test.tsx`)把全部渲染断言收窄成纯

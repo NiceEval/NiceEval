@@ -13,11 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_BZYM37JTFDZAV2RR
-// @concord-owner docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic
-// @concord-test-file e2e/adapter/sdk-converters/test/claude-sdk-stream.test.ts
-test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 确定性读回 [necase_BZYM37JTFDZAV2RR]", async () => {
+test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case(
     "claude-sdk-stream",
     sdkConverterRecordArtifacts,

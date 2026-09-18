@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: context-spread-getter-freezes-t-reply
+title: t.reply / t.events / t.sessionId 在顶层 `t` 上永远冻结在初始值
+createdAt: 2026-07-01T18:21:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/context-spread-getter-freezes-t-reply.md
+  commit: fd437d8d941e6eb21ff3598442f5f0e32e9ecf27
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # t.reply / t.events / t.sessionId 在顶层 `t` 上永远冻结在初始值
 
 ## 现象

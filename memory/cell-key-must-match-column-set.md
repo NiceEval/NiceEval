@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: cell-key-must-match-column-set
+title: 格子写在没有这一列的 key 上：判定被静默丢掉，两面都不报错
+createdAt: 2026-07-30T11:12:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/cell-key-must-match-column-set.md
+  commit: 3cfa79fe4bba6529d964b004c7bc23a50fa325eb
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [cell-key-must-match-column-set](cell-key-must-match-column-set.md) —
+      共用行构造函数把判定写在 key `verdict` 下,而层级表的状态列叫 `record`,attempt 行判定与失败摘要被静默丢成
+      `—`(真机导出站复现);修为判定长在 locator 格上,并补 CLAUDE.md「key 与消费侧同源」半条规则"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 格子写在没有这一列的 key 上：判定被静默丢掉，两面都不报错
 
 ## 现象

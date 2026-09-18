@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: guidance-stale
 title: Guidance can become stale after repository rules change
 createdAt: 2026-08-28
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 Runtime guidance can be presented from a stale AGENTS or Skill snapshot after HEAD or rule files change.
 

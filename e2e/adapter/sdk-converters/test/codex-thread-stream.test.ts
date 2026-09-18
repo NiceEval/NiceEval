@@ -14,12 +14,10 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
+// @regression memory/codex-thread-diagnostics-confused-with-terminal-failure.md
 
-// @concord-case necase_C2K9MBSGV9A6TC0A
-// @concord-owner docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
-// @concord-regression memory/codex-thread-diagnostics-confused-with-terminal-failure.md
-// @concord-test-file e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts
-test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回 [necase_C2K9MBSGV9A6TC0A]", async () => {
+test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case(
     "codex-thread-stream",
     sdkConverterRecordArtifacts,

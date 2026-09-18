@@ -1,3 +1,41 @@
+---
+format: concord.document/v1
+id: template-layer-supersedes-environment-provision
+title: 单 template + 统一 Layer 取代 Environment / Provision 二分
+createdAt: 2026-07-31T12:23:19+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/template-layer-supersedes-environment-provision.md
+  commit: 6f67cf2c6126f9dc632f45a697d7e9b9087b5c5d
+kind: memory
+memoryKind: decision
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 被后续裁决替代
+      [template-layer-supersedes-environment-provision](template-layer-supersed\
+      es-environment-provision.md) — 翻案裁决(2026-07-31 二次):曾选择单 template 槽位 + 统一
+      Layer 并行安装;因无法表达完整 Sandbox Case、manifest 不能证明实际状态、Agent Ensure
+      义务丢失和跨所有者安装冲突而被推翻
+      [requirements-base-case-ensure](requirements-base-case-ensure.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-31
+supersession:
+  statement: "- 被后续裁决替代
+    [template-layer-supersedes-environment-provision](template-layer-supersedes\
+    -environment-provision.md) — 翻案裁决(2026-07-31 二次):曾选择单 template 槽位 + 统一 Layer
+    并行安装;因无法表达完整 Sandbox Case、manifest 不能证明实际状态、Agent Ensure 义务丢失和跨所有者安装冲突而被推翻"
+  source:
+    path: memory/INDEX.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 单 template + 统一 Layer 取代 Environment / Provision 二分
 
 **已被后续裁决替代**:同日复审发现统一 Layer 会弱化真实检查、丢失完整 Sandbox Case 与 Agent Ensure 义务。

@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: compose-case-identity-digest-flap
+title: Compose caseIdentity 含本地镜像 digest,并行 docker 活动导致指纹抖动
+createdAt: 2026-08-04T12:23:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/compose-case-identity-digest-flap.md
+  commit: 909d894c1267467f8759240f39aecccefb586a83
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**已修**(2026-08-04):"
+    proof: []
+    source:
+      path: memory/compose-case-identity-digest-flap.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:72e7de37a569d72dd6ee53e85281d4f341c1d4da69a4a97ff85f54608b3a5239
+---
 # Compose caseIdentity 含本地镜像 digest,并行 docker 活动导致指纹抖动
 
 **现象**(2026-08-04,terminal-bench 迁移后 accept 流程):对 12 个 Compose 题 `niceeval accept` 重锚后立即 `--dry`,同一批题反复回到 `stale passed`,原因恒为 `plan:physical changed`;单独 accept 后立刻 dry 有时稳定有时又抖。期间宿主机上另有 agent 在做 docker 构建/拉取。

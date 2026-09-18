@@ -1,3 +1,40 @@
+---
+format: concord.document/v1
+id: multi-open-residual-window-closed-by-narrow-read
+title: 多开残留双跑窗口:根因是读取面粒度用错,不是「彻底闭合太贵」
+createdAt: 2026-07-24T20:44:05+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/multi-open-residual-window-closed-by-narrow-read.md
+  commit: b1aa6604048dad8ade0c2625b4ea359b43c32b1e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [multi-open-residual-window-closed-by-narrow-read](multi-open-residual-wi\
+      ndow-closed-by-narrow-read.md) — `multiOpenSeen`
+      留的「残留窗口」其实是确定性双跑(先起跑一侧的第二波必然重跑,冒烟 `e3=2
+      e4=2`):六条判据全是「此刻碰上对方」或「对方死了」,观测不到「对方干净地来过又走了」;根因=为回答 per-case 问题做全根扫描(110
+      ms/条)贵到只能靠启发式省;修法=`loadLatestResultsForCase` 收窄读(p50 0.89 ms)+ 取到锁一律重查 +
+      `carriableAttempts` 与 `planCarry` 共用判据,`multiOpenSeen` 整个删除(commit
+      d3963179)。两条反直觉:收窄读不是「更快的全量读」(逐条读满 144 组合 141 ms > 一次全树 110
+      ms,启动那次别换);冒烟里「对方 started」不等于「对方释放锁」,barrier 放早了测到的是挂起窗口那条本来就重查的路径"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 多开残留双跑窗口:根因是读取面粒度用错,不是「彻底闭合太贵」
 
 ## 现象

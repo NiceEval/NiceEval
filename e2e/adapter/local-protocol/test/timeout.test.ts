@@ -14,11 +14,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 0,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_0TMKFQJT31X0KJCM
-// @concord-owner docs/engineering/testing/e2e/adapter/ui-message-stream.md#timeout-owner
-// @concord-test-file e2e/adapter/local-protocol/test/timeout.test.ts
-test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 errored [necase_0TMKFQJT31X0KJCM]", async () => {
+test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 errored", async () => {
   await localProtocolE2E.case(
     "timeout",
     localProtocolRecordArtifacts,

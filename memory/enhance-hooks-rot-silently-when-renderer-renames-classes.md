@@ -1,3 +1,38 @@
+---
+format: concord.document/v1
+id: enhance-hooks-rot-silently-when-renderer-renames-classes
+title: 渲染面改类名,enhance.js 的钩子静默失效:图表 tooltip 已经坏了一段时间
+createdAt: 2026-07-29T00:18:28+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/enhance-hooks-rot-silently-when-renderer-renames-classes.md
+  commit: d489dfd4a5ad824d789e94a27cf49af6b0a21fb4
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [enhance-hooks-rot-silently-when-renderer-renames-classes](enhance-hooks-\
+      rot-silently-when-renderer-renames-classes.md) — enhance.js
+      三处钩子指向全仓没人产出的类名:ExperimentList 排序/过滤与 AttemptList 过滤是死代码(还留着 `:sample >`
+      这种改名误伤的非法选择器),`.niceeval-scatter-point` 则是真 bug——图表点改叫
+      `.niceeval-chart-dot` 后样式化 tooltip 一直没出现、只剩浏览器原生黄框;已删死码 + 重接选择器,验收缺口(hover
+      断言、选择器体检)归 e2e"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 渲染面改类名,enhance.js 的钩子静默失效:图表 tooltip 已经坏了一段时间
 
 ## 现象

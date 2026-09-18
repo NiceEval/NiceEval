@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-dimension-allocation-single-point
+title: 维度槽位分配单点声明补齐，dimensionPins 与惰性 page 消解
+createdAt: 2026-07-29T15:56:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-dimension-allocation-single-point.md
+  commit: 8c7c88454f4e2622e7a8eb7a8c74f8797f3155c8
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 维度槽位分配单点声明补齐，dimensionPins 与惰性 page 消解
 
 - **现象**：外审指出 dimensionPins 与惰性跨页矛盾——shell.md 说

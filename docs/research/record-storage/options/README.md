@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-storage-options
+title: Record storage 候选方案比较
+createdAt: 2026-08-26
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/record-storage/options/README.md
+  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
+kind: research
+sources: []
+---
 # Record storage 候选方案比较
 
 > 比较日期：2026-08-25
@@ -8,11 +20,11 @@
 
 ## 候选
 
-1. [全 JSON](all-json.md)：一 Run 一份 canonical JSON，binary 使用 base64。
-2. [JSON envelope + Host 私有 Content store](json-content-store.md)：结构化事实为 JSON；大材料自动成为 object/segment。
-3. [一 Run 一 SQLite](sqlite-run-file.md)：generic tables 保存 singleton、collection item、Content chunk、reference 与 Seal。
-4. [SQLite metadata + 外部 Content](sqlite-external-content.md)：SQLite 管 item/index，Content 仍在 Run directory 的 segment files。
-5. [MCAP profile + outer Run Seal](mcap-profile.md)：MCAP 管 file 内 framing、chunk、CRC 与部分 index，NiceEval 管 logical profile 与 closure。
+1. [全 JSON](all-json/README.md)：一 Run 一份 canonical JSON，binary 使用 base64。
+2. [JSON envelope + Host 私有 Content store](json-content-store/README.md)：结构化事实为 JSON；大材料自动成为 object/segment。
+3. [一 Run 一 SQLite](sqlite-run-file/README.md)：generic tables 保存 singleton、collection item、Content chunk、reference 与 Seal。
+4. [SQLite metadata + 外部 Content](sqlite-external-content/README.md)：SQLite 管 item/index，Content 仍在 Run directory 的 segment files。
+5. [MCAP profile + outer Run Seal](mcap-profile/README.md)：MCAP 管 file 内 framing、chunk、CRC 与部分 index，NiceEval 管 logical profile 与 closure。
 
 ## 横向比较
 

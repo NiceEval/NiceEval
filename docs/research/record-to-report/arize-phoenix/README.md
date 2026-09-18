@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: record-to-report-arize-phoenix
+title: Arize Phoenix：Project、Trace、Dataset、Experiment 与 Annotation
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources: []
+---
 # Arize Phoenix：Project、Trace、Dataset、Experiment 与 Annotation
 
 > 观察日期：2026-08-14
@@ -65,19 +74,19 @@ Dataset ── DatasetVersion
                     └── Annotation.trace_id ── evaluator Trace
 ```
 
-这些对象的 layer、owner 与依赖见 [layers.md](layers.md)。
-表、信封与权威/派生区分见 [storage.md](storage.md)。
+这些对象的 layer、owner 与依赖见 [layers.md](layers/README.md)。
+表、信封与权威/派生区分见 [storage.md](storage/README.md)。
 
 ## 研究页
 
 | 页 | 写什么 |
 |---|---|
-| [layers.md](layers.md) | Phoenix 自己的 layer、component、resource，以及 owner 与依赖 |
-| [execution.md](execution.md) | 实验从发起到完成、失败、partial、retry / resume 的真实顺序 |
-| [storage.md](storage.md) | 公开类型、表、文件、API 信封，以及权威事实与派生值 |
-| [reading-and-comparison.md](reading-and-comparison.md) | 历史怎样重开、过滤、对齐、比较和展示；缺测怎样出现 |
-| [schema-and-migration.md](schema-and-migration.md) | 对象版本、Alembic、升级命令、是否改写已保存数据 |
-| [evaluator-observability.md](evaluator-observability.md) | Phoenix 原生产品面：evaluator 自己的 Trace |
+| [layers.md](layers/README.md) | Phoenix 自己的 layer、component、resource，以及 owner 与依赖 |
+| [execution.md](execution/README.md) | 实验从发起到完成、失败、partial、retry / resume 的真实顺序 |
+| [storage.md](storage/README.md) | 公开类型、表、文件、API 信封，以及权威事实与派生值 |
+| [reading-and-comparison.md](reading-and-comparison/README.md) | 历史怎样重开、过滤、对齐、比较和展示；缺测怎样出现 |
+| [schema-and-migration.md](schema-and-migration/README.md) | 对象版本、Alembic、升级命令、是否改写已保存数据 |
+| [evaluator-observability.md](evaluator-observability/README.md) | Phoenix 原生产品面：evaluator 自己的 Trace |
 
 后一页不是为对照 NiceEval 而拆的层。
 它是官方单独成页的 evaluator 可观察性。

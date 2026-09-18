@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: macos-fswatch-reports-untouched-siblings
+title: macOS 的 fs.watch 会为没被碰过的兄弟文件报事件（真 bug，已修）
+createdAt: 2026-07-28T22:47:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/macos-fswatch-reports-untouched-siblings.md
+  commit: e79ea8edbd0498136ad3987d376ebef53a2f0605
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# macOS 的 fs.watch 会为没被碰过的兄弟文件报事件（真 bug，已修）"
+    proof: []
+    source:
+      path: memory/macos-fswatch-reports-untouched-siblings.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:6f7dc47109117c519473bcfd900dcc5df206c2a73fd7ea7bcf3bcfef07a6c618
+---
 # macOS 的 fs.watch 会为没被碰过的兄弟文件报事件（真 bug，已修）
 
 ## 现象

@@ -1,18 +1,42 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: pty-cleanup-kills-helper-before-exit-report
 title: PTY cleanup kills helper before candidate exit report
 createdAt: 2026-08-27
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - "main E2E red: run 33081322990, docker-3 job 98550429131 lost the candidate terminal-state frame"
-      - "installed Testkit stress receipts: timeout target 25/25 and full PTY owner 7/7 passed"
-      - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
 promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - "main E2E red: run 33081322990, docker-3 job 98550429131 lost the candidate terminal-state frame"
+            - "installed Testkit stress receipts: timeout target 25/25 and full PTY owner 7/7 passed"
+            - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
+    proof:
+      - "main E2E red: run 33081322990, docker-3 job 98550429131 lost the
+        candidate terminal-state frame"
+      - "installed Testkit stress receipts: timeout target 25/25 and full PTY
+        owner 7/7 passed"
+      - "main E2E green twice: runs 33086183347 and 33086382261, including
+        repo-batch-docker-3"
+    source:
+      path: memory/pty-cleanup-kills-helper-before-exit-report.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:2af04398771c07c467c26b5aebf2f88cd170c5bbafc232710db02293ac738b03
 ---
 ## Problem
 

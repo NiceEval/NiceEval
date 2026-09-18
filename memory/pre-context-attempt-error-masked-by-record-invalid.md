@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: pre-context-attempt-error-masked-by-record-invalid
+title: TestContext 前的 Attempt 错误被 Record invalid 覆盖
+createdAt: 2026-08-13T16:47:45+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pre-context-attempt-error-masked-by-record-invalid.md
+  commit: 36b97754a7dcb9f1174dd2d65051e089ec5249e3
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [pre-context-attempt-error-masked-by-record-invalid](pre-context-attempt-\
+      error-masked-by-record-invalid.md) — TestContext 前已物理执行的 ensure/setup 错误没有
+      sealed Assertions，Record 完成时用 `runner-record-attempt-invalid` 覆盖原错；Attempt
+      以空 Assertions runtime 封 errored origin，保留 locator、receipt 与公开诊断"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # TestContext 前的 Attempt 错误被 Record invalid 覆盖
 
 ## 现象

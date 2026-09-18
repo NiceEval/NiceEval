@@ -1,21 +1,9 @@
 # Case ownership
 
-Use `pnpm run repo docs test inventory --help` first, then `list [pattern]` to find candidates and `show <repo-relative-path#caseId>` to confirm one exact case.
+Write exactly one `// @feature docs/feature/<name>/README.md` or `// @use-case docs/feature/<name>/use-case/<name>.md` above each static test declaration. Keep natural test titles. Several tests may share one contract. Helpers use `@test-file` for a different native entry path.
 
-Each runner-collected E2E case has a permanent `necase_...` token at the end of its visible title and one current owner in managed comments immediately above its real declaration. Select it as `<repo-relative-path>#<caseId>`: ID is identity and path is a stale guard. One owner contract may serve multiple cases, but links to exactly one Feature or leaf Use Case. Use named commands for relation and history changes. AST locates declaration comments; executable inventory comes only from native runner collection. Helper declarations use `@concord-test-file` to preserve the native owner path.
+Run `pnpm run repo docs test inventory --help`, then fresh native inventory for the Repo. Use the returned derived `<path#caseId>` selector for list/show, regression and Issue commands. The reference is derived from native path, declaration path and title; changing any of these changes it. AST locates metadata; native collection uniquely binds executable cases to actual execution-copy declarations.
 
-Follow each command's current help:
+Use each command’s current help. The workflow is declaration annotation → inventory → show/audit → optional regression/Issue operations. Add regression only with formal red and green receipts. Add Issue only after canonical repository, non-PR identity and direct provenance verification. Diagnose receipts do not satisfy formal gates.
 
-```sh
-pnpm run repo docs test inventory --help
-pnpm run repo docs test owner create --help
-pnpm run repo docs test case attach --help
-pnpm run repo docs test regression add --help
-pnpm run repo docs test issue add --help
-pnpm run repo docs test case move --help
-pnpm run repo docs test regression refresh --help
-```
-
-The normal order is inventory → owner create or reuse → case attach → zero or more regression/Issue additions → `show <path#caseId>`. Repeat relation commands for each case in a multi-case file; never copy a file-level relation to every case.
-
-Add regression only for a Problem Memory with formal red and green receipts. Add Issue only after read-only verification of the canonical repository, non-PR identity, and direct provenance. Diagnose receipts do not satisfy formal gates. Use `retire`, not physical deletion, for owner, case, regression, and Issue lifecycle changes. One-time repository migrations require explicit authorization and exact mappings; there is no product migration command. History and tombstones remain in `e2e/concord-history.ts`. Refresh legacy or stale proof with `regression refresh --reason`, fresh managed v2 red/takeover IDs and native inventory; preserve old receipts and the current regression.
+Retire case and relations through named lifecycle commands. History and tombstones remain in `e2e/concord-history.ts`; migration preserves them without rewriting old evidence. Refresh stale proof with `regression refresh --reason`, fresh managed red/takeover IDs and native inventory.

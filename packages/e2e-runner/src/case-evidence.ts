@@ -1,5 +1,5 @@
 import { repositoryImplementationDigest } from "concord-sdlc/repository/identity";
-import { decodeRepositorySourceIdentityV2, type RepositorySourceIdentityV2 } from "concord-sdlc/repository/source-identity";
+import { decodeRepositorySourceIdentityV3, type RepositorySourceIdentityV3 } from "concord-sdlc/repository/source-identity";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -22,7 +22,7 @@ export interface FormalCaseReceiptV2 {
   readonly observation: "red" | "green" | "reliability"; readonly selector: string; readonly caseId: string;
   readonly inventoryDigest: string;
   readonly candidate: { readonly gitSha: string; readonly sha256: string; readonly sri: string };
-  readonly source: RepositorySourceIdentityV2;
+  readonly source: RepositorySourceIdentityV3;
   readonly runner: { readonly executor: "vitest" | "playwright"; readonly version: string; readonly argv: readonly string[] };
   readonly result: { readonly disposition: "regression" | "pass"; readonly stage: string; readonly exitCode: number | null; readonly signal: string | null };
   readonly cleanup: { readonly ok: boolean; readonly resources: readonly object[] };
@@ -83,12 +83,16 @@ export const parseExactSelector = (selector: string): { readonly path: string; r
   if (!CASE_ID_PATTERN.test(caseId)) throw new Error("invalid exact case selector id: " + JSON.stringify(caseId));
   return { path, caseId };
 };
-export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: string, caseId: string): readonly string[] => {
-  if (!CASE_ID_PATTERN.test(caseId)) throw new Error("invalid exact case id: " + JSON.stringify(caseId));
-  // Native runners prepend project or describe titles. Inventory already
-  // proves that this declaration token identifies exactly one collected case.
-  const pattern = " \\[" + caseId + "\\]$";
-  return executor === "vitest" ? [path, "--testNamePattern", pattern] : [path, "--grep", pattern];
+const escapePattern = (value: string): string => value.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: string, titlePath: readonly string[]): readonly string[] => {
+  if (titlePath.length === 0 || titlePath.some((title) => title.length === 0)) throw new Error("invalid exact case title path");
+  const title = escapePattern(titlePath.join(" "));
+  // Keep the native file path for scenario commands that route by extension.
+  // Both runners filter paths; fresh collection in the execution copy proves
+  // the complete argv selects exactly one case before formal execution.
+  return executor === "vitest"
+    ? [path, "--testNamePattern", `^${title}$`]
+    : [path, "--grep", `(?:^| )${title}$`];
 };
 export const validateInventoryReceipt = (input: unknown): CaseInventoryReceipt => {
   const receipt = record(input, "inventory receipt");
@@ -99,7 +103,7 @@ export const validateInventoryReceipt = (input: unknown): CaseInventoryReceipt =
   text(receipt.repo, "inventory.repo"); text(receipt.checkout, "inventory.checkout"); strings(receipt.argv, "inventory.argv"); strings(receipt.files, "inventory.files");
   if (!Array.isArray(receipt.cases)) throw new Error("inventory.cases must be an array");
   const seenCases = new Set<string>();
-  for (const [index, value] of receipt.cases.entries()) { const entry = record(value, "inventory case " + index); exactKeys(entry, entry.project === undefined ? ["executor", "repo", "path", "titlePath", "caseId"] : ["executor", "repo", "path", "project", "titlePath", "caseId"], "inventory case " + index); if (entry.executor !== executor.name || entry.repo !== receipt.repo) throw new Error("inventory case executor/repo mismatch"); const selected = parseExactSelector(text(entry.path, "case.path") + "#" + text(entry.caseId, "case.caseId")); const titlePath = strings(entry.titlePath, "case.titlePath"); if (titlePath.length === 0 || !titlePath.at(-1)!.endsWith(" [" + selected.caseId + "]")) throw new Error("inventory case title does not carry its canonical token"); if (seenCases.has(selected.caseId)) throw new Error("inventory contains duplicate case id " + selected.caseId); seenCases.add(selected.caseId); if (!strings(receipt.files, "inventory.files").includes(selected.path)) throw new Error("inventory files omit case path " + selected.path); if (entry.project !== undefined) text(entry.project, "case.project"); }
+  for (const [index, value] of receipt.cases.entries()) { const entry = record(value, "inventory case " + index); exactKeys(entry, entry.project === undefined ? ["executor", "repo", "path", "titlePath", "caseId"] : ["executor", "repo", "path", "project", "titlePath", "caseId"], "inventory case " + index); if (entry.executor !== executor.name || entry.repo !== receipt.repo) throw new Error("inventory case executor/repo mismatch"); const selected = parseExactSelector(text(entry.path, "case.path") + "#" + text(entry.caseId, "case.caseId")); const titlePath = strings(entry.titlePath, "case.titlePath"); if (titlePath.length === 0 || !CASE_ID_PATTERN.test(selected.caseId)) throw new Error("inventory case has invalid Concord reference"); if (seenCases.has(selected.caseId)) throw new Error("inventory contains duplicate case id " + selected.caseId); seenCases.add(selected.caseId); if (!strings(receipt.files, "inventory.files").includes(selected.path)) throw new Error("inventory files omit case path " + selected.path); if (entry.project !== undefined) text(entry.project, "case.project"); }
   const expected = "sha256:" + digestObject(receipt, "digest");
   if (receipt.digest !== expected) throw new Error("inventory digest mismatch: expected " + expected);
   return input as CaseInventoryReceipt;
@@ -133,7 +137,7 @@ export const selectInventoryCase = (receipt: CaseInventoryReceipt, selector: str
 };
 
 export const signFormalCaseReceipt = (unsigned: Omit<FormalCaseReceiptV2, "receiptSha256">): FormalCaseReceiptV2 => {
-  const source = decodeRepositorySourceIdentityV2(unsigned.source);
+  const source = decodeRepositorySourceIdentityV3(unsigned.source);
   const validated = { ...unsigned, source };
   return { ...validated, receiptSha256: digestObject(validated, "receiptSha256") };
 };
@@ -153,7 +157,7 @@ export const validateFormalCaseReceipt = (input: unknown): FormalCaseReceipt => 
     exactKeys(source, ["checkout", "testFileSha256", "sidecarSha256"], "receipt.source");
     if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(text(source.checkout, "source.checkout")) || !/^[a-f0-9]{64}$/.test(text(source.testFileSha256, "source.testFileSha256")) || !/^[a-f0-9]{64}$/.test(text(source.sidecarSha256, "source.sidecarSha256"))) throw new Error("formal receipt source identity is invalid");
   } else {
-    const decodedSource = decodeRepositorySourceIdentityV2(source);
+    const decodedSource = decodeRepositorySourceIdentityV3(source);
     if (decodedSource.caseId !== selector.caseId || decodedSource.nativeTestFile !== selector.path) throw new Error("v2 source identity does not bind the selector");
   }
   const runner = record(receipt.runner, "receipt.runner"); exactKeys(runner, ["executor", "version", "argv"], "receipt.runner");

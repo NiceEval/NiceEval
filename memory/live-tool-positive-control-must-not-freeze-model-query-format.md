@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: live-tool-positive-control-must-not-freeze-model-query-format
+title: Live 工具正调不要锁死模型可自由格式化的 query
+createdAt: 2026-08-13T15:54:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-tool-positive-control-must-not-freeze-model-query-format.md
+  commit: bec7da031e886eb311c1292ec93b043f53772fb5
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Live 工具正调不要锁死模型可自由格式化的 query
 
 ## 现象

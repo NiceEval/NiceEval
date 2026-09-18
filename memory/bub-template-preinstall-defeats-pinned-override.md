@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: bub-template-preinstall-defeats-pinned-override
+title: bub:模板烘焙的二进制击穿 git-pinned override,修复分支从未被安装
+createdAt: 2026-07-10T09:43:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bub-template-preinstall-defeats-pinned-override.md
+  commit: 26d205b5581c9937861782d0da08f6ea66b23fcd
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [bub-template-preinstall-defeats-pinned-override](bub-template-preinstall\
+      -defeats-pinned-override.md) — 模板烘焙的 bub 让 `command -v` 捷径跳过 git-pinned
+      override 安装,修复分支从未落地;pinned 时绕捷径 + 钉 $HOME/.local/bin/bub(修在
+      `src/agents/bub.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # bub:模板烘焙的二进制击穿 git-pinned override,修复分支从未被安装
 
 ## 现象

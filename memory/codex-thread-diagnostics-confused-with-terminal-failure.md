@@ -1,17 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: codex-thread-diagnostics-confused-with-terminal-failure
 title: Codex SDK 非致命告警被误判为 Turn 失败
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed candidate bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
 promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed candidate bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
+    proof:
+      - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed
+        candidate
+        bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed
+        netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
+    source:
+      path: memory/codex-thread-diagnostics-confused-with-terminal-failure.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:5d56c502c19ece0e02d758f820a678f9a49117487a91e3b4739ae8293d0ef208
 ---
 ## 公开现象
 

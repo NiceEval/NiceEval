@@ -1,27 +1,70 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: analysis-usage-projection-conflates-conversation-limitations
 title: Analysis usage 投影混入 conversation limitation
 createdAt: 2026-08-24T14:07:42+08:00
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - "Installed-candidate E2E red: candidate SHA-256 82b7507542e1febf2c65d94db16e8db179df2c12058fd7b43f2f771d140ec1f5 failed e2e/report/test/report-show.test.ts because classic/baseline Tokens was partial with 1/9 samples and eight analysis-missing usage collection is incomplete problems while agentTurns carried only unsupported-input(target=turn-item)."
-      - "Installed-candidate E2E green: candidate SHA-256 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc passed the targeted regression, all six Report files / 13 Vitest tests, and both Chromium browser journeys."
-      - "E2E reliability takeover: artifacts/e2e/takeover-report-usage/takeover-summary.json reports all three isolated copies, the same-installed-copy repeat, repo-default-parallel, and target-single as clean pass with matrixValidation ok and complete."
-      - "Public downstream check: NiceEval/NiceEval-Preview commit 705d90329848825b25b1fbde389905b513ccb93a with its existing sealed Records and candidate 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc returned zero usage collection is incomplete problems for /group/named/pass-gallery; pass-gallery/candidate was available with 4/4 samples and 208 tokens."
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/run/architecture/observability-attachments.md#reader-side-views
-    history:
-      - target: docs/feature/analysis/library.md#已发布的输入与成员集
-        commit: d2aa8c65664b88ede3bfd89b838ed314e36d17d3
-      - target: docs/feature/record/architecture/observability-attachments.md#reader-side-views
-        commit: 2f4199ed08965f24a693847d374a05d1c7a6896d
+  - docs/feature/run/architecture/observability-attachments.md#reader-side-views
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: retire-promotion
+    reason: 保留原 promotion history；迁移为历史 retire 记录。
+    ref: docs/feature/analysis/library.md#已发布的输入与成员集
+    commit: d2aa8c65664b88ede3bfd89b838ed314e36d17d3
+  - at: 2026-09-14T15:00:25.173Z
+    action: retire-promotion
+    reason: 保留原 promotion history；迁移为历史 retire 记录。
+    ref: docs/feature/record/architecture/observability-attachments.md#reader-side-views
+    commit: 2f4199ed08965f24a693847d374a05d1c7a6896d
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - "Installed-candidate E2E red: candidate SHA-256 82b7507542e1febf2c65d94db16e8db179df2c12058fd7b43f2f771d140ec1f5 failed e2e/report/test/report-show.test.ts because classic/baseline Tokens was partial with 1/9 samples and eight analysis-missing usage collection is incomplete problems while agentTurns carried only unsupported-input(target=turn-item)."
+            - "Installed-candidate E2E green: candidate SHA-256 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc passed the targeted regression, all six Report files / 13 Vitest tests, and both Chromium browser journeys."
+            - "E2E reliability takeover: artifacts/e2e/takeover-report-usage/takeover-summary.json reports all three isolated copies, the same-installed-copy repeat, repo-default-parallel, and target-single as clean pass with matrixValidation ok and complete."
+            - "Public downstream check: NiceEval/NiceEval-Preview commit 705d90329848825b25b1fbde389905b513ccb93a with its existing sealed Records and candidate 3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc returned zero usage collection is incomplete problems for /group/named/pass-gallery; pass-gallery/candidate was available with 4/4 samples and 208 tokens."
+    proof:
+      - "Installed-candidate E2E red: candidate SHA-256
+        82b7507542e1febf2c65d94db16e8db179df2c12058fd7b43f2f771d140ec1f5 failed
+        e2e/report/test/report-show.test.ts because classic/baseline Tokens was
+        partial with 1/9 samples and eight analysis-missing usage collection is
+        incomplete problems while agentTurns carried only
+        unsupported-input(target=turn-item)."
+      - "Installed-candidate E2E green: candidate SHA-256
+        3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc passed
+        the targeted regression, all six Report files / 13 Vitest tests, and
+        both Chromium browser journeys."
+      - "E2E reliability takeover:
+        artifacts/e2e/takeover-report-usage/takeover-summary.json reports all
+        three isolated copies, the same-installed-copy repeat,
+        repo-default-parallel, and target-single as clean pass with
+        matrixValidation ok and complete."
+      - "Public downstream check: NiceEval/NiceEval-Preview commit
+        705d90329848825b25b1fbde389905b513ccb93a with its existing sealed
+        Records and candidate
+        3c52d917283e7f72b3be8539d1dd999cb72c89eee2ea89681a1426c1b2d4eacc
+        returned zero usage collection is incomplete problems for
+        /group/named/pass-gallery; pass-gallery/candidate was available with 4/4
+        samples and 208 tokens."
+    source:
+      path: memory/analysis-usage-projection-conflates-conversation-limitations.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:c2e2b39bc9d5fa2a69360be0f984bf8a6ea571584f18909d534091f15fe48a1d
 ---
 # Analysis usage 投影混入 conversation limitation
 

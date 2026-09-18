@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: tsx-dynamic-import-require-cycle
+title: CJS 宿主目录下 CLI 加载不了自己 init 生成的 config
+createdAt: 2026-07-10T15:49:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/tsx-dynamic-import-require-cycle.md
+  commit: 4aa8695904b7f2ec3782d6403a7b4be1b56ce295
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**:已修(2026-07-24,同日复现验证 + 落地)。包侧修是**两件套,缺一不可**——只补 require 条件不加
+      CJS hook 实测照崩(崩在解析 exports 之前):"
+    proof: []
+    source:
+      path: memory/tsx-dynamic-import-require-cycle.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b45b340ecf5f1184143b1c51a07c6805d49440f3dd0f6c28f3642a862f85c9e7
+---
 # CJS 宿主目录下 CLI 加载不了自己 init 生成的 config
 
 **现象**:用户项目 `package.json` 无 `"type": "module"`(`npm init -y` 默认产 `"type": "commonjs"`)时,CLI 经 tsx 动态 `import()` 用户 `.ts` 文件(`niceeval.config.ts`、`--report` 报告文件)必崩——`niceeval init` 成功(只写文件),下一步 `niceeval list` 就加载不了它 3 秒前生成的 config。`loadConfig` 与 `src/show/index.ts` 的 `loadReportFile` 共享同一装载机制,两处都踩。报错措辞随 Node 版本与 tsx hook 注册面变化,根因同一个:

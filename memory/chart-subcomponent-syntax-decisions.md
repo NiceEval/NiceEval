@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: chart-subcomponent-syntax-decisions
+title: 图表子组件语法:三候选收敛为单一设计
+createdAt: 2026-07-21T20:09:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/chart-subcomponent-syntax-decisions.md
+  commit: 417ac182cd97360a5a7c166d82993f94ed518993
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 图表子组件语法:三候选收敛为单一设计
 
 **裁决**(2026-07-21,用户逐条定案):`docs/roadmap/report-chart-composition` 从三候选(A 自研子组件语法 / B recharts 作构建期 SVG 生成器 / C 只加三态定制阶梯)收敛为单一设计——自研子组件语法,阶梯并入为呈现定制公式;文档结构定为 README(设计)+ architecture(技术方案)+ library(逐组件遍历)+ gallery(真实图对照)。

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: waterfall-presentation-rulings
+title: Waterfall 呈现的四条裁决(2026-07-28)
+createdAt: 2026-07-28T22:27:30+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/waterfall-presentation-rulings.md
+  commit: 979c68ff3de759a1511d987ffcf3df4de92be4cf
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # Waterfall 呈现的四条裁决(2026-07-28)
 
 起因:真机报告里的执行时间轴读不动——kind 渲染成彩色小方块、208 个节点的色带条是一整块

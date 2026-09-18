@@ -13,11 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_6TPS9QTVYWQEEB8S
-// @concord-owner docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-core-deterministic
-// @concord-test-file e2e/adapter/sdk-converters/test/langgraph-core.test.ts
-test("createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 CLI 确定性读回 [necase_6TPS9QTVYWQEEB8S]", async () => {
+test("createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case("langgraph-core", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "langgraph-core", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

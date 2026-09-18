@@ -47,10 +47,9 @@ const e2e = createE2EContext({
   commands: { candidate: installedNiceeval },
 });
 
-// @concord-case necase_YP96MY4EQKVRFD24
-// @concord-owner docs/engineering/testing/e2e/migrate.md#os-user-service-state
-// @concord-test-file e2e/migrate/test/state-journey.test.ts
-test("state migrate 初始化唯一 OS-user database 并可重复执行 [necase_YP96MY4EQKVRFD24]", async () => {
+// @feature docs/feature/run/README.md
+
+test("state migrate 初始化唯一 OS-user database 并可重复执行", async () => {
   await e2e.case("os-user-database", async ({ paths, commands: { candidate } }) => {
     const home = join(paths.projectRoot, "maintenance-home");
     const env = { NICEEVAL_HOME: home };

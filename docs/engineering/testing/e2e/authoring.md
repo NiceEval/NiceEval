@@ -5,11 +5,13 @@ NiceEval 只提供候选包注入、场景 Repo 隔离与 Testkit 机械原语�
 
 ## 文件形状
 
-关系 subject 是 runner collection 后的 case。每个 live case 的 title 末尾携带唯一 `necase_...` token；owner、regression
-与 Issue 位于声明上方受管注释。一个文件可以含多个独立 cases，但每个 case 必须各自拥有稳定身份与恰好一个 owner。
+关系 subject 是 runner collection 后唯一绑定到真实声明的 case。标题描述用户结果；
+声明上方用一个 `@feature` 或 `@use-case` 关联契约，可以同时保存 regression 与 Issue。
+一个文件可以含多个 cases，每个声明分别关联。
 
 ```ts
-test("query run 经 pipe 交付完整文档 [necase_7J4M2N6Q8R3T5V9X]", async () => {
+// @feature docs/feature/inspection/README.md
+test("query run 经 pipe 交付完整文档", async () => {
   // 完整 argv、公开观察与独立 expected 留在这里。
 });
 ```

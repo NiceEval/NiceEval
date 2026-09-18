@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: vercel-sandbox-issues
+title: Vercel Sandbox 已知问题
+createdAt: 2026-06-30T09:02:39+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/vercel-sandbox-issues.md
+  commit: e94dd18dc2744b3b0685881a178fccbd8ead9cfd
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修复：`src/sandbox/vercel.ts`（2026-06-29）
+    proof: []
+    source:
+      path: memory/vercel-sandbox-issues.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:a9d50f6aad16bdee8dfc54b27e7907af55c506713b3b68ded619befbc9faf12b
+---
 # Vercel Sandbox 已知问题
 
 ## session 寿命约 360-390s

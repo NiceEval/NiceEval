@@ -1,3 +1,39 @@
+---
+format: concord.document/v1
+id: attempt-source-text-missing-passed-summary
+title: AttemptSource text 面全通过时不显示 passed 计数
+createdAt: 2026-07-22T20:10:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-source-text-missing-passed-summary.md
+  commit: 31a7d74356d5845a7e6bdf883df6db00c3167856
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修（`b7d274c6`，2026-07-23）。落点
+      `src/report/components/attempt-detail/faces.ts` 的
+      `attemptSourceText`：`AttemptSourceData` 补了 `passedGroups`（`compute.ts` 复用
+      `attemptAssertionsData` 同一份 `groupByPath`，得分点豁免收纳的规则也共用），text
+      面据此改成二选一——有失败可看就平铺 attention 条目，否则输出 `  ✓ passed · <group> · <count>`
+      摘要行。同批修掉一个相邻缺口：判定"有没有失败可看"时 unmapped 区（没有
+      loc、指向别的文件或越界的断言）也要一起检查，否则"unmapped 里藏着真实失败、行内 attention 恰好为空"的 attempt
+      会被错折成一条 `✓ passed`。
+    proof: []
+    source:
+      path: memory/attempt-source-text-missing-passed-summary.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:5758d8a38e2c2bb11137501b1d9290f6e91823be37de8b59a2ce9ba255fc1a4e
+---
 # AttemptSource text 面全通过时不显示 passed 计数
 
 ## 现象

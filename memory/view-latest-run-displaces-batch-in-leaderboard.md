@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: view-latest-run-displaces-batch-in-leaderboard
+title: 单跑一题后 view 榜单只剩 1/48:最新 Run 挤掉整批且无覆盖提示(根因已修)
+createdAt: 2026-07-30T14:54:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-latest-run-displaces-batch-in-leaderboard.md
+  commit: 5b06d9bd2e5722e9618a4f41e8823e43e12adb9c
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 单跑一题后 view 榜单只剩 1/48:最新 Run 挤掉整批且无覆盖提示(根因已修)"
+    proof: []
+    source:
+      path: memory/view-latest-run-displaces-batch-in-leaderboard.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:40a2037073154bf11eb525dafaaa22cd96bd701bbc2b8eae6932c0d9995318d3
+---
 # 单跑一题后 view 榜单只剩 1/48:最新 Run 挤掉整批且无覆盖提示(根因已修)
 
 ## 现象

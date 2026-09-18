@@ -62,5 +62,5 @@ PLAN-4 是已采用的两数据库方向：project Record 位于
 研究过程、外部系统证据和完整挑战问题见
 [Record 物理存储研究](../../research/record-storage/README.md)与
 [Root-wide SQLite 采用收据](../../research/record-storage/root-wide-sqlite-receipt.md)、
-[Attachment aggregate Content budget 挑战](../../research/record-storage/aggregate-content-budget-challenge.md)、
-[无固定 logical Content 容量挑战](../../research/record-storage/unbounded-logical-content-challenge.md)。
+[Attachment aggregate Content budget 挑战](../../research/record-storage/aggregate-content-budget-challenge/README.md)、
+[无固定 logical Content 容量挑战](../../research/record-storage/unbounded-logical-content-challenge/README.md)。

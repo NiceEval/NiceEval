@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: experimentlist-entity-boundary-keeps-comparison-table
+title: ExperimentList 的实体边界不等于卡片布局
+createdAt: 2026-07-13T15:44:38+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experimentlist-entity-boundary-keeps-comparison-table.md
+  commit: c483c08cdb1a16d082fa9a7c5c31a641d4c0b3bc
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [experimentlist-entity-boundary-keeps-comparison-table](experimentlist-en\
+      tity-boundary-keeps-comparison-table.md) — 裁决(2026-07-13):保留
+      ExperimentList 一项一个 experiment 的实体边界,web 面恢复固定八列比较表、text 面保持
+      experiment→Eval→Attempt 层级;locator 不附证据字母;单实验散点照常画;裸 show/view 共用
+      `ExperimentComparison` 的 text/web 面"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # ExperimentList 的实体边界不等于卡片布局
 
 **裁决（2026-07-13）**：`ExperimentList` 继续保持“一项一个 experiment、展开到 Eval、Eval 下列出全部 Attempt”的实体语义；web 面使用固定八列 experiment 比较表，列为 Experiment、Model、Agent、Avg duration、Pass rate、Tokens、Est. cost、Result，并提供成功率默认降序、表头排序与文本过滤。web 展开区与 text 面都必须把 Eval 渲染为独立父行，Attempt 用 `├─` / `└─` 子行展开，不能把一对多关系压平为重复 Eval id 的 Attempt 表。text 面先给八列 experiment 比较表，再逐 experiment 给状态、Eval / Attempt、结果、耗时、成本明细表，统一复用标准 text table renderer 做窄屏折行与隐藏列提示。列表只显示 locator 与 verdict，不附加证据能力字母；打开 Attempt 后由 `available` 列出实际可执行的证据命令。内置报告按整份报告回答的问题命名为 `ExperimentComparison`，由成本 × 通过率 `MetricScatter` 与 `ExperimentList` 组成；裸 `show` 与裸 `view` 分别渲染同一 definition 的 text / web 面。散点只有一个可绘实验时仍正常画点，只有零个可绘点才显示缺数据空态。

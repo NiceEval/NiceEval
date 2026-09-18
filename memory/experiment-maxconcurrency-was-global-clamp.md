@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: experiment-maxconcurrency-was-global-clamp
+title: experiment maxConcurrency 曾是全局钳制:一个串行实验拖慢整批
+createdAt: 2026-07-10T08:47:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-maxconcurrency-was-global-clamp.md
+  commit: 03de80d85db16ebe3b146fd4a98559b19f8492ce
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [experiment-maxconcurrency-was-global-clamp](experiment-maxconcurrency-wa\
+      s-global-clamp.md) — 实验级 maxConcurrency 曾按最小值钳全局,一个串行实验拖慢整批;修为 runner
+      两级信号量按实验限流(src/runner/run.ts + cli.ts)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # experiment maxConcurrency 曾是全局钳制:一个串行实验拖慢整批
 
 ## 现象

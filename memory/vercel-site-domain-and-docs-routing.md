@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: vercel-site-domain-and-docs-routing
+title: Vercel 站点域名和 docs routing 容易分裂
+createdAt: 2026-07-03T14:36:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/vercel-site-domain-and-docs-routing.md
+  commit: 29d58c985a6f5646cf851d20b85584daf79b3f7c
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Vercel 站点域名和 docs routing 容易分裂
 
 ## 现象

@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: eval-header-historical-mark-shifts-grid-columns
+title: eval-header-historical-mark-shifts-grid-columns
+createdAt: 2026-07-23T12:02:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/eval-header-historical-mark-shifts-grid-columns.md
+  commit: 15ce9daacfed9a6a594ae415d011e0fdda0ee4b1
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [eval-header-historical-mark-shifts-grid-columns](eval-header-historical-\
+      mark-shifts-grid-columns.md) — ExperimentList Eval 父行的 `↩` 时效标注曾裸插进按位置取列的
+      4 轨 grid 当第 5 个子元素,全携带的题整行错位、rollup 挤进 20px
+      列逐字竖排;修为嵌进题目名格内(`ExperimentList.tsx` EvalAttempts);教训=固定轨数 grid 不能裸插条件子元素"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # eval-header-historical-mark-shifts-grid-columns
 
 ## 现象

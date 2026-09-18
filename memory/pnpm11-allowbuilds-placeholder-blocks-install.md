@@ -1,8 +1,21 @@
 ---
-name: pnpm11-allowbuilds-placeholder-blocks-install
-description: "pnpm 11 给新依赖的 build script 写 allowBuilds 占位符('set this to true or false')并让 pnpm install 直接 exit 1——加带 postinstall 的依赖后必须手改 pnpm-workspace.yaml 才能继续"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: pnpm11-allowbuilds-placeholder-blocks-install
+title: pnpm11-allowbuilds-placeholder-blocks-install
+createdAt: 2026-07-07T13:23:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pnpm11-allowbuilds-placeholder-blocks-install.md
+  commit: cf56ab35bd961c1d046c9bee0620ad046becb04d
+description: pnpm 11 给新依赖的 build script 写 allowBuilds 占位符('set this to true or
+  false')并让 pnpm install 直接 exit 1——加带 postinstall 的依赖后必须手改 pnpm-workspace.yaml
+  才能继续
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：给 `package.json` 加了 `braintrust`(optional peer + devDependency)后,`pnpm run typecheck` 触发的依赖预检执行 `pnpm install`,报 `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: braintrust@3.20.0` 且 **exit 1**——不是警告,整条命令链(typecheck / test)全部失败。

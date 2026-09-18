@@ -1,8 +1,20 @@
 ---
-name: e2e-verify-results-format-drift
-description: e2e.yml 每次 push 必红——verify.mjs 还按落盘改快照(schemaVersion 4)之前的 summary.json 布局校验；e2e 重构期间已暂停 push/PR/nightly 自动触发
-metadata:
-  type: project
+format: concord.document/v1
+id: e2e-verify-results-format-drift
+title: e2e-verify-results-format-drift
+createdAt: 2026-07-13T13:58:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-verify-results-format-drift.md
+  commit: 6ad283bd90fced480e584691b0d8aa9dc44a3afc
+description: e2e.yml 每次 push 必红——verify.mjs 还按落盘改快照(schemaVersion 4)之前的
+  summary.json 布局校验；e2e 重构期间已暂停 push/PR/nightly 自动触发
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：`.github/workflows/e2e.yml` 的 `e2e-matrix` 与 `e2e-sandbox` 两个 job 每次 push 到 main 必红。`Verify (exit codes + summary.json 对账)` 步骤对全部 10 个 project/exp 组合报 `找不到 summary.json`，即使 CLI 自己的收尾输出明确打印 `Structured results: .niceeval/ci/<snapshot>/ (snapshot.json + per-attempt result.json / events.json / trace.json / diff.json)`——文件其实都在，只是不叫这个名字。

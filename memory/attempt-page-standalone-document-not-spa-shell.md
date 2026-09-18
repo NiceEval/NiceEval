@@ -1,8 +1,32 @@
 ---
-name: attempt-page-standalone-document-not-spa-shell
-description: 已修——attempt/<locator>.html 不能复用 index.html 的 SPA 外壳(空 #root 等 JS 挂载),无 JS 会白屏;改造过程中也发现相对路径与 locator 编码两处会在真实静态托管下断链的隐患
-metadata:
-  type: project
+format: concord.document/v1
+id: attempt-page-standalone-document-not-spa-shell
+title: attempt-page-standalone-document-not-spa-shell
+createdAt: 2026-07-19T17:20:13+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-page-standalone-document-not-spa-shell.md
+  commit: e3a393f3ce0edbe38f4cbcce7aa69c78ab72d6ef
+description: 已修——attempt/<locator>.html 不能复用 index.html 的 SPA 外壳(空
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修——attempt/<locator>.html 不能复用 index.html 的 SPA 外壳(空
+    proof: []
+    source:
+      path: memory/attempt-page-standalone-document-not-spa-shell.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:9f42f178b6c3e3f8f715b222d96f23d8c18b2386ac7ef49f8da3093f68ec0d26
 ---
 
 Phase F(`view` 为每个可达 locator 产出 `attempt/<locator>.html`)最初打算直接复用 `renderHtml`/

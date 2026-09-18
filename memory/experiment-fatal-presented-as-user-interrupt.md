@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: experiment-fatal-presented-as-user-interrupt
+title: ExperimentFatalError 被呈现成用户中断
+createdAt: 2026-07-31T09:21:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-fatal-presented-as-user-interrupt.md
+  commit: dc518d242fca32bc67b9c7ff2fdb6e58ba22676e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**:已修(2026-07-31)。根因是两处叠加,一处造缺陷、一处把缺陷伪装成中断:"
+    proof: []
+    source:
+      path: memory/experiment-fatal-presented-as-user-interrupt.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:2d66098aa0259b9125a38ca2fd06d57d6d0f4105eaab5d9f93b6d8e67c3f9b85
+---
 # ExperimentFatalError 被呈现成用户中断
 
 **现象**:多实验并跑时,一条泳道的 setup 抛 `ExperimentFatalError`,错误正文被吞,终端只剩一行 `interrupted` + 退出码 130,与用户 Ctrl+C 完全无法区分;且无关实验的进度一并被拖垮(2026-07-31 MemoryBench 真机)。排障时曾被误诊为「用户手滑关了终端」,浪费了一整轮。

@@ -1,8 +1,36 @@
 ---
-name: eval-reserved-word-breaks-predicate-example
-description: "eval" 不能作为 strict mode 下的绑定标识符,ExperimentDef.evals 谓词的文档示例参数名不能叫 eval
-metadata:
-  type: project
+format: concord.document/v1
+id: eval-reserved-word-breaks-predicate-example
+title: eval-reserved-word-breaks-predicate-example
+createdAt: 2026-07-19T11:40:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/eval-reserved-word-breaks-predicate-example.md
+  commit: b2539d96af02251f5ecf2a3f1c22156231ad7f2c
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [eval-reserved-word-breaks-predicate-example](eval-reserved-word-breaks-p\
+      redicate-example.md) — `eval` 是 strict mode
+      保留绑定标识符,不能当参数名;`ExperimentDef.evals` 类型签名与 docs 示例原写成 `(eval) =>
+      eval.id...` 会让用户抄示例直接语法报错,统一改参数名为 `e`(`src/runner/types.ts` +
+      `docs/feature/experiments/{library,README}.md`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**:实现 `ExperimentDef.evals: (eval: EvalDescriptor) => boolean` 类型签名时,`tsc` 报

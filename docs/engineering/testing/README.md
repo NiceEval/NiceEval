@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: testing
+title: 测试体系
+createdAt: 2026-07-14T08:00:48Z
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/testing/README.md
+  commit: 6abccb8bd882c3dfa5b28df9b3ca15e00da0c650
+kind: engineering
+---
 # 测试体系
 
 niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
@@ -140,9 +151,9 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 E2E 关系以 runner 实际枚举的 case 为 subject；身份、源码注释、生命周期、证据与事务完整服从
 [E2E case 关系契约](e2e/case-relations.md)。旧 `owner:`、`regression:` 与 `issue:` 文件 metadata 仅是两阶段迁移输入，
-不能建立或改变 current relation。注释中的关系声明、title token、普通 Markdown mention 或手写 receipt 都不能替代原生 inventory 与正式证据校验。
+不能建立或改变 current relation。注释中的关系声明、普通 Markdown mention 或手写 receipt 都不能替代原生 inventory 与正式证据校验。
 
-- 每个 E2E case 的 runner-visible title 末尾携带唯一 `necase_...` token；声明上方 Git-tracked 注释 为每个 live case 保存恰好一个 owner。
+- 每个 E2E case 使用自然标题；声明上方用 `@feature` 或 `@use-case` 直接关联一个契约路径。
 - 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。

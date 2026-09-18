@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: skill-install-via-git-not-skills-cli
+title: repo skill 安装改走 git clone，不用 `npx skills add`
+createdAt: 2026-07-12T22:18:12+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/skill-install-via-git-not-skills-cli.md
+  commit: 2875814261652f0c69f35edb0d11b51abdcfa9bf
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "2. **`codex plugin list --json` 的输出形状是猜的**——**确认是真 bug,已修**。真实形状是 `{
+      installed: [...] }` + `pluginId` 字段,不是猜测的裸数组或 `{ plugins: [...] }` +
+      `id`;`resolvedVersion` 对任何真实安装都被静默省略。修在 `src/agents/codex.ts`,回归测试见
+      `src/agents/codex.test.ts`,详见
+      [[codex-plugin-list-json-shape-guessed-wrong]]。"
+    proof: []
+    source:
+      path: memory/skill-install-via-git-not-skills-cli.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:232c1a939749ebfb941aea4a50d198eea7e36211f77caa24114d797b55f4ab97
+---
 # repo skill 安装改走 git clone，不用 `npx skills add`
 
 **设计裁决**(2026-07-12,实现结构化 `SkillSpec` 时)。

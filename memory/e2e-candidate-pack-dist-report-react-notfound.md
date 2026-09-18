@@ -1,8 +1,37 @@
 ---
-name: e2e-candidate-pack-dist-report-react-notfound
-description: 无前端 E2E 仓库跑 niceeval show 报 Cannot find package 'react'（dist/report/built-in/standard.js）——react/react-dom 是可选 peerDependency，file: 候选包注入不会像 registry 安装那样自动装 peer，消费方必须自己显式声明这两个依赖（首轮误判为并发 pnpm pack 撞车，已被字节级比对推翻，见文末修正）
-metadata:
-  type: project
+format: concord.document/v1
+id: e2e-candidate-pack-dist-report-react-notfound
+title: e2e-candidate-pack-dist-report-react-notfound
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-candidate-pack-dist-report-react-notfound.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-r\
+      eport-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package
+      'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享
+      `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency
+      `react`/`react-dom`,补上即全绿,见
+      [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**(2026-07-18):`pnpm e2e --repo claude-agent-sdk` 里真实 `ci` 实验（3 条 Eval，真实 DeepSeek 调用）全部 `passed`，JUnit 干净；但验收脚本紧接着调用 `niceeval show` 时崩:

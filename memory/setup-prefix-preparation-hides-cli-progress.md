@@ -1,16 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: setup-prefix-preparation-hides-cli-progress
 title: SetupPrefix 预派发构建在 CLI 中没有进度
 createdAt: 2026-08-26T19:11:16+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/experiments/cli.md#派发前-sandbox-准备
-    history: []
+  - docs/feature/experiments/cli.md#派发前-sandbox-准备
+history: []
 ---
 # SetupPrefix 预派发构建在 CLI 中没有进度
 

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: official-themes-basalt-chalk-lockup
+title: 官方主题定为两套单支锁定:basalt(暗·直角)与 chalk(浅·圆角)
+createdAt: 2026-07-28T17:09:33+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/official-themes-basalt-chalk-lockup.md
+  commit: f4f8d6d85e1f9d1f2ad0992a4ea5749189019a29
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 官方主题定为两套单支锁定:basalt(暗·直角)与 chalk(浅·圆角)
 
 **裁决**(2026-07-28,用户在对话中定):官方主题提供两套、各锁一个外观分支——

@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: codex-plugin-list-json-shape-guessed-wrong
+title: "`codex plugin list --json` 的真实输出形状被猜错，`installedVersion` 对任何真实安装恒返回 undefined"
+createdAt: 2026-07-13T12:40:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-plugin-list-json-shape-guessed-wrong.md
+  commit: 07416e688fbab92ce1ae05625532478cef3b3d6b
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修复:`src/agents/codex.ts` `installedVersion()`(2026-07-13,native
+      plugin 真机 e2e 复现并当场修复)。
+    proof: []
+    source:
+      path: memory/codex-plugin-list-json-shape-guessed-wrong.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:4310127c407da68bd2ecf13793033f5096747a644e67e2eee36779ca0e827964
+---
 # `codex plugin list --json` 的真实输出形状被猜错，`installedVersion` 对任何真实安装恒返回 undefined
 
 **现象**：`src/agents/codex.ts` 的 `installedVersion()` 解析 `codex plugin list --json --marketplace <name>`

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: timeout-evidence-carry-censoring-ruling
+title: 裁决:超时不丢证据、timeoutMs 退出指纹改携带判据、耗时删失显式呈现(2026-07-23)
+createdAt: 2026-07-23T18:01:24+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/timeout-evidence-carry-censoring-ruling.md
+  commit: fdab6dbcb9f18fec765b8714ea6d6405962f6745
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:超时不丢证据、timeoutMs 退出指纹改携带判据、耗时删失显式呈现(2026-07-23)
 
 **裁决**(三条一揽子,起因同一个真机 case):

@@ -1,8 +1,20 @@
 ---
-name: claude-agent-sdk-permission-mode-silent-skip
-description: "@anthropic-ai/claude-agent-sdk 的 query() 默认 permissionMode 在无终端的 headless 服务里会静默跳过工具调用，模型转而幻觉答案，不报错"
-metadata:
-  type: project
+format: concord.document/v1
+id: claude-agent-sdk-permission-mode-silent-skip
+title: claude-agent-sdk-permission-mode-silent-skip
+createdAt: 2026-07-03T05:24:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/claude-agent-sdk-permission-mode-silent-skip.md
+  commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
+description: "@anthropic-ai/claude-agent-sdk 的 query() 默认 permissionMode 在无终端的
+  headless 服务里会静默跳过工具调用，模型转而幻觉答案，不报错"
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：`examples/zh/origin/claude-agent-sdk` 改成真实调用 DeepSeek(经 `ANTHROPIC_BASE_URL` 走 anthropic 兼容端点)后，第一次跑「北京天气」返回了一个看起来合理但和 `WEATHER_TABLE` 对不上的假读数(26°C 而不是表里的 24°C，还编了湿度/风力)；问算式时模型直接回复"需要调用计算工具来帮你算，请先授权"，工具调用完全没发生——但请求没有报错，HTTP 200 正常返回。

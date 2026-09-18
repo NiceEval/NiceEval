@@ -1,24 +1,60 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: view-renderer-flattens-debug-evidence
 title: 固定 View renderer 把 Attempt 调试证据压平为摘要表格
 createdAt: 2026-08-26T15:44:35+08:00
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - "Installed-package browser red: candidate SHA-256 832ee8c95911bf05c415d9dbb1458b804744ce082a1c8756007833fe0d4c621e failed the canonical report Journey at the earliest Grid observation; artifacts/e2e/attempt-detail-red-confirmed/summary.json reports a regression because the first two usage cells both had x=110."
-      - "Installed-package browser green: candidate SHA-256 62e9558e8054ed6f369d90d3d4dcc43e587e0ea8a7a0375a40d57f8fbfa345dd passed e2e/report/test/view-snapshot.browser.spec.ts through the public niceeval view entry; artifacts/e2e/attempt-detail-green-confirmed/summary.json reports a clean pass for responsive usage Grid cells, the t.send(...) inline Session log, and structured assertion Observed fields."
-      - "Reliability takeover: artifacts/e2e/attempt-detail-takeover/takeover-summary.json reports all required observations passed for the same candidate, including three isolated copies, two consecutive runs in one installed copy, the report Repo default-parallel suite (5 query tests and 3 Chromium Journeys), the target file/title run, and clean resource cleanup."
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
 promotions:
-  - kind: use-case
-    current:
-      - docs/feature/insight/use-case/insight-review-run-adoption.md
-    history:
-      - target: docs/feature/reports/use-case/审阅一次Run怎样采用结果.md
-        commit: f8eb3968044213605bc2042944777d12afd13eb9
+  - docs/feature/insight/use-case/insight-review-run-adoption.md
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: retire-promotion
+    reason: 保留原 promotion history；迁移为历史 retire 记录。
+    ref: docs/feature/reports/use-case/审阅一次Run怎样采用结果.md
+    commit: f8eb3968044213605bc2042944777d12afd13eb9
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - "Installed-package browser red: candidate SHA-256 832ee8c95911bf05c415d9dbb1458b804744ce082a1c8756007833fe0d4c621e failed the canonical report Journey at the earliest Grid observation; artifacts/e2e/attempt-detail-red-confirmed/summary.json reports a regression because the first two usage cells both had x=110."
+            - "Installed-package browser green: candidate SHA-256 62e9558e8054ed6f369d90d3d4dcc43e587e0ea8a7a0375a40d57f8fbfa345dd passed e2e/report/test/view-snapshot.browser.spec.ts through the public niceeval view entry; artifacts/e2e/attempt-detail-green-confirmed/summary.json reports a clean pass for responsive usage Grid cells, the t.send(...) inline Session log, and structured assertion Observed fields."
+            - "Reliability takeover: artifacts/e2e/attempt-detail-takeover/takeover-summary.json reports all required observations passed for the same candidate, including three isolated copies, two consecutive runs in one installed copy, the report Repo default-parallel suite (5 query tests and 3 Chromium Journeys), the target file/title run, and clean resource cleanup."
+    proof:
+      - "Installed-package browser red: candidate SHA-256
+        832ee8c95911bf05c415d9dbb1458b804744ce082a1c8756007833fe0d4c621e failed
+        the canonical report Journey at the earliest Grid observation;
+        artifacts/e2e/attempt-detail-red-confirmed/summary.json reports a
+        regression because the first two usage cells both had x=110."
+      - "Installed-package browser green: candidate SHA-256
+        62e9558e8054ed6f369d90d3d4dcc43e587e0ea8a7a0375a40d57f8fbfa345dd passed
+        e2e/report/test/view-snapshot.browser.spec.ts through the public
+        niceeval view entry;
+        artifacts/e2e/attempt-detail-green-confirmed/summary.json reports a
+        clean pass for responsive usage Grid cells, the t.send(...) inline
+        Session log, and structured assertion Observed fields."
+      - "Reliability takeover:
+        artifacts/e2e/attempt-detail-takeover/takeover-summary.json reports all
+        required observations passed for the same candidate, including three
+        isolated copies, two consecutive runs in one installed copy, the report
+        Repo default-parallel suite (5 query tests and 3 Chromium Journeys), the
+        target file/title run, and clean resource cleanup."
+    source:
+      path: memory/view-renderer-flattens-debug-evidence.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:af9f26aa42260eb1eefe285d75d43592330c2c8ebf2b6a0f95fc0ad42643564e
 ---
 # 固定 View renderer 把 Attempt 调试证据压平为摘要表格
 

@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: failure-notice-phase-is-error-origin-not-last-lifecycle-phase
+title: failure 通知的 phase 必须取 error 原点,不能取最后 lifecycle phase
+createdAt: 2026-07-15T12:35:30+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md
+  commit: d37927492ef76d6e27ab0a7e79af24845889b182
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-n\
+      otice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对
+      `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle
+      phase 反推 verdict 原因"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # failure 通知的 phase 必须取 error 原点,不能取最后 lifecycle phase
 
 **现象**:一个 gate 断言已经判为 `failed` 的 attempt,永久通知却显示

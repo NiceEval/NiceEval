@@ -8,17 +8,15 @@ import {
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
+// @use-case docs/feature/insight/use-case/insight-review-run-adoption.md
+// @regression memory/report-header-experiment-selector-regression.md
+// @regression memory/report-match-details-obscure-score-and-collection.md
+// @regression memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
+// @regression memory/view-hard-refresh-duplicates-attempt-overlay.md
+// @regression memory/view-renderer-flattens-debug-evidence.md
+// @regression memory/view-run-selection-is-ignored.md
 
-// @concord-case necase_DCFSBPFARWB0QD6D
-// @concord-owner docs/engineering/testing/e2e/insight.md#operational-browser-journey
-// @concord-regression memory/report-header-experiment-selector-regression.md
-// @concord-regression memory/report-match-details-obscure-score-and-collection.md
-// @concord-regression memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
-// @concord-regression memory/view-hard-refresh-duplicates-attempt-overlay.md
-// @concord-regression memory/view-renderer-flattens-debug-evidence.md
-// @concord-regression memory/view-run-selection-is-ignored.md
-// @concord-test-file e2e/insight/test/view-snapshot.browser.spec.ts
-test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff [necase_DCFSBPFARWB0QD6D]", async ({ page }, testInfo) => {
+test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];

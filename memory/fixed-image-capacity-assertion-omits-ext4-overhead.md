@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: fixed-image-capacity-assertion-omits-ext4-overhead
 title: Fixed-image capacity assertion omits ext4 overhead
 createdAt: 2026-08-25T11:09:52+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 # Fixed-image capacity assertion omits ext4 overhead
 

@@ -5,11 +5,9 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAttempt } from "./inspection.ts";
+// @feature docs/feature/assertions/README.md
 
-// @concord-case necase_9PV0Q2PS6ZZ8E4XR
-// @concord-owner docs/engineering/testing/e2e/eval.md#eval-context
-// @concord-test-file e2e/eval/test/context.test.ts
-test("多轮和 newSession 的 Context Eval 以 passed 终态完成 [necase_9PV0Q2PS6ZZ8E4XR]", async () => {
+test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "context",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

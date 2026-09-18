@@ -1,8 +1,20 @@
 ---
-name: experimentcomparison-relativeto-cosmetic-vs-groupby
-description: ExperimentComparison/ExperimentList 的 relativeTo prop 当天又被推翻,改成默认自动缩成最短唯一后缀(与 MetricScatter 点标签同一算法),不再需要报告作者手写路径前缀
-metadata:
-  type: project
+format: concord.document/v1
+id: experimentcomparison-relativeto-cosmetic-vs-groupby
+title: experimentcomparison-relativeto-cosmetic-vs-groupby
+createdAt: 2026-07-20T10:07:31+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experimentcomparison-relativeto-cosmetic-vs-groupby.md
+  commit: 447c23ac8687a6408aab1ea8b252c33aaa8e5ef7
+description: ExperimentComparison/ExperimentList 的 relativeTo prop
+  当天又被推翻,改成默认自动缩成最短唯一后缀(与 MetricScatter 点标签同一算法),不再需要报告作者手写路径前缀
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
 ---
 
 **当前裁决(2026-07-20,同日第二次翻案)**：`ExperimentList`（因此 `ExperimentComparison`）不再有 `relativeTo` prop。行标签默认缩成 experiment id 在当前列表里的最短唯一后缀——末段唯一就只显示末段，撞名时逐段向前加长到能区分为止；算法与 `MetricScatter` 散点点标签共用同一份实现（`shortestUniqueLabels`，`src/report/model/format.ts`），两处保证同一份 id 缩成同一个显示名。完整 id 不受影响，仍是排序 / 过滤 / 折叠展开的身份键。契约见 `docs/feature/reports/library/entity-lists.md`「`ExperimentList`」与 `docs/feature/reports/library/summaries.md`「`ExperimentComparison`」。

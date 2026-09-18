@@ -40,6 +40,7 @@ export interface RunOptions {
   readonly keepWorkdir: boolean;
   readonly repoConcurrency: number;
   readonly selection?: SelectionReceipt;
+  readonly caseSelections?: Readonly<Record<string, import("./run-repo.ts").CaseSelectionExpectation>>;
   readonly sourceDirs?: Readonly<Record<string, string>>;
   readonly sourceSnapshotDigests?: Readonly<Record<string, string>>;
 }
@@ -324,6 +325,7 @@ export const runEffect = (
           {
             ...(options.sourceDirs?.[repo.manifest.id] === undefined ? {} : { sourceDir: options.sourceDirs[repo.manifest.id] }),
             ...(options.sourceSnapshotDigests?.[repo.manifest.id] === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigests[repo.manifest.id] }),
+            ...(options.caseSelections?.[repo.manifest.id] === undefined ? {} : { caseSelection: options.caseSelections[repo.manifest.id] }),
             keepWorkdir: options.keepWorkdir,
             ...(options.selection === undefined
               ? {}

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: hard-kill-leaves-orphans-and-experiment-leaks
+title: 强杀(SIGKILL)反复漏实验 teardown:孤儿容器 + license 席位泄漏,且无事后清理入口
+createdAt: 2026-07-21T17:01:47+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/hard-kill-leaves-orphans-and-experiment-leaks.md
+  commit: 88e604df3161c0cff951c6290a30135cb801fd43
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 强杀(SIGKILL)反复漏实验 teardown:孤儿容器 + license 席位泄漏,且无事后清理入口
 
 ## 现象

@@ -1,19 +1,41 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: show-score-outcomes-rendered-as-pass-rate
 title: Show renders Score outcomes as a synthetic pass rate
 createdAt: 2026-09-04
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS
+            - nered_99F7WPXW2JB629D5
+            - netake_40G7KZMW4Z54KAB6
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS"]}
     proof:
       - e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS
       - nered_99F7WPXW2JB629D5
       - netake_40G7KZMW4Z54KAB6
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/inspection/test/show-cli.test.ts#necase_9FHHSQTVB492P8DS"]}
-promotions: []
+    source:
+      path: memory/show-score-outcomes-rendered-as-pass-rate.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:a4d20b08beb3add8419f52e1316466d93d8af6876338d1eee66eac70f5e0edfa
 ---
 ## Problem
 

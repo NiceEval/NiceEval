@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: react19-dangerously-set-inner-html-identity
+title: React 19 的 dangerouslySetInnerHTML 只比对象身份，重渲染即重建子树
+createdAt: 2026-07-16T17:34:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/react19-dangerously-set-inner-html-identity.md
+  commit: e02cdce4d18fbab221373c1dcfb32cad95060ad7
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [react19-dangerously-set-inner-html-identity](react19-dangerously-set-inn\
+      er-html-identity.md) — React 19 对 dangerouslySetInnerHTML 只比 `{__html}`
+      对象身份,内联字面量让任何重渲染都整树重建报告槽(开关 attempt 弹窗丢 details/排序/过滤状态);修为 useMemo 包
+      `{__html}`(`src/view/app/App.tsx` 的 ReportSlot)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # React 19 的 dangerouslySetInnerHTML 只比对象身份，重渲染即重建子树
 
 ## 现象

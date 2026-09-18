@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: docker-image-lifecycle-gap
+title: Docker 镜像与构建缓存无退役机制,磁盘被历史代产物吃满
+createdAt: 2026-08-04T12:23:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-image-lifecycle-gap.md
+  commit: 909d894c1267467f8759240f39aecccefb586a83
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Docker 镜像与构建缓存无退役机制,磁盘被历史代产物吃满
 
 **现象**(2026-08-04,terminal-bench 全量场景):宿主盘 916G 用掉 738G。`docker system df`:镜像 612 个 436.5GB(`niceeval-build:*` 226 个 + `niceeval-agent:*` 243 个,单个 0.9~6.4GB),BuildKit 构建缓存 1464 条 292.3GB。`.niceeval/` 记录只有 243M。

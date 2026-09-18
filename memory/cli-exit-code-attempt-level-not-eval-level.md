@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: cli-exit-code-attempt-level-not-eval-level
+title: CLI 退出码曾按 attempt 计红,重试吸收的抖动照样 exit 1(已修)
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/cli-exit-code-attempt-level-not-eval-level.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# CLI 退出码曾按 attempt 计红,重试吸收的抖动照样 exit 1(已修)"
+    proof: []
+    source:
+      path: memory/cli-exit-code-attempt-level-not-eval-level.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:1ec7bc0b6db5d43ec49b6d5fc4c93c86a137100d3ba75c9a92abb51efad16aef
+---
 # CLI 退出码曾按 attempt 计红,重试吸收的抖动照样 exit 1(已修)
 
 ## 现象

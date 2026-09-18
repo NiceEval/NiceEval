@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: carry-eligibility-and-fingerprint-scope-decisions
+title: 携带资格与指纹范围:2026-07-26 的三条设计裁决
+createdAt: 2026-07-26T12:30:35+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/carry-eligibility-and-fingerprint-scope-decisions.md
+  commit: 4b7b5e74294ff9b142231f1401f801f237bff2a0
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 携带资格与指纹范围:2026-07-26 的三条设计裁决
 
 一轮 cache.md 评审同时改了三处判据。记这条是因为其中两处的**第一版方案被推翻**,

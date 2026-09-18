@@ -1,8 +1,20 @@
 ---
-name: bench-direct-invocation-not-niceeval-project
-description: phase-timings.md 的 bench/ 定型为直接调 runAttemptBody 的内部脚本,不是 niceeval 项目 + Reports 报告页
-metadata:
-  type: project
+format: concord.document/v1
+id: bench-direct-invocation-not-niceeval-project
+title: bench-direct-invocation-not-niceeval-project
+createdAt: 2026-07-11T17:09:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bench-direct-invocation-not-niceeval-project.md
+  commit: 5e4eb007b69dc4389e84f94d126147fc4871cc93
+description: phase-timings.md 的 bench/ 定型为直接调 runAttemptBody 的内部脚本,不是 niceeval
+  项目 + Reports 报告页
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
 ---
 
 裁决(2026-07-11):`docs/phase-timings.md` 的 `bench/`(装机基准工作台)定型为几个纯 TS 脚本(`run.ts` / `compare.ts` / `stats.ts` / `probes.ts`),直接从 `../src/runner/attempt.ts` 相对导入调用 `runAttemptBody`(单次 attempt 执行引擎),不经过 CLI discover、不落 `.niceeval/result.json`;跑完直接 `console.table` 打印,对比两轮快照走脚本里的 noise-aware 包络判据(效应量阈值 + 历史 min/max 包络),同样直接打印,不生成任何报告页。

@@ -1,8 +1,38 @@
 ---
-name: codex-cli-show-board-collapses-multi-experiment
-description: "裸 `niceeval show`(无位置参数)在仓库有多个 experiment 时按实验组折叠成组级汇总表,不逐条列 Eval id;`board.includes(evalId)` 这种'少排用例不能全绿'检查在多 experiment 仓库里必然假阴性,要改用 `show --page attempts`"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: codex-cli-show-board-collapses-multi-experiment
+title: codex-cli-show-board-collapses-multi-experiment
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-cli-show-board-collapses-multi-experiment.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: 裸 `niceeval show`(无位置参数)在仓库有多个 experiment 时按实验组折叠成组级汇总表,不逐条列 Eval
+  id;`board.includes(evalId)` 这种'少排用例不能全绿'检查在多 experiment 仓库里必然假阴性,要改用 `show
+  --page attempts`
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '-
+      [codex-cli-show-board-collapses-multi-experiment](codex-cli-show-board-collapses-multi-experiment.md)
+      — 裸 `niceeval show` 在多 experiment 仓库里按实验组折叠成汇总表,不逐条列 Eval
+      id;"少排用例不能全绿"检查要用 `show --page attempts`,已修在
+      e2e/adapter/codex-cli/scripts/verify.ts'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**:`e2e/adapter/codex-cli` 的 `scripts/verify.ts`(前一位 agent 搭好的脚手架)用例二

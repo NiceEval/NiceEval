@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: e2e-suite-landing-gotchas
+title: e2e/ 套件落地的三个坑(link 深度、budget 空转、codex bwrap)
+createdAt: 2026-07-07T15:02:35+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-suite-landing-gotchas.md
+  commit: 9c18f1e760c43de8b0be925f5ee1d7eae33de26d
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # e2e/ 套件落地的三个坑(link 深度、budget 空转、codex bwrap)
 
 (安装被 pnpm 11 allowBuilds 占位符打断的部分见既有条目

@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: workspace-access-evidence
+title: 工作目录访问证据
+createdAt: 2026-08-13T12:06:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/workspace-access-evidence/README.md
+  commit: c297a79e2b319b5cb6cdf8101039450aedf8f0c2
+kind: roadmap
+state: planned
+---
 # 工作目录访问证据
 
 工作目录变化只能说明 Agent 最终改了什么，工具输入中的 JSON 只能说明 Adapter 投影出的文本。两者都不能证明 Agent 进程是否读取、写入或重命名过工作目录中的一个路径。

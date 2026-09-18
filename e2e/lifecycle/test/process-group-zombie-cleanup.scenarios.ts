@@ -288,11 +288,9 @@ namespace = {"__name__": "__main__", "__file__": runner}
 exec(compile(source, runner, "exec"), namespace)
 `;
 
-export function registerProcessGroupZombieCleanupOwner(): void {
-// @concord-case necase_SNREDD5CDAJ7MM94
-// @concord-owner docs/engineering/testing/e2e/README.md#process-group-terminal-state
-// @concord-test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
-test("Lifecycle subreaper returns a child exit observed at its blocking wait boundary [necase_SNREDD5CDAJ7MM94]", async () => {
+// @feature docs/feature/sandbox/README.md
+// @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
+test("Lifecycle subreaper returns a child exit observed at its blocking wait boundary", async () => {
   const runner = join(process.cwd(), "fixtures", "subreaper-runner.py");
   await withProcess(
     ["python3", "-c", subreaperWakeupProbe, runner],
@@ -307,10 +305,9 @@ test("Lifecycle subreaper returns a child exit observed at its blocking wait bou
 });
 
 // Regression note: memory/testkit-zombie-only-process-group.md
-// @concord-case necase_57891J8F49ET59Z0
-// @concord-owner docs/engineering/testing/e2e/README.md#process-group-terminal-state
-// @concord-test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
-test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies [necase_57891J8F49ET59Z0]", async () => {
+// @feature docs/feature/sandbox/README.md
+// @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
+test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
   const handle = startProcess(
     ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],
     { cwd: process.cwd(), processGroup: true, graceMs: 100, timeoutMs: 10_000 },
@@ -361,10 +358,9 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
 });
 
 // Regression note: memory/testkit-procfs-scan-race.md
-// @concord-case necase_D2B5G8VM5BCSJ56E
-// @concord-owner docs/engineering/testing/e2e/README.md#process-group-terminal-state
-// @concord-test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
-test("ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group [necase_D2B5G8VM5BCSJ56E]", async () => {
+// @feature docs/feature/sandbox/README.md
+// @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
+test("ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group", async () => {
   await withTempDir("niceeval-process-group-procfs-race-", async (tempRoot) => {
     const snapshotPath = join(tempRoot, "procfs-snapshot");
     const childStatusPath = join(tempRoot, "descendant.json");
@@ -509,4 +505,3 @@ test("ProcessHandle repeats its post-TERM procfs scan before accepting a termina
     }
   });
 });
-}

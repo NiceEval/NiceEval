@@ -45,7 +45,8 @@ inventory；不得用 AST 或源码扫描发现测试。
 单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
 ```ts
-test("attempt.trace 经 pipe 仍交付完整 versioned document [necase_7J4M2N6Q8R3T5V9X]", async () => {
+// @feature docs/feature/inspection/README.md
+test("attempt.trace 经 pipe 仍交付完整 versioned document", async () => {
   const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
   const result = await niceeval.run([
     "query",

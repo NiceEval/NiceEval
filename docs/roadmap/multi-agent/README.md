@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: multi-agent
+title: Multi-Agent Evals
+createdAt: 2026-07-12T16:45:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/multi-agent/README.md
+  commit: 4027fdfd45a842837578fe725d3f932c8f48c4a9
+kind: roadmap
+state: planned
+---
 # Multi-Agent Evals
 
 被测对象越来越多是多 agent 系统:orchestrator 委派 subagent、planner 交接给 writer、客服 bot 对着模拟用户。这篇回答:niceeval 怎么评它们,而不破坏 core 中立、CLI 模型和现有断言作用域规则。

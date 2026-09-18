@@ -1,8 +1,42 @@
 ---
-name: exp-show-unbounded-output-cases
-description: exp/show 实测输出违反已有 human 契约:全 reused 缺 FAILURES、per-config 复用清单铺开、0s 却 $7 成本口径矛盾、show Result 单元格 dump 整段 stdout
-metadata:
-  type: project
+format: concord.document/v1
+id: exp-show-unbounded-output-cases
+title: exp-show-unbounded-output-cases
+createdAt: 2026-07-15T14:38:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/exp-show-unbounded-output-cases.md
+  commit: 389e2ead7116a0220950f340f2c56c8ef42a1585
+description: exp/show 实测输出违反已有 human 契约:全 reused 缺 FAILURES、per-config 复用清单铺开、0s
+  却 $7 成本口径矛盾、show Result 单元格 dump 整段 stdout
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 代码侧已修(2026-07-15):反馈状态把「最终结果集」与「本次实际派发」拆成两层。carry 的失败在 plan
+      阶段静态注入终局 FAILURES,不伪装成刚发生的 failure event；token/cost 只由 fresh
+      `attempt:complete` 累计,全复用固定显示 `0s · 0 new tok · $0.00`；Reuse 只显示聚合数量；0
+      eval 选择在调度/落盘前非零退出。断言摘要统一先折单行、再做 240 字符安全上限,完整证据仍留在
+      show/view。类型检查、反馈/runner/scoring 定向测试与空选择 CLI e2e 已通过。全量 CLI profile 与
+      sandbox hook 的确定性 mock 也已在
+      `test/fixtures/cli-output-profiles/agents/mock.ts`、`test/fixtures/sandbox\
+      -hooks/experiments/order/mock.ts` 显式声明 `completeCoverage`，不再因 Adapter 省略
+      coverage = unknown 而把 `succeeded()` 降成 unavailable；两份 spawn 级测试隔离重跑通过。真机
+      full-reuse 仍需单独复核。"
+    proof: []
+    source:
+      path: memory/exp-show-unbounded-output-cases.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:071386b6440390f097527da9300a1ec3100f237e776655f05f84d08d8271cda3
 ---
 
 **现象**（2026-07-15 在 coding-agent-memory-evals 真机跑,50 attempts 全命中缓存）:

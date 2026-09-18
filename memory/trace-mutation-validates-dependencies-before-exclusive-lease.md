@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: trace-mutation-validates-dependencies-before-exclusive-lease
 title: Trace 多文件发布前置条件在 exclusive lease 外验证
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 # Trace 多文件发布前置条件在 exclusive lease 外验证
 

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: scope-warnings-group-by-action
+title: 裁决：ScopeWarnings 按动作聚合 + 明细折叠（2026-07-17）
+createdAt: 2026-07-17T14:12:36+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/scope-warnings-group-by-action.md
+  commit: 177a151c4b41ba97515f17af597b1f91c23a9cac
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决：ScopeWarnings 按动作聚合 + 明细折叠（2026-07-17）
 
 `ScopeWarnings` 的呈现契约从「逐条平铺 message、明确无折叠」翻案为「按下一步动作聚合成组，组头（存在 / 分类 / 命令）恒可见、逐条 message 收进 `<details>` 明细」。

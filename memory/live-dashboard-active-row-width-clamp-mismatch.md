@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: live-dashboard-active-row-width-clamp-mismatch
+title: live 面板 ACTIVE 行:宽终端下右侧被框截断,phase/detail 完全不可见
+createdAt: 2026-07-23T10:32:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-dashboard-active-row-width-clamp-mismatch.md
+  commit: 51a98f609091e8d9a784e7debcee93a31cb47fc3
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [live-dashboard-active-row-width-clamp-mismatch](live-dashboard-active-ro\
+      w-width-clamp-mismatch.md) — 宽终端(>100 列)live 面板 ACTIVE 行 phase/detail
+      被框截断完全不可见:human.ts 手写 width-4 漏过 MAX_BOX_WIDTH 钳制,该用 panelContentWidth;修为
+      panel.ts 新增 `capWidth` 豁免声明 + 身份列按实际最长值定宽跨帧单调、detail
+      拿全部剩余宽度(`src/report/model/panel.ts` + `src/runner/feedback/human.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # live 面板 ACTIVE 行:宽终端下右侧被框截断,phase/detail 完全不可见
 
 ## 现象

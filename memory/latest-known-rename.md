@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: latest-known-rename
+title: 裁决:`latestPerEval` 改名 `latestKnown`,并撤销「名字自解释」的宣称
+createdAt: 2026-07-26T20:44:40+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/latest-known-rename.md
+  commit: 460c26892f462220c9cbc7a42ae90ec959e441e6
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:`latestPerEval` 改名 `latestKnown`,并撤销「名字自解释」的宣称
 
 **日期**:2026-07-26

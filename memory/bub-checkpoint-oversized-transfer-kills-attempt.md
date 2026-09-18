@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: bub-checkpoint-oversized-transfer-kills-attempt
+title: bub checkpoint 100MB+ 单次传输在 e2b 上不可靠,且缓存回填失败会杀掉已就绪的 attempt
+createdAt: 2026-07-11T14:16:48+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bub-checkpoint-oversized-transfer-kills-attempt.md
+  commit: 7f4efbb85666f6eadcbde4a06fa72914afb033da
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [bub-checkpoint-oversized-transfer-kills-attempt](bub-checkpoint-oversize\
+      d-transfer-kills-attempt.md) — bub checkpoint 曾打包 `~/.cache/uv` 撑到
+      100MB+,e2b 文件 API 单次传输超时/重置;且缓存回填失败曾杀掉已装好 bub 的 attempt;修为只打 `~/.local` +
+      回填/还原失败降级警告(修在 `src/agents/bub.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # bub checkpoint 100MB+ 单次传输在 e2b 上不可靠,且缓存回填失败会杀掉已就绪的 attempt
 
 ## 现象

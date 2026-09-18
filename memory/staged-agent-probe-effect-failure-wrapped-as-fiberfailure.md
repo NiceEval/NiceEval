@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: staged-agent-probe-effect-failure-wrapped-as-fiberfailure
+title: Staged Agent 版本 probe 的 typed failure 被 FiberFailure 包装
+createdAt: 2026-08-13T16:47:45+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/staged-agent-probe-effect-failure-wrapped-as-fiberfailure.md
+  commit: 36b97754a7dcb9f1174dd2d65051e089ec5249e3
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [staged-agent-probe-effect-failure-wrapped-as-fiberfailure](staged-agent-\
+      probe-effect-failure-wrapped-as-fiberfailure.md) — staged Agent 版本 miss 经
+      `Effect.runPromise` 被包成 FiberFailure，Ensure 识别不到 `SandboxCommandExitError`
+      而跳过安装；改用 `runPromiseExit` + `Cause.squash` 保留 typed failure"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Staged Agent 版本 probe 的 typed failure 被 FiberFailure 包装
 
 ## 现象

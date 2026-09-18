@@ -4,11 +4,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
+// @feature docs/feature/experiments/README.md
 
-// @concord-case necase_DGWX9WZ940KJ7WT7
-// @concord-owner docs/engineering/testing/e2e/cli.md#cli-sandbox-project-preflight
-// @concord-test-file e2e/cli/test/sandbox-project-preflight.test.ts
-test("Sandbox 管理命令准备项目凭据但不求值项目配置 [necase_DGWX9WZ940KJ7WT7]", async () => {
+test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () => {
   await cliE2E.case("sandbox-config-free", async ({ commands: { niceeval }, paths }) => {
     await mkdir(join(paths.projectRoot, ".niceeval"));
     await writeFile(

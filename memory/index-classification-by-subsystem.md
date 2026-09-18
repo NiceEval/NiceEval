@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: index-classification-by-subsystem
+title: 设计裁决：memory 索引按子系统主轴归档,类型降为大区子标题
+createdAt: 2026-07-21T17:48:30+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/index-classification-by-subsystem.md
+  commit: b8d0387848d92ae09567e5a45967d2af2d53f2a8
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- **同场否决**:把「已修」条目分离到单独文件(如
+      `INDEX-fixed.md`)以缩短可见长度——违反「不归档不删除」规则(已修条目是复盘材料);缩短靠子标题分组与大区拆分实现,不靠隐藏条目。"
+    proof: []
+    source:
+      path: memory/index-classification-by-subsystem.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b12d0b1965b296479244a6127c78b8a798ed539024e7011d795aff6a2520d5d2
+---
 # 设计裁决：memory 索引按子系统主轴归档,类型降为大区子标题
 
 - **日期**：2026-07-21

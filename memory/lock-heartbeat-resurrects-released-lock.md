@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: lock-heartbeat-resurrects-released-lock
+title: 心跳续租在飞时释放锁,锁文件会被写回复活(已修)
+createdAt: 2026-07-24T19:34:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/lock-heartbeat-resurrects-released-lock.md
+  commit: 02744945e816e83584ce727a7d69aed7b2e5c89e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 心跳续租在飞时释放锁,锁文件会被写回复活(已修)"
+    proof: []
+    source:
+      path: memory/lock-heartbeat-resurrects-released-lock.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b39f53042ab26dff8c10e4e657596a01cc6d0ba7703a5b91493cee6e7aa49665
+---
 # 心跳续租在飞时释放锁,锁文件会被写回复活(已修)
 
 ## 现象

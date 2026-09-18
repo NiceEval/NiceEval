@@ -1,18 +1,39 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: active-run-inspection-lifecycle
 title: Inspection 把部分发布的 Run 误呈现为完成
 createdAt: 2026-09-07
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - netake_285XFX4X679TK3GB
+            - netake_P8KT8TMM795FGW24
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-journey.test.ts#necase_71RKBRSMD0ER677F","e2e/record/test/record-journey.test.ts#necase_SVJG4JP8WN5TWCQF"]}
     proof:
       - netake_285XFX4X679TK3GB
       - netake_P8KT8TMM795FGW24
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-journey.test.ts#necase_71RKBRSMD0ER677F","e2e/record/test/record-journey.test.ts#necase_SVJG4JP8WN5TWCQF"]}
-promotions: []
+    source:
+      path: memory/active-run-inspection-lifecycle.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:53d8595eb681ff2419349593b057d328d6831b53988190280642f9832acd7007
 ---
 # Inspection 把部分发布的 Run 误呈现为完成
 

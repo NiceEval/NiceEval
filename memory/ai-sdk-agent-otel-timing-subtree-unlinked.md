@@ -1,8 +1,21 @@
 ---
-name: ai-sdk-agent-otel-timing-subtree-unlinked
-description: "aiSdkAgent 的 attempt-scope OTel tracing（tracing: aiSdkOtel()）真的收到了带正确 gen_ai.tool.call.id 的 span——`show --execution` 的节点级关联工作正常——但 `show --timing` 的 OTel 子树永远挂不出来，turn.traceId 从未被赋值"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: ai-sdk-agent-otel-timing-subtree-unlinked
+title: ai-sdk-agent-otel-timing-subtree-unlinked
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ai-sdk-agent-otel-timing-subtree-unlinked.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: "aiSdkAgent 的 attempt-scope OTel tracing（tracing:
+  aiSdkOtel()）真的收到了带正确 gen_ai.tool.call.id 的 span——`show --execution`
+  的节点级关联工作正常——但 `show --timing` 的 OTel 子树永远挂不出来，turn.traceId 从未被赋值"
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：`e2e/adapter/ai-sdk` 用内置 `aiSdkAgent({ tracing: aiSdkOtel(), generate })` 真机跑

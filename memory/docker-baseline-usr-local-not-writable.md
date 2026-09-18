@@ -1,8 +1,34 @@
 ---
-name: docker-baseline-usr-local-not-writable
-description: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable / npm install -g 直接 EACCES;已修
-metadata:
-  type: project
+format: concord.document/v1
+id: docker-baseline-usr-local-not-writable
+title: docker-baseline-usr-local-not-writable
+createdAt: 2026-08-04T20:34:33+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-baseline-usr-local-not-writable.md
+  commit: 8aa933822902af5a274a9207f0dc6c0042250261
+description: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable /
+  npm install -g 直接 EACCES;已修
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable / npm
+      install -g 直接 EACCES;已修
+    proof: []
+    source:
+      path: memory/docker-baseline-usr-local-not-writable.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:0b837195ffd40c701caea232aa52a51ad7c64298124d4364b0fc381800cedb3c
 ---
 
 **已修**:[[official-baseline-tool-surface-unified]] 统一的「跨 provider 基线工具面」只显式覆盖了 yarn/python3 两条,漏了 Node 工具契约(见 `docs/feature/sandbox/library/prebuilt-environments.md`「E2B:TemplateBuilder 派生」)的第三条——`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 侧 `withNodeToolContract` 早就 chown 给运行用户,Docker 侧的六个 target 全部在装完全局 CLI 后才 `USER node`,构建期这两个目录一直归 root,运行期以 `node` 身份补装或 `corepack enable` 必现 EACCES。

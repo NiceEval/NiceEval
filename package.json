@@ -9,7 +9,7 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "typecheck": "pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/reference/tsconfig.json",
+    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/reference/tsconfig.json",
     "lint": "pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"pnpm run lint:vitest\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "lint:vitest": "vitest run --project lint-docs --project lint-docs-site",
     "lint:docs": "vitest run --project lint-docs",
@@ -43,6 +43,6 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.11",
     "yaml": "^2.9.0",
-    "concord-sdlc": "file:tools/concord/concord-sdlc-0.3.0.tgz"
+    "concord-sdlc": "file:tools/concord/concord-sdlc-0.4.0.tgz"
   }
 }

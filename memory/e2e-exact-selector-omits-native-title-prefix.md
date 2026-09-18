@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: e2e-exact-selector-omits-native-title-prefix
 title: Exact E2E selection omits native project and suite title prefixes
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 ## Observation
 

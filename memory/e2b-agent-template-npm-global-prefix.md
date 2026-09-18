@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: e2b-agent-template-npm-global-prefix
+title: E2B coding-agent 模板的 npm global 契约必须一致
+createdAt: 2026-07-23T16:46:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-agent-template-npm-global-prefix.md
+  commit: 2c473122456b4472c361ddfa2890918c3c88f1b1
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # E2B coding-agent 模板的 npm global 契约必须一致
 
 ## 现象

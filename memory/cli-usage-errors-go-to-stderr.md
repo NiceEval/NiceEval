@@ -1,9 +1,20 @@
 ---
-name: cli-usage-errors-go-to-stderr
-description: niceeval CLI 的用法错误/无匹配提示（page not found、No results matched、--exp 无匹配等）一律写 stderr，不是 stdout
-metadata:
-  node_type: memory
-  type: project
+format: concord.document/v1
+id: cli-usage-errors-go-to-stderr
+title: cli-usage-errors-go-to-stderr
+createdAt: 2026-07-22T08:08:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/cli-usage-errors-go-to-stderr.md
+  commit: 4de42b0162238fb9d0583f6df47d8bca1f2d732d
+description: niceeval CLI 的用法错误/无匹配提示（page not found、No results matched、--exp
+  无匹配等）一律写 stderr，不是 stdout
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：写 E2E `verify-*.ts` 时用 `spawnSync` 分别拿到 `stdout`/`stderr`，对预期

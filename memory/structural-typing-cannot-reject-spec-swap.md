@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: structural-typing-cannot-reject-spec-swap
+title: 同形的两个具名 Spec，TypeScript 拦不住互换——「类型层拒绝」不能这么承诺
+createdAt: 2026-07-12T22:18:12+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/structural-typing-cannot-reject-spec-swap.md
+  commit: 2875814261652f0c69f35edb0d11b51abdcfa9bf
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 同形的两个具名 Spec，TypeScript 拦不住互换——「类型层拒绝」不能这么承诺
 
 **现象**:`docs/feature/adapters/coding-agent-skills-plugins.md` 的设计规则 5 曾写「`ClaudeCodePluginSpec` 不能传给 Codex，`CodexPluginSpec` 不能传给 Claude Code」。实现时发现这句做不到。

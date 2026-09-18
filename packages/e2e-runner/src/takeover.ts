@@ -1,7 +1,7 @@
 // Deterministic owner-takeover reliability matrix. Command parsing, output and
 // the sole Node runtime boundary live in cli.ts.
 
-import { projectRepositorySources, resolveRepositorySourceIdentity, sameRepositorySourceIdentity, type RepositorySourceIdentityV2, type SourceProjectionV1 } from "concord-sdlc/repository/source-identity";
+import { projectRepositorySources, resolveRepositorySourceIdentity, sameRepositorySourceIdentity, type RepositorySourceIdentityV3, type SourceProjectionV2 } from "concord-sdlc/repository/source-identity";
 import { lstat as nodeLstat, type Stats } from "node:fs";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
@@ -41,7 +41,7 @@ export class TakeoverOperationError extends Data.TaggedError("TakeoverOperationE
   readonly detail: string;
 }> {}
 
-type SourceSnapshotIdentity = SourceProjectionV1;
+type SourceSnapshotIdentity = SourceProjectionV2;
 interface CheckoutIdentity { readonly root: string; readonly commit: string; readonly dirty: boolean; readonly sourceSnapshot?: SourceSnapshotIdentity }
 
 export interface TakeoverRunRecord {
@@ -296,7 +296,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const exactSelector = parseExactSelector(options.selector);
   const repoPrefix = "e2e/" + options.repoId + "/";
   const runnerCasePath = selectedCase.path.startsWith(repoPrefix) ? selectedCase.path.slice(repoPrefix.length) : selectedCase.path;
-  const targetNativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.caseId)];
+  const targetNativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.titlePath)];
   const candidate = yield* readCandidateTarball(options.candidatePath).pipe(Effect.mapError((cause) => operationError("candidate", cause)));
   const root = repoRootDir();
   const declaredArtifactRoot = options.artifactRoot ?? (yield* fileSystem.makeTempDirectory({ prefix: "niceeval-e2e-takeover-artifacts-" }).pipe(Effect.mapError((cause) => operationError("artifact", cause))));
@@ -316,7 +316,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const sourceSnapshotDir = join(scratchRoot, "source", repo.manifest.id);
   const results: RepoRunResult[] = [];
   let checkout: CheckoutIdentity | undefined;
-  let sourceIdentity: RepositorySourceIdentityV2 | undefined;
+  let sourceIdentity: RepositorySourceIdentityV3 | undefined;
   let testkit: TestkitPackage | undefined;
   let setupFailure: string | undefined;
   yield* Effect.gen(function* () {
@@ -331,7 +331,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     if (repo.manifest.harness?.testkit === true) testkit = yield* buildTestkitPackage(root, scratchRoot).pipe(Effect.mapError((cause) => operationError("snapshot", cause)));
     const allSecretNames = new Set(discovered.repos.flatMap((entry) => entry.manifest.secrets));
     for (const required of REQUIRED_TAKEOVER_RUNS) {
-      const result = yield* runRepoEffect(repo, materializedCandidate, scratchRoot, artifactRoot, allSecretNames, required.target ? targetNativeArgs : [], testkit, { sourceDir: sourceSnapshotDir, runLabel: required.label, workdirKey: `${required.label}/${repo.manifest.id}`, testRuns: required.attempts, copyId: required.copyId, sourceSnapshotDigest: sourceSnapshot.digest }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
+      const result = yield* runRepoEffect(repo, materializedCandidate, scratchRoot, artifactRoot, allSecretNames, required.target ? targetNativeArgs : [], testkit, { caseSelection: { executor: inventory.executor.name, caseId: selectedCase.caseId, checkout: inventory.checkout, only: required.target }, sourceDir: sourceSnapshotDir, runLabel: required.label, workdirKey: `${required.label}/${repo.manifest.id}`, testRuns: required.attempts, copyId: required.copyId, sourceSnapshotDigest: sourceSnapshot.digest }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
       results.push(result);
     }
     const after = yield* Effect.try({ try: () => resolveRepositorySourceIdentity(root, sourceSnapshotDir, options.selector), catch: (cause) => operationError("evidence", cause) });

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-display-single-formatter-decision
+title: 报告显示值定稿为计算侧单点格式化,否决 MeasureFormat
+createdAt: 2026-07-28T21:12:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-display-single-formatter-decision.md
+  commit: 06588ff8f6bdfcaf2ce303d328f2504077829299
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 报告显示值定稿为计算侧单点格式化,否决 MeasureFormat
 
 **裁决(2026-07-28)**:报告读数的显示字符串在计算侧生成一次,写进 `MeasureCell.display:

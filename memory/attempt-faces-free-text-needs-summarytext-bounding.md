@@ -1,8 +1,34 @@
 ---
-name: attempt-faces-free-text-needs-summarytext-bounding
-description: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误 message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
-metadata:
-  type: project
+format: concord.document/v1
+id: attempt-faces-free-text-needs-summarytext-bounding
+title: attempt-faces-free-text-needs-summarytext-bounding
+createdAt: 2026-07-19T16:44:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-faces-free-text-needs-summarytext-bounding.md
+  commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
+description: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误
+  message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误
+      message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
+    proof: []
+    source:
+      path: memory/attempt-faces-free-text-needs-summarytext-bounding.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b0da86eeb7279aacc9e5506a9f76e40a1662faaed506046d4535ca5be9ca3451
 ---
 
 Phase E 用 3 条手造 fixture(source 可用/不可用/errored)走查过 `standardAttemptPage`,组件级和树级测试都全绿。

@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: npx-skills-add-headless-hang
+title: "`npx skills add` 默认交互式,headless 沙箱里会卡死"
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/npx-skills-add-headless-hang.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修复：`src/agents/claude-code.ts` /
+      `src/agents/codex.ts`(2026-07-09,e2e 沙箱矩阵落地时发现)。
+    proof: []
+    source:
+      path: memory/npx-skills-add-headless-hang.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:303b14d7d82ba5d9d9ee6df93a12d450d18b47c55c0c622cd5f1eab5102e29ad
+---
 # `npx skills add` 默认交互式,headless 沙箱里会卡死
 
 **现象**：`src/agents/claude-code.ts` / `src/agents/codex.ts` 的 `skills` 配置项在沙箱 `setup()`

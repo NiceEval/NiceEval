@@ -17,11 +17,9 @@ beforeAll(async () => {
     traceMarkers: ["lookup_live_chat_fixture", "chat-live-20260809"],
   });
 }, 5 * 60_000);
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_JHVWQ7XBPFKNV12J
-// @concord-owner docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live
-// @concord-test-file e2e/adapter/openai-compat/test/chat-completion-live.test.ts
-test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成 [necase_JHVWQ7XBPFKNV12J]", () => {
+test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
   expect(receipt.createdRunIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
@@ -40,11 +38,9 @@ test("真实 OpenAI Chat Completion 一次请求以通过 verdict 完成 [necase
     () => evidence.receipt.diagnostic(),
   );
 });
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_64MHM340W3GDDKNZ
-// @concord-owner docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live
-// @concord-test-file e2e/adapter/openai-compat/test/chat-completion-live.test.ts
-test("attempt.trace 读回 OpenAI Chat Completion 的代表性证据 [necase_64MHM340W3GDDKNZ]", async () => {
+test("attempt.trace 读回 OpenAI Chat Completion 的代表性证据", async () => {
   const queried = await queryOpenAiLiveEvidence(evidence, {
     kind: "attempt.trace",
     locator: evidence.evalEvent.locator,

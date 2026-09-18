@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: mintlify-mdx-html-rendering-limits
+title: Mintlify MDX 渲染 HTML 的四个坑（GitHub 式 diff 页踩出来的）
+createdAt: 2026-07-02T21:23:24+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/mintlify-mdx-html-rendering-limits.md
+  commit: 5547df0ab8aae7bee8b6e8dbcf7159e075124f1a
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Mintlify MDX 渲染 HTML 的四个坑（GitHub 式 diff 页踩出来的）
 
 ## 现象

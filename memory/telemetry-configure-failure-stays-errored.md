@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: telemetry-configure-failure-stays-errored
+title: 裁决:telemetry 配置失败保持 errored,不降级
+createdAt: 2026-07-30T14:53:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/telemetry-configure-failure-stays-errored.md
+  commit: e8441bb201df31bd9e8adbbe9bc0b939ef792829
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:telemetry 配置失败保持 errored,不降级
 
 - **裁决**(2026-07-30):沙箱侧 OTLP 采集器写不进 `/tmp`(permission denied)这类

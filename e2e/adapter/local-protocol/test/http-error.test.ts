@@ -14,11 +14,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 0,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_AMH3K9YNHY0MSDMC
-// @concord-owner docs/engineering/testing/e2e/adapter/ui-message-stream.md#http-error-owner
-// @concord-test-file e2e/adapter/local-protocol/test/http-error.test.ts
-test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果 [necase_AMH3K9YNHY0MSDMC]", async () => {
+test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async () => {
   await localProtocolE2E.case(
     "http-error",
     localProtocolRecordArtifacts,

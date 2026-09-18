@@ -1,8 +1,20 @@
 ---
-name: codex-docker-default-image-missing-git
-description: "dockerSandbox 默认镜像 node:24-slim 不带 git;codex plugin marketplace add owner/repo 与 SkillSpec{kind:\"repo\"} 都在容器内部靠系统 git clone 实现,默认镜像下 100% 失败"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: codex-docker-default-image-missing-git
+title: codex-docker-default-image-missing-git
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-docker-default-image-missing-git.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: dockerSandbox 默认镜像 node:24-slim 不带 git;codex plugin marketplace add
+  owner/repo 与 SkillSpec{kind:"repo"} 都在容器内部靠系统 git clone 实现,默认镜像下 100% 失败
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**:`e2e/adapter/codex-cli` 的 native Plugin 实验(挂载一个真实公开 GitHub 仓库当

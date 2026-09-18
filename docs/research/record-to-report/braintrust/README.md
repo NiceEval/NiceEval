@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-to-report-braintrust
+title: Braintrust：以 Trace 为共同语言的观测、标注与实验系统
+createdAt: 2026-08-14
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/record-to-report/braintrust/README.md
+  commit: a33c7a3ca725ef6afbc188b232e318d85445fc29
+kind: research
+sources: []
+---
 # Braintrust：以 Trace 为共同语言的观测、标注与实验系统
 
 > 研究截点：2026-08-14
@@ -18,7 +30,7 @@ Braintrust 把自己定义为 agent/AI 应用的 active observability 与 evalua
 
 Braintrust 对 evaluation 的核心心智模型是 **Data + Task + Scorers/Classifiers → Experiment**。每个 test case 是一条 trace：根 `eval` span 包含 input/expected/final scores，`task` span 包住被测应用代码，LLM、tool、score 等 span 继续嵌套。[Evaluate 概览](https://www.braintrust.dev/docs/evaluate)；[Trace anatomy](https://www.braintrust.dev/docs/instrument)
 
-官方文档把 experiment 称为 immutable、comparable record；准确理解应是“正常工作流把每次 run 当作不可变比较点”。公开 API/SDK 仍允许 patch/delete Experiment、以 `update: true` 继续同名 Experiment，以及 merge/update 已有 event，所以它不是存储层强制封存对象。具体证据见 [execution.md](execution.md) 与 [schema-and-migration.md](schema-and-migration.md)。
+官方文档把 experiment 称为 immutable、comparable record；准确理解应是“正常工作流把每次 run 当作不可变比较点”。公开 API/SDK 仍允许 patch/delete Experiment、以 `update: true` 继续同名 Experiment，以及 merge/update 已有 event，所以它不是存储层强制封存对象。具体证据见 [execution.md](execution/README.md) 与 [schema-and-migration.md](schema-and-migration/README.md)。
 
 ## 原生对象总图
 
@@ -46,11 +58,11 @@ Feedback ───────────────────────�
 
 ## 研究页导航
 
-- [layers.md](layers.md)：Braintrust 自己的 control plane、data plane、API、Brainstore、resource 与 owner/依赖关系。
-- [execution.md](execution.md)：`bt eval` 到 SDK scheduler、span 写入、flush、summary、进程完成与 partial/retry/resume。
-- [storage.md](storage.md)：公开 type/class、event envelope、版本历史、物理存储、持久派生值、index 与本地 cache。
-- [reading-and-comparison.md](reading-and-comparison.md)：历史重开、BTQL/SQL、filter/group/align/compare、缺测与 UI/CLI render。
-- [schema-and-migration.md](schema-and-migration.md)：对象版本、wire version、兼容 reader、自托管数据库/WAL/Terraform 升级，以及未公开边界。
+- [layers.md](layers/README.md)：Braintrust 自己的 control plane、data plane、API、Brainstore、resource 与 owner/依赖关系。
+- [execution.md](execution/README.md)：`bt eval` 到 SDK scheduler、span 写入、flush、summary、进程完成与 partial/retry/resume。
+- [storage.md](storage/README.md)：公开 type/class、event envelope、版本历史、物理存储、持久派生值、index 与本地 cache。
+- [reading-and-comparison.md](reading-and-comparison/README.md)：历史重开、BTQL/SQL、filter/group/align/compare、缺测与 UI/CLI render。
+- [schema-and-migration.md](schema-and-migration/README.md)：对象版本、wire version、兼容 reader、自托管数据库/WAL/Terraform 升级，以及未公开边界。
 
 ## 与 NiceEval 的相似、差异与可吸收约束
 

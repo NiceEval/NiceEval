@@ -7,11 +7,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
+// @feature docs/feature/experiments/README.md
 
-// @concord-case necase_FEJ6CWPP9EWWY2F6
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-accept-reanchor
-// @concord-test-file e2e/runner/test/accept-reanchor.test.ts
-test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance [necase_FEJ6CWPP9EWWY2F6]", async () => {
+test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
   await runnerE2E.case(
     "accept-reanchor",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

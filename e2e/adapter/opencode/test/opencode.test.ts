@@ -147,11 +147,9 @@ function expectCommandDetail(
     expect(stream.truncation.omittedSafeUtf8Bytes).toBeGreaterThanOrEqual(0);
   }
 }
+// @feature docs/feature/adapters/README.md
 
-// @concord-case necase_A6ZPA7TVDX4T0MCR
-// @concord-owner docs/engineering/testing/e2e/adapter/opencode.md#adapter-opencode-live-compatibility
-// @concord-test-file e2e/adapter/opencode/test/opencode.test.ts
-it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回 [necase_A6ZPA7TVDX4T0MCR]", async () => {
+it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   await requireDocker();
 

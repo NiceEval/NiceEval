@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: compose-orphan-check-misses-resource-groups
+title: compose 资源组逃过孤儿核对与 prune
+createdAt: 2026-07-31T09:21:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/compose-orphan-check-misses-resource-groups.md
+  commit: dc518d242fca32bc67b9c7ff2fdb6e58ba22676e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**:已修(2026-07-31)。契约先补齐:`docs/feature/sandbox/architecture.md`
+      孤儿核对新增「核对与收回以 case 的资源组为单位」,`cli.md` 的 `list --orphans` / `prune`
+      同步声明整组列出与整组销毁,覆盖类别登记在 `docs/engineering/testing/unit/sandbox.md`「孤儿核对与
+      prune」。代码落点三处:"
+    proof: []
+    source:
+      path: memory/compose-orphan-check-misses-resource-groups.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:9c7f8d272476270b0a20774f149adeb690c2327a1c5ff269e7ee28b30f70cab0
+---
 # compose 资源组逃过孤儿核对与 prune
 
 **现象**:MemoryBench 批跑被 SIGINT 后残留 4 个 `ne-tb-*` 容器与 5 个网络;`niceeval sandbox list --orphans` 报 `No orphan sandboxes.`、`sandbox prune` 无可收、`sandbox list` 报 `No kept sandboxes.`,只能手工 `docker rm -f` 收场(2026-07-31 真机)。prune 正是文档给用户的「跑崩之后收容器」官方手段,却对 compose case 全盲。

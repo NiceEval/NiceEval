@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: theme-as-separate-artifact
+title: 主题上提为独立可分发制品；seriesPins 留在报告
+createdAt: 2026-07-25T17:44:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/theme-as-separate-artifact.md
+  commit: f76dc11143cb3ac726bf45313758a9a8bd2bec81
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 主题上提为独立可分发制品；seriesPins 留在报告
 
 **日期**：2026-07-25

@@ -39,6 +39,6 @@
 它要求 binary base64、整体 encode/decode 与 append 重写，已经与 L7–L10 的增量 Content/collection 路径和真实失败语义冲突。
 
 外部事实与版本证据见
-[便携格式](../../research/record-storage/portable-formats.md)、
-[Artifact systems](../../research/record-storage/artifact-systems.md) 和
-[Eval platforms](../../research/record-storage/eval-platforms.md)。
+[便携格式](../../research/record-storage/portable-formats/README.md)、
+[Artifact systems](../../research/record-storage/artifact-systems/README.md) 和
+[Eval platforms](../../research/record-storage/eval-platforms/README.md)。

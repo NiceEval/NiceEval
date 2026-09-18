@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: framework-e2e
+title: 框架工具自身的 E2E 对照
+createdAt: 2026-08-06
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/framework-e2e/README.md
+  commit: 71929e5689b00138d13cd9c6b396ecf6d72a4d3e
+kind: research
+sources: []
+---
 # 框架工具自身的 E2E 对照
 
 本组研究只回答一个具体问题：Vite、Vitest 与 Playwright 测试自己时，通用 runner 管到哪里，产品专属 harness 又从哪里开始。

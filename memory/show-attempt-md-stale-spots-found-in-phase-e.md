@@ -1,8 +1,33 @@
 ---
-name: show-attempt-md-stale-spots-found-in-phase-e
-description: Phase H 待办清单——docs/feature/reports/show/attempt.md 里三处仍是旧 attemptOverviewText 时代的叙述,与新 AttemptDetail 组件族实际输出不符
-metadata:
-  type: project
+format: concord.document/v1
+id: show-attempt-md-stale-spots-found-in-phase-e
+title: show-attempt-md-stale-spots-found-in-phase-e
+createdAt: 2026-07-19T16:44:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-attempt-md-stale-spots-found-in-phase-e.md
+  commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
+description: Phase H 待办清单——docs/feature/reports/show/attempt.md 里三处仍是旧
+  attemptOverviewText 时代的叙述,与新 AttemptDetail 组件族实际输出不符
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 已修(2026-07-24 复核)"
+    proof: []
+    source:
+      path: memory/show-attempt-md-stale-spots-found-in-phase-e.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:96b6b2ae72d1cb86d325d24ca15e4153a090bcaf0e3345c7cc80bd67d7cea8d9
 ---
 
 Phase E(`show @locator` 接线到 `standardAttemptPage`,删除旧 `attemptOverviewText`)过程中,对照

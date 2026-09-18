@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: turn-retry-backoff-releases-experiment-serial-lock
+title: "turn 级重试退避释放实验级串行锁,击穿 maxConcurrency: 1 的串行契约"
+createdAt: 2026-07-23T10:32:00+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/turn-retry-backoff-releases-experiment-serial-lock.md
+  commit: 3167664e3d294295d243ba707716b2e22d1a887a
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [turn-retry-backoff-releases-experiment-serial-lock](turn-retry-backoff-r\
+      eleases-experiment-serial-lock.md) — turn 级重试退避把实验级 runSem
+      一并释放,`maxConcurrency: 1` 的串行契约被击穿(下游 mempal 记忆回存竞态、running=2 实证);修法=退避只释放
+      globalSem,退避期间继续持有 runSem(裁决见 experiment-gate-tenure-ruling,commit
+      `9d7b352`+`6953d51`);MemoryBench 真机回归三条判据全过"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # turn 级重试退避释放实验级串行锁,击穿 maxConcurrency: 1 的串行契约
 
 ## 现象

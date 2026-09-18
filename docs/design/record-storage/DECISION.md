@@ -104,6 +104,6 @@ latency、throughput、database growth 或 Git growth SLO。future revision 只�
 0.13.x bytes，也不提供 converter。
 
 挑战过程与已有 crash matrix 输入见
-[SQLite 独立设计挑战](../../research/record-storage/design-challenge.md)与
-[Attachment aggregate Content budget 挑战](../../research/record-storage/aggregate-content-budget-challenge.md)、
-[无固定 logical Content 容量挑战](../../research/record-storage/unbounded-logical-content-challenge.md)。
+[SQLite 独立设计挑战](../../research/record-storage/design-challenge/README.md)与
+[Attachment aggregate Content budget 挑战](../../research/record-storage/aggregate-content-budget-challenge/README.md)、
+[无固定 logical Content 容量挑战](../../research/record-storage/unbounded-logical-content-challenge/README.md)。

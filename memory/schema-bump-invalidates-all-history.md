@@ -1,3 +1,40 @@
+---
+format: concord.document/v1
+id: schema-bump-invalidates-all-history
+title: 升 schemaVersion 会把存量语料整批打成不可携带
+createdAt: 2026-07-30T19:26:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/schema-bump-invalidates-all-history.md
+  commit: c07c21fc370eaca5791b6ab150c737c78853ebbe
+kind: memory
+memoryKind: problem
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 被后续裁决替代
+      [schema-bump-invalidates-all-history](schema-bump-invalidates-all-history\
+      .md) — 旧 Results 曾用全局升版让存量整体失效；新 Record 改为稳定 core、局部 channel schema 与
+      carry fence，见本区新裁决 [兼容矩阵](../docs/feature/record/architecture.md#兼容矩阵)
+      [schemaVersion 历史存档](results-schema-version-history.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-08-11
+supersession:
+  statement: "- 被后续裁决替代
+    [schema-bump-invalidates-all-history](schema-bump-invalidates-all-history.m\
+    d) — 旧 Results 曾用全局升版让存量整体失效；新 Record 改为稳定 core、局部 channel schema 与 carry
+    fence，见本区新裁决"
+  source:
+    path: memory/INDEX.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 升 schemaVersion 会把存量语料整批打成不可携带
 
 > 状态（2026-08-11）：本页描述旧 Results Format，已被新 Record 裁决替代。新格式从 `niceeval.record/v1` 首次正式发布后才承担未来兼容，并把 core、channel schema、FactRequirement 与 carry fence 分开；见 [兼容矩阵](../docs/feature/record/architecture.md#兼容矩阵) 与 [schemaVersion 历史存档](results-schema-version-history.md)。

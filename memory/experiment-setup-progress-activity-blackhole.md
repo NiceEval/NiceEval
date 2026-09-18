@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: experiment-setup-progress-activity-blackhole
+title: experiment-setup-progress-activity-blackhole
+createdAt: 2026-07-18T10:34:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-setup-progress-activity-blackhole.md
+  commit: 99b1a3279151db5fbb3206586fca5a130a28ffe1
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [experiment-setup-progress-activity-blackhole](experiment-setup-progress-\
+      activity-blackhole.md) — 实验级 setup 全程零输出(状态行全员 queued 像卡死):runner 不为 setup
+      发布事件且 cli.md 无显示契约,`ctx.progress`→`reportActivity` 因四个渲染器都没实现可选
+      `activity()` 钩子被静默丢弃;修为 runner 发布 `experiment-hook` 起止事件 + 运行级 active 行 +
+      agent/ci 起止行,human 实现 `activity()`(feedback 各文件 + run.ts)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # experiment-setup-progress-activity-blackhole
 
 **现象**:`niceeval exp` 跑到实验级 `setup` 期间界面完全无输出——状态行显示 `0 running · N queued`,极像调度卡死;即使 setup 钩子老老实实调了 `ctx.progress(...)`,终端上也一个字都不出现(真实 repo `coding-agent-memory-evals` 实测,2026-07-18)。

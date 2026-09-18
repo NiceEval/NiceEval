@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: judge-precheck-degrades-not-gates
+title: 裁决:judge 预检失败降级为只作废含 judge 的 eval,不拦整次运行
+createdAt: 2026-07-30T12:08:37+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/judge-precheck-degrades-not-gates.md
+  commit: c632b20463a7cb9408ab0463012f152132894966
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:judge 预检失败降级为只作废含 judge 的 eval,不拦整次运行
 
 ## 现象

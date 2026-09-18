@@ -3,11 +3,10 @@
 import { expect, test } from "vitest";
 import { inspectionE2E } from "./support.ts";
 
-// @concord-case necase_NRD2EXM6620FRXHN
-// @concord-owner docs/engineering/testing/e2e/inspection.md#show-terminal-review
-// @concord-regression memory/show-experiment-heading-detached-from-table.md
-// @concord-test-file e2e/inspection/test/show-experiment-spacing.test.ts
-test.concurrent("Show 把 Experiment 标题和自己的内容排在同一段 [necase_NRD2EXM6620FRXHN]", async () => {
+// @feature docs/feature/inspection/README.md
+// @regression memory/show-experiment-heading-detached-from-table.md
+
+test.concurrent("Show 把 Experiment 标题和自己的内容排在同一段", async () => {
   await inspectionE2E.case(
     "show-experiment-spacing",
     async ({ commands: { niceeval } }) => {

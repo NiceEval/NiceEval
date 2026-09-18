@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: copysnapshots-deletion-rejected-carried-entries
+title: 设计裁决:否决删除 `copySnapshots`——携带条目让子集 cp 结构性不可行
+createdAt: 2026-07-22T12:44:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/copysnapshots-deletion-rejected-carried-entries.md
+  commit: d22e666bcebc5aeafd9f137d97f0d3f1da0988cf
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:否决删除 `copySnapshots`——携带条目让子集 cp 结构性不可行
 
 ## 裁决

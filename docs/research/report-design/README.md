@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: report-design
+title: Report design 产品研究
+createdAt: 2026-08-14
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/report-design/README.md
+  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
+kind: research
+sources: []
+---
 # Report design 产品研究
 
 本方向研究已经得到语义结果之后，表格、图表和报告网站怎样组织信息、控制交互状态并投影到具体媒介。
@@ -15,7 +27,7 @@
 | Vercel `design.md` | 报告网站怎样从读者任务、证据关系进入页面结构与视觉验收 | [Vercel `design.md`](vercel/README.md) |
 
 两者都不具备 Run、durable result store、历史 reader 或结果 migration 闭环。
-具体不适格证据分别见 [TanStack 适格性审查](tanstack/eligibility.md) 与 [Vercel 适格性审查](vercel/eligibility.md)。
+具体不适格证据分别见 [TanStack 适格性审查](tanstack/eligibility/README.md) 与 [Vercel 适格性审查](vercel/eligibility/README.md)。
 
 ## 与 Record → Report 的边界
 

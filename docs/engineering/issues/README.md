@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: issues
+title: GitHub Issue 与 Memory
+createdAt: 2026-08-24T17:59:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/issues/README.md
+  commit: 52ab27a21d81d7ff66fc2e4d07efb64832bc7392
+kind: engineering
+---
 # GitHub Issue 与 Memory
 
 GitHub Issue 跟踪公开、已脱敏且需要 NiceEval maintainer 后续处理的工作项。

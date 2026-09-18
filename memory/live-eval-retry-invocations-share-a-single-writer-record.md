@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: live-eval-retry-invocations-share-a-single-writer-record
+title: Live Eval 补跑 Invocation 共享单写者 Record
+createdAt: 2026-08-13T16:19:40+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-eval-retry-invocations-share-a-single-writer-record.md
+  commit: 8b111232d392814031227503a87dec451c0afcf8
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [live-eval-retry-invocations-share-a-single-writer-record](live-eval-retr\
+      y-invocations-share-a-single-writer-record.md) — 同一 Repo 的多个 Eval 补跑
+      Invocation 用并行 CLI 写同一个 Record 会确定性触发 RecordWriterBusy；仅补跑串行，主
+      Invocation/Repo batch 并发不变"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Live Eval 补跑 Invocation 共享单写者 Record
 
 ## 现象

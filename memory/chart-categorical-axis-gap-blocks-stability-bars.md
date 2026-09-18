@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: chart-categorical-axis-gap-blocks-stability-bars
+title: 已修：Chart 分类轴与非 scatter mark 曾让官方图表不可用
+createdAt: 2026-07-28T17:39:14+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/chart-categorical-axis-gap-blocks-stability-bars.md
+  commit: 7fcffc4115ec0cb75c1ab09a1c2520100d36c261
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 已修：Chart 分类轴与非 scatter mark 曾让官方图表不可用"
+    proof: []
+    source:
+      path: memory/chart-categorical-axis-gap-blocks-stability-bars.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:aa557f5eeeac9aa939eb11d9c5aa443a1f3886053212a13568377062a88bf65c
+---
 # 已修：Chart 分类轴与非 scatter mark 曾让官方图表不可用
 
 - **现象**：`niceeval show --report stability` 里判定构成堆叠柱整块显示 `no data`；

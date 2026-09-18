@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: judge-missing-key-unavailable-not-silent
+title: 设计裁决:judge 缺 key 记 unavailable,不静默消失
+createdAt: 2026-07-14T22:32:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/judge-missing-key-unavailable-not-silent.md
+  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:judge 缺 key 记 unavailable,不静默消失
 
 - **裁决**(2026-07-14):judge 没有解析到模型 / API key 时,该条断言记录为 `AssertionResult { unavailable: true, reason }`——soft 不参与得分但保留在记录里,`.gate()` 的 judge 使 attempt `errored`。同一 `unavailable` 态同时承载证据通道不完整时的负断言 / 上限断言(EvidenceCoverage,见 `docs/feature/adapters/architecture/evidence.md`)。契约落在 `docs/feature/scoring/library/judge.md`、`severity-and-verdict.md`、`scoring/cli.md`。

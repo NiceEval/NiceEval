@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: non-tty-pipe-narrow-table-width-fallback
+title: 非 TTY 管道下 show 表格窄折行是宽度回退,不是渲染缺陷
+createdAt: 2026-07-23T22:04:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/non-tty-pipe-narrow-table-width-fallback.md
+  commit: 9607515ef3e79b389ebdf9b2293c549aae452d20
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 非 TTY 管道下 show 表格窄折行是宽度回退,不是渲染缺陷
 
 - **现象**:`node bin/niceeval.js show ... | head` 或任何纯管道(无 TTY)下,榜单/对照矩阵/用量表逐字符窄折行,和 docs 宽表示例完全不像,极易误判为渲染 bug。

@@ -1,17 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: view-hard-refresh-duplicates-attempt-overlay
 title: Hard refresh renders the same Attempt as its background and dialog
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - Installed authorization and snapshot reds nered_1GH2D3JYA68VAKD2 / nered_WFZ2XWRF2BECH78C; complete takeovers netake_0SVB9XS4NCGH4WFE / netake_YQZGSWP388S90J9B on be39d8a6 candidate, 14 current-source observations all pass and cleanup, independently accepted.
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0","e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
 promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - Installed authorization and snapshot reds nered_1GH2D3JYA68VAKD2 / nered_WFZ2XWRF2BECH78C; complete takeovers netake_0SVB9XS4NCGH4WFE / netake_YQZGSWP388S90J9B on be39d8a6 candidate, 14 current-source observations all pass and cleanup, independently accepted.
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0","e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
+    proof:
+      - Installed authorization and snapshot reds nered_1GH2D3JYA68VAKD2 /
+        nered_WFZ2XWRF2BECH78C; complete takeovers netake_0SVB9XS4NCGH4WFE /
+        netake_YQZGSWP388S90J9B on be39d8a6 candidate, 14 current-source
+        observations all pass and cleanup, independently accepted.
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0","e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
+    source:
+      path: memory/view-hard-refresh-duplicates-attempt-overlay.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:54db24e9e15678757d73a97206d830d19a66a8ab255b044cd02e69035d06cdc8
 ---
 An authenticated reader opens an Attempt from Results and hard-refreshes its URL. The browser can preserve history.state.usr.background while React refs restart. InsightShell initializes stablePage from the current outlet, which is already AttemptRoute, then renders both stablePage.current and outlet. Two Radix dialogs can hide each other instead of presenting one Attempt above a Results page.
 

@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: attempt-source-unlocated-conversation-unstyled-and-escape-leak
+title: attempt-source-unlocated-conversation-unstyled-and-escape-leak
+createdAt: 2026-07-23T12:33:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-source-unlocated-conversation-unstyled-and-escape-leak.md
+  commit: 4d739a0ed39552083604da7b1355955d6b7b6698
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [attempt-source-unlocated-conversation-unstyled-and-escape-leak](attempt-\
+      source-unlocated-conversation-unstyled-and-escape-leak.md) —
+      AttemptSource「Other conversation」兜底区文字墙 + 工具结果 `\\n` 字面直出:`.nre-conv-*`
+      按容器限定没盖到第三容器、`compact()` 在 stringify 之后才收口;修为第三容器补 CSS + 先收口后字符串化;教训=共享
+      renderer 进新容器 CSS 不自动跟、自由文本收口必须在序列化前"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # attempt-source-unlocated-conversation-unstyled-and-escape-leak
 
 ## 现象

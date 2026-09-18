@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: active-attempt-publication-omitted-from-reuse
 title: Active Attempt publication is omitted from default Inspection and reuse
 createdAt: 2026-09-01
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
 promotions: []
+history: []
 ---
 ## Problem
 

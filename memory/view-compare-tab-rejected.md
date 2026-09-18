@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: view-compare-tab-rejected
+title: 设计裁决:不做 view 内建 Compare tab 与 Eval 目录页(roadmap「View 增强」删除)
+createdAt: 2026-07-21T19:29:34+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-compare-tab-rejected.md
+  commit: aa267ec0103a5482f7b1707dfed4307d5b3a738d
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:不做 view 内建 Compare tab 与 Eval 目录页(roadmap「View 增强」删除)
 
 ## 裁决

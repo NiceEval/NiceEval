@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: fs-promise-watch-starts-on-iteration
 title: 文件 ready 屏障应先开始监听再检查状态
 createdAt: 2026-09-05
-kind:
-  type: insight
-  state: current
+kind: memory
+memoryKind: insight
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 `node:fs/promises.watch()` 返回惰性的异步生成器；调用本身不会开始监听。先创建 iterator，再次 access，再进入 for-await，仍然可能漏掉在第二次 access 与首次 next 之间发布的 ready 文件。
 

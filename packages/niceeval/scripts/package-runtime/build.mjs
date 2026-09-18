@@ -52,6 +52,7 @@ async function assertPublicEntryClosure() {
 
 function isRuntimeSource(file) {
   return (file.endsWith(".ts") || file.endsWith(".tsx")) &&
+    !file.endsWith(".d.ts") &&
     !file.startsWith(`view${process.platform === "win32" ? "\\" : "/"}app${process.platform === "win32" ? "\\" : "/"}`) &&
     !file.endsWith(".test.ts") &&
     !file.endsWith(".test.tsx") &&

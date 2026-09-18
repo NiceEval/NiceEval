@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: deepseek-judge-thinking-mode-tool-choice
+title: judge.autoevals.closedQA 在纯 DeepSeek 网关下必错:"Thinking mode does not
+  support this tool_choice"
+createdAt: 2026-07-03T05:24:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/deepseek-judge-thinking-mode-tool-choice.md
+  commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # judge.autoevals.closedQA 在纯 DeepSeek 网关下必错:"Thinking mode does not support this tool_choice"
 
 **现象**：`examples/zh/eval/openllmetry`(应用 `.env` 只有 `OPENAI_API_KEY`/`OPENAI_BASE_URL` 直指

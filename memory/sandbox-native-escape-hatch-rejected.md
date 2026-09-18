@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: sandbox-native-escape-hatch-rejected
+title: 设计裁决:否决 sandbox.native 原生出口与「透明转发未知方法」
+createdAt: 2026-07-31T10:34:12+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-native-escape-hatch-rejected.md
+  commit: a7584de3ee82cc87ea0b5714e9f889ff817c0eb5
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:否决 sandbox.native 原生出口与「透明转发未知方法」
 
 **裁决**(2026-07-31):不给 eval / Layer 作者暴露 `sandbox.native`;不承诺「包装层透明转发所有未知方法」这种公共语义。采纳的窄契约是:core 已知、但不属于中性 `Sandbox` 接口的内部能力(suspend/resume 这类)必须显式建模为 capability 成员,所有包装/装饰实现有义务保留并转发它们(落 `docs/feature/sandbox/architecture.md` 实现纪律)。

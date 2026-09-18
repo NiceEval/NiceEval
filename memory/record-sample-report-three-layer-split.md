@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: record-sample-report-three-layer-split
+title: 裁决:Results 拆成 Record / Sample / Reports 三层,并整套改名
+createdAt: 2026-07-25T21:41:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/record-sample-report-three-layer-split.md
+  commit: c188df9970f834fd776468d1a1911ca39744d7bd
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:Results 拆成 Record / Sample / Reports 三层,并整套改名
 
 **日期**:2026-07-25

@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: sdk-stream-transformers-missing-canonical-tool
+title: SDK 流转换器不发规范工具名,规范名断言在该路径静默失配
+createdAt: 2026-07-09T15:57:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sdk-stream-transformers-missing-canonical-tool.md
+  commit: 060a6a05b14b348d24d2ca881bcad13cc9049c42
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修
+      [sdk-stream-transformers-missing-canonical-tool](sdk-stream-transformers-missing-canonical-tool.md)
+      — `fromCodexThreadEvents` 曾不发 `tool` 规范名,`calledTool("shell")` 在 SDK
+      流路径静默失配(修在 `src/agents/sdk-streams.ts`;`fromClaudeSdkMessages` 同类未修)'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # SDK 流转换器不发规范工具名,规范名断言在该路径静默失配
 
 ## 现象

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: test-budget-inverted-pyramid
+title: 设计裁决:测试预算按「静默出错的代价」分配,不按代码量或好测程度
+createdAt: 2026-07-13T14:53:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/test-budget-inverted-pyramid.md
+  commit: b66929aff97305dc446afae83772ab8c8ef2d3f6
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:测试预算按「静默出错的代价」分配,不按代码量或好测程度
 
 **裁决**:判定层(评分/断言/缓存键/调度)必须有直接测试;展示层测薄可以接受。行覆盖率不作为指标,也不作为验收依据。落成 [`docs/engineering/testing/unit/README.md`](../docs/engineering/testing/unit/README.md)。

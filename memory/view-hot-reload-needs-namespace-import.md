@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: view-hot-reload-needs-namespace-import
+title: 已修:view 热重载断在装载层——watch 闭集对、模块缓存未失效
+createdAt: 2026-07-28T21:12:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-hot-reload-needs-namespace-import.md
+  commit: 06588ff8f6bdfcaf2ce303d328f2504077829299
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 已修:view 热重载断在装载层——watch 闭集对、模块缓存未失效"
+    proof: []
+    source:
+      path: memory/view-hot-reload-needs-namespace-import.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:5fcfa4216d4de2deb78574a89e4a21795990a9e2128ab20cbbfecbf9e015de85
+---
 # 已修:view 热重载断在装载层——watch 闭集对、模块缓存未失效
 
 ## 现象

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: view-tool-io-dropped-not-adapter-bug
+title: view 工具出入参「看不到」是渲染层丢的,不是 adapter / 官方 SDK 的问题
+createdAt: 2026-07-05T12:41:13+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-tool-io-dropped-not-adapter-bug.md
+  commit: f28c6b2278c1a7e13f47d5dcb5243406af9e1e84
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # view 工具出入参「看不到」是渲染层丢的,不是 adapter / 官方 SDK 的问题
 
 ## 现象

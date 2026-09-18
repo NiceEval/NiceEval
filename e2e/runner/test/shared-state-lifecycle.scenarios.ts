@@ -22,12 +22,10 @@ function ownerTokenFromPublicRecoveryInspection(stderr: string): string {
   return match![1]!;
 }
 
-export function registerSharedStateLifecycleOwner(): void {
-// @concord-case necase_400VHE4GK3DNPNPC
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle
-// @concord-regression memory/concurrent-run-publication-recovery-race.md
-// @concord-test-file e2e/runner/test/shared-state-lifecycle.test.ts
-test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup [necase_400VHE4GK3DNPNPC]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
+// @regression memory/concurrent-run-publication-recovery-race.md
+// @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup", async () => {
   await runnerE2E.case(
     "shared-state-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -72,11 +70,9 @@ test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允�
     },
   );
 });
-
-// @concord-case necase_JDW5GFSRDDAP19P8
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle
-// @concord-test-file e2e/runner/test/shared-state-lifecycle.test.ts
-test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState [necase_JDW5GFSRDDAP19P8]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
+// @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState", async () => {
   await runnerE2E.case(
     "shared-state-reuse-lifecycle",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -156,11 +152,9 @@ test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 
     },
   );
 });
-
-// @concord-case necase_FFVQ9YEXTRJGGVA5
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle
-// @concord-test-file e2e/runner/test/shared-state-lifecycle.test.ts
-test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复 [necase_FFVQ9YEXTRJGGVA5]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
+// @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复", async () => {
   await runnerE2E.case(
     "shared-state-pool-retire-cleanup-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -222,11 +216,9 @@ test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState
     },
   );
 });
-
-// @concord-case necase_PV16QF2DMTKR229Z
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-lifecycle
-// @concord-test-file e2e/runner/test/shared-state-lifecycle.test.ts
-test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复 [necase_PV16QF2DMTKR229Z]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
+// @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复", async () => {
   await runnerE2E.case(
     "shared-state-fresh-cleanup-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -284,4 +276,3 @@ test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，�
     },
   );
 });
-}

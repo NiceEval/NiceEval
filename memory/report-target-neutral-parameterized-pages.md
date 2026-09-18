@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-target-neutral-parameterized-pages
+title: 报告下钻翻案:实体特权页收敛为中立参数化页 + ReportTarget
+createdAt: 2026-07-31T09:42:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-target-neutral-parameterized-pages.md
+  commit: b24b22d20da35bbb4f49adb4047376d5981bb67e
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 报告下钻翻案:实体特权页收敛为中立参数化页 + ReportTarget
 
 - **裁决**(2026-07-31):报告 page 只有一种形状 `PageDefinition{id,title,navigation,params?,load?,render}`。`params{encode,decode,enumerate}` 声明参数化页,`load` 声明输入来源;下钻统一为 `ReportTarget{page,params}` 经宿主唯一通道 `ctx.href(target)` 换 URL,换不出返回 undefined 转纯文本。全库唯一默认规则 `targetOfRefs()`:refs 恰好一个才给 attempt 目标,多 refs 不猜。view 路由收敛为 `#/<pageId>` 与 `#/<pageId>/<key>`,静态导出按各参数化页 `enumerate(有效根)` 物化 `<pageId>/<key>.html`。新增 `standardExperimentPage` + `ExperimentDetails`(load 就是 `sample.scope({experiments})`),`ExperimentScatter` 点目标默认指向它。

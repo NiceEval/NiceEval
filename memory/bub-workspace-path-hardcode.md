@@ -1,3 +1,34 @@
+---
+format: concord.document/v1
+id: bub-workspace-path-hardcode
+title: bub agent workspace 路径不能 hardcode(同 $HOME 的坑，但漏了 workspace）
+createdAt: 2026-07-02T14:51:50+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bub-workspace-path-hardcode.md
+  commit: 060a37aee41976739b9771304b98046dbd97f7ad
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**：`src/agents/bub.ts` 的 `setup()` 里 `workspace = sb.workdir`（不要
+      hardcode 常量），`send()` 里 `sessionInfo` 缺省兜底也要用 `sb.workdir`
+      而不是写死路径。已修复（2026-07-02）。"
+    proof: []
+    source:
+      path: memory/bub-workspace-path-hardcode.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:6b090f0ea85bf54b72469a7b7ae5247c17b74afc2a6bfdb2df6d12b84eee4084
+---
 # bub agent workspace 路径不能 hardcode(同 $HOME 的坑，但漏了 workspace）
 
 **现象**：coding-agent-memory-evals 仓库跑 `memory/terminal-cancel-async-tasks` eval，agent=bub，sandbox=e2b，`bub run` 最终 `RuntimeError: max_steps_reached=50` 失败。看 events.json 发现 agent 前 7 次工具调用全是 `pwd`/`find /` 在瞎找文件——`ls -la && sed -n run.py` 直接 `FileNotFoundError`，因为 bub 的 shell 起始 cwd 是 `/home/sandbox/workspace`，但 e2b 的 `uploadDirectory` 实际落地在 `E2B_WORKDIR=/home/user/workspace`（两者不同）。

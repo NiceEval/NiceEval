@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: show-view-host-unit-tests-retired-to-e2e
+title: show/view 宿主单测退役：用法错误矩阵归 E2E，report 组件数据测试保留
+createdAt: 2026-07-28T21:47:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-view-host-unit-tests-retired-to-e2e.md
+  commit: 022c0adc66fe133f6acbc3812c7a5f6e9253e91f
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # show/view 宿主单测退役：用法错误矩阵归 E2E，report 组件数据测试保留
 
 **裁决（2026-07-28，用户定案）**

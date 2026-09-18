@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: codex-responses-lite-custom-provider-hides-web-search
+title: Codex Responses Lite + custom provider 不暴露 Web Search
+createdAt: 2026-08-13T17:09:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-responses-lite-custom-provider-hides-web-search.md
+  commit: 4f2380b6b2b176abf0c93d6fb9c96cc67aaa21f5
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修
+      [codex-responses-lite-custom-provider-hides-web-search](codex-responses-lite-custom-provider-hides-web-search.md)
+      — Codex 0.144.1 的 custom Responses Lite provider 即使配置 `web_search =
+      "live"` 也过不了 standalone provider 门控；configFile A/B 改用 provider-neutral 的
+      `features.shell_tool` 工具面差异'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Codex Responses Lite + custom provider 不暴露 Web Search
 
 ## 现象

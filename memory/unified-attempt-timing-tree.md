@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: unified-attempt-timing-tree
+title: 设计裁决:`--timing` 统一 phase/hook/command/turn/OTel 时间树
+createdAt: 2026-07-14T18:04:37+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/unified-attempt-timing-tree.md
+  commit: d0bdf2a529aa2c0930c687946054f2d8f6296c59
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:`--timing` 统一 phase/hook/command/turn/OTel 时间树
 
 **裁决**(2026-07-14,用户继续挑战「只展开 setup hook、看不到 hook 内真实 shell」「OTel 时间只在 execution」的诊断断层):

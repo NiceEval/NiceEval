@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: show-json-pipe-truncated-at-128k
+title: show --json 输出进管道时在 128KB 处截断
+createdAt: 2026-07-30T14:54:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-json-pipe-truncated-at-128k.md
+  commit: 5b06d9bd2e5722e9618a4f41e8823e43e12adb9c
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # show --json 输出进管道时在 128KB 处截断
 
 ## 现象

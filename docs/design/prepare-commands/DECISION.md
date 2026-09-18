@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md)
 
 ---
 
@@ -12,7 +12,7 @@
 
 ## 裁决
 
-采纳 [PLAN-1](PLAN-1/README.md):官方内置命令库(`checkout()` / `installTool()`)加 `--dry` 复用成本视图。
+采纳 [PLAN-1](plans/plan-1/README.md):官方内置命令库(`checkout()` / `installTool()`)加 `--dry` 复用成本视图。
 定稿契约在 [Feature · 准备工具](../../feature/sandbox/prepare-commands.md);本页只保留选型理由。
 
 ## 为什么否决另两个候选

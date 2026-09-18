@@ -1,17 +1,19 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: report-result-cell-exposes-float-noise-and-unlabeled-coverage
 title: Report 结果格泄露浮点尾数并混淆覆盖度
 createdAt: 2026-08-24T13:45:27+08:00
-kind:
-  type: problem
-  state: open
-promotions:
-  - kind: feature
-    current: []
-    history:
-      - target: docs/feature/reports/library.md#中立组件与官方组合组件
-        commit: 50cf5fce5ff0189caf6c55f27717f3b162f00b3d
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: retire-promotion
+    reason: 保留原 promotion history；迁移为历史 retire 记录。
+    ref: docs/feature/reports/library.md#中立组件与官方组合组件
+    commit: 50cf5fce5ff0189caf6c55f27717f3b162f00b3d
 ---
 # Report 结果格泄露浮点尾数并混淆覆盖度
 

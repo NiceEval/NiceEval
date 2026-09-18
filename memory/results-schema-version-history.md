@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: results-schema-version-history
+title: Results Format schemaVersion 1–18 历史台账
+createdAt: 2026-07-14T06:20:18Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/results-schema-version-history.md
+  commit: d55d3c3ba405b5ad50a51140d312aae0933e88fd
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Results Format schemaVersion 1–18 历史台账
 
 核对日期：2026-08-11

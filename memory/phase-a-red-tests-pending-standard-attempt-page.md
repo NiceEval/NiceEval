@@ -1,8 +1,34 @@
 ---
-name: phase-a-red-tests-pending-standard-attempt-page
-description: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先 pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
-metadata:
-  type: project
+format: concord.document/v1
+id: phase-a-red-tests-pending-standard-attempt-page
+title: phase-a-red-tests-pending-standard-attempt-page
+createdAt: 2026-07-19T14:28:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/phase-a-red-tests-pending-standard-attempt-page.md
+  commit: 97be5b9c269f1a02056989d917769917c9cdf6be
+description: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先
+  pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先
+      pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
+    proof: []
+    source:
+      path: memory/phase-a-red-tests-pending-standard-attempt-page.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:7ef1b482edb65439949a17bc61f4883f2157822f1404c299e83c13d5ea11e26d
 ---
 
 `plan/report-pages-attempt-detail-alignment.md` 的 Phase A（统一 report definition、page context、runtime facade）落地后，`pnpm test` 有 3 个测试保持红，且是有意留红,不是回归：

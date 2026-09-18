@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: drive-frame-stream-reducer-variance
+title: driveFrameStream 单型参时 reducer 与传输帧联合类型不兼容
+createdAt: 2026-07-04T10:33:37+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/drive-frame-stream-reducer-variance.md
+  commit: 6d7e752f4de25f32082d8b71d1d11164c55901bf
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # driveFrameStream 单型参时 reducer 与传输帧联合类型不兼容
 
 ## 现象

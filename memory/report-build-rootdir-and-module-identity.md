@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-build-rootdir-and-module-identity
+title: 编译 src/report/** 到 dist/report/**:rootDir 范围、unique symbol emit、模块身份三个坑
+createdAt: 2026-07-12T14:39:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-build-rootdir-and-module-identity.md
+  commit: 5c973a0a679e505551aba88007f389f9af771e28
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 编译 src/report/** 到 dist/report/**:rootDir 范围、unique symbol emit、模块身份三个坑
 
 落地 [[global-react-jsx-shim-rejected]] 裁决(把 package-owned report runtime 从「随包发

@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: config-delta-value-truncated-before-diff
+title: 已修 差异值在构造点被截到 80 字符，截断点常落在差异点之前
+createdAt: 2026-08-04T18:01:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/config-delta-value-truncated-before-diff.md
+  commit: 304f18cb471498aa10fba1805c243afa8d2fc037
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 已修 差异值在构造点被截到 80 字符，截断点常落在差异点之前"
+    proof: []
+    source:
+      path: memory/config-delta-value-truncated-before-diff.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:82e2cd56edcd6ad07442beafa4582361a01fbde5793450fce659f143f9fc01e2
+---
 # 已修 差异值在构造点被截到 80 字符，截断点常落在差异点之前
 
 - **现象**(2026-08-04，下游 compare/codex 复盘)：`--dry` 与 `--dry --json` 里 `config:sandboxLayer changed`、`plan:physical changed` 两条差异的 `from`/`to` 打印出来两侧完全相同，差异全被 `…` 吞掉；`niceeval accept` 落盘的 `acceptedFrom.differences` 与 `carriedAccepting` 留痕也是同一份被截断的字符串。用户拿着这份输出判断不了配置到底改了什么，只能去翻源码。

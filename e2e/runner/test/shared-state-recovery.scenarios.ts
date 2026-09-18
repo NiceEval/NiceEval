@@ -28,11 +28,9 @@ function heartbeatFromPublicRecoveryInspection(stderr: string): string {
   return heartbeatAt;
 }
 
-export function registerSharedStateRecoveryOwner(): void {
-// @concord-case necase_933F8H9VHA6V8153
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接 [necase_933F8H9VHA6V8153]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接", async () => {
   await runnerE2E.case(
     "shared-state-pause-resume-cancel",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -139,12 +137,10 @@ test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可
     },
   );
 });
-
-// @concord-case necase_7XAMTKFQJZ58EZQ5
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-regression memory/concurrent-run-publication-recovery-race.md
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder [necase_7XAMTKFQJZ58EZQ5]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @regression memory/concurrent-run-publication-recovery-race.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder", async () => {
   await runnerE2E.case(
     "shared-state-crash-recovery-aba",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -311,11 +307,9 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
     },
   );
 });
-
-// @concord-case necase_BXJ9903T6J56JE4K
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复 [necase_BXJ9903T6J56JE4K]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复", async () => {
   await runnerE2E.case(
     "shared-state-cleanup-failure-retains-lease",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -357,11 +351,9 @@ test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只
     },
   );
 });
-
-// @concord-case necase_KWHHT498E861HWMH
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation [necase_KWHHT498E861HWMH]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation", async () => {
   await runnerE2E.case(
     "shared-state-recovery-requires-declared-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -427,11 +419,9 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation 
     },
   );
 });
-
-// @concord-case necase_8JE0MDKWV5A2SWA2
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数 [necase_8JE0MDKWV5A2SWA2]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数", async () => {
   await runnerE2E.case(
     "shared-state-recovery-human-only-interface",
     async ({ commands: { niceeval } }) => {
@@ -465,11 +455,9 @@ test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全
     },
   );
 });
-
-// @concord-case necase_X1F0QN5F124T2HQH
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待者 [necase_X1F0QN5F124T2HQH]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待者", async () => {
   await runnerE2E.case(
     "shared-state-recovery-registration-before-free",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -550,11 +538,9 @@ export default defineExperiment({
     },
   );
 });
-
-// @concord-case necase_A2699428EFNX2V13
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记 [necase_A2699428EFNX2V13]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记", async () => {
   await runnerE2E.case(
     "shared-state-recovery-changed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -632,11 +618,9 @@ export default defineExperiment({
     },
   );
 });
-
-// @concord-case necase_PKDDGWJF9WG1GKMC
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复 [necase_PKDDGWJF9WG1GKMC]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复", async () => {
   await runnerE2E.case(
     "shared-state-recovery-removed-key",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -699,11 +683,9 @@ export default defineExperiment({
     },
   );
 });
-
-// @concord-case necase_8GR53E938YVF6VVW
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-shared-state-recovery
-// @concord-test-file e2e/runner/test/shared-state-recovery.test.ts
-test.concurrent("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放 [necase_8GR53E938YVF6VVW]", async () => {
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @test-file e2e/runner/test/shared-state-recovery.test.ts
+test.concurrent("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放", async () => {
   await runnerE2E.case(
     "shared-state-recovery-invalid-teardown",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -777,4 +759,3 @@ export default defineExperiment({
     },
   );
 });
-}

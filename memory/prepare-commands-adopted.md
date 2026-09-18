@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: prepare-commands-adopted
+title: prepare-commands 定稿:内置 checkout / installTool 命令与 --dry 成本视图
+createdAt: 2026-08-01T18:25:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/prepare-commands-adopted.md
+  commit: a390ed2e3b58bad7c6a14a494837804a0d3bc114
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # prepare-commands 定稿:内置 checkout / installTool 命令与 --dry 成本视图
 
 ## 裁决

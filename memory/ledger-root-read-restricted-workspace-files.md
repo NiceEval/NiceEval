@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: ledger-root-read-restricted-workspace-files
+title: Ledger 在 Agent 前读不到题目故意限制权限的文件
+createdAt: 2026-08-02T15:18:14+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ledger-root-read-restricted-workspace-files.md
+  commit: 0d24186331cc787226bccdc99c515ff8b7f331a6
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [ledger-root-read-restricted-workspace-files](ledger-root-read-restricted\
+      -workspace-files.md) — Terminal-Bench 题故意把脚本设成 root-owned mode 0311 等
+      Agent 修,ledger 却在 Agent 前以普通用户 git add 而 Permission denied;修为按 Provider
+      能力仅给 runner 私有 Git 命令提权,不 chmod/chown workdir,不支持时保留用户态并报能力缺口"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Ledger 在 Agent 前读不到题目故意限制权限的文件
 
 **现象（2026-08-02，真实 Terminal-Bench `processing-pipeline`）**：题目把 `collect_data.sh` 设成 root-owned mode `0311`，要求 Agent 自己发现并修复权限。NiceEval 在 `workspace.baseline` 阶段先执行普通用户 `git add`，以 `open("collect_data.sh"): Permission denied` errored，Agent 尚未开始，官方任务因此无法被评估。

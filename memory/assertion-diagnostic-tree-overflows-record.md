@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: assertion-diagnostic-tree-overflows-record
+title: Assertions matcher diagnostic 树使已完成 Run 无法发布
+createdAt: 2026-08-18T22:32:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/assertion-diagnostic-tree-overflows-record.md
+  commit: 9bc7efb275d53036bb27e27fbb2ec04c88c782d2
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [assertion-diagnostic-tree-overflows-record](assertion-diagnostic-tree-ov\
+      erflows-record.md) — 上百个 occurrence × 组合 matcher 的完整诊断树撑破递归/4 MiB 边界，使已完成
+      Run 无法发布；collection 改存 witness + 8 个样本，runtime/document 双层有界化，大材料自动进
+      Assertions blob"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Assertions matcher diagnostic 树使已完成 Run 无法发布
 
 ## 现象

@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: command-evidence-known-secret-redaction
+title: "`show --timing` / `--execution` 会泄漏命令里显式注入的凭据"
+createdAt: 2026-08-02T15:18:14+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/command-evidence-known-secret-redaction.md
+  commit: 0d24186331cc787226bccdc99c515ff8b7f331a6
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [command-evidence-known-secret-redaction](command-evidence-known-secret-r\
+      edaction.md) — timing 曾只截断不脱敏，MCP/header/heredoc 凭据可从
+      full/JSON/execution/error 旁路泄漏；修为 `CommandOptions.sensitiveValues` 的显式
+      provenance + Runner 落盘前统一精确替换，未登记自由文本不靠正则猜测"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # `show --timing` / `--execution` 会泄漏命令里显式注入的凭据
 
 ## 现象

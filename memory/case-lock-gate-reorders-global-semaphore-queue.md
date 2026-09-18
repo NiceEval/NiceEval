@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: case-lock-gate-reorders-global-semaphore-queue
+title: 用例锁的取锁步骤插在 preflight 之前,打乱全局并发位排队的瓶颈优先序
+createdAt: 2026-07-24T17:19:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/case-lock-gate-reorders-global-semaphore-queue.md
+  commit: 1986dfd6734256ed9f1cedc957fcadae8cae7e6b
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修
+      [case-lock-gate-reorders-global-semaphore-queue](case-lock-gate-reorders-global-semaphore-queue.md)
+      — 用例锁取锁检查插在 preflight 之前(等待不占位的唯一位置),真实磁盘 I/O
+      完成顺序不等于到达顺序,打乱瓶颈优先排队隐藏依赖的"抢全局位顺序=数组序";修法=permit=1
+      互斥量只串行化"一次非阻塞取锁尝试",确认要等待立刻放行;旁记 `vi.advanceTimersByTimeAsync` 在真实 I/O
+      密集轮询链路上不可靠的独立发现。**该修法已随派发脊柱重构删除**:取锁移到授位之后,抢位路径上不再有真实 I/O,互斥量没有存在理由'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 用例锁的取锁步骤插在 preflight 之前,打乱全局并发位排队的瓶颈优先序
 
 ## 现象

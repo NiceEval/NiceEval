@@ -13,11 +13,9 @@ interface InspectedScoreEntry {
     | { readonly state: "earned"; readonly points: number; readonly earned: number }
     | { readonly state: "unavailable"; readonly points: number; readonly reason: string };
 }
+// @feature docs/feature/assertions/README.md
 
-// @concord-case necase_EFV616D6SD28DHFE
-// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-score
-// @concord-test-file e2e/eval/test/assertion-score.test.ts
-test("计分 Eval 公开区分 scored、stopped 与 skipped [necase_EFV616D6SD28DHFE]", async () => {
+test("计分 Eval 公开区分 scored、stopped 与 skipped", async () => {
   await evalE2E.case(
     "score",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

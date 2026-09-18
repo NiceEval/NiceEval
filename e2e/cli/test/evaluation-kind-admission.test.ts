@@ -4,11 +4,9 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
+// @use-case docs/feature/experiments/use-case/selection-split-eval-kinds.md
 
-// @concord-case necase_9MQ99DC3XKAN6NNW
-// @concord-owner docs/engineering/testing/e2e/cli.md#cli-evaluation-kind-admission
-// @concord-test-file e2e/cli/test/evaluation-kind-admission.test.ts
-test("运行与 check 在执行前拒绝混合 Pass Eval 与 Score Eval 的 Experiment 和 Eval Group [necase_9MQ99DC3XKAN6NNW]", async () => {
+test("运行与 check 在执行前拒绝混合 Pass Eval 与 Score Eval 的 Experiment 和 Eval Group", async () => {
   await cliE2E.case("mixed-experiment-kinds", async ({ paths, commands: { niceeval } }) => {
     await writeFile(join(paths.projectRoot, "experiments", "mixed-evaluation-kinds.ts"), `
 import { defineExperiment } from "niceeval";

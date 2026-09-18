@@ -1,3 +1,36 @@
+---
+format: concord.document/v1
+id: record-only-assertions-labeled-soft
+title: Record-only Assertion 被标成 soft
+createdAt: 2026-08-20T20:32:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/record-only-assertions-labeled-soft.md
+  commit: c2fee91465b304e9b02c5145b2143f4791e14a38
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft\
+      .md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool`
+      看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E
+      守住零命中与决定性见证"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Record-only Assertion 被标成 soft
 
 ## 现象

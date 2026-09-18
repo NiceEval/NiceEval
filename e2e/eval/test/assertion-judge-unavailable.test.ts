@@ -5,12 +5,9 @@ import { createServer } from "node:http";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
+// @feature docs/feature/assertions/README.md
 
-
-// @concord-case necase_N9PKV5X8PPWYPXZM
-// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable
-// @concord-test-file e2e/eval/test/assertion-judge-unavailable.test.ts
-test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]", async () => {
+test("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
   await evalE2E.case(
     "judge-unavailable",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -68,11 +65,9 @@ test("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM
     },
   );
 });
+// @feature docs/feature/assertions/README.md
 
-// @concord-case necase_Z1PAQPEQGDRFSCQ0
-// @concord-owner docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable
-// @concord-test-file e2e/eval/test/assertion-judge-unavailable.test.ts
-test("配置 Judge 后的质量门只调用一次并保留 measurement artifact [necase_Z1PAQPEQGDRFSCQ0]", async () => {
+test("配置 Judge 后的质量门只调用一次并保留 measurement artifact", async () => {
   let measurementCalls = 0;
   const provider = createServer((request, response) => {
     expect(request.method).toBe("POST");

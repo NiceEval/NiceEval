@@ -1,3 +1,37 @@
+---
+format: concord.document/v1
+id: docker-profile-control-create-migration-incomplete
+title: Docker profile create 迁移只完成了宿主侧，cold build 在 Attempt 前失败
+createdAt: 2026-08-22T20:14:15+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-profile-control-create-migration-incomplete.md
+  commit: 93fa76b7fc9f0c3e1c6709d70bd016eff9c9f8da
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [docker-profile-control-create-migration-incomplete](docker-profile-contr\
+      ol-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与
+      doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报
+      control-create-unimplemented；改为 control 持有 build context、network/container
+      create 与终止证明"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Docker profile create 迁移只完成了宿主侧，cold build 在 Attempt 前失败
 
 ## 现象

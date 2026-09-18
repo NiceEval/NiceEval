@@ -1,3 +1,40 @@
+---
+format: concord.document/v1
+id: severity-is-single-vs-multi-score-switch
+title: 裁决（已被同日后续裁决替代）：severity 当单分/多分开关
+createdAt: 2026-07-22T11:45:06+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/severity-is-single-vs-multi-score-switch.md
+  commit: 6a9011c66f9efeff8709fb58768fb75f5bb89392
+kind: memory
+memoryKind: decision
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 已被同日裁决替代
+      [severity-is-single-vs-multi-score-switch](severity-is-single-vs-multi-sc\
+      ore-switch.md) — 裁决(2026-07-22 上午):severity 当单分/多分开关;装不下自定分值 rubric
+      被下条替代,但「gate 不进质量分」「soft 无权均值」「组 gate 读数=失败定位」被继承
+      [pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-22
+supersession:
+  statement: "- 已被同日裁决替代
+    [severity-is-single-vs-multi-score-switch](severity-is-single-vs-multi-scor\
+    e-switch.md) — 裁决(2026-07-22 上午):severity 当单分/多分开关;装不下自定分值 rubric
+    被下条替代,但「gate 不进质量分」「soft 无权均值」「组 gate 读数=失败定位」被继承"
+  source:
+    path: memory/INDEX.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 裁决（已被同日后续裁决替代）：severity 当单分/多分开关
 
 **日期**：2026-07-22 上午。**替代者**：[pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md)（同日下午定稿）。

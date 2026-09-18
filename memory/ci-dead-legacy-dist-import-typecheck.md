@@ -1,3 +1,35 @@
+---
+format: concord.document/v1
+id: ci-dead-legacy-dist-import-typecheck
+title: CI typecheck 因死掉的 legacy dist 桥接导入而红
+createdAt: 2026-07-16T17:40:44+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ci-dead-legacy-dist-import-typecheck.md
+  commit: d2e486101a84bb174b6b1aa56f62dd5bc112bc37
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [ci-dead-legacy-dist-import-typecheck](ci-dead-legacy-dist-import-typeche\
+      ck.md) — built-ins→built-in 目录改名后残留的 legacy 桥接导入让 CI typecheck 红、本地靠陈旧
+      dist 假绿;修为删死代码直连新入口(`src/show/report-host.ts`),验证 dist 路径改动要先清 dist 重建"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # CI typecheck 因死掉的 legacy dist 桥接导入而红
 
 ## 现象

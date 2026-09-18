@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: end-to-end-pass-rate-is-default
+title: 裁决：默认成功率包含 errored（2026-07-15）
+createdAt: 2026-07-15T14:28:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/end-to-end-pass-rate-is-default.md
+  commit: b56e37223ae1cd0d83ec1e183887abe11bc9b13e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决：默认成功率包含 errored（2026-07-15）
 
 `taskPassRate`、`executionReliability`、`endToEndPassRate` 三指标拆分继续保留，但默认报告选择 `taskPassRate` 的决定被推翻。

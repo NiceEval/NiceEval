@@ -3,11 +3,9 @@ import { only } from "@niceeval/testkit";
 import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
+// @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
 
-// @concord-case necase_8J57CW0JYVWA8NZ4
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-carry-partial-reuse
-// @concord-test-file e2e/runner/test/application-reuse.test.ts
-test.concurrent("Adapter 未声明行为版本时重新执行，版本稳定才允许 carry [necase_8J57CW0JYVWA8NZ4]", async () => {
+test.concurrent("Adapter 未声明行为版本时重新执行，版本稳定才允许 carry", async () => {
   await runnerE2E.case("application-reuse", {
     artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }],
   }, async ({ commands: { niceeval } }) => {

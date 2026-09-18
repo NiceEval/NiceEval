@@ -1,8 +1,37 @@
 ---
-name: e2b-provision-429-duplicate-sandbox
-description: E2B 创建成功后的初始化请求撞 429 被归「拒绝类」盲重试,同一 provision token 开出两台实例,第一台泄漏计费——修为 create 内 kill-on-failure + 有对账通道时任何重试前都对账
-metadata:
-  type: project
+format: concord.document/v1
+id: e2b-provision-429-duplicate-sandbox
+title: e2b-provision-429-duplicate-sandbox
+createdAt: 2026-07-15T15:57:00+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-provision-429-duplicate-sandbox.md
+  commit: d8958308af36ccc5a2904e82ede1c9c9c30f90e8
+description: E2B 创建成功后的初始化请求撞 429 被归「拒绝类」盲重试,同一 provision token
+  开出两台实例,第一台泄漏计费——修为 create 内 kill-on-failure + 有对账通道时任何重试前都对账
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修
+      [e2b-provision-429-duplicate-sandbox](e2b-provision-429-duplicate-sandbox\
+      .md) — E2B create 成功后的 mkdir 初始化请求撞 429 被归拒绝类盲重试,同 token 开两台、首台泄漏计费(实跑 10
+      evals 见 14 台);修为 create 内 kill-on-failure(e2b.ts/docker.ts)+
+      重试前一律对账且对账失败不重试(retry.ts)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**(2026-07-15,coding-agent-memory-evals 实跑 `niceeval exp dev-e2b/codex-e2b`):10 evals × 1 config 却在 E2B dashboard 看到 14 台实例;4 个 `niceeval-provision-token` 各对应两台,每对里一台 ~220MB / 0% CPU 闲置(从未被使用的泄漏首次 attempt)。终端可见限流退避重试消息。泄漏实例只能等 30 分钟 `SESSION_TIMEOUT_MS` 自动回收,期间计费。

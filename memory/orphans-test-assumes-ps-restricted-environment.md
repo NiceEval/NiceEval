@@ -1,3 +1,39 @@
+---
+format: concord.document/v1
+id: orphans-test-assumes-ps-restricted-environment
+title: orphans-test-assumes-ps-restricted-environment
+createdAt: 2026-07-23T12:33:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/orphans-test-assumes-ps-restricted-environment.md
+  commit: 4d739a0ed39552083604da7b1355955d6b7b6698
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修(commit `328b35bc`,修在 `src/sandbox/orphans.ts` +
+      `src/sandbox/orphans.test.ts`;bug 由 `791ec6e` 引入)。`listOrphanCandidates` /
+      `dockerOrphanCandidates` / `e2bOrphanCandidates` 增开 `OrphanClassifier`
+      注入缝(`(identity) => "alive" | OrphanState`),默认仍是真实系统探测
+      `classifyRunIdentity`。用例注入按 pid 直接裁决三态的窄判据(ORPHAN_PID / ALIVE_PID /
+      UNVERIFIED_PID),于是「alive 完全不进列表」「unverified 进列表但状态不是
+      orphan」「留存注册表条目连判据都不调用」三条各自被显式构造,不再赌宿主 `ps` 是否可用;`classifyRunIdentity` 自身的
+      host/pid/启动时刻裁决语义由独立的用例组覆盖(启动时刻探测同样走注入)。
+    proof: []
+    source:
+      path: memory/orphans-test-assumes-ps-restricted-environment.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:d42c49e21c61bd241e31c2597e12192cd461949f09d5df69ebe3c2eccbe63f59
+---
 # orphans-test-assumes-ps-restricted-environment
 
 ## 现象

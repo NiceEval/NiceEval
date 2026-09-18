@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: view-shell-nav-ignores-page-navigation-flag
+title: view 外壳导航未按 page.navigation 过滤
+createdAt: 2026-07-21T21:51:44+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-shell-nav-ignores-page-navigation-flag.md
+  commit: 418a9abda48397d07f3965f212ab360aedfb6e62
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 修法：已修，走的是「给 `ViewReportPageMeta` 加 `navigation` 字段、由 `App.tsx` 侧过滤
+    proof: []
+    source:
+      path: memory/view-shell-nav-ignores-page-navigation-flag.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:72748dc52f0b1cfe0372135cb9e4694ea988ad958399599aa95286f0637025c0
+---
 # view 外壳导航未按 page.navigation 过滤
 
 现象：`docs/feature/reports/library/shell.md`「导航的组成只有一条规则」声明 pages 中

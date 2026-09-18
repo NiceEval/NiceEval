@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: dispatch-priority-binds-to-slot-grant
+title: 瓶颈优先绑在「并发位分配」上，不是 fiber 创建顺序
+createdAt: 2026-07-20T22:34:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/dispatch-priority-binds-to-slot-grant.md
+  commit: 837bc3fadbf4e3987e323016cd616605e093728a
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 瓶颈优先绑在「并发位分配」上，不是 fiber 创建顺序
 
 **裁决（2026-07-20）**：`docs/runner.md`「派发顺序:瓶颈优先」的优先级作用点定义为**全局并发位的分配时刻**——每有一个位空出，发给当前等待集中轮次数最高的 attempt，「谁先开始等」不参与裁决。实验级 `maxConcurrency` 闸不参与这条纪律，先来后到即可（同 run 内 attempt 优先级相同，内部先后不影响总墙钟）。

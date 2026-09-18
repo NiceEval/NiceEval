@@ -5,10 +5,9 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
 
-// @concord-case necase_GW2Q0HTFQYKTXY3R
-// @concord-owner docs/engineering/testing/e2e/runner.md#runner-rename-exact-source
-// @concord-test-file e2e/runner/test/rename-experiment.test.ts
-test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持续沿用 [necase_GW2Q0HTFQYKTXY3R]", async () => {
+// @use-case docs/feature/experiments/use-case/cache-adopt-migrated-config.md
+
+test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持续沿用", async () => {
   await runnerE2E.case("rename-exact-source", {}, async ({ commands: { niceeval }, paths }) => {
     const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
     expect(first.exitCode, first.diagnostic()).toBe(0);

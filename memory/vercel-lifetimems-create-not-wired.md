@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: vercel-lifetimems-create-not-wired
+title: 发现(未修):VercelSandbox.create 不消费 lifetimeMs
+createdAt: 2026-07-29T22:20:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/vercel-lifetimems-create-not-wired.md
+  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 发现(未修):VercelSandbox.create 不消费 lifetimeMs
 
 - **现象**:vercel provider 创建实例时忽略 `lifetimeMs`,固定 ~20 分钟 session + 快照轮换;

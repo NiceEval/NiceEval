@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-plain-value-author-model
+title: Reports 作者模型翻案：plain-value page.render 取代 Source/Composition
+createdAt: 2026-07-29T15:56:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-plain-value-author-model.md
+  commit: 8c7c88454f4e2622e7a8eb7a8c74f8797f3155c8
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Reports 作者模型翻案：plain-value page.render 取代 Source/Composition
 
 **日期**：2026-07-29

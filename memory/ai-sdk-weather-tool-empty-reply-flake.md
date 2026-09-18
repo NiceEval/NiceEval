@@ -1,8 +1,20 @@
 ---
-name: ai-sdk-weather-tool-empty-reply-flake
-description: examples/zh/ai-sdk weather-tool eval 某次跑批 gpt-5.4 全部断言失败，根因是上游模型请求瞬时退化返回空文本，不是 tool 没传也不是 niceeval 采集问题
-metadata:
-  type: project
+format: concord.document/v1
+id: ai-sdk-weather-tool-empty-reply-flake
+title: ai-sdk-weather-tool-empty-reply-flake
+createdAt: 2026-07-01T19:41:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ai-sdk-weather-tool-empty-reply-flake.md
+  commit: dd61d6015b3f040e7182a9001af81e7e74b95135
+description: examples/zh/ai-sdk weather-tool eval 某次跑批 gpt-5.4
+  全部断言失败，根因是上游模型请求瞬时退化返回空文本，不是 tool 没传也不是 niceeval 采集问题
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象**：`.niceeval/2026-07-01T11-30-22-990Z/summary.json` 里 `compare-models/gpt-5.4` 实验组跑 `weather-tool` eval，两次 attempt 全部失败：a0 连 `calledTool(get_weather)` 都没通过，a1 工具确实被调用且拿到正确数据，但两次最终 `reply` 都是兜底文案「我已经处理了这一步」，且两次 `usage` 都是 `inputTokens:0 outputTokens:0 requests:0`。trace.json 显示 a0 那次 `chat gpt-5.4` span 只花了 848ms（明显短于正常生成耗时，其余同批次用 gpt-5.4 的 eval 都在 4~11s）。

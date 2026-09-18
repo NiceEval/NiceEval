@@ -95,13 +95,12 @@ const predecessors = [
   },
 ] as const;
 
-// @concord-case necase_W26XFXH8K05QA8C5
-// @concord-owner docs/engineering/testing/e2e/record.md#upgrade-preserves-historical-results
-// @concord-regression memory/historical-record-read-bypasses-migration.md
-// @concord-regression memory/moved-record-write-replaces-sealed-identity.md
-// @concord-regression memory/record-hook-context-format-migration.md
-// @concord-test-file e2e/record/test/record-migration.test.ts
-test.concurrent("历史公开 producer Record 首次只读即可自动迁移并保留结果与引用 [necase_W26XFXH8K05QA8C5]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/historical-record-read-bypasses-migration.md
+// @regression memory/moved-record-write-replaces-sealed-identity.md
+// @regression memory/record-hook-context-format-migration.md
+
+test.concurrent("历史公开 producer Record 首次只读即可自动迁移并保留结果与引用", async () => {
   for (const predecessor of [
     ...predecessors,
     { ...predecessors[0], version: "0.15-hooks" },

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: pnpm11-verify-deps-gate-blocks-niceeval-cli
+title: pnpm 11 的 pre-run gate 会在 niceeval 启动前拦死 CLI
+createdAt: 2026-07-05T13:10:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pnpm11-verify-deps-gate-blocks-niceeval-cli.md
+  commit: 10d909c30c768439ff6f3e992dc90f0ab63fcff4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # pnpm 11 的 pre-run gate 会在 niceeval 启动前拦死 CLI
 
 ## 现象

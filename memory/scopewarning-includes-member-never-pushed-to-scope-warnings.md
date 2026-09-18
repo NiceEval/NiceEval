@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: scopewarning-includes-member-never-pushed-to-scope-warnings
+title: ScopeWarning 类型联合含一个从不出现在 scope.warnings 里的成员
+createdAt: 2026-07-22T15:32:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/scopewarning-includes-member-never-pushed-to-scope-warnings.md
+  commit: a5baf7718146e70b789188f4236132a64eb3351d
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # ScopeWarning 类型联合含一个从不出现在 scope.warnings 里的成员
 
 - **实现细节**(2026-07-22,`plan/provenance-over-warnings.md` 节点 2.1 落地时的裁决):`src/results/types.ts` 的 `ScopeWarning` 判别联合定为**恰好三个成员**——`unfinished-snapshot` / `missing-startedAt` / `unreadable-snapshot`。`DedupeWarning` 改为 `Extract<ScopeWarning, { kind: "missing-startedAt" }>` 类型别名,不再是独立 interface。

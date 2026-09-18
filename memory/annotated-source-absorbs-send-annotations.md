@@ -1,8 +1,20 @@
 ---
-name: annotated-source-absorbs-send-annotations
-description: 设计裁决:AnnotatedEvalSource 收编 send 行的 turn 头行标注,推翻「events → 轮次是 ExecutionTree 的地盘、不进此模型」
-metadata:
-  type: project
+format: concord.document/v1
+id: annotated-source-absorbs-send-annotations
+title: annotated-source-absorbs-send-annotations
+createdAt: 2026-07-15T17:06:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/annotated-source-absorbs-send-annotations.md
+  commit: 8d032cad6e47365a1235967d0b048c940a10ac17
+description: 设计裁决:AnnotatedEvalSource 收编 send 行的 turn 头行标注,推翻「events → 轮次是
+  ExecutionTree 的地盘、不进此模型」
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决**(2026-07-15):`--eval` 源码视图在 `t.send(...)` 调用行标注该轮 turn 头行事实(身份 / status / 墙钟),数据模型落在 `AnnotatedEvalSource`(`SendAnnotation` + 每行 `sends` 桶 + 纯函数 `deriveSendAnnotations`),契约见 docs/feature/reports/show.md「--eval」。

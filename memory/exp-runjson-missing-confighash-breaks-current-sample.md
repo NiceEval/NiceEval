@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: exp-runjson-missing-confighash-breaks-current-sample
+title: exp 写的 run.json 缺 configHash + selectedEvalIds 过滤,现刻水位塌成单题(已修)
+createdAt: 2026-08-04T18:45:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/exp-runjson-missing-confighash-breaks-current-sample.md
+  commit: 775816b327ebfcb53b3b42c75d0357d639454c6e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# exp 写的 run.json 缺 configHash + selectedEvalIds 过滤,现刻水位塌成单题(已修)"
+    proof: []
+    source:
+      path: memory/exp-runjson-missing-confighash-breaks-current-sample.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:2a3f7e26c217293a3f816c5749a2f7c42f5ec3dd1c501b0afd1c90358eeb0c8a
+---
 # exp 写的 run.json 缺 configHash + selectedEvalIds 过滤,现刻水位塌成单题(已修)
 
 ## 现象

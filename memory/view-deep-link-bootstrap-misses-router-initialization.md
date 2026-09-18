@@ -1,17 +1,39 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: view-deep-link-bootstrap-misses-router-initialization
 title: View deep-link bootstrap can miss the initial router state
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
-    proof:
-      - nered_ABHQ7PPW920CV3BJ -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
 promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_ABHQ7PPW920CV3BJ -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
+    proof:
+      - nered_ABHQ7PPW920CV3BJ -> netake_0SVB9XS4NCGH4WFE; current installed
+        authorization Journey, three isolated + two same-copy + default parallel
+        + single-case observations, all pass and cleanup verified by parent.
+      - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
+    source:
+      path: memory/view-deep-link-bootstrap-misses-router-initialization.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:1479ffebc9b6b5cab9c85f496d713578ec5911ca68c82be1f88bd5a6377e53ac
 ---
 An installed View hard reload can remain blank even after all generation, Inspection, and lazy route requests have completed. createViewRouter registers a location observer before RouterProvider subscribes. React Router buffers initialization updates only when no subscriber exists, so an update between the Provider render snapshot and layout-effect subscription can be delivered only to that observer. The Provider retains initialized=false and renderFallback=true.
 

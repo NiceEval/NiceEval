@@ -1,8 +1,35 @@
 ---
-name: metric-views-compute-nul-byte-separator-blinds-grep
+format: concord.document/v1
+id: metric-views-compute-nul-byte-separator-blinds-grep
+title: metric-views-compute-nul-byte-separator-blinds-grep
+createdAt: 2026-07-19T20:07:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/metric-views-compute-nul-byte-separator-blinds-grep.md
+  commit: 7362e8326d9a7e8432404a6ff01e2273cbc6d641
 description: 复合 key 的 NUL 分隔符曾以裸 NUL 字节写进源码,grep/rg 把文件当二进制静默返回空;已改写成 \u0000 转义(分隔符本身不动)
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 2. **分隔符以裸 NUL *字节* 写进源码**——这是可以无损去掉的那一半,已修:源码里的裸 0x00 全部改写成 `\u0000`
+      转义序列(6 个 ASCII 字符)。模板字面量里的 `\u0000` 与裸 NUL 字节产出**逐字节相同**的运行时字符串(`` `x` +
+      转义 + `y` `` === `String.fromCharCode(120,0,121)`,已实测),所以 Map key、React
+      key、哈希输入、既有 locator 摘要全部不变;文件回到纯文本,`grep`/`rg`/`git diff`/Edit 工具一并恢复正常。
+    proof: []
+    source:
+      path: memory/metric-views-compute-nul-byte-separator-blinds-grep.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:1bd69fb276fe6e88ebd53ea82f9b74ca0c81389e44be8561d249fde1020cd134
 ---
 
 ## 现象

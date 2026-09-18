@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: diagnostic-key-doubles-as-json-warning-code
+title: 诊断的去重 key 被当成 `--json` 的 `warning.code` 直接透出
+createdAt: 2026-07-24T20:27:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/diagnostic-key-doubles-as-json-warning-code.md
+  commit: 0eef5784b1bae06c1e12d730097d3e306c558d30
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "## 补漏:`src/runner/attempt.ts` 的调用点同样漏改(已修)"
+    proof: []
+    source:
+      path: memory/diagnostic-key-doubles-as-json-warning-code.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:449ca9b8f087812ffb7f6b76146f1400e7238a3c5751b0e1c89ad18b3edcbbdb
+---
 # 诊断的去重 key 被当成 `--json` 的 `warning.code` 直接透出
 
 ## 现象

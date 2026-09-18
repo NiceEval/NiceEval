@@ -1,8 +1,34 @@
 ---
-name: docs-site-en-report-components-stale-groupby
-description: docs-site/reference/report-components.mdx（英文）ExperimentComparison 一节仍描述已否决的按父目录分组设计,且引用不存在的 ExperimentComparison.data() 静态方法,需要独立重写
-metadata:
-  type: project
+format: concord.document/v1
+id: docs-site-en-report-components-stale-groupby
+title: docs-site-en-report-components-stale-groupby
+createdAt: 2026-07-20T10:07:31+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docs-site-en-report-components-stale-groupby.md
+  commit: 447c23ac8687a6408aab1ea8b252c33aaa8e5ef7
+description: docs-site/reference/report-components.mdx（英文）ExperimentComparison
+  一节仍描述已否决的按父目录分组设计,且引用不存在的 ExperimentComparison.data() 静态方法,需要独立重写
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**已修（2026-07-24 复核）**：`docs-site/reference/report-components.mdx` 里
+      `groupBy` 与"
+    proof: []
+    source:
+      path: memory/docs-site-en-report-components-stale-groupby.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:380038bd247a6c7b652f7f36d4e186f428434eaf5a52abe63dad2b8f351dea76
 ---
 
 **现象**：`docs-site/reference/report-components.mdx`（英文入口，非 `docs-site/zh/`）第 15、99-104、150、338 行左右，把 `ExperimentComparison` 描述成"Grouped by the experiment id's full parent directory; each group gets its own summary, scatter plot, and experiment list"，并给出 `<ExperimentComparison data={await ExperimentComparison.data(selection)} />` 这样的调用示例。

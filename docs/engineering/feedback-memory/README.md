@@ -1,232 +1,62 @@
-# 存量 Feedback 与 Memory
+---
+format: concord.document/v1
+id: feedback-memory
+title: Feedback 与 Memory
+createdAt: 2026-08-23T12:48:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/feedback-memory/README.md
+  commit: 7871a6b3939fef8c750ce18e733603a40afa22c7
+kind: engineering
+---
+# Feedback 与 Memory
 
-Feedback 是仓库既有的原始观察条目，只用于迁移、审计和既有关系维护。新的 Observation 由公开、脱敏的 [GitHub Issue](../issues/README.md) 跟进，不再创建 Feedback。Memory 保存调查过程中形成的问题、根因、思考与裁决；它可以来自 Issue、存量 Feedback 或直接开发调查。
+Research、Memory 和本地 Issue 统一使用 Concord 最新文档模型。类型与严格 Schema 由锁定包的 `concord-sdlc/model` 导出。普通命令只读写 `concord.document/v1`，不读取旧格式或维护历史兼容列表。
 
-```text
-new Observation ──▶ GitHub Issue ── 调查、归因 ──▶ Memory
-legacy Feedback ────────────────────────────────▶ Memory
-       │                                             │
-       └── existing adoption ──▶ contract ◀──────────┘ promotion
-```
+## Feedback
 
-存量 Feedback 可以在没有 Memory 时存在。Memory 也可以直接来自开发过程，不必伪造 Feedback 或 Issue。Feedback 只保存对 Memory 的正向关系；反向关系由命令扫描得出，避免两个文件分别维护同一事实。
+本地观察的唯一 owner 是 `docs/issues/<id>.md`，`pnpm feedback` 与 Concord 页面读取同一批文件。旧 `feedback/<id>/README.md` 已通过一次性移动迁出，不保留第二份 owner。`origin` 保留 dev／dogfood provenance，`source` 仅保存实际 GitHub／Linear 远端provenance快照，二者不互相冒充。
 
-## Legacy Feedback
-
-`pnpm feedback` 继续提供存量条目的读取、校验、迁移和关系修复能力。Repository workflow 不再用 `add` 或 `import` 建立新 Observation owner；新公开工作项进入 Issue，安全或私密材料进入对应私密渠道。
-
-每条 Feedback 是 `feedback/<feedback-id>/README.md`。附件只放在同目录的 `artifacts/`，条目关闭后仍永久保留。
-
-```ts
-type RepoRef = string; // canonical repo-relative path，可带一个 #anchor
-
-interface FeedbackV2 {
-  format: "niceeval.feedback/v2";
-  id: string;
-  title: string;
-  state: "open" | "closed";
-  reportedAt: string;
-  source:
-    | { kind: "issue"; repository: string; number: number; url: string }
-    | { kind: "dogfood"; repository: string; originId: string; commit: string }
-    | { kind: "dev"; repository: string; commit?: string };
-  subject: "product" | "repository" | "dependency";
-  claim: "defect" | "friction" | "request";
-  observation: string;
-  impact: string;
-  adoptions: {
-    current: readonly RepoRef[];
-    history: readonly { target: RepoRef; commit: string }[];
-  };
-  memoryRelations: readonly {
-    kind: "investigation" | "root-cause" | "decision" | "delivery";
-    memory: string;
-  }[];
-  closure?: FeedbackClosure;
-}
-
-type FeedbackClosure =
-  | { kind: "fixed"; memory: string; proof: readonly string[] }
-  | { kind: "delivered"; memory: string; target: string; proof: readonly string[] }
-  | { kind: "duplicate"; canonical: string }
-  | { kind: "declined"; memory: string }
-  | { kind: "invalid"; evidence: readonly string[] }
-  | { kind: "external-fixed"; dependency: string; version: string; proof: readonly string[] };
-```
-
-`source`、`subject` 与 `claim` 是互相独立的分类。`dogfood` 可以发现产品缺陷，也可以提出仓库体验问题；`dev` 也可以描述依赖行为。是否进入产品 Bug 门由 `adoptions.current/history` 与 Problem Memory 共同决定，不再增加一个可随意填写的 `bug` 标签。
-一个 Feedback 可以采用到多个 Roadmap、Feature、Use Case 或 Engineering exact ref；Feedback 不保存目标的反向列表。
+`memoryRelations` 条目 investigation、root-cause、decision、delivery 角色和 canonical Memory 路径。`adoptions.current/history` 保存精确契约引用及退役历史。反向关系统一派生，不另建注册表。
 
 ### 关闭规则
 
-Feedback 的人读状态只显示“未处理”与“已处理”。关闭原因决定它是否真的修复、交付，或只是停止处理。
+`closure` 保存 fixed、delivered、duplicate、declined、invalid、external-fixed 或普通 closed 原因。fixed 关联已条目 fixed resolution 的 Problem；delivered 关联交付 Memory 与已采用目标；declined 关联当前 Decision；duplicate 指向唯一 canonical Issue。duplicate／declined／invalid 前须明确退役 current adoptions。历史关闭声明不会生成新的执行证据。后续问题重开不静默改写 Issue 历史。
 
-| 原因 | 适用条件 | 关闭凭据 |
-|---|---|---|
-| `fixed` | 已确认的 product / repository defect 或 friction | 指向 `resolved(fixed)` Problem Memory，且真实 live E2E case 源码关系的 current `regressions` 必须指回该 Memory；`proof` 只补充红绿收据与 takeover certificate，不能代替这条关系 |
-| `delivered` | request 已进入采用后的目标，且交付结果仍适用于原 observation | 指向交付 Decision / Problem Memory、path 与 anchor 均可定位的当前目标和原观察场景验收 |
-| `duplicate` | 观察与另一条 Feedback 相同 | 只指向 canonical Feedback；不得自指、形成环或删除原条目 |
-| `declined` | 明确决定不采纳 request 或 friction | 指向 adopted Decision Memory；界面不得显示为“已修复” |
-| `invalid` | 观察的事实前提无法成立 | 保存可重新执行的反证；界面不得显示为“已修复” |
-| `external-fixed` | dependency 行为已由上游版本修复 | 保存依赖名、版本和原观察步骤的再次执行结果 |
+`pnpm feedback close --help` 给出各 kind 的具名参数。新公开工作项由 Issue 流程处理；本地创建、关闭或同步都不授权远端写入。
 
-`feedback close --kind <kind>` 直接接收该关闭原因所需的具名参数：`fixed`、`delivered` 与
-`external-fixed` 的 `--proof`，以及 `invalid` 的 `--evidence` 都可重复传入。命令不要求调用者先组装临时
-JSON，并在写入前验证整张关闭表。不属于所选 kind 的参数同样会被拒绝。
+### 远端接入
 
-`memoryRelations` 只接受表中列出的关系，不能重复。
-`duplicate` 的 canonical 只存在 closure 中，不再另存 `duplicateOf`。被引用的 Problem Memory 后续重新打开时，
-`pnpm feedback check` 报关闭凭据失效，不静默修改 Feedback，也不隐藏既有 adoption/promotion。
+在消费仓库配置 GitHub 读取范围：
 
-adoption 状态满足以下不变量：
-
-- current exact ref 唯一；retire 必须 exact 命中；
-- closed Feedback 不得新增 current；要继续采纳必须先 reopen；
-- history 只追加，当前 Git commit 由工具写入；
-- `declined`、`invalid` 与 `duplicate` closure 要求 current 为空；
-- `delivered` 要求目标出现在 current 或 history；
-- reopen 只移除 closure，绝不从 history 恢复 current。
-
-`feedback close` 不会暗中移除 adoption。若 `declined`、`invalid` 或 `duplicate` 仍有 current，命令具名失败并要求先逐条 retire；
-`delivered.target` 必须 exact 命中 current 或 history。close/reopen 与 adopt/retire 共用 Trace 锁，状态检查不会和关系 mutation 竞态。
-
-### 历史下游导入
-
-旧下游流程生成只读导入包而不直接写本仓库。该格式只用于审计或恢复已经产生的 envelope；新的下游 Observation 应准备脱敏 Issue draft：
-
-```ts
-interface FeedbackEnvelopeV1 {
-  format: "niceeval.feedback-envelope/v1";
-  origin: { repository: string; originId: string; commit: string };
-  candidate?: { version?: string; commit?: string; sha256?: string };
-  source: "dogfood";
-  observation: string;
-  impact: string;
-  artifacts: readonly { path: string; byteLength: number; sha256: string }[];
-  digest: string;
-}
+```sh
+pnpm exec concord feedback connection add --id niceeval-github --provider github --owner NiceEval --repo NiceEval --credential-env GITHUB_TOKEN
 ```
 
-`feedback import` 以 `origin.repository + origin.originId` 作为幂等键。同一 digest 重复导入返回既有 ID；不同 digest 使用同一幂等键时失败并显示冲突，不替换历史。
-Envelope 只承载下游 dogfood，导入器不会把 `source.kind` 静默改写成 dogfood。Issue 与本仓库开发观察不进入 Feedback。
-
-导入只接受 manifest 中声明的普通文件。绝对路径、`..`、symlink、超出大小上限、摘要不匹配或未登记文件都在写入前失败。导入器只复制字节，不执行、不按语法读取，也不渲染附件中的主动内容。
+凭据只引用进程变量名。`pnpm exec concord feedback sync --connection niceeval-github` 显式读取远端。同步不是发布 GitHub Issue，历史 dev／dogfood 也不会被伪造为远端 Issue。
 
 ## Memory
 
-Memory 继续使用 `memory/<slug>.md`。新条目在 frontmatter 中声明结构化版本；现有无 frontmatter 条目是只读历史，仍可被 `list`、`show`、`search` 与 `check` 读取，也继续满足既有 E2E 的 `regression: memory/<file>.md` 引用。`resolve`、`reopen`、`supersede` 与 `promote` 只修改结构化条目；旧条目要改变状态时先显式转换并保留原始正文。
+`memory/<id>.md` 保存 Problem、Decision、Insight 或 Note；`memory/INDEX.md` 是人读导航，机器发现来自 owner metadata。类型明确但当前状态未知时保存 captured，不能默认断言已采用或仍开放。Note 只允许 captured；具名 `memory activate --reason` 可将已分类条目激活为 open 或 current。captured 不满足 fixed 或 promotion 门槛。
 
-```ts
-interface MemoryV1 {
-  format: "niceeval.memory/v1";
-  id: string;
-  title: string;
-  createdAt: string;
-  kind:
-    | { type: "problem"; state: "open" | "resolved"; resolution?: ProblemResolution }
-    | { type: "decision"; state: "adopted" | "superseded"; supersededBy?: string }
-    | { type: "insight"; state: "current" | "superseded"; supersededBy?: string };
-  promotions: readonly Promotion[];
-}
-
-interface ProblemResolution {
-  kind: "fixed" | "not-a-bug" | "wont-fix" | "external-fixed";
-  proof: readonly string[];
-}
-
-interface Promotion {
-  kind: "roadmap" | "feature" | "use-case" | "engineering";
-  current: readonly RepoRef[];
-  history: readonly { target: RepoRef; commit: string }[];
-}
-```
-
-Problem 保存可验证的问题、根因与修法；Decision 保存明确采用的取舍；Insight 保存仍成立的 know-how。Decision 与 Insight 的 `supersededBy` 只指向同 kind Memory，不得自指或形成环。Problem 重新打开时，工具把旧 resolution 和当前 Git commit 追加到正文的 `Resolution history`，结构化当前状态不再携带已生效的 resolution。
+Problem 可为 open、`resolved`、captured 或 superseded；Decision／Insight 可为 current、captured 或 superseded。superseded 表示已不再适用，不表示已修复。未知替代目标保留原声明和provenance，不猜测正文中任意链接。
 
 ### 作者区域
 
-Memory 作者区域是正文中 resolution-history marker 之前的当前内容，而不是可任意改写的历史字段。`pnpm memory author set` 是唯一修改该区域的入口：它只替换 marker 前内容，发布 receipt 同时绑定完整 owner preimage digest 与 author-region preimage digest。它不得触及 marker 后的 Resolution history，不得写入 legacy Memory，也不得删除受管历史。作者区域更新不是一般文本编辑，更不是历史对象删除。
-
-Memory 可以提升到 Roadmap、Feature、Use Case 或 Engineering，不能直接成为这些目录的契约 owner。
-每个 kind 最多一个 promotion bucket；current exact ref 去重，retire 必须 exact 命中；目标移动或删除时，同一操作先把旧 target 与 commit 追加进 history，再更新或清空 current。既有 history 项不可改写。
-
-`memory supersede` 在同一次单文件 mutation 中把 Decision/Insight 的全部 current 以当前 Git commit 追加到对应 history，再清空 current。
-Problem reopen 不删除 relation，只会让依赖 `resolved(fixed)` 的 Feedback closure 变成 finding。
-
-结构化 Memory 由 `pnpm memory list` 动态发现。`memory/INDEX.md` 为结构化条目提供一个稳定的命令入口，不逐条双写索引；旧条目继续由现有逐条索引发现。这样创建 Memory 只原子写一个文件，不会留下“正文成功、索引失败”的半状态。
+最新 frontmatter 拥有状态、关系、epoch 和历史；正文是完整作者区域。`author set` 以 preimage 摘要保护修改，保留 metadata history。普通 reader 不识别旧正文历史标记；一次性迁移保留原作者字节与审计provenance。
 
 ## E2E regression
 
-E2E case 只引用 Problem Memory，关系由声明上方注释 的 current `regressions` 保存；同一 case 可以关联多个 Problem Memory，同一文件中的不同 case 互不继承关系。旧测试头 `regression:` 不建立 current 关系。
+`command`、`repository`、`attested` 是不同证据等级。Concord 通用 fixed 必须有自己签发的当前 red／green command 收据。Repository fixed 验证实际 formal receipt、inventory、certificate 和六条 reliability 收据后，在独占锁内绑定当前 Memory epoch。
 
-`problem.open → problem.resolved(fixed)` 必须经过以下门（case schema 与 certificate 见
-[E2E case 关系契约](../testing/e2e/case-relations.md#正式-evidence-与-takeover-certificate)）：
-
-1. 从安装后的 Library、CLI、HTTP、浏览器或真实 adapter 取得旧候选或最小逆补丁的红灯收据。
-2. 加强拥有同一长期用户结果的既有 E2E owner；没有合格 owner 时才新增最小 owner。
-3. 证明失败出现在最早公开边界，修复后同一 candidate、fixture 与原生 runner 转绿。
-4. 通过该 live case 的可靠性接管；current regression 注释、正式 red/green receipts 与完整 takeover certificate
-   共同构成机器凭据。旧文件 metadata、retired case、自由文本 proof 或 diagnose receipt 都不满足。
-
-`pnpm memory resolve --kind fixed --proof <receipt>` 与
-`feedback close --kind fixed --memory <memory-id> --proof <receipt>` 都从同一 Trace Snapshot 反查 current E2E case。
-反查结果必须同时包含 owner 与 certificate。
-
-新 fixed 只接受 v2 证据，核验执行源码投影与 owner/contract 内容。旧 v1 关闭历史保持历史可读并显示 `legacy` / `stale` / `unavailable`；不自动 reopen。
-
-已有 current regression 的证据更新使用 `docs test regression refresh --reason`，不改写旧 receipts。
-
-`--proof` 可重复传入；没有 canonical regression 时，命令零写入失败。
-
-`pnpm memory check` 也反向扫描并报告既存的无 owner `resolved(fixed)` Problem。Memory 不保存另一份 E2E
-反向列表，`proof` 中出现 “e2e” 或路径文本都不算通过。
-
-无法固定的外部条件、安全限制或 Provider 可以暂停自动化，但在专门的结构化例外凭据落地前不能冒充 `fixed`；保持 Problem open，并在 `proof`/正文保存公开入口人工验收和复查条件。dependency 已由上游修复时使用 `external-fixed`。仓库 DX 问题仍使用真实仓库命令或 lint 的红绿凭据，不伪造产品 E2E。
+Repository epoch 表示核验与绑定时的生命周期，不声称 runner 在该 epoch 签发；候选只表示 green 和 reliability 一致，不能据此证明当前工作区。reopen 增加 epoch，完整旧 resolution 入 history；已使用 invocation 不得被换路径复用。原条目声明已修只迁为 attested，始终未验证，不能满足新的 fixed gate。
 
 ## 命令与一致性
 
-正式入口属于同一个 `@niceeval/repo-tools` runtime：
+`pnpm memory`、`pnpm feedback` 和 `pnpm exec concord` 共用当前 schema。读、写、检查、迁移及恢复共享同一 publication lock；发现未完成 journal 时先按具名错误恢复。dry-run 不写用户文件或证据缓存，可以建立 Git-private 协调锁文件。
 
-```text
-pnpm feedback import|export|list|show|link|adopt|retire|close|reopen|check
-pnpm memory   add|list|show|search|resolve|reopen|supersede|promote|retire|check
-pnpm run repo docs trace recover
-```
+使用 `--help` 获取当前具名参数；运行 `pnpm memory check`、`pnpm feedback check` 与 `pnpm exec concord check` 检查结构和关系。检查成功不等于原生 E2E 测试涉及范围或历史修复在当前工作区仍有效。
 
-普通读取与 dry-run 持有 Trace shared lease，且不执行恢复。首次读取可以初始化 Git-private 的持久 lock inode，但不修改 owner、journal 或 generation。
+## 迁移审计
 
-所有条目写命令持有 exclusive lease，先恢复旧 journal，再完成两次 Snapshot/preimage 校验与单 owner publication。历史 envelope 导入为 Feedback 时，无论有无附件都先写 `feedback/.stage-<token>`，再以整个目录的 manifest、journal 与同文件系统 atomic rename 发布。
-
-既有 Feedback 与 Memory 使用 file publication，Memory add 使用 absent-preimage file publication。generation durable replace 是唯一 commit point。
-
-崩溃恢复只有在 worktree identity、HEAD、Git index、mode、digest 与 manifest 全部匹配时才回滚。其它状态保留 owner、stage 与 journal，并具名失败。
-
-所有会改变 Trace 可见 Feedback/Memory metadata 的发布步骤都经过同一结构锁，并在成功后递增 generation。
-Feedback 没有普通创建命令；`import` 只恢复既有的历史 envelope，并把引用 owner 纳入 publication preimage。
-`memory add` 只接受空 promotions。新条目只能从 `problem/open`、`decision/adopted` 或 `insight/current` 初态创建；terminal state 必须走具名 transition，不能借创建入口绕过 fixed E2E 门、supersession 或 history。
-
-Memory、Feedback 与其历史关系均是具名生命周期，不是通用 CRUD。`retire`、`reopen`、`supersede`、resolution history 与 published author 均保留可审计历史；“删除”只可描述为目标模型中从未产生或不再存在的 owner，不能虚称既有历史被物理删除。
-
-`check` 聚合报告 Schema、引用、状态、环、promotion、关闭凭据、E2E 门、unknown stage 与 recovery 问题，不遇到第一项就停止。正常命令失败只留下原始文件或完整新文件；进程崩溃后的 journal/stage 是显式恢复证据，不冒充已发布 Feedback。
-
-`adopt`、`retire`、`promote`、Memory `retire`、Feedback `close/reopen` 与 Memory `supersede` 均提供 `--dry-run` 和结构化 receipt。
-调用方只传 exact ref，不传完整 current/history bucket，也不手填 history commit。
-
-## Feedback v2 migration
-
-`niceeval.feedback/v2` 一次切换，不在 regular codec 保留 v1 reader。迁移器是独立、可重复校验的受控入口；它逐条解码 v1，
-把 `adoptedContract` 转成 `adoptions.current`，把 `duplicateOf` 收敛到 duplicate closure，并保持 observation、impact、正文和附件字节不变。
-
-`feedback/schema-v2-migration-receipt.json` 逐 ID 保存 v1/v2 metadata digest、正文 digest 与附件 path/size/digest。顶层同时绑定迁移前的 `sourceCommit`、首次完整 v2 owner 所在的 `resultCommit` 与迁移前后数量。
-验收从 `sourceCommit` 重新读取并迁移全部 35 条历史 v1，再逐条复算两个 metadata digest。它还从 `resultCommit` 读取首次签入的完整 v2 metadata、正文和附件，证明真实迁移结果曾与确定性输出一致。
-
-当前仓库必须保持 v1=0。收据锁定 `sourceCommit` 上 35 条存量 Feedback 的一次迁移；该提交之后、Issue 入口切换之前并发进入 `main` 的 3 条 v1 Feedback 在主线合并时按同一映射补迁，因此当前共有 38 条 v2 Feedback。新的 Observation 进入 Issue，不追加 v2 Feedback。470 条 legacy Memory 以迁移前后 digest 证明逐字节不变。
-
-v2 metadata digest 是迁移时刻的历史审计值；后续合法 mutation 不会反过来改写收据，也不会因当前 metadata 已变化而失败。
-长期 `feedback check` 仍核对 ID 完整性、当前 v2 Schema/状态，以及不可改写正文与附件的 digest。
-
-## Legacy Frog provenance
-
-`feedback/migration-receipt.json` 把旧 `.agents/friction-log/` 条目一对一映射到 Feedback。收据保存旧目录、Feedback ID、原始时间、severity、完整正文、附件摘要与 provenance；机器检查每个旧 ID 恰好出现一次，并以正文摘要核对迁移后的内容。
-
-相似条目只建立 duplicate closure 或共同的 Memory 关系，不物理合并。每条 legacy Feedback 还声明 Memory disposition：连接既有 Memory、创建 Problem / Insight，或明确 `none` 及理由。仓库不安装 Frog，不保留 Frog Skill、配置或入口；Git 历史继续保存旧文件。
+本次收据位于 `docs/migrations/concord-documents-20260914.json`，条目每条原路径、目标路径、源 metadata 和正文摘要。它不是 runtime registry。历史 `feedback/migration-receipt.json` 与 `feedback/schema-v2-migration-receipt.json` 保持原 Git 时点语义，不改写为当前验证证明。
