@@ -1,4 +1,4 @@
-import { chmodSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
 
 import { compileTraceUnderLease } from "./trace/compiler.js";
-import { mutateTraceOwner, traceDigest, type TraceDirectoryManifestEntry, type TraceMutationPreparation } from "./trace/relation-mutation.js";
+import { mutateTraceOwner, traceDigest, traceDirectoryManifest, type TraceMutationPreparation } from "./trace/relation-mutation.js";
 
 const PAGES = ["library", "cli", "architecture", "lifecycle", "use-case"] as const;
 type FeaturePage = typeof PAGES[number];
@@ -61,30 +61,17 @@ function render(source: string, title: string, root = false): string {
   const body = source.replaceAll("<功能或候选名>", title).trimEnd();
   return root ? `${frontmatter()}${body}\n` : `${body}\n`;
 }
-function manifest(root: string, stage: string, operation: FeatureStructureError["operation"]): readonly TraceDirectoryManifestEntry[] {
-  const base = resolve(root, stage);
-  const entries: TraceDirectoryManifestEntry[] = [];
-  const visit = (directory: string, item: string) => {
-    if (item !== "") entries.push({ kind: "directory", path: item, mode: 0o755 });
-    for (const name of readdirSync(directory).sort()) {
-      const absolute = resolve(directory, name); const relativePath = item === "" ? name : `${item}/${name}`;
-      const status = lstatSync(absolute);
-      if (status.isDirectory()) visit(absolute, relativePath);
-      else if (status.isFile()) {
-        const source = readFileSync(absolute);
-        entries.push({ kind: "file", path: relativePath, mode: 0o644, byteLength: source.byteLength, digest: traceDigest(source) });
-      } else throw new Error(`${relativePath}: stage may only contain regular files and directories`);
-    }
-  };
-  try { visit(base, ""); return entries.filter((entry) => entry.path !== ""); }
-  catch (cause) { throw fail(operation, stage, cause instanceof Error ? cause.message : String(cause)); }
+function stageManifest(root: string, stagePath: string) {
+  const entries = traceDirectoryManifest(resolve(root, stagePath), "feature-create");
+  if (entries === undefined) throw fail("create", stagePath, "Feature publication stage is missing");
+  return entries;
 }
-function stage(root: string, files: readonly { readonly path: string; readonly bytes: string }[], operation: FeatureStructureError["operation"]): Effect.Effect<{ readonly stagePath: string; readonly targetPath: string }, FeatureStructureError> {
+function stage(root: string, files: readonly { readonly path: string; readonly bytes: string }[], featureSlug: string, operation: FeatureStructureError["operation"]): Effect.Effect<{ readonly stagePath: string; readonly targetPath: string }, FeatureStructureError> {
   return Effect.try({ try: () => {
     const token = randomUUID(); const stagePath = `docs/feature/.stage-${token}`; const absolute = resolve(root, stagePath);
     mkdirSync(absolute, { recursive: true, mode: 0o700 }); chmodSync(absolute, 0o700);
     for (const file of files) { const target = resolve(absolute, file.path); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, file.bytes, { mode: 0o644 }); }
-    return { stagePath, targetPath: `docs/feature/${files[0]!.path.split("/")[0]!}` };
+    return { stagePath, targetPath: `docs/feature/${featureSlug}` };
   }, catch: (cause) => fail(operation, "docs/feature", cause instanceof Error ? cause.message : String(cause)) });
 }
 function removeStage(root: string, stagePath: string): Effect.Effect<void, FeatureStructureError> {
@@ -125,9 +112,9 @@ export function createFeatureAt(root: string, input: { readonly slug: string; re
         ] } satisfies TraceMutationPreparation;
       }),
       plan: ({ source }) => source === undefined ? Effect.succeed({ bytes: files[0]!.bytes, value: files, changes: { created: true as const } }) : Effect.fail(fail("create", ownerPath, "Feature README already exists")),
-      ...(publication === undefined ? {} : { publication: { kind: "new-docs-directory" as const, stagePath: publication.stagePath, targetPath: publication.targetPath, expectedManifest: manifest(root, publication.stagePath, "create") } }),
+      ...(publication === undefined ? {} : { publication: { kind: "new-docs-directory" as const, stagePath: publication.stagePath, targetPath: publication.targetPath, expectedManifest: stageManifest(root, publication.stagePath) } }),
     });
-    const mutation = input.dryRun ? yield* execute() : yield* Effect.acquireUseRelease(stage(root, files.map((file) => ({ path: `${value}/${file.path}`, bytes: file.bytes })), "create"), (item) => execute(item), (item) => removeStage(root, item.stagePath));
+    const mutation = input.dryRun ? yield* execute() : yield* Effect.acquireUseRelease(stage(root, files, value, "create"), (item) => execute(item), (item) => removeStage(root, item.stagePath));
     return { format: "niceeval.docs-feature/structure-v1", operation: "feature-create", dryRun: input.dryRun, feature: { slug: value, ref: ownerPath, title: input.title }, snapshotDigest: mutation.snapshotDigest, generation: mutation.generation, nextGeneration: mutation.nextGeneration, preimageDigest: mutation.preimageDigest, plannedBytesDigest: mutation.plannedBytesDigest, changedPaths: mutation.changed ? files.map((file) => `docs/feature/${value}/${file.path}`) : [] };
   });
 }

@@ -18,6 +18,7 @@ const VIEW_VITE_CONFIG = join(ROOT, "vite.config.ts");
 const PUBLIC_ENTRIES = [
   [".", "index.ts"],
   ["./sandbox", "sandbox/index.ts"],
+  ["./judge", "judge/index.ts"],
   ["./sandbox/e2b-template", "sandbox/e2b-agent-template.ts"],
   ["./adapter", "agents/index.ts"],
   ["./adapter/otel", "agents/ai-sdk-otel.ts"],
@@ -59,7 +60,8 @@ function isRuntimeSource(file) {
 }
 
 function isRuntimeAsset(relativePath) {
-  return [".css", ".html", ".js", ".json"].includes(extname(relativePath));
+  return [".css", ".html", ".js", ".json"].includes(extname(relativePath)) ||
+    (relativePath.startsWith("migrations/") && extname(relativePath) === ".md");
 }
 
 async function walk(dir, files = []) {

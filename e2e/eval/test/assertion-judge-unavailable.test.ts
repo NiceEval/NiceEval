@@ -54,7 +54,7 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV
         assertion: { entryId: judge.entryId },
       });
       const detail = JSON.stringify(assertion.document.assertion);
-      expect(detail).toContain("judge-model-unresolved");
+      expect(detail).toContain("judge-provider-unresolved");
       expect(detail).toContain("failureDetail");
       for (const field of ["rationale", "evidence", "detail", "citations"]) {
         expect(detail).toContain(`\"label\":\"${field}\"`);

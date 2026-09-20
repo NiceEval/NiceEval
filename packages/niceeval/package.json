@@ -25,6 +25,16 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./judge": {
+      "import": {
+        "types": "./dist/judge/index.d.mts",
+        "default": "./dist/judge/index.mjs"
+      },
+      "require": {
+        "types": "./dist/judge/index.d.cts",
+        "default": "./dist/judge/index.cjs"
+      }
+    },
     "./sandbox": {
       "import": {
         "types": "./dist/sandbox/index.d.mts",

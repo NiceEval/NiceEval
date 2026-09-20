@@ -1,8 +1,9 @@
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
   name: { "zh-CN": "Claude Agent SDK 示例", en: "Claude Agent SDK example" },
-  judgeRuntime: { model: "gpt-5.4" },
+  judgeRuntime: OpenAIProvider({ model: "gpt-5.4" }),
   timeoutMs: 120_000,
   // 每个 attempt 都要经一个真实子进程(server.ts)+ Claude Code CLI 子进程 + 网络调用。
   // 钉死串行(不是"偏保守",是必须):同一 model 分桶下两个并发的

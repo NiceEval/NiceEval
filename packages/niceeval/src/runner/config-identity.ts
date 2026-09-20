@@ -10,7 +10,7 @@
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
-import type { EvalResult, JsonValue, JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
+import type { EvalResult, JsonValue, ResolvedJudgeConfig } from "../types.ts";
 import type { AgentRun } from "./types.ts";
 import { adapterIdentity } from "../adapter.ts";
 import type { AdapterIdentity } from "../record/model/run-context.ts";
@@ -47,11 +47,13 @@ export type JudgeConfigIdentity =
   | { readonly _tag: "Unconfigured" }
   | {
       readonly _tag: "Configured";
-      readonly model: DeclaredConfigValue<string>;
-      readonly baseUrl: DeclaredConfigValue<string>;
-      readonly apiKeyEnv: DeclaredConfigValue<string>;
-      readonly timeoutMs: DeclaredConfigValue<number>;
-      readonly maxOutputTokens: DeclaredConfigValue<number>;
+      readonly provider: ResolvedJudgeConfig["provider"];
+      readonly model: string;
+      readonly baseUrl: string;
+      readonly credential: ResolvedJudgeConfig["credential"];
+      readonly timeoutMs: number;
+      readonly maxResponseBytes: number;
+      readonly protocol: ResolvedJudgeConfig["protocol"];
     };
 
 /** manifest 相减得出的一条具名差异;`selector` 原样可复制进 `--accept`。 */
@@ -112,11 +114,13 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
       ? Object.freeze({ _tag: "Unconfigured" as const })
       : Object.freeze({
           _tag: "Configured" as const,
-          model: Object.freeze(identity.judgeRuntime.model),
-          baseUrl: Object.freeze(identity.judgeRuntime.baseUrl),
-          apiKeyEnv: Object.freeze(identity.judgeRuntime.apiKeyEnv),
+          provider: identity.judgeRuntime.provider,
+          model: identity.judgeRuntime.model,
+          baseUrl: identity.judgeRuntime.baseUrl,
+          credential: Object.freeze({ ...identity.judgeRuntime.credential }),
           timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
-          maxOutputTokens: Object.freeze(identity.judgeRuntime.maxOutputTokens),
+          maxResponseBytes: Object.freeze(identity.judgeRuntime.maxResponseBytes),
+          protocol: Object.freeze({ ...identity.judgeRuntime.protocol }),
         }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
   });
@@ -165,23 +169,25 @@ function declaredString(value: string | undefined): DeclaredConfigValue<string> 
   return value === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value };
 }
 
-function judgeIdentity(judge: JudgeConfig | ResolvedJudgeConfig | undefined): JudgeConfigIdentity {
+function judgeIdentity(judge: ResolvedJudgeConfig | undefined): JudgeConfigIdentity {
   return judge === undefined
     ? { _tag: "Unconfigured" }
     : {
         _tag: "Configured",
-        model: declaredString(judge.model),
-        baseUrl: declaredString(judge.baseUrl),
-        apiKeyEnv: declaredString(judge.apiKeyEnv),
-        timeoutMs: judge.timeoutMs === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.timeoutMs },
-        maxOutputTokens: judge.maxOutputTokens === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.maxOutputTokens },
+        provider: judge.provider,
+        model: judge.model,
+        baseUrl: judge.baseUrl,
+        credential: judge.credential,
+        timeoutMs: judge.timeoutMs,
+        maxResponseBytes: judge.maxResponseBytes,
+        protocol: judge.protocol,
       };
 }
 /** 本次解析后配置的身份投影。 */
 export function configIdentityForRun(
   run: AgentRun,
   plan: LinkedRunPlan,
-  judge: JudgeConfig | ResolvedJudgeConfig | undefined = run.judgeRuntime,
+  judge: ResolvedJudgeConfig | undefined = undefined,
 ): ConfigIdentity {
   return freezeConfigIdentity({
     adapter: adapterIdentity(run.adapter),
@@ -238,11 +244,16 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judgeRuntime._tag === "Configured") {
-  putDeclared("judgeRuntime.model", identity.judgeRuntime.model);
-  putDeclared("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
-  putDeclared("judgeRuntime.apiKeyEnv", identity.judgeRuntime.apiKeyEnv);
-  putDeclared("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
-  putDeclared("judgeRuntime.maxOutputTokens", identity.judgeRuntime.maxOutputTokens);
+  put("judgeRuntime.provider", identity.judgeRuntime.provider);
+  put("judgeRuntime.model", identity.judgeRuntime.model);
+  put("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
+  put("judgeRuntime.credential.kind", identity.judgeRuntime.credential.kind);
+  if (identity.judgeRuntime.credential.kind === "environment") put("judgeRuntime.credential.name", identity.judgeRuntime.credential.name);
+  put("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
+  put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
+  put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
+  put("judgeRuntime.protocol.revision", identity.judgeRuntime.protocol.revision);
+  if (identity.judgeRuntime.protocol.kind === "chat-completions") put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);
   }
   put("agentInstalls", [...identity.agentInstalls]);
   return out;

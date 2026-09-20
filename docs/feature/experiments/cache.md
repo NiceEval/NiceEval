@@ -210,7 +210,7 @@ Score 的 partial 或 unavailable 不能作为完整结果沿用；`scored` 不�
 `runId` 是全局 Run identity，`slotId` 是 Run 内位置身份；两者都不要求与另一 Run 的目标相等。
 跨 Run 的适用性比较使用逻辑位置与输入 identity。
 
-fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 execution identity；reuse planning 只比较 Core digest，不重新发现配置，也不把 digest 回填成两份 identity。凭据不进入 identity 或 manifest；`judge.apiKeyEnv` 只表示读取凭据的位置。`sharedState` 未声明时不在配置身份对象或 manifest 写键，因而保持既有 base config hash；声明、删除或变更 key 分别产生具名 `config:sharedState.key` added、removed、changed 差异。
+fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 execution identity；reuse planning 只比较 Core digest，不重新发现配置，也不把 digest 回填成两份 identity。凭据不进入 identity 或 manifest；Judge Provider 的 `apiKeyEnv` 只表示读取凭据的位置。`sharedState` 未声明时不在配置身份对象或 manifest 写键，因而保持既有 base config hash；声明、删除或变更 key 分别产生具名 `config:sharedState.key` added、removed、changed 差异。
 
 自动 `carried` 只沿用同一逻辑位置最新 source barrier 中、通过全部资格条件的 Attempt。Eval sourceClosure、已登记的 Judge 数据或该 `Eval × Experiment` 的有效 Judge 配置任一变化，都会改变 execution identity 并形成 `identity-mismatch`。运行时 version/config 摘要只解释已完成的 Judge 评价，不能证明尚未执行的定义未变。未被 sourceClosure 捕获的宿主条件、外部包或动态 import 发生变化时，必须用 `--rerun all` 重验选中范围；不带范围的 `--rerun` 不足以替代它。
 

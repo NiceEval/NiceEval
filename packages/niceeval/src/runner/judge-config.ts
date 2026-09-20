@@ -1,85 +1,47 @@
-import { Predicate } from "effect";
-import type { JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
-import { assertionRuntimeLimits } from "../assertions/limits.ts";
+import {
+  isJudgeProvider,
+  resolveJudgeProvider,
+  type JudgeProvider,
+  type JudgeProviderIdentity,
+  type JudgeSelection,
+} from "../judge/provider.ts";
 
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_API_KEY_ENV = "NICEEVAL_JUDGE_KEY";
-const DEFAULT_TIMEOUT_MS = 180_000;
-const DEFAULT_MAX_OUTPUT_TOKENS = 1_024;
+const utf8 = new TextEncoder();
 
-/**
- * Resolve Judge Runtime once per Eval × Experiment pair. Undefined fields
- * inherit independently; the frozen result is shared by identity and execution.
- */
-export function normalizeJudgeConfig(value: unknown, label: string): JudgeConfig {
-  if (!Predicate.isObject(value) || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object`);
+function modelSelection(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim() === "" || utf8.encode(value).byteLength > 8 * 1024 || /\p{Cc}/u.test(value)) {
+    throw new TypeError(`${label} must be a non-empty, control-free model ID of at most 8192 UTF-8 bytes`);
   }
-  const allowed = ["model", "baseUrl", "apiKeyEnv", "timeoutMs", "maxOutputTokens"] as const;
-  const captured: Partial<Record<(typeof allowed)[number], unknown>> = {};
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string" || !allowed.includes(key as (typeof allowed)[number])) {
-      throw new TypeError(`${label} has unknown option ${String(key)}`);
-    }
-    const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-      throw new TypeError(`${label}.${key} must be an enumerable data property`);
-    }
-    captured[key as (typeof allowed)[number]] = descriptor.value;
-  }
-  const boundedText = (key: "model" | "baseUrl" | "apiKeyEnv", maximumBytes: number): string | undefined => {
-    const candidate = captured[key];
-    if (candidate === undefined) return undefined;
-    if (typeof candidate !== "string" || candidate.trim() === "" || new TextEncoder().encode(candidate).byteLength > maximumBytes || /\p{Cc}/u.test(candidate)) {
-      throw new TypeError(`${label}.${key} must be non-empty, control-free, and at most ${maximumBytes} UTF-8 bytes`);
-    }
-    return candidate;
-  };
-  const positiveInteger = (key: "timeoutMs" | "maxOutputTokens", maximum: number): number | undefined => {
-    const candidate = captured[key];
-    if (candidate === undefined) return undefined;
-    if (typeof candidate !== "number" || !Number.isSafeInteger(candidate) || candidate <= 0 || candidate > maximum) {
-      throw new TypeError(`${label}.${key} must be a positive safe integer at most ${maximum}`);
-    }
-    return candidate;
-  };
-  const model = boundedText("model", assertionRuntimeLimits.stringBytes);
-  const baseUrl = boundedText("baseUrl", assertionRuntimeLimits.stringBytes);
-  if (baseUrl !== undefined) {
-    let parsed: URL;
-    try { parsed = new URL(baseUrl); } catch { throw new TypeError(`${label}.baseUrl must be an absolute http(s) URL`); }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new TypeError(`${label}.baseUrl must be an absolute http(s) URL`);
-    }
-  }
-  const apiKeyEnv = boundedText("apiKeyEnv", assertionRuntimeLimits.stringBytes);
-  if (apiKeyEnv !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(apiKeyEnv)) {
-    throw new TypeError(`${label}.apiKeyEnv must be an environment variable name`);
-  }
-  const timeoutMs = positiveInteger("timeoutMs", Number.MAX_SAFE_INTEGER);
-  const maxOutputTokens = positiveInteger("maxOutputTokens", Number.MAX_SAFE_INTEGER);
-  return Object.freeze({
-    ...(model === undefined ? {} : { model }),
-    ...(baseUrl === undefined ? {} : { baseUrl }),
-    ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
-    ...(timeoutMs === undefined ? {} : { timeoutMs }),
-    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
-  });
+  return value;
 }
 
+/** Definition-boundary validation for a model override or an opaque Provider. */
+export function normalizeJudgeSelection(value: unknown, label: string): JudgeSelection {
+  if (typeof value === "string") return modelSelection(value, label);
+  if (isJudgeProvider(value)) return value;
+  throw new TypeError(`${label} must be a model string or a Judge Provider created by niceeval/judge`);
+}
+
+/**
+ * Resolve once per Eval × Experiment pair. The highest-priority complete
+ * Provider replaces all lower settings; only model strings above it apply.
+ */
 export function resolveJudge(
-  experimentJudge: JudgeConfig | undefined,
-  evalJudge: JudgeConfig | undefined,
-  configJudge: JudgeConfig | undefined,
-): ResolvedJudgeConfig {
-  const maxOutputTokens = experimentJudge?.maxOutputTokens ?? evalJudge?.maxOutputTokens ?? configJudge?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
-  return Object.freeze({
-    ...(experimentJudge?.model ?? evalJudge?.model ?? configJudge?.model) === undefined
-      ? {}
-      : { model: experimentJudge?.model ?? evalJudge?.model ?? configJudge?.model },
-    baseUrl: experimentJudge?.baseUrl ?? evalJudge?.baseUrl ?? configJudge?.baseUrl ?? DEFAULT_BASE_URL,
-    apiKeyEnv: experimentJudge?.apiKeyEnv ?? evalJudge?.apiKeyEnv ?? configJudge?.apiKeyEnv ?? DEFAULT_API_KEY_ENV,
-    timeoutMs: experimentJudge?.timeoutMs ?? evalJudge?.timeoutMs ?? configJudge?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    maxOutputTokens,
-  });
+  experimentJudge: JudgeSelection | undefined,
+  evalJudge: JudgeSelection | undefined,
+  configJudge: JudgeProvider | undefined,
+): JudgeProviderIdentity | undefined {
+  const layers = [configJudge, evalJudge, experimentJudge] as const;
+  let provider: JudgeProvider | undefined;
+  let model: string | undefined;
+  for (const layer of layers) {
+    if (layer === undefined) continue;
+    if (isJudgeProvider(layer)) {
+      provider = layer;
+      model = undefined;
+    } else if (provider !== undefined) {
+      model = modelSelection(layer, "Judge model override");
+    }
+  }
+  return provider === undefined ? undefined : resolveJudgeProvider(provider, model);
 }

@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/migration-assistance.test.ts",
+  "current": {
+    "necase_YS0ZMXF74ZS12WD4": {
+      "owner": "docs/engineering/testing/e2e/cli.md#judge-provider-migration",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_YS0ZMXF74ZS12WD4",
+      "atCommit": "cf25a6bfe21b8382c7063ff9ac01f5a861545ace",
+      "transactionId": "netxn_ab041e345ef94bcc91a607964582ebbe",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#judge-provider-migration"
+      }
+    }
+  ],
+  "tombstones": []
+}

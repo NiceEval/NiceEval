@@ -1,3 +1,4 @@
+import { OpenAIProvider } from "niceeval/judge";
 import { defineConfig } from "niceeval";
 
 const judgeBaseUrl = process.env.NICEEVAL_E2E_JUDGE_BASE_URL;
@@ -11,12 +12,12 @@ export default defineConfig({
     "eval-deterministic": { inputPerMTok: 0, outputPerMTok: 0 },
   },
   ...(judgeBaseUrl === undefined ? {} : {
-    judgeRuntime: {
+    judgeRuntime: OpenAIProvider({
       model: "judge-e2e",
       baseUrl: judgeBaseUrl,
       apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY",
       timeoutMs: 10_000,
       maxOutputTokens: 128,
-    },
+    }),
   }),
 });

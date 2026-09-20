@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/typesafe-judge.test.ts",
+  "current": {
+    "necase_8C7V56HSWJDNXH9B": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-score-audit",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_8C7V56HSWJDNXH9B",
+      "atCommit": "cf25a6bfe21b8382c7063ff9ac01f5a861545ace",
+      "transactionId": "netxn_bf9745748cb1422d8ce3c8f20d14bd52",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-score-audit"
+      }
+    }
+  ],
+  "tombstones": []
+}

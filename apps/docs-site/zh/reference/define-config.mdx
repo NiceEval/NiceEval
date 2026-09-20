@@ -8,9 +8,10 @@ description: "defineConfig 参考：Judge Runtime、Reporters、并发、超时�
 
 ```ts
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
-  judgeRuntime: { model: "gpt-5.4-mini", maxOutputTokens: 512 },
+  judgeRuntime: OpenAIProvider({ model: "gpt-5.4-mini", maxOutputTokens: 512 }),
   maxConcurrency: 4,
   timeoutMs: 300_000,
 });
@@ -43,10 +44,10 @@ workspace?: string;
 #### `judgeRuntime`
 
 ```ts
-judgeRuntime?: JudgeConfig;
+judgeRuntime?: JudgeProvider;
 ```
 
-项目级默认 Judge Runtime 配置；EvalDef.judge 与 Experiment.judgeRuntime 可逐字段替换默认值。
+项目级默认 Judge Provider；Eval 与 Experiment 可替换模型或整个 Provider。
 
 #### `reporters`
 

@@ -64,10 +64,10 @@ plugins?: readonly PluginInstance<"eval">[];
 #### `judge`
 
 ```ts
-judge?: JudgeConfig;
+judge?: JudgeSelection;
 ```
 
-本 Eval 的 Judge Runtime 字段级覆盖；Experiment 与项目 Config 可补齐未声明字段。
+模型字符串只替换项目 Judge Provider 的模型；Provider 实例整体替换。Experiment 设置优先。
 
 #### `reporters`
 
@@ -349,7 +349,7 @@ t.judge({ source: expected, summary: turn.message }, factualSummary)
   .label("事实一致");
 ```
 
-Judge 材料接受有界 JSON 值，并在登记时快照。模型配置按 `Experiment.judgeRuntime`、Eval 的 `judge`、项目配置的 `judgeRuntime` 与内置默认逐字段求值；`undefined` 继续继承。Eval 的 `judge` 为这道题指定模型配置，不是 Match 允许列表。通过制与计分制都可调用 `.gate(minimum)`；计分制还可调用 `.score(n)`，并保留 gate 失败时的 contribution。
+Judge 材料接受有界 JSON 值，并在登记时快照。解析从项目 `judgeRuntime` 开始，再应用 Eval 的 `judge` 和 Experiment 的 `judgeRuntime`；完整 Provider 整体替换服务与执行配置，模型字符串只替换已选 Provider 的模型。Eval 的 `judge` 为这道题选择模型或 Provider，不是 Match 允许列表。通过制与计分制都可调用 `.gate(minimum)`；计分制还可调用 `.score(n)`，并保留 gate 失败时的 contribution。
 
 ### 现成裁判与自定义 Match
 
@@ -372,14 +372,14 @@ t.check(
 ).gate(0.7).score(25);
 ```
 
-`faithfulness` 先提取事实，再逐项判断，由代码计算比例；提取不完整时没有有效得分。
+`faithfulness` 先提取事实，再逐项判断，由代码计算比例；提取不完整时没有有效得分。TypeSafe 不支持 `extract`，因此在 `TypesafeProvider` 上为 `unavailable`，不会改为整体估分。
 `pairwisePreference` 是一次固定顺序比较，适合一个候选与一个参考的比较。
 `closeQA` 只用给定上下文，不查外部知识。编造、矛盾、答非所问，或材料足够却拒答时为 incorrect；
 有据但遗漏必要内容时为 incomplete。冲突时先取 incorrect，再取 incomplete，最后才取 correct。
 
 需要组合多个模型步骤时，使用高级 `defineScoreMatch` 的 `score(value, context)`。
 `context.llm` 提供 `score`、`classify`、`extract` 和 `batchClassify`，返回 Effect。
-它们与现成裁判共用调用预算、超时和审计记录。静态配置校验不会发网络请求；模型或 key 缺失也不会发请求。实际调用使用 forced-function 请求与严格响应校验；传输或超时为 unavailable，HTTP 400 或协议不兼容为 errored。完整契约见 [自定义 Match](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md)。
+它们与现成裁判共用调用预算、超时和审计记录。静态配置校验不会发网络请求；Provider、模型或 key 缺失也不会发请求。聊天服务使用 forced-function 请求，TypeSafe 使用 `/systemone`；两者都严格校验响应。传输或超时为 unavailable，HTTP 400 或协议不兼容为 errored。完整契约见 [自定义 Match](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md)。
 
 ## `Turn` 返回类型
 

@@ -2,6 +2,7 @@ import {
   defineAdapter,
   defineJudge,
   defineEval,
+  defineConfig,
   type JudgeDefinition,
   defineAdapterContract,
   type AdapterCleanupContext,
@@ -11,6 +12,23 @@ import {
 import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
 import type { AdapterAssertionsFactoryContext as AssertionsContextFromSubpath } from "niceeval/adapter";
 import { satisfies, defineScoreMatch } from "niceeval/expect";
+import { OpenAIProvider, OpenRouterProvider, TypesafeProvider, VercelProvider, type JudgeProvider } from "niceeval/judge";
+
+const provider: JudgeProvider = OpenAIProvider({ model: "judge-model" });
+defineConfig({ judgeRuntime: provider });
+defineConfig({ judgeRuntime: VercelProvider({ model: "gateway-model" }) });
+defineConfig({ judgeRuntime: OpenRouterProvider({ model: "router-model", apiKeyEnv: "CUSTOM_KEY" }) });
+defineConfig({ judgeRuntime: TypesafeProvider({ model: "jev-model", apiKey: "type-fixture-key" }) });
+// @ts-expect-error A project must choose a Provider, not just a model.
+defineConfig({ judgeRuntime: "model" });
+// @ts-expect-error Legacy structural Judge configuration is not a Provider.
+defineConfig({ judgeRuntime: { model: "model" } });
+// @ts-expect-error A Provider has a required model.
+OpenAIProvider({});
+// @ts-expect-error A credential selects exactly one source.
+OpenAIProvider({ model: "model", apiKey: "key", apiKeyEnv: "KEY" });
+// @ts-expect-error TypeSafe has no server-side output-token limit.
+TypesafeProvider({ model: "model", maxOutputTokens: 128 });
 
 interface Post { id: string; text: string }
 const hasText = satisfies<Post>("Post has text", (post) => post.text.length > 0);
@@ -182,7 +200,7 @@ defineAdapter({ name: "prototype-collision", create: () => ({ toString: () => "a
 
 const quality = defineJudge({ name: "post-quality", rubric: "Post text is relevant to the task." });
 const qualityAlias: JudgeDefinition = quality;
-social.defineEval({ judge: { model: "eval-judge" }, async test(t) {
+social.defineEval({ judge: "eval-judge", async test(t) {
   const post: Post = await t.post("hello");
   t.check({ task: "greet", post }, qualityAlias).gate(0.8);
 } });

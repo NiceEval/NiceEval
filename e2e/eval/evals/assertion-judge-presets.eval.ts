@@ -28,7 +28,7 @@ const custom = defineScoreMatch<{ output: string }>({
 
 export default judgePresetApplication.defineScoreEval({
   description: "Inspect a combined rubric with classified, decomposed, comparative and free-form scores",
-  judge: { model: "judge-eval-override" },
+  judge: "judge-eval-override",
   test(t) {
     const output = t.answer();
     t.factuality({ input: "Describe Paris", output, expected: "Paris is the capital of France and has museums." }, limits)

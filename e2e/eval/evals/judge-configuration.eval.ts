@@ -1,3 +1,4 @@
+import { OpenAIProvider } from "niceeval/judge";
 import { defineAdapter, defineJudge } from "niceeval";
 import { equals } from "niceeval/expect";
 
@@ -13,7 +14,7 @@ export default {
     test(t) { t.check(t.answer(), quality).gate(1); },
   }),
   overridden: configurationApplication.defineEval({
-    judge: { model: "eval-specific-model", maxOutputTokens: 256 },
+    judge: OpenAIProvider({ model: "eval-specific-model", baseUrl: process.env.NICEEVAL_E2E_JUDGE_BASE_URL, apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY", maxOutputTokens: 256 }),
     test(t) { t.judge(t.answer(), quality).gate(1); },
   }),
   pure: configurationApplication.defineEval({

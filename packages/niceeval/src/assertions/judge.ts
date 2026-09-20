@@ -312,12 +312,13 @@ export async function readJudgeResponseCapped(response: Response, maxBytes: numb
 /** The single bounded HTTP adapter used by every managed LLM primitive. */
 export async function requestScoreMatchProvider(input: {
   readonly baseUrl: string;
+  readonly endpoint: "chat/completions" | "systemone";
   readonly apiKey: string;
   readonly body: string;
   readonly maxBytes: number;
   readonly signal: AbortSignal;
 }): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
-  const response = await fetch(`${input.baseUrl.replace(/\/$/u, "")}/chat/completions`, {
+  const response = await fetch(`${input.baseUrl.replace(/\/$/u, "")}/${input.endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.apiKey}` },
     body: input.body,

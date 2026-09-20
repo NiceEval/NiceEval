@@ -61,6 +61,8 @@ export interface DiscoveryIssue {
   readonly code: DiscoveryIssueCode;
   readonly message: string;
   readonly actions: readonly string[];
+  /** Retained in-process for structured error assistance; never persisted. */
+  readonly cause?: unknown;
 }
 
 /** Discovery reports the whole invalid batch, rather than stopping at the first bad file. */
@@ -130,8 +132,9 @@ function issue(
   code: DiscoveryIssueCode,
   message: string,
   actions: readonly string[],
+  cause?: unknown,
 ): DiscoveryError {
-  return discoveryError([{ file, code, message, actions }]);
+  return discoveryError([{ file, code, message, actions, ...(cause === undefined ? {} : { cause }) }]);
 }
 
 function causeMessage(cause: unknown): string {
@@ -155,6 +158,7 @@ function importModule(
       "discovery.import-failed",
       `Top-level ${kind} module evaluation failed: ${causeMessage(cause)}`,
       [`Move resource work into the selected ${kind} body.`, "Fix the reported top-level exception."],
+      cause,
     ),
   });
 }
@@ -431,6 +435,7 @@ function discoverEvalEntry(
         "discovery.import-failed",
         causeMessage(cause),
         ["Fix module loading and loader declarations."],
+        cause,
       ),
     });
     const module = yield* decodeEvalModule(captured.value, fileLabel);
