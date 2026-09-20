@@ -214,3 +214,9 @@ Linux 上失去可执行进程的 zombie owner 会通过公开 recovery 交接 s
 Contract: [docs/feature/experiments/use-case/cache-adopt-migrated-config.md](../../../feature/experiments/use-case/cache-adopt-migrated-config.md)
 
 删除旧实验后明确采用指定 Run，保持原 Attempt 身份与证据，并在目标不变时持续沿用；整批范围或输入不合格时零写入。
+## Judge 模型不变时沿用，修改 Eval 模型后重新评价 {#judge-model-reuse}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/cache.md#复用资格](../../../feature/experiments/cache.md#复用资格)
+
+Judge 模型不变时沿用，修改 Eval 模型后重新评价

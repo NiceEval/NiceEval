@@ -3,96 +3,167 @@
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/use-case/verify-judge.md
 // @concord-implements docs/feature/eval/use-case/judge-quality.md
-// Native LLM-as-Judge evaluator. The Assert-first path keeps provider I/O,
-// timeout, retry, and interruption inside the owning Effect.
+// Native LLM-as-Judge evaluator. Definition and material capture are pure;
+// provider I/O, timeout, retry, and interruption stay in the owning Effect.
 
-import { ClosedQA, Factuality, Summary } from "autoevals";
-import { Clock, Effect, Random } from "effect";
-import OpenAI from "openai";
-
-import { summaryText } from "./display.ts";
-import type { MeasurementAssertionEvaluation } from "./api.ts";
+import { Effect, Predicate } from "effect";
 import { defineScoreMatch, type ScoreMatch } from "./match.ts";
-import type { JudgeMaterial, ResolvedJudgeConfig } from "./types.ts";
-import { getEnv } from "../util.ts";
+import type { JsonValue } from "../shared/types.ts";
 
-const JUDGE_MAX_ATTEMPTS = 3;
-const JUDGE_RETRY_BASE_DELAY_MS = 1_000;
-const PROBE_TIMEOUT_MS = 20_000;
-const PROBE_MAX_ATTEMPTS = 2;
-
-export type JudgeRecipe = "closedQA" | "factuality" | "summarizes";
-export interface JudgeMatchSpec {
-  readonly recipe: JudgeRecipe;
-  readonly reference: string;
+export interface JudgeAnchor {
+  readonly measurement: number;
+  readonly description: string;
 }
+export interface JudgeOptions {
+  readonly name: string;
+  readonly rubric: string;
+  readonly anchors?: readonly JudgeAnchor[];
+  readonly maxMaterialBytes?: number;
+  readonly maxCalls?: number;
+  readonly maxAuditBytes?: number;
+}
+export type JudgeDefinition = ScoreMatch<unknown>;
 
-const judgeMatches = new WeakMap<object, JudgeMatchSpec>();
+const UTF8 = new TextEncoder();
+const DEFAULT_ANCHORS = Object.freeze([
+  Object.freeze({ measurement: 0, description: "Does not satisfy the rubric." }),
+  Object.freeze({ measurement: 1, description: "Fully satisfies the rubric." }),
+]);
 
-function judgeMatch(recipe: JudgeRecipe, reference: string): ScoreMatch<JudgeMaterial> {
-  if (typeof reference !== "string" || reference.trim() === "") {
-    throw new TypeError("Judge Match reference must be a non-empty string");
+function utf8Bytes(value: string): number { return UTF8.encode(value).byteLength; }
+function compareCodeUnits(left: string, right: string): number { return left < right ? -1 : left > right ? 1 : 0; }
+function exactDataObject(value: unknown, label: string, keys: readonly string[]): Readonly<Record<string, unknown>> {
+  if (!Predicate.isObject(value) || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
+  let ownKeys: readonly PropertyKey[];
+  try { ownKeys = Reflect.ownKeys(value); } catch { throw new TypeError(`${label} cannot be reflected`); }
+  const captured: Array<readonly [string, unknown]> = [];
+  for (const key of ownKeys) {
+    if (typeof key !== "string" || !keys.includes(key)) throw new TypeError(`${label} has unknown option ${String(key)}`);
+    let descriptor: PropertyDescriptor | undefined;
+    try { descriptor = Reflect.getOwnPropertyDescriptor(value, key); } catch { throw new TypeError(`${label}.${key} cannot be reflected`); }
+    if (descriptor === undefined || !("value" in descriptor)) throw new TypeError(`${label}.${key} must be a data property`);
+    captured.push([key, descriptor.value]);
   }
-  const match = defineScoreMatch<JudgeMaterial>({
-    name: `${recipe}(${JSON.stringify(reference)})`,
-    score: () => {
-      throw new TypeError("Judge Match evaluation requires an Eval context with Judge capability");
+  return Object.freeze(Object.fromEntries(captured));
+}
+function boundedText(value: unknown, label: string, maximumBytes: number, controlFree = false): string {
+  if (typeof value !== "string" || value.trim().length === 0 || utf8Bytes(value) > maximumBytes || controlFree && /\p{Cc}/u.test(value)) {
+    throw new TypeError(`${label} must be non-empty and at most ${maximumBytes} UTF-8 bytes${controlFree ? " without control characters" : ""}`);
+  }
+  return value;
+}
+function positiveInteger(value: unknown, label: string, maximum: number): number {
+  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0 || value > maximum) throw new TypeError(`${label} must be a positive integer at most ${maximum}`);
+  return value;
+}
+
+/** Defines one immutable scoring standard and returns the managed Match itself. */
+export function defineJudge(options: JudgeOptions): JudgeDefinition {
+  const input = exactDataObject(options, "defineJudge() options", ["name", "rubric", "anchors", "maxMaterialBytes", "maxCalls", "maxAuditBytes"]);
+  const name = boundedText(input.name, "Judge name", 128, true);
+  const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
+  const rawAnchors = input.anchors ?? DEFAULT_ANCHORS;
+  if (!Array.isArray(rawAnchors) || rawAnchors.length < 2 || rawAnchors.length > 32) throw new TypeError("Judge anchors must contain between 2 and 32 entries");
+  let previous = -1;
+  const anchors: JudgeAnchor[] = [];
+  const anchorKeys = Reflect.ownKeys(rawAnchors);
+  if (anchorKeys.some((key) => key !== "length" && !(typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < rawAnchors.length))) {
+    throw new TypeError("Judge anchors cannot contain custom properties");
+  }
+  for (let index = 0; index < rawAnchors.length; index += 1) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(rawAnchors, String(index));
+    if (descriptor === undefined || !("value" in descriptor)) throw new TypeError(`Judge anchors[${index}] must be a data property`);
+    const raw = descriptor.value;
+    const anchor = exactDataObject(raw, `Judge anchors[${index}]`, ["measurement", "description"]);
+    const measurement = anchor.measurement;
+    if (typeof measurement !== "number" || !Number.isFinite(measurement) || measurement < 0 || measurement > 1 || measurement <= previous) throw new TypeError("Judge anchors must be strictly increasing finite measurements in [0, 1]");
+    previous = measurement;
+    anchors.push(Object.freeze({ measurement, description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024) }));
+  }
+  if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1) throw new TypeError("Judge anchors must include 0 and 1");
+  const maxMaterialBytes = input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 48 * 1024);
+  const definition = defineScoreMatch<unknown>({
+    name,
+    version: "1",
+    config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
+    llm: {
+      maxMaterialBytes,
+      ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
+      ...(input.maxAuditBytes === undefined ? {} : { maxAuditBytes: positiveInteger(input.maxAuditBytes, "Judge maxAuditBytes", 256 * 1024) }),
     },
+    score: (material, context) => context.llm.score({ rubric, anchors, material: material as JsonValue })
+      .pipe(Effect.map((result) => ({ state: "measured" as const, ...result }))),
   });
-  judgeMatches.set(match, Object.freeze({ recipe, reference }));
-  return match;
+  return definition;
 }
 
-/** Creates a pure closed-question Judge Match. Registration occurs only in check(). */
-// @concord-code ne-eval-judge-closedqa-match
-// @concord-implements docs/feature/judge/library.md
-// @concord-implements docs/feature/eval/use-case/judge-quality.md
-export function closedQA(question: string): ScoreMatch<JudgeMaterial> {
-  return judgeMatch("closedQA", question);
-}
-
-/** Creates a pure factuality Judge Match. Registration occurs only in check(). */
-// @concord-code ne-eval-judge-factuality-match
-// @concord-implements docs/feature/judge/library.md
-export function factuality(expected: string): ScoreMatch<JudgeMaterial> {
-  return judgeMatch("factuality", expected);
-}
-
-/** Creates a pure summary-quality Judge Match. Registration occurs only in check(). */
-// @concord-code ne-eval-judge-summarizes-match
-// @concord-implements docs/feature/judge/library.md
-export function summarizes(source: string): ScoreMatch<JudgeMaterial> {
-  return judgeMatch("summarizes", source);
-}
-
-/** @internal Resolves a managed Judge Match without evaluating it. */
-export function judgeMatchSpecOf(value: unknown): JudgeMatchSpec | undefined {
-  return typeof value === "object" && value !== null ? judgeMatches.get(value) : undefined;
-}
-type AutoevalResult = { score?: number | null; metadata?: Record<string, unknown> };
-
-type JudgeMeasurementResult =
-  | {
-      readonly state: "measured";
-      readonly value: number;
-      readonly evidence?: string;
-      readonly explanation?: string;
-      readonly detail?: string;
-      readonly citations?: readonly string[];
+interface SnapshotState { nodes: number; readonly ancestors: WeakSet<object>; }
+function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0): unknown {
+  state.nodes += 1;
+  if (state.nodes > 16_384) throw new TypeError("Judge material exceeds 16,384 traversal nodes");
+  if (depth > 32) throw new TypeError("Judge material exceeds depth 32");
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError("Judge material numbers must be finite");
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (typeof value !== "object" || value === null || value instanceof Date || value instanceof RegExp) throw new TypeError(`Judge material cannot contain ${typeof value}`);
+  if (state.ancestors.has(value)) throw new TypeError("Judge material cannot contain an ancestor cycle");
+  state.ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      let keys: readonly PropertyKey[];
+      try { keys = Reflect.ownKeys(value); } catch { throw new TypeError("Judge material array reflection failed"); }
+      for (const key of keys) {
+        if (key === "length" || typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length) continue;
+        let descriptor: PropertyDescriptor | undefined;
+        try { descriptor = Reflect.getOwnPropertyDescriptor(value, key); } catch { throw new TypeError("Judge material array reflection failed"); }
+        if (descriptor?.enumerable) throw new TypeError("Judge material arrays cannot contain extra enumerable properties or toJSON");
+      }
+      const entries: unknown[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        let descriptor: PropertyDescriptor | undefined;
+        try { descriptor = Reflect.getOwnPropertyDescriptor(value, String(index)); } catch { throw new TypeError("Judge material array reflection failed"); }
+        if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined) throw new TypeError("Judge material arrays cannot contain holes, accessors, or undefined");
+        entries.push(snapshotMaterial(descriptor.value, state, depth + 1));
+      }
+      return Object.freeze(entries);
     }
-  | {
-      readonly state: "unavailable";
-      readonly reason: "source-unavailable";
-      readonly detail: string;
-      readonly evidence?: string;
+    let prototype: object | null;
+    try { prototype = Reflect.getPrototypeOf(value); } catch { throw new TypeError("Judge material prototype reflection failed"); }
+    if (prototype !== Object.prototype && prototype !== null) throw new TypeError("Judge material objects must be plain or null-prototype objects");
+    let keys: readonly PropertyKey[];
+    try { keys = Reflect.ownKeys(value); } catch { throw new TypeError("Judge material key reflection failed"); }
+    const entries: Array<readonly [string, unknown]> = [];
+    for (const key of keys) {
+      let descriptor: PropertyDescriptor | undefined;
+      try { descriptor = Reflect.getOwnPropertyDescriptor(value, key); } catch { throw new TypeError("Judge material property reflection failed"); }
+      if (descriptor === undefined || !descriptor.enumerable) continue;
+      if (typeof key !== "string" || !("value" in descriptor)) throw new TypeError("Judge material enumerable properties must be string data properties");
+      if (descriptor.value !== undefined) entries.push([key, snapshotMaterial(descriptor.value, state, depth + 1)]);
     }
-  | {
-      readonly state: "errored";
-      readonly code: string;
-      readonly message: string;
-    };
+    return Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => compareCodeUnits(left, right))));
+  } finally { state.ancestors.delete(value); }
+}
+/** @internal Shared strict call-time capture for all managed Match material. */
+export function snapshotScoreMatchMaterial(value: unknown): JsonValue {
+  return snapshotMaterial(value, { nodes: 0, ancestors: new WeakSet() }) as JsonValue;
+}
 
-function errorSummary(error: unknown): string {
+export function chunkUtf8(value: string): readonly string[] {
+  const chunks: string[] = [];
+  let current = ""; let bytes = 0;
+  for (const point of value) {
+    const size = utf8Bytes(point);
+    if (bytes + size > 4 * 1024) { chunks.push(current); current = ""; bytes = 0; }
+    current += point; bytes += size;
+  }
+  if (current !== "" || value === "") chunks.push(current);
+  return Object.freeze(chunks);
+}
+const RESPONSE_BYTES_PER_TOKEN = 8;
+
+export function errorSummary(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/\s+/g, " ").slice(0, 300);
 }
@@ -141,7 +212,7 @@ function headerValue(headers: unknown, name: string): string | undefined {
   return undefined;
 }
 
-function retryAfterMs(headers: unknown, nowMs: number): number | undefined {
+export function retryAfterMs(headers: unknown, nowMs: number): number | undefined {
   const raw = headerValue(headers, "retry-after")?.trim();
   if (!raw) return undefined;
   const seconds = Number(raw);
@@ -170,25 +241,15 @@ function isConnectionFailure(error: unknown): boolean {
   return false;
 }
 
-function isTransportFailure(error: unknown): boolean {
-  return judgeStatus(error) !== undefined || isConnectionFailure(error);
+export function isTransportFailure(error: unknown): boolean {
+  const status = judgeStatus(error);
+  return isConnectionFailure(error) || isTransientJudgeStatus(status);
 }
 
-function isTransientJudgeFailure(error: unknown): boolean {
+export function isTransientJudgeFailure(error: unknown): boolean {
   const status = judgeStatus(error);
   return isTransientJudgeStatus(status) || (status === undefined && isConnectionFailure(error));
 }
-
-interface JudgeProviderFailure {
-  readonly _tag: "JudgeProviderFailure";
-  readonly error: unknown;
-}
-
-interface JudgeProbeTimeout {
-  readonly _tag: "JudgeProbeTimeout";
-}
-
-type JudgeProbeFailure = JudgeProviderFailure | JudgeProbeTimeout;
 
 /**
  * An author-facing AbortSignal is external to this fiber. It must interrupt
@@ -213,7 +274,7 @@ function interruptWhenAborted(signal: AbortSignal): Effect.Effect<never> {
   });
 }
 
-function interruptibleByCaller<A, E, R>(
+export function interruptibleByCaller<A, E, R>(
   effect: Effect.Effect<A, E, R>,
   signal: AbortSignal | undefined,
 ): Effect.Effect<A, E, R> {
@@ -224,330 +285,49 @@ function interruptibleByCaller<A, E, R>(
       : Effect.raceFirst(effect, interruptWhenAborted(signal)));
 }
 
-function formatSeconds(ms: number): string {
-  const seconds = ms / 1000;
-  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
+class JudgeResponseTooLarge extends Error {}
+
+export function responseByteCap(maxOutputTokens: number): number {
+  return Math.max(1_024, maxOutputTokens * RESPONSE_BYTES_PER_TOKEN);
 }
 
-function judgeFailureEvidence(error: unknown, model: string, attempts: number, retried: boolean): string {
-  const parts = [`model=${model}`];
-  const status = judgeStatus(error);
-  const code = judgeCode(error);
-  if (status !== undefined) parts.push(`HTTP ${status}`);
-  if (code !== undefined) parts.push(`code=${code}`);
-  parts.push(errorSummary(error));
-  parts.push(retried ? `retry=yes · attempts=${attempts}` : "retry=no");
-  if (attempts >= JUDGE_MAX_ATTEMPTS) parts.push("retries exhausted");
-  return parts.join(" · ");
-}
-
-function judgeClient(apiKey: string, baseURL: string, signal?: AbortSignal): OpenAI {
-  return new OpenAI({
-    apiKey,
-    baseURL,
-    maxRetries: 0,
-    fetch: signal
-      ? (input, init) => fetch(input, {
-          ...init,
-          signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
-        })
-      : undefined,
-  });
-}
-
-type AutoevalOpenAIClient = NonNullable<Parameters<typeof ClosedQA>[0]["client"]>;
-
-function bridgeAutoevalClient(client: OpenAI): { readonly client: AutoevalOpenAIClient } {
-  // @ts-expect-error autoevals and this package resolve equivalent OpenAI SDKs through distinct peer contexts.
-  return { client };
-}
-
-export function freezeJudgeMaterial(material: JudgeMaterial): JudgeMaterial {
-  if (typeof material !== "object" || material === null || typeof material.input !== "string" || typeof material.output !== "string") {
-    throw new TypeError("Judge Match requires material { input: string, output: string }");
-  }
-  return Object.freeze({ input: material.input, output: material.output });
-}
-
-function missingConfiguration(resolved: ResolvedJudgeConfig): JudgeMeasurementResult | undefined {
-  if (!resolved.model) return unavailable("judge-model-unresolved");
-  if (!getEnv(resolved.apiKeyEnv)) return unavailable(`judge-key-unresolved (${resolved.apiKeyEnv} unset)`);
-  return undefined;
-}
-
-const retryProbe = Symbol("retry-judge-probe");
-
-function probeAttempt(
-  judge: ResolvedJudgeConfig,
-  apiKey: string,
-  endpoint: string,
-  attempt: number,
-  callerSignal: AbortSignal | undefined,
-): Effect.Effect<string | undefined | typeof retryProbe, JudgeProbeFailure> {
-  const probe = Effect.gen(function* () {
-    const response = yield* Effect.tryPromise({
-      try: async (effectSignal) => {
-        // This is the probe's sole Promise adapter boundary. The Effect fiber
-        // owns provider cancellation; caller aborts interrupt that fiber first.
-        const response = await fetch(`${endpoint}/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: judge.model, messages: [{ role: "user", content: "Reply with the single word: ok" }] }),
-          signal: effectSignal,
-        });
-        return {
-          response,
-          body: response.ok ? "" : await response.text().catch(() => ""),
-        };
-      },
-      catch: (error): JudgeProviderFailure => ({ _tag: "JudgeProviderFailure", error }),
-    });
-    if (response.response.ok) return undefined;
-
-    if (isTransientJudgeStatus(response.response.status) && attempt < PROBE_MAX_ATTEMPTS) {
-      const delay = retryAfterMs(response.response.headers, yield* Clock.currentTimeMillis);
-      if (delay !== undefined) yield* Effect.sleep(delay);
-      return retryProbe;
-    }
-    return `Judge precheck failed for ${endpoint} (${judge.model}): HTTP ${response.response.status} ${response.body.slice(0, 300)}`;
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: PROBE_TIMEOUT_MS,
-      orElse: () => Effect.fail({ _tag: "JudgeProbeTimeout" } as const),
-    }),
-  );
-  return interruptibleByCaller(probe, callerSignal);
-}
-
-function probeFailureMessage(
-  failure: JudgeProbeFailure,
-  judge: ResolvedJudgeConfig,
-  endpoint: string,
-): string {
-  if (failure._tag === "JudgeProbeTimeout") {
-    return `Judge precheck timed out for ${endpoint} (${judge.model}) after ${PROBE_TIMEOUT_MS / 1000}s`;
-  }
-  return `Judge precheck failed for ${endpoint} (${judge.model}): ${errorSummary(failure.error)}`;
-}
-
-/**
- * A precheck only tests a configured, credentialed endpoint.  Missing model or
- * key remains a normal zero-network unavailable Assertion when an author consumes it.
- */
-export function probeJudgeEffect(
-  judge: ResolvedJudgeConfig,
-  signal?: AbortSignal,
-): Effect.Effect<string | undefined> {
-  return Effect.suspend(() => {
-    const apiKey = getEnv(judge.apiKeyEnv);
-    if (!judge.model || !apiKey) return Effect.succeed(undefined);
-    const endpoint = judge.baseUrl.replace(/\/$/, "");
-    const probe = (attempt: number): Effect.Effect<string | undefined> =>
-      probeAttempt(judge, apiKey, endpoint, attempt, signal).pipe(
-        Effect.flatMap((result) =>
-          result === retryProbe
-            ? probe(attempt + 1)
-            : Effect.succeed(result)),
-        Effect.catch((failure) =>
-          attempt === PROBE_MAX_ATTEMPTS
-            ? Effect.succeed(probeFailureMessage(failure, judge, endpoint))
-            : probe(attempt + 1)),
-      );
-    return probe(1);
-  });
-}
-
-function unavailableForCall(model: string, timeoutMs: number, attempts: number, retried: boolean): JudgeMeasurementResult {
-  return unavailable(
-    "judge-call-failed",
-    `model=${model} · timed out after ${formatSeconds(timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`,
-  );
-}
-
-function unavailable(detail: string, evidence?: string): JudgeMeasurementResult {
-  return {
-    state: "unavailable",
-    reason: "source-unavailable",
-    detail,
-    ...(evidence === undefined ? {} : { evidence }),
-  };
-}
-
-function evaluatorError(code: string, message: string): JudgeMeasurementResult {
-  return { state: "errored", code, message };
-}
-
-/** Throws synchronously at the author callsite when the Eval did not opt in. */
-export function assertJudgeCapability(
-  judge: ResolvedJudgeConfig | undefined,
-): asserts judge is ResolvedJudgeConfig {
-  if (judge === undefined) {
-    throw new Error("Judge Assertion requires defineEval({ judge: true }) or defineScoreEval({ judge: true })");
-  }
-}
-
-export interface JudgeRecipeExecution {
-  readonly judge: ResolvedJudgeConfig;
-  readonly recipe: JudgeRecipe;
-  readonly reference: string;
-  readonly material: JudgeMaterial;
-  readonly signal?: AbortSignal;
-  readonly random?: () => number;
-}
-
-function evaluateAutoeval(
-  input: JudgeRecipeExecution,
-  material: JudgeMaterial,
-  apiKey: string,
-  model: string,
-): Effect.Effect<AutoevalResult, JudgeProviderFailure> {
-  const provider = Effect.tryPromise({
-    try: (effectSignal) => {
-      const client = bridgeAutoevalClient(judgeClient(
-        apiKey,
-        input.judge.baseUrl,
-        effectSignal,
-      ));
-      return Promise.resolve(
-        input.recipe === "closedQA"
-          ? ClosedQA({ input: material.input, output: material.output, criteria: input.reference, model, ...client })
-          : input.recipe === "factuality"
-            ? Factuality({ input: material.input, output: material.output, expected: input.reference, model, ...client })
-            : Summary({ input: material.input, output: material.output, expected: input.reference, model, ...client }),
-      );
+/** @internal transport seam: cap bytes before any JSON parser observes them. */
+export async function readJudgeResponseCapped(response: Response, maxBytes: number): Promise<Response> {
+  const advertised = response.headers.get("content-length");
+  if (advertised !== null && Number(advertised) > maxBytes) throw new JudgeResponseTooLarge("judge response exceeds the byte cap");
+  if (response.body === null) return response;
+  const reader = response.body.getReader();
+  let bytes = 0;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const next = await reader.read();
+      if (next.done) return controller.close();
+      bytes += next.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel();
+        return controller.error(new JudgeResponseTooLarge("judge response exceeds the byte cap"));
+      }
+      controller.enqueue(next.value);
     },
-    catch: (error): JudgeProviderFailure => ({ _tag: "JudgeProviderFailure", error }),
+    async cancel(reason) { await reader.cancel(reason); },
   });
-  return provider;
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
-function judgeSleep(delayMs: number): Effect.Effect<void> {
-  return Effect.sleep(delayMs);
-}
-
-/**
- * The real Judge invocation. Provider I/O is adapted once, then retry,
- * timeout, interruption, and delay remain inside the owning Effect.
- */
-function evaluateJudgeRecipe(
-  input: JudgeRecipeExecution,
-): Effect.Effect<JudgeMeasurementResult> {
-  const evaluation = Effect.suspend(() => {
-    const { judge: resolved } = input;
-    const frozenMaterial = freezeJudgeMaterial(input.material);
-    const missing = missingConfiguration(resolved);
-    if (missing !== undefined) return Effect.succeed(missing);
-    const model = resolved.model!;
-    const apiKey = getEnv(resolved.apiKeyEnv)!;
-    let attempts = 0;
-    let retried = false;
-
-    const evaluate = (attempt: number): Effect.Effect<JudgeMeasurementResult> =>
-      Effect.sync(() => {
-        attempts = attempt + 1;
-      }).pipe(
-        Effect.andThen(
-          evaluateAutoeval(input, frozenMaterial, apiKey, model).pipe(
-            Effect.flatMap((result): Effect.Effect<JudgeMeasurementResult> => {
-              if (typeof result.score !== "number" || !Number.isFinite(result.score) || result.score < 0 || result.score > 1) {
-                return Effect.succeed(evaluatorError("judge-invalid-response", "Judge returned no finite score in [0, 1]"));
-              }
-              const rationale = result.metadata?.rationale;
-              const returnedEvidence = result.metadata?.evidence;
-              const returnedDetail = result.metadata?.detail;
-              const returnedCitations = result.metadata?.citations;
-              return Effect.succeed({
-                state: "measured" as const,
-                value: result.score,
-                ...(typeof returnedEvidence === "string" && returnedEvidence.trim() !== ""
-                  ? { evidence: summaryText(returnedEvidence) }
-                  : {}),
-                ...(typeof rationale === "string" && rationale.trim() !== "" ? { explanation: summaryText(rationale) } : {}),
-                ...(typeof returnedDetail === "string" && returnedDetail.trim() !== "" ? { detail: summaryText(returnedDetail) } : {}),
-                ...(Array.isArray(returnedCitations)
-                  ? {
-                      citations: Object.freeze(returnedCitations
-                        .slice(0, 16)
-                        .filter((citation): citation is string => typeof citation === "string" && citation.trim() !== "")
-                        .map(summaryText)),
-                    }
-                  : {}),
-              });
-            }),
-            Effect.catch((failure: JudgeProviderFailure): Effect.Effect<JudgeMeasurementResult> =>
-              Effect.gen(function* () {
-                const error = failure.error;
-                if (!isTransportFailure(error)) return evaluatorError("judge-evaluator-error", errorSummary(error));
-                if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
-                  return unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried));
-                }
-                const retryAfter = retryAfterMs(objectField(error, "headers"), yield* Clock.currentTimeMillis);
-                const delay = retryAfter ?? (input.random ? input.random() : yield* Random.next) * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt;
-                retried = true;
-                yield* judgeSleep(delay);
-                return yield* evaluate(attempt + 1);
-              }),
-            ),
-          ),
-        ),
-      );
-
-    return evaluate(0).pipe(
-      Effect.timeoutOrElse({
-        duration: resolved.timeoutMs,
-        orElse: () => Effect.succeed(unavailableForCall(model, resolved.timeoutMs, attempts, retried)),
-      }),
-    );
+/** The single bounded HTTP adapter used by every managed LLM primitive. */
+export async function requestScoreMatchProvider(input: {
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly body: string;
+  readonly maxBytes: number;
+  readonly signal: AbortSignal;
+}): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
+  const response = await fetch(`${input.baseUrl.replace(/\/$/u, "")}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.apiKey}` },
+    body: input.body,
+    signal: input.signal,
   });
-  return interruptibleByCaller(evaluation, input.signal);
-}
-
-/** Assert-first bridge: one provider Promise adaptation in the Attempt Effect. */
-// @concord-code ne-eval-judge-evaluate-measurement
-// @concord-implements docs/feature/judge/library.md
-// @concord-implements docs/feature/judge/use-case/verify-judge.md
-export function evaluateJudgeMeasurement(
-  input: JudgeRecipeExecution,
-): Effect.Effect<MeasurementAssertionEvaluation, never, never> {
-  return evaluateJudgeRecipe(input).pipe(Effect.map((result): MeasurementAssertionEvaluation => {
-    switch (result.state) {
-      case "measured":
-        return Object.freeze({
-          state: "measured" as const,
-          value: result.value,
-          detail: Object.freeze({
-            evidence: result.evidence === undefined
-              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
-              : Object.freeze({ state: "available", value: result.evidence }),
-            rationale: result.explanation === undefined
-              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
-              : Object.freeze({ state: "available", value: result.explanation }),
-            detail: result.detail === undefined
-              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
-              : Object.freeze({ state: "available", value: result.detail }),
-            citations: result.citations === undefined
-              ? Object.freeze({ state: "unavailable", reason: "not-recorded" })
-              : Object.freeze({ state: "available", value: result.citations }),
-          }),
-        });
-      case "unavailable":
-        return Object.freeze({
-          state: "unavailable" as const,
-          reason: result.reason,
-          detail: Object.freeze({
-            failureDetail: result.detail,
-            failureEvidence: result.evidence ?? Object.freeze({ state: "unavailable", reason: "not-recorded" }),
-            rationale: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
-            evidence: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
-            detail: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
-            citations: Object.freeze({ state: "unavailable", reason: "not-recorded" }),
-          }),
-        });
-      case "errored":
-        return Object.freeze({
-          state: "errored" as const,
-          detail: Object.freeze({ code: result.code, message: result.message }),
-        });
-    }
-  }));
+  const bounded = await readJudgeResponseCapped(response, input.maxBytes);
+  return { status: response.status, headers: response.headers, body: await bounded.text() };
 }

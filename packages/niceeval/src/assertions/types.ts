@@ -119,6 +119,7 @@ export type PassFactAttemptOutcome =
 
 export type ScoreFactAttemptOutcome =
   | { readonly status: "scored"; readonly earnedScore: number; readonly creditedScore: number }
+  | { readonly status: "failed"; readonly earnedScore: number; readonly creditedScore: null }
   | {
       readonly status: "invalid";
       readonly earnedScore: number;
@@ -230,21 +231,15 @@ export interface JudgeConfig {
    * → Eval → 项目 config → 默认值。
    */
   timeoutMs?: number;
+  /** Bound the decision response before transport parsing; must be a positive integer. */
+  maxOutputTokens?: number;
 }
 
-/** Eval-level declaration: `true` enables inherited configuration; an object also overrides it. */
-export type JudgeDeclaration = true | JudgeConfig;
-
-/** Frozen configuration consumed identically by fingerprinting, precheck, and evaluation. */
+/** Frozen pair configuration consumed identically by result identity and evaluation. */
 export interface ResolvedJudgeConfig {
   readonly model?: string;
   readonly baseUrl: string;
   readonly apiKeyEnv: string;
   readonly timeoutMs: number;
-}
-
-/** Explicit input/output text evaluated by a managed Judge ScoreMatch. */
-export interface JudgeMaterial {
-  readonly input: string;
-  readonly output: string;
+  readonly maxOutputTokens: number;
 }

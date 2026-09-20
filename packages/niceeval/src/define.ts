@@ -23,6 +23,7 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
+import { normalizeJudgeConfig } from "./runner/judge-config.ts";
 import {
   brandEvalDefinition,
   brandEvalGroupDefinition,
@@ -255,6 +256,9 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     throw new Error(`defineExperiment requires exactly one of agent or adapter.`);
   }
   const adapter = def.adapter ?? def.agent!;
+  const judgeRuntime = def.judgeRuntime === undefined
+    ? undefined
+    : normalizeJudgeConfig(def.judgeRuntime, "defineExperiment() judgeRuntime");
   assertSandboxLayer(def.sandbox, "defineExperiment");
   if (adapter.kind === "custom") {
     if (def.sandbox !== undefined || def.sandboxReuse === true || def.sandboxCache !== undefined) {
@@ -308,6 +312,7 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
+    ...(judgeRuntime === undefined ? {} : { judgeRuntime }),
     ...(sharedState === undefined ? {} : { sharedState }),
     ...(sandboxCache === undefined ? {} : { sandboxCache }),
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
@@ -355,12 +360,15 @@ function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
 function normalizeEvalFields<
   const Sandbox extends SandboxLayer | undefined,
 >(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
+  const judge = def.judge === undefined
+    ? undefined
+    : normalizeJudgeConfig(def.judge, "defineEval() judge");
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
     ...(def.sandbox !== undefined ? { sandbox: def.sandbox } : {}),
     plugins: normalizePlugins(def.plugins ?? [], "defineEval plugins", "eval"),
-    ...(def.judge !== undefined ? { judge: def.judge } : {}),
+    ...(judge !== undefined ? { judge } : {}),
     reporters: Object.freeze([...(def.reporters ?? [])]),
     ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
     metadata: decodeJsonRecord(def.metadata ?? {}, "Eval metadata"),
@@ -441,7 +449,14 @@ function assertSandboxLayer(value: unknown, factory: string): void {
 /** 项目级配置。 */
 export function defineConfig(config: Config): Config {
   const sandboxCache = normalizeSandboxCache(config.sandboxCache, "defineConfig");
-  return sandboxCache === undefined ? config : { ...config, sandboxCache };
+  const judgeRuntime = config.judgeRuntime === undefined
+    ? undefined
+    : normalizeJudgeConfig(config.judgeRuntime, "defineConfig() judgeRuntime");
+  return Object.freeze({
+    ...config,
+    ...(sandboxCache === undefined ? {} : { sandboxCache }),
+    ...(judgeRuntime === undefined ? {} : { judgeRuntime }),
+  });
 }
 
 /**

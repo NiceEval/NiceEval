@@ -40,7 +40,7 @@ niceeval show @<locator> --diff [--record <file>]
 
 `show` 是固定的终端排版入口。省略 selector 时显示默认 overview。`--run <run-id>` 显示一个精确 Run，可重复传入。`--experiment <experiment-id>` 显示一个精确 Experiment，也可重复传入。
 
-通过制显示 `Verdicts` 与 `Pass rate`；纯计分制显示 `Outcomes` 与 `Score`，完成评分的 Attempt 标作 `scored`，不会把内部完成状态误写成 `passed` 或通过率。混合范围只在适用的行显示通过率。
+通过制显示 `Verdicts` 与 `Pass rate`；纯计分制显示 `Verdicts` 与 `Score`，不显示通过率。Score 的完整度只说明数值能否计算：`failed + complete` 必须显示失败并保留 earned score，只有 `passed + complete` 才进入成功排名。混合范围只在适用的行显示通过率。
 
 `@<locator>` 选择一个 Attempt。它不能与 `--run` 或 `--experiment` 一起使用，后两者也不能一起使用。一个命令最多只能给出一个 Attempt locator。
 

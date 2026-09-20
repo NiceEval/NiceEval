@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0",
+  "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+  "candidateSha256": "0f84a00e68a6696c427970a94ff07b516872d529c81f7095cfd45cd4a0bb07fc",
+  "greenReceipt": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/reliability-1.json",
+      "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/reliability-2.json",
+      "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/reliability-4.json",
+      "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/reliability-6.json",
+    "singleCase": "e2e/eval/test/assertion-judge-unavailable.test.ts.case-evidence/necase_Z1PAQPEQGDRFSCQ0/memory_llm-x-judge-turn-material-gap.md/nered_5EMQGNQKCNPKT4TT-netake_71D61PSEAXKBZS3S/green.json",
+    "cleanup": [
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-isolated-copy-1-1.json",
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-isolated-copy-2-1.json",
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-isolated-copy-3-1.json",
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-same-copy-1.json",
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-same-copy-2.json",
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-repo-default-parallel-1.json",
+      "/tmp/check-judge-takeover-main4/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "8a887a0ade363e95e7251dc929f3daf0db665491ee37652c9401623e5ac5196c"
+}

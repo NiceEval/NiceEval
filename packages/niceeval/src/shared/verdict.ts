@@ -3,8 +3,6 @@
 // fold or its tally.
 
 import type { Verdict } from "./types.ts";
-import type { ScoreFactAttemptOutcome } from "../assertions/types.ts";
-
 /** A consumer needs exactly the sealed four-state Verdict. */
 import type { EvaluationKind } from "./evaluation.ts";
 
@@ -12,25 +10,12 @@ export interface VerdictLike {
   readonly verdict: Verdict;
   readonly evaluationKind?: EvaluationKind;
   readonly scoreResult?: {
-    readonly status: ScoreFactAttemptOutcome["status"];
+    readonly status: import("../assertions/types.ts").ScoreFactAttemptOutcome["status"];
   };
 }
 
-/** Score uses its scoring outcome as the public terminal; Verdict remains the immutable audit claim. */
+/** Score completeness never replaces the Attempt's sealed four-state Verdict. */
 export function attemptTerminalOf<T extends VerdictLike>(attempt: T): Verdict {
-  if (attempt.evaluationKind === "score") {
-    switch (attempt.scoreResult?.status) {
-      case "scored":
-        return "passed";
-      case "skipped":
-        return "skipped";
-      case "invalid":
-      case "unavailable":
-      case "errored":
-      case undefined:
-        return "errored";
-    }
-  }
   return attempt.verdict;
 }
 

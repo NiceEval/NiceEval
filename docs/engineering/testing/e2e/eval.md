@@ -109,9 +109,14 @@ Contract: [Adapter architecture · Human live detail](../../../feature/adapters/
 ## eval-assertion-judge-unavailable
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [assertions](../../../feature/assertions/README.md)
+Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
+<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/assertions/README.md at=88edfe73ea416ff49835f48dad41af92fc986705 -->
 
-未配置 Judge 时，声明 capability 后 required Judge Assertion 保留 `unavailable` 并报告 model unresolved。
+该 owner 验证质量评分成功，并与材料登记、请求取消 owner 一起验收 Judge 行为。作者直接提交应用返回的领域对象；登记后的原对象修改不能改变送给模型或公开读回的材料，超过 8 KiB 的合法文本必须完整保留。分数允许 `anchors` 之间的连续值，发送状态只证明本地尝试发送。
+
+非法 JSON 和未声明的 Judge 必须同步拒绝，不创建 Assertion、不执行 getter 或 `toJSON`。等待模型时取消 Attempt 必须关闭 HTTP 请求，并在公开 Assertion detail 中保留固定材料与尝试发送状态。
+
+未配置 Judge 时，声明 Judge 后 required Judge Assertion 保留 `unavailable` 并报告 model unresolved。
 Attempt 为 `errored`，CLI 退出码为 1。该场景以公开 Record 的精确原因证明未进入预检或 evaluator 网络路径，
 并核对 settlement 没有丢掉有界 failure detail。Judge 未实际返回的 rationale/evidence/detail/citations 必须分别为
 unavailable/not-recorded；输入 material 不得冒充 returned evidence，Agent-as-Judge trace 不在本 owner 范围。
@@ -133,6 +138,7 @@ Contract: [docs/feature/eval/use-case/eval-compare-implementations.md](../../../
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
 
 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。
+共享断言便捷方法读取各 Attempt 的应用状态，公开 Query 逐项核对 Boolean 质量门与连续得分；方法解构后仍绑定正确实现。
 ## Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。 {#eval-custom-application-lifecycle}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
@@ -142,8 +148,9 @@ Contract: [docs/feature/eval/use-case/eval-native-operations.md](../../../featur
 
 Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。
 
-同步 abort listener 不能登记 Assertion、修改已有 handle 或再次调用顶层应用方法。
+同步 abort listener 不能登记 Assertion、修改已有 handle、再次调用顶层应用方法或调用自定义断言便捷方法。
 资源释放回调抛错不会跳过栈中其它回调；fixture journal 只观察应用自身的资源，不读取 NiceEval 私有结果。
+每个 cleanup callback 收到冻结 context；Attempt 取消后 cleanup signal 仍活动，同窗回调共享它，并在 30 秒总预算结束时取消。
 完成通知阶段再次登记资源必须同步失败。成功判定后的释放回调即使跨过执行 deadline 并抛错，也只能追加 diagnostic。
 
 ## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}
@@ -153,3 +160,28 @@ Contract: [docs/feature/eval/use-case/eval-native-operations.md](../../../featur
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#单一强类型-t at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
 
 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。
+自定义断言方法保留具体参数、Boolean 细化结果与 measurement 门槛；Pass 不暴露 Score 能力，直接 Adapter 与共享契约的实现保持一致。
+## Judge 材料与声明校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
+
+Judge 材料与 Match 校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。
+## Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。 {#eval-judge-cancellation}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
+
+Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。
+## 现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取 {#eval-judge-score-audit}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/judge/use-case/inspect-judge-score.md](../../../feature/judge/use-case/inspect-judge-score.md)
+
+现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取
+## Judge 配置逐字段取用 Eval、Experiment 与项目默认值，普通断言不触发模型调用 {#eval-judge-configuration}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/judge/library.md#runtime-配置](../../../feature/judge/library.md#runtime-配置)
+
+Judge 配置逐字段取用 Eval、Experiment 与项目默认值，普通断言不触发模型调用

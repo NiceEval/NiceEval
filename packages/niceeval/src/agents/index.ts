@@ -2,7 +2,15 @@
 
 export { defineAdapter, defineAdapterContract } from "../adapter.ts";
 export type {
+  AssertionCheck,
+  PolymorphicBooleanAssertionHandle,
+  PolymorphicMeasurementAssertionHandle,
+} from "../assertions/api.ts";
+export type {
   Adapter,
+  AdapterAssertionsFactory,
+  AdapterAssertionsFactoryContext,
+  AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,

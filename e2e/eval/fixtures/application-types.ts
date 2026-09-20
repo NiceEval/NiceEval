@@ -1,9 +1,16 @@
 import {
   defineAdapter,
+  defineJudge,
+  defineEval,
+  type JudgeDefinition,
   defineAdapterContract,
+  type AdapterCleanupContext,
   type AdapterImplementationInput,
+  type AdapterAssertionsFactoryContext,
 } from "niceeval";
-import { satisfies } from "niceeval/expect";
+import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
+import type { AdapterAssertionsFactoryContext as AssertionsContextFromSubpath } from "niceeval/adapter";
+import { satisfies, defineScoreMatch } from "niceeval/expect";
 
 interface Post { id: string; text: string }
 const hasText = satisfies<Post>("Post has text", (post) => post.text.length > 0);
@@ -13,6 +20,12 @@ const social = defineAdapter({
   async create(ctx) {
     const signal: AbortSignal = ctx.signal;
     ctx.onCleanup(() => undefined);
+    ctx.onCleanup((cleanupContext) => {
+      const rootExport: AdapterCleanupContext = cleanupContext;
+      const adapterExport: AdapterCleanupContextFromSubpath = rootExport;
+      const cleanupSignal: AbortSignal = adapterExport.signal;
+      void cleanupSignal;
+    });
     return {
       count: 0,
       increment() {
@@ -54,6 +67,71 @@ social.defineEval({
 });
 
 social.defineScoreEval({ async test(t) { t.score(1); t.check(await t.post("hi"), hasText).score(2); } });
+
+const textQuality = defineScoreMatch<Post>({ name: "text quality", score: () => 0.75 });
+declare const assertionsFactoryContext: AdapterAssertionsFactoryContext<{ readPost(): Post }>;
+const assertionsSubpathContext: AssertionsContextFromSubpath<{ readPost(): Post }> = assertionsFactoryContext;
+void assertionsSubpathContext;
+const assertedSocial = defineAdapter({
+  name: "asserted-social",
+  create: () => ({ readPost: (): Post => ({ id: "p", text: "hello" }) }),
+  assertions: ({ app, check }) => ({
+    hasText() { return check(app.readPost(), hasText); },
+    requiredText() { return check(app.readPost(), hasText).gate(); },
+    quality(label: string) { return check(app.readPost(), textQuality).label(label); },
+  }),
+});
+assertedSocial.defineEval({
+  async test(t) {
+    const post: Post = await t.hasText().orStop();
+    t.hasText().gate();
+    t.quality("quality").gate(0.5);
+    const measurement: number = await t.quality("quality").orStop(0.5);
+    // @ts-expect-error Pass sugar must not acquire Score capabilities.
+    t.hasText().score(1);
+    // @ts-expect-error Pass measurement sugar must not acquire Score capabilities.
+    t.quality("quality").score(1);
+    // @ts-expect-error Measurement gates require a minimum.
+    t.quality("quality").gate();
+    // @ts-expect-error Sugar preserves method argument types.
+    t.quality(1);
+    // @ts-expect-error A gate configured in the factory cannot be configured twice.
+    t.requiredText().gate();
+    void post; void measurement;
+  },
+});
+assertedSocial.defineScoreEval({
+  async test(t) {
+    t.hasText().score(1).gate();
+    t.requiredText().score(1);
+    t.quality("quality").gate(0.5).score(2);
+    const post: Post = await t.hasText().orStop();
+    // @ts-expect-error Boolean gates take no measurement threshold.
+    t.hasText().gate(0.5);
+    void post;
+  },
+});
+
+const assertedContract = defineAdapterContract<{ readPost(): Post }>({ name: "asserted-contract" })
+  .withAssertions(({ app, check }) => ({ hasText() { return check(app.readPost(), hasText); } }));
+const assertedImplementation = assertedContract.implement({
+  name: "asserted-implementation", create: () => ({ readPost: (): Post => ({ id: "p", text: "hi" }) }),
+});
+assertedContract.defineScoreEval({ test(t) { t.hasText().score(1); } });
+assertedImplementation.defineEval({ test(t) {
+  t.hasText().gate();
+  // @ts-expect-error Implementations retain Pass handle restrictions.
+  t.hasText().score(1);
+} });
+
+// @ts-expect-error A custom assertion must return a check handle, not a Boolean.
+defineAdapter({ name: "boolean-sugar", create: () => ({}), assertions: () => ({ invalid: () => true }) });
+// @ts-expect-error A custom assertion must synchronously return its handle.
+defineAdapter({ name: "async-sugar", create: () => ({}), assertions: ({ check }) => ({ invalid: async () => check({ id: "p", text: "hi" }, hasText) }) });
+// @ts-expect-error Sugar cannot replace an app member.
+defineAdapter({ name: "app-sugar-collision", create: () => ({ hasText: () => true }), assertions: ({ check }) => ({ hasText: () => check({ id: "p", text: "hi" }, hasText) }) });
+// @ts-expect-error Sugar cannot replace core check.
+defineAdapter({ name: "core-sugar-collision", create: () => ({}), assertions: ({ check }) => ({ check: () => check({ id: "p", text: "hi" }, hasText) }) });
 
 // @ts-expect-error Adapters cannot replace core check.
 defineAdapter({ name: "collision", create: () => ({ check: () => 1 }) });
@@ -100,3 +178,62 @@ defineTwitter({ name: "hidden-collision", create: () => ({ post: async (text: st
 defineAdapter({ name: "kind-collision", create: () => ({ evaluationKind: "pass" }) });
 // @ts-expect-error Object-prototype names cannot be Adapter actions.
 defineAdapter({ name: "prototype-collision", create: () => ({ toString: () => "adapter" }) });
+
+
+const quality = defineJudge({ name: "post-quality", rubric: "Post text is relevant to the task." });
+const qualityAlias: JudgeDefinition = quality;
+social.defineEval({ judge: { model: "eval-judge" }, async test(t) {
+  const post: Post = await t.post("hello");
+  t.check({ task: "greet", post }, qualityAlias).gate(0.8);
+} });
+social.defineScoreEval({  async test(t) {
+  t.judge(await t.post("hello"), quality).score(25).gate(0.7).orStop();
+} });
+defineEval({  async test(t) {
+  const turn = await t.send("hello");
+  turn.check({ task: turn.input, reply: turn.message }, quality).gate(0.8);
+  turn.judge({ task: turn.input, reply: turn.message }, quality).gate(0.7);
+  t.judge(turn.message, quality).gate(0.7).orStop();
+  // @ts-expect-error Measurement gates require an explicit minimum.
+  t.check(turn.message, quality).gate();
+  // @ts-expect-error A bare measurement has no stop condition.
+  t.judge(turn.message, quality).orStop();
+  // @ts-expect-error Judge sugar cannot evaluate an ordinary Match.
+  t.judge({ id: "p", text: "hi" }, hasText);
+  // @ts-expect-error Judge requires explicit material as well as its definition.
+  turn.judge(quality);
+  // @ts-expect-error Thresholds belong to a check, not the reusable Judge.
+  quality.atLeast(0.7);
+  // @ts-expect-error A gate already declares the single measurement condition.
+  t.judge(turn.message, quality).gate(0.7).orStop(0.8);
+  // @ts-expect-error A gate may only be configured once.
+  t.judge(turn.message, quality).gate(0.7).gate(0.8);
+} });
+// @ts-expect-error Provider configuration belongs to judgeRuntime, not defineJudge.
+defineJudge({ name: "bad-provider", rubric: "quality", model: "provider-model" });
+// @ts-expect-error A plain object cannot forge the managed Judge brand.
+const forgedJudge: JudgeDefinition = { kind: "judge-match", name: "forged", rubric: "quality", anchors: [], maxMaterialBytes: 1 };
+// @ts-expect-error Judge configuration cannot be a definition list.
+social.defineEval({ judge: [], async test() {} });
+
+// @ts-expect-error Judge is owned by the Eval context, not an Adapter action.
+defineAdapter({ name: "judge-collision", create: () => ({ judge: () => 1 }) });
+
+// @ts-expect-error Eval judge config cannot contain a Match definition.
+social.defineEval({ judge: quality, async test() {} });
+// @ts-expect-error Official Judge helpers are reserved evaluator operations.
+defineAdapter({ name: "factuality-collision", create: () => ({ factuality: () => 1 }) });
+social.defineScoreEval({ test(t) {
+  t.closeQA({ input: "Capital?", output: "Paris", context: "France: Paris" }).score(2).gate(0.8);
+  t.factuality({ input: "Capital?", output: "Paris", expected: "Paris" }).score(1);
+  // @ts-expect-error closeQA needs explicit context.
+  t.closeQA({ input: "Capital?", output: "Paris" });
+} });
+defineEval({ async test(t) {
+  const turn = await t.send("Capital?");
+  turn.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).gate(1);
+  t.newSession().closeQA({ input: "Capital?", output: "Paris", context: "France: Paris" }).gate(1);
+  t.faithfulness({ input: "Capital?", output: turn.message, context: ["France: Paris"] }).gate(1);
+  // @ts-expect-error Pass Eval measurement cannot contribute points.
+  t.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).score(1);
+} });

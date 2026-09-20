@@ -56,7 +56,7 @@ Contract: [experiments](../../../feature/experiments/README.md)
 | deliberate-fail  | 断言必然不通过的 Eval   | Attempt 的 Verdict 为 `failed`，进程非零退出                          |
 | deliberate-error | `sandbox.prepare` 在 Context 建立前确定性失败 | Run 仍完整发布，Attempt 为 `errored`；`attempt.get` 的固定 query 保留 locator、outcome 与 verdict，`attempt.trace` 保留阶段、退出码与诊断摘要，所有输出不含 `[object Object]`，且进程非零退出、与 `failed` 判然有别 |
 | deliberate-score | 确定性的 Score Eval       | Human 结束标题为 `SCORED`，`RESULTS` 显示实际 `2 score · 1/1 complete`，不冒充 `passed` |
-| judge-precheck-error | 两次 Attempt 创建前 Judge endpoint 预检失败 | NDJSON warning 携带 Experiment、Eval 与 `planned: 2` / `errored: 2`，receipt 正常闭合 |
+| judge-precheck-error | 两次 Attempt 的 Judge 调用失败 | NDJSON 保留 Eval 与次数，Query 保留每次 Attempt 的 locator 与 errored，receipt 正常闭合 |
 
 #### cli-provider-error-feedback
 

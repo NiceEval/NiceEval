@@ -3,7 +3,17 @@
 
 export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
+export { defineJudge } from "./assertions/judge.ts";
+export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";
+export { defineScoreMatch } from "./assertions/match.ts";
+export type { ManagedScoreMatchOptions, ScoreMatch, ScoreMatchAnchor, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./assertions/match.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
+export {
+  readScoreMatchAudit,
+  type ScoreMatchAudit,
+  type ScoreMatchAuditEnvelope,
+  type ScoreMatchAuditReadResult,
+} from "./assertions/score-match-audit.ts";
 
 export type {
   AgentSendWindowIdentity,
@@ -14,7 +24,12 @@ export type {
   AgentWorkspaceDiffWindow,
   AgentWorkspaceDiffWindowChange,
 } from "./assertions/workspace-diff.ts";
-export type { PostRunBooleanAssertionHandle } from "./assertions/api.ts";
+export type {
+  AssertionCheck,
+  PolymorphicBooleanAssertionHandle,
+  PolymorphicMeasurementAssertionHandle,
+  PostRunBooleanAssertionHandle,
+} from "./assertions/api.ts";
 
 export { requireEnv, getEnv, stripComments } from "./util.ts";
 
@@ -63,8 +78,6 @@ export type {
   Config,
   LocalizedText,
   JudgeConfig,
-  JudgeDeclaration,
-  JudgeMaterial,
   Reporter,
   ReporterEvent,
   EvalResult,
@@ -95,6 +108,9 @@ export type {
 } from "./types.ts";
 export type {
   Adapter,
+  AdapterAssertionsFactory,
+  AdapterAssertionsFactoryContext,
+  AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,
@@ -109,3 +125,6 @@ export type {
   ReservedAdapterContextKey,
 } from "./adapter.ts";
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";
+
+export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
+export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";

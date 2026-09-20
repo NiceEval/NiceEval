@@ -1,6 +1,7 @@
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineAdapter, defineAdapterContract, type Reporter } from "niceeval";
+import { equals, defineScoreMatch } from "niceeval/expect";
 
 export const customAdapterContract = "e2e/native-workflow/v1";
 export const customLifecycleContract = "e2e/custom-lifecycle/v1";
@@ -10,6 +11,7 @@ export const customIdentityJournal = "custom-identity.journal.jsonl";
 export interface NativeWorkflow {
   readonly implementation: "alpha" | "beta";
   readonly calls: number;
+  readCalls(): number;
   begin(title: string): { readonly sequence: number; readonly title: string };
   append(value: number): { readonly sequence: number; readonly total: number };
   finish(): { readonly sequence: number; readonly summary: string };
@@ -51,6 +53,9 @@ function nativeAdapter(implementation: "alpha" | "beta") {
         implementation,
         count: 0,
         get calls() { return this.count; },
+        get readCalls() {
+          return function (this: { count: number }) { return this.count; };
+        },
         begin(title: string) {
           if (Object.hasOwn(this, "check")) throw new Error("Adapter this must not contain evaluator methods");
           this.count += 1;
@@ -70,7 +75,18 @@ function nativeAdapter(implementation: "alpha" | "beta") {
   });
 }
 
-const nativeContract = defineAdapterContract<NativeWorkflow>({ name: customAdapterContract });
+const nativeContract = defineAdapterContract<NativeWorkflow>({ name: customAdapterContract })
+  .withAssertions(({ app, check }) => ({
+    hasCalls(expected: number) { return check(app.readCalls(), equals(expected)); },
+    usesImplementation(expected: string) {
+      return check(app.implementation, equals(expected));
+    },
+    completion() {
+      return check(app.calls, defineScoreMatch<number>({
+        name: "workflow completion", score: (calls) => calls / 4,
+      }));
+    },
+  }));
 
 // The Eval is intentionally defined from alpha while the beta Experiment uses
 // a distinct factory object with the same contract. This catches a bound Eval
@@ -115,12 +131,15 @@ export interface CustomLifecycleAdapter {
   waitForCancellation(): Promise<void>;
   onCancellation(callback: () => void): void;
   observations: {
-    recordAbortCheck(boundary: "check" | "handle" | "method", outcome: "accepted" | "rejected"): Promise<void>;
+    recordAbortCheck(boundary: "check" | "handle" | "method" | "assertion-method", outcome: "accepted" | "rejected"): Promise<void>;
     recordLateAssertion(outcome: "accepted" | "rejected"): Promise<void>;
   };
 }
 
-const lifecycleContract = defineAdapterContract<CustomLifecycleAdapter>({ name: customLifecycleContract });
+const lifecycleContract = defineAdapterContract<CustomLifecycleAdapter>({ name: customLifecycleContract })
+  .withAssertions(({ check }) => ({
+    hasMarker(value: string) { return check(value, equals("registered-before-timeout")); },
+  }));
 
 let registerAfterTimeout: (() => void) | undefined;
 export const timeoutClosedRegistrationReporter: Reporter = {
@@ -137,11 +156,23 @@ export const customCreateFailure = lifecycleContract.implement({
   behaviorRevision: "1",
   async create(context) {
     await writeJournal({ scenario: "create-failure", event: "acquired", attempt: context.attempt });
-    context.onCleanup(() => writeJournal({
-      scenario: "create-failure", event: "cleanup-outer", attempt: context.attempt,
+    let cleanupWindowSignal: AbortSignal | undefined;
+    context.onCleanup((cleanupContext) => writeJournal({
+      scenario: "create-failure",
+      event: cleanupContext.signal === cleanupWindowSignal && !cleanupContext.signal.aborted && Object.isFrozen(cleanupContext)
+        ? "cleanup-outer-shared-live-frozen"
+        : "cleanup-outer-invalid-context",
+      attempt: context.attempt,
     }));
-    context.onCleanup(async () => {
-      await writeJournal({ scenario: "create-failure", event: "cleanup-inner", attempt: context.attempt });
+    context.onCleanup(async (cleanupContext) => {
+      cleanupWindowSignal = cleanupContext.signal;
+      await writeJournal({
+        scenario: "create-failure",
+        event: !cleanupContext.signal.aborted && Object.isFrozen(cleanupContext)
+          ? "cleanup-inner-live-frozen"
+          : "cleanup-inner-invalid-context",
+        attempt: context.attempt,
+      });
       throw new Error("fixture resource release failure must not skip outer cleanup");
     });
     throw new Error("custom fixture fails after acquiring its resource");
@@ -156,18 +187,41 @@ export const customTimeoutCancellation = lifecycleContract.implement({
     registerAfterTimeout = () => context.onCleanup(() => {});
     let acknowledgeLateObservation!: () => void;
     const lateObservation = new Promise<void>((resolve) => { acknowledgeLateObservation = resolve; });
-    context.onCleanup(async () => {
-      await writeJournal({ scenario: "timeout", event: "cleanup-outer", attempt: context.attempt });
+    let cleanupWindowSignal: AbortSignal | undefined;
+    context.onCleanup(async (cleanupContext) => {
+      await writeJournal({
+        scenario: "timeout",
+        event: cleanupContext.signal === cleanupWindowSignal && !cleanupContext.signal.aborted && Object.isFrozen(cleanupContext)
+          ? "cleanup-outer-shared-live-frozen"
+          : "cleanup-outer-invalid-context",
+        attempt: context.attempt,
+      });
       // Keep the external fixture journal alive until its late continuation
       // has observed the closed evaluator. No process-exit timing assumption.
       await lateObservation;
+      await new Promise<void>((resolve) => {
+        if (cleanupContext.signal.aborted) resolve();
+        else cleanupContext.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      // The reporter's later write is chained behind this append, so process
+      // completion observes a durable terminal event without a timing sleep.
+      await writeJournal({ scenario: "timeout", event: "cleanup-window-aborted", attempt: context.attempt });
     });
-    context.onCleanup(() => writeJournal({
-      scenario: "timeout", event: "cleanup-inner", attempt: context.attempt,
-    }));
+    context.onCleanup((cleanupContext) => {
+      cleanupWindowSignal = cleanupContext.signal;
+      return writeJournal({
+        scenario: "timeout",
+        event: context.signal.aborted && !cleanupContext.signal.aborted && Object.isFrozen(cleanupContext)
+          ? "cleanup-inner-attempt-aborted-window-live-frozen"
+          : "cleanup-inner-invalid-context",
+        attempt: context.attempt,
+      });
+    });
     return {
-      onCancellation(callback: () => void) {
-        context.signal.addEventListener("abort", callback, { once: true });
+      get onCancellation() {
+        return (callback: () => void) => {
+          context.signal.addEventListener("abort", callback, { once: true });
+        };
       },
       async waitForCancellation() {
         if (!context.signal.aborted) {
@@ -195,11 +249,35 @@ export const customTimeoutCancellation = lifecycleContract.implement({
 export const successfulSlowCleanup = defineAdapter({
   name: "successful-slow-cleanup",
   create(context) {
-    context.onCleanup(async () => {
+    context.onCleanup(async (cleanupContext) => {
+      await writeJournal({
+        scenario: "success",
+        event: !cleanupContext.signal.aborted && Object.isFrozen(cleanupContext)
+          ? "cleanup-live-frozen"
+          : "cleanup-invalid-context",
+        attempt: context.attempt,
+      });
       await new Promise<void>((resolve) => setTimeout(resolve, 5_100));
       await writeJournal({ scenario: "success", event: "cleanup-finished", attempt: context.attempt });
       throw new Error("successful Adapter cleanup fixture failure");
     });
     return { value: () => 42 };
+  },
+  assertions({ app, check }) {
+    let prematureCheckRejected = false;
+    try { check(42, equals(42)); } catch { prematureCheckRejected = true; }
+    return {
+      hasValue(expected: number) {
+        if (!prematureCheckRejected) throw new Error("Assertion assembly must not register checks");
+        return check(app.value(), equals(expected));
+      },
+      invalidReturn() {
+        // Deliberately bypass the author type boundary to exercise JavaScript consumers.
+        return false as unknown as ReturnType<typeof check>;
+      },
+      invalidAsyncReturn() {
+        return Promise.reject(new Error("Invalid async assertion return")) as unknown as ReturnType<typeof check>;
+      },
+    };
   },
 });

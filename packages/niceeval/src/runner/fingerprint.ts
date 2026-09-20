@@ -17,6 +17,7 @@ import type {
 } from "./project-target.ts";
 import { EVALUATION_ALGORITHM, type AgentRun } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
+import { JUDGE_AUTHORING_PROTOCOL, JUDGE_AUTHORING_REVISION } from "../assertions/judge-presets.ts";
 import {
   prepareRunSandboxes,
   preparedPairsByKey as indexPreparedPairs,
@@ -181,6 +182,10 @@ function fingerprintPreparedPair(
     const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
+      judgeAuthoring: {
+        protocol: JUDGE_AUTHORING_PROTOCOL,
+        revision: JUDGE_AUTHORING_REVISION,
+      },
       plugins,
       configHash,
       pairPlan: pair.identity,
@@ -378,7 +383,7 @@ export interface ProjectTargetPlan {
   readonly target: ProjectCurrentTarget;
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
-  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig | undefined>;
+  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig>;
   readonly plannedFingerprints: ReadonlyMap<string, string>;
   readonly renameFingerprintsByKey: ReadonlyMap<
     string,
@@ -436,7 +441,7 @@ export function planPreparedProjectTarget(
     >();
     const manifestsByKey = new Map<string, EvalManifest>();
     const plannedConfigHashes = new Map<string, string>();
-    const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig | undefined>();
+    const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig>();
     const runConfigHashes = new Map<string, string>();
     const targetEvals = new Map<string, ProjectCurrentExperimentTarget["evals"][number][]>();
 
@@ -444,7 +449,7 @@ export function planPreparedProjectTarget(
       preparedPairs,
       (pair) => Effect.gen(function* () {
         const resolvedJudge = yield* Effect.try({
-          try: () => resolveJudge(pair.run.judge, pair.evalDef.judge, options.configJudge),
+          try: () => resolveJudge(pair.run.judgeRuntime, pair.evalDef.judge, options.configJudge),
           catch: (cause) => fingerprintPlanningError("configuration", cause),
         });
         resolvedJudgesByKey.set(pair.key, resolvedJudge);

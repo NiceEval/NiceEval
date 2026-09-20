@@ -1,0 +1,71 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-judge-unavailable.test.ts",
+  "current": {
+    "necase_N9PKV5X8PPWYPXZM": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_Z1PAQPEQGDRFSCQ0": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+      "regressions": [
+        "memory/llm-x-judge-turn-material-gap.md"
+      ],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_N9PKV5X8PPWYPXZM",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_N9PKV5X8PPWYPXZM",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+        "legacySourceDigest": "sha256:bb2c2f7fc797dc8c67adbc74cc337052a4185c7407a467e60b5c399d21695df5",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "743bb51e524f6385c44cdd1ef36c4f944fbdf0a5",
+      "transactionId": "netxn_612f954a76ea481ca930d3d0a6f0e058_Z1PAQPEQGDRFSCQ0",
+      "action": "legacy-migrated",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-assertion-judge-unavailable",
+        "legacySourceDigest": "sha256:bb2c2f7fc797dc8c67adbc74cc337052a4185c7407a467e60b5c399d21695df5",
+        "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "2fc2434fb44d09c3c08f44e7a4d27af07ddda41e",
+      "transactionId": "netxn_804bceaab8294e78a379dffa40718da6",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/llm-x-judge-turn-material-gap.md"
+      }
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "6ff241edc8098804d9d33eba720c33b4c52f488e",
+      "transactionId": "netxn_3850fc05b4cd4fa0a4df146d593b1c82",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/llm-x-judge-turn-material-gap.md"
+      },
+      "reason": "扩展同一公开 Judge 材料回归以验证 judge/check 共用评价和 gate/score，保留原修复并更新绑定最终测试源码的红绿及接管证据。"
+    },
+    {
+      "caseId": "necase_Z1PAQPEQGDRFSCQ0",
+      "atCommit": "864d64b9bd3ba6a799d5ab879b3c9a9b263636ee",
+      "transactionId": "netxn_3538b7a5fecf4d06b9dbc1f1c7fc2dcf",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/llm-x-judge-turn-material-gap.md"
+      }
+    }
+  ],
+  "tombstones": []
+}

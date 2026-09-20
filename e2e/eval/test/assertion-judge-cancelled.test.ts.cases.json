@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-judge-cancelled.test.ts",
+  "current": {
+    "necase_2TCX4FPX8TA9NV88": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-cancellation",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_2TCX4FPX8TA9NV88",
+      "atCommit": "88edfe73ea416ff49835f48dad41af92fc986705",
+      "transactionId": "netxn_571cb71c3aca468982086ad93c65acef",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-cancellation"
+      }
+    }
+  ],
+  "tombstones": []
+}

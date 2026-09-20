@@ -10,6 +10,7 @@ import { basename, extname } from "node:path";
 import { Effect } from "effect";
 
 import {
+  assertAssertionSubject,
   captureAssertionSnapshot,
   createAssertionsRuntime,
   postRunBooleanAssertionHandle,
@@ -17,6 +18,7 @@ import {
 import type {
   AssertionCriterion,
   AssertionMaterial,
+  AssertionSubject,
   AssertionsRuntime,
   BooleanAssertionHandle,
   BooleanAssertionEvaluation,
@@ -27,13 +29,6 @@ import type {
   PostRunBooleanAssertionHandle,
 } from "../assertions/api.ts";
 import type { MatcherSourceRow } from "../assertions/matcher-artifact.ts";
-import {
-  assertJudgeCapability,
-  evaluateJudgeMeasurement,
-  freezeJudgeMaterial,
-  judgeMatchSpecOf,
-  type JudgeRecipe,
-} from "../assertions/judge.ts";
 import {
   agentWorkspaceDiffChangesForPath,
   agentWorkspaceDiffPathsMatch,
@@ -58,8 +53,7 @@ import {
   inOrder,
   collectionMatchSpecOf,
   isManagedCollectionMatch,
-  isManagedThresholdedScoreMatch,
-  thresholdedScoreMatchValue,
+  managedScoreMatchOf,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
   toolMatch,
@@ -70,11 +64,25 @@ import {
   type EventOccurrenceView,
   type ManagedEventOccurrences,
   type ManagedToolCalls,
+  type ScoreMatch,
   type ToolMatch,
   type ToolOccurrenceMatch,
   type ToolMatchQuantifier,
 } from "../assertions/match.ts";
 import { numericBooleanRegistration } from "../assertions/numeric.ts";
+import {
+  closeQA,
+  factuality,
+  faithfulness,
+  instructionFollowing,
+  pairwisePreference,
+  type CloseQAMaterial,
+  type FactualityMaterial,
+  type FaithfulnessMaterial,
+  type InstructionFollowingMaterial,
+  type JudgePresetOptions,
+  type PairwisePreferenceMaterial,
+} from "../assertions/judge-presets.ts";
 import {
   buildO11ySummary,
   deriveRunFacts,
@@ -107,7 +115,6 @@ import type {
   InputRequestFilter,
   JsonMatch,
   JsonValue,
-  JudgeMaterial,
   PriceOverride,
   ResolvedJudgeConfig,
   Sandbox,
@@ -151,7 +158,7 @@ export interface AssertFirstCoreContextDeps {
   readonly evaluationKind: RuntimeKind;
 }
 
-export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> = {
+export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> = JudgePresetMethods<Kind> & {
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -166,6 +173,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
 } & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
@@ -208,6 +216,44 @@ export interface AssertFirstContextDeps {
 type RuntimeKind = "pass" | "score";
 type AssertFirstRespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
+export interface JudgePresetMethods<Kind extends RuntimeKind> {
+  factuality(material: FactualityMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  faithfulness(material: FaithfulnessMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  instructionFollowing(material: InstructionFollowingMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  pairwisePreference(material: PairwisePreferenceMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  closeQA(material: CloseQAMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+}
+
+function judgePresetMethods<Kind extends RuntimeKind>(
+  check: AssertionsRuntime<Kind>["t"]["check"],
+): JudgePresetMethods<Kind> {
+  const apply = <Material>(
+    factory: (options?: JudgePresetOptions) => ScoreMatch<Material>,
+    material: Material,
+    options: JudgePresetOptions | undefined,
+    extra: readonly unknown[],
+    name: string,
+  ): MeasurementAssertionHandle<Kind> => {
+    if (extra.length > 0) throw new TypeError(`${name}() accepts material and optional options`);
+    return (check as (value: Material, match: ScoreMatch<Material>) => MeasurementAssertionHandle<Kind>)(
+      material,
+      factory(options),
+    );
+  };
+  return Object.freeze({
+    factuality: (material: FactualityMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
+      apply(factuality, material, options, extra, "factuality"),
+    faithfulness: (material: FaithfulnessMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
+      apply(faithfulness, material, options, extra, "faithfulness"),
+    instructionFollowing: (material: InstructionFollowingMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
+      apply(instructionFollowing, material, options, extra, "instructionFollowing"),
+    pairwisePreference: (material: PairwisePreferenceMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
+      apply(pairwisePreference, material, options, extra, "pairwisePreference"),
+    closeQA: (material: CloseQAMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
+      apply(closeQA, material, options, extra, "closeQA"),
+  });
+}
+
 export interface FileChangedOptions {
   readonly status?: "added" | "modified" | "deleted";
   readonly before?: BooleanMatch<string, string, "value">;
@@ -230,7 +276,7 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
   ): PostRunBooleanAssertionHandle<Kind, void>;
 }
 
-export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
+export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends JudgePresetMethods<Kind> {
   readonly input: string;
   readonly events: readonly StreamEvent[];
   readonly toolCalls: ManagedToolCalls<"turn">;
@@ -240,6 +286,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   readonly data?: JsonValue;
   readonly usage?: Usage;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -256,7 +303,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> {
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 }
 
-export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
+export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends JudgePresetMethods<Kind> {
   send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
   sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
@@ -269,6 +316,7 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -285,7 +333,12 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> {
   maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
 }
 
-export type AssertFirstTestContext<Kind extends RuntimeKind> = {
+type JudgeFunction<Kind extends RuntimeKind> = <Value>(
+  value: AssertionSubject<Value>,
+  definition: ScoreMatch<NoInfer<Value>>,
+) => MeasurementAssertionHandle<Kind>;
+
+export type AssertFirstTestContext<Kind extends RuntimeKind> = JudgePresetMethods<Kind> & {
   readonly evaluationKind: Kind;
   send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
   sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
@@ -310,6 +363,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = {
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: AssertionsRuntime<Kind>["t"]["check"];
+  judge: JudgeFunction<Kind>;
   readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
@@ -1072,51 +1126,6 @@ function projectEventScope(input: {
   });
 }
 
-function judgeCriterion(recipe: JudgeRecipe): AssertionCriterion {
-  return Object.freeze({
-    kind: "judge-measurement" as const,
-    recipe: recipe === "closedQA" ? "closed-qa" as const : recipe,
-    scale: "unit-interval" as const,
-  });
-}
-
-function judgeHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly judge: ResolvedJudgeConfig | undefined;
-  readonly signal: AbortSignal;
-  readonly recipe: JudgeRecipe;
-  readonly reference: string;
-  readonly material: JudgeMaterial;
-  readonly threshold?: number;
-}): MeasurementAssertionHandle<Kind> {
-  const judge = input.judge;
-  assertJudgeCapability(judge);
-  if (typeof input.reference !== "string" || input.reference.trim() === "") {
-    throw new TypeError("Judge recipe reference must be a non-empty string");
-  }
-  const material = freezeJudgeMaterial(input.material);
-  const captured = captureAssertionSnapshot({
-    recipe: input.recipe,
-    reference: input.reference,
-    input: material.input,
-    output: material.output,
-  });
-  return input.runtime.registerMeasurement({
-    criterion: judgeCriterion(input.recipe),
-    subject: captured.material,
-    coverage: captured.coverage,
-    limitations: captured.limitations,
-    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
-    evaluate: () => evaluateJudgeMeasurement({
-      judge,
-      recipe: input.recipe,
-      reference: input.reference,
-      material,
-      signal: input.signal,
-    }),
-  });
-}
-
 const DIFF_REFERENCE_PREVIEW = "agent-attributed send-window endpoint deltas";
 
 function changedPathsCriterion(paths: readonly string[]): AssertionCriterion {
@@ -1546,28 +1555,18 @@ export function createAssertFirstCoreContext(
   readonly state: AssertFirstCoreContextState;
 } {
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
-    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop })
-    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop });
-  const check = ((subject: unknown, match: unknown, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("check() accepts exactly (subject, match)");
-    const thresholded = isManagedThresholdedScoreMatch(match)
-      ? thresholdedScoreMatchValue(match)
-      : undefined;
-    const judgeSpec = judgeMatchSpecOf(thresholded?.match ?? match);
-    if (judgeSpec === undefined) {
-      return (runtime.t.check as (subject: unknown, match: unknown) => unknown)(subject, match);
-    }
-    return judgeHandle({
-      runtime,
-      judge: deps.judge,
-      signal: deps.signal,
-      recipe: judgeSpec.recipe,
-      reference: judgeSpec.reference,
-      material: freezeJudgeMaterial(subject as JudgeMaterial),
-      ...(thresholded === undefined ? {} : { threshold: thresholded.threshold }),
-    });
-  }) as AssertionsRuntime<RuntimeKind>["t"]["check"];
+    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal })
+    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal });
+  const check = runtime.t.check;
+  const judge = ((subject: unknown, definition: unknown, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("judge() accepts exactly (subject, definition)");
+    runtime.assertAuthoringOpen();
+    assertAssertionSubject(subject, "judge");
+    if (managedScoreMatchOf(definition) === undefined) throw new TypeError("judge() definition must be a managed ScoreMatch");
+    return (runtime.t.check as (subject: unknown, match: unknown) => MeasurementAssertionHandle<RuntimeKind>)(subject, definition);
+  }) as JudgeFunction<RuntimeKind>;
   const state: AssertFirstCoreContextState = { assertions: runtime };
+  const presets = judgePresetMethods(runtime.t.check);
   const base = {
     evaluationKind: deps.evaluationKind,
     signal: deps.signal,
@@ -1592,6 +1591,8 @@ export function createAssertFirstCoreContext(
     },
     group: runtime.t.group,
     check,
+    judge,
+    ...presets,
   };
   const context = deps.evaluationKind === "score"
     ? Object.freeze({
@@ -1641,6 +1642,7 @@ export function createAssertFirstEvalContext(
   const core = createAssertFirstCoreContext(deps);
   const runtime = core.state.assertions;
   const check = core.context.check;
+  const judge = core.context.judge;
   const state: AssertFirstContextState = {
     assertions: runtime,
     manager,
@@ -2046,6 +2048,8 @@ export function createAssertFirstEvalContext(
       ...(turn.data === undefined ? {} : { data: turn.data }),
       ...(turn.usage === undefined ? {} : { usage: turn.usage }),
       check: check as AssertionsRuntime<Kind>["t"]["check"],
+      judge: judge as JudgeFunction<Kind>,
+      ...judgePresetMethods(check as AssertionsRuntime<Kind>["t"]["check"]),
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
@@ -2247,6 +2251,8 @@ export function createAssertFirstEvalContext(
         return sessionEventOccurrences();
       },
       check: check as AssertionsRuntime<Kind>["t"]["check"],
+      judge: judge as JudgeFunction<Kind>,
+      ...judgePresetMethods(check as AssertionsRuntime<Kind>["t"]["check"]),
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",

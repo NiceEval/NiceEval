@@ -284,7 +284,6 @@ function materializePreparationNode(
  */
 export function prepareSetupPrefixes(
   attempts: readonly Attempt[],
-  judgePrecheckFailures: ReadonlyMap<string, string>,
   options: PrepareSetupPrefixesOptions = {},
 ): Effect.Effect<SetupPrefixPreparationResult, Error> {
   const program = Effect.gen(function* () {
@@ -294,7 +293,6 @@ export function prepareSetupPrefixes(
       const pairKey = cacheKey(attempt.run, attempt.evalDef.id);
       if (
         attempt.run.sandboxSetupCache === "bypass" ||
-        judgePrecheckFailures.has(pairKey) ||
         attempt.plan._tag !== "Sandbox" ||
         attempt.plan.providerPlan.capabilities.setupPrefix._tag !== "PreparedArtifact" ||
         attempt.plan.providerPlan.build.buildKeys.length > 0

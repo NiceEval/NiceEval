@@ -475,6 +475,7 @@ export function runAttemptEffect<
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
   // Effect.timeoutTo 调用点的注释)。
   let timedOut = false;
+  let deadlineError: AttemptError | undefined;
   let timeoutDiff: DiffArtifact | undefined;
   let fileChangesCapture: FileChangesCapture | undefined;
   let timeoutFileChangesCapture: FileChangesCapture | undefined;
@@ -718,6 +719,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             timeout: { trigger: "attempt-deadline", limitMs: timeoutMs, source: timeoutSource },
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
+          deadlineError = error;
           recorder.failCurrent();
           // `timeoutTo` 已经赢得 deadline：先同步关闭所有作者/Core 修改入口，
           // 再标记并 abort 协作式 adapter。同步 abort listener 因而也不能追加断言。
@@ -1520,7 +1522,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             const raw = Cause.squash(cause);
             const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
             declareFailure(phase, raw);
-            const error = errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout);
+            const error = timedOut && deadlineError !== undefined
+              ? deadlineError
+              : errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout);
             const fallback: EvalResult = {
               ...base,
               durationMs: recorder.offsetNow(),
@@ -1710,8 +1714,8 @@ function runAdapterAttemptBody<SealRequirements>(
       // A synchronous plain object is validated before Promise assimilation;
       // async factories are validated only after their Promise settles.
       return created instanceof Promise
-        ? created.then((value) => bindAdapterEvalContext(core, value, () => resources.assertForwardOpen()))
-        : bindAdapterEvalContext(core, created, () => resources.assertForwardOpen());
+        ? created.then((value) => bindAdapterEvalContext(core, value, adapter, () => resources.assertForwardOpen()))
+        : bindAdapterEvalContext(core, created, adapter, () => resources.assertForwardOpen());
     }));
     if (Exit.isSuccess(createExit)) {
       context = createExit.value;
@@ -1837,7 +1841,7 @@ function cleanupAdapterResources(
  * `EvalResult` still has historical renderer fields while its replacement
  * invocation coordinator is being completed. This is the only Runner-side
  * compatibility projection: it derives empty legacy graph arrays and a score
- * terminal view from the one sealed Assert-first result. No Fact collector or
+ * completeness view from the one sealed Assert-first result. No Fact collector or
  * Fact/use graph participates in authoring, evaluation, or sealing.
  */
 function legacyResultProjectionFromSealedAssertions(
@@ -1850,20 +1854,9 @@ function legacyResultProjectionFromSealedAssertions(
     factUses: Object.freeze([]),
   });
   if (sealed.score === undefined) return empty;
-  if (skipReason !== undefined) {
-    return Object.freeze({
-      ...empty,
-      scoreResult: Object.freeze({
-        status: "skipped" as const,
-        earnedScore: 0,
-        creditedScore: null,
-        reason: skipReason,
-      }),
-    });
-  }
   const score = sealed.score;
   const earned = score.state === "unavailable" ? 0 : score.earned;
-  if (sealed.evaluation.execution === "errored") {
+  if (sealed.verdict.state === "errored") {
     const reasons = score.state === "complete" ? [] : score.reasons;
     const errors = [Object.freeze({
       kind: "error" as const,
@@ -1886,6 +1879,27 @@ function legacyResultProjectionFromSealedAssertions(
     return Object.freeze({
       ...empty,
       scoreResult,
+    });
+  }
+  if (sealed.verdict.state === "failed") {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "failed" as const,
+        earnedScore: earned,
+        creditedScore: null,
+      }),
+    });
+  }
+  if (sealed.verdict.state === "skipped") {
+    return Object.freeze({
+      ...empty,
+      scoreResult: Object.freeze({
+        status: "skipped" as const,
+        earnedScore: earned,
+        creditedScore: null,
+        reason: skipReason ?? "Attempt skipped",
+      }),
     });
   }
   if (score.state === "complete") {
@@ -4036,7 +4050,7 @@ export function experimentRunInfo(
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(run.sharedState === undefined ? {} : { sharedState: { key: run.sharedState.key } }),
     ...(judge
-      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs } }
+      ? { judgeRuntime: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs, maxOutputTokens: judge.maxOutputTokens } }
       : {}),
     agentInstalls: [...agentInstallPlansForRun(run)],
   };

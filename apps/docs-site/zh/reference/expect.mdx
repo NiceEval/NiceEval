@@ -163,7 +163,7 @@ export function defineValueMatch<T, R extends T = T>(spec: {
 #### `defineScoreMatch`
 
 ```ts
-export function defineScoreMatch<T>(spec: {
+export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E> | {
   readonly name: string;
   readonly score: (value: T) => number | Promise<number>;
 }): ScoreMatch<T> { ... }
@@ -220,7 +220,7 @@ t.check(t.reply, pattern(/order #\d+/i));
 t.check(turn.data, equals({ intent: "refund" }));
 t.check(turn.data, matches(OrderSchema));
 t.check(turn.data, satisfies("返回数组", Array.isArray));
-t.check(t.reply, similarity("The answer explains the refund window").atLeast(0.8));
+t.check(t.reply, similarity("The answer explains the refund window")).gate(0.8);
 ```
 
 ## 组合与三态
@@ -230,7 +230,7 @@ t.check(t.reply, and(includes("required"), excludes("forbidden")));
 t.check(t.reply, or(includes("approved"), includes("accepted")));
 ```
 
-同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身不持有判定、计分或控制流；`ScoreMatch.atLeast(n)` 在登记前形成 threshold，`.score(n)` 与 `.orStop()` 属于登记后的 AssertionHandle。
+同一 `and` / `or` 里的 Match 必须属于同一 domain。布尔 Match 的内部结果是 `matched`、`mismatched` 或 `unavailable`：`or` 只有在没有子项命中且至少一项证据不完整时才返回 `unavailable`，不会把未知当成否定。Match 自身不持有判定、计分或控制流；continuous measurement 的 `.gate(minimum)`、`.score(n)` 与 `.orStop(minimum)` 都属于登记后的 AssertionHandle。
 
 下面列出 Match 值本身的稳定字段。品牌和 evaluator 是模块私有实现，不属于作者 API。
 
@@ -272,12 +272,6 @@ readonly [matchRefinementBrand]: () => R;
 
 ```ts
 readonly kind: "score";
-```
-
-#### `atLeast`
-
-```ts
-atLeast(threshold: number): ThresholdedScoreMatch<T>;
 ```
 
 {/* GENERATED:END value-assertion */}

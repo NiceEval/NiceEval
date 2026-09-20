@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "629612ef6962c4dce48abe9b9baea3ed965e6c48"
+      "baseTree": "18a8111c63f469e7e6e6b2fcbc7b84829837bc57"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "8b85656059f41f5ea1cd48d7133326cfa4128801"
+      "baseTree": "3f05c8241aaebe1310de6eef896207580e98aac9"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "e127c6fd920d9ac687a4d2ac94992bc4f6339f57"
+      "baseTree": "0236b399acf95dede4ce30dbecb4974ecad14ec8"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "9ddd817b0299f84ad7fd4e5ab4b0a54be3dc0708"
+      "baseTree": "9364495bc64f43823d4bfc873f3dae41257bf8c9"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "81f365e249f2f9b97a5aeeb00d0167eefe26e67f"
+      "baseTree": "5d4736cc09379f5e51d607a41451e368cfdd7b5a"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "558129553e59bf37d860ab2c2737314ecb15dcbb"
+      "baseTree": "59e805ac3d5ec1d16e4ed596b1ddfbe503b3140e"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "c9390001e8175f464727116cc80750fd857ecfb3"
+      "baseTree": "a91745c97363dcd6f7c44feda427177644f768a9"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "854f5e49fa6e5ddf2dd8139eed2bc5857e14dbf6"
+      "baseTree": "5c6a0bca9accf62c4508623f6246e90238c102eb"
     }
   ]
 }

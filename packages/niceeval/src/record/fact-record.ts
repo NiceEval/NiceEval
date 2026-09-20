@@ -143,12 +143,15 @@ function assertFactUse(value: unknown, path: string, factIds: ReadonlySet<string
 
 function assertScoreResult(value: unknown, path: string): asserts value is ScoreFactAttemptOutcome {
   if (!isRecord(value)) throw new Error(`${path} must be a ScoreFactAttemptOutcome.`);
-  if (!["scored", "invalid", "unavailable", "errored", "skipped"].includes(value.status as string)) {
+  if (!["scored", "failed", "invalid", "unavailable", "errored", "skipped"].includes(value.status as string)) {
     throw new Error(`${path}.status is invalid.`);
   }
   assertFinite(value.earnedScore, `${path}.earnedScore`);
   if (value.earnedScore < 0) throw new Error(`${path}.earnedScore must be non-negative.`);
   if (value.status === "scored") assertFinite(value.creditedScore, `${path}.creditedScore`);
+  if (value.status === "failed" && value.creditedScore !== null) {
+    throw new Error(`${path}.creditedScore must be null for a failed Verdict.`);
+  }
 }
 
 /** Reject old or hybrid result objects. There is no partial compatibility reader. */

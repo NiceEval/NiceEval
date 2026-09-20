@@ -6,6 +6,12 @@ createdAt: 2026-07-27T18:06:14+08:00
 kind: feature
 ---
 
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Assertions
 
 Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 4`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Inspection 只读取已封口的事实，不重新执行 matcher 或作者代码。
@@ -92,12 +98,12 @@ t.check(turn.message, includes("已完成"))
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool("search").label("调用搜索工具");
-  turn.judge.autoevals.closedQA("回答质量").gate(0.8);
+t.judge({ question, answer: turn.message }, answerQuality).gate(0.8);
 ```
 
-`t.check` 只接收 `(value, match)`。scope 方法与 Judge recipe 已经登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+`t.check` 只接收 `(value, match)`。`t.judge(value, definition)` 是只接受 `JudgeDefinition` 的薄包装；root、Session 与 Turn 都要求作者显式提供材料。scope 方法与两个显式入口都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
 
-Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 不提供 gate 或 generic optional contribution；它保留 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
+Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 的 Boolean `.gate()` 与 measurement `.gate(minimum)` 形成显式质量门；gate 失败保留 earned score 并得到 `failed` Verdict。Score 不提供 generic optional contribution；它保留受约束的 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 
 完整字段、封口、边界与读侧形成规则见 [Architecture](architecture.md)。
 

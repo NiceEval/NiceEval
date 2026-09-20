@@ -8,28 +8,40 @@ kind: feature
 
 # Judge
 
-Judge 是异步 managed `ScoreMatch<JudgeMaterial>` evaluator。它给出有限 `[0,1]` measurement、理由与 evidence；
-它不拥有登记特权，也不自行决定 Verdict 或 score。
+Judge 是使用受管 LLM 能力的 `ScoreMatch`。`defineJudge` 和五个现成裁判都通过公开 `defineScoreMatch` 构造；
+自定义高级 Match 使用同一组模型原语。所有 Match 经 `t.check(value, match)` 的统一准备、登记、执行与封口路径。
+`t.judge(value, match)` 是受管 LLM Match 的便利入口，root、Session 与 Turn 都要求显式材料。
 
-`niceeval/expect` 导出的 `closedQA`、`factuality` 与 `summarizes` 都是纯 Match factory。factory 不读取 ctx、
-不绑定 subject、不登记；作者显式提供公开 `JudgeMaterial = { input, output }`，唯一中立 primitive
-`check(subject, match)` 才登记一次 Assertion。
+现成裁判提供事实一致性、上下文忠实度、指令遵循和两答案比较。
+自由评分、分类映射与分解后聚合共享模型调用能力，分数含义由各算法明确声明。
 
 ```ts
-const quality = turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("回答是否解释了风险？").atLeast(0.8),
-)
-  .gate()
-  .label("风险说明质量");
+const followsIntent = defineJudge({
+  name: "follows-intent",
+  rubric: "根据 intent 评价 post 是否保留明确要求，没有编造未给出的时间。",
+  anchors: [
+    { measurement: 0, description: "偏离意图或编造关键信息" },
+    { measurement: 0.5, description: "保留主要意图，但遗漏部分明确要求" },
+    { measurement: 1, description: "保留全部明确要求且没有编造" },
+  ],
+});
+
+export default x.defineScoreEval({
+  judge: { model: "judge-model" },
+  async test(t) {
+    const intent = "邀请大家今晚在河边入口集合，不指定时间";
+    const post = await t.post({ intent });
+    t.judge({ intent, post }, followsIntent).score(25).label("发帖遵循意图");
+  },
+});
 ```
 
-`ScoreMatch.atLeast(n)` 在登记前返回 `ThresholdedScoreMatch`，是唯一 threshold 入口。Pass Eval 对 thresholded
-measurement 调用无参 `.gate()` 才把局部 condition 纳入 Verdict。Score Eval 对未 threshold 或已 threshold
-Match 都可 `.score(n)`。这些配置都只执行一次 Judge evaluator，并写既有 `judge-measurement/v1` artifact。
+材料在登记 Assertion 时生成有界 canonical JSON 快照。Judge 产出有限 `[0,1]` measurement，并保留模型步骤及其公开理由，不自行决定 Verdict 或 score。Pass 与 Score 都用 `.gate(minimum)` 建立显式质量门；
+Score Eval 还可用 `.score(points)` 按 measurement 贡献分数，并在 gate 失败时保留 contribution。
 
 | 目的 | 入口 |
 |---|---|
-| recipe、材料、配置与失败 | [Library](library.md) |
+| API、定义、材料、配置与失败 | [Library](library.md) |
+| 统一执行、预算与完整审计 | [Architecture](architecture.md) |
 | Assertion、两种 Eval 与结果 | [Assertions](../assertions/README.md) |
 | 配置变化怎样影响缓存 | [Experiments · Cache](../experiments/cache.md) |

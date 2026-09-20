@@ -299,13 +299,13 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Experiment ID 含 `/` 时，首段形成显示分组，组内 Experiment 与同前缀 Eval 使用相对标签。
   每个 Experiment 小节仍显示一次完整 ID，每个可下钻 Attempt 显示完整稳定 locator。
 
-  默认 Attempt 明细隐藏 `passed`、`failed` 与 `scored` 项；每个 Experiment 最多展开 5 个 `errored` 项，超出的部分也折叠。
+  默认 Attempt 明细隐藏没有问题的 `passed` 项；`failed` 必须按 Verdict 显示。每个 Experiment 最多展开 5 个 `errored` 项，超出的部分也折叠。
   gap、`skipped`、pending 与 absent 项始终可见。每个 Experiment 显示各结果的隐藏数量及可复制的
   `See more: niceeval show --experiment <id>` 命令。
 
   `--all` 展开全部 Attempt。展开后的明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID；
-  同一 Eval 的多个 Attempt 各占一行。Pass 或历史 mixed Eval 显示 `Attempt`、`Verdict` 与 `Duration`；
-  Score Eval 显示 `Attempt`、`Outcome`、`Duration` 与 `Score`，正常完成写成 `scored` 而不是 `passed`。
+  同一 Eval 的多个 Attempt 各占一行。Pass、Score 或历史 mixed Eval 都显示 `Attempt`、`Verdict` 与 `Duration`；
+  Score Eval 另外显示 `Score`。`failed + complete` 必须保留失败与 earned score，不能改写成 `scored`。
 
   Verdict 为 `passed`、`failed`、`errored` 或 `skipped`。Duration 按大小使用 `ms`、`s`、`min` 或 `h`，
   最多保留两位小数。
@@ -352,8 +352,8 @@ human renderer 将 pass rate 显示为百分比。`available` 是健康 metric �
 Score 在纯 pass 制投影中是不适用的指标，
 human renderer 不输出 `Score unsupported` 占位：Totals 及某张表的全部成员均为 pass 制时，分别省略 Score 行或整列。
 
-反过来，纯 score 制 totals 显示 `Outcomes` 与 `Score`，不显示 `Verdicts` 或 `Pass rate`；纯 score 制
-Experiment 表省略 `Pass rate` 列。正常完成数显示为 `scored`，execution error 仍显示为 `errored`。
+反过来，纯 score 制 totals 显示 `Verdicts` 与 `Score`，不显示 `Pass rate`；纯 score 制
+Experiment 表省略 `Pass rate` 列。只有 `passed + complete` 进入成功排名；`failed + complete` 显示失败并保留 earned score，execution error 仍显示为 `errored`。
 
 包含历史 mixed cell 的投影并排保留 pass rate 与 score。machine result 始终保留原始 typed Verdict 与 metric，不因人读展示而改写。
 machine result 始终保留 typed `unsupported`。Experiment summary 按路径首段分组，

@@ -304,8 +304,14 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
     case "judge-measurement":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "judge-measurement/v1" as const,
-        data: Object.freeze({ recipe: criterion.recipe, scale: criterion.scale }),
+        id: "judge-measurement/v2" as const,
+        data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
+      });
+    case "managed-score-measurement":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "llm-measurement/v1" as const,
+        data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
       });
     case "sandbox-result": {
       switch (criterion.operation) {

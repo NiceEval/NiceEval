@@ -194,6 +194,8 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   const contribution = optionalRecord(entry.contribution) ?? optionalRecord(decision.contribution);
   const criterion = recordField(entry, "criterion");
   const materials = recordField(entry, "materials");
+  const judgeMaterial = optionalRecord(entry.judgeMaterial);
+  const scoreMatchAudit = optionalRecord(entry.scoreMatchAudit);
   const policy = optionalRecord(entry.policy);
   const condition = optionalRecord(policy?.condition);
   const result = assertionDecision(decision.result);
@@ -238,7 +240,7 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   const observedFact = assertionObservedFact(evaluation, matcher);
   const expectedFact = assertionExpectedFact(condition);
   const explanationFact = assertionExplanationFact(entry, check);
-  const sourceFact = assertionSourceFact(materials);
+  const sourceFact = assertionSourceFact(materials, judgeMaterial, scoreMatchAudit);
   const closed: AttemptClosedAssertionEntry = Object.freeze({
     entryId: stringField(detail, "entryId"),
     display: Object.freeze({
@@ -342,13 +344,23 @@ function assertionObservedFact(
   ]);
 }
 
-function assertionSourceFact(materials: JsonRecord): ClosedAssertionFactValue {
+function assertionSourceFact(
+  materials: JsonRecord,
+  judgeMaterial: JsonRecord | undefined,
+  scoreMatchAudit: JsonRecord | undefined,
+): ClosedAssertionFactValue {
   const source = assertionMaterialFact(recordField(materials, "source"));
   const evidence = arrayField(materials, "evidence").map((value, index) =>
     assertionMaterialFact(record(value, `materials.evidence[${index}]`)));
   const limitations = arrayField(materials, "limitations").map(assertionFact);
   return factFields([
     { label: "input", value: source },
+    ...(judgeMaterial === undefined
+      ? []
+      : [{ label: "judge material", value: assertionFact(judgeMaterial) }]),
+    ...(scoreMatchAudit === undefined
+      ? []
+      : [{ label: "model evaluation", value: assertionFact(scoreMatchAudit) }]),
     ...(evidence.length === 0
       ? []
       : [{ label: "evidence", value: Object.freeze({ kind: "list" as const, items: Object.freeze(evidence) }) }]),

@@ -24,7 +24,7 @@ export default defineScoreEval({
     t.check("inspection-fixture", defineScoreMatch({
       name: "inspection measurement",
       score: (value: string) => value === "inspection-fixture" ? 0.75 : 0,
-    }).atLeast(0.5)).score(4).label("Measurement contributes three points");
+    })).score(4).gate(0.5).label("Measurement contributes three points");
     t.check(
       eventGallery,
       satisfies("inspection lifecycle exists", (items: typeof eventGallery) =>

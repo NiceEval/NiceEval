@@ -20,7 +20,7 @@ const check = judge.check({
   },
 });
 
-t.judge.llm(check).atLeast(0.9).label("公开结果一致");
+t.judge.llm(check).gate(0.9).label("公开结果一致");
 ```
 
 Selector 先在完整 Action universe 上验证恰好一次命中，再只封口该 occurrence 的 result。它不会顺带授权其它命令输出。

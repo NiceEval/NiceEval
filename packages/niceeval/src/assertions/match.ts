@@ -9,6 +9,7 @@
 // 折成 mismatch 或 unavailable。
 
 import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
+import { Effect } from "effect";
 
 import type {
   CommandProjection,
@@ -87,21 +88,16 @@ export type BooleanMatchEvaluation<R> =
     };
 
 // 这些 symbol 不导出。外部作者无法构造看似可消费的 Match；输入 variance 与 refinement
-// variance 也保持分离，ScoreMatch 不会伪造一个没有含义的输出 refinement。
+// variance 也保持分离，连续 measurement 不会伪造一个没有含义的输出 refinement。
 const matchInputBrand: unique symbol = Symbol("niceeval.match.input");
 const matchRefinementBrand: unique symbol = Symbol("niceeval.match.refinement");
 const matchEvaluatorBrand: unique symbol = Symbol("niceeval.match.evaluator");
 const positiveWitnessBrand: unique symbol = Symbol("niceeval.match.positive-witness");
-const thresholdedScoreMatchBrand: unique symbol = Symbol("niceeval.thresholdedScoreMatch");
 const numericComparisonMatchBrand: unique symbol = Symbol("niceeval.numericComparisonMatch");
 const assertionEventIdentityBrand: unique symbol = Symbol("niceeval.assertionEventIdentity");
 const assertionEventPositionBrand: unique symbol = Symbol("niceeval.assertionEventPosition");
 const toolOccurrenceIdentityBrand: unique symbol = Symbol("niceeval.toolOccurrenceIdentity");
 const matchBrands = new WeakSet<object>();
-const thresholdedScoreMatches = new WeakMap<object, {
-  readonly match: ScoreMatch<unknown>;
-  readonly threshold: number;
-}>();
 const numericComparisons = new WeakMap<object, NumericComparison>();
 
 export const NUMERIC_COMPARATORS = ["less-than", "at-most", "greater-than", "at-least"] as const;
@@ -144,12 +140,48 @@ export interface NumericComparisonMatch extends BooleanMatch<number, number, "va
 
 export interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
-  atLeast(threshold: number): ThresholdedScoreMatch<T>;
 }
 
-export interface ThresholdedScoreMatch<in T> {
-  readonly kind: "thresholded-score-match";
-  readonly [thresholdedScoreMatchBrand]: (candidate: T) => void;
+export interface ScoreMatchAnchor { readonly measurement: number; readonly description: string; }
+export type ScoreMatchLlmFailure = { readonly _tag: "ScoreMatchLlmUnavailable"; readonly code: string; readonly message: string } | { readonly _tag: "ScoreMatchLlmErrored"; readonly code: string; readonly message: string };
+export type ScoreMatchResult = number | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string } | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string } | { readonly state: "errored"; readonly code: string; readonly message: string };
+export interface ScoreMatchContext {
+  readonly llm: {
+    score(input: { readonly rubric: string; readonly anchors: readonly ScoreMatchAnchor[]; readonly material: JsonValue }): Effect.Effect<{ readonly measurement: number; readonly rationale: string }, ScoreMatchLlmFailure>;
+    classify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly material: JsonValue }): Effect.Effect<{ readonly choice: string; readonly rationale: string }, ScoreMatchLlmFailure>;
+    extract(input: { readonly rubric: string; readonly maxItems: number; readonly material: JsonValue }): Effect.Effect<{ readonly items: readonly string[]; readonly rationale: string; readonly complete: boolean }, ScoreMatchLlmFailure>;
+    batchClassify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly items: readonly { readonly id: string; readonly text: string }[]; readonly material: JsonValue }): Effect.Effect<{ readonly items: readonly { readonly id: string; readonly choice: string; readonly rationale: string }[] }, ScoreMatchLlmFailure>;
+  };
+}
+export interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {
+  readonly name: string;
+  readonly version: string;
+  readonly config: JsonValue;
+  readonly llm: {
+    readonly maxCalls?: number;
+    readonly maxMaterialBytes?: number;
+    readonly maxAuditBytes?: number;
+  };
+  readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
+}
+
+/** @internal Canonical, deeply frozen definition consumed by identity and the managed gateway. */
+export interface ManagedScoreMatchDefinition<T = unknown, E = unknown> {
+  readonly name: string;
+  readonly version: string;
+  readonly config: JsonValue;
+  readonly canonicalConfig: string;
+  readonly llm: {
+    readonly maxCalls: number;
+    readonly maxMaterialBytes: number;
+    readonly maxAuditBytes: number;
+  };
+  readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
+}
+const managedScoreMatches = new WeakMap<object, ManagedScoreMatchDefinition<unknown, unknown>>();
+const scoreEvaluators = new WeakMap<object, (candidate: unknown) => Effect.Effect<number, unknown>>();
+export function managedScoreMatchOf(value: unknown): ManagedScoreMatchDefinition<unknown, unknown> | undefined {
+  return typeof value === "object" && value !== null ? managedScoreMatches.get(value) : undefined;
 }
 
 export type ValueMatch<T, R extends T = T> = BooleanMatch<T, R, "value"> | ScoreMatch<T>;
@@ -348,28 +380,6 @@ export function looksLikeMatch(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (value.domain === "value" || value.domain === "tool" || value.domain === "event") &&
     (value.kind === "boolean" || value.kind === "score") && typeof value.name === "string";
-}
-
-/** @internal Runtime brand guard for ScoreMatch.atLeast(). */
-export function isManagedThresholdedScoreMatch(value: unknown): value is ThresholdedScoreMatch<unknown> {
-  return isRecord(value) && thresholdedScoreMatches.has(value);
-}
-
-/** @internal Reserve threshold-view-shaped raw inputs at the authoring boundary. */
-export function looksLikeThresholdedScoreMatch(value: unknown): boolean {
-  return isRecord(value) && value.kind === "thresholded-score-match";
-}
-
-/** @internal Resolve a threshold view without evaluating its underlying Match. */
-export function thresholdedScoreMatchValue(value: unknown): {
-  readonly match: ScoreMatch<unknown>;
-  readonly threshold: number;
-} {
-  const resolved = isRecord(value) ? thresholdedScoreMatches.get(value) : undefined;
-  if (resolved === undefined) {
-    throw new TypeError("value must be a threshold view created by ScoreMatch.atLeast()");
-  }
-  return resolved;
 }
 
 /** @internal Returns the durable numeric identity of a managed matcher, when present. */
@@ -571,32 +581,20 @@ function createScoreMatch<T>(
   name: string,
   evaluate: (candidate: T) => number | Promise<number>,
 ): ScoreMatch<T> {
-  let match: ScoreMatch<T>;
   const result = {
     domain: "value" as const,
     name,
     kind: "score" as const,
     [matchInputBrand]: (_candidate: T) => undefined,
     [matchEvaluatorBrand]: async (candidate: T) => evaluate(candidate),
-    atLeast(threshold: number) {
-      assertUnitThreshold(threshold, "ScoreMatch.atLeast() threshold");
-      const view: ThresholdedScoreMatch<T> = {
-        kind: "thresholded-score-match",
-        [thresholdedScoreMatchBrand]: (_candidate: T) => undefined,
-      };
-      thresholdedScoreMatches.set(view, { match: match as ScoreMatch<unknown>, threshold });
-      return Object.freeze(view);
-    },
   };
-  match = Object.freeze(result) as ScoreMatch<T>;
+  const match = Object.freeze(result) as ScoreMatch<T>;
   matchBrands.add(match);
+  scoreEvaluators.set(match, (candidate) => Effect.tryPromise({
+    try: () => Promise.resolve(evaluate(candidate as T)),
+    catch: (cause) => cause,
+  }));
   return match;
-}
-
-function assertUnitThreshold(value: unknown, label: string): asserts value is number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
-    throw new TypeError(`${label} must be a finite number in [0, 1]`);
-  }
 }
 
 function freezeEventPosition(turnOrdinal: number, eventOrdinal: number): AssertionEventPosition {
@@ -690,16 +688,19 @@ export async function evaluateBooleanMatch<T, R extends T, D extends MatchDomain
 }
 
 /** 供 Assertion runtime 消费 ScoreMatch。范围非法是 evaluator defect，绝不 clamp。 */
-export async function evaluateScoreMatch<T>(match: ScoreMatch<T>, candidate: T): Promise<number> {
+export function evaluateScoreMatch<T>(match: ScoreMatch<T>, candidate: T): Effect.Effect<number, unknown> {
   const internal = internalMatchOf(match, "match");
   if (internal.kind !== "score" || internal.domain !== "value") {
     throw new TypeError("match must be a value-domain ScoreMatch");
   }
-  const score = await internal[matchEvaluatorBrand](candidate);
-  if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
-    throw new TypeError(`matcher ${internal.name} returned a score outside finite [0, 1]`);
-  }
-  return score;
+  const evaluate = scoreEvaluators.get(match);
+  if (evaluate === undefined) throw new TypeError("match must be a managed ScoreMatch");
+  return evaluate(candidate).pipe(Effect.map((score) => {
+    if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
+      throw new TypeError(`matcher ${internal.name} returned a score outside finite [0, 1]`);
+    }
+    return score;
+  }));
 }
 
 function hasPositiveWitnessCapability(match: BooleanMatch<unknown, unknown, "value">): boolean {
@@ -1282,20 +1283,146 @@ export function defineValueMatch<T, R extends T = T>(spec: {
   });
 }
 
+export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E>): ScoreMatch<T>;
 export function defineScoreMatch<T>(spec: {
   readonly name: string;
   readonly score: (value: T) => number | Promise<number>;
+}): ScoreMatch<T>;
+export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E> | {
+  readonly name: string;
+  readonly score: (value: T) => number | Promise<number>;
 }): ScoreMatch<T> {
-  if (!isRecord(spec)) throw new TypeError("defineScoreMatch() spec must be an object");
-  assertNonEmptyString(spec.name, "defineScoreMatch() spec.name");
-  if (typeof spec.score !== "function") throw new TypeError("defineScoreMatch() spec.score must be a function");
-  return createScoreMatch(spec.name, async (candidate) => {
-    const score = await spec.score(candidate);
+  const input = exactScoreMatchOptions(spec);
+  assertNonEmptyString(input.name, "defineScoreMatch() spec.name");
+  if (typeof input.score !== "function") throw new TypeError("defineScoreMatch() spec.score must be a function");
+  const managed = Object.hasOwn(input, "llm");
+  const match = createScoreMatch<T>(input.name, async (candidate) => {
+    if (managed) throw new TypeError("managed ScoreMatch must be evaluated by the Assertion runtime");
+    const score = await (input.score as (value: T) => number | Promise<number>)(candidate);
     if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
-      throw new TypeError(`matcher ${spec.name} returned a score outside finite [0, 1]`);
+      throw new TypeError(`matcher ${input.name} returned a score outside finite [0, 1]`);
     }
     return score;
   });
+  if (managed) {
+    assertNonEmptyString(input.version, "defineScoreMatch() spec.version");
+    if (!Object.hasOwn(input, "config")) throw new TypeError("defineScoreMatch() managed spec requires config");
+    const config = snapshotScoreMatchJson(input.config, "defineScoreMatch() spec.config");
+    const llm = exactLlmOptions(input.llm);
+    const definition: ManagedScoreMatchDefinition<unknown, unknown> = Object.freeze({
+      name: input.name,
+      version: input.version,
+      config,
+      canonicalConfig: canonicalScoreMatchJson(config),
+      llm,
+      score: input.score as ManagedScoreMatchDefinition<unknown, unknown>["score"],
+    });
+    managedScoreMatches.set(match, definition);
+  }
+  return match;
+}
+
+function exactScoreMatchOptions(value: unknown): Readonly<Record<string, unknown>> {
+  if (!isRecord(value) || Array.isArray(value)) throw new TypeError("defineScoreMatch() spec must be an object");
+  const managed = Object.hasOwn(value, "llm") || Object.hasOwn(value, "version") || Object.hasOwn(value, "config");
+  const allowed = managed ? ["name", "version", "config", "llm", "score"] : ["name", "score"];
+  const output: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || !allowed.includes(key)) {
+      throw new TypeError(`defineScoreMatch() spec has unknown option ${String(key)}`);
+    }
+    const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`defineScoreMatch() spec.${key} must be an enumerable data property`);
+    }
+    output[key] = descriptor.value;
+  }
+  if (!Object.hasOwn(output, "name") || !Object.hasOwn(output, "score")) {
+    throw new TypeError("defineScoreMatch() spec requires name and score");
+  }
+  if (managed && (!Object.hasOwn(output, "version") || !Object.hasOwn(output, "config") || !Object.hasOwn(output, "llm"))) {
+    throw new TypeError("defineScoreMatch() managed spec requires version, config, and llm");
+  }
+  return Object.freeze(output);
+}
+
+function boundedPositiveInteger(value: unknown, fallback: number, maximum: number, label: string): number {
+  const resolved = value ?? fallback;
+  if (typeof resolved !== "number" || !Number.isSafeInteger(resolved) || resolved <= 0 || resolved > maximum) {
+    throw new TypeError(`${label} must be a positive integer at most ${maximum}`);
+  }
+  return resolved;
+}
+
+function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["llm"] {
+  if (!isRecord(value) || Array.isArray(value)) throw new TypeError("defineScoreMatch() spec.llm must be an object");
+  const allowed = ["maxCalls", "maxMaterialBytes", "maxAuditBytes"];
+  const output: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || !allowed.includes(key)) throw new TypeError(`defineScoreMatch() spec.llm has unknown option ${String(key)}`);
+    const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) throw new TypeError(`defineScoreMatch() spec.llm.${key} must be an enumerable data property`);
+    output[key] = descriptor.value;
+  }
+  return Object.freeze({
+    maxCalls: boundedPositiveInteger(output.maxCalls, 4, 16, "defineScoreMatch() spec.llm.maxCalls"),
+    maxMaterialBytes: boundedPositiveInteger(output.maxMaterialBytes, 32 * 1024, 48 * 1024, "defineScoreMatch() spec.llm.maxMaterialBytes"),
+    maxAuditBytes: boundedPositiveInteger(output.maxAuditBytes, 96 * 1024, 256 * 1024, "defineScoreMatch() spec.llm.maxAuditBytes"),
+  });
+}
+
+function snapshotScoreMatchJson(
+  value: unknown,
+  label: string,
+  state: { nodes: number } = { nodes: 0 },
+  ancestors = new WeakSet<object>(),
+  depth = 0,
+): JsonValue {
+  state.nodes += 1;
+  if (state.nodes > 16_384) throw new TypeError(`${label} exceeds 16,384 JSON nodes`);
+  if (depth > 32) throw new TypeError(`${label} exceeds depth 32`);
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`${label} numbers must be finite`);
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (typeof value !== "object" || value === null) throw new TypeError(`${label} must contain only JSON values`);
+  if (ancestors.has(value)) throw new TypeError(`${label} cannot contain cycles`);
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const keys = Reflect.ownKeys(value);
+      if (keys.some((key) => key !== "length" && !(typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length))) {
+        throw new TypeError(`${label} arrays cannot contain custom properties`);
+      }
+      const output: JsonValue[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
+        if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined) throw new TypeError(`${label} arrays cannot contain holes, accessors, or undefined`);
+        output.push(snapshotScoreMatchJson(descriptor.value, `${label}[${index}]`, state, ancestors, depth + 1));
+      }
+      return Object.freeze(output) as unknown as JsonValue;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${label} objects must be plain objects`);
+    const entries: Array<readonly [string, JsonValue]> = [];
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") throw new TypeError(`${label} cannot contain symbol keys`);
+      const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+      if (descriptor === undefined || !descriptor.enumerable) continue;
+      if (!("value" in descriptor) || descriptor.value === undefined) throw new TypeError(`${label}.${key} must be a JSON data property`);
+      entries.push([key, snapshotScoreMatchJson(descriptor.value, `${label}.${key}`, state, ancestors, depth + 1)]);
+    }
+    return Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0))) as JsonValue;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function canonicalScoreMatchJson(value: JsonValue): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalScoreMatchJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalScoreMatchJson(value[key]!)}`).join(",")}}`;
 }
 
 interface ReferencePathPattern {

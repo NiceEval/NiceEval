@@ -1,0 +1,37 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/assertion-judge-presets.test.ts",
+  "current": {
+    "necase_5XSA6N7CC3VXT291": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-score-audit",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_Z0M6G2QTCQAW4BGN": {
+      "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-score-audit",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_5XSA6N7CC3VXT291",
+      "atCommit": "cea2f5b55a034f3b5f4e0c196a92e49c372297bb",
+      "transactionId": "netxn_22120eb9f10746599066c4e662a7c63b",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-score-audit"
+      }
+    },
+    {
+      "caseId": "necase_Z0M6G2QTCQAW4BGN",
+      "atCommit": "cea2f5b55a034f3b5f4e0c196a92e49c372297bb",
+      "transactionId": "netxn_b05cedf7c86f4bb2adc211d0207dbfef",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#eval-judge-score-audit"
+      }
+    }
+  ],
+  "tombstones": []
+}

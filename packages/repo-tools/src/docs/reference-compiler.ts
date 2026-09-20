@@ -877,6 +877,7 @@ export const SOURCE_FILES = [
   "src/assertions/types.ts",
   "src/runner/types.ts",
   "src/context/assert-first.ts",
+  "src/adapter.ts",
   "src/agents/types.ts",
   "src/sandbox/types.ts",
   "src/o11y/types.ts",
@@ -1048,6 +1049,30 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
           : member,
       );
       return renderMemberGroups([
+        {
+          heading: "AdapterAssertionsFactoryContext",
+          members: extractInterfaceMembers(
+            sources["src/adapter.ts"],
+            "src/adapter.ts",
+            "AdapterAssertionsFactoryContext",
+          ),
+        },
+        {
+          heading: "AdapterCleanupContext",
+          members: extractInterfaceMembers(
+            sources["src/adapter.ts"],
+            "src/adapter.ts",
+            "AdapterCleanupContext",
+          ),
+        },
+        {
+          heading: "AdapterCreateContext",
+          members: extractInterfaceMembers(
+            sources["src/adapter.ts"],
+            "src/adapter.ts",
+            "AdapterCreateContext",
+          ),
+        },
         {
           heading: "DirectAgentDef",
           members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "DirectAgentDef"),

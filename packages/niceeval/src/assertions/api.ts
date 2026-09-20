@@ -13,7 +13,6 @@ import type {
   NumericComparator,
   NumericComparisonMatch,
   ScoreMatch,
-  ThresholdedScoreMatch,
   EventMatch,
   ManagedEventOccurrences,
   ToolMatch,
@@ -132,7 +131,12 @@ export type AssertionCriterion =
     }
   | {
       readonly kind: "judge-measurement";
-      readonly recipe: "closed-qa" | "factuality" | "summarizes";
+      readonly name: string;
+      readonly scale: "unit-interval";
+    }
+  | {
+      readonly kind: "managed-score-measurement";
+      readonly name: string;
       readonly scale: "unit-interval";
     }
   | {
@@ -398,8 +402,17 @@ export const assertionHandleBrand: unique symbol = Symbol(
   "niceeval.assertion-handle",
 );
 
-export interface AssertionHandleBase {
+declare const assertionConditionStateBrand: unique symbol;
+declare const assertionGateStateBrand: unique symbol;
+declare const assertionScoreStateBrand: unique symbol;
+
+export interface AssertionHandleBase<
+  HasCondition extends boolean = boolean,
+  HasScore extends boolean = boolean,
+> {
   readonly [assertionHandleBrand]: true;
+  readonly [assertionConditionStateBrand]: HasCondition;
+  readonly [assertionScoreStateBrand]: HasScore;
   key(value: string): this;
   label(value: string): this;
   /** Adds one display-only group segment to this already registered entry. */
@@ -533,8 +546,12 @@ export interface BooleanAssertionRegistration<Refined>
 
 export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
-  /** Registration-time threshold selected by ThresholdedScoreMatch. */
-  readonly threshold?: number;
+  /** Bytes synchronously reserved from an Attempt-local producer budget. */
+  readonly retainedBytes?: number;
+  /** Complete terminal Content appended exactly once by the shared sealing path. */
+  readonly terminalEvidence?: () => readonly AssertionMaterial[];
+  /** Terminal producer facts frozen by the shared Assertion sealing path. */
+  readonly terminalDetail?: () => AssertionSnapshotObject;
   readonly evaluate: () => Effect.Effect<
     MeasurementAssertionEvaluation,
     unknown,
@@ -542,73 +559,194 @@ export interface MeasurementAssertionRegistration
   >;
 }
 
-export interface PassBooleanAssertionHandle<out Refined>
-  extends AssertionHandleBase {
+export interface PassBooleanAssertionHandle<
+  out Refined,
+  HasGate extends boolean = false,
+> extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
-  gate(): this;
+  gate(
+    this: PassBooleanAssertionHandle<Refined, false>,
+  ): PassBooleanAssertionHandle<Refined, true>;
   orStop(): Promise<Refined>;
 }
 
-export interface ScoreBooleanAssertionHandle<out Refined, HasScore extends boolean = false>
-  extends AssertionHandleBase {
+export interface ScoreBooleanAssertionHandle<
+  out Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
+> extends AssertionHandleBase<true, HasScore> {
   readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
+  gate(
+    this: ScoreBooleanAssertionHandle<Refined, false, HasScore>,
+  ): ScoreBooleanAssertionHandle<Refined, true, HasScore>;
   score(
-    this: ScoreBooleanAssertionHandle<Refined, false>,
+    this: ScoreBooleanAssertionHandle<Refined, HasGate, false>,
     points: number,
-  ): ScoreBooleanAssertionHandle<Refined, true>;
+  ): ScoreBooleanAssertionHandle<Refined, HasGate, true>;
   orStop(): Promise<Refined>;
 }
 
-export interface PassMeasurementAssertionHandle extends AssertionHandleBase {
+export interface PassMeasurementAssertionHandle<
+  HasCondition extends boolean = false,
+> extends AssertionHandleBase<HasCondition, false> {
   readonly kind: "measurement";
-}
-
-export interface PassThresholdedMeasurementAssertionHandle extends AssertionHandleBase {
-  readonly kind: "measurement";
-  gate(): this;
-  orStop(): Promise<number>;
+  gate(
+    this: PassMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): PassMeasurementAssertionHandle<true>;
+  orStop(
+    this: PassMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): Promise<number>;
+  orStop(
+    this: PassMeasurementAssertionHandle<true>,
+  ): Promise<number>;
 }
 
 export interface ScoreMeasurementAssertionHandle<
-  Thresholded extends boolean = false,
+  HasCondition extends boolean = false,
   HasScore extends boolean = false,
-> extends AssertionHandleBase {
+> extends AssertionHandleBase<HasCondition, HasScore> {
   readonly kind: "measurement";
+  gate(
+    this: ScoreMeasurementAssertionHandle<false, HasScore>,
+    minimum: number,
+  ): ScoreMeasurementAssertionHandle<true, HasScore>;
   score(
-    this: ScoreMeasurementAssertionHandle<Thresholded, false>,
+    this: ScoreMeasurementAssertionHandle<HasCondition, false>,
     points: number,
-  ): ScoreMeasurementAssertionHandle<Thresholded, true>;
+  ): ScoreMeasurementAssertionHandle<HasCondition, true>;
+  orStop(
+    this: ScoreMeasurementAssertionHandle<false, HasScore>,
+    minimum: number,
+  ): Promise<number>;
   orStop(
     this: ScoreMeasurementAssertionHandle<true, HasScore>,
   ): Promise<number>;
 }
 
 /** A Boolean Assertion that intentionally has no author control-flow operation. */
-interface PostRunPassBooleanAssertionHandle<Refined>
-  extends AssertionHandleBase {
+interface PostRunPassBooleanAssertionHandle<
+  Refined,
+  HasGate extends boolean = false,
+> extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
   optional(): this;
-  gate(): this;
+  gate(
+    this: PostRunPassBooleanAssertionHandle<Refined, false>,
+  ): PostRunPassBooleanAssertionHandle<Refined, true>;
 }
 
-interface PostRunScoreBooleanAssertionHandle<Refined>
-  extends AssertionHandleBase {
+interface PostRunScoreBooleanAssertionHandle<
+  Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
+> extends AssertionHandleBase<true, HasScore> {
   readonly kind: "boolean";
-  score(points: number): this;
+  readonly [assertionGateStateBrand]: HasGate;
+  gate(
+    this: PostRunScoreBooleanAssertionHandle<Refined, false, HasScore>,
+  ): PostRunScoreBooleanAssertionHandle<Refined, true, HasScore>;
+  score(
+    this: PostRunScoreBooleanAssertionHandle<Refined, HasGate, false>,
+    points: number,
+  ): PostRunScoreBooleanAssertionHandle<Refined, HasGate, true>;
 }
 
 export type PostRunBooleanAssertionHandle<
   Kind extends AssertionEvaluationKind,
   Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
 > = Kind extends "pass"
-  ? PostRunPassBooleanAssertionHandle<Refined>
-  : PostRunScoreBooleanAssertionHandle<Refined>;
+  ? PostRunPassBooleanAssertionHandle<Refined, HasGate>
+  : PostRunScoreBooleanAssertionHandle<Refined, HasGate, HasScore>;
 
 /** Direct score is an Assertion entry, but has no condition or stop barrier. */
-export interface DirectScoreAssertionHandle extends AssertionHandleBase {
+export interface DirectScoreAssertionHandle extends AssertionHandleBase<false, true> {
   readonly kind: "direct-score";
+}
+
+/**
+ * Definition-time handle shared by Adapter Assertion factories. It exposes
+ * only operations whose meaning is identical in Pass and Score Evals; the
+ * bound Eval factory replaces it with the native handle for its Kind.
+ */
+export interface PolymorphicBooleanAssertionHandle<
+  out Refined,
+  HasGate extends boolean = false,
+> extends AssertionHandleBase<true, false> {
+  readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
+  gate(
+    this: PolymorphicBooleanAssertionHandle<Refined, false>,
+  ): PolymorphicBooleanAssertionHandle<Refined, true>;
+  orStop(): Promise<Refined>;
+}
+
+/** Definition-time measurement counterpart to PolymorphicBooleanAssertionHandle. */
+export interface PolymorphicMeasurementAssertionHandle<
+  HasCondition extends boolean = false,
+> extends AssertionHandleBase<HasCondition, false> {
+  readonly kind: "measurement";
+  gate(
+    this: PolymorphicMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): PolymorphicMeasurementAssertionHandle<true>;
+  orStop(
+    this: PolymorphicMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): Promise<number>;
+  orStop(
+    this: PolymorphicMeasurementAssertionHandle<true>,
+  ): Promise<number>;
+}
+
+export type AssertionCheckKind = AssertionEvaluationKind | "polymorphic";
+
+type CheckedBooleanHandle<
+  Kind extends AssertionCheckKind,
+  Refined,
+> = Kind extends AssertionEvaluationKind
+  ? BooleanAssertionHandle<Kind, Refined>
+  : PolymorphicBooleanAssertionHandle<Refined>;
+
+type CheckedMeasurementHandle<Kind extends AssertionCheckKind> =
+  Kind extends AssertionEvaluationKind
+    ? MeasurementAssertionHandle<Kind>
+    : PolymorphicMeasurementAssertionHandle;
+
+/** Single owner for the public check overload set, including Adapter-polymorphic factories. */
+export interface AssertionCheck<Kind extends AssertionCheckKind> {
+  <Value, Refined extends Value>(
+    value: AssertionSubject<Value>,
+    match: BooleanMatch<NoInfer<Value>, Refined, "value">,
+  ): CheckedBooleanHandle<Kind, Refined>;
+  <Value extends readonly unknown[]>(
+    value: NumericAssertionSubject<Value>,
+    match: NumericComparisonMatch,
+  ): CheckedBooleanHandle<Kind, Value>;
+  <S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedToolCalls<S>>,
+    match: ToolMatch,
+  ): CheckedBooleanHandle<Kind, ManagedToolCalls<S>>;
+  <S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedEventOccurrences<S>>,
+    match: EventMatch,
+  ): CheckedBooleanHandle<Kind, ManagedEventOccurrences<S>>;
+  <Value>(
+    value: AssertionSubject<Value>,
+    match: CollectionMatch<NoInfer<Value>>,
+  ): CheckedBooleanHandle<Kind, Value>;
+  <Value>(
+    value: AssertionSubject<Value>,
+    match: ScoreMatch<NoInfer<Value>>,
+  ): CheckedMeasurementHandle<Kind>;
 }
 
 export interface AssertionGroupContext {
@@ -625,66 +763,12 @@ export interface AssertionGroupContext {
 
 export interface PassAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "pass";
-  check<Value, Refined extends Value>(
-    value: AssertionSubject<Value>,
-    match: BooleanMatch<NoInfer<Value>, Refined, "value">,
-  ): PassBooleanAssertionHandle<Refined>;
-  check<Value extends readonly unknown[]>(
-    value: NumericAssertionSubject<Value>,
-    match: NumericComparisonMatch,
-  ): PassBooleanAssertionHandle<Value>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedToolCalls<S>>,
-    match: ToolMatch,
-  ): PassBooleanAssertionHandle<ManagedToolCalls<S>>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedEventOccurrences<S>>,
-    match: EventMatch,
-  ): PassBooleanAssertionHandle<ManagedEventOccurrences<S>>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: CollectionMatch<NoInfer<Value>>,
-  ): PassBooleanAssertionHandle<Value>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ScoreMatch<NoInfer<Value>>,
-  ): PassMeasurementAssertionHandle;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ThresholdedScoreMatch<NoInfer<Value>>,
-  ): PassThresholdedMeasurementAssertionHandle;
+  readonly check: AssertionCheck<"pass">;
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "score";
-  check<Value, Refined extends Value>(
-    value: AssertionSubject<Value>,
-    match: BooleanMatch<NoInfer<Value>, Refined, "value">,
-  ): ScoreBooleanAssertionHandle<Refined>;
-  check<Value extends readonly unknown[]>(
-    value: NumericAssertionSubject<Value>,
-    match: NumericComparisonMatch,
-  ): ScoreBooleanAssertionHandle<Value>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedToolCalls<S>>,
-    match: ToolMatch,
-  ): ScoreBooleanAssertionHandle<ManagedToolCalls<S>>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedEventOccurrences<S>>,
-    match: EventMatch,
-  ): ScoreBooleanAssertionHandle<ManagedEventOccurrences<S>>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: CollectionMatch<NoInfer<Value>>,
-  ): ScoreBooleanAssertionHandle<Value>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ScoreMatch<NoInfer<Value>>,
-  ): ScoreMeasurementAssertionHandle;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ThresholdedScoreMatch<NoInfer<Value>>,
-  ): ScoreMeasurementAssertionHandle<true>;
+  readonly check: AssertionCheck<"score">;
   score(points: number): DirectScoreAssertionHandle;
 }
 
@@ -694,15 +778,19 @@ export type AssertionsContext<Kind extends AssertionEvaluationKind> =
 export type BooleanAssertionHandle<
   Kind extends AssertionEvaluationKind,
   Refined,
+  HasGate extends boolean = false,
+  HasScore extends boolean = false,
 > = Kind extends "pass"
-  ? PassBooleanAssertionHandle<Refined>
-  : ScoreBooleanAssertionHandle<Refined>;
+  ? PassBooleanAssertionHandle<Refined, HasGate>
+  : ScoreBooleanAssertionHandle<Refined, HasGate, HasScore>;
 
 export type MeasurementAssertionHandle<
   Kind extends AssertionEvaluationKind,
+  HasCondition extends boolean = false,
+  HasScore extends boolean = false,
 > = Kind extends "pass"
-  ? PassMeasurementAssertionHandle
-  : ScoreMeasurementAssertionHandle;
+  ? PassMeasurementAssertionHandle<HasCondition>
+  : ScoreMeasurementAssertionHandle<HasCondition, HasScore>;
 
 export interface AssertionSealOptions {
   readonly execution?: "completed" | "errored";
@@ -780,6 +868,8 @@ export interface AssertionsRuntime<
 > {
   readonly evaluationKind: Kind;
   readonly t: AssertionsContext<Kind>;
+  /** @internal Reject before an adapter reads or snapshots author material. */
+  assertAuthoringOpen(): void;
   /** Attempt-owned synchronous admission close; sealing still happens once through `seal`. */
   closeAuthoring(reason: "attempt-sealing" | "attempt-interrupted"): void;
   registerBoolean<Refined>(

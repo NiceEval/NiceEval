@@ -6,6 +6,12 @@ createdAt: 2026-07-12T19:13:58+08:00
 kind: feature
 ---
 
+---
+format: niceeval.docs-node/v1
+kind: feature
+relations: {}
+---
+
 # Eval —— 编写 eval
 
 写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。
@@ -25,11 +31,11 @@ export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
-  judge?: true | JudgeConfig;
-  // 声明这道题可创建 Judge Assertion；true 继承配置，对象按字段替换外层配置
+  judge?: JudgeConfig;
+  // 为这道题指定 Judge 模型配置；指定字段优先于项目默认值
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
-  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 配置只在声明层解析一次
+  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 模型字段按层求值
 
   sandbox?: SandboxLayer;   // 这道题的起点或准备:具体 Provider factory 的产物,或 sandboxLayer() 的命令链
   //  与 Experiment 的同名字段配对:每个实际配对恰好一方带 template
@@ -44,12 +50,18 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要 Judge capability，这是题目本身的属性，不是这次跑法的偏好。
-项目级配置是没写时的默认出处，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Assertion 是同步作者错误。
+`timeoutMs` 是这条 eval 自己对运行条件的声明。项目级配置是 `timeoutMs` 没写时的默认出处，压不掉 eval 写下的值。
+`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。
 
-Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Judge factory 从 `niceeval/expect` 生成 managed Score Match；作者用 `check(material, match)` 登记 measurement Assertion。Pass Eval 先在 Match 上调用 `.atLeast(n)`，再在同一 handle 调用无参 `.gate()`；Score Eval 在同一 handle 调用 `.score(points)`。见 [Judge](../judge/library.md)。
-完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
+`judge` 是这条 Eval 的 Judge 模型配置，不是评分定义的允许列表。指定字段优先于项目默认值；Experiment 可进一步替换。每个字段按
+`Experiment.judgeRuntime → Eval.judge → Config.judgeRuntime → 内置默认` 求值；`undefined` 继续继承。
+
+Eval 创建时冻结自己写下的配置。`defineJudge`、现成裁判与自定义受管 `ScoreMatch` 都能经 `t.check()` 登记，
+不需要先在 Eval 上登记实例。
+
+Pass 与 Score Eval 都可在同一 handle 调用 `.gate(minimum)`；Score Eval 还可调用 `.score(points)`。
+两者任意先后都只求值一次。见 [Judge](../judge/library.md)。
+完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
 
@@ -115,7 +127,7 @@ solution、生成器与参考答案不得进入任何 build context 或最终镜
 ## defineScoreEval：Score Eval
 
 `defineScoreEval` 定义以累计 `score` 排名的题型。它与 `defineEval` 字段形状相同，差别只在 `test(t)`：
-ScoreTestContext 提供 handle `.score(points)` 与直接 `t.score(points)`。这两个入口只属于 Score Eval。
+ScoreTestContext 提供 handle `.score(points)` 与直接 `t.score(points)`。这两个入口只属于 Score Eval；Boolean `.gate()` 与 measurement `.gate(minimum)` 则同时适用于 Pass 和 Score。
 
 ```typescript
 import { defineScoreEval } from "niceeval";
@@ -149,9 +161,8 @@ Score 是同一份 sealed Assertions 的 `points`、earned contribution 与 rubr
 contribution 仍保留，结果为 partial 或 unavailable，而不是伪造 `0`。没有 contribution 的正常 Attempt
 得到 `earned: 0`。
 
-Verdict 同样在读侧折叠 Core `outcome`、sealed Assertions 与显式 skip。Score Eval 没有 gate：低分或
-Boolean mismatch 不会得到 `failed`；正常封口为 `passed`，execution error 为 `errored`，显式 skip 为
-`skipped`。只有预先用 `.atLeast(n)` 形成 threshold 的 measurement handle 才能无参 `.orStop()`；`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
+Verdict 同样在读侧折叠 Core `outcome`、sealed Assertions 与显式 skip。Score 的低分或未配置 gate 的 Boolean mismatch 不会得到 `failed`；显式 gate 不满足时为 `failed`，并保留 earned score。正常封口为 `passed`，execution error 为 `errored`，显式 skip 为 `skipped`。
+measurement handle 可用 `.orStop(minimum)` 建立 stop-only condition，或在 `.gate(minimum)` 后无参复用；`t.skip(reason)` 的 Attempt 不参加排名。Score 不声明 max、
 百分比或隐式每项 `+1`。
 
 题型是定义期事实，进入 `EvalDescriptor.evaluationKind`（`"pass" | "score"`）供 Inspection

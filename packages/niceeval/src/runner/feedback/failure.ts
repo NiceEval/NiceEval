@@ -90,7 +90,8 @@ function criterionTitle(criterion: AssertionCriterion): string {
     case "occurrence":
       return `${criterion.scope} ${criterion.occurrence} ${criterion.assertion}`;
     case "judge-measurement":
-      return criterion.recipe;
+    case "managed-score-measurement":
+      return criterion.name;
     case "sandbox-result":
       return criterion.operation.replaceAll("-", " ");
     case "direct-score":

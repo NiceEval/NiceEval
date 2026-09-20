@@ -154,7 +154,23 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "judge-measurement/v1";
       readonly data: {
-        readonly recipe: "closed-qa" | "factuality" | "summarizes";
+        readonly recipe: string;
+        readonly scale: "unit-interval";
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "judge-measurement/v2";
+      readonly data: {
+        readonly name: string;
+        readonly scale: "unit-interval";
+      };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "llm-measurement/v1";
+      readonly data: {
+        readonly name: string;
         readonly scale: "unit-interval";
       };
     }

@@ -18,7 +18,7 @@ const definition = defineGrading({
       },
     });
 
-    g.judge.llm(check).atLeast(0.8);
+    g.judge.llm(check).gate(0.8);
   },
 });
 ```

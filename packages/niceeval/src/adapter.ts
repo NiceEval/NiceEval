@@ -1,7 +1,17 @@
-import type { AssertionsRuntime } from "./assertions/api.ts";
+import type {
+  AssertionCheck,
+  AssertionSubject,
+  AssertionsRuntime,
+  BooleanAssertionHandle,
+  MeasurementAssertionHandle,
+  PolymorphicBooleanAssertionHandle,
+  PolymorphicMeasurementAssertionHandle,
+} from "./assertions/api.ts";
+import type { ScoreMatch } from "./assertions/match.ts";
 import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
+import type { JudgePresetMethods } from "./context/assert-first.ts";
 import type { DiagnosticInput, JsonValue, ProgressUpdate } from "./shared/types.ts";
 import type { AdapterIdentity } from "./record/model/run-context.ts";
 export type { AdapterIdentity } from "./record/model/run-context.ts";
@@ -9,10 +19,57 @@ export type { AdapterIdentity } from "./record/model/run-context.ts";
 const ADAPTER_CONTRACT_TOKEN: unique symbol = Symbol("niceeval.adapterContractToken");
 const EVAL_ADAPTER_CONTRACT_TOKEN: unique symbol = Symbol("niceeval.evalAdapterContractToken");
 
+/**
+ * Synchronously assembles Attempt-local Assertion methods from the guarded app
+ * facade and the shared check registrar. The returned object must contain only
+ * ordinary, synchronously returning methods. Generic and overloaded Assertion
+ * sugar is intentionally not callable after binding; use ordinary named
+ * parameters so argument and native handle types remain exact.
+ */
+export type AdapterAssertionsFactory<Context extends object, Assertions extends object = object> = (
+  context: AdapterAssertionsFactoryContext<Context>,
+) => Assertions;
+
+/**
+ * Definition inputs for Adapter Assertion sugar. `app` becomes callable after
+ * assembly, and `check` may only be called by a returned Assertion method.
+ */
+export interface AdapterAssertionsFactoryContext<Context extends object> {
+  readonly app: Readonly<Context>;
+  readonly check: AssertionCheck<"polymorphic">;
+}
+
+type BoundAdapterAssertionResult<Kind extends EvaluationKind, Result> =
+  Result extends PolymorphicBooleanAssertionHandle<infer Refined, infer HasGate>
+    ? BooleanAssertionHandle<Kind, Refined, HasGate>
+    : Result extends PolymorphicMeasurementAssertionHandle<infer HasCondition>
+      ? MeasurementAssertionHandle<Kind, HasCondition>
+      : never;
+
+type BoundAdapterAssertionMethod<Kind extends EvaluationKind, Method> =
+  Method extends (...args: infer Args) => infer Result
+    ? ((...args: Args) => Result) extends Method
+      ? (...args: Args) => BoundAdapterAssertionResult<Kind, Result>
+      : never
+    : never;
+
+type AdapterAssertionsFor<
+  Assertions extends object | undefined,
+  Kind extends EvaluationKind,
+> = Assertions extends object
+  ? { readonly [Key in keyof Assertions]: BoundAdapterAssertionMethod<Kind, Assertions[Key]> }
+  : {};
+
 /** Keys owned by the neutral Eval runtime or unsafe on a merged object root. */
 const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "evaluationKind",
   "check",
+  "judge",
+  "factuality",
+  "faithfulness",
+  "instructionFollowing",
+  "pairwisePreference",
+  "closeQA",
   "score",
   "group",
   "skip",
@@ -61,25 +118,79 @@ type AdapterContextValidation<Context> = unknown extends Context
     ? unknown
     : { readonly invalidAdapterContext: InvalidContextBranch<Context> };
 
+type InvalidAssertionMethodKey<Context extends object, Assertions> = Assertions extends object
+  ? {
+      [Key in keyof Assertions]: Key extends string
+        ? Key extends ReservedAdapterContextKey | keyof Context
+          ? Key
+          : Assertions[Key] extends (...args: readonly never[]) => infer Result
+            ? Result extends
+                | PolymorphicBooleanAssertionHandle<unknown, boolean>
+                | PolymorphicMeasurementAssertionHandle<boolean>
+              ? never
+              : Key
+            : Key
+        : Key;
+    }[keyof Assertions]
+  : "assertions";
+
+type InvalidAdapterAssertions<
+  Context extends object,
+  Assertions extends object,
+> = InvalidAssertionMethodKey<Context, Assertions>;
+
+type AdapterAssertionsValidation<
+  Context extends object,
+  Assertions extends object,
+> = [InvalidAdapterAssertions<Context, Assertions>] extends [never]
+  ? unknown
+  : { readonly invalidAdapterAssertions: InvalidAdapterAssertions<Context, Assertions> };
+
+type AdapterAssertionsValidationArgs<
+  Context extends object,
+  Assertions extends object,
+> = [InvalidAdapterAssertions<Context, Assertions>] extends [never]
+  ? []
+  : [error: { readonly invalidAdapterAssertions: InvalidAdapterAssertions<Context, Assertions> }];
+
 type AdapterFactory<Context extends object> = (
   context: AdapterCreateContext,
 ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
 
-export interface AdapterCreateContext {
-  readonly evalId: string;
-  readonly experimentId: string;
-  readonly attempt: number;
+export interface AdapterCleanupContext {
+  /** 当前 Adapter cleanup 总窗口的取消信号。它独立于 Attempt signal，并在 30 秒总预算结束时取消。 */
   readonly signal: AbortSignal;
-  readonly model?: string;
-  readonly reasoningEffort?: string;
-  readonly flags: Readonly<Record<string, JsonValue>>;
-  progress(update: ProgressUpdate): void;
-  diagnostic(input: DiagnosticInput): void;
-  log(message: string): void;
-  onCleanup(cleanup: () => void | Promise<void>): void;
 }
 
-type EvalContextBase<Kind extends EvaluationKind> = {
+export interface AdapterCreateContext {
+  /** 当前 Eval 的公开 ID。 */
+  readonly evalId: string;
+  /** 当前 Experiment 的公开 ID。 */
+  readonly experimentId: string;
+  /** 当前 Attempt 的零起始序号。 */
+  readonly attempt: number;
+  /** Attempt 执行信号；取消或超时后会中止，不用于 cleanup 窗口。 */
+  readonly signal: AbortSignal;
+  /** Experiment 选择的模型。 */
+  readonly model?: string;
+  /** Experiment 选择的推理强度。 */
+  readonly reasoningEffort?: string;
+  /** Experiment 传给 Adapter 的只读 flags。 */
+  readonly flags: Readonly<Record<string, JsonValue>>;
+  /** 更新当前 Attempt 的人读进度。 */
+  progress(update: ProgressUpdate): void;
+  /** 为当前 Attempt 追加结构化诊断。 */
+  diagnostic(input: DiagnosticInput): void;
+  /** 为当前 Attempt 追加日志。 */
+  log(message: string): void;
+  /**
+   * 登记 Attempt-local 资源释放。回调按全局 LIFO 执行；一项失败不会跳过其余项。
+   * 零参数回调仍可直接传入。传入的 context 已冻结，同一 cleanup 窗口的回调共享一个 signal。
+   */
+  onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
+}
+
+type EvalContextBase<Kind extends EvaluationKind> = JudgePresetMethods<Kind> & {
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -91,6 +202,10 @@ type EvalContextBase<Kind extends EvaluationKind> = {
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
   readonly check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly judge: <Value>(
+    value: AssertionSubject<Value>,
+    definition: ScoreMatch<NoInfer<Value>>,
+  ) => MeasurementAssertionHandle<Kind>;
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */
@@ -107,23 +222,46 @@ type AdapterScoreEvalFields = Omit<ScoreEvalInput<undefined>, "test" | "sandbox"
   readonly diff?: never;
 };
 
-export type AdapterEvalInput<Context extends object> = AdapterEvalFields & {
-  test(t: EvalContext<"pass"> & Readonly<Context>): void | Promise<void>;
+export type AdapterEvalInput<
+  Context extends object,
+  Assertions extends object | undefined = undefined,
+> = AdapterEvalFields & {
+  test(
+    t: EvalContext<"pass"> & Readonly<Context> & AdapterAssertionsFor<Assertions, "pass">,
+  ): void | Promise<void>;
 };
 
-export type AdapterScoreEvalInput<Context extends object> = AdapterScoreEvalFields & {
-  test(t: EvalContext<"score"> & Readonly<Context>): void | Promise<void>;
+export type AdapterScoreEvalInput<
+  Context extends object,
+  Assertions extends object | undefined = undefined,
+> = AdapterScoreEvalFields & {
+  test(
+    t: EvalContext<"score"> & Readonly<Context> & AdapterAssertionsFor<Assertions, "score">,
+  ): void | Promise<void>;
 };
 
-interface AdapterContractToken<Context extends object> {
+interface AdapterContractToken<
+  Context extends object,
+  Assertions extends object | undefined,
+> {
   readonly name: string;
+  readonly assertions: AdapterAssertionsFactory<Context> | undefined;
+  /** Keeps the Assertion method shape invariant without exposing a constructible brand. */
+  readonly assertionTypes: (value: Assertions) => Assertions;
   /** Keeps the context parameter invariant without exposing a constructible brand. */
   readonly context: (value: Context) => Context;
 }
 
-export interface AdapterEvalDefinition<Kind extends EvaluationKind, Context extends object>
-  extends EvalDefinition<Kind, EvalContext<Kind> & Readonly<Context>, undefined> {
-  readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context>;
+export interface AdapterEvalDefinition<
+  Kind extends EvaluationKind,
+  Context extends object,
+  Assertions extends object | undefined = undefined,
+> extends EvalDefinition<
+    Kind,
+    EvalContext<Kind> & Readonly<Context> & AdapterAssertionsFor<Assertions, Kind>,
+    undefined
+  > {
+  readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions>;
 }
 
 /** @internal Existential discovery view; concrete bound factories retain their exact Context. */
@@ -133,10 +271,15 @@ export interface AdapterRuntimeEvalDefinition<Kind extends EvaluationKind>
 }
 
 /** Common public surface for an Adapter definition with bound Eval factories. */
-export interface AdapterDefinition<Context extends object> {
+export interface AdapterDefinition<
+  Context extends object,
+  Assertions extends object | undefined = undefined,
+> {
   readonly name: string;
-  defineEval(input: AdapterEvalInput<Context>): AdapterEvalDefinition<"pass", Context>;
-  defineScoreEval(input: AdapterScoreEvalInput<Context>): AdapterEvalDefinition<"score", Context>;
+  defineEval(input: AdapterEvalInput<Context, Assertions>): AdapterEvalDefinition<"pass", Context, Assertions>;
+  defineScoreEval(
+    input: AdapterScoreEvalInput<Context, Assertions>,
+  ): AdapterEvalDefinition<"score", Context, Assertions>;
 }
 
 /** Existential runtime view used by Experiment without erasing a concrete context to `any`. */
@@ -151,11 +294,14 @@ export interface AdapterRuntimeDefinition {
   create(context: AdapterCreateContext): object | Promise<object>;
 }
 
-export interface AdapterImplementation<Context extends object> extends AdapterDefinition<Context> {
+export interface AdapterImplementation<
+  Context extends object,
+  Assertions extends object | undefined = undefined,
+> extends AdapterDefinition<Context, Assertions> {
   readonly kind: "custom";
   readonly contract: string;
   readonly behaviorRevision: string | null;
-  readonly [ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context>;
+  readonly [ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions>;
   create(context: AdapterCreateContext): Context | Promise<Context>;
 }
 
@@ -168,11 +314,22 @@ export type AdapterImplementationInput<
   readonly create: AdapterFactory<ImplementationContext>;
 } & AdapterContextValidation<NoInfer<ImplementationContext>>;
 
-export interface AdapterContract<Context extends object> extends AdapterDefinition<Context> {
+export interface AdapterContract<
+  Context extends object,
+  Assertions extends object | undefined = undefined,
+> extends AdapterDefinition<Context, Assertions> {
   readonly name: string;
   implement<ImplementationContext extends Context>(
     input: AdapterImplementationInput<Context, ImplementationContext>,
-  ): AdapterImplementation<Context>;
+  ): AdapterImplementation<Context, Assertions>;
+  /**
+   * Returns a contract whose Eval factories and every implementation share
+   * this exact Assertion factory. Implementations cannot replace it.
+   */
+  withAssertions<NextAssertions extends object>(
+    factory: AdapterAssertionsFactory<Context, NextAssertions>,
+    ...validation: AdapterAssertionsValidationArgs<Context, NoInfer<NextAssertions>>
+  ): AdapterContract<Context, NextAssertions>;
 }
 
 export type Adapter = import("./agents/types.ts").Agent | AdapterRuntimeDefinition;
@@ -183,8 +340,19 @@ function assertNonEmptyString(value: unknown, field: string, factory: string): a
   }
 }
 
-function contractToken<Context extends object>(name: string): AdapterContractToken<Context> {
-  return Object.freeze({ name, context: (value: Context) => value });
+function contractToken<
+  Context extends object,
+  Assertions extends object | undefined,
+>(
+  name: string,
+  assertions: AdapterAssertionsFactory<Context> | undefined,
+): AdapterContractToken<Context, Assertions> {
+  return Object.freeze({
+    name,
+    assertions,
+    assertionTypes: (value: Assertions) => value,
+    context: (value: Context) => value,
+  });
 }
 
 function assertAdapterEvalInput(
@@ -199,8 +367,11 @@ function assertAdapterEvalInput(
   }
 }
 
-function boundEvalFactories<Context extends object>(token: AdapterContractToken<Context>): Pick<
-  AdapterDefinition<Context>,
+function boundEvalFactories<
+  Context extends object,
+  Assertions extends object | undefined,
+>(token: AdapterContractToken<Context, Assertions>): Pick<
+  AdapterDefinition<Context, Assertions>,
   "defineEval" | "defineScoreEval"
 > {
   return {
@@ -208,26 +379,29 @@ function boundEvalFactories<Context extends object>(token: AdapterContractToken<
       assertAdapterEvalInput(input, "defineEval");
       return defineEvalForContext("pass", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-      }) as AdapterEvalDefinition<"pass", Context>;
+      }) as AdapterEvalDefinition<"pass", Context, Assertions>;
     },
     defineScoreEval(input) {
       assertAdapterEvalInput(input, "defineScoreEval");
       return defineEvalForContext("score", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-      }) as AdapterEvalDefinition<"score", Context>;
+      }) as AdapterEvalDefinition<"score", Context, Assertions>;
     },
   };
 }
 
-function implementAdapter<Context extends object>(
-  token: AdapterContractToken<Context>,
+function implementAdapter<
+  Context extends object,
+  Assertions extends object | undefined,
+>(
+  token: AdapterContractToken<Context, Assertions>,
   input: {
     readonly name: string;
     readonly behaviorRevision?: string;
     readonly create: AdapterFactory<Context>;
   },
   factory: "defineAdapter" | "AdapterContract.implement",
-): AdapterImplementation<Context> {
+): AdapterImplementation<Context, Assertions> {
   assertNonEmptyString(input.name, "name", factory);
   if (input.behaviorRevision !== undefined) {
     assertNonEmptyString(input.behaviorRevision, "behaviorRevision", factory);
@@ -256,7 +430,7 @@ function implementAdapter<Context extends object>(
     create,
     [ADAPTER_CONTRACT_TOKEN]: token,
     ...boundEvalFactories(token),
-  }) as AdapterImplementation<Context>;
+  }) as AdapterImplementation<Context, Assertions>;
 }
 
 /** Defines one Adapter implementation with an automatically private contract. */
@@ -264,7 +438,19 @@ export function defineAdapter<Context extends object>(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
   readonly create: AdapterFactory<Context>;
+  readonly assertions?: undefined;
 } & AdapterContextValidation<NoInfer<Context>>): AdapterImplementation<Context>;
+export function defineAdapter<
+  Context extends object,
+  Assertions extends object,
+>(input: {
+  readonly name: string;
+  readonly behaviorRevision?: string;
+  readonly create: AdapterFactory<Context>;
+  /** Attempt-local Assertion sugar, assembled once after create() succeeds. */
+  readonly assertions: AdapterAssertionsFactory<Context, Assertions>;
+} & AdapterContextValidation<NoInfer<Context>> &
+  AdapterAssertionsValidation<Context, NoInfer<Assertions>>): AdapterImplementation<Context, Assertions>;
 // @concord-code ne-adapter-define-adapter
 // @concord-implements docs/feature/adapters/README.md
 // @concord-implements docs/feature/adapters/library/writing-an-adapter.md
@@ -272,8 +458,17 @@ export function defineAdapter(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
   readonly create: AdapterFactory<object>;
+  readonly assertions?: AdapterAssertionsFactory<object>;
 }): AdapterRuntimeDefinition {
-  return implementAdapter(contractToken<object>(input.name), input, "defineAdapter");
+  const assertions = input.assertions;
+  if (assertions !== undefined && typeof assertions !== "function") {
+    throw new TypeError("defineAdapter assertions must be a function.");
+  }
+  return implementAdapter(
+    contractToken<object, object | undefined>(input.name, assertions),
+    input,
+    "defineAdapter",
+  );
 }
 
 /** Defines a reusable contract whose implementations and Evals share one runtime-only token. */
@@ -284,15 +479,30 @@ export function defineAdapterContract<Context extends object>(
   input: { readonly name: string } & AdapterContextValidation<NoInfer<Context>>,
 ): AdapterContract<Context> {
   assertNonEmptyString(input.name, "name", "defineAdapterContract");
-  const token = contractToken<Context>(input.name);
+  return makeAdapterContract(contractToken<Context, undefined>(input.name, undefined));
+}
+
+function makeAdapterContract<
+  Context extends object,
+  Assertions extends object | undefined,
+>(token: AdapterContractToken<Context, Assertions>): AdapterContract<Context, Assertions> {
   const factories = boundEvalFactories(token);
   return Object.freeze({
-    name: input.name,
+    name: token.name,
     ...factories,
     implement<ImplementationContext extends Context>(
       implementation: AdapterImplementationInput<Context, ImplementationContext>,
     ) {
       return implementAdapter(token, implementation, "AdapterContract.implement");
+    },
+    withAssertions<NextAssertions extends object>(
+      factory: AdapterAssertionsFactory<Context, NextAssertions>,
+      ..._validation: AdapterAssertionsValidationArgs<Context, NoInfer<NextAssertions>>
+    ) {
+      if (typeof factory !== "function") {
+        throw new TypeError("AdapterContract.withAssertions requires a function.");
+      }
+      return makeAdapterContract(contractToken<Context, NextAssertions>(token.name, factory));
     },
   });
 }
@@ -326,7 +536,7 @@ export function adapterAcceptsEval(adapter: Adapter, definition: object): boolea
 
 /** @internal Returns the readable contract name without revealing the pairing token. */
 export function adapterContractRequiredByEval(definition: object): string | undefined {
-  return (definition as { readonly [EVAL_ADAPTER_CONTRACT_TOKEN]?: AdapterContractToken<object> })[
+  return (definition as { readonly [EVAL_ADAPTER_CONTRACT_TOKEN]?: { readonly name: string } })[
     EVAL_ADAPTER_CONTRACT_TOKEN
   ]?.name;
 }
@@ -348,16 +558,17 @@ function assertPlainAdapterContext(value: unknown): asserts value is object {
   }
 }
 
-function forwardProperties(target: object, source: object, guardMethods: boolean, assertAuthorOpen: () => void): void {
+function forwardProperties(target: object, source: object, guardAccess: boolean, assertAuthorOpen: () => void): void {
   for (const key of Reflect.ownKeys(source)) {
-    const initial = Reflect.get(source, key, source);
-    if (typeof initial === "function") {
-      const method = guardMethods
+    const descriptor = Object.getOwnPropertyDescriptor(source, key);
+    if (descriptor === undefined) continue;
+    if ("value" in descriptor && typeof descriptor.value === "function") {
+      const method = guardAccess
         ? function(this: unknown, ...args: readonly unknown[]) {
             assertAuthorOpen();
-            return Reflect.apply(initial, source, args);
+            return Reflect.apply(descriptor.value, source, args);
           }
-        : initial.bind(source);
+        : descriptor.value.bind(source);
       Object.defineProperty(target, key, {
         enumerable: true,
         configurable: false,
@@ -368,10 +579,137 @@ function forwardProperties(target: object, source: object, guardMethods: boolean
       Object.defineProperty(target, key, {
         enumerable: true,
         configurable: false,
-        get: () => Reflect.get(source, key, source),
+        get: () => {
+          if (guardAccess) assertAuthorOpen();
+          const value = Reflect.get(source, key, source);
+          if (typeof value !== "function") return value;
+          return guardAccess
+            ? (...args: readonly unknown[]) => {
+                assertAuthorOpen();
+                return Reflect.apply(value, source, args);
+              }
+            : value.bind(source);
+        },
       });
     }
   }
+}
+
+/** Observes only branded native Promises without reading an arbitrary `.then` property. */
+function observeNativePromiseRejection(value: unknown): boolean {
+  if ((typeof value !== "object" && typeof value !== "function") || value === null) return false;
+  try {
+    void Reflect.apply(Promise.prototype.then, value, [
+      undefined,
+      () => undefined,
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assertPlainAdapterAssertions(value: unknown, context: object): asserts value is object {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("Adapter assertions factory must return a plain object of methods.");
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    observeNativePromiseRejection(value);
+    throw new TypeError("Adapter assertions factory must return an explicit plain object.");
+  }
+  const contextKeys = new Set(Reflect.ownKeys(context));
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      throw new TypeError("Adapter assertion method names must be strings.");
+    }
+    if (RESERVED_ADAPTER_CONTEXT_KEY_SET.has(key)) {
+      throw new TypeError(`Adapter assertion method name ${JSON.stringify(key)} is reserved.`);
+    }
+    if (contextKeys.has(key)) {
+      throw new TypeError(`Adapter assertion method name ${JSON.stringify(key)} conflicts with an app member.`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor) || typeof descriptor.value !== "function") {
+      throw new TypeError(`Adapter assertion ${JSON.stringify(key)} must be an own data method.`);
+    }
+  }
+}
+
+function bindAdapterAppContext<Context>(
+  context: Context,
+  assertAppOpen: () => void,
+): Readonly<Context> {
+  const target = Object.create(null) as object;
+  forwardProperties(target, context as object, true, assertAppOpen);
+  return Object.freeze(target) as Readonly<Context>;
+}
+
+function bindAdapterAssertions<Kind extends EvaluationKind, Context extends object>(
+  core: EvalContext<Kind>,
+  context: Context,
+  factory: AdapterAssertionsFactory<Context>,
+  assertAuthorOpen: () => void,
+): { readonly app: Readonly<Context>; readonly assertions: object } {
+  let assembled = false;
+  const assertAppOpen = (): void => {
+    assertAuthorOpen();
+    if (!assembled) {
+      throw new TypeError("Adapter assertions factory may only assemble methods; app access starts afterward.");
+    }
+  };
+  const app = bindAdapterAppContext(context, assertAppOpen);
+  const handleFrames: Array<WeakSet<object>> = [];
+  const check = (...args: readonly unknown[]): unknown => {
+    assertAuthorOpen();
+    const frame = handleFrames.at(-1);
+    if (frame === undefined) {
+      throw new TypeError("Adapter assertions factory may call check only from an assertion method.");
+    }
+    const handle = Reflect.apply(core.check, undefined, args);
+    if ((typeof handle !== "object" && typeof handle !== "function") || handle === null) {
+      throw new TypeError("Adapter assertion check did not return an AssertionHandle.");
+    }
+    frame.add(handle);
+    return handle;
+  };
+
+  const authored = factory({
+    app,
+    check: check as AssertionCheck<"polymorphic">,
+  });
+  assertPlainAdapterAssertions(authored, context);
+  Object.freeze(authored);
+  assembled = true;
+
+  const assertions = Object.create(null) as object;
+  for (const key of Reflect.ownKeys(authored)) {
+    const descriptor = Object.getOwnPropertyDescriptor(authored, key)!;
+    const method = descriptor.value as (...args: readonly unknown[]) => unknown;
+    Object.defineProperty(assertions, key, {
+      enumerable: true,
+      configurable: false,
+      writable: false,
+      value: (...args: readonly unknown[]) => {
+        assertAuthorOpen();
+        const frame = new WeakSet<object>();
+        handleFrames.push(frame);
+        try {
+          const handle = Reflect.apply(method, authored, args);
+          if ((typeof handle !== "object" && typeof handle !== "function") || handle === null || !frame.has(handle)) {
+            observeNativePromiseRejection(handle);
+            throw new TypeError(
+              `Adapter assertion ${JSON.stringify(key)} must synchronously return its own check() handle.`,
+            );
+          }
+          return handle;
+        } finally {
+          handleFrames.pop();
+        }
+      },
+    });
+  }
+  return Object.freeze({ app, assertions: Object.freeze(assertions) });
 }
 
 /** @internal Builds the frozen single-t facade after create settles. */
@@ -380,11 +718,31 @@ function forwardProperties(target: object, source: object, guardMethods: boolean
 export function bindAdapterEvalContext<Kind extends EvaluationKind, Context>(
   core: EvalContext<Kind>,
   context: Context,
+  adapter: AdapterRuntimeDefinition,
   assertAuthorOpen: () => void,
 ): EvalContext<Kind> & Readonly<Context> {
   assertPlainAdapterContext(context);
+  const token = adapter[ADAPTER_CONTRACT_TOKEN] as AdapterContractToken<
+    Context & object,
+    object | undefined
+  >;
+  let app: Readonly<Context>;
+  let assertions: object | undefined;
+  if (token.assertions === undefined) {
+    app = bindAdapterAppContext(context, assertAuthorOpen);
+  } else {
+    const bound = bindAdapterAssertions(
+      core,
+      context,
+      token.assertions,
+      assertAuthorOpen,
+    );
+    app = bound.app;
+    assertions = bound.assertions;
+  }
   const target = Object.create(null) as object;
   forwardProperties(target, core, false, assertAuthorOpen);
-  forwardProperties(target, context, true, assertAuthorOpen);
+  forwardProperties(target, app, false, assertAuthorOpen);
+  if (assertions !== undefined) forwardProperties(target, assertions, false, assertAuthorOpen);
   return Object.freeze(target) as EvalContext<Kind> & Readonly<Context>;
 }
