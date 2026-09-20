@@ -3,11 +3,10 @@ import { equals } from "niceeval/expect";
 import { markerApplication } from "./assertion-judge-fake.eval.ts";
 
 const quality = defineJudge({ name: "admission-quality", rubric: "The text is useful.", maxMaterialBytes: 128 });
-const foreign = defineJudge({ name: "admission-quality", rubric: "The text is useful.", maxMaterialBytes: 128 });
+const foreign = { name: "forged-match" } as unknown as typeof quality;
 
 export default markerApplication.defineEval({
-  description: "无效 Judge 材料与未声明实例在登记前被拒绝",
-  judge: quality,
+  description: "无效 Judge 材料与伪造 Match 在登记前被拒绝",
   async test(t) {
     let accessorCalls = 0;
     const cycle: { self?: unknown } = {};

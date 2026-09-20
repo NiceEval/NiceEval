@@ -11,7 +11,6 @@ const weatherAnswerQuality = defineJudge({
 // 第一轮是纯文本算术，检查上一轮回复会被 t.reply 正确暴露出来。
 // 第二轮切到实时天气，检查同一会话里的后续问题仍能触发 get_weather。
 export default defineEval({
-  judge: weatherAnswerQuality,
   description: "测试 agent 在多轮对话中保持会话并按需调用工具的能力",
 
   async test(t) {

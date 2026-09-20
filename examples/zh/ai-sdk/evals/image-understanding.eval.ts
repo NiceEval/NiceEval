@@ -12,7 +12,6 @@ const imageDescriptionQuality = defineJudge({
 // 经 adapter 转给被测 app；AI 模式交给多模态模型，mock 模式返回固定描述。
 // 断言只看图片里的具体特征，避免“我看不到图片”这类泛泛回复误通过。
 export default defineEval({
-  judge: imageDescriptionQuality,
   description: "测试 agent 在图片理解上的能力",
 
   async test(t) {

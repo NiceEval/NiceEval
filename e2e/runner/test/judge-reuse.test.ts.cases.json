@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/runner/test/judge-reuse.test.ts",
+  "current": {
+    "necase_GCCD96SAN8ZJTEM5": {
+      "owner": "docs/engineering/testing/e2e/runner.md#judge-model-reuse",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_GCCD96SAN8ZJTEM5",
+      "atCommit": "d0898bd6d0e7c9687b0af3845410854b46dc7475",
+      "transactionId": "netxn_98d4b08bf34142f9afed4c1caf2fc78f",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#judge-model-reuse"
+      }
+    }
+  ],
+  "tombstones": []
+}

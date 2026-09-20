@@ -11,6 +11,7 @@ import type { ScoreMatch } from "./assertions/match.ts";
 import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
+import type { JudgePresetMethods } from "./context/assert-first.ts";
 import type { DiagnosticInput, JsonValue, ProgressUpdate } from "./shared/types.ts";
 import type { AdapterIdentity } from "./record/model/run-context.ts";
 export type { AdapterIdentity } from "./record/model/run-context.ts";
@@ -64,6 +65,11 @@ const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "evaluationKind",
   "check",
   "judge",
+  "factuality",
+  "faithfulness",
+  "instructionFollowing",
+  "pairwisePreference",
+  "closeQA",
   "score",
   "group",
   "skip",
@@ -184,7 +190,7 @@ export interface AdapterCreateContext {
   onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
 }
 
-type EvalContextBase<Kind extends EvaluationKind> = {
+type EvalContextBase<Kind extends EvaluationKind> = JudgePresetMethods<Kind> & {
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
   readonly model?: string;

@@ -4,13 +4,9 @@
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
-import { createAssertionsRuntime } from "./runtime.ts";
-import { readJudgeMaterialV2 } from "./judge-material.ts";
 import {
   defineJudge,
-  judgeDeclarationOwnsDefinition, judgeDefinitionDigest, judgeMatchOf,
-  normalizeJudgeDeclaration, readJudgeResponseCapped, renderJudgeRequest,
-  retainedJudgeMaterial,
+  readJudgeResponseCapped,
 } from "./judge.ts";
 
 import { defineScoreMatch, managedScoreMatchOf, type ScoreMatchContext } from "./match.ts";
@@ -87,15 +83,6 @@ function waitForSleep(instant: number): Effect.Effect<void> {
 }
 
 describe("Judge pure boundaries", () => {
-  test("chunks canonical requests on UTF-8 boundaries and preserves negative-zero normalization", () => {
-    const request = renderJudgeRequest(definition(), { z: `${"界".repeat(3_000)} sentinel`, a: -0 });
-    const parsed = JSON.parse(request.canonicalRequest) as { messages: Array<{ content: string }> };
-    expect(parsed.messages[1]?.content).toContain('"a":0');
-    expect(request.retained.content.length).toBeGreaterThan(2);
-    expect(request.retained.content.every((chunk) => new TextEncoder().encode(chunk).byteLength <= 4 * 1024)).toBe(true);
-    expect(readJudgeMaterialV2(retainedJudgeMaterial(request), "answer-quality")).toEqual({ state: "available", request: request.canonicalRequest });
-  });
-
   test("rejects definition shape and anchor boundary violations", () => {
     expect(() => defineJudge({ name: "x", rubric: "r", extra: true } as never)).toThrow("unknown option");
     expect(() => defineJudge({ name: " \t", rubric: "r" })).toThrow("non-empty");
@@ -119,47 +106,6 @@ describe("Judge pure boundaries", () => {
     expect(() => defineJudge({ name: "x", rubric: "r", maxMaterialBytes: 48 * 1024 + 1 })).toThrow("at most");
   });
 
-  test("accepts shared children but rejects cycles, sparse arrays, accessors, and classes", () => {
-    const shared = { value: 1 };
-    expect(() => renderJudgeRequest(definition(), { left: shared, right: shared })).not.toThrow();
-    const cyclic: { self?: unknown } = {}; cyclic.self = cyclic;
-    expect(() => renderJudgeRequest(definition(), cyclic)).toThrow("ancestor cycle");
-    expect(() => renderJudgeRequest(definition(), Array(1))).toThrow("holes");
-    expect(() => renderJudgeRequest(definition(), Object.defineProperty({}, "x", { enumerable: true, get: () => 1 }))).toThrow("data properties");
-    expect(() => renderJudgeRequest(definition(), new (class Material {})())).toThrow("plain");
-  });
-
-  test("normalizes non-empty declarations with exact-instance authority and canonical identity", () => {
-    const alpha = definition("alpha"); const beta = definition("beta");
-    const normalized = normalizeJudgeDeclaration([beta, alpha, beta]);
-    expect(normalized).toEqual([alpha, beta]);
-    expect(judgeDeclarationOwnsDefinition(normalized, alpha)).toBe(true);
-    expect(judgeDeclarationOwnsDefinition(normalized, definition("alpha"))).toBe(false);
-    expect(() => normalizeJudgeDeclaration([alpha, definition("alpha")])).toThrow("different instances");
-    expect(() => normalizeJudgeDeclaration([])).toThrow("non-empty");
-    expect(judgeDefinitionDigest([beta, alpha])).toBe(judgeDefinitionDigest([alpha, beta]));
-    expect(judgeMatchOf(alpha)).toBe(alpha);
-  });
-
-  test("classifies unknown versions and rejects chunk, request, and manifest digest corruption", () => {
-    const request = renderJudgeRequest(definition(), { answer: "ok" });
-    expect(readJudgeMaterialV2({ manifest: { schemaVersion: 3 }, content: [] })).toEqual({ state: "unsupported", schemaVersion: 3 });
-    expect(readJudgeMaterialV2({ ...request.retained, content: [...request.retained.content, "x"] })).toEqual({ state: "invalid" });
-    expect(readJudgeMaterialV2({ ...request.retained, manifest: { ...request.retained.manifest, requestDigest: "0".repeat(64) } })).toEqual({ state: "invalid" });
-    expect(readJudgeMaterialV2({ ...request.retained, manifest: { ...request.retained.manifest, digest: "0".repeat(64) } })).toEqual({ state: "invalid" });
-  });
-
-  test("enforces material, complete-request, and Attempt retention budgets atomically", async () => {
-    expect(() => renderJudgeRequest(defineJudge({ name: "tiny", rubric: "r", maxMaterialBytes: 8 }), "123456789")).toThrow("material exceeds");
-    const huge = defineJudge({ name: "huge", rubric: "r".repeat(8 * 1024), anchors: Array.from({ length: 32 }, (_, index) => ({ measurement: index / 31, description: "a".repeat(1024) })), maxMaterialBytes: 48 * 1024 });
-    expect(() => renderJudgeRequest(huge, "x".repeat(48 * 1024 - 2))).toThrow("complete request");
-    const runtime = createAssertionsRuntime({ evaluationKind: "score", executeStop: (effect) => Effect.runPromise(effect) });
-    const request = renderJudgeRequest(definition(), "ok");
-    const registration = (retainedBytes: number) => ({ criterion: { kind: "judge-measurement" as const, name: "answer-quality", scale: "unit-interval" as const }, subject: { kind: "snapshot" as const, value: retainedJudgeMaterial(request) }, retainedBytes, evaluate: () => Effect.succeed({ state: "measured" as const, value: 1 }) });
-    runtime.registerMeasurement(registration(512 * 1024));
-    expect(() => runtime.registerMeasurement(registration(1))).toThrow("512 KiB");
-    expect((await Effect.runPromise(runtime.seal())).entries).toHaveLength(1);
-  });
 });
 
 describe("Judge Effect lifecycle", () => {

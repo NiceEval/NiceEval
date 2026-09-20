@@ -224,7 +224,27 @@ type EventMatch = BooleanMatch<EventOccurrenceView> & {
 
 type JudgeDefinition = ScoreMatch<unknown>;
 
-interface PassScope {
+interface JudgePresetOptions {
+  readonly name?: string;
+  readonly maxCalls?: number;
+  readonly maxMaterialBytes?: number;
+  readonly maxAuditBytes?: number;
+}
+interface FactualityMaterial { readonly input: string; readonly output: string; readonly expected: string }
+interface FaithfulnessMaterial { readonly input: string; readonly output: string; readonly context: string | readonly string[] }
+interface InstructionFollowingMaterial { readonly instructions: readonly string[]; readonly output: string }
+interface PairwisePreferenceMaterial { readonly instructions: string; readonly output: string; readonly reference: string }
+interface CloseQAMaterial { readonly input: string; readonly output: string; readonly context: string | readonly string[] }
+
+interface JudgePresetScope<Handle> {
+  factuality(material: FactualityMaterial, options?: JudgePresetOptions): Handle;
+  faithfulness(material: FaithfulnessMaterial, options?: JudgePresetOptions): Handle;
+  instructionFollowing(material: InstructionFollowingMaterial, options?: JudgePresetOptions): Handle;
+  pairwisePreference(material: PairwisePreferenceMaterial, options?: JudgePresetOptions): Handle;
+  closeQA(material: CloseQAMaterial, options?: JudgePresetOptions): Handle;
+}
+
+interface PassScope extends JudgePresetScope<PassMeasurementHandle> {
   judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): PassMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
@@ -263,7 +283,7 @@ interface PassScope {
   maxCost(maximumUSD: number): PassUsageHandle<void>;
 }
 
-interface ScoreScope {
+interface ScoreScope extends JudgePresetScope<ScoreMeasurementHandle> {
   judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): ScoreMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
@@ -428,6 +448,9 @@ async function positiveAuthoringShapes(): Promise<void> {
   passTurn.notCalledTool("rm").label("未删除");
   passTurn.toolOrder([toolMatch("read"), toolMatch("write")]).label("先读后写");
   passSession.toolOrder([toolMatch("read"), toolMatch("write")]).label("会话顺序");
+  pass.closeQA({ input: "首都？", output: reply, context: "法国首都是巴黎。" }).gate(1);
+  passSession.faithfulness({ input: "首都？", output: reply, context: ["法国首都是巴黎。"] });
+  passTurn.factuality({ input: "首都？", output: reply, expected: "巴黎" });
 
   pass.check(3, lessThan(4)).label("严格小于");
   pass.check(4, atMost(4)).label("不超过");

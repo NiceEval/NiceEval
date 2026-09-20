@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAttempt } from "./inspection.ts";
 
-test.concurrent("非法 Judge 材料与未声明实例不登记 Assertion 或读取 accessor [necase_6GBMVA7DWNRGH4HV]", async () => {
+test.concurrent("非法 Judge 材料与伪造 Match不登记 Assertion 或读取 accessor [necase_6GBMVA7DWNRGH4HV]", async () => {
   await evalE2E.case("judge-admission", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "assertion-judge-admission", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

@@ -182,14 +182,14 @@ defineAdapter({ name: "prototype-collision", create: () => ({ toString: () => "a
 
 const quality = defineJudge({ name: "post-quality", rubric: "Post text is relevant to the task." });
 const qualityAlias: JudgeDefinition = quality;
-social.defineEval({ judge: qualityAlias, async test(t) {
+social.defineEval({ judge: { model: "eval-judge" }, async test(t) {
   const post: Post = await t.post("hello");
-  t.check({ task: "greet", post }, quality).gate(0.8);
+  t.check({ task: "greet", post }, qualityAlias).gate(0.8);
 } });
-social.defineScoreEval({ judge: [quality], async test(t) {
+social.defineScoreEval({  async test(t) {
   t.judge(await t.post("hello"), quality).score(25).gate(0.7).orStop();
 } });
-defineEval({ judge: quality, async test(t) {
+defineEval({  async test(t) {
   const turn = await t.send("hello");
   turn.check({ task: turn.input, reply: turn.message }, quality).gate(0.8);
   turn.judge({ task: turn.input, reply: turn.message }, quality).gate(0.7);
@@ -213,8 +213,27 @@ defineEval({ judge: quality, async test(t) {
 defineJudge({ name: "bad-provider", rubric: "quality", model: "provider-model" });
 // @ts-expect-error A plain object cannot forge the managed Judge brand.
 const forgedJudge: JudgeDefinition = { kind: "judge-match", name: "forged", rubric: "quality", anchors: [], maxMaterialBytes: 1 };
-// @ts-expect-error Judge declarations cannot be an empty list.
+// @ts-expect-error Judge configuration cannot be a definition list.
 social.defineEval({ judge: [], async test() {} });
 
 // @ts-expect-error Judge is owned by the Eval context, not an Adapter action.
 defineAdapter({ name: "judge-collision", create: () => ({ judge: () => 1 }) });
+
+// @ts-expect-error Eval judge config cannot contain a Match definition.
+social.defineEval({ judge: quality, async test() {} });
+// @ts-expect-error Official Judge helpers are reserved evaluator operations.
+defineAdapter({ name: "factuality-collision", create: () => ({ factuality: () => 1 }) });
+social.defineScoreEval({ test(t) {
+  t.closeQA({ input: "Capital?", output: "Paris", context: "France: Paris" }).score(2).gate(0.8);
+  t.factuality({ input: "Capital?", output: "Paris", expected: "Paris" }).score(1);
+  // @ts-expect-error closeQA needs explicit context.
+  t.closeQA({ input: "Capital?", output: "Paris" });
+} });
+defineEval({ async test(t) {
+  const turn = await t.send("Capital?");
+  turn.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).gate(1);
+  t.newSession().closeQA({ input: "Capital?", output: "Paris", context: "France: Paris" }).gate(1);
+  t.faithfulness({ input: "Capital?", output: turn.message, context: ["France: Paris"] }).gate(1);
+  // @ts-expect-error Pass Eval measurement cannot contribute points.
+  t.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).score(1);
+} });

@@ -186,7 +186,7 @@ export function prepareManagedScoreMatch(input: {
       // metadata. Reserve the worst JSON escaping of that response and its decoded
       // output, the request, three failed-attempt records, and the terminal record.
       const reserve = bytes(canonical(prepared.request)) + responseCap * 12 + 2048 + terminalReserve;
-      if (responseCap < 4096 || bytes(canonical(audit())) + reserve > options.llm.maxAuditBytes) return reject(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain this request and its bounded response"));
+      if (responseCap < 1_024 || bytes(canonical(audit())) + reserve > options.llm.maxAuditBytes) return reject(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain this request and its bounded response"));
       const index = calls.length;
       const attempts: ScoreMatchAuditAttempt[] = [];
       let callResult: Extract<ScoreMatchAuditCall, { state: "admitted" }>["result"] = { state: "interrupted" };

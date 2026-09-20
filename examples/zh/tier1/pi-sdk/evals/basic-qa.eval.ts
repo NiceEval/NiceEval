@@ -8,7 +8,6 @@ const answerQuality = defineJudge({
 // 这条 eval 验证 agent 能正常问答、不瞎调工具,顺带冒烟 usage 有没有正确从
 // message_end 的 AssistantMessage.usage 累加进 Turn.usage。
 export default defineEval({
-  judge: answerQuality,
   description: "测试 agent 能正常问答且不瞎调工具",
 
   async test(t) {

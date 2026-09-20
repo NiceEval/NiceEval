@@ -6,7 +6,7 @@ relations: {}
 
 # Judge
 
-Judge 是使用受管 LLM 能力的 `ScoreMatch`。`defineJudge` 和现成裁判都通过公开 `defineScoreMatch` 构造；
+Judge 是使用受管 LLM 能力的 `ScoreMatch`。`defineJudge` 和五个现成裁判都通过公开 `defineScoreMatch` 构造；
 自定义高级 Match 使用同一组模型原语。所有 Match 经 `t.check(value, match)` 的统一准备、登记、执行与封口路径。
 `t.judge(value, match)` 是受管 LLM Match 的便利入口，root、Session 与 Turn 都要求显式材料。
 
@@ -25,7 +25,7 @@ const followsIntent = defineJudge({
 });
 
 export default x.defineScoreEval({
-  judge: followsIntent,
+  judge: { model: "judge-model" },
   async test(t) {
     const intent = "邀请大家今晚在河边入口集合，不指定时间";
     const post = await t.post({ intent });
