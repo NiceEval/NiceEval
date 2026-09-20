@@ -49,8 +49,6 @@
 按 [Downstream Link skill](.agents/skills/downstream-link/SKILL.md) 选择真实下游，确认实际路径、局部规则和消费的 NiceEval 来源；不要假定当前 checkout 的相邻目录存在。多仓库父目录没有统一安装、测试或格式化入口。
 使用最小、能证明契约的实验切片，保留既有结果；读取运行结果只走下游规定的公开 Query 或 View 入口。具体项目职责、安装候选和跨仓库验收规则由该 skill 拥有。
 
-跨设备下游由消费者发起拉取，并显式选择 `main` 或一个 Herdr worktree；不得因为命令从 main checkout 启动就默认消费 main，也不得把 worktree 名解释成分支名后另行 checkout。候选使用当前 checkout 的 `pnpm e2e pack --out <tgz>` 生成，交接收据必须绑定实际 checkout 路径、branch、HEAD 与 tarball SHA-256。临时传输不构成 npm 发布。
-
 ## Issue 与 Memory
 
 公开、脱敏且仍需 maintainer 跟进的 Observation 按 [Issue skill](.agents/skills/issue/SKILL.md) 检查 open 与 closed Issue，再决定复用或准备 draft；新 Observation 不进入 Feedback。调查形成的 Problem、Decision 与 know-how 由 [Memory skill](.agents/skills/memory/SKILL.md) 拥有。
