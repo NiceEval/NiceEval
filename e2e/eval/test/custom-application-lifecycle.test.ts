@@ -96,6 +96,7 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
         { scenario: "timeout", event: "abort-check-rejected", attempt: 0 },
         { scenario: "timeout", event: "abort-handle-rejected", attempt: 0 },
         { scenario: "timeout", event: "abort-method-rejected", attempt: 0 },
+        { scenario: "timeout", event: "abort-assertion-method-rejected", attempt: 0 },
         { scenario: "timeout", event: "cleanup-inner-attempt-aborted-window-live-frozen", attempt: 0 },
         { scenario: "timeout", event: "cleanup-outer-shared-live-frozen", attempt: 0 },
         { scenario: "timeout", event: "late-assertion-rejected", attempt: 0 },

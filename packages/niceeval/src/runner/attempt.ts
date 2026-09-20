@@ -1715,8 +1715,8 @@ function runAdapterAttemptBody<SealRequirements>(
       // A synchronous plain object is validated before Promise assimilation;
       // async factories are validated only after their Promise settles.
       return created instanceof Promise
-        ? created.then((value) => bindAdapterEvalContext(core, value, () => resources.assertForwardOpen()))
-        : bindAdapterEvalContext(core, created, () => resources.assertForwardOpen());
+        ? created.then((value) => bindAdapterEvalContext(core, value, adapter, () => resources.assertForwardOpen()))
+        : bindAdapterEvalContext(core, created, adapter, () => resources.assertForwardOpen());
     }));
     if (Exit.isSuccess(createExit)) {
       context = createExit.value;

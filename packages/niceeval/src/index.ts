@@ -24,7 +24,12 @@ export type {
   AgentWorkspaceDiffWindow,
   AgentWorkspaceDiffWindowChange,
 } from "./assertions/workspace-diff.ts";
-export type { PostRunBooleanAssertionHandle } from "./assertions/api.ts";
+export type {
+  AssertionCheck,
+  PolymorphicBooleanAssertionHandle,
+  PolymorphicMeasurementAssertionHandle,
+  PostRunBooleanAssertionHandle,
+} from "./assertions/api.ts";
 
 export { requireEnv, getEnv, stripComments } from "./util.ts";
 
@@ -104,6 +109,8 @@ export type {
 } from "./types.ts";
 export type {
   Adapter,
+  AdapterAssertionsFactory,
+  AdapterAssertionsFactoryContext,
   AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,

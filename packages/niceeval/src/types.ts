@@ -18,10 +18,17 @@ export * from "./o11y/types.ts";
 export * from "./sandbox/types.ts";
 export * from "./agents/types.ts";
 export * from "./assertions/types.ts";
+export type {
+  AssertionCheck,
+  PolymorphicBooleanAssertionHandle,
+  PolymorphicMeasurementAssertionHandle,
+} from "./assertions/api.ts";
 export * from "./context/types.ts";
 export * from "./runner/types.ts";
 export type {
   Adapter,
+  AdapterAssertionsFactory,
+  AdapterAssertionsFactoryContext,
   AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,

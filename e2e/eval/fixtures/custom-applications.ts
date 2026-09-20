@@ -1,6 +1,7 @@
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineAdapter, defineAdapterContract, type Reporter } from "niceeval";
+import { equals, defineScoreMatch } from "niceeval/expect";
 
 export const customAdapterContract = "e2e/native-workflow/v1";
 export const customLifecycleContract = "e2e/custom-lifecycle/v1";
@@ -10,6 +11,7 @@ export const customIdentityJournal = "custom-identity.journal.jsonl";
 export interface NativeWorkflow {
   readonly implementation: "alpha" | "beta";
   readonly calls: number;
+  readCalls(): number;
   begin(title: string): { readonly sequence: number; readonly title: string };
   append(value: number): { readonly sequence: number; readonly total: number };
   finish(): { readonly sequence: number; readonly summary: string };
@@ -51,6 +53,9 @@ function nativeAdapter(implementation: "alpha" | "beta") {
         implementation,
         count: 0,
         get calls() { return this.count; },
+        get readCalls() {
+          return function (this: { count: number }) { return this.count; };
+        },
         begin(title: string) {
           if (Object.hasOwn(this, "check")) throw new Error("Adapter this must not contain evaluator methods");
           this.count += 1;
@@ -70,7 +75,18 @@ function nativeAdapter(implementation: "alpha" | "beta") {
   });
 }
 
-const nativeContract = defineAdapterContract<NativeWorkflow>({ name: customAdapterContract });
+const nativeContract = defineAdapterContract<NativeWorkflow>({ name: customAdapterContract })
+  .withAssertions(({ app, check }) => ({
+    hasCalls(expected: number) { return check(app.readCalls(), equals(expected)); },
+    usesImplementation(expected: string) {
+      return check(app.implementation, equals(expected));
+    },
+    completion() {
+      return check(app.calls, defineScoreMatch<number>({
+        name: "workflow completion", score: (calls) => calls / 4,
+      }));
+    },
+  }));
 
 // The Eval is intentionally defined from alpha while the beta Experiment uses
 // a distinct factory object with the same contract. This catches a bound Eval
@@ -89,7 +105,7 @@ function writeJournal(entry: JournalEntry): Promise<void> {
 
 export const customIdentityReporter: Reporter = {
   onEvent(event) {
-    if (event.type !== "eval:start") return;
+    if (event.type !== "eval:start" || event.evalId !== "custom-native-actions") return;
     const path = join(process.cwd(), customIdentityJournal);
     journalWrites = journalWrites.then(() => appendFile(path, `${JSON.stringify({
       source: "event",
@@ -100,6 +116,7 @@ export const customIdentityReporter: Reporter = {
     return journalWrites;
   },
   onEvalComplete(result) {
+    if (result.evalId !== "custom-native-actions") return;
     const path = join(process.cwd(), customIdentityJournal);
     journalWrites = journalWrites.then(() => appendFile(path, `${JSON.stringify({
       source: "result",
@@ -115,12 +132,15 @@ export interface CustomLifecycleAdapter {
   waitForCancellation(): Promise<void>;
   onCancellation(callback: () => void): void;
   observations: {
-    recordAbortCheck(boundary: "check" | "handle" | "method", outcome: "accepted" | "rejected"): Promise<void>;
+    recordAbortCheck(boundary: "check" | "handle" | "method" | "assertion-method", outcome: "accepted" | "rejected"): Promise<void>;
     recordLateAssertion(outcome: "accepted" | "rejected"): Promise<void>;
   };
 }
 
-const lifecycleContract = defineAdapterContract<CustomLifecycleAdapter>({ name: customLifecycleContract });
+const lifecycleContract = defineAdapterContract<CustomLifecycleAdapter>({ name: customLifecycleContract })
+  .withAssertions(({ check }) => ({
+    hasMarker(value: string) { return check(value, equals("registered-before-timeout")); },
+  }));
 
 let registerAfterTimeout: (() => void) | undefined;
 export const timeoutClosedRegistrationReporter: Reporter = {
@@ -199,8 +219,10 @@ export const customTimeoutCancellation = lifecycleContract.implement({
       });
     });
     return {
-      onCancellation(callback: () => void) {
-        context.signal.addEventListener("abort", callback, { once: true });
+      get onCancellation() {
+        return (callback: () => void) => {
+          context.signal.addEventListener("abort", callback, { once: true });
+        };
       },
       async waitForCancellation() {
         if (!context.signal.aborted) {
@@ -241,5 +263,22 @@ export const successfulSlowCleanup = defineAdapter({
       throw new Error("successful Adapter cleanup fixture failure");
     });
     return { value: () => 42 };
+  },
+  assertions({ app, check }) {
+    let prematureCheckRejected = false;
+    try { check(42, equals(42)); } catch { prematureCheckRejected = true; }
+    return {
+      hasValue(expected: number) {
+        if (!prematureCheckRejected) throw new Error("Assertion assembly must not register checks");
+        return check(app.value(), equals(expected));
+      },
+      invalidReturn() {
+        // Deliberately bypass the author type boundary to exercise JavaScript consumers.
+        return false as unknown as ReturnType<typeof check>;
+      },
+      invalidAsyncReturn() {
+        return Promise.reject(new Error("Invalid async assertion return")) as unknown as ReturnType<typeof check>;
+      },
+    };
   },
 });

@@ -68,6 +68,58 @@ export default social.defineEval({
 需要累计分数时使用 `social.defineScoreEval`，再对检查调用 `.score(points)`。
 开放式语气、人物一致性或内容质量可以交给 [Judge](/zh/explanation/judge)。
 
+## 在连接处定义断言方法
+
+多个评估需要同一种检查时，在 Adapter 的 `assertions` 中定义便捷方法。它取得当前 Attempt 的 `app` 和统一的 `check`，返回原有断言 handle。
+
+```ts application.ts
+import { defineAdapter } from "niceeval";
+import { defineValueMatch } from "niceeval/expect";
+import { createSocialApp } from "./src/social-app.ts";
+
+const hasText = defineValueMatch<{ text: string }>({
+  name: "推文包含文字",
+  evaluate: (post) => post.text.trim().length > 0,
+});
+
+export const social = defineAdapter({
+  name: "social-app",
+  create(context) {
+    const app = createSocialApp({ signal: context.signal });
+    context.onCleanup(() => app.close());
+    return {
+      post: (text: string) => app.publishPost(text),
+      readPublishedPost: () => app.readPublishedPost(),
+    };
+  },
+  assertions({ app, check }) {
+    return {
+      hasPublishedText() {
+        return check(app.readPublishedPost(), hasText);
+      },
+    };
+  },
+});
+```
+
+```ts evals/publish.eval.ts
+import { social } from "../application.ts";
+
+export default social.defineScoreEval({
+  async test(t) {
+    await t.post("邀请大家周末一起看流星雨");
+    t.hasPublishedText().gate().score(1).label("推文生成成功");
+  },
+});
+```
+
+`hasPublishedText()` 与显式 `check` 共享评分和报告。`defineEval` 的断言方法没有 `.score()`；`defineScoreEval` 的方法提供它。动作方法 `post()` 仍只执行应用操作。
+
+在断言方法被调用时读取证据。`assertions` 本身只组装方法，不能提前调用 `check`；返回对象不能包含 getter、非函数值或与应用及核心成员重名的方法。
+方法同步返回本次 `check` 的 handle，不返回 Boolean 或 Promise。异步动作、等待和证据封存放在应用方法中，在检查前显式完成。
+证据不完整时应报告明确错误，不能当作空历史来判断“没有发生”。
+便捷方法使用具体参数签名。无法保留类型关联的泛型或重载便捷方法不可调用；这类组合可以使用独立 Match 和显式 `t.check`，应用操作自身的泛型方法仍可使用。
+
 ## 选择实现并运行
 
 ```ts experiments/local.ts
@@ -105,6 +157,19 @@ export const candidate = social.implement({ name: "candidate", create: createCan
 
 评估通过 `social.defineEval` 编写，两个 Experiment 分别选择 `baseline` 与 `candidate`。
 只有共同接口里的方法可在该评估中使用；两个独立创建但同名的契约不能互换。
+
+需要共享断言方法时，在创建实现前调用 `withAssertions`：
+
+```ts
+const social = defineAdapterContract<SocialContext>({ name: "social/v1" })
+  .withAssertions(({ app, check }) => ({
+    hasPublishedText() {
+      return check(app.readPublishedPost(), hasText);
+    },
+  }));
+```
+
+从这个返回契约创建实现和评估，各实现就会使用相同检查。`withAssertions` 返回新契约，之前创建的实现不会自动取得这些方法。
 
 执行身份同时包含 Adapter identity（`name`、`contract`、`behaviorRevision`）和 experiment 的 `flags`。评估用例静态项目内相对 import/export 闭包变化会自动使候选失效。
 Experiment 单独选择的实现、动态 import、外部包和远端服务不在自动范围内。为这些行为声明非空 `behaviorRevision`，或用显式配置表达变化；未声明版本的自定义 Adapter 不会自动复用。

@@ -5,6 +5,6 @@ export default defineExperiment({
   description: "Native custom adapter beta",
   adapter: customBeta,
   attempts: 2,
-  evals: ["custom-native-actions"],
+  evals: ["custom-native-actions", "custom-native-score"],
   flags: { implementation: "beta" },
 });

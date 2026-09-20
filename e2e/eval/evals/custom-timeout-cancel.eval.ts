@@ -6,13 +6,15 @@ export default customTimeoutCancellation.defineEval({
   reporters: [timeoutClosedRegistrationReporter],
   async test(t) {
     const observations = t.observations;
-    const handle = t.check("registered-before-timeout", equals("registered-before-timeout"))
+    const { onCancellation } = t;
+    const handle = t.hasMarker("registered-before-timeout")
       .label("取消前登记的 Assertion");
     t.onCancellation(() => {
       for (const [boundary, action] of [
         ["check", () => t.check("abort", equals("abort"))],
         ["handle", () => handle.label("abort mutation")],
-        ["method", () => t.onCancellation(() => {})],
+        ["method", () => onCancellation(() => {})],
+        ["assertion-method", () => t.hasMarker("abort")],
       ] as const) {
         try {
           action();
@@ -24,7 +26,7 @@ export default customTimeoutCancellation.defineEval({
     });
     await t.waitForCancellation();
     try {
-      t.check("late", equals("different")).label("取消后的迟到 Assertion");
+      t.hasMarker("late").label("取消后的迟到 Assertion");
       await observations.recordLateAssertion("accepted");
     } catch {
       await observations.recordLateAssertion("rejected");

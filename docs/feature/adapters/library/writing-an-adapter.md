@@ -1,6 +1,6 @@
 # 编写自定义 Adapter
 
-自定义 Adapter 把被测应用的原生操作带进 eval。它不是 Agent，也不需要把应用伪装成对话。
+Adapter 连接评估对象。Agent、游戏与普通应用各自提供原生操作和证据，共用评估、实验与断言机制。
 `defineAdapter` 的 `create` 返回一个普通对象；对象的顶层方法会出现在由该 Adapter 的 `defineEval` 创建的 `t` 上。
 
 Agent 是另一种 Adapter。Agent 实现 `send(input, ctx) → Turn`，供 `t.send()` 驱动一次会话往返。
@@ -65,6 +65,9 @@ export default orders.defineEval({
 `defineValueMatch` 只描述怎样比较一个值。`t.check` 才登记 Assertion；`.gate()` 明确把这个 Boolean 条件作为质量门。通过制 eval 的 Boolean 条件默认也参与 Verdict，显式 gate 让评估意图在代码中可见。
 
 Adapter 的 `defineEval` 只接受同一 Adapter 的实现。要让一组实现共用 eval，使用 `defineAdapterContract` 建立共同的原生方法形状，再从该契约调用 `defineEval`。
+
+需要让评估直接调用领域断言方法时，在 `defineAdapter` 的 `assertions({ app, check })` 中定义它们。
+共享接口通过 `withAssertions` 定义同一组方法，各实现不替换判定规则。方法选择当前证据并返回原始 `check` handle；完整契约见 [自定义断言便捷方法](../../eval/library.md#自定义断言便捷方法)。
 
 ## 何时使用 Agent
 

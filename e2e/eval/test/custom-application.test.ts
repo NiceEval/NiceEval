@@ -9,6 +9,7 @@ import { evalE2E } from "./context.ts";
 import {
   assertionEntry,
   inspectAssertion,
+  inspectAssertionEntries,
   inspectAttempt,
   inspectRunSummary,
 } from "./inspection.ts";
@@ -93,11 +94,10 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
 
         const summary = await inspectRunSummary(niceeval, projectRoot, runId);
         expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
-        expect(summary.document.summary.members).toHaveLength(2);
+        expect(summary.document.summary.members).toHaveLength(4);
         for (const member of summary.document.summary.members) {
           expect(member).toMatchObject({
             runId,
-            evalId: "custom-native-actions",
             state: "executed",
             outcome: "completed",
           });
@@ -108,6 +108,24 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
           const attempt = await inspectAttempt(niceeval, projectRoot, locator, "attempt.get");
           expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
           expect(attempt.document.attempt.assertions.state).toBe("available");
+          if (member.evalId === "custom-native-score") {
+            expect(member.verdict).toBe("passed");
+            const details = await inspectAssertionEntries(
+              niceeval, projectRoot, locator, attempt.document.attempt.assertions.entries,
+            );
+            const entries = details.map((detail) => {
+              expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
+              return assertionEntry(detail.document, detail.receipt.diagnostic());
+            });
+            expect(entries.map(({ display, contribution }) => ({ label: display.label, contribution }))).toEqual([
+              { label: "独立初始状态", contribution: { state: "earned", points: 1, earned: 1 } },
+              { label: "调用时读取状态", contribution: { state: "earned", points: 4, earned: 2 } },
+              { label: "未匹配只贡献零分", contribution: { state: "earned", points: 3, earned: 0 } },
+            ]);
+            expect(entries.map(({ decision }) => decision.gate)).toEqual(["satisfied", "satisfied", "not-gate"]);
+            continue;
+          }
+          expect(member.evalId).toBe("custom-native-actions");
           const labels = attempt.document.attempt.assertions.entries.map(({ display }) => display.label);
           expect(labels).toEqual([
             "选中的实现创建实例",
