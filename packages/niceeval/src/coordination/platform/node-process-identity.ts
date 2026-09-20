@@ -82,7 +82,6 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
 
   const exactState = (owner: ProcessOwnerIdentity): ExactProcessState => {
     if (owner.host !== runtime.host()) return "unknown";
-    if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) return "unknown";
 
     if (runtime.platform === "linux") {
       let localBootId: string;
@@ -108,6 +107,7 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
       return "unknown";
     }
     if (owner.bootId !== localBootId) return "dead";
+    if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) return "unknown";
 
     // A per-process nonce proves only this exact process. It is intentionally
     // opaque to other processes rather than weakening PID reuse protection.

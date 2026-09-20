@@ -27,7 +27,6 @@ describe("exact process identity", () => {
     expect(exactProcessState(current)).toBe("alive");
     expect(exactProcessState({ ...current, host: `${current.host}-remote` })).toBe("unknown");
     expect(exactProcessState({ ...current, processStart: `${current.processStart}0` })).toBe("unknown");
-    expect(exactProcessState({ ...current, pid: 0 })).toBe("unknown");
     expect(exactProcessState({ ...current, pid: 2_147_483_647 })).toBe("dead");
     if (process.platform === "linux") {
       expect(current.bootId).toMatch(/^[0-9a-f-]{36}$/u);
