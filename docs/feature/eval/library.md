@@ -1,7 +1,7 @@
 # Eval —— Library
 
-Eval 定义任务与判定，Experiment 选择连接被测系统的 Adapter，Attempt 独立执行一次任务。
-Adapter 提供被测系统的原生操作；Agent 是提供会话操作的适配器特例。
+Eval 定义任务与判定，Experiment 选择连接评估对象的 Adapter，Attempt 独立执行一次任务。
+Agent、游戏和普通应用都属于评估对象。Adapter 提供对象自己的操作与证据；会话是 Agent 接入提供的能力。
 
 ## 自定义应用
 
@@ -24,7 +24,7 @@ const social = defineAdapter({
 });
 ```
 
-工厂输入只有 `name`、`create` 与可选的 `behaviorRevision`。
+工厂输入为 `name`、`create`，以及可选的 `behaviorRevision` 和 `assertions`。
 `name` 和显式版本必须是非空字符串。版本声明应用行为可复用的边界；闭包或远端服务行为改变时必须更新它或实验配置。
 未声明版本的用户应用不自动携带历史结果，避免把不可见的远端变更当作相同行为。
 
@@ -65,7 +65,7 @@ cleanup callback 收到冻结的 `AdapterCleanupContext`。它的 `signal` 属�
 ## 单一强类型 t
 
 返回的 Adapter 提供 `defineEval` 与 `defineScoreEval`，两者的 `test` 都只接收一个 `t`。
-概念类型为 `EvalContext<Kind> & Readonly<AdapterContext>`，作者不需要填写该泛型。
+`t` 合并当前评估类型的核心能力、只读应用上下文，以及在 Adapter 上声明的断言方法。作者不需要填写该泛型。
 
 ```ts
 export default social.defineEval({
@@ -160,6 +160,46 @@ Score Eval 使用 `.score(points)` 或 `t.score(points)` 显式贡献分数，�
 两者通过 Boolean `.orStop()` 或 measurement `.orStop(minimum)` 控制后续评估，并共用 [Assertions](../assertions/README.md) 的材料、求值和封口。Judge 可由 `t.judge(value, match)`、统一的 `t.check(value, match)`，或 `t.factuality(...)` 等现成直接入口登记。它们都只创建一个 `MeasurementAssertionHandle<Kind>`；Judge 费用不代表完整应用费用。
 
 完整模拟社交平台示例见 [`examples/zh/llm-x`](../../../examples/zh/llm-x/README.md)。
+
+## 自定义断言便捷方法
+
+`assertions({ app, check })` 在 Adapter 定义处把应用证据与 Match 绑定。它同步返回普通对象，每个自有字段都是同步断言方法；方法返回本次调用中由 `check` 登记的原始 handle。
+
+```ts
+const social = defineAdapter({
+  name: "social",
+  create: createSocialContext,
+  assertions({ app, check }) {
+    return {
+      hasPublishedText() {
+        return check(app.readPublishedPost(), hasText);
+      },
+    };
+  },
+});
+
+social.defineScoreEval({
+  async test(t) {
+    await t.post("今晚看流星雨");
+    t.hasPublishedText().score(1).gate();
+  },
+});
+```
+
+`app` 只包含当前 Attempt 的应用接口，方法仍受作者生命周期保护。每次实际执行先完成 `create`，再组装一次断言方法；carry 不执行两者。
+在方法调用时读取证据，避免将工厂组装时的旧状态当成动作后的结果。组装期间调用 `check` 报错。
+
+这些方法与显式 `t.check(subject, match)` 共用判定、计分、诊断和报告。Pass 方法不提供 `.score()`；Score 方法保留它。Boolean 与 measurement 各自保留 `.gate()` 和 `.orStop()` 的参数与返回类型。
+应用动作仍是普通操作，不会因为名称位于 `t` 上自动登记 Assertion。
+断言方法使用具体调用签名；无法准确保留参数与结果关联的泛型或重载方法在绑定后的 `t` 上不可调用，不静默退化为宽类型。应用原生方法的泛型关系不受影响。
+
+共享接口在定义处使用 `defineAdapterContract<Context>({ name }).withAssertions(factory)`，再由返回的契约定义 Eval 和各实现。返回契约拥有独立品牌；旧契约及其实现不自动取得新增方法。
+所有实现共用该 factory，`implement` 不能替换断言定义。断言名不能与核心成员或应用字段重名，实际对象也在执行前校验。
+断言对象不接受 getter、类实例、Promise、thenable 或非函数字段；方法不返回 Boolean、Promise 或其它调用留下的 handle。
+
+快照会把 `undefined` 保存为带标签的值，因此这类字段仍属于完整材料；无法安全表示、循环引用或超过边界的值才会标为 `partial`。
+
+封存与完整性检查由应用负责。断言方法不自动执行动作、等待或补跑；缺证据应抛出明确错误，不能转成匹配失败或空历史。取消或作者执行阶段结束后的应用方法、断言方法与 `check` 都拒绝继续调用。
 
 ## 封装自己的接入工厂
 

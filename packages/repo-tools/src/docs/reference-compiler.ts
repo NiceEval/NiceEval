@@ -1050,6 +1050,14 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
       );
       return renderMemberGroups([
         {
+          heading: "AdapterAssertionsFactoryContext",
+          members: extractInterfaceMembers(
+            sources["src/adapter.ts"],
+            "src/adapter.ts",
+            "AdapterAssertionsFactoryContext",
+          ),
+        },
+        {
           heading: "AdapterCleanupContext",
           members: extractInterfaceMembers(
             sources["src/adapter.ts"],

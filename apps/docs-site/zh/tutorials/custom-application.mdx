@@ -1,10 +1,10 @@
 ---
-title: "评估自定义 LLM 应用"
-description: "保留应用自己的方法与上下文，用 NiceEval 评估生成内容、社交互动和游戏步骤。"
+title: "评估自定义应用"
+description: "保留应用自己的方法与上下文，用 NiceEval 评估结构化结果和业务操作。"
 ---
 
-应用可以提供发帖、生成图片、刷新时间线等方法。用 `defineAdapter` 创建连接，应用操作会成为评估中强类型的 `t` 方法。
-Agent 是提供 `send`、Session 和 Turn 的一种应用；自定义应用可以采用自己的交互方式。
+应用可以提供发帖、生成图片、刷新时间线等方法。用 `defineAdapter` 创建连接，返回对象的顶层操作会成为评估中强类型的 `t` 方法。
+Agent 是实现 `send(input, ctx) → Turn`、Session 和 Turn 的另一种 Adapter；自定义应用不要求实现这个 Agent 协议。
 
 ## 定义应用连接
 
@@ -29,7 +29,8 @@ export const social = defineAdapter({
 });
 ```
 
-每次实际执行都会创建独立实例。取得资源后立即登记清理，创建失败或取消时也能释放已取得的资源。
+运行器每个 Attempt 调用一次 `create`，并在结束时执行已登记的 `onCleanup` 回调。实例隔离由你的 factory 实现；运行器不保证返回独立实例，也不会释放未登记 `onCleanup` 的资源。
+取得资源后立即登记 `onCleanup`。
 把 `signal` 传到应用的网络请求和长任务，才能响应取消。
 
 TypeScript 自动从返回对象推导方法参数和结果，不需要手写 `t` 的类型。
@@ -37,32 +38,87 @@ TypeScript 自动从返回对象推导方法参数和结果，不需要手写 `t
 
 ## 调用应用动作并自定义检查
 
-`test(t)` 同时提供应用操作与评估能力。应用返回的 Post、Reply 等对象可以直接交给自定义 Match。
+`test(t)` 同时提供应用操作与评估能力。应用返回的 Post、Reply 等对象可以直接交给 `defineValueMatch` 定义的自定义 Match。
 
 ```ts evals/publish.eval.ts
-import { satisfies } from "niceeval/expect";
+import { defineValueMatch } from "niceeval/expect";
 import { social } from "../application.ts";
 
-const hasText = satisfies<{ text: string }>("推文包含文字", (post) => post.text.trim().length > 0);
+const hasText = defineValueMatch<{ text: string }>({
+  name: "推文包含文字",
+  evaluate: (post) => post.text.trim().length > 0,
+});
 const hasReplyTo = (postId: string) =>
-  satisfies<{ replyToId: string | null }>(
-    "回复关联目标推文",
-    (reply) => reply.replyToId === postId,
-  );
+  defineValueMatch<{ replyToId: string | null }>({
+    name: "回复关联目标推文",
+    evaluate: (reply) => reply.replyToId === postId,
+  });
 
 export default social.defineEval({
   async test(t) {
     const post = await t.post("邀请大家周末一起看流星雨");
-    t.check(post, hasText).label("推文生成成功");
+    t.check(post, hasText).gate().label("推文生成成功");
     const reply = await t.reply(post.id, "询问集合地点");
-    t.check(reply, hasReplyTo(post.id)).label("回复关系正确");
+    t.check(reply, hasReplyTo(post.id)).gate().label("回复关系正确");
   },
 });
 ```
 
-这里的动作签名由你的应用决定。检查结构化内容可以使用 `satisfies`，也可以复用字符串、数值或 Schema 匹配器。
+这里的动作签名由你的应用决定。`defineValueMatch` 只描述值怎样匹配；`t.check` 登记 Assertion，`.gate()` 显式把 Boolean 条件设为质量门。也可以复用字符串、数值或 Schema 匹配器。
 需要累计分数时使用 `social.defineScoreEval`，再对检查调用 `.score(points)`。
 开放式语气、人物一致性或内容质量可以交给 [Judge](/zh/explanation/judge)。
+
+## 在连接处定义断言方法
+
+多个评估需要同一种检查时，在 Adapter 的 `assertions` 中定义便捷方法。它取得当前 Attempt 的 `app` 和统一的 `check`，返回原有断言 handle。
+
+```ts application.ts
+import { defineAdapter } from "niceeval";
+import { defineValueMatch } from "niceeval/expect";
+import { createSocialApp } from "./src/social-app.ts";
+
+const hasText = defineValueMatch<{ text: string }>({
+  name: "推文包含文字",
+  evaluate: (post) => post.text.trim().length > 0,
+});
+
+export const social = defineAdapter({
+  name: "social-app",
+  create(context) {
+    const app = createSocialApp({ signal: context.signal });
+    context.onCleanup(() => app.close());
+    return {
+      post: (text: string) => app.publishPost(text),
+      readPublishedPost: () => app.readPublishedPost(),
+    };
+  },
+  assertions({ app, check }) {
+    return {
+      hasPublishedText() {
+        return check(app.readPublishedPost(), hasText);
+      },
+    };
+  },
+});
+```
+
+```ts evals/publish.eval.ts
+import { social } from "../application.ts";
+
+export default social.defineScoreEval({
+  async test(t) {
+    await t.post("邀请大家周末一起看流星雨");
+    t.hasPublishedText().gate().score(1).label("推文生成成功");
+  },
+});
+```
+
+`hasPublishedText()` 与显式 `check` 共享评分和报告。`defineEval` 的断言方法没有 `.score()`；`defineScoreEval` 的方法提供它。动作方法 `post()` 仍只执行应用操作。
+
+在断言方法被调用时读取证据。`assertions` 本身只组装方法，不能提前调用 `check`；返回对象不能包含 getter、非函数值或与应用及核心成员重名的方法。
+方法同步返回本次 `check` 的 handle，不返回 Boolean 或 Promise。异步动作、等待和证据封存放在应用方法中，在检查前显式完成。
+证据不完整时应报告明确错误，不能当作空历史来判断“没有发生”。
+便捷方法使用具体参数签名。无法保留类型关联的泛型或重载便捷方法不可调用；这类组合可以使用独立 Match 和显式 `t.check`，应用操作自身的泛型方法仍可使用。
 
 ## 选择实现并运行
 
@@ -84,6 +140,7 @@ pnpm exec niceeval view
 
 实验选择的应用必须满足评估声明的接口。接口不匹配时，NiceEval 会在创建应用前报错。
 具体操作的顺序、参数和重复次数由评估代码决定；应用动作不会自动获得 Agent 的消息重试。
+自定义方法可以命名为 `send`，其参数和返回值仍由应用决定，不需要构造 `Turn`。如果返回对象没有定义 `send`，`t` 也不会自动获得这个方法。
 
 ## 用相同评估比较两个实现
 
@@ -101,8 +158,21 @@ export const candidate = social.implement({ name: "candidate", create: createCan
 评估通过 `social.defineEval` 编写，两个 Experiment 分别选择 `baseline` 与 `candidate`。
 只有共同接口里的方法可在该评估中使用；两个独立创建但同名的契约不能互换。
 
-用户应用省略 `behaviorRevision` 时每次实际运行重新执行。
-需要自动沿用历史结果时，显式声明非空版本，并在应用或远端服务行为变化时更新它；框架仍会检查源码、配置等其它复用条件。
+需要共享断言方法时，在创建实现前调用 `withAssertions`：
+
+```ts
+const social = defineAdapterContract<SocialContext>({ name: "social/v1" })
+  .withAssertions(({ app, check }) => ({
+    hasPublishedText() {
+      return check(app.readPublishedPost(), hasText);
+    },
+  }));
+```
+
+从这个返回契约创建实现和评估，各实现就会使用相同检查。`withAssertions` 返回新契约，之前创建的实现不会自动取得这些方法。
+
+执行身份同时包含 Adapter identity（`name`、`contract`、`behaviorRevision`）和 experiment 的 `flags`。评估用例静态项目内相对 import/export 闭包变化会自动使候选失效。
+Experiment 单独选择的实现、动态 import、外部包和远端服务不在自动范围内。为这些行为声明非空 `behaviorRevision`，或用显式配置表达变化；未声明版本的自定义 Adapter 不会自动复用。
 
 ## 阅读结果
 

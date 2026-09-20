@@ -33,7 +33,7 @@ Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终�
 
 ## 上下文组合
 
-公共 EvalContext 拥有 Assertion、分组、执行控制与反馈，Adapter 提供应用上下文。
+公共 EvalContext 拥有 Assertion、分组、执行控制与反馈，Adapter 提供评估对象的操作与证据。Agent、游戏和普通应用都沿同一个契约参与评估，领域能力不成为其它对象的执行前提。
 组合后的 `t` 具有精确泛型类型，不使用全局扩展或开放动作字典。
 它的根字段集合固定且只读，应用成员使用实时转发，不把可变值复制成过时快照。
 顶层函数稳定绑定原应用上下文，解构后仍可调用；`this` 不获得公共评估能力。
@@ -41,6 +41,11 @@ Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终�
 类型与运行时共同拒绝核心成员冲突及危险属性。同步上下文在 Promise 吸收前检查；异步工厂只检查兑现对象。
 JavaScript 自身已发生的 thenable 吸收不能撤销，这不是执行不可信代码的安全边界。
 顶层动作 wrapper 每次调用检查作者生命周期，关闭后的调用失败；已经运行的函数和嵌套原对象仍由应用协作取消。
+
+断言便捷方法由 Adapter 定义或共享契约拥有，每个实际执行的 Attempt 在 `create` 成功后组装一次。共享契约的实现不能替换 factory。
+组装输入仅包含受生命周期保护的应用 facade 和同一核心 `check`；组装期间不登记 Assertion。方法调用时读取证据，同步返回该次调用登记的原始 handle。
+断言方法不建立独立的评分、封口或持久结果类型。Pass 与 Score 使用各自的原生 handle 类型，关闭后的方法调用和保存的 `check` 都经过同一作者生命周期检查。
+字段碰撞、getter、非普通对象或无效返回值必须明确失败，不能让普通 Boolean 冒充已登记 Assertion。
 
 ## 应用实例生命周期
 
