@@ -105,7 +105,7 @@ function writeJournal(entry: JournalEntry): Promise<void> {
 
 export const customIdentityReporter: Reporter = {
   onEvent(event) {
-    if (event.type !== "eval:start" || event.evalId !== "custom-native-actions") return;
+    if (event.type !== "eval:start") return;
     const path = join(process.cwd(), customIdentityJournal);
     journalWrites = journalWrites.then(() => appendFile(path, `${JSON.stringify({
       source: "event",
@@ -116,7 +116,6 @@ export const customIdentityReporter: Reporter = {
     return journalWrites;
   },
   onEvalComplete(result) {
-    if (result.evalId !== "custom-native-actions") return;
     const path = join(process.cwd(), customIdentityJournal);
     journalWrites = journalWrites.then(() => appendFile(path, `${JSON.stringify({
       source: "result",

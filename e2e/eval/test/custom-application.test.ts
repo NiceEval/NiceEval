@@ -19,9 +19,11 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
     "custom-application",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      for (const [experimentId, implementation] of [
-        ["custom-native-alpha", "alpha"],
-        ["custom-native-beta", "beta"],
+      for (const [experimentId, implementation, evalId] of [
+        ["custom-native-alpha", "alpha", "custom-native-actions"],
+        ["custom-native-beta", "beta", "custom-native-actions"],
+        ["custom-native-alpha-score", "alpha", "custom-native-score"],
+        ["custom-native-beta-score", "beta", "custom-native-score"],
       ] as const) {
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.exitCode, run.diagnostic()).toBe(0);
@@ -29,7 +31,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
         expect(receipt, run.diagnostic()).toMatchObject({ completion: "completed" });
         const evaluation = only(
           run.expEvalEvents(),
-          (event) => event.experimentId === experimentId && event.evalId === "custom-native-actions",
+          (event) => event.experimentId === experimentId && event.evalId === evalId,
           run.diagnostic(),
         );
         expect(evaluation).toMatchObject({
@@ -65,36 +67,38 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
         expect(execution).not.toHaveProperty("application");
         expect(execution).not.toHaveProperty("agentId");
 
-        const identityEntries = (await readFile(join(projectRoot, customIdentityJournal), "utf8"))
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as {
-            source: "event" | "result";
-            experimentId: string;
-            attempt: number;
-            adapter: unknown;
-          })
-          .filter((entry) => entry.experimentId === experimentId);
-        expect(identityEntries).toHaveLength(4);
-        expect(identityEntries.map(({ source, attempt }) => `${source}:${attempt}`).sort()).toEqual([
-          "event:0",
-          "event:1",
-          "result:0",
-          "result:1",
-        ]);
-        for (const entry of identityEntries) {
-          expect(entry.adapter).toEqual({
-            name: `custom-${implementation}`,
-            contract: "e2e/native-workflow/v1",
-            behaviorRevision: "1",
-          });
-          expect(entry.adapter).not.toHaveProperty("kind");
+        if (evalId === "custom-native-actions") {
+          const identityEntries = (await readFile(join(projectRoot, customIdentityJournal), "utf8"))
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as {
+              source: "event" | "result";
+              experimentId: string;
+              attempt: number;
+              adapter: unknown;
+            })
+            .filter((entry) => entry.experimentId === experimentId);
+          expect(identityEntries).toHaveLength(4);
+          expect(identityEntries.map(({ source, attempt }) => `${source}:${attempt}`).sort()).toEqual([
+            "event:0",
+            "event:1",
+            "result:0",
+            "result:1",
+          ]);
+          for (const entry of identityEntries) {
+            expect(entry.adapter).toEqual({
+              name: `custom-${implementation}`,
+              contract: "e2e/native-workflow/v1",
+              behaviorRevision: "1",
+            });
+            expect(entry.adapter).not.toHaveProperty("kind");
+          }
         }
 
         const summary = await inspectRunSummary(niceeval, projectRoot, runId);
         expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
-        expect(summary.document.summary.members).toHaveLength(4);
+        expect(summary.document.summary.members).toHaveLength(2);
         for (const member of summary.document.summary.members) {
           expect(member).toMatchObject({
             runId,
