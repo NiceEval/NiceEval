@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: check-judge-policies-belong-to-assertion
 title: Judge 与普通检查共用 Assertion，门槛归本次验收
 createdAt: 2026-09-13
-kind:
-  type: decision
-  state: adopted
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 ## 裁决
 
