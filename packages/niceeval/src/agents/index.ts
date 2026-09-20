@@ -3,6 +3,7 @@
 export { defineAdapter, defineAdapterContract } from "../adapter.ts";
 export type {
   Adapter,
+  AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,

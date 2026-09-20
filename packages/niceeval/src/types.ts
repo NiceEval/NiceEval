@@ -22,6 +22,7 @@ export * from "./context/types.ts";
 export * from "./runner/types.ts";
 export type {
   Adapter,
+  AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,

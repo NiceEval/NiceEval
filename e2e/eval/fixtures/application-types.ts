@@ -4,8 +4,10 @@ import {
   defineEval,
   type JudgeDefinition,
   defineAdapterContract,
+  type AdapterCleanupContext,
   type AdapterImplementationInput,
 } from "niceeval";
+import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
 import { satisfies } from "niceeval/expect";
 
 interface Post { id: string; text: string }
@@ -16,6 +18,12 @@ const social = defineAdapter({
   async create(ctx) {
     const signal: AbortSignal = ctx.signal;
     ctx.onCleanup(() => undefined);
+    ctx.onCleanup((cleanupContext) => {
+      const rootExport: AdapterCleanupContext = cleanupContext;
+      const adapterExport: AdapterCleanupContextFromSubpath = rootExport;
+      const cleanupSignal: AbortSignal = adapterExport.signal;
+      void cleanupSignal;
+    });
     return {
       count: 0,
       increment() {

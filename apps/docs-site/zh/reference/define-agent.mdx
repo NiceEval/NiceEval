@@ -88,9 +88,112 @@ export default defineExperiment({
 `defineAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
 以及两者的 `send(input, ctx)` 都会拿到的 `ctx`（`AgentContext`）：
 
+自定义 Adapter 的 `create(ctx)` 使用 `AdapterCreateContext`，其 cleanup callback 使用 `AdapterCleanupContext`。
+
 {/* GENERATED:BEGIN agent-def */}
 
 {/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+### `AdapterCleanupContext`
+
+#### `signal`
+
+```ts
+readonly signal: AbortSignal;
+```
+
+当前 Adapter cleanup 总窗口的取消信号。它独立于 Attempt signal，并在 30 秒总预算结束时取消。
+
+### `AdapterCreateContext`
+
+#### `evalId`
+
+```ts
+readonly evalId: string;
+```
+
+当前 Eval 的公开 ID。
+
+#### `experimentId`
+
+```ts
+readonly experimentId: string;
+```
+
+当前 Experiment 的公开 ID。
+
+#### `attempt`
+
+```ts
+readonly attempt: number;
+```
+
+当前 Attempt 的零起始序号。
+
+#### `signal`
+
+```ts
+readonly signal: AbortSignal;
+```
+
+Attempt 执行信号；取消或超时后会中止，不用于 cleanup 窗口。
+
+#### `model`
+
+```ts
+readonly model?: string;
+```
+
+Experiment 选择的模型。
+
+#### `reasoningEffort`
+
+```ts
+readonly reasoningEffort?: string;
+```
+
+Experiment 选择的推理强度。
+
+#### `flags`
+
+```ts
+readonly flags: Readonly<Record<string, JsonValue>>;
+```
+
+Experiment 传给 Adapter 的只读 flags。
+
+#### `progress`
+
+```ts
+progress(update: ProgressUpdate): void;
+```
+
+更新当前 Attempt 的人读进度。
+
+#### `diagnostic`
+
+```ts
+diagnostic(input: DiagnosticInput): void;
+```
+
+为当前 Attempt 追加结构化诊断。
+
+#### `log`
+
+```ts
+log(message: string): void;
+```
+
+为当前 Attempt 追加日志。
+
+#### `onCleanup`
+
+```ts
+onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
+```
+
+登记 Attempt-local 资源释放。回调按全局 LIFO 执行；一项失败不会跳过其余项。
+零参数回调仍可直接传入。传入的 context 已冻结，同一 cleanup 窗口的回调共享一个 signal。
 
 ### `DirectAgentDef`
 

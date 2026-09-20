@@ -103,6 +103,7 @@ export type {
 } from "./types.ts";
 export type {
   Adapter,
+  AdapterCleanupContext,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,

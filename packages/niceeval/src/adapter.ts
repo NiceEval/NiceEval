@@ -77,18 +77,37 @@ type AdapterFactory<Context extends object> = (
   context: AdapterCreateContext,
 ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
 
-export interface AdapterCreateContext {
-  readonly evalId: string;
-  readonly experimentId: string;
-  readonly attempt: number;
+export interface AdapterCleanupContext {
+  /** 当前 Adapter cleanup 总窗口的取消信号。它独立于 Attempt signal，并在 30 秒总预算结束时取消。 */
   readonly signal: AbortSignal;
+}
+
+export interface AdapterCreateContext {
+  /** 当前 Eval 的公开 ID。 */
+  readonly evalId: string;
+  /** 当前 Experiment 的公开 ID。 */
+  readonly experimentId: string;
+  /** 当前 Attempt 的零起始序号。 */
+  readonly attempt: number;
+  /** Attempt 执行信号；取消或超时后会中止，不用于 cleanup 窗口。 */
+  readonly signal: AbortSignal;
+  /** Experiment 选择的模型。 */
   readonly model?: string;
+  /** Experiment 选择的推理强度。 */
   readonly reasoningEffort?: string;
+  /** Experiment 传给 Adapter 的只读 flags。 */
   readonly flags: Readonly<Record<string, JsonValue>>;
+  /** 更新当前 Attempt 的人读进度。 */
   progress(update: ProgressUpdate): void;
+  /** 为当前 Attempt 追加结构化诊断。 */
   diagnostic(input: DiagnosticInput): void;
+  /** 为当前 Attempt 追加日志。 */
   log(message: string): void;
-  onCleanup(cleanup: () => void | Promise<void>): void;
+  /**
+   * 登记 Attempt-local 资源释放。回调按全局 LIFO 执行；一项失败不会跳过其余项。
+   * 零参数回调仍可直接传入。传入的 context 已冻结，同一 cleanup 窗口的回调共享一个 signal。
+   */
+  onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
 }
 
 type EvalContextBase<Kind extends EvaluationKind> = JudgePresetMethods<Kind> & {

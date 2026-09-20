@@ -60,6 +60,9 @@ Agent 的安装、会话、变更归因和 tracing 由 Agent 专属准备及观�
 随后按中断规则封口，终态冻结、封口与 publication 交接各只执行一次。
 
 `onCleanup` 成功登记才移交释放义务。已登记回调按逆序执行，一项失败追加 diagnostic 并继续剩余回调。
+每个回调收到冻结的 `AdapterCleanupContext`；同一次 cleanup 的回调共享一个独立于 Attempt 的 signal。
+Attempt 超时或取消时，`ctx.signal` 可以已经取消，但 cleanup signal 在总预算内保持活动，并在预算结束时取消以支持协作收尾。
+
 进入 `cleanup-open` 时开始固定 30 秒总预算，应用回调与已知创建、作者交接都在该预算内；迟到登记不延长期限。
 `cleanup-open` 中的迟到登记由原 Scope 接管；已登记回调耗尽且已知交接完成，或总期限到达后，状态变为 `closed`。
 关闭后的登记同步抛出生命周期错误，资源仍归调用者，不能另开 runtime 或修改已发布事实。
@@ -67,7 +70,7 @@ Agent 的安装、会话、变更归因和 tracing 由 Agent 专属准备及观�
 ```ts
 const lease = await client.acquire({ signal: ctx.signal });
 try {
-  ctx.onCleanup(() => lease.release());
+  ctx.onCleanup(({ signal }) => lease.release({ signal }));
 } catch (error) {
   await lease.release();
   throw error;

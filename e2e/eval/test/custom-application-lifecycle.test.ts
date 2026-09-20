@@ -44,8 +44,8 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
       const afterCreateFailure = await journalEntries(projectRoot);
       expect(afterCreateFailure.filter(({ scenario }) => scenario === "create-failure")).toEqual([
         { scenario: "create-failure", event: "acquired", attempt: 0 },
-        { scenario: "create-failure", event: "cleanup-inner", attempt: 0 },
-        { scenario: "create-failure", event: "cleanup-outer", attempt: 0 },
+        { scenario: "create-failure", event: "cleanup-inner-live-frozen", attempt: 0 },
+        { scenario: "create-failure", event: "cleanup-outer-shared-live-frozen", attempt: 0 },
       ]);
 
       const cancelled = await niceeval.run([
@@ -76,6 +76,19 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
       expect(attempt.document.attempt.assertions.entries.map(({ display }) => display.label)).toEqual([
         "取消前登记的 Assertion",
       ]);
+      const timeoutTrace = await inspectAttempt(niceeval, projectRoot, locator, "attempt.trace");
+      expect(timeoutTrace.receipt.exitCode, timeoutTrace.receipt.diagnostic()).toBe(0);
+      const timeoutDiagnostics = timeoutTrace.document.trace.diagnostics.items;
+      expect(timeoutDiagnostics.map(({ code }) => code)).toEqual(expect.arrayContaining([
+        "timeout",
+        "adapter-cleanup-timeout",
+      ]));
+      expect(only(
+        timeoutDiagnostics,
+        ({ code }) => code === "timeout",
+        timeoutTrace.receipt.diagnostic(),
+      ).summary).toContain("attempt timed out (500ms, from experiment)");
+      expect(timeoutDiagnostics.map(({ code }) => code)).not.toContain("unexpected-error");
 
       const afterCancellation = await journalEntries(projectRoot);
       expect(afterCancellation.filter(({ scenario }) => scenario === "timeout")).toEqual([
@@ -83,9 +96,10 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
         { scenario: "timeout", event: "abort-check-rejected", attempt: 0 },
         { scenario: "timeout", event: "abort-handle-rejected", attempt: 0 },
         { scenario: "timeout", event: "abort-method-rejected", attempt: 0 },
-        { scenario: "timeout", event: "cleanup-inner", attempt: 0 },
-        { scenario: "timeout", event: "cleanup-outer", attempt: 0 },
+        { scenario: "timeout", event: "cleanup-inner-attempt-aborted-window-live-frozen", attempt: 0 },
+        { scenario: "timeout", event: "cleanup-outer-shared-live-frozen", attempt: 0 },
         { scenario: "timeout", event: "late-assertion-rejected", attempt: 0 },
+        { scenario: "timeout", event: "cleanup-window-aborted", attempt: 0 },
         { scenario: "timeout", event: "closed-registration-rejected", attempt: 0 },
       ]);
 
@@ -96,6 +110,7 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
       const successfulEvaluation = only(succeeded.expEvalEvents(), (event) => event.evalId === "custom-success-cleanup", succeeded.diagnostic());
       expect(successfulEvaluation).toMatchObject({ verdict: "passed", attempts: 1, passed: 1 });
       expect((await journalEntries(projectRoot)).filter(({ scenario }) => scenario === "success")).toEqual([
+        { scenario: "success", event: "cleanup-live-frozen", attempt: 0 },
         { scenario: "success", event: "cleanup-finished", attempt: 0 },
       ]);
       if (successfulEvaluation.locator === undefined) throw new Error("successful Adapter did not expose its locator");
