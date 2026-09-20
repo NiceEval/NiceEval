@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [ledger-gitignore-pathspec-and-gitlinks](ledger-gitignore-pathspec-and-gi\
-      tlinks.md) — ledger 裸 pathspec 只排根级缓存，嵌套 repo 又静默记成 gitlink 吞掉内部 diff；修为
-      gitignore glob 编译 + mode 160000 fail fast"
+    statement: "- 已修 [ledger-gitignore-pathspec-and-gitlinks](ledger-gitignore-pathspec-and-gitlinks.md) — ledger 裸 pathspec 只排根级缓存，嵌套 repo 又静默记成 gitlink 吞掉内部 diff；修为 gitignore glob 编译 + mode 160000 fail fast"
     proof: []
     source:
       path: memory/INDEX.md

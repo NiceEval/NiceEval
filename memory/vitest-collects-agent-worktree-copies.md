@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [vitest-collects-agent-worktree-copies](vitest-collects-agent-worktree-co\
-      pies.md) — `.claude/worktrees/` 被 git 忽略但不被 vitest 忽略,4 个废弃 agent worktree
-      里的整份 src 副本被当成正式测试跑(45% 的测试跑的是旧源码,抓不到回归却能凭陈旧原因弄红 CI);修为 vitest.config.ts 的
-      exclude 补 `.claude/**`(与 `.repos/**` 同类)"
+    statement: "- 已修 [vitest-collects-agent-worktree-copies](vitest-collects-agent-worktree-copies.md) — `.claude/worktrees/` 被 git 忽略但不被 vitest 忽略,4 个废弃 agent worktree 里的整份 src 副本被当成正式测试跑(45% 的测试跑的是旧源码,抓不到回归却能凭陈旧原因弄红 CI);修为 vitest.config.ts 的 exclude 补 `.claude/**`(与 `.repos/**` 同类)"
     proof: []
     source:
       path: memory/INDEX.md

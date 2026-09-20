@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_3HDDG0091KDYCM47": {
-      "memory/init-inspection-guidance-drift.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_3HDDG0091KDYCM47",
+      "memory": "memory/init-inspection-guidance-drift.md",
+      "evidence": {
         "red": {
           "path": "e2e/cli/test/init-inspection-guidance.test.ts.case-evidence/necase_3HDDG0091KDYCM47/memory_init-inspection-guidance-drift.md/nered_NTN8SG3AXHQED7AQ-netake_NMAQ3YBXZ4ARFFA1/red.json",
           "digest": "sha256:cc1a28add73a37c75bea94a194a29cbcd18fc2278f5e0e8328407d29619ff0a6"
@@ -19,7 +22,9 @@
           "path": "e2e/cli/test/init-inspection-guidance.test.ts.case-evidence/necase_3HDDG0091KDYCM47/memory_init-inspection-guidance-drift.md/nered_NTN8SG3AXHQED7AQ-netake_NMAQ3YBXZ4ARFFA1/inventory.json",
           "digest": "sha256:2a27eef325ecbb29e9e43fede031f4c523d67c2ff9d767d8335489dd31dfd275"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
-  }
+  ]
 }

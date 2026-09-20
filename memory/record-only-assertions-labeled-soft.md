@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft\
-      .md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool`
-      看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E
-      守住零命中与决定性见证"
+    statement: "- 已修 [record-only-assertions-labeled-soft](record-only-assertions-labeled-soft.md) — Attempt 展开把未计分 Assertion 标成 `soft`，正常 `notCalledTool` 看不出这是已记录的零命中结果；改为 `recorded passed/failed/unavailable`，并由浏览器 E2E 守住零命中与决定性见证"
     proof: []
     source:
       path: memory/INDEX.md

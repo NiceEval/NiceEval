@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [staged-agent-probe-effect-failure-wrapped-as-fiberfailure](staged-agent-\
-      probe-effect-failure-wrapped-as-fiberfailure.md) — staged Agent 版本 miss 经
-      `Effect.runPromise` 被包成 FiberFailure，Ensure 识别不到 `SandboxCommandExitError`
-      而跳过安装；改用 `runPromiseExit` + `Cause.squash` 保留 typed failure"
+    statement: "- 已修 [staged-agent-probe-effect-failure-wrapped-as-fiberfailure](staged-agent-probe-effect-failure-wrapped-as-fiberfailure.md) — staged Agent 版本 miss 经 `Effect.runPromise` 被包成 FiberFailure，Ensure 识别不到 `SandboxCommandExitError` 而跳过安装；改用 `runPromiseExit` + `Cause.squash` 保留 typed failure"
     proof: []
     source:
       path: memory/INDEX.md

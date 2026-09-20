@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-r\
-      eport-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package
-      'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享
-      `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency
-      `react`/`react-dom`,补上即全绿,见
-      [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)"
+    statement: "- 已修 [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-report-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package 'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享 `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency `react`/`react-dom`,补上即全绿,见 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)"
     proof: []
     source:
       path: memory/INDEX.md

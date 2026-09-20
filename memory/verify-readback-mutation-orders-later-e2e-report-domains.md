@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/verify-readback-mutation-orders-later-e2e-report-domains.md
   commit: 031ce196afdc67380ab6ccbeb8308168b74ee9bc
-description: verifyReadback 的 verifyHistoryAndPages 在结尾对 .niceeval/main 做 2 次真实
-  --force/reuse 追加快照，让 evidence.main 的原始 locator 之后就不再是「当前」——晚运行的只读验收域会在 --page
-  traces / ExperimentList 里查不到它
+description: verifyReadback 的 verifyHistoryAndPages 在结尾对 .niceeval/main 做 2 次真实 --force/reuse 追加快照，让 evidence.main 的原始 locator 之后就不再是「当前」——晚运行的只读验收域会在 --page traces / ExperimentList 里查不到它
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

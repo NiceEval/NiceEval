@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: open
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions:
   - docs/feature/sandbox-nested-docker/lifecycle.md#sigkill-与控制进程重启
 history: []

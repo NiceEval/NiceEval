@@ -1,8 +1,7 @@
 ---
 format: concord.document/v1
 id: reasonfor-priority-and-severity-bug
-title: MetricTable expand / CaseList / DefaultReport failing board 的失败原因曾各写一套
-  `.find(a => !a.passed)`,优先级还是错的
+title: MetricTable expand / CaseList / DefaultReport failing board 的失败原因曾各写一套 `.find(a => !a.passed)`,优先级还是错的
 createdAt: 2026-07-11T22:34:32+08:00
 createdAtSource:
   kind: first-recorded
@@ -12,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [reasonfor-priority-and-severity-bug](reasonfor-priority-and-severity-bug\
-      .md) — `MetricTable` 展开子行、`CaseList.data`、`<DefaultReport />` failing
-      board 曾各写一份 `.find(a => !a.passed)`,优先级还是断言先于 error、不查 skipReason、soft
-      断言混进失败原因;提炼成 `compute.ts` 的 `reasonFor`/`failingGateAssertions` 三处共用(修在
-      `src/report/compute.ts` + `official-report.tsx`)"
+    statement: "- 已修 [reasonfor-priority-and-severity-bug](reasonfor-priority-and-severity-bug.md) — `MetricTable` 展开子行、`CaseList.data`、`<DefaultReport />` failing board 曾各写一份 `.find(a => !a.passed)`,优先级还是断言先于 error、不查 skipReason、soft 断言混进失败原因;提炼成 `compute.ts` 的 `reasonFor`/`failingGateAssertions` 三处共用(修在 `src/report/compute.ts` + `official-report.tsx`)"
     proof: []
     source:
       path: memory/INDEX.md

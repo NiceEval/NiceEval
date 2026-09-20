@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [human-error-feedback-folds-provider-messages](human-error-feedback-folds\
-      -provider-messages.md) — Human 结束面按 phase+code 把 E2B/Vercel 不同 message 合成
-      `×2`，共享构建又暴露 `n1` 且长单行被截；修为 execution error 逐 Attempt 展示安全 `error:` +
-      locator details，receipt 后按 Experiment 配对 Run details，内部 failure identity
-      仅留机器面"
+    statement: "- 已修 [human-error-feedback-folds-provider-messages](human-error-feedback-folds-provider-messages.md) — Human 结束面按 phase+code 把 E2B/Vercel 不同 message 合成 `×2`，共享构建又暴露 `n1` 且长单行被截；修为 execution error 逐 Attempt 展示安全 `error:` + locator details，receipt 后按 Experiment 配对 Run details，内部 failure identity 仅留机器面"
     proof: []
     source:
       path: memory/INDEX.md

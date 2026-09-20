@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/pi-agent-core-no-session-persistence.md
   commit: bd0e3e6aae8a54546a57ff973538f08e49bc4a7c
-description: pi SDK(@earendil-works/pi-agent-core)的 Agent 没有 Codex thread /
-  Claude session 那种落盘 resume 机制,多轮会话必须由服务端自己保存并回灌 agent.state.messages
+description: pi SDK(@earendil-works/pi-agent-core)的 Agent 没有 Codex thread / Claude session 那种落盘 resume 机制,多轮会话必须由服务端自己保存并回灌 agent.state.messages
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

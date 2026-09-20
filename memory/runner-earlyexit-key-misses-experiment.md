@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [runner-earlyexit-key-misses-experiment](runner-earlyexit-key-misses-expe\
-      riment.md) — earlyExit 去重键漏 experimentId,同 agent 同 model 只差 flags 的 A/B
-      实验会有一组被静默跳过(修在 `src/runner/run.ts` 键加
-      experimentId、`reporters/artifacts.ts` 工件路径加实验段)"
+    statement: "- 已修 [runner-earlyexit-key-misses-experiment](runner-earlyexit-key-misses-experiment.md) — earlyExit 去重键漏 experimentId,同 agent 同 model 只差 flags 的 A/B 实验会有一组被静默跳过(修在 `src/runner/run.ts` 键加 experimentId、`reporters/artifacts.ts` 工件路径加实验段)"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [agent-setup-workspace-writes-pollute-diff](agent-setup-workspace-writes-\
-      pollute-diff.md) — git 基线早于 `agent.setup`,所以 setup 往 workspace 装的 skill /
-      AGENTS.md 会被当成 agent 产出记进 diff;修为写 `.git/info/exclude`(能放 `$HOME` 就别放
-      workspace)"
+    statement: "- 已修 [agent-setup-workspace-writes-pollute-diff](agent-setup-workspace-writes-pollute-diff.md) — git 基线早于 `agent.setup`,所以 setup 往 workspace 装的 skill / AGENTS.md 会被当成 agent 产出记进 diff;修为写 `.git/info/exclude`(能放 `$HOME` 就别放 workspace)"
     proof: []
     source:
       path: memory/INDEX.md

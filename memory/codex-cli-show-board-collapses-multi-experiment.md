@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/codex-cli-show-board-collapses-multi-experiment.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: 裸 `niceeval show`(无位置参数)在仓库有多个 experiment 时按实验组折叠成组级汇总表,不逐条列 Eval
-  id;`board.includes(evalId)` 这种'少排用例不能全绿'检查在多 experiment 仓库里必然假阴性,要改用 `show
-  --page attempts`
+description: 裸 `niceeval show`(无位置参数)在仓库有多个 experiment 时按实验组折叠成组级汇总表,不逐条列 Eval id;`board.includes(evalId)` 这种'少排用例不能全绿'检查在多 experiment 仓库里必然假阴性,要改用 `show --page attempts`
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '-
-      [codex-cli-show-board-collapses-multi-experiment](codex-cli-show-board-collapses-multi-experiment.md)
-      — 裸 `niceeval show` 在多 experiment 仓库里按实验组折叠成汇总表,不逐条列 Eval
-      id;"少排用例不能全绿"检查要用 `show --page attempts`,已修在
-      e2e/adapter/codex-cli/scripts/verify.ts'
+    statement: '- [codex-cli-show-board-collapses-multi-experiment](codex-cli-show-board-collapses-multi-experiment.md) — 裸 `niceeval show` 在多 experiment 仓库里按实验组折叠成汇总表,不逐条列 Eval id;"少排用例不能全绿"检查要用 `show --page attempts`,已修在 e2e/adapter/codex-cli/scripts/verify.ts'
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,9 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**：`src/agents/bub.ts` 的 `setup()` 里 `workspace = sb.workdir`（不要
-      hardcode 常量），`send()` 里 `sessionInfo` 缺省兜底也要用 `sb.workdir`
-      而不是写死路径。已修复（2026-07-02）。"
+    statement: "**修法**：`src/agents/bub.ts` 的 `setup()` 里 `workspace = sb.workdir`（不要 hardcode 常量），`send()` 里 `sessionInfo` 缺省兜底也要用 `sb.workdir` 而不是写死路径。已修复（2026-07-02）。"
     proof: []
     source:
       path: memory/bub-workspace-path-hardcode.md

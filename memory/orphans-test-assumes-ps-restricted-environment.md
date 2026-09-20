@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,14 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修(commit `328b35bc`,修在 `src/sandbox/orphans.ts` +
-      `src/sandbox/orphans.test.ts`;bug 由 `791ec6e` 引入)。`listOrphanCandidates` /
-      `dockerOrphanCandidates` / `e2bOrphanCandidates` 增开 `OrphanClassifier`
-      注入缝(`(identity) => "alive" | OrphanState`),默认仍是真实系统探测
-      `classifyRunIdentity`。用例注入按 pid 直接裁决三态的窄判据(ORPHAN_PID / ALIVE_PID /
-      UNVERIFIED_PID),于是「alive 完全不进列表」「unverified 进列表但状态不是
-      orphan」「留存注册表条目连判据都不调用」三条各自被显式构造,不再赌宿主 `ps` 是否可用;`classifyRunIdentity` 自身的
-      host/pid/启动时刻裁决语义由独立的用例组覆盖(启动时刻探测同样走注入)。
+    statement: 已修(commit `328b35bc`,修在 `src/sandbox/orphans.ts` + `src/sandbox/orphans.test.ts`;bug 由 `791ec6e` 引入)。`listOrphanCandidates` / `dockerOrphanCandidates` / `e2bOrphanCandidates` 增开 `OrphanClassifier` 注入缝(`(identity) => "alive" | OrphanState`),默认仍是真实系统探测 `classifyRunIdentity`。用例注入按 pid 直接裁决三态的窄判据(ORPHAN_PID / ALIVE_PID / UNVERIFIED_PID),于是「alive 完全不进列表」「unverified 进列表但状态不是 orphan」「留存注册表条目连判据都不调用」三条各自被显式构造,不再赌宿主 `ps` 是否可用;`classifyRunIdentity` 自身的 host/pid/启动时刻裁决语义由独立的用例组覆盖(启动时刻探测同样走注入)。
     proof: []
     source:
       path: memory/orphans-test-assumes-ps-restricted-environment.md

@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2b-putcontent-root-owned-nested-directory.md
   commit: 0d24186331cc787226bccdc99c515ff8b7f331a6
-description: E2B prepare 的 putContent 在 root-owned 目标下只写入顶层文件，嵌套目录 mkdir
-  以默认用户执行并因 Permission denied 中止
+description: E2B prepare 的 putContent 在 root-owned 目标下只写入顶层文件，嵌套目录 mkdir 以默认用户执行并因 Permission denied 中止
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2b-putcontent-root-owned-nested-directory](e2b-putcontent-root-owned-ne\
-      sted-directory.md) — E2B prepare 的 registered directory 快照完整,但
-      `putContent()` 在 root-owned 目标下用默认用户 mkdir 嵌套目录而 Permission
-      denied,现场只剩顶层文件;修为仅对明确权限拒绝的幂等 mkdir 用 root 重试"
+    statement: "- 已修 [e2b-putcontent-root-owned-nested-directory](e2b-putcontent-root-owned-nested-directory.md) — E2B prepare 的 registered directory 快照完整,但 `putContent()` 在 root-owned 目标下用默认用户 mkdir 嵌套目录而 Permission denied,现场只剩顶层文件;修为仅对明确权限拒绝的幂等 mkdir 用 root 重试"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [docs-site-lagged-behind-two-renames](docs-site-lagged-behind-two-renames\
-      .md) — 同一类漂移第二次:`runs`(真名 `attempts`,连 `--help` 都在打广告)与
-      `--reuse-sandbox`(已改成实验字段 `sandboxReuse`)教了整整一页;`defineExperiment`
-      不校验未知字段且 examples 不进 typecheck,所以 `runs: 3` 静默按 1
-      跑;已全面改正,标识符级守护的取值面难点记在正文"
+    statement: "- 已修 [docs-site-lagged-behind-two-renames](docs-site-lagged-behind-two-renames.md) — 同一类漂移第二次:`runs`(真名 `attempts`,连 `--help` 都在打广告)与 `--reuse-sandbox`(已改成实验字段 `sandboxReuse`)教了整整一页;`defineExperiment` 不校验未知字段且 examples 不进 typecheck,所以 `runs: 3` 静默按 1 跑;已全面改正,标识符级守护的取值面难点记在正文"
     proof: []
     source:
       path: memory/INDEX.md

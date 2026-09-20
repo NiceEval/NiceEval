@@ -1,8 +1,7 @@
 ---
 format: concord.document/v1
 id: deepseek-judge-thinking-mode-tool-choice
-title: judge.autoevals.closedQA 在纯 DeepSeek 网关下必错:"Thinking mode does not
-  support this tool_choice"
+title: judge.autoevals.closedQA 在纯 DeepSeek 网关下必错:"Thinking mode does not support this tool_choice"
 createdAt: 2026-07-03T05:24:42+08:00
 createdAtSource:
   kind: first-recorded
@@ -12,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

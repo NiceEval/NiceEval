@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [typescript7-no-api-alias-recipe](typescript7-no-api-alias-recipe.md) —
-      TS7 原生版只有 tsc 没有编程 API,直升会炸 next build;官方 alias
-      双装配方(`typescript`→typescript6 + `@typescript/native`→ts7),`typescript` 名下是
-      6.0.x 是有意为之"
+    statement: "- 已修 [typescript7-no-api-alias-recipe](typescript7-no-api-alias-recipe.md) — TS7 原生版只有 tsc 没有编程 API,直升会炸 next build;官方 alias 双装配方(`typescript`→typescript6 + `@typescript/native`→ts7),`typescript` 名下是 6.0.x 是有意为之"
     proof: []
     source:
       path: memory/INDEX.md

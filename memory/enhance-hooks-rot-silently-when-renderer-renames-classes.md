@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [enhance-hooks-rot-silently-when-renderer-renames-classes](enhance-hooks-\
-      rot-silently-when-renderer-renames-classes.md) — enhance.js
-      三处钩子指向全仓没人产出的类名:ExperimentList 排序/过滤与 AttemptList 过滤是死代码(还留着 `:sample >`
-      这种改名误伤的非法选择器),`.niceeval-scatter-point` 则是真 bug——图表点改叫
-      `.niceeval-chart-dot` 后样式化 tooltip 一直没出现、只剩浏览器原生黄框;已删死码 + 重接选择器,验收缺口(hover
-      断言、选择器体检)归 e2e"
+    statement: "- 已修 [enhance-hooks-rot-silently-when-renderer-renames-classes](enhance-hooks-rot-silently-when-renderer-renames-classes.md) — enhance.js 三处钩子指向全仓没人产出的类名:ExperimentList 排序/过滤与 AttemptList 过滤是死代码(还留着 `:sample >` 这种改名误伤的非法选择器),`.niceeval-scatter-point` 则是真 bug——图表点改叫 `.niceeval-chart-dot` 后样式化 tooltip 一直没出现、只剩浏览器原生黄框;已删死码 + 重接选择器,验收缺口(hover 断言、选择器体检)归 e2e"
     proof: []
     source:
       path: memory/INDEX.md

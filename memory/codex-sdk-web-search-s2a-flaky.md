@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/codex-sdk-web-search-s2a-flaky.md
   commit: bd0e3e6aae8a54546a57ff973538f08e49bc4a7c
-description: codex-sdk demo 走 s2a 代理时内置 web_search 极不稳定——单个问题连发 9+
-  次检索重试,有时整轮失败;SDK 的 WebSearchItem 只有 query 字段,UI 层无法区分成败
+description: codex-sdk demo 走 s2a 代理时内置 web_search 极不稳定——单个问题连发 9+ 次检索重试,有时整轮失败;SDK 的 WebSearchItem 只有 query 字段,UI 层无法区分成败
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

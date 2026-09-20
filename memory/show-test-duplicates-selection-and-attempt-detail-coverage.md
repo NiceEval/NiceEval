@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [show-test-duplicates-selection-and-attempt-detail-coverage](show-test-du\
-      plicates-selection-and-attempt-detail-coverage.md) — show.test.ts 曾有三条断言经
-      `runShow()` 整条 CLI 管线复述 `host-equivalence.test.ts` 已直调
-      `selectCurrentResults` 验证过的 Selection 语义,另一条渲染断言自认与 Attempt
-      详情组件测试同契约仍留着;测试体系重划 A2 分拣时删除重复覆盖"
+    statement: "- 已修 [show-test-duplicates-selection-and-attempt-detail-coverage](show-test-duplicates-selection-and-attempt-detail-coverage.md) — show.test.ts 曾有三条断言经 `runShow()` 整条 CLI 管线复述 `host-equivalence.test.ts` 已直调 `selectCurrentResults` 验证过的 Selection 语义,另一条渲染断言自认与 Attempt 详情组件测试同契约仍留着;测试体系重划 A2 分拣时删除重复覆盖"
     proof: []
     source:
       path: memory/INDEX.md

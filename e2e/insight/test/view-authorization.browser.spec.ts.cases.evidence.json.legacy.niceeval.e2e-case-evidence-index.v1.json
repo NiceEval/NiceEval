@@ -1,0 +1,61 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_XDDZFNTFXA177RG0": {
+      "memory/view-session-cookie-collides-across-ports.md": {
+        "red": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/red.json",
+          "digest": "sha256:7f687a182e4aa78d64ab303d98aee2cc240454f35744b2cf99641962be3434f6"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/green.json",
+          "digest": "sha256:7805bdf0a3dd5e3edb26810972bf3a74e0e4d6ac0f11ab59883fa945d79b84e1"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/certificate.json",
+          "digest": "sha256:53606289aa8497de884443c9082a268d805023281647679a441bfe7f091cd7e4"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/inventory.json",
+          "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
+        }
+      },
+      "memory/view-deep-link-bootstrap-misses-router-initialization.md": {
+        "red": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-deep-link-bootstrap-misses-router-initialization.md/nered_ABHQ7PPW920CV3BJ-netake_0SVB9XS4NCGH4WFE/red.json",
+          "digest": "sha256:3d7b0646a94a46f3559f27078faa7fea71ede2d8cc8ae6758d0942845d0831a5"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-deep-link-bootstrap-misses-router-initialization.md/nered_ABHQ7PPW920CV3BJ-netake_0SVB9XS4NCGH4WFE/green.json",
+          "digest": "sha256:7805bdf0a3dd5e3edb26810972bf3a74e0e4d6ac0f11ab59883fa945d79b84e1"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-deep-link-bootstrap-misses-router-initialization.md/nered_ABHQ7PPW920CV3BJ-netake_0SVB9XS4NCGH4WFE/certificate.json",
+          "digest": "sha256:13ad24db05b75856e2b3aae356381f86e6c40f3ddc3bed6266d5dfdb9f8a3f2a"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-deep-link-bootstrap-misses-router-initialization.md/nered_ABHQ7PPW920CV3BJ-netake_0SVB9XS4NCGH4WFE/inventory.json",
+          "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
+        }
+      },
+      "memory/view-hard-refresh-duplicates-attempt-overlay.md": {
+        "red": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_1GH2D3JYA68VAKD2-netake_0SVB9XS4NCGH4WFE/red.json",
+          "digest": "sha256:e6d93c8774535f9d4fa5d94e6d70a15ed8e6680feeb85605f1a5f0fae12574cd"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_1GH2D3JYA68VAKD2-netake_0SVB9XS4NCGH4WFE/green.json",
+          "digest": "sha256:7805bdf0a3dd5e3edb26810972bf3a74e0e4d6ac0f11ab59883fa945d79b84e1"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_1GH2D3JYA68VAKD2-netake_0SVB9XS4NCGH4WFE/certificate.json",
+          "digest": "sha256:56776e64ffe2bcf480c99e49b70e4972bba07d9de97ef0f49e97f1f2fb7d9a2f"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_1GH2D3JYA68VAKD2-netake_0SVB9XS4NCGH4WFE/inventory.json",
+          "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
+        }
+      }
+    }
+  }
+}

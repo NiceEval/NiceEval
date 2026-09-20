@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/ai-sdk-usechat-typing-indicator-start-chunk.md
   commit: bd0e3e6aae8a54546a57ff973538f08e49bc4a7c
-description: origin demos 前端"发消息后一片空白/看起来不 stream"的根因——useChat 收到 start chunk
-  就先推入一条空 parts 的 assistant 消息，按 role 判断的"思考中…"指示器会立刻消失
+description: origin demos 前端"发消息后一片空白/看起来不 stream"的根因——useChat 收到 start chunk 就先推入一条空 parts 的 assistant 消息，按 role 判断的"思考中…"指示器会立刻消失
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

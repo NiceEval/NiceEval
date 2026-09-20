@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2e-s2a-jihuayu-proxy-decommissioned.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: 旧 e2e/ 里 s2a.jihuayu.site
-  代理签发的凭据(OPENAI_*、CODEX_*、NICEEVAL_JUDGE_*)全部失效,api.deepseek.com 官方端点可平替
-  chat-completions 场景
+description: 旧 e2e/ 里 s2a.jihuayu.site 代理签发的凭据(OPENAI_*、CODEX_*、NICEEVAL_JUDGE_*)全部失效,api.deepseek.com 官方端点可平替 chat-completions 场景
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

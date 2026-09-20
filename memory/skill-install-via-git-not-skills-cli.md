@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "2. **`codex plugin list --json` 的输出形状是猜的**——**确认是真 bug,已修**。真实形状是 `{
-      installed: [...] }` + `pluginId` 字段,不是猜测的裸数组或 `{ plugins: [...] }` +
-      `id`;`resolvedVersion` 对任何真实安装都被静默省略。修在 `src/agents/codex.ts`,回归测试见
-      `src/agents/codex.test.ts`,详见
-      [[codex-plugin-list-json-shape-guessed-wrong]]。"
+    statement: "2. **`codex plugin list --json` 的输出形状是猜的**——**确认是真 bug,已修**。真实形状是 `{ installed: [...] }` + `pluginId` 字段,不是猜测的裸数组或 `{ plugins: [...] }` + `id`;`resolvedVersion` 对任何真实安装都被静默省略。修在 `src/agents/codex.ts`,回归测试见 `src/agents/codex.test.ts`,详见 [[codex-plugin-list-json-shape-guessed-wrong]]。"
     proof: []
     source:
       path: memory/skill-install-via-git-not-skills-cli.md

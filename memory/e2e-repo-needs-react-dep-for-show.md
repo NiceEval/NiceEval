@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)
-      — 没有前端的消费方项目(如 pi-agent-core E2E 仓库)跑裸 `niceeval show` 报 `Cannot find
-      package 'react'`:react/react-dom 只是可选
-      peerDependency,不装就用不了默认内建报告;修为该仓库自己显式加这两个依赖"
+    statement: "- 已修 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md) — 没有前端的消费方项目(如 pi-agent-core E2E 仓库)跑裸 `niceeval show` 报 `Cannot find package 'react'`:react/react-dom 只是可选 peerDependency,不装就用不了默认内建报告;修为该仓库自己显式加这两个依赖"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [reference-generator-url-in-tsdoc-nested-quotes](reference-generator-url-\
-      in-tsdoc-nested-quotes.md) — TSDoc 里带引号的 URL 字面量经 docs:reference
-      的自动反引号包裹生成嵌套引号乱码;修法=TSDoc 不写带引号的 URL 示例,改文字描述"
+    statement: "- 已修 [reference-generator-url-in-tsdoc-nested-quotes](reference-generator-url-in-tsdoc-nested-quotes.md) — TSDoc 里带引号的 URL 字面量经 docs:reference 的自动反引号包裹生成嵌套引号乱码;修法=TSDoc 不写带引号的 URL 示例,改文字描述"
     proof: []
     source:
       path: memory/INDEX.md

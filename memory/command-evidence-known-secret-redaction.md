@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [command-evidence-known-secret-redaction](command-evidence-known-secret-r\
-      edaction.md) — timing 曾只截断不脱敏，MCP/header/heredoc 凭据可从
-      full/JSON/execution/error 旁路泄漏；修为 `CommandOptions.sensitiveValues` 的显式
-      provenance + Runner 落盘前统一精确替换，未登记自由文本不靠正则猜测"
+    statement: "- 已修 [command-evidence-known-secret-redaction](command-evidence-known-secret-redaction.md) — timing 曾只截断不脱敏，MCP/header/heredoc 凭据可从 full/JSON/execution/error 旁路泄漏；修为 `CommandOptions.sensitiveValues` 的显式 provenance + Runner 落盘前统一精确替换，未登记自由文本不靠正则猜测"
     proof: []
     source:
       path: memory/INDEX.md

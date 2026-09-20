@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2e-report-playwright-browser-never-installed.md
   commit: d923971e2e83291a2b288d7974438ed41b820de5
-description: e2e/report 的 CI 任务因 Playwright chromium 从未被安装而失败——playwright 系依赖已无
-  postinstall 生命周期脚本
+description: e2e/report 的 CI 任务因 Playwright chromium 从未被安装而失败——playwright 系依赖已无 postinstall 生命周期脚本
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2e-report-playwright-browser-never-installed](e2e-report-playwright-bro\
-      wser-never-installed.md) — B4/B5 新增的 chromium.launch() 验收在 CI
-      上炸`Executable doesn't exist`:playwright 系依赖已无 postinstall 生命周期脚本,`pnpm
-      install` 从不下载浏览器二进制;修为 `e2e/report/package.json` 加 `postinstall:
-      playwright install chromium`(项目自身脚本,不受 onlyBuiltDependencies 门禁)"
+    statement: "- 已修 [e2e-report-playwright-browser-never-installed](e2e-report-playwright-browser-never-installed.md) — B4/B5 新增的 chromium.launch() 验收在 CI 上炸`Executable doesn't exist`:playwright 系依赖已无 postinstall 生命周期脚本,`pnpm install` 从不下载浏览器二进制;修为 `e2e/report/package.json` 加 `postinstall: playwright install chromium`(项目自身脚本,不受 onlyBuiltDependencies 门禁)"
     proof: []
     source:
       path: memory/INDEX.md

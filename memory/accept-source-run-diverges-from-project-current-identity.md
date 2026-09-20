@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/accept-source-run-diverges-from-project-current-identity.md
   commit: 9638b1f16179894d293c9e56a035544e6966fbf1
-description: accept 用 link 前的 source Experiment 重算当前身份，带 Plugin 的 accepted Run
-  能被 explicit --run 读到，却立即被无参 project-current 排除
+description: accept 用 link 前的 source Experiment 重算当前身份，带 Plugin 的 accepted Run 能被 explicit --run 读到，却立即被无参 project-current 排除
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [accept-source-run-diverges-from-project-current-identity](accept-source-\
-      run-diverges-from-project-current-identity.md) — `accept` 曾用 Plugin link
-      前的 source Run 重算当前身份，导致 reference Run 可被 explicit `--run` 读到却立即被无参 `show`
-      排除；修为 accept 与 show/dry 共用 prepared project planning，并在既有 Journey 同时守住
-      project-current 可见与未来 dry 仍为 gap"
+    statement: "- 已修 [accept-source-run-diverges-from-project-current-identity](accept-source-run-diverges-from-project-current-identity.md) — `accept` 曾用 Plugin link 前的 source Run 重算当前身份，导致 reference Run 可被 explicit `--run` 读到却立即被无参 `show` 排除；修为 accept 与 show/dry 共用 prepared project planning，并在既有 Journey 同时守住 project-current 可见与未来 dry 仍为 gap"
     proof: []
     source:
       path: memory/INDEX.md

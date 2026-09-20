@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [codex-plugin-session-start-intermittent-under-live-docker](codex-plugin-\
-      session-start-intermittent-under-live-docker.md) — Codex CLI 0.144.1 在
-      hook 子进程已退出后写 SessionStart stdin，BrokenPipe 被误判成整次 hook 失败并丢 stdout；官方
-      0.146.0 已忽略该竞态，NiceEval 在配置 plugins 时由 staged installer 选择修复版本"
+    statement: "- 已修 [codex-plugin-session-start-intermittent-under-live-docker](codex-plugin-session-start-intermittent-under-live-docker.md) — Codex CLI 0.144.1 在 hook 子进程已退出后写 SessionStart stdin，BrokenPipe 被误判成整次 hook 失败并丢 stdout；官方 0.146.0 已忽略该竞态，NiceEval 在配置 plugins 时由 staged installer 选择修复版本"
     proof: []
     source:
       path: memory/INDEX.md

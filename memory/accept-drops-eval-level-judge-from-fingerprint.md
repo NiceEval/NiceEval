@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/accept-drops-eval-level-judge-from-fingerprint.md
   commit: 7812fd41496868de6d6e44b1022cac2ee6e35aba
-description: niceeval accept 对带 eval/config 级 judge 的 eval 重算指纹时用了残缺的 judge
-  口径，接受后立刻又被判 stale，形成死循环
+description: niceeval accept 对带 eval/config 级 judge 的 eval 重算指纹时用了残缺的 judge 口径，接受后立刻又被判 stale，形成死循环
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-\
-      judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config
-      级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判
-      stale;修为 `prepareAcceptLocator` 改走同一份
-      `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)"
+    statement: "- 已修 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config 级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判 stale;修为 `prepareAcceptLocator` 改走同一份 `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

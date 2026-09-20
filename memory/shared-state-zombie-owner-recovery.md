@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.m\
-      d) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery
-      曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed"
+    statement: "- 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed"
     proof: []
     source:
       path: memory/INDEX.md

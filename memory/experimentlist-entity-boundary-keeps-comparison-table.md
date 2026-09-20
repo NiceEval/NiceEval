@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [experimentlist-entity-boundary-keeps-comparison-table](experimentlist-en\
-      tity-boundary-keeps-comparison-table.md) — 裁决(2026-07-13):保留
-      ExperimentList 一项一个 experiment 的实体边界,web 面恢复固定八列比较表、text 面保持
-      experiment→Eval→Attempt 层级;locator 不附证据字母;单实验散点照常画;裸 show/view 共用
-      `ExperimentComparison` 的 text/web 面"
+    statement: "- 已修 [experimentlist-entity-boundary-keeps-comparison-table](experimentlist-entity-boundary-keeps-comparison-table.md) — 裁决(2026-07-13):保留 ExperimentList 一项一个 experiment 的实体边界,web 面恢复固定八列比较表、text 面保持 experiment→Eval→Attempt 层级;locator 不附证据字母;单实验散点照常画;裸 show/view 共用 `ExperimentComparison` 的 text/web 面"
     proof: []
     source:
       path: memory/INDEX.md

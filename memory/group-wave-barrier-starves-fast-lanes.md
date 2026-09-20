@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [group-wave-barrier-starves-fast-lanes](group-wave-barrier-starves-fast-l\
-      anes.md) — 连续跨 lane wave 闸让慢 Group 的下一槽挡住快 Group 后继，出现真实空闲与 timing
-      空白；公平闸收窄为只保护各 lane 首槽"
+    statement: "- 已修 [group-wave-barrier-starves-fast-lanes](group-wave-barrier-starves-fast-lanes.md) — 连续跨 lane wave 闸让慢 Group 的下一槽挡住快 Group 后继，出现真实空闲与 timing 空白；公平闸收窄为只保护各 lane 首槽"
     proof: []
     source:
       path: memory/INDEX.md

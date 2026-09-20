@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [docker-profile-control-create-migration-incomplete](docker-profile-contr\
-      ol-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与
-      doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报
-      control-create-unimplemented；改为 control 持有 build context、network/container
-      create 与终止证明"
+    statement: "- 已修 [docker-profile-control-create-migration-incomplete](docker-profile-control-create-migration-incomplete.md) — profile-bound Dockerfile cold build 与 doctor smoke 仍由客户端 create/commit，遇到拒绝旧语义的新 watchdog 会在 Attempt 前报 control-create-unimplemented；改为 control 持有 build context、network/container create 与终止证明"
     proof: []
     source:
       path: memory/INDEX.md

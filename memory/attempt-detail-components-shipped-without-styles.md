@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [attempt-detail-components-shipped-without-styles](attempt-detail-compone\
-      nts-shipped-without-styles.md) — `4e45185` 新增 AttemptDetail 却没补官方
-      CSS，`421474f` 切 view 时又删除旧 CodeView，导致裸排版以及语法高亮、状态色、点击展开同时丢失；修为补齐组件族
-      CSS，并把 loc 回复投影与 diff 式源码交互迁回公开 AttemptSource"
+    statement: "- 已修 [attempt-detail-components-shipped-without-styles](attempt-detail-components-shipped-without-styles.md) — `4e45185` 新增 AttemptDetail 却没补官方 CSS，`421474f` 切 view 时又删除旧 CodeView，导致裸排版以及语法高亮、状态色、点击展开同时丢失；修为补齐组件族 CSS，并把 loc 回复投影与 diff 式源码交互迁回公开 AttemptSource"
     proof: []
     source:
       path: memory/INDEX.md

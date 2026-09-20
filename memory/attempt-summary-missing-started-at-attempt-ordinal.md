@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/attempt-summary-missing-started-at-attempt-ordinal.md
   commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
-description: AttemptSummaryData 携带 startedAt/identity.attempt 但
-  attemptSummaryText 两者都没渲染——已在 Phase H 修复
+description: AttemptSummaryData 携带 startedAt/identity.attempt 但 attemptSummaryText 两者都没渲染——已在 Phase H 修复
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:

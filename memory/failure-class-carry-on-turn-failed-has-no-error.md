@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [failure-class-carry-on-turn-failed-has-no-error](failure-class-carry-on-\
-      turn-failed-has-no-error.md) — 终局失败的 scope 要走出重试执行体:`turn-failed`
-      形态没有错误对象可挂(错误到 `expectOk()` 才铸造),且耗尽摘要会换出一个新的 Turn 对象——按 Turn 身份登记时登记错对象会让
-      scope 静默丢失、只在「重试耗尽」这条路径上错;修法=onFinalFailure 回执报浮出的那个 Turn + WeakMap 登记 +
-      expectOk 附着;接线方注意 attempt.ts 转 AttemptError 时原错误即被丢弃"
+    statement: "- 已修 [failure-class-carry-on-turn-failed-has-no-error](failure-class-carry-on-turn-failed-has-no-error.md) — 终局失败的 scope 要走出重试执行体:`turn-failed` 形态没有错误对象可挂(错误到 `expectOk()` 才铸造),且耗尽摘要会换出一个新的 Turn 对象——按 Turn 身份登记时登记错对象会让 scope 静默丢失、只在「重试耗尽」这条路径上错;修法=onFinalFailure 回执报浮出的那个 Turn + WeakMap 登记 + expectOk 附着;接线方注意 attempt.ts 转 AttemptError 时原错误即被丢弃"
     proof: []
     source:
       path: memory/INDEX.md

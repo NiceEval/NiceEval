@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [ui-message-stream-missing-done-accepted](ui-message-stream-missing-done-\
-      accepted.md) — UI Message Stream 在部分 assistant 帧后断开且没有 `[DONE]` 时曾被当成成功
-      Turn；修为把结束标记纳入协议完整性，提前 EOF 公开为 `agent-send-failed`"
+    statement: "- 已修 [ui-message-stream-missing-done-accepted](ui-message-stream-missing-done-accepted.md) — UI Message Stream 在部分 assistant 帧后断开且没有 `[DONE]` 时曾被当成成功 Turn；修为把结束标记纳入协议完整性，提前 EOF 公开为 `agent-send-failed`"
     proof: []
     source:
       path: memory/INDEX.md

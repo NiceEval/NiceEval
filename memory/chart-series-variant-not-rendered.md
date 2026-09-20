@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [chart-series-variant-not-rendered](chart-series-variant-not-rendered.md)
-      — 24 槽只保证槽唯一,Chart 只落 colorIndex 把 variant 丢掉 → 6 色撞色(MemoryBench
-      leaderboard baseline/obelisk 同绿);首修虽产出 fill/stroke/marker 与 HTML
-      图案类,却被后声明的 `background` shorthand 清空图案;补修把纯色 background 限定到 variant
-      1,并以真实浏览器 computed style 验收"
+    statement: "- 已修 [chart-series-variant-not-rendered](chart-series-variant-not-rendered.md) — 24 槽只保证槽唯一,Chart 只落 colorIndex 把 variant 丢掉 → 6 色撞色(MemoryBench leaderboard baseline/obelisk 同绿);首修虽产出 fill/stroke/marker 与 HTML 图案类,却被后声明的 `background` shorthand 清空图案;补修把纯色 background 限定到 variant 1,并以真实浏览器 computed style 验收"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [eval-reserved-word-breaks-predicate-example](eval-reserved-word-breaks-p\
-      redicate-example.md) — `eval` 是 strict mode
-      保留绑定标识符,不能当参数名;`ExperimentDef.evals` 类型签名与 docs 示例原写成 `(eval) =>
-      eval.id...` 会让用户抄示例直接语法报错,统一改参数名为 `e`(`src/runner/types.ts` +
-      `docs/feature/experiments/{library,README}.md`)"
+    statement: "- 已修 [eval-reserved-word-breaks-predicate-example](eval-reserved-word-breaks-predicate-example.md) — `eval` 是 strict mode 保留绑定标识符,不能当参数名;`ExperimentDef.evals` 类型签名与 docs 示例原写成 `(eval) => eval.id...` 会让用户抄示例直接语法报错,统一改参数名为 `e`(`src/runner/types.ts` + `docs/feature/experiments/{library,README}.md`)"
     proof: []
     source:
       path: memory/INDEX.md

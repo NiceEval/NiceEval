@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**已修**：`src/sandbox/e2b.ts` 用字节转义在 bash supervisor 内还原 marker，避免
-      wrapper 源码直接出现完整 marker；parser
-      对候选帧只接受严格十进制且可安全表示的数字，非法候选作为普通输出继续扫描，stdout/stderr
-      两路合法帧必须给出同一退出码。`src/sandbox/e2b.test.ts` 把生产 wrapper 原样交给真实
-      `/bin/bash`，按小块转发真实两路输出，覆盖 0、非零、正文、跨 chunk 与 Codex 长命令/heredoc。"
+    statement: "**已修**：`src/sandbox/e2b.ts` 用字节转义在 bash supervisor 内还原 marker，避免 wrapper 源码直接出现完整 marker；parser 对候选帧只接受严格十进制且可安全表示的数字，非法候选作为普通输出继续扫描，stdout/stderr 两路合法帧必须给出同一退出码。`src/sandbox/e2b.test.ts` 把生产 wrapper 原样交给真实 `/bin/bash`，按小块转发真实两路输出，覆盖 0、非零、正文、跨 chunk 与 Codex 长命令/heredoc。"
     proof: []
     source:
       path: memory/e2b-command-completion-marker-source-echo.md

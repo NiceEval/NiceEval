@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/claude-agent-sdk-permission-mode-silent-skip.md
   commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
-description: "@anthropic-ai/claude-agent-sdk 的 query() 默认 permissionMode 在无终端的
-  headless 服务里会静默跳过工具调用，模型转而幻觉答案，不报错"
+description: "@anthropic-ai/claude-agent-sdk 的 query() 默认 permissionMode 在无终端的 headless 服务里会静默跳过工具调用，模型转而幻觉答案，不报错"
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

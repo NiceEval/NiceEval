@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,10 +27,7 @@ resolution:
             - "Installed public Run Host case necase_JNE1HTBAPBV34014: inventory neinv_9WF1Q8Y3FQZR0N9W; takeover netake_QX7V472MF2F3H30B; candidate sha256 ad830d005f1e9763021bd5992ac682325fdb932b940467656d908824c331c422. Independent red bound in current regression evidence."
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-journey.test.ts#necase_JNE1HTBAPBV34014"]}
     proof:
-      - "Installed public Run Host case necase_JNE1HTBAPBV34014: inventory
-        neinv_9WF1Q8Y3FQZR0N9W; takeover netake_QX7V472MF2F3H30B; candidate
-        sha256 ad830d005f1e9763021bd5992ac682325fdb932b940467656d908824c331c422.
-        Independent red bound in current regression evidence."
+      - "Installed public Run Host case necase_JNE1HTBAPBV34014: inventory neinv_9WF1Q8Y3FQZR0N9W; takeover netake_QX7V472MF2F3H30B; candidate sha256 ad830d005f1e9763021bd5992ac682325fdb932b940467656d908824c331c422. Independent red bound in current regression evidence."
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-journey.test.ts#necase_JNE1HTBAPBV34014"]}
     source:
       path: memory/run-lifecycle-errors-thrown-as-effect-defects.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修(2026-07-30,`src/context/context.ts` 的 `previewCheckedValue` +
-      `mergeCommandOutput`)。
+    statement: 已修(2026-07-30,`src/context/context.ts` 的 `previewCheckedValue` + `mergeCommandOutput`)。
     proof: []
     source:
       path: memory/commandsucceeded-received-excerpt-not-tail.md

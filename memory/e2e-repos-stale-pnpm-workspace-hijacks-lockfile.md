@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2e-repos-stale-pnpm-workspace-hijacks-lockfile.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: e2e/pnpm-workspace.yaml(旧 apps/projects/shared 架构遗留)会把
-  e2e/adapter/<id> 下的 pnpm install 顶到 e2e/ 根的共享
-  lockfile/node_modules,而不是给新独立仓库生成自己的 pnpm-lock.yaml
+description: e2e/pnpm-workspace.yaml(旧 apps/projects/shared 架构遗留)会把 e2e/adapter/<id> 下的 pnpm install 顶到 e2e/ 根的共享 lockfile/node_modules,而不是给新独立仓库生成自己的 pnpm-lock.yaml
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/judge-config-precheck-hard-fails-without-key.md
   commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
-description: niceeval.config.ts 里显式设 judge.model 后,没有对应 API key 会在跑任何 eval
-  前直接抛错退出,不是"judge 断言自动跳过"
+description: niceeval.config.ts 里显式设 judge.model 后,没有对应 API key 会在跑任何 eval 前直接抛错退出,不是"judge 断言自动跳过"
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [judge-config-precheck-hard-fails-without-key](judge-config-precheck-hard\
-      -fails-without-key.md) — 显式设 `judge.model` 后没有对应 API key
-      曾是跑前直接抛错退出;现预检只对「实际要跑且源码含 judge」的 eval 生效(修在 `src/runner/run.ts`
-      judgeProbeTargets)"
+    statement: "- 已修 [judge-config-precheck-hard-fails-without-key](judge-config-precheck-hard-fails-without-key.md) — 显式设 `judge.model` 后没有对应 API key 曾是跑前直接抛错退出;现预检只对「实际要跑且源码含 judge」的 eval 生效(修在 `src/runner/run.ts` judgeProbeTargets)"
     proof: []
     source:
       path: memory/INDEX.md

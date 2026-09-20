@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/shared-worktree-concurrent-commit-race.md
   commit: 746ee6c287043489a9ab17c556fcbbeea9b0fb99
-description: 多个 agent 共用一个工作树时 git add → commit 两步之间有竞态——另一 agent 的 commit
-  会把你暂存的文件连同它的改动一起带走;提交要用 git commit <paths> 一步完成
+description: 多个 agent 共用一个工作树时 git add → commit 两步之间有竞态——另一 agent 的 commit 会把你暂存的文件连同它的改动一起带走;提交要用 git commit <paths> 一步完成
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

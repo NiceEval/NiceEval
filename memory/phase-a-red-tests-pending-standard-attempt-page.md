@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/phase-a-red-tests-pending-standard-attempt-page.md
   commit: 97be5b9c269f1a02056989d917769917c9cdf6be
-description: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先
-  pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
+description: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先 pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先
-      pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
+    statement: 已修——3 个测试在 Phase A 后仍红，Phase D 加 standardAttemptPage 后按预期自动转绿；但需要先 pnpm run build:report，且还有一处未预见到的测试(内建报告页数/内容 parity)要手工改
     proof: []
     source:
       path: memory/phase-a-red-tests-pending-standard-attempt-page.md

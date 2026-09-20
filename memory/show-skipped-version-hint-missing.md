@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/show-skipped-version-hint-missing.md
   commit: 16d78ee1fceff73ab88dcc64310ebc61db3cd5b1
-description: niceeval show 遇到 schemaVersion 不兼容的落盘时不给版本/npx 建议，只逐条报
-  reason；niceeval view 早就做了
+description: niceeval show 遇到 schemaVersion 不兼容的落盘时不给版本/npx 建议，只逐条报 reason；niceeval view 早就做了
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,17 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '**修法**（已修）：新增中性分组函数
-      `groupIncompatibleVersionSkips`（`src/results/skipped-notice.ts`，从
-      `src/results/index.ts` 导出），把 `incompatible-version` 且 `producer.name ===
-      "niceeval"` 的 skipped 目录按 `(producer.version, schemaVersion)` 分组。`show`
-      侧格式化在 `src/show/render.ts` 的 `skippedRunsText`：**不能照抄 view
-      的"逐条给命令"**——`show --run` 认的是结果根目录（其下可以有多个
-      experiment），不是单个快照目录，`SkippedDir.dir` 只有单个快照路径，所以 `show` 只能给「按版本分组、每组一条
-      `npx niceeval@<version> show --run <结果根>`」，同版本的多份快照合并成一行；`view`
-      则保留逐条给（它支持精确打开某一份快照，这是它的正确行为，不是待改的重复）。第三方 harness（`producer.name !==
-      "niceeval"`）或版本信息缺失时不参与分组，原样逐条列出，不编 npx 建议。`docs/view.md` 补了一段跨引用说明这套机制是
-      results 层通用能力、show/view 各自的命令语法差异。'
+    statement: '**修法**（已修）：新增中性分组函数 `groupIncompatibleVersionSkips`（`src/results/skipped-notice.ts`，从 `src/results/index.ts` 导出），把 `incompatible-version` 且 `producer.name === "niceeval"` 的 skipped 目录按 `(producer.version, schemaVersion)` 分组。`show` 侧格式化在 `src/show/render.ts` 的 `skippedRunsText`：**不能照抄 view 的"逐条给命令"**——`show --run` 认的是结果根目录（其下可以有多个 experiment），不是单个快照目录，`SkippedDir.dir` 只有单个快照路径，所以 `show` 只能给「按版本分组、每组一条 `npx niceeval@<version> show --run <结果根>`」，同版本的多份快照合并成一行；`view` 则保留逐条给（它支持精确打开某一份快照，这是它的正确行为，不是待改的重复）。第三方 harness（`producer.name !== "niceeval"`）或版本信息缺失时不参与分组，原样逐条列出，不编 npx 建议。`docs/view.md` 补了一段跨引用说明这套机制是 results 层通用能力、show/view 各自的命令语法差异。'
     proof: []
     source:
       path: memory/show-skipped-version-hint-missing.md

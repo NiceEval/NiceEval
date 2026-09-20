@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [e2e-artifacts-glob-overwrites-repo-manifest](e2e-artifacts-glob-overwrites-repo-manifest.md)
-      — `e2e/report/e2e.json` 曾用 `"*.json"`/`"*.xml"` 通配声明
-      artifacts,根编排器收尾把隔离副本顶层文件拷回真实仓库时连带命中并覆盖真实 `package.json`(改写成失效的临时 tarball
-      路径),下次直接 install/typecheck 报
-      ENOENT;修为显式文件名(`main.json`/`main.xml`/`fail.xml`/`error.xml`),裸 glob
-      会命中仓库自带顶层文件是通用坑'
+    statement: '- 已修 [e2e-artifacts-glob-overwrites-repo-manifest](e2e-artifacts-glob-overwrites-repo-manifest.md) — `e2e/report/e2e.json` 曾用 `"*.json"`/`"*.xml"` 通配声明 artifacts,根编排器收尾把隔离副本顶层文件拷回真实仓库时连带命中并覆盖真实 `package.json`(改写成失效的临时 tarball 路径),下次直接 install/typecheck 报 ENOENT;修为显式文件名(`main.json`/`main.xml`/`fail.xml`/`error.xml`),裸 glob 会命中仓库自带顶层文件是通用坑'
     proof: []
     source:
       path: memory/INDEX.md

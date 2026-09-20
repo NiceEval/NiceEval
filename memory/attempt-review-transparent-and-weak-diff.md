@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [attempt-review-transparent-and-weak-diff](attempt-review-transparent-and\
-      -weak-diff.md) — Attempt review
-      的半透明模糊遮罩保留了报告纹理，暗色下断言行状态色又过淡；遮罩改为高不透明纯色，代码面强制不透底并提高 diff 红绿 gutter/行色对比"
+    statement: "- 已修 [attempt-review-transparent-and-weak-diff](attempt-review-transparent-and-weak-diff.md) — Attempt review 的半透明模糊遮罩保留了报告纹理，暗色下断言行状态色又过淡；遮罩改为高不透明纯色，代码面强制不透底并提高 diff 红绿 gutter/行色对比"
     proof: []
     source:
       path: memory/INDEX.md

@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/docs-site-en-report-components-stale-groupby.md
   commit: 447c23ac8687a6408aab1ea8b252c33aaa8e5ef7
-description: docs-site/reference/report-components.mdx（英文）ExperimentComparison
-  一节仍描述已否决的按父目录分组设计,且引用不存在的 ExperimentComparison.data() 静态方法,需要独立重写
+description: docs-site/reference/report-components.mdx（英文）ExperimentComparison 一节仍描述已否决的按父目录分组设计,且引用不存在的 ExperimentComparison.data() 静态方法,需要独立重写
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**已修（2026-07-24 复核）**：`docs-site/reference/report-components.mdx` 里
-      `groupBy` 与"
+    statement: "**已修（2026-07-24 复核）**：`docs-site/reference/report-components.mdx` 里 `groupBy` 与"
     proof: []
     source:
       path: memory/docs-site-en-report-components-stale-groupby.md

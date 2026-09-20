@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,14 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [sandbox-path-managed-pathprepend](sandbox-path-managed-pathprepend.md) —
-      `docker.ts` 的 `runCommand` 把受管 `PATH` 无条件覆盖 `opts.env.PATH`,与 codex-cli
-      README「`env` 追加环境变量、无例外」的声明矛盾,静默丢弃零报错;修为 `codexAgent({ env })` 构造期同步拒绝
-      `PATH` 键 + 新增 Sandbox factory `pathPrepend` 显式前置入口(四个内置 provider 一致支持,进
-      template
-      identity)(`src/agents/codex.ts`、`src/sandbox/layer.ts`、`src/sandbox/{dock\
-      er,e2b,vercel,local,compose,runtime}.ts`)"
+    statement: "- 已修 [sandbox-path-managed-pathprepend](sandbox-path-managed-pathprepend.md) — `docker.ts` 的 `runCommand` 把受管 `PATH` 无条件覆盖 `opts.env.PATH`,与 codex-cli README「`env` 追加环境变量、无例外」的声明矛盾,静默丢弃零报错;修为 `codexAgent({ env })` 构造期同步拒绝 `PATH` 键 + 新增 Sandbox factory `pathPrepend` 显式前置入口(四个内置 provider 一致支持,进 template identity)(`src/agents/codex.ts`、`src/sandbox/layer.ts`、`src/sandbox/{docker,e2b,vercel,local,compose,runtime}.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [workspace-diff-path-cap-skips-partial-capture](workspace-diff-path-cap-s\
-      kips-partial-capture.md) — ledger exporter 在 10,000 路径先失败，使 File Changes
-      的确定性 partial collector 无法处理三万路径窗口；扫描上限与 10,000 条持久保留上限现已分离"
+    statement: "- 已修 [workspace-diff-path-cap-skips-partial-capture](workspace-diff-path-cap-skips-partial-capture.md) — ledger exporter 在 10,000 路径先失败，使 File Changes 的确定性 partial collector 无法处理三万路径窗口；扫描上限与 10,000 条持久保留上限现已分离"
     proof: []
     source:
       path: memory/INDEX.md

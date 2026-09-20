@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [attempt-source-unlocated-conversation-unstyled-and-escape-leak](attempt-\
-      source-unlocated-conversation-unstyled-and-escape-leak.md) —
-      AttemptSource「Other conversation」兜底区文字墙 + 工具结果 `\\n` 字面直出:`.nre-conv-*`
-      按容器限定没盖到第三容器、`compact()` 在 stringify 之后才收口;修为第三容器补 CSS + 先收口后字符串化;教训=共享
-      renderer 进新容器 CSS 不自动跟、自由文本收口必须在序列化前"
+    statement: "- 已修 [attempt-source-unlocated-conversation-unstyled-and-escape-leak](attempt-source-unlocated-conversation-unstyled-and-escape-leak.md) — AttemptSource「Other conversation」兜底区文字墙 + 工具结果 `\\n` 字面直出:`.nre-conv-*` 按容器限定没盖到第三容器、`compact()` 在 stringify 之后才收口;修为第三容器补 CSS + 先收口后字符串化;教训=共享 renderer 进新容器 CSS 不自动跟、自由文本收口必须在序列化前"
     proof: []
     source:
       path: memory/INDEX.md

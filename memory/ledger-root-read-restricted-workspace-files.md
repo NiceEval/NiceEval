@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [ledger-root-read-restricted-workspace-files](ledger-root-read-restricted\
-      -workspace-files.md) — Terminal-Bench 题故意把脚本设成 root-owned mode 0311 等
-      Agent 修,ledger 却在 Agent 前以普通用户 git add 而 Permission denied;修为按 Provider
-      能力仅给 runner 私有 Git 命令提权,不 chmod/chown workdir,不支持时保留用户态并报能力缺口"
+    statement: "- 已修 [ledger-root-read-restricted-workspace-files](ledger-root-read-restricted-workspace-files.md) — Terminal-Bench 题故意把脚本设成 root-owned mode 0311 等 Agent 修,ledger 却在 Agent 前以普通用户 git add 而 Permission denied;修为按 Provider 能力仅给 runner 私有 Git 命令提权,不 chmod/chown workdir,不支持时保留用户态并报能力缺口"
     proof: []
     source:
       path: memory/INDEX.md

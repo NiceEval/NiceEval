@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- **已修(第二层根因)**:carry 基线原来只取「最近一个 run」(`loadMostRecentResults` 的
-      `loaded[0]`),部分补跑 run 一旦成为最新,任何后续续跑都携带不到东西,`exp <组>` 补齐随之失效。已改为跨历史每
-      `(experimentId, evalId)` 取最新一份(`src/view/loader.ts` 的
-      `loadLatestResultsPerEval`,配套 `loader.test.ts`)。"
+    statement: "- **已修(第二层根因)**:carry 基线原来只取「最近一个 run」(`loadMostRecentResults` 的 `loaded[0]`),部分补跑 run 一旦成为最新,任何后续续跑都携带不到东西,`exp <组>` 补齐随之失效。已改为跨历史每 `(experimentId, evalId)` 取最新一份(`src/view/loader.ts` 的 `loadLatestResultsPerEval`,配套 `loader.test.ts`)。"
     proof: []
     source:
       path: memory/rerun-with-eval-filter-partial-snapshot.md

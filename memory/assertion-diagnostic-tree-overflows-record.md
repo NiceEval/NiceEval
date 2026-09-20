@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [assertion-diagnostic-tree-overflows-record](assertion-diagnostic-tree-ov\
-      erflows-record.md) — 上百个 occurrence × 组合 matcher 的完整诊断树撑破递归/4 MiB 边界，使已完成
-      Run 无法发布；collection 改存 witness + 8 个样本，runtime/document 双层有界化，大材料自动进
-      Assertions blob"
+    statement: "- 已修 [assertion-diagnostic-tree-overflows-record](assertion-diagnostic-tree-overflows-record.md) — 上百个 occurrence × 组合 matcher 的完整诊断树撑破递归/4 MiB 边界，使已完成 Run 无法发布；collection 改存 witness + 8 个样本，runtime/document 双层有界化，大材料自动进 Assertions blob"
     proof: []
     source:
       path: memory/INDEX.md

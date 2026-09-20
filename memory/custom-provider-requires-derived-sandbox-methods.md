@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,10 +27,7 @@ resolution:
             - Installed public TypeScript consumer red nered_MJ9T9V3A0QAKYRTK and complete takeover netake_K1ZWVFG8PENNX9RB validate native CustomProviderSandbox input; all 31 Runner cases pass default concurrency and resource cleanup.
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/fresh-sandbox-provider-stop.test.ts#necase_9E2KVHJXB3FTA8AE"]}
     proof:
-      - Installed public TypeScript consumer red nered_MJ9T9V3A0QAKYRTK and
-        complete takeover netake_K1ZWVFG8PENNX9RB validate native
-        CustomProviderSandbox input; all 31 Runner cases pass default
-        concurrency and resource cleanup.
+      - Installed public TypeScript consumer red nered_MJ9T9V3A0QAKYRTK and complete takeover netake_K1ZWVFG8PENNX9RB validate native CustomProviderSandbox input; all 31 Runner cases pass default concurrency and resource cleanup.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/fresh-sandbox-provider-stop.test.ts#necase_9E2KVHJXB3FTA8AE"]}
     source:
       path: memory/custom-provider-requires-derived-sandbox-methods.md

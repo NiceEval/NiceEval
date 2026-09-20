@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-con\
-      flates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当
-      attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按
-      artifact 在不在开门,空清单与无证据分成两态"
+    statement: "- 已修 [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-conflates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当 attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按 artifact 在不在开门,空清单与无证据分成两态"
     proof: []
     source:
       path: memory/INDEX.md

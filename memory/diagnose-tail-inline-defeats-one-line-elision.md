@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [diagnose-tail-inline-defeats-one-line-elision](diagnose-tail-inline-defeats-one-line-elision.md)
-      — `shared.diagnoseFailure` 曾把 output tail 用 " ⏎ " 拼进单行 message,traceback
-      框线灌满 scrollback 失败行且 `firstLine` 拦不住;修为首行一层摘要 + tail 从第二行起原始换行,单行面各自折首行收口'
+    statement: '- 已修 [diagnose-tail-inline-defeats-one-line-elision](diagnose-tail-inline-defeats-one-line-elision.md) — `shared.diagnoseFailure` 曾把 output tail 用 " ⏎ " 拼进单行 message,traceback 框线灌满 scrollback 失败行且 `firstLine` 拦不住;修为首行一层摘要 + tail 从第二行起原始换行,单行面各自折首行收口'
     proof: []
     source:
       path: memory/INDEX.md

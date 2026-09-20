@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修:`docs-site/{,zh/}example/claude-code-codex-{skill,plugin}.mdx`
-      里的示例命令(原来的"
+    statement: "- 已修:`docs-site/{,zh/}example/claude-code-codex-{skill,plugin}.mdx` 里的示例命令(原来的"
     proof: []
     source:
       path: memory/cli-exp-multi-experiment-positional-noop.md

@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,9 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**：已修——三处代码示例 + Braintrust metadata 描述全部改回 `verdict`(在
-      attempt-evidence-feedback-loop 重构收尾的英文文档同步扫描中顺带发现并修复,与
-      locator/execution-tree 这批新概念无关,是更早就存在的独立文档 bug)。"
+    statement: "**修法**：已修——三处代码示例 + Braintrust metadata 描述全部改回 `verdict`(在 attempt-evidence-feedback-loop 重构收尾的英文文档同步扫描中顺带发现并修复,与 locator/execution-tree 这批新概念无关,是更早就存在的独立文档 bug)。"
     proof: []
     source:
       path: memory/docs-result-outcome-field-doesnt-exist.md

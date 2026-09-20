@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [bub-ensurebub-warning-no-attribution-prefix](bub-ensurebub-warning-no-at\
-      tribution-prefix.md) — ensureBub 的 checkpoint 回填/还原警告曾用裸
-      console.error,并发多配置下无法归属;修为穿入触发 attempt 的 ctx.log(`src/agents/bub.ts`)"
+    statement: "- 已修 [bub-ensurebub-warning-no-attribution-prefix](bub-ensurebub-warning-no-attribution-prefix.md) — ensureBub 的 checkpoint 回填/还原警告曾用裸 console.error,并发多配置下无法归属;修为穿入触发 attempt 的 ctx.log(`src/agents/bub.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

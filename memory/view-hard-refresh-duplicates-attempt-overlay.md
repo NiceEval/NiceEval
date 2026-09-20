@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,10 +27,7 @@ resolution:
             - Installed authorization and snapshot reds nered_1GH2D3JYA68VAKD2 / nered_WFZ2XWRF2BECH78C; complete takeovers netake_0SVB9XS4NCGH4WFE / netake_YQZGSWP388S90J9B on be39d8a6 candidate, 14 current-source observations all pass and cleanup, independently accepted.
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0","e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
     proof:
-      - Installed authorization and snapshot reds nered_1GH2D3JYA68VAKD2 /
-        nered_WFZ2XWRF2BECH78C; complete takeovers netake_0SVB9XS4NCGH4WFE /
-        netake_YQZGSWP388S90J9B on be39d8a6 candidate, 14 current-source
-        observations all pass and cleanup, independently accepted.
+      - Installed authorization and snapshot reds nered_1GH2D3JYA68VAKD2 / nered_WFZ2XWRF2BECH78C; complete takeovers netake_0SVB9XS4NCGH4WFE / netake_YQZGSWP388S90J9B on be39d8a6 candidate, 14 current-source observations all pass and cleanup, independently accepted.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0","e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
     source:
       path: memory/view-hard-refresh-duplicates-attempt-overlay.md

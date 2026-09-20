@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修复：`src/agents/claude-code.ts` /
-      `src/agents/codex.ts`(2026-07-09,e2e 沙箱矩阵落地时发现)。
+    statement: 已修复：`src/agents/claude-code.ts` / `src/agents/codex.ts`(2026-07-09,e2e 沙箱矩阵落地时发现)。
     proof: []
     source:
       path: memory/npx-skills-add-headless-hang.md

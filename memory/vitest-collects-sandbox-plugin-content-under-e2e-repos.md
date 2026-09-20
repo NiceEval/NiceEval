@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/vitest-collects-sandbox-plugin-content-under-e2e-repos.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: 根 vitest 曾把 e2e/adapter/codex-sdk/.codex-home/
-  下真机拉取的第三方插件内容当成正式测试跑，同类问题见 [[vitest-collects-agent-worktree-copies]]
+description: 根 vitest 曾把 e2e/adapter/codex-sdk/.codex-home/ 下真机拉取的第三方插件内容当成正式测试跑，同类问题见 [[vitest-collects-agent-worktree-copies]]
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [vitest-collects-sandbox-plugin-content-under-e2e-repos](vitest-collects-\
-      sandbox-plugin-content-under-e2e-repos.md) —
-      同类问题:`e2e/adapter/codex-sdk/.codex-home/` 下真机拉的第三方插件内容含 `*.test.ts`,被根
-      vitest 当正式测试跑;修为 exclude 补 `e2e/adapter/**`"
+    statement: "- 已修 [vitest-collects-sandbox-plugin-content-under-e2e-repos](vitest-collects-sandbox-plugin-content-under-e2e-repos.md) — 同类问题:`e2e/adapter/codex-sdk/.codex-home/` 下真机拉的第三方插件内容含 `*.test.ts`,被根 vitest 当正式测试跑;修为 exclude 补 `e2e/adapter/**`"
     proof: []
     source:
       path: memory/INDEX.md

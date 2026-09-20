@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,9 +27,7 @@ resolution:
             - nered_NPCQ260FNXM1SY43 -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
     proof:
-      - nered_NPCQ260FNXM1SY43 -> netake_0SVB9XS4NCGH4WFE; current installed
-        authorization Journey, three isolated + two same-copy + default parallel
-        + single-case observations, all pass and cleanup verified by parent.
+      - nered_NPCQ260FNXM1SY43 -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
     source:
       path: memory/view-session-cookie-collides-across-ports.md

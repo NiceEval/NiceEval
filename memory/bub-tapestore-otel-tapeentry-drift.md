@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [bub-tapestore-otel-tapeentry-drift](bub-tapestore-otel-tapeentry-drift.m\
-      d) — bub trace 静默消失:bub ≥0.3.10 vendor 了 `bub.tape`,插件按
-      `republic.TapeEntry` 做 pydantic 校验全被拒、异常吞成 warning → 0 span;先修在
-      bub-contrib fork `7c84cc7`,上游 #50 合并后 `OTEL_PLUGIN` 已切回 bubbuild main(bub
-      本体 fork 未退役)"
+    statement: "- 已修 [bub-tapestore-otel-tapeentry-drift](bub-tapestore-otel-tapeentry-drift.md) — bub trace 静默消失:bub ≥0.3.10 vendor 了 `bub.tape`,插件按 `republic.TapeEntry` 做 pydantic 校验全被拒、异常吞成 warning → 0 span;先修在 bub-contrib fork `7c84cc7`,上游 #50 合并后 `OTEL_PLUGIN` 已切回 bubbuild main(bub 本体 fork 未退役)"
     proof: []
     source:
       path: memory/INDEX.md

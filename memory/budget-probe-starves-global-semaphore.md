@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/budget-probe-starves-global-semaphore.md
   commit: d4c028b2170394e3e09fecc892334ac3111d773a
-description: 有 budget 的实验曾把 budget
-  探测循环包在全局并发信号量里面攥着槽位空等;修完之后发现探测循环本身(预测性节流)就是未文档化的多余设计,已整个删掉,budget 改成只按已完成花费判断
+description: 有 budget 的实验曾把 budget 探测循环包在全局并发信号量里面攥着槽位空等;修完之后发现探测循环本身(预测性节流)就是未文档化的多余设计,已整个删掉,budget 改成只按已完成花费判断
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,13 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '**第一层根因(已修,commit `a3ace40`)**:`src/runner/run.ts` 里,「要不要开始跑」的
-      budget 探测(还没拿到第一个真实成本样本前,同一实验只放 1 个 attempt 真正开跑,其余轮询等待,防止预算被穿)被写在了全局信号量
-      `globalSem.withPermits(1)(body)` **里面**——即 `body` 的第一段就是这个轮询循环。于是一个
-      attempt 先从全局 8 个槽位抢到 1 个,然后发现"轮不到我,得等",就攥着这个全局槽位死等而不释放。没设 `maxConcurrency`
-      的实验(9 个 attempt 一拥而上抢全局槽位)加上有 budget 的实验一起占坑,槽位很快被"占着不干活"的 attempt
-      占满,排在后面的实验一个槽位都抢不到。第一版修法:把 body 拆成 preflight(budget 探测 + 首过即停判断,不持有
-      globalSem)和真正执行段(只有这段套 globalSem)。'
+    statement: '**第一层根因(已修,commit `a3ace40`)**:`src/runner/run.ts` 里,「要不要开始跑」的 budget 探测(还没拿到第一个真实成本样本前,同一实验只放 1 个 attempt 真正开跑,其余轮询等待,防止预算被穿)被写在了全局信号量 `globalSem.withPermits(1)(body)` **里面**——即 `body` 的第一段就是这个轮询循环。于是一个 attempt 先从全局 8 个槽位抢到 1 个,然后发现"轮不到我,得等",就攥着这个全局槽位死等而不释放。没设 `maxConcurrency` 的实验(9 个 attempt 一拥而上抢全局槽位)加上有 budget 的实验一起占坑,槽位很快被"占着不干活"的 attempt 占满,排在后面的实验一个槽位都抢不到。第一版修法:把 body 拆成 preflight(budget 探测 + 首过即停判断,不持有 globalSem)和真正执行段(只有这段套 globalSem)。'
     proof: []
     source:
       path: memory/budget-probe-starves-global-semaphore.md

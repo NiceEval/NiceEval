@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [codex-responses-lite-custom-provider-hides-web-search](codex-responses-lite-custom-provider-hides-web-search.md)
-      — Codex 0.144.1 的 custom Responses Lite provider 即使配置 `web_search =
-      "live"` 也过不了 standalone provider 门控；configFile A/B 改用 provider-neutral 的
-      `features.shell_tool` 工具面差异'
+    statement: '- 已修 [codex-responses-lite-custom-provider-hides-web-search](codex-responses-lite-custom-provider-hides-web-search.md) — Codex 0.144.1 的 custom Responses Lite provider 即使配置 `web_search = "live"` 也过不了 standalone provider 门控；configFile A/B 改用 provider-neutral 的 `features.shell_tool` 工具面差异'
     proof: []
     source:
       path: memory/INDEX.md

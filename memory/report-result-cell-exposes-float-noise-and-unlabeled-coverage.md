@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: open
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history:
   - at: 2026-09-14T15:00:25.173Z

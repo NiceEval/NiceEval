@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2b-provision-429-duplicate-sandbox.md
   commit: d8958308af36ccc5a2904e82ede1c9c9c30f90e8
-description: E2B 创建成功后的初始化请求撞 429 被归「拒绝类」盲重试,同一 provision token
-  开出两台实例,第一台泄漏计费——修为 create 内 kill-on-failure + 有对账通道时任何重试前都对账
+description: E2B 创建成功后的初始化请求撞 429 被归「拒绝类」盲重试,同一 provision token 开出两台实例,第一台泄漏计费——修为 create 内 kill-on-failure + 有对账通道时任何重试前都对账
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2b-provision-429-duplicate-sandbox](e2b-provision-429-duplicate-sandbox\
-      .md) — E2B create 成功后的 mkdir 初始化请求撞 429 被归拒绝类盲重试,同 token 开两台、首台泄漏计费(实跑 10
-      evals 见 14 台);修为 create 内 kill-on-failure(e2b.ts/docker.ts)+
-      重试前一律对账且对账失败不重试(retry.ts)"
+    statement: "- 已修 [e2b-provision-429-duplicate-sandbox](e2b-provision-429-duplicate-sandbox.md) — E2B create 成功后的 mkdir 初始化请求撞 429 被归拒绝类盲重试,同 token 开两台、首台泄漏计费(实跑 10 evals 见 14 台);修为 create 内 kill-on-failure(e2b.ts/docker.ts)+ 重试前一律对账且对账失败不重试(retry.ts)"
     proof: []
     source:
       path: memory/INDEX.md

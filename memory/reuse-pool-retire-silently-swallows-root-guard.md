@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [reuse-pool-retire-silently-swallows-root-guard](reuse-pool-retire-silent\
-      ly-swallows-root-guard.md) — 归还 finalizer 把 `resetToAnchor()` 的 root
-      身份安全守卫失败静默吞成退休换新,root 执行身份要到首次归还才被拒且零诊断;docker+r3 镜像无 `USER` 声明下 151 条复用记录
-      `reuseOrdinal` 全为 1;修为 `ChangeLedger.rootExecutionIdentity` 提前到 `create()`
-      派发前拒绝 + 归还 reset 失败发 `sandbox-reset-failed`
-      diagnostic(src/runner/ledger.ts、src/runner/sandbox-pool.ts)"
+    statement: "- 已修 [reuse-pool-retire-silently-swallows-root-guard](reuse-pool-retire-silently-swallows-root-guard.md) — 归还 finalizer 把 `resetToAnchor()` 的 root 身份安全守卫失败静默吞成退休换新,root 执行身份要到首次归还才被拒且零诊断;docker+r3 镜像无 `USER` 声明下 151 条复用记录 `reuseOrdinal` 全为 1;修为 `ChangeLedger.rootExecutionIdentity` 提前到 `create()` 派发前拒绝 + 归还 reset 失败发 `sandbox-reset-failed` diagnostic(src/runner/ledger.ts、src/runner/sandbox-pool.ts)"
     proof: []
     source:
       path: memory/INDEX.md

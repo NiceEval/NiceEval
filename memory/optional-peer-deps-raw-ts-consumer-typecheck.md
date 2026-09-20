@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/optional-peer-deps-raw-ts-consumer-typecheck.md
   commit: 9aaa123a9f3d0c814e2852a96ff6a74d7e96f270
-description: niceeval 发布裸 .ts 源码——主入口图里任何可静态解析到可选 peer 依赖的引用(含 typeof import
-  与字面量动态 import)都会拖垮未装该依赖的下游 typecheck;修法是独立子路径导出,绝不从主入口 re-export
+description: niceeval 发布裸 .ts 源码——主入口图里任何可静态解析到可选 peer 依赖的引用(含 typeof import 与字面量动态 import)都会拖垮未装该依赖的下游 typecheck;修法是独立子路径导出,绝不从主入口 re-export
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

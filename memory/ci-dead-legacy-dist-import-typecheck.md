@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [ci-dead-legacy-dist-import-typecheck](ci-dead-legacy-dist-import-typeche\
-      ck.md) — built-ins→built-in 目录改名后残留的 legacy 桥接导入让 CI typecheck 红、本地靠陈旧
-      dist 假绿;修为删死代码直连新入口(`src/show/report-host.ts`),验证 dist 路径改动要先清 dist 重建"
+    statement: "- 已修 [ci-dead-legacy-dist-import-typecheck](ci-dead-legacy-dist-import-typecheck.md) — built-ins→built-in 目录改名后残留的 legacy 桥接导入让 CI typecheck 红、本地靠陈旧 dist 假绿;修为删死代码直连新入口(`src/show/report-host.ts`),验证 dist 路径改动要先清 dist 重建"
     proof: []
     source:
       path: memory/INDEX.md

@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/attempt-faces-free-text-needs-summarytext-bounding.md
   commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
-description: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误
-  message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
+description: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误 message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误
-      message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
+    statement: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误 message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
     proof: []
     source:
       path: memory/attempt-faces-free-text-needs-summarytext-bounding.md

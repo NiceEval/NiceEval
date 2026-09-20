@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,9 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次
-      terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle
-      snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口"
+    statement: "- 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口"
     proof: []
     source:
       path: memory/INDEX.md

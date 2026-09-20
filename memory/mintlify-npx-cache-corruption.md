@@ -1,8 +1,7 @@
 ---
 format: concord.document/v1
 id: mintlify-npx-cache-corruption
-title: "`pnpm run docs:dev` / `docs:validate` fails with npm permission or
-  ENOTEMPTY errors — clear the npx cache dir, don't touch the scripts"
+title: "`pnpm run docs:dev` / `docs:validate` fails with npm permission or ENOTEMPTY errors — clear the npx cache dir, don't touch the scripts"
 createdAt: 2026-07-02T13:38:43+08:00
 createdAtSource:
   kind: first-recorded
@@ -12,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

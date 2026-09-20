@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "已修。`Sample.scope({ experiments: [id] })` 内部把每个候选
-      `AttemptHandle.experimentId`"
+    statement: "已修。`Sample.scope({ experiments: [id] })` 内部把每个候选 `AttemptHandle.experimentId`"
     proof: []
     source:
       path: memory/sample-scope-experiments-per-id-fuzzy-match-bug.md

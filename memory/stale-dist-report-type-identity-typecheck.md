@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [stale-dist-report-type-identity-typecheck](stale-dist-report-type-identi\
-      ty-typecheck.md) — 改 src 公共类型后 `dist/report` 陈旧,typecheck 在 show/view
-      宿主报「X not assignable to X」同名类型不相认;修法=先 `pnpm run build:report`
-      重建再排查,不要顺着报错改 src"
+    statement: "- 已修 [stale-dist-report-type-identity-typecheck](stale-dist-report-type-identity-typecheck.md) — 改 src 公共类型后 `dist/report` 陈旧,typecheck 在 show/view 宿主报「X not assignable to X」同名类型不相认;修法=先 `pnpm run build:report` 重建再排查,不要顺着报错改 src"
     proof: []
     source:
       path: memory/INDEX.md

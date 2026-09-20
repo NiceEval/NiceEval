@@ -41,8 +41,11 @@ export interface RunOptions {
   readonly repoConcurrency: number;
   readonly selection?: SelectionReceipt;
   readonly caseSelections?: Readonly<Record<string, import("./run-repo.ts").CaseSelectionExpectation>>;
+  readonly caseCollectionNativeArgs?: Readonly<Record<string, readonly string[]>>;
   readonly sourceDirs?: Readonly<Record<string, string>>;
   readonly sourceSnapshotDigests?: Readonly<Record<string, string>>;
+  readonly sourceProjectionPrefixes?: Readonly<Record<string, string>>;
+  readonly copyIds?: Readonly<Record<string, string>>;
 }
 export type ScratchDisposition =
   | {
@@ -325,7 +328,10 @@ export const runEffect = (
           {
             ...(options.sourceDirs?.[repo.manifest.id] === undefined ? {} : { sourceDir: options.sourceDirs[repo.manifest.id] }),
             ...(options.sourceSnapshotDigests?.[repo.manifest.id] === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigests[repo.manifest.id] }),
+            ...(options.sourceProjectionPrefixes?.[repo.manifest.id] === undefined ? {} : { sourceProjectionPrefix: options.sourceProjectionPrefixes[repo.manifest.id] }),
             ...(options.caseSelections?.[repo.manifest.id] === undefined ? {} : { caseSelection: options.caseSelections[repo.manifest.id] }),
+            ...(options.caseCollectionNativeArgs?.[repo.manifest.id] === undefined ? {} : { caseCollectionNativeArgs: options.caseCollectionNativeArgs[repo.manifest.id] }),
+            ...(options.copyIds?.[repo.manifest.id] === undefined ? {} : { copyId: options.copyIds[repo.manifest.id] }),
             keepWorkdir: options.keepWorkdir,
             ...(options.selection === undefined
               ? {}

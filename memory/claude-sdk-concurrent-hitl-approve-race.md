@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/claude-sdk-concurrent-hitl-approve-race.md
   commit: e842f5e0d2544cd1091af51a10a0c0c490f2458d
-description: 两条 HITL eval 并发跑在同一个 claude-sdk server 实例上时,POST /api/chat/approve
-  会永久 404,不是瞬时竞态——必须串行或每个 attempt 独立 server 实例
+description: 两条 HITL eval 并发跑在同一个 claude-sdk server 实例上时,POST /api/chat/approve 会永久 404,不是瞬时竞态——必须串行或每个 attempt 独立 server 实例
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

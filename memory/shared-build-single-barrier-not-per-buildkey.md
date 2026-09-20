@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**:已修(2026-07-31)。协调器新增
-      `startSandboxBuilds()`(`src/sandbox/build-coordinator.ts`):启动后立即返回句柄,逐 key
-      的结算 promise 一 settle 就放行,`prepareSandboxBuilds()` 保留为「等全部
-      key」的薄封装。`src/runner/run.ts` 不再 await 整批构建,改在每条 attempt 的许可链最前面等
-      `awaitBuildsFor(evalId)`——只等本 eval 的 key,等待期间不占全局并发位;locators 在自己的 key
-      结算后才灌进 attempt,provenance 在调度收尾时从 `running.done` 取齐。"
+    statement: "**修法**:已修(2026-07-31)。协调器新增 `startSandboxBuilds()`(`src/sandbox/build-coordinator.ts`):启动后立即返回句柄,逐 key 的结算 promise 一 settle 就放行,`prepareSandboxBuilds()` 保留为「等全部 key」的薄封装。`src/runner/run.ts` 不再 await 整批构建,改在每条 attempt 的许可链最前面等 `awaitBuildsFor(evalId)`——只等本 eval 的 key,等待期间不占全局并发位;locators 在自己的 key 结算后才灌进 attempt,provenance 在调度收尾时从 `running.done` 取齐。"
     proof: []
     source:
       path: memory/shared-build-single-barrier-not-per-buildkey.md

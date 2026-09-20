@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [elsewhere-migration-must-balance-reported-counts](elsewhere-migration-mu\
-      st-balance-reported-counts.md) — `lock_wait resolved` 曾拿收尾时的
-      `pending.size` 现算迁出条数:等待期间被中断而提前 settle 的 attempt 让差额永远挂在 `elsewhere`
-      上(最终帧五项恒等式破)、瞬时接管那对事件报整组又会在 `runs>1` 下把 `queued`
-      扣成负数;修法=`CaseLockState.inElsewhere` 记账「报进多少报出多少」+ 瞬时那对只报真正携入的几条;emitter
-      侧失衡在 reducer 单测里看不见"
+    statement: "- 已修 [elsewhere-migration-must-balance-reported-counts](elsewhere-migration-must-balance-reported-counts.md) — `lock_wait resolved` 曾拿收尾时的 `pending.size` 现算迁出条数:等待期间被中断而提前 settle 的 attempt 让差额永远挂在 `elsewhere` 上(最终帧五项恒等式破)、瞬时接管那对事件报整组又会在 `runs>1` 下把 `queued` 扣成负数;修法=`CaseLockState.inElsewhere` 记账「报进多少报出多少」+ 瞬时那对只报真正携入的几条;emitter 侧失衡在 reducer 单测里看不见"
     proof: []
     source:
       path: memory/INDEX.md

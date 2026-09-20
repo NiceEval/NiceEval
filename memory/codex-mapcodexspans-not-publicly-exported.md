@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/codex-mapcodexspans-not-publicly-exported.md
   commit: e842f5e0d2544cd1091af51a10a0c0c490f2458d
-description: docs/origin-integration.md 建议黑盒 codex-sdk 接入用内置 codex spanMapper
-  归一瀑布图,但 mapCodexSpans 当时没有从 "niceeval/adapter" 公开导出,外部/示例包只能省略 spanMapper 走通用
-  heuristic;现已导出
+description: docs/origin-integration.md 建议黑盒 codex-sdk 接入用内置 codex spanMapper 归一瀑布图,但 mapCodexSpans 当时没有从 "niceeval/adapter" 公开导出,外部/示例包只能省略 spanMapper 走通用 heuristic;现已导出
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:

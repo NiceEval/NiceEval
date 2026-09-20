@@ -11,7 +11,11 @@ kind: engineering
 ---
 # Repository Tools
 
-维护 CLI 的实现由独立的 `concord-sdlc` 包拥有。NiceEval 使用锁定版本的 `concord repo` repository profile；`@niceeval/repo-tools` 仅保留源码路径转发。沿用 pnpm repository profile 入口、文档与 Memory 领域；当前测试关系使用源码注释，新正式证据使用 v2，历史证据保留。
+维护 CLI 由 NiceEval 与中立 `concord-sdlc` engine 组合。Concord 拥有 docs/test/trace/memory 等中立治理 contribution。
+
+`@niceeval/repo-tools` 拥有 Preview、Examples、下游链接、Repository setup、PR，以及文档 generators/site/reference/diff-code/terms/work 等 NiceEval 产品流程。最终 CLI 也由 NiceEval 组合。
+
+当前测试关系使用源码注释，新正式证据使用 `concord.native-reliability/v1`，历史证据原样保留。
 
 `concord.repository.json` 指向 NiceEval 自己的 E2E host。真实 candidate、Testkit、inventory 与 formal evidence 仍由 `packages/e2e-runner` 执行；Concord 原生模式的命令收据不能替代 formal evidence。安装版本不一致时 CLI 拒绝执行，请使用仓库内的 pnpm 入口。
 
@@ -19,7 +23,7 @@ kind: engineering
 
 ## 安装与按需指引
 
-仓库锁定已构建的 `tools/concord/concord-sdlc-0.4.0.tgz`，根包、repo-tools 与 e2e-runner 使用各自
+仓库锁定已构建的 `tools/concord/concord-sdlc-0.5.0.tgz`，根包、repo-tools 与 e2e-runner 使用各自
 相对路径的 `file:` dependency，lockfile 保存 integrity。`pnpm install --frozen-lockfile` 安装同一包；
 离线安装仍要求其它依赖已在 pnpm cache 中。Git checkout 或全局 link 不替代仓库锁定的 engine。
 
@@ -76,7 +80,10 @@ Test inventory 的单 Repo 入口是 `pnpm run repo docs test inventory --repo <
 
 inventory 文件没有公开 format 或兼容期，也不是可编辑输入；CLI 实现变化、完整性检查失败或 ID 丢失时重新 collection。底层 runner adapter 不作为独立 CLI 暴露 `--cwd` collection。
 
-Formal case evidence 使用同一边界：root runner 的 red 和 takeover 命令分别返回 `nered_...` 与 `netake_...`，Git-private bundle 持有 candidate bytes、formal receipts 和 certificate。`regression add` 和 `regression refresh` 只消费这些 ID 与 `neinv_...`，不接受任意 evidence 文件路径。实现变化或 bundle 完整性失败时重新运行 root runner，不修补 JSON 或 digest。
+Formal case evidence 使用同一边界：root runner 的 red 和 takeover 命令分别返回 `nered_...` 与 `netake_...`。
+两者都要求 `--problem <canonical-memory-path> --problem-epoch <n>` 并绑定同一 Problem epoch。
+
+Git-private bundle 持有 candidate bytes、native receipts 和 reliability certificate。`regression add` 和 `regression refresh` 只消费这些 ID 与 `neinv_...`。不接受任意 evidence 文件路径。实现变化或 bundle 完整性失败时重新运行 root runner，不修补 JSON 或 digest。
 
 Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `pnpm feedback`、`pnpm memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
 

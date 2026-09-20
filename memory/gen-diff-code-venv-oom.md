@@ -1,8 +1,7 @@
 ---
 format: concord.document/v1
 id: gen-diff-code-venv-oom
-title: "`scripts/gen-diff-code.ts` 不排除 `.venv`/`__pycache__`,langgraph 配对能把
-  `mint validate` 撑爆内存"
+title: "`scripts/gen-diff-code.ts` 不排除 `.venv`/`__pycache__`,langgraph 配对能把 `mint validate` 撑爆内存"
 createdAt: 2026-07-03T15:22:01+08:00
 createdAtSource:
   kind: first-recorded
@@ -12,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

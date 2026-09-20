@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,10 +27,7 @@ resolution:
             - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed candidate bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
     proof:
-      - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed
-        candidate
-        bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed
-        netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
+      - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed candidate bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
     source:
       path: memory/codex-thread-diagnostics-confused-with-terminal-failure.md

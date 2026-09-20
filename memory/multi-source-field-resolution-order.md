@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,9 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**这条 memory 曾把修法写得像已完成**——2026-07-30 MemoryBench(niceeval
-      0.11.3)dogfooding 再次真机撞上同一 bug(声明 31 / 36 分钟的 eval 被 config 的 20
-      分钟掐死,报错无来源),回查才发现只有契约落了。docs 先于代码定稿是正常流程,但 memory 台账必须区分「契约已定」与「代码已修」。"
+    statement: "**这条 memory 曾把修法写得像已完成**——2026-07-30 MemoryBench(niceeval 0.11.3)dogfooding 再次真机撞上同一 bug(声明 31 / 36 分钟的 eval 被 config 的 20 分钟掐死,报错无来源),回查才发现只有契约落了。docs 先于代码定稿是正常流程,但 memory 台账必须区分「契约已定」与「代码已修」。"
     proof: []
     source:
       path: memory/multi-source-field-resolution-order.md

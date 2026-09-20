@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sa\
-      mple.md) — `show @<locator>` 曾在 resolveLocator 之后拿
-      `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史
-      attempt 一律报「outside the selected record
-      scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围"
+    statement: "- 已修 [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sample.md) — `show @<locator>` 曾在 resolveLocator 之后拿 `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史 attempt 一律报「outside the selected record scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围"
     proof: []
     source:
       path: memory/INDEX.md

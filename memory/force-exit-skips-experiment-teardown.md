@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [force-exit-skips-experiment-teardown](force-exit-skips-experiment-teardo\
-      wn.md) — Ctrl-C 强清路径跳过实验级 teardown 留孤儿;一修=加速收尾三件套(注册表兜底+先停沙箱+逐调用体 30s
-      超时);二修(2026-07-18)=事件驱动收口:15s 窗口 < 30s 预算倒挂且在飞收尾对 drain 不可见,改为 memoized
-      promise 可等待、settle 即退、兜底上限 2×CLEANUP_TIMEOUT_MS 从常量推导"
+    statement: "- 已修 [force-exit-skips-experiment-teardown](force-exit-skips-experiment-teardown.md) — Ctrl-C 强清路径跳过实验级 teardown 留孤儿;一修=加速收尾三件套(注册表兜底+先停沙箱+逐调用体 30s 超时);二修(2026-07-18)=事件驱动收口:15s 窗口 < 30s 预算倒挂且在飞收尾对 drain 不可见,改为 memoized promise 可等待、settle 即退、兜底上限 2×CLEANUP_TIMEOUT_MS 从常量推导"
     proof: []
     source:
       path: memory/INDEX.md

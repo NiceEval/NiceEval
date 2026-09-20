@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,22 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '**修法**（2026-07-24 已修）：采用「adapter 边界归一成互斥桶」——`Usage`
-      契约改为三个输入侧桶恒互斥（`docs/feature/results/architecture.md#usage`
-      重写,`src/o11y/types.ts` TSDoc 同步）,七个 OpenAI 系生产点落 `inputTokens` 前扣掉缓存明细并夹底
-      0：`src/agents/sdk-streams.ts`（codex
-      turn.completed）、`src/o11y/parsers/codex.ts`、`src/agents/openai-compat.ts`（Chat
-      Completions + Responses）、`src/agents/ai-sdk.ts`（cacheRead+cacheWrite
-      都扣）、`src/agents/langgraph.ts`（cache_read+cache_creation
-      都扣）、`src/o11y/parsers/bub.ts`；Anthropic / pi 系原生互斥不动。`estimateCost`
-      公式不变（互斥下逐桶相加即正确）。报告层 `uncachedInputTokens` 派生字段整个删除（`inputTokens`
-      即未缓存输入,"uncached in" 标注由 face 层在 cache
-      桶在场时给）：`src/report/model/types.ts`、`compute.ts`、`faces.ts`、`UsageTable.tsx`、`src/show/index.ts`。各
-      adapter 口径逐家声明在 `docs/feature/adapters/sdk/<name>/cost.md`（10 篇新文档）。测试锁定在
-      `src/agents/{sdk-streams,openai-compat,ai-sdk,langgraph}.test.ts` 与
-      `src/o11y/parsers/{codex,bub}.test.ts`。**注意断代**：此前所有 OpenAI 系 run 的落盘
-      `usage.inputTokens` 是含缓存总量、`estimatedCostUSD` 虚高 ~5.5x,与新 run
-      对比时要按旧口径换算（uncached = input − cacheRead）。'
+    statement: '**修法**（2026-07-24 已修）：采用「adapter 边界归一成互斥桶」——`Usage` 契约改为三个输入侧桶恒互斥（`docs/feature/results/architecture.md#usage` 重写,`src/o11y/types.ts` TSDoc 同步）,七个 OpenAI 系生产点落 `inputTokens` 前扣掉缓存明细并夹底 0：`src/agents/sdk-streams.ts`（codex turn.completed）、`src/o11y/parsers/codex.ts`、`src/agents/openai-compat.ts`（Chat Completions + Responses）、`src/agents/ai-sdk.ts`（cacheRead+cacheWrite 都扣）、`src/agents/langgraph.ts`（cache_read+cache_creation 都扣）、`src/o11y/parsers/bub.ts`；Anthropic / pi 系原生互斥不动。`estimateCost` 公式不变（互斥下逐桶相加即正确）。报告层 `uncachedInputTokens` 派生字段整个删除（`inputTokens` 即未缓存输入,"uncached in" 标注由 face 层在 cache 桶在场时给）：`src/report/model/types.ts`、`compute.ts`、`faces.ts`、`UsageTable.tsx`、`src/show/index.ts`。各 adapter 口径逐家声明在 `docs/feature/adapters/sdk/<name>/cost.md`（10 篇新文档）。测试锁定在 `src/agents/{sdk-streams,openai-compat,ai-sdk,langgraph}.test.ts` 与 `src/o11y/parsers/{codex,bub}.test.ts`。**注意断代**：此前所有 OpenAI 系 run 的落盘 `usage.inputTokens` 是含缓存总量、`estimatedCostUSD` 虚高 ~5.5x,与新 run 对比时要按旧口径换算（uncached = input − cacheRead）。'
     proof: []
     source:
       path: memory/estimatecost-openai-inclusive-cache-double-billed.md

@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/codex-sdk-e2e-codex-home-personal-config-leak.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: e2e/adapter/codex-sdk 在开发者本机跑会读到真实 `~/.codex/config.toml`(ChatGPT
-  桌面版注册的 node_repl MCP server、danger-full-access
-  沙箱、approval_policy=never),三个坑同时被这一次泄漏掩盖/引出
+description: e2e/adapter/codex-sdk 在开发者本机跑会读到真实 `~/.codex/config.toml`(ChatGPT 桌面版注册的 node_repl MCP server、danger-full-access 沙箱、approval_policy=never),三个坑同时被这一次泄漏掩盖/引出
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,16 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [codex-sdk-e2e-codex-home-personal-config-leak](codex-sdk-e2e-codex-home-\
-      personal-config-leak.md) — `e2e/adapter/codex-sdk` 在开发者本机跑会读到真实
-      `~/.codex/config.toml`:ChatGPT 桌面版注册的 `node_repl` MCP server 让 mcp-tool
-      断言随机失配;`danger-full-access`/`approval_policy=never` 曾悄悄兜底 coding-tool
-      的文件写入;隔离后还发现自定义 model_provider 默认不请求 reasoning summary 导致 usage 的 thinking
-      断言恒 0;三处均已修(`e2e/adapter/codex-sdk/agents/codex-sdk.ts` 隔离 `CODEX_HOME` +
-      显式
-      sandboxMode/approvalPolicy/model_reasoning_summary,`evals/mcp-tool.eval.t\
-      s`/`evals/usage.eval.ts` 配套改 prompt)"
+    statement: "- 已修 [codex-sdk-e2e-codex-home-personal-config-leak](codex-sdk-e2e-codex-home-personal-config-leak.md) — `e2e/adapter/codex-sdk` 在开发者本机跑会读到真实 `~/.codex/config.toml`:ChatGPT 桌面版注册的 `node_repl` MCP server 让 mcp-tool 断言随机失配;`danger-full-access`/`approval_policy=never` 曾悄悄兜底 coding-tool 的文件写入;隔离后还发现自定义 model_provider 默认不请求 reasoning summary 导致 usage 的 thinking 断言恒 0;三处均已修(`e2e/adapter/codex-sdk/agents/codex-sdk.ts` 隔离 `CODEX_HOME` + 显式 sandboxMode/approvalPolicy/model_reasoning_summary,`evals/mcp-tool.eval.ts`/`evals/usage.eval.ts` 配套改 prompt)"
     proof: []
     source:
       path: memory/INDEX.md

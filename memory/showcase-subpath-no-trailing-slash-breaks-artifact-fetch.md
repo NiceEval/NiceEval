@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [showcase-subpath-no-trailing-slash-breaks-artifact-fetch](showcase-subpath-no-trailing-slash-breaks-artifact-fetch.md)
-      — 导出站挂在无尾斜杠子路径(反代 rewrite)时前端相对路径 fetch 打到上一级目录全 404,源码/trace 显示"artifact
-      缺失"但文件其实都在;修为 `artifactUrl` 以页面 pathname
-      自算目录基底(`src/view/app/lib/artifact-url.ts`)'
+    statement: '- 已修 [showcase-subpath-no-trailing-slash-breaks-artifact-fetch](showcase-subpath-no-trailing-slash-breaks-artifact-fetch.md) — 导出站挂在无尾斜杠子路径(反代 rewrite)时前端相对路径 fetch 打到上一级目录全 404,源码/trace 显示"artifact 缺失"但文件其实都在;修为 `artifactUrl` 以页面 pathname 自算目录基底(`src/view/app/lib/artifact-url.ts`)'
     proof: []
     source:
       path: memory/INDEX.md

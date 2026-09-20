@@ -16,18 +16,18 @@
     "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"vitest run --project lint-docs-site\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "niceeval": "node packages/niceeval/bin/niceeval.js",
     "e2e": "tsx packages/e2e-runner/src/cli.ts",
-    "feedback": "concord repo feedback",
-    "memory": "concord repo memory",
-    "repo": "concord repo",
+    "feedback": "tsx packages/repo-tools/src/cli.ts feedback",
+    "memory": "tsx packages/repo-tools/src/cli.ts memory",
+    "repo": "tsx packages/repo-tools/src/cli.ts",
     "test": "vitest run --project unit",
-    "pr:body": "concord repo pr body",
-    "examples:sync": "concord repo examples sync",
-    "dev:link": "concord repo link",
-    "preview:build": "concord repo preview build",
+    "pr:body": "tsx packages/repo-tools/src/cli.ts pr body",
+    "examples:sync": "tsx packages/repo-tools/src/cli.ts examples sync",
+    "dev:link": "tsx packages/repo-tools/src/cli.ts link",
+    "preview:build": "tsx packages/repo-tools/src/cli.ts preview build",
     "preview:accept": "pnpm run repo preview accept",
-    "repo:setup": "concord repo repository setup",
+    "repo:setup": "tsx packages/repo-tools/src/cli.ts repository setup",
     "build:package": "pnpm --filter niceeval run build:package",
-    "build:index": "concord repo package docs-index",
+    "build:index": "tsx packages/repo-tools/src/cli.ts package docs-index",
     "prepare": "pnpm repo:setup apply",
     "site:dev": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run dev",
     "site:build": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run build:deploy"
@@ -43,6 +43,6 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^4.1.11",
     "yaml": "^2.9.0",
-    "concord-sdlc": "file:tools/concord/concord-sdlc-0.4.0.tgz"
+    "concord-sdlc": "file:tools/concord/concord-sdlc-0.5.0.tgz"
   }
 }

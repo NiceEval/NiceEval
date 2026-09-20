@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**已修**(2026-07 复核):代码在 `5e7549eb`(results schema
-      v8)随落盘截断一起实现,与上面的契约逐条对上——"
+    statement: "**已修**(2026-07 复核):代码在 `5e7549eb`(results schema v8)随落盘截断一起实现,与上面的契约逐条对上——"
     proof: []
     source:
       path: memory/oversized-tool-output-blows-up-artifacts.md

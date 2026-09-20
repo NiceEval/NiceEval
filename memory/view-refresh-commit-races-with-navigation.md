@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,10 +27,7 @@ resolution:
             - Installed View browser red nered_SF50AX0SXYPK151S; candidate be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1 full Insight7 and complete takeover netake_GNGEXFKZ0FQ46Y0H, all seven observations with process cleanup, current source verified by parent.
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078"]}
     proof:
-      - Installed View browser red nered_SF50AX0SXYPK151S; candidate
-        be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1 full
-        Insight7 and complete takeover netake_GNGEXFKZ0FQ46Y0H, all seven
-        observations with process cleanup, current source verified by parent.
+      - Installed View browser red nered_SF50AX0SXYPK151S; candidate be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1 full Insight7 and complete takeover netake_GNGEXFKZ0FQ46Y0H, all seven observations with process cleanup, current source verified by parent.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078"]}
     source:
       path: memory/view-refresh-commit-races-with-navigation.md

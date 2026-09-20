@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/ai-sdk-weather-tool-empty-reply-flake.md
   commit: dd61d6015b3f040e7182a9001af81e7e74b95135
-description: examples/zh/ai-sdk weather-tool eval 某次跑批 gpt-5.4
-  全部断言失败，根因是上游模型请求瞬时退化返回空文本，不是 tool 没传也不是 niceeval 采集问题
+description: examples/zh/ai-sdk weather-tool eval 某次跑批 gpt-5.4 全部断言失败，根因是上游模型请求瞬时退化返回空文本，不是 tool 没传也不是 niceeval 采集问题
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

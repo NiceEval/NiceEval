@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [sandbox-wrapper-drops-non-interface-capabilities](sandbox-wrapper-drops-\
-      non-interface-capabilities.md) — normalizeSandboxPaths 丢非接口能力
-      ensureLifetime,suspend 之后同 bug 第二次复发;修为显式转发+穿透断言,新增 provider 能力必查全部包装层"
+    statement: "- 已修 [sandbox-wrapper-drops-non-interface-capabilities](sandbox-wrapper-drops-non-interface-capabilities.md) — normalizeSandboxPaths 丢非接口能力 ensureLifetime,suspend 之后同 bug 第二次复发;修为显式转发+穿透断言,新增 provider 能力必查全部包装层"
     proof: []
     source:
       path: memory/INDEX.md

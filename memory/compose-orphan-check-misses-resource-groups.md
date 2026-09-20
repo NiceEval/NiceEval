@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**:已修(2026-07-31)。契约先补齐:`docs/feature/sandbox/architecture.md`
-      孤儿核对新增「核对与收回以 case 的资源组为单位」,`cli.md` 的 `list --orphans` / `prune`
-      同步声明整组列出与整组销毁,覆盖类别登记在 `docs/engineering/testing/unit/sandbox.md`「孤儿核对与
-      prune」。代码落点三处:"
+    statement: "**修法**:已修(2026-07-31)。契约先补齐:`docs/feature/sandbox/architecture.md` 孤儿核对新增「核对与收回以 case 的资源组为单位」,`cli.md` 的 `list --orphans` / `prune` 同步声明整组列出与整组销毁,覆盖类别登记在 `docs/engineering/testing/unit/sandbox.md`「孤儿核对与 prune」。代码落点三处:"
     proof: []
     source:
       path: memory/compose-orphan-check-misses-resource-groups.md

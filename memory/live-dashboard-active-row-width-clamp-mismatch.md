@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [live-dashboard-active-row-width-clamp-mismatch](live-dashboard-active-ro\
-      w-width-clamp-mismatch.md) — 宽终端(>100 列)live 面板 ACTIVE 行 phase/detail
-      被框截断完全不可见:human.ts 手写 width-4 漏过 MAX_BOX_WIDTH 钳制,该用 panelContentWidth;修为
-      panel.ts 新增 `capWidth` 豁免声明 + 身份列按实际最长值定宽跨帧单调、detail
-      拿全部剩余宽度(`src/report/model/panel.ts` + `src/runner/feedback/human.ts`)"
+    statement: "- 已修 [live-dashboard-active-row-width-clamp-mismatch](live-dashboard-active-row-width-clamp-mismatch.md) — 宽终端(>100 列)live 面板 ACTIVE 行 phase/detail 被框截断完全不可见:human.ts 手写 width-4 漏过 MAX_BOX_WIDTH 钳制,该用 panelContentWidth;修为 panel.ts 新增 `capWidth` 豁免声明 + 身份列按实际最长值定宽跨帧单调、detail 拿全部剩余宽度(`src/report/model/panel.ts` + `src/runner/feedback/human.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

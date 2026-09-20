@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [reference-docs-drift-generated-regions](reference-docs-drift-generated-r\
-      egions.md) — 参考页手写漂移(matches 写成正则、虚构 .soft() 等);修法=TSDoc 唯一事实来源 + `pnpm
-      docs:reference` 生成区块 + vitest 漂移守护,区块内永远不手改"
+    statement: "- 已修 [reference-docs-drift-generated-regions](reference-docs-drift-generated-regions.md) — 参考页手写漂移(matches 写成正则、虚构 .soft() 等);修法=TSDoc 唯一事实来源 + `pnpm docs:reference` 生成区块 + vitest 漂移守护,区块内永远不手改"
     proof: []
     source:
       path: memory/INDEX.md

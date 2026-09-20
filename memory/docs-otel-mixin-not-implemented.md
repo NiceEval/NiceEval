@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/docs-otel-mixin-not-implemented.md
   commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
-description: docs-site/zh/guides/connect-otel.mdx 把未落地的 otelEvents()
-  设计提案写成已实现功能，且链接到不存在的 examples/zh/before/* 目录
+description: docs-site/zh/guides/connect-otel.mdx 把未落地的 otelEvents() 设计提案写成已实现功能，且链接到不存在的 examples/zh/before/* 目录
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,13 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**已修（2026-07-24 复核）**：走的是第 2 点里的第一条路——把 API
-      从用户文档里撤掉，而不是把它实现出来。判据：`otelEvents` 这个符号在
-      `src/`、`docs/`、`docs-site/`、`examples/`
-      全仓零命中，`docs-site/{,zh/}tutorials/connect-otel.mdx`（页面已从 `guides/` 移到
-      `tutorials/`）既不提 `otelEvents` 也不再链 `examples/zh/before/*`。设计文档
-      `docs/adapters/otel-mixin.md` 连同整个 `docs/adapters/`
-      目录也已不在，`docs/roadmap/adapters/` 只剩 README。"
+    statement: "**已修（2026-07-24 复核）**：走的是第 2 点里的第一条路——把 API 从用户文档里撤掉，而不是把它实现出来。判据：`otelEvents` 这个符号在 `src/`、`docs/`、`docs-site/`、`examples/` 全仓零命中，`docs-site/{,zh/}tutorials/connect-otel.mdx`（页面已从 `guides/` 移到 `tutorials/`）既不提 `otelEvents` 也不再链 `examples/zh/before/*`。设计文档 `docs/adapters/otel-mixin.md` 连同整个 `docs/adapters/` 目录也已不在，`docs/roadmap/adapters/` 只剩 README。"
     proof: []
     source:
       path: memory/docs-otel-mixin-not-implemented.md

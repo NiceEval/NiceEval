@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- **同场否决**:把「已修」条目分离到单独文件(如
-      `INDEX-fixed.md`)以缩短可见长度——违反「不归档不删除」规则(已修条目是复盘材料);缩短靠子标题分组与大区拆分实现,不靠隐藏条目。"
+    statement: "- **同场否决**:把「已修」条目分离到单独文件(如 `INDEX-fixed.md`)以缩短可见长度——违反「不归档不删除」规则(已修条目是复盘材料);缩短靠子标题分组与大区拆分实现,不靠隐藏条目。"
     proof: []
     source:
       path: memory/index-classification-by-subsystem.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [claude-code-skill-tool-name-not-load-skill](claude-code-skill-tool-name-not-load-skill.md)
-      — `t.loadedSkill()` 曾是 `calledTool("load_skill")` 的糖,而 parser 早已把 Skill
-      加载归一成 `skill.loaded` 一等事件 → 在 claude-code 上永远静默断不中;修为 `loadedSkill()` 直接读
-      `skill.loaded`(`src/scoring/scoped.ts`)'
+    statement: '- 已修 [claude-code-skill-tool-name-not-load-skill](claude-code-skill-tool-name-not-load-skill.md) — `t.loadedSkill()` 曾是 `calledTool("load_skill")` 的糖,而 parser 早已把 Skill 加载归一成 `skill.loaded` 一等事件 → 在 claude-code 上永远静默断不中;修为 `loadedSkill()` 直接读 `skill.loaded`(`src/scoring/scoped.ts`)'
     proof: []
     source:
       path: memory/INDEX.md

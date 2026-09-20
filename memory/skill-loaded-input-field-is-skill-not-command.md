@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [skill-loaded-input-field-is-skill-not-command](skill-loaded-input-field-\
-      is-skill-not-command.md) — 实现 `skill.loaded` 归一化时凭印象把入参字段猜成
-      `input.command`,正确字段是 `input.skill`(仓库已有实测 memory 记录了这个形状,没检索到就重新猜错了);修在
-      `src/o11y/parsers/claude-code.ts`"
+    statement: "- 已修 [skill-loaded-input-field-is-skill-not-command](skill-loaded-input-field-is-skill-not-command.md) — 实现 `skill.loaded` 归一化时凭印象把入参字段猜成 `input.command`,正确字段是 `input.skill`(仓库已有实测 memory 记录了这个形状,没检索到就重新猜错了);修在 `src/o11y/parsers/claude-code.ts`"
     proof: []
     source:
       path: memory/INDEX.md

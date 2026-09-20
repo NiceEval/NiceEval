@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [codex-hook-trust-headless-silent-skip](codex-hook-trust-headless-silent-\
-      skip.md) — codex 对非 managed hook 要求交互式授信,headless 下未授信 hook 被静默跳过零报错(插件
-      hook 配置全对也零触发);bypass_hook_trust 是 runtime-only,修为 exec 一律带
-      `--dangerously-bypass-hook-trust`(src/agents/codex.ts)"
+    statement: "- 已修 [codex-hook-trust-headless-silent-skip](codex-hook-trust-headless-silent-skip.md) — codex 对非 managed hook 要求交互式授信,headless 下未授信 hook 被静默跳过零报错(插件 hook 配置全对也零触发);bypass_hook_trust 是 runtime-only,修为 exec 一律带 `--dangerously-bypass-hook-trust`(src/agents/codex.ts)"
     proof: []
     source:
       path: memory/INDEX.md

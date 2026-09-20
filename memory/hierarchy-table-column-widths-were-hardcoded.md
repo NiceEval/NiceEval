@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [hierarchy-table-column-widths-were-hardcoded](hierarchy-table-column-wid\
-      ths-were-hardcoded.md) — 层级表除首列外七列逐像素同宽(`.68fr` 写死)、结果列折行而模型/Agent
-      列大片留白;根因=每层行各自复读一份按列位写死的 grid 模板,修为整表一个 grid + 各层 subgrid,列宽由内容算;附 subgrid
-      链要穿过 Chrome `::details-content`、折叠态 `getBoundingClientRect()` 读出陈旧尺寸两个坑"
+    statement: "- 已修 [hierarchy-table-column-widths-were-hardcoded](hierarchy-table-column-widths-were-hardcoded.md) — 层级表除首列外七列逐像素同宽(`.68fr` 写死)、结果列折行而模型/Agent 列大片留白;根因=每层行各自复读一份按列位写死的 grid 模板,修为整表一个 grid + 各层 subgrid,列宽由内容算;附 subgrid 链要穿过 Chrome `::details-content`、折叠态 `getBoundingClientRect()` 读出陈旧尺寸两个坑"
     proof: []
     source:
       path: memory/INDEX.md

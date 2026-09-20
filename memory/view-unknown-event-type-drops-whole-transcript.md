@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [view-unknown-event-type-drops-whole-transcript](view-unknown-event-type-\
-      drops-whole-transcript.md) — 源码视图 send 行「无回复」的两个前端根因:`asEvents` 全有全无校验被一条
-      `skill.loaded` 整体判空(修为逐条过滤+补词汇);原生 transcript 的同文本回显把整轮回复抢进不渲染的 noloc
-      轮(修为轮归属按 loc 判定,`src/view/app/lib/{guards,transcript-data}` 等,记得 `pnpm run
-      view:build`)"
+    statement: "- 已修 [view-unknown-event-type-drops-whole-transcript](view-unknown-event-type-drops-whole-transcript.md) — 源码视图 send 行「无回复」的两个前端根因:`asEvents` 全有全无校验被一条 `skill.loaded` 整体判空(修为逐条过滤+补词汇);原生 transcript 的同文本回显把整轮回复抢进不渲染的 noloc 轮(修为轮归属按 loc 判定,`src/view/app/lib/{guards,transcript-data}` 等,记得 `pnpm run view:build`)"
     proof: []
     source:
       path: memory/INDEX.md

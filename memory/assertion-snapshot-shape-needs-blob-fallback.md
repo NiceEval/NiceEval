@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [assertion-snapshot-shape-needs-blob-fallback](assertion-snapshot-shape-n\
-      eeds-blob-fallback.md) — 小型深层 subject 仍可能超出 durable inline shape；Record
-      bridge 现按 byte size 或 schema shape 自动选择 Assertions-own blob"
+    statement: "- 已修 [assertion-snapshot-shape-needs-blob-fallback](assertion-snapshot-shape-needs-blob-fallback.md) — 小型深层 subject 仍可能超出 durable inline shape；Record bridge 现按 byte size 或 schema shape 自动选择 Assertions-own blob"
     proof: []
     source:
       path: memory/INDEX.md

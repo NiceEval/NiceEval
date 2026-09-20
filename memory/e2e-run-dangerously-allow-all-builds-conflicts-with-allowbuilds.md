@@ -7,14 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2e-run-dangerously-allow-all-builds-conflicts-with-allowbuilds.md
   commit: 5431ec33105ddc53403afac1d77a278648a11a45
-description: e2e/scripts/run.ts 的隔离安装用
-  --config.dangerouslyAllowAllBuilds=true,与仓库自己 pnpm-workspace.yaml 的
-  allowBuilds 白名单在 pnpm 10.33+/11
-  上互斥,ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES 直接判红整个 e2e matrix
+description: e2e/scripts/run.ts 的隔离安装用 --config.dangerouslyAllowAllBuilds=true,与仓库自己 pnpm-workspace.yaml 的 allowBuilds 白名单在 pnpm 10.33+/11 上互斥,ERR_PNPM_CONFIG_CONFLICT_BUILT_DEPENDENCIES 直接判红整个 e2e matrix
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:

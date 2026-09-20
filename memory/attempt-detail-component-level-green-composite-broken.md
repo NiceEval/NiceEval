@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/attempt-detail-component-level-green-composite-broken.md
   commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
-description: 已修——11 个叶子组件的渲染矩阵全绿,但拼成 AttemptDetail 整页后两处功能性缺陷(下钻命令丢
-  locator、断言缺源码锚)只有渲染完整合成页才能看见
+description: 已修——11 个叶子组件的渲染矩阵全绿,但拼成 AttemptDetail 整页后两处功能性缺陷(下钻命令丢 locator、断言缺源码锚)只有渲染完整合成页才能看见
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修——11 个叶子组件的渲染矩阵全绿,但拼成 AttemptDetail 整页后两处功能性缺陷(下钻命令丢
-      locator、断言缺源码锚)只有渲染完整合成页才能看见
+    statement: 已修——11 个叶子组件的渲染矩阵全绿,但拼成 AttemptDetail 整页后两处功能性缺陷(下钻命令丢 locator、断言缺源码锚)只有渲染完整合成页才能看见
     proof: []
     source:
       path: memory/attempt-detail-component-level-green-composite-broken.md

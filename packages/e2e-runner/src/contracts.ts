@@ -101,6 +101,7 @@ const PositiveFiniteNumberSchema = Schema.Number.check(Schema.makeFilter((value)
     description: "a finite positive number",
   }));
 export const Sha256HexSchema = Schema.String.check(Schema.makeFilter((value) => /^[a-f0-9]{64}$/.test(value), { identifier: "Sha256Hex", description: "a lowercase SHA-256 hex digest" }));
+export const Sha256DigestSchema = Schema.String.check(Schema.makeFilter((value) => /^sha256:[a-f0-9]{64}$/.test(value), { identifier: "Sha256Digest", description: "a prefixed lowercase SHA-256 digest" }));
 export const SriSchema = Schema.String.check(Schema.makeFilter((value) => /^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/.test(value), {
     identifier: "SRI",
     description: "a SHA SRI digest",
@@ -248,6 +249,14 @@ export const StageReceiptSchema = Schema.Struct({
   assets: Schema.optional(UniqueHarnessAssetListSchema),
   collected: Schema.optional(Schema.Array(RepoIdSchema)),
   path: Schema.optional(Schema.String),
+  native: Schema.optional(Schema.Struct({
+    caseCount: NonNegativeSafeIntegerSchema,
+    passed: NonNegativeSafeIntegerSchema,
+    failed: NonNegativeSafeIntegerSchema,
+    skipped: NonNegativeSafeIntegerSchema,
+    retries: NonNegativeSafeIntegerSchema,
+  })),
+  nativeObservationError: Schema.optional(NonEmptyStringSchema),
 });
 export const SelectionReceiptSchema = Schema.Struct({
   mode: Schema.Literals(["affected", "full", "fail-open-full"]),
@@ -276,7 +285,7 @@ export const RepoReceiptSchema = Schema.Struct({
   testInvocations: NonNegativeSafeIntegerSchema,
   copyId: Schema.optional(NonEmptyStringSchema),
   runLabel: Schema.optional(NonEmptyStringSchema),
-  sourceSnapshotDigest: Schema.optional(Sha256HexSchema),
+  sourceSnapshotDigest: Schema.optional(Sha256DigestSchema),
   artifactDir: NonEmptyStringSchema,
   receiptPath: NonEmptyStringSchema,
   stages: Schema.Array(StageReceiptSchema),

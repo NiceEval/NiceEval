@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,9 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [static-site-export-drops-sources](static-site-export-drops-sources.md) —
-      静态托管导出丢 sources.json,code view 显示"源码未捕获"(0.3.0 已修)'
+    statement: '- 已修 [static-site-export-drops-sources](static-site-export-drops-sources.md) — 静态托管导出丢 sources.json,code view 显示"源码未捕获"(0.3.0 已修)'
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [codex-agent-process-env-not-forwarded](codex-agent-process-env-not-forwa\
-      rded.md) — Codex factory 曾无法声明实际 `exec` / `exec resume` 的 ambient
-      env，Nowledge 的 `NMEM_SPACE` 因而到不了 MCP 动态 header、Session Hook 与 `nmem`
-      子进程；修为 `codexAgent({ env })` 经 command options 逐轮注入，值不进 shell/manifest
-      并登记脱敏"
+    statement: "- 已修 [codex-agent-process-env-not-forwarded](codex-agent-process-env-not-forwarded.md) — Codex factory 曾无法声明实际 `exec` / `exec resume` 的 ambient env，Nowledge 的 `NMEM_SPACE` 因而到不了 MCP 动态 header、Session Hook 与 `nmem` 子进程；修为 `codexAgent({ env })` 经 command options 逐轮注入，值不进 shell/manifest 并登记脱敏"
     proof: []
     source:
       path: memory/INDEX.md

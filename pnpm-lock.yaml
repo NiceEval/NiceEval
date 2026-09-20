@@ -15,8 +15,8 @@ importers:
         specifier: ^24.0.0
         version: 24.13.3
       concord-sdlc:
-        specifier: file:tools/concord/concord-sdlc-0.4.0.tgz
-        version: file:tools/concord/concord-sdlc-0.4.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+        specifier: file:tools/concord/concord-sdlc-0.5.0.tgz
+        version: file:tools/concord/concord-sdlc-0.5.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
       concurrently:
         specifier: ^10.0.5
         version: 10.0.5
@@ -118,8 +118,8 @@ importers:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
       concord-sdlc:
-        specifier: file:../../tools/concord/concord-sdlc-0.4.0.tgz
-        version: file:tools/concord/concord-sdlc-0.4.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+        specifier: file:../../tools/concord/concord-sdlc-0.5.0.tgz
+        version: file:tools/concord/concord-sdlc-0.5.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
@@ -293,9 +293,21 @@ importers:
 
   packages/repo-tools:
     dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
       concord-sdlc:
-        specifier: file:../../tools/concord/concord-sdlc-0.4.0.tgz
-        version: file:tools/concord/concord-sdlc-0.4.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+        specifier: file:../../tools/concord/concord-sdlc-0.5.0.tgz
+        version: file:tools/concord/concord-sdlc-0.5.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1))
+      effect:
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112
+      shiki:
+        specifier: 4.3.0
+        version: 4.3.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -2611,9 +2623,9 @@ packages:
   compute-l2norm@1.1.0:
     resolution: {integrity: sha512-6EHh1Elj90eU28SXi+h2PLnTQvZmkkHWySpoFz+WOlVNLz3DQoC4ISUHSV9n5jMxPHtKGJ01F4uu2PsXBB8sSg==}
 
-  concord-sdlc@file:tools/concord/concord-sdlc-0.4.0.tgz:
-    resolution: {integrity: sha512-Q/fdl+yv8icycW3Wbwuzvt5Mm5ZHTtW4ucFTgSXCoiP1ZwSgO7hKJ/pk4XtIHNysjL3GgbrDoWG+FMuTMCnJUQ==, tarball: file:tools/concord/concord-sdlc-0.4.0.tgz}
-    version: 0.4.0
+  concord-sdlc@file:tools/concord/concord-sdlc-0.5.0.tgz:
+    resolution: {integrity: sha512-ZdclMj0oQiZxeNSZlbyfD/s0u1nSmJ4e9C5TbcD6OglCRemkHTXMYujh+pq6hwrUQRKIcUAlXOrtrMX0oSaXmQ==, tarball: file:tools/concord/concord-sdlc-0.5.0.tgz}
+    version: 0.5.0
     engines: {node: '>=24.15.0'}
     hasBin: true
 
@@ -6679,7 +6691,7 @@ snapshots:
       validate.io-array: 1.0.6
       validate.io-function: 1.0.2
 
-  concord-sdlc@file:tools/concord/concord-sdlc-0.4.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1)):
+  concord-sdlc@file:tools/concord/concord-sdlc-0.5.0.tgz(redis@6.2.1(@opentelemetry/api@1.9.1)):
     dependencies:
       '@effect/platform-node': 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112)

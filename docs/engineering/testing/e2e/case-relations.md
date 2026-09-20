@@ -103,15 +103,15 @@ JSON 成功 receipt 共享下列字段：
 
 只有根 runner 正式 receipt 可成为 red、green 或 reliability evidence；`e2e diagnose` 永不合格。
 
-新登记与新 fixed 使用 v2 formal receipt 和 takeover certificate。证据绑定：
+新登记与新 fixed 使用 `concord.native-case-receipt/v1` receipt 和 `concord.native-reliability/v1` takeover certificate。证据绑定：
 
 - caseId 与 native testFile；
 - 固定执行副本中的源码投影：所属 E2E Repo 的 JS/TS 源文件路径集合及每文件 raw/code SHA；
-- source identity v3 的 direct-contract binding：contractRef 与完整契约 Markdown SHA；
+- source identity v4 的 direct-contract binding：suite、policy、治理配置、adapter source、contractRef 与完整契约 Markdown SHA；
+- canonical Problem Memory path 与当前非负 epoch；生成 red 和 takeover 时分别显式传入相同的 `--problem`、`--problem-epoch`；
 - candidate、inventory、runner argv/version、结果、cleanup 和唯一 invocation identity。
 
-源码投影采用 concord.repository-source-projection/v2，源码身份采用 concord.repository-source-identity/v3。范围包括 `.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts`，排除依赖、Git、
-工具结果及隔离复制明确排除的目录；它不证明完整依赖闭包。
+源码投影采用 concord.repository-source-projection/v3，源码身份采用 concord.repository-source-identity/v4。范围包括 `.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts`，排除依赖与 Git；它不证明完整依赖闭包。
 
 code 投影只剥除语法识别成功的 feature/use-case/regression/issue 注释；标题、test-file 映射、普通注释、字符串、模板和断言仍参与校验，
 源码新增或删除也改变投影。根 runner 必须执行被签名的同一固定副本，并在复制/执行前后检查漂移，

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [live-eval-retry-invocations-share-a-single-writer-record](live-eval-retr\
-      y-invocations-share-a-single-writer-record.md) — 同一 Repo 的多个 Eval 补跑
-      Invocation 用并行 CLI 写同一个 Record 会确定性触发 RecordWriterBusy；仅补跑串行，主
-      Invocation/Repo batch 并发不变"
+    statement: "- 已修 [live-eval-retry-invocations-share-a-single-writer-record](live-eval-retry-invocations-share-a-single-writer-record.md) — 同一 Repo 的多个 Eval 补跑 Invocation 用并行 CLI 写同一个 Record 会确定性触发 RecordWriterBusy；仅补跑串行，主 Invocation/Repo batch 并发不变"
     proof: []
     source:
       path: memory/INDEX.md

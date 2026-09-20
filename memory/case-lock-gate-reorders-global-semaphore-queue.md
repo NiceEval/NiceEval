@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [case-lock-gate-reorders-global-semaphore-queue](case-lock-gate-reorders-global-semaphore-queue.md)
-      — 用例锁取锁检查插在 preflight 之前(等待不占位的唯一位置),真实磁盘 I/O
-      完成顺序不等于到达顺序,打乱瓶颈优先排队隐藏依赖的"抢全局位顺序=数组序";修法=permit=1
-      互斥量只串行化"一次非阻塞取锁尝试",确认要等待立刻放行;旁记 `vi.advanceTimersByTimeAsync` 在真实 I/O
-      密集轮询链路上不可靠的独立发现。**该修法已随派发脊柱重构删除**:取锁移到授位之后,抢位路径上不再有真实 I/O,互斥量没有存在理由'
+    statement: '- 已修 [case-lock-gate-reorders-global-semaphore-queue](case-lock-gate-reorders-global-semaphore-queue.md) — 用例锁取锁检查插在 preflight 之前(等待不占位的唯一位置),真实磁盘 I/O 完成顺序不等于到达顺序,打乱瓶颈优先排队隐藏依赖的"抢全局位顺序=数组序";修法=permit=1 互斥量只串行化"一次非阻塞取锁尝试",确认要等待立刻放行;旁记 `vi.advanceTimersByTimeAsync` 在真实 I/O 密集轮询链路上不可靠的独立发现。**该修法已随派发脊柱重构删除**:取锁移到授位之后,抢位路径上不再有真实 I/O,互斥量没有存在理由'
     proof: []
     source:
       path: memory/INDEX.md

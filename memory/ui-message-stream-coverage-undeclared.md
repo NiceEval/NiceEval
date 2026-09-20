@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/ui-message-stream-coverage-undeclared.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: 内置 uiMessageStreamAgent 没有声明 EvidenceCoverage，让所有作用域断言在真实协议下
-  unavailable→errored——e2e/adapter/ai-sdk 的 hitl-approval/tool-call 首跑全 errored
-  才发现
+description: 内置 uiMessageStreamAgent 没有声明 EvidenceCoverage，让所有作用域断言在真实协议下 unavailable→errored——e2e/adapter/ai-sdk 的 hitl-approval/tool-call 首跑全 errored 才发现
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [ui-message-stream-coverage-undeclared](ui-message-stream-coverage-undecl\
-      ared.md) — 内置 uiMessageStreamAgent 没声明 EvidenceCoverage,真机跑
-      e2e/adapter/ai-sdk 时 succeeded()/notCalledTool()/noFailedActions() 全部
-      unknown→errored(不是断言写错);修为补 coverage(complete + usage
-      unavailable)(`src/agents/ui-message-stream.ts`)"
+    statement: "- 已修 [ui-message-stream-coverage-undeclared](ui-message-stream-coverage-undeclared.md) — 内置 uiMessageStreamAgent 没声明 EvidenceCoverage,真机跑 e2e/adapter/ai-sdk 时 succeeded()/notCalledTool()/noFailedActions() 全部 unknown→errored(不是断言写错);修为补 coverage(complete + usage unavailable)(`src/agents/ui-message-stream.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

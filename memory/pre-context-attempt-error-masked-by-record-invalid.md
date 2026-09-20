@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [pre-context-attempt-error-masked-by-record-invalid](pre-context-attempt-\
-      error-masked-by-record-invalid.md) — TestContext 前已物理执行的 ensure/setup 错误没有
-      sealed Assertions，Record 完成时用 `runner-record-attempt-invalid` 覆盖原错；Attempt
-      以空 Assertions runtime 封 errored origin，保留 locator、receipt 与公开诊断"
+    statement: "- 已修 [pre-context-attempt-error-masked-by-record-invalid](pre-context-attempt-error-masked-by-record-invalid.md) — TestContext 前已物理执行的 ensure/setup 错误没有 sealed Assertions，Record 完成时用 `runner-record-attempt-invalid` 覆盖原错；Attempt 以空 Assertions runtime 封 errored origin，保留 locator、receipt 与公开诊断"
     proof: []
     source:
       path: memory/INDEX.md

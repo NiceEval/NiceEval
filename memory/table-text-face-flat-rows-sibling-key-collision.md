@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [table-text-face-flat-rows-sibling-key-collision](table-text-face-flat-ro\
-      ws-sibling-key-collision.md) — show 双 Experiment 稳定抛行 key 重复:text 面漏传可选
-      hierarchyRows 参数、拿展平行判同层重复;修为 resolver 只产出层级权威形态并单点校验,text
-      面渲染期自己展平(primitives.tsx)"
+    statement: "- 已修 [table-text-face-flat-rows-sibling-key-collision](table-text-face-flat-rows-sibling-key-collision.md) — show 双 Experiment 稳定抛行 key 重复:text 面漏传可选 hierarchyRows 参数、拿展平行判同层重复;修为 resolver 只产出层级权威形态并单点校验,text 面渲染期自己展平(primitives.tsx)"
     proof: []
     source:
       path: memory/INDEX.md

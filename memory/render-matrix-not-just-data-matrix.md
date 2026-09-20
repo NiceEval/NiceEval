@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/render-matrix-not-just-data-matrix.md
   commit: 4e451858bfb5b1e0b05fbbb2255eb7561df68e88
-description: 组件测试注册表要求"两面都渲染"时,只测 attempt*Data() 返回值形状是弱化替代,必须真正调用
-  renderToStaticMarkup/renderNodeToText
+description: 组件测试注册表要求"两面都渲染"时,只测 attempt*Data() 返回值形状是弱化替代,必须真正调用 renderToStaticMarkup/renderNodeToText
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: '- 已修
-      [render-matrix-not-just-data-matrix](render-matrix-not-just-data-matrix.md)
-      — 注册表场景写"两面渲染输出"时只测 attempt*Data() 返回形状是弱化替代,typecheck/build/test 全绿也遮不住
-      9/11 叶子组件渲染函数从未被真正调用过;修法=表驱动直接 renderToStaticMarkup/renderNodeToText
-      两态各跑一遍(src/report/attempt-components.test.tsx)'
+    statement: '- 已修 [render-matrix-not-just-data-matrix](render-matrix-not-just-data-matrix.md) — 注册表场景写"两面渲染输出"时只测 attempt*Data() 返回形状是弱化替代,typecheck/build/test 全绿也遮不住 9/11 叶子组件渲染函数从未被真正调用过;修法=表驱动直接 renderToStaticMarkup/renderNodeToText 两态各跑一遍(src/report/attempt-components.test.tsx)'
     proof: []
     source:
       path: memory/INDEX.md

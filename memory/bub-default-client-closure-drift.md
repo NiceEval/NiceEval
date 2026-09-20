@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [bub-default-client-closure-drift](bub-default-client-closure-drift.md) —
-      默认 `bub==0.4.0` 未锁模型客户端使重装后请求协议突变；运行时、E2B 与 Vercel 现共用三行 override 和同一
-      marker，旧预制品严格 miss 后重装"
+    statement: "- 已修 [bub-default-client-closure-drift](bub-default-client-closure-drift.md) — 默认 `bub==0.4.0` 未锁模型客户端使重装后请求协议突变；运行时、E2B 与 Vercel 现共用三行 override 和同一 marker，旧预制品严格 miss 后重装"
     proof: []
     source:
       path: memory/INDEX.md

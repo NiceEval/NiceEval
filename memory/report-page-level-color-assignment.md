@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [scatter-series-color-collision](scatter-series-color-collision.md) —
-      散点两个不同
-      series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/repo\
-      rt/react/colors.ts` 的 colorIndicesForKeys);作用域后被
-      [report-page-level-color-assignment](report-page-level-color-assignment.m\
-      d) 上提到「一页」"
+    statement: "- 已修 [scatter-series-color-collision](scatter-series-color-collision.md) — 散点两个不同 series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/report/react/colors.ts` 的 colorIndicesForKeys);作用域后被 [report-page-level-color-assignment](report-page-level-color-assignment.md) 上提到「一页」"
     proof: []
     source:
       path: memory/INDEX.md

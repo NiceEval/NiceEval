@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml.md
   commit: 4de42b0162238fb9d0583f6df47d8bca1f2d732d
-description: pnpm link 给 e2e/<repo> 做本地快速迭代会往 pnpm-workspace.yaml/pnpm-lock.yaml
-  写入持久 override，rm -rf node_modules 也不消失
+description: pnpm link 给 e2e/<repo> 做本地快速迭代会往 pnpm-workspace.yaml/pnpm-lock.yaml 写入持久 override，rm -rf node_modules 也不消失
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

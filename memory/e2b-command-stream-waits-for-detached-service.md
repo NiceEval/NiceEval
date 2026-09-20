@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2b-command-stream-waits-for-detached-service.md
   commit: 0d24186331cc787226bccdc99c515ff8b7f331a6
-description: E2B commands.run 的 wait 把直接 shell 退出与 stdout/stderr event stream
-  EOF 绑定，nohup 后台服务继承输出管道会让正常任务永不 settle
+description: E2B commands.run 的 wait 把直接 shell 退出与 stdout/stderr event stream EOF 绑定，nohup 后台服务继承输出管道会让正常任务永不 settle
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2b-command-stream-waits-for-detached-service](e2b-command-stream-waits-\
-      for-detached-service.md) — E2B `commands.run` 把 shell 退出和 stdout/stderr
-      EOF 绑死，`nohup ... &` 继承管道令任务永不 settle；修为直接 shell completion marker 后只断
-      transport，异常仍退休 VM"
+    statement: "- 已修 [e2b-command-stream-waits-for-detached-service](e2b-command-stream-waits-for-detached-service.md) — E2B `commands.run` 把 shell 退出和 stdout/stderr EOF 绑死，`nohup ... &` 继承管道令任务永不 settle；修为直接 shell completion marker 后只断 transport，异常仍退休 VM"
     proof: []
     source:
       path: memory/INDEX.md

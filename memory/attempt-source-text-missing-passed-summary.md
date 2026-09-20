@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,14 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修（`b7d274c6`，2026-07-23）。落点
-      `src/report/components/attempt-detail/faces.ts` 的
-      `attemptSourceText`：`AttemptSourceData` 补了 `passedGroups`（`compute.ts` 复用
-      `attemptAssertionsData` 同一份 `groupByPath`，得分点豁免收纳的规则也共用），text
-      面据此改成二选一——有失败可看就平铺 attention 条目，否则输出 `  ✓ passed · <group> · <count>`
-      摘要行。同批修掉一个相邻缺口：判定"有没有失败可看"时 unmapped 区（没有
-      loc、指向别的文件或越界的断言）也要一起检查，否则"unmapped 里藏着真实失败、行内 attention 恰好为空"的 attempt
-      会被错折成一条 `✓ passed`。
+    statement: 已修（`b7d274c6`，2026-07-23）。落点 `src/report/components/attempt-detail/faces.ts` 的 `attemptSourceText`：`AttemptSourceData` 补了 `passedGroups`（`compute.ts` 复用 `attemptAssertionsData` 同一份 `groupByPath`，得分点豁免收纳的规则也共用），text 面据此改成二选一——有失败可看就平铺 attention 条目，否则输出 `  ✓ passed · <group> · <count>` 摘要行。同批修掉一个相邻缺口：判定"有没有失败可看"时 unmapped 区（没有 loc、指向别的文件或越界的断言）也要一起检查，否则"unmapped 里藏着真实失败、行内 attention 恰好为空"的 attempt 会被错折成一条 `✓ passed`。
     proof: []
     source:
       path: memory/attempt-source-text-missing-passed-summary.md

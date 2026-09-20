@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [eval-parent-repeats-attempt-failure](eval-parent-repeats-attempt-failure\
-      .md) — ExperimentList/EvalList 的 web 面曾在 Eval 父行复述某个 Attempt
-      的失败摘要,单轮完全重复、多轮又冒充题级事实;父行固定为判定+题级聚合,失败原因只留 Attempt 子行"
+    statement: "- 已修 [eval-parent-repeats-attempt-failure](eval-parent-repeats-attempt-failure.md) — ExperimentList/EvalList 的 web 面曾在 Eval 父行复述某个 Attempt 的失败摘要,单轮完全重复、多轮又冒充题级事实;父行固定为判定+题级聚合,失败原因只留 Attempt 子行"
     proof: []
     source:
       path: memory/INDEX.md

@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2e-verify-results-format-drift.md
   commit: 6ad283bd90fced480e584691b0d8aa9dc44a3afc
-description: e2e.yml 每次 push 必红——verify.mjs 还按落盘改快照(schemaVersion 4)之前的
-  summary.json 布局校验；e2e 重构期间已暂停 push/PR/nightly 自动触发
+description: e2e.yml 每次 push 必红——verify.mjs 还按落盘改快照(schemaVersion 4)之前的 summary.json 布局校验；e2e 重构期间已暂停 push/PR/nightly 自动触发
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

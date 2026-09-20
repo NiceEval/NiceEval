@@ -63,11 +63,13 @@ pnpm e2e diagnose exec --from artifacts/e2e/insight/summary.json --repo insight 
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo insight \
   --selector "$case_selector" \
   --inventory <neinv_...> \
+  --problem memory/<problem>.md --problem-epoch <n> \
   --artifact-root artifacts/e2e/takeover-insight
 
 # 旧 candidate 的正式红灯；prepare、infra、cleanup 或零匹配失败不会签发 red receipt
 pnpm e2e evidence red --candidate artifacts/old-candidate.tgz --candidate-git-sha <sha> \
   --repo insight --selector "$case_selector" \
+  --problem memory/<problem>.md --problem-epoch <n> \
   --inventory <neinv_...> --artifact-root artifacts/e2e/red-insight
 
 # 仅本地结构化 release 核验；不发布、不调用 workflow 产品逻辑
@@ -137,10 +139,13 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 
 ## Owner 接管运行
 
-新增、接管或实质修改确定性 owner 时，必须使用根入口
-`pnpm e2e takeover --candidate ... --repo <id> --selector <path#caseId> --inventory <neinv_...>`。
+新增、接管或实质修改确定性 owner 时，必须使用根入口：
+
+`pnpm e2e takeover --candidate ... --repo <id> --selector <path#caseId> --inventory <neinv_...> --problem <memory-path> --problem-epoch <n>`。
+
 它拒绝没有显式 candidate、Repo、selector 或 runner inventory 的调用；原生 target 由 inventory 自动构造，
 不是把普通 `run` 重复五次冒充可靠性门。
+
 接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit scratch
 snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt：
 

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修复:`src/agents/codex.ts` `installedVersion()`(2026-07-13,native
-      plugin 真机 e2e 复现并当场修复)。
+    statement: 已修复:`src/agents/codex.ts` `installedVersion()`(2026-07-13,native plugin 真机 e2e 复现并当场修复)。
     proof: []
     source:
       path: memory/codex-plugin-list-json-shape-guessed-wrong.md

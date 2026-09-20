@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/report-src-changes-need-dist-rebuild.md
   commit: 8d032cad6e47365a1235967d0b048c940a10ac17
-description: 改 src/report/** 后 CLI 行为不变——show/view 宿主 import 的是 dist/report
-  预编译产物,要 pnpm run build:report
+description: 改 src/report/** 后 CLI 行为不变——show/view 宿主 import 的是 dist/report 预编译产物,要 pnpm run build:report
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,10 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [report-src-changes-need-dist-rebuild](report-src-changes-need-dist-rebui\
-      ld.md) — 改 `src/report/**` 后 CLI 行为不变:show/view 宿主 import 的是 `dist/report`
-      预编译产物,单测绿 + CLI 旧 ≈ 忘了 `pnpm run build:report`"
+    statement: "- 已修 [report-src-changes-need-dist-rebuild](report-src-changes-need-dist-rebuild.md) — 改 `src/report/**` 后 CLI 行为不变:show/view 宿主 import 的是 `dist/report` 预编译产物,单测绿 + CLI 旧 ≈ 忘了 `pnpm run build:report`"
     proof: []
     source:
       path: memory/INDEX.md

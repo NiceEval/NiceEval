@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -27,12 +28,9 @@ resolution:
             - "installed Testkit stress receipts: timeout target 25/25 and full PTY owner 7/7 passed"
             - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
     proof:
-      - "main E2E red: run 33081322990, docker-3 job 98550429131 lost the
-        candidate terminal-state frame"
-      - "installed Testkit stress receipts: timeout target 25/25 and full PTY
-        owner 7/7 passed"
-      - "main E2E green twice: runs 33086183347 and 33086382261, including
-        repo-batch-docker-3"
+      - "main E2E red: run 33081322990, docker-3 job 98550429131 lost the candidate terminal-state frame"
+      - "installed Testkit stress receipts: timeout target 25/25 and full PTY owner 7/7 passed"
+      - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
     source:
       path: memory/pty-cleanup-kills-helper-before-exit-report.md
       commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f

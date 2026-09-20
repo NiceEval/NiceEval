@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**:已修(2026-07-24,同日复现验证 + 落地)。包侧修是**两件套,缺一不可**——只补 require 条件不加
-      CJS hook 实测照崩(崩在解析 exports 之前):"
+    statement: "**修法**:已修(2026-07-24,同日复现验证 + 落地)。包侧修是**两件套,缺一不可**——只补 require 条件不加 CJS hook 实测照崩(崩在解析 exports 之前):"
     proof: []
     source:
       path: memory/tsx-dynamic-import-require-cycle.md

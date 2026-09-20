@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [cell-key-must-match-column-set](cell-key-must-match-column-set.md) —
-      共用行构造函数把判定写在 key `verdict` 下,而层级表的状态列叫 `record`,attempt 行判定与失败摘要被静默丢成
-      `—`(真机导出站复现);修为判定长在 locator 格上,并补 CLAUDE.md「key 与消费侧同源」半条规则"
+    statement: "- 已修 [cell-key-must-match-column-set](cell-key-must-match-column-set.md) — 共用行构造函数把判定写在 key `verdict` 下,而层级表的状态列叫 `record`,attempt 行判定与失败摘要被静默丢成 `—`(真机导出站复现);修为判定长在 locator 格上,并补 CLAUDE.md「key 与消费侧同源」半条规则"
     proof: []
     source:
       path: memory/INDEX.md

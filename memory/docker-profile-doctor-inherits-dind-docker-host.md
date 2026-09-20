@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [docker-profile-doctor-inherits-dind-docker-host](docker-profile-doctor-i\
-      nherits-dind-docker-host.md) — doctor 的 DIND 诊断容器继承镜像自带
-      `DOCKER_HOST=tcp://docker:2375`，因而始终探测错误 endpoint、无法产出结果；固定到本容器的 Unix
-      socket，并让 lifecycle owner 验收完整 PASS"
+    statement: "- 已修 [docker-profile-doctor-inherits-dind-docker-host](docker-profile-doctor-inherits-dind-docker-host.md) — doctor 的 DIND 诊断容器继承镜像自带 `DOCKER_HOST=tcp://docker:2375`，因而始终探测错误 endpoint、无法产出结果；固定到本容器的 Unix socket，并让 lifecycle owner 验收完整 PASS"
     proof: []
     source:
       path: memory/INDEX.md

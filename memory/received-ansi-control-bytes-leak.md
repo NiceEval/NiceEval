@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [received-ansi-control-bytes-leak](received-ansi-control-bytes-leak.md) —
-      `received`(jest/vitest 命令输出)的 ANSI 着色码在 exp/show/report
-      里显成乱码:`summaryText` 只折 `\\s` 不覆盖 ESC/BEL/BS;修为新增 `stripControl`(去
-      ANSI+不可打印控制字节、保留 glyph 与换行),summaryText 与两个报告详情面共用,原始字节仍存
-      artifact(`src/scoring/display.ts` +
-      `AttemptAssertions/AttemptSource.tsx`)"
+    statement: "- 已修 [received-ansi-control-bytes-leak](received-ansi-control-bytes-leak.md) — `received`(jest/vitest 命令输出)的 ANSI 着色码在 exp/show/report 里显成乱码:`summaryText` 只折 `\\s` 不覆盖 ESC/BEL/BS;修为新增 `stripControl`(去 ANSI+不可打印控制字节、保留 glyph 与换行),summaryText 与两个报告详情面共用,原始字节仍存 artifact(`src/scoring/display.ts` + `AttemptAssertions/AttemptSource.tsx`)"
     proof: []
     source:
       path: memory/INDEX.md

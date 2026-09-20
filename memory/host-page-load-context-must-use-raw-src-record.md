@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/host-page-load-context-must-use-raw-src-record.md
   commit: c0cbac0cfc51984e2d8e03a7bece83e637e79559
-description: PageLoadContext 的 locator 解析若走 dist/report/** 编译产物自带的 record
-  import,会跟 host 侧 raw src 的 Record 对象不同模块实例、查不到索引
+description: PageLoadContext 的 locator 解析若走 dist/report/** 编译产物自带的 record import,会跟 host 侧 raw src 的 Record 对象不同模块实例、查不到索引
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:

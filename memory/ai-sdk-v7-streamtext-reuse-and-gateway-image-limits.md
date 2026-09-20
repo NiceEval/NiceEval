@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/ai-sdk-v7-streamtext-reuse-and-gateway-image-limits.md
   commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
-description: eval 复用生产 streamText 调用的正确姿势（v7 结果字段 await 即自动消费流），以及
-  OPENAI_BASE_URL 网关不支持图像输入的处理位置（eval 侧 skip，不改应用模型元数据）
+description: eval 复用生产 streamText 调用的正确姿势（v7 结果字段 await 即自动消费流），以及 OPENAI_BASE_URL 网关不支持图像输入的处理位置（eval 侧 skip，不改应用模型元数据）
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

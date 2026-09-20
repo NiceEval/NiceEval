@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/keep-sandbox-suspend-wrapper-drops-capability.md
   commit: d5d069622fd6aba6b9d3db3accfb3326ccdf523b
-description: normalizeSandboxPaths 包装丢了接口外的 suspend() 能力，--keep-sandbox 对
-  docker/e2b/vercel 全部假成功真不停——真机跑通 docker
-  全链路（keep→list→enter→history→diff→stop）才发现，mock 单测测不出这类拼接 bug
+description: normalizeSandboxPaths 包装丢了接口外的 suspend() 能力，--keep-sandbox 对 docker/e2b/vercel 全部假成功真不停——真机跑通 docker 全链路（keep→list→enter→history→diff→stop）才发现，mock 单测测不出这类拼接 bug
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [keep-sandbox-suspend-wrapper-drops-capability](keep-sandbox-suspend-wrap\
-      per-drops-capability.md) — `normalizeSandboxPaths` 包装丢了接口外的 `suspend()`
-      能力,`--keep-sandbox` 对 docker/e2b/vercel 三家全部假成功真不停(state 永远停 alive,只留一条
-      warning);真机跑通 docker 全链路才发现,mock 单测互相拼不出这个 bug;修为按 `appendLog`
-      先例原样转发(`src/sandbox/paths.ts`)"
+    statement: "- 已修 [keep-sandbox-suspend-wrapper-drops-capability](keep-sandbox-suspend-wrapper-drops-capability.md) — `normalizeSandboxPaths` 包装丢了接口外的 `suspend()` 能力,`--keep-sandbox` 对 docker/e2b/vercel 三家全部假成功真不停(state 永远停 alive,只留一条 warning);真机跑通 docker 全链路才发现,mock 单测互相拼不出这个 bug;修为按 `appendLog` 先例原样转发(`src/sandbox/paths.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

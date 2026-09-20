@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/langgraph-e2e-hitl-resume-register-before-send.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: e2e/adapter/langgraph 的自建 SSE bridge 里,并发跑 HITL eval 时
-  /api/chat/resume 偶发 404 no pending interrupt——根因是先把 interrupted 帧发给客户端再登记
-  pending queue,已定位并修复(登记必须先于发送)
+description: e2e/adapter/langgraph 的自建 SSE bridge 里,并发跑 HITL eval 时 /api/chat/resume 偶发 404 no pending interrupt——根因是先把 interrupted 帧发给客户端再登记 pending queue,已定位并修复(登记必须先于发送)
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,9 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: e2e/adapter/langgraph 的自建 SSE bridge 里,并发跑 HITL eval 时
-      /api/chat/resume 偶发 404 no pending interrupt——根因是先把 interrupted 帧发给客户端再登记
-      pending queue,已定位并修复(登记必须先于发送)
+    statement: e2e/adapter/langgraph 的自建 SSE bridge 里,并发跑 HITL eval 时 /api/chat/resume 偶发 404 no pending interrupt——根因是先把 interrupted 帧发给客户端再登记 pending queue,已定位并修复(登记必须先于发送)
     proof: []
     source:
       path: memory/langgraph-e2e-hitl-resume-register-before-send.md

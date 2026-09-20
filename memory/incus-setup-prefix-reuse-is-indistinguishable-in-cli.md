@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: open
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions:
   - docs/feature/experiments/cli.md#派发前-sandbox-准备
 history: []

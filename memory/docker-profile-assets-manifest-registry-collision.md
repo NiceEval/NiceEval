@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [docker-profile-assets-manifest-registry-collision](docker-profile-assets\
-      -manifest-registry-collision.md) — host package 把 `assets-v1.json` 放进
-      profile registry 后，客户端误把它当成 alias descriptor，doctor 与 experiment 在
-      descriptor 阶段失败；改为 registry 明确忽略版本化资产清单，并补齐 host package 的预载验证入口"
+    statement: "- 已修 [docker-profile-assets-manifest-registry-collision](docker-profile-assets-manifest-registry-collision.md) — host package 把 `assets-v1.json` 放进 profile registry 后，客户端误把它当成 alias descriptor，doctor 与 experiment 在 descriptor 阶段失败；改为 registry 明确忽略版本化资产清单，并补齐 host package 的预载验证入口"
     proof: []
     source:
       path: memory/INDEX.md

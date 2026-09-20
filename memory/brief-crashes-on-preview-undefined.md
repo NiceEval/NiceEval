@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修复:`src/util.ts` `brief()`(2026-07-13,与
-      [[codex-plugin-list-json-shape-guessed-wrong]] 同一次
+    statement: 已修复:`src/util.ts` `brief()`(2026-07-13,与 [[codex-plugin-list-json-shape-guessed-wrong]] 同一次
     proof: []
     source:
       path: memory/brief-crashes-on-preview-undefined.md

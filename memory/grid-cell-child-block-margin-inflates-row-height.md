@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [grid-cell-child-block-margin-inflates-row-height](grid-cell-child-block-\
-      margin-inflates-row-height.md) — 摘要条每格比内容高出一圈:根因是 `Stat` 以
-      `.niceeval-report` 打底、带着 `margin: 1rem 0` 进格子,格子有 padding 挡住折叠;修为
-      `.niceeval-grid-cell > .niceeval-report { margin: 0 }`,格内留白只由 Grid
-      给;单测量不到高度,真实产物截图才看得见"
+    statement: "- 已修 [grid-cell-child-block-margin-inflates-row-height](grid-cell-child-block-margin-inflates-row-height.md) — 摘要条每格比内容高出一圈:根因是 `Stat` 以 `.niceeval-report` 打底、带着 `margin: 1rem 0` 进格子,格子有 padding 挡住折叠;修为 `.niceeval-grid-cell > .niceeval-report { margin: 0 }`,格内留白只由 Grid 给;单测量不到高度,真实产物截图才看得见"
     proof: []
     source:
       path: memory/INDEX.md

@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,10 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 2. **分隔符以裸 NUL *字节* 写进源码**——这是可以无损去掉的那一半,已修:源码里的裸 0x00 全部改写成 `\u0000`
-      转义序列(6 个 ASCII 字符)。模板字面量里的 `\u0000` 与裸 NUL 字节产出**逐字节相同**的运行时字符串(`` `x` +
-      转义 + `y` `` === `String.fromCharCode(120,0,121)`,已实测),所以 Map key、React
-      key、哈希输入、既有 locator 摘要全部不变;文件回到纯文本,`grep`/`rg`/`git diff`/Edit 工具一并恢复正常。
+    statement: 2. **分隔符以裸 NUL *字节* 写进源码**——这是可以无损去掉的那一半,已修:源码里的裸 0x00 全部改写成 `\u0000` 转义序列(6 个 ASCII 字符)。模板字面量里的 `\u0000` 与裸 NUL 字节产出**逐字节相同**的运行时字符串(`` `x` + 转义 + `y` `` === `String.fromCharCode(120,0,121)`,已实测),所以 Map key、React key、哈希输入、既有 locator 摘要全部不变;文件回到纯文本,`grep`/`rg`/`git diff`/Edit 工具一并恢复正常。
     proof: []
     source:
       path: memory/metric-views-compute-nul-byte-separator-blinds-grep.md

@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2b-sandbox.md
   commit: 746ee6c287043489a9ab17c556fcbbeea9b0fb99
-description: e2b base 模板只有 node20 + ~481MB 内存(npm install 会 OOM kill),内存/node
-  版本由模板烘焙决定不能创建时调;重 eval 用预制模板 fasteval-agents,构建踩坑清单在正文
+description: e2b base 模板只有 node20 + ~481MB 内存(npm install 会 OOM kill),内存/node 版本由模板烘焙决定不能创建时调;重 eval 用预制模板 fasteval-agents,构建踩坑清单在正文
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:

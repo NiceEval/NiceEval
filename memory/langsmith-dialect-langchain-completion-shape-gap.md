@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/langsmith-dialect-langchain-completion-shape-gap.md
   commit: e842f5e0d2544cd1091af51a10a0c0c490f2458d
-description: 当年的 langsmith 方言解析不了 LangChain ChatOpenAI 实际吐的 gen_ai.completion
-  形状(generations[0][0].text),message 事件恒空——方言连同整套 span 派生事件的 API
-  已撤,现在消息只能从协议帧来;BatchSpanProcessor 收尾宽限那条修法仍在用
+description: 当年的 langsmith 方言解析不了 LangChain ChatOpenAI 实际吐的 gen_ai.completion 形状(generations[0][0].text),message 事件恒空——方言连同整套 span 派生事件的 API 已撤,现在消息只能从协议帧来;BatchSpanProcessor 收尾宽限那条修法仍在用
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

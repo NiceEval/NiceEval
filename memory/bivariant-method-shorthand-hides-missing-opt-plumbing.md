@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- **已修**:`src/results/open.ts` 的 `makeResults()`
-      两个方法都已加宽并真正透传——`latest(opts?: { experiments?: string | string[]; fresh?:
-      boolean })` 与 `current(...)` 各自把 `fresh: opts?.fresh` 交给
-      `selectLatestResults`/`selectCurrentResults`。第 2
-      点建议的「接口方法签名全仓改箭头函数属性」仍未做,风险点照旧。"
+    statement: "- **已修**:`src/results/open.ts` 的 `makeResults()` 两个方法都已加宽并真正透传——`latest(opts?: { experiments?: string | string[]; fresh?: boolean })` 与 `current(...)` 各自把 `fresh: opts?.fresh` 交给 `selectLatestResults`/`selectCurrentResults`。第 2 点建议的「接口方法签名全仓改箭头函数属性」仍未做,风险点照旧。"
     proof: []
     source:
       path: memory/bivariant-method-shorthand-hides-missing-opt-plumbing.md

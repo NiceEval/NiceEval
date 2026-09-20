@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/docker-baseline-usr-local-not-writable.md
   commit: 8aa933822902af5a274a9207f0dc6c0042250261
-description: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable /
-  npm install -g 直接 EACCES;已修
+description: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable / npm install -g 直接 EACCES;已修
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,8 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable / npm
-      install -g 直接 EACCES;已修
+    statement: 官方 Docker 基线漏了 Node 工具契约第三条(可写性),USER node 切换后 corepack enable / npm install -g 直接 EACCES;已修
     proof: []
     source:
       path: memory/docker-baseline-usr-local-not-writable.md

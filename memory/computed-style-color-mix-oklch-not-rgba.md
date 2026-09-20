@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/computed-style-color-mix-oklch-not-rgba.md
   commit: 1b7c6c953b51a2c0ce2d90c6dd646ed91b4a4233
-description: 报告 CSS 大量用 color-mix(in oklch, ...) 做浅染背景,Chromium 里
-  getComputedStyle 算出来是 oklch(L C H / A) 斜杠语法,不是 rgba(r, g, b, a)——按传统 rgba 正则解析
-  alpha 会直接失配
+description: 报告 CSS 大量用 color-mix(in oklch, ...) 做浅染背景,Chromium 里 getComputedStyle 算出来是 oklch(L C H / A) 斜杠语法,不是 rgba(r, g, b, a)——按传统 rgba 正则解析 alpha 会直接失配
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

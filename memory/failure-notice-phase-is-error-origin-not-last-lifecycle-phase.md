@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-n\
-      otice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对
-      `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle
-      phase 反推 verdict 原因"
+    statement: "- 已修 [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对 `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle phase 反推 verdict 原因"
     proof: []
     source:
       path: memory/INDEX.md

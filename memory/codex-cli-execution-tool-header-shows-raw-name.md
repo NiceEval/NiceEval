@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/codex-cli-execution-tool-header-shows-raw-name.md
   commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: "`show --execution` 的 TOOL 卡片头显示
-  ExecutionActionNode.name(协议原始未归一化名),不是 t.calledTool() 断言用的 canonical 工具名;codex
-  的 command_execution/file_change 在 --execution 里就是这两个字面量,不会显示 shell/file_edit"
+description: "`show --execution` 的 TOOL 卡片头显示 ExecutionActionNode.name(协议原始未归一化名),不是 t.calledTool() 断言用的 canonical 工具名;codex 的 command_execution/file_change 在 --execution 里就是这两个字面量,不会显示 shell/file_edit"
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [codex-cli-execution-tool-header-shows-raw-name](codex-cli-execution-tool\
-      -header-shows-raw-name.md) — `show --execution` 的 TOOL 卡片头显示
-      `ExecutionActionNode.name`(协议原始名),codex 的 command_execution/file_change
-      不会显示 shell/file_edit;verify.ts 断言改 OR 兼容两种(镜像 codex-sdk 已有写法)"
+    statement: "- 已修 [codex-cli-execution-tool-header-shows-raw-name](codex-cli-execution-tool-header-shows-raw-name.md) — `show --execution` 的 TOOL 卡片头显示 `ExecutionActionNode.name`(协议原始名),codex 的 command_execution/file_change 不会显示 shell/file_edit;verify.ts 断言改 OR 兼容两种(镜像 codex-sdk 已有写法)"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [incomplete-summary-hides-unstarted](incomplete-summary-hides-unstarted.m\
-      d) — 止损闸后 human 结论只显示 `INCOMPLETE`、隐藏 `completion.unstarted`，计划与 verdict
-      平白少数；修为结论行显式列 `N unstarted`，保持「未执行」身份不冒充 skipped"
+    statement: "- 已修 [incomplete-summary-hides-unstarted](incomplete-summary-hides-unstarted.md) — 止损闸后 human 结论只显示 `INCOMPLETE`、隐藏 `completion.unstarted`，计划与 verdict 平白少数；修为结论行显式列 `N unstarted`，保持「未执行」身份不冒充 skipped"
     proof: []
     source:
       path: memory/INDEX.md

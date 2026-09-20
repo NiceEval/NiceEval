@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**:已修(2026-07-31)。出处判断收进装载 facade:`src/report/runtime/host.ts`
-      新增 `describeReportSource(reportPath, configuredReport)`,三档与
-      `loadHostReport` 一一对应;`src/show/index.ts` 缺 attempt
-      页的报错改用它,并先给一条当场可用的读法(`--report standard` 或 `--json`),再给三条把 attempt
-      页加进本报告的路径。覆盖类别声明在 `docs/engineering/testing/unit/reports.md`「报告取值链与
-      `--report` 值判别」,区分力场景是「没写 `--report` 但配了 `config.report`」。"
+    statement: "**修法**:已修(2026-07-31)。出处判断收进装载 facade:`src/report/runtime/host.ts` 新增 `describeReportSource(reportPath, configuredReport)`,三档与 `loadHostReport` 一一对应;`src/show/index.ts` 缺 attempt 页的报错改用它,并先给一条当场可用的读法(`--report standard` 或 `--json`),再给三条把 attempt 页加进本报告的路径。覆盖类别声明在 `docs/engineering/testing/unit/reports.md`「报告取值链与 `--report` 值判别」,区分力场景是「没写 `--report` 但配了 `config.report`」。"
     proof: []
     source:
       path: memory/show-locator-crashes-under-linked-worktree.md

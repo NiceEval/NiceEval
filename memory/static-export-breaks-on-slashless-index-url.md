@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,11 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [static-export-breaks-on-slashless-index-url](static-export-breaks-on-sla\
-      shless-index-url.md) — `--out`
-      站点被托管在无尾斜杠路径(`/showcase/memory`,cleanUrls)上时 attempt 下钻全 404;根因=浏览器按文档 URL
-      的目录解析相对引用、少一层,本地 server 永远带尾斜杠所以测不出;修为 index.html 落站点根归一的 `<base>` 引导脚本"
+    statement: "- 已修 [static-export-breaks-on-slashless-index-url](static-export-breaks-on-slashless-index-url.md) — `--out` 站点被托管在无尾斜杠路径(`/showcase/memory`,cleanUrls)上时 attempt 下钻全 404;根因=浏览器按文档 URL 的目录解析相对引用、少一层,本地 server 永远带尾斜杠所以测不出;修为 index.html 落站点根归一的 `<base>` 引导脚本"
     proof: []
     source:
       path: memory/INDEX.md

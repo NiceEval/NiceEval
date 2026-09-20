@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/report-site-ci-build-needs-tmp-install-workaround.md
   commit: f171b80afce6dc7e1595ffd99cedbb4fc00f6fac
-description: 下游仓库在 CI 里构建报告站要用「/tmp 装 niceeval+react + symlink node_modules
-  回仓库根」的 workaround,因为没有不依赖仓库自身 node_modules 的官方构建路径
+description: 下游仓库在 CI 里构建报告站要用「/tmp 装 niceeval+react + symlink node_modules 回仓库根」的 workaround,因为没有不依赖仓库自身 node_modules 的官方构建路径
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

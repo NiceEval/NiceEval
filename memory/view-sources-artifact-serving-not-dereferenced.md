@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,13 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [view-sources-artifact-serving-not-dereferenced](view-sources-artifact-se\
-      rving-not-dereferenced.md) — sources.json
-      落盘改两层去重存储后,`server.ts`/`index.ts` 的 artifact
-      出口仍原样转发/拷贝引用格式(`{path,sha256}[]`),浏览器端 guard 因缺 `content` 字段静默判空;修为两处都改经
-      `AttemptHandle.sources()` 解引用(`src/view/server.ts` + `src/view/index.ts` +
-      `src/view/data.ts` 的 `loadAttemptIndex`/`attemptsByBase`)"
+    statement: "- 已修 [view-sources-artifact-serving-not-dereferenced](view-sources-artifact-serving-not-dereferenced.md) — sources.json 落盘改两层去重存储后,`server.ts`/`index.ts` 的 artifact 出口仍原样转发/拷贝引用格式(`{path,sha256}[]`),浏览器端 guard 因缺 `content` 字段静默判空;修为两处都改经 `AttemptHandle.sources()` 解引用(`src/view/server.ts` + `src/view/index.ts` + `src/view/data.ts` 的 `loadAttemptIndex`/`attemptsByBase`)"
     proof: []
     source:
       path: memory/INDEX.md

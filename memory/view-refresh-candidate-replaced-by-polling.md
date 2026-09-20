@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -26,10 +27,7 @@ resolution:
             - Installed browser red nered_HJ67P7C0AH52MVQA; candidate ceffa89a270aec0dd8bd655bc5a3b92c0afa5c008562f9b1ee870e11c47bf4f9 passed complete takeover netake_BJJTAA44R0CE4XMX, including default Insight 7 cases and all process cleanup.
             - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078"]}
     proof:
-      - Installed browser red nered_HJ67P7C0AH52MVQA; candidate
-        ceffa89a270aec0dd8bd655bc5a3b92c0afa5c008562f9b1ee870e11c47bf4f9 passed
-        complete takeover netake_BJJTAA44R0CE4XMX, including default Insight 7
-        cases and all process cleanup.
+      - Installed browser red nered_HJ67P7C0AH52MVQA; candidate ceffa89a270aec0dd8bd655bc5a3b92c0afa5c008562f9b1ee870e11c47bf4f9 passed complete takeover netake_BJJTAA44R0CE4XMX, including default Insight 7 cases and all process cleanup.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078"]}
     source:
       path: memory/view-refresh-candidate-replaced-by-polling.md

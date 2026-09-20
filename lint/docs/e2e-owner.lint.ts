@@ -12,7 +12,7 @@ describe("E2E case relation owner lint", () => {
       { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     );
     const receipt = JSON.parse(output) as { format?: unknown; findings?: unknown };
-    expect(receipt.format).toBe("niceeval.docs-trace/list-v1");
+    expect(receipt.format).toBe("concord.docs-trace/list-v1");
     expect(receipt.findings ?? []).toEqual([]);
   }, 60_000);
 });

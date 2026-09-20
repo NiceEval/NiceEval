@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,9 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: 已修复：`examples/zh/ai-sdk/evals/image-understanding.eval.ts`(2026-07-01)。回归用例见
-      `test/e2e-image-refusal.test.ts` + `test/fixtures/image-refusal/`(mock
-      agent 永远回复"拒绝识图",e2e 跑真实 CLI 断言 outcome 必须是 failed)。
+    statement: 已修复：`examples/zh/ai-sdk/evals/image-understanding.eval.ts`(2026-07-01)。回归用例见 `test/e2e-image-refusal.test.ts` + `test/fixtures/image-refusal/`(mock agent 永远回复"拒绝识图",e2e 跑真实 CLI 断言 outcome 必须是 failed)。
     proof: []
     source:
       path: memory/loose-gate-regex-plus-soft-judge-false-pass.md

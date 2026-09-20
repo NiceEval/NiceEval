@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/e2b-list-returns-paginator-not-array.md
   commit: 0cef7946b085cf102fd9ac695cfa566ee8845637
-description: reconcileProvision 把 e2b Sandbox.list() 当成同步返回 Promise<数组>
-  来用,真实签名是同步返回 SandboxPaginator,for...of 直接炸 TypeError,导致对账(reconcile)硬失败、整批重试被
-  abort
+description: reconcileProvision 把 e2b Sandbox.list() 当成同步返回 Promise<数组> 来用,真实签名是同步返回 SandboxPaginator,for...of 直接炸 TypeError,导致对账(reconcile)硬失败、整批重试被 abort
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [e2b-list-returns-paginator-not-array](e2b-list-returns-paginator-not-arr\
-      ay.md) — `Sandbox.list()` 真实是同步返回 `SandboxPaginator`，不是 Promise
-      数组；provision reconcile 与 detached keep inspect 都改为 `hasNext`/`nextItems()`
-      翻页，避免将真机 TypeError 吞成错误的过期状态(`src/sandbox/e2b.ts`、`src/sandbox/keep.ts`)"
+    statement: "- 已修 [e2b-list-returns-paginator-not-array](e2b-list-returns-paginator-not-array.md) — `Sandbox.list()` 真实是同步返回 `SandboxPaginator`，不是 Promise 数组；provision reconcile 与 detached keep inspect 都改为 `hasNext`/`nextItems()` 翻页，避免将真机 TypeError 吞成错误的过期状态(`src/sandbox/e2b.ts`、`src/sandbox/keep.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

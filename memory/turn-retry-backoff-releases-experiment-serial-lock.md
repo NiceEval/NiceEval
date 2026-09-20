@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [turn-retry-backoff-releases-experiment-serial-lock](turn-retry-backoff-r\
-      eleases-experiment-serial-lock.md) — turn 级重试退避把实验级 runSem
-      一并释放,`maxConcurrency: 1` 的串行契约被击穿(下游 mempal 记忆回存竞态、running=2 实证);修法=退避只释放
-      globalSem,退避期间继续持有 runSem(裁决见 experiment-gate-tenure-ruling,commit
-      `9d7b352`+`6953d51`);MemoryBench 真机回归三条判据全过"
+    statement: "- 已修 [turn-retry-backoff-releases-experiment-serial-lock](turn-retry-backoff-releases-experiment-serial-lock.md) — turn 级重试退避把实验级 runSem 一并释放,`maxConcurrency: 1` 的串行契约被击穿(下游 mempal 记忆回存竞态、running=2 实证);修法=退避只释放 globalSem,退避期间继续持有 runSem(裁决见 experiment-gate-tenure-ruling,commit `9d7b352`+`6953d51`);MemoryBench 真机回归三条判据全过"
     proof: []
     source:
       path: memory/INDEX.md

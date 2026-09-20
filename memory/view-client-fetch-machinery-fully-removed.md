@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/view-client-fetch-machinery-fully-removed.md
   commit: 421474faf4b046d33e385953e4f269d45944eb42
-description: Phase F 收尾——AttemptModal/CodeView/Trace/Transcript 等整棵客户端手渲染树连同
-  viewData.snapshots 一起删除,attempt 详情改成 fetch 独立文档塞进 dialog;记录判断"什么算真死"的依据(遗留的两处
-  cases.md 陈旧行已在 Phase H 处理完)
+description: Phase F 收尾——AttemptModal/CodeView/Trace/Transcript 等整棵客户端手渲染树连同 viewData.snapshots 一起删除,attempt 详情改成 fetch 独立文档塞进 dialog;记录判断"什么算真死"的依据(遗留的两处 cases.md 陈旧行已在 Phase H 处理完)
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -23,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [view-client-fetch-machinery-fully-removed](view-client-fetch-machinery-f\
-      ully-removed.md) — Phase F 收尾:AttemptModal/CodeView/Trace/Transcript
-      整棵客户端手渲染树 + viewData.snapshots 一起删除,attempt 详情改 fetch 独立文档塞
-      dialog;记录判活依据、无浏览器环境下的验证手法;遗留的 cases.md 陈旧行已在 Phase H 处理(第 218 行删除,198/220
-      行复核后判定无需改)"
+    statement: "- 已修 [view-client-fetch-machinery-fully-removed](view-client-fetch-machinery-fully-removed.md) — Phase F 收尾:AttemptModal/CodeView/Trace/Transcript 整棵客户端手渲染树 + viewData.snapshots 一起删除,attempt 详情改 fetch 独立文档塞 dialog;记录判活依据、无浏览器环境下的验证手法;遗留的 cases.md 陈旧行已在 Phase H 处理(第 218 行删除,198/220 行复核后判定无需改)"
     proof: []
     source:
       path: memory/INDEX.md

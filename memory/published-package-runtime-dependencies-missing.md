@@ -5,39 +5,38 @@ title: 发布包缺失运行依赖并触发 pnpm build approval
 createdAt: 2026-08-27T16:30:00+08:00
 kind: memory
 memoryKind: problem
-state: resolved
-epoch: 0
+state: open
+epoch: 1
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
-history: []
-resolution:
-  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: >-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - package E2E installed candidate sha256 b9fac436912598abaaad0278564a075a139608b0110d3d086dde12f166803830 in pnpm 11 without a NiceEval build allowlist and passed --version, init, list, and exp --dry; a separate empty project with a new pnpm store also installed it without msgpackr-extract
-            - package reliability takeover passed all six required observations for the same candidate, including three isolated installations and repeated same-copy execution
-    proof:
-      - package E2E installed candidate sha256
-        b9fac436912598abaaad0278564a075a139608b0110d3d086dde12f166803830 in pnpm
-        11 without a NiceEval build allowlist and passed --version, init, list,
-        and exp --dry; a separate empty project with a new pnpm store also
-        installed it without msgpackr-extract
-      - package reliability takeover passed all six required observations for
-        the same candidate, including three isolated installations and repeated
-        same-copy execution
-    source:
-      path: memory/published-package-runtime-dependencies-missing.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:64ee7edb2cd5ef7bb0a3cef900f3bc32f29d83b8640e1fb2c4b1c6236be350e7
+history:
+  - at: 2026-09-20T07:49:49.786Z
+    action: reopen
+    reason: reopen
+    resolution:
+      reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+      at: 2026-09-14T15:00:25.173Z
+      epoch: 0
+      kind: fixed
+      evidenceLevel: attested
+      attestation:
+        statement: |-
+          kind:
+            type: problem
+            state: resolved
+            resolution:
+              kind: fixed
+              proof:
+                - package E2E installed candidate sha256 b9fac436912598abaaad0278564a075a139608b0110d3d086dde12f166803830 in pnpm 11 without a NiceEval build allowlist and passed --version, init, list, and exp --dry; a separate empty project with a new pnpm store also installed it without msgpackr-extract
+                - package reliability takeover passed all six required observations for the same candidate, including three isolated installations and repeated same-copy execution
+        proof:
+          - package E2E installed candidate sha256 b9fac436912598abaaad0278564a075a139608b0110d3d086dde12f166803830 in pnpm 11 without a NiceEval build allowlist and passed --version, init, list, and exp --dry; a separate empty project with a new pnpm store also installed it without msgpackr-extract
+          - package reliability takeover passed all six required observations for the same candidate, including three isolated installations and repeated same-copy execution
+        source:
+          path: memory/published-package-runtime-dependencies-missing.md
+          commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+          digest: sha256:64ee7edb2cd5ef7bb0a3cef900f3bc32f29d83b8640e1fb2c4b1c6236be350e7
+    commit: 5d4aa1a991d614f3acc2647850d6b5d21f215658
 ---
 # 发布包缺失运行依赖并触发 pnpm build approval
 

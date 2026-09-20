@@ -7,13 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/pnpm11-allowbuilds-placeholder-blocks-install.md
   commit: cf56ab35bd961c1d046c9bee0620ad046becb04d
-description: pnpm 11 给新依赖的 build script 写 allowBuilds 占位符('set this to true or
-  false')并让 pnpm install 直接 exit 1——加带 postinstall 的依赖后必须手改 pnpm-workspace.yaml
-  才能继续
+description: pnpm 11 给新依赖的 build script 写 allowBuilds 占位符('set this to true or false')并让 pnpm install 直接 exit 1——加带 postinstall 的依赖后必须手改 pnpm-workspace.yaml 才能继续
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

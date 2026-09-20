@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,8 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**修法**:已修(2026-07-31),选的是「platform 从构建执行环境探测再进
-      key」这条,并顺带把该值传给构建执行,两个方向合成一条闭环。"
+    statement: "**修法**:已修(2026-07-31),选的是「platform 从构建执行环境探测再进 key」这条,并顺带把该值传给构建执行,两个方向合成一条闭环。"
     proof: []
     source:
       path: memory/buildkey-platform-declared-not-enforced.md

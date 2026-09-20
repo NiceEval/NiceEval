@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [accept-batch-per-locator-planning-oom](accept-batch-per-locator-planning\
-      -oom.md) — 批量 `acceptLocators` 曾让每条 locator 各自并发重跑一遍完整 discovery + sandbox
-      planning,137 条撑爆 4GB 堆;修为 discovery 只 hoist 一次、sandbox planning 按
-      experiment 记忆化、指纹计算共享 sourceCache、prepare 阶段加 8
-      并发小池(`src/runner/accept.ts`)"
+    statement: "- 已修 [accept-batch-per-locator-planning-oom](accept-batch-per-locator-planning-oom.md) — 批量 `acceptLocators` 曾让每条 locator 各自并发重跑一遍完整 discovery + sandbox planning,137 条撑爆 4GB 堆;修为 discovery 只 hoist 一次、sandbox planning 按 experiment 记忆化、指纹计算共享 sourceCache、prepare 阶段加 8 并发小池(`src/runner/accept.ts`)"
     proof: []
     source:
       path: memory/INDEX.md

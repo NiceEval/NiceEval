@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions:
   - docs/feature/assertions/library/display.md#单条-assertion
 history: []
@@ -17,7 +18,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -28,17 +29,9 @@ resolution:
             - "E2E green: pnpm e2e run --candidate <096f08f5 candidate> --repo report -- --run test/report.browser.spec.ts -g 经典报告将 Attempt passed and verified scored weight/earned, measurement observed/threshold, and collapsed Array(2) input."
             - "E2E takeover: report reliability matrix passed all isolated-copy, same-copy, repo-default-parallel, and target-single observations for the same candidate digest."
     proof:
-      - "E2E red: candidate
-        096f08f54642aba88b03ff3253b1bf0e7880672b5b937980ede2e91945e68335 failed
-        because the scored mismatch header was absent before the report UI
-        change."
-      - "E2E green: pnpm e2e run --candidate <096f08f5 candidate> --repo report
-        -- --run test/report.browser.spec.ts -g 经典报告将 Attempt passed and
-        verified scored weight/earned, measurement observed/threshold, and
-        collapsed Array(2) input."
-      - "E2E takeover: report reliability matrix passed all isolated-copy,
-        same-copy, repo-default-parallel, and target-single observations for the
-        same candidate digest."
+      - "E2E red: candidate 096f08f54642aba88b03ff3253b1bf0e7880672b5b937980ede2e91945e68335 failed because the scored mismatch header was absent before the report UI change."
+      - "E2E green: pnpm e2e run --candidate <096f08f5 candidate> --repo report -- --run test/report.browser.spec.ts -g 经典报告将 Attempt passed and verified scored weight/earned, measurement observed/threshold, and collapsed Array(2) input."
+      - "E2E takeover: report reliability matrix passed all isolated-copy, same-copy, repo-default-parallel, and target-single observations for the same candidate digest."
     source:
       path: memory/report-match-details-obscure-score-and-collection.md
       commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f

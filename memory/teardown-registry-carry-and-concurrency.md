@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [teardown-registry-carry-and-concurrency](teardown-registry-carry-and-con\
-      currency.md) — 全携带零派发曾跳过强杀遗留的启动自愈，单实验槽位又会让并发 run 互相覆盖；修为调度前逐条认领与
-      experimentId+pid 条目键"
+    statement: "- 已修 [teardown-registry-carry-and-concurrency](teardown-registry-carry-and-concurrency.md) — 全携带零派发曾跳过强杀遗留的启动自愈，单实验槽位又会让并发 run 互相覆盖；修为调度前逐条认领与 experimentId+pid 条目键"
     proof: []
     source:
       path: memory/INDEX.md

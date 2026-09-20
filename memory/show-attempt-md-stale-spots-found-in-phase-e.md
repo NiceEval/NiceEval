@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/show-attempt-md-stale-spots-found-in-phase-e.md
   commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
-description: Phase H 待办清单——docs/feature/reports/show/attempt.md 里三处仍是旧
-  attemptOverviewText 时代的叙述,与新 AttemptDetail 组件族实际输出不符
+description: Phase H 待办清单——docs/feature/reports/show/attempt.md 里三处仍是旧 attemptOverviewText 时代的叙述,与新 AttemptDetail 组件族实际输出不符
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:

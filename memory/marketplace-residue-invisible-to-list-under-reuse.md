@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [marketplace-residue-invisible-to-list-under-reuse](marketplace-residue-i\
-      nvisible-to-list-under-reuse.md) — 复用+plugins 第 2 条 attempt 起必死「already
-      added from a different source」:configFile 整层替换抹掉 config 里的注册项、磁盘残根 list
-      看不见但 add 撞;修成按声明名字无条件 remove(容忍不存在),add 是权威失败面;原「install_hooks.py
-      改托管源」归因是错的,第一版按 list 播种的修法真机被打回"
+    statement: "- 已修 [marketplace-residue-invisible-to-list-under-reuse](marketplace-residue-invisible-to-list-under-reuse.md) — 复用+plugins 第 2 条 attempt 起必死「already added from a different source」:configFile 整层替换抹掉 config 里的注册项、磁盘残根 list 看不见但 add 撞;修成按声明名字无条件 remove(容忍不存在),add 是权威失败面;原「install_hooks.py 改托管源」归因是错的,第一版按 list 播种的修法真机被打回"
     proof: []
     source:
       path: memory/INDEX.md

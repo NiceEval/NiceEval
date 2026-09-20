@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-re\
-      lease-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超
-      `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user
-      并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification
-      architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档"
+    statement: "- 已修 [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-release-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超 `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user 并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档"
     proof: []
     source:
       path: memory/INDEX.md

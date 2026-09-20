@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [live-dashboard-active-row-elapsed-resets-per-phase](live-dashboard-activ\
-      e-row-elapsed-resets-per-phase.md) — ACTIVE 行时间列按当前 phase 计时,`eval.run`
-      跑几分钟后进 `workspace.diff` 回归 0s,读起来像这条 eval 重跑了,还与 cli.md「存活性由持续增长的 elapsed
-      证明」自相矛盾;修为 `ActiveAttempt.startedAt` 只在 `attempt:start`
-      写一次、阶段推进只换标签,阶段耗时不进 live 面板(归 `timing.phases`)"
+    statement: "- 已修 [live-dashboard-active-row-elapsed-resets-per-phase](live-dashboard-active-row-elapsed-resets-per-phase.md) — ACTIVE 行时间列按当前 phase 计时,`eval.run` 跑几分钟后进 `workspace.diff` 回归 0s,读起来像这条 eval 重跑了,还与 cli.md「存活性由持续增长的 elapsed 证明」自相矛盾;修为 `ActiveAttempt.startedAt` 只在 `attempt:start` 写一次、阶段推进只换标签,阶段耗时不进 live 面板(归 `timing.phases`)"
     proof: []
     source:
       path: memory/INDEX.md

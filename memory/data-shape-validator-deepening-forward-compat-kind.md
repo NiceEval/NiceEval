@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/data-shape-validator-deepening-forward-compat-kind.md
   commit: 496974edc5136db605516115c26363165e6b24ad
-description: 深化 validate*Data 判别联合时两种反方向的坑——ScopeWarning 未登记 kind 要放行（validator
-  曾太严）、TraceSpan 字段被 fixture 的 as never 偷懒绕过（validator 是对的，该改 fixture）
+description: 深化 validate*Data 判别联合时两种反方向的坑——ScopeWarning 未登记 kind 要放行（validator 曾太严）、TraceSpan 字段被 fixture 的 as never 偷懒绕过（validator 是对的，该改 fixture）
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,12 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [data-shape-validator-deepening-forward-compat-kind](data-shape-validator\
-      -deepening-forward-compat-kind.md) — 深化 `validate*Data`
-      判别联合炸出既有测试时两种反方向的坑:`ScopeWarning` 未登记 kind 要放行(validator 曾太严,改
-      validator);`TraceSpan` 字段被两处 fixture 的 `as never` 偷懒绕过(validator 是对的,改
-      fixture);判断法与两个真实案例见正文"
+    statement: "- 已修 [data-shape-validator-deepening-forward-compat-kind](data-shape-validator-deepening-forward-compat-kind.md) — 深化 `validate*Data` 判别联合炸出既有测试时两种反方向的坑:`ScopeWarning` 未登记 kind 要放行(validator 曾太严,改 validator);`TraceSpan` 字段被两处 fixture 的 `as never` 偷懒绕过(validator 是对的,改 fixture);判断法与两个真实案例见正文"
     proof: []
     source:
       path: memory/INDEX.md

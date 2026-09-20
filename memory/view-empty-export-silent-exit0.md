@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,10 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view
-      对零选中结果曾静默导出空报告 exit 0，CI 发布会把空站顶上线；全站关闭按 `coverage.selected` 类型化失败为
-      `report-sample-empty`，已选中结果中的 empty MetricValue 仍可发布"
+    statement: "- 已修 [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view 对零选中结果曾静默导出空报告 exit 0，CI 发布会把空站顶上线；全站关闭按 `coverage.selected` 类型化失败为 `report-sample-empty`，已选中结果中的 empty MetricValue 仍可发布"
     proof: []
     source:
       path: memory/INDEX.md

@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,9 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "**根因**：中断发布把任何含 reserved Attempt 的 Run 整体排除。已完成 Attempt 只在
-      Invocation 收尾统一写 fixed families；在飞 Attempt 又从未关闭自己的 writer session，因此 Run
-      无法 seal。"
+    statement: "**根因**：中断发布把任何含 reserved Attempt 的 Run 整体排除。已完成 Attempt 只在 Invocation 收尾统一写 fixed families；在飞 Attempt 又从未关闭自己的 writer session，因此 Run 无法 seal。"
     proof: []
     source:
       path: memory/interrupted-run-completed-attempt-hidden.md

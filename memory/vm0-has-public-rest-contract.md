@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/vm0-has-public-rest-contract.md
   commit: 8e283b79a9f76d51beb7f75ebad884d7499e9479
-description: vm0 其实有公开、版本化的 REST 契约可程序化接入(POST /api/agent/runs + 轮询 events),"无公开
-  API"的旧调研结论是错的;examples/zh/origin/vm0 已按此重写为真集成
+description: vm0 其实有公开、版本化的 REST 契约可程序化接入(POST /api/agent/runs + 轮询 events),"无公开 API"的旧调研结论是错的;examples/zh/origin/vm0 已按此重写为真集成
 kind: memory
 memoryKind: problem
 state: captured
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 ---

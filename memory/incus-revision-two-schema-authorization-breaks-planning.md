@@ -7,6 +7,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -16,7 +17,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: >-
+    statement: |-
       kind:
         type: problem
         state: resolved
@@ -27,13 +28,9 @@ resolution:
             - "installed exact-candidate owner passed: pnpm --dir /tmp/niceeval-incus-fixed.6ADb6Q exec vitest run test/incus-user-database-ledger.test.ts (58.3s)"
             - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
     proof:
-      - "main E2E red: run 33082665372, docker-3 job 98555987722 stopped before
-        artifact publication"
-      - "installed exact-candidate owner passed: pnpm --dir
-        /tmp/niceeval-incus-fixed.6ADb6Q exec vitest run
-        test/incus-user-database-ledger.test.ts (58.3s)"
-      - "main E2E green twice: runs 33086183347 and 33086382261, including
-        repo-batch-docker-3"
+      - "main E2E red: run 33082665372, docker-3 job 98555987722 stopped before artifact publication"
+      - "installed exact-candidate owner passed: pnpm --dir /tmp/niceeval-incus-fixed.6ADb6Q exec vitest run test/incus-user-database-ledger.test.ts (58.3s)"
+      - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
     source:
       path: memory/incus-revision-two-schema-authorization-breaks-planning.md
       commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f

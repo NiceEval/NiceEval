@@ -7,12 +7,12 @@ createdAtSource:
   kind: first-recorded
   path: memory/exp-show-unbounded-output-cases.md
   commit: 389e2ead7116a0220950f340f2c56c8ef42a1585
-description: exp/show 实测输出违反已有 human 契约:全 reused 缺 FAILURES、per-config 复用清单铺开、0s
-  却 $7 成本口径矛盾、show Result 单元格 dump 整段 stdout
+description: exp/show 实测输出违反已有 human 契约:全 reused 缺 FAILURES、per-config 复用清单铺开、0s 却 $7 成本口径矛盾、show Result 单元格 dump 整段 stdout
 kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -22,16 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 代码侧已修(2026-07-15):反馈状态把「最终结果集」与「本次实际派发」拆成两层。carry 的失败在 plan
-      阶段静态注入终局 FAILURES,不伪装成刚发生的 failure event；token/cost 只由 fresh
-      `attempt:complete` 累计,全复用固定显示 `0s · 0 new tok · $0.00`；Reuse 只显示聚合数量；0
-      eval 选择在调度/落盘前非零退出。断言摘要统一先折单行、再做 240 字符安全上限,完整证据仍留在
-      show/view。类型检查、反馈/runner/scoring 定向测试与空选择 CLI e2e 已通过。全量 CLI profile 与
-      sandbox hook 的确定性 mock 也已在
-      `test/fixtures/cli-output-profiles/agents/mock.ts`、`test/fixtures/sandbox\
-      -hooks/experiments/order/mock.ts` 显式声明 `completeCoverage`，不再因 Adapter 省略
-      coverage = unknown 而把 `succeeded()` 降成 unavailable；两份 spawn 级测试隔离重跑通过。真机
-      full-reuse 仍需单独复核。"
+    statement: "- 代码侧已修(2026-07-15):反馈状态把「最终结果集」与「本次实际派发」拆成两层。carry 的失败在 plan 阶段静态注入终局 FAILURES,不伪装成刚发生的 failure event；token/cost 只由 fresh `attempt:complete` 累计,全复用固定显示 `0s · 0 new tok · $0.00`；Reuse 只显示聚合数量；0 eval 选择在调度/落盘前非零退出。断言摘要统一先折单行、再做 240 字符安全上限,完整证据仍留在 show/view。类型检查、反馈/runner/scoring 定向测试与空选择 CLI e2e 已通过。全量 CLI profile 与 sandbox hook 的确定性 mock 也已在 `test/fixtures/cli-output-profiles/agents/mock.ts`、`test/fixtures/sandbox-hooks/experiments/order/mock.ts` 显式声明 `completeCoverage`，不再因 Adapter 省略 coverage = unknown 而把 `succeeded()` 降成 unavailable；两份 spawn 级测试隔离重跑通过。真机 full-reuse 仍需单独复核。"
     proof: []
     source:
       path: memory/exp-show-unbounded-output-cases.md

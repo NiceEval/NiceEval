@@ -12,6 +12,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -21,11 +22,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [docs-renames-dont-auto-propagate-to-docs-site](docs-renames-dont-auto-pr\
-      opagate-to-docs-site.md) — `--eval`→`--source` 改名与 `defineReport`
-      函数形态删除都只同步了 `docs/`,`docs-site/` 整篇教旧 API;修法=收尾大改动前单独 grep docs-site
-      找旧名字,不假设 docs/ 干净等于 docs-site 干净"
+    statement: "- 已修 [docs-renames-dont-auto-propagate-to-docs-site](docs-renames-dont-auto-propagate-to-docs-site.md) — `--eval`→`--source` 改名与 `defineReport` 函数形态删除都只同步了 `docs/`,`docs-site/` 整篇教旧 API;修法=收尾大改动前单独 grep docs-site 找旧名字,不假设 docs/ 干净等于 docs-site 干净"
     proof: []
     source:
       path: memory/INDEX.md

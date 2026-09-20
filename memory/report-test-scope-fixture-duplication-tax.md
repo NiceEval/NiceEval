@@ -11,6 +11,7 @@ kind: memory
 memoryKind: problem
 state: resolved
 epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
 history: []
 resolution:
@@ -20,12 +21,7 @@ resolution:
   kind: fixed
   evidenceLevel: attested
   attestation:
-    statement: "- 已修
-      [report-test-scope-fixture-duplication-tax](report-test-scope-fixture-dup\
-      lication-tax.md) — report 四个测试文件各复制一份 `scopeOf`/`resultsOf`,makeScope
-      两天两次改签名每次连改四处;修为收敛进
-      `src/report/components/scope.harness.ts`(`*.harness.ts` 不进 vitest 收集与
-      dist/report)"
+    statement: "- 已修 [report-test-scope-fixture-duplication-tax](report-test-scope-fixture-duplication-tax.md) — report 四个测试文件各复制一份 `scopeOf`/`resultsOf`,makeScope 两天两次改签名每次连改四处;修为收敛进 `src/report/components/scope.harness.ts`(`*.harness.ts` 不进 vitest 收集与 dist/report)"
     proof: []
     source:
       path: memory/INDEX.md
