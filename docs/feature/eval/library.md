@@ -34,6 +34,10 @@ const social = defineAdapter({
 ## 执行上下文
 
 ```ts
+interface AdapterCleanupContext {
+  readonly signal: AbortSignal;
+}
+
 interface AdapterCreateContext {
   readonly evalId: string;
   readonly experimentId: string;
@@ -45,13 +49,17 @@ interface AdapterCreateContext {
   progress(update: ProgressUpdate): void;
   diagnostic(input: DiagnosticInput): void;
   log(message: string): void;
-  onCleanup(cleanup: () => void | Promise<void>): void;
+  onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
 }
 ```
 
 `ctx` 提供执行配置、取消、反馈与资源释放登记，不提供应用操作或通用持久写入。
 每个实际执行的 Attempt 创建一次上下文；carry 不创建实例。
-应用应传递 `signal`，取得资源后立即登记 cleanup callback。注册成功才将释放义务交给框架。
+应用应将 `ctx.signal` 传给执行阶段的工作，取得资源后立即登记 cleanup callback。注册成功才将释放义务交给框架。
+
+cleanup callback 收到冻结的 `AdapterCleanupContext`。它的 `signal` 属于当前 `cleanup-open` 状态的 30 秒总预算，不是可能已经取消的 `ctx.signal`。
+同一次 cleanup 的回调共享这个 signal。
+回调可以在外部释放操作中传递该 signal，并在总预算结束时协作取消；现有零参数回调保持有效。
 资源接管结束后的注册同步失败，作者仍须释放尚未移交的资源；完整边界见 [生命周期](architecture.md#应用实例生命周期)。
 
 ## 单一强类型 t

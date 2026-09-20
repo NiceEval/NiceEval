@@ -149,6 +149,7 @@ Application 在 create 部分失败或 Attempt 取消后释放已取得资源，
 
 同步 abort listener 不能登记 Assertion、修改已有 handle 或再次调用顶层应用方法。
 资源释放回调抛错不会跳过栈中其它回调；fixture journal 只观察应用自身的资源，不读取 NiceEval 私有结果。
+每个 cleanup callback 收到冻结 context；Attempt 取消后 cleanup signal 仍活动，同窗回调共享它，并在 30 秒总预算结束时取消。
 完成通知阶段再次登记资源必须同步失败。成功判定后的释放回调即使跨过执行 deadline 并抛错，也只能追加 diagnostic。
 
 ## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}

@@ -1,81 +1,90 @@
-# 编写 Adapter
+# 编写自定义 Adapter
 
-一个 Adapter 只负责两件事：驱动自己的被测对象，并把原始行为归一成 `Turn`。
-先实现最小 `send`，再按 eval 实际需要补充事件、会话、HITL 和 tracing。
+自定义 Adapter 把被测应用的原生操作带进 eval。它不是 Agent，也不需要把应用伪装成对话。
+`defineAdapter` 的 `create` 返回一个普通对象；对象的顶层方法会出现在由该 Adapter 的 `defineEval` 创建的 `t` 上。
 
-## 递进实现
+Agent 是另一种 Adapter。Agent 实现 `send(input, ctx) → Turn`，供 `t.send()` 驱动一次会话往返。
+原生 Adapter 不要求实现这个 Agent 协议，也不需要构造 `Turn`；它自己的方法仍可命名为 `send`。
 
-| 步骤 | Adapter 增量 | 解锁的 eval 行为 |
-|---|---|---|
-| 收发消息 | 只在取得可信协议终态时返回真实 `status` / `data`；执行异常 reject `SendFailure` | 单轮发送、结构化输出、`succeeded` |
-| 标准事件流 | 完整转换消息、工具、结果与 usage | 消息、工具和事件断言 |
-| 多轮会话 | 使用 typed session slot 或 `id` / `capture()` | 连续发送和 `newSession()` |
-| HITL | waiting、`input.requested`、按 request ID 恢复 | `t.check(turn.status, equals("waiting"))`、`requireInputRequest`、`respond` |
-| tracing | exporter 配置与 span mapper | 当前运行的 trace 瀑布图；raw OTLP 不进入 Record |
+## 返回原生操作
 
-这五步表示 Adapter 文件实现了多少行为；Tier 1/2/3 表示接入需要对被测应用做多少修改。
-两套坐标彼此正交。
-
-被测对象是 Sandbox CLI 时，再加一份 ensure 声明（目标 identity 加只读 探测）——这是 Adapter 在 Sandbox 内的全部准备义务。
-第三方 Adapter 写协议加 ensure 声明就是完整的纯适配；安装由按 identity 配对的官方 Agent 安装层承担，需要自管分发渠道时随包导出自己的安装层（见 [Agent Ensure](../architecture/agent-ensure.md)）。
-
-## 组织 `send`
-
-把 `send` 拆成三个可单测的函数，主函数只负责编排：
-
-```text
-transport ─► reducer ─► session / HITL orchestration ─► Turn
-```
-
-### 1. 写 transport
-
-写一个只负责调用对象的函数，传入 `ctx.signal`，返回原始响应、frame cursor 或 transcript。
-URL、鉴权、请求体和 CLI 参数留在这里。
-transport 必须同时保存受理事实与进程终态：能证明 admission 拒绝才写 `acceptance: "rejected"`，已经出现服务端处理或 agent 事件写 `started`，其余写 `unknown`。自然语言、空事件和退出码不能代替这个判定。
-
-### 2. 选择 reducer
-
-优先从 [`sdk/`](../sdk/README.md) 选择官方转换器；没有转换器时写一个只接受 fixture 数据的纯映射函数。
-
-根据输入形态选择写法：
-
-- **完整单元事件**：一帧已经包含完整消息或工具生命周期片段，逐帧映射即可。
-- **增量 delta**：文本和工具参数需要按 call ID/index 累积，到结束信号才落地；优先用协议官方 reducer，其次用 `deltaStream`。
-
-### 3. 在 `send` 中接入会话
-
-在 `send` 中使用 `ctx.session` 读取或提交历史、捕获 ID，并在暂停时保存 cursor。
-直接套用 [使用会话与 HITL](sessions-and-hitl.md) 的对应示例。
-
-Reducer 只有在协议给出完整 terminal frame 时构造 `Turn`。`completed` / `waiting` / `failed` 都是可信终态；进程非零、signal、transport 中断或缺 terminal frame 时构造并 reject `SendFailure`，由 core 统一分类和重试。不要把执行异常压成 `Turn.failed`，也不要在 Adapter 内整段重发输入。
-
-需要 trace 时，把 `ctx.telemetry.headers` 传给 transport；不要在 reducer 里从 span 生成行为事件。
-内部数据流见 [Architecture](../architecture.md#数据流)。
-
-## 完整性优先
-
-正断言缺数据会失败，负断言缺数据可能静默通过。
-Adapter 不应为了“看起来支持工具断言”而只映射容易取得的成功事件。
-无法证明完整时，应明确说明限制并让 eval 避免使用对应负断言。
-见 [Architecture · 断言证据与完整性](../architecture/evidence.md)。
-
-## 组合与发现
-
-niceeval 不维护按字符串名称查找 Agent 的运行时注册表。
-Adapter 是普通 TypeScript 值，由 experiment 直接 import：
+下面的 Adapter 连接一个订单应用。`createOrderApp` 属于应用自身。运行器每个 Attempt 调用一次 `create`，传递取消信号，并在结束时执行已登记的 `onCleanup` 回调。
 
 ```ts
-import { defineExperiment } from "niceeval";
-import agent from "../agents/support.ts";
+import { defineAdapter } from "niceeval";
+import { createOrderApp } from "./src/order-app.ts";
 
-export default defineExperiment({ agent, attempts: 3 });
+export const orders = defineAdapter({
+  name: "orders",
+  create({ signal, onCleanup }) {
+    const app = createOrderApp({ signal });
+    onCleanup(() => app.close());
+
+    return {
+      createOrder: (sku: string, quantity: number) => app.createOrder({ sku, quantity }),
+      cancelOrder: (orderId: string) => app.cancelOrder(orderId),
+      findOrder: (orderId: string) => app.findOrder(orderId),
+    };
+  },
+});
 ```
 
-要比较 Agent 或模型，定义不同 experiment 并复用同一个 factory。
-名字用于结果标识和路由，不用于 core 按供应商分支。
+实例隔离由 Adapter 作者的 factory 实现；运行器不保证返回独立实例，也不会释放未登记 `onCleanup` 的资源。取得资源后立刻调用 `onCleanup`，并把 `signal` 传给网络请求与长任务，取消时应用才能停止工作。返回值必须是普通对象；已有 class 或 client 用闭包包成所需的方法，不直接返回实例。
+
+方法名和参数由应用决定。`check`、`judge`、`signal` 等 NiceEval 名称已由 eval runtime 使用，不能作为返回对象的键。
+
+## 用 Adapter 绑定 eval 与 Match
+
+从同一个 Adapter 值调用 `defineEval`。`t` 同时拥有 Adapter 返回的原生方法和 NiceEval 的断言 API，TypeScript 会从 `create` 的返回对象推导这些方法的参数与结果。
+
+```ts
+import { defineValueMatch } from "niceeval/expect";
+import { orders } from "../orders.ts";
+
+type Order = {
+  readonly id: string;
+  readonly status: "pending" | "confirmed" | "cancelled";
+  readonly sku: string;
+  readonly quantity: number;
+};
+
+const isConfirmed = defineValueMatch<Order>({
+  name: "订单已确认",
+  evaluate: (order) => order.status === "confirmed" && order.quantity > 0,
+});
+
+export default orders.defineEval({
+  description: "创建的订单可以确认",
+  async test(t) {
+    const order = await t.createOrder("starter-plan", 1);
+    t.check(order, isConfirmed).gate().label("订单确认");
+  },
+});
+```
+
+`defineValueMatch` 只描述怎样比较一个值。`t.check` 才登记 Assertion；`.gate()` 明确把这个 Boolean 条件作为质量门。通过制 eval 的 Boolean 条件默认也参与 Verdict，显式 gate 让评估意图在代码中可见。
+
+Adapter 的 `defineEval` 只接受同一 Adapter 的实现。要让一组实现共用 eval，使用 `defineAdapterContract` 建立共同的原生方法形状，再从该契约调用 `defineEval`。
+
+## 何时使用 Agent
+
+被测对象的主要操作是发送消息、续接会话或处理人工回答时，使用 `defineAgent` 或 `defineSandboxAgent`：
+
+```text
+t.send(input) → agent.send(input, ctx) → Turn
+```
+
+`Turn` 提供那一轮的状态、事件、数据与 usage，后续断言读取这些会话事实。普通 Adapter 的 `t.createOrder()`、`t.cancelOrder()` 等操作直接返回应用值；用 `t.check` 检查它们即可。不要为原生操作编造消息、事件或 `Turn`，也不要在 core 中按应用领域或协议分支。
+
+## 声明复用边界
+
+执行身份同时包含 Adapter identity（`name`、`contract`、`behaviorRevision`）与 experiment 的 `flags`。Eval 的静态项目内相对 import/export 闭包变化会自动使候选失效。
+
+Experiment 单独选择的实现、动态 import、外部包和远端服务不在这个自动范围内。为这些行为声明非空 `behaviorRevision`，或通过显式配置表达变化；未声明版本的自定义 Adapter 不会自动复用。
 
 ## 下一步
 
+- 需要比较多个原生实现：[自定义应用教程](../../../../apps/docs-site/zh/tutorials/custom-application.mdx)
 - 被测对象是服务或 SDK endpoint：[Direct Agent](direct-agent.md)
-- 被测对象是隔离 Sandbox 里的 CLI：[Sandbox Agent](sandbox-agent.md)
-- 需要消费 SSE、delta 或 transcript：[流式协议与共享工具](streaming.md)
+- 被测对象是隔离 Sandbox 中的 CLI：[Sandbox Agent](sandbox-agent.md)
+- 需要连续 measurement 或 Judge：[Assertions](../../assertions/README.md)
