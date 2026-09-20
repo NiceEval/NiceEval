@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: env-only-credentials-config-only-code
+title: 裁决:配置只从代码来,环境变量只放凭据与终端事实
+createdAt: 2026-07-25T10:59:38+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/env-only-credentials-config-only-code.md
+  commit: 71c6e89ca3938291ea95889d243e6c62395e2e2a
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:配置只从代码来,环境变量只放凭据与终端事实
 
 **日期**:2026-07-25(用户裁决)。契约落点 `docs/architecture.md`「配置从代码来,凭据从环境来」;用户文档 `docs-site/zh/tutorials/configuration.mdx`(英文对应页同步)。

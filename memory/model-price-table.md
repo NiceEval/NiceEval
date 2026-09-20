@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: model-price-table
+title: 模型价格表(成本估算)
+createdAt: 2026-06-30T18:57:13+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/model-price-table.md
+  commit: 3664a674abdcd602ff891b79d6383c259f135231
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 模型价格表(成本估算)
 
 ## 现象

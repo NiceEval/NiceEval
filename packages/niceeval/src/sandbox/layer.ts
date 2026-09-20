@@ -1589,6 +1589,9 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
   return Object.freeze(layer);
 }
 
+// @concord-code ne-sandbox-command-layer
+// @concord-implements docs/feature/sandbox/README.md
+// @concord-implements docs/feature/sandbox/layers.md
 export function sandboxLayer(): SandboxLayer<"command-only"> {
   return createLayer({
     kind: "command-only",
@@ -1677,6 +1680,10 @@ export function defineSandboxTemplate(
 }
 
 /** Declare physical capabilities that the selected Sandbox Provider must prove before creation. */
+// @concord-code ne-sandbox-requirements
+// @concord-implements docs/feature/sandbox-nested-docker/README.md
+// @concord-implements docs/feature/sandbox-nested-docker/library.md
+// @concord-implements docs/feature/sandbox-nested-docker/use-case/nested-docker-capability.md
 export function sandboxRequirements(
   options: SandboxRequirementsOptions,
 ): SandboxLayer<"command-only"> {
@@ -2694,6 +2701,11 @@ export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
  * 统一的单容器 Docker factory。Docker access用判别联合选择显式socket、raw DinD或managed DinD；
  * 宿主路径/profile只保存到私有runtime binding。本函数不连接Docker，provider接线由后续层负责。
  */
+// @concord-code ne-sandbox-docker-factory
+// @concord-implements docs/feature/sandbox/README.md
+// @concord-implements docs/feature/sandbox/library.md
+// @concord-implements docs/feature/sandbox-docker-profiles/README.md
+// @concord-implements docs/feature/sandbox-docker-profiles/library.md
 export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing"> {
   assertRecord(options, "dockerSandbox options");
   assertOnlyKeys(

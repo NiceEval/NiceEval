@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: record-hook-context-format-migration
 title: Hook Core 声明需要显式格式演进并保留历史证据
 createdAt: 2026-09-13
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_H9JJQ6Q86BMNJJSA
+            - netake_3YAHS415N9ZYHRSH
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
     proof:
       - nered_H9JJQ6Q86BMNJJSA
       - netake_3YAHS415N9ZYHRSH
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
-promotions: []
+    source:
+      path: memory/record-hook-context-format-migration.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:46bc0c4e848bfee47b1e64f40dc4df516df746113af72de7d8078687357f6483
 ---
 # Hook 声明进入严格 Core 后没有区分格式版本
 

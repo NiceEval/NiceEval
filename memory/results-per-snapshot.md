@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: results-per-snapshot
+title: 设计裁决:落盘单位改为快照,判决落 attempt 级 result.json(schemaVersion 4)
+createdAt: 2026-07-11T17:08:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/results-per-snapshot.md
+  commit: d0b67181014038966507cba626afea59a8de778f
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:落盘单位改为快照,判决落 attempt 级 result.json(schemaVersion 4)
 
 **裁决**(2026-07-11,用户拍板):废除 run 级 `summary.json`;落盘布局改为实验目录在外层(`.niceeval/<experiment>/<timestamp>-<rand>/snapshot.json + <evalId>/aN/result.json`);判决/断言的权威落点是 attempt 级 `result.json`(完成即写、一次写成),`snapshot.json` 只装快照级元数据(开始时写,收尾补 `completedAt`);快照目录独占创建保证唯一性。跨实验聚合(总计数/总成本)不落盘,归消费方。`createRunWriter` 改名 `createResultsWriter`,`RunDir`/`runDirs`/synthetic 合成键/`AttemptRef {run, result}` 随之消亡。

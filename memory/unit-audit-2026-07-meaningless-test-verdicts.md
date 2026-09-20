@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: unit-audit-2026-07-meaningless-test-verdicts
+title: 单元测试全量审查裁决:21k 行里直接删除级仅 5 条,病因分四类
+createdAt: 2026-07-23T16:46:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/unit-audit-2026-07-meaningless-test-verdicts.md
+  commit: 2c473122456b4472c361ddfa2890918c3c88f1b1
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 单元测试全量审查裁决:21k 行里直接删除级仅 5 条,病因分四类
 
 2026-07-23 按 `docs/engineering/testing/unit/README.md` 的「核心判据」与九条反模式对全部 src 测试(四家族并行审查)做存废裁决,作为后续同类审查的基线台账。

@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: mcp-tool-naming-claude-vs-codex
+title: claude-code 与 codex 的 MCP 工具规范名不一样(`mcp__x__y` vs `x.y`)
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/mcp-tool-naming-claude-vs-codex.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # claude-code 与 codex 的 MCP 工具规范名不一样(`mcp__x__y` vs `x.y`)
 
 **现象**：同一个 MCP server(`@modelcontextprotocol/server-everything`,工具 `get-sum`)分别挂给

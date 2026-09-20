@@ -1,8 +1,33 @@
 ---
-name: accept-source-run-diverges-from-project-current-identity
+format: concord.document/v1
+id: accept-source-run-diverges-from-project-current-identity
+title: accept-source-run-diverges-from-project-current-identity
+createdAt: 2026-08-15T08:10:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/accept-source-run-diverges-from-project-current-identity.md
+  commit: 9638b1f16179894d293c9e56a035544e6966fbf1
 description: accept 用 link 前的 source Experiment 重算当前身份，带 Plugin 的 accepted Run 能被 explicit --run 读到，却立即被无参 project-current 排除
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [accept-source-run-diverges-from-project-current-identity](accept-source-run-diverges-from-project-current-identity.md) — `accept` 曾用 Plugin link 前的 source Run 重算当前身份，导致 reference Run 可被 explicit `--run` 读到却立即被无参 `show` 排除；修为 accept 与 show/dry 共用 prepared project planning，并在既有 Journey 同时守住 project-current 可见与未来 dry 仍为 gap"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 # `accept` 用 source Run 重算身份，刚采用的 Run 不属于 project-current

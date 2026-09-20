@@ -65,7 +65,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
   复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；组合在创建 Sandbox 前报错。
   Sandbox 预热行为不变,未领用的预创建实例照常销毁。
-- `incusSandbox()` 是 DestroyOnly，与 `--keep-sandbox` 组合在创建资源前报错。nested Docker 的只读诊断入口是 [`niceeval sandbox provider doctor incus`](nested-docker/cli.md)，默认检查 reference domain。
+- `incusSandbox()` 是 DestroyOnly，与 `--keep-sandbox` 组合在创建资源前报错。nested Docker 的只读诊断入口是 [`niceeval sandbox provider doctor incus`](../sandbox-nested-docker/cli.md)，默认检查 reference domain。
 
 ### run 收尾输出
 
@@ -78,7 +78,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 ```
 
 每条都给三样东西:Attempt identity、Provider 与实例 id、进入现场的命令。落盘证据从包含它的 Run 参数化页面查看。进入统一走 `niceeval sandbox enter`(见下),不让用户背各家 Provider 的语法;Provider 原生命令记在注册表里供直连。
-完整 Human 成功与互斥失败案例见[宿主运行条件错误](use-case/留存现场/运行条件错误.md#反馈)。
+完整 Human 成功与互斥失败案例见[宿主运行条件错误](use-case/sandbox-retain-run-condition-error.md#反馈)。
 
 ### 残留提醒
 
@@ -127,7 +127,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 2. 在 `workdir` 打开交互 shell。
 3. shell 退出(含 Ctrl+C)后自动把现场送回休眠——「休眠不烧资源」的承诺不因为进去看过一眼就失效;要让它保持运行,显式传 `--leave-running`。
 4. 把观察到的现场状态回写注册表条目(`state`),`list` 的显示保持新鲜。
-成功进入、expired 与 lease 拒绝的 Human 输出见[在同一现场反复验证假设](use-case/留存现场/现场验证假设.md#反馈)。
+成功进入、expired 与 lease 拒绝的 Human 输出见[在同一现场反复验证假设](use-case/sandbox-retain-validate-scene.md#反馈)。
 
 ### 回放留存现场的变更历史:sandbox history / diff
 
@@ -136,7 +136,7 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 变更 baseline 嵌上边框右侧,区间逐行列在框内,下边框嵌下一步的 `diff` 命令(带最近一个区间,改参数即可换区间)。
 
 区间标签与 Attempt 详情页中 Observability、Assertions 和 FileChanges DomainView 的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token。`--window` 按字符串等值匹配打印出的标签；省略时输出全部区间的串联视图。`--path` 省略时输出该区间的全部文件。
-完整 Human 输出（含未知 window 的失败）见[检查工作目录外状态](use-case/留存现场/检查工作目录外状态.md#反馈)。
+完整 Human 输出（含未知 window 的失败）见[检查工作目录外状态](use-case/sandbox-retain-outside-workdir.md#反馈)。
 
 ### `sandbox list`
 
@@ -145,7 +145,7 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - `STATE` 是当下核对的现场状态。`alive` 在跑(suspend 失败或 `--leave-running` 留下的)、`dormant` 休眠中可唤醒(docker 停驻、e2b 已 pause、vercel 已 stop)。`expired` 是 provider 明确确认现场已经没了、只剩注册表条目(vercel 保留期限已过,或实例被外部删除)。`unknown` 是探测因网络、凭据或 SDK 错误失败。`unknown` 不改写注册表，也不暗示用户销毁；检查凭据或稍后重试。docker 问本地 daemon,云 provider 按注册表的 `expiresAt` 与实例状态核对。
 - 没有留存沙箱时输出 `No kept sandboxes.`,退出码 0。
 - `list` 只读,不销毁任何东西——包括 `expired` 条目;条目的移除只发生在 `stop`。
-完整 Human 列表、找不到注册表与不支持 `--json` 的输出见[配置损坏时管理现场](use-case/留存现场/配置损坏时管理现场.md#反馈)。
+完整 Human 列表、找不到注册表与不支持 `--json` 的输出见[配置损坏时管理现场](use-case/sandbox-retain-broken-config.md#反馈)。
 
 ### `sandbox stop`
 
@@ -153,7 +153,7 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - id 接受唯一前缀;有歧义或不在注册表里时报错并列出候选,退出码 1。
 - 不带参数也不带 `--all` 时报错:`specify sandbox ids or --all`。
 - `stop` 走内置 provider 的 detached 销毁通道(不需要原来的 run 进程还活着)。只有实例成功销毁或确认已不存在时才移除登记项;provider 返回其它错误时保留条目并退出 1,方便重试,不能把仍活着的资源从管理面隐藏掉。
-完整 Human 成功、已消失与错误输出见[配置损坏时管理现场](use-case/留存现场/配置损坏时管理现场.md#反馈)。
+完整 Human 成功、已消失与错误输出见[配置损坏时管理现场](use-case/sandbox-retain-broken-config.md#反馈)。
 
 ### `sandbox list --orphans`
 
@@ -166,7 +166,7 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - 查询通道:docker 问本地 daemon 的 label 索引,e2b 走 SDK 的 metadata 过滤;vercel 无检索通道、不参与,靠 provider 保留期限到期回收。
 - runner 启动期的提醒只做零成本的本地 docker 核对；云 provider 的网络/凭据探测只在用户显式执行 `list --orphans` 时发生。
 - 没有孤儿时输出 `No orphan sandboxes.`,退出码 0;只读,不销毁任何东西。
-完整 Human 成功与 provider 查询失败输出见[配置损坏时管理现场](use-case/留存现场/配置损坏时管理现场.md#孤儿与-prune)。
+完整 Human 成功与 provider 查询失败输出见[配置损坏时管理现场](use-case/sandbox-retain-broken-config.md#孤儿与-prune)。
 
 ### `sandbox prune`
 
@@ -190,7 +190,7 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 ## 相关阅读
 
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
-- [Nested Docker CLI](nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
+- [Nested Docker CLI](../sandbox-nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
 - [Record · Architecture](../run/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。

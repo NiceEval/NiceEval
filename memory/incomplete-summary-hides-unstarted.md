@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: incomplete-summary-hides-unstarted
+title: INCOMPLETE 结论隐藏 unstarted
+createdAt: 2026-08-03T18:10:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/incomplete-summary-hides-unstarted.md
+  commit: 1d5d3eddf9bcf3994fdefb0de6deade21b62a02b
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [incomplete-summary-hides-unstarted](incomplete-summary-hides-unstarted.md) — 止损闸后 human 结论只显示 `INCOMPLETE`、隐藏 `completion.unstarted`，计划与 verdict 平白少数；修为结论行显式列 `N unstarted`，保持「未执行」身份不冒充 skipped"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # INCOMPLETE 结论隐藏 unstarted
 
 ## 现象

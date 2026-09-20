@@ -14,8 +14,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本 [necase_86J20Q4F56776SEJ]", async () => {
+test("uiMessageStreamAgent 完整 SSE transport 交付 fixture 文本", async () => {
   await localProtocolE2E.case(
     "transport",
     localProtocolRecordArtifacts,

@@ -1,8 +1,33 @@
 ---
-name: e2e-public-local-sandbox-host-config-incident
+format: concord.document/v1
+id: e2e-public-local-sandbox-host-config-incident
+title: e2e-public-local-sandbox-host-config-incident
+createdAt: 2026-08-22T15:10:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-public-local-sandbox-host-config-incident.md
+  commit: f06ff79d51c9704598fb75776d26eb5af96fb4ee
 description: E2E 公开 localSandbox 把测试命令放进宿主 HOME/config 信任域；安全红灯证明测试自有 HOME sentinel 被改写，所有 owner 已迁出该边界
-metadata:
-  type: infra-bug
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [e2e-public-local-sandbox-host-config-incident](e2e-public-local-sandbox-host-config-incident.md) — 公开 `localSandbox()` 让 E2E CLI 留在宿主 HOME/config 信任域；旧候选安全红灯只改写测试自有 HOME sentinel，故所有公开 Local owner 已迁到 digest-pinned 非 root Docker 或固定 HOME/CODEX_HOME/TMPDIR 的 test-only custom provider，Lifecycle 删除 Local 对照"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **事故来源链**：`e2e/adapter/codex-app-server` 为确定性 app-server fixture 使用公开

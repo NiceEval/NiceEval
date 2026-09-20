@@ -7,8 +7,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
+// @feature docs/feature/experiments/README.md
 
-test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance [necase_FEJ6CWPP9EWWY2F6]", async () => {
+test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 verdict/evidence 与审计 provenance", async () => {
   await runnerE2E.case(
     "accept-reanchor",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

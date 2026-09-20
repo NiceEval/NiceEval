@@ -1,0 +1,94 @@
+---
+format: concord.document/v1
+id: concurrency-resume-interrupted-run
+title: 恢复中断运行留下的协调状态
+createdAt: 2026-08-18T09:07:20+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 恢复中断运行留下的协调状态
+
+## 解决什么问题
+
+运行被强杀时可能留下仍被标记为占用的 ProjectDatabase rows。case lock 与 `sharedState.key` 都绝不依据 heartbeat、
+TTL、PID 死亡或超时自动接管；它们只能以精确 process identity 和 generation fencing 进入公开 recovery。用户不需要、也不应删除私有文件或 SQLite rows。
+
+```bash
+niceeval exp compare/codex
+```
+
+等待仍在活动的另一条 NiceEval 运行是运行状态，不是失败。Human 输出用 `i` 说明正在等待；只有 owner 正常结束，或有可验证的
+精确终止证据并完成 recovery 后，当前运行才继续派发。
+
+```text
+i Waiting for another NiceEval run before continuing compare/codex.
+```
+
+Experiment `maxConcurrency` 不跨 Invocation 协调，也不会形成并发名额接管。
+
+## sharedState 显式恢复
+
+当强杀或 cleanup 失败留下 `sharedState.key` 时，等待者保持阻塞；它不会 setup、创建 Sandbox 或派发 Attempt。
+先用公开命令检查 owner evidence，再带 exact token 和双确认执行恢复：
+
+```bash
+niceeval exp compare/codex --teardown \
+  --recover-shared-state mempal/codex/cohort-a \
+  --owner-token <displayed-token> \
+  --confirm-owner-terminated \
+  --confirm-remote-quiesced
+```
+
+检查输出明确显示 key、Experiment、owner token、host、PID、process identity 与 heartbeat。heartbeat 是当前 exact
+token/generation 专属 ProjectDatabase observation 的最新诊断时间，不是租约 authority。
+
+CLI 先把输入 key 用作 immutable owner-evidence 的查询键。即使作者后来把当前 Experiment 改为另一个 `sharedState.key`、或
+删除该声明，旧 key 的 inspection 与恢复入口仍存在。
+
+没有 token 或确认时，inspection 仍只读 owner evidence。带 token 和双确认时，selector 必须最终只匹配一个 Experiment，且其
+id 必须匹配 evidence；target 的 `teardown` 必须是函数。
+
+否则命令非零退出，原 active generation 保持不变，不进入 recovering 或 free。显式 recovery 是人读流程，不支持 `--json`，也
+不提供 NDJSON 或 receipt。
+
+若同机 exact owner identity 仍活，或者身份无法可靠读取，命令拒绝。远端恢复仍要求明确 remote-quiesced 确认。
+
+成功 recovery 先以短事务从 `active` 进入带 immutable recovery actor 的 `recovering`，再执行该 Experiment 的 teardown；
+actor 与 generation 仍精确匹配时才以第二笔短事务收口为 `interrupted` 或 free。
+
+teardown 成功后，它先核对并原子删除 immutable owner `{ experimentId, host, PID, process identity }` 对应的唯一旧 teardown
+登记，才发布 free generation。它不按当前声明或同一 Experiment 的其它登记做宽泛删除。
+
+local recovery 对 PID 缺失、复用及 Linux `Z`/`X`/`x` 终态采用同一 exact identity 判定。obligation 或 identity 的读取、格式检查失败
+一律保持 recovering、非零退出，等待者不能先进入；新的精确 recovery actor 可以重试，旧 actor 永远不能改写它。
+
+若重复命令发现 exact token 已是 free，它不重跑 teardown，但会仅幂等清除能证明属于该 immutable owner 的遗留登记。不能安全
+清除仍非零退出。
+
+两名操作员并发恢复时，只有一名能发布同一 next generation；失败者必须重读 immutable generation 后重新检查。旧 token
+永远无法删除后来 holder。
+
+若 recovery actor 自身已终止，带同一原 owner token 与双确认的新操作员会发布新的 recovery id/actor generation 并继续
+补偿，不会被已崩溃的 recovery 永久卡住。成功消息为 `explicitly recovered sharedState key`；cleanup 留置消息为
+`state-lease-recovery-required`。
+
+recovery 不会改变 carry 资格、Attempt 身份或退出码。sharedState explicit recovery 同样不会回滚强杀前已写入
+一半的 checkpoint；它只在作者确认外部状态已可安全补偿后，运行一次公开 teardown。
+
+## 与 Sandbox orphan 的边界
+
+协调状态接管不等于 Sandbox cleanup。被强杀的运行还可能留下 orphan Sandbox；用户通过公开命令列出并终止它们：
+
+```bash
+niceeval sandbox list --orphans
+niceeval sandbox prune
+```
+
+不需要 orphan cleanup 时，直接重新运行即可。Runner 会沿用仍符合资格的已发布 Attempt，只派发缺口。
+
+## 相关阅读
+
+- [并行 Invocation](concurrency-parallel-invocations.md)
+- [Experiment CLI 反馈](../cli.md#协调等待与恢复)
+- [并发 Invocation 架构](../architecture.md#并发-invocation)

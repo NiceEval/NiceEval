@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_VXE9ARZNBMZ6V0JT": {
+      "memory/eval-group-retained-sandbox-capacity-deadlock.md": {
+        "red": {
+          "path": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/red.json",
+          "digest": "sha256:d23418ace76a361565357235be15ded6453f191f103f31c7541d6580e875f296"
+        },
+        "green": {
+          "path": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/green.json",
+          "digest": "sha256:3bc52cc4d30bd574d9d532205420f9524543ccc02553dd6190117c5cdbb9bc17"
+        },
+        "certificate": {
+          "path": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/certificate.json",
+          "digest": "sha256:84551c1fa3856119d6ff8242069bbf88a73fb612fa7ad40493cdf9a6c6d73c34"
+        },
+        "inventory": {
+          "path": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/inventory.json",
+          "digest": "sha256:f992bbca2eb0db4d03942cbff3a5e4ddfcfc8522c9446c7f798c9601956a7aba"
+        }
+      }
+    }
+  }
+}

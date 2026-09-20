@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: guard-entries-vitest-only-not-scripts
+title: 守护入口裁决:说红绿的一律 vitest,写产物的才是脚本
+createdAt: 2026-07-26T21:22:39+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/guard-entries-vitest-only-not-scripts.md
+  commit: b424d2cc937f617cb34630a646b2d30ce032a8ff
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 守护入口裁决:说红绿的一律 vitest,写产物的才是脚本
 
 **裁决**(2026-07-26):一条仓库约束只能有一个入口说它红。`scripts/` 里同时干「检查」和

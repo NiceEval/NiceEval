@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: report-page-level-color-assignment
+title: report-page-level-color-assignment
+createdAt: 2026-07-25T14:02:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-page-level-color-assignment.md
+  commit: 87918e3267942f727ed77d3061dec2dc64277106
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [scatter-series-color-collision](scatter-series-color-collision.md) — 散点两个不同 series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/report/react/colors.ts` 的 colorIndicesForKeys);作用域后被 [report-page-level-color-assignment](report-page-level-color-assignment.md) 上提到「一页」"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # report-page-level-color-assignment
 
 ## 裁决

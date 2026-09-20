@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: calledtool
+title: 验证 Agent 真的完成了所需操作
+createdAt: 2026-07-22T11:45:06+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # 验证 Agent 真的完成了所需操作

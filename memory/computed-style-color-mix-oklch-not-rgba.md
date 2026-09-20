@@ -1,9 +1,20 @@
 ---
-name: computed-style-color-mix-oklch-not-rgba
+format: concord.document/v1
+id: computed-style-color-mix-oklch-not-rgba
+title: computed-style-color-mix-oklch-not-rgba
+createdAt: 2026-07-22T09:21:58+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/computed-style-color-mix-oklch-not-rgba.md
+  commit: 1b7c6c953b51a2c0ce2d90c6dd646ed91b4a4233
 description: 报告 CSS 大量用 color-mix(in oklch, ...) 做浅染背景,Chromium 里 getComputedStyle 算出来是 oklch(L C H / A) 斜杠语法,不是 rgba(r, g, b, a)——按传统 rgba 正则解析 alpha 会直接失配
-metadata:
-  node_type: memory
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：给 `e2e/report/scripts/verify-render-visual.ts` 写「状态染色是浅色透明混合、不是

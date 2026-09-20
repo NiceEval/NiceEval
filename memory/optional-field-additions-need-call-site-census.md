@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: optional-field-additions-need-call-site-census
+title: 给共享接口加**可选**字段:类型系统一次都拦不住,必须数着调用点逐个过
+createdAt: 2026-07-24T21:24:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/optional-field-additions-need-call-site-census.md
+  commit: 961194ee93d8c249dbdd83a24c57a3739480dde7
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 给共享接口加**可选**字段:类型系统一次都拦不住,必须数着调用点逐个过
 
 ## 现象

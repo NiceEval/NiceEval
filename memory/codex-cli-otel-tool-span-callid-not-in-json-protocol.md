@@ -1,8 +1,20 @@
 ---
-name: codex-cli-otel-tool-span-callid-not-in-json-protocol
-description: "codex CLI 0.144.1 的 `--json` 事件流里 command_execution/apply_patch 等 item 只有 item.id(如 item_3),从不带 call_id;其原生 OTel span 的 exec_command/apply_patch 关联键恰恰是另一套 call_id(如 call_cBGsEAQ8I9da8AuwndfivwNv,OpenAI Responses API 风格);两边没有共同字段,niceeval 现有『call_id 精确匹配』的关联策略对 codex CLI 的工具级 span 结构性地永远关联不上——这不是选错字段,是协议本身没暴露可用于关联的字段;真机验证到此为止,是否/如何解决未定,留待裁决"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: codex-cli-otel-tool-span-callid-not-in-json-protocol
+title: codex-cli-otel-tool-span-callid-not-in-json-protocol
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-cli-otel-tool-span-callid-not-in-json-protocol.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: codex CLI 0.144.1 的 `--json` 事件流里 command_execution/apply_patch 等 item 只有 item.id(如 item_3),从不带 call_id;其原生 OTel span 的 exec_command/apply_patch 关联键恰恰是另一套 call_id(如 call_cBGsEAQ8I9da8AuwndfivwNv,OpenAI Responses API 风格);两边没有共同字段,niceeval 现有『call_id 精确匹配』的关联策略对 codex CLI 的工具级 span 结构性地永远关联不上——这不是选错字段,是协议本身没暴露可用于关联的字段;真机验证到此为止,是否/如何解决未定,留待裁决
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**:`e2e/adapter/codex-cli` 的 docs 契约(docs/engineering/testing/e2e/adapter/codex-cli.md

@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: llm-x-live-match-dogfood
 title: LLM X 实测：功能通过、语义评分与视觉证据必须分开
 createdAt: 2026-09-12
-kind:
-  type: insight
-  state: current
+kind: memory
+memoryKind: insight
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 # LLM X 实测：功能通过、语义评分与视觉证据必须分开
 

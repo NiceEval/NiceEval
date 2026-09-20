@@ -1,8 +1,33 @@
 ---
-name: e2b-sandbox
+format: concord.document/v1
+id: e2b-sandbox
+title: e2b-sandbox
+createdAt: 2026-07-07T14:16:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-sandbox.md
+  commit: 746ee6c287043489a9ab17c556fcbbeea9b0fb99
 description: e2b base 模板只有 node20 + ~481MB 内存(npm install 会 OOM kill),内存/node 版本由模板烘焙决定不能创建时调;重 eval 用预制模板 fasteval-agents,构建踩坑清单在正文
-metadata:
-  type: infra-bug
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "## 预制模板(fasteval-agents)构建踩坑(都已修,记于 templates/Dockerfile + README)"
+    proof: []
+    source:
+      path: memory/e2b-sandbox.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:ac234c1d8b46822bd87105dbbf55db4c8ad9c8ab737be5512e3ecf5eeff5a8b1
 ---
 
 # e2b sandbox:base 模板跑不动重 eval,用预制 fasteval-agents 模板

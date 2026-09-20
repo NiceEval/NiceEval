@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: workspace-diff-path-cap-skips-partial-capture
+title: workspace diff 路径上限抢在 partial collector 前失败
+createdAt: 2026-08-18T23:38:59+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/workspace-diff-path-cap-skips-partial-capture.md
+  commit: fe2c0a0998439b964c709c02a872e24486e6f74f
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [workspace-diff-path-cap-skips-partial-capture](workspace-diff-path-cap-skips-partial-capture.md) — ledger exporter 在 10,000 路径先失败，使 File Changes 的确定性 partial collector 无法处理三万路径窗口；扫描上限与 10,000 条持久保留上限现已分离"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # workspace diff 路径上限抢在 partial collector 前失败
 
 ## 现象

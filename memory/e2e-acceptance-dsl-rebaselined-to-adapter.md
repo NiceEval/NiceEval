@@ -1,9 +1,25 @@
+---
+format: concord.document/v1
+id: e2e-acceptance-dsl-rebaselined-to-adapter
+title: 裁决:E2E 验收 DSL 收敛为 Report 读面 adapter,不做全仓作者面也不发公共包
+createdAt: 2026-08-01T21:34:29+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-acceptance-dsl-rebaselined-to-adapter.md
+  commit: 5f32f299e6f8b5d645d2eb30e081bcf922cddd82
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:E2E 验收 DSL 收敛为 Report 读面 adapter,不做全仓作者面也不发公共包
 
 ## 裁决
 
 2026-08-01,现位于 `docs/roadmap/testing/dsl/` 的方案按[测试作者面决策](../docs/design/user-readable-testing/DECISION.md)整体重定基线:
-它设计的是 [PLAN-2](../docs/design/user-readable-testing/PLAN-2/README.md) 领域读面**底下**的 adapter,不是测试作者面本身。
+它设计的是 [PLAN-2](../docs/design/user-readable-testing/plans/plan-2/README.md) 领域读面**底下**的 adapter,不是测试作者面本身。
 测试正文只出现 Report 领域对象与 `Observed<T>`;`section`、`row`、`line`、YAML 结构期望、role locator 与正则全部降进 adapter 内部。
 
 同批落定的边界(逐条对应 DECISION「现有 E2E Acceptance DSL 的处理」十项):

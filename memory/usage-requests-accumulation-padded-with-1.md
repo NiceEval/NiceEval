@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: usage-requests-accumulation-padded-with-1
+title: 已修:SessionManager.accumulateUsage 曾把缺失的 requests/cache token 用 1/0 凑数
+createdAt: 2026-07-23T18:12:30+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/usage-requests-accumulation-padded-with-1.md
+  commit: be3ebdb3514323f68ece7eaeb339d838b5b1f065
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 已修:SessionManager.accumulateUsage 曾把缺失的 requests/cache token 用 1/0 凑数"
+    proof: []
+    source:
+      path: memory/usage-requests-accumulation-padded-with-1.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:478560b18214c85737090d0d2ba311344ed49af54a5380623d6eb894d8d946eb
+---
 # 已修:SessionManager.accumulateUsage 曾把缺失的 requests/cache token 用 1/0 凑数
 
 **现象**:落盘 `result.json` 的 `usage.requests` 经常是 `1`,即使该 attempt 内部真实发生了几十次工具调用 / 模型请求(如 memory-evals-three-way-result 与 show-scope-slice-json-ruling 记录的「21 次工具调用的 codex session 落盘 `requests: 1`」)。跨 attempt 对比 usage 时,转录解析型 adapter(codex/claude-code/bub/openclaw,只在 attempt 末尾解析一次完整 transcript)的 `requests` 几乎恒为 `1`,而 SDK 流式 adapter(ai-sdk/langgraph/sdk-streams)的 `requests` 是真实计数,两类 producer 的同一字段口径完全不可比。

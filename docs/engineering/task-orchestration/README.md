@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: task-orchestration
+title: 任务图与 E2E 选择
+createdAt: 2026-08-22T13:35:36+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/task-orchestration/README.md
+  commit: 1f8e0b5ac9b103eb0a214ca3c43da3b5f89c9ee9
+kind: engineering
+---
 # 任务图与 E2E 选择
 
 本主题定义 niceeval 仓库如何用 Nx 管理项目图、任务输入和受影响的 E2E 集合。它只负责回答“这次变更需要验证哪些项目”；

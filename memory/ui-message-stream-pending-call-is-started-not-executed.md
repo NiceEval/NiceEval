@@ -1,8 +1,21 @@
 ---
-name: ui-message-stream-pending-call-is-started-not-executed
-description: "裁决(2026-08-09): UI Message Stream approval-requested 表示逻辑调用已宣布但副作用未执行；等待轮先发 started+input.requested，resume 只补同 call 的 completed/output 或 rejected/无 output"
-metadata:
-  type: design-decision
+format: concord.document/v1
+id: ui-message-stream-pending-call-is-started-not-executed
+title: ui-message-stream-pending-call-is-started-not-executed
+createdAt: 2026-08-09T17:23:02+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ui-message-stream-pending-call-is-started-not-executed.md
+  commit: 5c0799de8dc0f2b651144d57573a0623ee7a9e32
+description: "裁决(2026-08-09): UI Message Stream approval-requested
+  表示逻辑调用已宣布但副作用未执行；等待轮先发 started+input.requested，resume 只补同 call 的
+  completed/output 或 rejected/无 output"
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 # UI Message Stream pending call 的公开语义

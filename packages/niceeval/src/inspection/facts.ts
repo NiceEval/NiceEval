@@ -1,3 +1,7 @@
+// @concord-file ne-eval-inspection-facts-reader
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 import { Result, Schema } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
@@ -100,6 +104,9 @@ const ATTEMPT_TARGET_MEMBER_LIMIT = 256;
  * Pins the source cutoff, exhausts the fixed Run-summary pagination, then
  * reads and strictly decodes every Run Core in that exact sealed generation.
  */
+// @concord-code ne-eval-inspection-load-runs
+// @concord-implements docs/feature/inspection/architecture.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 export function loadInspectionRuns(
   source: InspectionFactSource,
 ): readonly LoadedInspectionRun[] {
@@ -309,6 +316,8 @@ export function decodeInspectionRun(
 }
 
 /** Resolves a public locator through the source's bounded exact index. */
+// @concord-code ne-eval-inspection-resolve-attempt
+// @concord-implements docs/feature/inspection/architecture.md
 export function resolveInspectionAttempt(
   source: InspectionFactSource,
   locator: string,
@@ -418,6 +427,9 @@ export function runAttachment(
 }
 
 /** Reads only the current logical Assertions family, preserving failure state. */
+// @concord-code ne-eval-inspection-read-assertions
+// @concord-implements docs/feature/assertions/README.md
+// @concord-implements docs/feature/inspection/README.md
 export function readInspectionAssertions(
   resolved: ResolvedInspectionAttempt,
 ): InspectionAssertionsRead {

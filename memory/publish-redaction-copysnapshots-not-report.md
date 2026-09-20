@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: publish-redaction-copysnapshots-not-report
+title: 设计裁决:发布消毒在 copySnapshots({ redact }),报告 redact 降为展示层
+createdAt: 2026-07-14T22:32:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/publish-redaction-copysnapshots-not-report.md
+  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:发布消毒在 copySnapshots({ redact }),报告 redact 降为展示层
 
 - **裁决**(2026-07-14):结果数据分两级——`.niceeval/` 本地事实根(未消毒)与发布拷贝(只能经 `copySnapshots` 单一管线产出,`view --out` 的 artifact 复制走同一管线)。artifact 级消毒是 `copySnapshots` 的 `redact` 选项(改写自由文本值、身份分类字段不动、sources 改写后重算 sha256);`AttemptList.data({ redact })` 明确降为展示层遮蔽。契约落在 `docs/feature/results/library.md` copySnapshots 节 + `docs/feature/reports/view.md` 静态导出节。

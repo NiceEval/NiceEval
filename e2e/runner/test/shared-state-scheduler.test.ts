@@ -13,8 +13,9 @@ async function exists(path: string): Promise<boolean> {
     return false;
   }
 }
+// @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
 
-test("同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attempt 能继续启动 [necase_3T4GYG4AH3XJMQHE]", async () => {
+test("同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attempt 能继续启动", async () => {
   await runnerE2E.case(
     "shared-state-scheduler",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

@@ -1,13 +1,36 @@
+---
+format: concord.document/v1
+id: eval-suite-sharing
+title: 共享 Eval：原生题目怎样跨项目复用
+createdAt: 2026-08-06T20:58:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/design/eval-suite-sharing/README.md
+  commit: 3e913593740753eba12d48475cb9bb5e443278cb
+kind: design
+alternatives:
+  - plan-1
+  - plan-2
+  - plan-3
+decision:
+  selected: plan-3
+  reason: 迁移保留 DECISION.md 中的明确裁决：plan-3
+  source:
+    path: docs/design/eval-suite-sharing/DECISION.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:919d8f136e6963d3d8dd0fed76da740d306ef70eec6078d42664b679e9ad096d
+  targets: []
+---
 # 共享 Eval：原生题目怎样跨项目复用
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [DECISION](DECISION.md)
 
 一组已经能被 NiceEval 发现的 Eval，本身就是可复用题集。
 发布方不应为了共享再写 `suite.ts`、manifest、适配器或导出入口。
 这里承诺的是“零共享协议文件”，不是替一个不完整或依赖声明错误的 package 自动补齐内容。
 
 这个设计比较三种交付形态：复制题目、建立 NiceEval registry、挂载另一个已安装 NiceEval 项目的 Eval 目录。
-推荐 [PLAN-3](PLAN-3/README.md)：分发与版本由项目已有的 package manager 负责，NiceEval 只扩展多根发现和逐 Eval 出处登记。
+推荐 [PLAN-3](plans/plan-3/README.md)：分发与版本由项目已有的 package manager 负责，NiceEval 只扩展多根发现和逐 Eval 出处登记。
 
 ## 推荐路径一眼看完
 
@@ -94,5 +117,5 @@ NiceEval Eval 是已处于 TypeScript 依赖图中的原生模块，不应照搬
 - 目标与非目标见 [GOALS](GOALS.md)。
 - 外部框架做法与 NiceEval 现有约束见 [LIMITS](LIMITS.md)。
 - 固定场景与验收结果见 [CASES](CASES.md)。
-- 推荐 API、CLI、内部边界与时序从 [PLAN-3](PLAN-3/README.md) 进入。
-- Terminal-Bench 的完整零发布改造示例见 [用例](PLAN-3/use-case/terminal-bench.md)。
+- 推荐 API、CLI、内部边界与时序从 [PLAN-3](plans/plan-3/README.md) 进入。
+- Terminal-Bench 的完整零发布改造示例见 [用例](plans/plan-3/use-case/terminal-bench.md)。

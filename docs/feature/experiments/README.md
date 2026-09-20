@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: experiments
+title: Experiments —— 怎么跑这批 eval
+createdAt: 2026-07-12T19:13:58+08:00
 kind: feature
-relations: {}
 ---
 
 ---

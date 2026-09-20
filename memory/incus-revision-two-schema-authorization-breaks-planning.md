@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: incus-revision-two-schema-authorization-breaks-planning
 title: Incus revision 2 schema authorization breaks planning
 createdAt: 2026-08-27
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - "main E2E red: run 33082665372, docker-3 job 98555987722 stopped before artifact publication"
+            - "installed exact-candidate owner passed: pnpm --dir /tmp/niceeval-incus-fixed.6ADb6Q exec vitest run test/incus-user-database-ledger.test.ts (58.3s)"
+            - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
     proof:
       - "main E2E red: run 33082665372, docker-3 job 98555987722 stopped before artifact publication"
       - "installed exact-candidate owner passed: pnpm --dir /tmp/niceeval-incus-fixed.6ADb6Q exec vitest run test/incus-user-database-ledger.test.ts (58.3s)"
       - "main E2E green twice: runs 33086183347 and 33086382261, including repo-batch-docker-3"
-promotions: []
+    source:
+      path: memory/incus-revision-two-schema-authorization-breaks-planning.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:1c5f562d8a7277c1442a50a01cb505ad8a0ded9a766a92e6c1053199399043c9
 ---
 ## Problem
 

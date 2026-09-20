@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: ai-bundled-docs-root-index
+title: AI 随包文档使用包根 INDEX.md 路由
+createdAt: 2026-07-12T10:15:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ai-bundled-docs-root-index.md
+  commit: 576fe8dccb74927a7b0a52c39354985f4bb6d727
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # AI 随包文档使用包根 INDEX.md 路由
 
 ## 裁决

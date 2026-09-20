@@ -1,9 +1,20 @@
 ---
-name: show-single-eval-narrow-drops-page-index
+format: concord.document/v1
+id: show-single-eval-narrow-drops-page-index
+title: show-single-eval-narrow-drops-page-index
+createdAt: 2026-07-22T08:08:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-single-eval-narrow-drops-page-index.md
+  commit: 4de42b0162238fb9d0583f6df47d8bca1f2d732d
 description: 位置参数把 show 收窄到恰好 1 个 eval 时，报告页切换成单题详情视图，尾部完全不附「Other pages」多页索引
-metadata:
-  node_type: memory
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：`niceeval show <多个 eval 都命中的前缀> --results <root>` 会在尾部打印

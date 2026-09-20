@@ -1,19 +1,42 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: ui-message-stream-error-only-loses-diagnostic
 title: UI Message Stream 只有 error 帧时丢失原始诊断
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_KVVCE7VKN9EFYDD4
+            - nered_7QJHGC208AJ1SJS2
+            - netake_VHK27B6CM7EKD33P
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/local-protocol/test/disconnect.test.ts#necase_2Q053XPZ22MT68HW"]}
     proof:
       - nered_KVVCE7VKN9EFYDD4
       - nered_7QJHGC208AJ1SJS2
       - netake_VHK27B6CM7EKD33P
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/local-protocol/test/disconnect.test.ts#necase_2Q053XPZ22MT68HW"]}
-promotions: []
+    source:
+      path: memory/ui-message-stream-error-only-loses-diagnostic.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:600b4796682f8b55edc992d65524f340257efe117e35110adac565eb1523a3c6
 ---
 ## 观察与根因
 

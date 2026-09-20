@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: diff-attribution-send-window-ledger
+title: 设计裁决:agent diff 改为 send 窗口归因的私有 git 分类账
+createdAt: 2026-07-14T22:32:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/diff-attribution-send-window-ledger.md
+  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:agent diff 改为 send 窗口归因的私有 git 分类账
 
 - **裁决**(2026-07-14):`t.sandbox.diff` / `fileChanged` 语义定为 **agent 归因增量**——runner 维护私有 git ledger(GIT_DIR 在沙箱内、workdir 外),每次 `t.send()` 前后落 commit,agent diff = 各 send 窗口 diff 的按时序并集;分类账 add 强制无视 `.gitignore`。契约落在 `docs/feature/sandbox/architecture.md`「变更归因」节。

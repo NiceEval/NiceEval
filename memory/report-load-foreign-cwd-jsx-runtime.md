@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: report-load-foreign-cwd-jsx-runtime
+title: 跨项目 cwd 装载 --report 报 "React is not defined"
+createdAt: 2026-07-16T16:18:50+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-load-foreign-cwd-jsx-runtime.md
+  commit: 3a21458f0679ab66f94b76dd7674da7bf1cdfdb3
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 跨项目 cwd 装载 --report 报 "React is not defined"
 
 **现象**：在 niceeval 仓库 cwd 下用绝对路径加载另一个项目的报告文件（`pnpm run niceeval -- show --results <他仓>/.niceeval --report <他仓>/reports/x.tsx`）报 `Cannot load report file …: React is not defined`；cd 进该项目再跑（`pnpm exec niceeval show --report reports/x.tsx`）完全正常。2026-07-16 集成冒烟与 web 面 smoke 各复现一次。

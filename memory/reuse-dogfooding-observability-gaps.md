@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: reuse-dogfooding-observability-gaps
+title: 复用 dogfooding:调度事实缺失、词义冲突与配额盲区
+createdAt: 2026-07-29T21:18:31+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reuse-dogfooding-observability-gaps.md
+  commit: 908702c9e2a771f5ce21ebd5fd6cfef6af4818e4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 复用 dogfooding:调度事实缺失、词义冲突与配额盲区
 
 2026-07-29 下游 dogfooding(E2B 复用跑批)一批观察,按落点分流:

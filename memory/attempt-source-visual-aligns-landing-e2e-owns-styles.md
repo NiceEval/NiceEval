@@ -1,8 +1,19 @@
 ---
-name: attempt-source-visual-aligns-landing-e2e-owns-styles
+format: concord.document/v1
+id: attempt-source-visual-aligns-landing-e2e-owns-styles
+title: attempt-source-visual-aligns-landing-e2e-owns-styles
+createdAt: 2026-07-20T13:05:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-source-visual-aligns-landing-e2e-owns-styles.md
+  commit: 3fe97543e5a060141624bc817f4ea23bdedb2d71
 description: 裁决:AttemptSource 与 landing 示例卡定为同一视觉语言的两份实现(不共享组件),样式守护从单元层移交 e2e 真实浏览器
-metadata:
-  type: project
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决（2026-07-20）**：`AttemptSource` web 面与 landing eval 示例卡

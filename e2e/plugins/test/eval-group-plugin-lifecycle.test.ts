@@ -7,8 +7,9 @@ import {
   typecheckInstalledPluginConsumer,
   validateDynamicPluginConsumer,
 } from "./helpers.ts";
+// @feature docs/feature/plugins/README.md
 
-test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期 [necase_VY5N0N3S5CARK120]", async () => {
+test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期", async () => {
   await e2e.case("group-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const typecheck = await typecheckInstalledPluginConsumer(paths.projectRoot);
     expect(typecheck.exitCode, typecheck.diagnostic()).toBe(0);

@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: claude-code-skill-tool-name-not-load-skill
+title: claude-code 的原生 Skill 工具叫 `Skill`,不是 `load_skill`;`t.loadedSkill()` 断不中
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/claude-code-skill-tool-name-not-load-skill.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修 [claude-code-skill-tool-name-not-load-skill](claude-code-skill-tool-name-not-load-skill.md) — `t.loadedSkill()` 曾是 `calledTool("load_skill")` 的糖,而 parser 早已把 Skill 加载归一成 `skill.loaded` 一等事件 → 在 claude-code 上永远静默断不中;修为 `loadedSkill()` 直接读 `skill.loaded`(`src/scoring/scoped.ts`)'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # claude-code 的原生 Skill 工具叫 `Skill`,不是 `load_skill`;`t.loadedSkill()` 断不中
 
 **现象**：给 `claudeCodeAgent` 装了一个真实 skill(`Effect-TS/skills`)、发一句会触发它的提示词,

@@ -1,8 +1,20 @@
 ---
-name: codex-sdk-web-search-s2a-flaky
+format: concord.document/v1
+id: codex-sdk-web-search-s2a-flaky
+title: codex-sdk-web-search-s2a-flaky
+createdAt: 2026-07-03T13:18:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-sdk-web-search-s2a-flaky.md
+  commit: bd0e3e6aae8a54546a57ff973538f08e49bc4a7c
 description: codex-sdk demo 走 s2a 代理时内置 web_search 极不稳定——单个问题连发 9+ 次检索重试,有时整轮失败;SDK 的 WebSearchItem 只有 query 字段,UI 层无法区分成败
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：`examples/zh/origin/codex-sdk` demo 问"北京天气"，Codex 连发 9 次以上 `web_search`（不断换 query 措辞重试），耗时 60s+；有时最终放弃并回复"工具没成功返回"（用户截图里的失败），有时最后一次靠直接搜 URL 拿到结果。

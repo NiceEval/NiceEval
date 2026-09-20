@@ -1,0 +1,48 @@
+{
+  "format": "concord.repository/v2",
+  "suites": [
+    {
+      "id": "cli",
+      "root": "e2e/cli"
+    },
+    {
+      "id": "eval",
+      "root": "e2e/eval"
+    },
+    {
+      "id": "insight",
+      "root": "e2e/insight"
+    },
+    {
+      "id": "inspection",
+      "root": "e2e/inspection"
+    },
+    {
+      "id": "lifecycle",
+      "root": "e2e/lifecycle"
+    },
+    {
+      "id": "migrate",
+      "root": "e2e/migrate"
+    },
+    {
+      "id": "package",
+      "root": "e2e/package"
+    },
+    {
+      "id": "plugins",
+      "root": "e2e/plugins"
+    },
+    {
+      "id": "record",
+      "root": "e2e/record"
+    },
+    {
+      "id": "runner",
+      "root": "e2e/runner"
+    }
+  ],
+  "historyPath": "e2e/concord-history.ts",
+  "policy": "concord.native-reliability/v1",
+  "host": "packages/e2e-runner/src/concord-host.ts"
+}

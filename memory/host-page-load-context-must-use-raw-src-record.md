@@ -1,8 +1,33 @@
 ---
-name: host-page-load-context-must-use-raw-src-record
+format: concord.document/v1
+id: host-page-load-context-must-use-raw-src-record
+title: host-page-load-context-must-use-raw-src-record
+createdAt: 2026-07-31T11:47:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/host-page-load-context-must-use-raw-src-record.md
+  commit: c0cbac0cfc51984e2d8e03a7bece83e637e79559
 description: PageLoadContext 的 locator 解析若走 dist/report/** 编译产物自带的 record import,会跟 host 侧 raw src 的 Record 对象不同模块实例、查不到索引
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修。`src/report/runtime/host.ts` 是不参与 `tsconfig.report-build.json` 编译单元的 raw
+    proof: []
+    source:
+      path: memory/host-page-load-context-must-use-raw-src-record.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:ee4e1f0aabfc76a2b4f1097befe8365d5e020ecc2f4c6362adf05c1f0c29db4b
 ---
 
 已修。`src/report/runtime/host.ts` 是不参与 `tsconfig.report-build.json` 编译单元的 raw

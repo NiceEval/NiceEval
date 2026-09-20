@@ -4,7 +4,7 @@
 
 ## 状态
 
-选择 [PLAN-3](PLAN-3/README.md)：fixed Inspection operations 由 machine `query`、human terminal `show`
+选择 [PLAN-3](plans/plan-3/README.md)：fixed Inspection operations 由 machine `query`、human terminal `show`
 与 runtime browser `view` 消费。独立只读 re-grill 已针对原修正版 PLAN-3/A 给出最终 `PASS`；
 其中删除 `show` 的子决策被本裁决翻案。此裁决仍以 source/selection 正交、sealed-only Snapshot、
 各 consumer 私有呈现层为前提。
@@ -42,6 +42,6 @@ source 与 selection 分离避免把“从哪里读”误写为“看哪些 Run�
 
 ## 未选方案
 
-[PLAN-1](PLAN-1/README.md) 把 query 与浏览器绑定到作者 Page。[PLAN-2](PLAN-2/README.md) 仍把通用
+[PLAN-1](plans/plan-1/README.md) 把 query 与浏览器绑定到作者 Page。[PLAN-2](plans/plan-2/README.md) 仍把通用
 Analysis recipe、旧 show 宽表面与 Insight 作为长期面。恢复一个受限的 fixed-operation renderer
 不采用 PLAN-2 的通用作者能力或自由统计边界。

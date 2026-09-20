@@ -1,3 +1,34 @@
+---
+format: concord.document/v1
+id: requirements-base-case-ensure
+title: 三份 Requirement、唯一 Base Case 与 Ensure
+createdAt: 2026-07-31T12:37:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/requirements-base-case-ensure.md
+  commit: c44dcf8dc43407cc68d01cf92a8f7f5c6eecb780
+kind: memory
+memoryKind: decision
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 被后续裁决替代
+      [requirements-base-case-ensure](requirements-base-case-ensure.md) —
+      翻案裁决(2026-07-31):环境模型曾采用 Eval/Experiment/Agent 三份 Requirement + 单 Attempt
+      唯一 Base Case + Ensure;Eval 与 Experiment 均可提供 Base 或 Ensure,双 Base 必须按 Eval
+      profile 提供融合 case;多 case 按 Eval 选择,Base 不跳过实际 check
+      [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provision\
+      er.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-31
+supersededBy: memory/sandbox-layer-model-adopted.md
+---
 # 三份 Requirement、唯一 Base Case 与 Ensure
 
 > 2026-08-01 被 [[sandbox-layer-model-adopted]] 替代:环境模型最终采纳 PLAN-10 的 SandboxLayer 模型,Requirement / Base Case / Ensure 词族不进入公开契约。

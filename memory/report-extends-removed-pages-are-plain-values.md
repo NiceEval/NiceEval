@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-extends-removed-pages-are-plain-values
+title: 报告不再有 extends:复用是普通数组展开
+createdAt: 2026-07-29T13:06:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-extends-removed-pages-are-plain-values.md
+  commit: bbd40c22bcedf364909601575159dff12401e8e7
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 报告不再有 extends:复用是普通数组展开
 
 **裁决(2026-07-28)**:`defineReport` 移除 `extends`,`content` / `pages` 二选一。复用另一份报告

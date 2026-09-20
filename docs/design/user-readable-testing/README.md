@@ -1,6 +1,30 @@
+---
+format: concord.document/v1
+id: user-readable-testing
+title: 测试作者面与 E2E 组织方式
+createdAt: 2026-07-31T16:22:33+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/design/user-readable-testing/README.md
+  commit: 3f20d47ae02a7265b3e71b5f63288ce48bebdfc9
+kind: design
+alternatives:
+  - plan-1
+  - plan-2
+  - plan-3
+  - plan-4
+decision:
+  selected: plan-4
+  reason: 迁移保留 DECISION.md 中的明确裁决：plan-4
+  source:
+    path: docs/design/user-readable-testing/DECISION.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:e030e4b208d5807dd11d87b9de68edb72b16010b2724c7e10bb1b0de253e1abc
+  targets: []
+---
 # 测试作者面与 E2E 组织方式
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md) · [TESTKIT](TESTKIT.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md) · [TESTKIT](TESTKIT.md)
 
 niceeval 已经有 unit 与 E2E，却没有同时解决四个问题：
 
@@ -16,10 +40,10 @@ niceeval 已经有 unit 与 E2E，却没有同时解决四个问题：
 
 | 候选 | 作者主要看到什么 | 元平台成本 | 测试可读性 | 本地 / CI |
 |---|---|---:|---:|---:|
-| [PLAN-1](PLAN-1/README.md) | Behavior 元数据与媒介 matcher | 中 | 中 | 沿用现有 runner |
-| [PLAN-2](PLAN-2/README.md) | Behavior、typed view、World 与 Registry | 高 | 中低 | 需要新 world runtime |
-| [PLAN-3](PLAN-3/README.md) | 声明式 Acceptance Case 与 Projection | 很高 | 规格高、调试低 | 需要新 driver runtime |
-| [PLAN-4](PLAN-4/README.md)（推荐） | 真实场景 Repo 里的单边界 E2E 与 Journey E2E | 低 | 高 | 同一根命令 + host / Docker executor |
+| [PLAN-1](plans/plan-1/README.md) | Behavior 元数据与媒介 matcher | 中 | 中 | 沿用现有 runner |
+| [PLAN-2](plans/plan-2/README.md) | Behavior、typed view、World 与 Registry | 高 | 中低 | 需要新 world runtime |
+| [PLAN-3](plans/plan-3/README.md) | 声明式 Acceptance Case 与 Projection | 很高 | 规格高、调试低 | 需要新 driver runtime |
+| [PLAN-4](plans/plan-4/README.md)（推荐） | 真实场景 Repo 里的单边界 E2E 与 Journey E2E | 低 | 高 | 同一根命令 + host / Docker executor |
 
 前三个候选尝试用越来越强的声明模型连接测试身份、观察面和证据。
 PLAN-4 把机器协议缩到 repo 编排，测试语义保留在原生代码中。
@@ -68,6 +92,6 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 
 - 先看共同目标与硬边界：[GOALS](GOALS.md)、[LIMITS](LIMITS.md)。
 - 用固定真实场景核对候选：[CASES](CASES.md)、[EVIDENCE](EVIDENCE.md)。
-- 看各候选完整形态：[PLAN-1](PLAN-1/README.md)、[PLAN-2](PLAN-2/README.md)、[PLAN-3](PLAN-3/README.md)、[PLAN-4](PLAN-4/README.md)。
+- 看各候选完整形态：[PLAN-1](plans/plan-1/README.md)、[PLAN-2](plans/plan-2/README.md)、[PLAN-3](plans/plan-3/README.md)、[PLAN-4](plans/plan-4/README.md)。
 - 最终选择与迁移边界见 [DECISION](DECISION.md)。
 - 共享测试设施的包边界、稳定外层与公开门槛见 [TESTKIT](TESTKIT.md)。

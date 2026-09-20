@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-inventory
+title: Record 库存
+createdAt: 2026-08-14T13:42:59+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/record-inventory/README.md
+  commit: 44685a9360d68e5d227ac6b758a1e6c993fa464d
+kind: roadmap
+state: planned
+---
 # Record 库存
 
 `niceeval exp` 的 Run 交接已经由现行 [InvocationReceipt](../../feature/experiments/cli.md#结束反馈与-receipt) 完成。

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: default-report-partitions-experiment-groups
+title: 默认报告比较当前 Scope，不建实验组
+createdAt: 2026-07-15T18:46:58+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/default-report-partitions-experiment-groups.md
+  commit: bb4fa7c73b3889d98cd6663301a9b54ef75c10bd
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 默认报告比较当前 Scope，不建实验组
 
 **最终裁决（2026-07-19）**：默认报告不再建立实验组，直接比较当前 Scope。每个 experiment 的 eval 集以快照 `ExperimentRunInfo.selectedEvalIds` 为准；路径只负责 experimentId 和 CLI 前缀选择。需要子集时收窄 Scope，不给 experiment 增加分组配置。

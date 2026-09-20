@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: human-error-feedback-folds-provider-messages
+title: Human error feedback folds provider messages
+createdAt: 2026-08-19T09:11:24+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/human-error-feedback-folds-provider-messages.md
+  commit: 207cfa3caee109a5d4719994ad5e1a0dbe2743d6
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [human-error-feedback-folds-provider-messages](human-error-feedback-folds-provider-messages.md) — Human 结束面按 phase+code 把 E2B/Vercel 不同 message 合成 `×2`，共享构建又暴露 `n1` 且长单行被截；修为 execution error 逐 Attempt 展示安全 `error:` + locator details，receipt 后按 Experiment 配对 Run details，内部 failure identity 仅留机器面"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Human error feedback folds provider messages
 
 ## 现象

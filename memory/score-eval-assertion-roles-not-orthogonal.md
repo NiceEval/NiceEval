@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: score-eval-assertion-roles-not-orthogonal
+title: 裁决：计分制里 points 与 severity 不正交，改成「一条断言只扮演一个角色」
+createdAt: 2026-07-23T08:51:45+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/score-eval-assertion-roles-not-orthogonal.md
+  commit: 74b88fa01658addfc259cb80beb4e9826cc76079
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决：计分制里 points 与 severity 不正交，改成「一条断言只扮演一个角色」
 
 **日期**：2026-07-23（推翻 [pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md) 定稿时的第 5 条「判定面完全不变」）

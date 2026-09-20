@@ -14,8 +14,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 0,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果 [necase_AMH3K9YNHY0MSDMC]", async () => {
+test("uiMessageStreamAgent 将 HTTP 500 呈现为公开 errored 结果", async () => {
   await localProtocolE2E.case(
     "http-error",
     localProtocolRecordArtifacts,

@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: brief-crashes-on-preview-undefined
+title: '`brief(undefined)` 抛 TypeError，断言预览 undefined 字段值时崩溃而不是显示 "undefined"'
+createdAt: 2026-07-13T12:40:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/brief-crashes-on-preview-undefined.md
+  commit: 07416e688fbab92ce1ae05625532478cef3b3d6b
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修复:`src/util.ts` `brief()`(2026-07-13,与 [[codex-plugin-list-json-shape-guessed-wrong]] 同一次
+    proof: []
+    source:
+      path: memory/brief-crashes-on-preview-undefined.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:0e2dd9e5f98c96a44c6269a267e259cc83182b392ececdc6b896686ff0288a6b
+---
 # `brief(undefined)` 抛 TypeError，断言预览 undefined 字段值时崩溃而不是显示 "undefined"
 
 **现象**：`t.check(某字段, equals("期望值"))` 在「某字段」实际是 `undefined` 时,gate 求值本身

@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: record-to-report-weights-and-biases
+title: Weights & Biases：Models 与 Weave
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources: []
+---
 # Weights & Biases：Models 与 Weave
 
 > 观察日期：2026-08-14
@@ -86,18 +95,18 @@ entity / project
 
 `weave:///{entity}/{project}/{kind}/...` 是用户空间 ref。
 内部存储用 `project_id` 与 `weave-trace-internal:///`。
-见 [weave.md](weave.md) 与 [storage.md](storage.md#weave)。
+见 [weave.md](weave/README.md) 与 [storage.md](storage/README.md#weave)。
 
 ## 研究页导航
 
 | 页 | 只回答什么 |
 |---|---|
-| [layers.md](layers.md) | 各产品自己的 layer / component / resource、owner、引用与依赖 |
-| [execution.md](execution.md) | 发起、调度、执行、写入、完成、失败、partial、retry / resume |
-| [storage.md](storage.md) | type / class、table / model、file / directory、envelope / API resource |
-| [reading-and-comparison.md](reading-and-comparison.md) | 重开、query / filter / align / group / compare / render、缺测 |
-| [schema-and-migration.md](schema-and-migration.md) | schema 轨道、兼容 reader、migration、升级、是否改已存数据 |
-| [weave.md](weave.md) | Weave 独立产品面、与 Models 的边界、SDK / ClickHouse / migration 证据索引 |
+| [layers.md](layers/README.md) | 各产品自己的 layer / component / resource、owner、引用与依赖 |
+| [execution.md](execution/README.md) | 发起、调度、执行、写入、完成、失败、partial、retry / resume |
+| [storage.md](storage/README.md) | type / class、table / model、file / directory、envelope / API resource |
+| [reading-and-comparison.md](reading-and-comparison/README.md) | 重开、query / filter / align / group / compare / render、缺测 |
+| [schema-and-migration.md](schema-and-migration/README.md) | schema 轨道、兼容 reader、migration、升级、是否改已存数据 |
+| [weave.md](weave/README.md) | Weave 独立产品面、与 Models 的边界、SDK / ClickHouse / migration 证据索引 |
 
 各页按 Models 与 Weave 分节，不互相复制同一段。
 

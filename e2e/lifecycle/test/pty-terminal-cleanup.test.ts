@@ -4,14 +4,16 @@ import { startPty } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 const node = process.execPath;
+// @feature docs/feature/sandbox/README.md
 
-test("PTY startup failure after helper configuration closes its helper and launcher groups [necase_81M8VZCCTEZZ4VM5]", async () => {
+test("PTY startup failure after helper configuration closes its helper and launcher groups", async () => {
   await expect(startPty(["/definitely-not-an-e2e-executable"], { graceMs: 100 })).rejects.toThrow(
     "pty helper",
   );
 });
+// @feature docs/feature/sandbox/README.md
 
-test("PTY helper bootstrap failure before candidate status rejects instead of hanging [necase_QTHFHP3YEDDKCHT1]", async () => {
+test("PTY helper bootstrap failure before candidate status rejects instead of hanging", async () => {
   const start = startPty([node, "-e", "process.stdout.write('unreachable')"], {
     env: { NODE_OPTIONS: "--require=/definitely-not-a-pty-bootstrap-module" },
     timeoutMs: 300,
@@ -26,14 +28,16 @@ test("PTY helper bootstrap failure before candidate status rejects instead of ha
   ]);
   expect(settled).toBe("rejected");
 });
+// @feature docs/feature/sandbox/README.md
 
-test("PTY launcher lookup failure closes the listening control server before removing its scratch directory [necase_NW8NGQ554NT11NKE]", async () => {
+test("PTY launcher lookup failure closes the listening control server before removing its scratch directory", async () => {
   await expect(
     startPty([node, "-e", "process.stdout.write('unreachable')"], { env: { PATH: "" }, graceMs: 100 }),
   ).rejects.toThrow("PTY launcher");
 });
+// @feature docs/feature/sandbox/README.md
 
-test("PTY sends hostile candidate argv only through the private control frame [necase_NW7PEK5XMEYQM6JX]", async () => {
+test("PTY sends hostile candidate argv only through the private control frame", async () => {
   const hostile = ["two words", "*", "$(not-a-command)", "'single'\"double\"", "line\nbreak", "; echo escaped"];
   const pty = await startPty(
     [node, "-e", "process.stdout.write(JSON.stringify(process.argv.slice(1)))", ...hostile],
@@ -44,8 +48,9 @@ test("PTY sends hostile candidate argv only through the private control frame [n
   expect(JSON.parse(receipt.clean)).toEqual(hostile);
   expect(receipt.raw).toBe(receipt.clean);
 });
+// @feature docs/feature/sandbox/README.md
 
-test("PTY receipt preserves terminal bytes and candidate exit 201 without treating it as success [necase_C56X5T3NXQKYVJJ2]", async () => {
+test("PTY receipt preserves terminal bytes and candidate exit 201 without treating it as success", async () => {
   const pty = await startPty(
     [node, "-e", "process.stdout.write('\\x1b[31mpty-ready\\r\\n'); setTimeout(() => process.exit(201), 120)"],
     { columns: 91, rows: 27, timeoutMs: 5_000 },
@@ -60,16 +65,19 @@ test("PTY receipt preserves terminal bytes and candidate exit 201 without treati
   expect(receipt.raw).toContain("\r\n");
   expect(receipt.clean).toBe("pty-ready\n");
 });
+// @feature docs/feature/sandbox/README.md
 
-test("PTY rejects a sentinel first checked after candidate exit when whileRunning is required [necase_36E9RFR3YASKN8PB]", async () => {
+test("PTY rejects a sentinel first checked after candidate exit when whileRunning is required", async () => {
   const pty = await startPty([node, "-e", "process.stdout.write('late-sentinel\\n')"], { timeoutMs: 5_000 });
   await expect(pty.wait()).resolves.toMatchObject({ exitCode: 0 });
   await expect(pty.waitForText("late-sentinel", { timeoutMs: 1_000, whileRunning: true })).rejects.toThrow(
     "exited before",
   );
 });
+// @feature docs/feature/sandbox/README.md
+// @regression memory/pty-cleanup-kills-helper-before-exit-report.md
 
-test("PTY timeout kills a TERM-ignoring candidate and its descendant, then proves all owned groups terminal [necase_VWGZRFWXF18HCYQE]", async () => {
+test("PTY timeout kills a TERM-ignoring candidate and its descendant, then proves all owned groups terminal", async () => {
   const pty = await startPty(
     [node, "-e", "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); process.stdout.write('cleanup-ready\\n'); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
     { timeoutMs: 3_000, graceMs: 200 },

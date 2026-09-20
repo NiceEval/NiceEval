@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E as e2e } from "./context.ts";
 
-test.concurrent("旧项目状态拒绝写入并提供保留数据的恢复指引 [necase_CQYTFVY7A9TQCDFZ]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/legacy-record-recovery-guidance.md
+
+test.concurrent("旧项目状态拒绝写入并提供保留数据的恢复指引", async () => {
   await e2e.case("legacy-record-recovery", async ({ paths, commands: { niceeval } }) => {
     // Hostile predecessor input, never a source of expected current Record facts.
     const legacyRoot = join(paths.projectRoot, ".niceeval", "locks");

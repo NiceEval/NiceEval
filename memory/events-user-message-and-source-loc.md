@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: events-user-message-and-source-loc
+title: 事件流含 user message + 源码对齐(source-loc / code view)
+createdAt: 2026-06-30T17:01:39+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/events-user-message-and-source-loc.md
+  commit: 02fb24d57fef0c8c3f338e9b4cd84a38373a946e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 事件流含 user message + 源码对齐(source-loc / code view)
 
 ## 现象

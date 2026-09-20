@@ -12,8 +12,9 @@ const PRIMARY_ERROR_HEAD = "502 Bad Gateway · DOCKER_PROVIDER_TIMEOUT";
 const PRIMARY_ERROR_TAIL = "request req_docker_primary_789";
 const SECONDARY_ERROR_HEAD = "409 Conflict · DOCKER_BUILD_DENIED";
 const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
+// @feature docs/feature/experiments/README.md
 
-test("provider 与 sandbox 错误只展示真实问题并给出所属 details [necase_7HXVADGZABWJQXEC]", async () => {
+test("provider 与 sandbox 错误只展示真实问题并给出所属 details", async () => {
   await cliE2E.case(
     "provider-error-feedback",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

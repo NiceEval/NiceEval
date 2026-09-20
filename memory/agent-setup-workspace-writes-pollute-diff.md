@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: agent-setup-workspace-writes-pollute-diff
+title: agent.setup 往 workspace 里装的东西会被当成「agent 生成的文件」记进 diff
+createdAt: 2026-07-12T22:18:12+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/agent-setup-workspace-writes-pollute-diff.md
+  commit: 2875814261652f0c69f35edb0d11b51abdcfa9bf
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [agent-setup-workspace-writes-pollute-diff](agent-setup-workspace-writes-pollute-diff.md) — git 基线早于 `agent.setup`,所以 setup 往 workspace 装的 skill / AGENTS.md 会被当成 agent 产出记进 diff;修为写 `.git/info/exclude`(能放 `$HOME` 就别放 workspace)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # agent.setup 往 workspace 里装的东西会被当成「agent 生成的文件」记进 diff
 
 **现象**:给 claude-code 装 skill 后,`diff.json` / `t.sandbox.diff` 里出现几十个 skill 文件(`.claude/skills/**`),以及 adapter 新建的 `AGENTS.md`——它们不是被测 agent 干的,却被算进了它的产出。`notInDiff()` 这类负断言会被误伤,view 里的 diff 也被噪声淹没。

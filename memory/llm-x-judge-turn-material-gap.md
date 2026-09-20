@@ -1,18 +1,39 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: llm-x-judge-turn-material-gap
 title: LLM X 接入声明式 Judge 缺少应用材料入口
 createdAt: 2026-09-13
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+promotions: []
+history: []
+resolution:
+  reason: 保留原记录声明
+  at: 2026-09-20T13:31:15.382Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_5EMQGNQKCNPKT4TT
+            - netake_71D61PSEAXKBZS3S
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0"]}
     proof:
       - nered_5EMQGNQKCNPKT4TT
       - netake_71D61PSEAXKBZS3S
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0"]}
-promotions: []
+    source:
+      path: memory/llm-x-judge-turn-material-gap.md
+      commit: b5afbef07cbb0532e51f3c1f12ffc76bf7f51891
+      digest: sha256:ad66c889ca8007b175104451e9a70c8188aec3eb79ae216cc226266da8afa6ff
 ---
 # LLM X 接入声明式 Judge 缺少应用材料入口
 

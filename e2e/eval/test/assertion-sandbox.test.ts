@@ -5,8 +5,9 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAssertion, inspectAttempt } from "./inspection.ts";
+// @feature docs/feature/assertions/README.md
 
-test("Sandbox Assertion Eval 以 passed 终态完成 [necase_62D35D368K26CDJN]", async () => {
+test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
   await evalE2E.case(
     "sandbox",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

@@ -549,6 +549,9 @@ function schemaError(value: unknown, error: SchemaIssue.Issue): DockerProfileErr
   });
 }
 
+// @concord-code ne-sandbox-docker-profile-parse
+// @concord-implements docs/feature/sandbox-docker-profiles/library.md
+// @concord-implements docs/feature/sandbox-docker-profiles/architecture.md
 export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionProfileV1 {
   const decoded = Schema.decodeUnknownResult(DockerExecutionProfileV1Schema, ParseOptions)(value);
   if (Result.isFailure(decoded)) throw schemaError(value, decoded.failure.issue);
@@ -611,6 +614,8 @@ export function parseDockerExecutionProfileV1(value: unknown): DockerExecutionPr
 export const parseDockerExecutionProfile = parseDockerExecutionProfileV1;
 export const decodeDockerExecutionProfileV1 = parseDockerExecutionProfileV1;
 
+// @concord-code ne-sandbox-docker-profile-make
+// @concord-implements docs/feature/sandbox-docker-profiles/library.md
 export function makeDockerExecutionProfileV1(
   input: DockerExecutionProfileV1Draft,
 ): DockerExecutionProfileV1 {
@@ -710,6 +715,8 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
   };
 }
 
+// @concord-code ne-sandbox-docker-profile-digest
+// @concord-implements docs/feature/sandbox-docker-profiles/architecture.md
 export function dockerExecutionProfileV1Digest(profile: DockerExecutionProfileV1): string {
   return `sha256:${digestOf(canonicalJson(parseDockerExecutionProfileV1(profile)))}`;
 }

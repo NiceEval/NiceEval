@@ -1,8 +1,33 @@
 ---
-name: codeview-perline-hidden-scrollbar-clips-text
+format: concord.document/v1
+id: codeview-perline-hidden-scrollbar-clips-text
+title: codeview-perline-hidden-scrollbar-clips-text
+createdAt: 2026-07-11T18:37:33+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codeview-perline-hidden-scrollbar-clips-text.md
+  commit: 4543d9f0edcda0e7dcc2243c7f7a8cbc7d5dc599
 description: AttemptModal 的 CodeView 长代码行/长 t.send prompt 被静默裁掉,读不全也无法滚动看到
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [codeview-perline-hidden-scrollbar-clips-text](codeview-perline-hidden-scrollbar-clips-text.md) — AttemptModal 代码视图长行(尤其 t.send prompt)被裁断且无滚动条提示,根因是横向滚动挂在每行自己身上还把滚动条砍成 0;改为整块 `.code-lines` 统一滚动(修在 `src/view/styles.css`,`d0b6718` 重构带入,记得改完要 `pnpm run view:build`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**:`niceeval view` 的证据室 attempt 详情弹窗(`AttemptModal` → `CodeView`,

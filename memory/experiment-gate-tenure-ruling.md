@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: experiment-gate-tenure-ruling
+title: 裁决:两级并发闸按持有期分工——全局位管吞吐,实验闸全程持有管正确性
+createdAt: 2026-07-23T10:32:00+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-gate-tenure-ruling.md
+  commit: 3167664e3d294295d243ba707716b2e22d1a887a
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:两级并发闸按持有期分工——全局位管吞吐,实验闸全程持有管正确性
 
 **日期**:2026-07-23

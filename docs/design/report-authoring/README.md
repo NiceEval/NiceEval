@@ -1,8 +1,35 @@
+---
+format: concord.document/v1
+id: report-authoring
+title: 报告作者面：组件粒度与取数形态
+createdAt: 2026-07-27T18:06:13+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/design/report-authoring/README.md
+  commit: 5894456c54a8f1bbfc6d27031e3373d69ef689c8
+kind: design
+alternatives:
+  - plan-1
+  - plan-2
+  - plan-3
+  - plan-4
+  - plan-5
+  - plan-6
+  - plan-7
+decision:
+  selected: plan-7
+  reason: 迁移保留 DECISION.md 中的明确裁决：plan-7
+  source:
+    path: docs/design/report-authoring/DECISION.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:eae8bd440c263724ee47cc0d36bce9e34ab1ccf5230c41d56adb0223e5b91aef
+  targets: []
+---
 # 报告作者面：组件粒度与取数形态
 
 > 本主题的双面 Report 作者面已被 [CLI 与 Insight](../cli-insight/DECISION.md) 取代。本目录只保留候选与裁决历史。外部用户网页的数据 / 组件接入面仍在[独立决策](../benchmark-web-consumption/README.md)中比较。
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [PLAN-5](plans/plan-5/README.md) · [PLAN-6](plans/plan-6/README.md) · [PLAN-7](plans/plan-7/README.md) · [DECISION](DECISION.md)
 
 写一份自定义报告的人先撞上两个选择，这里把它们摊开比较。
 
@@ -17,14 +44,14 @@
 
 | | 类型化数据源 | SQL 查询 |
 |---|---|---|
-| 通用原语 | [PLAN-2](PLAN-2/README.md) | [PLAN-3](PLAN-3/README.md) |
-| 专用组件 | [PLAN-1](PLAN-1/README.md) | 与 PLAN-1 同格：取数不进作者视野 |
+| 通用原语 | [PLAN-2](plans/plan-2/README.md) | [PLAN-3](plans/plan-3/README.md) |
+| 专用组件 | [PLAN-1](plans/plan-1/README.md) | 与 PLAN-1 同格：取数不进作者视野 |
 
-[PLAN-4](PLAN-4/README.md) 是双轨：类型化数据源作默认，SQL 作逃生舱。
-[PLAN-5](PLAN-5/README.md) 曾保留通用原语与 closed values，却把 projection／Calculation plumbing 暴露给作者。
-[PLAN-6](PLAN-6/README.md) 在同一个静态内核上恢复 typed Analysis fields 与 descriptor components，但保留 static
+[PLAN-4](plans/plan-4/README.md) 是双轨：类型化数据源作默认，SQL 作逃生舱。
+[PLAN-5](plans/plan-5/README.md) 曾保留通用原语与 closed values，却把 projection／Calculation plumbing 暴露给作者。
+[PLAN-6](plans/plan-6/README.md) 在同一个静态内核上恢复 typed Analysis fields 与 descriptor components，但保留 static
 `ReportData`。
-[PLAN-7](PLAN-7/README.md)（推荐）保留 fields 与 closed output，并恢复受限 `ReportSample`、async callback 与
+[PLAN-7](plans/plan-7/README.md)（推荐）保留 fields 与 closed output，并恢复受限 `ReportSample`、async callback 与
 `await aggregate(sample, ...)`。
 
 这层选择值得单独比较，因为它一旦定下就写进每一份用户报告文件。
@@ -158,6 +185,6 @@ PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过�
 
 - 要求与判据：[GOALS](GOALS.md)。
 - 三个候选项各自的现状与硬约束：[LIMITS](LIMITS.md)。
-- 逐个方案的完整写法与代价：[PLAN-1](PLAN-1/README.md) 到 [PLAN-7](PLAN-7/README.md)。
+- 逐个方案的完整写法与代价：[PLAN-1](plans/plan-1/README.md) 到 [PLAN-7](plans/plan-7/README.md)。
 - 裁决与否决理由：[DECISION](DECISION.md)。
 - 当前替代契约：[Inspection Architecture](../../feature/inspection/architecture.md) 与 [Insight](../../feature/insight/README.md)。

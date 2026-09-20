@@ -13,7 +13,7 @@
 #### cli-positive-selection
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
+Contract: [预览并收窄](../../../feature/experiments/use-case/selection-dry-preview.md)
 
 - eval id 位置参数按前缀收窄实际运行的 Eval 集合；experiment 选择器按 CLI 契约命中。
 - Setup cache 策略在 Config 与 Experiment 可声明 `use | bypass`；`exp --sandbox-setup-cache`
@@ -22,21 +22,21 @@ Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/�
 #### cli-no-eval-feedback
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
+Contract: [预览并收窄](../../../feature/experiments/use-case/selection-dry-preview.md)
 
 - Experiment 命中但 Eval 前缀零命中时按用法错误退出，错误信息给出下一步。
 
 #### cli-no-experiment-feedback
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
+Contract: [预览并收窄](../../../feature/experiments/use-case/selection-dry-preview.md)
 
 - 未命中任何 Experiment 的选择器按用法错误退出，错误信息给出下一步。
 
 #### cli-evaluation-kind-admission
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [拆开混型评测](../../../feature/experiments/use-case/选择评测/拆开混型评测.md)
+Contract: [拆开混型评测](../../../feature/experiments/use-case/selection-split-eval-kinds.md)
 
 - 普通 `niceeval exp` 在任何 Agent、Sandbox、fingerprint 或 Record 写入前拒绝同时选中 Pass Eval 与 Score Eval 的 Experiment；错误分别列出两类 Eval ID，并要求按题型拆分或收窄。
 - Eval Group 的闭合成员集若同时包含 Pass Eval 与 Score Eval，同一公开 preflight 以 Group ID 和两类成员 ID 拒绝；不能靠 Experiment 或 CLI 只选中其中一类绕过非法 Group 定义。
@@ -89,7 +89,7 @@ Then 输出把 BuildKit 放进独立的 `providerObservations`，状态为 `unve
 #### cli-docker-task-build-cache
 
 <!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命周期/重依赖烘进镜像.md)
+Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/lifecycle-bake-dependencies.md)
 
 Given 一个 Dockerfile Sandbox 的 BuildKey 未变化，且前一次 Invocation 已把 image 与 manifest 写入受管 registry。
 

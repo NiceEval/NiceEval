@@ -45,8 +45,9 @@ function assertionOutcomeMap(entries: readonly { display: unknown; decision: unk
     return typeof label === "string" && typeof state === "string" ? [[label, state] as const] : [];
   }));
 }
+// @feature docs/feature/assertions/README.md
 
-test.concurrent("值与连续 Match 登记可审阅的检查结果 [necase_1PKK4WB3WZNMV5F7]", async () => {
+test.concurrent("值与连续 Match 登记可审阅的检查结果", async () => {
   await evalE2E.case(
     "values",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

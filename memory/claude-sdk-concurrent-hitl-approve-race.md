@@ -1,8 +1,20 @@
 ---
-name: claude-sdk-concurrent-hitl-approve-race
+format: concord.document/v1
+id: claude-sdk-concurrent-hitl-approve-race
+title: claude-sdk-concurrent-hitl-approve-race
+createdAt: 2026-07-03T20:16:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/claude-sdk-concurrent-hitl-approve-race.md
+  commit: e842f5e0d2544cd1091af51a10a0c0c490f2458d
 description: 两条 HITL eval 并发跑在同一个 claude-sdk server 实例上时,POST /api/chat/approve 会永久 404,不是瞬时竞态——必须串行或每个 attempt 独立 server 实例
-metadata:
-  type: infra-bug
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：`examples/zh/tier1/claude-sdk` 的 `hitl-approve.eval.ts` 和 `hitl-deny.eval.ts` 单独跑

@@ -14,8 +14,9 @@ async function exists(path: string): Promise<boolean> {
     throw error;
   }
 }
+// @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
 
-test.concurrent("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent [necase_EZDHV0MV2FA9SX7X]", async () => {
+test.concurrent("等待 sharedState 不占用同一 exclusive provider lane，无关 Experiment 仍可进入 Agent", async () => {
   await runnerE2E.case(
     "shared-state-exclusive-provider-lane",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

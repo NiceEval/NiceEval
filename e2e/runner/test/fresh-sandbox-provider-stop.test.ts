@@ -20,8 +20,10 @@ function ownerTokenFromInspection(stderr: string): string {
   expect(match, stderr).not.toBeNull();
   return match![1]!;
 }
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+// @regression memory/custom-provider-requires-derived-sandbox-methods.md
 
-test.concurrent("fresh custom Provider group.stop 失败保留 sharedState，普通输出与 Run diagnostic 不泄露 owner token [necase_9E2KVHJXB3FTA8AE]", async () => {
+test.concurrent("fresh custom Provider group.stop 失败保留 sharedState，普通输出与 Run diagnostic 不泄露 owner token", async () => {
   await runnerE2E.case(
     "shared-state-provider-stop-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

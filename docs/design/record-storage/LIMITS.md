@@ -30,15 +30,15 @@
 
 ## 候选清单
 
-- [PLAN-1](PLAN-1/README.md)：canonical JSON envelope、Host 私有 framed pack sets 与 whole-Run directory rename。
-- [PLAN-2](PLAN-2/README.md)：历史上的单 SQLite application file；它不能同时满足 durable-member ceiling 与无 Run Content cap。
-- [PLAN-3](PLAN-3/README.md)：条件后备；SQLite 保存 logical inventory 与 collection item，Content 进入同一 Run directory 的外部 rolling packs。
-- [PLAN-4](PLAN-4/README.md)：整个 Record root 使用一份 SQLite application database；事务发布 logical Run，Content 使用 bounded chunk rows。
+- [PLAN-1](plans/plan-1/README.md)：canonical JSON envelope、Host 私有 framed pack sets 与 whole-Run directory rename。
+- [PLAN-2](plans/plan-2/README.md)：历史上的单 SQLite application file；它不能同时满足 durable-member ceiling 与无 Run Content cap。
+- [PLAN-3](plans/plan-3/README.md)：条件后备；SQLite 保存 logical inventory 与 collection item，Content 进入同一 Run directory 的外部 rolling packs。
+- [PLAN-4](plans/plan-4/README.md)：整个 Record root 使用一份 SQLite application database；事务发布 logical Run，Content 使用 bounded chunk rows。
 
 全 JSON 不是候选。
 它要求 binary base64、整体 encode/decode 与 append 重写，已经与 L7–L10 的增量 Content/collection 路径和真实失败语义冲突。
 
 外部事实与版本证据见
-[便携格式](../../research/record-storage/portable-formats.md)、
-[Artifact systems](../../research/record-storage/artifact-systems.md) 和
-[Eval platforms](../../research/record-storage/eval-platforms.md)。
+[便携格式](../../research/record-storage/portable-formats/README.md)、
+[Artifact systems](../../research/record-storage/artifact-systems/README.md) 和
+[Eval platforms](../../research/record-storage/eval-platforms/README.md)。

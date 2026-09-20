@@ -1,3 +1,13 @@
+---
+format: concord.document/v1
+id: report-design-vercel
+title: Vercel `design.md`：报告网站设计指令
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources:
+  - https://vercel.com/geist/vercel-brand.css
+---
 # Vercel `design.md`：报告网站设计指令
 
 > 观察日期：2026-08-14
@@ -14,7 +24,7 @@
 
 这份指令让 agent 把调用者已有的事实、公式和约束组织进宿主 Web 项目。
 它定义读者任务、证据构图、VBG 视觉基础、响应式、可访问性和真实渲染复查。
-运行结果、历史查询与持久数据 migration 不属于它的公开产品边界，完整证据见 [适格性审查](eligibility.md)。
+运行结果、历史查询与持久数据 migration 不属于它的公开产品边界，完整证据见 [适格性审查](eligibility/README.md)。
 
 ## 用户心智模型
 
@@ -56,7 +66,7 @@ VBG foundation + 页面专属实现
 
 ## 研究页导航
 
-- [适格性审查](eligibility.md)：逐项核对运行顺序、持久对象、写入边界、历史读取、derived value 与 migration，并说明为什么应移出 Record → Report 研究。
+- [适格性审查](eligibility/README.md)：逐项核对运行顺序、持久对象、写入边界、历史读取、derived value 与 migration，并说明为什么应移出 Record → Report 研究。
 
 本对象不适格，所以本目录不伪造 `layers.md`、`execution.md`、`storage.md`、`reading-and-comparison.md` 或 `schema-and-migration.md`。
 

@@ -1,3 +1,8 @@
+// @concord-file ne-eval-assertions-judge
+// @concord-implements docs/feature/judge/README.md
+// @concord-implements docs/feature/judge/library.md
+// @concord-implements docs/feature/judge/use-case/verify-judge.md
+// @concord-implements docs/feature/eval/use-case/judge-quality.md
 // Native LLM-as-Judge evaluator. Definition and material capture are pure;
 // provider I/O, timeout, retry, and interruption stay in the owning Effect.
 

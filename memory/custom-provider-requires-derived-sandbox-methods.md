@@ -1,17 +1,38 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: custom-provider-requires-derived-sandbox-methods
 title: 自定义 Provider 被要求实现框架生成的 Sandbox 方法
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - Installed public TypeScript consumer red nered_MJ9T9V3A0QAKYRTK and complete takeover netake_K1ZWVFG8PENNX9RB validate native CustomProviderSandbox input; all 31 Runner cases pass default concurrency and resource cleanup.
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/fresh-sandbox-provider-stop.test.ts#necase_9E2KVHJXB3FTA8AE"]}
     proof:
       - Installed public TypeScript consumer red nered_MJ9T9V3A0QAKYRTK and complete takeover netake_K1ZWVFG8PENNX9RB validate native CustomProviderSandbox input; all 31 Runner cases pass default concurrency and resource cleanup.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/fresh-sandbox-provider-stop.test.ts#necase_9E2KVHJXB3FTA8AE"]}
-promotions: []
+    source:
+      path: memory/custom-provider-requires-derived-sandbox-methods.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:fc5754d5d582085b2d7411c0ccfbec99aa064f3cb2499a6094eccbbaf9ba71d0
 ---
 公开 `defineSandbox().create` 和 `defineSandboxCase().materialize` 要求完整 `Sandbox`，但 `Sandbox.upload` 消费由框架持有的 opaque `SandboxContent`，`runCommandOrThrow` 与 `runShellOrThrow` 也由 normalization 生成。内部 `SandboxProviderBackend` 已排除 upload，运行时从来不调用作者提供的派生方法，公开作者输入却要求它们。真实 E2E custom Provider 因缺 upload 无法类型检查。
 

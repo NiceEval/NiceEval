@@ -146,6 +146,9 @@ function tapePath(workspace: string, sessionId: string, bubHome: string): string
   return `${bubHome}/tapes/${w}__${s}.jsonl`;
 }
 
+// @concord-code ne-adapter-bub-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/bub/README.md
 export function bubAgent(config?: BubConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("BUB_API_KEY");
   const getApiBase = () => config?.apiBase ?? requireEnv("BUB_API_BASE");

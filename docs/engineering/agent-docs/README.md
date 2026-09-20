@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: agent-docs
+title: 随包 AI 文档（agent-docs）
+createdAt: 2026-07-17T14:16:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/agent-docs/README.md
+  commit: f2ce0475dc49c073822f84116c495b93dde58e94
+kind: engineering
+---
 # 随包 AI 文档（agent-docs）
 
 Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如果依赖训练数据或官网，读到的可能是另一个版本的 API。

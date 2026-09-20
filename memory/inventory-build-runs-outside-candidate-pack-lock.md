@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: inventory-build-runs-outside-candidate-pack-lock
 title: Workspace inventory 在 candidate pack lease 外重复构建共享 dist
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # Workspace inventory 在 candidate pack lease 外重复构建共享 dist
 

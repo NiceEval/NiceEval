@@ -1,3 +1,8 @@
+// @concord-file ne-eval-inspection-selector
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
+// @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
+// @concord-implements docs/feature/insight/README.md
 import { Data, Result, Schema } from "effect";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
@@ -126,6 +131,10 @@ export function selectInspectionOperation<
   facts: InspectionFactSource,
   operation: InspectionOperationFor<Kind>,
 ): InspectionSuccessDocumentFor<Kind>;
+// @concord-code ne-eval-inspection-select-operation
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
+// @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
@@ -137,6 +146,9 @@ export function selectInspectionOperation(
 }
 
 /** Internal CLI explanation over the same selected facts and cutoff. */
+// @concord-code ne-eval-inspection-explain-operation
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 export function explainInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,

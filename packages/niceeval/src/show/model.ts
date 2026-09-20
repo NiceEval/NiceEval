@@ -1,3 +1,6 @@
+// @concord-file ne-surface-show-model
+// @concord-implements docs/feature/inspection/cli.md
+// @concord-implements docs/feature/run-inspection/README.md
 import type {
   InspectionOverviewResult,
   InspectionScoredValue,
@@ -250,6 +253,8 @@ export function projectExperiment(document: InspectionSuccessDocumentFor<"experi
     cells: cells(document.experiment.cells),
   };
 }
+// @concord-code ne-surface-project-run-view
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 export function projectRun(document: InspectionSuccessDocumentFor<"run.overview">): RunView {
   const value = document.runOverview;
   return {
@@ -280,6 +285,8 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.overview"
     })),
   };
 }
+// @concord-code ne-surface-project-attempt-view
+// @concord-implements docs/feature/inspection/cli.md
 export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">): AttemptView {
   const value = document.attempt;
   return {

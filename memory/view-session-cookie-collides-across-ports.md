@@ -1,17 +1,38 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: view-session-cookie-collides-across-ports
 title: 同一浏览器打开第二个 View 会覆盖第一个实例的 session cookie
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_NPCQ260FNXM1SY43 -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
     proof:
       - nered_NPCQ260FNXM1SY43 -> netake_0SVB9XS4NCGH4WFE; current installed authorization Journey, three isolated + two same-copy + default parallel + single-case observations, all pass and cleanup verified by parent.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0"]}
-promotions: []
+    source:
+      path: memory/view-session-cookie-collides-across-ports.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:06fb8679768d2993391ae34c59c88e4a17e8c72e747c7fc918611bbf91b944fe
 ---
 # 同一浏览器打开第二个 View 会覆盖第一个实例的 session cookie
 

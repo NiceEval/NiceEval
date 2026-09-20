@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: static-export-breaks-on-slashless-index-url
+title: "`--out` 站点被托管在无尾斜杠路径上时 attempt 下钻全断"
+createdAt: 2026-07-25T13:00:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/static-export-breaks-on-slashless-index-url.md
+  commit: f055aa676783993ac3f6010df5a11864be368da7
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [static-export-breaks-on-slashless-index-url](static-export-breaks-on-slashless-index-url.md) — `--out` 站点被托管在无尾斜杠路径(`/showcase/memory`,cleanUrls)上时 attempt 下钻全 404;根因=浏览器按文档 URL 的目录解析相对引用、少一层,本地 server 永远带尾斜杠所以测不出;修为 index.html 落站点根归一的 `<base>` 引导脚本"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # `--out` 站点被托管在无尾斜杠路径上时 attempt 下钻全断
 
 ## 现象

@@ -2,8 +2,9 @@
 
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
+// @use-case docs/feature/experiments/use-case/selection-dry-preview.md
 
-test("Experiment 命中但 Eval 前缀零命中时以用法错误给出下一步 [necase_05SXTFZQ7FSEMDEV]", async () => {
+test("Experiment 命中但 Eval 前缀零命中时以用法错误给出下一步", async () => {
   await cliE2E.case("no-eval-feedback", async ({ commands: { niceeval } }) => {
     const receipt = await niceeval.run(["exp", "normal", "totally-bogus-eval-prefix-zzz", "--dry"]);
 

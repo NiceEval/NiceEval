@@ -1,8 +1,20 @@
 ---
-name: attempt-detail-is-a-parametrized-page
-description: 裁决(2026-07-19)：attempt 详情从宿主固定路由内容翻案为报告里唯一的参数化 page，取代 reports-no-privilege-chrome-rulings 里"证据页归宿主路由"的部分
-metadata:
-  type: project
+format: concord.document/v1
+id: attempt-detail-is-a-parametrized-page
+title: attempt-detail-is-a-parametrized-page
+createdAt: 2026-07-19T14:28:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-detail-is-a-parametrized-page.md
+  commit: 97be5b9c269f1a02056989d917769917c9cdf6be
+description: 裁决(2026-07-19)：attempt 详情从宿主固定路由内容翻案为报告里唯一的参数化 page，取代
+  reports-no-privilege-chrome-rulings 里"证据页归宿主路由"的部分
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 # 裁决

@@ -1,16 +1,16 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: incus-setup-prefix-reuse-is-indistinguishable-in-cli
 title: Incus SetupPrefix 复用在 CLI 中无法区分 pair
 createdAt: 2026-08-26T21:21:34+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/experiments/cli.md#派发前-sandbox-准备
-    history: []
+  - docs/feature/experiments/cli.md#派发前-sandbox-准备
+history: []
 ---
 # Incus SetupPrefix 复用在 CLI 中无法区分 pair
 

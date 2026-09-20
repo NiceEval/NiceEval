@@ -1,8 +1,20 @@
 ---
-name: metrictable-expand-replaces-default-report-caselist
-description: 设计裁决——defaultReport 榜单加 MetricTable.data 的 expand 选项展开逐题明细,取代裸跑报告尾部单独的 CaseList 板块
-metadata:
-  type: project
+format: concord.document/v1
+id: metrictable-expand-replaces-default-report-caselist
+title: metrictable-expand-replaces-default-report-caselist
+createdAt: 2026-07-11T19:39:45+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/metrictable-expand-replaces-default-report-caselist.md
+  commit: 337d73565f838e93b70fd966aea68f77b9db2cd5
+description: 设计裁决——defaultReport 榜单加 MetricTable.data 的 expand
+  选项展开逐题明细,取代裸跑报告尾部单独的 CaseList 板块
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决**(2026-07-11):`defaultReport`(`src/report/default-report.tsx`,`niceeval view`/`show`

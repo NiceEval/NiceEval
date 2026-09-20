@@ -106,7 +106,7 @@ Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即�
 声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。固定 Plugin 安装通过准备前缀 restore 或 replay；动态 overlay 每条 Attempt 重做。Adapter 仍验证最终 provenance，不能把 `$HOME` 里恰好存在的同名目录当作命中。
 
 两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须可重复执行；Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆写。
-用例叙事见[插件实验开复用](../../sandbox/use-case/Sandbox复用/插件实验开复用.md)。
+用例叙事见[插件实验开复用](../../sandbox/use-case/sandbox-reuse-plugin-experiment.md)。
 
 它与作者 sandbox layer 的分工只看相对 agent 安装的时机。与 agent 配置无关的准备逻辑进 Eval / Experiment layer 的 prepare command，跑在 agent 安装之前；要读写 agent 安装文件（插件文件、agent 主配置）的脚本进 `postSetup`，跑在 agent 安装之后。`postSetup` 是过程 Hook，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，Hook 不复制 factory 拥有的配置知识。
 

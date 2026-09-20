@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: attempt-phase-scoped-feedback-api-deferred
+title: 设计裁决:adapter/provider 公开 scoped feedback API(progress/diagnostic)推迟出本次反馈模型重构范围
+createdAt: 2026-07-14T09:56:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-phase-scoped-feedback-api-deferred.md
+  commit: 62bf6cc8fc1f62a1752a0931e348006837608f3a
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:adapter/provider 公开 scoped feedback API(progress/diagnostic)推迟出本次反馈模型重构范围
 
 **裁决**(2026-07-13,`plan/exp-output-feedback-models.md` 执行阶段的明确 SCOPE DECISION):本次交付只实现 `AttemptPhase` 作为 runner 内部的闭集合枚举——由 `attempt.ts` 既有的顺序步骤(创建 sandbox / `SandboxSpec.setup()` / workspace 准备 / `EvalDef.setup` / `Agent.setup` / telemetry 配置 / `EvalDef.test` / diff / scoring / trace / teardown)在各自**实际执行**的边界上发出 phase 转换事件,没有对应 hook/配置的步骤直接跳过,不伪造空阶段。已有的 adapter 自由文本进度(`AgentContext.log` / `ctx.progress` 风格)继续作为 `detail` 字符串挂在 runner 当前认定的 phase 上,只更新 human dashboard 当前 active 行的次要文本,`agent` / `ci` profile 不展示;adapter/provider/hook 不能借此改变 phase 本身。

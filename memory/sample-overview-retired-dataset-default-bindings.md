@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: sample-overview-retired-dataset-default-bindings
+title: 设计裁决:SampleOverview 退役,Dataset 缺省绑定接住动态标签
+createdAt: 2026-07-29T13:06:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sample-overview-retired-dataset-default-bindings.md
+  commit: bbd40c22bcedf364909601575159dff12401e8e7
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 设计裁决:SampleOverview 退役,Dataset 缺省绑定接住动态标签
 
 - **裁决**(2026-07-29):报告层新增「Dataset 缺省绑定」机制——`Dataset.defaults`(x / y /

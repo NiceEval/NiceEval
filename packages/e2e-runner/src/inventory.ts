@@ -3,13 +3,14 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { Data, Effect, Predicate } from "effect";
+import { Data, Effect, Predicate, Result } from "effect";
+import { deriveTestReference } from "concord-sdlc/model";
+import { SOURCE_EXCLUDED_BASENAMES } from "concord-sdlc/repository/source-identity";
+import { decodeAnnotatedCases, locateSupportedTestDeclarations } from "concord-sdlc/repository/docs/test-case/annotations";
 
 import { OwnedProcess } from "./owned-process.js";
 
-export const CASE_ID_PATTERN = /^necase_[0-9A-HJKMNP-TV-Z]{16}$/;
-const TOKEN_LIKE_PATTERN = /necase_[A-Za-z0-9_-]+/g;
-const CANONICAL_SUFFIX_PATTERN = / \[(necase_[0-9A-HJKMNP-TV-Z]{16})\]$/;
+export const CASE_ID_PATTERN = /^neref_[0-9a-f]{32}$/;
 
 export type InventoryExecutor = "vitest" | "playwright";
 
@@ -19,7 +20,7 @@ export interface CollectedCase {
   readonly path: string;
   readonly project?: string;
   readonly titlePath: readonly string[];
-  readonly caseId: `necase_${string}`;
+  readonly caseId: string;
 }
 
 export interface CaseInventoryReceipt {
@@ -121,7 +122,7 @@ const canonicalPath = (cwd: string, file: string): string => {
   const matches: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isDirectory() && (entry.name === "node_modules" || entry.name === ".git")) continue;
+      if (SOURCE_EXCLUDED_BASENAMES.has(entry.name)) continue;
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute);
       else if (entry.isFile()) {
@@ -135,6 +136,40 @@ const canonicalPath = (cwd: string, file: string): string => {
   return matches[0]!;
 };
 
+interface SourceDeclaration {
+  readonly title: string;
+  readonly testFile: string;
+  readonly declarationPath: string;
+  readonly annotated: boolean;
+}
+
+const sourceFiles = (cwd: string): readonly string[] => {
+  const output: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (SOURCE_EXCLUDED_BASENAMES.has(entry.name)) continue;
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile() && /\.(?:[cm]?[jt]sx?)$/u.test(entry.name)) output.push(relative(cwd, absolute).replaceAll("\\", "/"));
+    }
+  };
+  visit(cwd);
+  return output.sort();
+};
+
+const declarationsInCopy = (cwd: string, repo: string): readonly SourceDeclaration[] => sourceFiles(cwd).flatMap((path) => {
+  const workspacePath = `e2e/${repo}/${path}`;
+  const source = readFileSync(resolve(cwd, path), "utf8");
+  const declarations = locateSupportedTestDeclarations(workspacePath, source);
+  const decoded = decodeAnnotatedCases(workspacePath, source);
+  if (Result.isFailure(decoded)) throw new Error(`${workspacePath}: ${decoded.failure.message}`);
+  const annotatedByStart = new Map(decoded.success.map((entry) => [entry.declarationStart, entry]));
+  return declarations.map((entry) => {
+    const relation = annotatedByStart.get(entry.start);
+    return { title: entry.title, testFile: relation?.testFile ?? workspacePath, declarationPath: workspacePath, annotated: relation !== undefined };
+  });
+});
+
 const validateCases = (
   executor: InventoryExecutor,
   repo: string,
@@ -146,18 +181,24 @@ const validateCases = (
   const seen = new Map<string, string>();
   const files = new Set<string>();
   const cases: CollectedCase[] = [];
+  const declarations = declarationsInCopy(cwd, repo);
   for (const raw of rawCases) {
     const path = canonicalPath(cwd, raw.file);
     files.add(path);
-    const visibleTitle = raw.titlePath.at(-1) ?? "";
-    const suffix = CANONICAL_SUFFIX_PATTERN.exec(visibleTitle);
-    const tokenLikes = visibleTitle.match(TOKEN_LIKE_PATTERN) ?? [];
-    if (suffix === null || tokenLikes.length !== 1 || !CASE_ID_PATTERN.test(suffix[1]!)) {
-      findings.push(`InvalidCaseToken: ${path}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(visibleTitle)}`);
-      if (tokenLikes.length === 0) unassignedCases.push({ ...raw, file: path });
+    const title = raw.titlePath.at(-1) ?? "";
+    const workspacePath = `e2e/${repo}/${path}`;
+    const candidates = declarations.filter((entry) => entry.testFile === workspacePath && entry.title === title);
+    const declaration = candidates[0];
+    if (candidates.length !== 1 || declaration === undefined) {
+      if (candidates.length > 1) findings.push(`AmbiguousCaseBinding: ${path}: ${JSON.stringify(title)} has ${candidates.length} statically supported declarations`);
+      unassignedCases.push({ ...raw, file: path });
       continue;
     }
-    const caseId = suffix[1]! as `necase_${string}`;
+    if (!declaration.annotated) {
+      unassignedCases.push({ ...raw, file: path });
+      continue;
+    }
+    const caseId = deriveTestReference(workspacePath, declaration.declarationPath, title) as `neref_${string}`;
     const prior = seen.get(caseId);
     if (prior !== undefined) {
       findings.push(`DuplicateCaseId: ${caseId} is collected by both ${prior} and ${path}`);
@@ -273,7 +314,9 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
       findings.push(`collection receipt decode failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
-  const validated = validateCases(options.executor, options.repo, cwd, rawCases);
+  let validated: ReturnType<typeof validateCases> = { cases: [], unassignedCases: [], findings: [], files: [] };
+  try { validated = validateCases(options.executor, options.repo, cwd, rawCases); }
+  catch (cause) { findings.push(`CaseBindingInvalid: ${cause instanceof Error ? cause.message : String(cause)}`); }
   findings.push(...validated.findings);
   const unsigned = {
     executor: { name: options.executor, version },
@@ -285,7 +328,7 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
     unassignedCases: validated.unassignedCases,
     bodyExecutions: 0 as const,
     forbiddenSetupExecutions: 0 as const,
-    findings: findings.filter((finding) => !validated.unassignedCases.some((item) => finding === `InvalidCaseToken: ${item.file}: title must end in exactly one canonical [necase_...] token: ${JSON.stringify(item.titlePath.at(-1) ?? "")}`)).sort(),
+    findings: findings.sort(),
     exit: collection.exitCode,
     signal: collection.signal,
   };

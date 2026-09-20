@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: attempt-phase-tracking-teardown-always-last
+title: attempt phase 追踪:teardown 在 finally 无条件触发,取「最后一次 phase」必须排除它
+createdAt: 2026-07-14T09:56:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-phase-tracking-teardown-always-last.md
+  commit: 62bf6cc8fc1f62a1752a0931e348006837608f3a
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # attempt phase 追踪:teardown 在 finally 无条件触发,取「最后一次 phase」必须排除它
 
 **现象**:给 `reportFailure()`(`src/runner/run.ts`)补 `phase` 字段时,第一版实现直接把

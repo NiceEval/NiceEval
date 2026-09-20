@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: historical-record-read-bypasses-migration
 title: 历史 Record 读取绕过自动迁移或误用项目 writer
 createdAt: 2026-09-12
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_9EZ5TZX8V9PS4MW5
+            - netake_DT2VZW5T5MEM00V9
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
     proof:
       - nered_9EZ5TZX8V9PS4MW5
       - netake_DT2VZW5T5MEM00V9
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
-promotions: []
+    source:
+      path: memory/historical-record-read-bypasses-migration.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:58dac142197790ea2ee42b6f1ef4a4ee34f04c899aeb52a4b673ab05fc12c7d2
 ---
 ## 现象与根因
 

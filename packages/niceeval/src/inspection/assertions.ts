@@ -1,3 +1,6 @@
+// @concord-file ne-eval-inspection-assertion-projection
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/assertions/README.md
 import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../record/attachment/content.ts";
 import type {

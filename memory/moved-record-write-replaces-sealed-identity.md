@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: moved-record-write-replaces-sealed-identity
 title: 移动项目后的新写入重算 Record 身份并破坏历史 Seal
 createdAt: 2026-09-12
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_C8XEDHFV486C4WY4
+            - netake_X4K538C7VH630B4N
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
     proof:
       - nered_C8XEDHFV486C4WY4
       - netake_X4K538C7VH630B4N
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
-promotions: []
+    source:
+      path: memory/moved-record-write-replaces-sealed-identity.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:49096f620887beffb7e1e1d6beb1f68ba4d22b295d7705355babd4f6cf0db3eb
 ---
 ## 现象
 

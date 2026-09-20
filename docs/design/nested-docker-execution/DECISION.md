@@ -2,7 +2,7 @@
 
 ## 裁决
 
-采用 [PLAN-5](PLAN-5/README.md)：NiceEval 把 nested Docker 定义为 Provider-neutral Sandbox
+采用 [PLAN-5](plans/plan-5/README.md)：NiceEval 把 nested Docker 定义为 Provider-neutral Sandbox
 capability，Eval 只声明 `docker/v1 + dedicated-kernel/v1`、Compose 与最低 data capacity。
 Experiment 选择满足要求的 Sandbox Provider。
 
@@ -102,7 +102,7 @@ NiceEval 之外的显式运维流程。
 
 ## 公开验收
 
-唯一 dogfood 流程见 [PLAN-5 · NiceEval-Eval](PLAN-5/use-case/README.md)。通过必须同时包含：
+唯一 dogfood 流程见 [PLAN-5 · NiceEval-Eval](plans/plan-5/use-case/README.md)。通过必须同时包含：
 
 - 安装后 `niceeval exp` 的两条真实并发 Run 与 score；
 - `niceeval show --run` 的 cold replay、warm hit 与 elapsed 对比；

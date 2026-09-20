@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: examples-eval-niceeval-file-link-depth
+title: "examples/zh/eval/<name> 的 niceeval file:/link: 深度容易写错一层"
+createdAt: 2026-07-03T05:24:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/examples-eval-niceeval-file-link-depth.md
+  commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # examples/zh/eval/<name> 的 niceeval file:/link: 深度容易写错一层
 
 **现象**：`examples/zh/eval/ai-sdk-v7`（restructure 后新路径,4 层深:

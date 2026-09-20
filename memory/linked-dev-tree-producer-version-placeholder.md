@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: linked-dev-tree-producer-version-placeholder
+title: link 开发树写出的 producer.version 恒是占位号,恢复提示照抄它就不可执行
+createdAt: 2026-07-30T19:26:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/linked-dev-tree-producer-version-placeholder.md
+  commit: c07c21fc370eaca5791b6ab150c737c78853ebbe
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # link 开发树写出的 producer.version 恒是占位号,恢复提示照抄它就不可执行
 
 > 状态（2026-08-11）：这是旧 Results Format 的历史问题。新 `niceeval.record/v1` reader 不读取旧 Results，也不以 `producer.version` 拼可执行恢复命令；本页保留为旧格式证据，不构成新 Record 待办。边界见 [schemaVersion 历史存档](results-schema-version-history.md)。

@@ -3,8 +3,9 @@
 
 import { e2bCodingAgentTemplate } from "niceeval/sandbox/e2b-template";
 import { expect, test } from "vitest";
+// @feature docs/feature/adapters/README.md
 
-test("Bub E2B factory 固定默认模型客户端并写匹配指纹 [necase_HCCW8G5HJM4WJE3K]", () => {
+test("Bub E2B factory 固定默认模型客户端并写匹配指纹", () => {
   const dockerfile = e2bCodingAgentTemplate("bub").toDockerfile();
 
   // 默认 template 与 bubAgent() 必须安装同一个完整闭包；只钉 Bub 本体仍会让

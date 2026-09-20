@@ -58,8 +58,9 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
     await new Promise<void>((resolve) => setTimeout(resolve, 300));
   }
 }
+// @feature docs/feature/adapters/README.md
 
-it("真实 AI SDK adapter 运行结果经过公开 CLI 读回 [necase_01GMGBQG568S67DM]", async () => {
+it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   rmSync(".niceeval", { recursive: true, force: true });
 

@@ -1,0 +1,28 @@
+---
+format: concord.document/v1
+id: observations-declare-flags
+title: 用 flags 声明运行条件
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 用 flags 声明运行条件
+
+两个实验使用同一个 agent，唯一差别是是否允许联网。
+这个值会改变 Attempt 里发生的事，因此写进 `flags`：
+
+```ts
+export default defineExperiment({
+  agent: codex({ model: "gpt-5.4" }),
+  flags: { webSearch: true },
+  evals: "*",
+  sandbox: e2bSandbox({ template: "niceeval-agents" }),
+});
+```
+
+Adapter 或 Eval 经 `ctx.flags` / `t.flags` 消费它。
+改变值后已有 Attempt 不再匹配并重新执行，因为两个值代表不同的评估条件。
+历史 Attempt 仍保留在 origin Run；当前 Invocation 建立自己的 Run 与执行成员。
+
+只供报告分组、不改变行为的值改用 [labels](observations-label-report.md)。

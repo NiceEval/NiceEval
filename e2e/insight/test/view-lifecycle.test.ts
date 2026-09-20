@@ -10,8 +10,9 @@ import {
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 
-test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动 [necase_TZY3ZF8SA08GACTK]", async () => {
+test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
   await insightE2E.case(
     "view-options-only-navigation",
     { artifacts: insightCaseArtifacts() },
@@ -55,8 +56,9 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
     },
   );
 });
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 
-test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready [necase_WKBCCYB733NPSWXZ]", async () => {
+test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半份 ready", async () => {
   await insightE2E.case(
     "view-startup-failure-cleanup",
     { artifacts: insightCaseArtifacts() },
@@ -85,12 +87,14 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
     },
   );
 });
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 
-test.concurrent("SIGINT 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程 [necase_C2KM92EHZYEN02SQ]", async () => {
+test.concurrent("SIGINT 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程", async () => {
   await verifyControlledStop("SIGINT");
 });
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 
-test.concurrent("SIGTERM 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程 [necase_8CJEBJNX1EJK1DJ1]", async () => {
+test.concurrent("SIGTERM 受控停止交付 closed，并回收 reader、server、session、watcher 与子进程", async () => {
   await verifyControlledStop("SIGTERM");
 });
 

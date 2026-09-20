@@ -1,0 +1,19 @@
+---
+format: concord.document/v1
+id: cache-modify-runtime-condition
+title: 修改运行条件后执行新的 Attempt
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 修改运行条件后执行新的 Attempt
+
+改变 `flags`、`model` 或裁判模型，会改变 Attempt 的运行或评分条件，因此历史 Attempt 不再可比，指纹自然失效并重新执行。
+
+历史 Attempt 仍留在 origin Run。
+新执行的 Attempt 归新 Run；两者只在显式 Inspection request 的读取范围中并列，不会相互改写。
+
+需要保留两组条件做 A/B 对比时，不要在同一个 Experiment 文件中来回改值；建立两个 Experiment，各自固定条件，再用报告按 flag 或运行配置分组。
+
+只给报告分类、不影响运行的值应写进 `labels`，见[修改非运行元数据](cache-modify-non-runtime-metadata.md)。

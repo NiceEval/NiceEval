@@ -1,9 +1,9 @@
 # 多容器拓扑 —— 裁决
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) ·
-[PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) ·
-[真题落地样例](PLAN-4/use-case/README.md)
+[LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) ·
+[PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) ·
+[真题落地样例](plans/plan-4/use-case/README.md)
 
 ---
 
@@ -22,7 +22,7 @@
 E2B 消费 template,云端 Compose 只在兑现全部义务后开放。
 
 本裁决推翻此前「采纳 PLAN-1(拓扑表)」的裁决。决定性证据
-是[真题落地样例](PLAN-4/use-case/README.md)的四道 TB 题:named volume、
+是[真题落地样例](plans/plan-4/use-case/README.md)的四道 TB 题:named volume、
 一次性初始化容器、只读卷投影、坏 `dns` / `extra_hosts`
 本身就是题面。规范化拓扑的封闭字段集要么表达不了这些,
 要么靠豁免白名单改掉题目语义;导入器则会被 Compose 上百个
@@ -39,7 +39,7 @@ adapter 一样单独成篇文档,声明自己支持的 `SandboxCase`
 ## 随本裁决一并裁定的三点
 
 PLAN-4 正文遗留的含糊处,按下面裁定并已写回
-[PLAN-4](PLAN-4/README.md):
+[PLAN-4](plans/plan-4/README.md):
 
 - **部分不支持判什么**:分两类。eval 引用了不存在的
   profile 键、或 source 声明本身非法,是启动期配置错误,

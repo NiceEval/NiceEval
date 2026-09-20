@@ -18,8 +18,9 @@ async function receiptLines(root: string, name: string): Promise<string[]> {
     .split("\n")
     .filter((line) => line !== "");
 }
+// @feature docs/feature/experiments/README.md
 
-test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系 [necase_21VCRD4WKW8K1E66]", async () => {
+test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关系", async () => {
   await runnerE2E.case(
     "generic-timing",
     {
@@ -160,8 +161,9 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
     },
   );
 });
+// @feature docs/feature/experiments/README.md
 
-test("Run 终态持久化失败时已发布 locator 仍可公开检查 [necase_EP0HS2HD783EN64J]", async () => {
+test("Run 终态持久化失败时已发布 locator 仍可公开检查", async () => {
   await runnerE2E.case(
     "completion-persistence-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

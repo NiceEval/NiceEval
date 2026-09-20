@@ -1,3 +1,31 @@
+---
+format: concord.document/v1
+id: agent-provisioner-object-not-adapter-methods
+title: 裁决:Ensure 的公开形态是独立 AgentProvisioner 对象,不是 SandboxAgentDef 上的方法
+createdAt: 2026-07-30T19:32:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/agent-provisioner-object-not-adapter-methods.md
+  commit: bf0b0c489aa0c82226537d36faf5bb90f4667e9d
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: revise
+    reason: "- 部分被后续裁决替代
+      [agent-provisioner-object-not-adapter-methods](agent-provisioner-object-n\
+      ot-adapter-methods.md) — 裁决(2026-07-30):Ensure 公开形态是独立 `AgentProvisioner`
+      值对象(identity/check/install 原子替换,经工厂参数拔插),否决在 SandboxAgentDef 上散布方法;Runner
+      只额外消费 identity 与 prepare;check 返回结构化事实不返回 boolean"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-30
+---
 # 裁决:Ensure 的公开形态是独立 AgentProvisioner 对象,不是 SandboxAgentDef 上的方法
 
 > 2026-08-01 被 [[pure-adapter-official-installer]] 部分替代:check(probe)留在 Adapter 的 ensure 声明,install 拆出为官方 AgentInstaller 按 identity 配对;原子性由 identity 同源保证,不再要求同一值对象。

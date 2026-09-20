@@ -99,7 +99,10 @@ function artifactDeletes(records: readonly JournalRecord[]): readonly JournalRec
     record.detail.project === artifactProject);
 }
 
-test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts [necase_E2ARE3AS30W6PA6H]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/incus-revision-two-schema-authorization-breaks-planning.md
+
+test("Incus repository fences admission, recovers crashes, and reuses only committed artifacts", async () => {
   await withProjectCopy(projectCopy, async ({ root: projectRoot }) => {
     await withTempDir("niceeval-e2e-incus-userdb-runtime-", async (runtimeRoot) => {
       const binDir = join(runtimeRoot, "bin");

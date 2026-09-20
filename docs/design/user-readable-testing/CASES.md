@@ -1,6 +1,6 @@
 # 共同 Cases
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md)
 
 下面九个 Case 固定候选必须处理的问题。
 “用户”指 niceeval 的使用者；“读者”指评审或维护测试的人。
@@ -21,7 +21,7 @@
 
 | 候选 | 对应用例说明 |
 |---|---|
-| PLAN-1 | [场景元数据与媒介 matcher](PLAN-1/use-case/README.md) |
-| PLAN-2 | [用户任务规格与类型化可观察读面](PLAN-2/use-case/README.md) |
-| PLAN-3 | [声明式 Acceptance Case](PLAN-3/use-case/README.md) |
-| PLAN-4 | [真实场景 Repo 与原生结果断言](PLAN-4/use-case/README.md) |
+| PLAN-1 | [场景元数据与媒介 matcher](plans/plan-1/use-case/README.md) |
+| PLAN-2 | [用户任务规格与类型化可观察读面](plans/plan-2/use-case/README.md) |
+| PLAN-3 | [声明式 Acceptance Case](plans/plan-3/use-case/README.md) |
+| PLAN-4 | [真实场景 Repo 与原生结果断言](plans/plan-4/use-case/README.md) |

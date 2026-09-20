@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: lifecycle-operation-missing-eval-teardown
+title: LifecycleOperationName 没有 eval 的 teardown/cleanup 项
+createdAt: 2026-07-14T03:44:45Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/lifecycle-operation-missing-eval-teardown.md
+  commit: fef6adcd6b1766af6ee189e07ace5ebb8696b45e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "## 已修(2026-07 复核)"
+    proof: []
+    source:
+      path: memory/lifecycle-operation-missing-eval-teardown.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:e5a738641d311d5b2e48c969e9bf44b7a24477218bee1bf5873a79849fbc86ac
+---
 # LifecycleOperationName 没有 eval 的 teardown/cleanup 项
 
 ## 现象

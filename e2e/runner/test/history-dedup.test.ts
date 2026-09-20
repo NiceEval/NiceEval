@@ -6,8 +6,9 @@ import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
+// @use-case docs/feature/experiments/use-case/concurrency-parallel-invocations.md
 
-test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt [necase_HP9NWW0YWAV48X1P]", async () => {
+test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
   await runnerE2E.case(
     "history-dedup",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -93,8 +94,9 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt [
     },
   );
 });
+// @use-case docs/feature/experiments/use-case/concurrency-parallel-invocations.md
 
-test("两次同时运行同一实验时，后开始的那次不重复跑已经完成的题目 [necase_ZJFWH6XRX2EZWS5J]", async () => {
+test("两次同时运行同一实验时，后开始的那次不重复跑已经完成的题目", async () => {
   await runnerE2E.case(
     "history-dedup-concurrent",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

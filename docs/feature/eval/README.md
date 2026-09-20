@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: eval
+title: Eval —— 编写 eval
+createdAt: 2026-07-12T19:13:58+08:00
 kind: feature
-relations: {}
 ---
 
 ---

@@ -1,0 +1,29 @@
+---
+format: concord.document/v1
+id: observations-label-report
+title: 用 labels 标注报告坐标
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 用 labels 标注报告坐标
+
+三个实验分别使用 baseline、mempal 和 nowledge，报告需要按“记忆机制”分组，但 Agent 和 Eval 不需要读取这个词：
+
+```ts
+export default defineExperiment({
+  agent: mempalAgent(),
+  labels: { memory: "mempal", line: "codex" },
+  evals: ["memory/"],
+  sandbox: e2bSandbox({ template: "niceeval-agents" }),
+});
+```
+
+报告用 `label("memory")` 分组。
+改变 `labels` 不进入运行时，也不让已有 Attempt 失去采用资格；再次运行时，新 Run 保存当前 labels，通过 reference Member 引用旧 Attempt，并写出 carried action，不需要重新执行。
+
+历史 Run 的 labels 保持不变。
+要让 Report 读取新归类，选择新的 Run，而不是从当前 Experiment 文件回写历史事实。
+
+会改变运行行为的值应使用 [flags](observations-declare-flags.md)。

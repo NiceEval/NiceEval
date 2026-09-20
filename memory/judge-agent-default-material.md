@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: judge-agent-default-material
+title: t.judge.agent 默认材料写死成 diff → 对话型 eval 误判 0 分
+createdAt: 2026-06-30T21:19:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/judge-agent-default-material.md
+  commit: a43442da30a8d7425b070647d466568c6ee9f7f8
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # t.judge.agent 默认材料写死成 diff → 对话型 eval 误判 0 分
 
 ## 现象

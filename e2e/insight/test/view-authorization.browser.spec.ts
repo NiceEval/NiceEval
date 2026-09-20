@@ -16,8 +16,12 @@ import {
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
+// @regression memory/view-deep-link-bootstrap-misses-router-initialization.md
+// @regression memory/view-hard-refresh-duplicates-attempt-overlay.md
+// @regression memory/view-session-cookie-collides-across-ports.md
 
-test("loopback view 只向一次性 fragment 换取的同源 session 交付 facts [necase_XDDZFNTFXA177RG0]", async ({ browser }) => {
+test("loopback view 只向一次性 fragment 换取的同源 session 交付 facts", async ({ browser }) => {
   await insightE2E.case(
     "view-loopback-authorization",
     { artifacts: insightCaseArtifacts() },

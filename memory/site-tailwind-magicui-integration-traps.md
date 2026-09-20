@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: site-tailwind-magicui-integration-traps
+title: site/ 接 Tailwind + Magic UI 的两个坑
+createdAt: 2026-07-29T19:26:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/site-tailwind-magicui-integration-traps.md
+  commit: 485a00b3404f360a1045fe933fe6fbfb8e301905
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # site/ 接 Tailwind + Magic UI 的两个坑
 
 **日期**:2026-07-29

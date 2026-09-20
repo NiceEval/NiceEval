@@ -1,0 +1,16 @@
+---
+format: concord.document/v1
+id: lifecycle-external-long-lived-resource
+title: 用外部编排管理长生命周期资源
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 用外部编排管理长生命周期资源
+
+数据库、共享服务或测试集群在 niceeval 启动前就应存在，并且需要跨多个 Run 复用时，不由 Experiment Hook 管理。
+使用 Docker Compose、CI job 或基础设施编排启动和回收，经 env 变量把连接信息交给 Experiment。
+
+这条边界避免一次运行结束时误删其它运行仍在使用的资源。
+要留存本轮实际连接的实例，可在运行作用域上报[运行时观测](observations-report-runtime.md)。

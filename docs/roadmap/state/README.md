@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: state
+title: State —— Cohort、Checkpoint 与预期持久化
+createdAt: 2026-08-13T12:06:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/state/README.md
+  commit: c297a79e2b319b5cb6cdf8101039450aedf8f0c2
+kind: roadmap
+state: planned
+---
 # State —— Cohort、Checkpoint 与预期持久化
 
 ## 要消除的 Frog / DX 摩擦

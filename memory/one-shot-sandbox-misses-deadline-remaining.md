@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: one-shot-sandbox-misses-deadline-remaining
+title: 一次性沙箱拿不到 deadlineAt,每条命令各拿一整份 timeoutMs
+createdAt: 2026-07-31T09:42:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/one-shot-sandbox-misses-deadline-remaining.md
+  commit: b24b22d20da35bbb4f49adb4047376d5981bb67e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 一次性沙箱拿不到 deadlineAt,每条命令各拿一整份 timeoutMs
 
 **状态**:发现,未修(2026-07-31,做 `--timing` 时限归属标注时顺带发现)。

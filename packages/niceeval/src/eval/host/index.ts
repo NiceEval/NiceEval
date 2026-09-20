@@ -1,3 +1,5 @@
+// @concord-file ne-eval-host-catalog
+// @concord-implements docs/feature/eval/README.md
 import { Data, Effect } from "effect";
 import { discoverEvals } from "../../runner/discover.ts";
 

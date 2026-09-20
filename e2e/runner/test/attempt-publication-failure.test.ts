@@ -1,8 +1,10 @@
 // rerun: pnpm e2e test --repo runner -- --run test/attempt-publication-failure.test.ts
 import { expect, test } from "vitest";
 import { runnerE2E, writeInspectionRequest } from "./context.ts";
+// @feature docs/feature/experiments/README.md
+// @regression memory/attempt-publication-diagnostic-context.md
 
-test("Attempt publication 失败保留 cause 与 locator，但不公开未完成的 Attempt [necase_MJKBRQFQP8P4EWH5]", async () => {
+test("Attempt publication 失败保留 cause 与 locator，但不公开未完成的 Attempt", async () => {
   await runnerE2E.case(
     "attempt-publication-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

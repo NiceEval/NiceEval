@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: record-to-report-eve
+title: Eve：文件系统 Agent、Eval 与 `.eve/evals` 生成文件
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources: []
+---
 # Eve：文件系统 Agent、Eval 与 `.eve/evals` 生成文件
 
 > 观察日期：2026-08-14
@@ -11,8 +20,8 @@ Eve 是 filesystem-first 的 durable backend agent 框架。
 它不是实验跟踪平台，也不是 Dashboard 产品。
 
 本目录只写 Eve 自己的名词与边界。
-Eval 的作者断言面另见 [Eve 断言 DX](../../eve-assertion-dx.md)。
-会话事件协议另见 [eve protocol](../../adapters/eve-protocol.md)。
+Eval 的作者断言面另见 [Eve 断言 DX](../../eve-assertion-dx/README.md)。
+会话事件协议另见 [eve protocol](../../adapters/eve-protocol/README.md)。
 Harbor 不在 Eve 仓库里，不是 Eve 内部模块。
 
 ## 导航
@@ -20,11 +29,11 @@ Harbor 不在 Eve 仓库里，不是 Eve 内部模块。
 | 页 | 回答什么 |
 |---|---|
 | 本页 | 产品是什么、用户心智、原生对象总图，以及最后才写的 NiceEval 对照 |
-| [channel、harness 与作者面](layers.md) | channel、harness、runtime、session / turn / step、Eval 作者面与 `.eve/` 文件族 |
-| [一次 `eve eval`](execution.md) | 从发现到退出码的真实顺序 |
-| [`.eve/evals` 信封](storage.md) | 落盘文件、写入 owner、原子性与 resume |
-| [重新打开与比较](reading-and-comparison.md) | 历史 dump 怎样重新打开，比较发生在哪里 |
-| [schema 与版本](schema-and-migration.md) | eval dump 有没有版本，其它 Eve 面怎样升版 |
+| [channel、harness 与作者面](layers/README.md) | channel、harness、runtime、session / turn / step、Eval 作者面与 `.eve/` 文件族 |
+| [一次 `eve eval`](execution/README.md) | 从发现到退出码的真实顺序 |
+| [`.eve/evals` 信封](storage/README.md) | 落盘文件、写入 owner、原子性与 resume |
+| [重新打开与比较](reading-and-comparison/README.md) | 历史 dump 怎样重新打开，比较发生在哪里 |
+| [schema 与版本](schema-and-migration/README.md) | eval dump 有没有版本，其它 Eve 面怎样升版 |
 
 ## 产品身份
 
@@ -53,7 +62,7 @@ my-agent/
 `defineEval` 禁止作者写 `id` 或 `name`。
 `evals/weather/brooklyn-forecast.eval.ts` 的 id 是 `weather/brooklyn-forecast`。
 
-公开作者符号、CLI 发起边界和 `.eve/` 文件族见 [channel、harness 与作者面](layers.md)。
+公开作者符号、CLI 发起边界和 `.eve/` 文件族见 [channel、harness 与作者面](layers/README.md)。
 
 ## 用户心智
 
@@ -72,19 +81,19 @@ my-agent/
 
 | Eve 自己的对象 | 它是什么 | 细节 |
 |---|---|---|
-| `agent/` 目录 | 能力与运行时配置 | [channel、harness 与作者面](layers.md) |
-| `evals/**/*.eval.ts` | 路径派生 id 的 scored check | [channel、harness 与作者面](layers.md) |
-| `evals/evals.config.ts` | 整次 run 的 judge、timeout、reporter | [channel、harness 与作者面](layers.md) |
-| channel / harness / runtime | inbound、一单位 AI 工作、持久化与 workflow | [channel、harness 与作者面](layers.md) |
-| session / turn / step | durable conversation 的执行单位 | [channel、harness 与作者面](layers.md) |
-| `/eve/v1` 与 `sessionId` | 公开 HTTP 身份 | [channel、harness 与作者面](layers.md) |
-| `eve eval` 进程 | 发现、打 target、评分、写 dump、退出 | [一次 `eve eval`](execution.md) |
-| `.eve/evals/<timestamp>/` | 一次 `eve eval` 的本地 dump | [`.eve/evals` 信封](storage.md) |
-| `MessageStreamEvent` | 被测 agent 的权威事件 | [`.eve/evals` 信封](storage.md) |
-| Braintrust / JUnit / Console | reporter 发货层 | [重新打开与比较](reading-and-comparison.md) |
-| `.eve/traces/v1/` | 本地 OTLP span，`eve traces` 读取 | [重新打开与比较](reading-and-comparison.md) |
-| `.eve/logs/` | 诊断日志，`eve logs` 读取 | [重新打开与比较](reading-and-comparison.md) |
-| `.eve/.workflow-data` | durable session 状态 | [channel、harness 与作者面](layers.md) |
+| `agent/` 目录 | 能力与运行时配置 | [channel、harness 与作者面](layers/README.md) |
+| `evals/**/*.eval.ts` | 路径派生 id 的 scored check | [channel、harness 与作者面](layers/README.md) |
+| `evals/evals.config.ts` | 整次 run 的 judge、timeout、reporter | [channel、harness 与作者面](layers/README.md) |
+| channel / harness / runtime | inbound、一单位 AI 工作、持久化与 workflow | [channel、harness 与作者面](layers/README.md) |
+| session / turn / step | durable conversation 的执行单位 | [channel、harness 与作者面](layers/README.md) |
+| `/eve/v1` 与 `sessionId` | 公开 HTTP 身份 | [channel、harness 与作者面](layers/README.md) |
+| `eve eval` 进程 | 发现、打 target、评分、写 dump、退出 | [一次 `eve eval`](execution/README.md) |
+| `.eve/evals/<timestamp>/` | 一次 `eve eval` 的本地 dump | [`.eve/evals` 信封](storage/README.md) |
+| `MessageStreamEvent` | 被测 agent 的权威事件 | [`.eve/evals` 信封](storage/README.md) |
+| Braintrust / JUnit / Console | reporter 发货层 | [重新打开与比较](reading-and-comparison/README.md) |
+| `.eve/traces/v1/` | 本地 OTLP span，`eve traces` 读取 | [重新打开与比较](reading-and-comparison/README.md) |
+| `.eve/logs/` | 诊断日志，`eve logs` 读取 | [重新打开与比较](reading-and-comparison/README.md) |
+| `.eve/.workflow-data` | durable session 状态 | [channel、harness 与作者面](layers/README.md) |
 
 ## NiceEval 摘要
 

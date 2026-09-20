@@ -86,8 +86,9 @@ beforeAll(async () => {
     only(runReceipt.expEvalEvents(), (event) => event.evalId === EVAL_ID, () => runReceipt.diagnostic());
   });
 }, 14 * 60_000);
+// @feature docs/feature/adapters/README.md
 
-it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQA14WV1V9J]", () => {
+it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md）：
   // completion、createdRunIds 与 publicationCutoff；成败由带身份的 eval 事件精确断言，live provider
   // 故障不会冒充通过。
@@ -102,8 +103,9 @@ it("真实 Codex SDK converter 的 Eval 以通过 verdict 完成 [necase_1PKQBZQ
   expect(outcome, runReceipt.diagnostic()).toMatchObject({ verdict: "passed", passed: 1 });
   expect(outcome.attempts, runReceipt.diagnostic()).toBe(1);
 });
+// @feature docs/feature/adapters/README.md
 
-it("attempt.trace 读回 Codex SDK converter 的代表性证据 [necase_ZG76BVB82BKAH1C9]", () => {
+it("attempt.trace 读回 Codex SDK converter 的代表性证据", () => {
   const queried = traceReceipt;
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();

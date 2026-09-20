@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: eval-environment-profile-sandbox-resolver
+title: Eval 声明环境 profile，Experiment 解析具体 SandboxSpec
+createdAt: 2026-07-16T21:29:58+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/eval-environment-profile-sandbox-resolver.md
+  commit: a957d2fbeff18b025c82807a1acbf08f2a047391
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Eval 声明环境 profile，Experiment 解析具体 SandboxSpec
 
 **裁决（2026-07-16，terminal SWE-bench DX 回灌）**：`EvalDef.environment` 是非空、provider-neutral 的环境 profile id；`ExperimentDef.sandbox` 除固定 `SandboxSpec` 外支持 resolver，根据 `{ eval: { id, environment } }` 为每条选中 eval 返回具体 spec。resolver 调度前每 eval 求值一次，resolved spec 同源进入创建、fingerprint、provider 推荐并发与结果审计；remote Agent 不调用。

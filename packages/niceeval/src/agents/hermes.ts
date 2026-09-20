@@ -126,6 +126,9 @@ async function hermesSkillDir(sb: Sandbox): Promise<string> {
 /**
  * Hermes Agent 的内置 sandbox Agent 工厂。
  */
+// @concord-code ne-adapter-hermes-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/hermes/README.md
 export function hermesAgent(config?: HermesConfig): Agent {
   const version = config?.version ?? DEFAULT_HERMES_CLI_VERSION;
   const identity = { agent: "hermes", version, revision: "1" } as const;

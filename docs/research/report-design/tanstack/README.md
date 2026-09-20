@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: report-design-tanstack
+title: TanStack Table / Charts
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources: []
+---
 # TanStack Table / Charts
 
 > 观察日期：2026-08-14
@@ -79,7 +88,7 @@ Charts 的固定源码入口是官方 commit
 
 ## 研究页导航
 
-- [Record → Report 适格性审查](eligibility.md)：核对运行、写入、失败、持久结构、历史读取、比较、version 与 migration，并说明移出方向。
+- [Record → Report 适格性审查](eligibility/README.md)：核对运行、写入、失败、持久结构、历史读取、比较、version 与 migration，并说明移出方向。
 
 ## 与 NiceEval 的相似点与差异
 

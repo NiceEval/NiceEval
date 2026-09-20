@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: retry-reacquire-delays-interruption
+title: 退避槽位收回会延后中断传播
+createdAt: 2026-07-22T21:11:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/retry-reacquire-delays-interruption.md
+  commit: 4b37775c604228a4be3d167153da3b574e96ab0e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 退避槽位收回会延后中断传播
 
 ## 现象

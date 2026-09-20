@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: record-storage
+title: Record 物理存储研究
+createdAt: 2026-08-25
+kind: research
+observedAt: 2026-08-25
+sources: []
+---
 # Record 物理存储研究
 
 > 观察日期：2026-08-25
@@ -19,14 +28,14 @@
 
 | 页面 | 回答的问题 |
 |---|---|
-| [NiceEval 当前证据](current-niceeval.md) | 现行实现在哪里整体加载、受哪些预算限制、哪些语义已经定稿 |
-| [Eval 与 tracing 平台](eval-platforms.md) | MLflow、Langfuse、Phoenix、ClearML、W&B 与 Aim 怎样分开小事实和大材料 |
-| [Artifact 与 CAS 系统](artifact-systems.md) | DVC、W&B Artifact 与 ClearML 怎样组织 manifest、cache、remote 与大 bytes |
-| [底层格式总览](portable-formats.md) | SQLite、MCAP、CAR/IPLD、ZIP/TAR、Parquet/Arrow 与 Perfetto 能复用哪些机制 |
+| [NiceEval 当前证据](current-niceeval/README.md) | 现行实现在哪里整体加载、受哪些预算限制、哪些语义已经定稿 |
+| [Eval 与 tracing 平台](eval-platforms/README.md) | MLflow、Langfuse、Phoenix、ClearML、W&B 与 Aim 怎样分开小事实和大材料 |
+| [Artifact 与 CAS 系统](artifact-systems/README.md) | DVC、W&B Artifact 与 ClearML 怎样组织 manifest、cache、remote 与大 bytes |
+| [底层格式总览](portable-formats/README.md) | SQLite、MCAP、CAR/IPLD、ZIP/TAR、Parquet/Arrow 与 Perfetto 能复用哪些机制 |
 | [候选方案比较](options/README.md) | NiceEval storage 方案的共同约束、收益、代价与翻转条件 |
-| [独立设计挑战](design-challenge.md) | SQLite 候选经过哪些质疑、发生了哪些修订、为什么判定是 `CONDITIONAL` |
-| [Attachment aggregate Content budget 挑战](aggregate-content-budget-challenge.md) | 为什么移除 128 MiB 合计上限仍要保留单 Content 与 storage-neutral 结构 ceiling |
-| [无固定 logical Content 容量挑战](unbounded-logical-content-challenge.md) | 为什么继续移除单 Content 64 MiB，并让 data、index、catalog 与 Seal 一起滚动 |
+| [独立设计挑战](design-challenge/README.md) | SQLite 候选经过哪些质疑、发生了哪些修订、为什么判定是 `CONDITIONAL` |
+| [Attachment aggregate Content budget 挑战](aggregate-content-budget-challenge/README.md) | 为什么移除 128 MiB 合计上限仍要保留单 Content 与 storage-neutral 结构 ceiling |
+| [无固定 logical Content 容量挑战](unbounded-logical-content-challenge/README.md) | 为什么继续移除单 Content 64 MiB，并让 data、index、catalog 与 Seal 一起滚动 |
 | [Root-wide SQLite 采用收据](root-wide-sqlite-receipt.md) | Node/Drizzle 版本、144 MiB Content、并发、snapshot、crash、migration 与 worker startup 的实测边界 |
 
 ## 当前研究判断
@@ -43,11 +52,11 @@
 现有 Design 取消了单 Content 固定容量上限，也取消了所有 durable member 必须 rollover 的实现政策。
 底层协议研究与 root-wide spike 重新打开了 SQLite 候选：
 
-- [一 Run 一 SQLite](options/sqlite-run-file.md) 是否失败，取决于 durable-member ceiling 是否有独立产品证据；大文件本身不导致整体读入内存。
-- [MCAP profile + outer Run Seal](options/mcap-profile.md) 可以复用 file 内 framing、CRC、chunk 与部分 index，尚未经过 RS2/RS3/RS7/RS16 spike。
-- [JSON envelope + Host 私有 Content store](options/json-content-store.md) 仍是自定义对照，但不能在 SQLite 与 MCAP spike 前预设必须完整自研 codec。
-- [SQLite metadata + 外部 Content](options/sqlite-external-content.md) 同时拥有 database 与 pack 两套 closure，只有明确量出双协议收益后才应选择。
-- [全 JSON](options/all-json.md) 与已观察到的大材料、深层 snapshot 和惰性读取目标冲突，不作为推荐方向。
+- [一 Run 一 SQLite](options/sqlite-run-file/README.md) 是否失败，取决于 durable-member ceiling 是否有独立产品证据；大文件本身不导致整体读入内存。
+- [MCAP profile + outer Run Seal](options/mcap-profile/README.md) 可以复用 file 内 framing、CRC、chunk 与部分 index，尚未经过 RS2/RS3/RS7/RS16 spike。
+- [JSON envelope + Host 私有 Content store](options/json-content-store/README.md) 仍是自定义对照，但不能在 SQLite 与 MCAP spike 前预设必须完整自研 codec。
+- [SQLite metadata + 外部 Content](options/sqlite-external-content/README.md) 同时拥有 database 与 pack 两套 closure，只有明确量出双协议收益后才应选择。
+- [全 JSON](options/all-json/README.md) 与已观察到的大材料、深层 snapshot 和惰性读取目标冲突，不作为推荐方向。
 
 Design 的 G14/L16/L19若保持不变，多文件 rolling 是这些政策组合后的必然结果。
 研究不能把这项设计选择改写成外部格式的客观限制。

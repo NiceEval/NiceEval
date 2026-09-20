@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: bub-pin-moved-to-upstream-0-4-0
+title: Bub pin 从个人 fork 迁到上游 0.4.0（丢掉一个未上游的修复）
+createdAt: 2026-07-25T17:41:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bub-pin-moved-to-upstream-0-4-0.md
+  commit: e0f1c6b7c499e3f11c997b968c0f29b0915f9ca8
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # Bub pin 从个人 fork 迁到上游 0.4.0（丢掉一个未上游的修复）
 
 **裁决(2026-07-25)**：Bub 从 PyPI 装上游 release，默认 `bub==0.4.0`，退役

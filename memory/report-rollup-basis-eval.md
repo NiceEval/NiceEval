@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-rollup-basis-eval
+title: rollup 产物 basis 从 "attempt" 翻案为 "eval"
+createdAt: 2026-07-29T15:56:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-rollup-basis-eval.md
+  commit: 8c7c88454f4e2622e7a8eb7a8c74f8797f3155c8
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # rollup 产物 basis 从 "attempt" 翻案为 "eval"
 
 - **裁决**（2026-07-29）：`rollup()` 产物的 MetricValue 固定 `basis: "eval"`。

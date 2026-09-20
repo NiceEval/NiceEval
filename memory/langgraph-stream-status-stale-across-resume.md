@@ -1,8 +1,20 @@
 ---
-name: langgraph-stream-status-stale-across-resume
-description: "fromLangGraphEvents() 的 LangGraphStream.status 是持久 getter,resume 后如果新帧不触碰 lifecycle,读到的仍是暂停前的 \"waiting\"——HITL adapter 判断「这一帧是不是新产生了 input.requested」不能拿 stream.status 当依据,要看 stream.add(frame) 这一次自己返回了什么"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: langgraph-stream-status-stale-across-resume
+title: langgraph-stream-status-stale-across-resume
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/langgraph-stream-status-stale-across-resume.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: fromLangGraphEvents() 的 LangGraphStream.status 是持久 getter,resume 后如果新帧不触碰 lifecycle,读到的仍是暂停前的 "waiting"——HITL adapter 判断「这一帧是不是新产生了 input.requested」不能拿 stream.status 当依据,要看 stream.add(frame) 这一次自己返回了什么
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：`e2e/adapter/langgraph` 的 `agents/langgraph.ts`(用官方 `fromLangGraphEvents()` 转换器,

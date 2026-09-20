@@ -40,7 +40,7 @@ Agent 安装固定从宿主内容寻址 cache 注入 Sandbox，不创建 task ×
 Setup Prefix 的普通 Docker exact-image cache 是执行期优化，不进入本页的 Domain 库存、lease、精确失效或 GC 协议。
 
 Sandbox 实例的停驻和销毁归 [Sandbox 默认停驻与回收](../../sandbox-retention/README.md)。
-执行容量、reservation 与 admission 归 [Docker 执行配置](../../../feature/sandbox/docker-profiles/README.md)。
+执行容量、reservation 与 admission 归 [Docker 执行配置](../../../feature/sandbox-docker-profiles/README.md)。
 
 - [CLI](cli.md)定义需求反馈，以及 Docker feature 自己拥有的库存与回收命令。
 - [Architecture](architecture.md)定义 Cache Manifest、Domain、lease 和删除不变量。

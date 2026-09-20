@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: concurrent-run-publication-recovery-race
 title: 并发 Run 发布被 recovery 误判为 inventory 损坏
 createdAt: 2026-08-24T21:48:41+08:00
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - "E2E red: GitHub Actions run 32733524084 installed main candidate e4ea74e7a5b5b5c04290175a0de91670147cf341 and failed e2e/runner/test/shared-state-lifecycle.test.ts through niceeval exp shared-state-second --json with Staged Run does not match its publish recovery inventory."
+            - "E2E red refinement: GitHub Actions run 32735973760 installed candidate b22a1d9980f52b19423367918208a92f93345bcf and failed e2e/runner/test/shared-state-recovery.test.ts through niceeval exp shared-state-crash-third --rerun all --json when the same atomic rename surfaced as typed read-file ENOENT for the staging complete marker."
+            - "E2E green: candidate SHA-256 409294aa1f3297272c0d5229f8a6c627431dd1c49eee04906ae874eeeba8fb9f ran pnpm e2e test --repo runner -- --run test/shared-state-recovery.test.ts with 1 file / 9 tests passed and clean scratch removal; the earlier lifecycle owner also passed 1 file / 4 tests on candidate 1f84f9717a251ac4ae1208a7f4c2443debb37c4dadc50afd1a099aca0f670dba."
     proof:
       - "E2E red: GitHub Actions run 32733524084 installed main candidate e4ea74e7a5b5b5c04290175a0de91670147cf341 and failed e2e/runner/test/shared-state-lifecycle.test.ts through niceeval exp shared-state-second --json with Staged Run does not match its publish recovery inventory."
       - "E2E red refinement: GitHub Actions run 32735973760 installed candidate b22a1d9980f52b19423367918208a92f93345bcf and failed e2e/runner/test/shared-state-recovery.test.ts through niceeval exp shared-state-crash-third --rerun all --json when the same atomic rename surfaced as typed read-file ENOENT for the staging complete marker."
       - "E2E green: candidate SHA-256 409294aa1f3297272c0d5229f8a6c627431dd1c49eee04906ae874eeeba8fb9f ran pnpm e2e test --repo runner -- --run test/shared-state-recovery.test.ts with 1 file / 9 tests passed and clean scratch removal; the earlier lifecycle owner also passed 1 file / 4 tests on candidate 1f84f9717a251ac4ae1208a7f4c2443debb37c4dadc50afd1a099aca0f670dba."
-promotions: []
+    source:
+      path: memory/concurrent-run-publication-recovery-race.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b27e73f0b45c946d12ab82ca199bf05afcdb16a39539ae1bd0e54487a19fbaaf
 ---
 # 并发 Run 发布被 recovery 误判为 inventory 损坏
 

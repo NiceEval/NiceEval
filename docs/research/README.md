@@ -12,11 +12,9 @@
 
 ## 当前闭环
 
-Research v1 只维护带边界的研究材料，不形成 Feature、Roadmap、Engineering 或 Design 的 Trace 节点，也不写 Trace relation。它从 `pnpm run repo docs research --help` 进入：`package` 建立一个研究包，`page` 建立一个研究页，`add-page` 把新页接入指定研究包，`check <exact-ref>` 只检查这个精确研究对象。
+独立研究页使用 `concord.document/v1` Research metadata，原路径就是身份。纯导航和收据仍为 supporting 页面，不重复计为研究 owner。`pnpm exec concord research list` 与页面从同一 metadata 发现条目；profile 入口见 `pnpm run repo docs research --help`。
 
-`check` 不接受全库扫描、模糊 pattern 或空 selector。它核对归属、路径、标题、索引和所需的结构字段，使研究包可以被稳定导航；它不联网、不读取外部产品的实时状态，也不判断观察、引文或产品判断是否为真。事实真伪由作者在一手材料与观察日期上负责，不能用结构通过冒充研究判断已获验证。
-
-研究的启发要进入 Design、Roadmap 或 Feature 才能成为 NiceEval 的方向或当前目标。不要把 Research 加进 Trace 来取得可追溯外观，也不要把一次 `check` 成功解释为产品采纳。
+`observedAt` 只保存原文明确观察日期，未声明时可省略。Git 首次登记时间由 `createdAtSource` 明示，不能充当研究日期。check 验证结构与归属，不联网、不证明引文或研究判断为真，也不代表研究已成为当前目标契约。
 
 ## 研究方向
 
@@ -25,13 +23,13 @@ Research v1 只维护带边界的研究材料，不形成 Feature、Roadmap、En
 
 | 方向 | 研究对象 | 研究判断入口 |
 |---|---|---|
-| Eval authoring | OpenRouter `spawn-ori-eval`、Ori Eval 与 Ori Harness | [Skill、评估框架与 NiceEval 的关系](ori-eval.md) |
+| Eval authoring | OpenRouter `spawn-ori-eval`、Ori Eval 与 Ori Harness | [Skill、评估框架与 NiceEval 的关系](ori-eval/README.md) |
 | Adapter | agent-eval、Agent SDK、Eve 与 OTel | [Adapter 接入、事件协议与遥测生态](adapters/README.md) |
-| Assertion | Eve、smevals、Ori Eval、Promptfoo、Inspect AI、Braintrust、DeepEval 等 | [断言 API、语法与作者 DX](assertion-api-dx/README.md)；[Eve 回归题研究](eve-assertion-dx.md) |
+| Assertion | Eve、smevals、Ori Eval、Promptfoo、Inspect AI、Braintrust、DeepEval 等 | [断言 API、语法与作者 DX](assertion-api-dx/README.md)；[Eve 回归题研究](eve-assertion-dx/README.md) |
 | Experiment | Vercel agent-eval `ExperimentConfig` | [Experiment 运行矩阵设计参照](experiments/README.md) |
 | Record storage | Eval/Artifact 平台、application file、事件与列式格式 | [Record 的逻辑写入怎样映射到物理存储](record-storage/README.md) |
 | Record → Report | Eval/tracing 平台、实验结果 store、历史查询、Experiment 比较与 Dashboard | [运行事实怎样被保存、看懂、比较并交付](record-to-report/README.md) |
 | Report design | TanStack Table / Charts 与 Vercel `design.md` | [已完成结果怎样进入表格、图表与报告网站](report-design/README.md) |
 | CLI Insight | 固定 Inspection operation 的确定性 protocol spike | [Machine query、Human show 与 Insight 共用语义](cli-insight/README.md) |
-| Sandbox | Harbor、Inspect AI、SWE-ReX、SWE-bench、Docker Sandboxes、Runloop、Incus、Sysbox 与 Firecracker | [容器进程模型](docker-sandbox-process-models.md)；[嵌套 Docker Sandbox](nested-docker-execution/README.md) |
+| Sandbox | Harbor、Inspect AI、SWE-ReX、SWE-bench、Docker Sandboxes、Runloop、Incus、Sysbox 与 Firecracker | [容器进程模型](docker-sandbox-process-models/README.md)；[嵌套 Docker Sandbox](nested-docker-execution/README.md) |
 | Testing | Git、Cargo、Deno、pnpm、OpenTofu、kubectl、Vite、Vitest 与 Playwright | [复杂 CLI 测试体系](cli-testing/README.md)；[框架 E2E](framework-e2e/README.md) |

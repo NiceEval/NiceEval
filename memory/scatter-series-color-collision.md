@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: scatter-series-color-collision
+title: scatter-series-color-collision
+createdAt: 2026-07-18T17:28:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/scatter-series-color-collision.md
+  commit: de592e3c6666b6ac252b4b9bf6692247d3980865
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [scatter-series-color-collision](scatter-series-color-collision.md) — 散点两个不同 series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/report/react/colors.ts` 的 colorIndicesForKeys);作用域后被 [report-page-level-color-assignment](report-page-level-color-assignment.md) 上提到「一页」"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # scatter-series-color-collision
 
 ## 现象

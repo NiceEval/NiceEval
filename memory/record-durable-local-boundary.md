@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: record-durable-local-boundary
+title: Record 分离 durable facts、local write state 与 cache
+createdAt: 2026-08-11T11:43:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/record-durable-local-boundary.md
+  commit: 312e98cd36e4a5332feca9006606c542409a55cf
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Record 分离 durable facts、local write state 与 cache
 
 日期：2026-08-11

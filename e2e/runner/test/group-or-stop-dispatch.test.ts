@@ -2,8 +2,9 @@
 // Regression note: memory/group-or-stop-dispatch-starvation.md
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
+// @use-case docs/feature/experiments/use-case/concurrency-mix-fast-slow.md
 
-test("orStop 只结束当前 Eval，三个 Group lane 仍可并行派发 [necase_JRJ0FVDAN2QKHY28]", async () => {
+test("orStop 只结束当前 Eval，三个 Group lane 仍可并行派发", async () => {
   await runnerE2E.case("group-or-stop-dispatch", {}, async ({ commands: { niceeval } }) => {
     const result = await niceeval.run(["exp", "group-stop", "--json"], { timeoutMs: 120_000 });
     expect(result.exitCode, result.diagnostic()).toBe(1);

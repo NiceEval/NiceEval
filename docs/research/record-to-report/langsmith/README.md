@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-to-report-langsmith
+title: LangSmith
+createdAt: 2026-08-14
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/record-to-report/langsmith/README.md
+  commit: a33c7a3ca725ef6afbc188b232e318d85445fc29
+kind: research
+sources: []
+---
 # LangSmith
 
 ## 产品是什么
@@ -43,11 +55,11 @@ Thread、Trace 与 experiment row 都是从 Run 及其引用关系形成的产�
 
 ## 研究页导航
 
-- [layers.md](layers.md)：LangSmith 自己的产品面、resource、服务组件、owner、引用和依赖关系。
-- [execution.md](execution.md)：SDK / UI / REST 的实验发起路径，真实调度与写入顺序，完成信号、失败、partial、retry 与 resume。
-- [storage.md](storage.md)：公开 type/class、API resource 与 envelope，物理存储证据，权威事实、派生 summary、index 和本地 cache 的区别。
-- [reading-and-comparison.md](reading-and-comparison.md)：历史 Trace / Experiment 的重开、query、filter、align、group、compare、render，以及缺测如何被隐藏或暴露。
-- [schema-and-migration.md](schema-and-migration.md)：对象/API/SDK/chart/database/SmithDB/dataset-version 各条演进轨道，兼容 reader、升级与数据迁移边界。
+- [layers.md](layers/README.md)：LangSmith 自己的产品面、resource、服务组件、owner、引用和依赖关系。
+- [execution.md](execution/README.md)：SDK / UI / REST 的实验发起路径，真实调度与写入顺序，完成信号、失败、partial、retry 与 resume。
+- [storage.md](storage/README.md)：公开 type/class、API resource 与 envelope，物理存储证据，权威事实、派生 summary、index 和本地 cache 的区别。
+- [reading-and-comparison.md](reading-and-comparison/README.md)：历史 Trace / Experiment 的重开、query、filter、align、group、compare、render，以及缺测如何被隐藏或暴露。
+- [schema-and-migration.md](schema-and-migration/README.md)：对象/API/SDK/chart/database/SmithDB/dataset-version 各条演进轨道，兼容 reader、升级与数据迁移边界。
 
 ## 与 NiceEval 的相似、差异与可吸收约束
 

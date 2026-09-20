@@ -85,7 +85,7 @@ describe("Repository Tools 动态发现", () => {
       const script = scriptName(skill.command);
       expect(agents, `AGENTS.md 没有路由 ${skill.path}`).toContain(skill.path);
       expect(scripts, `${skill.command} 不存在`).toHaveProperty(script);
-      expect(scripts[script], `${skill.command} 没有进入 @niceeval/repo-tools`).toContain("packages/repo-tools/");
+      expect(scripts[script], `${skill.command} 没有进入 NiceEval repository composition`).toMatch(/^tsx packages\/repo-tools\/src\/cli\.ts(?: |$)/u);
       expect(existsSync(join(ROOT, skill.design)), `${skill.path} 的 design 不存在: ${skill.design}`).toBe(true);
       expect(skill.body, `${skill.path} 没有把完整参数交给 --help`).toContain(`${skill.command} --help`);
     }

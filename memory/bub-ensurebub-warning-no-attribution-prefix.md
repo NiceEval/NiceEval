@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: bub-ensurebub-warning-no-attribution-prefix
+title: bub ensureBub 的 checkpoint 警告用裸 console.error,并发下无法归属
+createdAt: 2026-07-11T15:44:38+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bub-ensurebub-warning-no-attribution-prefix.md
+  commit: a2aa2fac534d3fb68fb75caf09e84cbcfa863a4a
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [bub-ensurebub-warning-no-attribution-prefix](bub-ensurebub-warning-no-attribution-prefix.md) — ensureBub 的 checkpoint 回填/还原警告曾用裸 console.error,并发多配置下无法归属;修为穿入触发 attempt 的 ctx.log(`src/agents/bub.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # bub ensureBub 的 checkpoint 警告用裸 console.error,并发下无法归属
 
 ## 现象

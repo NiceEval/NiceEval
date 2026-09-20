@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: report-components-reference-missing-attempt-detail-family
+title: "`report-components.mdx`(中英文)完全不覆盖 attempt-detail 组件族"
+createdAt: 2026-07-23T11:17:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-components-reference-missing-attempt-detail-family.md
+  commit: ca12d845e57a6a5aed731a5cd933cf5732999ca2
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # `report-components.mdx`(中英文)完全不覆盖 attempt-detail 组件族
 
 ## 现象

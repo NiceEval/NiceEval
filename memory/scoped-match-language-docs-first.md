@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: scoped-match-language-docs-first
+title: scoped 断言匹配语言:契约以 docs 为准,不从源码反推
+createdAt: 2026-07-14T18:48:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/scoped-match-language-docs-first.md
+  commit: da12b0504e540fab2c3041870d0f5d597091e2c6
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # scoped 断言匹配语言:契约以 docs 为准,不从源码反推
 
 - **裁决**(2026-07-14):`eventsSatisfy(label, predicate)`——label 必填、在前;`calledTool` / `notCalledTool` 的 `input` 是匹配小语言:对象做深度部分匹配(写出的键值要求出现且相等,未写的忽略,嵌套递归;值位置可放 `RegExp`),顶层 `RegExp` 匹配序列化后的完整输入,谓词函数拿原始值。契约落点:`docs/feature/scoring/library/scoped-assertions.md`、`docs-site/zh/concepts/assert.mdx`(后者本来就是这么写的)。

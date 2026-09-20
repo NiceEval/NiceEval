@@ -21,7 +21,7 @@ const EXCLUDE = [
   "e2e/report/**",
   "e2e/undo/**",
 ];
-const UNIT_EXCLUDE = [...EXCLUDE, "src/**/*.docker.test.ts"];
+const UNIT_EXCLUDE = [...EXCLUDE, "packages/niceeval/src/**/*.docker.test.ts"];
 
 export default defineConfig({
   test: {
@@ -29,7 +29,7 @@ export default defineConfig({
       {
         test: {
           name: "unit",
-          include: ["packages/niceeval/src/**/*.test.ts", "packages/niceeval/src/**/*.test.tsx", "test/unit/**/*.test.ts"],
+          include: ["packages/niceeval/src/**/*.test.ts", "packages/niceeval/src/**/*.test.tsx", "packages/repo-tools/src/**/*.test.ts", "test/unit/**/*.test.ts"],
           exclude: UNIT_EXCLUDE,
         },
       },

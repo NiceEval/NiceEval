@@ -17,8 +17,9 @@ beforeAll(async () => {
     traceMarkers: ["lookup_live_responses_fixture", "responses-live-20260809"],
   });
 }, 5 * 60_000);
+// @feature docs/feature/adapters/README.md
 
-test("真实 OpenAI Responses 一次请求以通过 verdict 完成 [necase_MXBHGNYSRKNQ4S8N]", () => {
+test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
   const receipt = evidence.receipt.expReceipt();
   expect(receipt.completion).toBe("completed");
   expect(receipt.createdRunIds, evidence.receipt.diagnostic()).not.toHaveLength(0);
@@ -37,8 +38,9 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成 [necase_MXBHG
     () => evidence.receipt.diagnostic(),
   );
 });
+// @feature docs/feature/adapters/README.md
 
-test("attempt.trace 读回 OpenAI Responses 的代表性证据 [necase_23G2DW46N026X1GE]", async () => {
+test("attempt.trace 读回 OpenAI Responses 的代表性证据", async () => {
   const queried = await queryOpenAiLiveEvidence(evidence, {
     kind: "attempt.trace",
     locator: evidence.evalEvent.locator,

@@ -1,3 +1,7 @@
+// @concord-file ne-eval-inspection-source
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md
+// @concord-implements docs/feature/insight/README.md
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Data, Effect } from "effect";

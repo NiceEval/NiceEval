@@ -1,16 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: docs-trace-relations-are-source-owned
 title: Docs Trace 关系由事实 owner 持有
 createdAt: 2026-08-24T15:29:14+08:00
-kind:
-  type: decision
-  state: adopted
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
 promotions:
-  - kind: engineering
-    current:
-      - docs/engineering/docs-traceability/README.md
-    history: []
+  - docs/engineering/docs-traceability/README.md
+history: []
 ---
 # Docs Trace 关系由事实 owner 持有
 
@@ -22,7 +21,7 @@ README、Library、CLI、Architecture、Lifecycle 与 Reference 的页面角色�
 
 ## Decision
 
-- `niceeval.docs-node/v1` 只保存节点身份和该节点拥有的强关系。
+- `concord.document/v1` 只保存节点身份和该节点拥有的强关系。
 - Feedback v2 保存原始观察、Issue provenance、adoption current/history 与 Feedback→Memory relation。
 - structured Memory 保存 Problem、Decision、Insight 和 promotion current/history。
 - E2E test/spec header 保存 owner、regression 与测试 Issue provenance。

@@ -69,8 +69,10 @@ function ownerTokenFromInspection(stderr: string): string {
   return match![1]!;
 }
 
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
+
 test.skipIf(process.platform !== "linux")(
-  "explicit recovery accepts a terminal Linux zombie owner but still runs its compensating teardown [necase_KFXCHWB9075701RA]",
+  "explicit recovery accepts a terminal Linux zombie owner but still runs its compensating teardown",
   async () => {
     await runnerE2E.case(
       "shared-state-zombie-owner-recovery",

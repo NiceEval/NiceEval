@@ -1,3 +1,6 @@
+// @concord-file ne-eval-inspection-trace
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/insight/README.md
 import { createHash } from "node:crypto";
 
 import { Result, Schema } from "effect";
@@ -102,6 +105,9 @@ interface ProjectionState {
   )[];
 }
 
+// @concord-code ne-eval-inspection-project-trace
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/insight/README.md
 export function projectAttemptTrace(
   source: InspectionFactSource,
   attachments: AttemptTraceAttachments,

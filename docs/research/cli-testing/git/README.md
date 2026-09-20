@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: cli-testing-git
+title: Git
+createdAt: 2026-08-06
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/cli-testing/git/README.md
+  commit: 71929e5689b00138d13cd9c6b396ecf6d72a4d3e
+kind: research
+sources: []
+---
 # Git
 
 ## 证据范围

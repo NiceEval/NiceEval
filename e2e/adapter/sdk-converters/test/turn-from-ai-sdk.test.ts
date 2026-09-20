@@ -13,8 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回 [necase_AVSF0X0N75ZTPJBD]", async () => {
+test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case("turn-from-ai-sdk", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "turn-from-ai-sdk", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

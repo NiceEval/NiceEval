@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: show-locator-crashes-under-linked-worktree
+title: "`niceeval show @<locator>` 在配了 `config.report` 的项目里打不开"
+createdAt: 2026-07-31T09:21:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-locator-crashes-under-linked-worktree.md
+  commit: dc518d242fca32bc67b9c7ff2fdb6e58ba22676e
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**修法**:已修(2026-07-31)。出处判断收进装载 facade:`src/report/runtime/host.ts` 新增 `describeReportSource(reportPath, configuredReport)`,三档与 `loadHostReport` 一一对应;`src/show/index.ts` 缺 attempt 页的报错改用它,并先给一条当场可用的读法(`--report standard` 或 `--json`),再给三条把 attempt 页加进本报告的路径。覆盖类别声明在 `docs/engineering/testing/unit/reports.md`「报告取值链与 `--report` 值判别」,区分力场景是「没写 `--report` 但配了 `config.report`」。"
+    proof: []
+    source:
+      path: memory/show-locator-crashes-under-linked-worktree.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:33088fbd10e7d6c231f77083e742ada480eaea9d51f5b6912e31777ed4cc1b07
+---
 # `niceeval show @<locator>` 在配了 `config.report` 的项目里打不开
 
 **现象**:MemoryBench 里 `niceeval show @<locator>` 直接失败(退出码 1)、`--json` 面可用(2026-07-31 真机)。当时怀疑是 pnpm link 工作树的陈旧 `dist/report/**`。

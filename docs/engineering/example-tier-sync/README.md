@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: example-tier-sync
+title: Tier Sync:examples 的 origin → tier1 → tier2 → tier3 同步维护方案
+createdAt: 2026-07-12T19:14:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/example-tier-sync/README.md
+  commit: 695cbaf358f8296fe46dd94c9e3d416b04862d00
+kind: engineering
+---
 # Tier Sync:examples 的 origin → tier1 → tier2 → tier3 同步维护方案
 
 `packages/repo-tools/src/examples/**` 与 `pnpm examples:sync` 维护 `examples/zh/.tier-sync.json` 登记的全部目录对。只读检查由 `pnpm examples:sync check` 承担。

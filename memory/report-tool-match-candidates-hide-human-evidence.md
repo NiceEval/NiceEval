@@ -1,16 +1,16 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: report-tool-match-candidates-hide-human-evidence
 title: Report 工具匹配候选隐藏可读证据
 createdAt: 2026-08-24T13:13:34+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/assertions/library/display.md#单条-assertion
-    history: []
+  - docs/feature/assertions/library/display.md#单条-assertion
+history: []
 ---
 ## 问题
 

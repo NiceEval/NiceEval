@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: fixed-activation-systemd-slice-cgroup-hierarchy
 title: Fixed activation flattens the systemd slice cgroup hierarchy
 createdAt: 2026-08-25T10:52:14+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # Fixed activation flattens the systemd slice cgroup hierarchy
 

@@ -13,8 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回 [necase_Z2VYZ98HMX5MVPG4]", async () => {
+test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case("openai-chat-completion", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "openai-chat-completion", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

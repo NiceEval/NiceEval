@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: eval-parent-repeats-attempt-failure
+title: Eval 父行重复 Attempt 失败内容
+createdAt: 2026-07-15T21:38:56+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/eval-parent-repeats-attempt-failure.md
+  commit: 493da63bc75fabf8be458d8a14ef4430ee6b4acd
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [eval-parent-repeats-attempt-failure](eval-parent-repeats-attempt-failure.md) — ExperimentList/EvalList 的 web 面曾在 Eval 父行复述某个 Attempt 的失败摘要,单轮完全重复、多轮又冒充题级事实;父行固定为判定+题级聚合,失败原因只留 Attempt 子行"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Eval 父行重复 Attempt 失败内容
 
 **现象（2026-07-15）**：默认 `niceeval view` 的 `ExperimentList` 展开区会在失败 Eval 父行显示一条主失败摘要，紧接着又在唯一 Attempt 子行显示完全相同的摘要。`EvalList` web 面有同类问题。单 Attempt 时信息逐字重复；多 Attempt 时父行只能任意挑一轮的原因，却没有标明它不是 Eval 级事实。

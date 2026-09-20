@@ -4,8 +4,9 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
+// @use-case docs/feature/experiments/use-case/lifecycle-bake-dependencies.md
 
-test("Docker task build 在不同 Invocation 复用受管 image cache [necase_FTCND3Y2ZRCHXZJ7]", async () => {
+test("Docker task build 在不同 Invocation 复用受管 image cache", async () => {
   await cliE2E.case("cache-hit", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-hit/bin");
     const stateRoot = join(paths.projectRoot, "state");

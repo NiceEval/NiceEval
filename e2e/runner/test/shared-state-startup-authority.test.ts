@@ -20,8 +20,9 @@ function ownerTokenFromInspection(stderr: string): string {
   expect(match, stderr).not.toBeNull();
   return match![1]!;
 }
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 
-test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]", async () => {
+test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -107,8 +108,9 @@ test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等
     },
   );
 });
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 
-test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]", async () => {
+test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority-full-carry",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

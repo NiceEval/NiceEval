@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: experiment-teardown-missed-once-in-batch
+title: 实验级 teardown 在一次真实批跑中未触发(间歇,根因未定位)
+createdAt: 2026-07-17T19:20:50+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-teardown-missed-once-in-batch.md
+  commit: 6ebcef72afdbaf6ea173c94f7ad3ba711c73bed8
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 实验级 teardown 在一次真实批跑中未触发(间歇,根因未定位)
 
 **现象**(2026-07-17,coding-agent-memory-evals):`niceeval exp compare`(72 attempt,45 carry + 27 fresh,9 实验)正常跑完、exit 1(有 failed/errored,属正常 CI 语义)后,`compare/claude-dp-v4--nowledge` 的实验级 teardown 没有执行——mem 容器、cloudflared 隧道、实例数据目录全部残留(`nowledge-mem.sh down` 的 `rm -rf $STATE_DIR` 显然没跑过),也没有 `experiment-teardown-failed` 诊断(说明 `runExperimentTeardown` 要么没被调、要么调时 `cleanup` 已是 undefined)。手动执行同一条 `down` 秒过,脚本本身无问题。

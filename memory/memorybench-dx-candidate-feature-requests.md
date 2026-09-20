@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: memorybench-dx-candidate-feature-requests
+title: MemoryBench dogfooding 批次:候选 feature request 与逐条处置
+createdAt: 2026-07-30T14:54:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/memorybench-dx-candidate-feature-requests.md
+  commit: 5b06d9bd2e5722e9618a4f41e8823e43e12adb9c
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # MemoryBench dogfooding 批次:候选 feature request 与逐条处置
 
 2026-07-30 MemoryBench(terminal-bench 移植,niceeval 0.11.3)dogfooding 一批 DX 反馈的

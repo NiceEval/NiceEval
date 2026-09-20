@@ -14,7 +14,9 @@ import {
   inspectRunSummary,
 } from "./inspection.ts";
 
-test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用 [necase_8QDV951NVHXK0G1W]", async () => {
+// @use-case docs/feature/eval/use-case/eval-compare-implementations.md
+
+test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用", async () => {
   await evalE2E.case(
     "custom-application",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

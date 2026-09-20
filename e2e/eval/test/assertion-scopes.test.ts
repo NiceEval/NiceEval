@@ -81,8 +81,9 @@ function expectOccurrence(
     expect(dataString(entry, ["quantifier", "kind"])).toBe(quantifierKind);
   }
 }
+// @feature docs/feature/assertions/README.md
 
-test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布 [necase_596H6RRXK485Z0HK]", async () => {
+test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", async () => {
   await evalE2E.case(
     "scopes",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

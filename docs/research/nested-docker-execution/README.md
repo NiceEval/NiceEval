@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: nested-docker-execution
+title: Coding Agent 的嵌套 Docker Sandbox
+createdAt: 2026-08-25
+kind: research
+observedAt: 2026-08-25
+sources: []
+---
 # Coding Agent 的嵌套 Docker Sandbox
 
 > 观察日期：2026-08-25
@@ -18,7 +27,7 @@ Coding Agent 经常要在评估 Sandbox 内执行 `docker build`、`docker run` 
 - CLI 被 `SIGKILL`、宿主重启或 Provider 中断后，系统仍能证明谁拥有实例和存储；
 - 任一优化失效时 fail closed，不回退到宿主 daemon 或共享 writable state。
 
-此前的[容器进程模型研究](../docker-sandbox-process-models.md)回答框架怎样保持
+此前的[容器进程模型研究](../docker-sandbox-process-models/README.md)回答框架怎样保持
 Sandbox 存活并执行命令。本文继续追问更外层的问题：当 Sandbox 自己还要提供 Docker 时，
 谁拥有 VM、磁盘、mount、daemon、快照和回收。
 
@@ -53,7 +62,7 @@ registry mirror 与 BuildKit external cache。只有确定性 setup 才能由受
 
 ## 正文
 
-- [产品与执行模型](products.md)——自托管 VM、托管 Sandbox、system container 与直接 microVM。
-- [缓存与快照边界](cache.md)——哪些内容可以共享，什么时候才允许捕获完整磁盘状态。
-- [所有权与恢复](ownership-and-recovery.md)——mount namespace、唯一 owner、fencing 与 orphan 回收。
+- [产品与执行模型](products/README.md)——自托管 VM、托管 Sandbox、system container 与直接 microVM。
+- [缓存与快照边界](cache/README.md)——哪些内容可以共享，什么时候才允许捕获完整磁盘状态。
+- [所有权与恢复](ownership-and-recovery/README.md)——mount namespace、唯一 owner、fencing 与 orphan 回收。
 - [设计决策](../../design/nested-docker-execution/README.md)——把研究事实变成 NiceEval 候选与裁决。

@@ -1,3 +1,4 @@
+import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
 import {
   cp,
@@ -31,7 +32,7 @@ import {
 } from "./model.js";
 import { requirePreviewSuccess, runPreviewProcess } from "./process.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const ROOT = repositoryRoot();
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 const ALLOWED_EXTENSIONS = new Set([
   ".css", ".gif", ".html", ".ico", ".jpeg", ".jpg", ".js", ".json", ".mjs",

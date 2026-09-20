@@ -7,7 +7,8 @@ import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
 
-test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV5X8PPWYPXZM]", async () => {
+// @feature docs/feature/assertions/README.md
+test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
   await evalE2E.case(
     "judge-unavailable",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -65,8 +66,9 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成 [necase_N9PKV
     },
   );
 });
+// @feature docs/feature/assertions/README.md
 
-test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求留存 [necase_Z1PAQPEQGDRFSCQ0]", async () => {
+test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求留存", async () => {
   let measurementCalls = 0;
   const deliveredRequests: string[] = [];
   const provider = createServer((request, response) => {

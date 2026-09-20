@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: group-matrix-dedicated-component-ruling
+title: GroupMatrix 走独立组件,否决扩展 MetricMatrix 的动态 Metric 方案(补记)
+createdAt: 2026-07-23T18:20:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/group-matrix-dedicated-component-ruling.md
+  commit: f1eee9a0a16583087bd4c0c7c6664a2726ea4536
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # GroupMatrix 走独立组件,否决扩展 MetricMatrix 的动态 Metric 方案(补记)
 
 裁决(2026-07-23,补记——这条裁决此前只存在于会话外记忆,未落 memory,现按定稿文档反推补上):

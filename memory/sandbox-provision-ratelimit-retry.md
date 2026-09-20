@@ -1,8 +1,20 @@
 ---
-name: sandbox-provision-ratelimit-retry
-description: 设计裁决——sandbox provisioning 瞬时错误(限流 + 传输层)退避重试,分类放 provider + 共用瞬时分类器兜底,重试放在 resolve.ts 而不是 runner,不覆盖运行期限流
-metadata:
-  type: project
+format: concord.document/v1
+id: sandbox-provision-ratelimit-retry
+title: sandbox-provision-ratelimit-retry
+createdAt: 2026-07-11T17:22:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-provision-ratelimit-retry.md
+  commit: d4c028b2170394e3e09fecc892334ac3111d773a
+description: 设计裁决——sandbox provisioning 瞬时错误(限流 + 传输层)退避重试,分类放 provider +
+  共用瞬时分类器兜底,重试放在 resolve.ts 而不是 runner,不覆盖运行期限流
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 裁决(2026-07-11):`createSandbox()` 遇到 provider 侧限流(e2b `RateLimitError`、vercel `APIError{status:429}`、docker 拉镜像 429)时,由各 provider 自己的 `classifyProvisionError()` 把原生错误归类成中性 kind(`"rate_limit" | "unknown"`),`src/sandbox/resolve.ts` 的 `createProvider()` 对可重试 kind 做指数退避重试(封顶 4 次 + 全抖动),不可重试的错误(模板不存在、凭据缺失)第一次就抛出。落地:`src/sandbox/errors.ts`(kind + `isRetryableProvisionError`)、`src/sandbox/retry.ts`(`withProvisionRetry`)、各 provider 文件的 `classifyProvisionError`、`resolve.ts` 接线;文档见 `docs/sandbox.md`「Provisioning 失败与重试」。

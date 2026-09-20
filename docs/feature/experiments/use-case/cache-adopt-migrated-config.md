@@ -1,0 +1,100 @@
+---
+format: concord.document/v1
+id: cache-adopt-migrated-config
+title: 审阅后采用历史结果
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 审阅后采用历史结果
+
+当前目标出现缺口时，先查看原因与旧 Attempt。历史可查看不表示它适用于当前任务；
+`accept` 只采用已明确选择且通过资格检查的结果，不重新执行 Agent，也不重新评分。
+
+例如，同一份固定 digest 的 Docker 镜像换了仓库引用，任务、判据与其它运行输入都没有变化。
+先让 dry plan 检查[有限采用规则](../cache.md#显式采用的资格)，再审阅具体结果：
+
+```sh
+niceeval view --run <source-run-id>
+niceeval accept @1K1P0VJAPVJ12 --dry
+niceeval accept @1K1P0VJAPVJ12
+niceeval show
+niceeval exp compare/codex --dry
+```
+
+当前 Experiment 建立 Run，用 reference Member 引用同一个历史 Attempt，并以 Core `accepted` action 标记采用。
+随后当前可用结果增加；目标不再变化时，下一次 dry plan 显示沿用同一 locator。正式执行只发布 carried 引用，不再执行这条 Attempt。
+
+```text
+ACCEPTED
+@1K1P0VJAPVJ12  compare/codex · memory/commit0
+details: niceeval view --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
+
+Current results
+Covered 1/1
+Gaps 0
+
+PLAN
+compare/codex  memory/commit0  Attempt #1  using result @1K1P0VJAPVJ12
+```
+
+输入不是规范 locator、Record 找不到它，或当前 target 不满足 Verdict、timeout、配置或计划资格时，`accept` 非零并零业务写入：
+
+```text
+error: malformed-locator: expected @ followed by 12 uppercase Crockford characters
+error: accept-ineligible: @1K1P0VJAPVJ12 has changed evaluation inputs
+```
+规范 locator 只授权列出的 Attempt；不会因为同一处 flags 差异而顺带接受其它评估用例。
+
+如果一次 source Run 的 expected slots 正好与当前 Experiment 的全部目标对应，先预览整批映射，再明确采用该授权范围：
+
+```sh
+niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706 --dry
+niceeval accept --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
+niceeval show
+```
+
+`--dry` 必须逐项列出 Eval、ordinal、source locator 与资格，并证明 source Run 和当前 target 双向全等。
+正式执行复用同一计划，原子发布 `accepted` reference Members；这些位置计为当前可用结果。
+之前的历史结果始终可以通过 Run 或 locator 查看，但不用于补齐当前缺口。
+
+Run 中有已退役 Eval、缺失 Member，或当前 target 新增了 Run 没有对应成员的 slot 时，整批采用失败且零写入。命令不会把
+“采用这个 Run”静默缩成“采用其中还能用的部分”。用户审阅后确实只想采用子集时，显式列出对应 locators：
+
+```sh
+niceeval accept @1K1P0VJAPVJ12 @1MEMY3VCQ6B5B
+```
+
+目标 Run 的 expected slot 保存当前 Core combined execution identity；reference Member 保存原 Attempt ref，`accepted` action 保存采用事实。Invocation receipt 将本次命令与目标 Run 关联。
+Attempt 的 origin Run、Core outcome、Assertions 与 locator 都不变；Verdict 只在读取这些事实时折叠。
+
+## 改名后承接已删除实验的结果
+
+实验定义从 `compare/old` 改为 `compare/new`，旧 Run 仍保留原来的名字。先从历史 Run 中选定一次完整结果，
+再按[实验改名契约](../rename.md)采用到当前目标；不必恢复旧文件，也不需要逐个输入 Attempt ID。
+
+```sh
+niceeval show --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
+niceeval exp rename compare/new --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706 --dry
+niceeval exp rename compare/new --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
+niceeval exp compare/new --dry
+```
+
+即使旧实验有更新的一轮结果，也只采用指定 Run。预览逐项给出 Eval、ordinal 和 source locator，
+并说明新成员将参与当前目标的结果选择；目标已有历史无需删除。
+采用后，连续运行仍沿用原 locator，原 Attempt 的评分、证据和 origin 不变。
+
+源成员缺失、目标增减 ordinal 或删减 Eval 时，整批拒绝且零写入。输入变化不能伪装成改名；
+模型、flags 或判据改变，或无法纯计算证明等价时，预览和正式采用均保留具体阻断原因。
+源实验曾有 setup/teardown，改名时删除它们也不能通过；历史缺少 hook 声明时拒绝推断纯改名。
+后续目标改变，或删除了唯一的 adopted Member 见证，下一次规划重新显示缺口，不自动换用另一轮历史。
+
+## 不能用采用代替重新评估
+
+改动任务文本、断言、隐藏判据、评分材料、模型或 flags 时，旧结果不能仅凭操作者确认就变成新条件下的结果。
+删除 `flags.tunnelUrl` 也可能影响读取该值的 Eval 或 Agent；字段名不能证明它只是运行时坐标。
+此类变化保持缺口，原子采用失败且零写入。真正的运行时坐标应按[留存运行时坐标](cache-retain-runtime-coordinate.md) 放回所属生命周期。
+
+源码、配置或证据不足以证明有限规则时，返回具体阻断原因，不给出必然失败的采用建议。
+`accept` 不改变分数；评分逻辑变化需要重新评估。后续目标再次变化时重新判定，旧采用不构成对新变化的许可。

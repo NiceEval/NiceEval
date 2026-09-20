@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: e2e-artifacts-glob-overwrites-repo-manifest
+title: e2e.json 的宽泛 artifacts glob 会把隔离副本的 package.json 拷回真实仓库
+createdAt: 2026-07-21T22:25:37+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-artifacts-glob-overwrites-repo-manifest.md
+  commit: aabf22cc4d920bd3e8474f022da709f3b74f3005
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: '- 已修 [e2e-artifacts-glob-overwrites-repo-manifest](e2e-artifacts-glob-overwrites-repo-manifest.md) — `e2e/report/e2e.json` 曾用 `"*.json"`/`"*.xml"` 通配声明 artifacts,根编排器收尾把隔离副本顶层文件拷回真实仓库时连带命中并覆盖真实 `package.json`(改写成失效的临时 tarball 路径),下次直接 install/typecheck 报 ENOENT;修为显式文件名(`main.json`/`main.xml`/`fail.xml`/`error.xml`),裸 glob 会命中仓库自带顶层文件是通用坑'
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # e2e.json 的宽泛 artifacts glob 会把隔离副本的 package.json 拷回真实仓库
 
 **现象**：在根仓库跑 `pnpm e2e --repo report`（或任意仓库）后，真实的

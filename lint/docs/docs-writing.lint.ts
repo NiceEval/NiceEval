@@ -84,6 +84,18 @@ describe("文档可读性守护", () => {
     expect(lines.filter(Boolean)).toEqual(["组件前正文。", "组件后正文。"]);
   });
 
+  it("Markdown owner 的 YAML frontmatter 不算正文", () => {
+    const lines = readableProseLines("docs/feature/example/README.md", [
+      "---",
+      "format: concord.document/v1",
+      `title: ${"很长的元数据标题".repeat(30)}`,
+      "---",
+      "正文。",
+    ]);
+
+    expect(lines.filter(Boolean)).toEqual(["正文。"]);
+  });
+
   it("概念表按表头认列,不按位置——表格加一列不会让词条静默错位", () => {
     // 总表是三列、报告组件表是五列,写死列号的解析器在第二张表上会把「含义」当成词。
     const five = parseConcepts(

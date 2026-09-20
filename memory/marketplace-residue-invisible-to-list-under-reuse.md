@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: marketplace-residue-invisible-to-list-under-reuse
+title: 复用沙箱下 marketplace 残根对 list 不可见,按回读列表收敛摘不到它
+createdAt: 2026-07-30T12:11:22+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/marketplace-residue-invisible-to-list-under-reuse.md
+  commit: 827477169a8f2f5a169e74630890755ca96c13bb
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [marketplace-residue-invisible-to-list-under-reuse](marketplace-residue-invisible-to-list-under-reuse.md) — 复用+plugins 第 2 条 attempt 起必死「already added from a different source」:configFile 整层替换抹掉 config 里的注册项、磁盘残根 list 看不见但 add 撞;修成按声明名字无条件 remove(容忍不存在),add 是权威失败面;原「install_hooks.py 改托管源」归因是错的,第一版按 list 播种的修法真机被打回"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 复用沙箱下 marketplace 残根对 list 不可见,按回读列表收敛摘不到它
 
 ## 现象

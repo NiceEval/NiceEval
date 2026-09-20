@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: e2e-signal-cleanup-waits-for-program-completion
 title: E2E 顶层 signal listener 未启动运行中的取消与升级
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # E2E 顶层 signal listener 未启动运行中的取消与升级
 

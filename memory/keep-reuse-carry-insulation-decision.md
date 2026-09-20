@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: keep-reuse-carry-insulation-decision
+title: 裁决:执行模式 flag(keep/reuse)与携带、并发 flag 的组合(2026-07-21)
+createdAt: 2026-07-21T20:59:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/keep-reuse-carry-insulation-decision.md
+  commit: bd8dc097f8b8d825cbe1d35fdc014a622a274998
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:执行模式 flag(keep/reuse)与携带、并发 flag 的组合(2026-07-21)
 
 ## 现象(为什么需要裁决)

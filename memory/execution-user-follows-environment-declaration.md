@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: execution-user-follows-environment-declaration
+title: "执行身份沿用环境声明,`root: true` 退役成 `user`"
+createdAt: 2026-08-04T11:02:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/execution-user-follows-environment-declaration.md
+  commit: dab9ca8c2bcafb742f862c479a3e1e48b42ac1d3
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 执行身份沿用环境声明,`root: true` 退役成 `user`
 
 **裁决(2026-08-04)**:Sandbox 执行身份统一成一个词 `user`,默认沿用环境自己声明的身份。

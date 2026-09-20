@@ -51,7 +51,12 @@ function stableIdentity(stdout: string, label: string): string {
   return identity;
 }
 
-test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面 [necase_9FHHSQTVB492P8DS]", async () => {
+// @feature docs/feature/inspection/README.md
+// @regression memory/inspection-overview-fixed-byte-limit.md
+// @regression memory/show-overview-includes-stale-execution-identity.md
+// @regression memory/show-score-outcomes-rendered-as-pass-rate.md
+
+test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面", async () => {
   await inspectionE2E.case(
     "show-terminal-review",
     { artifacts: inspectionCaseArtifacts() },

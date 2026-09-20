@@ -1,16 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: single-project-database-publication-state
 title: Use one ProjectDatabase for operational and published Run state
 createdAt: 2026-08-31
-kind:
-  type: decision
-  state: adopted
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/run/architecture.md#canonical-record-与运行中状态
-    history: []
+  - docs/feature/run/architecture.md#canonical-record-与运行中状态
+history: []
 ---
 ## Context
 

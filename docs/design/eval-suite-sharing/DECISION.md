@@ -1,10 +1,10 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md)
 
 ## 裁决
 
-采纳 [PLAN-3](PLAN-3/README.md)：消费项目挂载另一个已安装 NiceEval 项目的 Eval 目录。
+采纳 [PLAN-3](plans/plan-3/README.md)：消费项目挂载另一个已安装 NiceEval 项目的 Eval 目录。
 
 发布方不写 `defineEvalSuite()`、`suite.ts`、manifest 或专用 package export。
 它只维护原本就能运行的 NiceEval 项目，并通过普通 package、Git dependency、tarball 或 workspace 交付现有文件。

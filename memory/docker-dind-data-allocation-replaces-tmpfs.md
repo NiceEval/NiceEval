@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: docker-dind-data-allocation-replaces-tmpfs
+title: DinD data allocation取代大 tmpfs
+createdAt: 2026-08-22T10:21:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-dind-data-allocation-replaces-tmpfs.md
+  commit: 6e57f7eb8e83ee90e39cc6390f417c75384c0099
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # DinD data allocation取代大 tmpfs
 
 **裁决（2026-08-22）**：inner `/var/lib/docker`使用部署期预建、每 Attempt私有、disk-backed且带

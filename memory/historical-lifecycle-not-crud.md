@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: historical-lifecycle-not-crud
 title: Historical lifecycle is not CRUD
 createdAt: 2026-08-28
-kind:
-  type: insight
-  state: current
+kind: memory
+memoryKind: insight
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 Historical owners preserve evidence and transitions; they are not generic records that can safely be physically deleted.
 

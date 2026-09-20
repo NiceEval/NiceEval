@@ -1,8 +1,33 @@
 ---
-name: data-shape-validator-deepening-forward-compat-kind
+format: concord.document/v1
+id: data-shape-validator-deepening-forward-compat-kind
+title: data-shape-validator-deepening-forward-compat-kind
+createdAt: 2026-07-20T09:39:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/data-shape-validator-deepening-forward-compat-kind.md
+  commit: 496974edc5136db605516115c26363165e6b24ad
 description: 深化 validate*Data 判别联合时两种反方向的坑——ScopeWarning 未登记 kind 要放行（validator 曾太严）、TraceSpan 字段被 fixture 的 as never 偷懒绕过（validator 是对的，该改 fixture）
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [data-shape-validator-deepening-forward-compat-kind](data-shape-validator-deepening-forward-compat-kind.md) — 深化 `validate*Data` 判别联合炸出既有测试时两种反方向的坑:`ScopeWarning` 未登记 kind 要放行(validator 曾太严,改 validator);`TraceSpan` 字段被两处 fixture 的 `as never` 偷懒绕过(validator 是对的,改 fixture);判断法与两个真实案例见正文"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 ## 现象

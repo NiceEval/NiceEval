@@ -1,8 +1,33 @@
 ---
-name: e2b-list-returns-paginator-not-array
+format: concord.document/v1
+id: e2b-list-returns-paginator-not-array
+title: e2b-list-returns-paginator-not-array
+createdAt: 2026-07-18T17:37:45+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-list-returns-paginator-not-array.md
+  commit: 0cef7946b085cf102fd9ac695cfa566ee8845637
 description: reconcileProvision 把 e2b Sandbox.list() 当成同步返回 Promise<数组> 来用,真实签名是同步返回 SandboxPaginator,for...of 直接炸 TypeError,导致对账(reconcile)硬失败、整批重试被 abort
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [e2b-list-returns-paginator-not-array](e2b-list-returns-paginator-not-array.md) — `Sandbox.list()` 真实是同步返回 `SandboxPaginator`，不是 Promise 数组；provision reconcile 与 detached keep inspect 都改为 `hasNext`/`nextItems()` 翻页，避免将真机 TypeError 吞成错误的过期状态(`src/sandbox/e2b.ts`、`src/sandbox/keep.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**(2026-07-18,coding-agent-memory-evals 实跑 `niceeval exp compare`):大量 `sandbox-provision-reconcile-failed`,内层错误 `TypeError: sandboxes is not iterable`,provisioning 重试被直接 abort(不是原始的 `creating sandbox: fetch failed` 而是重试路径自己炸的次生失败)。

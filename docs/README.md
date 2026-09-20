@@ -26,7 +26,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 理解 Run 与 Attempt 怎样经过 Inspection 到 Insight | [Run → Inspection → Insight](feature/run-inspection/README.md) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
-| 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox/nested-docker/README.md) |
+| 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox-nested-docker/README.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature Skill](../.agents/skills/feature/SKILL.md) → [Feature](feature/README.md) → 对应功能目录 |
 | 从 Feature 或测试反查 Use Case、E2E、Roadmap、Design 与 Memory | [仓库文档追溯](engineering/docs-traceability/README.md) |
@@ -54,6 +54,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 - [Roadmap](roadmap/README.md)：已定稿、尚未采用为当前契约的方向。
 - [Design](design/README.md)：多候选方案的比较与裁决存档。
 - [Research](research/README.md)：带观察日期的外部产品研究。
+- [Issue](issues/README.md)：保留用户观察原文及处理关系。
 - [Engineering](engineering/README.md)：仓库自身的测试、维护、同步与 benchmark 机制。
 - [文档模板](_template/README.md)：Feature Design Package 与 Design Decision 的受管创建材料。
 
@@ -212,3 +213,5 @@ Git hook 的检查与安装从 [Repository Setup skill](../.agents/skills/reposi
 - 公开参考区块：修改源码 TSDoc / CLI flag JSDoc 后运行 `pnpm run repo docs reference`。
 - 公开中文文档：按 [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) 更新并运行 `pnpm run repo docs site validate`、`pnpm run repo docs site links`。
 - 示例：按 [`examples/README.md`](../examples/README.md) 与对应示例目录说明验证。
+
+Issue 的观察原文属于调查事实，不是产品设计契约；保留报告者用语，不按设计文档的润色规则改写。其 metadata 由当前 Issue Schema 严格检查。

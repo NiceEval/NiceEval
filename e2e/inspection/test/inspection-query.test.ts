@@ -25,7 +25,12 @@ const OPERATION_CATALOG = [
   "runs.compare",
 ] as const;
 
-test("machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实 [necase_79TQ9VGG316D8FK0]", async () => {
+// @feature docs/feature/inspection/README.md
+// @regression memory/analysis-usage-projection-conflates-conversation-limitations.md
+// @regression memory/inspection-overview-partial-cost-drops-known-samples.md
+// @regression memory/inspection-query-missing-overview-and-trace-detail.md
+
+test("machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实", async () => {
   await inspectionE2E.case(
     "inspection-query",
     { artifacts: inspectionCaseArtifacts() },

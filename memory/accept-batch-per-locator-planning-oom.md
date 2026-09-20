@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: accept-batch-per-locator-planning-oom
+title: 批量 `accept` 逐 locator 各自重跑完整 discovery + sandbox planning,137 条撑爆 4GB 堆
+createdAt: 2026-08-04T17:29:58+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/accept-batch-per-locator-planning-oom.md
+  commit: 4c23e6a66d281c7502a0baa17967ebf2283b6538
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [accept-batch-per-locator-planning-oom](accept-batch-per-locator-planning-oom.md) — 批量 `acceptLocators` 曾让每条 locator 各自并发重跑一遍完整 discovery + sandbox planning,137 条撑爆 4GB 堆;修为 discovery 只 hoist 一次、sandbox planning 按 experiment 记忆化、指纹计算共享 sourceCache、prepare 阶段加 8 并发小池(`src/runner/accept.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 批量 `accept` 逐 locator 各自重跑完整 discovery + sandbox planning,137 条撑爆 4GB 堆
 
 **现象**:下游一次 `niceeval accept @a @b …`(137 条 locator,对应 toggl-cli 一次系统性改动后

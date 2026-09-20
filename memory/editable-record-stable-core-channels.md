@@ -1,3 +1,32 @@
+---
+format: concord.document/v1
+id: editable-record-stable-core-channels
+title: 可编辑 Record 以稳定核心和局部通道替代全局 schema 升版
+createdAt: 2026-08-10T03:32:47+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/editable-record-stable-core-channels.md
+  commit: c9853a2d4694d3ed04bb4a05638c7f4a0983c505
+kind: memory
+memoryKind: decision
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 被后续裁决替代
+      [editable-record-stable-core-channels](editable-record-stable-core-channe\
+      ls.md) — 2026-08-09 曾选择可编辑当前数据集；2026-08-11 改为 immutable whole-Run
+      publication、lock-free reader 与 sibling local sidecar
+      [`record-durable-local-boundary.md`](record-durable-local-boundary.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-08-11
+supersededBy: memory/record-durable-local-boundary.md
+---
 # 可编辑 Record 以稳定核心和局部通道替代全局 schema 升版
 
 > 状态：已被 2026-08-11 的 [`record-durable-local-boundary.md`](record-durable-local-boundary.md) 替代。保留本页只为记录曾选方案；“发布后可编辑”“operation lock 覆盖所有操作”和相关 maintenance 结论不再是目标契约。

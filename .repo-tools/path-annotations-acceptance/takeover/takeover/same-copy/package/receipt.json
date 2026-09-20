@@ -1,0 +1,190 @@
+{
+  "repoId": "package",
+  "invocationIds": [
+    "bc49a1d5-4ad5-43fe-8771-2886bc1784bc",
+    "5e1fbd15-ebe2-42b7-a0e4-61b53ca3358b",
+    "f50f7341-b943-4d95-b502-fc7bccecfc02"
+  ],
+  "testInvocations": 2,
+  "copyId": "same-installed-copy",
+  "runLabel": "takeover/same-copy",
+  "sourceSnapshotDigest": "8ce61c167d0f7ea9a50e3339a1fb7d000eb4c4901984ef6a171a10d360c77eaa",
+  "artifactDir": "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/takeover/same-copy/package",
+  "receiptPath": "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/takeover/same-copy/package/receipt.json",
+  "stages": [
+    {
+      "stage": "preflight",
+      "ok": true,
+      "invocationId": "bc49a1d5-4ad5-43fe-8771-2886bc1784bc",
+      "checks": [
+        {
+          "kind": "runtime",
+          "subject": "node>=24",
+          "ok": true,
+          "detail": "node>=24 available",
+          "command": [
+            "node",
+            "--version"
+          ],
+          "capture": {
+            "exitCode": 0,
+            "signal": null,
+            "timedOut": false,
+            "cancelled": false,
+            "stdout": "v24.19.0\n",
+            "stderr": "",
+            "processGroupOwned": true,
+            "groupCleanup": {
+              "owned": true,
+              "checked": true,
+              "aliveAfterLeaderClose": false,
+              "groupId": 587865,
+              "signalsSent": [],
+              "gone": true,
+              "detail": "owned process group 587865 has no running members after leader close"
+            }
+          }
+        }
+      ],
+      "detail": "declared host capabilities available"
+    },
+    {
+      "stage": "prepare",
+      "ok": true,
+      "assets": [],
+      "detail": "source clean; no harness assets declared"
+    },
+    {
+      "stage": "install",
+      "ok": true,
+      "invocationId": "bc49a1d5-4ad5-43fe-8771-2886bc1784bc",
+      "command": [
+        "pnpm",
+        "install",
+        "--no-frozen-lockfile",
+        "--prefer-offline"
+      ],
+      "capture": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "cancelled": false,
+        "stdout": "✓ Lockfile passes supply-chain policies (verified 11d ago)\nProgress: resolved 1, reused 0, downloaded 0, added 0\n[WARN] 1 deprecated subdependencies found: glob@11.1.0\nPackages: +333\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nPackages are hard linked from the content-addressable store to the virtual store.\n  Content-addressable store is at: /home/ctrdh/.local/share/pnpm/store/v11\n  Virtual store is at:             node_modules/.pnpm\nProgress: resolved 418, reused 333, downloaded 0, added 109\nProgress: resolved 418, reused 333, downloaded 0, added 333, done\n\ndependencies:\n+ niceeval 0.0.0-development\n\ndevDependencies:\n+ @niceeval/testkit 0.1.0\n+ @types/node 24.13.3 (26.5.1 is available)\n+ e2b 2.31.0 (2.49.1 is available)\n+ esbuild 0.28.2\n+ typescript 5.9.3 (7.0.2 is available)\n+ vitest 4.1.11 (5.0.0 is available)\n\nDone in 2s using pnpm v11.18.0\n",
+        "stderr": "",
+        "processGroupOwned": true,
+        "groupCleanup": {
+          "owned": true,
+          "checked": true,
+          "aliveAfterLeaderClose": false,
+          "groupId": 587866,
+          "signalsSent": [],
+          "gone": true,
+          "detail": "owned process group 587866 has no running members after leader close"
+        }
+      },
+      "detail": "pnpm install ok"
+    },
+    {
+      "stage": "injection",
+      "ok": true,
+      "invocationId": "bc49a1d5-4ad5-43fe-8771-2886bc1784bc",
+      "detail": "candidate integrity matches lockfile"
+    },
+    {
+      "stage": "test",
+      "attempt": 1,
+      "invocationId": "5e1fbd15-ebe2-42b7-a0e4-61b53ca3358b",
+      "ok": true,
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "test/bub-e2b-template.test.ts",
+        "--testNamePattern",
+        "^Bub E2B factory 固定默认模型客户端并写匹配指纹$"
+      ],
+      "capture": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "cancelled": false,
+        "stdout": "\n RUN  v4.1.11 /tmp/niceeval-e2e-takeover-scratch-r8B1v5/runs/takeover/same-copy/package\n\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  19:10:46\n   Duration  220ms (transform 13ms, setup 0ms, import 101ms, tests 6ms, environment 0ms)\n\n",
+        "stderr": "",
+        "processGroupOwned": true,
+        "groupCleanup": {
+          "owned": true,
+          "checked": true,
+          "aliveAfterLeaderClose": false,
+          "groupId": 587949,
+          "signalsSent": [],
+          "gone": true,
+          "detail": "owned process group 587949 has no running members after leader close"
+        }
+      },
+      "detail": "test invocation 1 exited 0"
+    },
+    {
+      "stage": "test",
+      "attempt": 2,
+      "invocationId": "f50f7341-b943-4d95-b502-fc7bccecfc02",
+      "ok": true,
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "test/bub-e2b-template.test.ts",
+        "--testNamePattern",
+        "^Bub E2B factory 固定默认模型客户端并写匹配指纹$"
+      ],
+      "capture": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "cancelled": false,
+        "stdout": "\n RUN  v4.1.11 /tmp/niceeval-e2e-takeover-scratch-r8B1v5/runs/takeover/same-copy/package\n\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  19:10:48\n   Duration  214ms (transform 13ms, setup 0ms, import 100ms, tests 7ms, environment 0ms)\n\n",
+        "stderr": "",
+        "processGroupOwned": true,
+        "groupCleanup": {
+          "owned": true,
+          "checked": true,
+          "aliveAfterLeaderClose": false,
+          "groupId": 588086,
+          "signalsSent": [],
+          "gone": true,
+          "detail": "owned process group 588086 has no running members after leader close"
+        }
+      },
+      "detail": "test invocation 2 exited 0"
+    },
+    {
+      "stage": "collect",
+      "ok": true,
+      "collected": [],
+      "detail": "artifact collection completed"
+    },
+    {
+      "stage": "cleanup",
+      "ok": true,
+      "path": "/tmp/niceeval-e2e-takeover-scratch-r8B1v5/runs/takeover/same-copy/package",
+      "detail": "removed /tmp/niceeval-e2e-takeover-scratch-r8B1v5/runs/takeover/same-copy/package"
+    }
+  ],
+  "exitCode": 0,
+  "category": "pass",
+  "detail": "clean pass",
+  "candidate": {
+    "sha256": "bac12e9e2118c47fa663fca88e661bf1478efe19c7db6d8de1371887d559f8d4",
+    "integrity": "sha512-YG1d4ospZUHHvrXVJZDAteJi2zgoDn84t10BsMDsMUjlJvr7l8+Xpal12JqvC2JAyBzud+4PPwKWjPv020uyEQ==",
+    "artifactPath": "candidate/niceeval-candidate-bac12e9e2118c47fa663fca88e661bf1478efe19c7db6d8de1371887d559f8d4.tgz",
+    "reproduce": "pnpm e2e run --candidate /home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/candidate/niceeval-candidate-bac12e9e2118c47fa663fca88e661bf1478efe19c7db6d8de1371887d559f8d4.tgz --repo package",
+    "exactReplay": true
+  },
+  "testkit": {
+    "version": "0.1.0",
+    "sourcePath": "packages/testkit",
+    "resolvedPath": "node_modules/@niceeval/testkit",
+    "digest": "797a5b21cdefc2a667f9ffe98a0d1dbc838a46c353b835bc21f385b020b0f41a"
+  }
+}

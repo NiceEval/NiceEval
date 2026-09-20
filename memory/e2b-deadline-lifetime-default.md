@@ -1,8 +1,20 @@
 ---
-name: e2b-deadline-lifetime-default
+format: concord.document/v1
+id: e2b-deadline-lifetime-default
+title: e2b-deadline-lifetime-default
+createdAt: 2026-08-02T13:00:19+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2b-deadline-lifetime-default.md
+  commit: d5f7fd64a7443b5c3888d62a197b54e66da5c6cd
 description: Bounded E2B attempts without an explicit lifetimeMs inherited the E2B SDK default lifetime, so a longer attempt could lose its sandbox before diff and cleanup.
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 ## 现象

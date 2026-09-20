@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: regression-publication-does-not-bind-current-test-source
 title: regression publication 未重新核验当前测试源码和 red/green source
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # regression publication 未重新核验当前测试源码和 red/green source
 

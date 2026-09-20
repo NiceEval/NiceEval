@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: memory-author-update-gap
 title: Memory author updates lack a managed boundary
 createdAt: 2026-08-28
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 Changing a structured Memory author region without a dedicated CLI boundary risks rewriting history, legacy entries, or published authors.
 

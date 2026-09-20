@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: fixed-watchdog-findmnt-duplicate-mount-rows
 title: Fixed watchdog misreads duplicate findmnt rows in a systemd mount namespace
 createdAt: 2026-08-25T11:14:27+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # Fixed watchdog misreads duplicate findmnt rows in a systemd mount namespace
 

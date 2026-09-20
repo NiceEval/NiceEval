@@ -1,3 +1,6 @@
+// @concord-file ne-surface-plugin-contracts
+// @concord-implements docs/feature/plugins/README.md
+// @concord-implements docs/feature/compile-time-contracts/README.md
 // Plugin owns stable identity and scoped host setup/teardown. Its optional
 // command-only SandboxLayer is projected onto that host owner; templates,
 // configuration, and resource handles stay with their existing owners.
@@ -244,6 +247,8 @@ export function definePlugin<Options>(
 export function definePlugin<const Definition extends PluginDefinition<void> & AtLeastOneScope<void>>(
   definition: Definition & { readonly instanceKey?: never },
 ): () => PluginInstance<ScopesOf<Definition>>;
+// @concord-code ne-surface-define-plugin
+// @concord-implements docs/feature/plugins/library.md
 export function definePlugin(
   definition: PluginDefinition<any> & AtLeastOneScope<any>,
 ): (...args: readonly unknown[]) => PluginInstance<PluginOwner> {

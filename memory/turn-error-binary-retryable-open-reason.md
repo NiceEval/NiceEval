@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: turn-error-binary-retryable-open-reason
+title: turn 错误分类:二分决策 + 开放 reason,推翻三词封闭枚举
+createdAt: 2026-07-22T12:08:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/turn-error-binary-retryable-open-reason.md
+  commit: 5f98e3db8e585d4e07a19a0e22790929b8953dce
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # turn 错误分类:二分决策 + 开放 reason,推翻三词封闭枚举
 
 **裁决**(2026-07-22,用户 review 定案):turn 失败的分类结果是判别联合 `TurnErrorClass = { retryable: true, reason: string } | { retryable: false, reason?: string }`——顶层只有可重试/不可重试一个决策轴(执行体唯一消费面),`reason` 是开放词表的细分诊断(内建兜底产出 `rate_limit` / `network`,adapter 分类器可自造词),只进 activity 与耗尽摘要,不进任何分支。同场增加 attempt 级总重试上限(8 次,与单 send 封顶 4 次叠成两层预算)。

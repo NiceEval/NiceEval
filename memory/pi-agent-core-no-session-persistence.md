@@ -1,8 +1,20 @@
 ---
-name: pi-agent-core-no-session-persistence
+format: concord.document/v1
+id: pi-agent-core-no-session-persistence
+title: pi-agent-core-no-session-persistence
+createdAt: 2026-07-03T13:18:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pi-agent-core-no-session-persistence.md
+  commit: bd0e3e6aae8a54546a57ff973538f08e49bc4a7c
 description: pi SDK(@earendil-works/pi-agent-core)的 Agent 没有 Codex thread / Claude session 那种落盘 resume 机制,多轮会话必须由服务端自己保存并回灌 agent.state.messages
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：`examples/zh/origin/pi-sdk` demo 多轮对话上下文丢失——上一轮刚问"福建哪个城市"，用户答"福州"，模型却当成全新对话重新自我介绍。

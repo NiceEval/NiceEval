@@ -1,3 +1,7 @@
+// @concord-file ne-eval-record-score
+// @concord-implements docs/feature/assertions/library/score-points.md
+// @concord-implements docs/feature/verdict/README.md
+// @concord-implements docs/feature/eval/use-case/rubric-points.md
 import { Result, Schema } from "effect";
 import {
   ExactEvaluationParseOptions,
@@ -165,6 +169,9 @@ export function buildScorePayload(
 }
 
 /** Folds Score from the same immutable Record/Core facts as Verdict. */
+// @concord-code ne-eval-fold-score
+// @concord-implements docs/feature/assertions/library/score-points.md
+// @concord-implements docs/feature/eval/use-case/rubric-points.md
 export function foldRecordedAttemptScore(input: {
   readonly outcome: AttemptOutcome;
   readonly assertions: AssertionsAttachment;

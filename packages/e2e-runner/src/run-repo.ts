@@ -4,8 +4,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result, Scope } from "effect";
+import { projectExecutionSources } from "concord-sdlc/repository/source-identity";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
+import { collectCaseInventory, type InventoryExecutor } from "./inventory.ts";
 import { formatCause } from "./format-cause.ts";
+import { observeNativeTestResult } from "./native-observation.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
 import { verifyInjection } from "./injection.ts";
@@ -308,17 +311,40 @@ export const runCommand = (
     Effect.mapError((cause) => problem("<command>", "command", cause)),
   );
 
+export interface CaseSelectionExpectation {
+  readonly executor: InventoryExecutor;
+  readonly caseId: string;
+  readonly titlePath: readonly string[];
+  readonly checkout: string;
+  readonly only: boolean;
+}
+
 export interface RunRepoOptions {
+  readonly caseSelection?: CaseSelectionExpectation;
+  readonly caseCollectionNativeArgs?: readonly string[];
   readonly sourceDir?: string;
   readonly runLabel?: string;
   readonly workdirKey?: string;
   readonly testRuns?: number;
   readonly copyId?: string;
   readonly sourceSnapshotDigest?: string;
+  readonly sourceProjectionPrefix?: string;
   readonly keepWorkdir?: boolean;
   readonly logPrefix?: string;
   readonly selection?: SelectionReceipt;
 }
+const verifyExecutionProjection = (
+  repoId: string,
+  directory: string,
+  expectedDigest: string,
+  phase: string,
+  prefix: string,
+): Effect.Effect<void, RepoRunError> => Effect.try({
+  try: () => projectExecutionSources(directory, prefix),
+  catch: (cause) => problem(repoId, "run", `SourceSnapshotProjectionInvalid (${phase}): ${cause instanceof Error ? cause.message : String(cause)}`),
+}).pipe(Effect.flatMap((projection) => projection.digest === expectedDigest
+  ? Effect.void
+  : Effect.fail(problem(repoId, "run", `SourceSnapshotDrift (${phase}): expected ${expectedDigest}, got ${projection.digest}`))));
 const stage = (stages: StageReceipt[], value: StageReceipt): void => {
   stages.push(value);
 };
@@ -391,6 +417,8 @@ export const runRepoEffect = (
     const invocationIds: [string, ...string[]] = [randomUUID()];
     const secretValues = sensitiveEnvValues(process.env);
     const runs = options.testRuns ?? 1;
+    if ((options.sourceDir === undefined) !== (options.sourceSnapshotDigest === undefined) || (options.sourceDir !== undefined && options.sourceProjectionPrefix === undefined)) return yield* Effect.fail(problem(id, "run", "SourceSnapshotModeInvalid: sourceDir, sourceSnapshotDigest, and sourceProjectionPrefix must be supplied together"));
+    const sourceSnapshotDigest = options.sourceSnapshotDigest;
     const consumesTestkit = repo.manifest.harness?.testkit === true;
     if (!Number.isSafeInteger(runs) || runs < 1)
       return yield* Effect.fail(
@@ -466,7 +494,13 @@ export const runRepoEffect = (
     let exitCode: number | null = null;
     let testkitResolvedPath: string | undefined;
     if (preflight.ok) {
+      const sourceProjectionPrefix = options.sourceProjectionPrefix ?? "unavailable";
+      if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, options.sourceDir, sourceSnapshotDigest, "frozen-source-before-copy", sourceProjectionPrefix);
       yield* copyRepoIsolated(options.sourceDir ?? repo.dir, copy);
+      if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined) {
+        yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, "execution-copy-after-copy", sourceProjectionPrefix);
+        yield* verifyExecutionProjection(id, options.sourceDir, sourceSnapshotDigest, "frozen-source-after-copy", sourceProjectionPrefix);
+      }
       const declaredAssets = repo.manifest.harness?.assets ?? [];
       const harnessResult = yield* Effect.result(
         materializeHarnessAssets(repoRootDir(), copy, declaredAssets),
@@ -548,6 +582,7 @@ export const runRepoEffect = (
               : "pnpm install failed",
         });
         if (installOk) {
+          if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, "execution-copy-after-install", sourceProjectionPrefix);
           const injection = yield* Effect.exit(
             Effect.gen(function* () {
               const lockText = yield* fs(id, "run", (service) =>
@@ -636,6 +671,17 @@ export const runRepoEffect = (
               attempt > runs || !browser.ok
                 ? Effect.void
                 : Effect.gen(function* () {
+                    if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-before-test-${attempt}`, sourceProjectionPrefix);
+                    if (options.caseSelection !== undefined) {
+                      const expected = options.caseSelection;
+                      const inventory = yield* collectCaseInventory({ executor: expected.executor, repo: id, cwd: copy, checkout: expected.checkout, nativeArgs: options.caseCollectionNativeArgs ?? nativeArgs }).pipe(
+                        Effect.mapError((cause) => problem(id, "run", `CaseSelectionInvalid: ${cause.detail}`)),
+                      );
+                      if (inventory.cases.filter((entry) => entry.caseId === expected.caseId).length !== 1 || (expected.only && inventory.cases.length !== 1) || inventory.unassignedCases.length > 0) {
+                        return yield* Effect.fail(problem(id, "run", `CaseSelectionMismatch: expected ${expected.only ? "only " : ""}${expected.caseId}, collected ${inventory.cases.length} cases`));
+                      }
+                      if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-collection-${attempt}`, sourceProjectionPrefix);
+                    }
                     const invocation = randomUUID();
                     invocationIds.push(invocation);
                     const command = [
@@ -654,8 +700,15 @@ export const runRepoEffect = (
                       repo.manifest.timeoutMinutes * 60_000,
                       options.logPrefix,
                     );
+                    if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-test-${attempt}`, sourceProjectionPrefix);
                     exitCode = result.exitCode;
                     const ok = commandCaptureOk(result);
+                    const native = options.caseSelection === undefined
+                      ? undefined
+                      : Result.try({
+                          try: () => observeNativeTestResult(options.caseSelection!.executor, result.stdout, options.caseSelection!),
+                          catch: (cause) => cause instanceof Error ? cause.message : String(cause),
+                        });
                     stage(stages, {
                       stage: "test",
                       attempt,
@@ -667,6 +720,11 @@ export const runRepoEffect = (
                         redactSecretCapture(result, secretValues),
                         ok,
                       ),
+                      ...(native === undefined
+                        ? {}
+                        : Result.isSuccess(native)
+                          ? { native: native.success }
+                          : { nativeObservationError: native.failure }),
                       detail: result.cancelled
                         ? `cancelled during test invocation ${attempt}`
                         : ok

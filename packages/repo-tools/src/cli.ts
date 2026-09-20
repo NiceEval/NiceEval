@@ -1,5 +1,4 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
-import { OwnedProcessLive } from "@niceeval/e2e-runner/inventory";
 import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
 import { Clock, Data, Effect, FileSystem, Layer, Option } from "effect";
 
@@ -280,15 +279,15 @@ const feedbackReopen = Command.make("reopen", {
   json: jsonOption,
 }, ({ dryRun, id, json }) => runFeedbackCommand({ operation: "reopen", id, dryRun }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
-)).pipe(Command.withDescription("Reopen closed Feedback."));
+)).pipe(Command.withDescription("Reopen closed Issue."));
 
 const feedbackCheck = Command.make("check", { json: jsonOption }, ({ json }) =>
   runFeedbackCommand({ operation: "check" }).pipe(
     Effect.flatMap((outcome) => emit(outcome, json)),
-  )).pipe(Command.withDescription("Validate Feedback, relations, closures, and migration provenance."));
+  )).pipe(Command.withDescription("Validate Issues, relations, and closures."));
 
 const feedback = Command.make("feedback").pipe(
-  Command.withDescription("Audit, relate, close, and validate legacy repository Feedback."),
+  Command.withDescription("Audit, relate, close, and validate repository Issues."),
   Command.withSubcommands([
     feedbackImport,
     feedbackExport,
@@ -324,16 +323,16 @@ const memoryAdd = Command.make("add", {
   Effect.flatMap(({ body: source, createdAt }) => runMemoryCommand({
     operation: "add",
     metadata: {
-      format: "niceeval.memory/v1",
+      format: "concord.document/v1",
       id,
       title,
       createdAt,
-      kind: kind === "problem"
-        ? { type: kind, state: "open" }
-        : kind === "decision"
-          ? { type: kind, state: "adopted" }
-          : { type: kind, state: "current" },
+      kind: "memory",
+      memoryKind: kind,
+      state: kind === "problem" ? "open" : kind === "note" ? "captured" : "current",
+      epoch: 0,
       promotions: [],
+      history: [],
     },
     body: source,
     dryRun,
@@ -343,7 +342,7 @@ const memoryAdd = Command.make("add", {
 
 const memoryList = Command.make("list", { json: jsonOption }, ({ json }) =>
   runMemoryCommand({ operation: "list" }).pipe(Effect.flatMap((outcome) => emit(outcome, json)))).pipe(
-  Command.withDescription("List structured and legacy Memory."),
+  Command.withDescription("List current-format Memory."),
 );
 const memoryShow = Command.make("show", {
   id: Args.string("memory-id"),
@@ -378,20 +377,27 @@ const memoryAuthor = Command.make("author").pipe(
 const memoryResolve = Command.make("resolve", {
   id: Args.string("memory-id"),
   kind: Options.choice("kind", PROBLEM_RESOLUTION_KINDS),
-  proof: Options.string("proof").pipe(
-    Options.atLeast(1),
-    Options.withDescription("Resolution evidence; repeat for each proof item."),
-  ),
+  reason: Options.string("reason"),
+  at: Options.string("at").pipe(Options.optional),
   dryRun: dryRunOption,
   json: jsonOption,
-}, ({ dryRun, id, json, kind, proof }) => runMemoryCommand({
+}, ({ at, dryRun, id, json, kind, reason }) => runMemoryCommand({
   operation: "resolve",
   id,
-  resolution: { kind, proof },
+  resolution: { kind, reason, ...(Option.isSome(at) ? { at: at.value } : {}) },
   dryRun,
 }).pipe(
   Effect.flatMap((outcome) => emit(outcome, json)),
 )).pipe(Command.withDescription("Resolve one structured Problem Memory."));
+
+const memoryActivate = Command.make("activate", {
+  id: Args.string("memory-id"),
+  reason: Options.string("reason"),
+  dryRun: dryRunOption,
+  json: jsonOption,
+}, ({ dryRun, id, json, reason }) => runMemoryCommand({ operation: "activate", id, reason, dryRun }).pipe(
+  Effect.flatMap((outcome) => emit(outcome, json)),
+)).pipe(Command.withDescription("Activate one captured Problem, Decision, or Insight Memory."));
 
 const memoryReopen = Command.make("reopen", {
   id: Args.string("memory-id"),
@@ -441,6 +447,7 @@ const memory = Command.make("memory").pipe(
     memoryShow,
     memorySearch,
     memoryAuthor,
+    memoryActivate,
     memoryResolve,
     memoryReopen,
     memorySupersede,
@@ -1006,7 +1013,6 @@ const root = Command.make("niceeval-repo").pipe(
 
 const live = Layer.mergeAll(
   NodeServices.layer,
-  OwnedProcessLive,
   NodeFeedbackStoreLive(ROOT),
   NodeMemoryStoreLive(ROOT),
   makeNodePrLive(ROOT).pipe(Layer.provide(NodeServices.layer)),

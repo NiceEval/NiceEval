@@ -7,7 +7,8 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertionEntries, inspectAttempt, inspectRunSummary } from "./inspection.ts";
 
-test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止 [necase_EFV616D6SD28DHFE]", async () => {
+// @feature docs/feature/assertions/README.md
+test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止", async () => {
   await evalE2E.case(
     "score",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

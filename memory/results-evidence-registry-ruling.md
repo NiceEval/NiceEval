@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: results-evidence-registry-ruling
+title: 裁决:证据家族收敛为 registry 表,`has*` 布尔族换 `artifacts` 列表,o11y 正名派生缓存(2026-07-23)
+createdAt: 2026-07-23T17:20:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/results-evidence-registry-ruling.md
+  commit: a3ea06e7455d56adca17ccb393c2ccd0b2f46bd8
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:证据家族收敛为 registry 表,`has*` 布尔族换 `artifacts` 列表,o11y 正名派生缓存(2026-07-23)
 
 **裁决**:attempt 级 artifact 的横切属性(词干、存储形态、类型、截断策略、`copySnapshots` 缺省、存在性声明)收敛为 `docs/feature/results/architecture.md#证据-registry` 一张表,writer / reader / copySnapshots / 截断 / `view --out` 复制全部由表驱动,新增证据 = 加一行。配套三项:① `AttemptRecord.hasEvents/hasTrace/hasSources/hasCommands` 四个布尔删除,换统一 `artifacts?: string[]`(词干列表,消解「四有二无」不对称);② `schemaVersion` 8→9(破坏性);③ `o11y.json` 移除 usage、估算成本与 durationMs 字段,只留行为计数,正名为「同版本派生缓存,删除可重算」——token/成本/耗时权威唯一在 `result.json`(`Usage` / `estimatedCostUSD` / `durationMs` 与 `phases`);durationMs 是对抗校验(V1)发现后补的同批扩展:runner 计时不是事件流派生物,留在 o11y 会破坏「可从 events 重算」的缓存契约。传播落点见 `plan/evidence-registry-slice-components.md`。

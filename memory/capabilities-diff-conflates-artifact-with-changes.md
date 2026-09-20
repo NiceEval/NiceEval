@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: capabilities-diff-conflates-artifact-with-changes
+title: "`capabilities.diff` 不是「有 diff 证据」,拿它当投影的门会误报缺证据"
+createdAt: 2026-07-30T10:40:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/capabilities-diff-conflates-artifact-with-changes.md
+  commit: 2b81795f51e24d5130ccc06b4ea2fce48ccfb2c1
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-conflates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当 attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按 artifact 在不在开门,空清单与无证据分成两态"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # `capabilities.diff` 不是「有 diff 证据」,拿它当投影的门会误报缺证据
 
 ## 现象

@@ -275,7 +275,7 @@ export function editorInputFinding(input: EditPrBodyInput): string | undefined {
     return "test case narrative fields must each be one line";
   }
   if (input.operation === "test-set") {
-    if (!/^e2e\/.+#necase_[0-9A-HJKMNP-TV-Z]{16}$/.test(input.selector)) return "test selector must be e2e/<path>#necase_<16 Crockford characters>";
+    if (!/^e2e\/.+#neref_[0-9a-f]{32}$/.test(input.selector)) return "test selector must identify a derived test reference in e2e/<path>";
     if (input.fragmentFrom.length !== input.fragmentThrough.length) {
       return "--fragment-from and --fragment-through must be repeated the same number of times";
     }

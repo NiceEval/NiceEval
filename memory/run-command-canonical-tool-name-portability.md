@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: run-command-canonical-tool-name-portability
+title: 断言"跑过 shell"要用规范名 `"shell"`,不要用某一家的原始工具名
+createdAt: 2026-07-09T10:27:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/run-command-canonical-tool-name-portability.md
+  commit: 6307c5013a42de8319771585941765b56d1c25f4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 断言"跑过 shell"要用规范名 `"shell"`,不要用某一家的原始工具名
 
 **现象**：`e2e/shared/evals.ts` 既有的 `runCommand(p)` factory 断言
