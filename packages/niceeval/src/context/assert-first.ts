@@ -1,3 +1,4 @@
+import type { ExperimentFlags } from "../shared/types.ts";
 /**
  * The active Eval context. Assertion authoring deliberately enters through
  * `AssertionsRuntime`; this module never constructs an intermediate Fact or
@@ -149,7 +150,7 @@ export interface AssertFirstCoreContextState {
 export interface AssertFirstCoreContextDeps {
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   readonly signal: AbortSignal;
   readonly log: (message: string) => void;
   readonly feedback?: import("../types.ts").ScopedFeedback;
@@ -163,7 +164,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   progress(update: import("../types.ts").ProgressUpdate): void;
   diagnostic(input: import("../types.ts").DiagnosticInput): void;
   log(message: string): void;
@@ -187,7 +188,7 @@ export interface AssertFirstContextDeps {
   /** defineConfig({ pricing }) 的价目表,只供 maxCost 的 estimatedCostUSD 估算(estimateCost);与 observed usage.costUSD 无关。 */
   readonly pricing?: globalThis.Record<string, PriceOverride>;
   readonly reasoningEffort?: string;
-  readonly flags: globalThis.Record<string, JsonValue>;
+  readonly flags: ExperimentFlags;
   readonly experimentId?: string;
   readonly signal: AbortSignal;
   readonly log: (message: string) => void;
@@ -353,7 +354,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = JudgePresetMethod
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   progress(update: import("../types.ts").ProgressUpdate): void;
   diagnostic(input: import("../types.ts").DiagnosticInput): void;
   log(message: string): void;

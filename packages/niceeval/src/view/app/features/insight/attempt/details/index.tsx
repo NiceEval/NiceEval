@@ -21,11 +21,14 @@ function Kpi({ label, value }: { readonly label: string; readonly value: string 
 
 export function AttemptSummary({ locator, data, locale }: { readonly locator: string; readonly data: AttemptSummaryData; readonly locale: ReportLocale }): ReactElement {
   const { t } = useTranslation();
+  // totalScore is projected only from a complete score. Zero is a completed
+  // assessment too; the canonical Verdict remains unchanged in the model.
+  const scored = data.verdict === "passed" && data.totalScore !== undefined;
   const adapter = `${data.adapter.name} · ${data.adapter.contract} · ${data.adapter.behaviorRevision === null
     ? t("attempt.adapterRevisionNotDeclared")
     : data.adapter.behaviorRevision}`;
   return <div className="niceeval-attempt-summary">
-    <div className="niceeval-attempt-summary-head"><span className={`niceeval-verdict-pill niceeval-verdict-${data.verdict}`}>{t(`attempt.verdict.${data.verdict}`)}</span><span className="niceeval-attempt-summary-locator">{locator}</span></div>
+    <div className="niceeval-attempt-summary-head"><span className={`niceeval-verdict-pill niceeval-verdict-${data.verdict}`}>{scored ? t("attempt.scoreCompleted") : t(`attempt.verdict.${data.verdict}`)}</span><span className="niceeval-attempt-summary-locator">{locator}</span></div>
     <div className="niceeval-grid niceeval-attempt-summary-kpis"><Kpi label={t("attempt.experiment")} value={data.experimentId} /><Kpi label={t("attempt.adapter")} value={adapter} /><Kpi label={t("attempt.eval")} value={data.identity.evalId} /><Kpi label={t("attempt.title")} value={data.identity.attempt.state === "available" ? String(data.identity.attempt.value + 1) : "—"} />{data.totalScore === undefined ? null : <Kpi label={t("attempt.score")} value={formatPoints(data.totalScore, locale)} />}{data.startedAt === undefined ? null : <Kpi label={t("attempt.started")} value={formatInstant(data.startedAt, locale)} />}<Kpi label={t("attempt.duration")} value={data.durationMs.state === "available" ? formatDurationMs(data.durationMs.value) : "—"} />{data.observedCostUSD === undefined ? null : <Kpi label={t("attempt.cost")} value={formatUSD(data.observedCostUSD)} />}</div>
   </div>;
 }

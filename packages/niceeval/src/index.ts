@@ -42,6 +42,8 @@ export type {
   StreamEvent,
   ToolName,
   JsonValue,
+  FlagValue,
+  ExperimentFlags,
   JsonMatch,
   Usage,
   Turn,
@@ -127,6 +129,7 @@ export type { ParsedTranscript } from "./o11y/parsers/index.ts";
 
 export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
 export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
-
 export type { JudgeProvider, JudgeSelection } from "./judge/index.ts";
 export { MigrationRequiredError, type MigrationOccurrence, type ErrorSource } from "./error-assistance/index.ts";
+export type { AdapterUsageInput } from "./adapter-usage.ts";
+export type { AdapterAttachmentInput, AdapterAttachmentReceipt } from "./adapter-attachments.ts";

@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/inspection/test/artifacts-limits.test.ts",
+  "current": {
+    "necase_4G8QVYJM9TW1HDSX": {
+      "owner": "docs/engineering/testing/e2e/inspection.md#artifact-limits",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_4G8QVYJM9TW1HDSX",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_aa737e1715504adcadcb24b629f6cf04",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/inspection.md#artifact-limits"
+      }
+    }
+  ],
+  "tombstones": []
+}

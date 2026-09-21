@@ -191,3 +191,21 @@ Judge Provider 按项目、Eval、Experiment 优先级整体替换；模型字�
 Contract: [docs/feature/error-assistance/use-case/read-grouped-errors.md](../../../feature/error-assistance/use-case/read-grouped-errors.md)
 
 多个 Attempt 缺少同一 Judge 凭据时，保留各自结果并集中显示修复提示与次数。
+## Adapter flags 在启动前同步校验并复制冻结规范化结果。 {#adapter-parse-flags}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
+
+Adapter flags 在启动前同步校验并复制冻结规范化结果。
+## 规范化 flags 与行为 revision 决定缓存复用身份。 {#adapter-flags-identity}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/README.md](../../../feature/experiments/README.md)
+
+规范化 flags 与行为 revision 决定缓存复用身份。
+## 外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。 {#external-usage}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
+
+外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。

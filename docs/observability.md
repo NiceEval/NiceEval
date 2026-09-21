@@ -1,7 +1,7 @@
 # Observability —— 运行反馈、持久观测与 Inspection
 
 Observability 有两条边界。运行中的反馈只服务当前进程；停稳后的观测写入 Record。Record durable
-catalog 按 capture authority 固定为五个 source family。固定 Inspection operation 从这些 source 关闭 conversation、usage、
+catalog 按 capture authority 固定为六个 source family。固定 Inspection operation 从这些 source 关闭 conversation、usage、
 commands、timing、diagnostics 与 source navigation；Delivery 只消费闭合 operation result。
 
 本页是 Observability 领域的唯一入口。字段、限制、seal 和读取语义的精确 durable schema 由
@@ -18,7 +18,7 @@ Adapter / SessionManager / Sandbox / Runner
         └─ 收集、脱敏、seal
                          │
                          ▼
-     五个 fixed Observability source family
+     六个 fixed Observability source family
                          │
                          ▼
        Record Host source read → fixed Inspection operation → query | View
@@ -27,18 +27,19 @@ Adapter / SessionManager / Sandbox / Runner
 终端进度、心跳、活动行与临时计数不进入 Record。进程退出后，只有已发布 Run 内的
 RecordAttachment 只能由固定 query operation 或 View 读取。
 
-## 五个 source family，五个 capture authority
+## 固定 source family 与 capture authority
 
 | family | owner | capture authority | durable fact |
 |---|---|---|---|
+| `niceeval.adapter-usage` | Attempt | Adapter 显式采集 | 已登记外部调用的最终用量快照 |
 | `niceeval.agent-turns` | Attempt | Adapter | 解释并脱敏后的 terminal Turn 与 provider usage observation |
 | `niceeval.turn-contexts` | Attempt | SessionManager | 每个物理 `t.send` 当时已知的 source context |
 | `niceeval.sandbox-commands` | Attempt | Sandbox wrapper | command manifest、唯一终态与安全 stream |
 | `niceeval.runner-activities` | Attempt、Run | 对应 owner 的 Runner monotonic clock | activity、phase、anchor 与区间 |
 | `niceeval.runner-diagnostics` | Attempt、Run | 对应 owner 的 Runner diagnostic sink | advisory 与 execution error |
 
-这五项与 `niceeval.assertions`、`niceeval.file-changes`、`niceeval.sources`、`niceeval.artifacts` 共同组成
-Record 的九项 fixed catalog；各自 owner 由 catalog 声明。
+这些 source 与 `niceeval.assertions`、`niceeval.file-changes`、`niceeval.sources`、`niceeval.artifacts` 共同组成
+Record 的 fixed catalog；各自 owner 由 catalog 声明。
 
 一个 capture authority 只能保存自己亲历且有权解释的事实。reference Member 沿精确 origin Attempt 读取，
 不复制 source payload。conversation、usage、commands、timing、diagnostics 与 source navigation 都是读侧投影，
@@ -115,6 +116,9 @@ provider 或 hostile filesystem 的安全沙箱。
 secret 或任意 JSON。诊断是观测事实，不自动改变 assertion outcome 或 reuse decision。
 
 ## 用量、成本与时间
+
+普通 Adapter 通过 `recordUsage()` 上报每次物理外部调用，保存于 `niceeval.adapter-usage`。
+它不生成 Turn，也不证明全部外部调用都已上报；没有登记事实时保持 `not-recorded`。
 
 `niceeval.agent-turns` 保存原子 usage observation，而非 Attempt 总计。token bucket、一个 request 与一笔
 provider observed cost 各自是一项 observation。provider cost 只承载上游如实带回的事实，不承载任何估算；

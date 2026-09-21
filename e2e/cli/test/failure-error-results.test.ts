@@ -230,6 +230,34 @@ test.concurrent("计分制与通过制 Human 结束摘要显示各自主读数 [
       expect(scored.stdout).toContain("1 scored · 0 failed · 0 skipped · 0 errored");
       expect(scored.stdout).not.toContain("1 passed · 0 failed");
 
+      const zero = await niceeval.run(["exp", "score-feedback", "score-feedback/zero", "--rerun", "all"]);
+      expect(zero.exitCode, zero.diagnostic()).toBe(0);
+      expect(zero.stdout).toContain("SCORED");
+      expect(zero.stdout).toContain("0 score · 1/1 ranked");
+      expect(zero.stdout).not.toContain("1 passed");
+
+      const zeroJson = await niceeval.run(["exp", "score-feedback", "score-feedback/zero", "--rerun", "all", "--json"]);
+      expect(zeroJson.exitCode, zeroJson.diagnostic()).toBe(0);
+      const zeroEval = only(zeroJson.expEvalEvents(), (event) => event.evalId === "score-feedback/zero");
+      expect(zeroEval.verdict).toBe("passed");
+      const zeroShow = await niceeval.run(["show", zeroEval.locator!]);
+      expect(zeroShow.exitCode, zeroShow.diagnostic()).toBe(0);
+      expect(zeroShow.stdout).toMatch(/scored|score completed/iu);
+
+      const gated = await niceeval.run(["exp", "score-feedback", "score-feedback/gated", "--rerun", "all"]);
+      expect(gated.exitCode, gated.diagnostic()).toBe(1);
+      expect(gated.stdout).toContain("FAILED");
+      expect(gated.stdout).toContain("2 score · failed · unranked");
+      expect(gated.stdout).toContain("0 scored · 1 failed");
+      expect(gated.stdout).not.toContain("SCORED");
+
+      const partial = await niceeval.run(["exp", "score-feedback", "score-feedback/partial", "--rerun", "all"]);
+      expect(partial.exitCode, partial.diagnostic()).toBe(1);
+      expect(partial.stdout).toContain("ERRORED");
+      expect(partial.stdout).toContain("≥3 score · partial");
+      expect(partial.stdout).toContain("0 scored");
+      expect(partial.stdout).not.toContain("SCORED");
+
       const passed = await niceeval.run(["exp", "normal", "greet", "--rerun", "all"]);
       expect(passed.exitCode, passed.diagnostic()).toBe(0);
       expect(passed.stderr).toBe("");

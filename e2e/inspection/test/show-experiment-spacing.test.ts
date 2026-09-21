@@ -17,11 +17,11 @@ test.concurrent("Show 把 Experiment 标题和自己的内容排在同一段 [ne
       expect(overview.stdout).toContain([
         "Attempts · harness",
         "  Experiment harness/alternate",
-        "  1 passed Attempts hidden",
+        "  1 scored Attempts hidden",
         "  See more  niceeval show --experiment harness/alternate",
         "  ",
         "  Experiment harness/canary",
-        "  1 passed Attempts hidden",
+        "  1 scored Attempts hidden",
         "  See more  niceeval show --experiment harness/canary",
       ].join("\n"));
     },

@@ -1,4 +1,4 @@
-import type { JsonValue } from "../shared/types.ts";
+import type { ExperimentFlags } from "../shared/types.ts";
 import type { AdapterIdentity } from "../record/model/run-context.ts";
 import type { EvaluationKind } from "./types.ts";
 
@@ -21,7 +21,7 @@ export interface ProjectCurrentExperimentTarget {
   readonly adapter: AdapterIdentity;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: globalThis.Record<string, JsonValue>;
+  readonly flags: ExperimentFlags;
   readonly labels?: globalThis.Record<string, string | number>;
   readonly description?: string;
   readonly evals: readonly ProjectCurrentEvalTarget[];

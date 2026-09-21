@@ -156,6 +156,9 @@ Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一�
 
 Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换，阶段与计数可以更新。持久业务事实只能进入 Core 或 NiceEval 固定的 Attachment；没有通用持久化 writer。
 
+非 TTY Human 将活跃 Attempt 的短 detail 作为纯文本追加到 stdout，每行保留 Experiment、Eval 和从 1 开始的 Attempt 序号。每个 Attempt 最多每秒输出一次变化后的 detail；高频更新合并为最新值，相同阶段与文本不重复输出。
+短于采样间隔的 detail 可以省略，已结束 Attempt 不补写历史进度。进度输出重置 30 秒空闲 heartbeat，TTY 继续使用动态面板。
+
 每次 Agent send 开始时，Runner 在当前 Attempt 显示 `user: <message>`。
 具备可信增量协议的 Adapter 可以随后用 `tool: <name> <input>` 或其它原生 activity 替换当前 detail。
 两者都只走 `progress()`，不进入 timeout breadcrumb；退出后才读取到的 transcript 不能回填成实时 detail。
@@ -258,6 +261,8 @@ generation，错误/旧 token 不会修改 lease，也不能删除恢复后的�
 TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS` 和下一步命令。它不持久化成另一份结果文档。
 完整的通过场景见[正常完成输出案例](output/completed-run.md)。
 
+Pass 与 Score 的终态摘要都显示尚未启动的 Attempt 数量；fail-fast 停止派发的 slot 计为 `not started`，不计为 `skipped`。
+
 结果标题是人类结果摘要，不是 `InvocationReceipt.completion` 的别名。正常发布后的优先级固定为：
 
 1. 有 execution error：`ERRORED`；
@@ -268,7 +273,8 @@ TTY 结束反馈显示 Invocation completion、Run ID、终态计数、`RESULTS`
 Pass 与 Score 混型在 Invocation planning 前拒绝，不进入结束标题折叠。
 
 预算耗尽和无法解释的 `not-dispatched` 是结果缺口；已满足契约的 early exit 不是缺口。受控中断
-显示 `INTERRUPTED`，Record 发布失败显示 `FAILED TO PUBLISH`，两者不冒充正常结果摘要。标题不替代退出码：
+显示 `INTERRUPTED`，中断提示只说明正在输出部分结果，不声称已经终止或删除未创建的 Sandbox 容器。
+Record 发布失败显示 `FAILED TO PUBLISH`，两者不冒充正常结果摘要。标题不替代退出码：
 Pass 未通过、Score gate 失败、execution error、结果缺口、中断和发布失败均保持非零退出；`passed + complete`
 的 Score 结果即使 earned 为 `0`，仍是成功的 `SCORED`。`failed + complete` 保留 earned score，但不能触发成功标题。
 
@@ -279,9 +285,10 @@ Pass 未通过、Score gate 失败、execution error、结果缺口、中断和�
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
 合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟所属 Run 的
 `details: niceeval view --run <runId>`。命令打开固定 View 后，人类从页面的 Run/Attempt 导航选择该 locator 对应的
-Attempt。
+Attempt。`FAILURES` 的 `entries` 表示展示条目数，不表示错误种类数；同形断言可占一个条目，每条执行错误独占一个条目。
 
 错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条摘要预算收口并在送进 panel 前按显示宽度折行；
+预算内的安全消息完整保留，不因其中出现 HTTP 状态或大写错误码而删除前文。
 “真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
 [Attempt 失败输出案例](output/attempt-failures.md)。
 

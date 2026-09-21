@@ -1,3 +1,11 @@
+import type { ExperimentFlags } from "./shared/types.ts";
+import {
+  assertAdapterFlagsParser,
+  type AdapterFlagsParser,
+  type AdapterFlagsOutput,
+  type AdapterFlagsParserValidation,
+  type AdapterFlagsParserValidationArgs,
+} from "./adapter-flags.ts";
 import type {
   AssertionCheck,
   AssertionSubject,
@@ -12,7 +20,7 @@ import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
 import type { JudgePresetMethods } from "./context/assert-first.ts";
-import type { DiagnosticInput, JsonValue, ProgressUpdate } from "./shared/types.ts";
+import type { DiagnosticInput, ProgressUpdate } from "./shared/types.ts";
 import type { AdapterIdentity } from "./record/model/run-context.ts";
 export type { AdapterIdentity } from "./record/model/run-context.ts";
 
@@ -153,8 +161,8 @@ type AdapterAssertionsValidationArgs<
   ? []
   : [error: { readonly invalidAdapterAssertions: InvalidAdapterAssertions<Context, Assertions> }];
 
-type AdapterFactory<Context extends object> = (
-  context: AdapterCreateContext,
+type AdapterFactory<Context extends object, Flags extends AdapterFlagsParser = undefined> = (
+  context: AdapterCreateContext<AdapterFlagsOutput<Flags>>,
 ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
 
 export interface AdapterCleanupContext {
@@ -162,7 +170,9 @@ export interface AdapterCleanupContext {
   readonly signal: AbortSignal;
 }
 
-export interface AdapterCreateContext {
+export interface AdapterCreateContext<Flags = ExperimentFlags> {
+  recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
+  attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
   /** 当前 Eval 的公开 ID。 */
   readonly evalId: string;
   /** 当前 Experiment 的公开 ID。 */
@@ -176,7 +186,7 @@ export interface AdapterCreateContext {
   /** Experiment 选择的推理强度。 */
   readonly reasoningEffort?: string;
   /** Experiment 传给 Adapter 的只读 flags。 */
-  readonly flags: Readonly<Record<string, JsonValue>>;
+  readonly flags: Flags;
   /** 更新当前 Attempt 的人读进度。 */
   progress(update: ProgressUpdate): void;
   /** 为当前 Attempt 追加结构化诊断。 */
@@ -190,12 +200,12 @@ export interface AdapterCreateContext {
   onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
 }
 
-type EvalContextBase<Kind extends EvaluationKind> = JudgePresetMethods<Kind> & {
+type EvalContextBase<Kind extends EvaluationKind, Flags> = JudgePresetMethods<Kind> & {
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<Record<string, JsonValue>>;
+  readonly flags: Flags;
   progress(update: ProgressUpdate): void;
   diagnostic(input: DiagnosticInput): void;
   log(message: string): void;
@@ -209,7 +219,7 @@ type EvalContextBase<Kind extends EvaluationKind> = JudgePresetMethods<Kind> & {
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */
-export type EvalContext<Kind extends EvaluationKind = "pass"> = EvalContextBase<Kind> &
+export type EvalContext<Kind extends EvaluationKind = "pass", Flags = ExperimentFlags> = EvalContextBase<Kind, Flags> &
   (Kind extends "score" ? { readonly score: AssertionsRuntime<"score">["t"]["score"] } : {});
 
 type AdapterEvalFields = Omit<EvalInput<undefined>, "test" | "sandbox" | "diff"> & {
@@ -225,27 +235,31 @@ type AdapterScoreEvalFields = Omit<ScoreEvalInput<undefined>, "test" | "sandbox"
 export type AdapterEvalInput<
   Context extends object,
   Assertions extends object | undefined = undefined,
+  Flags extends AdapterFlagsParser = undefined,
 > = AdapterEvalFields & {
   test(
-    t: EvalContext<"pass"> & Readonly<Context> & AdapterAssertionsFor<Assertions, "pass">,
+    t: EvalContext<"pass", AdapterFlagsOutput<Flags>> & Readonly<Context> & AdapterAssertionsFor<Assertions, "pass">,
   ): void | Promise<void>;
 };
 
 export type AdapterScoreEvalInput<
   Context extends object,
   Assertions extends object | undefined = undefined,
+  Flags extends AdapterFlagsParser = undefined,
 > = AdapterScoreEvalFields & {
   test(
-    t: EvalContext<"score"> & Readonly<Context> & AdapterAssertionsFor<Assertions, "score">,
+    t: EvalContext<"score", AdapterFlagsOutput<Flags>> & Readonly<Context> & AdapterAssertionsFor<Assertions, "score">,
   ): void | Promise<void>;
 };
 
 interface AdapterContractToken<
   Context extends object,
   Assertions extends object | undefined,
+  Flags extends AdapterFlagsParser = undefined,
 > {
   readonly name: string;
   readonly assertions: AdapterAssertionsFactory<Context> | undefined;
+  readonly parseFlags: Flags;
   /** Keeps the Assertion method shape invariant without exposing a constructible brand. */
   readonly assertionTypes: (value: Assertions) => Assertions;
   /** Keeps the context parameter invariant without exposing a constructible brand. */
@@ -256,12 +270,13 @@ export interface AdapterEvalDefinition<
   Kind extends EvaluationKind,
   Context extends object,
   Assertions extends object | undefined = undefined,
+  Flags extends AdapterFlagsParser = undefined,
 > extends EvalDefinition<
     Kind,
-    EvalContext<Kind> & Readonly<Context> & AdapterAssertionsFor<Assertions, Kind>,
+    EvalContext<Kind, AdapterFlagsOutput<Flags>> & Readonly<Context> & AdapterAssertionsFor<Assertions, Kind>,
     undefined
   > {
-  readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions>;
+  readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
 }
 
 /** @internal Existential discovery view; concrete bound factories retain their exact Context. */
@@ -274,16 +289,19 @@ export interface AdapterRuntimeEvalDefinition<Kind extends EvaluationKind>
 export interface AdapterDefinition<
   Context extends object,
   Assertions extends object | undefined = undefined,
+  Flags extends AdapterFlagsParser = undefined,
 > {
   readonly name: string;
-  defineEval(input: AdapterEvalInput<Context, Assertions>): AdapterEvalDefinition<"pass", Context, Assertions>;
+  readonly parseFlags: Flags;
+  defineEval(input: AdapterEvalInput<Context, Assertions, Flags>): AdapterEvalDefinition<"pass", Context, Assertions, Flags>;
   defineScoreEval(
-    input: AdapterScoreEvalInput<Context, Assertions>,
-  ): AdapterEvalDefinition<"score", Context, Assertions>;
+    input: AdapterScoreEvalInput<Context, Assertions, Flags>,
+  ): AdapterEvalDefinition<"score", Context, Assertions, Flags>;
 }
 
 /** Existential runtime view used by Experiment without erasing a concrete context to `any`. */
 export interface AdapterRuntimeDefinition {
+  readonly parseFlags?: Exclude<AdapterFlagsParser, undefined>;
   readonly kind: "custom";
   readonly name: string;
   readonly contract: string;
@@ -291,45 +309,52 @@ export interface AdapterRuntimeDefinition {
   readonly [ADAPTER_CONTRACT_TOKEN]: object;
   readonly defineEval: (...args: never[]) => unknown;
   readonly defineScoreEval: (...args: never[]) => unknown;
-  create(context: AdapterCreateContext): object | Promise<object>;
+  create(context: AdapterCreateContext<unknown>): object | Promise<object>;
 }
 
 export interface AdapterImplementation<
   Context extends object,
   Assertions extends object | undefined = undefined,
-> extends AdapterDefinition<Context, Assertions> {
+  Flags extends AdapterFlagsParser = undefined,
+> extends AdapterDefinition<Context, Assertions, Flags> {
   readonly kind: "custom";
   readonly contract: string;
   readonly behaviorRevision: string | null;
-  readonly [ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions>;
-  create(context: AdapterCreateContext): Context | Promise<Context>;
+  readonly [ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
+  create(context: AdapterCreateContext<AdapterFlagsOutput<Flags>>): Context | Promise<Context>;
 }
 
 export type AdapterImplementationInput<
   Context extends object,
   ImplementationContext extends Context = Context,
+  Flags extends AdapterFlagsParser = undefined,
 > = {
   readonly name: string;
   readonly behaviorRevision?: string;
-  readonly create: AdapterFactory<ImplementationContext>;
+  readonly create: AdapterFactory<ImplementationContext, Flags>;
 } & AdapterContextValidation<NoInfer<ImplementationContext>>;
 
 export interface AdapterContract<
   Context extends object,
   Assertions extends object | undefined = undefined,
-> extends AdapterDefinition<Context, Assertions> {
+  Flags extends AdapterFlagsParser = undefined,
+> extends AdapterDefinition<Context, Assertions, Flags> {
   readonly name: string;
   implement<ImplementationContext extends Context>(
-    input: AdapterImplementationInput<Context, ImplementationContext>,
-  ): AdapterImplementation<Context, Assertions>;
+    input: AdapterImplementationInput<Context, ImplementationContext, Flags>,
+  ): AdapterImplementation<Context, Assertions, Flags>;
   /**
-   * Returns a contract whose Eval factories and every implementation share
-   * this exact Assertion factory. Implementations cannot replace it.
+   * Returns a contract whose Eval factories and implementations share one flags parser.
    */
+  withParseFlags<NextFlags extends Exclude<AdapterFlagsParser, undefined>>(
+    parseFlags: NextFlags,
+    ...validation: AdapterFlagsParserValidationArgs<NoInfer<NextFlags>>
+  ): AdapterContract<Context, Assertions, NextFlags>;
+  /** Returns a contract whose implementations share this exact Assertion factory. */
   withAssertions<NextAssertions extends object>(
     factory: AdapterAssertionsFactory<Context, NextAssertions>,
     ...validation: AdapterAssertionsValidationArgs<Context, NoInfer<NextAssertions>>
-  ): AdapterContract<Context, NextAssertions>;
+  ): AdapterContract<Context, NextAssertions, Flags>;
 }
 
 export type Adapter = import("./agents/types.ts").Agent | AdapterRuntimeDefinition;
@@ -343,13 +368,16 @@ function assertNonEmptyString(value: unknown, field: string, factory: string): a
 function contractToken<
   Context extends object,
   Assertions extends object | undefined,
+  Flags extends AdapterFlagsParser,
 >(
   name: string,
   assertions: AdapterAssertionsFactory<Context> | undefined,
-): AdapterContractToken<Context, Assertions> {
+  parseFlags: Flags,
+): AdapterContractToken<Context, Assertions, Flags> {
   return Object.freeze({
     name,
     assertions,
+    parseFlags,
     assertionTypes: (value: Assertions) => value,
     context: (value: Context) => value,
   });
@@ -370,8 +398,9 @@ function assertAdapterEvalInput(
 function boundEvalFactories<
   Context extends object,
   Assertions extends object | undefined,
->(token: AdapterContractToken<Context, Assertions>): Pick<
-  AdapterDefinition<Context, Assertions>,
+  Flags extends AdapterFlagsParser,
+>(token: AdapterContractToken<Context, Assertions, Flags>): Pick<
+  AdapterDefinition<Context, Assertions, Flags>,
   "defineEval" | "defineScoreEval"
 > {
   return {
@@ -379,13 +408,13 @@ function boundEvalFactories<
       assertAdapterEvalInput(input, "defineEval");
       return defineEvalForContext("pass", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-      }) as AdapterEvalDefinition<"pass", Context, Assertions>;
+      }) as AdapterEvalDefinition<"pass", Context, Assertions, Flags>;
     },
     defineScoreEval(input) {
       assertAdapterEvalInput(input, "defineScoreEval");
       return defineEvalForContext("score", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-      }) as AdapterEvalDefinition<"score", Context, Assertions>;
+      }) as AdapterEvalDefinition<"score", Context, Assertions, Flags>;
     },
   };
 }
@@ -393,15 +422,16 @@ function boundEvalFactories<
 function implementAdapter<
   Context extends object,
   Assertions extends object | undefined,
+  Flags extends AdapterFlagsParser,
 >(
-  token: AdapterContractToken<Context, Assertions>,
+  token: AdapterContractToken<Context, Assertions, Flags>,
   input: {
     readonly name: string;
     readonly behaviorRevision?: string;
-    readonly create: AdapterFactory<Context>;
+    readonly create: AdapterFactory<Context, Flags>;
   },
   factory: "defineAdapter" | "AdapterContract.implement",
-): AdapterImplementation<Context, Assertions> {
+): AdapterImplementation<Context, Assertions, Flags> {
   assertNonEmptyString(input.name, "name", factory);
   if (input.behaviorRevision !== undefined) {
     assertNonEmptyString(input.behaviorRevision, "behaviorRevision", factory);
@@ -410,7 +440,7 @@ function implementAdapter<
     throw new TypeError(`${factory} requires create(context).`);
   }
   const authorCreate = input.create;
-  const create = (context: AdapterCreateContext): Context | Promise<Context> => {
+  const create = (context: AdapterCreateContext<AdapterFlagsOutput<Flags>>): Context | Promise<Context> => {
     const created = authorCreate(context);
     if (created instanceof Promise) {
       return created.then((value) => {
@@ -424,45 +454,51 @@ function implementAdapter<
   };
   return Object.freeze({
     kind: "custom" as const,
+    parseFlags: token.parseFlags,
     name: input.name,
     contract: token.name,
     behaviorRevision: input.behaviorRevision ?? null,
     create,
     [ADAPTER_CONTRACT_TOKEN]: token,
     ...boundEvalFactories(token),
-  }) as AdapterImplementation<Context, Assertions>;
+  }) as AdapterImplementation<Context, Assertions, Flags>;
 }
 
 /** Defines one Adapter implementation with an automatically private contract. */
-export function defineAdapter<Context extends object>(input: {
+export function defineAdapter<Context extends object, Flags extends AdapterFlagsParser = undefined>(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
-  readonly create: AdapterFactory<Context>;
+  readonly create: AdapterFactory<Context, Flags>;
+  readonly parseFlags?: Flags;
   readonly assertions?: undefined;
-} & AdapterContextValidation<NoInfer<Context>>): AdapterImplementation<Context>;
+} & AdapterContextValidation<NoInfer<Context>> & AdapterFlagsParserValidation<NoInfer<Flags>>): AdapterImplementation<Context, undefined, Flags>;
 export function defineAdapter<
   Context extends object,
   Assertions extends object,
+  Flags extends AdapterFlagsParser = undefined,
 >(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
-  readonly create: AdapterFactory<Context>;
+  readonly create: AdapterFactory<Context, Flags>;
+  readonly parseFlags?: Flags;
   /** Attempt-local Assertion sugar, assembled once after create() succeeds. */
   readonly assertions: AdapterAssertionsFactory<Context, Assertions>;
-} & AdapterContextValidation<NoInfer<Context>> &
-  AdapterAssertionsValidation<Context, NoInfer<Assertions>>): AdapterImplementation<Context, Assertions>;
+} & AdapterContextValidation<NoInfer<Context>> & AdapterFlagsParserValidation<NoInfer<Flags>> &
+  AdapterAssertionsValidation<Context, NoInfer<Assertions>>): AdapterImplementation<Context, Assertions, Flags>;
 export function defineAdapter(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
-  readonly create: AdapterFactory<object>;
+  readonly create: AdapterFactory<object, AdapterFlagsParser>;
+  readonly parseFlags?: Exclude<AdapterFlagsParser, undefined>;
   readonly assertions?: AdapterAssertionsFactory<object>;
 }): AdapterRuntimeDefinition {
+  if (input.parseFlags !== undefined) assertAdapterFlagsParser(input.parseFlags);
   const assertions = input.assertions;
   if (assertions !== undefined && typeof assertions !== "function") {
     throw new TypeError("defineAdapter assertions must be a function.");
   }
   return implementAdapter(
-    contractToken<object, object | undefined>(input.name, assertions),
+    contractToken<object, object | undefined, AdapterFlagsParser>(input.name, assertions, input.parseFlags),
     input,
     "defineAdapter",
   );
@@ -473,21 +509,30 @@ export function defineAdapterContract<Context extends object>(
   input: { readonly name: string } & AdapterContextValidation<NoInfer<Context>>,
 ): AdapterContract<Context> {
   assertNonEmptyString(input.name, "name", "defineAdapterContract");
-  return makeAdapterContract(contractToken<Context, undefined>(input.name, undefined));
+  return makeAdapterContract(contractToken<Context, undefined, undefined>(input.name, undefined, undefined));
 }
 
 function makeAdapterContract<
   Context extends object,
   Assertions extends object | undefined,
->(token: AdapterContractToken<Context, Assertions>): AdapterContract<Context, Assertions> {
+  Flags extends AdapterFlagsParser,
+>(token: AdapterContractToken<Context, Assertions, Flags>): AdapterContract<Context, Assertions, Flags> {
   const factories = boundEvalFactories(token);
   return Object.freeze({
     name: token.name,
+    parseFlags: token.parseFlags,
     ...factories,
     implement<ImplementationContext extends Context>(
-      implementation: AdapterImplementationInput<Context, ImplementationContext>,
+      implementation: AdapterImplementationInput<Context, ImplementationContext, Flags>,
     ) {
       return implementAdapter(token, implementation, "AdapterContract.implement");
+    },
+    withParseFlags<NextFlags extends Exclude<AdapterFlagsParser, undefined>>(
+      parseFlags: NextFlags,
+      ..._validation: AdapterFlagsParserValidationArgs<NoInfer<NextFlags>>
+    ) {
+      assertAdapterFlagsParser(parseFlags);
+      return makeAdapterContract(contractToken<Context, Assertions, NextFlags>(token.name, token.assertions, parseFlags));
     },
     withAssertions<NextAssertions extends object>(
       factory: AdapterAssertionsFactory<Context, NextAssertions>,
@@ -496,7 +541,7 @@ function makeAdapterContract<
       if (typeof factory !== "function") {
         throw new TypeError("AdapterContract.withAssertions requires a function.");
       }
-      return makeAdapterContract(contractToken<Context, NextAssertions>(token.name, factory));
+      return makeAdapterContract(contractToken<Context, NextAssertions, Flags>(token.name, factory, token.parseFlags));
     },
   });
 }

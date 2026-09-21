@@ -36,6 +36,7 @@ import {
 } from "../source-receipts/runtime.ts";
 import type { RunnerAssertionSourceSitesBuild } from "../source-producer.ts";
 import type { AgentRun, EvalResult } from "../types.ts";
+import type { AdapterAttachmentSnapshot } from "../adapter-attachments.ts";
 
 export interface RunnerAssertionsAttachmentInvalid {
   readonly code: "runner-record-assertions-invalid";
@@ -138,6 +139,7 @@ export function createRunnerAssertionsAttachment(
 }
 
 interface ArtifactCapture {
+  readonly artifactId?: string;
   readonly mediaType: string;
   readonly label: string;
   readonly bytes: Uint8Array;
@@ -150,11 +152,12 @@ export type ArtifactsAttachmentBuild = (
 function artifactsAttachment(input: {
   readonly artifacts: readonly ArtifactCapture[];
   readonly omittedAtLeast?: number;
+  readonly captureFailed?: boolean;
 }): ArtifactsAttachmentBuild {
   const captures = Object.freeze(input.artifacts.map((artifact) => {
-    const bytes = new Uint8Array(artifact.bytes);
+    const bytes = artifact.artifactId === undefined ? new Uint8Array(artifact.bytes) : artifact.bytes;
     return Object.freeze({
-      artifactId: `art_${randomBytes(10).toString("hex")}`,
+      artifactId: artifact.artifactId ?? `art_${randomBytes(10).toString("hex")}`,
       mediaType: artifact.mediaType,
       label: artifact.label,
       bytes,
@@ -164,7 +167,12 @@ function artifactsAttachment(input: {
   }).sort((left, right) => left.artifactId.localeCompare(right.artifactId)));
 
   return (build) => {
-    const collection = input.omittedAtLeast === undefined
+    const collection = input.captureFailed === true
+      ? Object.freeze({ state: "partial" as const, limitations: [Object.freeze({
+          code: "capture-failed" as const,
+          stage: "adapter-attachment",
+        })] as const })
+      : input.omittedAtLeast === undefined
       ? Object.freeze({ state: "complete" as const, limitations: [] as const })
       : (() => {
           const first = Object.freeze({
@@ -198,10 +206,20 @@ function artifactsAttachment(input: {
 
 export function createAttemptArtifactsAttachment(
   result: EvalResult,
+  snapshot?: AdapterAttachmentSnapshot,
 ): ArtifactsAttachmentBuild | undefined {
-  const captures: ArtifactCapture[] = [];
+  const captures: ArtifactCapture[] = (snapshot?.artifacts ?? []).map((artifact) => ({
+    artifactId: artifact.artifactId,
+    mediaType: artifact.mediaType,
+    label: artifact.name,
+    bytes: artifact.bytes,
+  }));
   let omittedAtLeast = 0;
   const appendJson = (label: string, value: unknown): void => {
+    if (captures.length >= ArtifactsLimits.maximumArtifacts) {
+      omittedAtLeast += 1;
+      return;
+    }
     let encoded: string | undefined;
     try {
       encoded = JSON.stringify(value);
@@ -222,9 +240,10 @@ export function createAttemptArtifactsAttachment(
   };
 
   if (result.agentSetup !== undefined) appendJson("agent-setup.json", result.agentSetup);
-  if (captures.length === 0 && omittedAtLeast === 0) return undefined;
+  if (captures.length === 0 && omittedAtLeast === 0 && snapshot?.failure === undefined) return undefined;
   return artifactsAttachment({
     artifacts: Object.freeze(captures),
+    captureFailed: snapshot?.failure !== undefined,
     ...(omittedAtLeast === 0 ? {} : { omittedAtLeast }),
   });
 }

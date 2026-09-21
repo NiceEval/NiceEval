@@ -790,7 +790,16 @@ function compileTraceAtGeneration(
         message: decoded.failure.message,
       }));
       const sidecar = decoded.success;
-      if (`${sidecar.testFile}.cases.json` !== candidate.path || !relativeFiles.has(sidecar.testFile)) {
+      // Managed case moves retain the old sidecar as immutable history. Only
+      // live ownership requires a source file; an entirely moved history does not.
+      const lastHistory = new Map(sidecar.history.map((entry) => [entry.caseId, entry]));
+      const movedHistoryOnly = Object.keys(sidecar.current).length === 0 &&
+        sidecar.tombstones.length === 0 && lastHistory.size > 0 &&
+        [...lastHistory.values()].every((entry) => entry.action === "case-moved" &&
+          entry.from?.path === sidecar.testFile && typeof entry.to?.path === "string" &&
+          entry.to.path !== sidecar.testFile);
+      if (`${sidecar.testFile}.cases.json` !== candidate.path ||
+        (!relativeFiles.has(sidecar.testFile) && !movedHistoryOnly)) {
         return yield* Effect.fail(new TraceFormatError({
           path: candidate.path,
           subject: "testFile",

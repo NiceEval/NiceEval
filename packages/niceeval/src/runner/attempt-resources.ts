@@ -52,6 +52,9 @@ export class AdapterAttemptResources {
   private authorOpen = true;
   private readonly cleanups: Array<(context: AdapterCleanupContext) => void | Promise<void>> = [];
   private readonly handoffs = new Set<Promise<void>>();
+  private cleanupReceipt: Promise<AdapterCleanupResult> | undefined;
+
+  constructor(private readonly closeCapture: () => void = () => {}) {}
 
   get window(): AdapterResourceWindow {
     return this.windowState;
@@ -62,6 +65,10 @@ export class AdapterAttemptResources {
     if (this.windowState !== "forward-open") {
       throw new AdapterResourceWindowClosedError(this.windowState);
     }
+  }
+
+  assertCaptureOpen(): void {
+    if (this.windowState === "closed") throw new AdapterResourceWindowClosedError(this.windowState);
   }
 
   onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void {
@@ -96,10 +103,16 @@ export class AdapterAttemptResources {
   }
 
   close(): void {
+    if (this.windowState === "closed") return;
     this.windowState = "closed";
+    this.closeCapture();
   }
 
-  async cleanup(signal: AbortSignal): Promise<AdapterCleanupResult> {
+  cleanup(signal: AbortSignal): Promise<AdapterCleanupResult> {
+    return this.cleanupReceipt ??= this.drain(signal);
+  }
+
+  private async drain(signal: AbortSignal): Promise<AdapterCleanupResult> {
     this.beginCleanup();
     const context: AdapterCleanupContext = Object.freeze({ signal });
     const failures: unknown[] = [];
@@ -110,7 +123,10 @@ export class AdapterAttemptResources {
       stopWaiting = resolve;
       if (signal.aborted) resolve();
       else {
-        onAbort = () => resolve();
+        onAbort = () => {
+          this.close();
+          resolve();
+        };
         signal.addEventListener("abort", onAbort, { once: true });
       }
     });

@@ -59,10 +59,10 @@ Agent 的安装、会话、变更归因和 tracing 由 Agent 专属准备及观�
 
 应用资源状态为 `forward-open` → `cleanup-open` → `closed`。
 作者完成、创建失败、执行异常、超时或取消都关闭同一个作用域。
-正常完成先冻结判定，再退出执行 deadline 的竞争并释放资源；资源释放期间到达的执行 deadline 不推翻判定。
+正常完成先冻结 Assertion 求值结果，再退出执行 deadline 的竞争并释放资源；资源释放期间到达的执行 deadline 不推翻求值结果。
 超时或取消先同步关闭应用方法、Core 登记和 handle 修改入口，再发出取消信号。
 同步 abort listener 也不能追加或修改 Assertion，不能只依赖桥接队列拒绝异步请求。
-随后按中断规则封口，终态冻结、封口与 publication 交接各只执行一次。
+随后按中断规则冻结 Assertion；应用采集排空后才交出最终执行 outcome 与 publication，交接只执行一次。
 
 `onCleanup` 成功登记才移交释放义务。已登记回调按逆序执行，一项失败追加 diagnostic 并继续剩余回调。
 每个回调收到冻结的 `AdapterCleanupContext`；同一次 cleanup 的回调共享一个独立于 Attempt 的 signal。
@@ -71,6 +71,14 @@ Attempt 超时或取消时，`ctx.signal` 可以已经取消，但 cleanup signa
 进入 `cleanup-open` 时开始固定 30 秒总预算，应用回调与已知创建、作者交接都在该预算内；迟到登记不延长期限。
 `cleanup-open` 中的迟到登记由原 Scope 接管；已登记回调耗尽且已知交接完成，或总期限到达后，状态变为 `closed`。
 关闭后的登记同步抛出生命周期错误，资源仍归调用者，不能另开 runtime 或修改已发布事实。
+
+取消只关闭 forward，不关闭 `recordUsage` 与 `attach` 的 capture 入口。Eval 的 `finally` 与 `onCleanup` 可以等待同一份幂等完成 Promise，尾部采集仍归原 Attempt。
+cleanup 关闭时同步关闭两个采集入口；之后的调用拒绝，不能改变已封口的用量、附件或执行 outcome。
+
+输入校验、容量限制与 capture 失败即使被应用捕获，也保留为执行错误。cleanup 总预算耗尽同样形成 `errored` Attempt，不能报告成功。
+最终结果保留已完成 Assertions、已得分与成功附件，并通过原有 Verdict 与 Score 算法折叠；普通 cleanup callback 抛错仍只追加 warning。
+先发生的执行错误保持其类型与说明；后续 cleanup 超时另写诊断，不替换已有的 Attempt timeout 归属。
+因此成功通知、earlyExit 与后续 reuse 只能消费 cleanup 已确定的最终结果。
 
 ```ts
 const lease = await client.acquire({ signal: ctx.signal });

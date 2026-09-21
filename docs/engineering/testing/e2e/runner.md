@@ -220,3 +220,15 @@ Contract: [docs/feature/experiments/use-case/缓存与沿用/迁移错误归属�
 Contract: [docs/feature/experiments/cache.md#复用资格](../../../feature/experiments/cache.md#复用资格)
 
 Judge 模型不变时沿用，修改 Eval 模型后重新评价
+## 取消后有界排空并发布已采集的外部用量和附件，保留评分且停止后续派发。 {#adapter-capture-interrupt}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
+
+取消后有界排空并发布已采集的外部用量和附件，保留评分且停止后续派发。
+## cleanup 截止关闭采集入口，保留已得分和成功附件并公开执行错误。 {#adapter-capture-timeout}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
+
+cleanup 截止关闭采集入口，保留已得分和成功附件并公开执行错误。

@@ -97,13 +97,16 @@ function exceptionalVerdictCountsCell(attempts: readonly AttemptListItem[]): Cel
 }
 
 function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
-  const only = attempts.length === 1 ? attempts[0]?.verdict : null;
-  return only === null || only === undefined ? verdictCountsCell(attempts) : verdictCell(only);
+  const only = attempts.length === 1 ? attempts[0] : undefined;
+  return only === undefined ? verdictCountsCell(attempts) : verdictCell(only);
 }
 
-function verdictCell(verdict: Verdict | null): Cell {
+function verdictCell(attempt: AttemptListItem): Cell {
+  const { verdict } = attempt;
   if (verdict === null) return { kind: "notApplicable" };
-  return { kind: "verdict", verdict };
+  const scored = verdict === "passed" && attempt.evaluationKind === "points" &&
+    attempt.score?.state === "available" && attempt.score.value !== null;
+  return { kind: "verdict", verdict, ...(scored ? { label: localizedMessage("verdict.scored") } : {}) };
 }
 
 function locatorCell(attempt: AttemptListItem): Cell {
@@ -132,7 +135,7 @@ function resultCell(attempt: AttemptListItem): Cell {
 export function attemptCells(attempt: AttemptListItem): CellBag {
   return {
     entity: locatorCell(attempt),
-    verdict: verdictCell(attempt.verdict),
+    verdict: verdictCell(attempt),
     result: resultCell(attempt),
     // locator 已携带这次判定；层级 Result 不重复同一个状态。
     ...(attempt.durationMs === undefined ? {} : { durationMs: measureCell(attempt.durationMs) }),

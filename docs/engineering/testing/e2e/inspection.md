@@ -73,3 +73,15 @@ tool/event target 的 anchor 与 trace 使用同一 `toolOccurrenceId`／`eventI
 `attempt.trace.detail` 以 `toolOccurrenceId` 取得同一 occurrence 的 call/result 与完整已封存输入和结果。下钻只接受 `itemId`、`toolOccurrenceId` 与 `commandId`；数组 index、Turn/card 序号、旧 `t<N>.c<M>` 与 `cmd<N>` 都不是公开 selector。
 
 `attempt.sources` 从同一 Attempt 的 Assertions source sites 连接 exact origin Run Sources；target carry Run 不能替换历史源码事实。
+## Adapter 附件随 Record 搬迁后经公开目录与分块读取保留字节及 provenance。 {#portable-artifacts}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/inspection/README.md](../../../feature/inspection/README.md)
+
+Adapter 附件随 Record 搬迁后经公开目录与分块读取保留字节及 provenance。
+## 附件非法输入与容量限制明确失败，已接管内容仍可读取。 {#artifact-limits}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
+
+附件非法输入与容量限制明确失败，已接管内容仍可读取。

@@ -22,7 +22,7 @@ export default defineExperiment({
 ```
 
 - `agent`：评谁。放的是已经配置好的实例——被测系统的 URL、鉴权传给 Adapter 工厂，不进 experiment 的其它字段。
-- `model` / `flags`：透传语义。[NiceEval](https://niceeval.com/) 不解释它们的含义，原样经 `ctx` 递给 Adapter，由 Adapter 随请求转发、应用按需切换——这正是 [Tier](/zh/explanation/tier) 里模型对比（Tier 1）和 feature A/B（Tier 3）的通道。
+- `model` / `flags`：由 Adapter 消费的实验条件。`flags` 只接受扁平的字符串、有限数字或布尔值。[NiceEval](https://niceeval.com/) 不解释具体策略；普通 Adapter 声明 `parseFlags` 时先同步校验和规范化，再经 `ctx` 递给 Adapter，由 Adapter 随请求转发、应用按需切换——这正是 [Tier](/zh/explanation/tier) 里模型对比（Tier 1）和 feature A/B（Tier 3）的通道。
 - `attempts`、`budget`、并发、`sandbox` 等运行参数：怎么跑、跑多少。完整字段见[写实验](/zh/tutorials/write-experiment)。
 
 Experiment 还有一对实验级 Hook `setup` / `teardown`：整个实验只跑一次，在你自己的机器上执行，用来起停所有 Attempt 共享的服务（比如一条到内网服务的隧道、一个实验专用的 mock server）。

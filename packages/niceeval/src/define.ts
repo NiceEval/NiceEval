@@ -1,3 +1,6 @@
+import type { Adapter } from "./adapter.ts";
+import { parseAdapterFlags } from "./adapter-flags.ts";
+import { decodeExperimentFlags } from "./experiment/flags.ts";
 // 定义入口:把用户对象规格化成核心认得的形状。路径即身份 —— 这里禁止手写 id,
 // 由发现阶段从文件路径推导(见 runner/discover.ts)。
 
@@ -263,7 +266,8 @@ export function defineEvalForContext<
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
-export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
+export function defineExperiment<const A extends Adapter>(def: ExperimentInput<A>): ExperimentDefinition<A>;
+export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonly flags?: unknown }): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
   }
@@ -317,11 +321,14 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     sandboxCache: _sandboxCache,
     ...author
   } = def;
+  const flags = decodeExperimentFlags(def.flags === undefined ? {} : def.flags);
   return brandExperimentDefinition({
     ...author,
     adapter,
     ...(adapter.kind === "custom" ? {} : { agent: adapter }),
-    flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
+    flags: adapter.kind === "custom" && adapter.parseFlags !== undefined
+      ? parseAdapterFlags(adapter.parseFlags, flags)
+      : flags,
     labels: Object.freeze({ ...(def.labels ?? {}) }),
     attempts: def.attempts ?? 1,
     earlyExit: def.earlyExit ?? false,
@@ -437,7 +444,7 @@ function deepFreezeJson(value: JsonValue): JsonValue {
 }
 
 function decodeJsonRecord(
-  value: Readonly<globalThis.Record<string, JsonValue>>,
+  value: unknown,
   label: string,
 ): Readonly<globalThis.Record<string, JsonValue>> {
   const decoded = Schema.decodeUnknownResult(JsonRecordSchema, { errors: "all" })(value);

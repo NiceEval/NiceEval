@@ -25,7 +25,9 @@ export default defineEval({
     );
 
     const recall = await t.send(
-      `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}我最喜欢的数字是多少?只回答数字。`,
+      `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}我最喜欢的数字是多少?` +
+        `这是本轮唯一任务：从本会话前文找出数字并直接回答数字。` +
+        `如果收到继续完成任务的提示，仍然完成这个回答，不要询问新的任务。`,
     );
     await recall.succeeded().orStop();
     t.check(recall.message, includes("47"));

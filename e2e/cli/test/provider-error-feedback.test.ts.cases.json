@@ -4,7 +4,9 @@
   "current": {
     "necase_7HXVADGZABWJQXEC": {
       "owner": "docs/engineering/testing/e2e/cli.md#cli-provider-error-feedback",
-      "regressions": [],
+      "regressions": [
+        "memory/human-short-error-and-score-summary.md"
+      ],
       "issues": []
     }
   },
@@ -18,6 +20,15 @@
         "owner": "docs/engineering/testing/e2e/cli.md#cli-provider-error-feedback",
         "legacySourceDigest": "sha256:6a9f46629fe71b96299ca573eea746b5ed5a73f547aaa4fcbdb122a4877a95df",
         "mappingDigest": "sha256:3f47cf12dfb7eedf325b5ad2020b991db79e015c6e0f9f26766fadfac51a4402"
+      }
+    },
+    {
+      "caseId": "necase_7HXVADGZABWJQXEC",
+      "atCommit": "cf25a6bfe21b8382c7063ff9ac01f5a861545ace",
+      "transactionId": "netxn_fe7d9f77fa2840b19e342ffea45f21c5",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/human-short-error-and-score-summary.md"
       }
     }
   ],

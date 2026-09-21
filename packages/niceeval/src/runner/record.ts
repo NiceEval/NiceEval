@@ -68,6 +68,8 @@ import {
   createRunObservabilityAttachments,
   recordAttemptOutcome,
 } from "./record/attachments.ts";
+import { adapterUsageForResult } from "./adapter-usage.ts";
+import { adapterAttachmentsForResult } from "./adapter-attachments.ts";
 import {
   planRunnerRecordRun,
   previewRunnerRunId,
@@ -680,7 +682,11 @@ export function openRunnerRecordCoordinator(input: {
         if (fileChanges !== undefined) {
           yield* active.session.records.write(NiceEvalRecordAttachments.fileChanges, fileChanges);
         }
-        const artifacts = createAttemptArtifactsAttachment(result);
+        const artifacts = createAttemptArtifactsAttachment(result, adapterAttachmentsForResult(result));
+        const adapterUsage = adapterUsageForResult(result);
+        if (adapterUsage !== undefined) {
+          yield* active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage);
+        }
         if (artifacts !== undefined) {
           yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
         }
