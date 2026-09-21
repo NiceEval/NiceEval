@@ -138,4 +138,5 @@ niceeval show --record ./baseline.record.sqlite
 niceeval query explain --record ./baseline.record.sqlite --request request.json
 ```
 
-`show` 和 `query` 的 `--record` 接受 canonical SQLite Record 的副本，并把它当 hostile input。精确 current schema、SQLite integrity 或领域 invariant 任一校验失败，命令都会拒绝整个文件。`view` 只读取当前项目的 `.niceeval/record.sqlite`。
+在评估命令完成、相关进程退出后复制 Record。`show` 和 `query` 的 `--record` 接受可搬运的 SQLite Record 副本，并验证格式、数据库完整性和运行事实。
+支持的历史格式在私有副本中自动升级，原件保持不变；未知格式、损坏文件或仍有活动工作的记录会被拒绝。详见[读取历史 Record](/zh/troubleshooting/debugging#读取历史-record)。`view` 只读取当前项目的 `.niceeval/record.sqlite`。

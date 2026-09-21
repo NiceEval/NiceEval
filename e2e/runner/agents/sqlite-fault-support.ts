@@ -31,6 +31,9 @@ export function rejectAttemptPublication(): void {
   const rejectionMessage = "fixture rejected attempt publication";
   const database = new DatabaseSync(projectDatabasePath());
   try {
+    // Coordination heartbeats may briefly own the writer. Acquire it before
+    // inspecting schema so the fault is installed, not lost as a cleanup error.
+    database.exec("PRAGMA busy_timeout=5000; BEGIN IMMEDIATE");
     const table = database
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?")
       .get(publicationTable) as { readonly name?: unknown } | undefined;
@@ -52,7 +55,9 @@ export function rejectAttemptPublication(): void {
     if (trigger?.name !== triggerName || trigger.tableName !== publicationTable) {
       throw new Error(`runner SQLite fault seam did not install ${triggerName}`);
     }
+    database.exec("COMMIT");
   } finally {
+    if (database.isTransaction) database.exec("ROLLBACK");
     database.close();
   }
 }

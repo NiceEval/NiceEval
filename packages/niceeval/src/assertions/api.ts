@@ -667,6 +667,83 @@ export interface DirectScoreAssertionHandle extends AssertionHandleBase<false, t
   readonly kind: "direct-score";
 }
 
+/**
+ * Definition-time handle shared by Adapter Assertion factories. It exposes
+ * only operations whose meaning is identical in Pass and Score Evals; the
+ * bound Eval factory replaces it with the native handle for its Kind.
+ */
+export interface PolymorphicBooleanAssertionHandle<
+  out Refined,
+  HasGate extends boolean = false,
+> extends AssertionHandleBase<true, false> {
+  readonly kind: "boolean";
+  readonly [assertionGateStateBrand]: HasGate;
+  gate(
+    this: PolymorphicBooleanAssertionHandle<Refined, false>,
+  ): PolymorphicBooleanAssertionHandle<Refined, true>;
+  orStop(): Promise<Refined>;
+}
+
+/** Definition-time measurement counterpart to PolymorphicBooleanAssertionHandle. */
+export interface PolymorphicMeasurementAssertionHandle<
+  HasCondition extends boolean = false,
+> extends AssertionHandleBase<HasCondition, false> {
+  readonly kind: "measurement";
+  gate(
+    this: PolymorphicMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): PolymorphicMeasurementAssertionHandle<true>;
+  orStop(
+    this: PolymorphicMeasurementAssertionHandle<false>,
+    minimum: number,
+  ): Promise<number>;
+  orStop(
+    this: PolymorphicMeasurementAssertionHandle<true>,
+  ): Promise<number>;
+}
+
+export type AssertionCheckKind = AssertionEvaluationKind | "polymorphic";
+
+type CheckedBooleanHandle<
+  Kind extends AssertionCheckKind,
+  Refined,
+> = Kind extends AssertionEvaluationKind
+  ? BooleanAssertionHandle<Kind, Refined>
+  : PolymorphicBooleanAssertionHandle<Refined>;
+
+type CheckedMeasurementHandle<Kind extends AssertionCheckKind> =
+  Kind extends AssertionEvaluationKind
+    ? MeasurementAssertionHandle<Kind>
+    : PolymorphicMeasurementAssertionHandle;
+
+/** Single owner for the public check overload set, including Adapter-polymorphic factories. */
+export interface AssertionCheck<Kind extends AssertionCheckKind> {
+  <Value, Refined extends Value>(
+    value: AssertionSubject<Value>,
+    match: BooleanMatch<NoInfer<Value>, Refined, "value">,
+  ): CheckedBooleanHandle<Kind, Refined>;
+  <Value extends readonly unknown[]>(
+    value: NumericAssertionSubject<Value>,
+    match: NumericComparisonMatch,
+  ): CheckedBooleanHandle<Kind, Value>;
+  <S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedToolCalls<S>>,
+    match: ToolMatch,
+  ): CheckedBooleanHandle<Kind, ManagedToolCalls<S>>;
+  <S extends "turn" | "session" | "attempt">(
+    value: AssertionSubject<ManagedEventOccurrences<S>>,
+    match: EventMatch,
+  ): CheckedBooleanHandle<Kind, ManagedEventOccurrences<S>>;
+  <Value>(
+    value: AssertionSubject<Value>,
+    match: CollectionMatch<NoInfer<Value>>,
+  ): CheckedBooleanHandle<Kind, Value>;
+  <Value>(
+    value: AssertionSubject<Value>,
+    match: ScoreMatch<NoInfer<Value>>,
+  ): CheckedMeasurementHandle<Kind>;
+}
+
 export interface AssertionGroupContext {
   /**
    * Runs an ordinary author callback with one display-only group segment. The
@@ -681,58 +758,12 @@ export interface AssertionGroupContext {
 
 export interface PassAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "pass";
-  check<Value, Refined extends Value>(
-    value: AssertionSubject<Value>,
-    match: BooleanMatch<NoInfer<Value>, Refined, "value">,
-  ): PassBooleanAssertionHandle<Refined>;
-  check<Value extends readonly unknown[]>(
-    value: NumericAssertionSubject<Value>,
-    match: NumericComparisonMatch,
-  ): PassBooleanAssertionHandle<Value>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedToolCalls<S>>,
-    match: ToolMatch,
-  ): PassBooleanAssertionHandle<ManagedToolCalls<S>>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedEventOccurrences<S>>,
-    match: EventMatch,
-  ): PassBooleanAssertionHandle<ManagedEventOccurrences<S>>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: CollectionMatch<NoInfer<Value>>,
-  ): PassBooleanAssertionHandle<Value>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ScoreMatch<NoInfer<Value>>,
-  ): PassMeasurementAssertionHandle;
+  readonly check: AssertionCheck<"pass">;
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "score";
-  check<Value, Refined extends Value>(
-    value: AssertionSubject<Value>,
-    match: BooleanMatch<NoInfer<Value>, Refined, "value">,
-  ): ScoreBooleanAssertionHandle<Refined>;
-  check<Value extends readonly unknown[]>(
-    value: NumericAssertionSubject<Value>,
-    match: NumericComparisonMatch,
-  ): ScoreBooleanAssertionHandle<Value>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedToolCalls<S>>,
-    match: ToolMatch,
-  ): ScoreBooleanAssertionHandle<ManagedToolCalls<S>>;
-  check<S extends "turn" | "session" | "attempt">(
-    value: AssertionSubject<ManagedEventOccurrences<S>>,
-    match: EventMatch,
-  ): ScoreBooleanAssertionHandle<ManagedEventOccurrences<S>>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: CollectionMatch<NoInfer<Value>>,
-  ): ScoreBooleanAssertionHandle<Value>;
-  check<Value>(
-    value: AssertionSubject<Value>,
-    match: ScoreMatch<NoInfer<Value>>,
-  ): ScoreMeasurementAssertionHandle;
+  readonly check: AssertionCheck<"score">;
   score(points: number): DirectScoreAssertionHandle;
 }
 

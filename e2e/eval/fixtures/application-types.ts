@@ -4,9 +4,13 @@ import {
   defineEval,
   type JudgeDefinition,
   defineAdapterContract,
+  type AdapterCleanupContext,
   type AdapterImplementationInput,
+  type AdapterAssertionsFactoryContext,
 } from "niceeval";
-import { satisfies } from "niceeval/expect";
+import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
+import type { AdapterAssertionsFactoryContext as AssertionsContextFromSubpath } from "niceeval/adapter";
+import { satisfies, defineScoreMatch } from "niceeval/expect";
 
 interface Post { id: string; text: string }
 const hasText = satisfies<Post>("Post has text", (post) => post.text.length > 0);
@@ -16,6 +20,12 @@ const social = defineAdapter({
   async create(ctx) {
     const signal: AbortSignal = ctx.signal;
     ctx.onCleanup(() => undefined);
+    ctx.onCleanup((cleanupContext) => {
+      const rootExport: AdapterCleanupContext = cleanupContext;
+      const adapterExport: AdapterCleanupContextFromSubpath = rootExport;
+      const cleanupSignal: AbortSignal = adapterExport.signal;
+      void cleanupSignal;
+    });
     return {
       count: 0,
       increment() {
@@ -57,6 +67,71 @@ social.defineEval({
 });
 
 social.defineScoreEval({ async test(t) { t.score(1); t.check(await t.post("hi"), hasText).score(2); } });
+
+const textQuality = defineScoreMatch<Post>({ name: "text quality", score: () => 0.75 });
+declare const assertionsFactoryContext: AdapterAssertionsFactoryContext<{ readPost(): Post }>;
+const assertionsSubpathContext: AssertionsContextFromSubpath<{ readPost(): Post }> = assertionsFactoryContext;
+void assertionsSubpathContext;
+const assertedSocial = defineAdapter({
+  name: "asserted-social",
+  create: () => ({ readPost: (): Post => ({ id: "p", text: "hello" }) }),
+  assertions: ({ app, check }) => ({
+    hasText() { return check(app.readPost(), hasText); },
+    requiredText() { return check(app.readPost(), hasText).gate(); },
+    quality(label: string) { return check(app.readPost(), textQuality).label(label); },
+  }),
+});
+assertedSocial.defineEval({
+  async test(t) {
+    const post: Post = await t.hasText().orStop();
+    t.hasText().gate();
+    t.quality("quality").gate(0.5);
+    const measurement: number = await t.quality("quality").orStop(0.5);
+    // @ts-expect-error Pass sugar must not acquire Score capabilities.
+    t.hasText().score(1);
+    // @ts-expect-error Pass measurement sugar must not acquire Score capabilities.
+    t.quality("quality").score(1);
+    // @ts-expect-error Measurement gates require a minimum.
+    t.quality("quality").gate();
+    // @ts-expect-error Sugar preserves method argument types.
+    t.quality(1);
+    // @ts-expect-error A gate configured in the factory cannot be configured twice.
+    t.requiredText().gate();
+    void post; void measurement;
+  },
+});
+assertedSocial.defineScoreEval({
+  async test(t) {
+    t.hasText().score(1).gate();
+    t.requiredText().score(1);
+    t.quality("quality").gate(0.5).score(2);
+    const post: Post = await t.hasText().orStop();
+    // @ts-expect-error Boolean gates take no measurement threshold.
+    t.hasText().gate(0.5);
+    void post;
+  },
+});
+
+const assertedContract = defineAdapterContract<{ readPost(): Post }>({ name: "asserted-contract" })
+  .withAssertions(({ app, check }) => ({ hasText() { return check(app.readPost(), hasText); } }));
+const assertedImplementation = assertedContract.implement({
+  name: "asserted-implementation", create: () => ({ readPost: (): Post => ({ id: "p", text: "hi" }) }),
+});
+assertedContract.defineScoreEval({ test(t) { t.hasText().score(1); } });
+assertedImplementation.defineEval({ test(t) {
+  t.hasText().gate();
+  // @ts-expect-error Implementations retain Pass handle restrictions.
+  t.hasText().score(1);
+} });
+
+// @ts-expect-error A custom assertion must return a check handle, not a Boolean.
+defineAdapter({ name: "boolean-sugar", create: () => ({}), assertions: () => ({ invalid: () => true }) });
+// @ts-expect-error A custom assertion must synchronously return its handle.
+defineAdapter({ name: "async-sugar", create: () => ({}), assertions: ({ check }) => ({ invalid: async () => check({ id: "p", text: "hi" }, hasText) }) });
+// @ts-expect-error Sugar cannot replace an app member.
+defineAdapter({ name: "app-sugar-collision", create: () => ({ hasText: () => true }), assertions: ({ check }) => ({ hasText: () => check({ id: "p", text: "hi" }, hasText) }) });
+// @ts-expect-error Sugar cannot replace core check.
+defineAdapter({ name: "core-sugar-collision", create: () => ({}), assertions: ({ check }) => ({ check: () => check({ id: "p", text: "hi" }, hasText) }) });
 
 // @ts-expect-error Adapters cannot replace core check.
 defineAdapter({ name: "collision", create: () => ({ check: () => 1 }) });
