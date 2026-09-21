@@ -12,6 +12,5 @@ export default defineExperiment({
 // A validator may retain its result; the experiment must own an independent copy.
 if (parsedOutput) {
   parsedOutput.limit = 99;
-  parsedOutput.nested.enabled = false;
-  parsedOutput.nested.labels.push("mutated");
+  parsedOutput.enabled = false;
 }

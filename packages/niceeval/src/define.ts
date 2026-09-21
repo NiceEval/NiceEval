@@ -1,5 +1,6 @@
 import type { Adapter } from "./adapter.ts";
 import { parseAdapterFlags } from "./adapter-flags.ts";
+import { decodeExperimentFlags } from "./experiment/flags.ts";
 // 定义入口:把用户对象规格化成核心认得的形状。路径即身份 —— 这里禁止手写 id,
 // 由发现阶段从文件路径推导(见 runner/discover.ts)。
 
@@ -299,13 +300,14 @@ export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonl
     sandboxCache: _sandboxCache,
     ...author
   } = def;
+  const flags = decodeExperimentFlags(def.flags === undefined ? {} : def.flags);
   return brandExperimentDefinition({
     ...author,
     adapter,
     ...(adapter.kind === "custom" ? {} : { agent: adapter }),
     flags: adapter.kind === "custom" && adapter.parseFlags !== undefined
-      ? parseAdapterFlags(adapter.parseFlags, def.flags === undefined ? {} : def.flags)
-      : decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
+      ? parseAdapterFlags(adapter.parseFlags, flags)
+      : flags,
     labels: Object.freeze({ ...(def.labels ?? {}) }),
     attempts: def.attempts ?? 1,
     earlyExit: def.earlyExit ?? false,

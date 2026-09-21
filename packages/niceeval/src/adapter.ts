@@ -1,3 +1,4 @@
+import type { ExperimentFlags } from "./shared/types.ts";
 import {
   assertAdapterFlagsParser,
   type AdapterFlagsParser,
@@ -19,7 +20,7 @@ import { defineEvalForContext } from "./define.ts";
 import type { EvalDefinition, EvalInput, ScoreEvalInput } from "./runner/types.ts";
 import type { EvaluationKind } from "./shared/evaluation.ts";
 import type { JudgePresetMethods } from "./context/assert-first.ts";
-import type { DiagnosticInput, JsonValue, ProgressUpdate } from "./shared/types.ts";
+import type { DiagnosticInput, ProgressUpdate } from "./shared/types.ts";
 import type { AdapterIdentity } from "./record/model/run-context.ts";
 export type { AdapterIdentity } from "./record/model/run-context.ts";
 
@@ -169,7 +170,7 @@ export interface AdapterCleanupContext {
   readonly signal: AbortSignal;
 }
 
-export interface AdapterCreateContext<Flags = Readonly<Record<string, JsonValue>>> {
+export interface AdapterCreateContext<Flags = ExperimentFlags> {
   recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
   attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
   /** 当前 Eval 的公开 ID。 */
@@ -218,7 +219,7 @@ type EvalContextBase<Kind extends EvaluationKind, Flags> = JudgePresetMethods<Ki
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */
-export type EvalContext<Kind extends EvaluationKind = "pass", Flags = Readonly<Record<string, JsonValue>>> = EvalContextBase<Kind, Flags> &
+export type EvalContext<Kind extends EvaluationKind = "pass", Flags = ExperimentFlags> = EvalContextBase<Kind, Flags> &
   (Kind extends "score" ? { readonly score: AssertionsRuntime<"score">["t"]["score"] } : {});
 
 type AdapterEvalFields = Omit<EvalInput<undefined>, "test" | "sandbox" | "diff"> & {

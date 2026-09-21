@@ -419,7 +419,7 @@ readonly reasoningEffort?: string;
 #### `flags`
 
 ```ts
-readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+readonly flags: ExperimentFlags;
 ```
 
 experiment 的 `flags` 字段原样透传,内容和结构完全由 experiment 作者自定义

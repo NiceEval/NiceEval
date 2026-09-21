@@ -31,7 +31,7 @@ src/backend/ai-sdk-runtime.ts           →  instructions ?? SYSTEM_PROMPT、bui
 evals 一条没改——feature A/B 的判读就是同一批 eval 在不同变体下的对照:极简变体下工具
 断言应当照常绿(变体 prompt 原样保留了工具规则),看点在 judge 分与回复长度的差异。
 `tools` 字段在实验里没用到,但同一条通道已经打通:比如
-`flags: { tools: ["get_weather", "calculate"] }` 就能对照"禁用 web_search"的变体。
+`flags: { webSearch: false }` 就能对照"禁用 web_search"的变体。
 
 ## 目录
 

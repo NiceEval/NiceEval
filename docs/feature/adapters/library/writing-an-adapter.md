@@ -71,7 +71,7 @@ Adapter 的 `defineEval` 只接受同一 Adapter 的实现。要让一组实现�
 
 ## 校验与推导 flags
 
-`defineAdapter` 的可选 `parseFlags(input: unknown): TFlags` 接收实验参数，并同步返回完整的 JSON 普通对象。
+`defineAdapter` 的可选 `parseFlags(input: unknown): TFlags` 接收实验参数，并同步返回完整的扁平标量对象。
 Adapter 直接复用应用的 validator；策略名称可由应用 registry 的 `keyof` 推导，不需要额外的 schema 包或另一份枚举。
 
 ```ts
@@ -89,22 +89,22 @@ export const game = defineAdapter({
 ```
 
 `TFlags` 同时约束 Experiment 显式提供的 `flags`、`create(ctx).flags` 和 Eval 的 `t.flags`。
-后两者递归只读，嵌套对象不可赋值，数组不可 `push`。
+后两者只读。值只能是字符串、有限数字或布尔值，不允许嵌套对象或数组。
 Experiment 的完整输入规则见 [Experiment 参数校验与规范化](../../experiments/library.md#adapter-参数校验与规范化)。
 
 共享契约用 `defineAdapterContract<Context>({ name }).withParseFlags(parser)` 绑定同一 parser。
 它的 `implement()`、`defineEval()` 和 `defineScoreEval()` 保留同一 flags 类型，也可以继续组合 `withAssertions()`。
 
-NiceEval 在 `defineExperiment()` 内调用 parser 一次，早于 Experiment setup 与 Adapter create。
+NiceEval 在 `defineExperiment()` 内先检查输入结构，复制冻结后调用 parser 一次，早于 Experiment setup 与 Adapter create。
 parser 负责拒绝未知键、应用默认值和规范化；校验失败应抛错，不得静默忽略未知键。
 它必须纯粹、确定且同步，不启动资源或后台任务。
 返回 Promise 或 thenable 会立即报错；NiceEval 同时接收其拒绝，避免未处理的 Promise rejection。
 
-parser 输出只允许 JSON 普通对象及其嵌套 JSON 值。
-非有限数、循环引用、函数、accessor、symbol 键、隐藏属性、稀疏数组和 class 实例均被拒绝。
-NiceEval 深复制并冻结结果；parser 保留的引用不能修改实验值。
-静态类型也拒绝可识别的异步结果、primitive 根值和函数成员。
-未配置 `parseFlags` 的 Adapter 继续接受通用 JSON flags。
+parser 输入和输出都只允许普通对象，成员值为 `string | number | boolean`。
+嵌套对象、数组、`null`、显式 `undefined`、非有限数、函数、accessor、symbol 键、隐藏属性和 class 实例均被拒绝。
+NiceEval 复制并冻结结果；parser 保留的引用不能修改实验值。
+静态类型也拒绝可识别的异步结果、primitive 根值和非标量成员；普通接口类型不需要 index signature。
+未配置 `parseFlags` 的 Adapter 及 Agent 同样接受这一扁平结构。
 
 规范化结果同时用于执行、公开实验值与缓存身份。
 `behaviorRevision` 必须标识 parser、默认值和转换语义；这些语义变化时，即使某次输出相同，也必须更新版本。

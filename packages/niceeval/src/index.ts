@@ -42,6 +42,8 @@ export type {
   StreamEvent,
   ToolName,
   JsonValue,
+  FlagValue,
+  ExperimentFlags,
   JsonMatch,
   Usage,
   Turn,

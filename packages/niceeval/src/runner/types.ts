@@ -3,7 +3,7 @@ import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
 import type { Effect } from "effect";
-import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
+import type { ExperimentFlags, FlagValue, JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
@@ -940,10 +940,10 @@ export interface ExperimentAuthorFields {
    * Experiment → Eval → Config → 内置默认值解析。
    */
   judgeRuntime?: JudgeConfig;
-  /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
-   *  (defineExperiment 解析时校验,非 JSON 直接报错),经 ctx.flags 透传给 adapter、
+  /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是扁平标量对象
+   *  (仅字符串、有限数字或布尔值，defineExperiment 解析时校验),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
-  flags?: globalThis.Record<string, JsonValue>;
+  flags?: globalThis.Record<string, FlagValue>;
   /**
    * 报告归类标注:实验在各对比轴上的坐标(如 `{ line: "codex", memory: "mempal" }`)。
    * 值域 string | number(解析时校验)。与 `flags` 的分界是「会不会改变 attempt 里发生的事」:
@@ -1059,7 +1059,7 @@ export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly model?: string;
   readonly reasoningEffort?: string;
   readonly judgeRuntime?: JudgeConfig;
-  readonly flags: AdapterFlagsOutput<ExperimentFlagsParser<A>> & Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: AdapterFlagsOutput<ExperimentFlagsParser<A>> & ExperimentFlags;
   readonly labels: Readonly<globalThis.Record<string, string | number>>;
   readonly attempts: number;
   readonly earlyExit: boolean;
@@ -1079,11 +1079,14 @@ export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly [EXPERIMENT_DEFINITION]: true;
 }
 
+const experimentDefinitions = new WeakSet<object>();
+
 /** @internal 仅 defineExperiment 写入私有品牌。 */
 export function brandExperimentDefinition(
   value: Omit<ExperimentDefinition, typeof EXPERIMENT_DEFINITION>,
 ): ExperimentDefinition {
   Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
+  experimentDefinitions.add(value);
   return Object.freeze(value) as ExperimentDefinition;
 }
 
@@ -1092,7 +1095,7 @@ export function isExperimentDefinition(value: unknown): value is ExperimentDefin
   return (
     typeof value === "object" &&
     value !== null &&
-    (value as { readonly [EXPERIMENT_DEFINITION]?: unknown })[EXPERIMENT_DEFINITION] === true
+    experimentDefinitions.has(value)
   );
 }
 
@@ -1217,7 +1220,7 @@ export interface AdapterRun {
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   readonly attempts: number;
   readonly earlyExit: boolean;
   /** 本次 Invocation 已按 CLI → Experiment → Config → default 归一的 Host cache 策略。 */

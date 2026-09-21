@@ -241,7 +241,7 @@ defineEval({ async test(t) {
 } });
 
 // Flags infer only from the selected Adapter's synchronous parser.
-type StrategyFlags = { strategy: "safe" | "fast"; limit: number };
+interface StrategyFlags { strategy: "safe" | "fast"; limit: number }
 declare function parseStrategyFlags(input: unknown): StrategyFlags;
 const strategyAdapter = defineAdapter({
   name: "strategy",
@@ -280,7 +280,13 @@ defineExperiment(widenedAttack);
 
 const optionalAdapter = defineAdapter({ name: "optional", parseFlags: (_input: unknown): { strategy?: "safe" } => ({}), create: (ctx) => ({ read: () => ctx.flags.strategy }) });
 defineExperiment({ adapter: optionalAdapter });
+defineExperiment({ adapter: social, flags: { enabled: false, count: 2, strategy: "safe" } });
+// @ts-expect-error Adapters without a parser also reject arrays.
 defineExperiment({ adapter: social, flags: { legacy: [true, 2, null] } });
+// @ts-expect-error Adapters without a parser reject null.
+defineExperiment({ adapter: social, flags: { value: null } });
+// @ts-expect-error Adapters without a parser reject nested objects.
+defineExperiment({ adapter: social, flags: { value: { enabled: true } } });
 
 const flagsContract = defineAdapterContract<{ read(): number }>({ name: "shared-flags" }).withParseFlags(parseStrategyFlags);
 flagsContract.defineEval({ test(t) { const limit: number = t.flags.limit; void limit; } });
@@ -304,22 +310,18 @@ const assertionFlagsAdapter = defineAdapter({
 assertionFlagsAdapter.defineEval({ test(t) { const limit: number = t.flags.limit; t.valid(); void limit; } });
 void normalizedLimit;
 
-const nestedFlagsAdapter = defineAdapter({
-  name: "nested-flags",
-  parseFlags: (_input: unknown) => ({ nested: { count: 1 }, names: ["a"] }),
-  create(ctx) {
-    // @ts-expect-error Nested flags are recursively read-only.
-    ctx.flags.nested.count = 2;
-    // @ts-expect-error Nested arrays are read-only.
-    ctx.flags.names.push("b");
-    return {};
-  },
-});
-nestedFlagsAdapter.defineEval({ test(t) {
-  // @ts-expect-error Eval receives recursively read-only flags too.
-  t.flags.names.push("b");
+// @ts-expect-error Parser outputs must remain flat, even when all nested values are JSON.
+defineAdapter({ name: "nested-flags", parseFlags: (_input: unknown) => ({ nested: { count: 1 } }), create: () => ({}) });
+// @ts-expect-error Arrays cannot be flag values.
+defineAdapter({ name: "array-member", parseFlags: (_input: unknown) => ({ names: ["a"] }), create: () => ({}) });
+// @ts-expect-error Null cannot be a flag value.
+defineAdapter({ name: "null-member", parseFlags: (_input: unknown) => ({ value: null }), create: () => ({}) });
+// @ts-expect-error Required undefined cannot be a flag value.
+defineAdapter({ name: "undefined-member", parseFlags: (_input: unknown) => ({ value: undefined }), create: () => ({}) });
+strategyAdapter.defineEval({ test(t) {
+  // @ts-expect-error Normalized flags remain read-only.
+  t.flags.limit = 3;
 } });
-defineExperiment({ adapter: nestedFlagsAdapter, flags: { nested: { count: 2 }, names: ["b"] } });
 // @ts-expect-error An async parser cannot provide synchronous flags.
 defineAdapter({ name: "async-flags", parseFlags: async (_input: unknown) => ({ ok: true }), create: () => ({}) });
 // @ts-expect-error The parser must return a record, not a primitive.
@@ -332,4 +334,5 @@ defineAdapter({ name: "array-flags", parseFlags: (_input: unknown) => [1], creat
 flagsContract.withParseFlags(async (_input: unknown) => ({ strategy: "safe" }));
 
 declare function parseJsonFlags(input: unknown): Record<string, JsonValue>;
+// @ts-expect-error Arbitrary JSON parser output is wider than scalar flags.
 defineAdapter({ name: "json-flags", parseFlags: parseJsonFlags, create: () => ({}) });

@@ -1,3 +1,4 @@
+import type { ExperimentFlags } from "../shared/types.ts";
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
@@ -161,7 +162,7 @@ export interface SessionDeps {
   evalGroup?: AgentContext["evalGroup"];
   model?: string;
   reasoningEffort?: string;
-  flags: globalThis.Record<string, JsonValue>;
+  flags: ExperimentFlags;
   signal: AbortSignal;
   /**
    * The only Promise facade for the active Assert-first author surface. It

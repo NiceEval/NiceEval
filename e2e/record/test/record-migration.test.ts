@@ -295,7 +295,11 @@ test.concurrent("历史公开 producer Record 首次只读即可自动迁移并�
                 adapter: experiment.adapter,
                 model: experiment.context.model,
                 reasoningEffort: null,
-                flags: experiment.context.flags,
+                flags: {
+                  application: "user-flag-application",
+                  agentId: "user-flag-agentId",
+                  nestedApplication: "agentId",
+                },
               },
               labels: experiment.context.labels,
             },

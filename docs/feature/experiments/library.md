@@ -75,7 +75,7 @@ export default defineExperiment({
 ```
 
 - `model` 与 `reasoningEffort` 省略时使用 Agent 原生默认；跨模型比较应建立多个 Experiment。
-- `flags` 是 JSON 参数袋。会改变执行的开关必须在这里声明，不能藏在不可描述的闭包里。
+- `flags` 是扁平参数对象，值只能是 `string | number | boolean`，其中数字必须有限。会改变执行的开关必须在这里声明，不能藏在不可描述的闭包里。
 - 已求值配置形成带 `{ domain, value }` 的不透明 identity。只有相同 domain 的值才可比较；identity 只是 reuse planning 的输入，不认证或锁定 Record。
 
 `maxConcurrency`、同一 Experiment 的 dispatch claim（派发占用）与 execution deduplication（执行去重）由
@@ -97,8 +97,14 @@ export default defineExperiment({
 
 整体省略 `flags` 时，`defineExperiment()` 向 parser 传入 `{}`，由 parser 决定默认值或拒绝。
 JavaScript 与动态输入同样经过这次同步校验，不以 TypeScript 类型代替运行校验。
-parser 的规范化结果经严格 JSON 检查、深复制和冻结后，成为执行与缓存身份共同使用的实验值。
+所有 Agent 与普通 Adapter 使用同一结构约束：拒绝嵌套对象、数组、`null`、显式 `undefined` 和非普通对象。
+输入先经过结构检查与复制冻结，再交给 parser；parser 不能将非法结构转换为合法结果来绕过检查。
+规范化结果再次按相同规则校验、复制并冻结，成为执行与缓存身份共同使用的实验值。
 失败发生在任何 Experiment setup 或 Adapter create 之前。
+
+实验模块必须导出 `defineExperiment()` 返回的原始定义值，不能通过继承或复制内部标记替换参数。
+已有 Record 中的复杂 JSON flags 仍按历史事实读取，不转换、不重写，也不更改身份算法或 generation。
+迁移作者配置时，应改成具名的标量条件，例如用 `webSearch: false` 选择工具集合，不用 JSON 字符串包装旧对象。
 
 parser 的同步、未知键与版本责任见 [Adapter flags 契约](../adapters/library/writing-an-adapter.md#校验与推导-flags)。
 

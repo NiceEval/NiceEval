@@ -22,7 +22,7 @@ export default uiMessageStreamAgent({
   body: (ctx) => ({
     model: ctx.model,
     instructions: ctx.flags.instructions as string | undefined,
-    tools: ctx.flags.tools as string[] | undefined,
+    tools: ctx.flags.webSearch === false ? ["get_weather", "calculate"] : undefined,
   }),
   // 应用用 BatchSpanProcessor,流结束后留一段宽限让最后一批 span 落进本轮收集窗口
   // (配合启动应用时的 OTEL_BSP_SCHEDULE_DELAY=200,见 README;只影响瀑布图)。

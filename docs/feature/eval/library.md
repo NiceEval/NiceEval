@@ -45,7 +45,7 @@ interface AdapterCreateContext {
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<Record<string, JsonValue>>;
+  readonly flags: Readonly<Record<string, string | number | boolean>>;
   progress(update: ProgressUpdate): void;
   diagnostic(input: DiagnosticInput): void;
   log(message: string): void;

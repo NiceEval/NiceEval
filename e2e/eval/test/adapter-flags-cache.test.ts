@@ -15,7 +15,7 @@ test.concurrent("Adapter flags 规范化等价时复用且 parseFlags 行为版�
     await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "run.get", runId } }));
     const inspected = await niceeval.run(["query", "run", "--request", request]);
     expect(inspected.exitCode, inspected.diagnostic()).toBe(0);
-    expect(inspected.querySuccess("run.get").run.value.context?.execution?.flags).toEqual({ strategy: "safe", limit: 2, nested: { enabled: true, labels: ["original"] } });
+    expect(inspected.querySuccess("run.get").run.value.context?.execution?.flags).toEqual({ strategy: "safe", limit: 2, enabled: true });
 
     const equivalent = await niceeval.run(["exp", "parsed-flags", "--json"], {
       env: { NICEEVAL_E2E_FLAGS_INPUT: '{"strategy":"safe","limit":"2"}' },
