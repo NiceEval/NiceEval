@@ -9,6 +9,7 @@ import { evalE2E } from "./context.ts";
 import {
   assertionEntry,
   inspectAssertion,
+  inspectAssertionEntries,
   inspectAttempt,
   inspectRunSummary,
 } from "./inspection.ts";
@@ -18,9 +19,11 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
     "custom-application",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      for (const [experimentId, implementation] of [
-        ["custom-native-alpha", "alpha"],
-        ["custom-native-beta", "beta"],
+      for (const [experimentId, implementation, evalId] of [
+        ["custom-native-alpha", "alpha", "custom-native-actions"],
+        ["custom-native-beta", "beta", "custom-native-actions"],
+        ["custom-native-alpha-score", "alpha", "custom-native-score"],
+        ["custom-native-beta-score", "beta", "custom-native-score"],
       ] as const) {
         const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
         expect(run.exitCode, run.diagnostic()).toBe(0);
@@ -28,7 +31,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
         expect(receipt, run.diagnostic()).toMatchObject({ completion: "completed" });
         const evaluation = only(
           run.expEvalEvents(),
-          (event) => event.experimentId === experimentId && event.evalId === "custom-native-actions",
+          (event) => event.experimentId === experimentId && event.evalId === evalId,
           run.diagnostic(),
         );
         expect(evaluation).toMatchObject({
@@ -64,31 +67,33 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
         expect(execution).not.toHaveProperty("application");
         expect(execution).not.toHaveProperty("agentId");
 
-        const identityEntries = (await readFile(join(projectRoot, customIdentityJournal), "utf8"))
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as {
-            source: "event" | "result";
-            experimentId: string;
-            attempt: number;
-            adapter: unknown;
-          })
-          .filter((entry) => entry.experimentId === experimentId);
-        expect(identityEntries).toHaveLength(4);
-        expect(identityEntries.map(({ source, attempt }) => `${source}:${attempt}`).sort()).toEqual([
-          "event:0",
-          "event:1",
-          "result:0",
-          "result:1",
-        ]);
-        for (const entry of identityEntries) {
-          expect(entry.adapter).toEqual({
-            name: `custom-${implementation}`,
-            contract: "e2e/native-workflow/v1",
-            behaviorRevision: "1",
-          });
-          expect(entry.adapter).not.toHaveProperty("kind");
+        if (evalId === "custom-native-actions") {
+          const identityEntries = (await readFile(join(projectRoot, customIdentityJournal), "utf8"))
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as {
+              source: "event" | "result";
+              experimentId: string;
+              attempt: number;
+              adapter: unknown;
+            })
+            .filter((entry) => entry.experimentId === experimentId);
+          expect(identityEntries).toHaveLength(4);
+          expect(identityEntries.map(({ source, attempt }) => `${source}:${attempt}`).sort()).toEqual([
+            "event:0",
+            "event:1",
+            "result:0",
+            "result:1",
+          ]);
+          for (const entry of identityEntries) {
+            expect(entry.adapter).toEqual({
+              name: `custom-${implementation}`,
+              contract: "e2e/native-workflow/v1",
+              behaviorRevision: "1",
+            });
+            expect(entry.adapter).not.toHaveProperty("kind");
+          }
         }
 
         const summary = await inspectRunSummary(niceeval, projectRoot, runId);
@@ -97,7 +102,6 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
         for (const member of summary.document.summary.members) {
           expect(member).toMatchObject({
             runId,
-            evalId: "custom-native-actions",
             state: "executed",
             outcome: "completed",
           });
@@ -108,6 +112,24 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
           const attempt = await inspectAttempt(niceeval, projectRoot, locator, "attempt.get");
           expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
           expect(attempt.document.attempt.assertions.state).toBe("available");
+          if (member.evalId === "custom-native-score") {
+            expect(member.verdict).toBe("passed");
+            const details = await inspectAssertionEntries(
+              niceeval, projectRoot, locator, attempt.document.attempt.assertions.entries,
+            );
+            const entries = details.map((detail) => {
+              expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
+              return assertionEntry(detail.document, detail.receipt.diagnostic());
+            });
+            expect(entries.map(({ display, contribution }) => ({ label: display.label, contribution }))).toEqual([
+              { label: "独立初始状态", contribution: { state: "earned", points: 1, earned: 1 } },
+              { label: "调用时读取状态", contribution: { state: "earned", points: 4, earned: 2 } },
+              { label: "未匹配只贡献零分", contribution: { state: "earned", points: 3, earned: 0 } },
+            ]);
+            expect(entries.map(({ decision }) => decision.gate)).toEqual(["satisfied", "satisfied", "not-gate"]);
+            continue;
+          }
+          expect(member.evalId).toBe("custom-native-actions");
           const labels = attempt.document.attempt.assertions.entries.map(({ display }) => display.label);
           expect(labels).toEqual([
             "选中的实现创建实例",

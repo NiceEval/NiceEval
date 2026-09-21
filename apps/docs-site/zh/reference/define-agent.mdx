@@ -1,12 +1,17 @@
 ---
-title: "defineAgent 和 defineSandboxAgent：Adapter 参考"
+title: "定义评估对象：Adapter 参考"
 sidebarTitle: "定义 Adapter"
-description: "defineAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 Sandbox 辅助函数。"
+description: "自定义 Adapter 与 Agent 接入的上下文、断言方法和资源生命周期。"
 ---
 
 import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
-每个 [NiceEval](https://niceeval.com/) agent 都是一个 adapter：一段知道如何驱动特定 backend，并把输出转成标准事件流的代码。runner 只调用 `agent.send(input, ctx)`。
+Adapter 连接评估对象，提供其操作和证据。Agent、游戏和普通应用都使用 NiceEval 的实验、断言与结果查询能力。
+
+自定义对象通过 `defineAdapter` 提供原生方法，并可在 `assertions` 中绑定领域检查；多个实现通过 `defineAdapterContract` 共享接口与断言。
+完整定义与运行方式见[评估自定义应用](/zh/tutorials/custom-application)。
+
+以下 `defineAgent` 与 `defineSandboxAgent` 专门提供会话接入，使用 `send` 返回标准事件流。
 
 <TurnRoundtrip />
 
@@ -88,9 +93,126 @@ export default defineExperiment({
 `defineAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
 以及两者的 `send(input, ctx)` 都会拿到的 `ctx`（`AgentContext`）：
 
+自定义 Adapter 的 `create(ctx)` 使用 `AdapterCreateContext`，其 cleanup callback 使用 `AdapterCleanupContext`。
+
 {/* GENERATED:BEGIN agent-def */}
 
 {/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+### `AdapterAssertionsFactoryContext`
+
+#### `app`
+
+```ts
+readonly app: Readonly<Context>;
+```
+
+#### `check`
+
+```ts
+readonly check: AssertionCheck<"polymorphic">;
+```
+
+### `AdapterCleanupContext`
+
+#### `signal`
+
+```ts
+readonly signal: AbortSignal;
+```
+
+当前 Adapter cleanup 总窗口的取消信号。它独立于 Attempt signal，并在 30 秒总预算结束时取消。
+
+### `AdapterCreateContext`
+
+#### `evalId`
+
+```ts
+readonly evalId: string;
+```
+
+当前 Eval 的公开 ID。
+
+#### `experimentId`
+
+```ts
+readonly experimentId: string;
+```
+
+当前 Experiment 的公开 ID。
+
+#### `attempt`
+
+```ts
+readonly attempt: number;
+```
+
+当前 Attempt 的零起始序号。
+
+#### `signal`
+
+```ts
+readonly signal: AbortSignal;
+```
+
+Attempt 执行信号；取消或超时后会中止，不用于 cleanup 窗口。
+
+#### `model`
+
+```ts
+readonly model?: string;
+```
+
+Experiment 选择的模型。
+
+#### `reasoningEffort`
+
+```ts
+readonly reasoningEffort?: string;
+```
+
+Experiment 选择的推理强度。
+
+#### `flags`
+
+```ts
+readonly flags: Readonly<Record<string, JsonValue>>;
+```
+
+Experiment 传给 Adapter 的只读 flags。
+
+#### `progress`
+
+```ts
+progress(update: ProgressUpdate): void;
+```
+
+更新当前 Attempt 的人读进度。
+
+#### `diagnostic`
+
+```ts
+diagnostic(input: DiagnosticInput): void;
+```
+
+为当前 Attempt 追加结构化诊断。
+
+#### `log`
+
+```ts
+log(message: string): void;
+```
+
+为当前 Attempt 追加日志。
+
+#### `onCleanup`
+
+```ts
+onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
+```
+
+登记 Attempt-local 资源释放。回调按全局 LIFO 执行；一项失败不会跳过其余项。
+零参数回调仍可直接传入。传入的 context 已冻结，同一 cleanup 窗口的回调共享一个 signal。
 
 ### `DirectAgentDef`
 

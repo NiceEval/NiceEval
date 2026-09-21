@@ -55,6 +55,8 @@ query discover
 
 ## 读取历史 Record
 
+这里的格式版本是 Record 内部标识，与 NiceEval 的 npm 包版本独立。不要通过修改数据库版本字段尝试升级。
+
 `show`、`query`、`run list/show` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史 portable Record。读取会在私有副本中自动迁移，保留原文件、Run、Attempt 和引用，不需要先运行评估。
 
 通过 `--record` 读取时，输入必须是已经交付的单文件 Record，读取期间不能被其它进程修改。包含未合并 WAL、活动工作或无法确认的 owner 状态时，会拒绝读取；不要删除 sidecar 来绕过检查。

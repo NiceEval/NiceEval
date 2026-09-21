@@ -475,6 +475,7 @@ export function runAttemptEffect<
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
   // Effect.timeoutTo 调用点的注释)。
   let timedOut = false;
+  let deadlineError: AttemptError | undefined;
   let timeoutDiff: DiffArtifact | undefined;
   let fileChangesCapture: FileChangesCapture | undefined;
   let timeoutFileChangesCapture: FileChangesCapture | undefined;
@@ -718,6 +719,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             timeout: { trigger: "attempt-deadline", limitMs: timeoutMs, source: timeoutSource },
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
+          deadlineError = error;
           recorder.failCurrent();
           // `timeoutTo` 已经赢得 deadline：先同步关闭所有作者/Core 修改入口，
           // 再标记并 abort 协作式 adapter。同步 abort listener 因而也不能追加断言。
@@ -1520,7 +1522,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             const raw = Cause.squash(cause);
             const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
             declareFailure(phase, raw);
-            const error = errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout);
+            const error = timedOut && deadlineError !== undefined
+              ? deadlineError
+              : errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout);
             const fallback: EvalResult = {
               ...base,
               durationMs: recorder.offsetNow(),
@@ -1710,8 +1714,8 @@ function runAdapterAttemptBody<SealRequirements>(
       // A synchronous plain object is validated before Promise assimilation;
       // async factories are validated only after their Promise settles.
       return created instanceof Promise
-        ? created.then((value) => bindAdapterEvalContext(core, value, () => resources.assertForwardOpen()))
-        : bindAdapterEvalContext(core, created, () => resources.assertForwardOpen());
+        ? created.then((value) => bindAdapterEvalContext(core, value, adapter, () => resources.assertForwardOpen()))
+        : bindAdapterEvalContext(core, created, adapter, () => resources.assertForwardOpen());
     }));
     if (Exit.isSuccess(createExit)) {
       context = createExit.value;

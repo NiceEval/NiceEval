@@ -138,6 +138,7 @@ Contract: [docs/feature/eval/use-case/比较应用实现.md](../../../feature/ev
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
 
 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。
+共享断言便捷方法读取各 Attempt 的应用状态，公开 Query 逐项核对 Boolean 质量门与连续得分；方法解构后仍绑定正确实现。
 ## Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。 {#eval-custom-application-lifecycle}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
@@ -147,8 +148,9 @@ Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feat
 
 Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。
 
-同步 abort listener 不能登记 Assertion、修改已有 handle 或再次调用顶层应用方法。
+同步 abort listener 不能登记 Assertion、修改已有 handle、再次调用顶层应用方法或调用自定义断言便捷方法。
 资源释放回调抛错不会跳过栈中其它回调；fixture journal 只观察应用自身的资源，不读取 NiceEval 私有结果。
+每个 cleanup callback 收到冻结 context；Attempt 取消后 cleanup signal 仍活动，同窗回调共享它，并在 30 秒总预算结束时取消。
 完成通知阶段再次登记资源必须同步失败。成功判定后的释放回调即使跨过执行 deadline 并抛错，也只能追加 diagnostic。
 
 ## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}
@@ -158,7 +160,8 @@ Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feat
 <!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#单一强类型-t at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
 
 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。
-## Judge 材料与 Match 校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
+自定义断言方法保留具体参数、Boolean 细化结果与 measurement 门槛；Pass 不暴露 Score 能力，直接 Adapter 与共享契约的实现保持一致。
+## Judge 材料与声明校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
 
 <!-- niceeval.e2e-owner-contract/v1 -->
 Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)

@@ -197,6 +197,9 @@ Preview 从同一已验证 generation 取得 cutoff、计算摘要并打包，�
 
 ## Record 格式版本历史
 
+Record 格式版本独立于 npm 包版本，不能用产品版本号推断数据库格式。
+当前 schema 独立定义；历史 schema 仅用于精确识别与迁移，不参与当前 schema 的生成。
+
 | 格式版本 | Run execution 身份 | 升级 |
 |---|---|---|
 | `niceeval.project-database/0.15` | `agentId: string` | 映射到会话适配器身份 |

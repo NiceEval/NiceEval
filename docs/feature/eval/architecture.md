@@ -33,7 +33,7 @@ Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终�
 
 ## 上下文组合
 
-公共 EvalContext 拥有 Assertion、分组、执行控制与反馈，Adapter 提供应用上下文。
+公共 EvalContext 拥有 Assertion、分组、执行控制与反馈，Adapter 提供评估对象的操作与证据。Agent、游戏和普通应用都沿同一个契约参与评估，领域能力不成为其它对象的执行前提。
 组合后的 `t` 具有精确泛型类型，不使用全局扩展或开放动作字典。
 它的根字段集合固定且只读，应用成员使用实时转发，不把可变值复制成过时快照。
 顶层函数稳定绑定原应用上下文，解构后仍可调用；`this` 不获得公共评估能力。
@@ -41,6 +41,11 @@ Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终�
 类型与运行时共同拒绝核心成员冲突及危险属性。同步上下文在 Promise 吸收前检查；异步工厂只检查兑现对象。
 JavaScript 自身已发生的 thenable 吸收不能撤销，这不是执行不可信代码的安全边界。
 顶层动作 wrapper 每次调用检查作者生命周期，关闭后的调用失败；已经运行的函数和嵌套原对象仍由应用协作取消。
+
+断言便捷方法由 Adapter 定义或共享契约拥有，每个实际执行的 Attempt 在 `create` 成功后组装一次。共享契约的实现不能替换 factory。
+组装输入仅包含受生命周期保护的应用 facade 和同一核心 `check`；组装期间不登记 Assertion。方法调用时读取证据，同步返回该次调用登记的原始 handle。
+断言方法不建立独立的评分、封口或持久结果类型。Pass 与 Score 使用各自的原生 handle 类型，关闭后的方法调用和保存的 `check` 都经过同一作者生命周期检查。
+字段碰撞、getter、非普通对象或无效返回值必须明确失败，不能让普通 Boolean 冒充已登记 Assertion。
 
 ## 应用实例生命周期
 
@@ -60,6 +65,9 @@ Agent 的安装、会话、变更归因和 tracing 由 Agent 专属准备及观�
 随后按中断规则封口，终态冻结、封口与 publication 交接各只执行一次。
 
 `onCleanup` 成功登记才移交释放义务。已登记回调按逆序执行，一项失败追加 diagnostic 并继续剩余回调。
+每个回调收到冻结的 `AdapterCleanupContext`；同一次 cleanup 的回调共享一个独立于 Attempt 的 signal。
+Attempt 超时或取消时，`ctx.signal` 可以已经取消，但 cleanup signal 在总预算内保持活动，并在预算结束时取消以支持协作收尾。
+
 进入 `cleanup-open` 时开始固定 30 秒总预算，应用回调与已知创建、作者交接都在该预算内；迟到登记不延长期限。
 `cleanup-open` 中的迟到登记由原 Scope 接管；已登记回调耗尽且已知交接完成，或总期限到达后，状态变为 `closed`。
 关闭后的登记同步抛出生命周期错误，资源仍归调用者，不能另开 runtime 或修改已发布事实。
@@ -67,7 +75,7 @@ Agent 的安装、会话、变更归因和 tracing 由 Agent 专属准备及观�
 ```ts
 const lease = await client.acquire({ signal: ctx.signal });
 try {
-  ctx.onCleanup(() => lease.release());
+  ctx.onCleanup(({ signal }) => lease.release({ signal }));
 } catch (error) {
   await lease.release();
   throw error;

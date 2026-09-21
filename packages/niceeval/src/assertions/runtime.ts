@@ -301,7 +301,10 @@ function boundedSnapshotValue(
   }
 
   if (typeof value === "undefined") {
-    markTruncated(state);
+    // undefined has no JSON primitive representation, but the tagged
+    // placeholder below preserves the fact exactly. It is therefore complete
+    // snapshot material; only values that cannot be represented safely or
+    // boundedly should make coverage partial.
     return marker("undefined");
   }
 

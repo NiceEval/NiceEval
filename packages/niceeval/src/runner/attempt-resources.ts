@@ -1,4 +1,5 @@
 import type { EvidenceCoverage } from "../agents/types.ts";
+import type { AdapterCleanupContext } from "../adapter.ts";
 import type { AttemptResourceRegistry } from "../types.ts";
 
 const ADAPTER_UNAVAILABLE_ENTRY = Object.freeze({
@@ -49,7 +50,7 @@ export interface AdapterCleanupResult {
 export class AdapterAttemptResources {
   private windowState: AdapterResourceWindow = "forward-open";
   private authorOpen = true;
-  private readonly cleanups: Array<() => void | Promise<void>> = [];
+  private readonly cleanups: Array<(context: AdapterCleanupContext) => void | Promise<void>> = [];
   private readonly handoffs = new Set<Promise<void>>();
 
   get window(): AdapterResourceWindow {
@@ -63,7 +64,7 @@ export class AdapterAttemptResources {
     }
   }
 
-  onCleanup(cleanup: () => void | Promise<void>): void {
+  onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void {
     if (typeof cleanup !== "function") {
       throw new TypeError("Adapter onCleanup() requires a function");
     }
@@ -100,6 +101,7 @@ export class AdapterAttemptResources {
 
   async cleanup(signal: AbortSignal): Promise<AdapterCleanupResult> {
     this.beginCleanup();
+    const context: AdapterCleanupContext = Object.freeze({ signal });
     const failures: unknown[] = [];
     let timedOut = signal.aborted;
     let stopWaiting: (() => void) | undefined;
@@ -117,7 +119,7 @@ export class AdapterAttemptResources {
         while (this.cleanups.length > 0 && !timedOut) {
           const cleanup = this.cleanups.pop()!;
           const outcome = await Promise.race([
-            Promise.resolve().then(cleanup).then(
+            Promise.resolve().then(() => cleanup(context)).then(
               () => ({ _tag: "settled" as const }),
               (error: unknown) => ({ _tag: "failed" as const, error }),
             ),
