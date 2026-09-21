@@ -1173,23 +1173,38 @@ export interface Config {
   /**
    * 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-   * 精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
-   * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
-   * 固定 Inspection operation 不会把它作为额外输入。
+   * 精确 key 优先于通配。Runner 用它计算 `maxCost` 的预算 estimate；Adapter physical-call
+   * collector 只在 reported cost 缺席时，把命中的显式 fixed profile 封存为 call-bound estimate proof。
+   * Inspection 只读已封存 proof，不把 mutable config 作为 operation 输入，也不按 endpoint 倒填历史调用。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
 }
 
-/** 每百万 token 的美元单价;省略的桶退回 `inputPerMTok`(cache token 本质也是 input)。 */
+/** 每百万 token 的配置价格；Runner 预算保持既有 USD 语义，Inspection 不读取该预算结果。 */
 export interface PriceOverride {
   /** 普通输入 token 单价。 */
   inputPerMTok: number;
   /** 输出 token 单价。 */
   outputPerMTok: number;
-  /** cache 命中(读)token 单价,省略则退回 inputPerMTok。 */
+  /**
+   * cache 命中（读）token 单价。封存 physical-call estimate 时，省略表示该桶价格未知，不会改用 input rate。
+   * 独立的 Runner `maxCost` 执行前预算为保持既有行为，仍会在它自己的计算中使用 input rate fallback。
+   */
   cacheReadPerMTok?: number;
-  /** cache 写入 token 单价,省略则退回 inputPerMTok。 */
+  /**
+   * cache 写入 token 单价。封存 physical-call estimate 时，省略表示该桶价格未知，不会改用 input rate。
+   * 独立的 Runner `maxCost` 执行前预算为保持既有行为，仍会在它自己的计算中使用 input rate fallback。
+   */
   cacheWritePerMTok?: number;
+  /** Inspection call-price receipt 的依据；省略时按兼容配置解释为 catalog reference。 */
+  basis?: "catalog-reference";
+  /** 配置价格当前只接受 USD；reported cost 仍可报告其它货币。 */
+  currency?: "USD";
+  /** 非秘密价格来源身份；省略时使用 niceeval.config.pricing，未知时间保留 null。 */
+  source?: {
+    readonly id: string;
+    readonly asOf?: number | null;
+  };
 }
 
 // ───────────────────────── 调度编排 ─────────────────────────

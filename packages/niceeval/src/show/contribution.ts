@@ -17,6 +17,9 @@ import {
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
+  type InspectionFactSource,
+  type InspectionOperationFor,
+  type InspectionSuccessDocumentFor,
 } from "../inspection/index.ts";
 import {
   ExperimentIdSchema,
@@ -34,7 +37,6 @@ import {
   renderTrace,
   renderTraceDetail,
   renderUsage,
-  traceSelector,
 } from "./render.ts";
 import {
   projectAttempt,
@@ -121,7 +123,8 @@ Selectors:
 Attempt details:
   --source                      Show captured sources and Assertion sites.
   --execution                   Show the bounded execution outline.
-  --expand <stable-id>          Expand an itemId, toolOccurrenceId, or commandId.
+  --expand <stable-id>          Expand an execution event/evidence ID, itemId,
+                              toolOccurrenceId, or commandId.
   --timing                      Show captured timing activities.
   --usage                       Show captured usage totals and observations.
   --diff                        Show captured file-change windows.
@@ -333,6 +336,20 @@ function runShow(
           return 0;
         }
         if (execution) {
+          if (expand !== undefined) {
+            const detail = yield* select("attempt.trace.detail", () =>
+              selectTraceDetailByStableId(opened, selectedLocator, expand),
+            );
+            yield* write(
+              "stdout",
+              renderTraceDetail(
+                yield* project("attempt.trace.detail", () =>
+                  projectTraceDetail(detail, selectedLocator),
+                ),
+              ),
+            );
+            return 0;
+          }
           const outline = yield* select("attempt.trace", () =>
             selectInspectionOperation(opened, {
               kind: "attempt.trace",
@@ -342,30 +359,7 @@ function runShow(
           const trace = yield* project("attempt.trace", () =>
             projectTrace(outline, selectedLocator),
           );
-          if (expand === undefined) {
-            yield* write("stdout", renderTrace(trace));
-            return 0;
-          }
-          const selector = traceSelector(trace, expand);
-          if (selector === undefined)
-            return yield* usage(
-              `Stable execution identity ${JSON.stringify(expand)} is not present in this Attempt outline.`,
-            );
-          const detail = yield* select("attempt.trace.detail", () =>
-            selectInspectionOperation(opened, {
-              kind: "attempt.trace.detail",
-              locator: selectedLocator,
-              selector,
-            }),
-          );
-          yield* write(
-            "stdout",
-            renderTraceDetail(
-              yield* project("attempt.trace.detail", () =>
-                projectTraceDetail(detail, selectedLocator),
-              ),
-            ),
-          );
+          yield* write("stdout", renderTrace(trace));
           return 0;
         }
         if (timing) {
@@ -434,6 +428,38 @@ function runShow(
         return 0;
       }),
     );
+  });
+}
+
+function selectTraceDetailByStableId(
+  source: InspectionFactSource,
+  locator: string,
+  stableId: string,
+): InspectionSuccessDocumentFor<"attempt.trace.detail"> {
+  type DetailSelector = InspectionOperationFor<"attempt.trace.detail">["selector"];
+  const selectors = Object.freeze([
+    { kind: "execution-event", eventId: stableId },
+    { kind: "execution-evidence", evidenceId: stableId },
+    { kind: "item", itemId: stableId },
+    { kind: "tool-occurrence", toolOccurrenceId: stableId },
+    { kind: "command", commandId: stableId },
+  ]) as unknown as readonly DetailSelector[];
+  for (const selector of selectors) {
+    try {
+      return selectInspectionOperation(source, {
+        kind: "attempt.trace.detail",
+        locator,
+        selector,
+      });
+    } catch (cause) {
+      if (cause instanceof InspectionOperationError && cause.code === "inspection-selection-missing") continue;
+      throw cause;
+    }
+  }
+  throw new InspectionOperationError({
+    code: "inspection-selection-missing",
+    operation: "attempt.trace.detail",
+    reason: `Stable execution identity ${JSON.stringify(stableId)} was not found.`,
   });
 }
 

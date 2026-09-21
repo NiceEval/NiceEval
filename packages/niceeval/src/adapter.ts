@@ -173,6 +173,9 @@ export interface AdapterCleanupContext {
 export interface AdapterCreateContext<Flags = ExperimentFlags> {
   recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
   attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
+  recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceEvent>(
+    input: import("./adapter-execution-trace.ts").ExecutionTraceInput<Event>,
+  ): Promise<import("./adapter-execution-trace.ts").ExecutionTraceReceipt>;
   /** 当前 Eval 的公开 ID。 */
   readonly evalId: string;
   /** 当前 Experiment 的公开 ID。 */

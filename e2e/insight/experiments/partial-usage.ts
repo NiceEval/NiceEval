@@ -1,10 +1,9 @@
 import { defineExperiment } from "niceeval";
-import { deterministicAgent, deterministicSandbox } from "../agents/deterministic.ts";
+import { usageCost } from "../adapters/usage-cost.ts";
 
 export default defineExperiment({
-  description: "partial-usage: expose a partial token subtotal in Insight",
-  agent: deterministicAgent({ partialUsage: true }),
-  sandbox: deterministicSandbox,
-  model: "inspection-fixture-v1",
-  evals: ["inspection"],
+  description: "partial-usage: expose consistent usage and cost subtotals in Insight",
+  adapter: usageCost,
+  model: "openai/gpt-5.6-luna",
+  evals: ["usage-cost"],
 });

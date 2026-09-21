@@ -23,7 +23,9 @@ export interface InspectionQueryProtocolError {
     | "inspection-source-invalid"
     | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
-    | "inspection-result-invalid";
+    | "inspection-result-invalid"
+    | "evidence-budget-exceeded"
+    | "restart-required";
   readonly reason: string;
   readonly identity?: { readonly runId: string };
   readonly cause?: unknown;

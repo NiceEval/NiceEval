@@ -7,6 +7,7 @@ import {
 } from "./artifacts/definition.ts";
 import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { fileChangesRecordAttachment } from "./file-changes/definition.ts";
+import { executionTracesRecordCollection } from "./execution-traces/definition.ts";
 import {
   attemptRunnerActivitiesRecordAttachment,
   runRunnerActivitiesRecordAttachment,
@@ -36,6 +37,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
     run: runRunnerDiagnosticsRecordAttachment,
   }),
   fileChanges: fileChangesRecordAttachment,
+  executionTraces: executionTracesRecordCollection,
   sources: sourcesRecordAttachment,
   artifacts: Object.freeze({
     attempt: attemptArtifactsRecordAttachment,
@@ -48,7 +50,7 @@ const current = <Attachment, Revision extends number>(attachment: Attachment, re
 
 /** Current revisions without importing historical Node-only migration code. */
 export const NiceEvalCurrentRecordAttachments = Object.freeze({
-  adapterUsage: current(adapterUsageRecordAttachment, 1),
+  adapterUsage: current(adapterUsageRecordAttachment, 2),
   assertions: current(assertionsRecordAttachment, 4),
   attemptCost: current(attemptCostRecordAttachment, 1),
   agentTurns: current(agentTurnsRecordAttachment, 4),
@@ -63,6 +65,7 @@ export const NiceEvalCurrentRecordAttachments = Object.freeze({
     run: current(runRunnerDiagnosticsRecordAttachment, 2),
   }),
   fileChanges: current(fileChangesRecordAttachment, 2),
+  executionTraces: current(executionTracesRecordCollection, 1),
   sources: current(sourcesRecordAttachment, 2),
   artifacts: Object.freeze({
     attempt: current(attemptArtifactsRecordAttachment, 2),

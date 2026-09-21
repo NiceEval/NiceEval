@@ -1,7 +1,9 @@
 import { Result, Schema } from "effect";
 import type { AdapterUsageInput } from "../adapter-usage.ts";
+import { createAdapterCallPriceReceipts } from "../o11y/adapter-call-price.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
-import { AdapterUsageCallSchema, AdapterUsageLimits, validateAdapterUsageAttachment, type AdapterUsageCall, type AdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
+import { AdapterUsageCallSchema, AdapterUsageLimits, validateAdapterUsageCalls, type AdapterUsageCall, type AdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
+import type { PriceOverride } from "./types.ts";
 import type { EvalResult } from "./types.ts";
 
 const captures = new WeakMap<EvalResult, AdapterUsageAttachment>();
@@ -16,7 +18,10 @@ export class AdapterUsageCollector {
   private closed = false;
   private failed: Error | undefined;
   get failure(): Error | undefined { return this.failed; }
-  constructor(private readonly assertOpen: () => void) {}
+  constructor(
+    private readonly assertOpen: () => void,
+    private readonly pricing: Readonly<Record<string, PriceOverride>> | undefined,
+  ) {}
   record = (input: AdapterUsageInput): void => {
     if (this.closed) throw new Error("Adapter usage capture is closed");
     this.assertOpen();
@@ -24,6 +29,8 @@ export class AdapterUsageCollector {
       const decoded = Schema.decodeUnknownResult(AdapterUsageCallSchema, RecordExactParseOptions)({
         ...input,
         retryOf: input.retryOf ?? null,
+        route: input.route ?? { transportProvider: null, endpointId: null },
+        cost: input.cost ?? null,
         inputTotalTokens: input.inputTotalTokens ?? null,
         cacheReadTokens: input.cacheReadTokens ?? null,
         cacheWriteTokens: input.cacheWriteTokens ?? null,
@@ -37,7 +44,7 @@ export class AdapterUsageCollector {
       }
       if (call.retryOf !== null && !this.calls.has(call.retryOf)) throw new Error("Adapter usage retryOf must reference an earlier call in this Attempt");
       if (this.calls.size >= AdapterUsageLimits.maximumCalls) throw new Error("Adapter usage exceeds 4000 calls per Attempt");
-      if (validateAdapterUsageAttachment({ collection: { state: "complete", limitations: [] }, calls: [...this.calls.values(), call] }).length > 0) {
+      if (validateAdapterUsageCalls([...this.calls.values(), call]).length > 0) {
         throw new Error("Adapter input token observations are inconsistent or exceed safe integer limits");
       }
       this.calls.set(call.callId, call);
@@ -48,11 +55,13 @@ export class AdapterUsageCollector {
   };
   close(): AdapterUsageAttachment {
     this.closed = true;
+    const calls = Object.freeze([...this.calls.values()]);
     return Object.freeze({
       collection: this.failed === undefined
         ? { state: "complete" as const, limitations: [] as const }
         : { state: "partial" as const, limitations: [{ code: "capture-failed" as const, stage: "adapter-usage" }] as const },
-      calls: Object.freeze([...this.calls.values()]),
+      calls,
+      priceReceipts: createAdapterCallPriceReceipts(calls, this.pricing),
     });
   }
 }

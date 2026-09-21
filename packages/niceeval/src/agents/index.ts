@@ -24,6 +24,20 @@ export type {
   EvalContext,
   ReservedAdapterContextKey,
 } from "../adapter.ts";
+export type {
+  ExecutionTraceActor,
+  ExecutionTraceEvent,
+  ExecutionTraceEvidence,
+  ExecutionTraceInput,
+  ExecutionTraceLimitation,
+  ExecutionTraceLink,
+  ExecutionTraceReceipt,
+  ExecutionTraceScope,
+  ExecutionTraceScopeMembership,
+  ExecutionTraceSource,
+  ExecutionTraceTime,
+  TraceJson,
+} from "../adapter-execution-trace.ts";
 export { defineAgent, defineSandboxAgent } from "../define.ts";
 export { createSessionSlot } from "./session-slot.ts";
 export { shared } from "./shared.ts";

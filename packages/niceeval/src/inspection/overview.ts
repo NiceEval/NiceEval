@@ -10,6 +10,7 @@ import {
 } from "../record/family/current.ts";
 import {
   closeInspectionJson,
+  isInspectionCodecError,
   type InspectionJson,
 } from "./codec.ts";
 import {
@@ -59,7 +60,7 @@ export interface InspectionMetricValue {
 }
 
 export interface InspectionCostMetricValue extends InspectionMetricValue {
-  readonly source: "observed" | "estimated" | null;
+  readonly source: "reported" | "estimated" | "mixed" | null;
 }
 
 export interface InspectionOverviewDenominator {
@@ -166,8 +167,9 @@ interface AttemptAnalysis {
     readonly complete: boolean;
   };
   readonly costUSD: {
-    readonly observed: number | null;
-    readonly estimated: number | null;
+    readonly value: number | null;
+    readonly state: "available" | "partial" | "unavailable";
+    readonly source: "reported" | "estimated" | "mixed" | null;
   };
   readonly durationMs: OperationalMetric;
   readonly tokens: OperationalMetric;
@@ -607,6 +609,25 @@ function inspectionLabels(
 }
 
 function costUSDOf(resolved: ResolvedInspectionAttempt): AttemptAnalysis["costUSD"] {
+  const adapterUsage = attemptAttachment(
+    resolved,
+    NiceEvalRecordAttachments.adapterUsage.family,
+  );
+  if (adapterUsage !== undefined) {
+    const usage = projectAttemptUsage(Object.freeze({ adapterUsage }));
+    const costs = usage.totals.costs;
+    const usd = costs?.values.find((value) => value.currency === "USD");
+    if (costs === undefined || usd === undefined) return unavailableAttemptCost();
+    const value = Number(usd.value);
+    if (!Number.isFinite(value) || value < 0) return unavailableAttemptCost();
+    const complete = costs.state === "complete" && costs.values.length === 1 &&
+      usd.coveredCalls === costs.totalCalls;
+    return Object.freeze({
+      value,
+      state: complete ? "available" as const : "partial" as const,
+      source: usd.source,
+    });
+  }
   const attachment = attemptAttachment(
     resolved,
     NiceEvalRecordAttachments.attemptCost.family,
@@ -628,16 +649,19 @@ function costUSDOf(resolved: ResolvedInspectionAttempt): AttemptAnalysis["costUS
   const estimated = Reflect.has(raw, "estimated")
     ? decode({ estimated: Reflect.get(raw, "estimated") })
     : undefined;
-  return Object.freeze({
-    observed: observed === undefined ? null : observed.success.observed?.amountUSD ?? null,
-    estimated: estimated === undefined || Result.isFailure(estimated)
-      ? null
-      : estimated.success.estimated?.amountUSD ?? null,
-  });
+  if (estimated !== undefined && Result.isFailure(estimated)) return unavailableAttemptCost();
+  const reportedValue = observed?.success.observed?.amountUSD;
+  if (reportedValue !== undefined) {
+    return Object.freeze({ value: reportedValue, state: "available", source: "reported" });
+  }
+  const estimatedValue = estimated?.success.estimated?.amountUSD;
+  return estimatedValue === undefined
+    ? unavailableAttemptCost()
+    : Object.freeze({ value: estimatedValue, state: "available", source: "estimated" });
 }
 
 function unavailableAttemptCost(): AttemptAnalysis["costUSD"] {
-  return Object.freeze({ observed: null, estimated: null });
+  return Object.freeze({ value: null, state: "unavailable", source: null });
 }
 
 function costForSlots(slots: readonly SelectedSlot[]): InspectionCostMetricValue {
@@ -647,23 +671,24 @@ function costForSlots(slots: readonly SelectedSlot[]): InspectionCostMetricValue
     if (!unique.has(key)) unique.set(key, slot);
   }
   const subjects = [...unique.values()];
-  const observed = subjects.filter(({ analysis }) => analysis.costUSD.observed !== null);
-  const estimated = subjects.filter(({ analysis }) => analysis.costUSD.estimated !== null);
-  const source = observed.length >= estimated.length && observed.length > 0
-    ? "observed" as const
-    : estimated.length > 0
-      ? "estimated" as const
-      : null;
-  const valued = source === "observed" ? observed : source === "estimated" ? estimated : [];
-  const value = source === null
+  const valued = subjects.filter(({ analysis }) => analysis.costUSD.value !== null);
+  const sources = new Set(valued.flatMap(({ analysis }) =>
+    analysis.costUSD.source === null ? [] : [analysis.costUSD.source]));
+  const hasReported = sources.has("reported") || sources.has("mixed");
+  const hasEstimated = sources.has("estimated") || sources.has("mixed");
+  const source = hasReported && hasEstimated ? "mixed" as const
+    : hasReported ? "reported" as const
+      : hasEstimated ? "estimated" as const
+        : null;
+  const value = valued.length === 0
     ? null
-    : valued.reduce((sum, { analysis }) => sum + (analysis.costUSD[source] ?? 0), 0);
+    : valued.reduce((sum, { analysis }) => sum + analysis.costUSD.value!, 0);
   return Object.freeze({
     value,
     source,
     state: source === null
       ? "unavailable" as const
-      : valued.length < subjects.length
+      : valued.length < subjects.length || valued.some(({ analysis }) => analysis.costUSD.state !== "available")
         ? "partial" as const
         : "available" as const,
     samples: valued.length,
@@ -1039,14 +1064,6 @@ function closeOverview(value: InspectionOverview): InspectionOverview {
     throw closed;
   }
   return closed as unknown as InspectionOverview;
-}
-
-function isInspectionCodecError(
-  value: InspectionJson | { readonly code: string; readonly reason: string },
-): value is { readonly code: string; readonly reason: string } {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    Reflect.get(value, "code") === "inspection-result-invalid" &&
-    typeof Reflect.get(value, "reason") === "string";
 }
 
 function compareText(left: string, right: string): number {

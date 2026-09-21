@@ -39,6 +39,7 @@ export interface AdapterAttachmentCollector {
   readonly attach: (input: AdapterAttachmentInput) => Promise<AdapterAttachmentReceipt>;
   readonly markFailure: (cause: unknown) => AdapterAttachmentError;
   readonly failure: () => AdapterAttachmentError | undefined;
+  readonly artifacts: () => readonly CapturedAdapterAttachment[];
   readonly close: () => void;
   readonly snapshot: () => AdapterAttachmentSnapshot;
 }
@@ -107,6 +108,7 @@ export function createAdapterAttachmentCollector(): AdapterAttachmentCollector {
     attach,
     markFailure,
     failure: () => firstFailure,
+    artifacts: () => Object.freeze([...artifacts]),
     close: () => {
       if (closed) return;
       closed = true;

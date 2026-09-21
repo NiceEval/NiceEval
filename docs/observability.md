@@ -1,7 +1,7 @@
 # Observability —— 运行反馈、持久观测与 Inspection
 
 Observability 有两条边界。运行中的反馈只服务当前进程；停稳后的观测写入 Record。Record durable
-catalog 按 capture authority 固定为六个 source family。固定 Inspection operation 从这些 source 关闭 conversation、usage、
+catalog 按 capture authority 固定 source family。固定 Inspection operation 从这些 source 关闭执行轨迹、conversation、usage、
 commands、timing、diagnostics 与 source navigation；Delivery 只消费闭合 operation result。
 
 本页是 Observability 领域的唯一入口。字段、限制、seal 和读取语义的精确 durable schema 由
@@ -18,7 +18,7 @@ Adapter / SessionManager / Sandbox / Runner
         └─ 收集、脱敏、seal
                          │
                          ▼
-     六个 fixed Observability source family
+     fixed Observability source family
                          │
                          ▼
        Record Host source read → fixed Inspection operation → query | View
@@ -31,6 +31,7 @@ RecordAttachment 只能由固定 query operation 或 View 读取。
 
 | family | owner | capture authority | durable fact |
 |---|---|---|---|
+| `niceeval.execution-traces` | Attempt | Adapter 封存快照 | 通用事件、主体、显式关系、范围与精确证据引用 |
 | `niceeval.adapter-usage` | Attempt | Adapter 显式采集 | 已登记外部调用的最终用量快照 |
 | `niceeval.agent-turns` | Attempt | Adapter | 解释并脱敏后的 terminal Turn 与 provider usage observation |
 | `niceeval.turn-contexts` | Attempt | SessionManager | 每个物理 `t.send` 当时已知的 source context |
@@ -65,8 +66,23 @@ partial 表示已保存事实有明确缺口，不表示“没有发生”。rea
 `niceeval.record` beta format 不进入 current reader 或 maintenance，明确返回 `unsupported-format`。它缺少
 可证明的 capture authority 与 provenance，不能拆分或伪迁移成 source receipt。
 
-所有 payload 都是 exact JSON。它们没有 metadata、attributes、data 或任意 JSON 扩展袋。未知字段、
-超出上限、重复 identity 和不符合 schema 的值都会使对应 Attachment 为 invalid。
+source envelope 都是 exact JSON。未知 envelope 字段、超出上限、重复 identity 和不符合 schema 的值都会使对应 Attachment 为 invalid。
+`niceeval.execution-traces` 的领域 payload 与 scope boundary 是显式允许的有限 plain JSON，领域 schema 由 Adapter 验证。
+其它 source 不接受 metadata、attributes、data 或任意 JSON 扩展袋。
+
+## 通用执行轨迹
+
+执行事件保留其领域类型，conversation、turn 与 tool 是内建 producer 的特例。Adapter 通过
+[`recordTrace`](feature/adapters/library.md#保存通用执行轨迹) 提交不可变快照，事件进入原生 collection。
+快照头保存 schema identity、完整度和 scope 声明；事件保存主体、source 顺序、clock、显式关系与精确证据引用。
+
+导入 key、框架 eventId 和可缺失的原生 source eventId 分开。展示顺序不证明跨 source 因果，接纳或取消也不证明操作完成。
+测量边界与 scope membership 是 Adapter 声明，不生成 score、Verdict 或有效样本分母。
+会话 source 保留原 revision 和 item/tool identity，由内建投影参与同一通用读取，不重复写入或汇总 usage。
+
+Inspection 提供有界摘要、分页和精确事件/证据读取。精确 selector 不依赖默认 outline 是否展示该 ID。
+CLI 与 Web 使用同一关闭结果，领域作者不能提供执行代码或 formatter。payload 与附件均须是可公开且已脱敏的证据，
+不能借开放字段保存 hidden chain of thought、secret 或未解释的私有 provider 帧。
 
 ## 用户可见对话与临时输入
 
@@ -117,18 +133,18 @@ secret 或任意 JSON。诊断是观测事实，不自动改变 assertion outcom
 
 ## 用量、成本与时间
 
-普通 Adapter 通过 `recordUsage()` 上报每次物理外部调用，保存于 `niceeval.adapter-usage`。
+普通 Adapter 通过 `recordUsage()` 上报每次物理外部调用及可选 reported cost，保存于 `niceeval.adapter-usage`。
 它不生成 Turn，也不证明全部外部调用都已上报；没有登记事实时保持 `not-recorded`。
 
 `niceeval.agent-turns` 保存原子 usage observation，而非 Attempt 总计。token bucket、一个 request 与一笔
 provider observed cost 各自是一项 observation。provider cost 只承载上游如实带回的事实，不承载任何估算；
 amount 使用 canonical decimal，并同时保存 provider 与 currency。
 
-总 token、cache ratio、Runner `estimatedCostUSD`、FX、跨币种汇总、command success、owner-local observed timing window 与
+总 token、cache ratio、Runner `estimatedCostUSD`、FX、按币种小计、command success、owner-local observed timing window 与
 diagnostic 分组都是 Calculation。
 
-Runner 始终从 Config/runtime price table 独立计算 `estimatedCostUSD`，即使已有 provider-cost observation 也照常计算。
-只有 `maxCost` 消费这个 estimate。Inspection 的成本 operation 只使用显式 PricingProfile 与 sealed Usage，绝不读取 Runner estimate。
+Runner 的预算 estimate 只供 `maxCost` 使用。Inspection 不读取该结果；它从 sealed Adapter Usage 选择每个物理调用的 effective cost。
+reported cost 包括零并始终优先。只有 reported 缺席时，显式 configured fixed pricing profile 才能形成与同一 call 绑定的 estimate proof。
 
 所有 Calculation 显式声明所需 source 与完整度策略，不能回写 Record。`niceeval.runner-activities` 的
 unknown outcome、partial source 或不完整 parent containment 不能单独证明 Attempt 总耗时或 critical path。
@@ -140,8 +156,11 @@ provider 名称都不落盘。
 
 ### 用量与成本：token / 计费
 
-provider observed cost 是 provider 当时报告的事实。价格表、模型价、货币换算与总成本属于独立
-Calculation 的输入和输出。缺少 provider cost 不得用估算金额冒充一项 observation，也不得把 observed 值或 estimate 互相替换。
+reported cost 是上游当时报告的单一有效金额。其它回执金额可以保存在 Adapter 原始附件中，但不进入通用成本聚合。
+价格表、模型价、货币换算与总成本属于独立 Calculation 的输入和输出。estimate 保存自己的 fixed profile provenance、有效 rate、摘要和逐桶计算，不能冒充 reported observation。
+
+每个物理调用至多贡献一个金额。Inspection 按 origin Attempt 与 `callId` 去重，按货币分别合计，并把 provenance kind 折为
+`reported | estimated | mixed`。provenance kind 与完整度正交；partial estimate 贡献已知小计，但不增加完整调用数。
 
 ### OTLP traces-统一瀑布图
 

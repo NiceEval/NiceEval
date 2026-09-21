@@ -10,6 +10,11 @@ export const timeoutCapture = defineAdapter<{ ready: boolean }>({
       status: "succeeded", inputTokens: 3, outputTokens: 2,
     });
     await ctx.attach({ name: "accepted.txt", mediaType: "text/plain", body: "accepted-before-timeout" });
+    await ctx.recordTrace({
+      traceId: "before-timeout", schema: { id: "example.capture", revision: 1 },
+      collection: { state: "complete", limitations: [] }, scopes: [],
+      events: [{ key: "accepted", type: "operation.accepted", source: { id: "backend" }, summary: "Trace accepted before cleanup" }],
+    });
     ctx.onCleanup(async ({ signal }) => {
       signal.addEventListener("abort", () => {
         void (async () => {
@@ -27,6 +32,15 @@ export const timeoutCapture = defineAdapter<{ ready: boolean }>({
             appendFileSync("capture-late.txt", "attachment-accepted\n");
           } catch {
             appendFileSync("capture-late.txt", "attachment-rejected\n");
+          }
+          try {
+            await ctx.recordTrace({
+              traceId: "late-trace", schema: { id: "example.capture", revision: 1 },
+              collection: { state: "complete", limitations: [] }, scopes: [], events: [],
+            });
+            appendFileSync("capture-late.txt", "trace-accepted\n");
+          } catch {
+            appendFileSync("capture-late.txt", "trace-rejected\n");
           }
         })();
       }, { once: true });

@@ -22,8 +22,10 @@ import type {
 } from "../record/sqlite/index.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
+  INSPECTION_BEHAVIOR_VERSION,
   QUERY_PROTOCOL,
   closeInspectionJson,
+  isInspectionCodecError,
   type InspectionDocument,
   type InspectionJson,
   type InspectionOperation,
@@ -102,6 +104,11 @@ import {
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
+import {
+  InspectionExecutionTraceError,
+  projectExecutionTraceDetail,
+  projectExecutionTraceOutline,
+} from "./execution-traces.ts";
 
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
@@ -110,7 +117,9 @@ export class InspectionOperationError extends Data.TaggedError("InspectionOperat
     | "inspection-selection-missing"
     | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
-    | "inspection-result-invalid";
+    | "inspection-result-invalid"
+    | "evidence-budget-exceeded"
+    | "restart-required";
   readonly operation: InspectionOperationId;
   readonly reason: string;
   readonly identity?: { readonly runId: string };
@@ -294,17 +303,45 @@ function selectOperation(
         trace: decodeRequiredResult(
           operation.kind,
           InspectionTraceResultSchema,
-          projectAttemptTrace(resolved.origin.source, traceAttachments(resolved)),
+          projectAttemptTrace(
+            resolved.origin.source,
+            traceAttachments(resolved),
+            projectExecutionTraceOutline(source, resolved, {
+              ...(operation.traceId === undefined ? {} : { traceId: operation.traceId }),
+              ...(operation.sourceId === undefined ? {} : { sourceId: operation.sourceId }),
+              ...(operation.actorId === undefined ? {} : { actorId: operation.actorId }),
+              ...(operation.continuation === undefined ? {} : { continuation: operation.continuation }),
+            }),
+            {
+              ...(operation.traceId === undefined ? {} : { traceId: operation.traceId }),
+              ...(operation.sourceId === undefined ? {} : { sourceId: operation.sourceId }),
+              ...(operation.actorId === undefined ? {} : { actorId: operation.actorId }),
+              ...(operation.continuation === undefined ? {} : { continuation: operation.continuation }),
+            },
+          ),
         ),
       });
     }
     case "attempt.trace.detail": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const detail = projectAttemptTraceDetail(
-        resolved.origin.source,
-        traceAttachments(resolved),
-        operation.selector,
-      );
+      let detail = operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
+        ? projectExecutionTraceDetail(resolved, operation.selector)
+        : projectAttemptTraceDetail(
+            resolved.origin.source,
+            traceAttachments(resolved),
+            operation.selector,
+          );
+      if (detail === undefined && operation.selector.kind === "execution-event") {
+        type ItemSelector = Extract<
+          Parameters<typeof projectAttemptTraceDetail>[2],
+          { readonly kind: "item" }
+        >;
+        detail = projectAttemptTraceDetail(
+          resolved.origin.source,
+          traceAttachments(resolved),
+          { kind: "item", itemId: operation.selector.eventId as ItemSelector["itemId"] },
+        );
+      }
       if (detail === undefined) {
         throw selectionMissing(
           operation.kind,
@@ -502,6 +539,7 @@ function runsListBase(
 ) {
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
     outcome: "success" as const,
     operation: "runs.list" as const,
     source: sourceProvenance(source, cutoff),
@@ -916,6 +954,10 @@ function attemptSections(
     attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
     NiceEvalCurrentRecordAttachments.agentTurns.revision,
   );
+  const executionTraces = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.executionTraces.family),
+    NiceEvalCurrentRecordAttachments.executionTraces.revision,
+  );
   const commands = attachmentSectionState(
     attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
     NiceEvalCurrentRecordAttachments.sandboxCommands.revision,
@@ -942,7 +984,7 @@ function attemptSections(
   );
   return Object.freeze({
     assertions: Object.freeze({ state: assertions }),
-    trace: Object.freeze({ state: combineSectionStates([conversation, commands, timing, diagnostics]) }),
+    trace: Object.freeze({ state: combineSectionStates([executionTraces, conversation, commands, timing, diagnostics]) }),
     sources: Object.freeze({ state: sources }),
     diff: Object.freeze({ state: diff }),
     artifacts: Object.freeze({ state: artifacts }),
@@ -1493,6 +1535,7 @@ function baseDocument(
   const cutoff = source.cutoff();
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1524,6 +1567,7 @@ function resultMetadata<Kind extends InspectionOperationId>(
   const cutoff = source.cutoff();
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1578,9 +1622,7 @@ function uniqueRuns(
 
 function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
-  if (typeof closed === "object" && closed !== null && !Array.isArray(closed) && Reflect.get(closed, "code") === "inspection-result-invalid") {
-    throw closed;
-  }
+  if (isInspectionCodecError(closed)) throw closed;
   return closed as InspectionJson;
 }
 
@@ -1625,6 +1667,7 @@ function evaluateInspectionOperation(
     return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
@@ -1647,10 +1690,23 @@ function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
     return narrowed.value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
   }
+}
+
+function executionTraceFailure(
+  operation: InspectionOperationId,
+  cause: InspectionExecutionTraceError,
+): InspectionOperationError {
+  return new InspectionOperationError({
+    code: cause.code,
+    operation,
+    reason: cause.message,
+    cause,
+  });
 }
 
 function isInspectionResultError(

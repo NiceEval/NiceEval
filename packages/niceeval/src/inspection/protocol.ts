@@ -7,7 +7,7 @@ import { InspectionArtifactLimitSchema, InspectionArtifactOffsetSchema, Inspecti
 import { RunDocumentSchema } from "../record/codec/core.ts";
 import { InspectionArtifactMetadataSchema, InspectionArtifactsPageLimitSchema, InspectionArtifactsValueSchema } from "./artifact-list.ts";
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
-import { QUERY_PROTOCOL } from "./protocol-values.ts";
+import { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 import { AssertionDetailResultSchema } from "./assertion-projection.ts";
 import {
   InspectionAttemptDiffResultSchema, InspectionAttemptResultSchema,
@@ -42,11 +42,13 @@ const SelectionSchema = Schema.Struct({
 });
 const SuccessMetadataSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("success"),
+  behaviorVersion: Schema.Literal(INSPECTION_BEHAVIOR_VERSION),
   source: SourceSchema, sealedCutoff: SealedCutoffSchema, selection: SelectionSchema,
   issues: Schema.Tuple([]), evidence: Schema.Struct({ refs: Schema.Array(Schema.String) }),
 });
 const RunsListSuccessMetadataSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("success"),
+  behaviorVersion: Schema.Literal(INSPECTION_BEHAVIOR_VERSION),
   source: SourceSchema,
   sealedCutoff: Schema.Struct({ kind: Schema.Literal("inspection-sealed-cutoff"), identity: Schema.String, runCount: Schema.Number }),
   selection: Schema.Struct({
@@ -101,8 +103,24 @@ export const inspectionProtocolRegistry = Object.freeze({
   "run.overview": spec({ request: operation("run.overview", { runId: RunIdSchema }), result: { runOverview: InspectionRunOverviewResultSchema }, factKinds: ["core", "assertions", "agent-turns"] }),
   "attempt.get": spec({ request: operation("attempt.get", { locator: AttemptLocatorSchema }), result: { attempt: InspectionAttemptResultSchema }, factKinds: ["core", "assertions"] }),
   "attempt.assertion.detail": spec({ request: operation("attempt.assertion.detail", { locator: AttemptLocatorSchema, entryId: AssertionEntryIdSchema }), result: { assertion: AssertionDetailResultSchema }, factKinds: ["assertions", "agent-turns", "sources"] }),
-  "attempt.trace": spec({ request: operation("attempt.trace", { locator: AttemptLocatorSchema }), result: { trace: InspectionTraceResultSchema }, factKinds: ["agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"] }),
-  "attempt.trace.detail": spec({ request: operation("attempt.trace.detail", { locator: AttemptLocatorSchema, selector: Schema.Union([operation("item", { itemId: ItemIdSchema }), operation("tool-occurrence", { toolOccurrenceId: ToolOccurrenceIdSchema }), operation("command", { commandId: CommandIdSchema })]) }), result: { detail: InspectionTraceDetailResultSchema }, factKinds: ["agent-turns", "sandbox-commands"] }),
+  "attempt.trace": spec({ request: operation("attempt.trace", {
+    locator: AttemptLocatorSchema,
+    traceId: Schema.optional(Schema.String),
+    sourceId: Schema.optional(Schema.String),
+    actorId: Schema.optional(Schema.String),
+    continuation: Schema.optional(Schema.String),
+  }), result: { trace: InspectionTraceResultSchema }, factKinds: ["execution-traces", "agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"] }),
+  "attempt.trace.detail": spec({ request: operation("attempt.trace.detail", { locator: AttemptLocatorSchema, selector: Schema.Union([
+    operation("execution-event", { eventId: Schema.String }),
+    operation("execution-evidence", {
+      evidenceId: Schema.String,
+      offset: Schema.optional(InspectionArtifactOffsetSchema),
+      limit: Schema.optional(InspectionArtifactLimitSchema),
+    }),
+    operation("item", { itemId: ItemIdSchema }),
+    operation("tool-occurrence", { toolOccurrenceId: ToolOccurrenceIdSchema }),
+    operation("command", { commandId: CommandIdSchema }),
+  ]) }), result: { detail: InspectionTraceDetailResultSchema }, factKinds: ["execution-traces", "agent-turns", "sandbox-commands", "artifacts"] }),
   "attempt.timing": spec({ request: operation("attempt.timing", { locator: AttemptLocatorSchema }), result: { timing: InspectionAttemptTimingResultSchema }, factKinds: ["runner-activities"] }),
   "attempt.usage": spec({ request: operation("attempt.usage", { locator: AttemptLocatorSchema }), result: { usage: InspectionAttemptUsageResultSchema }, factKinds: ["agent-turns", "adapter-usage"] }),
   "attempt.diff": spec({ request: operation("attempt.diff", { locator: AttemptLocatorSchema }), result: { diff: InspectionAttemptDiffResultSchema }, factKinds: ["file-changes"] }),
@@ -155,10 +173,10 @@ export const InspectionFailureDocumentSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("failure"),
   operation: Schema.NullOr(InspectionOperationIdSchema),
   failure: Schema.Struct({
-    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid"]),
+    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid", "evidence-budget-exceeded", "restart-required"]),
     reason: Schema.String,
     identity: Schema.optional(Schema.Struct({ runId: Schema.String })),
-    correction: Schema.Literals(["fix-request", "choose-existing-selection", "fix-record-source", "retry", "upgrade-or-report"]),
+    correction: Schema.Literals(["fix-request", "choose-existing-selection", "fix-record-source", "retry", "upgrade-or-report", "restart"]),
   }),
 });
 export const InspectionDocumentSchema = Schema.Union([

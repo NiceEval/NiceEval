@@ -32,9 +32,16 @@ Header 右上角先显示 `Experiments` selector，再显示 `Language`。Result
 通过率或分数为纵轴。Run identity 是 Attempt member 的 provenance；读者可以
 按 exact Run identity 打开 Run debugger，或从 Attempt 行打开 Attempt debugger。
 
+Experiment、Eval 与 Attempt 行的 token 和单一 cost 列读取同一个 Inspection selector。父行按 origin Attempt 与 call identity
+并集聚合，不因引用或展示分页重复计量；partial 与 unknown 在每一层保持可见。
+
 Run debugger 显示 state、`expected`／`published`／`missing`、pending/absence、coverage、指标分母、slot bindings 与
 Attempt locators。Attempt debugger 连续呈现身份、判定、source、assertions、trajectory、tool input/output、timeline、
 usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated 始终是可见事实。
+
+自定义 Adapter 的领域事件使用统一通用轨迹展示：默认只载入有界摘要页，保留主体、独立时钟、完整性和测量范围。
+读者可以点击事件或输入稳定 ID，按需读取同一 Inspection detail；原始证据以已登记的精确 JSON 定位分块展开。
+没有会话事件不代表没有执行轨迹。领域类型和 JSON 内容作为数据展示，不加载作者提供的组件或执行展示代码。
 
 软导航以 drawer 或 modal 显示详情；关闭或 Back 回到原选择。复制的 Run 或 Attempt URL 在硬加载时显示完整详情。
 语言只改变界面文案，不改变 cutoff、identity、URL 或读取结果。

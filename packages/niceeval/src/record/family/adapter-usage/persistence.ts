@@ -3,5 +3,5 @@ import { adapterUsageRecordAttachment } from "./definition.ts";
 
 export const adapterUsageRecordAttachmentPersistence = defineRecordAttachmentPersistence({
   attachment: adapterUsageRecordAttachment,
-  revision: 1,
+  revision: 2,
 });

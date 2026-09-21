@@ -363,3 +363,9 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 Contract: [docs/feature/sandbox/use-case/起点与准备/共享分支准备.md](../../../feature/sandbox/use-case/起点与准备/共享分支准备.md)
 
 不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。
+## 通用执行轨迹在 Record 搬迁后保留有界摘要、稳定身份与精确证据读取。 {#execution-trace-portable}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/adapters/library.md#保存通用执行轨迹](../../../feature/adapters/library.md#保存通用执行轨迹)
+
+通用执行轨迹在 Record 搬迁后保留有界摘要、稳定身份与精确证据读取。

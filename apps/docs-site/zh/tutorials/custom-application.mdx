@@ -174,6 +174,52 @@ const social = defineAdapterContract<SocialContext>({ name: "social/v1" })
 执行身份同时包含 Adapter identity（`name`、`contract`、`behaviorRevision`）和 experiment 的 `flags`。评估用例静态项目内相对 import/export 闭包变化会自动使候选失效。
 Experiment 单独选择的实现、动态 import、外部包和远端服务不在自动范围内。为这些行为声明非空 `behaviorRevision`，或用显式配置表达变化；未声明版本的自定义 Adapter 不会自动复用。
 
+## 保存应用执行轨迹
+
+应用结束并取得完整日志后，在 Adapter 内调用 `ctx.recordTrace`。每个事件保留自己的类型、主体、摘要和已知关系。
+应用不用把操作包装成聊天消息。下面的事件只表示请求已接纳；实际完成应记录另一条事件。
+
+```ts
+const attachment = await ctx.attach({
+  name: "events.json",
+  mediaType: "application/json",
+  body: JSON.stringify({ events: archivedEvents }),
+});
+
+const receipt = await ctx.recordTrace({
+  traceId: sessionId,
+  schema: { id: "social-app.execution", revision: 1 },
+  collection: { state: "complete", limitations: [] },
+  scopes: [],
+  events: [{
+    key: "accepted",
+    type: "post.accepted",
+    source: { id: "server", eventId: archivedEvents[0].eventId },
+    actor: { id: "author", label: "Author" },
+    summary: "Post accepted for publication",
+    evidence: [{
+      key: "original",
+      label: "Original event",
+      artifactId: attachment.artifactId,
+      pointer: "/events/0",
+    }],
+  }],
+});
+```
+
+`key` 是这份快照内的关联键，`source.eventId` 只填写应用真实提供的 ID；没有时省略。
+返回的 `receipt.events` 给出可供查看的稳定 `eventId`。同一 `traceId` 重交相同快照返回同一身份，内容冲突会拒绝。
+摘要有界，大输入通过证据引用精确定位到附件中的值，查看时不需要手动扫描整份日志。
+
+```sh
+niceeval show @<attempt> --execution
+niceeval show @<attempt> --execution --expand <eventId>
+```
+
+清理回调在独立时限内仍可提交轨迹。取消与完整性是两回事：取消后取得完整日志可以是 complete，
+缺少日志时使用 partial 并列出 limitations；不要用空集合表示未知。窗口外事件保留为 excluded 或 unknown，轨迹导入本身不产生评分。
+已保存的轨迹与证据随 Record 搬迁，查看时不调用原应用或模型。
+
 ## 阅读结果
 
 应用结果交给 `t.check` 后，NiceEval 保存有界检查材料和判定。

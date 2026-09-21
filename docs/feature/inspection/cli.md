@@ -112,9 +112,9 @@ Attempt `refs` 始终一起交付。状态穷尽为 `available | partial | unava
 producer/固定事实族 无此能力是 `unsupported`；已选择事实无法解释是 `failed`。points 的 `value` 是 earned，
 `bounds.max` 是 possible；consumer 不从 Assertion 或其它 scalar 重算它。
 
-成本聚合不会混合 observed 与 estimated。它选择 `samples` 最多的单一 source；`samples` 相同时优先
-observed。只要所选 source 未命中全部 eligible slot，`state` 就是 `partial`，但仍保留已知的 `value`、
-`samples`、`total`、`bounds`、`source`、`refs` 与 `issues`；只有两个 source 都没有样本时才是 `unavailable`。
+成本聚合先在每个 physical call 内选择一个 effective cost：reported 包括零并优先，缺席时才采用与 sealed call 绑定的 estimate proof。
+聚合不在整条轴上选择 reported 或 estimated，也不把同一调用重复计价。`source` 为 `reported | estimated | mixed`，与
+`state` 分开表达；partial estimate 保留已知金额，但不增加完整 coverage。USD 指标遇到非 USD、未知金额、采集 partial 或历史 revision 1 缺口时不能宣称完整。
 
 `overview.cells[].members[].score.value` 是一个 selected Attempt 的 earned 真值。
 `overview.cells[].score.value` 是同一 Experiment × Eval 中 eligible Attempt score 的 mean。
@@ -187,10 +187,9 @@ source/field state 也是结果事实，View 只把它们映射到 `data-source-
 }
 ```
 
-outline 按 Turn 保留 message、thinking、tool call/result，并另外列出 command、timing、usage 与 diagnostic。
-长文本只给有界 preview；独立 identity index 枚举这次 Attempt 已封存的全部 `itemId`、精确
-`toolOccurrenceId` 与 `commandId`，所以 preview 之外的项仍可选择。调用方需要一项完整详情时，使用其中
-一个 identity：
+outline 显示通用领域事件及内建 Agent 投影，保留 producer、主体、时间、摘要、范围与完整性。
+conversation 和 command 继续保留各自的专用信息。长文本只给有界 preview；identity index 同样有界并报告遗漏。
+精确详情直接选择已封存身份，不要求该项出现在默认摘要中。调用方需要一项详情时，使用对应 selector：
 
 ```json
 {
@@ -206,10 +205,33 @@ outline 按 Turn 保留 message、thinking、tool call/result，并另外列出 
 }
 ```
 
-`selector.kind` 穷尽为 `item`、`tool-occurrence` 与 `command`，分别使用 `itemId`、
-`toolOccurrenceId` 与 `commandId`。tool occurrence detail 把同一 occurrence 的 call 与 result 一起交付；
+`selector.kind` 包括 `item`、`tool-occurrence` 与 `command`，分别使用 `itemId`、
+`toolOccurrenceId` 与 `commandId`。通用轨迹使用 `execution-event` / `eventId` 和
+`execution-evidence` / `evidenceId`。tool occurrence detail 把同一 occurrence 的 call 与 result 一起交付；
 command detail 交付 invocation、outcome 与已封存 stdout/stderr。identity 未命中时返回
 `inspection-selection-missing`，不会猜相邻项。
+
+通用事件详情保留事件 envelope、typed JSON payload、已声明关系、scope membership，以及每件 Evidence 最多
+2 KiB 的原文预览。Evidence detail 只接受 receipt 中的 `evidenceId`，不接受任意附件 pointer：
+
+```json
+{
+  "protocol": "niceeval.query/v1",
+  "operation": {
+    "kind": "attempt.trace.detail",
+    "locator": "@<locator>",
+    "selector": { "kind": "execution-evidence", "evidenceId": "<stable-evidence-id>", "offset": 0, "limit": 65536 }
+  }
+}
+```
+
+Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编码；`targetSha256`、`targetByteLength`、
+`offset` 与可空 `nextOffset` 一起交付。默认每次 64 KiB，最大 256 KiB，调用方按 `nextOffset` 续读。
+这不是整局附件的下载入口，也不重新调用外部系统。
+
+`attempt.trace` 的可选 `traceId`、`sourceId`、`actorId` 精确筛选通用轨迹；每页最多 32 个事件且事件摘要至多 64 KiB。
+`execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff、family revision 和 behavior version；
+续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
 Query 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”只表示完整取回
 已经脱敏并按固定事实族上限封口的内容；producer 已写入的 truncation 与 limitations 必须继续可见，
@@ -329,9 +351,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
   source state、location、limitations 与 Evidence；不从文本推断断言或运行时原文。
 - `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline。`--expand <stable-id>`
-  必须和 `--execution` 一起使用，且只接受 outline identity index 已暴露的 `itemId`、
-  `toolOccurrenceId` 或 `commandId`；命中后以对应 selector 调用 `attempt.trace.detail`。
-  旧 `t<N>.c<M>`、`cmd<N>`、数组位置或任意未暴露 ID 一律是 selection error，不猜测相邻项。
+  必须和 `--execution` 一起使用，按持久事件、证据、`itemId`、`toolOccurrenceId` 或 `commandId`
+  直接调用 `attempt.trace.detail`。目标可以位于默认摘要之外。导入 key、原生 source eventId、
+  `t<N>.c<M>`、`cmd<N>` 或数组位置不能替代持久身份；找不到时返回 selection error，不猜测相邻项。
 - `@<locator> --timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
 - `@<locator> --usage` 调用 `attempt.usage`，只显示其关闭的 input/output token、request 与 cost typed totals，以及每项 total 的 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> --diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。

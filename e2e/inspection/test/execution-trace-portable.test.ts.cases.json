@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/inspection/test/execution-trace-portable.test.ts",
+  "current": {
+    "necase_82VJD2KZ52Y4S486": {
+      "owner": "docs/engineering/testing/e2e/README.md#execution-trace-portable",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_82VJD2KZ52Y4S486",
+      "atCommit": "8ad11b12b2bdd0a1945e2682b6a856a22691e461",
+      "transactionId": "netxn_b310f20867c8457c9bd78421a684689f",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/README.md#execution-trace-portable"
+      }
+    }
+  ],
+  "tombstones": []
+}

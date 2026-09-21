@@ -61,7 +61,7 @@ export interface MetricValue<Value = number> {
   readonly issues: readonly MetricIssue[];
   readonly refs: readonly EvidenceRef[];
   readonly unit?: string;
-  readonly source?: "observed" | "estimated" | null;
+  readonly source?: "reported" | "estimated" | "mixed" | null;
   readonly format?: MetricFormat;
   readonly better?: "higher" | "lower" | "neutral";
   readonly bounds?: { readonly min?: number; readonly max?: number };

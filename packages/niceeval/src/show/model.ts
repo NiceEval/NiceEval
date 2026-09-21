@@ -163,6 +163,7 @@ type WithoutTurnId<Value> = Value extends unknown ? Omit<Value, "turnId"> : neve
 export type TraceItem = WithoutTurnId<InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["items"][number]>;
 export interface TraceView {
   readonly locator: string;
+  readonly execution: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["execution"];
   readonly conversation: {
     readonly state: ProjectionState;
     readonly limitations: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["limitations"];
@@ -189,11 +190,14 @@ export interface TraceView {
     readonly itemIds: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["identityIndex"]["itemIds"];
     readonly toolOccurrenceIds: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["identityIndex"]["toolOccurrenceIds"]["ids"];
     readonly commandIds: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["identityIndex"]["commandIds"];
+    readonly omittedItemIdCount: number;
+    readonly omittedToolOccurrenceIdCount: number;
+    readonly omittedCommandIdCount: number;
   };
 }
 export interface TraceDetailView {
   readonly locator: string;
-  readonly kind: "item" | "tool-occurrence" | "command";
+  readonly kind: InspectionTraceDetailResult["kind"];
   readonly stableId: string;
   readonly body: InspectionTraceDetailResult;
 }
@@ -334,6 +338,7 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
   const value = document.trace;
   return {
     locator,
+    execution: value.execution,
     conversation: {
       state: value.conversation.state,
       limitations: value.conversation.limitations,
@@ -363,6 +368,9 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
       itemIds: value.identityIndex.itemIds,
       toolOccurrenceIds: value.identityIndex.toolOccurrenceIds.ids,
       commandIds: value.identityIndex.commandIds,
+      omittedItemIdCount: value.identityIndex.omittedItemIdCount,
+      omittedToolOccurrenceIdCount: value.identityIndex.toolOccurrenceIds.omittedIdCount,
+      omittedCommandIdCount: value.identityIndex.omittedCommandIdCount,
     },
   };
 }
@@ -371,7 +379,15 @@ export function projectTraceDetail(document: InspectionSuccessDocumentFor<"attem
   return {
     locator,
     kind: body.kind,
-    stableId: body.kind === "item" ? body.itemId : body.kind === "tool-occurrence" ? body.toolOccurrenceId : body.commandId,
+    stableId: body.kind === "item"
+      ? body.itemId
+      : body.kind === "tool-occurrence"
+      ? body.toolOccurrenceId
+      : body.kind === "command"
+      ? body.commandId
+      : body.kind === "execution-event"
+      ? body.event.eventId
+      : body.evidenceId,
     body,
   };
 }

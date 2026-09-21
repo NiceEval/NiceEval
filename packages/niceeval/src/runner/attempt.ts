@@ -22,6 +22,11 @@ import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
 import { createAdapterAttachmentCollector, retainAdapterAttachments, type AdapterAttachmentCollector } from "./adapter-attachments.ts";
+import {
+  createAdapterExecutionTraceCollector,
+  retainAdapterExecutionTraces,
+  type AdapterExecutionTraceCollector,
+} from "./adapter-execution-trace.ts";
 import { buildScorePayload } from "../eval/record/score.ts";
 import { foldVerdict } from "../eval/record/verdict.ts";
 import {
@@ -497,6 +502,7 @@ export function runAttemptEffect<
   let adapterUsage: AdapterUsageCollector | undefined;
   let adapterUsageSnapshot: ReturnType<AdapterUsageCollector["close"]> | undefined;
   let adapterAttachments: AdapterAttachmentCollector | undefined;
+  let adapterExecutionTraces: AdapterExecutionTraceCollector | undefined;
   let adapterSealedAssertions: SealedAttemptAssertions | undefined;
   let adapterCleanupError: AttemptError | undefined;
   let invocationInterrupted = false;
@@ -812,10 +818,12 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         const resources = new AdapterAttemptResources(() => {
           adapterUsageSnapshot = adapterUsage!.close();
           adapterAttachments!.close();
+          adapterExecutionTraces!.close();
         });
         adapterResources = resources;
-        adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen());
+        adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen(), config.pricing);
         adapterAttachments = createAdapterAttachmentCollector();
+        adapterExecutionTraces = createAdapterExecutionTraceCollector(adapterAttachments.artifacts);
 
         // Scope LIFO freezes Assertions before releasing author resources.
         // The final execution outcome is handed off only after capture drains.
@@ -858,6 +866,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           resources,
           usage: adapterUsage,
           attachments: adapterAttachments,
+          executionTraces: adapterExecutionTraces,
           signal,
           sourceCapture,
           sourceRegistry,
@@ -1607,7 +1616,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
     ),
     Effect.flatMap((result) => Effect.gen(function* () {
       if (adapter.kind !== "custom") return result;
-      const captureFailure = adapterUsage?.failure ?? adapterAttachments?.failure();
+      const captureFailure = adapterUsage?.failure ?? adapterAttachments?.failure() ?? adapterExecutionTraces?.failure();
       // Cleanup must not erase the original execution failure or timeout attribution.
       // Its own timeout remains independently recorded as a teardown diagnostic.
       const error = result.error ?? adapterCleanupError ?? (captureFailure === undefined
@@ -1682,6 +1691,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       }
       if (adapterUsageSnapshot !== undefined) retainAdapterUsage(finalResult, adapterUsageSnapshot);
       if (adapterAttachments !== undefined) retainAdapterAttachments(finalResult, adapterAttachments.snapshot());
+      if (adapterExecutionTraces !== undefined) retainAdapterExecutionTraces(finalResult, adapterExecutionTraces.snapshot());
       return finalResult;
     }),
     Effect.tap((finalResult) =>
@@ -1703,6 +1713,7 @@ interface AdapterAttemptBodyInput {
   readonly resources: AdapterAttemptResources;
   readonly usage: AdapterUsageCollector;
   readonly attachments: AdapterAttachmentCollector;
+  readonly executionTraces: AdapterExecutionTraceCollector;
   readonly signal: AbortSignal;
   readonly sourceCapture: RunnerAttemptSourceCapture;
   readonly sourceRegistry: SourceRegistry;
@@ -1748,6 +1759,7 @@ function runAdapterAttemptBody(
     resources,
     usage,
     attachments,
+    executionTraces,
     signal,
     sourceCapture,
     sourceRegistry,
@@ -1797,6 +1809,7 @@ function runAdapterAttemptBody(
         onCleanup: (cleanup) => resources.onCleanup(cleanup),
         recordUsage: usage.record,
         attach: attachments.attach,
+        recordTrace: executionTraces.recordTrace,
       });
       // A synchronous plain object is validated before Promise assimilation;
       // async factories are validated only after their Promise settles.

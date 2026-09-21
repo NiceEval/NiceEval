@@ -149,6 +149,10 @@ export type RunRecordDefinition<
 
 export type AttemptRecordCollectionLimitation =
   | {
+      readonly code: "capture-failed";
+      readonly stage: "adapter";
+    }
+  | {
       readonly code: "capture-interrupted";
       readonly stage: "attempt-finalizer";
     }
@@ -203,6 +207,10 @@ const PositiveSafeIntegerSchema = Schema.Number.pipe(
 );
 const EmptyCollectionLimitationsSchema = Schema.Tuple([]);
 const AttemptRecordCollectionLimitationSchema = Schema.Union([
+  Schema.Struct({
+    code: Schema.Literal("capture-failed"),
+    stage: Schema.Literal("adapter"),
+  }),
   Schema.Struct({
     code: Schema.Literal("capture-interrupted"),
     stage: Schema.Literal("attempt-finalizer"),

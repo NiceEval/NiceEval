@@ -10,7 +10,7 @@ test.concurrent("cleanup 总预算耗尽后拒绝迟到采集并保留已得分�
     const completed = await niceeval.run(["exp", "adapter-capture/timeout", "--rerun", "all", "--json"], { timeoutMs: 90_000 });
     expect(completed.exitCode, completed.diagnostic()).toBe(1);
     expect(completed.expReceipt().completion).toBe("completed");
-    expect(await readFile(join(projectRoot, "capture-late.txt"), "utf8")).toBe("usage-rejected\nattachment-rejected\n");
+    expect(await readFile(join(projectRoot, "capture-late.txt"), "utf8")).toBe("usage-rejected\nattachment-rejected\ntrace-rejected\n");
     const runId = only(completed.expReceipt().createdRunIds, () => true, completed.diagnostic());
     const request = join(projectRoot, "capture-query.json");
     await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "run.overview", runId } }));
@@ -34,6 +34,12 @@ test.concurrent("cleanup 总预算耗尽后拒绝迟到采集并保留已得分�
     expect(usage.querySuccess("attempt.usage").usage.calls).toEqual([
       expect.objectContaining({ callId: "accepted-request", inputTokens: 3, outputTokens: 2 }),
     ]);
+    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "attempt.trace", locator } }));
+    const trace = await niceeval.run(["query", "run", "--request", request]);
+    expect(trace.exitCode, trace.diagnostic()).toBe(0);
+    const execution = trace.querySuccess("attempt.trace").trace.execution;
+    expect(execution.events).toEqual([expect.objectContaining({ summary: "Trace accepted before cleanup" })]);
+    expect(execution.traces).toEqual([expect.objectContaining({ sourceTraceId: "before-timeout" })]);
     await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "attempt.artifacts", locator } }));
     const artifacts = await niceeval.run(["query", "run", "--request", request]);
     const collection = artifacts.querySuccess("attempt.artifacts").artifacts;

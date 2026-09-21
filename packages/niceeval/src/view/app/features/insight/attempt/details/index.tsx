@@ -11,6 +11,7 @@ import type { AttemptPageModel } from "../model/page.ts";
 import { projectAssertions, projectCommands, projectConversation, projectDiagnostics, projectDiff, projectSources, projectTiming, projectUsage } from "../model/assemble.ts";
 import { attachAssertionsToSource, attemptAssertionsContent, attemptDiagnosticsContent, embedConversationInSource, evidenceSliceCallouts, executionEvidenceUnavailableCallouts, sliceData } from "./content.tsx";
 import type { AttemptSummaryData, UsageTableData } from "./compute.ts";
+import { ExecutionTrace } from "./execution-trace.tsx";
 
 export type { ReportLocale } from "../../components/primitives/shared.ts";
 export type * from "./compute.ts";
@@ -52,6 +53,31 @@ function AttemptUsage({ data }: { readonly data: UsageTableData | null }): React
   if (data.observedCostUSD !== undefined) rows.push(["observed cost", `$${data.observedCostUSD.toFixed(4)}`]);
   if (rows.length === 0) return null;
   return <Grid className="niceeval-usage-table">{rows.map(([label, value], index) => <Kpi key={`${label}:${index}`} label={label} value={value} />)}</Grid>;
+}
+
+function ExternalUsage({ usage }: { readonly usage: InspectionSuccessDocumentFor<"attempt.usage">["usage"] }): ReactElement | null {
+  const { t } = useTranslation();
+  if (usage.source !== "adapter") return null;
+  const costs = usage.totals.costs;
+  const jsonStyle = { maxHeight: "24rem", overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+  return <section aria-label={t("usage.external")}>
+    <h3>{t("usage.external")}</h3>
+    <p>{usage.state} · {usage.coverage}</p>
+    <Grid>{([
+      ["usage.input", usage.totals.inputTokens],
+      ["usage.output", usage.totals.outputTokens],
+      ["usage.requests", usage.totals.requests],
+    ] as const).map(([label, metric]) => <Kpi key={label} label={t(label)} value={`${metric.value ?? "—"} (${metric.state})`} />)}</Grid>
+    {costs === undefined || costs.values.length === 0 ? <p>{t("attempt.cost")}: {t("cell.metricUnavailable")}</p> : null}
+    {costs?.values.map((cost) => <p key={cost.currency}>
+      {cost.value} {cost.currency} · {t(cost.source === "reported" ? "cell.costReported" : cost.source === "estimated" ? "cell.costEstimated" : "cell.costMixed")} · {costs.state} · {t("usage.coverage", { covered: cost.coveredCalls, total: costs.totalCalls })}
+    </p>)}
+    <details><summary>{t("usage.calls")} ({usage.calls?.length ?? 0}; {usage.omittedCallCount ?? 0} {t("attempt.truncated")})</summary>
+      <pre style={jsonStyle}>{JSON.stringify(usage.calls ?? [], null, 2)}</pre>
+    </details>
+    <details><summary>{t("usage.prices")}</summary><pre style={jsonStyle}>{JSON.stringify(usage.priceReceipts ?? null, null, 2)}</pre></details>
+    {usage.limitations.length === 0 ? null : <pre style={jsonStyle}>{JSON.stringify(usage.limitations, null, 2)}</pre>}
+  </section>;
 }
 
 export function AttemptDetails({ model, locale, className }: { readonly model: AttemptPageModel; readonly locale: ReportLocale; readonly className?: string }): ReactElement {
@@ -104,9 +130,11 @@ export function AttemptDetails({ model, locale, className }: { readonly model: A
       : <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} />}
     <Waterfall nodes={sliceData(timingQuery.data!)} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} locale={locale} />
     <AttemptUsage data={sliceData(projectUsage(usageQuery.data!, trace))} />
+    <ExternalUsage usage={usageQuery.data!.usage} />
+    <ExecutionTrace key={model.locator} locator={model.locator} initial={trace.trace.execution} />
     {embedded.conversation !== null
       ? <TurnTrace data={embedded.conversation} locale={locale} />
-      : sliceData(conversation) === null
+      : sliceData(conversation) === null && trace.trace.execution.state === "not-recorded"
         ? <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} />
         : null}
     <CommandEvidence data={sliceData(commands)} locale={locale} />

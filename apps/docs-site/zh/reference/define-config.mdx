@@ -120,9 +120,9 @@ pricing?: globalThis.Record<string, PriceOverride>;
 
 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
 · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
-`usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
-固定 Inspection operation 不会把它作为额外输入。
+精确 key 优先于通配。Runner 用它计算 `maxCost` 的预算 estimate；Adapter physical-call
+collector 只在 reported cost 缺席时，把命中的显式 fixed profile 封存为 call-bound estimate proof。
+Inspection 只读已封存 proof，不把 mutable config 作为 operation 输入，也不按 endpoint 倒填历史调用。
 
 {/* GENERATED:END config-fields */}
 

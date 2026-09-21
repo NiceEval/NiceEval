@@ -38,6 +38,7 @@ import type {
 } from "../record/sqlite/types.ts";
 import {
   closeInspectionJson,
+  isInspectionCodecError,
   type InspectionJson,
 } from "./codec.ts";
 import type { InspectionFactSource } from "./source.ts";
@@ -674,14 +675,6 @@ function hasOwnMarker(value: unknown, key: string): boolean {
 
 function issue(code: string, locator: string): InspectionJson {
   return Object.freeze({ code, locator });
-}
-
-function isInspectionCodecError(
-  value: InspectionJson | { readonly code: string; readonly reason: string },
-): value is { readonly code: string; readonly reason: string } {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    Reflect.get(value, "code") === "inspection-result-invalid" &&
-    typeof Reflect.get(value, "reason") === "string";
 }
 
 function factsError(reason: string, cause?: unknown): Error {

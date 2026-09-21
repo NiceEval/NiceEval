@@ -15,7 +15,7 @@ import type {
   PersistedContentMetadata,
   SealedAttachmentMetadata,
 } from "../record/sqlite/index.ts";
-import { closeInspectionJson, type InspectionJson } from "./codec.ts";
+import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
@@ -465,10 +465,7 @@ function hasOwnMarker(value: unknown, key: string): boolean {
 
 function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
-  if (typeof closed === "object" && closed !== null && !Array.isArray(closed) &&
-    Reflect.get(closed, "code") === "inspection-result-invalid") {
-    throw closed;
-  }
+  if (isInspectionCodecError(closed)) throw closed;
   return closed as InspectionJson;
 }
 

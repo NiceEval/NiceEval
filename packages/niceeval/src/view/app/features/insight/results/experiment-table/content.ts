@@ -239,6 +239,7 @@ export function evalRow(
   const bag: CellBag = {
     entity: textCell(label),
     ...(row.durationMs === undefined ? {} : { durationMs: measureCell(row.durationMs) }),
+    ...(row.tokens === undefined ? {} : { tokens: measureCell(row.tokens) }),
     summary: row.evaluationKind === "pass"
       ? (row.attempts.length === 1
           ? evalVerdictCell(row.attempts)

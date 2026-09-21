@@ -13,7 +13,7 @@ import {
 import type { AssertionsAttachment } from "../record/family/assertions/schema.ts";
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 import type { PersistedContentMetadata } from "../record/sqlite/index.ts";
-import { closeInspectionJson, type InspectionJson } from "./codec.ts";
+import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
@@ -1080,7 +1080,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
-  if (isRecord(closed) && closed.code === "inspection-result-invalid") throw closed;
+  if (isInspectionCodecError(closed)) throw closed;
   return closed as InspectionJson;
 }
 

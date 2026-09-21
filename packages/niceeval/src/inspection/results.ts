@@ -1,5 +1,8 @@
 import { Schema } from "effect";
-import { AdapterUsageCallSchema } from "../record/family/adapter-usage/schema.ts";
+import {
+  AdapterCallPriceReceiptSchema,
+  AdapterUsageCallSchema,
+} from "../record/family/adapter-usage/schema.ts";
 
 import {
   AttemptDocumentSchema,
@@ -17,6 +20,10 @@ import {
 import {
   AgentTurnUsageObservationSchema,
 } from "../record/family/agent-turns/schema.ts";
+import {
+  ExecutionTraceEventRecordSchema,
+  ExecutionTraceHeaderRecordSchema,
+} from "../record/family/execution-traces/schema.ts";
 import {
   FileChangesCollectionLimitationSchema,
 } from "../record/family/file-changes/schema.ts";
@@ -37,7 +44,7 @@ import {
   isItemId,
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
-import { QUERY_PROTOCOL } from "./protocol-values.ts";
+import { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 import {
   RunAbsentPublicationSchema,
   RunPendingPublicationSchema,
@@ -102,7 +109,7 @@ const MetricSchema = Schema.Struct({
 });
 const CostMetricSchema = Schema.Struct({
   ...MetricSchema.fields,
-  source: Schema.NullOr(Schema.Literals(["observed", "estimated"])),
+  source: Schema.NullOr(Schema.Literals(["reported", "estimated", "mixed"])),
 });
 const OverviewCoverageSchema = Schema.Union([
   Schema.Struct({
@@ -542,6 +549,48 @@ const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("not-started"), reason: Schema.Literals(COMMAND_NOT_STARTED_REASONS) }),
 ]);
 export const InspectionTraceResultSchema = Schema.Struct({
+  execution: Schema.Struct({
+    state: ProjectionStateSchema,
+    limitations: Schema.Array(Schema.Union([
+      Schema.Struct({ code: Schema.Literal("capture-failed"), stage: Schema.Literal("adapter") }),
+      Schema.Struct({ code: Schema.Literal("capture-interrupted"), stage: Schema.Literal("attempt-finalizer") }),
+      Schema.Struct({ code: Schema.Literal("collection-cap-reached"), omittedAtLeast: Schema.Number }),
+      Schema.Struct({
+        code: Schema.Literal("legacy-source-state"),
+        state: Schema.Literals(["partial", "invalid"]),
+        message: Schema.String,
+      }),
+    ])),
+    traces: Schema.Array(ExecutionTraceHeaderRecordSchema.pipe(Schema.fieldsAssign({ eventCount: Schema.Number }))),
+    events: Schema.Array(Schema.Struct({
+      traceId: Schema.String,
+      eventId: Schema.String,
+      origin: Schema.Union([
+        Schema.Struct({ kind: Schema.Literal("execution-event"), eventId: Schema.String }),
+        Schema.Struct({ kind: Schema.Literal("agent-item"), itemId: ItemIdSchema }),
+      ]),
+      ordinal: Schema.Number,
+      type: Schema.String,
+      source: ExecutionTraceEventRecordSchema.fields.source,
+      actor: ExecutionTraceEventRecordSchema.fields.actor,
+      time: ExecutionTraceEventRecordSchema.fields.time,
+      summary: Schema.String,
+      links: ExecutionTraceEventRecordSchema.fields.links,
+      evidence: Schema.Array(Schema.Struct({ evidenceId: Schema.String, key: Schema.String, label: Schema.String })),
+      scopeMemberships: ExecutionTraceEventRecordSchema.fields.scopeMemberships,
+    })),
+    identityIndex: Schema.Struct({
+      traceIds: Schema.Array(Schema.String),
+      omittedTraceIdCount: Schema.Number,
+      eventIds: Schema.Array(Schema.String),
+      omittedEventIdCount: Schema.Number,
+      evidenceIds: Schema.Array(Schema.String),
+      omittedEvidenceIdCount: Schema.Number,
+    }),
+    hasMore: Schema.Boolean,
+    omittedEventCount: Schema.Number,
+    continuation: Schema.optional(Schema.String),
+  }),
   conversation: Schema.Struct({
     state: ProjectionStateSchema,
     limitations: Schema.Array(TraceProjectionLimitationSchema),
@@ -577,8 +626,10 @@ export const InspectionTraceResultSchema = Schema.Struct({
   diagnostics: TraceDiagnosticsSchema,
   identityIndex: Schema.Struct({
     itemIds: Schema.Array(ItemIdSchema),
-    toolOccurrenceIds: Schema.Struct({ ids: Schema.Array(ToolOccurrenceIdSchema) }),
+    omittedItemIdCount: Schema.Number,
+    toolOccurrenceIds: Schema.Struct({ ids: Schema.Array(ToolOccurrenceIdSchema), omittedIdCount: Schema.Number }),
     commandIds: Schema.Array(CommandIdSchema),
+    omittedCommandIdCount: Schema.Number,
   }),
 });
 export type InspectionTraceResult = Schema.Schema.Type<typeof InspectionTraceResultSchema>;
@@ -619,6 +670,39 @@ const CommandStreamSchema = Schema.Struct({
   truncation: Schema.Struct({ state: Schema.Literals(["not-truncated", "truncated"]), omittedSafeUtf8Bytes: Schema.Number }),
 });
 export const InspectionTraceDetailResultSchema = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("execution-event"),
+    event: ExecutionTraceEventRecordSchema,
+    evidence: Schema.Array(Schema.Struct({
+      evidenceId: Schema.String,
+      key: Schema.String,
+      label: Schema.String,
+      artifactId: Schema.String,
+      pointer: Schema.String,
+      targetSha256: Schema.String,
+      targetByteLength: Schema.Number,
+      offset: Schema.Literal(0),
+      base64: Schema.String,
+      nextOffset: Schema.NullOr(Schema.Number),
+      truncated: Schema.Boolean,
+    })),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("execution-evidence"),
+    evidenceId: Schema.String,
+    eventId: Schema.String,
+    traceId: Schema.String,
+    key: Schema.String,
+    label: Schema.String,
+    artifactId: Schema.String,
+    pointer: Schema.String,
+    artifactSha256: Schema.String,
+    targetSha256: Schema.String,
+    targetByteLength: Schema.Number,
+    offset: Schema.Number,
+    base64: Schema.String,
+    nextOffset: Schema.NullOr(Schema.Number),
+  }),
   Schema.Struct({ kind: Schema.Literal("item"), itemId: ItemIdSchema, item: InspectionTraceDetailItemSchema }),
   Schema.Struct({
     kind: Schema.Literal("tool-occurrence"),
@@ -675,21 +759,49 @@ const UsageCostTotalSchema = Schema.Struct({
   value: Schema.String,
   observationCount: Schema.Number,
 });
+const EffectiveCostSchema = Schema.Struct({
+  amount: Schema.String,
+  currency: Schema.String,
+  source: Schema.Struct({
+    kind: Schema.Literals(["reported", "estimated"]),
+    id: Schema.String,
+  }),
+  state: Schema.Literals(["complete", "partial"]),
+});
+const AdapterUsageInspectionCallSchema = Schema.Struct({
+  ...AdapterUsageCallSchema.fields,
+  effectiveCost: Schema.NullOr(EffectiveCostSchema),
+});
+const EffectiveCostTotalSchema = Schema.Struct({
+  state: Schema.Literals(["complete", "partial", "unavailable"]),
+  source: Schema.NullOr(Schema.Literals(["reported", "estimated", "mixed"])),
+  values: Schema.Array(Schema.Struct({
+    currency: Schema.String,
+    value: Schema.String,
+    source: Schema.Literals(["reported", "estimated", "mixed"]),
+    coveredCalls: Schema.Number,
+    reportedCalls: Schema.Number,
+    estimatedCalls: Schema.Number,
+  })),
+  totalCalls: Schema.Number,
+});
 const UsageTotalsSchema = Schema.Struct({
   inputTotalTokens: Schema.optional(UsageNumericTotalSchema),
   inputTokens: UsageNumericTotalSchema,
   outputTokens: UsageNumericTotalSchema,
   requests: UsageNumericTotalSchema,
-  providerCosts: Schema.Struct({
+  providerCosts: Schema.optional(Schema.Struct({
     state: Schema.Literals(["available", "partial", "unavailable"]),
     values: Schema.Array(UsageCostTotalSchema),
     observationCount: Schema.Number,
-  }),
+  })),
+  costs: Schema.optional(EffectiveCostTotalSchema),
 });
 export const InspectionAttemptUsageResultSchema = Schema.Struct({
   source: Schema.optional(Schema.Literal("adapter")),
   coverage: Schema.optional(Schema.Literal("recorded-calls")),
-  calls: Schema.optional(Schema.Array(AdapterUsageCallSchema)),
+  calls: Schema.optional(Schema.Array(AdapterUsageInspectionCallSchema)),
+  priceReceipts: Schema.optional(Schema.NullOr(Schema.Array(AdapterCallPriceReceiptSchema))),
   callsTruncated: Schema.optional(Schema.Boolean),
   omittedCallCount: Schema.optional(Schema.Number),
   state: ProjectionStateSchema,
@@ -853,6 +965,7 @@ export interface InspectionSelectionAudit {
 }
 export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
   readonly protocol: typeof QUERY_PROTOCOL;
+  readonly behaviorVersion: typeof INSPECTION_BEHAVIOR_VERSION;
   readonly outcome: "success";
   readonly operation: Kind;
   readonly source: {

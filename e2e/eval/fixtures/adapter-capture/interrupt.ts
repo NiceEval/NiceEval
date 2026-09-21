@@ -22,6 +22,16 @@ export const interruptCapture = defineAdapter({
         status: "cancelled", inputTokens: 13, outputTokens: 5,
       });
       await ctx.attach({ name: "tail.txt", mediaType: "text/plain", body: "cancelled-tail" });
+      await ctx.recordTrace({
+        traceId: "cancelled-complete", schema: { id: "example.capture", revision: 1 },
+        collection: { state: "complete", limitations: [] }, scopes: [],
+        events: [{ key: "cancelled", type: "operation.cancelled", source: { id: "backend" }, summary: "Cancellation observed; capture complete" }],
+      });
+      await ctx.recordTrace({
+        traceId: "missing-checkpoint", schema: { id: "example.capture", revision: 1 },
+        collection: { state: "partial", limitations: [{ code: "checkpoint-missing", message: "Checkpoint was not available" }] }, scopes: [],
+        events: [{ key: "tail", type: "operation.observed", source: { id: "client" }, summary: "Verified cancellation tail" }],
+      });
       appendFileSync("capture-finish.txt", "done\n");
     })();
     ctx.onCleanup(async ({ signal }) => {

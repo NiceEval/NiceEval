@@ -137,6 +137,14 @@ recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
 attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
 ```
 
+#### `recordTrace`
+
+```ts
+recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceEvent>(
+  input: import("./adapter-execution-trace.ts").ExecutionTraceInput<Event>,
+): Promise<import("./adapter-execution-trace.ts").ExecutionTraceReceipt>;
+```
+
 #### `evalId`
 
 ```ts

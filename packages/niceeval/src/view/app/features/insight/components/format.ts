@@ -44,7 +44,7 @@ function formatDollars(absolute: number): string {
   if (absolute >= 1000) return abbreviate(absolute);
   if (absolute >= 0.01 || absolute === 0) return absolute.toFixed(2);
   // 小额成本保留有效位,不四舍成 "$0.00" 假零。
-  return absolute.toFixed(4);
+  return String(absolute);
 }
 
 /** unit 是量纲声明,也是格式化的唯一开关。 */
@@ -53,7 +53,7 @@ function formatNumberWithUnit(value: number, unit?: string): string {
   const absolute = Math.abs(value);
   if (unit === "%") return `${sign}${trimmed(Math.round(absolute * 1000) / 10)}%`;
   if (unit === "ms") return sign + formatDuration(absolute);
-  if (unit === "$") return `${sign}$${formatDollars(absolute)}`;
+  if (unit === "$" || unit === "USD") return `${sign}$${formatDollars(absolute)}`;
   const number = abbreviate(absolute);
   return unit ? `${sign}${number} ${unit}` : `${sign}${number}`;
 }

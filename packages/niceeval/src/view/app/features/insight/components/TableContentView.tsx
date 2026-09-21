@@ -218,6 +218,9 @@ export function MetricCellView({
           {hasCoverageGap ? `${cell.samples}/${cell.total}` : localeText(loc, "cell.partialDetail")}
         </sup>
       ))}
+      {cell.source == null ? null : <small className="niceeval-cost-source">{localeText(loc,
+        cell.source === "reported" ? "cell.costReported" : cell.source === "estimated" ? "cell.costEstimated" : "cell.costMixed",
+      )}</small>}
       {href && refLocators.length === 1 && href(refLocators[0]!) !== undefined && (
         <span className="niceeval-refs">
           <a className="niceeval-ref" href={href(refLocators[0]!)}>

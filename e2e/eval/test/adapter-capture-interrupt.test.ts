@@ -50,6 +50,18 @@ test.concurrent("SIGINT 排空共享 finish 的尾部采集并在 Run 终态前�
     expect(usage.querySuccess("attempt.usage").usage.calls).toEqual([
       expect.objectContaining({ callId: "cancelled-request", status: "cancelled", inputTokens: 13, outputTokens: 5 }),
     ]);
+    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "attempt.trace", locator } }));
+    const trace = await niceeval.run(["query", "run", "--request", request]);
+    expect(trace.exitCode, trace.diagnostic()).toBe(0);
+    const execution = trace.querySuccess("attempt.trace").trace.execution;
+    expect(execution.traces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceTraceId: "cancelled-complete", collection: { state: "complete", limitations: [] }, scopes: [] }),
+      expect.objectContaining({ sourceTraceId: "missing-checkpoint", collection: { state: "partial", limitations: [expect.objectContaining({ code: "checkpoint-missing" })] }, scopes: [] }),
+    ]));
+    expect(execution.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ summary: "Cancellation observed; capture complete" }),
+      expect.objectContaining({ summary: "Verified cancellation tail" }),
+    ]));
     await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "attempt.artifacts", locator } }));
     const artifacts = await niceeval.run(["query", "run", "--request", request]);
     const collection = artifacts.querySuccess("attempt.artifacts").artifacts;

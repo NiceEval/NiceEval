@@ -133,3 +133,17 @@ export type { JudgeProvider, JudgeSelection } from "./judge/index.ts";
 export { MigrationRequiredError, type MigrationOccurrence, type ErrorSource } from "./error-assistance/index.ts";
 export type { AdapterUsageInput } from "./adapter-usage.ts";
 export type { AdapterAttachmentInput, AdapterAttachmentReceipt } from "./adapter-attachments.ts";
+export type {
+  ExecutionTraceActor,
+  ExecutionTraceEvent,
+  ExecutionTraceEvidence,
+  ExecutionTraceInput,
+  ExecutionTraceLimitation,
+  ExecutionTraceLink,
+  ExecutionTraceReceipt,
+  ExecutionTraceScope,
+  ExecutionTraceScopeMembership,
+  ExecutionTraceSource,
+  ExecutionTraceTime,
+  TraceJson,
+} from "./adapter-execution-trace.ts";

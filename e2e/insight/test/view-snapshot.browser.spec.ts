@@ -53,6 +53,10 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       const alternate = await niceeval.run(["exp", "alternate", "--rerun", "all", "--json"]);
       expect(alternate.exitCode, alternate.diagnostic()).toBe(0);
 
+      const executionTrace = await niceeval.run(["exp", "execution-trace", "--rerun", "all", "--json"]);
+      expect(executionTrace.exitCode, executionTrace.diagnostic()).toBe(0);
+      const executionLocator = withAt(only(executionTrace.expEvalEvents(), (event) => event.evalId === "execution-trace", executionTrace.diagnostic()).locator);
+
       const partialUsage = await niceeval.run(["exp", "partial-usage", "--rerun", "all", "--json"]);
       expect(partialUsage.expReceipt(), partialUsage.diagnostic()).toMatchObject({ completion: "completed" });
 
@@ -141,12 +145,37 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           hasText: /^partial-usage /u,
         });
         const partialUsageTokens = partialUsageSummary.locator(".niceeval-table-hierarchy-cell").nth(4);
-        await expect(partialUsageTokens.locator(".niceeval-value")).toHaveText("10 tokens");
+        await expect(partialUsageTokens.locator(".niceeval-value")).toHaveText("12 tokens");
         await expect(partialUsageTokens.locator(".niceeval-coverage")).toHaveText("partial");
         await expect(partialUsageTokens.locator(".niceeval-coverage")).toHaveAttribute(
           "title",
           "This value is a known subtotal because some underlying observations are unavailable",
         );
+        const partialUsageCost = partialUsageSummary.locator(".niceeval-table-hierarchy-cell").nth(5);
+        await expect(partialUsageCost.locator(".niceeval-value")).toHaveText("$0.000001");
+        await expect(partialUsageCost.locator(".niceeval-coverage")).toHaveText("partial");
+        await expect(partialUsageCost.locator(".niceeval-cost-source")).toHaveText("reported + estimated");
+        await partialUsageSummary.click();
+        const partialUsageDetails = partialUsageSummary.locator("xpath=..");
+        const partialUsageEval = partialUsageDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^usage-cost/u,
+        });
+        await expect(partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(4).locator(".niceeval-value")).toHaveText("12 tokens");
+        await expect(partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-value")).toHaveText("$0.000001");
+        await expect(partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage")).toHaveText("partial");
+        await partialUsageEval.click();
+        const partialUsageAttempt = partialUsageEval.locator("xpath=..").locator(".niceeval-table-hierarchy-row").first();
+        await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(4).locator(".niceeval-value")).toHaveText("12 tokens");
+        await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-value")).toHaveText("$0.000001");
+        await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage")).toHaveText("partial");
+        await partialUsageAttempt.getByRole("link", { name: /^@/u }).click();
+        const externalUsage = page.getByRole("region", { name: "External call usage", exact: true });
+        await expect(externalUsage).toContainText("1/2 calls fully costed");
+        await externalUsage.getByText(/^Recorded calls/u).click();
+        await expect(externalUsage).toContainText("vercel-ai-gateway.response");
+        await externalUsage.getByText("Sealed pricing evidence", { exact: true }).click();
+        await expect(externalUsage).toContainText("tokens-unknown");
+        await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
         await experimentSelector.selectOption("/group/named/classic");
         await expect(page).toHaveURL(/#\/group\/named\/classic$/u);
 
@@ -434,6 +463,22 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         });
 
         await dialog.getByRole("button", { name: "Close" }).click();
+        await experimentSelector.selectOption("/group/singleton/execution-trace");
+        const executionSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({ hasText: /^execution-trace \(1\/1\)/u });
+        await executionSummary.click();
+        const executionDetails = executionSummary.locator("xpath=..");
+        await executionDetails.locator("summary.niceeval-table-hierarchy-summary").filter({ hasText: /^execution-trace/u }).nth(1).click();
+        await executionDetails.getByRole("link", { name: executionLocator, exact: true }).click();
+        const executionRegion = page.getByRole("dialog").getByRole("region", { name: "Execution events", exact: true });
+        await expect(executionRegion).toBeVisible();
+        await expect(executionRegion).not.toContainText("sealed-evidence-browser-sentinel");
+        await executionRegion.getByRole("button", { name: "Courier reached the observed destination", exact: true }).click();
+        await expect(executionRegion).toContainText("sealed-evidence-browser-sentinel");
+        await expect(executionRegion).toContainText("/event");
+        await executionRegion.getByRole("button", { name: "Open evidence", exact: true }).last().click();
+        await expect(executionRegion).toContainText("SHA-256");
+        await expect(executionRegion).toContainText("sealed-evidence-browser-sentinel");
+        await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
         await experimentSelector.selectOption("/group/singleton/main");
         await expect(page).toHaveURL(/#\/group\/singleton\/main$/u);
         const frozenOverviewText = await page.locator(".niceeval-view-report-slot").first().innerText();
