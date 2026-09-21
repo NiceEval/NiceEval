@@ -19,6 +19,24 @@
           "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_WFZ2XWRF2BECH78C-netake_YQZGSWP388S90J9B/inventory.json",
           "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
         }
+      },
+      "memory/insight-aggregate-hides-partial-state.md": {
+        "red": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_insight-aggregate-hides-partial-state.md/nered_JSKXSEVB12GTC5M2-netake_NFCA10NRSR3KP9R6/red.json",
+          "digest": "sha256:bdaec3e161c4798c6f43210f5bc9b4dd8851bf46a36c49fa460716915147eb39"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_insight-aggregate-hides-partial-state.md/nered_JSKXSEVB12GTC5M2-netake_NFCA10NRSR3KP9R6/green.json",
+          "digest": "sha256:84bcfe1b2212726d87ec44e6c6399c51fc81b9eff59385dab35840b7d0523186"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_insight-aggregate-hides-partial-state.md/nered_JSKXSEVB12GTC5M2-netake_NFCA10NRSR3KP9R6/certificate.json",
+          "digest": "sha256:fe1dec3a538eee9c37a6ca6d0428993b8bc99f21a343a8924e12c751ff1050b2"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_insight-aggregate-hides-partial-state.md/nered_JSKXSEVB12GTC5M2-netake_NFCA10NRSR3KP9R6/inventory.json",
+          "digest": "sha256:855e0386d6fd351104e6769e06231239f1b33560638ea79916afbbea039f7d03"
+        }
       }
     }
   }

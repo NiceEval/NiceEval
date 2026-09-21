@@ -5,6 +5,7 @@
     "necase_DCFSBPFARWB0QD6D": {
       "owner": "docs/engineering/testing/e2e/insight.md#operational-browser-journey",
       "regressions": [
+        "memory/insight-aggregate-hides-partial-state.md",
         "memory/report-header-experiment-selector-regression.md",
         "memory/report-match-details-obscure-score-and-collection.md",
         "memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md",
@@ -34,6 +35,15 @@
       "action": "regression-added",
       "to": {
         "memory": "memory/view-hard-refresh-duplicates-attempt-overlay.md"
+      }
+    },
+    {
+      "caseId": "necase_DCFSBPFARWB0QD6D",
+      "atCommit": "ef1ef6aaa097880d3b3988cf79bffb014781c567",
+      "transactionId": "netxn_6fa76e9bdbe24344a9e794d179664b60",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/insight-aggregate-hides-partial-state.md"
       }
     }
   ],

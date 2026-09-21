@@ -53,6 +53,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       const alternate = await niceeval.run(["exp", "alternate", "--rerun", "all", "--json"]);
       expect(alternate.exitCode, alternate.diagnostic()).toBe(0);
 
+      const partialUsage = await niceeval.run(["exp", "partial-usage", "--rerun", "all", "--json"]);
+      expect(partialUsage.expReceipt(), partialUsage.diagnostic()).toMatchObject({ completion: "completed" });
+
       let recallLocator = "";
       let toolLocator = "";
       let selectedRunId = "";
@@ -131,7 +134,19 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           "named/classic",
           "singleton/alternate",
           "singleton/main",
+          "singleton/partial-usage",
         ]);
+        await experimentSelector.selectOption("/group/singleton/partial-usage");
+        const partialUsageSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^partial-usage /u,
+        });
+        const partialUsageTokens = partialUsageSummary.locator(".niceeval-table-hierarchy-cell").nth(4);
+        await expect(partialUsageTokens.locator(".niceeval-value")).toHaveText("10 tokens");
+        await expect(partialUsageTokens.locator(".niceeval-coverage")).toHaveText("partial");
+        await expect(partialUsageTokens.locator(".niceeval-coverage")).toHaveAttribute(
+          "title",
+          "This value is a known subtotal because some underlying observations are unavailable",
+        );
         await experimentSelector.selectOption("/group/named/classic");
         await expect(page).toHaveURL(/#\/group\/named\/classic$/u);
 

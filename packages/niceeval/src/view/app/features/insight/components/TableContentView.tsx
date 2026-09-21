@@ -188,7 +188,7 @@ export function MetricCellView({
   }
   const refLocators = refLocatorsOf(cell);
   const hasCoverageGap = cell.samples < cell.total;
-  const hasPartialCoverage = showCoverage && (hasCoverageGap || cell.state === "partial");
+  const hasPartialCoverage = cell.state === "partial" || (showCoverage && hasCoverageGap);
   const partialTitle = hasCoverageGap
     ? localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })
     : localeText(loc, "cell.partialTitle");
