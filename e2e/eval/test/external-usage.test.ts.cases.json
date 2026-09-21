@@ -1,0 +1,37 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/external-usage.test.ts",
+  "current": {
+    "necase_920FSWMBVEP3090H": {
+      "owner": "docs/engineering/testing/e2e/eval.md#external-usage",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_P73V11ADFDNYEXTH": {
+      "owner": "docs/engineering/testing/e2e/eval.md#external-usage",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_920FSWMBVEP3090H",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_572baf2d108c42b996d9d19bdf0157c8",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#external-usage"
+      }
+    },
+    {
+      "caseId": "necase_P73V11ADFDNYEXTH",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_ce4433cde6994cebabe893685a10fdcb",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#external-usage"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -9,7 +9,7 @@ export default defineExperiment({
   flags: {
     application: "user-flag-application",
     agentId: "user-flag-agentId",
-    nested: { application: "agentId" },
+    nestedApplication: "agentId",
   },
   labels: { migration: "historical-agent", application: "agentId" },
 });

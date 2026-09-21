@@ -8,6 +8,7 @@ Observability 的 durable facts 按 capture authority 分 family。Adapter、Ses
 
 | family | owner | capture authority | Content |
 |---|---|---|---|
+| `niceeval.adapter-usage` | Attempt | Adapter 最终调用快照 | none |
 | `niceeval.agent-turns` | Attempt | Adapter terminal Turn | none |
 | `niceeval.turn-contexts` | Attempt | SessionManager physical `t.send` context | none |
 | `niceeval.sandbox-commands` | Attempt | Sandbox command lifecycle | stdout / stderr |
@@ -68,3 +69,39 @@ source 替代损坏事实。total token、cost、duration coverage、grouping �
 大 collection 的 view 使用 `openCollection()` 流式投影；不得先调用 whole-value `read()` 取得完整数组再分页。每个 Stream
 execution 持有自己的 storage-generation lease，physical-only migration 后可重开同一 `LogicalSealIdentity`，family migration
 后必须 restart。
+
+## 外部调用用量
+
+`niceeval.adapter-usage` 的持久 revision 为 `1`，owner 为 origin Attempt。它保存最终快照，不保存可变的请求状态机。
+同一 Attempt 的 `callId` 唯一；完全相同的规范化快照重报是幂等的，冲突拒绝并形成采集失败。
+`retryOf` 只能引用此前登记的同 Attempt 调用，因此实际重试计作新请求。
+
+```ts
+interface AdapterUsageCall {
+  callId: string;
+  retryOf: string | null;
+  provider: string | null;
+  model: string | null;
+  status: "succeeded" | "failed" | "cancelled" | "unknown";
+  inputTokens: number | null;
+  inputTotalTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+}
+interface AdapterUsageAttachment {
+  collection: SourceCollection<{ code: "capture-failed"; stage: "adapter-usage" }>;
+  calls: readonly AdapterUsageCall[];
+}
+```
+
+每项字符串最多 256 UTF-8 bytes，不能含控制字符；每个 Attempt 最多 4,000 个调用。
+计数为非负安全整数或 `null`。`inputTokens` 排除 cache read/write；`inputTotalTokens` 是独立观察到的含缓存输入总量。
+已知输入分项之和不能超过已知总量，全部分项已知时必须相等。总量不与分项相加，也不由分项补值。
+
+没有 terminal 证据的最终快照使用 `unknown`。框架取消不证明上游取消；失败调用仍可有已知用量。
+快照在外部工作排空后提交；`unknown` 不能再改成另一终态。provider/model 未知时保存 `null`，不猜供应商或价格。
+
+collection 只证明已接纳快照的保存完整度，不证明所有外部请求都已被登记。
+旧 Record 缺少此 family 时保持 `not-recorded`；读取不合成空集合，不改写旧 Agent Turn 事实。
+`attempt.usage` 保留 calls 与逐项 unknown，部分已知计数给出 partial 小计，全部未知为 unavailable。

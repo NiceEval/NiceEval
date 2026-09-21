@@ -52,14 +52,14 @@ const duration = (value: Metric): string => metric(value, (milliseconds) => {
   return `${fmt(milliseconds / 3_600_000)} h`;
 });
 
-const score = (value: ScoredValue): string =>
+const score = (value: ScoredValue, verdict: AttemptView["verdict"]): string =>
   value.state === "not-scored"
     ? value.state
     : `${fmt(value.earned)}/${fmt(value.possible)} (${value.state}${
       value.state === "unavailable"
         ? `; ${value.unavailable} unavailable`
         : ""
-    })`;
+    }${value.state === "complete" && verdict === "passed" ? "; scored" : ""})`;
 
 const aggregateEntries = (
   value: Aggregate,
@@ -165,7 +165,7 @@ const attemptBlocks = (
             : member.publication.state,
           ...(showScore
             ? [member.publication.state === "published"
-              ? metric(member.publication.score)
+              ? `${metric(member.publication.score)}${member.publication.verdict === "passed" && member.publication.score.state === "available" && member.publication.score.value !== null ? " (scored)" : ""}`
               : member.publication.state]
             : []),
         ]),
@@ -175,13 +175,17 @@ const attemptBlocks = (
 };
 
 const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
-  const counts = { passed: 0, failed: 0, errored: 0 };
+  const counts = { passed: 0, scored: 0, failed: 0, errored: 0 };
   for (const cell of cells) {
     for (const member of cell.members) {
       if (member.publication.state !== "published") continue;
       const verdict = member.publication.verdict;
       if (verdict === "passed") {
-        counts.passed += 1;
+        if (cell.aggregate.evaluationKind === "points" && member.publication.score.state === "available" && member.publication.score.value !== null) {
+          counts.scored += 1;
+        } else {
+          counts.passed += 1;
+        }
       } else if (verdict === "failed" || verdict === "errored") {
         counts[verdict] += 1;
       }
@@ -189,6 +193,7 @@ const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
   }
   const hidden = [
     ...(counts.passed > 0 ? [`${counts.passed} passed`] : []),
+    ...(counts.scored > 0 ? [`${counts.scored} scored`] : []),
     ...(counts.failed > 0 ? [`${counts.failed} failed`] : []),
     ...(counts.errored > 5 ? [`${counts.errored - 5} errored`] : []),
   ];
@@ -401,7 +406,7 @@ export function renderRun(value: RunView): string {
             { key: "Verdict", value: member.verdict ?? "not-recorded" },
             {
               key: "Score",
-              value: member.score === null ? "not-recorded" : score(member.score),
+              value: member.score === null ? "not-recorded" : score(member.score, member.verdict),
             },
           ],
         },
@@ -529,7 +534,9 @@ export function renderAttempt(value: AttemptView): string {
     {
       kind: "panel",
       title: `Attempt ${value.locator}`,
-      meta: value.verdict ?? value.outcome,
+      meta: value.verdict === "passed" && value.score.state === "complete"
+        ? "scored"
+        : value.verdict ?? value.outcome,
       blocks: [
         {
           kind: "keyValue",
@@ -541,7 +548,7 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Slot", value: value.slotId },
             { key: "Outcome", value: value.outcome },
             { key: "Verdict", value: value.verdict ?? "not-available" },
-            { key: "Score", value: score(value.score) },
+            { key: "Score", value: score(value.score, value.verdict) },
           ],
         },
         {
@@ -1271,6 +1278,7 @@ function usageTotalEntries(
 ): readonly { readonly key: string; readonly value: string }[] {
   return [
     { key: "Input tokens", value: numericUsageTotal(totals.inputTokens) },
+    ...(totals.inputTotalTokens === undefined ? [] : [{ key: "Input including cache", value: numericUsageTotal(totals.inputTotalTokens) }]),
     { key: "Output tokens", value: numericUsageTotal(totals.outputTokens) },
     { key: "Requests", value: numericUsageTotal(totals.requests) },
     {
@@ -1297,6 +1305,10 @@ export function renderUsage(value: UsageView): string {
           kind: "keyValue",
           entries: [
             { key: "State", value: value.state },
+            ...(value.source === "adapter" ? [
+              { key: "Coverage", value: "Recorded calls only" },
+              { key: "Calls", value: boundedPreview(value.calls?.length ?? 0, value.callsTruncated ?? false, value.omittedCallCount ?? 0) },
+            ] : []),
             ...usageTotalEntries(value.totals),
             {
               key: "Limitations",

@@ -22,6 +22,7 @@ const OPERATION_CATALOG = [
   "attempt.diff",
   "attempt.sources",
   "attempt.artifacts",
+  "attempt.artifact",
   "runs.compare",
 ] as const;
 

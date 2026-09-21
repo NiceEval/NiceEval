@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/adapter-flags-cache.test.ts",
+  "current": {
+    "necase_3JRA1GT0ZX74H9V7": {
+      "owner": "docs/engineering/testing/e2e/eval.md#adapter-flags-identity",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_3JRA1GT0ZX74H9V7",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_dcf6e5e127e9428ca8061ac1d5c59b60",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#adapter-flags-identity"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -322,7 +322,7 @@ function renderCellWeb(
       return (
         <span className={cx("niceeval-verdict", `niceeval-verdict-${verdict}`)}>
           {verdictMark(verdict)}
-          {!cell.bare ? <> {localeText(ctx.locale, `verdict.${verdict}`)}</> : null}
+          {!cell.bare ? <> {cell.label === undefined ? localeText(ctx.locale, `verdict.${verdict}`) : resolveLocalizedText(cell.label, ctx.locale)}</> : null}
         </span>
       );
     }

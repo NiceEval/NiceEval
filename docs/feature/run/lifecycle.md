@@ -23,6 +23,10 @@ Run close 不重新发布或撤销 Attempt，只冻结终态与剩余 absence re
 正常退出停止新的 reservation，等待已经接纳的 Attempt publication，再提交 Run close。
 
 SIGINT 与 SIGTERM 走同一受控路径：发布已经完成的 Attempt，并把没有 publication 的 slot 以 `interrupted-before-publication` 收口。
+
+普通 Adapter 的在途 Attempt 先停止 forward，在固定 cleanup 总预算内排空尾部采集，再把可验证的 `errored` Attempt 发布到仍活动的 Run。
+Runner 等待这次 publication 后恢复中断，停止后续派发，再提交 Run 终态。封口或存储失败仍按 Run 失败与 absence 规则处理，不伪造已发布结果。
+
 它返回 `interrupted` receipt，并在同一收尾路径把 Session 收口为 durable Invocation projection。
 随后关闭 writer、checkpoint 并 truncate WAL，再以内建只读路径重开 canonical database。
 只有 schema、引用闭包、publication 和领域不变量验证全部通过，CLI 才成功交付 receipt 与 portable Record。

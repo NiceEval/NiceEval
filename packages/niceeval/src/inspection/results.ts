@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { AdapterUsageCallSchema } from "../record/family/adapter-usage/schema.ts";
 
 import {
   AttemptDocumentSchema,
@@ -675,6 +676,7 @@ const UsageCostTotalSchema = Schema.Struct({
   observationCount: Schema.Number,
 });
 const UsageTotalsSchema = Schema.Struct({
+  inputTotalTokens: Schema.optional(UsageNumericTotalSchema),
   inputTokens: UsageNumericTotalSchema,
   outputTokens: UsageNumericTotalSchema,
   requests: UsageNumericTotalSchema,
@@ -685,6 +687,11 @@ const UsageTotalsSchema = Schema.Struct({
   }),
 });
 export const InspectionAttemptUsageResultSchema = Schema.Struct({
+  source: Schema.optional(Schema.Literal("adapter")),
+  coverage: Schema.optional(Schema.Literal("recorded-calls")),
+  calls: Schema.optional(Schema.Array(AdapterUsageCallSchema)),
+  callsTruncated: Schema.optional(Schema.Boolean),
+  omittedCallCount: Schema.optional(Schema.Number),
   state: ProjectionStateSchema,
   limitations: Schema.Array(UsageLimitationSchema),
   limitationsTruncated: Schema.Boolean,

@@ -212,7 +212,7 @@ interface AgentContext {
   readonly model?: string;         // Tier 1 的模型对比：experiment.model 透传。应用接口收模型选择就转发
   readonly reasoningEffort?: string;  // 推理努力程度：experiment.reasoningEffort 透传，归属与 model 一致
   readonly telemetry?: Telemetry;  // Tier 2：本轮的 W3C trace context（headers，每轮一个新 traceparent）
-  readonly flags: Readonly<Record<string, JsonValue>>; // Tier 3 的 feature A/B：experiment.flags 透传。没配时是 {}
+  readonly flags: Readonly<Record<string, string | number | boolean>>; // Tier 3 的 feature A/B：experiment.flags 透传。没配时是 {}
   readonly experimentId?: string;  // 路径推导的实验 id，与结果里的 experimentId 同源。不经 experiment 跑时是 undefined
 
 }
