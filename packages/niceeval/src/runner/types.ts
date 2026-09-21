@@ -1,3 +1,4 @@
+import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "../adapter-flags.ts";
 // runner 域类型:结果 / 汇总 / reporter 契约,eval / experiment / config 定义,
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
@@ -1032,25 +1033,33 @@ export interface ExperimentAuthorFields {
 }
 
 /** 作者输入：id 只能由发现阶段从文件路径推导。 */
-type ExperimentAdapterSelection =
-  | { readonly adapter: Adapter; readonly agent?: never }
-  | { readonly agent: Agent; readonly adapter?: never };
+/** Infer only from the Adapter selection; flags cannot widen it. */
+type ExperimentFlagsParser<A extends Adapter> = A extends { readonly parseFlags: infer S extends AdapterFlagsParser }
+  ? S
+  : undefined;
+type ExperimentFlagsFields<A extends Adapter> = {
+  readonly flags?: NoInfer<AdapterFlagsValue<ExperimentFlagsParser<A>>>;
+};
 
-export type ExperimentInput = Omit<ExperimentAuthorFields, "agent" | "adapter"> &
-  ExperimentAdapterSelection & {
+type ExperimentAdapterSelection<A extends Adapter> =
+  | { readonly adapter: A; readonly agent?: never }
+  | { readonly agent: A & Agent; readonly adapter?: never };
+
+export type ExperimentInput<A extends Adapter = Adapter> = Omit<ExperimentAuthorFields, "agent" | "adapter" | "flags"> &
+  ExperimentAdapterSelection<A> & ExperimentFlagsFields<NoInfer<A>> & {
   id?: ExperimentIdComesFromFilePath;
 };
 
 /** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
-export interface ExperimentDefinition {
+export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly description?: string;
-  readonly adapter: Adapter;
+  readonly adapter: A;
   /** Present when the selected Adapter is an Agent, regardless of the input shorthand. */
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
   readonly judgeRuntime?: JudgeConfig;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: AdapterFlagsOutput<ExperimentFlagsParser<A>> & Readonly<globalThis.Record<string, JsonValue>>;
   readonly labels: Readonly<globalThis.Record<string, string | number>>;
   readonly attempts: number;
   readonly earlyExit: boolean;

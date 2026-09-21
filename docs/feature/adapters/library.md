@@ -161,3 +161,62 @@ export default defineSandboxAgent({
 - [OpenCode](sdk/opencode/README.md)
 - [Hermes Agent](sdk/hermes/README.md)
 - [OpenClaw](sdk/openclaw/README.md)
+
+## 保存 Attempt 附件
+
+自定义 Adapter 的 `create(ctx)` 可以用 `ctx.attach` 保存文本、图片或其它 bytes：
+
+```ts
+const receipt = await ctx.attach({
+  name: "response.json",
+  mediaType: "application/json",
+  body: JSON.stringify(response),
+});
+```
+
+输入 `body` 为 `Uint8Array | string`；字符串按 UTF-8 编码。`name` 是显示标签，允许同名，不用作磁盘路径，
+也不替换同名附件。框架为每次成功接管分配独立 `artifactId`，返回
+`{ artifactId, name, mediaType, byteLength, sha256 }`。
+
+调用在返回 Promise 前复制 bytes；调用方随后修改原数组不会改写已接管内容。Promise 成功只证明接管，
+持久性由 Attempt publication 提供。附件 bytes 随 Record 保存，搬走 Record 后无需保留源文件或应用工作目录。
+
+每个 Attempt 最多接管 4000 件、累计 256 MiB，每件最多 64 MiB，边界值可用。非法输入、超限和关闭后的调用明确拒绝；
+采集失败不会丢弃此前已接管的内容。关闭前发生的失败保留为 Attempt 执行错误，collection 标为 partial，即使作者捕获了拒绝。
+
+Attempt 取消不立刻关闭附件入口。已登记 cleanup 在独立 cleanup 时限内仍可附加诊断材料；cleanup 完成或截止时关闭入口并封存快照。
+关闭后的迟到调用不能修改封存事实。读取使用 [Inspection 的附件 operation](../inspection/architecture.md#附件分块读取)。
+
+## 上报外部调用用量
+
+普通 Adapter 从 `create(ctx)` 取得 `ctx.recordUsage`，把外部系统观测到的物理调用上报给框架。
+接口不要求 Agent、消息、游戏状态或特定模型 SDK：
+
+```ts
+ctx.recordUsage({
+  callId: "request-42",
+  provider: null,
+  model: null,
+  status: "unknown",
+  inputTokens: null,
+  inputTotalTokens: 120,
+  outputTokens: 8,
+});
+```
+
+`callId` 在一个 Attempt 内标识物理调用；重试使用新 ID，`retryOf` 可引用此前已登记的 ID。
+相同规范化快照重复上报不增加用量；同 ID 的冲突快照明确失败。每个 Attempt 最多保存 4000 次调用的快照。
+这是终态快照入口：先收尾外部观测，再上报；只有 started 而无 terminal 的调用标为 `unknown`，不推断成功。
+`status` 接受 `succeeded | failed | cancelled | unknown`；供应商和模型未知时保留 `null`，不从通道名称推断。
+
+`inputTokens` 排除缓存读取与写入；`inputTotalTokens` 是独立观测到的含缓存输入总量。
+可选 `cacheReadTokens`、`cacheWriteTokens` 和 `inputTotalTokens` 省略时为 `null`，不得为了补全而填零。
+所有已知计数必须是非负安全整数；明确的零保留为已知零。已知分项之和不得超过已知总量，分项全部已知时必须相等。
+总量与分项独立保存，不重复相加，也不根据不完整分项补算总量。
+
+`attempt.usage` 返回 `source: "adapter"`、`coverage: "recorded-calls"`、调用快照和各计数的已知小计。
+未知值保留，部分小计标为 partial；已上报快照完整不代表包含外部系统的全部调用。单次最多返回前 128 条调用，
+`callsTruncated` 与 `omittedCallCount` 明示截断；聚合仍包含已封存的全部调用。框架不猜测价格。
+
+用量入口与附件入口共用 Attempt 的有界 cleanup 生命周期。取消后 cleanup 未结束时仍可上报；
+关闭后的调用拒绝且不能改写已封存事实。关闭前的采集错误即使被作者捕获，也保留为最终执行错误。

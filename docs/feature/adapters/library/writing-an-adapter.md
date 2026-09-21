@@ -69,6 +69,47 @@ Adapter 的 `defineEval` 只接受同一 Adapter 的实现。要让一组实现�
 需要让评估直接调用领域断言方法时，在 `defineAdapter` 的 `assertions({ app, check })` 中定义它们。
 共享接口通过 `withAssertions` 定义同一组方法，各实现不替换判定规则。方法选择当前证据并返回原始 `check` handle；完整契约见 [自定义断言便捷方法](../../eval/library.md#自定义断言便捷方法)。
 
+## 校验与推导 flags
+
+`defineAdapter` 的可选 `parseFlags(input: unknown): TFlags` 接收实验参数，并同步返回完整的 JSON 普通对象。
+Adapter 直接复用应用的 validator；策略名称可由应用 registry 的 `keyof` 推导，不需要额外的 schema 包或另一份枚举。
+
+```ts
+import { defineAdapter } from "niceeval";
+import { parseGameFlags, createGame } from "./game.ts";
+
+export const game = defineAdapter({
+  name: "game",
+  behaviorRevision: "game/v1",
+  parseFlags: parseGameFlags,
+  create(ctx) {
+    return createGame(ctx.flags);
+  },
+});
+```
+
+`TFlags` 同时约束 Experiment 显式提供的 `flags`、`create(ctx).flags` 和 Eval 的 `t.flags`。
+后两者递归只读，嵌套对象不可赋值，数组不可 `push`。
+Experiment 的完整输入规则见 [Experiment 参数校验与规范化](../../experiments/library.md#adapter-参数校验与规范化)。
+
+共享契约用 `defineAdapterContract<Context>({ name }).withParseFlags(parser)` 绑定同一 parser。
+它的 `implement()`、`defineEval()` 和 `defineScoreEval()` 保留同一 flags 类型，也可以继续组合 `withAssertions()`。
+
+NiceEval 在 `defineExperiment()` 内调用 parser 一次，早于 Experiment setup 与 Adapter create。
+parser 负责拒绝未知键、应用默认值和规范化；校验失败应抛错，不得静默忽略未知键。
+它必须纯粹、确定且同步，不启动资源或后台任务。
+返回 Promise 或 thenable 会立即报错；NiceEval 同时接收其拒绝，避免未处理的 Promise rejection。
+
+parser 输出只允许 JSON 普通对象及其嵌套 JSON 值。
+非有限数、循环引用、函数、accessor、symbol 键、隐藏属性、稀疏数组和 class 实例均被拒绝。
+NiceEval 深复制并冻结结果；parser 保留的引用不能修改实验值。
+静态类型也拒绝可识别的异步结果、primitive 根值和函数成员。
+未配置 `parseFlags` 的 Adapter 继续接受通用 JSON flags。
+
+规范化结果同时用于执行、公开实验值与缓存身份。
+`behaviorRevision` 必须标识 parser、默认值和转换语义；这些语义变化时，即使某次输出相同，也必须更新版本。
+NiceEval 不计算任意 validator 函数的语义指纹；未声明版本的普通 Adapter 不自动复用。
+
 ## 何时使用 Agent
 
 被测对象的主要操作是发送消息、续接会话或处理人工回答时，使用 `defineAgent` 或 `defineSandboxAgent`：

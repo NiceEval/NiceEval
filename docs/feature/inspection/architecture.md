@@ -6,7 +6,7 @@ Inspection catalog 是读取语义与业务聚合的唯一 owner。它的穷尽 
 
 - 当前项目：`project.get`；历史 Results、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
 - Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`；
-- Attempt 切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`；
+- Attempt 切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`、`attempt.artifact`；
 - 比较：`runs.compare`。
 
 catalog 不接受任意 SQL、关系遍历、JSON path、统计或公式。每个 definition 拥有具名 operation、穷尽 request、合法
@@ -97,3 +97,31 @@ opaque continuation token 绑定 operation、canonical request、source identity
 Inspection 拥有已发布事实及冻结当前输入的选择、解释与闭合 result。当前目标求值及沿用资格属于 Experiment Host。
 人读 navigation、drawer、语言、Preview、session 与刷新属于
 [Insight](../insight/README.md)；Run publication、收口、retention 与物理回收属于 [Run](../run/README.md)。
+
+## 附件分块读取
+
+`attempt.artifacts` 用 `{ locator, offset?, limit? }` 列出附件 metadata。offset 默认 0，以条目计；
+limit 默认且最多 128，必须为正安全整数。响应 `artifacts.value.artifacts` 与 `artifacts.collection.items`
+是同一页条目，包含 `artifactId`、`label`、`mediaType`、`byteLength`、`sha256`。
+
+每页 metadata 数组同时受 128 KiB 序列化 UTF-8 JSON 预算限制，完整保留标签；
+`artifacts.collection` 的 `total` 是总条数，`nextOffset` 指向下一条，否则为 null，`hasMore` 明示剩余页。
+客户端按返回的 nextOffset 继续，不能按请求 limit 自增。offset 等于 total 返回空末页，超过 total 则拒绝。
+`value.collection` 仍表示整个采集的 complete 或 partial 状态，不表示当前页状态。
+
+
+`attempt.artifact` 用 `{ locator, artifactId, offset?, limit? }` 读取同一 origin Attempt 的附件。
+`offset` 和 `limit` 以原始 bytes 为单位；offset 默认 0，limit 默认 64 KiB、最大 256 KiB，且必须是正 safe integer。
+offset 必须是非负 safe integer。这里的字节区间属于附件领域读面，不暴露存储页或物理 chunk 身份。
+
+成功 document 的 `artifact` 字段为
+`{ state: "available", artifactId, name, mediaType, byteLength, sha256, offset, base64, nextOffset }`。
+base64 是当前区间的标准 base64；metadata 描述整件附件。还有内容时 nextOffset 指向下一字节，否则为 null。
+offset 等于 byteLength 时返回空 base64 与 null；超过 byteLength、limit 为零或超过上限都形成 `inspection-request-invalid`。
+附件 ID 不存在时同一成功 envelope 返回 `{ state: "not-found", artifactId }`。
+
+读取沿 locator 查找 exact origin，校验 artifact descriptor、content metadata、总字节数与完整 SHA-256。
+实现逐块读取并校验，只保留请求区间，不把整件附件预载入内存。错误 origin、损坏内容或不一致的 metadata 形成
+`inspection-record-integrity-failure`。carry 与历史 locator 继续读取已发布 origin bytes，不读取外部路径或当前应用文件。
+
+附件继续使用既有 artifacts family、revision 与 bytes content；新 operation 不改变历史附件的持久解释。

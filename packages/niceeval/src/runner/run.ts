@@ -2861,6 +2861,22 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                           sealed,
                         ),
                       )),
+                    onInterruptedResult: (result) => Effect.gen(function* () {
+                      // Attempt cleanup has closed capture admission and the
+                      // assertion callback has supplied the final execution
+                      // outcome. Publish through the same coordinator before
+                      // the Attempt restores interruption and halts dispatch.
+                      const published = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+                      if (published !== undefined) result.locator = published.locator;
+                      results.push(result);
+                      reportAttemptLifecycle({
+                        type: "attempt:complete",
+                        at: Date.now(),
+                        identity: feedbackIdentity(a),
+                        who: feedbackWho(a),
+                        verdict: result.verdict,
+                      });
+                    }),
                   },
                 );
             if (lease) {

@@ -1,0 +1,29 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/lifecycle/test/adapter-capture-timeout.test.ts",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_A8MF18FNMHPRDD81",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_748337711a644864bfb0e484f1bb5960",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/runner.md#adapter-capture-timeout"
+      }
+    },
+    {
+      "caseId": "necase_A8MF18FNMHPRDD81",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_f751ebc3d403476dbdf20d480e0b288f",
+      "action": "case-moved",
+      "from": {
+        "path": "e2e/lifecycle/test/adapter-capture-timeout.test.ts"
+      },
+      "to": {
+        "path": "e2e/eval/test/adapter-capture-timeout.test.ts"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -6,7 +6,7 @@
 // - TTY:动态 dashboard(命令/elapsed/守恒计数/cost/active slots)覆盖重画,永久事件走
 //   clear → append → redraw(coordinator 保证顺序,这里只需正确实现三个钩子)。
 // - 非 TTY:零 ANSI 的单一有序 stdout 追加流 —— 只有 start(plan 永久事件天然充当)、永久事件、
-//   运行级瞬时通知、以及连续 30 秒无永久事件时的一条 heartbeat;不追踪 active slot,不重画。
+//   运行级瞬时通知、节流的 Attempt progress、以及连续 30 秒无输出时的一条 heartbeat;不重画。
 //
 // 两个变体共用同一份「永久事件 → 文本行」的纯函数(renderDurableLines 及其子函数),保证
 // 完成页/失败行/诊断行的实际文案在两种模式下完全一致,只有「要不要用 ANSI 维护一块动态区域」
@@ -117,6 +117,7 @@ const FAILURE_GROUPS_CAP = 10;
 const NON_TTY_FAILURE_LINE_MAX_CHARS = 100;
 /** 非 TTY human 退化流的空闲 heartbeat 阈值(见 cli.md「什么动态更新,什么逐条追加」表)。 */
 const NON_TTY_HEARTBEAT_IDLE_MS = 30_000;
+const NON_TTY_PROGRESS_INTERVAL_MS = 1_000;
 /** dashboard 高度预留:避免最后一行触发终端自动滚动(与 live.ts 旧实现的 `rows - 2` 同一动机,
  *  这里只需要给「下一帧」留出一行余地,不需要额外的表头/尾行预留)。 */
 const DASHBOARD_ROW_RESERVE = 1;
@@ -1374,8 +1375,9 @@ function formatLockWaitRow(wait: ActiveLockWait, io: FeedbackIO, columns: number
 // 单流才能保证事件序就是发生序。
 
 function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
-  // 上一条永久事件的时间戳:heartbeat 只在「连续 30 秒没有永久事件」时才追加一条
-  //(见 cli.md「什么动态更新,什么逐条追加」表),failure/diagnostic 出现后立即重新计时。
+  // Progress uses the coordinator's existing tick and latest active state. No
+  // renderer-owned timers or queued historical details survive an Attempt.
+  const progress = new Map<AttemptKey, { text: string; at: number }>();
   let lastDurableAtMs = 0;
   return {
     appendDurable(event, state) {
@@ -1389,15 +1391,32 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
       io.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
     },
     onTick(event, state) {
+      for (const key of progress.keys()) {
+        if (!state.active.has(key)) progress.delete(key);
+      }
+      for (const [key, active] of state.active) {
+        if (!active.detail) continue;
+        const detail = stripControl(active.detail).replace(/\s+/gu, " ").trim();
+        if (detail === "") continue;
+        const text = `${phaseLabel(active.phase)}: ${detail}`;
+        const previous = progress.get(key);
+        if (previous?.text === text) continue;
+        if (previous !== undefined && event.at - previous.at < NON_TTY_PROGRESS_INTERVAL_MS) continue;
+        const { experimentId, evalId, attempt } = active.identity;
+        const owner = [experimentId, evalId, `attempt ${attempt + 1}`].filter((part) => part !== undefined).join(" · ");
+        io.stdout.write(`${stripControl(owner).replace(/\s+/gu, " ")} · ${text}\n`);
+        progress.set(key, { text, at: event.at });
+        lastDurableAtMs = event.at;
+      }
       if (event.at - lastDurableAtMs < NON_TTY_HEARTBEAT_IDLE_MS) return;
       lastDurableAtMs = event.at;
       io.stdout.write(
         `${`${formatElapsed(state.elapsedMs)} elapsed · ${formatCounts(state)}`}\n`,
       );
     },
-    // 没有 clearDynamic/redrawDynamic/onLifecycle:非 TTY 退化流不维护动态区域,
-    // 不展示 active attempt 的逐次阶段变化,也不逐次输出 provisioning retry/backoff ——
-    // 这些行为由「不实现对应可选钩子」天然满足,不需要在这里写 profile 分支。
+    close() {
+      progress.clear();
+    },
   };
 }
 

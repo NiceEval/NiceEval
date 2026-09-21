@@ -125,6 +125,18 @@ readonly signal: AbortSignal;
 
 ### `AdapterCreateContext`
 
+#### `recordUsage`
+
+```ts
+recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
+```
+
+#### `attach`
+
+```ts
+attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
+```
+
 #### `evalId`
 
 ```ts
@@ -176,7 +188,7 @@ Experiment 选择的推理强度。
 #### `flags`
 
 ```ts
-readonly flags: Readonly<Record<string, JsonValue>>;
+readonly flags: Flags;
 ```
 
 Experiment 传给 Adapter 的只读 flags。

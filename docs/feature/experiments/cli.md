@@ -156,6 +156,9 @@ Assertions 的 Verdict 折叠，以及 Observability 的完整 timing。任一�
 
 Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换，阶段与计数可以更新。持久业务事实只能进入 Core 或 NiceEval 固定的 Attachment；没有通用持久化 writer。
 
+非 TTY Human 将活跃 Attempt 的短 detail 作为纯文本追加到 stdout，每行保留 Experiment、Eval 和从 1 开始的 Attempt 序号。每个 Attempt 最多每秒输出一次变化后的 detail；高频更新合并为最新值，相同阶段与文本不重复输出。
+短于采样间隔的 detail 可以省略，已结束 Attempt 不补写历史进度。进度输出重置 30 秒空闲 heartbeat，TTY 继续使用动态面板。
+
 每次 Agent send 开始时，Runner 在当前 Attempt 显示 `user: <message>`。
 具备可信增量协议的 Adapter 可以随后用 `tool: <name> <input>` 或其它原生 activity 替换当前 detail。
 两者都只走 `progress()`，不进入 timeout breadcrumb；退出后才读取到的 transcript 不能回填成实时 detail。

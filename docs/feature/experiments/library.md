@@ -82,6 +82,26 @@ export default defineExperiment({
 Coordination（协调）处理。它们与 case lock、Invocation Session 一同使用唯一 `.niceeval/record.sqlite` 内的 rows；
 长期 authority 不持有长 SQLite transaction，每次短事务都重验精确 process identity 与 generation。
 
+## Adapter 参数校验与规范化
+
+普通 Adapter 声明 `parseFlags(input: unknown): TFlags` 后，Experiment 显式填写的 `flags` 必须满足完整 `TFlags`。
+类型只从已选择的 Adapter 推导；参数中的错误策略名或缺失字段不能把 Adapter 类型反向拓宽。
+这不是 `Partial<TFlags>`，也没有独立的编码输入类型。
+
+```ts
+export default defineExperiment({
+  adapter: game,
+  flags: { strategy: "safe", maxTurns: 20 },
+});
+```
+
+整体省略 `flags` 时，`defineExperiment()` 向 parser 传入 `{}`，由 parser 决定默认值或拒绝。
+JavaScript 与动态输入同样经过这次同步校验，不以 TypeScript 类型代替运行校验。
+parser 的规范化结果经严格 JSON 检查、深复制和冻结后，成为执行与缓存身份共同使用的实验值。
+失败发生在任何 Experiment setup 或 Adapter create 之前。
+
+parser 的同步、未知键与版本责任见 [Adapter flags 契约](../adapters/library/writing-an-adapter.md#校验与推导-flags)。
+
 ## 选择 Eval
 
 ```ts

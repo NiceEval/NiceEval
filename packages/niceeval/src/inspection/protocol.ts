@@ -2,9 +2,10 @@ import { Result, Schema } from "effect";
 
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
-import { ExperimentIdSchema, RunIdSchema } from "../record/codec/identifiers.ts";
+import { ArtifactIdSchema, ExperimentIdSchema, RunIdSchema } from "../record/codec/identifiers.ts";
+import { InspectionArtifactLimitSchema, InspectionArtifactOffsetSchema, InspectionArtifactResultSchema } from "./artifacts.ts";
 import { RunDocumentSchema } from "../record/codec/core.ts";
-import { ArtifactSchema, ArtifactsAttachmentSchema } from "../record/family/artifacts/schema.ts";
+import { InspectionArtifactMetadataSchema, InspectionArtifactsPageLimitSchema, InspectionArtifactsValueSchema } from "./artifact-list.ts";
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
 import { QUERY_PROTOCOL } from "./protocol-values.ts";
 import { AssertionDetailResultSchema } from "./assertion-projection.ts";
@@ -63,8 +64,8 @@ const CompareSuccessMetadataSchema = SuccessMetadataSchema.pipe(Schema.fieldsAss
 const ArtifactsResultSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded") }),
   Schema.Struct({
-    state: Schema.Literal("available"), value: Schema.toType(ArtifactsAttachmentSchema),
-    collection: Schema.Struct({ state: Schema.Literals(["complete-page", "bounded-page"]), items: Schema.Array(Schema.toType(ArtifactSchema)), hasMore: Schema.Boolean }),
+    state: Schema.Literal("available"), value: InspectionArtifactsValueSchema,
+    collection: Schema.Struct({ state: Schema.Literals(["complete-page", "bounded-page"]), items: Schema.Array(InspectionArtifactMetadataSchema), hasMore: Schema.Boolean, nextOffset: Schema.NullOr(InspectionArtifactOffsetSchema), total: InspectionArtifactOffsetSchema }),
     contents: Schema.Array(Schema.Struct({ logicalHandle: Schema.String, byteLength: Schema.Number, digest: Schema.String })),
     contentsTruncated: Schema.Boolean,
   }),
@@ -103,10 +104,11 @@ export const inspectionProtocolRegistry = Object.freeze({
   "attempt.trace": spec({ request: operation("attempt.trace", { locator: AttemptLocatorSchema }), result: { trace: InspectionTraceResultSchema }, factKinds: ["agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"] }),
   "attempt.trace.detail": spec({ request: operation("attempt.trace.detail", { locator: AttemptLocatorSchema, selector: Schema.Union([operation("item", { itemId: ItemIdSchema }), operation("tool-occurrence", { toolOccurrenceId: ToolOccurrenceIdSchema }), operation("command", { commandId: CommandIdSchema })]) }), result: { detail: InspectionTraceDetailResultSchema }, factKinds: ["agent-turns", "sandbox-commands"] }),
   "attempt.timing": spec({ request: operation("attempt.timing", { locator: AttemptLocatorSchema }), result: { timing: InspectionAttemptTimingResultSchema }, factKinds: ["runner-activities"] }),
-  "attempt.usage": spec({ request: operation("attempt.usage", { locator: AttemptLocatorSchema }), result: { usage: InspectionAttemptUsageResultSchema }, factKinds: ["agent-turns"] }),
+  "attempt.usage": spec({ request: operation("attempt.usage", { locator: AttemptLocatorSchema }), result: { usage: InspectionAttemptUsageResultSchema }, factKinds: ["agent-turns", "adapter-usage"] }),
   "attempt.diff": spec({ request: operation("attempt.diff", { locator: AttemptLocatorSchema }), result: { diff: InspectionAttemptDiffResultSchema }, factKinds: ["file-changes"] }),
   "attempt.sources": spec({ request: operation("attempt.sources", { locator: AttemptLocatorSchema }), result: { sources: InspectionSourcesResultSchema }, factKinds: ["assertions", "sources"] }),
-  "attempt.artifacts": spec({ request: operation("attempt.artifacts", { locator: AttemptLocatorSchema }), result: { artifacts: ArtifactsResultSchema }, factKinds: ["artifacts"] }),
+  "attempt.artifacts": spec({ request: operation("attempt.artifacts", { locator: AttemptLocatorSchema, offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactsPageLimitSchema) }), result: { artifacts: ArtifactsResultSchema }, factKinds: ["artifacts"] }),
+  "attempt.artifact": spec({ request: operation("attempt.artifact", { locator: AttemptLocatorSchema, artifactId: ArtifactIdSchema, offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactLimitSchema) }), result: { artifact: InspectionArtifactResultSchema }, factKinds: ["artifacts"] }),
   "runs.compare": spec({ request: operation("runs.compare", { mode: Schema.Literals(["side-by-side", "exact", "paired"]), leftRunIds: RunIdsSchema, rightRunIds: RunIdsSchema }), result: { comparison: RunsCompareResultSchema }, factKinds: ["core"] }),
 });
 

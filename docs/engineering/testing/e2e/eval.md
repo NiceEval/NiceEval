@@ -185,3 +185,21 @@ Contract: [docs/feature/judge/use-case/inspect-judge-score.md](../../../feature/
 Contract: [docs/feature/judge/library.md#runtime-配置](../../../feature/judge/library.md#runtime-配置)
 
 Judge 配置逐字段取用 Eval、Experiment 与项目默认值，普通断言不触发模型调用
+## Adapter flags 在启动前同步校验并复制冻结规范化结果。 {#adapter-parse-flags}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
+
+Adapter flags 在启动前同步校验并复制冻结规范化结果。
+## 规范化 flags 与行为 revision 决定缓存复用身份。 {#adapter-flags-identity}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/README.md](../../../feature/experiments/README.md)
+
+规范化 flags 与行为 revision 决定缓存复用身份。
+## 外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。 {#external-usage}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
+
+外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。

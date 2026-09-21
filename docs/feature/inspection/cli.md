@@ -305,7 +305,8 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
   `--all` 展开全部 Attempt。展开后的明细先以 `Eval <id>` 缩进分组，不在每个 Attempt 行重复 Eval ID；
   同一 Eval 的多个 Attempt 各占一行。Pass、Score 或历史 mixed Eval 都显示 `Attempt`、`Verdict` 与 `Duration`；
-  Score Eval 另外显示 `Score`。`failed + complete` 必须保留失败与 earned score，不能改写成 `scored`。
+  Score Eval 另外显示 `Score`。`passed + complete` 的分数旁标注 `scored`，Attempt 标题同样使用该人读标签；`failed + complete` 必须保留失败与 earned score。
+  标签遵守 [Verdict 的评分展示契约](../verdict/architecture.md#score-eval-的-assertion-score-facts)，canonical `Verdict` 栏仍保留四态。
 
   Verdict 为 `passed`、`failed`、`errored` 或 `skipped`。Duration 按大小使用 `ms`、`s`、`min` 或 `h`，
   最多保留两位小数。

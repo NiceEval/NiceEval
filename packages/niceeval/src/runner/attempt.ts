@@ -20,6 +20,10 @@ import { unregisterSandbox } from "../sandbox/registry.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
+import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
+import { createAdapterAttachmentCollector, retainAdapterAttachments, type AdapterAttachmentCollector } from "./adapter-attachments.ts";
+import { buildScorePayload } from "../eval/record/score.ts";
+import { foldVerdict } from "../eval/record/verdict.ts";
 import {
   AdapterAttemptResources,
   adapterEvidenceUnavailable,
@@ -312,6 +316,8 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   onSealedEvaluation?: (
     sealed: SealedAttemptAssertions,
   ) => Effect.Effect<void, never, SealRequirements>;
+  /** Publish a drained custom Attempt before restoring Invocation interruption. */
+  onInterruptedResult?: (result: EvalResult) => Effect.Effect<void, never, SealRequirements>;
   /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
   reusedSandbox?: {
     /** Resource facade remains callable while this Attempt Scope is closing. */
@@ -349,6 +355,7 @@ export function runAttemptEffect<
     onEnvironmentIncomplete,
     onSandboxCleanupFailure,
     onSealedEvaluation,
+    onInterruptedResult,
     reusedSandbox,
   }: RunAttemptEffectOptions<SealRequirements>,
 ) {
@@ -459,6 +466,12 @@ export function runAttemptEffect<
   let liveAssertions: AssertionsRuntime<"pass" | "score"> | undefined;
   let liveAssertionState: AssertFirstContextState | undefined;
   let adapterResources: AdapterAttemptResources | undefined;
+  let adapterUsage: AdapterUsageCollector | undefined;
+  let adapterUsageSnapshot: ReturnType<AdapterUsageCollector["close"]> | undefined;
+  let adapterAttachments: AdapterAttachmentCollector | undefined;
+  let adapterSealedAssertions: SealedAttemptAssertions | undefined;
+  let adapterCleanupError: AttemptError | undefined;
+  let invocationInterrupted = false;
   let assertionsSealed = false;
   let resolveExecutionTerminal!: () => void;
   const executionTerminal = new Promise<void>((resolve) => {
@@ -655,7 +668,9 @@ export function runAttemptEffect<
       Effect.tap(() => Effect.sync(() => {
         markExecutionTerminal();
       })),
-      Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
+      Effect.tap((sealed) => adapter.kind === "custom"
+        ? Effect.sync(() => { adapterSealedAssertions = sealed; })
+        : onSealedEvaluation?.(sealed) ?? Effect.void),
     );
   };
 
@@ -758,7 +773,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
   };
 
   const layerCleanups: LayerCleanupEntry[] = [];
-  return Effect.scoped(
+  return Effect.uninterruptibleMask((restore) => restore(Effect.scoped(
     Effect.gen(function* () {
       // Every Adapter kind enters through the same Attempt-owned bridge,
       // execution deadline, Assertion seal, feedback sink, and publication
@@ -766,16 +781,22 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // author context, and observations.
       const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
       if (adapter.kind === "custom") {
-        const resources = new AdapterAttemptResources();
+        const resources = new AdapterAttemptResources(() => {
+          adapterUsageSnapshot = adapterUsage!.close();
+          adapterAttachments!.close();
+        });
         adapterResources = resources;
+        adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen());
+        adapterAttachments = createAdapterAttachmentCollector();
 
-        // Cleanup is registered before interruption sealing so Scope LIFO
-        // freezes the terminal Assertion result before author resources leave.
+        // Scope LIFO freezes Assertions before releasing author resources.
+        // The final execution outcome is handed off only after capture drains.
         yield* Effect.addFinalizer(() =>
           cleanupAdapterResources(resources, {
             enterPhase,
             recorder,
             feedback: scopedFeedback,
+            onTimeout: (error) => { adapterCleanupError = error; },
           }),
         );
         yield* Effect.addFinalizer((exit) =>
@@ -795,8 +816,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               Effect.tap((sealed) => Effect.sync(() => {
                 markExecutionTerminal();
                 timeoutSealedAssertions = sealed;
+                adapterSealedAssertions = sealed;
               })),
-              Effect.tap((sealed) => onSealedEvaluation?.(sealed) ?? Effect.void),
               Effect.catchCause(() => Effect.void),
             );
           }),
@@ -807,6 +828,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           base,
           adapter,
           resources,
+          usage: adapterUsage,
+          attachments: adapterAttachments,
           signal,
           sourceCapture,
           sourceRegistry,
@@ -825,9 +848,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           closeAuthoring,
           markAssertionsSealed: (sealed) => {
             markExecutionTerminal();
+            adapterSealedAssertions = sealed;
             timeoutSealedAssertions = timedOut ? sealed : timeoutSealedAssertions;
           },
-          onSealedEvaluation,
         });
       }
       if (agent === undefined) {
@@ -1503,9 +1526,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       }
       return bodyResult;
     }).pipe(applyAttemptDeadline),
-  ).pipe(
+  )).pipe(
     // The execution race ends before Scope finalizers start. Cleanup retains
-    // its own budgets and can append diagnostics without reversing Verdict.
+    // its own budgets; custom capture failure participates in the final fold.
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
@@ -1514,9 +1537,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
     // 是否取消只由 invocationSignal 裁决；其它中断在本 attempt 内封成 errored，随后由调度器
     // 的 earlyExit 去重分支丢弃。兄弟 fiber 的真实 defect 仍由它自己的 Cause 向外传播。
     Effect.catchCause((cause) =>
-      isAttemptAborted(invocationSignal)
+      isAttemptAborted(invocationSignal) && adapter.kind !== "custom"
         ? Effect.interrupt
         : Effect.suspend(() => {
+            invocationInterrupted = isAttemptAborted(invocationSignal) && Cause.hasInterruptsOnly(cause);
             // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
             // 失败:先读空间轴回执,再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
             const raw = Cause.squash(cause);
@@ -1553,6 +1577,32 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         ? result
         : withSealedAssertions(result, timeoutSealedAssertions),
     ),
+    Effect.flatMap((result) => Effect.gen(function* () {
+      if (adapter.kind !== "custom") return result;
+      const captureFailure = adapterUsage?.failure ?? adapterAttachments?.failure();
+      // Cleanup must not erase the original execution failure or timeout attribution.
+      // Its own timeout remains independently recorded as a teardown diagnostic.
+      const error = result.error ?? adapterCleanupError ?? (captureFailure === undefined
+        ? undefined
+        : errorFromThrown(captureFailure, "attempt.teardown"));
+      let sealed = adapterSealedAssertions;
+      if (sealed === undefined) return result;
+      if (error !== undefined || invocationInterrupted) {
+        // Assertions were evaluated once before cleanup. Only the execution
+        // outcome changes; the existing domain folds retain every earned point.
+        const evaluation = Object.freeze({ ...sealed.evaluation, execution: "errored" as const });
+        const score = evalDef.evaluationKind === "score" ? buildScorePayload(evaluation) : undefined;
+        if (score !== undefined && Result.isFailure(score)) return yield* Effect.fail(score.failure);
+        sealed = Object.freeze({
+          ...sealed,
+          evaluation,
+          verdict: Object.freeze({ state: foldVerdict(evaluation) }),
+          ...(score === undefined ? {} : { score: score.success }),
+        });
+      }
+      yield* onSealedEvaluation?.(sealed) ?? Effect.void;
+      return withSealedAssertions({ ...result, ...(error === undefined ? {} : { error }) }, sealed);
+    })),
     // 结果封口在 Sample release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
     // 这里把完整的阶段计时挂到即将交还的结果上(timeout / scope 兜底分支同样带上)。超时路径
     // 额外把上面那个 finalizer 折叠出的 workspace.diff / sources 并进来——它俩是异步产出,
@@ -1602,22 +1652,29 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       if (capture !== undefined) {
         retainRunnerAttemptFileChangesCapture(finalResult, capture);
       }
+      if (adapterUsageSnapshot !== undefined) retainAdapterUsage(finalResult, adapterUsageSnapshot);
+      if (adapterAttachments !== undefined) retainAdapterAttachments(finalResult, adapterAttachments.snapshot());
       return finalResult;
     }),
     Effect.tap((finalResult) =>
       bindRunnerAttemptObservabilityCapture(finalResult, observabilityRuntime)
     ),
+    Effect.flatMap((finalResult) => invocationInterrupted
+      ? (onInterruptedResult?.(finalResult) ?? Effect.void).pipe(Effect.andThen(Effect.interrupt))
+      : Effect.succeed(finalResult)),
     Effect.ensuring(Effect.sync(() => {
       parentSignal?.removeEventListener("abort", forwardParentAbort);
     })),
-  );
+  ));
 }
 
-interface AdapterAttemptBodyInput<SealRequirements> {
+interface AdapterAttemptBodyInput {
   readonly a: Attempt;
   readonly base: EvalResult;
   readonly adapter: AdapterRuntimeDefinition;
   readonly resources: AdapterAttemptResources;
+  readonly usage: AdapterUsageCollector;
+  readonly attachments: AdapterAttachmentCollector;
   readonly signal: AbortSignal;
   readonly sourceCapture: RunnerAttemptSourceCapture;
   readonly sourceRegistry: SourceRegistry;
@@ -1630,7 +1687,6 @@ interface AdapterAttemptBodyInput<SealRequirements> {
   readonly registerAssertions: (runtime: AssertionsRuntime<"pass" | "score">) => void;
   readonly closeAuthoring: (reason: "attempt-sealing" | "attempt-interrupted") => void;
   readonly markAssertionsSealed: (sealed: SealedAttemptAssertions) => void;
-  readonly onSealedEvaluation: RunAttemptEffectOptions<SealRequirements>["onSealedEvaluation"];
 }
 
 function adapterAuthorCallbackEffect<Value>(
@@ -1654,14 +1710,16 @@ function adapterAuthorCallbackEffect<Value>(
   return Effect.raceFirst(author, interruptOnAbort(signal));
 }
 
-function runAdapterAttemptBody<SealRequirements>(
-  input: AdapterAttemptBodyInput<SealRequirements>,
-): Effect.Effect<EvalResult, unknown, SealRequirements> {
+function runAdapterAttemptBody(
+  input: AdapterAttemptBodyInput,
+): Effect.Effect<EvalResult, unknown> {
   const {
     a,
     base,
     adapter,
     resources,
+    usage,
+    attachments,
     signal,
     sourceCapture,
     sourceRegistry,
@@ -1674,7 +1732,6 @@ function runAdapterAttemptBody<SealRequirements>(
     registerAssertions,
     closeAuthoring,
     markAssertionsSealed,
-    onSealedEvaluation,
   } = input;
   return Effect.gen(function* () {
     const { context: core, state } = createAssertFirstCoreContext({
@@ -1710,6 +1767,8 @@ function runAdapterAttemptBody<SealRequirements>(
         diagnostic: feedback.diagnostic,
         log,
         onCleanup: (cleanup) => resources.onCleanup(cleanup),
+        recordUsage: usage.record,
+        attach: attachments.attach,
       });
       // A synchronous plain object is validated before Promise assimilation;
       // async factories are validated only after their Promise settles.
@@ -1757,7 +1816,6 @@ function runAdapterAttemptBody<SealRequirements>(
       explicitlySkipped: skipReason !== undefined,
     });
     markAssertionsSealed(sealed);
-    yield* onSealedEvaluation?.(sealed) ?? Effect.void;
     recorder.closeCurrent();
     const durationMs = recorder.offsetNow();
     const sourcesExit = yield* Effect.exit(Effect.tryPromise({
@@ -1791,6 +1849,7 @@ function cleanupAdapterResources(
     readonly enterPhase: (phase: LifecyclePhase) => void;
     readonly recorder: TimingRecorder;
     readonly feedback: ScopedFeedback;
+    readonly onTimeout: (error: AttemptError) => void;
   },
 ): Effect.Effect<void> {
   return Effect.suspend(() => {
@@ -1810,6 +1869,11 @@ function cleanupAdapterResources(
         }
         if (result.timedOut) {
           failed = true;
+          input.onTimeout({
+            code: "adapter-cleanup-timeout",
+            message: `Adapter cleanup timed out after ${CLEANUP_TIMEOUT_MS}ms`,
+            origin: attemptOrigin("attempt.teardown"),
+          });
           input.feedback.diagnostic({
             code: "adapter-cleanup-timeout",
             level: "warning",
@@ -1819,6 +1883,7 @@ function cleanupAdapterResources(
       })),
       Effect.catch((failure) => Effect.sync(() => {
         failed = true;
+        input.onTimeout({ ...errorFromThrown(failure, "attempt.teardown"), code: "adapter-cleanup-timeout" });
         input.feedback.diagnostic({
           code: "adapter-cleanup-timeout",
           level: "warning",

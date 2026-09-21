@@ -186,3 +186,9 @@ Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
 Contract: [docs/feature/experiments/cli.md#结束反馈与-receipt](../../../feature/experiments/cli.md#结束反馈与-receipt)
 
 无 Sandbox 的公开 CLI 中断反馈使用中性提示，保留 interrupted 终态与退出码。
+## 非交互终端在运行中显示有归属且节流去重的文本进度。 {#cli-live-pipe}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/README.md](../../../feature/experiments/README.md)
+
+非交互终端在运行中显示有归属且节流去重的文本进度。

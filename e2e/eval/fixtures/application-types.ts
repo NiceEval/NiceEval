@@ -1,5 +1,7 @@
 import {
   defineAdapter,
+  defineExperiment,
+  type JsonValue,
   defineJudge,
   defineEval,
   type JudgeDefinition,
@@ -237,3 +239,97 @@ defineEval({ async test(t) {
   // @ts-expect-error Pass Eval measurement cannot contribute points.
   t.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).score(1);
 } });
+
+// Flags infer only from the selected Adapter's synchronous parser.
+type StrategyFlags = { strategy: "safe" | "fast"; limit: number };
+declare function parseStrategyFlags(input: unknown): StrategyFlags;
+const strategyAdapter = defineAdapter({
+  name: "strategy",
+  parseFlags: parseStrategyFlags,
+  create(ctx) {
+    const strategy: "safe" | "fast" = ctx.flags.strategy;
+    const limit: number = ctx.flags.limit;
+    // @ts-expect-error The parser returns a numeric limit.
+    const encoded: string = ctx.flags.limit;
+    return { read: () => ({ strategy, limit }) };
+  },
+});
+strategyAdapter.defineEval({ test(t) {
+  const strategy: "safe" | "fast" = t.flags.strategy;
+  const limit: number = t.flags.limit;
+  // @ts-expect-error Parsed flags do not have an open index signature.
+  t.flags.missing;
+  void strategy; void limit;
+} });
+strategyAdapter.defineScoreEval({ test(t) { const limit: number = t.flags.limit; t.score(limit); } });
+const typedExperiment = defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe", limit: 2 } });
+const normalizedLimit: number = typedExperiment.flags.limit;
+// @ts-expect-error Flags cannot widen the Adapter's literal strategy type.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "typo", limit: 2 } });
+// An omitted flags object is passed to the parser as {} for defaulting or rejection.
+defineExperiment({ adapter: strategyAdapter });
+// @ts-expect-error Explicit flags must provide the complete parser result shape.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe" } });
+// @ts-expect-error Experiment input uses the same numeric limit as the parser output.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe", limit: "2" } });
+// @ts-expect-error Excess flags do not fall back to JSON.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe", limit: 2, typo: true } });
+const widenedAttack = { adapter: strategyAdapter, flags: { strategy: "typo" as const, limit: 2 } };
+// @ts-expect-error Passing a variable cannot make inference widen the Adapter.
+defineExperiment(widenedAttack);
+
+const optionalAdapter = defineAdapter({ name: "optional", parseFlags: (_input: unknown): { strategy?: "safe" } => ({}), create: (ctx) => ({ read: () => ctx.flags.strategy }) });
+defineExperiment({ adapter: optionalAdapter });
+defineExperiment({ adapter: social, flags: { legacy: [true, 2, null] } });
+
+const flagsContract = defineAdapterContract<{ read(): number }>({ name: "shared-flags" }).withParseFlags(parseStrategyFlags);
+flagsContract.defineEval({ test(t) { const limit: number = t.flags.limit; void limit; } });
+const flagsImplementation = flagsContract.implement({ name: "shared-flags-impl", create(ctx) {
+  const limit: number = ctx.flags.limit;
+  return { read: () => limit };
+} });
+defineExperiment({ adapter: flagsImplementation, flags: { strategy: "fast", limit: 2 } });
+// @ts-expect-error Shared implementations preserve exact parsed flags.
+defineExperiment({ adapter: flagsImplementation, flags: { strategy: "typo", limit: 2 } });
+const flagsAndAssertions = flagsContract.withAssertions(({ app, check }) => ({
+  valid() { return check(app.read(), satisfies<number>("positive", (value) => value > 0)); },
+}));
+flagsAndAssertions.defineScoreEval({ test(t) { const limit: number = t.flags.limit; t.valid().score(limit); } });
+const assertionFlagsAdapter = defineAdapter({
+  name: "assertion-flags",
+  parseFlags: parseStrategyFlags,
+  create: (ctx) => ({ read: () => ctx.flags.limit }),
+  assertions: ({ app, check }) => ({ valid() { return check(app.read(), satisfies<number>("positive", (value) => value > 0)); } }),
+});
+assertionFlagsAdapter.defineEval({ test(t) { const limit: number = t.flags.limit; t.valid(); void limit; } });
+void normalizedLimit;
+
+const nestedFlagsAdapter = defineAdapter({
+  name: "nested-flags",
+  parseFlags: (_input: unknown) => ({ nested: { count: 1 }, names: ["a"] }),
+  create(ctx) {
+    // @ts-expect-error Nested flags are recursively read-only.
+    ctx.flags.nested.count = 2;
+    // @ts-expect-error Nested arrays are read-only.
+    ctx.flags.names.push("b");
+    return {};
+  },
+});
+nestedFlagsAdapter.defineEval({ test(t) {
+  // @ts-expect-error Eval receives recursively read-only flags too.
+  t.flags.names.push("b");
+} });
+defineExperiment({ adapter: nestedFlagsAdapter, flags: { nested: { count: 2 }, names: ["b"] } });
+// @ts-expect-error An async parser cannot provide synchronous flags.
+defineAdapter({ name: "async-flags", parseFlags: async (_input: unknown) => ({ ok: true }), create: () => ({}) });
+// @ts-expect-error The parser must return a record, not a primitive.
+defineAdapter({ name: "primitive-flags", parseFlags: (_input: unknown) => 1, create: () => ({}) });
+// @ts-expect-error JSON flags cannot contain function members.
+defineAdapter({ name: "function-flags", parseFlags: (_input: unknown) => ({ nested: { method() {} } }), create: () => ({}) });
+// @ts-expect-error Root arrays are not flags records.
+defineAdapter({ name: "array-flags", parseFlags: (_input: unknown) => [1], create: () => ({}) });
+// @ts-expect-error A shared contract also requires a synchronous parser.
+flagsContract.withParseFlags(async (_input: unknown) => ({ strategy: "safe" }));
+
+declare function parseJsonFlags(input: unknown): Record<string, JsonValue>;
+defineAdapter({ name: "json-flags", parseFlags: parseJsonFlags, create: () => ({}) });

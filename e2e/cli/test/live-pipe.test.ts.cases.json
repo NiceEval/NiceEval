@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/cli/test/live-pipe.test.ts",
+  "current": {
+    "necase_M0SW6ZCJKN30HJNN": {
+      "owner": "docs/engineering/testing/e2e/cli.md#cli-live-pipe",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_M0SW6ZCJKN30HJNN",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_daaaff9f8b6e49708c2eafc501a46257",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/cli.md#cli-live-pipe"
+      }
+    }
+  ],
+  "tombstones": []
+}

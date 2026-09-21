@@ -1,0 +1,23 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/inspection/test/artifacts-portable.test.ts",
+  "current": {
+    "necase_JAEBNT5NHZGJKR5F": {
+      "owner": "docs/engineering/testing/e2e/inspection.md#portable-artifacts",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_JAEBNT5NHZGJKR5F",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_f9cd510677184bf8b2604f17b686d1fe",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/inspection.md#portable-artifacts"
+      }
+    }
+  ],
+  "tombstones": []
+}

@@ -120,7 +120,9 @@ pnpm run repo docs test
 
 这些是生命周期，不是 CRUD。`owner create` 建 owner anchor 与唯一 contract；`owner set` 改 contract 并留 history；
 `owner retire` 要求没有 live case。`case attach` 只接受 inventory 已见证且尚无 current 的 case；`case move` 同事务
-移动源码/sidecar ownership 并保持 ID；`case retire` 要求 inventory 已不再包含它，或同事务包含删除计划。relation
+移动源码/sidecar ownership 并保持 ID；原路径仅剩全部已迁出的 history 时，sidecar 保留且不要求旧测试文件存在。
+
+`case retire` 要求 inventory 已不再包含它，或同事务包含删除计划。relation
 retire 只移出 current 并追加 history。无 physical delete、任意 patch、bulk replace 或 history rewrite。
 
 存量 current regression 可以没有正式 evidence index。`regression add` 取得同一关系的新 red、takeover 与 inventory 后，

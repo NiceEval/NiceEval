@@ -1,4 +1,6 @@
 import { Data, Result, Schema } from "effect";
+import { projectAttemptArtifact } from "./artifacts.ts";
+import { projectArtifactsListing } from "./artifact-list.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import {
@@ -104,6 +106,7 @@ import { RecordIntegrityFailure } from "../record/reader/errors.ts";
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
   readonly code:
+    | "inspection-request-invalid"
     | "inspection-selection-missing"
     | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
@@ -368,24 +371,70 @@ function selectOperation(
         ),
       });
     }
+    case "attempt.artifact": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const projected = projectAttemptArtifact(resolved, {
+        artifactId: operation.artifactId,
+        ...(operation.offset === undefined ? {} : { offset: operation.offset }),
+        ...(operation.limit === undefined ? {} : { limit: operation.limit }),
+      });
+      if (Result.isFailure(projected)) throw new InspectionOperationError({
+        code: projected.failure.code, operation: operation.kind, reason: projected.failure.reason,
+      });
+      return Object.freeze({
+        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        artifact: boundedJson(projected.success),
+      });
+    }
     case "attempt.artifacts": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.artifacts.attempt.family);
-      return Object.freeze({
-        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        artifacts: boundedJson(attachment === undefined
-          ? Object.freeze({ state: "not-recorded" as const })
-          : Object.freeze({
-              state: "available" as const,
-              value: attachment.value,
-              collection: attachmentCollectionPage(resolved.origin.source, attachment),
-              contents: attachment.physical.contents
-                .slice(0, ATTACHMENT_CONTENT_METADATA_LIMIT)
-                .map(({ logicalHandle, byteLength, digest }) =>
-                  Object.freeze({ logicalHandle, byteLength, digest })),
-              contentsTruncated: attachment.physical.contents.length > ATTACHMENT_CONTENT_METADATA_LIMIT,
-            })),
+      const projected = attachment === undefined ? undefined : projectArtifactsListing(attachment);
+      if (projected !== undefined && Result.isFailure(projected)) throw new InspectionOperationError({
+        code: "inspection-record-integrity-failure", operation: operation.kind,
+        reason: projected.failure.reason, identity: { runId: resolved.attempt.originRunId },
       });
+      const value = projected?.success;
+      const offset = operation.offset ?? 0;
+      const limit = operation.limit ?? 128;
+      const total = value?.artifacts.length ?? 0;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > total ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 128) throw new InspectionOperationError({
+        code: "inspection-request-invalid", operation: operation.kind,
+        reason: "Artifact listing requires an offset within the collection and a limit from 1 to 128.",
+      });
+      const metadata = baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]);
+      if (attachment === undefined || value === undefined) return Object.freeze({
+        ...metadata, artifacts: Object.freeze({ state: "not-recorded" as const }),
+      });
+      let items = value.artifacts.slice(offset, offset + limit);
+      const page = () => Object.freeze({
+        state: "available" as const,
+        value: Object.freeze({ collection: value.collection, artifacts: items }),
+        collection: Object.freeze({
+          state: offset + items.length < total ? "bounded-page" as const : "complete-page" as const,
+          items,
+          hasMore: offset + items.length < total,
+          nextOffset: offset + items.length < total ? offset + items.length : null,
+          total,
+        }),
+        contents: attachment.physical.contents
+          .slice(0, ATTACHMENT_CONTENT_METADATA_LIMIT)
+          .map(({ logicalHandle, byteLength, digest }) => Object.freeze({ logicalHandle, byteLength, digest })),
+        contentsTruncated: attachment.physical.contents.length > ATTACHMENT_CONTENT_METADATA_LIMIT,
+      });
+      let artifacts = page();
+      // Both public arrays share the page; long labels also consume the fixed JSON budget twice.
+      while (items.length > 0 && (utf8ByteLength(JSON.stringify(items)) > 128 * 1024 ||
+        utf8ByteLength(JSON.stringify(artifacts)) > INSPECTION_RESULT_BYTE_LIMIT)) {
+        items = items.slice(0, -1);
+        artifacts = page();
+      }
+      if (items.length === 0 && offset < total) throw new InspectionOperationError({
+        code: "inspection-result-invalid", operation: operation.kind,
+        reason: "Artifact metadata cannot fit in the Inspection result byte limit.",
+      });
+      return Object.freeze({ ...metadata, artifacts: boundedJson(artifacts) });
     }
     case "runs.compare": {
       const selected = loadRuns(source, [...operation.leftRunIds, ...operation.rightRunIds]);
@@ -720,6 +769,7 @@ function traceAttachments(
   resolved: ResolvedInspectionAttempt,
 ): AttemptTraceAttachments {
   return Object.freeze({
+    adapterUsage: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
     agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
     turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
     sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
@@ -897,7 +947,12 @@ function attemptSections(
     diff: Object.freeze({ state: diff }),
     artifacts: Object.freeze({ state: artifacts }),
     timing: Object.freeze({ state: timing }),
-    usage: Object.freeze({ state: conversation }),
+    usage: Object.freeze({ state: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family) === undefined
+      ? conversation
+      : attachmentSectionState(
+          attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
+          NiceEvalCurrentRecordAttachments.adapterUsage.revision,
+        ) }),
     conversation: Object.freeze({ state: conversation }),
     commands: Object.freeze({ state: commands }),
     diagnostics: Object.freeze({ state: diagnostics }),

@@ -15,6 +15,7 @@ import {
   countText,
   DEFAULT_REPORT_LOCALE,
   localeText,
+  resolveLocalizedText,
   type LocalizedText,
   type ReportLocale,
 } from "./locale.ts";
@@ -95,6 +96,8 @@ export type Cell =
   | {
       readonly kind: "verdict";
       readonly verdict?: Verdict;
+      /** Human result label; the underlying Verdict keeps its canonical value. */
+      readonly label?: LocalizedText;
       readonly counts?: VerdictCounts;
       readonly refs?: readonly AttemptLocator[];
       /** 单判定形态省略判定词、只留判定符。 */
@@ -260,7 +263,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       }
       if (cell.verdict !== undefined) {
         if (cell.bare) return verdictMark(cell.verdict);
-        return `${verdictMark(cell.verdict)} ${localeText(loc, `verdict.${cell.verdict}`)}`;
+        return `${verdictMark(cell.verdict)} ${cell.label === undefined ? localeText(loc, `verdict.${cell.verdict}`) : resolveLocalizedText(cell.label, loc)}`;
       }
       return "—";
     }

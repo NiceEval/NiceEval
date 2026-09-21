@@ -1,0 +1,26 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/adapter-capture-interrupt.test.ts",
+  "current": {
+    "necase_0GXNKG5JBPHFTZ15": {
+      "owner": "docs/engineering/testing/e2e/runner.md#adapter-capture-interrupt",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_0GXNKG5JBPHFTZ15",
+      "atCommit": "047d409c7125be76f2cf09616be50c52c9d6537e",
+      "transactionId": "netxn_3d9741b6bc5149f2bae291638b3baddc",
+      "action": "case-moved",
+      "from": {
+        "path": "e2e/lifecycle/test/adapter-capture-interrupt.test.ts"
+      },
+      "to": {
+        "path": "e2e/eval/test/adapter-capture-interrupt.test.ts"
+      }
+    }
+  ],
+  "tombstones": []
+}

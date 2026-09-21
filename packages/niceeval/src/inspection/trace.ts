@@ -58,6 +58,7 @@ export interface TraceAttachmentInput {
 }
 
 export interface AttemptTraceAttachments {
+  readonly adapterUsage?: TraceAttachmentInput;
   readonly agentTurns?: TraceAttachmentInput;
   readonly turnContexts?: TraceAttachmentInput;
   readonly sandboxCommands?: TraceAttachmentInput;
@@ -1058,6 +1059,47 @@ function projectConversationItem(
 export function projectAttemptUsage(
   attachments: AttemptTraceAttachments,
 ): InspectionAttemptUsageResult {
+  if (attachments.adapterUsage !== undefined) {
+    const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.adapterUsage, attachments.adapterUsage);
+    const empty = {
+      source: "adapter" as const,
+      coverage: "recorded-calls" as const,
+      limitationsTruncated: false,
+      omittedLimitationCount: 0,
+      turns: [], turnsTruncated: false, omittedTurnCount: 0,
+      observations: [],
+      calls: [], callsTruncated: false, omittedCallCount: 0,
+      totals: unavailableInspectionUsageTotals(), hasMore: false, omittedObservationCount: 0,
+    };
+    if (read.state !== "available") return {
+      ...empty, state: read.state, limitations: read.state === "invalid" ? read.issues.map((issue) => ({ issue })) : [],
+    };
+    const all = read.value.calls;
+    const numeric = (key: "inputTokens" | "inputTotalTokens" | "outputTokens") => {
+      const known = all.flatMap((call) => call[key] === null ? [] : [call[key]]);
+      const sum = known.reduce((total, value) => total + value, 0);
+      if (known.length === 0 || !Number.isSafeInteger(sum)) return { state: "unavailable" as const, value: null, observationCount: known.length };
+      return {
+        state: known.length === all.length && read.value.collection.state === "complete" ? "available" as const : "partial" as const,
+        value: sum, observationCount: known.length,
+      };
+    };
+    const inputTokens = numeric("inputTokens");
+    const outputTokens = numeric("outputTokens");
+    const complete = all.length > 0 && read.value.collection.state === "complete" &&
+      all.every((call) => call.status !== "unknown") && inputTokens.state === "available" && outputTokens.state === "available";
+    return {
+      ...empty,
+      state: complete ? "complete" : "partial",
+      limitations: complete ? [] : [{ issue: "Adapter usage describes only recorded calls; some quantities or terminal outcomes are unknown, or capture is incomplete." }],
+      calls: all.slice(0, 128), callsTruncated: all.length > 128, omittedCallCount: Math.max(0, all.length - 128),
+      totals: {
+        ...empty.totals, inputTokens, outputTokens, inputTotalTokens: numeric("inputTotalTokens"),
+        requests: { state: read.value.collection.state === "complete" ? "available" : "partial", value: all.length, observationCount: all.length },
+      },
+      hasMore: all.length > 128,
+    };
+  }
   return projectUsage(readAgentTurns(attachments.agentTurns));
 }
 
