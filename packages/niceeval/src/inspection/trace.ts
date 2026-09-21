@@ -1087,7 +1087,9 @@ export function projectAttemptUsage(
     const inputTokens = numeric("inputTokens");
     const outputTokens = numeric("outputTokens");
     const complete = all.length > 0 && read.value.collection.state === "complete" &&
-      all.every((call) => call.status !== "unknown") && inputTokens.state === "available" && outputTokens.state === "available";
+      all.every((call) => call.status !== "unknown" && call.outputTokens !== null &&
+        (call.inputTotalTokens !== null ||
+          [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens].every((value) => value !== null)));
     return {
       ...empty,
       state: complete ? "complete" : "partial",
@@ -1101,6 +1103,39 @@ export function projectAttemptUsage(
     };
   }
   return projectUsage(readAgentTurns(attachments.agentTurns));
+}
+
+export function projectAdapterUsageTokens(
+  attachment: TraceAttachmentInput,
+): { readonly value: number | null; readonly state: "available" | "partial" | "unavailable" | "failed" } {
+  const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.adapterUsage, attachment);
+  if (read.state !== "available") {
+    return Object.freeze({
+      value: null,
+      state: read.state === "invalid" ? "failed" as const : "unavailable" as const,
+    });
+  }
+  const values = read.value.calls.flatMap((call) => {
+    const inputBuckets = [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens];
+    const knownInputBuckets = inputBuckets.filter((value): value is number => value !== null);
+    const input = call.inputTotalTokens ?? (knownInputBuckets.length === 0
+      ? null
+      : knownInputBuckets.reduce((total, current) => total + current, 0));
+    return [input, call.outputTokens].filter((value): value is number => value !== null);
+  });
+  const total = values.reduce((sum, current) => sum + current, 0);
+  if (!Number.isSafeInteger(total)) {
+    return Object.freeze({ value: null, state: "failed" as const });
+  }
+  const value = values.length === 0 ? null : total;
+  const complete = read.value.calls.length > 0 && read.value.collection.state === "complete" &&
+    read.value.calls.every((call) => call.status !== "unknown" && call.outputTokens !== null &&
+      (call.inputTotalTokens !== null ||
+        [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens].every((value) => value !== null)));
+  return Object.freeze({
+    value,
+    state: value === null ? "unavailable" as const : complete ? "available" as const : "partial" as const,
+  });
 }
 
 function projectUsage(

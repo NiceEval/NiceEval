@@ -218,5 +218,9 @@ ctx.recordUsage({
 未知值保留，部分小计标为 partial；已上报快照完整不代表包含外部系统的全部调用。单次最多返回前 128 条调用，
 `callsTruncated` 与 `omittedCallCount` 明示截断；聚合仍包含已封存的全部调用。框架不猜测价格。
 
+Overview 的 token 指标逐次调用选择可用输入总量：`inputTotalTokens` 已知时只采用它，否则汇总已知的 `inputTokens`、
+`cacheReadTokens` 与 `cacheWriteTokens`，再加 `outputTokens`。它不把输入总量与缓存分项重复相加。缺少任一必要分项时保留
+已知小计并标为 partial；全部未知才是 unavailable。显式零是已知零，没有用量 attachment 的旧 Attempt 仍是 unavailable。
+
 用量入口与附件入口共用 Attempt 的有界 cleanup 生命周期。取消后 cleanup 未结束时仍可上报；
 关闭后的调用拒绝且不能改写已封存事实。关闭前的采集错误即使被作者捕获，也保留为最终执行错误。

@@ -4,7 +4,9 @@
   "current": {
     "necase_920FSWMBVEP3090H": {
       "owner": "docs/engineering/testing/e2e/eval.md#external-usage",
-      "regressions": [],
+      "regressions": [
+        "memory/adapter-usage-overview-drops-token-facts.md"
+      ],
       "issues": []
     },
     "necase_P73V11ADFDNYEXTH": {
@@ -30,6 +32,34 @@
       "action": "case-attached",
       "to": {
         "owner": "docs/engineering/testing/e2e/eval.md#external-usage"
+      }
+    },
+    {
+      "caseId": "necase_920FSWMBVEP3090H",
+      "atCommit": "d68039aac8fbe73d35042b3f175a5a90d8685c73",
+      "transactionId": "netxn_116ae4658c8847dcbaa3f1711ca946a4",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/adapter-usage-overview-drops-token-facts.md"
+      }
+    },
+    {
+      "caseId": "necase_920FSWMBVEP3090H",
+      "atCommit": "dd2ca6ce8afdead17822bf7cb71b24cc509ab2e5",
+      "transactionId": "netxn_22775fbeb8be46b883ec6738868dd724",
+      "action": "regression-retired",
+      "from": {
+        "memory": "memory/adapter-usage-overview-drops-token-facts.md"
+      },
+      "reason": "replace evidence with the final candidate that also fixes total-only completeness"
+    },
+    {
+      "caseId": "necase_920FSWMBVEP3090H",
+      "atCommit": "dd2ca6ce8afdead17822bf7cb71b24cc509ab2e5",
+      "transactionId": "netxn_40455e97c2754f7eba44b4a261d4b7db",
+      "action": "regression-added",
+      "to": {
+        "memory": "memory/adapter-usage-overview-drops-token-facts.md"
       }
     }
   ],

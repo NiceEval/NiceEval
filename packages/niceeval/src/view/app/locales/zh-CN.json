@@ -28,6 +28,8 @@
     "cell.noneMeasurableTitle": "0/{{total}} 次 attempt 可测",
     "cell.coverageTitle": "覆盖率 {{samples}}/{{total}}：其余 attempt 测不了这个指标",
     "cell.coverageDetail": "结果完整度 {{samples}}/{{total}}",
+    "cell.partialTitle": "部分底层观测不可用，此值是已知小计",
+    "cell.partialDetail": "部分",
     "cell.evidence": "{{n}} 个 Attempt",
     "table.model": "模型",
     "cell.mixedExecution": "混合",

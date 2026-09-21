@@ -28,6 +28,8 @@
     "cell.noneMeasurableTitle": "0/{{total}} attempts measurable",
     "cell.coverageTitle": "coverage {{samples}}/{{total}}: this metric is null for the remaining attempts",
     "cell.coverageDetail": "Result coverage {{samples}}/{{total}}",
+    "cell.partialTitle": "This value is a known subtotal because some underlying observations are unavailable",
+    "cell.partialDetail": "partial",
     "cell.evidence": "{{n}} attempts",
     "table.model": "Model",
     "cell.mixedExecution": "mixed",

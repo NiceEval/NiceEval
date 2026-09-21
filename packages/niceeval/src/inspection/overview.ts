@@ -23,6 +23,7 @@ import {
 } from "./facts.ts";
 import type { InspectionFactSource } from "./source.ts";
 import {
+  projectAdapterUsageTokens,
   projectAttemptTiming,
   projectAttemptUsage,
 } from "./trace.ts";
@@ -480,12 +481,30 @@ function attemptOperationalMetrics(resolved: ResolvedInspectionAttempt): Pick<At
     const end = activity.startOffsetMs + activity.durationMs;
     return Math.max(maximum ?? 0, end);
   }, null);
+  const adapterUsage = attemptAttachment(
+    resolved,
+    NiceEvalRecordAttachments.adapterUsage.family,
+  );
   const usage = projectAttemptUsage(Object.freeze({
     agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+    ...(adapterUsage === undefined ? {} : { adapterUsage }),
   }));
   const input = usage.totals.inputTokens.value;
   const output = usage.totals.outputTokens.value;
   const tokenValues = [input, output].filter((value): value is number => value !== null);
+  const tokens = adapterUsage === undefined
+    ? Object.freeze({
+        value: tokenValues.length === 0 ? null : tokenValues.reduce((total, value) => total + value, 0),
+        state: usage.state === "invalid"
+          ? "failed" as const
+          : tokenValues.length === 0
+            ? "unavailable" as const
+            : usage.state === "complete" && usage.totals.inputTokens.state === "available" &&
+                usage.totals.outputTokens.state === "available"
+              ? "available" as const
+              : "partial" as const,
+      })
+    : projectAdapterUsageTokens(adapterUsage);
   return Object.freeze({
     durationMs: Object.freeze({
       value: durationMs,
@@ -497,17 +516,7 @@ function attemptOperationalMetrics(resolved: ResolvedInspectionAttempt): Pick<At
             ? "available" as const
             : "partial" as const,
     }),
-    tokens: Object.freeze({
-      value: tokenValues.length === 0 ? null : tokenValues.reduce((total, value) => total + value, 0),
-      state: usage.state === "invalid"
-        ? "failed" as const
-        : tokenValues.length === 0
-          ? "unavailable" as const
-          : usage.state === "complete" && usage.totals.inputTokens.state === "available" &&
-              usage.totals.outputTokens.state === "available"
-            ? "available" as const
-            : "partial" as const,
-    }),
+    tokens,
   });
 }
 

@@ -187,7 +187,14 @@ export function MetricCellView({
     );
   }
   const refLocators = refLocatorsOf(cell);
-  const hasPartialCoverage = showCoverage && cell.samples < cell.total;
+  const hasCoverageGap = cell.samples < cell.total;
+  const hasPartialCoverage = showCoverage && (hasCoverageGap || cell.state === "partial");
+  const partialTitle = hasCoverageGap
+    ? localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })
+    : localeText(loc, "cell.partialTitle");
+  const partialText = hasCoverageGap
+    ? localeText(loc, "cell.coverageDetail", { samples: cell.samples, total: cell.total })
+    : localeText(loc, "cell.partialDetail");
   return (
     <span className={cx("niceeval-cell", hasPartialCoverage && coverageDetail && "niceeval-cell-text")}>
       <span
@@ -199,16 +206,16 @@ export function MetricCellView({
       {hasPartialCoverage && (coverageDetail ? (
         <small
           className="niceeval-cell-detail"
-          title={localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
+          title={partialTitle}
         >
-          {localeText(loc, "cell.coverageDetail", { samples: cell.samples, total: cell.total })}
+          {partialText}
         </small>
       ) : (
         <sup
           className="niceeval-coverage"
-          title={localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
+          title={partialTitle}
         >
-          {cell.samples}/{cell.total}
+          {hasCoverageGap ? `${cell.samples}/${cell.total}` : localeText(loc, "cell.partialDetail")}
         </sup>
       ))}
       {href && refLocators.length === 1 && href(refLocators[0]!) !== undefined && (

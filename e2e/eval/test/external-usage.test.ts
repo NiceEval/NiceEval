@@ -14,8 +14,8 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
     const read = await niceeval.run(["query", "run", "--request", request]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
     const usage = read.querySuccess("attempt.usage").usage;
-    expect(usage).toMatchObject({ source: "adapter", coverage: "recorded-calls", state: "partial", turns: [], observations: [], callsTruncated: false });
-    expect(usage.calls).toHaveLength(4);
+    expect(usage).toMatchObject({ source: "adapter", coverage: "recorded-calls", state: "partial", turns: [], observations: [], callsTruncated: true, omittedCallCount: 3 });
+    expect(usage.calls).toHaveLength(128);
     const shown = await niceeval.run(["show", event.locator, "--usage"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("Recorded calls only");
@@ -25,13 +25,35 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
       expect.objectContaining({ callId: "request-2", retryOf: "request-1", status: "succeeded", inputTokens: 60, inputTotalTokens: 100 }),
       expect.objectContaining({ callId: "request-3", status: "unknown", inputTokens: null, outputTokens: null }),
       expect.objectContaining({ callId: "request-4", inputTokens: 0, outputTokens: 0 }),
+      expect.objectContaining({ callId: "request-5", inputTokens: 60, inputTotalTokens: null, cacheReadTokens: 30, cacheWriteTokens: 10, outputTokens: 20 }),
+      ...Array.from({ length: 123 }, () => expect.anything()),
     ]);
     expect(usage.totals).toMatchObject({
-      inputTokens: { state: "partial", value: 60, observationCount: 2 },
-      inputTotalTokens: { state: "partial", value: 200, observationCount: 3 },
-      outputTokens: { state: "partial", value: 10, observationCount: 3 },
-      requests: { state: "available", value: 4, observationCount: 4 },
+      inputTokens: { state: "partial", value: 246, observationCount: 129 },
+      inputTotalTokens: { state: "partial", value: 326, observationCount: 129 },
+      outputTokens: { state: "partial", value: 156, observationCount: 130 },
+      requests: { state: "available", value: 131, observationCount: 131 },
       providerCosts: { state: "unavailable", values: [] },
+    });
+
+    const overviewRequest = join(paths.projectRoot, "overview.request.json");
+    await writeFile(overviewRequest, JSON.stringify({
+      protocol: "niceeval.query/v1",
+      operation: { kind: "overview.get" },
+    }));
+    const overview = await niceeval.run(["query", "run", "--request", overviewRequest]);
+    expect(overview.exitCode, overview.diagnostic()).toBe(0);
+    const cell = only(
+      overview.querySuccess("overview.get").overview.cells,
+      (candidate) => candidate.experimentId === "external-usage" && candidate.evalId === "external-usage",
+      overview.diagnostic(),
+    );
+    expect(cell.tokens).toMatchObject({
+      state: "partial",
+      value: 582,
+      samples: 1,
+      total: 1,
+      unit: "tokens",
     });
   });
 });

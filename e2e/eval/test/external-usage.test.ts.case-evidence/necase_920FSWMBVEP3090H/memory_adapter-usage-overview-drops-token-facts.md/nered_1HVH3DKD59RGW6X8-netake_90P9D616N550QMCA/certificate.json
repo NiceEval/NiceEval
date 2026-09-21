@@ -1,0 +1,30 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v1",
+  "selector": "e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H",
+  "caseId": "necase_920FSWMBVEP3090H",
+  "candidateSha256": "f068a2e31ffff101728fbeb5ac10f84e57726c9e74775a6df9cd6ef216014dc6",
+  "greenReceipt": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/reliability-1.json",
+      "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/reliability-2.json",
+      "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/reliability-4.json",
+      "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/reliability-6.json",
+    "singleCase": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/green.json",
+    "cleanup": [
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/Code/NiceEval/NiceEval/artifacts/e2e/insight-adapter-usage-overview-final/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "939cf253ebe0723f52b9390dd21e783f052150c824efb9436f6342be7129ec63"
+}

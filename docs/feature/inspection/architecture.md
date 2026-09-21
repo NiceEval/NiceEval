@@ -63,6 +63,9 @@ issues 与 locators。
 
 每个 member、cell 与 aggregate 都带 USD cost `MetricValue`。它只汇总已发布且有可用成本的 Attempt，并保留 samples、total、
 state、issues 与 refs。没有成本的 Attempt 不是零。
+
+token `MetricValue` 优先使用 Adapter 持久化的每次物理调用输入总量。输入总量缺席时汇总不含缓存的输入量与已知缓存分项，
+然后加上输出量。缺少必要分项时保留已知小计并标为 partial；没有 Adapter 用量与 Agent 用量事实时为 unavailable，不按零聚合。
 `experiment.get` 只交付 exact Experiment 的 aggregate 与 cells。`runs.compare` 固定提供 `side-by-side`、`exact`、
 `paired`，并交付 left/right/pair denominator、unmatched、excluded、missing、issues 与 Evidence。
 
