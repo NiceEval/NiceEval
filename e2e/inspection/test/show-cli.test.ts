@@ -454,4 +454,6 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(historicalOverview.stdout).not.toContain("Observed   0/0");
     },
   );
-});
+// This journey starts dozens of public CLI processes. CI's successful run took
+// 109s, so the repository's 120s default leaves too little scheduling headroom.
+}, 180_000);
