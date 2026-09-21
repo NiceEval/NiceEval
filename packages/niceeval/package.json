@@ -226,7 +226,7 @@
     "@ai-sdk/otel": "^1.0.83",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/sdk-trace-node": "^2.8.0",
     "@playwright/test": "1.63.0",
     "@radix-ui/react-dialog": "1.1.17",
