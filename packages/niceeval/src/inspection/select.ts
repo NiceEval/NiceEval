@@ -33,7 +33,7 @@ import {
   type InspectionSourceProvenance,
 } from "./codec.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
-import { projectAttemptAssertionDetail } from "./assertions.ts";
+import { projectAttemptAssertionDetail, projectAttemptAssertionImage } from "./assertions.ts";
 import {
   attemptAttachment,
   loadInspectionRunResource,
@@ -295,6 +295,13 @@ function selectOperation(
         ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
         assertion: boundedJson(assertion),
       });
+    }
+    case "attempt.assertion.image": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const image = projectAttemptAssertionImage(source, readInspectionAssertions(resolved), operation.entryId, operation.imageId,
+        operation.offset ?? 0, operation.limit ?? 256 * 1024);
+      if (image === undefined) throw selectionMissing(operation.kind, `Assertion ${operation.entryId} was not found`);
+      return Object.freeze({ ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]), image });
     }
     case "attempt.trace": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);

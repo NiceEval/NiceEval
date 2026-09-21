@@ -53,6 +53,7 @@ export type JudgeConfigIdentity =
       readonly credential: ResolvedJudgeConfig["credential"];
       readonly timeoutMs: number;
       readonly maxResponseBytes: number;
+      readonly supportsImages?: boolean;
       readonly protocol: ResolvedJudgeConfig["protocol"];
     };
 
@@ -120,6 +121,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
           credential: Object.freeze({ ...identity.judgeRuntime.credential }),
           timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
           maxResponseBytes: Object.freeze(identity.judgeRuntime.maxResponseBytes),
+          ...(identity.judgeRuntime.supportsImages === true ? { supportsImages: true } : {}),
           protocol: Object.freeze({ ...identity.judgeRuntime.protocol }),
         }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
@@ -180,6 +182,7 @@ function judgeIdentity(judge: ResolvedJudgeConfig | undefined): JudgeConfigIdent
         credential: judge.credential,
         timeoutMs: judge.timeoutMs,
         maxResponseBytes: judge.maxResponseBytes,
+        ...(judge.supportsImages === true ? { supportsImages: true } : {}),
         protocol: judge.protocol,
       };
 }
@@ -251,6 +254,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   if (identity.judgeRuntime.credential.kind === "environment") put("judgeRuntime.credential.name", identity.judgeRuntime.credential.name);
   put("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
   put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
+  if (identity.judgeRuntime.supportsImages === true) put("judgeRuntime.supportsImages", true);
   put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
   put("judgeRuntime.protocol.revision", identity.judgeRuntime.protocol.revision);
   if (identity.judgeRuntime.protocol.kind === "chat-completions") put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);

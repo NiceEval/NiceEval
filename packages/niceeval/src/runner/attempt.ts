@@ -4163,6 +4163,7 @@ export function experimentRunInfo(
           credential: { ...judge.credential },
           timeoutMs: judge.timeoutMs,
           maxResponseBytes: judge.maxResponseBytes,
+          ...(judge.supportsImages === true ? { supportsImages: true } : {}),
           protocol: { ...judge.protocol },
         } }
       : {}),

@@ -11,6 +11,8 @@ export type { AssertionEntryId } from "./assertions/identity.ts";
 export {
   readScoreMatchAudit,
   type ScoreMatchAudit,
+  type ScoreMatchAuditV3,
+  type ScoreMatchAuditImageContent,
   type ScoreMatchAuditEnvelope,
   type ScoreMatchAuditReadResult,
 } from "./assertions/score-match-audit.ts";

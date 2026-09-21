@@ -21,6 +21,7 @@ export interface JudgeProviderSettings {
 
 export type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
   readonly maxOutputTokens?: number;
+  readonly supportsImages?: boolean;
 };
 
 export type TypesafeProviderOptions = JudgeProviderSettings & JudgeCredentials;
@@ -34,6 +35,7 @@ export interface JudgeProviderIdentity {
     | { readonly kind: "environment"; readonly name: string };
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
+  readonly supportsImages?: boolean;
   readonly protocol:
     | { readonly kind: "chat-completions"; readonly revision: 1; readonly maxOutputTokens: number }
     | { readonly kind: "typesafe-system-one"; readonly revision: 1 };
@@ -120,13 +122,14 @@ function createProvider(
 ): JudgeProvider {
   const label = `${provider === "typesafe" ? "Typesafe" : provider === "openai" ? "OpenAI" : provider === "openrouter" ? "OpenRouter" : "Vercel"}Provider() options`;
   const allowed = protocolKind === "chat-completions"
-    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens"]
+    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens", "supportsImages"]
     : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes"];
   const input = exactOptions(raw, label, allowed);
   const model = boundedText(input.model, `${label}.model`, 8 * 1024);
   const baseUrl = normalizedBaseUrl(input.baseUrl, defaults[provider].baseUrl, `${label}.baseUrl`);
   const timeoutMs = positiveInteger(input.timeoutMs, 180_000, `${label}.timeoutMs`, Number.MAX_SAFE_INTEGER);
   const maxResponseBytes = positiveInteger(input.maxResponseBytes, 16_384, `${label}.maxResponseBytes`, 256 * 1024);
+  if (input.supportsImages !== undefined && typeof input.supportsImages !== "boolean") throw new TypeError(`${label}.supportsImages must be boolean`);
   if (input.apiKey !== undefined && input.apiKeyEnv !== undefined) throw new TypeError(`${label}.apiKey and apiKeyEnv are mutually exclusive`);
 
   let credential: JudgeProviderIdentity["credential"];
@@ -149,7 +152,8 @@ function createProvider(
         maxOutputTokens: positiveInteger(input.maxOutputTokens, 1_024, `${label}.maxOutputTokens`, Number.MAX_SAFE_INTEGER),
       })
     : Object.freeze({ kind: "typesafe-system-one" as const, revision: 1 as const });
-  const identity = freezeIdentity({ provider, model, baseUrl, credential, timeoutMs, maxResponseBytes, protocol });
+  const identity = freezeIdentity({ provider, model, baseUrl, credential, timeoutMs, maxResponseBytes, protocol,
+    ...(input.supportsImages === true ? { supportsImages: true } : {}) });
   const value = Object.create(null) as Record<PropertyKey, unknown>;
   Object.defineProperty(value, judgeProviderBrand, { value: true, enumerable: false, writable: false, configurable: false });
   const frozen = Object.freeze(value) as unknown as JudgeProvider;

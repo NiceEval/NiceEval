@@ -349,7 +349,45 @@ t.judge({ source: expected, summary: turn.message }, factualSummary)
   .label("事实一致");
 ```
 
-Judge 材料接受有界 JSON 值，并在登记时快照。解析从项目 `judgeRuntime` 开始，再应用 Eval 的 `judge` 和 Experiment 的 `judgeRuntime`；完整 Provider 整体替换服务与执行配置，模型字符串只替换已选 Provider 的模型。Eval 的 `judge` 为这道题选择模型或 Provider，不是 Match 允许列表。通过制与计分制都可调用 `.gate(minimum)`；计分制还可调用 `.score(n)`，并保留 gate 失败时的 contribution。
+Judge 材料接受有界 JSON 值和显式 `judgeImage()` 值，并在登记时快照。解析从项目 `judgeRuntime` 开始，再应用 Eval 的 `judge` 和 Experiment 的 `judgeRuntime`；完整 Provider 整体替换服务与执行配置，模型字符串只替换已选 Provider 的模型。Eval 的 `judge` 为这道题选择模型或 Provider，不是 Match 允许列表。通过制与计分制都可调用 `.gate(minimum)`；计分制还可调用 `.score(n)`，并保留 gate 失败时的 contribution。
+
+### 图片材料
+
+从 `niceeval/judge` 导入 `judgeImage`。它同步复制原图字节；支持 PNG 和 JPEG，每张最多 4 MiB、16,777,216 像素。每条断言及每次模型请求最多 4 次图片引用、合计 8 MiB，重复引用也计入限制；每个 Attempt 最多留存 32 MiB 图片。输入只检查签名、头部边界和尺寸，不完整解码或转码。
+
+`OpenAIProvider`、`VercelProvider` 和 `OpenRouterProvider` 必须显式设置 `supportsImages: true`，并选择同时支持图片与工具调用的模型。默认不启用；`TypesafeProvider` 不支持图片。不支持时返回 `judge-capability-unavailable`，不会把图片降级成文字。
+
+{/* GENERATED:BEGIN judge-image */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+#### `judgeImage`
+
+```ts
+export function judgeImage(input: JudgeImageInput): JudgeImage { ... }
+```
+
+Capture PNG or JPEG bytes for an existing Judge call without sending a request.
+
+### `JudgeImageInput`
+
+#### `body`
+
+```ts
+readonly body: Uint8Array;
+```
+
+Original encoded image bytes; copied synchronously, at most 4 MiB.
+
+#### `mediaType`
+
+```ts
+readonly mediaType: "image/png" | "image/jpeg";
+```
+
+Must match the encoded image. Paths, URLs and SVG are not accepted.
+
+{/* GENERATED:END judge-image */}
 
 ### 现成裁判与自定义 Match
 

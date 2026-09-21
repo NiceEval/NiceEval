@@ -11,7 +11,7 @@ export const executionTrace = defineAdapter({
           body: JSON.stringify({ event: { result: "sealed-evidence-browser-sentinel", position: { x: 12, y: 4 } } }),
         });
         await ctx.recordTrace({
-          traceId: "sealed-world", schema: { id: "example.world", revision: 1 },
+          traceId: "sealed-world", schema: { id: "example.world" },
           collection: { state: "complete", limitations: [] }, scopes: [],
           events: [{
             key: "0", type: "operation.completed", source: { id: "server", eventId: "real-event-1" },

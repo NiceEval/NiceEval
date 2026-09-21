@@ -5,7 +5,7 @@
 Inspection catalog 是读取语义与业务聚合的唯一 owner。它的穷尽 operation 包括：
 
 - 当前项目：`project.get`；历史 Results、Experiment、Run：`overview.get`、`experiment.get`、`run.list`、`run.get`；
-- Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.trace`、`attempt.trace.detail`；
+- Attempt 首页与下钻：`attempt.get`、`attempt.assertion.detail`、`attempt.assertion.image`、`attempt.trace`、`attempt.trace.detail`；
 - Attempt 切片：`attempt.timing`、`attempt.usage`、`attempt.diff`、`attempt.sources`、`attempt.artifacts`、`attempt.artifact`；
 - 比较：`runs.compare`。
 

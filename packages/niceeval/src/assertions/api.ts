@@ -14,6 +14,7 @@ import type {
 } from "./match.ts";
 import type { AgentWorkspaceDiff } from "./workspace-diff.ts";
 import type { EvaluationKind } from "../shared/evaluation.ts";
+import type { JudgeImage } from "../judge/image.ts";
 
 /** The two Evaluation kinds deliberately share one Assertion entry model. */
 export type AssertionEvaluationKind = EvaluationKind;
@@ -68,6 +69,7 @@ export type AssertionLimitation =
  */
 export type AssertionMaterial =
   | { readonly kind: "snapshot"; readonly value: AssertionSnapshotValue }
+  | { readonly kind: "judge-image"; readonly image: JudgeImage }
   | {
       readonly kind: "record-attachment";
       readonly preview: string;
@@ -543,6 +545,7 @@ export interface MeasurementAssertionRegistration
   extends AssertionRegistrationBase {
   /** Bytes synchronously reserved from an Attempt-local producer budget. */
   readonly retainedBytes?: number;
+  readonly retainedImageBytes?: number;
   /** Complete terminal Content appended exactly once by the shared sealing path. */
   readonly terminalEvidence?: () => readonly AssertionMaterial[];
   /** Terminal producer facts frozen by the shared Assertion sealing path. */

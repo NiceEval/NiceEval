@@ -188,7 +188,7 @@ const attachment = await ctx.attach({
 
 const receipt = await ctx.recordTrace({
   traceId: sessionId,
-  schema: { id: "social-app.execution", revision: 1 },
+  schema: { id: "social-app.execution" },
   collection: { state: "complete", limitations: [] },
   scopes: [],
   events: [{
@@ -208,6 +208,7 @@ const receipt = await ctx.recordTrace({
 ```
 
 `key` 是这份快照内的关联键，`source.eventId` 只填写应用真实提供的 ID；没有时省略。
+`schema.id` 标识应用的事件格式，不需要填写 `revision`；NiceEval 自行管理记录格式。旧记录仍可读取，旧调用则需删去 `schema.revision`。
 返回的 `receipt.events` 给出可供查看的稳定 `eventId`。同一 `traceId` 重交相同快照返回同一身份，内容冲突会拒绝。
 摘要有界，大输入通过证据引用精确定位到附件中的值，查看时不需要手动扫描整份日志。
 

@@ -81,7 +81,7 @@ export interface ExecutionTraceInput<
   out Event extends ExecutionTraceEvent = ExecutionTraceEvent,
 > {
   readonly traceId: string;
-  readonly schema: { readonly id: string; readonly revision: number };
+  readonly schema: { readonly id: string };
   readonly collection: {
     readonly state: "complete" | "partial";
     readonly limitations: readonly ExecutionTraceLimitation[];

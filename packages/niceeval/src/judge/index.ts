@@ -1,4 +1,10 @@
 export {
+  judgeImage,
+  type JudgeImage,
+  type JudgeImageInput,
+  type JudgeMaterial,
+} from "./image.ts";
+export {
   OpenAIProvider,
   OpenRouterProvider,
   TypesafeProvider,

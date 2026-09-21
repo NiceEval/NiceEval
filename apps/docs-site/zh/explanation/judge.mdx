@@ -1,7 +1,7 @@
 ---
 title: "NiceEval 里的 Judge：评开放式输出"
 sidebarTitle: "Judge"
-description: "用 rubric、anchors 和命名 JSON 材料评估开放式输出。"
+description: "用 rubric、anchors 和显式材料评估开放式输出，需要时附上图片。"
 ---
 
 Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质量。它是一种受管 evaluator。普通自定义
@@ -48,6 +48,8 @@ export default defineEval({
 
 材料使用字符串、有限数字、布尔值、null、数组和普通对象。字段名应表达应用语义，例如 `change` 与
 `explanation`，无需把对象先拼成文本。NiceEval 在登记 Assertion 时生成有界 JSON 快照；之后修改原对象不会改变请求。
+
+需要观察图片内容时，在材料中放入 `judgeImage({ body, mediaType })`。它冻结 PNG 或 JPEG 字节，不创建另一个裁判，也不发起额外请求。图片和文字经同一次 Judge 调用发送，并保存在同一条断言的证据中。接线步骤见 [附加图片材料](/zh/tutorials/verify-judge#附加图片材料)。
 
 `t.judge(material, explainsRisk)` 与 `t.check(material, explainsRisk)` 都登记一条测量 Assertion。它们会共享材料快照、预算、求值、审计、封口和 handle；没有 Match 允许列表。
 
@@ -127,4 +129,4 @@ TypeSafe 使用 `/systemone` 协议。它支持 score、classify 和 batch class
 通过制与计分制都在登记后的 handle 上调用 `.gate(minimum)` 形成质量门。计分制还可调用
 `.score(points)`，贡献值为 measurement 乘 points。gate 与 score 可任意先后组合，两种方式都只执行一次 Judge。
 
-成功请求保存实际发送的固定材料。URL 或 alt 不是视觉输入；需要判断图片本身时，必须使用明确支持图像的能力。
+成功请求保存实际发送的固定材料。路径、URL、alt 或普通 base64 字符串不是视觉输入；只有显式图片材料会转换为模型 API 的图片部分。

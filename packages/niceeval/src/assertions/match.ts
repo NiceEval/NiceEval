@@ -13,6 +13,7 @@ import type {
 } from "../o11y/types.ts";
 import { matchesJson } from "../shared/json-match.ts";
 import type { JsonMatch, JsonValue } from "../shared/types.ts";
+import type { JudgeMaterial } from "../judge/image.ts";
 import { stripComments } from "../util.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 
@@ -143,10 +144,10 @@ export type ScoreMatchLlmFailure = { readonly _tag: "ScoreMatchLlmUnavailable"; 
 export type ScoreMatchResult = number | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string } | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string } | { readonly state: "errored"; readonly code: string; readonly message: string };
 export interface ScoreMatchContext {
   readonly llm: {
-    score(input: { readonly rubric: string; readonly anchors: readonly ScoreMatchAnchor[]; readonly material: JsonValue }): Effect.Effect<{ readonly measurement: number; readonly rationale: string }, ScoreMatchLlmFailure>;
-    classify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly material: JsonValue }): Effect.Effect<{ readonly choice: string; readonly rationale: string }, ScoreMatchLlmFailure>;
-    extract(input: { readonly rubric: string; readonly maxItems: number; readonly material: JsonValue }): Effect.Effect<{ readonly items: readonly string[]; readonly rationale: string; readonly complete: boolean }, ScoreMatchLlmFailure>;
-    batchClassify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly items: readonly { readonly id: string; readonly text: string }[]; readonly material: JsonValue }): Effect.Effect<{ readonly items: readonly { readonly id: string; readonly choice: string; readonly rationale: string }[] }, ScoreMatchLlmFailure>;
+    score(input: { readonly rubric: string; readonly anchors: readonly ScoreMatchAnchor[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly measurement: number; readonly rationale: string }, ScoreMatchLlmFailure>;
+    classify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly choice: string; readonly rationale: string }, ScoreMatchLlmFailure>;
+    extract(input: { readonly rubric: string; readonly maxItems: number; readonly material: JudgeMaterial }): Effect.Effect<{ readonly items: readonly string[]; readonly rationale: string; readonly complete: boolean }, ScoreMatchLlmFailure>;
+    batchClassify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly items: readonly { readonly id: string; readonly text: string }[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly items: readonly { readonly id: string; readonly choice: string; readonly rationale: string }[] }, ScoreMatchLlmFailure>;
   };
 }
 export interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {

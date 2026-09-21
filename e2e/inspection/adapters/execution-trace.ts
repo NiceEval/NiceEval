@@ -22,7 +22,13 @@ export const executionTraceAdapter = defineAdapter({
         });
         const snapshot: ExecutionTraceInput = {
           traceId: "sealed-session",
-          schema: { id: "example.simulation", revision: 1 },
+          schema: {
+            id: "example.simulation",
+            // Only for creating historical Records with an old installed candidate.
+            ...(process.env.NICEEVAL_E2E_LEGACY_TRACE_REVISION === undefined ? {} : {
+              revision: Number(process.env.NICEEVAL_E2E_LEGACY_TRACE_REVISION),
+            }),
+          },
           collection: { state: "complete", limitations: [] },
           scopes: [{ scopeId: "measurement", label: "Measured interval", boundary: { throughSequence: 10_000, gameTime: 20 } }],
           events: originals.map((event, index) => ({

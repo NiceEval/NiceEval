@@ -147,6 +147,11 @@ artifacts、timing、usage、commands 与 diagnostics，状态为 `available | n
 }
 ```
 
+图片 Judge 的 detail 只交付图片元数据和已验证的 v3 审计，不重复内嵌原始图片或审计的 base64。
+按稳定 `entryId` 与 `imageId` 使用 `attempt.assertion.image` 读取封存原图，`offset` 是原始字节偏移，
+`limit` 每页最多 256 KiB。响应交付 `mediaType`、`byteLength`、`sha256`、`base64` 与 `nextOffset`，
+最后一页的 `nextOffset` 为 `null`。这个固定 operation 同样支持 `--record` 搬迁读取，不访问作者路径或模型。
+
 detail 保留完整已封存 Assertion entry、display 与 source sites，并另给规范化 `check`。
 check 与每个 diagnostic node 都明确包含 `label`、`state`、`expected`、`observed`、`reason`、`anchor` 与有序
 `children`。缺席字段为 `null`，不能由 View 猜测。

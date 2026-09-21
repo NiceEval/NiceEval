@@ -103,6 +103,14 @@ export const inspectionProtocolRegistry = Object.freeze({
   "run.overview": spec({ request: operation("run.overview", { runId: RunIdSchema }), result: { runOverview: InspectionRunOverviewResultSchema }, factKinds: ["core", "assertions", "agent-turns"] }),
   "attempt.get": spec({ request: operation("attempt.get", { locator: AttemptLocatorSchema }), result: { attempt: InspectionAttemptResultSchema }, factKinds: ["core", "assertions"] }),
   "attempt.assertion.detail": spec({ request: operation("attempt.assertion.detail", { locator: AttemptLocatorSchema, entryId: AssertionEntryIdSchema }), result: { assertion: AssertionDetailResultSchema }, factKinds: ["assertions", "agent-turns", "sources"] }),
+  "attempt.assertion.image": spec({ request: operation("attempt.assertion.image", { locator: AttemptLocatorSchema,
+    entryId: AssertionEntryIdSchema, imageId: Schema.String,
+    offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactLimitSchema) }),
+    result: { image: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("available"), imageId: Schema.String, mediaType: Schema.Literals(["image/png", "image/jpeg"]),
+        byteLength: Schema.Number, sha256: Schema.String, offset: Schema.Number, base64: Schema.String, nextOffset: Schema.NullOr(Schema.Number) }),
+      Schema.Struct({ state: Schema.Literal("invalid") }), Schema.Struct({ state: Schema.Literal("not-recorded") }),
+    ]) }, factKinds: ["assertions"] }),
   "attempt.trace": spec({ request: operation("attempt.trace", {
     locator: AttemptLocatorSchema,
     traceId: Schema.optional(Schema.String),

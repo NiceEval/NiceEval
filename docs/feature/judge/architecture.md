@@ -13,7 +13,7 @@ Match 不拥有 gate、points、stop、源码位置或 Assertion identity。
 ## 授权、身份与输入
 
 入口在材料反射前确认 Match 与调用形状；不存在 Eval 的 Match 允许列表。
-高级 Match 接收登记时生成的深冻结 canonical JSON 快照，后续调用方修改原对象不会改变输入。
+高级 Match 接收登记时生成的深冻结材料快照：JSON 保持 canonical 编码，显式图片值按下文的独立 Content 规则捕获，后续调用方修改原对象不会改变输入。
 受管 LLM 能力只由框架提供，不是 JavaScript 沙箱。
 作者 callback 属于可信项目代码。
 
@@ -286,3 +286,60 @@ Definition digest 继续表示 Match 算法定义；Provider identity 的协议 
 Provider 验收包含四个工厂的公开导入、凭据声明位置、模型替换与整体替换、TypeSafe 非等距 anchor 分数和能力拒绝。
 同一结果经公开 Assertion detail 读回 v1/v2；动态 anchors、批量 ID、畸形概率与超限响应具有独立的可观察失败。
 迁移错误在相关业务动作之前交付位置与英文指南；历史结果读取与旧源码配置拒绝分别验收。
+
+## 图片捕获、Content 与 v3
+
+含图片的受管材料使用 `judgeImage` 的不可伪造值；同步复制 bytes 保存在私有 WeakMap，
+callback 只能重用不透明值，不能取得可修改数组。捕获遍历保留原有 JSON 校验，
+仅在材料位置承认图片；definition config、rubric、anchors 和其它原语字段仍是严格 JSON。
+高级原语的 material 类型为递归 `JudgeMaterial`。动态步骤只能引用本 entry 登记时捕获的图片，
+迟到图片与普通 JSON 冒充引用不授予读取能力。初始图片位置使用 JSON Pointer 留存。
+
+每个 entry 最多 4 个实际图片引用、8 MiB raw bytes；单图 4 MiB、16,777,216 pixels。
+每个原语构造的实际图片 parts 再次检查同样上限，不能通过重复引用放大。
+PNG/JPEG 校验签名、header 长度与尺寸及 MIME 一致性；这不是完整像素解码。
+登记点同时检查既有 512 KiB 文本总账与独立 32 MiB 图片总账，全部通过才创建 entry 和扣账。
+跨 entry 重用仍分别计费到图片留存，不跨 entry 共享 Content handle。重试复用同一 wire body，不重复封存图片。
+
+图片各自作为 Assertions 自有 binary Content 写入，最后一项 evidence 始终为审计 JSON。
+不新增持久 family，也不向作者公开 blob reference。取消或未发送仍保留已登记图片。
+v3 的选择只取决于捕获材料中是否有图片，未配置 Provider、TypeSafe 或缺能力的零发送拒绝也写 v3。
+纯 JSON 的 v1/v2 结构与解释不改变。
+
+v3 使用 schemaVersion `3` 与 protocol `niceeval.score-match-audit/v3`。
+沿用 definition、input、result 与拒绝 call；新增 images 描述符列表，每项含本 entry 内稳定
+imageId、evidenceIndex、mediaType、byteLength、sha256 与初始材料 paths。
+已准入 call 不再把模板叫 request，而使用 requestTemplate 与 wireBody（byteLength、sha256），
+其它 ordinal、operation、attempts、result 与聊天审计相同。
+
+requestTemplate 是 canonical JSON：唯一 user content 数组首项为 canonical JSON text，
+图片位置使用 `image_url.url = "niceeval-image:<imageId>"`。
+同一模板只在这些类型化 image_url 位置替换为 `data:<mediaType>;base64,<RFC4648 bytes>`，
+再按既有 canonical JSON 和 UTF-8 生成唯一 wire body；先计算摘要，再把同一正文交给 transport。
+文本中同名字符串不参与替换。图片顺序与文本中的 imageId 对应，不把图片说明提升为 system 规则。
+
+描述符、模板和终态计入 maxAuditBytes；raw bytes 计入图片总账；base64 膨胀后的 wire body
+受原语图片上限和材料/规则上限共同约束。已提交图片不得被静默删去。
+
+审计读取必须验证 imageId 唯一、evidence ordinal、Content digest/length、MIME 和封闭引用，
+按相同序列化规则还原发送正文并核对 wireBody。缺图、错位、伪引用、摘要不符均不可返回 available。
+旧 reader 对未知 v3 返回 unsupported。人读界面将 requestTemplate 明确呈现为模板，不冒充 wire 原文。
+
+## 有界图片读回
+
+多模态 Assertion detail 只交付图片 metadata 与已解码审计；不重复展开 source/evidence 的
+大图或原始 audit base64。单次结果仍受 512 KiB 上限约束。
+固定 `attempt.assertion.image` 只允许本 locator/entryId 内的 imageId，接受 offset/limit，
+最多返回 256 KiB raw bytes 的 base64、整图 SHA/byteLength/mediaType、offset、nextOffset。
+分页与 detail 使用同一封存 cutoff；不接受路径、URL、外部 Content handle 或跨 entry 引用。
+
+CLI 与 Web 使用同一 operation 和 decoder，搬迁 Record 后无需原附件目录或模型服务。
+
+图片能力为聊天 Provider 的显式 supportsImages 声明，默认 false，进入执行身份、
+fingerprint 与字段差异。字符串模型 override 继承声明，作者负责最终模型实际支持视觉和 forced tool；
+完整 Provider 替换采用新声明。能力拒绝先于凭据读取和 wire 构造，不能由缺 key 遮蔽。
+服务实际拒绝沿用原错误分类，不降级为文本调用。
+
+验收使用确定性 HTTP fixture 捕获真实 body，核对 image parts、冻结 bytes 与离线还原摘要；
+验证大图详情有界、Record 搬迁分页、无能力零发送、晚到图片/重复引用限制、
+重试取消封口及 v1/v2 兼容。图片只参与作者主动选择的语义判据，不自动产生断言或 gate。

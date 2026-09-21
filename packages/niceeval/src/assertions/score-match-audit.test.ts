@@ -68,7 +68,8 @@ describe("ScoreMatch audit decoder", () => {
     const value = retained() as { manifest: Record<string, unknown>; content: string[] };
     expect(readScoreMatchAudit({ ...value, manifest: { ...value.manifest, digest: "0".repeat(64) } })).toEqual({ state: "invalid" });
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 2, protocol: "niceeval.score-match-audit/v2" }, content: [] })).toEqual({ state: "invalid" });
-    expect(readScoreMatchAudit({ manifest: { schemaVersion: 3, protocol: "niceeval.score-match-audit/v3" }, content: [] })).toEqual({ state: "unsupported", schemaVersion: 3 });
+    expect(readScoreMatchAudit({ manifest: { schemaVersion: 3, protocol: "niceeval.score-match-audit/v3" }, content: [] })).toEqual({ state: "invalid" });
+    expect(readScoreMatchAudit({ manifest: { schemaVersion: 4, protocol: "niceeval.score-match-audit/v4" }, content: [] })).toEqual({ state: "unsupported", schemaVersion: 4 });
     expect(readScoreMatchAudit(value, "quality", 1)).toEqual({ state: "invalid" });
   });
 });

@@ -20,6 +20,7 @@ import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
 import { readJudgeMaterialV2 } from "../assertions/judge-material.ts";
 import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
+import type { ScoreMatchAuditImageContent } from "../assertions/score-match-audit.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionAgentTurnsRead } from "./trace.ts";
 
@@ -103,6 +104,43 @@ export function projectAttemptAssertionDetail(
   return decodeAssertionDetail(result);
 }
 
+export function projectAttemptAssertionImage(
+  source: InspectionFactSource, input: InspectionAssertionsRead, entryId: string, imageId: string, offset = 0, limit = 256 * 1024,
+): InspectionJson | undefined {
+  const assertions = readCurrentAssertions(input);
+  if (assertions.state !== "available") return closeJson({ state: assertions.state });
+  const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
+  if (entry === undefined) return undefined;
+  try {
+    if (!entry.materials.evidence.some((material) => material.kind === "content" && material.encoding === "binary")) return closeJson({ state: "not-recorded" });
+    const auditMaterial = entry.materials.evidence.at(-1);
+    if (auditMaterial?.kind !== "content" || auditMaterial.encoding !== "json" || !isRecordContentHandle(auditMaterial.content)) return closeJson({ state: "not-recorded" });
+    const auditMetadata = assertions.contents.get(auditMaterial.content);
+    if (auditMetadata === undefined) return closeJson({ state: "invalid" });
+    const rawAudit = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(readSealedBytes(source, auditMetadata)));
+    const imageMaterials = entry.materials.evidence.slice(0, -1);
+    const descriptors = JSON.parse(rawAudit.content.join(""))?.images;
+    const imageContent = imageMaterials.map((material, evidenceIndex): ScoreMatchAuditImageContent => {
+      if (material.kind !== "content" || material.encoding !== "binary" || !isRecordContentHandle(material.content)) throw new Error("Invalid Judge image material");
+      const metadata = assertions.contents.get(material.content);
+      if (metadata === undefined || metadata.byteLength !== material.byteLength) throw new Error("Invalid Judge image metadata");
+      return { evidenceIndex, mediaType: descriptors?.[evidenceIndex]?.mediaType,
+        bytes: readSealedBytes(source, metadata) } as ScoreMatchAuditImageContent;
+    });
+    const decoded = readScoreMatchAudit(rawAudit, undefined, observedMeasurement(entry.evaluation.observed), imageContent);
+    if (decoded.state !== "available" || decoded.audit.schemaVersion !== 3) return closeJson({ state: "invalid" });
+    const image = decoded.audit.images.find((candidate) => candidate.imageId === imageId);
+    if (image === undefined) return undefined;
+    const bytes = imageContent[image.evidenceIndex]!.bytes;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.length || !Number.isSafeInteger(limit) || limit < 1 || limit > 256 * 1024) return closeJson({ state: "invalid" });
+    const nextOffset = Math.min(bytes.length, offset + limit);
+    return closeJson({ state: "available", imageId, mediaType: image.mediaType, byteLength: image.byteLength, sha256: image.sha256,
+      offset, base64: base64(bytes.subarray(offset, nextOffset)), nextOffset: nextOffset === bytes.length ? null : nextOffset });
+  } catch {
+    return closeJson({ state: "invalid" });
+  }
+}
+
 function decodeAssertionDetail(input: unknown): AssertionDetailResult {
   const decoded = Schema.decodeUnknownResult(AssertionDetailResultSchema, {
     errors: "all", onExcessProperty: "error",
@@ -153,7 +191,8 @@ function projectEntry(
   const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";
   const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement/v1";
   if (currentScoreMatch) {
-    const projected = projectSealedValue(source, entry, contentMetadata) as Readonly<Record<string, InspectionJson>>;
+    const hasImages = entry.materials.evidence.some((material) => material.kind === "content" && material.encoding === "binary");
+    const projected = projectSealedValue(source, entry, contentMetadata, hasImages) as Readonly<Record<string, InspectionJson>>;
     try {
       const criterionData = entry.criterion.value.data;
       const name = isRecord(criterionData) && typeof criterionData.name === "string" ? criterionData.name : undefined;
@@ -168,7 +207,15 @@ function projectEntry(
       const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
       return closeJson(Object.freeze({
         ...projected,
-        scoreMatchAudit: readScoreMatchAudit(decoded, name, observedMeasurement(entry.evaluation.observed)),
+        scoreMatchAudit: readScoreMatchAudit(decoded, name, observedMeasurement(entry.evaluation.observed), hasImages
+          ? entry.materials.evidence.slice(0, -1).map((image, evidenceIndex) => {
+              if (image.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content)) throw new Error("Invalid Judge image material");
+              const imageMetadata = contentMetadata.get(image.content);
+              if (imageMetadata === undefined || imageMetadata.byteLength !== image.byteLength) throw new Error("Invalid Judge image metadata");
+              const imageDescriptor = JSON.parse(decoded.content.join(""))?.images?.[evidenceIndex];
+              return { evidenceIndex, mediaType: imageDescriptor?.mediaType, bytes: readSealedBytes(source, imageMetadata) } as ScoreMatchAuditImageContent;
+            })
+          : undefined),
       }));
     } catch {
       return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
@@ -217,6 +264,7 @@ function projectSealedValue(
   source: InspectionFactSource,
   value: unknown,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
+  deferContent = false,
 ): InspectionJson {
   if (isRecordContentHandle(value)) {
     const metadata = contentMetadata.get(value);
@@ -225,17 +273,17 @@ function projectSealedValue(
       state: "available" as const,
       byteLength: metadata.byteLength,
       sha256: metadata.digest,
-      base64: base64(readSealedBytes(source, metadata)),
+      ...(deferContent ? {} : { base64: base64(readSealedBytes(source, metadata)) }),
     }));
   }
   if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
     return closeJson(value);
   }
-  if (Array.isArray(value)) return closeJson(Object.freeze(value.map((item) => projectSealedValue(source, item, contentMetadata))));
+  if (Array.isArray(value)) return closeJson(Object.freeze(value.map((item) => projectSealedValue(source, item, contentMetadata, deferContent))));
   if (typeof value !== "object") throw new Error("Assertion entry contains an unsupported value");
   const output: Record<string, InspectionJson> = {};
   for (const key of Object.keys(value).sort()) {
-    output[key] = projectSealedValue(source, Reflect.get(value, key), contentMetadata);
+    output[key] = projectSealedValue(source, Reflect.get(value, key), contentMetadata, deferContent);
   }
   return closeJson(Object.freeze(output));
 }

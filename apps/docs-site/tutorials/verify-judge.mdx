@@ -1,23 +1,25 @@
 ---
 title: "Configure and Verify a Judge"
 sidebarTitle: "Configure and Verify a Judge"
-description: "Connect an OpenAI-compatible Judge gateway, use one minimal Eval to preflight and score for real, then distinguish missing configuration, network failure, and low-quality output in the results."
+description: "Choose a named Judge Provider and complete one real score with a rubric and named material."
 ---
 
-Use a Judge for open-ended quality judgments that rules cannot express as an exact match. First use one minimal Eval to confirm that the model, key, and endpoint can score for real, then add the Judge to production tasks.
+Use a Judge for open-ended quality judgments that rules cannot express as an exact Match. First use one minimal Eval to confirm that the model, key, and endpoint can score for real.
 
 ## Configure the model and credential source
 
 ```ts title="niceeval.config.ts"
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
-  judge: {
+  judgeRuntime: OpenAIProvider({
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
     timeoutMs: 180_000,
-  },
+    maxOutputTokens: 512,
+  }),
 });
 ```
 
@@ -27,56 +29,79 @@ Keep the key only in the process environment:
 export JUDGE_GATEWAY_KEY="..."
 ```
 
-The configuration file stores the environment-variable name, never the key value. To compare Judge models, override `judge.model` in different Experiments. Model selection comes from the resolved Eval configuration, not an individual factory call.
+The configuration file stores the environment-variable name, never the key value. To compare Judge models, configure different Experiments with different `judgeRuntime` model strings or Providers. Model selection comes from the resolved Eval configuration.
 
-## Write one minimal real scoring Eval
+## Write one minimal Eval
 
 ```ts title="evals/judge-smoke.eval.ts"
 import { defineEval } from "niceeval";
-import { closedQA } from "niceeval/expect";
 
 export default defineEval({
-  judge: true,
+  judge: "judge-model",
   async test(t) {
-    t.check(
-      {
-        input: "operation completed successfully",
-        output: "operation completed successfully",
-      },
-      closedQA("Does the text clearly state that the operation succeeded?").atLeast(0.8),
-    )
-      .gate()
-      .label("Clearly states success");
+    const operation = "Complete the data import";
+    const turn = await t.send(operation);
+    t.closeQA({
+      input: operation,
+      output: turn.message,
+      context: "After the operation completes, the response must clearly state that the data import succeeded.",
+    })
+      .gate(0.8)
+      .label("Success statement");
   },
 });
 ```
 
-`judge: true` declares that this Eval needs a Judge and inherits its fields from the Experiment and project configuration. `.atLeast(0.8)` forms the threshold before registration, and parameterless `.gate()` makes the resulting condition a pass/fail requirement.
+`t.closeQA` snapshots explicit material when registered. `.gate(0.8)` forms a condition on the same `MeasurementAssertionHandle` and includes it in the pass/fail Verdict. It is equivalent to `t.check(material, closeQA())` and does not create a second Assertion.
 
-## Run only this verification Eval
+## Add image material
 
-First ensure that an existing Experiment's `evals` scope includes `judge-smoke`, then use the second positional argument to select only that Eval. This example uses the Experiment ID `local`:
+Attach an image only when the criterion genuinely requires it. Reuse the same `defineJudge` and `t.judge`; you do not need another Judge or scoring threshold.
+First set `supportsImages: true` in the existing chat Provider configuration and choose a model that supports both images and tool calls. `TypesafeProvider` does not support images.
+
+The following Eval reads an existing `screenshot.png` saved by the application. It does not generate a new screenshot for the evaluation:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { defineEval, defineJudge } from "niceeval";
+import { judgeImage } from "niceeval/judge";
+
+const actionQuality = defineJudge({
+  name: "action-quality",
+  rubric: "Evaluate whether the action was reasonable based on known facts; use the image only as supporting evidence and do not infer actions outside the frame.",
+});
+
+export default defineEval({
+  async test(t) {
+    const screenshot = judgeImage({
+      body: await readFile("screenshot.png"),
+      mediaType: "image/png",
+    });
+    t.judge({ action: "The character completed the move", screenshot }, actionQuality).gate(0.8);
+  },
+});
+```
+
+Images must be PNG or JPEG, with a maximum of 4 MiB per image. Oversized images and invalid headers are rejected before sending. Do not use a path, URL, or ordinary base64 string as an image.
+
+After sealing, `attempt.assertion.detail` provides the image's stable `imageId` and summary. Use the fixed `attempt.assertion.image` query operation with the same Attempt's `entryId` and `imageId` to page through the original image. `offset` is a byte offset and `limit` is at most 256 KiB. This reads evidence from the Record; it does not access the file or call the model again.
+
+## Run and inspect
+
+Ensure an existing Experiment's `evals` scope includes `judge-smoke`, then run:
 
 ```sh
 pnpm exec niceeval exp local judge-smoke
-```
-
-Use `pnpm exec niceeval exp list` to find the actual Experiment ID. Do not treat an Eval ID as an Experiment ID too. When both the model and key are present, the Runner preflights the Judge endpoint before dispatching. A failed preflight is a setup error and never produces a fabricated Judge score.
-
-## Inspect the scoring result
-
-Copy the Run ID from the completion feedback:
-
-```sh
 pnpm exec niceeval view --run <run-id>
 ```
 
-The result should contain the Judge measurement, threshold, condition, reason, and trimmed material. Distinguish these three failure types:
+Static configuration validation does not request the endpoint. A real Judge Assertion uses a forced-function request; successful results include the measurement, threshold, public rationale, and exact material sent.
 
 | Result | Meaning |
-| --- | --- |
-| `judge-model-unresolved` / `judge-key-unresolved` | Configuration or the environment variable is missing; no network preflight began. |
-| `unavailable` | The network or Provider became unavailable after the request started. It is not a zero score. |
-| evaluator `errored` | The response is invalid, its score is not finite, or it lies outside `[0, 1]`. |
+|---|---|
+| `judge-provider-unresolved` / `judge-key-unresolved` | The Provider or credential is missing; no network request was sent. |
+| `errored` | The endpoint returned HTTP 400, the protocol was incompatible, or the response failed the strict schema. |
+| `unavailable` | The request failed in transport or timed out. |
+| `errored` | The Decision is missing or malformed, or the measurement is outside the allowed range. |
 
-For production tasks, first calibrate the rubric and threshold with representative results. To compare two Judge models, have two Experiments select the same Evals and use different `labels` to identify the Judge conditions. See the full matrix pattern in [Experiment Matrices](/tutorials/experiments).
+To compare Judges, have multiple Experiments use different model strings or named Providers, then use `labels` to identify the comparison axes.

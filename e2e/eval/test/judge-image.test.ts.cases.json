@@ -1,0 +1,37 @@
+{
+  "format": "niceeval.e2e-case-relations/v1",
+  "testFile": "e2e/eval/test/judge-image.test.ts",
+  "current": {
+    "necase_TB3PWT70ZK9BQWF1": {
+      "owner": "docs/engineering/testing/e2e/eval.md#judge-image-material",
+      "regressions": [],
+      "issues": []
+    },
+    "necase_ZK64TS7KYD0CH81W": {
+      "owner": "docs/engineering/testing/e2e/eval.md#judge-image-material",
+      "regressions": [],
+      "issues": []
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_ZK64TS7KYD0CH81W",
+      "atCommit": "12b4df10386c43ad95216b030947fa8f9f1b3ed5",
+      "transactionId": "netxn_6868c9e72c7241589e976f506da2c01d",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#judge-image-material"
+      }
+    },
+    {
+      "caseId": "necase_TB3PWT70ZK9BQWF1",
+      "atCommit": "12b4df10386c43ad95216b030947fa8f9f1b3ed5",
+      "transactionId": "netxn_5cb8e66a18e4424abbbb9ead4720470b",
+      "action": "case-attached",
+      "to": {
+        "owner": "docs/engineering/testing/e2e/eval.md#judge-image-material"
+      }
+    }
+  ],
+  "tombstones": []
+}

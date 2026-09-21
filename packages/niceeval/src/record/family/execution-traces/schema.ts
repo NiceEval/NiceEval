@@ -104,7 +104,7 @@ const InputEventSchema = Schema.Struct({
 
 export const ExecutionTraceInputSchema = Schema.Struct({
   traceId: BoundedIdentifierSchema,
-  schema: Schema.Struct({ id: BoundedIdentifierSchema, revision: NonNegativeSafeIntegerSchema }),
+  schema: Schema.Struct({ id: BoundedIdentifierSchema }),
   collection: CollectionSchema,
   scopes: Schema.Array(ScopeSchema),
   events: Schema.Array(InputEventSchema),
@@ -114,7 +114,8 @@ export const ExecutionTraceHeaderRecordSchema = Schema.Struct({
   kind: Schema.Literal("trace-header"),
   traceId: BoundedIdentifierSchema,
   sourceTraceId: BoundedIdentifierSchema,
-  schema: Schema.Struct({ id: BoundedIdentifierSchema, revision: NonNegativeSafeIntegerSchema }),
+  // Legacy producer metadata is read unchanged, never synthesized for new traces.
+  schema: Schema.Struct({ id: BoundedIdentifierSchema, revision: Schema.optional(NonNegativeSafeIntegerSchema) }),
   collection: CollectionSchema,
   scopes: Schema.Array(ScopeSchema),
 });

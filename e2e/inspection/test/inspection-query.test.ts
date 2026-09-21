@@ -15,6 +15,7 @@ const OPERATION_CATALOG = [
   "run.overview",
   "attempt.get",
   "attempt.assertion.detail",
+  "attempt.assertion.image",
   "attempt.trace",
   "attempt.trace.detail",
   "attempt.timing",

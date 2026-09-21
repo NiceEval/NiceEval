@@ -209,3 +209,9 @@ Contract: [docs/feature/experiments/README.md](../../../feature/experiments/READ
 Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
 
 外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。
+## 截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。 {#judge-image-material}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/judge/library.md](../../../feature/judge/library.md)
+
+截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。

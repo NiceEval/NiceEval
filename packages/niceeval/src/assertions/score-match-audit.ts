@@ -80,13 +80,37 @@ export interface ScoreMatchAuditV2 extends Omit<ScoreMatchAudit, "schemaVersion"
   readonly protocol: "niceeval.score-match-audit/v2";
   readonly calls: readonly TypeSafeAuditCall[];
 }
+export interface ScoreMatchAuditImage {
+  readonly imageId: string;
+  readonly evidenceIndex: number;
+  readonly mediaType: "image/png" | "image/jpeg";
+  readonly byteLength: number;
+  readonly sha256: string;
+  readonly paths: readonly string[];
+}
+export type ScoreMatchAuditCallV3 = Extract<ScoreMatchAuditCall, { readonly state: "rejected" }> | {
+  readonly ordinal: number;
+  readonly operation: ScoreMatchAuditCall["operation"];
+  readonly state: "admitted";
+  readonly requestTemplate: string;
+  readonly wireBody: { readonly byteLength: number; readonly sha256: string };
+  readonly attempts: readonly ScoreMatchAuditAttempt[];
+  readonly result: Extract<ScoreMatchAuditCall, { readonly state: "admitted" }>["result"];
+};
+export interface ScoreMatchAuditV3 extends Omit<ScoreMatchAudit, "schemaVersion" | "protocol" | "calls"> {
+  readonly schemaVersion: 3;
+  readonly protocol: "niceeval.score-match-audit/v3";
+  readonly images: readonly ScoreMatchAuditImage[];
+  readonly calls: readonly ScoreMatchAuditCallV3[];
+}
+export interface ScoreMatchAuditImageContent { readonly evidenceIndex: number; readonly mediaType: "image/png" | "image/jpeg"; readonly bytes: Uint8Array }
 export interface ScoreMatchAuditEnvelopeV2 extends Omit<ScoreMatchAuditEnvelope, "manifest"> {
   readonly manifest: Omit<ScoreMatchAuditEnvelope["manifest"], "schemaVersion" | "protocol"> & {
     readonly schemaVersion: 2;
     readonly protocol: "niceeval.score-match-audit/v2";
   };
 }
-export type ScoreMatchAuditAny = ScoreMatchAudit | ScoreMatchAuditV2;
+export type ScoreMatchAuditAny = ScoreMatchAudit | ScoreMatchAuditV2 | ScoreMatchAuditV3;
 export type ScoreMatchAuditReadResult =
   | { readonly state: "available"; readonly audit: ScoreMatchAuditAny }
   | { readonly state: "invalid" }
@@ -94,6 +118,7 @@ export type ScoreMatchAuditReadResult =
 
 const protocol = "niceeval.score-match-audit/v1" as const;
 const protocolV2 = "niceeval.score-match-audit/v2" as const;
+const protocolV3 = "niceeval.score-match-audit/v3" as const;
 const encoder = new TextEncoder();
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -476,22 +501,108 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+function validImages(value: unknown, input: string, contents: readonly ScoreMatchAuditImageContent[] | undefined): Map<string, { readonly descriptor: ScoreMatchAuditImage; readonly bytes: Uint8Array }> | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 4 || contents === undefined || contents.length !== value.length) return undefined;
+  const result = new Map<string, { readonly descriptor: ScoreMatchAuditImage; readonly bytes: Uint8Array }>();
+  const inputValue: unknown = JSON.parse(input);
+  let totalBytes = 0;
+  let referenceCount = 0;
+  const paths = new Set<string>();
+  for (let index = 0; index < value.length; index++) {
+    const item = exact(value[index], ["imageId", "evidenceIndex", "mediaType", "byteLength", "sha256", "paths"]);
+    const content = contents[index];
+    if (item === undefined || item.imageId !== `image-${index}` || item.evidenceIndex !== index || result.has(item.imageId) ||
+        (item.mediaType !== "image/png" && item.mediaType !== "image/jpeg") || !positiveInteger(item.byteLength, 4 * 1024 * 1024) ||
+        typeof item.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(item.sha256) || !Array.isArray(item.paths) || item.paths.length < 1 ||
+        content?.evidenceIndex !== index || content.mediaType !== item.mediaType || content.bytes.byteLength !== item.byteLength ||
+        new InspectionSha256().update(content.bytes).digestHex() !== item.sha256) return undefined;
+    const bytes = content.bytes;
+    const signature = item.mediaType === "image/png"
+      ? bytes.length >= 24 && [137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82].every((byte, offset) => bytes[offset] === byte)
+      : bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8;
+    if (!signature) return undefined;
+    for (const path of item.paths) {
+      if (typeof path !== "string" || path !== "" && !path.startsWith("/") || paths.has(path)) return undefined;
+      paths.add(path);
+      referenceCount += 1;
+      totalBytes += bytes.length;
+      if (referenceCount > 4 || totalBytes > 8 * 1024 * 1024) return undefined;
+      let pointed: unknown = inputValue;
+      for (const segment of (path === "" ? [] : path.slice(1).split("/")).map((part) => part.replace(/~1/gu, "/").replace(/~0/gu, "~"))) {
+        if (typeof pointed !== "object" || pointed === null || !(segment in pointed)) return undefined;
+        pointed = (pointed as Record<string, unknown>)[segment];
+      }
+      if (pointed !== `niceeval-image:${item.imageId}`) return undefined;
+    }
+    result.set(item.imageId, { descriptor: item as unknown as ScoreMatchAuditImage, bytes });
+  }
+  return result;
+}
+
+function validV3Call(value: unknown, ordinal: number, images: Map<string, { readonly descriptor: ScoreMatchAuditImage; readonly bytes: Uint8Array }>): boolean {
+  const item = record(value);
+  if (item?.state === "rejected") return validCall(value, ordinal);
+  const call = exact(value, ["ordinal", "operation", "state", "requestTemplate", "wireBody", "attempts", "result"]);
+  const wireBody = exact(call?.wireBody, ["byteLength", "sha256"]);
+  if (call === undefined || call.ordinal !== ordinal || call.state !== "admitted" || typeof call.requestTemplate !== "string" ||
+      wireBody === undefined || !positiveInteger(wireBody.byteLength, 12 * 1024 * 1024) || typeof wireBody.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(wireBody.sha256)) return false;
+  const request: unknown = JSON.parse(call.requestTemplate);
+  if (canonicalScoreMatchAuditJson(request) !== call.requestTemplate) return false;
+  const body = record(request);
+  if (body === undefined || !Array.isArray(body.messages) || body.messages.length !== 2) return false;
+  const user = exact(body.messages[1], ["role", "content"]);
+  if (user?.role !== "user" || !Array.isArray(user.content) || user.content.length < 1) return false;
+  const first = exact(user.content[0], ["type", "text"]);
+  if (first?.type !== "text" || typeof first.text !== "string") return false;
+  const parts: unknown[] = [{ type: "text", text: first.text }];
+  let imageBytes = 0;
+  if (user.content.length > 5) return false;
+  for (const raw of user.content.slice(1)) {
+    const part = exact(raw, ["type", "image_url"]);
+    const imageUrl = exact(part?.image_url, ["url"]);
+    if (part?.type !== "image_url" || typeof imageUrl?.url !== "string" || !imageUrl.url.startsWith("niceeval-image:")) return false;
+    const image = images.get(imageUrl.url.slice("niceeval-image:".length));
+    if (image === undefined) return false;
+    imageBytes += image.bytes.byteLength;
+    if (imageBytes > 8 * 1024 * 1024) return false;
+    parts.push({ type: "image_url", image_url: { url: `data:${image.descriptor.mediaType};base64,${base64Bytes(image.bytes)}` } });
+  }
+  const virtual = canonicalScoreMatchAuditJson({ ...body, messages: [body.messages[0], { role: "user", content: first.text }] });
+  const normalized = { ...call, request: virtual } as Record<string, unknown>;
+  delete normalized.requestTemplate;
+  delete normalized.wireBody;
+  if (!validCall(normalized, ordinal)) return false;
+  const actual = canonicalScoreMatchAuditJson({ ...body, messages: [body.messages[0], { role: "user", content: parts }] });
+  return utf8ByteLength(actual) === wireBody.byteLength && sha256(actual) === wireBody.sha256;
+}
+
+function base64Bytes(bytes: Uint8Array): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let result = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const block = (bytes[index]! << 16) | ((bytes[index + 1] ?? 0) << 8) | (bytes[index + 2] ?? 0);
+    result += alphabet[(block >>> 18) & 63] + alphabet[(block >>> 12) & 63] +
+      (index + 1 < bytes.length ? alphabet[(block >>> 6) & 63] : "=") + (index + 2 < bytes.length ? alphabet[block & 63] : "=");
+  }
+  return result;
+}
+
 /** Browser- and Node-neutral strict decoder for the complete managed ScoreMatch audit. */
-export function readScoreMatchAudit(value: unknown, expectedName?: string, expectedMeasurement?: number): ScoreMatchAuditReadResult {
+export function readScoreMatchAudit(value: unknown, expectedName?: string, expectedMeasurement?: number, imageContent?: readonly ScoreMatchAuditImageContent[]): ScoreMatchAuditReadResult {
   try {
     const outerRecord = record(value);
     const manifestRecord = record(outerRecord?.manifest);
     const version = manifestRecord?.schemaVersion;
-    if (typeof version === "number" && Number.isInteger(version) && version !== 1 && version !== 2) {
+    if (typeof version === "number" && Number.isInteger(version) && version !== 1 && version !== 2 && version !== 3) {
       return Object.freeze({ state: "unsupported", schemaVersion: version });
     }
-    const expectedProtocol = version === 2 ? protocolV2 : protocol;
-    if ((version === 1 || version === 2) && typeof manifestRecord?.protocol === "string" && manifestRecord.protocol !== expectedProtocol) {
+    const expectedProtocol = version === 3 ? protocolV3 : version === 2 ? protocolV2 : protocol;
+    if ((version === 1 || version === 2 || version === 3) && typeof manifestRecord?.protocol === "string" && manifestRecord.protocol !== expectedProtocol) {
       return Object.freeze({ state: "unsupported", schemaVersion: version });
     }
     const outer = exact(value, ["manifest", "content"]);
     const manifest = exact(outer?.manifest, ["schemaVersion", "protocol", "byteLength", "digest", "chunkByteLengths"]);
-    if (outer === undefined || manifest === undefined || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2) || manifest.protocol !== expectedProtocol || !Array.isArray(outer.content) || outer.content.length === 0 || !Array.isArray(manifest.chunkByteLengths) || manifest.chunkByteLengths.length !== outer.content.length || !positiveInteger(manifest.byteLength, 256 * 1024) || typeof manifest.digest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.digest)) return Object.freeze({ state: "invalid" });
+    if (outer === undefined || manifest === undefined || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) || manifest.protocol !== expectedProtocol || !Array.isArray(outer.content) || outer.content.length === 0 || !Array.isArray(manifest.chunkByteLengths) || manifest.chunkByteLengths.length !== outer.content.length || !positiveInteger(manifest.byteLength, 256 * 1024) || typeof manifest.digest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.digest)) return Object.freeze({ state: "invalid" });
     const chunks: string[] = [];
     for (let index = 0; index < outer.content.length; index += 1) {
       const chunk = outer.content[index];
@@ -503,13 +614,14 @@ export function readScoreMatchAudit(value: unknown, expectedName?: string, expec
     if (utf8ByteLength(content) !== manifest.byteLength || sha256(content) !== manifest.digest) return Object.freeze({ state: "invalid" });
     const parsed = JSON.parse(content) as unknown;
     if (canonicalScoreMatchAuditJson(parsed) !== content) return Object.freeze({ state: "invalid" });
-    const audit = exact(parsed, ["schemaVersion", "protocol", "definition", "input", "calls", "result"]);
+    const audit = exact(parsed, manifest.schemaVersion === 3 ? ["schemaVersion", "protocol", "definition", "input", "images", "calls", "result"] : ["schemaVersion", "protocol", "definition", "input", "calls", "result"]);
     const definition = exact(audit?.definition, ["name", "version", "config", "digest", "limits"]);
     const limits = exact(definition?.limits, ["maxCalls", "maxMaterialBytes", "maxAuditBytes"]);
     if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.name) || !text(definition.version) || expectedName !== undefined && definition.name !== expectedName || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || !positiveInteger(limits.maxMaterialBytes, 48 * 1024) || !positiveInteger(limits.maxAuditBytes, 256 * 1024) || manifest.byteLength > limits.maxAuditBytes) return Object.freeze({ state: "invalid" });
     const configValue = JSON.parse(definition.config);
     if (canonicalScoreMatchAuditJson(configValue) !== definition.config || definition.digest !== scoreMatchDefinitionDigest({ name: definition.name, version: definition.version, config: definition.config, limits: limits as unknown as ScoreMatchAudit["definition"]["limits"] })) return Object.freeze({ state: "invalid" });
-    if (typeof audit.input !== "string" || utf8ByteLength(audit.input) > limits.maxMaterialBytes || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : !validTypeSafeCall(call, index + 1))) return Object.freeze({ state: "invalid" });
+    const images = manifest.schemaVersion === 3 ? validImages(audit.images, audit.input as string, imageContent) : undefined;
+    if (typeof audit.input !== "string" || utf8ByteLength(audit.input) > limits.maxMaterialBytes || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || manifest.schemaVersion === 3 && images === undefined || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : manifest.schemaVersion === 2 ? !validTypeSafeCall(call, index + 1) : !validV3Call(call, index + 1, images!))) return Object.freeze({ state: "invalid" });
     const result = record(audit.result);
     const validResult = result?.state === "measured"
       ? exact(result, ["state", "value"]) !== undefined && unit(result.value) && (expectedMeasurement === undefined || Object.is(result.value, expectedMeasurement))

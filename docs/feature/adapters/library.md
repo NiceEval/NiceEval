@@ -178,7 +178,7 @@ type TraceJson = null | boolean | number | string
 
 interface ExecutionTraceInput {
   readonly traceId: string;
-  readonly schema: { readonly id: string; readonly revision: number };
+  readonly schema: { readonly id: string };
   readonly collection: {
     readonly state: "complete" | "partial";
     readonly limitations: readonly { readonly code: string; readonly message: string }[];
@@ -224,8 +224,13 @@ interface ExecutionTraceReceipt {
 }
 ```
 
-`schema.id`、`revision` 和事件 `type` 标识领域格式。NiceEval 验证封闭 envelope 与有限 plain JSON，
+`schema.id` 和事件 `type` 标识领域格式，Adapter 不提交 `schema.revision`。NiceEval 验证封闭 envelope 与有限 plain JSON，
 领域负载校验由 Adapter 的 parser 负责；未知领域仍可用通用展示读取，无需注册每种事件或运行作者代码。
+
+框架自行管理 Record 格式版本。历史 Record 中已有的领域 `schema.revision` 原样只读保留；缺失时不补值，新写入只包含 `id`。
+升级后的输入校验拒绝旧调用中多余的 `revision`，但不影响读取历史 Record。旧包不保证能读取新包写入的轨迹；
+旧 reader 的完整性错误不能据此证明新文件损坏，降级包版本不构成完整回滚方案。
+
 泛型事件声明应保留 `type` 与 `payload` 的判别联合。JSON 不接受非有限数、循环、accessor、class 或隐式 `toJSON`。
 
 展示顺序固定为接纳快照的事件顺序，不构成因果证明。`source.sequence` 是非负安全整数，不要求连续或全局唯一。

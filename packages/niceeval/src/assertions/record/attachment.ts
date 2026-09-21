@@ -1,4 +1,5 @@
 import { Result, Schema, Stream } from "effect";
+import { readJudgeImage } from "../../judge/image.ts";
 import type { RecordBytesContentHandle } from "../../record/attachment/content.ts";
 import type {
   AttachedRecordContent,
@@ -377,6 +378,11 @@ function encodeMaterial(
   material: AssertionMaterial,
 ): AssertionMaterialInput<never, never> {
   switch (material.kind) {
+    case "judge-image": {
+      const body = readJudgeImage(material.image).body;
+      return Object.freeze({ kind: "content" as const, source: Stream.succeed(body), encoding: "binary" as const,
+        byteLength: body.byteLength, preview: null });
+    }
     case "snapshot": {
       const value = encodeSnapshotValue(material.value);
       const bytes = new TextEncoder().encode(JSON.stringify(value));

@@ -52,6 +52,38 @@ export default defineEval({
 
 `t.closeQA` 在登记时快照显式材料，`.gate(0.8)` 在同一 `MeasurementAssertionHandle` 上形成条件并参与通过制判定。它等价于 `t.check(material, closeQA())`，不会创建第二条 Assertion。
 
+## 附加图片材料
+
+只有判据确实需要图片时才附图。沿用同一个 `defineJudge` 和 `t.judge`，不用增加第二个裁判或评分门槛。
+先在现有聊天 Provider 配置中设置 `supportsImages: true`，并将 `model` 换成支持图片及工具调用的模型。`TypesafeProvider` 不支持图片。
+
+下面的 Eval 读取应用已经保存的 `screenshot.png`，不会因评估重新生成截图：
+
+```ts
+import { readFile } from "node:fs/promises";
+import { defineEval, defineJudge } from "niceeval";
+import { judgeImage } from "niceeval/judge";
+
+const actionQuality = defineJudge({
+  name: "action-quality",
+  rubric: "根据已知事实评价行为是否合理；图片仅作为补充，不推断画面外的行为。",
+});
+
+export default defineEval({
+  async test(t) {
+    const screenshot = judgeImage({
+      body: await readFile("screenshot.png"),
+      mediaType: "image/png",
+    });
+    t.judge({ action: "角色完成搬运", screenshot }, actionQuality).gate(0.8);
+  },
+});
+```
+
+图片必须是 PNG 或 JPEG，每张最多 4 MiB；超限或头部无效会在发送前拒绝。不要传路径、URL 或普通 base64 字符串来代替图片。
+
+封存后，`attempt.assertion.detail` 给出图片的稳定 `imageId` 与摘要。用固定 query 操作 `attempt.assertion.image`，传入同一 Attempt 的 `entryId` 和 `imageId`，即可分页读取原图；`offset` 是字节偏移，`limit` 最多 256 KiB。它读取 Record 中的证据，不会重新访问文件或调用模型。
+
 ## 运行并查看
 
 确保现有 Experiment 的 `evals` 包含 `judge-smoke`，再运行：

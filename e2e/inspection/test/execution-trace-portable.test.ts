@@ -29,6 +29,7 @@ test.concurrent("通用轨迹随 Record 搬迁后仍可精确展开摘要之外�
     expect(outline.exitCode, outline.diagnostic()).toBe(0);
     const trace = outline.querySuccess("attempt.trace").trace;
     expect(trace.execution.state).toBe("complete");
+    expect(only(trace.execution.traces, () => true, outline.diagnostic()).schema).toEqual({ id: "example.simulation" });
     expect(trace.execution.events[0]).toMatchObject({ summary: "Observed event 0", actor: { id: "actor-a", label: "Courier" } });
     expect(trace.execution.events).toHaveLength(32);
     expect(trace.execution.omittedEventCount).toBe(9_971);
@@ -91,6 +92,7 @@ test.concurrent("通用轨迹随 Record 搬迁后仍可精确展开摘要之外�
     const conversationPage = await niceeval.run(["query", "run", "--record", portable, "--request", request]);
     expect(conversationPage.exitCode, conversationPage.diagnostic()).toBe(0);
     const firstConversation = conversationPage.querySuccess("attempt.trace").trace.execution;
+    expect(firstConversation.traces.every((item) => !("revision" in item.schema))).toBe(true);
     expect(firstConversation.events).toHaveLength(32);
     expect(firstConversation.hasMore).toBe(true);
     expect(firstConversation.continuation).toBeTypeOf("string");
@@ -122,5 +124,10 @@ test.concurrent("通用轨迹随 Record 搬迁后仍可精确展开摘要之外�
     const conversationDetail = await niceeval.run(["query", "run", "--record", portable, "--request", request]);
     expect(conversationDetail.exitCode, conversationDetail.diagnostic()).toBe(0);
     expect(conversationDetail.querySuccess("attempt.trace.detail").detail.kind).toBe("item");
+    const legacyInput = await niceeval.run(["exp", "execution-trace", "--rerun", "all", "--json"], {
+      env: { ...process.env, NICEEVAL_E2E_LEGACY_TRACE_REVISION: "7" },
+    });
+    expect(legacyInput.exitCode, legacyInput.diagnostic()).toBe(1);
+    expect(legacyInput.stdout).toContain("Execution trace envelope is invalid");
   });
 });

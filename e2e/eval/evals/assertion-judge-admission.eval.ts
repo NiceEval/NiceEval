@@ -1,5 +1,7 @@
 import { defineJudge } from "niceeval";
 import { equals } from "niceeval/expect";
+import { judgeImage } from "niceeval/judge";
+import { screenshotBytes } from "../fixtures/judge-image.ts";
 import { markerApplication } from "./assertion-judge-fake.eval.ts";
 
 const quality = defineJudge({ name: "admission-quality", rubric: "The text is useful.", maxMaterialBytes: 128 });
@@ -33,8 +35,34 @@ export default markerApplication.defineEval({
     let foreignSugarRejected = false;
     try { t.judge(material, foreign); }
     catch (error) { foreignSugarRejected = error instanceof TypeError; }
-    t.check({ rejected, sugarRejected, accessorCalls, reflected, foreignRejected, foreignSugarRejected }, equals({
+    const imageBytes = screenshotBytes();
+    const zeroWidth = imageBytes.slice();
+    zeroWidth.fill(0, 16, 20);
+    const tooManyPixels = imageBytes.slice();
+    new DataView(tooManyPixels.buffer).setUint32(16, 16_777_217);
+    const imageInputs: unknown[] = [
+      { body: new Uint8Array(4 * 1024 * 1024 + 1), mediaType: "image/png" },
+      { body: imageBytes, mediaType: "image/jpeg" },
+      { body: imageBytes.subarray(0, 12), mediaType: "image/png" },
+      { body: imageBytes.subarray(0, 24), mediaType: "image/png" },
+      { body: new Uint8Array([255, 216, 255, 192, 0, 7, 8, 0, 1, 0, 1]), mediaType: "image/jpeg" },
+      { body: zeroWidth, mediaType: "image/png" },
+      { body: tooManyPixels, mediaType: "image/png" },
+      { body: imageBytes, mediaType: "image/svg+xml" },
+      { get body() { accessorCalls += 1; return imageBytes; }, mediaType: "image/png" },
+    ];
+    const imagesRejected = imageInputs.map((value) => {
+      try { judgeImage(value as Parameters<typeof judgeImage>[0]); return false; }
+      catch (error) { return error instanceof TypeError; }
+    });
+    const imageQuality = defineJudge({ name: "image-admission", rubric: "Assess only supplied evidence." });
+    let repeatedImagesRejected = false;
+    const image = judgeImage({ body: imageBytes, mediaType: "image/png" });
+    try { t.judge({ images: [image, image, image, image, image] }, imageQuality); }
+    catch (error) { repeatedImagesRejected = error instanceof TypeError; }
+    t.check({ rejected, sugarRejected, accessorCalls, reflected, foreignRejected, foreignSugarRejected, imagesRejected, repeatedImagesRejected }, equals({
       rejected: Array(12).fill(true), sugarRejected: Array(12).fill(true), accessorCalls: 0, reflected: 0, foreignRejected: true, foreignSugarRejected: true,
+      imagesRejected: Array(9).fill(true), repeatedImagesRejected: true,
     })).gate().label("Judge admission is atomic");
   },
 });

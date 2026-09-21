@@ -374,7 +374,7 @@ function projectAgentItemsAsExecution(
           kind: "trace-header" as const,
           traceId,
           sourceTraceId: sourceId,
-          schema: Object.freeze({ id: sourceId, revision: NiceEvalCurrentRecordAttachments.agentTurns.revision }),
+          schema: Object.freeze({ id: sourceId }),
           collection: state === "complete"
             ? Object.freeze({ state: "complete" as const, limitations: [] as const })
             : Object.freeze({
