@@ -180,3 +180,9 @@ init 生成与安装版本一致的 query、show 与 view 指引，用户可从�
 Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
 
 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。
+## 无 Sandbox 的公开 CLI 中断反馈使用中性提示，保留 interrupted 终态与退出码。 {#cli-interrupt-feedback}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/experiments/cli.md#结束反馈与-receipt](../../../feature/experiments/cli.md#结束反馈与-receipt)
+
+无 Sandbox 的公开 CLI 中断反馈使用中性提示，保留 interrupted 终态与退出码。

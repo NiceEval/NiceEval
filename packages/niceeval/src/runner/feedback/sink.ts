@@ -301,7 +301,7 @@ export function reportInterrupted(): void {
     sink.interrupted();
     return;
   }
-  writeStderrLine(`  · interrupted: sandbox containers cleaned up; printing partial results completed so far.
+  writeStderrLine(`  · interrupted: printing partial results completed so far.
 `);
 }
 

@@ -330,7 +330,7 @@ export function renderDurableLines(
         `! ${`budget exhausted for ${event.experimentId} (spent ${event.spent.toFixed(2)}, unstarted ${event.unstarted})`}`,
       ];
     case "interrupted":
-      return [`  · interrupted: sandbox containers cleaned up; printing partial results completed so far.
+      return [`  · interrupted: printing partial results completed so far.
 `.trimEnd()];
     case "reporter-error":
       return [`  · [diagnostic] ${event.reporter} failed (ignored): ${event.message}
@@ -578,7 +578,7 @@ function buildSummaryLines(
     {
       kind: "line",
       text: hasScore && !hasPass
-        ? `${scored} scored · ${summary.failed} failed · ${summary.skipped} skipped · ${summary.errored} errored  (${state.reused} reused)`
+        ? `${scored} scored · ${summary.failed} failed · ${summary.skipped} skipped · ${summary.errored} errored${completion.unstarted > 0 ? ` · ${completion.unstarted} not started` : ""}  (${state.reused} reused)`
         : completion.unstarted > 0
           ? `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored · ${completion.unstarted} unstarted  (${state.reused} reused)`
           : fullReuse
@@ -683,8 +683,8 @@ function buildSummaryLines(
 
 /**
  * `FAILURES` 面板的内容:未通过的 attempt 按失败形态分组(见 cli.md「人看的结束反馈」)。
- * `failed` 的组 key 是主失败断言的标题 + 检查方式,`errored`(没有主断言摘要的结构化执行错误)
- * 的组 key 是 `phase · code`;`received`/message 各条不同,不进 key 也不进组行。size > 1 的组
+ * `failed` 的组 key 是主失败断言的标题 + 检查方式；`errored` 按 locator 逐条保留消息。
+ * 分组条目数不是错误种类数。size > 1 的断言组
  * 只占一行(右对齐 `×N` + 形态摘要 + 组内首现的代表 locator);size = 1 的组展开成身份行 +
  * 悬挂的单行压缩摘要两行。组按条数降序,超过 `FAILURE_GROUPS_CAP` 收进尾行。
  */
@@ -715,10 +715,10 @@ function buildFailuresPanelRows(
   if (omitted > 0) {
     rows.push({
       kind: "line",
-      text: `+${omitted} more kinds — niceeval view`,
+      text: `+${omitted} more entries — niceeval view`,
     });
   }
-  return { rows, meta: `${failures.length} total · ${groups.length} kinds` };
+  return { rows, meta: `${failures.length} total · ${groups.length} entries` };
 }
 
 /** 一个失败形态组:同一 key 下的全部失败共享同一条 `shapeText`(已经剥掉 `received`/message
@@ -845,6 +845,7 @@ function buildReceiptLines(
 
 function boundedHumanError(message: string): string {
   const safe = stripControl(message).replace(/\s+/gu, " ").trim();
+  if (utf8Bytes(safe) <= HUMAN_ERROR_TEXT_MAX_BYTES) return safe;
   const signalIndexes = [
     safe.search(/\b[1-5]\d{2}\s+[A-Z][A-Za-z -]{2,40}(?:\s+[—·:-]\s+[A-Z][A-Z0-9_-]+)?/u),
     safe.search(/\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,}\b/u),

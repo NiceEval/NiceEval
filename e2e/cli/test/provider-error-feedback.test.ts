@@ -18,6 +18,16 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details [n
     "provider-error-feedback",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
+      const shortError = await niceeval.run(["exp", "short-error", "--rerun", "all"]);
+      expect(shortError.exitCode, shortError.diagnostic()).toBe(1);
+      expect(shortError.stderr).toBe("");
+      const shortOutput = shortError.stdout.replace(/\s+/gu, " ");
+      const shortFailures = shortOutput.slice(shortOutput.indexOf("FAILURES"));
+      expect.soft(shortFailures, shortError.diagnostic()).toContain("error: Missing API_KEY; configure the provider before running");
+      expect.soft(shortFailures).toContain("2 total · 2 entries");
+      expect.soft(shortFailures.match(/error:/gu)).toHaveLength(2);
+      expect.soft(shortOutput).toContain("0 scored · 0 failed · 0 skipped · 2 errored · 1 not started");
+
       const fakeBin = join(paths.projectRoot, "fixtures/provider-error-sandbox/bin");
       const result = await niceeval.run(
         ["exp", "provider-error", "--rerun", "all"],
@@ -60,7 +70,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details [n
       const listed = await niceeval.run(["query", "run", "--request", listRequest]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
       const runIds = listed.runsList().selection.selectedRunIds;
-      expect(runIds).toHaveLength(4);
+      expect(runIds).toHaveLength(5);
       const summaries = await Promise.all(runIds.map(async (runId, index) => {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
           kind: "run.summary", runId,
@@ -72,7 +82,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details [n
       expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.summary", issues: [] })]));
       const errorLocators = summaries.flatMap(({ summary }) => summary.members)
         .flatMap(({ locator, state }) => locator !== null && state === "executed" ? [locator] : []);
-      expect(errorLocators).toHaveLength(2);
+      expect(errorLocators).toHaveLength(4);
       for (const [index, locator] of errorLocators.entries()) {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
           kind: "attempt.trace", locator,
@@ -81,7 +91,7 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details [n
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
-        expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden/u);
+        expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden|Missing API_KEY/u);
       }
 
       const judge = await niceeval.run(
