@@ -118,8 +118,8 @@ importers:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
       ignore:
-        specifier: 7.0.6
-        version: 7.0.6
+        specifier: 7.0.9
+        version: 7.0.9
       tar-stream:
         specifier: ^3.1.7
         version: 3.2.0
@@ -3213,6 +3213,10 @@ packages:
 
   ignore@7.0.6:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
+    engines: {node: '>= 4'}
+
+  ignore@7.0.9:
+    resolution: {integrity: sha512-brTTsvFRt5C1gGHtPst/281UjPD5t9fBqbgoMPlVWy11ZLTPfu7HxK4ZYqO9H7o/yC9rSTCI85EaQ4OoY12qYw==}
     engines: {node: '>= 4'}
 
   immer@11.1.18:
@@ -7234,6 +7238,8 @@ snapshots:
   ignore@7.0.5: {}
 
   ignore@7.0.6: {}
+
+  ignore@7.0.9: {}
 
   immer@11.1.18: {}
 
