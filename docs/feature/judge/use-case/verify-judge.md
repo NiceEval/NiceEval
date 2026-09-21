@@ -4,19 +4,26 @@ kind: use-case
 relations: {}
 ---
 
-# Judge：接上兼容网关并确认真实评估
+# Judge：选择 Provider 并确认真实评估
 
-把 endpoint、model 和 credential selector 写进可签入配置。key 只来自进程变量：
+从 `niceeval/judge` 导入具名工厂，把服务、model、endpoint 和 credential selector 绑定为一个 Provider。
+key 只来自进程变量：
 
 ```ts
+import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
+
 export default defineConfig({
-  judgeRuntime: {
+  judgeRuntime: OpenAIProvider({
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
-  },
+  }),
 });
 ```
+
+Vercel AI Gateway 改用 `VercelProvider`，OpenRouter 改用 `OpenRouterProvider`，TypeSafe System One 改用
+`TypesafeProvider`。它们都从 `niceeval/judge` 导出；不依靠 hostname、模型名或已存在的 key 猜测服务。
 
 写一个声明评分标准的 Pass Eval。材料使用应用语义明确的字段，最低值由同一 Assertion handle 声明：
 
@@ -27,7 +34,7 @@ const expressesSuccess = defineJudge({
 });
 
 export default defineEval({
-  judge: { model: "judge-model" },
+  judge: "judge-model",
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
@@ -44,5 +51,5 @@ export default defineEval({
 调用完成后，View 或固定 query 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
 裁剪后的材料。网络调用失败为 `unavailable`，无效响应为 evaluator `errored`；二者都不会显示为 `0`。
 
-开发机没有 model 或 key 时不会发出网络请求。结果保留 `judge-model-unresolved` 或
+开发机没有 Provider 或 key 时不会发出网络请求。结果保留 `judge-provider-unresolved` 或
 `judge-key-unresolved`，让读者区分配置缺失与被测对象质量。

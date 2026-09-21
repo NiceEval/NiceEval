@@ -200,6 +200,15 @@ export function reportDiagnostic(input: DiagnosticInput): void {
   writeStderrLine(input.message.endsWith("\n") ? input.message : `${input.message}\n`);
 }
 
+/**
+ * Error-assistance diagnostics are optional presentation enrichment. Library
+ * calls without an active CLI/Host coordinator must stay silent: the owning
+ * typed failure or Attempt fact remains the authoritative outcome.
+ */
+export function reportAssistedDiagnostic(input: DiagnosticInput): void {
+  current()?.diagnostic(input);
+}
+
 /** 一次失败/errored attempt 的永久通知(见 `FailureInput`)。与 `reportDiagnostic` 同级别的
  *  「必须留痕」信号 —— 没有活跃 coordinator 时退回一行 stderr,不像 `reportAttemptLifecycle`
  *  那样静默丢弃(定位一次真实失败不该因为没接 coordinator 就彻底没有出口)。 */

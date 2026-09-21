@@ -77,7 +77,6 @@ export type {
   ExperimentHookContext,
   Config,
   LocalizedText,
-  JudgeConfig,
   Reporter,
   ReporterEvent,
   EvalResult,
@@ -128,3 +127,6 @@ export type { ParsedTranscript } from "./o11y/parsers/index.ts";
 
 export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
 export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
+
+export type { JudgeProvider, JudgeSelection } from "./judge/index.ts";
+export { MigrationRequiredError, type MigrationOccurrence, type ErrorSource } from "./error-assistance/index.ts";

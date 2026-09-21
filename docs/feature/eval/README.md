@@ -29,8 +29,8 @@ export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
-  judge?: JudgeConfig;
-  // 为这道题指定 Judge 模型配置；指定字段优先于项目默认值
+  judge?: JudgeSelection;
+  // 为这道题指定模型字符串或整个 Judge Provider
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
   //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 模型字段按层求值
@@ -51,8 +51,9 @@ export default defineEval({
 `timeoutMs` 是这条 eval 自己对运行条件的声明。项目级配置是 `timeoutMs` 没写时的默认出处，压不掉 eval 写下的值。
 `timeoutMs` 可由 experiment 或 `--timeout` 设置替换。
 
-`judge` 是这条 Eval 的 Judge 模型配置，不是评分定义的允许列表。指定字段优先于项目默认值；Experiment 可进一步替换。每个字段按
-`Experiment.judgeRuntime → Eval.judge → Config.judgeRuntime → 内置默认` 求值；`undefined` 继续继承。
+`judge` 是这条 Eval 的 Judge 选择，不是评分定义的允许列表。
+模型字符串只替换已选 Provider 的模型；完整 Provider 替换服务、端点、凭据声明位置和执行限制。
+配置求值从 `Config.judgeRuntime` 开始，再应用 `Eval.judge` 和 `Experiment.judgeRuntime`。
 
 Eval 创建时冻结自己写下的配置。`defineJudge`、现成裁判与自定义受管 `ScoreMatch` 都能经 `t.check()` 登记，
 不需要先在 Eval 上登记实例。

@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
@@ -36,11 +38,11 @@ async function close(server: ReturnType<typeof createServer>) {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-test.concurrent("Judge 配置逐字段继承并按 Eval 与 Experiment 覆盖 [necase_SBN2ZSD6AQ22YFAE]", async () => {
+test.concurrent("Judge Provider 整体替换并支持 Eval 与 Experiment 模型覆盖 [necase_SBN2ZSD6AQ22YFAE]", async () => {
   const { server, requests } = provider();
   const baseUrl = await listen(server);
   try {
-    await evalE2E.case("judge-configuration", async ({ commands: { niceeval } }) => {
+    await evalE2E.case("judge-configuration", async ({ commands: { niceeval }, paths: { projectRoot } }) => {
       const env = { ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl, NICEEVAL_E2E_JUDGE_KEY: "configuration-fixture-key" };
       const inherited = await niceeval.run(["exp", "judge-configuration", "--rerun", "all", "--json"], { env });
       expect(inherited.exitCode, inherited.diagnostic()).toBe(0);
@@ -58,6 +60,24 @@ test.concurrent("Judge 配置逐字段继承并按 Eval 与 Experiment 覆盖 [n
       expect(requests.sort((a, b) => a.tokens - b.tokens)).toEqual([
         { model: "experiment-specific-model", tokens: 128, authorization: "Bearer configuration-fixture-key" },
         { model: "experiment-specific-model", tokens: 256, authorization: "Bearer configuration-fixture-key" },
+      ]);
+      requests.length = 0;
+      await writeFile(join(projectRoot, ".env"), "OPENROUTER_API_KEY=dotenv-router-key\n");
+      await writeFile(join(projectRoot, "experiments", "judge-configuration-experiment.ts"), `
+import { defineExperiment } from "niceeval";
+import { OpenRouterProvider } from "niceeval/judge";
+import { configurationApplication } from "../evals/judge-configuration.eval.ts";
+export default defineExperiment({
+  adapter: configurationApplication,
+  judgeRuntime: OpenRouterProvider({ model: "router-model", baseUrl: process.env.NICEEVAL_E2E_JUDGE_BASE_URL }),
+  evals: ["judge-configuration/inherited", "judge-configuration/overridden"],
+});
+`);
+      const replaced = await niceeval.run(["exp", "judge-configuration-experiment", "--rerun", "all", "--json"], { env });
+      expect(replaced.exitCode, replaced.diagnostic()).toBe(0);
+      expect(requests).toEqual([
+        { model: "router-model", tokens: 1024, authorization: "Bearer dotenv-router-key" },
+        { model: "router-model", tokens: 1024, authorization: "Bearer dotenv-router-key" },
       ]);
     });
   } finally { await close(server); }
@@ -99,6 +119,15 @@ test.concurrent("已配置模型缺少 Judge 凭据时不发送请求 [necase_HK
         const entry = assertionEntry(detail.document, detail.receipt.diagnostic());
         expect(entry.scoreMatchAudit).toMatchObject({ state: "available", audit: { result: { state: "unavailable", code: "judge-key-unresolved" } } });
       }
+      expect(requests).toEqual([]);
+      const human = await niceeval.run(["exp", "judge-configuration", "--rerun", "all"], {
+        env: { ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl, NICEEVAL_E2E_JUDGE_KEY: "", NO_COLOR: "1" },
+      });
+      expect(human.exitCode, human.diagnostic()).toBe(1);
+      const output = human.stdout + human.stderr;
+      expect(output).toContain("judge-key-unresolved");
+      expect(output).toContain("NICEEVAL_E2E_JUDGE_KEY");
+      expect(output).toMatch(/judge-key-unresolved\s*[×x(]\s*2/u);
       expect(requests).toEqual([]);
     });
   } finally { await close(server); }

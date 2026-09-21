@@ -478,7 +478,7 @@ function preimageForJournal(snapshot: FileSnapshot): FileJournal["preimage"] {
   };
 }
 
-function manifest(root: string, operation: string): readonly ManifestEntry[] | undefined {
+export function traceDirectoryManifest(root: string, operation: string): readonly ManifestEntry[] | undefined {
   if (!existsSync(root)) return undefined;
   const entries: ManifestEntry[] = [];
   const visit = (absolute: string, path: string): void => {
@@ -593,7 +593,7 @@ function discardStage(root: string, directory: string, journal: DirectoryJournal
   const stage = repositoryPath(root, journal.stage, "recover");
   const target = repositoryPath(root, journal.target, "recover");
   if (existsSync(target)) throw new TraceRecoveryConflict({ path: journal.target, message: "target reappeared while discarding stage" });
-  const current = manifest(stage, "recover");
+  const current = traceDirectoryManifest(stage, "recover");
   if (!manifestIsSubset(current, journal.manifest)) throw new TraceRecoveryConflict({ path: journal.stage, message: "discarding stage is not an exact remaining subset of its manifest" });
   if (current !== undefined) {
     const ordered = [...current].sort((left, right) => {
@@ -678,8 +678,8 @@ function recoverDirectoryJournal(root: string, directory: string, journal: Direc
     discardStage(root, directory, journal);
     return { format: "niceeval.docs-trace/recovery/v1", operation: "trace-recover", recovered: true, action: "finished-discard", owner: journal.owner, generation };
   }
-  const stageManifest = manifest(stage, "recover");
-  const targetManifest = manifest(target, "recover");
+  const stageManifest = traceDirectoryManifest(stage, "recover");
+  const targetManifest = traceDirectoryManifest(target, "recover");
   if (generation === journal.newGeneration) {
     if (stageManifest !== undefined || !sameManifest(targetManifest, journal.manifest)) throw new TraceRecoveryConflict({ path: journal.target, message: "committed directory publication no longer matches its journal" });
     removeJournal(directory);
@@ -798,7 +798,7 @@ function publishJournal(root: string, journal: PublicationJournal): void {
   }
   const stage = repositoryPath(root, journal.stage, journal.operation);
   const target = repositoryPath(root, journal.target, journal.operation);
-  if (!sameManifest(manifest(stage, journal.operation), journal.manifest) || existsSync(target)) throw mutationFailure(journal.operation, "preimage", "stage or target changed immediately before atomic rename", journal.target);
+  if (!sameManifest(traceDirectoryManifest(stage, journal.operation), journal.manifest) || existsSync(target)) throw mutationFailure(journal.operation, "preimage", "stage or target changed immediately before atomic rename", journal.target);
   renameSync(stage, target);
   fsyncDirectory(dirname(target));
 }
@@ -809,8 +809,8 @@ function committedJournalState(root: string, directory: string, journal: Publica
     return fileSnapshotMatches(readFileSnapshot(repositoryPath(root, journal.owner, "recover-after-failure"), "recover-after-failure"), journal.planned) &&
       readFileSnapshot(repositoryPath(root, journal.temporary, "recover-after-failure"), "recover-after-failure").kind === "absent";
   }
-  return manifest(repositoryPath(root, journal.stage, "recover-after-failure"), "recover-after-failure") === undefined &&
-    sameManifest(manifest(repositoryPath(root, journal.target, "recover-after-failure"), "recover-after-failure"), journal.manifest);
+  return traceDirectoryManifest(repositoryPath(root, journal.stage, "recover-after-failure"), "recover-after-failure") === undefined &&
+    sameManifest(traceDirectoryManifest(repositoryPath(root, journal.target, "recover-after-failure"), "recover-after-failure"), journal.manifest);
 }
 
 function safelyCommittedJournalState(root: string, directory: string, journal: PublicationJournal): boolean {
@@ -885,7 +885,7 @@ export function mutateTraceOwner<A, Changes, E, R>(
       const stage = repositoryPath(options.root, options.publication.stagePath, options.operation);
       const target = repositoryPath(options.root, options.publication.targetPath, options.operation);
       if (existsSync(target)) return yield* mutationFailure(options.operation, "preimage", "directory publication target already exists", options.publication.targetPath);
-      const plannedManifest = manifest(stage, options.operation);
+      const plannedManifest = traceDirectoryManifest(stage, options.operation);
       if (plannedManifest === undefined) return yield* mutationFailure(options.operation, "preimage", "directory publication stage is missing", options.publication.stagePath);
       if (options.publication.expectedManifest !== undefined &&
         !sameManifest(plannedManifest, options.publication.expectedManifest)) {
@@ -912,7 +912,7 @@ export function mutateTraceOwner<A, Changes, E, R>(
       if (!fileSnapshotMatches(confirmedOwner, journal.publication === "file-replace" ? journal.preimage : { kind: "absent" })) return yield* mutationFailure(options.operation, "preimage", "owner changed after journal fsync", options.ownerPath);
       if (headCommit(options.root, options.operation) !== head || indexEntry(options.root, options.ownerPath, options.operation) !== index) return yield* mutationFailure(options.operation, "preimage", "HEAD or owner Git index entry changed after journal fsync", options.ownerPath);
       verifyAdditionalPreimages(options.operation, preparation.preimages ?? []);
-      if (journal.publication !== "file-replace" && !sameManifest(manifest(repositoryPath(options.root, journal.stage, options.operation), options.operation), journal.manifest)) {
+      if (journal.publication !== "file-replace" && !sameManifest(traceDirectoryManifest(repositoryPath(options.root, journal.stage, options.operation), options.operation), journal.manifest)) {
         return yield* mutationFailure(options.operation, "preimage", "directory manifest changed after journal fsync", journal.stage);
       }
       yield* Effect.try({ try: () => publishJournal(options.root, journal), catch: (cause) => cause instanceof TraceMutationError ? cause : mutationFailure(options.operation, "publish", cause, options.ownerPath) });

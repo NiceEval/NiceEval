@@ -180,3 +180,9 @@ init 生成与安装版本一致的 query、show 与 view 指引，用户可从�
 Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
 
 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。
+## 旧 Judge 配置在模块加载阶段拒绝执行，显示准确位置与一次离线英文指南，且不创建 Invocation。 {#judge-provider-migration}
+
+<!-- niceeval.e2e-owner-contract/v1 -->
+Contract: [docs/feature/error-assistance/use-case/migrate-judge-provider.md](../../../feature/error-assistance/use-case/migrate-judge-provider.md)
+
+旧 Judge 配置在模块加载阶段拒绝执行，显示准确位置与一次离线英文指南，且不创建 Invocation。

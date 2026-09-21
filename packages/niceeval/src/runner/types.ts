@@ -13,13 +13,13 @@ import type { BuildKey } from "../sandbox/identity.ts";
 import type {
   EvaluationFactResult,
   DiffArtifact,
-  JudgeConfig,
   ResolvedJudgeConfig,
   PrimaryFactSummary,
   ScoreFactAttemptOutcome,
   ScoreFactUseResult,
   VerdictFactUseResult,
 } from "../assertions/types.ts";
+import type { JudgeProvider, JudgeProviderIdentity, JudgeSelection } from "../judge/provider.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../attempt-locator.ts";
@@ -57,7 +57,7 @@ export interface ExperimentRunInfo {
   /** 跨 Invocation 共享外部状态的互斥声明；只记录稳定、非凭据 key。 */
   sharedState?: SharedStateConfig;
   /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
-  judgeRuntime?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs" | "maxOutputTokens">;
+  judgeRuntime?: JudgeProviderIdentity;
   /**
    * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
    * 实际 artifact digest/platform 属运行 provenance，不进入这里。
@@ -697,8 +697,8 @@ export interface EvalAuthorFields {
   sandbox?: SandboxLayer;
   /** 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。 */
   plugins?: readonly PluginInstance<"eval">[];
-  /** 本 Eval 的 Judge Runtime 字段级覆盖；Experiment 与项目 Config 可补齐未声明字段。 */
-  judge?: JudgeConfig;
+  /** 模型字符串只替换项目 Judge Provider 的模型；Provider 实例整体替换。Experiment 设置优先。 */
+  judge?: JudgeSelection;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
@@ -751,7 +751,7 @@ export interface EvalDefinitionFields<
    */
   readonly sandbox?: Sandbox;
   readonly plugins: readonly PluginInstance<"eval">[];
-  readonly judge?: JudgeConfig;
+  readonly judge?: JudgeSelection;
   readonly reporters: readonly Reporter[];
   readonly timeoutMs?: number;
   readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
@@ -938,7 +938,7 @@ export interface ExperimentAuthorFields {
    * rubric 由 Match 拥有，材料与消费阈值由 Assertion 提供。各字段按
    * Experiment → Eval → Config → 内置默认值解析。
    */
-  judgeRuntime?: JudgeConfig;
+  judgeRuntime?: JudgeSelection;
   /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
    *  (defineExperiment 解析时校验,非 JSON 直接报错),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
@@ -1049,7 +1049,7 @@ export interface ExperimentDefinition {
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly judgeRuntime?: JudgeConfig;
+  readonly judgeRuntime?: JudgeSelection;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   readonly labels: Readonly<globalThis.Record<string, string | number>>;
   readonly attempts: number;
@@ -1133,8 +1133,8 @@ export interface Config {
   name?: LocalizedText;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
   workspace?: string;
-  /** 项目级默认 Judge Runtime 配置；EvalDef.judge 与 Experiment.judgeRuntime 可逐字段替换默认值。 */
-  judgeRuntime?: JudgeConfig;
+  /** 项目级默认 Judge Provider；Eval 与 Experiment 可替换模型或整个 Provider。 */
+  judgeRuntime?: JudgeProvider;
   /** 项目级默认 reporter 列表(如落盘 / 上传结果);EvalDef.reporters 会与它合并。 */
   reporters?: Reporter[];
   /** 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。 */
@@ -1223,7 +1223,7 @@ export interface AdapterRun {
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
   readonly sharedState?: SharedStateConfig;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
-  readonly judgeRuntime?: JudgeConfig;
+  readonly judgeRuntime?: JudgeSelection;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
@@ -1355,7 +1355,7 @@ export interface Attempt {
   readonly fingerprint: string;
   readonly configHash: string;
   /** Planning 时唯一解析并冻结的 Judge capability/config。 */
-  readonly judge: ResolvedJudgeConfig;
+  readonly judge: ResolvedJudgeConfig | undefined;
   /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */

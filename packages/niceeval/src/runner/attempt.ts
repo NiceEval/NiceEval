@@ -80,6 +80,7 @@ import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { pricingEstimate } from "../o11y/cost.ts";
 import { bindPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
+import { toFeedbackDiagnostic } from "../error-assistance/index.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import {
   deriveDiffData,
@@ -178,7 +179,7 @@ import type {
   Usage,
   RetryAttemptRecord,
 } from "../types.ts";
-import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
+import { reportAssistedDiagnostic, reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, EVALUATION_ALGORITHM, runWho } from "./types.ts";
 import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, sandboxPrepareActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
 import type {
@@ -232,6 +233,25 @@ export interface AttemptFailureDeclaration {
   readonly class: FailureClass;
   readonly phase: LifecyclePhase;
   readonly text: string;
+}
+
+function reportJudgeErrorAssistance(a: Attempt, sealed: SealedAttemptAssertions): void {
+  const judge = a.judge;
+  if (judge === undefined || judge.credential.kind !== "environment") return;
+  const missingKey = sealed.entries.some((entry) =>
+    entry.criterion.kind === "managed-score-measurement" &&
+    (entry.result.state === "unavailable" || entry.result.state === "errored") &&
+    entry.result.diagnostic?.failureDetail === "judge-key-unresolved");
+  if (!missingKey) return;
+  reportAssistedDiagnostic({ ...toFeedbackDiagnostic({
+    code: "judge-key-unresolved",
+    owner: "judge",
+    summary: `Judge credential is unavailable for ${judge.provider}.`,
+    repairTarget: `${judge.provider}:env:${judge.credential.name}`,
+    nextStep: `Set ${judge.credential.name} before running this evaluation.`,
+    service: judge.provider,
+    affectedObject: a.evalDef.id,
+  }), identity: { experimentId: a.run.experimentId, evalId: a.evalDef.id, attempt: a.attempt } });
 }
 
 /**
@@ -348,10 +368,18 @@ export function runAttemptEffect<
     onFailureClass,
     onEnvironmentIncomplete,
     onSandboxCleanupFailure,
-    onSealedEvaluation,
+    onSealedEvaluation: publishSealedEvaluation,
     reusedSandbox,
   }: RunAttemptEffectOptions<SealRequirements>,
 ) {
+  let assistanceReported = false;
+  const onSealedEvaluation = (sealed: SealedAttemptAssertions) => Effect.suspend(() => {
+    if (!assistanceReported) {
+      assistanceReported = true;
+      reportJudgeErrorAssistance(a, sealed);
+    }
+    return publishSealedEvaluation?.(sealed) ?? Effect.void;
+  });
   const config = opts.config;
   const { evalDef, run, attempt } = a;
   const adapter = run.adapter;
@@ -4050,7 +4078,15 @@ export function experimentRunInfo(
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(run.sharedState === undefined ? {} : { sharedState: { key: run.sharedState.key } }),
     ...(judge
-      ? { judgeRuntime: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs, maxOutputTokens: judge.maxOutputTokens } }
+      ? { judgeRuntime: {
+          provider: judge.provider,
+          model: judge.model,
+          baseUrl: judge.baseUrl,
+          credential: { ...judge.credential },
+          timeoutMs: judge.timeoutMs,
+          maxResponseBytes: judge.maxResponseBytes,
+          protocol: { ...judge.protocol },
+        } }
       : {}),
     agentInstalls: [...agentInstallPlansForRun(run)],
   };

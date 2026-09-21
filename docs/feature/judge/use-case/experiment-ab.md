@@ -6,7 +6,7 @@ relations: {}
 
 # 用 Experiment 做裁判 A/B
 
-Eval 保留 rubric、anchors、材料选择和 consumer threshold；Experiment 只选择 Judge 执行配置：
+Eval 保留 rubric、anchors、材料选择和 consumer threshold；Experiment 只选择模型或整个 Provider：
 
 ```ts
 const explainsRisk = defineJudge({
@@ -15,7 +15,6 @@ const explainsRisk = defineJudge({
 });
 
 export default defineEval({
-  judge: { timeoutMs: 30_000 },
   async test(t) {
     const change = "修改持久化字段并提供回滚方案";
     const turn = await t.send(`解释这次修改的风险：${change}`);
@@ -25,15 +24,20 @@ export default defineEval({
 ```
 
 ```ts
+import { defineExperiment } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
+
 export default defineExperiment({
   agent: codexAgent(),
   evals: ["explanations/"],
-  judgeRuntime: { model: "judge-model-a" },
-  labels: { judge: "a" },
+  judgeRuntime: OpenAIProvider({ model: "judge-model-a", timeoutMs: 30_000 }),
+  labels: { judge: "openai-a" },
 });
 ```
 
-另一个 Experiment 改为不同 `judgeRuntime.model` 和 label。每个 pair 的已求值配置进入 execution identity，并由实际 Judge Assertion 使用，因此结果可复现地表示实际使用的 Judge。
+另一个 Experiment 可把 `judgeRuntime` 换成另一个完整 Provider，或只写模型字符串来保留项目 Provider 的端点、凭据和限制。
+每个 pair 的已求值配置进入 execution identity，并由实际 Judge Assertion 使用。
 
-Eval 的 `judge` 按字段替换默认 Judge 配置。有效配置按 `Experiment.judgeRuntime → Eval.judge → Config.judgeRuntime → 内置默认`
-求值；每个 `Eval × Experiment` 的结果都带这份 execution identity。没有单条 Assertion 的模型设置或 CLI model flag。
+配置求值从 `Config.judgeRuntime` 开始，再应用 `Eval.judge` 和 `Experiment.judgeRuntime`。
+最高优先级的 Provider 是整份配置起点，只应用它之后更高层的模型字符串。
+没有单条 Assertion 的模型设置或 CLI model flag。

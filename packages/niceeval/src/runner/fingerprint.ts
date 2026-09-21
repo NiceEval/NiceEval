@@ -383,7 +383,7 @@ export interface ProjectTargetPlan {
   readonly target: ProjectCurrentTarget;
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
-  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig>;
+  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig | undefined>;
   readonly plannedFingerprints: ReadonlyMap<string, string>;
   readonly renameFingerprintsByKey: ReadonlyMap<
     string,
@@ -403,7 +403,7 @@ export function planProjectTarget(
   agentRuns: readonly AgentRun[],
   configTimeoutMs?: number,
   options: {
-    readonly configJudge?: import("../types.ts").JudgeConfig;
+    readonly configJudge?: import("../judge/provider.ts").JudgeProvider;
     readonly keepSandbox?: "failed" | "all";
   } = {},
 ): Effect.Effect<ProjectTargetPlan, SandboxRunPlanningError | FingerprintPlanningFailure> {
@@ -424,7 +424,7 @@ export function planProjectTarget(
 export function planPreparedProjectTarget(
   preparedPairs: readonly PreparedRunPair[],
   options: {
-    readonly configJudge?: import("../types.ts").JudgeConfig;
+    readonly configJudge?: import("../judge/provider.ts").JudgeProvider;
     readonly keepSandbox?: "failed" | "all";
   },
 ): Effect.Effect<ProjectTargetPlan, FingerprintPlanningFailure> {
@@ -441,7 +441,7 @@ export function planPreparedProjectTarget(
     >();
     const manifestsByKey = new Map<string, EvalManifest>();
     const plannedConfigHashes = new Map<string, string>();
-    const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig>();
+    const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig | undefined>();
     const runConfigHashes = new Map<string, string>();
     const targetEvals = new Map<string, ProjectCurrentExperimentTarget["evals"][number][]>();
 

@@ -105,7 +105,7 @@ export default defineExperiment({
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
-  judgeRuntime?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 Judge A/B，不定义 rubric 或 gate／score／stop policy
+  judgeRuntime?: JudgeSelection;                    // 本实验的裁判模型或完整 Provider；用于可签入的 Judge A/B
   flags?: Record<string, JsonValue>;        // KV 参数,透传到 ctx.flags / t.flags(见 Library);必须 JSON 可序列化——
                                             // 实验是可签入可复现的配置,函数/类实例装不进 Run;解析时校验,非 JSON 值直接报错
   labels?: Record<string, string | number>; // 报告归类标注:实验在各对比轴上的坐标(如 { line: "codex", memory: "mempal" })。

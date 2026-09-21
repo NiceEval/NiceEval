@@ -59,6 +59,10 @@ import type {
 import type { CurrentReusedAttemptReadback } from "../reuse-readback.ts";
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
+import {
+  readErrorAssistanceData,
+  renderAssistedDiagnosticDetails,
+} from "../../error-assistance/index.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import type { PrimaryFactSummary } from "../../assertions/types.ts";
 
@@ -514,10 +518,19 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
   // error block. Repeating its machine code in Human output adds no fact and
   // exposes machine vocabulary in the default profile.
   if (code === "judge-precheck-failed") return [];
-  const firstForCode = state.diagnostics.find((d) => (d.code ?? d.key) === code);
   const count = state.diagnostics.find((d) => d.key === event.key)?.count ?? 1;
-  if (count > 1 || firstForCode?.key !== event.key) return [];
   const sym = event.severity === "error" ? "✗" : event.severity === "warning" ? "!" : "i";
+  const assistance = readErrorAssistanceData(event.data);
+  if (assistance !== undefined) {
+    if (count > 1) return [];
+    return [
+      `${sym} error: ${event.message}`,
+      `  Code: ${code}`,
+      ...renderAssistedDiagnosticDetails(assistance).map((line) => `  ${line}`),
+    ];
+  }
+  const firstForCode = state.diagnostics.find((d) => (d.code ?? d.key) === code);
+  if (count > 1 || firstForCode?.key !== event.key) return [];
   if (event.code === HALT_DIAGNOSTIC_CODE) {
     // 止损闸落闸:一行 error 级通知,文案已经是完整的一句话(`experiment halted
     // (dispatch-halted): <message>` / `eval halted: <message>`,见 docs/feature/
@@ -784,24 +797,51 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
  *  聚合。info 由自己的完成面板消费；没有 warning/error 时返回 undefined。 */
 function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): PanelRow[] | undefined {
   if (diagnostics.length === 0) return undefined;
-  const byCode = new Map<string, { count: number; message: string; severity: "warning" | "error" }>();
+  const byCode = new Map<string, {
+    code: string;
+    count: number;
+    message: string;
+    severity: "warning" | "error";
+    assistance?: ReturnType<typeof readErrorAssistanceData>;
+  }>();
   for (const d of diagnostics) {
     if (d.severity === "info") continue;
     const code = d.code ?? d.key;
-    const existing = byCode.get(code);
+    const assistance = readErrorAssistanceData(d.data);
+    const group = assistance === undefined
+      ? code
+      : JSON.stringify([code, assistance.owner, assistance.repairTarget, assistance.guideId ?? ""]);
+    const existing = byCode.get(group);
     if (existing) {
-      byCode.set(code, { ...existing, count: existing.count + d.count });
+      byCode.set(group, { ...existing, count: existing.count + d.count });
     } else {
-      byCode.set(code, { count: d.count, message: d.message, severity: d.severity });
+      byCode.set(group, { code, count: d.count, message: d.message, severity: d.severity, assistance });
     }
   }
   const entries = [...byCode.entries()];
   if (entries.length === 0) return undefined;
-  const labelWidth = Math.max(0, ...entries.map(([code, v]) => stringWidth(warningCodeLabel(code, v.count))));
-  return entries.map(([code, v]) => ({
-    kind: "line",
-    text: `${v.severity === "error" ? "✗" : "!"} ${padDisplay(warningCodeLabel(code, v.count), labelWidth)}  ${v.message}`,
-  }));
+  const labelWidth = Math.max(0, ...entries.map(([, value]) => stringWidth(warningCodeLabel(value.code, value.count))));
+  return entries.flatMap(([, value]): PanelRow[] => {
+    const rows: PanelRow[] = [{
+      kind: "line",
+      text: `${value.severity === "error" ? "✗" : "!"} ${padDisplay(warningCodeLabel(value.code, value.count), labelWidth)}  ${value.message}`,
+    }];
+    if (value.assistance === undefined) return rows;
+    const service = value.assistance.service === undefined ? "" : ` · ${value.assistance.service}`;
+    rows.push({
+      kind: "line",
+      text: `  owner ${value.assistance.owner}${service} · repair ${value.assistance.repairTarget}`,
+    });
+    rows.push(...renderAssistedDiagnosticDetails(value.assistance).filter((line) =>
+      line.startsWith("Source") || line.startsWith("Affected")
+    )
+      .map((line): PanelRow => ({ kind: "line", text: `  ${line}` })));
+    rows.push({ kind: "line", text: `  ${value.assistance.nextStep}` });
+    if (value.assistance.guideId !== undefined) {
+      rows.push({ kind: "line", text: `  Guide: ${value.assistance.guideId}` });
+    }
+    return rows;
+  });
 }
 
 function buildRecoveryPanelRows(diagnostics: readonly DiagnosticNotice[]): PanelRow[] | undefined {

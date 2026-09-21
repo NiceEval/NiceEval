@@ -13,7 +13,9 @@ import {
   OrderEvaluationReceiptSchema,
 } from "../assertions/record/codec.ts";
 import { RecordAttachmentIssueCodeSchema } from "../record/attachment/errors.ts";
-import type { ScoreMatchAudit, ScoreMatchAuditReadResult } from "../assertions/score-match-audit.ts";
+import type { ScoreMatchAudit, ScoreMatchAuditReadResult, ScoreMatchAuditV2 } from "../assertions/score-match-audit.ts";
+import { isJsonValue } from "../shared/json-value.ts";
+import type { JsonValue } from "../shared/types.ts";
 
 const ExpandedContentSchema = Schema.Struct({
   state: Schema.Literal("available"), byteLength: Schema.Number,
@@ -42,6 +44,7 @@ const AuditAttemptSchema = Schema.Struct({
     Schema.Struct({ state: Schema.Literal("interrupted") }),
   ]),
 });
+const JsonValueSchema = Schema.declare<JsonValue>(isJsonValue);
 const AuditCallSchema = Schema.Union([
   Schema.Struct({
     ordinal: Schema.Number, operation: Schema.Literals(["score", "classify", "extract", "batchClassify"]),
@@ -70,8 +73,54 @@ const ScoreMatchAuditSchema: Schema.Schema<ScoreMatchAudit> = Schema.Struct({
     Schema.Struct({ state: Schema.Literal("interrupted") }),
   ]),
 });
+const ScoreInputSchema = Schema.Struct({
+  rubric: Schema.String,
+  anchors: Schema.Array(Schema.Struct({ measurement: Schema.Number, description: Schema.String })),
+  material: JsonValueSchema,
+});
+const ClassifyInputSchema = Schema.Struct({ rubric: Schema.String, choices: Schema.Array(Schema.String), material: JsonValueSchema });
+const BatchClassifyInputSchema = Schema.Struct({
+  rubric: Schema.String,
+  choices: Schema.Array(Schema.String),
+  items: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String })),
+  material: JsonValueSchema,
+});
+const TypeSafeMappingSchema = Schema.Union([
+  Schema.Struct({ operation: Schema.Literal("score"), input: ScoreInputSchema }),
+  Schema.Struct({ operation: Schema.Literal("classify"), input: ClassifyInputSchema }),
+  Schema.Struct({ operation: Schema.Literal("batchClassify"), input: BatchClassifyInputSchema }),
+]);
+const TypeSafeAuditCallSchema = Schema.Union([
+  Schema.Struct({
+    ordinal: Schema.Number, operation: Schema.Literals(["score", "classify", "extract", "batchClassify"]),
+    state: Schema.Literal("rejected"), transport: Schema.Literal("not-sent"), failure: AuditFailureSchema,
+  }),
+  Schema.Struct({
+    ordinal: Schema.Number, operation: Schema.Literals(["score", "classify", "batchClassify"]),
+    state: Schema.Literal("admitted"), request: Schema.String, attempts: Schema.Array(AuditAttemptSchema),
+    mapping: TypeSafeMappingSchema,
+    result: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("completed"), output: Schema.String }),
+      AuditFailureSchema,
+      Schema.Struct({ state: Schema.Literal("interrupted") }),
+    ]),
+  }),
+]);
+const ScoreMatchAuditV2Schema: Schema.Schema<ScoreMatchAuditV2> = Schema.Struct({
+  schemaVersion: Schema.Literal(2), protocol: Schema.Literal("niceeval.score-match-audit/v2"),
+  definition: Schema.Struct({
+    name: Schema.String, version: Schema.String, config: Schema.String, digest: Schema.String,
+    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.Number, maxAuditBytes: Schema.Number }),
+  }),
+  input: Schema.String, calls: Schema.Array(TypeSafeAuditCallSchema),
+  result: Schema.Union([
+    Schema.Struct({ state: Schema.Literal("measured"), value: Schema.Number }),
+    AuditFailureSchema,
+    Schema.Struct({ state: Schema.Literal("interrupted") }),
+  ]),
+});
 const ScoreMatchAuditReadResultSchema: Schema.Schema<ScoreMatchAuditReadResult> = Schema.Union([
-  Schema.Struct({ state: Schema.Literal("available"), audit: ScoreMatchAuditSchema }),
+  Schema.Struct({ state: Schema.Literal("available"), audit: Schema.Union([ScoreMatchAuditSchema, ScoreMatchAuditV2Schema]) }),
   Schema.Struct({ state: Schema.Literal("invalid") }),
   Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
 ]);

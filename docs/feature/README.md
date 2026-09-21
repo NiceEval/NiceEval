@@ -58,6 +58,7 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Assertion](assertions/README.md)：检查、作用域、证据与 `AssertionResult`。
 - [Compile-time Contracts](compile-time-contracts/README.md)：作者输入与派生事实的阶段边界。
 - [Error Classification](error-classification/README.md)：Turn 级有界重试与 Eval / Experiment 级停止派发。
+- [Error Assistance](error-assistance/README.md)：安全错误说明、源码位置、迁移指南与同类聚合。
 - [Eval](eval/README.md)：评估定义与 `defineEval`。
 - [Eval Groups](eval-groups/README.md)：封闭成员集内的 Sandbox 复用与组间并行。
 - [Experiments](experiments/README.md)：运行配置与 `defineExperiment`。

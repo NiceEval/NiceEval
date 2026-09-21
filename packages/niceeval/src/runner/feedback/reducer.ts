@@ -24,6 +24,13 @@
 import type { DiagnosticNotice, FailureNotice, RunFeedbackEvent, RunFeedbackState } from "../types.ts";
 import { encodeAttemptKey } from "../types.ts";
 import { evalConclusionKey } from "./eval-conclusions.ts";
+import {
+  ERROR_ASSISTANCE_OVERFLOW_KEY,
+  MAX_ERROR_ASSISTANCE_GROUPS,
+  appendErrorAssistanceAffected,
+  mergeErrorAssistanceData,
+  readErrorAssistanceData,
+} from "../../error-assistance/index.ts";
 
 /** reducer 的起始状态:一个尚未收到任何事件的 run。 */
 export function createInitialRunFeedbackState(): RunFeedbackState {
@@ -440,9 +447,41 @@ function upsertDiagnostic(
   diagnostics: readonly DiagnosticNotice[],
   input: Omit<DiagnosticNotice, "count">,
 ): readonly DiagnosticNotice[] {
+  const normalizedInput = {
+    ...input,
+    data: appendErrorAssistanceAffected(input.data, input.identity),
+  };
   const idx = diagnostics.findIndex((d) => d.key === input.key);
-  if (idx === -1) return [...diagnostics, { ...input, count: 1 }];
+  if (idx === -1) {
+    if (readErrorAssistanceData(normalizedInput.data) !== undefined) {
+      const groupCount = diagnostics.reduce(
+        (count, diagnostic) => count + (readErrorAssistanceData(diagnostic.data) === undefined ? 0 : 1),
+        0,
+      );
+      if (groupCount >= MAX_ERROR_ASSISTANCE_GROUPS) {
+        const overflowIndex = diagnostics.findIndex((diagnostic) => diagnostic.key === ERROR_ASSISTANCE_OVERFLOW_KEY);
+        if (overflowIndex === -1) {
+          return [...diagnostics, {
+            at: normalizedInput.at,
+            key: ERROR_ASSISTANCE_OVERFLOW_KEY,
+            code: "error-assistance-overflow",
+            severity: "warning",
+            message: "Additional error groups were omitted after the diagnostic limit was reached.",
+            count: 1,
+          }];
+        }
+        const overflow = diagnostics.slice();
+        overflow[overflowIndex] = { ...overflow[overflowIndex]!, at: normalizedInput.at, count: overflow[overflowIndex]!.count + 1 };
+        return overflow;
+      }
+    }
+    return [...diagnostics, { ...normalizedInput, count: 1 }];
+  }
   const next = diagnostics.slice();
-  next[idx] = { ...input, count: next[idx].count + 1 };
+  next[idx] = {
+    ...normalizedInput,
+    data: mergeErrorAssistanceData(next[idx].data, normalizedInput.data),
+    count: next[idx].count + 1,
+  };
   return next;
 }

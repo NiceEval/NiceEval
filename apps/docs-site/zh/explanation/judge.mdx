@@ -34,7 +34,7 @@ const explainsRisk = defineJudge({
 
 ```ts
 export default defineEval({
-  judge: { model: "judge-model" },
+  judge: "judge-model",
   async test(t) {
     const change = "修改持久化字段并提供回滚方案";
     const turn = await t.send(`解释这项变更：${change}`);
@@ -73,27 +73,39 @@ answer.check(
 
 可直接调用的方法是 `factuality(material, options?)`、`faithfulness(material, options?)`、`instructionFollowing(material, options?)`、`pairwisePreference(material, options?)` 和 `closeQA(material, options?)`。它们只 factory 后交给当前接收者的 `check`，不会多登记 Assertion。
 
-## 配置裁判模型
+## 配置裁判 Provider
 
-Eval 的 `judge` 与项目配置的 `judgeRuntime` 都能指定模型配置；Experiment 的 `judgeRuntime` 可进一步替换指定字段：
+项目配置用具名 Provider 工厂显式选择服务。下例连接 OpenAI 或显式兼容网关：
 
 ```ts
+import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
+
 export default defineConfig({
-  judgeRuntime: {
+  judgeRuntime: OpenAIProvider({
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
     timeoutMs: 180_000,
     maxOutputTokens: 512,
-  },
+  }),
 });
 ```
+
+| 工厂 | 服务 | 默认 key 变量 |
+| --- | --- | --- |
+| `OpenAIProvider` | OpenAI 或显式兼容网关 | `OPENAI_API_KEY` |
+| `VercelProvider` | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
+| `OpenRouterProvider` | OpenRouter | `OPENROUTER_API_KEY` |
+| `TypesafeProvider` | TypeSafe System One | `TYPESAFE_API_KEY` |
+
+四个工厂都从 `niceeval/judge` 导出。Vercel 工厂表示 AI Gateway，不表示 Vercel Sandbox 或通用 AI SDK model object。
 
 某道评估只需换模型时，写下这一项即可：
 
 ```ts
 export default defineEval({
-  judge: { model: "another-model" },
+  judge: "another-model",
   async test(t) {
     const answer = await t.send("法国首都是哪里？");
     t.factuality({ input: "法国首都是哪里？", output: answer.message, expected: "巴黎" }).gate(1);
@@ -101,19 +113,14 @@ export default defineEval({
 });
 ```
 
-这里继续使用全局的 `baseUrl`、`apiKeyEnv`、超时和输出上限，只替换 `model`。字段省略或设为 `undefined` 都表示继续继承。
+这里继续使用全局 Provider 的端点、凭据来源和执行限制，只替换 `model`。
+Eval 和 Experiment 也能提供完整 Provider；这会整体替换服务、默认模型和限制。
+没有按 hostname、模型前缀或已存在的 key 猜测服务的规则。
 
-每个字段按 `Experiment.judgeRuntime → Eval.judge → Config.judgeRuntime → 内置默认` 求值。`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs` 与 `maxOutputTokens` 都可单独指定；未指定的字段继续取下一层或内置默认。
+NiceEval 使用所选 Provider 的受管协议请求取得有限 `[0,1]` measurement 和公开 rationale。聊天服务使用 forced-function 请求，TypeSafe 使用 `/systemone`。未配置模型或 Key 时不会发送网络请求，Assertion 为 `unavailable`。传输失败或超时是 `unavailable`；HTTP 400、协议不兼容或非法响应是 `errored`。静态配置校验不会探测网络。
 
-| 字段 | 用途 | 内置默认值 |
-| --- | --- | --- |
-| `model` | 裁判模型名；所有层都未指定时不发网络请求 | 无 |
-| `baseUrl` | OpenAI 兼容 endpoint，必须是绝对 `http(s)` URL | `https://api.openai.com/v1` |
-| `apiKeyEnv` | 保存 key 的进程变量名；配置不保存 key 值 | `NICEEVAL_JUDGE_KEY` |
-| `timeoutMs` | 单条 Judge Assertion 的请求、重试与等待总时限 | `180_000` |
-| `maxOutputTokens` | 请求允许生成的最大 token 数 | `1_024` |
-
-NiceEval 使用实际 Judge Assertion 的 forced-function 请求取得有限 `[0,1]` measurement 和公开 rationale。未配置模型或 Key 时不会发送网络请求，Assertion 为 `unavailable`。传输失败或超时是 `unavailable`；HTTP 400、协议不兼容或非法响应是 `errored`。静态配置校验不会探测网络。
+TypeSafe 使用 `/systemone` 协议。它支持 score、classify 和 batch classify，但不支持 extract。
+因此 `faithfulness()` 在 `TypesafeProvider` 上得到 `unavailable`，不会改为整体估分或更换分母。
 
 ## Threshold 与分数
 

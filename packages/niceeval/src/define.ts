@@ -21,7 +21,10 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { normalizeJudgeConfig } from "./runner/judge-config.ts";
+import { normalizeJudgeSelection } from "./runner/judge-config.ts";
+import { isJudgeProvider } from "./judge/provider.ts";
+import { MigrationRequiredError, captureMigrationSource } from "./error-assistance/index.ts";
+
 import {
   brandEvalDefinition,
   brandEvalGroupDefinition,
@@ -45,6 +48,24 @@ import {
 } from "./agents/effect-runtime.ts";
 import { isPluginInstance, pluginInstanceDataOf, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
 
+/** Recognize only the retired flat configuration, without evaluating getters. */
+function normalizeDefinitionJudge(value: unknown, label: string) {
+  if (!isJudgeProvider(value) && typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const prototype = Object.getPrototypeOf(value);
+    const legacyKeys = ["model", "baseUrl", "apiKeyEnv", "timeoutMs", "maxOutputTokens"];
+    if ((prototype === Object.prototype || prototype === null) && Reflect.ownKeys(value).every((key) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+      return typeof key === "string" && legacyKeys.includes(key) && descriptor !== undefined && "value" in descriptor;
+    })) {
+      throw new MigrationRequiredError({ occurrences: [{
+        guideId: "judge-provider",
+        subject: label.replace("() ", "."),
+        source: captureMigrationSource(),
+      }] });
+    }
+  }
+  return normalizeJudgeSelection(value, label);
+}
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
@@ -252,7 +273,7 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   const adapter = def.adapter ?? def.agent!;
   const judgeRuntime = def.judgeRuntime === undefined
     ? undefined
-    : normalizeJudgeConfig(def.judgeRuntime, "defineExperiment() judgeRuntime");
+    : normalizeDefinitionJudge(def.judgeRuntime, "defineExperiment() judgeRuntime");
   assertSandboxLayer(def.sandbox, "defineExperiment");
   if (adapter.kind === "custom") {
     if (def.sandbox !== undefined || def.sandboxReuse === true || def.sandboxCache !== undefined) {
@@ -356,7 +377,7 @@ function normalizeEvalFields<
 >(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
   const judge = def.judge === undefined
     ? undefined
-    : normalizeJudgeConfig(def.judge, "defineEval() judge");
+    : normalizeDefinitionJudge(def.judge, "defineEval() judge");
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
@@ -443,7 +464,10 @@ export function defineConfig(config: Config): Config {
   const sandboxCache = normalizeSandboxCache(config.sandboxCache, "defineConfig");
   const judgeRuntime = config.judgeRuntime === undefined
     ? undefined
-    : normalizeJudgeConfig(config.judgeRuntime, "defineConfig() judgeRuntime");
+    : normalizeDefinitionJudge(config.judgeRuntime, "defineConfig() judgeRuntime");
+  if (judgeRuntime !== undefined && !isJudgeProvider(judgeRuntime)) {
+    throw new TypeError("defineConfig() judgeRuntime must be a Judge Provider created by niceeval/judge");
+  }
   return Object.freeze({
     ...config,
     ...(sandboxCache === undefined ? {} : { sandboxCache }),

@@ -1,7 +1,7 @@
 ---
 title: "配置并验证 Judge"
 sidebarTitle: "配置并验证 Judge"
-description: "连接 OpenAI 兼容 Judge 网关，用 rubric 和命名材料完成一次真实判分。"
+description: "选择具名 Judge Provider，用 rubric 和命名材料完成一次真实判分。"
 ---
 
 Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一条最小评估确认模型、Key 和端点能完成真实判分。
@@ -10,15 +10,16 @@ Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一�
 
 ```ts title="niceeval.config.ts"
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
-  judgeRuntime: {
+  judgeRuntime: OpenAIProvider({
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
     timeoutMs: 180_000,
     maxOutputTokens: 512,
-  },
+  }),
 });
 ```
 
@@ -34,7 +35,7 @@ export JUDGE_GATEWAY_KEY="..."
 import { defineEval } from "niceeval";
 
 export default defineEval({
-  judge: { model: "judge-model" },
+  judge: "judge-model",
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
@@ -64,9 +65,9 @@ pnpm exec niceeval view --run <run-id>
 
 | 结果 | 含义 |
 |---|---|
-| `judge-model-unresolved` / `judge-key-unresolved` | 配置缺失，未发网络请求 |
+| `judge-provider-unresolved` / `judge-key-unresolved` | Provider 或凭据缺失，未发网络请求 |
 | `errored` | endpoint 返回 HTTP 400、协议不兼容，或响应不符合严格 schema |
 | `unavailable` | 请求传输失败或超时 |
 | `errored` | Decision 缺失、格式错误或 measurement 越界 |
 
-比较 Judge 模型时，让多个 Experiment 使用不同 `judgeRuntime.model` 和 `labels`，并选择同一批评估。
+比较 Judge 时，让多个 Experiment 使用不同模型字符串或具名 Provider，再用 `labels` 标明对比坐标。
