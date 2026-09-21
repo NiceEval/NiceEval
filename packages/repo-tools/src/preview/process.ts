@@ -53,7 +53,7 @@ export function requirePreviewSuccess(
         args,
         cwd,
         exitCode: result.exitCode,
-        message: result.stderr.trim() || result.stdout.trim() || "command failed",
+        message: [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n") || "command failed",
       }))),
   );
 }
