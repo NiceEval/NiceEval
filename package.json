@@ -1,6 +1,7 @@
 {
   "name": "niceeval-workspace",
   "private": true,
+  "type": "module",
   "nx": {
     "includedScripts": []
   },
