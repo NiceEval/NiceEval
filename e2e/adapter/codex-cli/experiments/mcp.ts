@@ -27,7 +27,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli MCP 闭环:stdio 与远程 HTTP 两种传输形态,外加未挂载 server 的反例",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: ["mcp"],
   attempts: 1,

@@ -145,6 +145,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
             models: {
               // 允许任意 experiment.model;具体 id 由 --model compat/<id> 选择。
               "gpt-5.6-luna": { name: "gpt-5.6-luna" },
+              "gpt-6-luna": { name: "gpt-6-luna" },
               "gpt-5.4-mini": { name: "gpt-5.4-mini" },
               "gpt-5.4": { name: "gpt-5.4" },
               "gpt-4.1-mini": { name: "gpt-4.1-mini" },

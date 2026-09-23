@@ -10,7 +10,7 @@ export default defineExperiment({
     baseUrl: process.env.ANTHROPIC_BASE_URL,
     env: claudeCodeProviderEnv,
   }),
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   flags: { requestHitl: true },
   evals: ["hitl-options"],

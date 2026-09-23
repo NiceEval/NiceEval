@@ -20,7 +20,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "repo-skill:从钉定 Git commit 安装 calibre Skill，并由 Claude 原生发现",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   attempts: 1,
   evals: ["repo-skill"],

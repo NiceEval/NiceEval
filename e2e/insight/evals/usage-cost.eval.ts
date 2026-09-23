@@ -24,7 +24,7 @@ export default usageCost.defineEval({
     t.record({
       callId: "custom-endpoint-call",
       provider: "openai",
-      model: "openai/gpt-5.6-luna",
+      model: "openai/gpt-6-luna",
       route: { transportProvider: null, endpointId: "custom-openai-compatible" },
       status: "succeeded",
       inputTokens: 5,

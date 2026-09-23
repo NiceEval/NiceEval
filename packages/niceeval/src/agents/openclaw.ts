@@ -187,6 +187,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
                   api: "openai-completions",
                   models: [
                     { id: "gpt-5.6-luna", name: "gpt-5.6-luna" },
+                    { id: "gpt-6-luna", name: "gpt-6-luna" },
                     { id: "gpt-5.4-mini", name: "gpt-5.4-mini" },
                     { id: "gpt-5.4", name: "gpt-5.4" },
                   ],

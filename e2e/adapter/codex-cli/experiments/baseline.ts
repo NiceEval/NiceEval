@@ -13,7 +13,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli 基线闭环:coding 工具轨 / configFile / 会话续接 / usage 与实际模型",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   flags: { shellTool: true },
   evals: ["coding-task", "configfile", "session", "usage"],

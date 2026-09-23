@@ -10,7 +10,7 @@ const agent = ompAgent({
 export default defineExperiment({
   description: "OMP adapter 的工具事件流与 usage 兼容性",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: ["events"],
   attempts: 1,

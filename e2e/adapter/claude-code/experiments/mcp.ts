@@ -65,7 +65,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "mcp:挂载了 stdio + Streamable HTTP MCP server 的 claude-code agent",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   attempts: 1,
   evals: (e) => e.id === "mcp-tools",

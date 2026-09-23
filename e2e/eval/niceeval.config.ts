@@ -16,7 +16,7 @@ export default defineConfig({
       inputPerMTok: 0,
       outputPerMTok: 0,
     },
-    "openai/gpt-5.6-luna": {
+    "openai/gpt-6-luna": {
       basis: "catalog-reference",
       currency: "USD",
       source: { id: "niceeval-e2e-fixed-prices", asOf: 1_789_718_400_000 },

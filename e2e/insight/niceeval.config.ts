@@ -5,7 +5,7 @@ export default defineConfig({
   timeoutMs: 60_000,
   maxConcurrency: 1,
   pricing: {
-    "openai/gpt-5.6-luna": {
+    "openai/gpt-6-luna": {
       basis: "catalog-reference",
       currency: "USD",
       source: { id: "niceeval-insight-fixed-prices", asOf: 1_789_718_400_000 },

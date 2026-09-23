@@ -23,7 +23,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli Plugin + hook 信任闭环:marketplace 安装可观察,SessionStart hook 在 bypass 姿态下真实执行",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: ["plugin-hook"],
   attempts: 1,

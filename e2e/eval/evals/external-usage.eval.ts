@@ -46,7 +46,7 @@ export default externalUsage.defineEval({
       t.record({
         callId: `request-${index}`,
         provider: hasObservedCost ? "typesafe-ai" : "openai",
-        model: hasObservedCost ? "typesafe-ai/jev" : "openai/gpt-5.6-luna",
+        model: hasObservedCost ? "typesafe-ai/jev" : "openai/gpt-6-luna",
         route: hasObservedCost
           ? vercelRoute
           : { transportProvider: null, endpointId: "custom-openai-compatible" },

@@ -22,7 +22,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "plugin:从 Anthropic 官方 marketplace 安装 Context7，并调用其远程 MCP server",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   attempts: 1,
   evals: (e) => e.id === "plugin-mcp",

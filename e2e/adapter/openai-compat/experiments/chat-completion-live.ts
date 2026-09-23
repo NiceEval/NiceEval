@@ -25,7 +25,7 @@ const agent = defineAgent({
       timeout: 90_000,
     });
     const completion = await client.chat.completions.create({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       messages: [
         {
           role: "user",

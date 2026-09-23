@@ -19,7 +19,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli Repo Skill:从钉定 Git commit 安装 calibre 并按发现指引读取",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: ["repo-skill"],
   attempts: 1,

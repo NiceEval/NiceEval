@@ -22,7 +22,7 @@ export default defineExperiment({
   // 只跑 coding-task 一条:版本线是新增的覆盖维度,不是新增的协议行为
   // (预算见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval 预算」),
   // 其余行为已由 ci.ts 在默认版本上证明。
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   // Republic 0.5.x only retains token/request usage. This lane must not claim
   // a provider-cost fact that its tape protocol cannot carry.
   flags: { requireObservedCost: false },

@@ -82,8 +82,8 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
       },
       pricing: {
         basis: "catalog-reference",
-        requestModel: "openai/gpt-5.6-luna",
-        selector: "openai/gpt-5.6-luna",
+        requestModel: "openai/gpt-6-luna",
+        selector: "openai/gpt-6-luna",
         match: "exact",
         source: {
           kind: "configured-profile",

@@ -24,7 +24,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "plugin 复用:四路并发的两波 attempt 都能调用官方 Context7 Plugin 的 MCP 工具",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: (e) => e.id === "plugin-mcp",
   attempts: 8,

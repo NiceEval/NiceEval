@@ -19,7 +19,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "skill:三个互斥本地 Skill 的正选、反选与零加载契约",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   attempts: 1,
   evals: ["skill-used", "skill-checklist", "skill-unused"],

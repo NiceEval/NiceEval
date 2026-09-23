@@ -21,7 +21,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "remote-plugin:从 Anthropic 官方远程 marketplace 安装带 Skill 的 Plugin，并实际加载",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   attempts: 1,
   evals: ["remote-plugin"],
