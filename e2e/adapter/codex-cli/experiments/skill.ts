@@ -5,6 +5,7 @@ import { sandbox } from "../sandbox.ts";
 const agent = codexAgent({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: process.env.OPENAI_BASE_URL,
+  configFile: "configs/shell-enabled.toml",
   skills: [
     { kind: "local", path: "skills/niceeval-status-report", name: "niceeval-status-report" },
     { kind: "local", path: "skills/niceeval-release-note", name: "niceeval-release-note" },

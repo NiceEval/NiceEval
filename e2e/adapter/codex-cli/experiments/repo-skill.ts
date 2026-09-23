@@ -5,6 +5,7 @@ import { sandbox } from "../sandbox.ts";
 const agent = codexAgent({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: process.env.OPENAI_BASE_URL,
+  configFile: "configs/shell-enabled.toml",
   skills: [
     {
       kind: "repo",

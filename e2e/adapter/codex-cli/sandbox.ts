@@ -14,6 +14,6 @@ export const sandbox = dockerSandbox({
   },
 }).before(async (sandbox) => {
   // The pinned CLI predates this model and otherwise omits native apply_patch.
-  // The baseline config explicitly selects this fixture-owned tool catalog.
+  // Every experiment config selects the same fixture-owned tool catalog.
   await sandbox.writeText("/tmp/niceeval-codex-model-catalog.json", JSON.stringify(modelCatalog));
 });

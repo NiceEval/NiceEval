@@ -8,6 +8,7 @@ const MCP_FIXTURE_ENTRY = `${MCP_FIXTURE_ROOT}/node_modules/@modelcontextprotoco
 const agent = codexAgent({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: process.env.OPENAI_BASE_URL,
+  configFile: "configs/shell-enabled.toml",
   mcpServers: [
     { name: "e2e", command: "node", args: [MCP_FIXTURE_ENTRY] },
     { name: "deepwiki", url: "https://mcp.deepwiki.com/mcp" },
