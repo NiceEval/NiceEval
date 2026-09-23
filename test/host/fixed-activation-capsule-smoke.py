@@ -244,6 +244,70 @@ def assert_state(paths: dict[str, Path], bindings: dict[str, bytes],
     assert mounted_backing(paths["data-mount"]) == backing.resolve()
 
 
+def assert_mount_source_rename_survives(paths: dict[str, Path], root: Path) -> None:
+    """The public verify command must accept a new name for the same filesystem."""
+    store_root = Path(json.loads(paths["host-config"].read_text())["storage"]["rootDir"])
+    mount = run(["findmnt", "-n", "--raw", "-o", "TARGET,SOURCE,FSTYPE",
+                 "-T", str(store_root)]).stdout.strip().split(None, 2)
+    assert len(mount) == 3, mount
+    source = mount[1]
+    uuid = run(["blkid", "-s", "UUID", "-o", "value", source]).stdout.strip()
+    assert uuid, "host filesystem must expose a UUID for this regression"
+    alias = root / "renamed-mount-source"
+    alias.symlink_to(source)
+    shim = root / "bin"
+    shim.mkdir()
+    findmnt = shim / "findmnt"
+    findmnt.write_text(
+        f"#!{sys.executable}\n"
+        "import os, subprocess, sys\n"
+        f"result = subprocess.run([{shutil.which('findmnt')!r}, *sys.argv[1:]], "
+        "text=True, capture_output=True)\n"
+        f"if result.returncode == 0 and sys.argv[1:] == "
+        f"{['-n', '--raw', '-o', 'TARGET,SOURCE,FSTYPE', '-T', str(store_root)]!r}:\n"
+        f"    result.stdout = result.stdout.replace({source!r}, {str(alias)!r}, 1)\n"
+        "    if os.environ.get('NE_FAKE_MOUNT_TARGET'):\n"
+        f"        result.stdout = result.stdout.replace({mount[0]!r}, "
+        "os.environ['NE_FAKE_MOUNT_TARGET'], 1)\n"
+        "sys.stdout.write(result.stdout)\n"
+        "sys.stderr.write(result.stderr)\n"
+        "sys.exit(result.returncode)\n",
+        encoding="utf-8",
+    )
+    findmnt.chmod(0o755)
+    blkid = shim / "blkid"
+    blkid.write_text(
+        f"#!{sys.executable}\n"
+        "import os, subprocess, sys\n"
+        f"if sys.argv[1:] == {['-s', 'UUID', '-o', 'value', str(alias)]!r} "
+        "and 'NE_FAKE_MOUNT_UUID' in os.environ:\n"
+        "    value = os.environ['NE_FAKE_MOUNT_UUID']\n"
+        "    if value: print(value)\n"
+        "    sys.exit(0 if value else 2)\n"
+        f"sys.exit(subprocess.call([{shutil.which('blkid')!r}, *sys.argv[1:]]))\n",
+        encoding="utf-8",
+    )
+    blkid.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(shim) + os.pathsep + env["PATH"]
+    result = subprocess.run(command(paths, verify=True), text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                            check=False)
+    assert result.returncode == 0, (
+        "same mounted filesystem with renamed source rejected by public verify CLI: "
+        f"{result.stderr}"
+    )
+    for changed in ({"NE_FAKE_MOUNT_UUID": "00000000-0000-4000-8000-000000000000"},
+                    {"NE_FAKE_MOUNT_UUID": ""},
+                    {"NE_FAKE_MOUNT_TARGET": str(root / "different-mount")}):
+        rejected = subprocess.run(command(paths, verify=True), text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  env={**env, **changed}, check=False)
+        assert rejected.returncode != 0 and "rootDir parent mount identity differs" in rejected.stderr, (
+            f"changed mount identity was accepted: {changed}; {rejected.stderr}"
+        )
+
+
 def cleanup_mounts(root: Path) -> None:
     for _ in range(5):
         output = subprocess.run(["findmnt", "-n", "--raw", "-o", "TARGET"],
@@ -325,6 +389,7 @@ def main() -> None:
         baseline = capsule_bindings(paths["generation"], baseline_epoch)
         baseline_backing = Path(config["storage"]["outerImagePath"]).resolve()
         assert_state(paths, baseline, baseline_epoch, baseline_backing)
+        assert_mount_source_rename_survives(paths, raw)
 
         source = raw / "next-host.json"
         next_config = json.loads(paths["host-config"].read_text())
