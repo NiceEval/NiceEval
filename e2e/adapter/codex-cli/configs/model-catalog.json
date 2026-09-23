@@ -1,0 +1,20 @@
+{
+  "models": [
+    {
+      "slug": "gpt-6-luna",
+      "display_name": "GPT-6 Luna",
+      "supported_reasoning_levels": [],
+      "shell_type": "default",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 0,
+      "base_instructions": "You are a coding agent. Complete the user's task using the available tools. Use apply_patch for file edits and the shell for commands. Follow the user's constraints and report the observed results.",
+      "supports_reasoning_summaries": false,
+      "support_verbosity": false,
+      "apply_patch_tool_type": "freeform",
+      "truncation_policy": { "mode": "bytes", "limit": 10000 },
+      "supports_parallel_tool_calls": false,
+      "experimental_supported_tools": []
+    }
+  ]
+}

@@ -38,6 +38,7 @@ Contract: [adapters](../../../../feature/adapters/README.md)
 
 - `configfile` Eval 同时进入 baseline 与 disabled Experiment；两边通过 `flags.shellTool` 声明预期，并各自挂载显式 enabled / disabled 原生 configFile。相同 prompt 下工具面的结构差异形成正反对照，不依赖 custom provider 是否支持 Web Search。
 - coding 任务按 Codex 的真实归一形状设计：apply_patch 新增 → `file_write`、apply_patch 修改 → `file_edit`、命令执行 → `shell`。提示词显式禁止用 shell 写文件，避免 Codex 用一条命令顶掉文件工具。
+- baseline 的原生配置通过 `model_catalog_json` 加载场景提供的 `gpt-6-luna` 工具目录，显式启用 freeform `apply_patch`。钉定的 CLI 0.144.1 不认识该模型名，其未知模型回退配置不提供文件编辑工具；目录只声明本场景使用的工具，不复制旧模型的上下文上限、价格或 Responses Lite 设置。
 - `baseline` Experiment 选中本仓库的 `coding-task` / `configfile` / `session` / `usage`。
 - Codex 的 app-server item 通知仍需可信地标识当前 physical send 的 command input；live Repo 只在 Turn 完成后从公开
   `attempt.trace` 验收该工具事实，不以 provider timing 接管 ACTIVE frame 的确定性投影。
