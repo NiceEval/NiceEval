@@ -7,8 +7,8 @@
 // 两处设计都来自本仓库设计阶段的真机复现(codex-cli 0.144.1):
 // 1. 用"修改既有文件"而不是"从无创建文件"来触发 file_edit——"创建一个只有一行内容的新文件"
 //    这类极简任务,codex 经常图省事直接用一条 shell 命令(`printf ... > file`)写出去,整轮
-//    只留下 command_execution,不产生 file_change item;"精确替换既有文件中的一行"则稳定
-//    触发 apply_patch(file_change,kind:"update"→file_edit)。
+//    只留下 command_execution,不产生 file_change item。即使修改既有文件,模型也可能选择
+//    sed；因此提示显式要求原生 apply_patch(file_change,kind:"update"→file_edit)。
 // 2. 两个动作必须在**同一轮**里发起,不能拆成两个 t.send():原生 item ID 只在所属 turn
 //    内充当配对身份,跨轮不能拿顺序或局部 ID 猜测同一调用——
 //    两轮各自的工具调用可能巧合落在同一个 item 号上,call ID 在这条会话的累积事件流里发生
@@ -30,7 +30,8 @@ export default defineEval({
 
     const turn = await t.send(
       `在当前工作目录里做两件事:` +
-        `(1) 把 ${relPath} 中的 ${oldMarker} 改成 ${newMarker},其它内容保持不变;` +
+        `(1) 必须调用原生 apply_patch 工具把 ${relPath} 中的 ${oldMarker} 改成 ${newMarker},其它内容保持不变。` +
+        `不要通过 shell、sed、Python 或其它命令修改文件，也不要在 shell 中执行 apply_patch;` +
         `(2) 必须原样运行 \`echo ${cmdMarker}\` 并等待它完成,把命令的输出告诉我。` +
         `当前目录刻意不是 Git 仓库：不要运行 git 或 git diff；需要核对文件时请用 rg、sed 或 cat。`,
     );
