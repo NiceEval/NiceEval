@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v2
+        uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
@@ -43,7 +43,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v2
+        uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
@@ -64,7 +64,7 @@ jobs:
 
       # mint CLI 要 LTS Node；这个 job 与 package job 并行，不拖住代码侧反馈。
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v2
+        uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
