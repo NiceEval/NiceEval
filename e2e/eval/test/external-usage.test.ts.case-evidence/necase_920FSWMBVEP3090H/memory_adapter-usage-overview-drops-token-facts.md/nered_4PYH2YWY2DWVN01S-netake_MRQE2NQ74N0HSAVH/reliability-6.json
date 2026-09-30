@@ -1,0 +1,64 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H",
+  "caseId": "necase_920FSWMBVEP3090H",
+  "inventoryDigest": "sha256:70d8516a099b04f113dbe6272e6ae3f11a1d729f5502197620cca2de94ebe74c",
+  "candidate": {
+    "gitSha": "d68039aac8fbe73d35042b3f175a5a90d8685c73",
+    "sha256": "65bf69c5ab9b24d7849a9a811636e2d43f416bfdb6a5aa4a286573a5f8d3e224",
+    "sri": "sha512-GD7IKFmwZGj/oeFYfm1Cn64IkJs661hgwEysgP5GsbOjSd82gXnASpMpxjBv96IqGhmPjAbdhrwBiF1eANcoGw=="
+  },
+  "source": {
+    "checkout": "d68039aac8fbe73d35042b3f175a5a90d8685c73",
+    "testFileSha256": "21ebe83cb5d61b3746365e39d7bd1a0e53be0cbc3b5f7e3d1b6752ea14c29282",
+    "sidecarSha256": "2dbd84eb40f4c5206f04694e251aa372b02a9f77121b3e69ae13739db4417130"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-6skpRd/runs/takeover/repo-default-parallel/eval",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1732479 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1732480 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1732541 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "53756a86-6670-44c5-87b3-895c17d96063",
+  "receiptSha256": "2f0332c250062f095dfe3058c05a8df4e38d8c48fc3e606008129003dbb78614"
+}

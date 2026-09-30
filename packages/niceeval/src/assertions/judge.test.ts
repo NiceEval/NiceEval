@@ -12,6 +12,7 @@ import {
 import { defineScoreMatch, managedScoreMatchOf, type ScoreMatchContext } from "./match.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { readScoreMatchAudit } from "./score-match-audit.ts";
+import { OpenAIProvider, resolveJudgeProvider } from "../judge/provider.ts";
 
 const TEST_KEY_ENV = "NICEEVAL_JUDGE_TEST_KEY";
 
@@ -33,9 +34,12 @@ function judgeInput(signal?: AbortSignal, timeoutMs = 5_000) {
   return prepareManagedScoreMatch({
     match, options: managedScoreMatchOf(match)!,
     material: { question: "question", answer: "answer" },
-    judge: { model: "judge-model", baseUrl: "https://judge.example/v1", apiKeyEnv: TEST_KEY_ENV, timeoutMs, maxOutputTokens: 128 },
+    judge: testJudge(timeoutMs),
     ...(signal === undefined ? {} : { signal }),
   });
+}
+function testJudge(timeoutMs = 5_000) {
+  return resolveJudgeProvider(OpenAIProvider({ model: "judge-model", baseUrl: "https://judge.example/v1", apiKeyEnv: TEST_KEY_ENV, timeoutMs, maxOutputTokens: 128 }));
 }
 const evaluateJudgeMeasurement = (input: ReturnType<typeof judgeInput>) => input.evaluate();
 function transportOf(input: ReturnType<typeof judgeInput>) {
@@ -210,7 +214,7 @@ describe("Judge Effect lifecycle", () => {
     });
     const registration = prepareManagedScoreMatch({
       match, options: managedScoreMatchOf(match)!, material: null,
-      judge: { model: "judge-model", baseUrl: "https://judge.example/v1", apiKeyEnv: TEST_KEY_ENV, timeoutMs: 5000, maxOutputTokens: 128 },
+      judge: testJudge(),
     });
     expect(await Effect.runPromise(registration.evaluate())).toMatchObject({ state: "unavailable" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -243,7 +247,7 @@ describe("Judge Effect lifecycle", () => {
     });
     const registration = prepareManagedScoreMatch({
       match, options: managedScoreMatchOf(match)!, material: null,
-      judge: { model: "judge-model", baseUrl: "https://judge.example/v1", apiKeyEnv: TEST_KEY_ENV, timeoutMs: 5000, maxOutputTokens: 128 },
+      judge: testJudge(),
     });
     expect(await Effect.runPromise(registration.evaluate())).toMatchObject({ state: "errored", detail: { code: "score-match-pending-call" } });
     expect(aborted).toBe(true);
@@ -271,7 +275,7 @@ describe("Judge Effect lifecycle", () => {
     });
     const registration = prepareManagedScoreMatch({
       match, options: managedScoreMatchOf(match)!, material: null,
-      judge: { model: "judge-model", baseUrl: "https://judge.example/v1", apiKeyEnv: TEST_KEY_ENV, timeoutMs: 5000, maxOutputTokens: 128 },
+      judge: testJudge(),
     });
     expect(await Effect.runPromise(registration.evaluate())).toMatchObject({ state: "unavailable", detail: { failureDetail: "score-match-incomplete-step" } });
     const evidence = registration.terminalEvidence()[0]!;

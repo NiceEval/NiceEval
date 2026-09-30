@@ -1,4 +1,5 @@
 import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
+import { adapterUsageRecordAttachment } from "./adapter-usage/definition.ts";
 import { attemptCostRecordAttachment } from "./attempt-cost/definition.ts";
 import {
   attemptArtifactsRecordAttachment,
@@ -6,6 +7,7 @@ import {
 } from "./artifacts/definition.ts";
 import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { fileChangesRecordAttachment } from "./file-changes/definition.ts";
+import { executionTracesRecordCollection } from "./execution-traces/definition.ts";
 import {
   attemptRunnerActivitiesRecordAttachment,
   runRunnerActivitiesRecordAttachment,
@@ -20,6 +22,7 @@ import { turnContextsRecordAttachment } from "./turn-contexts/definition.ts";
 
 /** Browser-neutral logical definitions, grouped only for direct current-reader use. */
 export const NiceEvalRecordAttachments = Object.freeze({
+  adapterUsage: adapterUsageRecordAttachment,
   assertions: assertionsRecordAttachment,
   attemptCost: attemptCostRecordAttachment,
   agentTurns: agentTurnsRecordAttachment,
@@ -34,6 +37,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
     run: runRunnerDiagnosticsRecordAttachment,
   }),
   fileChanges: fileChangesRecordAttachment,
+  executionTraces: executionTracesRecordCollection,
   sources: sourcesRecordAttachment,
   artifacts: Object.freeze({
     attempt: attemptArtifactsRecordAttachment,
@@ -46,6 +50,7 @@ const current = <Attachment, Revision extends number>(attachment: Attachment, re
 
 /** Current revisions without importing historical Node-only migration code. */
 export const NiceEvalCurrentRecordAttachments = Object.freeze({
+  adapterUsage: current(adapterUsageRecordAttachment, 2),
   assertions: current(assertionsRecordAttachment, 4),
   attemptCost: current(attemptCostRecordAttachment, 1),
   agentTurns: current(agentTurnsRecordAttachment, 4),
@@ -60,6 +65,7 @@ export const NiceEvalCurrentRecordAttachments = Object.freeze({
     run: current(runRunnerDiagnosticsRecordAttachment, 2),
   }),
   fileChanges: current(fileChangesRecordAttachment, 2),
+  executionTraces: current(executionTracesRecordCollection, 1),
   sources: current(sourcesRecordAttachment, 2),
   artifacts: Object.freeze({
     attempt: current(attemptArtifactsRecordAttachment, 2),

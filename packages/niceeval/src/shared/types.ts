@@ -11,6 +11,11 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+/** One Experiment condition; numeric values must be finite at runtime. */
+export type FlagValue = string | number | boolean;
+/** Flat, immutable conditions declared by an Experiment. Historical Record flags remain JSON. */
+export type ExperimentFlags = Readonly<Record<string, FlagValue>>;
+
 /**
  * JSON 值的递归匹配小语言。对象是深度部分匹配，数组逐项精确匹配；RegExp 与谓词可出现在
  * 任意层级。`unknown` 只存在于谓词接收动态运行时值的边界，不作为可存储的匹配值。

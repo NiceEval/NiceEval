@@ -5,6 +5,7 @@ import {
   type RecordAttachmentCatalog,
 } from "../attachment/index.ts";
 import { agentTurnsRecordAttachmentPersistence } from "./agent-turns/persistence.ts";
+import { adapterUsageRecordAttachmentPersistence } from "./adapter-usage/persistence.ts";
 import { attemptCostRecordAttachmentPersistence } from "./attempt-cost/persistence.ts";
 import {
   attemptArtifactsRecordAttachmentPersistence,
@@ -12,6 +13,7 @@ import {
 } from "./artifacts/persistence.ts";
 import { assertionsRecordAttachmentPersistence } from "./assertions/persistence.ts";
 import { fileChangesRecordAttachmentPersistence } from "./file-changes/persistence.ts";
+import { executionTracesRecordAttachmentPersistence } from "./execution-traces/persistence.ts";
 import {
   attemptRunnerActivitiesRecordAttachmentPersistence,
   runRunnerActivitiesRecordAttachmentPersistence,
@@ -29,6 +31,7 @@ export { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "./c
 
 /** Explicit durable Host composition; importing a family never registers it. */
 export const NiceEvalRecordAttachmentPersistences = Object.freeze([
+  adapterUsageRecordAttachmentPersistence,
   assertionsRecordAttachmentPersistence,
   attemptCostRecordAttachmentPersistence,
   agentTurnsRecordAttachmentPersistence,
@@ -39,6 +42,7 @@ export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   attemptRunnerDiagnosticsRecordAttachmentPersistence,
   runRunnerDiagnosticsRecordAttachmentPersistence,
   fileChangesRecordAttachmentPersistence,
+  executionTracesRecordAttachmentPersistence,
   sourcesRecordAttachmentPersistence,
   attemptArtifactsRecordAttachmentPersistence,
   runArtifactsRecordAttachmentPersistence,
@@ -59,6 +63,7 @@ export const NiceEvalRecordAttachmentCatalog = requireCatalog(
 
 /** Family identities and source subsets derive from the logical definitions. */
 export const NICE_EVAL_FAMILIES = Object.freeze([
+  NiceEvalRecordAttachments.adapterUsage.family,
   NiceEvalRecordAttachments.assertions.family,
   NiceEvalRecordAttachments.attemptCost.family,
   NiceEvalRecordAttachments.agentTurns.family,
@@ -67,12 +72,15 @@ export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.runnerActivities.attempt.family,
   NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
   NiceEvalRecordAttachments.fileChanges.family,
+  NiceEvalRecordAttachments.executionTraces.family,
   NiceEvalRecordAttachments.sources.family,
   NiceEvalRecordAttachments.artifacts.attempt.family,
 ] as const);
 
 export const NICE_EVAL_OBSERVABILITY_SOURCE_FAMILIES = Object.freeze([
+  NiceEvalRecordAttachments.adapterUsage.family,
   NiceEvalRecordAttachments.agentTurns.family,
+  NiceEvalRecordAttachments.executionTraces.family,
   NiceEvalRecordAttachments.turnContexts.family,
   NiceEvalRecordAttachments.sandboxCommands.family,
   NiceEvalRecordAttachments.runnerActivities.attempt.family,

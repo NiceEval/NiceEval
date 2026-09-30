@@ -33,12 +33,14 @@ export {
   type InspectionQueryProtocolError,
   type InspectionQuerySelectionError,
 } from "./query.ts";
-export { QUERY_PROTOCOL } from "./protocol-values.ts";
+export { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 export { canonicalInspectionJson, canonicalJsonValue } from "./canonical.ts";
 export { closeInspectionJson, decodeInspectionRequest, type InspectionCodecError, type InspectionJson } from "./codec.ts";
 export {
   readScoreMatchAudit,
   type ScoreMatchAudit,
+  type ScoreMatchAuditV3,
+  type ScoreMatchAuditImageContent,
   type ScoreMatchAuditEnvelope,
   type ScoreMatchAuditReadResult,
 } from "../assertions/score-match-audit.ts";

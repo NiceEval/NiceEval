@@ -11,7 +11,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli configFile 闭环:shell_tool = false 生效后调不到 shell(反例)",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   flags: { shellTool: false },
   evals: ["configfile"],

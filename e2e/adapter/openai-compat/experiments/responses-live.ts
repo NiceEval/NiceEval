@@ -21,7 +21,7 @@ const agent = defineAgent({
       timeout: 90_000,
     });
     const response = await client.responses.create({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       input: "Call the required function once with marker exactly responses-live-20260809.",
       tools: [
         {

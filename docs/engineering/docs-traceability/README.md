@@ -390,6 +390,8 @@ Effect 层拥有文件系统、lock、journal、recovery 与 receipt。
 
 所有读命令离线、只读。Feature 与 Test domain 不是独立 runtime，也不各自保存缓存或 parser。每个写 domain 自己定义 `--dry-run` 或 `check` receipt；失败不留下部分 docs diff。
 
+迁移保真、旧分支合并与复杂图示的写作方式见 [Concord 迁移与图示实践](migration.md)。
+
 ## 切换与验收
 
 目标 Schema 一次切换，不保留 doc-node legacy reader：

@@ -1,0 +1,51 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_920FSWMBVEP3090H": {
+      "memory/adapter-usage-overview-drops-token-facts.md": {
+        "red": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/red.json",
+          "digest": "sha256:82b7f07c6cf55421782b13dc9449449f869fa27f7f9dd2e83c4bca2e5bab9666"
+        },
+        "green": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/green.json",
+          "digest": "sha256:1a9f4961e9b664c346d724ed7197a5c5bf68126f93a46af1e7b43e9e41213fe6"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/certificate.json",
+          "digest": "sha256:4d9aec3001bc9a18ca9accd6986ac3bb69058308a31a2fff1da222c38ad9c927"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_1HVH3DKD59RGW6X8-netake_90P9D616N550QMCA/inventory.json",
+          "digest": "sha256:44d30ed59b3d840f8bed1e2b350db111de477e9fc6de256a1d11d5f6b93dc43b"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_920FSWMBVEP3090H",
+      "memory": "memory/adapter-usage-overview-drops-token-facts.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_4PYH2YWY2DWVN01S-netake_MRQE2NQ74N0HSAVH/red.json",
+          "digest": "sha256:5c548fef0079abee7396e71b90d134e0f7934fe9123b2539780da55fc2f20577"
+        },
+        "green": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_4PYH2YWY2DWVN01S-netake_MRQE2NQ74N0HSAVH/green.json",
+          "digest": "sha256:68185a067b27753319a4a63a2cd5f4e63f059fab7a36d9eb181e6a504e1b0c6f"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_4PYH2YWY2DWVN01S-netake_MRQE2NQ74N0HSAVH/certificate.json",
+          "digest": "sha256:6555329d8c09f0dd7e479a7f890f797c4ad5d78de20076a971d5132442b36a7a"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/external-usage.test.ts.case-evidence/necase_920FSWMBVEP3090H/memory_adapter-usage-overview-drops-token-facts.md/nered_4PYH2YWY2DWVN01S-netake_MRQE2NQ74N0HSAVH/inventory.json",
+          "digest": "sha256:70d8516a099b04f113dbe6272e6ae3f11a1d729f5502197620cca2de94ebe74c"
+        }
+      },
+      "reason": "replace evidence with the final candidate that also fixes total-only completeness",
+      "retiredAtCommit": "dd2ca6ce8afdead17822bf7cb71b24cc509ab2e5"
+    }
+  ]
+}

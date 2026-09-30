@@ -1,129 +1,130 @@
 ---
 title: "Judge in NiceEval: assess open-ended output"
 sidebarTitle: "Judge"
-description: "Create a pure Judge ScoreMatch, register it against explicit input and output with check, then gate or score the registered Assertion."
+description: "Use a rubric, anchors, and explicit material to assess open-ended output, adding images when needed."
 ---
 
-Judge uses a separate model to assess quality that is hard to express with an exact Match, such as factual consistency, summary faithfulness, or clarity of explanation. Its three factories return pure managed `ScoreMatch` values from `niceeval/expect`. They do not read a context or register an Assertion. Register a Judge Match against explicit input and output with `check`; the measurement is a finite number in `[0, 1]`.
+Judge uses a separate model to assess factual consistency, summary faithfulness, or clarity of explanation. It is a managed evaluator. Ordinary custom `ScoreMatch` values remain pure; `defineJudge`, the built-in factories, and the managed `defineScoreMatch` path all use the same Assertion path.
+
+## Declare a scoring definition
+
+Define the criterion at module scope. `rubric` describes the dimensions to evaluate, and `anchors` provide calibration points for a continuous quality scale:
 
 ```ts
-import { closedQA, factuality, summarizes } from "niceeval/expect";
+import { closeQA, defineJudge } from "niceeval";
 
-const turn = await t.send("Explain the risk of this change in two sentences.");
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("Does the answer explain the risk clearly?").atLeast(0.8),
-)
-  .gate()
-  .label("Risk explanation quality");
+const explainsRisk = defineJudge({
+  name: "explains-risk",
+  rubric: "Evaluate whether explanation covers compatibility, rollback, and data risks for the change.",
+  anchors: [
+    { measurement: 0, description: "Does not explain a concrete risk or rollback plan" },
+    { measurement: 0.5, description: "Explains some risks but omits one key point" },
+    { measurement: 1, description: "Fully explains compatibility, rollback, and data risks" },
+  ],
+});
 ```
 
-## Three Judge factories
+When `anchors` is omitted, NiceEval uses 0 and 1 as the default endpoints. `measurement` may be any finite value in `[0, 1]`; the endpoints do not limit the result to two classes or represent model confidence.
 
-| Factory | Purpose |
-|---|---|
-| `closedQA(question)` | Decide whether output satisfies one open-ended criterion |
-| `factuality(reference)` | Decide whether output agrees with reference text |
-| `summarizes(source)` | Decide whether output faithfully summarizes source text |
+## Select evaluation material
 
-For one Turn, pass its frozen input and assistant output to `turn.check`:
-
-```ts
-turn.check(
-  { input: turn.input, output: turn.message },
-  factuality("The refund period is 30 days.").atLeast(0.9),
-).gate()
-  .label("Refund fact");
-```
-
-Use root-level `t.check` when material comes from files, several turns, or another custom source:
-
-```ts
-const notes = await t.sandbox.readText("NOTES.md");
-t.check(
-  {
-    input: "Install the service and explain installation and rollback in NOTES.md.",
-    output: notes,
-  },
-  closedQA("Does the document explain installation and rollback?").atLeast(0.8),
-).gate().label("Operating instructions");
-```
-
-Read files as strings through the public Sandbox API first. Judge Matches accept only their criterion or reference text. Authors always register explicit `{ input, output }` material through `check`, and model selection comes from the resolved Eval configuration.
-
-## Declare capability and configure it
-
-Only an Eval that declares `judge` can register Judge Matches:
+Pass the values needed for the decision directly to `t.judge`. The Eval `judge` option only selects the model configuration for this Eval:
 
 ```ts
 export default defineEval({
-  judge: true,
+  judge: "judge-model",
   async test(t) {
-    const turn = await t.send("Summarize the requirements.");
-    turn.check(
-      { input: turn.input, output: turn.message },
-      summarizes("The original requirements").atLeast(0.8),
-    ).gate().label("Summary quality");
+    const change = "Modify a persistent field and provide a rollback plan";
+    const turn = await t.send(`Explain this change: ${change}`);
+
+    t.judge({ change, explanation: turn.message }, explainsRisk)
+      .gate(0.8)
+      .label("Risk explanation quality");
   },
 });
 ```
 
-- `judge: true` declares the capability and inherits fields from the Experiment and project configuration.
-- `judge: { ... }` both declares the capability and overrides fields from the Experiment and project configuration.
-- Creating a Judge Assertion without a `judge` declaration immediately reports an authoring error.
+Material accepts strings, finite numbers, booleans, `null`, arrays, and plain objects. Use field names that express application meaning, such as `change` and `explanation`; you do not need to serialize the object first. NiceEval creates a bounded JSON snapshot when the Assertion is registered, so later mutations to the original object do not change the request.
+
+When you need to inspect image content, put `judgeImage({ body, mediaType })` in the material. It freezes PNG or JPEG bytes without creating another Judge or making an additional request. The image and text are sent in the same Judge call and stored in the same Assertion evidence. See [Add image material](/tutorials/verify-judge#add-image-material) for the setup.
+
+`t.judge(material, explainsRisk)` and `t.check(material, explainsRisk)` each register one measurement Assertion. They share the material snapshot, budget, evaluation, audit, sealing, and handle; there is no Match allowlist.
+
+## Use built-in Judges directly
+
+Root `t`, Session, and Turn each provide built-in methods and return `MeasurementAssertionHandle<Kind>` Assertions. For example:
 
 ```ts
-// niceeval.config.ts
+const answer = await t.send("Answer the question using the material.");
+
+answer.closeQA({
+  input: "Answer the question using the material.",
+  output: answer.message,
+  context: "The material only says that the product launches on Friday.",
+}).gate(0.8).label("Uses only the material");
+
+// Equivalent factory form:
+answer.check(
+  { input: "Answer the question using the material.", output: answer.message, context: "The material only says that the product launches on Friday." },
+  closeQA(),
+).gate(0.8);
+```
+
+The direct methods are `factuality(material, options?)`, `faithfulness(material, options?)`, `instructionFollowing(material, options?)`, `pairwisePreference(material, options?)`, and `closeQA(material, options?)`. They only create a factory value and pass it to the current receiver's `check`; they do not register another Assertion.
+
+## Configure the Judge Provider
+
+```ts
+import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
+
 export default defineConfig({
-  judge: {
+  judgeRuntime: OpenAIProvider({
     model: "judge-model",
     baseUrl: "https://gateway.example.com/v1",
     apiKeyEnv: "JUDGE_GATEWAY_KEY",
     timeoutMs: 180_000,
-  },
+    maxOutputTokens: 512,
+  }),
 });
 ```
 
-Field precedence is the Eval object, then the Experiment, then project configuration. When unspecified, `baseUrl` is the OpenAI-compatible endpoint, `apiKeyEnv` is `OPENAI_API_KEY`, and `timeoutMs` is 180000 milliseconds. The Runner freezes the resolved configuration once and uses the same configuration for fingerprinting, preflight, and the actual evaluator.
+`OpenAIProvider`, `VercelProvider`, `OpenRouterProvider`, and `TypesafeProvider` are exported from `niceeval/judge`. Vercel denotes AI Gateway, not Vercel Sandbox or a general AI SDK model object.
+
+To change only the model for one Eval, set `judge: "another-model"`; the selected Provider's endpoint, credential source, and execution limits remain in effect. An Eval or Experiment can also provide a complete Provider, which replaces the service, default model, and limits.
+
+NiceEval uses the selected Provider's managed protocol to obtain a finite `[0, 1]` measurement and public rationale. Chat Providers use forced-function requests; TypeSafe uses `/systemone`. With no model or key, no network request is sent and the Assertion is `unavailable`. Transport failures and timeouts are `unavailable`; HTTP 400, protocol incompatibility, and invalid responses are `errored`.
+
+TypeSafe supports score, classify, and batch classify, but not extract. Therefore `faithfulness()` on `TypesafeProvider` is `unavailable`; it is not converted to an overall score or a different denominator.
 
 ## Thresholds and scores
 
-Pass-style Evals call `.atLeast(n)` on the Judge `ScoreMatch` before registration. This forms the thresholded local condition. The returned Assertion handle's parameterless `.gate()` includes that condition in the Verdict.
+Pass-style and score-style Evals call `.gate(minimum)` on the registered handle to form a quality gate. Score-style Evals can also call `.score(points)`; the contribution is measurement multiplied by points. Gate and score may be called in either order, and both execute the Judge only once.
 
 ```ts
-const quality = turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("Is the answer accurate and complete?").atLeast(0.8),
-)
-  .gate()
-  .label("Answer quality");
-await quality.orStop();
+t.judge(
+  {
+    input: turn.input,
+    output: turn.message,
+    context: "The answer must cover the requirements stated in the input.",
+  },
+  closeQA(),
+).gate(0.8).label("Answer quality");
 ```
 
-`.orStop()` is an async barrier on the same handle. If the value is below the threshold, it stops the current continuation. The Attempt still receives a `failed` Verdict after a normal stop.
-
-Score-style Evals call `.score(n)` on the registered handle. A measurement `m` contributes `m * n`. If control flow also needs a threshold, form it on the Match before registration.
-
-```ts
-t.check(
-  { input: turn.input, output: turn.message },
-  closedQA("How good is the answer?").atLeast(0.5),
-).score(20);
-```
-
-Both configurations run the Judge evaluator once and write one AssertionResult. A Judge Assertion without `.score()` saves only the evaluation by default.
+Both styles run the Judge evaluator once. A Judge Assertion without `.score()` saves only the evaluation by default.
 
 ## Configuration, preflight, and failures
 
-When no model or key is available, NiceEval does not make a network preflight request. The Judge Assertion is `unavailable` and retains the reason `judge-model-unresolved` or `judge-key-unresolved`. If an Assertion configured with a score or `.orStop()` is unavailable, score grading cannot rank it; a pass-style Attempt is `errored`.
+Static configuration validation does not probe the endpoint. A missing Provider or key leaves the Assertion `unavailable`; transport failures and timeouts are `unavailable`; HTTP 400, protocol incompatibility, and invalid responses are `errored`.
 
-When both a model and key exist, the Runner checks the endpoint before dispatch. A real preflight failure is a setup error and does not fabricate an AssertionResult. A transport failure after the model request starts is an ordinary `unavailable`. An invalid response, a non-finite score, or a score outside the range is `errored`; NiceEval does not clamp it to a usable score.
-
-The Judge's reason goes in the general `explanation`. `evidence` stores only trimmed and redacted evaluation material.
+The Judge's reason goes in the general `explanation`. Sealed results retain the frozen material and the evidence sent to the model, including image evidence.
 
 ## Reading results
 
 `niceeval view`, fixed `query` operations, and failure feedback create summaries from the same sealed Assertion results. Failed and unavailable entries appear first. Configured measurements display their actual value and required threshold. Judge has no special Assertion-result or display branch.
+
+Successful requests save the exact material that was sent. A path, URL, alt text, or ordinary base64 string is not visual input; only explicit image material becomes an image part in the model API request.
 
 ## Related reading
 

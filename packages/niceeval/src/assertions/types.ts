@@ -1,6 +1,7 @@
 // assertions 域类型:值断言(expect 匹配器)、断言记录与结果、断言求值上下文、judge 配置。
 
 import type { SourceLoc } from "../shared/types.ts";
+import type { JudgeProviderIdentity } from "../judge/provider.ts";
 
 // Historical fact-use result types remain only for the current Record reader
 // bridge. Active authoring and evaluation use the Assert-first entry runtime.
@@ -218,28 +219,5 @@ export interface DiffData {
 
 export type { Verdict } from "../shared/types.ts";
 
-export interface JudgeConfig {
-  /** 可由更低优先级层补齐；四层都未解析到时，实际 assertion 记 judge-model-unresolved。 */
-  model?: string;
-  /** OpenAI 兼容 base url;省略时使用官方 https://api.openai.com/v1 端点。 */
-  baseUrl?: string;
-  apiKeyEnv?: string;
-  /**
-   * 单次判分调用的上限,毫秒;两层都没写即 180_000。到点中断这次调用,该条断言记
-   * `outcome: "unavailable"` + `reason: "judge-call-failed"`,`evidence` 写明超时秒数
-   * (判分调用不重试)。与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段解析:Experiment
-   * → Eval → 项目 config → 默认值。
-   */
-  timeoutMs?: number;
-  /** Bound the decision response before transport parsing; must be a positive integer. */
-  maxOutputTokens?: number;
-}
-
-/** Frozen pair configuration consumed identically by result identity and evaluation. */
-export interface ResolvedJudgeConfig {
-  readonly model?: string;
-  readonly baseUrl: string;
-  readonly apiKeyEnv: string;
-  readonly timeoutMs: number;
-  readonly maxOutputTokens: number;
-}
+/** Frozen, credential-free pair identity consumed identically by planning and execution. */
+export type ResolvedJudgeConfig = JudgeProviderIdentity;

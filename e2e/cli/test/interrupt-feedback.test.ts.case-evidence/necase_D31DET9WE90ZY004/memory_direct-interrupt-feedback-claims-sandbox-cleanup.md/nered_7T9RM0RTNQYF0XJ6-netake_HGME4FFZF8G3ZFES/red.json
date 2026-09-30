@@ -1,0 +1,54 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/cli/test/interrupt-feedback.test.ts#necase_D31DET9WE90ZY004",
+  "caseId": "necase_D31DET9WE90ZY004",
+  "inventoryDigest": "sha256:fa91b56b1fe24d5a9a71e8c6772423f1959d56ce7cb11f02a890752b32f389a5",
+  "candidate": {
+    "gitSha": "cf25a6bfe21b8382c7063ff9ac01f5a861545ace",
+    "sha256": "2f361ddc23b36b2e919e3e2d07fdb4b032217ff75b5a4e7c3bb6f7909b53ebdf",
+    "sri": "sha512-IhGfaEC2UXE8yY9KvgoRC4qvtihDn00XmIudn03pjlQ8eZxZeExGGz6QbF0VHWJs1Z/DfaKKbtDn1YpRbKyKPA=="
+  },
+  "source": {
+    "checkout": "cf25a6bfe21b8382c7063ff9ac01f5a861545ace",
+    "testFileSha256": "1da4ffaf59cb6c5d43d2b8301852853cc95796c8f88385b4fbfe6daee470be4e",
+    "sidecarSha256": "d8b634182feacae0dd9afa64a34fe470b10d1c5387b2992e2604fdd12d56c3df"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/interrupt-feedback.test.ts",
+      "--testNamePattern",
+      " \\[necase_D31DET9WE90ZY004\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-Pmd9S9/runs/cli",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 969896 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "32a64c34-73b0-4fbb-b6d3-17c192f2f381",
+  "receiptSha256": "e67e4f17191a6ccb779d42ea3dc56e04281a2972617ea0c96cd7b6653f7ac9dc"
+}

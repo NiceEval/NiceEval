@@ -18,7 +18,11 @@ import {
   renderFeatureCommandIndex,
   type CliCommandContribution,
 } from "./contribution.ts";
-import { formatThrown } from "../util.ts";
+import {
+  ownErrorCode,
+  renderMigrationAssistance,
+  summarizeUnknownError,
+} from "../error-assistance/index.ts";
 
 /** A recoverable root-command usage error. */
 export class CliUsageError extends Data.TaggedError("CliUsageError")<{
@@ -65,32 +69,32 @@ function operationError(operation: string, cause: unknown, exitCode = 1): CliOpe
 }
 
 function parseError(cause: unknown): CliUsageError {
-  const message = cause instanceof Error ? cause.message : String(cause);
+  const message = summarizeUnknownError(cause);
   return usageError(`${message}
 Run \`niceeval --help\` for usage.
 `);
 }
 
 function parseErrorCode(cause: unknown): string | undefined {
-  if (!(cause instanceof Error)) return undefined;
-  const code = Reflect.get(cause, "code");
-  return typeof code === "string" ? code : undefined;
+  return ownErrorCode(cause);
 }
 
 /** Bootstrap owns presentation of typed failures; defects and interruption stay in Cause. */
 export function renderCliFailure(failure: CliFailure): string {
   if (failure._tag === "CliUsageError") return failure.message;
+  const migration = renderMigrationAssistance(failure.cause);
+  if (migration !== undefined) return migration;
   if (failure._tag === "CliFeatureError") {
     if (failure.display !== undefined) return failure.display;
     if (parseErrorCode(failure.cause)?.startsWith("ERR_PARSE_ARGS_") === true) {
-      const message = failure.cause instanceof Error ? failure.cause.message : String(failure.cause);
+      const message = summarizeUnknownError(failure.cause);
       return `${message}
 Run \`niceeval --help\` for usage.
 `;
     }
-    return `${failure.feature} ${failure.operation} failed: ${formatThrown(failure.cause)}\n`;
+    return `${failure.feature} ${failure.operation} failed: ${summarizeUnknownError(failure.cause)}\n`;
   }
-  return `niceeval error: ${formatThrown(failure.cause)}
+  return `niceeval error: ${summarizeUnknownError(failure.cause)}
 `;
 }
 

@@ -6,17 +6,7 @@ createdAt: 2026-07-12T19:13:58+08:00
 kind: feature
 ---
 
----
-format: niceeval.docs-node/v1
-kind: feature
-relations: {}
----
 
----
-format: niceeval.docs-node/v1
-kind: feature
-relations: {}
----
 
 # Experiments —— 怎么跑这批 eval
 
@@ -107,9 +97,9 @@ export default defineExperiment({
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
-  judgeRuntime?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 Judge A/B，不定义 rubric 或 gate／score／stop policy
-  flags?: Record<string, JsonValue>;        // KV 参数,透传到 ctx.flags / t.flags(见 Library);必须 JSON 可序列化——
-                                            // 实验是可签入可复现的配置,函数/类实例装不进 Run;解析时校验,非 JSON 值直接报错
+  judgeRuntime?: JudgeSelection;                    // 本实验的裁判模型或完整 Provider；用于可签入的 Judge A/B
+  flags?: Record<string, string | number | boolean>; // 扁平实验条件，经 ctx.flags / t.flags 传递（见 Library）
+                                            // number 必须有限；输入和 parseFlags 输出均在启动前校验、复制并冻结
   labels?: Record<string, string | number>; // 报告归类标注:实验在各对比轴上的坐标(如 { line: "codex", memory: "mempal" })。
                                             // 不透传 ctx / t;报告用 label() / numericLabel() 按它归类(见 Library)
   attempts?: number;                         // 每个 (agent × model × eval) 跑几次(默认 1)

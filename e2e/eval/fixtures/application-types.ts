@@ -1,7 +1,10 @@
 import {
   defineAdapter,
+  defineExperiment,
+  type JsonValue,
   defineJudge,
   defineEval,
+  defineConfig,
   type JudgeDefinition,
   defineAdapterContract,
   type AdapterCleanupContext,
@@ -11,6 +14,23 @@ import {
 import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
 import type { AdapterAssertionsFactoryContext as AssertionsContextFromSubpath } from "niceeval/adapter";
 import { satisfies, defineScoreMatch } from "niceeval/expect";
+import { OpenAIProvider, OpenRouterProvider, TypesafeProvider, VercelProvider, type JudgeProvider } from "niceeval/judge";
+
+const provider: JudgeProvider = OpenAIProvider({ model: "judge-model" });
+defineConfig({ judgeRuntime: provider });
+defineConfig({ judgeRuntime: VercelProvider({ model: "gateway-model" }) });
+defineConfig({ judgeRuntime: OpenRouterProvider({ model: "router-model", apiKeyEnv: "CUSTOM_KEY" }) });
+defineConfig({ judgeRuntime: TypesafeProvider({ model: "jev-model", apiKey: "type-fixture-key" }) });
+// @ts-expect-error A project must choose a Provider, not just a model.
+defineConfig({ judgeRuntime: "model" });
+// @ts-expect-error Legacy structural Judge configuration is not a Provider.
+defineConfig({ judgeRuntime: { model: "model" } });
+// @ts-expect-error A Provider has a required model.
+OpenAIProvider({});
+// @ts-expect-error A credential selects exactly one source.
+OpenAIProvider({ model: "model", apiKey: "key", apiKeyEnv: "KEY" });
+// @ts-expect-error TypeSafe has no server-side output-token limit.
+TypesafeProvider({ model: "model", maxOutputTokens: 128 });
 
 interface Post { id: string; text: string }
 const hasText = satisfies<Post>("Post has text", (post) => post.text.length > 0);
@@ -182,7 +202,7 @@ defineAdapter({ name: "prototype-collision", create: () => ({ toString: () => "a
 
 const quality = defineJudge({ name: "post-quality", rubric: "Post text is relevant to the task." });
 const qualityAlias: JudgeDefinition = quality;
-social.defineEval({ judge: { model: "eval-judge" }, async test(t) {
+social.defineEval({ judge: "eval-judge", async test(t) {
   const post: Post = await t.post("hello");
   t.check({ task: "greet", post }, qualityAlias).gate(0.8);
 } });
@@ -237,3 +257,100 @@ defineEval({ async test(t) {
   // @ts-expect-error Pass Eval measurement cannot contribute points.
   t.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).score(1);
 } });
+
+// Flags infer only from the selected Adapter's synchronous parser.
+interface StrategyFlags { strategy: "safe" | "fast"; limit: number }
+declare function parseStrategyFlags(input: unknown): StrategyFlags;
+const strategyAdapter = defineAdapter({
+  name: "strategy",
+  parseFlags: parseStrategyFlags,
+  create(ctx) {
+    const strategy: "safe" | "fast" = ctx.flags.strategy;
+    const limit: number = ctx.flags.limit;
+    // @ts-expect-error The parser returns a numeric limit.
+    const encoded: string = ctx.flags.limit;
+    return { read: () => ({ strategy, limit }) };
+  },
+});
+strategyAdapter.defineEval({ test(t) {
+  const strategy: "safe" | "fast" = t.flags.strategy;
+  const limit: number = t.flags.limit;
+  // @ts-expect-error Parsed flags do not have an open index signature.
+  t.flags.missing;
+  void strategy; void limit;
+} });
+strategyAdapter.defineScoreEval({ test(t) { const limit: number = t.flags.limit; t.score(limit); } });
+const typedExperiment = defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe", limit: 2 } });
+const normalizedLimit: number = typedExperiment.flags.limit;
+// @ts-expect-error Flags cannot widen the Adapter's literal strategy type.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "typo", limit: 2 } });
+// An omitted flags object is passed to the parser as {} for defaulting or rejection.
+defineExperiment({ adapter: strategyAdapter });
+// @ts-expect-error Explicit flags must provide the complete parser result shape.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe" } });
+// @ts-expect-error Experiment input uses the same numeric limit as the parser output.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe", limit: "2" } });
+// @ts-expect-error Excess flags do not fall back to JSON.
+defineExperiment({ adapter: strategyAdapter, flags: { strategy: "safe", limit: 2, typo: true } });
+const widenedAttack = { adapter: strategyAdapter, flags: { strategy: "typo" as const, limit: 2 } };
+// @ts-expect-error Passing a variable cannot make inference widen the Adapter.
+defineExperiment(widenedAttack);
+
+const optionalAdapter = defineAdapter({ name: "optional", parseFlags: (_input: unknown): { strategy?: "safe" } => ({}), create: (ctx) => ({ read: () => ctx.flags.strategy }) });
+defineExperiment({ adapter: optionalAdapter });
+defineExperiment({ adapter: social, flags: { enabled: false, count: 2, strategy: "safe" } });
+// @ts-expect-error Adapters without a parser also reject arrays.
+defineExperiment({ adapter: social, flags: { legacy: [true, 2, null] } });
+// @ts-expect-error Adapters without a parser reject null.
+defineExperiment({ adapter: social, flags: { value: null } });
+// @ts-expect-error Adapters without a parser reject nested objects.
+defineExperiment({ adapter: social, flags: { value: { enabled: true } } });
+
+const flagsContract = defineAdapterContract<{ read(): number }>({ name: "shared-flags" }).withParseFlags(parseStrategyFlags);
+flagsContract.defineEval({ test(t) { const limit: number = t.flags.limit; void limit; } });
+const flagsImplementation = flagsContract.implement({ name: "shared-flags-impl", create(ctx) {
+  const limit: number = ctx.flags.limit;
+  return { read: () => limit };
+} });
+defineExperiment({ adapter: flagsImplementation, flags: { strategy: "fast", limit: 2 } });
+// @ts-expect-error Shared implementations preserve exact parsed flags.
+defineExperiment({ adapter: flagsImplementation, flags: { strategy: "typo", limit: 2 } });
+const flagsAndAssertions = flagsContract.withAssertions(({ app, check }) => ({
+  valid() { return check(app.read(), satisfies<number>("positive", (value) => value > 0)); },
+}));
+flagsAndAssertions.defineScoreEval({ test(t) { const limit: number = t.flags.limit; t.valid().score(limit); } });
+const assertionFlagsAdapter = defineAdapter({
+  name: "assertion-flags",
+  parseFlags: parseStrategyFlags,
+  create: (ctx) => ({ read: () => ctx.flags.limit }),
+  assertions: ({ app, check }) => ({ valid() { return check(app.read(), satisfies<number>("positive", (value) => value > 0)); } }),
+});
+assertionFlagsAdapter.defineEval({ test(t) { const limit: number = t.flags.limit; t.valid(); void limit; } });
+void normalizedLimit;
+
+// @ts-expect-error Parser outputs must remain flat, even when all nested values are JSON.
+defineAdapter({ name: "nested-flags", parseFlags: (_input: unknown) => ({ nested: { count: 1 } }), create: () => ({}) });
+// @ts-expect-error Arrays cannot be flag values.
+defineAdapter({ name: "array-member", parseFlags: (_input: unknown) => ({ names: ["a"] }), create: () => ({}) });
+// @ts-expect-error Null cannot be a flag value.
+defineAdapter({ name: "null-member", parseFlags: (_input: unknown) => ({ value: null }), create: () => ({}) });
+// @ts-expect-error Required undefined cannot be a flag value.
+defineAdapter({ name: "undefined-member", parseFlags: (_input: unknown) => ({ value: undefined }), create: () => ({}) });
+strategyAdapter.defineEval({ test(t) {
+  // @ts-expect-error Normalized flags remain read-only.
+  t.flags.limit = 3;
+} });
+// @ts-expect-error An async parser cannot provide synchronous flags.
+defineAdapter({ name: "async-flags", parseFlags: async (_input: unknown) => ({ ok: true }), create: () => ({}) });
+// @ts-expect-error The parser must return a record, not a primitive.
+defineAdapter({ name: "primitive-flags", parseFlags: (_input: unknown) => 1, create: () => ({}) });
+// @ts-expect-error JSON flags cannot contain function members.
+defineAdapter({ name: "function-flags", parseFlags: (_input: unknown) => ({ nested: { method() {} } }), create: () => ({}) });
+// @ts-expect-error Root arrays are not flags records.
+defineAdapter({ name: "array-flags", parseFlags: (_input: unknown) => [1], create: () => ({}) });
+// @ts-expect-error A shared contract also requires a synchronous parser.
+flagsContract.withParseFlags(async (_input: unknown) => ({ strategy: "safe" }));
+
+declare function parseJsonFlags(input: unknown): Record<string, JsonValue>;
+// @ts-expect-error Arbitrary JSON parser output is wider than scalar flags.
+defineAdapter({ name: "json-flags", parseFlags: parseJsonFlags, create: () => ({}) });

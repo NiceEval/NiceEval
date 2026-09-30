@@ -28,6 +28,9 @@ Score Eval 把 earned score 与 `complete`、`partial` 或 `unavailable` 保存�
 | required score source 不可用且没有可审计 earned 数值 | `errored` | `unavailable`，不伪造零分。 |
 | 显式 skip | `skipped`，除非更高优先级条件 | 已封口贡献照实保存，并标明 complete、partial 或 unavailable。 |
 
+人读展示将 `passed + complete` 的 Score Eval 标为 `scored` 或“评分完成”。这是有效评分，不表示目标已经达成，也不隐含通过阈值；完整零分同样适用。`partial`、`unavailable`、failed gate、execution error 与 skip 均不能使用该标签。
+CLI 与 View 从已有 Verdict 和 score facts 选择标签，canonical 四态 Verdict、Assertion DSL 与机器结果保持原义。
+
 `points` 只是 Assertion 的分值／计算单位。`evaluationKind` 是当前 Eval 定义的输入。Verdict 不按分数折叠，score 也不从 Verdict 派生。
 
 `failed + complete` 是合法且必须保留的组合：显式 gate 已失败，但 earned score 可完整计算。JSON、CLI、JUnit、人读 show、View 与 compatibility projection 都必须沿同一 Verdict 呈现失败；它不能触发 success early exit 或进入成功排名。stop-only condition 不是 gate，reader 不得把它提升为 failed。

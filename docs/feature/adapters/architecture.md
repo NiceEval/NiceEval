@@ -107,3 +107,10 @@ Runner 在唯一 ACTIVE 出口先对完整文本做已知 secret redaction，再
 
 新接一个对象时先判断协议知识能否独立于 transport。
 如果能，先实现纯转换器和 fixture 测试，再编写薄 Adapter；不能，则保留为项目自己的手写映射，不把应用私有协议提升成 niceeval API。
+
+## 轨迹领域标识与持久格式
+
+`ExecutionTraceInput.schema` 只接收 `id`。领域标识不承担 Record 格式迁移职责；框架的 collection family revision 保持独立。
+新写入的 header 和 Agent Turns 派生 header 都不合成领域 revision。历史 header 可以包含非负安全整数 `schema.revision`，
+读取时保留原值与缺席状态，不回填、不转换 id，也不修改原始 Record。此次扩宽 header 读取规则沿用现有 family revision 1，
+不新增迁移。旧读者不保证能读取缺少领域 revision 的新 header；后续不兼容格式变更另行治理。

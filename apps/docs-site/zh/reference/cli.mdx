@@ -6,6 +6,8 @@ description: "用固定的 query、show 和 view 读取 canonical SQLite Record�
 
 运行评估使用 `niceeval exp`。NiceEval 提供三条读取路径：给 AI、脚本和 CI 的 `niceeval query`，给终端中人读的 `niceeval show`，以及在浏览器中审阅的 `niceeval view`。三者都经固定 Inspection operation 读取一个 `PublicationCutoff` 内的已发布事实；origin Run 仍为 `active` 的 Attempt 也可见。
 
+将 `niceeval exp` 的人读输出接入管道时，stdout 仍会显示运行中的进度。每行带 Experiment、Eval 与 Attempt 序号；每个 Attempt 最多每秒输出一次变化，相同文本不会刷屏。终端中继续显示动态面板，脚本读取结构化结果时使用 `--json`。
+
 ## `niceeval query`
 
 ```sh
@@ -41,6 +43,8 @@ niceeval show @<locator> --diff [--record <file>]
 `show` 是固定的终端排版入口。省略 selector 时显示默认 overview。`--run <run-id>` 显示一个精确 Run，可重复传入。`--experiment <experiment-id>` 显示一个精确 Experiment，也可重复传入。
 
 通过制显示 `Verdicts` 与 `Pass rate`；纯计分制显示 `Verdicts` 与 `Score`，不显示通过率。Score 的完整度只说明数值能否计算：`failed + complete` 必须显示失败并保留 earned score，只有 `passed + complete` 才进入成功排名。混合范围只在适用的行显示通过率。
+
+完整评分且 Verdict 为 `passed` 时，人读详情显示 `scored`，浏览器显示“评分完成”。完整零分也表示评分完成，不表示目标已经达成，也没有默认通过阈值。failed gate 仍显示失败；partial 只保留已知分数下界，不称为有效评分。
 
 `@<locator>` 选择一个 Attempt。它不能与 `--run` 或 `--experiment` 一起使用，后两者也不能一起使用。一个命令最多只能给出一个 Attempt locator。
 

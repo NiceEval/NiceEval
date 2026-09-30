@@ -21,6 +21,7 @@ export {
 export {
   reportActivity,
   reportDiagnostic,
+  reportAssistedDiagnostic,
   reportInterrupted,
   reportReporterError,
   reportAttemptLifecycle,

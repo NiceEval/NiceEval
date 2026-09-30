@@ -4,7 +4,8 @@ import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
-test.concurrent("Judge 模型不变时沿用，修改 Eval 模型后重新评价 [necase_GCCD96SAN8ZJTEM5]", async () => {
+// @feature docs/feature/experiments/README.md
+test.concurrent("Judge 模型不变时沿用，修改 Eval 模型后重新评价", async () => {
   const models: string[] = [];
   const server = createServer(async (request, response) => {
     let body = "";

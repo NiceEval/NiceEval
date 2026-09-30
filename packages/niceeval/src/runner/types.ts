@@ -1,8 +1,9 @@
+import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "../adapter-flags.ts";
 // runner 域类型:结果 / 汇总 / reporter 契约,eval / experiment / config 定义,
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
 import type { Effect } from "effect";
-import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
+import type { ExperimentFlags, FlagValue, JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
@@ -13,13 +14,13 @@ import type { BuildKey } from "../sandbox/identity.ts";
 import type {
   EvaluationFactResult,
   DiffArtifact,
-  JudgeConfig,
   ResolvedJudgeConfig,
   PrimaryFactSummary,
   ScoreFactAttemptOutcome,
   ScoreFactUseResult,
   VerdictFactUseResult,
 } from "../assertions/types.ts";
+import type { JudgeProvider, JudgeProviderIdentity, JudgeSelection } from "../judge/provider.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../attempt-locator.ts";
@@ -57,7 +58,7 @@ export interface ExperimentRunInfo {
   /** 跨 Invocation 共享外部状态的互斥声明；只记录稳定、非凭据 key。 */
   sharedState?: SharedStateConfig;
   /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
-  judgeRuntime?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs" | "maxOutputTokens">;
+  judgeRuntime?: JudgeProviderIdentity;
   /**
    * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
    * 实际 artifact digest/platform 属运行 provenance，不进入这里。
@@ -697,8 +698,8 @@ export interface EvalAuthorFields {
   sandbox?: SandboxLayer;
   /** 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。 */
   plugins?: readonly PluginInstance<"eval">[];
-  /** 本 Eval 的 Judge Runtime 字段级覆盖；Experiment 与项目 Config 可补齐未声明字段。 */
-  judge?: JudgeConfig;
+  /** 模型字符串只替换项目 Judge Provider 的模型；Provider 实例整体替换。Experiment 设置优先。 */
+  judge?: JudgeSelection;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
@@ -751,7 +752,7 @@ export interface EvalDefinitionFields<
    */
   readonly sandbox?: Sandbox;
   readonly plugins: readonly PluginInstance<"eval">[];
-  readonly judge?: JudgeConfig;
+  readonly judge?: JudgeSelection;
   readonly reporters: readonly Reporter[];
   readonly timeoutMs?: number;
   readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
@@ -938,11 +939,11 @@ export interface ExperimentAuthorFields {
    * rubric 由 Match 拥有，材料与消费阈值由 Assertion 提供。各字段按
    * Experiment → Eval → Config → 内置默认值解析。
    */
-  judgeRuntime?: JudgeConfig;
-  /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
-   *  (defineExperiment 解析时校验,非 JSON 直接报错),经 ctx.flags 透传给 adapter、
+  judgeRuntime?: JudgeSelection;
+  /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是扁平标量对象
+   *  (仅字符串、有限数字或布尔值，defineExperiment 解析时校验),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
-  flags?: globalThis.Record<string, JsonValue>;
+  flags?: globalThis.Record<string, FlagValue>;
   /**
    * 报告归类标注:实验在各对比轴上的坐标(如 `{ line: "codex", memory: "mempal" }`)。
    * 值域 string | number(解析时校验)。与 `flags` 的分界是「会不会改变 attempt 里发生的事」:
@@ -1032,25 +1033,33 @@ export interface ExperimentAuthorFields {
 }
 
 /** 作者输入：id 只能由发现阶段从文件路径推导。 */
-type ExperimentAdapterSelection =
-  | { readonly adapter: Adapter; readonly agent?: never }
-  | { readonly agent: Agent; readonly adapter?: never };
+/** Infer only from the Adapter selection; flags cannot widen it. */
+type ExperimentFlagsParser<A extends Adapter> = A extends { readonly parseFlags: infer S extends AdapterFlagsParser }
+  ? S
+  : undefined;
+type ExperimentFlagsFields<A extends Adapter> = {
+  readonly flags?: NoInfer<AdapterFlagsValue<ExperimentFlagsParser<A>>>;
+};
 
-export type ExperimentInput = Omit<ExperimentAuthorFields, "agent" | "adapter"> &
-  ExperimentAdapterSelection & {
+type ExperimentAdapterSelection<A extends Adapter> =
+  | { readonly adapter: A; readonly agent?: never }
+  | { readonly agent: A & Agent; readonly adapter?: never };
+
+export type ExperimentInput<A extends Adapter = Adapter> = Omit<ExperimentAuthorFields, "agent" | "adapter" | "flags"> &
+  ExperimentAdapterSelection<A> & ExperimentFlagsFields<NoInfer<A>> & {
   id?: ExperimentIdComesFromFilePath;
 };
 
 /** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
-export interface ExperimentDefinition {
+export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly description?: string;
-  readonly adapter: Adapter;
+  readonly adapter: A;
   /** Present when the selected Adapter is an Agent, regardless of the input shorthand. */
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly judgeRuntime?: JudgeConfig;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly judgeRuntime?: JudgeSelection;
+  readonly flags: AdapterFlagsOutput<ExperimentFlagsParser<A>> & ExperimentFlags;
   readonly labels: Readonly<globalThis.Record<string, string | number>>;
   readonly attempts: number;
   readonly earlyExit: boolean;
@@ -1070,11 +1079,14 @@ export interface ExperimentDefinition {
   readonly [EXPERIMENT_DEFINITION]: true;
 }
 
+const experimentDefinitions = new WeakSet<object>();
+
 /** @internal 仅 defineExperiment 写入私有品牌。 */
 export function brandExperimentDefinition(
   value: Omit<ExperimentDefinition, typeof EXPERIMENT_DEFINITION>,
 ): ExperimentDefinition {
   Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
+  experimentDefinitions.add(value);
   return Object.freeze(value) as ExperimentDefinition;
 }
 
@@ -1083,7 +1095,7 @@ export function isExperimentDefinition(value: unknown): value is ExperimentDefin
   return (
     typeof value === "object" &&
     value !== null &&
-    (value as { readonly [EXPERIMENT_DEFINITION]?: unknown })[EXPERIMENT_DEFINITION] === true
+    experimentDefinitions.has(value)
   );
 }
 
@@ -1133,8 +1145,8 @@ export interface Config {
   name?: LocalizedText;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
   workspace?: string;
-  /** 项目级默认 Judge Runtime 配置；EvalDef.judge 与 Experiment.judgeRuntime 可逐字段替换默认值。 */
-  judgeRuntime?: JudgeConfig;
+  /** 项目级默认 Judge Provider；Eval 与 Experiment 可替换模型或整个 Provider。 */
+  judgeRuntime?: JudgeProvider;
   /** 项目级默认 reporter 列表(如落盘 / 上传结果);EvalDef.reporters 会与它合并。 */
   reporters?: Reporter[];
   /** 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。 */
@@ -1161,23 +1173,38 @@ export interface Config {
   /**
    * 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
-   * 精确 key 优先于通配。pricing 只驱动 `estimatedCostUSD` 的估算(`estimateCost`),与
-   * `usage.costUSD`(网关实测)无关——两者独立并存,互不兜底。它是 runtime/config 价目表,
-   * 固定 Inspection operation 不会把它作为额外输入。
+   * 精确 key 优先于通配。Runner 用它计算 `maxCost` 的预算 estimate；Adapter physical-call
+   * collector 只在 reported cost 缺席时，把命中的显式 fixed profile 封存为 call-bound estimate proof。
+   * Inspection 只读已封存 proof，不把 mutable config 作为 operation 输入，也不按 endpoint 倒填历史调用。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
 }
 
-/** 每百万 token 的美元单价;省略的桶退回 `inputPerMTok`(cache token 本质也是 input)。 */
+/** 每百万 token 的配置价格；Runner 预算保持既有 USD 语义，Inspection 不读取该预算结果。 */
 export interface PriceOverride {
   /** 普通输入 token 单价。 */
   inputPerMTok: number;
   /** 输出 token 单价。 */
   outputPerMTok: number;
-  /** cache 命中(读)token 单价,省略则退回 inputPerMTok。 */
+  /**
+   * cache 命中（读）token 单价。封存 physical-call estimate 时，省略表示该桶价格未知，不会改用 input rate。
+   * 独立的 Runner `maxCost` 执行前预算为保持既有行为，仍会在它自己的计算中使用 input rate fallback。
+   */
   cacheReadPerMTok?: number;
-  /** cache 写入 token 单价,省略则退回 inputPerMTok。 */
+  /**
+   * cache 写入 token 单价。封存 physical-call estimate 时，省略表示该桶价格未知，不会改用 input rate。
+   * 独立的 Runner `maxCost` 执行前预算为保持既有行为，仍会在它自己的计算中使用 input rate fallback。
+   */
   cacheWritePerMTok?: number;
+  /** Inspection call-price receipt 的依据；省略时按兼容配置解释为 catalog reference。 */
+  basis?: "catalog-reference";
+  /** 配置价格当前只接受 USD；reported cost 仍可报告其它货币。 */
+  currency?: "USD";
+  /** 非秘密价格来源身份；省略时使用 niceeval.config.pricing，未知时间保留 null。 */
+  source?: {
+    readonly id: string;
+    readonly asOf?: number | null;
+  };
 }
 
 // ───────────────────────── 调度编排 ─────────────────────────
@@ -1208,7 +1235,7 @@ export interface AdapterRun {
   readonly agent?: Agent;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   readonly attempts: number;
   readonly earlyExit: boolean;
   /** 本次 Invocation 已按 CLI → Experiment → Config → default 归一的 Host cache 策略。 */
@@ -1223,7 +1250,7 @@ export interface AdapterRun {
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
   readonly sharedState?: SharedStateConfig;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
-  readonly judgeRuntime?: JudgeConfig;
+  readonly judgeRuntime?: JudgeSelection;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
@@ -1355,7 +1382,7 @@ export interface Attempt {
   readonly fingerprint: string;
   readonly configHash: string;
   /** Planning 时唯一解析并冻结的 Judge capability/config。 */
-  readonly judge: ResolvedJudgeConfig;
+  readonly judge: ResolvedJudgeConfig | undefined;
   /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */

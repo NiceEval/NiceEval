@@ -1,8 +1,9 @@
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
   name: { "zh-CN": "Codex SDK 示例", en: "Codex SDK example" },
-  judgeRuntime: { model: "gpt-5.4" },
+  judgeRuntime: OpenAIProvider({ model: "gpt-5.4" }),
   timeoutMs: 180_000,
   // span 接收钉在 OTLP 标准端口:起应用时 OTEL_EXPORTER_OTLP_ENDPOINT 指过来即可(见 README)。
   telemetry: { port: 4318 },

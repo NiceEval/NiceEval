@@ -3,9 +3,10 @@ import { only } from "@niceeval/testkit";
 import { createServer } from "node:http";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
-import { inspectAssertion, inspectAttempt } from "./inspection.ts";
+import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
-test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实 [necase_2TCX4FPX8TA9NV88]", async () => {
+// @use-case docs/feature/eval/use-case/judge-quality.md
+test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", async () => {
   let measurementCalls = 0;
   let measurementConnectionClosed = false;
   const provider = createServer((request, response) => {
@@ -51,6 +52,12 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实 [n
       expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
       expect(JSON.stringify(detail.document.assertion)).toContain("attempted");
       expect(JSON.stringify(detail.document.assertion)).toContain("pending-marker");
+      expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
+        state: "available", audit: { schemaVersion: 3, result: { state: "interrupted" },
+          images: [{ mediaType: "image/png" }],
+          calls: [{ state: "admitted", attempts: [{ transport: "attempted", result: { state: "interrupted" } }] }],
+        },
+      });
       expect(measurementCalls).toBe(1);
       expect(measurementConnectionClosed).toBe(true);
     });

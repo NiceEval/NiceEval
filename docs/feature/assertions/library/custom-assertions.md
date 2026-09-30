@@ -44,6 +44,7 @@ measurement handle 还可用 `.orStop(minimum)` 建立只影响控制流的 cond
 
 高级定义的 version、config 和 llm 限制组成显式身份。config 在定义时完成 canonical JSON 快照并冻结。
 callback 使用登记时的材料快照；它不能读取 t、Turn 或 Session 的隐式材料。
+材料类型 `JudgeMaterial` 从 `niceeval/judge` 导入；它接受 JSON 与显式 `judgeImage()` 值，图片捕获与容量规则见 [Judge 图片材料](../../judge/library.md#原生图片材料)。
 以下是高级定义与 callback 结果的完整形状：
 
 ```ts
@@ -72,23 +73,23 @@ interface ScoreMatchContext {
     score(input: {
       readonly rubric: string;
       readonly anchors: readonly { readonly measurement: number; readonly description: string }[];
-      readonly material: JsonValue;
+      readonly material: JudgeMaterial;
     }): Effect.Effect<LlmScoreResult, ScoreMatchLlmFailure>;
     classify(input: {
       readonly rubric: string;
       readonly choices: readonly string[];
-      readonly material: JsonValue;
+      readonly material: JudgeMaterial;
     }): Effect.Effect<LlmClassifyResult, ScoreMatchLlmFailure>;
     extract(input: {
       readonly rubric: string;
       readonly maxItems: number;
-      readonly material: JsonValue;
+      readonly material: JudgeMaterial;
     }): Effect.Effect<LlmExtractResult, ScoreMatchLlmFailure>;
     batchClassify(input: {
       readonly rubric: string;
       readonly choices: readonly string[];
       readonly items: readonly { readonly id: string; readonly text: string }[];
-      readonly material: JsonValue;
+      readonly material: JudgeMaterial;
     }): Effect.Effect<LlmBatchClassifyResult, ScoreMatchLlmFailure>;
   };
 }

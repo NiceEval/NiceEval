@@ -4,7 +4,7 @@ import { defineExperiment } from "niceeval";
 import { aiSdkAgent } from "niceeval/adapter";
 import { z } from "zod";
 
-const DEFAULT_MODEL = "gpt-5.6-luna";
+const DEFAULT_MODEL = "gpt-6-luna";
 const provider = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   baseURL: process.env.OPENAI_BASE_URL,

@@ -77,7 +77,8 @@ function environment(baseUrl: string) {
   };
 }
 
-test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤可复核 [necase_5XSA6N7CC3VXT291]", async () => {
+// @use-case docs/feature/judge/use-case/inspect-judge-score.md
+test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤可复核", async () => {
   const { server, requests } = providerFixture(false);
   const baseUrl = await listen(server);
   try {
@@ -117,7 +118,8 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
   } finally { await close(server); }
 });
 
-test.concurrent("自定义 Match 捕获必要模型调用失败不能伪造正常成绩 [necase_Z0M6G2QTCQAW4BGN]", async () => {
+// @use-case docs/feature/judge/use-case/inspect-judge-score.md
+test.concurrent("自定义 Match 捕获必要模型调用失败不能伪造正常成绩", async () => {
   const { server, requests } = providerFixture(true);
   const baseUrl = await listen(server);
   try {

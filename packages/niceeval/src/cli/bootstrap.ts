@@ -38,6 +38,7 @@ import { DockerCacheAdministrationLive } from "../docker/cache-live.ts";
 import { NodeProjectLive } from "../project/node.ts";
 import { ProjectFileSystem, ProjectManifestFacts, ProjectProcessFacts } from "../project/services.ts";
 import { NodeViewBrowserLive, ViewBrowser } from "../view/browser.ts";
+import { summarizeUnknownError } from "../error-assistance/index.ts";
 
 // There is exactly one synchronous ownership state for the first signal. Node
 // invokes both signal handlers and Effect continuations serially, so the CLI's
@@ -167,7 +168,9 @@ const application = Effect.scoped(cliProgram(featureCommands)).pipe(
   // platform's generic logger so the CLI keeps its existing user-facing form.
   Effect.tapCause((cause) => Cause.hasInterruptsOnly(cause)
     ? Effect.void
-    : Effect.sync(() => process.stderr.write(`niceeval error:\n${Cause.pretty(cause)}\n`))),
+    : Effect.sync(() => process.stderr.write(
+      `niceeval error:\n${summarizeUnknownError(Cause.squash(cause))}\n`,
+    ))),
 );
 
 // Effect v4 keeps Node alive while live fibers await callbacks, so this

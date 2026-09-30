@@ -1,9 +1,10 @@
 import { NodeServices } from "@effect/platform-node";
+import { readGovernanceConfiguration } from "concord-sdlc/governance-config";
 import type { RepositoryHost } from "concord-sdlc/repository/host-contract";
 import { Effect, Layer } from "effect";
 
 import * as inventory from './inventory-api.js';
-import { repoRootDir } from './discovery.js';
+import { canonicalRepoId, repoRootDir } from './discovery.js';
 
 /** NiceEval owns native collection, candidate injection, and formal evidence. */
 const nativeRuntime = Layer.mergeAll(NodeServices.layer, inventory.OwnedProcessLive);
@@ -21,7 +22,13 @@ export default {
   format: 'concord.repository-host/v2',
   caseIdentity: 'concord.case-contracts/v1',
   repositoryRoot: repoRootDir(),
-  collectRepoCaseInventory: (suiteId, checkout) => runNative(inventory.collectRepoCaseInventory(suiteId, checkout)),
+  collectRepoCaseInventory: (suiteId, checkout) => runNative(Effect.flatMap(
+    syncNative(() => {
+      const suite = readGovernanceConfiguration(repoRootDir())?.config.suites.find(item => item.id === suiteId);
+      return suite === undefined ? suiteId : canonicalRepoId(suite.root);
+    }),
+    repoId => inventory.collectRepoCaseInventory(repoId, checkout),
+  )),
   collectWorkspaceCaseInventory: (checkout) => runNative(inventory.collectWorkspaceCaseInventory(checkout)),
   managedInventoryImplementationDigest: (root) => syncNative(() => inventory.managedInventoryImplementationDigest(root)),
   readManagedInventoryReceipt: (root, inventoryId, selector) => syncNative(() => inventory.readManagedInventoryReceipt(root, inventoryId, selector)),

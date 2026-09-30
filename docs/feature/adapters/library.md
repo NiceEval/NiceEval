@@ -161,3 +161,243 @@ export default defineSandboxAgent({
 - [OpenCode](sdk/opencode/README.md)
 - [Hermes Agent](sdk/hermes/README.md)
 - [OpenClaw](sdk/openclaw/README.md)
+
+## 保存通用执行轨迹
+
+Adapter 的 `create(ctx)` 通过 `ctx.recordTrace(snapshot)` 接纳已封存的领域事件快照。会话 Agent 是执行轨迹的一种 producer；
+普通 Adapter 保留自己的事件类型、主体、时间和关系，不需要构造 Turn 或 tool call。
+它返回 `Promise<ExecutionTraceReceipt>`；成功只证明接纳，持久性由同一 Attempt publication 提供。
+
+输入的 `traceId` 是 Attempt 内快照幂等键。事件 `key` 是该快照内的导入关联键，可以由导入器分配；
+`source.eventId` 只保存上游真实提供的 ID。框架接纳后分配稳定 `eventId`，receipt 返回两者的映射。
+缺少原生 ID 时省略该字段，不用导入序号冒充原生事实。
+
+```ts
+type TraceJson = null | boolean | number | string
+  | readonly TraceJson[] | { readonly [key: string]: TraceJson };
+
+interface ExecutionTraceInput {
+  readonly traceId: string;
+  readonly schema: { readonly id: string };
+  readonly collection: {
+    readonly state: "complete" | "partial";
+    readonly limitations: readonly { readonly code: string; readonly message: string }[];
+  };
+  readonly scopes: readonly {
+    readonly scopeId: string;
+    readonly label: string;
+    readonly boundary: TraceJson;
+  }[];
+  readonly events: readonly {
+    readonly key: string;
+    readonly type: string;
+    readonly source: { readonly id: string; readonly eventId?: string; readonly sequence?: number };
+    readonly actor?: { readonly id: string; readonly label?: string };
+    readonly time?: { readonly clockId: string; readonly value: number; readonly unit: string };
+    readonly summary: string;
+    readonly payload?: TraceJson;
+    readonly links?: readonly (
+      | { readonly relation: string; readonly targetKey: string }
+      | { readonly relation: string; readonly unresolved: { readonly sourceEventId: string; readonly reason: string } }
+    )[];
+    readonly evidence?: readonly {
+      readonly key: string;
+      readonly label: string;
+      readonly artifactId: string;
+      readonly pointer: string;
+    }[];
+    readonly scopeMemberships?: readonly {
+      readonly scopeId: string;
+      readonly state: "included" | "excluded" | "unknown";
+    }[];
+  }[];
+}
+
+interface ExecutionTraceReceipt {
+  readonly state: "accepted";
+  readonly traceId: string;
+  readonly events: readonly {
+    readonly key: string;
+    readonly eventId: string;
+    readonly evidence: readonly { readonly key: string; readonly evidenceId: string }[];
+  }[];
+}
+```
+
+`schema.id` 和事件 `type` 标识领域格式，Adapter 不提交 `schema.revision`。NiceEval 验证封闭 envelope 与有限 plain JSON，
+领域负载校验由 Adapter 的 parser 负责；未知领域仍可用通用展示读取，无需注册每种事件或运行作者代码。
+
+框架自行管理 Record 格式版本。历史 Record 中已有的领域 `schema.revision` 原样只读保留；缺失时不补值，新写入只包含 `id`。
+升级后的输入校验拒绝旧调用中多余的 `revision`，但不影响读取历史 Record。旧包不保证能读取新包写入的轨迹；
+旧 reader 的完整性错误不能据此证明新文件损坏，降级包版本不构成完整回滚方案。
+
+泛型事件声明应保留 `type` 与 `payload` 的判别联合。JSON 不接受非有限数、循环、accessor、class 或隐式 `toJSON`。
+
+展示顺序固定为接纳快照的事件顺序，不构成因果证明。`source.sequence` 是非负安全整数，不要求连续或全局唯一。
+时间属于同一 trace 内的 `clockId`，同一 clock 的 unit 必须一致，不能跨 trace 相减或排列成物理因果。
+`links` 的已定位目标必须存在于同一快照；`causes` 关系不能成环。其它关系名开放，缺失目标显式保留 unresolved。
+
+`scopes` 保存 Adapter 声明的测量边界，membership 引用已声明 scope，缺失 membership 为 unknown。
+边界 JSON 不参与 NiceEval 的评分计算；测量区间外排空事件可以保存为 excluded，缺少测量边界不补造有效评分区间。
+执行取消与采集完整度独立：取消仍可完整采集，成功也可只有 partial 证据。
+
+`evidence` 引用同一 Attempt 已由 `ctx.attach` 接纳的 JSON 附件，`pointer` 按 RFC 6901 定位精确值。
+Adapter 负责将领域 request reference 映射为明确的 link 或 evidence，框架不扫描负载猜关系。
+接纳时验证附件与 pointer，并固定附件及目标内容摘要；发布和读取再次验证同 owner 的内容闭合。
+大请求保留在附件中，事件只保存精确引用。缺失 pointer 拒绝整份快照，不回退为整件附件。
+
+同 `traceId` 的规范化快照完全相同则返回原 receipt；对象键顺序不影响比较，事件数组顺序参与比较。
+冲突、非法输入或预算超限拒绝整份输入，保留此前接纳的快照，并登记采集失败。不得静默截取为合法前缀。
+complete 的 limitations 必须为空，partial 必须有原因；从未提交不等于 complete-empty。
+
+每个 Attempt 最多 32 份快照、100,000 个事件、64 MiB 规范化输入。每事件 payload 最多 16 KiB，summary 最多
+512 UTF-8 bytes，links 最多 32 项，evidence 与 membership 各最多 8 项。标识最多 256 UTF-8 bytes，JSON 深度最多 32。
+同 trace 的 key、scopeId 唯一；同事件的 evidence key 与 membership 不重复。
+
+一次接纳或读取最多处理 256 MiB 原始附件内容与 128 MiB 规范化证据目标，相同附件及 pointer 复用校验结果。
+超过预算明确失败，不返回未经验证的预览。作为 JSON pointer 证据的单件附件最多 64 MiB，读取前检查大小。
+
+接纳在返回 Promise 前完成验证与复制，不绑定已取消的执行 signal。Adapter 可在独立 cleanup 接纳时段结束前提交
+已验证的 partial；正常和失败路径应共享一次 finish。接纳时段结束后的调用拒绝且不改变封存事实。
+持久内容校验或 storage 失败阻止 Attempt publication，不能发布缺少声明证据的成功快照。
+
+## 保存 Attempt 附件
+
+自定义 Adapter 的 `create(ctx)` 可以用 `ctx.attach` 保存文本、图片或其它 bytes：
+
+```ts
+const receipt = await ctx.attach({
+  name: "response.json",
+  mediaType: "application/json",
+  body: JSON.stringify(response),
+});
+```
+
+公开输入与回执形状如下：
+
+```ts
+interface AdapterAttachmentInput {
+  readonly name: string;
+  readonly mediaType: string;
+  readonly body: Uint8Array | string | {
+    readonly stream: (signal: AbortSignal) => AsyncIterable<Uint8Array>;
+  };
+  readonly signal?: AbortSignal;
+}
+
+interface AdapterAttachmentReceipt {
+  readonly artifactId: string;
+  readonly name: string;
+  readonly mediaType: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
+```
+
+字符串按 UTF-8 编码。`name` 是显示标签，允许同名，不用作磁盘路径，也不替换同名附件。
+每次成功接管分配独立 `artifactId`。`mediaType` 是内容标签；归档不做内容解码、转换或业务格式推断。
+
+字符串和数组在返回 Promise 前复制，调用方随后修改原数组不会改写已接管内容。
+流工厂只调用一次；框架把取消信号传给字节 producer，每次只拉取一块，复制并写完当前块才请求下一块。
+每块必须是至多 1 MiB 的 `Uint8Array`，字节 producer在下一次拉取前不得修改它。
+文件可由调用方使用 `stream: signal => createReadStream(path, { signal })` 提供，路径不进入附件事实。
+
+流的 Promise 成功前，框架已完成原始 bytes 的独立归档并关闭自己的写入文件。
+字节 producer必须提供有限内容；调用方在读取期间保持源文件稳定，收到成功回执后可立即修改或删除源文件。
+`byteLength` 与 `sha256` 来自实际接管的原始 bytes，不来自调用方声明或路径。
+Promise 成功只证明接管，持久性由 Attempt publication 提供；本地暂存不是远端上传。
+附件随 Record 保存，搬走 Record 后无需保留源文件或应用工作目录。
+
+每个 Attempt 最多接管 4000 件。字符串和数组单件最多 64 MiB，累计最多 256 MiB。
+流单件最多 1 GiB；所有字节 producer连同正在写入的内容累计最多 2 GiB。
+每个 Attempt 最多同时归档 4 个流，额外调用明确拒绝，不启动字节 producer。边界值可用。
+暂存目录位于 Record 的项目存储目录，使用私有目录与文件权限；并发磁盘预算是单 Attempt 上限乘以执行并发数。
+分块和并发上限限制框架持有的内存与文件句柄；字节 producer自己的预取、缓存和外部资源由字节 producer负责。
+
+非法输入、超限、字节 producer异常、调用方取消和关闭后的调用明确拒绝，不返回部分内容的成功回执。
+失败释放该次部分归档，保留此前成功接管的附件。关闭前的失败保留为 Attempt 执行错误，collection 标为 partial，即使作者捕获了拒绝。
+
+Attempt 取消不立刻关闭附件入口。已登记 cleanup 在独立时限内仍可附加诊断材料；cleanup 完成或截止时关闭入口并封存快照。
+调用方可通过 `signal` 提前取消单次归档；流收到的信号同时受入口关闭控制。
+取消或失败时框架停止拉取，发出取消信号并请求迭代器 `return()`，关闭自己的文件并删除部分归档。
+字节 producer必须响应信号并释放自己的资源；不协作的 `next()` 或 `return()` 不阻塞框架关闭，也不能在迟到后改变封存结果。
+
+已发起但未等待的归档仍进入既有 30 秒 cleanup 总时限；到期即取消，流式归档不延长该时限。归档成功不等于发布成功；发布失败不能返回成功的持久 Record。
+发布成功或失败后立即释放暂存副本，未走到发布的异常路径在 Invocation 退出时删除暂存副本。
+读取使用 [Inspection 的附件 operation](../inspection/architecture.md#附件分块读取)。
+
+## 上报外部调用用量
+
+普通 Adapter 从 `create(ctx)` 取得 `ctx.recordUsage`，把外部系统观测到的物理调用上报给框架。
+接口不要求 Agent、消息、游戏状态或特定模型 SDK：
+
+```ts
+ctx.recordUsage({
+  callId: "request-42",
+  provider: "typesafe-ai",
+  model: "typesafe-ai/jev",
+  route: { transportProvider: "vercel", endpointId: null },
+  status: "succeeded",
+  inputTokens: 112,
+  inputTotalTokens: 120,
+  outputTokens: 8,
+  cost: {
+    amount: "0",
+    currency: "USD",
+    source: { kind: "reported", id: "vercel-ai-gateway.response" },
+  },
+});
+```
+
+`callId` 在一个 Attempt 内标识物理调用；重试使用新 ID，`retryOf` 可引用此前已登记的 ID。
+相同规范化快照重复上报不增加用量；同 ID 的冲突快照明确失败。每个 Attempt 最多保存 4000 次调用的快照。
+这是终态快照入口：先收尾外部观测，再上报；只有 started 而无 terminal 的调用标为 `unknown`，不推断成功。
+`status` 接受 `succeeded | failed | cancelled | unknown`；供应商和模型未知时保留 `null`，不从通道名称推断。
+
+`provider` 只保存上游可证的 serving provider。可选 `route` 分开保存 transport provider 与非秘密 endpoint identity；未知字段为 `null`。
+
+可选 `cost` 只接受上游报告的一个有效金额，`source.kind` 固定为 `reported`。`amount` 是非负 canonical decimal，
+`currency` 是三位大写货币代码，`source.id` 标识回执字段或公开契约。明确报告的零是已知成本，优先于任何估算。
+Adapter 不能通过这个入口提交 estimated cost；market、gateway 与 surcharge 等旁路金额留在 Adapter 自有原始附件中。
+
+`inputTokens` 排除缓存读取与写入；`inputTotalTokens` 是独立观测到的含缓存输入总量。
+可选 `cacheReadTokens`、`cacheWriteTokens` 和 `inputTotalTokens` 省略时为 `null`，不得为了补全而填零。
+所有已知计数必须是非负安全整数；明确的零保留为已知零。已知分项之和不得超过已知总量，分项全部已知时必须相等。
+总量与分项独立保存，不重复相加，也不根据不完整分项补算总量。
+
+`attempt.usage` 返回 `source: "adapter"`、`coverage: "recorded-calls"`、调用快照和各计数的已知小计。
+未知值保留，部分小计标为 partial；已上报快照完整不代表包含外部系统的全部调用。单次最多返回前 128 条调用，
+`callsTruncated` 与 `omittedCallCount` 明示截断；聚合仍包含已封存的全部调用。
+
+每个调用最多选择一个 effective cost：有 reported cost 时直接采用，包括零；否则 NiceEval 只按显式 configured fixed pricing profile
+与已封存 token 桶形成 estimate proof。缺少价格、token 或 cache 专用 rate 时保持 unknown 或 partial，不回退 input rate。
+内置 catalog 没有可证的 flat applicability 时不参与估算。revision 1 的历史用量只读投影新增字段为 `null`，不会按当前价格重算。
+
+显式 fixed pricing profile 复用 `defineConfig({ pricing })`。旧的 input/output 配置保持有效，metadata 为可选扩展：
+
+```ts
+pricing: {
+  "openai/gpt-5.6-luna": {
+    inputPerMTok: 0.2,
+    outputPerMTok: 1.2,
+    cacheReadPerMTok: 0.02,
+    cacheWritePerMTok: 0.25,
+    basis: "catalog-reference",
+    currency: "USD",
+    source: { id: "project-fixed-prices", asOf: 1_789_718_400_000 },
+  },
+}
+```
+
+省略 metadata 的既有配置使用 `configured-profile`、`niceeval.config.pricing` 与 `asOf: null`，不会伪造时间。
+receipt 保存实际命中的 exact 或 provider wildcard selector、有效 rate 与 profile digest。配置只接受有限非负 number；框架把 rate 转为 canonical decimal 后做确定十进制计算。
+
+成本小计按货币分开，`reported | estimated | mixed` 只说明已采用金额的 provenance kind。完整度另由完整调用数决定。
+partial estimate 可以贡献已知金额并计入 `estimatedCalls`，但不计入 `coveredCalls`。采集 partial、未知金额与非 USD 金额都会使对应 USD 投影保留缺口。
+
+Overview 的 token 指标逐次调用选择可用输入总量：`inputTotalTokens` 已知时只采用它，否则汇总已知的 `inputTokens`、
+`cacheReadTokens` 与 `cacheWriteTokens`，再加 `outputTokens`。它不把输入总量与缓存分项重复相加。缺少任一必要分项时保留
+已知小计并标为 partial；全部未知才是 unavailable。显式零是已知零，没有用量 attachment 的旧 Attempt 仍是 unavailable。
+
+用量入口与附件入口共用 Attempt 的有界 cleanup 生命周期。取消后 cleanup 未结束时仍可上报；
+关闭后的调用拒绝且不能改写已封存事实。关闭前的采集错误即使被作者捕获，也保留为最终执行错误。

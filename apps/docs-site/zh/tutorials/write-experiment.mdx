@@ -66,7 +66,11 @@ export default defineExperiment({
 
 `model` 会作为 `ctx.model` 传给 Adapter。如果你的 Agent 支持模型选择，自己构建请求
 
-`flags` 会作为 `ctx.flags` 传给 Adapter，也会作为 `t.flags` 出现在评估用例里。
+`flags` 是扁平对象，值只能是字符串、有限数字或布尔值，例如 `{ strategy: "baseline", maxSteps: 20, enabled: true }`。
+不接受嵌套对象、数组、`null` 或显式 `undefined`；省略整个 `flags` 等价于 `{}`。
+NiceEval 在启动前检查结构、复制并冻结，再作为 `ctx.flags` 传给 Adapter、作为 `t.flags` 传给评估用例。
+普通 Adapter 可声明同步 `parseFlags(input: unknown)` 检查策略名、补默认值或规范化值；返回值也必须满足相同结构。
+实验的 `flags` 类型由该返回类型推导，规范化后的值参与缓存身份。
 
 语义就是产品 A/B 测试里的 feature flag，应该编写 Adapter 把 Flag 发给你的 Agent，Agent 根据 Flag 切换不同的 System Prompt 或者行为。
 
@@ -118,7 +122,7 @@ npx niceeval exp prompts/concise
 | `agent` | 选择并配置 adapter。必填 |
 | `model` | 单个模型名，经 `ctx.model` 透传 |
 | `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
-| `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
+| `flags` | 实验条件（A/B 里的 feature flag），扁平对象，值为字符串、有限数字或布尔值，经 `ctx.flags` / `t.flags` 透传 |
 | `attempts` | 每个评估用例 × 配置最多跑几次 |
 | `earlyExit` | 多次运行里通过一次就提前停止。默认关，`attempts` 默认跑满测完整通过率 |
 | `evals` | `"*"`、ID 前缀数组，或遍历只读评估用例描述并返回 Boolean 的函数 |

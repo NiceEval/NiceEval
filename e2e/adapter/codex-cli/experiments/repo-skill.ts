@@ -5,6 +5,7 @@ import { sandbox } from "../sandbox.ts";
 const agent = codexAgent({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: process.env.OPENAI_BASE_URL,
+  configFile: "configs/shell-enabled.toml",
   skills: [
     {
       kind: "repo",
@@ -19,7 +20,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli Repo Skill:从钉定 Git commit 安装 calibre 并按发现指引读取",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: ["repo-skill"],
   attempts: 1,

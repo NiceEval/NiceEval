@@ -1,0 +1,67 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "green",
+  "selector": "e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H",
+  "caseId": "necase_920FSWMBVEP3090H",
+  "inventoryDigest": "sha256:44d30ed59b3d840f8bed1e2b350db111de477e9fc6de256a1d11d5f6b93dc43b",
+  "candidate": {
+    "gitSha": "dd2ca6ce8afdead17822bf7cb71b24cc509ab2e5",
+    "sha256": "f068a2e31ffff101728fbeb5ac10f84e57726c9e74775a6df9cd6ef216014dc6",
+    "sri": "sha512-xKfZRw60Ce8kEte+gYA0baL0/ajuX3zAIVLstZcjmE3zPX7vWJmrp5BDxK6HhyhdQv7HjwFHCSg2av9Ie0+uZQ=="
+  },
+  "source": {
+    "checkout": "dd2ca6ce8afdead17822bf7cb71b24cc509ab2e5",
+    "testFileSha256": "21ebe83cb5d61b3746365e39d7bd1a0e53be0cbc3b5f7e3d1b6752ea14c29282",
+    "sidecarSha256": "9f90110efa07dd21304a2261f6acb075c5315545df32438edcc432c8d843d4de"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/external-usage.test.ts",
+      "--testNamePattern",
+      " \\[necase_920FSWMBVEP3090H\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-5o7IzQ/runs/takeover/target-single/eval",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1757906 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1757907 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1757938 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "9143048f-0ad2-4ad9-8e4c-b841202e66dc",
+  "receiptSha256": "13d1b6e9589bf69cd66501912b018ec7f7476dd87e6b5c629a1332dd219f65a0"
+}

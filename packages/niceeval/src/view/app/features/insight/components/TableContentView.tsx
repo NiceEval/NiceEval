@@ -187,7 +187,14 @@ export function MetricCellView({
     );
   }
   const refLocators = refLocatorsOf(cell);
-  const hasPartialCoverage = showCoverage && cell.samples < cell.total;
+  const hasCoverageGap = cell.samples < cell.total;
+  const hasPartialCoverage = cell.state === "partial" || (showCoverage && hasCoverageGap);
+  const partialTitle = hasCoverageGap
+    ? localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })
+    : localeText(loc, "cell.partialTitle");
+  const partialText = hasCoverageGap
+    ? localeText(loc, "cell.coverageDetail", { samples: cell.samples, total: cell.total })
+    : localeText(loc, "cell.partialDetail");
   return (
     <span className={cx("niceeval-cell", hasPartialCoverage && coverageDetail && "niceeval-cell-text")}>
       <span
@@ -199,18 +206,21 @@ export function MetricCellView({
       {hasPartialCoverage && (coverageDetail ? (
         <small
           className="niceeval-cell-detail"
-          title={localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
+          title={partialTitle}
         >
-          {localeText(loc, "cell.coverageDetail", { samples: cell.samples, total: cell.total })}
+          {partialText}
         </small>
       ) : (
         <sup
           className="niceeval-coverage"
-          title={localeText(loc, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
+          title={partialTitle}
         >
-          {cell.samples}/{cell.total}
+          {hasCoverageGap ? `${cell.samples}/${cell.total}` : localeText(loc, "cell.partialDetail")}
         </sup>
       ))}
+      {cell.source == null ? null : <small className="niceeval-cost-source">{localeText(loc,
+        cell.source === "reported" ? "cell.costReported" : cell.source === "estimated" ? "cell.costEstimated" : "cell.costMixed",
+      )}</small>}
       {href && refLocators.length === 1 && href(refLocators[0]!) !== undefined && (
         <span className="niceeval-refs">
           <a className="niceeval-ref" href={href(refLocators[0]!)}>
@@ -322,7 +332,7 @@ function renderCellWeb(
       return (
         <span className={cx("niceeval-verdict", `niceeval-verdict-${verdict}`)}>
           {verdictMark(verdict)}
-          {!cell.bare ? <> {localeText(ctx.locale, `verdict.${verdict}`)}</> : null}
+          {!cell.bare ? <> {cell.label === undefined ? localeText(ctx.locale, `verdict.${verdict}`) : resolveLocalizedText(cell.label, ctx.locale)}</> : null}
         </span>
       );
     }

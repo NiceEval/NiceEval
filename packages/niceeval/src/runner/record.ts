@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
-import { Cause, Effect, Result, Exit, Option, Semaphore } from "effect";
+import { Cause, Effect, Result, Exit, Option, Semaphore, Stream } from "effect";
 
 import { encodeAttemptLocator, type AttemptLocator } from "../attempt-locator.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
@@ -68,6 +68,13 @@ import {
   createRunObservabilityAttachments,
   recordAttemptOutcome,
 } from "./record/attachments.ts";
+import { adapterUsageForResult } from "./adapter-usage.ts";
+import { adapterAttachmentsForResult, releaseAdapterAttachments } from "./adapter-attachments.ts";
+import {
+  adapterExecutionTracesForResult,
+  validateExecutionTracePublication,
+} from "./adapter-execution-trace.ts";
+import { executionTracesRecordCollection } from "../record/family/execution-traces/definition.ts";
 import {
   planRunnerRecordRun,
   previewRunnerRunId,
@@ -680,9 +687,31 @@ export function openRunnerRecordCoordinator(input: {
         if (fileChanges !== undefined) {
           yield* active.session.records.write(NiceEvalRecordAttachments.fileChanges, fileChanges);
         }
-        const artifacts = createAttemptArtifactsAttachment(result);
+        const attachmentSnapshot = adapterAttachmentsForResult(result);
+        const artifacts = createAttemptArtifactsAttachment(result, attachmentSnapshot);
+        const adapterUsage = adapterUsageForResult(result);
+        const executionTraces = adapterExecutionTracesForResult(result);
+        if (adapterUsage !== undefined) {
+          yield* active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage);
+        }
         if (artifacts !== undefined) {
           yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
+        }
+        if (executionTraces !== undefined && executionTraces.traces.length > 0) {
+          validateExecutionTracePublication(executionTraces, attachmentSnapshot?.artifacts ?? []);
+          yield* active.session.records.appendAll(
+            executionTracesRecordCollection,
+            Stream.fromIterable(executionTraces.traces.flatMap((trace) => trace.records)),
+          );
+          yield* active.session.records.close(
+            executionTracesRecordCollection,
+            executionTraces.failure === undefined
+              ? { state: "complete" }
+              : {
+                  state: "partial",
+                  limitations: [{ code: "capture-failed", stage: "adapter" }],
+                },
+          );
         }
         yield* active.session.complete(recordAttemptOutcome(result));
         const closureBytes = new TextEncoder().encode(JSON.stringify(attemptPublicationClosure(
@@ -805,6 +834,7 @@ export function openRunnerRecordCoordinator(input: {
           );
           return undefined;
         })),
+        Effect.ensuring(Effect.promise(() => releaseAdapterAttachments(result))),
       ),
       markNotDispatched: (attempt: Attempt) => {
         const targetSlot = targetForAttempt(attempt);

@@ -20,7 +20,7 @@ import {
 
 export const ArtifactsLimits = Object.freeze({
   maximumArtifacts: 4_000,
-  maximumContentBytes: 64 * 1024 * 1024,
+  maximumContentBytes: 1024 * 1024 * 1024,
 });
 
 /** sha256 identifies the Artifact bytes fact, never its physical placement. */

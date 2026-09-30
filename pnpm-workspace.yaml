@@ -5,6 +5,8 @@ packages:
   - "!e2e/**"
   - "!examples/**"
 
+trustPolicy: off
+
 allowBuilds:
   autoevals: false
   '@parcel/watcher': false

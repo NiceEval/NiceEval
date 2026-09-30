@@ -2,6 +2,66 @@
   "format": "concord.repository/v2",
   "suites": [
     {
+      "id": "adapter-ai-sdk",
+      "root": "e2e/adapter/ai-sdk"
+    },
+    {
+      "id": "adapter-ai-sdk-direct",
+      "root": "e2e/adapter/ai-sdk-direct"
+    },
+    {
+      "id": "adapter-bub",
+      "root": "e2e/adapter/bub"
+    },
+    {
+      "id": "adapter-claude-agent-sdk",
+      "root": "e2e/adapter/claude-agent-sdk"
+    },
+    {
+      "id": "adapter-claude-code",
+      "root": "e2e/adapter/claude-code"
+    },
+    {
+      "id": "adapter-codex-cli",
+      "root": "e2e/adapter/codex-cli"
+    },
+    {
+      "id": "adapter-codex-sdk",
+      "root": "e2e/adapter/codex-sdk"
+    },
+    {
+      "id": "adapter-deepseek-harness",
+      "root": "e2e/adapter/deepseek-harness"
+    },
+    {
+      "id": "adapter-hermes",
+      "root": "e2e/adapter/hermes"
+    },
+    {
+      "id": "adapter-local-protocol",
+      "root": "e2e/adapter/local-protocol"
+    },
+    {
+      "id": "adapter-omp",
+      "root": "e2e/adapter/omp"
+    },
+    {
+      "id": "adapter-openai-compat",
+      "root": "e2e/adapter/openai-compat"
+    },
+    {
+      "id": "adapter-openclaw",
+      "root": "e2e/adapter/openclaw"
+    },
+    {
+      "id": "adapter-opencode",
+      "root": "e2e/adapter/opencode"
+    },
+    {
+      "id": "adapter-sdk-converters",
+      "root": "e2e/adapter/sdk-converters"
+    },
+    {
       "id": "cli",
       "root": "e2e/cli"
     },

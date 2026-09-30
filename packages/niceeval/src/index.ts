@@ -11,6 +11,8 @@ export type { AssertionEntryId } from "./assertions/identity.ts";
 export {
   readScoreMatchAudit,
   type ScoreMatchAudit,
+  type ScoreMatchAuditV3,
+  type ScoreMatchAuditImageContent,
   type ScoreMatchAuditEnvelope,
   type ScoreMatchAuditReadResult,
 } from "./assertions/score-match-audit.ts";
@@ -42,6 +44,8 @@ export type {
   StreamEvent,
   ToolName,
   JsonValue,
+  FlagValue,
+  ExperimentFlags,
   JsonMatch,
   Usage,
   Turn,
@@ -77,7 +81,6 @@ export type {
   ExperimentHookContext,
   Config,
   LocalizedText,
-  JudgeConfig,
   Reporter,
   ReporterEvent,
   EvalResult,
@@ -128,3 +131,21 @@ export type { ParsedTranscript } from "./o11y/parsers/index.ts";
 
 export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
 export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
+export type { JudgeProvider, JudgeSelection } from "./judge/index.ts";
+export { MigrationRequiredError, type MigrationOccurrence, type ErrorSource } from "./error-assistance/index.ts";
+export type { AdapterUsageInput } from "./adapter-usage.ts";
+export type { AdapterAttachmentInput, AdapterAttachmentReceipt } from "./adapter-attachments.ts";
+export type {
+  ExecutionTraceActor,
+  ExecutionTraceEvent,
+  ExecutionTraceEvidence,
+  ExecutionTraceInput,
+  ExecutionTraceLimitation,
+  ExecutionTraceLink,
+  ExecutionTraceReceipt,
+  ExecutionTraceScope,
+  ExecutionTraceScopeMembership,
+  ExecutionTraceSource,
+  ExecutionTraceTime,
+  TraceJson,
+} from "./adapter-execution-trace.ts";

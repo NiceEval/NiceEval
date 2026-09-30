@@ -1,27 +1,6 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_2Q053XPZ22MT68HW": {
-      "memory/ui-message-stream-error-only-loses-diagnostic.md": {
-        "red": {
-          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/red.json",
-          "digest": "sha256:4b839ef6bbe3b17f5211c999257d8a0f25e3a852c5284d0153c7082ac19431e1"
-        },
-        "green": {
-          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/green.json",
-          "digest": "sha256:5b95730c667b6d6fa5a074c0b06183bfd8ccaa780024f9baf08fa0ad2f863aa8"
-        },
-        "certificate": {
-          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/certificate.json",
-          "digest": "sha256:1a8432e396126d48c8c83e5b2b10981b4731fda18e04a93c9f054749f914e370"
-        },
-        "inventory": {
-          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/inventory.json",
-          "digest": "sha256:4295edaa865984a35abb96e50c8375a24d1682ed4eefd6ed86c6ec452f9a2e1e"
-        }
-      }
-    }
-  },
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
   "history": [
     {
       "caseId": "necase_2Q053XPZ22MT68HW",
@@ -46,6 +25,30 @@
       },
       "reason": "Astra review found legal empty and whitespace errorText; expand the same owner and recollect public red and complete takeover.",
       "retiredAtCommit": "cf8fbb1ad0962c8bfa56b29d89aea8e5b3af3f7f"
+    },
+    {
+      "caseId": "necase_2Q053XPZ22MT68HW",
+      "memory": "memory/ui-message-stream-error-only-loses-diagnostic.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/red.json",
+          "digest": "sha256:4b839ef6bbe3b17f5211c999257d8a0f25e3a852c5284d0153c7082ac19431e1"
+        },
+        "green": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/green.json",
+          "digest": "sha256:5b95730c667b6d6fa5a074c0b06183bfd8ccaa780024f9baf08fa0ad2f863aa8"
+        },
+        "certificate": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/certificate.json",
+          "digest": "sha256:1a8432e396126d48c8c83e5b2b10981b4731fda18e04a93c9f054749f914e370"
+        },
+        "inventory": {
+          "path": "e2e/adapter/local-protocol/test/disconnect.test.ts.case-evidence/necase_2Q053XPZ22MT68HW/memory_ui-message-stream-error-only-loses-diagnostic.md/nered_KVVCE7VKN9EFYDD4-netake_VHK27B6CM7EKD33P/inventory.json",
+          "digest": "sha256:4295edaa865984a35abb96e50c8375a24d1682ed4eefd6ed86c6ec452f9a2e1e"
+        }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "05dec8c7f1795e13212d424ee472874d62d84345"
     }
   ]
 }

@@ -80,7 +80,7 @@ interface AgentContext {
   readonly signal: AbortSignal;
   readonly model?: string;
   readonly reasoningEffort?: string;
-  readonly flags: Readonly<Record<string, JsonValue>>;
+  readonly flags: Readonly<Record<string, string | number | boolean>>;
   readonly session: AgentSession;
   readonly telemetry?: Telemetry;
   readonly experimentId?: string;

@@ -6,11 +6,6 @@ createdAt: 2026-07-27T18:06:14+08:00
 kind: feature
 ---
 
----
-format: niceeval.docs-node/v1
-kind: feature
-relations: {}
----
 
 # Assertions
 

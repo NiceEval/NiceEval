@@ -1,3 +1,4 @@
+import type { ExperimentFlags } from "../shared/types.ts";
 // AI SDK(Vercel `ai` 包)结果 → 标准事件流的共享转换器(采集通道 0:进程内直构)。
 //
 // 结构化 typing,不依赖 `ai` 包:niceeval 只认识 generateText / streamText 完整结果的
@@ -394,7 +395,7 @@ export interface AiSdkGenerateContext<M = JsonValue, Integration extends object 
   /** 实验钉的推理努力程度(ctx.reasoningEffort);省略 → 用应用自己的默认。应用自己决定怎么塞进 providerOptions(如 OpenAI 的 reasoningEffort)。 */
   readonly reasoningEffort?: string;
   readonly signal: AbortSignal;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   /**
    * 配了 `tracing`(如 `aiSdkOtel()`)才有:直接放进 generateText / streamText 的
    * `telemetry` 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,

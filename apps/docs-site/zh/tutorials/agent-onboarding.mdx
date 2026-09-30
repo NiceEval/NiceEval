@@ -40,18 +40,19 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 
 ## 第 2 步：配置 Judge
 
-把第 1 步问到的 Judge 服务配上。Judge 走 **OpenAI 兼容的 `/chat/completions`** 协议，在 `niceeval.config.ts` 里配：
+把第 1 步问到的 Judge 服务配上。在 `niceeval.config.ts` 里用具名 Provider 明确选择协议：
 
 ```ts
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
-  judgeRuntime: {
+  judgeRuntime: OpenAIProvider({
     model: "gpt-5.4-mini",                // 必填：没有内置默认模型
-    // 用非 OpenAI 官方的兼容服务（DeepSeek、网关等）时再加这两项：
+    // 使用 OpenAI 兼容网关时显式加下列两项：
     // baseUrl: "https://api.deepseek.com/v1",
-    // apiKeyEnv: "DEEPSEEK_API_KEY",     // key 从这个环境变量读。不配就读 OPENAI_API_KEY
-  },
+    // apiKeyEnv: "DEEPSEEK_API_KEY",
+  }),
 });
 ```
 
@@ -61,7 +62,7 @@ export default defineConfig({
 
 - **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、评估请求超时时，Judge Assertion 记为 `unavailable` 并带上原因；读取面不会把缺失 measurement 伪装成 mismatch 或零分。
 - **配完先验一次。** 用 `defineJudge` 声明 rubric 和 anchors，再调用 `t.judge(material, definition).gate(0.8)`。跑完后用 `niceeval view --run <run-id>` 查看结果。
-- **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有可用 key，例如 `OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`。有就用 `apiKeyEnv` 指向它并验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
+- **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有与所选 Provider 对应的 key。有就验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
 - Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。执行配置从 Experiment 和项目配置的 `judgeRuntime` 求值；定义与材料见 [Judge](/zh/explanation/judge)。
 
 ## 第 3 步：写三件套

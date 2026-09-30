@@ -4,6 +4,8 @@
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
 import { Data, Result, Schema } from "effect";
+import { projectAttemptArtifact } from "./artifacts.ts";
+import { projectArtifactsListing } from "./artifact-list.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import {
@@ -25,8 +27,10 @@ import type {
 } from "../record/sqlite/index.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
+  INSPECTION_BEHAVIOR_VERSION,
   QUERY_PROTOCOL,
   closeInspectionJson,
+  isInspectionCodecError,
   type InspectionDocument,
   type InspectionJson,
   type InspectionOperation,
@@ -34,7 +38,7 @@ import {
   type InspectionSourceProvenance,
 } from "./codec.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
-import { projectAttemptAssertionDetail } from "./assertions.ts";
+import { projectAttemptAssertionDetail, projectAttemptAssertionImage } from "./assertions.ts";
 import {
   attemptAttachment,
   loadInspectionRunResource,
@@ -105,14 +109,22 @@ import {
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
+import {
+  InspectionExecutionTraceError,
+  projectExecutionTraceDetail,
+  projectExecutionTraceOutline,
+} from "./execution-traces.ts";
 
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
   readonly code:
+    | "inspection-request-invalid"
     | "inspection-selection-missing"
     | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
-    | "inspection-result-invalid";
+    | "inspection-result-invalid"
+    | "evidence-budget-exceeded"
+    | "restart-required";
   readonly operation: InspectionOperationId;
   readonly reason: string;
   readonly identity?: { readonly runId: string };
@@ -296,6 +308,13 @@ function selectOperation(
         assertion: boundedJson(assertion),
       });
     }
+    case "attempt.assertion.image": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const image = projectAttemptAssertionImage(source, readInspectionAssertions(resolved), operation.entryId, operation.imageId,
+        operation.offset ?? 0, operation.limit ?? 256 * 1024);
+      if (image === undefined) throw selectionMissing(operation.kind, `Assertion ${operation.entryId} was not found`);
+      return Object.freeze({ ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]), image });
+    }
     case "attempt.trace": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       return Object.freeze({
@@ -303,17 +322,45 @@ function selectOperation(
         trace: decodeRequiredResult(
           operation.kind,
           InspectionTraceResultSchema,
-          projectAttemptTrace(resolved.origin.source, traceAttachments(resolved)),
+          projectAttemptTrace(
+            resolved.origin.source,
+            traceAttachments(resolved),
+            projectExecutionTraceOutline(source, resolved, {
+              ...(operation.traceId === undefined ? {} : { traceId: operation.traceId }),
+              ...(operation.sourceId === undefined ? {} : { sourceId: operation.sourceId }),
+              ...(operation.actorId === undefined ? {} : { actorId: operation.actorId }),
+              ...(operation.continuation === undefined ? {} : { continuation: operation.continuation }),
+            }),
+            {
+              ...(operation.traceId === undefined ? {} : { traceId: operation.traceId }),
+              ...(operation.sourceId === undefined ? {} : { sourceId: operation.sourceId }),
+              ...(operation.actorId === undefined ? {} : { actorId: operation.actorId }),
+              ...(operation.continuation === undefined ? {} : { continuation: operation.continuation }),
+            },
+          ),
         ),
       });
     }
     case "attempt.trace.detail": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const detail = projectAttemptTraceDetail(
-        resolved.origin.source,
-        traceAttachments(resolved),
-        operation.selector,
-      );
+      let detail = operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
+        ? projectExecutionTraceDetail(resolved, operation.selector)
+        : projectAttemptTraceDetail(
+            resolved.origin.source,
+            traceAttachments(resolved),
+            operation.selector,
+          );
+      if (detail === undefined && operation.selector.kind === "execution-event") {
+        type ItemSelector = Extract<
+          Parameters<typeof projectAttemptTraceDetail>[2],
+          { readonly kind: "item" }
+        >;
+        detail = projectAttemptTraceDetail(
+          resolved.origin.source,
+          traceAttachments(resolved),
+          { kind: "item", itemId: operation.selector.eventId as ItemSelector["itemId"] },
+        );
+      }
       if (detail === undefined) {
         throw selectionMissing(
           operation.kind,
@@ -380,24 +427,70 @@ function selectOperation(
         ),
       });
     }
+    case "attempt.artifact": {
+      const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const projected = projectAttemptArtifact(resolved, {
+        artifactId: operation.artifactId,
+        ...(operation.offset === undefined ? {} : { offset: operation.offset }),
+        ...(operation.limit === undefined ? {} : { limit: operation.limit }),
+      });
+      if (Result.isFailure(projected)) throw new InspectionOperationError({
+        code: projected.failure.code, operation: operation.kind, reason: projected.failure.reason,
+      });
+      return Object.freeze({
+        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        artifact: boundedJson(projected.success),
+      });
+    }
     case "attempt.artifacts": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.artifacts.attempt.family);
-      return Object.freeze({
-        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        artifacts: boundedJson(attachment === undefined
-          ? Object.freeze({ state: "not-recorded" as const })
-          : Object.freeze({
-              state: "available" as const,
-              value: attachment.value,
-              collection: attachmentCollectionPage(resolved.origin.source, attachment),
-              contents: attachment.physical.contents
-                .slice(0, ATTACHMENT_CONTENT_METADATA_LIMIT)
-                .map(({ logicalHandle, byteLength, digest }) =>
-                  Object.freeze({ logicalHandle, byteLength, digest })),
-              contentsTruncated: attachment.physical.contents.length > ATTACHMENT_CONTENT_METADATA_LIMIT,
-            })),
+      const projected = attachment === undefined ? undefined : projectArtifactsListing(attachment);
+      if (projected !== undefined && Result.isFailure(projected)) throw new InspectionOperationError({
+        code: "inspection-record-integrity-failure", operation: operation.kind,
+        reason: projected.failure.reason, identity: { runId: resolved.attempt.originRunId },
       });
+      const value = projected?.success;
+      const offset = operation.offset ?? 0;
+      const limit = operation.limit ?? 128;
+      const total = value?.artifacts.length ?? 0;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > total ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 128) throw new InspectionOperationError({
+        code: "inspection-request-invalid", operation: operation.kind,
+        reason: "Artifact listing requires an offset within the collection and a limit from 1 to 128.",
+      });
+      const metadata = baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]);
+      if (attachment === undefined || value === undefined) return Object.freeze({
+        ...metadata, artifacts: Object.freeze({ state: "not-recorded" as const }),
+      });
+      let items = value.artifacts.slice(offset, offset + limit);
+      const page = () => Object.freeze({
+        state: "available" as const,
+        value: Object.freeze({ collection: value.collection, artifacts: items }),
+        collection: Object.freeze({
+          state: offset + items.length < total ? "bounded-page" as const : "complete-page" as const,
+          items,
+          hasMore: offset + items.length < total,
+          nextOffset: offset + items.length < total ? offset + items.length : null,
+          total,
+        }),
+        contents: attachment.physical.contents
+          .slice(0, ATTACHMENT_CONTENT_METADATA_LIMIT)
+          .map(({ logicalHandle, byteLength, digest }) => Object.freeze({ logicalHandle, byteLength, digest })),
+        contentsTruncated: attachment.physical.contents.length > ATTACHMENT_CONTENT_METADATA_LIMIT,
+      });
+      let artifacts = page();
+      // Both public arrays share the page; long labels also consume the fixed JSON budget twice.
+      while (items.length > 0 && (utf8ByteLength(JSON.stringify(items)) > 128 * 1024 ||
+        utf8ByteLength(JSON.stringify(artifacts)) > INSPECTION_RESULT_BYTE_LIMIT)) {
+        items = items.slice(0, -1);
+        artifacts = page();
+      }
+      if (items.length === 0 && offset < total) throw new InspectionOperationError({
+        code: "inspection-result-invalid", operation: operation.kind,
+        reason: "Artifact metadata cannot fit in the Inspection result byte limit.",
+      });
+      return Object.freeze({ ...metadata, artifacts: boundedJson(artifacts) });
     }
     case "runs.compare": {
       const selected = loadRuns(source, [...operation.leftRunIds, ...operation.rightRunIds]);
@@ -465,6 +558,7 @@ function runsListBase(
 ) {
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
     outcome: "success" as const,
     operation: "runs.list" as const,
     source: sourceProvenance(source, cutoff),
@@ -732,6 +826,7 @@ function traceAttachments(
   resolved: ResolvedInspectionAttempt,
 ): AttemptTraceAttachments {
   return Object.freeze({
+    adapterUsage: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
     agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
     turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
     sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
@@ -878,6 +973,10 @@ function attemptSections(
     attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
     NiceEvalCurrentRecordAttachments.agentTurns.revision,
   );
+  const executionTraces = attachmentSectionState(
+    attemptAttachment(resolved, NiceEvalRecordAttachments.executionTraces.family),
+    NiceEvalCurrentRecordAttachments.executionTraces.revision,
+  );
   const commands = attachmentSectionState(
     attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
     NiceEvalCurrentRecordAttachments.sandboxCommands.revision,
@@ -904,12 +1003,17 @@ function attemptSections(
   );
   return Object.freeze({
     assertions: Object.freeze({ state: assertions }),
-    trace: Object.freeze({ state: combineSectionStates([conversation, commands, timing, diagnostics]) }),
+    trace: Object.freeze({ state: combineSectionStates([executionTraces, conversation, commands, timing, diagnostics]) }),
     sources: Object.freeze({ state: sources }),
     diff: Object.freeze({ state: diff }),
     artifacts: Object.freeze({ state: artifacts }),
     timing: Object.freeze({ state: timing }),
-    usage: Object.freeze({ state: conversation }),
+    usage: Object.freeze({ state: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family) === undefined
+      ? conversation
+      : attachmentSectionState(
+          attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
+          NiceEvalCurrentRecordAttachments.adapterUsage.revision,
+        ) }),
     conversation: Object.freeze({ state: conversation }),
     commands: Object.freeze({ state: commands }),
     diagnostics: Object.freeze({ state: diagnostics }),
@@ -1450,6 +1554,7 @@ function baseDocument(
   const cutoff = source.cutoff();
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1481,6 +1586,7 @@ function resultMetadata<Kind extends InspectionOperationId>(
   const cutoff = source.cutoff();
   return Object.freeze({
     protocol: QUERY_PROTOCOL,
+    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1535,9 +1641,7 @@ function uniqueRuns(
 
 function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
-  if (typeof closed === "object" && closed !== null && !Array.isArray(closed) && Reflect.get(closed, "code") === "inspection-result-invalid") {
-    throw closed;
-  }
+  if (isInspectionCodecError(closed)) throw closed;
   return closed as InspectionJson;
 }
 
@@ -1582,6 +1686,7 @@ function evaluateInspectionOperation(
     return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
@@ -1604,10 +1709,23 @@ function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
     return narrowed.value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
     throw operationFailure(operation, "Inspection operation failed", cause);
   }
+}
+
+function executionTraceFailure(
+  operation: InspectionOperationId,
+  cause: InspectionExecutionTraceError,
+): InspectionOperationError {
+  return new InspectionOperationError({
+    code: cause.code,
+    operation,
+    reason: cause.message,
+    cause,
+  });
 }
 
 function isInspectionResultError(

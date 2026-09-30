@@ -1,18 +1,9 @@
 import type { InspectionSuccessDocumentFor } from "@niceeval/inspection/public.ts";
 import {
   availableValue,
-  type AttemptSectionAvailability,
   type AttemptSummaryData,
   unavailableValue,
 } from "../details/compute.ts";
-
-type TraceEvidenceState = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["state"];
-
-function traceEvidenceAvailability(state: TraceEvidenceState): AttemptSectionAvailability {
-  if (state === "complete") return "available";
-  if (state === "partial") return "partial";
-  return state === "not-recorded" ? "not-recorded" : "unavailable";
-}
 
 export interface AttemptPageModel {
   readonly locator: string;
@@ -54,7 +45,7 @@ export function closeAttemptPage(
       durationMs: unavailableValue<number>(),
       capabilities: Object.freeze({
         source: attempt.attempt.sections.sources.state,
-        execution: traceEvidenceAvailability(trace.trace.conversation.state),
+        execution: attempt.attempt.sections.trace.state,
         timing: attempt.attempt.sections.timing.state,
         diff: attempt.attempt.sections.diff.state,
       }),

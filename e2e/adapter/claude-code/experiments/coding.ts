@@ -13,7 +13,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "coding:基线 claude-code agent —— coding-task、session resume/usage 与 WebSearch 正例",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   flags: { webResearch: true, expectedWebSearch: true },
   sandbox,
   attempts: 1,

@@ -1,5 +1,8 @@
 // @concord-file ne-surface-definition-entry
 // @concord-implements docs/feature/plugins/library.md
+import type { Adapter } from "./adapter.ts";
+import { parseAdapterFlags } from "./adapter-flags.ts";
+import { decodeExperimentFlags } from "./experiment/flags.ts";
 // 定义入口:把用户对象规格化成核心认得的形状。路径即身份 —— 这里禁止手写 id,
 // 由发现阶段从文件路径推导(见 runner/discover.ts)。
 
@@ -23,7 +26,10 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { normalizeJudgeConfig } from "./runner/judge-config.ts";
+import { normalizeJudgeSelection } from "./runner/judge-config.ts";
+import { isJudgeProvider } from "./judge/provider.ts";
+import { MigrationRequiredError, captureMigrationSource } from "./error-assistance/index.ts";
+
 import {
   brandEvalDefinition,
   brandEvalGroupDefinition,
@@ -47,6 +53,24 @@ import {
 } from "./agents/effect-runtime.ts";
 import { isPluginInstance, pluginInstanceDataOf, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
 
+/** Recognize only the retired flat configuration, without evaluating getters. */
+function normalizeDefinitionJudge(value: unknown, label: string) {
+  if (!isJudgeProvider(value) && typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const prototype = Object.getPrototypeOf(value);
+    const legacyKeys = ["model", "baseUrl", "apiKeyEnv", "timeoutMs", "maxOutputTokens"];
+    if ((prototype === Object.prototype || prototype === null) && Reflect.ownKeys(value).every((key) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+      return typeof key === "string" && legacyKeys.includes(key) && descriptor !== undefined && "value" in descriptor;
+    })) {
+      throw new MigrationRequiredError({ occurrences: [{
+        guideId: "judge-provider",
+        subject: label.replace("() ", "."),
+        source: captureMigrationSource(),
+      }] });
+    }
+  }
+  return normalizeJudgeSelection(value, label);
+}
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
@@ -246,9 +270,10 @@ export function defineEvalForContext<
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
+export function defineExperiment<const A extends Adapter>(def: ExperimentInput<A>): ExperimentDefinition<A>;
 // @concord-code ne-surface-define-experiment
 // @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
-export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
+export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonly flags?: unknown }): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
   }
@@ -258,7 +283,7 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   const adapter = def.adapter ?? def.agent!;
   const judgeRuntime = def.judgeRuntime === undefined
     ? undefined
-    : normalizeJudgeConfig(def.judgeRuntime, "defineExperiment() judgeRuntime");
+    : normalizeDefinitionJudge(def.judgeRuntime, "defineExperiment() judgeRuntime");
   assertSandboxLayer(def.sandbox, "defineExperiment");
   if (adapter.kind === "custom") {
     if (def.sandbox !== undefined || def.sandboxReuse === true || def.sandboxCache !== undefined) {
@@ -302,11 +327,14 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     sandboxCache: _sandboxCache,
     ...author
   } = def;
+  const flags = decodeExperimentFlags(def.flags === undefined ? {} : def.flags);
   return brandExperimentDefinition({
     ...author,
     adapter,
     ...(adapter.kind === "custom" ? {} : { agent: adapter }),
-    flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
+    flags: adapter.kind === "custom" && adapter.parseFlags !== undefined
+      ? parseAdapterFlags(adapter.parseFlags, flags)
+      : flags,
     labels: Object.freeze({ ...(def.labels ?? {}) }),
     attempts: def.attempts ?? 1,
     earlyExit: def.earlyExit ?? false,
@@ -362,7 +390,7 @@ function normalizeEvalFields<
 >(def: EvalInput<Sandbox> | ScoreEvalInput<Sandbox>): EvalDefinitionFields<Sandbox> {
   const judge = def.judge === undefined
     ? undefined
-    : normalizeJudgeConfig(def.judge, "defineEval() judge");
+    : normalizeDefinitionJudge(def.judge, "defineEval() judge");
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
@@ -424,7 +452,7 @@ function deepFreezeJson(value: JsonValue): JsonValue {
 }
 
 function decodeJsonRecord(
-  value: Readonly<globalThis.Record<string, JsonValue>>,
+  value: unknown,
   label: string,
 ): Readonly<globalThis.Record<string, JsonValue>> {
   const decoded = Schema.decodeUnknownResult(JsonRecordSchema, { errors: "all" })(value);
@@ -451,7 +479,10 @@ export function defineConfig(config: Config): Config {
   const sandboxCache = normalizeSandboxCache(config.sandboxCache, "defineConfig");
   const judgeRuntime = config.judgeRuntime === undefined
     ? undefined
-    : normalizeJudgeConfig(config.judgeRuntime, "defineConfig() judgeRuntime");
+    : normalizeDefinitionJudge(config.judgeRuntime, "defineConfig() judgeRuntime");
+  if (judgeRuntime !== undefined && !isJudgeProvider(judgeRuntime)) {
+    throw new TypeError("defineConfig() judgeRuntime must be a Judge Provider created by niceeval/judge");
+  }
   return Object.freeze({
     ...config,
     ...(sandboxCache === undefined ? {} : { sandboxCache }),

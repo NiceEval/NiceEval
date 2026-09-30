@@ -82,7 +82,7 @@ export default defineScoreEval({
 ## Judge 也是 Measurement
 
 `defineJudge` 声明一个受管 Judge Match。作者把完成判断所需的值组成带语义字段的材料。
-裁判可以直接传给 `t.judge`，无需在评估上登记。模型默认使用项目的 `judgeRuntime`；单题覆盖时设置 `judge: { model: "judge-model" }`。
+裁判可以直接传给 `t.judge`，无需在评估上登记。模型默认使用项目的 `judgeRuntime`；单题只换模型时设置 `judge: "judge-model"`。
 
 ```ts
 const explainsMotive = defineJudge({

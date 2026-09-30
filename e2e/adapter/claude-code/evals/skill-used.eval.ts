@@ -2,7 +2,7 @@
 // 工具调用(tool_use 块 name 恒为 "Skill",input.skill 是 skill 名)被 adapter 归一成
 // 一等的 skill.loaded 事件——下面直接对事件流断言这个规范事件,不倒查原始工具名。
 // 触发词是本仓库 fixture(fixtures/skills/e2e-marker)里写的精确短语,本机用真实
-// 本地 live E2E 使用 gpt-5.6-luna 验证此 skill 触发路径。
+// 本地 live E2E 使用 gpt-6-luna 验证此 skill 触发路径。
 // skill.loaded 事件与回答里的 fixture marker 共同证明 skill 的接线和行为，不再为这一条确定性
 // 协议事实引入第二个 judge 模型与额外凭据。
 import { defineEval } from "niceeval";

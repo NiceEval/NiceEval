@@ -1,0 +1,211 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "cli",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-MmvgPS/repos/cli/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.0_@types+node@24.13.3_esbuild@0.28.1_jiti@2.7.0_tsx@4.23.1_yaml@2.9.1_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "cf25a6bfe21b8382c7063ff9ac01f5a861545ace",
+  "files": [
+    "e2e/cli/test/cache-hit.test.ts",
+    "e2e/cli/test/cache-inventory.test.ts",
+    "e2e/cli/test/evaluation-kind-admission.test.ts",
+    "e2e/cli/test/failure-error-results.test.ts",
+    "e2e/cli/test/init-inspection-guidance.test.ts",
+    "e2e/cli/test/interrupt-feedback.test.ts",
+    "e2e/cli/test/legacy-record-recovery.test.ts",
+    "e2e/cli/test/live-pty.test.ts",
+    "e2e/cli/test/no-eval-feedback.test.ts",
+    "e2e/cli/test/no-experiment-feedback.test.ts",
+    "e2e/cli/test/provider-error-feedback.test.ts",
+    "e2e/cli/test/sandbox-action-debug.test.ts",
+    "e2e/cli/test/sandbox-project-preflight.test.ts",
+    "e2e/cli/test/sandbox-step-activity.test.ts",
+    "e2e/cli/test/selection.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/cache-hit.test.ts",
+      "titlePath": [
+        "Docker task build 在不同 Invocation 复用受管 image cache [necase_FTCND3Y2ZRCHXZJ7]"
+      ],
+      "caseId": "necase_FTCND3Y2ZRCHXZJ7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/cache-inventory.test.ts",
+      "titlePath": [
+        "共享 BuildKit 容量只作为未验证 Provider observation 展示 [necase_WT23YHZHKQ9PYBTC]"
+      ],
+      "caseId": "necase_WT23YHZHKQ9PYBTC"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/evaluation-kind-admission.test.ts",
+      "titlePath": [
+        "运行与 check 在执行前拒绝混合 Pass Eval 与 Score Eval 的 Experiment 和 Eval Group [necase_9MQ99DC3XKAN6NNW]"
+      ],
+      "caseId": "necase_9MQ99DC3XKAN6NNW"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/failure-error-results.test.ts",
+      "titlePath": [
+        "Assertions document 无法发布时使用统一 error 前缀 [necase_QV3XET13TGC1RN9K]"
+      ],
+      "caseId": "necase_QV3XET13TGC1RN9K"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/failure-error-results.test.ts",
+      "titlePath": [
+        "failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分 [necase_EA2M19N3W4T87684]"
+      ],
+      "caseId": "necase_EA2M19N3W4T87684"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/failure-error-results.test.ts",
+      "titlePath": [
+        "Judge 调用错误可从 CLI 汇总追溯每次 Attempt [necase_36KEGWBE07TBDDBJ]"
+      ],
+      "caseId": "necase_36KEGWBE07TBDDBJ"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/failure-error-results.test.ts",
+      "titlePath": [
+        "计分制与通过制 Human 结束摘要显示各自主读数 [necase_DT754GJJ2CSRC242]"
+      ],
+      "caseId": "necase_DT754GJJ2CSRC242"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/init-inspection-guidance.test.ts",
+      "titlePath": [
+        "init 生成可用于当前 CLI 的结果查看指引 [necase_3HDDG0091KDYCM47]"
+      ],
+      "caseId": "necase_3HDDG0091KDYCM47"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/interrupt-feedback.test.ts",
+      "titlePath": [
+        "无 Sandbox 的中断反馈不虚构容器清理 [necase_D31DET9WE90ZY004]"
+      ],
+      "caseId": "necase_D31DET9WE90ZY004"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/legacy-record-recovery.test.ts",
+      "titlePath": [
+        "旧项目状态拒绝写入并提供保留数据的恢复指引 [necase_CQYTFVY7A9TQCDFZ]"
+      ],
+      "caseId": "necase_CQYTFVY7A9TQCDFZ"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/live-pty.test.ts",
+      "titlePath": [
+        "TTY 在 Invocation 尚未结束时显示用户 progress，并以同一成功结果结束 [necase_TVW1KSEKG0ZM6SKD]"
+      ],
+      "caseId": "necase_TVW1KSEKG0ZM6SKD"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/no-eval-feedback.test.ts",
+      "titlePath": [
+        "Experiment 命中但 Eval 前缀零命中时以用法错误给出下一步 [necase_05SXTFZQ7FSEMDEV]"
+      ],
+      "caseId": "necase_05SXTFZQ7FSEMDEV"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/no-experiment-feedback.test.ts",
+      "titlePath": [
+        "未命中 Experiment 时以用法错误给出下一步 [necase_R2JQ4H334R7E0MA8]"
+      ],
+      "caseId": "necase_R2JQ4H334R7E0MA8"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/provider-error-feedback.test.ts",
+      "titlePath": [
+        "provider 与 sandbox 错误只展示真实问题并给出所属 details [necase_7HXVADGZABWJQXEC]"
+      ],
+      "caseId": "necase_7HXVADGZABWJQXEC"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/sandbox-action-debug.test.ts",
+      "titlePath": [
+        "debug 交付统一且无副作用的 Sandbox action 计划 [necase_NVHTZ20RVFHTJWRJ]"
+      ],
+      "caseId": "necase_NVHTZ20RVFHTJWRJ"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/sandbox-project-preflight.test.ts",
+      "titlePath": [
+        "Sandbox 管理命令准备项目凭据但不求值项目配置 [necase_DGWX9WZ940KJ7WT7]"
+      ],
+      "caseId": "necase_DGWX9WZ940KJ7WT7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/sandbox-step-activity.test.ts",
+      "titlePath": [
+        "TTY 在声明式 Sandbox step 执行时显示安全的具体动作 [necase_Q6TNRRPB791NM6SY]"
+      ],
+      "caseId": "necase_Q6TNRRPB791NM6SY"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/selection.test.ts",
+      "titlePath": [
+        "Eval 前缀只选择命中的 Eval [necase_YK8ZQ0WBWK6999X3]"
+      ],
+      "caseId": "necase_YK8ZQ0WBWK6999X3"
+    },
+    {
+      "executor": "vitest",
+      "repo": "cli",
+      "path": "e2e/cli/test/selection.test.ts",
+      "titlePath": [
+        "Setup cache 策略按默认与显式 flag 保持正向选择 [necase_8TBNSVGZA341X9C0]"
+      ],
+      "caseId": "necase_8TBNSVGZA341X9C0"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "exit": 0,
+  "signal": null,
+  "digest": "sha256:fa91b56b1fe24d5a9a71e8c6772423f1959d56ce7cb11f02a890752b32f389a5"
+}

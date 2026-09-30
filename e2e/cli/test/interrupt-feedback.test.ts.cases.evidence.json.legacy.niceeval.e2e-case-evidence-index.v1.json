@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_D31DET9WE90ZY004": {
+      "memory/direct-interrupt-feedback-claims-sandbox-cleanup.md": {
+        "red": {
+          "path": "e2e/cli/test/interrupt-feedback.test.ts.case-evidence/necase_D31DET9WE90ZY004/memory_direct-interrupt-feedback-claims-sandbox-cleanup.md/nered_7T9RM0RTNQYF0XJ6-netake_HGME4FFZF8G3ZFES/red.json",
+          "digest": "sha256:20312a6b355ffb2f54bd422d2806379604fc6e4396bc4902d53a54b4104a058a"
+        },
+        "green": {
+          "path": "e2e/cli/test/interrupt-feedback.test.ts.case-evidence/necase_D31DET9WE90ZY004/memory_direct-interrupt-feedback-claims-sandbox-cleanup.md/nered_7T9RM0RTNQYF0XJ6-netake_HGME4FFZF8G3ZFES/green.json",
+          "digest": "sha256:35c5d0781fc70b2612e06c1092f2751a79a89d8b4d0fc12c0cdc1c92b02d4770"
+        },
+        "certificate": {
+          "path": "e2e/cli/test/interrupt-feedback.test.ts.case-evidence/necase_D31DET9WE90ZY004/memory_direct-interrupt-feedback-claims-sandbox-cleanup.md/nered_7T9RM0RTNQYF0XJ6-netake_HGME4FFZF8G3ZFES/certificate.json",
+          "digest": "sha256:206ee8b547dcb0ad7ce26f923817a0d601a10ff4e776f41f8b4cfdb20666ffd0"
+        },
+        "inventory": {
+          "path": "e2e/cli/test/interrupt-feedback.test.ts.case-evidence/necase_D31DET9WE90ZY004/memory_direct-interrupt-feedback-claims-sandbox-cleanup.md/nered_7T9RM0RTNQYF0XJ6-netake_HGME4FFZF8G3ZFES/inventory.json",
+          "digest": "sha256:fa91b56b1fe24d5a9a71e8c6772423f1959d56ce7cb11f02a890752b32f389a5"
+        }
+      }
+    }
+  }
+}

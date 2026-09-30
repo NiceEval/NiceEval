@@ -11,12 +11,12 @@ import { Lifecycle } from '/snippets/widgets.jsx';
 ```ts
 import { defineEval, type JsonValue } from "niceeval";
 import type { SandboxLayer } from "niceeval/sandbox";
-import type { JudgeConfig } from "niceeval";
+import type { JudgeSelection } from "niceeval/judge";
 
 export default defineEval({
   description?: string;
   tags?: string[];
-  judge?: JudgeConfig;
+  judge?: JudgeSelection;
   reporters?: Reporter[];
   timeoutMs?: number;
   sandbox?: SandboxLayer;
@@ -26,7 +26,7 @@ export default defineEval({
 });
 ```
 
-`judge` 为这道题指定 Judge 模型配置。例如 `judge: { model: "judge-model" }`。指定字段替换项目配置的默认值；Experiment 的 `judgeRuntime` 还能进一步替换。它不声明允许使用哪些 Match。
+`judge` 为这道题指定模型字符串或完整 Provider。例如 `judge: "judge-model"` 只替换已选 Provider 的模型；Experiment 的 `judgeRuntime` 还能进一步替换。它不声明允许使用哪些 Match。
 
 ## `tags` 与 `sandbox`
 

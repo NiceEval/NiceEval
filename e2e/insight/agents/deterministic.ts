@@ -21,7 +21,7 @@ export const deterministicSandbox = defineSandbox({
 });
 
 /** Deterministic first-party Inspection fixture; it never contacts a provider. */
-export function deterministicAgent(): Agent {
+export function deterministicAgent(options: { readonly partialUsage?: boolean } = {}): Agent {
   return defineSandboxAgent({
     name: "inspection-fixture",
     evidenceCoverage: completeEvidenceCoverage,
@@ -41,11 +41,9 @@ export function deterministicAgent(): Agent {
             reason: "fixture conversation history is intentionally partial",
           },
         },
-        usage: {
-          inputTokens: 10,
-          outputTokens: 5,
-          requests: 1,
-        },
+        usage: options.partialUsage
+          ? { inputTokens: 10, requests: 1 }
+          : { inputTokens: 10, outputTokens: 5, requests: 1 },
         events: [
           {
             type: "operation.started",

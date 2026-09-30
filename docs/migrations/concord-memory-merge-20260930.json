@@ -1,0 +1,153 @@
+{
+  "format": "concord.document-migration-receipt/v1",
+  "recordedAt": "2026-09-29T23:47:24.368Z",
+  "sourceCommit": "05dec8c7f1795e13212d424ee472874d62d84345",
+  "counts": {
+    "memory": 6,
+    "researchFiles": 0,
+    "issues": 0
+  },
+  "entries": [
+    {
+      "sourcePath": "memory/adapter-single-effective-cost.md",
+      "targetPath": "memory/adapter-single-effective-cost.md",
+      "sourceDigest": "sha256:adeda015bc9fd7f491cd9c788c03bd751fcfcfe38fa1ef8d7a6ceff849ce93b8",
+      "bodyDigest": "sha256:0db696367e4050714a97aa54c647ea46720df6dc694d232be9d4633b1b5084a7",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "adapter-single-effective-cost",
+        "title": "每次物理调用只选择一个有效成本",
+        "createdAt": "2026-09-21",
+        "kind": {
+          "type": "decision",
+          "state": "adopted"
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:ef3b08d8c51c7b63a8a715545b1fa17d8cf62c1815316ae7b1ef40747d1dc86e"
+    },
+    {
+      "sourcePath": "memory/adapter-usage-overview-drops-token-facts.md",
+      "targetPath": "memory/adapter-usage-overview-drops-token-facts.md",
+      "sourceDigest": "sha256:56ae57f65ba8f01fb76480164a9ff5aca61256ab18db5e9c213320b1646d2ea1",
+      "bodyDigest": "sha256:91c0a927d3a19714fc0199e824c4a1d4509eaecd927708bc5aba54dcfe48eccb",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "adapter-usage-overview-drops-token-facts",
+        "title": "Adapter usage facts disappear from Insight token metrics",
+        "createdAt": "2026-09-21",
+        "kind": {
+          "type": "problem",
+          "state": "resolved",
+          "resolution": {
+            "kind": "fixed",
+            "proof": [
+              "nered_1HVH3DKD59RGW6X8",
+              "netake_90P9D616N550QMCA",
+              "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H\"]}"
+            ]
+          }
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:1ed48b7a91dac6f89aca8b98d9d1640cf8a4d012e1cb15ac058ff49124ea51b0"
+    },
+    {
+      "sourcePath": "memory/direct-interrupt-feedback-claims-sandbox-cleanup.md",
+      "targetPath": "memory/direct-interrupt-feedback-claims-sandbox-cleanup.md",
+      "sourceDigest": "sha256:4c0922809490b7bfb9b22586f2db9f993cc4b9914fbe0326f627f7e0f66b4e06",
+      "bodyDigest": "sha256:66f1bb5cd259842e037340520452ce6f4533b69bfae469da11c96b6a1aec1300",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "direct-interrupt-feedback-claims-sandbox-cleanup",
+        "title": "无 Sandbox 的中断反馈虚构容器清理",
+        "createdAt": "2026-09-20",
+        "kind": {
+          "type": "problem",
+          "state": "resolved",
+          "resolution": {
+            "kind": "fixed",
+            "proof": [
+              "nered_7T9RM0RTNQYF0XJ6",
+              "netake_HGME4FFZF8G3ZFES",
+              "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/cli/test/interrupt-feedback.test.ts#necase_D31DET9WE90ZY004\"]}"
+            ]
+          }
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:c432bbbe16ca41fa7ad26ce435622dbdae0bfba7e0e2bb793aed9072c906e386"
+    },
+    {
+      "sourcePath": "memory/human-short-error-and-score-summary.md",
+      "targetPath": "memory/human-short-error-and-score-summary.md",
+      "sourceDigest": "sha256:ef359133f6c7573b65f67cf198baca37fc24b9b414e2aa2b6d7c5cf9e76fefb6",
+      "bodyDigest": "sha256:bb762d0e1d5a98e7e2939d38e9123b76f9a7cbc16436335f655eadd8ffef3567",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "human-short-error-and-score-summary",
+        "title": "Human 短错误丢失前文且 Score 摘要隐藏未启动计数",
+        "createdAt": "2026-09-20",
+        "kind": {
+          "type": "problem",
+          "state": "resolved",
+          "resolution": {
+            "kind": "fixed",
+            "proof": [
+              "nered_1NZ67DBK6VWY8Y3R",
+              "netake_GPYRQ6D0Q344KXS7",
+              "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/cli/test/provider-error-feedback.test.ts#necase_7HXVADGZABWJQXEC\"]}"
+            ]
+          }
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:0bf1cc2cd4301652cd4fac1456367f79f420dcaee4f6ef1a5fb4abb49e449614"
+    },
+    {
+      "sourcePath": "memory/insight-aggregate-hides-partial-state.md",
+      "targetPath": "memory/insight-aggregate-hides-partial-state.md",
+      "sourceDigest": "sha256:df105438d70ce8fefda72985a33c18db60d63b037ac348a0a5d0ac3bea13fe3a",
+      "bodyDigest": "sha256:cf173c351875f10c49bf3eeca6669e7fb38e0f380194f8546a2d9b7cb3d53b08",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "insight-aggregate-hides-partial-state",
+        "title": "Insight aggregate row hides an intrinsic partial metric",
+        "createdAt": "2026-09-21",
+        "kind": {
+          "type": "problem",
+          "state": "resolved",
+          "resolution": {
+            "kind": "fixed",
+            "proof": [
+              "nered_JSKXSEVB12GTC5M2",
+              "netake_NFCA10NRSR3KP9R6",
+              "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D\"]}"
+            ]
+          }
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:e68b0a8f341a90b0ccd7b912adf68ac3200dfcc5b4c67f09355757eecbdc4bf6"
+    },
+    {
+      "sourcePath": "memory/stream-abort-race-retains-chunks.md",
+      "targetPath": "memory/stream-abort-race-retains-chunks.md",
+      "sourceDigest": "sha256:6ad0134004f6435e722433e9a99c11e1f79a5178a1f1409a28ef355f6f799089",
+      "bodyDigest": "sha256:fa343406b182e1f04b399dfd74593ac982ed905c6203bb849b9c0febff6960f6",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "stream-abort-race-retains-chunks",
+        "title": "流式拉取不能反复竞速同一个未结束的取消 Promise",
+        "createdAt": "2026-09-28",
+        "kind": {
+          "type": "insight",
+          "state": "current"
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:f3ce4f8a9609275f02a5a349f136f34c973571dba6ccecc2e88929df12c38734"
+    }
+  ],
+  "evidence": "Historical resolution attestations preserve source declarations and do not verify command or repository execution."
+}

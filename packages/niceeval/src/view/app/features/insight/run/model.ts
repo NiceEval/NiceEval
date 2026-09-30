@@ -17,6 +17,7 @@ export interface RunMemberModel {
   readonly locator: string | null;
   readonly outcome: "completed" | "errored" | "cancelled" | "interrupted" | null;
   readonly verdict: "passed" | "failed" | "errored" | "skipped" | null;
+  readonly score?: InspectionSuccessDocumentFor<"run.summary">["summary"]["members"][number]["score"];
 }
 
 export function closeRun(
@@ -36,6 +37,7 @@ export function closeRun(
       locator: member.locator,
       outcome: member.outcome,
       verdict: member.verdict,
+      ...(member.score === undefined ? {} : { score: member.score }),
     }))),
   });
 }

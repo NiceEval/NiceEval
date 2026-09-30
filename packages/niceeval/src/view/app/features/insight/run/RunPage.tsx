@@ -9,6 +9,7 @@ import { AttemptDialog } from "../attempt/AttemptDialog.tsx";
 import type { RunPageModel } from "./model.ts";
 import { useCurrentGeneration } from "../data/index.ts";
 import { runQueryOptions } from "./load.ts";
+import { localizedMessage } from "../components/locale.ts";
 
 export function RunPage({ model, locale }: {
   readonly model: RunPageModel;
@@ -30,7 +31,13 @@ export function RunPage({ model, locale }: {
       outcome: textOrMissing(member.outcome),
       verdict: member.verdict === null
         ? { kind: "notApplicable" }
-        : { kind: "verdict", verdict: member.verdict },
+        : {
+            kind: "verdict",
+            verdict: member.verdict,
+            ...(member.verdict === "passed" && member.score?.state === "complete"
+              ? { label: localizedMessage("verdict.scored") }
+              : {}),
+          },
       locator: member.locator === null
         ? { kind: "notApplicable" }
         : { kind: "locator", locator: member.locator, ...(member.verdict === null ? {} : { verdict: member.verdict }) },

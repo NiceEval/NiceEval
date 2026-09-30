@@ -874,6 +874,7 @@ function replaceBetween(content: string, begin: string, end: string, newBody: st
 export const SOURCE_FILES = [
   "src/expect/index.ts",
   "src/assertions/match.ts",
+  "src/judge/image.ts",
   "src/assertions/types.ts",
   "src/runner/types.ts",
   "src/context/assert-first.ts",
@@ -966,6 +967,11 @@ const ASSERT_FIRST_REFERENCE = {
 
 function computeRegionBody(regionId: string, sources: SourceMap): string {
   switch (regionId) {
+    case "judge-image":
+      return renderMemberGroups([
+        { members: extractExportedFunctions(sources["src/judge/image.ts"], "src/judge/image.ts").filter((member) => member.name === "judgeImage") },
+        { heading: "JudgeImageInput", members: extractInterfaceMembers(sources["src/judge/image.ts"], "src/judge/image.ts", "JudgeImageInput") },
+      ]);
     case "expect-matchers":
       return renderMemberList(
         extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts")
@@ -1145,7 +1151,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
 /** 每个参考页对应哪些 region id;CLI 与漂移测试共用,避免两处各写一份清单跑偏。 */
 export const REFERENCE_FILES: { file: string; regions: string[] }[] = [
   { file: "expect.mdx", regions: ["expect-matchers", "value-assertion"] },
-  { file: "define-eval.mdx", regions: ["defineeval-options", "test-context", "turn-handle"] },
+  { file: "define-eval.mdx", regions: ["defineeval-options", "test-context", "turn-handle", "judge-image"] },
   { file: "define-config.mdx", regions: ["config-fields"] },
   { file: "define-agent.mdx", regions: ["agent-def", "sandbox-methods"] },
   { file: "events.mdx", regions: ["stream-events", "usage-fields"] },

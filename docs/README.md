@@ -40,7 +40,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 跟进公开、脱敏且需 maintainer 处理的 Observation | [GitHub Issue 与 Memory](engineering/issues/README.md) |
 | 沉淀调查后的 Problem、Decision 或可复用 know-how | [Memory Skill](../.agents/skills/memory/SKILL.md) |
 | 切分互斥的多 Agent 文档工作 | [并行文档工作](engineering/docs-work/README.md) |
-| 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
+| 为文档选择关系图、静态图或复杂交互图 | [Concord 迁移与图示实践](engineering/docs-traceability/migration.md) → [SVG 视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |

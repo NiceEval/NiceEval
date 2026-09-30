@@ -196,6 +196,20 @@ def parent_mount_identity(root: Path) -> dict[str, Any]:
     }
 
 
+def assert_same_parent_mount(current: dict[str, Any], recorded: object) -> None:
+    # Kernel device names can change after reboot. Keep the original source in
+    # the capsule for audit, but bind admission to the mounted filesystem UUID.
+    if not isinstance(recorded, dict):
+        raise RuntimeError("epoch capsule rootDir parent mount identity differs")
+    for fact in (recorded, current):
+        if any(not isinstance(fact.get(key), str) or not fact[key]
+               for key in ("target", "source", "fsType", "filesystemUuid")):
+            raise RuntimeError("epoch capsule rootDir parent mount identity differs")
+    if any(recorded[key] != current[key]
+           for key in ("target", "fsType", "filesystemUuid")):
+        raise RuntimeError("epoch capsule rootDir parent mount identity differs")
+
+
 def switch_mount(image: Path, mount: Path) -> None:
     expected = str(image.resolve())
     current = mounted_backing(mount)
@@ -815,10 +829,10 @@ def load_capsule(generation: Path, epoch: str) -> tuple[dict[str, Any], bytes, d
     config = json.loads(config_bytes)
     if str(Path(config["dataMount"]).resolve()) != capsule.get("dataMount"):
         raise RuntimeError("rollback capsule data mount identity differs")
-    if capsule.get("rootDirParentMount") != parent_mount_identity(
-        Path(config["storage"]["rootDir"])
-    ):
-        raise RuntimeError("epoch capsule rootDir parent mount identity differs")
+    assert_same_parent_mount(
+        parent_mount_identity(Path(config["storage"]["rootDir"])),
+        capsule.get("rootDirParentMount"),
+    )
     return config, descriptor_bytes, manifest
 
 

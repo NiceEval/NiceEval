@@ -15,6 +15,7 @@ const OPERATION_CATALOG = [
   "run.overview",
   "attempt.get",
   "attempt.assertion.detail",
+  "attempt.assertion.image",
   "attempt.trace",
   "attempt.trace.detail",
   "attempt.timing",
@@ -22,6 +23,7 @@ const OPERATION_CATALOG = [
   "attempt.diff",
   "attempt.sources",
   "attempt.artifacts",
+  "attempt.artifact",
   "runs.compare",
 ] as const;
 
@@ -182,7 +184,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         costUSD: {
           state: "available",
           value: 0.00003,
-          source: "observed",
+          source: "reported",
           samples: 1,
           total: 1,
           basis: "slot",
@@ -282,15 +284,15 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
         },
         costUSD: {
           state: "partial",
-          value: 0.00004,
-          source: "estimated",
+          value: 0.00005,
+          source: "mixed",
           samples: 2,
           total: 3,
           basis: "slot",
           issues: [],
           refs: expect.any(Array),
           unit: "USD",
-          bounds: { min: 0, max: 0.00004 },
+          bounds: { min: 0, max: 0.00005 },
         },
       });
       expect(multiInspectionCell.costUSD.refs).toHaveLength(2);
@@ -345,7 +347,7 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       expect(multiSecondaryCell.costUSD).toMatchObject({
         state: "partial",
         value: 0.00003,
-        source: "observed",
+        source: "reported",
         samples: 1,
         total: 3,
         basis: "slot",
@@ -389,14 +391,14 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       });
       expect(multiExperiment.costUSD).toMatchObject({
         state: "partial",
-        value: 0.00006000000000000001,
-        source: "estimated",
+        value: 0.00008,
+        source: "mixed",
         samples: 3,
         total: 6,
         basis: "slot",
         issues: [],
         unit: "USD",
-        bounds: { min: 0, max: 0.00006000000000000001 },
+        bounds: { min: 0, max: 0.00008 },
       });
       expect(only(
         multiExperiment.groups,
@@ -405,14 +407,14 @@ test("machine consumer 发现固定 catalog，再从 project Run 读取 origin A
       ).costUSD).toMatchObject(multiSecondaryCell.costUSD);
       expect(overviewDocument.overview.totals.costUSD).toMatchObject({
         state: "partial",
-        value: 0.0001,
-        source: "estimated",
+        value: expect.closeTo(0.00013, 12),
+        source: "mixed",
         samples: 5,
         total: 8,
         basis: "slot",
         issues: [],
         unit: "USD",
-        bounds: { min: 0, max: 0.0001 },
+        bounds: { min: 0, max: expect.closeTo(0.00013, 12) },
       });
 
       const requestPath = join(projectRoot, "run-summary.request.json");

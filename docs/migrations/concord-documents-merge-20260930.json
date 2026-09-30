@@ -1,0 +1,58 @@
+{
+  "format": "concord.document-migration-receipt/v1",
+  "recordedAt": "2026-09-29T23:57:21.488Z",
+  "sourceCommit": "05dec8c7f1795e13212d424ee472874d62d84345",
+  "counts": {
+    "documents": 4
+  },
+  "entries": [
+    {
+      "sourcePath": "docs/feature/error-assistance/README.md",
+      "targetPath": "docs/feature/error-assistance/README.md",
+      "sourceDigest": "sha256:2845291abef8fc6a0a231b3f03e486c0ebcf02d929ec700c16393e073725bdb1",
+      "bodyDigest": "sha256:154045ca47c381d649d0b6b2e0a69ec04d16c4bc78287ff1f537fa82700406e3",
+      "sourceMetadata": {
+        "format": "niceeval.docs-node/v1",
+        "kind": "feature",
+        "relations": {}
+      },
+      "targetDigest": "sha256:d305a0c5f6a4b9c5cd92c7355a7a87407c2465b918ec1e52bafb83e7dc7e2441"
+    },
+    {
+      "sourcePath": "docs/feature/error-assistance/use-case/migrate-judge-provider.md",
+      "targetPath": "docs/feature/error-assistance/use-case/migrate-judge-provider.md",
+      "sourceDigest": "sha256:dd6bbaefcec11392ab51ac48119f7ca8f4464841a3b3f89b47c8725b5d273c9b",
+      "bodyDigest": "sha256:37f79be5282203187909065e8bb9cee14a4884a7241d44992cd6d830e8818ca2",
+      "sourceMetadata": {
+        "format": "niceeval.docs-node/v1",
+        "kind": "use-case",
+        "relations": {}
+      },
+      "targetDigest": "sha256:5b5bd60ed5fbffb1ec95ff5b58760c3c5e876103c0e24572349c569c4dcfab8e"
+    },
+    {
+      "sourcePath": "docs/feature/error-assistance/use-case/read-grouped-errors.md",
+      "targetPath": "docs/feature/error-assistance/use-case/read-grouped-errors.md",
+      "sourceDigest": "sha256:e733991362d360a56b54afe44075a3343f1ced7d6761f533e19e435617477b65",
+      "bodyDigest": "sha256:337bfe779deedca56c20b77dcb93a3e8f1fdeab3525a5725b4691c354f439905",
+      "sourceMetadata": {
+        "format": "niceeval.docs-node/v1",
+        "kind": "use-case",
+        "relations": {}
+      },
+      "targetDigest": "sha256:fe38f0529d224b258d0492efb8c774bb82a0e2e00b02d3ee17805c82c6348761"
+    },
+    {
+      "sourcePath": "docs/feature/judge/use-case/inspect-judge-score.md",
+      "targetPath": "docs/feature/judge/use-case/inspect-judge-score.md",
+      "sourceDigest": "sha256:c9c3cb08b5835f3374d73b5c8bf7d1ec1f3537604359a2b5e0d4806d5daa3357",
+      "bodyDigest": "sha256:1e8c689ab0cde8353e4cd528e63e16466269c9c7abe8a8949ace0e43818a3003",
+      "sourceMetadata": {
+        "format": "niceeval.docs-node/v1",
+        "kind": "use-case",
+        "relations": {}
+      },
+      "targetDigest": "sha256:e2105b634e9e3982063ba6e6285333a30b6b3c4157102f63def4443727495178"
+    }
+  ]
+}

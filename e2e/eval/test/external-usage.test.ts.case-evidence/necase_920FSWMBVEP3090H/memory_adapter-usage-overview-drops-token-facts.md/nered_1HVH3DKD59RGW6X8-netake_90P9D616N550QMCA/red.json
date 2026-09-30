@@ -1,0 +1,54 @@
+{
+  "format": "niceeval.e2e-case-receipt/v1",
+  "mode": "formal",
+  "observation": "red",
+  "selector": "e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H",
+  "caseId": "necase_920FSWMBVEP3090H",
+  "inventoryDigest": "sha256:44d30ed59b3d840f8bed1e2b350db111de477e9fc6de256a1d11d5f6b93dc43b",
+  "candidate": {
+    "gitSha": "d68039aac8fbe73d35042b3f175a5a90d8685c73",
+    "sha256": "3e24c76e10064b03a51cf00e7a9baacda2909e9fab19d4c29ed53a485ee17275",
+    "sri": "sha512-dqGeu+0CTbFFA9GaSD59SoaRBvRoI2B0XuG5SMJNohKP4JUKhm3RutalqsqpJRBCixISImaCeBUZ1X4zPliQ3A=="
+  },
+  "source": {
+    "checkout": "dd2ca6ce8afdead17822bf7cb71b24cc509ab2e5",
+    "testFileSha256": "21ebe83cb5d61b3746365e39d7bd1a0e53be0cbc3b5f7e3d1b6752ea14c29282",
+    "sidecarSha256": "9f90110efa07dd21304a2261f6acb075c5315545df32438edcc432c8d843d4de"
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/external-usage.test.ts",
+      "--testNamePattern",
+      " \\[necase_920FSWMBVEP3090H\\]$"
+    ]
+  },
+  "result": {
+    "disposition": "regression",
+    "stage": "test",
+    "exitCode": 1,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-scratch-037xNU/runs/eval",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "gone": true,
+        "detail": "owned process group 1748236 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "1e3165ba-37e1-4dd0-a12a-08895119bbc5",
+  "receiptSha256": "1e1bfe62c6d5ef409b9bbe5800ce379045f71017505b5905fe06ebbeeb18d8d7"
+}

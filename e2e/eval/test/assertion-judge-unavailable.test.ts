@@ -55,7 +55,7 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () =>
         assertion: { entryId: judge.entryId },
       });
       const detail = JSON.stringify(assertion.document.assertion);
-      expect(detail).toContain("judge-model-unresolved");
+      expect(detail).toContain("judge-provider-unresolved");
       expect(detail).toContain("failureDetail");
       for (const field of ["rationale", "evidence", "detail", "citations"]) {
         expect(detail).toContain(`\"label\":\"${field}\"`);
@@ -68,6 +68,7 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () =>
 });
 // @feature docs/feature/assertions/README.md
 
+// @regression memory/llm-x-judge-turn-material-gap.md
 test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求留存", async () => {
   let measurementCalls = 0;
   const deliveredRequests: string[] = [];

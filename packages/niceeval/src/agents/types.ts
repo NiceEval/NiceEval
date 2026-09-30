@@ -1,3 +1,4 @@
+import type { ExperimentFlags } from "../shared/types.ts";
 // agent 域类型:Agent / Adapter 契约、会话与 tracing 导出配置。
 
 import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
@@ -310,7 +311,7 @@ export interface AgentContext {
    * 读取其中的字段;框架本身不解释、不校验它的内容。命名特意避开 CLI 解析出的
    * `flag`(跑法层面的 --timeout/--budget 等),两者是不相关的概念。
    */
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly flags: ExperimentFlags;
   /**
    * 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
    * experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:

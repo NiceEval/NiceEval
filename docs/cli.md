@@ -170,6 +170,10 @@ migration 或 repair；原项目必须用 current NiceEval 重新运行。
 
 一次 Invocation 的 TTY 面板、NDJSON progress 和诊断只服务当前进程。它们可替换、合并或丢弃，不能成为 Record 的持久化协议。
 
+非 TTY Human 在 stdout 追加带 Experiment、Eval 和 Attempt 归属的节流文本进度。采样、去重与空闲 heartbeat 服从 [Experiments 运行中反馈](feature/experiments/cli.md#运行中反馈)。
+
+Score Eval 的 `scored` 人读标签只表示完整且有效的评分，完整零分不表示目标达成。标签与 canonical Verdict 的关系由 [Verdict](feature/verdict/architecture.md#score-eval-的-assertion-score-facts) 定义。
+
 CLI 与 Node runtime 只提供英语人读文本。每段文案由产生该反馈的 contribution、feedback renderer 或错误 owner
 直接拥有，不经过全局 message key、catalog 或翻译函数。列表、缩进、面板和截断继续由 CLI 呈现能力统一处理；
 数量文案使用固定形式，不按单复数选择另一条消息。浏览器 View 的中英文 catalog 属于 View，不与 CLI 共用。

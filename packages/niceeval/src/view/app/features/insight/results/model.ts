@@ -163,7 +163,7 @@ function projectMetric(metric: OverviewMetric): MetricValue<number> {
     }))),
     ...(metric.unit === undefined ? {} : { unit: metric.unit }),
     ...("source" in metric &&
-        (metric.source === "observed" || metric.source === "estimated" || metric.source === null)
+        (metric.source === "reported" || metric.source === "estimated" || metric.source === "mixed" || metric.source === null)
       ? { source: metric.source }
       : {}),
     ...(metric.bounds === undefined ? {} : { bounds: Object.freeze({ ...metric.bounds }) }),

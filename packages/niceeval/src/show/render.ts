@@ -23,6 +23,7 @@ import type {
   TraceView,
   UsageView,
 } from "./model.ts";
+import { decodeBase64Bytes } from "../inspection/bytes.ts";
 
 const TERMINAL_OPTIONS = Object.freeze({ width: 80, mode: "plain" as const });
 
@@ -55,14 +56,14 @@ const duration = (value: Metric): string => metric(value, (milliseconds) => {
   return `${fmt(milliseconds / 3_600_000)} h`;
 });
 
-const score = (value: ScoredValue): string =>
+const score = (value: ScoredValue, verdict: AttemptView["verdict"]): string =>
   value.state === "not-scored"
     ? value.state
     : `${fmt(value.earned)}/${fmt(value.possible)} (${value.state}${
       value.state === "unavailable"
         ? `; ${value.unavailable} unavailable`
         : ""
-    })`;
+    }${value.state === "complete" && verdict === "passed" ? "; scored" : ""})`;
 
 const aggregateEntries = (
   value: Aggregate,
@@ -168,7 +169,7 @@ const attemptBlocks = (
             : member.publication.state,
           ...(showScore
             ? [member.publication.state === "published"
-              ? metric(member.publication.score)
+              ? `${metric(member.publication.score)}${member.publication.verdict === "passed" && member.publication.score.state === "available" && member.publication.score.value !== null ? " (scored)" : ""}`
               : member.publication.state]
             : []),
         ]),
@@ -178,13 +179,17 @@ const attemptBlocks = (
 };
 
 const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
-  const counts = { passed: 0, failed: 0, errored: 0 };
+  const counts = { passed: 0, scored: 0, failed: 0, errored: 0 };
   for (const cell of cells) {
     for (const member of cell.members) {
       if (member.publication.state !== "published") continue;
       const verdict = member.publication.verdict;
       if (verdict === "passed") {
-        counts.passed += 1;
+        if (cell.aggregate.evaluationKind === "points" && member.publication.score.state === "available" && member.publication.score.value !== null) {
+          counts.scored += 1;
+        } else {
+          counts.passed += 1;
+        }
       } else if (verdict === "failed" || verdict === "errored") {
         counts[verdict] += 1;
       }
@@ -192,6 +197,7 @@ const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
   }
   const hidden = [
     ...(counts.passed > 0 ? [`${counts.passed} passed`] : []),
+    ...(counts.scored > 0 ? [`${counts.scored} scored`] : []),
     ...(counts.failed > 0 ? [`${counts.failed} failed`] : []),
     ...(counts.errored > 5 ? [`${counts.errored - 5} errored`] : []),
   ];
@@ -406,7 +412,7 @@ export function renderRun(value: RunView): string {
             { key: "Verdict", value: member.verdict ?? "not-recorded" },
             {
               key: "Score",
-              value: member.score === null ? "not-recorded" : score(member.score),
+              value: member.score === null ? "not-recorded" : score(member.score, member.verdict),
             },
           ],
         },
@@ -537,7 +543,9 @@ export function renderAttempt(value: AttemptView): string {
     {
       kind: "panel",
       title: `Attempt ${value.locator}`,
-      meta: value.verdict ?? value.outcome,
+      meta: value.verdict === "passed" && value.score.state === "complete"
+        ? "scored"
+        : value.verdict ?? value.outcome,
       blocks: [
         {
           kind: "keyValue",
@@ -549,7 +557,7 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Slot", value: value.slotId },
             { key: "Outcome", value: value.outcome },
             { key: "Verdict", value: value.verdict ?? "not-available" },
-            { key: "Score", value: score(value.score) },
+            { key: "Score", value: score(value.score, value.verdict) },
           ],
         },
         {
@@ -726,6 +734,46 @@ export function renderTrace(value: TraceView): string {
     },
     {
       kind: "panel",
+      title: `Generic execution traces · ${value.execution.state}`,
+      blocks: [
+        {
+          kind: "keyValue",
+          entries: [
+            { key: "Traces", value: String(value.execution.traces.length) },
+            {
+              key: "Events",
+              value: boundedPreview(
+                value.execution.events.length,
+                value.execution.hasMore,
+                value.execution.omittedEventCount,
+              ),
+            },
+            { key: "Continuation", value: value.execution.continuation ?? "complete" },
+          ],
+        },
+        {
+          kind: "table",
+          columns: [
+            { header: "Event ID" },
+            { header: "Type" },
+            { header: "Source" },
+            { header: "Actor" },
+            { header: "Time" },
+            { header: "Summary" },
+          ],
+          rows: value.execution.events.map((event) => [
+            event.eventId,
+            event.type,
+            event.source.id,
+            event.actor?.label ?? event.actor?.id ?? "not-recorded",
+            event.time === undefined ? "not-recorded" : `${event.time.clockId}: ${event.time.value} ${event.time.unit}`,
+            event.summary,
+          ]),
+        },
+      ],
+    },
+    {
+      kind: "panel",
       title: `Conversation · ${value.conversation.state}`,
       blocks: [
         {
@@ -875,6 +923,10 @@ export function renderTrace(value: TraceView): string {
     {
       kind: "raw",
       text: [
+        ...value.execution.events.flatMap((event) => [
+          `event ${event.eventId}`,
+          ...event.evidence.map((evidence) => `  evidence ${evidence.evidenceId}`),
+        ]),
         ...value.identities.itemIds.map((id) => `item ${id}`),
         ...value.identities.toolOccurrenceIds.map((id) =>
           `tool occurrence ${id}`
@@ -943,6 +995,7 @@ function formatProjectionLimitation(value: ProjectionLimitation): string {
 type UsageLimitation = UsageView["limitations"][number];
 
 function formatUsageLimitation(value: UsageLimitation): string {
+  if ("issue" in value) return value.issue;
   if ("source" in value) {
     return `${value.source}; turn ${value.turnId}; ${value.channel}; ${value.state}; ${value.reason}`;
   }
@@ -1020,6 +1073,88 @@ export function renderTraceDetail(value: TraceDetailView): string {
     meta: `${value.kind} ${value.stableId}`,
     blocks: [],
   };
+  if (body.kind === "execution-event") {
+    const eventJson = JSON.stringify({
+      key: body.event.key,
+      type: body.event.type,
+      source: body.event.source,
+      actor: body.event.actor ?? null,
+      time: body.event.time ?? null,
+      summary: body.event.summary,
+      payload: body.event.payload ?? null,
+      links: body.event.links,
+      scopeMemberships: body.event.scopeMemberships,
+    }, null, 2);
+    return terminal([
+      heading,
+      {
+        kind: "panel",
+        title: `${body.event.type} · ${body.event.eventId}`,
+        blocks: [{
+          kind: "keyValue",
+          entries: [
+            { key: "Trace", value: body.event.traceId },
+            { key: "Source", value: body.event.source.id },
+            { key: "Native event ID", value: body.event.source.eventId ?? "not-recorded" },
+            { key: "Client sequence", value: body.event.source.sequence === undefined ? "not-recorded" : String(body.event.source.sequence) },
+            { key: "Actor", value: body.event.actor?.id ?? "not-recorded" },
+            { key: "Time", value: body.event.time === undefined ? "not-recorded" : `${body.event.time.value} ${body.event.time.unit} (${body.event.time.clockId})` },
+            { key: "Summary", value: body.event.summary },
+            { key: "Evidence", value: String(body.evidence.length) },
+          ],
+        }],
+      },
+      { kind: "divider", title: "Event" },
+      { kind: "code", text: eventJson },
+      ...body.evidence.flatMap((evidence): readonly TerminalBlock[] => ([
+        {
+          kind: "panel",
+          title: `${evidence.label} · ${evidence.evidenceId}`,
+          meta: evidence.truncated ? "preview" : "complete",
+          blocks: [{
+            kind: "keyValue",
+            entries: [
+              { key: "Artifact", value: evidence.artifactId },
+              { key: "Pointer", value: evidence.pointer },
+              { key: "Bytes", value: String(evidence.targetByteLength) },
+              { key: "Target SHA-256", value: evidence.targetSha256 },
+              { key: "Next offset", value: evidence.nextOffset === null ? "complete" : String(evidence.nextOffset) },
+            ],
+          }],
+        },
+        { kind: "code", text: executionEvidenceText(evidence.base64) },
+        ...(evidence.nextOffset === null ? [] : [{
+          kind: "command" as const,
+          command: `Query attempt.trace.detail for ${evidence.evidenceId} with offset ${evidence.nextOffset}`,
+        }]),
+      ])),
+    ]);
+  }
+  if (body.kind === "execution-evidence") {
+    return terminal([
+      heading,
+      {
+        kind: "panel",
+        title: `${body.label} · ${body.evidenceId}`,
+        blocks: [{
+          kind: "keyValue",
+          entries: [
+            { key: "Trace", value: body.traceId },
+            { key: "Event", value: body.eventId },
+            { key: "Artifact", value: body.artifactId },
+            { key: "Pointer", value: body.pointer },
+            { key: "Range", value: `${body.offset}..${body.nextOffset ?? body.targetByteLength}` },
+            { key: "Target SHA-256", value: body.targetSha256 },
+          ],
+        }],
+      },
+      { kind: "code", text: executionEvidenceText(body.base64) },
+      ...(body.nextOffset === null ? [] : [{
+        kind: "command" as const,
+        command: `Query attempt.trace.detail for ${body.evidenceId} with offset ${body.nextOffset}`,
+      }]),
+    ]);
+  }
   if (body.kind === "item") {
     return terminal([heading, ...traceDetailItemBlocks(body.item)]);
   }
@@ -1096,6 +1231,10 @@ export function renderTraceDetail(value: TraceDetailView): string {
     { kind: "code", text: body.stdout.text },
     { kind: "code", text: body.stderr.text },
   ]);
+}
+
+function executionEvidenceText(base64: string): string {
+  return new TextDecoder("utf-8").decode(decodeBase64Bytes(base64));
 }
 
 type TraceDetailItem = Extract<
@@ -1279,18 +1418,30 @@ function usageTotalEntries(
 ): readonly { readonly key: string; readonly value: string }[] {
   return [
     { key: "Input tokens", value: numericUsageTotal(totals.inputTokens) },
+    ...(totals.inputTotalTokens === undefined ? [] : [{ key: "Input including cache", value: numericUsageTotal(totals.inputTotalTokens) }]),
     { key: "Output tokens", value: numericUsageTotal(totals.outputTokens) },
     { key: "Requests", value: numericUsageTotal(totals.requests) },
-    {
-      key: "Provider costs",
-      value: `${totals.providerCosts.state}; ${totals.providerCosts.observationCount} observations${
-        totals.providerCosts.values.length === 0
-          ? "; no recorded values"
-          : `; ${totals.providerCosts.values.map((cost) =>
-            `${cost.value} ${cost.currency} (${cost.observationCount} observations)`
-          ).join("; ")}`
-      }`,
-    },
+    totals.costs === undefined
+      ? {
+          key: "Provider costs",
+          value: `${totals.providerCosts?.state ?? "unavailable"}; ${totals.providerCosts?.observationCount ?? 0} observations${
+            (totals.providerCosts?.values.length ?? 0) === 0
+              ? "; no recorded values"
+              : `; ${totals.providerCosts!.values.map((cost) =>
+                `${cost.value} ${cost.currency} (${cost.observationCount} observations)`
+              ).join("; ")}`
+          }`,
+        }
+      : {
+          key: "Cost",
+          value: `${totals.costs.state}; ${totals.costs.source ?? "unknown"}; ${
+            totals.costs.values.length === 0
+              ? `0/${totals.costs.totalCalls} covered calls; no recorded values`
+              : totals.costs.values.map((cost) =>
+                `${cost.value} ${cost.currency} (${cost.coveredCalls}/${totals.costs!.totalCalls} covered calls; ${cost.source}; ${cost.estimatedCalls} estimated)`
+              ).join("; ")
+          }`,
+        },
   ];
 }
 
@@ -1305,6 +1456,10 @@ export function renderUsage(value: UsageView): string {
           kind: "keyValue",
           entries: [
             { key: "State", value: value.state },
+            ...(value.source === "adapter" ? [
+              { key: "Coverage", value: "Recorded calls only" },
+              { key: "Calls", value: boundedPreview(value.calls?.length ?? 0, value.callsTruncated ?? false, value.omittedCallCount ?? 0) },
+            ] : []),
             ...usageTotalEntries(value.totals),
             {
               key: "Limitations",
@@ -1337,7 +1492,7 @@ export function renderUsage(value: UsageView): string {
           ]),
           overflow: "wrap",
         },
-        { kind: "divider", title: "Provider costs" },
+        { kind: "divider", title: value.totals.costs === undefined ? "Provider costs" : "Costs" },
         {
           kind: "table",
           columns: [
@@ -1346,12 +1501,19 @@ export function renderUsage(value: UsageView): string {
             { header: "State" },
             { header: "Observations" },
           ],
-          rows: value.totals.providerCosts.values.map((cost) => [
-            cost.currency,
-            cost.value,
-            value.totals.providerCosts.state,
-            String(cost.observationCount),
-          ]),
+          rows: value.totals.costs === undefined
+            ? (value.totals.providerCosts?.values ?? []).map((cost) => [
+                cost.currency,
+                cost.value,
+                value.totals.providerCosts!.state,
+                String(cost.observationCount),
+              ])
+            : value.totals.costs.values.map((cost) => [
+                cost.currency,
+                cost.value,
+                value.totals.costs!.state,
+                `${cost.coveredCalls}/${value.totals.costs!.totalCalls}`,
+              ]),
         },
         { kind: "divider", title: "Turn coverage" },
         {
@@ -1514,6 +1676,12 @@ function fileEndpoint(value: DiffEndpoint): string {
 }
 
 export function traceSelector(value: TraceView, id: string) {
+  if (value.execution.identityIndex.eventIds.includes(id)) {
+    return { kind: "execution-event" as const, eventId: id };
+  }
+  if (value.execution.identityIndex.evidenceIds.includes(id)) {
+    return { kind: "execution-evidence" as const, evidenceId: id };
+  }
   if (value.identities.itemIds.includes(id)) {
     return { kind: "item" as const, itemId: id };
   }

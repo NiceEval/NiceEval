@@ -47,9 +47,10 @@ export default defineExperiment({
 
 ```ts
 import { defineConfig } from "niceeval";
+import { OpenAIProvider } from "niceeval/judge";
 
 export default defineConfig({
-  judgeRuntime: { model: "gpt-5.4-mini" },
+  judgeRuntime: OpenAIProvider({ model: "gpt-5.4-mini" }),
   maxConcurrency: 4,
   timeoutMs: 300_000,
 });
@@ -60,7 +61,7 @@ export default defineConfig({
 | 字段 | 放什么 |
 | --- | --- |
 | `name` | 项目名，显示在 `niceeval view` 顶部。可按语言给多份 |
-| `judgeRuntime` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`、`maxOutputTokens` |
+| `judgeRuntime` | 默认裁判 Provider，由 `niceeval/judge` 的具名工厂构造 |
 | `workspace` | 上传进 Sandbox 的工作区根目录 |
 | `reporters` | 默认 reporter 列表（落盘、上报实验平台） |
 | `maxConcurrency` | 默认并发上限 |
@@ -83,7 +84,10 @@ export default defineConfig({
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
-| `NICEEVAL_JUDGE_KEY` | Judge | Judge 的默认 key 变量，用 `judge.apiKeyEnv` 指到别的名字 |
+| `OPENAI_API_KEY` | `OpenAIProvider` | OpenAI 或显式兼容网关的默认 key |
+| `AI_GATEWAY_API_KEY` | `VercelProvider` | Vercel AI Gateway key |
+| `OPENROUTER_API_KEY` | `OpenRouterProvider` | OpenRouter key |
+| `TYPESAFE_API_KEY` | `TypesafeProvider` | TypeSafe System One key |
 | `E2B_API_KEY` | `e2bSandbox()` | |
 | `VERCEL_API_TOKEN` | `vercelSandbox()` | |
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
@@ -93,12 +97,14 @@ export default defineConfig({
 judge 想用别的变量名装 key，在配置里指过去：
 
 ```ts
+import { OpenAIProvider } from "niceeval/judge";
+
 export default defineConfig({
-  judgeRuntime: {
+  judgeRuntime: OpenAIProvider({
     model: "gpt-5.4-mini",
     baseUrl: "https://gateway.example.com/v1",   // 网关地址是配置，写在这里
     apiKeyEnv: "MY_GATEWAY_KEY",                  // key 是密钥，读这个环境变量
-  },
+  }),
 });
 ```
 
@@ -106,11 +112,11 @@ export default defineConfig({
 
 ```ts
 export default defineConfig({
-  judgeRuntime: {
+  judgeRuntime: OpenAIProvider({
     model: "gpt-5.4-mini",
     baseUrl: process.env.MY_GATEWAY_URL,   // 变量名自己起，自己读
     apiKeyEnv: "MY_GATEWAY_KEY",
-  },
+  }),
 });
 ```
 
@@ -121,7 +127,7 @@ export default defineConfig({
 ```bash
 # .env
 ANTHROPIC_API_KEY=sk-ant-...
-NICEEVAL_JUDGE_KEY=sk-...
+OPENAI_API_KEY=sk-...
 ```
 
 `.env` 是投递密钥的地方，不是第二个配置文件——往里写 `NICEEVAL_TIMEOUT` 这种东西不会有任何效果。CI 里同样只传密钥：
@@ -142,10 +148,11 @@ NICEEVAL_JUDGE_KEY=sk-...
 | 单次 Attempt 的超时 | `--timeout`，或 experiment / config 的 `timeoutMs` |
 | 花费上限 | `--budget`，或 experiment 的 `budget` |
 | 并发上限 | `--max-concurrency`，或 config 的 `maxConcurrency` |
-| Judge 模型与端点 | config 或评估用例的 `judge.model` / `judge.baseUrl` |
+| Judge 模型与端点 | config 或 Experiment 的具名 Provider；Eval 可用 `judge` 字符串只换模型 |
 | OTel 接收地址 | config 的 `telemetry: { host, port }` |
 
-Judge 默认从 `NICEEVAL_JUDGE_KEY` 读取 key，也可以改读 `judge.apiKeyEnv` 指定的变量；端点只从 `judge.baseUrl` 读。它不会借用被测应用的 `OPENAI_API_KEY`。
+每个 Judge Provider 只读自己的默认 key 变量，或工厂 `apiKeyEnv` 显式指定的变量。
+它不会借用其它 Provider 或被测应用的 key。
 
 ## 接着看
 

@@ -8,6 +8,7 @@ const MCP_FIXTURE_ENTRY = `${MCP_FIXTURE_ROOT}/node_modules/@modelcontextprotoco
 const agent = codexAgent({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: process.env.OPENAI_BASE_URL,
+  configFile: "configs/shell-enabled.toml",
   mcpServers: [
     { name: "e2e", command: "node", args: [MCP_FIXTURE_ENTRY] },
     { name: "deepwiki", url: "https://mcp.deepwiki.com/mcp" },
@@ -27,7 +28,7 @@ const agent = codexAgent({
 export default defineExperiment({
   description: "codex-cli MCP 闭环:stdio 与远程 HTTP 两种传输形态,外加未挂载 server 的反例",
   agent,
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   evals: ["mcp"],
   attempts: 1,

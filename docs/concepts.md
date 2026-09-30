@@ -141,7 +141,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 实验 | Experiment | 选择 Adapter、模型与运行条件的可签入配置；不定义 rubric、阈值或评分规则 | [Experiments](feature/experiments/README.md) |
 | 实验组 | Experiment Group | Experiment 的比较准入边界；具名组由 `experimentId` 第一段形成，根级 Experiment 各自形成单成员组 | [Experiments](feature/experiments/README.md#实验组与可比边界) |
-| 裁判执行配置 | JudgeConfig | 裁判 model、端点、凭据变量名与超时；可由 Experiment 做 A/B，不包含 rubric 或 gate／score／stop policy | [Judge](feature/judge/library.md#模型与鉴权) |
+| 裁判 Provider | JudgeProvider | 显式绑定服务协议、默认 model、端点、凭据声明位置与执行限制；Experiment 可替换模型或整个 Provider | [Judge](feature/judge/library.md#runtime-配置) |
 | 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [实验值归属](feature/experiments/use-case/实验值归属/) |
 | 运行时观测 | Runtime observation | 运行时才知道、由 producer-owned typed collector 发布的值；不自动进入 eligibility identity 或 Attempt Core | [实验值归属](feature/experiments/use-case/实验值归属/) |
 | 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |

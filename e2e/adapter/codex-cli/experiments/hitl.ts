@@ -9,7 +9,7 @@ export default defineExperiment({
     baseUrl: process.env.OPENAI_BASE_URL,
     configFile: "configs/shell-enabled.toml",
   }),
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   sandbox,
   flags: { requestHitl: true },
   evals: ["hitl-options"],

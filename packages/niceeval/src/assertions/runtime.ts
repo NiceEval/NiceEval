@@ -8,6 +8,7 @@ import { Cause, Deferred, Effect } from "effect";
 
 import type { SourceLoc } from "../shared/types.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
+import { isJudgeImage } from "../judge/image.ts";
 
 import {
   assertionHandleBrand,
@@ -533,6 +534,10 @@ function freezeAssertionMaterial(
   if (material.kind === "snapshot") {
     return Object.freeze({ kind: "snapshot", value: material.value });
   }
+  if (material.kind === "judge-image") {
+    if (!isJudgeImage(material.image)) throw new TypeError("judge-image material requires a judgeImage() value");
+    return Object.freeze({ kind: "judge-image", image: material.image });
+  }
   if (typeof material.preview !== "string" || material.preview.trim() === "") {
     throw new TypeError("record-attachment material requires a non-empty preview");
   }
@@ -741,6 +746,7 @@ class AssertionsRuntimeImplementation {
   private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
   private retainedProducerBytes = 0;
+  private retainedImageBytes = 0;
 
   constructor(
     readonly evaluationKind: AssertionEvaluationKind,
@@ -895,6 +901,7 @@ class AssertionsRuntimeImplementation {
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
       retainedBytes: definition.retainedBytes,
+      retainedImageBytes: definition.retainedImageBytes,
       terminalDetail: definition.terminalDetail,
       terminalEvidence: definition.terminalEvidence,
       evaluate: () =>
@@ -1172,6 +1179,7 @@ class AssertionsRuntimeImplementation {
     readonly directScorePoints?: number;
     readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
     readonly retainedBytes?: number;
+    readonly retainedImageBytes?: number;
     readonly terminalDetail?: () => AssertionSnapshotObject;
     readonly terminalEvidence?: () => readonly AssertionMaterial[];
   }): AssertionEntry {
@@ -1181,11 +1189,15 @@ class AssertionsRuntimeImplementation {
       );
     }
     const retainedBytes = input.retainedBytes ?? 0;
+    const retainedImageBytes = input.retainedImageBytes ?? 0;
     if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
       throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
     }
     if (this.retainedProducerBytes + retainedBytes > 512 * 1024) {
       throw new Error("Attempt managed measurement retention cannot exceed 512 KiB");
+    }
+    if (!Number.isSafeInteger(retainedImageBytes) || retainedImageBytes < 0 || this.retainedImageBytes + retainedImageBytes > 32 * 1024 * 1024) {
+      throw new Error("Attempt managed image retention cannot exceed 32 MiB");
     }
     const entry: AssertionEntry = {
       index: this.entries.length,
@@ -1214,6 +1226,7 @@ class AssertionsRuntimeImplementation {
     };
     this.entries.push(entry);
     this.retainedProducerBytes += retainedBytes;
+    this.retainedImageBytes += retainedImageBytes;
     const capture = sourceCaptureByRuntime.get(this);
     if (capture !== undefined) {
       const capturedEntry: AssertionRuntimeSourceEntry = { occurrences: [] };
@@ -1248,12 +1261,13 @@ class AssertionsRuntimeImplementation {
       && (!Array.isArray(definition.evidence)
         || definition.evidence.some((material) =>
           !isRecord(material)
-          || (material.kind !== "snapshot" && material.kind !== "record-attachment")
+          || (material.kind !== "snapshot" && material.kind !== "record-attachment" && material.kind !== "judge-image")
           || (material.kind === "record-attachment"
-            && typeof material.preview !== "string"),
+            && typeof material.preview !== "string")
+          || (material.kind === "judge-image" && !isJudgeImage(material.image)),
         ))
     ) {
-      throw new TypeError(`${owner} evidence must use snapshot or record-attachment material`);
+      throw new TypeError(`${owner} evidence must use snapshot, record-attachment, or judge-image material`);
     }
   }
 

@@ -219,6 +219,20 @@ function queryFailureDetail(error: Error): InspectionFailureDocument["failure"] 
         correction: "fix-record-source" as const,
       });
     }
+    if (cause.code === "restart-required") {
+      return Object.freeze({
+        code: cause.code,
+        reason: cause.reason,
+        correction: "restart" as const,
+      });
+    }
+    if (cause.code === "evidence-budget-exceeded") {
+      return Object.freeze({
+        code: cause.code,
+        reason: cause.reason,
+        correction: "retry" as const,
+      });
+    }
     return Object.freeze({
       code: cause.code,
       reason: "The fixed Inspection operation could not be completed.",
