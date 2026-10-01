@@ -5,11 +5,13 @@ import { defined, only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E as adapterCaptureE2E } from "./context.ts";
 
-test.concurrent("cleanup 总预算耗尽后拒绝迟到采集并保留已得分和成功附件 [necase_A8MF18FNMHPRDD81]", async () => {
+// @feature docs/feature/run/README.md
+test.concurrent("cleanup 总预算耗尽后拒绝迟到采集并保留已得分和成功附件", async () => {
   await adapterCaptureE2E.case("adapter-capture-timeout", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const completed = await niceeval.run(["exp", "adapter-capture/timeout", "--rerun", "all", "--json"], { timeoutMs: 90_000 });
     expect(completed.exitCode, completed.diagnostic()).toBe(1);
     expect(completed.expReceipt().completion).toBe("completed");
+    expect(await readFile(join(projectRoot, "capture-stream-late.txt"), "utf8")).toBe("rejected");
     expect(await readFile(join(projectRoot, "capture-late.txt"), "utf8")).toBe("usage-rejected\nattachment-rejected\ntrace-rejected\n");
     const runId = only(completed.expReceipt().createdRunIds, () => true, completed.diagnostic());
     const request = join(projectRoot, "capture-query.json");

@@ -11,6 +11,10 @@ node_modules/
 /.repo-tools/test-evidence/
 /.netlify-view-preview/
 /.playwright-mcp/
+# 本地下游安装包
+/artifacts/dev-links/
+# Local E2E diagnostics and candidate copies; formal evidence is managed separately.
+/artifacts/e2e/
 *.log
 .DS_Store
 dist/

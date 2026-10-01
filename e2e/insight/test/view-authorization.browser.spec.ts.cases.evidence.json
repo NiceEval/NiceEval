@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_XDDZFNTFXA177RG0": {
-      "memory/view-session-cookie-collides-across-ports.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_XDDZFNTFXA177RG0",
+      "memory": "memory/view-session-cookie-collides-across-ports.md",
+      "evidence": {
         "red": {
           "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-session-cookie-collides-across-ports.md/nered_NPCQ260FNXM1SY43-netake_0SVB9XS4NCGH4WFE/red.json",
           "digest": "sha256:7f687a182e4aa78d64ab303d98aee2cc240454f35744b2cf99641962be3434f6"
@@ -20,7 +23,13 @@
           "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
         }
       },
-      "memory/view-deep-link-bootstrap-misses-router-initialization.md": {
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
+    },
+    {
+      "caseId": "necase_XDDZFNTFXA177RG0",
+      "memory": "memory/view-deep-link-bootstrap-misses-router-initialization.md",
+      "evidence": {
         "red": {
           "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-deep-link-bootstrap-misses-router-initialization.md/nered_ABHQ7PPW920CV3BJ-netake_0SVB9XS4NCGH4WFE/red.json",
           "digest": "sha256:3d7b0646a94a46f3559f27078faa7fea71ede2d8cc8ae6758d0942845d0831a5"
@@ -38,7 +47,13 @@
           "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
         }
       },
-      "memory/view-hard-refresh-duplicates-attempt-overlay.md": {
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
+    },
+    {
+      "caseId": "necase_XDDZFNTFXA177RG0",
+      "memory": "memory/view-hard-refresh-duplicates-attempt-overlay.md",
+      "evidence": {
         "red": {
           "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_1GH2D3JYA68VAKD2-netake_0SVB9XS4NCGH4WFE/red.json",
           "digest": "sha256:e6d93c8774535f9d4fa5d94e6d70a15ed8e6680feeb85605f1a5f0fae12574cd"
@@ -55,7 +70,9 @@
           "path": "e2e/insight/test/view-authorization.browser.spec.ts.case-evidence/necase_XDDZFNTFXA177RG0/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_1GH2D3JYA68VAKD2-netake_0SVB9XS4NCGH4WFE/inventory.json",
           "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
-  }
+  ]
 }

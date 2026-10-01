@@ -104,16 +104,32 @@ export default defineExperiment({
 #### `app`
 
 ```ts
-readonly app: Readonly<Context>;
+readonly app: MatchContext<Context>;
 ```
 
 #### `check`
 
 ```ts
-readonly check: AssertionCheck<"polymorphic">;
+readonly check: AssertionCheck<"polymorphic", Context>;
 ```
 
 ### `AdapterCleanupContext`
+
+#### `timeoutMs`
+
+```ts
+readonly timeoutMs: number;
+```
+
+整个清理窗口的固定毫秒预算，不为每个回调续期。
+
+#### `deadlineAt`
+
+```ts
+readonly deadlineAt: number;
+```
+
+清理窗口实际开始时确定的 Unix 毫秒截止时间。
 
 #### `signal`
 
@@ -121,15 +137,31 @@ readonly check: AssertionCheck<"polymorphic">;
 readonly signal: AbortSignal;
 ```
 
-当前 Adapter cleanup 总窗口的取消信号。它独立于 Attempt signal，并在 30 秒总预算结束时取消。
+独立于执行信号；整个 Adapter 清理窗口截止时中止。
 
 ### `AdapterCreateContext`
+
+#### `models`
+
+```ts
+readonly models: ResolvedModelSlots;
+```
+
+Frozen application model selections for this Attempt.
 
 #### `recordUsage`
 
 ```ts
 recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
 ```
+
+#### `sealUsage`
+
+```ts
+sealUsage(input: import("./adapter-usage.ts").AdapterUsageSeal): void;
+```
+
+Close application usage admission and declare whether the recorded collection is complete.
 
 #### `attach`
 
@@ -172,10 +204,10 @@ readonly attempt: number;
 #### `signal`
 
 ```ts
-readonly signal: AbortSignal;
+readonly signal: AttemptSignal;
 ```
 
-Attempt 执行信号；取消或超时后会中止，不用于 cleanup 窗口。
+Attempt 执行信号；reason 区分 timeout 与 cancelled，不用于 cleanup 窗口。
 
 #### `model`
 

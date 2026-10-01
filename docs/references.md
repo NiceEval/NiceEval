@@ -1,7 +1,7 @@
 # References —— 从其它项目学到什么
 
 已经落地的借鉴大多分散记在各篇文档自己的"出处"脚注里。
-比如 [README](README.md) 的整体形状借鉴、[Assertions 出处](research/assertion-api-dx/provenance.md) 里的评分设计出处、[experiments 设计参照](research/experiments/agent-eval.md#niceeval-没跟什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`。
+比如 [README](README.md) 的整体形状借鉴、[Assertions 出处](research/assertion-api-dx/provenance.md) 里的评分设计出处、[experiments 设计参照](research/experiments/agent-eval/README.md#niceeval-%E6%B2%A1%E8%B7%9F%E4%BB%80%E4%B9%88) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`。
 这篇文档不重复那些,专门记下**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
 
 每次调研一个外部项目开一个二级标题,格式固定:是什么 → 已经借鉴的 → 这次新学到、值得抄的 → 调研过但不打算抄的(及理由)。
@@ -234,6 +234,6 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 - [Insight](feature/insight/README.md) —— 上面几条学到的东西，具体审阅设计在这篇；两次运行对比由 [Inspection](feature/inspection/README.md) 的 `runs.compare` 按 Run 维度承担。
 - [测试 Architecture](engineering/testing/architecture.md) —— 采用 Playwright role / label / web-first assertion 与严格结构 parser，但不再自建 Report 验收 DSL；共享层只保留机械工具函数。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
-- [agent-eval 适配笔记](research/adapters/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读笔记。
-- [OTel GenAI 等标准参考](research/adapters/otel-genai.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。
-- [eve 协议机制](research/adapters/eve-protocol.md) —— eve 运行时原生事件流的字段与采集机制,StreamEvent 演进的上限参照。
+- [agent-eval 适配笔记](research/adapters/agent-eval/README.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读笔记。
+- [OTel GenAI 等标准参考](research/adapters/otel-genai/README.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。
+- [eve 协议机制](research/adapters/eve-protocol/README.md) —— eve 运行时原生事件流的字段与采集机制,StreamEvent 演进的上限参照。

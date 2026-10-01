@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: declare-fatal-scope
+title: 抛出点声明死因:一次命中,按波及范围止损
+createdAt: 2026-07-24T18:03:58+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/error-classification/README.md
 ---
 
 # 抛出点声明死因:一次命中,按波及范围止损

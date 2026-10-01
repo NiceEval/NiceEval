@@ -222,7 +222,7 @@
     "check:prices": "node scripts/sync-prices.mjs --check",
     "build:package": "node scripts/package-runtime/build.mjs",
     "build:index": "pnpm --dir ../.. run build:index",
-    "stage:docs": "node scripts/stage-docs.mjs",
+    "stage:docs": "node docs-source/stage-docs.mjs",
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },
   "dependencies": {
@@ -233,7 +233,7 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@ai-sdk/otel": "^1.0.107",
+    "@ai-sdk/otel": "^1.0.114",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
@@ -270,7 +270,7 @@
     "recharts": "3.10.1",
     "tailwindcss": "4.3.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "undici": "8.10.2",
+    "undici": "8.11.0",
     "vite": "^8.3.0",
     "vitest": "^4.1.11",
     "ws": "8.21.3"

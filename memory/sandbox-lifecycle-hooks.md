@@ -1,3 +1,28 @@
+---
+format: concord.document/v1
+id: sandbox-lifecycle-hooks
+title: 设计裁决:沙箱生命周期钩子挂在 SandboxSpec 上(`.setup()` / `.teardown()` 链式)
+createdAt: 2026-07-10T22:26:06+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-lifecycle-hooks.md
+  commit: d5e7235406dd0802f099d98bab1a38af577496bd
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: revise
+    reason: "- 部分被后续裁决替代 [sandbox-lifecycle-hooks](sandbox-lifecycle-hooks.md) —
+      环境预置的家是 SandboxSpec 链式 `.setup()/.teardown()`;「ExperimentDef
+      保持纯数据/实验级钩子不存在」一条已被下一行推翻,其余(沙箱钩子挂 spec、persistentState 不做)仍有效"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 设计裁决:沙箱生命周期钩子挂在 SandboxSpec 上(`.setup()` / `.teardown()` 链式)
 
 > **部分被后续裁决替代**(2026-07-17):「实验级整场钩子不存在 / ExperimentDef 保持纯配置数据」一条被推翻,见 [[experiment-level-lifecycle-hooks]]——`ExperimentDef.setup`(整场一次、宿主机侧、返回 cleanup)已落地。本条其余裁决(沙箱钩子挂 SandboxSpec、persistentState 不做、sandbox.setup 的顺序)不受影响,仍然有效。

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: external-review-round2-rulings
+title: 设计裁决:第二轮外部契约评审的翻案清单(2026-07-14)
+createdAt: 2026-07-14T22:32:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/external-review-round2-rulings.md
+  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:第二轮外部契约评审的翻案清单(2026-07-14)
 
 第一轮契约修订(见 [diff-attribution-send-window-ledger](diff-attribution-send-window-ledger.md)、[judge-missing-key-unavailable-not-silent](judge-missing-key-unavailable-not-silent.md)、[keep-dormancy-provider-forms](keep-dormancy-provider-forms.md)、[publish-redaction-copysnapshots-not-report](publish-redaction-copysnapshots-not-report.md))当日被第二轮评审再挑战,以下裁决在各自条目之外的部分记在这里:

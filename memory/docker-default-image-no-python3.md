@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: docker-default-image-no-python3
+title: dockerSandbox 默认镜像没有 python3，ponytail-csv-sum 永远跑不过
+createdAt: 2026-07-03T14:36:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-default-image-no-python3.md
+  commit: 29d58c985a6f5646cf851d20b85584daf79b3f7c
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # dockerSandbox 默认镜像没有 python3，ponytail-csv-sum 永远跑不过
 
 ## 现象

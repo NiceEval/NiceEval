@@ -1,0 +1,31 @@
+---
+format: concord.document/v1
+id: observations-report-runtime
+title: 上报运行时观测
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 上报运行时观测
+
+记忆服务由 setup 启动，隧道 URL 每次运行都可能变化。
+这个值在启动完成后才知道，因此不写进 `flags` 或 `labels`。Hook 通过闭包把它交给后续 command 或 Agent factory 即可：
+
+```ts
+writeEnv(): SandboxCommand {
+  return async (sandbox) => {
+    await sandbox.writeBytes(
+      ".nowledge/env",
+      new TextEncoder().encode(`NMEM_URL=${env!.url}\n`),
+    );
+  };
+}
+```
+
+NiceEval 不提供通用 JSON 写入调用、自定义持久化入口或任意 JSON projector。运行时观测只有通过 NiceEval 已发布的 typed collector 或 Adapter 能力，且 payload 符合既有语义时，才能进入 Record catalog 中与 owner 匹配的 fixed family。
+
+这个 URL 没有对应的已发布 collector，因此不会随 Record 保存，也不能由 Sample 或 Report 查询；它只服务当前运行。若它确实需要成为可复核的产品事实，先为该事实完成 NiceEval 的领域设计、读面与版本治理，不能由第三方自行扩张固定 Record 事实。
+它不自动参与 input/config identity。被采用的 Attempt 保留 origin Run 的既有事实，不会被本轮地址替换。
+
+如果地址本身是作者指定的评估条件，应改用[flags](observations-declare-flags.md)，否则条件变化后旧结果可能被错误沿用。

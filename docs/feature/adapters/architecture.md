@@ -114,3 +114,8 @@ Runner 在唯一 ACTIVE 出口先对完整文本做已知 secret redaction，再
 新写入的 header 和 Agent Turns 派生 header 都不合成领域 revision。历史 header 可以包含非负安全整数 `schema.revision`，
 读取时保留原值与缺席状态，不回填、不转换 id，也不修改原始 Record。此次扩宽 header 读取规则沿用现有 family revision 1，
 不新增迁移。旧读者不保证能读取缺少领域 revision 的新 header；后续不兼容格式变更另行治理。
+
+事件的可选 `display` 同样在 family revision 1 内扩宽，不新增迁移。没有 `display` 的事件读取为 `display: absent`；
+存在时按严格形状解码，未知 `kind`、未知字段或越过上限的值使 collection 为 invalid。`image` 块持久保存接纳时固定的
+`artifactId`、`mediaType`、`byteLength` 与 `sha256`；发布与读取按 evidence 引用的同一规则验证附件闭合，
+不符时返回 `inspection-record-integrity-failure`，不报成 `not-found`。旧读者不保证能读取带 `display` 的事件。

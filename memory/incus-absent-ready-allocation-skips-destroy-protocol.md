@@ -1,16 +1,16 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: incus-absent-ready-allocation-skips-destroy-protocol
 title: Incus 对账为缺失 ready allocation 跳过销毁协议
 createdAt: 2026-08-26T19:32:40+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/sandbox/nested-docker/lifecycle.md#sigkill-与控制进程重启
-    history: []
+  - docs/feature/sandbox-nested-docker/lifecycle.md#sigkill-与控制进程重启
+history: []
 ---
 # Incus 对账为缺失 ready allocation 跳过销毁协议
 

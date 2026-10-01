@@ -5,12 +5,12 @@
 
 | 改了什么或想做什么 | 用例 |
 |---|---|
-| Eval、共享模块或数据集 | [修改评测源码](修改评测源码.md) |
-| flags、模型或裁判模型 | [修改运行条件](修改运行条件.md) |
-| labels、注释或格式 | [修改非运行元数据](修改非运行元数据.md) |
-| 每轮变化的实例地址 | [留存运行时坐标](留存运行时坐标.md) |
-| 审阅后采用单条、整 Run 或已改名实验的历史结果 | [审阅后采用历史结果](迁移错误归属的配置.md) |
-| timeout 或 Attempt 数量 | [修改执行范围](修改执行范围.md) |
-| Sandbox 起点、镜像或准备命令 | [修改Sandbox起点](修改Sandbox起点.md) |
-| Agent CLI、被测服务或工厂内部参数 | [外部行为发生变化](外部行为发生变化.md) |
-| 指纹没变但就是要重验 | [主动重新运行](主动重新运行.md) |
+| Eval、共享模块或数据集 | [修改评测源码](../cache-modify-eval-source.md) |
+| flags、模型或裁判模型 | [修改运行条件](../cache-modify-runtime-condition.md) |
+| labels、注释或格式 | [修改非运行元数据](../cache-modify-non-runtime-metadata.md) |
+| 每轮变化的实例地址 | [留存运行时坐标](../cache-retain-runtime-coordinate.md) |
+| 审阅后采用单条、整 Run 或已改名实验的历史结果 | [审阅后采用历史结果](../cache-adopt-migrated-config.md) |
+| timeout 或 Attempt 数量 | [修改执行范围](../cache-modify-execution-scope.md) |
+| Sandbox 起点、镜像或准备命令 | [修改Sandbox起点](../cache-modify-sandbox-origin.md) |
+| Agent CLI、被测服务或工厂内部参数 | [外部行为发生变化](../cache-external-behavior-change.md) |
+| 指纹没变但就是要重验 | [主动重新运行](../cache-explicit-rerun.md) |

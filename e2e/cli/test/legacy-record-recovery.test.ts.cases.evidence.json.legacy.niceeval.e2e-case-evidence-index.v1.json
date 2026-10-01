@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_CQYTFVY7A9TQCDFZ": {
+      "memory/legacy-record-recovery-guidance.md": {
+        "red": {
+          "path": "e2e/cli/test/legacy-record-recovery.test.ts.case-evidence/necase_CQYTFVY7A9TQCDFZ/memory_legacy-record-recovery-guidance.md/nered_JT5GWH03NWNSB7S2-netake_259BAEE8AGKT46VX/red.json",
+          "digest": "sha256:b1cecd5936f630ee3048f43e8ed34aee3004596dc5164f172a28087517de0840"
+        },
+        "green": {
+          "path": "e2e/cli/test/legacy-record-recovery.test.ts.case-evidence/necase_CQYTFVY7A9TQCDFZ/memory_legacy-record-recovery-guidance.md/nered_JT5GWH03NWNSB7S2-netake_259BAEE8AGKT46VX/green.json",
+          "digest": "sha256:72dbe6e39e596822c0d15cee496028b56292a013781a401b9b730d6779a65e95"
+        },
+        "certificate": {
+          "path": "e2e/cli/test/legacy-record-recovery.test.ts.case-evidence/necase_CQYTFVY7A9TQCDFZ/memory_legacy-record-recovery-guidance.md/nered_JT5GWH03NWNSB7S2-netake_259BAEE8AGKT46VX/certificate.json",
+          "digest": "sha256:d0dd75c438aa7465b2b7517bdc424021b027f26243af3d73d4584833dad57ead"
+        },
+        "inventory": {
+          "path": "e2e/cli/test/legacy-record-recovery.test.ts.case-evidence/necase_CQYTFVY7A9TQCDFZ/memory_legacy-record-recovery-guidance.md/nered_JT5GWH03NWNSB7S2-netake_259BAEE8AGKT46VX/inventory.json",
+          "digest": "sha256:2a27eef325ecbb29e9e43fede031f4c523d67c2ff9d767d8335489dd31dfd275"
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,6 @@
+// @concord-file ne-surface-view-inspection-host
+// @concord-implements docs/feature/inspection/architecture.md
+// @concord-implements docs/feature/run-inspection/README.md
 import { Effect, Result } from "effect";
 
 import { decodeInspectionRequest, QUERY_PROTOCOL } from "../inspection/codec.ts";
@@ -6,6 +9,8 @@ import { selectInspectionOperation } from "../inspection/select.ts";
 import type { InspectionDocument } from "../inspection/protocol.ts";
 import type { ViewGeneration } from "./revision.ts";
 
+// @concord-code ne-surface-inspect-view-generation
+// @concord-implements docs/feature/inspection/architecture.md
 export async function inspectViewGeneration(generation: ViewGeneration, input: unknown): Promise<InspectionDocument> {
   const decoded = decodeInspectionRequest(input);
   if (Result.isFailure(decoded)) throw decoded.failure;

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: scoped-feedback-finalized
+title: 设计裁决:ScopedFeedback(progress/diagnostic)定稿为 feature 契约,roadmap 提案页删除
+createdAt: 2026-07-14T06:20:18Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/scoped-feedback-finalized.md
+  commit: d55d3c3ba405b5ad50a51140d312aae0933e88fd
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:ScopedFeedback(progress/diagnostic)定稿为 feature 契约,roadmap 提案页删除
 
 **裁决**(2026-07-14):按 owner 作用域的 `ScopedFeedback { progress(); diagnostic() }` 从「roadmap 候选提案」定稿为现行 feature 契约,单一归属 `docs/feature/experiments/library.md`「生命周期代码怎样向这次运行反馈」;`docs/roadmap/scoped-attempt-feedback.md` 整页删除(内容早已被 feature 吸收,双挂只制造「到底定稿没有」的矛盾——experiments/library.md、sandbox/library.md、eval 的 context.md 都已按定稿写,只有 experiments/cli.md 一段与 roadmap 页还说它是候选)。

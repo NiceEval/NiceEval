@@ -95,7 +95,12 @@ const predecessors = [
   },
 ] as const;
 
-test.concurrent("历史公开 producer Record 首次只读即可自动迁移并保留结果与引用 [necase_W26XFXH8K05QA8C5]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/historical-record-read-bypasses-migration.md
+// @regression memory/moved-record-write-replaces-sealed-identity.md
+// @regression memory/record-hook-context-format-migration.md
+
+test.concurrent("历史公开 producer Record 首次只读即可自动迁移并保留结果与引用", async () => {
   for (const predecessor of [
     ...predecessors,
     { ...predecessors[0], version: "0.15-hooks" },
@@ -421,7 +426,10 @@ test.concurrent("历史公开 producer Record 首次只读即可自动迁移并�
               attempt: expect.objectContaining({ originRunId: origin.runId }),
             }),
           ]);
-          expect(acceptedDocument.run.value.context?.execution.adapter).toEqual(experiment.adapter);
+          expect(acceptedDocument.run.value.context?.execution.adapter).toEqual({
+            ...experiment.adapter,
+            ...(experiment.id === "migration-custom" ? { cleanupTimeoutMs: 30_000 } : {}),
+          });
         }
 
         // Reopening the now-current Record is a no-op: identities and references

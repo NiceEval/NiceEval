@@ -1,27 +1,20 @@
 ---
-title: "重跑与沿用结果"
+title: "修改后只重跑受影响的评估"
 sidebarTitle: "重跑与沿用"
-description: "查看每个 slot 会执行、自动采用还是由操作者接受，并理解这些关系怎样进入 Record。"
+description: "改了 prompt、评估用例或模型之后，用 --dry 看清哪些结果会沿用、哪些会重跑，再用 --rerun 和 accept 控制范围。"
 ---
 
-每次 Invocation 都建立新的 Run。Run 的 expected slots 定义本次分母；每个 slot 最多有一个 Member。Member 表示 slot 被哪个 Attempt 完整占据：
+你修好了 Agent 的一个工具调用 bug，想确认它真的修好了。一整套评估要跑一个小时、花几十美元，而这次改动只影响其中几道题。
 
-| 关系 | 含义 |
-| --- | --- |
-| `origin` | Attempt 的实际执行 slot 就是当前 slot。 |
-| `reference` | 采用了其它 Run 中已发布的 Attempt。 |
+NiceEval 会记住每道题上次的结果。再次运行同一个 Experiment 时，没受这次改动影响、上次已经有结论的题直接沿用旧结果，其余的重新跑。你不需要手动挑题。
 
-每个位置怎样形成（执行、自动沿用或操作者接受）都会随目标 Run 保存。Attempt 始终保留实际执行它的 `origin`；采用不会复制 Verdict、用量或其他业务值。
+## 运行前先看计划
 
-## 先查看计划
-
-在运行前使用 `--dry`。它根据已发布结果逐个列出执行或采用的原因。
+加上 `--dry`，NiceEval 只列计划，不调用模型，也不创建 Sandbox：
 
 ```sh
-npx niceeval exp checkout --dry
+pnpm exec niceeval exp checkout --dry
 ```
-
-示例输出：
 
 ```text
 PLAN
@@ -29,53 +22,59 @@ checkout  cart/add-item  ordinal 0  reuse @1K1P0VJAPVJ12
 checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 ```
 
-如果信息缺失、无效、不支持或 domain 不同，规划器会说明原因并执行该 slot，而不会把它当作可采用结果。
+每一行是一次 Attempt。`reuse` 后面是要沿用的旧结果 locator；`execute` 后面是要重跑的原因。上面第二行的 `input-identity-changed` 表示这道题的输入变了，例如你改了评估用例、Fixture 或模型。
 
-## 自动采用的条件
+结果和你预期的不一样时，先看原因。例如你只改了报告里的分组名，却看到整批 `execute`，说明某个会影响结果的输入也一起变了。
 
-一个 Attempt 要能被自动采用，需要同时满足：
+## 哪些结果会被沿用
 
-- Verdict 是可采用的终态；
-- 输入身份与当前输入相同；
-- 执行时长符合当前 timeout；
-- 本次 `--rerun` 允许采用该 Verdict；
-- 本次没有通过 `--keep-sandbox` 要求真实执行。
+一个旧 Attempt 同时满足下面几条才会被自动沿用：
 
-输入身份和配置身份都是带 domain 的不透明值。只有 domain 逐字相同才比较 value。Verdict 与资格信息为规划提供长期依据。
+- 它已经有明确结论，`passed` 或 `failed`。`errored` 说明上次没跑成，总会重跑。
+- 评估用例、Fixture、模型、Agent、判分标准和运行条件都和这次相同。
+- 它的耗时没有超过这次的 `timeout`。
+- 这次的 `--rerun` 没有要求重跑它。
+- 这次没有用 `--keep-sandbox` 要求真实执行。
 
-自动采用时，资格、身份和理由会随目标 Run 保存。Member 只保留引用，不复制这些说明，也不复制 Attempt 的业务值。
+只改 Experiment 的 `description` 或 `labels` 不会让旧结果失效。评估用例文件不同：文件内容一变，这道题就会重跑。
 
 ## 控制重跑范围
 
 ```sh
-# 默认采用符合条件的 passed 与 failed Attempt
-npx niceeval exp checkout
+# 默认：沿用符合条件的 passed 和 failed
+pnpm exec niceeval exp checkout
 
-# 单独写 --rerun 等价于 --rerun failed；已经 passed 的 slot 仍会采用
-npx niceeval exp checkout --rerun
+# 修复 bug 后复验：重跑上次 failed 的，passed 的继续沿用
+pnpm exec niceeval exp checkout --rerun
 
-# 重新执行选中范围内的全部 slot
-npx niceeval exp checkout --rerun all
+# 模型供应商更新了服务、本地文件却没变：全部重跑
+pnpm exec niceeval exp checkout --rerun all
 ```
 
-改变 `--rerun` 只影响本次 Invocation，不会修改已有 Run 或 Attempt。
+单独写 `--rerun` 等于 `--rerun failed`，已经通过的题不会重跑。要连通过的一起重做，必须写 `--rerun all`。
 
-不要在 `exp` 仍运行时并发执行 `show --experiment`：Experiment 可能尚未产生任何已发布结果。等待命令完成，从 receipt 复制本次 `runIds`，再用 `niceeval show --run <run-id>` 审阅确定的 Run。若目的是重做所有已通过或已评分的 slot，必须明确写 `--rerun all`；不带值的 `--rerun` 不会做到这一点。
+`--rerun` 只影响这一次运行，不会改动已有的结果。
 
-## 明确接受已有 Attempt
+## 确认旧结果在新配置下仍然成立
 
-身份变化不一定表示历史结果已经失效，但 NiceEval 不会替操作者猜测。先从 dry run 或结果页取得完整 locator，核对候选 Attempt；确认它在新配置下仍然成立时，明确接受它：
+有时改动会让 NiceEval 判定旧结果不能沿用，但你知道它其实不受影响。例如你给 Agent 加了一个日志开关，这道题的行为完全没变。NiceEval 不会替你猜，需要你明确接受：
 
 ```sh
-npx niceeval accept @1K1P0VJAPVJ12
+pnpm exec niceeval accept @1K1P0VJAPVJ12
 ```
 
-`accept` 会发布一个新的采用 Run，不会修改原 Attempt。一次需要接受多个结果时，把全部 locator 放在同一条命令中；NiceEval 会先原子预检所有输入，避免只接受一半。
+`accept` 会新建一个 Run 引用这个旧 Attempt，原 Attempt 保持不变。要接受多条时，把所有 locator 写进同一条命令，NiceEval 会先检查全部输入，不会只接受一半。
 
-候选 locator 的取得方式、审阅项目、原子预检和失败处理见[审阅并采用历史 Attempt](/zh/tutorials/accept-results)。
+怎样取得候选 locator、接受前要核对什么，见[审阅并采用历史 Attempt](/zh/tutorials/accept-results)。
 
-## 发布后不可修改
+## 跑完之后看结果
 
-Attempt 发布后不可修改。每一次读取都使用当时 Record 中已发布的值；新 Run 或新事实只会以新的发布出现。若 Attempt 或引用无效，固定 operation 将该位置标为 `core-invalid`，而不是 `not-recorded`。
+运行结束时，终端的 `NEXT` 面板会列出这次新建的 Run，并给出在终端和浏览器里查看它的两条命令：
 
-完成运行后，用 receipt 的 `runIds` 选择结果。查看步骤见[查看结果](/zh/tutorials/viewing-results)。
+```sh
+pnpm exec niceeval show --run <run-id>
+```
+
+沿用的题和重跑的题都会出现在这个 Run 里，通过率按完整的一批题计算。不要在 `exp` 还没结束时用 `show --experiment` 看结果，那时可能还没有任何已发布的结果。
+
+查看结果的完整方式见[查看运行结果](/zh/tutorials/viewing-results)。沿用和重跑的判定原理见 [Runner](/zh/explanation/runner)。

@@ -1,8 +1,20 @@
 ---
-name: attempt-facts-table-replaces-text-splice-hack
-description: show 详情新增 facts 完整键值表组件(AttemptFacts/TaskFactsResultView),取代 2026-07-23 遗留的 insertFactsLine 字符串级单行拼接 hack;exp 收尾 FAILURES 面板新增 facts 摘要提示
-metadata:
-  type: project
+format: concord.document/v1
+id: attempt-facts-table-replaces-text-splice-hack
+title: attempt-facts-table-replaces-text-splice-hack
+createdAt: 2026-08-04T19:15:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-facts-table-replaces-text-splice-hack.md
+  commit: 574560922a99e3f2267783610d50de5a780b3825
+description: show 详情新增 facts 完整键值表组件(AttemptFacts/TaskFactsResultView),取代
+  2026-07-23 遗留的 insertFactsLine 字符串级单行拼接 hack;exp 收尾 FAILURES 面板新增 facts 摘要提示
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决**(2026-08-04):`AttemptRecord.facts`(`ctx.fact()` 上报的运行事实)在 show 详情渲染为完整键值表,而不是压成一行摘要——facts 是开放键集合(一次运行零到几十个键),压缩会丢内容。新增 `attemptFactsData(evidence)`(`src/report/components/attempt-detail/compute.ts`)+ `toAttemptFacts`(`src/report/model/conversions.ts`),两条消费路径各自接线:内建 `standard` 报告的 `AttemptDetailsResultView`(`src/report/built-in/result-components.tsx` 的 `TaskFactsResultView`)与公开可复用组件 `AttemptDetails`(`src/report/components/attempt-detail/index.tsx` 的私有 `AttemptFacts`)。`AttemptDetailsResult`(`src/report/tasks.ts`)新增 `facts` 字段,`--json` 随之带出。exp 收尾 `FAILURES` 面板不展开,只在失败 attempt 有 facts 时于身份行/组行尾追加一次 `facts ×N`(N=键数,`src/runner/feedback/human.ts` 的 `factsHint`),完整键值表仍留给 `niceeval show @<locator>`。

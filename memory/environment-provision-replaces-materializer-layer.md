@@ -1,3 +1,44 @@
+---
+format: concord.document/v1
+id: environment-provision-replaces-materializer-layer
+title: Environment 与 Provision 取代 materializer 与 Layer
+createdAt: 2026-07-31T11:35:29+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/environment-provision-replaces-materializer-layer.md
+  commit: 6f02993d694adab9eb172ec927ac51fc410e73d9
+kind: memory
+memoryKind: decision
+state: superseded
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: supersede
+    reason: "- 被后续裁决替代
+      [environment-provision-replaces-materializer-layer](environment-provision\
+      -replaces-materializer-layer.md) — 翻案裁决(2026-07-31):公开模型重构为 Eval
+      Environment、Sandbox、Experiment Provision 与 Fixture;Provider 内建 Environment
+      kind 支持,删除普通用户 materializer 注册;Provision inspect 返回实际 identity,框架比较后
+      install;推翻双入口 materializer 与 Layer 公开模型
+      [requirements-base-case-ensure](requirements-base-case-ensure.md)"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-31
+supersession:
+  statement: "- 被后续裁决替代
+    [environment-provision-replaces-materializer-layer](environment-provision-r\
+    eplaces-materializer-layer.md) — 翻案裁决(2026-07-31):公开模型重构为 Eval
+    Environment、Sandbox、Experiment Provision 与 Fixture;Provider 内建 Environment
+    kind 支持,删除普通用户 materializer 注册;Provision inspect 返回实际 identity,框架比较后
+    install;推翻双入口 materializer 与 Layer 公开模型"
+  source:
+    path: memory/INDEX.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # Environment 与 Provision 取代 materializer 与 Layer
 
 **已被后续裁决替代**:同日先后经过统一 Layer 与 Experiment Addon,最终采用三份 Requirement + 唯一 Base Case + Ensure。

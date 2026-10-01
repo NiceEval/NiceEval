@@ -1,10 +1,10 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md)
 
 ## 裁决
 
-采纳 [PLAN-4](PLAN-4/README.md)：真实场景 Repo 与原生结果断言。
+采纳 [PLAN-4](plans/plan-4/README.md)：真实场景 Repo 与原生结果断言。
 
 目标体系保留 unit 与 E2E 两种证明边界，但不再建立 Behavior / Proof / Recipe / World / Observed 的全仓运行模型。
 

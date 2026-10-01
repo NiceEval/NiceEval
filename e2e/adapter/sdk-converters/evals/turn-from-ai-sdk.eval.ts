@@ -1,6 +1,8 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#turnfromaisdk-deterministic
 import { defineEval } from "niceeval";
 import {
+  atLeast,
+  atMost,
   equals,
   includes,
   jsonMatch,
@@ -64,23 +66,14 @@ export default defineEval({
       ),
     );
     t.requireInputRequest({ action: "approval_tool" });
-    t.check(
-      draft.usage,
-      satisfies<typeof draft.usage>(
-        "AI SDK input usage buckets total 13",
-        (usage) =>
-          typeof usage?.inputTokens === "number" &&
-          typeof usage.cacheReadTokens === "number" &&
-          typeof usage.cacheCreationTokens === "number" &&
-          usage.inputTokens === 7 &&
-          usage.cacheReadTokens === 4 &&
-          usage.cacheCreationTokens === 2 &&
-          usage.inputTokens +
-            usage.cacheReadTokens +
-            usage.cacheCreationTokens ===
-            13,
-      ),
-    );
+    t.check(draft.usage.inputTokens, atLeast(7));
+    t.check(draft.usage.inputTokens, atMost(7));
+    t.check(draft.usage.cacheReadTokens, atLeast(4));
+    t.check(draft.usage.cacheReadTokens, atMost(4));
+    t.check(draft.usage.cacheWriteTokens, atLeast(2));
+    t.check(draft.usage.cacheWriteTokens, atMost(2));
+    t.check(draft.usage.inputTotalTokens, atLeast(13));
+    t.check(draft.usage.inputTotalTokens, atMost(13));
     const approved = await t.respond("approve");
     approved.succeeded();
     t.check(approved.message, includes("ai-sdk-approved-marker"));

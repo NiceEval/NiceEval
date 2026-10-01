@@ -1,6 +1,8 @@
-import { appendFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { defineAdapter, defineAdapterContract, type Reporter } from "niceeval";
+import { defineAdapter as defineHostAdapter } from "niceeval/adapter";
 import { equals, defineScoreMatch } from "niceeval/expect";
 
 export const customAdapterContract = "e2e/native-workflow/v1";
@@ -182,8 +184,18 @@ export const customCreateFailure = lifecycleContract.implement({
 export const customTimeoutCancellation = lifecycleContract.implement({
   name: "custom-timeout-cancellation",
   behaviorRevision: "1",
+  cleanupTimeoutMs: 1_000,
   async create(context) {
     await writeJournal({ scenario: "timeout", event: "acquired", attempt: context.attempt });
+    context.signal.addEventListener("abort", () => {
+      const reason = context.signal.reason;
+      void writeJournal({
+        scenario: "timeout", attempt: context.attempt,
+        event: reason?.kind === "timeout" && reason.timeoutMs === 500 && reason.source === "experiment" &&
+          Number.isFinite(reason.deadlineAt) && reason.deadlineAt <= Date.now() && Object.isFrozen(reason)
+          ? "typed-attempt-timeout" : `invalid-attempt-reason:${JSON.stringify(reason)}:now=${Date.now()}:frozen=${Object.isFrozen(reason)}`,
+      });
+    }, { once: true });
     registerAfterTimeout = () => context.onCleanup(() => {});
     let acknowledgeLateObservation!: () => void;
     const lateObservation = new Promise<void>((resolve) => { acknowledgeLateObservation = resolve; });
@@ -281,3 +293,103 @@ export const successfulSlowCleanup = defineAdapter({
     };
   },
 });
+
+// Resource acquisition completes after execution cancellation. Releasing it lets
+// the in-flight create callback finish; cleanup must wake for the late registration.
+export const lateCreateCleanup = defineAdapter({
+  name: "late-create-cleanup",
+  cleanupTimeoutMs: 2_000,
+  async create(ctx) {
+    await new Promise<void>((resolve) => {
+      if (ctx.signal.aborted) resolve();
+      else ctx.signal.addEventListener("abort", () => resolve(), { once: true });
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    let released!: () => void;
+    const release = new Promise<void>((resolve) => { released = resolve; });
+    ctx.onCleanup(async () => {
+      await writeJournal({ scenario: "late-create", event: "released", attempt: ctx.attempt });
+      released();
+    });
+    await release;
+    await writeJournal({ scenario: "late-create", event: "create-settled", attempt: ctx.attempt });
+    return { ready: true };
+  },
+});
+
+// These resources belong to the consumer process, with a fresh loopback port
+// for each Attempt. The Host caller never supplies an AbortSignal.
+function hostLifecycleAdapter(mode: "success" | "interruption") {
+  return defineHostAdapter({
+    name: `custom-host-${mode}`,
+    cleanupTimeoutMs: 1_000,
+    async create(context) {
+      const scenario = `host-${mode}`;
+      const record = (event: string) => writeJournal({ scenario, event, attempt: context.attempt });
+      const resource = createServer((socket) => socket.end("host-resource\n"));
+      await new Promise<void>((resolve, reject) => {
+        resource.once("error", reject);
+        resource.listen(0, "127.0.0.1", resolve);
+      });
+      let acknowledgeLateAssertion!: () => void;
+      const lateAssertion = new Promise<void>((resolve) => { acknowledgeLateAssertion = resolve; });
+      let acknowledgeCleanup!: () => void;
+      const cleanupBegan = new Promise<void>((resolve) => { acknowledgeCleanup = resolve; });
+      context.onCleanup(async (cleanupContext) => {
+        await record(context.signal.aborted === (mode === "interruption") &&
+          !cleanupContext.signal.aborted && cleanupContext.signal !== context.signal && Object.isFrozen(cleanupContext) &&
+          cleanupContext.timeoutMs === 1_000 && Number.isFinite(cleanupContext.deadlineAt)
+          ? "cleanup-independent-live-frozen" : "cleanup-invalid-context");
+        acknowledgeCleanup();
+        if (mode === "interruption") {
+          await lateAssertion;
+          await new Promise<void>((resolve) => {
+            if (cleanupContext.signal.aborted) resolve();
+            else cleanupContext.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          await record("cleanup-window-aborted");
+        }
+        await new Promise<void>((resolve, reject) => resource.close((error) => error ? reject(error) : resolve()));
+        await record("released");
+      });
+      context.signal.addEventListener("abort", () => {
+        const reason = context.signal.reason;
+        void record(reason?.kind === "cancelled" && Object.isFrozen(reason)
+          ? "typed-attempt-cancelled" : "invalid-attempt-reason");
+      }, { once: true });
+      const address = resource.address();
+      if (address === null || typeof address === "string") throw new Error("fixture did not acquire a loopback port");
+      await writeFile(join(process.cwd(), `${scenario}.port`), String(address.port), "utf8");
+      await record("acquired");
+      return {
+        onCancellation(callback: () => void) {
+          context.signal.addEventListener("abort", callback, { once: true });
+        },
+        async enterTest() {
+          await record("test-entered");
+          await writeFile(join(process.cwd(), `${scenario}.entered`), "ready", "utf8");
+        },
+        async waitForCancellation() {
+          if (!context.signal.aborted) {
+            await new Promise<void>((resolve) => {
+              context.signal.addEventListener("abort", () => resolve(), { once: true });
+            });
+          }
+          // A plain Promise can continue after the evaluator is sealed. Its
+          // continuation is held until the independent cleanup has begun.
+          await cleanupBegan;
+        },
+        observations: {
+          recordAbortAssertion(outcome: "accepted" | "rejected") { return record(`abort-assertion-${outcome}`); },
+          async recordLateAssertion(outcome: "accepted" | "rejected") {
+            await record(`late-assertion-${outcome}`);
+            acknowledgeLateAssertion();
+          },
+        },
+      };
+    },
+  });
+}
+
+export const customHostSuccess = hostLifecycleAdapter("success");
+export const customHostInterruption = hostLifecycleAdapter("interruption");

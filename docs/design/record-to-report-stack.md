@@ -46,11 +46,11 @@ closed semantic tree
 
 | seam | 采用的设计 | 对公共 API 的影响 |
 |---|---|---|
-| Record runtime | [PLAN-2](record-runtime/PLAN-2/README.md) | 单 root authority、generation 与 verified cache 全部留在 host 内 |
-| durable layout | [PLAN-1](observability-package-layout/PLAN-1/README.md) | 平台固定 Metric/Score/Artifact envelopes，并拥有 converter 链 |
-| Projection | [PLAN-1](projection-api/PLAN-1/README.md) | direct projection 只供 Analysis/host 实现；Report 不获得 projection handle |
-| Relations | [PLAN-1](relations-api/PLAN-1/README.md) | 跨包关系先形成 closed、穷尽的 Analysis value |
-| Report | [PLAN-7](report-authoring/PLAN-7/README.md) | callback 只拿受限 sample；每次 `aggregate` 编译运行时局部 field DAG |
+| Record runtime | [PLAN-2](record-runtime/plans/plan-2/README.md) | 单 root authority、generation 与 verified cache 全部留在 host 内 |
+| durable layout | [PLAN-1](observability-package-layout/plans/plan-1/README.md) | 平台固定 Metric/Score/Artifact envelopes，并拥有 converter 链 |
+| Projection | [PLAN-1](projection-api/plans/plan-1/README.md) | direct projection 只供 Analysis/host 实现；Report 不获得 projection handle |
+| Relations | [PLAN-1](relations-api/plans/plan-1/README.md) | 跨包关系先形成 closed、穷尽的 Analysis value |
+| Report | [PLAN-7](report-authoring/plans/plan-7/README.md) | callback 只拿受限 sample；每次 `aggregate` 编译运行时局部 field DAG |
 
 这些方案的组合不是把五层都公开。它们分别守住存储、读取、关系与执行正确性，最后折叠成三套按角色划分的作者 API。
 

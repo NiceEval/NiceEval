@@ -59,8 +59,10 @@ const e2e = createE2EContext({
     niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")],
   },
 });
+// @feature docs/feature/eval/README.md
+// @regression memory/published-package-runtime-dependencies-missing.md
 
-test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey [necase_WXF4FWXBXWZMHY0S]", async () => {
+test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey", async () => {
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
     const dependencies = packageJson[field];

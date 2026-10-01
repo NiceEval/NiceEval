@@ -13,7 +13,7 @@ pnpm exec niceeval init
 
 ## 写一个 Eval
 
-在 `evals/greeting.ts` 中定义一次检查：
+在 `evals/greeting.eval.ts` 中定义一次检查。Discovery 只识别 `*.eval.ts`、`*.eval.tsx` 与目录入口 `eval.ts`：
 
 ~~~ts
 import { defineEval } from "niceeval";
@@ -88,7 +88,7 @@ canonical database 只由 Host 修改。不要手工编辑或拼接 SQLite main/
 
 ~~~sh
 cp .niceeval/record.sqlite ./release.record.sqlite
-pnpm exec niceeval view --record ./release.record.sqlite
+pnpm exec niceeval show --record ./release.record.sqlite
 ~~~
 
 只复制一次受控 CLI 成功退出后的 canonical 文件，不复制运行中的 WAL 或 private staging。接收方把外部文件作为 hostile import：

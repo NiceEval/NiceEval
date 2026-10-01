@@ -26,6 +26,9 @@ import {
   RunIdSchema,
 } from "../record/codec/identifiers.ts";
 import { parseAttemptLocator } from "../attempt-locator.ts";
+import { ProjectConfiguration } from "../cli/project-configuration.ts";
+import { CurrentTargetUnavailable } from "../experiment/host/current.ts";
+import { openCurrentProjectSource } from "../inspection/project-source.ts";
 import {
   renderAttempt,
   renderDiff,
@@ -82,6 +85,9 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
     type: "boolean",
     help: help("Show the execution outline for one Attempt locator."),
   }),
+  actor: option({ type: "string", help: help("Filter execution events by exact actor ID.") }),
+  type: option({ type: "string", help: help("Filter execution events by exact event type.") }),
+  continuation: option({ type: "string", help: help("Read the next execution page with the same filters.") }),
   timing: option({
     type: "boolean",
     help: help("Show captured timing for one Attempt locator."),
@@ -110,6 +116,7 @@ Usage:
   niceeval show @<locator> [--record <file>]
   niceeval show @<locator> --source
   niceeval show @<locator> --execution [--expand <stable-id>]
+  niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>]
   niceeval show @<locator> --timing
   niceeval show @<locator> --usage
   niceeval show @<locator> --diff
@@ -123,6 +130,9 @@ Selectors:
 Attempt details:
   --source                      Show captured sources and Assertion sites.
   --execution                   Show the bounded execution outline.
+  --actor <id>                  Filter execution events by exact actor ID.
+  --type <event-type>           Filter execution events by exact type.
+  --continuation <token>        Read the next page using the same filters.
   --expand <stable-id>          Expand an execution event/evidence ID, itemId,
                               toolOccurrenceId, or commandId.
   --timing                      Show captured timing activities.
@@ -131,10 +141,12 @@ Attempt details:
 
   --help, -h                    Print show help.
 `;
-type Requirements = CliArguments | CliInvocationFacts | CliOutput;
+type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration;
 type Error = CliFeatureError;
 const failure = (operation: string, cause: unknown) => {
-  const detail = cause instanceof InspectionIntegrityError
+  const detail = cause instanceof CurrentTargetUnavailable || cause instanceof InspectionOperationError && cause.code === "current-target-unavailable"
+    ? `current-target-unavailable: ${cause.reason}\nRead fixed history: niceeval show --run <run-id>`
+    : cause instanceof InspectionIntegrityError
     ? `Record integrity failure for sealed Run ${cause.runId}.`
     : cause instanceof InspectionOperationError &&
         cause.code === "inspection-record-integrity-failure"
@@ -207,6 +219,15 @@ function runShow(
       typeof parsed.values.expand === "string"
         ? parsed.values.expand
         : undefined;
+    const actorId = typeof parsed.values.actor === "string" ? parsed.values.actor : undefined;
+    const eventType = typeof parsed.values.type === "string" ? parsed.values.type : undefined;
+    const continuation = typeof parsed.values.continuation === "string" ? parsed.values.continuation : undefined;
+    const listOptions = [actorId === undefined ? undefined : "--actor", eventType === undefined ? undefined : "--type", continuation === undefined ? undefined : "--continuation"]
+      .filter((value) => value !== undefined);
+    if (listOptions.length > 0 && !execution)
+      return yield* usage(`${listOptions.join(", ")} require --execution.`);
+    if (listOptions.length > 0 && expand !== undefined)
+      return yield* usage(`--expand cannot be combined with ${listOptions.join(", ")}.`);
     if (detailModes > 1)
       return yield* usage(
         "--source, --execution, --timing, --usage, and --diff are mutually exclusive.",
@@ -243,7 +264,13 @@ function runShow(
       : operationalInspectionSource(facts.cwd);
     return yield* Effect.scoped(
       Effect.gen(function* () {
-        const opened = yield* openInspectionSource(inspectionSource).pipe(
+        const current = decodedLocator === undefined && runIds.length === 0 && experimentIds.length === 0 && typeof parsed.values.record !== "string";
+        const prepare = current ? Effect.gen(function* () {
+          const project = yield* ProjectConfiguration;
+          const config = yield* project.load(facts.cwd).pipe(Effect.mapError((cause) => new CurrentTargetUnavailable({ code: "current-target-unavailable", reason: String(cause), cause })));
+          return yield* openCurrentProjectSource({ cwd: facts.cwd, config });
+        }) : openInspectionSource(inspectionSource);
+        const opened = yield* prepare.pipe(
           Effect.mapError((cause) => failure("open Record source", cause)),
         );
         const select = <A>(
@@ -267,6 +294,13 @@ function runShow(
           runIds.length === 0 &&
           experimentIds.length === 0
         ) {
+          if (current) {
+            const document = yield* select("project.get", () => selectInspectionOperation(opened, { kind: "project.get" }));
+            // The presentation model only extracts already-closed aggregate fields.
+            const view = yield* project("project.get", () => projectOverview({ ...document, operation: "overview.get", overview: document.project }));
+            yield* write("stdout", renderOverview(view, { all, current: document.project }));
+            return 0;
+          }
           const document = yield* select("overview.get", () =>
             selectInspectionOperation(opened, { kind: "overview.get" }),
           );
@@ -274,7 +308,7 @@ function runShow(
             "stdout",
             renderOverview(
               yield* project("overview.get", () => projectOverview(document)),
-              { all },
+              { all, recorded: true },
             ),
           );
           return 0;
@@ -354,6 +388,9 @@ function runShow(
             selectInspectionOperation(opened, {
               kind: "attempt.trace",
               locator: selectedLocator,
+              ...(actorId === undefined ? {} : { actorId }),
+              ...(eventType === undefined ? {} : { eventType }),
+              ...(continuation === undefined ? {} : { continuation }),
             }),
           );
           const trace = yield* project("attempt.trace", () =>
@@ -419,10 +456,13 @@ function runShow(
             locator: selectedLocator,
           }),
         );
+        const usage = yield* select("attempt.usage", () =>
+          selectInspectionOperation(opened, { kind: "attempt.usage", locator: selectedLocator }),
+        );
         yield* write(
           "stdout",
           renderAttempt(
-            yield* project("attempt.get", () => projectAttempt(document)),
+            yield* project("attempt.get", () => projectAttempt(document, usage)),
           ),
         );
         return 0;

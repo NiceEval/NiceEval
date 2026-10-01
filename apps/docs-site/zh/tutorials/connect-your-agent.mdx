@@ -1,139 +1,49 @@
 ---
-title: "接入你的 Agent"
+title: "接入你的 Agent：选接入方式，传配置"
 sidebarTitle: "接入 Agent"
-description: "写一个 Adapter、配置一个 Experiment，并运行第一条评估用例。再把配置和参数从 Experiment 传给 Adapter 与被测应用。"
+description: "按被测对象选择内置适配器或手写 Adapter，把地址和鉴权放进 Adapter 工厂、把 model 和 flags 经 ctx 转给应用，并按需加上工具调用、多轮和 tracing。"
 ---
 
-把一个被测对象接入 [NiceEval](https://niceeval.com/) 需要一个 **Adapter**。`defineAgent` 构造直接调用函数、SDK 或服务端点的 Adapter。它的 `send` 接收输入、驱动 Agent，并返回本轮结果。
+[快速开始](/zh/tutorials/quickstart)里的 Adapter 写死了一个 `localhost` 地址，只能单轮对话。真实项目很快会遇到这些问题：本地和预发环境地址不同，想比较两个模型，想检查工具调用。这一页说明怎样把那个最小 Adapter 变成能长期用的接入。
 
-本教程先用 Adapter、Experiment 和评估用例跑通最小接入，再说明参数从 Experiment 到 Adapter 和被测应用的传递路径。事件流、多轮、HITL 与 tracing 属于可选能力，文末列出对应教程。
-
-## 按被测对象选择接入方式
+## 先选接入方式
 
 <CardGroup cols={3}>
   <Card title="AI SDK 应用" icon="bolt" href="/zh/reference/builtin-agents">
-    Vercel AI SDK 应用可使用内置适配器连接现有 HTTP 接口。
+    基于 Vercel AI SDK 的应用，用内置适配器直接连现有 HTTP 接口，不用手写映射。
   </Card>
-  <Card title="Agent" icon="terminal" href="/zh/tutorials/sandbox-agent">
-    评估 Claude Code / Codex / bub 这种独立的 Agent：用内置 Sandbox Agent。
+  <Card title="Claude Code、Codex 等 Coding Agent" icon="terminal" href="/zh/tutorials/sandbox-agent">
+    用内置 Sandbox Agent，把 Agent 放进隔离环境里跑。
   </Card>
-  <Card title="其它 AI Agent" icon="plug">
-    自己的 Agent 需要 [编写 Send](/zh/tutorials/write-send)。如应用已有 OTel 埋点，可[接入 OTel](/zh/tutorials/connect-otel)。
+  <Card title="其它 AI 应用" icon="plug" href="/zh/tutorials/write-send">
+    手写一个 Adapter 的 `send` 函数。应用已有 OTel 埋点的，还能[接入 OTel](/zh/tutorials/connect-otel)看调用瀑布图。
   </Card>
 </CardGroup>
 
-## 最小接入示例
+被测对象不是对话式 Agent，而是提供发帖、生图这类业务操作的应用时，用 `defineAdapter`，见[评估自定义应用](/zh/tutorials/custom-application)。
 
-以下步骤假设项目已经运行 `npx niceeval init`，并包含 `niceeval.config.ts` 和 `evals/` 目录。三个文件各有一项职责：**Adapter 连接被测系统，Experiment 固定运行配置，评估用例定义交互和断言。**
+## 连接真实的入口
 
-开始写 Adapter 前，先用被测系统自己的公开方式启动真实目标，并通过健康端点或最小真实请求确认就绪。服务生命周期属于部署脚本、开发命令或 CI，不属于 `send` 和评估用例 callback。Adapter 只发送请求并映射响应；评估用例只提供输入和判据。目标无法启动时，保留明确的执行错误，不要用静态回复或进程内替代物冒充真实运行。
+被测对象是独立的 HTTP 服务时，Adapter 应该调用线上实际使用的那个接口，即使服务代码和评估用例在同一个仓库里。不要为了方便改成在进程内直接调用函数：
 
-**1. 写 Adapter。** 最小接入只填 `status` 和 `events`，把 Agent 回复放进一条 `message` 事件。
+- HTTP 层、序列化、中间件和流式传输都会被绕过，评估通过不代表线上行为正确。
+- HTTP Adapter 换一个 `baseUrl` 就能连本地、预发或生产；进程内调用只能在当前代码库里跑。
+
+Agent 本来就只提供 SDK、函数或 CLI 时，就在 `send` 里直接调用它，不要为了套用 HTTP 写法额外搭一个服务。
+
+被测服务的启动和停止不归 Adapter 管。先用项目自己的开发命令、部署脚本或 CI 把服务起好，确认健康检查通过，再运行评估。服务起不来时，让评估如实报错，不要用写死的回复冒充运行结果。需要每次评估自动起停的服务，见[启动实验共享服务](/zh/tutorials/experiment-services)。
+
+## 两条传配置的通道
+
+接入里最容易乱的是“这个值该从哪里传”。只有两条通道：
+
+1. **连到哪里、怎么鉴权，走 Adapter 工厂。** URL、鉴权 header、协议开关这类环境级配置，作为工厂参数写在 Experiment 文件里。
+2. **这次跑什么配置，走 `ctx`。** Experiment 里的 `model` 和 `flags`，NiceEval 每轮经 `ctx` 交给 `send`。Adapter 不解释它们的含义，原样转给应用。
+
+把快速开始里的 Adapter 改成工厂：
 
 ```ts
 // agents/my-agent.ts
-import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
-
-export default defineAgent({
-  name: "my-agent",
-  evidenceCoverage: completeEvidenceCoverage,
-  async send(input, ctx) {
-    // 示例地址：换成你自己 agent 的真实端点（HTTP、CLI、SDK 都行，只要 send 里能拿到回复文本）
-    const r = await fetch("http://localhost:3000/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: input.text, model: ctx.model }),  // ← experiment.model 经 ctx.model 到这里
-      signal: ctx.signal,
-    });
-    const body = await r.json();
-    return {
-      status: r.ok ? "completed" : "failed",
-      events: [{ type: "message", role: "assistant", text: body.reply }],
-    };
-  },
-});
-```
-
-最小示例先使用固定 URL。需要按环境传入 URL 时，使用下文的[参数传递方式](#实验-flag)。`send` 的完整契约（`TurnInput` / `AgentContext` / `Turn` 各字段）见 [Adapter](/zh/explanation/adapter)。
-
-如果被测对象是独立的 HTTP 服务，即使服务代码和评估用例位于同一个代码库，也应通过线上实际使用的 HTTP 接口调用，不要把本例的 `fetch` 换成进程内函数调用，因为
-- **代码内部调用不是用户走的那条链路。** HTTP 层、序列化、中间件、流式传输全被绕过，评估用例通过不代表线上行为正确。
-- **Adapter 无法复用于其它部署环境。** HTTP Adapter 只需更换 `baseUrl`，即可连接本地、预发或生产环境（见下文两个 Experiment 文件）。进程内调用依赖当前代码库。
-
-如果 Agent 只提供 SDK、函数或 CLI，就在 `send` 中直接调用对应入口。保留前面相同的输入、取消信号和 `Turn` 返回形状；不要为了套用 HTTP 示例额外搭一个并不存在的服务。
-
-**2. 实验**
-
-```ts
-// experiments/my-agent.ts
-import { defineExperiment } from "niceeval";
-import myAgent from "../agents/my-agent.ts";
-
-export default defineExperiment({
-  description: "my-agent 基线",
-  agent: myAgent,
-  model: "gpt-4o",
-  attempts: 1,
-});
-```
-
-**3. 评估用例**
-
-```ts
-// evals/refund-policy.eval.ts
-import { defineEval, defineJudge } from "niceeval";
-import { includes } from "niceeval/expect";
-
-const refundPolicyQuality = defineJudge({
-  name: "refund-policy-quality",
-  rubric: "根据 question 评价 answer 是否清楚说明退款期限。",
-});
-
-export default defineEval({
-  judge: refundPolicyQuality,
-  description: "退款政策问答",
-  async test(t) {
-    const turn = await t.send("你们的退款政策是什么?");
-    turn.succeeded().label("请求成功");
-    t.check(turn.message, includes("30")).label("说明退款期限");
-    t.judge({ question: turn.input, answer: turn.message }, refundPolicyQuality)
-      .gate(0.7)
-      .label("退款政策质量");
-  },
-});
-```
-
-断言那行的写法是重点，别照抄成 `includes("30 天")`：回答的措辞每次都不一样，用单一精确短语卡开放式回答，被测系统答对了也会红。措辞开放的内容可以用正则、形状断言，或 `t.judge(material, definition)` 做语义判定。确定性的结果才用精确断言。完整取舍见[题型与断言](/zh/tutorials/evaluation-kinds)。
-
-```bash
-npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval
-npx niceeval exp my-agent refund # 只跑 ID 以 refund 开头的
-pnpm exec niceeval view --run <run-id>  # 在本地查看器里查看一个 Run
-```
-
-**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要和 receipt；用其中的 Run ID 也可以执行 `pnpm exec niceeval view --run <runId>`，查看每条评估用例逐轮的输入、事件和评分明细。
-
-没跑通时，按报错的位置分三类排查：
-
-- **`fetch` 直接抛错**（连接被拒等）：应用没起来，或 `send` 里的 URL 不对——先用 `curl` 对那个接口发一次同样的请求确认。
-- **`t.succeeded()` 没过、本轮判定是 failed**：请求发出去了，但应用返回的 Turn 是 `failed`。把协议中的失败映射到 `Turn.status` 或标准 `error` event。需要额外保留的有限上下文用 `ctx.diagnostic(...)`，不要打印完整响应体。
-- **只有内容断言没过**：接入本身已经通了——在 `view` 里对照 `t.reply` 的实际值，调断言或调应用。
-
-`fetch` 抛错通常会得到 `errored`，表示执行链需要修复。Turn 返回 `failed` 或内容断言不满足时，Attempt 已经形成可检查的结果；先核对输入、输出和 Assertion，再决定问题在被测系统、协议映射还是判据。计分制评估还要读取实际分数，不能把“Attempt 已完成”当成满分。
-
-完成这些步骤后，文本断言和 Judge 评分即可使用。工具、多轮和审批流断言需要继续添加文末列出的可选能力。
-
-## 实验 Flag
-
-配置归属只有两条通道，分清它们，接入就不会乱：
-
-1. **静态配置走 Adapter 工厂。** URL、鉴权和协议细节等环境级配置作为工厂参数写在 Experiment 文件里。`defineExperiment` 的 `agent` 字段接收**已经配置好的实例**。
-2. **每轮动态值走 `ctx`。** experiment 声明的 `model`、`flags`，运行器每轮经 `ctx` 原样递给 `send`。Adapter 不解释它们的含义，只随请求转发给应用。
-
-把第一步的 `my-agent` 从固定 URL 的实例改成接收配置的工厂。将 default export 改为返回 `defineAgent(...)` 的函数，并让 `send` 读取工厂参数。Experiment 声明的 `model` 和 `flags` 每轮经 `ctx` 到达，再由 `send` 随请求转发：
-
-```ts
-// agents/my-agent.ts —— 工厂：静态配置进闭包
 import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
@@ -142,15 +52,15 @@ export function myAgent(options: { baseUrl: string }): Agent {
     name: "my-agent",
     evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {
-      const r = await fetch(`${options.baseUrl}/chat`, {   // ← 工厂配置：连哪
+      const r = await fetch(`${options.baseUrl}/chat`, { // 连到哪里：来自工厂参数
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           message: input.text,
-          model: ctx.model,     // ← experiment.model：应用接口收模型选择就转发
-          flags: ctx.flags,   // ← experiment.flags：原样交给应用，应用按参数切换
+          model: ctx.model, // 跑哪个模型：来自 Experiment
+          flags: ctx.flags, // 开哪些开关：来自 Experiment
         }),
-        signal: ctx.signal,     // ← 运行器的超时与取消：挂到每个请求上
+        signal: ctx.signal, // 超时和取消
       });
       const body = await r.json();
       return {
@@ -162,34 +72,52 @@ export function myAgent(options: { baseUrl: string }): Agent {
 }
 ```
 
-鉴权 header、协议开关这类同属静态配置，一样加进 `options`。experiment 侧对应两处小改：具名导入工厂，`agent` 字段从「引用实例」变成「调用工厂」：
+Experiment 里调用工厂，再声明 `model` 和 `flags`：
 
 ```ts
-// experiments/my-agent.ts —— 参数的声明处
+// experiments/local.ts
 import { defineExperiment } from "niceeval";
 import { myAgent } from "../agents/my-agent.ts";
 
 export default defineExperiment({
-  description: "my-agent 基线",
-  agent: myAgent({ baseUrl: "http://localhost:3000" }),  // ← 静态配置：实例化时传
-  model: "gpt-5.4",                                    // ← 动态值：经 ctx.model 到 send
-  flags: { promptVariant: "concise" },                // ← 动态值：经 ctx.flags 到 send
+  agent: myAgent({ baseUrl: "http://localhost:3000" }),
+  model: "gpt-5.4",
+  flags: { promptVariant: "concise" },
 });
 ```
 
-`ctx` 上每轮可能用到的字段和消费方式：
+要分别评估本地和生产，写两个 Experiment，只换 `baseUrl`：
 
-| `ctx` 字段 | 来源 | Adapter 用法 |
+```ts
+// experiments/prod.ts
+export default defineExperiment({
+  agent: myAgent({ baseUrl: "https://api.example.com" }),
+  model: "gpt-5.4",
+});
+```
+
+```bash
+pnpm exec niceeval exp local
+pnpm exec niceeval exp prod
+```
+
+不要把 URL 写进命令行。Experiment ID 后面的位置参数只用来筛选评估用例。
+
+`ctx` 上每轮能用到的字段：
+
+| 字段 | 来自 | Adapter 怎么用 |
 |---|---|---|
-| `signal` | 运行器（超时与取消） | 挂到发出的每个请求上 |
-| `model` | experiment 的 `model` | 应用接口收模型选择就随请求转发。不收就忽略 |
-| `flags` | experiment 的 `flags` | 原样转发（请求体、header 都行），应用按参数切换变体 |
-| `telemetry` | 配置了 OTel 接入时出现 | 只碰 `headers`：每轮新的 W3C `traceparent`，spread 进请求头。接收端点每次运行都一样，在 `defineConfig` 里固定、应用启动时指向它，不从 send 传——见 [OTel 接入](/zh/tutorials/connect-otel) |
-| `session` | 运行器（每条会话线一份） | 会话续接与 HITL 停轮现场的存取器都在它上面：`id` / `capture()`、typed slot 的 `get()` / `set()` / `take()`，见[写 send](/zh/tutorials/write-send) |
-| `progress(update)` | 运行器（绑定当前 `agent.run`） | 报告 Turn/tool 的短期状态。Human dashboard 可显示，结果不保存 |
-| `diagnostic(input)` | 运行器（绑定当前 `agent.run`） | 保存协议退化、响应不完整等 warning/error。可由 locator 下钻回顾 |
+| `signal` | NiceEval 的超时和取消 | 挂到发出的每个请求上 |
+| `model` | Experiment 的 `model` | 应用接口接受模型选择就转发，不接受就忽略 |
+| `flags` | Experiment 的 `flags` | 原样转发，放请求体或 header 都行 |
+| `session` | 每段对话一份 | 多轮续接和人工介入的状态存取，见[编写 Send](/zh/tutorials/write-send) |
+| `telemetry` | 配置了 OTel 接入时出现 | 把 `headers` 里的 `traceparent` 放进请求头，见 [OTel 接入](/zh/tutorials/connect-otel) |
+| `progress(update)` | 当前这轮调用 | 在终端显示正在做什么，不保存 |
+| `diagnostic(input)` | 当前这轮调用 | 记下事后要回看的异常，会随结果保存 |
 
-### Adapter 里的进度、诊断和致命错误
+## 报告进度和异常
+
+调用上游比较慢，或者响应不完整时，用 `ctx` 报告，不要直接 `console.log`：
 
 ```ts
 async send(input, ctx) {
@@ -210,56 +138,35 @@ async send(input, ctx) {
 }
 ```
 
-`progress` 是可覆盖的短期状态。`diagnostic` 是运行结束后仍能回顾的有界记录。两者都不能指定 phase 或输出流，也不会自动改变 `Turn.status` 或 Attempt 判定。连接失败、解析无法继续等基础设施错误应抛出异常。正常收到的被测 Agent 失败通过 `Turn.status: "failed"` 表达。
+三种情况分开处理：
 
-终端只显示错误的一层摘要和 Attempt identity。完整 code、message、cause、stack 与 diagnostics 保存在 Attempt-owned 通道里，使用 `niceeval show @<attempt-locator>` 或固定 `query` operation 查看。OTel trace 只补充调用关系和耗时，不是错误数据的前提。
+- 被测 Agent 正常回复了，但这一轮它自己报告失败：返回 `status: "failed"`。这次运行会得出结论，通常是 `failed`。
+- 连接失败、响应没法解析，评估没法继续：直接抛出异常。这次运行记为 `errored`，终端会给出 locator。
+- 能继续，但有值得记下的异常：写一条 `ctx.diagnostic`。它不会改变通过与否。
 
-要分别评估本地和生产环境，创建两个 Experiment 文件，并传入不同的工厂参数：
+终端只显示一行错误摘要。完整的错误信息、堆栈和诊断，用 `niceeval show @<locator>` 查看。
 
-```ts
-// experiments/local.ts
-export default defineExperiment({
-  agent: myAgent({ baseUrl: "http://localhost:3000" }),
-  model: "gpt-5.4",
-});
+## 没跑通时先查哪里
 
-// experiments/prod.ts
-export default defineExperiment({
-  agent: myAgent({ baseUrl: "https://api.example.com" }),
-  model: "gpt-5.4",
-});
-```
+- `fetch` 直接抛错，例如连接被拒：应用没起来，或者 URL 不对。先用 `curl` 对同一个接口发一次请求确认。
+- `t.succeeded()` 没过：请求发出去了，但 Adapter 返回了 `failed`。检查应用的错误响应是怎么映射到 `status` 的。
+- 只有内容断言没过：接入已经通了。用 `niceeval show @<locator> --execution` 看应用实际回了什么，再决定改断言还是改应用。
 
-```bash
-npx niceeval exp local
-npx niceeval exp prod
-```
+## 按需加上更多能力
 
-不要把 URL 放进 CLI 位置参数——experiment 名之后的位置参数只用于过滤评估用例 ID。experiment 的完整字段（`attempts`、`budget`、并发、`sandbox`）见[写实验](/zh/tutorials/write-experiment)。
+最小接入只能检查回复文本。下面这些能力都只改 Adapter，已有的评估用例不用动：
 
-## 添加可选能力
-
-最小接入完成后，可以按需扩展 Adapter。已有评估用例不需要修改：
-
-| 目标能力 | Adapter 改动 | 教程 |
+| 想检查 | Adapter 要做的 | 怎么做 |
 |---|---|---|
-| 工具断言（`calledTool` / `toolOrder` / 负断言） | 把应用返回映射成标准事件流 | [写 send](/zh/tutorials/write-send)、[事件流参考](/zh/reference/events) |
-| 多轮对话、`t.newSession()` 隔离 | 接上 `ctx.session`：typed slot 或 `id` + `capture()` | [写 send](/zh/tutorials/write-send) |
-| 审批流（HITL，人工介入） | 停轮返回 `waiting` + `input.requested`，回答轮续跑 | [HITL](/zh/explanation/hitl) |
-| `niceeval view` 的调用瀑布图 | 应用把 OTel span 发给 NiceEval（不影响断言） | [OTel 接入](/zh/tutorials/connect-otel) |
-| feature A/B 对比 | 应用把变体暴露成 `flags` 可切换的配置 | [Tier](/zh/explanation/tier)、[写实验](/zh/tutorials/write-experiment) |
+| 调用了哪些工具、顺序、没调用什么 | 把应用返回的工具调用映射成标准事件 | [编写 Send · 第四步](/zh/tutorials/write-send#第四步：把工具解析成事件) |
+| 多轮对话、并行的独立会话 | 用 `ctx.session` 续接上下文 | [编写 Send · 第二步](/zh/tutorials/write-send#第二步：接上之前的消息) |
+| token 和费用 | 返回 `usage` | [编写 Send · 第三步](/zh/tutorials/write-send#第三步：记录消费) |
+| 需要人审批才继续的流程 | 返回 `waiting` 并说明在等什么 | [HITL](/zh/explanation/hitl) |
+| 浏览器里的调用瀑布图 | 让应用把 OTel span 也发给 NiceEval | [OTel 接入](/zh/tutorials/connect-otel) |
+| 比较两版 prompt 或功能开关 | 应用把变体做成可以用 `flags` 切换 | [编写实验](/zh/tutorials/write-experiment#比较两版-prompt) |
 
-各项能力对应的接入等级和功能范围见 [Tier](/zh/explanation/tier)。
+各项能力分别需要应用配合到什么程度，见 [Tier](/zh/explanation/tier)。
 
 ## 参考实现
 
-[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 提供五个可运行的无侵入接入示例（ai-sdk-v7、claude-sdk、codex-sdk、pi-sdk、langgraph），覆盖事件流断言、多轮隔离、HITL 批准与拒绝，以及 trace 瀑布图。手写 `send` 只需实现 transport 和映射表。会话续接与 HITL 暂停恢复由 `ctx.session` 提供，逐帧驱动可使用内置实现，见[内置 Agent 能力](/zh/reference/builtin-agents)。
-
-## 相关阅读
-
-- [官方适配器一览](/zh/reference/official-adapters) —— 查看 Sandbox 与非 Sandbox Adapter 及其配置项。
-- [写 send](/zh/tutorials/write-send) —— 手写 Adapter 的完整教程：七步递进，从发一条消息到 HITL、OTel、flags。
-- [Adapter](/zh/explanation/adapter) —— `send` 的契约：`TurnInput` / `AgentContext` / `Turn` 逐字段。
-- [OTel 接入](/zh/tutorials/connect-otel) —— 把应用的 span 也发给 [NiceEval](https://niceeval.com/)，换 `niceeval view` 的调用瀑布图。
-- [Tier](/zh/explanation/tier) —— 查看三个接入等级的要求与能力。
-- [写实验](/zh/tutorials/write-experiment) —— `defineExperiment` 的完整字段。
+[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 有五个可运行的接入示例：AI SDK v7、Claude SDK、Codex SDK、Pi SDK 和 LangGraph。它们覆盖工具调用断言、多轮隔离、HITL 的批准与拒绝，以及调用瀑布图。`send` 的完整字段见 [Adapter](/zh/explanation/adapter)，全部官方适配器见[官方适配器一览](/zh/reference/official-adapters)。

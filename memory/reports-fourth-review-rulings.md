@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: reports-fourth-review-rulings
+title: 设计裁决:Reports 第四轮评审修订(2026-07-16)
+createdAt: 2026-07-16T14:32:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reports-fourth-review-rulings.md
+  commit: 74577bc5bb9eaae03dd25d30ac56850178f18984
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:Reports 第四轮评审修订(2026-07-16)
 
 第三轮（[reports-external-review-rulings](reports-external-review-rulings.md)）落稿后又做了一轮全量 docs 评审（读 `docs/feature/reports/` 全部 14 篇，不读 src），按裁决重写受影响小节。定稿形态在 `docs/feature/reports/`，场景行同批更新在 `docs/engineering/testing/unit/reports.md`。本条记翻案、否决与来龙去脉。

@@ -10,6 +10,12 @@ export type AttemptInspectionOperation =
 
 export type AssertionIndexEntry = QuerySuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
 
+/** Optional mechanical checkpoints; callers retain ownership of logs and deadlines. */
+export type AssertionInspectionCheckpoint = (
+  stage: "prepare" | "invoke" | "observe" | "outcome",
+  entryId: string,
+) => void | Promise<void>;
+
 export function assertionEntry(
   document: QuerySuccessDocumentFor<"attempt.assertion.detail">,
   diagnostic: string,
@@ -26,7 +32,9 @@ export async function inspectAssertion(
   locator: string,
   entryId: string,
   options: RunProcessOptions = {},
+  checkpoint?: AssertionInspectionCheckpoint,
 ): Promise<{ readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }> {
+  if (checkpoint !== undefined) await checkpoint("prepare", entryId);
   const requestPath = join(projectRoot, `.inspection-attempt-assertion-detail-${locator.slice(1)}-${entryId}.json`);
   await writeFile(
     requestPath,
@@ -36,8 +44,12 @@ export async function inspectAssertion(
     })}\n`,
     "utf8",
   );
+  if (checkpoint !== undefined) await checkpoint("invoke", entryId);
   const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
-  return { receipt, document: receipt.attemptAssertionDetail() };
+  if (checkpoint !== undefined) await checkpoint("observe", entryId);
+  const document = receipt.attemptAssertionDetail();
+  if (checkpoint !== undefined) await checkpoint("outcome", entryId);
+  return { receipt, document };
 }
 
 // Each detail read starts the installed CLI while Vitest also runs files in
@@ -52,12 +64,13 @@ export async function inspectAssertionEntries(
   locator: string,
   entries: readonly AssertionIndexEntry[],
   options: RunProcessOptions = {},
+  checkpoint?: AssertionInspectionCheckpoint,
 ): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }[]> {
   const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }[] = [];
   for (let offset = 0; offset < entries.length; offset += ASSERTION_DETAIL_QUERY_CONCURRENCY) {
     const batch = entries.slice(offset, offset + ASSERTION_DETAIL_QUERY_CONCURRENCY);
     const batchDetails = await Promise.all(batch.map(async (entry) => {
-      const detail = await inspectAssertion(niceeval, projectRoot, locator, entry.entryId, options);
+      const detail = await inspectAssertion(niceeval, projectRoot, locator, entry.entryId, options, checkpoint);
       return { entry, ...detail };
     }));
     details.push(...batchDetails);

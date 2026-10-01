@@ -1,37 +1,58 @@
 ---
-title: "排查已封口的结果"
+title: "排查失败的评估结果"
 sidebarTitle: "排查手册"
-description: "根据具名错误和闭合 Inspection result，通过 Show、Query 与 View 排查问题。"
+description: "评估失败或出错时，从具体的 Run 或 Attempt 出发，用 show 逐层查看错误、对话、耗时和改动，找到是应用、Adapter、环境还是断言的问题。"
 ---
 
-从明确的 Run 或 Attempt 开始。终端排障先用 `niceeval show`，机器和 CI 用 `query` 的固定 JSON 协议，浏览器审阅则用 `view`。
+一批评估跑完，有几条 `failed` 或 `errored`。你要找到原因：是应用答错了、Adapter 映射漏了、环境没起来，还是断言写得太紧。
+
+从一个明确的 Run 或 Attempt 开始查。在终端用 `niceeval show`，在浏览器用 `niceeval view`；脚本和 CI 用 `query` 读 JSON。
+
+## 从 Run 找到出问题的 Attempt
+
+先看这次运行的整体情况。Run ID 在 `exp` 结束时的 `NEXT` 面板里：
 
 ```sh
-niceeval show --run <run-id>
-niceeval show @<attempt-locator>
+pnpm exec niceeval show --run <run-id>
 ```
 
-先用 `niceeval show --run <run-id>` 确认这个 Run 的时间、Member、判定、分数、coverage、usage 和限制。输出中的 Attempt locator 是下一步的精确目标。对一个 Attempt 先运行 `niceeval show @<attempt-locator>`，再按问题选择一个投影：
+输出会列出这个 Run 的时间、各评估用例的判定、分数、结果覆盖、用量和限制。每个 Attempt 前面有一个以 `@` 开头的 locator，复制出问题的那一个：
 
 ```sh
-niceeval show @<attempt-locator> --source
-niceeval show @<attempt-locator> --execution
-niceeval show @<attempt-locator> --timing
-niceeval show @<attempt-locator> --usage
-niceeval show @<attempt-locator> --diff
+pnpm exec niceeval show @<attempt-locator>
 ```
 
-`--source` 查看已封存的源码和 Assertion 事实；`--execution` 查看有界的执行 outline；`--timing` 查看活动、阶段和耗时；`--usage` 查看已封口的 token、request 和 cost totals；`--diff` 查看已封存的文件变更窗口。要展开 execution outline 中的一项，使用它显示的稳定 ID：`niceeval show @<attempt-locator> --execution --expand <stable-id>`。
+这一屏先告诉你判定和断言摘要。`errored` 时会显示出错的阶段和完整错误正文，通常先看这里就够了。
 
-这条链负责从 Run 定位到一次执行：
+## 按问题选择要看的内容
 
-```text
-show --run
-→ show @locator
-→ source / execution / timing / usage / diff
+单看摘要还不够时，按你怀疑的方向加一个参数：
+
+```sh
+pnpm exec niceeval show @<attempt-locator> --source
+pnpm exec niceeval show @<attempt-locator> --execution
+pnpm exec niceeval show @<attempt-locator> --timing
+pnpm exec niceeval show @<attempt-locator> --usage
+pnpm exec niceeval show @<attempt-locator> --diff
 ```
 
-如果问题落在一条具体 Assertion，继续使用 `query` 的动态发现链。`show` 负责给人看紧凑概览，`query` 负责返回 contribution、measurement 和 Judge rationale 等结构化详情：
+| 你想知道 | 参数 |
+| --- | --- |
+| 这次运行用的评估源码和每条断言的结果 | `--source` |
+| Agent 说了什么、调用了哪些工具 | `--execution` |
+| 时间花在哪个阶段，是不是卡在 setup | `--timing` |
+| 这次用了多少 token、请求和费用 | `--usage` |
+| Agent 改了哪些文件 | `--diff` |
+
+`--execution` 显示的是精简过的执行过程。要展开其中一项，复制它旁边的 ID：
+
+```sh
+pnpm exec niceeval show @<attempt-locator> --execution --expand <stable-id>
+```
+
+## 查清一条断言为什么得这个分
+
+问题落在某一条断言上时，用 `query` 取结构化详情。它会返回这条断言的各项贡献、测量值和 Judge 给出的理由：
 
 ```text
 query discover
@@ -40,58 +61,60 @@ query discover
 → attempt.assertion.detail(locator, entryId)
 ```
 
-不要从 `show` 的排版文本反推 Assertion 字段。完整 request 示例见[查看运行结果](/zh/tutorials/viewing-results#从-show-进入-assertion-详情)。
+不要从 `show` 的排版文本反推断言字段。完整 request 示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
 
 ## 无法打开结果
 
 | 错误 | 下一步 |
 | --- | --- |
-| 找不到项目 Record | 确认在项目目录中运行，并检查唯一的 `.niceeval/record.sqlite` 是否存在。 |
-| `--record` 输入被拒绝 | 确认文件是已完成收尾、没有并发修改的单文件 Record；不要丢弃尚未合并的 WAL。外部 Record 会经过完整性和领域不变量校验。 |
-| 不支持的 schema 或数据库无效 | 保留原件并核实写入版本。支持的历史格式会自动升级；未知格式或损坏的数据不会被修补或部分打开。 |
-| Run 仍为 `active`，但原进程已终止 | 先用 `niceeval run show <run-id>` 核对，再运行 `niceeval run recover <run-id> --yes`。 |
+| 找不到项目的结果文件 | 确认在项目目录里运行，并检查 `.niceeval/record.sqlite` 是否存在。 |
+| `--record` 指定的文件被拒绝 | 确认它是运行结束后复制的完整单文件，复制期间没有别的进程在写。不要删除还没合并的 WAL 文件。外部文件会经过完整性和数据一致性校验。 |
+| 不支持的格式版本或数据库无效 | 保留原文件，核实写入它的 NiceEval 版本。支持的历史格式会自动升级；未知格式或损坏的数据不会被修补，也不会只读一部分。 |
+| Run 仍为 `active`，但原进程已经终止 | 先用 `pnpm exec niceeval run show <run-id>` 核对，再运行 `pnpm exec niceeval run recover <run-id> --yes`。 |
 
-已发布事实没有手动编辑的修复路径。需要不同事实时创建新的 Run。`niceeval run recover` 只会收口可证明旧 owner 已终止的 Run，并保留已经发布的 Attempt。
+已发布的结果不能手动修改。需要不同的结果时，重新运行创建新的 Run。`niceeval run recover` 只会结束能证明原进程已经终止的 Run，已经发布的 Attempt 都会保留。完整步骤见[运行被强杀后恢复](/zh/troubleshooting/recover-after-kill)。
 
 ## 读取历史 Record
 
-这里的格式版本是 Record 内部标识，与 NiceEval 的 npm 包版本独立。不要通过修改数据库版本字段尝试升级。
+这里的格式版本是结果文件内部的标识，和 NiceEval 的 npm 包版本无关。不要通过修改数据库里的版本字段尝试升级。
 
-`show`、`query`、`run list/show` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史 portable Record。读取会在私有副本中自动迁移，保留原文件、Run、Attempt 和引用，不需要先运行评估。
+`show`、`query`、`run list`、`run show` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史结果文件。读取时 NiceEval 在私有副本里自动升级，原文件、Run、Attempt 和引用都保持不变，不需要先运行评估。
 
-通过 `--record` 读取时，输入必须是已经交付的单文件 Record，读取期间不能被其它进程修改。包含未合并 WAL、活动工作或无法确认的 owner 状态时，会拒绝读取；不要删除 sidecar 来绕过检查。
+用 `--record` 读取时，文件必须是已经交付的完整单文件，读取期间不能被其它进程修改。文件还带着未合并的 WAL、仍有运行在写，或无法确认写入进程是否已经结束时，命令会拒绝读取。不要删除旁边的文件来绕过检查。
 
-正常项目写入口会在备份和验证后自动升级支持的旧格式。当前格式项目的实时读取仍使用 SQLite 事务，不会为了读取执行迁移或恢复。
+在项目里正常运行 `exp` 等写入命令时，NiceEval 会先备份、验证，再自动升级支持的旧格式。读取当前格式的项目时，不会执行升级或恢复。
 
 ## 结果不完整或无法比较
 
-脚本、AI 或 CI 先运行 `niceeval query discover` 找到正确的固定 operation，再用 `explain` 检查 request，最后运行 `run`。结果会指出 missing、issues、Evidence 与 correction。`query` 只输出机器协议，不用来阅读终端排版；需要逐项解释分数时，使用 `attempt.get` 和 `attempt.assertion.detail`，不要只看聚合 Score。
+脚本、AI 或 CI 先运行 `pnpm --silent exec niceeval query discover` 找到合适的查询，再用 `explain` 检查 request，最后用 `run` 执行。结果会指出缺了哪些结果、有哪些问题、用了什么证据，以及怎样修正。
 
-需要浏览器界面时运行 `niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要读取或查询私有 SQLite 表。
+`query` 只输出 JSON，不适合人直接阅读。要逐项解释分数时，用 `attempt.get` 和 `attempt.assertion.detail`，不要只看汇总分数。
 
-比较使用 `runs.compare`。它的 `exact` 和 `paired` 模式会拒绝不兼容的 domain 或 pair，不会悄悄缩小分母。
+需要浏览器界面时运行 `pnpm exec niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要直接查询 SQLite 里的表。
+
+比较两个 Run 用 `runs.compare`。它的 `exact` 和 `paired` 模式遇到无法对齐的评估或配对时会直接拒绝，不会悄悄缩小分母。
 
 ## 读懂成批错误
 
-一次命令或 Invocation 内，同一类已知错误第一次出现时会立即给出完整原因、owner、源码位置和下一步；终局再用摘要列出总次数、受影响对象与源码位置。迁移指南按 `guideId` 只完整显示一次，不会为每个对象重复铺开。
+一次运行里，同一类已知错误第一次出现时，终端会立即给出完整原因、负责方、源码位置和下一步。运行结束时，再用摘要列出总次数、受影响的对象和源码位置。迁移指南按 `guideId` 只完整显示一次，不会为每个对象重复展开。
 
-只有 `code`、`owner`、repair target 与 `guideId` 四项完全相同才会归为一组。整个摘要最多保留 32 组，每组最多展示 32 个受影响对象和 32 个源码位置；更多事实由 omitted 数量明确说明，原始失败事实仍由各自 owner 保留。未知错误没有稳定 owner 身份时保持单例，不会仅凭相似 message 或 stack 猜测合并。
+只有 `code`、`owner`、修复目标与 `guideId` 四项完全相同的错误才会归为一组。摘要最多保留 32 组，每组最多展示 32 个受影响对象和 32 个源码位置；超出的数量会单独写明，每条原始错误仍各自保留。没有稳定来源的未知错误单独显示，不会仅凭相似的 message 或 stack 合并。
 
-源码位置按当前已知调用点或 source map 按需定位；找不到时明确显示 unknown。这项增强不会为了报错扫描整个项目，也不会要求应用启用未使用的 AST 扫描。相关预算是未来可选增强的上限，不代表已经测得的性能结果。
+源码位置按已知调用点或 source map 定位，找不到时显示 unknown。NiceEval 不会为了报错扫描整个项目，也不要求应用开启额外的 AST 扫描。
 
 ## 旧项目状态阻塞运行
 
-如果数据早于支持自动迁移的 ProjectDatabase 格式，或错误提示旧 `locks/`、`sessions/` 等目录阻塞写入，按下面步骤保留历史。这个流程不适用于上面支持自动迁移的 0.15、0.16、0.17 portable Record。
+如果项目数据早于支持自动升级的格式，或错误提示旧的 `locks/`、`sessions/` 等目录阻塞写入，按下面步骤保留历史。上面说的 0.15、0.16、0.17 格式会自动升级，不需要走这个流程。
 
-1. 停止原项目仍在运行的 NiceEval 进程。不要根据锁文件年龄判断它是否可以删除。
-2. 保留原项目及完整 `.niceeval` 目录；需要查看历史时，在原项目使用当时写入数据的 NiceEval 版本。来源版本不明确时，先保留现场并核实版本。
-3. 将配置、评估用例、实验和其它项目文件复制到独立目录，排除 `.niceeval`，并在副本安装当前 NiceEval 版本。
-4. 在副本运行原实验，例如 `pnpm exec niceeval exp <experiment> --rerun all`。新 Run 使用新的 Record，原项目的历史数据保持原样。
+1. 停止原项目里仍在运行的 NiceEval 进程。不要根据锁文件的修改时间判断它能不能删。
+2. 保留原项目和完整的 `.niceeval` 目录。需要查看历史时，在原项目里使用当时写入数据的 NiceEval 版本。不确定是哪个版本时，先保留现场再核实。
+3. 把配置、评估用例、实验和其它项目文件复制到一个新目录，不复制 `.niceeval`，并在新目录安装当前版本的 NiceEval。
+4. 在新目录运行原实验，例如 `pnpm exec niceeval exp <experiment> --rerun all`。新结果写进新目录的结果文件，原项目的历史数据保持原样。
 
-这个流程不会把旧结果带入新 Record。不要只删除个别锁或数据文件来绕过检查；`niceeval state migrate --all` 管理用户级服务状态，不能转换项目 Record。
+这个流程不会把旧结果带进新的结果文件。不要只删除个别锁文件或数据文件来绕过检查。`niceeval state migrate --all` 管理的是用户级服务状态，不能转换项目的结果文件。
 
 ## View 显示旧结果
 
-View 在一次读取开始时固定 PublicationCutoff。页面提示有新发布内容时，确认刷新即可读取新的闭合结果；刷新失败时，上一份可读结果会保留。
+`niceeval view` 打开时，固定读取当时已经发布的结果。页面提示有新结果时，确认刷新即可看到最新内容；刷新失败时，页面保留上一份能读到的结果。
 
-正常流程见[查看已封口的运行结果](/zh/tutorials/viewing-results)，命令细节见 [CLI](/zh/reference/cli)。
+正常的查看流程见[查看运行结果](/zh/tutorials/viewing-results)，命令细节见 [CLI](/zh/reference/cli)。

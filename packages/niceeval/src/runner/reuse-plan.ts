@@ -1,4 +1,13 @@
-import { Effect, Result } from "effect";
+// @concord-file ne-runner-reuse-plan
+// @concord-implements docs/feature/experiments/cache.md
+// @concord-implements docs/feature/experiments/use-case/cache-explicit-rerun.md
+// @concord-implements docs/feature/experiments/use-case/rerun-all.md
+
+import { Effect, Result, Schema } from "effect";
+import { RecordIntegrityFailure } from "../record/reader/errors.ts";
+import { RunIdSchema, ExperimentIdSchema, UtcMillisSchema } from "../record/codec/identifiers.ts";
+import { RecordSlotIdentitySchema } from "../record/codec/core.ts";
+import type { ReadableRunResource } from "../run/storage/types.ts";
 import { foldRecordedAttemptScore } from "../eval/record/score.ts";
 import { executionDigestForExperiment, hasProvenNoExperimentHooks } from "./rename-identity.ts";
 
@@ -10,6 +19,7 @@ import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import {
   readAttemptExecutionDuration,
   type DurationLimit,
+  type AttemptExecutionTimingFacts,
 } from "../eval/record/eligibility.ts";
 import {
   COMPARISON_SOURCE_STATES,
@@ -28,7 +38,7 @@ import type {
   SelectedAttemptRef,
   SelectedRunRef,
 } from "../record/host/types.ts";
-import type { RecordCoreRead } from "../record/model/read-state.ts";
+import type { RecordCoreRead, RecordAttachmentRead } from "../record/model/read-state.ts";
 import {
   compareCanonicalIdentity,
   isPortableSegment,
@@ -39,12 +49,12 @@ import {
   type SlotId,
   type UtcMillis,
 } from "../record/model/identifiers.ts";
-import type { AttemptOutcome, RecordSlotIdentity } from "../record/model/core.ts";
+import type { AttemptOutcome, AttemptDocument, MemberDocument, RunDocument, RecordSlotIdentity } from "../record/model/core.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type { EvaluationKind } from "./types.ts";
 
 export const PROJECT_TARGET_POLICY_NAME = "project-target" as const;
-export const PROJECT_TARGET_POLICY_VERSION = 1 as const;
+export const PROJECT_TARGET_POLICY_VERSION = 2 as const;
 export const PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH = 255 as const;
 export const PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH = 4096 as const;
 
@@ -113,6 +123,7 @@ export type ExecutionGapReason =
   | "attempt-outcome-ineligible"
   | "adoption-unproven"
   | "verdict-ineligible"
+  | "score-incomplete"
   | "adapter-behavior-revision-required"
   | "rerun-requested"
   | "sandbox-retention-requested";
@@ -168,6 +179,63 @@ export interface TargetSlot {
   readonly timeout?: ExecutionDurationLimit;
   /** Current-only eligibility fact; omitted means behavior identity is reusable. */
   readonly reuseEligibility?: "adapter-behavior-revision-required";
+}
+
+/** Logical current input; evaluating it never allocates durable identities. */
+export type CurrentTargetSlot = Omit<TargetSlot, "runId" | "slotId">;
+
+export interface CurrentAssessmentRun<Ref> {
+  readonly createdRevision?: number;
+  readonly lifecycle?: Pick<ReadableRunResource, "state" | "slots">;
+  readonly document: Pick<RunDocument, "runId" | "experimentId" | "startedAt" | "expectedSlots"> & { readonly context?: RunDocument["context"] };
+  readonly members: readonly {
+    readonly document: MemberDocument;
+    readonly bindingRevision?: number;
+    readonly attempt: Ref | null;
+  }[];
+}
+
+export interface CurrentAssessmentSource {
+  readonly attemptId: AttemptDocument["attemptId"];
+  readonly origin: ExecutionSourceOrigin;
+  readonly sourceBarrier: ExecutionSourceBarrier;
+}
+
+export type CurrentSlotAssessment<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource> = Target & (
+  | { readonly state: "reuse"; readonly adoption: "carried"; readonly source: Source; readonly comparisons: readonly ExecutionComparison[] }
+  | { readonly state: "gap"; readonly reason: ExecutionGapReason; readonly scope: ExecutionGapScope;
+      readonly issues: readonly RecordIssue[]; readonly sourceBarrier?: ExecutionSourceBarrier;
+      readonly candidate?: Source; readonly comparisons: readonly ExecutionComparison[] }
+);
+
+export interface CurrentAssessmentAttempt {
+  readonly document: AttemptDocument;
+  readonly publicationAvailable: boolean;
+}
+
+/** Both consumers retain every expected lifecycle position at one cutoff. */
+export function mergeCurrentAssessmentRuns<Ref>(
+  runs: readonly CurrentAssessmentRun<Ref>[],
+  resources: readonly ReadableRunResource[],
+): Effect.Effect<readonly CurrentAssessmentRun<Ref>[], RecordIntegrityFailure> {
+  return Effect.map(Effect.forEach(resources, (resource) => {
+    const published = runs.find((run) => run.document.runId === resource.runId);
+    const lifecycle = Object.freeze({ state: resource.state, slots: resource.slots });
+    if (published !== undefined) return Effect.succeed(Object.freeze({ ...published, createdRevision: resource.createdRevision, lifecycle }));
+    return Schema.decodeUnknownEffect(Schema.Struct({
+      runId: RunIdSchema, experimentId: ExperimentIdSchema, startedAt: UtcMillisSchema,
+      expectedSlots: Schema.Array(RecordSlotIdentitySchema),
+    }))({
+      runId: resource.runId, experimentId: resource.experimentId, startedAt: Date.parse(resource.startedAt),
+      expectedSlots: resource.slots.map(({ publication: _publication, ...slot }) => slot),
+    }).pipe(
+      Effect.map((document): CurrentAssessmentRun<Ref> => Object.freeze({ createdRevision: resource.createdRevision, lifecycle, document, members: Object.freeze([]) })),
+      Effect.mapError(() => new RecordIntegrityFailure({ code: "record-integrity-failure", runId: resource.runId, reason: "core-invalid" })),
+    );
+  }, { concurrency: 1 }), (lifecycle) => Object.freeze([
+    ...lifecycle,
+    ...runs.filter((run) => !resources.some((resource) => resource.runId === run.document.runId)),
+  ]));
 }
 
 export type AssertionsVerdict = VerdictState;
@@ -329,6 +397,8 @@ export function validateProjectTargetReusePlanInput(input: {
  * Plans only from Record Host selection references. It neither reconstructs
  * attempt handles from strings nor reads private Record paths.
  */
+// @concord-code ne-runner-plan-reuse
+// @concord-implements docs/feature/experiments/cache.md
 export function planProjectTargetReuse(
   input: ProjectTargetReusePlanInput,
 ): Effect.Effect<
@@ -350,13 +420,22 @@ export function planProjectTargetReuse(
         (ref) => input.reader.readRun(ref),
         { concurrency: 1 },
       );
-      const runs: ReadableRun[] = [];
+      const publishedRuns: ReadableRun[] = [];
       const coreIssues: RecordIssue[] = [];
       for (const read of readable) {
-        if (read.state === "available") runs.push(read.value);
+        if (read.state === "available") publishedRuns.push(read.value);
         else if (read.state === "core-invalid") coreIssues.push(...read.issues);
       }
-      const byRunId = new Map(runs.map((run) => [run.document.runId, run] as const));
+      const resources: ReadableRunResource[] = [];
+      let afterRunId = "";
+      for (;;) {
+        const page = yield* input.reader.listRunResources({ afterRunId, pageSize: 100 });
+        resources.push(...page.runs);
+        if (page.nextAfterRunId === null) break;
+        afterRunId = page.nextAfterRunId;
+      }
+      const runs = yield* mergeCurrentAssessmentRuns(publishedRuns, resources);
+      const byRunId = new Map(publishedRuns.map((run) => [run.document.runId, run] as const));
       const slots: ExecutionReusePlanSlot[] = [];
       for (const target of flattenTargetSlots(input.target)) {
         slots.push(yield* planTargetSlot({
@@ -416,11 +495,41 @@ function planTargetSlot(input: {
   readonly reader: RecordReadSession;
   readonly target: TargetSlot;
   readonly policy: ProjectTargetPolicy;
-  readonly runs: readonly ReadableRun[];
+  readonly runs: readonly CurrentAssessmentRun<SelectedAttemptRef>[];
   readonly byRunId: ReadonlyMap<RunId, ReadableRun>;
   readonly selectionHasProblem: boolean;
   readonly coreIssues: readonly RecordIssue[];
 }): Effect.Effect<ExecutionReusePlanSlot, RecordReaderReadError> {
+  return assessCurrentTargetSlot({
+    ...input,
+    readAttempt: (ref) => input.reader.readAttempt(ref).pipe(Effect.map((read) => read.state !== "available" ? read : {
+      state: "available" as const,
+      value: { ...read.value, publicationAvailable: read.value.ref.publicationIdentity !== undefined },
+    })),
+    readAssertions: (attempt) => input.reader.read(attempt.owner, NiceEvalRecordAttachments.assertions),
+    readActivities: (attempt) => input.reader.read(attempt.owner, NiceEvalRecordAttachments.runnerActivities.attempt),
+    sourceFor: (attempt, sourceBarrier) => {
+      if (!hasPublicationIdentity(attempt)) throw new Error("Expected a published Attempt");
+      return candidateFor({ target: input.target, sourceBarrier, attempt, byRunId: input.byRunId })!.source;
+    },
+  });
+}
+
+/** Both read-only current results and execution planning use this assessment. */
+export interface CurrentAssessmentInput<Ref, Attempt extends CurrentAssessmentAttempt, Source extends CurrentAssessmentSource, Target extends CurrentTargetSlot, Error> {
+  readonly target: Target;
+  readonly policy: ProjectTargetPolicy;
+  readonly runs: readonly CurrentAssessmentRun<Ref>[];
+  readonly byRunId: ReadonlyMap<RunId, CurrentAssessmentRun<Ref>>;
+  readonly selectionHasProblem: boolean;
+  readonly coreIssues: readonly RecordIssue[];
+  readonly readAttempt: (ref: Ref) => Effect.Effect<RecordCoreRead<Attempt>, Error>;
+  readonly readAssertions: (attempt: Attempt) => Effect.Effect<RecordAttachmentRead<AssertionsAttachment>, Error>;
+  readonly readActivities: (attempt: Attempt) => Effect.Effect<RecordAttachmentRead<AttemptExecutionTimingFacts>, Error>;
+  readonly sourceFor: (attempt: Attempt, barrier: ExecutionSourceBarrier) => Source;
+}
+
+export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAttempt, Source extends CurrentAssessmentSource, Target extends CurrentTargetSlot, Error>(input: CurrentAssessmentInput<Ref, Attempt, Source, Target, Error>): Effect.Effect<CurrentSlotAssessment<Target, Source>, Error> {
   return Effect.gen(function* () {
     if (input.target.reuseEligibility !== undefined) {
       return gapSlot(input.target, {
@@ -466,15 +575,18 @@ function planTargetSlot(input: {
     }
     const member = sourceRun.members.find((candidate) => candidate.document.slotId === expected.slotId);
     if (member === undefined || member.attempt === null) {
+      const publication = sourceRun.lifecycle?.slots.find((slot) => slot.slotId === expected.slotId)?.publication;
       return gapSlot(input.target, {
         reason: "source-member-missing",
         scope: "slot",
         issues: [],
         sourceBarrier,
-        comparisons: [],
+        comparisons: publication?.state === "pending" || publication?.state === "absent"
+          ? [comparison("core", "attempt-outcome", "unavailable", "not-comparable", publication.state === "pending" ? "pending" : publication.reason)]
+          : [],
       });
     }
-    const readAttempt = yield* input.reader.readAttempt(member.attempt);
+    const readAttempt = yield* input.readAttempt(member.attempt);
     if (readAttempt.state !== "available") {
       return gapSlot(input.target, {
         reason: "source-core-invalid",
@@ -484,7 +596,7 @@ function planTargetSlot(input: {
         comparisons: [],
       });
     }
-    if (!hasPublicationIdentity(readAttempt.value)) {
+    if (!readAttempt.value.publicationAvailable) {
       return gapSlot(input.target, {
         reason: "source-publication-unavailable",
         scope: "slot",
@@ -493,13 +605,10 @@ function planTargetSlot(input: {
         comparisons: [],
       });
     }
-    const candidateResolution = candidateFor({
-      target: input.target,
-      sourceBarrier,
-      attempt: readAttempt.value,
-      byRunId: input.byRunId,
-    });
-    if (candidateResolution === undefined) {
+    const document = readAttempt.value.document;
+    const originRun = input.byRunId.get(document.originRunId);
+    const originExpected = originRun?.document.expectedSlots.find((slot) => slot.slotId === document.slotId);
+    if (originExpected === undefined || document.evalId !== originExpected.evalId || document.executionIdentityDigest !== originExpected.executionIdentityDigest) {
       return gapSlot(input.target, {
         reason: "source-core-invalid",
         scope: "slot",
@@ -508,19 +617,20 @@ function planTargetSlot(input: {
         comparisons: [],
       });
     }
-    const candidate = candidateResolution.source;
-    const ordinaryIdentity = reusableSlotIdentityMatches({ target: input.target, sourceExpected: expected, originExpected: candidateResolution.originExpected });
+    const candidate = input.sourceFor(readAttempt.value, sourceBarrier);
+    const ordinaryIdentity = reusableSlotIdentityMatches({ target: input.target, sourceExpected: expected, originExpected });
     if (!ordinaryIdentity) {
       const originRun = input.byRunId.get(candidate.origin.runId)!;
       const pureRename = targetMatchesLogicalIdentity(input.target, expected) &&
-        candidateResolution.originExpected.evalId === input.target.evalId &&
-        candidateResolution.originExpected.attemptOrdinal === input.target.attempt &&
-        executionDigestForExperiment(input.target, originRun.document.experimentId) === candidateResolution.originExpected.executionIdentityDigest;
+        originExpected.evalId === input.target.evalId &&
+        originExpected.attemptOrdinal === input.target.attempt &&
+        executionDigestForExperiment(input.target, originRun.document.experimentId) === originExpected.executionIdentityDigest;
       if (!pureRename) return gapSlot(input.target, {
         reason: "identity-mismatch", scope: "slot", issues: [], sourceBarrier, candidate,
         comparisons: [identityMismatchComparison()],
       });
-      if (!hasProvenNoExperimentHooks(sourceRun.document.context) ||
+      if (sourceRun.document.context === undefined || originRun.document.context === undefined ||
+          !hasProvenNoExperimentHooks(sourceRun.document.context) ||
           !hasProvenNoExperimentHooks(originRun.document.context)) return gapSlot(input.target, {
         reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [],
       });
@@ -537,10 +647,7 @@ function planTargetSlot(input: {
         reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [],
       });
     }
-    const assertions = yield* input.reader.read(
-      readAttempt.value.owner,
-      NiceEvalRecordAttachments.assertions,
-    );
+    const assertions = yield* input.readAssertions(readAttempt.value);
     if (assertions.state !== "available") {
       const problem = attachmentProblem(assertions);
       return gapSlot(input.target, {
@@ -581,6 +688,13 @@ function planTargetSlot(input: {
         ],
       });
     }
+    if (input.target.evaluationKind === "score") {
+      const score = foldRecordedAttemptScore({ outcome: readAttempt.value.document.outcome, assertions: assertions.value });
+      if (Result.isFailure(score) || score.success.state !== "complete") return gapSlot(input.target, {
+        reason: "score-incomplete", scope: "slot", issues: [], sourceBarrier, candidate,
+        comparisons: [comparison("niceeval.assertions", "assertion-verdict", "available", "ineligible", "score-incomplete")],
+      });
+    }
     if (verdict !== "passed" && verdict !== "failed") {
       return gapSlot(input.target, {
         reason: "verdict-ineligible",
@@ -591,17 +705,7 @@ function planTargetSlot(input: {
         comparisons: [verdictComparison(verdict, "ineligible")],
       });
     }
-    if (!ordinaryIdentity && input.target.evaluationKind === "score") {
-      const score = foldRecordedAttemptScore({ outcome: readAttempt.value.document.outcome, assertions: assertions.value });
-      if (Result.isFailure(score) || score.success.state !== "complete") return gapSlot(input.target, {
-        reason: "verdict-ineligible", scope: "slot", issues: [], sourceBarrier, candidate,
-        comparisons: [verdictComparison(verdict, "ineligible")],
-      });
-    }
-    const activities = yield* input.reader.read(
-      readAttempt.value.owner,
-      NiceEvalRecordAttachments.runnerActivities.attempt,
-    );
+    const activities = yield* input.readActivities(readAttempt.value);
     if (activities.state !== "available") {
       const problem = attachmentProblem(activities);
       return gapSlot(input.target, {
@@ -688,26 +792,21 @@ function planTargetSlot(input: {
   });
 }
 
-function latestSourceRun(
-  runs: readonly ReadableRun[],
-  target: TargetSlot,
-): ReadableRun | undefined {
+function latestSourceRun<Ref>(
+  runs: readonly CurrentAssessmentRun<Ref>[],
+  target: CurrentTargetSlot,
+): CurrentAssessmentRun<Ref> | undefined {
   const candidates = runs.filter((run) =>
     run.document.experimentId === target.experimentId
-    && run.document.expectedSlots.some((slot) => slot.evalId === target.evalId)
+    // Execution refreshes may see their own already-created pending Run.
+    // Logical current targets have no Run identity and keep every barrier.
+    && (!("runId" in target) || run.document.runId !== target.runId)
+    && run.document.expectedSlots.some((slot) => slot.evalId === target.evalId && slot.attemptOrdinal === target.attempt)
   );
   return candidates.sort((left, right) => {
-    const a = left.createdRevision, b = right.createdRevision;
-    if (a !== undefined && b !== undefined) return a - b || compareCanonicalIdentity(left.document.runId, right.document.runId);
-    return compareReadableRuns(left, right);
+    const a = left.createdRevision ?? 0, b = right.createdRevision ?? 0;
+    return a - b || compareCanonicalIdentity(left.document.runId, right.document.runId);
   }).at(-1);
-}
-
-function compareReadableRuns(left: ReadableRun, right: ReadableRun): number {
-  if (left.document.startedAt !== right.document.startedAt) {
-    return left.document.startedAt < right.document.startedAt ? -1 : 1;
-  }
-  return compareCanonicalIdentity(left.document.runId, right.document.runId);
 }
 
 interface CandidateResolution {
@@ -764,24 +863,24 @@ function sameSlotIdentity(
 }
 
 /** Slot IDs are exact references within a Run, not cross-Run equivalence keys. */
-function targetMatchesLogicalIdentity(target: TargetSlot, slot: RecordSlotIdentity): boolean {
+function targetMatchesLogicalIdentity(target: CurrentTargetSlot, slot: RecordSlotIdentity): boolean {
   return target.evalId === slot.evalId
     && target.attempt === slot.attemptOrdinal
     && target.executionIdentityDigest === slot.executionIdentityDigest;
 }
 
 function targetMatchesSlotIdentity(
-  target: TargetSlot,
+  target: CurrentTargetSlot,
   slot: RecordSlotIdentity,
 ): boolean {
-  return target.slotId === slot.slotId
+  return (!("slotId" in target) || target.slotId === slot.slotId)
     && target.evalId === slot.evalId
     && target.attempt === slot.attemptOrdinal
     && target.executionIdentityDigest === slot.executionIdentityDigest;
 }
 
 function reusableSlotIdentityMatches(input: {
-  readonly target: TargetSlot;
+  readonly target: CurrentTargetSlot;
   readonly sourceExpected: RecordSlotIdentity;
   readonly originExpected: RecordSlotIdentity;
 }): boolean {
@@ -924,17 +1023,17 @@ function comparison(
   return Object.freeze({ attachment, recordedClaim, sourceState, result, reason });
 }
 
-function gapSlot(
-  target: TargetSlot,
+function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource = ExecutionReusePlanSource>(
+  target: Target,
   input: {
     readonly reason: ExecutionGapReason;
     readonly scope: ExecutionGapScope;
     readonly issues: readonly RecordIssue[];
     readonly comparisons: readonly ExecutionComparison[];
     readonly sourceBarrier?: ExecutionSourceBarrier;
-    readonly candidate?: ExecutionReusePlanSource;
+    readonly candidate?: Source;
   },
-): ExecutionGapSlot {
+): Extract<CurrentSlotAssessment<Target, Source>, { readonly state: "gap" }> {
   return Object.freeze({
     ...target,
     state: "gap" as const,

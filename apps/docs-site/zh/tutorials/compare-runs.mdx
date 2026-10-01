@@ -1,32 +1,59 @@
 ---
-title: "比较多个固定 Run"
+title: "比较两次运行：基线和候选谁更好"
 sidebarTitle: "比较 Run"
-description: "用 `runs.compare` operation 比较明确 Run 的已发布事实，并在浏览器中审阅相同的结果。"
+description: "固定两次运行的 Run ID，在浏览器里并排审阅，或用 runs.compare 让脚本和 CI 得到逐题配对的比较结果。"
 ---
 
-比较模型、提示词或 Agent 版本时，先保留每次运行 receipt 的 `runIds`。不要用最新结果代替明确的比较边界。
+你在周一跑了一次基线，周三改了 prompt 又跑了一次，想知道这次改动到底让哪些题变好、哪些题变差。
 
-## 先发现比较请求
+比较之前先固定两边各是哪一次运行。“最新的结果”会随着下一次运行而变化，拿它当比较对象，今天和明天得出的结论可能不一样。每次 `niceeval exp` 结束时，终端的 `NEXT` 面板都会列出这次新建的 Run ID，把基线和候选的 ID 记下来。
 
-```sh
-niceeval query discover > catalog.json
-```
-
-从 `runs.compare` 的 schema 创建 request。它只支持 `side-by-side`、`exact` 和 `paired` 三种模式。request 明确写出两边的 Run，结果会保留各自的分母、unmatched、excluded、missing、issues 和 Evidence。
+## 在浏览器里并排看
 
 ```sh
-niceeval query explain --request compare.json
-niceeval query run --request compare.json > compare-result.json
+pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
 ```
 
-`exact` 会验证两侧有相同 member domain 与 member set。`paired` 只使用第一方 pairing key。无法满足模式要求时，结果返回具名 correction 或问题，而不是把缺口填成零。
+View 会同时打开两个 Run，你可以逐题对照通过与否、分数、耗时和成本，再点进具体某一次运行看对话和工具调用。
 
-## 用 View 审阅
+## 让脚本和 CI 读比较结果
+
+自动化流程需要结构化的比较结果时，用 `runs.compare` 请求：
 
 ```sh
-niceeval view --run <baseline-run-id> --run <candidate-run-id>
+pnpm --silent exec niceeval query run --request - <<'JSON'
+{
+  "protocol": "niceeval.query/v1",
+  "operation": {
+    "kind": "runs.compare",
+    "mode": "paired",
+    "leftRunIds": ["<baseline-run-id>"],
+    "rightRunIds": ["<candidate-run-id>"]
+  }
+}
+JSON
 ```
 
-View 读取同样已发布的事实，帮助人审阅 Overview 与 Attempt detail。它不引入另一套统计、比较或页面组装逻辑。
+`mode` 决定怎样对齐两边：
 
-当结果来自另一台兼容 runtime 时，复制 canonical `.niceeval/record.sqlite`。随后为 `show` 或 `query` 指定这份副本的 `--record` 输入；`view` 只读取当前项目的 Record。
+| `mode` | 用在什么时候 |
+|---|---|
+| `side-by-side` | 两边各自给出结果，不算差值。两次运行的题目集合不同、只想并排看时用。 |
+| `exact` | 要求两边的题目集合完全相同，不同就返回具名问题。发布门禁这类必须同口径比较的场景用。 |
+| `paired` | 按同一道题配对，逐题比较。最常用于“这次改动让哪些题变了”。 |
+
+比较结果会如实给出两边各自的分母，以及没配上对的题、被排除的题和缺失的结果。缺失不会被当成零分或失败。条件不满足时，你会得到一个说明原因的具名错误，而不是一个看起来正常的数字。
+
+先用 `query explain` 检查请求是否合法，再正式运行：
+
+```sh
+pnpm --silent exec niceeval query explain --request compare.json
+```
+
+## 比较结果靠得住的前提
+
+- 两边跑的是同一批评估用例，每条跑的次数也相近。
+- 两边只差你想比较的那一个变量，写法见[编写实验](/zh/tutorials/write-experiment#比较两个模型)。
+- 看通过率的同时看成本和耗时。通过率高一点、成本却翻倍，不一定值得换。
+
+单次运行结果的读法见[查看运行结果](/zh/tutorials/viewing-results)。

@@ -1,0 +1,43 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_77F5PRE3YTPSA078": {
+      "memory/view-refresh-commit-races-with-navigation.md": {
+        "red": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/red.json",
+          "digest": "sha256:d64aae1e938f119442c6aaa7b58e87365d64b45526e0d27341a3bd44d9cf4e10"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/green.json",
+          "digest": "sha256:8d1e5662dcd75a2d39116715d57d09a54b40de4dbe0017b2232cb5241fdaf192"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/certificate.json",
+          "digest": "sha256:35c0dc2d2ff5c3f2cbd1654a610ea3458f5779a6f2833874bf6e5b81ad8f22e1"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-commit-races-with-navigation.md/nered_SF50AX0SXYPK151S-netake_GNGEXFKZ0FQ46Y0H/inventory.json",
+          "digest": "sha256:44c03a528f8af542845cf49d10e20f321de527ab6448447db145e4dcc31f666d"
+        }
+      },
+      "memory/view-refresh-candidate-replaced-by-polling.md": {
+        "red": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/red.json",
+          "digest": "sha256:cedf56b6f2cd06f16300bd08a01d4eae466f6c6016f6bcf2c80d56a8652d7442"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/green.json",
+          "digest": "sha256:9f6ff22335d4d887b943fd62625955ecf9de6bd63fb5e2f3a29b51b1088d22a3"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/certificate.json",
+          "digest": "sha256:df4b58969d22502a3f8786b8edd85894a7a7e81579e90eee026f1e989014e21c"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts.case-evidence/necase_77F5PRE3YTPSA078/memory_view-refresh-candidate-replaced-by-polling.md/nered_HJ67P7C0AH52MVQA-netake_BJJTAA44R0CE4XMX/inventory.json",
+          "digest": "sha256:a34e05cd04d1cac58b4d5ea4f310fff943e9e1ebc4cb9526e330b8b6f81e1045"
+        }
+      }
+    }
+  }
+}

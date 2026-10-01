@@ -75,6 +75,7 @@ export interface ResultsPageModel {
   readonly overview: ClosedOverview;
   readonly selectedExperiments: readonly string[];
   readonly selectionTitle: string;
+  readonly costSummary?: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["costSummary"];
 }
 
 export function closeOverview(document: InspectionSuccessDocumentFor<"overview.get">): ClosedOverview {

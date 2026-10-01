@@ -60,5 +60,5 @@ Inspection 在一个 PublicationCutoff 上读取闭合结果，大内容仍通�
 
 - 不让 fake Agent 实现 session、retry、family decoder、Host 或 planner。
 - 不断言私有 DTO、文件布局或完整字符串 snapshot。
-- 不恢复 Results 1–15 的容器、图模型、防伪或历史 fixture。
+- 不恢复已退役的结果容器、图模型、防伪或历史 fixture。
 - 删除任一未来测试时，必须说明会放走哪条当前契约；旧实现行为不是保留理由。

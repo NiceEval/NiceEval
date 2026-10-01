@@ -2,14 +2,25 @@
 
 import { only, type ProcessHandle } from "@niceeval/testkit";
 import { expect, test } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   expectLoopbackReadyUrl,
   insightCaseArtifacts,
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
+// @use-case docs/feature/insight/use-case/insight-review-run-adoption.md
+// @regression memory/insight-aggregate-hides-partial-state.md
+// @regression memory/inspection-complete-failed-scores.md
+// @regression memory/report-header-experiment-selector-regression.md
+// @regression memory/report-match-details-obscure-score-and-collection.md
+// @regression memory/report-result-cell-exposes-float-noise-and-unlabeled-coverage.md
+// @regression memory/view-hard-refresh-duplicates-attempt-overlay.md
+// @regression memory/view-renderer-flattens-debug-evidence.md
+// @regression memory/view-run-selection-is-ignored.md
 
-test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff [necase_DCFSBPFARWB0QD6D]", async ({ page }, testInfo) => {
+test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -29,6 +40,81 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
     "view-snapshot-browser",
     { artifacts: insightCaseArtifacts() },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const scoreRun = await niceeval.run(["exp", "verdict-scores", "--rerun", "all", "--json"]);
+      expect(scoreRun.exitCode, scoreRun.diagnostic()).toBe(1);
+      expect(scoreRun.expReceipt(), scoreRun.diagnostic()).toMatchObject({ completion: "completed" });
+      const scoreRunId = only(scoreRun.expReceipt().createdRunIds, () => true, scoreRun.diagnostic());
+      const scoreEvents = scoreRun.expEvalEvents();
+      const scoreLocators = new Map<string, string>();
+      for (const [evalId, verdict] of [
+        ["verdict-scores/failed", "failed"],
+        ["verdict-scores/zero", "failed"],
+        ["verdict-scores/partial", "errored"],
+        ["verdict-scores/unavailable", "errored"],
+      ] as const) {
+        const event = only(scoreEvents, (item) => item.evalId === evalId, scoreRun.diagnostic());
+        expect(event).toMatchObject({ verdict, attempts: 1 });
+        scoreLocators.set(evalId, withAt(event.locator));
+      }
+
+      const scoreRequestPath = join(projectRoot, "verdict-scores.request.json");
+      await writeFile(scoreRequestPath, JSON.stringify({
+        protocol: "niceeval.query/v1",
+        operation: { kind: "run.summary", runId: scoreRunId },
+      }));
+      const scoreSummary = await niceeval.run(["query", "run", "--request", scoreRequestPath]);
+      expect(scoreSummary.exitCode, scoreSummary.diagnostic()).toBe(0);
+      const scoreMembers = scoreSummary.querySuccess("run.summary").summary.members;
+      // These same public facts must survive the Overview aggregation and View.
+      for (const [evalId, earned, possible] of [
+        ["verdict-scores/failed", 61, 100],
+        ["verdict-scores/zero", 0, 200],
+      ] as const) {
+        expect(only(scoreMembers, (member) => member.evalId === evalId, scoreSummary.diagnostic()))
+          .toMatchObject({ verdict: "failed", score: { state: "complete", earned, possible } });
+      }
+
+      await writeFile(scoreRequestPath, JSON.stringify({
+        protocol: "niceeval.query/v1",
+        operation: { kind: "overview.get", runIds: [scoreRunId] },
+      }));
+      const scoreOverview = await niceeval.run(["query", "run", "--request", scoreRequestPath]);
+      expect(scoreOverview.exitCode, scoreOverview.diagnostic()).toBe(0);
+      const scoreOverviewDocument = scoreOverview.querySuccess("overview.get");
+      for (const [evalId, earned, possible] of [
+        ["verdict-scores/failed", 61, 100],
+        ["verdict-scores/zero", 0, 200],
+      ] as const) {
+        const cell = only(scoreOverviewDocument.overview.cells, (item) => item.evalId === evalId, scoreOverview.diagnostic());
+        expect(cell.verdict.tally).toEqual({ passed: 0, failed: 1, errored: 0, skipped: 0 });
+        expect(cell.score).toMatchObject({
+          state: "available", value: earned, samples: 1, total: 1, basis: "slot",
+          bounds: { min: 0, max: possible },
+        });
+        expect(only(cell.members, () => true, scoreOverview.diagnostic()).publication).toMatchObject({
+          state: "published",
+          attemptLocator: scoreLocators.get(evalId),
+          score: { state: "available", value: earned, samples: 1, total: 1, bounds: { min: 0, max: possible } },
+        });
+      }
+      for (const [evalId, memberState, memberValue] of [
+        ["verdict-scores/partial", "partial", 9],
+        ["verdict-scores/unavailable", "unavailable", null],
+      ] as const) {
+        const cell = only(scoreOverviewDocument.overview.cells, (item) => item.evalId === evalId, scoreOverview.diagnostic());
+        expect(cell.score).toMatchObject({ state: "unavailable", value: null, samples: 0, total: 1 });
+        expect(only(cell.members, () => true, scoreOverview.diagnostic()).publication).toMatchObject({
+          state: "published", score: { state: memberState, value: memberValue, samples: 0, total: 1 },
+        });
+      }
+      const completeSubtotal = {
+        state: "partial", value: 61, samples: 2, total: 4, basis: "eval",
+        bounds: { min: 0, max: 300 },
+      };
+      expect(only(scoreOverviewDocument.overview.experiments, (item) => item.experimentId === "verdict-scores", scoreOverview.diagnostic()).score)
+        .toMatchObject(completeSubtotal);
+      expect(scoreOverviewDocument.overview.totals.score).toMatchObject(completeSubtotal);
+
       const inspection = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(inspection.exitCode, inspection.diagnostic()).toBe(0);
       expect(inspection.expReceipt(), inspection.diagnostic()).toMatchObject({ completion: "completed" });
@@ -141,6 +227,11 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           "singleton/partial-usage",
         ]);
         await experimentSelector.selectOption("/group/singleton/partial-usage");
+        const experimentCosts = page.getByRole("region", { name: "Experiment known subtotal", exact: true });
+        await expect(experimentCosts).toBeVisible();
+        await expect(experimentCosts.getByText("0.000001 USD · reported + estimated", { exact: true })).toBeVisible();
+        await expect(experimentCosts.getByText("Incomplete", { exact: true })).toBeVisible();
+        await expect(experimentCosts.getByText("Missing sources: Application cost", { exact: true })).toBeVisible();
         const partialUsageSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^partial-usage /u,
         });
@@ -170,12 +261,92 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage")).toHaveText("partial");
         await partialUsageAttempt.getByRole("link", { name: /^@/u }).click();
         const externalUsage = page.getByRole("region", { name: "External call usage", exact: true });
+        await expect(externalUsage.getByRole("heading", { name: "Attempt known subtotal", exact: true })).toBeVisible();
+        await expect(externalUsage.getByText("Incomplete", { exact: true })).toBeVisible();
+        await expect(externalUsage.getByText("Missing sources: Application cost", { exact: true })).toBeVisible();
+        await expect(externalUsage.getByText("0.000001 USD · reported + estimated", { exact: true })).toBeVisible();
+        await externalUsage.getByText("External call usage", { exact: true }).click();
         await expect(externalUsage).toContainText("1/2 calls fully costed");
-        await externalUsage.getByText(/^Recorded calls/u).click();
+        const configuredModels = externalUsage.getByRole("table", { name: "Configured model slots", exact: true });
+        await expect(configuredModels.getByRole("row")).toHaveCount(4);
+        for (const [slot, model, calls] of [
+          ["primary", "typesafe-ai/requested", "1"],
+          ["secondary", "openai/gpt-6-luna", "1"],
+          ["unused", "typesafe-ai/unused", "0 (no recorded calls)"],
+        ] as const) {
+          const row = configuredModels.getByRole("row").filter({
+            has: page.getByRole("rowheader", { name: slot, exact: true }),
+          });
+          await expect(row.getByRole("cell")).toHaveText([model, "—", calls]);
+        }
+        const actualModels = externalUsage.getByRole("table", { name: "Actual model usage", exact: true });
+        await expect(actualModels.getByRole("row")).toHaveCount(3);
+        await expect(actualModels.getByRole("rowheader", { name: "unused", exact: true })).toHaveCount(0);
+        for (const [slot, provider, model, cost] of [
+          ["primary", "typesafe-ai", "typesafe-ai/jev", "0 USD · reported · complete"],
+          ["secondary", "openai", "openai/gpt-6-luna", "0.000001 USD · estimated · partial · known subtotal"],
+        ] as const) {
+          const row = actualModels.getByRole("row").filter({
+            has: page.getByRole("rowheader", { name: slot, exact: true }),
+          });
+          await expect(row.getByRole("cell").nth(0)).toHaveText(provider);
+          await expect(row.getByRole("cell").nth(1)).toHaveText(model);
+          await expect(row.getByRole("cell").nth(2)).toHaveText("1");
+          await expect(row.getByRole("cell").nth(4)).toContainText(cost);
+        }
+        await expect(externalUsage.getByRole("heading", { name: "Judge usage", exact: true })).toBeVisible();
+        await expect(externalUsage.getByText("No Judge calls", { exact: true })).toBeVisible();
+        await externalUsage.getByText(/^Recorded calls \(/u).click();
         await expect(externalUsage).toContainText("vercel-ai-gateway.response");
         await externalUsage.getByText("Sealed pricing evidence", { exact: true }).click();
         await expect(externalUsage).toContainText("tokens-unknown");
         await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+        await experimentSelector.selectOption("/group/singleton/verdict-scores");
+        const scoreExperiment = page.locator("summary.niceeval-table-hierarchy-summary").filter({
+          hasText: /^verdict-scores \(\d+\/4\)/u,
+        });
+        const scoreTotal = scoreExperiment.locator(".niceeval-table-hierarchy-cell").last();
+        await expect(scoreTotal.locator(".niceeval-value")).toHaveText("61 points");
+        await expect(scoreTotal.locator(".niceeval-cell-detail")).toHaveText("Result coverage 2/4");
+        await scoreExperiment.click();
+        const scoreDetails = scoreExperiment.locator("xpath=..");
+        for (const [name, expectedScore, expectedDetailScore] of [
+          ["failed", "61 points", "61 pts"],
+          ["zero", "0 points", "0 pts"],
+        ] as const) {
+          const evalSummary = scoreDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+            hasText: new RegExp(`^verdict-scores/${name}\\b`, "u"),
+          });
+          await expect(evalSummary.locator(".niceeval-table-hierarchy-cell").last().locator(".niceeval-value"))
+            .toHaveText(expectedScore);
+          await expect(evalSummary).toContainText("failed");
+          await evalSummary.click();
+          const attemptRow = evalSummary.locator("xpath=..").locator(".niceeval-table-hierarchy-row");
+          await attemptRow.getByRole("link", { name: scoreLocators.get(`verdict-scores/${name}`)!, exact: true }).click();
+          const scoreDialog = page.getByRole("dialog");
+          await expect(scoreDialog.locator(".niceeval-verdict-pill").first()).toHaveText("failed");
+          const scoreKpi = scoreDialog.locator(".niceeval-kpi").filter({
+            has: page.getByText("Score", { exact: true }),
+          });
+          await expect(scoreKpi.locator(".niceeval-kpi-value")).toHaveText(expectedDetailScore);
+          await scoreDialog.getByRole("button", { name: "Close", exact: true }).click();
+        }
+        for (const name of ["partial", "unavailable"] as const) {
+          const evalSummary = scoreDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
+            hasText: new RegExp(`^verdict-scores/${name}\\b`, "u"),
+          });
+          await expect(evalSummary.locator(".niceeval-table-hierarchy-cell").last()).toContainText("unavailable");
+          await evalSummary.click();
+          await evalSummary.locator("xpath=..").getByRole("link", {
+            name: scoreLocators.get(`verdict-scores/${name}`)!, exact: true,
+          }).click();
+          const scoreDialog = page.getByRole("dialog");
+          await expect(scoreDialog.locator(".niceeval-verdict-pill").first()).toHaveText("errored");
+          await expect(scoreDialog.locator(".niceeval-kpi").filter({
+            has: page.getByText("Score", { exact: true }),
+          })).toHaveCount(0);
+          await scoreDialog.getByRole("button", { name: "Close", exact: true }).click();
+        }
         await experimentSelector.selectOption("/group/named/classic");
         await expect(page).toHaveURL(/#\/group\/named\/classic$/u);
 

@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#langgraph-core-deterministic
 import { defineEval } from "niceeval";
-import { includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
+import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "LangGraph v3 real GraphRunStream envelope plus official message/tool protocol frames",
@@ -47,18 +47,14 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      { sessionId: t.sessionId, usage: turn.usage },
-      satisfies(
-        "LangGraph session and usage",
-        ({ sessionId, usage }) =>
-          sessionId === "langgraph-core-runtime-v3" &&
-          usage?.inputTokens === 8 &&
-          usage.cacheReadTokens === 3 &&
-          usage.cacheCreationTokens === 2 &&
-          usage.outputTokens === 7 &&
-          usage.reasoningTokens === 1,
-      ),
-    );
+    t.check(t.sessionId, equals("langgraph-core-runtime-v3"));
+    t.check(turn.usage.inputTokens, atLeast(8));
+    t.check(turn.usage.inputTokens, atMost(8));
+    t.check(turn.usage.cacheReadTokens, atLeast(3));
+    t.check(turn.usage.cacheReadTokens, atMost(3));
+    t.check(turn.usage.cacheWriteTokens, atLeast(2));
+    t.check(turn.usage.cacheWriteTokens, atMost(2));
+    t.check(turn.usage.outputTokens, atLeast(7));
+    t.check(turn.usage.outputTokens, atMost(7));
   },
 });

@@ -1,0 +1,132 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "inspection",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-toQExw/repos/inspection/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.2_@types+node@24.13.3_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.12_yaml@2.9.1_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "7ad457dcd4867bf3fe3c38715d7a2d13507bb05b",
+  "files": [
+    "e2e/inspection/test/artifacts-limits.test.ts",
+    "e2e/inspection/test/artifacts-portable.test.ts",
+    "e2e/inspection/test/execution-trace-portable.test.ts",
+    "e2e/inspection/test/file-attachments.test.ts",
+    "e2e/inspection/test/inspection-query.test.ts",
+    "e2e/inspection/test/show-cli.test.ts",
+    "e2e/inspection/test/show-experiment-spacing.test.ts",
+    "e2e/inspection/test/source-diagnostics.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/artifacts-limits.test.ts",
+      "titlePath": [
+        "附件拒绝非法输入和超限时仍保存接管的快照并形成 errored Attempt"
+      ],
+      "caseId": "neref_dcfe562250ac93658b61522d618fa086"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/artifacts-portable.test.ts",
+      "titlePath": [
+        "附件随 Record 搬走后仍能按历史与 carry locator 分块读取"
+      ],
+      "caseId": "neref_813218fdea3e6d07ba9f6b4eb30954b6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/execution-trace-portable.test.ts",
+      "titlePath": [
+        "producer partial 轨迹在空事件、非空事件与分页完成后仍保留采集原因"
+      ],
+      "caseId": "neref_3f72bc690bb378720f29dbb3dc36e6c6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/execution-trace-portable.test.ts",
+      "titlePath": [
+        "通用轨迹随 Record 搬迁后仍可精确展开摘要之外的事件与请求证据"
+      ],
+      "caseId": "neref_35fb475cc4a8363cfae0e55fe466fd0a"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/file-attachments.test.ts",
+      "titlePath": [
+        "280 MiB 文件归档使用有界内存且源改写后保留原始摘要及字节"
+      ],
+      "caseId": "neref_137ea53179183be4af815a4a66501ba3"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/file-attachments.test.ts",
+      "titlePath": [
+        "Attempt 超时取消流后 cleanup 独立归档诊断材料"
+      ],
+      "caseId": "neref_63702d5316893a1e6eae7fd99de4a7aa"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/file-attachments.test.ts",
+      "titlePath": [
+        "文件归档失败和取消后保留已接纳附件且 cleanup 仍可归档"
+      ],
+      "caseId": "neref_0a3f040ccad781474d26509997000fbf"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/inspection-query.test.ts",
+      "titlePath": [
+        "machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实"
+      ],
+      "caseId": "neref_bed902a18f5f371e36ec24256ebb6af7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/show-cli.test.ts",
+      "titlePath": [
+        "用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面"
+      ],
+      "caseId": "neref_781451e3a20edc5cb22335ed99e0894c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/show-experiment-spacing.test.ts",
+      "titlePath": [
+        "Show 把 Experiment 标题和自己的内容排在同一段"
+      ],
+      "caseId": "neref_e129cd9205e51476ba2bed44c988e4c4"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/source-diagnostics.test.ts",
+      "titlePath": [
+        "Record 读取失败保留具体原因且不凭空归因旧版本"
+      ],
+      "caseId": "neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "digest": "sha256:a1bebaff86f1a0d150dc4b52cad5b5f2c3a966653d297585c5551db64da587a0",
+  "exit": 0,
+  "signal": null
+}

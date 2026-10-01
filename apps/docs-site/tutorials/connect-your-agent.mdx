@@ -81,21 +81,23 @@ export default defineExperiment({
 
 ```ts
 // evals/refund-policy.eval.ts
-import { defineEval } from "niceeval";
-import { closedQA, includes } from "niceeval/expect";
+import { defineEval, defineJudge } from "niceeval";
+import { includes } from "niceeval/expect";
+
+const refundPolicyQuality = defineJudge({
+  name: "refund-policy-quality",
+  rubric: "Assess whether the answer clearly explains the refund period based on the question.",
+});
 
 export default defineEval({
-  judge: true,
+  judge: refundPolicyQuality,
   description: "Refund-policy Q&A",
   async test(t) {
     const turn = await t.send("What is your refund policy?");
     turn.succeeded().label("Request succeeds");
     t.check(turn.message, includes("30")).label("Explains the refund window");
-    turn.check(
-      { input: turn.input, output: turn.message },
-      closedQA("Does the answer explain the refund window?").atLeast(0.7),
-    )
-      .gate()
+    t.judge({ question: turn.input, answer: turn.message }, refundPolicyQuality)
+      .gate(0.7)
       .label("Refund-policy quality");
   },
 });

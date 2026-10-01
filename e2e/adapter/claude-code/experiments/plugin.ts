@@ -1,7 +1,7 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
 import { claudeCodeProviderEnv } from "../provider.ts";
-import { sandbox } from "../sandbox.ts";
+import { pluginMarketplacePath, pluginSandbox } from "../plugin-sandbox.ts";
 
 const agent = claudeCodeAgent({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -10,20 +10,20 @@ const agent = claudeCodeAgent({
   plugins: [
     {
       marketplace: {
-        name: "claude-plugins-official",
-        source: "anthropics/claude-plugins-official",
+        name: "niceeval-e2e",
+        source: pluginMarketplacePath,
       },
-      name: "context7",
+      name: "e2e",
     },
   ],
 });
 
-// 独立实验：从 Anthropic 官方 marketplace 安装知名的 Context7 Plugin，并调用其远程 MCP。
+// 独立实验：从本地 marketplace 安装签入的 Plugin，并调用其 stdio MCP。
 export default defineExperiment({
-  description: "plugin:从 Anthropic 官方 marketplace 安装 Context7，并调用其远程 MCP server",
+  description: "plugin:从本地 marketplace 安装 Plugin，并调用其 stdio MCP server",
   agent,
   model: "gpt-6-luna",
-  sandbox,
+  sandbox: pluginSandbox,
   attempts: 1,
   evals: (e) => e.id === "plugin-mcp",
 });

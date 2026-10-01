@@ -8,8 +8,11 @@ import {
   insightE2E,
   waitForViewReady,
 } from "./support.ts";
+// @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
+// @regression memory/view-refresh-candidate-replaced-by-polling.md
+// @regression memory/view-refresh-commit-races-with-navigation.md
 
-test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt [necase_77F5PRE3YTPSA078]", async ({ page }) => {
+test("project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt", async ({ page }) => {
   await insightE2E.case(
     "view-operational-refresh",
     { artifacts: insightCaseArtifacts() },

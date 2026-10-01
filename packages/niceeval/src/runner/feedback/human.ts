@@ -729,7 +729,7 @@ function buildFailuresPanelRows(
   if (omitted > 0) {
     rows.push({
       kind: "line",
-      text: `+${omitted} more entries — niceeval view`,
+      text: `+${omitted} more entries — see NEXT`,
     });
   }
   return { rows, meta: `${failures.length} total · ${groups.length} entries` };
@@ -790,7 +790,7 @@ function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: numbe
   } else {
     rows.push(...labelledWrappedRows("error", boundedHumanError(failure.reason), contentWidth));
   }
-  rows.push(...labelledWrappedRows("details", "niceeval view", contentWidth));
+  rows.push(...labelledWrappedRows("details", `niceeval show ${failure.locator}`, contentWidth));
   return rows;
 }
 
@@ -867,16 +867,21 @@ function buildReceiptLines(
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
+  const contentWidth = panelContentWidth(panel.width, panel.mode);
   const published = new Set(event.receipt.createdRunIds);
   const emitted = new Set<string>();
+  const appendCommands = (runId: string): void => {
+    rows.push(...labelledWrappedRows("show", `niceeval show --run ${runId}`, contentWidth));
+    rows.push(...labelledWrappedRows("view", `niceeval view --run ${runId}`, contentWidth));
+  };
   for (const [experimentId, runId] of state.runIdsByExperiment) {
     if (!published.has(runId)) continue;
     rows.push({ kind: "line", text: experimentId });
-    rows.push(...labelledWrappedRows("details", `niceeval view --run ${runId}`, panelContentWidth(panel.width, panel.mode)));
+    appendCommands(runId);
     emitted.add(runId);
   }
   for (const runId of event.receipt.createdRunIds) {
-    if (!emitted.has(runId)) rows.push({ kind: "line", text: `details: niceeval view --run ${runId}` });
+    if (!emitted.has(runId)) appendCommands(runId);
   }
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No Runs were created for this invocation." });

@@ -1,31 +1,46 @@
 ---
 title: "Record"
 sidebarTitle: "Record"
-description: "了解 canonical SQLite Record 的写入、携带与读取边界。"
+description: "了解项目结果文件 .niceeval/record.sqlite 保存什么、怎样复制给别人，以及读取时会校验什么。"
 ---
 
-Record 是项目唯一的持久事实集。canonical SQLite 文件位于 `.niceeval/record.sqlite`。
+你想把一次运行的结果交给同事复核，或者归档一份基线留着以后对比。NiceEval 的所有运行结果都在一个文件里：项目里的 `.niceeval/record.sqlite`，这就是 Record。
 
-Run create、运行中的聚合、已发布 Attempt、Attachment、Content、协调状态和 Invocation Session 都是同一份 ProjectDatabase 的 rows。
+## Record 里有什么
 
-Run 创建后立即可发现。Attempt 完成原子发布后，就能在固定 `PublicationCutoff` 中被读取；Run 不必先收口。
+Run、运行中的汇总、已发布的 Attempt，以及它们的附件和内容，都保存在这个文件里。缓存、凭据和用户级服务状态不在里面。
 
-Inspection、`query`、`show` 和 `view` 都遵守这条边界。发布后的 Attempt closure 不可修改。缓存、凭据和 OS-user Service state 不属于 Record。
+Run 一创建就能被查到。Attempt 跑完并发布后，就能被读取，不必等所在的 Run 结束。已发布的 Attempt 不会再被修改。`query`、`show` 和 `view` 都只读已发布的结果。
 
-## 携带 Record
+## 把结果交给别人
+
+运行完整结束后，直接复制这个文件：
 
 ```sh
 cp .niceeval/record.sqlite ./baseline.record.sqlite
-niceeval query explain --record ./baseline.record.sqlite --request request.json
-niceeval show --record ./baseline.record.sqlite
 ```
 
-canonical 文件本身即可复制或归档。不要复制 WAL、checkpoint 或 staging 文件，也不要在复制后修改 SQLite 内容。
+只复制 `record.sqlite` 本身。不要复制旁边的 WAL、checkpoint 或 staging 文件，复制后也不要修改里面的 SQLite 内容。
 
-`query` 与 `show` 把 `--record` 指定的文件当 hostile input。只有精确 current schema、SQLite integrity 和领域不变量全部成立时才读取；命令不会迁移、修补或部分读取。Record 仍可能包含敏感业务内容；分享者负责权限、脱敏和保留策略。
+拿到别人的文件后，用 `--record` 指向它：
 
-## 读取边界
+```sh
+pnpm exec niceeval show --record ./baseline.record.sqlite
+pnpm --silent exec niceeval query explain --record ./baseline.record.sqlite --request request.json
+```
 
-Record 不负责统计、比较或页面。固定 Inspection operation 在一个 `PublicationCutoff` 读取已发布事实，再把闭合结果交给 `query`、`show` 或第一方 `view`。读取路径不能把数据库、reader、Content handle 或 SQL 能力交给外部代码。
+`view` 只读当前项目的 `.niceeval/record.sqlite`，不接受 `--record`。
 
-查看 [CLI](/zh/reference/cli) 选择读取方式。
+## 读取外部文件前会先校验
+
+`query` 和 `show` 把 `--record` 指定的文件当作不可信输入。只有格式版本完全匹配、SQLite 完整性检查通过、内部数据一致时，命令才会读取。校验不通过时，命令直接报错，不会迁移、修补或只读一部分。
+
+文件被拒绝时，先确认它是运行结束后复制的完整单文件，复制期间没有别的进程在写。具体错误和下一步见[排查失败的评估结果](/zh/troubleshooting/debugging#无法打开结果)。
+
+Record 可能包含敏感的业务内容，例如对话原文和文件改动。分享前由你负责权限、脱敏和保留期限。
+
+## Record 不负责什么
+
+Record 只保存结果，不做统计、比较或页面。NiceEval 内置的固定查询读取已发布的结果，再把完整的查询结果交给 `query`、`show` 或 `view`。外部代码拿不到数据库连接、读取对象或 SQL 能力。
+
+选择哪种查看方式见 [CLI](/zh/reference/cli)。

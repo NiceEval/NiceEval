@@ -49,8 +49,24 @@ function eventKey(event: StreamEvent): string | undefined {
 
 function parseFrames(frames: readonly unknown[], reported: Set<string>): { events: StreamEvent[]; usage: Usage; parseSuccess: boolean } {
   const parsed = shared.parseClaudeCode(frames.map((frame) => JSON.stringify(frame)).join("\n"));
+  // The terminal result owns aggregate usage for this send. Some native
+  // versions omit usage from assistant messages; adding both would double count.
+  const terminal = frames.map(record).findLast((frame) => frame?.type === "result");
+  const resultUsage = record(terminal?.usage);
+  const token = (name: string): number | undefined => {
+    const value = resultUsage?.[name];
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  };
+  const usage: Usage = resultUsage === undefined ? parsed.usage : {
+    inputTokens: token("input_tokens"),
+    outputTokens: token("output_tokens"),
+    cacheReadTokens: token("cache_read_input_tokens"),
+    cacheCreationTokens: token("cache_creation_input_tokens"),
+    requests: typeof terminal?.num_turns === "number" && Number.isSafeInteger(terminal.num_turns) && terminal.num_turns >= 0
+      ? terminal.num_turns : parsed.usage.requests,
+  };
   return {
-    usage: parsed.usage,
+    usage,
     parseSuccess: parsed.parseSuccess,
     events: parsed.events.filter((event) => {
       const key = eventKey(event);
@@ -150,7 +166,17 @@ async function createState(
     cwd: ctx.sandbox.workdir,
     env: { ...env, CLAUDE_CODE_ENTRYPOINT: "sdk-ts", CLAUDE_AGENT_SDK_VERSION: "0.3.226" },
   });
-  return { driver, cursor: 0, reported: new Set(), reportedToolProgress: new Set() };
+  const requestId = "niceeval-initialize";
+  await driver.write({ type: "control_request", request_id: requestId, request: { subtype: "initialize" } });
+  const initialized = await driver.waitFor(0, (value) => {
+    const frame = record(value);
+    return frame?.type === "control_response" && record(frame.response)?.request_id === requestId;
+  }, ctx.signal);
+  const response = record(record(initialized.frame)?.response);
+  if (response?.subtype !== "success") {
+    throw new Error(`Claude Code initialization failed: ${String(response?.error ?? "invalid control response")}`);
+  }
+  return { driver, cursor: initialized.cursor, reported: new Set(), reportedToolProgress: new Set() };
 }
 
 function pendingFrom(frame: RecordValue, sessionId: string): Pending | undefined {

@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: first-single-turn
+title: 单轮：一问一答就断言
+createdAt: 2026-07-22T10:19:57+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # 单轮：一问一答就断言

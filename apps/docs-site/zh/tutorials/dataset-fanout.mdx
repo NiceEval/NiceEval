@@ -1,18 +1,20 @@
 ---
-title: "数据驱动测试（dataset fan-out）：用多份数据运行同一套评估用例"
+title: "数据驱动测试：一份测试集生成多条评估用例"
 sidebarTitle: "数据驱动测试"
-description: "从 .eval.ts 文件导出数组或 keyed record，将一套评估逻辑展开为多个 case。用 loadYaml 或 loadJson 读取外部测试集，并获得稳定 ID。"
+description: "几十条评估逻辑相同、只有输入不同时，从一个 .eval.ts 导出数组或对象，一套逻辑生成多条评估用例。也可以用 loadYaml 或 loadJson 读外部测试集，并给每条起稳定的 ID。"
 ---
 
 import { DatasetFanout } from '/snippets/diagram-dataset-fanout.jsx';
 
-数据驱动测试（dataset fan-out）适合大量结构相同、输入不同的测试。例如 SQL 生成、意图分类、检索问答和工具选择。
+你在评估一个 SQL 生成功能，手上有 80 个“问题 + 期望结果”的样例。每条的检查逻辑都一样：发问题、跑 SQL、比结果。给每条写一个文件，改一次检查逻辑就要改 80 处。
+
+数据驱动测试让你只写一份逻辑，用测试集生成多条评估用例。意图分类、检索问答、工具选择这类大量同构的测试都适合这样写。
 
 <DatasetFanout />
 
-## 工作原理
+## 从一个文件导出一组评估用例
 
-没有外部业务 ID 时，一个 `.eval.ts` 文件默认导出数组：
+把样例放进数组，用 `map` 给每一行生成一个 `defineEval`，再把整个数组作为默认导出。检查逻辑只写一次，改它时所有样例一起生效：
 
 ```ts
 import { defineEval } from "niceeval";
@@ -34,18 +36,18 @@ export default rows.map((row) =>
 );
 ```
 
-## 生成 ID
+## 确认每条评估用例的 ID
 
-如果文件是 `evals/sql.eval.ts`，生成的 ID 是：
+导出数组时，NiceEval 按位置给每条编号。如果文件是 `evals/sql.eval.ts`，生成的 ID 是：
 
 ```text
 sql/0000
 sql/0001
 ```
 
-序号零填充，便于稳定引用和过滤。
+序号补零到固定宽度，方便引用和按前缀筛选。注意数组顺序一变，同一个样例的 ID 也会跟着变。
 
-数据源已经带稳定 case、issue 或 benchmark ID 时，默认导出 keyed record：
+数据源已经带有稳定的 case、issue 或 benchmark ID 时，改为导出一个对象，用这些 ID 作 key：
 
 ```ts
 export default Object.fromEntries(
@@ -62,9 +64,13 @@ export default Object.fromEntries(
 );
 ```
 
-文件是 `evals/swelancer.eval.ts`、key 是 `15193` 时，ID 就是 `swelancer/15193`。key 必须是一个非空路径片段：不能是 `.` / `..`，不能含 `/`、`\\` 或控制字符。NiceEval 按 key 字典序发现，数据源返回顺序变化不会改变运行顺序。
+文件是 `evals/swelancer.eval.ts`、key 是 `15193` 时，ID 就是 `swelancer/15193`。key 必须是一个非空的路径片段：不能是 `.` 或 `..`，不能含 `/`、`\\` 或控制字符。NiceEval 按 key 的字典序排列，数据源返回的顺序变了，运行顺序和 ID 都不变。
 
-## 从 YAML / JSON 加载
+运行前可以用 `pnpm exec niceeval exp local sql --dry` 确认生成了哪些 ID、一共多少条。
+
+## 从 YAML 或 JSON 读取测试集
+
+样例多了以后，放进单独的数据文件更好维护。用 `loadYaml` 或 `loadJson` 读取，并传入一个校验函数：
 
 ```ts
 import { loadYaml } from "niceeval/loaders";
@@ -84,32 +90,36 @@ cases:
     sql: SELECT COUNT(*) FROM users;
 ```
 
-`loadYaml` / `loadJson` 必须接 decoder。未验证的动态值只出现在 decoder 入口。验证通过后，返回值就是可以直接使用的强类型数据。
+`loadYaml` 和 `loadJson` 必须传入校验函数（decoder）。文件内容只在校验函数里以未知类型出现；校验通过后，返回值就是带类型的数据，可以直接使用。数据文件格式不对时，校验函数会报错，这个评估文件加载失败。
 
-## 过滤测试集评估用例
+## 只跑测试集里的一部分
+
+在 Experiment 后面写评估用例 ID 前缀，就能只跑其中几条：
 
 ```bash
 # 运行整个测试集
-npx niceeval exp local sql
+pnpm exec niceeval exp local sql
 
-# 只运行第一个数组 case
-npx niceeval exp local sql/0000
+# 只运行数组里的第一条
+pnpm exec niceeval exp local sql/0000
 
-# 运行一个 keyed case
-npx niceeval exp local swelancer/15193
+# 运行对象导出里的一条
+pnpm exec niceeval exp local swelancer/15193
 ```
 
-## 测试集 vs 独立文件
+跑完后用 `pnpm exec niceeval show` 在终端查看结果，或用 `pnpm exec niceeval view` 在浏览器里查看。每条样例都是独立的评估用例，失败的那几条会单独列出。
+
+## 选择测试集还是独立文件
 
 <Tabs>
   <Tab title="使用测试集">
-    case 结构完全一致，主要差异是输入和预期输出。
+    每条样例的流程完全一样，只有输入和预期输出不同。
   </Tab>
   <Tab title="使用独立文件">
-    每个 case 有不同流程、不同断言或需要不同 agent 配置。
+    每条有不同的流程、不同的断言，或需要不同的 Agent 配置。
   </Tab>
 </Tabs>
 
 <Tip>
-  测试集适合”横向覆盖”，独立评估用例文件适合”行为复杂”的场景。
+  测试集适合用大量同类样例覆盖一个功能，独立的评估用例文件适合流程复杂的场景。
 </Tip>

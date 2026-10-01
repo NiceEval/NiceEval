@@ -1,8 +1,33 @@
 ---
-name: docker-uploadfile-tmp-mv-eperm
-description: "Docker sandbox 的 uploadFile() 不 chown 上传文件，随后对它的 mv/rm 类操作只要落在 sticky-bit 目录（如 /tmp）就会 EPERM——claude-code 的 settingsFile 真机 e2e 首跑发现"
-metadata:
-  type: infra-bug
+format: concord.document/v1
+id: docker-uploadfile-tmp-mv-eperm
+title: docker-uploadfile-tmp-mv-eperm
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docker-uploadfile-tmp-mv-eperm.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+description: Docker sandbox 的 uploadFile() 不 chown 上传文件，随后对它的 mv/rm 类操作只要落在 sticky-bit 目录（如 /tmp）就会 EPERM——claude-code 的 settingsFile 真机 e2e 首跑发现
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [docker-uploadfile-tmp-mv-eperm](docker-uploadfile-tmp-mv-eperm.md) — Docker sandbox 的 `uploadFile()` 不 chown 上传文件(与 `uploadFiles()` 不同),claude-code `settingsFile` 真机上传到 `/tmp` 后 `mv` 到 `~/.claude/settings.json` 因 sticky-bit 目录 + root 属主 100% EPERM;修为 putArchive 后补 `chownToSandboxUser(absPath)`(`src/sandbox/docker.ts`,同路径也影响 codex 的 `configFile`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 **现象**：`e2e/adapter/claude-code` 的 `websearch-denied` Eval（挂了 `settingsFile:

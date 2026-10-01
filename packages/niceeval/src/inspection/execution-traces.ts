@@ -10,11 +10,18 @@ import { executionTracesRecordCollection } from "../record/family/execution-trac
 import {
   ExecutionTraceRecordLimits,
   ExecutionTraceRecordSchema,
+  displayTextHasForbiddenCharacter,
+  type ExecutionDisplayBlockRecord,
   type ExecutionTraceEventRecord,
   type ExecutionTraceHeaderRecord,
 } from "../record/family/execution-traces/schema.ts";
 import type { DecodedInspectionAttachment, ResolvedInspectionAttempt } from "./facts.ts";
-import { readInspectionArtifactBytes, type InspectionArtifactBytes } from "./artifacts.ts";
+import {
+  readInspectionArtifactBytes,
+  readInspectionArtifactDescriptors,
+  type InspectionArtifactBytes,
+  type InspectionArtifactDescriptor,
+} from "./artifacts.ts";
 import {
   decodeBase64UrlUtf8,
   encodeBase64Bytes,
@@ -62,6 +69,7 @@ export interface ExecutionTraceFilters {
   readonly traceId?: string;
   readonly sourceId?: string;
   readonly actorId?: string;
+  readonly eventType?: string;
 }
 
 export interface ExecutionTraceOutlineRequest extends ExecutionTraceFilters {
@@ -100,6 +108,40 @@ export interface ExecutionTraceOutlineResult {
   readonly continuation?: string;
 }
 
+export interface ExecutionDisplayPreviewText {
+  readonly preview: string;
+  readonly omittedBytes: number;
+}
+
+export type ExecutionDisplayBlockPreview =
+  | { readonly kind: "text"; readonly text: ExecutionDisplayPreviewText }
+  | {
+      readonly kind: "message";
+      readonly role: "user" | "assistant" | "system" | "other";
+      readonly speaker?: string;
+      readonly text: ExecutionDisplayPreviewText;
+    }
+  | {
+      readonly kind: "fields";
+      readonly fields: readonly {
+        readonly label: string;
+        readonly value: ExecutionDisplayPreviewText | number | boolean | null;
+      }[];
+    }
+  | { readonly kind: "code"; readonly language?: string; readonly text: ExecutionDisplayPreviewText }
+  | {
+      readonly kind: "image";
+      readonly artifactId: string;
+      readonly alt: string;
+      readonly mediaType: string;
+      readonly byteLength: number;
+      readonly sha256: string;
+    };
+
+export type ExecutionDisplayPreview =
+  | { readonly state: "absent" }
+  | { readonly state: "present"; readonly blocks: readonly ExecutionDisplayBlockPreview[] };
+
 export interface ExecutionTraceEventOutline {
   readonly traceId: string;
   readonly eventId: string;
@@ -119,6 +161,7 @@ export interface ExecutionTraceEventOutline {
     readonly label: string;
   }[];
   readonly scopeMemberships: ExecutionTraceEventRecord["scopeMemberships"];
+  readonly display: ExecutionDisplayPreview;
 }
 
 export type ExecutionTraceDetailResult =
@@ -184,6 +227,7 @@ interface ScanState {
   readonly artifacts: Map<string, InspectionArtifactBytes>;
   readonly parsedArtifacts: Map<string, unknown>;
   readonly targets: Map<string, EvidenceTarget>;
+  descriptors: ReadonlyMap<string, InspectionArtifactDescriptor> | undefined;
 }
 
 function digest(value: Uint8Array | string): string {
@@ -320,6 +364,7 @@ function newScanState(): ScanState {
     scopeIds: new Map(), clockUnits: new Map(), resolvedLinks: [], causeEdges: new Map(),
     eventIds: new Set(), evidenceIds: new Set(), traceIdsForIndex: [], eventIdsForIndex: [], evidenceIdsForIndex: [],
     sourceBytes: 0, targetBytes: 0, artifacts: new Map(), parsedArtifacts: new Map(), targets: new Map(),
+    descriptors: undefined,
   };
 }
 
@@ -385,6 +430,59 @@ function verifyEvidence(
   return verified;
 }
 
+function displayStrings(block: ExecutionDisplayBlockRecord): readonly string[] {
+  switch (block.kind) {
+    case "text": return [block.text];
+    case "message": return block.speaker === undefined ? [block.text] : [block.text, block.speaker];
+    case "fields": return block.fields.flatMap((field) => typeof field.value === "string" ? [field.label, field.value] : [field.label]);
+    case "code": return block.language === undefined ? [block.text] : [block.text, block.language];
+    case "image": return [block.alt];
+  }
+}
+
+/** Display blocks are re-validated on read so a hostile or foreign writer cannot bypass acceptance rules. */
+function verifyDisplay(
+  resolved: ResolvedInspectionAttempt,
+  state: ScanState,
+  display: ExecutionTraceEventRecord["display"],
+): void {
+  if (display === undefined) return;
+  const limits = ExecutionTraceRecordLimits;
+  if (display.length > limits.maximumDisplayBlocksPerEvent) {
+    throw integrity("Execution display exceeds its fixed block limit.");
+  }
+  if (utf8ByteLength(canonicalRecordJsonText(display as unknown as RecordJson)) > limits.maximumDisplayBytesPerEvent) {
+    throw integrity("Execution display exceeds its fixed byte limit.");
+  }
+  for (const block of display) {
+    if (displayStrings(block).some(displayTextHasForbiddenCharacter)) {
+      throw integrity("Execution display contains a control or bidirectional formatting character.");
+    }
+    if (block.kind === "fields" && block.fields.length > limits.maximumDisplayFields) {
+      throw integrity("Execution display fields exceed their fixed limit.");
+    }
+    const singleLine = block.kind === "fields" ? block.fields.map((field) => field.label)
+      : block.kind === "message" ? block.speaker === undefined ? [] : [block.speaker]
+      : block.kind === "code" ? block.language === undefined ? [] : [block.language]
+      : block.kind === "image" ? [block.alt] : [];
+    const maximumBytes = block.kind === "image" ? limits.maximumDisplayAltBytes : limits.maximumDisplayLabelBytes;
+    if (singleLine.some((text) => text.includes("\n") || utf8ByteLength(text) > maximumBytes)) {
+      throw integrity("Execution display label exceeds its single-line or byte limit.");
+    }
+    if (block.kind !== "image") continue;
+    if (state.descriptors === undefined) {
+      const read = readInspectionArtifactDescriptors(resolved);
+      if (Result.isFailure(read)) throw integrity("Execution display image artifacts are unreadable.");
+      state.descriptors = read.success;
+    }
+    const descriptor = state.descriptors.get(block.artifactId);
+    if (descriptor === undefined || descriptor.sha256 !== block.sha256 ||
+      descriptor.byteLength !== block.byteLength || descriptor.mediaType !== block.mediaType) {
+      throw integrity("Execution display image artifact closure is invalid.");
+    }
+  }
+}
+
 function observeRecord(
   resolved: ResolvedInspectionAttempt,
   state: ScanState,
@@ -434,6 +532,7 @@ function observeRecord(
     if (state.evidenceIdsForIndex.length < IDENTITY_INDEX_LIMIT) state.evidenceIdsForIndex.push(evidence.evidenceId);
     verifyEvidence(resolved, state, evidence);
   }
+  verifyDisplay(resolved, state, record.display);
   const membershipScopes = new Set<string>();
   const declaredScopes = state.scopeIds.get(record.traceId)!;
   for (const membership of record.scopeMemberships) {
@@ -551,7 +650,8 @@ function scanCollection(
 function matches(event: ExecutionTraceEventRecord, filters: ExecutionTraceFilters): boolean {
   return (filters.traceId === undefined || event.traceId === filters.traceId) &&
     (filters.sourceId === undefined || event.source.id === filters.sourceId) &&
-    (filters.actorId === undefined || event.actor?.id === filters.actorId);
+    (filters.actorId === undefined || event.actor?.id === filters.actorId) &&
+    (filters.eventType === undefined || event.type === filters.eventType);
 }
 
 export const EXECUTION_TRACE_CONTINUATION_FAMILIES = Object.freeze({
@@ -567,7 +667,7 @@ interface ContinuationBinding {
   readonly sourceFamily: string;
   readonly familyRevision: number;
   readonly behaviorVersion: typeof INSPECTION_BEHAVIOR_VERSION;
-  readonly filters: { readonly traceId: string | null; readonly sourceId: string | null; readonly actorId: string | null };
+  readonly filters: { readonly traceId: string | null; readonly sourceId: string | null; readonly actorId: string | null; readonly eventType: string | null };
   readonly lastOrdinal: number;
 }
 
@@ -595,6 +695,7 @@ function continuationBinding(
       traceId: context.filters.traceId ?? null,
       sourceId: context.filters.sourceId ?? null,
       actorId: context.filters.actorId ?? null,
+      eventType: context.filters.eventType ?? null,
     }),
     lastOrdinal,
   });
@@ -649,8 +750,53 @@ function continuationSourceFamily(token: string): string | undefined {
   }
 }
 
+/** UTF-8-safe prefix: never splits a code point; omitted bytes count the remainder. */
+function previewText(value: string, limit: number): ExecutionDisplayPreviewText {
+  const total = utf8ByteLength(value);
+  if (total <= limit) return Object.freeze({ preview: value, omittedBytes: 0 });
+  let used = 0;
+  let end = 0;
+  for (const character of value) {
+    const size = utf8ByteLength(character);
+    if (used + size > limit) break;
+    used += size;
+    end += character.length;
+  }
+  return Object.freeze({ preview: value.slice(0, end), omittedBytes: total - used });
+}
+
+function previewBlock(block: ExecutionDisplayBlockRecord, limit: number): ExecutionDisplayBlockPreview {
+  switch (block.kind) {
+    case "text": return Object.freeze({ kind: "text", text: previewText(block.text, limit) });
+    case "message": return Object.freeze({
+      kind: "message", role: block.role,
+      ...(block.speaker === undefined ? {} : { speaker: block.speaker }),
+      text: previewText(block.text, limit),
+    });
+    case "fields": return Object.freeze({
+      kind: "fields",
+      fields: Object.freeze(block.fields.map((field) => Object.freeze({
+        label: field.label,
+        value: typeof field.value === "string" ? previewText(field.value, limit) : field.value,
+      }))),
+    });
+    case "code": return Object.freeze({
+      kind: "code",
+      ...(block.language === undefined ? {} : { language: block.language }),
+      text: previewText(block.text, limit),
+    });
+    case "image": return Object.freeze({ ...block });
+  }
+}
+
+function previewDisplay(display: ExecutionTraceEventRecord["display"], limit: number): ExecutionDisplayPreview {
+  return display === undefined
+    ? Object.freeze({ state: "absent" })
+    : Object.freeze({ state: "present", blocks: Object.freeze(display.map((block) => previewBlock(block, limit))) });
+}
+
 function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutline {
-  return Object.freeze({
+  const envelope = {
     traceId: event.traceId,
     eventId: event.eventId,
     origin: Object.freeze({ kind: "execution-event", eventId: event.eventId }),
@@ -663,7 +809,15 @@ function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutl
     links: event.links,
     evidence: Object.freeze(event.evidence.map(({ evidenceId, key, label }) => Object.freeze({ evidenceId, key, label }))),
     scopeMemberships: event.scopeMemberships,
-  });
+  };
+  let limit: number = ExecutionTraceRecordLimits.maximumDisplayPreviewBytes;
+  while (true) {
+    const projected = Object.freeze({ ...envelope, display: previewDisplay(event.display, limit) });
+    if (event.display === undefined || utf8ByteLength(JSON.stringify(projected)) <= ExecutionTraceRecordLimits.maximumOutlineEventBytes) return projected;
+    // Existing envelope fields have no preview shape; retain them under the page budget.
+    if (limit === 0) return projected;
+    limit = Math.floor(limit / 2);
+  }
 }
 
 export function projectExecutionTraceOutline(
@@ -675,6 +829,7 @@ export function projectExecutionTraceOutline(
     ...(request.traceId === undefined ? {} : { traceId: request.traceId }),
     ...(request.sourceId === undefined ? {} : { sourceId: request.sourceId }),
     ...(request.actorId === undefined ? {} : { actorId: request.actorId }),
+    ...(request.eventType === undefined ? {} : { eventType: request.eventType }),
   });
   const nativeAttachment = collectionAttachment(resolved);
   if (request.continuation !== undefined && nativeAttachment === undefined &&
@@ -693,11 +848,9 @@ export function projectExecutionTraceOutline(
   let matched = 0;
   let priorMatches = 0;
   let pageFull = false;
-  const matchedTraceIds = new Set<string>();
   const scanned = scanCollection(resolved, (record, collectionOrdinal) => {
     if (record.kind !== "event" || !matches(record, filters)) return;
     matched += 1;
-    matchedTraceIds.add(record.traceId);
     if (collectionOrdinal <= resumeAfter) {
       priorMatches += 1;
       return;
@@ -722,10 +875,9 @@ export function projectExecutionTraceOutline(
   });
   const remaining = Math.max(0, matched - priorMatches - retained.length);
   const lastOrdinal = retained.at(-1)?.collectionOrdinal;
-  const hasEventFilter = filters.sourceId !== undefined || filters.actorId !== undefined;
   const traceHeaders = [...scanned.state.headers.values()]
-    .filter((header) => (filters.traceId === undefined || header.traceId === filters.traceId) &&
-      (!hasEventFilter || matchedTraceIds.has(header.traceId)))
+    // An empty filtered page does not prove the producer captured all events.
+    .filter((header) => filters.traceId === undefined || header.traceId === filters.traceId)
     .map((header) => Object.freeze({
       ...header,
       eventCount: scanned.state.eventCounts.get(header.traceId) ?? 0,

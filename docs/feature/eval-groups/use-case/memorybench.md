@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: memorybench
+title: MemoryBench：分组复用记忆条件与 Git seed
+createdAt: 2026-08-12T22:41:17+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval-groups/README.md
 ---
 
 # MemoryBench：分组复用记忆条件与 Git seed

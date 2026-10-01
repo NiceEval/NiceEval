@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: live-raw-stderr-write-desyncs-redraw
+title: 独立诊断行绕开 live 表格直写 stderr,回跳量错位导致每帧越滚越多
+createdAt: 2026-07-11T19:40:44+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-raw-stderr-write-desyncs-redraw.md
+  commit: ddddcb3c7285296cdbad3b26aae40472dbf80316
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [live-raw-stderr-write-desyncs-redraw](live-raw-stderr-write-desyncs-redraw.md) — sandbox teardown 失败/budget 不可执行/reporter 抛错等独立诊断行绕开 live 表格裸写 stderr,回跳量与实际光标错位,每帧越滚越多刷屏(行数不超屏也会触发,和 live-overflow-redraw-appends-frames 是两条不同根因);修为新增 `src/tty-line.ts` 统一诊断行出口,live.ts 订阅后先清显示再放行(`tty-line.ts` + `sandbox/registry.ts` + `runner/run.ts` + `runner/report.ts` + `sandbox/docker.ts` + `sandbox/vercel.ts` + `runner/reporters/live.ts`)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 独立诊断行绕开 live 表格直写 stderr,回跳量错位导致每帧越滚越多
 
 ## 现象

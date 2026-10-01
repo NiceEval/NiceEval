@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: report-metric-views-deleted
+title: metric-views 目录删除
+createdAt: 2026-07-29T15:56:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-metric-views-deleted.md
+  commit: 8c7c88454f4e2622e7a8eb7a8c74f8797f3155c8
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # metric-views 目录删除
 
 ## 现象

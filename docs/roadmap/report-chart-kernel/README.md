@@ -1,3 +1,21 @@
+---
+format: concord.document/v1
+id: report-chart-kernel
+title: Report 图表语义内核
+createdAt: 2026-08-06T22:19:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/report-chart-kernel/README.md
+  commit: c3dc3b979ccd532237f6cfe26c45039b223a4477
+kind: roadmap
+state: cancelled
+cancellation:
+  reason: README 明确取消该方向
+  source:
+    path: docs/roadmap/report-chart-kernel/README.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:72bc40c09b2fe8bf41a6a7eb8290ecb1b5c11596ed71a98fbe84bc9d3053da93
+---
 # Report 图表语义内核
 
 > 本公共三面图表方向已由 [CLI 与 Insight](../../design/cli-insight/DECISION.md) 取消。MetricValue、missing、Evidence 与精确值语义仍归 Analysis；Insight 的图表是第一方私有实现，外部网页的 data / component 接入面仍在[独立决策](../../design/benchmark-web-consumption/README.md)中比较。

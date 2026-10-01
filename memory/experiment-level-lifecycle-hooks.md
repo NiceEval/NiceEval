@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: experiment-level-lifecycle-hooks
+title: 设计裁决:实验级生命周期钩子 `ExperimentDef.setup`(推翻「实验级整场钩子不存在」)
+createdAt: 2026-07-17T17:52:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-level-lifecycle-hooks.md
+  commit: 9119c2d5dc85a6f56ee1e4f8599dc355bc5eaf81
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:实验级生命周期钩子 `ExperimentDef.setup`(推翻「实验级整场钩子不存在」)
 
 **裁决**(2026-07-17,用户定案):`ExperimentDef` 增加唯一生命周期字段 `setup?: (ctx) => void | Cleanup | Promise<void | Cleanup>`——整场至多一次、宿主机侧,返回的 cleanup 就是 teardown。这推翻了 [[sandbox-lifecycle-hooks]](2026-07-10)里「实验级整场钩子不存在、ExperimentDef 保持纯配置数据」的裁决。

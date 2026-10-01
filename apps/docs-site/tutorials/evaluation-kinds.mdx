@@ -30,17 +30,17 @@ Boolean `matched` enters the Verdict. `mismatched` makes the final Verdict `fail
 
 ## Use a continuous quality threshold
 
-A Match such as `similarity(...)` produces a measurement in `[0, 1]`. It calculates character-level Levenshtein edit similarity, not semantic similarity. Form the threshold on the Match before registration, then call the handle's parameterless `.gate()` to include it in a pass/fail Verdict:
+A Match such as `similarity(...)` produces a measurement in `[0, 1]`. It calculates character-level Levenshtein edit similarity, not semantic similarity. In a pass/fail Eval, call `.gate(minimum)` on the registered handle to set the quality threshold:
 
 ```ts
 import { similarity } from "niceeval/expect";
 
-t.check(turn.message, similarity(expected).atLeast(0.8))
-  .gate()
+t.check(turn.message, similarity(expected))
+  .gate(0.8)
   .label("Response is close to the expected content");
 ```
 
-Below the Match threshold, that gated requirement fails. Without `.gate()`, the threshold records only a local condition. When you only want an explanation that does not affect the Verdict, use `t.diagnostic(...)`; do not register a measurement that nobody consumes.
+Below the measurement threshold, that gated requirement fails. Without `.gate(minimum)`, the measurement does not affect the Verdict. When you only want an explanation that does not affect the Verdict, use `t.diagnostic(...)`; do not register a measurement that nobody consumes.
 
 ## Award points for each completed step
 
@@ -68,7 +68,7 @@ export default defineScoreEval({
 });
 ```
 
-`t.score(n)` directly registers a contribution. `n` must be finite and nonnegative, and its returned handle can configure only `key` and `label`. A thresholded `ScoreMatch` can be registered and scored by the same Assertion; the evaluator runs only once.
+`t.score(n)` directly registers a contribution. `n` must be finite and nonnegative, and its returned handle can configure only `key` and `label`.
 
 When `test` returns normally, NiceEval closes the score automatically. No scoring entries is still a valid result with an official `score: 0`: evaluation successfully formed a zero score; it is not an execution failure or insufficient evidence.
 
@@ -83,26 +83,32 @@ When `test` returns normally, NiceEval closes the score automatically. No scorin
 
 ## Judge is also a measurement
 
-A Judge factory from `niceeval/expect` returns a pure `ScoreMatch`. First declare the `judge` capability, then register explicit input and output through `check`:
+A `defineJudge` call declares a managed Judge Match. Pass the values needed for the decision as fields in the material object. Register the definition directly with `t.judge`; this does not require a `judge` option on the Eval. By default, the model comes from the project's `judgeRuntime`. Set `judge: "judge-model"` to use a different model for one Eval.
 
 ```ts
-import { closedQA } from "niceeval/expect";
+import { defineEval, defineJudge } from "niceeval";
 
-export default defineScoreEval({
-  judge: true,
+const explainsMotive = defineJudge({
+  name: "explains-motive",
+  rubric: "Assess whether the explanation describes the motivation for the change based on the change.",
+});
+const explainsRisk = defineJudge({
+  name: "explains-risk",
+  rubric: "Assess whether the explanation identifies concrete risks based on the change.",
+});
+
+export default defineEval({
   async test(t) {
-    const turn = await t.send("Explain the motivation and risk of this change.");
-    turn.check(
-      { input: turn.input, output: turn.message },
-      closedQA("Is the explanation specific and accurate?").atLeast(0.7),
-    )
-      .score(20)
-      .label("Explanation quality");
+    const change = "Add the model version to the cache key";
+    const turn = await t.send(`Explain the motivation and risks of this change: ${change}`);
+    const material = { change, explanation: turn.message };
+    t.judge(material, explainsMotive).gate(0.8).label("Change motivation");
+    t.judge(material, explainsRisk).gate(0.8).label("Specific risks");
   },
 });
 ```
 
-The Match owns the threshold and the registered handle owns the score contribution. The evaluator runs only once.
+Register a separate Judge for each requirement that can fail, contribute score, or show its own reason. In a score-style Eval, one Judge can combine `.gate(minimum)` and `.score(points)`; the measurement multiplied by `points` is the contribution, and the gate determines the Verdict. Each Judge runs once.
 
 ## Use real commands to verify coding tasks
 

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
-test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分块读取 [necase_JAEBNT5NHZGJKR5F]", async () => {
+// @feature docs/feature/inspection/README.md
+test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分块读取", async () => {
   await inspectionE2E.case("artifacts-portable", { artifacts: inspectionCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const expected = Buffer.from(Array.from({ length: 256 * 1024 + 13 }, (_, index) => index % 251));
     await writeFile(join(projectRoot, "attachment-input.bin"), expected);

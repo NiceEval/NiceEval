@@ -1,13 +1,23 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: cli-insight
+title: CLI Query、Show 与 View —— Design Decision
+createdAt: 2026-08-23T11:33:47+08:00
 kind: design
-relations:
-  selectedPlan: docs/design/cli-insight/PLAN-3/README.md
+alternatives:
+  - plan-1
+  - plan-2
+  - plan-3
+decision:
+  selected: plan-3
+  reason: 固定 operation catalog 把选择、分母、partial、missing、issues、Evidence 与 comparison 留在唯一业务 owner。query、show 与 View 因而只需要各自编码或显示闭合结果，不能把 terminal 与浏览器的实现细节伪装为共享抽象。
+  at: 2026-08-29T14:34:50+08:00
+  targets: []
 ---
 
 # CLI Query、Show 与 View —— Design Decision
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [DECISION](DECISION.md)
 
 本决策裁决 NiceEval 自己维护的运行后入口。AI 与自动化使用 machine-only `query`；人可用
 英文终端 `show` 或第一方浏览器 `view`。三者只共享固定 Inspection operation 的业务语义，
@@ -32,13 +42,23 @@ niceeval record snapshot → portable sealed-only RecordSnapshot
 - 固定 Inspection operation 关闭 selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison。Delivery 不重算这些语义。
 - `niceeval record snapshot --output <snapshot>` 是唯一可移植输入的形成方式。snapshot 不是 ordinary operational copy。
 
-本决策选择 [PLAN-3](PLAN-3/README.md)。原决策删除 `show` 的子决策已翻案：恢复的只是
+本决策选择 [PLAN-3](plans/plan-3/README.md)。原决策删除 `show` 的子决策已翻案：恢复的只是
 fixed Inspection renderer，不恢复旧 Report 作者树、静态导出或自由统计。
 
 ## 候选
 
 | 候选 | Machine 面 | 人类面 | 状态 |
 |---|---|---|---|
-| [PLAN-1](PLAN-1/README.md) | 从 Report / Page 派生 | 共享作者树 | 未选。 |
-| [PLAN-2](PLAN-2/README.md) | 通用 Analysis protocol | `show` 与 Insight | 未选。 |
-| [PLAN-3](PLAN-3/README.md) | 固定 operation catalog | 受限 terminal Show 与固定 runtime View | 已选。 |
+| [PLAN-1](plans/plan-1/README.md) | 从 Report / Page 派生 | 共享作者树 | 未选。 |
+| [PLAN-2](plans/plan-2/README.md) | 通用 Analysis protocol | `show` 与 Insight | 未选。 |
+| [PLAN-3](plans/plan-3/README.md) | 固定 operation catalog | 受限 terminal Show 与固定 runtime View | 已选。 |
+
+<!-- concord.design-index/v1:start -->
+## 候选方案索引（生成）
+
+- [plan-1](plans/plan-1/README.md)
+- [plan-2](plans/plan-2/README.md)
+- [plan-3（已选择）](plans/plan-3/README.md)
+
+裁决：[plan-3](plans/plan-3/README.md)。
+<!-- concord.design-index/v1:end -->

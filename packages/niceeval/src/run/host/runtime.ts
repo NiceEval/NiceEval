@@ -1,3 +1,8 @@
+// @concord-file ne-run-host-runtime
+// @concord-implements docs/feature/run/library.md
+// @concord-implements docs/feature/run/cli.md
+// @concord-implements docs/feature/inspection/architecture.md
+
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";

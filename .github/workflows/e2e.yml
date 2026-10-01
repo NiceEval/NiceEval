@@ -72,7 +72,7 @@ jobs:
 
       # pnpm/setup 在 version 缺省时读取根 packageManager；不要在 workflow 重复版本真源。
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v2
+        uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
@@ -361,7 +361,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm and Node
-        uses: pnpm/setup@v2
+        uses: pnpm/setup@v3
         with:
           runtime: node@24
           cache: true
@@ -481,7 +481,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
@@ -493,7 +492,6 @@ jobs:
             "ANTHROPIC_API_KEY",
             "ANTHROPIC_BASE_URL",
             "DEEPSEEK_API_KEY",
-            "NICEEVAL_JUDGE_KEY",
             "OPENCODE_API_KEY",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",

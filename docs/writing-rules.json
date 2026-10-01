@@ -126,8 +126,8 @@
         "roots": [
           "apps/docs-site/zh"
         ],
-          "use": "不带 locator 或 --run 的 niceeval view 读取当前 sealed results；机器审计先发现 operation 再使用明确 request",
-          "why": "View 不支持时间排序选择，公开站继续展示会让用户复制出未知选项"
+        "use": "不带 locator 或 --run 的 niceeval view 读取当前 sealed results；机器审计先发现 operation 再使用明确 request",
+        "why": "View 不支持时间排序选择，公开站继续展示会让用户复制出未知选项"
       },
       {
         "flag": "--strict",
@@ -458,6 +458,51 @@
       "term": "沙箱",
       "use": "写 Sandbox；需要说明实现时写 Docker、Vercel 或 E2B Provider",
       "why": "公开站把 Sandbox 作为固定领域对象，中文别名会让读者误以为存在另一层抽象"
+    },
+    {
+      "term": "封口",
+      "use": "写读者能观察到的结果，例如「Attempt 已发布」「结果已保存」「分数已算出」",
+      "why": "内部状态机用语，读者不知道封住了什么、之后能做什么"
+    },
+    {
+      "term": "闭合",
+      "use": "直接写结果是什么，例如「完整结果」「固定的查询结果」",
+      "why": "设计契约里的限定词，对读者没有可操作的含义"
+    },
+    {
+      "term": "下钻",
+      "use": "写具体动作，例如「查看这个 Attempt 的对话」「展开一项工具调用」",
+      "why": "界面行话，没有说明要点哪里、看到什么"
+    },
+    {
+      "term": "三件套",
+      "use": "直接列出文件：Adapter、Experiment 和评估用例",
+      "why": "内部口头简称，第一次读的人不知道指哪三件"
+    },
+    {
+      "term": "canonical",
+      "use": "写「项目里的 .niceeval/record.sqlite」或「原始结果文件」",
+      "why": "实现层术语，读者只需要知道是哪一个文件"
+    },
+    {
+      "term": "sealed",
+      "use": "写「已发布」「已保存」",
+      "why": "内部状态名，公开站用中文说明可观察结果"
+    },
+    {
+      "term": "opaque",
+      "use": "写「不要解析它，原样传给下一条命令」",
+      "why": "协议设计用语，没有告诉读者该怎么处理这个值"
+    },
+    {
+      "term": "expected slots",
+      "use": "写「这次计划要跑的所有 Attempt」",
+      "why": "内部数据模型名词，读者关心的是要跑哪些、跑了哪些"
+    },
+    {
+      "term": "心智模型",
+      "use": "写「工作方式」「怎么运作」",
+      "why": "抽象说法，直接说明它怎么运作更好懂"
     }
   ],
   "bannedTerms": [
@@ -776,7 +821,7 @@
     {
       "term": "t.sandbox.diff",
       "use": "归因期望用 `changedPaths` / `noChanges` / `fileChanged` / `fileDeleted` / `notInDiff` 声明；文件当前内容用 `readText` 读取",
-        "why": "已定的 Assert-first author API 不存在通用或延迟的 diff subject；持久 `niceeval.diff/v1` 只经固定 Inspection operation 读取"
+      "why": "已定的 Assert-first author API 不存在通用或延迟的 diff subject；持久 `niceeval.diff/v1` 只经固定 Inspection operation 读取"
     },
     {
       "term": "sandbox case",

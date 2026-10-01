@@ -4,11 +4,13 @@ sidebarTitle: "安装自定义 Agent CLI"
 description: "用 ensure 和 installer 检查、安装并复检自定义 coding-agent CLI 的精确版本。"
 ---
 
-自定义 Sandbox Agent 需要声明 CLI 的名称、版本和安装方式。NiceEval 会先检查 Sandbox 里的 CLI。版本不匹配时，NiceEval 会安装指定版本，然后再检查一次。
+你在评估一个内置适配器还不支持的 Coding Agent CLI，或者需要固定某个特定版本。每次手动在镜像里装好它很容易出错：版本悄悄升级了，两次评估比较的就不是同一个 Agent。
 
-## 声明 CLI 身份和安装方式
+做法是在自定义 Sandbox Agent 上声明 CLI 的名称、版本和安装方式。每次运行前，NiceEval 先检查 Sandbox 里的 CLI；版本不对就安装你指定的版本，装完再检查一次，确认无误才开始评估。
 
-Node.js CLI 可以使用 `createNpmCliInstaller`。下面的代码把 npm 包 `my-agent@1.0.0` 接入自定义 Adapter：
+## 声明 CLI 的版本和安装方式
+
+先在 Agent 上写清楚要哪个 CLI、哪个版本、怎么装。Node.js CLI 用 `createNpmCliInstaller`。下面的代码把 npm 包 `my-agent@1.0.0` 接进一个自定义 Adapter：
 
 ```ts
 // agents/my-agent.ts
@@ -61,15 +63,16 @@ export default defineSandboxAgent({
 });
 ```
 
-这个示例约定 `my-agent run --json` 输出一个 OpenAI Responses 兼容的 JSON 对象。`turnFromResponses` 会把其中的 `output` 项与 usage 转成 NiceEval 的 `Turn`；如果 CLI 输出的是另一套 schema，就把这一行替换成对 `events`、`status` 与 `usage` 的显式映射。
+这个示例假定 `my-agent run --json` 输出一个和 OpenAI Responses 兼容的 JSON 对象。`turnFromResponses` 把其中的 `output` 和用量转成 NiceEval 的 `Turn`。CLI 输出的是别的格式时，把这一行换成你自己对 `events`、`status` 和 `usage` 的映射，写法见[编写 Send](/zh/tutorials/write-send#第四步：把工具解析成事件)。
 
-`identity.version` 是 CLI 的精确版本。同一版本的安装步骤变化时，同时更新 `identity.revision`。不要在这里使用 `latest`。
+- `identity.version` 写 CLI 的精确版本，不要写 `latest`。版本悄悄变了，两次评估比的就不是同一个 Agent。
+- 版本不变、但安装步骤改了时，同时提高 `identity.revision`。
+- `setup` 只写鉴权和运行配置。安装交给 `installer`，这样每个 Attempt 开始前都会先检查版本。
+- `progress` 里的文案会在检查、安装和就绪时显示在终端上。
 
-`setup` 只写鉴权和运行配置。CLI 安装由 `installer` 负责，因此每个 Attempt 都会先完成版本检查。
+## 在 Experiment 中运行
 
-## 在实验中运行
-
-把 Agent 和 Sandbox Provider 放进实验：
+把 Agent 和 Sandbox Provider 放进 Experiment：
 
 ```ts
 // experiments/my-agent.ts
@@ -85,26 +88,28 @@ export default defineExperiment({
 ```
 
 ```shell
-npx niceeval exp my-agent fixtures/button
+pnpm exec niceeval exp my-agent fixtures/button
 ```
 
-普通 npm 包要求 Sandbox 提供 Node.js 与 npm。`createNpmCliInstaller` 在宿主机打包、上传，再在 Sandbox 内执行 `npm install -g`。Sandbox 如果已有正确版本，NiceEval 会直接使用它。只有真正自包含的 `platformPackage` 才能省掉这项运行时前置条件。
+运行时终端会依次显示 `progress` 里的检查、安装和就绪文案。Sandbox 里已经有正确版本时，NiceEval 直接使用它，跳过安装。跑完后用 `pnpm exec niceeval show` 在终端看结果，或用 `pnpm exec niceeval view` 在浏览器里看。
+
+普通 npm 包要求 Sandbox 里有 Node.js 和 npm。`createNpmCliInstaller` 在宿主机打包、上传，再在 Sandbox 里执行 `npm install -g`。只有自带运行时的 `platformPackage` 才不需要 Node.js 和 npm。
 
 ## 检查安装失败
 
-安装或复检失败时，Attempt 会在 `agent.ensure` 阶段变成 `errored`。终端会给出 Attempt 定位符。
+安装或安装后的复检失败时，这个 Attempt 会在 `agent.ensure` 阶段变成 `errored`，终端会给出它的 locator：
 
 ```shell
 pnpm exec niceeval show @<attempt-locator>
 ```
 
-先检查错误里的包名、版本和目标平台。修正 `identity`、npm 包或安装步骤后，重新运行原命令。
+先核对错误里的包名、版本和目标平台，再确认镜像里有 Node.js 和 npm。修正 `identity`、npm 包或安装步骤后，重新运行原命令。
 
 ## 选择其他安装模式
 
-`AgentInstaller` 还支持两种模式：
+宿主机打包上传不适合你的场景时，`AgentInstaller` 还有两种模式：
 
-- `sandbox-network` 允许 Sandbox 使用自己的网络安装 CLI。只在题目明确允许这种网络访问时使用。
-- `verify-only` 只接受预装的精确版本。检查失败时，Attempt 会直接报错。
+- `sandbox-network`：让 Sandbox 用自己的网络安装 CLI。只在题目明确允许这种网络访问时使用。
+- `verify-only`：只接受镜像里预装好的精确版本。版本不对时，Attempt 直接报错，不尝试安装。
 
 这两种模式需要自己提供 `AgentInstaller`。完整字段见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。

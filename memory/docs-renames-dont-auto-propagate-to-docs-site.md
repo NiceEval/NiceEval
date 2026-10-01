@@ -1,8 +1,33 @@
 ---
-name: docs-renames-dont-auto-propagate-to-docs-site
+format: concord.document/v1
+id: docs-renames-dont-auto-propagate-to-docs-site
+title: docs-renames-dont-auto-propagate-to-docs-site
+createdAt: 2026-07-19T20:44:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/docs-renames-dont-auto-propagate-to-docs-site.md
+  commit: de5ce25b06f2211faaf845d8478839d2ca564be4
 description: 内部 docs/ 契约改名或改型后，docs-site/ 的教程/参考页不会自动跟上——即使 docs/ 全部同步了也要单独 grep docs-site
-metadata:
-  type: feedback
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [docs-renames-dont-auto-propagate-to-docs-site](docs-renames-dont-auto-propagate-to-docs-site.md) — `--eval`→`--source` 改名与 `defineReport` 函数形态删除都只同步了 `docs/`,`docs-site/` 整篇教旧 API;修法=收尾大改动前单独 grep docs-site 找旧名字,不假设 docs/ 干净等于 docs-site 干净"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
 ---
 
 Phase H 收尾时发现两处独立的大范围 docs-site 陈旧，根因是同一类问题：**改 `docs/` 时只同步了

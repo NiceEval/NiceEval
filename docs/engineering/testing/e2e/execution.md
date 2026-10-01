@@ -8,10 +8,10 @@
 关系 inventory 必须调用 Vitest / Playwright 原生 collection adapter，且不执行测试正文；case selector、正式 case receipt 与
 takeover certificate 服从 [case 关系契约](case-relations.md)。diagnose receipt 只用于定位，永不进入 red/green/reliability 或 fixed gate。
 
-## 七命令接口
+## 八命令接口
 
-根 CLI 只有七个显式命令：高阶本地入口是 `test`；本地诊断入口是带 `test` / `exec` 模式的 `diagnose`；低阶生命周期命令是
-`plan`、`pack`、`run`、`takeover` 与 `verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
+根 CLI 只有八个显式命令：高阶本地入口是 `test`；本地诊断入口是带 `test` / `exec` 模式的 `diagnose`；低阶生命周期命令是
+`plan`、`pack`、`run`、`evidence`（`evidence red`）、`takeover` 与 `verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
 
 `test` 严格执行一次 plan → 对合法非空计划打包一次 candidate → 运行该 plan 的精确 Repo 集；合法空计划在 pack 之前成功短路。
 CI 与 `run --plan` 消费同一份当前 checkout 生成的 plan，不会在 run 阶段重新选择。
@@ -25,7 +25,7 @@ pnpm e2e test --lane pr
 
 # 按 Repo / 原生测试参数收窄
 pnpm e2e test --repo insight
-pnpm e2e test --repo insight -- --run test/exported-targets.test.ts
+pnpm e2e test --repo insight -- --run test/view-lifecycle.test.ts
 
 # 全量 E2E；缺 secret 在 prepare 前一次列清
 pnpm e2e test --lane main --repo adapter/codex-cli
@@ -58,15 +58,18 @@ pnpm e2e diagnose test --from artifacts/e2e/insight/summary.json --repo insight 
 pnpm e2e diagnose exec --from artifacts/e2e/insight/summary.json --repo insight \
   --timeout-seconds 15 -- pnpm exec niceeval query discover
 
+# 从当前 inventory/list 取得 case_selector（完整 path#neref 引用），不手写 ID
 # Owner 接管可靠性收据：inventory 决定 exact case，-- 后只补充其它原生参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo insight \
-  --selector 'e2e/insight/test/view-snapshot.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --selector "$case_selector" \
   --inventory <neinv_...> \
+  --problem memory/<problem>.md --problem-epoch <n> \
   --artifact-root artifacts/e2e/takeover-insight
 
 # 旧 candidate 的正式红灯；prepare、infra、cleanup 或零匹配失败不会签发 red receipt
 pnpm e2e evidence red --candidate artifacts/old-candidate.tgz --candidate-git-sha <sha> \
-  --repo insight --selector 'e2e/insight/test/view-snapshot.browser.spec.ts#necase_7J4M2N6Q8R3T5V9X' \
+  --repo insight --selector "$case_selector" \
+  --problem memory/<problem>.md --problem-epoch <n> \
   --inventory <neinv_...> --artifact-root artifacts/e2e/red-insight
 
 # 仅本地结构化 release 核验；不发布、不调用 workflow 产品逻辑
@@ -136,10 +139,13 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 
 ## Owner 接管运行
 
-新增、接管或实质修改确定性 owner 时，必须使用根入口
-`pnpm e2e takeover --candidate ... --repo <id> --selector <path#caseId> --inventory <neinv_...>`。
+新增、接管或实质修改确定性 owner 时，必须使用根入口：
+
+`pnpm e2e takeover --candidate ... --repo <id> --selector <path#caseId> --inventory <neinv_...> --problem <memory-path> --problem-epoch <n>`。
+
 它拒绝没有显式 candidate、Repo、selector 或 runner inventory 的调用；原生 target 由 inventory 自动构造，
 不是把普通 `run` 重复五次冒充可靠性门。
+
 接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit scratch
 snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt：
 
@@ -318,11 +324,15 @@ main push、schedule、release 验收和显式 full dispatch 固定传 `--no-dif
 - `packages/niceeval/bin/**` 与 `packages/niceeval/scripts/package-runtime/**`；
 - `packages/repo-tools/src/docs/reference-compiler.ts`、`INDEX.md` 与 `INDEX.template.md`；
 - `apps/docs-site/zh/**`、`apps/docs-site/images/**` 与 `dist/**`；
-- root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 配置、package metadata 与 root tsconfig。
+- root `.npmrc`、`.npmignore`、`.gitignore`、自动纳入文件、pnpm 全局配置、非依赖 package metadata 与 root tsconfig。
+
+根 lockfile 按各 importer 的完整依赖闭包选择对应 project 下游。
+根 manifest 的站点专用 `next` 依赖由产品站拥有；其它根依赖仍属于共享输入。
+精确比较、异常回退与候选包依赖边界见[依赖更新](../../task-orchestration/README.md#依赖更新)。
 
 本地 diff 同时读取 staged、unstaged、tracked 删除和未忽略 untracked 路径；rename 按 delete 与 add 处理。
 多个显式 Repo 中有任一不属于 lane 时，plan 失败，不能静默删掉它。`--no-diff` 与显式
-`--base` / `--head` / `--diff-path` / `--diff` 同时出现时属于配置错误。
+`--base` / `--head` / `--diff-path` 同时出现时属于配置错误。
 
 ## Docker
 

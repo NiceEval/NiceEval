@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-locale-rendering
+title: 设计裁决:report 渲染面引入 locale 与内部双语字典
+createdAt: 2026-07-11T17:08:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-locale-rendering.md
+  commit: d0b67181014038966507cba626afea59a8de778f
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:report 渲染面引入 locale 与内部双语字典
 
 - **裁决**(2026-07-11):`ReportLocale = "en" | "zh-CN"`(默认 `"en"`)进报告的**渲染面**:`renderReportToStaticHtml` / `renderReportToText` 的 options 收 `locale`,经 `WebContext` / `TextContext` 携带进每个组件面;官方组件的 chrome 文案(verdict 词、缺数据说明、composed-from 标注、坐标轴提示等)走 report 内部字典 `src/report/locale.ts`。指标 `label` 类型扩为 `string | Partial<Record<ReportLocale, string>>`,数据层(`MetricColumn.label`)原样携带、渲染面按 locale 解析;`display` 不本地化。view 把报告槽渲染两遍(en + zh-CN)烘成两个 `<template>`,壳按界面语言摆放,切语言不重算数据。

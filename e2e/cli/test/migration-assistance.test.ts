@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-test.concurrent("旧 Judge 配置在执行前给出源码位置与离线英文迁移指南 [necase_YS0ZMXF74ZS12WD4]", async () => {
+// @use-case docs/feature/error-assistance/use-case/migrate-judge-provider.md
+test.concurrent("旧 Judge 配置在执行前给出源码位置与离线英文迁移指南", async () => {
   await cliE2E.case("judge-migration", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     await writeFile(join(projectRoot, "niceeval.config.ts"), [
       'import { defineConfig } from "niceeval";',

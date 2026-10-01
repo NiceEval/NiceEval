@@ -1,14 +1,18 @@
 ---
-title: "评估自定义应用"
-description: "保留应用自己的方法与上下文，用 NiceEval 评估结构化结果和业务操作。"
+title: "评估自定义应用：发帖、生图这类业务操作"
+sidebarTitle: "评估自定义应用"
+description: "被测应用不是对话式 Agent 时，用 defineAdapter 把它的业务方法直接暴露给评估用例，检查结构化结果和业务操作。"
 ---
 
-应用可以提供发帖、生成图片、刷新时间线等方法。用 `defineAdapter` 创建连接，返回对象的顶层操作会成为评估中强类型的 `t` 方法。
-Agent 是实现 `send(input, ctx) → Turn`、Session 和 Turn 的另一种 Adapter；自定义应用不要求实现这个 Agent 协议。
+你在评估一个社交应用里的 AI 功能：用户发帖后，AI 自动生成配图、推荐回复。这里没有“发一条消息、收一条回复”的对话，有的是发帖、回复、生成图片这些业务操作。
+
+硬把它们写成 `t.send("帮我发帖")` 很别扭。更直接的做法是用 `defineAdapter` 把应用自己的方法交给评估用例：返回对象里的每个操作，都会变成评估用例里带类型的 `t.post(...)`、`t.generateImage(...)`。
+
+对话式 Agent 用的 `defineAgent` 是 Adapter 的一种特例，要实现 `send`、多轮会话和 Turn。自定义应用不需要实现这些。
 
 ## 定义应用连接
 
-下面连接一个已有的社交应用。`createSocialApp` 属于你的应用；返回对象明确列出评估需要的操作。
+先告诉 NiceEval 怎么创建你的应用、评估要用到它的哪些操作。下面连接一个已有的社交应用。`createSocialApp` 属于你的应用，返回对象逐个列出评估需要的操作。
 
 ```ts application.ts
 import { defineAdapter } from "niceeval";
@@ -29,16 +33,17 @@ export const social = defineAdapter({
 });
 ```
 
-运行器每个 Attempt 调用一次 `create`，并在结束时执行已登记的 `onCleanup` 回调。实例隔离由你的 factory 实现；运行器不保证返回独立实例，也不会释放未登记 `onCleanup` 的资源。
-取得资源后立即登记 `onCleanup`。
-把 `signal` 传到应用的网络请求和长任务，才能响应取消。
+运行器每个 Attempt 调用一次 `create`，Attempt 结束时执行登记过的 `onCleanup` 回调。
 
-TypeScript 自动从返回对象推导方法参数和结果，不需要手写 `t` 的类型。
-应用没有提供 `send` 时，`t.send` 会报类型错误。`check` 等 NiceEval 核心名称不能覆盖；已有类实例用上面的闭包方式暴露方法。
+- 每个 Attempt 要不要拿到独立的应用实例，由你的 `create` 决定。运行器不会替你复制实例。
+- 没登记 `onCleanup` 的资源，运行器不会释放。取得资源后立即登记。
+- 把 `signal` 传进应用的网络请求和长任务，超时或取消时它们才会停下。
+
+TypeScript 会从返回对象推导出每个方法的参数和结果，不需要手写 `t` 的类型。返回对象里没有 `send` 时，在评估用例里写 `t.send` 会报类型错误。`check` 等 NiceEval 自带的名称不能被覆盖。已有的类实例，用上面的闭包写法逐个暴露方法。
 
 ## 调用应用动作并自定义检查
 
-`test(t)` 同时提供应用操作与评估能力。应用返回的 Post、Reply 等对象可以直接交给 `defineValueMatch` 定义的自定义 Match。
+接下来在评估用例里调用这些操作，再检查结果。`test(t)` 里既有应用的操作，也有 NiceEval 的检查方法。应用返回的 Post、Reply 等对象，可以直接交给 `defineValueMatch` 定义的自定义 Match。
 
 ```ts evals/publish.eval.ts
 import { defineValueMatch } from "niceeval/expect";
@@ -64,13 +69,13 @@ export default social.defineEval({
 });
 ```
 
-这里的动作签名由你的应用决定。`defineValueMatch` 只描述值怎样匹配；`t.check` 登记 Assertion，`.gate()` 显式把 Boolean 条件设为质量门。也可以复用字符串、数值或 Schema 匹配器。
-需要累计分数时使用 `social.defineScoreEval`，再对检查调用 `.score(points)`。
-开放式语气、人物一致性或内容质量可以交给 [Judge](/zh/explanation/judge)。
+操作的参数和返回值由你的应用决定。`defineValueMatch` 只描述一个值怎样算匹配。`t.check` 登记一条断言，`.gate()` 表示这条不通过，整个评估用例就不通过。字符串、数值和 Schema 匹配器也都能直接用。
+
+需要累计分数时，改用 `social.defineScoreEval`，再在检查上调用 `.score(points)`。语气、人物一致性、内容质量这类开放式标准可以交给 [Judge](/zh/explanation/judge)。
 
 ## 在连接处定义断言方法
 
-多个评估需要同一种检查时，在 Adapter 的 `assertions` 中定义便捷方法。它取得当前 Attempt 的 `app` 和统一的 `check`，返回原有断言 handle。
+好几个评估用例都要做同一种检查时，把它写成 Adapter 上的断言方法，评估用例里一行就能调用。在 `assertions` 里定义这些方法，它们拿到当前 Attempt 的 `app` 和 `check`，返回 `check` 的结果。
 
 ```ts application.ts
 import { defineAdapter } from "niceeval";
@@ -113,14 +118,19 @@ export default social.defineScoreEval({
 });
 ```
 
-`hasPublishedText()` 与显式 `check` 共享评分和报告。`defineEval` 的断言方法没有 `.score()`；`defineScoreEval` 的方法提供它。动作方法 `post()` 仍只执行应用操作。
+`hasPublishedText()` 和直接写 `t.check` 的效果一样，计分和报告里的展示也一样。`defineEval` 里的断言方法没有 `.score()`，`defineScoreEval` 里的有。`post()` 这样的操作方法仍然只调用应用。
 
-在断言方法被调用时读取证据。`assertions` 本身只组装方法，不能提前调用 `check`；返回对象不能包含 getter、非函数值或与应用及核心成员重名的方法。
-方法同步返回本次 `check` 的 handle，不返回 Boolean 或 Promise。异步动作、等待和证据封存放在应用方法中，在检查前显式完成。
-证据不完整时应报告明确错误，不能当作空历史来判断“没有发生”。
-便捷方法使用具体参数签名。无法保留类型关联的泛型或重载便捷方法不可调用；这类组合可以使用独立 Match 和显式 `t.check`，应用操作自身的泛型方法仍可使用。
+写断言方法时注意几点：
+
+- 在方法被调用时才读取要检查的数据。`assertions` 只负责组装方法，不能在里面提前调用 `check`。
+- 返回对象里只放函数，不放 getter 或其它值，方法名也不能和应用操作或 NiceEval 自带的名称重名。
+- 方法同步返回 `check` 的结果，不返回 Boolean 或 Promise。异步操作和等待放在应用方法里，在检查前先完成。
+- 数据不完整时报一个明确的错误，不要当成“什么都没发生”来判断。
+- 参数写成具体类型。泛型或重载的断言方法无法调用，这类检查改用独立的 Match 加 `t.check`。应用操作本身可以是泛型方法。
 
 ## 选择实现并运行
+
+写一个 Experiment 选定这个应用，然后运行。
 
 ```ts experiments/local.ts
 import { defineExperiment } from "niceeval";
@@ -135,16 +145,17 @@ export default defineExperiment({
 ```bash
 pnpm exec niceeval check
 pnpm exec niceeval exp local
-pnpm exec niceeval view
 ```
 
-实验选择的应用必须满足评估声明的接口。接口不匹配时，NiceEval 会在创建应用前报错。
-具体操作的顺序、参数和重复次数由评估代码决定；应用动作不会自动获得 Agent 的消息重试。
-自定义方法可以命名为 `send`，其参数和返回值仍由应用决定，不需要构造 `Turn`。如果返回对象没有定义 `send`，`t` 也不会自动获得这个方法。
+跑完后用 `pnpm exec niceeval show` 在终端看结果，或用 `pnpm exec niceeval view` 在浏览器里看。
+
+Experiment 选的应用必须提供评估用例用到的操作。缺了操作时，NiceEval 在创建应用之前就报错，先核对 `create` 的返回对象。
+
+操作的顺序、参数和重复次数都由评估代码决定。应用操作失败时不会像 Agent 消息那样自动重试。你也可以把某个操作命名为 `send`，它的参数和返回值仍由应用决定，不需要构造 `Turn`。
 
 ## 用相同评估比较两个实现
 
-需要替换应用实现时，创建共同的类型化契约，再分别提供实现：
+想知道换一套实现后效果是变好还是变差，就让两套实现跑同一批评估用例。先声明它们共同的接口，再分别提供实现：
 
 ```ts
 import { defineAdapterContract } from "niceeval";
@@ -155,10 +166,9 @@ export const baseline = social.implement({ name: "baseline", create: createBasel
 export const candidate = social.implement({ name: "candidate", create: createCandidate });
 ```
 
-评估通过 `social.defineEval` 编写，两个 Experiment 分别选择 `baseline` 与 `candidate`。
-只有共同接口里的方法可在该评估中使用；两个独立创建但同名的契约不能互换。
+评估用例用 `social.defineEval` 编写，两个 Experiment 分别选 `baseline` 和 `candidate`。评估用例里只能用共同接口里的方法。两次分别调用 `defineAdapterContract` 得到的接口即使同名，也不能互换。
 
-需要共享断言方法时，在创建实现前调用 `withAssertions`：
+两套实现要共用断言方法时，在创建实现前调用 `withAssertions`：
 
 ```ts
 const social = defineAdapterContract<SocialContext>({ name: "social/v1" })
@@ -169,15 +179,19 @@ const social = defineAdapterContract<SocialContext>({ name: "social/v1" })
   }));
 ```
 
-从这个返回契约创建实现和评估，各实现就会使用相同检查。`withAssertions` 返回新契约，之前创建的实现不会自动取得这些方法。
+用 `withAssertions` 返回的接口创建实现和评估用例，各实现就会用同一套检查。`withAssertions` 返回的是一个新接口，在它之前创建的实现拿不到这些方法。
 
-执行身份同时包含 Adapter identity（`name`、`contract`、`behaviorRevision`）和 experiment 的 `flags`。评估用例静态项目内相对 import/export 闭包变化会自动使候选失效。
-Experiment 单独选择的实现、动态 import、外部包和远端服务不在自动范围内。为这些行为声明非空 `behaviorRevision`，或用显式配置表达变化；未声明版本的自定义 Adapter 不会自动复用。
+### 什么时候沿用上次结果
+
+再次运行时，NiceEval 会判断能否沿用上次的结果。参与判断的有 Adapter 的 `name`、`contract`、`behaviorRevision`，以及 Experiment 的 `flags`。评估用例文件和它在项目内用相对路径静态 import 的文件一改，这道题就会重跑。
+
+Experiment 单独选择的实现、动态 import、外部包和远端服务，NiceEval 看不到它们的变化。改了这些行为时，提高 `behaviorRevision`，或者用显式配置体现变化。没有声明 `behaviorRevision` 的自定义 Adapter 每次都重跑，不沿用上次结果。用 `pnpm exec niceeval exp local --dry` 可以先看哪些会沿用、哪些会重跑，见[修改后只重跑受影响的评估](/zh/tutorials/rerun-and-cache)。
 
 ## 保存应用执行轨迹
 
-应用结束并取得完整日志后，在 Adapter 内调用 `ctx.recordTrace`。每个事件保留自己的类型、主体、摘要和已知关系。
-应用不用把操作包装成聊天消息。下面的事件只表示请求已接纳；实际完成应记录另一条事件。
+评估失败时，你想知道应用内部到底做了什么。把应用的执行日志交给 NiceEval，之后就能用 `niceeval show` 逐条查看，不必再去应用那边翻日志。
+
+应用结束、拿到完整日志后，在 Adapter 里调用 `ctx.recordTrace`。每个事件保留自己的类型、执行者、摘要和已知的关联，不需要包装成聊天消息。下面的事件只表示发帖请求已被接受，真正发布完成要另记一条事件。
 
 ```ts
 const attachment = await ctx.attach({
@@ -207,23 +221,25 @@ const receipt = await ctx.recordTrace({
 });
 ```
 
-`key` 是这份快照内的关联键，`source.eventId` 只填写应用真实提供的 ID；没有时省略。
-`schema.id` 标识应用的事件格式，不需要填写 `revision`；NiceEval 自行管理记录格式。旧记录仍可读取，旧调用则需删去 `schema.revision`。
-返回的 `receipt.events` 给出可供查看的稳定 `eventId`。同一 `traceId` 重交相同快照返回同一身份，内容冲突会拒绝。
-摘要有界，大输入通过证据引用精确定位到附件中的值，查看时不需要手动扫描整份日志。
+- `key` 用来在这次提交的事件之间互相引用。`source.eventId` 只填应用真实提供的 ID，没有就省略。
+- `schema.id` 标明应用的事件格式，只填 `id`，不填 `revision`。
+- 返回的 `receipt.events` 给出每个事件的 `eventId`，查看时用它展开。同一个 `traceId` 再次提交相同内容，返回同样的 `eventId`；内容不同会被拒绝。
+- 摘要有长度上限。大段输入放进附件，用 `evidence` 的 `pointer` 指向附件里的具体位置，查看时直接定位，不用扫完整份日志。
+
+跑完后查看这个 Attempt 的执行过程，再展开某个事件：
 
 ```sh
-niceeval show @<attempt> --execution
-niceeval show @<attempt> --execution --expand <eventId>
+pnpm exec niceeval show @<attempt> --execution
+pnpm exec niceeval show @<attempt> --execution --expand <eventId>
 ```
 
-清理回调在独立时限内仍可提交轨迹。取消与完整性是两回事：取消后取得完整日志可以是 complete，
-缺少日志时使用 partial 并列出 limitations；不要用空集合表示未知。窗口外事件保留为 excluded 或 unknown，轨迹导入本身不产生评分。
-已保存的轨迹与证据随 Record 搬迁，查看时不调用原应用或模型。
+`collection.state` 描述日志是否完整，和运行有没有被取消无关。取消后仍拿到了完整日志，就写 `complete`。缺日志时写 `partial`，并在 `limitations` 里说明缺了什么，不要用空列表表示“不知道”。超出 `scopes` 采集范围的事件也保留下来，标成 `excluded`，判断不了的标成 `unknown`。提交执行日志本身不影响判分。
+
+`onCleanup` 回调有自己的时限，在里面也能提交执行日志。保存后的执行日志和附件随结果文件 `.niceeval/record.sqlite` 一起保存，查看时不会再调用应用或模型。
 
 ## 归档大附件
 
-应用可把文件、网络响应或生成器作为原始字节流交给 `ctx.attach`。NiceEval 不解析日志格式：
+应用的原始日志、网络响应这类大文件，可以作为附件和结果一起保存，排查时再取出来看。用 `ctx.attach` 把文件、网络响应或生成器作为字节流交给 NiceEval，NiceEval 不解析其中的格式：
 
 ```ts
 import { createReadStream } from "node:fs";
@@ -241,23 +257,27 @@ const receipt = await ctx.attach({
 });
 ```
 
-先关闭本地日志的写入端，再提交归档；读取期间保持源文件稳定。
-成功回执包含 `artifactId`、原始 bytes 的 `sha256` 和 `byteLength`，此后删除或改写源文件不会改变附件。
-回执只表示内容已接管；Attempt 发布后，附件才能随 Record 持久保存。这不表示上传到了远端服务。
+先关掉本地日志的写入，再提交附件，读取期间不要改动源文件。
 
-流每块最多 1 MiB、单件最多 1 GiB，每个 Attempt 的附件总量最多 2 GiB，同时最多归档 4 个流。
-字符串和数组仍是单件 64 MiB、累计 256 MiB。自定义来源必须响应传入的取消信号，释放自己的文件或连接。
-框架逐块复制并写入后才拉取下一块，不收集整件内容。大附件可以分块读取；作为 trace 的 JSON pointer 证据时，单件仍须不超过 64 MiB。
+返回的回执包含 `artifactId`、原始字节的 `sha256` 和 `byteLength`。拿到回执后，NiceEval 已经有了自己的副本，之后删除或改写源文件不影响附件。附件在这个 Attempt 的结果保存时一起写进结果文件，不会上传到任何远端服务。
 
-在 `ctx.onCleanup` 内归档时，使用 cleanup 回调提供的 `signal`，不要使用已取消的 `ctx.signal`。
-归档失败即使被捕获，也会留下采集失败；此前成功接管的附件保留。大文件应在执行期归档，cleanup 总窗口仍是 30 秒。
+大小限制：
+
+- 字节流每块最多 1 MiB，单个附件最多 1 GiB，每个 Attempt 的附件合计最多 2 GiB，同时最多提交 4 个流。
+- 字符串和数组形式的附件单个最多 64 MiB，合计最多 256 MiB。
+- 作为执行日志里 `pointer` 证据的附件，单个不能超过 64 MiB。
+
+NiceEval 写完一块才读下一块，不会把整个文件读进内存。自定义的流必须响应传入的 `signal`，并释放自己的文件或连接。
+
+在 `ctx.onCleanup` 里提交附件时，用 cleanup 回调提供的 `signal`，不要用已经取消的 `ctx.signal`。提交失败时，即使你捕获了错误，这个 Attempt 也会显示采集失败，之前成功提交的附件仍然保留。cleanup 总共只有 30 秒，大文件应在运行过程中提交。
 
 ## 阅读结果
 
-应用结果交给 `t.check` 后，NiceEval 保存有界检查材料和判定。
-没有采集的会话、工具调用和费用保持缺失。没有 Turn 不代表用了零 token，Judge 的费用也不代表整个应用的费用。
-自定义应用不能声明依赖完整应用费用的 `budget`，也不能声明 Agent 专属的 Sandbox 或会话能力。
-当前生命周期 Plugin 依赖 Agent 的执行准备，自定义应用配置它们会在运行前报错。
+用 `pnpm exec niceeval show` 查看这次运行。每条 `t.check` 保存了被检查的值（有长度上限）和判定。
+
+NiceEval 没有采集到的会话、工具调用和费用会显示为缺失，不会填成零。没有 Turn 不代表用了零 token，Judge 的费用也不等于整个应用的费用。
+
+因为拿不到应用的完整费用，自定义应用不能设置 `budget`，也不能声明只有 Agent 才有的 Sandbox 或会话能力。生命周期 Plugin 需要 Agent 的执行准备步骤，在自定义应用上配置它们会在运行前报错。
 
 完整可运行的模拟 X 示例位于 [LLM X 源码](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/llm-x)。
 它由 LLM 生成人物、个人主页、推文、配图和后续社交动态，并使用应用原生方法进行评估。

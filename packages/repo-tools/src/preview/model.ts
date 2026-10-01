@@ -1,4 +1,11 @@
 import { Data, Schema } from "effect";
+import { ChangePreviewSchema } from "concord-sdlc/change-preview";
+
+export const PreviewChangesReceiptSchema = Schema.Struct({
+  operation: Schema.Literal("preview-changes"),
+  output: Schema.String,
+  comparison: ChangePreviewSchema.fields.comparison,
+});
 
 export const PREVIEW_REPOSITORY = "https://github.com/NiceEval/NiceEval-Preview.git";
 export const NETLIFY_SITE_ID = "af2b96d9-1119-4686-a238-d0ea14240bcd";

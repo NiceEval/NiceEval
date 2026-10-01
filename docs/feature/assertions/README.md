@@ -1,14 +1,11 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: assertions
+title: Assertions
+createdAt: 2026-07-27T18:06:14+08:00
 kind: feature
-relations: {}
 ---
 
----
-format: niceeval.docs-node/v1
-kind: feature
-relations: {}
----
 
 # Assertions
 
@@ -85,10 +82,15 @@ Score Eval 从同一份 sealed Assertions 中的 `points`、earned contribution 
 
 ## 作者入口
 
-作者仍在观察结果的位置登记 Assertion：
+作者在观察结果的位置登记 Assertion：
 
 ```ts
-const turn = await t.send("搜索资料并说明结论。");
+const answerQuality = defineJudge({
+  name: "answer-quality",
+  rubric: "根据 question 评价 answer 是否准确、完整地回答问题。",
+});
+const question = "搜索资料并说明结论。";
+const turn = await t.send(question);
 
 t.check(turn.message, includes("已完成"))
   .key("reply-complete")
@@ -96,10 +98,24 @@ t.check(turn.message, includes("已完成"))
 
 turn.succeeded().label("Turn 完成");
 turn.calledTool("search").label("调用搜索工具");
-t.judge({ question, answer: turn.message }, answerQuality).gate(0.8);
+t.check({ question, answer: turn.message }, answerQuality).gate(0.8);
+turn.closeQA("这轮全部材料是否支持结论？").gate(0.8);
 ```
 
-`t.check` 只接收 `(value, match)`。`t.judge(value, definition)` 是只接受 `JudgeDefinition` 的薄包装；root、Session 与 Turn 都要求作者显式提供材料。scope 方法与两个显式入口都登记同一种 Assertion；handle 只配置该 entry，不能登记第二条检查。
+通用层拥有 Match、`check`、`closeQA`、Assertion handle、受管 Judge 与审计。
+应用层提供事实 reader 与领域断言。游戏的 `systemTwo`、`said`、`operations` 与 Agent 的 `usedNoTools`、`calledTool` 属于同一层；Agent 再适配各具体 Agent。
+领域断言通过同一 Match 和 `check` 登记，不另建 evaluator。分层边界见 [Architecture](../../architecture.md#一个评估模型按应用组合上下文)。
+
+`check(value, match)` 检查显式事实；`check(contextualMatch)` 从当前接收者的只读 ctx 读取材料或单个聚合事实。
+`defineJudge` 返回真实 ScoreMatch；`judge(value, scoreMatch)` 是转交同一 `check` 的便利入口。
+这些入口与 scope 方法都登记同一种 Assertion，handle 只配置该 entry。
+
+`closeQA(selector, question)` 对完整匹配集合提出验收问题，将两者编译为受管评分 Match，再交给同一 `check`。
+游戏的 `t.closeQA(saidMatch(...), question)` 使用业务 ctx reader。
+Agent 的 `t.closeQA(question)`、`turn.closeQA(question)` 和 `session.closeQA(question)` 默认读取当前 scope 的完整材料；显式领域 Match 可筛选全部命中项。
+默认与显式选择共用完整性、预算、取消和审计规则，具体材料要求见 [Judge Library](../judge/library.md)。
+
+`usedNoTools()` 是零参数领域断言，不接受额外 Match。它要求工具集合计数为 exact zero；未知集合不能证明没有发生。
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 的 Boolean `.gate()` 与 measurement `.gate(minimum)` 形成显式质量门；gate 失败保留 earned score 并得到 `failed` Verdict。Score 不提供 generic optional contribution；它保留受约束的 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 

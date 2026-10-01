@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: compile-time-contracts
+title: 编译期作者契约
+createdAt: 2026-08-01T12:58:51+08:00
 kind: feature
-relations: {}
 ---
 
 # 编译期作者契约

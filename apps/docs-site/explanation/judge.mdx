@@ -11,7 +11,7 @@ Judge uses a separate model to assess factual consistency, summary faithfulness,
 Define the criterion at module scope. `rubric` describes the dimensions to evaluate, and `anchors` provide calibration points for a continuous quality scale:
 
 ```ts
-import { closeQA, defineJudge } from "niceeval";
+import { defineJudge } from "niceeval";
 
 const explainsRisk = defineJudge({
   name: "explains-risk",
@@ -52,25 +52,32 @@ When you need to inspect image content, put `judgeImage({ body, mediaType })` in
 
 ## Use built-in Judges directly
 
-Root `t`, Session, and Turn each provide built-in methods and return `MeasurementAssertionHandle<Kind>` Assertions. For example:
+Root `t`, Session, and Turn provide built-in methods that return `MeasurementAssertionHandle<Kind>` Assertions. For example:
 
 ```ts
-const answer = await t.send("Answer the question using the material.");
+import { eventMatch } from "niceeval/expect";
 
-answer.closeQA({
-  input: "Answer the question using the material.",
-  output: answer.message,
-  context: "The material only says that the product launches on Friday.",
-}).gate(0.8).label("Uses only the material");
+const answer = await t.send("List the risks and rollback steps.");
+answer.closeQA("Does this turn explain the risks and actionable rollback steps?")
+  .gate(0.8).label("Rollback explanation");
 
-// Equivalent factory form:
-answer.check(
-  { input: "Answer the question using the material.", output: answer.message, context: "The material only says that the product launches on Friday." },
-  closeQA(),
+// For a specific check, select all assistant messages explicitly.
+answer.closeQA(
+  eventMatch("message", { role: "assistant" }),
+  "Do all messages clearly explain the risks?",
 ).gate(0.8);
 ```
 
-The direct methods are `factuality(material, options?)`, `faithfulness(material, options?)`, `instructionFollowing(material, options?)`, `pairwisePreference(material, options?)`, and `closeQA(material, options?)`. They only create a factory value and pass it to the current receiver's `check`; they do not register another Assertion.
+`closeQA(selector, question, options?)` sends all matched material to one Judge in its original order. The question is an acceptance criterion to answer using only the material, not an expected answer.
+Agent's `closeQA(question, options?)` uses the current Turn, Session, or Attempt's complete recorded history, including messages and tool facts. It does not select only the final reply or successful operations.
+An explicit `EventMatch` selects from the three event views. For questions about tool inputs and outputs, use a `ToolMatch` or custom `MaterialMatch`.
+These forms compose a scoring Match and pass it to the same `check`. Application assertions such as `usedNoTools()` encapsulate a fixed criterion and do not accept another Match.
+The decision is 1 when satisfied, 0 when not satisfied, and `unavailable` when evidence is insufficient. A complete empty collection yields 0 without a model call. Missing or oversized material is not filled with zero or truncated before scoring.
+
+For material from another application, use a custom `MaterialMatch`. An Adapter's `create` provides the application context. The synchronous reader in `defineMaterialMatch` reads the current read-only context when the Assertion is registered.
+The selector predicate evaluates one item; `and` applies its conditions to the same item. Use `t.check(selector).gate()` for ordinary existence checks and `t.closeQA(selector, question).gate(0.8)` for a question about the whole matched collection.
+
+`factuality`, `faithfulness`, `instructionFollowing`, and `pairwisePreference` take explicit material, construct a Match, and pass it through the same `check` receiver.
 
 ## Configure the Judge Provider
 
@@ -100,19 +107,6 @@ TypeSafe supports score, classify, and batch classify, but not extract. Therefor
 ## Thresholds and scores
 
 Pass-style and score-style Evals call `.gate(minimum)` on the registered handle to form a quality gate. Score-style Evals can also call `.score(points)`; the contribution is measurement multiplied by points. Gate and score may be called in either order, and both execute the Judge only once.
-
-```ts
-t.judge(
-  {
-    input: turn.input,
-    output: turn.message,
-    context: "The answer must cover the requirements stated in the input.",
-  },
-  closeQA(),
-).gate(0.8).label("Answer quality");
-```
-
-Both styles run the Judge evaluator once. A Judge Assertion without `.score()` saves only the evaluation by default.
 
 ## Configuration, preflight, and failures
 

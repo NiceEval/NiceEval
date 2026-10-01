@@ -1,17 +1,38 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: init-inspection-guidance-drift
 title: init 托管指引与查看命令漂移
 createdAt: 2026-09-07
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - netake_NMAQ3YBXZ4ARFFA1
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/init-inspection-guidance.test.ts#necase_3HDDG0091KDYCM47"]}
     proof:
       - netake_NMAQ3YBXZ4ARFFA1
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/init-inspection-guidance.test.ts#necase_3HDDG0091KDYCM47"]}
-promotions: []
+    source:
+      path: memory/init-inspection-guidance-drift.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:3cb5cb831ec238240320943b2fee21e9486752aa470446ebd7a4a344a3676181
 ---
 # init 托管指引与查看命令漂移
 

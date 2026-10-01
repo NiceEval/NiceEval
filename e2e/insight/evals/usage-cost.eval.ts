@@ -6,6 +6,7 @@ export default usageCost.defineEval({
   test(t) {
     t.record({
       callId: "gateway-call",
+      modelSlot: "primary",
       provider: "typesafe-ai",
       model: "typesafe-ai/jev",
       route: { transportProvider: "vercel", endpointId: "vercel-ai-gateway" },
@@ -23,6 +24,7 @@ export default usageCost.defineEval({
     });
     t.record({
       callId: "custom-endpoint-call",
+      modelSlot: "secondary",
       provider: "openai",
       model: "openai/gpt-6-luna",
       route: { transportProvider: null, endpointId: "custom-openai-compatible" },
@@ -33,6 +35,7 @@ export default usageCost.defineEval({
       cacheWriteTokens: 0,
       outputTokens: null,
     });
+    t.finishUsage();
     t.check(true, equals(true)).gate();
   },
 });

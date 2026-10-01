@@ -1,6 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
-import type { ViewGenerationBinding } from "../data/index.ts";
-import { SelectionMissingError } from "../data/operations.ts";
+import { Result } from "effect";
+import { decodeInspectionOperation } from "../../../../../inspection/public.ts";
+import { inspectionQueryOptions, type ViewGenerationBinding } from "../data/index.ts";
+import { RouteInputError, SelectionMissingError } from "../data/operations.ts";
 import type { ClosedOverview, ResultsPageModel } from "./model.ts";
 import type { ViewManifest } from "../shell/manifest.ts";
 
@@ -20,6 +22,9 @@ export function resultsQueryOptions(
         throw new SelectionMissingError("Results selection is unavailable.");
       }
       const selectedExperiments = group?.members ?? [];
+      if (selectedExperiments.length === 1) {
+        return generation.queryClient.fetchQuery(experimentQueryOptions(generation, overview, selectedExperiments[0]!));
+      }
       return Object.freeze({
         overview,
         selectedExperiments,
@@ -41,10 +46,19 @@ export function experimentQueryOptions(
         throw new SelectionMissingError("Experiment selection is unavailable.");
       }
       const selectedExperiments = [experimentId];
+      const operation = decodeInspectionOperation({
+        kind: "experiment.get",
+        experimentId,
+      });
+      if (Result.isFailure(operation) || operation.success.kind !== "experiment.get") {
+        throw new RouteInputError("Invalid experiment route.");
+      }
+      const document = await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, operation.success));
       return Object.freeze({
         overview,
         selectedExperiments: Object.freeze(selectedExperiments),
         selectionTitle: selectedExperiments[0] ?? "Results",
+        costSummary: document.experiment.costSummary,
       });
     },
   });

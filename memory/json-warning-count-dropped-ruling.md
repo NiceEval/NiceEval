@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: json-warning-count-dropped-ruling
+title: "`--json` 的 warning 事件不带折叠计数"
+createdAt: 2026-07-24T20:37:22+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/json-warning-count-dropped-ruling.md
+  commit: 344febe01e561a3b4bc2f2e35c81c5a4e7f4976e
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # `--json` 的 warning 事件不带折叠计数
 
 - **裁决**(2026-07-24):`WarningEvent` 删掉 `count` 字段。诊断按 dedupeKey 去重后只在首次出现时追加一行,append-only 事件流承载的是「这件事发生过」;折叠次数是会被后续出现改写的状态,只活在 human 的诊断行(`! <code> (12 attempts)`)与 `snapshot.json` 的持久化诊断——要终值走 `show --json` 读快照。契约落在 `docs/feature/experiments/cli.md`(`WarningEvent` 形状 + 「`--json` 固定满足」的诊断条目)。

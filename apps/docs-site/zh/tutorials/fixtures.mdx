@@ -1,14 +1,22 @@
 ---
-title: "Sandbox Fixture：用任务评估 coding agents"
+title: "给 Coding Agent 准备任务：工作区、提示和验收"
 sidebarTitle: "Fixture"
-description: "用 .eval.ts 给 coding agent 准备隔离 workspace、发送真实任务，并用 Sandbox 文件、命令、diff 和 judge 验证结果。"
+description: "在评估用例里把一个真实项目放进 Sandbox，给 Coding Agent 发任务，再用文件内容、命令结果、diff 和 Judge 检查它做得对不对。"
 ---
 
-评估 coding agent 时，单纯检查一段回复不够。你通常要给它一个真实项目，让它读写文件、运行命令、提交改动，然后检查产物是否正确。[NiceEval](https://niceeval.com/) 的当前推荐写法是：用普通 `.eval.ts` 文件显式准备 sandbox workspace、发送任务并断言结果。
+评估 Coding Agent 时，只看它回了什么不够。你要给它一个真实项目，让它读写文件、运行命令，然后检查改出来的东西对不对。
+
+这一切都写在普通的 `.eval.ts` 里，分三步：
+
+1. 把起始项目放进 Sandbox，也就是 Fixture。
+2. 给 Agent 发一个具体任务。
+3. 用文件内容、命令结果和 diff 验收，开放式的质量再交给 Judge。
 
 可运行参考见 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)（独立仓库）。
 
 ## 推荐目录结构
+
+先把起始项目和评估用例分开放。Agent 能看到的只有你上传进 Sandbox 的部分，评估代码和验证材料留在外面：
 
 ```text
 evals/
@@ -30,11 +38,11 @@ experiments/
 └─ with-skill.ts
 ```
 
-`workspaces/` 存放 Agent 可见的初始项目。`.eval.ts` 控制 Workspace 上传时机、任务 prompt 和结果检查。`experiments/` 选择 Agent、模型，以及是否注入 Skill 或插件。
+`workspaces/` 放 Agent 能看到的起始项目。`.eval.ts` 决定什么时候上传、发什么任务、怎么检查结果。`experiments/` 选择 Agent 和模型，以及是否加载 Skill 或插件。
 
-## 准备 workspace
+## 把起始项目放进 Sandbox
 
-在评估用例里把初始项目上传到 sandbox：
+Agent 要在一个真实项目里工作，第一步是把项目上传进 Sandbox：
 
 ```ts
 import { defineEval } from "niceeval";
@@ -51,11 +59,13 @@ export default defineEval({
 });
 ```
 
-也可以用 `t.sandbox.writeText()` 在单个评估用例里补充种子文件，适合小任务或安全探针。
+路径相对评估用例文件。上传的文件放在 Sandbox 的工作目录下，Agent 一开始就能看到。只缺一两个文件时，用 `t.sandbox.writeText()` 直接写入，适合小任务或安全检查脚本。
+
+`fileChanged` 不通过时，先用 `pnpm exec niceeval show @<locator> --diff` 看 Agent 实际改了哪些文件。
 
 ## 写任务 prompt
 
-Prompt 应该像真实工单，描述目标和约束，但不要泄露验证答案。
+Prompt 要像一张真实工单：写清目标和约束，但不要把验证答案透露出去。
 
 ```ts
 await t
@@ -71,9 +81,11 @@ await t
   .then((turn) => turn.succeeded());
 ```
 
-把“是否防路径穿越”“是否复用现有工具”这类隐式质量要求留给验证阶段，才能测出 Skill 或插件是否真的帮助 agent 主动补齐上下文。
+“是否防路径穿越”“是否复用现有工具”这类没写进需求的质量要求，留到验证阶段再查。这样才能测出 Skill 或插件是否真的让 Agent 主动补上了这些考虑。
 
 ## 验证文件和代码
+
+Agent 跑完后，读出它改过的文件，检查关键代码是否到位：
 
 ```ts
 import { not, pattern } from "niceeval/expect";
@@ -86,11 +98,11 @@ t.check(code, not(pattern(/process\.env\.\w+\s*\?\?/)));
 t.sandbox.fileChanged("src/config/env.ts");
 ```
 
-`t.sandbox.fileChanged()` 是作用域断言：它在运行结束后用 agent 归因 diff 判断目标文件是否真的被修改。
+`t.sandbox.fileChanged()` 只看 Agent 在 `t.send()` 期间的改动，判断目标文件有没有被它改过。你自己上传或写入的文件不算。记录规则见 [Sandbox Agent · 让文件改动能被记下来](/zh/tutorials/sandbox-agent#让文件改动能被记下来)。
 
-## 运行项目测试或探针脚本
+## 运行项目测试或检查脚本
 
-对 coding-agent 任务，真实命令通常比文本匹配更可靠：
+文本匹配只能看代码长什么样，跑一遍才知道它对不对。对 Coding Agent 任务，真实命令通常更可靠。下面在 Agent 跑完后写入一个检查脚本并执行：
 
 ```ts
 await t.sandbox.writeText(
@@ -113,7 +125,7 @@ const result = await t.sandbox.runCommand("python3", ["_test_traversal.py"]);
 t.check(result.stdout.trim(), pattern(/ok/));
 ```
 
-也可以运行项目自己的 test/lint/build 脚本：
+也可以直接跑项目自己的 test、lint 或 build 脚本：
 
 ```ts
 import { commandSucceeded } from "niceeval/expect";
@@ -122,27 +134,31 @@ const result = await t.sandbox.runCommand("npm", ["test"]);
 t.check(result, commandSucceeded());
 ```
 
-## 用 experiment 做对照组
+`commandSucceeded()` 不通过时，用 `pnpm exec niceeval show @<locator>` 查看命令的退出码和输出。
 
-不要把 Agent 名、插件名或 URL 放进位置参数。Experiment 选择 Agent 并固定运行配置。CLI 的评估用例位置参数只过滤评估用例 ID。
+## 用 Experiment 做对照组
+
+要知道 Skill 或插件有没有用，就让同一批任务分别在装和不装的条件下跑。条件写在 Experiment 里：它选择 Agent、固定运行配置。命令行第一个参数选 Experiment，后面的参数按 ID 前缀筛选评估用例。不要把 Agent 名、插件名或 URL 写进命令行参数。
 
 ```bash
 pnpm exec niceeval exp compare
 pnpm exec niceeval exp compare api-validation
 ```
 
-典型 A/B：
+典型的 A/B 对照：
 
-- `experiments/baseline.ts`：不加额外配置的 agent。
-- `experiments/with-skill.ts`：同一 agent + setup hook 注入 `CLAUDE.md`。
-- 两组使用同一批评估用例、同一模型、同一 attempts 和预算。
+- `experiments/baseline.ts`：不加额外配置的 Agent。
+- `experiments/with-skill.ts`：同一个 Agent，用生命周期 Hook 或 [Plugin](/zh/tutorials/plugins) 写入 `CLAUDE.md`。
+- 两组用同一批评估用例、同一模型、同样的 `attempts` 和预算。
 
-## Sandbox Fixture 的适用场景
+两组都跑完后，用 `pnpm exec niceeval show --experiment baseline --experiment with-skill` 在终端对比，或用 `pnpm exec niceeval view` 在浏览器里看。两组成绩几乎一样时，先确认 `with-skill` 的 Sandbox 里真的有 `CLAUDE.md`。
 
-- 需要 agent 修改真实文件。
-- 需要运行项目测试、构建或 lint。
-- 需要比较 diff。
-- 需要评估 Claude Code、Codex 这类 coding agent。
-- 需要比较 Skill / 插件 / Hook 是否改善真实任务。
+## 什么时候用 Fixture
 
-如果只是评 direct agent 应用，用普通 direct adapter 会更轻。
+- Agent 要修改真实文件。
+- 要运行项目的测试、构建或 lint。
+- 要比较代码改动。
+- 评估的是 Claude Code、Codex 这类 Coding Agent。
+- 要比较 Skill、插件或 Hook 能否改善真实任务的结果。
+
+如果被测的是普通对话应用，不需要文件和命令，直接用对话 Adapter 接入更轻，见[接入你的 Agent](/zh/tutorials/connect-your-agent)。

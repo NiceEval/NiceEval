@@ -1,8 +1,33 @@
 ---
-name: oversized-tool-output-blows-up-artifacts
+format: concord.document/v1
+id: oversized-tool-output-blows-up-artifacts
+title: oversized-tool-output-blows-up-artifacts
+createdAt: 2026-07-13T14:23:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/oversized-tool-output-blows-up-artifacts.md
+  commit: 4883d8ecdc4c392805cdc63779453105f0b66f3d
 description: 一条失控 grep 让单个 attempt 的 trace.json 撑到 101MB,同一份 51MB 字符串在盘上存了三遍;修法是写入面统一截断
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "**已修**(2026-07 复核):代码在 `5e7549eb`(results schema v8)随落盘截断一起实现,与上面的契约逐条对上——"
+    proof: []
+    source:
+      path: memory/oversized-tool-output-blows-up-artifacts.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b08c7c2eb403484b641da6712f0bba384b9e6d9c93095cc2644195bdc50611c1
 ---
 
 **现象**:`coding-agent-memory-evals` 的 `.niceeval/dev-e2b_bub-e2b/2026-07-11T10-38-30-729Z-ua0x/memory/agent-037-updatetag-cache/a0/` 一个 attempt 占 159MB:

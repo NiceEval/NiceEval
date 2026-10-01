@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_DCFSBPFARWB0QD6D": {
+      "memory/view-hard-refresh-duplicates-attempt-overlay.md": {
+        "red": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_WFZ2XWRF2BECH78C-netake_YQZGSWP388S90J9B/red.json",
+          "digest": "sha256:f26446cb786bd042239a48d92d3081f3663456a9055950f72f7d189ce956f4cc"
+        },
+        "green": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_WFZ2XWRF2BECH78C-netake_YQZGSWP388S90J9B/green.json",
+          "digest": "sha256:4832484c4660b5b535a5085b113be14878a892c8970fb3a8a49b40b36d55040a"
+        },
+        "certificate": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_WFZ2XWRF2BECH78C-netake_YQZGSWP388S90J9B/certificate.json",
+          "digest": "sha256:d2784c36cb35622d0d8b1ce813cf1354a36a4ff821ed7daf17b6d4574973559a"
+        },
+        "inventory": {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/necase_DCFSBPFARWB0QD6D/memory_view-hard-refresh-duplicates-attempt-overlay.md/nered_WFZ2XWRF2BECH78C-netake_YQZGSWP388S90J9B/inventory.json",
+          "digest": "sha256:aa9b8a38233a32296e5a1d5de838f9054651f59475bb7f65ff5a45382699bb5f"
+        }
+      }
+    }
+  }
+}

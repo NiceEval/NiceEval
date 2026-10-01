@@ -1,3 +1,30 @@
+---
+format: concord.document/v1
+id: evaluation-facts-separate-verdict-and-score
+title: 裁决：评估事实与判定、控制流、计分分离
+createdAt: 2026-08-09T13:10:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/evaluation-facts-separate-verdict-and-score.md
+  commit: 0fd00434d6cbc8dd2443a169807940ea6da282d4
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: revise
+    reason: "- 部分被后续裁决替代
+      [evaluation-facts-separate-verdict-and-score](evaluation-facts-separate-v\
+      erdict-and-score.md) — 裁决(2026-08-09):Fact 只求值，`assert`/`require`
+      只判定，`score` 只计分；第 6 条的显式完成令牌与非空计分要求已由下一条替代"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-08-09
+---
 # 裁决：评估事实与判定、控制流、计分分离
 
 **日期**：2026-08-09

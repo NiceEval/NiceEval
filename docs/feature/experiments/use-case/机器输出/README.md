@@ -4,7 +4,7 @@
 
 | 目标 | 用例 |
 |---|---|
-| 让 coding agent 驱动运行、读失败、修改与复验 | [AI 修复循环](AI修复循环.md) |
-| 让 CI 根据退出码门禁并归档结构化结果 | [CI 门禁](CI门禁.md) |
+| 让 coding agent 驱动运行、读失败、修改与复验 | [AI 修复循环](../machine-output-ai-fix-loop.md) |
+| 让 CI 根据退出码门禁并归档结构化结果 | [CI 门禁](../machine-output-ci-gate.md) |
 
 输出事件词表与流边界见[Experiments CLI](../../cli.md#机器怎么读--json)。

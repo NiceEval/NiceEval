@@ -1,0 +1,318 @@
+{
+  "format": "concord.native-case-receipt/v1",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/insight/test/view-snapshot.browser.spec.ts#neref_b837639ed5650fdfbc1c8e0680cf3b4a",
+  "caseId": "neref_b837639ed5650fdfbc1c8e0680cf3b4a",
+  "inventoryDigest": "sha256:8c3a1dd12f8e42cc33dab0a7dcf558dfd3db7a5d048a01844eece3ff3126e299",
+  "problem": {
+    "path": "memory/inspection-complete-failed-scores.md",
+    "epoch": 0
+  },
+  "candidate": {
+    "gitSha": "7ad457dcd4867bf3fe3c38715d7a2d13507bb05b",
+    "sha256": "b65a4ebeaa9eaa014c219a2783f9effd8f17e5d733592d67a9492a79ad859c08",
+    "sri": "sha256-tlpOvqqeqgFMIZong/nv/Y8X5dczWS1nqUkqea2FnAg="
+  },
+  "source": {
+    "format": "concord.repository-source-identity/v4",
+    "projection": {
+      "algorithm": "concord.repository-source-projection/v3",
+      "digest": "sha256:a5474e39db39a906ed1567a87d2c1436221e7981ad5a168856002317674613b7",
+      "files": [
+        {
+          "path": "e2e/insight/adapters/execution-trace.ts",
+          "bytes": 1125,
+          "rawSha256": "bdcfa7b10cb2f9a86afd1bb6454fc79ee63005d8e1769de94dcfde776f180445",
+          "codeSha256": "bdcfa7b10cb2f9a86afd1bb6454fc79ee63005d8e1769de94dcfde776f180445"
+        },
+        {
+          "path": "e2e/insight/adapters/usage-cost.ts",
+          "bytes": 257,
+          "rawSha256": "2121528588c872a29aa16acbcb93ffd820d0da0b5d9020a6bcb5ef186bee6039",
+          "codeSha256": "2121528588c872a29aa16acbcb93ffd820d0da0b5d9020a6bcb5ef186bee6039"
+        },
+        {
+          "path": "e2e/insight/agents/classic.ts",
+          "bytes": 4005,
+          "rawSha256": "fad96454f7a130500cd126980493b4f9748d3aa0f939cb50a4580698a464e5e4",
+          "codeSha256": "fad96454f7a130500cd126980493b4f9748d3aa0f939cb50a4580698a464e5e4"
+        },
+        {
+          "path": "e2e/insight/agents/deterministic.ts",
+          "bytes": 2602,
+          "rawSha256": "6c619360a4a9120972cf405819fc3f475773e2a807b1d4d35c28f707bfd60bf4",
+          "codeSha256": "6c619360a4a9120972cf405819fc3f475773e2a807b1d4d35c28f707bfd60bf4"
+        },
+        {
+          "path": "e2e/insight/agents/process-sandbox.ts",
+          "bytes": 4674,
+          "rawSha256": "e22a9cf95bf3ac1fd3cc21b03367b77a57230f3cac6477470f14be7fe5723b3a",
+          "codeSha256": "e22a9cf95bf3ac1fd3cc21b03367b77a57230f3cac6477470f14be7fe5723b3a"
+        },
+        {
+          "path": "e2e/insight/evals/classic.eval.ts",
+          "bytes": 1939,
+          "rawSha256": "7302fcea9fd3065d647f96734dfcb00c8b90befc169ecf906939cb5ed78e17a2",
+          "codeSha256": "7302fcea9fd3065d647f96734dfcb00c8b90befc169ecf906939cb5ed78e17a2"
+        },
+        {
+          "path": "e2e/insight/evals/execution-trace.eval.ts",
+          "bytes": 218,
+          "rawSha256": "af785e1775182548e4646e726431cb5f6da48b0e6814c475cb305accd1f2d6f9",
+          "codeSha256": "af785e1775182548e4646e726431cb5f6da48b0e6814c475cb305accd1f2d6f9"
+        },
+        {
+          "path": "e2e/insight/evals/inspection.eval.ts",
+          "bytes": 1506,
+          "rawSha256": "fa9ac101d32a8aeb7f36b7a2fb1371fa74db876028b76bc1dc105e6f42ad455e",
+          "codeSha256": "fa9ac101d32a8aeb7f36b7a2fb1371fa74db876028b76bc1dc105e6f42ad455e"
+        },
+        {
+          "path": "e2e/insight/evals/overview-secondary.eval.ts",
+          "bytes": 351,
+          "rawSha256": "e2b5a5ca7afa41a02b74157634194858379063465ac55f7f17ab470de9b6fc18",
+          "codeSha256": "e2b5a5ca7afa41a02b74157634194858379063465ac55f7f17ab470de9b6fc18"
+        },
+        {
+          "path": "e2e/insight/evals/score.eval.ts",
+          "bytes": 489,
+          "rawSha256": "3209c6d0a8ced53c26e0379e19fd7afaf692b34159b1bbe973b92a049e86d9d8",
+          "codeSha256": "3209c6d0a8ced53c26e0379e19fd7afaf692b34159b1bbe973b92a049e86d9d8"
+        },
+        {
+          "path": "e2e/insight/evals/source-snapshot.eval.ts",
+          "bytes": 435,
+          "rawSha256": "9433d1a41cec6eaaaf176cdee92a8084bd4e526a96f4400651a0884fb94e324d",
+          "codeSha256": "9433d1a41cec6eaaaf176cdee92a8084bd4e526a96f4400651a0884fb94e324d"
+        },
+        {
+          "path": "e2e/insight/evals/source-snapshot/assertions.ts",
+          "bytes": 457,
+          "rawSha256": "ce247d4b0c1a01da27851099fa5426a5e998622c4a7afc21729e493edc0dda68",
+          "codeSha256": "ce247d4b0c1a01da27851099fa5426a5e998622c4a7afc21729e493edc0dda68"
+        },
+        {
+          "path": "e2e/insight/evals/usage-cost.eval.ts",
+          "bytes": 1209,
+          "rawSha256": "52f2d7a6f609d7799d57e54b256526a2c2fd4f0a7a4b71b93ba46f5e8517d7b1",
+          "codeSha256": "52f2d7a6f609d7799d57e54b256526a2c2fd4f0a7a4b71b93ba46f5e8517d7b1"
+        },
+        {
+          "path": "e2e/insight/evals/verdict-scores.eval.ts",
+          "bytes": 1302,
+          "rawSha256": "ce7ffa58586053b53ac0eb1443aa79642d5b08a41a652b44cf66cc3178f46c14",
+          "codeSha256": "ce7ffa58586053b53ac0eb1443aa79642d5b08a41a652b44cf66cc3178f46c14"
+        },
+        {
+          "path": "e2e/insight/experiments/alternate.ts",
+          "bytes": 369,
+          "rawSha256": "ea868d479e287dac4411cba4f9656e8defe3477f98a53aca01d62a1098c2b240",
+          "codeSha256": "ea868d479e287dac4411cba4f9656e8defe3477f98a53aca01d62a1098c2b240"
+        },
+        {
+          "path": "e2e/insight/experiments/classic/baseline.ts",
+          "bytes": 434,
+          "rawSha256": "8b57b1f6c2c5a3dd4e8ba35c052e10acae6d2f7a56f96d2c68dd7b12bcfa66b4",
+          "codeSha256": "8b57b1f6c2c5a3dd4e8ba35c052e10acae6d2f7a56f96d2c68dd7b12bcfa66b4"
+        },
+        {
+          "path": "e2e/insight/experiments/classic/incompatible.ts",
+          "bytes": 511,
+          "rawSha256": "013b801474b8972fabcf9cf9a0b93e24e1021d9b35bd7219526071982ca3925c",
+          "codeSha256": "013b801474b8972fabcf9cf9a0b93e24e1021d9b35bd7219526071982ca3925c"
+        },
+        {
+          "path": "e2e/insight/experiments/classic/memory-a.ts",
+          "bytes": 435,
+          "rawSha256": "d245a8d799c7cd13f3ce1bff39fc3c77ae163001502a89894195c021d46e1c0a",
+          "codeSha256": "d245a8d799c7cd13f3ce1bff39fc3c77ae163001502a89894195c021d46e1c0a"
+        },
+        {
+          "path": "e2e/insight/experiments/execution-trace.ts",
+          "bytes": 201,
+          "rawSha256": "83509f9a75c77c389957d4f041327e660eb9ad7123d244bd496c719d762cc30e",
+          "codeSha256": "83509f9a75c77c389957d4f041327e660eb9ad7123d244bd496c719d762cc30e"
+        },
+        {
+          "path": "e2e/insight/experiments/harness/alternate.ts",
+          "bytes": 390,
+          "rawSha256": "d7eb6a41429ba773a7142428f09aee3d6cbc1ae71bd147e3fb5225b4521e6f78",
+          "codeSha256": "d7eb6a41429ba773a7142428f09aee3d6cbc1ae71bd147e3fb5225b4521e6f78"
+        },
+        {
+          "path": "e2e/insight/experiments/harness/canary.ts",
+          "bytes": 375,
+          "rawSha256": "4a4432eb209c1a02c1259d09f74af4cd61431efe3cff74e067f641ea70c10c6b",
+          "codeSha256": "4a4432eb209c1a02c1259d09f74af4cd61431efe3cff74e067f641ea70c10c6b"
+        },
+        {
+          "path": "e2e/insight/experiments/inspection-multi.ts",
+          "bytes": 435,
+          "rawSha256": "37e2ca5f16550efd6cc33b66603fa88356ac4eece2577b771f5c321b5862804c",
+          "codeSha256": "37e2ca5f16550efd6cc33b66603fa88356ac4eece2577b771f5c321b5862804c"
+        },
+        {
+          "path": "e2e/insight/experiments/install/canary.ts",
+          "bytes": 375,
+          "rawSha256": "5dbfd6706aa0837afce486a3f2b37a5be31ff612e47ae134d1b96f07ad850364",
+          "codeSha256": "5dbfd6706aa0837afce486a3f2b37a5be31ff612e47ae134d1b96f07ad850364"
+        },
+        {
+          "path": "e2e/insight/experiments/main.ts",
+          "bytes": 371,
+          "rawSha256": "05ed446d9324da11f09c8d53eaa8b3eb5b7c703123252a3a53593a3e5b631410",
+          "codeSha256": "05ed446d9324da11f09c8d53eaa8b3eb5b7c703123252a3a53593a3e5b631410"
+        },
+        {
+          "path": "e2e/insight/experiments/partial-usage.ts",
+          "bytes": 431,
+          "rawSha256": "e34632c9f71d6de77e93438109412a528d83515bc1fea7db96627a4e85397754",
+          "codeSha256": "e34632c9f71d6de77e93438109412a528d83515bc1fea7db96627a4e85397754"
+        },
+        {
+          "path": "e2e/insight/experiments/verdict-scores.ts",
+          "bytes": 380,
+          "rawSha256": "2708fa6c4e38b926c5ce392e7e81fb2c4f34df9a6f9f92acab2d858ff1b81f9d",
+          "codeSha256": "2708fa6c4e38b926c5ce392e7e81fb2c4f34df9a6f9f92acab2d858ff1b81f9d"
+        },
+        {
+          "path": "e2e/insight/niceeval.config.ts",
+          "bytes": 496,
+          "rawSha256": "c15fe8eb92d240c6e81b8e88635ddab6ecc43c4c7a25f6e89468c7cde26cde72",
+          "codeSha256": "c15fe8eb92d240c6e81b8e88635ddab6ecc43c4c7a25f6e89468c7cde26cde72"
+        },
+        {
+          "path": "e2e/insight/playwright.config.ts",
+          "bytes": 548,
+          "rawSha256": "57756db802ae9b40fd01020cd7920bbf0803743a3d29474e51a4854c22db0e7e",
+          "codeSha256": "57756db802ae9b40fd01020cd7920bbf0803743a3d29474e51a4854c22db0e7e"
+        },
+        {
+          "path": "e2e/insight/scripts/run-native.mjs",
+          "bytes": 1376,
+          "rawSha256": "2e563464c514700fd74b6325738195672dec219de0b99ee261f3e7b7ff15aaa6",
+          "codeSha256": "2e563464c514700fd74b6325738195672dec219de0b99ee261f3e7b7ff15aaa6"
+        },
+        {
+          "path": "e2e/insight/test/support.ts",
+          "bytes": 2431,
+          "rawSha256": "c0e27da776efd19d5b5550cd204bcfc7cb8ebead976e74bd0738e410189ce4fa",
+          "codeSha256": "c0e27da776efd19d5b5550cd204bcfc7cb8ebead976e74bd0738e410189ce4fa"
+        },
+        {
+          "path": "e2e/insight/test/view-authorization.browser.spec.ts",
+          "bytes": 10500,
+          "rawSha256": "e25d8be51e101c9c2de0da7c40affabdb06a8a227c2b4b3df326c7c856db6884",
+          "codeSha256": "7dfda57b7bd9eca3591422f908d3090fa1813bf382fe4e9f4d728090bf4086af"
+        },
+        {
+          "path": "e2e/insight/test/view-lifecycle.test.ts",
+          "bytes": 6579,
+          "rawSha256": "ab80ebd9617957458a49dc317a160c7d137e344379dfc4f3c5f41c6e2f9b5057",
+          "codeSha256": "1b4101d53c52a90637b643491c5bba0582ca0a8dc6929617d980ae8b6ae1b76d"
+        },
+        {
+          "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts",
+          "bytes": 13273,
+          "rawSha256": "07dfcc527e044f35570b2f08adbedbd180de4d2e010d79ac4959a5f341737fa7",
+          "codeSha256": "592bf01736b64b6d5ed20ae0b7ef9b146b16e26a63bae46f376c0da21348baae"
+        },
+        {
+          "path": "e2e/insight/test/view-snapshot.browser.spec.ts",
+          "bytes": 40720,
+          "rawSha256": "78a2657175c251ac502206bb29bb79edf4facf0dfcf6077f22cac1aa8f40ecae",
+          "codeSha256": "26ed3ac723629aa990f0b70a54d9a712c4d2d37493228c10c5e31dfdfceb7a8d"
+        },
+        {
+          "path": "e2e/insight/vitest.config.ts",
+          "bytes": 183,
+          "rawSha256": "b50526a0c63a310adf91568cc5cbe88b12d51f0d2f52126c234192b2e3d2916b",
+          "codeSha256": "b50526a0c63a310adf91568cc5cbe88b12d51f0d2f52126c234192b2e3d2916b"
+        }
+      ]
+    },
+    "caseId": "neref_b837639ed5650fdfbc1c8e0680cf3b4a",
+    "nativeTestFile": "e2e/insight/test/view-snapshot.browser.spec.ts",
+    "declarationFile": "e2e/insight/test/view-snapshot.browser.spec.ts",
+    "binding": {
+      "kind": "direct-contract",
+      "suiteId": "insight",
+      "contractRef": "docs/feature/insight/use-case/insight-review-run-adoption.md",
+      "contractSha256": "1850c482a748f291442409cda7093629fc08976ab65dda0b9eb621d8ac7a932a",
+      "policy": "concord.native-reliability/v1",
+      "configurationDigest": "sha256:a67f159656eea9125073a719d9bedaee6becee86113cd0d9b0ca7bc0deedc41f",
+      "adapterSourceDigest": "sha256:da50a9517f42205d23e23be6ef82c6f56bcd560cb5a062dbe3bdb9648b468c3a"
+    }
+  },
+  "runner": {
+    "executor": "playwright",
+    "version": "1.63.0",
+    "implementationDigest": "sha256:8923b6f4b859f7a5a470cfac318df8cb22bf49ba3667f0fd18cbfa787e0447de",
+    "argv": [
+      "node",
+      "scripts/run-native.mjs",
+      "--config=playwright.config.ts",
+      "--reporter=json",
+      "test/view-snapshot.browser.spec.ts",
+      "--grep",
+      "(?:^| )view-snapshot\\.browser\\.spec\\.ts 读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "startupFailed": false
+  },
+  "native": {
+    "copyId": "isolated-copy-3",
+    "copyPath": "/tmp/niceeval-e2e-takeover-scratch-lompyf/runs/takeover/isolated-copy-3/insight",
+    "sequence": 1,
+    "mode": "isolated",
+    "caseCount": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "retries": 0,
+    "parallelism": 1
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-lompyf/runs/takeover/isolated-copy-3/insight",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 1256832 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 1256833 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "browser",
+        "gone": true,
+        "detail": "owned process group 1256897 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 1256941 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "108681ba-ced4-47d3-b5b9-18d61193ac05",
+  "receiptSha256": "d5140efe499fabea4b0e9218c10c58a30dcbfe4ed58922d8e458dfb6c094c1f6"
+}

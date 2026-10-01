@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: migrate-judge-provider
+title: 迁移旧 Judge 配置
+createdAt: 2026-09-20T22:07:36+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/error-assistance/README.md
 ---
 
 # 迁移旧 Judge 配置

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliBinary, cliE2E } from "./context.ts";
 
-test.concurrent("非 TTY 在运行中显示有归属且合并去重的进度 [necase_M0SW6ZCJKN30HJNN]", async () => {
+// @feature docs/feature/experiments/README.md
+test.concurrent("非 TTY 在运行中显示有归属且合并去重的进度", async () => {
   await cliE2E.case("live-pipe", async ({ paths }) => {
     await withProcess(
       [...cliBinary, "exp", "pipe-progress", "--rerun", "all"],

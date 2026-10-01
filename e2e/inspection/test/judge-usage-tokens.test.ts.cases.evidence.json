@@ -1,0 +1,25 @@
+{
+  "format": "concord.case-evidence-index/v1",
+  "current": {
+    "neref_7af09f6473d7323200cfa3d004ac1938": {
+      "memory/judge-physical-usage-missing.md": {
+        "red": {
+          "path": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/red.json",
+          "digest": "sha256:26f16242b7b21297af2946ca79c1012343aecc5abf603b15c94790b3bffc6cf9"
+        },
+        "green": {
+          "path": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/green.json",
+          "digest": "sha256:ea4a2db357c4ae32e66b9974e677b52f9e62cc063d60f6bf737e73bb83dc50db"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/certificate.json",
+          "digest": "sha256:8284469a6ed37a4e71cee454c433367ab4e2fd22a0aef410fc41ade3873a11ad"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/inventory.json",
+          "digest": "sha256:d8b9ae8206c764c8bbbb140295b5079cbddef82cbcf233ce254a28369e820ff7"
+        }
+      }
+    }
+  }
+}

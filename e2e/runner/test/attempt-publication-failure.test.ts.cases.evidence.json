@@ -1,27 +1,6 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_MJKBRQFQP8P4EWH5": {
-      "memory/attempt-publication-diagnostic-context.md": {
-        "red": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/red.json",
-          "digest": "sha256:c978ad83fab1f271b4084b585b9a04ff2693b8610b55d63f0299b7f2d5520d9c"
-        },
-        "green": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/green.json",
-          "digest": "sha256:21a9c2aba1388cef460075ecf720c61a977b61077fc039029456e275b87e39db"
-        },
-        "certificate": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/certificate.json",
-          "digest": "sha256:491d61eb5a5a1b7f25d79166151309dbdb682171a3426f76295f13381d6680c5"
-        },
-        "inventory": {
-          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/inventory.json",
-          "digest": "sha256:3a340cff9d71c88b049f2cd8d3413af1ca56daf58ac8489bf00abfb10fefafb5"
-        }
-      }
-    }
-  },
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
   "history": [
     {
       "caseId": "necase_MJKBRQFQP8P4EWH5",
@@ -70,6 +49,30 @@
       },
       "reason": "refresh evidence after main merge",
       "retiredAtCommit": "48c1206062e81463f9daab3cd4d425d5adbc9f76"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "memory": "memory/attempt-publication-diagnostic-context.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/red.json",
+          "digest": "sha256:c978ad83fab1f271b4084b585b9a04ff2693b8610b55d63f0299b7f2d5520d9c"
+        },
+        "green": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/green.json",
+          "digest": "sha256:21a9c2aba1388cef460075ecf720c61a977b61077fc039029456e275b87e39db"
+        },
+        "certificate": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/certificate.json",
+          "digest": "sha256:491d61eb5a5a1b7f25d79166151309dbdb682171a3426f76295f13381d6680c5"
+        },
+        "inventory": {
+          "path": "e2e/runner/test/attempt-publication-failure.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_F9NNRRVTQYFWVAZ2-netake_1P9BQR301YPPNK7N/inventory.json",
+          "digest": "sha256:3a340cff9d71c88b049f2cd8d3413af1ca56daf58ac8489bf00abfb10fefafb5"
+        }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
   ]
 }

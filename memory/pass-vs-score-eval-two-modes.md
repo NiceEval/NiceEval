@@ -1,3 +1,30 @@
+---
+format: concord.document/v1
+id: pass-vs-score-eval-two-modes
+title: 裁决：两种题型 defineEval/defineScoreEval，计分制叠加给分无满分，实验内不混型
+createdAt: 2026-07-22T11:45:06+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pass-vs-score-eval-two-modes.md
+  commit: 6a9011c66f9efeff8709fb58768fb75f5bb89392
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history:
+  - at: 2026-09-14T15:00:25.173Z
+    action: revise
+    reason: "- 给分词汇与 strict 部分被新裁决替代
+      [pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md) —
+      裁决(2026-07-22 定稿):两种题型 defineEval/defineScoreEval
+      与叠加给分无满分继续保留；`.points`、severity 与 strict 由 Evaluation Fact 新模型替代"
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+    eventAt: 2026-07-22
+---
 # 裁决：两种题型 defineEval/defineScoreEval，计分制叠加给分无满分，实验内不混型
 
 **日期**：2026-07-22（一天内四轮迭代定稿，前三轮见「曾选方案」）

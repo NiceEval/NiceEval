@@ -451,6 +451,10 @@
     {
       "source": "/example/tier1-pi-sdk",
       "destination": "/examples/integrations/pi-sdk"
+    },
+    {
+      "source": "/zh/tutorials/experiments",
+      "destination": "/zh/tutorials/write-experiment"
     }
   ],
   "navigation": {
@@ -568,6 +572,7 @@
                   "reference/define-agent",
                   "reference/events",
                   "reference/capabilities",
+                  "reference/define-experiment",
                   "reference/define-config",
                   "reference/expect"
                 ]
@@ -628,55 +633,76 @@
                 "pages": [
                   "zh/introduction",
                   "zh/tutorials/quickstart",
-                  "zh/tutorials/configuration",
-                  "zh/tutorials/agent-onboarding"
+                  "zh/tutorials/agent-onboarding",
+                  "zh/tutorials/configuration"
                 ]
               },
               {
-                "group": "连接 Agent",
+                "group": "接入你的应用",
                 "pages": [
                   "zh/tutorials/connect-your-agent",
-                  "zh/tutorials/custom-application",
                   "zh/tutorials/write-send",
-                  "zh/tutorials/connect-otel",
-                  "zh/tutorials/sandbox-agent",
-                  "zh/tutorials/install-custom-sandbox-agent",
-                  "zh/tutorials/sandbox-providers",
-                  "zh/tutorials/docker-in-docker",
-                  "zh/tutorials/nixos-managed-dind",
-                  "zh/tutorials/sandbox-reuse"
+                  "zh/tutorials/custom-application",
+                  "zh/tutorials/connect-otel"
                 ]
               },
               {
-                "group": "编写评估",
+                "group": "评估 Coding Agent",
+                "pages": [
+                  "zh/tutorials/sandbox-agent",
+                  "zh/tutorials/fixtures",
+                  "zh/tutorials/criteria-files",
+                  "zh/tutorials/install-custom-sandbox-agent",
+                  "zh/tutorials/sandbox-providers"
+                ]
+              },
+              {
+                "group": "写好评估用例",
                 "pages": [
                   "zh/tutorials/authoring",
-                  "zh/tutorials/eval-groups",
-                  "zh/tutorials/plugins",
-                  "zh/tutorials/write-experiment",
-                  "zh/tutorials/select-and-preview",
-                  "zh/tutorials/experiments",
-                  "zh/tutorials/fixtures",
-                  "zh/tutorials/dataset-fanout",
-                  "zh/tutorials/criteria-files",
                   "zh/tutorials/evaluation-kinds",
-                  "zh/tutorials/verify-judge"
+                  "zh/tutorials/dataset-fanout",
+                  "zh/tutorials/verify-judge",
+                  "zh/tutorials/niceeval-taste"
                 ]
               },
               {
-                "group": "运行、观察与发布",
+                "group": "实验与对比",
                 "pages": [
-                  "zh/tutorials/rerun-and-cache",
-                  "zh/tutorials/accept-results",
-                  "zh/tutorials/control-run-cost",
-                  "zh/tutorials/debug-lifecycle-plan",
-                  "zh/tutorials/handle-execution-failures",
-                  "zh/tutorials/concurrency",
-                  "zh/tutorials/ci-integration",
-                  "zh/tutorials/reporters",
+                  "zh/tutorials/write-experiment",
+                  "zh/tutorials/select-and-preview",
+                  "zh/tutorials/experiment-services",
+                  "zh/tutorials/control-run-cost"
+                ]
+              },
+              {
+                "group": "看结果与迭代",
+                "pages": [
                   "zh/tutorials/viewing-results",
                   "zh/tutorials/compare-runs",
+                  "zh/tutorials/rerun-and-cache",
+                  "zh/tutorials/accept-results",
                   "zh/tutorials/agent-feedback-loop"
+                ]
+              },
+              {
+                "group": "提速：并发与复用",
+                "pages": [
+                  "zh/tutorials/concurrency",
+                  "zh/tutorials/sandbox-reuse",
+                  "zh/tutorials/eval-groups",
+                  "zh/tutorials/plugins"
+                ]
+              },
+              {
+                "group": "基础设施与 CI",
+                "pages": [
+                  "zh/tutorials/ci-integration",
+                  "zh/tutorials/reporters",
+                  "zh/tutorials/handle-execution-failures",
+                  "zh/tutorials/debug-lifecycle-plan",
+                  "zh/tutorials/docker-in-docker",
+                  "zh/tutorials/nixos-managed-dind"
                 ]
               },
               {
@@ -730,6 +756,7 @@
                   "zh/reference/define-agent",
                   "zh/reference/events",
                   "zh/reference/capabilities",
+                  "zh/reference/define-experiment",
                   "zh/reference/define-config",
                   "zh/reference/expect"
                 ]

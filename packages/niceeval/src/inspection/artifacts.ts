@@ -141,6 +141,72 @@ export function projectAttemptArtifact(
   }
 }
 
+interface HydratedArtifactDescriptor {
+  readonly artifactId: string;
+  readonly name: string;
+  readonly mediaType: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+  readonly content: PersistedContentMetadata;
+}
+
+/** Hydrates and verifies every sealed artifact descriptor of the exact origin Attempt. */
+function hydrateArtifactDescriptors(resolved: ResolvedInspectionAttempt): readonly HydratedArtifactDescriptor[] {
+  if (encodeAttemptLocator(resolved.attempt.attemptId) !== resolved.locator ||
+    resolved.attempt.originRunId !== resolved.origin.run.runId) {
+    throw new Error("Artifact origin does not match the requested Attempt locator.");
+  }
+  const attachments = resolved.origin.attachments.filter(({ physical }) =>
+    physical.ownerKind === "attempt" && physical.ownerAttemptId === resolved.attempt.attemptId &&
+    physical.family === attemptArtifactsRecordAttachment.family);
+  if (attachments.length !== 1) throw new Error("Artifact owner attachment is unavailable.");
+  const attachment = attachments[0]!;
+  if (attachment.physical.ownerRunId !== resolved.attempt.originRunId ||
+    attachment.physical.familyRevision !== attemptArtifactsRecordAttachmentPersistence.revision ||
+    attachment.physical.references.length !== 0) {
+    throw new Error("Artifact attachment ownership or revision is invalid.");
+  }
+  const byLogicalHandle = new Map(attachment.physical.contents.map((content) => [content.logicalHandle, content]));
+  const bound = new WeakMap<object, PersistedContentMetadata>();
+  const used = new Set<string>();
+  if (byLogicalHandle.size !== attachment.physical.contents.length) throw new Error("Duplicate artifact content handle.");
+  const hydrated = hydrateRecordAttachmentCurrent(attemptArtifactsRecordAttachment, attachment.value, {
+    content: (token, declaration) => {
+      const marker = decodeMarker(token);
+      if (Result.isFailure(marker)) return Result.succeed(undefined);
+      const logicalHandle = marker.success["$niceeval.record.content"];
+      const persisted = byLogicalHandle.get(logicalHandle);
+      if (persisted === undefined || used.has(logicalHandle) || declaration.kind !== "bytes" ||
+        declaration.maximumBytes !== undefined && persisted.byteLength > declaration.maximumBytes) {
+        return Result.fail({ code: "current-content-bind-failed" as const });
+      }
+      const handle = mintRecordContentHandle("bytes");
+      bound.set(handle, persisted);
+      used.add(logicalHandle);
+      return Result.succeed(handle);
+    },
+    reference: () => Result.succeed(undefined),
+  });
+  if (Result.isFailure(hydrated) || used.size !== attachment.physical.contents.length) {
+    throw new Error("Artifact content closure is invalid.");
+  }
+  return Object.freeze(hydrated.success.artifacts.map((descriptor) => {
+    const metadata = bound.get(descriptor.content);
+    if (metadata === undefined || metadata.byteLength !== descriptor.byteLength || metadata.digest !== descriptor.sha256 ||
+      descriptor.byteLength < 0) {
+      throw new Error("Artifact descriptor does not match sealed content metadata.");
+    }
+    return Object.freeze({
+      artifactId: descriptor.artifactId,
+      name: descriptor.label,
+      mediaType: descriptor.mediaType,
+      byteLength: descriptor.byteLength,
+      sha256: descriptor.sha256,
+      content: metadata,
+    });
+  }));
+}
+
 /** Internal fixed-family closure reader. It verifies the whole sealed artifact. */
 export function readInspectionArtifactBytes(
   resolved: ResolvedInspectionAttempt,
@@ -149,66 +215,47 @@ export function readInspectionArtifactBytes(
 ): Result.Result<InspectionArtifactBytes | undefined, InspectionArtifactError> {
   if (Result.isFailure(decodeRequest({ artifactId }))) return requestInvalid("Invalid artifact ID.");
   try {
-    if (encodeAttemptLocator(resolved.attempt.attemptId) !== resolved.locator ||
-      resolved.attempt.originRunId !== resolved.origin.run.runId) {
-      throw new Error("Artifact origin does not match the requested Attempt locator.");
-    }
-    const attachments = resolved.origin.attachments.filter(({ physical }) =>
-      physical.ownerKind === "attempt" && physical.ownerAttemptId === resolved.attempt.attemptId &&
-      physical.family === attemptArtifactsRecordAttachment.family);
-    if (attachments.length !== 1) throw new Error("Artifact owner attachment is unavailable.");
-    const attachment = attachments[0]!;
-    if (attachment.physical.ownerRunId !== resolved.attempt.originRunId ||
-      attachment.physical.familyRevision !== attemptArtifactsRecordAttachmentPersistence.revision ||
-      attachment.physical.references.length !== 0) {
-      throw new Error("Artifact attachment ownership or revision is invalid.");
-    }
-    const byLogicalHandle = new Map(attachment.physical.contents.map((content) => [content.logicalHandle, content]));
-    const bound = new WeakMap<object, PersistedContentMetadata>();
-    const used = new Set<string>();
-    if (byLogicalHandle.size !== attachment.physical.contents.length) throw new Error("Duplicate artifact content handle.");
-    const hydrated = hydrateRecordAttachmentCurrent(attemptArtifactsRecordAttachment, attachment.value, {
-      content: (token, declaration) => {
-        const marker = decodeMarker(token);
-        if (Result.isFailure(marker)) return Result.succeed(undefined);
-        const logicalHandle = marker.success["$niceeval.record.content"];
-        const persisted = byLogicalHandle.get(logicalHandle);
-        if (persisted === undefined || used.has(logicalHandle) || declaration.kind !== "bytes" ||
-          declaration.maximumBytes !== undefined && persisted.byteLength > declaration.maximumBytes) {
-          return Result.fail({ code: "current-content-bind-failed" as const });
-        }
-        const handle = mintRecordContentHandle("bytes");
-        bound.set(handle, persisted);
-        used.add(logicalHandle);
-        return Result.succeed(handle);
-      },
-      reference: () => Result.succeed(undefined),
-    });
-    if (Result.isFailure(hydrated) || used.size !== attachment.physical.contents.length) {
-      throw new Error("Artifact content closure is invalid.");
-    }
-    for (const descriptor of hydrated.success.artifacts) {
-      const metadata = bound.get(descriptor.content);
-      if (metadata === undefined || metadata.byteLength !== descriptor.byteLength || metadata.digest !== descriptor.sha256) {
-        throw new Error("Artifact descriptor does not match sealed content metadata.");
-      }
-    }
-    const artifact = hydrated.success.artifacts.find((entry) => entry.artifactId === artifactId);
+    const artifact = hydrateArtifactDescriptors(resolved).find((entry) => entry.artifactId === artifactId);
     if (artifact === undefined) return Result.succeed(undefined);
-    const content = bound.get(artifact.content);
-    if (content === undefined || content.byteLength !== artifact.byteLength || content.digest !== artifact.sha256 ||
-      artifact.byteLength < 0) {
-      throw new Error("Artifact descriptor does not match sealed content metadata.");
-    }
     if (artifact.byteLength > maximumBytes) return requestInvalid("Artifact exceeds the evidence parsing budget.");
     return Result.succeed(Object.freeze({
       artifactId,
-      name: artifact.label,
+      name: artifact.name,
       mediaType: artifact.mediaType,
       byteLength: artifact.byteLength,
       sha256: artifact.sha256,
-      bytes: readVerifiedRange(resolved.origin.source, content, 0, artifact.byteLength),
+      bytes: readVerifiedRange(resolved.origin.source, artifact.content, 0, artifact.byteLength),
     }));
+  } catch (cause) {
+    return Result.fail(new InspectionArtifactError({
+      code: "inspection-record-integrity-failure",
+      reason: cause instanceof Error ? cause.message : "Artifact content validation failed.",
+    }));
+  }
+}
+
+export interface InspectionArtifactDescriptor {
+  readonly artifactId: string;
+  readonly mediaType: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
+
+/** Descriptor-only closure reader for references that must not load bytes, such as display images. */
+export function readInspectionArtifactDescriptors(
+  resolved: ResolvedInspectionAttempt,
+): Result.Result<ReadonlyMap<string, InspectionArtifactDescriptor>, InspectionArtifactError> {
+  try {
+    const hasArtifacts = resolved.origin.attachments.some(({ physical }) =>
+      physical.ownerKind === "attempt" && physical.ownerAttemptId === resolved.attempt.attemptId &&
+      physical.family === attemptArtifactsRecordAttachment.family);
+    if (!hasArtifacts) return Result.succeed(new Map());
+    return Result.succeed(new Map(hydrateArtifactDescriptors(resolved).map((artifact) => [artifact.artifactId, Object.freeze({
+      artifactId: artifact.artifactId,
+      mediaType: artifact.mediaType,
+      byteLength: artifact.byteLength,
+      sha256: artifact.sha256,
+    })] as const)));
   } catch (cause) {
     return Result.fail(new InspectionArtifactError({
       code: "inspection-record-integrity-failure",

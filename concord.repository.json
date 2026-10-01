@@ -1,0 +1,108 @@
+{
+  "format": "concord.repository/v2",
+  "suites": [
+    {
+      "id": "adapter-ai-sdk",
+      "root": "e2e/adapter/ai-sdk"
+    },
+    {
+      "id": "adapter-ai-sdk-direct",
+      "root": "e2e/adapter/ai-sdk-direct"
+    },
+    {
+      "id": "adapter-bub",
+      "root": "e2e/adapter/bub"
+    },
+    {
+      "id": "adapter-claude-agent-sdk",
+      "root": "e2e/adapter/claude-agent-sdk"
+    },
+    {
+      "id": "adapter-claude-code",
+      "root": "e2e/adapter/claude-code"
+    },
+    {
+      "id": "adapter-codex-cli",
+      "root": "e2e/adapter/codex-cli"
+    },
+    {
+      "id": "adapter-codex-sdk",
+      "root": "e2e/adapter/codex-sdk"
+    },
+    {
+      "id": "adapter-deepseek-harness",
+      "root": "e2e/adapter/deepseek-harness"
+    },
+    {
+      "id": "adapter-hermes",
+      "root": "e2e/adapter/hermes"
+    },
+    {
+      "id": "adapter-local-protocol",
+      "root": "e2e/adapter/local-protocol"
+    },
+    {
+      "id": "adapter-omp",
+      "root": "e2e/adapter/omp"
+    },
+    {
+      "id": "adapter-openai-compat",
+      "root": "e2e/adapter/openai-compat"
+    },
+    {
+      "id": "adapter-openclaw",
+      "root": "e2e/adapter/openclaw"
+    },
+    {
+      "id": "adapter-opencode",
+      "root": "e2e/adapter/opencode"
+    },
+    {
+      "id": "adapter-sdk-converters",
+      "root": "e2e/adapter/sdk-converters"
+    },
+    {
+      "id": "cli",
+      "root": "e2e/cli"
+    },
+    {
+      "id": "eval",
+      "root": "e2e/eval"
+    },
+    {
+      "id": "insight",
+      "root": "e2e/insight"
+    },
+    {
+      "id": "inspection",
+      "root": "e2e/inspection"
+    },
+    {
+      "id": "lifecycle",
+      "root": "e2e/lifecycle"
+    },
+    {
+      "id": "migrate",
+      "root": "e2e/migrate"
+    },
+    {
+      "id": "package",
+      "root": "e2e/package"
+    },
+    {
+      "id": "plugins",
+      "root": "e2e/plugins"
+    },
+    {
+      "id": "record",
+      "root": "e2e/record"
+    },
+    {
+      "id": "runner",
+      "root": "e2e/runner"
+    }
+  ],
+  "historyPath": "e2e/concord-history.ts",
+  "policy": "concord.native-reliability/v1",
+  "host": "packages/e2e-runner/src/concord-host.ts"
+}

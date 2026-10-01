@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { satisfies, includes } from "niceeval/expect";
+import { greaterThan, includes } from "niceeval/expect";
 
 export default defineEval({
   description: "usage 的输入与输出 token 逐轮可读",
@@ -11,24 +11,18 @@ export default defineEval({
     const second = await t.send("把刚才的最终数字再说一遍。不要调用工具。");
     await second.succeeded().orStop();
 
-    await t.group("每一轮都有正的 inputTokens 与 outputTokens", () => {
+    await t.group("每一轮都有正的含缓存输入总量与输出量", () => {
       for (const [label, turn] of [
         ["first", first],
         ["second", second],
       ] as const) {
         t.check(
-          turn.usage?.inputTokens,
-          satisfies(
-            `${label}.usage.inputTokens > 0`,
-            (value) => typeof value === "number" && value > 0,
-          ),
+          turn.usage.inputTotalTokens,
+          greaterThan(0),
         );
         t.check(
-          turn.usage?.outputTokens,
-          satisfies(
-            `${label}.usage.outputTokens > 0`,
-            (value) => typeof value === "number" && value > 0,
-          ),
+          turn.usage.outputTokens,
+          greaterThan(0),
         );
       }
     });

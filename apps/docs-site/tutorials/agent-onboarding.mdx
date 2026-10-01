@@ -59,7 +59,7 @@ export default defineConfig({
 Tell the user three things:
 
 - **A misconfiguration does not pretend to pass.** If the model or key cannot be resolved, the gateway rejects authentication, or an evaluation request times out, the Judge Assertion is `unavailable` with a reason. The reading surface does not disguise a missing measurement as a mismatch or zero.
-- **Verify it once after configuration.** Write a lightweight pass/fail eval with `judge: true`. Register `closedQA(...).atLeast(0.8)` against explicit `{ input, output }` through `check`, then call parameterless `.gate()`. After it runs, use `niceeval view --run <run-id>` to confirm that measurement, threshold, condition, and Assertion evidence are visible.
+- **Verify it once after configuration.** Use `defineJudge` to declare a rubric and anchors, then call `t.judge(material, definition).gate(0.8)`. After it runs, use `niceeval view --run <run-id>` to inspect the result.
 - **Do not skip a Judge directly when no user is present during autonomous onboarding.** First check whether the environment already has a usable key, such as `OPENAI_API_KEY` or `DEEPSEEK_API_KEY`. If it does, point `apiKeyEnv` to it and verify. If not, write precise Matches first and state at handoff that no Judge is configured.
 - Keep the Judge model **separate from the Agent under test** so a model does not score its own output. Configuration resolves field by field across the eval, Experiment, and project configuration. See [Judge](/explanation/judge) for the three factories.
 

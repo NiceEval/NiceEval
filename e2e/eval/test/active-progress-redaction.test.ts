@@ -10,7 +10,10 @@ const C1_SECRET = "active-secret-c1";
 const MULTIBYTE_GRAPHEME = "🧑🏽‍💻";
 const EXPECTED_DETAIL = `tool: <redacted> <redacted> ${MULTIBYTE_GRAPHEME.repeat(15)}…`;
 
-test("ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示 [necase_HEWPHYPC9KBN76CG]", async () => {
+// @feature docs/feature/adapters/README.md
+// @regression memory/active-progress-hides-user-and-tool-detail.md
+
+test("ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示", async () => {
   expect(Buffer.byteLength(EXPECTED_DETAIL, "utf8")).toBe(256);
   await evalE2E.case("active-progress-redaction", async ({ paths }) => {
     await withPty(

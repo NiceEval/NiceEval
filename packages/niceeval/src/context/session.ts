@@ -18,6 +18,7 @@ import {
   type ObservedTurnSnapshot,
 } from "../o11y/observed.ts";
 import type { AgentOtelChannel, TurnSpans } from "../o11y/otlp/turn-otel.ts";
+import type { AgentUsageContribution } from "../o11y/eval-usage.ts";
 import {
   downgradeEvidenceCoverage,
   worstEvidenceCoverage,
@@ -45,6 +46,15 @@ interface PhysicalSendResult {
   readonly attribution?: "traceparent" | "window" | "none";
   readonly window?: TurnSpans["window"];
 }
+
+interface ObservedTurnState {
+  readonly outcome: "completed" | "failed" | "waiting";
+  readonly coverage: ResolvedEvidenceCoverage;
+}
+
+type ObserveSendUsage = (
+  callOnce: Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>>,
+) => Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>>;
 
 /**
  * 一条会话线的存取器实现。slot 值只按 factory 创建的 symbol 身份存取；
@@ -271,6 +281,16 @@ export class SessionManager {
   evidenceCoverage: ResolvedEvidenceCoverage;
   /** 自动重试吸收的物理 send 失败；不混进 allEvents。 */
   readonly retryAttempts: RetryAttemptRecord[] = [];
+  private readonly usageContributions: AgentUsageContribution[] = [];
+
+  /** A frozen call-time copy; terminal replacement never changes an earlier pending cut. */
+  usageContributionsSnapshot(): readonly AgentUsageContribution[] {
+    return Object.freeze(this.usageContributions.map((contribution) => Object.freeze({
+      ...contribution,
+      usage: contribution.usage === null ? null : Object.freeze({ ...contribution.usage }),
+      coverage: Object.freeze({ ...contribution.coverage }),
+    })));
+  }
 
   /** 归属到本 attempt 的 span(逐轮攒;attempt 末尾连同 sweep 的迟到 span 一起挂 trace)。 */
   readonly otelSpans: TraceSpan[] = [];
@@ -302,6 +322,7 @@ export class SessionManager {
   private localSourceOrder = 0;
   private readonly nextSourceOrder: () => number;
   private readonly observedIngestion: ObservedEventIngestionCorrelator;
+  private observedTurnStates = new WeakMap<ObservedTurnSnapshot, ObservedTurnState>();
 
   constructor(private readonly deps: SessionDeps) {
     this.nextSourceOrder = deps.nextSourceOrder ?? (() => ++this.localSourceOrder);
@@ -320,12 +341,47 @@ export class SessionManager {
     return this.observedIngestion.attemptCut();
   }
 
+  /** A frozen call-time cut of all sealed sends, including failed sends without a Turn. */
+  observedSessionSnapshots(): readonly ObservedSessionSnapshot[] {
+    return Object.freeze(this.sessions.map((session) => session.observedSnapshot()));
+  }
+
+  observedTurnState(snapshot: ObservedTurnSnapshot): ObservedTurnState | undefined {
+    return this.observedTurnStates.get(snapshot);
+  }
+
+  /** Absorbed retry events have no sealed observed identities to include in default history. */
+  observedHistoryIncompleteReason(): string | undefined {
+    return this.retryAttempts.some((attempt) => attempt.events.length > 0)
+      ? "agent-retry-history-unsealed"
+      : undefined;
+  }
+
   observedEvaluationSegment(snapshot: ObservedTurnSnapshot): ObservedEvaluationSegment | undefined {
     return this.observedIngestion.evaluationSegment(snapshot);
   }
 
   releaseObservedEvaluationSegments(): void {
     this.observedIngestion.releaseEvaluationSegments();
+    this.observedTurnStates = new WeakMap();
+  }
+
+  private recordObservedTurnState(
+    snapshot: ObservedTurnSnapshot,
+    outcome: ObservedTurnState["outcome"],
+    coverage: ResolvedEvidenceCoverage,
+  ): void {
+    this.observedTurnStates.set(snapshot, Object.freeze({
+      outcome,
+      coverage: Object.freeze({
+        events: Object.freeze({ ...coverage.events }),
+        messages: Object.freeze({ ...coverage.messages }),
+        actions: Object.freeze({ ...coverage.actions }),
+        status: Object.freeze({ ...coverage.status }),
+        usage: Object.freeze({ ...coverage.usage }),
+        data: Object.freeze({ ...coverage.data }),
+      }),
+    }));
   }
 
   private mintPhysicalTurnId(): TurnId {
@@ -486,9 +542,16 @@ export class SessionManager {
 
       // turn 级重试只包这一次物理 agent send。SDK Promise 在这两个
       // Effect.tryPromise 边界适配；retry 本身不再包含手写 Promise / timeout。
+      let sendAttempt = 0;
+      const observeUsage: ObserveSendUsage = (callOnce) =>
+        this.recordSendUsageEffect(callOnce, () => ({
+          sessionScopeId: session.sessionScopeId,
+          turnId,
+          sendAttempt: sendAttempt++,
+        }));
       const sendOnce: Effect.Effect<PhysicalSendResult, unknown> = this.deps.otel
-        ? this.sendWithOtelEffect(this.deps.otel, { text, files, responses }, ctx)
-        : this.sendAgentEffect({ text, files, responses }, ctx).pipe(
+        ? this.sendWithOtelEffect(this.deps.otel, { text, files, responses }, ctx, observeUsage)
+        : this.sendAgentEffect({ text, files, responses }, ctx, observeUsage).pipe(
             Effect.map((turn) => ({ turn })),
           );
       const retryDeps: SendRetryDeps = {
@@ -538,9 +601,10 @@ export class SessionManager {
                 const { turn, traceId, attribution, window } = exit.value;
                 const observed = this.observedIngestion.finishTurn(observedDraft, turn.events);
                 session.appendObservedTurn(observed);
+                const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
+                this.recordObservedTurnState(observed, turn.status, turnEvidenceCoverage);
                 bindObservedSnapshotToTurn(turn, observed);
                 const traceAttribution = attribution ?? "none";
-                const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
                 const timingActivity = this.deps.onTurn?.({
                   turnId,
                   sessionIndex: session.index,
@@ -572,11 +636,29 @@ export class SessionManager {
               }
               const failure = exit.cause.reasons.find(Cause.isFailReason)?.error;
               const sendFailure = failure !== undefined && isSendFailure(failure) ? failure : undefined;
+              const interrupted = Cause.hasInterruptsOnly(exit.cause);
+              const incomplete = {
+                status: "partial" as const,
+                reason: interrupted ? "agent-send-interrupted" : "agent-send-failed",
+              };
+              const turnEvidenceCoverage = downgradeEvidenceCoverage(this.agentEvidenceCoverage, {
+                events: incomplete,
+                messages: incomplete,
+                actions: incomplete,
+                status: incomplete,
+              });
               const observed = this.observedIngestion.finishTurn(
                 observedDraft,
                 sendFailure?.events ?? [],
               );
               session.appendObservedTurn(observed);
+              this.recordObservedTurnState(observed, "failed", turnEvidenceCoverage);
+              this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
+              session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
+              this.allEvents.push(...(sendFailure?.events ?? []));
+              session.events.push(...(sendFailure?.events ?? []));
+              session.lastStatus = "failed";
+              this.lastStatus = "failed";
               if (sendFailure?.usage !== undefined) {
                 accumulateUsage(this.usage, sendFailure.usage);
                 accumulateUsage(session.usage, sendFailure.usage);
@@ -586,9 +668,10 @@ export class SessionManager {
                 sessionIndex: session.index,
                 turnIndex,
                 label: windowLabel,
-                outcome: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed",
+                outcome: interrupted ? "interrupted" : "failed",
                 events: Object.freeze([userEvent, ...(sendFailure?.events ?? [])]),
                 observed,
+                evidenceCoverage: turnEvidenceCoverage,
                 startOffsetMs,
                 durationMs,
                 failed: true,
@@ -649,21 +732,66 @@ export class SessionManager {
   private sendAgentEffect(
     input: TurnInput,
     ctx: AgentSendContext,
+    observeUsage: ObserveSendUsage,
   ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
     const nativeContext: AgentSendContext = this.deps.agent.kind === "sandbox"
       ? bindAttemptResources({ ...ctx, sandbox: this.deps.sandbox }, this.deps.resources)
       : ctx;
     const native = agentSendEffect(this.deps.agent, input, nativeContext);
     if (native !== undefined) {
-      return withAgentCallbackContext(nativeContext, (callbackContext) =>
-        agentSendEffect(this.deps.agent, input, callbackContext)!).pipe(
+      return withAgentCallbackContext(nativeContext, (callbackContext) => observeUsage(
+        Effect.suspend(() => agentSendEffect(this.deps.agent, input, callbackContext)!).pipe(
           Effect.mapError(normalizeSendFailure),
-        );
+        ),
+      ));
     }
-    return withAgentCallbackContext(ctx, (callbackContext) =>
-      authorCallbackEffect(() => this.sendAgent(input, callbackContext))).pipe(
+    return withAgentCallbackContext(ctx, (callbackContext) => observeUsage(
+      authorCallbackEffect(() => this.sendAgent(input, callbackContext)).pipe(
         Effect.mapError(normalizeSendFailure),
-      );
+      ),
+    ));
+  }
+
+  /** Runs at the Agent invoke boundary, after ledger and OTLP preparation, once per retry. */
+  private recordSendUsageEffect(
+    callOnce: Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>>,
+    identity: () => Pick<AgentUsageContribution, "sessionScopeId" | "turnId" | "sendAttempt">,
+  ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
+    return Effect.uninterruptibleMask((restore) => Effect.suspend(() => {
+      const index = this.usageContributions.length;
+      const pending: AgentUsageContribution = Object.freeze({
+        ...identity(),
+        state: "pending",
+        outcome: null,
+        model: this.deps.model ?? null,
+        usage: null,
+        coverage: Object.freeze({ status: "unavailable", reason: "agent-send-pending" }),
+      });
+      this.usageContributions.push(pending);
+      return restore(callOnce).pipe(Effect.onExit((exit) => Effect.sync(() => {
+        const failure = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined;
+        const usage = Exit.isSuccess(exit) ? exit.value.usage
+          : failure !== undefined && isSendFailure(failure) ? failure.usage : undefined;
+        let coverage: AgentUsageContribution["coverage"] = usage === undefined
+          ? { status: "unavailable", reason: "agent-send-usage-not-reported" }
+          : this.agentEvidenceCoverage.usage;
+        try {
+          if (Exit.isSuccess(exit)) {
+            coverage = { status: "unavailable", reason: "agent-send-invalid-coverage" };
+            coverage = this.resolveTurnEvidenceCoverage(exit.value).usage;
+          }
+        } finally {
+          this.usageContributions[index] = Object.freeze({
+            ...pending,
+            state: "terminal",
+            outcome: Exit.isSuccess(exit) ? exit.value.status === "failed" ? "failed" : "completed"
+              : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed",
+            usage: usage === undefined ? null : Object.freeze({ ...usage }),
+            coverage: Object.freeze({ ...coverage }),
+          });
+        }
+      })));
+    }));
   }
 
   /**
@@ -675,12 +803,13 @@ export class SessionManager {
     otel: AgentOtelChannel,
     input: { text: string; files?: readonly InputFile[]; responses?: readonly InputResponse[] },
     ctx: AgentSendContext,
+    observeUsage: ObserveSendUsage,
   ): Effect.Effect<PhysicalSendResult, ReturnType<typeof normalizeSendFailure>> {
     return otel.runTurnEffect((headers) => {
       const turnCtx: AgentSendContext = ctx.telemetry
         ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
         : ctx;
-      return this.sendAgentEffect(input, turnCtx);
+      return this.sendAgentEffect(input, turnCtx, observeUsage);
     }).pipe(
       Effect.map((result) => {
         this.otelSpans.push(...result.spans);

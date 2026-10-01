@@ -1,8 +1,19 @@
 ---
-name: e2e-repo-self-root-workspace
+format: concord.document/v1
+id: e2e-repo-self-root-workspace
+title: e2e-repo-self-root-workspace
+createdAt: 2026-07-21T19:45:01+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-repo-self-root-workspace.md
+  commit: cde9590883d29ffe1924f6edb8c42b76665a4f42
 description: E2E 每个测试仓库必须带 packages:[] 的 pnpm-workspace.yaml 自成 workspace root
-metadata:
-  type: project
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 每个 `e2e/adapter/*` 与 `e2e/cli`、`e2e/report` 测试仓库都要带一份只含 `packages: []` 的 `pnpm-workspace.yaml`,让 pnpm 把仓库目录本身当 workspace root、不向上并入父级 workspace。否则就地调试(`cd e2e/adapter/<id> && pnpm install && pnpm e2e`,`e2e/README.md` 明列为支持流程)时 pnpm 会走到 niceeval 根 `pnpm-workspace.yaml`,绕过候选 tarball 注入的隔离。`allowBuilds`(原生构建开关,如 esbuild、dockerode 的 ssh2/cpu-features)也放这个文件。

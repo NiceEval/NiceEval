@@ -5,7 +5,7 @@
 // Eval 只从标准事件流读取结果。
 
 import { defineEval } from "niceeval";
-import { includes, isDefined, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
+import { greaterThan, includes, isDefined, jsonMatch, toolMatch } from "niceeval/expect";
 
 function requiredInjectedValue(name: string): string {
   const value = process.env[name];
@@ -20,12 +20,6 @@ function requiredInjectedValue(name: string): string {
 const marker = requiredInjectedValue("NICEEVAL_CLAUDE_AGENT_SDK_MARKER");
 const sentinel = requiredInjectedValue("NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL");
 const command = `printf '%s\\n' '${marker}'`;
-const positive = (label: string) =>
-  satisfies<number | undefined, number>(
-    `${label} > 0`,
-    (value): value is number => typeof value === "number" && value > 0,
-  );
-
 export default defineEval({
   description:
     "Claude SDK 原生 Bash 的配对、usage 与 resume 会话在真实 provider 下可读",
@@ -45,8 +39,11 @@ export default defineEval({
           status: "completed",
         }).exactly(1))
       .label("shell command");
-    t.check(first.usage?.inputTokens, positive("first.usage.inputTokens"));
-    t.check(first.usage?.outputTokens, positive("first.usage.outputTokens"));
+    t.check(
+      first.usage.inputTotalTokens,
+      greaterThan(0),
+    );
+    t.check(first.usage.outputTokens, greaterThan(0));
     t.check(
       t.sessionId,
       isDefined<string | undefined>(
@@ -61,12 +58,12 @@ export default defineEval({
     t.check(resumed.message, includes(sentinel));
     resumed.notCalledTool("shell");
     t.check(
-      resumed.usage?.inputTokens,
-      positive("resumed.usage.inputTokens"),
+      resumed.usage.inputTotalTokens,
+      greaterThan(0),
     );
     t.check(
-      resumed.usage?.outputTokens,
-      positive("resumed.usage.outputTokens"),
+      resumed.usage.outputTokens,
+      greaterThan(0),
     );
     t.check(
       t.sessionId,

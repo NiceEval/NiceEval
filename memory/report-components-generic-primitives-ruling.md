@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-components-generic-primitives-ruling
+title: report-components-generic-primitives-ruling
+createdAt: 2026-07-25T18:57:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-components-generic-primitives-ruling.md
+  commit: 9f88ace5d9a6efcc9b74619979b739baf69b21bb
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # report-components-generic-primitives-ruling
 
 ## 裁决

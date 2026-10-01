@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: official-baseline-tool-surface-unified
+title: 官方基线不预装 yarn、补齐 python3——跨 provider 基线工具面统一
+createdAt: 2026-08-04T18:30:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/official-baseline-tool-surface-unified.md
+  commit: b88088f456976a8c59a9723b0c9b244f42b51837
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 官方基线不预装 yarn、补齐 python3——跨 provider 基线工具面统一
 
 **裁决(2026-08-04)**:六个 Docker target 与三个 E2B template 共用同一份基线工具面契约:官方基线的包管理器只保证 npm 与 corepack,不预装 yarn 实体;官方基线保证 python3 存在。

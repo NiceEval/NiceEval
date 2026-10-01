@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: reset-point-term-over-warm-baseline
+title: 设计裁决:串行复用那笔 commit 定名「复用 Sandbox 的题间重置点」,禁用「温基线」
+createdAt: 2026-07-26T21:52:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reset-point-term-over-warm-baseline.md
+  commit: 9e9d546ab2395f81567f00062c5bbbde1f9d22e2
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:串行复用那笔 commit 定名「复用 Sandbox 的题间重置点」,禁用「温基线」
 
 **裁决**(2026-07-26,用户拍板):串行复用里公共 setup 完成后落下的那笔 commit,`docs/concepts.md`

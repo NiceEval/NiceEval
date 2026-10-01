@@ -1,8 +1,21 @@
 ---
-name: origin-examples-real-ai-credentials
-description: examples/zh/origin/{claude-agent-sdk,codex-sdk,custom-genai,langgraph,openllmetry,openinference} 已删除 mock 模式，改用真实 DeepSeek/Codex 代理凭据；vm0 已按公开 REST 契约重写为真集成(见 vm0-has-public-rest-contract)
-metadata:
-  type: project
+format: concord.document/v1
+id: origin-examples-real-ai-credentials
+title: origin-examples-real-ai-credentials
+createdAt: 2026-07-03T05:24:42+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/origin-examples-real-ai-credentials.md
+  commit: eb582131f9cc4cccadc48a5a769e9b65062873b8
+description: examples/zh/origin/{claude-agent-sdk,codex-sdk,custom-genai,langgraph,openllmetry,openinference}
+  已删除 mock 模式，改用真实 DeepSeek/Codex 代理凭据；vm0 已按公开 REST 契约重写为真集成(见
+  vm0-has-public-rest-contract)
+kind: memory
+memoryKind: insight
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **背景**：这 6 个 origin 示例原本都有 `AGENT_MODE=mock`(默认，零配置离线跑)/`AGENT_MODE=ai`(真调用)两条路径。用户要求 origin 下不允许出现假 AI，2026-07-02 已批量删除 mock 分支，只保留真实调用路径，并从 `/Users/ctrdh/Code/coding-agent-memory-evals/.env` 搬了真实代理凭据过去(各自 `.env`，已在 `.gitignore` 里，未进 git)。

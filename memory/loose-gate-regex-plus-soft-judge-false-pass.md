@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: loose-gate-regex-plus-soft-judge-false-pass
+title: 宽泛 OR 正则 gate + soft judge 叠加,会把明确失败悄悄判成 passed
+createdAt: 2026-07-01T19:24:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/loose-gate-regex-plus-soft-judge-false-pass.md
+  commit: 84650302d0aa671ca3e411bbd1b9b69c52fc3956
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修复：`examples/zh/ai-sdk/evals/image-understanding.eval.ts`(2026-07-01)。回归用例见 `test/e2e-image-refusal.test.ts` + `test/fixtures/image-refusal/`(mock agent 永远回复"拒绝识图",e2e 跑真实 CLI 断言 outcome 必须是 failed)。
+    proof: []
+    source:
+      path: memory/loose-gate-regex-plus-soft-judge-false-pass.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:6b438bf9fd35ba1d96e570f4490dda9f2a477f7ad82c9656a17cfebfe299ce0e
+---
 # 宽泛 OR 正则 gate + soft judge 叠加,会把明确失败悄悄判成 passed
 
 **现象**：`examples/zh/ai-sdk/evals/image-understanding.eval.ts` 跑 deepseek-v4-pro 时,模型明确回复"不支持图像输入,无法查看你发送的图片",niceeval view 里这条 eval 仍显示"通过"(绿行);展开断言明细能看到 `judge:autoevals:closedQA` 确实判了 0/0.7、标着"失败",但整条 outcome 还是 passed。

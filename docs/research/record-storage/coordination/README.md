@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-storage-coordination
+title: SQLite Record Coordination research
+createdAt: 2026-08-26
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/record-storage/coordination/README.md
+  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
+kind: research
+sources: []
+---
 # SQLite Record Coordination research
 
 本目录保存 Record writer admission 与 snapshot barrier 的多进程采用证据。
@@ -31,4 +43,4 @@ Coordination sidecar 可以在全部 owner 停稳后删除并重建，但重建�
 这项边界由删除期间的相同 validity digest，以及重建后的相同 command replay 共同验证。
 
 该 candidate 是 PLAN-4 的采用证据；production Coordination 仍未采用这套 FIFO 与 barrier。
-对应目标边界见 [PLAN-4 Architecture](../../../design/record-storage/PLAN-4/architecture.md) 与 [PLAN-4 Lifecycle](../../../design/record-storage/PLAN-4/lifecycle.md)。
+对应目标边界见 [PLAN-4 Architecture](../../../design/record-storage/plans/plan-4/architecture.md) 与 [PLAN-4 Lifecycle](../../../design/record-storage/plans/plan-4/lifecycle.md)。

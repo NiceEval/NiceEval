@@ -6,6 +6,8 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 
 这一页是 Coding Agent 把 NiceEval 接入一个项目的执行步骤。前提：`niceeval` 依赖已经装进项目、`niceeval init` 已经运行，你是从随包 `INDEX.md` 进入本页的。用用户的语言与用户交流。所有 API、字段和 CLI 行为以随包文档为准，不要凭训练记忆现编。
 
+编写评估前，按 [NiceEval Taste](/zh/tutorials/niceeval-taste) 确定业务判据、充分证据与权重。交付时让读者只读评估正文就能解释通过条件与计分。
+
 ## 第 1 步：探索项目，再和用户确认
 
 这一步决定后面整条路径。**先自己读代码探明，把探到的结论列给用户核对，探不到的再提问**——不要一上来就抛一串问题，也不要没探就假设。要探明的信息：
@@ -15,7 +17,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 3. **真实目标怎样运行**：确认构建或安装命令、启动命令、就绪检查、端口、依赖服务、凭证来源和停止方式。Adapter 只连接目标，不在 `send` 或评估用例里临时启动一套替代实现。凭证只提供给需要它的运行边界，不写入评估源码、工作区或运行交接。
 4. **后端有没有接 OTel**：搜有没有 OTel SDK 初始化、AI SDK telemetry、LangSmith / OpenLLMetry / OpenInference 这类埋点。已经有的话 Tier 2 几乎零成本。
 5. **用户自己有没有做 A/B Test / feature flag**：应用里已有变体开关的话，Experiment 的 `flags` 可以直接透传给它（Tier 3 的现成入口）。
-6. **Judge 用什么**：语义评估（`t.judge(material, definition)`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容协议。问用户手上有哪个服务的 Key、想用什么 Judge 模型。缺 Key 不会静默通过：Judge Assertion 会记为 `unavailable`。没有 Judge 配置时，先只写精确 Match。
+6. **Judge 用什么**：语义评估（`t.judge(material, definition)`）要一个**与被测 Agent 分离的 Judge 模型**，走 OpenAI 兼容协议。问用户手上有哪个服务的 Key、想用什么 Judge 模型。缺 Key 不会静默通过：Judge 断言会记为 `unavailable`。没有 Judge 配置时，先只写精确 Match。
 7. **是不是 Agent 本体要进 Sandbox**：被测对象是 coding agent CLI、或给 coding agent 写的 Skill/Plugin/Hook/MCP server（要在隔离 workspace 里改文件/跑命令）的话，必须走 Sandbox，不能像 HTTP 服务那样直接 `send`。
 
    默认建议 `dockerSandbox({ source: { type: "image", image: "node:24-slim" } })`。任务或现有配置已经指定 Provider 时沿用；只有 Provider、Docker 可用性或远程执行需求仍会影响方案时才问。Provider 声明在评估用例或 Experiment 上，没有 CLI flag、项目级默认值或自动探测——见[选择 Sandbox Provider](/zh/tutorials/sandbox-providers)。
@@ -60,17 +62,17 @@ export default defineConfig({
 
 三个要提醒用户的点：
 
-- **配错不会假装通过。** 模型或 key 解析不到、网关拒绝鉴权、评估请求超时时，Judge Assertion 记为 `unavailable` 并带上原因；读取面不会把缺失 measurement 伪装成 mismatch 或零分。
-- **配完先验一次。** 用 `defineJudge` 声明 rubric 和 anchors，再调用 `t.judge(material, definition).gate(0.8)`。跑完后用 `niceeval view --run <run-id>` 查看结果。
+- **配错不会假装通过。** 读不到模型或 key、请求超时时，Judge 断言记为 `unavailable` 并带上原因；网关拒绝请求、返回格式不对时记为 `errored`。结果里不会把拿不到的分数显示成不通过或零分。
+- **配完先验一次。** 用 `defineJudge` 声明 rubric 和 anchors，再调用 `t.judge(material, definition).gate(0.8)`。跑完后用 `pnpm exec niceeval show --run <run-id>` 查看分数，步骤见[配置并验证 Judge](/zh/tutorials/verify-judge)。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有与所选 Provider 对应的 key。有就验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
 - Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。执行配置从 Experiment 和项目配置的 `judgeRuntime` 求值；定义与材料见 [Judge](/zh/explanation/judge)。
 
-## 第 3 步：写三件套
+## 第 3 步：写 Adapter、Experiment 和评估用例
 
 按第 1 步选中的方向读完对应文档后，依次写：
 
 1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——用 `defineAgent` 实现 `send`，配置走工厂参数，不写死、不读 `process.env`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [Adapter 参考](/zh/reference/define-agent)，事件映射见[事件参考](/zh/reference/events)。两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身。**`evidenceCoverage` 必须按实际映射如实声明**——只把最终文本映射出来就不要用 `completeEvidenceCoverage`，声明会影响断言完整性，虚报比保守更糟。
-2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`attempts` 等。模型对比写两个实验文件，各自钉一个 `model`。`evals: (eval) => boolean` 决定各自本次运行哪些评估用例。路径只负责 id 和批量运行，固定 Inspection operation 消费当前已发布的物理结果与覆盖事实。
+2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`attempts` 等。模型对比写两个实验文件，各自写一个 `model`。`evals: (eval) => boolean` 决定每个 Experiment 运行哪些评估用例。文件路径决定 Experiment ID，也决定一条命令能批量运行哪些 Experiment。
 3. **评估用例**（`evals/*.eval.ts`）——**先探明这个应用是干嘛的，再写一条贴着它真实功能的评估用例**。读它的 README、路由、工具定义或系统提示，找出它的核心用例（客服机器人就问一条真实的客服问题、SQL agent 就给一个真实的查询任务），拿这个用例做第一条评估用例的输入和断言。两类输入都不合格：「你好」这种和应用无关的占位输入，以及「你是什么/你能做什么」这种**问被测系统它自己的元问题**——那不是用户拿它干活的用例。形式上仍从最小写起：一句输入，`t.succeeded()` + 一个针对预期回答的内容断言——但最小形式只是调通的脚手架，不是交付标准，收尾前还要满足两条：
    - **断言在被测系统胡编时要会变红**。不要断言输入里本来就有的词（问「X 是什么」再断言回答含「X」，被测方复读题目就能通过）。断言预期回答独有的实质内容——具体事实、结构（`hasSections()`）、真实链接（`includesUrl()`），或用 `t.judge(material, definition)` 做语义判定。
    - **至少一条负例**。喂一个被测系统应该答不了的输入（不存在的表、检索不到的主题），断言它明确说查不到/做不到，而不是编造一个看似合理的结果——对连着真实数据/检索源的 agent，这是最值得先测的失败形态。
@@ -85,22 +87,27 @@ export default defineConfig({
 
 ## 第 4 步：跑通并验证
 
+先用 `--dry` 确认会跑哪些评估用例、每个跑几次，再正式运行。下面以 pnpm 为例，用户项目用其它包管理器时换成对应的 `exec`：
+
 ```sh
-<包管理器> exec niceeval exp models   # 按路径运行两个模型配置
-<包管理器> exec niceeval view                 # 查看器里看对比结果
+pnpm exec niceeval exp models --dry   # 确认两个模型配置各跑哪些评估用例
+pnpm exec niceeval exp models         # 按路径运行两个模型配置
+pnpm exec niceeval show               # 在终端查看结果
 ```
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、观察、修改和重跑。需要机器读取时，先执行 `query discover`，再提交固定 request；人使用 `niceeval show` 或 `niceeval view`。查看方式见[查看结果](/zh/tutorials/viewing-results)。
+人想在浏览器里对比结果时，运行 `pnpm exec niceeval view`。
+
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、查看、修改和重跑。需要机器读取时，先执行 `pnpm --silent exec niceeval query discover`，再发送完整 request。查看方式见[查看运行结果](/zh/tutorials/viewing-results)。
 
 先按终态分流，再决定是否修改：
 
-- `errored` 表示执行链没有形成可评分的业务结果。先检查目标服务、端点、凭证、依赖、超时和 Adapter 错误映射，修好后重新运行。
-- `failed` 表示执行完成，但业务断言没有满足。先查看 Assertion 和同一 Attempt 的公开证据；合法失败不需要改成绿色。
-- Score Eval 正常完成后仍要查看得分和逐项 Assertion。Overview 中的完成或通过状态不能替代满分判断。
+- `errored` 表示运行本身没跑成，没有得出可以评分的结果。先检查目标服务、端点、凭证、依赖、超时和 Adapter 的错误映射，修好后重新运行。
+- `failed` 表示运行跑完了，但业务断言没有满足。先查看同一个 Attempt 的断言和证据；被测系统确实答错时，不需要把它改成绿色。
+- 计分制评估跑完后，仍要查看得分和每条断言。总览里显示跑完或通过，不代表拿到了满分。
 
-在已有授权和预算内，主动修复 `errored` 所在的执行链并只复验受影响范围。只读请求不修改或重跑。目标服务、端口、凭证、数据库或模型服务等真实外部条件缺失时，明确报告阻塞；不要用临时替代物冒充真实目标已经跑通。
+在已有授权和预算内，主动修好导致 `errored` 的问题，并只复验受影响的范围。只读请求不修改或重跑。目标服务、端口、凭证、数据库或模型服务等真实外部条件缺失时，明确报告阻塞；不要用临时替代物冒充真实目标已经跑通。
 
-需要在终端下钻时，先从当前 Overview 复制动态 Attempt locator，再固定查看同一个 Attempt：
+需要在终端查看某个 Attempt 的细节时，先从当前总览复制它的 locator，再用同一个 locator 查看各项内容：
 
 ```sh
 pnpm exec niceeval show
@@ -109,7 +116,7 @@ pnpm exec niceeval show @<locator> --execution
 pnpm exec niceeval show @<locator> --source
 ```
 
-不要从旧输出猜 locator，也不要把另一次运行的 source 与当前 execution 拼成一条证据链。公开结果只能证明捕获范围内的事实；`partial`、`unavailable` 和 `not-recorded` 都不是零值或失败。
+不要从旧输出猜 locator，也不要把另一次运行的源码和这次的执行过程拼在一起当证据。结果只能证明记录下来的内容；`partial`、`unavailable` 和 `not-recorded` 表示信息不全，不等于零分或失败。
 
 ## 第 5 步：收尾，告诉用户做了什么
 
@@ -118,12 +125,12 @@ pnpm exec niceeval show @<locator> --source
 - [ ] 评估用例的输入是被测系统的核心用例，不是问它自己的元问题或占位寒暄
 - [ ] 每条内容断言在被测系统复读题目/胡编时会变红（断言的词不是输入里本来就有的）
 - [ ] 至少有一条负例（应该答不了的输入，断言它明确说做不到）
-- [ ] 有 key 时 Judge 已配置，且在 `niceeval view` 里看到过 Judge 分数。没 key 时总结里说明了
+- [ ] 有 key 时 Judge 已配置，且在 `niceeval show` 或 `niceeval view` 里看到过 Judge 分数。没 key 时总结里说明了
 - [ ] Experiment 里声明的 `model` / `flags` 确实被 Adapter 消费（没有写了没人读的死配置，也没有编造被测系统不存在的 model 值）
 - [ ] 真实目标按项目自己的方式启动并确认就绪，凭证只提供给需要它的运行边界，没有写进评估源码、工作区或交接
-- [ ] 至少取得一个完成且非 `errored` 的 Attempt；业务失败如实保留，并用同一 locator 核对分数、Assertion 与证据覆盖
+- [ ] 至少有一个跑完且不是 `errored` 的 Attempt；业务失败如实保留，并用同一个 locator 核对分数、断言和证据是否完整
 
-跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、Adapter、Experiment 与评估用例各在哪、`niceeval exp <实验路径>` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
+跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、Adapter、Experiment 与评估用例各在哪、`niceeval exp <实验路径>`、`niceeval show` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
 
 ## 第 6 步：问用户要不要往深了接
 
@@ -132,9 +139,9 @@ pnpm exec niceeval show @<locator> --source
 | 能做什么 | 改动量 | 好处 | 文档 |
 |---|---|---|---|
 | 工具调用断言（`t.calledTool()` 等） | 只改 Adapter：把应用响应映射成标准事件流，约 10–30 行映射代码 | 评估用例能断言「Agent 有没有调对工具、参数对不对」，不再只看最终回复 | [编写 send](/zh/tutorials/write-send)、[事件参考](/zh/reference/events) |
-| 多轮对话、会话隔离 | 只改 Adapter：接上 `ctx.session`（typed slot 或 `id` + `capture()`），几行到十几行 | 评估用例能写多轮场景、`t.newSession()` 验证会话间不串味 | [驱动多轮交互](/zh/explanation/drive)、[编写 send](/zh/tutorials/write-send) |
-| 人工审批流（HITL） | 只改 Adapter：停轮返回 `waiting` + `input.requested`，回答轮续跑，约 10–20 行 | 评估用例能覆盖「批准/拒绝之后 Agent 行为对不对」这类审批场景 | [HITL](/zh/explanation/hitl) |
+| 多轮对话、会话隔离 | 只改 Adapter：接上 `ctx.session`（带类型的会话状态，或 `id` + `capture()`），几行到十几行 | 评估用例能写多轮场景、`t.newSession()` 验证会话间不串味 | [驱动多轮交互](/zh/explanation/drive)、[编写 send](/zh/tutorials/write-send) |
+| 人工审批流（HITL） | 只改 Adapter：等待审批时让当前 Turn 返回 `waiting` 和 `input.requested`，收到回答后继续执行，约 10–20 行 | 评估用例能覆盖「批准/拒绝之后 Agent 行为对不对」这类审批场景 | [HITL](/zh/explanation/hitl) |
 | 调用瀑布图（升 Tier 2） | 应用已有 OTel 埋点（第 1 步探过）：只是把 span 多发一份给 NiceEval，几行配置。没埋点：补一段通用 OTel 初始化 | `niceeval view` 里看到应用内部每次模型调用、工具执行的耗时和 token 时间线。不影响任何断言 | [配置 OTel](/zh/tutorials/connect-otel) |
-| feature A/B 对比（升 Tier 3） | 改应用：把变体暴露成 `flags` 可切换的配置，改动量取决于应用。已有 A/B 开关（第 1 步探过）就是现成入口 | Experiment 层面直接对比「改 prompt / 换工具集 / 开关 feature 谁更好」 | [组织 Experiment](/zh/tutorials/experiments)、[接入等级](/zh/explanation/tier) |
+| feature A/B 对比（升 Tier 3） | 改应用：把变体暴露成 `flags` 可切换的配置，改动量取决于应用。已有 A/B 开关（第 1 步探过）就是现成入口 | Experiment 层面直接对比「改 prompt / 换工具集 / 开关 feature 谁更好」 | [组织 Experiment](/zh/tutorials/write-experiment)、[接入等级](/zh/explanation/tier) |
 
 共同点也要讲给用户：这些全是给 Adapter 或应用加增量，**已写的评估用例一行不用改**。三档投入分别买到什么、什么时候值得升级，见[接入等级](/zh/explanation/tier)。第 1 步探到应用已有 OTel 埋点的话，瀑布图那条要主动推荐——成本接近零。

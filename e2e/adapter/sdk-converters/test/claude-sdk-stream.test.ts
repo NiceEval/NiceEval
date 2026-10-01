@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/claude-sdk-stream.test.ts
 
-import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
+import { assertExpEvalOutcomes, exactEval, only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 import { withInspectionRequest } from "@niceeval/testkit";
@@ -13,8 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 确定性读回 [necase_BZYM37JTFDZAV2RR]", async () => {
+test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case(
     "claude-sdk-stream",
     sdkConverterRecordArtifacts,
@@ -67,6 +68,18 @@ test("createClaudeSdkEventStream 的锁定上游帧经 Experiment 和公开 CLI 
       expect(trace).toContain('"tool":"Read"');
       expect(trace).toContain('"tool":"Write"');
       expect(trace).toContain("rejected");
+      const usageReceipt = await withInspectionRequest({
+        kind: "attempt.usage",
+        locator: event.locator,
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+      expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
+      const { usage } = usageReceipt.attemptUsage();
+      expect(usage).toMatchObject({ hasMore: false, omittedObservationCount: 0 });
+      const usageTurn = only(usage.turns, () => true, () => usageReceipt.diagnostic());
+      expect(usage.observations.filter((observation) =>
+        observation.turnId === usageTurn.turnId && observation.kind === "request" &&
+        observation.requestKind === "model")).toHaveLength(2);
+      expect(usage.totals.requests).toMatchObject({ state: "available", value: 2, observationCount: 2 });
     },
   );
 });

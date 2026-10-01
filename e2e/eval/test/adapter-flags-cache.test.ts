@@ -5,7 +5,8 @@ import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
-test.concurrent("Adapter flags 规范化等价时复用且 parseFlags 行为版本隔离缓存 [necase_3JRA1GT0ZX74H9V7]", async () => {
+// @feature docs/feature/experiments/README.md
+test.concurrent("Adapter flags 规范化等价时复用且 parseFlags 行为版本隔离缓存", async () => {
   await evalE2E.case("adapter-flags-cache", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const initial = await niceeval.run(["exp", "parsed-flags", "--json"]);
     expect(initial.exitCode, initial.diagnostic()).toBe(0);

@@ -73,7 +73,7 @@ link。
 
 无密钥的 `local-protocol/` 只拥有确定性 protocol state / transport / fault / cleanup，不得用它的 typed fixture 宣称 live adapter 兼容。
 多个纯 converter 只有在依赖、密钥、executor、runtime 与资源边界完全相同时才可共用一个无密钥载体；每个入口仍须有独立
-fixture、Eval、Experiment、测试文件、项目副本 / 结果根与 owner anchor，默认并行不得共写现场。任一依赖图或资源边界分叉就拆 Repo。
+fixture、Eval、Experiment、测试文件、项目副本与结果根，默认并行不得共写现场。任一依赖图或资源边界分叉就拆 Repo。
 
 ## Repo project
 

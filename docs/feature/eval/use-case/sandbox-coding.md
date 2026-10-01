@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: sandbox-coding
+title: 沙箱 coding 任务：从放文件到评 diff
+createdAt: 2026-07-22T10:19:57+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # 沙箱 coding 任务：从放文件到评 diff

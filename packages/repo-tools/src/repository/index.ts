@@ -1,3 +1,4 @@
+import { repositoryRoot } from "../root.js";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,7 +18,7 @@ import { runProcess } from "./process.js";
 
 export * from "./model.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const ROOT = repositoryRoot();
 const MANIFEST_PATH = join(ROOT, "package.json");
 
 const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));

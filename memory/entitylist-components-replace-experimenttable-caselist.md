@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: entitylist-components-replace-experimenttable-caselist
+title: 设计裁决:实体列表 ExperimentList/EvalList/AttemptList 取代混合实体的 ExperimentTable +
+  CaseList + MetricTable.expand
+createdAt: 2026-07-12T14:40:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/entitylist-components-replace-experimenttable-caselist.md
+  commit: c8a61e272ee3b76c3a025e7547eea5cc50a1c1b9
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:实体列表 ExperimentList/EvalList/AttemptList 取代混合实体的 ExperimentTable + CaseList + MetricTable.expand
 
 **裁决**(2026-07-12):报告组件里"从聚合下钻到 Attempt 证据"这条路径收拢成三个组件,每个对应一个实体层级——`ExperimentList`(每项一个 experiment)、`EvalList`(每项一个 experiment × eval)、`AttemptList`(每项一个 Attempt)。三者都用既有 `defineComponent({ resolve, web, text })` 机制(该机制本身不变、已实现),`.data(selection)` 返回普通、可 `.filter()`/`.slice()` 的 JS 数组(`ExperimentListItem[]` / `EvalListItem[]` / `AttemptListItem[]`),报告作者用原生数组方法收窄展示范围,组件不提供查询 DSL,不静默丢弃传入项。`MetricTable` 收窄回「纯维度 × 指标」,不再承担实体下钻职责,`expand`/`TableSubRow` 一并删除。

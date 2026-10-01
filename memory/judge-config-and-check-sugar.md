@@ -1,16 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: judge-config-and-check-sugar
 title: Judge 模型配置与 Match 断言分工，官方方法复用 check
 createdAt: 2026-09-13
-kind:
-  type: decision
-  state: adopted
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
 promotions:
-  - kind: feature
-    current:
-      - docs/feature/judge/library.md
-    history: []
+  - docs/feature/judge/library.md
+history: []
 ---
 用户明确要求 `defineEval.judge` 为每道题配置 Judge 模型，官方 `t.factuality()`、`t.closeQA()` 等则是断言方法。把该字段解释成精确 Match 实例允许列表，会迫使作者重复声明，并混淆执行配置与评价标准。
 

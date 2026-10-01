@@ -1,75 +1,82 @@
 ---
 title: "运行被强杀后恢复"
-description: "进程被 kill -9、CI 超时或断电中断后，保留已发布结果、收口失去 owner 的 Run，并收回遗留 Sandbox。"
+sidebarTitle: "强杀后恢复"
+description: "进程被 kill -9、CI 超时或断电中断后，保留已经跑完的结果，结束失去进程的 Run，并收回遗留的 Sandbox。"
 ---
 
-`niceeval exp` 被 `kill -9`、CI 时限或断电直接中断时，进程无法执行收尾。已经发布的 Attempt 仍在项目内唯一的 `.niceeval/record.sqlite` 中可读；尚未发布的工作不会变成半条公开事实。
+`niceeval exp` 被 `kill -9`、CI 时限或断电直接中断时，进程没有机会收尾。已经跑完的 Attempt 仍保存在项目的 `.niceeval/record.sqlite` 里，可以照常查看；还没跑完的不会留下写了一半的结果。
 
-正常的 Ctrl+C 或 SIGTERM 走受控中断：NiceEval 发布已经完成的 Attempt，并把其余 slot 收口为中断原因。本页只处理进程没有机会收尾的情况。
+正常按 Ctrl+C 或发送 SIGTERM 时，NiceEval 会自己收尾：保存已经完成的 Attempt，并把其余计划要跑的 Attempt 标成被中断。本页只处理进程没有机会收尾的情况。
 
-## 先查看已发布结果
+## 先看保存下来的结果
 
-先列出本次 Invocation 创建过的 Run。若你有 Invocation ID，用它缩小范围：
-
-```bash
-niceeval run list --invocation <invocation-id>
-niceeval run show <run-id>
-niceeval view --run <run-id>
-```
-
-`active` Run 仍会显示已经发布的 Attempt，未发布的 expected slot 显示为 `pending`。不要根据运行时间、PID 过期或 heartbeat 停止自行判断它可以被接管。
-
-## 收口失去 owner 的 Run
-
-只有确认原进程已经终止后，才执行恢复：
+列出这次运行创建过的 Run。如果你从 `--json` 输出或 CI 日志里拿到了 `invocationId`，用它缩小范围：
 
 ```bash
-niceeval run recover <run-id> --yes
+pnpm exec niceeval run list --invocation <invocation-id>
+pnpm exec niceeval run show <run-id>
+pnpm exec niceeval show --run <run-id>
 ```
 
-`run recover` 会验证旧 owner 的精确 process identity。验证通过后，它把 Run 收口为 `interrupted`，并为未发布的 slot 写入 absence reason。它不会删除 Run 或已经发布的 Attempt，也不会让旧 generation 继续写入。
+也可以在浏览器里看：`pnpm exec niceeval view --run <run-id>`。
 
-证据不足时命令会拒绝恢复。此时先确认原进程、CI job 和可能的远程 worker 都已停止，再重新检查；不要用超时或“等待太久”代替 owner 证据。
+被强杀的 Run 状态仍是 `active`。它会显示已经跑完的 Attempt，还没跑的显示为 `pending`。不要根据运行时长、PID 过期或心跳停止就认定它可以被接管。
 
-需要重新取得结果时，重新运行原来的 Experiment。新的 Invocation 会创建新的 Run；是否沿用已有 Attempt 由当前 Experiment 的 eligibility 和 `--rerun` policy 决定。
+## 结束失去进程的 Run
+
+确认原进程已经终止后，再执行恢复：
+
+```bash
+pnpm exec niceeval run recover <run-id> --yes
+```
+
+`run recover` 会先核实原进程确实已经终止。核实通过后，它把 Run 标成 `interrupted`，并为没跑完的 Attempt 写明缺失原因。它不会删除 Run 或已经跑完的 Attempt，原进程即使残留也不能再写入。
+
+证据不足时，命令会拒绝恢复。这时先确认原进程、CI job 和可能的远程 worker 都已停止，再重试。不要因为“已经等了很久”就绕过这个检查。
+
+## 补跑没完成的部分
+
+需要拿到完整结果时，重新运行原来的 Experiment。新的运行会创建新的 Run；上次已经跑完、符合沿用条件的 Attempt 会被沿用，其余的重新跑。运行前可以先加 `--dry` 看清哪些会沿用、哪些会重跑，规则见[修改后只重跑受影响的评估](/zh/tutorials/rerun-and-cache)。
 
 ## 收回强杀留下的 Sandbox
 
-强杀时正在运行的 Sandbox 不会进入留存注册表。先只读核对孤儿实例：
+强杀时正在运行的 Sandbox 不会被登记，`niceeval sandbox list` 看不到它们。先只读列出这些遗留实例：
 
 ```bash
-niceeval sandbox list --orphans
+pnpm exec niceeval sandbox list --orphans
 ```
 
-确认后再收回：
+确认后再回收：
 
 ```bash
-niceeval sandbox prune
+pnpm exec niceeval sandbox prune
 ```
 
-- `orphan` 表示同一主机上的 owner 已被证明终止，可以安全销毁。
-- `unverified` 表示来自另一台主机或无法确认的实例，默认不会删除；确认后才使用 `niceeval sandbox prune --force`。
+- `orphan` 表示同一台主机上创建它的进程已被证明终止，可以安全销毁。
+- `unverified` 表示来自另一台主机或无法确认，默认不会删除。确认它确实没人在用后，才使用 `pnpm exec niceeval sandbox prune --force`。
 - Compose 的伴随容器和网络会作为一组列出和销毁。
-- Vercel Sandbox 没有可检索的孤儿通道，按 Provider 保留期限自行回收。
-- 用 `--keep-sandbox` 留下的现场不受 `prune` 影响，仍用 `niceeval sandbox stop` 管理。
+- Vercel Sandbox 无法检索遗留实例，到 Provider 的保留期限后自行回收。
+- 用 `--keep-sandbox` 留下的现场不受 `prune` 影响，仍用 `niceeval sandbox stop` 管理，见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
 
 ## 恢复共享状态租约
 
-声明 `sharedState.key` 的 Experiment 在原 owner 正常释放租约，或操作员完成显式恢复前不会启动相同 key 的新 Invocation。先运行不带 token 的检查命令，读取当前 owner evidence：
+声明了 `sharedState.key` 的 Experiment，同一个 key 同时只能有一次运行持有。原运行没有正常释放时，新的运行会一直等待，直到你显式恢复。
+
+先运行不带 token 的检查命令，查看当前持有者的信息：
 
 ```bash
-niceeval exp <experiment> --teardown \
+pnpm exec niceeval exp <experiment> --teardown \
   --recover-shared-state <key>
 ```
 
-确认原 owner 已终止，并确认它操作的远程服务和 checkpoint 都已静止后，复制命令显示的 token 并显式确认：
+确认原运行已经终止，它操作的远程服务和 checkpoint 也都已停止变化后，复制命令显示的 token，再显式确认：
 
 ```bash
-niceeval exp <experiment> --teardown \
+pnpm exec niceeval exp <experiment> --teardown \
   --recover-shared-state <key> \
   --owner-token <displayed-token> \
   --confirm-owner-terminated \
   --confirm-remote-quiesced
 ```
 
-恢复只为该 Experiment 补跑 `teardown`。token 错误、旧 token 或 cleanup 失败都不会释放后来 owner 的租约；修复 teardown 后，用当前显示的 token 再试。
+恢复只为这个 Experiment 补跑 `teardown`。token 错误、token 已过期或 teardown 失败时，租约不会被释放，也不会影响之后新持有者的租约。修好 teardown 后，用当前显示的 token 再试。

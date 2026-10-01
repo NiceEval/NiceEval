@@ -1,20 +1,37 @@
 ---
 title: "让 Coding Agent 根据结果迭代"
 sidebarTitle: "Coding Agent 反馈闭环"
-description: "让 Coding Agent 读取 receipt 的 createdRunIds，查看结果，再区分被测失败、证据错误与评估用例误判。"
+description: "让 Coding Agent 自己跑评估、读结果、判断该改应用还是改断言，再复验，不用你把终端输出复制来复制去。"
 ---
 
-Coding Agent 可以用命令行完成一次清楚的反馈闭环：阅读安装版本的文档，运行 Experiment，读取最后的 receipt，用 receipt 的 `createdRunIds` 查看结果，再修改程序或评估用例并重新运行。
+你让 Coding Agent 修一个回归。它改完代码，你跑评估，把失败的输出复制给它，它再改，你再跑。来回几轮，大部分时间花在了搬运终端内容上。
 
-## 先读取安装版本的文档
+更好的做法是让 Agent 自己完成这个循环：
 
-NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包根提供供 Coding Agent 使用的 `INDEX.md`。Coding Agent 应先读取 `node_modules/niceeval/INDEX.md`，再从索引进入当前任务需要的页面，不依赖训练数据或其它版本的在线示例。这样可以保证 API、CLI 与安装版本一致。
+1. 跑评估。
+2. 从运行结束时的 receipt 里拿到这次的 Run ID。
+3. 用 Run ID 查看结果，找到失败的那几次运行。
+4. 判断该改应用、Adapter 还是评估用例。
+5. 改完再跑同一范围，确认修好了。
 
-`npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`。两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
+这一页说明每一步该用哪个命令，以及 Agent 要遵守的几条边界。
 
-托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者优先用 `niceeval show` 在终端审阅，用固定 `niceeval query` operation 取得稳定的机器数据。`niceeval view` 只用于浏览器审阅。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开读取面缺少必要证据时，应报告 NiceEval 的呈现缺口。
+## 先让 Agent 读安装版本的文档
 
-给 AI 的起始任务可以直接写成：
+Agent 凭训练记忆写出来的命令和 API，可能和你装的 NiceEval 版本对不上。先让它读跟着 npm 包发布的文档。
+
+NiceEval 把中文文档放在 npm 包的 `docs-site/zh/` 目录，并在包根提供给 Coding Agent 用的 `INDEX.md`。Agent 先读 `node_modules/niceeval/INDEX.md`，再从索引进入当前任务需要的页面。
+
+`pnpm exec niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。项目只有 `CLAUDE.md` 时写进 `CLAUDE.md`；两份都没有时新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，就能刷新这段指引。
+
+这段指引把两件事分开：
+
+- 写代码时，Agent 当然可以读 `evals/`、`agents/` 等项目源码。
+- 要证明某次运行发生了什么时，在终端用 `niceeval show`，要稳定的 JSON 用 `niceeval query`，浏览器审阅用 `niceeval view`。不要扫描 `.niceeval/` 下的原始文件，也不要拿当前源码反推历史运行。
+
+这些命令看不到需要的信息时，让 Agent 直接报告“CLI 看不到”，不要绕过去读文件。
+
+给 Agent 的起始任务可以直接写成：
 
 ```text
 先读取 node_modules/niceeval/INDEX.md。
@@ -22,38 +39,44 @@ NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包�
 使用命令运行 Experiment，并根据最后的 receipt 选择要查看的 Run。
 ```
 
-这样 Agent 使用的文档与项目安装的版本一致。
+## 运行并保存 receipt
 
-## 运行并保留 receipt
+让 Agent 用 `--json` 运行，并把输出存下来：
 
 ```sh
-npx niceeval exp checkout --json | tee .niceeval-invocation.ndjson
+pnpm exec niceeval exp checkout --json | tee .niceeval-invocation.ndjson
 ```
 
-`--json` 的每一行都是当前进程反馈。progress 与 diagnostic 只说明这次运行正在发生什么。最后恰好一条 receipt 包含：
+`--json` 的每一行都描述这次运行的进度和诊断。最后恰好一行是 receipt：
 
 ```json
 {
-  "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
-  "createdRunIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
-  "publicationCutoff": "{...}",
-  "startedAt": "2026-08-09T10:00:00.000Z",
-  "completedAt": "2026-08-09T10:01:00.000Z",
-  "completion": "completed"
+  "type": "receipt",
+  "receipt": {
+    "invocationId": "01J8ZK3M6P4T7V9X2C5N8QW0RY",
+    "createdRunIds": ["01J9ZK3M6P4T7V9X2C5N8QW0RY"],
+    "publicationCutoff": "{...}",
+    "startedAt": "2026-08-09T10:00:00.000Z",
+    "completedAt": "2026-08-09T10:01:00.000Z",
+    "completion": "completed"
+  },
+  "summary": { "...": "..." }
 }
 ```
 
-Agent 应把最后一条 receipt 当作本次调用的交接信息。`createdRunIds` 穷尽列出成功创建的 Run，`publicationCutoff` 是 opaque 的已发布事实边界；它们不表示任务已经完成。receipt 不是持久化的结果协议；业务事实仍要通过 `createdRunIds` 从已发布的 Record 读取。
+Agent 只认最后这一行。`createdRunIds` 列出这次新建的全部 Run，后面查看结果就用它。`publicationCutoff` 不要解析，原样传给后续命令。
 
-## 用 Run ID 审阅结果
+`completion` 是 `completed` 只说明这次运行结束了，不说明任务完成了，评估也可能没通过。receipt 也不是长期保存的结果格式，结果要通过 `createdRunIds` 去读。
 
-运行结束后，Coding Agent 先在终端读取 receipt 指定的 Run：
+## 用 Run ID 查看结果
+
+运行结束后，Agent 先在终端打开 receipt 里的 Run：
 
 ```sh
 pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-这会列出 Run 的分母、Member、判定、分数、coverage 与 Attempt locator。需要查看一条 Attempt 时，复制输出中的 locator：
+输出列出这个 Run 的分母、各评估用例的判定、分数、结果覆盖和每个 Attempt 的 locator。要细看某个 Attempt，复制它的 locator：
 
 ```sh
 pnpm exec niceeval show @<attempt-locator>
@@ -61,44 +84,52 @@ pnpm exec niceeval show @<attempt-locator> --source
 pnpm exec niceeval show @<attempt-locator> --execution
 ```
 
-`show @<attempt-locator>` 显示 Attempt 的身份、判定、断言摘要、section 状态与限制。`--source` 查看已封存的 source 和 Assertion 事实；`--execution` 查看有界执行 outline。它显示的稳定 ID 可用于 `--execution --expand <stable-id>` 下钻一项执行内容。
+`show @<attempt-locator>` 显示这个 Attempt 的判定、断言摘要、各部分是否完整和已知限制。`--source` 显示这次运行用的评估源码和每条断言的结果。`--execution` 显示精简后的执行过程，要展开其中一项，复制它旁边的 ID 运行 `--execution --expand <stable-id>`。
 
-需要让脚本、CI 或 Agent 稳定处理结果时，先发现可用 operation，再发送完整 request：
+需要让脚本、CI 或 Agent 稳定处理结果时，先找到可用的查询，再发送完整 request：
 
 ```sh
-pnpm exec niceeval query discover
-pnpm exec niceeval query explain --request request.json
-pnpm exec niceeval query run --request request.json
+pnpm --silent exec niceeval query discover
+pnpm --silent exec niceeval query explain --request request.json
+pnpm --silent exec niceeval query run --request request.json
 ```
 
-`query` 返回固定的闭合 Inspection result。需要在浏览器中阅读时，使用 `niceeval view --run <run-id>`；View 不作为终端 locator 的读取入口。Agent 应区分以下状态：
+`query` 返回固定格式的 JSON。人要在浏览器里看时，用 `pnpm exec niceeval view --run <run-id>`；`view` 不接受 locator。
+
+## 按看到的状态决定下一步
 
 | 看到的状态 | 下一步 |
 | --- | --- |
-| Attempt `failed` | 比较任务允许的结果、实际产物及证据和断言条件，再决定修被测对象、Adapter 还是评估用例。 |
-| `errored` | 检查诊断、Adapter、Sandbox 或凭据。 |
-| `not-recorded` | 检查该 expected slot 为什么没有 Member。 |
-| `core-invalid` | 阅读具名 Core issue，不要把它当成未采集。 |
-| `partial` | 阅读分母和问题，确认哪些成员没有贡献。 |
-| `record-schema-unsupported` 或旧项目状态阻塞运行 | 保留原项目和历史数据，按[旧项目恢复指引](/zh/troubleshooting/debugging#旧项目状态阻塞运行)在独立项目副本重新运行。 |
-| `unsupported` 或 `failed` | 只处理依赖该分析输入的查看内容，并阅读具名问题。 |
+| Attempt `failed` | 对照任务允许的结果、实际产物、证据和断言条件，再决定改被测对象、Adapter 还是评估用例。 |
+| `errored` | 检查错误正文、Adapter、Sandbox 或凭据。 |
+| `not-recorded` | 这次计划要跑的某个 Attempt 没有结果，检查它为什么没跑。 |
+| `core-invalid` | 阅读输出里写明的问题，不要把它当成没采集到。 |
+| `partial` | 结果不完整。阅读分母和问题说明，确认哪些 Attempt 没有计入。 |
+| `record-schema-unsupported` 或旧项目状态阻塞运行 | 保留原项目和历史数据，按[旧项目恢复指引](/zh/troubleshooting/debugging#旧项目状态阻塞运行)在项目副本里重新运行。 |
+| 查询结果为 `unsupported` 或 `failed` | 只影响依赖这项输入的查看内容。阅读写明的问题。 |
 
-处理 Attempt `failed` 时，不要为了通过一个过窄的 Match 而修改本来符合任务的产物。产物满足任务、断言却拒绝任务允许的结果时，这是评估用例的 False Negative。完整归因流程见[排查手册](/zh/troubleshooting/debugging)。
+处理 `failed` 时，不要为了通过一个过窄的 Match 去改本来符合任务的产物。产物满足任务、断言却拒绝了任务允许的结果，说明评估用例误判了，应该改评估用例。完整的归因流程见[排查手册](/zh/troubleshooting/debugging)。
 
-## 修改后再次运行
+## 修改后再跑一次
 
-让 Agent 每次只处理一个可验证假设：修改程序或评估用例，运行相同范围，再读取新的 receipt 和 Run。需要确认所有 slot 真实执行时使用：
+让 Agent 每次只验证一个假设：改程序或评估用例，运行同一个范围，再读新的 receipt 和 Run。
+
+默认情况下，没受改动影响、上次已经有结论的 Attempt 会被沿用。运行前加 `--dry` 可以看到哪些会沿用、哪些会重跑，以及原因。需要所有 Attempt 都真实执行时，加 `--rerun all`：
 
 ```sh
-npx niceeval exp checkout --rerun all --json
+pnpm exec niceeval exp checkout --rerun all --json
 ```
 
-自动采用已有 Attempt 时，`--dry` 会说明原因。carry 与 accept 的理由随目标 Run 保存，并可在结果中查看；详情见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
+沿用和接受旧结果的规则见[修改后只重跑受影响的评估](/zh/tutorials/rerun-and-cache)。
 
-运行完成只表示这次 Invocation 已交接，不表示用户任务已经完成。任务要求完成且已有授权时，先修复执行链错误，再只复验受影响范围。只读请求只做归因，不修改或重跑。业务失败符合任务时保留该结果并如实报告，不要为了变绿改写应用或评估用例。
+运行结束只说明这次运行交接完了，不说明用户的任务完成了。
 
-## Record 的边界
+- 任务要求修好、且已有授权时，先修运行出错的问题，再只复验受影响的范围。
+- 只要求分析时，只做归因，不改代码也不重跑。
+- 业务失败符合任务预期时，保留这个结果并如实报告，不要为了变绿去改应用或评估用例。
 
-Record 只保存已发布的事实，发布后不可修改。Agent 需要不同结果时修改程序或评估用例，运行新的 Invocation，再用新 receipt 的 `createdRunIds` 查看。
+## 结果保存后不能修改
 
-需要把运行事实交给他人时，复制 [canonical Record](/zh/explanation/record)，而不是把当前进程反馈当作分享格式。
+已经保存的结果不会被修改。Agent 想得到不同的结果，就改程序或评估用例，重新运行，再用新 receipt 的 `createdRunIds` 查看。
+
+需要把结果交给别人时，复制项目里的 [`.niceeval/record.sqlite`](/zh/explanation/record)，不要把终端输出或 NDJSON 当作分享格式。

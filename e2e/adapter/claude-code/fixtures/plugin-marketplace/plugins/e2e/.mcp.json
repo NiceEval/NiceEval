@@ -1,0 +1,6 @@
+{
+  "fixture": {
+    "command": "node",
+    "args": ["/tmp/niceeval-e2e-plugin-fixture/node_modules/@modelcontextprotocol/server-everything/dist/index.js"]
+  }
+}

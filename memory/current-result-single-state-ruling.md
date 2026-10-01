@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: current-result-single-state-ruling
+title: 当前结果收敛为单一状态
+createdAt: 2026-08-06T19:54:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/current-result-single-state-ruling.md
+  commit: 00a5e19f76a97c618e3e5b11f5244a93a0885653
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 当前结果收敛为单一状态
 
 日期：2026-08-06。

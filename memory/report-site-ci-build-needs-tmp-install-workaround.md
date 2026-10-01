@@ -1,8 +1,20 @@
 ---
-name: report-site-ci-build-needs-tmp-install-workaround
+format: concord.document/v1
+id: report-site-ci-build-needs-tmp-install-workaround
+title: report-site-ci-build-needs-tmp-install-workaround
+createdAt: 2026-08-04T12:18:47+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-site-ci-build-needs-tmp-install-workaround.md
+  commit: f171b80afce6dc7e1595ffd99cedbb4fc00f6fac
 description: 下游仓库在 CI 里构建报告站要用「/tmp 装 niceeval+react + symlink node_modules 回仓库根」的 workaround,因为没有不依赖仓库自身 node_modules 的官方构建路径
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 发现(未修,2026-08-04):下游仓库要在 CI 里把 `.niceeval` 构建成静态报告站,又不想为此跑一遍

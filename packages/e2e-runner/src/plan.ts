@@ -21,6 +21,7 @@ import {
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo, type DiscoveryIoError } from "./discovery.ts";
 import { type RepoRequires } from "./manifest.ts";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess, type OwnedProcess, type OwnedProcessResult } from "./owned-process.ts";
+import { changedLockImporters, rootManifestAffectsProduct } from "./dependency-selection.ts";
 
 const NxProjectNameListSchema = Schema.Array(Schema.String);
 
@@ -234,10 +235,10 @@ const downstreamE2E = (project: string, graph: import("./contracts.ts").NxGraph)
 };
 
 const selectAffected = (
-  nxArgs: readonly string[],
   changedPaths: readonly string[],
   cwd: string,
   dataDirectory: string,
+  base = "HEAD",
 ): Effect.Effect<
   { readonly all: readonly string[]; readonly e2e: readonly string[] },
   PlanSelectionError | PlanProcessError | PlanFilesystemError | PlanJsonError | ContractDecodeError,
@@ -248,10 +249,37 @@ const selectAffected = (
       return yield* Effect.fail(new PlanSelectionError({ reason: "unrepresentable-path", detail: "changed paths contain comma or newline characters that Nx --files cannot represent losslessly" }));
     }
     const graph = yield* readNxGraph(cwd, dataDirectory);
-    const [all, e2e] = yield* Effect.all([nxProjects(nxArgs, cwd, dataDirectory, false), nxProjects(nxArgs, cwd, dataDirectory, true)]);
-    const ignoredPaths = yield* nxIgnoredPaths(changedPaths, cwd);
+    const selectionPaths = new Set(changedPaths);
+    for (const path of changedPaths.filter((path) => path === "pnpm-lock.yaml" || path === "package.json")) {
+      const before = yield* runGit(["show", `${base}:${path}`], cwd);
+      const after = yield* planFileSystem("read-file", join(cwd, path), (service) => service.readFileString(join(cwd, path)));
+      // Explicit --diff-path remains conservative when there is no content diff.
+      if (before.trim() === after.trim()) continue;
+      const roots = yield* Effect.try({
+        try: () => path === "pnpm-lock.yaml" ? changedLockImporters(before, after) : rootManifestAffectsProduct(before, after) ? ["."] : ["apps/site"],
+        catch: (cause) => new PlanSelectionError({ reason: "dependency-selection", detail: `${path}: ${executionErrorDetail(cause)}` }),
+      });
+      selectionPaths.delete(path);
+      for (const root of roots) {
+        const manifestPath = root === "." ? "package.json" : `${root}/package.json`;
+        const owner = owningProject(manifestPath, graph);
+        if (owner === undefined || graph.graph.nodes[owner]?.data.root !== root) {
+          return yield* Effect.fail(new PlanSelectionError({ reason: "dependency-owner", detail: `dependency importer has no exact Nx owner: ${root}` }));
+        }
+        // Use a neutral owned path: root package/lockfile locators deliberately
+        // over-select, while their semantic changes have already been resolved.
+        selectionPaths.add(root === "." ? "project.json" : `${root}/project.json`);
+      }
+    }
+    const paths = [...selectionPaths].sort();
+    if (paths.some((path) => /[\r\n,]/.test(path))) {
+      return yield* Effect.fail(new PlanSelectionError({ reason: "unrepresentable-path", detail: "dependency owner paths contain characters that Nx --files cannot represent losslessly" }));
+    }
+    const nxArgs = paths.flatMap((path) => ["--files", path]);
+    const [all, e2e] = paths.length === 0 ? [[], []] : yield* Effect.all([nxProjects(nxArgs, cwd, dataDirectory, false), nxProjects(nxArgs, cwd, dataDirectory, true)]);
+    const ignoredPaths = yield* nxIgnoredPaths(paths, cwd);
     const expected = new Set<string>();
-    for (const path of changedPaths) {
+    for (const path of paths) {
       if (ignoredPaths.has(path)) continue;
       const owner = owningProject(path, graph);
       if (owner === undefined) return yield* Effect.fail(new PlanSelectionError({ reason: "unowned-path", detail: `changed path has no Nx owner: ${path}` }));
@@ -382,11 +410,11 @@ export const resolvePlan = (cli: PlanCli): Effect.Effect<ResolvedPlan, PlanFailu
         if (cli.base !== undefined && cli.head !== undefined) {
           const resolvedRange = yield* validateRange(cli.base, cli.head, root);
           const paths = (yield* gitDiffPaths(["diff", `${resolvedRange.base}...${resolvedRange.head}`], root)).map((path) => path.replaceAll("\\", "/")).sort();
-          const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths.flatMap((path) => ["--files", path]), paths, root, dataDirectory);
+          const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths, root, dataDirectory, resolvedRange.base);
           return { range: resolvedRange, changedPaths: paths, affectedNames: selection.e2e, allAffectedNames: selection.all };
         }
         const paths = cli.diffPaths === undefined ? yield* localChangedPaths(root) : [...new Set(cli.diffPaths)].sort();
-        const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths.flatMap((path) => ["--files", path]), paths, root, dataDirectory);
+        const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths, root, dataDirectory);
         return { changedPaths: paths, affectedNames: selection.e2e, allAffectedNames: selection.all };
       }));
       if (Result.isFailure(selected)) {

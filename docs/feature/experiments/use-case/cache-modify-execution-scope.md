@@ -1,0 +1,17 @@
+---
+format: concord.document/v1
+id: cache-modify-execution-scope
+title: 修改 timeout 或 Attempt 数量
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 修改 timeout 或 Attempt 数量
+
+提高或降低 `timeoutMs` 不改变 Eval fingerprint。
+它改变历史 Attempt 的采用资格：超过当前上限的 Attempt 必须重新执行，未超过的继续可采用。
+先从错误中的 `from …` 确认当前生效层，再修改 CLI、Experiment、Eval 或项目配置中的正确一层。
+
+增加 Attempt 数量时，已有序号继续沿用，只执行新增序号；减少数量时，本次 Run 只包含新的计划范围。
+两种变化都不删除或改写原有 Record 事实。

@@ -1,3 +1,4 @@
+import { judgeUsageForResult } from "./judge-usage.ts";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
@@ -689,6 +690,8 @@ export function openRunnerRecordCoordinator(input: {
         }
         const attachmentSnapshot = adapterAttachmentsForResult(result);
         const artifacts = createAttemptArtifactsAttachment(result, attachmentSnapshot);
+        const judgeUsage = judgeUsageForResult(result, closedAssertions.success.entryIds);
+        if (judgeUsage !== undefined) yield* active.session.records.write(NiceEvalRecordAttachments.judgeUsage, judgeUsage);
         const adapterUsage = adapterUsageForResult(result);
         const executionTraces = adapterExecutionTracesForResult(result);
         if (adapterUsage !== undefined) {

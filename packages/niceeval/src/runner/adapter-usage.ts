@@ -1,5 +1,8 @@
+import { projectAdapterEvalUsage, type EvalUsage } from "../o11y/eval-usage.ts";
 import { Result, Schema } from "effect";
-import type { AdapterUsageInput } from "../adapter-usage.ts";
+import type { AdapterUsageInput, AdapterUsageSeal } from "../adapter-usage.ts";
+import { SafeIdentifierSchema } from "../record/family/common.ts";
+import type { ResolvedModelSlots } from "../model-slots.ts";
 import { createAdapterCallPriceReceipts } from "../o11y/adapter-call-price.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import { AdapterUsageCallSchema, AdapterUsageLimits, validateAdapterUsageCalls, type AdapterUsageCall, type AdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
@@ -7,8 +10,13 @@ import type { PriceOverride } from "./types.ts";
 import type { EvalResult } from "./types.ts";
 
 const captures = new WeakMap<EvalResult, AdapterUsageAttachment>();
+const UsageSealSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("complete") }),
+  Schema.Struct({ state: Schema.Literal("partial"),
+    reason: SafeIdentifierSchema.check(Schema.makeFilter((value) => value.length <= 128)) }),
+]);
 export function retainAdapterUsage(result: EvalResult, value: AdapterUsageAttachment): void {
-  if (value.calls.length > 0 || value.collection.state === "partial") captures.set(result, value);
+  captures.set(result, value);
 }
 export function adapterUsageForResult(result: EvalResult): AdapterUsageAttachment | undefined { return captures.get(result); }
 
@@ -17,18 +25,22 @@ export class AdapterUsageCollector {
   private readonly calls = new Map<string, AdapterUsageCall>();
   private closed = false;
   private failed: Error | undefined;
+  private sealed: AdapterUsageSeal | undefined;
   get failure(): Error | undefined { return this.failed; }
   constructor(
     private readonly assertOpen: () => void,
     private readonly pricing: Readonly<Record<string, PriceOverride>> | undefined,
+    private readonly models: ResolvedModelSlots = {},
   ) {}
   record = (input: AdapterUsageInput): void => {
     if (this.closed) throw new Error("Adapter usage capture is closed");
     this.assertOpen();
     try {
+      if (this.sealed !== undefined) throw new Error("Adapter usage is already sealed");
       const decoded = Schema.decodeUnknownResult(AdapterUsageCallSchema, RecordExactParseOptions)({
         ...input,
         retryOf: input.retryOf ?? null,
+        modelSlot: input.modelSlot ?? null,
         route: input.route ?? { transportProvider: null, endpointId: null },
         cost: input.cost ?? null,
         inputTotalTokens: input.inputTotalTokens ?? null,
@@ -36,7 +48,10 @@ export class AdapterUsageCollector {
         cacheWriteTokens: input.cacheWriteTokens ?? null,
       });
       if (Result.isFailure(decoded)) throw new Error("Invalid Adapter usage snapshot");
-      const call = Object.freeze(decoded.success);
+      const call = deepFreeze(structuredClone(decoded.success));
+      if (call.modelSlot !== null && !Object.hasOwn(this.models, call.modelSlot)) {
+        throw new Error("Adapter usage modelSlot must reference a configured model purpose in this Attempt");
+      }
       const prior = this.calls.get(call.callId);
       if (prior !== undefined) {
         if (JSON.stringify(prior) !== JSON.stringify(call)) throw new Error("Conflicting Adapter usage snapshot for callId");
@@ -53,15 +68,41 @@ export class AdapterUsageCollector {
       throw cause;
     }
   };
+  seal = (input: AdapterUsageSeal): void => {
+    if (this.closed) throw new Error("Adapter usage capture is closed");
+    this.assertOpen();
+    try {
+      if (this.sealed !== undefined) throw new Error("Adapter usage is already sealed");
+      const decoded = Schema.decodeUnknownResult(UsageSealSchema, RecordExactParseOptions)(input);
+      if (Result.isFailure(decoded)) throw new Error("Invalid Adapter usage seal");
+      this.sealed = Object.freeze({ ...decoded.success });
+    } catch (cause) {
+      this.failed ??= cause instanceof Error ? cause : new Error("Adapter usage capture failed");
+      throw cause;
+    }
+  };
+  snapshot(): EvalUsage { return projectAdapterEvalUsage(deepFreeze(structuredClone(this.capture()))); }
   close(): AdapterUsageAttachment {
     this.closed = true;
+    return this.capture();
+  }
+  private capture(): AdapterUsageAttachment {
     const calls = Object.freeze([...this.calls.values()]);
     return Object.freeze({
-      collection: this.failed === undefined
-        ? { state: "complete" as const, limitations: [] as const }
-        : { state: "partial" as const, limitations: [{ code: "capture-failed" as const, stage: "adapter-usage" }] as const },
+      collection: this.failed !== undefined
+        ? { state: "partial" as const, limitations: [{ code: "capture-failed" as const, stage: "adapter-usage" }] as const }
+        : this.sealed === undefined
+          ? { state: "partial" as const, limitations: [{ code: "capture-interrupted" as const, stage: "adapter-usage-unsealed" }] as const }
+          : this.sealed.state === "partial"
+            ? { state: "partial" as const, limitations: [{ code: "capture-failed" as const, stage: this.sealed.reason }] as const }
+            : { state: "complete" as const, limitations: [] as const },
       calls,
       priceReceipts: createAdapterCallPriceReceipts(calls, this.pricing),
     });
   }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object") { for (const child of Object.values(value)) deepFreeze(child); Object.freeze(value); }
+  return value;
 }

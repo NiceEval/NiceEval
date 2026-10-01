@@ -13,7 +13,7 @@
 
 ## 位置参数(选择器)
 
-- [选择器 + `--dry`:几十个实验里只跑要跑的,先看清计划再花钱](选择评测/预览并收窄.md)
+- [选择器 + `--dry`:几十个实验里只跑要跑的,先看清计划再花钱](selection-dry-preview.md)
 
 ## 输出形态(`--json`)
 
@@ -21,12 +21,12 @@
 
 ## 调度
 
-- [`--budget`:一批长跑实验,给烧钱装安全网](预算上限.md)
-- [`--max-concurrency`:本地资源耗尽或 provider 限流,收并发](并发/限制全局并发.md)
+- [`--budget`:一批长跑实验,给烧钱装安全网](budget-limit.md)
+- [`--max-concurrency`:本地资源耗尽或 provider 限流,收并发](concurrency-max-global.md)
 
 ## 判定
 
-- [`--early-exit`:只想知道能不能做到,不为通过率分布跑满](首过即停.md)
+- [`--early-exit`:只想知道能不能做到,不为通过率分布跑满](early-exit.md)
 
 ## 缓存
 

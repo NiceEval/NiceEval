@@ -1,0 +1,53 @@
+---
+format: concord.document/v1
+id: sandbox-reuse-repeatability
+title: 同一题重复多次，昂贵安装只真实付一次
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/sandbox/README.md
+---
+
+# 同一题重复多次，昂贵安装只真实付一次
+
+## 解决什么问题
+
+一条 Eval 时过时不过，想在本地重复运行并观察通过率，再决定修断言还是修 Agent。
+默认模式下，`attempts: 5` 会创建五套全新 Sandbox，并支付五次冷启动。
+本地资源有限时，重复安装同一套 Sandbox 可能占去大部分总耗时。
+
+## 全流程
+
+1. 实验配置里已有(或临时改出)重复次数:
+
+   ```ts
+   export default defineExperiment({
+     // …
+     attempts: 5,
+     sandboxReuse: true,
+     maxConcurrency: 1,
+   });
+   ```
+
+2. 收窄到这一题运行：
+
+   ```bash
+   niceeval exp memory/commit0 onboarding/tool-first
+   ```
+
+3. Sandbox 创建只发生一次； 5 个 Attempt 在同一个 Sandbox 中串行执行。
+   每次开跑前 reset 回到复用 Sandbox 的题间重置点，再满足两层 before 与 agent.ensure 循环。昂贵安装第一次 replay，之后可以 restore verified prefix。
+4. [首过即停](../../../concepts.md)语义不变:配了 `earlyExit: true` 且某次通过,剩余重复照常省略;默认跑满拿完整分布。
+5. 跑完用 `niceeval view --run <runId>` 看逐 Attempt 判定分布，定位是断言太脆还是 agent 不稳。
+
+## 边界
+
+- **分布属于这个 Experiment。**
+  5 次跑在同一 Sandbox 中， workdir 之外的状态会跨次累积。
+  报告与 CI 必须把它解释成该生命周期下的分布，不能称为全新 Sandbox 下的独立分布。
+- **与结果沿用使用同一判据。**
+  这 5 条结果与普通 Attempt 一样可被下一次正式 run 按指纹携带；要重新采样这份分布时使用 `--rerun all`，让 5 条 Attempt 都在本次共用 Sandbox 中真实执行。
+
+## 相关阅读
+
+- [Sandbox 复用](../reuse.md) —— 重复运行、各阶段次数与结果沿用。
+- [Runner](../../../runner.md) —— 首过即停与派发语义。

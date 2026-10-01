@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: manual-carry-accept-decisions
+title: 手动复用标记定稿的裁决
+createdAt: 2026-07-30T19:00:43+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/manual-carry-accept-decisions.md
+  commit: 6387770017acc7a82907dcd0f9dda6fbf2b28a4f
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 手动复用标记定稿的裁决
 
 日期:2026-07-30。背景:全局 judge model 改名把 6 题里 5 道不用 judge 的题一起作废,

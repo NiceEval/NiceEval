@@ -1,4 +1,13 @@
-import { Cause, Deferred, Effect } from "effect";
+// @concord-file ne-eval-assertions-runtime
+// @concord-implements docs/feature/assertions/README.md
+// @concord-implements docs/feature/assertions/library.md
+// @concord-implements docs/feature/assertions/library/scoped-assertions.md
+// @concord-implements docs/feature/assertions/library/score-points.md
+// @concord-implements docs/feature/verdict/README.md
+import { validateMaterialQAInputs, captureContextualMatch, captureUnavailableContextualMatch, materialExistenceRegistration, materialQARegistration, contextBooleanRegistration, contextScoreRegistration } from "./material.ts";
+import { isContextualMatch, contextMatchDefinitionOf, type ContextualMatch, type MaterialMatch } from "./context-match.ts";
+import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
+import { Cause, Deferred, Effect, Schema } from "effect";
 
 import type { SourceLoc } from "../shared/types.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
@@ -49,21 +58,56 @@ import {
   isNumericComparisonMatch,
   looksLikeCollectionMatch,
   managedScoreMatchOf,
+  exactLlmOptions,
   type BooleanMatch,
   type CollectionMatch,
   type MatchDiagnostic,
   type ManagedToolCalls,
   type ManagedEventOccurrences,
   type NumericComparisonMatch,
+  type NumericMaterial,
   type ScoreMatch,
   type ToolMatch,
 } from "./match.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
+import { transferFullAssertionContent } from "./full-content.ts";
+
+const unitRatio = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+const weightedScoreInput = Schema.Struct({
+  ratio: Schema.Union([
+    unitRatio,
+    Schema.Struct({ state: Schema.Literal("exact"), value: unitRatio }),
+    Schema.Struct({ state: Schema.Literal("lower-bound"), value: Schema.Finite }),
+    Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.String }),
+  ]),
+  weight: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+});
 
 const UTF8 = new TextEncoder();
 
+const runtimeByCheck = new WeakMap<object, AssertionsRuntimeImplementation>();
+interface AssertionContextReceiver { readonly owner: object; read?: () => unknown; cut?: () => import("./api.ts").MatcherSourceSnapshot; release?: () => void }
+const contextByCheck = new WeakMap<object, AssertionContextReceiver>();
+/** @internal Binding is Attempt-local and happens only after app assembly. */
+export function bindAssertionContext(check: object, read: () => unknown, cut?: () => import("./api.ts").MatcherSourceSnapshot, release?: () => void): void {
+  runtimeByCheck.get(check)?.assertAuthoringOpen();
+  const receiver = contextByCheck.get(check);
+  if (receiver === undefined || receiver.read !== undefined) throw new TypeError("Assertion context must bind exactly once to its owning receiver");
+  receiver.read = read; receiver.cut = cut; receiver.release = release;
+}
+/** @internal A scope owns its ctx and observation cut while sharing the Attempt runtime. */
+export function createScopedAssertionCheck<Kind extends import("./api.ts").AssertionCheckKind, C>(root: object, read: () => unknown, cut: () => import("./api.ts").MatcherSourceSnapshot, release?: () => void): import("./api.ts").AssertionCheck<Kind, C> {
+  const runtime = runtimeByCheck.get(root); const receiver = contextByCheck.get(root);
+  if (runtime === undefined || receiver === undefined) throw new TypeError("Scoped checks require an Assertion runtime");
+  runtime.assertAuthoringOpen();
+  const scoped = (...args: readonly unknown[]) => runtime.checkFor(scoped, args);
+  const scopedReceiver: AssertionContextReceiver = { owner: receiver.owner, read, cut, release };
+  runtimeByCheck.set(scoped, runtime); contextByCheck.set(scoped, scopedReceiver);
+  runtime.trackContextReceiver(scopedReceiver);
+  return scoped as unknown as import("./api.ts").AssertionCheck<Kind, C>;
+}
 const assertionHandleRegistry = new WeakSet<object>();
 
 /** @internal Shared author-boundary guard for check() and Judge dispatch. */
@@ -116,8 +160,10 @@ interface AssertionEntry {
   };
   readonly directScorePoints: number | undefined;
   readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
+  readonly terminalReceipt: (() => import("./api.ts").AssertionCollectionReceipt) | undefined;
   readonly terminalDetail: (() => AssertionSnapshotObject) | undefined;
   readonly terminalEvidence: (() => readonly AssertionMaterial[]) | undefined;
+  readonly terminalCriterion: (() => AssertionCriterion) | undefined;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   conditionMinimum: number | undefined;
@@ -526,7 +572,9 @@ function freezeAssertionMaterial(
   material: AssertionMaterial,
 ): AssertionMaterial {
   if (material.kind === "snapshot") {
-    return Object.freeze({ kind: "snapshot", value: material.value });
+    const frozen = Object.freeze({ kind: "snapshot" as const, value: material.value });
+    transferFullAssertionContent(material, frozen);
+    return frozen;
   }
   if (material.kind === "judge-image") {
     if (!isJudgeImage(material.image)) throw new TypeError("judge-image material requires a judgeImage() value");
@@ -731,6 +779,8 @@ class DirectScoreHandle extends HandleBase {
 }
 
 class AssertionsRuntimeImplementation {
+  private readonly contextReceivers = new Set<AssertionContextReceiver>();
+  private readingContext = false;
   readonly t: AssertionsContext<AssertionEvaluationKind>;
   private readonly entries: AssertionEntry[] = [];
   private readonly groupStack: string[] = [];
@@ -740,6 +790,7 @@ class AssertionsRuntimeImplementation {
   private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
   private retainedProducerBytes = 0;
+  private readonly retentionByEntry = new WeakMap<AssertionEntry, { reserved: number; actual: () => number; settled: boolean }>();
   private retainedImageBytes = 0;
 
   constructor(
@@ -747,12 +798,18 @@ class AssertionsRuntimeImplementation {
     private readonly executeStop: AssertionStopExecutor,
     private readonly judge: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined,
+    private readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
   ) {
+    const check = (...args: readonly unknown[]) => this.checkFor(check, args);
     const base = {
       evaluationKind,
-      check: this.check.bind(this),
+      check,
       group: this.withGroup.bind(this),
     };
+    runtimeByCheck.set(base.check, this);
+    const receiver: AssertionContextReceiver = { owner: base.check };
+    contextByCheck.set(base.check, receiver);
+    this.trackContextReceiver(receiver);
     this.t = Object.freeze(
       evaluationKind === "score"
         ? { ...base, score: this.directScore.bind(this) }
@@ -781,6 +838,55 @@ class AssertionsRuntimeImplementation {
     return occurrence;
   }
 
+  private contextualRegistration(check: object, match: ContextualMatch, qa?: { question: string; options?: JudgePresetOptions }): BooleanHandle | MeasurementHandle {
+    this.assertCanRegister();
+    const receiver = contextByCheck.get(check);
+    if (receiver?.read === undefined) throw new TypeError("Contextual Match requires an application-bound Assertion receiver");
+    const definition = contextMatchDefinitionOf(match);
+    const managed = definition.kind === "context-score" ? managedScoreMatchOf(definition.match as ScoreMatch<unknown>) : undefined;
+    const auditBytes = qa === undefined ? managed?.llm.maxAuditBytes ?? 0 : exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm).maxAuditBytes;
+    const reservation = definition.capture.maxBytes + auditBytes + 64 * 1024;
+    const admitted = this.retainedProducerBytes + reservation <= 64 * 1024 * 1024;
+    if (admitted) this.retainedProducerBytes += reservation;
+    let reserved = admitted ? reservation : 0;
+    try {
+      this.readingContext = true;
+      let prepared: ReturnType<typeof captureContextualMatch>;
+      try {
+        const cut = admitted ? receiver.cut?.() : undefined;
+        prepared = admitted ? captureContextualMatch(definition, receiver.read(), { owner: receiver.owner, ...(cut === undefined ? {} : { cut }) }) : captureUnavailableContextualMatch(definition, "assertion-retention-budget");
+      } finally { this.readingContext = false; }
+      const registration = qa !== undefined && prepared.kind === "material" ? materialQARegistration(prepared, qa.question, qa.options, this.judge, this.signal, this.judgeUsage?.forEntry(this.entries.length))
+        : prepared.kind === "material" ? materialExistenceRegistration(prepared)
+        : prepared.kind === "context-boolean" ? contextBooleanRegistration(prepared)
+        : contextScoreRegistration(prepared, this.judge, this.signal, this.judgeUsage?.forEntry(this.entries.length));
+      const actual = "actualRetainedBytes" in registration && typeof registration.actualRetainedBytes === "function" ? registration.actualRetainedBytes : () => prepared.sourceBytes;
+      const retainedBytes = (registration.retainedBytes ?? prepared.sourceBytes) + 64 * 1024;
+      this.retainedProducerBytes -= reserved; reserved = 0;
+      const entryIndex = this.entries.length;
+      const handle = qa !== undefined || prepared.kind === "context-score" ? this.registerMeasurement({ ...registration, retainedBytes } as MeasurementAssertionRegistration) : this.registerBoolean({ ...registration, retainedBytes } as BooleanAssertionRegistration<void>);
+      const entry = this.entries[entryIndex]!;
+      this.retentionByEntry.set(entry, { reserved: retainedBytes, actual, settled: false });
+      return handle;
+    } catch (error) { this.retainedProducerBytes -= reserved; throw error; }
+  }
+
+  checkFor(receiver: object, args: readonly unknown[]): BooleanHandle | MeasurementHandle {
+    this.assertCanRegister();
+    const value = args[0];
+    const qa = typeof value === "object" && value !== null ? compiledMaterialQA.get(value) : undefined;
+    if (qa !== undefined) {
+      if (args.length !== 1) throw new TypeError("compiled closeQA Match accepts one argument");
+      return this.contextualRegistration(receiver, qa.selector, qa);
+    }
+    if (isContextualMatch(value)) {
+      if (args.length !== 1) throw new TypeError("check(contextualMatch) accepts one argument");
+      return this.contextualRegistration(receiver, value);
+    }
+    return Reflect.apply(this.check, this, args) as BooleanHandle | MeasurementHandle;
+  }
+
+  check(value: import("./match.ts").NumericMaterial, match: NumericComparisonMatch): BooleanHandle;
   check<Value, Refined extends Value>(
     value: Value,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
@@ -790,7 +896,7 @@ class AssertionsRuntimeImplementation {
   check(value: ManagedEventOccurrences, match: import("./match.ts").EventMatch): BooleanHandle;
   check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
-  check(value: unknown, match: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
+  check(value: unknown, match?: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
     if (extra.length > 0) {
       throw new TypeError("t.check() accepts exactly (value, match)");
     }
@@ -808,7 +914,9 @@ class AssertionsRuntimeImplementation {
     const managed = assertManagedValueMatch(match, "t.check() match");
     if (managed.kind === "boolean") {
       if (isNumericComparisonMatch(managed)) {
-        const material = typeof value === "number" && Number.isFinite(value)
+        const material: import("./match.ts").NumericMaterial = typeof value === "object" && value !== null && ["exact", "lower-bound", "unavailable"].includes(String((value as {state?: unknown}).state))
+          ? value as import("./match.ts").NumericMaterial
+          : typeof value === "number" && Number.isFinite(value)
           ? Object.freeze({ state: "exact" as const, value })
           : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" });
         const captured = captureAssertionSnapshot(Object.freeze({
@@ -844,6 +952,7 @@ class AssertionsRuntimeImplementation {
         options: managedScore,
         material: value,
         judge: this.judge,
+        ...(this.judgeUsage === undefined ? {} : { usage: this.judgeUsage.forEntry(this.entries.length) }),
         ...(this.signal === undefined ? {} : { signal: this.signal }),
       }));
     }
@@ -872,6 +981,9 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
+      retainedBytes: definition.retainedBytes,
+      terminalReceipt: definition.terminalReceipt,
+      terminalCriterion: definition.terminalCriterion,
       interruptedMatcherArtifact: definition.interruptedMatcherArtifact,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
@@ -896,6 +1008,8 @@ class AssertionsRuntimeImplementation {
       limitations: cloneLimitations(definition.limitations ?? []),
       retainedBytes: definition.retainedBytes,
       retainedImageBytes: definition.retainedImageBytes,
+      terminalReceipt: definition.terminalReceipt,
+      terminalCriterion: definition.terminalCriterion,
       terminalDetail: definition.terminalDetail,
       terminalEvidence: definition.terminalEvidence,
       evaluate: () =>
@@ -906,10 +1020,36 @@ class AssertionsRuntimeImplementation {
     return new MeasurementHandle(this, entry);
   }
 
-  directScore(points: number): DirectScoreHandle {
+  directScore(points: number): DirectScoreHandle;
+  directScore(ratio: number | NumericMaterial, options: { readonly weight: number }): MeasurementHandle;
+  directScore(points: number | NumericMaterial, options?: { readonly weight: number }, ...extra: readonly unknown[]): DirectScoreHandle | MeasurementHandle {
     this.assertCanRegister();
     if (this.evaluationKind !== "score") {
       throw new TypeError("t.score() is available only in a Score Eval");
+    }
+    if (extra.length > 0) throw new TypeError("t.score() accepts points, or ratio and { weight }");
+    if (options !== undefined) {
+      let decoded: typeof weightedScoreInput.Type;
+      try {
+        const weight = Schema.decodeUnknownSync(Schema.Struct({ weight: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)) }), { onExcessProperty: "error" })(options).weight;
+        decoded = Schema.decodeUnknownSync(weightedScoreInput)({ ratio: points, weight });
+      } catch (cause) {
+        throw new TypeError("t.score() requires a finite ratio in [0, 1] and a finite non-negative weight", { cause });
+      }
+      const ratio = typeof decoded.ratio === "number" ? decoded.ratio
+        : decoded.ratio.state === "exact" ? decoded.ratio.value : undefined;
+      const captured = captureAssertionSnapshot({ ratio: points, weight: decoded.weight });
+      const handle = this.registerMeasurement({
+        criterion: Object.freeze({ kind: "value-match", subject: "explicit-value", matcher: Object.freeze({ state: "declared", name: "author-weighted-score" }) }),
+        subject: captured.material,
+        coverage: captured.coverage,
+        limitations: captured.limitations,
+        evaluate: () => Effect.succeed(ratio === undefined
+          ? { state: "unavailable", reason: "source-unavailable", detail: { reason: typeof decoded.ratio !== "number" && decoded.ratio.state === "unavailable" ? decoded.ratio.reason : "ratio-is-only-a-lower-bound" } }
+          : { state: "measured", value: ratio }),
+      });
+      handle.score(decoded.weight);
+      return handle;
     }
     assertFiniteNonNegative(points, "t.score() points");
     const captured = captureAssertionSnapshot(points);
@@ -1152,14 +1292,24 @@ class AssertionsRuntimeImplementation {
     });
   }
 
+  trackContextReceiver(receiver: AssertionContextReceiver): void {
+    this.contextReceivers.add(receiver);
+  }
+
   closeAuthoring(reason: "attempt-sealing" | "attempt-interrupted"): void {
     if (this.sealed !== undefined) return;
     if (this.closingReason !== "attempt-interrupted") this.closingReason = reason;
     this.closing = true;
+    for (const receiver of this.contextReceivers) {
+      const release = receiver.release;
+      receiver.read = undefined; receiver.cut = undefined; receiver.release = undefined;
+      release?.();
+    }
+    this.contextReceivers.clear();
   }
 
   assertAuthoringOpen(): void {
-    this.assertCanRegister();
+    this.assertCanRegister(false);
   }
 
   private createEntry(input: {
@@ -1174,8 +1324,10 @@ class AssertionsRuntimeImplementation {
     readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
     readonly retainedBytes?: number;
     readonly retainedImageBytes?: number;
+    readonly terminalReceipt?: () => import("./api.ts").AssertionCollectionReceipt;
     readonly terminalDetail?: () => AssertionSnapshotObject;
     readonly terminalEvidence?: () => readonly AssertionMaterial[];
+    readonly terminalCriterion?: () => AssertionCriterion;
   }): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(
@@ -1187,8 +1339,8 @@ class AssertionsRuntimeImplementation {
     if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
       throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
     }
-    if (this.retainedProducerBytes + retainedBytes > 512 * 1024) {
-      throw new Error("Attempt managed measurement retention cannot exceed 512 KiB");
+    if (this.retainedProducerBytes + retainedBytes > 64 * 1024 * 1024) {
+      throw new Error("Attempt Assertion retention cannot exceed 64 MiB");
     }
     if (!Number.isSafeInteger(retainedImageBytes) || retainedImageBytes < 0 || this.retainedImageBytes + retainedImageBytes > 32 * 1024 * 1024) {
       throw new Error("Attempt managed image retention cannot exceed 32 MiB");
@@ -1205,8 +1357,10 @@ class AssertionsRuntimeImplementation {
       display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
       directScorePoints: input.directScorePoints,
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
+      terminalReceipt: input.terminalReceipt,
       terminalDetail: input.terminalDetail,
       terminalEvidence: input.terminalEvidence,
+      terminalCriterion: input.terminalCriterion,
       optionalConfigured: false,
       gateConfigured: false,
       conditionMinimum: undefined,
@@ -1359,12 +1513,14 @@ class AssertionsRuntimeImplementation {
       case "measured":
         assertUnitInterval(evaluation.value, "measurement Assertion result");
         return Object.freeze({
+          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
           state: "measured" as const,
           value: evaluation.value,
           ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
         });
       case "unavailable":
         return Object.freeze({
+          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
           state: "unavailable" as const,
           reason: evaluation.reason,
           ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
@@ -1492,7 +1648,7 @@ class AssertionsRuntimeImplementation {
     const material = this.materialFor(entry, settlement);
     return Object.freeze({
       display,
-      criterion: entry.criterion,
+      criterion: entry.terminalCriterion?.() ?? entry.criterion,
       subject: entry.subject,
       evidence: this.evidenceFor(entry),
       coverage: material.coverage,
@@ -1526,6 +1682,7 @@ class AssertionsRuntimeImplementation {
     readonly coverage: AssertionCoverage;
     readonly limitations: readonly AssertionLimitation[];
   } {
+    if (settlement.state === "unavailable" && this.retentionByEntry.has(entry) && entry.initialCoverage.state === "partial") return Object.freeze({ coverage: entry.initialCoverage, limitations: entry.initialLimitations });
     if (settlement.state === "unavailable") {
       return Object.freeze({
         coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
@@ -1551,6 +1708,13 @@ class AssertionsRuntimeImplementation {
       ...entry.evidence,
       ...terminal.map(freezeAssertionMaterial),
     ]);
+    const retention = this.retentionByEntry.get(entry);
+    if (retention !== undefined && !retention.settled) {
+      const diagnosticBytes = UTF8.encode(JSON.stringify(entry.settled === undefined ? {} : this.resultFor(entry, entry.settled))).byteLength;
+      const actual = retention.actual() + diagnosticBytes;
+      this.retainedProducerBytes += actual - retention.reserved;
+      retention.settled = true;
+    }
     return entry.sealedEvidence;
   }
 
@@ -1561,7 +1725,8 @@ class AssertionsRuntimeImplementation {
       ? baseDiagnostic
       : Object.freeze({ ...(baseDiagnostic ?? {}), ...terminalDetail });
     const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
-    const receipt = settlement.receipt === undefined ? {} : { receipt: settlement.receipt };
+    const terminalReceipt = entry.terminalReceipt?.() ?? settlement.receipt;
+    const receipt = terminalReceipt === undefined ? {} : { receipt: terminalReceipt };
     switch (settlement.state) {
       case "matched":
         return Object.freeze({
@@ -1695,7 +1860,8 @@ class AssertionsRuntimeImplementation {
     return points === undefined ? noScore() : unavailableScore(points, reason);
   }
 
-  private assertCanRegister(): void {
+  private assertCanRegister(reentry = true): void {
+    if (reentry && this.readingContext) throw new TypeError("Context Match readers cannot reenter Assertion authoring");
     if (this.stopped !== undefined) {
       throw new AssertionAuthoringClosedError("stop-latched");
     }
@@ -1783,18 +1949,21 @@ export function createAssertionsRuntime(input: {
   readonly executeStop?: AssertionStopExecutor;
   readonly judge?: ResolvedJudgeConfig;
   readonly signal?: AbortSignal;
+  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
   readonly executeStop?: AssertionStopExecutor;
   readonly judge?: ResolvedJudgeConfig;
   readonly signal?: AbortSignal;
+  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
   readonly executeStop?: AssertionStopExecutor;
   readonly judge?: ResolvedJudgeConfig;
   readonly signal?: AbortSignal;
+  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError("Assertions runtime evaluationKind must be \"pass\" or \"score\"");
@@ -1807,6 +1976,19 @@ export function createAssertionsRuntime(input: {
     executeStop,
     input.judge,
     input.signal,
+    input.judgeUsage,
   );
   return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
+}
+
+/** @internal Core preset dispatch shares the exact owning runtime. */
+const compiledMaterialQA = new WeakMap<object, { readonly selector: ContextualMatch; readonly question: string; readonly options?: JudgePresetOptions }>();
+export function registerMaterialQA(check: object, selector: ContextualMatch, question: string, options?: JudgePresetOptions): unknown {
+  const runtime = runtimeByCheck.get(check);
+  if (runtime === undefined) throw new TypeError("closeQA requires an Assertion runtime");
+  if (!isContextualMatch(selector) || selector.kind !== "material") throw new TypeError("closeQA requires a MaterialMatch");
+  validateMaterialQAInputs(question, options);
+  const compiled = Object.freeze({});
+  compiledMaterialQA.set(compiled, Object.freeze({ selector, question, ...(options === undefined ? {} : { options }) }));
+  return Reflect.apply(check as (...args: readonly unknown[]) => unknown, undefined, [compiled]);
 }

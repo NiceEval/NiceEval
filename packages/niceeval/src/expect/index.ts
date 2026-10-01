@@ -9,11 +9,13 @@ export {
   atMost,
   commandMatch,
   commandSucceeded,
+  countWhere,
   defineScoreMatch,
   defineValueMatch,
   equals,
   eventMatch,
   excludes,
+  filterWhere,
   greaterThan,
   includes,
   includesUrl,
@@ -25,6 +27,8 @@ export {
   hasSections,
   lessThan,
   matches,
+  mapEach,
+  mapValue,
   not,
   or,
   pattern,
@@ -37,6 +41,7 @@ export {
 export type {
   BooleanMatch,
   CollectionMatch,
+  CollectionValue,
   CommandMatchOptions,
   EventMatch,
   EventOccurrenceMatch,
@@ -69,5 +74,14 @@ export type {
   ScoreMatchAnchor,
 } from "../assertions/match.ts";
 
-export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "../assertions/judge-presets.ts";
-export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "../assertions/judge-presets.ts";
+export { factuality, faithfulness, instructionFollowing, pairwisePreference } from "../assertions/judge-presets.ts";
+export type { JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "../assertions/judge-presets.ts";
+
+export { defineMaterialMatch, defineContextMatch } from "../assertions/context-match.ts";
+export type { MaterialMatch, ContextBooleanMatch, ContextScoreMatch, MatchContext, ReadonlyMaterial, MatchFact, MaterialCollection, MaterialItem, MaterialCaptureBudget, FactCaptureBudget } from "../assertions/context-match.ts";
+
+export type { NumericMaterial } from "../assertions/match.ts";
+
+export type { EvalUsage } from "../o11y/eval-usage.ts";
+
+export type { AgentMatchContext } from "../context/assert-first.ts";

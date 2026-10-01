@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: fixed-watchdog-journal-state-crosses-activation-generations
 title: Fixed watchdog journal state crosses activation generations
 createdAt: 2026-08-25T11:27:34+08:00
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # Fixed watchdog journal state crosses activation generations
 

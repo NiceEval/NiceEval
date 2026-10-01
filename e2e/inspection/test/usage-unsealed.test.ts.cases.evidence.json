@@ -1,0 +1,25 @@
+{
+  "format": "concord.case-evidence-index/v1",
+  "current": {
+    "neref_7529882a80ec6968852a31ac799bcc9f": {
+      "memory/adapter-usage-unsealed-zero.md": {
+        "red": {
+          "path": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/red.json",
+          "digest": "sha256:cb5913b474308e3a479983cfbefb5686a556bdf17e64a67e4a463f663c0c0760"
+        },
+        "green": {
+          "path": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/green.json",
+          "digest": "sha256:bfb58e677918e371c9f7ca18a1f8bb78a6e1280257e520c6280de61fb2120562"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/certificate.json",
+          "digest": "sha256:2e14ddc32f8591f5f495aec758a6794de14a13ff3fa9437ae824457740c6b58d"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/inventory.json",
+          "digest": "sha256:d8b9ae8206c764c8bbbb140295b5079cbddef82cbcf233ce254a28369e820ff7"
+        }
+      }
+    }
+  }
+}

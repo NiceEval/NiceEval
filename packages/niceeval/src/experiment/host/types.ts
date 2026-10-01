@@ -1,3 +1,4 @@
+import type { ResolvedModelSlots } from "../../model-slots.ts";
 import { Data, type Effect } from "effect";
 
 import type { Config } from "../../types.ts";
@@ -6,7 +7,6 @@ import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
 import type { SetupPrefixPreparationSummary } from "../../runner/setup-prefix-preparation.ts";
-import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 export type ExperimentHostJsonValue =
   | null
@@ -15,13 +15,6 @@ export type ExperimentHostJsonValue =
   | string
   | readonly ExperimentHostJsonValue[]
   | { readonly [key: string]: ExperimentHostJsonValue };
-
-/** Services supplied once by the outer Node/application composition edge. */
-export type ExperimentHostRequirements =
-  | import("../../record/platform/services.ts").RecordFileSystem
-  | import("../../record/platform/services.ts").RecordEntropy
-  | import("../../coordination/record-leases.ts").RecordCoordination
-  | ProjectStateDatabase;
 
 export type ExperimentHostOperation =
   | "catalog"
@@ -62,6 +55,7 @@ export interface ExperimentHostEvalSummary {
 }
 
 export interface ExperimentHostExperimentSummary {
+  readonly models?: ResolvedModelSlots;
   readonly id: string;
   readonly description?: string;
   readonly adapter: string;
@@ -472,47 +466,47 @@ export type ExperimentHostTeardownResult =
 export interface ExperimentHostHighLevelSDK {
   readonly catalog: (
     input: ExperimentHostSelectionInput,
-  ) => Effect.Effect<ExperimentHostCatalog, ExperimentHostError, ExperimentHostRequirements>;
+  ) => Effect.Effect<ExperimentHostCatalog, ExperimentHostError>;
   readonly check: (
     input: ExperimentHostCheckRequest,
-  ) => Effect.Effect<ExperimentHostCheckResult, ExperimentHostError, ExperimentHostRequirements>;
+  ) => Effect.Effect<ExperimentHostCheckResult, ExperimentHostError>;
   readonly invocation: {
     readonly plan: (
       input: ExperimentHostInvocationPlanRequest,
-    ) => Effect.Effect<ExperimentHostInvocationPlanResult, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostInvocationPlanResult, ExperimentHostError>;
     readonly run: (
       input: ExperimentHostInvocationRunRequest,
-    ) => Effect.Effect<ExperimentHostInvocationResult, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostInvocationResult, ExperimentHostError>;
   };
   readonly invocationStatus: {
     readonly list: (
       input: ExperimentHostInvocationStatusListRequest,
-    ) => Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError>;
     readonly show: (
       input: ExperimentHostInvocationStatusShowRequest,
-    ) => Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError>;
   };
   readonly rename: {
     readonly plan: (
       input: ExperimentHostRenameRequest,
-    ) => Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError>;
     readonly apply: (
       input: ExperimentHostRenameRequest,
-    ) => Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostRenameResult, ExperimentHostError>;
   };
   readonly teardown: {
     readonly inspect: (
       input: ExperimentHostTeardownInspectRequest,
-    ) => Effect.Effect<ExperimentHostTeardownInspection, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostTeardownInspection, ExperimentHostError>;
     readonly run: (
       input: ExperimentHostTeardownRequest,
-    ) => Effect.Effect<ExperimentHostTeardownResult, ExperimentHostError, ExperimentHostRequirements>;
+    ) => Effect.Effect<ExperimentHostTeardownResult, ExperimentHostError>;
   };
   readonly accept: (
     input: ExperimentHostAcceptRequest,
-  ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements>;
+  ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
   readonly acceptRun: {
-    readonly plan: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError, ExperimentHostRequirements>;
-    readonly apply: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements>;
+    readonly plan: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError>;
+    readonly apply: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
   };
 }

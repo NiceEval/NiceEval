@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: sandbox-layer-model-adopted
+title: 环境模型定稿:SandboxLayer 配对 XOR 与逐 Attempt prepare
+createdAt: 2026-08-01T18:25:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-layer-model-adopted.md
+  commit: a390ed2e3b58bad7c6a14a494837804a0d3bc114
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 环境模型定稿:SandboxLayer 配对 XOR 与逐 Attempt prepare
 
 ## 裁决

@@ -1,4 +1,7 @@
+// @concord-file ne-surface-definition-entry
+// @concord-implements docs/feature/plugins/library.md
 import type { Adapter } from "./adapter.ts";
+import { normalizeModelSlots } from "./model-slots.ts";
 import { parseAdapterFlags } from "./adapter-flags.ts";
 import { decodeExperimentFlags } from "./experiment/flags.ts";
 // 定义入口:把用户对象规格化成核心认得的形状。路径即身份 —— 这里禁止手写 id,
@@ -230,6 +233,8 @@ type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> =
   };
 
 /** @internal Shared normalization and provenance path for root and Adapter-bound Eval factories. */
+// @concord-code ne-surface-define-eval-context
+// @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
 export function defineEvalForContext<
   Kind extends "pass" | "score",
   Context,
@@ -267,6 +272,8 @@ export function defineEvalForContext<
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
 export function defineExperiment<const A extends Adapter>(def: ExperimentInput<A>): ExperimentDefinition<A>;
+// @concord-code ne-surface-define-experiment
+// @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
 export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonly flags?: unknown }): ExperimentDefinition {
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
@@ -275,6 +282,10 @@ export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonl
     throw new Error(`defineExperiment requires exactly one of agent or adapter.`);
   }
   const adapter = def.adapter ?? def.agent!;
+  if (adapter.kind !== "custom" && def.models !== undefined) {
+    throw new TypeError("Experiment models is only supported by custom Adapters.");
+  }
+  const models = adapter.kind === "custom" ? normalizeModelSlots(def) : undefined;
   const judgeRuntime = def.judgeRuntime === undefined
     ? undefined
     : normalizeDefinitionJudge(def.judgeRuntime, "defineExperiment() judgeRuntime");
@@ -319,11 +330,17 @@ export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonl
     adapter: _adapter,
     sharedState: _sharedState,
     sandboxCache: _sandboxCache,
+    models: _models,
     ...author
   } = def;
   const flags = decodeExperimentFlags(def.flags === undefined ? {} : def.flags);
   return brandExperimentDefinition({
     ...author,
+    ...(models === undefined ? {} : {
+      models,
+      model: models.default?.model ?? undefined,
+      reasoningEffort: models.default?.reasoningEffort ?? undefined,
+    }),
     adapter,
     ...(adapter.kind === "custom" ? {} : { agent: adapter }),
     flags: adapter.kind === "custom" && adapter.parseFlags !== undefined
@@ -401,6 +418,8 @@ function normalizeEvalFields<
   };
 }
 
+// @concord-code ne-surface-normalize-plugins
+// @concord-implements docs/feature/plugins/library.md
 function normalizePlugins<Owner extends PluginOwner>(
   value: readonly PluginInstance<Owner>[],
   label: string,

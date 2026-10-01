@@ -1,0 +1,31 @@
+{
+  "format": "niceeval.e2e-takeover-certificate/v2",
+  "selector": "e2e/package/test/bub-e2b-template.test.ts#neref_8fa64cbd02667adad61897996bb48624",
+  "caseId": "neref_8fa64cbd02667adad61897996bb48624",
+  "candidateSha256": "bac12e9e2118c47fa663fca88e661bf1478efe19c7db6d8de1371887d559f8d4",
+  "sourceDigest": "8ce61c167d0f7ea9a50e3339a1fb7d000eb4c4901984ef6a171a10d360c77eaa",
+  "greenReceipt": "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-target-single-1.json",
+  "observations": {
+    "isolatedCopies": [
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-isolated-copy-3-1.json"
+    ],
+    "sameCopy": [
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-same-copy-2.json"
+    ],
+    "defaultParallel": "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-repo-default-parallel-1.json",
+    "singleCase": "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-target-single-1.json",
+    "cleanup": [
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-isolated-copy-1-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-isolated-copy-2-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-isolated-copy-3-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-same-copy-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-same-copy-2.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-repo-default-parallel-1.json",
+      "/home/ctrdh/.herdr/worktrees/NiceEval/repot-tool/.repo-tools/path-annotations-acceptance/takeover/case-evidence/takeover-target-single-1.json"
+    ]
+  },
+  "certificateSha256": "b776d84880a34605d367e689344f01d8467ec0fbbffb671ac8cf784d6c99f96f"
+}

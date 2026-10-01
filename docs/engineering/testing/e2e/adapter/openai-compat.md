@@ -10,9 +10,6 @@ The repository locks `openai@6.49.0` and requires `OPENAI_API_KEY` plus
 
 ## Chat Completion live
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 The Experiment creates the official OpenAI client with `maxRetries: 0`. It
 also sets an explicit 90-second timeout.
 
@@ -26,9 +23,6 @@ It also checks non-empty protocol usage. The test reads the same result back
 through a fixed `query run --request <request>` and the representative View detail page.
 
 ## Responses live
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 The Responses Experiment has the same one-request and no-retry limits. It
 forces one named function with the official Responses `tool_choice` shape.

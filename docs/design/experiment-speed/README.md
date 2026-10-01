@@ -1,3 +1,27 @@
+---
+format: concord.document/v1
+id: experiment-speed
+title: 实验加速
+createdAt: 2026-07-27T18:06:13+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/design/experiment-speed/README.md
+  commit: 2b6736225c3df4836eded4d1f979af6e5efcb0b8
+kind: design
+alternatives:
+  - plan-1
+  - plan-2
+  - plan-3
+  - plan-4
+decision:
+  selected: plan-1
+  reason: 迁移保留 DECISION.md 中的明确裁决：plan-1
+  source:
+    path: docs/design/experiment-speed/DECISION.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:bab873f4a1e68f094674f9917f728c22aa203bee6ef92760ddf0a519936cb742
+  targets: []
+---
 # 实验加速
 
 这项设计先区分真实场景，再讨论提速方案。
@@ -48,4 +72,4 @@ MemoryBench 的 467 条 Attempt 中有 237 条 `errored`，177 条停在 `sandbo
 能接受题间状态边界的 Experiment 用 `sandboxReuse: true` 声明本 Invocation 的 Attempt 共用 Sandbox，跨 Invocation checkpoint 另用 `sharedState.key` 协调。
 完整边界见 [DECISION](DECISION.md)。
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md)

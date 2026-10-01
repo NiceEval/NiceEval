@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-authoring-three-concept-model
+title: Reports 作者模型是三个概念，Composition 是运行期编排
+createdAt: 2026-07-27T18:05:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-authoring-three-concept-model.md
+  commit: f19e592fbff3423654a363bd8492bd25aaeede73
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Reports 作者模型是三个概念，Composition 是运行期编排
 
 **日期**：2026-07-27

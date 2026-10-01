@@ -220,15 +220,17 @@ export function prepareDocsWork(
     }
     const scopes = yield* Effect.forEach(rawScopes, normalizeOwnedPath);
     const baseCommit = yield* git(["rev-parse", "--verify", `${requestedBase ?? "HEAD"}^{commit}`]);
-    const dirty = yield* git(["status", "--porcelain=v1", "--untracked-files=normal"]);
-    if (dirty !== "") {
-      return yield* new DocsWorkError({
-        operation: "prepare",
-        reasons: ["the repository is dirty; commit the base or prepare from a clean checkout"],
-      });
-    }
     const runId = `docs-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}-${sha256(`${baseCommit}\0${scopes.join("\0")}`).slice(0, 8)}`;
     const items = yield* planDocsWorkItems(runId, baseCommit, scopes);
+    const dirty = yield* uncommittedPaths();
+    const reasons = items.flatMap((item) => {
+      const owned = [...item.read, ...item.write, ...item.finalizerOnly];
+      return dirty.filter((path) => owned.some((owner) => within(path, owner)))
+        .map((path) => `${item.id}: uncommitted path ${path}; commit this input before preparing the run`);
+    });
+    if (reasons.length > 0) {
+      return yield* new DocsWorkError({ operation: "prepare", reasons });
+    }
     const run: DocsWorkRun = {
       format: "niceeval.docs-work-run/v1",
       runId,
@@ -298,6 +300,27 @@ export function digestPaths(paths: readonly string[]): Effect.Effect<string, Doc
 
 function nulPaths(value: Buffer): readonly string[] {
   return value.toString("utf8").split("\0").filter((path) => path !== "");
+}
+
+function uncommittedPaths(): Effect.Effect<readonly string[], DocsProcessError> {
+  return Effect.try({
+    try: () => {
+      const commands = [
+        ["diff", "--name-only", "--no-renames", "-z", "--"],
+        ["diff", "--cached", "--name-only", "--no-renames", "-z", "--"],
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+      ];
+      return [...new Set(commands.flatMap((args) => nulPaths(execFileSync("git", args, {
+        cwd: REPOSITORY_ROOT,
+        encoding: "buffer",
+        stdio: ["ignore", "pipe", "pipe"],
+      }))))].sort();
+    },
+    catch: (error) => new DocsProcessError({
+      command: "git diff / git diff --cached / git ls-files --others",
+      message: errorMessage(error),
+    }),
+  });
 }
 
 function changedSince(base: string): Effect.Effect<readonly string[], DocsProcessError> {

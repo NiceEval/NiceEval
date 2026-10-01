@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: cli-fresh-flag-is-noop
+title: CLI `--fresh` 不是真 flag,会被静默吞掉——要跳过缓存结果用 `--force`
+createdAt: 2026-07-01T19:24:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/cli-fresh-flag-is-noop.md
+  commit: 84650302d0aa671ca3e411bbd1b9b69c52fc3956
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # CLI `--fresh` 不是真 flag,会被静默吞掉——要跳过缓存结果用 `--force`
 
 **现象**：曾有离线跑 CLI 的脚本(`test/view-harness/run.mjs`,后已删除)用 `niceeval exp --fresh` 起跑,注释也写"--fresh,每次重新生成工件",但 `src/cli.ts` 的 `parseArgs` 根本没有 `fresh` 这个 flag 名。

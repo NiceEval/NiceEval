@@ -26,7 +26,15 @@ It also coexists with LangFuse and BrainTrust: use them for tracing, or upload e
 
 ## Architecture
 
-NiceEval supports two integration modes, depending on whether the agent under test needs an isolated sandbox filesystem.
+### Shared evaluation layer
+
+Game and workflow Adapters sit at the same application layer as Agent. Applications own their facts and domain sugar: Agent's `usedNoTools()` and a game's custom criteria both register through the shared Match and `check` path. Match, `check`, `closeQA`, Assertion handles, managed Judges, and audit belong to the evaluation layer.
+
+`closeQA(materialMatch, question)` evaluates all matching materials across applications. Agent wraps its current scope's complete materials to offer `closeQA(question)`. `usedNoTools()` takes no arguments, including no Match. See [API design](docs/api-design.md#通用评估与应用断言) and the [custom Match contract](docs/feature/assertions/library/custom-assertions.md).
+
+### Agent integration
+
+Sandbox and Direct are two integration modes for the Agent application, selected according to whether the agent under test needs an isolated sandbox filesystem. Other applications use their own Adapter operations with the same evaluation layer.
 
 **Mode 1: Sandbox (Docker, E2B) — run coding agents like Codex and Claude Code that need a sandbox**
 
@@ -68,7 +76,7 @@ NiceEval supports two integration modes, depending on whether the agent under te
 ```
 
 - **NiceEval core** owns discovery, scheduling, assertions, sealed Records, and fixed Inspection delivery.
-- **Agent adapters** are the open boundary: you decide how to call the system under test.
+- **Application Adapters** are the open boundary: you decide how to call the system under test.
 - Coding agents that need filesystem isolation run inside the **Docker Sandbox**; your own AI agent can connect directly, without Docker.
 
 ## Core concepts at a glance
@@ -77,7 +85,7 @@ NiceEval supports two integration modes, depending on whether the agent under te
 |---|---|
 | Eval | A test case: written in `evals/*.eval.ts`, describing what to check. |
 | Experiment | A checked-in run configuration: which Adapter, which model, which flags. |
-| Adapter | The layer that connects to the system under test: implement one `send`, get back a standard event stream. |
+| Adapter | Connects to the system under test and provides application operations and facts; Agent adds sessions, turns, and standard events. |
 | Sandbox | Only needed for coding agents that require an isolated workspace; a direct web agent doesn't need one. |
 | Tier | Three levels of Adapter integration effort: Tier 1 wires up `send` only, Tier 2 adds OTel for a call waterfall, Tier 3 makes invasive changes for feature A/B testing. |
 

@@ -191,6 +191,9 @@ export interface ComposeLocalFileRef {
 }
 
 /** 从 Compose 原文抽取 services 的黑名单 / build / volume 面。未知字段忽略。 */
+// @concord-code ne-sandbox-compose-inspection
+// @concord-implements docs/feature/sandbox/library.md
+// @concord-implements docs/feature/sandbox/architecture.md
 export function inspectComposeYaml(raw: string): ComposeInspection {
   const doc = parseYamlMapping(raw);
   const servicesNode = doc.services;
@@ -1172,6 +1175,9 @@ function composeMaterializationError(projectName: string, cause: unknown): Compo
   });
 }
 
+// @concord-code ne-sandbox-compose-materialize
+// @concord-implements docs/feature/sandbox/library.md
+// @concord-implements docs/feature/sandbox/architecture.md
 export function materializeDockerComposeProviderCase(
   plan: DockerComposeProviderMaterializationPlan,
   opts: MaterializeComposeOpts,

@@ -1,18 +1,41 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: direct-interrupt-feedback-claims-sandbox-cleanup
 title: 无 Sandbox 的中断反馈虚构容器清理
 createdAt: 2026-09-20
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: Preserved historical resolution declaration during merge; not current
+    verification.
+  at: 2026-09-29T23:47:24.368Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_7T9RM0RTNQYF0XJ6
+            - netake_HGME4FFZF8G3ZFES
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/interrupt-feedback.test.ts#necase_D31DET9WE90ZY004"]}
     proof:
       - nered_7T9RM0RTNQYF0XJ6
       - netake_HGME4FFZF8G3ZFES
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/interrupt-feedback.test.ts#necase_D31DET9WE90ZY004"]}
-promotions: []
+    source:
+      path: memory/direct-interrupt-feedback-claims-sandbox-cleanup.md
+      commit: 05dec8c7f1795e13212d424ee472874d62d84345
+      digest: sha256:4c0922809490b7bfb9b22586f2db9f993cc4b9914fbe0326f627f7e0f66b4e06
 ---
 # 现象与根因
 

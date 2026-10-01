@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { satisfies } from "niceeval/expect";
+import { greaterThan } from "niceeval/expect";
 
 export default defineEval({
   description: "usage 的输入与输出 token 在每个独立 turn 都可读",
@@ -20,18 +20,12 @@ export default defineEval({
     ] as const) {
       await t.group(`${label} turn 的实际 usage`, () => {
         t.check(
-          turn.usage?.inputTokens,
-          satisfies(
-            "usage.inputTokens > 0",
-            (value) => typeof value === "number" && value > 0,
-          ),
+          turn.usage.inputTotalTokens,
+          greaterThan(0),
         );
         t.check(
-          turn.usage?.outputTokens,
-          satisfies(
-            "usage.outputTokens > 0",
-            (value) => typeof value === "number" && value > 0,
-          ),
+          turn.usage.outputTokens,
+          greaterThan(0),
         );
       });
     }

@@ -1,48 +1,69 @@
 ---
-title: "为你的 Agent 项目设置评估"
+title: "快速开始：跑通第一条评估用例"
 sidebarTitle: "快速开始"
-description: "安装 NiceEval，写三个文件，10 分钟内对你自己的应用跑通第一条评估用例。"
+description: "安装 NiceEval，写一个 Adapter、一个 Experiment 和一条评估用例，十分钟左右对你自己的应用跑通第一条评估，并在终端和浏览器里看到结果。"
 ---
 
-接入应用需要三个文件：一个 **Adapter** 负责调用应用，一个 **Experiment** 固定被测对象和运行次数，一条**评估用例**定义断言。以下步骤提供完整的最短路径，并分别覆盖 Coding Agent 自动接入和人工接入。
+这一页带你对自己的应用跑通第一条评估用例。你会写三个文件：
 
-## 使用 Coding Agent 接入（推荐）
+- **Adapter**：告诉 NiceEval 怎样调用你的应用。
+- **Experiment**：说明对着哪个 Adapter、用哪个模型跑。
+- **评估用例**：说明发什么消息、怎样算做对。
+
+有两种走法。让 Coding Agent 帮你写最快；自己动手写能更清楚每个文件管什么。
+
+## 让 Coding Agent 帮你接入
+
 <Steps>
-  <Step title="接入">
-    把以下指令发送给你正在使用的 Coding Agent（例如 Codex、Claude Code 或其他能修改当前项目的 Agent）：
+  <Step title="把指令发给 Agent">
+    在当前项目里打开你正在用的 Coding Agent，例如 Claude Code 或 Codex，发送下面这段话：
 
     ```text
     阅读 https://niceeval.com/INIT.md，为当前仓库安装并接入 niceeval，端到端跑通第一条评估用例。完成时列出创建的 Experiment ID、运行命令和结果查看命令。
-
     ```
+
+    Agent 会先探索你的项目，确认要测哪个接口，再写出三个文件并跑一次。
   </Step>
-  <Step title="运行测试">
-    使用 Agent 最后列出的 Experiment ID。若它没有列出，先运行 `pnpm exec niceeval exp list` 查看可用的 Experiment。
+  <Step title="自己再跑一次">
+    用 Agent 最后列出的 Experiment ID 运行。它没有列出时，先用 `pnpm exec niceeval exp list` 查看有哪些 Experiment：
 
     ```bash
     pnpm exec niceeval exp <experiment-id>
     ```
   </Step>
-  <Step title="查看结果">
+  <Step title="看结果">
     ```bash
-    pnpm exec niceeval query discover  # AI、脚本或 CI 先发现读取 operation
-    pnpm exec niceeval view            # 网页审阅已发布的结果
+    pnpm exec niceeval show
     ```
+
+    终端里会列出每条评估用例的结果，失败的排在前面。结果怎么读，见下文[读懂结果](#读懂结果)。
   </Step>
 </Steps>
 
+## 自己动手接入
 
-## 人工接入
+### 准备被测应用
 
-先启动你的被测应用，并确认它有一个可调用接口。下方示例假设接口是 `POST http://localhost:3000/chat`，请求体接收 `message` 和 `model`，响应 JSON 含有字符串字段 `reply`。接口不同就改 Adapter 的 URL、请求体和读取响应的代码；还没有可启动的应用时，先从 [Examples](/zh/examples) 选择一个可运行项目。
+先把你的应用启动起来，并确认它有一个能调用的接口。下面的示例假设：
+
+- 接口是 `POST http://localhost:3000/chat`；
+- 请求体是 `{ "message": "...", "model": "..." }`；
+- 响应体是 `{ "reply": "..." }`。
+
+你的接口不一样也没关系，只需要改 Adapter 里的地址、请求体和读取回复的那一行。手边还没有能启动的应用时，先从 [Examples](/zh/examples) 挑一个可运行项目。
+
+### 安装
 
 ```bash
 pnpm add -D niceeval
 pnpm exec niceeval init
 ```
 
-### Adapter
-Adapter 连接 Agent 与 [NiceEval](https://niceeval.com/)。三种接入等级从无侵入连接到修改 Agent 配置，分别提供不同的评估能力，见 [Tier](/zh/explanation/tier)。
+`init` 会创建 `niceeval.config.ts`。它还会在 `AGENTS.md` 或 `CLAUDE.md` 里写一段说明，让你的 Coding Agent 读取和安装版本匹配的文档。
+
+### 写 Adapter
+
+Adapter 负责一件事：把评估用例里的消息发给你的应用，再把回复交回给 NiceEval。
 
 ```ts
 // agents/my-agent.ts
@@ -52,11 +73,11 @@ export default defineAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
-    // 示例地址：换成你自己 agent 的真实端点（HTTP、CLI、SDK 都行，只要 send 里能拿到回复文本）
+    // 换成你自己应用的地址
     const r = await fetch("http://localhost:3000/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: input.text, model: ctx.model }), // ← experiment.model 经 ctx.model 到这里
+      body: JSON.stringify({ message: input.text, model: ctx.model }), // ctx.model 来自 Experiment
       signal: ctx.signal,
     });
     const body = await r.json();
@@ -68,7 +89,9 @@ export default defineAgent({
 });
 ```
 
-### Experiment
+`events` 是 NiceEval 读懂回复的方式。这里只交回一条助手消息，后面可以再加工具调用、用量等事件。
+
+### 写 Experiment
 
 ```ts
 // experiments/my-agent.ts
@@ -77,13 +100,15 @@ import myAgent from "../agents/my-agent.ts";
 
 export default defineExperiment({
   description: "my-agent 基线",
-  model: "gpt-4o",
   agent: myAgent,
+  model: "gpt-4o",
   attempts: 1,
 });
 ```
 
-### 评估用例
+文件名就是 Experiment ID，这里是 `my-agent`。以后想对比另一个模型，复制一份改 `model` 就行，评估用例不用动。
+
+### 写评估用例
 
 ```ts
 // evals/refund-policy.eval.ts
@@ -91,44 +116,63 @@ import { defineEval } from "niceeval";
 import { pattern } from "niceeval/expect";
 
 export default defineEval({
-  description: "退款政策问答",
+  description: "能正确回答退款政策",
   async test(t) {
-    await t.send("你们的退款政策是什么?");
+    await t.send("你们的退款政策是什么？");
     t.succeeded();
-    t.check(t.reply, pattern(/30\s*天|一个月/));  // 措辞会变，用等价正则而不是单一精确短语
+    t.check(t.reply, pattern(/30\s*天|一个月/));
   },
 });
 ```
 
+模型每次的措辞都会变，所以这里用正则匹配“30 天”或“一个月”，而不是要求一字不差。
+
+### 运行
+
 ```bash
-pnpm exec niceeval exp my-agent   # 跑起来
-pnpm exec niceeval query discover              # 让机器发现可用 operation
-pnpm exec niceeval view                        # 在网页审阅当前已发布的结果
+pnpm exec niceeval exp my-agent
 ```
 
-到这里第一条评估用例已经跑通。
+运行过程中终端会显示进度。结束后你会看到类似这样的输出：
 
-这个最小 Adapter 只支持**单轮**调用，第二轮不会携带第一轮的历史。多轮会话、工具调用事件（供 `t.calledTool()` 使用）、HITL 和 tracing 都是后续可选能力。按[接入你的 Agent](/zh/tutorials/connect-your-agent)继续扩展时，已有评估用例不需要修改。
+```text
+╭─ PASSED ─────────────────────────────────────────────────────── 12s ─╮
+│ 1 passed · 0 failed · 0 errored  (0 reused)                          │
+╰──────────────────────────────────────────────────────────────────────╯
 
-## 对照完整项目
+╭─ RESULTS ───────────────────────────────────── 1 run configuration ─╮
+│ my-agent                                                             │
+│   refund-policy  1/1 passed                                          │
+╰──────────────────────────────────────────────────────────────────────╯
 
-第一条评估用例跑通后，再到 [Examples](/zh/examples) 按被测对象选择完整项目。那里提供可运行源码。通用操作步骤在 Tutorials 的对应任务页中。
-
-## 放进 CI
-
-```yaml
-name: evals
-on: [pull_request]
-jobs:
-  evals:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-      - run: npm ci
-      - run: npm exec niceeval exp my-agent
+╭─ NEXT ───────────────────────────────────────────────────────────────╮
+│ my-agent                                                             │
+│   show: niceeval show --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706     │
+│   view: niceeval view --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706     │
+╰──────────────────────────────────────────────────────────────────────╯
 ```
 
-<Tip>
-  阅读 [编写评估用例](/zh/tutorials/authoring) 和 [题型与断言](/zh/tutorials/evaluation-kinds)，再把示例替换成真实场景。
-</Tip>
+到这里，第一条评估用例已经跑通。
+
+## 读懂结果
+
+标题告诉你这次运行的结论：
+
+| 标题 | 意思 | 先做什么 |
+|---|---|---|
+| `PASSED` | 所有断言都满足了。 | 继续加评估用例。 |
+| `FAILED` | 应用正常回复了，但至少一条断言没满足。 | 看 Agent 实际回了什么，判断是应用的问题还是断言写得太严。 |
+| `ERRORED` | 没能拿到结果，例如应用没启动、接口报错、Adapter 抛了异常。 | 看 `FAILURES` 面板里的 `error:` 行，通常能直接看出原因；需要更多细节时运行它下面的 `details:` 命令。 |
+
+失败的 Attempt 下面都有一行 `details: niceeval show @<locator>`，复制它就能在终端里看到这一次运行的对话和断言。看整次运行，复制 `NEXT` 面板里的 `show:` 命令；想在浏览器里翻对话、看耗时，复制 `view:` 那一行。
+
+更多查看方式见[查看运行结果](/zh/tutorials/viewing-results)。
+
+## 接下来
+
+这个最小 Adapter 只支持单轮对话，第二轮不会带上第一轮的历史，也看不到工具调用。按你的下一步需要选：
+
+- 要测多轮对话、工具调用或用量：按[编写 Send](/zh/tutorials/write-send)扩展 Adapter，已有评估用例不用改。
+- 要写更多、更有区分度的评估用例：读[编写评估用例](/zh/tutorials/authoring)。
+- 要比较两个模型或两版 prompt：读[编写实验](/zh/tutorials/write-experiment)。
+- 要在 PR 上自动跑：读 [CI 集成](/zh/tutorials/ci-integration)。

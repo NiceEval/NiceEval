@@ -131,7 +131,10 @@ async function removeOwnedDockerResources(
   }
 }
 
-test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider [necase_VXE9ARZNBMZ6V0JT]", async () => {
+// @feature docs/feature/sandbox/README.md
+// @regression memory/eval-group-retained-sandbox-capacity-deadlock.md
+
+test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", async () => {
   await runnerE2E.case(
     "provider-capacity-queue",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

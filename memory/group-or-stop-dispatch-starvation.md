@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: group-or-stop-dispatch-starvation
+title: Eval `.orStop()` 的 Group lane 饥饿排查
+createdAt: 2026-08-16T14:48:35+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/group-or-stop-dispatch-starvation.md
+  commit: 98c9e4dac2eec03359837cd413af29cd91ee27b9
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # Eval `.orStop()` 的 Group lane 饥饿排查
 
 **现象**（MemoryBench，2026-08-16）：`compare/codex-gpt-5.6-terra--remem` 中两个 `.orStop()` 后失败，live 面板一度持续显示 `1 running · 14 queued`，只剩另一个 Group 在执行。

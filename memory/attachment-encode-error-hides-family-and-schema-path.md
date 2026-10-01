@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: attachment-encode-error-hides-family-and-schema-path
 title: Attachment encode failure hides its family and Schema path
 createdAt: 2026-09-01
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 ## Observation
 

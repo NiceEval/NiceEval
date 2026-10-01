@@ -1,0 +1,5 @@
+{
+  "name": "niceeval-e2e",
+  "owner": { "name": "NiceEval" },
+  "plugins": [{ "name": "e2e", "source": "./plugins/e2e" }]
+}

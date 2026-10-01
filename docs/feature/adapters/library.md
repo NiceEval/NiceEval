@@ -3,6 +3,33 @@
 Adapter 作者从 `niceeval/adapter` 导入构造器、转换器与流式组合件。
 这一页从可运行代码开始；内部数据结构和不变量见 [Architecture](architecture.md)。
 
+## Attempt 取消与资源释放预算
+
+普通应用以 Attempt 为运行边界，Session 与 Turn 仅属于 Agent 应用协议。
+应用可以自行提供 start、waitUntil 与 finalize；框架不生成隐式轮次。
+Agent 的 send 等待一次应用交互完成，即时应用可以等待业务事件或状态条件成立。
+两者都在等待事实后继续评估；应用决定交互与观察边界，通用 Match 不订阅事件，也不承担等待循环。
+
+`defineAdapter` 与 `AdapterContract.implement` 的 `cleanupTimeoutMs` 声明该实现的整个 cleanup 时段。
+默认 30000 ms，允许整数 1–300000 ms。预算由实现固定，不接受 Experiment、Config 或 CLI 替换。
+它进入公开 Adapter identity 和配置指纹；不同预算不能默默复用相同运行配置。
+
+`AdapterCreateContext.signal` 为 `AttemptSignal`，未取消时 reason 为 undefined。
+取消后 reason 是冻结的判别联合：timeout 包含 timeoutMs、source 和 Unix 毫秒 deadlineAt；cancelled 表示外部或 Host Effect 取消。
+source 使用执行时限的 flag、experiment、eval、config 四层词表，不通过异常文案猜测。
+
+`onCleanup` 的冻结 context 提供独立 signal、timeoutMs 与 deadlineAt。
+预算从实际进入 cleanup 开始，全部回调、晚到注册、handoff 和归档共享同一截止，不逐项重新计时。
+预算到期先关闭所有采集入口，再通知取消。应用自建 signal 不能延长框架时段。
+
+正常路径先停止输入、排空并封存事实，再执行最终 check/judge。
+执行取消时先关闭断言登记，cleanup 只允许上报用量、附件、trace 和诊断。
+abort 不证明物理请求已结束，真实完成必须来自应用回执。
+游戏测量截止与排空尾部分开，cleanup 不延长已固定的业务时间。
+
+普通 cleanup 回调抛错保留 warning 并继续其它释放。总时段超时产生 adapter-cleanup-timeout 执行错误。
+需要排空成功才能评分时，作者在正常 test 中等待 finalize。第二次 OS signal 仍可强制退出。
+
 ## Direct Agent
 
 被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineAgent`：
@@ -261,6 +288,88 @@ complete 的 limitations 必须为空，partial 必须有原因；从未提交�
 已验证的 partial；正常和失败路径应共享一次 finish。接纳时段结束后的调用拒绝且不改变封存事实。
 持久内容校验或 storage 失败阻止 Attempt publication，不能发布缺少声明证据的成功快照。
 
+### 事件展示块
+
+事件可以带可选的 `display`：一组人读展示块，随事件一起封存。`show --execution` 与 View 按块呈现，读取时不运行 Adapter 代码。
+没有 `display` 的事件以 envelope、`summary` 与 payload JSON 呈现。
+
+```ts
+type ExecutionDisplayBlock =
+  | { readonly kind: "text"; readonly text: string }
+  | {
+      readonly kind: "message";
+      readonly role: "user" | "assistant" | "system" | "other";
+      readonly speaker?: string;
+      readonly text: string;
+    }
+  | {
+      readonly kind: "fields";
+      readonly fields: readonly {
+        readonly label: string;
+        readonly value: string | number | boolean | null;
+      }[];
+    }
+  | { readonly kind: "code"; readonly language?: string; readonly text: string }
+  | { readonly kind: "image"; readonly artifactId: string; readonly alt: string };
+
+interface ExecutionTraceEvent {
+  // key、type、source、actor、time、summary、payload、links、evidence、scopeMemberships
+  readonly display?: readonly ExecutionDisplayBlock[];
+}
+```
+
+- `display` 省略表示没有展示块；空数组非法。块按数组顺序呈现，顺序不证明因果。
+- 文本原样保存，不解释 Markdown、HTML 或 ANSI；只保留 `\t` 与 `\n` 两种控制字符。
+- `message.role` 只决定人读样式，不进入 conversation、usage 或 Judge 材料。`speaker` 省略时显示 role 的英文标签。
+- `fields.value` 只接受有限标量，原样显示，不格式化单位或小数位。`code.language` 只是显示提示。
+- `image.artifactId` 必须是同一 Attempt 已由 `ctx.attach` 接纳、`mediaType` 为 `image/png`、`image/jpeg`、`image/webp` 或 `image/gif` 的附件。
+  接纳时固定附件的 `mediaType`、`byteLength` 与 `sha256`；媒体类型是标签，不证明 bytes 可解码。`alt` 必填。
+
+展示块与 `payload` 相互独立：payload 是领域事实，展示块是同一事实的人读形式。NiceEval 不校验二者一致，也不从 payload 生成展示块。
+展示块与 payload 一样只能放已脱敏、可公开的内容。
+
+| 项 | 上限 |
+|---|---|
+| 每事件块数 | 4 |
+| 每事件展示总量（规范化 UTF-8） | 8 KiB，计入每 Attempt 64 MiB 规范化输入 |
+| `fields` 项数 | 16 |
+| `label`、`speaker`、`language` | 128 UTF-8 bytes，不含换行 |
+| `alt` | 512 UTF-8 bytes，不含换行 |
+
+字符串不能含除 `\t`、`\n` 外的 C0/C1 控制字符，也不能含 U+2028、U+2029 或双向格式控制字符。
+违反任一规则时整份快照被拒绝，code 为 `execution-display-invalid`，并指出违规的 `events[i].display[j]` 与字段名。
+展示块参与同 `traceId` 的幂等比较；它不进入执行资格身份，修改展示内容不触发重跑。
+
+#### 轨迹保存在外部系统
+
+应用自己保存完整轨迹时，提交一个指向外部系统的事件，并把快照标为 `partial`：
+
+```ts
+await ctx.recordTrace({
+  traceId: "rpg",
+  schema: { id: "example.rpg/v1" },
+  collection: {
+    state: "partial",
+    limitations: [{ code: "external-trace", message: "Full trace is stored by the RPG server." }],
+  },
+  scopes: [],
+  events: [{
+    key: "run",
+    type: "rpg.run",
+    source: { id: "rpg-server", eventId: "run_8f2c" },
+    summary: "Full trace stored by the RPG server: run_8f2c",
+    payload: { runId: "run_8f2c" },
+    display: [
+      { kind: "text", text: "The full trace is stored by the RPG server. Query it with:" },
+      { kind: "code", language: "shell", text: "rpg-cli trace show run_8f2c" },
+    ],
+  }],
+});
+```
+
+命令是不可信的应用文本。NiceEval 不执行、不打开，也不验证外部系统里的数据是否存在。
+外部 ID 拼进命令前，Adapter 负责限定字符集或按目标 shell 引用；命令里不能放 token、密码或签名 URL。
+
 ## 保存 Attempt 附件
 
 自定义 Adapter 的 `create(ctx)` 可以用 `ctx.attach` 保存文本、图片或其它 bytes：
@@ -322,7 +431,7 @@ Attempt 取消不立刻关闭附件入口。已登记 cleanup 在独立时限内
 取消或失败时框架停止拉取，发出取消信号并请求迭代器 `return()`，关闭自己的文件并删除部分归档。
 字节 producer必须响应信号并释放自己的资源；不协作的 `next()` 或 `return()` 不阻塞框架关闭，也不能在迟到后改变封存结果。
 
-已发起但未等待的归档仍进入既有 30 秒 cleanup 总时限；到期即取消，流式归档不延长该时限。归档成功不等于发布成功；发布失败不能返回成功的持久 Record。
+已发起但未等待的归档仍进入该 Adapter 的 cleanup 总时限；到期即取消，流式归档不延长该时限。归档成功不等于发布成功；发布失败不能返回成功的持久 Record。
 发布成功或失败后立即释放暂存副本，未走到发布的异常路径在 Invocation 退出时删除暂存副本。
 读取使用 [Inspection 的附件 operation](../inspection/architecture.md#附件分块读取)。
 
@@ -348,6 +457,17 @@ ctx.recordUsage({
   },
 });
 ```
+
+Adapter 在全部可取得的物理调用最终快照登记后，调用 `ctx.sealUsage({ state: "complete" })`。
+完整空账本也需要显式声明。源只读到一部分时，登记已有调用后调用
+`ctx.sealUsage({ state: "partial", reason: "source-incomplete" })`；reason 是 1–128 字符的非秘密 ASCII 标识。
+标识首字符为字母或数字，其余允许字母、数字、点、下划线、冒号和连字符。
+`AdapterUsageSeal` 从根包导出。未声明时费用只提供已知小计，不能据零调用或 Eval 的 Verdict 推断完整。
+
+封存停止此 Attempt 的用量接纳；捕获开放期间重复封存、封存后上报或非法参数均使 Attempt errored，捕获错误即使被作者 catch 也保留。
+已登记费用不会删除。cleanup 时段内可以补齐回执再封存，框架截止后迟到写入只拒绝，不再修改结果。
+`t.usage` 是读取时的不可变快照：cleanup 阶段封存不会改善此前快照或预算断言。
+需要完整预算判断时，必须先结束采集并封存，再读取用量。
 
 `callId` 在一个 Attempt 内标识物理调用；重试使用新 ID，`retryOf` 可引用此前已登记的 ID。
 相同规范化快照重复上报不增加用量；同 ID 的冲突快照明确失败。每个 Attempt 最多保存 4000 次调用的快照。
@@ -401,3 +521,68 @@ Overview 的 token 指标逐次调用选择可用输入总量：`inputTotalToken
 
 用量入口与附件入口共用 Attempt 的有界 cleanup 生命周期。取消后 cleanup 未结束时仍可上报；
 关闭后的调用拒绝且不能改写已封存事实。关闭前的采集错误即使被作者捕获，也保留为最终执行错误。
+
+## 读取官方用量与耗时
+
+Adapter 用 `ctx.recordUsage(call)` 上报每个物理请求的最终快照，评估从同一账本读取，不汇总应用 journal。
+
+
+
+```ts
+const usage = t.usage;
+if (usage.source === "adapter") {
+  t.check(usage.totalTokens, atMost(10_000)).gate();
+  t.check(usage, customUsageScore).score(30);
+}
+t.maxTokens(10_000).gate();
+t.maxCost(0.1).gate();
+t.check(t.elapsedMs, atMost(60_000)).gate();
+```
+
+usage 的 source 为 adapter、agent 或 unavailable；Adapter 的 basis 为 recorded-calls。
+
+Adapter快照范围是本 Attempt 在调用处已上报的全部物理请求，包括失败与重试。
+
+
+快照深度冻结且与账本隔离；后续 cleanup 上报不修改已登记断言。
+
+Agent 使用同一 EvalUsage 形状，其 basis 为 reported-sends，按 Turn、Session 或 Attempt 选择实际 invoke 的用量贡献。
+
+
+inputTotalTokens 优先于互斥输入/缓存桶求和；totalTokens再加outputTokens，不重复计算输入。
+
+
+数量为 exact、lower-bound 或 unavailable。
+
+未知字段不补0；超出 safe integer 为 unavailable。
+
+
+NumericMaterial 保留 provenance 的 source/scope/unit/cut；字段提取后仍可复核范围。
+
+
+
+maxCost 比较USD有效成本：优先实扣金额（包括0），否则仅用显式pricing的封存估算。
+
+十进制精确比较，不隐式兑换币种。
+
+
+已知超额可失败；只有全部请求都有完整USD金额才通过；混合币种或缺失金额为下界或 unavailable。
+
+
+elapsedMs使用runtime的Attempt单调时钟起点到调用处的墙钟毫秒，包含setup和等待，不包含未来cleanup。
+
+
+游戏时钟或首次完成时间由应用事实提供，不能用墙钟代替。
+
+## 读取模型用途并关联调用
+
+`AdapterCreateContext.models` 是当前 Attempt 的只读映射，每项为 `{ model: string | null; reasoningEffort: string | null }`。
+配置由 [Experiment](../experiments/library.md#普通-adapter-的命名模型用途) 冻结，Adapter 不另复制一份模型 flags。
+
+`recordUsage` 可带 `modelSlot?: string | null`。它引用当前配置的用途键，不要求实际 model 与配置相同。
+省略或 null 表示用途未登记，不推断为 default；非法引用沿既有采集错误通道失败，不能捕获后当作完整调用账本封存。
+同模型的不同用途保留独立分组，retryOf 和 callId 仍标识物理请求。
+新普通 Adapter 即使没有调用也封存完整空账本，旧 Record 缺源仍未知。
+
+用量 revision 4 保存必有的 modelSlot 与显式采集完整性；revision 1 与 2 只读投影用途为 null，revision 3 保留原用途。
+旧版本原金额与应用 costUSD 保留，新整局和实验总费用对缺少生产者声明的旧账本保留 application 缺口，不重写旧字节。

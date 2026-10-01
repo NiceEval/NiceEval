@@ -1,3 +1,5 @@
+import { AttemptCancellationController } from "./attempt-cancellation.ts";
+import type { AttemptSignal } from "../shared/attempt-lifecycle.ts";
 // 单个 attempt 的完整生命周期:资源(沙箱 / OTLP 接收器)经 Effect.Sample 的
 // acquireRelease 接管,无论 body 成功 / 抛错 / 被中断,stop() / close() 都保证执行。
 // 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
@@ -22,6 +24,8 @@ import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
+import { JudgeUsageCollector } from "../o11y/judge-usage.ts";
+import { retainJudgeUsage } from "./judge-usage.ts";
 import { createAdapterAttachmentCollector, retainAdapterAttachments, type AdapterAttachmentCollector } from "./adapter-attachments.ts";
 import {
   createAdapterExecutionTraceCollector,
@@ -388,6 +392,7 @@ export function runAttemptEffect<
     reusedSandbox,
   }: RunAttemptEffectOptions<SealRequirements>,
 ) {
+  return Effect.clockWith((clock) => Effect.suspend(() => {
   let assistanceReported = false;
   const onSealedEvaluation = (sealed: SealedAttemptAssertions) => Effect.suspend(() => {
     if (!assistanceReported) {
@@ -467,13 +472,13 @@ export function runAttemptEffect<
   const attemptTimeout = resolveAttemptTimeout(run, evalDef, config);
   // deadline 的截止**时刻**:沙箱内一切时限从它派生(单条命令未显式传 timeout 时上限 =
   // 剩余量,见 sandbox/deadline.ts)。与 Effect.timeoutTo 同一个锚点,不各取各的 now()。
-  const deadlineAt = attemptTimeout ? Date.now() + attemptTimeout.timeoutMs : undefined;
+  const deadlineAt = attemptTimeout ? clock.currentTimeMillisUnsafe() + attemptTimeout.timeoutMs : undefined;
+  const executionStartedAt = clock.monotonicTimeNanosUnsafe();
   // Adapter 的协作式 deadline 由专用 controller 承载。它绝不能自己设 timer：Effect.timeoutTo
   // 是唯一的 deadline owner，并会在 onTimeout 同步 abort 这个 controller；否则独立 timer
   // 可能让 adapter 先 reject，把 deadline 错分成外部 interrupt。
-  const deadlineAbort = new AbortController();
-  const parentAbort = new AbortController();
-  const signal = AbortSignal.any([parentAbort.signal, deadlineAbort.signal]);
+  const cancellation = new AttemptCancellationController();
+  const signal = cancellation.signal;
 
   // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
   // Direct / reused Attempt 由 run.ts 在进入本函数前发 start；fresh Sandbox 则由下面的 provider
@@ -537,7 +542,7 @@ export function runAttemptEffect<
   };
   const forwardParentAbort = (): void => {
     closeAuthoring("attempt-interrupted");
-    parentAbort.abort(parentSignal?.reason);
+    cancellation.abort({ kind: "cancelled" });
   };
   if (parentSignal?.aborted === true) forwardParentAbort();
   else parentSignal?.addEventListener("abort", forwardParentAbort, { once: true });
@@ -686,6 +691,11 @@ export function runAttemptEffect<
     },
   };
 
+  const judgeUsage = new JudgeUsageCollector(config.pricing, signal, () => recordDiagnostic({
+    code: "judge-transport-cleanup-incomplete", level: "warning",
+    message: "Judge transport cleanup did not settle before its local deadline; remote completion is unknown.",
+  }));
+
   const sealExecutionError = (): Effect.Effect<
     SealedAttemptAssertions,
     import("../assertions/api.ts").AssertionSealError
@@ -693,8 +703,8 @@ export function runAttemptEffect<
     SealRequirements
   > => {
     const runtime = liveAssertions ?? (evalDef.evaluationKind === "score"
-      ? createAssertionsRuntime({ evaluationKind: "score" })
-      : createAssertionsRuntime({ evaluationKind: "pass" }));
+      ? createAssertionsRuntime({ evaluationKind: "score", judgeUsage })
+      : createAssertionsRuntime({ evaluationKind: "pass", judgeUsage }));
     if (liveAssertions === undefined) {
       // Sandbox acquire/prepare may fail before TestContext exists. It is still
       // an executed Attempt, so seal its empty assertion set with the same
@@ -742,8 +752,15 @@ export function runAttemptEffect<
   const applyAttemptDeadline = <E, R>(self: Effect.Effect<EvalResult, E, R>): Effect.Effect<EvalResult, E, R> => {
     if (attemptTimeout === undefined) return self;
     const { timeoutMs, source: timeoutSource } = attemptTimeout;
+    const waitForDeadline: Effect.Effect<void> = Effect.suspend(() => {
+      const remaining = timeoutMs - Number(clock.monotonicTimeNanosUnsafe() - executionStartedAt) / 1_000_000;
+      // Native timers truncate fractional milliseconds. Recheck the same
+      // monotonic deadline after waking rather than cancelling early.
+      return remaining <= 0 ? Effect.void
+        : Effect.sleep(Duration.millis(Math.ceil(remaining))).pipe(Effect.andThen(waitForDeadline));
+    });
     const deadline = Effect.raceFirst(
-      Effect.sleep(Duration.millis(timeoutMs)).pipe(Effect.as("deadline" as const)),
+      waitForDeadline.pipe(Effect.as("deadline" as const)),
       Effect.promise(() => executionTerminal).pipe(Effect.as("terminal" as const)),
     ).pipe(
       Effect.flatMap((winner): Effect.Effect<EvalResult> => {
@@ -755,7 +772,7 @@ export function runAttemptEffect<
           // Recheck in the same synchronous section that closes admission and
           // flips `timedOut`; seal may have won after the race selected its
           // timer but before this continuation was scheduled.
-          if (assertionsSealed) return Effect.never;
+          if (assertionsSealed || signal.aborted) return Effect.never;
           // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
           // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
           const text = `attempt timed out (${timeoutMs}ms, from ${timeoutSource})
@@ -782,7 +799,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           // adapter。标记必须先于 abort，才能把本 fiber 的 timeout 中断与真正外层取消区分。
           closeAuthoring("attempt-interrupted");
           timedOut = true;
-          deadlineAbort.abort();
+          cancellation.abort({ kind: "timeout", timeoutMs, source: timeoutSource, deadlineAt: deadlineAt! });
           // 置位给下面的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
           // 补折叠 workspace.diff / sources——见该 finalizer 的注释)。events/usage 不必等它:
           // SessionManager 是外层已经登记过的活引用(见 liveEvents/liveUsage),截至这一刻已经
@@ -817,15 +834,16 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // execution deadline, Assertion seal, feedback sink, and publication
       // callback. The driver below contributes only its own preparation,
       // author context, and observations.
+      yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
       const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
       if (adapter.kind === "custom") {
         const resources = new AdapterAttemptResources(() => {
           adapterUsageSnapshot = adapterUsage!.close();
-          adapterAttachments!.close();
           adapterExecutionTraces!.close();
+          adapterAttachments!.close();
         });
         adapterResources = resources;
-        adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen(), config.pricing);
+        adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen(), config.pricing, run.models ?? Object.freeze({}));
         adapterAttachments = createAdapterAttachmentCollector(`${recordRootPaths(opts.recordRoot)!.portableRoot}/attachment-staging`);
         const ownedAttachments = adapterAttachments;
         yield* Scope.addFinalizer(attachmentScope, Effect.promise(() => ownedAttachments.dispose()));
@@ -835,6 +853,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         // The final execution outcome is handed off only after capture drains.
         yield* Effect.addFinalizer(() =>
           cleanupAdapterResources(resources, {
+            timeoutMs: adapter.cleanupTimeoutMs,
             enterPhase,
             recorder,
             feedback: scopedFeedback,
@@ -871,6 +890,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           adapter,
           resources,
           usage: adapterUsage,
+          judgeUsage,
           attachments: adapterAttachments,
           executionTraces: adapterExecutionTraces,
           signal,
@@ -1372,6 +1392,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       const bodyFiber = yield* Effect.forkChild(
         tryPromiseAsDefect((interruptSignal) =>
           runAttemptBody(a, config, t0, base, {
+            judgeUsage,
             sandbox,
             sourceRegistry,
             sourceCapture,
@@ -1568,7 +1589,14 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         }
       }
       return bodyResult;
-    }).pipe(applyAttemptDeadline),
+    }).pipe(
+      applyAttemptDeadline,
+      // Observe only interruption of the complete Attempt execution, never a
+      // losing internal race fiber. The original Cause continues unchanged.
+      Effect.onInterrupt(() => Effect.sync(() => {
+        if (!assertionsSealed) forwardParentAbort();
+      })),
+    ),
   )).pipe(
     // The execution race ends before Scope finalizers start. Cleanup retains
     // its own budgets; custom capture failure participates in the final fold.
@@ -1695,6 +1723,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       if (capture !== undefined) {
         retainRunnerAttemptFileChangesCapture(finalResult, capture);
       }
+      retainJudgeUsage(finalResult, judgeUsage.snapshot());
       if (adapterUsageSnapshot !== undefined) retainAdapterUsage(finalResult, adapterUsageSnapshot);
       if (adapterAttachments !== undefined) retainAdapterAttachments(finalResult, adapterAttachments.snapshot());
       if (adapterExecutionTraces !== undefined) retainAdapterExecutionTraces(finalResult, adapterExecutionTraces.snapshot());
@@ -1710,6 +1739,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       parentSignal?.removeEventListener("abort", forwardParentAbort);
     })),
   ));
+  }));
 }
 
 interface AdapterAttemptBodyInput {
@@ -1718,9 +1748,10 @@ interface AdapterAttemptBodyInput {
   readonly adapter: AdapterRuntimeDefinition;
   readonly resources: AdapterAttemptResources;
   readonly usage: AdapterUsageCollector;
+  readonly judgeUsage: JudgeUsageCollector;
   readonly attachments: AdapterAttachmentCollector;
   readonly executionTraces: AdapterExecutionTraceCollector;
-  readonly signal: AbortSignal;
+  readonly signal: AttemptSignal;
   readonly sourceCapture: RunnerAttemptSourceCapture;
   readonly sourceRegistry: SourceRegistry;
   readonly assertFirst: AssertFirstAttemptBridge<unknown>;
@@ -1781,6 +1812,9 @@ function runAdapterAttemptBody(
   } = input;
   return Effect.gen(function* () {
     const { context: core, state } = createAssertFirstCoreContext({
+      readUsage: () => usage.snapshot(),
+      judgeUsage: input.judgeUsage,
+      elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
       model: a.run.model,
       reasoningEffort: a.run.reasoningEffort,
@@ -1806,6 +1840,7 @@ function runAdapterAttemptBody(
         experimentId: a.run.experimentId,
         attempt: a.attempt,
         signal,
+        models: a.run.models ?? Object.freeze({}),
         model: a.run.model,
         reasoningEffort: a.run.reasoningEffort,
         flags: a.run.flags,
@@ -1814,6 +1849,7 @@ function runAdapterAttemptBody(
         log,
         onCleanup: (cleanup) => resources.onCleanup(cleanup),
         recordUsage: usage.record,
+        sealUsage: usage.seal,
         attach: (input) => resources.trackHandoff(attachments.attach(input)),
         recordTrace: executionTraces.recordTrace,
       });
@@ -1893,18 +1929,22 @@ function runAdapterAttemptBody(
 function cleanupAdapterResources(
   resources: AdapterAttemptResources,
   input: {
+    readonly timeoutMs: number;
     readonly enterPhase: (phase: LifecyclePhase) => void;
     readonly recorder: TimingRecorder;
     readonly feedback: ScopedFeedback;
     readonly onTimeout: (error: AttemptError) => void;
   },
 ): Effect.Effect<void> {
-  return Effect.suspend(() => {
+  return Effect.clockWith((clock) => Effect.suspend(() => {
+    const timeoutMs = input.timeoutMs;
+    const deadlineAt = clock.currentTimeMillisUnsafe() + timeoutMs;
+    const cleanupStartedAt = clock.monotonicTimeNanosUnsafe();
     resources.beginCleanup();
     input.enterPhase("attempt.teardown");
     const startedAt = input.recorder.offsetNow();
     let failed = false;
-    return cleanupCallback((signal) => resources.cleanup(signal), CLEANUP_TIMEOUT_MS).pipe(
+    return cleanupCallback((signal) => resources.cleanup(Object.freeze({ signal, timeoutMs, deadlineAt })), Math.max(0, Math.ceil(timeoutMs - Number(clock.monotonicTimeNanosUnsafe() - cleanupStartedAt) / 1_000_000))).pipe(
       Effect.tap((result) => Effect.sync(() => {
         for (const failure of result.failures) {
           failed = true;
@@ -1918,13 +1958,13 @@ function cleanupAdapterResources(
           failed = true;
           input.onTimeout({
             code: "adapter-cleanup-timeout",
-            message: `Adapter cleanup timed out after ${CLEANUP_TIMEOUT_MS}ms`,
+            message: `Adapter cleanup timed out after ${timeoutMs}ms`,
             origin: attemptOrigin("attempt.teardown"),
           });
           input.feedback.diagnostic({
             code: "adapter-cleanup-timeout",
             level: "warning",
-            message: `Adapter cleanup timed out after ${CLEANUP_TIMEOUT_MS}ms`,
+            message: `Adapter cleanup timed out after ${timeoutMs}ms`,
           });
         }
       })),
@@ -1946,7 +1986,7 @@ function cleanupAdapterResources(
         );
       })),
     );
-  });
+  }));
 }
 
 /**
@@ -2174,6 +2214,7 @@ function assertDeadlineFitsPlan(
 }
 
 interface AttemptResources {
+  judgeUsage: JudgeUsageCollector;
   sandbox: Sandbox;
   /** Fresh provider-owned backend; setup-prefix capability mutates this stable object across rebases. */
   materializedCase?: MaterializedSandboxCase;
@@ -3217,6 +3258,7 @@ async function runAttemptBody(
       } }),
       model: run.model,
       reasoningEffort: run.reasoningEffort,
+      judgeUsage: res.judgeUsage,
       // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
       pricing: config.pricing,
       flags: run.flags,
@@ -3250,6 +3292,7 @@ async function runAttemptBody(
           }
         : undefined,
       onSendActive: setSendActive,
+      elapsedMs: recorder.offsetNow,
       timingNow: recorder.offsetNow,
       // 每次 send 一个 turn 节点:本地单调时钟测得的端到端包络 + 与 diff/source 共用的
       // session/turn 身份 token;
@@ -4147,6 +4190,7 @@ export function experimentRunInfo(
 ): EvalResult["experiment"] {
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
   return {
+    ...(run.models === undefined ? {} : { models: run.models }),
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),

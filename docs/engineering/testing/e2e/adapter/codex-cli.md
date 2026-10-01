@@ -2,18 +2,12 @@
 
 ## adapter-codex-cli-live-compatibility
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、app-server 增量行为轨与续轮（契约见[Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
 Codex app-server 只是这个公开 Adapter 的内部 transport；Codex E2E 只有 `adapter/codex-cli` 这一条 live Repo，
 不保留签入 JSON-RPC fixture 或独立 app-server Repo。
 
 ## adapter-codex-cli-live-progress
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/live-progress.test.ts` 在私有项目副本中只运行 baseline/coding-task。它证明安装后的候选仍能通过真实 Codex CLI
 完成 coding task，并以公开 `query run` 的 `attempt.trace` 读回 command sentinel 与 shell 工具身份。

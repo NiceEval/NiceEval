@@ -1,8 +1,20 @@
 ---
-name: command-evidence-includes-successful-runs
-description: commands.json 从只记非零退出翻案为成功与失败都记,stdout/stderr 上限从「不截」改为 64 KiB/流独立截断;show --execution 新增中性 COMMAND 三态
-metadata:
-  type: project
+format: concord.document/v1
+id: command-evidence-includes-successful-runs
+title: command-evidence-includes-successful-runs
+createdAt: 2026-08-04T19:15:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/command-evidence-includes-successful-runs.md
+  commit: 574560922a99e3f2267783610d50de5a780b3825
+description: commands.json 从只记非零退出翻案为成功与失败都记,stdout/stderr 上限从「不截」改为 64
+  KiB/流独立截断;show --execution 新增中性 COMMAND 三态
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **裁决**(2026-08-04):四个公开 `Sandbox.run*()` 方法的最外层调用无论成功还是非零退出都登记一条 `CommandExitEvidence`,不再只记非零退出。`stdout` / `stderr` 各自独立按 `COMMAND_STREAM_MAX_BYTES`(64 KiB)截断,超限打结构化 `truncated` 标记(`path: "stdout" | "stderr"`),与 `events.json` / `trace.json` 的 256 KiB(`ARTIFACT_VALUE_MAX_BYTES`)截断同构但上限更小、逐流独立判定。`niceeval show @<locator> --execution` 新增中性 `COMMAND` 标题(`exitCode === 0`),与既有 `NON-ZERO COMMAND · observed`(unchecked 非零)、`FAILED COMMAND`(checked 非零)并列三态;展示层 `classification` 判别值从 `"observed" | "failed"` 扩为 `"succeeded" | "observed" | "failed"`。

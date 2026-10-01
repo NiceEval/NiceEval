@@ -1,0 +1,83 @@
+{
+  "format": "concord.document-migration-receipt/v1",
+  "recordedAt": "2026-09-20T13:31:15.382Z",
+  "sourceCommit": "b5afbef07cbb0532e51f3c1f12ffc76bf7f51891",
+  "counts": {
+    "memory": 3,
+    "researchFiles": 0,
+    "issues": 0
+  },
+  "entries": [
+    {
+      "sourcePath": "memory/check-judge-policies-belong-to-assertion.md",
+      "targetPath": "memory/check-judge-policies-belong-to-assertion.md",
+      "sourceDigest": "sha256:f4807f04f00dd431f76bda6cb8afa06f83e6dcc0be9b6e32517bb4fe2ead3721",
+      "bodyDigest": "sha256:91944a7a4f05fb8205db8f01bf3aecf0493eef2757dda01b6cda339b7f54bf1b",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "check-judge-policies-belong-to-assertion",
+        "title": "Judge 与普通检查共用 Assertion，门槛归本次验收",
+        "createdAt": "2026-09-13",
+        "kind": {
+          "type": "decision",
+          "state": "adopted"
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:473edc4d822dd29b993118a8c9e836cb7a642fe4a881d9e9fca761532d997db1"
+    },
+    {
+      "sourcePath": "memory/judge-config-and-check-sugar.md",
+      "targetPath": "memory/judge-config-and-check-sugar.md",
+      "sourceDigest": "sha256:05f8effa2d93b7a749bdc22e29cff15d42d1dfe69665eb801f7409db04a17cdf",
+      "bodyDigest": "sha256:924847348f4af2b9c0bbbd6662fb982fa53af268475ba8bf20531b4ac6cf5266",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "judge-config-and-check-sugar",
+        "title": "Judge 模型配置与 Match 断言分工，官方方法复用 check",
+        "createdAt": "2026-09-13",
+        "kind": {
+          "type": "decision",
+          "state": "adopted"
+        },
+        "promotions": [
+          {
+            "kind": "feature",
+            "current": [
+              "docs/feature/judge/library.md"
+            ],
+            "history": []
+          }
+        ]
+      },
+      "targetDigest": "sha256:5d151daac18dfec7b11fb4f1cb0ecb6ee700eecfd22e921ded2c062020fa054c"
+    },
+    {
+      "sourcePath": "memory/llm-x-judge-turn-material-gap.md",
+      "targetPath": "memory/llm-x-judge-turn-material-gap.md",
+      "sourceDigest": "sha256:ad66c889ca8007b175104451e9a70c8188aec3eb79ae216cc226266da8afa6ff",
+      "bodyDigest": "sha256:259b36df7fdd4fef1f2331c75e4054f2d0b53642726e0bdd4df3095ef6281c37",
+      "sourceMetadata": {
+        "format": "niceeval.memory/v1",
+        "id": "llm-x-judge-turn-material-gap",
+        "title": "LLM X 接入声明式 Judge 缺少应用材料入口",
+        "createdAt": "2026-09-13",
+        "kind": {
+          "type": "problem",
+          "state": "resolved",
+          "resolution": {
+            "kind": "fixed",
+            "proof": [
+              "nered_5EMQGNQKCNPKT4TT",
+              "netake_71D61PSEAXKBZS3S",
+              "niceeval.fixed-evidence/v1:{\"selectors\":[\"e2e/eval/test/assertion-judge-unavailable.test.ts#necase_Z1PAQPEQGDRFSCQ0\"]}"
+            ]
+          }
+        },
+        "promotions": []
+      },
+      "targetDigest": "sha256:c2bf9f09803bd83399c53c3d9e9bd71ed28c853d1c2780921b7b921087d735c8"
+    }
+  ],
+  "evidence": "Historical resolution attestations preserve source declarations and do not verify command or repository execution."
+}

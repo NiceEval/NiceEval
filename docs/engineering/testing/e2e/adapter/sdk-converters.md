@@ -65,9 +65,6 @@ anchor below.
 
 ## turnFromAiSdk deterministic
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 Provenance is exact `ai@7.0.30` and `zod@4.4.3`.
 
 The fixture uses the AI SDK's own `MockLanguageModelV4` test/model seam.
@@ -108,9 +105,6 @@ aggregate input as another bucket kills them too.
 <a id="claude-sdk-stream-deterministic"></a>
 
 ## Claude SDK stream deterministic
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 Provenance is exact `@anthropic-ai/claude-agent-sdk@0.3.226`.
 
@@ -157,9 +151,6 @@ assertion.
 <a id="codex-thread-stream-deterministic"></a>
 
 ## Codex thread stream deterministic
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 Provenance is exact `@openai/codex-sdk@0.147.0`.
 
@@ -214,9 +205,6 @@ Removing `turn.failed` kills the failed-status and terminal-error assertions.
 
 ## Pi Agent subscribe deterministic
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 Provenance is exact `@earendil-works/pi-agent-core@0.82.1` and
 `@earendil-works/pi-ai@0.82.1`.
 
@@ -240,9 +228,6 @@ terminal error kills a distinct Eval assertion.
 <a id="langgraph-core-deterministic"></a>
 
 ## LangGraph core deterministic
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 Provenance is exact `@langchain/langgraph@1.4.8`,
 `@langchain/core@1.2.5`, and `@langchain/protocol@0.0.18`.
@@ -270,9 +255,6 @@ A namespaced `values` frame proves that this path infers no ghost subagent.
 
 ## LangGraph HITL deterministic
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 The owner runs a real interrupting graph with `MemorySaver`. It resumes the
 graph through the official `Command` API and the same thread ID.
 
@@ -296,9 +278,6 @@ tool output and never duplicates the start event.
 
 ## OpenAI Chat Completion deterministic
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 Provenance is exact `openai@6.49.0`.
 
 The official client uses an injected deterministic `fetch`. It performs
@@ -316,9 +295,6 @@ Unknown future tool-call variants are ignored safely. Deprecated message-level
 <a id="openai-responses-deterministic"></a>
 
 ## OpenAI Responses deterministic
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 The same official client makes exactly one `responses.create()` call. It uses
 an injected deterministic `fetch`.

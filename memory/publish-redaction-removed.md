@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: publish-redaction-removed
+title: 设计裁决:发布脱敏管线整体移除,`view --out` 无确认关卡
+createdAt: 2026-07-16T20:58:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/publish-redaction-removed.md
+  commit: 94f20e3da5d524206bcc25a4e1427c33a8030f9a
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:发布脱敏管线整体移除,`view --out` 无确认关卡
 
 ## 裁决

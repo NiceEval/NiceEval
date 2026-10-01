@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: case-lock-dispatch-time-acquire-ruling
+title: 用例锁改派发时刻取锁,实验闸升级跨进程租约(翻案计划期全量取锁)
+createdAt: 2026-07-24T17:52:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/case-lock-dispatch-time-acquire-ruling.md
+  commit: be25b3b04fd8f184638a074e5deee4b50bc77f5c
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 用例锁改派发时刻取锁,实验闸升级跨进程租约(翻案计划期全量取锁)
 
 - **裁决**(2026-07-24):用例锁的取锁时机从「携带规划之后、派发之前(全部待跑用例一次性取锁)」改为**派发时刻逐用例非阻塞取锁**——排队中的用例不持锁,撞锁的用例挂起并把并发位转派给下一条未被锁的用例。配套把实验级 `maxConcurrency` 升级为**跨 Invocation 名额域**(`.niceeval/locks/` 下 `(experimentId, slot)` 租约文件,心跳/过期/接管与用例锁同纪律;两边 N 不一致取最小值)。全局 `--max-concurrency` 维持进程私有,非目标条款收窄为只豁免全局位。契约单源 `docs/feature/experiments/architecture.md#并发-invocation用例锁`,实现 plan 见 `plan/exp-case-lock-dispatch-time.md`。

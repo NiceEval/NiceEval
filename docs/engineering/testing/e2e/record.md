@@ -1,8 +1,5 @@
 ## Run create, Attempt publication, interruption, and lifecycle
 
-<!-- niceeval.e2e-owner-history/v1 action=retired reason="Replaced by five case-specific Run owners." at=ed9186c66cbf8be1ef9c4db28557101f5d9465ad -->
-Contract: [Attempt publication](../../../feature/run/architecture.md#attempt-publication)
-
 `e2e/record/` 的路径名是历史测试域标识，不构成公开产品概念。
 `record-journey.test.ts` 曾把安装后的 Experiment、Run CLI 与 Inspection 合成一个 Journey。
 Run create 后立即可以由 `run list` 发现，每个 Attempt 独立发布。Run 收口只冻结终态和剩余 slot 的 absence reason。
@@ -28,44 +25,23 @@ pnpm e2e test --repo record -- --run test/record-journey.test.ts
 本 owner 不检查 SQLite schema、文件布局、snapshot 或物理回收；这些内部 adapter 细节不能成为公开 Journey 的输入或 expected。
 ## Run 创建后立即可发现，并冻结完整 expected slots。 {#run-create-freezes-expected-slots}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/architecture.md#身份与固定计划](../../../feature/run/architecture.md#身份与固定计划)
-
 Run 创建后立即可发现，并冻结完整 expected slots。
 ## 已完成 Attempt 不等待 Run 收口即可公开读取。 {#attempt-readable-before-run-close}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/architecture.md#attempt-publication](../../../feature/run/architecture.md#attempt-publication)
 
 已完成 Attempt 不等待 Run 收口即可公开读取。
 ## 用户 SIGINT 中断时保留已发布 Attempt，并解释未发布 slot。 {#sigint-preserves-published-attempt}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/lifecycle.md#创建与执行](../../../feature/run/lifecycle.md#创建与执行)
-
 用户 SIGINT 中断时保留已发布 Attempt，并解释未发布 slot。
 ## 存在引用时拒绝删除 origin，删除依赖后允许安全重试。 {#referenced-origin-delete-safety}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/architecture.md#删除不变量](../../../feature/run/architecture.md#删除不变量)
 
 存在引用时拒绝删除 origin，删除依赖后允许安全重试。
 ## SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run。 {#sigkill-recovery-closes-run}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/lifecycle.md#崩溃与-recovery](../../../feature/run/lifecycle.md#崩溃与-recovery)
-
 SIGKILL 后的新 Invocation 自动沿用 active Run 中已发布的 Attempt，只执行缺失 slot；用户随后可通过显式 recover 取得恢复 authority，并把旧 Run 收口为 interrupted。
 ## 独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。 {#public-run-host-consumer}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
-
 独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。
 ## 升级 NiceEval 后继续读取历史结果并运行新评估；不安全或外部只读输入保留原件。 {#upgrade-preserves-historical-results}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/architecture.md#自动迁移](../../../feature/run/architecture.md#自动迁移)
 
 升级 NiceEval 后继续读取历史结果并运行新评估；不安全或外部只读输入保留原件。
 

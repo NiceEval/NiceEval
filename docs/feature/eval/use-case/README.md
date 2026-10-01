@@ -47,7 +47,6 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |
 
-<!-- niceeval.docs-index/v1:start -->
 ## Use Case 索引（生成）
 
 - [验证 Agent 真的完成了所需操作](calledtool.md)
@@ -61,6 +60,5 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 - [过程与成本：断 agent 怎么做到的](process-and-cost.md)
 - [计分制：检查点和质量分](rubric-points.md)
 - [沙箱 coding 任务：从放文件到评 diff](sandbox-coding.md)
-- [比较同一接口的应用实现](比较应用实现.md)
-- [评估应用原生操作](评估应用原生操作.md)
-<!-- niceeval.docs-index/v1:end -->
+- [比较同一接口的应用实现](eval-compare-implementations.md)
+- [评估应用原生操作](eval-native-operations.md)

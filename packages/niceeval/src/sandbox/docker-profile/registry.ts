@@ -317,6 +317,9 @@ function resolveEntry(
 }
 
 /** 构造只含规范化 descriptor 的 registry index；不读文件、不执行 profile 内容。 */
+// @concord-code ne-sandbox-docker-profile-index
+// @concord-implements docs/feature/sandbox-docker-profiles/library.md
+// @concord-implements docs/feature/sandbox-docker-profiles/architecture.md
 export function indexDockerProfiles(
   input: DockerProfileRegistryInput | unknown,
   options: DockerProfileRegistryOptions = {},
@@ -401,6 +404,8 @@ function indexOf(input: DockerProfileRegistryIndex | DockerProfileRegistryInput 
 }
 
 /** 只按宿主 alias 查找；没有 alias 时不猜 profile ID 或默认 Docker endpoint。 */
+// @concord-code ne-sandbox-docker-profile-resolve
+// @concord-implements docs/feature/sandbox-docker-profiles/library.md
 export function resolveDockerProfile(
   registry: DockerProfileRegistryIndex | DockerProfileRegistryInput | unknown,
   alias: string,
@@ -419,6 +424,8 @@ export function resolveDockerProfile(
 export const resolveDockerProfileAlias = resolveDockerProfile;
 
 /** detached 读面可显式按 alias 或 stable ID 查找；两者同时命中不同 descriptor 时拒绝猜测。 */
+// @concord-code ne-sandbox-docker-profile-select
+// @concord-implements docs/feature/sandbox-docker-profiles/library.md
 export function resolveDockerProfileSelector(
   registry: DockerProfileRegistryIndex | DockerProfileRegistryInput | unknown,
   selector: string,

@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: mintlify-zh-heading-anchor-slug
+title: Mintlify 中文标题的锚点 slug 规则
+createdAt: 2026-07-04T20:33:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/mintlify-zh-heading-anchor-slug.md
+  commit: d95d5309ba9f23bad9e93ff26acafbba44ea3b64
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # Mintlify 中文标题的锚点 slug 规则
 
 ## 现象

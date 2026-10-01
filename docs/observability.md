@@ -81,7 +81,9 @@ source envelope 都是 exact JSON。未知 envelope 字段、超出上限、重�
 会话 source 保留原 revision 和 item/tool identity，由内建投影参与同一通用读取，不重复写入或汇总 usage。
 
 Inspection 提供有界摘要、分页和精确事件/证据读取。精确 selector 不依赖默认 outline 是否展示该 ID。
-CLI 与 Web 使用同一关闭结果，领域作者不能提供执行代码或 formatter。payload 与附件均须是可公开且已脱敏的证据，
+CLI 与 Web 使用同一关闭结果，领域作者不能提供执行代码或 formatter。
+人读形式由 Adapter 在写入时以封闭词汇的[事件展示块](feature/adapters/library.md#事件展示块)交付，随事件封存；
+读取不加载项目或 Adapter，同一 NiceEval 版本对同一 Record 给出相同展示。payload 与附件均须是可公开且已脱敏的证据，
 不能借开放字段保存 hidden chain of thought、secret 或未解释的私有 provider 帧。
 
 ## 用户可见对话与临时输入

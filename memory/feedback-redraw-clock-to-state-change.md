@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: feedback-redraw-clock-to-state-change
+title: 设计裁决:human dashboard 重画时钟从 spinner setInterval 改为状态变化驱动
+createdAt: 2026-07-14T09:56:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/feedback-redraw-clock-to-state-change.md
+  commit: 62bf6cc8fc1f62a1752a0931e348006837608f3a
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:human dashboard 重画时钟从 spinner setInterval 改为状态变化驱动
 
 **裁决**(2026-07-13,`plan/exp-output-feedback-models.md` 落地):human profile 的 dashboard 重画不再由一个固定周期的 `setInterval` 驱动。改为「reducer 产出的真实状态变化 + coordinator 按 tick 给的重画机会」共同驱动:coordinator 通过可注入 `FeedbackIO` 的 clock 定期(默认 250ms)给渲染层一次「可以重画了」的机会,渲染层自己判断"这一帧渲染出的文本是否与上一帧相同",相同则不写;elapsed 最多每秒变化一次,整体最多 4fps。存活性由持续增长的 elapsed 与静态 `●` 符号证明,不再需要旋转动画。永久事件(plan / failure / diagnostic / summary)完全独立于这个 tick 节奏,由 coordinator 保证 clear → append → redraw 的严格顺序。

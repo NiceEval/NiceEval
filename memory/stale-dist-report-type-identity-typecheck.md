@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: stale-dist-report-type-identity-typecheck
+title: 改 src 类型后 dist/report 变陈旧,typecheck 报跨包类型不相认
+createdAt: 2026-07-15T03:50:16Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/stale-dist-report-type-identity-typecheck.md
+  commit: 29e9136737bd570bfb05f35121166e1104040843
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [stale-dist-report-type-identity-typecheck](stale-dist-report-type-identity-typecheck.md) — 改 src 公共类型后 `dist/report` 陈旧,typecheck 在 show/view 宿主报「X not assignable to X」同名类型不相认;修法=先 `pnpm run build:report` 重建再排查,不要顺着报错改 src"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 改 src 类型后 dist/report 变陈旧,typecheck 报跨包类型不相认
 
 ## 现象

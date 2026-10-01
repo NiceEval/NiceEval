@@ -1,18 +1,41 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: adapter-usage-overview-drops-token-facts
 title: Adapter usage facts disappear from Insight token metrics
 createdAt: 2026-09-21
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: Preserved historical resolution declaration during merge; not current
+    verification.
+  at: 2026-09-29T23:47:24.368Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_1HVH3DKD59RGW6X8
+            - netake_90P9D616N550QMCA
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H"]}
     proof:
       - nered_1HVH3DKD59RGW6X8
       - netake_90P9D616N550QMCA
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/eval/test/external-usage.test.ts#necase_920FSWMBVEP3090H"]}
-promotions: []
+    source:
+      path: memory/adapter-usage-overview-drops-token-facts.md
+      commit: 05dec8c7f1795e13212d424ee472874d62d84345
+      digest: sha256:56ae57f65ba8f01fb76480164a9ff5aca61256ab18db5e9c213320b1646d2ea1
 ---
 ## Problem
 

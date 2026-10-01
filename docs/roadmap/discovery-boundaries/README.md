@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: discovery-boundaries
+title: Eval 发现边界
+createdAt: 2026-08-13T12:06:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/discovery-boundaries/README.md
+  commit: c297a79e2b319b5cb6cdf8101039450aedf8f0c2
+kind: roadmap
+state: planned
+---
 # Eval 发现边界
 
 Eval 文件树既是模块树，也是用户可读的题目目录。递归扫描若不承认目录入口的所有权，就会把一个任务目录中的共享模块、fixture 或子任务误认成另一条 Eval，并让同一物理内容拥有不稳定的发现身份。

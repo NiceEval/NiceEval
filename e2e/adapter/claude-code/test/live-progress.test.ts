@@ -27,8 +27,10 @@ const claudeE2E = createE2EContext({
   },
   commands: {},
 });
+// @feature docs/feature/adapters/README.md
+// @regression memory/active-progress-hides-user-and-tool-detail.md
 
-test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原生 tool [necase_1V7SDBFKYSR5W6MK]", async () => {
+test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原生 tool", async () => {
   await claudeE2E.case(
     "live-progress",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

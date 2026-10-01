@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: error-classification
+title: 执行失败分类:时间轴与空间轴
+createdAt: 2026-07-21T18:02:02+08:00
 kind: feature
-relations: {}
 ---
 
 # 执行失败分类:时间轴与空间轴

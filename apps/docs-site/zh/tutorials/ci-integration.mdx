@@ -1,39 +1,56 @@
 ---
-title: "在 CI 中运行 NiceEval"
+title: "在 CI 里自动跑评估，挡住回归"
 sidebarTitle: "CI 集成"
-description: "让 CI 使用退出状态判定门禁，保留最后的 receipt，并向平台提供 JUnit 文件。"
+description: "在每个 PR 上运行同一条 niceeval exp，评估不通过就让 CI 变红。保留这次运行的 Run ID 供后续步骤读取，并把 JUnit 文件交给 CI 平台展示。"
 ---
 
-CI 运行 Experiment 时，进程退出状态决定门禁是否通过。`--json` 提供当前进程反馈，最后一条 receipt 给出本次 Invocation 的 `runIds`。JUnit 文件则交给 CI 平台显示测试结果。
+有人改了 prompt，本地试了两次觉得没问题就合并了，第二天才发现另一类问题全答错了。把评估放进 CI，每个 PR 都自动跑一遍，回归在合并前就能被发现。
 
-## 基本命令
+CI 里跑的就是你本地用的那条 `niceeval exp`，不需要额外配置：
 
-只要存在 mismatched 的 required Boolean condition、低于 `.gate(minimum)` 最低值的 measurement，或执行错误，[NiceEval](https://niceeval.com/) 就以非零状态码退出。通过制和计分制都读取显式 gate；没有全局 strict，也不会在读取时把 stop-only condition 提升成 gate。需要阻止合并的要求直接写在评估用例源码中，CI 与本地运行读取同一套判定。
+- 评估不通过、运行出错或被中断时，进程以非零状态退出，CI 自然变红。
+- 加 `--json` 时，最后一行是这次运行的 receipt，里面有新建的 Run ID，后续步骤可以用它读取结果。
+- 加 `--junit <path>` 时，会写出 JUnit 文件，让 CI 平台按测试用例展示结果。
+
+## 决定什么情况让 CI 变红
+
+CI 是否变红只看进程的退出状态。下面任一情况都会以非零状态退出：
+
+- 通过制评估有未通过的 Attempt。
+- 计分制评估有显式 `.gate()` 没有满足，例如测量值低于 `.gate(minimum)` 的最低值。
+- 有 Attempt 运行出错（`errored`），或计划要跑的 Attempt 没有全部得到结果。
+- 运行被中断，或结果没能保存。
+
+计分制评估只要没有 gate 失败，即使得分很低也算成功。想让低分挡住合并，就在评估用例里给对应断言加 `.gate()`。没有全局的 strict 开关，CI 和本地读的是同一份评估源码，判定结果一致。
+
+## 运行评估
 
 ```sh
-npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml
+pnpm exec niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml
 ```
 
-这条命令有三种输出：
+这条命令给 CI 三样东西：
 
-- 退出状态：CI 用它决定任务成功或失败。
-- NDJSON：progress 与 diagnostic 描述当前进程；最后一条 receipt 描述 Invocation。
-- JUnit：供 CI 平台读取的临时文件。
+- 退出状态：CI 用它决定这一步成功还是失败。
+- `--json` 的 NDJSON 输出：前面的行描述运行进度和诊断，最后一行是 receipt。
+- JUnit 文件：给 CI 平台读取并展示。
 
-JUnit 和外部平台文件不拥有 Record。Verdict、Usage、断言和诊断的持久事实仍在停稳 Record 的具名通道中。
+JUnit 只是交给 CI 平台的展示格式。判定、用量、断言和诊断仍保存在项目的 `.niceeval/record.sqlite` 里，事后查看都从那里读。
 
-## GitHub Actions 示例
+## 在 GitHub Actions 里配置
 
-下面的步骤保留 JSON 输出，并正确传回 `niceeval exp` 的退出状态：
+下面的步骤保存 JSON 输出，同时把 `niceeval exp` 的退出状态正确传回 CI：
 
 ```yaml
 - name: 运行评估
   shell: bash
   run: |
     set -o pipefail
-    npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml \
+    pnpm exec niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml \
       | tee ./artifacts/niceeval.ndjson
     exit "${PIPESTATUS[0]}"
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
 - name: 上传 JUnit
   if: always()
@@ -43,19 +60,26 @@ JUnit 和外部平台文件不拥有 Record。Verdict、Usage、断言和诊断�
     path: ./artifacts/niceeval-junit.xml
 ```
 
-将模型凭据作为 CI secret 注入命令运行所需的变量。不要把凭据写入 Experiment、receipt、JUnit 或日志。
+没有 `set -o pipefail` 和 `exit "${PIPESTATUS[0]}"` 时，退出状态来自 `tee`，评估失败也不会让 CI 变红。
 
-## 用 receipt 关联后续步骤
+模型凭据作为 CI secret 注入命令需要的环境变量，例如上面的 `ANTHROPIC_API_KEY`。不要把凭据写进 Experiment、receipt、JUnit 或日志。每个 Agent 读哪个变量见[配置与环境变量](/zh/tutorials/configuration)。
 
-成功建立 Invocation 后，NDJSON 的最后一行包含 receipt。后续脚本可以读取它的 `runIds`，用明确 Run 审阅或构造 query request：
+## 在后续步骤读取这次的结果
+
+运行开始后，NDJSON 的最后一行是 receipt。它的 `receipt.createdRunIds` 列出这次新建的 Run，后续步骤用它打开结果：
 
 ```sh
-pnpm exec niceeval query discover
-pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY --no-open
+pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-如果命令在建立 Invocation 前就因输入错误退出，不会有 receipt。此时直接修复命令、Experiment 或选择条件；不要猜测 Run ID。
+要让脚本处理结果，先找到可用的查询，再发送完整 request：
 
-## 让反馈保持可读
+```sh
+pnpm --silent exec niceeval query discover
+```
 
-CI 日志适合阅读当前进程的 progress 和 diagnostic。需要检查业务结果时，AI、脚本或 CI 先运行 `query discover`，人用 receipt 的 `runIds` 运行 `view`。
+如果命令在运行开始前就因为参数、配置或选择条件出错退出，不会有 receipt，终端会输出 `error:`。这时直接修复命令、Experiment 或选择条件，不要猜测 Run ID。
+
+## 让 CI 日志保持可读
+
+CI 日志适合看运行进度和诊断。要细查结果，人在本地用 receipt 里的 Run ID 运行 `niceeval show --run <run-id>` 或 `niceeval view --run <run-id>`；脚本和 AI 先运行 `query discover`。不要把进度和诊断行当作长期保存的结果格式。

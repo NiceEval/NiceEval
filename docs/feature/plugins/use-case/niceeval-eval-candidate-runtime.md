@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: niceeval-eval-candidate-runtime
+title: NiceEval-Eval 的候选 Runtime 条件
+createdAt: 2026-08-11T11:38:47+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/plugins/README.md
 ---
 
 # NiceEval-Eval 的候选 Runtime 条件

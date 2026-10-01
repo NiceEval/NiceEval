@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/openai-chat-completion.test.ts
 
-import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
+import { assertExpEvalOutcomes, exactEval, only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 import { withInspectionRequest } from "@niceeval/testkit";
@@ -13,8 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回 [necase_Z2VYZ98HMX5MVPG4]", async () => {
+test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case("openai-chat-completion", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "openai-chat-completion", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
@@ -58,5 +59,23 @@ test("turnFromChatCompletion 的 function 与 custom tool 输入经 Experiment �
     expect(trace).toContain("weather_lookup");
     expect(trace).toContain("grammar_query");
     expect(trace).toContain("SELECT fixture_marker");
+    const usageReceipt = await withInspectionRequest({
+      kind: "attempt.usage",
+      locator: event.locator,
+    }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+    expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
+    const { usage } = usageReceipt.attemptUsage();
+    expect(usage).toMatchObject({ hasMore: false, omittedObservationCount: 0 });
+    const usageTurn = only(usage.turns, () => true, () => usageReceipt.diagnostic());
+    const reasoning = only(usage.observations, (observation) =>
+      observation.turnId === usageTurn.turnId &&
+      observation.kind === "token-bucket" && observation.bucket === "reasoning",
+      () => usageReceipt.diagnostic());
+    expect(reasoning).toMatchObject({
+      turnId: usageTurn.turnId,
+      kind: "token-bucket",
+      bucket: "reasoning",
+      tokens: 2,
+    });
   });
 });

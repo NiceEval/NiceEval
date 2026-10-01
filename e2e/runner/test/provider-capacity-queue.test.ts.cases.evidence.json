@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_VXE9ARZNBMZ6V0JT": {
-      "memory/eval-group-retained-sandbox-capacity-deadlock.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_VXE9ARZNBMZ6V0JT",
+      "memory": "memory/eval-group-retained-sandbox-capacity-deadlock.md",
+      "evidence": {
         "red": {
           "path": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/red.json",
           "digest": "sha256:d23418ace76a361565357235be15ded6453f191f103f31c7541d6580e875f296"
@@ -19,7 +22,9 @@
           "path": "e2e/runner/test/provider-capacity-queue.test.ts.case-evidence/necase_VXE9ARZNBMZ6V0JT/memory_eval-group-retained-sandbox-capacity-deadlock.md/nered_E4EJKYQXVYVB3DW8-netake_S4P8BRJY1ZJ6FET9/inventory.json",
           "digest": "sha256:f992bbca2eb0db4d03942cbff3a5e4ddfcfc8522c9446c7f798c9601956a7aba"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
-  }
+  ]
 }

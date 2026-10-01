@@ -570,7 +570,7 @@ export const AssertionCoverageSchema: Schema.Schema<AssertionCoverage> =
     Schema.Struct({ state: Schema.Literal("complete") }),
     Schema.Struct({
       state: Schema.Literal("partial"),
-      reason: Schema.Literals(["sampled", "truncated", "redacted", "provider-limited"]),
+      reason: Schema.Literals(["sampled", "truncated", "redacted", "provider-limited", "capacity-limited"]),
     }),
     Schema.Struct({
       state: Schema.Literal("unavailable"),
@@ -598,6 +598,7 @@ export const AssertionLimitationSchema: Schema.Schema<AssertionLimitation> =
       omittedBytes: NonNegativeIntegerSchema,
     }),
     Schema.Struct({ kind: Schema.Literal("provider-limited") }),
+    Schema.Struct({ kind: Schema.Literal("capacity-limited"), capturedItems: NonNegativeIntegerSchema, knownTotalItems: NonNegativeIntegerSchema, omittedBytes: Schema.NullOr(NonNegativeIntegerSchema) }),
   ]);
 
 const NoScoreContributionSchema: Schema.Schema<NoScoreContribution> =

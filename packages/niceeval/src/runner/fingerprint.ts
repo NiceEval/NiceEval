@@ -506,6 +506,7 @@ export function planPreparedProjectTarget(
         runConfigHash,
         attempts: run.attempts,
         adapter: adapterIdentity(run.adapter),
+        ...(run.models !== undefined ? { models: run.models } : {}),
         ...(run.model !== undefined ? { model: run.model } : {}),
         ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
         flags: Object.freeze({ ...run.flags }),

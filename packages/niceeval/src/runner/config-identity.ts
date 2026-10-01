@@ -1,3 +1,4 @@
+import type { ResolvedModelSlots } from "../model-slots.ts";
 // 配置身份的字段级投影:`configHash` 的哈希输入本身,加上「同一份输入怎样按字段路径比对」。
 //
 // 哈希只回答「等不等」,回答不了「哪里变了」。`--accept config:<字段路径>` 与 `--dry` 的逐条
@@ -23,6 +24,7 @@ import type { AdapterIdentity } from "../record/model/run-context.ts";
  * 无端改变基础 configHash。新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
+  readonly models?: { readonly version: 1; readonly slots: ResolvedModelSlots };
   readonly adapter: AdapterIdentity;
   readonly model: DeclaredConfigValue<string>;
   readonly reasoningEffort: DeclaredConfigValue<string>;
@@ -105,6 +107,10 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
   return Object.freeze({
     ...withoutSharedState,
     adapter: Object.freeze({ ...identity.adapter }),
+    ...(identity.models === undefined ? {} : { models: Object.freeze({
+      version: 1 as const,
+      slots: Object.freeze(Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]))),
+    }) }),
     model: Object.freeze(identity.model),
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
@@ -194,6 +200,7 @@ export function configIdentityForRun(
 ): ConfigIdentity {
   return freezeConfigIdentity({
     adapter: adapterIdentity(run.adapter),
+    ...(run.adapter.kind === "custom" ? { models: { version: 1 as const, slots: run.models ?? Object.freeze({}) } } : {}),
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
@@ -215,6 +222,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
   if (exp === undefined) return undefined;
   return freezeConfigIdentity({
     adapter: result.adapter,
+    ...(exp.models === undefined ? {} : { models: { version: 1 as const, slots: exp.models } }),
     model: declaredString(result.model),
     reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
@@ -239,6 +247,14 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   put("adapter.name", identity.adapter.name);
   put("adapter.contract", identity.adapter.contract);
   put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
+  if (identity.adapter.cleanupTimeoutMs !== undefined) put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
+  if (identity.models !== undefined) {
+    put("models.version", identity.models.version);
+    for (const [slot, selection] of Object.entries(identity.models.slots)) {
+      put(`models.${slot}.model`, selection.model);
+      put(`models.${slot}.reasoningEffort`, selection.reasoningEffort);
+    }
+  }
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
@@ -331,8 +347,9 @@ export function counterfactualConfigIdentity(
   let judgeRuntime = current.judgeRuntime;
   let agentInstalls = current.agentInstalls;
   let adapter = current.adapter;
-  const rollbackGroups: readonly ("adapter" | "sandboxLayer" | "plugins" | "judgeRuntime" | "agentInstalls")[] = [
-    "adapter", "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls",
+  let models = current.models;
+  const rollbackGroups: readonly ("adapter" | "sandboxLayer" | "plugins" | "judgeRuntime" | "agentInstalls" | "models")[] = [
+    "adapter", "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls", "models",
   ];
   for (const group of rollbackGroups) {
     const paths = [...differing].filter((selector) =>
@@ -343,11 +360,13 @@ export function counterfactualConfigIdentity(
     else if (group === "sandboxLayer") sandboxLayer = historical.sandboxLayer;
     else if (group === "plugins") plugins = historical.plugins;
     else if (group === "judgeRuntime") judgeRuntime = historical.judgeRuntime;
+    else if (group === "models") models = historical.models;
     else agentInstalls = historical.agentInstalls;
   }
   const sharedState = accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState;
   return freezeConfigIdentity({
     adapter,
+    ...(models === undefined ? {} : { models }),
     model: accepted.has("config:model") ? historical.model : current.model,
     reasoningEffort: accepted.has("config:reasoningEffort")
       ? historical.reasoningEffort

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: turn-label-plain-words
+title: 设计裁决：轮/窗口标签改为自描述词（turn1 / session2/turn1）
+createdAt: 2026-07-21T08:34:48Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/turn-label-plain-words.md
+  commit: a5a4b2e94a142413864afd4358848d24095913b8
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决：轮/窗口标签改为自描述词（turn1 / session2/turn1）
 
 - **日期**：2026-07-21

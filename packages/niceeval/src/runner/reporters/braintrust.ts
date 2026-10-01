@@ -343,6 +343,8 @@ function limitationMetadata(
       return { kind: limitation.kind, omittedBytes: limitation.omittedBytes };
     case "provider-limited":
       return { kind: limitation.kind };
+    case "capacity-limited":
+      return { ...limitation };
   }
 }
 

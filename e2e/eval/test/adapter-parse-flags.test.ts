@@ -5,7 +5,8 @@ import { command } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 
-test.concurrent("Adapter flags 在资源启动前校验并交付一次解析的冻结结果 [necase_QEKQEJ7MT6QQKQW4]", async () => {
+// @feature docs/feature/adapters/README.md
+test.concurrent("Adapter flags 在资源启动前校验并交付一次解析的冻结结果", async () => {
   await evalE2E.case("adapter-parse-flags", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     await writeFile(join(projectRoot, "flat-flags.mjs"), `
       import assert from 'node:assert/strict';

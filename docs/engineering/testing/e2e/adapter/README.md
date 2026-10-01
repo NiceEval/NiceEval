@@ -37,7 +37,7 @@
    - Sandbox coding Agent 还必须从 `niceeval/sandbox` 导入对应的 `NICEEVAL_*_DOCKER_IMAGE`。当前版本锁定的官方镜像必须参与同一条 Journey；Live Repo 不硬编码旧 tag，也不用本地空白镜像替代。
    - fallback Installer 需要独立验收时，由另一条确定性 case 拥有。它不能替代官方镜像与 Adapter 的组合验收。
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
-   - 工具断言**连名带参**：`t.calledTool(toolMatch("mcp__demo-tools__get_weather", { input: jsonMatch({ city: "Brooklyn" }) }))`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
+   - 工具断言**连名带参**：`t.calledTool(toolMatch("mcp__demo-tools__get_weather", { input: jsonMatch({ city: "Brooklyn" }) }))`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#调用形状)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
 3. **用一个固定 Inspection request 核验公开结果**：
    - 每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator。
@@ -119,6 +119,10 @@ Verdict test 在 owner 文件中逐条声明 `(experimentId, evalId, verdict, at
 | `deepSeekHarnessAgent` | covered | `adapter/deepseek-harness` live target compatibility；headless 未提供的 actions/usage 明确 unavailable |
 
 ## 仓库 Eval 预算
+
+逐轮输入用量使用 `t.check(turn.usage.inputTotalTokens, greaterThan(0))`，由公共数值断言解释 `NumericMaterial` 的完整性状态。
+完整缓存命中允许未缓存输入为零；
+输入总量仍须为正，缺失全部输入证据不能通过。输出用量单独验证，不用缓存桶替代输出证据。
 
 每个 Adapter Repo 只签入足以证明该上游协议兼容性的 Eval：普通消息、工具身份与入参、session、usage、HITL、MCP、Skill、
 Plugin、Subagent 或该协议独有的失败面按实际能力取有区分力的代表。OTel mapper-specific 归因尚无公开 seam，明确标为没有可核查的公开证据；

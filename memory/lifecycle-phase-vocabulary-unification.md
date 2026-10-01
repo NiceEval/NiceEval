@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: lifecycle-phase-vocabulary-unification
+title: 设计裁决:attempt 生命周期词表三套合一(LifecyclePhase),schemaVersion 7
+createdAt: 2026-07-14T06:20:18Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/lifecycle-phase-vocabulary-unification.md
+  commit: d55d3c3ba405b5ad50a51140d312aae0933e88fd
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:attempt 生命周期词表三套合一(LifecyclePhase),schemaVersion 7
 
 **裁决**(2026-07-14):同一 attempt 生命周期此前存在三套互不映射的闭集词表——live 展示的 `AttemptPhase`(kebab-case:`sandbox-provision`/`running`/单一 `teardown`)、落盘计时的 `PhaseName`(`sandbox.create`/`test`/`score`/`trace`)、错误归因的 `LifecycleOperationName`(`sandbox.provision`/`eval.run`/`workspace.prepare`)。合并为唯一闭集 **`LifecyclePhase`**,live 展示、agent/ci envelope 的 `phase=`、`phases[].name`、`error.phase`、`diagnostics[].phase`、ScopedFeedback 的 scope 全部取自它。单一归属在 `docs/feature/results/architecture.md`。

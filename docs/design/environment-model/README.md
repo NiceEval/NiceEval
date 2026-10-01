@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: environment-model
+title: Sandbox 模型：Sandbox 起点与三方准备顺序
+createdAt: 2026-07-31T12:23:19+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/design/environment-model/README.md
+  commit: 6f67cf2c6126f9dc632f45a697d7e9b9087b5c5d
+kind: design
+alternatives:
+  - plan-1
+  - plan-10
+  - plan-11
+  - plan-2
+  - plan-3
+  - plan-4
+  - plan-6
+  - plan-7
+  - plan-8
+  - plan-9
+decision:
+  selected: plan-10
+  reason: 迁移保留 DECISION.md 中的明确裁决：plan-10
+  source:
+    path: docs/design/environment-model/DECISION.md
+    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+    digest: sha256:41667408907db77b5d3c7cae39ccc429d87a60d549ff7789d3872c1dc29ea2eb
+  targets: []
+---
 # Sandbox 模型：Sandbox 起点与三方准备顺序
 
 Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
@@ -22,13 +52,13 @@ Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
 [LIMITS](LIMITS.md) ·
 [CASES](CASES.md) ·
 [DECISION](DECISION.md) ·
-[PLAN-1](PLAN-1/README.md) ·
-[PLAN-2](PLAN-2/README.md) ·
-[PLAN-3](PLAN-3/README.md) ·
-[PLAN-4](PLAN-4/README.md) ·
-[PLAN-6](PLAN-6/README.md) ·
-[PLAN-7](PLAN-7/README.md) ·
-[PLAN-8](PLAN-8/README.md) ·
-[PLAN-9](PLAN-9/README.md) ·
-[PLAN-10](PLAN-10/README.md) ·
-[PLAN-11](PLAN-11/README.md)
+[PLAN-1](plans/plan-1/README.md) ·
+[PLAN-2](plans/plan-2/README.md) ·
+[PLAN-3](plans/plan-3/README.md) ·
+[PLAN-4](plans/plan-4/README.md) ·
+[PLAN-6](plans/plan-6/README.md) ·
+[PLAN-7](plans/plan-7/README.md) ·
+[PLAN-8](plans/plan-8/README.md) ·
+[PLAN-9](plans/plan-9/README.md) ·
+[PLAN-10](plans/plan-10/README.md) ·
+[PLAN-11](plans/plan-11/README.md)

@@ -93,9 +93,10 @@ interface ProjectStateResource {
 
 function makeProjectStateResource(): ProjectStateResource {
   let invocationPortableClosed = false;
+  let closing: Promise<void> | undefined;
   let state:
     | { readonly kind: "unbound" }
-    | { readonly kind: "opening"; readonly root: string; readonly client: Promise<StorageWorkerClient> }
+    | { readonly kind: "opening"; readonly root: string; readonly client: Promise<StorageWorkerClient>; readonly initialization: AbortController }
     | { readonly kind: "open"; readonly root: string; readonly client: StorageWorkerClient }
     | { readonly kind: "closed" } = { kind: "unbound" };
   const currentState = () => state;
@@ -158,10 +159,13 @@ function makeProjectStateResource(): ProjectStateResource {
     };
     if (state.kind === "open") return facets(state.client);
     if (state.kind === "opening") {
-      return facets(await state.client);
+      const client = await state.client;
+      if (currentState().kind === "closed") throw new Error("ProjectStateDatabase is closed");
+      return facets(client);
     }
-    const pending = makeStorageWorkerClient(portableRoot);
-    state = { kind: "opening", root: portableRoot, client: pending };
+    const initialization = new AbortController();
+    const pending = makeStorageWorkerClient(portableRoot, undefined, undefined, initialization.signal);
+    state = { kind: "opening", root: portableRoot, client: pending, initialization };
     try {
       const client = await pending;
       if (currentState().kind === "closed") {
@@ -176,14 +180,27 @@ function makeProjectStateResource(): ProjectStateResource {
     }
   };
 
-  const close = async (expectedRoot?: string): Promise<void> => {
+  const close = (expectedRoot?: string): Promise<void> => {
     const current = state;
     if (expectedRoot !== undefined && current.kind !== "unbound" && current.kind !== "closed" && current.root !== expectedRoot) {
-      throw new Error("ProjectStateDatabase is bound to another canonical root");
+      return Promise.reject(new Error("ProjectStateDatabase is bound to another canonical root"));
     }
+    if (closing !== undefined) return closing;
     state = { kind: "closed" };
-    if (current.kind === "open") await current.client.close();
-    if (current.kind === "opening") await (await current.client).close();
+    const reason = new Error("ProjectStateDatabase closed while its storage worker was opening");
+    if (current.kind === "opening") current.initialization.abort(reason);
+    closing = (async () => {
+      if (current.kind === "open") await current.client.close();
+      if (current.kind === "opening") {
+        try {
+          await (await current.client).close();
+        } catch (cause) {
+          // Only our initialization cancellation is expected during release.
+          if (cause !== reason) throw cause;
+        }
+      }
+    })();
+    return closing;
   };
 
   return {

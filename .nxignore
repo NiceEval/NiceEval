@@ -3,7 +3,6 @@
 /.claude/
 /.husky/
 /.vscode/
-/.nxignore
 
 # Prose, history, static README assets, and standalone examples have their own
 # lint or review surface. Internal docs and the product site remain Nx projects
@@ -11,10 +10,6 @@
 /*.md
 /packages/testkit/README.md
 /packages/niceeval/scripts/sync-prices.mjs
-# Legacy template path is ignored so its one-time relocation does not mark the
-# runtime package affected; the owned docs-source path selects package E2E.
-/packages/niceeval/INDEX.template.md
-/packages/niceeval/scripts/stage-docs.mjs
 /assets/
 /examples/
 /lint/

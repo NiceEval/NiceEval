@@ -1,3 +1,10 @@
+import type { ResolvedModelSlots } from "./model-slots.ts";
+import { resolveAdapterCleanupTimeoutMs } from "./shared/adapter-cleanup.ts";
+import type { AttemptSignal } from "./shared/attempt-lifecycle.ts";
+export type { AttemptCancellation, AttemptSignal } from "./shared/attempt-lifecycle.ts";
+import { bindAssertionContext } from "./assertions/runtime.ts";
+import type { MatchContext } from "./assertions/context-match.ts";
+import type { EvalUsage } from "./o11y/eval-usage.ts";
 import type { ExperimentFlags } from "./shared/types.ts";
 import {
   assertAdapterFlagsParser,
@@ -43,8 +50,8 @@ export type AdapterAssertionsFactory<Context extends object, Assertions extends 
  * assembly, and `check` may only be called by a returned Assertion method.
  */
 export interface AdapterAssertionsFactoryContext<Context extends object> {
-  readonly app: Readonly<Context>;
-  readonly check: AssertionCheck<"polymorphic">;
+  readonly app: MatchContext<Context>;
+  readonly check: AssertionCheck<"polymorphic", Context>;
 }
 
 type BoundAdapterAssertionResult<Kind extends EvaluationKind, Result> =
@@ -78,6 +85,10 @@ const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "instructionFollowing",
   "pairwisePreference",
   "closeQA",
+  "usage",
+  "elapsedMs",
+  "maxTokens",
+  "maxCost",
   "score",
   "group",
   "skip",
@@ -166,12 +177,20 @@ type AdapterFactory<Context extends object, Flags extends AdapterFlagsParser = u
 ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
 
 export interface AdapterCleanupContext {
-  /** 当前 Adapter cleanup 总窗口的取消信号。它独立于 Attempt signal，并在 30 秒总预算结束时取消。 */
+  /** 整个清理窗口的固定毫秒预算，不为每个回调续期。 */
+  readonly timeoutMs: number;
+  /** 清理窗口实际开始时确定的 Unix 毫秒截止时间。 */
+  readonly deadlineAt: number;
+  /** 独立于执行信号；整个 Adapter 清理窗口截止时中止。 */
   readonly signal: AbortSignal;
 }
 
 export interface AdapterCreateContext<Flags = ExperimentFlags> {
+  /** Frozen application model selections for this Attempt. */
+  readonly models: ResolvedModelSlots;
   recordUsage(input: import("./adapter-usage.ts").AdapterUsageInput): void;
+  /** Close application usage admission and declare whether the recorded collection is complete. */
+  sealUsage(input: import("./adapter-usage.ts").AdapterUsageSeal): void;
   attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
   recordTrace<Event extends import("./adapter-execution-trace.ts").ExecutionTraceEvent>(
     input: import("./adapter-execution-trace.ts").ExecutionTraceInput<Event>,
@@ -182,8 +201,8 @@ export interface AdapterCreateContext<Flags = ExperimentFlags> {
   readonly experimentId: string;
   /** 当前 Attempt 的零起始序号。 */
   readonly attempt: number;
-  /** Attempt 执行信号；取消或超时后会中止，不用于 cleanup 窗口。 */
-  readonly signal: AbortSignal;
+  /** Attempt 执行信号；reason 区分 timeout 与 cancelled，不用于 cleanup 窗口。 */
+  readonly signal: AttemptSignal;
   /** Experiment 选择的模型。 */
   readonly model?: string;
   /** Experiment 选择的推理强度。 */
@@ -203,7 +222,11 @@ export interface AdapterCreateContext<Flags = ExperimentFlags> {
   onCleanup(cleanup: (context: AdapterCleanupContext) => void | Promise<void>): void;
 }
 
-type EvalContextBase<Kind extends EvaluationKind, Flags> = JudgePresetMethods<Kind> & {
+type EvalContextBase<Kind extends EvaluationKind, Flags, Context> = JudgePresetMethods<Kind, Context> & {
+  readonly usage: EvalUsage;
+  readonly elapsedMs: import("./assertions/match.ts").NumericMaterial;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, number>;
+  maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -214,7 +237,7 @@ type EvalContextBase<Kind extends EvaluationKind, Flags> = JudgePresetMethods<Ki
   log(message: string): void;
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
-  readonly check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly check: AssertionCheck<Kind, Context>;
   readonly judge: <Value>(
     value: AssertionSubject<Value>,
     definition: ScoreMatch<NoInfer<Value>>,
@@ -222,7 +245,7 @@ type EvalContextBase<Kind extends EvaluationKind, Flags> = JudgePresetMethods<Ki
 };
 
 /** Agent-neutral author context shared by every Adapter Eval. */
-export type EvalContext<Kind extends EvaluationKind = "pass", Flags = ExperimentFlags> = EvalContextBase<Kind, Flags> &
+export type EvalContext<Kind extends EvaluationKind = "pass", Flags = ExperimentFlags, Context = unknown> = EvalContextBase<Kind, Flags, Context> &
   (Kind extends "score" ? { readonly score: AssertionsRuntime<"score">["t"]["score"] } : {});
 
 type AdapterEvalFields = Omit<EvalInput<undefined>, "test" | "sandbox" | "diff"> & {
@@ -241,7 +264,7 @@ export type AdapterEvalInput<
   Flags extends AdapterFlagsParser = undefined,
 > = AdapterEvalFields & {
   test(
-    t: EvalContext<"pass", AdapterFlagsOutput<Flags>> & Readonly<Context> & AdapterAssertionsFor<Assertions, "pass">,
+    t: EvalContext<"pass", AdapterFlagsOutput<Flags>, Context> & Readonly<Context> & AdapterAssertionsFor<Assertions, "pass">,
   ): void | Promise<void>;
 };
 
@@ -251,7 +274,7 @@ export type AdapterScoreEvalInput<
   Flags extends AdapterFlagsParser = undefined,
 > = AdapterScoreEvalFields & {
   test(
-    t: EvalContext<"score", AdapterFlagsOutput<Flags>> & Readonly<Context> & AdapterAssertionsFor<Assertions, "score">,
+    t: EvalContext<"score", AdapterFlagsOutput<Flags>, Context> & Readonly<Context> & AdapterAssertionsFor<Assertions, "score">,
   ): void | Promise<void>;
 };
 
@@ -276,7 +299,7 @@ export interface AdapterEvalDefinition<
   Flags extends AdapterFlagsParser = undefined,
 > extends EvalDefinition<
     Kind,
-    EvalContext<Kind, AdapterFlagsOutput<Flags>> & Readonly<Context> & AdapterAssertionsFor<Assertions, Kind>,
+    EvalContext<Kind, AdapterFlagsOutput<Flags>, Context> & Readonly<Context> & AdapterAssertionsFor<Assertions, Kind>,
     undefined
   > {
   readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
@@ -309,6 +332,7 @@ export interface AdapterRuntimeDefinition {
   readonly name: string;
   readonly contract: string;
   readonly behaviorRevision: string | null;
+  readonly cleanupTimeoutMs: number;
   readonly [ADAPTER_CONTRACT_TOKEN]: object;
   readonly defineEval: (...args: never[]) => unknown;
   readonly defineScoreEval: (...args: never[]) => unknown;
@@ -323,6 +347,7 @@ export interface AdapterImplementation<
   readonly kind: "custom";
   readonly contract: string;
   readonly behaviorRevision: string | null;
+  readonly cleanupTimeoutMs: number;
   readonly [ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
   create(context: AdapterCreateContext<AdapterFlagsOutput<Flags>>): Context | Promise<Context>;
 }
@@ -334,6 +359,8 @@ export type AdapterImplementationInput<
 > = {
   readonly name: string;
   readonly behaviorRevision?: string;
+  /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
+  readonly cleanupTimeoutMs?: number;
   readonly create: AdapterFactory<ImplementationContext, Flags>;
 } & AdapterContextValidation<NoInfer<ImplementationContext>>;
 
@@ -431,6 +458,8 @@ function implementAdapter<
   input: {
     readonly name: string;
     readonly behaviorRevision?: string;
+    /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
+    readonly cleanupTimeoutMs?: number;
     readonly create: AdapterFactory<Context, Flags>;
   },
   factory: "defineAdapter" | "AdapterContract.implement",
@@ -442,6 +471,7 @@ function implementAdapter<
   if (typeof input.create !== "function") {
     throw new TypeError(`${factory} requires create(context).`);
   }
+  const cleanupTimeoutMs = resolveAdapterCleanupTimeoutMs(input.cleanupTimeoutMs);
   const authorCreate = input.create;
   const create = (context: AdapterCreateContext<AdapterFlagsOutput<Flags>>): Context | Promise<Context> => {
     const created = authorCreate(context);
@@ -461,6 +491,7 @@ function implementAdapter<
     name: input.name,
     contract: token.name,
     behaviorRevision: input.behaviorRevision ?? null,
+    cleanupTimeoutMs,
     create,
     [ADAPTER_CONTRACT_TOKEN]: token,
     ...boundEvalFactories(token),
@@ -471,6 +502,8 @@ function implementAdapter<
 export function defineAdapter<Context extends object, Flags extends AdapterFlagsParser = undefined>(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
+  /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
+  readonly cleanupTimeoutMs?: number;
   readonly create: AdapterFactory<Context, Flags>;
   readonly parseFlags?: Flags;
   readonly assertions?: undefined;
@@ -482,15 +515,22 @@ export function defineAdapter<
 >(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
+  /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
+  readonly cleanupTimeoutMs?: number;
   readonly create: AdapterFactory<Context, Flags>;
   readonly parseFlags?: Flags;
   /** Attempt-local Assertion sugar, assembled once after create() succeeds. */
   readonly assertions: AdapterAssertionsFactory<Context, Assertions>;
 } & AdapterContextValidation<NoInfer<Context>> & AdapterFlagsParserValidation<NoInfer<Flags>> &
   AdapterAssertionsValidation<Context, NoInfer<Assertions>>): AdapterImplementation<Context, Assertions, Flags>;
+// @concord-code ne-adapter-define-adapter
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/library/writing-an-adapter.md
 export function defineAdapter(input: {
   readonly name: string;
   readonly behaviorRevision?: string;
+  /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
+  readonly cleanupTimeoutMs?: number;
   readonly create: AdapterFactory<object, AdapterFlagsParser>;
   readonly parseFlags?: Exclude<AdapterFlagsParser, undefined>;
   readonly assertions?: AdapterAssertionsFactory<object>;
@@ -508,6 +548,9 @@ export function defineAdapter(input: {
 }
 
 /** Defines a reusable contract whose implementations and Evals share one runtime-only token. */
+// @concord-code ne-adapter-define-contract
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/architecture/agent-contract.md
 export function defineAdapterContract<Context extends object>(
   input: { readonly name: string } & AdapterContextValidation<NoInfer<Context>>,
 ): AdapterContract<Context> {
@@ -556,6 +599,7 @@ export function adapterIdentity(adapter: Adapter): AdapterIdentity {
         name: adapter.name,
         contract: adapter.contract,
         behaviorRevision: adapter.behaviorRevision,
+        cleanupTimeoutMs: adapter.cleanupTimeoutMs,
       })
     : Object.freeze({
         name: adapter.name,
@@ -716,10 +760,7 @@ function bindAdapterAssertions<Kind extends EvaluationKind, Context extends obje
     return handle;
   };
 
-  const authored = factory({
-    app,
-    check: check as AssertionCheck<"polymorphic">,
-  });
+  const authored = factory({ app: app as MatchContext<Context>, check: check as AssertionCheck<"polymorphic", Context> });
   assertPlainAdapterAssertions(authored, context);
   Object.freeze(authored);
   assembled = true;
@@ -755,6 +796,8 @@ function bindAdapterAssertions<Kind extends EvaluationKind, Context extends obje
 }
 
 /** @internal Builds the frozen single-t facade after create settles. */
+// @concord-code ne-adapter-bind-eval-context
+// @concord-implements docs/feature/adapters/architecture/agent-contract.md
 export function bindAdapterEvalContext<Kind extends EvaluationKind, Context>(
   core: EvalContext<Kind>,
   context: Context,
@@ -780,6 +823,7 @@ export function bindAdapterEvalContext<Kind extends EvaluationKind, Context>(
     app = bound.app;
     assertions = bound.assertions;
   }
+  bindAssertionContext(core.check, () => app);
   const target = Object.create(null) as object;
   forwardProperties(target, core, false, assertAuthorOpen);
   forwardProperties(target, app, false, assertAuthorOpen);

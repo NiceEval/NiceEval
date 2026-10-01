@@ -1,0 +1,31 @@
+{
+  "format": "concord.native-reliability/v1",
+  "selector": "e2e/inspection/test/judge-usage-tokens.test.ts#neref_7af09f6473d7323200cfa3d004ac1938",
+  "caseId": "neref_7af09f6473d7323200cfa3d004ac1938",
+  "candidateSha256": "312415f42909e28d557a6ed18e4e831f71e64f7d1be71b97591e95fd424075e3",
+  "sourceDigest": "sha256:7bea066142cfbecfe9d2fc4a67645ea3c235016130a8333a5a6517d8da0511ab",
+  "greenReceipt": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-1.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-2.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-4.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-6.json",
+    "singleCase": "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/green.json",
+    "cleanup": [
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/green.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-1.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-2.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-3.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-4.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-5.json",
+      "e2e/inspection/test/judge-usage-tokens.test.ts.case-evidence/neref_7af09f6473d7323200cfa3d004ac1938/memory_judge-physical-usage-missing.md/nered_9RXEYTEWV4F08M3D-netake_509XW4XHT3RZTJ8B/reliability-6.json"
+    ]
+  },
+  "certificateSha256": "2a267bde99bfc9aeaf40285219140ec157f4878da2b63a1560e5a3d3f0b20ffe"
+}

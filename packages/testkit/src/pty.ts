@@ -5,7 +5,6 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readdirSync, readFileSync } from "node:fs";
-import type { Dirent } from "node:fs";
 import type { Argv } from "./process.js";
 
 const DEFAULT_COLUMNS = 120;
@@ -128,29 +127,31 @@ function errorCode(error: unknown): string | undefined {
 
 function processGroupState(groupId: number): GroupTerminal {
   if (process.platform !== "linux") throw new Error("PTY cleanup requires Linux /proc process identity");
-  let entries: Dirent<string>[];
+  let entries: string[];
   try {
-    entries = readdirSync("/proc", { withFileTypes: true });
+    // Dirent discovery can lstat a PID that exits during enumeration. Read only
+    // names so disappearing processes reach the per-PID ENOENT handling below.
+    entries = readdirSync("/proc");
   } catch (error) {
     throw new Error(`cannot inspect /proc for process group ${groupId}`, { cause: error });
   }
   let terminal = false;
   for (const entry of entries) {
-    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+    if (!/^\d+$/.test(entry)) continue;
     let stat: string;
     try {
-      stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      stat = readFileSync(`/proc/${entry}/stat`, "utf8");
     } catch (error) {
       const code = errorCode(error);
       if (code === "ENOENT" || code === "ESRCH") continue;
-      throw new Error(`cannot inspect /proc/${entry.name}/stat`, { cause: error });
+      throw new Error(`cannot inspect /proc/${entry}/stat`, { cause: error });
     }
     const end = stat.lastIndexOf(")");
     const fields = end < 0 ? [] : stat.slice(end + 2).trim().split(/\s+/);
     const state = fields[0];
     const memberGroup = Number(fields[2]);
     if (!Number.isSafeInteger(memberGroup) || state === undefined) {
-      throw new Error(`cannot decode /proc/${entry.name}/stat`);
+      throw new Error(`cannot decode /proc/${entry}/stat`);
     }
     if (memberGroup !== groupId) continue;
     if (state !== "Z" && state !== "X" && state !== "x") return "running";

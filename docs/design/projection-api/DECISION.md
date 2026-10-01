@@ -3,7 +3,7 @@
 ## 裁决
 
 旧投影方案曾采纳
-[PLAN-1](PLAN-1/README.md)：三种 factory 构造 `RecordProjection`，唯一公开执行入口是
+[PLAN-1](plans/plan-1/README.md)：三种 factory 构造 `RecordProjection`，唯一公开执行入口是
 `projectAnalysisSample({ sampleHandle, projection })`。
 
 这是已经退出产品面的历史选型裁决，不构成当前公共 API。
@@ -18,7 +18,7 @@
 
 ## 为什么否决 PLAN-2
 
-[PLAN-2](PLAN-2/README.md) 会把依赖节点、edge、graph brand、全图验证与调度变成通用作者协议。它能在 I/O 前闭合
+[PLAN-2](plans/plan-2/README.md) 会把依赖节点、edge、graph brand、全图验证与调度变成通用作者协议。它能在 I/O 前闭合
 任意官方 Analysis 图，但禁止 payload-dependent direct call。当前目标不需要用这套公共协议换取全局保证。
 
 Report 的每次 `aggregate()` 会在 host 内部把所请求 Analysis fields 编译成有限执行闭包。这个 runtime-local DAG 不成为

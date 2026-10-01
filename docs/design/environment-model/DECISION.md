@@ -1,10 +1,10 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md) · [PLAN-10](PLAN-10/README.md) · [PLAN-11](PLAN-11/README.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [PLAN-6](plans/plan-6/README.md) · [PLAN-7](plans/plan-7/README.md) · [PLAN-8](plans/plan-8/README.md) · [PLAN-9](plans/plan-9/README.md) · [PLAN-10](plans/plan-10/README.md) · [PLAN-11](plans/plan-11/README.md)
 
 ---
 
 ## 裁决
 
-采纳 [PLAN-10](PLAN-10/README.md):Eval、Experiment 与 Agent 向同一个主 Sandbox 各贡献一层准备,每个实际配对恰好一方携带 template,固定 template owner 先、另一 owner 次、Agent 最后的顺序,普通 command 只有逐 Attempt 一种频次。
+采纳 [PLAN-10](plans/plan-10/README.md):Eval、Experiment 与 Agent 向同一个主 Sandbox 各贡献一层准备,每个实际配对恰好一方携带 template,固定 template owner 先、另一 owner 次、Agent 最后的顺序,普通 command 只有逐 Attempt 一种频次。
 
 定稿契约写进 [Feature · Sandbox Layer](../../feature/sandbox/layers.md) 与 [Feature · Sandbox 三方准备时序](../../feature/sandbox/lifecycle.md);本页只保留选型理由。
 

@@ -1,8 +1,20 @@
 ---
-name: ai-sdk-usechat-typing-indicator-start-chunk
+format: concord.document/v1
+id: ai-sdk-usechat-typing-indicator-start-chunk
+title: ai-sdk-usechat-typing-indicator-start-chunk
+createdAt: 2026-07-03T13:18:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/ai-sdk-usechat-typing-indicator-start-chunk.md
+  commit: bd0e3e6aae8a54546a57ff973538f08e49bc4a7c
 description: origin demos 前端"发消息后一片空白/看起来不 stream"的根因——useChat 收到 start chunk 就先推入一条空 parts 的 assistant 消息，按 role 判断的"思考中…"指示器会立刻消失
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
 ---
 
 **现象**：`examples/zh/origin/{codex-sdk,claude-agent-sdk,pi-sdk}` 三个 demo，用户发消息后界面长时间完全空白，看起来像"前端不 stream"、"对方回复消失了"。codex-sdk 上最严重（一轮要空白 10 秒以上）。

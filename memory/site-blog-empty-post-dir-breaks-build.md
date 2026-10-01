@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: site-blog-empty-post-dir-breaks-build
+title: site 博客空 post 目录会把 site:build 整个炸掉
+createdAt: 2026-07-07T16:38:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/site-blog-empty-post-dir-breaks-build.md
+  commit: 21f5eeea6fd3ca4cc54530059b76cfdb9a5e6f17
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # site 博客空 post 目录会把 site:build 整个炸掉
 
 ## 现象

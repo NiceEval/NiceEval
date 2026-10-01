@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: reports-no-privilege-chrome-rulings
+title: Reports 第七批：宿主内容特权全部清零（证据页 / hero / 警告 / 品牌组件化）
+createdAt: 2026-07-17T14:12:36+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reports-no-privilege-chrome-rulings.md
+  commit: 177a151c4b41ba97515f17af597b1f91c23a9cac
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Reports 第七批：宿主内容特权全部清零（证据页 / hero / 警告 / 品牌组件化）
 
 **日期**：2026-07-17。**触发**：用户 review 内建报告与 view 页面时质疑「报告 / Attempts / 追踪都应该是定义出来的页；hero 与警告区应该是组件；docs 设计应尽可能通用、不给官方特异」，指着 DevTools 里的 `.report-slot > .nre > .nre-warnings` 问它算不算组件（不算——是宿主烘进报告槽的前置块）。诊断出的根因：现契约违反了 built-in.md 自己的验收标准「内建自己必须写得顺」——裸 view 页面上宿主开小灶的部分（证据页、hero、警告块、品牌位、CopyFixPrompt）内建那份「报告文件」写不出来，说明 API 缺件，shell.md 的「特权只剩渲染位置」正是这个缺口的补丁。

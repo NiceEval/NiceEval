@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo adapter/sdk-converters -- --run test/codex-thread-stream.test.ts
 
-import { assertExpEvalOutcomes, exactEval } from "@niceeval/testkit";
+import { assertExpEvalOutcomes, exactEval, only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { createCodexThreadEventStream } from "niceeval/adapter";
 import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
@@ -14,8 +14,10 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
+// @regression memory/codex-thread-diagnostics-confused-with-terminal-failure.md
 
-test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回 [necase_C2K9MBSGV9A6TC0A]", async () => {
+test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case(
     "codex-thread-stream",
     sdkConverterRecordArtifacts,
@@ -69,6 +71,30 @@ test("createCodexThreadEventStream 的锁定 ThreadEvent 经 Experiment 和公�
       expect(trace).toContain("codex-sdk-nonfatal-diagnostic-marker");
       expect(trace).toContain("conversation-error");
       expect(trace).toContain("stream-error");
+      const completedTurn = only(
+        traceDocument.trace.conversation.turns,
+        (turn) => traceDocument.trace.conversation.items.some((item) =>
+          item.turnId === turn.turnId && item.kind === "message" &&
+          item.role === "user" && item.text === "codex completed fixture"),
+        () => traceReceipt.diagnostic(),
+      );
+      const usageReceipt = await withInspectionRequest({
+        kind: "attempt.usage",
+        locator: event.locator,
+      }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+      expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
+      const { usage } = usageReceipt.attemptUsage();
+      expect(usage).toMatchObject({ hasMore: false, omittedObservationCount: 0 });
+      const reasoning = only(usage.observations, (observation) =>
+        observation.turnId === completedTurn.turnId &&
+        observation.kind === "token-bucket" && observation.bucket === "reasoning",
+        () => usageReceipt.diagnostic());
+      expect(reasoning).toMatchObject({
+        turnId: completedTurn.turnId,
+        kind: "token-bucket",
+        bucket: "reasoning",
+        tokens: 5,
+      });
     },
   );
   // The installed public converter reports fatal stream errors; a real Agent

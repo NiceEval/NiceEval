@@ -1,3 +1,12 @@
+---
+format: concord.document/v1
+id: record-to-report-mlflow
+title: MLflow：Experiment、Run、Trace 与 Tracking UI
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources: []
+---
 # MLflow：Experiment、Run、Trace 与 Tracking UI
 
 > 观察日期：2026-08-14
@@ -21,12 +30,12 @@ SDK 把 Param、Metric、Artifact、Trace 与 Assessment 写进同一 Tracking �
 | 页 | 回答什么 |
 | --- | --- |
 | 本页 | 产品是什么、用户心智、原生对象总图，以及最后才写的 NiceEval 对照 |
-| [Layers](layers.md) | SDK、Server、Backend Store、Artifact Store、UI 与对象之间的 owner、引用和依赖 |
-| [Execution](execution.md) | Run 与 Trace 从发起、写入、完成到失败、partial、resume 的真实顺序 |
-| [Storage](storage.md) | 公开 entity、SQL 表、FileStore 目录、信封，以及权威事实 / 派生值 / cache |
-| [Reading and comparison](reading-and-comparison.md) | 历史怎样重开、query、filter、align、group、compare 和展示 |
-| [Schema and migration](schema-and-migration.md) | Alembic、兼容 reader、升级命令，以及会不会改写已保存数据 |
-| [Tracing 与 Assessment](tracing-and-assessments.md) | MLflow 自己拆出的 GenAI 产品面：Trace、Span、Assessment、Evaluation Dataset |
+| [Layers](layers/README.md) | SDK、Server、Backend Store、Artifact Store、UI 与对象之间的 owner、引用和依赖 |
+| [Execution](execution/README.md) | Run 与 Trace 从发起、写入、完成到失败、partial、resume 的真实顺序 |
+| [Storage](storage/README.md) | 公开 entity、SQL 表、FileStore 目录、信封，以及权威事实 / 派生值 / cache |
+| [Reading and comparison](reading-and-comparison/README.md) | 历史怎样重开、query、filter、align、group、compare 和展示 |
+| [Schema and migration](schema-and-migration/README.md) | Alembic、兼容 reader、升级命令，以及会不会改写已保存数据 |
+| [Tracing 与 Assessment](tracing-and-assessments/README.md) | MLflow 自己拆出的 GenAI 产品面：Trace、Span、Assessment、Evaluation Dataset |
 
 机制细节只写在对应页。
 本页不重复事务、表结构和查询语法。
@@ -58,7 +67,7 @@ MLflow 3 另把 Logged Model 提升为独立对象。
 
 GenAI 面再加一条平行对象：Trace 是 span tree，Assessment 是挂在 Trace 或 Span 上的评价。
 它们与 Run 共用 Tracking Server 和 UI，但不是 Run 的字段。
-见 [Tracing 与 Assessment](tracing-and-assessments.md)。
+见 [Tracing 与 Assessment](tracing-and-assessments/README.md)。
 
 普通作者只看见 fluent API、autolog 和 Tracking UI。
 他们不把 Backend Store 表或 `./mlruns` 目录当成阅读界面。
@@ -91,11 +100,11 @@ Evaluation Dataset ── 可从 Trace 收录测试行；完整能力需要 SQL 
 | Evaluation Dataset | 持续增长的评测题集 | `dataset_id` |
 
 部署上，这些对象穿过四块具名部件：SDK、可选 Tracking Server、Backend Store、Artifact Store。
-部件边界、owner 和依赖见 [Layers](layers.md)。
+部件边界、owner 和依赖见 [Layers](layers/README.md)。
 
 默认 Tracking URI 是 `sqlite:///mlflow.db`。
 当前目录已有带 `meta.yaml` 的 `./mlruns` 时，继续用 FileStore。
-FileStore 处于维护模式。细节见 [Layers](layers.md) 与 [Schema and migration](schema-and-migration.md)。
+FileStore 处于维护模式。细节见 [Layers](layers/README.md) 与 [Schema and migration](schema-and-migration/README.md)。
 
 ## 与 NiceEval 的相似点与差异
 

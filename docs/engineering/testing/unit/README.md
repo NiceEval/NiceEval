@@ -12,7 +12,7 @@
 运行时测试可直接运行 Vitest 的 `unit` project，类型契约测试由 `pnpm run typecheck` 承担；文档守护位于 `lint/`，分别由 `pnpm lint:docs` 与 `pnpm lint:docs-site` 执行（见[套件边界与仓库守护](#套件边界与仓库守护)）。
 
 单元层的观察面是**数据**：输入数据到输出数据的确定性语义。
-渲染输出（终端排版、DOM 结构、Run、样式）、CLI 进程行为与真实协议路径不属于本层，一律归 E2E 功能仓库——边界全文见[测试体系总纲](../README.md#单元层的边界)。
+渲染输出（终端排版、DOM 结构、Run、样式）、CLI 进程行为与真实协议路径不属于本层，一律归 E2E 功能仓库——边界全文见[测试体系总纲的风险边界](../README.md#风险边界)。
 
 ## 核心判据
 
@@ -60,7 +60,7 @@ Feature 文档是语义的唯一出处。
 | **边界归一**       | 落盘格式与第三方文件怎样进入 niceeval 的标准模型            | 脱敏真实 fixture、畸形输入                  |
 | **公共组合**       | 用户可见 API、类型能力和主要组合方式能够表达 Feature 契约   | 公共子路径 import、编译 fixture、窄集成测试 |
 | **结果与计算口径** | 选择、去重、聚合、格式化与装载校验的数据语义                | 数据级断言、宿主装载等价测试                |
-| **仓库守护**       | 索引、链接、生成区块和测试收集范围等仓库约束                | `test/` 下的 Vitest 守护                    |
+| **仓库守护**       | 索引、链接、生成区块和测试收集范围等仓库约束                | `lint/docs/**` 与 `lint/docs-site/**` 下的 lint |
 
 测试预算由静默错误的影响和发现难度决定，而不是按层平均分配。
 判定、证据归一、缓存、调度、结果选择和读数聚合都可能给出看似合理但错误的答案，应得到更强的组合与边界证明。
@@ -85,10 +85,9 @@ Feature 文档是语义的唯一出处。
 | [eval.md](eval.md)                             | Context、session、HITL、能力边界                                          | scripted Agent 与 recording Sandbox（自有 `Agent` / `Sandbox` 接口） | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent 走同一条 Context 链      |
 | [experiments-runner.md](experiments-runner.md) | 调度、缓存、Sandbox 生命周期、budget、退出码折叠                          | fake Agent / Sandbox / Reporter、受控时钟与 barrier                  | [e2e/cli](../e2e/cli.md)：真实进程与真实 attempt 下同一批行为                |
 | [assertions.md](assertions.md) | matcher、collector、scope、judge、verdict | 构造 `AssertionEvaluationContext`；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
-| [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因、主 Sandbox 实例及伴随资源 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
+| [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因、主 Sandbox 实例及伴随资源 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --repo lifecycle](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [adapters.md](adapters.md)                     | Agent ensure 循环、身份 / staged payload digest、断网义务、复用与 environment 隔离 | 脚本化安装层 + recording Sandbox（自有接口）                   | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent CLI 安装与探测           |
 | [record.md](record.md)                         | Core、固定 family / blob closure、Host reader、Run publish/recovery | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/inspection](../e2e/inspection.md) 与 [e2e/insight](../e2e/insight.md)：真实运行的 whole-Run 提交与读回               |
-
 | [reports.md](reports.md)                       | Host-issued Sample、闭合 Analysis 输出、参数 Page 与页面的一次执行 | 受控 Host seam 与闭合 rows / views fixture                              | [e2e/inspection](../e2e/inspection.md) 与 [e2e/insight](../e2e/insight.md)：真实输出上的出口与渲染                       |
 
 ## Feature 测试文档
@@ -170,7 +169,7 @@ niceeval 是 TypeScript 库，类型推断和非法组合也是公共契约。
 
 | project          | 验证对象           | 入口                                  | 收哪些文件                                      |
 | ---------------- | ------------------ | ------------------------------------- | ----------------------------------------------- |
-| `unit`           | 代码               | `pnpm exec vitest run --project unit` | `src/**/*.test.ts(x)` 与 `test/unit/**`         |
+| `unit`           | 代码               | `pnpm exec vitest run --project unit` | `packages/niceeval/src/**/*.test.ts(x)`、`packages/repo-tools/src/**/*.test.ts` 与 `test/unit/**` |
 | `lint-docs`      | `docs/`、`memory/` | `pnpm lint:docs`                      | `lint/docs/**`                                  |
 | `lint-docs-site` | `apps/docs-site/`  | `pnpm lint:docs-site`                 | `lint/docs-site/**`，命令里再串 Mint 两步校验   |
 
@@ -182,23 +181,23 @@ Vitest 只收本仓库自己的测试。
 
 - `.repos/**`：vendored 外部仓库。
 - `.claude/**`：Agent 临时 worktree 中的源码和测试副本。
-- `e2e/adapter/**`、`e2e/cli/**`、`e2e/inspection/**`、`e2e/insight/**`：拥有独立执行入口的 E2E 仓库。
-- `e2e/undo/**`：尚无完整官方 Agent 工厂、暂停执行的 E2E fixture。
+- `e2e/**` 下拥有独立执行入口的 E2E 仓库；具体条目以 `vitest.config.ts` 为准。
 
 临时 worktree 副本会使用过期源码产生与当前提交无关的结果，详见 [`vitest-collects-agent-worktree-copies`](../../../../memory/vitest-collects-agent-worktree-copies.md)。
 每个入口收集到的文件数应等于它那几个 include 目录下测试文件的实际数量。
 
-索引涵盖、链接真实性、生成区块漂移和其它仓库约束写成 `test/` 下的 Vitest 测试，复用上面三个入口，不新增脚本或 hook。
+索引涵盖、链接真实性、生成区块漂移和其它仓库约束写成 `lint/docs/**` 或 `lint/docs-site/**` 下的 `*.lint.ts`，复用上面的 lint 入口，不新增脚本或 hook。
 这些测试同样必须指出自己守护的具体约束，以及删除后会发生的静默腐坏。
 
 判对错与写输出按这条线切开：**说红绿的一律是 Vitest，写文件的才是脚本**。
-一个脚本同时干这两件事时（`sync-tiers.mjs` 的 sync/check、`docs-writing-lint.ts` 的检查/更新存量上限），检查那一半导出成不打印、不退出的纯函数，由对应 project 的测试调用；生成那一半保留命令行。
+一个命令同时干这两件事时（例如 `pnpm examples:sync` 的 `check` / `apply`），判定那一半只报告、不写文件，写入那一半保留为显式子命令。
 带**待清除存量上限**的守护用两条断言表达：先判回归，数字变大即失败；再把实测结果与磁盘文件做快照比对，收紧交给 `vitest -u`。
 顺序不能反：回归断言在前，更新模式才写不进一个被放宽的数字。
 
 一条约束只能有一个入口说它红。
 同一个检查既能由脚本判、又能由测试判时，两边迟早给出不同判定，而人只会记得跑其中一条。
 
-测试文档归属也在守护范围内：`src/` 下每个测试文件头部用一行注释声明所属文档（`// cases: docs/engineering/testing/unit/<feature>.md`）。`test/` 下的守护测试校验两个方向：每条声明指向真实存在的测试文档；每篇 Feature 测试文档至少被一个测试文件声明。
-`test/` 下的仓库守护测试没有 Feature 文档可指，不做此声明，它们的登记面就是自己守护的那条仓库约束（写明在文件头注释里）。
+测试文档归属也在守护范围内：`packages/niceeval/src` 下每个测试文件头部用一行注释声明所属文档（`// cases: docs/engineering/testing/unit/<feature>.md`）。
+`lint/docs/cases-registry.lint.ts` 校验每条声明指向真实存在的测试文档。
+`lint/` 下的仓库守护没有 Feature 文档可指，不做此声明，它们的登记面就是自己守护的那条仓库约束（写明在文件头注释里）。
 机器守护只保证测试文档与套件不整册脱钩；类别级的影响面核对仍是评审对照证明范围规范的义务。

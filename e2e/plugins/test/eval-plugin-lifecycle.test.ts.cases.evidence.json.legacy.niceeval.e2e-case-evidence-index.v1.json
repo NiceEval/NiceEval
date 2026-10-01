@@ -1,0 +1,113 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_KVESCV3S1ZDJ5TYR": {
+      "memory/attempt-cleanup-join-truncates-serial-callbacks.md": {
+        "red": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/red.json",
+          "digest": "sha256:311169adb7b8d73bdd426efbcf6f3da36a3dd3511f6603419a83e72d5c6e3cb6"
+        },
+        "green": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/green.json",
+          "digest": "sha256:1472d7454f5b818db5bdd4dd0acefa50fc1d9df21ad62bbcc70f5ae60fa684d7"
+        },
+        "certificate": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/certificate.json",
+          "digest": "sha256:5a83b40312a108e152acf37ba42b3c5f2ab0892ce7a72d66cac61cbe8bc42a77"
+        },
+        "inventory": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-cleanup-join-truncates-serial-callbacks.md/nered_E1A4PDPQ53DAWVZE-netake_1J9E292SKTR2Z2AD/inventory.json",
+          "digest": "sha256:28d956599c133d66a97b058f66f8682b37523b33b324cb71a0e8fdd295232e36"
+        }
+      },
+      "memory/attempt-interruption-closes-teardown-bridge.md": {
+        "red": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_3D82BHMJEYZFMHB6-netake_1J9E292SKTR2Z2AD/red.json",
+          "digest": "sha256:315b8404eb8a507581a54f007872254bc68f590385b02b3c32e0903a20b10d17"
+        },
+        "green": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_3D82BHMJEYZFMHB6-netake_1J9E292SKTR2Z2AD/green.json",
+          "digest": "sha256:1472d7454f5b818db5bdd4dd0acefa50fc1d9df21ad62bbcc70f5ae60fa684d7"
+        },
+        "certificate": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_3D82BHMJEYZFMHB6-netake_1J9E292SKTR2Z2AD/certificate.json",
+          "digest": "sha256:5e2e47f4ce235fe729b1de3268466f18cb417bc05c1f2f94edd2d403ca1e38ca"
+        },
+        "inventory": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_3D82BHMJEYZFMHB6-netake_1J9E292SKTR2Z2AD/inventory.json",
+          "digest": "sha256:28d956599c133d66a97b058f66f8682b37523b33b324cb71a0e8fdd295232e36"
+        }
+      }
+    },
+    "necase_8XVYC6XMEE941YZ5": {
+      "memory/attempt-interruption-closes-teardown-bridge.md": {
+        "red": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_87NA0S0YNX7842Z4-netake_KYEZER8R3N4QSH0B/red.json",
+          "digest": "sha256:aba9943c7aa6dd774bcef134be142b321199b60695dd3dd3830b12244b1b8e85"
+        },
+        "green": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_87NA0S0YNX7842Z4-netake_KYEZER8R3N4QSH0B/green.json",
+          "digest": "sha256:be2d3ddbddcd1e62136edbd4e59be05eb42ea9bbc5ad1dcf1ba66073efcce131"
+        },
+        "certificate": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_87NA0S0YNX7842Z4-netake_KYEZER8R3N4QSH0B/certificate.json",
+          "digest": "sha256:b5a28c48b88b734adf5bcecc8da2c3c7c746937a6a1f63c9bd0929073bff3a47"
+        },
+        "inventory": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_87NA0S0YNX7842Z4-netake_KYEZER8R3N4QSH0B/inventory.json",
+          "digest": "sha256:28d956599c133d66a97b058f66f8682b37523b33b324cb71a0e8fdd295232e36"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "necase_KVESCV3S1ZDJ5TYR",
+      "memory": "memory/attempt-interruption-closes-teardown-bridge.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/red.json",
+          "digest": "sha256:327955fd19dc7e67cb5f2d458e69a601ff7043785afe30b40225e5a74423101f"
+        },
+        "green": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/green.json",
+          "digest": "sha256:0a9638f37637a6af4562e319799719ae7031d6c13cc7a7bf28d36a44a332189c"
+        },
+        "certificate": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/certificate.json",
+          "digest": "sha256:8c70d50a22f2f67bc45a0bb833b9206b49ae836e6e30b11e625c36da750cedde"
+        },
+        "inventory": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_KVESCV3S1ZDJ5TYR/memory_attempt-interruption-closes-teardown-bridge.md/nered_2E15T8HEMPMWKBXQ-netake_V68H8RAZF0H3XJBM/inventory.json",
+          "digest": "sha256:7960e48fdf444b3bbab9bb194db67c42b98ebcd041f135157d1b155b70239f2a"
+        }
+      },
+      "reason": "Refresh evidence after strengthening the same cleanup owner with the ordered 20 second callbacks; preserve historical receipt.",
+      "retiredAtCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a"
+    },
+    {
+      "caseId": "necase_8XVYC6XMEE941YZ5",
+      "memory": "memory/attempt-interruption-closes-teardown-bridge.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_XSJY0FQY7NFBYXGF-netake_NF2W8628FTPQG287/red.json",
+          "digest": "sha256:39b0c669198844f9855573b9d68934d059263cd23faa985a8725918bdedb537d"
+        },
+        "green": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_XSJY0FQY7NFBYXGF-netake_NF2W8628FTPQG287/green.json",
+          "digest": "sha256:26af6f8bca393f96693bdf9da98ca00437c3fca9b53451fc0576daaff44dbbd5"
+        },
+        "certificate": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_XSJY0FQY7NFBYXGF-netake_NF2W8628FTPQG287/certificate.json",
+          "digest": "sha256:03d6ec31ca33824bb3d7ae5810be4398e087a030558300439d379b9e476b5830"
+        },
+        "inventory": {
+          "path": "e2e/plugins/test/eval-plugin-lifecycle.test.ts.case-evidence/necase_8XVYC6XMEE941YZ5/memory_attempt-interruption-closes-teardown-bridge.md/nered_XSJY0FQY7NFBYXGF-netake_NF2W8628FTPQG287/inventory.json",
+          "digest": "sha256:7960e48fdf444b3bbab9bb194db67c42b98ebcd041f135157d1b155b70239f2a"
+        }
+      },
+      "reason": "Refresh evidence after strengthening the same cleanup owner with the ordered 20 second callbacks; preserve historical receipt.",
+      "retiredAtCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a"
+    }
+  ]
+}

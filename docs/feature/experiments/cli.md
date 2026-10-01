@@ -254,7 +254,7 @@ generation，错误/旧 token 不会修改 lease，也不能删除恢复后的�
 显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
 改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。
 
-完整恢复路径见[恢复中断运行留下的协调状态](use-case/并发/恢复中断运行.md)。
+完整恢复路径见[恢复中断运行留下的协调状态](use-case/concurrency-resume-interrupted-run.md)。
 
 ## 结束反馈与 receipt
 
@@ -283,35 +283,46 @@ Pass 未通过、Score gate 失败、execution error、结果缺口、中断和�
 保留审计数值但不进入成功均值；partial 只显示已知下界，unavailable 不制造数字。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
-合并。每条 execution error 显示这一条 Attempt 自己的、安全封口后的 `error:`，并紧跟所属 Run 的
-`details: niceeval view --run <runId>`。命令打开固定 View 后，人类从页面的 Run/Attempt 导航选择该 locator 对应的
-Attempt。`FAILURES` 的 `entries` 表示展示条目数，不表示错误种类数；同形断言可占一个条目，每条执行错误独占一个条目。
+合并。每个单条目显示这一条 Attempt 自己的断言摘要或安全有界的 `error:`，并紧跟可复制的
+`details: niceeval show @<locator>`。同形断言聚合成一个条目时保留 `e.g. @<locator>` 代表项。
+`FAILURES` 的 `entries` 表示展示条目数，不表示错误种类数；同形断言可占一个条目，每条执行错误独占一个条目。
+超出条目上限时显示 `+N more entries — see NEXT`，不给出不带选择的命令。
+
+下一步命令先给终端入口。结束反馈出现在 CI 日志、SSH 会话和 Coding Agent 的输出里，这些读者通常没有浏览器；
+`show` 在同一个终端里读取同一份 Inspection result，`view` 作为浏览器入口并列给出，不作为唯一下一步。
 
 错误文本先按既有敏感值 provenance 脱敏、剥除终端控制字符，再按单条摘要预算收口并在送进 panel 前按显示宽度折行；
 预算内的安全消息完整保留，不因其中出现 HTTP 状态或大写错误码而删除前文。
 “真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
 [Attempt 失败输出案例](output/attempt-failures.md)。
 
-Human 最多显示五个 run configuration block；其余项显示准确省略数，并在 `NEXT` 给出能包含被省略 Run 的精确
-`niceeval view --run <runId>` 命令。
+Human 最多显示五个 run configuration block；其余项显示准确省略数。`NEXT` 仍为每个已进入 receipt 的 Run
+给出命令，被省略的 Run 不会因此失去下钻入口。
 合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
 
 Attempt 创建前的共享构建失败另列 `ERRORS`。Human 显示所属 run configuration、没有启动的 Attempt 数量、
 安全有界的真实错误正文与精确下钻命令，不展示 phase key、NiceEval 内部错误码、failure ID 或共享机制名称。
 
-`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval view --run <runId>` 以用户可理解的
-Attempt 和错误说明呈现完整上下文。
+`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show --run <runId>` 与
+`niceeval view --run <runId>` 以用户可理解的 Attempt 和错误说明呈现完整上下文。
 这组事实复用现有 Run-owned `niceeval.runner-diagnostics` source，不改变 Record 或 attachment schema；历史 Run 没有采集时
 继续只显示 membership，不能补造错误原因。
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
 timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 Attempt 详情；只有 Run
-正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示 `details: niceeval view --run <runId>`，不能使用
-尚未发布的 draft Run ID。
+正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示两行命令，不能使用尚未发布的 draft Run ID：
+
+```text
+<experimentId>
+  show: niceeval show --run <runId>
+  view: niceeval view --run <runId>
+```
+
+没有创建任何 Run 时，`NEXT` 只显示 `No Runs were created for this invocation.`。
 
 共享失败的 Human 摘要以 `error:` 展示安全有界的真实错误正文，并按 panel 显示宽度折行，不能因为原始 stderr
 没有换行而在关键信息出现前截断。摘要不增加 `cause:` 包装，也不枚举 `fix:`；Provider 返回的凭据、配额、网络或
-宿主运行条件错误必须原样保留其可理解部分，再通过 `details:` 引导下钻。typed Provider error 的公开 `message`
+宿主运行条件错误必须原样保留其可理解部分，再通过 `NEXT` 的 `show:` 引导下钻。typed Provider error 的公开 `message`
 是 Human `error:` 的取值；`cause` 不回退进 Human，其内部保留与持久化仍服从既有错误契约。
 完整形态见[共享 Sandbox 构建失败输出案例](output/shared-sandbox-build-failure.md)。
 

@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: coding-agent-skill-judge-model-proxy-503
+title: coding-agent-skill 的 judge 模型在代理端点上 503
+createdAt: 2026-07-03T14:36:23+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/coding-agent-skill-judge-model-proxy-503.md
+  commit: 29d58c985a6f5646cf851d20b85584daf79b3f7c
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # coding-agent-skill 的 judge 模型在代理端点上 503
 
 ## 现象

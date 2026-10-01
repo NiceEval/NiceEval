@@ -110,11 +110,13 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
-`t` (`TestContext`) is the high-level context an Eval author receives. `check(subject, match)` is the sole Assertion registration primitive and takes exactly two arguments. Scoped helpers such as `succeeded()`, `calledTool(...)`, and `notCalledTool(...)` select their managed subject and Match, then register through that same path. A handle configures only its registered entry's `key`, `label`, parameterless `.gate()`, and `.score(n)`. `.orStop()` also applies only to that entry and never registers a second Assertion.
+`t` (`TestContext`) is the high-level context an Eval author receives. Every author-facing entry point registers one Assertion when called. `t.check(subject, match)` checks explicit material; `t.check(contextualMatch)` reads facts from the current context. `t.judge(material, match)` takes exactly two arguments and passes a managed `ScoreMatch` to the same `check` receiver. Root, Session, and Turn `judge` methods all require explicit material. The four built-in Judges with explicit material construct a Match and pass it to that receiver.
 
-Pass/fail Evals fold Boolean conditions into an Attempt Verdict. A `ScoreMatch` forms its threshold with `.atLeast(n)` before registration. The registered thresholded handle's parameterless `.gate()` includes that local condition in `failed`. `await handle.orStop()` stops the current continuation on a mismatch or below-threshold result.
+The shared `closeQA(materialMatch, question, options?)` selects material across applications to answer an acceptance question. Agent additionally offers `closeQA(question, options?)` for complete scope material and `closeQA(domainMatch, question, options?)` with an `EventMatch` or `ToolMatch`. All forms compose a scoring Match and register it through the same `check`. `usedNoTools()` encapsulates its own zero-occurrence criterion and takes no arguments, including no Match.
 
-`defineScoreEval`'s `ScoreTestContext` additionally offers `t.score(n)` to directly register a contribution; `n` must be finite and non-negative. An existing Assertion contributes a score through `.score(n)`, where `n` must be finite and greater than zero. For the complete contract for `calledTool` and `notCalledTool`, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md). All members follow:
+In a pass/fail Eval, Boolean assertions enter the Attempt Verdict by default. In a score-style Eval, Boolean assertions are record-only by default. Both Eval kinds include measurements in `failed` with `.gate(minimum)`; a score-style Eval can combine a gate and score on the same entry. A Boolean `.orStop()` uses its own condition. A measurement uses `.orStop(minimum)`, or a parameterless `.orStop()` after a gate is set.
+
+`defineScoreEval`'s `ScoreTestContext` additionally offers `t.score(n)` to directly register a contribution; `n` must be finite and non-negative. An existing Assertion contributes a score through `.score(n)`, where `n` must be finite and non-negative; zero is still an explicit contribution. For the complete contract for `calledTool` and `notCalledTool`, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md). All members follow:
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -319,27 +321,27 @@ readonly judge: RootJudge<Kind>;
 
 ## Judge measurement
 
-Declare the Judge model or Provider in the Eval or its resolved runtime, then register explicit material through `t.judge` or a scoped Judge helper:
+Declare the Judge model or Provider in the Eval or its resolved runtime, then pass a Judge definition to `t.judge`:
 
 ```ts
-import { closeQA, defineEval } from "niceeval";
+import { defineEval, defineJudge } from "niceeval";
+
+const factualSummary = defineJudge({
+  name: "factual-summary",
+  rubric: "Evaluate whether the summary faithfully preserves the facts from the source without invention.",
+});
 
 export default defineEval({
   judge: "judge-model",
   async test(t) {
     const turn = await t.send("Summarize the requirements.");
-    t.judge({
-      input: turn.input,
-      output: turn.message,
-      context: "The summary must cover the requirements stated in the input.",
-    }, closeQA())
-      .gate(0.8)
-      .label("Answer quality");
+    t.judge({ source: expected, summary: turn.message }, factualSummary)
+      .gate(0.8).label("Factual consistency");
   },
 });
 ```
 
-The built-in Judge helpers accept explicit material and register one measurement Assertion. For a Turn, use its immutable `input` and `message`. Judge material also accepts explicit `judgeImage()` values, and is snapshotted when registered. A pass/fail Eval uses `.gate(minimum)`; a scored Eval uses `.score(n)` on the registered handle.
+Judge material accepts bounded JSON values and explicit `judgeImage()` values. NiceEval snapshots it when the Assertion is registered. The model configuration resolves from the project's `judgeRuntime`, then the Eval's `judge` option and Experiment's `judgeRuntime`. A full Provider replaces the service and execution configuration; a model string only changes the selected Provider's model. The Eval's `judge` option selects a model or Provider for this question; it is not a Match allowlist. Pass/fail and score-style Evals can call `.gate(minimum)`; score-style Evals can also call `.score(n)`, retaining the contribution when a gate fails.
 
 ### Image material
 
@@ -352,6 +354,35 @@ Import `judgeImage` from `niceeval/judge`. It synchronously copies the original 
 {/* This block is generated by pnpm run repo docs reference from source comments. Do not edit it by hand; to change the copy, edit the corresponding source TSDoc/JSDoc (see packages/repo-tools/src/docs/reference-compiler.ts for the mapping). */}
 
 {/* GENERATED:END judge-image */}
+
+### Built-in Judges and custom Matches
+
+`defineJudge` and the built-in Judge presets return `ScoreMatch` values that you can pass to `t.check`. `t.judge` is a convenience entry point on the same `check` path, so registration, material snapshotting, budget, evaluation, audit, sealing, and the handle all happen once.
+
+| Judge | Material | Meaning |
+|---|---|---|
+| `factuality()` | `{ input, output, expected }` | Consistent: 1; incomplete: 0.5; contradictory: 0 |
+| `faithfulness()` | `{ input, output, context }` | The share of output facts supported by the context |
+| `instructionFollowing()` | `{ instructions, output }` | The share of explicit requirements that are satisfied |
+| `pairwisePreference()` | `{ instructions, output, reference }` | Candidate is better: 1; tie: 0.5; reference is better: 0 |
+| `t.closeQA(materialMatch, question, options?)` | A MaterialMatch with a context reader and a per-item predicate | Acceptance met: 1; not met: 0; insufficient evidence: `unavailable` |
+
+Agent also accepts `closeQA(question, options?)` using the current Turn, Session, or Attempt's complete recorded history. Pass an `EventMatch` to select event views or a `ToolMatch` to select tool facts, including inputs and receipts. Custom `MaterialMatch` readers provide business material across applications. Each form uses the same scoring Match and `check` path.
+
+For example, use `instructionFollowing()` directly:
+
+```ts
+t.check(
+  { instructions: ["Include the meeting place", "Do not invent an exact time"], output: post.content },
+  followsInstructions,
+).gate(0.7).score(25);
+```
+
+`faithfulness` extracts facts, evaluates them individually, and calculates the share in code. An incomplete extraction has no valid score. `TypesafeProvider` does not support `extract`, so it returns `unavailable` instead of estimating the whole output or changing the denominator.
+`pairwisePreference` compares one candidate with one reference in a fixed order.
+`closeQA` sends all matched items to one Judge in their original order to answer a question based only on the material. A complete empty collection produces 0 with no model call. Partial, unknown, or oversized evidence is `unavailable`; NiceEval does not truncate it before scoring.
+
+For a workflow with multiple model steps, use `score(value, context)` with the advanced `defineScoreMatch` API. `context.llm` provides Effect-returning `score`, `classify`, `extract`, and `batchClassify` methods. They share call budgets, timeouts, and audit records with built-in Judges. Static configuration checks make no network requests; a missing Provider, model, or key also makes no request. Chat services use forced-function requests, while TypeSafe uses `/systemone`; both validate responses strictly. Transport failures and timeouts are `unavailable`; HTTP 400 and protocol incompatibilities are `errored`. See [Custom Matches](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md) for the full contract.
 
 ## `Turn` return type
 
@@ -483,3 +514,27 @@ export default rows.map((row) =>
 An array export creates stable IDs: `file/0000`, `file/0001`, and so on.
 
 When you already have stable business keys, you can instead default-export `Record<string, EvalDef>`. For example, key `15193` in `swelancer.eval.ts` produces `swelancer/15193`. A key must be a nonempty single path segment. It cannot be `.` or `..`, and cannot contain `/`, `\\`, or control characters. Discovery order is fixed by lexical key order.
+
+### Context material and official usage measurements
+
+`defineMaterialMatch<C, T>({ name, read, match, capture? })` is exported from `niceeval` and `niceeval/expect`.
+An Adapter's `create` provides the application context. NiceEval injects the current read-only context into the reader when `check` or `closeQA` is registered.
+The reader returns `{ state: "complete", items: [{ id, value }] }`, or a partial/unavailable result with a `reason`.
+IDs must be unique within a collection and no longer than 128 UTF-8 bytes. The default capture limits are 256 items and 48 KiB; you can explicitly raise them to 16,384 items and 4 MiB.
+
+`check(materialMatch)` returns a Boolean handle and defaults to checking that at least one item matches. `closeQA(materialMatch, question, options?)` returns a measurement handle.
+Agent readers read managed `toolCalls` or `eventOccurrences` from `AgentMatchContext<Scope>` and use the corresponding `ToolMatch` or `EventMatch`.
+Agent's additional `closeQA(question, options?)` reads the current scope's complete recorded history. `closeQA(domainMatch, question, options?)` selects all matches with an `EventMatch` or `ToolMatch`; use a `ToolMatch` for tool input and output material.
+The question must be nonempty and no longer than 8 KiB. `options` uses `JudgePresetOptions`. All matched items go to one Judge in their original order; a complete empty collection scores 0 without a model call. Partial, unknown, or oversized evidence is `unavailable`.
+
+`defineContextMatch<C, T>({ name, read, match, capture? })` reads one small fact.
+The reader returns `{ state: "available", value }` or `{ state: "unavailable", reason }`.
+Pass it to `t.check(contextMatch)`: a `BooleanMatch` produces a Boolean handle; a `ScoreMatch` produces a measurement handle. Unknown facts do not invoke the scorer.
+
+`t.usage` reads a frozen value from the official ledger, retaining failed calls, retries, cache buckets, and cost provenance.
+An Adapter's `basis` is `recorded-calls`; an Agent's is `reported-sends`, with Turn, Session, and Attempt scopes preserved.
+Fields such as `usage.totalTokens` are `NumericMaterial`. Unknown values are not filled with zero.
+
+`t.maxTokens(max)` limits the complete token total. `t.maxCost(usd)` accepts a finite non-negative number or canonical non-negative decimal string and precisely limits effective USD cost. Reported cost, including zero, takes precedence over explicit pricing estimates. A known lower bound above the limit fails; incomplete cost evidence cannot pass.
+`t.elapsedMs` is wall-clock time from the runtime Attempt start to the point of reading. Pass it to `t.check(..., atMost(limit))` as needed.
+The application's own first-completion time is evaluated by an application Match.

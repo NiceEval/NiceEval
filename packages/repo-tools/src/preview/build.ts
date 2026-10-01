@@ -1,3 +1,4 @@
+import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
 import {
   cp,
@@ -17,6 +18,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from "node:p
 import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
+import { decodeChangePreview } from "concord-sdlc/change-preview";
 
 import {
   NETLIFY_SITE_ID,
@@ -30,8 +32,9 @@ import {
   PreviewVerificationError,
 } from "./model.js";
 import { requirePreviewSuccess, runPreviewProcess } from "./process.js";
+import { assertConcordComparison, exportConcordChanges, preparePullRequestHistory, readPullRequestComparison, type ConcordComparison } from "./concord.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const ROOT = repositoryRoot();
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 const ALLOWED_EXTENSIONS = new Set([
   ".css", ".gif", ".html", ".ico", ".jpeg", ".jpg", ".js", ".json", ".mjs",
@@ -53,6 +56,7 @@ type BuildServices = import("effect/unstable/process").ChildProcessSpawner.Child
 
 export interface PreviewBuildOptions {
   readonly local: boolean;
+  readonly comparison?: { readonly base: string; readonly head: string; readonly baseLabel?: string };
   readonly environment?: NodeJS.ProcessEnv;
 }
 
@@ -378,7 +382,7 @@ function installCandidateViewAssets(repositoryRoot: string) {
   });
 }
 
-async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]> {
+async function collectSiteManifest(root: string, comparison?: ConcordComparison): Promise<readonly PreviewFile[]> {
   const files: PreviewFile[] = [];
   let siteBytes = 0;
   async function visit(directory: string): Promise<void> {
@@ -398,6 +402,8 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
       const extension = extname(path).toLowerCase();
       if (!ALLOWED_EXTENSIONS.has(extension)) throw new Error(`published site contains non-allowlisted file: ${path}`);
       if (path.startsWith("assets/") && !HASHED_ASSET_PATH.test(path)) throw new Error(`published site contains a non-hashed asset: ${path}`);
+      if (path.startsWith("concord/assets/") && !HASHED_ASSET_PATH.test(path.slice("concord/".length))) throw new Error(`published Concord asset is not hashed: ${path}`);
+      if ((await stat(target)).size > MAXIMUM_STATIC_ASSET_BYTES) throw new Error(`published static asset exceeds ${MAXIMUM_STATIC_ASSET_BYTES} bytes: ${path}`);
       const bytes = await readFile(target);
       if (bytes.byteLength > MAXIMUM_STATIC_ASSET_BYTES) {
         throw new Error(`published static asset exceeds ${MAXIMUM_STATIC_ASSET_BYTES} bytes: ${path}`);
@@ -409,9 +415,14 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
       if (containsPrivateKeyMaterial(bytes)) throw new Error(`published site contains private-key material: ${path}`);
       if (extension === ".json") {
         const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
-        const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-        if (record === undefined || Object.keys(record).sort().join("\0") !== ["en", "format", "zh-CN"].join("\0") || record.format !== "niceeval.view-page/v1" || typeof record.en !== "string" || typeof record["zh-CN"] !== "string") {
-          throw new Error(`published site contains Inspection or unknown JSON: ${path}`);
+        if (path === "concord/changes.json") {
+          if (comparison === undefined) throw new Error("Concord changes are present without an admitted PR comparison");
+          assertConcordComparison(decodeChangePreview(parsed), comparison);
+        } else {
+          const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+          if (record === undefined || Object.keys(record).sort().join("\0") !== ["en", "format", "zh-CN"].join("\0") || record.format !== "niceeval.view-page/v1" || typeof record.en !== "string" || typeof record["zh-CN"] !== "string") {
+            throw new Error(`published site contains Inspection or unknown JSON: ${path}`);
+          }
         }
       }
       files.push({ path, byteLength: bytes.byteLength, sha256: sha256(bytes) });
@@ -419,8 +430,9 @@ async function collectSiteManifest(root: string): Promise<readonly PreviewFile[]
     }
   }
   await visit(root);
-  files.sort((left, right) => left.path.localeCompare(right.path));
+  files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
   if (!files.some((file) => file.path === "index.html")) throw new Error("published site is missing index.html");
+  if (comparison !== undefined && (!files.some(file => file.path === "concord/index.html") || !files.some(file => file.path === "concord/changes.json"))) throw new Error("published site is missing the admitted Concord review");
   return files;
 }
 
@@ -451,7 +463,7 @@ async function collectPrivateFunctionManifest(root: string): Promise<readonly Pr
     }
   }
   await visit(root);
-  files.sort((left, right) => left.path.localeCompare(right.path));
+  files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
   return files;
 }
 
@@ -584,14 +596,14 @@ function stageFunction(repositoryRoot: string, recordSource: string, generationI
   });
 }
 
-function publishSite(source: string, publish: string) {
+function publishSite(source: string, publish: string, comparison?: ConcordComparison) {
   const parent = dirname(publish);
   return Effect.gen(function*() {
     const staging = yield* io("make-publish-staging", parent, () => mkdtemp(join(parent, `.${basename(publish)}.staging-`)));
     const cleanup = io("remove-publish-staging", staging, () => rm(staging, { recursive: true, force: true })).pipe(Effect.orDie);
     return yield* Effect.gen(function*() {
       yield* io("copy-publish-staging", staging, () => cp(source, staging, { recursive: true }));
-      const files = yield* io("verify-publish-staging", staging, () => collectSiteManifest(staging));
+      const files = yield* io("verify-publish-staging", staging, () => collectSiteManifest(staging, comparison));
       const digest = closureDigest(files);
       yield* io("remove-old-publish", publish, () => rm(publish, { recursive: true, force: true }));
       yield* io("publish-atomic-rename", publish, () => rename(staging, publish));
@@ -615,6 +627,12 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       const platform: PreviewPlatform = options.local
         ? { mode: "local" }
         : yield* decodeNetlifyPlatform(options.environment ?? process.env, gitHead);
+      if (!options.local && options.comparison) return yield* new PreviewVerificationError({ subject: "PR identity", message: "explicit comparison is only available with --local; Netlify builds read actual PR metadata" });
+      const pullRequest = platform.mode === "netlify" && platform.kind === "pull-request"
+        ? yield* readPullRequestComparison(platform)
+        : undefined;
+      if (pullRequest) yield* preparePullRequestHistory(ROOT, pullRequest);
+      const concordInput = pullRequest ?? options.comparison;
       const temporaryRoot = yield* scopedTemporaryDirectory("niceeval-preview-build-");
       const orchestrator = yield* cloneOrchestrator(temporaryRoot);
       const orchestratorRoot = orchestrator.repositoryRoot;
@@ -634,7 +652,22 @@ export function buildPreview(options: PreviewBuildOptions): Effect.Effect<Previe
       if (runtimeDigestAfter !== runtimeDigestBefore) {
         return yield* new PreviewVerificationError({ subject: "installed runtime closure", message: "runtime closure changed while building the preview" });
       }
-      const published = yield* publishSite(join(orchestratorRoot, ".preview-site"), PREVIEW_PUBLISH_PATH);
+      let comparison: ConcordComparison | undefined;
+      if (concordInput) {
+        const review = yield* exportConcordChanges({ root: ROOT, ...concordInput, out: join(orchestratorRoot, ".preview-site/concord") });
+        comparison = review.comparison;
+        const index = join(orchestratorRoot, ".preview-site/index.html");
+        yield* io("link-concord-review", index, async () => {
+          const html = await readFile(index, "utf8");
+          if (!html.includes("</body>")) throw new Error("Preview index is missing its body terminator");
+          await writeFile(index, html.replace("</body>", '<a href="./concord/" aria-label="PR 变更" style="position:fixed;right:16px;bottom:16px;z-index:1000;padding:10px 16px;background:#183540;color:white;border-radius:6px;text-decoration:none">PR 变更</a></body>'));
+        });
+        if (pullRequest && platform.mode === "netlify" && platform.kind === "pull-request") {
+          const current = yield* readPullRequestComparison(platform);
+          if (current.base !== pullRequest.base || current.head !== pullRequest.head || current.baseLabel !== pullRequest.baseLabel) return yield* new PreviewVerificationError({ subject: "PR identity", message: "PR target or head changed during the build" });
+        }
+      }
+      const published = yield* publishSite(join(orchestratorRoot, ".preview-site"), PREVIEW_PUBLISH_PATH, comparison);
       const buildReceipt: PreviewBuildReceipt = {
         format: "niceeval.preview-build/v1",
         platform,

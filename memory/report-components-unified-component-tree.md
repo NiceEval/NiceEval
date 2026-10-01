@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-components-unified-component-tree
+title: report-components-unified-component-tree
+createdAt: 2026-07-25T14:02:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-components-unified-component-tree.md
+  commit: 87918e3267942f727ed77d3061dec2dc64277106
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # report-components-unified-component-tree
 
 ## 裁决

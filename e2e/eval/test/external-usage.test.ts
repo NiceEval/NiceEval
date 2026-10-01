@@ -2,13 +2,36 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
+import { inspectAttempt, inspectAssertionEntries, assertionEntry } from "./inspection.ts";
 import { evalE2E } from "./context.ts";
 
-test.concurrent("外部调用用量保留失败重试未知值且重复上报不增加计量 [necase_920FSWMBVEP3090H]", async () => {
+// @feature docs/feature/adapters/README.md
+// @regression memory/adapter-usage-overview-drops-token-facts.md
+test.concurrent("外部调用用量保留失败重试未知值且重复上报不增加计量", async () => {
   await evalE2E.case("external-usage", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "external-usage", "--rerun", "all", "--json"]);
-    expect(run.exitCode, run.diagnostic()).toBe(0);
+    expect(run.exitCode, run.diagnostic()).toBe(1);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "external-usage", run.diagnostic());
+    const attempt = await inspectAttempt(niceeval, paths.projectRoot, event.locator!, "attempt.get");
+    const details = await inspectAssertionEntries(niceeval, paths.projectRoot, event.locator!, attempt.document.attempt.assertions!.entries);
+    const entries = details.map((detail) => assertionEntry(detail.document, detail.receipt.diagnostic()));
+    for (const [label, result] of [["Official usage snapshot", "matched"], ["Unknown token ceiling", "unavailable"], ["Known token floor", "matched"], ["Token ceiling exceeded", "mismatched"], ["Token ceiling unknown", "unavailable"], ["Effective USD ceiling", "matched"], ["Effective USD exceeded", "mismatched"], ["Runtime elapsed", "matched"]]) {
+      expect(only(entries, (entry) => entry.display.label === label, run.diagnostic()).decision.result).toBe(result);
+    }
+    const budget = only(run.expEvalEvents(), (item) => item.evalId === "usage-budget", run.diagnostic());
+    const budgetAttempt = await inspectAttempt(niceeval, paths.projectRoot, budget.locator!, "attempt.get");
+    const budgetDetails = await inspectAssertionEntries(niceeval, paths.projectRoot, budget.locator!, budgetAttempt.document.attempt.assertions.entries);
+    const budgetEntries = budgetDetails.map((detail) => assertionEntry(detail.document, detail.receipt.diagnostic()));
+    for (const [label, result] of [["Prior usage snapshot unchanged", "matched"], ["Exact decimal exceeded", "mismatched"], ["Exact decimal within", "matched"], ["Complete tokens", "matched"]]) {
+      expect(only(budgetEntries, (entry) => entry.display.label === label, run.diagnostic()).decision.result).toBe(result);
+    }
+    const mixed = only(run.expEvalEvents(), (item) => item.evalId === "usage-budget-mixed", run.diagnostic());
+    const mixedAttempt = await inspectAttempt(niceeval, paths.projectRoot, mixed.locator, "attempt.get");
+    const mixedDetails = await inspectAssertionEntries(niceeval, paths.projectRoot, mixed.locator, mixedAttempt.document.attempt.assertions.entries);
+    const mixedEntries = mixedDetails.map((detail) => assertionEntry(detail.document, detail.receipt.diagnostic()));
+    for (const [label, result] of [["Mixed currency unknown", "unavailable"], ["Mixed currency exceeded", "mismatched"]]) {
+      expect(only(mixedEntries, (entry) => entry.display.label === label, run.diagnostic()).decision.result).toBe(result);
+    }
     const request = join(paths.projectRoot, "usage.request.json");
     await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "attempt.usage", locator: event.locator } }));
     const read = await niceeval.run(["query", "run", "--request", request]);
@@ -70,7 +93,7 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
       },
     });
     expect(usage.priceReceipts).toHaveLength(61);
-    expect(usage.priceReceipts[0]).toMatchObject({
+    expect(usage.priceReceipts?.[0]).toMatchObject({
       kind: "adapter-call-price-estimate",
       callId: "request-355",
       state: "complete",
@@ -140,7 +163,8 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
   });
 });
 
-test.concurrent("调用身份冲突即使被捕获仍公开为执行错误并保留先前事实 [necase_P73V11ADFDNYEXTH]", async () => {
+// @feature docs/feature/adapters/README.md
+test.concurrent("调用身份冲突即使被捕获仍公开为执行错误并保留先前事实", async () => {
   await evalE2E.case("conflicting-usage", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "conflicting-usage", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(1);

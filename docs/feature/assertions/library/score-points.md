@@ -10,6 +10,21 @@ Assertion 默认 record-only。`handle.score(points)` 让一条已登记 Asserti
 
 `t.score(points)` 也登记一个 Assertion entry，使用内建 direct-score criterion。它保存声明的 points 与 display，不绕开 Assertions payload。没有 score contribution 的正常 Score Eval 仍可形成 `earned: 0`。
 
+纯数值公式直接使用 TypeScript，再用 `t.score(ratio, { weight })` 登记固定权重的 measurement。
+ratio 必须是 finite 的 0–1 数值，weight 必须 finite 且非负。一次调用只登记一项，贡献为 ratio × weight。
+返回已配置分值的 measurement handle，可 label、group、gate 或 orStop，不能再次 score。
+审计保存 ratio 原值、weight 对应的 points 和 earned；不自动保存公式源码或重新计算应用数据。
+
+```ts
+const timeScore = 60 / (60 + completedGameSeconds);
+t.score(timeScore, { weight: 50 }).label("完成耗时");
+```
+
+带完整性状态的 NumericMaterial 也可作为 ratio：exact 必须满足相同数值范围，lower-bound 和 unavailable 保留不可判定。
+未知贡献仍登记固定 points，不补零或从 rubric 消失。应用证明未达成目标后可按业务规则显式给零。
+非法数值或权重在登记前抛 TypeError，不留下半项 Assertion。
+单参数 t.score(points) 保留直接贡献语义；它没有独立的归一化分数或固定满分。
+
 Score 不声明 max、百分比或隐式每项 `+1`。同一评测的比较单位是同一份 rubric：它规定哪些 Assertions 贡献、各自 points 与读侧汇总语义，而不是由页面、Runner 常量或一个虚构分母猜出。
 
 ## Verdict 与 Score Eval

@@ -1,3 +1,13 @@
+---
+format: concord.document/v1
+id: record-to-report-harbor
+title: Harbor：Job、Trial、reward 与 Hub
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources:
+  - https://harborframework.com/docs/run-jobs/run-evals
+---
 # Harbor：Job、Trial、reward 与 Hub
 
 > 观察日期：2026-08-14
@@ -28,7 +38,7 @@ Environment ─────┘           │
 
 Harbor 没有名为 Run 的公共写入对象。
 一次实验的用户身份是 Job，一次尝试的用户身份是 Trial；展开与 Regrade 的例外见
-[Job 与 Trial 的关系](layers.md#job-与-trial-的关系)。
+[Job 与 Trial 的关系](layers/README.md#job-%E4%B8%8E-trial-%E7%9A%84%E5%85%B3%E7%B3%BB)。
 
 ## 原生对象总图
 
@@ -47,21 +57,21 @@ Harbor 没有名为 Run 的公共写入对象。
 
 用户以 `harbor run` 发起 Job，再通过本地 `jobs/`、viewer、`harbor analyze` 或 Harbor Hub 返回结果。
 `jobs/` 并非 opaque 根；官方文档直接展示 Job / Trial 的 JSON、Agent 输出、verifier 输出与 artifact。
-命令形状分别见 [发起 Job](execution.md#发起-job)、[用户从哪里进入结果](reading-and-comparison.md#用户从哪里进入结果) 与
+命令形状分别见 [发起 Job](execution/README.md#%E5%8F%91%E8%B5%B7-job)、[用户从哪里进入结果](reading-and-comparison/README.md#%E7%94%A8%E6%88%B7%E4%BB%8E%E5%93%AA%E9%87%8C%E8%BF%9B%E5%85%A5%E7%BB%93%E6%9E%9C) 与
 [Run Evals](https://harborframework.com/docs/run-jobs/run-evals)。
 
 ## 核心研究判断
 
 | 问题 | Harbor 的选择 | 详细页面 |
 |---|---|---|
-| 一次实验与一次尝试是什么 | Job 是 Trial 的集合；Trial 保存一次 Task 尝试 | [原生层与对象关系](layers.md) |
-| 运行怎样完成 | Job 展开并调度 Trial，verifier 产出 reward，`_finalize()` 收尾 Trial | [执行、失败与恢复](execution.md) |
-| 哪个对象拥有事实 | Trial 的 `config` / `lock` / `result` 信封保存请求、锁定输入与运行事实 | [存储与权威事实](storage.md) |
-| 怎样判断完成 | Trial 需要有效且含 `finished_at` 的 `result.json`；Job 查看自己的 `finished_at` | [执行、失败与恢复](execution.md#完成条件) |
-| 哪些值是派生的 | Job 持久化 Metric 与合计，viewer 的摘要和比较网格在读取时计算 | [存储与权威事实](storage.md#权威事实派生值与-cache) |
-| 怎样比较 | 本地 viewer 扫多个 Job；Hub 调 `get_comparison_data` | [读取、查询与比较](reading-and-comparison.md) |
-| 怎样重评分 | Regrade 派生新的 Job / Trial，不改源 Trial | [执行、失败与恢复](execution.md#regrade) |
-| 怎样演进旧数据 | reader 兼容旧 JSON；没有修改历史 Job / Trial 的用户 migrate | [Schema、兼容与 Migration](schema-and-migration.md) |
+| 一次实验与一次尝试是什么 | Job 是 Trial 的集合；Trial 保存一次 Task 尝试 | [原生层与对象关系](layers/README.md) |
+| 运行怎样完成 | Job 展开并调度 Trial，verifier 产出 reward，`_finalize()` 收尾 Trial | [执行、失败与恢复](execution/README.md) |
+| 哪个对象拥有事实 | Trial 的 `config` / `lock` / `result` 信封保存请求、锁定输入与运行事实 | [存储与权威事实](storage/README.md) |
+| 怎样判断完成 | Trial 需要有效且含 `finished_at` 的 `result.json`；Job 查看自己的 `finished_at` | [执行、失败与恢复](execution/README.md#%E5%AE%8C%E6%88%90%E6%9D%A1%E4%BB%B6) |
+| 哪些值是派生的 | Job 持久化 Metric 与合计，viewer 的摘要和比较网格在读取时计算 | [存储与权威事实](storage/README.md#%E6%9D%83%E5%A8%81%E4%BA%8B%E5%AE%9E%E6%B4%BE%E7%94%9F%E5%80%BC%E4%B8%8E-cache) |
+| 怎样比较 | 本地 viewer 扫多个 Job；Hub 调 `get_comparison_data` | [读取、查询与比较](reading-and-comparison/README.md) |
+| 怎样重评分 | Regrade 派生新的 Job / Trial，不改源 Trial | [执行、失败与恢复](execution/README.md#regrade) |
+| 怎样演进旧数据 | reader 兼容旧 JSON；没有修改历史 Job / Trial 的用户 migrate | [Schema、兼容与 Migration](schema-and-migration/README.md) |
 
 `JobResult.trial_results` 只在内存中聚合。
 磁盘上的 Job `result.json` 故意不保存 Trial 列表，每个 Trial 由自己的目录保存事实。
@@ -70,11 +80,11 @@ Harbor 没有名为 Run 的公共写入对象。
 
 | 页面 | 独立回答的问题 |
 |---|---|
-| [原生层与对象关系](layers.md) | 作者输入、执行、判定、派生、读取与 Hub 分别是哪一层，Job / Trial 怎样关联 |
-| [执行、失败与恢复](execution.md) | 一次 Job 的真实顺序、写入 owner、完成、原子性、retry、resume 与 regrade |
-| [存储与权威事实](storage.md) | 本地目录、JSON 信封、Hub 表与 archive，以及权威事实、projection 和 cache 的边界 |
-| [读取、查询与比较](reading-and-comparison.md) | viewer、终端、Hub、handoff、筛选、对齐、分组与比较怎样工作 |
-| [Schema、兼容与 Migration](schema-and-migration.md) | 包、Task、lock、ATIF 与 Hub 的版本怎样演进，兼容读取是否改写历史 bytes |
+| [原生层与对象关系](layers/README.md) | 作者输入、执行、判定、派生、读取与 Hub 分别是哪一层，Job / Trial 怎样关联 |
+| [执行、失败与恢复](execution/README.md) | 一次 Job 的真实顺序、写入 owner、完成、原子性、retry、resume 与 regrade |
+| [存储与权威事实](storage/README.md) | 本地目录、JSON 信封、Hub 表与 archive，以及权威事实、projection 和 cache 的边界 |
+| [读取、查询与比较](reading-and-comparison/README.md) | viewer、终端、Hub、handoff、筛选、对齐、分组与比较怎样工作 |
+| [Schema、兼容与 Migration](schema-and-migration/README.md) | 包、Task、lock、ATIF 与 Hub 的版本怎样演进，兼容读取是否改写历史 bytes |
 
 ## 与 NiceEval 的相似点
 

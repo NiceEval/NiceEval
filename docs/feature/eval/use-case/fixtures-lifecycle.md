@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: fixtures-lifecycle
+title: Fixture 与反馈：prepare 与长步骤报告
+createdAt: 2026-07-22T10:19:57+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # Fixture 与反馈：prepare 与长步骤报告

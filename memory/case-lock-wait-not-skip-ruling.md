@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: case-lock-wait-not-skip-ruling
+title: 用例锁:撞锁等待并携带,否决跳过记 incomplete
+createdAt: 2026-07-24T15:11:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/case-lock-wait-not-skip-ruling.md
+  commit: 70bbc51508e95a476eae0658686dc2be52fc19ab
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 用例锁:撞锁等待并携带,否决跳过记 incomplete
 
 - **裁决**(2026-07-24):并发 Invocation 的防双跑用例锁定稿——键 `(experimentId, evalId)`,`.niceeval/locks/` 逐条目心跳锁(10s 续租 / 落后 30s 判死 / rename 原子接管)。撞上新鲜锁 = 等待(无超时,心跳新鲜就一直等),锁释放后重查携带:对方落盘终态指纹匹配即携入,缺的 attempt 才自己补跑。等待中的用例计入独立的 `elsewhere` 计数状态(别人在运行),不混进 `queued`——用户明确要求区分「等别的进程」和「等本进程并发位」两种等待。契约单源 `docs/feature/experiments/architecture.md#并发-invocation用例锁`。

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: registermcp-post-hoc-primitive
+title: 设计裁决:不提供后置追加 MCP 的原语(`shared.registerMcp` 已撤销)
+createdAt: 2026-07-10T10:41:17Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/registermcp-post-hoc-primitive.md
+  commit: 52476b0f5336629c353805da879a97e772648b86
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:不提供后置追加 MCP 的原语(`shared.registerMcp` 已撤销)
 
 **裁决**(2026-07-10,用户明确定案):MCP 只有一条进入路径——adapter factory 的构造期 `mcpServers`(未来收敛进 `PluginSpec` 的 `kind: "mcp"`)。不提供任何「给已构造 Agent 后置追加配置」的原语;Agent 构造之后不做后置修改,变体差异永远落在构造入参上。

@@ -1,3 +1,4 @@
+import { judgeUsageRecordAttachmentPersistence } from "./judge-usage/persistence.ts";
 import { Result, Schema } from "effect";
 
 import {
@@ -32,6 +33,7 @@ export { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "./c
 /** Explicit durable Host composition; importing a family never registers it. */
 export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   adapterUsageRecordAttachmentPersistence,
+  judgeUsageRecordAttachmentPersistence,
   assertionsRecordAttachmentPersistence,
   attemptCostRecordAttachmentPersistence,
   agentTurnsRecordAttachmentPersistence,
@@ -64,6 +66,7 @@ export const NiceEvalRecordAttachmentCatalog = requireCatalog(
 /** Family identities and source subsets derive from the logical definitions. */
 export const NICE_EVAL_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.adapterUsage.family,
+  NiceEvalRecordAttachments.judgeUsage.family,
   NiceEvalRecordAttachments.assertions.family,
   NiceEvalRecordAttachments.attemptCost.family,
   NiceEvalRecordAttachments.agentTurns.family,
@@ -79,6 +82,7 @@ export const NICE_EVAL_FAMILIES = Object.freeze([
 
 export const NICE_EVAL_OBSERVABILITY_SOURCE_FAMILIES = Object.freeze([
   NiceEvalRecordAttachments.adapterUsage.family,
+  NiceEvalRecordAttachments.judgeUsage.family,
   NiceEvalRecordAttachments.agentTurns.family,
   NiceEvalRecordAttachments.executionTraces.family,
   NiceEvalRecordAttachments.turnContexts.family,

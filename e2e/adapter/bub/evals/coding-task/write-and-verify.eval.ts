@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { jsonMatch, pattern, satisfies, toolMatch } from "niceeval/expect";
+import { greaterThan, jsonMatch, pattern, satisfies, toolMatch } from "niceeval/expect";
 
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
@@ -58,32 +58,18 @@ export default defineEval({
     });
 
     t.check(turn.message, pattern(/bub e2e ok/));
-    t.check(
-      turn.usage,
-      satisfies(
-        "usage within 50_000 tokens",
-        (usage) => {
-          if (usage === undefined) return false;
-          const reported = [usage.inputTokens, usage.outputTokens].filter(
-            (tokens): tokens is number => tokens !== undefined,
-          );
-          return reported.length > 0 && reported.reduce((total, tokens) => total + tokens, 0) <= 50_000;
-        },
-      ),
-    );
+    t.check(turn.usage.totalTokens, greaterThan(0));
     if (requireObservedCost) {
       t.check(
-        turn.usage,
+        turn.usage.costs,
         satisfies(
-          "observed cost within $0.5",
-          (usage) =>
-            usage !== undefined &&
-            typeof usage.costUSD === "number" &&
-            Number.isFinite(usage.costUSD) &&
-            usage.costUSD >= 0 &&
-            usage.costUSD <= 0.5,
+          "complete reported USD cost",
+          (costs) => costs.state === "complete" && costs.values.some(
+            (cost) => cost.currency === "USD" && cost.source === "reported",
+          ),
         ),
       );
+      turn.maxCost(0.5);
     }
   },
 });

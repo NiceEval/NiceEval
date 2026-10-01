@@ -12,8 +12,10 @@ const PRIMARY_ERROR_HEAD = "502 Bad Gateway · DOCKER_PROVIDER_TIMEOUT";
 const PRIMARY_ERROR_TAIL = "request req_docker_primary_789";
 const SECONDARY_ERROR_HEAD = "409 Conflict · DOCKER_BUILD_DENIED";
 const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
+// @feature docs/feature/experiments/README.md
+// @regression memory/human-short-error-and-score-summary.md
 
-test("provider 与 sandbox 错误只展示真实问题并给出所属 details [necase_7HXVADGZABWJQXEC]", async () => {
+test("provider 与 sandbox 错误只展示真实问题并给出所属 details", async () => {
   await cliE2E.case(
     "provider-error-feedback",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -80,6 +82,20 @@ test("provider 与 sandbox 错误只展示真实问题并给出所属 details [n
         return queried.runSummary();
       }));
       expect(summaries).toEqual(expect.arrayContaining([expect.objectContaining({ operation: "run.summary", issues: [] })]));
+      for (const { summary } of summaries) {
+        const run = summary.runs[0]!;
+        const output = run.experimentId === "short-error" ? shortOutput : compact;
+        expect(output).toContain(
+          `${run.experimentId} show: niceeval show --run ${run.runId} view: niceeval view --run ${run.runId}`,
+        );
+        for (const member of summary.members) {
+          if (member.locator !== null && member.state === "executed") {
+            expect(output).toContain(`details: niceeval show ${member.locator}`);
+          }
+        }
+      }
+      expect(shortOutput).not.toContain("details: niceeval view");
+      expect(compact).not.toContain("details: niceeval view");
       const errorLocators = summaries.flatMap(({ summary }) => summary.members)
         .flatMap(({ locator, state }) => locator !== null && state === "executed" ? [locator] : []);
       expect(errorLocators).toHaveLength(4);

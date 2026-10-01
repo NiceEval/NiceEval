@@ -3,6 +3,4 @@
 // Regression note: memory/testkit-zombie-only-process-group.md
 // Regression note: memory/testkit-procfs-scan-race.md
 // reliability: required takeover on one frozen candidate: 3 isolated + same-copy x2 + repo-default parallel + file/title single + cleanup; no retry.
-import { registerProcessGroupZombieCleanupOwner } from "./process-group-zombie-cleanup.scenarios.ts";
-
-registerProcessGroupZombieCleanupOwner();
+import "./process-group-zombie-cleanup.scenarios.ts";

@@ -14,6 +14,6 @@
 
 ## 候选清单
 
-- [PLAN-1](PLAN-1/README.md)：只承诺 framework-neutral closed data API。
-- [PLAN-2](PLAN-2/README.md)：主要承诺可 import component API，数据 transport 保持组件内部。
-- [PLAN-3](PLAN-3/README.md)：稳定 data core 与可选 component layer 同时发布。
+- [PLAN-1](plans/plan-1/README.md)：只承诺 framework-neutral closed data API。
+- [PLAN-2](plans/plan-2/README.md)：主要承诺可 import component API，数据 transport 保持组件内部。
+- [PLAN-3](plans/plan-3/README.md)：稳定 data core 与可选 component layer 同时发布。

@@ -30,6 +30,7 @@ import type {
 } from "../model/identifiers.ts";
 import type { RecordRoot } from "../platform/root.ts";
 import type { RunAbsenceReason } from "../../run/protocol.ts";
+import type { RunResourcePage } from "../../run/storage/types.ts";
 import type {
   RecordAttachmentRead as ModelRecordAttachmentRead,
   RecordCoreRead,
@@ -217,6 +218,12 @@ export interface ReadableAttempt {
 }
 
 export interface RecordReadSession {
+  /** Lifecycle resources at this reader's cutoff, including zero-publication Runs. */
+  readonly listRunResources: (input?: {
+    readonly invocationId?: string;
+    readonly afterRunId?: string;
+    readonly pageSize?: number;
+  }) => Effect.Effect<RunResourcePage, RecordReaderReadError>;
   readonly selectRuns: (
     request?: RecordSelectionRequest,
   ) => Effect.Effect<RecordSelection, RecordReaderReadError>;

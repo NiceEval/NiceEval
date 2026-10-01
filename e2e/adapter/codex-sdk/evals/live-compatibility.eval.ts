@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { includes, isDefined, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
+import { greaterThan, includes, isDefined, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -51,18 +51,12 @@ export default defineEval({
       ),
     );
     t.check(
-      first.usage?.inputTokens,
-      satisfies(
-        "input token usage is positive",
-        (value) => typeof value === "number" && value > 0,
-      ),
+      first.usage.inputTotalTokens,
+      greaterThan(0),
     );
     t.check(
-      first.usage?.outputTokens,
-      satisfies(
-        "output token usage is positive",
-        (value) => typeof value === "number" && value > 0,
-      ),
+      first.usage.outputTokens,
+      greaterThan(0),
     );
     t.check(
       t.sessionId,

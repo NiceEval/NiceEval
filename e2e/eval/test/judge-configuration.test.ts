@@ -38,7 +38,8 @@ async function close(server: ReturnType<typeof createServer>) {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-test.concurrent("Judge Provider 整体替换并支持 Eval 与 Experiment 模型覆盖 [necase_SBN2ZSD6AQ22YFAE]", async () => {
+// @feature docs/feature/judge/README.md
+test.concurrent("Judge Provider 整体替换并支持 Eval 与 Experiment 模型覆盖", async () => {
   const { server, requests } = provider();
   const baseUrl = await listen(server);
   try {
@@ -83,7 +84,8 @@ export default defineExperiment({
   } finally { await close(server); }
 });
 
-test.concurrent("仅普通断言的 Eval 不探测已配置的 Judge [necase_PERJXXND67KH9RNJ]", async () => {
+// @feature docs/feature/judge/README.md
+test.concurrent("仅普通断言的 Eval 不探测已配置的 Judge", async () => {
   const { server, requests } = provider();
   const baseUrl = await listen(server);
   try {
@@ -98,7 +100,8 @@ test.concurrent("仅普通断言的 Eval 不探测已配置的 Judge [necase_PER
   } finally { await close(server); }
 });
 
-test.concurrent("已配置模型缺少 Judge 凭据时不发送请求 [necase_HKVK56KKNX4BTM4D]", async () => {
+// @feature docs/feature/judge/README.md
+test.concurrent("已配置模型缺少 Judge 凭据时不发送请求", async () => {
   const { server, requests } = provider();
   const baseUrl = await listen(server);
   try {

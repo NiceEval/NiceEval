@@ -1,3 +1,4 @@
+import { judgeUsageRecordAttachment } from "./judge-usage/definition.ts";
 import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
 import { adapterUsageRecordAttachment } from "./adapter-usage/definition.ts";
 import { attemptCostRecordAttachment } from "./attempt-cost/definition.ts";
@@ -23,6 +24,7 @@ import { turnContextsRecordAttachment } from "./turn-contexts/definition.ts";
 /** Browser-neutral logical definitions, grouped only for direct current-reader use. */
 export const NiceEvalRecordAttachments = Object.freeze({
   adapterUsage: adapterUsageRecordAttachment,
+  judgeUsage: judgeUsageRecordAttachment,
   assertions: assertionsRecordAttachment,
   attemptCost: attemptCostRecordAttachment,
   agentTurns: agentTurnsRecordAttachment,
@@ -50,7 +52,8 @@ const current = <Attachment, Revision extends number>(attachment: Attachment, re
 
 /** Current revisions without importing historical Node-only migration code. */
 export const NiceEvalCurrentRecordAttachments = Object.freeze({
-  adapterUsage: current(adapterUsageRecordAttachment, 2),
+  adapterUsage: current(adapterUsageRecordAttachment, 4),
+  judgeUsage: current(judgeUsageRecordAttachment, 1),
   assertions: current(assertionsRecordAttachment, 4),
   attemptCost: current(attemptCostRecordAttachment, 1),
   agentTurns: current(agentTurnsRecordAttachment, 4),

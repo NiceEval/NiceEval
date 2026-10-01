@@ -1,0 +1,31 @@
+{
+  "format": "concord.native-reliability/v1",
+  "selector": "e2e/eval/test/recursive-material-types.test.ts#neref_1ad0a3aad9346b8947d5aa7d2c9ba212",
+  "caseId": "neref_1ad0a3aad9346b8947d5aa7d2c9ba212",
+  "candidateSha256": "312415f42909e28d557a6ed18e4e831f71e64f7d1be71b97591e95fd424075e3",
+  "sourceDigest": "sha256:ac30cf2cc1d0493fb671a63b3a740190220d5d1f95b8410f83a488672875366b",
+  "greenReceipt": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-1.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-2.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-4.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-6.json",
+    "singleCase": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/green.json",
+    "cleanup": [
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/green.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-1.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-2.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-3.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-4.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-5.json",
+      "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/reliability-6.json"
+    ]
+  },
+  "certificateSha256": "3267298e0d66667db10bba5f02b6884e0df0afb17d67749ad4d99755b151469a"
+}

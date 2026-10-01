@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: e2e-repo-needs-react-dep-for-show
+title: 无前端的 E2E 测试仓库跑 `niceeval show` 报 `Cannot find package 'react'`
+createdAt: 2026-07-19T08:35:09+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/e2e-repo-needs-react-dep-for-show.md
+  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md) — 没有前端的消费方项目(如 pi-agent-core E2E 仓库)跑裸 `niceeval show` 报 `Cannot find package 'react'`:react/react-dom 只是可选 peerDependency,不装就用不了默认内建报告;修为该仓库自己显式加这两个依赖"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 无前端的 E2E 测试仓库跑 `niceeval show` 报 `Cannot find package 'react'`
 
 **现象**：`e2e/adapter/pi-agent-core`（纯后端 + adapter，没有任何前端代码）经根编排器注入候选 tarball 后，`pnpm exec niceeval exp ci --force` 正常跑完并 4/4 passed，但紧接着裸 `pnpm exec niceeval show`（不带 `--report`）直接崩：

@@ -52,7 +52,7 @@ linked pair
   -> fingerprint
 ```
 
-nested Docker 的 requirement / capability 比较在 create、模型调用和 Attempt dispatch 之前完成。不满足时返回 `sandbox-capability-unsatisfied`；不回退宿主 socket、raw / managed DinD 或 privileged outer container。`incusSandbox()` 是 DestroyOnly：`--keep-sandbox` 与 `sandboxReuse` 在创建资源前失败。完整时序见 [Nested Docker Lifecycle](nested-docker/lifecycle.md)。
+nested Docker 的 requirement / capability 比较在 create、模型调用和 Attempt dispatch 之前完成。不满足时返回 `sandbox-capability-unsatisfied`；不回退宿主 socket、raw / managed DinD 或 privileged outer container。`incusSandbox()` 是 DestroyOnly：`--keep-sandbox` 与 `sandboxReuse` 在创建资源前失败。完整时序见 [Nested Docker Lifecycle](../sandbox-nested-docker/lifecycle.md)。
 
 planner 只做只读文件与网络读取,不 build、不创建资源。
 不同配对的 template 可以由不同 Provider 承接;相同物理输入按 BuildKey 共享构建工作。

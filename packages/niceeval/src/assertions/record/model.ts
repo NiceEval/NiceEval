@@ -245,7 +245,7 @@ export type AssertionCoverage =
   | { readonly state: "complete" }
   | {
       readonly state: "partial";
-      readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited";
+      readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited" | "capacity-limited";
     }
   | {
       readonly state: "unavailable";
@@ -264,7 +264,8 @@ export type AssertionLimitation =
       readonly knownTotal?: number;
     }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
-  | { readonly kind: "provider-limited" };
+  | { readonly kind: "provider-limited" }
+  | { readonly kind: "capacity-limited"; readonly capturedItems: number; readonly knownTotalItems: number; readonly omittedBytes: number | null };
 
 export type GateDisposition =
   | "not-gate"

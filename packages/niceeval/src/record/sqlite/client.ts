@@ -105,7 +105,9 @@ export async function makeStorageWorkerClient(
   recordStorageRoot: string,
   busyTimeoutMs = 5_000,
   databasePath = recordSqlitePath(recordStorageRoot),
+  initializationSignal?: AbortSignal,
 ): Promise<StorageWorkerClient> {
+  initializationSignal?.throwIfAborted();
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
     execArgv: (extension === "ts" ? ["--import", "tsx"] : process.execArgv.filter((argument) =>
@@ -116,6 +118,7 @@ export async function makeStorageWorkerClient(
   let nextId = 1;
   let closed = false;
   let termination: Promise<number> | undefined;
+  let closing: Promise<void> | undefined;
   const pending = new Map<number, { readonly resolve: (value: StorageWorkerResult) => void; readonly reject: (cause: unknown) => void }>();
 
   const rejectAll = (cause: unknown): void => {
@@ -127,7 +130,7 @@ export async function makeStorageWorkerClient(
     if (closed) return;
     closed = true;
     rejectAll(cause);
-    void terminate();
+    void terminate().catch(() => undefined);
   };
   const protocolFailure = (value: unknown): SqliteRecordError => new SqliteRecordError(
     "record-sqlite-error",
@@ -181,12 +184,19 @@ export async function makeStorageWorkerClient(
     });
   };
 
+  const abortInitialization = () => fail(initializationSignal?.reason);
+  initializationSignal?.addEventListener("abort", abortInitialization, { once: true });
   try {
+    initializationSignal?.throwIfAborted();
     await request<undefined>({ operation: "initialize", databasePath, busyTimeoutMs });
+    initializationSignal?.throwIfAborted();
+    if (closed) throw new Error("Record storage worker closed during initialization");
   } catch (cause) {
     fail(cause);
     await terminate().catch(() => undefined);
     throw cause;
+  } finally {
+    initializationSignal?.removeEventListener("abort", abortInitialization);
   }
   return Object.freeze({
     persistSealedRun: (input: PersistSealedRunInput) => request<SealedRunSummary>({ operation: "persist-sealed-run", input }),
@@ -222,8 +232,11 @@ export async function makeStorageWorkerClient(
       request<A>({ operation: "invocation", command }),
     run: <A extends StorageWorkerResult>(command: RunCommand) => request<A>({ operation: "run", command }),
     admission: <A extends StorageWorkerResult>(command: AdmissionInput) => request<A>({ operation: "admission", command }),
-    close: async () => {
-      if (closed) return;
+    close: () => closing ??= (async () => {
+      if (closed) {
+        await terminate();
+        return;
+      }
       try {
         await request<undefined>({ operation: "close" });
       } finally {
@@ -231,7 +244,7 @@ export async function makeStorageWorkerClient(
         rejectAll(new Error("Record storage worker is closed"));
         await terminate();
       }
-    },
+    })(),
   });
 }
 

@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: staleness-demoted-from-warning-to-provenance
+title: 时效从 Scope 警告降级为行级 provenance,覆盖缺口从警告改为数据+占位行
+createdAt: 2026-07-22T11:45:06+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/staleness-demoted-from-warning-to-provenance.md
+  commit: 6a9011c66f9efeff8709fb58768fb75f5bb89392
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 时效从 Scope 警告降级为行级 provenance,覆盖缺口从警告改为数据+占位行
 
 - **裁决**(2026-07-22,用户发起「不该通过 ScopeWarnings 展示,该在通过率/eval 行上提示,或允许过滤」):

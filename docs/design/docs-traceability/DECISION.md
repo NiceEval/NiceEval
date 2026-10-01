@@ -4,7 +4,7 @@
 
 ## 定案
 
-采纳 [PLAN-2：owner-local typed links 与动态编译](PLAN-2/README.md)。正式目标写入[仓库文档追溯工程契约](../../engineering/docs-traceability/README.md)。
+采纳 [PLAN-2：owner-local typed links 与动态编译](plans/plan-2/README.md)。正式目标写入[仓库文档追溯工程契约](../../engineering/docs-traceability/README.md)。
 
 ## 依据
 
@@ -34,7 +34,7 @@ owner anchor 不是 Behavior 或 Proof 节点。它只保存稳定结果身份�
 
 ## 否决 PLAN-1
 
-[中央 Registry](PLAN-1/README.md)把路径、测试头、Memory 和索引已有的事实再抄一遍。每次结构变更都要同步中央文件，并让并行 Agent 争写同一位置。
+[中央 Registry](plans/plan-1/README.md)把路径、测试头、Memory 和索引已有的事实再抄一遍。每次结构变更都要同步中央文件，并让并行 Agent 争写同一位置。
 
 Registry 还会自然吸收 coverage、状态与反向列表，最终成为 Feature 和 testing 文档之外的第二真源。查询方便不足以抵偿这种长期漂移。
 

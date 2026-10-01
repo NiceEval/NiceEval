@@ -352,6 +352,9 @@ function normalizeCommandMetadata(value: SandboxCommandDefinition): NormalizedSa
   }, "defineSandboxCommand identity");
 }
 
+// @concord-code ne-sandbox-define-command
+// @concord-implements docs/feature/sandbox/library/operations.md
+// @concord-implements docs/feature/sandbox/prepare-commands.md
 export function defineSandboxCommand(
   identity: SandboxCommandDefinition,
   run: SandboxCommand,

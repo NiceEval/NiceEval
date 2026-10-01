@@ -1,37 +1,37 @@
 ---
 title: "NiceEval 的运行后数据流"
 sidebarTitle: "架构概览"
-description: "理解 Record、固定 Inspection operation、Query、Show 和 View 的职责边界。"
+description: "理解运行结果保存在哪里，以及 query、show 和 view 三个查看入口各管什么。"
 ---
 
-NiceEval 将运行后的数据分成三层。Record 保存 Run 与已发布 Attempt 的运行事实。Inspection operation 关闭读取语义。三个 consumer 各自交付结果。
+一次运行结束后，你可能在终端看结果，也可能在浏览器里翻对话，或者让 CI 脚本读 JSON。三种方式看到的是同一份结果，只是排版不同。这一页说明结果保存在哪里、怎样被读出来，以及三个查看入口各管什么。
 
 ```text
-published Run and Attempt facts
+项目里的 .niceeval/record.sqlite（已发布的 Run 和 Attempt）
         ↓
-fixed Inspection operations
+NiceEval 内置的固定查询
         ↓
-machine Query | terminal Show | browser View
+query（JSON） | show（终端） | view（浏览器）
 ```
 
-## Record 保存事实
+## 结果保存在一个文件里
 
-每个项目只有一个 canonical `.niceeval/record.sqlite`。Runner 创建 Run 时冻结预期 slot；每个 Attempt 在自己的原子发布事务完成后立即成为可读事实，即使 origin Run 仍是 `active`。已发布 Attempt 和终态 Run 都不可修改。
+每个项目的运行结果都保存在 `.niceeval/record.sqlite`，这就是 Record。`niceeval exp` 开始时创建 Run，并记下这次计划要跑的所有 Attempt。每个 Attempt 跑完就单独发布，马上可以读到，不必等整个 Run 结束。已发布的 Attempt 和已结束的 Run 都不会再被修改。
 
-一次 Invocation 完整收尾并通过 portable gate 后，canonical 文件本身即可复制或归档。`query` 和 `show` 的 `--record <file>` 会完整校验外部副本后只读打开。
+运行完整结束后，这个文件本身就可以复制或归档。要读别人交给你的副本时，给 `query` 或 `show` 加 `--record <file>`；NiceEval 会先完整校验这个文件，再只读打开。
 
-## Inspection 关闭读取语义
+## 读取规则由 NiceEval 固定
 
-Inspection operation 在返回前决定 source、selector、sealed cutoff、数据缺口、issues、Evidence 和比较方式。它返回可编码 plain data，不把 reader、数据库连接或文件路径交给调用者。
+读取结果时，选哪些 Run、读到哪个时刻为止、哪些结果缺失、有哪些问题、用什么证据、怎样比较，都由 NiceEval 内置的固定查询决定。查询返回的是普通数据，不会把数据库连接、文件路径或读取对象交给调用者。
 
-固定 catalog 提供 Run、Attempt、trace、diff、sources、artifacts 和 Run comparison。新的读取需求通过新 operation 或穷尽 union 扩展表达，不通过临时 SQL、JSON path 或公式实现。
+内置查询覆盖 Run、Attempt、trace、diff、sources、artifacts 和 Run 之间的比较。你不能用临时 SQL、JSON path 或公式自定义读取方式。
 
-## 三个独立 Consumer
+## 三个查看入口
 
-- `niceeval query` 是 machine Query，面向 AI、脚本和 CI。它输出 `niceeval.query/v1` JSON document。
-- `niceeval show` 是 terminal Show，面向人在终端快速审阅和下钻。
-- `niceeval view` 是 browser View，面向人在受保护的 loopback 浏览器使用固定第一方 Insight。
+- `niceeval query` 给 AI、脚本和 CI 用，输出 `niceeval.query/v1` JSON。
+- `niceeval show` 给人在终端用，先看总览，再逐层查看某个 Attempt 的对话、耗时和改动。
+- `niceeval view` 给人在浏览器用，打开只监听本机地址、受访问保护的 Insight 界面。
 
-三个 consumer 共享同一个固定 Inspection result。它们各自负责 JSON protocol、终端文字布局或浏览器界面，不共享 formatter、路由、组件、主题或呈现 schema，也不重选成员或重算业务结果。
+三个入口读到的是同一份查询结果。它们只负责各自的排版：JSON、终端文字或浏览器页面。它们不会各自挑选结果，也不会重新计算通过率或分数，所以同一个 Run 在三处看到的结论一致。
 
-继续阅读 [CLI](/zh/reference/cli) 了解完整命令，或阅读 [Record](/zh/explanation/record) 了解外部文件的校验边界。
+完整命令见 [CLI](/zh/reference/cli)。结果文件怎样复制和校验，见 [Record](/zh/explanation/record)。

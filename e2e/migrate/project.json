@@ -12,7 +12,8 @@
     "niceeval-package-shared",
     "niceeval-testkit",
     "niceeval-src-fallback",
-    "niceeval-domain-record"
+    "niceeval-domain-record",
+    "niceeval-domain-o11y"
   ],
   "targets": {
     "e2e": {

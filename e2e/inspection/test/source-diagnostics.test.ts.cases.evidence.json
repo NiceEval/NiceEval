@@ -1,0 +1,51 @@
+{
+  "format": "concord.case-evidence-index/v1",
+  "current": {
+    "neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01": {
+      "memory/inspection-source-diagnostics-hidden.md": {
+        "red": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_KAF4F9SNG2ZXRD99-netake_0E995PRF8ETW28Z7/red.json",
+          "digest": "sha256:70fd5e5e3eb2c35bab6e831f1999794ea725b76c114ef230f64f86d95eeaae37"
+        },
+        "green": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_KAF4F9SNG2ZXRD99-netake_0E995PRF8ETW28Z7/green.json",
+          "digest": "sha256:9fc97db5a50dcb780a52e3027ee4ebe73c7ebc5cd7e511deaf0a66dbdf531dee"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_KAF4F9SNG2ZXRD99-netake_0E995PRF8ETW28Z7/certificate.json",
+          "digest": "sha256:f3257af4fe20d3e69e2a3624b96c7e13d479b68c0c72ded13d144b62a5e1b048"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_KAF4F9SNG2ZXRD99-netake_0E995PRF8ETW28Z7/inventory.json",
+          "digest": "sha256:8729b0463bc37494e6e214d638f2dea66057847f53bfb14d70c8a53cb9959fa0"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01",
+      "memory": "memory/inspection-source-diagnostics-hidden.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_9DTZ1GD39VK7VG5X-netake_QYA0QZ2D044AT1KR/red.json",
+          "digest": "sha256:429d7b9327e9b3036988e87634ddb29b16fc341d8f252be73217ac554b7065d9"
+        },
+        "green": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_9DTZ1GD39VK7VG5X-netake_QYA0QZ2D044AT1KR/green.json",
+          "digest": "sha256:c6b5215d987c3133a1854ed18d1c497785eb07631e8a7c82bb098da450cd33ef"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_9DTZ1GD39VK7VG5X-netake_QYA0QZ2D044AT1KR/certificate.json",
+          "digest": "sha256:ec1339af3911447b1bb247072e6bd8f2a985cceb9739fe0fda49cbfd804c72e5"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/source-diagnostics.test.ts.case-evidence/neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01/memory_inspection-source-diagnostics-hidden.md/nered_9DTZ1GD39VK7VG5X-netake_QYA0QZ2D044AT1KR/inventory.json",
+          "digest": "sha256:a1bebaff86f1a0d150dc4b52cad5b5f2c3a966653d297585c5551db64da587a0"
+        }
+      },
+      "reason": "Refresh proof against the final fee and usage scenario sources.",
+      "refreshedAtCommit": "0bde4166f53bb3d2b7a3a0e3b8be1530a75ca4fa"
+    }
+  ]
+}

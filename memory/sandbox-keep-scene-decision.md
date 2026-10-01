@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: sandbox-keep-scene-decision
+title: sandbox-keep-scene-decision
+createdAt: 2026-07-14T18:07:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-keep-scene-decision.md
+  commit: ec8347f14bea973c01313fc2933fdc0f2b2f1a5e
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # sandbox-keep-scene-decision
 
 设计裁决（2026-07-14）：debug 沙箱环境的路线是 **opt-in 留存现场**（`--keep-sandbox` + `niceeval sandbox list/stop`），不是加大 artifact 采集，也不是暂停态。

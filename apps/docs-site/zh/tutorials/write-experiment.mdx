@@ -1,10 +1,12 @@
 ---
-title: "实验与生命周期"
-sidebarTitle: "实验"
-description: "如何写好实验。选择 Agent、传递 model 和 flags，设置 attempts、预算、并发与 Sandbox，并用 setup / teardown 起停实验级共享服务。"
+title: "编写实验：比较模型、prompt 和 Agent"
+sidebarTitle: "编写实验"
+description: "用 defineExperiment 固定被测 Agent、模型、flags 和运行次数。同一批评估用例写两份只差一个变量的 Experiment，就能比较两个模型或两版 prompt。"
 ---
 
-Experiment 是可签入的运行配置：同一批评估用例对着哪个 adapter、哪个模型、开哪些 flags、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛评估用例，不负责临时改 agent 或运行配置。
+你写了一版新的 system prompt，想知道它比旧版好还是差。评估用例已经有了，现在需要对着两个版本各跑一遍，再把结果放在一起看。
+
+这就是 Experiment 的用处。评估用例只说“发什么、怎样算做对”；Experiment 说“对着谁跑”：哪个 Agent、哪个模型、开哪些 flags、跑几次、花多少钱为止。两者分开，同一批评估用例就能拿来比较任意两个配置。
 
 ## 最小实验
 
@@ -18,10 +20,42 @@ export default defineExperiment({
 });
 ```
 
-`agent` 放的是已经配置好的 agent 实例。被测系统的 URL、鉴权、协议细节通常传给 adapter 工厂。运行器不会单独保存一个 `agentConfig` 字段。
+文件路径就是 Experiment ID，这里是 `local`。`agent` 放的是已经配置好的 Adapter 实例，被测应用的地址、鉴权这类连接参数传给 Adapter 工厂，不写在别处。
 
-## 评估不同的 System Prompt 对于 Agent 的影响
-使用 flag 机制，配置不同的 Flag，设置两个实验，对比不同 Prompt 的区别。两格之间**只差一个变量**（这里是 `flags.promptVariant`），其余字段逐字相同——差别越少，分数差能归因到的东西越明确：
+```bash
+pnpm exec niceeval exp local
+```
+
+## 比较两个模型
+
+一个 Experiment 文件就是一个配置。要比较两个模型，写两个文件，只改 `model` 那一行：
+
+```text
+experiments/
+  models/gpt-5.4.ts
+  models/deepseek-v4-pro.ts
+```
+
+```ts
+// experiments/models/gpt-5.4.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "../../agents/web-agent.ts";
+
+export default defineExperiment({
+  description: "gpt-5.4",
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+  model: "gpt-5.4",
+  attempts: 3,
+});
+```
+
+`model` 会作为 `ctx.model` 传给 Adapter。Adapter 要把它放进发给应用的请求里，应用才真的会换模型，写法见[接入你的 Agent](/zh/tutorials/connect-your-agent)。
+
+`attempts: 3` 让每条评估用例跑 3 次。Agent 每次的回答都不一样，只跑一次的通过率说明不了多少问题。
+
+## 比较两版 prompt
+
+prompt 版本在应用内部，NiceEval 看不到。做法和产品里的 A/B 测试一样：应用接受一个 flag，按 flag 切换 prompt；Experiment 负责给这个 flag 赋值。
 
 ```ts
 // experiments/prompts/v1.ts
@@ -30,371 +64,155 @@ import { webAgent } from "../../agents/web-agent.ts";
 
 export default defineExperiment({
   description: "System Prompt v1（基线）",
-  agent: webAgent({
-    baseUrl: "https://staging.example.com",
-  }),
+  agent: webAgent({ baseUrl: "https://staging.example.com" }),
   model: "gpt-5.4",
-  flags: {
-    promptVariant: "v1",     // ← 唯一的变量
-  },
-  attempts: 1,
+  flags: { promptVariant: "v1" }, // 两个文件只有这里不同
+  attempts: 3,
   budget: 5,
 });
 ```
 
-```ts
-// experiments/prompts/v2.ts
-import { defineExperiment } from "niceeval";
-import { webAgent } from "../../agents/web-agent.ts";
+`experiments/prompts/v2.ts` 把 `promptVariant` 改成 `"v2"`，其余逐字相同。两个配置之间差得越少，分数的差别就越能归因到 prompt 上。
 
-export default defineExperiment({
-  description: "System Prompt v2（对比）",
-  agent: webAgent({
-    baseUrl: "https://staging.example.com",
-  }),
-  model: "gpt-5.4",
-  flags: {
-    promptVariant: "v2",     // ← 唯一的变量
-  },
-  attempts: 1,
-  budget: 5,
-});
-```
-
-两格写成同一个 `flags`（或模型对比里两格钉同一个 `model`，包括两格都写成同一个环境变量默认值）是最常见的失误：跑得完、报告也出得来，但两列数字比的是同一套配置，看不出任何东西。
-
-
-`model` 会作为 `ctx.model` 传给 Adapter。如果你的 Agent 支持模型选择，自己构建请求
-
-`flags` 是扁平对象，值只能是字符串、有限数字或布尔值，例如 `{ strategy: "baseline", maxSteps: 20, enabled: true }`。
-不接受嵌套对象、数组、`null` 或显式 `undefined`；省略整个 `flags` 等价于 `{}`。
-NiceEval 在启动前检查结构、复制并冻结，再作为 `ctx.flags` 传给 Adapter、作为 `t.flags` 传给评估用例。
-普通 Adapter 可声明同步 `parseFlags(input: unknown)` 检查策略名、补默认值或规范化值；返回值也必须满足相同结构。
-实验的 `flags` 类型由该返回类型推导，规范化后的值参与缓存身份。
-
-语义就是产品 A/B 测试里的 feature flag，应该编写 Adapter 把 Flag 发给你的 Agent，Agent 根据 Flag 切换不同的 System Prompt 或者行为。
+Adapter 把 `ctx.flags` 原样转给应用：
 
 ```ts
 // agents/web-agent.ts
 async send(input, ctx) {
-  await fetch(`${baseUrl}/api/turn`, {
+  const r = await fetch(`${baseUrl}/api/turn`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      message: input.text,
-      model: ctx.model,
-      flags: ctx.flags,
-    }),
+    body: JSON.stringify({ message: input.text, model: ctx.model, flags: ctx.flags }),
     signal: ctx.signal,
   });
+  // ……把回复翻译成 events
 }
 ```
 
-## 编写一组实验
+`flags` 是扁平对象，值只能是字符串、有限数字或布尔值。嵌套对象、数组、`null` 和显式 `undefined` 都会在运行前被拒绝。评估用例里也能用 `t.flags` 读到同一份值。
 
-一个实验文件是一格配置。要比较多个模型、agent 或 flag 取值，就写多个文件。目录只负责 id：
+需要检查 flag 是否合法或补默认值时，在 Adapter 上声明同步的 `parseFlags(input: unknown)`。它的返回值决定实验里 `flags` 的类型，规范化后的值参与结果沿用的判定。
+
+最常见的失误是两个文件写成了同一个 `flags` 或同一个 `model`，例如两边都读同一个环境变量的默认值。运行和报告都正常，但两列数字比的是同一套配置。
+
+## 跑一组，或者只跑一格
+
+位置参数按 ID 前缀选择 Experiment。目录只用来组织 ID 和批量选择：
+
+```bash
+pnpm exec niceeval exp prompts      # prompts/ 下全部实验
+pnpm exec niceeval exp prompts/v2   # 只跑 v2 这一格
+```
+
+某一格结果反常、需要单独复现时，写它的完整 ID 就行，不用先跑完整组，也不用把其它文件挪走。后面再跟评估用例 ID 前缀，可以进一步只跑某几道题：
+
+```bash
+pnpm exec niceeval exp prompts/v2 refund-policy
+```
+
+想在运行前确认会跑哪些评估用例、多少次，加 `--dry`，见[选择并预览运行范围](/zh/tutorials/select-and-preview)。
+
+## 看对比结果
+
+两个配置都跑完后，在终端分别查看：
+
+```bash
+pnpm exec niceeval show --experiment prompts/v1 --experiment prompts/v2
+```
+
+每个 Experiment 的 `Summary` 里会列出这几项：
 
 ```text
-experiments/
-  prompts/baseline.ts
-  prompts/concise.ts
-  retrieval/with-retrieval.ts
+  Observed   12/12
+  Verdicts   8 passed; 4 failed; 0 errored; 0 skipped
+  Pass rate  66.67%
 ```
 
-```bash
-npx niceeval exp prompts
+`Observed` 是有结果的 Attempt 数和计划数。两个数不相等时，说明有些 Attempt 还没有结果，这时的通过率不能直接和另一边比较。
+
+除了通过率，还要看耗时、token、成本和失败的类型。一个配置通过率高一点，成本却翻了一倍，不一定值得换。把两次 Run 并排比较，见[比较多个固定 Run](/zh/tutorials/compare-runs)；在浏览器里看，用 `niceeval view`。
+
+## 让比较有意义
+
+- 比较期间保持评估用例集合不变，否则两边比的不是同一批题。
+- 非确定性强的 Agent，尤其是 Coding Agent，每个配置至少跑 3 次。
+- 每次只改一个变量。同时换模型又换 prompt，就分不清是谁的功劳。
+- 失败要按原因归类看，不只看总分。
+
+## 只跑部分评估用例
+
+每个 Experiment 用 `evals` 选择要跑哪些评估用例，默认是全部。可以写 ID 前缀数组，也可以写一个函数：
+
+```ts
+evals: (eval) => eval.id.startsWith("coding/") && eval.tags.includes("coding"),
 ```
 
-报告直接比较当前 Scope 中的这些 experiments，不需要额外分组字段。
-
-只想验证某一个配置时，把位置参数写成该配置的完整 id：
-
-```bash
-npx niceeval exp prompts/concise
-```
-
-用于逐配置排查——确认某一格改动是否达标，不用先跑完整组，也不用把其它配置文件挪出目录。
+`eval.id` 是从文件路径推导出的项目内 ID，不是绝对路径，可以直接用 `startsWith` 判断。
 
 ## 常用字段
 
 | 字段 | 用途 |
 |---|---|
-| `agent` | 选择并配置 adapter。必填 |
-| `model` | 单个模型名，经 `ctx.model` 透传 |
-| `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
-| `flags` | 实验条件（A/B 里的 feature flag），扁平对象，值为字符串、有限数字或布尔值，经 `ctx.flags` / `t.flags` 透传 |
-| `attempts` | 每个评估用例 × 配置最多跑几次 |
-| `earlyExit` | 多次运行里通过一次就提前停止。默认关，`attempts` 默认跑满测完整通过率 |
-| `evals` | `"*"`、ID 前缀数组，或遍历只读评估用例描述并返回 Boolean 的函数 |
-| `timeoutMs` | 单个 attempt 的超时 |
-| `budget` | 这一格配置的预算上限 |
-| `maxConcurrency` | 这一格配置的并发上限 |
-| `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key。只协调状态，不提供存储 |
-| `sandbox` | 一条 `SandboxLayer`。具体 factory 声明唯一 Provider template，并可链 `.before()` / `.after()` |
-| `plugins` | 显式附着的 NiceEval Plugin occurrence；把一套 identity、flags、Sandbox 命令、生命周期或 Agent Extension 作为完整条件复用 |
-| `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
-| `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
+| `agent` | 选择并配置 Adapter。必填 |
+| `model` | 单个模型名，经 `ctx.model` 传给 Adapter |
+| `reasoningEffort` | 推理努力程度，例如 `"high"`，经 `ctx.reasoningEffort` / `t.reasoningEffort` 传递 |
+| `flags` | 实验条件，经 `ctx.flags` / `t.flags` 传递 |
+| `attempts` | 每条评估用例最多跑几次 |
+| `earlyExit` | 通过一次就停止剩下的 Attempt。默认关闭，跑满才能算出完整通过率 |
+| `evals` | `"*"`、ID 前缀数组，或返回 Boolean 的函数 |
+| `timeoutMs` | 单个 Attempt 的超时 |
+| `budget` | 这个配置的花费上限，单位美元 |
+| `maxConcurrency` | 这个配置同时跑几个 Attempt |
+| `labels` | 只用于报告分组的标注，Adapter 和评估用例都读不到 |
+| `sandbox` | Coding Agent 使用的 Sandbox，见 [Sandbox](/zh/tutorials/sandbox-providers) |
+| `plugins` | 复用一整套运行条件，见 [Plugin](/zh/tutorials/plugins) |
+| `setup` / `teardown` | 启动和关闭整个实验共用的服务，见[启动实验共享服务](/zh/tutorials/experiment-services) |
+| `sharedState` | 跨多次运行共享状态时的独占 key，见[启动实验共享服务](/zh/tutorials/experiment-services#跨-attempt-保存状态) |
 
-## 传递运行时地址，又不让它作废缓存
+字段全集见 [defineExperiment 参考](/zh/reference/define-experiment)。
 
-`flags` 写的是实验条件，它整袋参与缓存判定：值一变，已经跑完的结果就要重跑。所以隧道地址不要写进 `flags`——隧道每次重启换一个 URL，写进去就等于每次重启都作废全部已完成结果。
+## 不同评估用例需要不同环境
 
-这个地址是 `setup` 跑起来才拿到的。把它留在生命周期闭包里，再由 Agent 工厂或 Sandbox callback 使用；它不是实验条件，也没有通用 API 把它写成报告字段：
-
-```ts
-let endpoint: string | undefined;
-
-export default defineExperiment({
-  agent: nowledgeAgent(() => ({ url: endpoint! })),
-  sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .before(async sandbox => {
-      await sandbox.writeText(".nowledge/env", `NMEM_URL=${endpoint!}\n`);
-    }),
-  async setup(ctx) {
-    endpoint = (await nowledgeTunnel({ signal: ctx.signal })).url;
-  },
-});
-```
-
-换了 URL 再跑，已完成的照常复用，只跑还缺的：
-
-```bash
-$ pnpm exec niceeval exp compare/codex--nowledge
-╭─ PLAN ──────────────────────────────────────────╮
-│ 36 attempts · 36 evals × 1 configs              │
-│ 24 of 36 reuse from cache · 12 to run           │
-╰─────────────────────────────────────────────────╯
-```
-
-地址只服务本次运行。复用进来的结果也不会被这次的新 URL 改写；需要比较的长期条件应当声明成稳定的实验配置。
-
-服务端版本号则相反：写成 `flags: { memoryVersion: "0.10.39" }`，换了版本行为可能真的不一样，那种变化就该让结果重跑。判据是**它是否是可比较的实验条件**：是就写 `flags`；只是本次连接坐标，就放在生命周期代码或外部服务配置里。没有通用回调、自定义数据族或注册点可把任意值写进结果。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
-
-## 启动 Experiment 共享服务
-
-有些资源是「一个实验一份、所有 Attempt 共用」的：一条到内网记忆服务的隧道、一个实验专用的 mock server、一个 license 租约。这类资源写进一对实验级 Hook `setup` / `teardown`：整场至多各跑一次。`setup` 在这个实验第一个要派发的 Attempt 前执行。`teardown` 在全部 Attempt 收尾后执行（运行被中断也执行），当且仅当 `setup` 的时点已经走到才触发——`setup` 抛错同样要走到 `teardown`，收尾代码要对可能未赋值的变量做防御。上一次的结果全部被复用、这个实验一个 Attempt 都不需要真正运行时，`setup` 和 `teardown` 都不会执行：
-
-```ts
-// setup 拿到的地址、密钥放模块变量：teardown 和同文件里的 agent（每个 Attempt 都会执行、晚于 setup）直接读它。
-let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
-
-export default defineExperiment({
-  agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
-  evals: ["memory/"],
-  async setup(ctx) {
-    ctx.progress({ message: "starting nowledge tunnel" });
-    tunnel = await nowledgeTunnel({ signal: ctx.signal });
-  },
-  async teardown(ctx) {
-    ctx.progress({ message: "stopping nowledge tunnel" });
-    await tunnel?.stop(); // setup 抛错也会走到这里：对可能未赋值的变量做防御
-  },
-});
-```
-
-`setup` 在跑的时候，终端的 `ACTIVE` 区会显示一行 `experiment setup · <实验 id>`，`ctx.progress(...)` 的消息就更新在这一行末尾。等它的 Attempt 计入排队数，这不是卡住。在 CI 或 agent 输出里，`setup` / `teardown` 的开始和结束各追加一行。
-
-`setup` 抛错时，这个实验的每条 Attempt 都记为 `errored`（错误码 `experiment-setup-failed`）、逐条进报告。同一批的其它实验照常跑——环境起不来不该伪装成绿，也不该连坐别人。
-
-`teardown` 里资源释放是必达底线：用 `try/finally` 包住，不管前面的观测代码是否出错都要执行。观测类动作（health 检查、指标上报）只是 best-effort——给它自己的短超时、失败不要拦住释放，并在 `ctx.signal.aborted` 时直接跳过。中断路径上，一次可能挂起的观测不该挡在「拆隧道、退租约」前面：
-
-```ts
-async teardown(ctx) {
-  try {
-    if (!ctx.signal.aborted) {
-      await tunnel?.probe({ timeoutMs: 10_000 }).catch(() => {});
-    }
-  } finally {
-    await tunnel?.stop(); // 释放是必达底线，无论观测成败都要执行
-  }
-},
-```
-
-`setup` / `teardown` 只管「在你机器上、一个实验一份」的服务。要在跑 agent 前按实验在**Sandbox 里**准备环境（装二进制、预热、跨 attempt 载入和回存状态），挂在 `sandbox` 字段的 spec 上：
-
-```ts
-export default defineExperiment({
-  agent: codexAgent({ mcpServers: [mempalMcp] }),
-  sandbox: e2bSandbox({ template: "fasteval-agents" })
-    .before(async (sandbox, context) => {
-      await mempalLoad(sandbox, "codex");
-      context.onCleanup(async (sandbox) => {
-        await mempalSave(sandbox, "codex");
-      });
-    }),
-  sandboxReuse: true,
-  maxConcurrency: 1,                    // 本 Invocation 内串行
-  sharedState: { key: "mempal/codex/cohort-a" },
-});
-```
-
-`maxConcurrency: 1` 只串行本 Invocation。`sharedState.key` 在同一项目 Coordination 域内保护跨 Invocation 的 checkpoint。租约从 Experiment 与 Sandbox setup 前开始，到全部 Sandbox teardown、Provider finalizer 和 Experiment teardown 完成。它只提供互斥；存储、原子回存、强杀恢复与跨机器协调仍由作者负责。
-
-固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot，也可以声明为低频 `.before()` action。NiceEval 会复用未变化的 Docker 准备前缀，不必因为评估代码或最后一层 `.env` 改变而重跑固定安装。从官方 Docker 镜像、E2B template 或 Vercel runtime 派生预制环境的步骤见 [Sandbox · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
-
-Action 的排序、缓存、动态回调和收尾语义见 [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。
-
-### 与 Sandbox callback 协作
-
-实验级 Hook 起宿主机侧服务，Sandbox callback 在 Attempt 前把坐标写进去，并立即登记回存收尾。两层在同一个文件里靠模块变量衔接，时序由 runner 保证：实验级 `setup` 早于本实验任何 Sandbox callback，callback 读到的变量一定已经赋好值：
-
-```ts
-// experiments/compare/claude--nowledge.ts
-import { defineExperiment } from "niceeval";
-import { e2bSandbox } from "niceeval/sandbox";
-import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
-import { loadMemoryState, saveMemoryState } from "../shared/memory-state.ts";
-
-let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
-
-export default defineExperiment({
-  agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
-  evals: ["memory/"],
-  maxConcurrency: 1,
-  sharedState: { key: "nowledge/claude/cohort-a" },
-  sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .before(async (sandbox, ctx) => {
-      // 每条真实 Attempt 一次，晚于实验级 setup：把宿主机侧坐标写进 Sandbox
-      await sandbox.writeText(
-        ".nowledge/config.json",
-        JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
-      );
-      await loadMemoryState(sandbox, ctx.experimentId);
-      ctx.onCleanup(async (sandbox) => {
-        await saveMemoryState(sandbox, ctx.experimentId);
-      });
-    }),
-  async setup(ctx) {
-    tunnel = await nowledgeTunnel({ signal: ctx.signal }); // 整场一次，宿主机侧
-  },
-  async teardown() {
-    await tunnel?.stop(); // 全部 Attempt 收尾后拆
-  },
-});
-```
-
-一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级 Hook 对里。每 Sandbox 的写入与回存在 `sandbox` 链式 Hook 里，读实验级产物。Agent 怎么连接被测对象、评估用例的 Fixture，各自在 Agent 定义与 `EvalDef` 里，不进实验文件。
-
-### 多个实验共享同一套生命周期代码
-
-对比组里常常是几个实验对着同一类基础设施——同一个记忆产品，claude 与 codex 各一格对照，起停机制完全一样。把起停写成一个**工厂函数**，返回共享同一闭包的整套件：实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进 Sandbox 的 command。每个实验文件各自调用一次工厂，同一套代码、各自的实例与坐标：
-
-```ts
-// experiments/shared/nowledge.ts —— 启停一份代码。实例、坐标每实验一份
-import type { ExperimentHookContext } from "niceeval";
-import type { SandboxCommand } from "niceeval/sandbox";
-
-export function nowledgeLifecycle() {
-  let instance: string | undefined;
-  let env: { url: string; apiKey: string } | undefined;
-
-  return {
-    /** agent / MCP 工厂经它读连接信息：闭包值，setup 之后才存在 */
-    endpoint: () => env!,
-
-    async setup(ctx: ExperimentHookContext) {
-      instance = `exp-${ctx.experimentId.replace(/[^A-Za-z0-9]+/g, "-")}`;
-      ctx.progress({ message: `[nowledge] activating ${instance}` });
-      await memctl("up", instance); // 容器 + 隧道，全新记忆库
-      env = await readInstanceEnv(instance);
-    },
-
-    async teardown(ctx: ExperimentHookContext) {
-      if (!instance) return; // setup 没走到起实例就抛了：无事可扫
-      await memctl("down", instance); // 释放是必达底线
-    },
-
-    /** 每条真实 Attempt 一次：把闭包坐标写进 Sandbox */
-    sandboxBefore(): SandboxCommand {
-      return async (sandbox) => {
-        await sandbox.writeText(
-          ".nowledge/env",
-          `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`,
-        );
-      };
-    },
-  };
-}
-```
-
-实验文件里换 agent 只换 agent 那几行，生命周期四行接完：
-
-```ts
-// experiments/compare/codex-gpt-5.4--nowledge.ts
-const nowledge = nowledgeLifecycle();
-export default defineExperiment({
-  agent: codexAgent(nowledgeCodexConfig(nowledge.endpoint)),
-  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).before(nowledge.sandboxBefore()),
-  setup: nowledge.setup,
-  teardown: nowledge.teardown,
-  maxConcurrency: 1, // 中心化记忆库，attempt 串行累积
-});
-```
-
-两条纪律保证多个实验并发跑同一套代码不互相踩踏：
-
-- **工厂在 import 期只创建闭包，不做 I/O、不读配置**——实验文件在 `niceeval exp` 的发现阶段就会被 import，import 抛错会连累同批无关实验。所有硬失败留给 `setup`。
-- **运行时坐标活在工厂闭包里，不放模块级单例**——同批并行的两个实验各持一份，互不覆写。坐标在 `setup` 之后才存在。
-
-服务起多份太贵、必须让同批实验共享一份实例时，用「首进启动、末出关停」的引用计数代替按实验各建一份：
-
-```ts
-// experiments/shared/nowledge-shared.ts
-let refs = 0;
-let starting: Promise<void> | undefined;
-let service: { url: string; stop(): Promise<void> } | undefined;
-
-export const sharedNowledge = {
-  async setup() {
-    refs += 1;
-    starting ??= startNowledge().then((s) => { service = s; });
-    await starting; // 并发实验等同一个启动。启动失败各自抛错
-  },
-  async teardown() {
-    refs -= 1;
-    if (refs === 0) {
-      await service?.stop(); // 启动失败时 service 未赋值，防御式跳过
-      service = undefined;
-      starting = undefined;
-    }
-  },
-};
-```
-
-计数能保持平衡，靠的是成对触发规则本身：`teardown` 当且仅当同层 `setup` 时点走到过才执行、`setup` 抛错也照样配对触发 `teardown`，`refs` 不会泄漏。
-
-边界在生命周期：同批共享的服务活不过这次 run。要**跨 run** 存在的服务（先起好、连续跑多次 `niceeval exp`）仍归外部编排（`docker compose` 之类）起停，URL 经环境变量传入。
-
-## 让不同评估用例使用不同预制环境
-
-一批真实任务可能需要不同版本的运行时和依赖。把具体的 template-bearing factory 直接放在每条评估用例上，让任务与执行环境保持为同一份声明：
+一批真实任务可能需要不同版本的运行时，例如有的题要 Python 3.9。这时把 Sandbox 直接写在评估用例上，让任务和它需要的环境放在一起：
 
 ```ts
 // evals/astropy-2021.eval.ts
 export default defineEval({
   sandbox: e2bSandbox({ template: "codex-python39" }),
   async test(t) {
-    // 驱动任务并验证结果
+    // 发送任务并验证结果
   },
 });
 ```
 
+多条评估用例共用同一个环境时，用普通函数复用：
+
 ```ts
-// evals/shared/python39.ts —— 用普通 TypeScript 复用，不建 profile registry
+// evals/shared/python39.ts
 import { e2bSandbox } from "niceeval/sandbox";
 
 export const python39 = () => e2bSandbox({ template: "codex-python39" });
 ```
 
-```ts
-// experiments/e2b.ts —— 评估用例拥有 template，Experiment 只拥有 Agent
-import { defineExperiment } from "niceeval";
+Experiment 这时只需要写 Agent，同一个 Experiment 仍然能覆盖所有评估用例。NiceEval 在创建任何 Sandbox 之前，会先检查每条评估用例的环境是否和 Experiment 的配置兼容。
 
+## 一个应用用多个模型
+
+应用内部有规划、回复、审查等不同角色，各用一个模型时，用 `models` 按用途分别指定：
+
+```ts
 export default defineExperiment({
-  agent: codexAgent(),
+  adapter: workflowAdapter,
+  models: {
+    planner: { model: "provider/model-a" },
+    responder: { model: "provider/model-b" },
+    reviewer: { model: "provider/model-a" },
+  },
 });
 ```
 
-没有 profile registry，也没有按 source kind 登记的 Sandbox creator 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中评估用例。重复 template 用普通 TypeScript 辅助函数共享。同一个 Experiment 仍能覆盖全部评估用例，link planning 会逐条把评估用例 layer 与 Experiment layer 配对。
+Adapter 从 `ctx.models` 读取这份配置交给应用，每次请求模型时在 `ctx.recordUsage` 里写上对应的 `modelSlot`。这样用量和费用能按用途分开统计；没被调用的角色不会产生费用。
 
-跨配置比较的设计建议见[实验矩阵](/zh/tutorials/experiments)。Adapter 对 `ctx.model` 和 `ctx.flags` 的用法见 [Adapter](/zh/explanation/adapter)。
+`models` 不能和 `model`、`reasoningEffort` 同时写。Agent 类的 Adapter 只用单个 `model`。
+
+运行后用 `niceeval show @<locator> --usage` 查看一次运行里各个模型的用量和费用。Judge 的用量没有上报时会显示为不可用，总费用只给出已知部分。

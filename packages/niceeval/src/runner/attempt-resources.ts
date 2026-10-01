@@ -53,6 +53,7 @@ export class AdapterAttemptResources {
   private readonly cleanups: Array<(context: AdapterCleanupContext) => void | Promise<void>> = [];
   private readonly handoffs = new Set<Promise<void>>();
   private cleanupReceipt: Promise<AdapterCleanupResult> | undefined;
+  private wakeCleanup: (() => void) | undefined;
 
   constructor(private readonly closeCapture: () => void = () => {}) {}
 
@@ -79,6 +80,7 @@ export class AdapterAttemptResources {
       throw new AdapterResourceWindowClosedError(this.windowState);
     }
     this.cleanups.push(cleanup);
+    this.wakeCleanup?.();
   }
 
   trackHandoff<Value>(promise: Promise<Value>): Promise<Value> {
@@ -108,13 +110,13 @@ export class AdapterAttemptResources {
     this.closeCapture();
   }
 
-  cleanup(signal: AbortSignal): Promise<AdapterCleanupResult> {
-    return this.cleanupReceipt ??= this.drain(signal);
+  cleanup(context: AdapterCleanupContext): Promise<AdapterCleanupResult> {
+    return this.cleanupReceipt ??= this.drain(context);
   }
 
-  private async drain(signal: AbortSignal): Promise<AdapterCleanupResult> {
+  private async drain(context: AdapterCleanupContext): Promise<AdapterCleanupResult> {
     this.beginCleanup();
-    const context: AdapterCleanupContext = Object.freeze({ signal });
+    const { signal } = context;
     const failures: unknown[] = [];
     let timedOut = signal.aborted;
     let stopWaiting: (() => void) | undefined;
@@ -149,13 +151,17 @@ export class AdapterAttemptResources {
         }
         if (timedOut || this.cleanups.length > 0) continue;
         if (this.handoffs.size === 0) break;
+        const changed = new Promise<void>((resolve) => { this.wakeCleanup = resolve; });
         const outcome = await Promise.race([
+          changed,
           ...this.handoffs,
           aborted,
         ]).then(() => signal.aborted ? "aborted" as const : "settled" as const);
+        this.wakeCleanup = undefined;
         if (outcome === "aborted") timedOut = true;
       }
     } finally {
+      this.wakeCleanup = undefined;
       this.close();
       if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
       stopWaiting?.();

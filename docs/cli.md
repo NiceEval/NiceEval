@@ -7,7 +7,7 @@
 - [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
 - [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
-- [Docker Profile CLI](feature/sandbox/docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
+- [Docker Profile CLI](feature/sandbox-docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
   管理由 [Docker cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md) 定义。
 - [Getting Started](getting-started.md) 定义 `init` 建立项目入口后的第一条使用路径。
 

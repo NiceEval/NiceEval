@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: view-server-serves-site-plan
+title: 设计裁决:view 本地 server 与 `--out` 统一为单一站点管线(SitePlan)
+createdAt: 2026-07-16T19:32:00+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/view-server-serves-site-plan.md
+  commit: fafa290d6de6cc2f293d5360fea1f050f3c3017b
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:view 本地 server 与 `--out` 统一为单一站点管线(SitePlan)
 
 ## 裁决

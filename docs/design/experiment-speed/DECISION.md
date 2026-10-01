@@ -1,6 +1,6 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) ·[PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·[LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) ·[PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md)
 
 ---
 
@@ -9,10 +9,10 @@
 实验加速采用分层方案：
 
 1. 先用结果沿用、选择与首过即停减少不必派发的 Attempt。
-2. 默认使用[方案 1](PLAN-1/README.md)：保留有界并发，稳定依赖进入预构建起点，每 Attempt 使用全新 Sandbox。
+2. 默认使用[方案 1](plans/plan-1/README.md)：保留有界并发，稳定依赖进入预构建起点，每 Attempt 使用全新 Sandbox。
 3. Sandbox 预热可以移动创建时间，但真实运行数据中 `sandbox.create` 只占约 0.5%–0.6%，因此不作为第一优先级。
-4. Experiment 作者确认题间状态边界后，显式使用[方案 4](PLAN-4/README.md)：`sandboxReuse: true` 让本 Invocation 的 Attempt 共用 Sandbox。
-5. [方案 2](PLAN-2/README.md)不是独立 Feature；对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1` 表达一次只运行一个可复用 Sandbox。
+4. Experiment 作者确认题间状态边界后，显式使用[方案 4](plans/plan-4/README.md)：`sandboxReuse: true` 让本 Invocation 的 Attempt 共用 Sandbox。
+5. [方案 2](plans/plan-2/README.md)不是独立 Feature；对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1` 表达一次只运行一个可复用 Sandbox。
 6. 多个 Invocation 使用各自的 Sandbox 复用池；只有它们读写同一外部状态时，才用 `sharedState.key` 独占完整生命周期。
 
 这不是一种机制承接所有提速需求。

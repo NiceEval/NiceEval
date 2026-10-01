@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: env-cases-and-ensure-supersede-topology-middleware
+title: 裁决:provider environment case + Agent Ensure 取代拓扑表与构建中间件
+createdAt: 2026-07-30T17:06:40+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/env-cases-and-ensure-supersede-topology-middleware.md
+  commit: ff9b819e3df8808c07f102376b35d223b67303a7
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:provider environment case + Agent Ensure 取代拓扑表与构建中间件
 
 - **日期**:2026-07-30

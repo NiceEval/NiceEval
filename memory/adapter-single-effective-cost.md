@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: adapter-single-effective-cost
 title: 每次物理调用只选择一个有效成本
 createdAt: 2026-09-21
-kind:
-  type: decision
-  state: adopted
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 ## 决策
 

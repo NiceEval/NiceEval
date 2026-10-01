@@ -1,3 +1,7 @@
+// @concord-file ne-runner-adoption
+// @concord-implements docs/feature/experiments/cache.md
+// @concord-implements docs/feature/experiments/library.md
+
 import { foldRecordedAttemptScore } from "../eval/record/score.ts";
 import { executionDigestForExperiment, hasProvenNoExperimentHooks } from "./rename-identity.ts";
 import { experimentHooksForRun } from "./record/context.ts";
@@ -366,6 +370,7 @@ function runForExperiment(
   return Object.freeze({
     adapter: experiment.adapter,
     ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
+    ...(experiment.models === undefined ? {} : { models: experiment.models }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     ...(experiment.reasoningEffort === undefined
       ? {}
@@ -411,6 +416,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
     experimentId: run.experimentId,
     execution: {
       adapter: adapterIdentity(run.adapter),
+      ...(run.adapter.kind === "custom" ? { models: run.models ?? Object.freeze({}) } : {}),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,
@@ -491,6 +497,8 @@ interface CurrentTargetPair {
  * a produced Run has the complete current denominator rather than only the
  * manually adopted Members.
  */
+// @concord-code ne-runner-prepare-adoption-target
+// @concord-implements docs/feature/experiments/cache.md
 export function prepareCurrentAdoptionTarget(input: {
   readonly project: AdoptionProject;
   readonly experimentId: string;
@@ -931,6 +939,8 @@ function durationComparison(input: {
  * is compared exactly, but an explicit operator decision may accept a mismatch.
  * The folded Verdict and complete Runner Activity timing remain hard gates.
  */
+// @concord-code ne-runner-prepare-adoption-member
+// @concord-implements docs/feature/experiments/cache.md
 export function prepareExplicitAdoptionMember(input: {
   readonly reader: RecordReadSession;
   readonly target: CurrentAdoptionTarget;

@@ -30,6 +30,8 @@ export type {
   AdapterAssertionsFactory,
   AdapterAssertionsFactoryContext,
   AdapterCleanupContext,
+  AttemptCancellation,
+  AttemptSignal,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,

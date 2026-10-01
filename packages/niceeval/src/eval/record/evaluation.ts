@@ -1,3 +1,6 @@
+// @concord-file ne-eval-record-evaluation
+// @concord-implements docs/feature/eval/README.md
+// @concord-implements docs/feature/inspection/README.md
 import { Result, Schema } from "effect";
 import { SlotIdSchema } from "../../record/codec/identifiers.ts";
 import { compareCanonicalIdentity, type SlotId } from "../../record/model/identifiers.ts";

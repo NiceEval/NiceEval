@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: sandbox-prepare
+title: Sandbox Prepare
+createdAt: 2026-08-14T13:42:59+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/sandbox-prepare/README.md
+  commit: 44685a9360d68e5d227ac6b758a1e6c993fa464d
+kind: roadmap
+state: planned
+---
 # Sandbox Prepare
 
 本方向收拢官方 prepare 命令的数据进入、安全边界与故障恢复。所有子方向仍遵守 [Sandbox prepare commands](../../feature/sandbox/prepare-commands.md) 的固定阶段、identity 和公开收据。

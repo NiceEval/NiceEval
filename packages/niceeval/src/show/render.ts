@@ -1,7 +1,15 @@
+// @concord-file ne-surface-show-render
+// @concord-implements docs/feature/inspection/cli.md
+// @concord-implements docs/feature/run-inspection/README.md
 import {
   renderTerminal,
   type TerminalBlock,
   type TerminalPanelContentBlock,
+  charDisplayWidth,
+  stringWidth,
+  padDisplay,
+  wrapDisplay,
+  panelContentWidth,
 } from "../terminal/index.ts";
 import type {
   Aggregate,
@@ -9,6 +17,8 @@ import type {
   DiffView,
   ExperimentView,
   ExecutionValue,
+  ExecutionDisplayPreviewBlock,
+  ExecutionDisplayDetailBlock,
   Metric,
   OverviewView,
   RunView,
@@ -21,6 +31,8 @@ import type {
   UsageView,
 } from "./model.ts";
 import { decodeBase64Bytes } from "../inspection/bytes.ts";
+import { displayTextHasForbiddenCharacter } from "../record/family/execution-traces/schema.ts";
+import type { InspectionProjectResult } from "../inspection/project-result.ts";
 
 const TERMINAL_OPTIONS = Object.freeze({ width: 80, mode: "plain" as const });
 
@@ -113,6 +125,7 @@ const attemptBlocks = (
   cells: OverviewView["cells"],
   group: string | null,
   all: boolean,
+  showFailed = false,
 ): readonly TerminalPanelContentBlock[] => {
   let shownErrors = 0;
   return cells.flatMap((cell) => {
@@ -123,7 +136,7 @@ const attemptBlocks = (
         if (member.publication.state !== "published") return true;
         if (
           member.publication.verdict === "passed" ||
-          member.publication.verdict === "failed"
+          (member.publication.verdict === "failed" && !showFailed)
         ) return false;
         if (member.publication.verdict !== "errored") return true;
         shownErrors += 1;
@@ -175,7 +188,7 @@ const attemptBlocks = (
   });
 };
 
-const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
+const hiddenAttemptSummary = (cells: OverviewView["cells"], showFailed = false): string | null => {
   const counts = { passed: 0, scored: 0, failed: 0, errored: 0 };
   for (const cell of cells) {
     for (const member of cell.members) {
@@ -195,7 +208,7 @@ const hiddenAttemptSummary = (cells: OverviewView["cells"]): string | null => {
   const hidden = [
     ...(counts.passed > 0 ? [`${counts.passed} passed`] : []),
     ...(counts.scored > 0 ? [`${counts.scored} scored`] : []),
-    ...(counts.failed > 0 ? [`${counts.failed} failed`] : []),
+    ...(!showFailed && counts.failed > 0 ? [`${counts.failed} failed`] : []),
     ...(counts.errored > 5 ? [`${counts.errored - 5} errored`] : []),
   ];
   return hidden.length === 0 ? null : `${hidden.join("; ")} Attempts hidden`;
@@ -205,9 +218,10 @@ const compactContinuation = (
   cells: OverviewView["cells"],
   experimentId: string,
   all: boolean,
+  showFailed = false,
 ): readonly TerminalPanelContentBlock[] => {
   if (all) return [];
-  const hidden = hiddenAttemptSummary(cells);
+  const hidden = hiddenAttemptSummary(cells, showFailed);
   return hidden === null
     ? []
     : [
@@ -234,16 +248,26 @@ const textOrNotRecorded = (value: string | null | undefined): string =>
 
 export function renderOverview(
   value: OverviewView,
-  options: { readonly all?: boolean } = {},
+  options: { readonly all?: boolean; readonly recorded?: boolean; readonly current?: InspectionProjectResult } = {},
 ): string {
   const all = options.all === true;
+  const current = options.current;
   const blocks: TerminalBlock[] = [
     {
       kind: "panel",
-      title: "NiceEval results",
+      title: current === undefined ? options.recorded === true ? "Recorded results" : "NiceEval results" : "Current results",
       blocks: [
         { kind: "divider", title: "Totals" },
-        aggregateEntries(value.totals),
+        current === undefined ? aggregateEntries(value.totals) : {
+          kind: "keyValue",
+          entries: [
+            { key: "Covered", value: `${current.coverage.covered}/${current.coverage.expected}` },
+            { key: "Gaps", value: String(current.coverage.gaps) },
+            { key: "Verdicts", value: `${value.totals.passed} passed; ${value.totals.failed} failed; ${value.totals.errored} errored; ${value.totals.skipped} skipped` },
+            ...(value.totals.evaluationKind === "points" ? [] : [{ key: "Pass rate", value: passRate(value.totals.passRate) }]),
+            ...(value.totals.evaluationKind === "pass" ? [] : [{ key: "Score", value: metric(value.totals.score) }]),
+          ],
+        },
       ],
     },
   ];
@@ -267,17 +291,15 @@ export function renderOverview(
             kind: "table" as const,
             columns: [
               { header: "Experiment" },
-              { header: "Observed" },
-              { header: "Adapter" },
-              { header: "Model" },
+              { header: current === undefined ? "Observed" : "Covered" },
+              ...(current === undefined ? [{ header: "Adapter" }, { header: "Model" }] : [{ header: "Gaps" }]),
               ...(showPassRate ? [{ header: "Pass rate" }] : []),
               ...(showScore ? [{ header: "Score" }] : []),
             ],
             rows: group.experiments.map((experiment) => [
               relativeToGroup(experiment.experimentId, group.name),
               `${experiment.aggregate.observed}/${experiment.aggregate.expected}`,
-              adapterValue(experiment.adapter),
-              executionValue(experiment.model),
+              ...(current === undefined ? [adapterValue(experiment.adapter), executionValue(experiment.model)] : [String(current.experiments.find(({ experimentId }) => experimentId === experiment.experimentId)!.denominator.missing)]),
               ...(showPassRate ? [passRate(experiment.aggregate.passRate)] : []),
               ...(showScore ? [metric(experiment.aggregate.score)] : []),
             ]),
@@ -285,6 +307,42 @@ export function renderOverview(
         ];
       }),
     });
+  }
+  if (current !== undefined) {
+    const currentGroups = groupExperiments(value).flatMap((group) => group.name === null
+      ? group.experiments.map((experiment) => ({ name: null, experiments: [experiment] }))
+      : [group]);
+    for (const group of currentGroups) {
+      blocks.push({
+        kind: "panel",
+        title: `Attempts · ${group.name ?? group.experiments[0]!.experimentId}`,
+        blocks: group.experiments.flatMap((experiment) => {
+          const experimentCells = value.cells.filter((cell) => cell.experimentId === experiment.experimentId && cell.members.length > 0);
+          const gaps = current.slots.filter((slot) => slot.experimentId === experiment.experimentId && slot.state === "gap");
+          return [
+            ...(group.name === null ? [] : [{ kind: "divider" as const, title: `Experiment ${experiment.experimentId}`, attachNext: true }]),
+            ...gaps.flatMap((slot): TerminalPanelContentBlock[] => slot.state !== "gap" ? [] : [
+              { kind: "divider", title: `Eval ${relativeToGroup(slot.evalId, group.name)}`, attachNext: true },
+              { kind: "divider", title: `Gap ${slot.reason}`, attachNext: slot.previous !== null },
+              ...(slot.previous === null ? [] : [{ kind: "divider" as const, title: `Previous result ${slot.previous.locator}` }]),
+            ]),
+            ...attemptBlocks(experimentCells, group.name, all, true),
+            ...compactContinuation(experimentCells, experiment.experimentId, all, true),
+          ];
+        }),
+      });
+    }
+    if (current.history.length > 0) blocks.push({
+      kind: "panel",
+      title: "History",
+      blocks: [{
+        kind: "table",
+        columns: [{ header: "Experiment" }, { header: "Eval" }, { header: "Attempt" }, { header: "Previous result" }],
+        rows: current.history.map((slot) => [slot.experimentId, slot.evalId, String(slot.attemptOrdinal), slot.locator ?? slot.sourceRunId]),
+      }],
+    });
+    const next = current.experiments.filter((experiment) => experiment.denominator.missing > 0);
+    return terminal(blocks) + next.map((experiment) => `\nNext: niceeval exp ${experiment.experimentId} --dry\n`).join("");
   }
   if (value.cells.length > 0) {
     for (const group of groupExperiments(value)) {
@@ -322,15 +380,44 @@ function adapterValue(value: import("./model.ts").AdapterValue): string {
 }
 
 export function renderExperiment(value: ExperimentView): string {
+  const { totalCosts, coverage } = value.costSummary;
   return terminal([
     {
       kind: "panel",
       title: `Experiment ${value.experimentId}`,
       blocks: [
+        { kind: "divider", title: totalCosts.state === "complete" ? "Experiment total costs" : "Experiment known subtotal" },
+        ...totalCostBlocks(totalCosts).slice(1),
+        { kind: "keyValue", entries: [
+          { key: "Scope", value: "Latest recorded slots; replaced executions excluded" },
+          { key: "Selected slots", value: String(coverage.selectedSlotCount) },
+          { key: "Resolved slots", value: String(coverage.resolvedSlotCount) },
+          { key: "Unique origin Attempts", value: String(coverage.originAttemptCount) },
+          { key: "Attempts with complete costs", value: String(coverage.completeAttemptCount) },
+          { key: "Attempts with partial costs", value: String(coverage.partialAttemptCount) },
+          { key: "Attempts with unavailable costs", value: String(coverage.unavailableAttemptCount) },
+          { key: "Unresolved slots", value: String(coverage.unresolvedSlotCount) },
+        ] },
         { kind: "divider", title: "Summary" },
         aggregateEntries(value.aggregate),
         { kind: "divider", title: "Attempts" },
         ...attemptBlocks(value.cells, null, true),
+        { kind: "divider", title: "Models and usage" },
+        { kind: "keyValue", entries: [
+          { key: "Origin Attempts", value: `${value.modelUsage.attempts.length} shown; ${value.modelUsage.totalAttemptCount} selected; ${value.modelUsage.omittedAttemptCount} omitted; ${value.modelUsage.unresolvedAttemptCount} unresolved` },
+          { key: "Scope", value: "Per origin Attempt; recorded calls only" },
+        ] },
+        ...value.modelUsage.attempts.flatMap<TerminalPanelContentBlock>((attempt) => [
+          { kind: "divider", title: `Usage ${attempt.locator}` },
+          { kind: "keyValue", entries: [
+            { key: "Attempt", value: attempt.locator },
+            { key: "Origin Run", value: attempt.originRunId },
+          ] },
+          ...totalCostBlocks(attempt.usage.totalCosts),
+          ...modelUsageBlocks(attempt.usage),
+          { kind: "divider", title: "Application totals" },
+          { kind: "keyValue", entries: usageTotalEntries(attempt.usage.totals) },
+        ]),
       ],
     },
   ]);
@@ -340,6 +427,8 @@ function executionValue(value: ExecutionValue): string {
   return value.state === "available" ? value.value : value.state;
 }
 
+// @concord-code ne-surface-render-run
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 export function renderRun(value: RunView): string {
   const blocks: TerminalBlock[] = [
     {
@@ -530,6 +619,9 @@ function formatAttemptLimitation(value: AttemptLimitation): string {
   return `assertion-material; ${value.state}; ${value.reason}; ${value.limitations.length} material limitations`;
 }
 
+// @concord-code ne-surface-render-attempt
+// @concord-implements docs/feature/inspection/cli.md
+// @concord-implements docs/feature/error-classification/use-case/reading-errored.md
 export function renderAttempt(value: AttemptView): string {
   return terminal([
     {
@@ -539,6 +631,7 @@ export function renderAttempt(value: AttemptView): string {
         ? "scored"
         : value.verdict ?? value.outcome,
       blocks: [
+        ...(value.totalCosts === undefined ? [] : totalCostBlocks(value.totalCosts)),
         {
           kind: "keyValue",
           entries: [
@@ -717,6 +810,76 @@ function sourceRange(
   return `start ${start.line}:${start.column} · end ${end.line}:${end.column}`;
 }
 
+function safeEventText(text: string): string {
+  return Array.from(text).filter((character) => !displayTextHasForbiddenCharacter(character)).join("");
+}
+
+function safeEventJson(value: unknown, space?: number): string {
+  return JSON.stringify(value, (_key, item: unknown) => typeof item === "string" ? safeEventText(item) : item, space);
+}
+
+function displayPreview(text: { readonly preview: string; readonly omittedBytes: number }, eventId: string): string {
+  return safeEventText(text.preview) + (text.omittedBytes === 0 ? "" : `\n… (${text.omittedBytes} more bytes, --expand ${eventId})`);
+}
+
+function truncateCodeLine(line: string, width: number): string {
+  if (stringWidth(line) <= width) return line;
+  let text = "";
+  let used = 0;
+  for (const character of line) {
+    const size = charDisplayWidth(character.codePointAt(0)!);
+    if (used + size > width - 1) break;
+    text += character;
+    used += size;
+  }
+  return `${text}…`;
+}
+
+function displayLines(block: ExecutionDisplayPreviewBlock | ExecutionDisplayDetailBlock, eventId: string, width: number): string[] {
+  const textValue = (text: string | { readonly preview: string; readonly omittedBytes: number }): string =>
+    typeof text === "string" ? safeEventText(text) : displayPreview(text, eventId);
+  switch (block.kind) {
+    case "text": return wrapDisplay(textValue(block.text), width);
+    case "message": {
+      const label = safeEventText(block.speaker ?? block.role);
+      const prefix = `${label}: `;
+      return wrapDisplay(textValue(block.text), Math.max(4, width - stringWidth(prefix)))
+        .map((line, index) => `${index === 0 ? prefix : " ".repeat(stringWidth(prefix))}${line}`);
+    }
+    case "fields": {
+      const labelWidth = Math.max(0, ...block.fields.map((field) => stringWidth(safeEventText(field.label))));
+      return block.fields.flatMap((field) => {
+        const value = typeof field.value === "object" && field.value !== null
+          ? textValue(field.value)
+          : typeof field.value === "string" ? safeEventText(field.value) : JSON.stringify(field.value);
+        return wrapDisplay(value, Math.max(4, width - labelWidth - 2)).map((line, index) =>
+          `${index === 0 ? padDisplay(safeEventText(field.label), labelWidth) : " ".repeat(labelWidth)}  ${line}`);
+      });
+    }
+    case "code": {
+      if (typeof block.text === "string") return safeEventText(block.text).split("\n");
+      return [
+        ...safeEventText(block.text.preview).split("\n").map((line) => truncateCodeLine(line, width)),
+        ...(block.text.omittedBytes === 0 ? [] : [`… (${block.text.omittedBytes} more bytes, --expand ${eventId})`]),
+      ];
+    }
+    case "image": return [
+      ...wrapDisplay(`[image] ${safeEventText(block.alt)}`, width),
+      ...wrapDisplay(`${block.mediaType} · ${block.byteLength} bytes · artifact ${block.artifactId}`, width),
+    ];
+  }
+}
+
+function displayDetailBlocks(block: ExecutionDisplayDetailBlock, locator: string, eventId: string): TerminalBlock[] {
+  const lines = displayLines(block, eventId, TERMINAL_OPTIONS.width);
+  const blocks: TerminalBlock[] = [{ kind: "code", text: lines.join("\n") }];
+  if (block.kind === "image") {
+    const request = JSON.stringify({ protocol: "niceeval.query/v1", operation: { kind: "attempt.artifact", locator, artifactId: block.artifactId } });
+    blocks.push({ kind: "code", text: `niceeval query run --request - <<'NICEEVAL_REQUEST'\n${request}\nNICEEVAL_REQUEST` });
+  }
+  return blocks;
+}
+
 export function renderTrace(value: TraceView): string {
   const blocks: TerminalBlock[] = [
     {
@@ -726,42 +889,62 @@ export function renderTrace(value: TraceView): string {
     },
     {
       kind: "panel",
-      title: `Generic execution traces · ${value.execution.state}`,
+      title: "Generic execution traces",
       blocks: [
         {
           kind: "keyValue",
           entries: [
+            { key: "Capture", value: value.execution.state },
             { key: "Traces", value: String(value.execution.traces.length) },
             {
               key: "Events",
-              value: boundedPreview(
-                value.execution.events.length,
-                value.execution.hasMore,
-                value.execution.omittedEventCount,
-              ),
+              value: `${value.execution.events.length} shown; ${value.execution.omittedEventCount} remaining in this selection`,
             },
-            { key: "Continuation", value: value.execution.continuation ?? "complete" },
+            { key: "Page", value: value.execution.hasMore ? "more events available" : "end of selected events" },
+            ...(value.execution.continuation === undefined ? [] : [{ key: "Continuation", value: value.execution.continuation }]),
           ],
         },
         {
           kind: "table",
-          columns: [
-            { header: "Event ID" },
-            { header: "Type" },
-            { header: "Source" },
-            { header: "Actor" },
-            { header: "Time" },
-            { header: "Summary" },
-          ],
-          rows: value.execution.events.map((event) => [
-            event.eventId,
-            event.type,
-            event.source.id,
-            event.actor?.label ?? event.actor?.id ?? "not-recorded",
-            event.time === undefined ? "not-recorded" : `${event.time.clockId}: ${event.time.value} ${event.time.unit}`,
-            event.summary,
-          ]),
+          columns: [{ header: "Capture limitation" }],
+          rows: value.execution.limitations.map((limitation) => [safeEventJson(limitation)]),
+          overflow: "wrap",
         },
+        ...value.execution.traces.flatMap<TerminalPanelContentBlock>((trace) => [
+          { kind: "divider", title: `Trace ${safeEventText(trace.sourceTraceId)}` },
+          {
+            kind: "keyValue",
+            entries: [
+              { key: "Trace ID", value: trace.traceId },
+              { key: "Producer collection", value: trace.collection.state },
+              { key: "Recorded events", value: String(trace.eventCount) },
+            ],
+          },
+          {
+            kind: "table",
+            columns: [{ header: "Producer limitation" }, { header: "Reason" }],
+            rows: trace.collection.limitations.map((limitation) => [safeEventText(limitation.code), safeEventText(limitation.message)]),
+            overflow: "wrap",
+          },
+        ]),
+        { kind: "divider", title: "Event page" },
+        ...value.execution.events.flatMap<TerminalPanelContentBlock>((event) => [
+          { kind: "divider", title: safeEventText(event.type) },
+          {
+            kind: "keyValue",
+            entries: [
+              { key: "Event ID", value: event.eventId },
+              { key: "Actor", value: safeEventText(event.actor?.label ?? event.actor?.id ?? "not-recorded") },
+              { key: "Source", value: safeEventText(event.source.id) },
+              ...(event.time === undefined ? [] : [{ key: "Time", value: safeEventText(`${event.time.clockId}: ${event.time.value} ${event.time.unit}`) }]),
+              { key: "Summary", value: safeEventText(event.summary) },
+            ],
+          },
+          ...(event.display.state === "absent" ? [] : event.display.blocks.map((block): TerminalPanelContentBlock => ({
+            kind: "command",
+            command: displayLines(block, event.eventId, panelContentWidth(TERMINAL_OPTIONS.width, TERMINAL_OPTIONS.mode)).join("\n"),
+          }))),
+        ]),
       ],
     },
     {
@@ -1066,7 +1249,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
     blocks: [],
   };
   if (body.kind === "execution-event") {
-    const eventJson = JSON.stringify({
+    const eventJson = safeEventJson({
       key: body.event.key,
       type: body.event.type,
       source: body.event.source,
@@ -1076,45 +1259,46 @@ export function renderTraceDetail(value: TraceDetailView): string {
       payload: body.event.payload ?? null,
       links: body.event.links,
       scopeMemberships: body.event.scopeMemberships,
-    }, null, 2);
+    }, 2);
     return terminal([
       heading,
       {
         kind: "panel",
-        title: `${body.event.type} · ${body.event.eventId}`,
+        title: `${safeEventText(body.event.type)} · ${body.event.eventId}`,
         blocks: [{
           kind: "keyValue",
           entries: [
             { key: "Trace", value: body.event.traceId },
-            { key: "Source", value: body.event.source.id },
-            { key: "Native event ID", value: body.event.source.eventId ?? "not-recorded" },
+            { key: "Source", value: safeEventText(body.event.source.id) },
+            { key: "Native event ID", value: safeEventText(body.event.source.eventId ?? "not-recorded") },
             { key: "Client sequence", value: body.event.source.sequence === undefined ? "not-recorded" : String(body.event.source.sequence) },
-            { key: "Actor", value: body.event.actor?.id ?? "not-recorded" },
-            { key: "Time", value: body.event.time === undefined ? "not-recorded" : `${body.event.time.value} ${body.event.time.unit} (${body.event.time.clockId})` },
-            { key: "Summary", value: body.event.summary },
+            { key: "Actor", value: safeEventText(body.event.actor?.id ?? "not-recorded") },
+            { key: "Time", value: body.event.time === undefined ? "not-recorded" : safeEventText(`${body.event.time.value} ${body.event.time.unit} (${body.event.time.clockId})`) },
+            { key: "Summary", value: safeEventText(body.event.summary) },
             { key: "Evidence", value: String(body.evidence.length) },
           ],
         }],
       },
+      ...(body.event.display ?? []).flatMap((block) => displayDetailBlocks(block, value.locator, body.event.eventId)),
       { kind: "divider", title: "Event" },
       { kind: "code", text: eventJson },
       ...body.evidence.flatMap((evidence): readonly TerminalBlock[] => ([
         {
           kind: "panel",
-          title: `${evidence.label} · ${evidence.evidenceId}`,
+          title: `${safeEventText(evidence.label)} · ${evidence.evidenceId}`,
           meta: evidence.truncated ? "preview" : "complete",
           blocks: [{
             kind: "keyValue",
             entries: [
               { key: "Artifact", value: evidence.artifactId },
-              { key: "Pointer", value: evidence.pointer },
+              { key: "Pointer", value: safeEventText(evidence.pointer) },
               { key: "Bytes", value: String(evidence.targetByteLength) },
               { key: "Target SHA-256", value: evidence.targetSha256 },
               { key: "Next offset", value: evidence.nextOffset === null ? "complete" : String(evidence.nextOffset) },
             ],
           }],
         },
-        { kind: "code", text: executionEvidenceText(evidence.base64) },
+        { kind: "code", text: safeEventText(executionEvidenceText(evidence.base64)) },
         ...(evidence.nextOffset === null ? [] : [{
           kind: "command" as const,
           command: `Query attempt.trace.detail for ${evidence.evidenceId} with offset ${evidence.nextOffset}`,
@@ -1127,20 +1311,20 @@ export function renderTraceDetail(value: TraceDetailView): string {
       heading,
       {
         kind: "panel",
-        title: `${body.label} · ${body.evidenceId}`,
+        title: `${safeEventText(body.label)} · ${body.evidenceId}`,
         blocks: [{
           kind: "keyValue",
           entries: [
             { key: "Trace", value: body.traceId },
             { key: "Event", value: body.eventId },
             { key: "Artifact", value: body.artifactId },
-            { key: "Pointer", value: body.pointer },
+            { key: "Pointer", value: safeEventText(body.pointer) },
             { key: "Range", value: `${body.offset}..${body.nextOffset ?? body.targetByteLength}` },
             { key: "Target SHA-256", value: body.targetSha256 },
           ],
         }],
       },
-      { kind: "code", text: executionEvidenceText(body.base64) },
+      { kind: "code", text: safeEventText(executionEvidenceText(body.base64)) },
       ...(body.nextOffset === null ? [] : [{
         kind: "command" as const,
         command: `Query attempt.trace.detail for ${body.evidenceId} with offset ${body.nextOffset}`,
@@ -1425,8 +1609,8 @@ function usageTotalEntries(
           }`,
         }
       : {
-          key: "Cost",
-          value: `${totals.costs.state}; ${totals.costs.source ?? "unknown"}; ${
+          key: "Application cost",
+          value: `${totals.costs.state}${totals.costs.state === "partial" ? "; known subtotal" : ""}; ${totals.costs.source ?? "unknown"}; ${
             totals.costs.values.length === 0
               ? `0/${totals.costs.totalCalls} covered calls; no recorded values`
               : totals.costs.values.map((cost) =>
@@ -1437,6 +1621,73 @@ function usageTotalEntries(
   ];
 }
 
+function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanelContentBlock[] {
+  const complete = costs.state === "complete";
+  return [
+    { kind: "divider", title: complete ? "Total costs" : "Known subtotal" },
+    { kind: "keyValue", entries: [
+      { key: "Cost coverage", value: complete ? "Complete" : "Incomplete" },
+      ...(costs.missingSources.length === 0 ? [] : [{ key: "Missing sources", value: costs.missingSources.join(", ") }]),
+      ...(costs.values.length === 0 ? [{ key: "Amount", value: complete ? "No recorded charges" : "Unavailable" }] : []),
+    ] },
+    ...(costs.values.length === 0 ? [] : [{ kind: "table" as const,
+      columns: [{ header: "Currency" }, { header: complete ? "Total" : "Known subtotal" }, { header: "Source" }],
+      rows: costs.values.map((cost) => [cost.currency, cost.value, cost.source]), overflow: "wrap" as const }]),
+  ];
+}
+
+function modelUsageBlocks(
+  value: Pick<UsageView, "configuredModels" | "modelGroups" | "totalCosts"> & { readonly judgeUsage: import("../inspection/results.ts").JudgeUsageSummary },
+): readonly TerminalPanelContentBlock[] {
+  const configured = value.configuredModels;
+  const groups = value.modelGroups;
+  const recordedCalls = (count: number | null): string => count === null ? "—" : count === 0 ? "0 (no recorded calls)" : String(count);
+  const defaultBinding = configured.state === "available" && configured.bindings.length === 1 && configured.bindings[0].modelSlot === "default" ? configured.bindings[0] : null;
+  const configurationBlocks: readonly TerminalPanelContentBlock[] = configured.state !== "available"
+    ? [{ kind: "keyValue", entries: [{ key: "Configuration", value: configured.state }] }]
+    : defaultBinding !== null
+    ? [{ kind: "keyValue", entries: [
+      { key: "Configured model (default)", value: defaultBinding.model ?? "—" },
+      ...(defaultBinding.reasoningEffort === null ? [] : [{ key: "Effort", value: defaultBinding.reasoningEffort }]),
+      { key: "Recorded calls", value: recordedCalls(defaultBinding.recordedCalls) },
+    ] }]
+    : configured.bindings.length === 0
+    ? [{ kind: "keyValue", entries: [{ key: "Configured slots", value: "0" }] }]
+    : [{ kind: "table", columns: [{ header: "Slot" }, { header: "Configured model" }, { header: "Effort" }, { header: "Recorded calls" }],
+      rows: configured.bindings.map((binding) => [binding.modelSlot, binding.model ?? "—", binding.reasoningEffort ?? "—", recordedCalls(binding.recordedCalls)]), overflow: "wrap" }];
+  return [
+    { kind: "divider", title: "Configured model slots" },
+    ...configurationBlocks,
+    { kind: "divider", title: "Actual model usage" },
+    { kind: "keyValue", entries: [
+      { key: "State", value: groups.state },
+      { key: "Basis", value: groups.basis },
+      { key: "Groups", value: `${groups.groups.length} shown; ${groups.totalGroupCount ?? "unknown"} total; ${groups.omittedGroupCount} omitted${groups.groupsTruncated ? " (truncated)" : ""}` },
+      ...("reason" in groups && groups.reason !== undefined ? [{ key: "Reason", value: groups.reason }] : []),
+    ] },
+    { kind: "table", columns: [
+      { header: "Slot / provider / actual model", maxWidth: 30 },
+      { header: "Calls / tokens", maxWidth: 18 }, { header: "Application cost", maxWidth: 24 },
+    ], rows: groups.groups.map((group) => [
+      `Slot: ${group.modelSlot ?? "not-recorded"}\nProvider: ${group.provider ?? "not-recorded"}\n${group.model ?? "not-recorded"}`,
+      `${group.recordedCalls} calls\nInput incl. cache: ${metric(group.tokens.inputTotalTokens)}\nOutput: ${metric(group.tokens.outputTokens)}\nTotal: ${metric(group.tokens.totalTokens)}`,
+      group.costs.values.length === 0 ? group.costs.state : group.costs.values.map((cost) =>
+        `${cost.value} ${cost.currency} (${group.costs.state}${group.costs.state === "partial" ? "; known subtotal" : ""}; ${cost.coveredCalls}/${group.costs.totalCalls} covered; ${cost.source})`
+      ).join("; "),
+    ]), overflow: "wrap" },
+    { kind: "divider", title: "Judge usage" },
+    { kind: "keyValue", entries: "totals" in value.judgeUsage ? [
+      { key: "Physical calls", value: value.judgeUsage.totals.requests.value === 0 && value.judgeUsage.totals.requests.state === "available" ? "No Judge calls" : metric(value.judgeUsage.totals.requests) },
+      { key: "Input tokens", value: metric(value.judgeUsage.totals.inputTotalTokens) },
+      { key: "Output tokens", value: metric(value.judgeUsage.totals.outputTokens) },
+      { key: "Total tokens", value: metric(value.judgeUsage.totals.totalTokens) },
+      { key: "Cost", value: value.judgeUsage.totals.costs.state },
+      ...value.judgeUsage.totals.costs.values.map((cost) => ({ key: cost.currency,
+        value: `${cost.value} (${cost.coveredCalls}/${value.judgeUsage.state === "complete" || value.judgeUsage.state === "partial" ? value.judgeUsage.totals.costs.totalCalls : "unknown"} covered; ${cost.source})` })),
+    ] : [{ key: "State", value: `${value.judgeUsage.state}; ${value.judgeUsage.reason}` }] },
+  ];
+}
+
 export function renderUsage(value: UsageView): string {
   return terminal([
     {
@@ -1444,6 +1695,8 @@ export function renderUsage(value: UsageView): string {
       title: `Usage ${value.locator}`,
       meta: value.state,
       blocks: [
+        ...totalCostBlocks(value.totalCosts),
+        { kind: "divider", title: "Application usage" },
         {
           kind: "keyValue",
           entries: [
@@ -1475,6 +1728,7 @@ export function renderUsage(value: UsageView): string {
             },
           ],
         },
+        ...modelUsageBlocks(value),
         { kind: "divider", title: "Limitations" },
         {
           kind: "table",
@@ -1484,7 +1738,7 @@ export function renderUsage(value: UsageView): string {
           ]),
           overflow: "wrap",
         },
-        { kind: "divider", title: value.totals.costs === undefined ? "Provider costs" : "Costs" },
+        { kind: "divider", title: value.totals.costs === undefined ? "Provider costs" : "Application costs" },
         {
           kind: "table",
           columns: [

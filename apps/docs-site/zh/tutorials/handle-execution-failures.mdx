@@ -1,34 +1,48 @@
 ---
-title: "在基础设施失败时停止无效运行"
+title: "凭据失效或服务挂掉时，及时止损"
 sidebarTitle: "处理执行失败"
-description: "读懂自动重试，为确定性故障声明影响范围，修复后继续未完成的评估。"
+description: "了解 NiceEval 会自动重试哪些失败；发现凭据失效、共享服务断开这类注定失败的故障时，停止剩下的 Attempt，修好后只补跑没完成的部分。"
 ---
 
-NiceEval 会自动重试明确未被 Agent 受理的瞬时失败，例如限流或部分网络错误。如果某个故障注定让同一实验或评估的后续 Attempt 失败，你可以立即停止它们。
+一批 200 条的评估跑到第 30 条，API Key 过期了。剩下 170 条注定全部失败，却还会一条条地创建 Sandbox、调用模型、消耗预算。
 
-## 先区分执行故障与业务结论
+NiceEval 分两种情况处理：
 
-`errored` 表示运行没有形成可评分的业务结果，例如目标服务未启动、协议不匹配、凭证无效、依赖缺失或 Adapter 抛错。修复执行链后重跑。
+- 限流、网络抖动这类瞬时失败，只要能确认 Agent 还没收到请求，NiceEval 会自动重试，你不用管。
+- 凭据失效、共享服务断开这类故障，重试也没用。你可以在代码里声明它影响哪些范围，NiceEval 会停止派发剩下的相关 Attempt。修好之后，只补跑没完成的部分，已经得出的结果照常保留。
 
-`failed` 表示 Attempt 已经执行完成，但一个或多个业务断言不满足。它可能正确暴露了被测系统的问题，也可能暴露了过紧或错误的判据。先读取同一 Attempt 的输入、输出、Assertion 和证据覆盖，再决定修改被测系统还是评估用例。不要把真实业务失败归类成基础设施故障，也不要为了全绿而自动重写判据。
+## 先分清是运行出错还是答错了
 
-Score Eval 的完成状态只表示评分过程结束。是否表现良好由分数和逐项 Assertion 决定；低分结果不应因为执行完成而被解释为满分。
+动手修之前，先看失败的 Attempt 是哪一种：
 
-## 先读懂自动重试
+- `errored`：运行本身没跑成，没有得出可以评分的结果。例如目标服务没启动、协议不匹配、凭据无效、依赖缺失或 Adapter 抛错。修好运行环境后重跑。
+- `failed`：Attempt 跑完了，但有业务断言没满足。它可能确实暴露了被测系统的问题，也可能说明判据过紧或写错了。先查看同一个 Attempt 的输入、输出、断言和证据，再决定改被测系统还是改评估用例。
 
-自动重试不需要配置。重试等待时，Attempt 的活动行会显示类似这条信息：
+不要把真实的业务失败归成基础设施故障，也不要为了全绿去改判据。
+
+计分制评估跑完只说明打分结束了。表现好不好要看分数和每条断言，低分结果不会因为跑完了就算满分。
+
+查看某个 Attempt 的错误正文时，复制终端给出的 locator：
+
+```sh
+pnpm exec niceeval show @<attempt-locator>
+```
+
+## 读懂自动重试
+
+自动重试不需要配置。重试等待时，Attempt 的进度行会显示类似这条信息：
 
 ```text
 turn retry 2/4 (rate_limit) — waiting 8s
 ```
 
-重试成功后，评分和事件流只保留成功的 Turn。重试次数用完后，Attempt 会变成 `errored`，错误中会出现摘要：
+重试成功后，评分和对话记录只保留成功的那次 Turn。重试次数用完后，Attempt 会变成 `errored`，错误里会出现摘要：
 
 ```text
 retries exhausted (4 attempts, rate_limit)
 ```
 
-没有这条摘要，表示 NiceEval 没有重试该错误。已经被 Agent 受理或无法确定受理状态的请求不会自动重试，以免重复执行有副作用的操作。
+没有这条摘要，说明 NiceEval 没有重试这个错误。Agent 已经收到的请求，或者无法确定是否收到的请求，不会自动重试，以免重复执行有副作用的操作。
 
 ## 在发现故障时声明影响范围
 
@@ -111,20 +125,28 @@ export default defineExperiment({
 
 只识别你能确定影响范围的服务。不要把所有 `ECONNREFUSED` 都当成实验级故障，因为 Agent 访问其他站点时也可能出现同样的错误。
 
-## 修复后继续运行
+## 修好后补跑没完成的部分
 
-止损生效后，已经失败的 Attempt 会记为 `errored`。还没开始的 Attempt 会记为 `unstarted`，运行状态会显示 `incomplete`。
+止损生效后，同一范围里还没开始的 Attempt 不再派发，记为 `unstarted`，运行状态显示 `incomplete`。已经在跑的 Attempt 会跑完并如实记录结果，触发故障的那些记为 `errored`。
 
-修好服务、凭据或 Fixture 后，重新运行原命令。NiceEval 会保留已通过的结果，并运行之前 `errored` 或 `unstarted` 的部分。
+先看这次运行的结果，确认停下来的范围和你预期的一致。Run ID 在终端的 `NEXT` 面板里：
 
-```shell
-npx niceeval exp compare evals/coding
+```sh
+pnpm exec niceeval show --run <run-id>
 ```
 
-需要查看某个 Attempt 的原始错误和重试摘要时，使用终端给出的定位符：
+也可以用 `pnpm exec niceeval view --run <run-id>` 在浏览器里看。需要查看某个 Attempt 的原始错误和重试摘要时，复制它的 locator：
 
-```shell
+```sh
 pnpm exec niceeval show @<attempt-locator> --execution
 ```
 
-自定义 Adapter 如果有专用的受理前拒绝信号，可以提供 `classifySendFailure`。该字段的类型和边界见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。
+修好服务、凭据或 Fixture 后，重新运行原命令：
+
+```sh
+pnpm exec niceeval exp compare evals/coding
+```
+
+`errored` 和 `unstarted` 的 Attempt 会重新跑，已经通过的结果照常沿用。运行前可以加 `--dry` 确认哪些会重跑，规则见[修改后只重跑受影响的评估](/zh/tutorials/rerun-and-cache)。
+
+自定义 Adapter 如果能明确识别“请求被拒绝、还没被受理”的协议信号，可以提供 `classifySendFailure`，把这类失败标为可以重试。字段类型和边界见 [`defineSandboxAgent` 参考](/zh/reference/define-agent#definesandboxagent)。

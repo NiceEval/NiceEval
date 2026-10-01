@@ -1,3 +1,8 @@
+// @concord-file ne-eval-assertions-judge
+// @concord-implements docs/feature/judge/README.md
+// @concord-implements docs/feature/judge/library.md
+// @concord-implements docs/feature/judge/use-case/verify-judge.md
+// @concord-implements docs/feature/eval/use-case/judge-quality.md
 // Native LLM-as-Judge evaluator. Definition and material capture are pure;
 // provider I/O, timeout, retry, and interruption stay in the owning Effect.
 
@@ -77,7 +82,7 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
     anchors.push(Object.freeze({ measurement, description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024) }));
   }
   if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1) throw new TypeError("Judge anchors must include 0 and 1");
-  const maxMaterialBytes = input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 48 * 1024);
+  const maxMaterialBytes = input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024);
   const definition = defineScoreMatch<unknown>({
     name,
     version: "1",
@@ -85,7 +90,7 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
     llm: {
       maxMaterialBytes,
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
-      ...(input.maxAuditBytes === undefined ? {} : { maxAuditBytes: positiveInteger(input.maxAuditBytes, "Judge maxAuditBytes", 256 * 1024) }),
+      ...(input.maxAuditBytes === undefined ? {} : { maxAuditBytes: positiveInteger(input.maxAuditBytes, "Judge maxAuditBytes", 8 * 1024 * 1024) }),
     },
     score: (material, context) => context.llm.score({ rubric, anchors, material: material as JudgeMaterial })
       .pipe(Effect.map((result) => ({ state: "measured" as const, ...result }))),
@@ -105,8 +110,8 @@ export interface CapturedImageReference {
 interface SnapshotState { nodes: number; readonly ancestors: WeakSet<object>; readonly images?: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }>; imageBytes?: number; imageReferences?: number; }
 function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path = ""): unknown {
   state.nodes += 1;
-  if (state.nodes > 16_384) throw new TypeError("Judge material exceeds 16,384 traversal nodes");
-  if (depth > 32) throw new TypeError("Judge material exceeds depth 32");
+  if (state.nodes > 2_097_152) throw new TypeError("Judge material exceeds 2,097,152 traversal nodes");
+  if (depth > 72) throw new TypeError("Judge material exceeds depth 72");
   if (isJudgeImage(value)) {
     if (state.images === undefined) throw new TypeError("Judge image is only valid in material");
     const image = readJudgeImage(value);
@@ -334,25 +339,64 @@ export function responseByteCap(maxOutputTokens: number): number {
 
 /** @internal transport seam: cap bytes before any JSON parser observes them. */
 export async function readJudgeResponseCapped(response: Response, maxBytes: number): Promise<Response> {
+  const body = await readJudgeResponseText(response, maxBytes);
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
+async function readJudgeResponseText(
+  response: Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+  usage?: import("../o11y/judge-usage.ts").JudgeUsageTransmission,
+  deadlineAt = Infinity,
+): Promise<string> {
   const advertised = response.headers.get("content-length");
-  if (advertised !== null && Number(advertised) > maxBytes) throw new JudgeResponseTooLarge("judge response exceeds the byte cap");
-  if (response.body === null) return response;
+  if (advertised !== null && Number(advertised) > maxBytes) {
+    const cancellation = response.body?.cancel();
+    if (cancellation !== undefined) { usage?.trackCleanup(cancellation, deadlineAt); void cancellation.catch(() => undefined); }
+    throw new JudgeResponseTooLarge("judge response exceeds the byte cap");
+  }
+  if (response.body === null) return "";
   const reader = response.body.getReader();
   let bytes = 0;
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const next = await reader.read();
-      if (next.done) return controller.close();
+  let complete = false;
+  let rejectAbort: (reason: unknown) => void = () => undefined;
+  const interrupted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+  const abort = () => rejectAbort(new DOMException("Judge request cancelled", "AbortError"));
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  const chunks: Uint8Array[] = [];
+  try {
+    for (;;) {
+      const next = await Promise.race([reader.read(), interrupted]);
+      if (next.done) { complete = true; break; }
       bytes += next.value.byteLength;
-      if (bytes > maxBytes) {
-        await reader.cancel();
-        return controller.error(new JudgeResponseTooLarge("judge response exceeds the byte cap"));
-      }
-      controller.enqueue(next.value);
-    },
-    async cancel(reason) { await reader.cancel(reason); },
+      if (bytes > maxBytes) throw new JudgeResponseTooLarge("judge response exceeds the byte cap");
+      chunks.push(next.value);
+    }
+    const joined = new Uint8Array(bytes);
+    let offset = 0;
+    for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.byteLength; }
+    return new TextDecoder().decode(joined);
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    if (complete) reader.releaseLock();
+    else {
+      const cancellation = reader.cancel().finally(() => reader.releaseLock());
+      usage?.trackCleanup(cancellation, deadlineAt);
+      void cancellation.catch(() => undefined);
+    }
+  }
+}
+
+function abortWait(signal: AbortSignal): { promise: Promise<never>; dispose: () => void } {
+  let abort: () => void = () => undefined;
+  const promise = new Promise<never>((_, reject) => {
+    abort = () => reject(new DOMException("Judge request cancelled", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
   });
-  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  return { promise, dispose: () => signal.removeEventListener("abort", abort) };
 }
 
 /** The single bounded HTTP adapter used by every managed LLM primitive. */
@@ -363,13 +407,41 @@ export async function requestScoreMatchProvider(input: {
   readonly body: string;
   readonly maxBytes: number;
   readonly signal: AbortSignal;
+  readonly usage?: import("../o11y/judge-usage.ts").JudgeUsageTransmission;
+  readonly deadlineAt?: number;
 }): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
-  const response = await fetch(`${input.baseUrl.replace(/\/$/u, "")}/${input.endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.apiKey}` },
-    body: input.body,
-    signal: input.signal,
-  });
-  const bounded = await readJudgeResponseCapped(response, input.maxBytes);
-  return { status: response.status, headers: response.headers, body: await bounded.text() };
+  const deadlineAt = input.deadlineAt ?? Infinity;
+  let resolveSettled: () => void = () => undefined;
+  const settled = new Promise<void>((resolve) => { resolveSettled = resolve; });
+  const cancel = () => { input.usage?.cancel(); input.usage?.trackCleanup(settled, deadlineAt); };
+  input.signal.addEventListener("abort", cancel, { once: true });
+  const interrupted = abortWait(input.signal);
+  let request: Promise<Response> | undefined;
+  let received = false;
+  try {
+    request = fetch(`${input.baseUrl.replace(/\/$/u, "")}/${input.endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.apiKey}` },
+      body: input.body, signal: input.signal,
+    });
+    const response = await Promise.race([request, interrupted.promise]);
+    received = true;
+    input.usage?.headers(response.status);
+    const body = await readJudgeResponseText(response, input.maxBytes, input.signal, input.usage, deadlineAt);
+    input.usage?.body(body);
+    return { status: response.status, headers: response.headers, body };
+  } catch (error) {
+    if (input.signal.aborted) input.usage?.cancel();
+    else input.usage?.fail(error instanceof JudgeResponseTooLarge ? "response-too-large" : "response-unavailable");
+    if (!received && request !== undefined) {
+      const cleanup = request.then((response) => response.body?.cancel(), () => undefined);
+      input.usage?.trackCleanup(cleanup, deadlineAt);
+      void cleanup.catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    interrupted.dispose();
+    input.signal.removeEventListener("abort", cancel);
+    resolveSettled();
+  }
 }

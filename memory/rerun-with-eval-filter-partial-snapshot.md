@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: rerun-with-eval-filter-partial-snapshot
+title: 带 eval-id 位置参数补跑会产出部分快照,遮蔽线上/聚合口径
+createdAt: 2026-07-07T19:33:00+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/rerun-with-eval-filter-partial-snapshot.md
+  commit: d3658e152e8672868dff5634d3232294e3cf2915
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- **已修(第二层根因)**:carry 基线原来只取「最近一个 run」(`loadMostRecentResults` 的 `loaded[0]`),部分补跑 run 一旦成为最新,任何后续续跑都携带不到东西,`exp <组>` 补齐随之失效。已改为跨历史每 `(experimentId, evalId)` 取最新一份(`src/view/loader.ts` 的 `loadLatestResultsPerEval`,配套 `loader.test.ts`)。"
+    proof: []
+    source:
+      path: memory/rerun-with-eval-filter-partial-snapshot.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:4025a1952278b4a5a881ad4f41ad92c86ba82148acd7a584841236ceb7955988
+---
 # 带 eval-id 位置参数补跑会产出部分快照,遮蔽线上/聚合口径
 
 ## 现象

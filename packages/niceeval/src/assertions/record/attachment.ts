@@ -1,5 +1,6 @@
 import { Result, Schema, Stream } from "effect";
 import { readJudgeImage } from "../../judge/image.ts";
+import { fullAssertionContentOf } from "../full-content.ts";
 import type { RecordBytesContentHandle } from "../../record/attachment/content.ts";
 import type {
   AttachedRecordContent,
@@ -384,8 +385,8 @@ function encodeMaterial(
         byteLength: body.byteLength, preview: null });
     }
     case "snapshot": {
-      const value = encodeSnapshotValue(material.value);
-      const bytes = new TextEncoder().encode(JSON.stringify(value));
+      const content = fullAssertionContentOf(material) ?? JSON.stringify(encodeSnapshotValue(material.value));
+      const bytes = new TextEncoder().encode(content);
       return Object.freeze({
         kind: "content" as const,
         source: Stream.succeed(bytes),
@@ -442,6 +443,8 @@ function encodeLimitations(
         return Object.freeze({ kind: "truncated" as const, omittedBytes: limitation.omittedBytes });
       case "provider-limited":
         return Object.freeze({ kind: "provider-limited" as const });
+      case "capacity-limited":
+        return Object.freeze({ ...limitation });
     }
   }));
 }

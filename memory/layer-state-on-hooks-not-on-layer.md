@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: layer-state-on-hooks-not-on-layer
+title: "设计裁决:层状态挂 spec Hook 链,不做层自带 state: { load, save }"
+createdAt: 2026-07-31T10:56:50+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/layer-state-on-hooks-not-on-layer.md
+  commit: 333bf13d1a57b2e88bd20453fef27abbb5dd3ca1
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:层状态挂 spec Hook 链,不做层自带 state: { load, save }
 
 **裁决**(2026-07-31,环境层 roadmap 评审):状态(记忆载入/回存这类每沙箱动作)留在 sandbox spec 的 `.setup()/.teardown()` Hook 链;`defineLayer` 不加 `state: { load, save }` 成对声明。同批判据当时落在 `docs/roadmap/environment-model/README.md`;当前候选快照见 `docs/design/environment-model/PLAN-2/architecture.md`。

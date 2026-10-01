@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: pure-adapter-official-installer
+title: Adapter 纯适配:ensure 声明归 Adapter,安装归官方 Agent 安装层
+createdAt: 2026-08-01T18:25:03+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/pure-adapter-official-installer.md
+  commit: a390ed2e3b58bad7c6a14a494837804a0d3bc114
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # Adapter 纯适配:ensure 声明归 Adapter,安装归官方 Agent 安装层
 
 ## 裁决

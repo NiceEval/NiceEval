@@ -6,7 +6,7 @@ Feature、Roadmap 与 Design 候选共用同一套 Feature Design Package。
 - [`feature-design/`](feature-design/README.md)：由 `pnpm run repo docs feature create` 和 `pnpm run repo docs design create` 使用。
 - [`design-decision/`](design-decision/README.md)：由 `pnpm run repo docs design create` 创建多个候选的决策外层。
 
-Roadmap 与 Use Case 尚无受管结构写入入口。在对应命令出现于仓库工具 `--help` 之前，不手工复制模板、生成索引或伪造收据。
+Roadmap 由 `pnpm exec concord roadmap create` 创建（参数见 `pnpm exec concord roadmap --help`），叶子 Use Case 由 `pnpm run repo docs use-case create` 创建。不手工复制模板、生成索引或伪造收据。
 
 模板中的 `README.md` 必备。
 `library.md`、`cli.md`、`architecture.md`、`lifecycle.md` 与 `use-case/` 按功能形态用 `--pages` 选择。

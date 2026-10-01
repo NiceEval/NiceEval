@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: feedback-profile-replaces-tty-detection
+title: 设计裁决:退役 `--quiet`,`--output human/agent/ci` 取代 TTY/非 TTY 二分
+createdAt: 2026-07-14T09:56:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/feedback-profile-replaces-tty-detection.md
+  commit: 62bf6cc8fc1f62a1752a0931e348006837608f3a
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:退役 `--quiet`,`--output human/agent/ci` 取代 TTY/非 TTY 二分
 
 **裁决**(2026-07-13,`plan/exp-output-feedback-models.md` 落地):`niceeval exp` 的终端反馈不再用「`stderr` 是不是 TTY」直接当产品模式,也不再用 `--quiet` 同时表达"AI 需要什么"和"CI 需要什么"两种不同的需求。改为显式的 `--output human|agent|ci` 三选一 profile;默认 `--output auto` 只做环境侦测(显式值 → `stderr` 是 TTY → CI 环境变量存在 → 非 TTY 兜底为 agent),三种 profile 只改变反馈,不改变选择/调度/判定/artifact/退出码;`--quiet` flag、`QuietReporter` 与相关 i18n 整体删除,不保留兼容 alias 或第四种反馈语义。

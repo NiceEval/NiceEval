@@ -114,8 +114,9 @@ beforeAll(async () => {
   }
   evalEvents = retried.events;
 }, 48 * 60_000);
+// @feature docs/feature/adapters/README.md
 
-it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict [necase_EWVY7TM0PPA7FRCV]", () => {
+it("真实 Codex CLI adapter 的全部专用 Eval 得到预期 verdict", () => {
   expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
@@ -127,8 +128,9 @@ function locatorFor(evalId: string): string {
     () => run.diagnostic(),
   ).locator;
 }
+// @feature docs/feature/adapters/README.md
 
-it("attempt.trace 读回 Codex CLI 的代表性工具证据 [necase_KX28M0CRT50S6FV3]", async () => {
+it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   const codingTaskLocator = locatorFor("coding-task");
 
   // outcome：trace 是适配器收到的公开投影。工具身份保留原始未归一化名

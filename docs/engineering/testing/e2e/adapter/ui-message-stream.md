@@ -30,17 +30,12 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 
 ### Transport owner
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 `test/transport.test.ts` 只拥有完整 SSE 成功及其公开 Evidence Page 文案。
 
 <a id="live-progress-owner"></a>
 
 ### Live progress owner
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memory/active-progress-hides-user-and-tool-detail.md)
 
 `test/live-progress.test.ts` 只拥有 Human TTY 的 active-frame 投影。fixture 按官方
@@ -51,17 +46,11 @@ Regression: [ACTIVE 进度隐藏用户消息与工具细节](../../../../../memo
 
 ### Approval owner
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 `test/approval.test.ts` 只拥有 pending → approve / deny 的同 call 生命周期。
 
 <a id="disconnect-owner"></a>
 
 ### Disconnect owner
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/disconnect.test.ts` 拥有不能形成完整 Turn 的终止：半截 SSE 在结束标记前断开、结束标记后的帧不能补成成功 Turn，以及只有 error 帧后结束时仍公开原始错误。三者都保持 execution error，不伪造 assistant 消息。
 
@@ -69,17 +58,11 @@ Contract: [adapters](../../../../feature/adapters/README.md)
 
 ### Timeout owner
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 `test/timeout.test.ts` 只拥有挂起 body 触发 attempt timeout 的结果。
 
 <a id="http-error-owner"></a>
 
 ### HTTP error owner
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
 
 `test/http-error.test.ts` 只拥有 HTTP 500 的公开失败与可行动诊断。
 

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: lifecycle-paired-teardown-replaces-cleanup-return
+title: 生命周期统一成对 setup/teardown,否决 setup-returns-cleanup
+createdAt: 2026-07-18T13:16:39+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/lifecycle-paired-teardown-replaces-cleanup-return.md
+  commit: 73dada60919ad56333aa6a8fce6dabea1f21e578
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 生命周期统一成对 setup/teardown,否决 setup-returns-cleanup
 
 **裁决(2026-07-18)**:experiment / eval / agent / sandbox 四层生命周期统一为成对 `setup` / `teardown` 字段(方法),`setup` 返回 `void`;`Cleanup` 返回值从全部公开钩子签名移除(类型保留为内部注册表用)。触发规则全局统一:teardown 当且仅当同层 setup **时点**走到过(setup 抛错不豁免、未声明 setup 不影响触发、时点没走到则跳过);LIFO;setup 链中断后 teardown 链仍完整走完。契约中枢在 `docs/runner.md`「环境预置不进运行器,但按顺序调它」。

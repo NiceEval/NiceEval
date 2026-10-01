@@ -1,27 +1,6 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_NRD2EXM6620FRXHN": {
-      "memory/show-experiment-heading-detached-from-table.md": {
-        "red": {
-          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/red.json",
-          "digest": "sha256:acf89edf97968f02d523566a0424e74292ca6b012c5828bdcca17fb21c181ac5"
-        },
-        "green": {
-          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/green.json",
-          "digest": "sha256:8b347ec98801c0b92ab5a6926433c253e336841e7e85af534c205e71ce11d3d3"
-        },
-        "certificate": {
-          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/certificate.json",
-          "digest": "sha256:87b29bf0634b55d98caafd0bc6c16c0577a43143a00c70e26fa9f26f5ceebbf0"
-        },
-        "inventory": {
-          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/inventory.json",
-          "digest": "sha256:58e407c3f87d056e0e5a5fe21cfbda9d40b682251eb507b2f7d37564552aac95"
-        }
-      }
-    }
-  },
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
   "history": [
     {
       "caseId": "necase_NRD2EXM6620FRXHN",
@@ -46,6 +25,30 @@
       },
       "reason": "Refresh managed evidence after finalizing the exact expected output source.",
       "retiredAtCommit": "b3d673420ec09bfeeb65a0610f53960af02be7fe"
+    },
+    {
+      "caseId": "necase_NRD2EXM6620FRXHN",
+      "memory": "memory/show-experiment-heading-detached-from-table.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/red.json",
+          "digest": "sha256:acf89edf97968f02d523566a0424e74292ca6b012c5828bdcca17fb21c181ac5"
+        },
+        "green": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/green.json",
+          "digest": "sha256:8b347ec98801c0b92ab5a6926433c253e336841e7e85af534c205e71ce11d3d3"
+        },
+        "certificate": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/certificate.json",
+          "digest": "sha256:87b29bf0634b55d98caafd0bc6c16c0577a43143a00c70e26fa9f26f5ceebbf0"
+        },
+        "inventory": {
+          "path": "e2e/inspection/test/show-experiment-spacing.test.ts.case-evidence/necase_NRD2EXM6620FRXHN/memory_show-experiment-heading-detached-from-table.md/nered_T14PWWB7GN7FFG9D-netake_2EPSHS9C8K6S2NQB/inventory.json",
+          "digest": "sha256:58e407c3f87d056e0e5a5fe21cfbda9d40b682251eb507b2f7d37564552aac95"
+        }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
   ]
 }

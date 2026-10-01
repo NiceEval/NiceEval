@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: agent-native-settings-official-surface
+title: 设计裁决:coding agent 原生行为开关走官方 `settings` 面,不做透传口、不做单需求字段
+createdAt: 2026-07-14T19:13:55+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/agent-native-settings-official-surface.md
+  commit: f2fdcdcaf7265622c9d32f643851c098b30c43c5
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:coding agent 原生行为开关走官方 `settings` 面,不做透传口、不做单需求字段
 
 **裁决**(2026-07-14):`claudeCodeAgent` / `codexAgent` factory 新增 `settings` 字段——各 agent **原生配置词汇**的结构化对象(claude-code 是 settings.json 的 JSON 对象,codex 是 config.toml 的 TOML 形状对象),setup 阶段由 Adapter 序列化落进对应配置文件。并按用户裁决升格为 coding-agent Adapter 的**契约义务**:被测 CLI 有原生配置文件,factory 就提供 `settings`(bub 没有,config 上没有该字段)。配套契约:保留键(model / 鉴权 / OTel 导出 / MCP 表)出现在 settings 里 setup 报错并点名;settings 进安装 checkpoint key 与 manifest;secret 只走 env。核心原则一句话:**新的行为需求先看 CLI 原生配置能否表达,能表达就天然被 `settings` 覆盖;不为单个需求铸语义字段,不能表达的去上游提 FR。**

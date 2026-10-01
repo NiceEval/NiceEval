@@ -39,6 +39,7 @@
           },
           "command": [
             "pnpm",
+            "--silent",
             "run",
             "e2e"
           ],

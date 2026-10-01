@@ -1,3 +1,4 @@
+import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +25,7 @@ import { git, runProcess } from "./process.js";
 
 export * from "./model.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const ROOT = repositoryRoot();
 const STATE_PATH = "examples/zh/.tier-sync.json";
 const STATE_FILE = join(ROOT, STATE_PATH);
 const DIFFS_DIR = join(ROOT, "examples/zh/diffs");

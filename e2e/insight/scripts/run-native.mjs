@@ -4,7 +4,13 @@
 import { spawnSync } from "node:child_process";
 
 const nativeArgs = process.argv.slice(2);
-const isBrowserTarget = nativeArgs.some((arg) => /\.browser\.spec\.[cm]?[jt]sx?$/.test(arg));
+// Formal whole-suite observations have no file selector; the native config
+// still identifies the runner whose JSON report was requested.
+const isBrowserTarget = nativeArgs.some((arg, index) =>
+  /\.browser\.spec\.[cm]?[jt]sx?$/.test(arg) ||
+  /^--config=(?:.*\/)?playwright\.config\.[cm]?[jt]s$/.test(arg) ||
+  (index > 0 && nativeArgs[index - 1] === "--config" && /(?:^|\/)playwright\.config\.[cm]?[jt]s$/.test(arg)),
+);
 const playwrightArgs = nativeArgs.flatMap((arg) => {
   if (arg === "--run") return [];
   if (arg === "-t") return ["--grep"];

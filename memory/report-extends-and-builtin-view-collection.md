@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-extends-and-builtin-view-collection
+title: 报告级复用走 extends,内建入口改为具名视图集合
+createdAt: 2026-07-17T16:17:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-extends-and-builtin-view-collection.md
+  commit: dcb561b13954f052ca99ee4704a6f347bc9f06db
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 报告级复用走 extends,内建入口改为具名视图集合
 
 ## 裁决(2026-07-17)

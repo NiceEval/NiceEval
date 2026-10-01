@@ -53,8 +53,8 @@ type ScoreMatchLlmFailure =
   | { readonly _tag: "ScoreMatchLlmErrored"; readonly code: string; readonly message: string };
 type ScoreMatchResult =
   | number
-  | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string }
-  | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string }
+  | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string; readonly citations?: readonly string[] }
+  | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string; readonly citations?: readonly string[] }
   | { readonly state: "errored"; readonly code: string; readonly message: string };
 interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {
   readonly name: string;
@@ -107,3 +107,54 @@ LlmScoreResult 等四种结果形状及约束由 [Judge 原语契约](../../judg
 ## 第三方 criterion
 
 第三方确定性 evaluator 可以有自己的 criterion schema，但 Assertions current payload 只保存精确的 `{ name, schemaId, data }`。它不保存 evaluator 函数、模块对象、闭包或运行时 dependency graph，也不能由此增加 durable family。`schemaId` 未安装或 `data` 无法解码时，reader 只把该 entry 标为 `unsupported` 或 `invalid`；同一 Attachment 的其它 entry 继续可读。
+
+## 材料选择
+
+`defineMaterialMatch<C,T>` 定义当前应用 ctx 的同步读取与单项 Boolean Match。
+定义不捕获 Attempt；`check` 与 `closeQA` 在登记处注入当前接收者的只读 ctx，只保存 reader 返回的事实。
+Adapter 通过 `create` 提供强类型 ctx，`assertions({ app, check })` 只装配同步断言方法。
+
+```ts
+import { defineMaterialMatch, type BooleanMatch } from "niceeval/expect";
+interface App { history(): MaterialCollection<Event> }
+function historyMatch(match: BooleanMatch<Event, Event>) {
+  return defineMaterialMatch<App, Event>({
+    name: "history",
+    read: (ctx) => ctx.history(),
+    match,
+    capture: { maxItems: 4096, maxBytes: 4 * 1024 * 1024 },
+  });
+}
+// Adapter 的 assertions factory：
+assertions({ check }) {
+  return { participated(match: BooleanMatch<Event, Event>) {
+    return check(historyMatch(match));
+  } };
+}
+```
+
+MaterialCollection 是 `{ state: "complete", items: [{ id, value }] }`，
+或 `{ state: "partial", items, reason }`，或 `{ state: "unavailable", reason }`。
+ID 非空、最多128 UTF-8 bytes且集合内唯一。value 保存应用原文与回执；失败或未采用的条目默认保留。
+`and` 约束同一项。普通 `defineValueMatch` 可以返回 Boolean 或 `{ state: "unavailable", reason }`。
+
+`check(materialMatch)` 默认至少命中一项，返回 Boolean handle。确定见证可通过；完整零命中失败；其余 unknown 不补零。
+`closeQA(materialMatch, question, options?)` 返回 measurement handle，将全部命中项按原顺序交给一次 Judge。
+完整空集得0且不调用模型；证据不完整、predicate unknown或超限时 unavailable。
+question 非空且最多8 KiB；options 使用 JudgePresetOptions。引用只接受命中ID。
+
+Agent 的 `AgentMatchContext<Scope>` 提供 scope、managed toolCalls、eventOccurrences 与官方 usage。
+reader 返回 managed collection 时使用对应 ToolMatch 或 EventMatch；跨 Attempt 或不同作用域拒绝，过期采集切点不可判定。
+
+capture 默认256项、48 KiB、16384节点、深度32，可分别提高至16384项、4 MiB、1048576节点、深度64。
+容量不足保留已捕获完整前缀及精确限制原因，不将前缀冒充完整材料。
+存在性可利用确定见证；整体 Judge 必须得到全部命中材料。
+Judge 的命中材料与 audit 另设预算，最大分别4 MiB、8 MiB。
+
+## ctx 单事实评分
+
+`defineContextMatch<C,T>({ name, read, match, capture? })` 的 reader 返回 MatchFact：
+`{ state: "available", value }` 或 `{ state: "unavailable", reason }`。
+配 BooleanMatch 时 `check` 返回 Boolean handle；配 ScoreMatch 时返回 measurement handle。
+只捕获一个聚合事实，并调用一次评分器；不会逐项平均。未知事实不调用评分器。
+业务完成边界及指标应留在小事实里，不把整局应用上下文当显式 value 传入普通断言。

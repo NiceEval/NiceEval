@@ -1,8 +1,33 @@
 ---
-name: attempt-summary-missing-started-at-attempt-ordinal
+format: concord.document/v1
+id: attempt-summary-missing-started-at-attempt-ordinal
+title: attempt-summary-missing-started-at-attempt-ordinal
+createdAt: 2026-07-19T16:44:26+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/attempt-summary-missing-started-at-attempt-ordinal.md
+  commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
 description: AttemptSummaryData 携带 startedAt/identity.attempt 但 attemptSummaryText 两者都没渲染——已在 Phase H 修复
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# 已修(Phase H)"
+    proof: []
+    source:
+      path: memory/attempt-summary-missing-started-at-attempt-ordinal.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:cb640fe74c40dfe84e647a9ecff824c28ef70731a0912f2027ab419771a0c746
 ---
 
 # 已修(Phase H)

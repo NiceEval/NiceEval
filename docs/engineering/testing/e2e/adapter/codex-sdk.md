@@ -2,9 +2,6 @@
 
 ## adapter-codex-sdk-live-compatibility
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 Repo ID 是 `adapter/codex-sdk`。它在 host 上以 external network 和 Node 24+ 运行，锁定
 `@openai/codex-sdk` 版本，并只接收 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 两个 live secret。
 每次 Experiment 只有一次 Attempt；Vitest 没有 retry，也没有 Judge。
@@ -27,8 +24,8 @@ workspace，三者均不进入 artifact。SDK provider 配置采用仓库 Codex 
 `model_providers` / `model_provider` 形状。
 
 唯一 Eval 是一条 live Journey：要求模型运行带随机 marker 的安全 `printf` 命令，读取公共 converter
-产生的 canonical `shell` 调用与 completed 配对，检查 input/output usage 均为正数和
-`thread.started` 被 capture。第二轮携带随机 sentinel，通过 `resumeThread()` 在同一 thread 中成功完成；
+产生的 canonical `shell` 调用与 completed 配对。含缓存输入总量与 output usage 均须为正数，
+`thread.started` 须被 capture。第二轮携带随机 sentinel，通过 `resumeThread()` 在同一 thread 中成功完成；
 sentinel 从公共 trace 的第二轮输入读回，不把 live 模型是否逐字复述随机文本当成 converter 判据。
 Codex SDK 没有公开 HITL callback，因此仓库不伪造 `input.requested`。
 

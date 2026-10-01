@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: task-orchestration
+title: 任务图与 E2E 选择
+createdAt: 2026-08-22T13:35:36+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/task-orchestration/README.md
+  commit: 1f8e0b5ac9b103eb0a214ca3c43da3b5f89c9ee9
+kind: engineering
+---
 # 任务图与 E2E 选择
 
 本主题定义 niceeval 仓库如何用 Nx 管理项目图、任务输入和受影响的 E2E 集合。它只负责回答“这次变更需要验证哪些项目”；
@@ -9,7 +20,7 @@
 - 产品域或单个场景 Repo 变更只运行图上受影响的 E2E；
 - 无法安全归类的源码、共享测试设施或选择器故障扩大为该 lane 全量，不能绿色少跑。
 
-Nx 版本精确锁定为 `23.1.1`。升级不是普通依赖刷新；必须重新执行本页的选择收据、直接执行护栏和完整无密钥 lane。
+Nx 版本以根 `package.json` 的精确锁定为准，本页不复写版本号。升级不是普通依赖刷新；必须重新执行本页的选择收据、直接执行护栏和完整无密钥 lane。
 
 ## 职责边界
 
@@ -33,7 +44,7 @@ NiceEval runner ── candidate / Testkit / native tests / receipts / cleanup
 | `pnpm e2e plan` | 校验 changed paths、读取 Nx affected、应用 lane 并产出当前格式的可执行 cells | 执行场景 |
 | `pnpm e2e test` | 一次 plan、合法空选择短路、一次 candidate、一次 Testkit snapshot 与精确计划的真实场景生命周期 | 重新推导 affected 集合 |
 | `pnpm e2e pack` / `run` / `takeover` / `verify-release` | 显式低阶 candidate、执行、可靠性收据与发布核验 | 改变 `test` 的一次 plan / pack / run 语义 |
-| GitHub Actions | checkout、传递 base/head、分发 cells、cache 与上传 artifact | 维护第二份 Repo、path 或 owner 清单 |
+| GitHub Actions | checkout、传递 base/head、分发 cells、cache、上传 artifact，以及把 `project.json` 声明的 secret 名映射到 env 并对日志做 redaction | 维护第二份 Repo、path 或 owner 清单 |
 
 `targets.e2e` 是选择标记，不是可独立运行的任务。它只带 Nx 找不到的
 `executor: "nx:selection-only"` 哨兵，没有真实 command；维护者用
@@ -71,37 +82,45 @@ Project name 是图上的稳定 identity，不因物理目录移动而重命名�
 
 ```json
 {
-  "name": "e2e-report",
-  "root": "e2e/report",
-  "tags": ["kind:e2e"],
+  "name": "e2e-inspection",
+  "root": "e2e/inspection",
+  "tags": ["kind:e2e", "e2e:inspection"],
   "implicitDependencies": [
+    "workspace-shared",
+    "niceeval-e2e-runner",
+    "niceeval-package-shared",
+    "niceeval-testkit",
     "niceeval-src-fallback",
-    "niceeval-domain-report",
-    "niceeval-domain-record"
+    "niceeval-domain-record",
+    "niceeval-domain-sources",
+    "niceeval-domain-o11y"
   ],
   "targets": {
     "e2e": {
       "executor": "nx:selection-only",
       "cache": false,
+      "inputs": ["default"],
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
-          "batch": "browser-1",
-          "areas": ["report"],
+          "batch": "inspection-1",
+          "areas": ["inspection"],
           "lanes": ["pr", "main", "nightly", "release"],
           "executor": { "kind": "host" },
-          "command": ["pnpm", "exec", "vitest", "run"],
-          "timeoutMinutes": 2,
+          "command": ["node", "scripts/run-native.mjs"],
+          "timeoutMinutes": 5,
           "harness": { "testkit": true },
           "secrets": [],
-          "requires": { "browsers": ["chromium"] },
-          "artifacts": ["test-results/**", "playwright-report/**"]
+          "requires": { "runtimes": ["node>=24"] },
+          "artifacts": [".e2e-artifacts/**", "test-results/**"]
         }
       }
     }
   }
 }
 ```
+
+示例取自 `e2e/inspection/project.json`；字段与依赖以各叶子当前文件为准。
 
 `project.json` 是场景编排的唯一真源，不再并存 `e2e.json`。`metadata.niceeval` 只保存执行所需领域信息；affected
 关系由 project graph 表达，不在 metadata 中复制 `paths`。存在场景 `package.json` 却缺 `project.json`、root 与目录不一致、
@@ -120,11 +139,12 @@ metadata 非法或重复 name 时，discovery 聚合报错并进入 `invalid`，
 
 | 源码域 | 至少受影响的 E2E |
 |---|---|
-| `record/**` | `eval`、`migrate`、`report`、`runner` |
-| `sources/**` | `eval`、`runner`、`report` |
-| `o11y/**` | 全部 adapter Repo、`eval`、`lifecycle`、`runner`、`report`、`migrate` |
+| `record/**` | `eval`、`migrate`、`inspection`、`insight`、`runner` |
+| `sources/**` | `eval`、`runner`、`inspection`、`insight` |
+| `o11y/**` | 全部 adapter Repo、`eval`、`lifecycle`、`runner`、`inspection`、`insight`、`migrate` |
 | `agents/**` | 全部 adapter Repo、`eval`、`lifecycle`、`runner` |
 
+表中只列不得缩减的下限；实际选择以 `nx show project <name>` 与 `pnpm e2e plan` 读出的图为准。
 其它域也由 E2E project 对对应 `niceeval-domain-*` 的依赖表达。若一个产品行为跨域，应该给真正拥有该用户结果的 E2E
 增加图依赖；不能在 planner 里补一张 owner 表。要缩减上述边界，必须先用安装后 candidate 做能杀死错误映射的红灯 / 绿灯
 mutation 收据。
@@ -143,11 +163,28 @@ mutation 收据。
 
 任何未明确排除的新路径仍落入 workspace shared input，并 fail-open 为当前 lane 全量。
 planner 用 Nx 同一套 `.gitignore` + `.nxignore` 语义交叉校验 changed paths，不能在 workflow 或 planner 里再复制 glob 表。
-修改 `.nxignore` 自身会触发全量，分类边界的变化必须先经过完整无密钥 lane。
+`.nxignore` 不排除自身；修改它落入 workspace shared input 并触发全量，分类边界的变化必须先经过完整无密钥 lane。
 
-共享输入不建伪产品域。Testkit、`packages/e2e-runner/**`、package root / runtime builder、lockfile、workspace / Nx 配置以及
+共享输入不建伪产品域。Testkit、`packages/e2e-runner/**`、package root / runtime builder、workspace / Nx 配置以及
 E2E workflow 的变化属于所有 `e2e` target 的 workspace inputs，必须产生当前 lane 全量。单个 `e2e/<id>/**` 仍只影响该叶子；
 多个叶子同时变化时取并集，只有共享 runner、选择器、注入或 receipt 设施变化才扩为全量。
+
+### 依赖更新
+
+根 `pnpm-lock.yaml` 按 base 与 head 的 importer 分别比较依赖声明和完整 resolution 闭包。
+直接版本、传递依赖、peer resolution、integrity 与补丁变化都属于依赖变化。
+每个受影响 importer 使用其 `package.json` 所属 project 的下游集合；产品包、Testkit 和共享 runner 的依赖变化仍选择全量。
+单个场景的独立 lockfile 只影响该场景。
+
+根 manifest 的 `devDependencies.next` 由 `apps/site` 拥有，不参与产品 E2E。
+根其它依赖和非依赖字段变化仍属于共享输入；lockfile 的全局设置变化也选择全量。
+这个例外只作用于根 importer，不能跳过产品包或测试设施的同名依赖。
+
+planner 将依赖差异映射到这些 project 的 `project.json`，再交给 Nx 传播和交叉校验。
+原始 changed paths 与 base/head 保留在计划收据中。
+本地 dirty 内容与 `HEAD` 比较；显式路径只声明变化但没有内容差异时，保留原路径的保守选择。
+缺少版本、lockfile 解码失败或依赖闭包不完整时进入 `fail-open-full`。
+未知 importer 必须有 project 归属，不能作为合法空选择。
 
 ## Changed path 完整性
 
@@ -182,7 +219,7 @@ rename 按 delete 与 add 两条路径处理。选择收据保存最终 base/hea
 | `fail-open-full` | diff 或 Nx 选择不可安全完成 | 只有当前 lane 全部 cells 真正运行并通过后才可成功 |
 
 `fail-open-full` 不是日志警告或绿色 fallback。planner 必须产出 lane 全集，并把具体故障写入 `reason`；workflow 随后按完整
-matrix 执行。secret 只在合法计划已产生且最终 cell 非空时按 Repo 白名单注入。
+matrix 执行。secret 只在合法计划已产生且最终 cell 非空时注入：workflow 把 `project.json` 的 `metadata.niceeval.secrets` 声明映射为 env 并做 redaction，根 runner 再按 Repo 最小注入。
 分布式 `run --plan --cell` 会把同一份 `mode`、`reason`、`lane`、cell ID 与可选 base/head 写进根 summary 和每个 Repo
 receipt；artifact 离开 Actions 后仍能说明该 Repo 为什么被选择。
 
@@ -215,14 +252,19 @@ Nx 版本、`nx.json`、planner、Testkit、candidate 打包 / 注入、receipt�
 ## 验收收据
 
 每次升级 Nx、修改图边界或改变 planner 时，固定保存以下选择结果的 exact project IDs、matrix cells、`mode`、`reason`、
-base/head 和 Nx graph JSON：
+base/head 和 Nx graph JSON。仓库不另设收据落盘目录；收据随该 PR 的 Test impact 提交：
 
 | 变更样本 | 预期 |
 |---|---|
 | `apps/site/**`、`docs/**` | `affected`，零产品 E2E |
+| 根 `next` 与站点 importer 的直接或传递依赖更新 | `affected`，零产品 E2E |
+| 候选包、Testkit、共享 runner 或根共享工具的依赖更新 | 当前 lane 全量 |
+| lockfile 全局设置变化 | 当前 lane 全量 |
+| lockfile 解码失败、缺少 snapshot 或未知 importer | `fail-open-full`，当前 lane 全量 |
 | `.agents/**`、`memory/**` 等 `.nxignore` 路径 | `affected`，零产品 E2E |
 | `apps/docs-site/zh/**` | 只选 Package owner |
-| `record/**` | `eval`、`migrate`、`report`、`runner` |
+| `record/**` | 至少 `eval`、`migrate`、`inspection`、`insight`、`runner` |
+| `.nxignore` | 当前 lane 全量 |
 | 单个 `e2e/<id>/**` | 只选该 Repo |
 | Testkit、E2E runner、package root、E2E workflow | 当前 lane 全量 |
 | 顶层、新目录、未归域产品源码 | fallback，当前 lane 全量 |

@@ -1,5 +1,9 @@
 import { defineEval } from "niceeval";
 import {
+  defineMaterialMatch,
+  defineValueMatch,
+  atLeast,
+  type AgentMatchContext,
   atMost,
   commandMatch,
   eventMatch,
@@ -26,6 +30,7 @@ export default defineEval({
   async test(t) {
     const main = t.newSession();
     const mainTurn = await main.send("assertion/scopes-main");
+    const firstUsage = t.usage;
     await mainTurn.succeeded().orStop();
     const branch = t.newSession();
     const branchTurn = await branch.send("assertion/scopes-branch");
@@ -45,8 +50,21 @@ export default defineEval({
         }).exactly(1),
       );
       mainTurn.notCalledTool("scope_branch_tool");
+      const mainUsage = mainTurn.usage;
+      const branchUsage = branch.usage;
+      const aggregateUsage = t.usage;
+      t.check(firstUsage, defineValueMatch({ name: "first-usage-isolated", evaluate: (value: typeof firstUsage) => value.scope === "attempt" && value.costs.totalContributions === 1 && Object.isFrozen(value.costs) })).gate().label("usage snapshot isolated");
+      mainTurn.check(mainUsage, defineValueMatch({ name: "turn-usage-owner", evaluate: (value: typeof mainUsage) => value.scope === "turn" && value.basis === "reported-sends" && value.costs.totalContributions === 1 })).gate().label("turn usage owner");
+      branch.check(branchUsage, defineValueMatch({ name: "session-usage-owner", evaluate: (value: typeof branchUsage) => value.scope === "session" && value.costs.totalContributions === 1 })).gate().label("session usage owner");
+      t.check(aggregateUsage, defineValueMatch({ name: "attempt-usage-owner", evaluate: (value: typeof aggregateUsage) => value.scope === "attempt" && value.costs.totalContributions === 2 })).gate().label("attempt usage owner");
+      t.check(t.elapsedMs, atLeast(0)).gate().label("attempt runtime elapsed");
+      t.check(defineMaterialMatch<AgentMatchContext<"attempt">>({ name: "attempt-tools", capture: { maxBytes: 4 * 1024 * 1024, maxItems: 16384, maxNodes: 1048576, maxDepth: 64 }, read: (ctx) => ctx.toolCalls, match: toolMatch("shell") })).gate().label("attempt context selection");
+      branch.check(defineMaterialMatch<AgentMatchContext<"session">>({ name: "session-tools", capture: { maxBytes: 4 * 1024 * 1024, maxItems: 16384, maxNodes: 1048576, maxDepth: 64 }, read: (ctx) => ctx.toolCalls, match: toolMatch("scope_branch_tool") })).gate().label("session context selection");
+
       mainTurn.calledTool("scope_main_tool").label("turn calledTool bare");
       mainTurn.noFailedActions();
+      branchTurn.check(defineMaterialMatch<AgentMatchContext<"turn">>({ name: "branch-tools", read: (ctx) => ctx.toolCalls, match: toolMatch("scope_branch_tool") })).gate().label("managed tool selection");
+      branchTurn.check(defineMaterialMatch<AgentMatchContext<"turn">>({ name: "branch-events", read: (ctx) => ctx.eventOccurrences, match: eventMatch("message", { role: "assistant" }) })).gate().label("managed event selection");
       mainTurn.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
       mainTurn.maxToolCalls(20_000).label("turn maxToolCalls");
       mainTurn.check(mainTurn.toolCalls, atMost(20_000)).label("turn explicit cardinality");

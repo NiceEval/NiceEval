@@ -1,0 +1,290 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "inspection",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-vP2FAR/repos/inspection/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.2_@types+node@24.13.3_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.12_yaml@2.9.1_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "52a0334e21602684f23601b75010e186f70e6e28",
+  "files": [
+    "e2e/inspection/test/artifacts-limits.test.ts",
+    "e2e/inspection/test/artifacts-portable.test.ts",
+    "e2e/inspection/test/execution-trace-portable.test.ts",
+    "e2e/inspection/test/experiment-cost-incomplete.test.ts",
+    "e2e/inspection/test/experiment-cost.test.ts",
+    "e2e/inspection/test/file-attachments.test.ts",
+    "e2e/inspection/test/inspection-query.test.ts",
+    "e2e/inspection/test/judge-usage-empty.test.ts",
+    "e2e/inspection/test/judge-usage-invalid-qa.test.ts",
+    "e2e/inspection/test/judge-usage-pricing.test.ts",
+    "e2e/inspection/test/judge-usage-reported.test.ts",
+    "e2e/inspection/test/judge-usage-retry.test.ts",
+    "e2e/inspection/test/judge-usage-tokens.test.ts",
+    "e2e/inspection/test/model-slots-cost.test.ts",
+    "e2e/inspection/test/model-slots-experiment.test.ts",
+    "e2e/inspection/test/model-slots-truncated.test.ts",
+    "e2e/inspection/test/model-slots-usage.test.ts",
+    "e2e/inspection/test/show-cli.test.ts",
+    "e2e/inspection/test/show-experiment-spacing.test.ts",
+    "e2e/inspection/test/source-diagnostics.test.ts",
+    "e2e/inspection/test/usage-seal.test.ts",
+    "e2e/inspection/test/usage-unsealed.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/artifacts-limits.test.ts",
+      "titlePath": [
+        "附件拒绝非法输入和超限时仍保存接管的快照并形成 errored Attempt"
+      ],
+      "caseId": "neref_dcfe562250ac93658b61522d618fa086"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/artifacts-portable.test.ts",
+      "titlePath": [
+        "附件随 Record 搬走后仍能按历史与 carry locator 分块读取"
+      ],
+      "caseId": "neref_813218fdea3e6d07ba9f6b4eb30954b6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/execution-trace-portable.test.ts",
+      "titlePath": [
+        "producer partial 轨迹在空事件、非空事件与分页完成后仍保留采集原因"
+      ],
+      "caseId": "neref_3f72bc690bb378720f29dbb3dc36e6c6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/execution-trace-portable.test.ts",
+      "titlePath": [
+        "通用轨迹随 Record 搬迁后仍可精确展开摘要之外的事件与请求证据"
+      ],
+      "caseId": "neref_35fb475cc4a8363cfae0e55fe466fd0a"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/experiment-cost-incomplete.test.ts",
+      "titlePath": [
+        "实验已知零费用保留另一 Eval 的缺费来源，Query 与 Show 不声称完整总额"
+      ],
+      "caseId": "neref_66ebf1e2e9d61d5bca1851b0a73b533c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/experiment-cost.test.ts",
+      "titlePath": [
+        "实验总费用包含预览之外的失败 Attempt，部分 Eval 重跑替代旧费用并保留其它结果"
+      ],
+      "caseId": "neref_ee88cadd1a0d693cfef55786b86f5f19"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/file-attachments.test.ts",
+      "titlePath": [
+        "280 MiB 文件归档使用有界内存且源改写后保留原始摘要及字节"
+      ],
+      "caseId": "neref_137ea53179183be4af815a4a66501ba3"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/file-attachments.test.ts",
+      "titlePath": [
+        "Attempt 超时取消流后 cleanup 独立归档诊断材料"
+      ],
+      "caseId": "neref_63702d5316893a1e6eae7fd99de4a7aa"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/file-attachments.test.ts",
+      "titlePath": [
+        "文件归档失败和取消后保留已接纳附件且 cleanup 仍可归档"
+      ],
+      "caseId": "neref_0a3f040ccad781474d26509997000fbf"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/inspection-query.test.ts",
+      "titlePath": [
+        "machine consumer 发现固定 catalog，再从 project Run 读取 origin Attempt 的闭合事实"
+      ],
+      "caseId": "neref_bed902a18f5f371e36ec24256ebb6af7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/judge-usage-empty.test.ts",
+      "titlePath": [
+        "完整空材料证明没有 Judge 发送，应用费用与总费用仍可读"
+      ],
+      "caseId": "neref_37f4a3ebc8f55e37f9d52462d4fefef8"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/judge-usage-invalid-qa.test.ts",
+      "titlePath": [
+        "QA 内容非法仍保留已收到的 Judge token 与费用，并可导航到 errored 断言"
+      ],
+      "caseId": "neref_db57b84ceb1330e0ac59e5b9942b2fc1"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/judge-usage-pricing.test.ts",
+      "titlePath": [
+        "显式 Judge 价格只估已知输出桶，缺输入与缓存桶仍显示 partial 小计"
+      ],
+      "caseId": "neref_e9cbe8a1c2568a6386dc4079f9097cb2"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/judge-usage-reported.test.ts",
+      "titlePath": [
+        "OpenRouter 已报告费用与明确零覆盖两次传输，整局费用完整并可追查"
+      ],
+      "caseId": "neref_c8972d4a05515f0d9e5c546572451b5c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/judge-usage-retry.test.ts",
+      "titlePath": [
+        "OpenRouter 失败与重试分别入账，reported 零优先并可按 Assertion 身份追查"
+      ],
+      "caseId": "neref_63d80e5f8dcb1226412ae6914e15b440"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/judge-usage-tokens.test.ts",
+      "titlePath": [
+        "Vercel Judge 的 120 输入与 30 输出可查，费用未知保留总费用缺口"
+      ],
+      "caseId": "neref_7af09f6473d7323200cfa3d004ac1938"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/model-slots-cost.test.ts",
+      "titlePath": [
+        "375 次调用的已知小计保留 19 次费用缺口并公开覆盖分母"
+      ],
+      "caseId": "neref_e57c55e09ba27b49928008bb234cde6c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/model-slots-experiment.test.ts",
+      "titlePath": [
+        "按 Experiment 查看时三用途配置与推理强度各自可读"
+      ],
+      "caseId": "neref_151e6ff888a154b020922dd056bed94b"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/model-slots-truncated.test.ts",
+      "titlePath": [
+        "调用和模型组预览均漏掉 z 时用途计数仍为 129、1、0"
+      ],
+      "caseId": "neref_aeb731033b0aeda6ef44d81f10ebc001"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/model-slots-usage.test.ts",
+      "titlePath": [
+        "用途与实际模型分列，零费用与未知费用保留且裁判缺口可读"
+      ],
+      "caseId": "neref_808a7fa26dc670e5e4c689080ad06d73"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/show-cli.test.ts",
+      "titlePath": [
+        "用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 与确定性证据切面"
+      ],
+      "caseId": "neref_781451e3a20edc5cb22335ed99e0894c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/show-experiment-spacing.test.ts",
+      "titlePath": [
+        "Show 把 Experiment 标题和自己的内容排在同一段"
+      ],
+      "caseId": "neref_e129cd9205e51476ba2bed44c988e4c4"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/source-diagnostics.test.ts",
+      "titlePath": [
+        "Record 读取失败保留具体原因且不凭空归因旧版本"
+      ],
+      "caseId": "neref_2ecb4cd1cc4eaffd80a33a3a3a9a6a01"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/usage-seal.test.ts",
+      "titlePath": [
+        "封存后写入被 catch 仍发布 errored Attempt，保留已接纳费用且拒绝新费用"
+      ],
+      "caseId": "neref_a837f2713d2646a1bda75cd745d20da7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/usage-seal.test.ts",
+      "titlePath": [
+        "显式 partial 应用账本保留已知费用，默认 Show 仍标记费用缺口"
+      ],
+      "caseId": "neref_a62ca3afae7d19edce712b7ab8d26039"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/usage-seal.test.ts",
+      "titlePath": [
+        "显式完整空应用账本交付完整零费用，默认 Show 确认没有收费"
+      ],
+      "caseId": "neref_0398d7079ff6d055cb145ffbea313d58"
+    },
+    {
+      "executor": "vitest",
+      "repo": "inspection",
+      "path": "e2e/inspection/test/usage-unsealed.test.ts",
+      "titlePath": [
+        "应用账本未读的 errored Attempt 保留费用缺口，默认 Show 不声称完整零费用"
+      ],
+      "caseId": "neref_7529882a80ec6968852a31ac799bcc9f"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "digest": "sha256:d8b9ae8206c764c8bbbb140295b5079cbddef82cbcf233ce254a28369e820ff7",
+  "exit": 0,
+  "signal": null
+}

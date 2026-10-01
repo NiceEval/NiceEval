@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: reports-dx-dogfood-rulings
+title: 设计裁决:Reports DX 试写回灌(2026-07-16)
+createdAt: 2026-07-16T14:32:52+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reports-dx-dogfood-rulings.md
+  commit: 74577bc5bb9eaae03dd25d30ac56850178f18984
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:Reports DX 试写回灌(2026-07-16)
 
 第四轮评审（[reports-fourth-review-rulings](reports-fourth-review-rulings.md)）后，在真实 eval repo（`/Users/ctrdh/Code/coding-agent-memory-evals`）按新契约试写了一份多页报告，用「哪些行是内容、哪些行是 API 逼出来的」逐段算账。结论：spec 形态删掉了旧报告的整段取数管道，API 主体成立；但试写暴露四个真实缺口，本轮裁决落进 docs。定稿在 `docs/feature/reports/library/{metric-views,entity-lists,metrics,recipes}.md`，场景行同批登记。

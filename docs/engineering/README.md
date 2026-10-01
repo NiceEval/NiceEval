@@ -5,7 +5,7 @@
 
 正文写工程机制应满足的目标、使用方式和验收方式，不写当前`实现进度`——同 [Feature](../feature/README.md) 的目标状态规则。
 
-工程主题尚无受管创建命令。[`_template/`](_template/README.md) 保留目标形状，不把它手工复制成新主题或伪造结构收据。
+新工程主题由 Concord 受管入口 `pnpm exec concord engineering create` 创建，`list`、`show`、`page` 查询和维护既有主题；参数以 `pnpm exec concord engineering --help` 为准。[`_template/`](_template/README.md) 说明主题形状，不把它手工复制成新主题或伪造结构收据。
 
 公开、已脱敏且需要 maintainer 跟进的 Observation 从 [GitHub Issue 与 Memory](issues/README.md) 进入。
 该入口定义 Issue 标签、分诊、关闭证据、授权和机器幂等规则。

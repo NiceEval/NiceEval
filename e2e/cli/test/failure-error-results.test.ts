@@ -7,7 +7,9 @@ import { expect, test } from "vitest";
 import { cliE2E, writeInspectionRequest } from "./context.ts";
 
 // feature: 同一次公开 CLI 旅程中核对 failed / errored 的机器输出与人读详情。
-test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分 [necase_EA2M19N3W4T87684]", async () => {
+// @feature docs/feature/experiments/README.md
+
+test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可区分", async () => {
   await cliE2E.case(
     "failure-error-results",
     {
@@ -73,6 +75,26 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       expect(failedHuman.stdout).toContain("turn succeeded · expected completed · received failed");
       expect(failedHuman.stdout).toContain("reason deterministic agent reported a t");
       expect(failedHuman.stdout).not.toContain("error: failed");
+      const failedHumanLocator = /✗ (@1[0-9A-HJKMNP-TV-Z]{12})/u.exec(failedHuman.stdout)?.[1];
+      expect(failedHumanLocator, failedHuman.diagnostic()).toBeTruthy();
+      expect(failedHuman.stdout).toContain(`details: niceeval show ${failedHumanLocator}`);
+      const failedHumanRunId = /show: niceeval show --run\s+([0-9a-f-]{36})/u.exec(failedHuman.stdout)?.[1];
+      expect(failedHumanRunId, failedHuman.diagnostic()).toBeTruthy();
+      expect(failedHuman.stdout.replace(/\s+/gu, " ")).toContain(
+        `deliberate-fail show: niceeval show --run ${failedHumanRunId} view: niceeval view --run ${failedHumanRunId}`,
+      );
+      const failedHumanRequest = await writeInspectionRequest(root, "failed-human-run-summary", {
+        kind: "run.summary", runId: failedHumanRunId!,
+      });
+      const failedHumanSummary = await niceeval.run(["query", "run", "--request", failedHumanRequest]);
+      expect(failedHumanSummary.exitCode, failedHumanSummary.diagnostic()).toBe(0);
+      expect(failedHumanSummary.runSummary().summary.members).toEqual([expect.objectContaining({
+        locator: failedHumanLocator, verdict: "failed",
+      })]);
+
+      const sessions = await niceeval.run(["session", "list", "--all"]);
+      expect(sessions.exitCode, sessions.diagnostic()).toBe(0);
+      expect(sessions.stdout).toContain(`deliberate-fail  niceeval show --run ${failedHumanRunId}`);
 
       const errored = await niceeval.run(
         ["exp", "deliberate-error", "--rerun", "all", "--json", "--junit", "junit/errored.xml"],
@@ -159,12 +181,20 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       );
       expect(prepareDiagnostic.summary).toContain("deliberate pre-context sandbox before failure");
       expect(JSON.stringify(traceDocument.trace)).not.toContain("[object Object]");
+
+      const erroredHuman = await niceeval.run(["exp", "deliberate-error", "--rerun", "all"]);
+      expect(erroredHuman.exitCode, erroredHuman.diagnostic()).toBe(1);
+      const erroredHumanLocator = /✗ (@1[0-9A-HJKMNP-TV-Z]{12})/u.exec(erroredHuman.stdout)?.[1];
+      expect(erroredHumanLocator, erroredHuman.diagnostic()).toBeTruthy();
+      expect(erroredHuman.stdout).toContain(`details: niceeval show ${erroredHumanLocator}`);
+      expect(erroredHuman.stdout).not.toContain("details: niceeval view");
     },
   );
 });
 
 // Regression note: Judge 预检失败曾只输出通用消息，无法定位受影响的用例和次数。
-test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt [necase_36KEGWBE07TBDDBJ]", async () => {
+// @feature docs/feature/experiments/README.md
+test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt", async () => {
   await cliE2E.case(
     "judge-precheck-error",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -194,7 +224,9 @@ test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt [necase
 });
 
 // Regression note: Assertions writer 的具体原因曾使用与其它 CLI 运行错误不同的 `niceeval error:` 前缀。
-test.concurrent("Assertions document 无法发布时使用统一 error 前缀 [necase_QV3XET13TGC1RN9K]", async () => {
+// @feature docs/feature/experiments/README.md
+
+test.concurrent("Assertions document 无法发布时使用统一 error 前缀", async () => {
   await cliE2E.case(
     "assertions-document-error",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -215,7 +247,9 @@ test.concurrent("Assertions document 无法发布时使用统一 error 前缀 [n
 });
 
 // feature: Human 结束摘要按 Eval 类型展示 score 或 pass 主读数。
-test.concurrent("计分制与通过制 Human 结束摘要显示各自主读数 [necase_DT754GJJ2CSRC242]", async () => {
+// @feature docs/feature/experiments/README.md
+
+test.concurrent("计分制与通过制 Human 结束摘要显示各自主读数", async () => {
   await cliE2E.case(
     "score-human-results",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

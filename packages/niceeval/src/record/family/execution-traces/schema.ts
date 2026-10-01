@@ -68,6 +68,44 @@ const LinkSchema = Schema.Union([
   }),
 ]);
 
+const DisplayRoleSchema = Schema.Literals(["user", "assistant", "system", "other"]);
+const DisplayScalarSchema = Schema.Union([Schema.String, FiniteNumberSchema, Schema.Boolean, Schema.Null]);
+const DisplayFieldsSchema = Schema.Array(Schema.Struct({ label: Schema.String, value: DisplayScalarSchema }));
+
+const InputDisplayBlockSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("text"), text: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("message"),
+    role: DisplayRoleSchema,
+    speaker: Schema.optional(Schema.String),
+    text: Schema.String,
+  }),
+  Schema.Struct({ kind: Schema.Literal("fields"), fields: DisplayFieldsSchema }),
+  Schema.Struct({ kind: Schema.Literal("code"), language: Schema.optional(Schema.String), text: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("image"), artifactId: BoundedIdentifierSchema, alt: Schema.String }),
+]);
+
+/** Persisted image blocks carry the descriptor fixed at acceptance. */
+export const ExecutionDisplayBlockRecordSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("text"), text: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("message"),
+    role: DisplayRoleSchema,
+    speaker: Schema.optional(Schema.String),
+    text: Schema.String,
+  }),
+  Schema.Struct({ kind: Schema.Literal("fields"), fields: DisplayFieldsSchema }),
+  Schema.Struct({ kind: Schema.Literal("code"), language: Schema.optional(Schema.String), text: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("image"),
+    artifactId: BoundedIdentifierSchema,
+    alt: Schema.String,
+    mediaType: Schema.Literals(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+    byteLength: NonNegativeSafeIntegerSchema,
+    sha256: Sha256Schema,
+  }),
+]);
+
 const InputEvidenceSchema = Schema.Struct({
   key: BoundedIdentifierSchema,
   label: Schema.String,
@@ -100,6 +138,7 @@ const InputEventSchema = Schema.Struct({
     scopeId: BoundedIdentifierSchema,
     state: Schema.Literals(["included", "excluded", "unknown"]),
   }))),
+  display: Schema.optional(Schema.Array(InputDisplayBlockSchema)),
 });
 
 export const ExecutionTraceInputSchema = Schema.Struct({
@@ -158,6 +197,8 @@ export const ExecutionTraceEventRecordSchema = Schema.Struct({
     scopeId: BoundedIdentifierSchema,
     state: Schema.Literals(["included", "excluded", "unknown"]),
   })),
+  // Revision 1 widening: absent on every event written before display blocks.
+  display: Schema.optional(Schema.NonEmptyArray(ExecutionDisplayBlockRecordSchema)),
 });
 
 export const ExecutionTraceRecordSchema = Schema.Union([
@@ -168,6 +209,7 @@ export const ExecutionTraceRecordSchema = Schema.Union([
 export type ExecutionTraceHeaderRecord = Schema.Schema.Type<typeof ExecutionTraceHeaderRecordSchema>;
 export type ExecutionTraceEventRecord = Schema.Schema.Type<typeof ExecutionTraceEventRecordSchema>;
 export type ExecutionTraceRecord = Schema.Schema.Type<typeof ExecutionTraceRecordSchema>;
+export type ExecutionDisplayBlockRecord = Schema.Schema.Type<typeof ExecutionDisplayBlockRecordSchema>;
 
 export const ExecutionTraceRecordLimits = Object.freeze({
   maximumTraces: 32,
@@ -186,4 +228,24 @@ export const ExecutionTraceRecordLimits = Object.freeze({
   maximumDetailBytes: 512 * 1024,
   maximumOutlineEvents: 32,
   maximumOutlineBytes: 64 * 1024,
+  maximumDisplayBlocksPerEvent: 4,
+  maximumDisplayBytesPerEvent: 8 * 1024,
+  maximumDisplayFields: 16,
+  maximumDisplayLabelBytes: 128,
+  maximumDisplayAltBytes: 512,
+  maximumDisplayPreviewBytes: 1024,
+  maximumOutlineEventBytes: 8 * 1024,
+  maximumDisplayInlineImageBytes: 16 * 1024 * 1024,
 });
+
+export const ExecutionDisplayImageMediaTypes: ReadonlySet<string> = new Set([
+  "image/png", "image/jpeg", "image/webp", "image/gif",
+]);
+
+// eslint-disable-next-line no-control-regex
+const DISALLOWED_DISPLAY_CHARACTER = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+
+/** True when a display string contains a control or bidirectional formatting character other than tab and newline. */
+export function displayTextHasForbiddenCharacter(value: string): boolean {
+  return DISALLOWED_DISPLAY_CHARACTER.test(value);
+}

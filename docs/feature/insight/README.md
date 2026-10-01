@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: insight
+title: Insight
+createdAt: 2026-08-26T19:54:36+08:00
 kind: feature
-relations: {}
 ---
 
 # Insight
@@ -41,7 +43,9 @@ usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated �
 
 自定义 Adapter 的领域事件使用统一通用轨迹展示：默认只载入有界摘要页，保留主体、独立时钟、完整性和测量范围。
 读者可以点击事件或输入稳定 ID，按需读取同一 Inspection detail；原始证据以已登记的精确 JSON 定位分块展开。
-没有会话事件不代表没有执行轨迹。领域类型和 JSON 内容作为数据展示，不加载作者提供的组件或执行展示代码。
+没有会话事件不代表没有执行轨迹。事件带展示块时按 `kind` 呈现文本、对话、键值、等宽文本与图片；文本以文本节点插入，
+不进入 HTML、属性拼接或 URL 执行位置。图片只从 `attempt.artifact` 读取的已验证 bytes 创建，16 MiB 以上不内联，
+无法解码时显示 `alt`。没有展示块时，领域类型和 JSON 内容作为数据展示。不加载作者提供的组件或执行展示代码。
 
 软导航以 drawer 或 modal 显示详情；关闭或 Back 回到原选择。复制的 Run 或 Attempt URL 在硬加载时显示完整详情。
 语言只改变界面文案，不改变 cutoff、identity、URL 或读取结果。

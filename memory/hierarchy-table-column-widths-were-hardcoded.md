@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: hierarchy-table-column-widths-were-hardcoded
+title: 层级表列宽写死:七列同宽、结果列折行,余下几列大片留白
+createdAt: 2026-07-28T23:08:28+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/hierarchy-table-column-widths-were-hardcoded.md
+  commit: 5f8886b2858269822af7a58f6eabfc08195a8ad6
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [hierarchy-table-column-widths-were-hardcoded](hierarchy-table-column-widths-were-hardcoded.md) — 层级表除首列外七列逐像素同宽(`.68fr` 写死)、结果列折行而模型/Agent 列大片留白;根因=每层行各自复读一份按列位写死的 grid 模板,修为整表一个 grid + 各层 subgrid,列宽由内容算;附 subgrid 链要穿过 Chrome `::details-content`、折叠态 `getBoundingClientRect()` 读出陈旧尺寸两个坑"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 层级表列宽写死:七列同宽、结果列折行,余下几列大片留白
 
 ## 现象

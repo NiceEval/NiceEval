@@ -1,32 +1,31 @@
-// Plugins(适配器契约页 Eval 闭环表):从 Anthropic 官方 marketplace 安装知名的
-// Context7 Plugin。它自带匿名可用的远程 MCP；调用 Plugin 命名空间内的工具就是
-// "native plugin 安装真的把内容接线进了运行中的 agent"的行为证据，不只检查安装清单。
+// Real native Plugin installation must expose the fixture server under the
+// Plugin namespace; calling its tool proves more than installation metadata.
 import { defineEval } from "niceeval";
 import { jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description:
-    "Plugins:官方 Context7 Plugin 自带的远程 MCP 已接线且能以正确入参被调用",
+    "Plugins:安装后的 Plugin MCP 能以正确入参被调用并返回结果",
   async test(t) {
     const turn = await t.send(
-      "调用 Context7 Plugin 的 resolve-library-id MCP 工具查找 React。" +
-        "参数 libraryName=react、query=React useState documentation。不要用 Bash 或其它工具。" +
+      "调用名字严格为 mcp__plugin_e2e_fixture__get-sum 的 MCP 工具，参数 a=517、b=926。" +
+        "必须真实调用这个工具，不要自己计算，不要用 Bash 或其它工具。" +
         "如果调用因为其 MCP server 还在连接中而失败,调用 WaitForMcpServers," +
-        '参数只填 server 名称("plugin_context7_context7"——不是工具名,也不要加 mcp__ 前缀),' +
+        '参数只填 server 名称("plugin_e2e_fixture"——不是工具名,也不要加 mcp__ 前缀),' +
         "然后重试同一个工具调用;持续重试直到成功,不要放弃。" +
-        "最后只报告工具返回的第一个 library ID。",
+        "最后只报告工具返回的数字。",
     );
     await turn.succeeded().orStop();
 
     t.calledTool(
-      toolMatch("mcp__plugin_context7_context7__resolve-library-id", {
+      toolMatch("mcp__plugin_e2e_fixture__get-sum", {
         input: jsonMatch({
-          libraryName: "react",
-          query: "React useState documentation",
+          a: 517,
+          b: 926,
         }),
-        output: jsonMatch(new RegExp("/reactjs/react\\.dev")),
+        output: jsonMatch(/1443/),
         status: "completed",
       }),
-    ).label('"mcp__plugin_context7_context7__resolve-library-id" input and output');
+    ).label('"mcp__plugin_e2e_fixture__get-sum" input and output');
   },
 });

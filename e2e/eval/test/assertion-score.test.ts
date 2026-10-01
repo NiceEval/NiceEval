@@ -7,7 +7,8 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertionEntries, inspectAttempt, inspectRunSummary } from "./inspection.ts";
 
-test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止 [necase_EFV616D6SD28DHFE]", async () => {
+// @feature docs/feature/assertions/README.md
+test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止", async () => {
   await evalE2E.case(
     "score",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -97,14 +98,24 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
         expect(entriesByEval.get(evalId), `${evalId} must expose both published Attempt assertion sets`).toHaveLength(2);
       }
       for (const entries of entriesByEval.get("assertion-score/scored") ?? []) {
-        expect(entries).toHaveLength(7);
+        expect(entries).toHaveLength(10);
         expect(entries.map(({ contribution }) => contribution)).toEqual(expect.arrayContaining([
           { state: "earned", points: 1, earned: 1 },
           { state: "earned", points: 2, earned: 2 },
           { state: "earned", points: 3, earned: 3 },
           { state: "earned", points: 5, earned: 0 },
           { state: "earned", points: 4, earned: 4 },
+          { state: "earned", points: 50, earned: 25 },
+          { state: "earned", points: 10, earned: 0 },
+          { state: "earned", points: 0, earned: 0 },
         ]));
+        expect(only(entries, (entry) => entry.display.label === "weighted author formula", "weighted formula")).toMatchObject({
+          evaluation: { kind: "ordinary", observed: { kind: "fields", fields: [
+            { label: "kind", value: { kind: "value", value: "measurement" } },
+            { label: "state", value: { kind: "value", value: "available" } },
+            { label: "value", value: { kind: "value", value: .5 } },
+          ] } },
+        });
         for (const label of ["unavailable measurement is only recorded", "unavailable condition is only recorded"]) {
           expect(only(entries, (entry) => entry.display.label === label, label)).toMatchObject({
             decision: { result: "errored", gate: "not-gate" },
@@ -133,9 +144,11 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
       for (const entries of entriesByEval.get("assertion-score/unavailableGate") ?? []) {
         expect(entries.map(({ contribution }) => contribution)).toEqual([
           { state: "earned", points: 2, earned: 2 },
+          { state: "unavailable", points: 50, reason: "source-unavailable" },
+          { state: "unavailable", points: 10, reason: "source-unavailable" },
           { state: "not-scored" },
         ]);
-        expect(entries[1]).toMatchObject({
+        expect(entries[3]).toMatchObject({
           decision: { result: "errored", gate: "unavailable" },
           policy: { requirement: { state: "available", value: "required" } },
         });
@@ -159,7 +172,10 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       const cells = overview.querySuccess("overview.get").overview.cells;
       expect(only(cells, (cell) => cell.evalId === "assertion-score/gated", overview.diagnostic()).score)
-        .toMatchObject({ value: null, samples: 0 });
+        .toMatchObject({
+          state: "available", value: 30, samples: 2, total: 2,
+          bounds: { min: 0, max: 43 },
+        });
     },
   );
 });

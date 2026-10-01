@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: hierarchy-record-column-uniform-tally
+title: 设计裁决:层级表判定构成列不引入 `k/n 通过` 分数形态,每层统一计票/单判定
+createdAt: 2026-07-30T14:54:24+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/hierarchy-record-column-uniform-tally.md
+  commit: f1f4efd6edcf346f49dd1c09e6b08c56fd465e4d
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:层级表判定构成列不引入 `k/n 通过` 分数形态,每层统一计票/单判定
 
 ## 裁决

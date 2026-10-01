@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: record-to-report-clearml
+title: ClearML：以 Task 为中心的实验管理与执行系统
+createdAt: 2026-08-14
+kind: research
+observedAt: 2026-08-14
+sources:
+  - https://github.com/clearml/clearml-docs/tree/53782832efce804072879f107ab148218ba07536
+  - https://clear.ml/docs/latest/docs/
+---
 # ClearML：以 Task 为中心的实验管理与执行系统
 
 > 观察日期：2026-08-14
@@ -59,11 +70,11 @@ Dashboard 的公开边界见[官方 Project Dashboard 文档](https://clear.ml/d
 
 ## 研究页导航
 
-- [layers.md](layers.md)：ClearML 自己的组件、资源、owner、引用与依赖边界。
-- [execution.md](execution.md)：从发起、排队、Agent 执行、写入到完成、失败、partial 与续跑的真实顺序。
-- [storage.md](storage.md)：公开 class/type、Mongo collection、Elasticsearch index、fileserver 路径、离线 envelope 与事实分类。
-- [reading-and-comparison.md](reading-and-comparison.md)：历史 Task 的重开、查询、筛选、对齐、分组、比较、渲染与缺测表现。
-- [schema-and-migration.md](schema-and-migration.md)：API、对象、Mongo、Elasticsearch、离线包的版本与 migration 轨道。
+- [layers.md](layers/README.md)：ClearML 自己的组件、资源、owner、引用与依赖边界。
+- [execution.md](execution/README.md)：从发起、排队、Agent 执行、写入到完成、失败、partial 与续跑的真实顺序。
+- [storage.md](storage/README.md)：公开 class/type、Mongo collection、Elasticsearch index、fileserver 路径、离线 envelope 与事实分类。
+- [reading-and-comparison.md](reading-and-comparison/README.md)：历史 Task 的重开、查询、筛选、对齐、分组、比较、渲染与缺测表现。
+- [schema-and-migration.md](schema-and-migration/README.md)：API、对象、Mongo、Elasticsearch、离线包的版本与 migration 轨道。
 
 ## 与 NiceEval 的相似、差异与可吸收约束
 

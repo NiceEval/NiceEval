@@ -37,7 +37,8 @@ interface SelectedProfile {
   };
 }
 
-function configuredProfile(
+/** @internal Shared configured-price selection; it never consults the builtin catalog. */
+export function configuredProfile(
   model: string,
   overrides: Readonly<Record<string, PriceOverride>> | undefined,
 ): SelectedProfile | undefined {
@@ -86,7 +87,8 @@ function tokensFor(call: AdapterUsageCall, bucket: (typeof AdapterCallPriceBucke
   }
 }
 
-function rateFor(profile: SelectedProfile, bucket: (typeof AdapterCallPriceBuckets)[number]): string | null {
+/** @internal Shared rates for the four mutually exclusive token buckets. */
+export function rateFor(profile: SelectedProfile, bucket: (typeof AdapterCallPriceBuckets)[number]): string | null {
   switch (bucket) {
     case "input": return profile.ratesPerMTok.input;
     case "output": return profile.ratesPerMTok.output;

@@ -84,7 +84,7 @@ t.check(fresh.reply, satisfies("没有记忆泄漏", (r) => !r.includes("小明"
 
 ## 人工介入(HITL)
 
-有些 agent 会在一轮执行中间停下来,等审批或缺失信息,而不是直接跑完。这时这一轮以 `status: "waiting"` 结束,并带一条或多条 `input.requested` 事件说明在等什么。完整的心智模型(握手时序、Adapter 侧义务、rejected 语义)见 [HITL](/zh/explanation/hitl),这里讲评估侧怎么用。
+有些 agent 会在一轮执行中间停下来,等审批或缺失信息,而不是直接跑完。这时这一轮以 `status: "waiting"` 结束,并带一条或多条 `input.requested` 事件说明在等什么。完整的工作方式(握手时序、Adapter 侧义务、rejected 语义)见 [HITL](/zh/explanation/hitl),这里讲评估侧怎么用。
 
 ```ts
 import { equals } from "niceeval/expect";

@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "18a8111c63f469e7e6e6b2fcbc7b84829837bc57"
+      "baseTree": "5ea14d0ebbb2e9d7ca963371404456e5eeeedb44"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "3f05c8241aaebe1310de6eef896207580e98aac9"
+      "baseTree": "abd1c96af6013c1814b379b69b9bb776553d3a0b"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "0236b399acf95dede4ce30dbecb4974ecad14ec8"
+      "baseTree": "62120abc80aa80fa347e06eba4b635ef29dd5937"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "9364495bc64f43823d4bfc873f3dae41257bf8c9"
+      "baseTree": "dad3f8cd4b464b1e2b787a48cd8346d483cd374a"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "5d4736cc09379f5e51d607a41451e368cfdd7b5a"
+      "baseTree": "0f8a6e30dcb8aa5d3457bb731d0ae41154f1d184"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "59e805ac3d5ec1d16e4ed596b1ddfbe503b3140e"
+      "baseTree": "ce0d4864308afc9805fa7196f1a332ed507d266b"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "a91745c97363dcd6f7c44feda427177644f768a9"
+      "baseTree": "a463cbf5ddc37051ca59d281e2fe544d41cedfbc"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "5c6a0bca9accf62c4508623f6246e90238c102eb"
+      "baseTree": "2eeb8d4e612e707d5d3ee320ee38901091b54d9a"
     }
   ]
 }

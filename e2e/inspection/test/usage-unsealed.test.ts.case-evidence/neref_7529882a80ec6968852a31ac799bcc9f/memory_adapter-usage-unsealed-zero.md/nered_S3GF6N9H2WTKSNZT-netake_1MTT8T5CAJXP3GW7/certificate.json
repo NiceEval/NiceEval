@@ -1,0 +1,31 @@
+{
+  "format": "concord.native-reliability/v1",
+  "selector": "e2e/inspection/test/usage-unsealed.test.ts#neref_7529882a80ec6968852a31ac799bcc9f",
+  "caseId": "neref_7529882a80ec6968852a31ac799bcc9f",
+  "candidateSha256": "312415f42909e28d557a6ed18e4e831f71e64f7d1be71b97591e95fd424075e3",
+  "sourceDigest": "sha256:7bea066142cfbecfe9d2fc4a67645ea3c235016130a8333a5a6517d8da0511ab",
+  "greenReceipt": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-1.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-2.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-4.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-6.json",
+    "singleCase": "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/green.json",
+    "cleanup": [
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/green.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-1.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-2.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-3.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-4.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-5.json",
+      "e2e/inspection/test/usage-unsealed.test.ts.case-evidence/neref_7529882a80ec6968852a31ac799bcc9f/memory_adapter-usage-unsealed-zero.md/nered_S3GF6N9H2WTKSNZT-netake_1MTT8T5CAJXP3GW7/reliability-6.json"
+    ]
+  },
+  "certificateSha256": "5fa05d86119328b616fcc35c93f5f2b2e38e5494eaebca427cf17bb1a5b38755"
+}

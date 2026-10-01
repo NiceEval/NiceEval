@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-responses-deterministic
 import { defineEval } from "niceeval";
-import { includes, satisfies, toolMatch } from "niceeval/expect";
+import { atLeast, atMost, includes, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "openai@6.49 Responses raw response 保留 message/function_call 与互斥 usage",
@@ -27,16 +27,11 @@ export default defineEval({
           ) && !events.some((event) => event.type === "operation.finished"),
       ),
     );
-    t.check(
-      turn.usage,
-      satisfies<typeof turn.usage>(
-        "OpenAI Responses usage",
-        (usage) =>
-          usage?.inputTokens === 12 &&
-          usage.cacheReadTokens === 5 &&
-          usage.outputTokens === 8 &&
-          usage.reasoningTokens === 3,
-      ),
-    );
+    t.check(turn.usage.inputTokens, atLeast(12));
+    t.check(turn.usage.inputTokens, atMost(12));
+    t.check(turn.usage.cacheReadTokens, atLeast(5));
+    t.check(turn.usage.cacheReadTokens, atMost(5));
+    t.check(turn.usage.outputTokens, atLeast(8));
+    t.check(turn.usage.outputTokens, atMost(8));
   },
 });

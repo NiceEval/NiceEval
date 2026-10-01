@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: sandbox-injection-deleted-o11y-host-side
+title: 裁决:删除沙箱注入,行为断言收进宿主侧 t.o11y
+createdAt: 2026-07-29T22:20:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-injection-deleted-o11y-host-side.md
+  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:删除沙箱注入,行为断言收进宿主侧 t.o11y
 
 - **裁决**(2026-07-29):沙箱内不落任何框架文件、不注入任何框架环境变量。行为断言由

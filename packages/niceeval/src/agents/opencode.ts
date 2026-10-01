@@ -100,6 +100,9 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
 /**
  * OpenCode 的内置 sandbox Agent 工厂。
  */
+// @concord-code ne-adapter-opencode-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/opencode/README.md
 export function openCodeAgent(config?: OpenCodeConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCODE_CLI_VERSION;
   const { ensure, installer } = createNpmCliInstaller({

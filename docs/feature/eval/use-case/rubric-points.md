@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: rubric-points
+title: 计分制：检查点和质量分
+createdAt: 2026-07-22T11:45:06+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # 计分制：检查点和质量分

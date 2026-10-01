@@ -11,16 +11,16 @@
 
 | 目标 | 用例 |
 |---|---|
-| Eval 互相独立，追求默认吞吐 | [独立评测并行执行](独立评测并行执行.md) |
-| 跨 Attempt 读写同一份状态 | [串行保护共享状态](串行保护共享状态.md) |
-| 多开终端时追加同一 Record，并保护共享 checkpoint | [并行 Invocation](并行Invocation协作.md) |
-| 上一次运行被强杀，下一次运行接管过期协调状态 | [恢复中断运行](恢复中断运行.md) |
-| 后一道 Eval 依赖前一道的结果 | [固定执行顺序](固定执行顺序.md) |
-| 只有一个 Experiment 撞服务限额 | [限制单个实验](限制单个实验.md) |
-| 重复运行必须按结果决定下一次 | [严格顺序重试](严格顺序重试.md) |
-| 生命周期代码在并发下保存每个 Sandbox 的状态 | [隔离Hook状态](隔离Hook状态.md) |
-| 本机或 Provider 容量不足 | [限制全局并发](限制全局并发.md) |
-| 快慢实验混在同一批 | [让调度器混跑](快慢实验混跑.md) |
-| 多开终端运行同一 Experiment | [并行 Invocation](并行Invocation协作.md) |
+| Eval 互相独立，追求默认吞吐 | [独立评测并行执行](../concurrency-independent-evals.md) |
+| 跨 Attempt 读写同一份状态 | [串行保护共享状态](../concurrency-serialize-shared-state.md) |
+| 多开终端时追加同一 Record，并保护共享 checkpoint | [并行 Invocation](../concurrency-parallel-invocations.md) |
+| 上一次运行被强杀，下一次运行接管过期协调状态 | [恢复中断运行](../concurrency-resume-interrupted-run.md) |
+| 后一道 Eval 依赖前一道的结果 | [固定执行顺序](../concurrency-fixed-order.md) |
+| 只有一个 Experiment 撞服务限额 | [限制单个实验](../concurrency-max-per-experiment.md) |
+| 重复运行必须按结果决定下一次 | [严格顺序重试](../concurrency-strict-retry-order.md) |
+| 生命周期代码在并发下保存每个 Sandbox 的状态 | [隔离Hook状态](../concurrency-isolate-hook-state.md) |
+| 本机或 Provider 容量不足 | [限制全局并发](../concurrency-max-global.md) |
+| 快慢实验混在同一批 | [让调度器混跑](../concurrency-mix-fast-slow.md) |
+| 多开终端运行同一 Experiment | [并行 Invocation](../concurrency-parallel-invocations.md) |
 
 调度与名额持有期的契约单源在 [Runner](../../../../runner.md#调度有界并发)。

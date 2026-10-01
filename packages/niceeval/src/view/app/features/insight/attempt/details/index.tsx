@@ -55,28 +55,77 @@ function AttemptUsage({ data }: { readonly data: UsageTableData | null }): React
   return <Grid className="niceeval-usage-table">{rows.map(([label, value], index) => <Kpi key={`${label}:${index}`} label={label} value={value} />)}</Grid>;
 }
 
-function ExternalUsage({ usage }: { readonly usage: InspectionSuccessDocumentFor<"attempt.usage">["usage"] }): ReactElement | null {
+function ExternalUsage({ usage }: { readonly usage: InspectionSuccessDocumentFor<"attempt.usage">["usage"] }): ReactElement {
   const { t } = useTranslation();
-  if (usage.source !== "adapter") return null;
+  const configured = usage.configuredModels;
+  const defaultBinding = configured.state === "available" && configured.bindings.length === 1 && configured.bindings[0].modelSlot === "default" ? configured.bindings[0] : null;
+  const groups = usage.modelGroups;
   const costs = usage.totals.costs;
+  const judgeTotals = "totals" in usage.judgeUsage ? usage.judgeUsage.totals : undefined;
   const jsonStyle = { maxHeight: "24rem", overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
+  const tokenValue = (metric: { readonly value: number | null; readonly state: string }): string => `${metric.value ?? "—"} (${metric.state})`;
+  const costSource = (source: "reported" | "estimated" | "mixed"): string => t(source === "reported" ? "cell.costReported" : source === "estimated" ? "cell.costEstimated" : "cell.costMixed");
+  const recordedCalls = (count: number | null): string => count === null ? "—" : count === 0 ? `0 (${t("usage.noRecordedCalls")})` : String(count);
   return <section aria-label={t("usage.external")}>
-    <h3>{t("usage.external")}</h3>
-    <p>{usage.state} · {usage.coverage}</p>
-    <Grid>{([
-      ["usage.input", usage.totals.inputTokens],
-      ["usage.output", usage.totals.outputTokens],
-      ["usage.requests", usage.totals.requests],
-    ] as const).map(([label, metric]) => <Kpi key={label} label={t(label)} value={`${metric.value ?? "—"} (${metric.state})`} />)}</Grid>
-    {costs === undefined || costs.values.length === 0 ? <p>{t("attempt.cost")}: {t("cell.metricUnavailable")}</p> : null}
-    {costs?.values.map((cost) => <p key={cost.currency}>
-      {cost.value} {cost.currency} · {t(cost.source === "reported" ? "cell.costReported" : cost.source === "estimated" ? "cell.costEstimated" : "cell.costMixed")} · {costs.state} · {t("usage.coverage", { covered: cost.coveredCalls, total: costs.totalCalls })}
-    </p>)}
-    <details><summary>{t("usage.calls")} ({usage.calls?.length ?? 0}; {usage.omittedCallCount ?? 0} {t("attempt.truncated")})</summary>
-      <pre style={jsonStyle}>{JSON.stringify(usage.calls ?? [], null, 2)}</pre>
-    </details>
-    <details><summary>{t("usage.prices")}</summary><pre style={jsonStyle}>{JSON.stringify(usage.priceReceipts ?? null, null, 2)}</pre></details>
+    <h3>{t(usage.totalCosts.state === "complete" ? "usage.totalCosts" : "usage.totalKnownSubtotal")}</h3>
+    <p>{t(usage.totalCosts.state === "complete" ? "usage.costComplete" : "usage.costIncomplete")}</p>
+    {usage.totalCosts.missingSources.length === 0 ? null : <p>{t("usage.missingSources")}: {usage.totalCosts.missingSources.map((source) => t(source === "judge" ? "usage.judgeUsage" : "usage.applicationCost")).join(", ")}</p>}
+    {usage.totalCosts.values.length === 0 ? <p>{t(usage.totalCosts.state === "complete" ? "usage.noRecordedCharges" : "cell.metricUnavailable")}</p> : usage.totalCosts.values.map((cost) => <p key={cost.currency}>{cost.value} {cost.currency} · {costSource(cost.source)}</p>)}
+    <details><summary>{t("usage.external")}</summary>
+    <p>{usage.state}{usage.coverage === undefined ? "" : ` · ${usage.coverage}`}</p>
+    <h4>{t("usage.configuredModels")}</h4>
+    {configured.state !== "available" ? <p>{t("usage.notRecorded")}</p> : defaultBinding !== null ? <Grid>
+      <Kpi label={`${t("usage.configuredModel")} (default)`} value={defaultBinding.model ?? "—"} />
+      {defaultBinding.reasoningEffort === null ? null : <Kpi label={t("usage.effort")} value={defaultBinding.reasoningEffort} />}
+      <Kpi label={t("usage.recordedCalls")} value={recordedCalls(defaultBinding.recordedCalls)} />
+    </Grid> : configured.bindings.length === 0 ? <p>{t("usage.configuredSlotCount", { count: 0 })}</p> : <div className="niceeval-table-wrap" style={{ overflowX: "auto" }}>
+      <table aria-label={t("usage.configuredModels")}><thead><tr>
+        {(["usage.slot", "usage.configuredModel", "usage.effort", "usage.recordedCalls"] as const).map((key) => <th key={key} scope="col">{t(key)}</th>)}
+      </tr></thead><tbody>{configured.bindings.map((binding) => <tr key={binding.modelSlot}>
+        <th scope="row">{binding.modelSlot}</th><td>{binding.model ?? "—"}</td><td>{binding.reasoningEffort ?? "—"}</td>
+        <td>{recordedCalls(binding.recordedCalls)}</td>
+      </tr>)}</tbody></table>
+    </div>}
+    <h4>{t("usage.actualModels")}</h4>
+    <p>{groups.state} · {groups.basis} · {t("usage.groupPreview", { shown: groups.groups.length, total: groups.totalGroupCount ?? "—", omitted: groups.omittedGroupCount })}{groups.groupsTruncated ? ` · ${t("attempt.truncated")}` : ""}</p>
+    {"reason" in groups && groups.reason !== undefined ? <p>{groups.reason}</p> : null}
+    {groups.state !== "available" ? <p>{t("cell.metricUnavailable")}</p> : <div className="niceeval-table-wrap" style={{ overflowX: "auto" }}>
+      <table aria-label={t("usage.actualModels")}><thead><tr>
+        {(["usage.slot", "usage.servingProvider", "usage.actualModel", "usage.recordedCalls", "usage.tokens", "usage.applicationCost"] as const).map((key) => <th key={key} scope="col">{t(key)}</th>)}
+      </tr></thead><tbody>{groups.groups.map((group) => <tr key={JSON.stringify([group.modelSlot, group.provider, group.model])}>
+        <th scope="row">{group.modelSlot ?? t("usage.notRecorded")}</th><td>{group.provider ?? t("usage.notRecorded")}</td><td>{group.model ?? t("usage.notRecorded")}</td><td>{group.recordedCalls}</td>
+        <td>{t("usage.inputTotal")}: {tokenValue(group.tokens.inputTotalTokens)}<br />{t("usage.output")}: {tokenValue(group.tokens.outputTokens)}<br />{t("usage.totalTokens")}: {tokenValue(group.tokens.totalTokens)}</td>
+        <td>{group.costs.values.length === 0 ? t("cell.metricUnavailable") : group.costs.values.map((cost) => <div key={cost.currency}>
+          {cost.value} {cost.currency} · {costSource(cost.source)} · {group.costs.state}{group.costs.state === "partial" ? ` · ${t("usage.knownSubtotal")}` : ""}<br />
+          {t("usage.coverage", { covered: cost.coveredCalls, total: group.costs.totalCalls })} · {t("usage.costOrigins", { reported: cost.reportedCalls, estimated: cost.estimatedCalls })}
+        </div>)}</td>
+      </tr>)}</tbody></table>
+    </div>}
+    <h4>{t("usage.judgeUsage")}</h4>
+    {judgeTotals !== undefined ? <>
+      <p>{judgeTotals.requests.value === 0 && judgeTotals.requests.state === "available" ? t("usage.noJudgeCalls") : `${t("usage.physicalCalls")}: ${tokenValue(judgeTotals.requests)}`}</p>
+      <p>{t("usage.inputTotal")}: {tokenValue(judgeTotals.inputTotalTokens)} · {t("usage.output")}: {tokenValue(judgeTotals.outputTokens)} · {t("usage.totalTokens")}: {tokenValue(judgeTotals.totalTokens)}</p>
+      <p>{judgeTotals.costs.state}</p>
+      {judgeTotals.costs.values.map((cost) => <p key={cost.currency}>{cost.value} {cost.currency} · {costSource(cost.source)} · {t("usage.coverage", { covered: cost.coveredCalls, total: judgeTotals.costs.totalCalls })}</p>)}
+    </> : <p>{t("cell.metricUnavailable")} · {"reason" in usage.judgeUsage ? usage.judgeUsage.reason : ""}</p>}
+    {usage.source === "adapter" ? <>
+      <h4>{t("usage.applicationCost")}</h4>
+      <Grid>{([
+        ["usage.input", usage.totals.inputTokens],
+        ["usage.output", usage.totals.outputTokens],
+        ["usage.requests", usage.totals.requests],
+      ] as const).map(([label, metric]) => <Kpi key={label} label={t(label)} value={tokenValue(metric)} />)}</Grid>
+      {costs === undefined || costs.values.length === 0 ? <p>{t("usage.applicationCost")}: {t("cell.metricUnavailable")}</p> : null}
+      {costs?.values.map((cost) => <p key={cost.currency}>
+        {cost.value} {cost.currency} · {costSource(cost.source)} · {costs.state}{costs.state === "partial" ? ` · ${t("usage.knownSubtotal")}` : ""} · {t("usage.coverage", { covered: cost.coveredCalls, total: costs.totalCalls })}
+      </p>)}
+      <details><summary>{t("usage.calls")} ({usage.calls?.length ?? 0}; {usage.omittedCallCount ?? 0} {t("attempt.truncated")})</summary>
+        <pre style={jsonStyle}>{JSON.stringify(usage.calls ?? [], null, 2)}</pre>
+      </details>
+      <details><summary>{t("usage.prices")}</summary><pre style={jsonStyle}>{JSON.stringify(usage.priceReceipts ?? null, null, 2)}</pre></details>
+    </> : null}
     {usage.limitations.length === 0 ? null : <pre style={jsonStyle}>{JSON.stringify(usage.limitations, null, 2)}</pre>}
+    </details>
   </section>;
 }
 
@@ -124,13 +173,13 @@ export function AttemptDetails({ model, locale, className }: { readonly model: A
   ];
   return <Col className={cx("niceeval-report", className)}>
     <AttemptSummary locator={model.locator} data={model.summary} locale={locale} />
+    <ExternalUsage usage={usageQuery.data!.usage} />
     <Callouts items={notices} locale={locale} />
     {embedded.source !== null
       ? <SourceView data={embedded.source} locale={locale} />
       : <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} />}
     <Waterfall nodes={sliceData(timingQuery.data!)} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} locale={locale} />
     <AttemptUsage data={sliceData(projectUsage(usageQuery.data!, trace))} />
-    <ExternalUsage usage={usageQuery.data!.usage} />
     <ExecutionTrace key={model.locator} locator={model.locator} initial={trace.trace.execution} />
     {embedded.conversation !== null
       ? <TurnTrace data={embedded.conversation} locale={locale} />

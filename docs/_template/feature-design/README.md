@@ -5,7 +5,7 @@
 
 - `docs/feature/<name>/`：已采用的当前目标契约。
 - `docs/roadmap/<name>/`：已经定稿、尚未采用为当前契约的方向。
-- `docs/design/<decision>/PLAN-N/`:参与同一决策比较的自包含候选。
+- `docs/design/<decision>/plans/plan-N/`:参与同一决策比较的自包含候选。
 
 Feature 从 `pnpm run repo docs feature create --help` 进入，Design 从 `pnpm run repo docs design create --help` 进入。Roadmap 的受管结构写入尚未提供；命令出现前不手工复制本模板。
 

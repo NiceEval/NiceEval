@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: fingerprint-inputs-not-user-configurable
+title: 裁决:指纹构成不开放给用户配置,轮换坐标的家是 facts
+createdAt: 2026-07-25T10:27:54+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/fingerprint-inputs-not-user-configurable.md
+  commit: 3cd2cbe6e6aeca3763784bc44ab39446129ab37e
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:指纹构成不开放给用户配置,轮换坐标的家是 facts
 
 **裁决**(2026-07-25)。缓存指纹的输入是框架不变量,`ExperimentDef` 上**不提供**任何逐键豁免声明。

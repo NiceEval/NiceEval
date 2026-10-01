@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: config-report-value-not-path
+title: 裁决:`config.report` 收 ReportDefinition 值,`--report` 裸词是内建视图名
+createdAt: 2026-07-25T10:58:34+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/config-report-value-not-path.md
+  commit: 7230100c67040e42c1d35e750901fa3cd54728e4
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:`config.report` 收 ReportDefinition 值,`--report` 裸词是内建视图名
 
 **日期**:2026-07-25(用户裁决)

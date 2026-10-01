@@ -1,18 +1,41 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: insight-aggregate-hides-partial-state
 title: Insight aggregate row hides an intrinsic partial metric
 createdAt: 2026-09-21
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: Preserved historical resolution declaration during merge; not current
+    verification.
+  at: 2026-09-29T23:47:24.368Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_JSKXSEVB12GTC5M2
+            - netake_NFCA10NRSR3KP9R6
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
     proof:
       - nered_JSKXSEVB12GTC5M2
       - netake_NFCA10NRSR3KP9R6
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-snapshot.browser.spec.ts#necase_DCFSBPFARWB0QD6D"]}
-promotions: []
+    source:
+      path: memory/insight-aggregate-hides-partial-state.md
+      commit: 05dec8c7f1795e13212d424ee472874d62d84345
+      digest: sha256:df105438d70ce8fefda72985a33c18db60d63b037ac348a0a5d0ac3bea13fe3a
 ---
 ## Problem
 

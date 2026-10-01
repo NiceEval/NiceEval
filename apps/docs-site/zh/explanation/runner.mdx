@@ -1,13 +1,34 @@
 ---
-title: "运行、封口与读取"
+title: "运行怎样产出可读的结果"
 sidebarTitle: "运行器"
-description: "了解 Runner 如何发布 Run，以及读取路径为什么只看已封口事实。"
+description: "了解 Runner 怎样创建 Run、逐个发布 Attempt，以及查看命令为什么只读已发布的结果。"
 ---
 
-Runner 为选中的 Experiment 创建 Run，并在创建事务中冻结 `runId`、`invocationId` 与全部 expected slots。每个 Attempt 完成自己的 closure 后独立原子发布；已发布 Attempt 即使其 Run 仍为 `active`，也能被读取、比较、沿用或显式采用。尚未发布的聚合和晚到写入不对读取面可见。
+你启动 `niceeval exp` 后，还没等它跑完就想看已经出来的结果，或者想知道运行中途被打断时哪些结果还算数。这一页说明 Runner 怎样把一次运行变成可以查看的结果。
 
-命令结束后的 receipt 给出 `createdRunIds` 与 `publicationCutoff`。把它们作为稳定的运行边界：人用 `niceeval view --run <run-id>` 审阅，AI、脚本和 CI 先从 `niceeval query discover` 获取可用 operation，再运行对应 request。
+## Run 在开始时就定下要跑什么
 
-View 在一个固定 `PublicationCutoff` 中读取事实。新 publication 出现后，页面提示用户刷新；用户确认后才切换到新的 cutoff。
+Runner 为每个选中的 Experiment 创建一个 Run。创建时，它记下 `runId`、这次运行的 `invocationId`，以及这次计划要跑的所有 Attempt。之后这份计划不会再变，所以通过率的分母在开始时就确定了。
 
-Runner 不把数据库、执行工作目录或未封口记录交给读取路径。运行后查看的 selector、缺口、Evidence 与 comparison 由固定 Inspection operation 决定。
+## 每个 Attempt 跑完就单独发布
+
+一个 Attempt 跑完、结果全部写好后，会单独发布。发布后它马上可以被查看、比较、在下次运行中沿用，或用 `niceeval accept` 明确采用，即使所在的 Run 仍是 `active`。
+
+还没发布的 Attempt、尚未算完的汇总，以及晚到的写入，都不会出现在任何查看命令里。所以你在运行中途看到的每条结果都是完整的，不会读到写了一半的数据。
+
+## 运行结束时拿到这次的 Run ID
+
+`niceeval exp` 结束时，终端的 `NEXT` 面板会列出这次新建的 Run，并给出两条查看命令：
+
+```sh
+pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval view --run <run-id>
+```
+
+加 `--json` 时，最后一行是这次运行的 receipt，里面的 `createdRunIds` 列出新建的 Run，`publicationCutoff` 标记这次运行结束时已发布到哪里。`publicationCutoff` 不要解析，原样传给后续命令。脚本、AI 和 CI 先运行 `niceeval query discover` 找到可用的查询，再发送完整 request。
+
+## 浏览器页面不会自己跳到新结果
+
+`niceeval view` 打开时，固定读取当时已发布的结果。之后又有新的 Attempt 发布时，页面会提示刷新；你确认后，页面才切换到最新结果。这样你在对比数据时，页面不会中途变化。
+
+Runner 不会把数据库、执行时的工作目录或尚未发布的记录交给查看命令。查看时选哪些结果、缺了什么、用什么证据、怎样比较，都由 NiceEval 内置的固定查询决定，见[运行后数据流](/zh/explanation/overview)。

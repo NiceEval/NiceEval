@@ -1,0 +1,133 @@
+{
+  "format": "niceeval.e2e-case-receipt/v2",
+  "mode": "formal",
+  "observation": "reliability",
+  "selector": "e2e/package/test/bub-e2b-template.test.ts#neref_8fa64cbd02667adad61897996bb48624",
+  "caseId": "neref_8fa64cbd02667adad61897996bb48624",
+  "inventoryDigest": "sha256:aea2e3042721a12ecb5d7bf48556ab46bfaac87eebf7f8b7b17ec37786dee60e",
+  "candidate": {
+    "gitSha": "687a24ccc8898fe0ae2d4f8a6209d67e46b000d4",
+    "sha256": "bac12e9e2118c47fa663fca88e661bf1478efe19c7db6d8de1371887d559f8d4",
+    "sri": "sha512-YG1d4ospZUHHvrXVJZDAteJi2zgoDn84t10BsMDsMUjlJvr7l8+Xpal12JqvC2JAyBzud+4PPwKWjPv020uyEQ=="
+  },
+  "source": {
+    "format": "concord.repository-source-identity/v3",
+    "projection": {
+      "algorithm": "concord.repository-source-projection/v2",
+      "digest": "8ce61c167d0f7ea9a50e3339a1fb7d000eb4c4901984ef6a171a10d360c77eaa",
+      "files": [
+        {
+          "path": "fixtures/commonjs-init-list/agents/smoke.ts",
+          "bytes": 362,
+          "rawSha256": "8d5f394998d3d5fba6930ff76d7c2f7dc6e7d7a462265c661a79428b981f4ab9",
+          "codeSha256": "8d5f394998d3d5fba6930ff76d7c2f7dc6e7d7a462265c661a79428b981f4ab9"
+        },
+        {
+          "path": "fixtures/commonjs-init-list/evals/cjs-default.eval.ts",
+          "bytes": 257,
+          "rawSha256": "b7ee4675ef31ac275117b59860aff655afd7cd61a35dbaf2a3e96f398ca2364e",
+          "codeSha256": "b7ee4675ef31ac275117b59860aff655afd7cd61a35dbaf2a3e96f398ca2364e"
+        },
+        {
+          "path": "fixtures/commonjs-init-list/evals/tsx-default.eval.tsx",
+          "bytes": 302,
+          "rawSha256": "25edde5eaa7270e237197c01753b0f65ae820af3a87072fcabef6111256cc8c4",
+          "codeSha256": "25edde5eaa7270e237197c01753b0f65ae820af3a87072fcabef6111256cc8c4"
+        },
+        {
+          "path": "fixtures/commonjs-init-list/experiments/smoke.ts",
+          "bytes": 246,
+          "rawSha256": "cfed1989188ad67d305a682cdbfbd786dd3731c4ca6341f5357c4fb3f7371d99",
+          "codeSha256": "cfed1989188ad67d305a682cdbfbd786dd3731c4ca6341f5357c4fb3f7371d99"
+        },
+        {
+          "path": "test/bub-e2b-template.test.ts",
+          "bytes": 903,
+          "rawSha256": "b105a2ef016e9f7e441e603f634a107130f805a497a947949bf68b2a5ee6c292",
+          "codeSha256": "6cbaf06cf8142dd87c39444f4076a67183e46ea37929f690b0f28ab4a48013f1"
+        },
+        {
+          "path": "test/inspection-public-entry.test.ts",
+          "bytes": 5325,
+          "rawSha256": "6605efe9c6dc342bb3473882b91d89447305412e3071ed8c48457ed8ec6658a0",
+          "codeSha256": "978d5cb0a73fabd0341180b04234dae5e5a094774eead2bb05926cc049858591"
+        },
+        {
+          "path": "test/package.test.ts",
+          "bytes": 5857,
+          "rawSha256": "995748f1e53f1689c70345bd5ff5351c146571846713bd63d60d5e405770d758",
+          "codeSha256": "29899e8f591d36bfcd5f88d5a092b3e32df666f72d50fa6b6c435ec0ba84c3ee"
+        },
+        {
+          "path": "vitest.config.ts",
+          "bytes": 157,
+          "rawSha256": "63bcf537a9126d8a508f5fc6a62729e4d85ccc4013b7108a3b76ad159e1f249f",
+          "codeSha256": "63bcf537a9126d8a508f5fc6a62729e4d85ccc4013b7108a3b76ad159e1f249f"
+        }
+      ]
+    },
+    "caseId": "neref_8fa64cbd02667adad61897996bb48624",
+    "nativeTestFile": "e2e/package/test/bub-e2b-template.test.ts",
+    "declarationFile": "e2e/package/test/bub-e2b-template.test.ts",
+    "binding": {
+      "kind": "direct-contract",
+      "contractRef": "docs/feature/adapters/README.md",
+      "contractSha256": "95f13a8238635de3ae40e4888efbb985bd593c7b948eeacc02253480a3dd07ca"
+    }
+  },
+  "runner": {
+    "executor": "vitest",
+    "version": "4.1.11",
+    "argv": [
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "test/bub-e2b-template.test.ts",
+      "--testNamePattern",
+      "^Bub E2B factory 固定默认模型客户端并写匹配指纹$"
+    ]
+  },
+  "result": {
+    "disposition": "pass",
+    "stage": "test",
+    "exitCode": 0,
+    "signal": null
+  },
+  "cleanup": {
+    "ok": true,
+    "resources": [
+      {
+        "kind": "workdir",
+        "path": "/tmp/niceeval-e2e-takeover-scratch-r8B1v5/runs/takeover/same-copy/package",
+        "ok": true
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "preflight",
+        "gone": true,
+        "detail": "owned process group 587865 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "install",
+        "gone": true,
+        "detail": "owned process group 587866 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 587949 has no running members after leader close"
+      },
+      {
+        "kind": "owned-process-group",
+        "stage": "test",
+        "gone": true,
+        "detail": "owned process group 588086 has no running members after leader close"
+      }
+    ]
+  },
+  "invocationId": "f50f7341-b943-4d95-b502-fc7bccecfc02",
+  "receiptSha256": "9acb058762b85ac179919269a5c165ae0fbf205be715c18f31163c077e93040e"
+}

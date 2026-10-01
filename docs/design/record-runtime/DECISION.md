@@ -3,7 +3,7 @@
 ## 裁决
 
 旧统一 Runtime 方案曾采纳
-[PLAN-2](PLAN-2/README.md)：一个 canonical Record root 由同一个 `RecordAccessRuntime` 管理，并向 host mint
+[PLAN-2](plans/plan-2/README.md)：一个 canonical Record root 由同一个 `RecordAccessRuntime` 管理，并向 host mint
 snapshot、invocation 与 maintenance facets。
 
 这是被独立 Record Host 与 Coordination SDK 取代的历史选型裁决，不构成当前公共 API。
@@ -18,7 +18,7 @@ snapshot、invocation 与 maintenance facets。
 
 ## 为什么否决 PLAN-1
 
-[PLAN-1](PLAN-1/README.md) 可以让每次 reader / writer open 各自正确，但不能保证同一 host operation 内共享 root
+[PLAN-1](plans/plan-1/README.md) 可以让每次 reader / writer open 各自正确，但不能保证同一 host operation 内共享 root
 authority、generation allocator 或 verified material。调用者若自行拼接多个 open，就会重新承担 cache identity、
 锁顺序与 fresh snapshot 的协调责任。
 

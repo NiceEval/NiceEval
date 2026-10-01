@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: attempt-interruption-closes-teardown-bridge
 title: Attempt 中断关闭执行桥后跳过 Agent 与 Eval Plugin teardown
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - netake_1J9E292SKTR2Z2AD
+            - netake_KYEZER8R3N4QSH0B
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_8XVYC6XMEE941YZ5","e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_KVESCV3S1ZDJ5TYR"]}
     proof:
       - netake_1J9E292SKTR2Z2AD
       - netake_KYEZER8R3N4QSH0B
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_8XVYC6XMEE941YZ5","e2e/plugins/test/eval-plugin-lifecycle.test.ts#necase_KVESCV3S1ZDJ5TYR"]}
-promotions: []
+    source:
+      path: memory/attempt-interruption-closes-teardown-bridge.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:b55c0e60f46c2289b0cf3c454030958b73152f44ebf9fefd98de63b6333f5ec7
 ---
 # Attempt 中断关闭执行桥后跳过 Agent 与 Eval Plugin teardown
 

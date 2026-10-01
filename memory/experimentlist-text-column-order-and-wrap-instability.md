@@ -1,9 +1,21 @@
 ---
-name: experimentlist-text-column-order-and-wrap-instability
-description: ExperimentList 的 text 面真实列顺序是 Results 排在 Tokens/Cost 之前,与 entity-lists.md 自己给的 ASCII 范例(Tokens/Cost/Results)不一致;哪个单元格在 width 80 折行也随其它单元格的真实数值内容变化,不是固定的某一列
-metadata:
-  node_type: memory
-  type: project
+format: concord.document/v1
+id: experimentlist-text-column-order-and-wrap-instability
+title: experimentlist-text-column-order-and-wrap-instability
+createdAt: 2026-07-22T08:50:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experimentlist-text-column-order-and-wrap-instability.md
+  commit: 031ce196afdc67380ab6ccbeb8308168b74ee9bc
+description: ExperimentList 的 text 面真实列顺序是 Results 排在 Tokens/Cost 之前,与
+  entity-lists.md 自己给的 ASCII 范例(Tokens/Cost/Results)不一致;哪个单元格在 width 80
+  折行也随其它单元格的真实数值内容变化,不是固定的某一列
+kind: memory
+memoryKind: insight
+state: captured
+epoch: 0
+promotions: []
+history: []
 ---
 
 **现象一（doc/code 列顺序不一致）**：`docs/feature/reports/library/entity-lists.md` 里

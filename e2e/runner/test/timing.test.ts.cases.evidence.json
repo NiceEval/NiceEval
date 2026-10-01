@@ -1,28 +1,6 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_EP0HS2HD783EN64J": {},
-    "necase_MJKBRQFQP8P4EWH5": {
-      "memory/attempt-publication-diagnostic-context.md": {
-        "red": {
-          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/red.json",
-          "digest": "sha256:ef6384d254d9bb588477b63aa6ab5e5136dd6ff54c608c3b2065269cbdb0b05d"
-        },
-        "green": {
-          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/green.json",
-          "digest": "sha256:63dbd23e2c126fce836abefc0d9dfa8cd0aaba8e11075d8a78cfda2331632464"
-        },
-        "certificate": {
-          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/certificate.json",
-          "digest": "sha256:7d415842a23127a3b2d746d6b6a04feb564e1b596a562afa14844be637b792c1"
-        },
-        "inventory": {
-          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/inventory.json",
-          "digest": "sha256:16a3bad57bff48f90ff84273721d74ad16280791b6fa5bd74e3b880a8f9afc46"
-        }
-      }
-    }
-  },
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
   "history": [
     {
       "caseId": "necase_EP0HS2HD783EN64J",
@@ -47,6 +25,30 @@
       },
       "reason": "Current case proves already-published Attempt remains inspectable after Run close failure; it no longer proves omission of an unpublished locator.",
       "retiredAtCommit": "5a1bc84e8944350574f07553b21ff61cbbd70f0a"
+    },
+    {
+      "caseId": "necase_MJKBRQFQP8P4EWH5",
+      "memory": "memory/attempt-publication-diagnostic-context.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/red.json",
+          "digest": "sha256:ef6384d254d9bb588477b63aa6ab5e5136dd6ff54c608c3b2065269cbdb0b05d"
+        },
+        "green": {
+          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/green.json",
+          "digest": "sha256:63dbd23e2c126fce836abefc0d9dfa8cd0aaba8e11075d8a78cfda2331632464"
+        },
+        "certificate": {
+          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/certificate.json",
+          "digest": "sha256:7d415842a23127a3b2d746d6b6a04feb564e1b596a562afa14844be637b792c1"
+        },
+        "inventory": {
+          "path": "e2e/runner/test/timing.test.ts.case-evidence/necase_MJKBRQFQP8P4EWH5/memory_attempt-publication-diagnostic-context.md/nered_28383A34332WSX13-netake_VDNVQ457ZW5AB04D/inventory.json",
+          "digest": "sha256:16a3bad57bff48f90ff84273721d74ad16280791b6fa5bd74e3b880a8f9afc46"
+        }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
   ]
 }

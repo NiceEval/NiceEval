@@ -53,7 +53,7 @@ export function or(
 #### `not`
 
 ```ts
-export function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, "value"> { ... }
+export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): BooleanMatch<T, T, "value"> { ... }
 ```
 
 #### `includes`
@@ -156,7 +156,7 @@ export function satisfies<T, R extends T = T>(
 ```ts
 export function defineValueMatch<T, R extends T = T>(spec: {
   readonly name: string;
-  readonly evaluate: (value: T) => boolean | Promise<boolean>;
+  readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
 }): BooleanMatch<T, R> | BooleanMatch<T, T> { ... }
 ```
 
@@ -176,6 +176,59 @@ export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
 ): EventMatch<Extract<EventOccurrenceView, { readonly type: K }>> { ... }
+```
+
+#### `mapValue`
+
+```ts
+export function mapValue<T, U>(
+  label: string, project: (value: T) => U, match: Match<NoInfer<U>, "value"> & { readonly kind: "boolean" },
+): BooleanMatch<T, T> { ... }
+```
+
+Project a single value without replacing the original subject's refinement.
+
+#### `mapEach`
+
+```ts
+export function mapEach<T, U, Subject extends CollectionValue<T>>(
+  project: (value: T) => U,
+  aggregate: Match<CollectionValue<NoInfer<U>>, "value"> & { readonly kind: "boolean" },
+): BooleanMatch<Subject & CollectionValue<T>, Subject> { ... }
+```
+
+Project each complete item, retaining its material identity and order.
+
+#### `filterWhere`
+
+```ts
+export function filterWhere<T, R extends T, Subject extends CollectionValue<T>>(
+  selector: BooleanMatch<T, R>, aggregate: BooleanMatch<CollectionValue<R>, CollectionValue<R>>,
+): BooleanMatch<Subject, Subject> { ... }
+```
+
+Select only definite matches; an unknown selector makes the aggregate unavailable.
+
+#### `countWhere`
+
+```ts
+export function countWhere<T, Subject extends CollectionValue<T>>(
+  item: BooleanMatch<T, NoInfer<T>>, count: Match<number, "value"> & { readonly kind: "boolean" },
+): BooleanMatch<Subject, Subject> { ... }
+```
+
+Compare an exact match count only after every item in a complete collection is known.
+
+#### `defineMaterialMatch`
+
+```ts
+export function defineMaterialMatch(definition: unknown): ContextualMatch { ... }
+```
+
+#### `defineContextMatch`
+
+```ts
+export function defineContextMatch(definition: unknown): ContextualMatch { ... }
 ```
 
 {/* GENERATED:END expect-matchers */}
@@ -275,6 +328,28 @@ readonly kind: "score";
 ```
 
 {/* GENERATED:END value-assertion */}
+
+## 集合中的先后条件
+
+`inOrder` 可以把 2–64 个普通值 Match 组合成集合 Match，交给 `t.check` 或应用的集合断言方法。
+它接受只读数组或带完整性状态的 `MaterialCollection`，按原位置寻找严格递增的子序列，不要求相邻。
+
+```ts
+import { equals, inOrder, not, or } from "niceeval/expect";
+
+t.check([1, 0, 2], inOrder([equals(1), equals(2)])).gate();
+t.check([2, 1], not(inOrder([equals(1), equals(2)]))).gate();
+t.check([3, 4], or(
+  inOrder([equals(1), equals(2)]),
+  inOrder([equals(3), equals(4)]),
+)).gate();
+```
+
+同一项不能满足两个步骤，每个步骤内部可以用 `and` 约束同一事实。应用负责提供正式提交顺序；请求发出不代表操作采用或执行完成。
+只要求双方都发言时，分别检查存在性即可。
+
+不完整集合返回不可判定。完整集合有已知顺序证据时通过，没有可能的顺序时失败，只有依赖未知项才能成立时不可判定。
+诊断保留原位置、材料 ID 和步骤判断。ToolMatch 与 EventMatch 的顺序组合保留各自的 Agent 范围，不能和普通值步骤混用。
 
 ## 自定义 matcher
 

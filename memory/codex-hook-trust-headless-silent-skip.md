@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: codex-hook-trust-headless-silent-skip
+title: codex hook 信任门槛在 headless 下静默跳过所有非 managed hook
+createdAt: 2026-07-17T14:12:36+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/codex-hook-trust-headless-silent-skip.md
+  commit: 177a151c4b41ba97515f17af597b1f91c23a9cac
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [codex-hook-trust-headless-silent-skip](codex-hook-trust-headless-silent-skip.md) — codex 对非 managed hook 要求交互式授信,headless 下未授信 hook 被静默跳过零报错(插件 hook 配置全对也零触发);bypass_hook_trust 是 runtime-only,修为 exec 一律带 `--dangerously-bypass-hook-trust`(src/agents/codex.ts)"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # codex hook 信任门槛在 headless 下静默跳过所有非 managed hook
 
 ## 现象

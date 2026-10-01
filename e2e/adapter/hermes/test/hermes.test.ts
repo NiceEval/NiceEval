@@ -51,8 +51,9 @@ function requireLiveSecrets(): void {
     );
   }
 }
+// @feature docs/feature/adapters/README.md
 
-it("真实 Hermes CLI adapter 完成运行并公开读回工具证据 [necase_WV1P8Q28NSVS993X]", async () => {
+it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async () => {
   requireLiveSecrets();
   await e2e.case(
     "live",

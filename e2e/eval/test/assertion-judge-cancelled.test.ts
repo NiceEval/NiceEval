@@ -5,7 +5,8 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
-test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实 [necase_2TCX4FPX8TA9NV88]", async () => {
+// @use-case docs/feature/eval/use-case/judge-quality.md
+test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", async () => {
   let measurementCalls = 0;
   let measurementConnectionClosed = false;
   const provider = createServer((request, response) => {
@@ -57,6 +58,17 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实 [n
           calls: [{ state: "admitted", attempts: [{ transport: "attempted", result: { state: "interrupted" } }] }],
         },
       });
+      const usage = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.usage");
+      expect(usage.receipt.exitCode, usage.receipt.diagnostic()).toBe(0);
+      const ledger = usage.document.usage.judgeUsage;
+      expect(ledger.state).toBe("complete");
+      if (ledger.state !== "complete") throw new Error("Missing interrupted Judge physical usage");
+      expect(ledger.calls).toHaveLength(1);
+      expect(ledger.calls[0]).toMatchObject({ entryId: entry.entryId, status: "cancelled", cost: null,
+        inputTotalTokens: null, outputTokens: null, receipt: { state: "unavailable", reason: "cancelled" } });
+      expect(ledger.totals.requests).toMatchObject({ state: "available", value: 1 });
+      expect(ledger.totals.costs).toMatchObject({ state: "unavailable", totalCalls: 1 });
+      expect(usage.document.usage.totalCosts.missingSources).toContain("judge");
       expect(measurementCalls).toBe(1);
       expect(measurementConnectionClosed).toBe(true);
     });

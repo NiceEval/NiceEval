@@ -26,10 +26,10 @@ src/
 ├─ define.ts                # define 一族的家(eval / config / experiment / agent / sandbox)
 ├─ types.ts                 # 核心类型的汇聚出口(各域类型的家在各自目录)
 │
-├─ context/                 # `t` 上下文的构建(TestContext / SessionHandle / TurnHandle)
+├─ context/                 # 公共评估能力与应用上下文的组合
 ├─ expect/                  # 值断言库(includes / equals / matches / similarity …)
-├─ assertions/              # Assertion collector、作用域检查与证据完整性
-├─ judge/                   # 裁判模型配置、调用与响应解析
+├─ assertions/              # 通用 Match 求值、Assertion collector 与证据完整性
+├─ judge/                   # 受管裁判模型配置、调用、响应解析与审计
 ├─ verdict/                 # Assertion 结果到 Attempt 四态的折叠
 │
 ├─ agents/                  # —— 连到哪个被测对象、协议怎么说,全部特殊性在这里 ——
@@ -137,6 +137,11 @@ client 或持久 adapter coordination。`Layer` 只负责在 bootstrap 组合这
 继续由 CLI bootstrap 提供资源，不经过这层公开包装。该具名入口不承诺非 Node 加载，
 也不授予其它 Host 在领域 handler 内选择 Live Layer 的能力。
 
+`niceeval/experiment/host` 同样是具名 Node composition edge。公开 operation 惰性提供完整的本地
+`NodeRecordLive`，requirement 为 `never`；内部 runtime 保留 Record 与 coordination 的真实 requirement，
+CLI contribution 继续消费 bootstrap 的资源。每次公开执行拥有独立 Scope，退出和中断都释放其连接与 worker，
+包括初始化尚未完成的 worker。包装不创建嵌套 runtime，不转换 interruption Cause，也不公开内部 Service tag。
+
 每个 contribution 连同 parser shape、help metadata 和 handler 一起冻结。根 router 聚合这些 schema，只为让
 `parseArgs` 在不知道命令位置时取得 indexed tokens；第一个 positional token 是 root，投影时只删除这一个
 token，root 前后的 option 与 `--` 都保持原顺序。聚合 parse 不是 option 的语义验收：命令取得投影后的 argv
@@ -182,7 +187,7 @@ Agent 是提供会话操作与观测的 Adapter，不是普通应用必须实现
 
 | Adapter | 应用提供的操作 | 专属观测 |
 |---|---|---|
-| 用户应用 | `post`、`reply`、`generateImage` 或作者自己的方法 | 显式检查的应用返回值 |
+| 用户应用 | `post`、`reply`、`generateImage` 或作者自己的方法 | 应用返回值与业务 ctx 的只读事实 |
 | Direct Agent | `send`、`sendFile`、`newSession` 等会话操作 | Session、Turn 与实际采集的工具和用量 |
 | Sandbox Agent | 会话操作与 Sandbox 操作 | 上述观测，加文件、命令与变更归因 |
 
@@ -192,12 +197,38 @@ Adapter 的 bound Eval factory 将它与公共评估能力组合为单一强类�
 根 `defineEval` 是 Agent 会话契约的便捷入口，仍执行相同的 Eval 和 Attempt 模型。
 共享接口与实现选择、保留成员、绑定和资源规则由 [Eval Library](feature/eval/library.md) 与 [Eval 架构](feature/eval/architecture.md) 拥有。
 
+评估能力与应用能力按职责分层：
+
+| 层 | 拥有的职责 |
+|---|---|
+| 通用评估 | Match、`check`、`closeQA`、Assertion handle、受管 Judge 与审计。 |
+| 应用 | 游戏的 `systemTwo`、`said`、`operations`，Agent 的会话操作、`usedNoTools`、`calledTool`，以及各自的事实 reader。 |
+| 具体接入 | Agent 应用适配各具体 Agent；游戏应用连接自己的运行系统。 |
+
+领域断言封装事实读取与既定判据，通过同一 Match 和 `check` 登记。
+通用层支持显式 `check(value, match)` 和单参 `check(contextualMatch)`，不因应用不同建立另一套 evaluator。
+接收者在断言调用时提供当前只读 ctx；业务 reader 只读取判定所需的事实，不把整份应用状态当成审计材料。
+
+`closeQA` 是通用层的受管评分组合。它把 selector 与 question 编译为评分 Match，再交给同一接收者的 `check`。
+集合选择对全部候选求值，全部命中项保序进入同一次 Judge，不逐项评分或抽样。
+材料不完整、无法穷尽或存在不可判定 predicate 时保留 unavailable；完整空集为零分且零模型调用。
+调用预算、取消、用量与审计继续由同一受管 Judge 路径拥有。
+
+游戏的 `t.closeQA(saidMatch(...), question)` 使用业务 ctx reader。
+Agent 为当前 scope 的完整材料提供 `t.closeQA(question)`、`turn.closeQA(question)` 和 `session.closeQA(question)` 简写，也允许显式领域 Match 筛选全部命中项。
+默认材料由 Agent 应用读取当前 scope 的正式完整历史，不只取最终回答。
+通用核心不探测应用 ctx，也不建立全局 reader 注册表。
+
+`usedNoTools()` 同样属于 Agent 应用，零参数且不接额外 Match；判据是 exact zero，未知工具集合不能证明没有发生。
+材料、Match 与评分的完整契约见 [Assertions](feature/assertions/README.md) 和 [Judge Library](feature/judge/library.md)。
+
 ## Agent 上下文与构造证据
 
 Agent 的 `test(t)` 暴露会话 `TestContext`，其中方法能否读到完整数据由实际采集证据决定。
-下面的能力属于 Agent 接入，不约束用户应用的方法名或数据模型：
+`check`、日志、skip、signal 与 Attempt 生命周期属于公共评估能力。
+下面的会话与观测能力属于 Agent 应用，不约束其它应用的方法名或数据模型：
 
-- 任何 Agent → `t.check(value, match)`、scope Assertion、`t.log`、`t.skip`、`t.signal`，以及 `t.send` / `t.reply` / `t.newSession`。多轮取决于 `send` 是否接上 `ctx.session` 的续接存取器，不取决于声明。
+- 任何 Agent → scope Assertion，以及 `t.send` / `t.reply` / `t.newSession`。多轮取决于 `send` 是否接上 `ctx.session` 的续接存取器，不取决于声明。
 - `send` 吐出 `action.*` 事件 → `turn.calledTool` / `turn.toolOrder` / `turn.usedNoTools` 有数据可断；跨 Turn 的顺序断言放在 `session`，`t` 只保留全 Attempt 的出现与计数聚合。没吐事件时，正断言自然不命中，负断言按事件出处的完整性证明判断可信度（见[断言证据与完整性](feature/adapters/architecture/evidence.md)）。
 - `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO、宿主传输与归因断言。
   `writeText` / `readText` / `writeBytes` / `readBytes`、`upload*` / `download*`、`runCommand` / `runShell`,以及 `fileChanged` / `notInDiff` 等归因断言都收在这一个命名空间下。
@@ -289,7 +320,7 @@ CLI application 通过窄的 `ProjectConfiguration` facade 固定执行 `prepare
 
 - `ProjectCredentials` 只投递缺失的 `.env` 凭据，并按规范 cwd 缓存。
 - `ConfigModuleLoader` 只提供串行的 `loadOnce` 与 `rebuild`。
-- application 与平台中立的 Library Host 不隐式选择 Node Layer，也不以 `.env` 作为 Config layer；`niceeval/run/host` 的显式 Node composition 职责见上文。
+- application 与平台中立的 Library Host 不隐式选择 Node Layer，也不以 `.env` 作为 Config layer；`niceeval/run/host` 与 `niceeval/experiment/host` 的显式 Node composition 职责见上文。
 
 命令的 argv parse、选择、render 与 Effect 编排留在 platform-neutral command program。
 它只读取不可变的 `InvocationFacts`，并依赖 `CliOutput`、`ProjectInitializer`、

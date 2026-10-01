@@ -67,7 +67,7 @@ t.check({ task, answer: turn.message }, completeness).score(5); // Measurement 0
 t.score(5);                                      // 直接 +5
 ```
 
-计分制评估的 measurement 不必 gate 就能封口。需要质量门时，在 handle 上调用 `.gate(minimum)`；它不改变 contribution，同一 entry 可以同时 gate 和 score。低分本身不失败，显式 gate 不满足时 Verdict 为 `failed` 并保留 earned score。没有 `.score()` 的 Assertion 不显示 `+0`；正常没有计分项的计分制评估得到正式的 `score: 0`。
+计分制评估的 measurement 不设 gate 也能算出分数。需要质量门时，在 handle 上调用 `.gate(minimum)`；它不改变 contribution，同一 entry 可以同时 gate 和 score。低分本身不失败，显式 gate 不满足时 Verdict 为 `failed` 并保留 earned score。没有 `.score()` 的 Assertion 不显示 `+0`；正常没有计分项的计分制评估得到正式的 `score: 0`。
 
 ## 控制流
 

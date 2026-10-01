@@ -1,3 +1,8 @@
+// @concord-file ne-eval-assertions-api
+// @concord-implements docs/feature/assertions/README.md
+// @concord-implements docs/feature/assertions/library.md
+// @concord-implements docs/feature/assertions/library/value-assertions.md
+// @concord-implements docs/feature/assertions/library/scoped-assertions.md
 import type { Effect } from "effect";
 
 import type {
@@ -6,6 +11,7 @@ import type {
   ManagedToolCalls,
   MatchDiagnostic,
   NumericComparator,
+  NumericMaterial,
   NumericComparisonMatch,
   ScoreMatch,
   EventMatch,
@@ -45,7 +51,7 @@ export type AssertionCoverage =
   | { readonly state: "complete" }
   | {
       readonly state: "partial";
-      readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited";
+      readonly reason: "sampled" | "truncated" | "redacted" | "provider-limited" | "capacity-limited";
     }
   | {
       readonly state: "unavailable";
@@ -60,7 +66,8 @@ export type AssertionLimitation =
   | { readonly kind: "redacted"; readonly fieldCount: number }
   | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal?: number }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
-  | { readonly kind: "provider-limited" };
+  | { readonly kind: "provider-limited" }
+  | { readonly kind: "capacity-limited"; readonly capturedItems: number; readonly knownTotalItems: number; readonly omittedBytes: number | null };
 
 /**
  * Authoring material intentionally has no blob ref, attachment entry ID, or
@@ -498,7 +505,7 @@ export type BooleanAssertionEvaluation<Refined> =
     };
 
 /** A measurement is always a finite unit-interval value when it is available. */
-export type MeasurementAssertionEvaluation =
+export type MeasurementAssertionEvaluation = { readonly receipt?: AssertionCollectionReceipt } & (
   | { readonly state: "measured"; readonly value: number; readonly detail?: AssertionSnapshotObject }
   | {
       readonly state: "unavailable";
@@ -509,7 +516,7 @@ export type MeasurementAssertionEvaluation =
       readonly detail?: AssertionSnapshotObject;
     }
   | { readonly state: "not-applicable"; readonly detail?: AssertionSnapshotObject }
-  | { readonly state: "errored"; readonly detail?: AssertionSnapshotObject };
+  | { readonly state: "errored"; readonly detail?: AssertionSnapshotObject });
 
 export interface CapturedAssertionSnapshot {
   readonly material: Extract<AssertionMaterial, { readonly kind: "snapshot" }>;
@@ -518,6 +525,10 @@ export interface CapturedAssertionSnapshot {
 }
 
 export interface AssertionRegistrationBase {
+  /** @internal Seal the criterion for the actual local or managed evaluation path. */
+  readonly terminalCriterion?: () => AssertionCriterion;
+  readonly retainedBytes?: number;
+  readonly terminalReceipt?: () => AssertionCollectionReceipt;
   readonly criterion: AssertionCriterion;
   readonly subject: AssertionMaterial;
   readonly evidence?: readonly AssertionMaterial[];
@@ -720,7 +731,11 @@ type CheckedMeasurementHandle<Kind extends AssertionCheckKind> =
     : PolymorphicMeasurementAssertionHandle;
 
 /** Single owner for the public check overload set, including Adapter-polymorphic factories. */
-export interface AssertionCheck<Kind extends AssertionCheckKind> {
+export interface AssertionCheck<Kind extends AssertionCheckKind, Context = unknown> {
+  <T>(match: import("./context-match.ts").MaterialMatch<Context, T>): CheckedBooleanHandle<Kind, void>;
+  <T>(match: import("./context-match.ts").ContextBooleanMatch<Context, T>): CheckedBooleanHandle<Kind, void>;
+  <T>(match: import("./context-match.ts").ContextScoreMatch<Context, T>): CheckedMeasurementHandle<Kind>;
+  (value: import("./match.ts").NumericMaterial, match: NumericComparisonMatch): CheckedBooleanHandle<Kind, number>;
   <Value, Refined extends Value>(
     value: AssertionSubject<Value>,
     match: BooleanMatch<NoInfer<Value>, Refined, "value">,
@@ -764,10 +779,16 @@ export interface PassAssertionsContext extends AssertionGroupContext {
   readonly check: AssertionCheck<"pass">;
 }
 
+/** Adds direct points, or a unit-interval measurement with an explicit fixed weight. */
+export interface ScoreFunction {
+  (points: number): DirectScoreAssertionHandle;
+  (ratio: number | NumericMaterial, options: { readonly weight: number }): ScoreMeasurementAssertionHandle<false, true>;
+}
+
 export interface ScoreAssertionsContext extends AssertionGroupContext {
   readonly evaluationKind: "score";
   readonly check: AssertionCheck<"score">;
-  score(points: number): DirectScoreAssertionHandle;
+  readonly score: ScoreFunction;
 }
 
 export type AssertionsContext<Kind extends AssertionEvaluationKind> =

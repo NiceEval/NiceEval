@@ -1,72 +1,82 @@
 ---
-title: "审阅并采用历史 Attempt"
+title: "确认旧结果仍然成立，免去重跑"
 sidebarTitle: "采用历史 Attempt"
-description: "从 --dry 取得候选 locator，核对不可变 Attempt，再用 niceeval accept 原子采用明确结果，并用新 Run ID 验证分母与来源。"
+description: "配置变了、NiceEval 不敢沿用旧结果，而你确认它不受影响时，用 niceeval accept 明确接受它，省下一次付费重跑。"
 ---
 
-配置身份改变后，自动沿用可能被拒绝。如果你已经核对某个历史 Attempt，确认它在新配置下仍然成立，可以用 `niceeval accept` 明确采用它。
+你把公司的基础镜像从旧仓库迁到了新仓库，镜像内容一字节没变，只是 Experiment 里的镜像地址换了。NiceEval 看到配置变了，不会自动沿用上次的结果，`--dry` 显示整批都要重跑。可你知道这次改动不影响任何一道题，整批重跑却要花真钱。
 
-不要用这个命令跨过真实的评估条件变化。任务、断言、Agent 行为或 Sandbox 起点已经改变时，应重新运行并取得新证据。
+这时用 `niceeval accept` 明确接受那些旧结果。NiceEval 不会仅凭你的确认就放行，它会自己验证这次变化确实不影响结果。只有两种变化能通过验证：
 
-## 从计划取得候选 locator
+- Experiment 改了名，其它都没变。改名还可以直接用 `niceeval exp rename`，见 [CLI 参考](/zh/reference/cli)。
+- 官方 `dockerSandbox` 的镜像引用换了地址，但新旧两个引用都写明了同一个 `@sha256:` digest 和完整的 platform。只写 tag 的镜像不行，因为 tag 指向的内容可能已经变了。
 
-先预览当前目标：
+模型、flags、Judge、任务、断言或分值的任何变化都会被拒绝，返回 `accept-ineligible`。这些变化可能真的改变结果，应该重跑。
+
+## 从运行计划找到可以接受的旧结果
+
+先预览当前要跑的 Experiment：
 
 ```sh
 pnpm exec niceeval exp checkout --dry
 ```
 
-被身份差异挡住的历史结果会显示完整 Attempt locator 和可执行的 `accept` 提示。Locator 是本次授权的唯一范围；命令不会隐含选择同一 Run 或同一 Experiment 的其它结果。
+因为配置变化而不能自动沿用的旧结果，会显示完整的 Attempt locator，并附一条可以直接复制的 `accept` 命令。你写进命令的 locator 就是这次接受的全部范围；NiceEval 不会顺带接受同一个 Run 或同一个 Experiment 的其它结果。
 
-## 核对历史 Attempt
+如果整批旧结果都来自同一个 Run、都能被接受，`--dry` 会改为建议 `niceeval accept --run <run-id> --dry`，一次预览整个 Run。
 
-使用完整 locator 在终端查看不可变结果：
+## 接受前先核对旧结果
+
+用完整 locator 在终端打开这个旧 Attempt：
 
 ```sh
 pnpm exec niceeval show @1K1P0VJAPVJ12
 ```
 
-核对 Verdict、Assertion、用量、时间和证据。需要回看来源 Run 的完整分母时，再使用：
+核对判定、断言、用量、耗时和证据，确认这就是你想沿用的结果。需要看它当时所在的整个 Run 时，再打开那个 Run：
 
 ```sh
+pnpm exec niceeval show --run <source-run-id>
 pnpm exec niceeval view --run <source-run-id>
 ```
 
-## 一次采用需要的结果
+## 接受需要的结果
 
 ```sh
 pnpm exec niceeval accept @1K1P0VJAPVJ12
 ```
 
-同一个 Experiment 有多个结果需要采用时，把 locator 放进同一条命令：
+同一个 Experiment 有多个结果要接受时，把所有 locator 写进同一条命令：
 
 ```sh
 pnpm exec niceeval accept @1K1P0VJAPVJ12 @1K1P0VJAPVJ13
 ```
 
-NiceEval 会先预检全部输入。任一 locator 无效、不符合资格或与另一个输入冲突时，整条命令都不会发布业务结果。
+想先看会发生什么、不真正写入时，加 `--dry`。
 
-成功后，每个目标 slot 以 `reference` 指向原 Attempt，并记录 `accepted` action。源 Attempt 的事实、来源 Run 和 locator 都不会被修改或复制。
+NiceEval 会先检查全部输入。任何一个 locator 无效、不符合条件或和另一个输入冲突时，整条命令都不会写入任何结果，不会只接受一半。
 
-## 核对新 Run
+成功后，NiceEval 新建一个 Run，在对应位置引用原来的 Attempt，并记下这是你明确接受的。原 Attempt、它所在的 Run 和它的 locator 都保持不变，结果也不会被复制一份。
 
-成功反馈会显示新 Run ID：
+## 核对新建的 Run
+
+成功反馈会显示新 Run 的 ID。打开它确认结果：
 
 ```sh
-pnpm exec niceeval view --run <accepted-run-id>
+pnpm exec niceeval show --run <accepted-run-id>
 ```
 
-这个 Run 保留当前 Experiment 的完整 expected-slot 分母。命令中选择的位置是 `accepted`；没有选择的 sibling slot 是 `not-dispatched`。一次只采用部分位置时，报告会如实显示结果覆盖不足。
+这个 Run 的分母仍是当前 Experiment 计划要跑的全部 Attempt。你接受的位置显示为 `accepted`，没有接受的位置显示为 `not-dispatched`。只接受了一部分时，报告会如实显示结果不全。
 
-每次 `accept` 都发布新 Run，不会修改或合并上一次调用。需要同一批结果组成同一个采用边界时，应放在同一条命令中。
+每次 `accept` 都新建一个 Run，不会修改或合并上一次的接受。想让一批结果出现在同一个 Run 里，就把它们写进同一条命令。
 
 ## 常见失败
 
 | 错误 | 下一步 |
 | --- | --- |
-| `malformed-locator` | 从 `--dry` 或固定 query result 复制完整的大写 locator，不使用旧 UUID 或模糊前缀。 |
-| `locator-not-found` | 确认读取的是同一份 Record；读取复制出的 SQLite 文件时，为 `show` 显式传 `--record`。 |
-| `accept-ineligible` | 按提示检查 Verdict、timeout、身份或 Observability；不能证明仍成立时重新运行。 |
-| `duplicate-accept-member` | 每个目标 slot 只保留一个 locator，去掉重复或冲突输入。 |
+| `malformed-locator` | 从 `--dry` 或 `show` 的输出复制完整的大写 locator，不要用旧 UUID 或截短的前缀。 |
+| `locator-not-found` | 确认在产生这个 locator 的同一个项目里运行命令，并从 `--dry` 或 `show` 的输出原样复制。 |
+| `accept-ineligible` | 按提示检查判定、timeout、配置变化或耗时记录。不能证明旧结果仍然成立时，重新运行。 |
+| `duplicate-accept-member` | 同一个位置只保留一个 locator，去掉重复或冲突的输入。 |
 
-自动沿用与强制重跑的选择见[重跑与沿用结果](/zh/tutorials/rerun-and-cache)。
+自动沿用和强制重跑怎样选择，见[修改后只重跑受影响的评估](/zh/tutorials/rerun-and-cache)。

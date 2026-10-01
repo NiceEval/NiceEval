@@ -81,10 +81,15 @@ export const AdapterCallPriceReceiptSchema = Schema.Struct({
   missing: Schema.Array(AdapterCallPriceMissingSchema),
 });
 export type AdapterCallPriceReceipt = Schema.Schema.Type<typeof AdapterCallPriceReceiptSchema>;
-export const AdapterUsageCallSchema = Schema.Struct({
+export const AdapterUsageModelSlotSchema = Schema.String.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$(?![\s\S])/u));
+const AdapterUsageCallRevision2Schema = Schema.Struct({
   ...AdapterUsageCallRevision1Schema.fields,
   route: AdapterUsageRouteSchema,
   cost: Schema.NullOr(AdapterUsageReportedCostSchema),
+});
+export const AdapterUsageCallSchema = Schema.Struct({
+  ...AdapterUsageCallRevision2Schema.fields,
+  modelSlot: Schema.NullOr(AdapterUsageModelSlotSchema),
 });
 export type AdapterUsageCall = Schema.Schema.Type<typeof AdapterUsageCallSchema>;
 export const AdapterUsageLimits = Object.freeze({ maximumCalls: 4_000 });
@@ -93,6 +98,12 @@ export const AdapterUsageAttachmentRevision1Schema = Schema.Struct({
   calls: Schema.Array(AdapterUsageCallRevision1Schema),
 });
 export type AdapterUsageAttachmentRevision1 = Schema.Schema.Type<typeof AdapterUsageAttachmentRevision1Schema>;
+export const AdapterUsageAttachmentRevision2Schema = Schema.Struct({
+  collection: CollectionStateSchema,
+  calls: Schema.Array(AdapterUsageCallRevision2Schema),
+  priceReceipts: Schema.Array(AdapterCallPriceReceiptSchema),
+});
+export type AdapterUsageAttachmentRevision2 = Schema.Schema.Type<typeof AdapterUsageAttachmentRevision2Schema>;
 export const AdapterUsageAttachmentSchema = Schema.Struct({
   collection: CollectionStateSchema,
   calls: Schema.Array(AdapterUsageCallSchema),
@@ -115,10 +126,21 @@ export function projectAdapterUsageRevision1(
     collection: value.collection,
     calls: Object.freeze(value.calls.map((call) => Object.freeze({
       ...call,
+      modelSlot: null,
       route: Object.freeze({ transportProvider: null, endpointId: null }),
       cost: null,
     }))),
     priceReceipts: null,
+  });
+}
+
+/** Revision 2 preserves reported costs and sealed estimates while leaving purpose unknown. */
+export function projectAdapterUsageRevision2(
+  value: AdapterUsageAttachmentRevision2,
+): ReadableAdapterUsageAttachment {
+  return Object.freeze({
+    ...value,
+    calls: Object.freeze(value.calls.map((call) => Object.freeze({ ...call, modelSlot: null }))),
   });
 }
 

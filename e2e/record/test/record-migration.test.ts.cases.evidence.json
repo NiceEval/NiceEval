@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_W26XFXH8K05QA8C5": {
-      "memory/moved-record-write-replaces-sealed-identity.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "memory": "memory/moved-record-write-replaces-sealed-identity.md",
+      "evidence": {
         "red": {
           "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_moved-record-write-replaces-sealed-identity.md/nered_C8XEDHFV486C4WY4-netake_X4K538C7VH630B4N/red.json",
           "digest": "sha256:238288060c32a29f118081b7966efd132adcf79763812f692ca68418a061b27e"
@@ -20,7 +23,13 @@
           "digest": "sha256:6ff82127db82e95248f7f2c6657b2f600b673bde1d3d5968fd13780753e364a1"
         }
       },
-      "memory/historical-record-read-bypasses-migration.md": {
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
+    },
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "memory": "memory/historical-record-read-bypasses-migration.md",
+      "evidence": {
         "red": {
           "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_historical-record-read-bypasses-migration.md/nered_9EZ5TZX8V9PS4MW5-netake_DT2VZW5T5MEM00V9/red.json",
           "digest": "sha256:e381c58ad1efeeef246aabe1907342cea750a484519893c1aa59b7f4c2c6114a"
@@ -38,7 +47,13 @@
           "digest": "sha256:ad3b2364d60baac14586715f78d086fd1253dbfb0be732cab33c42a93fd02bca"
         }
       },
-      "memory/record-hook-context-format-migration.md": {
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
+    },
+    {
+      "caseId": "necase_W26XFXH8K05QA8C5",
+      "memory": "memory/record-hook-context-format-migration.md",
+      "evidence": {
         "red": {
           "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/red.json",
           "digest": "sha256:c15e8d617e3279119117808cb8637575e2c9ef61d1a5080839adb44d6d337e9a"
@@ -55,7 +70,9 @@
           "path": "e2e/record/test/record-migration.test.ts.case-evidence/necase_W26XFXH8K05QA8C5/memory_record-hook-context-format-migration.md/nered_H9JJQ6Q86BMNJJSA-netake_3YAHS415N9ZYHRSH/inventory.json",
           "digest": "sha256:9b9f87c8beee7c95bb15fc7188fffe71f14b83de7cf9f8617c76be8bd0401653"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
-  }
+  ]
 }

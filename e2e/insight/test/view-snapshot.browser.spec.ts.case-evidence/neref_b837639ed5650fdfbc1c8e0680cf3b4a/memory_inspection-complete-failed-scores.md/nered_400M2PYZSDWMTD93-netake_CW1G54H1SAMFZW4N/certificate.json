@@ -1,0 +1,31 @@
+{
+  "format": "concord.native-reliability/v1",
+  "selector": "e2e/insight/test/view-snapshot.browser.spec.ts#neref_b837639ed5650fdfbc1c8e0680cf3b4a",
+  "caseId": "neref_b837639ed5650fdfbc1c8e0680cf3b4a",
+  "candidateSha256": "312415f42909e28d557a6ed18e4e831f71e64f7d1be71b97591e95fd424075e3",
+  "sourceDigest": "sha256:1c8b9629b75dcd8e12990ae4ac74f7a18aec658485c9583c4f5ca34e90418c63",
+  "greenReceipt": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-1.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-2.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-4.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-6.json",
+    "singleCase": "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/green.json",
+    "cleanup": [
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/green.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-1.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-2.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-3.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-4.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-5.json",
+      "e2e/insight/test/view-snapshot.browser.spec.ts.case-evidence/neref_b837639ed5650fdfbc1c8e0680cf3b4a/memory_inspection-complete-failed-scores.md/nered_400M2PYZSDWMTD93-netake_CW1G54H1SAMFZW4N/reliability-6.json"
+    ]
+  },
+  "certificateSha256": "de98269d15ea597bd2a6d56299747f3286959cfe78fa6a7c1eb6d291ad77f033"
+}

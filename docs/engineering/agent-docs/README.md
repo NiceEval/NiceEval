@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: agent-docs
+title: 随包 AI 文档（agent-docs）
+createdAt: 2026-07-17T14:16:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/agent-docs/README.md
+  commit: f2ce0475dc49c073822f84116c495b93dde58e94
+kind: engineering
+---
 # 随包 AI 文档（agent-docs）
 
 Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如果依赖训练数据或官网，读到的可能是另一个版本的 API。
@@ -18,7 +29,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 | `docs-site/images/` | 正文引用的图片资源，保证引用在包内有落点 |
 
 - **为什么原样发 MDX**：与整个包发布 TS 源码是同一个模型——消费侧直接读源文件，没有 build 步骤就没有构建漂移；MDX 的 frontmatter 和组件标签不妨碍 agent 阅读，frontmatter 的 `description` 反而是页面自述。
-- **为什么只发中文**：中文是产品叙事与场景示例的准绳（根 CLAUDE.md），英文入口从中文同步。
+- **为什么只发中文**：中文是产品叙事与场景示例的准绳（见 [文档站 AGENTS.md](../../../apps/docs-site/AGENTS.md)），英文入口从中文同步。
   双语随包只增加体积和漂移面，不增加 agent 可用的信息。
 - **体积边界**：zh 正文约 1MB 文本，images 约 28KB，相对 `src/` 与 `dist/` 占比可接受，不做裁剪。
   将来正文膨胀时，裁剪的单位是「这一整页值不值得给 agent」，不是换压缩格式或抽摘要。
@@ -96,7 +107,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 ## 维护与验收
 
-- 增删、移动、重命名 `apps/docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览输出运行 `pnpm run build:index`（`pnpm run repo docs reference` 也会顺带产出）。
+- 增删、移动、重命名 `apps/docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览输出运行 `pnpm run build:index`。
   `apps/docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
 - 修改导语或分区说明：改 `INDEX.template.md`。
 - 以 link / 本地路径把仓库工作树当包消费时，直接在 NiceEval checkout 运行

@@ -8,27 +8,78 @@ import { useCurrentGeneration } from "../data/index.ts";
 import { experimentQueryOptions, resultsQueryOptions } from "./load.ts";
 import type { InsightRuntimeSnapshot } from "../shell/App.tsx";
 import type { InsightTarget } from "../shell/types.ts";
+import { Grid } from "../components/primitives/index.tsx";
 
 export function ResultsPage({ model, locale }: {
   readonly model: ResultsPageModel;
   readonly locale: Locale;
 }): ReactElement {
   const { t } = useTranslation();
+  const experiments = overviewData(model.overview, model.selectedExperiments);
   return (
     <>
       <header className="niceeval-report niceeval-hero">
         <h1 className="niceeval-hero-title">{t("insight.title")}</h1>
       </header>
       <div className="niceeval-view-report-slot">
+        {model.costSummary === undefined ? null : <ExperimentCosts summary={model.costSummary} />}
+        {experiments.length <= 1 ? null : (
+          <nav aria-label={t("nav.experiments")}>
+            <ul>{experiments.map((experiment) => (
+              <li key={experiment.experimentId}><a href={experiment.href}>{experiment.experimentId}</a></li>
+            ))}</ul>
+          </nav>
+        )}
         <ExperimentResults
           data={{
             selectionTitle: model.selectionTitle,
-            experiments: overviewData(model.overview, model.selectedExperiments),
+            experiments,
           }}
           locale={locale}
         />
       </div>
     </>
+  );
+}
+
+function ExperimentCosts({ summary }: {
+  readonly summary: NonNullable<ResultsPageModel["costSummary"]>;
+}): ReactElement {
+  const { t } = useTranslation();
+  const { totalCosts, coverage } = summary;
+  const complete = totalCosts.state === "complete";
+  const title = t(complete ? "experimentCost.totalCosts" : "experimentCost.knownSubtotal");
+  const counts = [
+    ["experimentCost.selectedSlots", coverage.selectedSlotCount],
+    ["experimentCost.resolvedSlots", coverage.resolvedSlotCount],
+    ["experimentCost.originAttempts", coverage.originAttemptCount],
+    ["experimentCost.completeAttempts", coverage.completeAttemptCount],
+    ["experimentCost.partialAttempts", coverage.partialAttemptCount],
+    ["experimentCost.unavailableAttempts", coverage.unavailableAttemptCount],
+    ["experimentCost.unresolvedSlots", coverage.unresolvedSlotCount],
+  ] as const;
+  return (
+    <section className="niceeval-report niceeval-section" aria-label={title}>
+      <h2 className="niceeval-section-title">{title}</h2>
+      <p>{t("experimentCost.scope")}</p>
+      <p>{t(complete ? "usage.costComplete" : "usage.costIncomplete")}</p>
+      {totalCosts.missingSources.length === 0 ? null : (
+        <p>{t("usage.missingSources")}: {totalCosts.missingSources.map((source) =>
+          t(source === "application" ? "usage.applicationCost" : "usage.judgeUsage")).join(", ")}</p>
+      )}
+      {totalCosts.values.length === 0 ? (
+        <p>{t(complete ? "usage.noRecordedCharges" : "cell.metricUnavailable")}</p>
+      ) : totalCosts.values.map((cost) => (
+        <p key={cost.currency}>{cost.value} {cost.currency} · {t(cost.source === "reported"
+          ? "cell.costReported" : cost.source === "estimated" ? "cell.costEstimated" : "cell.costMixed")}</p>
+      ))}
+      <Grid>{counts.map(([label, count]) => (
+        <div className="niceeval-kpi" key={label}>
+          <span className="niceeval-kpi-label">{t(label)}</span>
+          <span className="niceeval-kpi-value">{count}</span>
+        </div>
+      ))}</Grid>
+    </section>
   );
 }
 

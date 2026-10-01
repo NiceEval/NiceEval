@@ -225,13 +225,13 @@ declare function sandboxRequirements(
 ```
 
 `sandboxRequirements()` 与 `incusSandbox()` 的字段语义、capability receipt 与 identity 单源在
-[Nested Docker Library](nested-docker/library.md)。
+[Nested Docker Library](../sandbox-nested-docker/library.md)。
 
 `user` 替换整个 Sandbox 的默认执行身份,省略时沿用起点声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
 
 Docker image/Dockerfile 还可声明结构化 `resources`。
 Agent 要在 Sandbox 内使用 Docker API 时，Eval 写 `sandboxRequirements()`，Experiment 写 `incusSandbox()`；
-完整契约见 [Nested Docker](nested-docker/README.md)。
+完整契约见 [Nested Docker](../sandbox-nested-docker/README.md)。
 `dockerAccess` 的 socket / raw / managed DinD 不是 adopted nested-Docker public path，也不能降为 fallback。
 
 `env` 只放会改变运行时语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
@@ -775,7 +775,7 @@ sandboxLayer()
 
 声明式 action 与运行期 `Sandbox` 刻意共用文件动词：已有文本或字节使用 `writeText()` / `writeBytes()`，声明的宿主路径使用 `uploadFile()` / `uploadDirectory()`。前者的内容、后者的规范化 manifest 都直接进入 identity。`before()` 不能把尚不存在的 Sandbox 传给这些 action；只有 callback before 在执行期取得 `Sandbox`，代价是 opaque 且不能共享捕获。
 
-`run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
+`run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/rerun-all.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
 
 `defineSandboxCommand()` 的稳定 identity 只提供失效与排序依据。它的 `run` 始终 opaque，在每个 occurrence 真实执行并截断后续共享 capture，绝不因 identity 稳定而命中准备前缀。只有 `shell()`、`writeText()`、`writeBytes()`、`upload*()`、`gitCheckout()` 等完全声明式 action 具备前缀缓存资格。
 
@@ -820,7 +820,7 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 
 - [三方准备时序](lifecycle.md) —— action schedule、fresh / reuse 次数、身份与错误归属。
 - [Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
-- [Nested Docker](nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
+- [Nested Docker](../sandbox-nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [Library](library.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。

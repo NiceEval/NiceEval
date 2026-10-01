@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#claude-sdk-stream-deterministic
 import { defineEval } from "niceeval";
-import { includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
+import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "Claude Agent SDK raw frames 经 converter 保留 tool_use_id、原生工具 canonical、usage/session 与 markRejected",
@@ -73,18 +73,14 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      { sessionId: t.sessionId, usage: turn.usage },
-      satisfies(
-        "Claude converter session and usage",
-        ({ sessionId, usage }) =>
-          sessionId === "claude-sdk-converter-session" &&
-          usage?.inputTokens === 100 &&
-          usage.cacheReadTokens === 30 &&
-          usage.cacheCreationTokens === 10 &&
-          usage.outputTokens === 20 &&
-          usage.requests === 2,
-      ),
-    );
+    t.check(t.sessionId, equals("claude-sdk-converter-session"));
+    t.check(turn.usage.inputTokens, atLeast(100));
+    t.check(turn.usage.inputTokens, atMost(100));
+    t.check(turn.usage.cacheReadTokens, atLeast(30));
+    t.check(turn.usage.cacheReadTokens, atMost(30));
+    t.check(turn.usage.cacheWriteTokens, atLeast(10));
+    t.check(turn.usage.cacheWriteTokens, atMost(10));
+    t.check(turn.usage.outputTokens, atLeast(20));
+    t.check(turn.usage.outputTokens, atMost(20));
   },
 });

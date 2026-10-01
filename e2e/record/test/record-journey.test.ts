@@ -18,7 +18,10 @@ const e2e = createE2EContext({
   commands: { niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")] },
 });
 
-test.concurrent("运行创建后立即可发现，并冻结完整 expected slots [necase_SVJG4JP8WN5TWCQF]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/active-run-inspection-lifecycle.md
+
+test.concurrent("运行创建后立即可发现，并冻结完整 expected slots", async () => {
   await e2e.case("run-create-discovery", async ({ paths, commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -113,10 +116,45 @@ test.concurrent("运行创建后立即可发现，并冻结完整 expected slots
   });
 });
 
-test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完整可读 [necase_71RKBRSMD0ER677F]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/active-run-inspection-lifecycle.md
+
+test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完整可读", async () => {
   await e2e.case("attempt-readable-while-active", async ({ paths, commands: { niceeval } }) => {
     const unpublishedCanary = `niceeval-unpublished-attempt-canary-${randomUUID()}`;
+    // Create historical facts through the same public writer that will reopen this project.
+    const historicalBackend = await createLoopbackBackend();
+    const historicalProcess = niceeval.start(
+      ["exp", "run-journey", "--rerun", "all", "--json"],
+      { env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: historicalBackend.endpoint }, timeoutMs: 90_000 },
+    );
+    let historicalRunId: string;
+    try {
+      await whileRunning(historicalBackend.waitForAttempt(0), historicalProcess, "the historical first Attempt reached its backend");
+      historicalBackend.completeAttempt(0);
+      await whileRunning(historicalBackend.waitForAttempt(1), historicalProcess, "the historical second Attempt reached its backend");
+      historicalBackend.completeAttempt(1);
+      const historicalReceipt = await historicalProcess.done;
+      expect(historicalReceipt.exitCode, historicalReceipt.diagnostic()).toBe(0);
+      expect(historicalReceipt.expReceipt().createdRunIds).toHaveLength(1);
+      historicalRunId = historicalReceipt.expReceipt().createdRunIds[0]!;
+    } finally {
+      await historicalProcess.dispose();
+      await historicalBackend.close();
+    }
+    const historicalRequest = join(paths.projectRoot, "historical-run-summary.query.json");
+    await writeFile(historicalRequest, `${JSON.stringify({
+      protocol: "niceeval.query/v1",
+      operation: { kind: "run.summary", runId: historicalRunId },
+    })}\n`, "utf8");
+
     const backend = await createLoopbackBackend();
+    // Spawn readers before reopening the writer; process scheduling determines admission order.
+    // Every query must succeed on its first call. This is overlap coverage, not a capture-phase barrier.
+    const startupReaders = Array.from({ length: 2 }, () => niceeval.start(
+      ["query", "run", "--request", historicalRequest],
+      { timeoutMs: 30_000 },
+    ));
     const process = niceeval.start(
       ["exp", "run-journey", "--rerun", "all", "--json"],
       {
@@ -127,7 +165,30 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
       },
     );
     try {
+      const startupReceipts = await Promise.all(startupReaders.map((reader) => reader.done));
+      for (const receipt of startupReceipts) {
+        expect(receipt.exitCode, `Historical run.summary while starting a normal writer\n${receipt.diagnostic()}`).toBe(0);
+        const summary = receipt.runSummary().summary;
+        expect(summary.runs).toEqual([
+          expect.objectContaining({
+            runId: historicalRunId,
+            experimentId: "run-journey",
+            expectedSlots: expect.arrayContaining([
+              expect.objectContaining({ attemptOrdinal: 0 }),
+              expect.objectContaining({ attemptOrdinal: 1 }),
+            ]),
+          }),
+        ]);
+        expect(summary.denominator).toEqual({ expected: 2, observed: 2 });
+        expect(summary.members).toHaveLength(2);
+        expect(summary.members).toEqual(expect.arrayContaining([0, 1].map((attemptOrdinal) =>
+          expect.objectContaining({ runId: historicalRunId, attemptOrdinal, state: "executed", outcome: "completed", verdict: "passed" })
+        )));
+      }
       await whileRunning(backend.waitForAttempt(0), process, "the first Attempt reached its backend");
+      const historicalWhileActive = await niceeval.run(["query", "run", "--request", historicalRequest]);
+      expect(historicalWhileActive.exitCode, historicalWhileActive.diagnostic()).toBe(0);
+      expect(historicalWhileActive.runSummary().summary.denominator).toEqual({ expected: 2, observed: 2 });
       const active = await whileRunning(pollUntil(async () => {
         const receipt = await niceeval.run(["run", "list", "--json"]);
         expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
@@ -232,7 +293,9 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
       expect(humanAttempt.stdout, humanAttempt.diagnostic()).toContain(published.publication.attemptLocator);
       expect(humanAttempt.stdout, humanAttempt.diagnostic()).toContain("completed");
 
-      const humanOverview = await niceeval.run(["show"]);
+      const humanOverview = await niceeval.run(["show"], {
+        env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+      });
       expect(humanOverview.exitCode, humanOverview.diagnostic()).toBe(0);
       expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("1/2");
       expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("1 passed Attempts hidden");
@@ -296,13 +359,16 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
         },
       });
     } finally {
+      await Promise.all(startupReaders.map((reader) => reader.dispose()));
       await process.dispose();
       await backend.close();
     }
   });
 });
 
-test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot [necase_XAJRPPHVE3PG7TBV]", async () => {
+// @feature docs/feature/run/README.md
+
+test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发布 slot", async () => {
   await e2e.case("sigint-preserves-publication", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -352,7 +418,9 @@ test.concurrent("用户 SIGINT 中断时保留已发布 Attempt 并解释未发�
   });
 });
 
-test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全重试 [necase_AY5TKPWYF4GQ8EDT]", async () => {
+// @feature docs/feature/run/README.md
+
+test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全重试", async () => {
   await e2e.case("reference-safe-delete", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -418,7 +486,11 @@ test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全�
   });
 });
 
-test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run [necase_H632V0FG1N2KEBJ5]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/active-attempt-publication-omitted-from-reuse.md
+// @regression memory/run-recovery-absence-required-member.md
+
+test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot 并可显式收口旧 Run", async () => {
   await e2e.case("sigkill-recovery", async ({ commands: { niceeval } }) => {
     const backend = await createLoopbackBackend();
     const process = niceeval.start(
@@ -524,7 +596,12 @@ test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot
   });
 });
 
-test.concurrent("独立 Host consumer 可组合 Run 生命周期操作并捕获预期读取错误 [necase_JNE1HTBAPBV34014]", async () => {
+// @feature docs/feature/run/README.md
+// @regression memory/public-run-host-requires-internal-database-service.md
+// @regression memory/run-lifecycle-errors-thrown-as-effect-defects.md
+// @regression memory/run-read-errors-thrown-as-effect-defects.md
+
+test.concurrent("独立 Host consumer 可组合 Run 生命周期操作并捕获预期读取错误", async () => {
   await e2e.case("public-run-host-consumer", async ({ paths, commands: { niceeval }, run }) => {
     const compiled = await run([
       join(paths.projectRoot, "node_modules", ".bin", "tsc6"),

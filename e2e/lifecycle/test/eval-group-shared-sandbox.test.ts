@@ -35,8 +35,9 @@ async function waitForContainerGone(container: string, cwd: string): Promise<voi
     { timeoutMs: 15_000, intervalMs: 100, label: `Docker sandbox ${container} to be removed` },
   );
 }
+// @use-case docs/feature/sandbox/use-case/sandbox-reuse-preparable-evals.md
 
-test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Docker Sandbox [necase_ZSJ6A2P1FJ5AC603]", async () => {
+test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Docker Sandbox", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
     const run = await niceeval.run(["exp", "eval-group", "--rerun", "all", "--json"], {
       cwd: root,

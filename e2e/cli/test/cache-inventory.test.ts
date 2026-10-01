@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-test("共享 BuildKit 容量只作为未验证 Provider observation 展示 [necase_WT23YHZHKQ9PYBTC]", async () => {
+// @feature docs/feature/sandbox/README.md
+
+test("共享 BuildKit 容量只作为未验证 Provider observation 展示", async () => {
   await cliE2E.case("cache-inventory", {}, async ({ commands: { niceeval }, paths }) => {
     const fakeBin = join(paths.projectRoot, "fixtures/cache-inventory/bin");
     const stateRoot = join(paths.projectRoot, "state");

@@ -1,3 +1,7 @@
+// @concord-file ne-eval-assertions-collection
+// @concord-implements docs/feature/assertions/library/scoped-assertions.md
+// @concord-implements docs/feature/assertions/architecture/evidence.md
+// @concord-implements docs/feature/eval/use-case/calledtool.md
 import { Effect } from "effect";
 
 import type {
@@ -227,7 +231,7 @@ function toolMatchEvaluation(
   return result;
 }
 
-function toolMatcherQuery(
+export function toolMatcherQuery(
   match: ToolMatch,
   summary: import("./api.ts").AssertionSnapshotValue = Object.freeze({
     matcher: match.name,
@@ -245,7 +249,7 @@ function toolMatcherQuery(
   });
 }
 
-function eventMatcherQuery(
+export function eventMatcherQuery(
   match: EventMatch,
   summary: import("./api.ts").AssertionSnapshotValue = Object.freeze({ matcher: match.name }),
 ): MatcherQuery<ProjectedMatcherCandidate<EventOccurrenceView>> {

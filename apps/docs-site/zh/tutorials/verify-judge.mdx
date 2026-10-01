@@ -1,12 +1,16 @@
 ---
-title: "配置并验证 Judge"
+title: "配置 Judge，并确认它真的能打分"
 sidebarTitle: "配置并验证 Judge"
-description: "选择具名 Judge Provider，用 rubric 和命名材料完成一次真实判分。"
+description: "给裁判模型 Judge 选好 Provider、模型和 API Key，再用一条最小评估跑一次真实判分，确认配置无误后再大批使用。"
 ---
 
-Judge 适合规则难以写成精确 Match 的开放式质量判断。先用一条最小评估确认模型、Key 和端点能完成真实判分。
+“讲解是否适合小学生”“回答有没有编造事实”这类问题，正则写不出来，要交给裁判模型 Judge 打分。
 
-## 配置 Judge Runtime
+Judge 本身也会出错：API Key 不对、端点写错、模型名拼错。这些问题如果等到 200 条评估跑完才发现，前面的 Judge 分数全都拿不到。所以先配好，再用一条最小评估跑一次真实判分，确认能拿到分数再大批使用。
+
+## 配置 Judge 用哪个服务
+
+在 `niceeval.config.ts` 里用具名 Provider 写明服务、模型和端点。下面用 OpenAI 兼容网关举例：
 
 ```ts title="niceeval.config.ts"
 import { defineConfig } from "niceeval";
@@ -23,13 +27,15 @@ export default defineConfig({
 });
 ```
 
-Key 只放进进程变量。配置文件只保存变量名，不保存值：
+`apiKeyEnv` 只写变量名。Key 本身放进环境变量，或放进项目的 `.env`：
 
 ```sh
 export JUDGE_GATEWAY_KEY="..."
 ```
 
 ## 写一条最小评估
+
+写一条只有一个 Judge 断言的评估，用来确认配置能拿到分数：
 
 ```ts title="evals/judge-smoke.eval.ts"
 import { defineEval } from "niceeval";
@@ -39,25 +45,26 @@ export default defineEval({
   async test(t) {
     const operation = "完成数据导入";
     const turn = await t.send(operation);
-    t.closeQA({
-      input: operation,
-      output: turn.message,
-      context: "操作完成后，回复必须明确说明数据导入成功。",
-    })
+    turn.closeQA("这轮是否清楚汇报执行情况和数据导入结果？")
       .gate(0.8)
       .label("成功表达");
   },
 });
 ```
 
-`t.closeQA` 在登记时快照显式材料，`.gate(0.8)` 在同一 `MeasurementAssertionHandle` 上形成条件并参与通过制判定。它等价于 `t.check(material, closeQA())`，不会创建第二条 Assertion。
+`turn.closeQA(question)` 把这个 Turn 的完整对话交给 Judge，让它回答你写的问题并给出 0 到 1 的分数。`.gate(0.8)` 表示分数低于 0.8 时这条评估不通过。
+
+材料是空的时，这条断言直接得 0 分，不调用 Judge。材料不全、无法判断时，结果是 `unavailable`，不会被算成 0 分。
+
+只想让 Judge 看特定的消息或工具调用时，给 `closeQA` 传入对应的 Match；应用自己的业务材料用自定义的 `MaterialMatch`。写法见 [NiceEval Taste](/zh/tutorials/niceeval-taste)。
 
 ## 附加图片材料
 
-只有判据确实需要图片时才附图。沿用同一个 `defineJudge` 和 `t.judge`，不用增加第二个裁判或评分门槛。
-先在现有聊天 Provider 配置中设置 `supportsImages: true`，并将 `model` 换成支持图片及工具调用的模型。`TypesafeProvider` 不支持图片。
+只有判据确实需要看图时才附图。沿用同一个 `defineJudge` 和 `t.judge`，不用增加第二个 Judge 或评分门槛。
 
-下面的 Eval 读取应用已经保存的 `screenshot.png`，不会因评估重新生成截图：
+先在现有聊天 Provider 的配置里设置 `supportsImages: true`，并把 `model` 换成同时支持图片和工具调用的模型。`TypesafeProvider` 不支持图片。
+
+下面的评估读取应用已经保存的 `screenshot.png`，不会为了评估重新截图：
 
 ```ts
 import { readFile } from "node:fs/promises";
@@ -80,26 +87,42 @@ export default defineEval({
 });
 ```
 
-图片必须是 PNG 或 JPEG，每张最多 4 MiB；超限或头部无效会在发送前拒绝。不要传路径、URL 或普通 base64 字符串来代替图片。
+图片必须是 PNG 或 JPEG，每张最多 4 MiB。超过大小或文件头无效时，NiceEval 在发送前就拒绝。不要传路径、URL 或普通 base64 字符串来代替图片。
 
-封存后，`attempt.assertion.detail` 给出图片的稳定 `imageId` 与摘要。用固定 query 操作 `attempt.assertion.image`，传入同一 Attempt 的 `entryId` 和 `imageId`，即可分页读取原图；`offset` 是字节偏移，`limit` 最多 256 KiB。它读取 Record 中的证据，不会重新访问文件或调用模型。
+跑完后，用 `query` 的 `attempt.assertion.detail` 查看这条断言，结果里有图片的 `imageId` 和摘要。要取回原图，用 `attempt.assertion.image`，传入同一个 Attempt 的 `entryId` 和 `imageId`，分段读取：`offset` 是字节偏移，`limit` 最多 256 KiB。它读的是保存下来的图片，不会重新读文件或调用模型。
 
-## 运行并查看
+## 运行一次，确认拿到分数
 
 确保现有 Experiment 的 `evals` 包含 `judge-smoke`，再运行：
 
 ```sh
 pnpm exec niceeval exp local judge-smoke
-pnpm exec niceeval view --run <run-id>
 ```
 
-静态配置校验不会请求 endpoint。实际 Judge Assertion 使用 forced-function 请求；成功结果包含 measurement、threshold、公开 rationale 和实际发送的固定材料。
+NiceEval 加载配置时不会访问 Judge 端点，只有真正执行 Judge 断言时才发请求。所以配置写错了，要跑一次才会暴露。
 
-| 结果 | 含义 |
-|---|---|
-| `judge-provider-unresolved` / `judge-key-unresolved` | Provider 或凭据缺失，未发网络请求 |
-| `errored` | endpoint 返回 HTTP 400、协议不兼容，或响应不符合严格 schema |
-| `unavailable` | 请求传输失败或超时 |
-| `errored` | Decision 缺失、格式错误或 measurement 越界 |
+跑完后，从终端 `NEXT` 面板复制 Run ID，打开这次运行：
 
-比较 Judge 时，让多个 Experiment 使用不同模型字符串或具名 Provider，再用 `labels` 标明对比坐标。
+```sh
+pnpm exec niceeval show --run <run-id>
+```
+
+复制 `judge-smoke` 那个 Attempt 的 locator，查看断言结果：
+
+```sh
+pnpm exec niceeval show @<attempt-locator>
+```
+
+配置正确时，这条断言会显示分数和是否达到阈值。也可以用 `pnpm exec niceeval view --run <run-id>` 在浏览器里看。需要 Judge 给出的理由和实际发给它的材料时，用 `query` 的 `attempt.assertion.detail`，示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
+
+没拿到分数时，按结果判断该查什么：
+
+| 看到的结果 | 原因 | 先查什么 |
+|---|---|---|
+| `unavailable`，原因 `judge-provider-unresolved` | 没有配置 Provider，没有发请求 | `niceeval.config.ts` 的 `judgeRuntime` |
+| `unavailable`，原因 `judge-key-unresolved` | 读不到 key，没有发请求 | `apiKeyEnv` 写的变量名是否已设置 |
+| `unavailable` | 请求发不出去或超时 | 网络、`baseUrl`、`timeoutMs` |
+| `errored` | 端点返回 HTTP 400、协议不兼容，或返回内容不符合要求的格式 | `baseUrl` 是否指向兼容网关、`model` 名是否正确 |
+| `errored` | Judge 没给出判断、格式错误或分数越界 | 模型是否支持工具调用 |
+
+要比较不同的 Judge，让多个 Experiment 使用不同的模型字符串或具名 Provider，再用 `labels` 标明对比的维度。

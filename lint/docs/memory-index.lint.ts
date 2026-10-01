@@ -1,33 +1,27 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseDocument } from "yaml";
+import { MemorySchema, decode } from "concord-sdlc/model";
 
-// Structured Memory is discovered through the managed CLI. INDEX.md remains the
-// recall owner only for legacy Markdown entries that predate niceeval.memory/v1.
 const MEMORY_DIR = join(import.meta.dirname, "../..", "memory");
-
-const isStructuredMemory = (filename: string): boolean =>
-  readFileSync(join(MEMORY_DIR, filename), "utf8").startsWith(
-    "---\nformat: niceeval.memory/v1\n",
-  );
-
-describe("memory/INDEX.md", () => {
-  it("每个 legacy memory 条目都有索引行", () => {
-    const index = readFileSync(join(MEMORY_DIR, "INDEX.md"), "utf8");
-    const entries = readdirSync(MEMORY_DIR).filter(
-      (f) => f.endsWith(".md") && f !== "INDEX.md",
-    );
-    const missing = entries.filter(
-      (f) => !isStructuredMemory(f) && !index.includes(`](${f})`),
-    );
-    expect(missing, "这些条目没有出现在 memory/INDEX.md 里").toEqual([]);
+describe("memory owners", () => {
+  it("every Memory uses the current strict schema", () => {
+    const entries = readdirSync(MEMORY_DIR).filter(f => f.endsWith(".md") && f !== "INDEX.md");
+    for (const entry of entries) {
+      const source = readFileSync(join(MEMORY_DIR, entry), "utf8");
+      const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(source);
+      expect(frontmatter, entry).not.toBeNull();
+      const yaml = parseDocument(frontmatter![1]!, { uniqueKeys: true, merge: false });
+      expect(yaml.errors, entry).toEqual([]);
+      const metadata = decode(MemorySchema, yaml.toJS({ maxAliasCount: 0 }) as unknown, entry);
+      expect(metadata.id + ".md", entry).toBe(entry);
+    }
   });
-
-  it("索引行不指向不存在的文件", () => {
+  it("the human index has no dangling file links", () => {
     const index = readFileSync(join(MEMORY_DIR, "INDEX.md"), "utf8");
     const files = new Set(readdirSync(MEMORY_DIR));
-    const linked = [...index.matchAll(/\]\(([\w-]+\.md)\)/g)].map((m) => m[1]);
-    const dangling = linked.filter((f) => !files.has(f));
-    expect(dangling, "这些索引行指向的文件不存在").toEqual([]);
+    const linked = [...index.matchAll(/\]\(([\w-]+\.md)\)/g)].map(m => m[1]);
+    expect(linked.filter(path => !files.has(path!))).toEqual([]);
   });
 });

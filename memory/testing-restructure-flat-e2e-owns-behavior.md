@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: testing-restructure-flat-e2e-owns-behavior
+title: 测试体系合并统筹：e2e 平铺三域、行为验收整体归 E2E
+createdAt: 2026-07-21T20:35:46+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/testing-restructure-flat-e2e-owns-behavior.md
+  commit: 6458af5a68cc0dd01230528db9196b53aa41bbe5
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 测试体系合并统筹：e2e 平铺三域、行为验收整体归 E2E
 
 **裁决（2026-07-21，用户逐条定案）**

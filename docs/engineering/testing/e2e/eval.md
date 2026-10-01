@@ -6,6 +6,7 @@ Agent 会话场景使用 Direct Agent；只有文件、diff、shell 或其它 Sa
 
 每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
 固定 `query` Inspection 的 versioned JSON 观察结果。
+Repo 的 15 分钟期限包含默认并行运行和资源终结。逐项启动已安装 CLI 的 values owner 保留 600 秒操作预算及 60 秒终结预算；大量工具事件的 scopes owner 保留 600 秒，二者不减少公开读回条目。
 不签入预生成结果，不从 Adapter Repo 注入 Eval，也不伪造 `Turn.events`、session 或 Sandbox ledger。某个契约分支需要不同 evidence
 时，直接增加一条目的明确的 Eval。
 
@@ -26,9 +27,6 @@ Agent 会话场景使用 Direct Agent；只有文件、diff、shell 或其它 Sa
 
 ## eval-context
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [assertions](../../../feature/assertions/README.md)
-
 Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可区分 marker。测试分别证明 turn、session 与 `t` scope 的消息、
 工具、usage 和输出边界，以及新旧 session 的隔离。Direct Agent 足以产生的 case 不为“更真实”接外部模型；HITL、文件或 shell
 确实是契约输入时，增加对应的确定性 Agent / Sandbox Eval。
@@ -36,9 +34,6 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 这组测试以 [Context](../../../feature/eval/library/context.md) 的公开行为为 expected，不根据 `src/` 类型或内部事件 reducer 生成答案。
 
 ## eval-assertion-values
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [assertions](../../../feature/assertions/README.md)
 
 值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。
 这个 owner 明确接管 `niceeval/expect` 的全部 factory。
@@ -50,9 +45,6 @@ Contract: [assertions](../../../feature/assertions/README.md)
 公开 `query run --request <attempt.get request>` 必须读到这些 Assertion 与 Verdict。
 
 ## eval-assertion-scopes
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [assertions](../../../feature/assertions/README.md)
 
 turn、session 与 attempt scope 必须以同一批真实工具事件完成断言。
 这个 owner 明确接管 tool、command 与 event matcher，以及 present、absent、count、order、scope status 与 failed-action 等 scope assertion。
@@ -66,18 +58,12 @@ tool occurrences，涉及末尾 decisive witness、absence/exact/at-least 与 pa
 
 ## eval-assertion-score
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [assertions](../../../feature/assertions/README.md)
-
 计分制正常返回由 Runner 自动封口。匹配与不匹配的 points Assertion、直接给分都可由公开 Report
 读回；不匹配只贡献零分且 Verdict 仍为 passed。没有分值贡献时 Score 仍是完整的零分 outcome，
 由 Assertions 与 Attempt outcome 解释，不另设 durable family。即使 Experiment 开启 earlyExit，
 每个 Score Attempt 仍完整运行。
 
 ## eval-assertion-sandbox
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [assertions](../../../feature/assertions/README.md)
 
 Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用
 `changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
@@ -98,19 +84,12 @@ Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoi
 
 ## eval-active-progress-redaction
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Adapter architecture · Human live detail](../../../feature/adapters/architecture.md#human-live-detail)
-
 安装后候选通过公开 Sandbox command 的 `sensitiveValues` 登记两段已知 secret，再从 Eval `progress()` 发出分别由 C0 与 C1 OSC
 拆开的同一明文。真实 PTY 必须在 Attempt 仍运行时只看到两段 `<redacted>`；这证明唯一 ACTIVE 出口先完整移除控制序列，再做
 二次脱敏。后续多字节 grapheme 被截在 256 UTF-8 bytes 内，不能出现半个 cluster 或替换字符。测试只 fake 外部 Sandbox
 进程边界，不复制 Runner 的控制序列过滤或脱敏实现。
 
 ## eval-assertion-judge-unavailable
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/assertions/README.md at=88edfe73ea416ff49835f48dad41af92fc986705 -->
 
 该 owner 验证质量评分成功，并与材料登记、请求取消 owner 一起验收 Judge 行为。作者直接提交应用返回的领域对象；登记后的原对象修改不能改变送给模型或公开读回的材料，超过 8 KiB 的合法文本必须完整保留。分数允许 `anchors` 之间的连续值，发送状态只证明本地尝试发送。
 
@@ -132,19 +111,9 @@ verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不�
 - 只有真实 Eval 无法稳定制造或区分的纯算法等价类，才按 Unit 例外登记最小矩阵。
 ## 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。 {#eval-custom-application}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/use-case/比较应用实现.md](../../../feature/eval/use-case/比较应用实现.md)
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#共享接口与选择实现 at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
-
 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。
 共享断言便捷方法读取各 Attempt 的应用状态，公开 Query 逐项核对 Boolean 质量门与连续得分；方法解构后仍绑定正确实现。
 ## Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。 {#eval-custom-application-lifecycle}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feature/eval/use-case/评估应用原生操作.md)
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/architecture.md#应用实例生命周期 at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/README.md at=0effad4e6b0ddb80a2d5ea75685862339a47df6c -->
 
 Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。
 
@@ -155,63 +124,32 @@ Application 在 create 部分失败或 Attempt 取消后释放已取得资源，
 
 ## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/use-case/评估应用原生操作.md](../../../feature/eval/use-case/评估应用原生操作.md)
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/eval/library.md#单一强类型-t at=426db6b807c1c4171218041ffe445cbf594bd5fd -->
-
 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。
 自定义断言方法保留具体参数、Boolean 细化结果与 measurement 门槛；Pass 不暴露 Score 能力，直接 Adapter 与共享契约的实现保持一致。
 ## Judge 材料与声明校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
-
 Judge 材料与 Match 校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。
 ## Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。 {#eval-judge-cancellation}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/eval/use-case/judge-quality.md](../../../feature/eval/use-case/judge-quality.md)
 
 Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。
 ## 现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取 {#eval-judge-score-audit}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/judge/use-case/inspect-judge-score.md](../../../feature/judge/use-case/inspect-judge-score.md)
-
 现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取
 ## Judge Provider 整体替换与模型优先级，普通断言不触发模型调用 {#eval-judge-configuration}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/judge/library.md#runtime-配置](../../../feature/judge/library.md#runtime-配置)
 
 Judge Provider 按项目、Eval、Experiment 优先级整体替换；模型字符串只替换模型，普通断言不触发模型调用。
 ## 多个 Attempt 缺少同一 Judge 凭据时，保留各自结果并集中显示修复提示与次数。 {#grouped-judge-errors}
 
-<!-- niceeval.e2e-owner-history/v1 action=retired reason="现有缺少 Judge 凭据的 Journey 已拥有该结果，复用 eval-judge-configuration 的实际入口断言，不另建重复测试。" at=cf25a6bfe21b8382c7063ff9ac01f5a861545ace -->
-Contract: [docs/feature/error-assistance/use-case/read-grouped-errors.md](../../../feature/error-assistance/use-case/read-grouped-errors.md)
-
 多个 Attempt 缺少同一 Judge 凭据时，保留各自结果并集中显示修复提示与次数。
 ## Adapter flags 在启动前同步校验并复制冻结规范化结果。 {#adapter-parse-flags}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
 
 Adapter flags 在启动前同步校验并复制冻结规范化结果。
 ## 规范化 flags 与行为 revision 决定缓存复用身份。 {#adapter-flags-identity}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/experiments/README.md](../../../feature/experiments/README.md)
-
 规范化 flags 与行为 revision 决定缓存复用身份。
 ## 外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。 {#external-usage}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
-
 外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。
 ## 截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。 {#judge-image-material}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/judge/library.md](../../../feature/judge/library.md)
 
 截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。

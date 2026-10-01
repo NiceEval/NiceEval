@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: grid-has-no-props-geometry-single-source
+title: Grid 收敛成零 props:体裁与体量也不是作者的输入
+createdAt: 2026-07-29T13:06:10+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/grid-has-no-props-geometry-single-source.md
+  commit: bbd40c22bcedf364909601575159dff12401e8e7
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Grid 收敛成零 props:体裁与体量也不是作者的输入
 
 **裁决(2026-07-28)**:`Grid` 的公开面收敛成 `LayoutProps`(只有 `children` / `className`)。

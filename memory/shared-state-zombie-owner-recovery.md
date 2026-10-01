@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: shared-state-zombie-owner-recovery
+title: sharedState 显式恢复将 Linux zombie owner 误判为 live
+createdAt: 2026-08-20T08:09:31+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/shared-state-zombie-owner-recovery.md
+  commit: 41d192486eefd620c14af2741016e0c161c2536c
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [shared-state-zombie-owner-recovery](shared-state-zombie-owner-recovery.md) — Linux zombie 保留 starttime 却不能执行 cleanup，显式 sharedState recovery 曾误拒绝；仅将 `Z` / `X` / `x` 判为终态，其余身份不确定继续 fail closed"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # sharedState 显式恢复将 Linux zombie owner 误判为 live
 
 ## 现象

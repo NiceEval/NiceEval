@@ -7,22 +7,20 @@ description: "Use a Match to describe a value comparison. A call immediately reg
 An Assertion is NiceEval's unit of evaluation. `check(subject, match)` is the registration primitive: it reads the subject and registers one Assertion immediately. Scoped helpers such as `calledTool(...)` select a managed subject and Match, then use that same path. The returned handle only configures the registered entry.
 
 ```ts
-import { closedQA, includes, toolMatch } from "niceeval/expect";
+import { includes, toolMatch } from "niceeval/expect";
 
 t.check(turn.message, includes("Completed")).label("Reply says it completed");
 turn.succeeded().label("Turn completed");
 turn.calledTool(toolMatch("get_weather").exactly(1)).label("Looks up weather");
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("Is the answer specific and polite?").atLeast(0.8),
-).gate().label("Answer quality");
+t.judge({ question, answer: turn.message }, answerQuality)
+  .gate(0.8).label("Answer quality");
 ```
 
 Each Assertion's `key` and `label` can be configured at most once. Setting either more than once is an authoring error, even when setting it to the same value.
 
 ## Matches compare values only
 
-`niceeval/expect` exports pure Match factories. A Match is a reusable, immutable, deterministic, side-effect-free comparison rule. It has no call site, score, or control flow. A `ScoreMatch` can form a thresholded Match with `.atLeast(n)` before registration. `t.check(subject, match)` strictly takes two arguments, reads the subject at the call site, and registers an Assertion.
+`niceeval/expect` exports pure Match factories. A Match is a reusable, immutable, deterministic, side-effect-free comparison rule. It has no identity, call site, threshold, score, or control flow. `t.check(subject, match)` strictly takes two arguments, reads the subject at the call site, and registers an Assertion.
 
 ```ts
 import { equals, includes, matches, satisfies } from "niceeval/expect";
@@ -48,30 +46,27 @@ Put occurrence quantifiers such as `.exactly(2)` or `.atLeast(1)` on `toolMatch`
 
 ## Two kinds of Eval
 
-`defineEval` creates a pass-style Eval. Boolean `matched` enters the Attempt Verdict; `mismatched` makes the final Verdict `failed`, but does not prevent later checks from registering. Continuous evaluators and Judge Matches yield a `[0,1]` measurement. Call `.atLeast(n)` on the `ScoreMatch` before registration to form a local condition. The registered handle's parameterless `.gate()` includes that condition in the Verdict.
+`defineEval` creates a pass-style Eval. Boolean `matched` enters the Attempt Verdict; `mismatched` makes the final Verdict `failed`, but does not prevent later checks from registering. Continuous evaluators and Judges yield a `[0,1]` measurement. Call `.gate(minimum)` on the registered handle to include the measurement threshold in the Verdict.
 
 ```ts
-turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("Does the answer give actionable steps?").atLeast(0.8),
-)
-  .gate()
+t.judge({ task, answer: turn.message }, actionableQuality)
+  .gate(0.8)
   .label("Actionable steps");
 ```
 
-`defineScoreEval` creates a score-style Eval. It has only a cumulative `score`, not an Attempt Verdict, total score, percentage, or another numeric unit. An Assertion saves its evaluation without scoring by default; `.score(n)` makes an existing Assertion contribute score. A Boolean match contributes `n` and a mismatch contributes `0`; a measurement `m` contributes `m * n`. `t.score(n)` registers a contribution directly, and its returned handle can configure only `key` and `label`.
+`defineScoreEval` creates a score-style Eval. It has an Attempt Verdict and a cumulative `score`, with no implicit total score, percentage, or other numeric unit. An Assertion saves its evaluation without scoring by default; `.score(n)` makes an existing Assertion contribute score. A Boolean match contributes `n` and a mismatch contributes `0`; a measurement `m` contributes `m * n`. `t.score(n)` registers a contribution directly, and its returned handle can configure only `key` and `label`.
 
 ```ts
 turn.calledTool("search");                         // Saves only the evaluation
 turn.calledTool("search").score(2);                // +2 when it matches
 turn.check(
-  { input: turn.input, output: turn.message },
-  closedQA("Is the answer complete?"),
+  { task, answer: turn.message },
+  completeness,
 ).score(5);                                         // +4 when measurement is 0.8
 t.score(5);                                        // Directly +5
 ```
 
-A score-style Eval measurement can close without a threshold. Applying `.atLeast(n)` to its `ScoreMatch` before registration adds a local `met` / `below` condition without changing the contribution. An Assertion without `.score()` does not display `+0`. A score-style Eval with no score items normally receives an official, rankable `score: 0`.
+A score-style Eval measurement can close without a threshold. Call `.gate(minimum)` on its handle to add a quality gate without changing the contribution; the same entry can have both a gate and a score. A low measurement alone does not fail, but an unmet gate makes the Verdict `failed` and keeps the earned score. An Assertion without `.score()` does not display `+0`. A score-style Eval with no score items normally receives an official, rankable `score: 0`.
 
 ## Control flow
 
@@ -87,7 +82,7 @@ After a normal stop, a pass-style Eval still receives a `failed` Verdict from th
 
 ## Judge
 
-Judge factories from `niceeval/expect` are pure `ScoreMatch` values. Register one with `check({ input, output }, judgeMatch)`. For a pass-style requirement, threshold the Match first and call `.gate()` on the returned handle. A score-style Eval calls `.score(n)` on the handle. See [Judge](/explanation/judge) for material, configuration, and failure semantics.
+`defineJudge` creates a managed `JudgeDefinition`. `judge(material, definition)` is a thin helper that only accepts a Judge definition; `check(material, definition)` uses the same dispatcher. Both pass-style and score-style Evals can call `.gate(minimum)`, and score-style Evals can also call `.score(n)`. A Judge runs once per entry. See [Judge](/explanation/judge) for material, configuration, and failure semantics.
 
 ## Unavailable results and reading them
 

@@ -1,16 +1,22 @@
 ---
-title: "用 Plugin 复用完整运行条件"
+title: "用 Plugin 复用一整套运行条件"
 sidebarTitle: "Plugin"
-description: "用 definePlugin 组合宿主生命周期与 command-only SandboxLayer，并在多个 owner 之间复用。"
+description: "同一套“先在宿主机起服务、再在 Sandbox 里准备环境”的条件要在多个 Experiment、评估组或评估用例里用时，用 definePlugin 写一次，到处挂载。"
 ---
 
-Plugin 把一项可复用条件的稳定身份、宿主生命周期和 Sandbox action 放在同一个 family 中。它不是另一套 Sandbox DSL，也不能选择 Provider template。
+你的几个对比实验都要接同一个记忆服务：在宿主机上开一条隧道，再在 Sandbox 里写入连接配置、装好命令行工具。把这些代码复制到每个 Experiment 里，改一处就要改好几处。
 
-Agent 的 Skill、MCP server 和原生 Plugin 仍传给 Agent factory。Docker image、E2B template 或 Vercel snapshot 由 Experiment、评估组或评估用例的 `sandbox` 字段选择。
+Plugin 把这样一整套条件写在一起：它叫什么、宿主机上要起停什么、Sandbox 里要执行哪些准备命令。写好后挂到 Experiment、评估组或评估用例上就能复用。
 
-## 让 Plugin 贡献统一的 SandboxLayer
+Plugin 只负责条件本身，不负责选环境：用哪个 Docker 镜像、E2B template 或 Vercel snapshot，仍由 `sandbox` 字段决定。
 
-所有 Plugin API 从 `niceeval/plugin` 导入。`sandbox` fragment 直接返回 command-only `SandboxLayer`，里面使用和普通作者代码相同的 `.before()` / `.after()`：
+Agent 自己的 Skill、MCP server 和原生 Plugin 也不归这里管，它们仍传给 Agent factory，例如 `codexAgent({ plugins: [...] })`。
+
+## 第 1 步：写一个 Plugin
+
+把这套条件写成一个 Plugin，放在几个 Experiment 都能导入的位置。所有 Plugin API 从 `niceeval/plugin` 导入。
+
+下面这个例子在宿主机上起停记忆服务，并在 Sandbox 里上传插件文件、写入连接配置：
 
 ```ts
 // experiments/shared/memory.ts
@@ -57,17 +63,23 @@ export const memory = definePlugin<MemoryOptions>({
 });
 ```
 
-固定文件、目录、Git checkout 和 shell 安装都走 `SandboxAction`。它们会参与统一排序、指纹和 Docker 准备前缀缓存。Plugin 不需要自己再维护一份 upload 或 clone 协议。
+几个字段各管一件事：
 
-需要运行中分支时，可以在返回的 layer 中写 `.before(async (sandbox, context) => ...)`。这种 callback 每次真实执行，并截断后续可共享前缀。成功取得资源后用 `context.onCleanup()` 登记释放。
+- `name` 和 `instanceKey` 一起区分同一个 Plugin 的不同实例，这里按 `model` 区分。
+- `experiment` 里的 `setup` / `teardown` 在宿主机上运行，适合起停服务、开隧道。
+- `sandbox` 返回一个 `sandboxLayer()`，里面用和普通代码相同的 `.before()` / `.after()` 准备 Sandbox。
+
+Sandbox 里的准备步骤用内置的 `uploadDirectory()`、`writeText()`、`gitCheckout()`、`shell()` 等函数写。它们和 Experiment、评估用例里的准备步骤一起排序，没变的步骤在 Docker 上可以直接沿用上次的准备结果。Plugin 不需要自己处理上传或 clone。
+
+需要运行时才能决定的分支，可以在返回的 layer 里写 `.before(async (sandbox, context) => ...)`。这种回调每次都真实执行，它后面的准备步骤也不再沿用缓存。成功取得资源后，立即用 `context.onCleanup()` 登记释放。
 
 <Warning>
-  `sandbox` fragment 必须返回 `sandboxLayer()` 产生的 command-only layer。返回 `dockerSandbox()`、`e2bSandbox()` 或其它 template-bearing layer 会在定义加载时失败。Plugin 不能替换调用方选择的 Provider。
+  `sandbox` 必须返回 `sandboxLayer()`。返回 `dockerSandbox()`、`e2bSandbox()` 这类选择了镜像或 template 的 layer，会在加载定义时报错。Plugin 不能替换调用方选择的 Provider。
 </Warning>
 
-## 固定 Git checkout
+### 从 Git 仓库取 Plugin 源码
 
-可以克隆的 Plugin 源码使用 `gitCheckout()`，并填写完整 commit object ID。移动 branch 或 tag 不能作为缓存身份：
+Plugin 源码在一个能 clone 的仓库里时，用 `gitCheckout()`，`ref` 填完整的 commit ID。branch 或 tag 会移动，NiceEval 无法据此判断内容变没变，所以不接受：
 
 ```ts
 import {
@@ -83,11 +95,11 @@ const pluginSource = sandboxLayer().before(gitCheckout({
 }));
 ```
 
-本地目录使用 `uploadDirectory()`，其 `source` 必须是以当前定义模块为基准的 `file:` URL。目录内容、权限和 symlink manifest 自动进入指纹；改一个文件只会失效包含它的 action 及后续前缀。
+源码在本地目录时用 `uploadDirectory()`，`source` 写成相对当前文件的 `new URL("...", import.meta.url)`。目录里的文件内容、权限和 symlink 变化都会被自动发现：改一个文件，只有上传这个目录的步骤和它后面的步骤会重新执行。
 
-## 挂到 Experiment、评估组或评估用例
+## 第 2 步：挂到 Experiment、评估组或评估用例
 
-简单场景可以继续传数组：
+只用一两个 Plugin 时，直接传数组：
 
 ```ts
 export default defineExperiment({
@@ -99,7 +111,7 @@ export default defineExperiment({
 });
 ```
 
-多个共享组合使用不可变的 `PluginStack`。`.use()` 追加一个 attachment，`.concat()` 合并两个 Stack；原值不变，可以安全分叉：
+几个 Experiment 共用一组 Plugin、又各自再加几个时，用 `pluginStack()` 组合。`.use()` 追加一个 Plugin，`.concat()` 合并两组。每次调用都返回新值，原来那组不变，可以放心从同一个基础上分叉：
 
 ```ts
 import { pluginStack } from "niceeval/plugin";
@@ -116,37 +128,49 @@ export default defineExperiment({
 });
 ```
 
-类型会跟随 Plugin 支持的 owner 收窄。只支持 Eval 的 Plugin 不能放进 Experiment Stack；没有共同 owner 的两个 Stack 不能合并。空 `pluginStack()` 与省略 `plugins` 具有相同身份。
+类型检查会拦住挂错位置的 Plugin：只支持评估用例的 Plugin 不能放进 Experiment 的组合里，没有共同可挂位置的两组也不能合并。空的 `pluginStack()` 和不写 `plugins` 效果相同。
 
-Stack 不自动去重。同一 owner 重复出现相同 `(name, instanceKey)` 时，link 会在创建 Sandbox 前报错。
+组合不会自动去重。同一个位置出现两个 `name` 和 `instanceKey` 都相同的 Plugin 时，运行会在创建 Sandbox 前报错。删掉重复的那个，或者给它不同的 `instanceKey`。
 
-## 宿主生命周期范围
+## 宿主机上的准备每次跑几回
 
-Plugin 可以声明三种宿主 fragment：
+Plugin 可以在三个层级声明宿主机上的 `setup` / `teardown`：
 
-| fragment | 运行次数 |
+| 写在 | 运行次数 |
 | --- | --- |
-| `experiment(options)` | 每个有实际工作运行的 Experiment 一次 |
-| `group(options)` | 每个 Experiment 与评估组组合一次 |
-| `eval(options)` | 每条实际运行的 Attempt 一次 |
+| `experiment(options)` | 每个这次确实要跑的 Experiment 一次 |
+| `group(options)` | 每个 Experiment 和评估组的组合一次 |
+| `eval(options)` | 每个确实要跑的 Attempt 一次 |
 
-每个宿主 fragment 可以包含 `identity`，以及至少一个 `setup` / `teardown`。setup 按最终 attachment 顺序运行，teardown 逆序运行。完整沿用的 Attempt 不激活这些生命周期。
+每一层至少写 `setup` 或 `teardown` 之一，可以带 `identity`。多个 Plugin 的 `setup` 按挂载顺序运行，`teardown` 按相反顺序运行。整道题都沿用上次结果、不需要重跑时，这些回调不会运行。
 
-`sandbox(options)` 不是第四种宿主生命周期。它只定义一次 command-only layer，再由 NiceEval 投影到 attachment 所在 owner 的 Sandbox 计划。用户不需要在 `.before()` 里再传 Plugin，也不存在 `SandboxLayer.plugins()`。
+`sandbox(options)` 不是第四个层级。它只定义一次 Sandbox 准备步骤，NiceEval 把这些步骤放进 Plugin 所挂位置的 Sandbox 准备里。你不需要在 `.before()` 里再传一次 Plugin。
 
-修改宿主 callback 行为时提高 `behaviorRevision`。Sandbox action 的变化由 action 自动指纹负责；自定义 Action 只在自动观察不到协议变化时补 `cache.fingerprint`。
+## 修改 Plugin 后让旧结果失效
 
-## 运行前检查
+Plugin 的行为变了，沿用上次的结果就不再可信。NiceEval 能看到一部分变化，另一部分要你告诉它：
+
+- 改了宿主机 `setup` / `teardown` 的行为时，把 `behaviorRevision` 加一。NiceEval 看不到函数体的变化。
+- 改了 Sandbox 里的内置准备步骤（命令、文件、commit）时，不用做任何事，这些变化会被自动发现。
+- 自定义的准备步骤只在 NiceEval 观察不到的协议变化时，才补一个 `cache.fingerprint`。
+
+改完后先用 `pnpm exec niceeval exp <experiment> --dry` 确认受影响的题会重跑。
+
+## 运行前检查 Plugin 加进了哪些步骤
+
+挂上 Plugin 后，先看它的准备步骤排在哪里，再花钱运行：
 
 ```bash
 pnpm exec niceeval debug compare/codex memory/smoke
 pnpm exec niceeval debug compare/codex memory/smoke --json
 ```
 
-`debug` 会把 Plugin 投影的 action 与 Experiment、评估组、评估用例、Agent action 放进同一棵计划。Human 框显示 owner、执行序号、`changeFrequency`、依赖和缓存资格；JSON 保留相同结构。
+`debug` 把 Plugin 加入的步骤和 Experiment、评估组、评估用例、Agent 的步骤放进同一份计划。终端里每一步显示它来自哪里、执行序号、`changeFrequency`、依赖和能否沿用缓存；`--json` 给出相同的结构。
+
+Plugin 的步骤没出现在计划里时，先检查 `plugins` 是否挂在了你选中的 Experiment 或评估用例上。
 
 ## 接着看
 
-- [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)——Action、频率、缓存与收尾。
-- [评估组](/zh/tutorials/eval-groups)——评估组 action 怎样进入同一顺序。
-- [运行前检查 Sandbox 计划](/zh/tutorials/debug-lifecycle-plan)——查看 Plugin 投影后的精确计划。
+- [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)——准备步骤、频率、缓存与收尾。
+- [评估组](/zh/tutorials/eval-groups)——评估组的准备步骤怎样进入同一顺序。
+- [运行前检查 Sandbox 计划](/zh/tutorials/debug-lifecycle-plan)——查看 Plugin 加入后的完整计划。

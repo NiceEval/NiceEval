@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: official-baseline-versioning-follows-agent
+title: 官方基线制品的版本跟被装的 Agent 走，不跟 niceeval 的 release
+createdAt: 2026-07-25T17:12:53+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/official-baseline-versioning-follows-agent.md
+  commit: 8237bb67f70d1b71b75957cf76d8125b0b4fcc63
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 官方基线制品的版本跟被装的 Agent 走，不跟 niceeval 的 release
 
 **裁决(2026-07-25)**：公共 E2B template 与公共 Docker 镜像的 tag 统一为

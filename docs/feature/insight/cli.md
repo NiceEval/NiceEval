@@ -19,7 +19,7 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>]
 完整 SPA assets、session 与读取 transport 可用后，命令向 stdout 写出一次可打开的 loopback URL。新的 publication
 只让页面显示更新可用；用户确认后才切换到新的 cutoff。启动或运行失败通过退出码与 stderr 反馈。
 
-启动与关闭见[制作可访问页面](use-case/制作可访问页面.md#观察启动与关闭)；Run 选择见
-[审阅一次 Run 怎样采用结果](use-case/审阅一次Run怎样采用结果.md#选择要审阅的-run)。
+启动与关闭见[制作可访问页面](use-case/insight-create-accessible-page.md#观察启动与关闭)；Run 选择见
+[审阅一次 Run 怎样采用结果](use-case/insight-review-run-adoption.md#选择要审阅的-run)。
 
 此命令没有持久数据源、SQL、`--out`、部署、分享、Report、Page、theme、renderer、route 或 operation 参数。

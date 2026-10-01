@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-head-channel-replaces-asset-attrs
+title: 设计裁决:外壳第三方脚本走结构化 head 通道,不给 ReportAsset 加 attrs
+createdAt: 2026-07-16T20:16:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-head-channel-replaces-asset-attrs.md
+  commit: 1c8558451754a41829bac3977992fd4191c8c7b8
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:外壳第三方脚本走结构化 head 通道,不给 ReportAsset 加 attrs
 
 - **裁决**(2026-07-16):`defineReport` 外壳新增 `head?: HeadTag[]` 通道——`{ tag, attrs?, children? }`,tag 白名单 `meta`/`link`/`script`/`style`。GA4、data-* 驱动的 tracker、SEO meta、favicon、字体、JSON-LD 全走它,新第三方接入零契约变更。`ReportAsset` 保持 `{src 本地} | {inline}` 原样,`{src}` 声明外链装载报错并指引改写成 head 条目(增强层与第三方注入的职责切开:scripts/styles 是宿主管线接管的增强层资产,head 是"声明什么标签出什么标签"的注入口)。

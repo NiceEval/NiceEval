@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: phase-timings-teardown-steps-and-show-view
+title: 设计裁决:阶段计时补收尾段与钩子步级明细,消费面扩到 show/view
+createdAt: 2026-07-14T05:37:46Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/phase-timings-teardown-steps-and-show-view.md
+  commit: 2133aff71498fdd259b04e29ca6eedf1610b2804
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:阶段计时补收尾段与钩子步级明细,消费面扩到 show/view
 
 **裁决**(2026-07-14,用户以「sandbox eval 要能 debug:沙箱启动时间、setup 下面每条的时间、各生命周期的执行与用时,并在 show 和 view 里展示」为准绳发起的契约挑战):

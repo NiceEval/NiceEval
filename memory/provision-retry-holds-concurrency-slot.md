@@ -1,8 +1,33 @@
 ---
-name: provision-retry-holds-concurrency-slot
+format: concord.document/v1
+id: provision-retry-holds-concurrency-slot
+title: provision-retry-holds-concurrency-slot
+createdAt: 2026-07-11T19:03:27+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/provision-retry-holds-concurrency-slot.md
+  commit: 08d4d443c1b6ececbe46a851e21e3cf30afba00c
 description: 已修 — provisioning 退避重试期间攥着 sandboxSem 名额,一批 429 能把实际并发拖到个位数
-metadata:
-  type: project
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修 — provisioning 退避重试期间攥着 sandboxSem 名额,一批 429 能把实际并发拖到个位数
+    proof: []
+    source:
+      path: memory/provision-retry-holds-concurrency-slot.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:bfba3c080faa5cc81b27f5615f84e88f0aab9f1da739c2b198a0e480c268a4a8
 ---
 
 ## 现象

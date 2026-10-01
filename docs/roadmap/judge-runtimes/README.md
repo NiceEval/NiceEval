@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: judge-runtimes
+title: Judge Runtimes
+createdAt: 2026-08-14T13:42:59+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/judge-runtimes/README.md
+  commit: 44685a9360d68e5d227ac6b758a1e6c993fa464d
+kind: roadmap
+state: planned
+---
 # Judge Runtimes
 
 本方向定义由模型或独立 Agent 执行的 Judge Assertion。两种 runtime 共用同一个 Judge Check、已封口材料、结构化 Decision 与 unavailable 语义，但执行权限不同。

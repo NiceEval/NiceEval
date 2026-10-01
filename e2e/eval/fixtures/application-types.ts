@@ -13,7 +13,7 @@ import {
 } from "niceeval";
 import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
 import type { AdapterAssertionsFactoryContext as AssertionsContextFromSubpath } from "niceeval/adapter";
-import { satisfies, defineScoreMatch } from "niceeval/expect";
+import { satisfies, defineScoreMatch, defineMaterialMatch, defineContextMatch, type AgentMatchContext, type MaterialCollection, type CollectionValue, toolMatch, eventMatch, type BooleanMatch, countWhere, filterWhere, mapEach, mapValue, equals, not, inOrder, or, and } from "niceeval/expect";
 import { OpenAIProvider, OpenRouterProvider, TypesafeProvider, VercelProvider, type JudgeProvider } from "niceeval/judge";
 
 const provider: JudgeProvider = OpenAIProvider({ model: "judge-model" });
@@ -244,18 +244,87 @@ social.defineEval({ judge: quality, async test() {} });
 // @ts-expect-error Official Judge helpers are reserved evaluator operations.
 defineAdapter({ name: "factuality-collision", create: () => ({ factuality: () => 1 }) });
 social.defineScoreEval({ test(t) {
-  t.closeQA({ input: "Capital?", output: "Paris", context: "France: Paris" }).score(2).gate(0.8);
+  t.closeQA(defineMaterialMatch<unknown, string>({ name: "answer", read: () => ({ state: "complete", items: [{ id: "p", value: "Paris" }] }), match: satisfies<string>("answer", () => true) }), "Is the capital named?").score(2).gate(0.8);
   t.factuality({ input: "Capital?", output: "Paris", expected: "Paris" }).score(1);
-  // @ts-expect-error closeQA needs explicit context.
+  // @ts-expect-error closeQA requires a source-bound selector and a question.
   t.closeQA({ input: "Capital?", output: "Paris" });
 } });
 defineEval({ async test(t) {
   const turn = await t.send("Capital?");
+  t.closeQA("Does the whole task satisfy the request?").gate(0.8);
+  turn.closeQA("Is this turn clear?").gate(0.8);
+  turn.closeQA(eventMatch("message", { role: "assistant" }), "Are all explanations clear?").gate(0.8);
+  t.closeQA(toolMatch("read"), "Do the inputs and outputs support completion?").gate(0.8);
+  const qa = turn.closeQA;
+  qa("Is this still the captured turn?").gate(0.8);
+  // @ts-expect-error Fixed Agent sugar accepts no extra Match.
+  turn.usedNoTools(toolMatch("read"));
+  // @ts-expect-error A value predicate has no implicit Agent source.
+  turn.closeQA(equals("yes"), "Is this clear?");
   turn.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).gate(1);
-  t.newSession().closeQA({ input: "Capital?", output: "Paris", context: "France: Paris" }).gate(1);
+  t.newSession().closeQA(defineMaterialMatch<AgentMatchContext<"session">>({ name: "messages", read: (ctx) => ctx.eventOccurrences, match: eventMatch("message", { role: "assistant" }) }), "Is the capital named?").gate(1);
   t.faithfulness({ input: "Capital?", output: turn.message, context: ["France: Paris"] }).gate(1);
   // @ts-expect-error Pass Eval measurement cannot contribute points.
   t.factuality({ input: "Capital?", output: turn.message, expected: "Paris" }).score(1);
+} });
+
+// Compile real collection sugar against the installed public package, without casts or type arguments at callsites.
+interface RecordedActor { readonly id: string; readonly hp: number; readonly aliveAtEnd: boolean }
+interface GameEvent { readonly actorId: string; readonly actorsAtEnd: MaterialCollection<RecordedActor> }
+type GameMatchValue = RecordedActor | GameEvent;
+const npc = satisfies<GameMatchValue>("participant", value => "id" in value ? value.id === "a" : value.actorId === "a");
+const actorsApplication = defineAdapter({
+  name: "collection-types",
+  create: () => ({ actors: (): MaterialCollection<RecordedActor> => ({ state: "complete", items: [] }) }),
+  assertions: ({ app, check }) => ({
+    hp(selector: BooleanMatch<GameMatchValue, GameMatchValue>, inner: BooleanMatch<CollectionValue<number>, CollectionValue<number>>) {
+      return check(app.actors(), filterWhere(selector, mapEach((actor: GameMatchValue) => "hp" in actor ? actor.hp : NaN, inner)));
+    },
+  }),
+});
+actorsApplication.defineScoreEval({ test(t) {
+  t.hp(npc, countWhere(equals(0), equals(3))).gate().score(10);
+  const selected: BooleanMatch<CollectionValue<GameMatchValue>, CollectionValue<GameMatchValue>> = filterWhere(npc, mapEach(actor => "hp" in actor ? actor.hp : NaN, countWhere(equals(0), equals(3))));
+  void selected;
+  const unfinished = mapValue("actors at end", (event: GameEvent) => event.actorsAtEnd, countWhere(npc, not(equals(1))));
+  t.check({ actorId: "a", actorsAtEnd: t.actors() }, unfinished).score(10);
+} });
+
+// Formal hearing precedes the movement that adopts it, in application commit order.
+interface OrderedGameEvent { readonly type: "heard" | "movement"; readonly actorId: string; readonly adopted: boolean }
+const formallyHeard = satisfies<OrderedGameEvent>("heard-by-b", event => event.type === "heard" && event.actorId === "b");
+const adoptedMovement = satisfies<OrderedGameEvent>("adopted movement", event => event.type === "movement" && event.adopted);
+interface GameHistory { history(): MaterialCollection<OrderedGameEvent> }
+const orderedApplication = defineAdapter({
+  name: "ordered-events-types",
+  create: (): GameHistory => ({ history: () => ({ state: "complete", items: [] }) }),
+  assertions: ({ app, check }) => ({
+    events(match: BooleanMatch<CollectionValue<OrderedGameEvent>, CollectionValue<OrderedGameEvent>>) {
+      return check(defineContextMatch<GameHistory, CollectionValue<OrderedGameEvent>>({
+        name: "formally committed game history", read: ctx => ({ state: "available", value: ctx.history() }), match,
+      }));
+    },
+    orderedValues(values: readonly number[]) { return check(values, inOrder([equals(1), equals(2)])); },
+  }),
+});
+orderedApplication.defineScoreEval({ async test(t) {
+  const numbers: readonly number[] = [1, 2, 3];
+  const unchangedNumbers: readonly number[] = await t.check(numbers, inOrder([equals(1), equals(2)])).orStop();
+  const alternatives: readonly number[] = await t.check(numbers, or(inOrder([equals(1), equals(2)]), inOrder([equals(2), equals(3)]))).orStop();
+  const negated: readonly number[] = await t.check(numbers, not(inOrder([equals(3), equals(1)]))).orStop();
+  const conjoined: readonly number[] = await t.check(numbers, and(inOrder([equals(1), equals(2)]), inOrder([equals(2), equals(3)]))).orStop();
+  const fromSugar: readonly number[] = await t.orderedValues(numbers).orStop();
+  const materials: MaterialCollection<OrderedGameEvent> = await t.check(t.history(), inOrder([formallyHeard, adoptedMovement])).orStop();
+  const raw: readonly OrderedGameEvent[] = [];
+  const unchangedEvents: readonly OrderedGameEvent[] = await t.check(raw, inOrder([formallyHeard, adoptedMovement])).orStop();
+  t.events(inOrder([formallyHeard, adoptedMovement])).gate().score(1);
+  // @ts-expect-error A number history cannot be inspected by GameEvent steps.
+  t.check(numbers, inOrder([formallyHeard, adoptedMovement]));
+  // @ts-expect-error A domain step cannot mix with ordinary values.
+  inOrder([toolMatch("move"), formallyHeard]);
+  // @ts-expect-error ContextMatch reads a source; it is not an item step.
+  inOrder([postFactScore, postFactScore]);
+  void [unchangedNumbers, alternatives, negated, conjoined, fromSugar, materials, unchangedEvents];
 } });
 
 // Flags infer only from the selected Adapter's synchronous parser.
@@ -354,3 +423,82 @@ flagsContract.withParseFlags(async (_input: unknown) => ({ strategy: "safe" }));
 declare function parseJsonFlags(input: unknown): Record<string, JsonValue>;
 // @ts-expect-error Arbitrary JSON parser output is wider than scalar flags.
 defineAdapter({ name: "json-flags", parseFlags: parseJsonFlags, create: () => ({}) });
+
+
+interface PostApp { history(): MaterialCollection<Post> }
+const postSource = (match: BooleanMatch<Post, Post>) => defineMaterialMatch<PostApp, Post>({ name: "posts", read: (ctx) => ctx.history(), match });
+const sourcedSocial = defineAdapter({
+  name: "material-social",
+  create: () => ({ history: () => ({ state: "complete" as const, items: [{ id: "p", value: { id: "p", text: "hello" } }] }) }),
+  assertions({ check }) {
+    return { said(match: BooleanMatch<Post, Post>) { return check(postSource(match)); } };
+  },
+});
+sourcedSocial.defineScoreEval({ test(t) {
+  t.said(hasText).gate().score(1);
+  t.check(postSource(hasText)).gate().score(1);
+  t.closeQA(postSource(hasText), "Is the post clear?").gate(0.8).score(30);
+  // @ts-expect-error Existential Boolean gates do not accept a threshold.
+  t.said(hasText).gate(0.8);
+  // @ts-expect-error Material QA requires a measurement threshold.
+  t.closeQA(postSource(hasText), "Is the post clear?").gate();
+  // @ts-expect-error A naked item Match has no material source.
+  t.closeQA(hasText, "Is the post clear?");
+  // @ts-expect-error A forged selector is not a source-bound selector.
+  t.closeQA({ kind: "material-selector" }, "Is the post clear?");
+} });
+sourcedSocial.defineEval({ test(t) {
+  t.said(hasText).gate();
+  t.closeQA(postSource(hasText), "Is the post clear?").gate(0.8);
+  // @ts-expect-error Pass material QA cannot contribute points.
+  t.closeQA(postSource(hasText), "Is the post clear?").score(30);
+  // @ts-expect-error Pass existence cannot contribute points.
+  t.said(hasText).score(1);
+} });
+
+const postFactScore = defineContextMatch<PostApp, number>({ name: "post-count", read: (ctx) => ({ state: "available", value: ctx.history().state === "unavailable" ? 0 : 1 }), match: defineScoreMatch({ name: "count-score", score: (n: number) => n }) });
+sourcedSocial.defineScoreEval({ test(t) {
+  t.check(postFactScore).gate(.8).score(30);
+  // @ts-expect-error Context Score is not a Boolean gate.
+  t.check(postFactScore).gate();
+  // @ts-expect-error closeQA requires a collection, not a scalar fact.
+  t.closeQA(postFactScore, "Is it clear?");
+  const wrong = defineMaterialMatch<{ unrelated(): string }, string>({ name: "wrong", read: (ctx) => ({ state: "complete", items: [{ id: "w", value: ctx.unrelated() }] }), match: satisfies<string>("string", () => true) });
+  // @ts-expect-error This Match requires another application ctx.
+  t.check(wrong);
+} });
+defineEval({ async test(t) {
+  const turn = await t.send("read");
+  const byTurn = defineMaterialMatch<AgentMatchContext<"turn">>({ name: "turn-only", read: (ctx) => ctx.toolCalls, match: toolMatch("read") });
+  turn.check(byTurn).gate();
+  // @ts-expect-error A turn reader cannot consume session context.
+  t.newSession().check(byTurn);
+  // @ts-expect-error An Attempt receiver cannot consume turn context.
+  t.closeQA(byTurn, "Is it clear?");
+} });
+
+// Ordinary author formulas keep a fixed, auditable weight without a ScoreMatch.
+sourcedSocial.defineScoreEval({ test(t) {
+  const ratio = 60 / (60 + 120);
+  t.score(ratio, { weight: 50 }).label("completion time").gate(.1);
+  t.score({ state: "unavailable", reason: "completion-missing" }, { weight: 50 });
+  // @ts-expect-error Weight is already configured by the score call.
+  t.score(ratio, { weight: 50 }).score(20);
+  // @ts-expect-error A string is not a numeric ratio.
+  t.score(".5", { weight: 50 });
+} });
+
+defineAdapter({ name: "cleanup-types", cleanupTimeoutMs: 120_000, create(ctx) {
+  const reason = ctx.signal.reason;
+  if (reason?.kind === "timeout") {
+    const deadline: number = reason.deadlineAt;
+    const source: "flag" | "experiment" | "eval" | "config" = reason.source;
+    void [deadline, source];
+  }
+  ctx.onCleanup(({ signal, timeoutMs, deadlineAt }) => {
+    const duration: number = timeoutMs;
+    const limit: number = deadlineAt;
+    void [signal.aborted, duration, limit];
+  });
+  return {};
+} });

@@ -2,7 +2,18 @@ import { Schema } from "effect";
 import {
   AdapterCallPriceReceiptSchema,
   AdapterUsageCallSchema,
+  AdapterUsageModelSlotSchema,
 } from "../record/family/adapter-usage/schema.ts";
+import { CollectionStateSchema, NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
+import {
+  JudgeUsageCallSchema, JudgePriceReceiptSchema, validateJudgeUsageAttachment,
+} from "../record/family/judge-usage/schema.ts";
+import {
+  compareJudgeUsageCalls, JUDGE_USAGE_PREVIEW_BYTE_LIMIT, JUDGE_USAGE_PREVIEW_CALL_LIMIT,
+} from "../o11y/judge-usage-projection.ts";
+import { utf8ByteLength } from "./bytes.ts";
+import { CurrencyCodeSchema } from "../record/family/source-receipt/codec.ts";
+import { compareAdapterModelGroups } from "../o11y/adapter-usage-projection.ts";
 
 import {
   AttemptDocumentSchema,
@@ -72,6 +83,7 @@ const AssertionLimitationSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("sampled"), captured: Schema.Number, knownTotal: Schema.optional(Schema.Number) }),
   Schema.Struct({ kind: Schema.Literal("truncated"), omittedBytes: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("provider-limited") }),
+  Schema.Struct({ kind: Schema.Literal("capacity-limited"), capturedItems: Schema.Number, knownTotalItems: Schema.Number, omittedBytes: Schema.NullOr(Schema.Number) }),
 ]);
 const OverviewIssueSchema = Schema.Union([
   Schema.Struct({
@@ -121,7 +133,7 @@ const OverviewCoverageSchema = Schema.Union([
     entryId: Schema.String,
     groupPath: Schema.Array(Schema.String),
     state: Schema.Literals(["complete", "partial", "unavailable", "not-applicable"]),
-    reason: Schema.optional(Schema.Literals(["sampled", "truncated", "redacted", "provider-limited", "not-collected", "source-unavailable", "producer-failed", "optional-material", "unsupported-subject"])),
+    reason: Schema.optional(Schema.Literals(["sampled", "truncated", "redacted", "provider-limited", "capacity-limited", "not-collected", "source-unavailable", "producer-failed", "optional-material", "unsupported-subject"])),
     limitations: Schema.Array(AssertionLimitationSchema),
   }),
 ]);
@@ -208,6 +220,28 @@ export const InspectionOverviewResultSchema = Schema.Struct({
 export type InspectionOverviewResult = Schema.Schema.Type<typeof InspectionOverviewResultSchema>;
 
 export const InspectionExperimentResultSchema = Schema.Struct({
+  costSummary: Schema.suspend(() => ExperimentCostSummarySchema),
+  modelUsage: Schema.Struct({
+    attempts: Schema.Array(Schema.Struct({
+      locator: Schema.String,
+      originRunId: Schema.String,
+      usage: Schema.suspend(() => Schema.Struct({
+        state: InspectionAttemptUsageResultSchema.fields.state,
+        configuredModels: InspectionAttemptUsageResultSchema.fields.configuredModels,
+        modelGroups: InspectionAttemptUsageResultSchema.fields.modelGroups,
+        judgeUsage: JudgeUsageSummarySchema,
+        totalCosts: InspectionAttemptUsageResultSchema.fields.totalCosts,
+        totals: InspectionAttemptUsageResultSchema.fields.totals,
+      })),
+    })),
+    totalAttemptCount: NonNegativeSafeIntegerSchema,
+    omittedAttemptCount: NonNegativeSafeIntegerSchema,
+    unresolvedAttemptCount: NonNegativeSafeIntegerSchema,
+  }).check(Schema.makeFilter((usage) => usage.attempts.length <= 64 &&
+    usage.totalAttemptCount === usage.attempts.length + usage.omittedAttemptCount &&
+    usage.attempts.every((entry, index) => index === 0 ||
+      usage.attempts[index - 1]!.originRunId < entry.originRunId ||
+      usage.attempts[index - 1]!.originRunId === entry.originRunId && usage.attempts[index - 1]!.locator < entry.locator))),
   experiment: OverviewExperimentSchema,
   cells: Schema.Array(OverviewCellSchema),
 });
@@ -288,7 +322,7 @@ const AttemptLimitationSchema = Schema.Union([
   Schema.Struct({
     owner: Schema.Literal("assertion-material"),
     state: Schema.Literal("partial"),
-    reason: Schema.Literals(["sampled", "truncated", "redacted", "provider-limited"]),
+    reason: Schema.Literals(["sampled", "truncated", "redacted", "provider-limited", "capacity-limited"]),
     limitations: Schema.Array(AssertionLimitationSchema),
   }),
   Schema.Struct({
@@ -533,6 +567,39 @@ const TraceDiagnosticsSchema = Schema.Struct({
   hasMore: Schema.Boolean,
   omittedDiagnosticCount: Schema.Number,
 });
+const ExecutionDisplayPreviewTextSchema = Schema.Struct({ preview: Schema.String, omittedBytes: Schema.Number });
+const ExecutionDisplayRoleSchema = Schema.Literals(["user", "assistant", "system", "other"]);
+export const ExecutionDisplayPreviewSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("absent") }),
+  Schema.Struct({
+    state: Schema.Literal("present"),
+    blocks: Schema.Array(Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("text"), text: ExecutionDisplayPreviewTextSchema }),
+      Schema.Struct({
+        kind: Schema.Literal("message"),
+        role: ExecutionDisplayRoleSchema,
+        speaker: Schema.optional(Schema.String),
+        text: ExecutionDisplayPreviewTextSchema,
+      }),
+      Schema.Struct({
+        kind: Schema.Literal("fields"),
+        fields: Schema.Array(Schema.Struct({
+          label: Schema.String,
+          value: Schema.Union([ExecutionDisplayPreviewTextSchema, Schema.Number, Schema.Boolean, Schema.Null]),
+        })),
+      }),
+      Schema.Struct({ kind: Schema.Literal("code"), language: Schema.optional(Schema.String), text: ExecutionDisplayPreviewTextSchema }),
+      Schema.Struct({
+        kind: Schema.Literal("image"),
+        artifactId: Schema.String,
+        alt: Schema.String,
+        mediaType: Schema.String,
+        byteLength: Schema.Number,
+        sha256: Schema.String,
+      }),
+    ])),
+  }),
+]);
 const TraceItemBase = { itemId: ItemIdSchema, turnId: Schema.String, sequence: Schema.Number } as const;
 export const InspectionTraceItemSchema = Schema.Union([
   Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: Schema.String, textTruncated: Schema.Boolean }),
@@ -578,6 +645,7 @@ export const InspectionTraceResultSchema = Schema.Struct({
       links: ExecutionTraceEventRecordSchema.fields.links,
       evidence: Schema.Array(Schema.Struct({ evidenceId: Schema.String, key: Schema.String, label: Schema.String })),
       scopeMemberships: ExecutionTraceEventRecordSchema.fields.scopeMemberships,
+      display: ExecutionDisplayPreviewSchema,
     })),
     identityIndex: Schema.Struct({
       traceIds: Schema.Array(Schema.String),
@@ -759,9 +827,13 @@ const UsageCostTotalSchema = Schema.Struct({
   value: Schema.String,
   observationCount: Schema.Number,
 });
+const validUsageCurrency = Schema.is(CurrencyCodeSchema);
+// Summed amounts may be longer than one call's bounded receipt; Query owns the output byte budget.
+const UsageDecimalSchema = Schema.String.check(Schema.isPattern(/^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$(?![\s\S])/u));
+const UsageCurrencySchema = Schema.String.check(Schema.makeFilter((value): boolean => validUsageCurrency(value)));
 const EffectiveCostSchema = Schema.Struct({
-  amount: Schema.String,
-  currency: Schema.String,
+  amount: UsageDecimalSchema,
+  currency: UsageCurrencySchema,
   source: Schema.Struct({
     kind: Schema.Literals(["reported", "estimated"]),
     id: Schema.String,
@@ -776,15 +848,159 @@ const EffectiveCostTotalSchema = Schema.Struct({
   state: Schema.Literals(["complete", "partial", "unavailable"]),
   source: Schema.NullOr(Schema.Literals(["reported", "estimated", "mixed"])),
   values: Schema.Array(Schema.Struct({
-    currency: Schema.String,
-    value: Schema.String,
+    currency: UsageCurrencySchema,
+    value: UsageDecimalSchema,
     source: Schema.Literals(["reported", "estimated", "mixed"]),
-    coveredCalls: Schema.Number,
-    reportedCalls: Schema.Number,
-    estimatedCalls: Schema.Number,
+    coveredCalls: NonNegativeSafeIntegerSchema,
+    reportedCalls: NonNegativeSafeIntegerSchema,
+    estimatedCalls: NonNegativeSafeIntegerSchema,
   })),
-  totalCalls: Schema.Number,
+  totalCalls: NonNegativeSafeIntegerSchema,
 });
+const RecordedCallCountSchema = NonNegativeSafeIntegerSchema.check(Schema.isLessThanOrEqualTo(4_000));
+const ModelGroupTokenTotalSchema = Schema.Struct({
+  state: Schema.Literals(["available", "partial", "unavailable"]),
+  value: Schema.NullOr(NonNegativeSafeIntegerSchema),
+  observationCount: RecordedCallCountSchema,
+}).check(Schema.makeFilter((value) => (value.state === "unavailable") === (value.value === null)));
+const ConfiguredModelsSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("not-recorded") }),
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    bindings: Schema.Array(Schema.Struct({
+      modelSlot: AdapterUsageModelSlotSchema,
+      model: Schema.NullOr(Schema.String.check(Schema.isPattern(/\S/u))),
+      reasoningEffort: Schema.NullOr(Schema.String.check(Schema.isPattern(/\S/u))),
+      recordedCalls: Schema.NullOr(RecordedCallCountSchema),
+    })).check(Schema.makeFilter((bindings) => bindings.length <= 64 &&
+      bindings.every((entry, index) => index === 0 || bindings[index - 1]!.modelSlot < entry.modelSlot))),
+  }),
+]);
+const ModelGroupSchema = Schema.Struct({
+  modelSlot: Schema.NullOr(AdapterUsageModelSlotSchema),
+  provider: AdapterUsageCallSchema.fields.provider,
+  model: AdapterUsageCallSchema.fields.model,
+  recordedCalls: RecordedCallCountSchema.check(Schema.isGreaterThan(0)),
+  tokens: Schema.Struct({
+    inputTotalTokens: ModelGroupTokenTotalSchema,
+    outputTokens: ModelGroupTokenTotalSchema,
+    totalTokens: ModelGroupTokenTotalSchema,
+  }),
+  costs: EffectiveCostTotalSchema,
+}).check(Schema.makeFilter((group) => group.costs.totalCalls === group.recordedCalls &&
+  Object.values(group.tokens).every((total) => total.observationCount <= group.recordedCalls)));
+const ModelGroupsSchema = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    basis: Schema.Literal("recorded-calls"),
+    groups: Schema.Array(ModelGroupSchema).check(Schema.makeFilter((groups) => groups.length <= 64 &&
+      groups.every((entry, index) => index === 0 || compareAdapterModelGroups(groups[index - 1]!, entry) < 0))),
+    totalGroupCount: RecordedCallCountSchema,
+    groupsTruncated: Schema.Boolean,
+    omittedGroupCount: RecordedCallCountSchema,
+  }).check(Schema.makeFilter((value) => value.totalGroupCount === value.groups.length + value.omittedGroupCount &&
+    value.groups.length === Math.min(value.totalGroupCount, 64) &&
+    value.groupsTruncated === (value.omittedGroupCount > 0))),
+  Schema.Struct({
+    state: Schema.Literal("unavailable"),
+    basis: Schema.Literals(["recorded-calls", "reported-sends", "unavailable"]),
+    reason: Schema.Literals(["source-invalid", "usage-not-recorded", "physical-call-identity-not-recorded"]),
+    groups: Schema.Tuple([]),
+    totalGroupCount: Schema.Null,
+    groupsTruncated: Schema.Literal(false),
+    omittedGroupCount: Schema.Literal(0),
+  }),
+]);
+const TotalUsageCostsSchema = Schema.Struct({
+  state: Schema.Literals(["complete", "partial", "unavailable"]),
+  values: Schema.Array(Schema.Struct({
+    currency: UsageCurrencySchema,
+    value: UsageDecimalSchema,
+    source: Schema.Literals(["reported", "estimated", "mixed"]),
+  })),
+  missingSources: Schema.Array(Schema.Literals(["application", "judge"])).check(Schema.makeFilter((sources) =>
+    sources.length <= 2 && sources.every((source, index) => index === 0 || sources[index - 1] === "application" && source === "judge"))),
+}).check(Schema.makeFilter((value) => value.state === (value.missingSources.length === 0
+    ? "complete" : value.values.length === 0 ? "unavailable" : "partial") &&
+  value.values.every((entry, index) => index === 0 || value.values[index - 1]!.currency < entry.currency)));
+export type TotalUsageCosts = Schema.Schema.Type<typeof TotalUsageCostsSchema>;
+
+const ExperimentCostSummarySchema = Schema.Struct({
+  scope: Schema.Literal("latest-recorded-slots"),
+  totalCosts: TotalUsageCostsSchema,
+  coverage: Schema.Struct({
+    selectedSlotCount: NonNegativeSafeIntegerSchema,
+    resolvedSlotCount: NonNegativeSafeIntegerSchema,
+    originAttemptCount: NonNegativeSafeIntegerSchema,
+    completeAttemptCount: NonNegativeSafeIntegerSchema,
+    partialAttemptCount: NonNegativeSafeIntegerSchema,
+    unavailableAttemptCount: NonNegativeSafeIntegerSchema,
+    unresolvedSlotCount: NonNegativeSafeIntegerSchema,
+  }).check(Schema.makeFilter((value) =>
+    value.selectedSlotCount === value.resolvedSlotCount + value.unresolvedSlotCount &&
+    value.originAttemptCount <= value.resolvedSlotCount &&
+    value.originAttemptCount === value.completeAttemptCount + value.partialAttemptCount + value.unavailableAttemptCount)),
+});
+
+const JudgeCostTotalsSchema = EffectiveCostTotalSchema.check(Schema.makeFilter((costs) =>
+  costs.totalCalls <= 4_000 &&
+  (costs.source === null) === (costs.values.length === 0) &&
+  costs.values.every((entry, index) => entry.coveredCalls <= entry.reportedCalls + entry.estimatedCalls &&
+    entry.reportedCalls + entry.estimatedCalls <= costs.totalCalls &&
+    entry.source === (entry.reportedCalls === 0 ? "estimated" : entry.estimatedCalls === 0 ? "reported" : "mixed") &&
+    (index === 0 || costs.values[index - 1]!.currency < entry.currency)) &&
+  costs.values.reduce((count, entry) => count + entry.reportedCalls + entry.estimatedCalls, 0) <= costs.totalCalls &&
+  (costs.state !== "unavailable" || costs.values.length === 0) &&
+  (costs.state !== "complete" || costs.values.reduce((count, entry) => count + entry.coveredCalls, 0) === costs.totalCalls)));
+const JudgeUsageUnavailableSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("judge-usage-not-recorded") }),
+  Schema.Struct({ state: Schema.Literal("invalid"), reason: Schema.Literal("judge-usage-source-invalid") }),
+]);
+const JudgeUsageSummaryFields = {
+  state: Schema.Literals(["complete", "partial"]),
+  coverage: Schema.Literal("physical-transmissions"),
+  collection: CollectionStateSchema,
+  totals: Schema.Struct({
+    requests: ModelGroupTokenTotalSchema,
+    inputTotalTokens: ModelGroupTokenTotalSchema,
+    outputTokens: ModelGroupTokenTotalSchema,
+    totalTokens: ModelGroupTokenTotalSchema,
+    costs: JudgeCostTotalsSchema,
+  }),
+};
+const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).check(Schema.makeFilter((usage) => {
+  const requests = usage.totals.requests;
+  return usage.state === usage.collection.state && requests.value === requests.observationCount &&
+    requests.state === (usage.state === "complete" ? "available" : "partial") &&
+    usage.totals.costs.totalCalls === requests.value &&
+    (usage.state === "complete" || usage.totals.costs.state !== "complete") &&
+    [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every((total) =>
+      total.observationCount <= requests.observationCount && (total.state !== "available" ||
+        usage.state === "complete" && total.observationCount === requests.observationCount)) &&
+    (requests.value !== 0 || usage.state !== "complete" ||
+      [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every((total) =>
+        total.state === "available" && total.value === 0) && usage.totals.costs.state === "complete");
+}));
+const JudgeUsageSummarySchema = Schema.Union([JudgeUsageUnavailableSchema, JudgeUsageAvailableSummarySchema]);
+export type JudgeUsageSummary = Schema.Schema.Type<typeof JudgeUsageSummarySchema>;
+const JudgeUsageSchema = Schema.Union([
+  JudgeUsageUnavailableSchema,
+  Schema.Struct({
+    ...JudgeUsageSummaryFields,
+    calls: Schema.Array(JudgeUsageCallSchema),
+    callsTruncated: Schema.Boolean,
+    omittedCallCount: RecordedCallCountSchema,
+    priceReceipts: Schema.Array(JudgePriceReceiptSchema),
+  }).check(Schema.makeFilter((usage) => Schema.is(JudgeUsageAvailableSummarySchema)({
+      state: usage.state, coverage: usage.coverage, collection: usage.collection, totals: usage.totals,
+    }) && usage.calls.length <= JUDGE_USAGE_PREVIEW_CALL_LIMIT &&
+    usage.calls.length + usage.omittedCallCount === usage.totals.requests.value &&
+    usage.callsTruncated === (usage.omittedCallCount > 0) &&
+    usage.calls.every((call, index) => index === 0 || compareJudgeUsageCalls(usage.calls[index - 1]!, call) < 0) &&
+    utf8ByteLength(JSON.stringify({ calls: usage.calls, priceReceipts: usage.priceReceipts })) <= JUDGE_USAGE_PREVIEW_BYTE_LIMIT &&
+    validateJudgeUsageAttachment({ collection: usage.collection, calls: usage.calls, priceReceipts: usage.priceReceipts }).length === 0)),
+]);
+export type JudgeUsage = Schema.Schema.Type<typeof JudgeUsageSchema>;
 const UsageTotalsSchema = Schema.Struct({
   inputTotalTokens: Schema.optional(UsageNumericTotalSchema),
   inputTokens: UsageNumericTotalSchema,
@@ -798,6 +1014,10 @@ const UsageTotalsSchema = Schema.Struct({
   costs: Schema.optional(EffectiveCostTotalSchema),
 });
 export const InspectionAttemptUsageResultSchema = Schema.Struct({
+  configuredModels: ConfiguredModelsSchema,
+  modelGroups: ModelGroupsSchema,
+  judgeUsage: JudgeUsageSchema,
+  totalCosts: TotalUsageCostsSchema,
   source: Schema.optional(Schema.Literal("adapter")),
   coverage: Schema.optional(Schema.Literal("recorded-calls")),
   calls: Schema.optional(Schema.Array(AdapterUsageInspectionCallSchema)),

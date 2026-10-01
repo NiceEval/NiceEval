@@ -121,6 +121,9 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  * 默认主会话——否则相邻 attempt 会静默共享历史),后续轮用 `ctx.session.id` resume;
  * `t.newSession()` 后的新会话线自然拿到新 id,session 之间互相隔离。
  */
+// @concord-code ne-adapter-openclaw-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/openclaw/README.md
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
   const plugins = normalizeExactNpmPlugins(config?.plugins, "openClawAgent plugins");

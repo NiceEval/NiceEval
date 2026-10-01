@@ -1,18 +1,41 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: human-short-error-and-score-summary
 title: Human 短错误丢失前文且 Score 摘要隐藏未启动计数
 createdAt: 2026-09-20
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: Preserved historical resolution declaration during merge; not current
+    verification.
+  at: 2026-09-29T23:47:24.368Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: >-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_1NZ67DBK6VWY8Y3R
+            - netake_GPYRQ6D0Q344KXS7
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/provider-error-feedback.test.ts#necase_7HXVADGZABWJQXEC"]}
     proof:
       - nered_1NZ67DBK6VWY8Y3R
       - netake_GPYRQ6D0Q344KXS7
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/provider-error-feedback.test.ts#necase_7HXVADGZABWJQXEC"]}
-promotions: []
+    source:
+      path: memory/human-short-error-and-score-summary.md
+      commit: 05dec8c7f1795e13212d424ee472874d62d84345
+      digest: sha256:ef359133f6c7573b65f67cf198baca37fc24b9b414e2aa2b6d7c5cf9e76fefb6
 ---
 # 现象与根因
 

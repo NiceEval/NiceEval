@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: test-issue-relation-lacks-publication-cas
 title: test issue add 没有 publication 前的远端 identity 复查
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # test issue add 没有 publication 前的远端 identity 复查
 

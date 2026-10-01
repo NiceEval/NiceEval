@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: testing
+title: 测试体系
+createdAt: 2026-07-14T08:00:48Z
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/testing/README.md
+  commit: 6abccb8bd882c3dfa5b28df9b3ca15e00da0c650
+kind: engineering
+---
 # 测试体系
 
 niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
@@ -10,13 +21,13 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 测试体系同时优化五件事：
 
 - **测真实结果**：从安装后的 Library、CLI、HTTP、浏览器或真实 adapter 协议进入，断言用户拿到的结果；
-- **稳定**：小更改只修改真实契约影响范围内的 owner，不连带修改无关测试文件；
+- **稳定**：见[稳定性：变更预算](#稳定性变更预算)；
 - **可靠**：同一提交、输入与运行条件重复执行时不意外失败；
 - **能定位**：单边界 E2E 只跨一条公开边界，Journey 在每个必要接缝检查，失败报告标出阶段和原始收据；
 - **易阅读**：命令、动作、独立预期和历史 bug 引用留在同一个原生测试文件。
 
 稳定与可靠是自动化测试的准入条件，不是测试完成后的优化项。
-Bug 修复统一从公开入口的 E2E 红灯开始；只有无法固定的外部条件、安全限制或 Provider 阻塞才改由 AI 通过真实生产入口验收。
+Bug 修复统一按 [E2E TDD](#bug-修复的-e2e-tdd) 从公开入口的红灯开始。
 
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
@@ -83,7 +94,7 @@ Bug 修复先从安装后的候选包和公开生产入口建立 E2E 红灯，�
 
 ## 稳定性：变更预算
 
-稳定的定义是：小更改只修改真实契约影响范围内的测试，不连带修改无关测试文件。
+稳定的定义是：小更改只修改真实契约影响范围内的 owner，不连带修改无关测试文件。
 
 PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改写的产品测试、fixture、expected 与 harness，
 再从产品契约和可观察行为的变化独立推导受影响 owner，逐文件核对测试 diff，不依赖 PR 描述自报。
@@ -96,9 +107,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
 - 公开契约变化只修改实际结果发生变化的 owner。多个测试文件同改时，每个文件都必须拥有独立公开结果；
   “同一 Feature”“顺便增加测试涉及范围”或实现文件同批变化都不能扩大预算。
 - Snapshot 或 golden 只有在 owner 已声明的稳定表示实际变化时才能更新；批量确认输出变化不能代替逐项核对契约与 expected。
-- Bug 修复必须先由安装后的旧候选经公开入口取得 E2E 红灯，再修改生产代码；先加强本应捕获它的既有 owner，
-  没有合格 owner 时才新增一个最小 Journey 或单边界 E2E。只有无法固定的外部条件、安全限制或 Provider 阻塞才可改做
-  AI 真实验收；测试重置、工期或内部实现标签不构成例外。Unit、源码直调或私有落盘文件不能代替红灯，红灯必须杀死旧实现。
+- Bug 修复按 [E2E TDD](#bug-修复的-e2e-tdd) 先取得能杀死旧实现的红灯；只加强本应捕获它的既有 owner，没有合格 owner 时才新增一个。
 - 测试设施变化只修改集中机械适配层，产品 expected 不随 runner、executor 或内部 receipt 改写。Testkit、根 E2E runner
   与 workflow 不建立独立测试分类，也不用 Vitest 扫描 YAML 或源码结构来证明测试流程。专门的测试退役 PR 只修改声明的迁移集合，
   并逐项给出 retain、replace 或 delete 的证据。
@@ -130,7 +139,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
 
 ## 不自动化
 
-不自动化不是测试层，也不是长期 owner。Bug 修复只在无法固定的外部条件、安全限制或 Provider 阻塞时进入本路径；没有既有 owner 时应新增最小 E2E，不能用测试重置、工期或内部实现标签跳过。非 Bug 变更仍按长期区分收益、稳定性、可靠性与维护成本裁决。
+不自动化不是测试层，也不是长期 owner。Bug 修复只在 [E2E TDD](#bug-修复的-e2e-tdd) 列出的例外条件下进入本路径。非 Bug 变更在不应新增 owner、自动化会违反稳定或可靠要求、依赖无法固定、必须复制生产核心算法，或长期区分收益不足以抵偿维护成本时进入本路径。
 
 PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)保存本次 AI 真实验收及未守护风险。
 不创建空测试、mock 假 pass 或伪 owner。Docker-in-Docker 依赖不可固定的宿主内核、daemon 权限和嵌套网络时属于适用例。
@@ -138,11 +147,11 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 测试正文约束
 
-E2E 关系以 runner 实际枚举的 case 为 subject；身份、sidecar、生命周期、证据与事务完整服从
+E2E 关系以 runner 实际枚举的 case 为 subject；身份、源码注释、生命周期、证据与事务完整服从
 [E2E case 关系契约](e2e/case-relations.md)。旧 `owner:`、`regression:` 与 `issue:` 文件 metadata 仅是两阶段迁移输入，
-不能建立或改变 current relation。手写 sidecar、title token、普通 Markdown mention 或 receipt 都不能绕过具名命令。
+不能建立或改变 current relation。注释中的关系声明、普通 Markdown mention 或手写 receipt 都不能替代原生 inventory 与正式证据校验。
 
-- 每个 E2E case 的 runner-visible title 末尾携带唯一 `necase_...` token；相邻 Git-tracked sidecar 为每个 live case 保存恰好一个 owner。
+- 每个 E2E case 使用自然标题；声明上方用 `@feature` 或 `@use-case` 直接关联一个契约路径。
 - 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
@@ -152,7 +161,7 @@ E2E 关系以 runner 实际枚举的 case 为 subject；身份、sidecar、生�
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
 - 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的
   role / label；不稳定能力先记产品缺口。
-- 历史回归通过 case sidecar 指向 Problem Memory；标题仍描述长期结果。新 case 必须以正式 red receipt 杀死旧实现。
+- 历史回归通过 case 源码关系 指向 Problem Memory；标题仍描述长期结果。新 case 必须以正式 red receipt 杀死旧实现。
 - 复用设施只拥有临时目录、进程、server、parser、artifact 和 cleanup 等机械能力；浏览器生命周期默认交给 Playwright Test。
 
 ## 失败怎样定位
@@ -182,7 +191,7 @@ pnpm e2e test --lane main --repo adapter/codex-cli
 - PR 先由 Nx project graph 选择受影响 E2E；同仓可信 PR 对选中集合使用 main lane 和最小 secret 白名单，Fork 与 Dependabot 使用无密钥 pr lane；
 - main、nightly 与 release 都运行各自声明的完整 Repo 集，不按 diff、成本、Docker 或 provider 类型降频；
 - release 先生成最终 tarball，验收通过后发布同一字节与 digest；
-- workflow 只负责 checkout、运行时、矩阵、cache 和 artifact，选择、注入、executor、重试和失败分类都在根 runner；
+- workflow 负责 checkout、运行时、矩阵、cache、artifact，以及把 `project.json` 声明的 secret 名映射到 env 并做 redaction；选择、按 Repo 最小注入、executor、重试和失败分类都在根 runner；
 - 不使用 `pull_request_target` 或 `workflow_run` 让不可信 PR 代码读取 secret。
 
 Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Tests 数不得超过 200；Testkit 不设独立 Unit 套件。
@@ -197,9 +206,9 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 - [官方 Testkit](testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
 - [测试组合与退役](portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
 - [Unit](unit/README.md) —— 确定性语义例外的存在资格和写法；
-- [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter 与 Lifecycle；
-- [E2E 测试正文](e2e/README.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
-- [E2E case 关系](e2e/case-relations.md) —— case ID、runner inventory、sidecar、生命周期、证据、迁移与恢复；
+- [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter、Lifecycle，以及原生测试文件、命令收据、阶段、失败分类与浏览器写法；
+- [E2E 测试正文](e2e/authoring.md) —— 测试正文的写作约束；
+- [E2E case 关系](e2e/case-relations.md) —— case ID、runner inventory、源码注释、生命周期、证据、迁移与恢复；
 - [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
 - [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [任务图与 E2E 选择](../task-orchestration/README.md) —— Nx project graph、affected、fallback 与管理收据；

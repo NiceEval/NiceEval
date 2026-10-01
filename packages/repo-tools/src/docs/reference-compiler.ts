@@ -874,6 +874,7 @@ function replaceBetween(content: string, begin: string, end: string, newBody: st
 export const SOURCE_FILES = [
   "src/expect/index.ts",
   "src/assertions/match.ts",
+  "src/assertions/context-match.ts",
   "src/judge/image.ts",
   "src/assertions/types.ts",
   "src/runner/types.ts",
@@ -920,6 +921,12 @@ const EXPECT_FACTORY_NAMES = new Set([
   "isFalse",
   "commandSucceeded",
   "defineValueMatch",
+  "defineMaterialMatch",
+  "defineContextMatch",
+  "countWhere",
+  "filterWhere",
+  "mapEach",
+  "mapValue",
   "defineScoreMatch",
   // Tool selectors live in docs/feature/assertions/library/scoped-assertions.md.
   // Keeping their signatures out of this generated list avoids a second author-facing
@@ -974,7 +981,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
       ]);
     case "expect-matchers":
       return renderMemberList(
-        extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts")
+        [...extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts"), ...extractExportedFunctions(sources["src/assertions/context-match.ts"], "src/assertions/context-match.ts")]
           .filter((member) => EXPECT_FACTORY_NAMES.has(member.name)),
       );
     case "value-assertion":
@@ -1023,7 +1030,10 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
             sources[ASSERT_FIRST_REFERENCE.source],
             ASSERT_FIRST_REFERENCE.source,
             ASSERT_FIRST_REFERENCE.testContext,
-          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)),
+          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)).concat(
+            extractInterfaceMembers(sources[ASSERT_FIRST_REFERENCE.source], ASSERT_FIRST_REFERENCE.source, "AgentJudgePresetMethods")
+              .filter(member => member.name === "closeQA"),
+          ),
         ),
       );
     case "turn-handle":
@@ -1033,8 +1043,15 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
             sources[ASSERT_FIRST_REFERENCE.source],
             ASSERT_FIRST_REFERENCE.source,
             ASSERT_FIRST_REFERENCE.turnHandle,
-          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)),
+          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)).concat(
+            extractInterfaceMembers(sources[ASSERT_FIRST_REFERENCE.source], ASSERT_FIRST_REFERENCE.source, "AgentJudgePresetMethods")
+              .filter(member => member.name === "closeQA"),
+          ),
         ),
+      );
+    case "experiment-fields":
+      return renderMemberList(
+        extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "ExperimentAuthorFields"),
       );
     case "config-fields":
       return renderMemberList(
@@ -1152,6 +1169,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
 export const REFERENCE_FILES: { file: string; regions: string[] }[] = [
   { file: "expect.mdx", regions: ["expect-matchers", "value-assertion"] },
   { file: "define-eval.mdx", regions: ["defineeval-options", "test-context", "turn-handle", "judge-image"] },
+  { file: "define-experiment.mdx", regions: ["experiment-fields"] },
   { file: "define-config.mdx", regions: ["config-fields"] },
   { file: "define-agent.mdx", regions: ["agent-def", "sandbox-methods"] },
   { file: "events.mdx", regions: ["stream-events", "usage-fields"] },

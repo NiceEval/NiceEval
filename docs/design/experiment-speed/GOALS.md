@@ -1,6 +1,6 @@
 # 目标与要求
 
-**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md)
 
 ---
 

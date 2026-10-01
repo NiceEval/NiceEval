@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: stream-failure-panels-and-tty-input-guard
+title: 裁决:失败收进 live 面板分节 + 结束按形态聚合 + 键盘接管(2026-08-04)
+createdAt: 2026-08-04T12:15:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/stream-failure-panels-and-tty-input-guard.md
+  commit: d231541a537fe25fdb08a5ca2d5ae677da3524ac
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 裁决:失败收进 live 面板分节 + 结束按形态聚合 + 键盘接管(2026-08-04)
 
 ## 现象

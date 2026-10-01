@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: cli-testing
+title: 复杂 CLI 测试体系对照
+createdAt: 2026-08-06
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/cli-testing/README.md
+  commit: 71929e5689b00138d13cd9c6b396ecf6d72a4d3e
+kind: research
+sources: []
+---
 # 复杂 CLI 测试体系对照
 
 本研究为 NiceEval 测试体系提供外部基准。它不按测试数量评分，只比较证据链、隔离、协议真实性、lane 同构、cleanup 与矩阵所有权。

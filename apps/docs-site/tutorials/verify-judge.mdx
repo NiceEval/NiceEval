@@ -41,18 +41,16 @@ export default defineEval({
   async test(t) {
     const operation = "Complete the data import";
     const turn = await t.send(operation);
-    t.closeQA({
-      input: operation,
-      output: turn.message,
-      context: "After the operation completes, the response must clearly state that the data import succeeded.",
-    })
+    turn.closeQA("Does this turn clearly report the execution status and data import result?")
       .gate(0.8)
       .label("Success statement");
   },
 });
 ```
 
-`t.closeQA` snapshots explicit material when registered. `.gate(0.8)` forms a condition on the same `MeasurementAssertionHandle` and includes it in the pass/fail Verdict. It is equivalent to `t.check(material, closeQA())` and does not create a second Assertion.
+`turn.closeQA(question)` captures the current Turn's complete recorded history when registered, composes a managed scoring Match, and passes it to the same `check`. `.gate(0.8)` sets a quality threshold on the same measurement handle. A complete empty collection scores 0 without a model call; insufficient evidence is `unavailable`.
+To check specific messages or tools, pass an explicit domain Match. For business material from another application, use a custom `MaterialMatch`.
+Use `EventMatch` for message views and `ToolMatch` for tool inputs and outputs. `usedNoTools()` already encapsulates its criterion and takes no arguments, including no Match.
 
 ## Add image material
 

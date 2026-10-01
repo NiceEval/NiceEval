@@ -12,7 +12,7 @@ Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质�
 在模块顶层写出标准。`rubric` 说明评价维度，`anchors` 给连续质量量尺提供可校准的落点：
 
 ```ts
-import { closeQA, defineJudge } from "niceeval";
+import { defineJudge } from "niceeval";
 
 const explainsRisk = defineJudge({
   name: "explains-risk",
@@ -51,29 +51,36 @@ export default defineEval({
 
 需要观察图片内容时，在材料中放入 `judgeImage({ body, mediaType })`。它冻结 PNG 或 JPEG 字节，不创建另一个裁判，也不发起额外请求。图片和文字经同一次 Judge 调用发送，并保存在同一条断言的证据中。接线步骤见 [附加图片材料](/zh/tutorials/verify-judge#附加图片材料)。
 
-`t.judge(material, explainsRisk)` 与 `t.check(material, explainsRisk)` 都登记一条测量 Assertion。它们会共享材料快照、预算、求值、审计、封口和 handle；没有 Match 允许列表。
+`t.judge(material, explainsRisk)` 与 `t.check(material, explainsRisk)` 都登记一条测量 Assertion。它们会共享材料快照、预算、求值、审计、结果保存和 handle；没有 Match 允许列表。
 
 ## 直接使用现成 Judge
 
 root `t`、Session 与 Turn 都提供现成方法，并返回 Assertions 的 `MeasurementAssertionHandle<Kind>`。例如：
 
 ```ts
-const answer = await t.send("根据材料回答问题。");
+import { eventMatch } from "niceeval/expect";
+const answer = await t.send("列出风险与回滚步骤。");
+answer.closeQA("这轮是否说明风险和可执行的回滚步骤？")
+  .gate(0.8).label("回滚说明");
 
-answer.closeQA({
-  input: "根据材料回答问题。",
-  output: answer.message,
-  context: "材料只说明产品在周五发布。",
-}).gate(0.8).label("只依据材料回答");
-
-// 与上一条调用等价的 factory 形式：
-answer.check(
-  { input: "根据材料回答问题。", output: answer.message, context: "材料只说明产品在周五发布。" },
-  closeQA(),
+// 特殊检查可以显式选择全部助手发言。
+answer.closeQA(
+  eventMatch("message", { role: "assistant" }),
+  "全部发言是否清楚说明风险？",
 ).gate(0.8);
 ```
 
-可直接调用的方法是 `factuality(material, options?)`、`faithfulness(material, options?)`、`instructionFollowing(material, options?)`、`pairwisePreference(material, options?)` 和 `closeQA(material, options?)`。它们只 factory 后交给当前接收者的 `check`，不会多登记 Assertion。
+`closeQA(selector, question, options?)` 将全部命中材料保序交给一次 Judge。问题是只依据材料回答的验收问题，不是预设答案。
+Agent 的 `closeQA(question, options?)` 默认使用该 Turn、Session 或 Attempt 的完整正式历史，包含消息与工具事实。它不会只挑最后一句或成功操作。
+显式 EventMatch 选择三类事件视图；工具输入和回执问答使用 ToolMatch，或自定义 MaterialMatch。
+
+这些写法都组合评分 Match 并交给同一个 `check`。`usedNoTools()` 等应用断言则封装固定判据，不接受另一个 Match。
+满足条件为1，条件不成立为0，证据不足为 `unavailable`。完整空集为0且不调用模型；材料缺失或超限不能补零或截断后评分。
+
+Adapter 通过 `create` 提供应用 ctx，`defineMaterialMatch` 的同步 reader 在断言登记时读取当前只读 ctx。
+selector 的 predicate 只判断单项；`and` 约束同一项。普通存在性用 `t.check(selector).gate()`，整组问答用 `t.closeQA(selector, question).gate(0.8)`。
+
+`factuality`、`faithfulness`、`instructionFollowing` 与 `pairwisePreference` 接收显式材料，构造 Match 后交给同一 `check`。
 
 ## 配置裁判 Provider
 
@@ -99,6 +106,7 @@ export default defineConfig({
 | `OpenAIProvider` | OpenAI 或显式兼容网关 | `OPENAI_API_KEY` |
 | `VercelProvider` | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 | `OpenRouterProvider` | OpenRouter | `OPENROUTER_API_KEY` |
+
 | `TypesafeProvider` | TypeSafe System One | `TYPESAFE_API_KEY` |
 
 四个工厂都从 `niceeval/judge` 导出。Vercel 工厂表示 AI Gateway，不表示 Vercel Sandbox 或通用 AI SDK model object。

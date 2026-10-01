@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-components-docs-taxonomy-cleanup
+title: 报告组件文档去专用件残影：Source 归 sources/、SampleNotices 改 Composition、影子 helper 公开化
+createdAt: 2026-07-28T16:54:45+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-components-docs-taxonomy-cleanup.md
+  commit: f80be49b3c2a664d851e44ba211f38dd1c165a2f
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 报告组件文档去专用件残影：Source 归 sources/、SampleNotices 改 Composition、影子 helper 公开化
 
 日期：2026-07-28。起因：用户审「组件定义得对不对、内容好不好、该不该独立成文件」，

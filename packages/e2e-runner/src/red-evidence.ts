@@ -1,21 +1,27 @@
 import { resolve } from "node:path";
+import { governanceSuiteForFile } from "concord-sdlc/governance-config";
+import { projectExecutionSources, resolveRepositorySourceIdentity, sameRepositorySourceIdentity } from "concord-sdlc/repository/source-identity";
 
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result } from "effect";
 
 import { decodeRepoReceipt, type RepoReceipt } from "./contracts.ts";
-import { repoRootDir } from "./discovery.ts";
+import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { runEffect } from "./run.ts";
 import { saveManagedRedEvidence } from "./managed-evidence.ts";
+import { nativeReporterArgs } from "./native-observation.ts";
+import { copyRepoIsolated } from "./run-repo.ts";
 import { hasConfirmedOwnedGroupCleanup, hasSuccessfulOwnedProcessResult, OwnedProcess, runOwnedProcess } from "./owned-process.ts";
 import {
   selectInventoryCase,
   exactCaseNativeArgs,
-  sha256Hex,
   signFormalCaseReceipt,
   readManagedInventoryReceipt,
+  managedInventoryImplementationDigest,
+  sha256Sri,
   validateFormalCaseReceipt,
-  type FormalCaseReceiptV1,
+  type FormalCaseReceiptV2,
+  type EvidenceResource,
 } from "./case-evidence.ts";
 
 export interface RedEvidenceOptions {
@@ -26,13 +32,14 @@ export interface RedEvidenceOptions {
   readonly inventoryId: string;
   readonly artifactRoot?: string;
   readonly nativeArgs: readonly string[];
+  readonly problem: { readonly path: string; readonly epoch: number };
 }
 
 export interface RedEvidenceSummary {
   readonly format: "niceeval.e2e-red-evidence-summary/v1";
   readonly evidence: string;
   readonly receiptPath: string;
-  readonly receipt: FormalCaseReceiptV1;
+  readonly receipt: FormalCaseReceiptV2;
 }
 
 export class RedEvidenceError extends Data.TaggedError("RedEvidenceError")<{ readonly detail: string }> {}
@@ -63,7 +70,7 @@ const decodeReceipt = (text: string, path: string): Effect.Effect<RepoReceipt, R
 const receiptCaptureClean = (capture: RepoReceipt["stages"][number]["capture"]): boolean =>
   capture !== undefined && capture.processGroupOwned && capture.groupCleanup.gone === true;
 
-export const validateExpectedRegression = (receipt: RepoReceipt): { readonly test: NonNullable<RepoReceipt["stages"][number]["capture"]>; readonly invocationId: string; readonly resources: readonly object[] } => {
+export const validateExpectedRegression = (receipt: RepoReceipt): { readonly test: NonNullable<RepoReceipt["stages"][number]["capture"]>; readonly invocationId: string; readonly resources: readonly EvidenceResource[] } => {
   if (receipt.category !== "regression") throw new Error("exact case did not produce the expected public regression");
   const tests = receipt.stages.filter((stage) => stage.stage === "test");
   if (tests.length !== 1) throw new Error("red evidence requires exactly one test invocation and forbids retry");
@@ -90,10 +97,23 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
   if (head !== inventory.checkout) return yield* Effect.fail(new RedEvidenceError({ detail: "inventory checkout does not match current checkout HEAD" }));
   const repoPrefix = "e2e/" + options.repoId + "/";
   const runnerPath = selected.path.startsWith(repoPrefix) ? selected.path.slice(repoPrefix.length) : selected.path;
-  const sourcePath = resolve(selected.path.startsWith("e2e/") ? repoRootDir() : resolve(repoRootDir(), "e2e", options.repoId), selected.path);
-  const [testFile, sidecar] = yield* Effect.all([fileSystem.readFile(sourcePath), fileSystem.readFile(sourcePath + ".cases.json")], { concurrency: 2 }).pipe(Effect.mapError(failure));
-  const nativeArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerPath, selected.caseId)];
-  const summary = yield* runEffect({ repoIds: [options.repoId], candidatePath: options.candidatePath, ...(options.artifactRoot === undefined ? {} : { artifactRoot: options.artifactRoot }), nativeArgs, keepWorkdir: false, repoConcurrency: 1 }).pipe(Effect.mapError(failure));
+  const discovered = yield* discoverAllRepos(e2eRootDir()).pipe(Effect.mapError(failure));
+  const repo = discovered.repos.find((entry) => entry.manifest.id === options.repoId);
+  if (repo === undefined || discovered.errors.length > 0) return yield* Effect.fail(new RedEvidenceError({ detail: `cannot freeze source for ${options.repoId}: ${discovered.errors.join("; ")}` }));
+  const root = repoRootDir();
+  const suite = yield* Effect.try({ try: () => governanceSuiteForFile(root, selected.path), catch: failure });
+  const scratch = yield* Effect.acquireRelease(
+    fileSystem.makeTempDirectory({ prefix: "niceeval-e2e-red-source-" }).pipe(Effect.mapError(failure)),
+    (path) => fileSystem.remove(path, { recursive: true, force: true }).pipe(Effect.catch(() => Effect.void)),
+  );
+  const sourceSnapshot = resolve(scratch, suite.root);
+  yield* copyRepoIsolated(repo.dir, sourceSnapshot).pipe(Effect.mapError(failure));
+  const sourceIdentity = yield* Effect.try({ try: () => resolveRepositorySourceIdentity(root, options.selector), catch: failure });
+  const copiedProjection = yield* Effect.try({ try: () => projectExecutionSources(sourceSnapshot, suite.root), catch: failure });
+  if (copiedProjection.digest !== sourceIdentity.projection.digest) return yield* Effect.fail(new RedEvidenceError({ detail: "red execution copy projection differs from the current source identity" }));
+  const exactArgs = exactCaseNativeArgs(inventory.executor.name, runnerPath, selected.titlePath);
+  const nativeArgs = [...options.nativeArgs, ...nativeReporterArgs(inventory.executor.name), ...exactArgs];
+  const summary = yield* runEffect({ repoIds: [options.repoId], candidatePath: options.candidatePath, ...(options.artifactRoot === undefined ? {} : { artifactRoot: options.artifactRoot }), nativeArgs, keepWorkdir: false, repoConcurrency: 1, caseSelections: { [options.repoId]: { executor: inventory.executor.name, caseId: selected.caseId, titlePath: selected.titlePath, checkout: inventory.checkout, only: true } }, caseCollectionNativeArgs: { [options.repoId]: [...options.nativeArgs, ...exactArgs] }, sourceDirs: { [options.repoId]: sourceSnapshot }, sourceSnapshotDigests: { [options.repoId]: sourceIdentity.projection.digest }, sourceProjectionPrefixes: { [options.repoId]: suite.root }, copyIds: { [options.repoId]: "red-single" } }).pipe(Effect.mapError(failure));
   if (summary.runner.category !== "pass" || summary.results.length !== 1) return yield* Effect.fail(new RedEvidenceError({ detail: "runner infrastructure or scratch cleanup failed" }));
   const repoResult = summary.results[0]!;
   const repoReceiptText = yield* fileSystem.readFileString(repoResult.receiptPath).pipe(Effect.mapError(failure));
@@ -102,12 +122,19 @@ export const runRedEvidence = (options: RedEvidenceOptions): Effect.Effect<RedEv
     return yield* Effect.fail(new RedEvidenceError({ detail: repoReceipt.detail }));
   }
   const regression = yield* Effect.try({ try: () => validateExpectedRegression(repoReceipt), catch: failure });
+  const afterSourceIdentity = yield* Effect.try({ try: () => resolveRepositorySourceIdentity(root, options.selector), catch: failure });
+  if (!sameRepositorySourceIdentity(sourceIdentity, afterSourceIdentity)) return yield* Effect.fail(new RedEvidenceError({ detail: "fixed red source identity drifted during execution" }));
+  const testStage = repoReceipt.stages.find((stage) => stage.stage === "test")!;
+  const cleanupStage = repoReceipt.stages.findLast((stage) => stage.stage === "cleanup");
+  if (testStage.native === undefined) return yield* Effect.fail(new RedEvidenceError({ detail: `native red observation is unavailable: ${testStage.nativeObservationError ?? "missing native reporter result"}` }));
   const receipt = signFormalCaseReceipt({
-    format: "niceeval.e2e-case-receipt/v1", mode: "formal", observation: "red", selector: options.selector, caseId: selected.caseId, inventoryDigest: inventory.digest,
-    candidate: { gitSha: options.candidateGitSha, sha256: repoReceipt.candidate.sha256, sri: repoReceipt.candidate.integrity },
-    source: { checkout: head, testFileSha256: sha256Hex(testFile), sidecarSha256: sha256Hex(sidecar) },
-    runner: { executor: inventory.executor.name, version: inventory.executor.version, argv: repoReceipt.stages.find((stage) => stage.stage === "test")!.command ?? [] },
-    result: { disposition: "regression", stage: "test", exitCode: regression.test.exitCode, signal: regression.test.signal },
+    format: "concord.native-case-receipt/v1", mode: "formal", observation: "red", selector: options.selector, caseId: selected.caseId, inventoryDigest: inventory.digest,
+    problem: options.problem,
+    candidate: { gitSha: options.candidateGitSha, sha256: repoReceipt.candidate.sha256, sri: sha256Sri(repoReceipt.candidate.sha256) },
+    source: sourceIdentity,
+    runner: { executor: inventory.executor.name, version: inventory.executor.version, implementationDigest: managedInventoryImplementationDigest(root), argv: testStage.command ?? [] },
+    result: { disposition: "regression", stage: "test", exitCode: regression.test.exitCode, signal: regression.test.signal, timedOut: regression.test.timedOut, startupFailed: regression.test.error !== undefined },
+    native: { copyId: repoReceipt.copyId ?? "red-single", copyPath: cleanupStage?.path ?? "unavailable", sequence: 1, mode: "single", ...testStage.native, parallelism: 1 },
     cleanup: { ok: true, resources: regression.resources }, invocationId: regression.invocationId,
   });
   validateFormalCaseReceipt(receipt);

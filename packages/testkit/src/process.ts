@@ -252,7 +252,7 @@ export class ProcessReceipt {
     const first = events[0];
     if (!isExpStartEvent(first)) {
       throw new Error(
-        `expReceipt(): stdout does not start with a valid niceeval.exp start event\n\n${this.diagnostic()}`,
+        `expTerminal(): stdout does not start with a valid niceeval.exp start event\n\n${this.diagnostic()}`,
       );
     }
 
@@ -264,7 +264,7 @@ export class ProcessReceipt {
       receiptIndexes[0] !== events.length - 1
     ) {
       throw new Error(
-        `expReceipt(): stdout must contain exactly one receipt event as its final line\n\n${this.diagnostic()}`,
+        `expTerminal(): stdout must contain exactly one receipt event as its final line\n\n${this.diagnostic()}`,
       );
     }
 

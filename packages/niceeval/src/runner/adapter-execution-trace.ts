@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { openSync, readSync, closeSync } from "node:fs";
 
-import { Data, Result, Schema } from "effect";
+import { Data, Result, Schema, SchemaIssue } from "effect";
 
 import type {
   ExecutionTraceInput,
@@ -14,8 +14,11 @@ import {
   type RecordJson,
 } from "../record/definition/canonical.ts";
 import {
+  displayTextHasForbiddenCharacter,
+  ExecutionDisplayImageMediaTypes,
   ExecutionTraceInputSchema,
   ExecutionTraceRecordLimits,
+  type ExecutionDisplayBlockRecord,
   type ExecutionTraceEventRecord,
   type ExecutionTraceHeaderRecord,
   type ExecutionTraceRecord,
@@ -32,7 +35,8 @@ export class AdapterExecutionTraceError extends Data.TaggedError("AdapterExecuti
     | "execution-trace-evidence-missing"
     | "evidence-budget-exceeded"
     | "execution-trace-closed"
-    | "execution-trace-failed";
+    | "execution-trace-failed"
+    | "execution-display-invalid";
   readonly message: string;
 }> {}
 
@@ -105,6 +109,16 @@ const PERSISTED_ITEM_LIMITS = Object.freeze({
 const exactDecode = Schema.decodeUnknownResult(ExecutionTraceInputSchema, {
   onExcessProperty: "error",
 });
+const formatSchemaIssues = SchemaIssue.makeFormatterStandardSchemaV1();
+
+function invalidEnvelope(error: Schema.SchemaError): AdapterExecutionTraceError {
+  const displayIssue = formatSchemaIssues(error.issue).issues.find((issue) => issue.path?.[0] === "events" && issue.path?.[2] === "display");
+  if (displayIssue !== undefined) {
+    const path = (displayIssue.path ?? []).map((part) => typeof part === "number" ? `[${part}]` : `.${String(part)}`).join("").replace(/^\./u, "");
+    return traceError("execution-display-invalid", `${path}: invalid display block shape.`);
+  }
+  return traceError("execution-trace-invalid", "Execution trace envelope is invalid.");
+}
 const utf8 = new TextEncoder();
 
 interface VerifiedEvidenceTarget {
@@ -247,6 +261,108 @@ function parseArtifactJson(artifact: CapturedAdapterAttachment): unknown {
   return parsed;
 }
 
+type InputEvent = Schema.Schema.Type<typeof ExecutionTraceInputSchema>["events"][number];
+type InputDisplayBlock = NonNullable<InputEvent["display"]>[number];
+
+function displayInvalid(eventIndex: number, blockIndex: number | undefined, field: string, reason: string): AdapterExecutionTraceError {
+  const path = blockIndex === undefined ? `events[${eventIndex}].display` : `events[${eventIndex}].display[${blockIndex}]`;
+  return traceError("execution-display-invalid", `${path}.${field}: ${reason}`);
+}
+
+function checkDisplayString(
+  value: string,
+  eventIndex: number,
+  blockIndex: number,
+  field: string,
+  options: { readonly maximumBytes?: number; readonly singleLine?: boolean },
+): void {
+  if (displayTextHasForbiddenCharacter(value)) {
+    throw displayInvalid(eventIndex, blockIndex, field, "contains a control or bidirectional formatting character.");
+  }
+  if (options.singleLine === true && value.includes("\n")) {
+    throw displayInvalid(eventIndex, blockIndex, field, "must not contain a line break.");
+  }
+  if (options.maximumBytes !== undefined && utf8.encode(value).byteLength > options.maximumBytes) {
+    throw displayInvalid(eventIndex, blockIndex, field, `exceeds ${options.maximumBytes} UTF-8 bytes.`);
+  }
+}
+
+/** Validates one event's display blocks against the closed vocabulary limits. */
+function verifyDisplay(event: InputEvent, eventIndex: number): void {
+  const display = event.display;
+  if (display === undefined) return;
+  const limits = ExecutionTraceRecordLimits;
+  if (display.length === 0) throw displayInvalid(eventIndex, undefined, "length", "must not be empty; omit display instead.");
+  if (display.length > limits.maximumDisplayBlocksPerEvent) {
+    throw displayInvalid(eventIndex, undefined, "length", `exceeds ${limits.maximumDisplayBlocksPerEvent} blocks.`);
+  }
+  for (const [blockIndex, block] of display.entries()) {
+    switch (block.kind) {
+      case "text":
+        checkDisplayString(block.text, eventIndex, blockIndex, "text", {});
+        break;
+      case "message":
+        checkDisplayString(block.text, eventIndex, blockIndex, "text", {});
+        if (block.speaker !== undefined) {
+          checkDisplayString(block.speaker, eventIndex, blockIndex, "speaker", { maximumBytes: limits.maximumDisplayLabelBytes, singleLine: true });
+        }
+        break;
+      case "fields":
+        if (block.fields.length > limits.maximumDisplayFields) {
+          throw displayInvalid(eventIndex, blockIndex, "fields", `exceeds ${limits.maximumDisplayFields} entries.`);
+        }
+        for (const [fieldIndex, field] of block.fields.entries()) {
+          checkDisplayString(field.label, eventIndex, blockIndex, `fields[${fieldIndex}].label`, { maximumBytes: limits.maximumDisplayLabelBytes, singleLine: true });
+          if (typeof field.value === "string") checkDisplayString(field.value, eventIndex, blockIndex, `fields[${fieldIndex}].value`, {});
+        }
+        break;
+      case "code":
+        checkDisplayString(block.text, eventIndex, blockIndex, "text", {});
+        if (block.language !== undefined) {
+          checkDisplayString(block.language, eventIndex, blockIndex, "language", { maximumBytes: limits.maximumDisplayLabelBytes, singleLine: true });
+        }
+        break;
+      case "image":
+        checkDisplayString(block.alt, eventIndex, blockIndex, "alt", { maximumBytes: limits.maximumDisplayAltBytes, singleLine: true });
+        break;
+    }
+  }
+  if (utf8.encode(canonicalRecordJsonText(display as unknown as RecordJson)).byteLength > limits.maximumDisplayBytesPerEvent) {
+    throw displayInvalid(eventIndex, undefined, "length", `exceeds ${limits.maximumDisplayBytesPerEvent} UTF-8 bytes.`);
+  }
+}
+
+/** Fixes each image block to the accepted attachment descriptor. */
+function durableDisplay(
+  display: readonly InputDisplayBlock[] | undefined,
+  eventIndex: number,
+  byArtifactId: ReadonlyMap<string, CapturedAdapterAttachment>,
+): readonly [ExecutionDisplayBlockRecord, ...ExecutionDisplayBlockRecord[]] | undefined {
+  if (display === undefined) return undefined;
+  const blocks = display.map((block, blockIndex): ExecutionDisplayBlockRecord => {
+    if (block.kind !== "image") return Object.freeze(structuredClone(block)) as ExecutionDisplayBlockRecord;
+    const artifact = byArtifactId.get(block.artifactId);
+    if (artifact === undefined) {
+      throw displayInvalid(eventIndex, blockIndex, "artifactId", `${block.artifactId} is not attached to this Attempt.`);
+    }
+    if (!ExecutionDisplayImageMediaTypes.has(artifact.mediaType)) {
+      throw displayInvalid(eventIndex, blockIndex, "artifactId", `${block.artifactId} is ${artifact.mediaType}, not a supported image type.`);
+    }
+    return Object.freeze({
+      kind: "image",
+      artifactId: block.artifactId,
+      alt: block.alt,
+      mediaType: artifact.mediaType as Extract<ExecutionDisplayBlockRecord, { kind: "image" }>["mediaType"],
+      byteLength: artifact.byteLength,
+      sha256: artifact.sha256,
+    });
+  });
+  if (utf8.encode(canonicalRecordJsonText(blocks as unknown as RecordJson)).byteLength > ExecutionTraceRecordLimits.maximumDisplayBytesPerEvent) {
+    throw displayInvalid(eventIndex, undefined, "length", `exceeds ${ExecutionTraceRecordLimits.maximumDisplayBytesPerEvent} UTF-8 bytes.`);
+  }
+  return Object.freeze(blocks) as unknown as readonly [ExecutionDisplayBlockRecord, ...ExecutionDisplayBlockRecord[]];
+}
+
 function verifySemantics(
   input: Schema.Schema.Type<typeof ExecutionTraceInputSchema>,
 ): void {
@@ -262,7 +378,8 @@ function verifySemantics(
   const eventKeys = new Set<string>();
   const causeEdges = new Map<string, string[]>();
   const clockUnits = new Map<string, string>();
-  for (const event of input.events) {
+  for (const [eventIndex, event] of input.events.entries()) {
+    verifyDisplay(event, eventIndex);
     if (eventKeys.has(event.key)) throw traceError("execution-trace-invalid", "Execution trace event keys must be unique.");
     eventKeys.add(event.key);
     if (utf8.encode(event.summary).byteLength > limits.maximumSummaryBytes) {
@@ -347,6 +464,15 @@ export function createAdapterExecutionTraceCollector(
       if (closed) throw traceError("execution-trace-closed", "Execution trace collection is closed.");
       const canonical = canonicalizeRecordJson(input, INPUT_LIMITS);
       if (Result.isFailure(canonical)) {
+        if (canonical.failure.path[0] === "events" && canonical.failure.path[2] === "display") {
+          const path = canonical.failure.path.map((part) => /^\d+$/u.test(part) ? `[${part}]` : `.${part}`).join("").replace(/^\./u, "");
+          throw traceError("execution-display-invalid", `${path}: display must contain finite plain JSON and valid UTF-8 text within its limits.`);
+        }
+        const shape = exactDecode(input);
+        if (Result.isFailure(shape)) {
+          const error = invalidEnvelope(shape.failure);
+          if (error.code === "execution-display-invalid") throw error;
+        }
         throw traceError(
           canonical.failure.code === "record-json-limit-exceeded" ? "execution-trace-limit" : "execution-trace-invalid",
           "Execution trace must be finite plain JSON within the 64 MiB and depth limits.",
@@ -356,7 +482,7 @@ export function createAdapterExecutionTraceCollector(
       const snapshotBytes = utf8.encode(canonicalText).byteLength;
       const canonicalInputDigest = digest(canonicalText);
       const decoded = exactDecode(canonical.success);
-      if (Result.isFailure(decoded)) throw traceError("execution-trace-invalid", "Execution trace envelope is invalid.");
+      if (Result.isFailure(decoded)) throw invalidEnvelope(decoded.failure);
       const snapshot = decoded.success;
       verifySemantics(snapshot);
 
@@ -474,6 +600,10 @@ export function createAdapterExecutionTraceCollector(
           ))),
           evidence: Object.freeze(durableEvidence),
           scopeMemberships: Object.freeze((event.scopeMemberships ?? []).map((membership) => Object.freeze({ ...membership }))),
+          ...(() => {
+            const display = durableDisplay(event.display, ordinal, byArtifactId);
+            return display === undefined ? {} : { display };
+          })(),
         });
         records.push(durable);
         receiptEvents.push(Object.freeze({
@@ -611,6 +741,14 @@ export function validateExecutionTracePublication(
           const targets = causeEdges.get(record.key) ?? [];
           targets.push(link.targetKey);
           causeEdges.set(record.key, targets);
+        }
+      }
+      for (const block of record.display ?? []) {
+        if (block.kind !== "image") continue;
+        const artifact = byArtifactId.get(block.artifactId);
+        if (artifact === undefined || artifact.sha256 !== block.sha256 ||
+          artifact.byteLength !== block.byteLength || artifact.mediaType !== block.mediaType) {
+          throw traceError("execution-trace-evidence-missing", "Execution display image artifact closure is invalid.");
         }
       }
       for (const evidence of record.evidence) {

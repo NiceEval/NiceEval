@@ -1,0 +1,39 @@
+---
+format: concord.document/v1
+id: cache-modify-eval-source
+title: 修改评测源码后只重跑受影响项
+createdAt: 2026-07-27T18:06:13+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# 修改评测源码后只重跑受影响项
+
+修改某个 Eval 的任务或断言，只会改变该 Eval 的源码闭包指纹；同一 Experiment 中其它 Eval 继续沿用。
+修改项目根内被多个 Eval 导入的共享文件，则所有依赖它的 Eval 重跑。
+
+修改后先运行 `niceeval show`：当前目标仍包含受影响的 Eval，但对应位置显示 `gap: identity-mismatch`，
+并保留旧 Attempt 的查看入口。旧得分不进入当前成绩。再运行同一范围的 `niceeval exp --dry`，
+应只看到这些缺口执行，其它位置沿用。
+
+例如三条 Eval 已有结果，改了一条并新增第四条后，当前结果显示 `Covered 2/4`、`Gaps 2`。
+一个缺口是输入变化，一个是没有结果；不能把历史 `3/3` 显示成当前完成度。
+`show --run <旧 Run ID>` 仍显示当时的三条结果，不受当前源码影响。
+
+`loadYaml` / `loadJson` / `loadText` 读入的文件也属于源码闭包。
+改一行测试数据或判据文件时，依赖它的 Eval 重新计算指纹，不需要手动使用 `--rerun`。
+需要把单个文件内容读进定义值时用 `loadText`；用 `fs` 自行读入的文件进不了指纹。
+
+通过普通本地上传实际读取的测试树会进入 transfer manifest（用法见[本地测试文件](../../eval/use-case/criteria-files.md)），对树的每类改动按下表查后果：
+
+| 我做了什么 | 后果 |
+|---|---|
+| 改了树里某个文件的内容 | 引用这棵树的 Eval 重跑，其它照常沿用 |
+| 往树里加文件、删文件 | 同上，匹配集与内容同等作废 |
+| 对整棵 fixtures 树格式化、统一行尾 | 被盖到的每条 Eval 都重跑，一次批量重烧 |
+| 本地跑测试冒出 `__pycache__` 等生成物 | 同样作废——在 file source 的 `ignore` 中排除生成物 |
+| 重新 `git clone`、改权限位 | 一条不动，哈希只认内容与相对路径 |
+
+改了判据没有「强制沿用旧结果」的出口，这是有意的：判据变了，旧判定就不能再采信，宁可多烧一次。
+`niceeval accept @<旧 locator> --dry` 必须解释判据变化并拒绝采用；正式采用同样失败且不写入 Run。
+判据没变但要重跑的场景走 [`--rerun`](重新运行/)。

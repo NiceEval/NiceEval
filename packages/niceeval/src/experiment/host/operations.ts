@@ -1,3 +1,4 @@
+import type { ExperimentHostRequirements } from "./requirements.ts";
 import { resolve } from "node:path";
 
 import { Clock, Data, Effect, Result } from "effect";
@@ -76,7 +77,6 @@ import type {
   ExperimentHostRenamePlan,
   ExperimentHostRenameRequest,
   ExperimentHostRenameResult,
-  ExperimentHostRequirements,
   ExperimentHostRunOverrides,
   ExperimentHostSelectionInput,
   ExperimentHostSelectionProblem,
@@ -298,6 +298,7 @@ function summaryOfExperiment(
     id: experiment.id,
     ...(experiment.description === undefined ? {} : { description: experiment.description }),
     adapter: experiment.adapter.name,
+    ...(experiment.models === undefined ? {} : { models: experiment.models }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     attempts: experiment.attempts ?? 1,
     evalIds: freezeArray(evalIds),
@@ -335,6 +336,7 @@ function agentRunFromExperiment(
   return Object.freeze({
     adapter: experiment.adapter,
     ...(experiment.agent === undefined ? {} : { agent: experiment.agent }),
+    ...(experiment.models === undefined ? {} : { models: experiment.models }),
     model: experiment.model,
     reasoningEffort: experiment.reasoningEffort,
     flags: experiment.flags ?? {},
@@ -373,16 +375,18 @@ function sandboxSetupCacheOverrideOf(
   throw new TypeError("sandboxSetupCache override must be \"use\" or \"bypass\".");
 }
 
-function prepareRuns(input: ExperimentHostSelectionInput & {
+export function prepareRuns(input: ExperimentHostSelectionInput & {
   readonly config: ExperimentHostInvocationPlanRequest["config"];
   readonly overrides?: ExperimentHostRunOverrides;
-}): Effect.Effect<PreparedRuns, unknown> {
+}, options: { readonly allowEmptySelection?: boolean } = {}): Effect.Effect<PreparedRuns, unknown> {
   return closeSelection(input).pipe(Effect.flatMap((selected): Effect.Effect<
     PreparedRuns,
     ExperimentEvaluationKindAdmissionError
   > => {
     const problem = selectionProblem(input, selected);
-    if (problem !== undefined) return Effect.succeed({ status: "problem", selected, problem } as const);
+    if (problem !== undefined && !(options.allowEmptySelection === true && problem.status === "empty-selection")) {
+      return Effect.succeed({ status: "problem", selected, problem } as const);
+    }
     const evalsById = new Map(selected.evals.map((definition) => [definition.id, definition]));
     const issues = selected.selections.flatMap(({ experiment, selectedEvalIds }) => {
       const evaluationKinds = splitByEvaluationKind(selectedEvalIds.flatMap((id) => {

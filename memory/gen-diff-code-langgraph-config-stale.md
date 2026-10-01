@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: gen-diff-code-langgraph-config-stale
+title: "`scripts/gen-diff-code.ts` 里 langgraph 的 before/after 配置已经和 origin 对不上语言"
+createdAt: 2026-07-03T02:55:52Z
+createdAtSource:
+  kind: first-recorded
+  path: memory/gen-diff-code-langgraph-config-stale.md
+  commit: 9b0299677e2b66c99d63ed8269932a6196d97cc7
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # `scripts/gen-diff-code.ts` 里 langgraph 的 before/after 配置已经和 origin 对不上语言
 
 **现象**：`scripts/gen-diff-code.ts` 的 `DIFF_CONFIGS` 有一条 `source: examples/zh/origin/langgraph`

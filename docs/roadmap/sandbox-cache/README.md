@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: sandbox-cache
+title: Sandbox Cache
+createdAt: 2026-08-22T22:07:32+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/sandbox-cache/README.md
+  commit: 9e13f6b61ae2e363e2bf1a04d52aa80faec4e46d
+kind: roadmap
+state: planned
+---
 # Sandbox Cache
 
 本方向定义 Sandbox 起点怎样按内容构建，以及由 NiceEval 创建的 provider cache 怎样被盘点、归因和安全回收。

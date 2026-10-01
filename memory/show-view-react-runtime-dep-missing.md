@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: show-view-react-runtime-dep-missing
+title: show / view 全新安装必崩:react 是可选 peerDep(已修)
+createdAt: 2026-07-24T12:53:11+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-view-react-runtime-dep-missing.md
+  commit: 67bacc46e6afb2b23e4b66496dc51d137ed41ee6
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "# show / view 全新安装必崩:react 是可选 peerDep(已修)"
+    proof: []
+    source:
+      path: memory/show-view-react-runtime-dep-missing.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:41f8fd98e565a7cd4f8965b62a560ab3eb00f4525d1059932498fb2ae3d6969e
+---
 # show / view 全新安装必崩:react 是可选 peerDep(已修)
 
 **现象**：全新安装 niceeval 的项目里跑 `niceeval show` / `view` 直接 `ERR_MODULE_NOT_FOUND: react`——`dist/report/built-in/standard.js` 顶部 `import … from "react/jsx-runtime"`,但装不到 react。真机复现于两个沙箱里 agent 自己的 `show`、以及 harness 的 evalAdapter 取证。本地仓库能跑纯属环境里恰好有 react(dev 依赖)。pnpm 消费方尤其必崩。

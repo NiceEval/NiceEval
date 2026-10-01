@@ -2,8 +2,9 @@
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
+// @feature docs/feature/plugins/README.md
 
-test("Experiment Plugin 生命周期只包围一次整场实验 [necase_FMQ3HBFK0TDFA5CB]", async () => {
+test("Experiment Plugin 生命周期只包围一次整场实验", async () => {
   await e2e.case("experiment-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "experiment-plugin", "--rerun", "all", "--json"], {
       timeoutMs: 180_000,

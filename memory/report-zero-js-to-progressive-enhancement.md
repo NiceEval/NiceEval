@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-zero-js-to-progressive-enhancement
+title: 设计裁决:报告 web 面从「零客户端 JS」翻案为渐进增强
+createdAt: 2026-07-11T17:08:41+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-zero-js-to-progressive-enhancement.md
+  commit: d0b67181014038966507cba626afea59a8de778f
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:报告 web 面从「零客户端 JS」翻案为渐进增强
 
 - **裁决**(2026-07-11):官方报告组件的 web 面保持静态基线——`renderToStaticMarkup` 产出、不 hydrate、无 JS 时内容完整可读——但随包发布一份渐进增强 runtime(`src/report/react/enhance.js`,发布为 `niceeval/report/react/enhance.js`):纯 vanilla、零依赖、幂等,只作用于 `.nre` DOM 与 `data-nre-*` 属性,提供表头点击排序(`th` 带 `data-nre-sort`、`td` 带 `data-sort-value`)、`MetricTable` 行过滤(`filter` prop 渲染 `<input data-nre-filter>`)、scatter / line 点的 hover tooltip(无 JS 退化为 SVG `<title>`)。宿主(view 的 server 与 `--out` 导出)把 runtime 与 styles.css 一并内联;text 面(`show`)不受影响。

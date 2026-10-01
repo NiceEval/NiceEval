@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: docs-work
+title: 并行文档工作
+createdAt: 2026-08-23T12:48:57+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/docs-work/README.md
+  commit: 7871a6b3939fef8c750ce18e733603a40afa22c7
+kind: engineering
+---
 # 并行文档工作
 
 Docs Work 把已经定稿的文档目标切成互斥写集，并为每份交付复用正式 lint。它不启动、选择、暂停或关闭 Agent；Herdr 是唯一调度器，操作者仍负责把 work item 交给独立 Agent 并完成验收。
@@ -88,7 +99,12 @@ pnpm run repo docs work finalize <run-id> [--json]
 
 命令面不提供 `claim`、`start-agent`、`wait` 或 `finish`。这些动作会与 Herdr 的真实 agent / pane 状态形成第二套调度状态。work item 的“负责人”和执行状态由 Herdr 与父 Agent 管理；Docs Work 只保存可重新执行的输入和检查收据。
 
-`prepare` 检查所有读写集、依赖图和 shared finalizer 边界，再一次性写完整 run。`show` 只读取本地状态。`check` 只缩小输入路径，规则实现仍来自 `lint/docs/**` 或 `lint/docs-site/**`，不得复制 lint。
+`prepare` 检查所有读写集、依赖图和 shared finalizer 边界，再一次性写完整 run。
+
+共享 checkout 里常有其它 Agent 的未提交改动，因此 base 是否干净只按本次 run 声明的路径判断。
+任一 item 的 `read`、`write` 或 `finalizerOnly` 命中未提交、未跟踪或已暂存的路径时，base 是脏的。
+声明范围之外的改动不阻止 `prepare`，也不进入任何 item 的 digest。`run.json` 只保存 base commit 与声明范围，
+不复制范围外的路径清单。`show` 只读取本地状态。`check` 只缩小输入路径，规则实现仍来自 `lint/docs/**` 或 `lint/docs-site/**`，不得复制 lint。
 
 worker 只能运行 `check --report` 并产生 `reported` receipt。父 Agent 完成 Herdr 的 wait、get/read 和独立 diff 验收后，运行 `check --verify <receipt>`；工具重新执行同一检查并产生 `verified` receipt。pane 的 idle / done、完成通知与 worker 自己的绿色检查都不能产生 `verified`。
 
@@ -122,6 +138,7 @@ Agent 中断、pane 退出或 Herdr 报告 idle 都不改变 Docs Work 状态。
 
 ## 失败语义
 
-`prepare` 对路径冲突、依赖环、共享文件被普通 item 拥有、未知 lint owner 和脏 base 聚合报错，零写入。`check` 对越界改动、`previous-result` base、缺失依赖或 lint 失败返回具名失败，不修改 docs。
+`prepare` 对路径冲突、依赖环、共享文件被普通 item 拥有、未知 lint owner 和声明范围内的脏 base 聚合报错，零写入；
+脏 base 错误逐条列出命中的路径与所属 item。`check` 对越界改动、`previous-result` base、缺失依赖或 lint 失败返回具名失败，不修改 docs。
 
 `finalize` 发现 receipt 缺失或失效时只报告阻塞 item；发现最终完整 lint 失败时保留所有 scoped receipt，但不宣称 run 完成。操作者修正对应 owner 后重跑 check 与 finalize，不新建一份平行计划。

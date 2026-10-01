@@ -1,10 +1,8 @@
 # 测试跟改率 —— 用 git 历史定位不稳定测试
 
-稳定的定义是：小更改只修改真实契约影响范围内的 owner，不连带修改无关测试文件。
-[稳定性：变更预算](README.md#稳定性变更预算)定义可执行的逐类预算与拒绝条件。实现重构导致产品测试、fixture 或 expected
-批量修改，属于测试缺陷。
+稳定的定义与逐类预算见[稳定性：变更预算](README.md#稳定性变更预算)。
 
-本篇使用**测试跟改率**回看历史：过去修改 `src/` 时，哪些测试文件总被连带修改。跟改率高通常有两个原因：测试锁定了实现细节，或者测试站错了层。前者要把断言改到契约层；后者按 [Owner 选择顺序](README.md#owner-选择顺序)迁移。
+本篇使用**测试跟改率**回看历史：过去修改 `packages/*/src` 时，哪些测试文件总被连带修改。跟改率高通常有两个原因：测试锁定了实现细节，或者测试站错了层。前者要把断言改到契约层；后者按 [Owner 选择顺序](README.md#owner-选择顺序)迁移。
 
 ## 本次变更先裁决
 
@@ -17,7 +15,7 @@ PR Tests section 提供契约、owner 与验证证据；审查直接从 base dif
 
 对每个测试文件统计两个数：
 
-- **跟改次数**：同一个 commit 里既改了 `src/` 非测试文件、又改了该测试文件的 commit 数。这是"改功能连带改测试"的直接证据。
+- **跟改次数**：同一个 commit 里既改了 `packages/*/src` 非测试文件、又改了该测试文件的 commit 数。这是"改功能连带改测试"的直接证据。
 - **总变更次数**：该测试文件被任何 commit 触碰的次数。
 
 跟改次数是排查的主排序键。跟改次数 / 总变更次数接近 1，说明该测试几乎从不独立演进。
@@ -32,13 +30,13 @@ PR Tests section 提供契约、owner 与验证证据；审查直接从 base dif
 在仓库根执行（时间区间默认取最近六个月，按需调整）：
 
 ```sh
-git log --since="6 months ago" --format='@%H' --numstat -- src test \
+git log --since="6 months ago" --format='@%H' --numstat -- packages e2e test \
 | awk '
   /^@/ { if (srcTouched) for (f in tests) count[f]++; delete tests; srcTouched = 0; next }
   NF >= 3 {
     f = $3
-    if (f ~ /\.test\.(ts|tsx)$/) { tests[f] = 1; total[f]++ }
-    else if (f ~ /^src\//) srcTouched = 1
+    if (f ~ /\.(test|spec)\.tsx?$/) { tests[f] = 1; total[f]++ }
+    else if (f ~ /^packages\/[^/]+\/src\//) srcTouched = 1
   }
   END {
     if (srcTouched) for (f in tests) count[f]++
@@ -48,6 +46,7 @@ git log --since="6 months ago" --format='@%H' --numstat -- src test \
 ```
 
 输出三列：跟改次数、总变更次数、测试文件。已知局限：rename 在 `--numstat` 里以 `{old => new}` 形态出现、会被当成新路径重新计数；批量重构类 commit（如目录搬移）会给全体测试各记一次——排查时看清单头部的相对差距，不看绝对值。
+2026-08-22 的 `c73b2003d` 把可发布包从根 `src/` 迁入 `packages/niceeval/src`；迁移前的历史只落在已不存在的根 `src/` 路径上，本命令不计入。观察区间需要跨越这次迁移时，以 2026-08-22 作为新区间的起点。
 
 ## 排查动作
 

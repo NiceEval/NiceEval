@@ -12,12 +12,9 @@
 - 启动失败、SIGINT 与 SIGTERM 都回收 reader、server、session、watcher 与子进程。终态由退出码、stderr、端口释放和旧 session 失效共同验收。
 - View 不接受自定义 Page、component、theme、route、renderer 或其它历史 Report 作者面。
 
-## E2E owner anchors
+## E2E 测试 owner
 
 ### operational-browser-journey
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [审阅一次 Run 怎样采用结果](../../../feature/insight/use-case/审阅一次Run怎样采用结果.md)
 
 `view-snapshot.browser.spec.ts` 的文件名保留历史测试域标识。它是 operational browser Journey owner，验证固定第一方页面从 overview、Run 到 Attempt detail 的连续审阅路径，以及 Attempt 详情中可操作的调试证据。
 
@@ -33,9 +30,6 @@ Attempt 读面显示 scored matcher 的 sealed result、weight / earned、measur
 
 ### operational-revision-refresh
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访问页面.md)
-
 `view-operational-refresh.browser.spec.ts` 验证 operational View 只在用户确认后原子切换 latest-slot membership。它打开当前 project 的 fixed overview，立即显示 first Run member 和 Issues / Evidence 语义区。测试然后通过另一次公开 `exp` 为同一 logical slot 发布 second Run member。refresh 前 first 可见、second 不可见；用户确认后原子切换，first 被 latest-slot selection 替换、second 可见，页面不混合半份 revision。
 
 该 Journey 在真实 Host 接受提交后延迟交付原始响应，触发浏览器 Back，验证选择与页面地址暂时保留；响应交付后自动进入历史目标并显示新 Attempt，Forward 仍能返回。另在准备数据时延迟真实响应，验证 selector 可继续导航，废弃候选后 last-good 仍可读，随后手动刷新可取得新结果。拦截器只控制 HTTP 时序，释放时等待处理完成，不复制产品响应或读取浏览器内部状态。
@@ -44,15 +38,9 @@ Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访
 
 ### loopback-authorization
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访问页面.md)
-
 `view-authorization.browser.spec.ts` 是 loopback authorization 单边界 owner。它沿 ready URL 的 fragment credential 完成一次交换，核对 HttpOnly / SameSite=Strict / host-only session，并从 Chromium 已成功的数据 request 取得精确 URL、method 与 body。同一 request 在 exact Host / Origin / session 下成功；缺 session、错 Origin 或错 Host 均拒绝。成功与拒绝响应都是 `no-store`，同一 fragment credential 不能第二次交换。
 
 ### view-lifecycle-cleanup
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [制作可访问页面](../../../feature/insight/use-case/制作可访问页面.md)
 
 `view-lifecycle.test.ts` 是 lifecycle cleanup 单边界 owner。它用公开端口冲突制造启动失败，确认没有输出可访问 URL，诊断只在 stderr；又分别对 ready 进程发送 SIGINT 和 SIGTERM。进程终结后，旧 session URL 不可达、端口可重绑，后续 `run list` 读取正常，而 Testkit 负责核对该子进程组无残留。
 

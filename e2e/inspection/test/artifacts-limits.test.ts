@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
-test.concurrent("附件拒绝非法输入和超限时仍保存接管的快照并形成 errored Attempt [necase_4G8QVYJM9TW1HDSX]", async () => {
+// @feature docs/feature/adapters/README.md
+test.concurrent("附件拒绝非法输入和超限时仍保存接管的快照并形成 errored Attempt", async () => {
   await inspectionE2E.case("artifacts-limits", { artifacts: inspectionCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const experimentPath = join(projectRoot, "experiments", "artifacts-limits.ts");
     const source = await readFile(experimentPath, "utf8");

@@ -1,7 +1,14 @@
+/** Producer declaration after all obtainable final request snapshots have been recorded. */
+export type AdapterUsageSeal =
+  | { readonly state: "complete" }
+  | { readonly state: "partial"; readonly reason: string };
+
 /** Final observation of one physical external request, scoped to an Adapter Attempt. */
 export interface AdapterUsageInput {
   readonly callId: string;
   readonly retryOf?: string;
+  /** Frozen application model purpose; omission records an unknown purpose. */
+  readonly modelSlot?: string | null;
   /** Upstream-proven serving provider. Transport and protocol identities belong in route. */
   readonly provider: string | null;
   readonly model: string | null;

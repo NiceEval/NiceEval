@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: exp-output-two-forms-ruling
+title: 裁决:exp 输出收敛为「人读文本 + `--json`」,`--output` 三档 profile 删除(2026-07-23)
+createdAt: 2026-07-23T16:46:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/exp-output-two-forms-ruling.md
+  commit: 2c473122456b4472c361ddfa2890918c3c88f1b1
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:exp 输出收敛为「人读文本 + `--json`」,`--output` 三档 profile 删除(2026-07-23)
 
 **裁决**:`niceeval exp` 与 `show` 对齐为全 CLI 统一原则——**每条命令一个人读 text 面,`--json` 是机器面**。`--output human|agent|ci` 整个删除:不加 flag 是人读文本(TTY live 面板,非 TTY 自动降级只追加流,CI 日志页用它),`--json` 是 stdout NDJSON 事件流(agent 与 CI adapter 共用)。附带:exp 的 `--json <path>` 聚合文件出口删除(与 boolean 形态冲突;归 `show --json` 重定向或事件流重定向,`Json(path)` 留库 reporter),`NICEEVAL key=value` 与 `niceeval:` 两套自造方言删除(词法就是 JSON)。落 docs:`docs/feature/experiments/cli.md`;实现 TODO 在 `plan/exp-json-machine-form.md`。

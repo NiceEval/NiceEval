@@ -14,7 +14,9 @@ import {
   inspectRunSummary,
 } from "./inspection.ts";
 
-test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用 [necase_8QDV951NVHXK0G1W]", async () => {
+// @use-case docs/feature/eval/use-case/eval-compare-implementations.md
+
+test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用", async () => {
   await evalE2E.case(
     "custom-application",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -56,12 +58,14 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
             name: `custom-${implementation}`,
             contract: "e2e/native-workflow/v1",
             behaviorRevision: "1",
+            cleanupTimeoutMs: 30_000,
           },
         });
         expect(execution?.adapter).toEqual({
           name: `custom-${implementation}`,
           contract: "e2e/native-workflow/v1",
           behaviorRevision: "1",
+            cleanupTimeoutMs: 30_000,
         });
         expect(execution?.adapter).not.toHaveProperty("kind");
         expect(execution).not.toHaveProperty("application");
@@ -91,6 +95,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
               name: `custom-${implementation}`,
               contract: "e2e/native-workflow/v1",
               behaviorRevision: "1",
+            cleanupTimeoutMs: 30_000,
             });
             expect(entry.adapter).not.toHaveProperty("kind");
           }
@@ -167,11 +172,14 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
           const usageReceipt = await niceeval.run(["query", "run", "--request", usageRequest]);
           expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
           const usage = usageReceipt.attemptUsage().usage;
+          expect(usage.source).toBe("adapter");
+          expect(usage.calls).toEqual([]);
           expect(usage.totals).toEqual({
             inputTokens: { state: "unavailable", value: null, observationCount: 0 },
+            inputTotalTokens: { state: "unavailable", value: null, observationCount: 0 },
             outputTokens: { state: "unavailable", value: null, observationCount: 0 },
-            requests: { state: "unavailable", value: null, observationCount: 0 },
-            providerCosts: { state: "unavailable", values: [], observationCount: 0 },
+            requests: { state: "partial", value: 0, observationCount: 0 },
+            costs: { state: "unavailable", source: null, values: [], totalCalls: 0 },
           });
         }
       }

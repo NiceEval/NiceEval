@@ -13,8 +13,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回 [necase_SDYJ7FCR2EZHN8XX]", async () => {
+test("createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回", async () => {
   await sdkConverterE2E.case("langgraph-hitl", sdkConverterRecordArtifacts, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "langgraph-hitl", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);

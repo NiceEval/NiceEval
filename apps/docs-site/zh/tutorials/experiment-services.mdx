@@ -1,0 +1,243 @@
+---
+title: "启动实验共享服务"
+sidebarTitle: "实验共享服务"
+description: "用 Experiment 的 setup / teardown 启停整个实验共用的隧道、mock server 或租约，把运行时地址交给 Agent 和 Sandbox，又不让它作废已有结果。"
+---
+
+你在评估一个接入了记忆服务的 Coding Agent。记忆服务跑在内网，每次评估前要先开一条隧道，拿到一个临时地址，再把地址告诉 Agent。隧道开一次就够，几十个 Attempt 共用；全部跑完后要记得关掉。
+
+这类“一个实验一份、所有 Attempt 共用”的资源，写进 Experiment 的 `setup` 和 `teardown`。
+
+## 写一对 setup / teardown
+
+```ts
+// experiments/memory/codex.ts
+import { defineExperiment } from "niceeval";
+import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
+
+// setup 拿到的坐标放在模块变量里，teardown 和 Agent 都能读到
+let tunnel: { url: string; apiKey: string; stop(): Promise<void> } | undefined;
+
+export default defineExperiment({
+  agent: nowledgeAgent(() => ({ url: tunnel!.url, apiKey: tunnel!.apiKey })),
+  evals: ["memory/"],
+  async setup(ctx) {
+    ctx.progress({ message: "starting nowledge tunnel" });
+    tunnel = await nowledgeTunnel({ signal: ctx.signal });
+  },
+  async teardown(ctx) {
+    ctx.progress({ message: "stopping nowledge tunnel" });
+    await tunnel?.stop();
+  },
+});
+```
+
+两个回调在你自己的机器上执行，各自最多跑一次：
+
+- `setup` 在这个实验第一个要真正执行的 Attempt 之前运行。
+- `teardown` 在全部 Attempt 结束后运行，运行被中断时也会执行。
+- 只要 `setup` 开始过，`teardown` 就一定会执行，`setup` 抛错也一样。所以 `teardown` 里要防御变量还没赋值的情况，上面用的是 `tunnel?.stop()`。
+- 上次的结果全部能沿用、这次一个 Attempt 都不用真正执行时，两者都不会运行。
+
+`setup` 运行期间，终端 `ACTIVE` 区会显示一行 `experiment setup · <实验 id>`，`ctx.progress(...)` 的消息更新在这一行末尾。这时该实验的 Attempt 计入排队数，不是卡住了。
+
+## setup 失败时会发生什么
+
+`setup` 抛错时，这个实验的每个 Attempt 都记为 `errored`，错误码是 `experiment-setup-failed`。同一批里的其它实验照常运行。环境没起来不会被算成通过，也不会拖累别的实验。
+
+## teardown 里先保证释放
+
+释放资源是必须做到的事，健康检查、上报指标这类观测只是尽力而为。用 `try/finally` 包住，观测出错也不能挡住释放；运行被中断时直接跳过观测：
+
+```ts
+async teardown(ctx) {
+  try {
+    if (!ctx.signal.aborted) {
+      await tunnel?.probe({ timeoutMs: 10_000 }).catch(() => {});
+    }
+  } finally {
+    await tunnel?.stop();
+  }
+},
+```
+
+## 运行时地址不要写进 flags
+
+隧道每次重启都会换一个 URL。`flags` 是实验条件，值一变，已经跑完的结果就不能沿用了。把临时地址写进 `flags`，等于每次重启隧道都要整批重跑。
+
+把地址留在模块变量里，由 Agent 工厂或 Sandbox 回调读取：
+
+```ts
+let endpoint: string | undefined;
+
+export default defineExperiment({
+  agent: nowledgeAgent(() => ({ url: endpoint! })),
+  sandbox: e2bSandbox({ template: "niceeval-agents" })
+    .before(async (sandbox) => {
+      await sandbox.writeText(".nowledge/env", `NMEM_URL=${endpoint!}\n`);
+    }),
+  async setup(ctx) {
+    endpoint = (await nowledgeTunnel({ signal: ctx.signal })).url;
+  },
+});
+```
+
+换了 URL 再跑，已完成的照常沿用，只跑还缺的：
+
+```text
+$ pnpm exec niceeval exp compare/codex--nowledge
+╭─ PLAN ──────────────────────────────────────────╮
+│ 36 attempts · 36 evals × 1 configs              │
+│ 24 of 36 reuse from cache · 12 to run           │
+╰─────────────────────────────────────────────────╯
+```
+
+判断一个值该放哪里，问一句：它是不是你想比较的实验条件？
+
+- 是，例如记忆服务的版本号 `0.10.39`，换版本行为可能真的不同，写进 `flags`，变了就该重跑。
+- 不是，只是这一次的连接坐标，留在 `setup` 和模块变量里。
+- 只用来给报告分组的标注，写 `labels`。
+
+## 在 Sandbox 里准备环境
+
+`setup` / `teardown` 管的是你机器上的服务。Agent 运行前要在 Sandbox 里做的准备，例如写入配置、装二进制、载入上次保存的状态，挂在 `sandbox` 的 `.before()` 上。它对每个真正执行的 Attempt 跑一次，一定晚于 `setup`，所以能读到 `setup` 赋好的变量：
+
+```ts
+// experiments/compare/claude--nowledge.ts
+import { defineExperiment } from "niceeval";
+import { e2bSandbox } from "niceeval/sandbox";
+import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
+import { loadMemoryState, saveMemoryState } from "../shared/memory-state.ts";
+
+let tunnel: { url: string; apiKey: string; stop(): Promise<void> } | undefined;
+
+export default defineExperiment({
+  agent: nowledgeAgent(() => ({ url: tunnel!.url, apiKey: tunnel!.apiKey })),
+  evals: ["memory/"],
+  maxConcurrency: 1,
+  sharedState: { key: "nowledge/claude/cohort-a" },
+  sandbox: e2bSandbox({ template: "niceeval-agents" })
+    .before(async (sandbox, ctx) => {
+      // 把宿主机上的坐标写进 Sandbox
+      await sandbox.writeText(
+        ".nowledge/config.json",
+        JSON.stringify({ url: tunnel!.url, apiKey: tunnel!.apiKey }),
+      );
+      await loadMemoryState(sandbox, ctx.experimentId);
+      ctx.onCleanup(async (sandbox) => {
+        await saveMemoryState(sandbox, ctx.experimentId);
+      });
+    }),
+  async setup(ctx) {
+    tunnel = await nowledgeTunnel({ signal: ctx.signal });
+  },
+  async teardown() {
+    await tunnel?.stop();
+  },
+});
+```
+
+从上往下读，这个文件就是完整的运行说明：整个实验一份的服务在 `setup` / `teardown`，每个 Sandbox 的准备和收尾在 `.before()` 和 `ctx.onCleanup`。
+
+Agent CLI、系统包这类固定不变的安装，最好先做进镜像或 template。NiceEval 会复用没变的准备步骤，不会因为评估用例改了就重装一遍。做法见 [Sandbox · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
+
+## 跨 Attempt 保存状态
+
+上面的例子里，每个 Attempt 开始时载入记忆、结束时存回去，让记忆一题一题累积下来。这要求 Attempt 按顺序一个接一个跑：
+
+- `maxConcurrency: 1` 让这次运行里的 Attempt 串行。
+- `sharedState.key` 防止你在另一个终端同时跑同一个实验，两边交错读写同一份状态。
+
+`sharedState` 只保证同一时刻只有一个运行持有这个 key，存储本身、存回时的原子性和异常中断后的恢复仍由你负责。key 里不要放密钥。
+
+## 多个实验共用同一套启停代码
+
+对比实验里，几个实验往往对着同一类基础设施，例如 Claude Code 和 Codex 各接同一个记忆产品。把启停写成一个工厂函数，每个实验文件各调用一次，代码只写一份，实例和坐标各自独立：
+
+```ts
+// experiments/shared/nowledge.ts
+import type { ExperimentHookContext } from "niceeval";
+import type { SandboxCommand } from "niceeval/sandbox";
+
+export function nowledgeLifecycle() {
+  let instance: string | undefined;
+  let env: { url: string; apiKey: string } | undefined;
+
+  return {
+    /** Agent 工厂经它读连接信息，setup 之后才有值 */
+    endpoint: () => env!,
+
+    async setup(ctx: ExperimentHookContext) {
+      instance = `exp-${ctx.experimentId.replace(/[^A-Za-z0-9]+/g, "-")}`;
+      ctx.progress({ message: `[nowledge] activating ${instance}` });
+      await memctl("up", instance);
+      env = await readInstanceEnv(instance);
+    },
+
+    async teardown() {
+      if (!instance) return; // setup 还没起实例就失败了，没有要清理的
+      await memctl("down", instance);
+    },
+
+    /** 每个 Attempt 一次：把坐标写进 Sandbox */
+    sandboxBefore(): SandboxCommand {
+      return async (sandbox) => {
+        await sandbox.writeText(".nowledge/env", `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`);
+      };
+    },
+  };
+}
+```
+
+实验文件里接上四行：
+
+```ts
+// experiments/compare/codex--nowledge.ts
+const nowledge = nowledgeLifecycle();
+
+export default defineExperiment({
+  agent: codexAgent(nowledgeCodexConfig(nowledge.endpoint)),
+  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).before(nowledge.sandboxBefore()),
+  setup: nowledge.setup,
+  teardown: nowledge.teardown,
+  maxConcurrency: 1,
+});
+```
+
+这样写要守住两条，多个实验并发运行时才不会互相覆盖：
+
+- 工厂函数被调用时只创建闭包，不做 I/O，也不读配置。`niceeval exp` 在发现阶段就会 import 实验文件，这时抛错会连累同一批里无关的实验。所有可能失败的操作都放进 `setup`。
+- 运行时坐标放在工厂闭包里，不放在模块级单例里。并行的两个实验各持一份，互不覆写。
+
+服务起多份太贵、必须让同一批实验共用一个实例时，用引用计数：第一个进来的启动，最后一个离开的关闭。
+
+```ts
+// experiments/shared/nowledge-shared.ts
+let refs = 0;
+let starting: Promise<void> | undefined;
+let service: { url: string; stop(): Promise<void> } | undefined;
+
+export const sharedNowledge = {
+  async setup() {
+    refs += 1;
+    starting ??= startNowledge().then((s) => { service = s; });
+    await starting; // 并发的实验等同一次启动
+  },
+  async teardown() {
+    refs -= 1;
+    if (refs === 0) {
+      await service?.stop(); // 启动失败时 service 没有值
+      service = undefined;
+      starting = undefined;
+    }
+  },
+};
+```
+
+因为 `setup` 开始过就一定会配对执行 `teardown`，计数总能回到 0，不会泄漏。
+
+## 跨多次运行存在的服务
+
+`setup` 启动的服务活不过这一次 `niceeval exp`。需要先起好、连续跑好几次的服务，用 `docker compose` 这类外部工具启停，再通过环境变量把地址传给 Adapter。
+
+`setup` 和 `teardown` 的完整参数见 [Experiment](/zh/explanation/experiment)。Sandbox 准备步骤的顺序、缓存和收尾见 [Sandbox · 按顺序准备 Sandbox](/zh/tutorials/sandbox-providers#按顺序准备-sandbox)。

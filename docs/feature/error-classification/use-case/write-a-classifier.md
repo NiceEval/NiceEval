@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: write-a-classifier
+title: 写分类器认第三方错误:取证、裁决、声明、验证
+createdAt: 2026-07-24T18:03:58+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/error-classification/README.md
 ---
 
 # 写分类器认第三方错误:取证、裁决、声明、验证

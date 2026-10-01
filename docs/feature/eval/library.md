@@ -94,7 +94,7 @@ export default social.defineEval({
 | `model`、`reasoningEffort`、`flags` | 已求值实验配置 |
 | `progress`、`diagnostic`、`log` | 当前执行的反馈 |
 | `judge(value, match)` | 显式材料的受管 Judge Assertion；转交同一个 `check` 接收者 |
-| `factuality`、`faithfulness`、`instructionFollowing`、`pairwisePreference`、`closeQA` | 现成 Judge 的直接入口；返回 Assertions 的 `MeasurementAssertionHandle<Kind>` |
+| `factuality`、`faithfulness`、`instructionFollowing`、`pairwisePreference`、`closeQA` | 现成 Judge 的直接入口；closeQA 接收 selector 与验收问题；返回 Assertions 的 `MeasurementAssertionHandle<Kind>` |
 | `score(points)` | 仅 Score Eval 的直接贡献 |
 
 公共成员名不可被应用替换，`score` 在 Pass Eval 中也保留。

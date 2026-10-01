@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: multi-container-design-review-ledger
+title: 多容器环境设计:正反评审台账(2026-07-30)
+createdAt: 2026-07-30T14:05:12+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/multi-container-design-review-ledger.md
+  commit: 9b165103651976a3b3f5cdc41bcead378ae30a24
+kind: memory
+memoryKind: insight
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 多容器环境设计:正反评审台账(2026-07-30)
 
 **背景**:`docs/design/multi-container-environments/` 定稿前,两个子代理分别做红队攻击(对照十篇既有契约)与下游落地验证(三个真实 Terminal-Bench 任务逐题写代码)。结论并入 PLAN-1 与 DECISION;本条目存评审揭出的翻案与反直觉点,供复盘。

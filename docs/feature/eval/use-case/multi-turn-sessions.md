@@ -1,7 +1,10 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: multi-turn-sessions
+title: 多轮与并行会话：每轮各自断，跨轮显式评
+createdAt: 2026-07-22T10:19:57+08:00
 kind: use-case
-relations: {}
+feature: docs/feature/eval/README.md
 ---
 
 # 多轮与并行会话：每轮各自断，跨轮显式评
@@ -14,7 +17,7 @@ relations: {}
 1. 将每一轮保存为局部变量，并立即对该 Turn 登记断言：
 
    ```typescript
-   import { includes, toolMatch } from "niceeval/expect";
+   import { includes, toolMatch, defineMaterialMatch, eventMatch, type AgentMatchContext } from "niceeval/expect";
 
    const request = "帮我拟一封跟进邮件。";
    const draft = await t.send(request);
@@ -33,14 +36,9 @@ relations: {}
    const first = await t.send("列出风险。");
    const second = await t.send("再给出回滚方案。");
 
-   first.closeQA({
-     input: "列出风险。",
-     output: first.message,
-     context: "风险包括兼容性与数据丢失。",
-   }).gate(0.8);
-   t.check(
-     { input: "列出风险。", output: first.message, context: "风险包括兼容性与数据丢失。" },
-     closeQA(),
+   t.closeQA(
+     defineMaterialMatch<AgentMatchContext<"attempt">>({ name: "assistant-history", read: (ctx) => ctx.eventOccurrences, match: eventMatch("message", { role: "assistant" }) }),
+     "全部发言是否说明了风险及相应回滚方案？",
    ).gate(0.8);
    ```
 
@@ -57,7 +55,7 @@ relations: {}
 - Judge 材料在 Assertion 登记时快照。后续修改源对象不会改变已登记请求。
 - 多轮材料使用命名对象表达各段内容的角色，不用 `JSON.stringify` 拼接成无结构文本。
 - `t.newSession()` 的事件仍会汇入根级 `t.*` 聚合 Assertion，但不改变主 session 的 `t.reply` / `t.events` 即时视图。
-- Judge 可由 `judge` 语法糖、`check` 或接收者的 `factuality`、`faithfulness`、`instructionFollowing`、`pairwisePreference`、`closeQA` 登记。直接入口等价于 `check(material, factory(options))`，且 Judge evaluator 在同一 Attempt 内串行运行。
+- Judge 可由 `judge` 语法糖、`check` 或接收者的 `factuality`、`faithfulness`、`instructionFollowing`、`pairwisePreference`、`closeQA` 登记。closeQA 接收读取当前 ctx 的 MaterialMatch 与验收问题，其它预设等价于 `check(material, factory(options))`。Judge evaluator 在同一 Attempt 内串行运行。
 
 ## 相关阅读
 

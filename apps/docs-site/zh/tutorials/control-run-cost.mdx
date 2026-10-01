@@ -1,10 +1,12 @@
 ---
 title: "控制一次运行的成本"
 sidebarTitle: "控制运行成本"
-description: "用 attempts、首过即停、budget、并发和结果沿用分别控制统计样本、停止派发、花费保护与资源占用。"
+description: "一次评估可能花掉几十美元。按你要控制的是什么，分别用 attempts、首过即停、budget、并发和结果沿用。"
 ---
 
-控制成本前先判断你要减少什么。不同开关回答不同问题，不能互相替代。
+一次完整评估要调用几百次模型，再加上 Sandbox 的费用，账单很容易超出预期。控制成本前，先想清楚你要省的是什么：是重复运行的次数、失控时的上限，还是同时占用的资源。
+
+每个设置管一件事，不能互相替代。
 
 | 目标 | 使用方式 |
 | --- | --- |
@@ -15,44 +17,93 @@ description: "用 attempts、首过即停、budget、并发和结果沿用分别
 | 跳过没有受影响的结果 | 使用默认沿用或 `--rerun`。 |
 | 分摊 Sandbox 创建和准备成本 | 使用 `sandboxReuse`。 |
 
-## 先预览运行矩阵
+## 运行前先看要跑多少
+
+花钱之前，先确认这次选中了多少评估用例、多少个 Experiment、每道题跑几次：
 
 ```sh
 pnpm exec niceeval exp regression --dry
 ```
 
-先确认评估用例数量、Experiment 数量和 Attempt 数量。`--dry` 不预测最终模型费用，但能在派发前发现范围选错或重复次数过大。
+`--dry` 不调用模型，也不创建 Sandbox。第一行给出这次计划的 Attempt 总数，后面每行是一道题，标出哪些会沿用上次的结果、哪些要重新跑。
+
+`--dry` 不预测最终费用。它的作用是在派发前发现范围选错或重复次数过大。总数比预期大得多时，先查 Experiment 的 `evals` 选择和 `attempts`。
 
 ## 只关心能否成功时首过即停
+
+只想知道“这道题能不能做到”，不在乎通过率分布时，打开首过即停：
 
 ```sh
 pnpm exec niceeval exp regression --early-exit
 ```
 
-某条评估用例的一个 Attempt 得到 `passed` 后，尚未派发的剩余 Attempt 会写成 `not-dispatched`。同一评估用例已经在运行的 Attempt 会通过 `ctx.signal` 收到取消信号；Adapter 是否及时观察它，决定这个 Attempt 能否尽快结束。
+某道题的一个 Attempt 得到 `passed` 后，这道题还没开始的 Attempt 不再派发，结果里记为 `not-dispatched`。同一道题已经在跑的 Attempt 会通过 `ctx.signal` 收到取消信号；它能多快结束，取决于 Adapter 是否及时响应这个信号。
 
-一次通过触发首过即停后才返回的同一评估用例 Attempt 不会进入结果。
+首过即停触发之后才返回的同题 Attempt 不会进入结果。
 
-`failed`、`errored` 或 `skipped` 不触发首过即停。需要完整通过率分布时不要打开这个选项。
+`failed`、`errored` 或 `skipped` 不触发首过即停。需要完整通过率分布时不要打开这个选项。默认并发下，同一道题的几次 Attempt 可能已经同时开跑，省不下钱；要让它真的省钱，配法见[让首过即停真的省钱](/zh/tutorials/concurrency#让首过即停真的省钱)。
 
 ## 给花费设置保护上限
+
+担心某次运行失控、花得比预期多时，设置一个美元上限：
 
 ```sh
 pnpm exec niceeval exp regression --budget 25
 ```
 
-预算按每个 Experiment ID 分别计算。每条已完成的 Attempt，NiceEval 从 Experiment 的 `model`、上报的 token 用量和 Config/runtime price table 推得 `estimatedCostUSD`，再把这个估算累加进预算。`usage.costUSD` 是 Provider 或 Adapter 上报的 observed 值，绝不驱动预算。累计 estimate 到达上限后，NiceEval 停止派发新 Attempt；已经在运行的任务不会被中途终止。
+预算按每个 Experiment ID 分别计算。每完成一个 Attempt，NiceEval 用 Experiment 的 `model`、上报的 token 用量和价格表估算这个 Attempt 的花费（`estimatedCostUSD`），再累加进预算。Provider 或 Adapter 自己上报的实际金额 `usage.costUSD` 只用于展示，不参与预算判断。
 
-因此 `--budget` 是保护上限，不是精确账单。并发任务尚未结算时，最终花费可能短暂超过设置值。缺少 model、token 用量或匹配的价格时，NiceEval 无法产生 `estimatedCostUSD`，`usage.costUSD` 也不能补上。Runner 会给出警告，而不是假装预算仍可执行。
+累计估算到达上限后，NiceEval 停止派发新 Attempt，已经在跑的不会被中途终止。所以 `--budget` 是保护上限，不是精确账单：几个并发任务还没结算时，最终花费可能短暂超过设置值。
 
-预算耗尽会留下 `budget_exhausted` diagnostic，未派发位置写成 `not-dispatched`，命令以非零状态退出。提高预算后重跑同一范围，合格的已完成 Attempt 会沿用，只补剩余位置。
+预算耗尽时，你会看到：
+
+- 一条 `budget_exhausted` 诊断；
+- 没来得及派发的 Attempt 记为 `not-dispatched`；
+- 命令以非零状态退出。
+
+提高预算后重跑同一范围，已经完成且符合沿用条件的 Attempt 直接沿用，只补剩下的部分。
+
+缺少 `model`、token 用量或匹配的价格时，NiceEval 算不出估算花费，`usage.costUSD` 也不能补上。这时运行会给出警告，而不是假装预算仍在生效。看到这条警告时，先确认 Experiment 写了 `model`，Adapter 上报了 token 用量。
 
 ## 并发只控制资源占用
+
+本机或 Provider 吃不消时，限制同时运行的 Attempt 数：
 
 ```sh
 pnpm exec niceeval exp regression --max-concurrency 4
 ```
 
-并发上限限制同时运行的评估用例，不是费用上限。费用保护仍使用 `--budget`。Sandbox 构建并发由独立的 `--max-build-concurrency` 控制。
+并发上限不是费用上限，费用保护仍然用 `--budget`。Sandbox 构建的并发由另一个 flag `--max-build-concurrency` 控制。
 
-需要进一步分摊环境准备成本时，阅读[复用 Sandbox](/zh/tutorials/sandbox-reuse)。需要选择只重跑失败项或全部重验时，阅读[重跑与沿用结果](/zh/tutorials/rerun-and-cache)。
+还想分摊每个 Sandbox 的创建和准备时间，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。要选择只重跑失败项还是全部重验，见[重跑与沿用结果](/zh/tutorials/rerun-and-cache)。
+
+## 查看花了多少钱
+
+跑完后在终端查看一个 Attempt 或整个实验的费用：
+
+```sh
+pnpm exec niceeval show @attempt-locator
+pnpm exec niceeval show --experiment regression
+```
+
+想在浏览器里翻看，运行 `pnpm exec niceeval view`。
+
+Attempt 页面先显示应用和 Judge 的合计费用：
+
+- 费用完整时显示总额。
+- 缺少回执、价格或完整调用记录时，显示已知小计和缺了哪些部分。
+- 明确记录的零金额算作已知费用。失败和重试已经花掉的钱也会保留。
+
+模型用途、每次实际调用和 Judge 的费用放在后面的明细里。
+
+实验页面汇总每道题每次 Attempt 最新的一条结果，同一个原始 Attempt 只算一次。被重跑替换掉的旧结果不累计，没重跑的保留原结果。所以它显示的是当前这批结果的费用，不是全部历史运行的账单。明细省略几行不会减少总额；不同币种分别展示，不换算汇率。
+
+## 让自定义 Adapter 上报费用
+
+自己写的应用 Adapter 要让费用出现在上面的页面里，需要上报每次调用的用量：
+
+- 用 `ctx.recordUsage(call)` 上报每次物理调用的最终快照。
+- 全部记录取得后调用 `ctx.sealUsage({ state: "complete" })`，告诉 NiceEval 这份记录是完整的。
+- 只读到一部分记录时，调用 `ctx.sealUsage({ state: "partial", reason: "source-incomplete" })`。
+
+没有声明完整的空记录会显示为未知费用，不会显示成零。

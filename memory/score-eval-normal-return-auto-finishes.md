@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: score-eval-normal-return-auto-finishes
+title: 裁决：Score Eval 正常返回自动收尾，空计分是零分
+createdAt: 2026-08-10T09:00:49+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/score-eval-normal-return-auto-finishes.md
+  commit: fcbe0a8b0c68b28f3c43bb9827e56d71b6997658
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决：Score Eval 正常返回自动收尾，空计分是零分
 
 **日期**：2026-08-10

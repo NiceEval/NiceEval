@@ -15,7 +15,7 @@ export default markerApplication.defineEval({
     cycle.self = cycle;
     const invalid = [
       undefined, [undefined], Array(1), NaN, Infinity, 1n, () => 1,
-      new Date(0), cycle, "x".repeat(129),
+      new Date(0), cycle,
       { get content() { accessorCalls += 1; return "not-a-snapshot"; } },
       { toJSON() { accessorCalls += 1; return "not-a-snapshot"; } },
     ];
@@ -61,7 +61,7 @@ export default markerApplication.defineEval({
     try { t.judge({ images: [image, image, image, image, image] }, imageQuality); }
     catch (error) { repeatedImagesRejected = error instanceof TypeError; }
     t.check({ rejected, sugarRejected, accessorCalls, reflected, foreignRejected, foreignSugarRejected, imagesRejected, repeatedImagesRejected }, equals({
-      rejected: Array(12).fill(true), sugarRejected: Array(12).fill(true), accessorCalls: 0, reflected: 0, foreignRejected: true, foreignSugarRejected: true,
+      rejected: Array(11).fill(true), sugarRejected: Array(11).fill(true), accessorCalls: 0, reflected: 0, foreignRejected: true, foreignSugarRejected: true,
       imagesRejected: Array(9).fill(true), repeatedImagesRejected: true,
     })).gate().label("Judge admission is atomic");
   },

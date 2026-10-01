@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: reports-component-page-report-redesign
+title: 设计裁决:Reports 组件/页/报告三层重设计(resolve 管线、content 字段、Scope 改名)
+createdAt: 2026-07-16T12:41:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reports-component-page-report-redesign.md
+  commit: f39dd312fa4250ffa8b6dacef18039046d1f1a66
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:Reports 组件/页/报告三层重设计(resolve 管线、content 字段、Scope 改名)
 
 **日期**:2026-07-16

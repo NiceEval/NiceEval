@@ -17,6 +17,13 @@ const references = new WeakMap<object, ReferenceRuntime>();
 const referenceDeclarations = new WeakMap<object, ReferenceDeclarationRuntime>();
 const referenceDeclarationRuns = new WeakMap<SchemaAST.DeclarationRun, ReferenceDeclarationRuntime>();
 
+/** Shared admission limits for producers using the current attachment encoder. */
+export const RecordAttachmentEncodingLimits = Object.freeze({
+  maximumJsonBytes: 1_048_576, maximumDepth: 64, maximumNodes: 100_000,
+  maximumObjectKeys: 10_000, maximumArrayItems: 100_000,
+  maximumKeyUtf8Bytes: 16_384, maximumStringUtf8Bytes: 1_048_576,
+});
+
 export type RecordAttachmentSchema = Schema.Codec<unknown, unknown, never, never>;
 
 type AnyDefinition = RecordAttachmentDefinition<RecordAttachmentOwner, string, Schema.Top>;
@@ -108,11 +115,7 @@ export function defineRecordAttachment<
   readonly validate?: (value: Schema.Schema.Type<ValueSchema>) => readonly RecordAttachmentIssue[];
 }): RecordAttachmentDefinition<Owner, Family, ValueSchema> {
   if (!validOwner(input.owner) || !isRecordAttachmentName(input.family) || !isRecordAttachmentSchema(input.schema) || typeof input.validate !== "undefined" && typeof input.validate !== "function") invalid();
-  const limits = {
-    maximumJsonBytes: 1_048_576, maximumDepth: 64, maximumNodes: 100_000,
-    maximumObjectKeys: 10_000, maximumArrayItems: 100_000,
-    maximumKeyUtf8Bytes: 16_384, maximumStringUtf8Bytes: 1_048_576,
-  };
+  const limits = RecordAttachmentEncodingLimits;
   const definition = Object.freeze({
     owner: input.owner, family: input.family, schema: input.schema, validate: input.validate,
     [definitionTypeId]: () => ({ owner: input.owner, family: input.family }),

@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: record-to-report
+title: Record → Report 产品研究
+createdAt: 2026-08-14
+createdAtSource:
+  kind: first-recorded
+  path: docs/research/record-to-report/README.md
+  commit: a33c7a3ca725ef6afbc188b232e318d85445fc29
+kind: research
+sources: []
+---
 # Record → Report 产品研究
 
 本方向研究一类用户路径：产品先保存 Run、Trace、Experiment 或 Evaluation 的事实，随后让用户重新打开、查询、比较并形成 Dashboard 或 Report。
@@ -57,9 +69,9 @@ NiceEval 需要回答五组连续问题：
 
 产品确有独立产品面时，可在上述研究页之外按它自己的边界增加页面：
 
-- MLflow 主页面之外，另有 [Tracing 与 Assessment](mlflow/tracing-and-assessments.md)。
-- W&B Models 主页面之外，另有 [W&B Weave](weights-and-biases/weave.md)。
-- Phoenix 主页面之外，另有 [Evaluator 可观察性](arize-phoenix/evaluator-observability.md)。
+- MLflow 主页面之外，另有 [Tracing 与 Assessment](mlflow/tracing-and-assessments/README.md)。
+- W&B Models 主页面之外，另有 [W&B Weave](weights-and-biases/weave/README.md)。
+- Phoenix 主页面之外，另有 [Evaluator 可观察性](arize-phoenix/evaluator-observability/README.md)。
 
 这些拆分分别来自 MLflow、W&B 与 Phoenix 自己的产品边界，不表示其它产品也应具有相同层次。
 
@@ -143,7 +155,7 @@ TanStack Table / Charts 与 Vercel `design.md` 因此移到独立的 [Report des
 用户增加 metric 名字、score、tag、artifact 或 dashboard 配置时，通常不发布一套新的持久格式。
 
 NiceEval 自己也有反例：旧 Results 用一个全局整数承载 Core 与全部业务事实，v1–v15 因局部功能和整体结构变化反复升版；v7、v10 没有成为独立格式，v16 只存在于未合并分支。
-完整逐版证据、未升版反例和实际故障见 [NiceEval Results schemaVersion 1–16 研究](niceeval-results-schema-history.md)。
+完整逐版证据、未升版反例和实际故障见 [NiceEval Results schemaVersion 1–16 研究](niceeval-results-schema-history/README.md)。
 
 NiceEval 需要把同样的稳定性变成明确门槛：
 

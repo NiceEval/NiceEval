@@ -24,6 +24,20 @@ const scored = defineScoreEval({
         .score(5)
         .label("mismatch contributes zero without failing");
       t.score(4).label("deterministic manual points");
+      const completionSeconds = 60;
+      t.score(60 / (60 + completionSeconds), { weight: 50 }).label("weighted author formula");
+      t.score(0, { weight: 10 }).label("weighted author zero");
+      t.score(1, { weight: 0 }).label("weighted zero weight");
+      for (const invalidRatio of [-.1, 1.1, NaN, Infinity]) {
+        let rejected = false;
+        try { t.score(invalidRatio, { weight: 50 }); } catch (error) { rejected = error instanceof TypeError; }
+        if (!rejected) throw new Error("Invalid weighted ratio was admitted");
+      }
+      for (const invalidWeight of [-1, NaN, Infinity]) {
+        let rejected = false;
+        try { t.score(.5, { weight: invalidWeight }); } catch (error) { rejected = error instanceof TypeError; }
+        if (!rejected) throw new Error("Invalid weight was admitted");
+      }
       t.check(0, defineScoreMatch({ name: "record-only measurement", score: () => { throw new Error("Measurement unavailable in this fixture"); } }))
         .label("unavailable measurement is only recorded");
       t.check(0, defineValueMatch({ name: "record-only condition", evaluate: () => { throw new Error("Condition unavailable in this fixture"); } }))
@@ -86,6 +100,8 @@ const unavailableGate = defineScoreEval({
   description: "无法评估必要条件时保留已有分数并报告错误",
   test(t) {
     t.score(2).label("score before unavailable gate");
+    t.score({ state: "unavailable", reason: "completion-boundary-missing" }, { weight: 50 }).label("weighted unavailable");
+    t.score({ state: "lower-bound", value: .2 }, { weight: 10 }).label("weighted incomplete");
     t.check(0, defineValueMatch({ name: "required condition", evaluate: () => { throw new Error("Required condition cannot be evaluated"); } }))
       .gate().label("required condition unavailable");
   },

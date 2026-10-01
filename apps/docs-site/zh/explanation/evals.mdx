@@ -92,7 +92,7 @@ npx niceeval exp local weather/brooklyn
   </Card>
 </CardGroup>
 
-计分制评估的主读数是累计 earned score，分数越高越好。正常没有计分项时 score 为 `0`。默认报告显示 earned score，不把正常封口状态算进通过率，但仍保留 Verdict；`failed + complete` 不能进入成功排名。
+计分制评估的主读数是累计 earned score，分数越高越好。正常没有计分项时 score 为 `0`。默认报告显示 earned score，不把正常算完分的状态算进通过率，但仍保留 Verdict；`failed + complete` 不能进入成功排名。
 
 `.score(points)` 中的 `points` 是单项贡献权重，不是固定总分。默认报告不会把 earned score 自动换算成百分比。一个 Experiment 同时包含通过制评估与计分制评估时，报告分别显示两种主读数。
 

@@ -536,7 +536,11 @@ export function createRunnerTurnContextsAttachment(input: {
   const sources = sourceManifestByPlan.get(input.sourcePlan);
   if (sources === undefined) return Result.fail(invalid("sources-closure-invalid"));
   const local = localSourceTexts(input.result);
-  const segments = capture.sends.map((captured, index) => Object.freeze({
+  // The family is ordered by session and physical turn, while sourceOrder
+  // retains author invocation order when sends interleave across sessions.
+  const segments = capture.sends.toSorted((left, right) =>
+    left.sessionIndex - right.sessionIndex || left.turnIndex - right.turnIndex,
+  ).map((captured, index) => Object.freeze({
     segmentId: captured.segmentId,
     sequence: index + 1,
     turnId: captured.turnId,

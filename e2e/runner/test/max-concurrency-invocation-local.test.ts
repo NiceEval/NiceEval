@@ -19,8 +19,9 @@ async function exists(path: string): Promise<boolean> {
     return false;
   }
 }
+// @use-case docs/feature/experiments/use-case/concurrency-parallel-invocations.md
 
-test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并发额度 [necase_YAJ06RV7ZR47KAZD]", async () => {
+test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并发额度", async () => {
   await runnerE2E.case(
     "max-concurrency-invocation-local",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

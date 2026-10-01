@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: effect-testclock-daemon-needs-registration-and-observation-barriers
 title: Effect TestClock daemon tests need registration and observation barriers
 createdAt: 2026-08-26T17:52:53+08:00
-kind:
-  type: insight
-  state: current
+kind: memory
+memoryKind: insight
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 # Effect TestClock daemon tests need registration and observation barriers
 

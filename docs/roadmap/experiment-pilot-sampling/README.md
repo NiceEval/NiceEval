@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: experiment-pilot-sampling
+title: 可复现的 Experiment Pilot 抽样
+createdAt: 2026-08-09T15:37:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/experiment-pilot-sampling/README.md
+  commit: 16b426cf7189ae0ea340074b3141086d9d47d9ae
+kind: roadmap
+state: planned
+---
 # 可复现的 Experiment Pilot 抽样
 
 ## 用户需要
@@ -48,10 +60,10 @@ Pilot 不修改 Attempt fingerprint。
 
 ## 研究取舍
 
-[Braintrust](../../research/assertion-api-dx/braintrust-autoevals.md) 的 `--first N` 与 `--sample N` 会明确生成 non-final run，是这个 CLI 的直接启发。
+[Braintrust](../../research/assertion-api-dx/braintrust-autoevals/README.md) 的 `--first N` 与 `--sample N` 会明确生成 non-final run，是这个 CLI 的直接启发。
 NiceEval 额外要求固定 seed、持久算法版本，并让同批 Experiment 只选一次共同 Eval ID 集合。
 
-[Ori Eval](../../research/assertion-api-dx/ori-eval.md) 的 `--pilot N` 仍走完整 Agent 与 Judge 路径，而不只估 token。
+[Ori Eval](../../research/assertion-api-dx/ori-eval/README.md) 的 `--pilot N` 仍走完整 Agent 与 Judge 路径，而不只估 token。
 NiceEval 吸收这个真实执行边界，但不在 Pilot 选择 API 里绑定费用外推或 baseline 政策。
 
 ## 不做什么

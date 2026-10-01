@@ -30,10 +30,13 @@ owner 随规则改变维护；它不是历史 durable schema 的迁移信号。
 `maxCalls` 计逻辑原语调用，默认 4，上限 16；每个调用最多 3 次传输尝试。
 裁判 Provider 的 timeout 限定该 entry 的整个高级 callback、全部步骤、重试和等待，不能每步重新获得完整期限。
 
-`maxMaterialBytes` 默认 32 KiB，上限 48 KiB。
-`maxAuditBytes` 默认 96 KiB，上限 256 KiB，包含序列化审计材料与封口事实。
-登记时从 Attempt 的 512 KiB 总账原子预留初始材料实际字节与完整审计容量。
-登记失败不创建 entry，也不调用 callback 或 Provider。
+`maxMaterialBytes` 默认 32 KiB，上限 4 MiB。
+`maxAuditBytes` 默认 96 KiB，上限 8 MiB，包含完整最终审计 envelope 与封存事实。
+Attempt 的文字材料与 audit 总账上限为64 MiB，图片独立上限为32 MiB。
+ctx reader 执行前原子预留声明的 capture 字节、受管 audit 最大字节与有界诊断空间。
+局部布尔与确定性评分只预留 capture；未知材料、无模型终态与取消退还未用预留。
+已登记事实按完整实际字节持续计账，不能因封存释放已留存证据。
+容量拒绝登记一个有界 unavailable 事实，不调用 reader、callback 或 Provider。
 
 每步发送前再次检查剩余容量，预留实际请求、响应硬上限和最多三次尝试的留存。
 终态事实空间提前保留。已准入请求完整留存；未准入请求只保存 not-sent、拒绝原因和有界元数据。
@@ -343,3 +346,46 @@ fingerprint 与字段差异。字符串模型 override 继承声明，作者负�
 验收使用确定性 HTTP fixture 捕获真实 body，核对 image parts、冻结 bytes 与离线还原摘要；
 验证大图详情有界、Record 搬迁分页、无能力零发送、晚到图片/重复引用限制、
 重试取消封口及 v1/v2 兼容。图片只参与作者主动选择的语义判据，不自动产生断言或 gate。
+
+## 匹配材料的整组问答
+
+`closeQA(materialMatch, question)` 在登记处注入当前 ctx，捕获 reader 返回的事实，用既有 Boolean Match 对全部候选求值。
+
+
+Match快照保留原值；发送给模型的JSON材料独立捕获。
+
+Agent保留原关联row、scope与locator，跨Attempt拒绝。
+
+
+完整命中材料保序交给一次 classify；satisfied=1，not-satisfied=0，insufficient-evidence=unavailable。
+
+
+完整空集为0且零调用；这类局部终态保存 question 与 source，不声明不存在的模型 audit。
+
+partial、unknown与超限形成 unavailable，不截断材料继续评分。
+
+
+选中项计数保存在既有 evaluation.receipt，含完整度与穷尽范围；中断时封口进度，晚到求值不能更新。
+
+
+Adapter binder只有装配阶段可登记，校验成功后一次提交；关闭作者阶段清空读取方法，已登记entry只持有快照。
+
+
+引用协议在明确提供evidenceIds时要求聊天模型返回citations，并严格验证ID子集。
+
+TypeSafe未提供引用时不生成引用。
+
+
+详见 [定案](../../design/matched-material/PLAN-1/architecture.md)。
+
+
+## Judge 物理用量账本
+
+每个已执行 Attempt 封存独立 Judge 调用账本；发送前登记每次实际 HTTP 传输，重试各计一次。
+费用和 token 在传输回执边界接纳，先于判分解码，失败或取消不抹除已经接纳的事实。
+未发送为完整空集；历史缺源、未收到回执及缺字段保持未知。应用用量与 Judge 用量分别保留，总费用显式列出缺失的账本。
+
+持久形状、容量与价证遵守[物理账本定案](../../design/judge-physical-usage/plans/plan-1/architecture.md)，
+逐次传输的回执截止与资源释放遵守[生命周期](../../design/judge-physical-usage/plans/plan-1/lifecycle.md)，
+公共 Query、Show 与 View 使用同一[读面契约](../../design/judge-physical-usage/plans/plan-1/library.md)。
+Vercel Chat 未证实的费用及 serving provider 路径保持未知；显式 pricing 可产生带完整性状态的封存估价。

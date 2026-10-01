@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: native-plugin-marketplace-name-not-caller-assignable
+title: native plugin 的 `marketplace.name` 不是调用方能自定的连接名,真实 CLI 按 manifest 自己的 `name` 注册
+createdAt: 2026-07-13T12:40:25+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/native-plugin-marketplace-name-not-caller-assignable.md
+  commit: 07416e688fbab92ce1ae05625532478cef3b3d6b
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # native plugin 的 `marketplace.name` 不是调用方能自定的连接名,真实 CLI 按 manifest 自己的 `name` 注册
 
 **现象**：`ClaudeCodePluginSpec.marketplace.name` / `CodexPluginSpec.marketplace.name` 的 TSDoc

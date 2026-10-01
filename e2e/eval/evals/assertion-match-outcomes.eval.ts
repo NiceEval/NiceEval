@@ -3,6 +3,10 @@ import {
   and,
   commandMatch,
   commandSucceeded,
+  countWhere,
+  filterWhere,
+  mapEach,
+  mapValue,
   defineScoreMatch,
   defineValueMatch,
   equals,
@@ -11,6 +15,7 @@ import {
   hasSections,
   includes,
   includesUrl,
+  inOrder,
   isDefined,
   isFalse,
   isTrue,
@@ -42,6 +47,64 @@ export default defineScoreEval({
   async test(t) {
     const turn = await t.send("assertion/match-outcomes");
     await turn.succeeded().orStop();
+
+    t.check([0, 1, 0, 0], countWhere(equals(0), equals(3))).score(1).label("countWhere:matched");
+    t.check([0, 1], countWhere(equals(0), equals(3))).score(1).label("countWhere:mismatched");
+    t.check([], countWhere(equals(0), equals(0))).label("countWhere.empty:matched");
+    const actors = { state: "complete" as const, items: [
+      { id: "actor-a", value: { id: "a", hp: 0 } },
+      { id: "actor-b", value: { id: "b", hp: 10 } },
+      { id: "actor-c", value: { id: "a", hp: 0 } },
+    ] };
+    const selected = defineValueMatch<{ readonly id: string; readonly hp: number }>({ name: "actor-a", evaluate: actor => actor.id === "a" });
+    t.check(actors, filterWhere(selected, mapEach(actor => actor.hp, countWhere(equals(0), equals(2))))).score(1).label("filterWhere.mapEach:matched");
+    t.check(actors, filterWhere(selected, mapEach(actor => actor.hp, countWhere(equals(0), equals(3))))).score(1).label("filterWhere.mapEach:mismatched");
+    t.check({ actors }, mapValue("actors at end", value => value.actors, countWhere(selected, equals(2)))).score(1).label("mapValue:matched");
+    t.check({ actors }, mapValue("actors at end", value => value.actors, countWhere(selected, equals(1)))).score(1).label("mapValue:mismatched");
+    t.check([NaN], countWhere(equals(0), equals(0))).label("countWhere.nan:unavailable");
+    t.check({ state: "partial" as const, reason: "actors-not-sealed", items: actors.items }, countWhere(selected, equals(2))).label("countWhere.partial:unavailable");
+    const uncertain = defineValueMatch<number>({ name: "unknown-item", evaluate: () => ({ state: "unavailable", reason: "missing-hp" }) });
+    t.check([0], countWhere(uncertain, equals(0))).label("countWhere.item:unavailable");
+    t.check([0], filterWhere(uncertain, countWhere(equals(0), equals(0)))).label("filterWhere.item:unavailable");
+    t.check([1], mapEach((_item: number) => NaN, countWhere(equals(0), equals(0)))).label("mapEach.nan:unavailable");
+    t.check({ hp: NaN }, mapValue("hp", value => value.hp, equals(0))).label("mapValue.nan:unavailable");
+
+    const sequence = inOrder([equals(1), equals(2)]);
+    t.check([1, 2], sequence).label("inOrder.adjacent:matched");
+    t.check([1, 0, 2], sequence).label("inOrder.subsequence:matched");
+    t.check([2, 1], sequence).label("inOrder.reverse:mismatched");
+    t.check([], sequence).label("inOrder.empty:mismatched");
+    t.check([1], inOrder([equals(1), equals(1)])).label("inOrder.single-item:mismatched");
+    t.check([1, 1], inOrder([equals(1), equals(1)])).label("inOrder.distinct-items:matched");
+    t.check([undefined, 1, 2], sequence).label("inOrder.known-witness:matched");
+    t.check([undefined, 2], sequence).label("inOrder.possible:unavailable");
+    t.check([undefined, 0], sequence).label("inOrder.impossible:mismatched");
+    t.check([NaN, 2], sequence).label("inOrder.nonfinite:unavailable");
+    t.check([null, 2], sequence).label("inOrder.null:unavailable");
+    const sparse = new Array<number>(2);
+    sparse[1] = 2;
+    t.check(sparse, sequence).label("inOrder.hole:unavailable");
+    t.check([3, 0, 4], or(inOrder([equals(1), equals(2)]), inOrder([equals(3), equals(4)]))).label("inOrder.alternatives:matched");
+    t.check([2, 1], not(inOrder([equals(1), equals(2)]))).label("inOrder.not:matched");
+    t.check([1, 2], not(inOrder([equals(1), equals(2)]))).label("inOrder.not:mismatched");
+    t.check([undefined, 2], not(inOrder([equals(1), equals(2)]))).label("inOrder.not:unavailable");
+    const uncertainFirst = defineValueMatch<number>({ name: "uncertain-first", evaluate: value => value === 0
+      ? { state: "unavailable", reason: "heard-not-verified" } : value === 1 });
+    t.check([0, 2], inOrder([uncertainFirst, equals(2)])).label("inOrder.step:unavailable");
+    t.check([0, 1, 2], inOrder([uncertainFirst, equals(2)])).label("inOrder.step-known-witness:matched");
+    const forbiddenStep = defineValueMatch<unknown>({ name: "incomplete-step-must-not-run", evaluate: () => { throw new Error("Incomplete order evaluated a child"); } });
+    t.check({ state: "partial" as const, reason: "events-not-sealed", items: [{ id: "one", value: 1 }, { id: "two", value: 2 }] }, inOrder([forbiddenStep, forbiddenStep])).label("inOrder.partial:unavailable");
+    t.check({ state: "unavailable" as const, reason: "events-not-sealed" }, inOrder([forbiddenStep, forbiddenStep])).label("inOrder.source:unavailable");
+    type GameEvent = { readonly type: "heard" | "movement"; readonly listener: string; readonly adopted: boolean };
+    const heard = defineValueMatch<GameEvent>({ name: "heard-by-b", evaluate: event => event.type === "heard" && event.listener === "b" });
+    const adoptedMovement = defineValueMatch<GameEvent>({ name: "adopted-movement", evaluate: event => event.type === "movement" && event.adopted });
+    const gameEvents = { state: "complete" as const, items: [
+      { id: "formally-heard", value: { type: "heard" as const, listener: "b", adopted: false } },
+      { id: "unrelated-movement", value: { type: "movement" as const, listener: "b", adopted: false } },
+      { id: "adopted-movement", value: { type: "movement" as const, listener: "b", adopted: true } },
+    ] };
+    t.check(gameEvents, inOrder([heard, adoptedMovement])).label("inOrder.heard-movement:matched");
+    t.check({ state: "complete" as const, items: [...gameEvents.items].reverse() }, inOrder([heard, adoptedMovement])).label("inOrder.heard-movement:mismatched");
 
     t.check("alpha", includes("alpha"))
       .score(1)

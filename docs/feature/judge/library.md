@@ -1,6 +1,6 @@
 # Judge —— Library
 
-Judge 是使用受管模型能力的 `ScoreMatch`。`defineJudge` 与五个现成裁判都调用公开 `defineScoreMatch`。
+Judge 是使用受管模型能力的 `ScoreMatch`。`defineJudge` 与四个现成裁判都调用公开 `defineScoreMatch`。
 `t.check(value, match)` 统一登记评价；`t.judge(value, match)` 是转交同一个 `check` 接收者的便利入口。
 root、Session 与 Turn 都要求显式材料。
 
@@ -30,25 +30,27 @@ Match 只定义怎样得到测量值；minimum、points、label 和 stop 都属�
 同一 entry 上的 gate 与 score 可任意先后组合，评价仍只执行一次。
 模型失败和不完整评价不能伪装成零分或完整成绩。
 
-官方 root、custom Adapter 的 `t`、Session 与 Turn 都提供 `factuality(material, options?)`、
-`faithfulness(material, options?)`、`instructionFollowing(material, options?)`、
-`pairwisePreference(material, options?)` 与 `closeQA(material, options?)`。这些方法只构造对应 Match，
-再交给当前接收者的同一个 `check`；`defineJudge`、`defineScoreMatch`、现成 factory 与 `t.judge` 也继续可用。
+官方 root、custom Adapter 的 `t`、Session 与 Turn 提供四个显式材料预设：
+`factuality`、`faithfulness`、`instructionFollowing`、`pairwisePreference`。
+它们构造对应 Match 后交给同一 `check` 接收者。通用材料验收使用 `closeQA(selector, question, options?)`。
+Agent 应用提供 `closeQA(question, options?)`，使用接收者当前 scope 的完整正式历史，不只取最后一句回答。
+显式 EventMatch 或 ToolMatch 则使用对应领域的全部命中材料；游戏等应用使用自身 MaterialMatch。
 
 ```ts
-const answer = await t.send("只根据材料回答。");
-answer.closeQA({
-  input: "只根据材料回答。",
-  output: answer.message,
-  context: "材料说明发布日是周五。",
-}).gate(0.8);
-
-// 等价于当前接收者的同一条 check 路径：
-t.check(
-  { input: "只根据材料回答。", output: answer.message, context: "材料说明发布日是周五。" },
-  closeQA(),
+import { eventMatch } from "niceeval/expect";
+const answer = await t.send("列出风险与回滚步骤。");
+answer.closeQA("这轮是否说明风险和可执行的回滚步骤？").gate(0.8);
+answer.closeQA(
+  eventMatch("message", { role: "assistant" }),
+  "全部发言是否清楚说明风险？",
 ).gate(0.8);
 ```
+
+MaterialMatch 的 reader 从当前 ctx 取出业务事实，单项 predicate 在同一候选上判断。NiceEval 对全部候选求值，并将全部命中项保序交给一次受管 Judge。
+问题是材料验收条件，不是预设答案；不会逐项评分或只挑成功样本。
+所有 closeQA 写法组合一个受管评分 Match 后交同一 check，返回同一种 measurement handle。
+完整空集为0且零模型调用；partial、unknown、超限或模型不可判定为 unavailable。
+ctx 材料读取与存在性使用见 [材料选择](../assertions/library/custom-assertions.md#材料选择)。
 
 ## 自由评分定义
 
@@ -105,20 +107,14 @@ interface PairwisePreferenceMaterial {
   readonly output: string;
   readonly reference: string;
 }
-interface CloseQAMaterial {
-  readonly input: string;
-  readonly output: string;
-  readonly context: string | readonly string[];
-}
 declare function factuality(options?: JudgePresetOptions): ScoreMatch<FactualityMaterial>;
 declare function faithfulness(options?: JudgePresetOptions): ScoreMatch<FaithfulnessMaterial>;
 declare function instructionFollowing(options?: JudgePresetOptions): ScoreMatch<InstructionFollowingMaterial>;
 declare function pairwisePreference(options?: JudgePresetOptions): ScoreMatch<PairwisePreferenceMaterial>;
-declare function closeQA(options?: JudgePresetOptions): ScoreMatch<CloseQAMaterial>;
 ```
 
-五个工厂及其材料类型从 `niceeval` 和 `niceeval/expect` 导出。
-每个工厂返回可复用的定义实例；默认 name 分别为 factuality、faithfulness、instruction-following、pairwise-preference 和 close-qa。
+四个工厂及其材料类型从 `niceeval` 和 `niceeval/expect` 导出。
+每个工厂返回可复用的定义实例；默认 name 分别为 factuality、faithfulness、instruction-following和 pairwise-preference。
 必填文本非空；instructions 是 1 至 32 项非空文本，context 数组非空。非法材料不会进入模型调用。
 
 | 裁判 | 计算方法 | 分数含义 |
@@ -127,14 +123,10 @@ declare function closeQA(options?: JudgePresetOptions): ScoreMatch<CloseQAMateri
 | faithfulness | 提取陈述，再全量分类，由代码计算 supported / total | 已提取陈述受到上下文支持的比例 |
 | instructionFollowing | 对作者列出的每项要求分类，代码计算 followed / total | 明确要求的满足比例 |
 | pairwisePreference | candidate=1、tie=0.5、reference=0 | 本次比较中对候选答案的偏好 |
-| closeQA | correct=1、incomplete=0.5、incorrect=0 | 只依据给定材料回答的完整性与正确性 |
 
 Factuality 的 expected 是作者提供的参考，不是经过外部验证的事实依据。
 Faithfulness 不是让模型整体估计比例；完整分母与逐项结果必须可读。提取为空或不完整时是 unavailable。
 比较裁判允许平局，分数不是胜率；一次比较不保证消除位置偏差。
-`closeQA()` 只使用 `input`、`output` 与 `context`。完整有据的回答，或材料不足时准确拒答，为 correct；
-有据但遗漏必要内容为 incomplete；编造、矛盾、答非所问，或材料足以回答却拒答为 incorrect。分类冲突时，
-依次以 incorrect、incomplete、correct 为准。
 完整场景见 [使用现成裁判并复核判分依据](use-case/inspect-judge-score.md)。
 
 ## 自定义 Match 与声明

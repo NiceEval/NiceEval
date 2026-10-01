@@ -28,6 +28,7 @@ export type {
 } from "./assertions/workspace-diff.ts";
 export type {
   AssertionCheck,
+  ScoreFunction,
   PolymorphicBooleanAssertionHandle,
   PolymorphicMeasurementAssertionHandle,
   PostRunBooleanAssertionHandle,
@@ -114,6 +115,8 @@ export type {
   AdapterAssertionsFactory,
   AdapterAssertionsFactoryContext,
   AdapterCleanupContext,
+  AttemptCancellation,
+  AttemptSignal,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,
@@ -129,13 +132,14 @@ export type {
 } from "./adapter.ts";
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";
 
-export { closeQA, factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
-export type { CloseQAMaterial, JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
+export { factuality, faithfulness, instructionFollowing, pairwisePreference } from "./assertions/judge-presets.ts";
+export type { JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
 export type { JudgeProvider, JudgeSelection } from "./judge/index.ts";
 export { MigrationRequiredError, type MigrationOccurrence, type ErrorSource } from "./error-assistance/index.ts";
-export type { AdapterUsageInput } from "./adapter-usage.ts";
+export type { AdapterUsageInput, AdapterUsageSeal } from "./adapter-usage.ts";
 export type { AdapterAttachmentInput, AdapterAttachmentReceipt } from "./adapter-attachments.ts";
 export type {
+  ExecutionDisplayBlock,
   ExecutionTraceActor,
   ExecutionTraceEvent,
   ExecutionTraceEvidence,
@@ -149,3 +153,14 @@ export type {
   ExecutionTraceTime,
   TraceJson,
 } from "./adapter-execution-trace.ts";
+
+export { defineMaterialMatch, defineContextMatch } from "./assertions/context-match.ts";
+export type { MaterialMatch, ContextBooleanMatch, ContextScoreMatch, MatchContext, ReadonlyMaterial, MatchFact, MaterialCollection, MaterialItem, MaterialCaptureBudget, FactCaptureBudget } from "./assertions/context-match.ts";
+
+export type { AttemptUsageSnapshot, AdapterAttemptUsageSnapshot } from "./o11y/adapter-usage-projection.ts";
+
+export type { EvalUsage } from "./o11y/eval-usage.ts";
+
+export type { AgentMatchContext } from "./context/assert-first.ts";
+
+export type { ModelSlotSelection, ResolvedModelSlot, ResolvedModelSlots } from "./model-slots.ts";

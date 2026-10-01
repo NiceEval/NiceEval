@@ -2,11 +2,11 @@
 
 > 本裁决已被 [CLI 与 Insight](../cli-insight/DECISION.md) 取代。PLAN-7 只代表旧目标作者面，本篇保留形成历史；外部用户网页接入面尚未定案。
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [PLAN-5](plans/plan-5/README.md) · [PLAN-6](plans/plan-6/README.md) · [PLAN-7](plans/plan-7/README.md)
 
 ## 裁决
 
-采纳 [PLAN-7](PLAN-7/README.md)。
+采纳 [PLAN-7](plans/plan-7/README.md)。
 
 作者面是 nominal Analysis fields、受限 `ReportSample`、`await aggregate(sample, ...)`、普通 async component 与 closed
 semantic components。

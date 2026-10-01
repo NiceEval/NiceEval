@@ -29,6 +29,8 @@ import { encodeRecordJsonUtf8, RECORD_JSON_MAXIMUM_BYTES } from "../writer/limit
 import type { RecordWriteError } from "../writer/types.ts";
 import type { AttemptRecordsWriter, AttemptWriteSession, CreateRunRequest, OwnerRecordsWriter, ReadableAttempt, ReadableRun, RecordAttachmentContentReader, RecordAttachmentRead, RecordCleanOperationPlan, RecordCleanOperationReceipt, RecordCompleteView, RecordHostSDK, RecordMaintenanceOperationFailure, RecordMaintenanceSession, RecordMigrateOperationPlan, RecordMigrateOperationReceipt, RecordMigrationPlan, RecordReadSession, RecordSealReceipt, RecordSelection, RecordSelectionProblem, RecordSelectionRequest, ReferenceRunWriteSession, RunCompletion, RunWriteSession, SelectedAttemptRef, SelectedOwnerRef, SelectedRunFacts, SelectedRunRef } from "./types.ts";
 import { attemptWriteSessionBrand, runWriteSessionBrand, selectedAttemptRefBrand, selectedOwnerRefBrand, selectedRunRefBrand } from "./types.ts";
+import { openOperationalRecordReadSession, type SealedRunSummary } from "../sqlite/index.ts";
+import type { RunResourcePage } from "../../run/storage/types.ts";
 
 type AnyDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> = RecordAttachmentDefinition<Owner, string, Schema.Top>;
 type AnyPersistence = RecordAttachmentPersistence<AnyDefinition, number>;
@@ -109,10 +111,53 @@ type OwnerRuntime =
   | { readonly kind: "attempt"; readonly runId: RunId; readonly attemptId: AttemptId };
 interface ReaderRuntime {
   readonly root: RecordRoot; readonly client: StorageWorkerClient; readonly catalog: RecordAttachmentCatalog; readonly lifecycle: ReaderLifecycle;
+  readonly snapshot: ReaderSnapshot;
   readonly runs: WeakMap<SelectedRunRef, RunId>; readonly attempts: WeakMap<SelectedAttemptRef, { readonly runId: RunId; readonly attemptId: AttemptId }>;
   readonly owners: WeakMap<SelectedOwnerRef, OwnerRuntime>; readonly selections: WeakSet<RecordSelection>; readonly coreCache: Map<RunId, SealedRunCore>;
   readonly runRefs: Map<RunId, SelectedRunRef>; readonly attemptRefs: Map<string, SelectedAttemptRef>;
   readonly content: WeakMap<RecordContentHandle, { readonly contentId: string; readonly logicalHandle: string; readonly byteLength: number; readonly digest: string; readonly chunkCount: number }>;
+}
+interface ReaderSnapshot {
+  readonly summaries: readonly SealedRunSummary[];
+  readonly resources: RunResourcePage["runs"];
+  readonly cutoff: RunResourcePage["cutoff"];
+  readonly cores: ReadonlyMap<RunId, SealedRunCore>;
+}
+
+/** Capture planning facts together, then release SQLite before any dispatch. */
+function captureReaderSnapshot(root: string): Effect.Effect<ReaderSnapshot, SqliteRecordError> {
+  return Effect.try({
+    try: () => {
+      const session = openOperationalRecordReadSession(root);
+      try {
+        const summaries: SealedRunSummary[] = [];
+        const resources: RunResourcePage["runs"][number][] = [];
+        const cores = new Map<RunId, SealedRunCore>();
+        let afterRunId = "";
+        for (;;) {
+          const page = session.readSealedRunSummaryPage(afterRunId, 100);
+          summaries.push(...page.summaries);
+          if (page.nextAfterRunId === null) break;
+          afterRunId = page.nextAfterRunId;
+        }
+        for (const summary of summaries) {
+          const core = session.readSealedRunCore(summary.runId);
+          if (core !== undefined) cores.set(summary.runId as RunId, core);
+        }
+        afterRunId = "";
+        for (;;) {
+          const page = session.listRunResources({ afterRunId, pageSize: 100 });
+          resources.push(...page.runs);
+          if (page.nextAfterRunId === null) break;
+          afterRunId = page.nextAfterRunId;
+        }
+        return Object.freeze({ summaries: Object.freeze(summaries), resources: Object.freeze(resources), cutoff: session.publicationCutoff(), cores });
+      } finally {
+        session.close();
+      }
+    },
+    catch: (cause) => cause instanceof SqliteRecordError ? cause : new SqliteRecordError("record-sqlite-error", "record-reader-snapshot", "Could not capture reader facts", { cause }),
+  });
 }
 const runSessions = new WeakMap<object, RunRuntime>();
 const attemptSessions = new WeakMap<object, AttemptRuntime>();
@@ -461,13 +506,8 @@ function decodeCore(core: SealedRunCore): { readonly record: RecordDocument; rea
   return Object.freeze({ record: record.success, run: run.success, attempts: Object.freeze(attempts), members: Object.freeze(members) });
 }
 function readCore(runtime: ReaderRuntime, runId: RunId): Effect.Effect<SealedRunCore | undefined, RecordReaderReadError> {
-  if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" })); const cached = runtime.coreCache.get(runId);
-  return cached === undefined ? sqliteEffect(() => runtime.client.readSealedRunCore(runId)).pipe(
-    Effect.mapError((error) => error.code === "record-database-invalid" || error.code === "record-seal-incomplete"
-      ? new RecordIntegrityFailure({ code: "record-integrity-failure", runId, reason: "publication-closure-invalid" })
-      : error),
-    Effect.tap((core) => Effect.sync(() => { if (core !== undefined) runtime.coreCache.set(runId, core); })),
-  ) : Effect.succeed(cached);
+  if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
+  return Effect.succeed(runtime.coreCache.get(runId));
 }
 function runRef(runtime: ReaderRuntime, runId: RunId): SelectedRunRef {
   const old = runtime.runRefs.get(runId); if (old !== undefined) return old; const ref: SelectedRunRef = Object.freeze({ runId, [selectedRunRefBrand]: () => undefined }); runtime.runRefs.set(runId, ref); runtime.runs.set(ref, runId); return ref;
@@ -632,11 +672,19 @@ function readCollectionWhole(runtime: ReaderRuntime, owner: SelectedOwnerRef<"at
 }
 
 function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
+  const listRunResources: RecordReadSession["listRunResources"] = (input = {}) => Effect.suspend((): Effect.Effect<RunResourcePage, RecordReaderReadError> => {
+    if (runtime.lifecycle.closed) return Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
+    const pageSize = input.pageSize ?? 100;
+    if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 256) return Effect.fail(new RecordHandleInvalid({ code: "record-handle-invalid" }));
+    const candidates = runtime.snapshot.resources.filter((run) => run.runId > (input.afterRunId ?? "") && (input.invocationId === undefined || run.invocationId === input.invocationId));
+    const runs = Object.freeze(candidates.slice(0, pageSize));
+    return Effect.succeed(Object.freeze({ cutoff: runtime.snapshot.cutoff, runs, nextAfterRunId: candidates.length > pageSize ? runs.at(-1)!.runId : null }));
+  });
   const selectRuns: RecordReadSession["selectRuns"] = (request?: RecordSelectionRequest) => Effect.gen(function* () {
     if (runtime.lifecycle.closed) return yield* Effect.fail(new RecordReaderClosed({ code: "record-reader-closed" }));
     const requested = request?.runIds === undefined ? undefined : new Set(request.runIds); const cores: { readonly core: SealedRunCore; readonly decoded: NonNullable<ReturnType<typeof decodeCore>> }[] = []; let after = "";
     while (true) {
-      const page = yield* sqliteEffect(() => runtime.client.listSealedRunSummaries(after, 100)); if (page.length === 0) break;
+      const page = runtime.snapshot.summaries.filter((summary) => summary.runId > after).slice(0, 100); if (page.length === 0) break;
       for (const summary of page) {
         after = summary.runId;
         if (requested !== undefined && !requested.has(summary.runId as RunId)) continue;
@@ -688,6 +736,7 @@ function makeReadSession(runtime: ReaderRuntime): RecordReadSession {
     return Object.freeze({ selection, attachments: runtime.catalog }) satisfies RecordCompleteView;
   });
   return Object.freeze({
+    listRunResources,
     selectRuns,
     readRun: readRunEntry,
     readAttempt: readAttemptEntry,
@@ -701,7 +750,8 @@ function openRead(root: RecordRoot, catalog: RecordAttachmentCatalog): Effect.Ef
     const rootPath = storageRoot(root); if (rootPath === undefined) return yield* Effect.fail(new RecordBootstrapInvalid({ code: "record-bootstrap-invalid", reason: "record-document-invalid" }));
     const projectState = yield* ProjectStateDatabase;
     const client = (yield* projectState.bind(rootPath)).record; const lifecycle: ReaderLifecycle = { closed: false };
-    const runtime: ReaderRuntime = { root, client, catalog, lifecycle, runs: new WeakMap(), attempts: new WeakMap(), owners: new WeakMap(), selections: new WeakSet(), coreCache: new Map(), runRefs: new Map(), attemptRefs: new Map(), content: new WeakMap() };
+    const snapshot = yield* captureReaderSnapshot(rootPath);
+    const runtime: ReaderRuntime = { root, client, catalog, lifecycle, snapshot, runs: new WeakMap(), attempts: new WeakMap(), owners: new WeakMap(), selections: new WeakSet(), coreCache: new Map(snapshot.cores), runRefs: new Map(), attemptRefs: new Map(), content: new WeakMap() };
     yield* Effect.addFinalizer(() => Effect.sync(() => { lifecycle.closed = true; })); return makeReadSession(runtime);
   });
 }

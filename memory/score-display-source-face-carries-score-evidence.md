@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: score-display-source-face-carries-score-evidence
+title: 设计裁决:计分制给分证据在有源码的 attempt 详情由源码面承载
+createdAt: 2026-07-23T09:58:35+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/score-display-source-face-carries-score-evidence.md
+  commit: c192b7d44240098024ec65d9b377ce4701bc15a0
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:计分制给分证据在有源码的 attempt 详情由源码面承载
 
 - **裁决**(2026-07-23):「计分制 + 有源码」的 attempt 详情里,给分证据由 `AttemptSource` 自己承载——得分点挣分进源码行右缘 pill、`t.score(...)` 调用行原位标注给分、前置中止行标 `⤓` 且其后源码行降灰(未到达区),`loc` 不在展示源码内的得分点与给分记录落既有 unmapped 区。配套裁决:本轮挣分总分只在 `AttemptSummary` 头行出现一次;得分点(含 passed)豁免 passed 收纳;计分制 passed 有丢分时结果摘要取首条丢分得分点(`+N more lost points`);`AttemptFixPrompt` 把丢分算可操作失败。落点:`docs/feature/scoring/library/display.md`、`docs/feature/reports/library/attempt-detail.md`、`docs/feature/reports/show/attempt.md`、`docs/feature/reports/library/entity-lists.md`。

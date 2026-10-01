@@ -1,6 +1,8 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#pi-agent-subscribe-deterministic
 import { defineEval } from "niceeval";
 import {
+  atLeast,
+  atMost,
   equals,
   includes,
   jsonMatch,
@@ -53,18 +55,15 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      { sessionId: t.sessionId, usage: completed.usage },
-      satisfies(
-        "Pi completed session and usage",
-        ({ sessionId, usage }) =>
-          sessionId === "pi-agent-completed-session" &&
-          usage?.inputTokens === 10 &&
-          usage.outputTokens === 5 &&
-          usage.cacheReadTokens === 4 &&
-          usage.cacheCreationTokens === 2,
-      ),
-    );
+    t.check(t.sessionId, equals("pi-agent-completed-session"));
+    t.check(completed.usage.inputTokens, atLeast(10));
+    t.check(completed.usage.inputTokens, atMost(10));
+    t.check(completed.usage.outputTokens, atLeast(5));
+    t.check(completed.usage.outputTokens, atMost(5));
+    t.check(completed.usage.cacheReadTokens, atLeast(4));
+    t.check(completed.usage.cacheReadTokens, atMost(4));
+    t.check(completed.usage.cacheWriteTokens, atLeast(2));
+    t.check(completed.usage.cacheWriteTokens, atMost(2));
     const failedSession = t.newSession();
     const failed = await failedSession.send(
       "pi agent terminal failure fixture",
@@ -90,15 +89,10 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      { sessionId: failedSession.sessionId, usage: failed.usage },
-      satisfies(
-        "Pi failed session and usage",
-        ({ sessionId, usage }) =>
-          sessionId === "pi-agent-failed-session" &&
-          usage?.inputTokens === 5 &&
-          usage.outputTokens === 1,
-      ),
-    );
+    t.check(failedSession.sessionId, equals("pi-agent-failed-session"));
+    t.check(failed.usage.inputTokens, atLeast(5));
+    t.check(failed.usage.inputTokens, atMost(5));
+    t.check(failed.usage.outputTokens, atLeast(1));
+    t.check(failed.usage.outputTokens, atMost(1));
   },
 });

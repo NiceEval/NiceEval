@@ -57,6 +57,25 @@ export interface ExecutionTraceScopeMembership {
   readonly state: "included" | "excluded" | "unknown";
 }
 
+/** One closed, human-readable display block sealed with its event. */
+export type ExecutionDisplayBlock =
+  | { readonly kind: "text"; readonly text: string }
+  | {
+      readonly kind: "message";
+      readonly role: "user" | "assistant" | "system" | "other";
+      readonly speaker?: string;
+      readonly text: string;
+    }
+  | {
+      readonly kind: "fields";
+      readonly fields: readonly {
+        readonly label: string;
+        readonly value: string | number | boolean | null;
+      }[];
+    }
+  | { readonly kind: "code"; readonly language?: string; readonly text: string }
+  | { readonly kind: "image"; readonly artifactId: string; readonly alt: string };
+
 /**
  * One Adapter-owned domain event. `Type` and `Payload` preserve a caller's
  * discriminated union without requiring NiceEval to execute its domain parser.
@@ -75,6 +94,8 @@ export interface ExecutionTraceEvent<
   readonly links?: readonly ExecutionTraceLink[];
   readonly evidence?: readonly ExecutionTraceEvidence[];
   readonly scopeMemberships?: readonly ExecutionTraceScopeMembership[];
+  /** Optional human-readable blocks; omitted means the event has no display. */
+  readonly display?: readonly ExecutionDisplayBlock[];
 }
 
 export interface ExecutionTraceInput<

@@ -117,7 +117,7 @@ interface Agent {
 }
 ```
 
-`progress` 是运行中的短期状态，不落盘。`diagnostic` 是需要运行后回顾的有界 warning/error，会随 Attempt 保存。它们都不能指定 lifecycle phase，也不会自动改变 `Turn.status`。连接失败或响应无法解析时抛出异常。runner 会把它记录为 `errored`，并在终端给出可下钻的 locator。
+`progress` 是运行中的短期状态，不落盘。`diagnostic` 是需要运行后回顾的有界 warning/error，会随 Attempt 保存。它们都不能指定 lifecycle phase，也不会自动改变 `Turn.status`。连接失败或响应无法解析时抛出异常。runner 会把它记录为 `errored`，并在终端给出 locator，用它可以查看这次失败的细节。
 
 `send` 是唯一要实现的函数。它的签名里只有三个类型，分开看。
 

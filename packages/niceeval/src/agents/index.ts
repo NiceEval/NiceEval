@@ -11,6 +11,8 @@ export type {
   AdapterAssertionsFactory,
   AdapterAssertionsFactoryContext,
   AdapterCleanupContext,
+  AttemptCancellation,
+  AttemptSignal,
   AdapterContract,
   AdapterCreateContext,
   AdapterDefinition,
@@ -25,6 +27,7 @@ export type {
   ReservedAdapterContextKey,
 } from "../adapter.ts";
 export type {
+  ExecutionDisplayBlock,
   ExecutionTraceActor,
   ExecutionTraceEvent,
   ExecutionTraceEvidence,
@@ -211,3 +214,5 @@ export type {
   McpServer,
   SkillSpec,
 } from "../types.ts";
+
+export type { ModelSlotSelection, ResolvedModelSlot, ResolvedModelSlots } from "../model-slots.ts";

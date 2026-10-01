@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: live-dashboard-full-width-ruling
+title: 裁决:live 面板默认占满终端全宽,ACTIVE 身份列按内容定宽、detail 拿走其余全部
+createdAt: 2026-07-23T10:32:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/live-dashboard-full-width-ruling.md
+  commit: 51a98f609091e8d9a784e7debcee93a31cb47fc3
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:live 面板默认占满终端全宽,ACTIVE 身份列按内容定宽、detail 拿走其余全部
 
 **日期**:2026-07-23(用户裁定「默认占满,把细节尽可能的展示出来」)

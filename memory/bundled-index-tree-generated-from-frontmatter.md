@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: bundled-index-tree-generated-from-frontmatter
+title: 随包 INDEX.md 正文：手写任务表两连翻案为「打包时从 frontmatter 生成」
+createdAt: 2026-07-17T14:16:21+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/bundled-index-tree-generated-from-frontmatter.md
+  commit: f2ce0475dc49c073822f84116c495b93dde58e94
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 随包 INDEX.md 正文：手写任务表两连翻案为「打包时从 frontmatter 生成」
 
 **日期**：2026-07-17。**触发**：用户先提议「mdx 加 description、INDEX.md 生成树状」，随后再纠正「是打包的时候 cp 进去 + 生成」。同一天内两次翻案，最终形态见 `docs/engineering/agent-docs/README.md`。

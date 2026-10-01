@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: undecided-chinese-terms-carry-scope-evalkind
+title: 三组中文术语待裁决:Carry / Scope / Eval kind
+createdAt: 2026-07-26T20:43:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/undecided-chinese-terms-carry-scope-evalkind.md
+  commit: bc7586f2cdc5204da4669bde30138d66e445e0f2
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 三组中文术语待裁决:Carry / Scope / Eval kind
 
 **状态**:待裁决(2026-07-26)。含义已在 `docs/concepts.md` 定稿,中文写法未定。

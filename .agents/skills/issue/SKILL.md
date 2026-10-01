@@ -12,7 +12,7 @@ Send suspected vulnerabilities to Private Vulnerability Reporting, and stop if s
 Do not create a Feedback for a new Observation; Feedback is retained only for legacy migration and audit.
 Use Memory for investigated Problems, Decisions, and reusable know-how; do not use an Issue as a root-cause record.
 
-For an E2E case relation, run `pnpm run repo docs test issue add --help`. This is a local sidecar mutation, not remote Issue mutation. It must read-only verify the current repository's canonical URL, existence, non-PR identity, and direct provenance to the exact `<path>#<caseId>`, then CAS the verified remote identity before local publication. Repeat it for every Issue related to that case; repeat it separately for other cases in the same file. It never grants or consumes authorization to mutate GitHub. Remove a current relation only through `pnpm run repo docs test issue retire --help`.
+For an E2E case relation, run `pnpm run repo docs test issue add --help`. This is a local source-relation mutation, not remote Issue mutation. It must read-only verify the current repository's canonical URL, existence, non-PR identity, and direct provenance to the exact `<path>#<caseId>`, then CAS the verified remote identity before local publication. Repeat it for every Issue related to that case; repeat it separately for other cases in the same file. It never grants or consumes authorization to mutate GitHub. Remove a current relation only through `pnpm run repo docs test issue retire --help`.
 
 ## Prepare
 
@@ -21,7 +21,8 @@ For a Feature, preserve the expected workflow, current gap, impact, usage exampl
 Do not invent a root cause or require a proposed solution.
 
 Search both open and closed Issues for a semantic duplicate.
-Return a draft and suggested type, area, and status labels when remote mutation is not explicitly authorized.
+Record the local draft with `pnpm exec concord issue create <id> --title <title> --body <text>`; it writes `docs/issues/<id>.md` and never mutates GitHub.
+Return that draft and suggested type, area, and status labels when remote mutation is not explicitly authorized.
 
 ## Remote mutation gate
 

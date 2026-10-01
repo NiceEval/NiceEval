@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: accept-cross-experiment-batch-ruling
+title: 裁决:`accept` 多 locator 放开跨 experiment,原「必须同一 experiment」是实现事故
+createdAt: 2026-08-04T17:29:58+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/accept-cross-experiment-batch-ruling.md
+  commit: 4c23e6a66d281c7502a0baa17967ebf2283b6538
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:`accept` 多 locator 放开跨 experiment,原「必须同一 experiment」是实现事故
 
 **裁决**(2026-08-04)。`niceeval accept @<locator>...` 的多 locator 输入不再要求全部属于同一

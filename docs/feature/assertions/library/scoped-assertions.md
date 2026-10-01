@@ -1,31 +1,27 @@
 # Assertions —— scoped methods
 
-本页是 `calledTool`、`notCalledTool`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段或计数规则。
+本页是 `calledTool`、`notCalledTool`、`usedNoTools`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段或计数规则。
 
-每一次调用都直接登记 Boolean Assertion。receiver 在调用处取得 snapshot；随后发生的 Session 或 Turn 不能改写这条 entry。Boolean handle 仍可 `await .orStop()`，它只等待并控制同一条已登记 Assertion。
+每一次调用都通过同一 `check` 登记 Boolean Assertion。receiver 在调用处取得 snapshot；随后发生的 Session 或 Turn 不能改写这条 entry。Boolean handle 仍可 `await .orStop()`，它只等待并控制同一条已登记 Assertion。
 
 ## 调用形状
 
 ```ts
-interface CalledToolAtLeast {
-  readonly atLeast: number;
-}
-
-type CalledToolCount = number | CalledToolAtLeast;
-
-interface CalledToolOptions {
-  readonly count?: CalledToolCount;
-}
-
-calledTool(match: ToolMatch, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
-calledTool(name: string, options?: CalledToolOptions): BooleanAssertionHandle<Kind, void>;
+calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
+calledTool(name: string): BooleanAssertionHandle<Kind, void>;
 notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
 notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
+usedNoTools(): BooleanAssertionHandle<Kind, void>;
 ```
 
-`name` 是 `toolMatch(name)` 的薄糖，只按原始工具名选择 occurrence。`calledTool` 的第二参数只含 `count`；`input`、`output` 与 `status` 都属于 `ToolMatch`。
+根 `t`、Session 与 Turn 使用相同签名。`calledTool` 与 `notCalledTool` 只接一个 Match 或工具名；`usedNoTools()` 完全零参数，也不接额外 Match。
+`name` 是 `toolMatch(name)` 的薄糖，只按原始工具名选择 occurrence。`input`、`output` 与 `status` 都属于 `ToolMatch`。
 
-`count` 的数字是恰好次数，且必须为正整数。`{ atLeast: n }` 的 `n` 同样必须为正整数。省略 `count` 等于 `{ atLeast: 1 }`。数值 `0` 无效；需要证明没有匹配调用时使用 `notCalledTool`。
+普通 ToolMatch 表达至少一次匹配。次数通过 `ToolMatch.exactly(n)`、`.atLeast(n)` 或 `.greaterThan(n)` 构造 ToolOccurrenceMatch。
+所有 `n` 都必须是安全整数；`calledTool` 的 `.exactly(n)` 与 `.atLeast(n)` 要求 `n > 0`，`.greaterThan(n)` 允许 `n >= 0`。
+`calledTool` 只接受正存在或正 occurrence，拒绝 `.exactly(0)`、`.atLeast(0)` 与上界 `.atMost(n)`、`.lessThan(n)`。
+
+证明没有匹配调用用 `notCalledTool(match)`；证明整个工具集合为 exact zero 用 `usedNoTools()`，未知集合不能证明没有发生。
 
 ```ts
 import {
@@ -42,8 +38,7 @@ turn.calledTool(
     input: jsonMatch({ city: "Taipei" }),
     output: jsonMatch({ forecast: "sunny" }),
     status: "completed",
-  }),
-  { count: 1 },
+  }).exactly(1),
 ).label("完成天气查询");
 
 turn.calledTool(
@@ -53,6 +48,7 @@ turn.calledTool(
 ).label("读取敏感路径");
 
 turn.calledTool(commandMatch("pnpm", { argsStart: ["test"] }));
+turn.calledTool(toolMatch("read_file").atLeast(2));
 turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 ```
 
@@ -82,10 +78,12 @@ Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session �
 
 每个候选 occurrence 先得到 `matched`、`mismatched` 或 `unavailable`。计数在这三种结果上求值，不能把未知当作零。
 
-- 精确 `n`：已知匹配数超过 `n` 时确定 mismatched。只有已知匹配数等于 `n` 且其余候选都可判定时才 matched；否则为 unavailable。
-- `{ atLeast: n }`：已知匹配数达到 `n` 时立即 matched。已知匹配数不足且其余候选都可判定时才 mismatched；否则为 unavailable。
-- 省略计数：按 `{ atLeast: 1 }` 求值。
+- `.exactly(n)`：已知匹配数超过 `n` 时确定 mismatched。只有已知匹配数等于 `n` 且其余候选都可判定时才 matched；否则为 unavailable。
+- `.atLeast(n)`：已知匹配数达到 `n` 时立即 matched。已知匹配数不足且其余候选都可判定时才 mismatched；否则为 unavailable。
+- `.greaterThan(n)`：按 `.atLeast(n + 1)` 的下限判据求值。
+- 普通 ToolMatch 或工具名：按 `.atLeast(1)` 求值。
 - `notCalledTool`：按精确零匹配求值。一个已知匹配即可 mismatched；只有所有候选都可判定且没有匹配时才 matched。
+- `usedNoTools()`：对全部工具按精确零求值，完整性要求与 `notCalledTool` 相同。
 
 这套规则也要求 receiver 的 actions 材料足以判定。材料不完整时，正断言、负断言和未达到的下限都保留 unavailable，而不是据空白认定结果。
 

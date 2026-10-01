@@ -1,3 +1,7 @@
+// @concord-file ne-eval-inspection-protocol
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 import { Result, Schema } from "effect";
 
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
@@ -9,6 +13,7 @@ import { InspectionArtifactMetadataSchema, InspectionArtifactsPageLimitSchema, I
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
 import { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 import { AssertionDetailResultSchema } from "./assertion-projection.ts";
+import { InspectionProjectResultSchema } from "./project-result.ts";
 import {
   InspectionAttemptDiffResultSchema, InspectionAttemptResultSchema,
   InspectionAttemptTimingResultSchema, InspectionAttemptUsageResultSchema,
@@ -27,6 +32,7 @@ const ItemIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isItemId)
 const ToolOccurrenceIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isToolOccurrenceId)));
 const CommandIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isCommandId)));
 const RunIdsSchema = Schema.Array(RunIdSchema);
+const ProjectExperimentIdsSchema = Schema.Array(ExperimentIdSchema).check(Schema.makeFilter((ids) => ids.length > 0 && new Set(ids).size === ids.length));
 const operation = <Kind extends string, Fields extends Schema.Struct.Fields>(kind: Kind, fields: Fields) =>
   Schema.Struct({ kind: Schema.Literal(kind), ...fields });
 
@@ -93,10 +99,11 @@ const spec = <Request extends Schema.Constraint, ResultFields extends Schema.Str
   readonly request: Request; readonly result: ResultFields; readonly factKinds: FactKinds;
 }) => Object.freeze(fields);
 
-/** The sole 16-operation protocol owner. Every request, result and descriptor projection is derived from this registry. */
+/** The sole protocol catalog owner. Every request, result and descriptor projection is derived from this registry. */
 export const inspectionProtocolRegistry = Object.freeze({
+  "project.get": spec({ request: operation("project.get", { experimentIds: Schema.optional(ProjectExperimentIdsSchema) }), result: { project: InspectionProjectResultSchema }, factKinds: ["current-project", "core", "assertions", "attempt-cost"] }),
   "overview.get": spec({ request: operation("overview.get", { runIds: Schema.optional(RunIdsSchema) }), result: { overview: InspectionOverviewResultSchema }, factKinds: ["core", "assertions", "attempt-cost"] }),
-  "experiment.get": spec({ request: operation("experiment.get", { experimentId: ExperimentIdSchema }), result: { experiment: InspectionExperimentResultSchema }, factKinds: ["core", "assertions", "attempt-cost"] }),
+  "experiment.get": spec({ request: operation("experiment.get", { experimentId: ExperimentIdSchema }), result: { experiment: InspectionExperimentResultSchema }, factKinds: ["core", "assertions", "attempt-cost", "agent-turns", "adapter-usage", "judge-usage"] }),
   "runs.list": spec({ request: operation("runs.list", { continuation: Schema.optional(Schema.String) }), result: { runs: Schema.Array(SealedRunSummarySchema), continuation: Schema.optional(Schema.String) }, factKinds: ["core"] }),
   "run.get": spec({ request: operation("run.get", { runId: RunIdSchema }), result: { run: InspectionRunResultSchema }, factKinds: ["core"] }),
   "run.summary": spec({ request: operation("run.summary", { runId: RunIdSchema }), result: { summary: InspectionRunSummaryResultSchema }, factKinds: ["core", "assertions", "agent-turns"] }),
@@ -116,6 +123,7 @@ export const inspectionProtocolRegistry = Object.freeze({
     traceId: Schema.optional(Schema.String),
     sourceId: Schema.optional(Schema.String),
     actorId: Schema.optional(Schema.String),
+    eventType: Schema.optional(Schema.String),
     continuation: Schema.optional(Schema.String),
   }), result: { trace: InspectionTraceResultSchema }, factKinds: ["execution-traces", "agent-turns", "turn-contexts", "sandbox-commands", "runner-activities", "runner-diagnostics"] }),
   "attempt.trace.detail": spec({ request: operation("attempt.trace.detail", { locator: AttemptLocatorSchema, selector: Schema.Union([
@@ -130,7 +138,7 @@ export const inspectionProtocolRegistry = Object.freeze({
     operation("command", { commandId: CommandIdSchema }),
   ]) }), result: { detail: InspectionTraceDetailResultSchema }, factKinds: ["execution-traces", "agent-turns", "sandbox-commands", "artifacts"] }),
   "attempt.timing": spec({ request: operation("attempt.timing", { locator: AttemptLocatorSchema }), result: { timing: InspectionAttemptTimingResultSchema }, factKinds: ["runner-activities"] }),
-  "attempt.usage": spec({ request: operation("attempt.usage", { locator: AttemptLocatorSchema }), result: { usage: InspectionAttemptUsageResultSchema }, factKinds: ["agent-turns", "adapter-usage"] }),
+  "attempt.usage": spec({ request: operation("attempt.usage", { locator: AttemptLocatorSchema }), result: { usage: InspectionAttemptUsageResultSchema }, factKinds: ["agent-turns", "adapter-usage", "judge-usage"] }),
   "attempt.diff": spec({ request: operation("attempt.diff", { locator: AttemptLocatorSchema }), result: { diff: InspectionAttemptDiffResultSchema }, factKinds: ["file-changes"] }),
   "attempt.sources": spec({ request: operation("attempt.sources", { locator: AttemptLocatorSchema }), result: { sources: InspectionSourcesResultSchema }, factKinds: ["assertions", "sources"] }),
   "attempt.artifacts": spec({ request: operation("attempt.artifacts", { locator: AttemptLocatorSchema, offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactsPageLimitSchema) }), result: { artifacts: ArtifactsResultSchema }, factKinds: ["artifacts"] }),
@@ -153,13 +161,19 @@ export type InspectionOperationFor<Kind extends InspectionOperationId> = Extract
   { readonly kind: Kind }
 >;
 
-const successSchema = (id: InspectionOperationId, entry: (typeof inspectionProtocolRegistry)[InspectionOperationId]) => {
+const successSchema = (
+  id: InspectionOperationId,
+  entry: (typeof inspectionProtocolRegistry)[InspectionOperationId],
+): Schema.Codec<InspectionSuccessDocument, InspectionSuccessEncoded> => {
   const fields = Schema.fieldsAssign({ operation: Schema.Literal(id), ...entry.result });
-  if (id === "runs.list") return RunsListSuccessMetadataSchema.pipe(fields);
-  if (id === "runs.compare") return CompareSuccessMetadataSchema.pipe(fields);
-  return SuccessMetadataSchema.pipe(fields);
+  const schema = id === "runs.list" ? RunsListSuccessMetadataSchema.pipe(fields)
+    : id === "runs.compare" ? CompareSuccessMetadataSchema.pipe(fields)
+    : SuccessMetadataSchema.pipe(fields);
+  // Object.entries erases the ID/result correlation established by the registry.
+  return schema as unknown as Schema.Codec<InspectionSuccessDocument, InspectionSuccessEncoded>;
 };
-export const InspectionSuccessDocumentSchema = Schema.Union(specs.map(([id, entry]) => successSchema(id as InspectionOperationId, entry)));
+export const InspectionSuccessDocumentSchema: Schema.Union<readonly Schema.Codec<InspectionSuccessDocument, InspectionSuccessEncoded>[]> =
+  Schema.Union(specs.map(([id, entry]) => successSchema(id as InspectionOperationId, entry)));
 
 const explanationSchema = (id: InspectionOperationId, entry: (typeof inspectionProtocolRegistry)[InspectionOperationId]) => {
   const fields = Schema.fieldsAssign({
@@ -181,13 +195,16 @@ export const InspectionFailureDocumentSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("failure"),
   operation: Schema.NullOr(InspectionOperationIdSchema),
   failure: Schema.Struct({
-    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid", "evidence-budget-exceeded", "restart-required"]),
+    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid", "evidence-budget-exceeded", "restart-required", "current-target-unavailable"]),
     reason: Schema.String,
     identity: Schema.optional(Schema.Struct({ runId: Schema.String })),
     correction: Schema.Literals(["fix-request", "choose-existing-selection", "fix-record-source", "retry", "upgrade-or-report", "restart"]),
   }),
 });
-export const InspectionDocumentSchema = Schema.Union([
+export const InspectionDocumentSchema: Schema.Union<readonly [
+  typeof InspectionDiscoveryDocumentSchema, typeof InspectionSuccessDocumentSchema,
+  typeof InspectionExplanationDocumentSchema, typeof InspectionFailureDocumentSchema,
+]> = Schema.Union([
   InspectionDiscoveryDocumentSchema, InspectionSuccessDocumentSchema,
   InspectionExplanationDocumentSchema, InspectionFailureDocumentSchema,
 ]);
@@ -207,6 +224,15 @@ export type InspectionSuccessDocumentFor<Kind extends InspectionOperationId> = K
   ? MetadataFor<Kind> & { readonly operation: Kind } & ResultFields<Kind>
   : never;
 export type InspectionSuccessDocument = InspectionSuccessDocumentFor<InspectionOperationId>;
+type SuccessEncodedFor<Kind extends InspectionOperationId> = Kind extends InspectionOperationId
+  ? (Kind extends "runs.list" ? Schema.Codec.Encoded<typeof RunsListSuccessMetadataSchema>
+      : Kind extends "runs.compare" ? Schema.Codec.Encoded<typeof CompareSuccessMetadataSchema>
+      : Schema.Codec.Encoded<typeof SuccessMetadataSchema>)
+    & { readonly operation: Kind }
+    & { readonly [Field in keyof Registry[Kind]["result"]]: Registry[Kind]["result"][Field] extends Schema.Constraint
+        ? Schema.Codec.Encoded<Registry[Kind]["result"][Field]> : never }
+  : never;
+type InspectionSuccessEncoded = SuccessEncodedFor<InspectionOperationId>;
 export type InspectionExplanationDocumentFor<Kind extends InspectionOperationId> = Kind extends InspectionOperationId
   ? Omit<MetadataFor<Kind>, "outcome"> & { readonly outcome: "explanation"; readonly operation: Kind; readonly factKinds: Registry[Kind]["factKinds"] }
   : never;
@@ -217,6 +243,8 @@ export type InspectionFailureDocument = Schema.Schema.Type<typeof InspectionFail
 export type InspectionDocument = InspectionDiscoveryDocument | InspectionOperationDocument | InspectionFailureDocument;
 export type InspectionProtocolDecodeResult<A> = { readonly success: true; readonly value: A } | { readonly success: false; readonly reason: string };
 
+// @concord-code ne-eval-inspection-decode-document
+// @concord-implements docs/feature/inspection/architecture.md
 export function decodeInspectionDocument(input: unknown): InspectionProtocolDecodeResult<InspectionDocument> {
   const decoded = Schema.decodeUnknownResult(InspectionDocumentSchema, { errors: "all", onExcessProperty: "error" })(input);
   return Result.isSuccess(decoded)

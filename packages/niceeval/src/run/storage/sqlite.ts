@@ -1,3 +1,8 @@
+// @concord-file ne-run-storage-sqlite
+// @concord-implements docs/feature/run/architecture.md
+// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run-inspection/README.md
+
 import { createHash, randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
 import { Effect } from "effect";
@@ -216,6 +221,9 @@ export function currentPublicationCutoffOnConnection(connection: RecordDatabase)
   return requireCutoff(connection);
 }
 
+// @concord-code ne-run-create-resource
+// @concord-implements docs/feature/run/architecture.md
+// @concord-implements docs/feature/run/lifecycle.md
 export function createRunResourceOnConnection(
   connection: RecordDatabase,
   input: CreateRunResourceInput,
@@ -260,6 +268,9 @@ export function createRunResourceOnConnection(
   });
 }
 
+// @concord-code ne-run-publish-origin-attempt
+// @concord-implements docs/feature/run/architecture.md
+// @concord-implements docs/feature/run/lifecycle.md
 export function publishOriginAttemptOnConnection(
   connection: RecordDatabase,
   input: PublishOriginAttemptInput,
@@ -343,6 +354,8 @@ export function publishOriginAttemptOnConnection(
   });
 }
 
+// @concord-code ne-run-bind-attempt-reference
+// @concord-implements docs/feature/run/architecture.md
 export function bindAttemptReferenceOnConnection(
   connection: RecordDatabase,
   input: BindAttemptReferenceInput,
@@ -431,6 +444,9 @@ function insertAbsences(
   for (const absence of absences) insert.run(runId, absence.slotId, absence.reason, revision);
 }
 
+// @concord-code ne-run-close-resource
+// @concord-implements docs/feature/run/architecture.md
+// @concord-implements docs/feature/run/lifecycle.md
 export function closeRunResourceOnConnection(
   connection: RecordDatabase,
   input: CloseRunResourceInput,
@@ -465,6 +481,8 @@ export function closeRunResourceOnConnection(
   });
 }
 
+// @concord-code ne-run-recover-resource
+// @concord-implements docs/feature/run/lifecycle.md
 export function recoverRunResourceOnConnection(
   connection: RecordDatabase,
   input: RecoverRunResourceInput,
@@ -547,6 +565,9 @@ function incomingReferences(connection: RecordDatabase, originRunId: string): re
   })));
 }
 
+// @concord-code ne-run-delete-resource
+// @concord-implements docs/feature/run/architecture.md
+// @concord-implements docs/feature/run/lifecycle.md
 export function deleteRunResourceOnConnection(
   connection: RecordDatabase,
   input: DeleteRunResourceInput,

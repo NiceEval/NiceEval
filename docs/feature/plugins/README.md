@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: plugins
+title: Plugins
+createdAt: 2026-08-11T12:02:10+08:00
 kind: feature
-relations: {}
 ---
 
 # Plugins

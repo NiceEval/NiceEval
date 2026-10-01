@@ -42,7 +42,8 @@ function walkCode(dir: string): string[] {
 function relativeLinks(content: string): string[] {
   return [...content.matchAll(/\]\(([^)\s]+)\)/g)]
     .map((m) => m[1].replace(/#.*$/, ""))
-    .filter((t) => t && !/^(https?:|mailto:|#)/.test(t));
+    .filter((t) => t && !/^(https?:|mailto:|#)/.test(t))
+    .map((target) => decodeURIComponent(target));
 }
 
 // 根入口直接链接共用页面，并把子目录委托给最近的 README。
@@ -59,6 +60,10 @@ function unindexedDocuments(files: readonly string[], index: string): string[] {
 }
 
 describe("docs 一致性", () => {
+  it("按 URL 语义解析中文与空格文件名，锚点不参与文件存在性检查", () => {
+    expect(relativeLinks("[研究](%E7%A0%94%E7%A9%B6.md#结论) [材料](source%20notes.md) [外部](https://example.invalid/x)")).toEqual(["研究.md", "source notes.md"]);
+  });
+
   const docsFiles = walk("docs", ".md");
 
   it("docs/ 下每篇文档都被 docs/README.md 索引", () => {

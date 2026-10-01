@@ -95,103 +95,35 @@ candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未�
 
 ### 命令与收据
 
-```ts
-export type Argv = readonly [string, ...string[]];
+本篇只说明各原语的语义与准入边界，不复写签名；导出与精确类型以 [`packages/testkit/src`](../../../packages/testkit/src/index.ts) 为准。
+按模块的导出索引：
 
-export interface InvocationReceipt {
-  readonly invocationId: string;
-  readonly createdRunIds: readonly string[];
-  readonly publicationCutoff: string;
-  readonly startedAt: string;
-  readonly completedAt?: string;
-  readonly completion: "completed" | "interrupted" | "failed";
-}
+| 模块 | 导出 |
+|---|---|
+| `process.ts` | `Argv`、`RunProcessOptions`、`DiagnosticTruncation`、`ProcessReceipt`、`ProcessStartError`、`runProcess`、`command`、`DIAGNOSTIC_LIMIT`；`ExpEvent` / `ExpStartEvent` / `ExpEvalEvent` / `ExpErrorEvent` 及对应 Schema |
+| `exp-protocol.ts` | 转出 `niceeval/experiment/host` 的 `ExpTerminalEvent`、`ExpTerminalSummary`、`InvocationReceipt` 与 `decodeExpTerminalEvent` |
+| `query-protocol.ts` | 转出 `niceeval/inspection` 的 `QUERY_PROTOCOL`、`INSPECTION_OPERATION_IDS`、`decodeInspectionDocument`、`narrowInspectionSuccess`、`narrowInspectionExplanation` 与 Query 文档类型 |
+| `inspection-request.ts` | `withInspectionRequest` |
+| `run-protocol.ts` | 转出 `niceeval/run` 的 `RUN_PROTOCOL`、`decodeRunDocument`、`RunListDocument`、`RunGetDocument` 等 |
+| `view-lifecycle.ts` | 转出 `niceeval/view` 的 `VIEW_LIFECYCLE_PROTOCOL`、`decodeViewLifecycle` 与 lifecycle 事件类型 |
+| `exp-eval-outcomes.ts` | `ExpEvalOutcomeExpectation`、`ExactEvalIdentity`、`assertExpEvalOutcomes`、`exactEval` |
+| `live-exp-retry.ts` | `retryFailedExpEvalsOnce` 及其结果类型 |
+| `process-lifecycle.ts` | `ProcessHandle`、`startProcess`、`withProcess`、`runManagedProcess`、`waitForOutput`、`waitForPathOrProcessExit`、`DEFAULT_GRACE_MS` |
+| `pty.ts` | `PtyHandle`、`PtyReceipt`、`startPty`、`withPty` 及选项类型 |
+| `primitives.ts` | `only`、`defined`、`pollUntil` |
+| `temp.ts` / `project-copy.ts` / `artifact-staging.ts` | `withTempDir`、`withProjectCopy`、`stageArtifacts` 及收据类型 |
+| `process-file-lock.ts` | `acquireProcessFileLock` |
+| `e2e-context.ts` | `E2EContext`、`E2ECaseContext`、`E2ECommand`、`createE2EContext` |
 
-export interface ExpReceiptEvent {
-  readonly type: "receipt";
-  readonly receipt: InvocationReceipt;
-}
+`ProcessReceipt` 携带完整 argv、cwd、exitCode、signal、原始 stdout / stderr、durationMs、timedOut 与 `diagnosticTruncation`，
+并提供按产品协议窄化的方法族：
 
-export type ExpEvalEvent = {
-  readonly event: "eval";
-  readonly locator: string;
-  readonly evalId: string;
-  readonly experimentId: string;
-  readonly verdict: "passed" | "failed" | "errored" | "skipped";
-  readonly attempts: number;
-} & (
-  | { readonly passed: number }
-  | {
-      readonly planned: number;
-      readonly unstarted: number;
-      readonly reason: "early_exit";
-    }
-);
+- 通用：`diagnostic()`、`json()`、`ndjson()`；
+- `niceeval.exp`：`expTerminal()`、`expReceipt()`、`expEvents()`、`expEvalEvents()`、`expErrorEvents()`；
+- `niceeval.query`：`queryDiscovery()`、`querySuccess(operation)`、`queryExplanation(operation)`、`queryFailure()`；
+- `niceeval.query` 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
+- `niceeval.run`：`runListDocument()`、`runGetDocument()`。
 
-export interface ExpEvalOutcomeExpectation {
-  readonly experimentId: string;
-  readonly evalId: string;
-  readonly verdict: "passed" | "failed" | "errored" | "skipped";
-  readonly attempts: number;
-  readonly passed?: number;
-  readonly reason?: "early_exit";
-  readonly planned?: number;
-  readonly unstarted?: number;
-}
-
-export interface ProcessReceipt {
-  argv: Argv;
-  cwd: string;
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
-  durationMs: number;
-  timedOut: boolean;
-  diagnosticTruncation: { stdout: boolean; stderr: boolean };
-  diagnostic(): string;
-  json<T = unknown>(): T;
-  ndjson<T = unknown>(): T[];
-  expReceipt(): InvocationReceipt;
-  expEvalEvents(): ExpEvalEvent[];
-  runListDocument(): RunListDocument;
-  runGetDocument(): RunGetDocument;
-}
-
-export function assertExpEvalOutcomes(
-  actual: readonly ExpEvalEvent[],
-  expected: readonly ExpEvalOutcomeExpectation[],
-  diagnostic?: string | (() => string),
-): ExpEvalEvent[];
-
-export function exactEval(
-  events: readonly ExpEvalEvent[],
-  identity: { experimentId: string; evalId: string },
-  diagnostic?: string | (() => string),
-): ExpEvalEvent;
-
-export function retryFailedExpEvalsOnce(options: {
-  events: readonly ExpEvalEvent[];
-  targets: readonly ExpEvalEvent[];
-  runRetry: (target: ExpEvalEvent) => Promise<ProcessReceipt>;
-}): Promise<{
-  events: readonly ExpEvalEvent[];
-  retries: readonly {
-    target: ExpEvalEvent;
-    event: ExpEvalEvent;
-    receipt: ProcessReceipt;
-  }[];
-}>;
-
-export function runProcess(
-  argv: Argv,
-  options?: {
-    cwd?: string;
-    env?: NodeJS.ProcessEnv;
-    timeoutMs?: number;
-  },
-): Promise<ProcessReceipt>;
-```
 
 argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` 只裁剪展示，不改变 `stdout` / `stderr` 原值；
 `diagnosticTruncation` 让读者看见哪条展示被裁剪。parser 永远读取完整原值。`env` 合并进父进程变量集合，
@@ -215,17 +147,20 @@ Testkit 导出的 `ProcessReceipt`、`ProcessHandle`、`E2EContext`、`E2ECaseCo
 Testkit 不拥有产品 argv、用户动作、字面 expected 或结果断言。场景 support 只可封装端口、进程、poll、readiness 与 cleanup 等机械步骤，
 不得封装产品 workflow 或从 actual 生成 expected。具体正文与 review 门见 [E2E 正文与 support 边界](e2e/README.md#正文与-support-边界)。
 
-Testkit 直接导出公开原始 `ExpEvent`、`ExpReceiptEvent` 与精确的 `InvocationReceipt` 类型，不改名、不折叠字段。
-`expReceipt()` 严格确认首行是字段合法的 `niceeval.exp` `start`。
+Testkit 直接导出公开原始 `ExpEvent`、`ExpTerminalEvent`、`ExpTerminalSummary` 与精确的 `InvocationReceipt` 类型，不折叠字段。
+终局行形状由产品 Schema 拥有：`{ type: "receipt", receipt, summary }`，多余字段按严格解码拒绝。
+`expTerminal()` 严格确认首行是字段合法的 `niceeval.exp` `start`。
 它还要求全流中恰好一个 `type: "receipt"`，并且该事件是末行。
 它验证 receipt 的必填字段：
 
 - `invocationId` 与 `startedAt` 是字符串；
 - `createdRunIds` 是字符串数组，`publicationCutoff` 是字符串；
 - `completedAt` 未提供时不存在，否则为字符串；
-- `completion` 是 `"completed" | "interrupted" | "failed"`。
+- `completion` 是 `"completed" | "interrupted" | "failed"`；
+- `summary` 存在并通过 `ExpTerminalSummary` 解码：起止时间、passed / failed / skipped / errored 计数、durationMs、
+  可选 token 与成本，以及 `setupPrefixes` 计数。字段全集以产品 Schema 为准。
 
-`expReceipt()` 返回末行的内层 `InvocationReceipt`。它不检查退出码，也不折叠 Verdict 或 Attempt。
+`expTerminal()` 返回完整终局事件；`expReceipt()` 是它的窄化，只返回内层 `InvocationReceipt`。它不检查退出码，也不折叠 Verdict 或 Attempt。
 
 `retryFailedExpEvalsOnce()` 是 live Adapter 固定容错的机械设施，不是测试级自动 retry。调用方先从首轮公开
 Eval events 明确选出 `verdict: "failed"` 且 `attempts: 1` 的 targets，并在 `runRetry` 回调中保留完整产品 argv、
@@ -477,7 +412,7 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 ## 不进入 Testkit 的内容
 
 - `ExpPlanDocument`、`HistoryDocument`、`ExecutionDocument` 等派生领域文档；
-- 对原始 `ExpEvent` / `ExpReceiptEvent` 字段的二次命名、折叠或领域解释；
+- 对原始 `ExpEvent` / `ExpTerminalEvent` 字段的二次命名、折叠或领域解释；
 - 工具名和 sentinel 的 expected；
 - `runExperiment()`、`queryHistory()`、`expectCarry()`、`openAttempt()` 等产品动作；
 - `.niceeval/` 私有目录读取或候选导出的常量；

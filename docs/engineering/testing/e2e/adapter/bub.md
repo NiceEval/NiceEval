@@ -2,9 +2,6 @@
 
 ## adapter-bub-live-compatibility
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../../feature/adapters/README.md)
-
 Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker、Python 与 external network。
 被测对象是 `bubAgent()` 在 Docker Sandbox 里的完整生命周期：安装（含 `pythonPlugins`）、真实 coding 任务、tape JSONL 行为轨与会话（契约见 [Bub 契约页](../../../../feature/adapters/sdk/bub/README.md)）。
 
@@ -16,7 +13,7 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 | Skills | 挂载的 Skill 在事件流中留下使用证据（引用只存在于 SKILL.md 里的魔法词 + 工具入参含 skill 路径） |
 | pythonPlugins 与 postSetup | 安装的 Python 插件行为可观察；`postSetup` 生命周期 Hook 按序执行并在输出中留下证据 |
 | 会话 | session 由 Adapter 管理，第二轮能引用首轮事实 |
-| 当前版 usage | `ci` 严格断言可配置 OpenAI-compatible 网关返回的 token / request usage；provider observed `Usage.costUSD` 只在上游实际提供时存在，不做估算 |
+| 当前版 usage | `ci` 严格断言可配置 OpenAI-compatible 网关返回的 token / request usage；token 值须有限、非负且合计大于零，不以固定 token 上限判定协议兼容性；provider observed `Usage.costUSD` 只在上游实际提供时存在，不做估算 |
 
 ## 两条版本线
 

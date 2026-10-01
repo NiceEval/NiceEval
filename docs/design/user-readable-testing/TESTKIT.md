@@ -1,7 +1,7 @@
 # Testkit 交付边界
 
 本页比较“怎样交付共享测试设施”。测试分层、场景 Repo 与结果断言仍以
-[DECISION](DECISION.md)和 [PLAN-4](PLAN-4/README.md) 为准。
+[DECISION](DECISION.md)和 [PLAN-4](plans/plan-4/README.md) 为准。
 
 ## 已观察到的重复
 

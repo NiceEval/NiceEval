@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: replayable-grading
+title: 可重评分 Eval
+createdAt: 2026-08-09T15:37:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/replayable-grading/README.md
+  commit: 0fd00434d6cbc8dd2443a169807940ea6da282d4
+kind: roadmap
+state: planned
+---
 # 可重评分 Eval
 
 Replayable Eval 把一次 Agent execution、一次 evaluator 求值与后续评分投影分开保存。Execution 先封口为 sealed semantic source graph；每次 grading 以当前版本的定义绑定 source，复用或创建 immutable Judge Evaluation，再产生新的 Grading Claim。

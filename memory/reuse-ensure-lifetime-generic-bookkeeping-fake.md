@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: reuse-ensure-lifetime-generic-bookkeeping-fake
+title: ensureLifetime 通用本地时钟记账把「没实现」伪装成「实现了」
+createdAt: 2026-07-29T21:18:31+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/reuse-ensure-lifetime-generic-bookkeeping-fake.md
+  commit: 908702c9e2a771f5ce21ebd5fd6cfef6af4818e4
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # ensureLifetime 通用本地时钟记账把「没实现」伪装成「实现了」
 
 - **现象**(2026-07-29 下游 dogfooding):`sandboxReuse` 实验在 E2B 上跑到 ~30 分钟,

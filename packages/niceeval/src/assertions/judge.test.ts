@@ -107,7 +107,7 @@ describe("Judge pure boundaries", () => {
     expect(() => defineJudge({ name: "x", rubric: "r", anchors: accessorAnchors })).toThrow("data property");
     expect(() => defineJudge({ name: "x", rubric: "r", anchors: [{ measurement: 0, description: "no" }, { measurement: 0, description: "same" }] })).toThrow("strictly increasing");
     expect(() => defineJudge({ name: "x", rubric: "r", anchors: [{ measurement: 0.1, description: "no" }, { measurement: 1, description: "yes" }] })).toThrow("include 0 and 1");
-    expect(() => defineJudge({ name: "x", rubric: "r", maxMaterialBytes: 48 * 1024 + 1 })).toThrow("at most");
+    expect(() => defineJudge({ name: "x", rubric: "r", maxMaterialBytes: 4 * 1024 * 1024 + 1 })).toThrow("at most");
   });
 
 });

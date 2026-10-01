@@ -123,6 +123,9 @@ function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage 
  * Chat Completions 形状的响应 → `Turn`。零映射:`res.choices[0].message` 的
  * `tool_calls` / `content` 直接变成 `operation.started` / `message`,`usage` 顺手带上。
  */
+// @concord-code ne-adapter-openai-chat-turn
+// @concord-implements docs/feature/adapters/library/streaming.md
+// @concord-implements docs/feature/adapters/sdk/openai-compat/README.md
 export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   const message = res.choices[0]?.message;
   const events: StreamEvent[] = [];
@@ -218,6 +221,9 @@ function responsesUsage(usage: ResponseUsageLike | undefined): Usage | undefined
  * Responses 形状的响应 → `Turn`。零映射:`res.output` 逐项翻译——
  * `message`(`content` 里的 `output_text`)变成 `message`,`function_call` 变成 `operation.started`。
  */
+// @concord-code ne-adapter-openai-responses-turn
+// @concord-implements docs/feature/adapters/library/streaming.md
+// @concord-implements docs/feature/adapters/sdk/openai-compat/README.md
 export function turnFromResponses(res: ResponseLike): Turn {
   const events: StreamEvent[] = [];
   for (const item of res.output ?? []) {

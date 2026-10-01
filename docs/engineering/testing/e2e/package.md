@@ -14,9 +14,6 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 
 ## package-commonjs-init-list
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [eval](../../../feature/eval/README.md)
-
 用户用 pnpm 11 初始化项目时，`package.json` 默认不声明 `type`，也不自行声明 `effect` 或为 NiceEval 的依赖批准
 build script。该项目包含分别以 `.ts`、`.tsx` 导入 `niceeval` 与 `niceeval/expect` 的 Eval；安装后的 candidate
 依次执行 `--version`、`init`、`list` 与 `exp --dry`，必须发现两条 Eval 并形成 dry plan。
@@ -33,9 +30,6 @@ build script。该项目包含分别以 `.ts`、`.tsx` 导入 `niceeval` 与 `ni
 
 ## package-bub-e2b-template
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [adapters](../../../feature/adapters/README.md)
-
 用户从安装后的 `niceeval/sandbox/e2b-template` 调用 `e2bCodingAgentTemplate("bub")`，再通过 E2B
 `TemplateBuilder.toDockerfile()` 取得实际构建输入。构建输入必须同时固定 Bub、`any-llm-sdk` 与 `openai`，
 并写入与默认 `bubAgent()` 相同的安装 marker；漏掉任一传递依赖或仍按旧闭包计算 marker 都会使本 owner 变红。
@@ -45,10 +39,7 @@ factory 交给 E2B 的公开构建输入可复现，且不会因 identity 分叉
 
 ## package-inspection-public-entry
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Inspection](../../../feature/inspection/README.md#固定-query-边界)
-
-安装后的 ESM 与 CommonJS consumer 都能从 `niceeval/inspection` 取得同一个 18-operation registry、Schema 与 decoder，包含 Assertion image 读取操作。
+安装后的 ESM 与 CommonJS consumer 都能从 `niceeval/inspection` 取得同一个 19-operation registry、Schema 与 decoder，包含当前项目结果与 Assertion image 读取操作。
 两种模块系统加载 `niceeval/inspection/host` 都必须以 Node 的 `ERR_PACKAGE_PATH_NOT_EXPORTED` 拒绝。
 consumer 不能经 alias、fallback 或 Node 专用入口取得 source lifecycle。
 

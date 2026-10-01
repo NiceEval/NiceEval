@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: one-line-summary-grammar-and-flat-attempt-assertions
+title: 裁决：单行摘要语法单点定义；attempt 首页四段分节让位平铺混排
+createdAt: 2026-07-22T13:46:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/one-line-summary-grammar-and-flat-attempt-assertions.md
+  commit: 800ed72ab132bb85ceccd4a1dbd3fd21cd3c5a10
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决：单行摘要语法单点定义；attempt 首页四段分节让位平铺混排
 
 日期：2026-07-22

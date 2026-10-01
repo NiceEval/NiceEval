@@ -6,26 +6,26 @@ description: "跑几次、超时、并发、judge 这些值写进代码的哪一
 
 import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
 
-[NiceEval](https://niceeval.com/) 里的值只有两个家：
+你想让 CI 每题跑 5 次、本地只跑 1 次，又不想把 API key 签进仓库。NiceEval 把值分成两类，各放一处：
 
-- **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少和 Judge 用哪个模型，全都在这里，没有对应的环境变量。
-- **密钥放环境变量**——API key、provider token。再加上 `NO_COLOR` 这类描述"输出到哪个终端"的事实。
+- **配置写进代码**：CLI flag、`experiments/` 下的 Experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少和 Judge 用哪个模型都在这里，没有对应的环境变量。
+- **密钥放环境变量**：API key、Provider token，再加上 `NO_COLOR` 这类描述当前终端的设置。
 
-所以同一个值只有一条来路。`niceeval exp --dry` 打印出来的就是真正生效的值，不用担心某个环境变量在背后改了它。CLI 与运行时文案是英语；浏览器 view 自己提供中英切换。
+所以同一个值只有一个来源。`niceeval exp --dry` 打印出来的就是真正生效的值，不会有环境变量在背后改掉它。CLI 与运行时文案是英语；浏览器里的 `niceeval view` 可以切换中英文。
 
 ## 配置：想让这个值活多久，就写在哪一层
 
-同一个值出现在多层时，按 **CLI flag → experiment → 评估用例 → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
+先想清楚这个值要在多大范围内生效，再决定写在哪一层。同一个值出现在多层时，按 **CLI flag → Experiment → 评估用例 → config → 内置默认** 取，前面有值就不看后面。config 只提供默认值，不会覆盖别的层：评估用例自己声明的 `timeoutMs` 不会被项目默认值替换。
 
 <ConfigLayers />
 
-**只想这一次不一样**——写在命令上：
+**只想这一次不一样**：写在命令上。
 
 ```bash
-npx niceeval exp ci --attempts 5 --timeout 600000
+pnpm exec niceeval exp ci --attempts 5 --timeout 600000
 ```
 
-**这个实验一直这样**——写进 experiment 文件：
+**这个实验一直这样**：写进 Experiment 文件。
 
 ```ts
 // experiments/ci.ts
@@ -41,9 +41,9 @@ export default defineExperiment({
 });
 ```
 
-`agent`、`model`、`flags` 只能写在这里，没有对应的 flag——换 agent 或换模型是复制一个 experiment 文件的事，这样每次运行对着谁跑都记在快照里，事后能复现。
+`agent`、`model`、`flags` 只能写在这里，没有对应的 CLI flag。要换 Agent 或换模型，就复制一个 Experiment 文件。这样每次运行用的是哪个 Agent 和模型都记在结果里，事后能复现。
 
-**整个项目共享**——写进 `niceeval.config.ts`：
+**整个项目共享**：写进 `niceeval.config.ts`。
 
 ```ts
 import { defineConfig } from "niceeval";
@@ -73,7 +73,7 @@ export default defineConfig({
 
 ## 环境变量：只有密钥和终端两类
 
-下面就是 NiceEval 会读的全部环境变量。每个 agent、Sandbox 和 Judge 只认自己那几个名字，不会在环境里翻找别的 key。
+把密钥放进下面这些环境变量。这就是 NiceEval 会读的全部环境变量；每个 Agent、Sandbox 和 Judge 只认自己那几个名字，不会去读别的 key。
 
 | 变量 | 谁在用 | 备注 |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ export default defineConfig({
 | `VERCEL_PROJECT_ID` | `vercelSandbox()` | |
 | `NO_COLOR` | CLI 输出 | 设了就不画颜色和框线 |
 
-judge 想用别的变量名装 key，在配置里指过去：
+想让 Judge 从别的变量名读 key，在配置里写明变量名：
 
 ```ts
 import { OpenAIProvider } from "niceeval/judge";
@@ -108,7 +108,7 @@ export default defineConfig({
 });
 ```
 
-网关地址本身也不方便签入仓库时，不需要 niceeval 提供什么环境变量——配置是代码，自己读就行（`.env` 在这之前已经加载完）：
+网关地址也不方便签入仓库时，在配置里自己读环境变量即可。配置本身就是代码，读取时 `.env` 已经加载完：
 
 ```ts
 export default defineConfig({
@@ -122,7 +122,7 @@ export default defineConfig({
 
 区别只在于：变量名是你的项目定的，不是 NiceEval 内置一个名字然后到环境里猜。
 
-本地把密钥放进 cwd 下的 `.env`，CLI 启动时自动加载（不覆盖已经存在的环境变量），不用每次 `export`：
+本地开发时，把密钥放进当前目录的 `.env`。CLI 启动时会自动加载它，不会覆盖已经存在的环境变量，你不用每次 `export`：
 
 ```bash
 # .env
@@ -130,17 +130,17 @@ ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 ```
 
-`.env` 是投递密钥的地方，不是第二个配置文件——往里写 `NICEEVAL_TIMEOUT` 这种东西不会有任何效果。CI 里同样只传密钥：
+`.env` 只用来放密钥，不是第二个配置文件。往里写 `NICEEVAL_TIMEOUT` 这类变量不会有任何效果。CI 里同样只传密钥：
 
 ```yaml
-- run: npx niceeval exp ci --junit .niceeval/junit.xml
+- run: pnpm exec niceeval exp ci --junit .niceeval/junit.xml
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 ## 想调这些值时写到哪一层
 
-配置项没有环境变量层，所以下面每一项都只有一条来路：
+配置项没有环境变量层，所以下面每一项都只有这几个位置可写：
 
 | 要调什么 | 写在哪 |
 | --- | --- |

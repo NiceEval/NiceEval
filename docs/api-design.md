@@ -355,6 +355,27 @@ definedCheck();                       // 差：词序不像条件，也不与 is
 Matcher 工厂的名字优先让断言句子读起来自然。
 它可以是条件短语，不必为了“函数必须有动词”改成命令。
 
+### 通用评估与应用断言
+
+通用层拥有 Match、`check`、`closeQA`、Assertion handle、受管 Judge 与审计。
+应用层拥有业务操作、事实读取和领域断言。游戏的 `systemTwo`、`said`、`operations` 与 Agent 的 `usedNoTools`、`calledTool` 属于同一层；Agent 再适配各具体 Agent。
+
+所有领域断言都构造 Match 并交给同一 `check` 登记，不另建 evaluator。
+`check(value, match)` 检查显式事实；`check(contextualMatch)` 在调用时从当前接收者的只读 ctx 读取事实。
+集合材料 Match 选择符合条件的项；单个事实的上下文 Match 将聚合事实交给已有 BooleanMatch 或 ScoreMatch。
+
+`closeQA(selector, question)` 对全部命中材料提出验收问题。
+它将 selector 与 question 编译为受管评分 Match，再交给同一接收者的 `check`；handle 继续配置同一个 Assertion。
+游戏使用业务 ctx reader，例如 `t.closeQA(saidMatch(npcMatch({ id: "a" })), question)`。
+通用层不从任意应用 ctx 猜测默认材料。
+
+Agent 应用提供 `t.closeQA(question)`、`turn.closeQA(question)` 与 `session.closeQA(question)` 简写，默认读取当前 scope 的完整材料。
+作者也可用显式领域 Match 筛选全部命中项。两种调用都使用同一通用问答组合，完整性、预算、取消与审计规则相同。
+`usedNoTools()` 是零参数领域断言，不接额外 Match；它要求工具集合计数为 exact zero，未知集合不能证明没有发生。
+
+`defineJudge` 返回真实 ScoreMatch。`check(value, scoreMatch)` 与便利入口 `judge(value, scoreMatch)` 都接受 ScoreMatch，共享登记和受管评分路径。
+具体调用与材料规则见 [Judge Library](feature/judge/library.md) 和 [自定义 Match](feature/assertions/library/custom-assertions.md)。
+
 ## 哪些能力进公开 API
 
 一个候选能力先过三条判据，再进入命名评审：

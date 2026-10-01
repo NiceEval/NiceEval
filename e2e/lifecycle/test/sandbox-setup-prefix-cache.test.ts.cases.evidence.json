@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_APN2MNBEXSN1G18T": {
-      "memory/incus-clone-volume-admission-race.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_APN2MNBEXSN1G18T",
+      "memory": "memory/incus-clone-volume-admission-race.md",
+      "evidence": {
         "red": {
           "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/red.json",
           "digest": "sha256:27c23e1f3170978d24f13f9c884f9256d854e859a1ea4e7ab76186fba44b3b12"
@@ -19,7 +22,9 @@
           "path": "e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts.case-evidence/necase_APN2MNBEXSN1G18T/memory_incus-clone-volume-admission-race.md/nered_4ZWAZXWP4WRPKQH2-netake_R960DF8AWJXHAWPV/inventory.json",
           "digest": "sha256:af087bb553826633f25c081bdc2f6a78dccad172868704d794f512f16d604b61"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
-  }
+  ]
 }

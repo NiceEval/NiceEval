@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo runner -- --run test/shared-state-startup-authority.test.ts
 import { pollUntil, waitForOutput, withTempDir } from "@niceeval/testkit";
-import { access, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
@@ -20,8 +20,9 @@ function ownerTokenFromInspection(stderr: string): string {
   expect(match, stderr).not.toBeNull();
   return match![1]!;
 }
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 
-test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info [necase_YJQZERNET06GJ98S]", async () => {
+test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等待只发无 token 的 info", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -107,15 +108,23 @@ test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等
     },
   );
 });
+// @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 
-test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown [necase_MZECYXY0CYDG8HFQ]", async () => {
+test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后才补遗留 teardown", async () => {
   await runnerE2E.case(
     "shared-state-startup-authority-full-carry",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ commands: { niceeval } }) => {
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-startup-authority-carry-", async (barrierRoot) => {
         const env = { NICEEVAL_SHARED_STATE_STARTUP_AUTHORITY_BARRIER: barrierRoot };
         const experiment = "shared-state-startup-authority";
+        // A newer pending Run of the selected slot is a source barrier.
+        // Hold the same Experiment's sharedState key through a different Eval
+        // so alpha still has an eligible full-carry source and pending teardown.
+        await copyFile(
+          join(projectRoot, "evals/shared-state/alpha.eval.ts"),
+          join(projectRoot, "evals/shared-state/beta.eval.ts"),
+        );
         const key = "runner/shared-state-startup-authority";
         const releasePath = join(barrierRoot, "release-startup-authority-agent");
         const agentStartedPath = join(barrierRoot, "startup-authority-agent-started");
@@ -132,11 +141,11 @@ test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后�
           ].map((path) => rm(path, { force: true })));
         };
         await writeFile(releasePath, "");
-        const seed = await niceeval.run(["exp", experiment, "--rerun", "all", "--json"], { env, timeoutMs: 60_000 });
+        const seed = await niceeval.run(["exp", experiment, "shared-state/alpha", "--rerun", "all", "--json"], { env, timeoutMs: 60_000 });
         expect(seed.exitCode, seed.diagnostic()).toBe(0);
         await cleanupRoundMarkers();
 
-        const holder = niceeval.start(["exp", experiment, "--rerun", "all", "--json"], { env, timeoutMs: 60_000 });
+        const holder = niceeval.start(["exp", experiment, "shared-state/beta", "--rerun", "all", "--json"], { env, timeoutMs: 60_000 });
         let carrying: ReturnType<typeof niceeval.start> | undefined;
         let ownerToken: string | undefined;
         let recovered = false;
@@ -154,7 +163,7 @@ test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后�
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           ownerToken = ownerTokenFromInspection(inspection.stderr);
 
-          carrying = niceeval.start(["exp", experiment, "--json"], { env, timeoutMs: 60_000 });
+          carrying = niceeval.start(["exp", experiment, "shared-state/alpha", "--json"], { env, timeoutMs: 60_000 });
           await waitForOutput(
             carrying,
             "stdout",

@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_9E2KVHJXB3FTA8AE": {
-      "memory/custom-provider-requires-derived-sandbox-methods.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_9E2KVHJXB3FTA8AE",
+      "memory": "memory/custom-provider-requires-derived-sandbox-methods.md",
+      "evidence": {
         "red": {
           "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts.case-evidence/necase_9E2KVHJXB3FTA8AE/memory_custom-provider-requires-derived-sandbox-methods.md/nered_MJ9T9V3A0QAKYRTK-netake_K1ZWVFG8PENNX9RB/red.json",
           "digest": "sha256:a15825b37a26affaff31e4ff88807eafa6588990c5603474a38479a11e63bf03"
@@ -19,7 +22,9 @@
           "path": "e2e/runner/test/fresh-sandbox-provider-stop.test.ts.case-evidence/necase_9E2KVHJXB3FTA8AE/memory_custom-provider-requires-derived-sandbox-methods.md/nered_MJ9T9V3A0QAKYRTK-netake_K1ZWVFG8PENNX9RB/inventory.json",
           "digest": "sha256:3f200d484bbf7722e223dc4a2a3f2e11e80fb1d1cc88d732940c76c8e4bb6dcc"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "5d4aa1a991d614f3acc2647850d6b5d21f215658"
     }
-  }
+  ]
 }

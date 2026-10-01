@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E as e2e } from "./context.ts";
 
-test.concurrent("init 生成可用于当前 CLI 的结果查看指引 [necase_3HDDG0091KDYCM47]", async () => {
+// @feature docs/feature/inspection/README.md
+// @regression memory/init-inspection-guidance-drift.md
+
+test.concurrent("init 生成可用于当前 CLI 的结果查看指引", async () => {
   await e2e.case("init-inspection-guidance", async ({ paths, commands: { niceeval } }) => {
     const initialized = await niceeval.run(["init"]);
     expect(initialized.exitCode, initialized.diagnostic()).toBe(0);

@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: experiment-flags-naming-reversal
+title: 设计裁决:experiment 条件键定名 flags(经历 flags→params→flags 翻案)
+createdAt: 2026-07-10T17:59:30+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/experiment-flags-naming-reversal.md
+  commit: 7c28254f679a2a2678254ce2f2ecbfe86ed2fa40
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:experiment 条件键定名 flags(经历 flags→params→flags 翻案)
 
 - **裁决**(2026-07-10,commit 3265d4f):运行时链路 `experiment.flags → ctx.flags → t.flags` 定名 `flags`,持久化字段同名,`schemaVersion: 3`。

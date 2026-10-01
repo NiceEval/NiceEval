@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: sandbox-wrapper-drops-non-interface-capabilities
+title: 包装层静默丢弃非接口能力:suspend 之后 ensureLifetime 第二次复发
+createdAt: 2026-07-29T22:20:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-wrapper-drops-non-interface-capabilities.md
+  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修 [sandbox-wrapper-drops-non-interface-capabilities](sandbox-wrapper-drops-non-interface-capabilities.md) — normalizeSandboxPaths 丢非接口能力 ensureLifetime,suspend 之后同 bug 第二次复发;修为显式转发+穿透断言,新增 provider 能力必查全部包装层"
+    proof: []
+    source:
+      path: memory/INDEX.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
+---
 # 包装层静默丢弃非接口能力:suspend 之后 ensureLifetime 第二次复发
 
 - **现象**:`normalizeSandboxPaths` 包装 Sandbox 时只转发 `Sandbox` 接口方法,

@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: eval-group-retained-sandbox-capacity-deadlock
 title: Eval Group 保留 Sandbox 导致 provider capacity 死锁
 createdAt: 2026-08-31
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 ## 现象
 

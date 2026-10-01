@@ -1,0 +1,62 @@
+{
+  "executor": {
+    "name": "playwright",
+    "version": "1.63.0"
+  },
+  "repo": "insight",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-TZHUVB/repos/insight/node_modules/.pnpm/@playwright+test@1.63.0/node_modules/@playwright/test/cli.js",
+    "test",
+    "--list",
+    "--reporter=json"
+  ],
+  "checkout": "0bde4166f53bb3d2b7a3a0e3b8be1530a75ca4fa",
+  "files": [
+    "e2e/insight/test/view-authorization.browser.spec.ts",
+    "e2e/insight/test/view-operational-refresh.browser.spec.ts",
+    "e2e/insight/test/view-snapshot.browser.spec.ts"
+  ],
+  "cases": [
+    {
+      "executor": "playwright",
+      "repo": "insight",
+      "path": "e2e/insight/test/view-authorization.browser.spec.ts",
+      "project": "chromium",
+      "titlePath": [
+        "view-authorization.browser.spec.ts",
+        "loopback view 只向一次性 fragment 换取的同源 session 交付 facts"
+      ],
+      "caseId": "neref_ed4268023afc8da06ee2ed1b88c44f4a"
+    },
+    {
+      "executor": "playwright",
+      "repo": "insight",
+      "path": "e2e/insight/test/view-operational-refresh.browser.spec.ts",
+      "project": "chromium",
+      "titlePath": [
+        "view-operational-refresh.browser.spec.ts",
+        "project view 在确认刷新前保留 last-good hierarchy，确认后原子呈现新封口 Attempt"
+      ],
+      "caseId": "neref_871feecdfea7f0fb7a8a68b95aa05734"
+    },
+    {
+      "executor": "playwright",
+      "repo": "insight",
+      "path": "e2e/insight/test/view-snapshot.browser.spec.ts",
+      "project": "chromium",
+      "titlePath": [
+        "view-snapshot.browser.spec.ts",
+        "读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff"
+      ],
+      "caseId": "neref_b837639ed5650fdfbc1c8e0680cf3b4a"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "digest": "sha256:1b9933e2f19431c0bbfb4d3e58bd9c4032a2c1389a9122bb72a81f0282687035",
+  "exit": 0,
+  "signal": null
+}

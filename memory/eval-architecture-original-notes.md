@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: eval-architecture-original-notes
+title: Eval 架构的原始设计笔记(从 docs/feature/eval/architecture.md 原样迁入)
+createdAt: 2026-07-14T22:32:51+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/eval-architecture-original-notes.md
+  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
+kind: memory
+memoryKind: insight
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # Eval 架构的原始设计笔记(从 docs/feature/eval/architecture.md 原样迁入)
 
 2026-07-14 按裁决把 `docs/feature/eval/architecture.md` 里的手动维护笔记原样迁到这里,正文重写为正式架构文档;本条目是出处,正文引用它、不复述叙事。原文如下(含原维护标记,未删改):

@@ -1,115 +1,129 @@
 ---
-title: "NiceEval：面向 Agent 的评估工具"
+title: "NiceEval 是什么"
 sidebarTitle: "介绍"
-description: "NiceEval 帮助团队衡量、评估并改进生产环境中的 AI：比较模型、迭代 Agent、发现回归、用真实数据持续改进。"
+description: "NiceEval 用 TypeScript 给 AI Agent 和 AI 应用写评估：断言工具调用、回复、代码改动和业务结果，反复运行、比较配置，再逐条追查失败。"
 ---
 
 import { SandboxMode } from '/snippets/diagram-sandbox-mode.jsx';
 import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
-[NiceEval](https://niceeval.com/) 是一个 Agent 评估工具，帮助团队衡量、评估并改进生产环境中的 AI。借助 NiceEval，团队可以比较模型、迭代 Agent、发现回归问题，并利用真实用户数据持续改进 AI 应用。
+你改了一版 prompt，换了一个模型，给 Claude Code 写了一个新 Skill，或者调了游戏里 NPC 的提示词。它到底变好了没有？
 
-NiceEval 以本地优先为核心：你的评估在你自己的环境中运行。已发布的 Attempt 进入项目内唯一的 Record；团队可用固定的 `query` 交给自动化流程，并用本地 `view` 审阅同一批事实。
+只靠手动试几次很难回答。Agent 每次的回答都不一样，一次碰巧答对说明不了什么。改好了这道题，可能又悄悄改坏了另一道。
 
-它既能评估用于 Claude Code / Codex 的 Plugins、Hook 和 Skill，也能直接评你自己的 AI Agent 应用。无论你的 Agent 基于 AI SDK、LangGraph、Pi 还是自研 Agent SDK，都可以通过 Adapter 接入同一套评估体系。
+NiceEval 用来回答这个问题。它以 Agent 为主要场景，也能评任何由 LLM 驱动的应用。你用 TypeScript 写下“什么算做对”，NiceEval 负责下面这些事：
 
-## 构建评估用例
+- 连上被测对象，把任务发给它。
+- 按需要反复运行，每次都打分。
+- 把每一次的对话、工具调用、文件改动、耗时和花费留下来。
+- 让你在终端或浏览器里比较两个配置，并回到具体某一次失败去看发生了什么。
+
+所有运行都在你自己的机器和 CI 里完成，不需要注册账号。
+
+## 一条评估用例长什么样
+
+下面这条评估用例验证一个天气助手：问天气时它要真的调用 `get_weather`，而不是凭空编一个答案。
+
 ```ts
-// evals/eval-tool-call.eval.ts
+// evals/weather-tool.eval.ts
 import { defineEval, defineJudge } from "niceeval";
 import { includes } from "niceeval/expect";
 
-const groundedWeatherAnswer = defineJudge({
+const groundedAnswer = defineJudge({
   name: "grounded-weather-answer",
   rubric: "根据 question 评价 answer 是否给出具体天气信息，而不是拒绝或含糊作答。",
 });
 
 export default defineEval({
-  judge: groundedWeatherAnswer,
-  description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
+  description: "问天气时调用工具，并基于工具结果作答",
+  judge: groundedAnswer,
 
   async test(t) {
     const turn = await t.send("北京今天天气怎么样？");
     turn.succeeded().label("Turn 成功");
 
-    await t.group("调用 get_weather 且回答天气", () => {
-      t.calledTool("get_weather").label("调用天气工具");
-      t.check(turn.message, includes("天气")).label("说明天气");
-    });
+    t.calledTool("get_weather").label("调用天气工具");
+    t.check(turn.message, includes("天气")).label("说明天气");
 
-    const second = await t.send("上海明天天气怎么样?");
-    t.check(second.message, includes("上海")).label("第二轮回答上海");
+    const second = await t.send("那上海明天呢？");
+    t.check(second.message, includes("上海")).label("第二轮接得上上下文");
 
-    t.judge({ question: turn.input, answer: turn.message }, groundedWeatherAnswer).gate(0.7)
+    t.judge({ question: turn.input, answer: turn.message }, groundedAnswer).gate(0.7)
       .label("回答有依据");
   },
 });
 ```
 
-```sh
-pnpm exec niceeval exp local eval-tool-call  # 用 local experiment 只跑 eval-tool-call
-pnpm exec niceeval query discover   # AI、脚本和 CI 先发现 operation
-pnpm exec niceeval view             # 人在网页中审阅结果
-```
+确定的事实用确定的规则检查，例如调用了哪个工具、回复里有没有某个词。开放式的质量，例如回答是否有依据，交给裁判模型 Judge 打分，低于 0.7 就算不通过。
 
-## 为什么有了 DeepEval、LangFuse、BrainTrust 还需要 NiceEval
+“对着哪个 Agent、用哪个模型跑”不写在评估用例里，而是写在 Experiment 里。同一批评估用例因此可以直接用来比较两个模型或两版 prompt。
 
-NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「构建 Input 与 Expected Output」的模式，并不适合真实的 Agent 评估。现在的 Agent 要在多轮对话、多 agent 协作、工具调用、Skill 加载等细粒度场景下被检查，NiceEval 就是为这类场景设计的：断言直接落在工具调用、消息内容、结构化输出和用量上，而不是要求你先手工准备一份 golden 测试集。
+## 能评什么
 
-像 LangFuse、BrainTrust 这类工具更偏 tracing 和监控，对「写评估用例、跑评估用例、看结果」这条路径来说太重。NiceEval 从一开始就针对这条路径做了友好的开发体验。两者也不冲突：NiceEval 能与 LangFuse、BrainTrust 共存——可以用它们做 tracing，或者把评估结果上传到两者。
-
-## 你可以评什么
-
-<CardGroup cols={2}>
-  <Card title="Coding Agent" icon="code">
-    把 Claude Code、Codex、bub 放进 Sandbox，给它任务，再用真实测试和文件断言验证结果。
+<CardGroup cols={3}>
+  <Card title="你自己的 AI Agent" icon="globe" href="/zh/tutorials/connect-your-agent">
+    基于 AI SDK、LangGraph、Pi 或自研 Agent loop 都可以，用什么语言写也不影响。只要有一个能调用的接口，写一个 Adapter 就能接进来。
   </Card>
-  <Card title="你自己的 AI Agent 应用" icon="globe">
-    直连你的应用接口，断言回复、工具调用和结构化输出。通过 Flag 切换测试不同版本的 Prompt
+  <Card title="Coding Agent 和它的扩展" icon="code" href="/zh/tutorials/sandbox-agent">
+    把 Claude Code、Codex 等 Agent 放进 Sandbox，给它一个真实仓库和任务，用项目自己的测试判分。适合衡量 Skill、Plugin 或 memory 的实际效果。
+  </Card>
+  <Card title="任何 AI 应用，比如 LLM 游戏" icon="gamepad" href="/zh/tutorials/custom-application">
+    被测对象提供的是发帖、回复、NPC 行动这类业务操作时，把它们原样交给评估用例，直接检查返回的结构化结果和世界状态。
   </Card>
 </CardGroup>
 
-## 两种接入模式
+不是对话式 Agent 的应用，评估里调用的就是它自己的方法。下面是 [`examples/zh/llm-x`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/llm-x) 里一个 AI 社交应用的评估：
+
+```ts
+// evals/social-journey.eval.ts —— 被测对象是一个 AI 驱动的社交应用
+export default x.defineEval({
+  description: "发帖、回复后，AI 角色作出回应，社交世界保持自洽",
+  async test(t) {
+    const initial = await t.visitDiscoveryPage();
+    const post = await t.post({ intent: "邀请大家今晚一起拍摄城市夜景", withImage: true });
+    t.check(post, authoredPost(initial.viewerId)).label("帖子属于当前玩家");
+
+    const reply = await t.reply({ postId: post.id, intent: "补充集合地点在河边步道入口" });
+    const responses = await t.waitForReplies(reply.id);
+    t.check(responses.length, greaterThan(0)).label("AI 角色作出回应");
+    t.check(worldMaterial(await t.refreshFeed()), coherentSocialWorld()).label("刷新后社交关系仍完整");
+  },
+});
+```
+
+被测对象的接入方式有两种：
 
 <Tabs>
-  <Tab title="Sandbox mode">
-    适合 Codex、Claude Code 这类必须在真实文件系统中改代码、跑命令的 coding agent。
-
-    <SandboxMode />
-  </Tab>
-  <Tab title="Direct mode">
-    适合你自己的 AI Agent，不需要 Docker。
+  <Tab title="直连你的应用">
+    NiceEval 通过 Adapter 直接请求你的 Agent 或应用接口，不需要 Docker。对话式 Agent 和提供业务操作的应用都走这条路。
 
     <DirectMode />
   </Tab>
+  <Tab title="放进 Sandbox">
+    Coding Agent 要在真实文件系统里改代码、跑命令，NiceEval 先创建一个隔离的 Sandbox，再在里面启动 Agent。
+
+    <SandboxMode />
+  </Tab>
 </Tabs>
 
-## 核心概念一览
+## 和 DeepEval、LangFuse、Braintrust 有什么不同
 
-| 概念 | 一句话 |
+准备一份输入和标准答案再逐条比对，这套做法适合问答。但 Agent 做对一件事，往往要经过多轮对话、几次工具调用、读文件、改代码，最终答案只是其中一环。NiceEval 的断言直接落在这些过程事实上，不要求你先攒一份 golden 数据集。
+
+LangFuse、Braintrust 更偏线上 tracing 和监控。NiceEval 专注“写评估、跑评估、看结果、改 Agent”这一段本地开发循环。两者可以共存：你继续用它们看线上 trace，也可以把 NiceEval 的结果上报给 Braintrust。
+
+## 会反复见到的几个词
+
+| 词 | 是什么 |
 |---|---|
-| 评估用例 | 一个测试用例：写在 `evals/*.eval.ts` 里，描述测什么。 |
-| Experiment | 可签入的运行配置：决定连哪个 Adapter、什么 model、什么 flags。 |
-| Adapter | 连接被测系统的适配层：实现一个 `send`，把返回翻译成标准事件流。 |
-| Sandbox | 需要隔离工作区的 coding agent 才用得到。直连 Web Agent 不需要。 |
-| Tier | 接入 Adapter 的三档投入：Tier 1 只接 send，Tier 2 加 OTel 换调用瀑布图，Tier 3 侵入改造做 feature A/B。 |
+| [评估用例](/zh/explanation/evals) | 一条测试，写在 `evals/*.eval.ts` 里，说明发什么、怎样算做对。 |
+| [Experiment](/zh/explanation/experiment) | 一份运行配置，说明对着哪个 Agent、用哪个模型、跑几次。 |
+| [Adapter](/zh/explanation/adapter) | 连接被测对象的代码，把请求发过去，把回复翻译成 NiceEval 能读的事件。 |
+| [Sandbox](/zh/tutorials/sandbox-providers) | 隔离的运行环境。只有 Coding Agent 需要，直连的应用用不到。 |
+| Attempt | 一条评估用例的一次运行。同一条跑 5 次，就有 5 个 Attempt。 |
 
-完整术语表见[架构概览](/zh/explanation/overview)。
+其它术语第一次出现时都会就地解释。
 
-## 从你的场景开始
+## 接下来
 
-<CardGroup cols={3}>
-  <Card title="接入 Agent" icon="code-branch" href="/zh/tutorials/connect-your-agent">
-    连接你的 Agent，写一个 Adapter，把消息、工具调用和结构化输出翻译成标准事件流。
-  </Card>
-  <Card title="评估 Coding Agent 扩展" icon="wand-magic-sparkles" href="/zh/examples/coding-agent-extensions">
-    用真实 Workspace 和对照实验衡量 Skill、提示词与 Plugin Benchmark 的效果。
-  </Card>
-  <Card title="学习如何写评估用例与实验" icon="robot" href="/zh/tutorials/authoring">
-    了解如何写评估用例、断言、实验配置和报告。
-  </Card>
-</CardGroup>
-
-## 接下来读什么
-
-[快速开始](/zh/tutorials/quickstart) 会带你安装 NiceEval、构建评估用例，并审阅首次运行发布的结果。
+[快速开始](/zh/tutorials/quickstart)带你在十分钟左右跑通第一条评估用例，并在终端和浏览器里看到结果。

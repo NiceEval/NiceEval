@@ -14,8 +14,9 @@ function expectIdentityMismatch(plan: ExpPlanDocument): void {
     expect(row.slots).toMatchObject([{ state: "gap", reason: "identity-mismatch" }]);
   }
 }
+// @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
 
-test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带 [necase_Q3G99190B9YX4TW3]", async () => {
+test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的 Eval 继续携带", async () => {
   await runnerE2E.case(
     "carry-partial-reuse",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
@@ -107,8 +108,9 @@ test.concurrent("改变一个 Eval 后只重新派发该 identity，未改变的
     },
   );
 });
+// @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
 
-test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 作废 carry [necase_18CRTCDWKQD3YJR7]", async () => {
+test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 作废 carry", async () => {
   await runnerE2E.case(
     "carry-shared-state-config-identity",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },

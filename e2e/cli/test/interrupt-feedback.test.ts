@@ -4,7 +4,9 @@ import { pollUntil, withProcess } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { cliBinary, cliE2E } from "./context.ts";
 
-test.concurrent("无 Sandbox 的中断反馈不虚构容器清理 [necase_D31DET9WE90ZY004]", async () => {
+// @feature docs/feature/experiments/README.md
+// @regression memory/direct-interrupt-feedback-claims-sandbox-cleanup.md
+test.concurrent("无 Sandbox 的中断反馈不虚构容器清理", async () => {
   await cliE2E.case("interrupt-feedback", async ({ paths }) => {
     await withProcess(
       [...cliBinary, "exp", "interrupt-feedback", "--rerun", "all"],

@@ -1,17 +1,38 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: view-refresh-commit-races-with-navigation
 title: View refresh can publish a candidate after navigation changes during commit
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - Installed View browser red nered_SF50AX0SXYPK151S; candidate be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1 full Insight7 and complete takeover netake_GNGEXFKZ0FQ46Y0H, all seven observations with process cleanup, current source verified by parent.
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078"]}
     proof:
       - Installed View browser red nered_SF50AX0SXYPK151S; candidate be39d8a68af55510a974013fd5e61950f85bf23a0ceb34d516681434fb9ea5d1 full Insight7 and complete takeover netake_GNGEXFKZ0FQ46Y0H, all seven observations with process cleanup, current source verified by parent.
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/insight/test/view-operational-refresh.browser.spec.ts#necase_77F5PRE3YTPSA078"]}
-promotions: []
+    source:
+      path: memory/view-refresh-commit-races-with-navigation.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:8c8dbe9296c4b35e88b56a9160a11e2bc3790e5bbe5039912abe1241de2476c6
 ---
 A reader confirms Refresh on one Experiment while retaining another Experiment in browser history. The browser prepares only the current surface, checks its location epoch, and then awaits the Host commit response. A Back/Forward or selector navigation during that await can publish a different location before the prepared candidate reaches the UI.
 

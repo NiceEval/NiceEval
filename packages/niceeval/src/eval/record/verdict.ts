@@ -1,3 +1,7 @@
+// @concord-file ne-eval-record-verdict
+// @concord-implements docs/feature/verdict/README.md
+// @concord-implements docs/feature/verdict/architecture.md
+// @concord-implements docs/feature/verdict/use-case/strict-quality-gate.md
 import { Schema } from "effect";
 import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
 import type { AttemptOutcome } from "../../record/model/core.ts";
@@ -30,6 +34,9 @@ export type VerdictPayloadEncoded = Schema.Codec.Encoded<
 export type VerdictFoldInput = EvaluationAttemptFacts;
 export const VerdictFoldInputSchema = EvaluationAttemptFactsSchema;
 
+// @concord-code ne-eval-fold-verdict
+// @concord-implements docs/feature/verdict/architecture.md
+// @concord-implements docs/feature/verdict/use-case/strict-quality-gate.md
 export function foldVerdict(input: VerdictFoldInput): VerdictState {
   if (
     input.execution === "errored"

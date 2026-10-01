@@ -6,7 +6,7 @@
 
 暂缓选择外部 benchmark 网页的公开接入面。
 
-[PLAN-1 data-first](PLAN-1/README.md)、[PLAN-2 components-first](PLAN-2/README.md) 与 [PLAN-3 layered](PLAN-3/README.md) 都不是当前产品承诺。NiceEval 当前只定稿 CLI 与本地 [Insight](../cli-insight/DECISION.md)；Insight transport、machine query 和旧 Report runtime 都不能被外部网页当作临时 API。
+[PLAN-1 data-first](plans/plan-1/README.md)、[PLAN-2 components-first](plans/plan-2/README.md) 与 [PLAN-3 layered](plans/plan-3/README.md) 都不是当前产品承诺。NiceEval 当前只定稿 CLI 与本地 [Insight](../cli-insight/DECISION.md)；Insight transport、machine query 和旧 Report runtime 都不能被外部网页当作临时 API。
 
 这是一个明确的产品裁决。在下列证据门完成前，不发布 `niceeval/benchmark/**`、公共 Benchmark data schema、公共网页组件、Astro integration、公共 Bundle / snapshot transport 或 NiceEval-hosted web query server。
 
@@ -36,9 +36,9 @@
 
 | 候选 | 当前状态 | 缺少的决定性证据 |
 |---|---|---|
-| [PLAN-1](PLAN-1/README.md) | 保留 | React / Astro 是否重复大量 revision、Evidence 与 a11y glue。 |
-| [PLAN-2](PLAN-2/README.md) | 保留 | 完全自定义与非主 framework 是否仍能满足产品目标。 |
-| [PLAN-3](PLAN-3/README.md) | 保留 | 两层 ABI 的实际收益是否大于维护与兼容成本。 |
+| [PLAN-1](plans/plan-1/README.md) | 保留 | React / Astro 是否重复大量 revision、Evidence 与 a11y glue。 |
+| [PLAN-2](plans/plan-2/README.md) | 保留 | 完全自定义与非主 framework 是否仍能满足产品目标。 |
+| [PLAN-3](plans/plan-3/README.md) | 保留 | 两层 ABI 的实际收益是否大于维护与兼容成本。 |
 
 ## 遗留风险
 

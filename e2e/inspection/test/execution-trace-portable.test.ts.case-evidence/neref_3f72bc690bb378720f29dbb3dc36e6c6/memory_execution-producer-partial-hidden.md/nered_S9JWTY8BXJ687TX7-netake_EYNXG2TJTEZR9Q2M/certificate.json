@@ -1,0 +1,31 @@
+{
+  "format": "concord.native-reliability/v1",
+  "selector": "e2e/inspection/test/execution-trace-portable.test.ts#neref_3f72bc690bb378720f29dbb3dc36e6c6",
+  "caseId": "neref_3f72bc690bb378720f29dbb3dc36e6c6",
+  "candidateSha256": "1ff09947744bffe3d5e99be243809acbc8c32a5df22ac295a13f71851883d9ae",
+  "sourceDigest": "sha256:53a56a965a19fec2d7a05b4400994def794f7aaacc7a007e227aaffeb4b899d8",
+  "greenReceipt": "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/green.json",
+  "observations": {
+    "isolatedCopies": [
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-1.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-2.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-3.json"
+    ],
+    "sameCopy": [
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-4.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-5.json"
+    ],
+    "defaultParallel": "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-6.json",
+    "singleCase": "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/green.json",
+    "cleanup": [
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/green.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-1.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-2.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-3.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-4.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-5.json",
+      "e2e/inspection/test/execution-trace-portable.test.ts.case-evidence/neref_3f72bc690bb378720f29dbb3dc36e6c6/memory_execution-producer-partial-hidden.md/nered_S9JWTY8BXJ687TX7-netake_EYNXG2TJTEZR9Q2M/reliability-6.json"
+    ]
+  },
+  "certificateSha256": "f22f0e95805b94b3672ed924a6c746c02afb1449a955cfe43aedcab1d07e9a62"
+}

@@ -39,9 +39,9 @@ const EXPECTED_OUTCOMES = [
   { experimentId: "repo-skill", evalId: "repo-skill", verdict: "passed", attempts: 1, passed: 1 },
   // mcp-tools：stdio 与 Streamable HTTP 两个 MCP 工具都须以正确入参完成；因此期望 passed/1。
   { experimentId: "mcp", evalId: "mcp-tools", verdict: "passed", attempts: 1, passed: 1 },
-  // plugin-mcp：官方 Context7 Plugin 的远程 MCP 必须接线并成功调用；单次安装路径期望 passed/1。
+  // plugin-mcp：签入的 Plugin 的 stdio MCP 必须接线并成功调用；单次安装路径期望 passed/1。
   { experimentId: "plugin", evalId: "plugin-mcp", verdict: "passed", attempts: 1, passed: 1 },
-  // plugin-reuse：四个 Sandbox 承接两波共八次复用，八次都须调用 Context7 成功，所以是 passed/8。
+  // plugin-reuse：四个 Sandbox 承接两波共八次复用，八次都须调用 Plugin MCP 成功，所以是 passed/8。
   { experimentId: "plugin-reuse", evalId: "plugin-mcp", verdict: "passed", attempts: 8, passed: 8 },
   // remote-plugin：远程 marketplace 文件须安装，随 Plugin 的 Skill 须被加载并完成请求；期望 passed/1。
   { experimentId: "remote-plugin", evalId: "remote-plugin", verdict: "passed", attempts: 1, passed: 1 },
@@ -124,16 +124,18 @@ beforeAll(async () => {
   }
   evalEvents = retried.events;
 }, 53 * 60_000);
+// @feature docs/feature/adapters/README.md
 
-it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict [necase_03VC48FN8K5730J0]", () => {
+it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () => {
   // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
   // receipt」）；成败与发现完整性由下面带身份的 eval 事件精确断言。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
+// @feature docs/feature/adapters/README.md
 
-it("attempt.trace 读回 Claude Code 的代表性工具证据 [necase_SD0VYFPKPV859TGT]", async () => {
+it("attempt.trace 读回 Claude Code 的代表性工具证据", async () => {
   const attempt = representativeAttempt();
   const queried = await withInspectionRequest({
     kind: "attempt.trace",

@@ -1,8 +1,11 @@
 {
-  "format": "niceeval.e2e-case-evidence-index/v1",
-  "current": {
-    "necase_C2K9MBSGV9A6TC0A": {
-      "memory/codex-thread-diagnostics-confused-with-terminal-failure.md": {
+  "format": "concord.case-evidence-index/v1",
+  "current": {},
+  "history": [
+    {
+      "caseId": "necase_C2K9MBSGV9A6TC0A",
+      "memory": "memory/codex-thread-diagnostics-confused-with-terminal-failure.md",
+      "evidence": {
         "red": {
           "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/red.json",
           "digest": "sha256:748b8690637cce55b2863c9f81334db824449c58f458d85c88bb5fd43620835a"
@@ -19,7 +22,9 @@
           "path": "e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts.case-evidence/necase_C2K9MBSGV9A6TC0A/memory_codex-thread-diagnostics-confused-with-terminal-failure.md/nered_K4ACT1Y87VBTQE3D-netake_N0SWY5MB45QGDPCN/inventory.json",
           "digest": "sha256:a9a09efca40ca5c0a959a5deb2d1082c5fae1a73ea72dd195b9c1e4c6d5739e5"
         }
-      }
+      },
+      "reason": "Archived during explicit neutral-governance migration; legacy evidence is historical and is not current proof.",
+      "retiredAtCommit": "05dec8c7f1795e13212d424ee472874d62d84345"
     }
-  }
+  ]
 }

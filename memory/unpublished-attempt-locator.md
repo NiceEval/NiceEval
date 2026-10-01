@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: unpublished-attempt-locator
 title: Failed Attempt persistence exposed an unqueryable locator
 createdAt: 2026-08-30
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 ## Observation
 

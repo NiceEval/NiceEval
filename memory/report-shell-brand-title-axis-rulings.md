@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-shell-brand-title-axis-rulings
+title: 设计裁决:报告壳品牌位 / title 落点 / 散点轴向(2026-07-16,看真实站点后第六批)
+createdAt: 2026-07-16T16:55:12+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-shell-brand-title-axis-rulings.md
+  commit: ee59a11ce39fb0dbbfd06e565c1c9b4377f2def8
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:报告壳品牌位 / title 落点 / 散点轴向(2026-07-16,看真实站点后第六批)
 
 用户看部署后的 view 页面提出三条,当场裁决:

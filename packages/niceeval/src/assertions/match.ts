@@ -1,3 +1,7 @@
+// @concord-file ne-eval-assertions-match
+// @concord-implements docs/feature/assertions/library/value-assertions.md
+// @concord-implements docs/feature/assertions/library/scoped-assertions.md
+// @concord-implements docs/feature/judge/library.md
 // Match 内核：纯候选比较、三态结果与领域 matcher。
 //
 // 这里不登记 Assertion，也不决定 Verdict / Score。调用方先冻结 subject，再把同一
@@ -16,6 +20,7 @@ import type { JsonMatch, JsonValue } from "../shared/types.ts";
 import type { JudgeMaterial } from "../judge/image.ts";
 import { stripComments } from "../util.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
+import type { MaterialCollection, MaterialItem } from "./context-match.ts";
 
 export type MatchDomain = "value" | "tool" | "event";
 
@@ -105,7 +110,7 @@ export interface NumericComparison {
   readonly threshold: number;
 }
 
-export type NumericMaterial =
+export type NumericMaterial = { readonly provenance?: { readonly source: string; readonly scope: string; readonly unit: string; readonly cut: string } } & (
   | {
       readonly state: "exact";
       readonly value: number;
@@ -117,7 +122,7 @@ export type NumericMaterial =
   | {
       readonly state: "unavailable";
       readonly reason: string;
-    };
+    });
 
 export interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
@@ -141,11 +146,11 @@ export interface ScoreMatch<in T> extends Match<T, "value"> {
 
 export interface ScoreMatchAnchor { readonly measurement: number; readonly description: string; }
 export type ScoreMatchLlmFailure = { readonly _tag: "ScoreMatchLlmUnavailable"; readonly code: string; readonly message: string } | { readonly _tag: "ScoreMatchLlmErrored"; readonly code: string; readonly message: string };
-export type ScoreMatchResult = number | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string } | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string } | { readonly state: "errored"; readonly code: string; readonly message: string };
+export type ScoreMatchResult = number | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string; readonly citations?: readonly string[] } | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string; readonly citations?: readonly string[] } | { readonly state: "errored"; readonly code: string; readonly message: string };
 export interface ScoreMatchContext {
   readonly llm: {
     score(input: { readonly rubric: string; readonly anchors: readonly ScoreMatchAnchor[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly measurement: number; readonly rationale: string }, ScoreMatchLlmFailure>;
-    classify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly choice: string; readonly rationale: string }, ScoreMatchLlmFailure>;
+    classify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly evidenceIds?: readonly string[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly choice: string; readonly rationale: string; readonly citations?: readonly string[] }, ScoreMatchLlmFailure>;
     extract(input: { readonly rubric: string; readonly maxItems: number; readonly material: JudgeMaterial }): Effect.Effect<{ readonly items: readonly string[]; readonly rationale: string; readonly complete: boolean }, ScoreMatchLlmFailure>;
     batchClassify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly items: readonly { readonly id: string; readonly text: string }[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly items: readonly { readonly id: string; readonly choice: string; readonly rationale: string }[] }, ScoreMatchLlmFailure>;
   };
@@ -908,7 +913,7 @@ export function or(
   });
 }
 
-export function not<T>(match: BooleanMatch<T, T, "value">): BooleanMatch<T, T, "value"> {
+export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): BooleanMatch<T, T, "value"> {
   assertBooleanMatch(match, "not() argument", "value");
   return createBooleanMatch("value", `not(${match.name})`, async (candidate) => {
     const result = await evaluateBooleanMatch(match, candidate);
@@ -952,6 +957,10 @@ function textCandidate(value: unknown, options: TextMatchOptions): string | unde
   if (typeof value !== "string") return undefined;
   return options.stripComments === true ? stripComments(value) : value;
 }
+
+// @concord-code ne-eval-assertions-includes-match
+// @concord-implements docs/feature/assertions/library/value-assertions.md
+// @concord-implements docs/feature/eval/use-case/first-single-turn.md
 
 export function includes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> {
   assertNonEmptyString(text, "includes() text");
@@ -1256,17 +1265,21 @@ export function defineValueMatch<T, R extends T>(spec: {
 }): BooleanMatch<T, R>;
 export function defineValueMatch<T>(spec: {
   readonly name: string;
-  readonly evaluate: (value: T) => boolean | Promise<boolean>;
+  readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
 }): BooleanMatch<T, T>;
+// @concord-code ne-eval-assertions-define-value-match
+// @concord-implements docs/feature/assertions/library/value-assertions.md
+
 export function defineValueMatch<T, R extends T = T>(spec: {
   readonly name: string;
-  readonly evaluate: (value: T) => boolean | Promise<boolean>;
+  readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
 }): BooleanMatch<T, R> | BooleanMatch<T, T> {
   if (!isRecord(spec)) throw new TypeError("defineValueMatch() spec must be an object");
   assertNonEmptyString(spec.name, "defineValueMatch() spec.name");
   if (typeof spec.evaluate !== "function") throw new TypeError("defineValueMatch() spec.evaluate must be a function");
   return createBooleanMatch<T, R, "value">("value", spec.name, async (candidate) => {
     const value = await spec.evaluate(candidate);
+    if (typeof value === "object" && value !== null && value.state === "unavailable" && typeof value.reason === "string" && value.reason.trim() !== "") return unavailable(value.reason, diagnostic("value-unavailable", value.reason));
     if (typeof value !== "boolean") throw new TypeError(`matcher ${spec.name} returned a non-boolean result`);
     if (value) return matched(candidate as R, diagnostic("value-match", `${spec.name} matched`));
     return mismatched(diagnostic("value-mismatch", `${spec.name} did not match`));
@@ -1344,7 +1357,8 @@ function boundedPositiveInteger(value: unknown, fallback: number, maximum: numbe
   return resolved;
 }
 
-function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["llm"] {
+/** @internal Shared managed-model budget validation. */
+export function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["llm"] {
   if (!isRecord(value) || Array.isArray(value)) throw new TypeError("defineScoreMatch() spec.llm must be an object");
   const allowed = ["maxCalls", "maxMaterialBytes", "maxAuditBytes"];
   const output: Record<string, unknown> = {};
@@ -1356,8 +1370,8 @@ function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["llm"] {
   }
   return Object.freeze({
     maxCalls: boundedPositiveInteger(output.maxCalls, 4, 16, "defineScoreMatch() spec.llm.maxCalls"),
-    maxMaterialBytes: boundedPositiveInteger(output.maxMaterialBytes, 32 * 1024, 48 * 1024, "defineScoreMatch() spec.llm.maxMaterialBytes"),
-    maxAuditBytes: boundedPositiveInteger(output.maxAuditBytes, 96 * 1024, 256 * 1024, "defineScoreMatch() spec.llm.maxAuditBytes"),
+    maxMaterialBytes: boundedPositiveInteger(output.maxMaterialBytes, 32 * 1024, 4 * 1024 * 1024, "defineScoreMatch() spec.llm.maxMaterialBytes"),
+    maxAuditBytes: boundedPositiveInteger(output.maxAuditBytes, 96 * 1024, 8 * 1024 * 1024, "defineScoreMatch() spec.llm.maxAuditBytes"),
   });
 }
 
@@ -2216,17 +2230,26 @@ export function inOrder(
 export function inOrder(
   matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
 ): ToolSequenceMatch;
+export function inOrder<T, Subject extends CollectionValue<T>>(
+  matches: readonly [BooleanMatch<T, NoInfer<T>>, BooleanMatch<T, NoInfer<T>>, ...BooleanMatch<T, NoInfer<T>>[]],
+): SubjectSequenceMatch<Subject>;
 export function inOrder(
-  matches: readonly [ToolMatch | EventMatch, ToolMatch | EventMatch, ...(ToolMatch | EventMatch)[]],
-): ToolSequenceMatch | EventSequenceMatch {
+  matches: readonly unknown[],
+): ToolSequenceMatch | EventSequenceMatch | BooleanMatch<CollectionValue<unknown>, CollectionValue<unknown>> {
   if (!Array.isArray(matches) || matches.length < 2) {
-    throw new TypeError("inOrder() requires at least two ToolMatch or EventMatch values");
+    throw new TypeError("inOrder() requires at least two BooleanMatch values");
   }
   if (matches.length > MAX_ORDER_STEPS) {
     throw new TypeError(`inOrder() supports at most ${MAX_ORDER_STEPS} steps`);
   }
   const first = internalMatchOf(matches[0], "inOrder() match 1");
-  if (first.domain !== "tool" && first.domain !== "event") throw new TypeError("inOrder() requires ToolMatch or EventMatch steps");
+  if (first.domain === "value") {
+    const steps = Array.from(matches, (match, index) => {
+      assertBooleanMatch(match, `inOrder() match ${index + 1}`, "value");
+      return match as BooleanMatch<unknown, unknown>;
+    });
+    return valueSequenceMatch(Object.freeze(steps));
+  }
   const domain = first.domain;
   const normalized = matches.map((match, index) => domain === "tool"
     ? assertManagedToolMatch(match, `inOrder() match ${index + 1}`)
@@ -2236,6 +2259,48 @@ export function inOrder(
     domain,
     matches: Object.freeze(normalized),
   }, `${domain}-sequence`) as ToolSequenceMatch | EventSequenceMatch;
+}
+
+// A sequence always refines to its input, including when nested under a NoInfer
+// composition argument. Keep that relationship available for contextual instantiation.
+interface SubjectSequenceMatch<Subject> extends BooleanMatch<Subject, Subject> {
+  readonly [matchRefinementBrand]: <Original extends Subject>() => Original;
+}
+
+function valueSequenceMatch(
+  steps: readonly BooleanMatch<unknown, unknown>[],
+): BooleanMatch<CollectionValue<unknown>, CollectionValue<unknown>> {
+  const name = `inOrder(${steps.map(step => step.name).join(", ")})`;
+  return createBooleanMatch("value", name, async subject => {
+    const collection = compositionCollection(subject, name);
+    if (collection.state === "unavailable") return collection;
+    const certain = new Array<boolean>(steps.length + 1).fill(false);
+    const possible = new Array<boolean>(steps.length + 1).fill(false);
+    certain[0] = possible[0] = true;
+    const children: MatchDiagnosticChild[] = [];
+    let unknownReason: string | undefined;
+    for (let index = 0; index < collection.values.length; index += 1) {
+      const value = collection.values[index];
+      // Descending updates only consume prefixes reached by earlier items.
+      for (let step = steps.length - 1; step >= 0; step -= 1) {
+        if (!possible[step] || certain[step + 1]) continue;
+        const result = !Object.hasOwn(collection.values, index) || compositionUnknown(value)
+          ? compositionMissing(name) : await evaluateBooleanMatch(steps[step], value);
+        children.push(resultChild({ ...result, diagnostic: diagnostic("composition-order-item", `${name} evaluated original item ${index}, step ${step}`, {
+          path: ["items", index],
+          children: [resultChild(result, step, steps[step].name)],
+        }) }, index, collection.items?.[index]?.id));
+        if (result.state !== "mismatched") possible[step + 1] = true;
+        if (result.state === "matched" && certain[step]) certain[step + 1] = true;
+        if (result.state === "unavailable") unknownReason ??= result.reason;
+      }
+      if (certain[steps.length]) return compositionResult(subject, name, children, matched(subject));
+    }
+    const result = possible[steps.length]
+      ? unavailable(unknownReason ?? "unknown-composition-value", diagnostic("composition-order-unavailable", "Only an unknown sequence can satisfy the order"))
+      : mismatched(diagnostic("composition-order-mismatched", "No increasing sequence can satisfy the order"));
+    return compositionResult(subject, name, children, result);
+  });
 }
 
 export function isManagedCollectionMatch(value: unknown): value is CollectionMatch<unknown> {
@@ -2252,4 +2317,195 @@ export function collectionMatchSpecOf(value: unknown): CollectionMatchSpec {
     throw new TypeError("match must be a collection Match created by niceeval/expect");
   }
   return spec;
+}
+
+/** Ordinary arrays are complete; material collections carry explicit source coverage. */
+export type CollectionValue<T> = readonly T[] | MaterialCollection<T>;
+
+// Only input variance matters: a child's refinement never replaces the outer subject.
+type CompositionValueMatch<T> = Match<T, "value"> & { readonly kind: "boolean" };
+
+async function compositionEvaluate<T>(match: CompositionValueMatch<T>, value: T): Promise<BooleanMatchEvaluation<T>> {
+  return evaluateBooleanMatch(match as BooleanMatch<T, T>, value);
+}
+
+function compositionUnknown(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "number" && !Number.isFinite(value);
+}
+
+function compositionMissing(name: string, path: readonly MatchPathSegment[] = []): BooleanMatchEvaluation<never> {
+  return unavailable("unknown-composition-value", diagnostic("composition-value-unavailable", `${name} requires a known, finite value`, {
+    path, reason: "unknown-composition-value",
+  }));
+}
+
+function compositionProject<T, U>(name: string, project: (value: T) => U, value: T): U {
+  const projected = project(value);
+  if (projected !== null && (typeof projected === "object" || typeof projected === "function") &&
+    typeof (projected as { readonly then?: unknown }).then === "function") {
+    throw new TypeError(`${name} projection must return a synchronous value`);
+  }
+  return projected;
+}
+
+function compositionResult<T>(
+  subject: T, name: string, children: readonly MatchDiagnosticChild[], result: BooleanMatchEvaluation<unknown>,
+): BooleanMatchEvaluation<T> {
+  const detail = diagnostic(`composition-${result.state}`, `${name} ${result.state}`, {
+    children, ...(result.state === "unavailable" ? { reason: result.reason } : {}),
+  });
+  if (result.state === "unavailable") return unavailable(result.reason, detail);
+  if (result.state === "mismatched") return mismatched(detail);
+  return matched(subject, detail);
+}
+
+function compositionCollection<T>(subject: CollectionValue<T>, name: string):
+  | { readonly state: "complete"; readonly values: readonly T[]; readonly items?: readonly MaterialItem<T>[] }
+  | Extract<BooleanMatchEvaluation<never>, { readonly state: "unavailable" }> {
+  if (Array.isArray(subject)) return { state: "complete", values: subject };
+  if (!isRecord(subject) || !["complete", "partial", "unavailable"].includes(String(subject.state))) {
+    throw new TypeError(`${name} subject must be an array or MaterialCollection`);
+  }
+  if (subject.state !== "complete") {
+    if (typeof subject.reason !== "string" || subject.reason.trim() === "") {
+      throw new TypeError(`${name} incomplete collection requires a reason`);
+    }
+    return unavailable(subject.reason, diagnostic("composition-collection-unavailable", `${name} requires a complete collection`, {
+      reason: subject.reason,
+    })) as Extract<BooleanMatchEvaluation<never>, { readonly state: "unavailable" }>;
+  }
+  if (!Array.isArray(subject.items)) throw new TypeError(`${name} material items must be an array`);
+  const items = subject.items as readonly MaterialItem<T>[];
+  const ids = new Set<string>();
+  const values: T[] = new Array(items.length);
+  for (let index = 0; index < items.length; index += 1) {
+    if (!Object.hasOwn(items, index) || compositionUnknown(items[index])) continue;
+    const item = items[index];
+    if (!isRecord(item) || typeof item.id !== "string" || item.id.trim() === "" || ids.has(item.id)) {
+      throw new TypeError(`${name} material items require unique nonempty IDs`);
+    }
+    ids.add(item.id);
+    if (Object.hasOwn(item, "value")) values[index] = item.value as T;
+  }
+  return { state: "complete", values, items };
+}
+
+function compositionItemChild(
+  result: BooleanMatchEvaluation<unknown>, index: number, id: string | undefined, label: string,
+): MatchDiagnosticChild {
+  return resultChild({ ...result, diagnostic: diagnostic("composition-item", `${label} evaluated original item ${index}`, {
+    path: ["items", index],
+    children: [resultChild(result, 0, label)],
+  }) }, index, id === undefined ? label : id);
+}
+
+function compositionSubset<T>(values: readonly T[], indices: readonly number[], items?: readonly MaterialItem<unknown>[]): CollectionValue<T> {
+  if (items === undefined) return Object.freeze([...values]);
+  return Object.freeze({ state: "complete", items: Object.freeze(values.map((value, index) => Object.freeze({
+    id: items[indices[index]].id, value,
+  }))) });
+}
+
+/** Project a single value without replacing the original subject's refinement. */
+export function mapValue<T, U>(
+  label: string, project: (value: T) => U, match: Match<NoInfer<U>, "value"> & { readonly kind: "boolean" },
+): BooleanMatch<T, T> {
+  assertNonEmptyString(label, "mapValue() label");
+  if (typeof project !== "function") throw new TypeError("mapValue() project must be a function");
+  assertBooleanMatch(match, "mapValue() match", "value");
+  const name = `mapValue(${label}, ${match.name})`;
+  return createBooleanMatch("value", name, async (subject: T) => {
+    if (compositionUnknown(subject)) return compositionMissing(name);
+    const value = compositionProject(name, project, subject);
+    const result = compositionUnknown(value) ? compositionMissing(name) : await compositionEvaluate(match, value);
+    return compositionResult(subject, name, [resultChild(result, 0, label)], result);
+  });
+}
+
+/** Project each complete item, retaining its material identity and order. */
+export function mapEach<T, U, Subject extends CollectionValue<T>>(
+  project: (value: T) => U,
+  aggregate: Match<CollectionValue<NoInfer<U>>, "value"> & { readonly kind: "boolean" },
+): BooleanMatch<Subject & CollectionValue<T>, Subject> {
+  if (typeof project !== "function") throw new TypeError("mapEach() project must be a function");
+  assertBooleanMatch(aggregate, "mapEach() aggregate", "value");
+  const name = `mapEach(${aggregate.name})`;
+  return createBooleanMatch("value", name, async (subject: Subject) => {
+    const collection = compositionCollection(subject, name);
+    if (collection.state === "unavailable") return collection;
+    const values: U[] = [];
+    const indices: number[] = [];
+    const children: MatchDiagnosticChild[] = [];
+    let unknown: BooleanMatchEvaluation<unknown> | undefined;
+    for (let index = 0; index < collection.values.length; index += 1) {
+      const item = collection.values[index];
+      const value = !Object.hasOwn(collection.values, index) || compositionUnknown(item)
+        ? undefined : compositionProject(name, project, item);
+      const result = compositionUnknown(value) ? compositionMissing(name) : matched(value);
+      if (result.state === "unavailable") unknown ??= result;
+      values.push(value as U); indices.push(index);
+      children.push(compositionItemChild(result, index, collection.items?.[index]?.id, "projection"));
+    }
+    if (unknown !== undefined) return compositionResult(subject, name, children, unknown);
+    const result = await compositionEvaluate(aggregate, compositionSubset(values, indices, collection.items));
+    children.push(resultChild(result, collection.values.length, "aggregate"));
+    return compositionResult(subject, name, children, result);
+  });
+}
+
+/** Select only definite matches; an unknown selector makes the aggregate unavailable. */
+export function filterWhere<T, R extends T, Subject extends CollectionValue<T>>(
+  selector: BooleanMatch<T, R>, aggregate: BooleanMatch<CollectionValue<R>, CollectionValue<R>>,
+): BooleanMatch<Subject, Subject> {
+  assertBooleanMatch(selector, "filterWhere() selector", "value");
+  assertBooleanMatch(aggregate, "filterWhere() aggregate", "value");
+  const name = `filterWhere(${selector.name}, ${aggregate.name})`;
+  return createBooleanMatch("value", name, async (subject: Subject) => {
+    const collection = compositionCollection(subject, name);
+    if (collection.state === "unavailable") return collection;
+    const values: R[] = [];
+    const indices: number[] = [];
+    const children: MatchDiagnosticChild[] = [];
+    let unknown: BooleanMatchEvaluation<unknown> | undefined;
+    for (let index = 0; index < collection.values.length; index += 1) {
+      const value = collection.values[index];
+      const result = !Object.hasOwn(collection.values, index) || compositionUnknown(value)
+        ? compositionMissing(name) : await evaluateBooleanMatch(selector, value);
+      if (result.state === "matched") { values.push(value as R); indices.push(index); }
+      if (result.state === "unavailable") unknown ??= result;
+      children.push(compositionItemChild(result, index, collection.items?.[index]?.id, selector.name));
+    }
+    if (unknown !== undefined) return compositionResult(subject, name, children, unknown);
+    const result = await compositionEvaluate(aggregate, compositionSubset(values, indices, collection.items));
+    children.push(resultChild(result, collection.values.length, "aggregate"));
+    return compositionResult(subject, name, children, result);
+  });
+}
+
+/** Compare an exact match count only after every item in a complete collection is known. */
+export function countWhere<T, Subject extends CollectionValue<T>>(
+  item: BooleanMatch<T, NoInfer<T>>, count: Match<number, "value"> & { readonly kind: "boolean" },
+): BooleanMatch<Subject, Subject> {
+  assertBooleanMatch(item, "countWhere() item", "value");
+  assertBooleanMatch(count, "countWhere() count", "value");
+  const name = `countWhere(${item.name}, ${count.name})`;
+  return createBooleanMatch("value", name, async (subject: Subject) => {
+    const collection = compositionCollection(subject, name);
+    if (collection.state === "unavailable") return collection;
+    let total = 0;
+    const children: MatchDiagnosticChild[] = [];
+    let unknown: BooleanMatchEvaluation<unknown> | undefined;
+    for (let index = 0; index < collection.values.length; index += 1) {
+      const value = collection.values[index];
+      const result = !Object.hasOwn(collection.values, index) || compositionUnknown(value)
+        ? compositionMissing(name) : await evaluateBooleanMatch(item, value);
+      if (result.state === "matched") total += 1;
+      if (result.state === "unavailable") unknown ??= result;
+      children.push(compositionItemChild(result, index, collection.items?.[index]?.id, item.name));
+    }
+    if (unknown !== undefined) return compositionResult(subject, name, children, unknown);
+    const result = await compositionEvaluate(count, total);
+    children.push(resultChild(result, collection.values.length, "count"));
+    return compositionResult(subject, name, children, result);
+  });
 }

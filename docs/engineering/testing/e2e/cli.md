@@ -12,31 +12,19 @@
 
 #### cli-positive-selection
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
-
 - eval id 位置参数按前缀收窄实际运行的 Eval 集合；experiment 选择器按 CLI 契约命中。
 - Setup cache 策略在 Config 与 Experiment 可声明 `use | bypass`；`exp --sandbox-setup-cache`
   接受两个显式值与省略默认，不改变同一 Experiment / Eval 的选择 identity，其它值以用法错误退出。
 
 #### cli-no-eval-feedback
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
-
 - Experiment 命中但 Eval 前缀零命中时按用法错误退出，错误信息给出下一步。
 
 #### cli-no-experiment-feedback
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [预览并收窄](../../../feature/experiments/use-case/选择评测/预览并收窄.md)
-
 - 未命中任何 Experiment 的选择器按用法错误退出，错误信息给出下一步。
 
 #### cli-evaluation-kind-admission
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [拆开混型评测](../../../feature/experiments/use-case/选择评测/拆开混型评测.md)
 
 - 普通 `niceeval exp` 在任何 Agent、Sandbox、fingerprint 或 Record 写入前拒绝同时选中 Pass Eval 与 Score Eval 的 Experiment；错误分别列出两类 Eval ID，并要求按题型拆分或收窄。
 - Eval Group 的闭合成员集若同时包含 Pass Eval 与 Score Eval，同一公开 preflight 以 Group ID 和两类成员 ID 拒绝；不能靠 Experiment 或 CLI 只选中其中一类绕过非法 Group 定义。
@@ -44,9 +32,6 @@ Contract: [拆开混型评测](../../../feature/experiments/use-case/选择评�
 ### 退出码折叠
 
 #### cli-failure-error-results
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
 
 仓库包含四个 Experiment，验收脚本把预期非零退出转换为仓库级成功：
 
@@ -59,9 +44,6 @@ Contract: [experiments](../../../feature/experiments/README.md)
 | judge-precheck-error | 两次 Attempt 的 Judge 调用失败 | NDJSON 保留 Eval 与次数，Query 保留每次 Attempt 的 locator 与 errored，receipt 正常闭合 |
 
 #### cli-provider-error-feedback
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
 
 Given 同一次 Human invocation 选中四个 Experiment。两个 custom provider 在 `sandbox.create` 以相同
 phase/code、不同长 `message` 失败，分别代表 E2B 与 Vercel 外部边界。另两个 Dockerfile sandbox 在不同 Run
@@ -76,10 +58,6 @@ Then：
 
 #### cli-cache-inventory
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/sandbox/cli.md](../../../feature/sandbox/cli.md)
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/README.md at=7c23d9957a9e3433dc82db65a18099b60823e133 -->
-
 Given Docker 的共享 BuildKit builder 报告总容量和 Provider reclaimable estimate，但没有 NiceEval Domain identity、entry 或 lease。
 
 When 从安装后的 candidate 运行 `niceeval docker cache inventory --json`。
@@ -87,9 +65,6 @@ When 从安装后的 candidate 运行 `niceeval docker cache inventory --json`�
 Then 输出把 BuildKit 放进独立的 `providerObservations`，状态为 `unverified`，不产生 `domainId`、`evictable` 或 GcPlan。
 
 #### cli-docker-task-build-cache
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [重依赖烘进镜像](../../../feature/experiments/use-case/生命周期/重依赖烘进镜像.md)
 
 Given 一个 Dockerfile Sandbox 的 BuildKey 未变化，且前一次 Invocation 已把 image 与 manifest 写入受管 registry。
 
@@ -106,9 +81,6 @@ Then 第一次只显示一次 `built once`，第二次显示 `build cache hit`�
 
 #### cli-sandbox-action-debug
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Experiments · debug](../../../feature/experiments/cli.md#debug)
-
 `niceeval debug <experiment> <eval> --json` 从安装后的公开 CLI 交付统一的 Sandbox action plan。
 Experiment、Eval Group、Eval 与 Agent action 保留 owner、occurrence、声明次序和拓扑次序。
 
@@ -120,9 +92,6 @@ callback 与 legacy command 是 opaque barrier，后续 action 标记 `opaque-an
 不探 cache，也不执行作者 action、callback、Agent 或 Eval。
 
 #### cli-sandbox-project-preflight
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [experiments](../../../feature/experiments/README.md)
 
 `niceeval sandbox list` 在语法检查成功后准备当前项目的 `.env` 凭据，因此凭据文件不可读时会在调用
 Sandbox Provider 前失败；它不加载或求值 `niceeval.config.*`，空留存表仍输出
@@ -148,9 +117,6 @@ flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明�
 
 #### cli-live-pty
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Experiments CLI · 运行中反馈](../../../feature/experiments/cli.md#运行中反馈)
-
 安装后的 `niceeval exp pty-progress --rerun all` 在真实 PTY 中仍活跃时显示 Runner 在 `send()` 起点投影的
 `user: <sentinel>`；Eval 不自行调用 `progress()` 冒充该结果。同一
 Invocation 随后以零退出结束。owner 只断言可观察的 live detail、PTY 控制 bytes 与终态，不解释帧布局，也不通过退出后的
@@ -163,38 +129,19 @@ flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/R
 固定 query 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有的是运行侧 CLI 行为——选择、退出码、缓存。
 ## 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。 {#cli-sandbox-step-activity}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/experiments/cli.md](../../../feature/experiments/cli.md)
-<!-- niceeval.e2e-owner-history/v1 action=set from=docs/feature/experiments/cli.md#声明式-sandbox-step-activity at=a527c598df69bb8ee80d7fd637256942b9f96ee5 -->
-
 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。
 ## init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。 {#cli-init-inspection-guidance}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/inspection/README.md](../../../feature/inspection/README.md)
 
 init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。
 ## 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。 {#cli-legacy-record-recovery}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/run/README.md](../../../feature/run/README.md)
-
 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。
 ## 旧 Judge 配置在模块加载阶段拒绝执行，显示准确位置与一次离线英文指南，且不创建 Invocation。 {#judge-provider-migration}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/error-assistance/use-case/migrate-judge-provider.md](../../../feature/error-assistance/use-case/migrate-judge-provider.md)
 
 旧 Judge 配置在模块加载阶段拒绝执行，显示准确位置与一次离线英文指南，且不创建 Invocation。
 ## 无 Sandbox 的公开 CLI 中断反馈使用中性提示，保留 interrupted 终态与退出码。 {#cli-interrupt-feedback}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/experiments/cli.md#结束反馈与-receipt](../../../feature/experiments/cli.md#结束反馈与-receipt)
-
 无 Sandbox 的公开 CLI 中断反馈使用中性提示，保留 interrupted 终态与退出码。
 ## 非交互终端在运行中显示有归属且节流去重的文本进度。 {#cli-live-pipe}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/experiments/README.md](../../../feature/experiments/README.md)
 
 非交互终端在运行中显示有归属且节流去重的文本进度。

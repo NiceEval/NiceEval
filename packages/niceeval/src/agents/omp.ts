@@ -95,6 +95,9 @@ function enrichOmpEvent(event: StreamEvent): StreamEvent {
 }
 
 /** Oh My Pi sandbox adapter backed by `omp --print --mode json`. */
+// @concord-code ne-adapter-omp-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/omp/README.md
 export function ompAgent(config?: OmpConfig): Agent {
   const version = config?.version ?? DEFAULT_OMP_CLI_VERSION;
   const bunVersion = config?.bunVersion ?? DEFAULT_BUN_VERSION;

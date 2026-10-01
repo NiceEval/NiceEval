@@ -1,18 +1,40 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: attempt-publication-diagnostic-context
 title: Attempt publication failure lost cause and locator
 createdAt: 2026-08-31
-kind:
-  type: problem
-  state: resolved
-  resolution:
-    kind: fixed
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: |-
+      kind:
+        type: problem
+        state: resolved
+        resolution:
+          kind: fixed
+          proof:
+            - nered_F9NNRRVTQYFWVAZ2
+            - netake_1P9BQR301YPPNK7N
+            - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5"]}
     proof:
       - nered_F9NNRRVTQYFWVAZ2
       - netake_1P9BQR301YPPNK7N
       - niceeval.fixed-evidence/v1:{"selectors":["e2e/runner/test/attempt-publication-failure.test.ts#necase_MJKBRQFQP8P4EWH5"]}
-promotions: []
+    source:
+      path: memory/attempt-publication-diagnostic-context.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:d2c0f978e6654085b8656f557abd0a3cd6a1fb555953c0c3f58dcbb6f1ef3fce
 ---
 ## Observation
 

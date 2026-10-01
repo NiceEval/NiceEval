@@ -45,7 +45,7 @@ Attempt locator 必须来自固定 operation 的可继续读取 identity；reque
 
 - **答案层**：具名 identity、Verdict、数字、错误 code、工具名和建议命令与 ground truth 一致。
 - **路径层**：transcript 使用公开 CLI；若徒手读取 Record 私有文件，单独记为 CLI/文档可发现性缺口。
-- **路由层**：从随包索引进入与问题相符的参考页，且没有使用 Results 1–15 的 schema、history 或 session 查询。
+- **路由层**：从随包索引进入与问题相符的参考页，且没有使用已退役的 schema、history 或 session 查询。
 
 对同一题库比较 coding agent/model，并设置有/无随包文档对照组。CLI 或页面改版前后也可各跑一轮，用分数判断可发现性是否退化。
 

@@ -1,4 +1,4 @@
-import { equals } from "niceeval/expect";
+import { equals, atMost, atLeast, defineValueMatch } from "niceeval/expect";
 import { externalUsage } from "../fixtures/external-usage.ts";
 
 export default externalUsage.defineEval({
@@ -59,6 +59,18 @@ export default externalUsage.defineEval({
         outputTokens: 1,
       });
     }
+    t.finishUsage();
+    const usage = t.usage;
+    t.check(usage, defineValueMatch({ name: "official-usage-snapshot", evaluate: (value: typeof usage) => value.source === "adapter" && value.costs.totalContributions === 415 && value.totalTokens.state === "lower-bound" && value.totalTokens.value === 1150 && value.costs.values[0]?.value === "0.0000854" && Object.isFrozen(value.costs.values[0]) })).gate().label("Official usage snapshot");
+    if (usage.source === "adapter") {
+      t.check(usage.totalTokens, atMost(2000)).label("Unknown token ceiling");
+      t.check(usage.totalTokens, atLeast(1150)).gate().label("Known token floor");
+    }
+    t.maxTokens(1149).label("Token ceiling exceeded");
+    t.maxTokens(2000).label("Token ceiling unknown");
+    t.maxCost(0.0000854).gate().label("Effective USD ceiling");
+    t.maxCost(0.0000853).label("Effective USD exceeded");
+    t.check(t.elapsedMs, atLeast(0)).gate().label("Runtime elapsed");
     t.check(true, equals(true)).gate();
   },
 });

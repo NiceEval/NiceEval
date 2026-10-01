@@ -14,8 +14,9 @@ const EXPECTED = [{
   attempts: 1,
   passed: 1,
 }] as const;
+// @feature docs/feature/adapters/README.md
 
-test("uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生命周期 [necase_M0WRF6Y287MN677Y]", async () => {
+test("uiMessageStreamAgent 审批等待、批准与拒绝保持同一 call 生命周期", async () => {
   await localProtocolE2E.case(
     "approval",
     localProtocolRecordArtifacts,

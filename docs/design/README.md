@@ -45,6 +45,7 @@
 - [文档追溯](docs-traceability/README.md)
 - [Sandbox 声明模型](environment-model/README.md)
 - [Eval Suite 共享](eval-suite-sharing/README.md)
+- [执行轨迹的应用展示](execution-display/README.md)
 - [实验加速](experiment-speed/README.md)
 - [多容器 Sandbox](multi-container-environments/README.md)
 - [Nested Docker 执行](nested-docker-execution/README.md)

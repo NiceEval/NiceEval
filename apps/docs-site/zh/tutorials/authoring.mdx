@@ -1,105 +1,136 @@
 ---
-title: "编写评估用例: 单轮、多轮和测试集模式"
-sidebarTitle: "评估用例"
-description: "用 defineEval 编写评估用例，包括单轮对话、多轮对话、数据驱动测试、Sandbox Workspace 和评估的生命周期与 Fixture。"
+title: "编写评估用例：单轮、多轮和测试集"
+sidebarTitle: "编写评估用例"
+description: "用 defineEval 写评估用例：发送消息、检查回复和工具调用、多轮对话、用一份测试集生成多条用例，以及给 Coding Agent 准备工作区和收尾外部资源。"
 ---
 
 import { Lifecycle } from '/snippets/widgets.jsx';
 
-## `defineEval` 的结构
+快速开始里那条评估用例只检查了回复里有没有“30 天”。真实的 Agent 要做的事更多：调用对的工具、在多轮对话里记住上下文、改对代码。这一页从一条最简单的用例出发，逐步加上这些检查。
+
+## 一条评估用例的结构
+
+评估用例写在 `evals/` 下，文件名以 `.eval.ts` 结尾，默认导出 `defineEval(...)`：
 
 ```ts
-import { defineEval, type JsonValue } from "niceeval";
-import type { SandboxLayer } from "niceeval/sandbox";
-import type { JudgeSelection } from "niceeval/judge";
-
-export default defineEval({
-  description?: string;
-  tags?: string[];
-  judge?: JudgeSelection;
-  reporters?: Reporter[];
-  timeoutMs?: number;
-  sandbox?: SandboxLayer;
-  metadata?: Record<string, JsonValue>;
-  async setup(sandbox, ctx) { /* task fixture + progress/diagnostic */ },
-  async test(t) { /* interactions + assertions */ },
-});
-```
-
-`judge` 为这道题指定模型字符串或完整 Provider。例如 `judge: "judge-model"` 只替换已选 Provider 的模型；Experiment 的 `judgeRuntime` 还能进一步替换。它不声明允许使用哪些 Match。
-
-## `tags` 与 `sandbox`
-
-```ts
+// evals/billing/refund.eval.ts → ID 是 billing/refund
 import { defineEval } from "niceeval";
-import { dockerSandbox } from "niceeval/sandbox";
 
-// evals/coding/fix-button.eval.ts → id: coding/fix-button
 export default defineEval({
-  description: "修复 Button 组件",
-  tags: ["coding", "frontend"],
-  sandbox: dockerSandbox({ source: { type: "image", image: "node:22-slim" } }),
-  async test(t) { /* coding task */ },
+  description: "能正确回答退款政策",
+  tags: ["billing"],
+  async test(t) {
+    // 发消息，再检查结果
+  },
 });
 ```
 
-`tags` 可供 `--tag` 和 Experiment 的 `evals` 谓词读取。任务本身拥有起始环境时，在评估用例上声明 `sandbox`；如果 template-bearing Sandbox layer 由 Experiment 提供，这里就省略。每个实际评估用例 × Experiment 配对必须恰好有一方提供 template-bearing layer。
+- 文件路径决定 ID：`evals/billing/refund.eval.ts` 的 ID 是 `billing/refund`。只有 `.eval.ts` 和 `.eval.tsx` 文件会被发现。
+- `description` 会显示在结果里，写成一句“这条用例验证什么”。
+- `tags` 用于按标签选择，例如 `niceeval exp local --tag billing`，Experiment 的 `evals` 函数也能读到它。
+- `test(t)` 是用例主体。`t` 上有发送消息、断言和操作 Sandbox 的全部方法。
 
-## 单轮评估
+其它字段，例如 `judge`、`timeoutMs`、`sandbox`、`metadata`，见 [defineEval 参考](/zh/reference/define-eval)。
+
+## 单轮：发一条消息，检查结果
 
 ```ts
 import { defineEval } from "niceeval";
 import { includes, jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
-  description: "Brooklyn weather query",
+  description: "问天气时调用工具",
   async test(t) {
-    await t.send("What's the weather like in Brooklyn today?");
+    await t.send("布鲁克林今天天气怎么样？");
+
     t.succeeded();
-    t.calledTool(
-      toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1),
-    );
-    t.check(t.reply, includes("sunny"));
+    t.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Brooklyn" }) }).exactly(1));
+    t.check(t.reply, includes("晴"));
   },
 });
 ```
 
-`t.send()` 驱动一次交互，`t.succeeded()` 和 `t.calledTool()` 是作用域断言，`t.check()` 是立即记录的值断言。
+这里用到三种检查：
 
-### `Turn` 对象
+- `t.succeeded()`：这一轮正常完成，没有失败或停在等待状态。
+- `t.calledTool(...)`：调用了 `get_weather`，参数里的城市是 Brooklyn，而且只调用了一次。工具调用要 Adapter 上报对应事件才看得到，见[编写 Send](/zh/tutorials/write-send#第四步：把工具解析成事件)。
+- `t.check(value, match)`：对一个具体的值做检查，这里是回复文本。
 
-| 属性 | 说明 |
+一条检查没通过，不会中断后面的检查。一次运行结束后，你能一次看到所有没满足的条件，不用改一处、跑一次。后面的代码确实依赖某条结果时，用 `await t.check(...).orStop()` 在失败时停下。
+
+给检查加上 `.label("...")`，结果里显示的就是你写的说明，比显示一段代码好读：
+
+```ts
+t.calledTool("get_weather").label("调用了天气工具");
+```
+
+`t.send()` 返回这一轮的 `Turn`。需要分别检查某一轮时，保存它：
+
+| 属性 | 内容 |
 |---|---|
-| `turn.events` | 标准事件流，主要事实来源 |
+| `turn.message` | 助手的文本回复 |
+| `turn.toolCalls` | 这一轮的工具调用 |
 | `turn.data` | 结构化输出 |
 | `turn.status` | `"completed"`、`"failed"` 或 `"waiting"` |
-| `turn.usage` | token / cost 等 usage |
-| `turn.message` | assistant 文本回复 |
-| `turn.toolCalls` | 本轮工具调用 |
+| `turn.usage` | token 和费用 |
+| `turn.events` | 完整的标准事件流，其它属性都从这里来 |
 
-## 多轮评估
+## 多轮：检查上下文接不接得上
 
 ```ts
 export default defineEval({
-  description: "Draft an email, then send it on confirmation",
+  description: "先起草邮件，确认后再发送",
   async test(t) {
-    const draft = await t.send("Draft a follow-up email.");
+    const draft = await t.send("帮我起草一封跟进邮件。");
     draft.succeeded();
-    t.check(draft.message, includes("Best"));
+    t.check(draft.message, includes("此致"));
 
-    await t.send("Looks good, send it.");
+    await t.send("可以，发出去吧。");
     t.calledTool("send_email");
   },
 });
 ```
 
-需要并行独立会话时，用 `t.newSession()`。
+同一个 `t` 上连续 `send`，就是同一段对话。`draft.succeeded()` 只检查第一轮；`t.calledTool` 检查整个用例里有没有调用过。需要两段互不相干的对话，例如模拟两个用户，用 `t.newSession()` 开一个新会话。
 
-## 数据驱动测试（dataset fan-out）
+多轮对话要 Adapter 把上一轮的上下文带给应用，见[编写 Send](/zh/tutorials/write-send#第二步：接上之前的消息)。
 
-一个文件可以导出评估用例数组：
+## 开放式的回答交给 Judge
+
+“回答是否有依据”“语气是否适合小学生”这类问题，正则写不出来。把它交给裁判模型 Judge 打分：
 
 ```ts
+import { defineEval, defineJudge } from "niceeval";
+
+const grounded = defineJudge({
+  name: "grounded-answer",
+  rubric: "根据 question 评价 answer 是否基于事实作答，而不是编造或含糊其辞。",
+});
+
+export default defineEval({
+  async test(t) {
+    const turn = await t.send("北京今天天气怎么样？");
+    t.judge({ question: turn.input, answer: turn.message }, grounded).gate(0.7).label("回答有依据");
+  },
+});
+```
+
+Judge 给出 0 到 1 的分数，`.gate(0.7)` 表示低于 0.7 就不通过。能用确定规则检查的，例如调用了哪个工具、文件有没有改，优先用确定规则；Judge 留给真正开放的质量。配置 Judge 用哪个模型，见[配置并验证 Judge](/zh/tutorials/verify-judge)。
+
+## 一份测试集生成多条用例
+
+几十条用例逻辑相同、只有输入不同时，不用写几十个文件。从一个文件导出数组：
+
+```ts
+// evals/sql.eval.ts
+import { defineEval } from "niceeval";
+import { equals } from "niceeval/expect";
+
+const rows = [
+  { task: "统计订单数", prompt: "一共有多少订单？", expected: "42" },
+  { task: "最贵商品", prompt: "最贵的商品是什么？", expected: "MacBook Pro" },
+];
+
 export default rows.map((row) =>
   defineEval({
     description: row.task,
@@ -111,40 +142,34 @@ export default rows.map((row) =>
 );
 ```
 
-生成 ID 为 `sql/0000`、`sql/0001` 等。详见 [数据驱动测试](/zh/tutorials/dataset-fanout)。
+生成的 ID 是 `sql/0000`、`sql/0001`。从 YAML 或 JSON 读测试集、给每条起稳定的 ID，见[数据驱动测试](/zh/tutorials/dataset-fanout)。
 
-## Sandbox workspace
+## 给 Coding Agent 准备工作区
 
-Coding Agent 评估用例仍然是普通 `.eval.ts` 文件，只是 test 里会准备 Sandbox workspace、发送任务并检查文件结果：
+评估 Coding Agent 时，用例照样是普通的 `.eval.ts`，只是要先把一个项目放进 Sandbox，再让 Agent 去改：
 
 ```ts
-import { defineEval } from "niceeval";
-
 export default defineEval({
-  description: "Create a Button component",
+  description: "创建 Button 组件",
   async test(t) {
     await t.sandbox.uploadDirectory("../workspaces/ts-starter");
-    await t.send("Create src/components/Button.tsx with label and onClick props.").then((turn) => turn.succeeded());
+    const turn = await t.send("创建 src/components/Button.tsx，接受 label 和 onClick 两个 props。");
+    turn.succeeded();
     t.sandbox.fileChanged("src/components/Button.tsx");
   },
 });
 ```
 
-详见 [Fixtures](/zh/tutorials/fixtures)。
+Sandbox 从哪来、怎样用项目自己的测试判分，见 [Fixture](/zh/tutorials/fixtures) 和 [Sandbox Agent](/zh/tutorials/sandbox-agent)。
 
-## 输出信息
+## 运行中提示进度和问题
 
-`setup` 用于这条评估用例的 Fixture。第二个参数绑定到评估用例 setup 阶段。`test(t)` 里的反馈绑定到评估用例 run 阶段：
+准备步骤比较慢时，用 `t.progress` 在终端显示当前在做什么；遇到值得记下、但不影响结论的情况，用 `t.diagnostic` 记一条诊断：
 
 ```ts
 export default defineEval({
-  async setup(sandbox, ctx) {
-    ctx.progress({ message: "安装 fixture 依赖" });
-    await sandbox.runCommand("npm", ["install"]);
-  },
-
   async test(t) {
-    t.progress({ message: "上传隐藏测试", current: 1, total: 2 });
+    t.progress({ message: "上传项目", current: 1, total: 2 });
     await t.sandbox.uploadDirectory("../fixtures/project");
 
     const preflight = await inspectFixture();
@@ -162,75 +187,67 @@ export default defineEval({
 });
 ```
 
-`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会写进当前 Attempt 的 `result.json`，但不会代替断言或自动改变判定：业务结论仍写 `t.check(value, match)`、作用域 Assertion 或 Judge measurement。基础设施无法继续时抛出异常。
+`progress` 只在运行时显示，不会保存。`diagnostic` 会随这次 Attempt 保存，事后能在结果里看到，但它不会改变通过与否。业务结论写成断言；准备工作失败、没法继续时，直接抛出异常，这次运行会记为 `errored`。
 
-## 评估的生命周期
+## 准备和收尾外部资源
 
-`setup(sandbox, ctx)` 准备 Fixture。配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条评估用例的 Fixture，每个 Attempt 各执行一次。它在整条 Attempt 里的位置是固定的：
-
-<Lifecycle
-  title="一条 Attempt 从排队到收尾"
-  hint="悬停暂停"
-  note={<>收尾段不计入这条 Attempt 的耗时口径。用 <code>niceeval show @&lt;attempt-locator&gt;</code> 审阅运行信息，或用固定 query operation 读取机器结果。</>}
-  phases={[
-    { name: "experiment.setup", what: "起隧道、起共享服务", times: "整场一次" },
-    { name: "sandbox.queue", what: "等一个并发位", times: "每 Attempt" },
-    { name: "sandbox.create", what: "Provider 起 Sandbox", times: "每个 Sandbox 一次" },
-    { name: "sandbox.prepare", what: "恢复缓存前缀、执行有序 before action", times: "按 occurrence" },
-    { name: "workspace.baseline", what: "记下改动基线", times: "每 Attempt" },
-    { name: "eval.setup", what: "这条评估用例的 Fixture", times: "每 Attempt" },
-    { name: "agent.setup", what: "装 Agent CLI、写主配置", times: "每 Attempt" },
-    { name: "eval.run", what: "整段 test(t)，含所有 send 与手工命令", times: "每 Attempt" },
-    { name: "workspace.diff", what: "折出 Agent 造成的文件改动", times: "每 Attempt" },
-    { name: "assertions.evaluate", what: "断言收口与判定，含 Judge 调用", times: "每 Attempt" },
-    { name: "eval.teardown", what: "收尾链第一段，Sandbox 还活着", times: "每 Attempt" },
-    { name: "sandbox.teardown", what: "反向执行 cleanup / after，最后销毁 Sandbox", times: "按 occurrence" },
-  ]}
-/>
-
-右列是「谁的一次」：四层 Hook 共用同一副成对形态，但触发频次不同。不声明 `sandboxReuse` 时每条 Attempt 独占一个 Sandbox，所以「每个 Sandbox 一次」和「每 Attempt」重合。声明复用之后两者分开，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
-
-大多数 Fixture 不需要 `teardown`——写进 Sandbox 的起始文件、装的依赖随 Sandbox 销毁自动没了。需要 `teardown` 的是**Sandbox 外**的 Fixture：在共享外部服务里为这个 Attempt 建的临时资源（临时 repo、bucket、队列 topic），不收就泄漏。
-
-同一条评估用例的多个 Attempt（`attempts` 大于 1、或同批多个实验跑同一条评估用例）并发执行且共享同一个模块，`setup` 的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 `sandbox` 实例作键存取（`WeakMap`）：sandbox 与 Attempt 一一对应，天然是 per-attempt 键：
+有的用例要在 Sandbox 之外建临时资源，例如在共享的 Git 服务上建一个临时仓库。这时用 `setup` 准备、`teardown` 收尾，每个 Attempt 各执行一次：
 
 ```ts
 // evals/pr-review/close-outdated.eval.ts
 import { defineEval } from "niceeval";
 import type { Sandbox } from "niceeval/sandbox";
 
-// 并发 Attempt 共享本模块：句柄按 sandbox 键控，不用普通模块变量
+// 同一条用例的多个 Attempt 会并发执行、共享这个模块，所以按 sandbox 存取，不用普通模块变量
 const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void> }>();
 
 export default defineEval({
   async setup(sandbox, ctx) {
-    ctx.progress({ message: "seeding fixture repo" });
-    const fixture = await createFixtureRepo("pr-review/close-outdated"); // Sandbox 外的临时资源
+    ctx.progress({ message: "创建临时仓库" });
+    const fixture = await createFixtureRepo("pr-review/close-outdated");
     fixtures.set(sandbox, fixture);
     await sandbox.runCommand("git", ["clone", fixture.repoUrl, "workspace"]);
   },
   async teardown(sandbox) {
-    await fixtures.get(sandbox)?.destroy(); // setup 抛错也会进来：没建成就跳过
+    await fixtures.get(sandbox)?.destroy(); // setup 中途失败时可能没建成
   },
-  async test(t) { /* 驱动 agent 清理过期 PR，断言 */ },
+  async test(t) { /* 让 Agent 清理过期 PR，再断言 */ },
 });
 ```
 
-`teardown` 当且仅当这条 Attempt 走到过 `setup` 的时点才执行——`setup` 抛错不豁免，收尾代码要对可能没建成的资源做防御。`teardown` 抛错或超过 30 秒清理上限只记 `teardown-failed` 诊断，不改变这个 Attempt 已经产出的判定。要让某个收尾动作影响结论，在 `setup` / `test` 里抛错，不要指望 `teardown` 能改判。
+几条要点：
 
-## 命名约定
+- 大多数用例不需要 `teardown`。写进 Sandbox 的文件、装的依赖，会随 Sandbox 销毁一起消失。只有 Sandbox 之外的资源才需要手动清理。
+- `setup` 开始过，`teardown` 就一定会执行，`setup` 抛错也一样，所以要防御资源没建成的情况。
+- `teardown` 抛错或超过 30 秒只记一条 `teardown-failed` 诊断，不会改变这次 Attempt 已经得出的结论。想让某个检查影响结论，放进 `setup` 或 `test`。
+- `attempts` 大于 1 时，同一条用例的多个 Attempt 并发执行。把句柄存进以 `sandbox` 为键的 `WeakMap`，每个 Attempt 一份，互不覆盖。
 
-<CardGroup cols={2}>
-  <Card title="文件名" icon="file">
-    只有 `.eval.ts` 会被 runner 发现。
-  </Card>
-  <Card title="ID 命名空间" icon="folder">
-    `evals/billing/refund.eval.ts` 的 ID 是 `billing/refund`。
-  </Card>
-  <Card title="测试集" icon="database">
-    适合大量结构相同、输入不同的 case。
-  </Card>
-  <Card title="Sandbox workspace" icon="box">
-    适合 coding agent，需要真实文件系统、命令和 diff。
-  </Card>
-</CardGroup>
+这些步骤在一次 Attempt 里的完整顺序：
+
+<Lifecycle
+  title="一次 Attempt 从排队到收尾"
+  hint="悬停暂停"
+  note={<>收尾阶段不计入这次 Attempt 的耗时。用 <code>niceeval show @&lt;attempt-locator&gt; --timing</code> 查看每一步实际花了多久。</>}
+  phases={[
+    { name: "experiment.setup", what: "启动实验共享服务", times: "整个实验一次" },
+    { name: "sandbox.queue", what: "等一个并发名额", times: "每次 Attempt" },
+    { name: "sandbox.create", what: "Provider 创建 Sandbox", times: "每个 Sandbox 一次" },
+    { name: "sandbox.prepare", what: "恢复缓存、执行准备步骤", times: "每个 Sandbox 一次" },
+    { name: "workspace.baseline", what: "记下文件基线", times: "每次 Attempt" },
+    { name: "eval.setup", what: "这条用例的准备", times: "每次 Attempt" },
+    { name: "agent.setup", what: "安装 Agent CLI、写配置", times: "每次 Attempt" },
+    { name: "eval.run", what: "整段 test(t)", times: "每次 Attempt" },
+    { name: "workspace.diff", what: "算出 Agent 改了哪些文件", times: "每次 Attempt" },
+    { name: "assertions.evaluate", what: "计算断言和判定，包括 Judge", times: "每次 Attempt" },
+    { name: "eval.teardown", what: "这条用例的收尾", times: "每次 Attempt" },
+    { name: "sandbox.teardown", what: "执行收尾步骤，销毁 Sandbox", times: "每个 Sandbox 一次" },
+  ]}
+/>
+
+默认每次 Attempt 独占一个 Sandbox，“每个 Sandbox 一次”和“每次 Attempt”是同一回事。开启复用后两者才会分开，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
+
+## 接下来
+
+- 任务有部分完成度，想按完成了几步给分：读[通过制与计分制](/zh/tutorials/evaluation-kinds)。
+- 想把判据写得清楚、不误判：读 [NiceEval Taste](/zh/tutorials/niceeval-taste)。
+- 全部匹配器：查 [expect 参考](/zh/reference/expect)。

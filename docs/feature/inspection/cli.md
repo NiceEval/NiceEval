@@ -194,6 +194,29 @@ source/field state 也是结果事实，View 只把它们映射到 `data-source-
 
 outline 显示通用领域事件及内建 Agent 投影，保留 producer、主体、时间、摘要、范围与完整性。
 conversation 和 command 继续保留各自的专用信息。长文本只给有界 preview；identity index 同样有界并报告遗漏。
+
+通用事件项带 `display`，是 Adapter 写入时封存的展示块的有界预览：
+
+```ts
+type PreviewText = { readonly preview: string; readonly omittedBytes: number };
+
+type ExecutionDisplay =
+  | { readonly state: "absent" }
+  | { readonly state: "present"; readonly blocks: readonly ExecutionDisplayBlockPreview[] };
+
+type ExecutionDisplayBlockPreview =
+  | { readonly kind: "text"; readonly text: PreviewText }
+  | { readonly kind: "message"; readonly role: "user" | "assistant" | "system" | "other"; readonly speaker?: string; readonly text: PreviewText }
+  | { readonly kind: "fields"; readonly fields: readonly { readonly label: string; readonly value: PreviewText | number | boolean | null }[] }
+  | { readonly kind: "code"; readonly language?: string; readonly text: PreviewText }
+  | { readonly kind: "image"; readonly artifactId: string; readonly alt: string; readonly mediaType: string; readonly byteLength: number; readonly sha256: string };
+```
+
+每个文本字段与 `fields` 字符串值最多预览 1 KiB，截在码点边界；`omittedBytes` 按 UTF-8 字节由 Inspection 计算。
+Inspection 按需收缩展示块预览，使单个事件的序列化投影不超过 8 KiB；页预算按序列化投影计，每页至少交付一个事件。
+envelope 字段（actor label、evidence label、unresolved reason）没有预览形状，单靠它们超过 8 KiB 时沿用既有页预算规则。
+
+由 Conversation 投影而成的事件 `display` 为 `absent`。`execution-event` detail 交付完整展示块。
 精确详情直接选择已封存身份，不要求该项出现在默认摘要中。调用方需要一项详情时，使用对应 selector：
 
 ```json
@@ -234,7 +257,7 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 `offset` 与可空 `nextOffset` 一起交付。默认每次 64 KiB，最大 256 KiB，调用方按 `nextOffset` 续读。
 这不是整局附件的下载入口，也不重新调用外部系统。
 
-`attempt.trace` 的可选 `traceId`、`sourceId`、`actorId` 精确筛选通用轨迹；每页最多 32 个事件且事件摘要至多 64 KiB。
+`attempt.trace` 的可选 `traceId`、`sourceId`、`actorId`、`eventType` 精确筛选通用轨迹；每页最多 32 个事件且事件摘要至多 64 KiB。
 `execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff、family revision 和 behavior version；
 续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
@@ -302,7 +325,7 @@ niceeval show --run <run-id>...
 niceeval show --experiment <experiment-id>...
 niceeval show @<locator>
 niceeval show @<locator> --source
-niceeval show @<locator> --execution [--expand <stable-id>]
+niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>]
 niceeval show @<locator> --timing
 niceeval show @<locator> --usage
 niceeval show @<locator> --diff
@@ -344,24 +367,51 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   标题为 `Current results`，先显示 `Covered N/M` 与 `Gaps K`。
   分母来自当前目标；缺口显示具名原因、可用的旧 locator 与下一步。已删除的 Experiment 只出现在 `History`，不计当前分数。
   不用 `Observed` 把历史发布数量暗示成当前结果可用性；目标求值失败显示错误与历史读取命令。
-- 一个或多个 `--experiment` 通过同一个 `project.get` 的 exact `experimentIds` 收窄当前目标，完整格式化当前 coverage、cells 与 gaps。
-  任一 ID 未命中时整次失败。已删除的 Experiment 可经 `experiment.get` 的固定 query 或 exact Run 读取历史。
+  有缺口时末尾给出 `Next: niceeval exp <experimentId> --dry`，每个有缺口的 Experiment 一行；没有缺口时省略 `Next`。
+  完整形态见下文[当前 Results 示例](#当前-results-示例)。
+- 一个或多个 `--experiment` 逐个读取 exact `experiment.get`；任一 ID 未命中时整次失败。
+  首先显示官方 costSummary 的实验总费用或已知小计、完整度和数量，再显示各评估结果与 Attempt 明细。
+  范围是各槽位最新已发布结果，明确标注 Latest recorded slots；不表示全部历史支出或当前源码中的目标集合。
 - 显式 `--record <file>` 使用历史 `overview.get`，标题为 `Recorded results`；与 `--experiment` 搭配时使用 exact `experiment.get`。
   这些路径不发现或求值当前项目。`--run` 与 Attempt locator 也始终读取固定历史事实。
 - 一个或多个 `--run` 逐个调用 exact `run.overview`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
   CLI 不得组合 `run.get` 与 `run.summary`。重复 flag 的输入顺序不是业务排序 authority。
-- `@<locator>` 默认调用 `attempt.get`，显示精确身份、Verdict、score、coverage、Assertion
-  摘要、section states 与 limitations，并给出可复制的 source、execution、timing、usage 和 diff 后续命令。
+- `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
+  摘要、section states 与 limitations。另给出可复制的 source、execution、timing、usage 和 diff 后续命令。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
   source state、location、limitations 与 Evidence；不从文本推断断言或运行时原文。
-- `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline。`--expand <stable-id>`
+- `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline，展示块的呈现见下文[展示块呈现](#展示块呈现)。`--expand <stable-id>`
   必须和 `--execution` 一起使用，按持久事件、证据、`itemId`、`toolOccurrenceId` 或 `commandId`
   直接调用 `attempt.trace.detail`。目标可以位于默认摘要之外。导入 key、原生 source eventId、
   `t<N>.c<M>`、`cmd<N>` 或数组位置不能替代持久身份；找不到时返回 selection error，不猜测相邻项。
 - `@<locator> --timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
-- `@<locator> --usage` 调用 `attempt.usage`，只显示其关闭的 input/output token、request 与 cost typed totals，以及每项 total 的 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
+- `@<locator> --usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
+  input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> --diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
+
+### 展示块呈现
+
+通用事件有展示块时，`show --execution` 按块呈现；没有展示块的事件显示 envelope 与 `summary`。
+
+| kind | outline 中的呈现 |
+|---|---|
+| `text` | 原文，按终端宽度折行 |
+| `message` | `<speaker 或 role 标签>: <text>` |
+| `fields` | label 列按块内最长 label 对齐 |
+| `code` | 等宽，不折行；超出终端宽度的行截断并标 `…` |
+| `image` | `[image] <alt>`，次行媒体类型、大小与 `artifactId` |
+
+outline 中有两种省略，标记不同：
+
+- 文本超过预览上限时标为 `… (N more bytes, --expand <eventId>)`，N 来自 Inspection result。
+- `code` 行超过终端宽度时只标 `…`。这是显示宽度省略，源文本完整。
+
+`--expand <eventId>` 先显示完整展示块，再显示 payload JSON、links、scope 与 evidence。
+展开后的 `code` 原样逐行输出，不折行、不截断、不加前缀，可以直接复制。
+`image` 展开后另给出读取该附件的 `attempt.artifact` query 请求；终端不内联图像。
+
+Events 的全部人读字符串按码点去掉控制字符与双向格式控制字符后再输出，包括 summary、actor label、limitation message 与展示块文本。
 
 ### selector 与 flag 组合
 
@@ -370,7 +420,54 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
 `--source`、`--execution`、`--timing`、`--usage` 与 `--diff` 都要求一个 Attempt locator，且五者互斥。
 `--expand` 只能与 `--execution` 同用。
+
+`--actor`、`--type` 与 `--continuation` 同样只用于 `--execution`，分别交给 `actorId`、`eventType` 与原样 continuation。
+下一页必须保留同一筛选；`--expand` 直接定位稳定 ID，不接受列表筛选或 continuation。
+
+轨迹输出分别标明捕获状态、每条 trace 的 producer collection 状态及限制、当前页是否还有后续。
+`partial` 的空索引显示其限制，页尾不能被描述为生产者证据完整。
+
 `--all` 只适用于无 selector 的 Results，不能与 `--experiment`、`--run`、Attempt locator 或 Attempt detail flag 同用。
+
+### 当前 Results 示例
+
+默认 `show` 的 Experiment summary 显示 `Covered` 与 `Gaps` 列；Attempt 明细先列 gap，再列 `failed`、`errored`、
+`skipped` 与 pending，`passed` 默认折叠：
+
+```text
+$ niceeval show
+Current results
+  Totals
+
+  Covered    11/12
+  Gaps       1
+  Verdicts   8 passed; 3 failed; 0 errored; 0 skipped
+  Pass rate  72.73% (partial)
+
+Experiments
+  Experiment  Covered  Gaps  Pass rate
+  ----------  -------  ----  -----------------
+  my-agent    11/12    1     72.73% (partial)
+
+Attempts · my-agent
+  Eval refund-policy
+  Gap identity-mismatch
+  Previous result @1K1P0VJAPVJ12
+
+  Eval weather-tool
+  Attempt         Verdict  Duration
+  --------------  -------  --------
+  @1MEMY3VCQ6B5B  failed   12.40 s
+
+  8 passed Attempts hidden
+  See more  niceeval show --experiment my-agent
+
+Next: niceeval exp my-agent --dry
+```
+
+`Verdicts` 与 `Pass rate` 只统计 covered 位置，缺口不计 failed；有缺口时 Pass rate 的 state 是 `partial`，人读输出保留该标记。纯计分制范围显示 `Score` 而不显示 `Pass rate`，
+规则同下文历史 Results。当前目标求值失败时不输出这张表，stderr 给出错误并提示 `niceeval show --run <run-id>`
+等固定历史读取命令。
 
 ### 固定 Record 的历史 Results 示例
 
@@ -468,11 +565,14 @@ Experiment selector 是下钻动作，直接显示完整明细，不再要求 `-
 
 ```text
 $ niceeval show --experiment main
-Current results · Experiment main
+Experiment main
+  Experiment total costs
+  ……
+  Scope      Latest recorded slots; replaced executions excluded
+
   Summary
 
-  Covered    3/3
-  Gaps       0
+  Observed   3/3
   Verdicts   2 passed; 1 failed; 0 errored; 0 skipped
   Pass rate  66.67%
 
@@ -489,10 +589,24 @@ Current results · Experiment main
   @ATTEMPT-PASS-2 passed   20.12 s
 ```
 
-命令读取 project operational Store 的单一 `PublicationCutoff`。当前目标成功求值、Store 读取正常但没有历史结果时，正常返回 `Covered 0/N` 与 `Gaps N`。
+`--experiment` 读取该 Experiment 各槽位最新已发布结果，不求值当前源码；当前缺口只在默认 `show` 中显示。
+
+命令读取 project operational Store 的单一 `PublicationCutoff`。默认 `show` 在当前目标成功求值、Store 读取正常但没有历史结果时，正常返回 `Covered 0/N` 与 `Gaps N`。
 当前目标求值失败、source 读取失败、显式 Run / Experiment / locator 未命中、required result shape 不合法与 `--expand` 未命中，都以英文诊断写 stderr 并非零退出。
 不输出半张表，不把 typed missing/partial 或正常的当前缺口改写成进程失败。
 
 `show` 不提供 `--json`、`--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、
 component、renderer、静态导出、显示位置 handle 或其它作者面。`query` 是唯一 JSON 入口；`view` 不接受 Attempt locator。
 CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英语文本，不建立中文或英语 message catalog。
+
+读取失败保留底层 Record 错误分类、操作与原因。只有明确需要 schema migration 时才提示迁移；忙碌读取和资源限额表示本次读取未完成，不推断已发布数据损坏。
+
+## 模型用途与成本
+
+`show @attempt --usage` 区分模型配置、实际调用、应用费用、Judge 缺口与总费用已知小计。
+单模型保持简洁摘要；多模型按用途逐行列配置模型、effort 和 recordedCalls，另表列实际 serving provider、model、调用数、tokens 与费用完整度。
+只有全账本 recordedCalls 为 0 才标 no recorded calls；费用未知不显示成零，未调用配置不制造用量快照。
+
+`show --experiment <id>` 的 Models and usage 区按当前已选 origin Attempt 展示同一读面，标明 locator 和 origin Run。
+重复 origin 只展示一次，不合并不同局的配置；超出 64 个 Attempt 时说明省略数，未找到的成员另列。
+此区域不从调用或模型组预览重算实验总费用。旧应用 costUSD 口径不变，Judge 未登记与带缺口合计保持显式状态。

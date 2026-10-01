@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: judge-rationale-has-no-record-field
+title: judge rationale 没有落盘字段,待裁决它的家
+createdAt: 2026-07-29T22:20:07+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/judge-rationale-has-no-record-field.md
+  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # judge rationale 没有落盘字段,待裁决它的家
 
 **现象**(2026-07-29):judge 断言的 `detail` 曾直接落成裁判模型的 rationale(spec 层没设

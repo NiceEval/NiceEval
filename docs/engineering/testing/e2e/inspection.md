@@ -13,12 +13,9 @@ machine query / CLI 只交付英语协议面。测试不读 SQLite table、Recor
 - `show` 不保留旧显示位置 handle、`show --json` 或 `--report`。
 - source、trace、diff 与 artifacts 均由固定 Inspection operation 读取；消费方不得从行数或标量重算 denominator、pass rate、score、coverage 或 Evidence。
 
-## E2E owner anchors
+## E2E 测试 owner
 
 ### show-terminal-review
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Inspection CLI · `niceeval show`](../../../feature/inspection/cli.md#niceeval-show)
 
 `show-cli.test.ts` 是人读终端 Inspection Journey owner。它从安装后 candidate 经真实 CLI 读取已封口 Record，验证默认 Overview、重复 exact `--run`、重复 exact `--experiment`、Attempt 概览与全部五个证据切面。
 
@@ -41,9 +38,6 @@ Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff
 它还核对 activity 时序、operation-owned usage totals 与已封存 file-change state。任一重复 selector 未命中时不得先输出部分结果。
 
 ### inspection-query
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [Inspection CLI · `niceeval query`](../../../feature/inspection/cli.md#niceeval-query)
 
 `inspection-query.test.ts` 是 machine Inspection Journey owner。它经安装后 `exp` 产生已封口 origin Run，随后以 full carry 发布第二个 target Run，并运行 `alternate` Experiment。历史 Attempt locator 必须继续沿 origin Run 读取事实。
 
@@ -75,31 +69,16 @@ tool/event target 的 anchor 与 trace 使用同一 `toolOccurrenceId`／`eventI
 `attempt.sources` 从同一 Attempt 的 Assertions source sites 连接 exact origin Run Sources；target carry Run 不能替换历史源码事实。
 ## Adapter 附件随 Record 搬迁后经公开目录与分块读取保留字节及 provenance。 {#portable-artifacts}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/inspection/README.md](../../../feature/inspection/README.md)
-
 Adapter 附件随 Record 搬迁后经公开目录与分块读取保留字节及 provenance。
 ## 附件非法输入与容量限制明确失败，已接管内容仍可读取。 {#artifact-limits}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/adapters/README.md](../../../feature/adapters/README.md)
 
 附件非法输入与容量限制明确失败，已接管内容仍可读取。
 ## 文件附件以有界内存接管，源文件改写后 receipt 与公开分块读取仍保留原 bytes。 {#file-attachment-archive}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/adapters/library.md](../../../feature/adapters/library.md)
-
 文件附件以有界内存接管，源文件改写后 receipt 与公开分块读取仍保留原 bytes。
 ## 文件归档取消、输入失败与 cleanup 关闭释放文件并保留已接纳附件及 partial 结果。 {#file-attachment-failure}
 
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/adapters/library.md](../../../feature/adapters/library.md)
-
 文件归档取消、输入失败与 cleanup 关闭释放文件并保留已接纳附件及 partial 结果。
 ## Attempt 超时取消流后，独立 cleanup 时段仍可归档诊断附件且释放暂存文件。 {#stream-attachment-timeout}
-
-<!-- niceeval.e2e-owner-contract/v1 -->
-Contract: [docs/feature/adapters/library.md](../../../feature/adapters/library.md)
 
 Attempt 超时取消流后，独立 cleanup 时段仍可归档诊断附件且释放暂存文件。

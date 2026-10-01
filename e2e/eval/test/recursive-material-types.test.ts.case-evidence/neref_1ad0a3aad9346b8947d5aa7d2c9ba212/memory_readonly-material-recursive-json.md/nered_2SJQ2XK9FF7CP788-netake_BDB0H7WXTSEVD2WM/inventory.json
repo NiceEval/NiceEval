@@ -1,0 +1,356 @@
+{
+  "executor": {
+    "name": "vitest",
+    "version": "4.1.11"
+  },
+  "repo": "eval",
+  "argv": [
+    "/nix/store/k3nz3s314bipvqbcbw3faq823hxpwbn1-nodejs-slim-24.19.0/bin/node",
+    "/tmp/niceeval-case-inventory-ADpTBm/repos/eval/node_modules/.pnpm/vitest@4.1.11_@types+node@24.13.3_vite@8.2.1_@types+node@24.13.3_esbuild@0.28.1_jiti@2.7.0_tsx@4.23.11_yaml@2.9.1_/node_modules/vitest/vitest.mjs",
+    "list",
+    "--json"
+  ],
+  "checkout": "0bde4166f53bb3d2b7a3a0e3b8be1530a75ca4fa",
+  "files": [
+    "e2e/eval/test/active-progress-redaction.test.ts",
+    "e2e/eval/test/adapter-capture-interrupt.test.ts",
+    "e2e/eval/test/adapter-capture-timeout.test.ts",
+    "e2e/eval/test/adapter-flags-cache.test.ts",
+    "e2e/eval/test/adapter-parse-flags.test.ts",
+    "e2e/eval/test/application-types.test.ts",
+    "e2e/eval/test/assertion-judge-admission.test.ts",
+    "e2e/eval/test/assertion-judge-cancelled.test.ts",
+    "e2e/eval/test/assertion-judge-presets.test.ts",
+    "e2e/eval/test/assertion-judge-unavailable.test.ts",
+    "e2e/eval/test/assertion-sandbox.test.ts",
+    "e2e/eval/test/assertion-scopes.test.ts",
+    "e2e/eval/test/assertion-score.test.ts",
+    "e2e/eval/test/assertion-values.test.ts",
+    "e2e/eval/test/context.test.ts",
+    "e2e/eval/test/custom-application-lifecycle.test.ts",
+    "e2e/eval/test/custom-application.test.ts",
+    "e2e/eval/test/external-usage.test.ts",
+    "e2e/eval/test/judge-configuration.test.ts",
+    "e2e/eval/test/judge-image.test.ts",
+    "e2e/eval/test/model-slot-invalid.test.ts",
+    "e2e/eval/test/model-slot-selection.test.ts",
+    "e2e/eval/test/model-slot-types.test.ts",
+    "e2e/eval/test/recursive-material-types.test.ts",
+    "e2e/eval/test/typesafe-judge.test.ts"
+  ],
+  "cases": [
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/active-progress-redaction.test.ts",
+      "titlePath": [
+        "ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示"
+      ],
+      "caseId": "neref_7ed88d36aa7c38ddeb42ebbfb1859529"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/adapter-capture-interrupt.test.ts",
+      "titlePath": [
+        "SIGINT 排空共享 finish 的尾部采集并在 Run 终态前发布 errored Attempt"
+      ],
+      "caseId": "neref_4a4aec41778597ce92887759a8b691e4"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/adapter-capture-timeout.test.ts",
+      "titlePath": [
+        "cleanup 总预算耗尽后拒绝迟到采集并保留已得分和成功附件"
+      ],
+      "caseId": "neref_18799e0683c88c2aaeee21abbf83a539"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/adapter-flags-cache.test.ts",
+      "titlePath": [
+        "Adapter flags 规范化等价时复用且 parseFlags 行为版本隔离缓存"
+      ],
+      "caseId": "neref_16aa677096535b0cc39832adc32fecd4"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/adapter-parse-flags.test.ts",
+      "titlePath": [
+        "Adapter flags 在资源启动前校验并交付一次解析的冻结结果"
+      ],
+      "caseId": "neref_4f50d327e4f02a38c39f7644743fdfe6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/application-types.test.ts",
+      "titlePath": [
+        "Adapter 上下文推导保留方法和 Post 类型并拒绝冲突与越界能力"
+      ],
+      "caseId": "neref_4172336b123c84c9148176d2bfe10b19"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-admission.test.ts",
+      "titlePath": [
+        "非法 Judge 材料与伪造 Match不登记 Assertion 或读取 accessor"
+      ],
+      "caseId": "neref_121fece0419aac86e9ff0f75ddbfdcd4"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-cancelled.test.ts",
+      "titlePath": [
+        "Attempt 取消终止 Judge 请求并保留尝试发送事实"
+      ],
+      "caseId": "neref_dc5dc26cc9d8db2a443f201da5a01510"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-presets.test.ts",
+      "titlePath": [
+        "现成与自定义 Match 的组合分数和完整模型步骤可复核"
+      ],
+      "caseId": "neref_4687cdf6bc15ae2f0eefe2531159f93c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-presets.test.ts",
+      "titlePath": [
+        "自定义 Match 捕获必要模型调用失败不能伪造正常成绩"
+      ],
+      "caseId": "neref_301e80e0c74ece0d9074c270511a1665"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-unavailable.test.ts",
+      "titlePath": [
+        "Judge 与 check 共用质量门、连续计分及完整请求留存"
+      ],
+      "caseId": "neref_7fa40e93fc7f1820995e7cb5fea69fd6"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-judge-unavailable.test.ts",
+      "titlePath": [
+        "未配置 Judge 的 Eval 以 errored 终态完成"
+      ],
+      "caseId": "neref_b6428040adbc030ba9a891483901ab28"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-sandbox.test.ts",
+      "titlePath": [
+        "Sandbox Assertion Eval 以 passed 终态完成"
+      ],
+      "caseId": "neref_b261d80355d66158c01ab322627122e3"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-scopes.test.ts",
+      "titlePath": [
+        "大量真实工具事件的 scope Assertion 仍以 passed 终态发布"
+      ],
+      "caseId": "neref_2ed33ccff5d81fa2688c9e6b3aa72d3b"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-score.test.ts",
+      "titlePath": [
+        "计分 Eval 公开区分质量门失败、连续得分与停止"
+      ],
+      "caseId": "neref_f3e82f37a3fb504d2524d8426f58b20c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/assertion-values.test.ts",
+      "titlePath": [
+        "值与连续 Match 登记可审阅的检查结果"
+      ],
+      "caseId": "neref_57c9c7d39116a20999c0ad0f489b6702"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/context.test.ts",
+      "titlePath": [
+        "多轮和 newSession 的 Context Eval 以 passed 终态完成"
+      ],
+      "caseId": "neref_b002e32edb28ffd21b9fb18af95585c1"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/custom-application-lifecycle.test.ts",
+      "titlePath": [
+        "Adapter 创建部分失败与 Attempt 取消均清理资源且拒绝迟到 Assertion"
+      ],
+      "caseId": "neref_bd91bca95959879d5b24b9f41a9de275"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/custom-application.test.ts",
+      "titlePath": [
+        "同一 Adapter 契约的不同实现执行原生动作并公开缺失会话与费用"
+      ],
+      "caseId": "neref_07ad2879f143a795e4d6aff11ebe0ab7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/external-usage.test.ts",
+      "titlePath": [
+        "外部调用用量保留失败重试未知值且重复上报不增加计量"
+      ],
+      "caseId": "neref_4f88a8f12e27276c350a8c0e9ce4e9af"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/external-usage.test.ts",
+      "titlePath": [
+        "调用身份冲突即使被捕获仍公开为执行错误并保留先前事实"
+      ],
+      "caseId": "neref_cc098e0528f469d62abe25486c1a5a63"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/judge-configuration.test.ts",
+      "titlePath": [
+        "Judge Provider 整体替换并支持 Eval 与 Experiment 模型覆盖"
+      ],
+      "caseId": "neref_01ec55f4dae9738809477f5ad0d11b2a"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/judge-configuration.test.ts",
+      "titlePath": [
+        "仅普通断言的 Eval 不探测已配置的 Judge"
+      ],
+      "caseId": "neref_a74ec4b17aa2774848438d5b0022f211"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/judge-configuration.test.ts",
+      "titlePath": [
+        "已配置模型缺少 Judge 凭据时不发送请求"
+      ],
+      "caseId": "neref_2e206e965568a986574c05f63637d128"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/judge-image.test.ts",
+      "titlePath": [
+        "不支持图片的 Judge 在凭据检查前明确拒绝，封存图片不退化为文字判分"
+      ],
+      "caseId": "neref_441897776efe1460863c1327fd2a84b7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/judge-image.test.ts",
+      "titlePath": [
+        "截图以真实视觉材料参与判分，冻结原图与发送证据可随 Record 复查"
+      ],
+      "caseId": "neref_be0e3da09e5ef008c7e6fcb405723147"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/model-slot-invalid.test.ts",
+      "titlePath": [
+        "捕获未配置用途引用仍使 Attempt errored 并保留已接纳调用"
+      ],
+      "caseId": "neref_6c8069ca2c706bd7a2aa5a5ad6ae18c7"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/model-slot-selection.test.ts",
+      "titlePath": [
+        "仅推理强度保留 null 模型与冻结 default 别名"
+      ],
+      "caseId": "neref_0425e5a3c730945ac50872195c00a7b8"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/model-slot-selection.test.ts",
+      "titlePath": [
+        "单模型简写使用冻结 default 选择及其别名"
+      ],
+      "caseId": "neref_b8f5e06e3e6ced85991d87f0d6bfdc5f"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/model-slot-selection.test.ts",
+      "titlePath": [
+        "显式 default 使用冻结选择及相同别名"
+      ],
+      "caseId": "neref_f0f96a2a2f508b58badc4c144137ea81"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/model-slot-selection.test.ts",
+      "titlePath": [
+        "省略模型配置保留冻结空映射及空别名"
+      ],
+      "caseId": "neref_1b20311685e598eb871a39c3e9faba70"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/model-slot-types.test.ts",
+      "titlePath": [
+        "安装后类型支持三用途配置与可空物理关联并拒绝修改冻结选择"
+      ],
+      "caseId": "neref_fe19ea53675f32af45a4eb8c2d60ad4c"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/recursive-material-types.test.ts",
+      "titlePath": [
+        "安装后递归材料类型可编译并保持深只读与受管集合语义"
+      ],
+      "caseId": "neref_1ad0a3aad9346b8947d5aa7d2c9ba212"
+    },
+    {
+      "executor": "vitest",
+      "repo": "eval",
+      "path": "e2e/eval/test/typesafe-judge.test.ts",
+      "titlePath": [
+        "TypeSafe 概率映射与批量分类可复核且提取能力明确不可用"
+      ],
+      "caseId": "neref_2a81b97af672c297c063225bd31f4ebc"
+    }
+  ],
+  "unassignedCases": [],
+  "bodyExecutions": 0,
+  "forbiddenSetupExecutions": 0,
+  "findings": [],
+  "digest": "sha256:113ddd6afdab653886f8fe9684bacfe7ceb608cde0e7338e78321b72ab182292",
+  "exit": 0,
+  "signal": null
+}

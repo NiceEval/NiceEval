@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: diff-export-budget-counts-transferred-bytes
+title: 裁决:diff 导出预算只数真正传输的字节,超限文本逐文件显式省略
+createdAt: 2026-07-30T14:53:13+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/diff-export-budget-counts-transferred-bytes.md
+  commit: 993ff3a29daa32b08b1a08207d95abc67a88944d
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:diff 导出预算只数真正传输的字节,超限文本逐文件显式省略
 
 - **裁决**(2026-07-30):`workspace.diff` 的 64 MiB 单窗口预算只约束真正要传输的文本

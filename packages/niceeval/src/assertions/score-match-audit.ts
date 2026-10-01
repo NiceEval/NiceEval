@@ -188,6 +188,7 @@ function unit(value: unknown): value is number {
 }
 
 interface PrimitiveRequest {
+  readonly evidenceIds?: ReadonlySet<string>;
   readonly choices?: ReadonlySet<string>;
   readonly maxItems?: number;
   readonly itemIds?: ReadonlySet<string>;
@@ -216,7 +217,9 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   const systemKeys = operation === "score" ? ["operation", "rubric", "anchors"]
     : operation === "classify" || operation === "batchClassify" ? ["operation", "rubric", "choices"]
     : ["operation", "rubric", "maxItems"];
-  const systemInput = exact(system, [...systemKeys, "protocol", "instruction"]);
+  const evidenceIds = operation === "classify" ? record(system)?.evidenceIds : undefined;
+  if (evidenceIds !== undefined && !validEvidenceIds(evidenceIds)) return undefined;
+  const systemInput = exact(system, [...systemKeys, "protocol", "instruction", ...(evidenceIds === undefined ? [] : ["evidenceIds"])]);
   const userInput = exact(user, operation === "batchClassify" ? ["material", "items"] : ["material"]);
   if (systemInput === undefined || userInput === undefined || systemInput.protocol !== protocol || !text(systemInput.instruction) || systemInput.operation !== operation || !text(systemInput.rubric)) return undefined;
   if (operation === "score") {
@@ -238,7 +241,7 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   if (!Array.isArray(systemInput.choices) || systemInput.choices.length < 2 || systemInput.choices.length > 32 || systemInput.choices.some((choice) => !text(choice))) return undefined;
   const choices = new Set(systemInput.choices as string[]);
   if (choices.size !== systemInput.choices.length) return undefined;
-  if (operation === "classify") return Object.freeze({ choices });
+  if (operation === "classify") return Object.freeze({ choices, ...(evidenceIds === undefined ? {} : { evidenceIds: new Set(evidenceIds as string[]) }) });
   if (!Array.isArray(userInput.items) || userInput.items.length === 0 || userInput.items.length > 32) return undefined;
   const itemIds = new Set<string>();
   for (const raw of userInput.items) {
@@ -264,8 +267,8 @@ function primitiveOutput(operation: ScoreMatchAuditCall["operation"], output: st
     return item !== undefined && unit(item.measurement) && text(item.rationale);
   }
   if (operation === "classify") {
-    const item = exact(value, ["choice", "rationale"]);
-    return item !== undefined && text(item.choice) && text(item.rationale) && requestInput.choices?.has(item.choice) === true;
+    const item = exact(value, ["choice", "rationale", ...(requestInput.evidenceIds === undefined ? [] : ["citations"])]);
+    return item !== undefined && text(item.choice) && text(item.rationale) && requestInput.choices?.has(item.choice) === true && (requestInput.evidenceIds === undefined || validEvidenceIds(item.citations, true) && (item.citations as string[]).every((id) => requestInput.evidenceIds!.has(id)));
   }
   if (operation === "extract") {
     const item = exact(value, ["items", "complete", "rationale"]);
@@ -346,7 +349,9 @@ function mappingRequestAndOutput(mappingValue: unknown, response: string, reques
   if (mapping === undefined || !["score", "classify", "batchClassify"].includes(String(mapping.operation)) || !text(requestModel)) return undefined;
   const operation = mapping.operation as TypeSafeMapping["operation"];
   const inputKeys = operation === "score" ? ["rubric", "anchors", "material"] : operation === "classify" ? ["rubric", "choices", "material"] : ["rubric", "choices", "items", "material"];
-  const input = exactKeys(mapping.input, inputKeys);
+  const evidenceIds = operation === "classify" ? record(mapping.input)?.evidenceIds : undefined;
+  if (evidenceIds !== undefined && !validEvidenceIds(evidenceIds)) return undefined;
+  const input = exactKeys(mapping.input, [...inputKeys, ...(evidenceIds === undefined ? [] : ["evidenceIds"])]);
   if (input === undefined || !text(input.rubric)) return undefined;
   let parsedResponse: unknown;
   try { parsedResponse = JSON.parse(response); } catch { return undefined; }
@@ -602,7 +607,7 @@ export function readScoreMatchAudit(value: unknown, expectedName?: string, expec
     }
     const outer = exact(value, ["manifest", "content"]);
     const manifest = exact(outer?.manifest, ["schemaVersion", "protocol", "byteLength", "digest", "chunkByteLengths"]);
-    if (outer === undefined || manifest === undefined || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) || manifest.protocol !== expectedProtocol || !Array.isArray(outer.content) || outer.content.length === 0 || !Array.isArray(manifest.chunkByteLengths) || manifest.chunkByteLengths.length !== outer.content.length || !positiveInteger(manifest.byteLength, 256 * 1024) || typeof manifest.digest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.digest)) return Object.freeze({ state: "invalid" });
+    if (outer === undefined || manifest === undefined || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) || manifest.protocol !== expectedProtocol || !Array.isArray(outer.content) || outer.content.length === 0 || outer.content.length > 2050 || !Array.isArray(manifest.chunkByteLengths) || manifest.chunkByteLengths.length !== outer.content.length || !positiveInteger(manifest.byteLength, 8 * 1024 * 1024) || typeof manifest.digest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.digest)) return Object.freeze({ state: "invalid" });
     const chunks: string[] = [];
     for (let index = 0; index < outer.content.length; index += 1) {
       const chunk = outer.content[index];
@@ -617,11 +622,12 @@ export function readScoreMatchAudit(value: unknown, expectedName?: string, expec
     const audit = exact(parsed, manifest.schemaVersion === 3 ? ["schemaVersion", "protocol", "definition", "input", "images", "calls", "result"] : ["schemaVersion", "protocol", "definition", "input", "calls", "result"]);
     const definition = exact(audit?.definition, ["name", "version", "config", "digest", "limits"]);
     const limits = exact(definition?.limits, ["maxCalls", "maxMaterialBytes", "maxAuditBytes"]);
-    if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.name) || !text(definition.version) || expectedName !== undefined && definition.name !== expectedName || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || !positiveInteger(limits.maxMaterialBytes, 48 * 1024) || !positiveInteger(limits.maxAuditBytes, 256 * 1024) || manifest.byteLength > limits.maxAuditBytes) return Object.freeze({ state: "invalid" });
+    if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.name) || !text(definition.version) || expectedName !== undefined && definition.name !== expectedName || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024) || !positiveInteger(limits.maxAuditBytes, 8 * 1024 * 1024) || manifest.byteLength > limits.maxAuditBytes || utf8ByteLength(canonicalScoreMatchAuditJson({ manifest, content: chunks })) > limits.maxAuditBytes) return Object.freeze({ state: "invalid" });
     const configValue = JSON.parse(definition.config);
     if (canonicalScoreMatchAuditJson(configValue) !== definition.config || definition.digest !== scoreMatchDefinitionDigest({ name: definition.name, version: definition.version, config: definition.config, limits: limits as unknown as ScoreMatchAudit["definition"]["limits"] })) return Object.freeze({ state: "invalid" });
     const images = manifest.schemaVersion === 3 ? validImages(audit.images, audit.input as string, imageContent) : undefined;
-    if (typeof audit.input !== "string" || utf8ByteLength(audit.input) > limits.maxMaterialBytes || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || manifest.schemaVersion === 3 && images === undefined || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : manifest.schemaVersion === 2 ? !validTypeSafeCall(call, index + 1) : !validV3Call(call, index + 1, images!))) return Object.freeze({ state: "invalid" });
+    const initialMaterialRejected = record(audit.result)?.state === "unavailable" && record(audit.result)?.code === "score-match-material-budget" && Array.isArray(audit.calls) && audit.calls.length === 0;
+    if (typeof audit.input !== "string" || utf8ByteLength(audit.input) > limits.maxMaterialBytes && !initialMaterialRejected || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || manifest.schemaVersion === 3 && images === undefined || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : manifest.schemaVersion === 2 ? !validTypeSafeCall(call, index + 1) : !validV3Call(call, index + 1, images!))) return Object.freeze({ state: "invalid" });
     const result = record(audit.result);
     const validResult = result?.state === "measured"
       ? exact(result, ["state", "value"]) !== undefined && unit(result.value) && (expectedMeasurement === undefined || Object.is(result.value, expectedMeasurement))
@@ -631,4 +637,8 @@ export function readScoreMatchAudit(value: unknown, expectedName?: string, expec
   } catch {
     return Object.freeze({ state: "invalid" });
   }
+}
+
+function validEvidenceIds(value: unknown, empty = false): boolean {
+  return Array.isArray(value) && value.length <= 16384 && (empty || value.length > 0) && value.every((id) => text(id) && id.trim() !== "" && new TextEncoder().encode(id).length <= 128 && !/[\u0000-\u001f\u007f]/u.test(id)) && new Set(value).size === value.length;
 }

@@ -1,3 +1,15 @@
+---
+format: concord.document/v1
+id: sandbox-reuse-feedback
+title: Sandbox 复用运行级反馈
+createdAt: 2026-08-14T13:42:59+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/roadmap/sandbox-reuse-feedback/README.md
+  commit: 44685a9360d68e5d227ac6b758a1e6c993fa464d
+kind: roadmap
+state: planned
+---
 # Sandbox 复用运行级反馈
 
 结果携带的 `carried` 词表、冻结 reuse plan、完整 prior locator 与 membership provenance 已由

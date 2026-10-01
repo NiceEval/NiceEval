@@ -1,12 +1,13 @@
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const ROOT = resolve(import.meta.dirname, "../..");
-const SKILLS_ROOT = join(ROOT, ".agents/skills");
 const execFileAsync = promisify(execFile);
 
 interface ToolSkill {
@@ -26,12 +27,12 @@ function frontmatter(markdown: string, path: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function toolSkills(): ToolSkill[] {
+function toolSkills(root = ROOT): ToolSkill[] {
   const skills: ToolSkill[] = [];
-  for (const directory of readdirSync(SKILLS_ROOT, { withFileTypes: true })) {
+  for (const directory of readdirSync(join(root, ".agents/skills"), { withFileTypes: true })) {
     if (!directory.isDirectory()) continue;
     const path = `.agents/skills/${directory.name}/SKILL.md`;
-    const body = readFileSync(join(ROOT, path), "utf8");
+    const body = readFileSync(join(root, path), "utf8");
     const header = frontmatter(body, path);
     const metadata = header.metadata;
     if (typeof metadata !== "object" || metadata === null) continue;
@@ -65,12 +66,34 @@ function scriptName(command: string): string {
   return script ?? "";
 }
 
-function pnpm(args: string[]): string {
-  return execFileSync("pnpm", args, {
-    cwd: ROOT,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+function linkDependencies(copy: string): void {
+  const directories = [copy, ...readdirSync(copy, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(entry.parentPath, entry.name))];
+  for (const directory of directories) {
+    const dependencies = join(ROOT, relative(copy, directory), "node_modules");
+    if (existsSync(dependencies)) symlinkSync(dependencies, join(directory, "node_modules"), "dir");
+  }
+}
+
+function contentDigest(root: string): string {
+  const digest = createHash("sha256");
+  const visit = (path: string): void => {
+    const absolute = join(root, path);
+    const stat = lstatSync(absolute);
+    digest.update(JSON.stringify([path, stat.mode]));
+    if (stat.isSymbolicLink()) {
+      digest.update(JSON.stringify(["symlink", readlinkSync(absolute)]));
+    } else if (stat.isDirectory()) {
+      digest.update("directory");
+      for (const entry of readdirSync(absolute).sort()) visit(join(path, entry));
+    } else {
+      digest.update("file");
+      digest.update(createHash("sha256").update(readFileSync(absolute)).digest());
+    }
+  };
+  visit("");
+  return digest.digest("hex");
 }
 
 describe("Repository Tools 动态发现", () => {
@@ -85,23 +108,52 @@ describe("Repository Tools 动态发现", () => {
       const script = scriptName(skill.command);
       expect(agents, `AGENTS.md 没有路由 ${skill.path}`).toContain(skill.path);
       expect(scripts, `${skill.command} 不存在`).toHaveProperty(script);
-      expect(scripts[script], `${skill.command} 没有进入 @niceeval/repo-tools`).toContain("packages/repo-tools/");
+      expect(scripts[script], `${skill.command} 没有进入 NiceEval repository composition`).toMatch(/^tsx packages\/repo-tools\/src\/cli\.ts(?: |$)/u);
       expect(existsSync(join(ROOT, skill.design)), `${skill.path} 的 design 不存在: ${skill.design}`).toBe(true);
       expect(skill.body, `${skill.path} 没有把完整参数交给 --help`).toContain(`${skill.command} --help`);
     }
   });
 
   it("每个多步入口的 --help 离线、只读且成功", async () => {
-    const before = pnpm(["exec", "git", "status", "--short"]);
-    await Promise.all(toolSkills().map(async (skill) => {
-      const { stdout: output } = await execFileAsync("pnpm", [...commandArgs(skill.command), "--help"], {
+    const temporary = mkdtempSync(join(tmpdir(), "niceeval-help-"));
+    try {
+      const copy = join(temporary, "checkout");
+      const archive = join(temporary, "head.tar");
+      mkdirSync(copy);
+      execFileSync("git", ["archive", "--format=tar", "--output", archive, "HEAD"], {
         cwd: ROOT,
-        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
       });
-      expect(output, `${skill.command} --help 没有 usage`).toMatch(/usage:?/i);
-    }));
-    expect(pnpm(["exec", "git", "status", "--short"])).toBe(before);
-  }, 30_000);
+      execFileSync("tar", ["-xf", archive, "-C", copy], { stdio: ["ignore", "pipe", "pipe"] });
+      // The repository profile requires a Git root even for --help. Keep its metadata isolated too.
+      execFileSync("git", ["-c", "init.templateDir=", "init", "--quiet", copy], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      linkDependencies(copy);
+      const before = contentDigest(copy);
+      const skills = toolSkills(copy);
+      const results: PromiseSettledResult<void>[] = [];
+      // Each help command starts pnpm, tsx and the CLI. Bound that startup load
+      // on CI runners while retaining every command's own deadline and result.
+      for (let offset = 0; offset < skills.length; offset += 2) {
+        results.push(...await Promise.allSettled(skills.slice(offset, offset + 2).map(async (skill) => {
+          const { stdout: output } = await execFileAsync("pnpm", [...commandArgs(skill.command), "--help"], {
+            cwd: copy,
+            encoding: "utf8",
+            timeout: 20_000,
+            killSignal: "SIGKILL",
+          });
+          expect(output, `${skill.command} --help 没有 usage`).toMatch(/usage:?/i);
+        })));
+      }
+      expect(contentDigest(copy), "--help 改写了隔离副本").toBe(before);
+      for (const result of results) {
+        if (result.status === "rejected") throw result.reason;
+      }
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   it("不恢复中央命令清单或 capability 查询入口", () => {
     const manifest = readFileSync(join(ROOT, "package.json"), "utf8");

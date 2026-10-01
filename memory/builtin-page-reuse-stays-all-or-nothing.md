@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: builtin-page-reuse-stays-all-or-nothing
+title: 内建报告的复用面保持整站粒度：页级 override 与 page 具名导出都否决
+createdAt: 2026-07-25T16:19:16+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/builtin-page-reuse-stays-all-or-nothing.md
+  commit: fd7141f4256fb5eb6b191c013030919b45e025f7
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # 内建报告的复用面保持整站粒度：页级 override 与 page 具名导出都否决
 
 **裁决（2026-07-25）**：`extends` 只有整站语义——页列表整体来自 base，外壳字段逐字段覆盖。想改内建页里的任何内容，就照抄那页并从此拥有它（`built-in.md` 里有 `standard` 全文）。`niceeval/report/built-in` 不为内建页开新的具名导出。

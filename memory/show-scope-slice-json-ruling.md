@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: show-scope-slice-json-ruling
+title: 裁决:show 重设计为「范围 × 切片 × 形态」三正交轴(2026-07-23)
+createdAt: 2026-07-23T16:46:08+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/show-scope-slice-json-ruling.md
+  commit: 2c473122456b4472c361ddfa2890918c3c88f1b1
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 裁决:show 重设计为「范围 × 切片 × 形态」三正交轴(2026-07-23)
 
 **裁决**:`niceeval show` 的 CLI 模型定稿为三条正交轴——范围(前缀 / `@locator` / `--exp` 可重复 / `--fresh` / `--results`)× 切片(缺省 / source / execution / timing / usage / diff / history)× 形态(text / `--json`)。落 docs:`docs/feature/reports/show.md` 及新分篇 `show/compare.md`、`show/usage.md`、`show/json.md`;同批定稿 `Usage` 落盘形状与 `ctx.fact()` 通道(`docs/feature/results/architecture.md`)。实现 TODO 在 `plan/show-scope-slice-json.md`。

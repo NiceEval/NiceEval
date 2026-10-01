@@ -1,3 +1,20 @@
+---
+format: concord.document/v1
+id: readable-test-examples-false-green-review
+title: 可读测试样例首轮验收暴露的伪绿模式
+createdAt: 2026-08-06T21:16:17+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/readable-test-examples-false-green-review.md
+  commit: 12804a03230b75f73b5a146bba52578e2485e3be
+kind: memory
+memoryKind: problem
+state: captured
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+---
 # 可读测试样例首轮验收暴露的伪绿模式
 
 2026-08-06 对 DeepSeek V4 Flash 首轮样例草稿做独立验收。

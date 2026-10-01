@@ -1,3 +1,6 @@
+// @concord-file ne-surface-show-model
+// @concord-implements docs/feature/inspection/cli.md
+// @concord-implements docs/feature/run-inspection/README.md
 import type {
   InspectionOverviewResult,
   InspectionScoredValue,
@@ -82,6 +85,8 @@ export interface ExperimentView {
   readonly experimentId: string;
   readonly aggregate: Aggregate;
   readonly cells: OverviewView["cells"];
+  readonly costSummary: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["costSummary"];
+  readonly modelUsage: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["modelUsage"];
 }
 export interface RunView {
   readonly runId: string;
@@ -111,6 +116,7 @@ export interface RunView {
   }[];
 }
 export interface AttemptView {
+  readonly totalCosts?: InspectionSuccessDocumentFor<"attempt.usage">["usage"]["totalCosts"];
   readonly locator: string;
   readonly verdict: Verdict | null;
   readonly attemptId: string;
@@ -201,6 +207,8 @@ export interface TraceDetailView {
   readonly stableId: string;
   readonly body: InspectionTraceDetailResult;
 }
+export type ExecutionDisplayPreviewBlock = Extract<TraceView["execution"]["events"][number]["display"], { state: "present" }>["blocks"][number];
+export type ExecutionDisplayDetailBlock = NonNullable<Extract<TraceDetailView["body"], { kind: "execution-event" }>["event"]["display"]>[number];
 export type TimingView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.timing">["timing"];
 export type UsageView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.usage">["usage"];
 export type DiffView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.diff">["diff"];
@@ -252,8 +260,12 @@ export function projectExperiment(document: InspectionSuccessDocumentFor<"experi
     experimentId: document.experiment.experiment.experimentId,
     aggregate: aggregate(document.experiment.experiment),
     cells: cells(document.experiment.cells),
+    costSummary: document.experiment.costSummary,
+    modelUsage: document.experiment.modelUsage,
   };
 }
+// @concord-code ne-surface-project-run-view
+// @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 export function projectRun(document: InspectionSuccessDocumentFor<"run.overview">): RunView {
   const value = document.runOverview;
   return {
@@ -284,10 +296,13 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.overview"
     })),
   };
 }
-export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">): AttemptView {
+// @concord-code ne-surface-project-attempt-view
+// @concord-implements docs/feature/inspection/cli.md
+export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">, usage?: InspectionSuccessDocumentFor<"attempt.usage">): AttemptView {
   const value = document.attempt;
   return {
     locator: value.locator,
+    totalCosts: usage?.usage.totalCosts,
     verdict: value.verdict,
     attemptId: value.core.attemptId,
     evalId: value.core.evalId,

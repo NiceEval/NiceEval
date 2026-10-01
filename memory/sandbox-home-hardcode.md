@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: sandbox-home-hardcode
+title: Sandbox $HOME 不能 hardcode
+createdAt: 2026-06-30T09:02:39+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/sandbox-home-hardcode.md
+  commit: e94dd18dc2744b3b0685881a178fccbd8ead9cfd
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: 已修复：`src/agents/bub.ts`（2026-06-30）
+    proof: []
+    source:
+      path: memory/sandbox-home-hardcode.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:2e276c680d76a57aba2351d0cb1f7aed03c8392aa1af71ba4bdf727873acde08
+---
 # Sandbox $HOME 不能 hardcode
 
 **现象**：bub agent 在 Vercel sandbox 上出现 `$HOME/.local/bin/bub: No such file or directory`。

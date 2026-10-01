@@ -1,3 +1,9 @@
+import { compareCanonicalDecimal } from "../o11y/adapter-usage-projection.ts";
+import { canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
+import { ownMaterialCollection } from "../assertions/material.ts";
+import { defineMaterialMatch, type MaterialCollection, type MaterialMatch, type ContextualMatch } from "../assertions/context-match.ts";
+import { projectAgentEvalUsage, type EvalUsage } from "../o11y/eval-usage.ts";
+import { registerMaterialQA, bindAssertionContext, createScopedAssertionCheck } from "../assertions/runtime.ts";
 import type { ExperimentFlags } from "../shared/types.ts";
 /**
  * The active Eval context. Assertion authoring deliberately enters through
@@ -23,7 +29,7 @@ import type {
   AssertionsRuntime,
   BooleanAssertionHandle,
   BooleanAssertionEvaluation,
-  DirectScoreAssertionHandle,
+  ScoreFunction,
   MatcherSourceLocator,
   MatcherSourceSnapshot,
   MeasurementAssertionHandle,
@@ -54,6 +60,9 @@ import {
   inOrder,
   collectionMatchSpecOf,
   isManagedCollectionMatch,
+  isManagedEventMatch,
+  isManagedToolMatch,
+  defineValueMatch,
   managedScoreMatchOf,
   makeAssertionMessageEvent,
   makeAssertionToolEvent,
@@ -72,12 +81,11 @@ import {
 } from "../assertions/match.ts";
 import { numericBooleanRegistration } from "../assertions/numeric.ts";
 import {
-  closeQA,
+
   factuality,
   faithfulness,
   instructionFollowing,
   pairwisePreference,
-  type CloseQAMaterial,
   type FactualityMaterial,
   type FaithfulnessMaterial,
   type InstructionFollowingMaterial,
@@ -98,10 +106,6 @@ import {
   type ObservedSourceEvent,
   type ObservedTurnSnapshot,
 } from "../o11y/observed.ts";
-import {
-  pricingEstimate,
-  type PricingEstimateResult,
-} from "../o11y/cost.ts";
 import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
 import { captureLoc, type SourceRegistry } from "../source-loc.ts";
 import { lastAssistantText, RunSession, SessionManager, type SessionDeps } from "./session.ts";
@@ -148,6 +152,9 @@ export interface AssertFirstCoreContextState {
 }
 
 export interface AssertFirstCoreContextDeps {
+  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly readUsage?: () => EvalUsage;
+  readonly elapsedMs?: () => number;
   readonly model?: string;
   readonly reasoningEffort?: string;
   readonly flags: ExperimentFlags;
@@ -160,6 +167,10 @@ export interface AssertFirstCoreContextDeps {
 }
 
 export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> = JudgePresetMethods<Kind> & {
+  readonly usage: EvalUsage;
+  readonly elapsedMs: import("../assertions/match.ts").NumericMaterial;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, number>;
+  maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -173,12 +184,13 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     title: string,
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
-  check: AssertionsRuntime<Kind>["t"]["check"];
+  check: import("../assertions/api.ts").AssertionCheck<Kind>;
   judge: JudgeFunction<Kind>;
-} & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
+} & (Kind extends "score" ? { readonly score: ScoreFunction } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
 export interface AssertFirstContextDeps {
+  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
   readonly agent: Agent;
   readonly sandbox: Sandbox;
   readonly evalId?: string;
@@ -197,6 +209,7 @@ export interface AssertFirstContextDeps {
   readonly feedback?: import("../types.ts").ScopedFeedback;
   readonly onSendActive?: (active: boolean) => void;
   readonly ledgerHooks?: import("./session.ts").SessionDeps["ledgerHooks"];
+  readonly elapsedMs?: () => number;
   readonly timingNow?: import("./session.ts").SessionDeps["timingNow"];
   readonly onTurn?: import("./session.ts").SessionDeps["onTurn"];
   readonly concurrencySlot?: ConcurrencySlot;
@@ -217,17 +230,65 @@ export interface AssertFirstContextDeps {
 type RuntimeKind = "pass" | "score";
 type AssertFirstRespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
-export interface JudgePresetMethods<Kind extends RuntimeKind> {
+export interface JudgePresetMethods<Kind extends RuntimeKind, Context = unknown> {
   factuality(material: FactualityMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
   faithfulness(material: FaithfulnessMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
   instructionFollowing(material: InstructionFollowingMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
   pairwisePreference(material: PairwisePreferenceMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
-  closeQA(material: CloseQAMaterial, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
 }
 
-function judgePresetMethods<Kind extends RuntimeKind>(
-  check: AssertionsRuntime<Kind>["t"]["check"],
-): JudgePresetMethods<Kind> {
+/** Agent supplies its receiver's complete default history to the shared QA capability. */
+export interface AgentJudgePresetMethods<Kind extends RuntimeKind, Context> extends JudgePresetMethods<Kind, Context> {
+  closeQA(question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  closeQA(selector: ToolMatch | EventMatch, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+  closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+}
+
+interface AgentHistoryFrame {
+  cut?: MatcherSourceSnapshot;
+  read?: (cut: MatcherSourceSnapshot) => MaterialCollection<Readonly<Record<string, unknown>>>;
+}
+const agentQACapture = Object.freeze({ maxItems: 16384, maxBytes: 4 * 1024 * 1024, maxNodes: 1048576, maxDepth: 64 });
+function agentJudgePresetMethods<Kind extends RuntimeKind, S extends AssertionScope>(
+  check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<S>>,
+  frame: AgentHistoryFrame,
+): AgentJudgePresetMethods<Kind, AgentMatchContext<S>> {
+  const defaults = defineMaterialMatch<AgentMatchContext<S>, Readonly<Record<string, unknown>>>({
+    name: "agent-history",
+    read: () => frame.cut === undefined || frame.read === undefined
+      ? { state: "unavailable", reason: "agent-history-receiver-closed" }
+      : frame.read(frame.cut),
+    match: defineValueMatch({ name: "all-history-items", evaluate: (_value: Readonly<Record<string, unknown>>) => true }),
+    capture: agentQACapture,
+  });
+  const closeQA = (first: unknown, second?: unknown, third?: JudgePresetOptions, ...extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError("closeQA accepts question and options, or selector, question and options");
+    let selector: ContextualMatch;
+    let question: string;
+    let options: JudgePresetOptions | undefined;
+    if (typeof first === "string") {
+      if (third !== undefined) throw new TypeError("closeQA(question, options) accepts two arguments");
+      selector = defaults as ContextualMatch;
+      question = first;
+      options = second as JudgePresetOptions | undefined;
+    } else {
+      question = second as string;
+      options = third;
+      selector = isManagedToolMatch(first)
+        ? defineMaterialMatch<AgentMatchContext<S>>({ name: "agent-tool-history", read: ctx => ctx.toolCalls as ManagedToolCalls<S>, match: first, capture: agentQACapture }) as ContextualMatch
+        : isManagedEventMatch(first)
+        ? defineMaterialMatch<AgentMatchContext<S>>({ name: "agent-event-history", read: ctx => ctx.eventOccurrences as ManagedEventOccurrences<S>, match: first, capture: agentQACapture }) as ContextualMatch
+        : first as ContextualMatch;
+    }
+    return registerMaterialQA(check, selector, question, options) as MeasurementAssertionHandle<Kind>;
+  };
+  return Object.freeze({ ...judgePresetMethods(check), closeQA }) as AgentJudgePresetMethods<Kind, AgentMatchContext<S>>;
+}
+
+function judgePresetMethods<Kind extends RuntimeKind, C = unknown>(
+  check: import("../assertions/api.ts").AssertionCheck<Kind, C>,
+): JudgePresetMethods<Kind, C> {
   const apply = <Material>(
     factory: (options?: JudgePresetOptions) => ScoreMatch<Material>,
     material: Material,
@@ -250,8 +311,10 @@ function judgePresetMethods<Kind extends RuntimeKind>(
       apply(instructionFollowing, material, options, extra, "instructionFollowing"),
     pairwisePreference: (material: PairwisePreferenceMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
       apply(pairwisePreference, material, options, extra, "pairwisePreference"),
-    closeQA: (material: CloseQAMaterial, options?: JudgePresetOptions, ...extra: readonly unknown[]) =>
-      apply(closeQA, material, options, extra, "closeQA"),
+    closeQA: <T>(selector: MaterialMatch<C, T>, question: string, options?: JudgePresetOptions, ...extra: readonly unknown[]) => {
+      if (extra.length > 0) throw new TypeError("closeQA accepts selector, question and optional options");
+      return registerMaterialQA(check, selector as ContextualMatch, question, options) as MeasurementAssertionHandle<Kind>;
+    },
   });
 }
 
@@ -277,7 +340,7 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
   ): PostRunBooleanAssertionHandle<Kind, void>;
 }
 
-export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends JudgePresetMethods<Kind> {
+export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends AgentJudgePresetMethods<Kind, AgentMatchContext<"turn">> {
   readonly input: string;
   readonly events: readonly StreamEvent[];
   readonly toolCalls: ManagedToolCalls<"turn">;
@@ -285,8 +348,8 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends JudgePr
   readonly status: "completed" | "failed" | "waiting";
   readonly message: string;
   readonly data?: JsonValue;
-  readonly usage?: Usage;
-  check: AssertionsRuntime<Kind>["t"]["check"];
+  readonly usage: EvalUsage;
+  check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"turn">>;
   judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
@@ -300,11 +363,12 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends JudgePr
   event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
   eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
-  maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
-  maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
+  readonly elapsedMs: import("../assertions/match.ts").NumericMaterial;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, number>;
+  maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
 }
 
-export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends JudgePresetMethods<Kind> {
+export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends AgentJudgePresetMethods<Kind, AgentMatchContext<"session">> {
   send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
   sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
@@ -313,10 +377,10 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends Judg
   readonly reply: string;
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
-  readonly usage: Usage;
+  readonly usage: EvalUsage;
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
-  check: AssertionsRuntime<Kind>["t"]["check"];
+  check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"session">>;
   judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
@@ -330,8 +394,9 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends Judg
   event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
   eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
-  maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
-  maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
+  readonly elapsedMs: import("../assertions/match.ts").NumericMaterial;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, number>;
+  maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
 }
 
 type JudgeFunction<Kind extends RuntimeKind> = <Value>(
@@ -339,7 +404,7 @@ type JudgeFunction<Kind extends RuntimeKind> = <Value>(
   definition: ScoreMatch<NoInfer<Value>>,
 ) => MeasurementAssertionHandle<Kind>;
 
-export type AssertFirstTestContext<Kind extends RuntimeKind> = JudgePresetMethods<Kind> & {
+export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetMethods<Kind, AgentMatchContext<"attempt">> & {
   readonly evaluationKind: Kind;
   send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
   sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
@@ -363,12 +428,12 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = JudgePresetMethod
     title: string,
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
-  check: AssertionsRuntime<Kind>["t"]["check"];
+  check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"attempt">>;
   judge: JudgeFunction<Kind>;
   readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
   readonly o11y: import("../o11y/types.ts").O11ySummary;
-  readonly usage: Usage;
+  readonly usage: EvalUsage;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
@@ -379,10 +444,17 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = JudgePresetMethod
   noFailedActions(): BooleanAssertionHandle<Kind, void>;
   event(match: EventMatch | EventOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
   notEvent(match: EventMatch): BooleanAssertionHandle<Kind, void>;
-  maxTokens(max: number): BooleanAssertionHandle<Kind, void>;
-  maxCost(usd: number): BooleanAssertionHandle<Kind, void>;
-} & (Kind extends "score" ? { score(points: number): DirectScoreAssertionHandle } : {});
+  readonly elapsedMs: import("../assertions/match.ts").NumericMaterial;
+  maxTokens(max: number): BooleanAssertionHandle<Kind, number>;
+  maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
+} & (Kind extends "score" ? { readonly score: ScoreFunction } : {});
 
+export interface AgentMatchContext<Scope extends "turn" | "session" | "attempt" = "attempt"> {
+  readonly scope: Scope;
+  readonly toolCalls: ManagedToolCalls<Scope>;
+  readonly eventOccurrences: ManagedEventOccurrences<Scope>;
+  readonly usage: EvalUsage;
+}
 type AssertionScope = "turn" | "session" | "attempt";
 type ScopeStatus = "completed" | "failed" | "waiting" | "not-started";
 type ScopeCoverage = import("../assertions/coverage.ts").ResolvedEvidenceCoverage;
@@ -798,97 +870,6 @@ function noFailedActionsHandle<Kind extends RuntimeKind>(input: {
   });
 }
 
-function usageLimitHandle<Kind extends RuntimeKind>(input: {
-  readonly runtime: AssertionsRuntime<Kind>;
-  readonly scope: AssertionScope;
-  readonly maximum: number;
-  readonly usage: Usage;
-  readonly coverage: ScopeCoverage;
-  readonly snapshot: unknown;
-} & (
-  | { readonly metric: "tokens" }
-  | {
-      readonly metric: "cost";
-      /** observed usage.costUSD 不进入预算断言。 */
-      readonly pricing: PricingEstimateResult;
-    }
-)): BooleanAssertionHandle<Kind, void> {
-  assertNonNegativeFinite(input.maximum, input.metric === "tokens" ? "maxTokens() max" : "maxCost() usd");
-  // observed usage.costUSD intentionally never enters this material. Cost is
-  // sealed from the pricing receipt; tokens exclude cache buckets by contract.
-  const tokenBuckets = [input.usage.inputTokens, input.usage.outputTokens] as const;
-  const recordedTokenBuckets = tokenBuckets.filter((value): value is number => value !== undefined);
-  const tokenInputInvalid = recordedTokenBuckets.some((value) => !Number.isFinite(value) || value < 0);
-  const tokenValue = recordedTokenBuckets.reduce((sum, value) => sum + value, 0);
-  const tokenMaterial = tokenInputInvalid
-    ? Object.freeze({ state: "unavailable" as const, reason: "usage-input-invalid" })
-    : recordedTokenBuckets.length === 0
-    ? Object.freeze({ state: "unavailable" as const, reason: "usage-not-recorded" })
-    : recordedTokenBuckets.length === tokenBuckets.length && input.coverage.usage.status === "complete"
-    ? Object.freeze({ state: "exact" as const, value: tokenValue })
-    : Object.freeze({ state: "lower-bound" as const, value: tokenValue });
-  const material = input.metric === "tokens"
-    ? tokenMaterial
-    : input.pricing.state === "unavailable"
-    ? Object.freeze({ state: "unavailable" as const, reason: input.pricing.reason })
-    : input.pricing.receipt.charges.length === 4 && input.coverage.usage.status === "complete"
-    ? Object.freeze({ state: "exact" as const, value: input.pricing.receipt.amountUSD })
-    : Object.freeze({ state: "lower-bound" as const, value: input.pricing.receipt.amountUSD });
-  const derivation = input.metric === "tokens"
-    ? Object.freeze({
-        kind: "usage-token-sum" as const,
-        buckets: Object.freeze([
-          ...(input.usage.inputTokens === undefined ? [] : ["inputTokens"]),
-          ...(input.usage.outputTokens === undefined ? [] : ["outputTokens"]),
-        ]),
-        missingBuckets: Object.freeze([
-          ...(input.usage.inputTokens === undefined ? ["inputTokens"] : []),
-          ...(input.usage.outputTokens === undefined ? ["outputTokens"] : []),
-        ]),
-      })
-    : input.pricing.state === "available"
-    ? input.pricing.receipt
-    : Object.freeze({ kind: "pricing-estimate-unavailable" as const, reason: input.pricing.reason });
-  const captured = captureAssertionSnapshot(Object.freeze({
-    ...material,
-    cut: input.snapshot,
-    coverage: input.coverage.usage,
-    derivation,
-  }));
-  const semanticCapture = material.state === "unavailable"
-    ? Object.freeze({
-        ...captured,
-        coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
-        limitations: Object.freeze([]),
-      })
-    : material.state === "lower-bound" && captured.coverage.state === "complete"
-    ? Object.freeze({
-        ...captured,
-        coverage: Object.freeze({ state: "partial" as const, reason: "provider-limited" as const }),
-        limitations: Object.freeze([{ kind: "provider-limited" as const }]),
-      })
-    : captured;
-  const criterionSubject = input.metric === "tokens"
-    ? Object.freeze({
-        kind: "scope-metric" as const,
-        metric: "tokens" as const,
-        scope: input.scope,
-        unit: "tokens" as const,
-      })
-    : Object.freeze({
-        kind: "scope-metric" as const,
-        metric: "cost" as const,
-        scope: input.scope,
-        unit: "usd" as const,
-      });
-  return input.runtime.registerBoolean(numericBooleanRegistration({
-    match: atMost(input.maximum),
-    criterionSubject,
-    material,
-    captured: semanticCapture,
-    matchedValue: () => undefined,
-  }));
-}
 
 function toolOrderHandle<Kind extends RuntimeKind>(input: {
   readonly runtime: AssertionsRuntime<Kind>;
@@ -901,8 +882,9 @@ function toolOrderHandle<Kind extends RuntimeKind>(input: {
 function managedToolCalls(
   scope: AssertionScope,
   snapshot: ToolScopeSnapshot,
+  check: object,
 ): ManagedToolCalls {
-  return freezeManagedToolCalls({
+  const collection = freezeManagedToolCalls({
     scope,
     sourceSnapshot: snapshot.sourceSnapshot,
     rows: snapshot.rows,
@@ -911,13 +893,16 @@ function managedToolCalls(
     orphanFinishCount: snapshot.orphanFinishes.length,
     snapshot: snapshot.snapshot,
   });
+  ownMaterialCollection(check, collection);
+  return collection;
 }
 
 function managedEventOccurrences(
   scope: AssertionScope,
   snapshot: EventScopeSnapshot,
+  check: object,
 ): ManagedEventOccurrences {
-  return freezeManagedEventOccurrences({
+  const collection = freezeManagedEventOccurrences({
     scope,
     sourceSnapshot: snapshot.sourceSnapshot,
     rows: snapshot.rows,
@@ -925,6 +910,8 @@ function managedEventOccurrences(
     snapshot: snapshot.snapshot,
     unassociatedOperation: snapshot.unassociatedOperation,
   });
+  ownMaterialCollection(check, collection);
+  return collection;
 }
 
 function eventHandle<Kind extends RuntimeKind>(input: {
@@ -1556,8 +1543,8 @@ export function createAssertFirstCoreContext(
   readonly state: AssertFirstCoreContextState;
 } {
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
-    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal })
-    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal });
+    ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal, ...(deps.judgeUsage === undefined ? {} : { judgeUsage: deps.judgeUsage }) })
+    : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal, ...(deps.judgeUsage === undefined ? {} : { judgeUsage: deps.judgeUsage }) });
   const check = runtime.t.check;
   const judge = ((subject: unknown, definition: unknown, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("judge() accepts exactly (subject, definition)");
@@ -1568,7 +1555,18 @@ export function createAssertFirstCoreContext(
   }) as JudgeFunction<RuntimeKind>;
   const state: AssertFirstCoreContextState = { assertions: runtime };
   const presets = judgePresetMethods(runtime.t.check);
+  const readUsage = (): EvalUsage => { runtime.assertAuthoringOpen(); return deps.readUsage?.() ?? projectAgentEvalUsage({ contributions: [], scope: "attempt" }); };
+  const elapsedMs = (): import("../assertions/match.ts").NumericMaterial => {
+    runtime.assertAuthoringOpen();
+    const value = deps.elapsedMs?.();
+    const provenance = Object.freeze({ source: "runtime", scope: "attempt", unit: "milliseconds", cut: "call-time" });
+    return value === undefined || !Number.isFinite(value) || value < 0 ? Object.freeze({ state: "unavailable", reason: "runtime-timing-not-recorded", provenance }) : Object.freeze({ state: "exact", value, provenance });
+  };
+  const { maxTokens, maxCost } = usageBudgetMethods(runtime, readUsage);
   const base = {
+    get usage() { return readUsage(); },
+    get elapsedMs() { return elapsedMs(); },
+    maxTokens, maxCost,
     evaluationKind: deps.evaluationKind,
     signal: deps.signal,
     model: deps.model,
@@ -1595,16 +1593,31 @@ export function createAssertFirstCoreContext(
     judge,
     ...presets,
   };
-  const context = deps.evaluationKind === "score"
-    ? Object.freeze({
-        ...base,
-        score: (runtime as AssertionsRuntime<"score">).t.score,
-      })
-    : Object.freeze(base);
+  if (deps.evaluationKind === "score") Object.defineProperty(base, "score", { value: (runtime as AssertionsRuntime<"score">).t.score, enumerable: true });
+  const context = Object.freeze(base);
   return {
     context: context as AssertFirstCoreTestContext<RuntimeKind>,
     state,
   };
+}
+
+function usageBudgetMethods<Kind extends RuntimeKind>(runtime: AssertionsRuntime<Kind>, readUsage: () => EvalUsage) {
+  const maxTokens = (maximum: number, ...extra: readonly unknown[]): BooleanAssertionHandle<Kind, number> => {
+    if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
+    assertNonNegativeFinite(maximum, "maxTokens() max");
+    return runtime.t.check(readUsage().totalTokens, atMost(maximum)) as BooleanAssertionHandle<Kind, number>;
+  };
+  const maxCost = (maximum: number | string, ...extra: readonly unknown[]): BooleanAssertionHandle<Kind, string> => {
+    if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
+    const threshold = typeof maximum === "number" ? canonicalDecimalFromNumber(maximum) : maximum;
+    if (threshold == null || !/^(?:0|[1-9]\d*)(?:\.\d*[1-9])?$/.test(threshold) || threshold.length > 128) throw new TypeError("maxCost() requires a nonnegative canonical USD amount");
+    const usage = readUsage(); const usd = usage.costs.values.find((cost) => cost.currency === "USD");
+    const complete = usage.costs.state === "complete" && usage.costs.values.length === 1;
+    const captured = captureAssertionSnapshot({ source: usage.source, scope: usage.scope, cut: usage.cut, unit: "USD", threshold, amount: usd?.value ?? null, complete, costs: usage.costs });
+    return runtime.registerBoolean({ criterion: { kind: "value-match", subject: "explicit-value", matcher: { state: "declared", name: "max-cost-usd" } }, subject: captured.material, coverage: captured.coverage, limitations: captured.limitations,
+      evaluate: () => Effect.succeed(usd === undefined ? { state: "unavailable" as const, reason: "source-unavailable" as const } : compareCanonicalDecimal(usd.value, threshold) > 0 ? { state: "mismatched" as const } : complete ? { state: "matched" as const, value: usd.value } : { state: "unavailable" as const, reason: "source-unavailable" as const }) }) as BooleanAssertionHandle<Kind, string>;
+  };
+  return { maxTokens, maxCost };
 }
 
 /**
@@ -1640,7 +1653,8 @@ export function createAssertFirstEvalContext(
     sourceRegistry: deps.sourceRegistry,
     resources: deps.resources,
   });
-  const core = createAssertFirstCoreContext(deps);
+  const readAttemptUsage = () => projectAgentEvalUsage({ contributions: manager.usageContributionsSnapshot(), scope: "attempt", pricing: deps.pricing });
+  const core = createAssertFirstCoreContext({ ...deps, readUsage: readAttemptUsage });
   const runtime = core.state.assertions;
   const check = core.context.check;
   const judge = core.context.judge;
@@ -1652,10 +1666,6 @@ export function createAssertFirstEvalContext(
   const resolveObservedEvaluation: ResolveObservedEvaluation = (snapshot) =>
     manager.observedEvaluationSegment(snapshot);
 
-  // maxCost 断言唯一认价目表估算(estimateCost);observed usage.costUSD 与之独立并存,
-  // 存在也不改变估算(见 Usage.costUSD 单向字段契约)。
-  const pricingEstimateFor = (usage: Usage): PricingEstimateResult =>
-    pricingEstimate(deps.model, usage, deps.pricing);
 
   interface TurnScopeSnapshot {
     readonly events: readonly StreamEvent[];
@@ -1736,7 +1746,7 @@ export function createAssertFirstEvalContext(
       scopeId: observed.sessionId,
       throughSessionSequence: observed.throughSessionSequence,
       source: matcherSource,
-      collectionAtCut: collectionAtCut(scope.turns, coverage, allowUnclassifiedActions),
+      collectionAtCut: collectionAtCut(observedMatcherTurns(observed.sessionId), coverage, allowUnclassifiedActions),
     });
   };
 
@@ -1780,6 +1790,68 @@ export function createAssertFirstEvalContext(
     return coverage;
   };
 
+  const observedMatcherTurns = (sessionId?: string): readonly MatcherScopeTurn[] => Object.freeze(
+    manager.observedSessionSnapshots().filter(session => sessionId === undefined || session.sessionId === sessionId)
+      .flatMap(session => session.turns.map(observed => Object.freeze({
+        observed,
+        events: resolveObservedEvaluation(observed)?.events ?? Object.freeze([]),
+        outcome: manager.observedTurnState(observed)?.outcome ?? "failed" as const,
+      }))),
+  );
+
+  const readDefaultHistory = (cut: MatcherSourceSnapshot): MaterialCollection<Readonly<Record<string, unknown>>> => {
+    const ends = cut.scope === "attempt"
+      ? new Map(cut.sessions.map(session => [session.sessionId, session.throughSessionSequence]))
+      : new Map([[cut.sessionId, cut.throughSessionSequence]]);
+    const prefix = observedMatcherTurns().filter(turn => {
+      const end = ends.get(turn.observed.sessionId);
+      return end !== undefined && turn.observed.throughSessionSequence <= end;
+    });
+    const selected = prefix.filter(turn => cut.scope !== "turn" || turn.observed.turnId === cut.turnId);
+    const projection = projectMatcherSources(prefix, resolveObservedEvaluation);
+    let reason: string | undefined = manager.observedHistoryIncompleteReason();
+    if (projection.state === "invalid") reason ??= "agent-history-invalid-relation";
+    const active = cut.scope === "attempt"
+      ? sessions.some(scope => scope.inFlight > 0)
+      : sessions.some(scope => scope.session.observedSnapshot().sessionId === cut.sessionId && scope.inFlight > 0);
+    if (active) reason ??= "scope-still-running";
+    const items: { readonly id: string; readonly value: Readonly<Record<string, unknown>> }[] = [];
+    for (const turn of selected) {
+      const segment = resolveObservedEvaluation(turn.observed);
+      if (segment === undefined) { reason ??= "agent-history-segment-unavailable"; continue; }
+      if (turn.observed.collectionAtCut !== "complete") reason ??= "agent-history-truncated";
+      const coverage = manager.observedTurnState(turn.observed)?.coverage;
+      for (const channel of ["events", "messages", "actions"] as const) {
+        if (coverage?.[channel].status !== "complete") reason ??= coverage?.[channel].reason ?? `agent-history-${channel}-unavailable`;
+      }
+      segment.items.forEach((event, index) => {
+        const raw = segment.events[index];
+        if (raw === undefined) reason ??= "agent-history-event-unavailable";
+        if ((raw?.truncated?.length ?? 0) > 0) reason ??= "agent-history-truncated";
+        if (event.kind === "tool-finish" && event.occurrence.state !== "exact") reason ??= `agent-history-${event.occurrence.reason}`;
+        const occurrenceId = event.kind === "tool-start" ? event.toolOccurrenceId
+          : event.kind === "tool-finish" && event.occurrence.state === "exact" ? event.occurrence.toolOccurrenceId : undefined;
+        const occurrence = occurrenceId === undefined ? undefined : projection.occurrenceCandidates.get(occurrenceId);
+        items.push(Object.freeze({ id: event.eventId, value: Object.freeze({
+          eventId: event.eventId, itemId: event.itemId,
+          sessionId: segment.sessionId, turnId: segment.turnId, sessionSequence: event.sessionSequence,
+          event: raw ?? event, observed: event,
+          ...(occurrence === undefined ? {} : { occurrence }),
+          ordering: "first-session appearance, then sessionSequence; no cross-session causal order",
+        }) }));
+      });
+    }
+    return reason === undefined ? Object.freeze({ state: "complete" as const, items: Object.freeze(items) })
+      : Object.freeze({ state: "partial" as const, items: Object.freeze(items), reason });
+  };
+
+  const historyFrame = (): AgentHistoryFrame => ({ read: readDefaultHistory });
+  const latchHistoryCut = (frame: AgentHistoryFrame, cut: MatcherSourceSnapshot): MatcherSourceSnapshot => {
+    frame.cut = cut;
+    return cut;
+  };
+  const releaseHistoryFrame = (frame: AgentHistoryFrame): void => { frame.cut = undefined; frame.read = undefined; };
+
   const attemptStatus = (): ScopeStatus => {
     const active = sessions.filter((scope) => scope.started);
     if (active.length === 0) return "not-started";
@@ -1808,7 +1880,7 @@ export function createAssertFirstEvalContext(
 
   const sessionToolScope = (scope: SessionScopeState): ToolScopeSnapshot => {
     const coverage = sessionCoverage(scope);
-    const turns = Object.freeze([...scope.turns]);
+    const turns = observedMatcherTurns(scope.session.observedSnapshot().sessionId);
     const sourceSnapshot = sessionSourceSnapshot(scope, coverage.actions, true);
     const snapshot = Object.freeze({
       sessionIndex: scope.session.index,
@@ -1833,7 +1905,7 @@ export function createAssertFirstEvalContext(
   const attemptToolScope = (): ToolScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
-    const turns = Object.freeze(active.flatMap((scope) => scope.turns));
+    const turns = observedMatcherTurns();
     const sourceSnapshot = attemptSourceSnapshot(turns, coverage.actions, true);
     const snapshot = Object.freeze({
       sessions: Object.freeze(active.map((scope) => ({
@@ -1860,12 +1932,12 @@ export function createAssertFirstEvalContext(
   };
 
   const sessionScopedEvents = (scope: SessionScopeState): readonly StreamEvent[] =>
-    Object.freeze(scope.turns.flatMap((turn) => turn.events));
+    Object.freeze(observedMatcherTurns(scope.session.observedSnapshot().sessionId).flatMap((turn) => turn.events));
 
   const sessionEventScope = (scope: SessionScopeState): EventScopeSnapshot => {
     const coverage = sessionCoverage(scope);
     return projectEventScope({
-      turns: Object.freeze([...scope.turns]),
+      turns: observedMatcherTurns(scope.session.observedSnapshot().sessionId),
       sourceSnapshot: sessionSourceSnapshot(scope, coverage.events),
       coverage,
       snapshot: sessionSnapshot(scope),
@@ -1877,13 +1949,13 @@ export function createAssertFirstEvalContext(
     Object.freeze(
       sessions
         .filter((scope) => scope.started)
-        .flatMap((scope) => scope.turns.flatMap((turn) => turn.events)),
+        .flatMap((scope) => observedMatcherTurns(scope.session.observedSnapshot().sessionId).flatMap((turn) => turn.events)),
     );
 
   const attemptEventScope = (): EventScopeSnapshot => {
     const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
-    const turns = Object.freeze(active.flatMap((scope) => scope.turns));
+    const turns = observedMatcherTurns();
     return projectEventScope({
       turns,
       sourceSnapshot: attemptSourceSnapshot(turns, coverage.events),
@@ -1935,8 +2007,11 @@ export function createAssertFirstEvalContext(
       snapshot: scopeSnapshot,
       resolveEvaluation: resolveObservedEvaluation,
     });
-    const toolCalls = managedToolCalls("turn", toolScope) as ManagedToolCalls<"turn">;
-    const eventOccurrences = managedEventOccurrences("turn", eventScope) as ManagedEventOccurrences<"turn">;
+    const toolCalls = managedToolCalls("turn", toolScope, check) as ManagedToolCalls<"turn">;
+    const eventOccurrences = managedEventOccurrences("turn", eventScope, check) as ManagedEventOccurrences<"turn">;
+    const readTurnUsage = () => { runtime.assertAuthoringOpen(); return projectAgentEvalUsage({ contributions: manager.usageContributionsSnapshot().filter((call) => call.turnId === observed.turnId), scope: "turn", pricing: deps.pricing }); };
+    const frame = historyFrame();
+    const scopedCheck = createScopedAssertionCheck<Kind, AgentMatchContext<"turn">>(check, () => Object.freeze({ scope: "turn" as const, toolCalls, eventOccurrences, get usage() { return readTurnUsage(); } }), () => latchHistoryCut(frame, turnSourceSnapshot(matcherTurn, coverage.actions, true)), () => releaseHistoryFrame(frame));
     const snapshot: TurnScopeSnapshot = Object.freeze({
       events,
       toolCalls,
@@ -2014,31 +2089,7 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("eventOrder() accepts exactly one ordered match list");
       return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, eventOccurrences, inOrder(matches));
     };
-    const maxTokens = (max: number, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
-      return usageLimitHandle({
-        runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
-        metric: "tokens",
-        maximum: max,
-        usage: turn.usage ?? {},
-        coverage,
-        snapshot: scopeSnapshot,
-      });
-    };
-    const maxCost = (usd: number, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
-      return usageLimitHandle({
-        runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "turn",
-        metric: "cost",
-        maximum: usd,
-        usage: turn.usage ?? {},
-        pricing: pricingEstimateFor(turn.usage === undefined ? {} : turn.usage),
-        coverage,
-        snapshot: scopeSnapshot,
-      });
-    };
+    const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readTurnUsage);
     return Object.freeze({
       input: snapshot.input,
       events: snapshot.events,
@@ -2047,10 +2098,11 @@ export function createAssertFirstEvalContext(
       status: snapshot.status,
       message: snapshot.output,
       ...(turn.data === undefined ? {} : { data: turn.data }),
-      ...(turn.usage === undefined ? {} : { usage: turn.usage }),
-      check: check as AssertionsRuntime<Kind>["t"]["check"],
+      get usage() { return readTurnUsage(); },
+      get elapsedMs() { return core.context.elapsedMs; },
+      check: scopedCheck,
       judge: judge as JudgeFunction<Kind>,
-      ...judgePresetMethods(check as AssertionsRuntime<Kind>["t"]["check"]),
+      ...agentJudgePresetMethods<Kind, "turn">(scopedCheck, frame),
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "turn",
@@ -2108,9 +2160,12 @@ export function createAssertFirstEvalContext(
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
     const sessionCalls = (): ManagedToolCalls<"session"> =>
-      managedToolCalls("session", sessionToolScope(scope)) as ManagedToolCalls<"session">;
+      managedToolCalls("session", sessionToolScope(scope), check) as ManagedToolCalls<"session">;
     const sessionEventOccurrences = (): ManagedEventOccurrences<"session"> =>
-      managedEventOccurrences("session", sessionEventScope(scope)) as ManagedEventOccurrences<"session">;
+      managedEventOccurrences("session", sessionEventScope(scope), check) as ManagedEventOccurrences<"session">;
+    const readSessionUsage = () => { runtime.assertAuthoringOpen(); return projectAgentEvalUsage({ contributions: manager.usageContributionsSnapshot().filter((call) => call.sessionScopeId === session.sessionScopeId), scope: "session", pricing: deps.pricing }); };
+    const frame = historyFrame();
+    const scopedCheck = createScopedAssertionCheck<Kind, AgentMatchContext<"session">>(check, () => Object.freeze({ scope: "session" as const, get toolCalls() { return sessionCalls(); }, get eventOccurrences() { return sessionEventOccurrences(); }, get usage() { return readSessionUsage(); } }), () => latchHistoryCut(frame, sessionSourceSnapshot(scope, sessionCoverage(scope).actions, true)), () => releaseHistoryFrame(frame));
     const toolOrder = (
       matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
       ...extra: readonly unknown[]
@@ -2171,33 +2226,7 @@ export function createAssertFirstEvalContext(
       if (extra.length > 0) throw new TypeError("eventOrder() accepts exactly one ordered match list");
       return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, sessionEventOccurrences(), inOrder(matches));
     };
-    const maxTokens = (max: number, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
-      const coverage = sessionCoverage(scope);
-      return usageLimitHandle({
-        runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        metric: "tokens",
-        maximum: max,
-        usage: session.usage,
-        coverage,
-        snapshot: sessionSnapshot(scope),
-      });
-    };
-    const maxCost = (usd: number, ...extra: readonly unknown[]) => {
-      if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
-      const coverage = sessionCoverage(scope);
-      return usageLimitHandle({
-        runtime: runtime as AssertionsRuntime<Kind>,
-        scope: "session",
-        metric: "cost",
-        maximum: usd,
-        usage: session.usage,
-        pricing: pricingEstimateFor(session.usage),
-        coverage,
-        snapshot: sessionSnapshot(scope),
-      });
-    };
+    const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readSessionUsage);
     return Object.freeze({
       send: (input: string | { readonly text: string; readonly files?: readonly InputFile[] }) => {
         const text = typeof input === "string" ? input : input.text;
@@ -2243,7 +2272,7 @@ export function createAssertFirstEvalContext(
         return Object.freeze([...session.events]);
       },
       get usage() {
-        return Object.freeze({ ...session.usage });
+        return readSessionUsage();
       },
       get toolCalls() {
         return sessionCalls();
@@ -2251,9 +2280,10 @@ export function createAssertFirstEvalContext(
       get eventOccurrences() {
         return sessionEventOccurrences();
       },
-      check: check as AssertionsRuntime<Kind>["t"]["check"],
+      get elapsedMs() { return core.context.elapsedMs; },
+      check: scopedCheck,
       judge: judge as JudgeFunction<Kind>,
-      ...judgePresetMethods(check as AssertionsRuntime<Kind>["t"]["check"]),
+      ...agentJudgePresetMethods<Kind, "session">(scopedCheck, frame),
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
         scope: "session",
@@ -2300,9 +2330,9 @@ export function createAssertFirstEvalContext(
   const primary = makeSession<RuntimeKind>(primaryScope);
 
   const attemptCalls = (): ManagedToolCalls<"attempt"> =>
-    managedToolCalls("attempt", attemptToolScope()) as ManagedToolCalls<"attempt">;
+    managedToolCalls("attempt", attemptToolScope(), check) as ManagedToolCalls<"attempt">;
   const attemptEventOccurrences = (): ManagedEventOccurrences<"attempt"> =>
-    managedEventOccurrences("attempt", attemptEventScope()) as ManagedEventOccurrences<"attempt">;
+    managedEventOccurrences("attempt", attemptEventScope(), check) as ManagedEventOccurrences<"attempt">;
   const rootUsedNoTools = (...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("usedNoTools() accepts no arguments");
     return usedNoToolsHandle({ runtime, subject: attemptCalls() });
@@ -2338,36 +2368,14 @@ export function createAssertFirstEvalContext(
       match,
     });
   };
-  const rootMaxTokens = (max: number, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("maxTokens() accepts exactly one maximum");
-    const coverage = attemptCoverage();
-    return usageLimitHandle({
-      runtime,
-      scope: "attempt",
-      metric: "tokens",
-      maximum: max,
-      usage: manager.usage,
-      coverage,
-      snapshot: attemptSnapshot(),
-    });
-  };
-  const rootMaxCost = (usd: number, ...extra: readonly unknown[]) => {
-    if (extra.length > 0) throw new TypeError("maxCost() accepts exactly one maximum");
-    const coverage = attemptCoverage();
-    return usageLimitHandle({
-      runtime,
-      scope: "attempt",
-      metric: "cost",
-      maximum: usd,
-      usage: manager.usage,
-      pricing: pricingEstimateFor(manager.usage),
-      coverage,
-      snapshot: attemptSnapshot(),
-    });
-  };
+  const rootFrame = historyFrame();
+  bindAssertionContext(check, () => Object.freeze({ scope: "attempt" as const, get toolCalls() { return attemptCalls(); }, get eventOccurrences() { return attemptEventOccurrences(); }, get usage() { return readAttemptUsage(); } }), () => latchHistoryCut(rootFrame, attemptSourceSnapshot(observedMatcherTurns(), attemptCoverage().actions, true)), () => releaseHistoryFrame(rootFrame));
+  const { maxTokens: rootMaxTokens, maxCost: rootMaxCost } = usageBudgetMethods(runtime, readAttemptUsage);
 
   const base = {
-    ...core.context,
+    ...Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(core.context)).filter(([, descriptor]) => "value" in descriptor).map(([key, descriptor]) => [key, descriptor.value])),
+    ...agentJudgePresetMethods<RuntimeKind, "attempt">(check as import("../assertions/api.ts").AssertionCheck<RuntimeKind, AgentMatchContext<"attempt">>, rootFrame),
+    get elapsedMs() { return core.context.elapsedMs; },
     send: primary.send,
     sendFile: primary.sendFile,
     requireInputRequest: primary.requireInputRequest,
@@ -2406,7 +2414,7 @@ export function createAssertFirstEvalContext(
       return buildO11ySummary(manager.allEvents);
     },
     get usage() {
-      return Object.freeze({ ...manager.usage });
+      runtime.assertAuthoringOpen(); return readAttemptUsage();
     },
     get toolCalls() {
       return attemptCalls();
@@ -2442,12 +2450,8 @@ export function createAssertFirstEvalContext(
     maxTokens: rootMaxTokens,
     maxCost: rootMaxCost,
   };
-  const context = deps.evaluationKind === "score"
-    ? Object.freeze({
-        ...base,
-        score: (runtime as AssertionsRuntime<"score">).t.score,
-      })
-    : Object.freeze(base);
+  if (deps.evaluationKind === "score") Object.defineProperty(base, "score", { value: (runtime as AssertionsRuntime<"score">).t.score, enumerable: true });
+  const context = Object.freeze(base);
   return {
     context: context as AssertFirstTestContext<RuntimeKind>,
     state,

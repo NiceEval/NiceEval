@@ -158,7 +158,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - 人读诊断行的标题是「阶段标签 · `code`」，阶段标签复用失败行同一个投影；没有 phase 的运行级诊断（止损机制、锁接管、budget）标题只有 `code`，不留空的分隔符。
 - 区分力要证明有/无 `dedupeKey`、有/无作者 `data`、`data` 里带一个冒充 `phase` 三面。
 - `--json` 侧同一份 `code`/`phase` 的透出归「形态求值与 `--json` 流不变量」类别，字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
-- **human renderer 的面板接线到 `panel.ts`（`runner/feedback/human.ts`）**：面板几何本身由 [Reports 的「面板几何」类别](reports.md#证明范围规范)证明。这里只证明 `renderDurableLines`/live dashboard 真的把内容交给 `renderPanel`，而不是各自拼框字符。
+- **human renderer 的面板接线到 `panel.ts`（`runner/feedback/human.ts`）**：面板几何本身由 [Inspection 与 Insight 测试文档](reports.md)证明。这里只证明 `renderDurableLines`/live dashboard 真的把内容交给 `renderPanel`，而不是各自拼框字符。
 - `panelCapabilityOf(io)` 按 `io.stderr.isTTY` 与 `io.env.NO_COLOR` 正确算出 `mode`；`plan`/`summary`/`saved` 三类事件在 `mode: "boxed"` 时产生可识别的框线字符（`╭`/`├`/`╰`）。
 - 面板顺序与分隔（FAILED/PASSED → FAILURES → KEPT SANDBOXES，各自独立成框、之间空行分隔；NEXT 面板内嵌 RESULTS 横隔）符合声明；同一状态在 `mode: "plain"` 或非 TTY 下不产生任何框字符，内容仍完整。
 - 收尾内容证明 `complete` 与带非零 `unstarted` 的 `incomplete` 两面。后者必须把数量投影到收尾行，证明未派发的 Attempt 不会只留一个没有原因或规模的 `INCOMPLETE` 标题（`// bug: memory/incomplete-summary-hides-unstarted.md`）。
@@ -175,19 +175,19 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 断言渲染帧的行数组与列位置，不断言内部计算公式。
 
-- **失败的单行投影与 live `FAILURES` 分节（`runner/feedback/human.ts` + `assertions/display.ts`）**：契约见 [CLI · 框线体裁](../../../feature/experiments/cli.md#框线体裁)与「运行中的 live 面板」。
+- **失败的单行投影与 live `FAILURES` 分节（`runner/feedback/human.ts` + `assertions/display.ts`）**：契约见 [CLI · 运行中反馈](../../../feature/experiments/cli.md#运行中反馈)。
   - 一条失败的终端投影恒为单行 `✗ @<locator>  <evalId>  [<who>]  <单行压缩摘要>`；errored 给 `errored · <phase> · <code>`，余量够再带 message 首行。
   - TTY 帧内出现在 counts 行与 `ACTIVE` 之间的 `FAILURES` 横隔分节：滚动保留最近 5 条，横隔 meta 给累计数，失败不写 scrollback。
   - 非 TTY 单流逐条追加同一投影，10 条后一次 suppressed 提示。
-  - 摘要行预算由渲染面按内容宽扣掉身份列传入，按显示列量，渲染行恒不超过预算。`--json` 与非 TTY 用固定 100 字符预算（[Assertions · 一条摘要怎样排版](../../../feature/assertions/library/display.md#一条摘要怎样排版)）。
+  - 摘要行预算由渲染面按内容宽扣掉身份列传入，按显示列量，渲染行恒不超过预算。`--json` 与非 TTY 用固定 100 字符预算（[Assertions · 一条摘要怎样排版](../../../feature/assertions/library/display.md#attempt-摘要)）。
   - 区分力：`received` 长值单行收口不溢出；CJK 值按显示列不破框；矮终端先减 `ACTIVE` 可见项再减分节条数。
-- **结束反馈的失败形态聚合与 `WARNINGS` 汇总（`runner/feedback/human.ts`）**：契约见 [CLI · 人看的结束反馈](../../../feature/experiments/cli.md#人看的结束反馈)。
+- **结束反馈的失败形态聚合与 `WARNINGS` 汇总（`runner/feedback/human.ts`）**：契约见 [CLI · 结束反馈与 receipt](../../../feature/experiments/cli.md#结束反馈与-receipt)。
   - 组 key：`failed` 用主失败断言标题 + 检查方式；`errored` 用 `phase · code`；`received` 不进 key。
   - size > 1 的组一行：右对齐 `×N` + 形态摘要 + 组内首现的代表 locator。size = 1 的组两行：身份行 + 悬挂单行摘要。
   - 组按条数降序；超过 10 组收进 `+K more kinds — niceeval view` 尾行；总数与形态数嵌上边框 meta。
   - 人读运行中每个诊断 `code` 至多完整打印一次，同 `code` 后续静默计数；结束时 `WARNINGS` 面板每 code 一行（`! <code> ×N` + 首条 message 截断），无诊断不出面板。
   - 区分力：205 条同 matcher 失败聚成一行且代表 locator 是首现那条；1 条失败展开成完整身份两行；`--json` 的 `failure`/`warning` 事件仍逐条。
-- **live 面板的键盘接管与自愈重绘（`runner/feedback/input-guard.ts` + coordinator 接线）**：契约见 [CLI · 键盘输入与画面自愈](../../../feature/experiments/cli.md#键盘输入与画面自愈)。
+- **live 面板的键盘接管与自愈重绘（`runner/feedback/input-guard.ts` + coordinator 接线）**：契约见 [CLI · 运行中反馈](../../../feature/experiments/cli.md#运行中反馈)。
   - stdin 与 stderr 都是 TTY 时，live 期间 stdin 进入 raw mode 且不回显，普通字节不透传。
   - 收到 `\r` / `\n` 触发 clear → 整帧重绘且绕过「同帧不写」判断。收到 `\x03` 走与 SIGINT 相同的中断路径。
   - 结束与中断路径都恢复终端模式并释放 stdin，不阻止进程退出。stdin 非 TTY 时一个字节都不读。
@@ -214,7 +214,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   预检发生在派发前，因此 Attempt 始终保持 `queued`，不改变计数恒等式。
   live 面板把它排在实验生命周期 Hook 与 Attempt 行之前。
   这里断言 reducer 状态与事件序；字节渲染归 [E2E · CLI](../e2e/cli.md)。
-- **Judge 预检失败的降级**（契约见 [Judge · 派发前预检](../../../feature/judge/library.md#派发前预检)）：预检失败时，含 judge 断言的 eval 的全部计划 attempt 不派发、逐条落成 `errored`，并照常落盘。
+- **Judge 预检失败的降级**（契约见 [Judge · 凭据与失败](../../../feature/judge/library.md#凭据与失败)）：预检失败时，含 judge 断言的 eval 的全部计划 attempt 不派发、逐条落成 `errored`，并照常落盘。
   错误形状是 `code: "judge-precheck-failed"` 加 `phase: "judge.precheck"`。
   不含 judge 断言的 eval 照常派发并产出 verdict；同一批里两类 eval 都要有，才有区分力。
   还要证明两个不预检的场景：未配置 judge，以及含 judge 的 eval 全部命中携带。
@@ -225,8 +225,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   human PLAN 行的附注文本（`concurrency 19 (from flag) · mempal ≤1`）断言到格式化输出，字节渲染归 [E2E · CLI](../e2e/cli.md)。
 - **PLAN 的全局并发出处标注**：human PLAN 行的 `concurrency` 值带取胜层。
    `from flag` / `from config` / `from <provider> default` 三层出处各一条区分力场景，断言到格式化输出。
-  出处不进 `--json` 的 `start` 事件（契约见 [CLI · 运行中的 live 面板](../../../feature/experiments/cli.md#运行中的-live-面板)）。
-- **已了结 attempt 按 verdict 分项**：reducer 不保留笼统的完成数，每一条了结的 attempt 落进 `passed` / `failed` / `errored` / `skipped` 之一（契约见 [CLI · 运行中的 live 面板](../../../feature/experiments/cli.md#运行中的-live-面板)）。
+  出处不进 `--json` 的 `start` 事件（契约见 [CLI · 运行中反馈](../../../feature/experiments/cli.md#运行中反馈)）。
+- **已了结 attempt 按 verdict 分项**：reducer 不保留笼统的完成数，每一条了结的 attempt 落进 `passed` / `failed` / `errored` / `skipped` 之一（契约见 [CLI · 运行中反馈](../../../feature/experiments/cli.md#运行中反馈)）。
 - 断言面：`attempt:complete` 按事件携带的 `verdict` 落项，四值都要有区分力场景（同一批事件里换 verdict，落项跟着变，不是恒落同一项）。`attempt:early-exit` 与 `budget-exhausted` 落 `skipped` 而非 `passed`／`failed`——未跑出 verdict 的了结不冒充收尾结果。
 - 携入结果的 verdict 留在 `reused`、不摊进四项（`plan` 事件带 `reusedFailures` 时四项仍全为零）；`lock-wait` 等到锁时把 `carried` 迁 `reused`、`dispatched` 迁 `queued`，两者都不直接落结局项。
 - 恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped` 在每一个事件之后逐步断言，不只在末尾断言一次。
@@ -398,7 +398,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 相关条目：
 [insandbox-otlp-port-wait-3s-no-retry](../../../../memory/insandbox-otlp-port-wait-3s-no-retry.md)。
 
-- **共享 Run activity 不占 attempt 位**（[Run 级共享准备](../../../feature/experiments/architecture.md#run-级共享准备构建协调的预算)）：
+- **共享 Run activity 不占 attempt 位**（[Run 级共享准备](../../../feature/experiments/architecture.md#coordination协调与-run-级共享准备)）：
 
   - BuildKey 构建与 `agent.artifact.prepare` 在独立构建并发下推进时，attempt 在飞计数与 `maxConcurrency` 槽位不变。
   - live 面板把共享准备显示为运行级 active 行，不占 attempt active 位。

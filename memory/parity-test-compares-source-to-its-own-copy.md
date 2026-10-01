@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: parity-test-compares-source-to-its-own-copy
+title: 设计裁决:「公开 API 够不够用户重建内置报告」由 fixture 能编译过证明,不由输出比对证明
+createdAt: 2026-07-13T14:53:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/parity-test-compares-source-to-its-own-copy.md
+  commit: b66929aff97305dc446afae83772ab8c8ef2d3f6
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
+promotions: []
+history: []
+---
 # 设计裁决:「公开 API 够不够用户重建内置报告」由 fixture 能编译过证明,不由输出比对证明
 
 **裁决**:证明「公开 barrel 导出了用户重建内置报告所需的全部 API」,只需要一份 fixture **能通过 `pnpm run typecheck`**。不写内置报告与其拷贝的输出比对。

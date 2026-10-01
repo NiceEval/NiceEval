@@ -80,6 +80,10 @@ MetricValue 保留 state、value、samples、total、basis、issues 与 refs。p
 earned/possible、USD cost，以及 member/cell/aggregate score 都由 selector 关闭；renderer 只 decode/relabel。Insight 的
 Results 散点图只把已关闭的 USD cost 作为横轴，并把已关闭的 pass rate 或 score 作为纵轴。
 
+普通 score 指标汇总完整的 earned score，独立于 Verdict。`failed + complete` 与完整的零分都计入样本数、
+均值、总分和评分完整性；失败标签仍保留。`partial` 与 `unavailable` 不补零，也不算完整评分样本。
+成功排名另以 `passed + complete` 判断资格，不能用排名资格代替 score 可用性或结果完整性。
+
 ## Source adapter 与交付边界
 
 Node adapter 为 `niceeval query` 和 `niceeval show` 打开短寿只读连接；本机 Insight Host 拥有 generation-bound
@@ -128,3 +132,57 @@ offset 等于 byteLength 时返回空 base64 与 null；超过 byteLength、limi
 `inspection-record-integrity-failure`。carry 与历史 locator 继续读取已发布 origin bytes，不读取外部路径或当前应用文件。
 
 附件继续使用既有 artifacts family、revision 与 bytes content；新 operation 不改变历史附件的持久解释。
+
+## 模型用途与费用读取
+
+`attempt.usage` 在同一 PublicationCutoff 上读取 origin Run 配置及其账本。v3 的非空 modelSlot 必须引用该 origin 配置，错误引用返回 invalid。
+物理贡献按 origin Run、origin Attempt、application、callId 识别，不以用途或模型去重。
+
+configuredModels 为 available bindings 或 not-recorded。bindings 按用途键排序，每项含 modelSlot、model、reasoningEffort、recordedCalls。
+计数读取全部合法封存调用；完整空账本为 0，缺源或 invalid 为 null，不依据预览缺席判断未调用。
+
+modelGroups 含 basis、state、groups、totalGroupCount、groupsTruncated、omittedGroupCount。
+普通 Adapter 的 basis 为 recorded-calls，各组按 modelSlot/provider/model 精确三元组区分，null 排在字符串前。
+每组含 recordedCalls、tokens（inputTotalTokens/outputTokens/totalTokens）和官方 effective costs，完整性与已知小计分别保留。
+
+全部最多 4000 调用参与统计，最多预览 64 组；调用预览的 128 条上限不影响聚合。
+Agent 为 reported-sends 与 physical-call-identity-not-recorded，不把配置模型或 Adapter 名称当作实际物理事实。
+
+judgeUsage 读取同一 origin Attempt 的独立物理调用账本；旧缺源为 unavailable，完整空账本为已知零调用，指标完整性独立于调用集合完整性。
+totalCosts 包含 state、values（currency/value/source）、missingSources，按币种汇总全部应用与 Judge 已知金额。
+两者均完整时为 complete；有缺口且有已知金额（包括明确零）时为 partial，否则 unavailable。不推断应用与 Judge 的合并总调用数。
+Judge 调用、价证、有界预览与摘要的穷尽形状遵守[Judge 读面契约](../../design/judge-physical-usage/plans/plan-1/library.md)。
+
+既有 totals.costs 和 costUSD 仍表示应用费用，不改变历史口径。价格匹配仍按模型字符串，不声称独立 provider/model 定价。
+
+`experiment.get.modelUsage` 复用已选成员的 origin Attempt usage，按 origin 去重，不合并不同历史配置。
+它含 attempts（locator、originRunId、usage）、totalAttemptCount、omittedAttemptCount、unresolvedAttemptCount。
+
+usage 仅含 state、configuredModels、modelGroups、judgeUsage、totalCosts、totals，不重复调用预览。
+最多返回按 originRunId/locator 排序的 64 个 Attempt；未找到的成员单列。Judge 使用不含 calls/priceReceipts 的摘要。
+experiment.get 的最终 JSON 响应上限为 4 MiB；完整 aggregate/cells 保留逐断言证据完整度，因此独立于单 Attempt 用量的 512 KiB 上限。
+最终响应字节预算内保留完整 Attempt 摘要前缀，omittedAttemptCount 反映省略数量；保留摘要中的金额及完整度不变，不以预览重算总量。
+
+
+## 实验总费用与应用完整性
+
+`experiment.get.costSummary` 使用 `scope: "latest-recorded-slots"`，包含 `totalCosts` 与 `coverage`。
+每个 experimentId、evalId、attemptOrdinal 选择最新已发布槽位，排序使用 completedAt、startedAt、runId。
+未重跑槽位保留其最新结果，替代的旧执行不累计；该范围不表示一次 invocation 或全部历史支出，也不读取当前源码删除旧 Eval。
+
+coverage 包含 selectedSlotCount、resolvedSlotCount、originAttemptCount 与 unresolvedSlotCount。
+完整度分为 completeAttemptCount、partialAttemptCount、unavailableAttemptCount。
+后三种完整度计数以各 origin 的 totalCosts.state 为准，合计等于 originAttemptCount。
+resolvedSlotCount 与 unresolvedSlotCount 合计等于 selectedSlotCount。
+
+读取直接承接已选槽位的 originRunId 与 attemptId，在同一 PublicationCutoff 上定位原始账本，不经 locator 历史引用发现。
+按 originRunId 与 attemptId 去重，从全部所选原始账本汇总；失败、错误或复用结果不因 Verdict 被排除。
+无法定位的槽位保留 application 与 judge 缺口，不能将预算错误伪装为缺源。
+
+同币种使用精确十进制相加，不换汇。完整时为总费用，缺项时为已知小计，并保留有序 missingSources。
+聚合先于 modelUsage 的 64 项与字节裁剪；清空明细仍超出响应预算时返回 evidence-budget-exceeded，不删金额或币种。
+Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Attempt 的后续明细不参与客户端求和。
+
+应用 usage family revision 4 的 complete 表示 Adapter 显式确认调用集合完整。
+v1、v2、v3 保留独立历史解码及原金额、原应用 costUSD；总费用对其保留 application 缺口。
+revision 3 仍检查用途引用属于 origin Run 的配置。未声明的新账本也保持缺口；已知零金额不等于未知。

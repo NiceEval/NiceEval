@@ -1,142 +1,192 @@
 ---
-title: "查看运行结果"
+title: "查看运行结果：从总览找到失败原因"
 sidebarTitle: "查看结果"
-description: "在终端用 show 逐层查看结果；在浏览器用 View 审阅，在自动化中用 query 读取 JSON。"
+description: "跑完评估后，用 niceeval show 在终端从总览逐层找到失败的那次运行，查看对话、耗时、用量和文件改动；在浏览器用 view 翻看；脚本和 CI 用 query 读 JSON。"
 ---
 
-每个 Attempt 发布后立即可读，不必等待来源 Run 结束。运行结束后，receipt 中的 `runIds` 也是稳定的读取边界。人在终端用 `niceeval show`，在浏览器用 `niceeval view`。AI、脚本和 CI 用 `niceeval query` 读取 JSON。
+一批评估跑完，终端显示 `FAILED`，12 条里有 3 条没通过。你想知道是哪几条、Agent 在那几次运行里实际说了什么、调用了什么工具、为什么没满足断言。
 
-## 先在终端查看 Overview
+NiceEval 给不同读者准备了三个入口，读的是同一份结果：
+
+| 入口 | 给谁 | 适合 |
+|---|---|---|
+| `niceeval show` | 人，在终端 | 快速找到失败，逐层查看细节 |
+| `niceeval view` | 人，在浏览器 | 翻看完整对话、耗时瀑布图、对比多个 Run |
+| `niceeval query` | AI、脚本和 CI | 读结构化 JSON |
+
+每次 Attempt 一结束，结果就能读到，不必等整批跑完。
+
+## 从总览开始
 
 ```sh
-niceeval show
+pnpm exec niceeval show
 ```
 
-不带 selector 时，`show` 输出当前 PublicationCutoff 的 Overview。它按 Experiment、评估用例和 Attempt 展开汇总，并保留 Verdict、适用的通过率或分数、coverage、缺失项和 issues。Score Eval 也显示 `Verdicts` 与 `Score`；完整分数不能覆盖失败 Verdict。先从这里找出需要继续查看的 Experiment、Run 或 Attempt locator。
+默认总览回答“当前项目还缺哪些结果”：分母是你现在的 Experiment 和评估用例，不是历史上跑过的全部。没问题的 Attempt 默认折叠，让失败和下一条查看命令留在一屏之内。输出类似这样：
 
-Overview 来自项目唯一的 `.niceeval/record.sqlite` 中已发布的结果。即使当前源码或当前安装候选的 identity 已经改变，
-`show` 也会保留每个逻辑 slot 的最新结果，不会把存在的历史显示为 `Observed 0/0`。这表示结果可查看，
-不表示它已通过当前 target 的复用资格检查。
+```text
+Current results
+  Totals
 
-## 缩小到一个 Experiment 或 Run
+  Covered    11/12
+  Gaps       1
+  Verdicts   8 passed; 3 failed; 0 errored; 0 skipped
+  Pass rate  72.73% (partial)
 
-```sh
-niceeval show --experiment <experiment-id>
-niceeval show --run <run-id>
+Experiments
+  Experiment  Covered  Gaps  Pass rate
+  ----------  -------  ----  -----------------
+  my-agent    11/12    1     72.73% (partial)
+
+Attempts · my-agent
+  Eval refund-policy
+  Gap identity-mismatch
+  Previous result @1K1P0VJAPVJ12
+
+  8 passed Attempts hidden
+  See more  niceeval show --experiment my-agent
+
+Next: niceeval exp my-agent --dry
 ```
 
-`--experiment` 显示一个 Experiment 的聚合结果和各评估用例。`--run` 显示一个精确 Run 的成员、判定、分数、coverage 和 usage 摘要；`active` Run 已发布的 Attempt 会出现，尚未发布的位置显示 `pending`。两者都可重复传入多个精确 ID；不能与彼此或 Attempt locator 混用。
+几个值得先看的数：
 
-Run 创建后即可按 ID 查看，不必等待第一条 Attempt 发布。运行中的状态是 `active`，没有最终完成时间；收尾后显示 `completed`、`interrupted` 或 `failed`，并提供该 Run 的完成时间。
+- `Covered` 是当前有可用结果的位置数和计划数。`Gaps` 不为 0 时，说明有些位置还没有结果，或者旧结果已经不适用，例如你改了这条评估用例。缺口下面会写原因和上次的结果入口，旧分数不会被算进当前通过率；这时通过率后面会带 `(partial)`，提醒你它只基于已有结果。
+- `errored` 不为 0 时，先处理它们。`errored` 说明运行本身没跑成，例如应用没启动或接口报错，这些 Attempt 没有得出结论。
+- 计分制评估显示 `Score` 而不是通过率，读法见[通过制与计分制](/zh/tutorials/evaluation-kinds)。
 
-机器读取 `query` 的 `run.get` 时，`run.value.completedAt` 只在 Run 收尾后存在。尚无已发布的历史上下文时，`run.value.context` 也会缺席；不要从当前配置补写它，或把部分 Attempt 的完成时间当成整个 Run 的完成时间。
+要补齐缺口，运行最后一行建议的 `niceeval exp <id> --dry` 看看会跑哪些，再去掉 `--dry` 正式运行。
 
-## 查看一个 Attempt
+看到 `Attempts hidden` 时，用它建议的命令缩小范围；要显示全部 Attempt，加 `--all`。
+
+## 缩小到一个 Experiment 或一次运行
 
 ```sh
-niceeval show @<locator>
+pnpm exec niceeval show --experiment my-agent
+pnpm exec niceeval show --run <run-id>
 ```
 
-Attempt 概览显示身份、结果、判定、分数、Assertion 摘要和各详情 section 的状态。再按问题选择一条已封存的事实：
+`--experiment` 显示一个 Experiment 下每条评估用例的结果。`--run` 显示某一次运行，Run ID 在 `exp` 结束时的 `NEXT` 面板里。两者都可以重复传入多个。
+
+运行还没结束时也可以看：已经完成的 Attempt 会出现，还没完成的显示为 `pending`。
+
+## 查看一次失败的运行
+
+总览和 Experiment 视图里，每个 Attempt 前面都有一个以 `@` 开头的 Attempt 定位符（locator），它在项目里唯一指向这一次运行。复制它：
 
 ```sh
-niceeval show @<locator> --source
-niceeval show @<locator> --execution
-niceeval show @<locator> --timing
-niceeval show @<locator> --usage
-niceeval show @<locator> --diff
+pnpm exec niceeval show @1K1P0VJAPVJ12
 ```
 
-`--source` 查看捕获的 source 和 Assertion 位置。`--execution` 查看有界的对话、工具和命令 outline；要展开一项，请从 outline 复制稳定的 `itemId`、`toolOccurrenceId` 或 `commandId`：
+输出的主要部分类似这样：
 
-```sh
-niceeval show @<locator> --execution --expand <stable-id>
+```text
+Attempt @1K1P0VJAPVJ12 · failed
+  Experiment  my-agent
+  Eval        refund-policy
+  Outcome     completed
+  Verdict     failed
+
+assertions available · 3 entries
+  Assertion   Entry ID  Group
+  调用天气工具  e1        root
+  说明天气     e2        root
+  回答有依据   e3        root
+
+Sections
+  Source      available
+  Execution   available
+  Timing      available
+  Usage       available
+  Diff        not-recorded
+
+Next
+  niceeval show @1K1P0VJAPVJ12 --source
+  niceeval show @1K1P0VJAPVJ12 --execution
+  niceeval show @1K1P0VJAPVJ12 --timing
+  niceeval show @1K1P0VJAPVJ12 --usage
+  niceeval show @1K1P0VJAPVJ12 --diff
 ```
 
-`--timing` 显示活动的顺序和耗时，`--usage` 显示 token、请求和成本总计，`--diff` 显示已捕获的文件变更窗口。详情只读取 Record 已发布的事实；`partial`、`not-recorded` 或 `unavailable` 表示实际可用范围，不能当作零值或失败。
+`Next` 列出了能继续看的方面，按你要回答的问题选：
 
-默认 Overview 会隐藏没有问题的 Attempt，让错误和下一条下钻命令留在一屏内。看到 `Attempts hidden` 时，使用输出建议的 `show --experiment <experiment-id>` 缩小范围；需要显示该范围的全部 Attempt 时再加 `--all`。隐藏只影响终端排版，不表示 Record 缺少结果。
+| 想知道 | 命令 |
+|---|---|
+| Agent 说了什么、调用了哪些工具 | `--execution` |
+| 哪条断言没过，写在源码哪一行 | `--source` |
+| 时间花在了哪一步 | `--timing` |
+| 用了多少 token、花了多少钱 | `--usage` |
+| Agent 改了哪些文件 | `--diff` |
 
-## 从 Show 进入 Assertion 详情
-
-`show @<locator>` 适合先找出 Assertion 名称和 Entry ID，但不展开每项 contribution、measurement 或 Judge rationale。需要解释具体得分或失败原因时，转到结构化 `query`，不要解析 `show` 的终端文本。
-
-先动态发现当前版本支持的 operation ID，再取得该 Attempt 的 Assertion 清单。`discover` 是紧凑目录，不包含 request schema；下面的请求就是 `attempt.get` 的最小形式，可先交给 `query explain` 校验：
+`--execution` 给出对话和工具调用的提纲。要展开其中一项，复制提纲里显示的 ID：
 
 ```sh
-niceeval query discover
+pnpm exec niceeval show @1K1P0VJAPVJ12 --execution --expand <id>
+```
 
-niceeval query run --request - <<'JSON'
+某一项显示 `not-recorded`、`partial` 或 `unavailable`，表示这部分信息没有采集到或不完整，不代表它是零或者失败。例如直连应用不会有文件改动，`diff` 就是 `not-recorded`。
+
+## 判断该改应用还是改断言
+
+`failed` 只说明至少一条断言没满足，不一定说明 Agent 做错了。看完 `--execution` 后分三种情况：
+
+- Agent 的输出确实不符合任务要求：改应用或 prompt。
+- Agent 的输出符合任务要求，断言却拒绝了它，例如正则写得太死：改评估用例。
+- 任务本身写得模糊，说不清 Agent 算不算做对：先把任务和判据写清楚。
+
+不要为了让结果变绿而随意放宽断言。
+
+## 在浏览器里看
+
+```sh
+pnpm exec niceeval view
+pnpm exec niceeval view --run <run-id>
+```
+
+不带参数时打开总览，`--run` 打开指定的一次或几次运行。浏览器里能看到完整对话、工具调用的输入输出和耗时瀑布图。
+
+有新结果发布时，页面会提示刷新，你确认后才会切换，正在看的内容不会突然变掉。`--no-open` 不自动打开浏览器，`--port` 指定端口。
+
+## 看一条断言具体为什么得这个分
+
+`show` 告诉你哪条断言没过。要看 Judge 给出的理由、计分项具体得了几分，用 `query` 读这条断言的详情。先取得这次运行的断言清单：
+
+```sh
+pnpm --silent exec niceeval query run --request - <<'JSON'
 {
   "protocol": "niceeval.query/v1",
-  "operation": {
-    "kind": "attempt.get",
-    "locator": "@<locator>"
-  }
+  "operation": { "kind": "attempt.get", "locator": "@1K1P0VJAPVJ12" }
 }
 JSON
 ```
 
-从返回的 `assertions.entries` 选择一个 `entryId`，再读取这一项：
+从返回的 `assertions.entries` 里选一个 `entryId`，再读它的详情：
 
 ```sh
-niceeval query run --request - <<'JSON'
+pnpm --silent exec niceeval query run --request - <<'JSON'
 {
   "protocol": "niceeval.query/v1",
   "operation": {
     "kind": "attempt.assertion.detail",
-    "locator": "@<locator>",
+    "locator": "@1K1P0VJAPVJ12",
     "entryId": "<entry-id>"
   }
 }
 JSON
 ```
 
-详情中的 contribution 说明这一项获得多少分，evaluation 保存实际测量结果，explanation retention 则说明 Judge rationale 等解释材料是否可用。字段不存在或状态为 `unavailable` 时，按返回的 reason 解释，不能从其它字段猜值。兼容 `ScoreResult` 中，`failed` 保留 `earnedScore` 供审计，但 `creditedScore` 为 `null`；只有 `passed + complete` 才取得可用于成功排名的 credited score。
+详情里的 contribution 是这一项得了多少分，evaluation 是实际测出的结果，Judge 的理由在 explanation 里。某个字段缺失或标为 `unavailable` 时，按返回的 reason 理解，不要从别的字段推测。
 
-## 正确解释完成、判定与分数
+## 让脚本和 CI 读结果
 
-先确认 Attempt 是否形成业务结果，再解释它的质量：
-
-- `errored`：执行链中断，没有形成可评分的业务结论。
-- `failed`：执行完成，但通过制评估的业务断言没有满足。
-- `passed`：通过制评估满足了判定条件。仍需检查 warning、coverage 和证据限制。
-- Score Eval：同样先读取 `passed`／`failed` Verdict，再读取 `Score`、完整度和逐项 contribution。`failed` 且分数完整是合法结果，不能显示成 `passed` 或成功评分；执行中断时只报告 `errored` 和可用的 partial score。
-
-比较结果时使用同一种评估、相同分母和相同证据覆盖。不要把 `unavailable` 当作零分。需要解释一项得失时，固定同一个 Attempt locator，交叉查看 overview、`--execution`、`--source` 与 `attempt.assertion.detail`。
-
-## 在浏览器中审阅
+`query` 只输出 `niceeval.query/v1` 格式的 JSON，不做终端排版。不要解析 `show` 的文字输出，也不要直接读 `.niceeval/` 下的文件，格式可能随版本变化。
 
 ```sh
-niceeval view
-niceeval view --run <run-id>
+pnpm --silent exec niceeval query discover
 ```
 
-View 是给人使用的固定第一方浏览器界面。它不读取项目自定义页面、主题或组件。不带 selector 时，View 打开项目当前 PublicationCutoff 的 Overview；`--run` 选择一个或多个明确 Run。它同样显示 `active` Run 已发布的 Attempt，以及尚未发布 slot 的 `pending`。
+`discover` 列出当前版本支持的全部请求类型，例如列出 Run、读取 Run 摘要、读取 Attempt 详情、trace、diff，以及比较两个 Run。按[CLI 参考](/zh/reference/cli)写好请求后，先用 `query explain --request <file>` 检查，再用 `query run --request <file>` 执行。
 
-可以使用 `--no-open` 保持浏览器不自动打开，或使用 `--port` 选择 loopback port。`--json` 只输出 lifecycle NDJSON；它不输出运行结果。
+在 pnpm 项目里加 `--silent`，否则 pnpm 自己的输出会混进 JSON。
 
-新事实发布后，项目 View 会提示用户确认 refresh；确认后才切换到新的 PublicationCutoff。
-
-## 让机器读取 JSON
-
-```sh
-niceeval query discover
-niceeval query explain --request request.json
-niceeval query run --request request.json
-```
-
-`query` 是给 AI、脚本和 CI 使用的机器入口，只输出 `niceeval.query/v1` 的结构化 JSON，不提供适合人阅读的终端排版。先从 `discover` 返回的紧凑 catalog 确认 operation ID，再按文档中的最小请求构造 request，并用 `explain` 校验。`run` 向 stdout 写一个 `niceeval.query/v1` document。不要解析 View 页面，也不要使用未公开的 Record 文件。
-
-常见读取任务由固定 operation 覆盖：列出 Run、取得 Run summary、读取 Attempt detail、trace、diff、sources、artifacts 或比较两个 Run。查看 [CLI](/zh/reference/cli) 获取完整说明。
-
-## 读取另一份已发布事实
-
-```sh
-cp .niceeval/record.sqlite ./baseline.record.sqlite
-niceeval show --record ./baseline.record.sqlite
-niceeval query explain --record ./baseline.record.sqlite --request request.json
-```
-
-在评估命令完成、相关进程退出后复制 Record。`show` 和 `query` 的 `--record` 接受可搬运的 SQLite Record 副本，并验证格式、数据库完整性和运行事实。
-支持的历史格式在私有副本中自动升级，原件保持不变；未知格式、损坏文件或仍有活动工作的记录会被拒绝。详见[读取历史 Record](/zh/troubleshooting/debugging#读取历史-record)。`view` 只读取当前项目的 `.niceeval/record.sqlite`。
+比较两次运行见[比较两次运行](/zh/tutorials/compare-runs)。

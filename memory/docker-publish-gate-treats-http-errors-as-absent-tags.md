@@ -1,12 +1,15 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: docker-publish-gate-treats-http-errors-as-absent-tags
 title: Docker 发布 gate 将 HTTP 错误误判为版本 tag 不存在
 createdAt: 2026-09-05
-kind:
-  type: problem
-  state: open
+kind: memory
+memoryKind: problem
+state: open
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
 promotions: []
+history: []
 ---
 # Docker 发布 gate 将 HTTP 错误误判为版本 tag 不存在
 

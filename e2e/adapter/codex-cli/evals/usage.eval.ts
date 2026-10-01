@@ -6,7 +6,7 @@
 // ~/.codex/sessions/YYYY/MM/DD/rollout-*-<thread_id>.jsonl——本仓库设计阶段已用真实
 // codex-cli 0.144.1 在本机核对过这个字段确实存在且值就是这次请求实际生效的模型名。
 import { defineEval } from "niceeval";
-import { equals, includes, satisfies } from "niceeval/expect";
+import { greaterThan, equals, includes } from "niceeval/expect";
 
 export default defineEval({
   description:
@@ -19,18 +19,12 @@ export default defineEval({
 
     await t.group("usage 逐轮非空", () => {
       t.check(
-        turn.usage?.inputTokens,
-        satisfies(
-          "usage.inputTokens > 0",
-          (v) => typeof v === "number" && v > 0,
-        ),
+        turn.usage.inputTotalTokens,
+        greaterThan(0),
       );
       t.check(
-        turn.usage?.outputTokens,
-        satisfies(
-          "usage.outputTokens > 0",
-          (v) => typeof v === "number" && v > 0,
-        ),
+        turn.usage.outputTokens,
+        greaterThan(0),
       );
     });
     t.check(turn.message, includes("63"));

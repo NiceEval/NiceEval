@@ -1,3 +1,6 @@
+// @concord-file ne-eval-inspection-assertion-projection
+// @concord-implements docs/feature/inspection/README.md
+// @concord-implements docs/feature/assertions/README.md
 import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../record/attachment/content.ts";
 import type {
@@ -16,7 +19,7 @@ import type { PersistedContentMetadata } from "../record/sqlite/index.ts";
 import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
-import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
+import { INSPECTION_RESULT_BYTE_LIMIT, INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
 import { readJudgeMaterialV2 } from "../assertions/judge-material.ts";
 import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
@@ -98,7 +101,7 @@ export function projectAttemptAssertionDetail(
     check: projectCheck(entry),
     matcher: projectMatcher(entry, agentTurns),
   }));
-  if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
+  if (jsonByteLength(result) > INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT) {
     throw new Error("Assertion detail exceeds its fixed result byte limit");
   }
   return decodeAssertionDetail(result);

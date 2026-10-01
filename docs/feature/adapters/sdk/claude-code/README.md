@@ -53,9 +53,12 @@ secret 走 env var，不写进配置文件。
 Adapter 使用 Claude Code 官方 SDK 同款的双向 stream-json 进程协议取得消息、thinking、工具、usage 和原生 session ID，按 `tool_use.id` / `tool_result.tool_use_id` 配对。
 Skill Tool 调用归一为 `skill.loaded`。
 进程属于 Attempt；多个 send 在同一个原生 session 上写 user frame。`t.newSession()` 创建独立进程与 session，旧 SessionHandle 不会被自动关闭。
+首个 user frame 必须等待官方 `control_request / initialize` 的成功响应，确保原生配置与扩展完成初始化。
 
 Human live 面板只在完整 `tool_use` 已带稳定 `id`、`name` 与 `input` 时显示一次 `tool:` detail。
 每个官方 `result` frame 是对应 user frame 的 terminal barrier；下一次 send 前存在未消费 frame 时，Adapter 以 ambiguous protocol failure 拒绝继续。
+终态 `result.usage` 提供该次 send 的聚合用量，不能与 assistant 消息上的用量重复相加；终态没有用量时才使用消息上的观测。
+
 两轮不同工具不会串用上一轮 context，approval resume 也不重复同一 `tool_use.id`。
 Runner 单独负责 `user:` detail；这些短命文本不进入 Record 或 timeout error。
 

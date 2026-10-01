@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
-test.concurrent("280 MiB 文件归档使用有界内存且源改写后保留原始摘要及字节 [necase_3XFPJ9GFRJ87JAVB]", async () => {
+// @feature docs/feature/adapters/README.md
+test.concurrent("280 MiB 文件归档使用有界内存且源改写后保留原始摘要及字节", async () => {
   await inspectionE2E.case("file-attachments", { artifacts: inspectionCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const block = Buffer.alloc(64 * 1024, 0x61);
     block[block.length - 1] = 10;
@@ -35,7 +36,8 @@ test.concurrent("280 MiB 文件归档使用有界内存且源改写后保留原�
   });
 }, 180_000);
 
-test.concurrent("文件归档失败和取消后保留已接纳附件且 cleanup 仍可归档 [necase_5JAKZ2GBC7K6T4E0]", async () => {
+// @feature docs/feature/adapters/README.md
+test.concurrent("文件归档失败和取消后保留已接纳附件且 cleanup 仍可归档", async () => {
   await inspectionE2E.case("file-attachment-failure", { artifacts: inspectionCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     await writeFile(join(projectRoot, "small.txt"), "retained bytes");
     const run = await niceeval.run(["exp", "stream-failure", "--rerun", "all", "--json"]);
@@ -63,7 +65,8 @@ test.concurrent("文件归档失败和取消后保留已接纳附件且 cleanup 
   });
 }, 60_000);
 
-test.concurrent("Attempt 超时取消流后 cleanup 独立归档诊断材料 [necase_TQG31382KKC9A7W5]", async () => {
+// @feature docs/feature/adapters/README.md
+test.concurrent("Attempt 超时取消流后 cleanup 独立归档诊断材料", async () => {
   await inspectionE2E.case("stream-timeout", { artifacts: inspectionCaseArtifacts() }, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     await writeFile(join(projectRoot, "small.txt"), "timeout diagnostics");
     const run = await niceeval.run(["exp", "stream-timeout", "--rerun", "all", "--json"]);

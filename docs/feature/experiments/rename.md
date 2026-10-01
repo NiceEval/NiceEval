@@ -77,4 +77,4 @@ source Run 与 origin Run 分别校验：选中的 Member 可能引用更早的 
 | accept | 不变 | 人明确选择合格 Attempt 或完整 Run | `reference / accepted` |
 | rename | 改变 | 人明确选择完整 source Run 与当前目标 | `reference / accepted` |
 
-使用路径见[审阅后采用历史结果](use-case/缓存与沿用/迁移错误归属的配置.md)。
+使用路径见[审阅后采用历史结果](use-case/cache-adopt-migrated-config.md)。

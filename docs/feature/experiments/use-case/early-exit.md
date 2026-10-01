@@ -1,0 +1,47 @@
+---
+format: concord.document/v1
+id: early-exit
+title: "`--early-exit`:只想知道能不能做到,不为通过率分布跑满"
+createdAt: 2026-07-21T19:29:34+08:00
+kind: use-case
+feature: docs/feature/experiments/README.md
+---
+
+# `--early-exit`:只想知道能不能做到,不为通过率分布跑满
+
+## 解决什么问题
+
+实验签入 `attempts: 5` 是为了测稳定性——完整通过率分布是这个工具的核心指标,所以 `attempts` 默认跑满。
+但今天的问题不是「稳不稳」,是「改完这版 prompt 后 agent 到底能不能做到」:任何一次通过就足够回答,剩下的轮次纯属重复花钱。
+`--early-exit` 让每条 eval 首次通过后停掉其余轮次,不改签入的实验文件。
+
+## 全流程
+
+1. 带 flag 跑(等价于实验里 `earlyExit: true`,CLI 替换本次运行):
+
+   ```sh
+   niceeval exp compare/bub-e2b --early-exit
+   ```
+
+2. 语义只有一条:**`passed` 触发**。
+   某条 eval 的一个 attempt 通过后,同 eval 还没开跑的其余轮次停止派发;已经在飞的照常跑完并独立发布。未派发 slot 不伪造 Member，Run close 将其 absence reason 冻结为 `early-exit-satisfied`(契约见 [Runner · 调度](../../../runner.md#调度))。
+3. 人读文本下被省略的 ordinal 从 `queued` 进入明确的未启动计数。
+   Live reducer 的计数始终自洽，不留下永久 running。
+   `--json` 不伪造 skipped Attempt、locator 或 Verdict；它发送同一 Reducer 的 Live record，并以末尾 `InvocationReceipt` 表达完成态（见 [CLI · attempts 与首过即停怎样展示](../cli.md#attempts-与首过即停怎样展示)）。
+
+4. 被省略的轮次是已知 Verdict 下主动省下的成本，不是遗失的 Attempt。Run 只在 close 时冻结终态与 absence reasons，不重新发布已有 Attempt。
+5. `errored` 不触发:超时、限流、沙箱挂掉这类瞬态基建错误在下一个 attempt 上完全可能自愈,停掉其余样本等于放弃重试机会。
+   确定性错误由独立的 run 级 fail-fast 止损,与首过即停互不混用。
+
+## 边界
+
+- early-exit 不改变派发节奏,只减少已派发的浪费:`attempts: N` 的多个 attempt 按并发位一起进等待集,能省下的只是还在排队的那些。
+  要「过了就停、没过才跑下一次」的严格串行重试,配实验级 `maxConcurrency: 1`(见 [Runner · 调度](../../../runner.md#调度))。
+- 做通过率对比时别开：分母被截断，pass at k 失真；实验里签入了 `earlyExit: true` 而本次要完整分布时，用 `--no-early-exit` 关回跑满。
+- reuse 的 `passed` 与它组合遵守同一语义：reuse planning 已选择通过结果时，缺失序号不再派发（见 [Reuse planning](../cache.md#coordinatorplanner-与-writer)）。
+- 退出码按 eval 折叠,不按 attempt 折叠:先挂一次、后来某次通过的 eval 不让进程判红(见 [Runner · 退出码](../../../runner.md#退出码))。
+
+## 相关阅读
+
+- [Runner · 调度](../../../runner.md#调度) —— 停止派发、并发与闭合的单源。
+- [CLI · attempts 与首过即停怎样展示](../cli.md#attempts-与首过即停怎样展示) —— 两种输出形态的计数与题目级 `eval` 事件形态。

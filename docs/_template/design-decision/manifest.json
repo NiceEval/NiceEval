@@ -1,5 +1,5 @@
 {
-  "format": "niceeval.docs-template/v1",
+  "format": "concord.templates/v1",
   "applicableKinds": [
     "design"
   ],

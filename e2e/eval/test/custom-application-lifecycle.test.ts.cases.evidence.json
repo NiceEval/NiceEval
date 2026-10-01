@@ -1,0 +1,51 @@
+{
+  "format": "concord.case-evidence-index/v1",
+  "current": {
+    "neref_bd91bca95959879d5b24b9f41a9de275": {
+      "memory/experiment-host-private-requirements.md": {
+        "red": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_8J86YD7X8KK8DRW1-netake_HMC085SVMG15FGPT/red.json",
+          "digest": "sha256:7e2c4cc8f3163f8be89c62b537117f2f9088d2dc8764ba82a449a886cc7a3b82"
+        },
+        "green": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_8J86YD7X8KK8DRW1-netake_HMC085SVMG15FGPT/green.json",
+          "digest": "sha256:313e4792ddcc1598ed2c57ed2f397e4be0a6b4828b08b1064b107cc83e2784a8"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_8J86YD7X8KK8DRW1-netake_HMC085SVMG15FGPT/certificate.json",
+          "digest": "sha256:17f019183e3d9c8268d0420927b07dfe011fb0ef1e9c49a8db253606301d1e33"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_8J86YD7X8KK8DRW1-netake_HMC085SVMG15FGPT/inventory.json",
+          "digest": "sha256:113ddd6afdab653886f8fe9684bacfe7ceb608cde0e7338e78321b72ab182292"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "neref_bd91bca95959879d5b24b9f41a9de275",
+      "memory": "memory/experiment-host-private-requirements.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_31N7XKERFRZ5X3P9-netake_58MATZJ9SEJXHACS/red.json",
+          "digest": "sha256:fdeaf4c728dc3c1dc1d16b723cb44068a64c20d8ee9dd6836ebb7e9360e1410a"
+        },
+        "green": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_31N7XKERFRZ5X3P9-netake_58MATZJ9SEJXHACS/green.json",
+          "digest": "sha256:4e6276984d92fb2a99471af6996f7cccc8484dbd49e1bb8e45fb449f200f4317"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_31N7XKERFRZ5X3P9-netake_58MATZJ9SEJXHACS/certificate.json",
+          "digest": "sha256:976353c36c2fe6d41d5a4fd5c7edbfd027aa8abed0b22d1ee1ca0f9386ec5517"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/custom-application-lifecycle.test.ts.case-evidence/neref_bd91bca95959879d5b24b9f41a9de275/memory_experiment-host-private-requirements.md/nered_31N7XKERFRZ5X3P9-netake_58MATZJ9SEJXHACS/inventory.json",
+          "digest": "sha256:f0cea01d2b49b5f36de1e6290816b695a53b89f76438647cc5fe615ca746e67f"
+        }
+      },
+      "reason": "Refresh public Host lifecycle proof against final eval fixture sources.",
+      "refreshedAtCommit": "0bde4166f53bb3d2b7a3a0e3b8be1530a75ca4fa"
+    }
+  ]
+}

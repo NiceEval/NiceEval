@@ -1,6 +1,7 @@
 import { Cause, Clock, Effect, Fiber, Random, Schema } from "effect";
 import { createHash } from "node:crypto";
-import type { AssertionMaterial, AssertionSnapshotValue, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
+import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
+import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
 import type { ManagedScoreMatchDefinition, ScoreMatch, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./match.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import type { JsonValue } from "../shared/types.ts";
@@ -71,11 +72,12 @@ function primitiveOptions(operation: Operation, input: unknown, images?: Readonl
   if (material.images.some((image) => !images?.has(image.image))) throw new TypeError("LLM material contains an image not captured by this Assertion");
   options.material = material.material;
   const allowed = operation === "score" ? ["rubric", "anchors", "material"] : operation === "classify" ? ["rubric", "choices", "material"] : operation === "extract" ? ["rubric", "maxItems", "material"] : ["rubric", "choices", "items", "material"];
-  if (Object.keys(options).some((key) => !allowed.includes(key)) || allowed.some((key) => !(key in options))) throw new TypeError("Invalid LLM primitive arguments");
+  if (Object.keys(options).some((key) => !allowed.includes(key) && !(operation === "classify" && key === "evidenceIds")) || allowed.some((key) => !(key in options))) throw new TypeError("Invalid LLM primitive arguments");
   return options;
 }
 function validatePrimitiveOptions(operation: Operation, options: Record<string, unknown>): void {
   const rubric = requiredText(options.rubric, "rubric");
+  if (options.evidenceIds !== undefined) validateEvidenceIds(options.evidenceIds);
   if (operation === "score") {
     if (!Array.isArray(options.anchors) || options.anchors.length < 2 || options.anchors.length > 32) throw new TypeError("anchors must contain 2 to 32 entries");
     let previous = -1;
@@ -132,7 +134,11 @@ function chatRequestFor(operation: Operation, input: unknown, profile: ResolvedJ
     const choices = choicesOf(options.choices);
     system.choices = choices;
     const choice = { type: "string", enum: choices };
-    if (operation === "classify") parameters = schemaObject({ choice, rationale: string });
+    if (operation === "classify") {
+      const evidenceIds = options.evidenceIds as readonly string[] | undefined;
+      if (evidenceIds !== undefined) system.evidenceIds = evidenceIds;
+      parameters = schemaObject({ choice, rationale: string, ...(evidenceIds === undefined ? {} : { citations: { type: "array", items: { type: "string", enum: evidenceIds }, uniqueItems: true } }) });
+    }
     else {
       const ids = (options.items as { id: string }[]).map((item) => item.id);
       user.items = options.items;
@@ -199,7 +205,12 @@ function decodeChatOutput<K extends Operation>(operation: K, response: string, o
   let output: unknown;
   if (operation === "score") output = Schema.decodeUnknownSync(scoreSchema, parse)(raw);
   else if (operation === "classify") {
-    const result = Schema.decodeUnknownSync(classifySchema, parse)(raw);
+    const result = options.evidenceIds === undefined ? Schema.decodeUnknownSync(classifySchema, parse)(raw) : Schema.decodeUnknownSync(Schema.Struct({ choice: Schema.String, rationale: Schema.String, citations: Schema.Array(Schema.String) }), parse)(raw);
+    if (options.evidenceIds !== undefined) {
+      const citations = (result as unknown as { citations: readonly string[] }).citations;
+      validateEvidenceIds(citations, true);
+      if (citations.some((id) => !(options.evidenceIds as readonly string[]).includes(id))) throw new TypeError("Unknown evidence citation");
+    }
     if (!choicesOf(options.choices).includes(result.choice)) throw new TypeError("Unknown classification label");
     output = result;
   } else if (operation === "extract") {
@@ -272,6 +283,8 @@ function decodeTypesafeOutput<K extends Exclude<Operation, "extract">>(operation
   return snapshotScoreMatchMaterial({ items: items.map((item, index) => ({ id: item.id, ...decodeChoice(`q${index}`) })) }) as PrimitiveResult<K>;
 }
 
+class JudgeUsageAdmissionError extends Error {}
+
 /** A managed Match contributes one ordinary measurement entry and terminal Content. */
 export function prepareManagedScoreMatch(input: {
   readonly match: ScoreMatch<unknown>;
@@ -279,14 +292,16 @@ export function prepareManagedScoreMatch(input: {
   readonly material: unknown;
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal?: AbortSignal;
-}): MeasurementAssertionRegistration & { readonly terminalEvidence: () => readonly AssertionMaterial[] } {
+  readonly usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry;
+}): MeasurementAssertionRegistration & { readonly terminalEvidence: () => readonly AssertionMaterial[]; readonly actualRetainedBytes: () => number } {
   const { options } = input;
+  let deadlineAt = Infinity;
   const snapshot = snapshotJudgeMaterial(input.material as JudgeMaterial);
   const material = snapshot.material;
   const imageByValue = snapshot.imageByValue;
   const images = snapshot.images;
   const captured = canonical(projectJudgeMaterial(material, imageByValue).json);
-  if (bytes(captured) > options.llm.maxMaterialBytes) throw new TypeError(`ScoreMatch material exceeds ${options.llm.maxMaterialBytes} bytes`);
+  const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }).material;
   const definitionBase = { name: options.name, version: options.version, config: options.canonicalConfig, limits: options.llm };
   const definition = { ...definitionBase, digest: scoreMatchDefinitionDigest(definitionBase) };
   const typesafe = input.judge?.protocol.kind === "typesafe-system-one";
@@ -307,11 +322,22 @@ export function prepareManagedScoreMatch(input: {
     : typesafe
     ? { schemaVersion: 2, protocol: typesafeProtocol, definition, input: captured, calls: calls as TypeSafeAuditCall[], result } as ScoreMatchAuditV2
     : { schemaVersion: 1, protocol: chatProtocol, definition, input: captured, calls: calls as ScoreMatchAuditCall[], result };
+  const envelopeOf = (value: ScoreMatchAuditAny) => {
+    const encoded = canonical(value);
+    const chunks = chunkUtf8(encoded);
+    return {
+      manifest: { schemaVersion: auditVersion, protocol: auditProtocol, byteLength: bytes(encoded), digest: createHash("sha256").update(encoded).digest("hex"), chunkByteLengths: chunks.map(bytes) },
+      content: chunks,
+    };
+  };
+  const auditSize = (value: ScoreMatchAuditAny): number => Math.max(bytes(canonical(value)), bytes(canonical(envelopeOf(value))));
   const latch = (problem: ScoreMatchAuditFailure): ScoreMatchAuditFailure => {
     if (!closed) latched ??= problem;
     return latched ?? problem;
   };
-  if (bytes(canonical(audit())) + terminalReserve > options.llm.maxAuditBytes) throw new TypeError("ScoreMatch audit budget cannot retain the definition, input and terminal result");
+  const canRetainAudit = auditSize(audit()) + terminalReserve * 2 <= options.llm.maxAuditBytes;
+  if (!canRetainAudit) latch(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain the definition, input and terminal result"));
+  else if (bytes(captured) > options.llm.maxMaterialBytes) latch(failure("unavailable", "score-match-material-budget", "ScoreMatch material exceeds its byte budget"));
 
   const invoke = <K extends Operation>(operation: K, raw: PrimitiveInput<K>): Effect.Effect<PrimitiveResult<K>, ScoreMatchLlmFailure> =>
     Effect.suspend(() => {
@@ -343,17 +369,22 @@ export function prepareManagedScoreMatch(input: {
         return reject(failure("unavailable", "judge-capability-unavailable", "TypeSafe Provider supports at most 10 score anchors"));
       }
       if (bytes(prepared.material) > options.llm.maxMaterialBytes) return reject(failure("unavailable", "score-match-material-budget", "LLM step material exceeds its byte budget"));
-      const requestAudit = prepared.requestTemplate ?? prepared.request;
-      const remaining = options.llm.maxAuditBytes - bytes(canonical(audit())) - bytes(canonical(requestAudit)) - 2048 - terminalReserve;
+      const prospective = { ...audit(), calls: [...calls, {
+        ordinal: calls.length + 1, operation, state: "admitted",
+        ...(prepared.requestTemplate === undefined ? { request: prepared.request } : { requestTemplate: prepared.requestTemplate, wireBody: prepared.wireBody }),
+        ...(prepared.mapping === undefined ? {} : { mapping: prepared.mapping }),
+        attempts: [], result: { state: "interrupted" },
+      }] } as ScoreMatchAuditAny;
+      const remaining = options.llm.maxAuditBytes - auditSize(prospective) - terminalReserve * 4;
       const providerResponseCap = profile.protocol.kind === "chat-completions"
         ? Math.min(profile.maxResponseBytes, responseByteCap(profile.protocol.maxOutputTokens))
         : profile.maxResponseBytes;
-      const responseCap = Math.min(providerResponseCap, Math.floor(remaining / 12));
+      const responseCap = Math.min(providerResponseCap, Math.floor(remaining / 25));
       // Successful output can occur only once. Failed transmissions retain bounded
       // metadata. Reserve the worst JSON escaping of that response and its decoded
-      // output, the request, three failed-attempt records, and the terminal record.
-      const reserve = bytes(canonical(requestAudit)) + responseCap * 12 + 2048 + terminalReserve;
-      if (responseCap < 1_024 || bytes(canonical(audit())) + reserve > options.llm.maxAuditBytes) return reject(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain this request and its bounded response"));
+      // output in both the canonical audit and the persisted envelope, including
+      // chunk metadata, three attempt records and the terminal rejection reserve.
+      if (responseCap < 1_024) return reject(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain this request and its bounded response"));
       const apiKey = resolveJudgeCredential(profile);
       if (!apiKey) {
         const source = profile.credential.kind === "environment" ? ` environment ${profile.credential.name}` : " inline credential";
@@ -380,6 +411,12 @@ export function prepareManagedScoreMatch(input: {
           let received: Awaited<ReturnType<typeof requestScoreMatchProvider>>;
           const sent = Effect.tryPromise({
             try: (signal) => {
+              if (signal.aborted) return Promise.reject(new DOMException("Judge request cancelled", "AbortError"));
+              const usage = input.usage?.begin({
+                logicalOrdinal: index + 1, transmissionOrdinal: attempt, operation,
+                requestModel: profile.model, transportProvider: profile.provider,
+              });
+              if (input.usage !== undefined && usage === undefined) return Promise.reject(new JudgeUsageAdmissionError());
               attempts.push({ ordinal: attempt, transport: "attempted", result: { state: "interrupted" } });
               update();
               return requestScoreMatchProvider({
@@ -389,6 +426,8 @@ export function prepareManagedScoreMatch(input: {
                 body: prepared.request,
                 maxBytes: responseCap,
                 signal,
+                ...(usage === undefined ? {} : { usage }),
+                deadlineAt,
               });
             },
             catch: (error) => error,
@@ -398,6 +437,11 @@ export function prepareManagedScoreMatch(input: {
             ? Object.assign(new Error(`HTTP ${outcome.value.status}`), { status: outcome.value.status, headers: outcome.value.headers })
             : outcome.ok ? undefined : outcome.error;
           if (error !== undefined) {
+            if (error instanceof JudgeUsageAdmissionError) {
+              const problem = latch(failure("unavailable", "judge-usage-capacity-exceeded", "Judge usage cannot retain another physical transmission"));
+              callResult = problem; update();
+              return yield* Effect.fail(typedFailure(problem));
+            }
             attempts[attempt - 1] = { ordinal: attempt, transport: "attempted", result: { state: "failed", code: "judge-call-failed", message: errorSummary(error) } };
             update();
             if (isTransientJudgeFailure(error) && attempt < 3) {
@@ -448,6 +492,8 @@ export function prepareManagedScoreMatch(input: {
     batchClassify: (value: PrimitiveInput<"batchClassify">) => invoke("batchClassify", value),
   }) });
   const finish = (output: ScoreMatchResult): MeasurementAssertionEvaluation => {
+    const genuine = latched === undefined && typeof output === "object" && (output.state === "measured" || output.state === "unavailable") ? output : undefined;
+    const explanation = genuine === undefined ? {} : { ...(genuine.rationale === undefined ? {} : { rationale: { state: "available" as const, value: genuine.rationale } }), citations: genuine.citations === undefined ? { state: "unavailable" as const, reason: "not-recorded" as const } : { state: "available" as const, value: [...genuine.citations] } };
     if (latched === undefined && calls.some((call) => call.state !== "admitted" || call.result.state !== "completed")) {
       latch(failure("unavailable", "score-match-incomplete-step", "A necessary LLM step did not complete"));
     }
@@ -458,7 +504,7 @@ export function prepareManagedScoreMatch(input: {
         else {
           result = { state: "measured", value: measurement };
           const rationale = typeof output === "number" ? undefined : output.rationale;
-          return { state: "measured", value: measurement, ...(rationale === undefined ? {} : { detail: { rationale: { state: "available", value: rationale } } }) };
+          return { state: "measured", value: measurement, detail: explanation };
         }
       } else if (output?.state === "unavailable") latch(failure("unavailable", "score-match-unavailable", output.reason));
       else if (output?.state === "errored") latch(failure("errored", output.code, output.message));
@@ -467,13 +513,15 @@ export function prepareManagedScoreMatch(input: {
     const problem = latched!;
     result = problem;
     return problem.state === "unavailable"
-      ? { state: "unavailable", reason: "source-unavailable", detail: { failureDetail: problem.code, failureEvidence: problem.message, rationale: { state: "unavailable", reason: "not-recorded" }, evidence: { state: "unavailable", reason: "not-recorded" }, detail: { state: "unavailable", reason: "not-recorded" }, citations: { state: "unavailable", reason: "not-recorded" } } }
+      ? { state: "unavailable", reason: "source-unavailable", detail: { failureDetail: problem.code, failureEvidence: problem.message, rationale: { state: "unavailable", reason: "not-recorded" }, evidence: { state: "unavailable", reason: "not-recorded" }, detail: { state: "unavailable", reason: "not-recorded" }, citations: { state: "unavailable", reason: "not-recorded" }, ...explanation } }
       : { state: "errored", detail: { code: problem.code, message: problem.message } };
   };
   const evaluate = (): Effect.Effect<MeasurementAssertionEvaluation> => {
-    const callback = Effect.suspend(() => {
+    const callback = Effect.suspend((): Effect.Effect<ScoreMatchResult, unknown> => {
       if (evaluationStarted || closed) return Effect.die(new Error("Managed ScoreMatch may only evaluate once"));
       evaluationStarted = true;
+      deadlineAt = Date.now() + (input.judge?.timeoutMs ?? 180_000);
+      if (latched !== undefined) return Effect.succeed({ state: "unavailable" as const, reason: latched.message });
       return options.score(material, context);
     }).pipe(
       Effect.catchCause((cause) => Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed({ state: "errored" as const, code: "score-match-callback-error", message: errorSummary(Cause.squash(cause)) })),
@@ -488,6 +536,7 @@ export function prepareManagedScoreMatch(input: {
       }),
       Effect.ensuring(Effect.gen(function* () {
         // Stop escaped child calls and await their finalizers before terminal Content.
+        input.usage?.close();
         yield* Fiber.interruptAll([...pending]);
         closed = true;
       })),
@@ -496,22 +545,26 @@ export function prepareManagedScoreMatch(input: {
   };
   return {
     criterion: { kind: "managed-score-measurement", name: options.name, scale: "unit-interval" },
-    subject: { kind: "snapshot", value: Object.freeze({ content: chunkUtf8(captured) }) },
-    retainedBytes: bytes(captured) + options.llm.maxAuditBytes,
+    terminalCriterion: () => canRetainAudit
+      ? { kind: "managed-score-measurement", name: options.name, scale: "unit-interval" }
+      : { kind: "value-match", subject: "explicit-value", matcher: { state: "declared", name: options.name } },
+    subject,
+    retainedBytes: fullAssertionContentByteLength(subject)! + options.llm.maxAuditBytes,
     retainedImageBytes: images.reduce((sum, image) => sum + image.byteLength, 0),
     evidence: Object.freeze(images.map((image) => ({ kind: "judge-image" as const, image: image.image }))),
     evaluate,
     terminalEvidence: () => {
       if (sealed !== undefined) return sealed;
+      input.usage?.close();
       closed = true;
-      const encoded = canonical(audit());
-      const chunks = chunkUtf8(encoded);
-      const envelope = {
-        manifest: { schemaVersion: auditVersion, protocol: auditProtocol, byteLength: bytes(encoded), digest: createHash("sha256").update(encoded).digest("hex"), chunkByteLengths: chunks.map(bytes) },
-        content: chunks,
-      };
-      sealed = Object.freeze([{ kind: "snapshot", value: snapshotScoreMatchMaterial(envelope) as AssertionSnapshotValue }]);
+      const payload = canRetainAudit ? envelopeOf(audit()) : { failure: latched };
+      sealed = Object.freeze([captureFullAssertionSnapshot(payload).material]);
       return sealed;
     },
+    actualRetainedBytes: () => fullAssertionContentByteLength(subject)! + (sealed ?? []).reduce((sum, evidence) => sum + (fullAssertionContentByteLength(evidence) ?? 0), 0),
   };
+}
+
+function validateEvidenceIds(value: unknown, empty = false): asserts value is readonly string[] {
+  if (!Array.isArray(value) || value.length > 16384 || !empty && value.length === 0 || value.some((id) => typeof id !== "string" || id.trim() === "" || bytes(id) > 128 || /[\u0000-\u001f\u007f]/u.test(id)) || new Set(value).size !== value.length) throw new TypeError("Evidence IDs must be unique bounded strings");
 }

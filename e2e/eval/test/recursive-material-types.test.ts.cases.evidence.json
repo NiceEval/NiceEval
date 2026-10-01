@@ -1,0 +1,51 @@
+{
+  "format": "concord.case-evidence-index/v1",
+  "current": {
+    "neref_1ad0a3aad9346b8947d5aa7d2c9ba212": {
+      "memory/readonly-material-recursive-json.md": {
+        "red": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/red.json",
+          "digest": "sha256:c17bd8ed9befb0002f5eda3d18bd459b8f3732cd4e5f75a4eaaec73b20cb6f3a"
+        },
+        "green": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/green.json",
+          "digest": "sha256:7a10425f5f7b5097adabf510c5137e4ab337d6a5d2c7ba90e39e7419a8d04793"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/certificate.json",
+          "digest": "sha256:ef0352cdd68cb660aef413998b5be33dd3715da4aa262e71631089e48cbdf1bf"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_2SJQ2XK9FF7CP788-netake_BDB0H7WXTSEVD2WM/inventory.json",
+          "digest": "sha256:113ddd6afdab653886f8fe9684bacfe7ceb608cde0e7338e78321b72ab182292"
+        }
+      }
+    }
+  },
+  "history": [
+    {
+      "caseId": "neref_1ad0a3aad9346b8947d5aa7d2c9ba212",
+      "memory": "memory/readonly-material-recursive-json.md",
+      "evidence": {
+        "red": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_BP8C0G7JNVAC4FES-netake_886Z0GS22RGYS7Q7/red.json",
+          "digest": "sha256:a30f73d82983a1404b660cd207eb5f557819581cf0f5e3b91445496f1fd3d8c2"
+        },
+        "green": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_BP8C0G7JNVAC4FES-netake_886Z0GS22RGYS7Q7/green.json",
+          "digest": "sha256:b0b2ccbefcf4505e612dd3a9d1040609c04324bf1cfbe83d0b9efdca061eaad9"
+        },
+        "certificate": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_BP8C0G7JNVAC4FES-netake_886Z0GS22RGYS7Q7/certificate.json",
+          "digest": "sha256:eac8b318e30c706f0174a7dd787b924dc9a18891ca5df7d0763c264ed9eec30e"
+        },
+        "inventory": {
+          "path": "e2e/eval/test/recursive-material-types.test.ts.case-evidence/neref_1ad0a3aad9346b8947d5aa7d2c9ba212/memory_readonly-material-recursive-json.md/nered_BP8C0G7JNVAC4FES-netake_886Z0GS22RGYS7Q7/inventory.json",
+          "digest": "sha256:95ae4350830489ec5b3f4a4878f7c255a193b951aa23017bbfed46ec902ea97b"
+        }
+      },
+      "reason": "Refresh recursive JSON public type proof against final eval fixture sources.",
+      "refreshedAtCommit": "0bde4166f53bb3d2b7a3a0e3b8be1530a75ca4fa"
+    }
+  ]
+}

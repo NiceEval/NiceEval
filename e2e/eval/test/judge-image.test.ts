@@ -9,7 +9,8 @@ import { screenshotBytes } from "../fixtures/judge-image.ts";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
-test.concurrent("截图以真实视觉材料参与判分，冻结原图与发送证据可随 Record 复查 [necase_ZK64TS7KYD0CH81W]", async () => {
+// @feature docs/feature/judge/README.md
+test.concurrent("截图以真实视觉材料参与判分，冻结原图与发送证据可随 Record 复查", async () => {
   const requests: string[] = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -106,7 +107,8 @@ test.concurrent("截图以真实视觉材料参与判分，冻结原图与发送
   }
 });
 
-test.concurrent("不支持图片的 Judge 在凭据检查前明确拒绝，封存图片不退化为文字判分 [necase_TB3PWT70ZK9BQWF1]", async () => {
+// @feature docs/feature/judge/README.md
+test.concurrent("不支持图片的 Judge 在凭据检查前明确拒绝，封存图片不退化为文字判分", async () => {
   let requests = 0;
   const server = createServer((_request, response) => { requests += 1; response.writeHead(500); response.end(); });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

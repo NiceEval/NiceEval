@@ -1,6 +1,6 @@
 // owner: docs/engineering/testing/e2e/adapter/openai-compat.md#chat-completion-live
 import { defineEval } from "niceeval";
-import { satisfies, toolMatch } from "niceeval/expect";
+import { greaterThan, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "真实 ChatCompletion 保留强制 function call 的 id/name/arguments 与 usage",
@@ -38,19 +38,7 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      turn.usage?.inputTokens,
-      satisfies(
-        "input token usage is positive",
-        (value) => typeof value === "number" && value > 0,
-      ),
-    );
-    t.check(
-      turn.usage?.outputTokens,
-      satisfies(
-        "output token usage is positive",
-        (value) => typeof value === "number" && value > 0,
-      ),
-    );
+    t.check(turn.usage.inputTotalTokens, greaterThan(0));
+    t.check(turn.usage.outputTokens, greaterThan(0));
   },
 });

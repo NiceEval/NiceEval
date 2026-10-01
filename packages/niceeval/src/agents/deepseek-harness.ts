@@ -93,6 +93,9 @@ function resolveBaseUrl(config?: DeepSeekHarnessConfig): string | undefined {
 }
 
 /** DeepSeek Harness sandbox adapter backed by its one-shot headless profile. */
+// @concord-code ne-adapter-deepseek-harness-agent
+// @concord-implements docs/feature/adapters/README.md
+// @concord-implements docs/feature/adapters/sdk/deepseek-harness/README.md
 export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
   const version = config?.version ?? DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION;
   const plugins = normalizeExactNpmPlugins(config?.plugins, "deepSeekHarnessAgent plugins");

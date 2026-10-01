@@ -1,20 +1,20 @@
 ---
-title: "隐藏测试判分：让判据文件进缓存 fingerprint"
+title: "用隐藏测试判分，改了测试自动重跑"
 sidebarTitle: "隐藏测试判分"
-description: "用 loadText 在模块顶层读入隐藏测试、跑测脚本等判据文件，文件内容进入 fingerprint：改一字节自动重跑，不靠人工 --rerun。"
+description: "用 loadText 读入隐藏测试、跑测脚本等判分文件。NiceEval 会记住文件内容，测试一改，用到它的评估用例下次自动重跑。"
 ---
 
-Sandbox Coding 任务常用一份隐藏测试判分：Agent 改完代码后，评估用例把测试文件写进 Sandbox 执行，
-测试通过就算过。这份测试文件就是判分标准本体——改了它，等于换了一道题，旧结果不能再采信。
+Coding 任务常用一份隐藏测试来判分。Agent 改完代码后，评估用例才把测试文件写进 Sandbox 执行，测试通过就算过。Agent 工作时看不到这份测试，也就没法针对它投机。
 
-用 `loadText` 读它，NiceEval 会把文件内容算进这条评估用例的 fingerprint：
-文件改一字节，下次运行这条评估用例自动重跑，其它评估用例照常复用缓存。
-用 `fs.readFile` 自己读拿到的内容一样，但 NiceEval 不知道这次读取发生过——
-改了测试文件，缓存照常命中，你看到的是拿旧测试判出来的旧结论。
+这份测试文件就是判分标准。你改了它，等于换了一道题，旧结果就不该再算数。
 
-## 步骤
+用 `loadText` 读它，NiceEval 会记下文件内容，把它算作这条评估用例的输入。文件改一个字节，下次运行时这条评估用例自动重跑，其它评估用例照常沿用旧结果。
 
-1. 判据文件与评估用例一起放进仓库：
+如果用 `fs.readFile` 自己读，拿到的内容一样，但 NiceEval 不知道这次读取。你改了测试文件，它仍然沿用旧结果，你看到的是用旧测试判出来的旧结论。
+
+## 用 loadText 读入判分文件
+
+1. 把判分文件和评估用例一起放进仓库，不要放进给 Agent 的起始项目里：
 
    ```text
    evals/
@@ -25,7 +25,7 @@ Sandbox Coding 任务常用一份隐藏测试判分：Agent 改完代码后，�
        tests/run-tests.sh               # 跑测脚本
    ```
 
-2. 在 `.eval.ts` 的**模块顶层**读入：
+2. 在 `.eval.ts` 的**模块顶层**读入。NiceEval 在运行前就要知道判分文件的内容，才能决定这条评估用例要不要重跑：
 
    ```typescript
    import { defineEval } from "niceeval";
@@ -42,7 +42,7 @@ Sandbox Coding 任务常用一份隐藏测试判分：Agent 改完代码后，�
    路径写项目根相对的字符串也可以：`loadText("evals/fixtures/react-datepicker/pr-6058/tests/run-tests.sh")`。
    `loadText` 直接收 `URL` 对象，不需要 import `node:url`。
 
-3. 在 `test(t)` 里写进 Sandbox 并执行：
+3. 在 `test(t)` 里，等 Agent 做完再把测试写进 Sandbox 执行：
 
    ```typescript
    export default defineEval({
@@ -56,15 +56,22 @@ Sandbox Coding 任务常用一份隐藏测试判分：Agent 改完代码后，�
    });
    ```
 
-   对 Terminal-Bench 一类仓库任务，构建给 Agent 的初始环境时只放公开 fixture，不把隐藏测试或 runner 放进镜像、工作目录或 prompt。等 `t.send(...)` 返回后，再由评估侧把模块顶层 `loadText` 得到的原始隐藏文件上传进 Sandbox，执行原始 runner，并同时检查预期结果和防泄漏探针。这样 hidden 文件既参与 fingerprint，又不会提前暴露给被测 Agent。
+   Terminal-Bench 这类仓库任务也是同样的做法。给 Agent 准备起始环境时只放公开的 Fixture，不把隐藏测试或跑测脚本放进镜像、工作目录或 prompt。等 `t.send(...)` 返回后，再把模块顶层 `loadText` 读到的原始文件上传进 Sandbox，执行原始的跑测脚本，同时检查预期结果和防泄漏的检查脚本。这样改了隐藏文件会触发重跑，Agent 工作时也看不到它。
 
-改一下 `datepicker_test.test.tsx` 再跑同一条命令，只有这条评估用例重跑，验证生效。
+## 确认改了测试会重跑
 
-## 注意
+改一下 `datepicker_test.test.tsx`，先预览一次运行计划：
 
-- **`loadText` 必须写在模块顶层。** 缓存判断发生在运行之前，写进 `test(t)` 里运行期才读就来不及了，
-  NiceEval 会直接报错并提示挪到顶层。
-- **读 Agent 的产物用 `t.sandbox`，不用 `loadText`。** Sandbox 里 Agent 跑出来的文件是本次运行的证据，
-  每次都不同，不属于 fingerprint。用 `await t.sandbox.readText(path)` 读取，再把返回的字符串交给 `t.check`。
-- 判据是结构化数据（case 对照表）时用 `loadYaml` / `loadJson`，
-  见[数据驱动测试](/zh/tutorials/dataset-fanout)。
+```sh
+pnpm exec niceeval exp <experiment-id> --dry
+```
+
+这条评估用例应该显示 `execute`，其它没受影响的显示 `reuse`。确认后去掉 `--dry` 正式运行，跑完用 `pnpm exec niceeval show` 在终端看结果，或用 `pnpm exec niceeval view` 在浏览器里看。计划的读法见[修改后只重跑受影响的评估](/zh/tutorials/rerun-and-cache)。
+
+改了测试却显示 `reuse` 时，先检查这个文件是不是用 `fs.readFile` 读的。
+
+## 常见错误
+
+- **`loadText` 必须写在模块顶层。** 要不要重跑在运行开始前就决定了，写在 `test(t)` 里到运行时才读就来不及了。NiceEval 会直接报错，提示你挪到顶层。
+- **读 Agent 改出来的文件用 `t.sandbox`，不用 `loadText`。** Sandbox 里的文件是这次运行的结果，每次都不同，不该决定要不要重跑。用 `await t.sandbox.readText(path)` 读取，再把字符串交给 `t.check`。
+- 判分标准是结构化数据（例如用例对照表）时，用 `loadYaml` / `loadJson`，见[数据驱动测试](/zh/tutorials/dataset-fanout)。

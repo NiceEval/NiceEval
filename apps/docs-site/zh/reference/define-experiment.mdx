@@ -1,0 +1,251 @@
+---
+title: "defineExperiment：实验配置"
+sidebarTitle: "defineExperiment"
+description: "defineExperiment 的实验字段、类型与默认行为参考。"
+---
+
+Experiment 决定对着谁跑，包括被测 Agent、模型和运行条件。它与评估用例分开，同一批用例可以用于比较不同配置。完整写法见[编写实验](/zh/tutorials/write-experiment)。
+
+```ts
+// experiments/local.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "../agents/web-agent.ts";
+
+export default defineExperiment({
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+});
+```
+
+## Experiment 字段
+
+{/* GENERATED:BEGIN experiment-fields */}
+
+{/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
+
+#### `models`
+
+```ts
+models?: Readonly<Record<string, ModelSlotSelection>>;
+```
+
+为自定义 Adapter 的各个具名模型槽选择模型；不能与单模型简写同时使用。
+
+#### `description`
+
+```ts
+description?: string;
+```
+
+一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。
+
+#### `agent`
+
+```ts
+agent?: Agent;
+```
+
+对话 Adapter 的简写；`agent` 与 `adapter` 必须且只能提供一个。
+
+#### `adapter`
+
+```ts
+adapter?: Adapter;
+```
+
+本实验使用的 Adapter 实现。
+
+#### `model`
+
+```ts
+model?: string;
+```
+
+单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。
+
+#### `reasoningEffort`
+
+```ts
+reasoningEffort?: string;
+```
+
+模型推理努力程度(如 "low"/"medium"/"high",取值由具体模型/adapter 决定);省略=用 agent 原生默认。经 ctx.reasoningEffort 透给 adapter 与 eval。
+
+#### `judgeRuntime`
+
+```ts
+judgeRuntime?: JudgeSelection;
+```
+
+本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
+rubric 由 Match 拥有，材料与消费阈值由 Assertion 提供。各字段按
+Experiment → Eval → Config → 内置默认值解析。
+
+#### `flags`
+
+```ts
+flags?: globalThis.Record<string, FlagValue>;
+```
+
+实验条件(A/B 里的 feature flag),由实验文件声明;必须是扁平标量对象
+ (仅字符串、有限数字或布尔值，defineExperiment 解析时校验),经 ctx.flags 透传给 adapter、
+ t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。
+
+#### `labels`
+
+```ts
+labels?: globalThis.Record<string, string | number>;
+```
+
+报告归类标注:实验在各对比轴上的坐标(如 `{ line: "codex", memory: "mempal" }`)。
+值域 string | number(解析时校验)。与 `flags` 的分界是「会不会改变 attempt 里发生的事」:
+labels 不透传 ctx / t(agent 和 eval 看不见)、不参与可比性配置(改它不作废已有结果),
+只原样投影进快照的 `ExperimentRunInfo.labels` 供报告维度(`label()` / `numericLabel()`)
+分组。`line` 键被默认报告识别:组内任一实验声明了它,散点按线归类并连线。
+见 docs/feature/experiments/library.md「labels」。
+
+#### `attempts`
+
+```ts
+attempts?: number;
+```
+
+同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--attempts` 覆盖时默认 1。
+
+#### `earlyExit`
+
+```ts
+earlyExit?: boolean;
+```
+
+一次重复(attempts &gt; 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`attempts` 跑满、测完整通过率),
+ 显式打开用于「只想知道能不能过」的省钱场景。
+
+#### `evals`
+
+```ts
+evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
+```
+
+这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的
+只读 `EvalDescriptor`,不暴露路径 / 执行字段);省略等价于 `"*"`。谓词对本次 invocation 的
+候选 eval 各求值一次,解析结果作为内存中的 `selectedEvalIds` 计划——不是运行时反复调用的过滤器
+(见 docs/feature/eval/library.md「EvalDescriptor」、docs/feature/experiments/library.md
+「evals:遍历发现结果,自定义选择」)。
+
+#### `timeoutMs`
+
+```ts
+timeoutMs?: number;
+```
+
+覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这个实验生效。
+
+#### `sandbox`
+
+```ts
+sandbox?: SandboxLayer;
+```
+
+本实验贡献的 Sandbox 声明层。它与每条选中 Eval 的同名字段逐配对链接；
+每个配对恰好一方提供 template-bearing layer。
+
+#### `sandboxCache`
+
+```ts
+sandboxCache?: SandboxCacheConfig;
+```
+
+Host 的执行缓存策略；与 Sandbox 声明层不同，此字段不参与身份计算。
+
+#### `plugins`
+
+```ts
+plugins?: readonly PluginInstance<"experiment">[];
+```
+
+本实验显式声明的 Plugin 实例列表，由 `defineExperiment()` 规范化。
+
+#### `sandboxReuse`
+
+```ts
+sandboxReuse?: boolean;
+```
+
+同一 Run 内复用沙箱；这种运行与历史携带双向隔离。
+
+#### `sharedState`
+
+```ts
+sharedState?: SharedStateConfig;
+```
+
+声明本 Experiment 需要独占的共享外部状态。相同 key 的 Invocation 在同一项目
+Coordination 域内从 Experiment/Sandbox setup 前一直互斥到 Sandbox teardown、
+provider finalizer 与 Experiment teardown 全部完成；等待者不会先创建 Sandbox，
+取得租约后继续自己的 plan。它不是状态存储、事务或跨机器锁。
+
+#### `budget`
+
+```ts
+budget?: number;
+```
+
+本实验的估算花费上限(USD)。调度器累计已完成 attempt 的 `estimatedCostUSD`；该值由
+model、token usage 与 runtime/config pricing table 计算，与 Provider / Adapter 回报的
+observed `usage.costUSD` 独立，后者不驱动 budget。估算到顶后跳过这个实验剩下未起飞的
+attempt 并上报一次 `run:budgetExceeded`（已在飞的 attempt 仍会跑完）。
+
+#### `maxConcurrency`
+
+```ts
+maxConcurrency?: number;
+```
+
+本 Invocation 内本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
+仍按全局并发(CLI / env / config / 沙箱默认)跑。用于串行化有共享状态的实验
+(如跨 eval 累积记忆:`maxConcurrency: 1` 保证 attempt 按 eval 顺序一个个跑),
+或给撞 provider 限额的实验单独降速。名额与 attempt 同生命周期:从沙箱创建前一直握到
+teardown 与沙箱销毁完成才归还,中途任何等待(含 turn 重试退避)都不松手——
+`maxConcurrency: 1` 因此是严格的临界区,不会被同实验的下一个 attempt 提前闯入。
+它不跨 Invocation；跨 Invocation 的共享外部状态请声明 `sharedState`。
+
+#### `classifyFailure`
+
+```ts
+classifyFailure?: AttemptFailureClassifier;
+```
+
+本实验的失败分类器:识别以第三方错误形态浮出的自家共享基建死因(对自家隧道 host 的拒连
+一类),返回 `undefined` 表示「不认识,交给后续链路」。本实验任意 per-attempt 阶段的失败
+都会问到它;send 失败链上它排在 adapter 的 `classifySendFailure` 之前——按自家坐标过滤的
+特异性高于协议通用形状,两者同时认领时空间轴才赢得下来。分类器要快、纯、不抛错(抛错按
+`undefined` 回落并被吞掉);只声明决策轴与 `reason` 词,重试与落闸策略归执行体。
+见 docs/feature/error-classification/library.md「实验 / eval 作者:声明死因的波及范围」。
+
+#### `setup`
+
+```ts
+setup?: ExperimentHook;
+```
+
+实验级生命周期钩子对的 setup 侧:整场至多一次、宿主机侧,管「每实验一份、所有 attempt
+共享」的宿主机资源(隧道、mock server、license 租约)。本实验第一个通过派发许可的
+attempt 触发(memoized,并发 attempt 等同一个结果;全部结果被 carry 携入时不执行)。
+setup 不返回值;产物写模块级变量,`teardown` 与同文件 agent / sandbox 钩子从闭包读,
+runner 不做值的中介。setup 抛错 → 本实验所有 Attempt 形成 `errored` Verdict
+(code `"experiment-setup-failed"`、phase `"experiment.setup"`),同批其它实验不受影响。
+函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
+见 docs/feature/experiments/architecture.md「实验级生命周期」。
+
+#### `teardown`
+
+```ts
+teardown?: ExperimentHook;
+```
+
+实验级生命周期钩子对的 teardown 侧:本实验全部 attempt 收尾后执行(运行被中断也执行),
+当且仅当 setup 时点走到过——setup 抛错不豁免(半初始化现场同样要扫尾,teardown 对可能
+未赋值的闭包变量做防御),未声明 setup 不影响触发;一个 attempt 都不派发则跳过。
+抛错或超 30s 清理上限只记运行级 diagnostic(`experiment-teardown-failed`),不改判定。
+
+{/* GENERATED:END experiment-fields */}

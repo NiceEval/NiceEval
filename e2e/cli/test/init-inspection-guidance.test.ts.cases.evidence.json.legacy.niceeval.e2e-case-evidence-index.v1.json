@@ -1,0 +1,25 @@
+{
+  "format": "niceeval.e2e-case-evidence-index/v1",
+  "current": {
+    "necase_3HDDG0091KDYCM47": {
+      "memory/init-inspection-guidance-drift.md": {
+        "red": {
+          "path": "e2e/cli/test/init-inspection-guidance.test.ts.case-evidence/necase_3HDDG0091KDYCM47/memory_init-inspection-guidance-drift.md/nered_NTN8SG3AXHQED7AQ-netake_NMAQ3YBXZ4ARFFA1/red.json",
+          "digest": "sha256:cc1a28add73a37c75bea94a194a29cbcd18fc2278f5e0e8328407d29619ff0a6"
+        },
+        "green": {
+          "path": "e2e/cli/test/init-inspection-guidance.test.ts.case-evidence/necase_3HDDG0091KDYCM47/memory_init-inspection-guidance-drift.md/nered_NTN8SG3AXHQED7AQ-netake_NMAQ3YBXZ4ARFFA1/green.json",
+          "digest": "sha256:e3ac42123fb47a9267b9c0eb8ed99754c75f6f813f61202711eb509b3516211d"
+        },
+        "certificate": {
+          "path": "e2e/cli/test/init-inspection-guidance.test.ts.case-evidence/necase_3HDDG0091KDYCM47/memory_init-inspection-guidance-drift.md/nered_NTN8SG3AXHQED7AQ-netake_NMAQ3YBXZ4ARFFA1/certificate.json",
+          "digest": "sha256:9c052c47aa088bd469223dcce2640dbdbb30d748b7cac4050bde3f34d85b710d"
+        },
+        "inventory": {
+          "path": "e2e/cli/test/init-inspection-guidance.test.ts.case-evidence/necase_3HDDG0091KDYCM47/memory_init-inspection-guidance-drift.md/nered_NTN8SG3AXHQED7AQ-netake_NMAQ3YBXZ4ARFFA1/inventory.json",
+          "digest": "sha256:2a27eef325ecbb29e9e43fede031f4c523d67c2ff9d767d8335489dd31dfd275"
+        }
+      }
+    }
+  }
+}

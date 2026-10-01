@@ -54,7 +54,7 @@ compare/claude-opus-4.1
 
 ## 研究取舍
 
-[Ori Eval](../../../research/assertion-api-dx/ori-eval.md) 用 `candidateModels` 与 Bun `test.each()` 快速生成 model matrix，证明了共享测试体的作者价值。
+[Ori Eval](../../../research/assertion-api-dx/ori-eval/README.md) 用 `candidateModels` 与 Bun `test.each()` 快速生成 model matrix，证明了共享测试体的作者价值。
 NiceEval 不采用数组位置或运行时 model catalog 当 Experiment identity，而是要求每个成员有可 review 的 key。
 
 这个形状也沿用 NiceEval 已有的 [Eval keyed-record fan-out](../../../feature/eval/library.md#测试集从输入数组生成多条-eval) 经验。

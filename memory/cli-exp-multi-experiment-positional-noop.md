@@ -1,3 +1,33 @@
+---
+format: concord.document/v1
+id: cli-exp-multi-experiment-positional-noop
+title: "`niceeval exp <a> <b>` 不会跑两个实验,第二个 positional 被当成 eval 过滤器"
+createdAt: 2026-07-11T18:52:06+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/cli-exp-multi-experiment-positional-noop.md
+  commit: 7114c5fc404aa72ea9a228a3c7b98050e53c4ca8
+kind: memory
+memoryKind: problem
+state: resolved
+epoch: 0
+evidenceRequirement: concord.native-reliability/v1
+promotions: []
+history: []
+resolution:
+  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
+  at: 2026-09-14T15:00:25.173Z
+  epoch: 0
+  kind: fixed
+  evidenceLevel: attested
+  attestation:
+    statement: "- 已修:`docs-site/{,zh/}example/claude-code-codex-{skill,plugin}.mdx` 里的示例命令(原来的"
+    proof: []
+    source:
+      path: memory/cli-exp-multi-experiment-positional-noop.md
+      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
+      digest: sha256:0e965a17928cc2fd41728b1169d892399343193d97994876f9fc1a6d847bd90a
+---
 # `niceeval exp <a> <b>` 不会跑两个实验,第二个 positional 被当成 eval 过滤器
 
 ## 现象

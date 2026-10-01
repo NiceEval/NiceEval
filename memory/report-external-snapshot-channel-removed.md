@@ -1,3 +1,19 @@
+---
+format: concord.document/v1
+id: report-external-snapshot-channel-removed
+title: External snapshot 宿主注入通道删除，外部数据走 import 冻结
+createdAt: 2026-07-29T15:56:20+08:00
+createdAtSource:
+  kind: first-recorded
+  path: memory/report-external-snapshot-channel-removed.md
+  commit: 8c7c88454f4e2622e7a8eb7a8c74f8797f3155c8
+kind: memory
+memoryKind: decision
+state: captured
+epoch: 0
+promotions: []
+history: []
+---
 # External snapshot 宿主注入通道删除，外部数据走 import 冻结
 
 - **裁决**（2026-07-29）：删除报告的 External snapshot 宿主注入通道——

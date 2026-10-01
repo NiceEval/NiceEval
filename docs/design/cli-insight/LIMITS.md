@@ -17,6 +17,6 @@
 
 ## 候选清单
 
-- [PLAN-1](PLAN-1/README.md)：历史 Report / Page 作者树。
-- [PLAN-2](PLAN-2/README.md)：历史 Analysis、show 与 Insight 组合。
-- [PLAN-3](PLAN-3/README.md)：已选的 fixed Inspection operations、query 与 runtime View。
+- [PLAN-1](plans/plan-1/README.md)：历史 Report / Page 作者树。
+- [PLAN-2](plans/plan-2/README.md)：历史 Analysis、show 与 Insight 组合。
+- [PLAN-3](plans/plan-3/README.md)：已选的 fixed Inspection operations、query 与 runtime View。

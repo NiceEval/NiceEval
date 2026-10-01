@@ -1,12 +1,14 @@
 ---
-format: niceeval.memory/v1
+format: concord.document/v1
 id: e2e-case-relations-are-runner-owned
 title: E2E relations are owned by runner-collected cases
 createdAt: 2026-08-28
-kind:
-  type: decision
-  state: adopted
+kind: memory
+memoryKind: decision
+state: current
+epoch: 0
 promotions: []
+history: []
 ---
 ## Decision
 

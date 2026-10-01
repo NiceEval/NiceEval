@@ -1,7 +1,9 @@
 ---
-format: niceeval.docs-node/v1
+format: concord.document/v1
+id: error-assistance
+title: 错误助手
+createdAt: 2026-09-20T22:07:36+08:00
 kind: feature
-relations: {}
 ---
 
 # 错误助手

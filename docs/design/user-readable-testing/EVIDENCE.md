@@ -1,6 +1,6 @@
 # 现状与历史证据
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md)
 
 本页记载本次决策审阅过的测试结构、代表性实现和历史提交。
 数字用于说明规模与结构，不作为质量分数。
@@ -66,7 +66,7 @@ Runner 测试文档按粗粒度`覆盖类别`组织，无法替代具体结果 o
 [测试总纲](../../engineering/testing/README.md)与 [Inspection 与 Insight E2E](../../engineering/testing/e2e/inspection.md)把真实 text / HTML 设为 E2E 的唯一验收面。
 [`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 输出断言。
 
-[Report 读面 DSL](PLAN-2/README.md) 曾试图统一结构识别、evidence 生命周期和公共 verifier。
+[Report 读面 DSL](plans/plan-2/README.md) 曾试图统一结构识别、evidence 生命周期和公共 verifier。
 该抽象已随 PLAN-2 留在 Design；选定方案只提取机械 parser 与 browser 工具，并把领域 expected 留在原生测试。
 浏览器审阅仍遵守 [Insight](../../feature/insight/README.md)，场景 Repo 仍遵守 E2E 自治，两者不需要一套新的产品对象模型才能成立。
 

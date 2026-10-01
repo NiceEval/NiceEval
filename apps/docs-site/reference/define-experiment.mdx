@@ -1,0 +1,22 @@
+---
+title: "defineExperiment: Experiment Configuration"
+sidebarTitle: "defineExperiment"
+description: "Reference for defineExperiment fields, types, and defaults."
+---
+
+An Experiment selects the Agent, model, and run conditions. Keep it separate from Evals to compare configurations with the same cases. See [Write an Experiment](/tutorials/write-experiment).
+
+```ts
+// experiments/local.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "../agents/web-agent.ts";
+
+export default defineExperiment({
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+});
+```
+
+## Experiment fields
+
+{/* GENERATED:BEGIN experiment-fields */}
+{/* GENERATED:END experiment-fields */}

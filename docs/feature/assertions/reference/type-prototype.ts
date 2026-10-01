@@ -234,17 +234,20 @@ interface FactualityMaterial { readonly input: string; readonly output: string; 
 interface FaithfulnessMaterial { readonly input: string; readonly output: string; readonly context: string | readonly string[] }
 interface InstructionFollowingMaterial { readonly instructions: readonly string[]; readonly output: string }
 interface PairwisePreferenceMaterial { readonly instructions: string; readonly output: string; readonly reference: string }
-interface CloseQAMaterial { readonly input: string; readonly output: string; readonly context: string | readonly string[] }
+declare const materialContextBrand: unique symbol;
+interface MaterialMatch<in C, out T> { readonly kind: "material"; readonly [materialContextBrand]: (ctx: C) => void; readonly value?: T }
+declare function defineMaterialMatch<C, T>(spec: { name: string; read(ctx: C): { state: "complete"; items: readonly { id: string; value: T }[] }; match: BooleanMatch<T, T> }): MaterialMatch<C, T>;
 
 interface JudgePresetScope<Handle> {
   factuality(material: FactualityMaterial, options?: JudgePresetOptions): Handle;
   faithfulness(material: FaithfulnessMaterial, options?: JudgePresetOptions): Handle;
   instructionFollowing(material: InstructionFollowingMaterial, options?: JudgePresetOptions): Handle;
   pairwisePreference(material: PairwisePreferenceMaterial, options?: JudgePresetOptions): Handle;
-  closeQA(material: CloseQAMaterial, options?: JudgePresetOptions): Handle;
+  closeQA<T>(selector: MaterialMatch<unknown, T>, question: string, options?: JudgePresetOptions): Handle;
 }
 
 interface PassScope extends JudgePresetScope<PassMeasurementHandle> {
+  check<T>(selector: MaterialMatch<unknown, T>): PassBooleanHandle<void>;
   judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): PassMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
@@ -284,6 +287,7 @@ interface PassScope extends JudgePresetScope<PassMeasurementHandle> {
 }
 
 interface ScoreScope extends JudgePresetScope<ScoreMeasurementHandle> {
+  check<T>(selector: MaterialMatch<unknown, T>): ScoreBooleanHandle<void>;
   judge<V>(value: Subject<V>, definition: ScoreMatch<NoInfer<V>>): ScoreMeasurementHandle;
   check<V extends number | readonly unknown[]>(
     value: NumericSubject<V>,
@@ -398,6 +402,7 @@ declare const hasId: BooleanMatch<unknown, { readonly id: string }>;
 declare const isTrue: BooleanMatch<boolean, true>;
 declare const eventsAreValid: BooleanMatch<readonly StreamEvent[]>;
 declare const quality: ScoreMatch<string>;
+declare const textMatch: BooleanMatch<string, string>;
 declare const judgeMaterial: {
   readonly task: string;
   readonly reply: string;
@@ -448,7 +453,7 @@ async function positiveAuthoringShapes(): Promise<void> {
   passTurn.notCalledTool("rm").label("未删除");
   passTurn.toolOrder([toolMatch("read"), toolMatch("write")]).label("先读后写");
   passSession.toolOrder([toolMatch("read"), toolMatch("write")]).label("会话顺序");
-  pass.closeQA({ input: "首都？", output: reply, context: "法国首都是巴黎。" }).gate(1);
+  pass.closeQA(defineMaterialMatch({ name: "replies", read: () => ({ state: "complete", items: [{ id: "reply", value: reply }] }), match: textMatch }), "全部发言是否指出法国首都？").gate(1);
   passSession.faithfulness({ input: "首都？", output: reply, context: ["法国首都是巴黎。"] });
   passTurn.factuality({ input: "首都？", output: reply, expected: "巴黎" });
 

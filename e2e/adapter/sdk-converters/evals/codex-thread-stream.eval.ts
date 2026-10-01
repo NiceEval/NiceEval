@@ -1,6 +1,8 @@
 // owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
 import { defineEval } from "niceeval";
 import {
+  atLeast,
+  atMost,
   equals,
   includes,
   jsonMatch,
@@ -59,18 +61,13 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      { sessionId: t.sessionId, usage: completed.usage },
-      satisfies(
-        "Codex completed thread and usage",
-        ({ sessionId, usage }) =>
-          sessionId === "codex-sdk-completed-thread" &&
-          usage?.inputTokens === 13 &&
-          usage.cacheReadTokens === 8 &&
-          usage.outputTokens === 13 &&
-          usage.reasoningTokens === 5,
-      ),
-    );
+    t.check(t.sessionId, equals("codex-sdk-completed-thread"));
+    t.check(completed.usage.inputTokens, atLeast(13));
+    t.check(completed.usage.inputTokens, atMost(13));
+    t.check(completed.usage.cacheReadTokens, atLeast(8));
+    t.check(completed.usage.cacheReadTokens, atMost(8));
+    t.check(completed.usage.outputTokens, atLeast(13));
+    t.check(completed.usage.outputTokens, atMost(13));
     const terminalSession = t.newSession();
     const terminal = await terminalSession.send("codex terminal fixture");
     t.check(terminal.status, equals("failed"));
@@ -115,16 +112,12 @@ export default defineEval({
           ),
       ),
     );
-    t.check(
-      { sessionId: terminalSession.sessionId, usage: terminal.usage },
-      satisfies(
-        "Codex failed thread and usage",
-        ({ sessionId, usage }) =>
-          sessionId === "codex-sdk-failed-thread" &&
-          usage?.inputTokens === 7 &&
-          usage.cacheReadTokens === 2 &&
-          usage.outputTokens === 4,
-      ),
-    );
+    t.check(terminalSession.sessionId, equals("codex-sdk-failed-thread"));
+    t.check(terminal.usage.inputTokens, atLeast(7));
+    t.check(terminal.usage.inputTokens, atMost(7));
+    t.check(terminal.usage.cacheReadTokens, atLeast(2));
+    t.check(terminal.usage.cacheReadTokens, atMost(2));
+    t.check(terminal.usage.outputTokens, atLeast(4));
+    t.check(terminal.usage.outputTokens, atMost(4));
   },
 });

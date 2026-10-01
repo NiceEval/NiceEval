@@ -1,3 +1,14 @@
+---
+format: concord.document/v1
+id: benchmark
+title: Phase Timings 与安装基准
+createdAt: 2026-07-12T19:14:04+08:00
+createdAtSource:
+  kind: first-recorded
+  path: docs/engineering/benchmark/README.md
+  commit: 695cbaf358f8296fe46dd94c9e3d416b04862d00
+kind: engineering
+---
 # Phase Timings 与安装基准
 
 本机制回答两个工程问题：一次 Attempt 慢在哪个阶段，以及不同 Sandbox provider / Agent adapter 的安装速度和成功率怎样比较。持久事实使用 owner-local named RecordAttachment；`bench/` 是不写 Record 的本地工程工具。
@@ -44,6 +55,8 @@ niceeval query run --request ./timing-comparison.request.json
 query 与 View 只得到 operation result 和其分母。它们看不到 RecordReader、文件路径或 Content 路径，也不能在读取后重新打开 Attachment。OTel span 仍由 telemetry RecordAttachment 拥有；固定 operation 可以按 correlation identity 组合已请求的事实，但不把其中一项改成另一项的持久真源。
 
 ## `bench/` 本地工具
+
+仓库里还没有 `bench/` 目录，下文命令在它落地前不能运行；本节只定义它的目标形状。
 
 安装基准是仓库内的优化工具，不是 NiceEval 项目、Unit 或 CI 门禁。它直接调用 Runner 的单 Attempt 引擎，以同形内存 timing 值打印结果，但不创建 Record：
 
