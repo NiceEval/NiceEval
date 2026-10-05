@@ -29,13 +29,13 @@
     "@effect/platform-node": "4.0.0-rc.112",
     "effect": "4.0.0-rc.112",
     "ignore": "7.0.10",
-    "tar-stream": "^3.1.7",
+    "tar-stream": "^3.2.1",
     "yaml": "^2.9.1",
     "concord-sdlc": "file:../../vendor/concord/concord-sdlc-0.10.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/tar-stream": "^3.1.3",
+    "@types/tar-stream": "^3.1.5",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   }
