@@ -38,7 +38,7 @@
     "@types/node": "^24.0.0",
     "concurrently": "^10.0.5",
     "husky": "^9.1.7",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "nx": "23.2.1",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
