@@ -29,12 +29,12 @@
     "@effect/platform-node": "4.0.0-rc.112",
     "effect": "4.0.0-rc.112",
     "ignore": "7.0.10",
-    "tar-stream": "^3.2.0",
+    "tar-stream": "^3.2.2",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
-    "@types/tar-stream": "^3.1.4",
+    "@types/tar-stream": "^3.1.5",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   }
