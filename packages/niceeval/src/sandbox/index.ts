@@ -15,6 +15,8 @@ export {
 } from "./layer.ts";
 export { incusSandbox } from "./incus.ts";
 export { openSandbox } from "./opensandbox.ts";
+export { instaboxSandbox } from "./instabox.ts";
+export type { InstaboxSandboxOptions } from "./instabox.ts";
 export type { OpenSandboxOptions } from "./opensandbox.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
 export {

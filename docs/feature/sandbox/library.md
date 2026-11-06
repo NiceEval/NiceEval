@@ -516,3 +516,31 @@ rootfs 缓存不保存进程、卷或 tmpfs。捕获前发现新增挂载或已�
 镜像必须以 root 启动 execd，并提供 Bash 和 Git。`user` 控制命令与 Agent 的身份，HOME、USER、LOGNAME 从该用户的 `/etc/passwd` entry 取得；调用方可显式替换这些变量。
 
 `codexAgent` 与 `claudeCodeAgent` 使用双向受管进程；镜像必须提供 Node.js 24。服务接入验收必须证明销毁成功响应代表实例及其进程已经终止；仅受理异步删除不能作为回收确认。该要求按服务行为验证，不按 runtime 名称判断。
+
+
+## Instabox
+
+`instaboxSandbox()` 用固定 snapshot ID 声明一个 template-bearing layer。每条 Attempt 从 snapshot 创建独立 Machine；起点不在运行中构建。
+
+```ts
+interface InstaboxSandboxOptions {
+  readonly snapshotId: string;
+  readonly lifetimeMs: number;
+  readonly resources?: { readonly vcpus: number; readonly memMiB: number };
+  readonly pathPrepend?: readonly string[];
+}
+
+instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
+```
+
+`snapshotId` 必须是 `sn_` 开头的具体 ID，不接受名称。`lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。资源默认固定为 4 vCPU、8192 MiB；显式 vCPU 与内存配置由账户配额校验。
+
+宿主设置 `INSTABOX_API_KEY`，并安装可选依赖 `ssh2@1.17.0`。服务地址固定为 `https://api.instabox.sh`。Key 与临时 SSH token 只保存在运行时内存，不进入公开配置、身份、命令事实或 Sandbox。创建关闭 Vault 与 Org Secrets 自动注入。
+
+Snapshot 必须提供 Linux x64 GNU 系统、Bash、Git、Node.js 24 或更新版本，以及允许免密 sudo 的非 root 登录用户。工作目录为 `/data/home/workspace`，文件和命令默认使用 snapshot 的登录身份；单条命令只额外支持 `user: "root"`。`pathPrepend` 按声明顺序作用于所有受管命令。平台和工具在 Machine ready 后检查，失败立即回收。
+
+该 Provider 的实例仅属于一条 Attempt。不支持留存、复用、before snapshot 缓存或 Nested Docker requirement；before 正常执行。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制，超时或取消在确认整台 Machine 删除后才拒绝返回。
+
+Snapshot 由项目的 Instabox 原生构建脚本管理，必须等到 `ready` 才写入配置。它保存系统文件和 `/data`，不保存进程；基础 snapshot 不应含 Agent 登录凭据。起点属于其 org，不能假定跨账户可见。OCI 导入会叠加 Instabox 系统文件，生成的 snapshot 与原 Docker image 是不同 Sandbox 起点。
+
+公共入口、隔离文件读写、原生 argv、流式输出、双向 stdin、取消后的资源终态与 snapshot 保留共同组成验收路径。真实服务未验证的能力不能由模拟通过替代。

@@ -20,6 +20,7 @@ Coding Agent 要在一个能随意改文件、跑命令的环境里工作，而�
 | Incus VM | Agent 需要运行 Docker 或 Compose，并拥有独立内核 | 管理员部署的 Incus 环境、可信镜像与 Provider 描述文件 |
 | Vercel Sandbox | 需要云端隔离、更多资源或更稳定的环境 | Vercel token 或 OIDC 配置 |
 | E2B | 需要大量并行，或者想直接用现成的 Agent template | E2B 账号和 `e2b auth login` |
+| Instabox | 从固定 snapshot 启动独立云端 Linux 机器 | Instabox API key、允许关闭自动暂停的计划和已准备的 snapshot |
 | OpenSandbox | 通过已有服务管理远端容器 | OpenSandbox 服务入口、API key 和镜像 |
 
 在 Experiment 的 `sandbox` 字段里选一个：
@@ -47,6 +48,7 @@ Provider 的 SDK 不随 NiceEval 一起安装。用哪个就装哪个，用不�
 | `vercelSandbox({ snapshotId })` | `pnpm add @vercel/sandbox` |
 | `e2bSandbox({ template })` | `pnpm add e2b` |
 | `openSandbox({ image, targetPlatform, lifetimeMs })` | `pnpm add @alibaba-group/opensandbox@1.1.1` |
+| `instaboxSandbox({ snapshotId, lifetimeMs })` | `pnpm add ssh2@1.17.0` |
 
 漏装时，创建 Sandbox 的那一刻会报错并给出安装命令，例如 `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`。照着装好再运行即可。
 
@@ -86,6 +88,28 @@ Docker、Kubernetes 等 runtime 由 OpenSandbox 服务端选择，NiceEval 无�
 用 `sandboxCache: { before: "bypass" }` 或 `--sandbox-before-cache bypass` 排障时，准备步骤会重新执行，并跳过缓存读取与发布。快照请求发出后若失败，当前 Attempt 会终止，已完成的准备步骤不会在该 Attempt 自动重跑。
 
 接入服务时，需要验证销毁成功响应代表实例及其进程已停止。仅受理异步删除的服务不能满足这项要求；填写 runtime 名称无法替代验证。
+
+### Instabox：从 snapshot 启动
+
+在宿主的 `.env` 设置 `INSTABOX_API_KEY`，然后选择已就绪的具体 snapshot ID：
+
+```ts
+import { instaboxSandbox } from "niceeval/sandbox";
+
+const sandbox = instaboxSandbox({
+  snapshotId: "sn_your_snapshot_id",
+  lifetimeMs: 60 * 60_000,
+  resources: { vcpus: 4, memMiB: 8192 },
+});
+```
+
+Snapshot 需要 Linux x64 GNU 环境、Bash、Git、Node.js 24 或更新版本，以及可免密 sudo 的非 root 登录用户。默认工作目录是 `/data/home/workspace`。稳定依赖在构建 snapshot 时准备；服务启动和 Agent 鉴权在运行时处理，避免把登录凭据保存到 snapshot。
+
+每条 Attempt 创建独立 Machine，完成后删除；基础 snapshot 保留。`lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，至少覆盖 Attempt 剩余时限加 30 秒。它控制失联后的自动删除，正常收尾会提前删除。命令取消或超时也会删除整台机器。
+
+此 Provider 不支持保留现场、跨 Attempt 复用或 before 快照缓存。SSH 连接需要宿主能够访问 Instabox gateway，HTTP API key 和 SSH token 都不会写入机器。创建会关闭 Vault 和 Org Secrets 自动注入。
+
+Snapshot 构建步骤见[预制 Sandbox](/zh/tutorials/prebuilt-sandbox)。
 
 ### Docker Compose：`workspaceService` 指定主 Sandbox
 

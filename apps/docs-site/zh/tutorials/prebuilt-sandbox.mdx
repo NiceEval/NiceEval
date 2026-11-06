@@ -7,12 +7,13 @@ description: "把系统包、Agent CLI 和大缓存做进 Docker 镜像、Vercel
 
 每个 Attempt 都从同一个起点开始。系统包、Agent CLI、编译好的二进制、大模型缓存这类内容稳定、体积大，每次都一样，与其每个 Attempt 重装一遍，不如在跑评估之前做进预制环境，让 Attempt 直接从装好的环境启动。
 
-三种 Provider 引用预制环境的写法一致：
+各 Provider 用自己的字段引用预制环境：
 
 ```ts
 dockerSandbox({ source: { type: "image", image: "my-evals:node24" } })
 vercelSandbox({ snapshotId: "snap_abc123" })
 e2bSandbox({ template: "my-evals" })
+instaboxSandbox({ snapshotId: "sn_your_snapshot_id", lifetimeMs: 60 * 60_000 })
 ```
 
 NiceEval 只读取构建结果的 ID，不提供跨 Provider 的构建命令。Docker 镜像、Vercel 快照和 E2B template 的凭据、构建方式、发布和过期规则各不相同，构建脚本用 Provider 自己的官方工具维护，最后把 ID 或名字写进 Experiment。
@@ -187,6 +188,22 @@ sandbox: vercelSandbox({ snapshotId: "snap_xxx" })
 ```
 
 Vercel 快照不能像 E2B 那样公开发布。快照 ID 受创建它的 Team/Project 权限控制，同一个项目的成员可以复用，其他人要在自己的 Vercel Project 里重新拍一份。NiceEval 项目自己验证过、永不过期的快照是 `snap_7sIjfs71xfmVly0WEUTGhTBoMGeL`，但它不能跨账号使用。
+
+### Instabox：保存准备好的机器
+
+用 Instabox 原生 CLI 准备一台只含稳定依赖的机器。确认 Node.js 为 24 或更新版本、Git 和 Bash 可用，并以能免密 sudo 的非 root 用户执行命令。准备完成后停止机器并保存快照：
+
+```bash
+instabox stop eval-builder
+instabox snapshot save eval-builder --name eval-node24-r1
+instabox snapshot ls
+```
+
+从列表取得具体的 `sn_...` ID，等快照就绪后写进 `instaboxSandbox({ snapshotId, lifetimeMs })`。每次重建使用新 ID；不要把会重新指向其它内容的名字填进 `snapshotId`。
+
+快照包含系统文件和 `/data` 下的 HOME、工作目录，因此构建机器不要登录 Claude、Codex、GitHub 或其它账户。运行中的服务不会被快照保存，需在 `.before()` 或 Agent 初始化时启动。快照按所属 org 共享，创建机器与删除机器不会删除基础快照。
+
+`instabox snapshot import` 也能导入 registry 中的 OCI 镜像，但它会保留 Instabox 的系统组件。导入后的快照需要独立验证，不能把它当作与原 Docker 镜像相同的评估环境。
 
 ## 运行时 checkpoint
 

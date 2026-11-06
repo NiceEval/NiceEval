@@ -602,3 +602,24 @@ OpenSandbox Snapshot 删除不保证回收 Kubernetes registry blobs；provider 
 ### 验收
 
 通过安装后 CLI 和真实 OpenSandbox 服务验证：冷路径 replay、另一次 Invocation 的 hit、改变 action 内容后的 miss、bypass 真执行，以及两个 clone 的写入隔离。删除上游 snapshot 或破坏 manifest 必须降级到干净 Base；捕获后的 action 不能因降级执行两次。还须验证 root release、取消和失败后无本轮活跃 Sandbox/Job，以及 UserDatabase 从前一版本迁移后原 provider cache 仍可读。运行无需付费模型。
+
+
+## Instabox snapshot Provider
+
+`instabox.ts` 拥有纯配置校验、template identity 和 Provider plan；`instabox/` 拥有 HTTPS 协议解码、Machine 资源、SSH 命令与文件传输。Runner 继续只使用统一 Provider 契约，不按 Instabox 名称分支。
+
+固定服务 origin、snapshot ID、Provider revision、Linux x64 GNU 平台、显式寿命、规范化资源和 PATH 前缀组成 identity。Machine ID、创建幂等键、SSH token 与 API key 不参与 identity；不同 snapshot ID 保守地视为不同 Sandbox 起点，不声称内容等价。配置求值不访问网络。
+
+`materialize` 先验证 snapshot 的具体 ID 与 ready 状态，再以唯一幂等键创建 Machine。请求禁止自动 Vault 或 Org Secrets 注入，明确设置 delete deadline、资源与禁用自动暂停。收费计划必须允许这些设置；拒绝不能降级为可能暂停的机器。创建返回 operation 后，立刻登记资源回收，再等待 operation succeeded 与运行就绪。创建响应失联时只用相同幂等键重取受理结果，不发起第二次逻辑创建。无法取得身份时报告无法确认回收，服务端 delete deadline 是最后上界。
+
+每个 Machine 的 Scope 拥有一次删除职责。失败、取消与正常退出均调用 DELETE，附带确认 ID 和稳定删除幂等键，等待 operation succeeded。已有 operation 冲突时等待其终态后再删除；404 表示资源已不存在。删除失败保持未回收状态并传播错误，不能先标记成功。Snapshot 不由 Attempt Scope 拥有。
+
+HTTPS API 返回值在边界通过 Schema 解码；错误只交付 HTTP 状态、服务错误 code，不转交可能回显凭据的响应正文。默认请求有有界传输超时，资源等待由 Attempt deadline 或显式 lifetime 限制。回收使用独立有界时限，不继承已取消的 Attempt signal。
+
+SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每个执行连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
+
+普通命令的前台进程结束后关闭自身管道并提交退出码，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。双向进程通过 SSH channel 写 stdin 与发送 EOF。连接异常、退出码缺失、命令超时或取消均退休并删除整台 Machine，等待确认后再 settle。正常退出只关闭连接。外层 Scope 最终删除实例，包含其余后代进程。
+
+文件使用原生 HTTP bytes 接口，目录传输复用既有收集和下载能力。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。before cache、reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力。
+
+验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。
