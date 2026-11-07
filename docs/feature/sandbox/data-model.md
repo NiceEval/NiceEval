@@ -22,6 +22,7 @@
 | generation | INTEGER UNIQUE NOT NULL CHECK > 0 | 全库单调分配，取值为已分配的最大值 + 1 |
 | snapshot_name | TEXT UNIQUE NOT NULL | `niceeval-<artifact_id>`，用于结果不确定时的精确查询 |
 | snapshot_id | TEXT NULL | Provider 返回的 locator；Ready 之前为空 |
+| requested_at | INTEGER NULL | 发出 snapshot 请求之前写入，Unix 毫秒；判断查不到是否可信 |
 | state | TEXT NOT NULL CHECK IN ('preparing', 'ready', 'deleting', 'deleted') | 生命周期 |
 | lease_token | TEXT NULL | `preparing` / `deleting` 行的 [lease](../../concepts.md#lease) token |
 | lease_until | INTEGER NULL | lease 到期时间，Unix 毫秒 |
@@ -62,10 +63,11 @@
 | 续期 | `state = 'preparing'`、`lease_token` 相同且 `lease_until >= now` 时延长 lease；否则不写入，调用方失去 lease |
 | 接管 | 比较旧 `lease_token` 与已过期的 `lease_until`，换上新 token 与新 lease |
 | 发布 | 校验 lease 与 generation、写 `snapshot_id` 与 `ready`、插入 `run` hold、把同 scope 更小的 ready 改为 `deleting` |
+| 请求前 | 以当前 lease 写入 `requested_at` |
 | 请求结果不确定 | 以当前 lease 把 `preparing` 改为 `deleting`，`snapshot_id` 留空，清空 lease |
 | 交接 | 插入 `sandbox` hold；依赖该 artifact 的 Planned attempts 都已交接时删除对应 `run` hold |
 | 删除领取 | `state = 'deleting'`，lease 为空或已过期，且没有 `sandbox` hold 与未过期的 `run` hold，写入新 token 与 lease |
-| 删除结算 | 以领取 token 改为 `deleted` 并清空 lease；失败或 `Pending` 时只清空 lease |
+| 删除结算 | 以领取 token 改为 `deleted` 并清空 lease；失败、`Pending`，或没有 `snapshot_id` 且未过 `requested_at + snapshotSettleMs` 时只清空 lease |
 
 ### 建立
 

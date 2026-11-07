@@ -35,6 +35,8 @@ interface BeforeCacheSnapshotDriver<Plan> {
   };
   /** snapshot Ready 后源实例是否仍可继续执行命令。为 true 时一条 miss 链可在同一个 staging 上连续推进。 */
   readonly sourceUsableAfterSnapshot: boolean;
+  /** 发出 snapshot 请求后，服务端对象最晚多久可以按名称查到；取 driver 等待 Ready 的超时上限。 */
+  readonly snapshotSettleMs: number;
   /** 只读：把声明解析成不可变 Base 与账号域。不得创建或修改远端资源。 */
   readonly resolveBase: (
     plan: Plan,
@@ -223,7 +225,7 @@ replacement scope = hash(provider, execution domain, baseReference,
 
 ### 结果不确定的请求
 
-`createSnapshot` 返回错误时，远端可能已经创建、或稍后才创建一份名为 `niceeval-<artifactId>` 的 snapshot。core 在同一事务把该行改为 `deleting`、`snapshot_id` 留空，节点结算为 `degraded(snapshot-uncertain)`。这份登记让它不会变成来历不明的快照（OPS-7）：回收时按名称查询再删除。
+core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`createSnapshot` 返回错误时，远端可能已经创建、或稍后才创建一份名为 `niceeval-<artifactId>` 的 snapshot。core 在同一事务把该行改为 `deleting`、`snapshot_id` 留空，节点结算为 `degraded(snapshot-uncertain)`。这份登记让它不会变成来历不明的快照（OPS-7）：回收时按名称查询再删除。
 
 ## 回收
 
@@ -239,7 +241,7 @@ replacement scope = hash(provider, execution domain, baseReference,
 **删除。** 每个使用某 `(provider, execution_domain_id)` 的 Run 在结束时处理一次该 domain 的 `deleting` 行，总数受 Run 取消约束。删除者先在一个写事务中领取：lease 为空或已过期、且没有 `sandbox` hold 与未过期的 `run` hold 时，写入自己的 token 与 lease。领取后：
 
 - 有 `snapshot_id`：`deleteSnapshot`；`deleted` 或 `absent` 都以同一 token 改为 `deleted`。
-- 没有 `snapshot_id`：先 `findSnapshot(snapshot_name)`。`Ready` 时删除；`Absent` 时改为 `deleted`；`Pending` 时放弃 lease，留到下次。
+- 没有 `snapshot_id`：先 `findSnapshot(snapshot_name)`。`Ready` 时删除；`Pending` 时放弃 lease，留到下次。`Absent` 只有在 `now ≥ requested_at + snapshotSettleMs` 之后才改为 `deleted`：在此之前查不到，不能排除对象稍后才出现，只放弃 lease。
 
 删除失败时只放弃 lease，下次再领取。用户声明的 Base template 与 snapshot 永不由 NiceEval 删除。
 
