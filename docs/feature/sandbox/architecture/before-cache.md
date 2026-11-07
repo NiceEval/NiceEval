@@ -96,6 +96,8 @@ interface AttemptBeforeCache {
 
 ```typescript
 interface BeforeCachePreparer<Plan> {
+  /** 节点发布后 staging 是否还能接着执行下一个 action；为 true 时 Runner 把它交给一个子节点，不新建实例。 */
+  readonly continuesStaging: boolean;
   /** 只读；可以为解析不可变 Base 做认证后的网络请求，不得创建或修改资源。 */
   readonly eligibility: (
     plan: Plan,
@@ -178,7 +180,7 @@ lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的�
 
 action 成功后 capture 失败时不得再执行该 action。当前容器仍完整时，它可以继续 uncached；已无法证明完整时，Attempt 失败。任何部分恢复或部分 capture 都不会冒充 hit，也不会形成循环 cache retry。
 
-Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 author action 在 staging 中失败时节点才是 `failed`，依赖它的配对在派发前失败。其余不能发布的情形都让节点 `degraded`：目标配对从链上最深的可用祖先开始，其余 eligible action 在 Attempt 内真实执行。远端 Provider 的结算表见 [远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)；Incus 的边界见 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md)。
+远端 snapshot Provider 的 Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 author action 在 staging 中失败时节点才是 `failed`，依赖它的配对在派发前失败。其余不能发布的情形都让节点 `degraded`：目标配对从链上最深的可用祖先开始，其余 eligible action 在 Attempt 内真实执行。远端 Provider 的结算表见 [远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)；Incus 保留 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md) 规定的 fail-closed 边界：它的 VM、disk 与 artifact 归属由 Incus repository 判定，账本或 publication 不能证明一致时节点 `failed`。
 
 取消只回收当前 private staging 与 Attempt 资源，不回滚已经完成验证并发布的 immutable Before cache artifact。下一次 Invocation 仍从最深 verified prefix 继续：取消时正在执行或尚未发布的 action 必须重新执行；已经发布的祖先 action 不得因取消而从 Base 重新执行。某个中间 action 的 canonical input、fingerprint、依赖或顺序变化时，它之前未变化的最长 verified prefix 继续命中，从该 action 起的变化层与全部后缀重新执行和发布。
 

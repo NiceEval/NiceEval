@@ -22,7 +22,7 @@ BeforeCacheKey、能力分类与降级的通用规则在 [Before cache](before-c
 
 ## 协议归 core，Provider 只交原语
 
-账本、lease 与接管、artifact 标记的写入与校验、挂载与敏感字节检查、quiesce、consumer 回退和回收对三个 Provider 完全相同，由 core 实现一次（[T-6](../../../taste.md#t-6)）。Provider 只交出 `BeforeCacheSnapshotDriver`。driver 不声明自己是谁：账本的 `provider` 列取 Provider module 的 `id`，新增一个远端 Provider 不需要改 core 的类型或账本 schema（[T-3](../../../taste.md#t-3)）。core 用 `remoteSnapshotPreparer(driver)` 把它变成 [`BeforeCachePreparer`](before-cache.md#provider-能力)：
+账本、lease 与接管、artifact 标记的写入与校验、挂载与敏感字节检查、quiesce、consumer 回退和回收对三个 Provider 完全相同，由 core 实现一次（[T-6](../../../taste.md#t-6)）。Provider 只交出 `BeforeCacheSnapshotDriver`。driver 不声明自己是谁：账本的 `provider` 列取 Provider module 的 `id`，新增一个远端 Provider 不需要改 core 的类型或账本 schema（[T-3](../../../taste.md#t-3)）。core 用 `remoteSnapshotPreparer(driver)` 把它变成（`continuesStaging` 取 driver 的 `sourceUsableAfterSnapshot`） [`BeforeCachePreparer`](before-cache.md#provider-能力)：
 
 ```typescript
 interface BeforeCacheSnapshotDriver<Plan> {
