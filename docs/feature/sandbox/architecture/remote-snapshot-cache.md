@@ -188,7 +188,9 @@ type BeforeCacheStart =
 
 ## Sandbox 复用
 
-声明 `sandboxReuse: true` 的配对照常进入准备图，artifact 只在复用池创建实例时消费一次。复用实例承接的第一条 Attempt 报告 `hit`；同一实例上的后续 Attempt 真实执行全部 before，由作者写下的探测保持便宜（见 [Sandbox 复用](../library/reuse.md)）。实例不会因为缓存命中被替换，workdir 之外的状态与有意保留的后台服务按复用契约延续。复用池按配对终端节点的 BeforeCacheKey 分组（没有可用节点时记为无前缀）：池里每个实例从同一个 artifact 创建，准备链不同的配对不进同一个池。复用实例的 Provider baseline 就是从 artifact 恢复后的状态，Attempt 之间的 reset 回到这里。三个 Provider 中只有 E2B 支持 Sandbox 复用；OpenSandbox 与 Instabox 在规划时拒绝 `sandboxReuse: true`。
+声明 `sandboxReuse: true` 的配对照常进入准备图，artifact 只在复用池创建实例时消费一次。复用实例承接的第一条 Attempt 报告 `hit`；同一实例上的后续 Attempt 真实执行全部 before，由作者写下的探测保持便宜（见 [Sandbox 复用](../library/reuse.md)）。实例不会因为缓存命中被替换，workdir 之外的状态与有意保留的后台服务按复用契约延续。
+
+复用池按配对终端节点的 BeforeCacheKey 分组（没有可用节点时记为无前缀）：池里每个实例从同一个 artifact 创建，准备链不同的配对不进同一个池。复用实例的 Provider baseline 就是从 artifact 恢复后的状态，Attempt 之间的 reset 回到这里。三个 Provider 中只有 E2B 支持 Sandbox 复用；OpenSandbox 与 Instabox 在规划时拒绝 `sandboxReuse: true`。
 
 ## 发布与竞争
 
