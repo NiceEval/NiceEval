@@ -88,7 +88,7 @@ coverage/revisions 验证成功后，才提交 `ArtifactIntent` 并原子发布 
 capture 或 publication acceptance unknown 时，按 intent 和 Provider inventory 对账，不重发。没有 committed
 intent 的 template/volume 是 orphan；committed 后 identity 或双向 metadata 漂移的对象进入 quarantine。两者都
 不能让 warm lookup 命中。clean failure 可以从最深 committed ancestor 或 base 重新执行 prepare；unknown、漂移或无法删除 orphan
-一律 fail closed。quota 满只给出结构化 fallback 或失败，不隐式 GC 或删除未归属对象。
+让准备节点 `degraded`，配对改从更浅的前缀真实执行，对象由 doctor 与 `gc incus` 处理。字节准入不足同样让节点 `degraded`，不隐式 GC 或删除未归属对象。
 
 普通 Attempt 不发布 `sandboxState.dockerData`。
 Provider 只对完整、可验证的 prepared Sandbox artifact 声明缓存资格。

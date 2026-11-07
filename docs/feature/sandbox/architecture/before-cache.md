@@ -171,7 +171,7 @@ type BeforeCacheDegradedReason =
   | "snapshot-rejected" | "snapshot-uncertain" | "lease-lost";
 ```
 
-`lookup`、`materializeFrom` 与 `capture` 返回 `Degraded` 时节点结算为 `degraded`；返回错误时节点结算为 `failed`。Runner 只看这个结果，不按 Provider 名称或错误的 cause 区分。consumer 的 `materializeFrom` 自己处理回退，Base 也创建失败时返回错误，Attempt 按普通实例创建失败处理。远端 snapshot preparer 把它能识别的全部缓存故障映射为 `Degraded`；Incus 按自己的 fail-closed 边界返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
+`lookup`、`materializeFrom` 与 `capture` 返回 `Degraded` 时节点结算为 `degraded`；返回错误时节点结算为 `failed`。Runner 只看这个结果，不按 Provider 名称或错误的 cause 区分。consumer 的 `materializeFrom` 自己处理回退，Base 也创建失败时返回错误，Attempt 按普通实例创建失败处理。preparer 把它能识别的全部缓存故障映射为 `Degraded`，只有 author action 失败与无法继续执行的基础设施故障返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
 
 Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 Instabox 只交出 `BeforeCacheSnapshotDriver`，由 core 的 `remoteSnapshotPreparer(driver)` 实现，见 [远端 snapshot Before cache](remote-snapshot-cache.md#协议归-coreprovider-只交原语)。
 
@@ -228,7 +228,7 @@ lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的�
 
 action 成功后 capture 失败时不得再执行该 action。当前容器仍完整时，它可以继续 uncached；已无法证明完整时，Attempt 失败。任何部分恢复或部分 capture 都不会冒充 hit，也不会形成循环 cache retry。
 
-远端 snapshot Provider 的 Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 author action 在 staging 中失败时节点才是 `failed`，依赖它的配对在派发前失败。其余不能发布的情形都让节点 `degraded`：目标配对从链上最深的可用祖先开始，其余 eligible action 在 Attempt 内真实执行。远端 Provider 的结算表见 [远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)。Incus 保留 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md) 规定的 fail-closed 边界：它的 VM、disk 与 artifact 归属由 Incus repository 判定，账本或 publication 不能证明一致时节点 `failed`。
+Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 author action 在 staging 中失败时节点才是 `failed`，依赖它的配对在派发前失败。其余不能发布的情形都让节点 `degraded`：目标配对从链上最深的可用祖先开始，其余 eligible action 在 Attempt 内真实执行。远端 Provider 的结算表见 [远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)。Incus 遵守同一原则，unknown acceptance、identity 漂移与 orphan 的处理见 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md)。
 
 取消只回收当前 private staging 与 Attempt 资源，不回滚已经完成验证并发布的 immutable Before cache artifact。下一次 Invocation 仍从最深 verified prefix 继续：取消时正在执行或尚未发布的 action 必须重新执行；已经发布的祖先 action 不得因取消而从 Base 重新执行。某个中间 action 的 canonical input、fingerprint、依赖或顺序变化时，它之前未变化的最长 verified prefix 继续命中，从该 action 起的变化层与全部后缀重新执行和发布。
 

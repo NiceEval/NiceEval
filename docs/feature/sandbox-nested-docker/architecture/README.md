@@ -128,7 +128,7 @@ Incus adapter 使用官方的 instance、custom storage volume、project、copy 
 NiceEval repository 负责 prepared artifact、head、hold、`retiring` 与 absence receipt。
 
 clean publication failure 可以回到最深的已提交 ancestor 或 exact base，重新执行后续 prefix。
-unknown acceptance、identity 漂移、metadata 不一致或无法删除 orphan 时一律 fail closed。
+unknown acceptance、identity 漂移、metadata 不一致或无法删除 orphan 只说明这份缓存用不上：对象留给 orphan 或 quarantine 处理，准备节点 `degraded`，配对从更浅的已提交前缀或 Base 真实执行（[T-5](../../../taste.md#t-5)）。只有 author action 在 prepare allocation 中失败时，节点才是 `failed`。
 
 公开维护入口是 [`inventory incus` 与 `gc incus`](../cli.md#inventory-incus-与-gc-incus)。
 GC 复用 Docker cache 的两阶段 GcPlan，plan 与 outcome 落在 Incus repository。它只回收 repository 拥有
