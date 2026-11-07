@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { formatLintHits, lintCalledToolContract, lintCalledToolContractText, lintSvgTerms, svgTexts } from "./writing.js";
+import { type ConcordWriting, formatLintHits, lintCalledToolContract, lintCalledToolContractText, lintSvgTerms, svgBannedMatchers, svgTexts } from "./writing.js";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 
@@ -39,10 +39,38 @@ describe("公开 API 示例契约", () => {
 // 图和正文各说各话是这么开始的:画的人为了摆得下造个简称,读的人在正文里查不到它。
 // 规矩写在 docs/SVG-DESIGN.md「用语:图里不立新词」,一次命中都不许有。
 describe("docs/ 手绘 SVG 的用语", () => {
+  it("按 SVG 路径应用 Concord 的规则范围与概念旧写法", () => {
+    const writing: ConcordWriting = {
+      state: "valid",
+      policy: {
+        roots: ["docs", "apps/docs-site/zh"],
+        bannedTerms: [
+          { term: "全局旧词", use: "正式词", why: "统一写法", allowIn: ["合法全局旧词组合"] },
+          { term: "局部旧词", use: "正式词", why: "局部裁决", roots: ["docs/assets"] },
+          { term: "单图旧词", use: "正式词", why: "指定文件", roots: ["docs/assets/one.svg"] },
+          { term: "站点旧词", use: "正式词", why: "站点裁决", roots: ["apps/docs-site/zh"] },
+        ],
+      },
+      derived: [{ term: "Old Name", use: "New Name", why: "docs/concepts.md#name", scope: "docs" }],
+    };
+    const matchers = svgBannedMatchers("docs/assets/one.svg", writing);
+    expect(matchers.map((term) => term.term)).toEqual(["全局旧词", "局部旧词", "单图旧词", "Old Name"]);
+    expect(matchers[0]?.allowIn).toEqual(["合法全局旧词组合"]);
+    expect(matchers[3]?.re.test("old name")).toBe(true);
+    expect(matchers[3]?.why).toBe("docs/concepts.md#name");
+    expect(svgBannedMatchers("docs/assets-other/one.svg", writing).map((term) => term.term))
+      .toEqual(["全局旧词", "Old Name"]);
+    expect(svgBannedMatchers("docs/assets/two.svg", writing).map((term) => term.term))
+      .toEqual(["全局旧词", "局部旧词", "Old Name"]);
+    expect(svgBannedMatchers("apps/docs-site/zh/one.svg", writing).map((term) => term.term))
+      .toEqual(["全局旧词", "站点旧词"]);
+    expect(svgBannedMatchers("apps/docs-site/en/one.svg", writing)).toEqual([]);
+  });
+
   it("盒标题与泳道名用的词在正文里都有出处,禁用写法也不许藏进图里", () => {
     const hits = lintSvgTerms();
     expect(hits.length, formatLintHits(hits)).toBe(0);
-  });
+  }, 60_000);
 
   it("tspan 拼进父节点,不按 tspan 切词", () => {
     // 一行里用 tspan 分色的「已<tspan>受理</tspan>」是同一个词,拆开两边都不成词,

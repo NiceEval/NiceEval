@@ -1,11 +1,11 @@
 /** NiceEval-specific API-example and SVG guards; prose is checked by Concord. */
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const RULES_FILE = "lint/docs/public-api-examples.json";
-const CONCEPTS_FILE = "docs/concepts.md";
+const WRITING_FILE = "docs/writing.md";
 // SVG 标签可以引用设计文档、公开站正文或概念目录中的正式写法。
 const USAGE_DIRS = ["docs", "apps/docs-site"];
 
@@ -16,8 +16,8 @@ export interface BannedTerm {
   use: string;
   /** 为什么禁——命中时原样打印,作者不必回来翻文档。 */
   why: string;
-  /** Concord 政策明确排除的目录或文件。 */
-  exempt?: string[];
+  /** 只在这些目录或文件生效；省略时适用于整个检查范围。 */
+  roots?: string[];
   /**
    * 可选:包含该词但语义无关的更长词(如「选集」之于「候选集合」)。中文没有词边界,
    * 短词会被更长的合法词整段命中;落在这些词里的匹配不计。每一项都必须含 `term` 本身。
@@ -219,28 +219,43 @@ function countTermHits(prose: string, re: RegExp, allowIn?: string[]): number {
   return count;
 }
 
-/** Catalog 的 `## term {#id}` 标题给出写法，frontmatter 的 `deprecated` 给出弃用名；结构校验归 Concord。 */
-function conceptCatalog(): { conceptTerms: Map<string, string>; deprecated: Record<string, string[]> } {
-  const source = readFileSync(join(ROOT, CONCEPTS_FILE), "utf8");
-  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(source);
-  const metadata: { deprecated?: Record<string, string[]> } = frontmatter ? parseYaml(frontmatter[1]!) ?? {} : {};
-  const conceptTerms = new Map<string, string>();
-  for (const match of source.matchAll(/^## (.+) \{#([a-z0-9-]+)\}$/gmu)) conceptTerms.set(match[2]!, match[1]!);
-  return { conceptTerms, deprecated: metadata.deprecated ?? {} };
+export interface ConcordWriting {
+  state: string;
+  diagnostic?: string;
+  policy: { roots?: string[]; bannedTerms: BannedTerm[] } | null;
+  derived: Array<BannedTerm & { scope: string }>;
 }
 
-/** SVG is outside Concord's Markdown/MDX scan. Reuse its policy and catalog decisions. */
-function svgBannedMatchers(): Array<BannedTerm & { re: RegExp }> {
-  const policy: { bannedTerms: Array<BannedTerm & { roots?: string[] }> } =
-    JSON.parse(readFileSync(join(ROOT, "docs/concord-writing.json"), "utf8"));
-  const terms = policy.bannedTerms.filter((term) => !term.roots || term.roots.includes("docs"));
-  const { conceptTerms, deprecated } = conceptCatalog();
-  for (const [id, names] of Object.entries(deprecated)) {
-    for (const term of names) {
-      terms.push({ term, use: conceptTerms.get(id) ?? id, why: `${CONCEPTS_FILE}#${id}` });
+function concordWriting(): ConcordWriting {
+  try {
+    const writing: ConcordWriting = JSON.parse(execFileSync(
+      "concord",
+      ["writing", "show", "--path", WRITING_FILE, "--json"],
+      { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 },
+    ));
+    if (writing.state !== "valid" || writing.policy === null) {
+      throw new Error(writing.diagnostic ?? `writing policy state: ${writing.state}`);
     }
+    return writing;
+  } catch (cause) {
+    throw new Error(`SVG writing check requires concord writing show --path ${WRITING_FILE} --json`, { cause });
   }
-  return terms.map((term) => ({ ...term, re: termMatcher(term.term) }));
+}
+
+function withinRoots(file: string, roots?: string[]): boolean {
+  return roots === undefined || roots.some((root) => file === root || file.startsWith(`${root}/`));
+}
+
+/** SVG is outside Concord's Markdown/MDX scan. Reuse its parsed policy and derived old spellings. */
+export function svgBannedMatchers(file: string, writing: ConcordWriting): Array<BannedTerm & { re: RegExp }> {
+  const policy = writing.policy;
+  if (policy === null || !withinRoots(file, policy.roots)) return [];
+  const terms = [
+    ...policy.bannedTerms,
+    ...writing.derived.map((term) => ({ ...term, roots: [term.scope] })),
+  ];
+  return terms.filter((term) => withinRoots(file, term.roots))
+    .map((term) => ({ ...term, re: termMatcher(term.term) }));
 }
 
 /** 图里的一个文本节点:`<text>` / `<tspan>` 拼平之后的一句,连同它挂的 class。 */
@@ -308,14 +323,14 @@ export function svgTexts(svg: string): SvgText[] {
  * 2. **禁用写法照样管。** 正文那份禁词库与概念表的首选裁决,对图里的每个字同样生效。
  */
 export function lintSvgTerms(): Hit[] {
-  const matchers = svgBannedMatchers();
+  const writing = concordWriting();
   const corpus = termCorpus();
   const hits: Hit[] = [];
 
   for (const file of walkDocs("docs", [".svg"])) {
+    const matchers = svgBannedMatchers(file, writing);
     for (const node of svgTexts(readFileSync(join(ROOT, file), "utf8"))) {
       for (const term of matchers) {
-        if (term.exempt?.some((path) => file === path || file.startsWith(`${path}/`))) continue;
         const count = countTermHits(node.text, term.re, term.allowIn);
         if (count === 0) continue;
         for (let occurrence = 1; occurrence <= count; occurrence += 1) {

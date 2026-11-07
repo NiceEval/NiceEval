@@ -97,6 +97,16 @@ function contentDigest(root: string): string {
 }
 
 describe("Repository Tools 动态发现", () => {
+  it("写作规则由 finalizer 持有，不能分配给普通文档 worker", async () => {
+    await expect(execFileAsync("pnpm", [
+      "run", "repo", "docs", "work", "prepare", "--scope", "docs/writing.md", "--json",
+    ], { cwd: ROOT, encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" }))
+      .rejects.toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining('"error":"DocsConflictError"'),
+      });
+  }, 30_000);
+
   it("AGENTS、Skill、设计与根 pnpm 入口形成直接关系", () => {
     const agents = readFileSync(join(ROOT, "AGENTS.md"), "utf8");
     const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
