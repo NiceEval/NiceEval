@@ -4,7 +4,7 @@ import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
 // 会话由 Adapter 管理(ctx.session.id / ctx.session.capture,见 src/agents/bub.ts):第二轮
 // t.send() 复用同一个 session_id 续接同一个 tape 文件,第二轮能引用首轮事实
-// (docs/engineering/testing/e2e/adapter/bub.md「会话」)。
+// (docs/engineering/testing/architecture/e2e/adapter/bub.md「会话」)。
 export default defineEval({
   description: "会话由 adapter 管理:第二轮能引用首轮建立的事实",
 

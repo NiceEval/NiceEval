@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: eval
-title: Eval —— 编写 eval
-createdAt: 2026-07-12T19:13:58+08:00
-kind: feature
----
-
-
-
 # Eval —— 编写 eval
 
 写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。
@@ -16,7 +6,7 @@ kind: feature
 Adapter 连接被评估系统，Agent 是会话接入的一种。用 `defineAdapter({ name, create(ctx) })` 提供自己的应用接口，
 再用 `adapter.defineEval()` 编写测试；返回的 `post()`、`reply()` 或其它方法直接出现在强类型 `t` 上，
 与 `t.check()` 共用一个上下文。Match 接收方法的原生返回值，不要求先转成消息。
-完整写法见 [自定义应用](library.md#自定义应用)。下文根入口 `defineEval()` 的交互与 Sandbox 能力属于 Agent 特例。
+完整写法见 [自定义应用](library/README.md#自定义应用)。下文根入口 `defineEval()` 的交互与 Sandbox 能力属于 Agent 特例。
 
 ## `defineEval` 的形状
 
@@ -58,22 +48,22 @@ Eval 创建时冻结自己写下的配置。`defineJudge`、现成裁判与自�
 
 Pass 与 Score Eval 都可在同一 handle 调用 `.gate(minimum)`；Score Eval 还可调用 `.score(points)`。
 两者任意先后都只求值一次。见 [Judge](../judge/library.md)。
-完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值)。
+完整求值链见 [Experiments · 配置求值链](../experiments/architecture/README.md#配置求值)。
 
-`sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
+`sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/library/layers.md)）：
 
 - **template-bearing**：由 `dockerComposeSandbox` / `dockerSandbox` / `e2bSandbox` 等具体 Provider factory 构造，携带完整起点并同时选定 Provider。
 - **command-only**：`sandboxLayer()` 的 `.before()` 命令链，只在已经启动的主 Sandbox 中执行题目准备。
 
 每个实际选中的 `Eval × Experiment` 配对恰好一方 template-bearing：两方都带报 `sandbox.template-conflict`，两方都不带报 `sandbox.template-missing`，link 阶段全矩阵聚合、零 Provider I/O、零资源创建。
-template factory、平台或 Agent capability requirement 不可用时，physical planning 聚合报错，零 build、零 Sandbox 创建（错误表见[三方准备时序](../sandbox/lifecycle.md#错误语义)）。
+template factory、平台或 Agent capability requirement 不可用时，physical planning 聚合报错，零 build、零 Sandbox 创建（错误表见[三方准备时序](../sandbox/architecture/lifecycle.md#错误语义)）。
 
 测试集从输入数组生成多条 eval（一个文件默认导出数组或 record）时整组条目共享同一 `sandbox` 声明。
-template identity、CaseKey 与 command identity 计入 Attempt fingerprint（完整清单见[三方准备时序](../sandbox/lifecycle.md#身份与复用池)）。
+template identity、CaseKey 与 command identity 计入 Attempt fingerprint（完整清单见[三方准备时序](../sandbox/architecture/lifecycle.md#身份与复用池)）。
 Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.unexpected-for-direct-agent`。
 
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
-两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-区间与分类账),那里把每一行写入落到哪本账上逐行标了出来。
+两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture/README.md#变更归因send-区间与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
 `metadata` 只在发现期作为 Experiment 的 `evals` 谓词可读的结构化选择数据。它决定哪些 eval 被选中，
 不进入 durable Record，Inspection 也不能读取它。能从 eval id、tags 或 description 推导出的值不重复写；
@@ -83,7 +73,7 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 Eval before 由 planning 按输入编译为 physical-instance 或 attempt occurrence；它在 Agent 进场前满足，用来准备题目素材，写入算 eval 归因，不进 agent diff。
 命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记 cleanup(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
 
-收尾按 owner occurrence 的登记栈全局逆序：Agent runtime teardown 之后，Agent、Eval、Group、Experiment 的 after 逆序执行，Provider finalizer 最后回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
+收尾按 owner occurrence 的登记栈全局逆序：Agent runtime teardown 之后，Agent、Eval、Group、Experiment 的 after 逆序执行，Provider finalizer 最后回收(时序单源见[三方准备时序](../sandbox/architecture/lifecycle.md#cleanup))。
 四类 owner 的 action 在各自 occurrence 内按依赖与 changeFrequency 排队，template owner 不参与排序。物理 before 完成后建立 verified reset baseline；每条 Attempt reset 后再满足 attempt before，随后进入 Agent runtime setup(`agent.setup`)。
 
 文件传输不设 EvalInput field。
@@ -127,7 +117,7 @@ evals/foo/eval.ts       → eval id "foo"
 目录共址只解决组织问题，不把 environment 构建与运行期文件传输合并成一个哈希。
 
 solution、生成器与参考答案不得进入任何 build context 或最终镜像。
-它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；template 一侧的隔离规则见 [Sandbox 实例与伴随资源 · 动态泄漏检查](../sandbox/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
+它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；template 一侧的隔离规则见 [Sandbox 实例与伴随资源 · 动态泄漏检查](../sandbox/architecture/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
 
 ## defineScoreEval：Score Eval
 
@@ -179,11 +169,11 @@ measurement handle 可用 `.orStop(minimum)` 建立 stop-only condition，或在
 
 ## 相关阅读
 
-- [Library](library.md) —— API 全景、测试集从输入数组生成多条 eval契约与命名组织约定。
+- [Library](library/README.md) —— API 全景、测试集从输入数组生成多条 eval契约与命名组织约定。
 - [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。
 - [Architecture](architecture.md) —— 为什么作用域断言按接收者(`t` / `session` / `turn`)分层,对齐 eve 的设计依据。
 - [Assertions](../assertions/README.md) —— 值断言、作用域断言、Judge、计分与判定规则。
 - [Agents 与 Adapters](../adapters/README.md) —— agent 三类 transport 与 agent 适配。
 - [Experiments](../experiments/README.md) —— eval 由谁跑、跑几次、对着哪个 agent。
-- [Sandbox Layer](../sandbox/layers.md) —— `sandbox` 字段的类型、factory 与配对规则。
+- [Sandbox Layer](../sandbox/library/layers.md) —— `sandbox` 字段的类型、factory 与配对规则。

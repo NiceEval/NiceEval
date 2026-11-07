@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: incus-prepare-progress-not-visible
-title: Incus 准备阶段只显示 Attempt 排队，无法判断当前步骤与进展
-createdAt: 2026-10-23T10:37:35.218Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# Incus 准备阶段只显示 Attempt 排队，无法判断当前步骤与进展
 
 ## Observation
 

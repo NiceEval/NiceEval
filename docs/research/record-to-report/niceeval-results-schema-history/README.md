@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-niceeval-results-schema-history
-title: NiceEval Results schemaVersion 1–16 研究
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/niceeval-results-schema-history.md
-  commit: f836c72af3edf455863a2186140500eb24af3cef
-kind: research
 sources: []
 ---
+
 # NiceEval Results schemaVersion 1–16 研究
 
 本页整理 NiceEval 旧 Results Format 从 v1 到 v16 的格式演进，回答三个问题：每次为什么升版，哪些变化其实不需要升版，以及为什么一个全局整数最终无法支撑 Record → Report。
@@ -146,12 +138,12 @@ v4 删除 `summary.json` 后，E2E 的 `verify.mjs` 仍手写扫描旧文件名�
 - `niceeval migrate` 只执行平台拥有、相邻且无损的转换链；普通 `show` 与 `view` 不静默改盘。
 - 用户不进入 `.niceeval/` 判断版本或手工修 JSON。CLI 无法解释时，应把它当作产品读取缺口。
 
-目标契约见 [Record Architecture](../../../feature/run/architecture.md)；本方向的门槛摘要见 [方向入口](../README.md#%E6%80%8E%E6%A0%B7%E9%98%B2%E6%AD%A2%E5%8A%9F%E8%83%BD%E6%BC%94%E8%BF%9B%E7%89%B5%E5%8A%A8-schema)。
+目标契约见 [Record Architecture](../../../feature/run/architecture/README.md)；本方向的门槛摘要见 [方向入口](../README.md#%E6%80%8E%E6%A0%B7%E9%98%B2%E6%AD%A2%E5%8A%9F%E8%83%BD%E6%BC%94%E8%BF%9B%E7%89%B5%E5%8A%A8-schema)。
 
 ## 关联 memory
 
 - [Results schemaVersion 1–18 历史存档](../../../../memory/results-schema-version-history.md)：版本、commit 与分支边界的唯一历史依据。
-- [升 schemaVersion 会把存量语料整批打成不可携带](../../../../memory/schema-bump-invalidates-all-history.md)：exact-version reader 对 carry 与重跑成本的影响。
+- 升 schemaVersion 会把存量语料整批打成不可携带：exact-version reader 对 carry 与重跑成本的影响。
 - [落盘单位改为 Snapshot](../../../../memory/results-per-snapshot.md) 与 [并行 Run 抹掉 summary](../../../../memory/parallel-runs-same-ms-summary-clobber.md)：v4 的真实数据丢失动因。
 - [Attempt locator 与 source 去重](../../../../memory/attempt-locator-and-source-dedup.md)：v5 的 identity 与引用布局。
 - [flags → params → flags](../../../../memory/experiment-flags-naming-reversal.md)：v2–v3 的字段命名翻案。

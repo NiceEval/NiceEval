@@ -1,35 +1,3 @@
----
-format: concord.document/v1
-id: attempt-page-standalone-document-not-spa-shell
-title: attempt-page-standalone-document-not-spa-shell
-createdAt: 2026-07-19T17:20:13+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/attempt-page-standalone-document-not-spa-shell.md
-  commit: e3a393f3ce0edbe38f4cbcce7aa69c78ab72d6ef
-description: 已修——attempt/<locator>.html 不能复用 index.html 的 SPA 外壳(空
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: 已修——attempt/<locator>.html 不能复用 index.html 的 SPA 外壳(空
-    proof: []
-    source:
-      path: memory/attempt-page-standalone-document-not-spa-shell.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:9f42f178b6c3e3f8f715b222d96f23d8c18b2386ac7ef49f8da3093f68ec0d26
----
-
 Phase F(`view` 为每个可达 locator 产出 `attempt/<locator>.html`)最初打算直接复用 `renderHtml`/
 `template.html`(index.html 的 SPA 外壳):双语内容都烘成 `<template>` 静态块,`#root` 起初为空,
 等 React(`main.tsx`)挂载后才把对应语言的块塞进去。这个模式对 index.html 没问题(那是一个有 tab
@@ -39,6 +7,8 @@ JS 的浏览器里天生不渲染,复用这个模式会让 attempt 页面在关�
 
 # 修法
 
+已修——attempt/<locator>.html 不能复用 index.html 的 SPA 外壳(空
+
 不复用 SPA 外壳,给 attempt 页面写一个独立的轻量渲染器(`site.ts` 的 `renderAttemptDocument`)。
 关键结构差异:两种语言内容都直接落成可见 DOM(不进 `<template>`),但用一个属性区分——
 `<div data-nre-locale="en">`(可见)与 `<div data-nre-locale="zh-CN" hidden>`(`hidden` 属性,
@@ -47,7 +17,7 @@ JS 的浏览器里天生不渲染,复用这个模式会让 attempt 页面在关�
 背上整个 SPA 打包产物)。增强脚本(index.html 里拦截 locator 链接、fetch 这份文档塞进 dialog 的那段)
 按同一个 `[data-nre-locale]` 选择器取内容,不维护第二份提取逻辑。
 
-# 同一轮改造中,advisor 提前指出的两处隐患(不是事后调试,是设计阶段挡下来的)
+## 同一轮改造中,advisor 提前指出的两处隐患(不是事后调试,是设计阶段挡下来的)
 
 1. **相对路径深度**:`attempt/<locator>.html` 比 `index.html` 深一层。`materializeHeadAssets`
    物化的本地 head 资产(`assets/<sha256><ext>`)原来是根相对路径,直接用在 attempt 页面上会解析成
@@ -74,7 +44,7 @@ JS 的浏览器里天生不渲染,复用这个模式会让 attempt 页面在关�
 http.server`)直接托管,或者用 `file://` 打开——这些路径必须单独验证一次,不能只信 `server.ts` 自己
 测出的绿。
 
-# How to apply
+## How to apply
 
 以后任何往 view 站点新增「不在站点根、独立于 index.html 之外的文档」的功能,进设计前先问两个问题:
 (a) 这份文档里引用的相对资源(样式、脚本、其它文档)是否假设了「我在站点根」?(b) 磁盘文件名 /

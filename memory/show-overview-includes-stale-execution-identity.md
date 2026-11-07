@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: show-overview-includes-stale-execution-identity
-title: Show Overview includes stale execution identity
-createdAt: 2026-08-28
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Show Overview includes stale execution identity
+
 ## Problem
 
 `niceeval show` 的默认 Overview 在打开 canonical Record 后，又用当前项目计划的 `executionIdentityDigest` 过滤 sealed Slot。只要当前源码或物化候选 identity 变化，Record 中仍存在的结果就会从人读 Overview 消失，并显示成 `Observed 0/0`。

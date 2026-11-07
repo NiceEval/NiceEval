@@ -1,18 +1,9 @@
----
-format: concord.document/v1
-id: eval-compare-implementations
-title: 比较同一接口的应用实现
-createdAt: 2026-09-12T19:50:45+08:00
-kind: use-case
-feature: docs/feature/eval/README.md
----
-
 # 比较同一接口的应用实现
 
 ## 用户目标
 
 用户要用同一套任务与 Match 比较两个社交应用实现，不让实现专属方法悄悄改变评估内容。
-共享接口的唯一类型与运行时配对规则见 [Adapter Library](../library.md#共享接口与选择实现)。
+共享接口的唯一类型与运行时配对规则见 [Adapter Library](../library/README.md#共享接口与选择实现)。
 
 ```ts
 // application.ts

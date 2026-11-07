@@ -1,15 +1,5 @@
----
-format: concord.document/v1
-id: adapter-single-effective-cost
-title: 每次物理调用只选择一个有效成本
-createdAt: 2026-09-21
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
+# 每次物理调用只选择一个有效成本
+
 ## 决策
 
 2026-09-21，外部 Adapter 的真实调用同时带有网关 cost、marketCost、gatewayCost 与 surchargeCost。初稿将这些值扩成多金额汇总，又尝试按 receipt namespace 跨 callId 去重。用户指出复杂度超出需求；消费者已经以物理请求 callId 合并最终快照，不需要框架重复推断请求身份。

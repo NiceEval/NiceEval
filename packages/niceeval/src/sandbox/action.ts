@@ -873,8 +873,8 @@ function makeAfterAction(data: SandboxActionData): SandboxAfterAction {
 }
 
 // @concord-code
-// @concord-implements docs/feature/sandbox/prepare-commands.md
-// @concord-implements docs/feature/sandbox/architecture.md
+// @concord-implements docs/feature/sandbox/library/prepare-commands.md
+// @concord-implements docs/feature/sandbox/architecture/README.md
 export function defineSandboxAction<A, I extends JsonValue>(
   definition: SandboxActionDefinition<A, I>,
 ): SandboxActionFamily<A> {

@@ -290,6 +290,7 @@ exec(compile(source, runner, "exec"), namespace)
 
 // @feature docs/feature/sandbox/README.md
 // @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22lifecycle%22%2C%22file%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22Lifecycle%20subreaper%20returns%20a%20child%20exit%20observed%20at%20its%20blocking%20wait%20boundary%22%5D%7D
 test("Lifecycle subreaper returns a child exit observed at its blocking wait boundary", async () => {
   const runner = join(process.cwd(), "fixtures", "subreaper-runner.py");
   await withProcess(
@@ -307,6 +308,7 @@ test("Lifecycle subreaper returns a child exit observed at its blocking wait bou
 // Regression note: memory/testkit-zombie-only-process-group.md
 // @feature docs/feature/sandbox/README.md
 // @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22lifecycle%22%2C%22file%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22ProcessHandle%20cleanup%20completes%20when%20an%20owned%20Linux%20process%20group%20contains%20only%20terminal%20zombies%22%5D%7D
 test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
   const handle = startProcess(
     ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],
@@ -360,6 +362,7 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
 // Regression note: memory/testkit-procfs-scan-race.md
 // @feature docs/feature/sandbox/README.md
 // @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22lifecycle%22%2C%22file%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22ProcessHandle%20repeats%20its%20post-TERM%20procfs%20scan%20before%20accepting%20a%20terminal%20owned%20group%22%5D%7D
 test("ProcessHandle repeats its post-TERM procfs scan before accepting a terminal owned group", async () => {
   await withTempDir("niceeval-process-group-procfs-race-", async (tempRoot) => {
     const snapshotPath = join(tempRoot, "procfs-snapshot");

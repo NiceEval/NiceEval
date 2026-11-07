@@ -35,7 +35,7 @@
 
 ### L6：E2E 仓库必须自治
 
-[E2E 总纲](../../engineering/testing/e2e/README.md)要求候选包注入、外部 cwd、真实协议和独立预期。
+[E2E 总纲](../../engineering/testing/architecture/e2e/README.md)要求候选包注入、外部 cwd、真实协议和独立预期。
 不同 E2E 仓库不能依赖一个中央套件来解释相同内部模型。
 
 自治不排斥稳定的测试工具依赖，但共享工具不能拥有具体仓库的测试语义、evidence schema 或用户预期。
@@ -66,8 +66,8 @@ ARIA E2E 必须说明真实浏览器引擎、隔离的 page / context 和 verifi
 
 ### L10：渲染所有权存在现行矛盾
 
-测试总纲与 [Inspection 与 Insight E2E](../../engineering/testing/e2e/inspection.md)把真实 text / HTML 指定为 E2E 唯一验收面。
-但 [`unit/reports.md`](../../engineering/testing/unit/reports.md)又要求若干 text 字符串与 HTML 输出断言。
+测试总纲与 [Inspection 与 Insight E2E](../../engineering/testing/architecture/e2e/inspection.md)把真实 text / HTML 指定为 E2E 唯一验收面。
+但 [`unit/reports.md`](../../engineering/testing/architecture/unit/reports.md)又要求若干 text 字符串与 HTML 输出断言。
 
 候选必须明确划线：纯数据投影和无媒介语义可在 unit 证明；用户可见 text、HTML 语义、PTY 布局与交互由相应真实读面证明。
 

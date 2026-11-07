@@ -1,4 +1,4 @@
-// Human profile renderer(见 docs/feature/experiments/cli.md「人在终端里怎么用」)。
+// Human profile renderer(见 docs/feature/experiments/cli/README.md「人在终端里怎么用」)。
 //
 // 两个变体,由 `io.stderr.isTTY` 在构造时选一次(profile 是消费者模型,TTY 只是传输能力 ——
 // 不加 `--json` 在非 TTY 下仍是人读文本,只是退化成纯追加文案,不悄悄变成 `--json` 语义):
@@ -16,7 +16,7 @@
 // 面板内嵌的 FAILURES 分节(最近 5 条本次新发生的失败,carry 携入失败不进分节,不写
 // scrollback);非 TTY 单流逐条追加同一投影。结束反馈的 FAILURES 面板改按失败形态聚合
 // (buildFailuresPanelRows),不再逐条铺开;新增的 WARNINGS 面板按 code 汇总本次去重后的诊断。
-// 详见 docs/feature/experiments/cli.md「运行中的 live 面板」与「人看的结束反馈」。
+// 详见 docs/feature/experiments/cli/README.md「运行中的 live 面板」与「人看的结束反馈」。
 //
 // 完成页(summary/receipt 两个永久事件)不再调用 `./reporters/table.ts` 的 `renderRunReport()`
 // 大表:失败优先摘要留在终端，完整证据始终由 receipt 中的真实 Run ID 打开。
@@ -418,7 +418,7 @@ export function renderDurableLines(
 }
 
 /**
- * 把一条永久事件的渲染行写到正确的流(见 docs/feature/experiments/cli.md「输出流和落盘节奏」
+ * 把一条永久事件的渲染行写到正确的流(见 docs/feature/experiments/cli/README.md「输出流和落盘节奏」
  * 的流边界表)。TTY 与非 TTY 两个变体在这里分岔,共用同一份「事件 → 文本行」的纯函数:
  *
  * - TTY(`allStdout: false`):`stdout` 只留给"最终摘要与 Run 指引"("summary"/"receipt" 两个
@@ -435,12 +435,12 @@ function writeDurable(io: FeedbackIO, event: DurableFeedbackEvent, state: RunFee
   else io.stderr.write(text);
 }
 
-/** `PLAN` 面板(docs/feature/experiments/cli.md「运行中的 live 面板」):规模一行 + 复用一行
+/** `PLAN` 面板(docs/feature/experiments/cli/README.md「运行中的 live 面板」):规模一行 + 复用一行
  *  (全新派发时省略),经 panel.ts 画框——面板体裁全仓只有一个渲染件,这里不手拼 `╭─`。 */
 function buildPlanLines(plan: RunFeedbackPlan, panel: { mode: PanelMode; width: number }): string[] {
   // 实验闸让声明了 maxConcurrency 的实验的有效宽度小于全局值:只印全局值会被读成
   // 「这批要开 19 路」。逐个附注在全局值之后(`concurrency 19 · mempal ≤1 · nowledge ≤4`),
-  // 未声明的实验不列(见 docs/feature/experiments/cli.md「运行中的 live 面板」)。
+  // 未声明的实验不列(见 docs/feature/experiments/cli/README.md「运行中的 live 面板」)。
   const experimentConcurrency = Object.entries(plan.experimentConcurrency ?? {});
   const concurrencyNotes = experimentConcurrency
     .map(([experimentId, limit]) => `${experimentId} ≤${limit}`)
@@ -554,7 +554,7 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
 }
 
 /** 结束结论(`FAILED`/`PASSED`/…)+ `FAILURES`(有失败才出现)+ `KEPT SANDBOXES`(有留存才
- *  出现)——三个各自独立的面板,用空行分隔(docs/feature/experiments/cli.md「人看的结束反馈」、
+ *  出现)——三个各自独立的面板,用空行分隔(docs/feature/experiments/cli/README.md「人看的结束反馈」、
  *  docs/feature/sandbox/cli.md「run 收尾输出」)。`NEXT` 面板不在这里:它要等 `receipt` 事件
  *  的真实 Run ID,见 `buildReceiptLines`。 */
 function buildSummaryLines(
@@ -959,7 +959,7 @@ export function formatTokenCount(n: number): string {
   return String(n);
 }
 
-/** LifecyclePhase → Human 展示列的人读投影(见 docs/feature/experiments/cli.md「Attempt 阶段」);
+/** LifecyclePhase → Human 展示列的人读投影(见 docs/feature/experiments/cli/README.md「Attempt 阶段」);
  *  机器面(json 的 `phase=` 与落盘)保留精确的点分名,收尾段在 Human 侧合并显示为一档。 */
 function phaseLabel(phase: LifecyclePhase): string {
   switch (phase) {
@@ -1072,7 +1072,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
   }
 
   /** 上边框标题 = 本次命令、meta = 已运行时长;下边框 footerCommand = 本次新派发的累计估算成本
-   *  (docs/feature/experiments/cli.md「运行中的 live 面板」)。ACTIVE 是嵌套 Section 的
+   *  (docs/feature/experiments/cli/README.md「运行中的 live 面板」)。ACTIVE 是嵌套 Section 的
    *  同构体裁——一条贯穿框宽的横隔,不是独立的框;非 boxed(非 TTY 或 NO_COLOR)时
    *  panel.ts 自动降级成无框文本,dashboard 的覆盖重画机制不因此改变,只是重画的内容
    *  换成了无框版本。 */
@@ -1444,7 +1444,7 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
 
 /** 一个 (experimentId, evalId) 组合在 `--dry` 预览里的一行,与 cli.ts 里 `matchedByRun` 摊平后
  *  的矩阵、以及 `--dry --json` 的 `ExpPlanRow`(去掉 `reused` 字段)三处同一份数据一一对应——
- *  dry 预览同样是「展示」,不该留在 cli.ts(见 docs/feature/experiments/cli.md 与 plan 对
+ *  dry 预览同样是「展示」,不该留在 cli.ts(见 docs/feature/experiments/cli/README.md 与 plan 对
  *  「CLI 只负责解析/构造/退出」的要求)。dry run 不派发 attempt,没有 `RunFeedbackState` 可言,
  *  所以这是独立于 `FeedbackRenderer`/coordinator 的纯函数,与 `renderAgentPlanEnvelope`
  *  (agent.ts)同一定位。 */
@@ -1454,7 +1454,7 @@ export interface HumanDryPlanRow {
   evalGroupId?: string;
   /** 本行计划内的 attempt 总数；混合 `attempts` 的多个 Experiment 不共用 input 的最大值。 */
   attempts?: number;
-  /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture.md
+  /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture/README.md
    *  「并发 Invocation:用例锁」);计划行尾如实标注,`--dry` 本身不取锁、不等待。 */
   locked?: boolean;
   /** 本行实际携入的终态结果；只会出现 `passed` / `failed`，供人读面显示已确定判定。 */
@@ -1462,7 +1462,7 @@ export interface HumanDryPlanRow {
     attempt: number;
     verdict: "passed" | "failed";
   }[];
-  /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli.md
+  /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli/README.md
    *  「`--dry`:计划矩阵与作废原因」);`attempts` 是这组原因覆盖的 0-based 序号。
    *  省略或空数组 = 全部携带(兼容直接调用 formatter 的旧 fixture)。 */
   dispatch?: readonly {
@@ -1497,7 +1497,7 @@ export interface HumanDryPlanInput {
   command?: string;
 }
 
-/** 契约首行(docs/feature/experiments/cli.md 开头的 `--dry` 示例):
+/** 契约首行(docs/feature/experiments/cli/README.md 开头的 `--dry` 示例):
  *  `plan: <total> attempts · <N> eval[s] × <M> config[s] · runs <R>`,单复数随计数变化。
  *  有携带预测时紧跟一行,沿用 `PLAN` 面板缓存摘要既有的 `feedback.human.reuse` 文案(见
  *  `buildPlanLines`)而不是为 `--dry` 另造一套词。逐行按 `experimentId`/`evalId` 两列对齐,

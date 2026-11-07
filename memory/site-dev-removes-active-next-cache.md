@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: site-dev-removes-active-next-cache
-title: 第二次产品站 dev 启动会删除仍在使用的 Next dev 目录
-createdAt: 2026-09-05
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 第二次产品站 dev 启动会删除仍在使用的 Next dev 目录
 
 P2；2026-09-05，审查基线 `6c6d5ce39414df86be304fb3ed6923d27aae775a`。来源：parent review，父 agent 独立复核。入口：`apps/site/scripts/dev.mjs:36`。

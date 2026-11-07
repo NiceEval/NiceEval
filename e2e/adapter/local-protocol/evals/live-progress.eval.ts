@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#live-progress-owner
+// owner: docs/engineering/testing/architecture/e2e/adapter/ui-message-stream.md#live-progress-owner
 import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";
 

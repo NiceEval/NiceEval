@@ -1,6 +1,6 @@
 // @concord-file
-// @concord-implements docs/feature/experiments/cache.md
-// @concord-implements docs/feature/experiments/library.md
+// @concord-implements docs/feature/experiments/architecture/cache.md
+// @concord-implements docs/feature/experiments/library/README.md
 
 import { readIdentityExplanation } from "./identity-explanation-read.ts";
 import { CURRENT_IDENTITY_DOMAINS } from "./identity-domains.ts";
@@ -509,7 +509,7 @@ interface CurrentTargetPair {
  * manually adopted Members.
  */
 // @concord-code
-// @concord-implements docs/feature/experiments/cache.md
+// @concord-implements docs/feature/experiments/architecture/cache.md
 export function prepareCurrentAdoptionTarget(input: {
   readonly project: AdoptionProject;
   readonly experimentId: string;
@@ -962,7 +962,7 @@ function durationComparison(input: {
  * reused at the target. Operator confirmation cannot prove changed behavior.
  */
 // @concord-code
-// @concord-implements docs/feature/experiments/cache.md
+// @concord-implements docs/feature/experiments/architecture/cache.md
 export function prepareExplicitAdoptionMember(input: {
   readonly reader: RecordReadSession;
   readonly target: CurrentAdoptionTarget;

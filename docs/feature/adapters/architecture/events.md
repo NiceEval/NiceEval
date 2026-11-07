@@ -39,7 +39,7 @@ type StreamEvent =
 5. Skill 加载只产 `skill.loaded`，不重复计入工具调用。
 6. 原始协议没有 usage 时省略，不编造数值。
 7. **Adapter 不截断。**
-   工具输出再大也原样交出来——断言跑在完整值上，落盘时才由写入面统一削到 256 KiB 并打 `truncated` 标记（见 [Record · 大值截断](../../run/architecture.md)）。
+   工具输出再大也原样交出来——断言跑在完整值上，落盘时才由写入面统一削到 256 KiB 并打 `truncated` 标记（见 [Record · 大值截断](../../run/architecture/README.md)）。
    Adapter 自己先削一刀会让断言看到不完整的输出，是 bug，不是保护。
 8. **`loc` 只属于 eval 侧注入的 user message。**
    `t.send` 由 core 留存、携带 send 语句的源码位置；adapter 从 SDK 事件或 transcript 归一出的任何消息都不携带 `loc`。
@@ -55,7 +55,7 @@ type StreamEvent =
       它对行为断言没有信息量，和「系统元数据行不进事件流」是同一条原则的延伸，不是新例外。
     - `source` 是可选的原始出处标记（如 Claude Code 自己的 hook 名 `SessionStart`）。
       adapter 按各自协议原样透传供下钻，不强行归一到一组封闭枚举，不同被测系统的命名不必对齐。
-    - **这与 niceeval 自己的 [prepare command](../../sandbox/layers.md#command-形状与-identity)是完全不同的两层机制。**
+    - **这与 niceeval 自己的 [prepare command](../../sandbox/library/layers.md#command-形状与-identity)是完全不同的两层机制。**
       后者是作者声明、运行器编排的沙箱准备命令；前者是被测 CLI 自己的内部生命周期设施，`context.injected` 只归一后者。
 
 ## InputRequest

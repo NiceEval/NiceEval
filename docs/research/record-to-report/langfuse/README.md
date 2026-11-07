@@ -1,11 +1,6 @@
 ---
-format: concord.document/v1
-id: record-to-report-langfuse
-title: Langfuse：Observation、Score、Experiment 与 Dashboard
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
 
 # Langfuse：Observation、Score、Experiment 与 Dashboard

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-fixed-order
-title: 让 Eval 按固定顺序执行
-createdAt: 2026-07-29T22:20:07+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 让 Eval 按固定顺序执行
 
 ## 解决什么问题
@@ -40,7 +31,7 @@ export default defineExperiment({
   Coordination 的 `sharedState` 可以让两条状态区间不交错，但不会合并两边的选择集与发现顺序。
 - **历史 Attempt 采用会跳过队列前面的 Eval。**
   上一次已判定的 Eval 这次通过 reference Member 引用、不再执行；对应 carried 原因写在 actions，因此它写入的外部状态不会重新产生。
-  顺序依赖这份状态时用 [`--rerun all`](重新运行/) 从头跑。
+  顺序依赖这份状态时用 [`--rerun all`](README.md#--rerun) 从头跑。
 - **`attempts > 1` 时按轮次跑**:这批 Eval 各跑一遍算一轮,跑完再开下一轮。
   同一条 Eval 的多次 Attempt 不连在一起。
 

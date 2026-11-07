@@ -24,7 +24,7 @@ Doctor 的 artifact 容量分成两项，任何一项不足都使整体 `FAIL`�
 
 - `artifact-capacity`：非 released intent 数相对 `artifactMaxInstances` 的余量；
 - `artifact-storage`：artifact pool 当前空闲字节相对 `artifactStorageReserveBytes` 与一份新副本的
-  估算字节（见 [Lifecycle · 字节容量准入](lifecycle.md#字节容量准入)）。读不到 pool 字节时显示 `unknown` 并
+  估算字节（见 [Lifecycle · 字节容量准入](architecture/lifecycle.md#字节容量准入)）。读不到 pool 字节时显示 `unknown` 并
   `FAIL`，不把数量余量当成空间余量。
 
 `artifact-inventory` 逐项核对 committed intent 与 Provider 对象，而不是只比较数量。intent 存在但
@@ -74,7 +74,7 @@ generation、是否当前 head 与 consumer lease 数。每项另显示创建时
 （`verified` / `dangling` / `metadata-drift`）。另列 orphan 对象与 pool 字节摘要。
 
 JSON 使用
-[Docker cache inventory](../../roadmap/sandbox-cache/cache-lifecycle/cli.md#domain-库存) 的同一
+[Docker cache inventory](../../roadmap/sandbox-cache-lifecycle/cli.md#domain-库存) 的同一
 `niceeval.cache-inventory` 顶层，`backendKind: "incus-artifacts"`；估算字节标 `estimate`，不能相加的数字标
 `not additive`。
 
@@ -82,7 +82,7 @@ JSON 使用
 
 `gc incus` 不带 `--apply` 只生成预览，并把 immutable GcPlan 持久化到 Incus repository；`--apply <plan-id>`
 只执行该 plan 列出的候选，只会因事实漂移缩减集合，不重新规划。plan 形状、15 分钟有效期、整单拒绝条件、
-outcome 文档和退出码全部沿用 [Docker 两阶段回收](../../roadmap/sandbox-cache/cache-lifecycle/cli.md#两阶段回收)，
+outcome 文档和退出码全部沿用 [Docker 两阶段回收](../../roadmap/sandbox-cache-lifecycle/cli.md#两阶段回收)，
 这里只定义 Incus 的候选规则：
 
 | ruleId | 条件 | 是否需要 flag |

@@ -117,7 +117,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
     const cost = optionalNum(usage, "cost");
     if (rawInput === 0 && output === 0 && cache === 0 && cost === undefined) return;
     // Chat Completions 口径的 prompt_tokens 含缓存命中,cached_tokens 是其子集;
-    // 落互斥桶前扣掉(docs/feature/adapters/sdk/bub/cost.md)
+    // 落互斥桶前扣掉(docs/feature/adapters/library/sdk/bub/cost.md)
     const input = Math.max(0, rawInput - cache);
     inputTokens += input;
     outputTokens += output;

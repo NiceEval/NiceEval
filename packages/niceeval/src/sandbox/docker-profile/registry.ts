@@ -319,7 +319,7 @@ function resolveEntry(
 /** 构造只含规范化 descriptor 的 registry index；不读文件、不执行 profile 内容。 */
 // @concord-code
 // @concord-implements docs/feature/sandbox-docker-profiles/library.md
-// @concord-implements docs/feature/sandbox-docker-profiles/architecture.md
+// @concord-implements docs/feature/sandbox-docker-profiles/architecture/README.md
 export function indexDockerProfiles(
   input: DockerProfileRegistryInput | unknown,
   options: DockerProfileRegistryOptions = {},

@@ -212,7 +212,7 @@ operation 窄化函数取得对应结果类型。Testkit 也遵守这条顺序�
 Inspection selection policy 是 operation 内部 ABI，不版本化。内建 identity 是 `explicit-runs` 与 `project-current`，输入分别由自己的具名 request shape 承载。`project-current` 比较当前项目目标与已有 Eligibility identity，并保留全部匹配结果；它不是按时间排序的模式。durable RecordAttachment persistence 仍保留独立 revision。不要把 execution `reuse | gap` 混进同一个 slot 联合。
 
 正交约束必须写成独立字段，但前提是它对应明确用户旅途。
-adoption 与 reuse 的采用动作是 Member Core 的 `action` 事实，见 [Run 架构](feature/run/architecture.md)；它们不膨胀成组合选择模式。
+adoption 与 reuse 的采用动作是 Member Core 的 `action` 事实，见 [Run 架构](feature/run/architecture/README.md)；它们不膨胀成组合选择模式。
 
 ## 相邻 API 按选择维度成组设计
 

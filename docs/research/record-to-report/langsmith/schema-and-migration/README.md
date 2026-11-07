@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-langsmith-schema-and-migration
-title: LangSmith schema、兼容与 migration
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/langsmith/schema-and-migration.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # LangSmith schema、兼容与 migration
 
 LangSmith 不用单一 schema version 管理所有对象。需要分别追踪 Dataset 内容时间、wire/API generation、SDK package、self-hosted chart/app、PostgreSQL/ClickHouse migrations 与 ClickHouse→SmithDB 数据搬迁。本页固定核对官方 SDK commit [`345a522`](https://github.com/langchain-ai/langsmith-sdk/commit/345a52252af163abe33699fb361038f5783c9024)（2026-08-13 UTC）和 Helm commit [`e5fd3cf`](https://github.com/langchain-ai/helm/commit/e5fd3cf1f3bb39d0ae8962c2308f82419b8e10a0)（2026-08-12 UTC）。

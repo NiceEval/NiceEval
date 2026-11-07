@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/experiments-runner.md
+// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
 
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";

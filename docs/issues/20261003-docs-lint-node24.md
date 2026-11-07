@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: 20261003-docs-lint-node24
-title: pnpm lint docs prepare ignores mise-installed Node 24
-createdAt: 2026-10-03T01:49:18.132Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# pnpm lint docs prepare ignores mise-installed Node 24
 
 ### Actual observation
 

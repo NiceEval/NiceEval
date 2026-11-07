@@ -2,7 +2,7 @@
 
 NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**发布与检查**事实并按需交付。
 核心拥有这四段里对所有被测对象都一样的部分。Adapter 定义怎样连接被测系统；Agent 是提供会话协议的适配器特例。
-自定义适配器直接提供系统的原生操作，隔离运行资源属于 Sandbox。作者入口见 [Eval Library](feature/eval/library.md#自定义应用)。
+自定义适配器直接提供系统的原生操作，隔离运行资源属于 Sandbox。作者入口见 [Eval Library](feature/eval/library/README.md#自定义应用)。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
 
@@ -206,7 +206,7 @@ Agent 是提供会话操作与观测的 Adapter，不是普通应用必须实现
 Adapter 的 bound Eval factory 将它与公共评估能力组合为单一强类型 `t`。
 普通应用不因此获得 `send`；Agent 也不因为另一个应用提供生图方法而获得该方法。
 根 `defineEval` 是 Agent 会话契约的便捷入口，仍执行相同的 Eval 和 Attempt 模型。
-共享接口与实现选择、保留成员、绑定和资源规则由 [Eval Library](feature/eval/library.md) 与 [Eval 架构](feature/eval/architecture.md) 拥有。
+共享接口与实现选择、保留成员、绑定和资源规则由 [Eval Library](feature/eval/library/README.md) 与 [Eval 架构](feature/eval/architecture.md) 拥有。
 
 评估能力与应用能力按职责分层：
 
@@ -261,23 +261,23 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    CLI 调用 `experimentHost.invocation.plan()` 或 `experimentHost.invocation.run()`。Host 计算带 domain 的
    input/config identity，并在其实现内通过内部 Run capability 提交 Invocation start transaction。
    该事务同时创建 Invocation Session 与带 `startedAt`、完整 Planned attempt 身份 的 `active` Run；Run 提交后立即可被发现。
-   Run 可见不等于任何 Attempt 已发布，Attempt 逐个经第 12 步发布；完整生命周期见 [Run](feature/run/architecture.md)。
+   Run 可见不等于任何 Attempt 已发布，Attempt 逐个经第 12 步发布；完整生命周期见 [Run](feature/run/architecture/README.md)。
 4. **reuse planning。**
    `experimentHost` 在内部把当前 ProjectTarget、ExecutionTarget 和 Run capability 交给 Runner。
    具名 policy 把每个 Planned attempt 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、
    Verdict、fingerprint、timeout、`--rerun` 与 `--keep-sandbox` 都属于该 policy，不属于 Run Core。
-   完整契约见 [Execution reuse planning](feature/experiments/cache.md)。
+   完整契约见 [Execution reuse planning](feature/experiments/architecture/cache.md)。
 
    planner/scheduler 只接收 gaps；Host 保留完整 Planned attempt decision。
 5. **有界并发调度。**
    全局至多 `maxConcurrency` 个 gap execution 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
-   重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture.md#provisioning-失败与重试)。
+   重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture/README.md#provisioning-失败与重试)。
 6. **准备 Sandbox,交给 `test(t)`。**
    沙箱型按固定顺序完成下面几步:
    - Provider 按配对唯一的 template 启动 Sandbox 实例。
-   - 执行各 owner 的 before action(装二进制、预热、题目准备)。顺序只由 [Sandbox Layer · 顺序与依赖方向](feature/sandbox/layers.md#顺序与依赖方向) 定义;这一步在变更分类账参照点之前,准备输出不进入任何归因视图。
+   - 执行各 owner 的 before action(装二进制、预热、题目准备)。顺序只由 [Sandbox Layer · 顺序与依赖方向](feature/sandbox/library/layers.md#顺序与依赖方向) 定义;这一步在变更分类账参照点之前,准备输出不进入任何归因视图。
    - `agent.ensure` 循环安装 Agent CLI:探测、缺失时配对安装层 install、复检。
-   - 打变更分类账参照点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md))。
+   - 打变更分类账参照点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture/README.md))。
    - 跑 agent 的 runtime `SandboxAgent.setup`(写鉴权与运行时配置)。
    之后全部交给这条 eval 自己的 `test(t)`。
    作者按自己的顺序调 `t.sandbox.writeText` / `writeBytes` / `uploadDirectory`(准备起始文件)与 `t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)。
@@ -296,8 +296,8 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
 10. **首过即停。**
    若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 11. **收尾与留存。**
-    finally 里按 `SandboxAgent.teardown` → 各 owner 已登记的 after action(按实际登记栈逆序,见 [Cleanup](feature/sandbox/layers.md#cleanup))→ Provider finalizer 的顺序收尾。
-    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
+    finally 里按 `SandboxAgent.teardown` → 各 owner 已登记的 after action(按实际登记栈逆序,见 [Cleanup](feature/sandbox/library/layers.md#cleanup))→ Provider finalizer 的顺序收尾。
+    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture/README.md#留存keep与注册表))。
 12. **经 Run Host 发布 Attempt、收口 Run，并返回 receipt。**
     `experimentHost` 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 Runner。
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin

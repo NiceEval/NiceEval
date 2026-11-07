@@ -7,7 +7,7 @@
 - 你需要一页纸把整套词汇过一遍。
 
 本页是 Concord 管理的全局术语 catalog：每个二级标题是一个概念，标题文字是正文唯一的写法，`{#id}` 是稳定身份，紧随其后的段落是定义，再往后是解释。写作政策由 [`concord-writing.json`](concord-writing.json) 拥有。
-本页只能经 `concord concepts set` 带摘要整份写入；不要手改，也不要另建词表。
+直接编辑本页后运行 `concord writing check`；不要另建词表。
 
 ```sh
 concord concepts index --json
@@ -30,7 +30,7 @@ Member 将两者关联；历史结果沿用时，新的 Run 引用既有 Attempt
 例如，Sandbox Agent 在隔离空间里运行 CLI，Direct Agent 则直接调用函数、SDK 或服务端点。
 
 生命周期 Hook 使用 `before` / `after`；所在对象决定执行范围与次数。
-[Sandbox Layer](feature/sandbox/layers.md) 的可缓存前置动作形成 before 缓存；它与 [结果沿用](feature/experiments/cache.md) 分别复用 Sandbox 起始状态和已发布结果。
+[Sandbox Layer](feature/sandbox/library/layers.md) 的可缓存前置动作形成 before 缓存；它与 [结果沿用](feature/experiments/architecture/cache.md) 分别复用 Sandbox 起始状态和已发布结果。
 
 [Assertion](feature/assertions/README.md) 声明检查条件，[Judge](feature/judge/README.md) 对显式材料求 measurement，
 [Verdict](feature/verdict/README.md) 表达 Attempt 的判定。Score Eval 还保存显式数值贡献。
@@ -69,7 +69,7 @@ Member 将两者关联；历史结果沿用时，新的 Run 引用既有 Attempt
 
 要让被测应用完成的操作序列；Agent 使用会话动作，自定义应用使用自己的方法
 
-契约：[Eval](feature/eval/library.md)
+契约：[Eval](feature/eval/library/README.md)
 
 其它写法：`任务`。
 
@@ -117,7 +117,7 @@ Member 将两者关联；历史结果沿用时，新的 Run 引用既有 Attempt
 
 契约：[Eval context](feature/eval/library/context.md)
 
-契约：[Run Architecture](feature/run/architecture.md)
+契约：[Run Architecture](feature/run/architecture/README.md)
 
 ## Agent Session {#agent-session}
 
@@ -223,7 +223,7 @@ Adapter 按 events、actions、messages、usage、status、data 六类声明采�
 
 每 Attempt 连接被测系统并创建作者上下文，其原生操作与通用评估能力组成强类型的 `t`
 
-契约：[Eval Library](feature/eval/library.md#自定义应用)
+契约：[Eval Library](feature/eval/library/README.md#自定义应用)
 
 其它写法：`Custom adapter`、`defineAdapter`。
 
@@ -339,7 +339,7 @@ Agent 与测试实际执行命令、读写文件的隔离运行空间及其操�
 
 Eval 或 Experiment 对同一主 Sandbox 的作者声明,分 template-bearing 与 command-only 两种形态
 
-契约：[Sandbox Layer](feature/sandbox/layers.md)
+契约：[Sandbox Layer](feature/sandbox/library/layers.md)
 
 其它写法：`Sandbox layer`。
 
@@ -347,13 +347,13 @@ Eval 或 Experiment 对同一主 Sandbox 的作者声明,分 template-bearing �
 
 Sandbox 的具体实现选择,由内置或自定义工厂显式构造
 
-契约：[Sandbox library](feature/sandbox/library.md)
+契约：[Sandbox library](feature/sandbox/library/README.md)
 
 ## workdir {#workdir}
 
 Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的参照点
 
-契约：[Sandbox library](feature/sandbox/library.md)
+契约：[Sandbox library](feature/sandbox/library/README.md)
 
 其它写法：`工作目录`。
 
@@ -377,7 +377,7 @@ Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的�
 
 runner 私有的 git 分类账;只把参照点之后的改动放进 agent 归因视图
 
-契约：[Sandbox architecture](feature/sandbox/architecture.md)
+契约：[Sandbox architecture](feature/sandbox/architecture/README.md)
 
 其它写法：`Change ledger`。
 
@@ -385,7 +385,7 @@ runner 私有的 git 分类账;只把参照点之后的改动放进 agent 归因
 
 同时选择 Provider 并由其启动完整 Sandbox 实例的唯一起点；可以是 Compose、Dockerfile、image、E2B template 或 snapshot
 
-契约：[Sandbox Layer](feature/sandbox/layers.md#template-bearing-factory)
+契约：[Sandbox Layer](feature/sandbox/library/layers.md#template-bearing-factory)
 
 其它写法：`Sandbox template`。
 
@@ -393,7 +393,7 @@ runner 私有的 git 分类账;只把参照点之后的改动放进 agent 归因
 
 Eval 对 Sandbox 必须兑现的 provider-neutral 约束；它不选择 Provider，也不创建第二个 Sandbox origin
 
-契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture.md#requirement-与-capability)
+契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture/README.md#requirement-与-capability)
 
 其它写法：`Sandbox capability requirement`。
 
@@ -409,7 +409,7 @@ Eval 对 Sandbox 必须兑现的 provider-neutral 约束；它不选择 Provider
 
 Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、kernel 或其它 Attempt
 
-契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture.md#四个-owner)
+契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture/README.md#四个-owner)
 
 其它写法：`dedicated-kernel isolation`。
 
@@ -417,7 +417,7 @@ Agent 的 Docker 权限止于当前 guest kernel，不能到达宿主 daemon、k
 
 Provider 启动的主 Sandbox；存在 sidecar、网络或服务时，同时点名这些伴随资源
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/case.md)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md)
 
 其它写法：`Sandbox instance`。
 
@@ -425,7 +425,7 @@ Provider 启动的主 Sandbox；存在 sidecar、网络或服务时，同时点�
 
 Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/case.md#主-sandbox-不变量)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#主-sandbox-不变量)
 
 其它写法：`Main Sandbox`。
 
@@ -433,13 +433,13 @@ Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 dif
 
 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#buildkey-与-casekey两个身份各管一件事)
 
 ## Before cache {#before-cache}
 
 Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓存 before action 所形成的内容寻址 Sandbox 起点
 
-契约：[Sandbox · before 缓存](feature/sandbox/architecture.md#before-缓存的身份与验证边界)
+契约：[Sandbox · before 缓存](feature/sandbox/architecture/README.md#before-缓存的身份与验证边界)
 
 其它写法：`before 缓存`、`beforeCaches`、`beforeCachePlan`、`sandboxCache.before`、`SandboxBeforeCache`。
 
@@ -447,19 +447,19 @@ Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓�
 
 parent 前缀、规范化 steps、immutable inputs 与 Provider 捕获协议的链式内容身份
 
-契约：[Sandbox · before 缓存](feature/sandbox/architecture.md#before-缓存的身份与验证边界)
+契约：[Sandbox · before 缓存](feature/sandbox/architecture/README.md#before-缓存的身份与验证边界)
 
 ## Provider artifact {#provider-artifact}
 
 Provider 为 exact Sandbox template 或 before cache 捕获并验证的不可变 image、template、snapshot 或 volume 结果；物理 locator 不成为 Eval 语义
 
-契约：[Sandbox · 前缀缓存](feature/sandbox/architecture.md#前缀缓存是可失败的优化)
+契约：[Sandbox · 前缀缓存](feature/sandbox/architecture/README.md#前缀缓存是可失败的优化)
 
 ## Sandbox 状态面 {#sandbox-state-surface}
 
 一个 before action 承诺写入的完整可观察状态范围；V1 只有完整 Sandbox 与 inner Docker data 两种
 
-契约：[Sandbox Layer](feature/sandbox/layers.md#action-family-与-step)
+契约：[Sandbox Layer](feature/sandbox/library/layers.md#action-family-与-step)
 
 其它写法：`Sandbox state surface`。
 
@@ -467,25 +467,25 @@ Provider 为 exact Sandbox template 或 before cache 捕获并验证的不可变
 
 完整 attempt 运行条件身份,携带门的判据
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#buildkey-与-casekey两个身份各管一件事)
 
 ## Provider cache {#provider-cache}
 
 Roadmap 候选：Provider 为后续 Sandbox 保留的 Agent npm tarball、任务构建结果或原生 build cache；不属于结果携带或留存 Sandbox
 
-契约：[Provider Cache 生命周期](roadmap/sandbox-cache/cache-lifecycle/README.md)
+契约：[Provider Cache 生命周期](roadmap/sandbox-cache-lifecycle/README.md)
 
 ## Cache Domain {#cache-domain}
 
 Roadmap 候选：单一 cache backend 的所有权、命中、lease 与回收边界；identity 改变时形成新 Domain
 
-契约：[Provider Cache Architecture](roadmap/sandbox-cache/cache-lifecycle/architecture.md#cache-domain)
+契约：[Provider Cache Architecture](roadmap/sandbox-cache-lifecycle/architecture.md#cache-domain)
 
 ## GcPlan {#gc-plan}
 
 Roadmap 候选：对一个 Cache Domain 的不可变回收授权预览；apply 只能因事实漂移缩减候选，不能扩大候选
 
-契约：[Provider Cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md#两阶段回收)
+契约：[Provider Cache CLI](roadmap/sandbox-cache-lifecycle/cli.md#两阶段回收)
 
 其它写法：`GC 计划`。
 
@@ -493,7 +493,7 @@ Roadmap 候选：对一个 Cache Domain 的不可变回收授权预览；apply �
 
 Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，跨进程由 detached provider inspect / wake / destroy
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/case.md#收尾留存与注册表)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#收尾留存与注册表)
 
 其它写法：`Sandbox 留存能力`。
 
@@ -501,7 +501,7 @@ Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，
 
 一条 Attempt 对 Provider 实例、私有磁盘与网络的 durable ownership 事实；用 generation fencing 与期望终态支撑 detached recovery
 
-契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture.md#sandboxallocation)
+契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture/README.md#sandboxallocation)
 
 其它写法：`Sandbox allocation`。
 
@@ -515,25 +515,25 @@ raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配�
 
 每 Attempt独占、带 project quota hard limit的磁盘配额分配；固定挂到 inner `/var/lib/docker`，内部可由预建目录池兑现
 
-契约：[Docker profile architecture](feature/sandbox-docker-profiles/architecture.md#单容器资源)
+契约：[Docker profile architecture](feature/sandbox-docker-profiles/architecture/README.md#单容器资源)
 
 ## template owner {#template-owner}
 
 为当前配对提供 template 的 Eval 或 Experiment owner；它只决定 Provider 起点，不形成 action 排序墙
 
-契约：[Sandbox Layer](feature/sandbox/layers.md#顺序与依赖方向)
+契约：[Sandbox Layer](feature/sandbox/library/layers.md#顺序与依赖方向)
 
 ## action schedule {#action-schedule}
 
 同一 occurrence 内根据显式依赖、typed capability 与 changeFrequency 形成的确定性 before 顺序
 
-契约：[三方准备时序](feature/sandbox/lifecycle.md)
+契约：[三方准备时序](feature/sandbox/architecture/lifecycle.md)
 
 ## SandboxAction {#sandbox-action}
 
 四类 owner 共用的 `before` / `after` 执行单元；声明位置保留 owner 与 ordinal，planning 再编译 occurrence
 
-契约：[Sandbox Layer](feature/sandbox/layers.md#command-形状与-identity)
+契约：[Sandbox Layer](feature/sandbox/library/layers.md#command-形状与-identity)
 
 其它写法：`Sandbox action`。
 
@@ -541,19 +541,19 @@ raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配�
 
 只读探测命令,零副作用;退出码零为命中,非零是未命中而不是失败
 
-契约：[内置 prepare 命令](feature/sandbox/prepare-commands.md)
+契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 
 ## ensure {#ensure}
 
 「探测 → 缺失才 install → 复检」的循环语义;`installTool` 是工具版,`agent.ensure` 相位是 Agent 版
 
-契约：[内置 prepare 命令](feature/sandbox/prepare-commands.md)
+契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 
 ## 内置 prepare 命令 {#prepare}
 
 官方提供、自带 探测、缓存与稳定 identity 的 prepare 命令
 
-契约：[内置 prepare 命令](feature/sandbox/prepare-commands.md)
+契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 
 ## Prebuilt environment {#prebuilt-environment}
 
@@ -573,7 +573,7 @@ raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配�
 
 Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox
 
-契约：[Sandbox reuse](feature/sandbox/reuse.md)
+契约：[Sandbox reuse](feature/sandbox/library/reuse.md)
 
 其它写法：`Sandbox reuse`。
 
@@ -581,7 +581,7 @@ Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox
 
 Sandbox 实例就绪后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里,再执行两层 prepare
 
-契约：[Sandbox reuse](feature/sandbox/reuse.md)
+契约：[Sandbox reuse](feature/sandbox/library/reuse.md)
 
 其它写法：`Between-eval reset point for Sandbox reuse`。
 
@@ -589,7 +589,7 @@ Sandbox 实例就绪后落下的 commit；共用同一 Sandbox 的 Attempt 之�
 
 Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifetime` 确认或续期
 
-契约：[Sandbox reuse](feature/sandbox/reuse.md)
+契约：[Sandbox reuse](feature/sandbox/library/reuse.md)
 
 其它写法：`Sandbox reuse lifetime`。
 
@@ -597,7 +597,7 @@ Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifeti
 
 在 Attempt deadline 之外为 Hook 收尾与 Sandbox 销毁保留的内部安全时间
 
-契约：[Sandbox reuse](feature/sandbox/reuse.md)
+契约：[Sandbox reuse](feature/sandbox/library/reuse.md)
 
 其它写法：`收尾预留时间`。
 
@@ -629,7 +629,7 @@ Experiment 的比较准入边界；具名组由 `experimentId` 第一段形成�
 
 A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval
 
-契约：[实验值归属](feature/experiments/use-case/实验值归属/)
+契约：[实验值归属](feature/experiments/use-case/README.md#实验值归属)
 
 其它写法：`实验 flags`。
 
@@ -637,7 +637,7 @@ A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval
 
 运行时才知道、由 producer-owned typed collector 发布的值；不自动进入 eligibility identity 或 Attempt Core
 
-契约：[实验值归属](feature/experiments/use-case/实验值归属/)
+契约：[实验值归属](feature/experiments/use-case/README.md#实验值归属)
 
 其它写法：`Runtime observation`。
 
@@ -645,7 +645,7 @@ A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval
 
 Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认
 
-契约：[Experiments](feature/experiments/library.md)
+契约：[Experiments](feature/experiments/library/README.md)
 
 其它写法：`Model`。
 
@@ -653,7 +653,7 @@ Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认
 
 独立于 `model` 的推理强度档位;归属与 `model` 一致
 
-契约：[Experiments](feature/experiments/library.md)
+契约：[Experiments](feature/experiments/library/README.md)
 
 其它写法：`推理强度`、`reasoningEffort`。
 
@@ -799,7 +799,7 @@ Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入
 
 带 domain 的 opaque equality token；只有 domain 相同且 value 相等才允许沿用
 
-契约：[Cache](feature/experiments/cache.md)
+契约：[Cache](feature/experiments/architecture/cache.md)
 
 其它写法：`输入身份`。
 
@@ -807,7 +807,7 @@ Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入
 
 合格的历史 Attempt 通过 reference Member 并入本次 Run、不重跑；`carried` 是 actions provenance，不是 Member 或结果状态
 
-契约：[Cache](feature/experiments/cache.md)
+契约：[Cache](feature/experiments/architecture/cache.md)
 
 其它写法：`Result carry-forward`、`carried`。
 
@@ -815,7 +815,7 @@ Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入
 
 带 domain 的 opaque equality token；配方改变时更换 domain
 
-契约：[Cache](feature/experiments/cache.md)
+契约：[Cache](feature/experiments/architecture/cache.md)
 
 其它写法：`配置身份`。
 
@@ -823,7 +823,7 @@ Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入
 
 NiceEval 更换某个身份 domain 时登记的具名变更；`encoding-only` 可由旧算法纯重建后沿用，`behavior-changing` 必须重跑
 
-契约：[Cache](feature/experiments/cache.md#niceeval-身份域变更)
+契约：[Cache](feature/experiments/architecture/cache.md#niceeval-身份域变更)
 
 其它写法：`Identity domain change`、`IdentityDomainChange`。
 
@@ -903,7 +903,7 @@ producer 为 turn、item、call、command、usage、interval 与 diagnostic mint
 
 项目内唯一 `.niceeval/record.sqlite`；同时是即时可读事实源与通过 graceful portable gate 后可搬运的 artifact
 
-契约：[Run Architecture](feature/run/architecture.md#canonical-record-与-staging)
+契约：[Run Architecture](feature/run/architecture/README.md#canonical-record-与-staging)
 
 其它写法：`canonical Record`。
 
@@ -911,7 +911,7 @@ producer 为 turn、item、call、command、usage、interval 与 diagnostic mint
 
 受控退出时 close writer、truncate WAL，并以内建只读路径验证 schema 与领域不变量的交付门
 
-契约：[Run Architecture](feature/run/architecture.md#portable-gate-与不可信输入)
+契约：[Run Architecture](feature/run/architecture/README.md#portable-gate-与不可信输入)
 
 其它写法：`portable gate`。
 
@@ -919,7 +919,7 @@ producer 为 turn、item、call、command、usage、interval 与 diagnostic mint
 
 Run 创建时冻结的 expected 位置；最多原子绑定一个已发布 Attempt
 
-契约：[Run Architecture](feature/run/architecture.md)
+契约：[Run Architecture](feature/run/architecture/README.md)
 
 其它写法：`计划 Attempt`、`plannedAttemptId`、`plannedAttempts`、`originPlannedAttemptId`。
 
@@ -927,19 +927,19 @@ Run 创建时冻结的 expected 位置；最多原子绑定一个已发布 Attem
 
 同一事务提交 immutable Attempt closure、publication identity 与 origin binding 的线性化点
 
-契约：[Run Architecture](feature/run/architecture.md#attempt-publication)
+契约：[Run Architecture](feature/run/architecture/README.md#attempt-publication)
 
 ## Member {#member}
 
 一个 Planned attempt 对已发布 Attempt 的 origin 或 reference binding；不复制 Attempt
 
-契约：[Run Architecture](feature/run/architecture.md)
+契约：[Run Architecture](feature/run/architecture/README.md)
 
 ## Run absence {#run-absence}
 
 终态 Run 中未绑定 Planned attempt 的闭集原因；不伪造 Attempt 或 Member
 
-契约：[Run Architecture](feature/run/architecture.md#run-收口与-absence)
+契约：[Run Architecture](feature/run/architecture/README.md#run-收口与-absence)
 
 ## runHost {#run-host}
 
@@ -977,7 +977,7 @@ Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-2
 
 交付 `createdRunIds`、Invocation completion 与 opaque `publicationCutoff` 的进程返回值
 
-契约：[Experiments](feature/experiments/architecture.md#invocation-receipt-与退出)
+契约：[Experiments](feature/experiments/architecture/README.md#invocation-receipt-与退出)
 
 其它写法：`Invocation receipt`。
 
@@ -985,9 +985,9 @@ Sources snapshot 中由 `SourceItemId`、canonical project-relative path、SHA-2
 
 完整 `attemptId` 的确定性人读别名：`@1` 加 SHA-256 前 60 bit 的 12 字符规范大写 Crockford 编码；碰撞时返回 `ambiguous`
 
-契约：[Run](feature/run/architecture.md)
+契约：[Run](feature/run/architecture/README.md)
 
-其它写法：`Attempt 定位符`。
+其它写法：`Attempt 定位符`、`Attempt locator`。
 
 ## Inspection operation {#inspection-operation}
 
@@ -1005,7 +1005,7 @@ NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result �
 
 一次 operation 固定的 Run create、Planned attempt binding、Run close 与 deletion 可见边界
 
-契约：[Run Architecture](feature/run/architecture.md#publicationcutoff)
+契约：[Run Architecture](feature/run/architecture/README.md#publicationcutoff)
 
 其它写法：`Publication cutoff`。
 
@@ -1021,7 +1021,7 @@ NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result �
 
 对当前逻辑位置保留 reuse 或 gap 适用性，再按运行选项选择沿用或执行；只读预览不分配 Run identity
 
-契约：[Cache](feature/experiments/cache.md#公开形状)
+契约：[Cache](feature/experiments/architecture/cache.md#公开形状)
 
 其它写法：`执行沿用计划`。
 
@@ -1029,7 +1029,7 @@ NiceEval 第一方维护的具名读取问题，拥有穷尽 request、result �
 
 当前目标中没有合格 Attempt 的位置；不是 Attempt 或 Run state，也不是强制重跑选项；实际派发仍受预算与 early exit 约束
 
-契约：[Cache](feature/experiments/cache.md#当前结果可用性与执行选择)
+契约：[Cache](feature/experiments/architecture/cache.md#当前结果可用性与执行选择)
 
 其它写法：`Execution gap`。
 
@@ -1059,7 +1059,7 @@ NiceEval 自己维护、供用户审阅 Run、Attempt 与证据的本机 SPA；�
 
 跑 agent 前的准备逻辑,按职责分层:layer 的 `before()`、Agent Ensure、`test(t)` 普通代码与外部编排；`SandboxAgent.before` 只连 runtime / 鉴权
 
-契约：[Sandbox library](feature/sandbox/library.md)
+契约：[Sandbox library](feature/sandbox/library/README.md)
 
 ## CLI flag {#cli-flag}
 
@@ -1109,13 +1109,13 @@ Roadmap 候选：一个 Experiment Run 写入 Record 的候选分母、Execution
 
 Roadmap 候选：从受管 Execution 或 Grading definition source 创建、只能绑定到 recipe input 的私有品牌 Judge 输入句柄
 
-契约：[Judge Material Library](roadmap/judge-runtimes/material/library.md)
+契约：[Judge Material Library](roadmap/judge-runtimes-material/library.md)
 
 ## Action Result Selector {#action-result-selector}
 
 Roadmap 候选：按 occurrence 或封存动作元数据精确选择 Action result、且不能读取 output 的持久选择器
 
-契约：[Judge Material Library](roadmap/judge-runtimes/material/library.md#action-result-selector)
+契约：[Judge Material Library](roadmap/judge-runtimes-material/library.md#action-result-selector)
 
 其它写法：`ActionResultSelector`。
 
@@ -1123,7 +1123,7 @@ Roadmap 候选：按 occurrence 或封存动作元数据精确选择 Action resu
 
 Roadmap 候选：穷尽保存一次 Judge Check 的 input 声明、已定位 source、已交付 representation 与授权能力的 canonical manifest
 
-契约：[Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#materialbindingmanifest)
+契约：[Judge Material Architecture](roadmap/judge-runtimes-material/architecture.md#materialbindingmanifest)
 
 其它写法：`材料绑定清单`。
 
@@ -1131,7 +1131,7 @@ Roadmap 候选：穷尽保存一次 Judge Check 的 input 声明、已定位 sou
 
 Roadmap 候选：一次 evaluator occurrence 的 manifest、presentation 或 investigation closure 与 Decision；不拥有 threshold 或 score policy
 
-契约：[Judge Material Architecture](roadmap/judge-runtimes/material/architecture.md#实体与-owner)
+契约：[Judge Material Architecture](roadmap/judge-runtimes-material/architecture.md#实体与-owner)
 
 其它写法：`JudgeEvaluation`。
 
@@ -1147,7 +1147,7 @@ Roadmap 候选：在 attempts 展开前按共同 Eval ID 总体执行 first 或�
 
 Roadmap 候选：用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID
 
-契约：[具名 Experiment 族](roadmap/experiment-authoring/families/README.md)
+契约：[具名 Experiment 族](roadmap/experiment-authoring-families/README.md)
 
 其它写法：`Experiment family`、`defineExperiments`。
 
@@ -1155,7 +1155,7 @@ Roadmap 候选：用一个 keyed record 展开多个普通 Experiment；文件�
 
 Roadmap 候选：把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command
 
-契约：[Fixture 内容命令](roadmap/sandbox-prepare/fixture-content/README.md)
+契约：[Fixture 内容命令](roadmap/sandbox-prepare-fixture-content/README.md)
 
 其它写法：`Fixture content command`、`putFixture`。
 
@@ -1163,7 +1163,7 @@ Roadmap 候选：把本地内容登记、digest-backed identity 与 `putContent`
 
 Roadmap 候选：作为 Assertion evaluator 运行的独立 Agent；调查证据后返回 measurement、理由与引用，不拥有 Verdict 或 score policy
 
-契约：[Agent Judge](roadmap/judge-runtimes/agent/README.md)
+契约：[Agent Judge](roadmap/judge-runtimes-agent/README.md)
 
 ## 准入健康 {#admission-health}
 
@@ -1177,7 +1177,7 @@ Roadmap 候选：每条 fresh Planned attempt 在 Agent 进入前，对 producer
 
 Roadmap 候选：State Provider 颁发身份的一条持久状态 lineage，约束 Checkpoint、Region 与 schema 的共同归属
 
-契约：[持久状态](roadmap/state/README.md)
+契约：[持久状态](feature/state/README.md)
 
 其它写法：`状态 Cohort`。
 
@@ -1185,7 +1185,7 @@ Roadmap 候选：State Provider 颁发身份的一条持久状态 lineage，约�
 
 Roadmap 候选：State cohort 内由 Provider 发布的 immutable exact 状态点；Comparable 状态必须带内容摘要
 
-契约：[持久状态](roadmap/state/README.md)
+契约：[持久状态](feature/state/README.md)
 
 其它写法：`状态 Checkpoint`。
 
@@ -1193,7 +1193,7 @@ Roadmap 候选：State cohort 内由 Provider 发布的 immutable exact 状态�
 
 Roadmap 候选：由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG
 
-契约：[Eval Trajectory](roadmap/eval-trajectories/README.md)
+契约：[Eval Trajectory](feature/eval-trajectories/README.md)
 
 其它写法：`Eval trajectory`。
 
@@ -1217,7 +1217,7 @@ Roadmap 候选：显式目录入口拥有的递归 Eval discovery 范围；父�
 
 Roadmap 候选：与 description、Experiment identity 分离且不参与 reuse、选择或去重的人类可读标签
 
-契约：[Experiment 展示名](roadmap/experiment-authoring/display-names/README.md)
+契约：[Experiment 展示名](roadmap/experiment-authoring-display-names/README.md)
 
 其它写法：`Experiment display name`、`displayName`。
 
@@ -1233,7 +1233,7 @@ Roadmap 候选：在 frozen Record view 上按 canonical Run ID 枚举的只读�
 
 Experiment 为应用声明的模型用途，例如 mind 与 speech；键表达模型在应用里担任的角色。
 
-契约：docs/feature/adapters/library.md
+契约：docs/feature/adapters/library/README.md
 
 其它写法：`Model role`、`modelRole`、`ModelRoleSelection`、`defineModelRoles`。
 

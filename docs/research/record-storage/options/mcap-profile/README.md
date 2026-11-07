@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-options-mcap-profile
-title: 候选：MCAP profile + outer Run Seal
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/options/mcap-profile.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # 候选：MCAP profile + outer Run Seal
 
 > 状态：需要 spike 的容器复用候选

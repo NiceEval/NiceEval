@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: telemetry-configure-failure-stays-errored
-title: 裁决:telemetry 配置失败保持 errored,不降级
-createdAt: 2026-07-30T14:53:26+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/telemetry-configure-failure-stays-errored.md
-  commit: e8441bb201df31bd9e8adbbe9bc0b939ef792829
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 裁决:telemetry 配置失败保持 errored,不降级
 
 - **裁决**(2026-07-30):沙箱侧 OTLP 采集器写不进 `/tmp`(permission denied)这类
@@ -26,7 +9,7 @@ history: []
   镜像本身坏了,装依赖、跑测试迟早也撞;大声错 + errored 不携带,修好镜像重跑即自愈,
   而按消费面放行会让无关缺陷藏到更晚才炸。
 - **定稿义务**(契约已落):provider 可写保证扩到 runner 的沙箱侧运行时路径
-  (docs/feature/sandbox/architecture.md「provider 的可写保证不止 workdir」段);
+  (docs/feature/sandbox/architecture/README.md「provider 的可写保证不止 workdir」段);
   报错点名不可写路径与修法,不透传 SDK 原始错误串;超时类同病见
   docs/error-feedback.md「超时报错的三要素」。
 - **出处**:MemoryBench dogfooding(2026-07-30),huarong-dao-solver 死在

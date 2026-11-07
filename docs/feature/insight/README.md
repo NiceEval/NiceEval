@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: insight
-title: Insight
-createdAt: 2026-08-26T19:54:36+08:00
-kind: feature
----
-
 # Insight
 
 Insight 是本机开发者审阅持续可读 Run 的第一方 debugger。`niceeval view` 启动 React SPA；浏览器在一次读取开始时

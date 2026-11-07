@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-pydantic-evals
-title: Pydantic Evals 断言、判分与聚合作者面
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Pydantic Evals 断言、判分与聚合作者面
 
 观察日期：2026-08-09。

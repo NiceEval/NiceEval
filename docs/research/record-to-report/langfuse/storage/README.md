@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-langfuse-storage
-title: Langfuse 持久结构：type、表、文件与信封
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Langfuse 持久结构：type、表、文件与信封
 
 > 观察日期：2026-08-14

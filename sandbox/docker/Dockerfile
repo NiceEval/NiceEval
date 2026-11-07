@@ -9,7 +9,7 @@
 # Docker provider 的标准 node 用户装到 $HOME/.local。Bub 另写 NiceEval 安装规格指纹，
 # Adapter 只有在指纹完全匹配时才跳过安装。
 #
-# 非 root 是预制环境的义务，不是 runner 的强加（docs/feature/sandbox/library.md「执行身份」）：
+# 非 root 是预制环境的义务，不是 runner 的强加（docs/feature/sandbox/library/README.md「执行身份」）：
 # NiceEval 不再静默把执行身份换成非 root，镜像自己必须声明 USER。安装步骤都以 root 执行（base
 # 未声明 USER，继承 Docker 默认 root）；每个 target 收尾前切到 slim 基础镜像自带的 node 用户
 # （UID 1000），version smoke test 在切换后跑，顺带验证该用户能直接调用装好的 CLI。

@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: accept-cross-experiment-batch-ruling
-title: 裁决:`accept` 多 locator 放开跨 experiment,原「必须同一 experiment」是实现事故
-createdAt: 2026-08-04T17:29:58+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/accept-cross-experiment-batch-ruling.md
-  commit: 4c23e6a66d281c7502a0baa17967ebf2283b6538
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 裁决:`accept` 多 locator 放开跨 experiment,原「必须同一 experiment」是实现事故
 
 **裁决**(2026-08-04)。`niceeval accept @<locator>...` 的多 locator 输入不再要求全部属于同一
@@ -23,7 +7,7 @@ snapshot;预检仍是全批原子(任一 locator 不合格,整批零写入);同�
 
 **起因**。旧限制来自 `writeAcceptedAttempts` 的一条实现细节——「批量 commit 只建一个
 snapshot」的 writer 侧约束,被误当成「批量 accept 本身只能对着一个 experiment」的产品规则去校验
-和文档化(`docs/feature/experiments/cache.md` 曾写「多个 locator 必须属于同一 experiment……
+和文档化(`docs/feature/experiments/architecture/cache.md` 曾写「多个 locator 必须属于同一 experiment……
 跨 experiment 时按 experiment 分开调用」)。真实下游(toggl-cli)一次要接受 137 条 locator,天然
 跨多个 experiment,被这条限制逼着按 experiment 拆成多次 CLI 调用。而 `createWriter` 本来就支持
 一个 writer 内按 experimentId 记忆化建多个 `RunWriter`(`src/record/writer.ts` 的
@@ -35,7 +19,7 @@ snapshot」的 writer 侧约束,被误当成「批量 accept 本身只能对着�
 manifests/knownEvalIds/name)全部按组内的 `group[0]` 取,不再从全批 first 拿——manifests 尤其
 要每组独立一个对象,否则跨 experiment 同名 eval 会把两边的指纹输入清单互相覆盖。返回值按调用方
 传入的 `preparedAttempts` 顺序,用一个 `Map<PreparedAcceptedAttempt, locator>` 还原(分组会打乱
-内部处理顺序)。落点 `src/runner/accept.ts`;契约见 `docs/feature/experiments/cache.md`
+内部处理顺序)。落点 `src/runner/accept.ts`;契约见 `docs/feature/experiments/architecture/cache.md`
 「`niceeval accept @<locator>...`」。回归测试见 `src/runner/accept.test.ts`
 「writeAcceptedAttempts · 跨 experiment 分组提交」「acceptLocators · 跨 experiment 批量」。
 

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: three-levels
-title: 三级反馈走查
-createdAt: 2026-08-01T17:47:32+08:00
-kind: use-case
-feature: docs/feature/compile-time-contracts/README.md
----
-
 # 三级反馈走查
 
 ## 解决什么问题

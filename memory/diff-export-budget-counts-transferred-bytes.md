@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: diff-export-budget-counts-transferred-bytes
-title: 裁决:diff 导出预算只数真正传输的字节,超限文本逐文件显式省略
-createdAt: 2026-07-30T14:53:13+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/diff-export-budget-counts-transferred-bytes.md
-  commit: 993ff3a29daa32b08b1a08207d95abc67a88944d
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 裁决:diff 导出预算只数真正传输的字节,超限文本逐文件显式省略
 
 - **裁决**(2026-07-30):`workspace.diff` 的 64 MiB 单窗口预算只约束真正要传输的文本
@@ -29,7 +13,7 @@ history: []
   elided 取代,粒度更细且不需要新机制:没消费 diff 的题天然不受影响,消费了被省略内容的
   断言在读取时刻如实报证据不可用。
 - **连带**:`binary` 字段并入 `elided`,破坏兼容读取,schemaVersion 11→12;契约落
-  docs/feature/sandbox/architecture.md「导出往返是常数次」与
+  docs/feature/sandbox/architecture/README.md「导出往返是常数次」与
   docs/feature/record/architecture.md 的 diff.json 形状。
 - **修法落点**(2026-07-30 已实现):`src/runner/ledger.ts` 导出脚本两段式分类
   (numstat 二进制位 × cat-file 尺寸,预算检查先于内容传输),`src/scoring/diff.ts` 派生视图

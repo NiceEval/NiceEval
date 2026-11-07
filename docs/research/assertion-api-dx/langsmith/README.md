@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-langsmith
-title: LangSmith Evaluation：断言、评估器与反馈作者面
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # LangSmith Evaluation：断言、评估器与反馈作者面
 
 > 观察日：2026-08-09。本文是竞品研究，不是 NiceEval 契约。

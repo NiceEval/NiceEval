@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-eve
-title: Eve Eval 断言、Judge 与判定作者指南
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Eve Eval 断言、Judge 与判定作者指南
 
 本文观察 Eve 的 Eval 作者面，重点是断言、Judge、事件、判定与汇总。

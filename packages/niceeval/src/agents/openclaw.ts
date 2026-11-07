@@ -31,7 +31,7 @@ import {
 //
 // 连接方式:在沙箱里 spawn `openclaw agent --local --json`(嵌入式 agent 循环,不依赖
 // 长驻 gateway),读回结果封包 + session transcript → 标准事件流。方言解析全部住
-// src/o11y/parsers/openclaw.ts,不进 core(契约见 docs/feature/adapters/sdk/openclaw/README.md)。
+// src/o11y/parsers/openclaw.ts,不进 core(契约见 docs/feature/adapters/library/sdk/openclaw/README.md)。
 //
 // 行为轨优先级(collection.md):session transcript(完整工具轨迹)优先;transcript 拿不到
 // 时只保留 `--json` 封包的最终回复,不从最终文本猜工具行为——此时负断言不可信,send 会
@@ -127,7 +127,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/openclaw/README.md
+// @concord-implements docs/feature/adapters/library/sdk/openclaw/README.md
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
   const plugins = normalizeExactNpmPlugins(config?.plugins, "openClawAgent plugins");

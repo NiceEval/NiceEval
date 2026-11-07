@@ -94,7 +94,7 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
  * Provisioning 重试前的对账:按 provision token 查询本地 daemon,查到的实例先销毁再重建
  * (不做断线收养,重建比重连语义干净)。docker create 是对本地 daemon 的调用,歧义窗口极小,
  * 这条主要兜 daemon 代理 / 远程 DOCKER_HOST 的场景。查询或销毁失败必须抛出——对账是重试的
- * 硬前置,静默放行等于盲重试(见 docs/feature/sandbox/architecture.md);唯一的例外:
+ * 硬前置,静默放行等于盲重试(见 docs/feature/sandbox/architecture/README.md);唯一的例外:
  * 容器已不存在(404),视作对账完成。
  */
 export async function reconcileProvision(token: string, socketPath?: string): Promise<void> {
@@ -139,7 +139,7 @@ const CONTAINER_LOG = "/tmp/niceeval-agent.log";
 // 命令默认沿用环境自己声明的执行身份:省略 `user` 时 docker exec 不注入 `--user`,
 // 镜像 `USER` 原样生效(未声明按 Docker 语义是 root)。需要别的身份走 factory `user`
 // (整个 Sandbox 的默认身份)或 runCommand 的 `{ user: "root" }`(只这一条命令)——
-// 见 docs/feature/sandbox/library.md「执行身份」。
+// 见 docs/feature/sandbox/library/README.md「执行身份」。
 const ROOT_USER = "root";
 const DOCKER_ACCESS_SOCKET = "unix:///var/run/docker.sock";
 
@@ -185,7 +185,7 @@ export interface DockerSandboxOptions {
   provisionToken?: string;
   /**
    * 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 label 事后收回(见
-   * docs/feature/sandbox/architecture.md「孤儿核对」)。省略时不写这组 label(如直接单测构造
+   * docs/feature/sandbox/architecture/README.md「孤儿核对」)。省略时不写这组 label(如直接单测构造
    * DockerSandbox,不经 runtime.ts 的 provider materializer)。
    */
   runIdentity?: RunIdentity;
@@ -218,7 +218,7 @@ export interface DockerSandboxOptions {
   profileSetupPrefix?: DockerProfileSetupPrefixSession;
   afterStop?: () => Promise<void>;
   /**
-   * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+   * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
    * 「PATH:受管变量与 pathPrepend」)。
    */
   pathPrepend?: readonly string[];
@@ -1007,7 +1007,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       const initializationError = await this.withInitializationDiagnostics(error);
       // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
       // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
-      // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+      // (见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」)。
       const cleanupErrors: unknown[] = [];
       try {
         await this.container?.remove({ force: true });
@@ -1255,7 +1255,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.ensureRunnerTools(operationSignal);
 
     // 探测默认执行身份(镜像 USER,或 factory 的 `user` 覆盖)的 home 目录,后续 chown 与
-    // npm 全局前缀都按它解析,不硬编码 UID/家目录(见 docs/feature/sandbox/library.md「执行身份」)。
+    // npm 全局前缀都按它解析,不硬编码 UID/家目录(见 docs/feature/sandbox/library/README.md「执行身份」)。
     await this.resolveDefaultIdentity(operationSignal);
 
     // 工作目录交给默认执行身份。

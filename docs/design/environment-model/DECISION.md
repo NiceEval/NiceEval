@@ -6,7 +6,7 @@
 
 采纳 [PLAN-10](plans/plan-10/README.md):Eval、Experiment 与 Agent 向同一个主 Sandbox 各贡献一层准备,每个实际配对恰好一方携带 template,固定 template owner 先、另一 owner 次、Agent 最后的顺序,普通 command 只有逐 Attempt 一种频次。
 
-定稿契约写进 [Feature · Sandbox Layer](../../feature/sandbox/layers.md) 与 [Feature · Sandbox 三方准备时序](../../feature/sandbox/lifecycle.md);本页只保留选型理由。
+定稿契约写进 [Feature · Sandbox Layer](../../feature/sandbox/library/layers.md) 与 [Feature · Sandbox 三方准备时序](../../feature/sandbox/architecture/lifecycle.md);本页只保留选型理由。
 
 ## 命名裁决
 

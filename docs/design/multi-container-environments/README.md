@@ -1,27 +1,3 @@
----
-format: concord.document/v1
-id: multi-container-environments
-title: 多容器拓扑
-createdAt: 2026-07-30T14:05:12+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/multi-container-environments/README.md
-  commit: 9b165103651976a3b3f5cdc41bcead378ae30a24
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-  - plan-4
-decision:
-  selected: plan-4
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-4
-  source:
-    path: docs/design/multi-container-environments/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:cee3fe415b1cd70754b53fcae050024d28e21f111db78cc8d8e5a87266707d06
-  targets: []
----
 # 多容器拓扑
 
 Terminal-Bench 一类基准把被测 Sandbox 定义成一组容器加一张网:
@@ -52,11 +28,11 @@ provider 支持面差异都很大。
   (见 [DECISION](DECISION.md)),compose 保持单一事实源。
 - **会话残留进程死亡。** agent 前台启动的 server 随 exec
   会话销毁,判分时服务不在。此条与拓扑无关,由
-  [Sandbox 命令树契约](../../feature/sandbox/architecture.md#命令树与进程寿命)定义正常服务与异常命令树的相反边界，
+  [Sandbox 命令树契约](../../feature/sandbox/architecture/README.md#命令树与进程寿命)定义正常服务与异常命令树的相反边界，
   三个候选方案都以它为前提。
 
 假 `failed` 比缺功能更贵:它进分母掺水,还按
-[缓存沿用门表](../../feature/experiments/cache.md)被当成
+[缓存沿用门表](../../feature/experiments/architecture/cache.md)被当成
 可携带终态永久固化。
 
 **相关文档**:

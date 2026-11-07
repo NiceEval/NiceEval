@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-repeatability
-title: 同一题重复多次，昂贵安装只真实付一次
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # 同一题重复多次，昂贵安装只真实付一次
 
 ## 解决什么问题
@@ -49,5 +40,5 @@ feature: docs/feature/sandbox/README.md
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md) —— 重复运行、各阶段次数与结果沿用。
+- [Sandbox 复用](../library/reuse.md) —— 重复运行、各阶段次数与结果沿用。
 - [Runner](../../../runner.md) —— 首过即停与派发语义。

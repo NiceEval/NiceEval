@@ -5,7 +5,7 @@ import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 // (见 src/agents/skills.ts skillDiscoveryInstruction)是唯一途径。证据因此不是一等的
 // "skill.loaded" 事件(那只有原生机制的 adapter 才发),而是「Skill 内容确实影响了这轮
 // 输出」——助手文本引用了只存在于 SKILL.md 里的值,外加至少一次工具调用的入参提到了
-// skill 路径/文件名(见 docs/engineering/testing/e2e/adapter/bub.md「Skills」)。
+// skill 路径/文件名(见 docs/engineering/testing/architecture/e2e/adapter/bub.md「Skills」)。
 const MAGIC_WORD = "pineapple-37";
 export default defineEval({
   description: "挂载的 skill 内容在事件流里体现为真实的使用证据",

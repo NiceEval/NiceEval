@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: plugins
-title: Plugins
-createdAt: 2026-08-11T12:02:10+08:00
-kind: feature
----
-
 # Plugins
 
 Plugin 是一个可复用的实验条件，把条件身份、Agent 扩展、Sandbox 步骤和宿主前后步骤装进同一个值。
@@ -50,7 +42,7 @@ before 正序执行，after 按已激活顺序逆序执行。宿主 after 失败
 ## 入口
 
 - [Library](library.md)：实例、工厂、挂载矩阵、上下文与扩展合并。
-- [Architecture](architecture.md)：条件身份、Layer 投影与职责边界。
-- [Lifecycle](lifecycle.md)：顺序、carry、取消与失败收尾。
+- [Architecture](architecture/README.md)：条件身份、Layer 投影与职责边界。
+- [Lifecycle](architecture/lifecycle.md)：顺序、carry、取消与失败收尾。
 - [Use Case](use-case/terminal-bench-harness.md)：可复用条件的实际场景。
 - [Run](../run/README.md) 与 [Inspection](../inspection/README.md)：执行事实与公开观察。

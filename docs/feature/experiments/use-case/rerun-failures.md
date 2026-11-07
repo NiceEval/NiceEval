@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: rerun-failures
-title: 修复被测对象后只复验失败项
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 修复被测对象后只复验失败项
 
 上一轮五条 Attempt 中一条 Verdict 为 `failed`。

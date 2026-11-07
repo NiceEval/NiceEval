@@ -60,7 +60,7 @@ function testFromInput(input: Extract<EditPrBodyInput, { readonly operation: "te
       };
   return {
     path: input.selector.slice(0, input.selector.lastIndexOf("#")),
-    cases: [{ selector: input.selector, behavior: input.behavior, entry: input.entry, assertion: input.assertion, escape: input.escape, ...(input.regression === undefined ? {} : { regression: input.regression }) }],
+    cases: [{ selector: input.selector, behavior: input.behavior, entry: input.entry, assertion: input.assertion, escape: input.escape, ...(input.issue === undefined ? {} : { issue: input.issue }) }],
     source,
   };
 }
@@ -270,7 +270,7 @@ export function editorInputFinding(input: EditPrBodyInput): string | undefined {
     input.entry,
     input.assertion,
     input.escape,
-    input.regression,
+    input.issue,
   ].some((value) => value?.includes("\n") === true)) {
     return "test case narrative fields must each be one line";
   }

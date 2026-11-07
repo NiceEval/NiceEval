@@ -2,47 +2,26 @@
 name: testing
 description: Inspect, select, author, modify, or review NiceEval E2E and Unit test owners. Use when a change needs a test strategy, an existing test must be traced to its Feature or Use Case, or a bug requires public-entry E2E TDD.
 metadata:
-  command: concord repo docs test
+  command: concord test
   design: docs/engineering/testing/README.md
 ---
 
 # Testing
 
-Use `concord --skill repository` for the packaged command guide; load other topics only as needed. Generic `--skill test` describes command evidence, which cannot satisfy NiceEval formal gates. Read the affected product Feature first, then the [testing contract](../../../docs/engineering/testing/README.md). Run `concord repo docs test --help` to discover the current managed commands rather than guessing flags.
+Run `concord --skill test` for test markers, discovery and execution, and `concord --skill fix` for the defect-fix flow; use `concord test --help` for current syntax. Read the affected product Feature first, then the [testing contract](../../../docs/engineering/testing/README.md).
 
-For repository-wide coverage or relation audits, run `concord repo docs test audit --help`, then `concord repo docs test audit --json`. Treat its `uncoveredUseCases`, `unassignedCases`, `missingRelations`, and `orphanedRelations` as distinct findings; do not infer or merge them from filenames or titles.
+For a new case, place exactly one `// @feature docs/feature/<name>/README.md` or `// @use-case docs/feature/<name>/use-case/<name>.md` marker immediately above its real static declaration; generate it with `concord test marker --contract <path>`. Keep a natural title. Start from the long-term user result: strengthen an existing owner with the same result, or create one minimal Journey or single-boundary E2E only when no suitable owner exists. Never treat source `e2e/<repo>` as an installed consumer project. Do not create a second test for a Bug number, implementation module, or convenient fixture.
 
-Repository tools do not own one-time data migration commands or compatibility registries. An explicitly authorized migration must preserve exact contract/regression/Issue relations, history and tombstones; current references are derived from the migrated declarations, and finish with fresh native collection and audit. Keep any mapping and original snapshots in Git-private work material. Never manufacture inventory, replace real cases with stubs, or duplicate current relations in JSON.
-
-For one Repo or case, use `concord repo docs test inventory --help` first, then `list [pattern]` to find candidates and `show <repo-relative-path#caseId>` to confirm one exact case. `inventory --repo <id> --json` finds the registered scenario Repo, makes an isolated copy, injects the candidate and Testkit when required, installs it, runs native collection, and returns a Git-private `neinv_...` ID. Never treat source `e2e/<repo>` as an installed consumer project. Start from the long-term user result: strengthen an existing owner with the same result, or create one minimal Journey or single-boundary E2E only when no suitable owner exists. Do not create a second test for a Bug number, implementation module, or convenient fixture.
-
-For a Bug, obtain a red receipt through the installed public Library, CLI, HTTP, browser, or Adapter entry before changing production code. The same owner must turn green after the fix. Source calls, private artifacts, core-implementation mocks, and Unit tests cannot replace this gate.
-
-For the executable workflow, follow the command's current `--help` instead of guessing flags:
-
-```sh
-concord repo docs test inventory --help
-concord repo docs test regression add --help
-concord repo docs test regression refresh --help
-concord repo docs test issue add --help
-```
-
-For a new case, place exactly one `// @feature docs/feature/<name>/README.md` or `// @use-case docs/feature/<name>/use-case/<name>.md` immediately above its real static declaration. Keep a natural title. Run fresh native inventory, then use its derived selector for show and regression/Issue operations. Helpers use `// @test-file <repo-relative native entry>` when declaration and native file differ. Never put a generated reference into the title or comments. Changing the title or either identity path derives a new reference. AST locates declarations; native collection must uniquely bind each executable case to the actual execution-copy declaration. History and tombstones remain in the comment-only `e2e/concord-history.ts` archive.
-
-Inventory JSON is private evidence, not agent work material or a versioned compatibility protocol. Never write or patch inventory files in `/tmp`, and never repair `argv`, digests, executor fields, or collection output. Commands accept only the managed ID returned by collection. `InventoryInvalid` or `InventoryStale` means collect again with the current CLI. For a repository-wide read-only decision, run `concord repo docs test audit --json`; it owns the same isolated preparation and collection path without a hand-authored intermediate file.
-
-A file with multiple cases repeats relation commands for each selector; never copy one file-level relation to every case. Generate the old-candidate red evidence with `pnpm e2e evidence red --help`; pass the canonical Problem Memory path and its current epoch with `--problem <path> --problem-epoch <n>`. A successful run returns `nered_...`. Generate the green plus reliability certificate with the same Problem binding via `pnpm e2e takeover --help`; a passing matrix returns `netake_...`. Add the regression with `--red <nered_...> --takeover <netake_...> --inventory <neinv_...>`. These IDs resolve root-runner-owned Git-private bundles containing candidate bytes and formal evidence. Never pass, copy, or repair receipt/certificate paths or JSON. A stale or invalid ID requires a fresh root-runner operation. Use `retire`, not physical delete, for case, regression, and Issue lifecycle changes. Outside an explicitly authorized, coordinated repository data migration, use the named commands to change managed relation comments and history; never rewrite historical evidence.
-
-Current formal evidence uses `concord.native-case-receipt/v1` under policy and certificate `concord.native-reliability/v1`. Source identity v4 and source projection v3 bind the configured suite, policy, governance configuration, adapter source, fixed execution bytes, and current direct contract bytes. Every new receipt also binds the canonical Problem Memory path and its current non-negative epoch; red, takeover, relation refresh, and fixed resolution must all use that same epoch. Historical evidence is not rewritten and cannot close a new fixed Problem without current proof. For an existing current regression whose proof is legacy or stale, keep the Problem open and use `regression refresh --reason <text>` with fresh managed red, takeover and inventory IDs. Do not repair old receipts or retire/re-add the relation merely to refresh evidence.
+For a Bug, obtain a red result through the installed public Library, CLI, HTTP, browser, or Adapter entry before changing production code. The same owner must turn green after the fix. Source calls, private artifacts, core-implementation mocks, and Unit tests cannot replace this gate. Mark the regression with `@issue docs/issues/<id>.md`, commit it before the fix, and close the Issue with `concord issue close <id> --fixed`.
 
 Before authoring, follow the testing index to the portfolio, E2E form, scenario-repo layout, domain page, authoring rules, and execution command needed by this case. There is intentionally no generic `test create` scaffold: owner selection, public observation, fixture, and cleanup cannot be generated safely from a slug.
 
 For E2E authoring and review, enforce the harness and structured-output gates in
-[`docs/engineering/testing/e2e/README.md`](../../../docs/engineering/testing/e2e/README.md#正文与-support-边界)
-and route shared mechanics through the [official Testkit](../../../docs/engineering/testing/testkit.md#e2e-正文准入门).
+[`docs/engineering/testing/architecture/e2e/README.md`](../../../docs/engineering/testing/architecture/e2e/README.md#正文与-support-边界)
+and route shared mechanics through the [official Testkit](../../../docs/engineering/testing/library.md#e2e-正文准入门).
 Reject local copies of exported Testkit types and `json<T>()` plus local interfaces that redefine product protocols.
 If a candidate lacks a strict public decoder, add it at the product protocol authority before adding a thin Testkit method.
 
-New or substantially changed deterministic owners must pass isolated repetitions, same-copy repetition, default parallel execution, single-case execution, and resource cleanup. Use full local E2E only for the first public red, the fixed candidate's targeted green, and required takeover/final receipts; CI owns the final complete matrix rather than step-by-step debugging. Finish with `concord repo docs test show <path#caseId>`, the narrow E2E command, `pnpm test` for required Unit validation, `pnpm typecheck`, and `pnpm lint`; preserve the exact receipts required by the PR template.
+New or substantially changed deterministic owners must pass isolated repetitions, same-copy repetition, default parallel execution, single-case execution, and resource cleanup. Use full local E2E only for the first public red and the fixed candidate's targeted green; CI owns the final complete matrix rather than step-by-step debugging. Finish with `concord check`, the narrow E2E command, `pnpm test` for required Unit validation, `pnpm typecheck`, and `pnpm lint`.
 
 Cases that can theoretically run in parallel should be concurrent by default once their project copy, result root, ports, processes, containers, and external-state identity have separate owners. Express that decision with `test.concurrent` / `test.concurrent.each`; do not rely on file splitting or an implicit global mode. Validate their owner-local deadlines under the default parallel suite load. Do not add a Repo- or domain-wide concurrency cap to make a shared runner pass; follow the E2E execution contract and change CI placement when independently owned work causes daemon, memory, or tail-latency contention. Only the smallest region that intentionally shares mutable evidence or resources may remain serial, and the shared ownership must be evident in the test.

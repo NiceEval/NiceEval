@@ -93,7 +93,7 @@ labels?: globalThis.Record<string, string | number>;
 labels 不透传 ctx / t(agent 和 eval 看不见)、不参与可比性配置(改它不作废已有结果),
 只原样投影进快照的 `ExperimentRunInfo.labels` 供报告维度(`label()` / `numericLabel()`)
 分组。`line` 键被默认报告识别:组内任一实验声明了它,散点按线归类并连线。
-见 docs/feature/experiments/library.md「labels」。
+见 docs/feature/experiments/library/README.md「labels」。
 
 #### `attempts`
 
@@ -121,7 +121,7 @@ evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
 这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的
 只读 `EvalDescriptor`,不暴露路径 / 执行字段);省略等价于 `"*"`。谓词对本次 invocation 的
 候选 eval 各求值一次,解析结果作为内存中的 `selectedEvalIds` 计划——不是运行时反复调用的过滤器
-(见 docs/feature/eval/library.md「EvalDescriptor」、docs/feature/experiments/library.md
+(见 docs/feature/eval/library/README.md「EvalDescriptor」、docs/feature/experiments/library/README.md
 「evals:遍历发现结果,自定义选择」)。
 
 #### `timeoutMs`
@@ -214,7 +214,7 @@ before 不返回值;产物写模块级变量,`after` 与同文件 agent / sandbo
 runner 不做值的中介。before 抛错 → 本实验所有 Attempt 形成 `errored` Verdict
 (code `"experiment-setup-failed"`、phase `"experiment.before"`),同批其它实验不受影响。
 函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
-见 docs/feature/experiments/architecture.md「实验级生命周期」。
+见 docs/feature/experiments/architecture/README.md「实验级生命周期」。
 
 #### `after`
 

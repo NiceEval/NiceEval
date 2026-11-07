@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: multi-source-field-resolution-order
-title: 多来源字段的解析顺序没有单点声明 → `??` 链少一层没人会红
-createdAt: 2026-07-25T12:46:34+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/multi-source-field-resolution-order.md
-  commit: 49bb1f338f829de1261881760d6f7276e9591a5a
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "**这条 memory 曾把修法写得像已完成**——2026-07-30 MemoryBench(niceeval 0.11.3)dogfooding 再次真机撞上同一 bug(声明 31 / 36 分钟的 eval 被 config 的 20 分钟掐死,报错无来源),回查才发现只有契约落了。docs 先于代码定稿是正常流程,但 memory 台账必须区分「契约已定」与「代码已修」。"
-    proof: []
-    source:
-      path: memory/multi-source-field-resolution-order.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:183446e7f6cc3ac80e5183a103731504596afe60f9b3b0755b82bd3cbc5edba5
----
 # 多来源字段的解析顺序没有单点声明 → `??` 链少一层没人会红
 
 ## 现象
@@ -46,7 +16,7 @@ resolution:
 
 ## 修法(逐项标注落地状态,2026-07-30 核对)
 
-1. **契约先落地**(已落,commit 49bb1f33,随 v0.11.3 发布):解析链单点声明在 `docs/feature/experiments/architecture.md` 的「配置解析链」节——`--timeout` → experiment → eval → config → 默认值,并写死「**config 是缺省底不是覆盖层,写了 config 不得使 eval 自己的声明失效**」;`docs/runner.md` 的 carry 资格判据与 `docs/feature/eval/README.md` 引用它,不各自复述。
+1. **契约先落地**(已落,commit 49bb1f33,随 v0.11.3 发布):解析链单点声明在 `docs/feature/experiments/architecture/README.md` 的「配置解析链」节——`--timeout` → experiment → eval → config → 默认值,并写死「**config 是缺省底不是覆盖层,写了 config 不得使 eval 自己的声明失效**」;`docs/runner.md` 的 carry 资格判据与 `docs/feature/eval/README.md` 引用它,不各自复述。
 2. **代码**(已落地,2026-07-30):解析链单点收进新建 `src/runner/timeout.ts`(运行侧 `resolveRunTimeout` 不含 config 层、attempt 侧 `resolveAttemptTimeout` 补 eval → config),`cli.ts` 那层提前物化删除;`run.ts` 复用池寿命与 `fingerprint.ts` 携带判据同源消费。同批按契约删掉了链末端藏着的 600s 内置默认(表格写「无上限」),四层全缺就不设 deadline。
 3. **测试**(已落地,2026-07-30):`src/runner/attempt.test.ts` 五行区分力矩阵(flag/experiment/eval/config/无上限),断真实 deadline 而非配置值;变异自检确认链改回旧写法时恰好 eval/config/无上限三行红。
 4. **诊断**(已落地,2026-07-30):超时消息带来源(`attempt 超时(1200000ms, from config)`),四值 `flag`/`experiment`/`eval`/`config`;`FLAG_OPTIONS` 的 `--timeout` JSDoc 补齐 eval 层与「默认无上限」,`pnpm docs:reference` 已重生成 cli.mdx 区块(`docs-site/zh/reference/cli.mdx` 手写段的同步另行处理)。

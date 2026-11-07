@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: config-hash-forks-per-eval-judge-declaration
-title: run.json 的 Run 级 configHash 曾把逐 eval judge 分叉当 bug 报错(已修)
-createdAt: 2026-08-04T19:32:31+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/config-hash-forks-per-eval-judge-declaration.md
-  commit: 57d0f153882b1a041c9fd4eaaca945d3e68dcab3
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "# run.json 的 Run 级 configHash 曾把逐 eval judge 分叉当 bug 报错(已修)"
-    proof: []
-    source:
-      path: memory/config-hash-forks-per-eval-judge-declaration.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:46a16f76b2499f353f032c1fb96458781f61b794d73bfa87f91725edfa97e7df
----
 # run.json 的 Run 级 configHash 曾把逐 eval judge 分叉当 bug 报错(已修)
 
 ## 现象
@@ -48,7 +18,7 @@ configHash is a Run-level value and must be identical for every eval scheduled u
 
 ## 根因
 
-`toggl-cli/04-billing-doc` 是这条链里唯一自己声明 `judge: {...}` 的 eval(其余 35 条都不声明,项目级 `niceeval.config.ts` 与实验文件也都不声明 judge)。`src/runner/fingerprint.ts` 的 `planCarryPrepared` 按 `resolveJudge(run.judge, evalDef.judge, configJudge)` 逐字段解析出**该 eval 实际生效**的 judge,喂进 `configIdentityForRun(...)` 算出 `plannedConfigHashes`——这是刻意行为,判分 judge 变化必须让依赖它的 eval 重跑(`docs/feature/experiments/cache.md`「指纹:两个哈希嵌套」,以及 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) 记录的前一次相关修复)。
+`toggl-cli/04-billing-doc` 是这条链里唯一自己声明 `judge: {...}` 的 eval(其余 35 条都不声明,项目级 `niceeval.config.ts` 与实验文件也都不声明 judge)。`src/runner/fingerprint.ts` 的 `planCarryPrepared` 按 `resolveJudge(run.judge, evalDef.judge, configJudge)` 逐字段解析出**该 eval 实际生效**的 judge,喂进 `configIdentityForRun(...)` 算出 `plannedConfigHashes`——这是刻意行为,判分 judge 变化必须让依赖它的 eval 重跑(`docs/feature/experiments/architecture/cache.md`「指纹:两个哈希嵌套」,以及 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) 记录的前一次相关修复)。
 
 昨天(2026-08-04)的 commit `775816b3` 新增了 run.json 的 Run 级 `configHash` 落盘,校验逻辑却直接拿 `plannedConfigHashes`(逐 eval、含完整 judge 解析链的那份)按 experimentId 汇总并断言"同一 experiment 下每条 eval 的值必须相等,不等就抛错,不能硬写"——这条校验的假设(configHash 是纯 Run 级,不受任何单个 eval 的声明影响)与「一条 eval 自己声明 judge 会让它的 configHash 单独变化」这个更早就存在的既有行为直接矛盾。矛盾此前一直不可见,是因为 exp 写入面在这条修法之前从不写 run 级 configHash(见 [exp-runjson-missing-confighash-breaks-current-sample](exp-runjson-missing-confighash-breaks-current-sample.md)),没有任何地方真正比较过"同一 experiment 下逐 eval 的 configHash 是否相等"。
 
@@ -63,4 +33,4 @@ configHash is a Run-level value and must be identical for every eval scheduled u
 - `src/runner/run.test.ts`「run.json 的 Run 级 configHash 不因单条 eval 自带 judge 分叉」:同一 experiment 下一条 eval 声明自己的 judge、其余不声明,规划期不再抛错;该 eval 自己的 `result.configHash` 与其余 eval 不同(携带正确性),但 `run.json` 落盘的值与不声明 judge 的 eval 一致(真正的 Run 级值)。临时改回旧逻辑复现过原始报错,确认非重言式。
 - `src/sandbox/layer.test.ts`「pathPrepend 省略与显式空数组产出同一份 template identity;非空时才改变它」。
 
-修法落点:`src/runner/run.ts`、`src/sandbox/layer.ts`。文档同步:`docs/feature/experiments/cache.md`(未改,既有契约本就正确)、`docs/feature/sandbox/library.md`「PATH:受管变量与 pathPrepend」补 absent ≡ default 通用规则、`docs/engineering/testing/unit/{experiments-runner,sandbox}.md` 补覆盖规范。
+修法落点:`src/runner/run.ts`、`src/sandbox/layer.ts`。文档同步:`docs/feature/experiments/architecture/cache.md`(未改,既有契约本就正确)、`docs/feature/sandbox/library/README.md`「PATH:受管变量与 pathPrepend」补 absent ≡ default 通用规则、`docs/engineering/testing/architecture/unit/{experiments-runner,sandbox}.md` 补覆盖规范。

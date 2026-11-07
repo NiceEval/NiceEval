@@ -3,7 +3,7 @@
 ## 调用形状
 
 展示块是 `ctx.recordTrace()` 事件上的可选字段 `display`。
-事件的其它字段由 [保存通用执行轨迹](../../../../feature/adapters/library.md#保存通用执行轨迹) 定义。
+事件的其它字段由 [保存通用执行轨迹](../../../../feature/adapters/library/README.md#保存通用执行轨迹) 定义。
 
 ```ts
 const image = await ctx.attach({ name: "frame.png", mediaType: "image/png", body: png });

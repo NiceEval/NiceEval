@@ -1,41 +1,5 @@
----
-format: concord.document/v1
-id: incus-clone-volume-admission-race
-title: Incus 并行准备误判尚未重标记的克隆磁盘
-createdAt: 2026-09-06
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: |-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - nered_4ZWAZXWP4WRPKQH2
-            - netake_R960DF8AWJXHAWPV
-            - niceeval.fixed-evidence/v1:{"selectors":["e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts#necase_APN2MNBEXSN1G18T"]}
-    proof:
-      - nered_4ZWAZXWP4WRPKQH2
-      - netake_R960DF8AWJXHAWPV
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts#necase_APN2MNBEXSN1G18T"]}
-    source:
-      path: memory/incus-clone-volume-admission-race.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:0c5adaba7f7b511fb34f34aea631f4bd943b6974b8691f8a3145d01b3c8393f8
----
+# Incus 并行准备误判尚未重标记的克隆磁盘
+
 ## 观察
 
 main CI 33973066999 的准备前缀 DAG 只启动一个 child，等待共同屏障 270 秒后失败。同一候选 SHA-256 `8d3cfed42707fcafde05d12fa8c96c358850f40fe1c30be350ed24cd47a97862` 在隔离消费项目首跑通过，第二次诊断复现单 child 等待。

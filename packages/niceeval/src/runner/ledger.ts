@@ -1,5 +1,5 @@
 // 变更分类账(私有 git ledger):回答「**agent** 改了什么」,不是「workspace 相对空目录变了什么」。
-// 契约见 docs/feature/sandbox/architecture.md「变更归因:send 窗口与分类账」:
+// 契约见 docs/feature/sandbox/architecture/README.md「变更归因:send 窗口与分类账」:
 // - ledger 的 git 目录在沙箱内、workdir 外(runner 私有路径),以 workdir 为 work-tree——
 //   workdir 保持素净:agent 看不到 runner 的 .git,eval 需要真实 git repo 时自己 git init,
 //   agent 在 workdir 里的任何 git 操作都碰不到分类账。
@@ -178,7 +178,7 @@ export interface ChangeLedger {
   resetToAnchor(): Promise<void>;
   /**
    * 建账时探测到的执行身份是否为 root(仅当 provider 支持 root ledger 命令时才探测得到,
-   * 否则恒为 false)。sandboxReuse 复用池据此在实例进池前拒绝(见 docs/feature/sandbox/reuse.md);
+   * 否则恒为 false)。sandboxReuse 复用池据此在实例进池前拒绝(见 docs/feature/sandbox/library/reuse.md);
    * `resetToAnchor()` 内的同款判断作纵深防御保留。
    */
   readonly rootExecutionIdentity: boolean;

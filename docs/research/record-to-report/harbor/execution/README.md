@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-harbor-execution
-title: Harbor 的执行、失败与恢复
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/harbor/execution.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Harbor 的执行、失败与恢复
 
 本页回答一个 Job 怎样展开并执行 Trial，谁写每份结果，以及失败后 retry、resume 与 regrade 怎样处理已有事实。

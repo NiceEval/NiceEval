@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: experiment-ab
-title: 用 Experiment 做裁判 A/B
-createdAt: 2026-08-01T21:01:04+08:00
-kind: use-case
-feature: docs/feature/judge/README.md
----
-
-
 # 用 Experiment 做裁判 A/B
 
 Eval 保留 rubric、anchors、材料选择和 consumer threshold；Experiment 只选择模型或整个 Provider：

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: rubric-points
-title: 计分制：检查点和质量分
-createdAt: 2026-07-22T11:45:06+08:00
-kind: use-case
-feature: docs/feature/eval/README.md
----
-
 # 计分制：检查点和质量分
 
 通过制回答“是否满足要求”。需要表达“做到几成”时，使用 `defineScoreEval`，用 `.score(points)` 让已登记

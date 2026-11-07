@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: live-dashboard-full-width-ruling
-title: 裁决:live 面板默认占满终端全宽,ACTIVE 身份列按内容定宽、detail 拿走其余全部
-createdAt: 2026-07-23T10:32:20+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/live-dashboard-full-width-ruling.md
-  commit: 51a98f609091e8d9a784e7debcee93a31cb47fc3
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 裁决:live 面板默认占满终端全宽,ACTIVE 身份列按内容定宽、detail 拿走其余全部
 
 **日期**:2026-07-23(用户裁定「默认占满,把细节尽可能的展示出来」)
@@ -30,4 +14,4 @@ history: []
 - **身份列固定比例(55/45)分配**——短 id 垫空格,空白全是 detail 本可用的宽度(用户截图里的大段空白);否决。
 - **列宽整场按计划集合预算定**——需要 plan 数据穿进 renderer,复杂度高于「见过的最长值单调放宽」且收益只是前几帧更稳;否决,取单调放宽方案(帧间同样无抖动)。
 
-文档落点:`docs/feature/experiments/cli.md`「框线体裁」「运行中的 live 面板」、`docs/feature/reports/library/layout.md` 几何段;实现 TODO 在 `plan/live-dashboard-full-width-detail.md`。
+文档落点:`docs/feature/experiments/cli/README.md`「框线体裁」「运行中的 live 面板」、`docs/feature/reports/library/layout.md` 几何段;实现 TODO 在 `plan/live-dashboard-full-width-detail.md`。

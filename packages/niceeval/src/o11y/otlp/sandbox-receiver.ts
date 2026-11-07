@@ -107,7 +107,7 @@ function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unkno
 
     return Effect.gen(function* () {
       // 采集器脚本落在系统临时目录(workdir 之外的私有路径,契约见
-      // docs/feature/sandbox/architecture.md「provider 的可写保证不止 workdir」)。/tmp 对运行
+      // docs/feature/sandbox/architecture/README.md「provider 的可写保证不止 workdir」)。/tmp 对运行
       // 用户不可写时,e2b 一类 provider 只抛一个 500 原始串,读到它的人无从下手:这里翻译成
       // 「点名路径 + 这是镜像环境缺陷 + 怎么修」,原始错误留在 cause 里做证据,不进消息。
       yield* writeCollector;

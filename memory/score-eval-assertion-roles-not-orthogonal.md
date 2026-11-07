@@ -1,24 +1,8 @@
----
-format: concord.document/v1
-id: score-eval-assertion-roles-not-orthogonal
-title: 裁决：计分制里 points 与 severity 不正交，改成「一条断言只扮演一个角色」
-createdAt: 2026-07-23T08:51:45+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/score-eval-assertion-roles-not-orthogonal.md
-  commit: 74b88fa01658addfc259cb80beb4e9826cc76079
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 裁决：计分制里 points 与 severity 不正交，改成「一条断言只扮演一个角色」
 
 **日期**：2026-07-23（推翻 [pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md) 定稿时的第 5 条「判定面完全不变」）
 
-**裁决**（契约落 `docs/feature/experiments/score-points.md`，severity 侧落 `docs/feature/scoring/architecture/severity-and-verdict.md`）：
+**裁决**（契约落 `docs/feature/experiments/library/score-points.md`，severity 侧落 `docs/feature/scoring/architecture/severity-and-verdict.md`）：
 
 1. **角色互斥，不是正交组合**。计分制里一条断言的角色由断言句柄上链的词唯一决定：`.points(n)` 得分点（进分数面）、`.gate(x?)` 前置（不进任何折叠读数）、不链词或 `.soft()` 观测（进质量分）。`.points(n).gate(x?)` 是「得分点兼前置」，是唯一的合法组合。读数落点两两不相交。
 2. **`.points()` 之后只剩 `.gate()` / `.optional()`**：`.soft()` / `.atLeast(x)` 在计分制句柄上不存在（类型层拒绝）。设通过线用 `.gate(x)`。
@@ -31,7 +15,7 @@ history: []
 **否决理由（原「正交」设计的三处硬伤）**：
 
 - **旗舰例子自己踩了默认 gate**：`score-points.md` 检查点制示例的 `.points(1)` 断言没链 severity，默认就是 gate，于是「五步走完三步」的 attempt verdict 是 `failed`——计分制的整个前提是部分完成有部分分，判定面却把它标成失败。这是文档里活的 bug，不是理论问题。
-- **`.points(n).soft()` 双读同一条证据**：质量分 = soft 断言分数的无权均值，带 points 的 soft 断言会同时进分数面和质量分。原契约（`docs/engineering/testing/unit/scoring.md` 的「可任意顺序组合」）从没裁决过这种情况。
+- **`.points(n).soft()` 双读同一条证据**：质量分 = soft 断言分数的无权均值，带 points 的 soft 断言会同时进分数面和质量分。原契约（`docs/engineering/testing/architecture/unit/scoring.md` 的「可任意顺序组合」）从没裁决过这种情况。
 - **计分制里 gate 没有读者**：榜单主列在计分制是总分不是通过率，「没挣到那 60 分」已经把排名压下去，再翻一次 verdict 是重复表达。
 
 **曾选方案**：

@@ -1,5 +1,5 @@
 // run 激活期间,底层模块(sandbox provider、budget 记账、reporter 兜底、中断处理……)不得
-// 直接写 stdout/stderr(见 docs/feature/experiments/cli.md「输出流和落盘节奏」与本文件对应的
+// 直接写 stdout/stderr(见 docs/feature/experiments/cli/README.md「输出流和落盘节奏」与本文件对应的
 // PLAN 第 2 节「一个 run 内只有一个终端协调者」)。它们改调用这里的 reportXxx() 系列函数。
 //
 // - 有活跃 FeedbackCoordinator 时(coordinator.start() 之后、finish() 之前,见 cli.ts 的
@@ -315,7 +315,7 @@ export function reportInterrupted(): void {
 }
 
 /**
- * runner 自己驱动的 attempt 生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)——
+ * runner 自己驱动的 attempt 生命周期投影(见 docs/feature/experiments/cli/README.md「Attempt 阶段」)——
  * `src/runner/attempt.ts`(phase/progress)与 `src/runner/run.ts`(start/complete/early-exit)是
  * 目前仅有的两个调用方。没有活跃 coordinator 时(今天:CLI 还没接入 --output)静默 no-op ——
  * 与其它 reportXxx() 不同,这里不退回 `writeStderrLine` 兜底:这类事件只服务尚不存在的

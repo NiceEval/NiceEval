@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: testkit-zombie-only-process-group
-title: Testkit 将 zombie-only owned process group 误判为活组
-createdAt: 2026-08-20T08:09:31+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/testkit-zombie-only-process-group.md
-  commit: 41d192486eefd620c14af2741016e0c161c2536c
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [testkit-zombie-only-process-group](testkit-zombie-only-process-group.md) — Linux 的 `kill(-pgid, 0)` 对仅含 zombie 的 owned group 仍成功，旧 cleanup 无法改变终态却在两轮信号后报残留；Lifecycle 安装后 E2E 用固定 subreaper fixture 取得旧实现红灯，procfs terminal-only 判定转绿"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # Testkit 将 zombie-only owned process group 误判为活组
 
 ## 现象
@@ -53,7 +23,7 @@ zombie process group member；对该成员再发 TERM 或 KILL 都不会改变�
 ## 回归收据
 
 - Owner：`e2e/lifecycle/test/process-group-zombie-cleanup.test.ts`，
-  `docs/engineering/testing/e2e/README.md#process-group-terminal-state`。
+  `docs/engineering/testing/architecture/e2e/README.md#process-group-terminal-state`。
 - 固定条件：Linux、`python>=3.11`、Lifecycle manifest 的 `PR_SET_CHILD_SUBREAPER` wrapper；fixture 明确断言
   process group 的唯一成员为 `Z`，并确认旧 probe `kill(-pgid, 0)` 成功。
 - Candidate：checkout HEAD `305bd27c9403986fcf11b9ad6a67e9ac140cb658`；同一 candidate SHA-256

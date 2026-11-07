@@ -1,4 +1,4 @@
-// Plugin 安装收敛 × Sandbox 复用(docs/engineering/testing/e2e/adapter/claude-code.md 的
+// Plugin 安装收敛 × Sandbox 复用(docs/engineering/testing/architecture/e2e/adapter/claude-code.md 的
 // Plugins 行)。四个沙箱并发承接八条 attempt；第二波复用第一波的沙箱，workdir 回到
 // 题间重置点，$HOME 保留上一波安装。八条 attempt 都必须调用 Plugin MCP 工具成功。
 import { defineExperiment } from "niceeval";

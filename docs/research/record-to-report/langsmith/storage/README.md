@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-langsmith-storage
-title: LangSmith 的持久结构与读取投影
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/langsmith/storage.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # LangSmith 的持久结构与读取投影
 
 本页把公开 wire/resource schema 与物理 datastore 分开。除特别注明，源码证据固定在官方 `langchain-ai/langsmith-sdk` commit [`345a522`](https://github.com/langchain-ai/langsmith-sdk/commit/345a52252af163abe33699fb361038f5783c9024)（2026-08-13 UTC）。部署证据固定在官方 `langchain-ai/helm` commit [`e5fd3cf`](https://github.com/langchain-ai/helm/commit/e5fd3cf1f3bb39d0ae8962c2308f82419b8e10a0)（2026-08-12 UTC）。**公开 class 名或 API resource 不等于同名数据库 table。**

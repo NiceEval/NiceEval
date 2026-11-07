@@ -32,21 +32,18 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 |---|---|
 | Repository root 的 argv、`effect/unstable/cli` command tree、Layer、进程交付与唯一 `@effect/platform-node` `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
 | `docs` contribution 的装配与显式 domain contribution protocol | `packages/repo-tools/src/docs/{command,contribution}.ts` |
-| Feature/Test Trace Schema、compiler、固定投影与各自 domain renderer | Concord 的 `concord repo docs feature/test` 与 Trace 库入口 |
-| canonical RepoRef、target validation 与 Trace relation mutation 的共享锁/generation | Concord 的 repository Trace 库入口 |
-| 当前 Issue owner、adoption、Memory relation 与远端 source | Concord 的 `concord repo feedback` |
-| 当前 Memory、promotion、supersession 与 E2E regression check | Concord 的 `concord repo memory` |
+| Feature、Use Case、测试标记与关系追踪 | 全局 `concord`：`list`、`show`、`test`、`trace` |
+| 本地 Issue、Memory 关系与远端来源 | 全局 `concord`：`issue`、`memory`、`feedback` |
 
 这些命令属于仓库自身，不进入发布的 `niceeval` 产品 CLI。中立治理直接从全局 `concord` 进入，NiceEval 自有文档生成从 `pnpm run repo docs` 进入。
-Feature/Test 发现分别是 `concord repo docs feature` 与 `concord repo docs test`；
-Feedback 与 Memory 仍各自使用 `concord repo feedback` 与 `concord repo memory`。领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。
+领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。
 
 ## 运行与持久事实
 
 | 目标行为 | 当前源码区域 |
 |---|---|
 | Experiment 发现、调度、Invocation-local 并发、共享状态租约、Sandbox 生命周期、reuse 与 receipt | `packages/niceeval/src/runner/{run,lock,shared-state-lease}.ts` 及同目录协作者；由 `experimentHost` 调用 |
-| [Setup 前缀缓存](roadmap/sandbox-cache/setup-prefix/README.md) 的 Action state、DAG 线性化、前缀协调、capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-setup-prefix-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/` 与 `packages/niceeval/src/runner/attempt.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
+| [Setup 前缀缓存](roadmap/sandbox-cache-setup-prefix/README.md) 的 Action state、DAG 线性化、前缀协调、capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-setup-prefix-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/` 与 `packages/niceeval/src/runner/attempt.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
 | execution claim 与共享资源协调 | `packages/niceeval/src/coordination/`；不形成公开持久 writer 或 maintenance lease |
 | Run Core、expected slots、Attempt publication、reference binding、state 与 tombstone | 目标 owner 为 `packages/niceeval/src/run/`；当前 `packages/niceeval/src/record/{model,sqlite,host}/` 是需要向该边界收敛的内部实现 |
 | SQLite schema、migration、generation retention、checkpoint 与 GC | `packages/niceeval/src/record/sqlite/` 等内部 adapter 区域；不形成 package export、CLI 或可搬运输入 |

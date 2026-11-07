@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: group-cleanup-inherits-attempt-deadline
-title: Sandbox cleanup 命令继承已耗尽的 Attempt deadline
-createdAt: 2026-10-22
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-promotions: []
-history: []
-evidenceRequirement: concord.native-reliability/v1
----
 # Sandbox cleanup 命令继承已耗尽的 Attempt deadline
 
 ## 现象与根因

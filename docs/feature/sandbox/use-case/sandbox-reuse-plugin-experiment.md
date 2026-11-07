@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-plugin-experiment
-title: 声明了原生 Plugin 的实验开复用
-createdAt: 2026-07-30T12:11:22+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
-
 # 声明了原生 Plugin 的实验开复用
 
 ## 解决什么问题
@@ -59,11 +49,11 @@ Sandbox 复用:实际 Sandbox 数 × (Sandbox 创建 + 完整公共准备)
            + 固定 Plugin 前缀 restore + Attempt 数 × 动态 overlay
 ```
 
-marketplace 拉取是插件安装的大头，用 `sparse` 只拉插件所需路径能明显压低。Plugin 发布流程先查询移动 ref 当前指向的完整 commit，再交给 `gitCheckout()`；相同 commit 自动命中，推进后输入 commit 改变并自动 miss。NiceEval V1 不执行这项远端身份查找。Plugin 投影与第三方 Action 共用 [SandboxAction](../layers.md#action-family-与-step) 和 [before 缓存验证边界](../architecture.md#before-缓存的身份与验证边界)。
+marketplace 拉取是插件安装的大头，用 `sparse` 只拉插件所需路径能明显压低。Plugin 发布流程先查询移动 ref 当前指向的完整 commit，再交给 `gitCheckout()`；相同 commit 自动命中，推进后输入 commit 改变并自动 miss。NiceEval V1 不执行这项远端身份查找。Plugin 投影与第三方 Action 共用 [SandboxAction](../library/layers.md#action-family-与-step) 和 [before 缓存验证边界](../architecture/README.md#before-缓存的身份与验证边界)。
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md) —— 重置点、生命周期与 `$HOME` 残留语义。
+- [Sandbox 复用](../library/reuse.md) —— 重置点、生命周期与 `$HOME` 残留语义。
 - [配置 Coding Agent 扩展](../../adapters/library/coding-agent-extensions.md) —— `plugins` 与 `postSetup` 的写法。
 - [共享动态依赖安装](sandbox-reuse-shared-dependency.md) —— 哪些准备适合进 Experiment layer 的 `before()`。
 - [预制实例](../library/prebuilt-environments.md) —— 稳定安装移到构建期。

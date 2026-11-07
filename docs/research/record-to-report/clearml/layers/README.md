@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-clearml-layers
-title: ClearML 原生组件、资源与 owner
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/clearml/layers.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # ClearML 原生组件、资源与 owner
 
 本页只描述 ClearML 自己公开的组件边界、资源归属和依赖。

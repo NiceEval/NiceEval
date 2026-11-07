@@ -55,7 +55,7 @@ const SKILL_DIR = ".agents/skills";
 
 /**
  * `configFile` 的保留键:model / provider 路由 / 推理努力归 experiment 与 Adapter 的生成层,
- * MCP 表与 OTel 导出归 Adapter。清单定稿见 docs/feature/adapters/sdk/codex-cli/README.md。
+ * MCP 表与 OTel 导出归 Adapter。清单定稿见 docs/feature/adapters/library/sdk/codex-cli/README.md。
  */
 const RESERVED_CONFIG_KEYS = [
   "model",
@@ -104,7 +104,7 @@ export interface CodexConfig {
    * env value 不进入 carry 身份。会改变被测行为的非敏感值必须同时声明在 Experiment flags
    * 或所属 Plugin identity；只轮换凭据不会让旧结果失效。
    * `PATH` 是 Sandbox 受管变量，不接受经这里声明——出现即在 factory 构造时报错，改用
-   * Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library.md）。
+   * Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library/README.md）。
    */
   env?: Readonly<globalThis.Record<string, string>>;
   /**
@@ -275,16 +275,16 @@ const CODEX_PLUGIN_HOOK_SAFE_CLI_VERSION = "0.146.0";
 
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/codex-cli/README.md
+// @concord-implements docs/feature/adapters/library/sdk/codex-cli/README.md
 export function codexAgent(config?: CodexConfig): Agent {
   assertAgentLifecycleNames(config, "codexAgent");
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
   // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
   // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
-  // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
+  // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
   if (config?.env && "PATH" in config.env) {
-    throw new TypeError(`codexAgent config.env.PATH is not supported: PATH is a Sandbox-managed variable, so silently dropping or overriding it would break hooks and child processes without any error. Prepend directories to it with the Sandbox factory's pathPrepend option instead (see docs/feature/sandbox/library.md).`);
+    throw new TypeError(`codexAgent config.env.PATH is not supported: PATH is a Sandbox-managed variable, so silently dropping or overriding it would break hooks and child processes without any error. Prepend directories to it with the Sandbox factory's pathPrepend option instead (see docs/feature/sandbox/library/README.md).`);
   }
   // factory 构造时快照：一份 Agent 配置服务并发 attempt，不能让调用方随后改原对象造成
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。

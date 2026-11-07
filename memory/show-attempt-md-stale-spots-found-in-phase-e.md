@@ -1,35 +1,3 @@
----
-format: concord.document/v1
-id: show-attempt-md-stale-spots-found-in-phase-e
-title: show-attempt-md-stale-spots-found-in-phase-e
-createdAt: 2026-07-19T16:44:26+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/show-attempt-md-stale-spots-found-in-phase-e.md
-  commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
-description: Phase H 待办清单——docs/feature/reports/show/attempt.md 里三处仍是旧 attemptOverviewText 时代的叙述,与新 AttemptDetail 组件族实际输出不符
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "# 已修(2026-07-24 复核)"
-    proof: []
-    source:
-      path: memory/show-attempt-md-stale-spots-found-in-phase-e.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:96b6b2ae72d1cb86d325d24ca15e4153a090bcaf0e3345c7cc80bd67d7cea8d9
----
-
 Phase E(`show @locator` 接线到 `standardAttemptPage`,删除旧 `attemptOverviewText`)过程中,对照
 `docs/feature/reports/show/attempt.md` 逐句核对新输出时,发现这篇文档"半迁移":组件名已经改成新的
 (`AttemptSummary`/`AttemptAssessment`/`AttemptSource`/`AttemptAssertions`),但至少三处内容其实是照抄
@@ -50,14 +18,16 @@ Phase E(`show @locator` 接线到 `standardAttemptPage`,删除旧 `attemptOvervi
 
 # Why 记录而不是当场改
 
+Phase H 待办清单——docs/feature/reports/show/attempt.md 里三处仍是旧 attemptOverviewText 时代的叙述,与新 AttemptDetail 组件族实际输出不符
+
 Advisor 复核时确认:这三处只活在 `show/attempt.md` 的散文里,**没有一处被
-`docs/engineering/testing/unit/reports.md` 登记**(cases.md 第 256 行的 AttemptTimeline 场景只
+`docs/engineering/testing/architecture/unit/reports.md` 登记**(cases.md 第 256 行的 AttemptTimeline 场景只
 要求 children 折叠、失败节点标记默认展开,不要求过滤短阶段)。cases.md 是绑定测试的权威来源,
 show/attempt.md 是给用户看的任务文档——按 CLAUDE.md 的"先文档后代码",理应文档先定稿再实现,但这
 篇文档显然是先写死了旧实现的输出样例,新实现从未回头核对。当场按这三处重写整篇文档超出 Phase E
 (接线 + 修复失败诊断链路可用性)的范围,留给 Phase H(docs/source-map/参考页同步)一次性处理。
 
-# How to apply
+## How to apply
 
 Phase H 重写 `docs/feature/reports/show/attempt.md` 时:
 - 代码示例整段替换成真实调用 `standardAttemptPage` 产出的文本(可以复用 Phase E 走查时构造的
@@ -71,7 +41,7 @@ Phase H 重写 `docs/feature/reports/show/attempt.md` 时:
 
 关联:[attempt-detail-component-level-green-composite-broken](attempt-detail-component-level-green-composite-broken.md)(同一轮走查发现的组件实现缺陷,那条是代码要修,这条是文档要改)。
 
-# 已修(2026-07-24 复核)
+## 已修(2026-07-24 复核)
 
 Phase H 已按上面三条重写 `docs/feature/reports/show/attempt.md`:判据是 `attemptOverviewText`
 与 `failureDiagnostics` 两个旧 renderer 名在 `docs/feature/reports/show/` 全目录零命中——三处陈旧

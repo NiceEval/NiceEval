@@ -25,7 +25,7 @@ export type SandboxRuntime = "node20" | "node24";
 /**
  * Sandbox hook 的窄上下文:只有 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic`,
  * 不借用包含 session / model / telemetry 的完整 `AgentContext`
- * (见 docs/feature/sandbox/library.md「环境层生命周期钩子」)。
+ * (见 docs/feature/sandbox/library/README.md「环境层生命周期钩子」)。
  */
 export interface SandboxHookContext extends ScopedFeedback {
   /** 运行计划中已解析的实验 id；生命周期 hook 不在脱离 Experiment 的上下文执行。 */
@@ -58,7 +58,7 @@ export interface CommandOptions {
   /**
    * 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值)。`PATH` 是 Sandbox
    * 受管变量,各 provider 保留自己算出的 `PATH`,不保证能被这里覆盖;需要扩展 PATH 用
-   * Sandbox factory 的 `pathPrepend`(见 docs/feature/sandbox/library.md「PATH:受管变量与
+   * Sandbox factory 的 `pathPrepend`(见 docs/feature/sandbox/library/README.md「PATH:受管变量与
    * pathPrepend」)。
    */
   readonly env?: Readonly<globalThis.Record<string, string>>;
@@ -82,7 +82,7 @@ export interface CommandOptions {
   /**
    * 覆盖本条命令的执行身份;省略 = Sandbox 默认身份(沿用环境自己声明的身份——Docker 镜像 `USER`、
    * Compose service `user:`、E2B template 默认用户,见
-   * docs/feature/sandbox/library.md「执行身份」)。
+   * docs/feature/sandbox/library/README.md「执行身份」)。
    *
    * 语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
    * `{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错)。
@@ -92,7 +92,7 @@ export interface CommandOptions {
   readonly user?: string;
   /**
    * 这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
-   * (见 docs/feature/sandbox/architecture.md「时限归属」),provider 层没有独立默认。
+   * (见 docs/feature/sandbox/architecture/README.md「时限归属」),provider 层没有独立默认。
    * 显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
    */
   readonly timeoutMs?: number;

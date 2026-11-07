@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: unpublished-attempt-locator
-title: Failed Attempt persistence exposed an unqueryable locator
-createdAt: 2026-08-30
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Failed Attempt persistence exposed an unqueryable locator
+
 ## Observation
 
 When final Attempt persistence fails after reservation, `niceeval exp --json` prints the reserved `@...` locator even though no published Attempt is available through `niceeval query run` or `niceeval show`.

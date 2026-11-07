@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-options-all-json
-title: 候选一：全 JSON
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/options/all-json.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # 候选一：全 JSON
 
 > 状态：已研究，不推荐

@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: opensandbox-prepare-cache-visibility
-title: OpenSandbox 准备缓存是否命中、334 秒花在哪，公开 timing 与 receipt 都看不出
-createdAt: 2026-10-29T02:48:30.370Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# OpenSandbox 准备缓存是否命中、334 秒花在哪，公开 timing 与 receipt 都看不出
 
 ## 观察与期望
 同一个 Eval 在 OpenSandbox 上连续运行，`sandbox.prepare` 一次用了 457 秒，后一次只用了 49 秒。公开结果给不出原因，看不出前一次是缓存未命中、在建缓存，还是别的步骤慢：

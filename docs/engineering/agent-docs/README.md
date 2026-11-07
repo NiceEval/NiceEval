@@ -1,21 +1,10 @@
----
-format: concord.document/v1
-id: agent-docs
-title: 随包 AI 文档（agent-docs）
-createdAt: 2026-07-17T14:16:21+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/engineering/agent-docs/README.md
-  commit: f2ce0475dc49c073822f84116c495b93dde58e94
-kind: engineering
----
 # 随包 AI 文档（agent-docs）
 
 Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如果依赖训练数据或官网，读到的可能是另一个版本的 API。
 
 本机制把中文文档随 npm 包发布，让 agent 永远读「与当前安装版本一起发布」的文档：官网服务人，`node_modules/niceeval/` 里的文档服务 AI。
 
-用户面契约（AI 应该怎么读、init 写什么）单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](agent-debug-eval.md)。
+用户面契约（AI 应该怎么读、init 写什么）单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](architecture/agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](architecture/agent-debug-eval.md)。
 
 ## 打包方案：原样发布，不转换
 
@@ -77,7 +66,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 - **不做手写任务表**（按任务分组、一行路由多页组合的人工索引）。
   页面自述已单源存在于 frontmatter，手写行是它的复述，复述必然漂移，而守护只能保证路径存在、保证不了措辞同步；跨页组合的路由，agent 扫一遍带自述的树即可自行完成。
-  若效果评估（见 [`agent-install-eval.md`](agent-install-eval.md)）表明 agent 路由质量不足，再以有证据的策展补一张小表，不默认维护。
+  若效果评估（见 [`agent-install-eval.md`](architecture/agent-install-eval.md)）表明 agent 路由质量不足，再以有证据的策展补一张小表，不默认维护。
 - **不为索引增设第二个 frontmatter 字段**。
   一句 `description` 同时服务站点卡片与 agent 路由，两者的要求一致——任务视角的一句话自述；措辞冲突时改这一句，不加旁路字段造第二事实源。
 - **页面级路由，不做 anchor 级**。

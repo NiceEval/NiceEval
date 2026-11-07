@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: eval-group-retained-sandbox-capacity-deadlock
-title: Eval Group 保留 Sandbox 导致 provider capacity 死锁
-createdAt: 2026-08-31
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Eval Group 保留 Sandbox 导致 provider capacity 死锁
+
 ## 现象
 
 当一个 Experiment 含有多条 Eval Group lane，且物理 Sandbox provider 容量小于 Group 数量时，已完成的 Group 仍保留自己的 reusable Sandbox，尚未启动的 Group 永远等不到 provider capacity。队列仍有工作，但运行数逐步降到零。

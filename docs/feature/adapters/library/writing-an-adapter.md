@@ -67,7 +67,7 @@ export default orders.defineEval({
 Adapter 的 `defineEval` 只接受同一 Adapter 的实现。要让一组实现共用 eval，使用 `defineAdapterContract` 建立共同的原生方法形状，再从该契约调用 `defineEval`。
 
 需要让评估直接调用领域断言方法时，在 `defineAdapter` 的 `assertions({ app, check })` 中定义它们。
-共享接口通过 `withAssertions` 定义同一组方法，各实现不替换判定规则。方法选择当前证据并返回原始 `check` handle；完整契约见 [自定义断言便捷方法](../../eval/library.md#自定义断言便捷方法)。
+共享接口通过 `withAssertions` 定义同一组方法，各实现不替换判定规则。方法选择当前证据并返回原始 `check` handle；完整契约见 [自定义断言便捷方法](../../eval/library/README.md#自定义断言便捷方法)。
 
 ## 校验与推导 flags
 
@@ -90,7 +90,7 @@ export const game = defineAdapter({
 
 `TFlags` 同时约束 Experiment 显式提供的 `flags`、`create(ctx).flags` 和 Eval 的 `t.flags`。
 后两者只读。值只能是字符串、有限数字或布尔值，不允许嵌套对象或数组。
-Experiment 的完整输入规则见 [Experiment 参数校验与规范化](../../experiments/library.md#adapter-参数校验与规范化)。
+Experiment 的完整输入规则见 [Experiment 参数校验与规范化](../../experiments/library/README.md#adapter-参数校验与规范化)。
 
 共享契约用 `defineAdapterContract<Context>({ name }).withParseFlags(parser)` 绑定同一 parser。
 它的 `implement()`、`defineEval()` 和 `defineScoreEval()` 保留同一 flags 类型，也可以继续组合 `withAssertions()`。

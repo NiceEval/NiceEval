@@ -1,6 +1,6 @@
 // @concord-file
-// @concord-implements docs/feature/experiments/architecture.md
-// @concord-implements docs/feature/eval-groups/architecture.md
+// @concord-implements docs/feature/experiments/architecture/README.md
+// @concord-implements docs/feature/eval-groups/architecture/README.md
 // @concord-implements docs/feature/eval-groups/library.md
 // @concord-implements docs/feature/eval/use-case/dataset-fanout.md
 
@@ -677,7 +677,7 @@ function normalizeEvalGroupSource(content: string): string {
 
 /** Discovery remains in Effect through selection/planning; an adapter host closes it. */
 // @concord-code
-// @concord-implements docs/feature/eval-groups/architecture.md
+// @concord-implements docs/feature/eval-groups/architecture/README.md
 // @concord-implements docs/feature/eval-groups/library.md
 export function discoverEvals(
   root: string,
@@ -806,7 +806,7 @@ export function discoverEvals(
 }
 
 // @concord-code
-// @concord-implements docs/feature/experiments/library.md
+// @concord-implements docs/feature/experiments/library/README.md
 function discoverExperimentFile(
   file: string,
   root: string,
@@ -834,7 +834,7 @@ function discoverExperimentFile(
 /** Discovery remains in Effect through selection/planning; an adapter host closes it. */
 // @concord-code
 // @concord-implements docs/feature/experiments/README.md
-// @concord-implements docs/feature/experiments/library.md
+// @concord-implements docs/feature/experiments/library/README.md
 export function discoverExperiments(
   root: string,
   options: { freshImport?: boolean; generation?: FreshImportGeneration } = {},

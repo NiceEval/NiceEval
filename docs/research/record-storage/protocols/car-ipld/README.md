@@ -1,16 +1,12 @@
 ---
-format: concord.document/v1
-id: record-storage-protocols-car-ipld
-title: CAR 与 IPLD
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources:
   - https://ipld.io/specs/transport/car/
   - https://ipld.io/specs/transport/car/carv1/
   - https://ipld.io/specs/transport/car/carv2/
   - https://ipld.io/specs/schemas/
+observedAt: 2026-08-25
 ---
+
 # CAR 与 IPLD
 
 > 观察日期：2026-08-25

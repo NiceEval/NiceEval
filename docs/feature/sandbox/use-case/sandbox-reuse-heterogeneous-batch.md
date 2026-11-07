@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-heterogeneous-batch
-title: Sandbox 复用：批次包含多种起点
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # Sandbox 复用：批次包含多种起点
 
 ## 解决什么问题
@@ -44,11 +35,11 @@ Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecyc
 
 ## 边界
 
-- 完整复用键相同才进入同一组：Provider physical plan（含规划完成的 CaseKey / BuildKey）、Agent ensure identity 与 lifecycle owner marker 都必须相同；仅 Provider 名或 template 名相同不够。两条 Eval 只有 attempt before 不同时不会因此拆池，规则见[复用池按物理身份分组](../reuse.md#复用池按物理身份分组)。
+- 完整复用键相同才进入同一组：Provider physical plan（含规划完成的 CaseKey / BuildKey）、Agent ensure identity 与 lifecycle owner marker 都必须相同；仅 Provider 名或 template 名相同不够。两条 Eval 只有 attempt before 不同时不会因此拆池，规则见[复用池按物理身份分组](../library/reuse.md#复用池按物理身份分组)。
 - 不同组之间不共享 Sandbox，也不共享任何检查命中历史；单个 Sandbox 不会在组之间切换。
 - 某一组的 Sandbox 创建失败，只影响该组；其余组按实验失败策略继续。
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md) —— 复用池分组与 Sandbox 数量。
-- [Sandbox Layer](../layers.md#每个配对的-link-约束) —— 每个配对恰好一方带 template 的检查。
+- [Sandbox 复用](../library/reuse.md) —— 复用池分组与 Sandbox 数量。
+- [Sandbox Layer](../library/layers.md#每个配对的-link-约束) —— 每个配对恰好一方带 template 的检查。

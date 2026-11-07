@@ -1,47 +1,18 @@
----
-format: concord.document/v1
-id: repository-tools
-title: Repository Tools
-createdAt: 2026-08-23T12:48:57+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/engineering/repository-tools/README.md
-  commit: 7871a6b3939fef8c750ce18e733603a40afa22c7
-kind: engineering
----
-
-
 # Repository Tools
 
-中立治理命令直接由全局 `concord` 提供。NiceEval 的 Feature、Test、Trace、Memory 与 Feedback 使用 `concord repo` repository profile，保留现有参数、关系与 formal evidence 语义。
+中立治理命令直接由全局 `concord` 提供。NiceEval 的 Feature、Test、Memory 与 Issue 直接使用全局 `concord` 命令，工作流按 `concord --skill <topic>`。
 
 `@niceeval/repo-tools` 拥有 Preview、Examples、下游链接、Repository setup、PR，以及文档 generators/site/reference/diff-code/work 等 NiceEval 产品流程。NiceEval CLI 只组合这些自有流程，不转发 Concord 自身的领域命令。
 
-当前测试关系使用源码注释，新正式证据使用 `concord.native-reliability/v1`，历史证据原样保留。
-
-`concord.repository.json` 通过 `adapter` 声明 NiceEval 的原生能力进程，与旧 `host` 配置互斥。真实 candidate、Testkit、inventory 与 formal evidence 继续由 `packages/e2e-runner` 执行，Concord 负责源码身份、声明关系与最终证据裁决。普通原生 observation 不能替代 formal evidence。
-
 NiceEval 自有文档生成与站点流程从 `pnpm run repo docs` 进入。治理命令直接调用全局 `concord`，不安装或导入 Concord 库，也不保留领域转发包装。
-
-## 进程协议与身份
-
-接入使用 `concord.repository-adapter/v1`，治理查询使用 `concord repo engine --json` 的 `concord.repository-engine/v1`。每次调用只交换一份严格 JSON 请求与响应，绑定 requestId、操作、消费者根和引擎实现摘要。被 Concord 启动的 adapter 使用请求给出的精确 engine argv；独立调用从 PATH 选择已安装的 CLI。
-
-Concord 的 `source-validate` 与 `same-source` 负责完整源码身份，不能用代码投影摘要代替契约、配置和 adapter 绑定。声明接口返回 contract、regressions、issues 和测试声明文件路径；PR 不自行读取源码注释建立关系。Preview 通过公开 view export 与 engine preview 验证完整变更数据，本地只拥有实际消费的展示字段。
-
-实现摘要绑定递归 runner/Testkit 源码、入口、依赖声明与锁、运行配置、实际执行文件和 loader。新增实现文件必须纳入摘要计算；安装依赖仍由 frozen lock 与包管理器完整性负责。入口、配置或实现变化使旧 managed 结果不再 current，但不改写历史证据与可靠性下限。
-
-外层 Concord 独占 adapter 进程组。adapter 内部的引擎查询、安装和收集继承该组；独立 E2E CLI 保留自己的进程组。超时、取消、输出超限或终结无法确认均失败；进程组消失不能代替容器等外部资源的终结证据。
-
-关系发布在锁外捕获 managed 证据及候选文件 guard，锁内只重验冻结输入、当前源码/实现、Memory epoch 与 publication 前像，不启动 adapter。现有 receipt、可靠性证书、七次观察及 invocation 防复用继续由 Concord 的唯一 validator 执行。
 
 ## 安装与升级
 
 Concord CLI 的发行版本和 SHA-256 由 CI 安装步骤唯一固定。升级先校验发行摘要，再在仓库外安装；不以修改 JavaScript shebang 或放松实现身份绕过检查。NiceEval manifests 和 lock 不含 Concord 库依赖。
 
-使用 `concord --skill repository` 及各命令 `--help` 发现精确参数。`concord repo docs test audit --json` 会打包并执行原生收集，只能在获准的正式 E2E 宿主或 CI 运行。
+使用 `concord --skill <topic>` 及各命令 `--help` 发现精确参数。
 
-升级验收包含协议的真实隔离消费者、取消与进程终结、过期证据拒绝、完整类型/lint/Unit，以及经授权的最小 NiceEval 正式证据闭环。静态扫描无内部 imports 不能代替真实执行。
+升级验收包含完整类型/lint/Unit。静态扫描无内部 imports 不能代替真实执行。
 
 ## 组合边界
 
@@ -65,56 +36,42 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 
 | 领域 | 入口 | 当前职责 |
 |---|---|---|
-| Feature | `concord repo docs feature --help` | 发现、显示，并通过 `create`、`page add`、`page set` 维护 Feature 结构 |
-| Test | `concord repo docs test --help` | 发现与显示 E2E owner 的 Trace 投影，并通过 `case`、`regression`、`issue` 子命令维护受管关系；不是 Unit test runner |
-| Use Case | `concord repo docs use-case --help` | 在既有 Feature 下创建叶子 Use Case 并维护父用例索引 |
-| Trace | `concord repo docs trace recover --help` | 显式恢复中断的 relation publication |
-| Design | `concord repo docs design --help` | `create`、`check`、`decide` 的候选到裁决闭环 |
-| Research | `concord repo docs research --help` | `page`、`package`、`add-page` 与对精确 ref 的 `check` |
+| Feature | `concord new --help`、`concord list feature`、`concord show <id>` | 发现、显示，并通过 `new feature` 创建 Feature；既有页面直接编辑 |
+| Test | `concord test --help` | 生成测试标记，发现、执行测试并核验缺陷修复；见 `concord --skill test` |
+| Use Case | `concord new --help`、`concord use-case --help` | 在既有 Feature 下创建叶子 Use Case，维护步骤标记 |
+| Trace | `concord recover --help` | 显式恢复中断的文档写入 |
+| Design | `concord new --help` | `concord new design <name>` 创建取舍页；裁决按 `concord --skill document` |
 | Concepts / Writing | `concord concepts --help`、`concord writing --help` | 维护目录术语与写作政策；`concord docs check --json` 检查正文 |
 | Work | `pnpm run repo docs work --help` | 准备、核对和收尾互斥的文档工作项 |
 | Reference | `pnpm run repo docs reference --help` | 核对或重生成公开 API reference 区块 |
 | Diff code | `pnpm run repo docs diff-code --help` | 核对或重生成接入示例前后对照页 |
 | Site | `pnpm run repo docs site dev --help` | `dev`、`prepare`、`validate` 与 `links` 的 Mint owner 操作；其余 verbs 从父级 `--help` 发现 |
 
-`pnpm test` 仍是代码测试入口，包括 Unit 验证；它不承担 Test Trace 的发现和显示。
+`pnpm test` 仍是代码测试入口，包括 Unit 验证。
 
 Site 的四个操作共用 Node 24 选择逻辑。当前进程为 Node 24 时直接使用；否则依次检查
 `NICEEVAL_DOCS_NODE_BIN`、Homebrew 的 Node 24、`PATH` 和 `mise where node@24`。
 候选必须通过实际版本检查，选中目录只加入 Mint 子进程的 `PATH`，不修改用户 shell 或安装全局工具。
 找不到 Node 24 时命令失败，并提示安装或设置显式目录。
 
-Test inventory 的单 Repo 入口是 `concord repo docs test inventory --repo <id>`。它与全仓 `audit` 共用 E2E registry、隔离复制、candidate/Testkit 注入、安装和原生 collection，只返回当前 CLI 可消费的 Git-private `neinv_...` ID。formal evidence 与 regression 关系只接收该 ID，不接收任意 receipt 路径。
-
-inventory 文件没有公开 format 或兼容期，也不是可编辑输入；CLI 实现变化、完整性检查失败或 ID 丢失时重新 collection。底层 runner adapter 不作为独立 CLI 暴露 `--cwd` collection。
-
-Formal case evidence 使用同一边界：root runner 的 red 和 takeover 命令分别返回 `nered_...` 与 `netake_...`。
-两者都要求 `--problem <canonical-memory-path> --problem-epoch <n>` 并绑定同一 Problem epoch。
-
-Git-private bundle 持有 candidate bytes、native receipts 和 reliability certificate。`regression add` 和 `regression refresh` 只消费这些 ID 与 `neinv_...`。不接受任意 evidence 文件路径。实现变化或 bundle 完整性失败时重新运行 root runner，不修补 JSON 或 digest。
-
-Feedback、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `concord repo feedback`、`concord repo memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
+Issue、Memory、PR、Examples、下游开发链接、Preview 与 Repository setup 保持各自的非 Docs 入口。准确入口是 `concord issue`、`concord feedback`、`concord memory`、`pnpm pr:body`、`pnpm examples:sync`、`pnpm dev:link`、`pnpm preview:build`、`pnpm preview:accept` 与 `pnpm repo:setup`。`pnpm link` 是 pnpm 自带的反向链接命令，不能作为仓库脚本；构建并链接当前 candidate 使用 `pnpm dev:link <directory>`。
 
 PR 正文入口 `pnpm pr:body` 拥有受模板约束的 Git-private 编辑状态；子命令、字段语义与发布边界见 [Pull Request skill](../../../.agents/skills/pull-request/SKILL.md) 与 `pnpm pr:body --help`。
 
-`concord repo docs use-case create` 在显式指定的既有 Feature 下创建一个叶子 Use Case。
-调用者提供单段名称、标题与完整 Markdown 正文；工具拒绝路径穿越、已有目标、正文 metadata 和生成区。
-工具拥有 `use-case` frontmatter，并在同一次 Trace publication 中写入叶子和父用例索引。
-缺少父 Feature 或既有用例索引时零写入失败，不隐式创建 package 或分组目录。
-dry-run 与实际 publication 使用相同的输入、路径与索引校验；命令不创建测试或反向关系。
+`concord new use-case <name> --feature <feature>` 在显式指定的既有 Feature 下创建一个叶子 Use Case。
 
-术语与写作政策由 Concord 基础 CLI 拥有：`concepts index/show/set` 管理 `docs/concepts.md`，
-`writing index/show/set` 管理 `docs/concord-writing.json`。修改使用最新 owner digest，参数从各自 `--help` 发现。
+术语与写作政策由 Concord 基础 CLI 拥有：`concepts index/show` 读取 `docs/concepts.md`，
+`writing index/show/check` 读取与检查 `docs/concord-writing.json`；两者直接编辑，参数从各自 `--help` 发现。
 Markdown 只解释关系与案例；API 示例规则由 `lint/docs/public-api-examples.json` 拥有，SVG 守护读取 Concord 的词汇裁决。
 
 Roadmap 与 Engineering 的结构写入也使用 Concord 基础 CLI 的受管入口：
 
-- `concord roadmap create/list/show/page/adopt`，参数见 `concord roadmap --help`；
-- `concord engineering create/list/show/page`，参数见 `concord engineering --help`。
+- `concord new roadmap|engineering <name>`、`concord list roadmap|engineering` 与 `concord show <id>`，参数见 `concord new --help`；
+- `concord roadmap start <id>` 采用 Roadmap，参数见 `concord roadmap --help`。
 
-通用 Trace `check` / `move` 仍是未来目标。Feature 的结构写入只包括 `create`、`page add` 与 `page set`；Use Case 由独立领域创建。这些入口都不提供 retire、物理删除或 move，也不能以手抄模板、手动 relation 改写或假 receipt 代替。
+不以手抄模板代替 `concord new`。
 
-追溯关系与各领域 mutation 的语义见[仓库文档追溯](../docs-traceability/README.md)。Design 与 Research 的闭环分别见[Design](../../design/README.md)和[Research](../../research/README.md)。
+追溯关系与各领域 mutation 的语义见[仓库文档追溯](../docs-traceability/README.md)。Research 见[Research](../../research/README.md)。
 
 ## 双语 Reference 生成
 
@@ -181,7 +138,7 @@ Function 的 Record、cutoff 和摘要来自同一已验证私有 generation；s
 
 同一 contribution 关闭 Netlify context identity，形成发布 closure 与 build receipt。`netlify.toml` 只调用入口并声明 publish directory 与 response headers。部署后的只读验收从 `pnpm preview:accept --input <file>` 进入，不把 Netlify token 或 GitHub token 交给领域命令。
 
-PR 的文档与源码审阅由 [Concord 变更预览](concord-preview.md)提供。Preview contribution 取得实际目标分支与提交身份，将只读页面纳入同一发布目录；产品页读取 Record，差异页读取 Git 提交。
+PR 的文档与源码审阅由 [Concord 变更预览](architecture.md)提供。Preview contribution 取得实际目标分支与提交身份，将只读页面纳入同一发布目录；产品页读取 Record，差异页读取 Git 提交。
 
 ## 验收
 

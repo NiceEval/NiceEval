@@ -17,7 +17,7 @@ Feature、Roadmap 与 Design 都有嵌套 package，普通契约页、reference 
 ### L3：测试身份是文件与 owner anchor
 
 仓库有 83 个 E2E test/spec 文件，首行各有一个唯一 `owner:`。其中 78 个指向 Engineering testing owner anchor，5 个直接指向 Feature。
-现行[测试组合契约](../../engineering/testing/portfolio.md)把产品契约与测试组合 owner 分开；较早 Design 存档不能取代这项较新的目标。
+现行[测试组合契约](../../engineering/testing/architecture/portfolio.md)把产品契约与测试组合 owner 分开；较早 Design 存档不能取代这项较新的目标。
 
 ### L4：测试正文不是追溯 Schema
 

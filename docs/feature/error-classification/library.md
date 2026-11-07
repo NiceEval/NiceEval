@@ -45,5 +45,5 @@ Adapter 在 `classifySendFailure` 中补充协议信息。只有明确拒绝受�
 
 - [Architecture](architecture.md)
 - [Runner](../../runner.md)
-- [Record 通道](../run/architecture.md#channel-identity-与局部演进)
-- [缓存与携带](../experiments/cache.md)
+- [Record 通道](../run/architecture/README.md#channel-identity-与局部演进)
+- [缓存与携带](../experiments/architecture/cache.md)

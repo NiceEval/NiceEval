@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/sandbox.md
+// cases: docs/engineering/testing/architecture/unit/sandbox.md
 // 真机 Docker opt-in：pnpm exec vitest run --config vitest.docker.config.ts
 // 覆盖 attempt signal 已 abort 时的 Compose 整组回收，以及 owned/anonymous/external volume 边界。
 

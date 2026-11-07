@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: view-run-selection-is-ignored
-title: view --run 未将 Insight Overview 收窄到所选 Run
-createdAt: 2026-08-29
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# view --run 未将 Insight Overview 收窄到所选 Run
+
 ## Problem
 
 运行 `niceeval view --run <run-id>` 时，CLI 已把 exact Run 写入 loopback View URL，但浏览器初始 Overview 仍显示同组的其它 Run / Experiment，用户无法从指定 Run 开始审阅。

@@ -1,22 +1,6 @@
----
-format: concord.document/v1
-id: keep-dormancy-provider-forms
-title: 设计裁决:留存现场转入 provider 休眠形态(keep ≠ 继续跑)
-createdAt: 2026-07-14T22:32:51+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/keep-dormancy-provider-forms.md
-  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 设计裁决:留存现场转入 provider 休眠形态(keep ≠ 继续跑)
 
-- **裁决**(2026-07-14):`--keep-sandbox` 的留存提交成功后,provider 把现场转入自己最持久的低成本形态——docker `stop` 停驻(fs 落盘、不占内存、跨 daemon 重启存活,enter 内联 `docker start && docker exec`)、e2b `pause`(fs+内存持久化、按存储计费、保留期内 `resume` 找回)、vercel 无休眠通道(留存 = 不 kill,TTL 内如实展示)。`sandbox list` 新增 `dormant` 状态。契约落在 `docs/feature/sandbox/architecture.md` 留存节 + `docs/feature/sandbox/cli.md`。
+- **裁决**(2026-07-14):`--keep-sandbox` 的留存提交成功后,provider 把现场转入自己最持久的低成本形态——docker `stop` 停驻(fs 落盘、不占内存、跨 daemon 重启存活,enter 内联 `docker start && docker exec`)、e2b `pause`(fs+内存持久化、按存储计费、保留期内 `resume` 找回)、vercel 无休眠通道(留存 = 不 kill,TTL 内如实展示)。`sandbox list` 新增 `dormant` 状态。契约落在 `docs/feature/sandbox/architecture/README.md` 留存节 + `docs/feature/sandbox/cli.md`。
 - **曾选方案:留存 = 保持运行**。docker 不带 AutoRemove 一直跑、e2b 活到 session TTL。否决理由:docker 白烧 CPU/内存;e2b 既烧计算又留不住(TTL 一到现场蒸发),「过一会回来 debug」根本不成立。
 - **同场否决**:`docker pause`(内存驻留、daemon 重启即失,比停驻更脆);`docker commit` 转镜像(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - 来源:用户提出「哪些 provider 能暂停、事后找回,作为 keep 的另一种实现」,采纳为契约。

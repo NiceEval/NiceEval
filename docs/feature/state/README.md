@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: state
-title: State —— Cohort、Checkpoint 与预期持久化
-createdAt: 2026-10-28T07:07:25.790Z
-kind: feature
-origin: docs/roadmap/state/README.md
----
-
 # State —— Cohort、Checkpoint 与预期持久化
 
 ## 要消除的 DX 摩擦
@@ -102,6 +93,6 @@ interruption。
 
 - [Library](library.md) —— opaque handle、Effect v4 service / Layer API、完整 reference 与 receipt 形状。
 - [CLI](cli.md) —— 既有 `niceeval exp` 的输出与审计边界。
-- [Architecture](architecture.md) —— 数据关系、CAS、fence、debug 与对账。
-- [Lifecycle](lifecycle.md) —— Scope、restore、提交、失败与收尾时序。
-- [Sandbox 生命周期](../sandbox/lifecycle.md) —— State restore 所处的物理 Sandbox 阶段。
+- [Architecture](architecture/README.md) —— 数据关系、CAS、fence、debug 与对账。
+- [Lifecycle](architecture/lifecycle.md) —— Scope、restore、提交、失败与收尾时序。
+- [Sandbox 生命周期](../sandbox/architecture/lifecycle.md) —— State restore 所处的物理 Sandbox 阶段。

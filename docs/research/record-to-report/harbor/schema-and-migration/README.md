@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-harbor-schema-and-migration
-title: Harbor 的 Schema、兼容与 Migration
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/harbor/schema-and-migration.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Harbor 的 Schema、兼容与 Migration
 
 本页回答 Harbor 有哪些彼此独立的版本轨道，旧 Job / Trial 怎样被 current reader 读取，以及哪些升级会重写用户保存的数据。

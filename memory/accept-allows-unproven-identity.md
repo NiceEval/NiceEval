@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: accept-allows-unproven-identity
-title: 显式采用未验证身份等价，后续 dry 仍拒绝沿用
-createdAt: 2026-10-28
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-promotions: []
-history: []
-evidenceRequirement: concord.native-reliability/v1
----
 # 显式采用未验证身份等价，后续 dry 仍拒绝沿用
 
 ## 观察与根因

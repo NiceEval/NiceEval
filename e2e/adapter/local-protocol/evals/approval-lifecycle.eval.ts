@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#adapter-local-protocol
+// owner: docs/engineering/testing/architecture/e2e/adapter/ui-message-stream.md#adapter-local-protocol
 import { defineEval } from "niceeval";
 import { equals, includes, satisfies } from "niceeval/expect";
 const CALL_ID = "local-approval-call";

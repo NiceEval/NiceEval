@@ -1,10 +1,4 @@
 ---
-format: concord.document/v1
-id: record-storage-protocols-mcap
-title: MCAP 日志容器与 NiceEval profile
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources:
   - https://mcap.dev/spec
   - https://mcap.dev/spec/registry
@@ -12,7 +6,9 @@ sources:
   - https://mcap.dev/docs/typescript/classes/_mcap_core.McapWriter
   - https://mcap.dev/docs/typescript/types/_mcap_core.McapWriterOptions
   - https://mcap.dev/docs/typescript/types/_mcap_core.McapTypes.Message
+observedAt: 2026-08-25
 ---
+
 # MCAP 日志容器与 NiceEval profile
 
 > 观察日期：2026-08-25

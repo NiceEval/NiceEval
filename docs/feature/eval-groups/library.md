@@ -65,4 +65,4 @@ Experiment 与 Group 之间仍遵守唯一 template owner。Group Plugin 提供 
 | `eval-group-direct-agent` | Group 被 Direct Agent 选中 |
 | `eval-group-incompatible` | 成员无法归一到相同的物理 Sandbox 计划 |
 
-完整运行时序见 [Lifecycle](lifecycle.md)。
+完整运行时序见 [Lifecycle](architecture/lifecycle.md)。

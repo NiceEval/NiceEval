@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: stream-failure-panels-and-tty-input-guard
-title: 裁决:失败收进 live 面板分节 + 结束按形态聚合 + 键盘接管(2026-08-04)
-createdAt: 2026-08-04T12:15:51+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/stream-failure-panels-and-tty-input-guard.md
-  commit: d231541a537fe25fdb08a5ca2d5ae677da3524ac
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 裁决:失败收进 live 面板分节 + 结束按形态聚合 + 键盘接管(2026-08-04)
 
 ## 现象
@@ -32,7 +15,7 @@ terminal-bench dogfooding(用户 2026-08-04 反馈,三连):
 
 ## 裁决
 
-1. **live 面板期间接管键盘**:stdin 为 TTY 时进 raw mode 不回显;回车 = 清除 + 整帧重绘(绕过同帧不写),兼作外部干扰后的自愈手势;`\x03` 走 SIGINT 同路径、`\x1a` 转发挂起并在恢复后重绘;一切退出路径恢复终端模式;stdin 非 TTY 不读不接管。契约在 `docs/feature/experiments/cli.md`「键盘输入与画面自愈」。
+1. **live 面板期间接管键盘**:stdin 为 TTY 时进 raw mode 不回显;回车 = 清除 + 整帧重绘(绕过同帧不写),兼作外部干扰后的自愈手势;`\x03` 走 SIGINT 同路径、`\x1a` 转发挂起并在恢复后重绘;一切退出路径恢复终端模式;stdin 非 TTY 不读不接管。契约在 `docs/feature/experiments/cli/README.md`「键盘输入与画面自愈」。
 2. **失败收进框里,单行投影**:TTY 下失败不进 scrollback 流,以单行(`✗ @loc evalId [who] 单行压缩摘要`)滚动显示在 live 面板内嵌 `FAILURES` 横隔分节(最近 5 条 + 累计数);非 TTY 单流逐条追加同一投影。多行 expected/received 全部退给 `show`。用户点名「有框隔离好读」——分节在框内,同时 scrollback 零失败刷屏。
 3. **结束按失败形态聚合**:FAILURES 组 key = failed 的断言标题+matcher / errored 的 `phase · code`;size>1 组一行(`×N` + 形态 + 代表 locator),size=1 组两行(完整身份+摘要)——「数量少展开、数量多聚合」由组大小自然区分,不设第二套开关。诊断人读面同 `code` 只完整打印首条,结束 `WARNINGS` 面板按 code 汇总次数。
 4. **摘要行预算由渲染面给**:按显示列量;`--json` 与非 TTY 固定 100。契约在 `docs/feature/assertions/library/display.md`。

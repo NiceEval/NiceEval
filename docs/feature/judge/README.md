@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: judge
-title: Judge
-createdAt: 2026-07-27T18:06:14+08:00
-kind: feature
----
-
-
 # Judge
 
 Judge 是使用受管模型能力的 `ScoreMatch`。`defineJudge` 与五个现成裁判都走公开 `defineScoreMatch`；
@@ -54,4 +45,4 @@ TypeSafe System One 使用自己的 `/systemone` 协议。它支持 `score`、`c
 | 接上 Provider 并验证真实判分 | [配置并验证 Judge](use-case/verify-judge.md) |
 | 用 Experiment 比较模型或 Provider | [裁判 A/B](use-case/experiment-ab.md) |
 | Assertion、两种 Eval 与结果 | [Assertions](../assertions/README.md) |
-| 配置变化怎样影响缓存 | [Experiments · Cache](../experiments/cache.md) |
+| 配置变化怎样影响缓存 | [Experiments · Cache](../experiments/architecture/cache.md) |

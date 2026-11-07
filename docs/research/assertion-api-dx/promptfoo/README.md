@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-promptfoo
-title: promptfoo 断言、计分与聚合作者指南
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # promptfoo 断言、计分与聚合作者指南
 
 本文观察 promptfoo 怎样让评估作者定义成功条件、分数与批次指标。

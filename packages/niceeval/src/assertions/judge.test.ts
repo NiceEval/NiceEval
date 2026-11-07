@@ -1,5 +1,5 @@
-// owner: docs/engineering/testing/unit/assertions.md#证明范围规范
-// cases: docs/engineering/testing/unit/assertions.md
+// owner: docs/engineering/testing/architecture/unit/assertions.md#证明范围规范
+// cases: docs/engineering/testing/architecture/unit/assertions.md
 
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";

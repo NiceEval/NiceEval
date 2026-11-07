@@ -30,6 +30,7 @@ function heartbeatFromPublicRecoveryInspection(stderr: string): string {
 
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E6%9A%82%E5%81%9C%E7%9A%84%20owner%20%E4%B8%8D%E4%BC%9A%E5%9B%A0%20heartbeat%20%E5%B9%B4%E9%BE%84%E5%A4%B1%E6%9D%83%EF%BC%8C%E7%AD%89%E5%BE%85%E8%80%85%E5%8F%AF%20SIGINT%20%E5%8F%96%E6%B6%88%E4%B8%94%E6%81%A2%E5%A4%8D%E5%90%8E%E6%89%8D%E4%BA%A4%E6%8E%A5%22%5D%7D
 test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可 SIGINT 取消且恢复后才交接", async () => {
   await runnerE2E.case(
     "shared-state-pause-resume-cancel",
@@ -150,6 +151,7 @@ test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @regression memory/concurrent-run-publication-recovery-race.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E5%B4%A9%E6%BA%83%E7%9A%84%20recovery%20%E5%8F%AF%E7%94%B1%E6%96%B0%20actor%20%E6%98%BE%E5%BC%8F%E7%BB%AD%E6%8E%A5%EF%BC%8C%E6%97%A7%20token%20%E4%B8%8D%E4%BC%9A%E5%88%A0%E9%99%A4%E6%96%B0%20holder%22%5D%7D
 test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不会删除新 holder", async () => {
   await runnerE2E.case(
     "shared-state-crash-recovery-aba",
@@ -319,6 +321,7 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E5%AE%9E%E9%99%85%20Experiment%20teardown%20%E5%A4%B1%E8%B4%A5%E4%BC%9A%E4%BF%9D%E7%95%99%20lease%EF%BC%8C%E7%AD%89%E5%BE%85%E8%80%85%E5%8F%AA%E8%83%BD%E5%8F%96%E6%B6%88%E6%88%96%E8%B5%B0%E6%98%BE%E5%BC%8F%E6%81%A2%E5%A4%8D%22%5D%7D
 test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只能取消或走显式恢复", async () => {
   await runnerE2E.case(
     "shared-state-cleanup-failure-retains-lease",
@@ -363,6 +366,7 @@ test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E7%BC%BA%E5%B0%91%20teardown%20%E7%9A%84%E6%98%BE%E5%BC%8F%20recovery%20%E4%B8%8D%E6%94%B9%E5%8F%98%20active%20generation%22%5D%7D
 test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation", async () => {
   await runnerE2E.case(
     "shared-state-recovery-requires-declared-teardown",
@@ -431,6 +435,7 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation"
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E6%98%BE%E5%BC%8F%20recovery%20%E6%8B%92%E7%BB%9D%20JSON%EF%BC%8C%E5%B9%B6%E5%9C%A8%E4%B8%A4%E7%A7%8D%E5%B8%AE%E5%8A%A9%E5%85%A5%E5%8F%A3%E5%85%AC%E5%BC%80%E5%85%A8%E9%83%A8%E5%8F%82%E6%95%B0%22%5D%7D
 test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数", async () => {
   await runnerE2E.case(
     "shared-state-recovery-human-only-interface",
@@ -467,6 +472,7 @@ test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22SQLite%20recovery%20%E5%8E%9F%E5%AD%90%E6%B8%85%E7%90%86%20teardown%20%E7%99%BB%E8%AE%B0%E5%90%8E%E6%89%8D%E5%BC%80%E6%94%BE%E7%AD%89%E5%BE%85%E8%80%85%22%5D%7D
 test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待者", async () => {
   await runnerE2E.case(
     "shared-state-recovery-registration-before-free",
@@ -550,6 +556,7 @@ export default defineExperiment({
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E4%BD%9C%E8%80%85%E6%94%B9%E6%8E%89%20sharedState%20key%20%E5%90%8E%EF%BC%8C%E6%97%A7%20key%20%E4%BB%8D%E4%BB%A5%20immutable%20evidence%20%E5%8F%AA%E6%B8%85%E7%90%86%E8%87%AA%E5%B7%B1%E7%9A%84%20teardown%20%E7%99%BB%E8%AE%B0%22%5D%7D
 test.concurrent("作者改掉 sharedState key 后，旧 key 仍以 immutable evidence 只清理自己的 teardown 登记", async () => {
   await runnerE2E.case(
     "shared-state-recovery-changed-key",
@@ -630,6 +637,7 @@ export default defineExperiment({
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E4%BD%9C%E8%80%85%E5%88%A0%E9%99%A4%20sharedState%20%E5%A3%B0%E6%98%8E%E5%90%8E%E4%BB%8D%E5%8F%AF%E6%8C%89%E9%81%97%E7%95%99%20key%20%E6%89%A7%E8%A1%8C%E4%B8%80%E6%AC%A1%E5%85%AC%E5%BC%80%E6%81%A2%E5%A4%8D%22%5D%7D
 test.concurrent("作者删除 sharedState 声明后仍可按遗留 key 执行一次公开恢复", async () => {
   await runnerE2E.case(
     "shared-state-recovery-removed-key",
@@ -695,6 +703,7 @@ export default defineExperiment({
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E9%9D%9E%E5%87%BD%E6%95%B0%20teardown%20%E8%A2%AB%E5%85%AC%E5%BC%80%20CLI%20%E6%8B%92%E7%BB%9D%EF%BC%8C%E9%81%97%E7%95%99%20owner%20%E4%B8%8D%E4%BC%9A%E8%A2%AB%E9%87%8A%E6%94%BE%22%5D%7D
 test.concurrent("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会被释放", async () => {
   await runnerE2E.case(
     "shared-state-recovery-invalid-teardown",

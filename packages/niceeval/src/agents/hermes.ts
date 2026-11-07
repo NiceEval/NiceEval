@@ -20,7 +20,7 @@ import { defineSandboxCommand } from "../sandbox/commands.ts";
 
 // Hermes Agent sandbox adapter。驱动:`hermes chat -q … --yolo`;
 // 行为轨优先 `hermes sessions export`,不足时 sqlite 读 messages。
-// 契约见 docs/feature/adapters/sdk/hermes/README.md。
+// 契约见 docs/feature/adapters/library/sdk/hermes/README.md。
 //
 // Docker 沙箱会覆盖 PATH(不含 $HOME/.local/bin),所以安装与调用一律走
 // `$HOME/.local/bin/hermes`(同 bub 裁决),不依赖 command -v。
@@ -128,7 +128,7 @@ async function hermesSkillDir(sb: Sandbox): Promise<string> {
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/hermes/README.md
+// @concord-implements docs/feature/adapters/library/sdk/hermes/README.md
 export function hermesAgent(config?: HermesConfig): Agent {
   const version = config?.version ?? DEFAULT_HERMES_CLI_VERSION;
   const identity = { agent: "hermes", version, revision: "1" } as const;

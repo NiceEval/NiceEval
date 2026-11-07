@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: report-dimension-allocation-single-point
-title: 维度槽位分配单点声明补齐，dimensionPins 与惰性 page 消解
-createdAt: 2026-07-29T15:56:20+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/report-dimension-allocation-single-point.md
-  commit: 8c7c88454f4e2622e7a8eb7a8c74f8797f3155c8
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 维度槽位分配单点声明补齐，dimensionPins 与惰性 page 消解
 
 - **现象**：外审指出 dimensionPins 与惰性跨页矛盾——shell.md 说
@@ -21,7 +5,7 @@ history: []
   「不开其它页」与「按全报告出现顺序分配未钉住值」不可兼得。
   核查发现更深一层：presentation.md 与 theme.md 都把分配规则
   「单点声明」链到 components/README.md 的两个小节，而那两个小节不存在
-  （引擎侧规则只散落在 docs/engineering/testing/unit/reports.md 的覆盖规范里）。
+  （引擎侧规则只散落在 docs/engineering/testing/architecture/unit/reports.md 的覆盖规范里）。
 - **裁决**（2026-07-29）：分配单位是页，钉住是跨页一致性的唯一承诺：
   1. 钉住且出现在本页 visual keyset 的值原样占用钉住下标（重复下标不探测）；
   2. 未钉住的值按（维度名，完整值）稳定哈希取起点、在剩余槽位向后探测，

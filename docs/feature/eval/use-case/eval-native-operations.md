@@ -1,18 +1,9 @@
----
-format: concord.document/v1
-id: eval-native-operations
-title: 评估应用原生操作
-createdAt: 2026-09-12T19:50:45+08:00
-kind: use-case
-feature: docs/feature/eval/README.md
----
-
 # 评估应用原生操作
 
 ## 用户目标
 
 社交游戏已经提供发帖、回复与生图方法。用户希望直接评估这些方法返回的 Post，不把游戏动作伪装成 Agent 消息。
-应用方法与通用评估能力的定义见 [Adapter Library](../library.md#自定义应用)，本篇只串联接入与查看结果。
+应用方法与通用评估能力的定义见 [Adapter Library](../library/README.md#自定义应用)，本篇只串联接入与查看结果。
 
 ## 定义应用连接
 

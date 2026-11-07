@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-harbor-layers
-title: Harbor 的原生层与对象关系
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/harbor/layers.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Harbor 的原生层与对象关系
 
 本页回答 Harbor 的产品层怎样分工，以及 Job、Trial、reward、viewer 与 Hub 怎样连接。

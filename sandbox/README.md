@@ -85,7 +85,7 @@ Bub / Hermes 与运行时 Adapter 使用相同的 `$HOME/.local` 布局；Bub �
 装完全局 CLI（root，写 `/usr/local/bin`）后切换身份；Bub / Hermes 本就以 `node` 用户安装，
 无需额外切换。非 root 是预制环境自己的义务，不是 runner 的强加——Claude Code 在 root 下拒绝
 `--dangerously-skip-permissions`；完整契约见
-[执行身份](../docs/feature/sandbox/library.md#执行身份)。
+[执行身份](../docs/feature/sandbox/library/README.md#执行身份)。
 
 NiceEval 维护公开镜像：
 [`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
@@ -160,4 +160,4 @@ Bub 的默认版本、OTel 插件和安装指纹的唯一代码源是
 换 Bub 版本时必须同批核对插件 pin：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型，
 配 0.3.9 会 import 失败；反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨
 静默为空。两代成对钉的契约与用户侧旋钮见
-[Bub 契约页](../docs/feature/adapters/sdk/bub/README.md#装哪一版-bub)。
+[Bub 契约页](../docs/feature/adapters/library/sdk/bub/README.md#装哪一版-bub)。

@@ -232,7 +232,7 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 ## 相关阅读
 
 - [Insight](feature/insight/README.md) —— 上面几条学到的东西，具体审阅设计在这篇；两次运行对比由 [Inspection](feature/inspection/README.md) 的 `runs.compare` 按 Run 维度承担。
-- [测试 Architecture](engineering/testing/architecture.md) —— 采用 Playwright role / label / web-first assertion 与严格结构 parser，但不再自建 Report 验收 DSL；共享层只保留机械工具函数。
+- [测试 Architecture](engineering/testing/architecture/README.md) —— 采用 Playwright role / label / web-first assertion 与严格结构 parser，但不再自建 Report 验收 DSL；共享层只保留机械工具函数。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
 - [agent-eval 适配笔记](research/adapters/agent-eval/README.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读笔记。
 - [OTel GenAI 等标准参考](research/adapters/otel-genai/README.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。

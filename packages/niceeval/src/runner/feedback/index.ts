@@ -1,5 +1,5 @@
 // `niceeval exp` 的 human / json 反馈模型:公开入口。
-// 见 docs/feature/experiments/cli.md,裁决见 memory/exp-output-two-forms-ruling.md。
+// 见 docs/feature/experiments/cli/README.md,裁决见 memory/exp-output-two-forms-ruling.md。
 //
 // - profile.ts   —— `--json` 的两选一形态解析。
 // - reducer.ts   —— 事件 → RunFeedbackState 的纯 reducer(与本文件同目录,类型见 ../types.ts)。

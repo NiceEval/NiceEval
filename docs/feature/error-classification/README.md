@@ -1,15 +1,7 @@
----
-format: concord.document/v1
-id: error-classification
-title: 执行失败分类:时间轴与空间轴
-createdAt: 2026-07-21T18:02:02+08:00
-kind: feature
----
-
 # 执行失败分类:时间轴与空间轴
 
 一套统一的失败分类词表,回答两个正交的决策问题:**换个时机重做,能不能过**(时间轴 `retryable`,驱动 attempt 内的有界重试),以及**这个死因波及多远**(空间轴 `scope`,驱动 eval / experiment 粒度的止损机制)。
-turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失败](../sandbox/architecture.md#provisioning-失败与重试)说同一种语言;声明点随知识所在地分布,消费策略单点在框架。
+turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失败](../sandbox/architecture/README.md#provisioning-失败与重试)说同一种语言;声明点随知识所在地分布,消费策略单点在框架。
 
 本文的 `passed` / `failed` / `errored` / `skipped` 始终指 Core `outcome`、sealed Assertions 与显式 skip
 在读侧折叠出的 Verdict 值，不是 Attempt state。失败分类只处理终局执行错误与 `FailureClass`，不读取
@@ -87,7 +79,7 @@ export type FailureClass =
 - **分类器**（第三方错误，事后识别）：错误由 SDK / CLI / 网络栈抛出，制造者不可能使用我们的类，由最懂其形状的一方在自己的边界识别，按特异性降序决议。adapter 的 `classifySendFailure` 识别自家协议 code（写法见 [Library](library.md#adapter-作者classifysendfailure)）。保守回退只识别结构化的 admission / transport 事实，不从自然语言猜受理状态。
 - **provisioning**:sandbox 层的分类自治(性质 + 后果两维不外泄),向外浮出的确定性配置死因附带按**声明 owner** 定档的 scope。
   凭据缺失 → `"experiment"`;template 不存在时波及范围由携带 template 的 owner(eval / experiment)决定,落 `"eval"` 或 `"experiment"`。
-  映射单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。
+  映射单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture/README.md#provisioning-失败与重试)。
 
 路由纪律沿用 Effect 生态的 tagged error 习语:**fatal 错误类的契约是它携带的 `_tag` 与 `class` 数据字段,一切识别走结构守卫(`failureClassOf`),不用 `instanceof`**——依赖树里出现第二份 niceeval 实例时类身份静默失效,数据不会。
 精确类型、分类链的决议顺序与否决权见 [Architecture](architecture.md#数据建模)。
@@ -117,7 +109,7 @@ export type FailureClass =
    adapter 不代偿这层能力,不在 `send` 里自己整段重发;`send` 浮出的失败视为 agent 侧自愈的最终结果。
 2. **turn 级重试**:对受理前的失败整段重发同一段 `TurnInput`。
    只兜「输入还没进 agent」的区间——断点续传只有内层做得到,对「已进 agent」的失败重发只会让 agent 重做已做过的操作。
-3. **重跑 eval**(最外层恢复路径):重试耗尽或不可重试的失败形成 `errored` Verdict；这类 Attempt 不具备携带资格。使用 `--rerun` 或 `--rerun failed` 重跑失败样本，使用 `--rerun all` 全量重跑(见 [Experiments · 缓存与携带](../experiments/cache.md))。
+3. **重跑 eval**(最外层恢复路径):重试耗尽或不可重试的失败形成 `errored` Verdict；这类 Attempt 不具备携带资格。使用 `--rerun` 或 `--rerun failed` 重跑失败样本，使用 `--rerun all` 全量重跑(见 [Experiments · 缓存与携带](../experiments/architecture/cache.md))。
 
 **止损**(空间轴,由小到大,声明精确、推断回退):
 
@@ -155,6 +147,6 @@ export type FailureClass =
 - [Library](library.md) —— fatal 错误类的写法、adapter 作者的 `classifySendFailure`、观察面。
 - [用例](use-case/README.md) —— 三种姿态的全流程叙事:读懂 errored、抛出点声明死因、写分类器。
 - [Runner](../../runner.md) —— earlyExit、run 级 fail-fast、完成状态与外层超时。
-- [Experiments · 实验级共享服务](../experiments/library.md#实验级共享服务setup-与-teardown) —— 实验级 setup 失败的既有语义。
-- [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试) —— 词表对齐的另一处分类与退避。
+- [Experiments · 实验级共享服务](../experiments/library/README.md#实验级共享服务setup-与-teardown) —— 实验级 setup 失败的既有语义。
+- [Sandbox · Provisioning 失败与重试](../sandbox/architecture/README.md#provisioning-失败与重试) —— 词表对齐的另一处分类与退避。
 - [Adapter · agent 契约](../adapters/architecture/agent-contract.md) —— `classifySendFailure` 的挂载面。

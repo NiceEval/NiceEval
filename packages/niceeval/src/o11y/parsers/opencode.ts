@@ -1,5 +1,5 @@
 // OpenCode `run --format json` / `opencode export` 解析器。方言只住这里,不进 core
-// (契约见 docs/feature/adapters/sdk/opencode/README.md)。
+// (契约见 docs/feature/adapters/library/sdk/opencode/README.md)。
 
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";

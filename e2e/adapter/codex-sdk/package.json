@@ -5,7 +5,7 @@
     "includedScripts": []
   },
   "type": "module",
-  "description": "niceeval E2E adapter repo: Codex SDK converter live compatibility — see docs/engineering/testing/e2e/adapter/codex-sdk.md",
+  "description": "niceeval E2E adapter repo: Codex SDK converter live compatibility — see docs/engineering/testing/architecture/e2e/adapter/codex-sdk.md",
   "engines": {
     "node": ">=24"
   },

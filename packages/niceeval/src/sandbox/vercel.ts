@@ -109,7 +109,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       lifetimeMs?: number;
       feedback?: import("../types.ts").ScopedFeedback;
       /**
-       * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+       * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
        * 「PATH:受管变量与 pathPrepend」)。
        */
       pathPrepend?: readonly string[];
@@ -244,7 +244,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
     // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
     // env 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
-    // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
+    // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
     const scriptWithPath = this.pathPrepend.length > 0
       ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}`
       : script;
@@ -254,7 +254,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   /** 实际发起 Vercel `runCommand` 调用的唯一出口;`runCommand`/`runShell` 都收敛到这里。 */
   private async execDirect(cmd: string, args: readonly string[], opts: CommandOptions): Promise<CommandResult> {
     // Vercel 命令级只认 `user: "root"`(映射 `sudo: true`);其它显式值报错,省略 = `sudo: false`
-    // (见 docs/feature/sandbox/library.md「执行身份」)。
+    // (见 docs/feature/sandbox/library/README.md「执行身份」)。
     if (opts.user !== undefined && opts.user !== "root") {
       throw new Error(`the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "${opts.user}" }. Use a container provider (docker / e2b) for other identities.`);
     }

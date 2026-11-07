@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: workspace-diff-path-cap-skips-partial-capture
-title: workspace diff 路径上限抢在 partial collector 前失败
-createdAt: 2026-08-18T23:38:59+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/workspace-diff-path-cap-skips-partial-capture.md
-  commit: fe2c0a0998439b964c709c02a872e24486e6f74f
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [workspace-diff-path-cap-skips-partial-capture](workspace-diff-path-cap-skips-partial-capture.md) — ledger exporter 在 10,000 路径先失败，使 File Changes 的确定性 partial collector 无法处理三万路径窗口；扫描上限与 10,000 条持久保留上限现已分离"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # workspace diff 路径上限抢在 partial collector 前失败
 
 ## 现象
@@ -47,7 +17,7 @@ ledger exporter 与 File Changes collector 共用 10,000 这个数字，却承�
 
 ## 回归收据
 
-owner 是 `docs/engineering/testing/e2e/eval.md#eval-assertion-sandbox`。确定性 Sandbox Agent 在第二个真实 send 区间创建 10,001 个空文件和 68 份各 1,000,000 bytes 的唯一文本。
+owner 是 `docs/engineering/testing/architecture/e2e/eval.md#eval-assertion-sandbox`。确定性 Sandbox Agent 在第二个真实 send 区间创建 10,001 个空文件和 68 份各 1,000,000 bytes 的唯一文本。
 
 - 旧候选 SHA-256 `3aa4663b95e41558d351ca6684cd49021554ebf0e31f7b7e6cd25389d7c4988d`：`niceeval exp --json` 包含 `workspace-diff-unavailable`，artifact `/tmp/niceeval-e2e-artifacts-XlnXON`。
 - 路径修复后的中间候选 SHA-256 `b09b3b016d81b213244c76d14c2961ad3cf7d40b84bb3eb4ac19fcc549539997`：68,000,000 text bytes 又在旧 64 MiB 导出门产生 unavailable，artifact `/tmp/niceeval-e2e-artifacts-xyFAlB`。

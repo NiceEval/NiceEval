@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: environment-model
-title: Sandbox 模型：Sandbox 起点与三方准备顺序
-createdAt: 2026-07-31T12:23:19+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/environment-model/README.md
-  commit: 6f67cf2c6126f9dc632f45a697d7e9b9087b5c5d
-kind: design
-alternatives:
-  - plan-1
-  - plan-10
-  - plan-11
-  - plan-2
-  - plan-3
-  - plan-4
-  - plan-6
-  - plan-7
-  - plan-8
-  - plan-9
-decision:
-  selected: plan-10
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-10
-  source:
-    path: docs/design/environment-model/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:41667408907db77b5d3c7cae39ccc429d87a60d549ff7789d3872c1dc29ea2eb
-  targets: []
----
 # Sandbox 模型：Sandbox 起点与三方准备顺序
 
 Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
@@ -45,7 +15,7 @@ Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
 
 十个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture、Lifecycle 与 Use Case。
 [Cases](CASES.md) 固定共同输入和验收结果;候选用例只说明各自怎样守护,不能改写 Case 来降低要求。
-最终裁决与选型理由见 [DECISION](DECISION.md);定稿契约在 [Feature · Sandbox Layer](../../feature/sandbox/layers.md)。
+最终裁决与选型理由见 [DECISION](DECISION.md);定稿契约在 [Feature · Sandbox Layer](../../feature/sandbox/library/layers.md)。
 
 **相关文档**:
 [GOALS](GOALS.md) ·

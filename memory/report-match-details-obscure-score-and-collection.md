@@ -1,42 +1,9 @@
 ---
-format: concord.document/v1
-id: report-match-details-obscure-score-and-collection
-title: Report Match 详情混淆计分语义并摊平 collection
-createdAt: 2026-08-24T12:25:00+08:00
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions:
-  - docs/feature/assertions/library/display.md#单条-assertion
-history: []
-resolution:
-  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: |-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - "E2E red: candidate 096f08f54642aba88b03ff3253b1bf0e7880672b5b937980ede2e91945e68335 failed because the scored mismatch header was absent before the report UI change."
-            - "E2E green: pnpm e2e run --candidate <096f08f5 candidate> --repo report -- --run test/report.browser.spec.ts -g 经典报告将 Attempt passed and verified scored weight/earned, measurement observed/threshold, and collapsed Array(2) input."
-            - "E2E takeover: report reliability matrix passed all isolated-copy, same-copy, repo-default-parallel, and target-single observations for the same candidate digest."
-    proof:
-      - "E2E red: candidate 096f08f54642aba88b03ff3253b1bf0e7880672b5b937980ede2e91945e68335 failed because the scored mismatch header was absent before the report UI change."
-      - "E2E green: pnpm e2e run --candidate <096f08f5 candidate> --repo report -- --run test/report.browser.spec.ts -g 经典报告将 Attempt passed and verified scored weight/earned, measurement observed/threshold, and collapsed Array(2) input."
-      - "E2E takeover: report reliability matrix passed all isolated-copy, same-copy, repo-default-parallel, and target-single observations for the same candidate digest."
-    source:
-      path: memory/report-match-details-obscure-score-and-collection.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:42fe20b251b121ef239a4e7db7dd5fd202b568e93b2baf03f818a144a186799f
+relations:
+  - role: supports
+    target: docs/feature/assertions/library/display.md#单条-assertion
 ---
+
 # Report Match 详情混淆计分语义并摊平 collection
 
 ## 问题
@@ -55,7 +22,7 @@ generic matcher 的 Input 直接递归渲染 `list` 与 `fields`。数组始终�
 
 计分项应以 `matched`／`mismatched`／`unavailable` 表达 matcher 结果，并同时显示 `weight N pts` 与 `earned N pts`。measurement 的主要读面同时显示实际值与 threshold。generic collection 默认显示 `Array(n)`，展开后按序号和独立边界显示元素；技术详情继续保留完整闭合值。
 
-回归由 `docs/engineering/testing/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。
+回归由 `docs/engineering/testing/architecture/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。
 
 ## 不覆盖的相邻能力
 

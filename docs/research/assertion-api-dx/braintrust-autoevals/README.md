@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-braintrust-autoevals
-title: Braintrust AutoEvals 与 Eval scorer 作者指南
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Braintrust AutoEvals 与 Eval scorer 作者指南
 
 > 观察日期：2026-08-09。

@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: judge-audit-reservation-budget-undocumented
-title: Judge 审计预算累计上限未在随包配置入口说明，长任务结束后才触发留存错误
-createdAt: 2026-10-23T14:35:32.182Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# Judge 审计预算累计上限未在随包配置入口说明，长任务结束后才触发留存错误
 
 ## 观察
 

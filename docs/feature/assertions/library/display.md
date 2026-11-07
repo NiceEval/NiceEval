@@ -83,10 +83,10 @@ Turn、conversation、diff、telemetry、timing 和 diagnostic 使用各自已�
 
 ## 相关阅读
 
-- [Assertions architecture](../architecture.md)
+- [Assertions architecture](../architecture/README.md)
 - [Assertion evidence](../architecture/evidence.md)
 - [Source sites](../architecture/source-sites.md)
-- [Record architecture](../../run/architecture.md)
+- [Record architecture](../../run/architecture/README.md)
 - [Verdict architecture](../../verdict/architecture.md)
 - [Inspection Architecture](../../inspection/architecture.md)
 - [Inspection CLI](../../inspection/cli.md)

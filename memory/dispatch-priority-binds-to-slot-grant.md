@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: dispatch-priority-binds-to-slot-grant
-title: 瓶颈优先绑在「并发位分配」上，不是 fiber 创建顺序
-createdAt: 2026-07-20T22:34:04+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/dispatch-priority-binds-to-slot-grant.md
-  commit: 837bc3fadbf4e3987e323016cd616605e093728a
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 瓶颈优先绑在「并发位分配」上，不是 fiber 创建顺序
 
 **裁决（2026-07-20）**：`docs/runner.md`「派发顺序:瓶颈优先」的优先级作用点定义为**全局并发位的分配时刻**——每有一个位空出，发给当前等待集中轮次数最高的 attempt，「谁先开始等」不参与裁决。实验级 `maxConcurrency` 闸不参与这条纪律，先来后到即可（同 run 内 attempt 优先级相同，内部先后不影响总墙钟）。
@@ -27,7 +10,7 @@ history: []
 
 - `docs/runner.md` 的**承诺句**把派发顺序定义成「fiber 抢占 permit 的顺序」「轮次越多越早占用并发位」；
 - 同节的**机制句**却把这层限定成「一次性数组排序、不改变两级信号量本身」；
-- `docs/feature/experiments/architecture.md` 的**不占并发位句**要求等待实验级 setup 的 attempt 不持有 permit。
+- `docs/feature/experiments/architecture/README.md` 的**不占并发位句**要求等待实验级 setup 的 attempt 不持有 permit。
 
 后两条组合必然推翻第一条：只要一个 run 在请求并发位**之前**插了一段真实异步等待（实验级 setup），数组排序给它的先机就在这段等待里失效，它回来时队伍已被无 setup 的宽并发 run 排满。旧实现（`src/runner/run.ts` 的 rounds 排序 + `Effect.makeSemaphore` FIFO + setup 在 `globalSem.withPermits` 之外）逐字实现了机制句和不占位句，没违反任何一句 docs——所以这是设计 bug，不是实现 bug。
 
@@ -44,7 +27,7 @@ history: []
 
 ## 落点
 
-契约：`docs/runner.md`「调度:有界并发」+「派发顺序:瓶颈优先」两节重写，`docs/feature/experiments/architecture.md` 实验级生命周期的「不占并发位」条改为「不占并发位,也不折损优先级」，`docs-site/zh/explanation/runner.mdx` 并发节补用户视角一段。场景行登记在 `docs/engineering/testing/unit/experiments-runner.md` 并发分区（3 行：瓶颈优先分配 / work-conserving / 等待中被中止不泄漏名额）。实现未动，待按登记行先写红测试再改 `src/runner/run.ts`。
+契约：`docs/runner.md`「调度:有界并发」+「派发顺序:瓶颈优先」两节重写，`docs/feature/experiments/architecture/README.md` 实验级生命周期的「不占并发位」条改为「不占并发位,也不折损优先级」，`docs-site/zh/explanation/runner.mdx` 并发节补用户视角一段。场景行登记在 `docs/engineering/testing/architecture/unit/experiments-runner.md` 并发分区（3 行：瓶颈优先分配 / work-conserving / 等待中被中止不泄漏名额）。实现未动，待按登记行先写红测试再改 `src/runner/run.ts`。
 
 ## 可复用的判据
 

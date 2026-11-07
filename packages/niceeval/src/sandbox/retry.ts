@@ -1,7 +1,7 @@
 // provider 无关的 provisioning 退避重试:runtime adapter 对每个内置 provider 的
 // create/provision 步骤套这一层。只有各 provider 自己的 classifyProvisionError 判为
 // 可重试的错误才会退避重试;其它错误第一次就抛出。防泄漏的两道防线
-// (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)中,这里承担
+// (见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」)中,这里承担
 // 「重试前对账」;kill-on-failure 在各 provider 的 create() 内部。
 
 import { Effect, Random } from "effect";
@@ -54,7 +54,7 @@ export function withProvisionRetry<T>(
    * 之后的初始化请求,分类不保证远端没有实例。对账排在退避睡眠之后(紧跟失败发出的检索大概率
    * 同样被限流);对账抛错即放弃重试、抛回原始 create 错误。没有对账通道的 provider 不传——
    * 歧义类第一次抛出:宁可判死一个 attempt,不留一台计费的无主实例
-   * (见 docs/feature/sandbox/architecture.md)。
+   * (见 docs/feature/sandbox/architecture/README.md)。
    */
   reconcile?: Effect.Effect<void, unknown>,
 ): Effect.Effect<T, unknown> {

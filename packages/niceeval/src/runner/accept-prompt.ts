@@ -1,4 +1,4 @@
-// `--accept` 不带值:TTY 下逐原因标记(契约见 docs/feature/experiments/cli.md
+// `--accept` 不带值:TTY 下逐原因标记(契约见 docs/feature/experiments/cli/README.md
 // 「`--accept` 不带值:TTY 下逐原因标记」)。
 //
 // 带 selector 的 `--accept` 是非交互授权,CI 与脚本用它;这里只解决「人不想手拼 selector」。

@@ -1,10 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design
-relations:
-  selectedPlan: docs/design/attempt-cleanup/PLAN-1/README.md
----
-
 # Attempt 取消原因与有界排空 —— Design Decision
 
 **相关文档**:[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md)

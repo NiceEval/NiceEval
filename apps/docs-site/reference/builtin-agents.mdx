@@ -168,7 +168,7 @@ env?: Readonly<globalThis.Record<string, string>>;
 
 Extra environment variables injected into every Codex CLI process. The first `codex exec` and continuing `codex exec resume` use the same declaration; lifecycle Hooks started by Codex, dynamic MCP headers, and command subprocesses all inherit it. Values enter only through Sandbox command options: they are not concatenated into shell text or written to the before manifest, and are all redacted as potential sensitive values from timing, execution, and error evidence. `CODEX_API_KEY` still comes from `apiKey` or the same host environment variable; the Adapter's authentication value overrides a same-named key here.
 
-An environment value does not enter carry identity. A non-sensitive value that changes behavior must also be declared in Experiment Flags or the owning Plugin identity; rotating credentials alone does not invalidate old results. `PATH` is Sandbox-managed and cannot be declared here. Its presence errors at factory construction; use the Sandbox factory's `pathPrepend` instead. See `docs/feature/sandbox/library.md`.
+An environment value does not enter carry identity. A non-sensitive value that changes behavior must also be declared in Experiment Flags or the owning Plugin identity; rotating credentials alone does not invalidate old results. `PATH` is Sandbox-managed and cannot be declared here. Its presence errors at factory construction; use the Sandbox factory's `pathPrepend` instead. See `docs/feature/sandbox/library/README.md`.
 
 #### `mcpServers`
 

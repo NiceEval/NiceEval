@@ -1,31 +1,3 @@
----
-format: concord.document/v1
-id: e2e-repo-autonomy-replaces-shared-suite
-title: 设计裁决：E2E 以独立 repo 为边界，废除共享 suite 与中央领域 verifier
-createdAt: 2026-07-13T14:10:19+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/e2e-repo-autonomy-replaces-shared-suite.md
-  commit: f4a77b9ee2e550d81926d5cf61a8d1330dd5af17
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history:
-  - at: 2026-09-14T15:00:25.173Z
-    action: revise
-    reason: "- 部分被后续裁决替代
-      [e2e-repo-autonomy-replaces-shared-suite](e2e-repo-autonomy-replaces-shar\
-      ed-suite.md) — 2026-07-13 确立独立 repo 与禁止中央 verifier；2026-08-08 仅对 Adapter
-      collection 翻案“Eval 源码绝不共享”，改为隔离副本物化共享 Assertion Eval + 叶子 profile，一次 live
-      运行同时验断言契约和适配器"
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
-    eventAt: 2026-07-13
----
 # 设计裁决：E2E 以独立 repo 为边界，废除共享 suite 与中央领域 verifier
 
 **裁决**（2026-07-13，用户拍板）：niceeval E2E 的执行与所有权单元改为独立测试 repo。每个 repo 自己拥有被测应用、adapter、Eval、Experiment、依赖锁定、服务生命周期和验收脚本；repo 之间不共享 Eval / Experiment factory、profile、应用进程或 Results 读取代码。根仓只构建候选 npm 包、发现 repo、隔离执行、注入最小 secrets、收集 artifact 和汇总退出码。
@@ -43,7 +15,7 @@ history:
 
 **crabbox 边界**：repo 暴露唯一的 `pnpm e2e` 命令。crabbox 只同步 checkout、转发 allowlist 环境、执行该命令、收集 JUnit/artifact 并传播退出码，不理解 niceeval 的 Eval、Results 或服务拓扑。
 
-定稿契约：`docs/engineering/testing/e2e/README.md`。
+定稿契约：`docs/engineering/testing/architecture/e2e/README.md`。
 
 ## 2026-08-08 部分翻案：Adapter collection 共享 Assertion Eval 源码
 
@@ -75,4 +47,4 @@ Adapter Repo 回到单一职责：只跑足以证明真实 SDK / CLI / provider 
 
 `.niceeval` 不作为签入 fixture、下载缓存或跨 Repo evidence 使用。只读 case 可共享本次完整运行后冻结的 evidence；修改 Eval、
 config、结果或执行 accept 的 case 使用私有副本并先完成自己的初始运行。现行定稿契约见
-`docs/engineering/testing/e2e/README.md#功能-repo-自己生产证据`。
+`docs/engineering/testing/architecture/e2e/README.md#功能-repo-自己生产证据`。

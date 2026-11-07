@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-harbor-storage
-title: Harbor 的存储与权威事实
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/harbor/storage.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Harbor 的存储与权威事实
 
 本页回答 Harbor 把 Job / Trial 写在哪里、每份信封保存什么，以及本地目录、Hub 行、派生值与 cache 哪一个拥有事实。

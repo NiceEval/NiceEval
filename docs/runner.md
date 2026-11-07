@@ -70,7 +70,7 @@ interface InvocationReceipt {
 
 receipt 只标识这次调用及其 Run。它不是第二份结果文件，也不带页面需要的业务数据。终端反馈与 `--json` 的 progress 同样只属于当前进程。
 
-`createdRunIds` 穷尽包含已提交 create transaction 的 Run；`publicationCutoff` 的语义见 [Invocation receipt](feature/experiments/architecture.md#invocation-receipt-与退出)。
+`createdRunIds` 穷尽包含已提交 create transaction 的 Run；`publicationCutoff` 的语义见 [Invocation receipt](feature/experiments/architecture/README.md#invocation-receipt-与退出)。
 
 ## 调度
 
@@ -104,7 +104,7 @@ Runner 先展开 expected Planned attempts，再以全局和 Experiment 范围�
 carry 只在固定 Assertions 事实与 Attempt outcome 可读、且精确 payload 合法时发生。`reuseContract`
 schema/domain/token 必须先满足当前 policy，随后才比较 identity、duration 与其它 gates。partial、缺失、
 损坏、不支持或 domain 不同都选择执行并提供具名原因；持久判定输入的穷尽清单只由
-[reuse planning](feature/experiments/cache.md#复用资格) 定义。
+[reuse planning](feature/experiments/architecture/cache.md#复用资格) 定义。
 
 `niceeval accept` 先校验全部 locator，再建立含 reference Member 的 Run，并在 Member action 中写出
 adoption。任一 locator 无效时不写入该批次。
@@ -114,7 +114,7 @@ Run 冻结。
 当前目标先判定结果可用性与 gap，再应用执行选项。符合有限规则的采用在相同目标下可经见证重验后继续沿用；
 目标再次变化则重新判断。缺口、强制重跑动作与 Invocation 完成度分别解释，不用历史评分填补当前缺口。
 
-详细规则见 [缓存与携带](feature/experiments/cache.md)。
+详细规则见 [缓存与携带](feature/experiments/architecture/cache.md)。
 
 ## 证据与固定 family
 
@@ -141,9 +141,9 @@ Attempt-owned observability 事实，并让 Assertion 与 Verdict 的正常规�
 
 ## 相关阅读
 
-- [Experiments 架构](feature/experiments/architecture.md)
-- [Experiments CLI](feature/experiments/cli.md)
-- [Record 架构](feature/run/architecture.md)
+- [Experiments 架构](feature/experiments/architecture/README.md)
+- [Experiments CLI](feature/experiments/cli/README.md)
+- [Record 架构](feature/run/architecture/README.md)
 - [Assertions 证据](feature/assertions/architecture/evidence.md)
 - [Verdict](feature/verdict/architecture.md)
 - [执行失败分类](feature/error-classification/architecture.md)

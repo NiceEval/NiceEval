@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: active-attempt-publication-omitted-from-reuse
-title: Active Attempt publication is omitted from default Inspection and reuse
-createdAt: 2026-09-01
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Active Attempt publication is omitted from default Inspection and reuse
+
 ## Problem
 
 An Experiment can publish a completed Attempt while its origin Run remains active. `niceeval run show` and an exact machine Inspection query can read that publication, but the default human `niceeval show` overview and the next Invocation's reuse planner omit it. After SIGKILL, the next Invocation reports `reused: 0` and executes the already paid-for ordinal again.

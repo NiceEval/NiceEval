@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-braintrust-storage
-title: Braintrust 的持久结构、envelope、index 与 cache
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/braintrust/storage.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Braintrust 的持久结构、envelope、index 与 cache
 
 本文回答“什么被保存、以什么公开 shape 保存、什么只是派生或缓存”。执行时机与 atomicity 见 [execution.md](../execution/README.md)，版本/兼容演进见 [schema-and-migration.md](../schema-and-migration/README.md)。源码核对日期为 2026-08-14。

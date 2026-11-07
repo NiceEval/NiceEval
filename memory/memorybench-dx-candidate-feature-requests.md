@@ -1,24 +1,8 @@
----
-format: concord.document/v1
-id: memorybench-dx-candidate-feature-requests
-title: MemoryBench dogfooding 批次:候选 feature request 与逐条处置
-createdAt: 2026-07-30T14:54:53+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/memorybench-dx-candidate-feature-requests.md
-  commit: 5b06d9bd2e5722e9618a4f41e8823e43e12adb9c
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # MemoryBench dogfooding 批次:候选 feature request 与逐条处置
 
 2026-07-30 MemoryBench(terminal-bench 移植,niceeval 0.11.3)dogfooding 一批 DX 反馈的
 处置台账。共同形状:**上层配置压过下层声明时不给任何提示**——已升格为契约规则
-「解析的赢家要在反馈里留痕」(docs/feature/experiments/architecture.md 配置解析链一节)。
+「解析的赢家要在反馈里留痕」(docs/feature/experiments/architecture/README.md 配置解析链一节)。
 
 ## 待裁决的候选(未立项,立项后进 docs/roadmap/)
 
@@ -39,7 +23,7 @@ history: []
 - config.timeoutMs 压掉 eval 声明、超时报错无来源 →
   [multi-source-field-resolution-order](multi-source-field-resolution-order.md)(契约已定,代码未修);
 - 实验闸压住 `--max-concurrency` 无提示 → 已设计落 docs:PLAN 行带全局并发来源标注
-  并逐个点名实验闸(docs/feature/experiments/cli.md live 面板一节);
+  并逐个点名实验闸(docs/feature/experiments/cli/README.md live 面板一节);
 - 默认 diff 排除表不收 `.tbench-testing` → 按现契约答复:benchmark 专属目录走项目级
   `diff.ignore`,默认表只收通用基础设施目录(core 中立);
 - `show --json` 管道截断 → [show-json-pipe-truncated-at-128k](show-json-pipe-truncated-at-128k.md);
@@ -52,7 +36,7 @@ history: []
 本批处置:
 
 - 判据树进指纹(728 文件 40MB 只能逐个 loadText)→ 已定稿 `loadCriteria`(登记不读入),
-  契约落 docs/feature/experiments/cache.md 数据面与 eval/use-case/criteria-files.md;
+  契约落 docs/feature/experiments/architecture/cache.md 数据面与 eval/use-case/criteria-files.md;
 - telemetry 配置失败把无关题打成 errored →
   维持 errored,裁决记 [telemetry-configure-failure-stays-errored](telemetry-configure-failure-stays-errored.md);
 - 80MB fixture 上传超时报错无上下文 → 契约落 docs/error-feedback.md「超时报错的三要素」;

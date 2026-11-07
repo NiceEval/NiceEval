@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-retain-run-condition-error
-title: "`--keep-sandbox`:宿主运行条件类 errored,进现场手动重跑准备命令"
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # `--keep-sandbox`:宿主运行条件类 errored,进现场手动重跑准备命令
 
 ## 解决什么问题
@@ -70,9 +61,9 @@ hint: remove --keep-sandbox to share one Sandbox, or remove sandboxReuse from th
 
 - 被 Ctrl+C 中断的 run 不留存——留存授予发生在 verdict 定稿的收尾点。
 - `defineSandbox` 自定义 provider 不支持 `--keep-sandbox`(创建前报错)。
-- 与 Experiment 的 [`sandboxReuse: true`](../reuse.md) 互斥：留存的现场必须只属于那一次 Attempt。
+- 与 Experiment 的 [`sandboxReuse: true`](../library/reuse.md) 互斥：留存的现场必须只属于那一次 Attempt。
 
 ## 相关阅读
 
 - [CLI](../cli.md) —— 两档语义、面板体裁、`sandbox` 命令组全集。
-- [Architecture · 留存与注册表](../architecture.md#留存keep与注册表) —— 各 provider 的休眠形态。
+- [Architecture · 留存与注册表](../architecture/README.md#留存keep与注册表) —— 各 provider 的休眠形态。

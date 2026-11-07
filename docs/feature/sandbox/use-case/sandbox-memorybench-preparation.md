@@ -1,15 +1,6 @@
----
-format: concord.document/v1
-id: sandbox-memorybench-preparation
-title: MemoryBench:Experiment 带 template
-createdAt: 2026-08-01T18:25:03+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # MemoryBench:Experiment 带 template
 
-契约单源见 [Sandbox Layer · Eval 与 Experiment 使用同一个类型](../layers.md#eval-与-experiment-使用同一个类型)、[内置 before action](../prepare-commands.md)与[三方准备时序 · Experiment template 路径](../lifecycle.md#experiment-template-路径)。
+契约单源见 [Sandbox Layer · Eval 与 Experiment 使用同一个类型](../library/layers.md#eval-与-experiment-使用同一个类型)、[内置 before action](../library/prepare-commands.md)与[三方准备时序 · Experiment template 路径](../architecture/lifecycle.md#experiment-template-路径)。
 
 MemoryBench 的 Sandbox 和 mempal 版本随 Experiment 变化,具体 Eval 只负责 checkout 固定仓库并准备题目。
 因此 Experiment 是 template owner,Eval 保持 command-only:

@@ -5,7 +5,7 @@ import { lstat, type Stats } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as FileSystem from "effect/FileSystem";
-import { Data, Effect, Fiber, Scope } from "effect";
+import { Data, Effect, Fiber, PlatformError, Scope } from "effect";
 
 const CONTROL_DIRECTORY = "niceeval-e2e-candidate-pack-locks";
 const OWNER_FILE = "owner.json";
@@ -20,8 +20,8 @@ export interface CandidatePackLock { readonly path: string; }
 export class CandidatePackLockError extends Data.TaggedError("CandidatePackLockError")<{ readonly operation: "acquire" | "inspect" | "release"; readonly detail: string; }> {}
 
 function pathFor(checkout: string): string { return join(tmpdir(), CONTROL_DIRECTORY, `${createHash("sha256").update(checkout).digest("hex")}.lock`); }
-function isNotFound(error: unknown): boolean { return typeof error === "object" && error !== null && "reason" in error && (error as { readonly reason?: unknown }).reason === "NotFound"; }
-function isAlreadyExists(error: unknown): boolean { return typeof error === "object" && error !== null && "reason" in error && (error as { readonly reason?: unknown }).reason === "AlreadyExists"; }
+function isNotFound(error: unknown): boolean { return error instanceof PlatformError.PlatformError && error.reason._tag === "NotFound"; }
+function isAlreadyExists(error: unknown): boolean { return error instanceof PlatformError.PlatformError && error.reason._tag === "AlreadyExists"; }
 function isOwner(value: unknown): value is LockOwner { if (value === null || typeof value !== "object") return false; const owner = value as Partial<LockOwner>; return typeof owner.token === "string" && owner.token.length > 0 && typeof owner.pid === "number" && Number.isInteger(owner.pid) && owner.pid > 0 && typeof owner.host === "string" && owner.host.length > 0 && typeof owner.createdAtMs === "number" && Number.isFinite(owner.createdAtMs) && typeof owner.heartbeatAtMs === "number" && Number.isFinite(owner.heartbeatAtMs); }
 function ownerDied(owner: LockOwner): boolean { if (owner.host !== hostname()) return false; try { process.kill(owner.pid, 0); return false; } catch (cause) { return (cause as NodeJS.ErrnoException).code === "ESRCH"; } }
 function lstatLeaf(path: string): Effect.Effect<Stats, NodeJS.ErrnoException> { return Effect.callback((resume) => { lstat(path, (error, stat) => resume(error === null ? Effect.succeed(stat) : Effect.fail(error))); }); }

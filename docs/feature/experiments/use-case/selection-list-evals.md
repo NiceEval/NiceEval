@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: selection-list-evals
-title: 列出已发现的 Eval
-createdAt: 2026-08-22T14:50:08+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 列出已发现的 Eval
 
 场景：你先要确认项目能发现哪些评估用例，或只检查某个 tag 的目录。此时不需要先选择 Experiment，使用

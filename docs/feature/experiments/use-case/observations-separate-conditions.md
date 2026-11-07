@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: observations-separate-conditions
-title: 按角色区分条件与运行时观测
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 按角色区分条件与运行时观测
 
 同一个值可能有两种角色。
@@ -18,4 +9,4 @@ feature: docs/feature/experiments/README.md
 判断依据不是值长什么样，而是谁在什么时候决定它。
 不要只把实验条件上报成观测，否则条件变化后旧 Attempt 仍可能被采用。
 
-发布与携带规则见 [Run · Architecture](../../run/architecture.md)。
+发布与携带规则见 [Run · Architecture](../../run/architecture/README.md)。

@@ -21,7 +21,7 @@ const agent = bubAgent({
 });
 
 // 单一实验:全部 4 条 Eval 共用同一个 agent 变体和同一份安装 checkpoint,只证明协议路径通
-// (docs/engineering/testing/e2e/adapter/README.md「仓库 Eval 预算」),不做多样本统计。
+// (docs/engineering/testing/architecture/e2e/adapter/README.md「仓库 Eval 预算」),不做多样本统计。
 export default defineExperiment({
   description: "bub:真实 Bub CLI 在 Docker 沙箱内,针对 s2a OpenAI 兼容网关跑通协议路径",
   adapter: agent,

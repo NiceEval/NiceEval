@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: selection-list-experiments
-title: 先列出 Experiment，再选择运行范围
-createdAt: 2026-08-02T19:52:02+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 先列出 Experiment，再选择运行范围
 
 仓库里有多组 agent、模型和条件变体时，先查看它们实际会选择多少 Eval，再决定运行哪一组。不要靠文件名猜 Experiment id，也不要为了查看配置启动一次 `exp --dry`。
@@ -42,4 +33,4 @@ niceeval exp compare/codex
 
 - `exp list` 发现的是**定义**；它不显示历史结果，也不表示某个 Experiment 当前在跑。
 - 当前在跑的多个 Experiment 属于一个 Invocation，不属于一条 `exp list` 条目。运行中反馈只在启动命令的进程里显示。
-- selector、零命中和 JSON 形状的精确契约单源在 [CLI](../cli.md#niceeval-exp-list先看有哪些运行配置)。
+- selector、零命中和 JSON 形状的精确契约单源在 [CLI](../cli/README.md#niceeval-exp-list先看有哪些运行配置)。

@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-arize-phoenix
-title: Arize Phoenix Evaluation：从 evaluator 到 annotation 与 CI
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Arize Phoenix Evaluation：从 evaluator 到 annotation 与 CI
 
 > 观察日期：2026-08-09。

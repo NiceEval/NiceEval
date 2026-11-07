@@ -26,7 +26,7 @@ declare function sandboxRequirements(
 
 `minimumDataBytes` 是正整数 byte 数。
 4 GiB 是 NiceEval-Eval 这类题目的最低要求，不是所有 Eval 的全局默认。
-没有 `docker` 字段时，该 layer 不要求启动 daemon。
+没有 `docker` 字段时，该 layer 不声明 DockerExecutionRequirement，也不要求启动 daemon。
 
 Eval 侧只能用这份 command-only layer 声明 nested Docker。
 它不选择 image、project、storage pool 或 Provider。

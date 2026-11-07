@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: selection-split-eval-kinds
-title: 拆开通过制与计分制 Eval
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 拆开通过制与计分制 Eval
 
 一个 Experiment 的实际选择只能全是 `defineEval`，或全是 `defineScoreEval`。通过率与 earned score 没有共同单位，

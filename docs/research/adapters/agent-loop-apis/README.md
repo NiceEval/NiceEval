@@ -1,13 +1,4 @@
 ---
-format: concord.document/v1
-id: adapters-agent-loop-apis
-title: 主流 agent loop 的接入面调研 —— API / 会话 / HITL / 遥测
-createdAt: 2026-08-12
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/adapters/agent-loop-apis.md
-  commit: 107a13b385b02c620a786064bded8bec766385b8
-kind: research
 sources:
   - https://openai.github.io/openai-agents-python/{running_agents,results,streaming,sessions,human_in_the_loop,tracing,usage}
   - https://openai.github.io/openai-agents-js/guides/
@@ -18,6 +9,7 @@ sources:
   - https://github.com/earendil-works/pi
   - https://mariozechner.at/posts/2025-11-30-pi-coding-agent/
 ---
+
 # 主流 agent loop 的接入面调研 —— API / 会话 / HITL / 遥测
 
 **出处:** 各框架官方文档 / 源码(2026-07 抓取,URL 见各节)。

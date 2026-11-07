@@ -1,26 +1,3 @@
----
-format: concord.document/v1
-id: observability-package-layout
-title: Observability package layout
-createdAt: 2026-08-12T11:57:58+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/observability-package-layout/README.md
-  commit: d7b0165d1752ba87558a100e03ab71ba7f4bccd0
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - source-receipt
-decision:
-  selected: source-receipt
-  reason: 迁移保留 DECISION.md 中的明确裁决：source-receipt
-  source:
-    path: docs/design/observability-package-layout/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:5a97fab394c5d1083002b50875bc80c0142a0031a5a3e4aa3f4086dfbeeea0d5
-  targets: []
----
 # Observability package layout
 
 本决策比较 Observability facts 在 RecordAttachment 中的物理切分。它不改变 Record Core、owner、

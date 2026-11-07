@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/cli.md#cli-sandbox-step-activity
+// owner: docs/engineering/testing/architecture/e2e/cli.md#cli-sandbox-step-activity
 // rerun: pnpm e2e test --repo cli -- --run test/sandbox-step-activity.test.ts
 
 import { withPty } from "@niceeval/testkit";

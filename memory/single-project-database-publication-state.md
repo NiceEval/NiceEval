@@ -1,16 +1,11 @@
 ---
-format: concord.document/v1
-id: single-project-database-publication-state
-title: Use one ProjectDatabase for operational and published Run state
-createdAt: 2026-08-31
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions:
-  - docs/feature/run/architecture.md#canonical-record-与运行中状态
-history: []
+relations:
+  - role: supports
+    target: docs/feature/run/architecture/README.md#canonical-record-与运行中状态
 ---
+
+# Use one ProjectDatabase for operational and published Run state
+
 ## Context
 
 The adopted root-wide SQLite design stored open, sealing, and published Run data in one ProjectDatabase. A later direct-portability refactor mapped publication visibility onto physical files and created one `record-staging-<runId>.sqlite` per Run. Real concurrent evaluation left dozens of staging databases and orphaned resources after owner processes died.

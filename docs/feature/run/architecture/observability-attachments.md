@@ -76,7 +76,7 @@ execution 持有自己的 storage-generation lease，physical-only migration 后
 
 `niceeval.execution-traces` 使用原生 collection items 保存快照头与事件，不把整局事件数组放入 Attachment header。
 快照头拥有 `traceId`、schema、collection 和 scopes，事件拥有框架稳定身份与该 trace 内展示 ordinal。
-导入时分配的身份在幂等重交、分页与 Record 搬迁后不变。字段全集由 [Adapter Library](../../adapters/library.md#保存通用执行轨迹) 拥有。
+导入时分配的身份在幂等重交、分页与 Record 搬迁后不变。字段全集由 [Adapter Library](../../adapters/library/README.md#保存通用执行轨迹) 拥有。
 
 collector 先验证整份输入和同 Attempt 的附件证据，再接纳不可变值。publication 将 trace items 与附件内容一起关闭；
 固定 family 的完整性校验核对 owner、附件 digest、JSON pointer、目标 digest 和长度。校验失败阻止 publication 或读取。

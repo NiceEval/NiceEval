@@ -1,6 +1,6 @@
 // @concord-file
-// @concord-implements docs/feature/experiments/architecture.md
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/experiments/architecture/README.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 
 // 运行器主调度:发现产出的 eval × agent × runs → attempt,有界并发调度。
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
@@ -948,7 +948,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     return sem;
   };
 
-  // 实验级生命周期(见 docs/feature/experiments/architecture.md「实验级生命周期」):
+  // 实验级生命周期(见 docs/feature/experiments/architecture/README.md「实验级生命周期」):
   // setup 整场至多一次——第一个通过派发许可(preflight)的 attempt 触发,后续 attempt 等同一个
   // memoized Effect completion;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown 是
   // ExperimentDef.teardown 字段,在最后一个 attempt 收尾后执行,当且仅当 setup 时点走到过
@@ -1231,7 +1231,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     );
     return acquired.claim;
   });
-  // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)
+  // 强杀后的收尾兜底(docs/feature/experiments/architecture/README.md「强杀后的收尾兜底」)
   // 与留存注册表都写入 coordinationRoot 对应的 canonical ProjectDatabase。
   const currentHost = hostname();
   // Establish process identity lazily: only a configured sharedState opts in
@@ -2139,7 +2139,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
   const lockIdentity = { pid: process.pid, host: currentHost };
 
-  // 用例锁(docs/feature/experiments/architecture.md「并发 Invocation:用例锁」):按
+  // 用例锁(docs/feature/experiments/architecture/README.md「并发 Invocation:用例锁」):按
   // (experimentId, evalId) 给这批已经确定要真实派发的 attempt 分组——被静态携带筛掉的组合
   // 从不出现在 attempts[] 里,天然满足「全携带用例不取锁」;裸 run(无 experimentId)不接入。
   // 一组(runs > 1 的兄弟 attempt)共享同一把锁:谁先到派发时刻谁试,自己已持有的直接放行,
@@ -3202,7 +3202,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // experiment-teardown-missed-once-in-batch)。走到这里时 forEach 的全部 fiber 连同 finalizer
   // 都已结算,任何仍停在 Active 的实验都意味着泄漏;在此强制收尾并报警示诊断——
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
-  // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
+  // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture/README.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
   const sweepExperimentTeardowns = (): Effect.Effect<void, unknown, ProjectStateDatabase> => Effect.forEach(
     [...expLifecycles],
@@ -3358,7 +3358,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     // reporter 的收尾——继续跑完剩下的循环,让每个 reporter 都拿到 onInvocationComplete 的机会;
     // 失败本身经 runReporter → reportReporterError 折成诊断,由调用方(cli.ts)读取
     // RunFeedbackState 组装成 InvocationCompletion,让最终 completion/退出码判红(见
-    // docs/feature/experiments/cli.md「运行完成状态不只看 verdict 计数」)。
+    // docs/feature/experiments/cli/README.md「运行完成状态不只看 verdict 计数」)。
     yield* runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary));
   }
   return receipt;

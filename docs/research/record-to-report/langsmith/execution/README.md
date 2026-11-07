@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-langsmith-execution
-title: LangSmith 实验执行与失败语义
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/langsmith/execution.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # LangSmith 实验执行与失败语义
 
 本页按 LangSmith 的 Experiment / Project / Run / Feedback 原生对象写一次实验的真实顺序。字段与介质见 [storage.md](../storage/README.md)，历史读取见 [reading-and-comparison.md](../reading-and-comparison/README.md)。源码固定核对官方 SDK commit [`345a522`](https://github.com/langchain-ai/langsmith-sdk/commit/345a52252af163abe33699fb361038f5783c9024)（2026-08-13 UTC）。

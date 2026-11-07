@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: inspection-check-completeness
-title: 核对数据完整度
-createdAt: 2026-08-26T19:54:36+08:00
-kind: use-case
-feature: docs/feature/inspection/README.md
----
-
 # 核对数据完整度
 
 自动化先发现固定 operation，再在一个 `PublicationCutoff` 下核对 Run 是否完整：
@@ -78,7 +69,7 @@ Inspection operation，而不是消费本次 CLI document。
 不要用较早 Run 的完整摘要判断本次执行是否完整。
 
 检查 Run 终态、已发布成员和缺失原因。已发布 Attempt 继续可读；未发布位置按
-[Run 生命周期](../../run/lifecycle.md#创建与执行)收口，不把中断解释为零分或零费用。
+[Run 生命周期](../../run/architecture/lifecycle.md#创建与执行)收口，不把中断解释为零分或零费用。
 终端错误摘要被截断时，从对应 Attempt 详情读取诊断，再按需要展开 execution 与 timing。
 
 全部成员都打印终态后，如果 Run 收尾失败，同样先核对已发布成员与具名缺失原因。
@@ -86,4 +77,4 @@ Inspection operation，而不是消费本次 CLI document。
 保留 exact Run、可查询的 locator 和诊断，确认当前 dry plan 后再决定补跑范围。
 
 进程被强制终止时，Run 可能仍为 active。此时 pending 只表示尚未发布，不能据此判断哪个 Eval 正在执行。
-恢复操作遵循 [Run recovery](../../run/lifecycle.md#崩溃与-recovery)；本用例不通过等待时长推断进程已经退出。
+恢复操作遵循 [Run recovery](../../run/architecture/lifecycle.md#崩溃与-recovery)；本用例不通过等待时长推断进程已经退出。

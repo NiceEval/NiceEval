@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-langfuse-schema-and-migration
-title: Langfuse schema、兼容读取与 migration
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Langfuse schema、兼容读取与 migration
 
 > 观察日期：2026-08-14

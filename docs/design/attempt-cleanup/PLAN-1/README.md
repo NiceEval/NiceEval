@@ -1,9 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design-plan
-relations: {}
----
-
 # 资源实现声明排空预算
 
 ## 解决的问题

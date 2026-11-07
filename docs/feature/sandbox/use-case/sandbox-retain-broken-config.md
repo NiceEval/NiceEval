@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-retain-broken-config
-title: 配置损坏时仍能管理现场
-createdAt: 2026-08-22T14:50:08+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # 配置损坏时仍能管理现场
 
 场景：一次 Experiment 留下了 Sandbox，但随后 `niceeval.config.ts` 的开发中改动暂时无法求值。你需要先确认

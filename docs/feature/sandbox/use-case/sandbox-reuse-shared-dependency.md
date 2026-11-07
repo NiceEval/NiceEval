@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-shared-dependency
-title: 共享一次随当前项目变化的依赖安装
-createdAt: 2026-07-27T18:06:14+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # 共享一次随当前项目变化的依赖安装
 
 ## 解决什么问题
@@ -84,7 +75,7 @@ template 与复用可以叠加：template 提供稳定工具链，Experiment lay
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md) —— 重置点、并发、寿命与结果边界。
-- [Sandbox Layer](../layers.md) —— `before()`、`shell()` 与 action identity。
+- [Sandbox 复用](../library/reuse.md) —— 重置点、并发、寿命与结果边界。
+- [Sandbox Layer](../library/layers.md) —— `before()`、`shell()` 与 action identity。
 - [准备可复用评测](sandbox-reuse-preparable-evals.md) —— clone、冷构建和分层的完整迁移示例。
 - [预制实例](../library/prebuilt-environments.md) —— 哪些稳定内容应移到 image / template / snapshot。

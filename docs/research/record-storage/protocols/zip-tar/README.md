@@ -1,15 +1,11 @@
 ---
-format: concord.document/v1
-id: record-storage-protocols-zip-tar
-title: ZIP64、TAR 与 PAX
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources:
   - https://pkwaredownloads.blob.core.windows.net/pkware-general/Documentation/APPNOTE-6.3.9.TXT
   - https://www.gnu.org/software/tar/manual/tar.html
   - https://www.gnu.org/software/tar/manual/html_section/Compression.html
+observedAt: 2026-08-25
 ---
+
 # ZIP64、TAR 与 PAX
 
 > 观察日期：2026-08-25

@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-clearml-reading-and-comparison
-title: ClearML 历史读取与比较
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/clearml/reading-and-comparison.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # ClearML 历史读取与比较
 
 ClearML 重新打开历史工作的单位仍是 Task。

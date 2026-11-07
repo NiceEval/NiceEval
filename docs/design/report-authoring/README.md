@@ -1,30 +1,3 @@
----
-format: concord.document/v1
-id: report-authoring
-title: 报告作者面：组件粒度与取数形态
-createdAt: 2026-07-27T18:06:13+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/report-authoring/README.md
-  commit: 5894456c54a8f1bbfc6d27031e3373d69ef689c8
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-  - plan-4
-  - plan-5
-  - plan-6
-  - plan-7
-decision:
-  selected: plan-7
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-7
-  source:
-    path: docs/design/report-authoring/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:eae8bd440c263724ee47cc0d36bce9e34ab1ccf5230c41d56adb0223e5b91aef
-  targets: []
----
 # 报告作者面：组件粒度与取数形态
 
 > 本主题的双面 Report 作者面已被 [CLI 与 Insight](../cli-insight/DECISION.md) 取代。本目录只保留候选与裁决历史。外部用户网页的数据 / 组件接入面仍在[独立决策](../benchmark-web-consumption/README.md)中比较。

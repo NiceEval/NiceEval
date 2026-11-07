@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/assertions.md
+// cases: docs/engineering/testing/architecture/unit/assertions.md
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import type { Usage } from "../types.ts";

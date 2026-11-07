@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: observations-report-runtime
-title: 上报运行时观测
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 上报运行时观测
 
 记忆服务由 before 启动，隧道 URL 每次运行都可能变化。

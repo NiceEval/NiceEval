@@ -1,22 +1,6 @@
----
-format: concord.document/v1
-id: case-lock-wait-not-skip-ruling
-title: 用例锁:撞锁等待并携带,否决跳过记 incomplete
-createdAt: 2026-07-24T15:11:46+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/case-lock-wait-not-skip-ruling.md
-  commit: 70bbc51508e95a476eae0658686dc2be52fc19ab
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 用例锁:撞锁等待并携带,否决跳过记 incomplete
 
-- **裁决**(2026-07-24):并发 Invocation 的防双跑用例锁定稿——键 `(experimentId, evalId)`,`.niceeval/locks/` 逐条目心跳锁(10s 续租 / 落后 30s 判死 / rename 原子接管)。撞上新鲜锁 = 等待(无超时,心跳新鲜就一直等),锁释放后重查携带:对方落盘终态指纹匹配即携入,缺的 attempt 才自己补跑。等待中的用例计入独立的 `elsewhere` 计数状态(别人在运行),不混进 `queued`——用户明确要求区分「等别的进程」和「等本进程并发位」两种等待。契约单源 `docs/feature/experiments/architecture.md#并发-invocation用例锁`。
+- **裁决**(2026-07-24):并发 Invocation 的防双跑用例锁定稿——键 `(experimentId, evalId)`,`.niceeval/locks/` 逐条目心跳锁(10s 续租 / 落后 30s 判死 / rename 原子接管)。撞上新鲜锁 = 等待(无超时,心跳新鲜就一直等),锁释放后重查携带:对方落盘终态指纹匹配即携入,缺的 attempt 才自己补跑。等待中的用例计入独立的 `elsewhere` 计数状态(别人在运行),不混进 `queued`——用户明确要求区分「等别的进程」和「等本进程并发位」两种等待。契约单源 `docs/feature/experiments/architecture/README.md#并发-invocation用例锁`。
 - **曾选方案 1**:撞锁用例跳过、计入 `unstarted`、completion 记 `incomplete`,提示稍后重跑同一命令续跑。**否决理由**:多开的目标是几条命令各自跑完都拿到完整结果;跳过把收尾成本转嫁给第二遍人工重跑,而等待不占并发位、代价只是墙钟被对方牵制,carry 让等待换来零成本携入(用户裁决)。
 - **曾选方案 2**:等锁用例计数保持 `queued`,靠运行级行解释(与实验级 setup 等待同构)。**否决理由**:用户裁决(同日)——「别人在运行」是与排队本质不同的状态,应有自己的计数词;`queued` 语义收窄为只等本进程的并发位。
 - **粒度出处**:用户明确定为单个评估用例,不是 experiment 级——experiment 级锁会把选择交集之外的用例也互斥掉,无谓折损多开并行度;也不按 attempt 拆锁,同一用例的 attempt 分属两个进程会把 `runs` 的通过率分母切成两半。

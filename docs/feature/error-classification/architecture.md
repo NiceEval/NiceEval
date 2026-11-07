@@ -25,7 +25,7 @@ interface SendFailure {
 
 ## 分类顺序
 
-1. 受理信息优先。只有 `acceptance: "rejected"` 才允许 `retryable: true`。
+1. 受理信息优先。只有 SendFailure 携带 `acceptance: "rejected"` 时才允许 `retryable: true`。
 2. 内建分类器识别 `EvalFatalError` 与 `ExperimentFatalError` 声明的共享失败范围。
 3. Adapter 分类器可补充其协议特有的重试或范围信息。
 4. 保守回退产生 `retryable: false`、`scope: "attempt"`。
@@ -75,4 +75,4 @@ Delivery 只消费 Inspection 已交付的具名值。它不由当前进程反�
 - [执行失败分类 Library](library.md)
 - [Runner](../../runner.md)
 - [Verdict](../verdict/architecture.md)
-- [Experiments CLI](../experiments/cli.md)
+- [Experiments CLI](../experiments/cli/README.md)

@@ -1,16 +1,9 @@
 ---
-format: concord.document/v1
-id: restore-show-as-fixed-inspection-renderer
-title: Restore show as a fixed Inspection renderer
-createdAt: 2026-08-27T00:00:00+08:00
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions:
-  - docs/feature/inspection/cli.md#niceeval-show
-history: []
+relations:
+  - role: supports
+    target: docs/feature/inspection/cli.md#niceeval-show
 ---
+
 # Restore show as a fixed Inspection renderer
 
 ## Decision

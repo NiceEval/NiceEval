@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: eval-groups
-title: Eval Group
-createdAt: 2026-08-12T22:41:17+08:00
-kind: feature
----
-
-
 # Eval Group
 
 Eval Group 把一组兼容的 Eval 绑定到同一条 capacity-one 复用 lane。组内真实派发的 Attempt 共享物理 Sandbox 并稳定串行；不同 Group 与未分组 Eval 仍可并发。它解决重型条件重复创建的问题，不表达跨 Eval 数据依赖或业务顺序。
@@ -34,8 +25,8 @@ export default defineEvalGroup({
 
 * [Library](library.md) —— `defineEvalGroup()`、成员 type-state 与错误边界。
 * [CLI](cli.md) —— 选择、dry plan 与机器输出。
-* [Architecture](architecture.md) —— 发现、身份、兼容性与调度模型。
-* [Lifecycle](lifecycle.md) —— 物理 Sandbox、Plugin、Attempt 与失败策略的时序。
+* [Architecture](architecture/README.md) —— 发现、身份、兼容性与调度模型。
+* [Lifecycle](architecture/lifecycle.md) —— 物理 Sandbox、Plugin、Attempt 与失败策略的时序。
 * [MemoryBench](use-case/memorybench.md) —— 用多个 Group 并行复用记忆条件与 Git seed。
 
 ## 范围

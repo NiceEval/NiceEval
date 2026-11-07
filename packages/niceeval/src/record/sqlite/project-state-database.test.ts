@@ -1,5 +1,5 @@
-// owner: docs/engineering/testing/unit/record.md
-// cases: docs/engineering/testing/unit/record.md
+// owner: docs/engineering/testing/architecture/unit/record.md
+// cases: docs/engineering/testing/architecture/unit/record.md
 
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

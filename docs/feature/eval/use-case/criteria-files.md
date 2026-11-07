@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: criteria-files
-title: 本地测试文件:普通上传与动态身份
-createdAt: 2026-07-29T22:20:07+08:00
-kind: use-case
-feature: docs/feature/eval/README.md
----
-
-
 # 本地测试文件:普通上传与动态身份
 
 ## 解决什么问题

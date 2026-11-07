@@ -44,7 +44,7 @@ const SETTINGS_PATH = "~/.claude/settings.json";
 
 /**
  * `settingsFile` 的保留键:`model` 归 experiment(经 `--model` flag),`env` 归 Adapter
- * (鉴权与 OTel 导出经进程环境变量注入)。清单定稿见 docs/feature/adapters/sdk/claude-code/README.md。
+ * (鉴权与 OTel 导出经进程环境变量注入)。清单定稿见 docs/feature/adapters/library/sdk/claude-code/README.md。
  */
 const RESERVED_SETTINGS_KEYS = ["model", "env"] as const;
 
@@ -125,7 +125,7 @@ export interface ClaudeCodeConfig {
 
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/claude-code/README.md
+// @concord-implements docs/feature/adapters/library/sdk/claude-code/README.md
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   assertAgentLifecycleNames(config, "claudeCodeAgent");
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");

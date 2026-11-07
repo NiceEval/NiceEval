@@ -27,7 +27,7 @@ niceeval exp <experiment> [eval...] --sandbox-before-cache=bypass
 niceeval exp <experiment> [eval...] --max-before-cache-concurrency 3
 ```
 
-取值只有 `use | bypass`。优先级固定为 CLI flag → Experiment 的 `sandboxCache.before` → `niceeval.config.ts` 的 `sandboxCache.before` → 默认 `use`。Eval 与 Eval Group 没有同名字段；完整配置形状见 [Library](library.md#before-cache-配置)。
+取值只有 `use | bypass`。优先级固定为 CLI flag → Experiment 的 `sandboxCache.before` → `niceeval.config.ts` 的 `sandboxCache.before` → 默认 `use`。Eval 与 Eval Group 没有同名字段；完整配置形状见 [Library](library/README.md#before-cache-配置)。
 
 `bypass` 禁止 Before cache lookup 与 publication，并真实 replay 全部 eligible before。BuildKey 的 lookup/build 仍照常执行；该选择不改变 BuildKey、BeforeCacheKey、CaseKey、Attempt fingerprint 或 result identity。该 flag 只用于冷路径验收、排障与绕开本机 cache，不是强制重跑历史结果的入口。
 
@@ -54,22 +54,22 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
   对应地，timing decoding 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目。
   留存提交后现场转入 provider 的休眠形态（docker 停驻容器、e2b pause、vercel stop 后可恢复），不白烧资源。
   suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
-  语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
+  语义见 [Architecture · 各 provider 的留存语义](architecture/README.md#留存keep与注册表)。
 - 被中断的 Run 不留存:留存授予发生在 Verdict 与 receipt 收敛的收尾点,Ctrl+C 时还没有 Verdict 的 Attempt 走正常销毁;此前已完成并授予留存的 Sandbox 不被中断收回。
-- 留存与 [project-target policy](../experiments/cache.md#复用资格) 不相容：带 carried action 的 reference Member 没有本次 Sandbox，无从留存。
+- 留存与 [project-target policy](../experiments/architecture/cache.md#复用资格) 不相容：带 carried action 的 reference Member 没有本次 Sandbox，无从留存。
   因此 `--keep-sandbox` 运行里，满足当前留存档的已有 Attempt 不参与携带，照常派发重跑拿现场。
   `failed` 档下上一轮 `failed` Attempt 重跑；`errored` Attempt 本就不具备携带资格。
   `passed` Attempt 可由 reference Member 沿用并写出 carried action；`all` 档下全部重跑。
-  要现场就给一次真实执行，不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)。
+  要现场就给一次真实执行，不需要为此再配一次 [`--rerun`](../experiments/use-case/README.md#--rerun)。
   两个 flag 的档位词表同构，`--keep-sandbox` 各档自带对应口径的重跑。
-- `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
+- `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](library/reuse.md) 互斥。
   复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；组合在创建 Sandbox 前报错。
   Sandbox 预热行为不变,未领用的预创建实例照常销毁。
 - `incusSandbox()` 是 DestroyOnly，与 `--keep-sandbox` 组合在创建资源前报错。nested Docker 的只读诊断入口是 [`niceeval sandbox provider doctor incus`](../sandbox-nested-docker/cli.md)，默认检查 reference domain。
 
 ### run 收尾输出
 
-留存发生时,run 摘要后追加输出,两种输出形态都有、格式随形态。`human` 是一个面板——它与 `FAILED` / `FAILURES` / `NEXT` 同属 [`exp` 结束反馈](../experiments/CLI-DESIGN.md):留存条数嵌上边框右侧,批量销毁命令嵌下边框，View 的下钻命令也紧贴其作用的内容。
+留存发生时,run 摘要后追加输出,两种输出形态都有、格式随形态。`human` 是一个面板——它与 `FAILED` / `FAILURES` / `NEXT` 同属 [`exp` 结束反馈](../experiments/cli/run-feedback.md):留存条数嵌上边框右侧,批量销毁命令嵌下边框，View 的下钻命令也紧贴其作用的内容。
 
 `niceeval exp --json` 在事件流追加 `kept` 事件(与 run 事件同一词表),非 TTY 人读文本在 `NEXT` 里补 `niceeval sandbox stop --all`:
 
@@ -101,11 +101,11 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 `sandbox` 命令组先用自己的 schema 完成语法检查，再准备项目 `.env` 中的 provider 凭据；它不读取或求值
 `niceeval.config.ts`，也不发现 eval。正常命令只操作留存注册表(`.niceeval/sandboxes/` 下的逐条目文件，见
-[Architecture · 留存注册表](architecture.md#留存keep与注册表))与内置 provider 的 detached 能力。
+[Architecture · 留存注册表](architecture/README.md#留存keep与注册表))与内置 provider 的 detached 能力。
 因此配置模块损坏时仍可 `list` / `enter` / `stop`，但 `.env` 不可读时会在连接 Provider 前失败。
 
 **输出体裁**:`sandbox` 命令组是一次性读取命令——一次调用、打印、退出,没有「运行中」阶段，也不定义
-`--json`。[`exp` 的两种输出形态](../experiments/cli.md)区分的是长时运行的反馈节奏，不是所有 root command
+`--json`。[`exp` 的两种输出形态](../experiments/cli/README.md)区分的是长时运行的反馈节奏，不是所有 root command
 共享的开关。`niceeval sandbox list --json` 在读取 `.env`、配置或 Provider 之前报 unknown option；不会接受后
 继续打印 Human 文本。
 
@@ -157,7 +157,7 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 
 ### `sandbox list --orphans`
 
-`SIGKILL` / 断电杀死 runner 时,正在跑的沙箱没有任何收尾代码来得及执行,也不在留存注册表里。`--orphans` 按创建期写入实例元数据的运行标识(`host` / `pid` / `startedAt`,契约见 [Architecture · 孤儿核对](architecture.md#孤儿核对强杀路径的实例面回退))向 provider 侧核对这类实例:
+`SIGKILL` / 断电杀死 runner 时,正在跑的沙箱没有任何收尾代码来得及执行,也不在留存注册表里。`--orphans` 按创建期写入实例元数据的运行标识(`host` / `pid` / `startedAt`,契约见 [Architecture · 孤儿核对](architecture/README.md#孤儿核对强杀路径的实例面回退))向 provider 侧核对这类实例:
 
 - `orphan`:属主 run 已被证实死亡(同宿主、pid 不存活),可安全收回。
 - `unverified`:标识来自另一台宿主或无法核对,不自动销毁;确认后用 `prune --force`。
@@ -192,8 +192,8 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
 - [Nested Docker CLI](../sandbox-nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
-- [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Record · Architecture](../run/architecture.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Architecture](architecture/README.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
+- [Record · Architecture](../run/architecture/README.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。
 
 ## Docker image cache inventory

@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/experiments-runner.md
+// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
 // Unit exception: synthetic historical domains have no published package/CLI input.
 // The release gate must distinguish recipe drift before such a package is published.
 import { resolve } from "node:path";

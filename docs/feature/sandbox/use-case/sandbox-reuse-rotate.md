@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-rotate
-title: Sandbox 复用：长批次在派发前更换 Sandbox
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # Sandbox 复用：长批次在派发前更换 Sandbox
 
 一批短 Attempt 的总时长可能超过云 Sandbox 的连续运行上限。

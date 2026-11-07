@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: run-inspection
-title: Run → Inspection → Insight
-createdAt: 2026-08-28T11:12:45+08:00
-kind: feature
----
-
 # Run → Inspection → Insight
 
 NiceEval 的运行后数据流由三个领域 owner 闭合：Run 保存已发布 Attempt、Planned attempt binding、状态与 absence；Inspection 在

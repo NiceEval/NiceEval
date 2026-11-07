@@ -1,9 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design-plan
-relations: {}
----
-
 # 声明材料工厂并绑定 reader
 
 材料工厂 token 声明材料类型，Adapter assertions factory 把 token 绑定到应用 reader。

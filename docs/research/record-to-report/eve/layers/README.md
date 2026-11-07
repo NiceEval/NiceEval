@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-eve-layers
-title: Eve：channel、harness、runtime 与 Eval 作者面
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Eve：channel、harness、runtime 与 Eval 作者面
 
 > 观察日期：2026-08-14

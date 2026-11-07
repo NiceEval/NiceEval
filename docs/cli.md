@@ -2,13 +2,13 @@
 
 `niceeval` 把命令输入分到运行、读取与恢复三条路径。面向用户的命令和选项由各 Feature 的 CLI 页定义；本页只定义入口模块的责任边界。
 
-- [Experiments CLI](feature/experiments/cli.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
+- [Experiments CLI](feature/experiments/cli/README.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Run CLI](feature/run/cli.md) 定义 Run 生命周期、canonical Record 交付与外部 artifact 导入。
 - [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
 - [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
 - [Docker Profile CLI](feature/sandbox-docker-profiles/cli.md) 定义 Docker profile 的诊断；Docker cache 与 BuildKit
-  管理由 [Docker cache CLI](roadmap/sandbox-cache/cache-lifecycle/cli.md) 定义。
+  管理由 [Docker cache CLI](roadmap/sandbox-cache-lifecycle/cli.md) 定义。
 - [Getting Started](getting-started.md) 定义 `init` 建立项目入口后的第一条使用路径。
 
 ## 模块边界
@@ -170,7 +170,7 @@ migration 或 repair；原项目必须用 current NiceEval 重新运行。
 
 一次 Invocation 的 TTY 面板、NDJSON progress 和诊断只服务当前进程。它们可替换、合并或丢弃，不能成为 Record 的持久化协议。
 
-非 TTY Human 在 stdout 追加带 Experiment、Eval 和 Attempt 归属的节流文本进度。采样、去重与空闲 heartbeat 服从 [Experiments 运行中反馈](feature/experiments/cli.md#运行中反馈)。
+非 TTY Human 在 stdout 追加带 Experiment、Eval 和 Attempt 归属的节流文本进度。采样、去重与空闲 heartbeat 服从 [Experiments 运行中反馈](feature/experiments/cli/README.md#运行中反馈)。
 
 Score Eval 的 `scored` 人读标签只表示完整且有效的评分，完整零分不表示目标达成。标签与 canonical Verdict 的关系由 [Verdict](feature/verdict/architecture.md#score-eval-的-assertion-score-facts) 定义。
 
@@ -194,7 +194,7 @@ argv、配置或 selector 无法建立 Invocation 时，CLI 输出 `error:`，�
 只有有限且确定的命令语法错误才附 `usage:`，有对应公开说明时可以附 `docs:`。CLI 不猜测 Provider、凭据、
 网络或宿主运行条件的修复办法。
 
-所有命令组的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/CLI-DESIGN.md)。机器 code、
+所有命令组的 Human 输出遵守 [CLI Human 输出设计](feature/experiments/cli/run-feedback.md)。机器 code、
 内部身份和状态机字段只进入 JSON、Record 或明确的开发者诊断面，不能直接成为默认终端文案。
 
 ## 退出码

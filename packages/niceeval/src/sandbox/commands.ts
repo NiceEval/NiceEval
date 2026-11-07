@@ -354,7 +354,7 @@ function normalizeCommandMetadata(value: SandboxCommandDefinition): NormalizedSa
 
 // @concord-code
 // @concord-implements docs/feature/sandbox/library/operations.md
-// @concord-implements docs/feature/sandbox/prepare-commands.md
+// @concord-implements docs/feature/sandbox/library/prepare-commands.md
 export function defineSandboxCommand(
   identity: SandboxCommandDefinition,
   run: SandboxCommand,

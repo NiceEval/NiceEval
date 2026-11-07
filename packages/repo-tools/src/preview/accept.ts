@@ -11,7 +11,7 @@ import {
   PreviewVerificationError,
 } from "./model.js";
 import { closureDigest } from "./build.js";
-import { validateConcordChanges } from "./concord.js";
+import { validateCapturedConcordPreview } from "./concord.js";
 import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
@@ -157,8 +157,7 @@ function verifyRemoteFile(base: string, expected: PreviewFile) {
     };
     if (actual.byteLength !== expected.byteLength) return yield* fail(expected.path, `byte length ${actual.byteLength} does not match ${expected.byteLength}`);
     if (actual.sha256 !== expected.sha256) return yield* fail(expected.path, `sha256 ${actual.sha256} does not match ${expected.sha256}`);
-    if (expected.path === "concord/changes.json") yield* validateConcordChanges(repositoryRoot(), bytes);
-    return actual;
+    return { file: actual, concordBytes: expected.path.startsWith("concord/") ? bytes : undefined };
   })));
 }
 
@@ -215,11 +214,14 @@ export function acceptPreview(input: unknown): Effect.Effect<PreviewAcceptanceRe
     if (decoded.buildReceipt.files.some((file) => file.path.endsWith(".sqlite"))) return yield* fail("build receipt", "static closure contains SQLite data");
     if (closureDigest(decoded.buildReceipt.function.files) !== decoded.buildReceipt.function.closureSha256) return yield* fail("Function closure", "Function manifest does not match its digest");
     if (decoded.buildReceipt.function.record.path !== "record.sqlite") return yield* fail("Function Record", "private Record path is not fixed");
-    const files = yield* Effect.forEach(
+    const captured = yield* Effect.forEach(
       decoded.buildReceipt.files,
       (file) => verifyRemoteFile(decoded.deploy.immutableUrl, file),
       { concurrency: 8 },
     );
+    const files = captured.map(item => item.file);
+    const concordFiles = captured.flatMap(item => item.concordBytes === undefined ? [] : [{ path: item.file.path, bytes: item.concordBytes }]);
+    if (concordFiles.length > 0) yield* validateCapturedConcordPreview(repositoryRoot(), concordFiles);
     const verifiedClosureSha256 = closureDigest(files);
     if (verifiedClosureSha256 !== decoded.buildReceipt.closureSha256) {
       return yield* fail("remote closure", "verified manifest closure does not match the build receipt");

@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-weights-and-biases
-title: Weights & Biases：Models 与 Weave
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Weights & Biases：Models 与 Weave
 
 > 观察日期：2026-08-14

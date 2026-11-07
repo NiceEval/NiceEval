@@ -1,18 +1,9 @@
----
-format: concord.document/v1
-id: sandbox-reuse-preparable-evals
-title: 声明 Sandbox 复用：让一批 Eval 共用 Sandbox
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # 声明 Sandbox 复用：让一批 Eval 共用 Sandbox
 
 拿一个真实 eval 仓库改:MemoryBench 的 `evals/toggl-cli/` 链,6 道题、同一个 repo、同一个 base commit、同一套 Rust 工具链。
 它适合使用 Sandbox 复用，但现有准备逻辑需要分层。
 先看改完之后代码长什么样——注释标的就是每一块落在哪一层、那一层只能放什么、在复用实验里怎么跑。
-契约单源始终在 [Sandbox Layer](../layers.md)、[三方准备时序](../lifecycle.md)与 [Sandbox 复用](../reuse.md),本页只做搭配叙事。
+契约单源始终在 [Sandbox Layer](../library/layers.md)、[三方准备时序](../architecture/lifecycle.md)与 [Sandbox 复用](../library/reuse.md),本页只做搭配叙事。
 
 ## 先看完整生命周期
 
@@ -24,7 +15,7 @@ feature: docs/feature/sandbox/README.md
 
 每条 Attempt 开始前,Runner 先把 workdir reset 回题间重置点,再按 occurrence schedule 满足 attempt before,随后执行 agent.ensure 循环与 Agent runtime。
 图中的 `git reset --hard` 和 `git clean` 由 Runner 自动执行,Eval 作者不写这两条命令。
-无论 fresh 或 reuse,普通 command 都只有逐 Attempt 一种频次;各阶段的完整次数表见 [Sandbox 复用](../reuse.md#各阶段次数)。
+无论 fresh 或 reuse,普通 command 都只有逐 Attempt 一种频次;各阶段的完整次数表见 [Sandbox 复用](../library/reuse.md#各阶段次数)。
 
 重新执行不等于每条 Attempt 付全价。
 昂贵动作由真实检查把关:装在 workdir 之外的工具链活过 reset,第二条 Attempt 起检查命中、快速返回。
@@ -224,7 +215,7 @@ agent 自己起的进程不经作者命令取得,在 `test(t)` 末尾收:`await 
 
 ## 一页速查:哪一层只能放什么
 
-分工的单源是 [Library · 沙箱预置放哪](../library.md#沙箱预置放哪);这里按「复用实验里跑几次」展开:
+分工的单源是 [Library · 沙箱预置放哪](../library/README.md#沙箱预置放哪);这里按「复用实验里跑几次」展开:
 
 | 层 | 只能放 | 复用实验里跑几次 | 放错的症状 |
 |---|---|---|---|
@@ -248,7 +239,7 @@ niceeval exp toggl
 之后每道题 `git reset --hard` 回题间重置点，重新执行的两条 before 检查命中：工具链探一次版本、checkout 从存活的 `.git` 本地恢复、cargo 增量核对，整链秒级。
 
 结果照常进 Run，供固定 `query` operation 或 `view` 查阅；每条真实派发 Attempt 的命令、timing 与 diagnostics 都由 Observability 封口，复用池的承接状态不另建 Record family。
-实验可以在 CI 中运行，结果按普通 Experiment 的终态、指纹、资格与 `--rerun` 判据沿用；携带条目不创建 Sandbox，未携带的 Attempt 才进入本次复用生命周期（见[结果与结果沿用](../reuse.md#结果与结果沿用)）。
+实验可以在 CI 中运行，结果按普通 Experiment 的终态、指纹、资格与 `--rerun` 判据沿用；携带条目不创建 Sandbox，未携带的 Attempt 才进入本次复用生命周期（见[结果与结果沿用](../library/reuse.md#结果与结果沿用)）。
 
 ## 什么时候不要声明复用
 
@@ -261,8 +252,8 @@ niceeval exp toggl
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md) —— 重置点、各阶段次数与状态边界。
-- [Sandbox Layer](../layers.md) —— `before()`、action identity 与配对规则。
-- [预置与收尾怎么放](../../experiments/use-case/生命周期/) —— 生命周期各层的分工与常见错位。
+- [Sandbox 复用](../library/reuse.md) —— 重置点、各阶段次数与状态边界。
+- [Sandbox Layer](../library/layers.md) —— `before()`、action identity 与配对规则。
+- [预置与收尾怎么放](../../experiments/use-case/README.md#生命周期代码放哪) —— 生命周期各层的分工与常见错位。
 - [Agent 契约](../../adapters/architecture/agent-contract.md#生命周期不变量) —— agent 侧安装与收尾的不变量。
 - [本地冒烟一批 eval](sandbox-reuse-batch-smoke.md) —— 改完之后的完整运行路径与反馈形态。

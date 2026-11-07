@@ -157,7 +157,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         const events = interrupted.expEvents();
         const evalEvents = interrupted.expEvalEvents();
         // receipt 只承载 Invocation completion 与已发布 Run ID（见
-        // docs/feature/experiments/cli.md「结束反馈与 receipt」）。业务 outcome 仍由带身份的
+        // docs/feature/experiments/cli/README.md「结束反馈与 receipt」）。业务 outcome 仍由带身份的
         // eval 事件断言；不读取 Record 内部细节。
         const interruptedReceipt = interrupted.expReceipt();
         expect(interruptedReceipt, interrupted.diagnostic()).toMatchObject({

@@ -1,4 +1,4 @@
-// FeedbackRenderer:human / json 两种 profile(见 docs/feature/experiments/cli.md)各实现
+// FeedbackRenderer:human / json 两种 profile(见 docs/feature/experiments/cli/README.md)各实现
 // 一份的插件契约。FeedbackCoordinator(coordinator.ts)是这份契约唯一的调用方 —— renderer 不
 // 知道、也不需要知道事件从哪来、该不该去重、什么时候该 tick,这些全部由 coordinator 保证好
 // 了才调用这里;renderer 只管「拿到一个已经确定要展示的 typed 事件 / 已经更新好的状态,

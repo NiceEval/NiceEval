@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: run
-title: Run：持续发布的评测运行
-createdAt: 2026-08-28T11:12:45+08:00
-kind: feature
----
-
 # Run：持续发布的评测运行
 
 Run 是 NiceEval 管理的运行资源。Runner 为一次选中的 Experiment 创建一个 Run，并在创建事务中冻结
@@ -40,11 +32,11 @@ Host 关闭 writer、checkpoint、truncate WAL，再以内建只读路径重开 
 Host-owned 可写打开会自动迁移明确支持的历史 ProjectDatabase，先备份并验证，再事务性升级。
 读取历史 portable Record 时在私有副本自动迁移，无需先运行评估；外部原件保持不变。
 未知格式、无法验证的数据与不安全的历史运行状态拒绝读取，不自动修复。
-版本范围与安全条件见 [自动迁移](architecture.md#自动迁移)。
+版本范围与安全条件见 [自动迁移](architecture/README.md#自动迁移)。
 
 ## 入口
 
 - [Library](library.md) —— 高层 `runHost` 组合能力。
 - [CLI](cli.md) —— `run list/show/delete/recover`。
-- [Architecture](architecture.md) —— 身份、publication、cutoff、引用与删除不变量。
-- [Lifecycle](lifecycle.md) —— 创建、发布、收口、崩溃恢复与物理回收顺序。
+- [Architecture](architecture/README.md) —— 身份、publication、cutoff、引用与删除不变量。
+- [Lifecycle](architecture/lifecycle.md) —— 创建、发布、收口、崩溃恢复与物理回收顺序。

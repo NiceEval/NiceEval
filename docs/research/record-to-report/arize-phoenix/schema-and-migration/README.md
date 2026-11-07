@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-arize-phoenix-schema-and-migration
-title: Phoenix 的 schema、版本与 migration
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Phoenix 的 schema、版本与 migration
 
 > 观察日期：2026-08-14

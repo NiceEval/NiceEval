@@ -1,6 +1,6 @@
 # Run Library
 
-`niceeval/run/host` 是 Node.js 应用的公开 Host 入口，提供高层、受支持的 `runHost`。替代 CLI、Node Web host 与深度应用集成使用同一组领域操作，不能取得
+`niceeval/run/host` 是 Node.js 应用的公开 Host 入口，提供高层、受支持的 runHost。替代 CLI、Node Web host 与深度应用集成使用同一组领域操作，不能取得
 SQLite、transaction、generic writer、migration、generation 或物理路径。该入口不承诺在浏览器或其它非 Node 运行时加载；跨运行时的只读协议使用 `niceeval/run`。
 
 ```ts

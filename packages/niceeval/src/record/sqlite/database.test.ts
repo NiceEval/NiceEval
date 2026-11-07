@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/record.md
+// cases: docs/engineering/testing/architecture/unit/record.md
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

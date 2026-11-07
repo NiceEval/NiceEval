@@ -172,7 +172,7 @@ export interface ScriptResult {
 }
 
 // ── agent 归因增量(见 docs/feature/record/architecture.md「diff.json」与
-//    docs/feature/sandbox/architecture.md「变更归因:send 窗口与分类账」)──
+//    docs/feature/sandbox/architecture/README.md「变更归因:send 窗口与分类账」)──
 
 /** diff.json 的落盘形状:按时序的窗口数组(逐窗口 delta 序列,不做跨窗口压缩)。 */
 export type DiffArtifact = DiffWindow[];

@@ -1,5 +1,5 @@
 // 协议行为:Plugins 与 hook 信任——marketplace 安装的 Plugin 行为可观察,其 hook 在 bypass
-// 信任姿态下确实生效(见 docs/engineering/testing/e2e/adapter/codex-cli.md)。
+// 信任姿态下确实生效(见 docs/engineering/testing/architecture/e2e/adapter/codex-cli.md)。
 //
 // 安装痕迹从 codex 自己的 plugin cache 目录读(镜像 e2e/projects/codex 里
 // native-plugin-installed.eval.ts 的既有做法);安装清单是宿主侧 attempt artifact,不进沙箱。

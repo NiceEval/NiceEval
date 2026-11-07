@@ -1,26 +1,3 @@
----
-format: concord.document/v1
-id: eval-suite-sharing
-title: 共享 Eval：原生题目怎样跨项目复用
-createdAt: 2026-08-06T20:58:03+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/eval-suite-sharing/README.md
-  commit: 3e913593740753eba12d48475cb9bb5e443278cb
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-decision:
-  selected: plan-3
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-3
-  source:
-    path: docs/design/eval-suite-sharing/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:919d8f136e6963d3d8dd0fed76da740d306ef70eec6078d42664b679e9ad096d
-  targets: []
----
 # 共享 Eval：原生题目怎样跨项目复用
 
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [DECISION](DECISION.md)

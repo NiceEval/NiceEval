@@ -37,7 +37,7 @@ Supporting Projection 可以证明 claim 子集或更精确的机制定律。
 ```typescript
 export const rerunReusesMatchingAttempt = defineRunnerCase({
   id: "runner.cache.reuse-expired",
-  contract: "docs/feature/experiments/cache.md#coordinatorplanner-与-writer",
+  contract: "docs/feature/experiments/architecture/cache.md#coordinatorplanner-与-writer",
   goal: "再次运行时，只重新执行身份变化的 attempt",
   world: runnerWorld({
     project: {

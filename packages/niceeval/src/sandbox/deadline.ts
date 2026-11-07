@@ -1,4 +1,4 @@
-// 时限归属:attempt deadline 是唯一默认(契约见 docs/feature/sandbox/architecture.md
+// 时限归属:attempt deadline 是唯一默认(契约见 docs/feature/sandbox/architecture/README.md
 // 「时限归属:attempt deadline 是唯一默认」)。
 //
 // provider 层**没有独立默认**。单条命令未显式传 `timeout` 时,上限就是 attempt deadline 的

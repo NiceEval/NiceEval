@@ -2,7 +2,7 @@
 //
 // 这里不认识 Layer、Provider 或复用调度。checkout/installTool 都只是普通 stable command:
 // runner 仍按 owner 的 prepare 顺序执行它们。契约单源:
-// docs/feature/sandbox/prepare-commands.md
+// docs/feature/sandbox/library/prepare-commands.md
 
 import { createHash } from "node:crypto";
 import { posix } from "node:path";

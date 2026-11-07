@@ -14,7 +14,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 
 讨论或修改设计时，目标状态一律以 docs 的声明为准；docs 未声明的行为视为未定稿，先在对话或 Design 中裁决，不从源码反推。
 只有进入实现与核对阶段，才使用 [Source Map](source-map.md) 定位源码并直接检查实现。
-要写入实现踩坑或设计翻案，进入 [`memory/INDEX.md`](../memory/INDEX.md)。
+要查找或写入实现踩坑与设计翻案，用 `concord memory search <query>` 或 `concord list memory`，写法见 `concord --skill memory`。
 
 ## 按意图进入
 
@@ -24,8 +24,8 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
 | 理解 Run 与 Attempt 怎样经过 Inspection 到 Insight | [Run → Inspection → Insight](feature/run-inspection/README.md) |
-| 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
-| 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
+| 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/architecture/cache.md)（eligibility identity 与 domain） |
+| 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/library/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/architecture/lifecycle.md) |
 | 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox-nested-docker/README.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature Skill](../.agents/skills/feature/SKILL.md) → [Feature](feature/README.md) → 对应功能目录 |
@@ -40,10 +40,10 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 跟进公开、脱敏且需 maintainer 处理的 Observation | [GitHub Issue 与 Memory](engineering/issues/README.md) |
 | 沉淀调查后的 Problem、Decision 或可复用 know-how | [Memory Skill](../.agents/skills/memory/SKILL.md) |
 | 切分互斥的多 Agent 文档工作 | [并行文档工作](engineering/docs-work/README.md) |
-| 为文档选择关系图、静态图或复杂交互图 | [Concord 迁移与图示实践](engineering/docs-traceability/migration.md) → [SVG 视觉契约](SVG-DESIGN.md) |
+| 为文档选择关系图、静态图或复杂交互图 | [Concord 迁移与图示实践](engineering/docs-traceability/architecture.md) → [SVG 视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | [Research](research/README.md)；RFC、OWASP 等基础规范仍见对应 Feature 的 `reference/` |
-| 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
+| 查过去的坑或被否决方案 | `concord memory search <query>`、`concord list memory` |
 | 写公开用户文档 | [`apps/docs-site/AGENTS.md`](../apps/docs-site/AGENTS.md) |
 
 ## 目录索引
@@ -56,6 +56,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 - [Research](research/README.md)：带观察日期的外部产品研究。
 - [Issue](issues/README.md)：保留用户观察原文及处理关系。
 - [Engineering](engineering/README.md)：仓库自身的测试、维护、同步与 benchmark 机制。
+- [跨功能用例](guides/README.md)：按用户最终目标选择路径，具体用例仍归能力所属 Feature。
 - [文档模板](_template/README.md)：Feature Design Package 与 Design Decision 的受管创建材料。
 
 根目录的产品与共用设计页仍由本入口直接拥有：
@@ -63,6 +64,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 - [Concepts](concepts.md)（Concord 管理的全局术语 catalog）、[Architecture](architecture.md)、[Getting Started](getting-started.md) 与 [用户故事地图](user-story.md)。
 - [API 设计](api-design.md)、[Origin 接入](origin-integration.md)、[Observability](observability.md)、[Runner](runner.md) 与 [CLI](cli.md)。
 - [错误反馈](error-feedback.md)、[外部参考](references.md)、[Source Map](source-map.md) 与 [SVG 视觉契约](SVG-DESIGN.md)。
+- [品味](taste.md)：审阅 Spec 与代码时共同的判断标准。
 - [`concord-writing.json`](concord-writing.json)：由 Concord 管理的句长、段长与禁用写法政策。
 
 ## 文档的唯一归属
@@ -90,8 +92,8 @@ Feature、Roadmap 与 Design 的每个候选使用同一套 [`_template/feature-
 - `README.md`:问题、核心心智、范围与正文入口。
 - `library.md`:公开 Library 形状。
 - `cli.md`:CLI 输入输出与反馈。
-- `architecture.md`:数据建模、内部边界、时序和不变量。
-- `lifecycle.md`:跨 owner 的起点选择、build/start/install、Fixture、复用与收尾时序。
+- `architecture.md`:数据建模、内部边界、时序和不变量;写不下时换成 `architecture/` 目录。
+- `architecture/lifecycle.md`:跨 owner 的起点选择、build/start/install、Fixture、复用与收尾时序。
 - `use-case/`:按用户目标组织的完整路径。
 
 只有 `README.md` 必备,其余页面按功能形态选用。
@@ -142,9 +144,9 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 用词由 [Concepts](concepts.md) 拥有：每个概念有唯一写法、稳定 ID、定义与解释。
 
 - 同一概念在正文里始终写同一个词，不换同义词，也不临时造中文译名。
-- 要用 catalog 里没有的概念，先用 `concord concepts set` 登记定义和契约链接，再在正文使用。`concepts index` 只读汇总全项目词条。
+- 要用 catalog 里没有的概念，先直接编辑 [Concepts](concepts.md) 登记定义和契约链接，运行 `concord writing check`，再在正文使用。`concepts index` 只读汇总全项目词条。
 - 唯一写法由 catalog 裁决，只有它算概念使用。不带豁免的弃用名写在 catalog frontmatter 的 `deprecated`；带历史目录豁免的弃用规则由写作政策拥有，并引用对应 concept。
-- 其它禁用写法由 `concord writing set` 写入 [`concord-writing.json`](concord-writing.json)，每项带 `term` / `use` / `why`。每项 `roots` 保留设计文档、中文站或两者的作用范围。
+- 其它禁用写法直接编辑 [`concord-writing.json`](concord-writing.json) 后运行 `concord writing check`，每项带 `term` / `use` / `why`。每项 `roots` 保留设计文档、中文站或两者的作用范围。
 - `concord docs check --json` 检查当前正文，`pnpm lint` 同时执行 Concord 与 NiceEval 专用的示例、SVG 和站点守护。
 - 要在正文里引用某个禁用写法本身（例如说明为什么不写它），把它写成行内代码：检查会先剥掉行内代码与代码块。
 
@@ -157,7 +159,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 | `README.md` | 为什么要这个功能、核心契约总纲 | 只到说明概念所需的最小片段 |
 | `library.md` / `cli.md` | API 面 / CLI 面:导出什么、参数与返回、约束与错误 | 只到最小调用形状,一个 API 一段 |
 | `architecture.md` | 模块边界、数据建模、内部不变量 | 类型与数据形状为主 |
-| `lifecycle.md` | 跨 owner 的完整运行时序与 fresh/reuse 次数 | 顺序图、次数表与状态转移为主 |
+| `architecture/lifecycle.md` | 跨 owner 的完整运行时序与 fresh/reuse 次数 | 顺序图、次数表与状态转移为主 |
 | `use-case/` | 场景叶子文档:一篇讲一个用户目标的完整路径 | 完整可抄的代码示例住这里 |
 
 两条纪律:

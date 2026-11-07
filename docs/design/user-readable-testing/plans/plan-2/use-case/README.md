@@ -19,7 +19,7 @@ runnerBehavior({
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/experiments/cache.md",
+    path: "docs/feature/experiments/architecture/cache.md",
     anchor: "携带粒度以-attempt-为单位",
   },
   title: "只修改一条 eval 后，未修改项被携带，修改项重新执行",
@@ -435,7 +435,7 @@ adapterBehavior({
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/run/architecture.md",
+    path: "docs/feature/run/architecture/README.md",
     anchor: "usage",
   },
   title: "用户用当前 AI SDK 运行后，记录保留真实 token usage",

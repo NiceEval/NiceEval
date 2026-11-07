@@ -1,19 +1,10 @@
----
-format: concord.document/v1
-id: machine-output-ai-fix-loop
-title: "`--json`：让 coding agent 跑、查、改、复验"
-createdAt: 2026-07-23T16:46:08+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # `--json`：让 coding agent 跑、查、改、复验
 
 coding agent 不需要解读 TTY 重绘。
 它需要稳定的 Invocation identity、规范 Attempt locator、按需读取证据的入口，以及最终 receipt。
 
 `exp --json` 输出当前进程的 NDJSON 反馈，末尾恰好一条 `InvocationReceipt`。
-完整词表见 [CLI · 机器怎么读](../cli.md#机器怎么读--json)。
+完整词表见 [CLI · 机器怎么读](../cli/README.md#机器怎么读--json)。
 
 ## 全流程
 
@@ -59,5 +50,5 @@ coding agent 不需要解读 TTY 重绘。
 
 ## 相关阅读
 
-- [Experiments CLI · `--json`](../cli.md#--json) —— 当前进程反馈与 receipt 的形状。
+- [Experiments CLI · `--json`](../cli/README.md#--json) —— 当前进程反馈与 receipt 的形状。
 - [`--json`（CI 门禁）](machine-output-ci-gate.md) —— 退出码与 JUnit 的消费方式。

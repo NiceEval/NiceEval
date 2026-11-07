@@ -307,7 +307,7 @@ interface E2BSandboxCreateOptions {
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
   readonly user?: string;
   /**
-   * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+   * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
    * 「PATH:受管变量与 pathPrepend」)。
    */
   readonly pathPrepend?: readonly string[];
@@ -315,14 +315,14 @@ interface E2BSandboxCreateOptions {
   /** 运行时已解析的实例寿命；bounded attempt 不能退回 E2B 的 SDK 默认值。 */
   readonly lifetime: E2BSandboxLifetime;
   /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
-   *  (见 docs/feature/sandbox/architecture.md「孤儿核对」)。 */
+   *  (见 docs/feature/sandbox/architecture/README.md「孤儿核对」)。 */
   readonly runIdentity?: RunIdentity;
 }
 
 /**
  * Provisioning 重试前的对账:按 metadata 里的 provision token 检索远端实例,查到即 kill。
  * 检索或销毁失败必须抛出——对账是重试的硬前置,静默放行等于盲重试,会复制计费实例
- * (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+ * (见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」)。
  * 唯一的例外:实例已不存在(NotFound),视作对账完成。
  */
 export async function reconcileProvision(token: string): Promise<void> {
@@ -578,7 +578,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         // 这是确定性配置死因(同一个值重试多少次都是同一个 400),而裸 SDK 栈既不说是哪个字段
         // 惹的祸、也不说上限是多少。把 provider 的理由原样带出来并指到 lifetimeMs 上——
         // 「不能静默压短」的另一半是「压不下就把原因说清楚」
-        // (见 docs/feature/sandbox/reuse.md「派发前确认」)。
+        // (见 docs/feature/sandbox/library/reuse.md「派发前确认」)。
         if (opts.lifetime._tag === "Requested" && /timeout cannot be greater than/i.test(e instanceof Error ? e.message : String(e))) {
           throw new Error(
             `e2b rejected the ${opts.lifetime.source === "explicit" ? "declared" : "attempt-deadline-derived"} ` +
@@ -593,7 +593,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     })();
     // kill-on-failure:实例句柄已到手,创建之后的初始化请求(如下面的 mkdir 撞 429)一旦失败,
     // 先尽力销毁实例再抛出原始错误——否则重试层按「拒绝类=远端没有实例」盲重试,就会复制一台
-    // 计费实例(见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+    // 计费实例(见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」)。
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
@@ -621,11 +621,11 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
     // e2b commands.run 直接透传同名 user 参数;省略时沿用 Sandbox 默认身份(factory `user`
     // 覆盖后的身份,否则 template 默认用户)—— 跨 provider 语义一致
-    // (见 docs/feature/sandbox/library.md「执行身份」)。
+    // (见 docs/feature/sandbox/library/README.md「执行身份」)。
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
     // envs 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
-    // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
+    // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
     const scriptWithPath = this.pathPrepend.length > 0
       ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}`
       : script;

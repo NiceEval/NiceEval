@@ -11,7 +11,7 @@
 import { attachFailureClass, type FailureClass, type FailureScope } from "../shared/failure-class.ts";
 
 /**
- * Provisioning 失败的两维分类(见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」):
+ * Provisioning 失败的两维分类(见 docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」):
  * **性质**(瞬时 / 确定性)决定要不要重试,**后果**(远端是否可能已创建实例)决定能不能直接重试。
  * - `rate_limit` / `rejected`:拒绝类——请求确定没被受理(限流、DNS/连接被拒/TLS 握手失败),
  *   直接指数退避重试。
@@ -127,7 +127,7 @@ function numericStatus(record: globalThis.Record<string, unknown> | undefined): 
 
 /**
  * 确定性 provisioning 死因的配置解析域细分(见
- * docs/feature/sandbox/architecture.md「Provisioning 失败与重试」「对外的空间轴映射」)。
+ * docs/feature/sandbox/architecture/README.md「Provisioning 失败与重试」「对外的空间轴映射」)。
  * 只在 provider 自身的 `classifyProvisionError` 判定为 `"unknown"`(性质轴:确定性,重试
  * 没有意义)之后调用一次,进一步细分成三档可证明死因:凭据缺失、权限不足、模板不存在。
  * 认不出的确定性错误(参数非法、通用 SDK 错误等)返回 `undefined`——不附带 scope 比误判
@@ -178,7 +178,7 @@ function provisionJsonErrorCode(record: globalThis.Record<string, unknown> | und
 
 /**
  * 三档死因 → 空间轴映射,按配置解析域定档(判据单源见
- * docs/feature/sandbox/architecture.md#provisioning-失败与重试):凭据缺失 / 权限不足
+ * docs/feature/sandbox/architecture/README.md#provisioning-失败与重试):凭据缺失 / 权限不足
  * 来自实验级配置,恒 `"experiment"`;模板不存在按 spec 是否带 `environments` 表二分——
  * 带表时模板逐 eval 解析,可证明的档收紧到 `"eval"`(错杀健康模板的 eval 比多撞几次死
  * 模板更贵);不带表时模板全实验共享,`"experiment"`。

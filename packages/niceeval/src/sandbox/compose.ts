@@ -1,7 +1,7 @@
 // Docker Compose case:原生 compose build/up/down、受管 overlay、黑名单、mainService 主 Sandbox、
 // ServiceController、整组 finalizer、泄题门 hints 与 BuildKey 收集。
 // NiceEval 不维护字段白名单解析器——未知字段原样交给 Compose;只拒绝破坏核心不变量的黑名单项。
-// 契约单源:docs/feature/sandbox/case.md「Docker Compose case」。
+// 契约单源:docs/feature/sandbox/architecture/case.md「Docker Compose case」。
 
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -192,8 +192,8 @@ export interface ComposeLocalFileRef {
 
 /** 从 Compose 原文抽取 services 的黑名单 / build / volume 面。未知字段忽略。 */
 // @concord-code
-// @concord-implements docs/feature/sandbox/library.md
-// @concord-implements docs/feature/sandbox/architecture.md
+// @concord-implements docs/feature/sandbox/library/README.md
+// @concord-implements docs/feature/sandbox/architecture/README.md
 export function inspectComposeYaml(raw: string): ComposeInspection {
   const doc = parseYamlMapping(raw);
   const servicesNode = doc.services;
@@ -1099,7 +1099,7 @@ export function buildComposeOverlay(opts: {
 /**
  * 运行标识 overlay:把 `host` / `pid` / `startedAt` 打到本组的每个服务与每个受管网络上,
  * 让强杀后残留的整组资源(含主容器已消失、只剩网络的情形)能被孤儿核对认领
- * (契约见 docs/feature/sandbox/architecture.md「孤儿核对」)。
+ * (契约见 docs/feature/sandbox/architecture/README.md「孤儿核对」)。
  *
  * 与受管 overlay 分成两份文件是因为它逐次运行都不同(pid、时刻),混进受管 overlay 会让
  * caseKey 每次都变、携带与缓存全部失效——caseKey 只按受管 overlay 的字节算。
@@ -1176,8 +1176,8 @@ function composeMaterializationError(projectName: string, cause: unknown): Compo
 }
 
 // @concord-code
-// @concord-implements docs/feature/sandbox/library.md
-// @concord-implements docs/feature/sandbox/architecture.md
+// @concord-implements docs/feature/sandbox/library/README.md
+// @concord-implements docs/feature/sandbox/architecture/README.md
 export function materializeDockerComposeProviderCase(
   plan: DockerComposeProviderMaterializationPlan,
   opts: MaterializeComposeOpts,

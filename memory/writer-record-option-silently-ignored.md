@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: writer-record-option-silently-ignored
-title: Writer CLI accepted and ignored --record source selection
-createdAt: 2026-10-21
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Writer CLI silently accepted an unsupported Record source
 
 `exp migration-agent --dry --json --record another-record` and `accept --run <id> --dry --record another-record` both returned success in installed candidate 69f2a5cf89b30f2dd2c827abdc7e41c0cd884f887bbb463dd543e0bbcb16c83f. CLI schemas promised source selection, while Experiment Host always used the canonical Record and overwrote the adoption input with undefined.

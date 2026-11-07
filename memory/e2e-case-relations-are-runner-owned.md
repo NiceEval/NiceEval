@@ -1,15 +1,5 @@
----
-format: concord.document/v1
-id: e2e-case-relations-are-runner-owned
-title: E2E relations are owned by runner-collected cases
-createdAt: 2026-08-28
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
+# E2E relations are owned by runner-collected cases
+
 ## Decision
 
 E2E Trace relations are owned per runner-collected case rather than per source file. Every live case carries a permanent opaque `necase_...` token in its runner-visible title and is selected as `<repo-relative-path>#<caseId>`: ID is identity and path is a stale guard.
@@ -26,4 +16,4 @@ Files are containers and can hold several independently runnable outcomes. Runne
 
 ## Adopted target
 
-The complete schema, command tree, receipts, recovery, Issue verification, migration, and acceptance matrix are adopted in `docs/engineering/testing/e2e/case-relations.md` and synchronized into Trace, Testing, Feature, Memory, and Issue rules.
+The complete schema, command tree, receipts, recovery, Issue verification, migration, and acceptance matrix are adopted in `docs/engineering/testing/architecture/e2e/case-relations.md` and synchronized into Trace, Testing, Feature, Memory, and Issue rules.

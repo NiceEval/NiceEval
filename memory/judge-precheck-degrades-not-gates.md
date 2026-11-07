@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: judge-precheck-degrades-not-gates
-title: 裁决:judge 预检失败降级为只作废含 judge 的 eval,不拦整次运行
-createdAt: 2026-07-30T12:08:37+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/judge-precheck-degrades-not-gates.md
-  commit: c632b20463a7cb9408ab0463012f152132894966
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 裁决:judge 预检失败降级为只作废含 judge 的 eval,不拦整次运行
 
 ## 现象
@@ -49,7 +32,7 @@ verify-judge 用例强调的「裁判失败和 agent 失败在报告上长得不
   「要开 19 路」;`--json` start 事件加 `experimentConcurrency`(仅收声明
   了 maxConcurrency 的实验)。
 - 契约落点:`docs/feature/judge/library.md#派发前预检`(单源)、
-  `docs/runner.md`、`docs/feature/experiments/cli.md#判分预检的显示`、
+  `docs/runner.md`、`docs/feature/experiments/cli/README.md#判分预检的显示`、
   `docs/feature/record/architecture.md`(LifecyclePhase)、concepts 立词
   「判分预检」并修 fail-fast 词条悬空的「预检」。
 

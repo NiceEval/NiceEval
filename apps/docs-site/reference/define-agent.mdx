@@ -536,7 +536,7 @@ progress(update: ProgressUpdate): void;
 Scoped feedback: reports what is happening right now (turn / tool / install progress). Short-lived state: the Human profile
 updates the active line, `agent`/`ci` do not print each one, and it does not enter the final result; do not call it for every token/delta.
 The runner attributes it by the lifecycle phase the callback is currently in (agent.before / agent.run / agent.after);
-the caller cannot impersonate another phase (see docs/feature/experiments/library.md).
+the caller cannot impersonate another phase (see docs/feature/experiments/library/README.md).
 
 #### `diagnostic`
 
@@ -771,7 +771,7 @@ readonly env?: Readonly<globalThis.Record<string, string>>;
 
 Adds/overrides environment variables for this command (layered on the Sandbox default environment without clearing defaults). `PATH` is a Sandbox
 managed variable; each provider keeps the `PATH` it computed and does not guarantee it can be overridden here; to extend PATH, use
-the Sandbox factory's `pathPrepend` (see docs/feature/sandbox/library.md "PATH: managed variable and
+the Sandbox factory's `pathPrepend` (see docs/feature/sandbox/library/README.md "PATH: managed variable and
 pathPrepend").
 
 #### `cwd`
@@ -819,7 +819,7 @@ readonly user?: string;
 
 Overrides the execution identity of this command; omitted = the Sandbox default identity (the identity the environment declares itself: the Docker image `USER`,
 the Compose service `user:`, the E2B template default user; see
-docs/feature/sandbox/library.md "Execution identity").
+docs/feature/sandbox/library/README.md "Execution identity").
 
 The semantics are consistent across providers, and each provider maps them to its own native mechanism (docker: `exec --user`; E2B:
 `{ user }`; Vercel: accepts only `"root"`, mapped to `{ sudo: true }`, other values error).
@@ -833,7 +833,7 @@ readonly timeoutMs?: number;
 ```
 
 This command's own limit (milliseconds). **Omitting it is the norm**: when omitted, the limit = the remaining attempt deadline
-(see docs/feature/sandbox/architecture.md "Deadline ownership"); the provider layer has no independent default.
+(see docs/feature/sandbox/architecture/README.md "Deadline ownership"); the provider layer has no independent default.
 Passing a shorter value explicitly is an intentional declaration and takes effect as usual; on hitting it, the attribution is recorded as "explicit command timeout".
 
 #### `signal`

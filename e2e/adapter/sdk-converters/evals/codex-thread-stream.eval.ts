@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
+// owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
 import { defineEval } from "niceeval";
 import {
   atLeast,

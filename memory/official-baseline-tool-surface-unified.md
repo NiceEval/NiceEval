@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: official-baseline-tool-surface-unified
-title: 官方基线不预装 yarn、补齐 python3——跨 provider 基线工具面统一
-createdAt: 2026-08-04T18:30:42+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/official-baseline-tool-surface-unified.md
-  commit: b88088f456976a8c59a9723b0c9b244f42b51837
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 官方基线不预装 yarn、补齐 python3——跨 provider 基线工具面统一
 
 **裁决(2026-08-04)**:六个 Docker target 与三个 E2B template 共用同一份基线工具面契约:官方基线的包管理器只保证 npm 与 corepack,不预装 yarn 实体;官方基线保证 python3 存在。
@@ -29,4 +13,4 @@ history: []
 
 **未发布项**:E2B 侧的三个 template(claude-code / codex / bub)源码配方已推进到新 tag,实际重建与发布(需要 `e2b auth login` 与维护者凭据)未执行,`sandbox/e2b/published.json` 的 `supersededBy` 字段记录了这个待发布状态,不是伪造已发布事实。
 
-**落点**:`sandbox/docker/Dockerfile`(base target)、`src/sandbox/e2b-agent-template.ts`(`withNodeToolContract`、`verifyE2BNodeToolContract`)、`src/sandbox/e2b-agent-template.test.ts`、`src/agents/coding-cli-versions.ts`(`AGENT_BASELINE_RECIPE_REVISION`)、`.github/workflows/docker-image.yml`、`sandbox/e2b/published.json`、`docs/feature/sandbox/library/prebuilt-environments.md`「跨 provider 基线工具面」、`docs/engineering/testing/unit/sandbox.md`「官方 E2B coding-agent 模板契约」。
+**落点**:`sandbox/docker/Dockerfile`(base target)、`src/sandbox/e2b-agent-template.ts`(`withNodeToolContract`、`verifyE2BNodeToolContract`)、`src/sandbox/e2b-agent-template.test.ts`、`src/agents/coding-cli-versions.ts`(`AGENT_BASELINE_RECIPE_REVISION`)、`.github/workflows/docker-image.yml`、`sandbox/e2b/published.json`、`docs/feature/sandbox/library/prebuilt-environments.md`「跨 provider 基线工具面」、`docs/engineering/testing/architecture/unit/sandbox.md`「官方 E2B coding-agent 模板契约」。

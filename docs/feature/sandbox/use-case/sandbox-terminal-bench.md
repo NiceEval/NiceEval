@@ -1,15 +1,6 @@
----
-format: concord.document/v1
-id: sandbox-terminal-bench
-title: Terminal-Bench:Eval 带 template
-createdAt: 2026-08-01T18:25:03+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # Terminal-Bench:Eval 带 template
 
-契约单源见 [Sandbox Layer · Template-bearing factory](../layers.md#template-bearing-factory)、[顺序与依赖方向](../layers.md#顺序与依赖方向)与[三方准备时序 · Eval template 路径](../lifecycle.md#eval-template-路径)。
+契约单源见 [Sandbox Layer · Template-bearing factory](../library/layers.md#template-bearing-factory)、[顺序与依赖方向](../library/layers.md#顺序与依赖方向)与[三方准备时序 · Eval template 路径](../architecture/lifecycle.md#eval-template-路径)。
 
 每道 Terminal-Bench Eval 的 task package 拥有 Compose 文件、workspace service、测试材料与题意。
 因此 Eval 是 template owner,Experiment 保持 command-only:

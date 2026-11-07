@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: table-text-face-flat-rows-sibling-key-collision
-title: Table text 面拿展平行判同层 key 重复,层级表两父行下同名子行误报
-createdAt: 2026-07-29T22:20:07+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/table-text-face-flat-rows-sibling-key-collision.md
-  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [table-text-face-flat-rows-sibling-key-collision](table-text-face-flat-rows-sibling-key-collision.md) — show 双 Experiment 稳定抛行 key 重复:text 面漏传可选 hierarchyRows 参数、拿展平行判同层重复;修为 resolver 只产出层级权威形态并单点校验,text 面渲染期自己展平(primitives.tsx)"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # Table text 面拿展平行判同层 key 重复,层级表两父行下同名子行误报
 
 ## 现象
@@ -61,6 +31,6 @@ face 里各调一次,靠**可选第三参** `hierarchyRows` 决定拿哪套判�
 
 回归测试在 `src/report/definition/table.test.tsx`
 (「两个父行各带同名子行」两面渲染 + 同层真重复仍报错),
-覆盖类别登记在 `docs/engineering/testing/unit/reports.md` Table 条目。
+覆盖类别登记在 `docs/engineering/testing/architecture/unit/reports.md` Table 条目。
 适用场景:一份数据要喂两个 renderer 时,派生投影在消费端做,
 不要在 resolver 里预烤第二套并列返回——并列返回迟早有调用点选错。

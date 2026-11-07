@@ -1,4 +1,4 @@
-// FeedbackCoordinator:一个 run 内唯一的终端协调者(见 docs/feature/experiments/cli.md
+// FeedbackCoordinator:一个 run 内唯一的终端协调者(见 docs/feature/experiments/cli/README.md
 // 「输出流和落盘节奏」与 plan 第 2 节「一个 run 内只有一个终端协调者」)。
 //
 // 职责边界:
@@ -89,7 +89,7 @@ export interface FeedbackCoordinator extends FeedbackSink {
    */
   emit(event: RunFeedbackEvent): void;
   /**
-   * 键盘/终端自愈重绘的唯一入口(见 docs/feature/experiments/cli.md「键盘输入与画面自愈」):
+   * 键盘/终端自愈重绘的唯一入口(见 docs/feature/experiments/cli/README.md「键盘输入与画面自愈」):
    * 清除动态区域后立即整帧重绘,绕过 renderer 自己的「同帧不写」判断——`input-guard.ts` 收到
    * 回车或 SIGWINCH 时调用这个方法,而不是直接拿着 renderer 去调 clearDynamic/redrawDynamic:
    * 这里经内部 `queue` 排队执行,与正常永久事件的 clear→append→redraw 三步共用同一条串行队列,

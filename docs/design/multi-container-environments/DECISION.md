@@ -10,9 +10,9 @@
 ## 裁决
 
 定稿契约的完整正文在 Feature,本篇只保留选型理由:
-[Sandbox 定义](../../feature/sandbox/case.md) ·
-[Record · 两层时间模型](../../feature/run/architecture.md) ·
-[Experiments · Run 级共享准备](../../feature/experiments/architecture.md#run-级共享准备构建协调的预算) ·
+[Sandbox 定义](../../feature/sandbox/architecture/case.md) ·
+[Record · 两层时间模型](../../feature/run/architecture/README.md) ·
+[Experiments · Run 级共享准备](../../feature/experiments/architecture/README.md#run-级共享准备构建协调的预算) ·
 [Eval · 文件夹入口](../../feature/eval/README.md#文件夹入口一道题一个目录)。
 
 采纳 **PLAN-4(能力分型)**:公共契约是唯一的主 `Sandbox`

@@ -467,7 +467,7 @@ export function runAttemptEffect<
 
   // 四层解析链的最后两层(eval → config)在这里接上,并把赢家那一层带出来:超时消息要说得出
   // 「这个上限是哪一层给的」,否则撞线时得回头逐层对照四个声明点(契约见
-  // docs/feature/experiments/cli.md「timeout、budget 与基础设施错误」)。
+  // docs/feature/experiments/cli/README.md「timeout、budget 与基础设施错误」)。
   // 四层都没声明 = 无上限:不挂 deadline、不发软截止信号,也不给 provider 递命令超时,
   // 链末端不发明一条隐藏的线。
   const attemptTimeout = resolveAttemptTimeout(run, evalDef, config);
@@ -481,7 +481,7 @@ export function runAttemptEffect<
   const cancellation = new AttemptCancellationController();
   const signal = cancellation.signal;
 
-  // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
+  // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli/README.md「Attempt 阶段」)。
   // Direct / reused Attempt 由 run.ts 在进入本函数前发 start；fresh Sandbox 则由下面的 provider
   // admission 在 granted 后发 start，再于同一边界进入 sandbox.create。没有对应 hook/配置的步骤
   // 直接不调用，不产生空阶段。没有活跃 feedback coordinator 时 lifecycle 投影静默 no-op。
@@ -621,7 +621,7 @@ export function runAttemptEffect<
     // 同时进运行级永久事件流(human 撤下 dashboard 后追加、JSON stdout 追加 warning,去重按 key)。
     // `key` 只管折叠到多细(作者没给 dedupeKey 时折到「这一条 attempt 的这种诊断」,身份因此
     // 编进去);对外稳定词法始终单独给 `code`,不让消费方从 key 反推(见 sink.ts 的
-    // DiagnosticInput.code、docs/feature/experiments/cli.md 的 WarningEvent)。
+    // DiagnosticInput.code、docs/feature/experiments/cli/README.md 的 WarningEvent)。
     const { origin: _authorOrigin, phase: _authorPhase, ...diagnosticData } = context ?? {};
     reportDiagnostic({
       key: input.dedupeKey ?? `${input.code}:${encodeAttemptKey(identity)}`,
@@ -639,7 +639,7 @@ export function runAttemptEffect<
   };
   // 作用域反馈:progress 只走 attempt:progress(短命状态,归因由 runner 的当前阶段决定),
   // 不进入 recentLogs / timeout stack；diagnostic 落 attempt diagnostics + 运行级永久事件。
-  // 绑定见 docs/feature/experiments/library.md。
+  // 绑定见 docs/feature/experiments/library/README.md。
   const scopedFeedback: ScopedFeedback = {
     progress: (u) => {
       const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
@@ -733,7 +733,7 @@ export function runAttemptEffect<
     // 附着在「当前阶段」上的次要文本(见 ActiveAttempt.detail)。所有调用点都晚于 Direct/reuse
     // start，或 fresh provider 的 granted callback，active map 因而已经有这个 identity。这是唯一出口 ——
     // 没有裸写 stderr 的兜底分支(那是给已删除的 Live reporter 用的旧接线,见
-    // docs/feature/experiments/cli.md「一个 run 内只有一个终端协调者」);由当前 renderer 决定
+    // docs/feature/experiments/cli/README.md「一个 run 内只有一个终端协调者」);由当前 renderer 决定
     // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
     reportAttemptLifecycle({
       type: "attempt:progress",
@@ -787,7 +787,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             message,
             origin: attemptOrigin((sendActive ? "agent.run" : lastPhase) ?? "eval.run"),
             // 归属三样一起落盘:撞的是哪层时限、值多少、值从四层解析链的哪层来。
-            // 不打一个没有归属说明的 ✗(见 docs/feature/sandbox/architecture.md「时限归属」)。
+            // 不打一个没有归属说明的 ✗(见 docs/feature/sandbox/architecture/README.md「时限归属」)。
             timeout: { trigger: "attempt-deadline", limitMs: timeoutMs, source: timeoutSource },
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };

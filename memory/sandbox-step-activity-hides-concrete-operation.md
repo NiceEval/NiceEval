@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: sandbox-step-activity-hides-concrete-operation
-title: Sandbox step activity hides the concrete operation
-createdAt: 2026-08-29
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Sandbox step activity hides the concrete operation
+
 ## Observation
 
 `niceeval exp` runs a declarative Sandbox action successfully, but the Human TTY row only says `preparing sandbox`. During a long `shell()` step it does not show the author-declared command, so users cannot distinguish useful work from a stalled Sandbox.

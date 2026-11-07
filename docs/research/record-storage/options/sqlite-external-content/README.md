@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-options-sqlite-external-content
-title: 候选四：SQLite metadata + 外部 Content segments
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/options/sqlite-external-content.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # 候选四：SQLite metadata + 外部 Content segments
 
 > 状态：条件性退路，不是默认折中

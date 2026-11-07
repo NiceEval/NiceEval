@@ -47,4 +47,4 @@ trace 另算：能发 OTLP → tracing + mapper；不能 → transcript 合成�
 
 每个新方言必须用 fixture 回答：call ID 是否显式、并发是否安全、失败/拒绝怎样表达、usage 和实际模型从哪里取得、异常终止是否仍完整、多个采集源怎样避免重复。
 
-各对象的具体采集面见对应 [`sdk/`](../sdk/README.md) 页面；通用完整性规则见 [断言证据](evidence.md)。
+各对象的具体采集面见对应 [`sdk/`](../library/sdk/README.md) 页面；通用完整性规则见 [断言证据](evidence.md)。

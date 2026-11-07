@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-mlflow-storage
-title: MLflow Storage：entity、表、目录与信封
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # MLflow Storage：entity、表、目录与信封
 
 > 观察日期：2026-08-14

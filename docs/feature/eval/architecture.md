@@ -1,7 +1,7 @@
 # Eval —— 架构
 
 Eval 拥有任务与判定，Adapter 拥有应用操作，Attempt 拥有一次执行与资源作用域。
-公开形状见 [Library](library.md)，持久事实与封口见 [Assertions](../assertions/README.md)。
+公开形状见 [Library](library/README.md)，持久事实与封口见 [Assertions](../assertions/README.md)。
 
 ## 应用契约与实现身份
 
@@ -27,7 +27,7 @@ interface AdapterIdentity {
 
 品牌契约 token 不进入持久结果。`contract` 只是接口名称，不授予运行时配对、Agent 能力或沿用资格。
 Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终表示没有显式声明行为版本。
-能力来自实际构造对象，沿用由独立 policy 校验。历史格式的已知转换由 [Run 迁移](../run/architecture.md#自动迁移) 拥有。
+能力来自实际构造对象，沿用由独立 policy 校验。历史格式的已知转换由 [Run 迁移](../run/architecture/README.md#自动迁移) 拥有。
 不支持的 Sandbox、Eval Group、Sandbox reuse 与完整应用费用 budget 组合在预检拒绝。
 依赖 Agent 执行准备的生命周期 Plugin 同样在预检拒绝，不能宣称执行却跳过其资源 owner。
 

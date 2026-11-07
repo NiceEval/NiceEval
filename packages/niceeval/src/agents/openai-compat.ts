@@ -108,7 +108,7 @@ export interface ChatCompletionLike {
 function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage | undefined {
   if (!usage) return undefined;
   // prompt_tokens 含缓存命中,cached_tokens 是其子集;落互斥桶前扣掉
-  // (docs/feature/adapters/sdk/openai-compat/cost.md)
+  // (docs/feature/adapters/library/sdk/openai-compat/cost.md)
   const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
   const u: Usage = {
     inputTokens: Math.max(0, (usage.prompt_tokens ?? 0) - cached),
@@ -125,7 +125,7 @@ function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage 
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/library/streaming.md
-// @concord-implements docs/feature/adapters/sdk/openai-compat/README.md
+// @concord-implements docs/feature/adapters/library/sdk/openai-compat/README.md
 export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   const message = res.choices[0]?.message;
   const events: StreamEvent[] = [];
@@ -206,7 +206,7 @@ export interface ResponseLike {
 function responsesUsage(usage: ResponseUsageLike | undefined): Usage | undefined {
   if (!usage) return undefined;
   // input_tokens 含缓存命中,cached_tokens 是其子集;落互斥桶前扣掉
-  // (docs/feature/adapters/sdk/openai-compat/cost.md)
+  // (docs/feature/adapters/library/sdk/openai-compat/cost.md)
   const cached = usage.input_tokens_details?.cached_tokens ?? 0;
   const u: Usage = {
     inputTokens: Math.max(0, (usage.input_tokens ?? 0) - cached),
@@ -223,7 +223,7 @@ function responsesUsage(usage: ResponseUsageLike | undefined): Usage | undefined
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/library/streaming.md
-// @concord-implements docs/feature/adapters/sdk/openai-compat/README.md
+// @concord-implements docs/feature/adapters/library/sdk/openai-compat/README.md
 export function turnFromResponses(res: ResponseLike): Turn {
   const events: StreamEvent[] = [];
   for (const item of res.output ?? []) {

@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: inspection-overview-fixed-byte-limit
-title: Large published Overviews fail Inspection
-createdAt: 2026-09-01
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Large published Overviews fail Inspection
+
 ## Problem
 
 A project with a legitimate published result matrix can make `niceeval show` and `overview.get` fail even though exact Run inspection succeeds. MemoryBench reproduced this with 180 selected slots: the public machine Overview was about 975 KiB, while Inspection rejected every Overview larger than 512 KiB.

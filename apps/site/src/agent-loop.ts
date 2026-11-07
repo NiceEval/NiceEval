@@ -1,7 +1,7 @@
 // Landing page「Agent 反馈闭环」区块的终端帧数据。四帧对应闭环四步，
 // 步骤标题/说明的 en/zh 文案在 lib/content.ts 的 loopSteps 里，组件按下标配对。
 //
-// 输出形态取自正式 CLI 契约：exp 的结束反馈见 docs/feature/experiments/cli.md「结束反馈与 receipt」，
+// 输出形态取自正式 CLI 契约：exp 的结束反馈见 docs/feature/experiments/cli/README.md「结束反馈与 receipt」，
 // show 的 Attempt 概览与 --execution 见 docs/feature/inspection/cli.md「niceeval show」。
 // locator 必须是合法格式：@1 加 12 位大写 Crockford base32。
 

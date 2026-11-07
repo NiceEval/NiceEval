@@ -1,10 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design
-relations:
-  selectedPlan: docs/design/matched-material/PLAN-1/README.md
----
-
 # 匹配材料的受管评分 —— Design Decision
 
 **相关文档**:[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md)

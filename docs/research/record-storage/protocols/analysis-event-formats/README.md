@@ -1,10 +1,4 @@
 ---
-format: concord.document/v1
-id: record-storage-protocols-analysis-event-formats
-title: 分析与事件格式
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources:
   - https://duckdb.org/docs/stable/internals/storage
   - https://duckdb.org/docs/stable/operations_manual/footprint_of_duckdb/files_created_by_duckdb
@@ -12,7 +6,9 @@ sources:
   - https://arrow.apache.org/docs/format/Columnar.html
   - https://arrow.apache.org/docs/format/Security.html
   - https://perfetto.dev/docs/
+observedAt: 2026-08-25
 ---
+
 # 分析与事件格式
 
 > 观察日期：2026-08-25

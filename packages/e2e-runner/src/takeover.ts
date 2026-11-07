@@ -1,9 +1,9 @@
 // Deterministic owner-takeover reliability matrix. Command parsing, output and
 // the sole Node runtime boundary live in cli.ts.
 
-import type { RepositorySourceIdentityV4, SourceProjectionV3 } from "./bridge-wire.ts";
-import { governanceSuiteForFile } from "./concord-engine.ts";
-import { projectExecutionSources, resolveRepositorySourceIdentity, sameRepositorySourceIdentity } from "./concord-engine.ts";
+import type { ReliabilitySourceIdentity, ExecutionSourceProjection } from "./bridge-wire.ts";
+import { governanceSuiteForFile } from "./repository-evidence.ts";
+import { projectExecutionSources, resolveRepositorySourceIdentity, sameRepositorySourceIdentity } from "./repository-evidence.ts";
 import { lstat as nodeLstat, type Stats } from "node:fs";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
@@ -16,7 +16,7 @@ import { appendNativeArgs, copyRepoIsolated, E2E_COPY_EXCLUDED_BASENAMES, materi
 import { buildTestkitPackage, type TestkitPackage } from "./testkit-snapshot.ts";
 import type { StageReceipt } from "./receipt.ts";
 import { ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
-import { saveManagedTakeoverEvidence } from "./managed-evidence.ts";
+import { collectRepoCaseInventory } from "./workspace-inventory.ts";
 import { nativeReporterArgs } from "./native-observation.ts";
 import {
   parseExactSelector,
@@ -24,8 +24,7 @@ import {
   selectInventoryCase,
   signFormalCaseReceipt,
   signTakeoverCertificate,
-  readManagedInventoryReceipt,
-  managedInventoryImplementationDigest,
+  reliabilityImplementationDigest,
   sha256Sri,
   validateTakeoverCertificate,
   type FormalCaseReceiptV2,
@@ -39,8 +38,6 @@ export interface TakeoverOptions {
   readonly artifactRoot?: string;
   readonly nativeArgs: readonly string[];
   readonly selector: string;
-  readonly inventoryId: string;
-  readonly problem: { readonly path: string; readonly epoch: number };
 }
 
 export class TakeoverOperationError extends Data.TaggedError("TakeoverOperationError")<{
@@ -48,7 +45,7 @@ export class TakeoverOperationError extends Data.TaggedError("TakeoverOperationE
   readonly detail: string;
 }> {}
 
-type SourceSnapshotIdentity = SourceProjectionV3;
+type SourceSnapshotIdentity = ExecutionSourceProjection;
 interface CheckoutIdentity { readonly root: string; readonly commit: string; readonly dirty: boolean; readonly sourceSnapshot?: SourceSnapshotIdentity }
 
 export interface TakeoverRunRecord {
@@ -80,7 +77,6 @@ export interface TakeoverSummary {
   readonly sourceSnapshotCleanup: { readonly ok: boolean; readonly detail: string };
   readonly certificate?: TakeoverCertificateV2;
   readonly certificatePath?: string;
-  readonly evidence?: string;
 }
 
 type TakeoverRequirements = FileSystem.FileSystem | OwnedProcess;
@@ -293,7 +289,10 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   if (discovered.errors.length > 0) return yield* Effect.fail(operationError("discovery", `repo discovery found ${discovered.errors.length} problem(s): ${discovered.errors.join("; ")}`));
   const repo = discovered.repos.find((entry) => entry.manifest.id === options.repoId);
   if (repo === undefined) return yield* Effect.fail(operationError("discovery", `takeover requested unknown repo ${JSON.stringify(options.repoId)}`));
-  const inventory = yield* readManagedInventoryReceipt(repoRootDir(), options.inventoryId, options.selector).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
+  const collection = yield* collectRepoCaseInventory(options.repoId, (yield* gitText(repoRootDir(), ["rev-parse", "HEAD"])) ).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
+  const inventories = collection.repos.flatMap(entry => entry.receipts).filter(receipt => receipt.cases.some(entry => `${entry.path}#${entry.caseId}` === options.selector));
+  if (inventories.length !== 1) return yield* Effect.fail(operationError("evidence", "Fresh collection must contain exactly one receipt for the selected case"));
+  const inventory = inventories[0]!;
   const selectorPath = yield* Effect.try({ try: () => parseExactSelector(options.selector).path, catch: (cause) => operationError("evidence", cause) });
   const suite = yield* governanceSuiteForFile(repoRootDir(), selectorPath).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
   if (suite.root !== `e2e/${repo.manifest.id}`) return yield* Effect.fail(operationError("evidence", `selector belongs to suite ${suite.id} at ${suite.root}, not repo ${repo.manifest.id}`));
@@ -303,7 +302,8 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   });
   const exactSelector = parseExactSelector(options.selector);
   const repoPrefix = "e2e/" + options.repoId + "/";
-  const runnerCasePath = selectedCase.path.startsWith(repoPrefix) ? selectedCase.path.slice(repoPrefix.length) : selectedCase.path;
+  const nativePath = selectedCase.nativePath ?? selectedCase.path;
+  const runnerCasePath = nativePath.startsWith(repoPrefix) ? nativePath.slice(repoPrefix.length) : nativePath;
   const targetSelectionArgs = [...options.nativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.titlePath)];
   const defaultNativeArgs = [...options.nativeArgs, ...nativeReporterArgs(inventory.executor.name)];
   const targetNativeArgs = [...defaultNativeArgs, ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.titlePath)];
@@ -328,7 +328,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const sourceSnapshotDir = join(sourceSnapshotRoot, suite.root);
   const results: RepoRunResult[] = [];
   let checkout: CheckoutIdentity | undefined;
-  let sourceIdentity: RepositorySourceIdentityV4 | undefined;
+  let sourceIdentity: ReliabilitySourceIdentity | undefined;
   let testkit: TestkitPackage | undefined;
   let setupFailure: string | undefined;
   yield* Effect.gen(function* () {
@@ -360,13 +360,12 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
   const category = baseCategory === "cancelled" || baseCategory === "regression" || baseCategory === "configuration" ? baseCategory : setupFailure !== undefined || !matrixValidation.ok || !sourceSnapshotCleanup.ok ? "infra" : baseCategory;
   let certificate: TakeoverCertificateV2 | undefined;
   let certificatePath: string | undefined;
-  let evidence: string | undefined;
   if (category === "pass" && checkout !== undefined && sourceIdentity !== undefined) {
     const evidenceRoot = join(artifactRoot, "case-evidence");
     yield* fileSystem.makeDirectory(evidenceRoot, { recursive: true }).pipe(Effect.mapError((cause) => operationError("artifact", cause)));
     const receipts = new Map<string, FormalCaseReceiptV2>();
     const pathsByLabel = new Map<string, string[]>();
-    const implementationDigest = yield* managedInventoryImplementationDigest(root);
+    const implementationDigest = yield* reliabilityImplementationDigest(root);
     for (const result of results) {
       const label = result.receipt.runLabel!;
       const cleanup = result.receipt.stages.findLast((stage) => stage.stage === "cleanup");
@@ -380,13 +379,12 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
             : label.includes("repo-default-parallel") ? "parallel" as const
               : "single" as const;
         const receipt = yield* signFormalCaseReceipt({
-          format: "concord.native-case-receipt/v1",
+          format: "niceeval.native-case-receipt/v1",
           mode: "formal",
           observation: label === "takeover/target-single" ? "green" : "reliability",
           selector: options.selector,
           caseId: exactSelector.caseId,
           inventoryDigest: inventory.digest,
-          problem: options.problem,
           candidate: { gitSha: checkout.commit, sha256: candidate.sha256, sri: sha256Sri(candidate.sha256) },
           source: sourceIdentity,
           runner: { executor: inventory.executor.name, version: inventory.executor.version, implementationDigest, argv: stage.command ?? [] },
@@ -406,7 +404,7 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     const singleCase = pathsByLabel.get("takeover/target-single")?.[0];
     if (isolated.some((path) => path === undefined) || sameCopy.length !== 2 || defaultParallel === undefined || singleCase === undefined) return yield* Effect.fail(operationError("evidence", "formal receipt matrix is incomplete after successful takeover"));
     certificate = yield* signTakeoverCertificate({
-      format: "concord.native-reliability/v1",
+      format: "niceeval.native-reliability/v1",
       selector: options.selector,
       caseId: exactSelector.caseId,
       candidateSha256: candidate.sha256,
@@ -417,9 +415,8 @@ export const runTakeover = (options: TakeoverOptions): Effect.Effect<TakeoverSum
     yield* validateTakeoverCertificate(certificate, receipts);
     certificatePath = join(evidenceRoot, "takeover-certificate.json");
     yield* writeContainedUtf8File(artifactRoot, certificatePath, JSON.stringify(certificate, null, 2) + "\n", "takeover certificate").pipe(Effect.mapError((cause) => operationError("artifact", cause)));
-    evidence = yield* saveManagedTakeoverEvidence(root, certificate!, receipts, materializedCandidate.path).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
   }
-  const summary: TakeoverSummary = { repoId: repo.manifest.id, candidate: { sha256: candidate.sha256, integrity: candidate.integrity }, checkout: checkout ?? { root, commit: "unavailable", dirty: false }, ...(testkit === undefined ? {} : { testkit: { name: testkit.name, version: testkit.version, sourcePath: testkit.sourcePath } }), targetNativeArgs, noRetry: true, runs: results.map(toRunRecord), matrixValidation, category, detail: setupFailure ?? (!matrixValidation.ok ? `takeover matrix validation failed: ${matrixValidation.issues.join("; ")}` : category === "pass" ? "all required takeover observations passed" : "one or more takeover observations did not pass"), sourceSnapshotCleanup, ...(certificate === undefined || certificatePath === undefined || evidence === undefined ? {} : { certificate, certificatePath, evidence }) };
+  const summary: TakeoverSummary = { repoId: repo.manifest.id, candidate: { sha256: candidate.sha256, integrity: candidate.integrity }, checkout: checkout ?? { root, commit: "unavailable", dirty: false }, ...(testkit === undefined ? {} : { testkit: { name: testkit.name, version: testkit.version, sourcePath: testkit.sourcePath } }), targetNativeArgs, noRetry: true, runs: results.map(toRunRecord), matrixValidation, category, detail: setupFailure ?? (!matrixValidation.ok ? `takeover matrix validation failed: ${matrixValidation.issues.join("; ")}` : category === "pass" ? "all required takeover observations passed" : "one or more takeover observations did not pass"), sourceSnapshotCleanup, ...(certificate === undefined || certificatePath === undefined ? {} : { certificate, certificatePath }) };
   yield* writeContainedUtf8File(artifactRoot, join(artifactRoot, "takeover-summary.json"), `${JSON.stringify(summary, null, 2)}\n`, "takeover summary").pipe(Effect.mapError((cause) => operationError("artifact", cause)));
   return summary;
 }).pipe(Effect.mapError((cause) => cause instanceof TakeoverOperationError ? cause : operationError("evidence", cause))));

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-independent-evals
-title: 独立 Eval 使用默认并发
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 独立 Eval 使用默认并发
 
 Eval 之间不共享可变状态时，不配置 Experiment `maxConcurrency`。

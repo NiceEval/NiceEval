@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: nested-docker-reference-development
-title: 检查 reference 与 development
-createdAt: 2026-08-25T23:04:51+08:00
-kind: use-case
-feature: docs/feature/sandbox-nested-docker/README.md
----
-
 # 检查 reference 与 development
 
 部署者要确认 Incus Provider 能不能承接 nested Docker。

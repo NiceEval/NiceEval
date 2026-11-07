@@ -1,6 +1,6 @@
 // Sandbox case 的共享类型面:种类、source、能力、物化结果与注册表条目。
 // provider 完成态与 materializer 见 layer.ts / runtime.ts；身份算法见 identity.ts。
-// 契约单源:docs/feature/sandbox/case.md。
+// 契约单源:docs/feature/sandbox/architecture/case.md。
 
 import type { JsonValue } from "../shared/types.ts";
 import type { CommandResult, Sandbox } from "./types.ts";

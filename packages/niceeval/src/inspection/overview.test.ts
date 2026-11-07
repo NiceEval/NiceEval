@@ -1,5 +1,5 @@
-// owner: docs/engineering/testing/unit/reports.md#证明范围规范
-// cases: docs/engineering/testing/unit/reports.md
+// owner: docs/engineering/testing/architecture/unit/reports.md#证明范围规范
+// cases: docs/engineering/testing/architecture/unit/reports.md
 
 import { describe, expect, it } from "vitest";
 

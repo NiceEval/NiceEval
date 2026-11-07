@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: report-design-vercel-eligibility
-title: Vercel `design.md` 适格性审查
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Vercel `design.md` 适格性审查
 
 > 观察日期：2026-08-14

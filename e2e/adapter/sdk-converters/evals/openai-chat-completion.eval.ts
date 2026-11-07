@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic
+// owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic
 import { defineEval } from "niceeval";
 import { atLeast, atMost, includes, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({

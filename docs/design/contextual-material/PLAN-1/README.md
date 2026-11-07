@@ -1,9 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design-plan
-relations: {}
----
-
 # 求值时注入上下文
 
 ## 解决的问题

@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-design-challenge
-title: SQLite 候选独立设计挑战
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/design-challenge.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # SQLite 候选独立设计挑战
 
 > 挑战日期：2026-08-25

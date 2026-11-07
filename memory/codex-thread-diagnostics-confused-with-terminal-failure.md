@@ -1,39 +1,5 @@
----
-format: concord.document/v1
-id: codex-thread-diagnostics-confused-with-terminal-failure
-title: Codex SDK 非致命告警被误判为 Turn 失败
-createdAt: 2026-09-05
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: |-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed candidate bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
-            - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
-    proof:
-      - Installed old-candidate public red nered_K4ACT1Y87VBTQE3D; fixed candidate bce0e61263bef5a1415b46fffa282cee04810c6d09ed7586fbea91361d8423e4 passed netake_N0SWY5MB45QGDPCN including all seven observations and cleanup.
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/adapter/sdk-converters/test/codex-thread-stream.test.ts#necase_C2K9MBSGV9A6TC0A"]}
-    source:
-      path: memory/codex-thread-diagnostics-confused-with-terminal-failure.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:5d56c502c19ece0e02d758f820a678f9a49117487a91e3b4739ae8293d0ef208
----
+# Codex SDK 非致命告警被误判为 Turn 失败
+
 ## 公开现象
 
 2026-09-05 的 Codex SDK live E2E 中，公开 attempt.trace 显示模型发出缺少模型元数据的非致命告警后，真实 shell 命令仍成功完成，但 NiceEval 把 Turn 标为 failed。CI 33968503589 的 host-2 失败；本地安装同一 041f23aa 候选的公开入口重现。
@@ -50,4 +16,4 @@ createCodexThreadEventStream 把 SDK ErrorItem 当作终态失败，且遗漏顶
 
 - [官方 SDK ErrorItem](https://raw.githubusercontent.com/openai/codex/rust-v0.142.5/sdk/typescript/src/items.ts)
 - [官方 SDK ThreadEvent](https://raw.githubusercontent.com/openai/codex/rust-v0.142.5/sdk/typescript/src/events.ts)
-- [Adapter 库用法](../docs/feature/adapters/library.md#sdk-与协议转换器)
+- [Adapter 库用法](../docs/feature/adapters/library/README.md#sdk-与协议转换器)

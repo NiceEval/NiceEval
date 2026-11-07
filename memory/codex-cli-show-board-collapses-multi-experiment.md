@@ -1,39 +1,11 @@
----
-format: concord.document/v1
-id: codex-cli-show-board-collapses-multi-experiment
-title: codex-cli-show-board-collapses-multi-experiment
-createdAt: 2026-07-19T08:35:09+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/codex-cli-show-board-collapses-multi-experiment.md
-  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: 裸 `niceeval show`(无位置参数)在仓库有多个 experiment 时按实验组折叠成组级汇总表,不逐条列 Eval id;`board.includes(evalId)` 这种'少排用例不能全绿'检查在多 experiment 仓库里必然假阴性,要改用 `show --page attempts`
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: '- [codex-cli-show-board-collapses-multi-experiment](codex-cli-show-board-collapses-multi-experiment.md) — 裸 `niceeval show` 在多 experiment 仓库里按实验组折叠成汇总表,不逐条列 Eval id;"少排用例不能全绿"检查要用 `show --page attempts`,已修在 e2e/adapter/codex-cli/scripts/verify.ts'
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
+# codex-cli-show-board-collapses-multi-experiment
+
+裸 `niceeval show`(无位置参数)在仓库有多个 experiment 时按实验组折叠成组级汇总表,不逐条列 Eval id;`board.includes(evalId)` 这种'少排用例不能全绿'检查在多 experiment 仓库里必然假阴性,要改用 `show --page attempts`
 
 **现象**:`e2e/adapter/codex-cli` 的 `scripts/verify.ts`(前一位 agent 搭好的脚手架)用例二
 写的是 `sh("pnpm exec niceeval show")` 后对 `EXPECTED_EVALS`(`coding-task`/`session`/…)逐个
 `board.includes(id)`。本仓库有 5 个 experiment 文件(baseline/mcp/plugin/skill/configfile,
-按 docs/engineering/testing/e2e/README.md「仓库自治」的设计,每个 experiment 配一份不同的
+按 docs/engineering/testing/architecture/e2e/README.md「仓库自治」的设计,每个 experiment 配一份不同的
 agent 挂载,不能合并成一个)。真机跑 `pnpm exec niceeval exp --force` 全部 5 个实验后,
 `pnpm exec niceeval show` 的输出是:
 
@@ -64,6 +36,6 @@ skill                        1       1        100%   1 passed             $0.05 
 
 **适用场景**:任何用「裸 `show` 输出里搜 Eval id 子串」来验证「应发现的 Eval 都真的跑了」的
 仓库,只要该仓库有 ≥2 个 experiment(不同 agent 挂载配置各自成组的设计在 sandbox 组里很常见,
-见 docs/engineering/testing/e2e/adapter/codex-cli.md 的 5-experiment 拆法),都要用
+见 docs/engineering/testing/architecture/e2e/adapter/codex-cli.md 的 5-experiment 拆法),都要用
 `--page attempts` 而不是裸 `show`;`verification.md` 的参考写法(用例二)本身是按单 experiment
 场景写的,照抄到多 experiment 仓库前先确认组数。

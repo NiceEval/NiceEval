@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-langfuse-reading-and-comparison
-title: Langfuse 读取与比较
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Langfuse 读取与比较
 
 > 观察日期：2026-08-14

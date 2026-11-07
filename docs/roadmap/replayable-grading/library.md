@@ -31,7 +31,7 @@ const definition = defineGrading({
 const claim = await gradeExecution(execution, definition);
 ```
 
-`g.turn(name)` 只查找该 Execution graph 中的具名 Turn ref；返回的 `turn.material` 与在线 Turn 使用相同的私有品牌 View。Definition reference/custom 的入口和阶段边界见 [Judge Material](../judge-runtimes/material/library.md#自定义与参考材料)。
+`g.turn(name)` 只查找该 Execution graph 中的具名 Turn ref；返回的 `turn.material` 与在线 Turn 使用相同的私有品牌 View。Definition reference/custom 的入口和阶段边界见 [Judge Material](../judge-runtimes-material/library.md#自定义与参考材料)。
 
 `gradeExecution` 读取 sealed semantic refs，注册新的 Assertion entries，并返回新的 immutable Claim。它不修改 Execution，不重新调用被测 Agent，也不从旧 AssertionResult、Attachment blob 或未保存的 inline value 复原材料。
 

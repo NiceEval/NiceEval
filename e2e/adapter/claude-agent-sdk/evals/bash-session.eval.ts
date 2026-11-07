@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility
+// owner: docs/engineering/testing/architecture/e2e/adapter/claude-agent-sdk.md#adapter-claude-agent-sdk-live-compatibility
 //
 // 这个 live Journey 只使用 Claude Agent SDK 原生 Bash。`Bash` 的原始名称和
 // tool_use_id → tool_result 配对由候选包的 createClaudeSdkEventStream 产生，

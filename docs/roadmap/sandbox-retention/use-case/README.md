@@ -1,6 +1,6 @@
 # Sandbox 默认停驻与回收 —— Use Cases
 
-契约单源始终在 [README](../README.md)、[Library](../library.md)、[CLI](../cli.md)、[Architecture](../architecture.md) 与 [Lifecycle](../lifecycle.md)。
+契约单源始终在 [README](../README.md)、[Library](../library.md)、[CLI](../cli.md)、[Architecture](../architecture/README.md) 与 [Lifecycle](../architecture/lifecycle.md)。
 用例只串联真实任务路径。
 
 - [失败后进入收尾 Sandbox](失败后进入收尾Sandbox.md) —— 不预判失败，在运行后检查 bounded Provider 保留的 filesystem。

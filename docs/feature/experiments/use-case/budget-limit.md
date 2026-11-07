@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: budget-limit
-title: "`--budget`:一批长跑实验,给烧钱装安全网"
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # `--budget`:一批长跑实验,给烧钱装安全网
 
 ## 解决什么问题
@@ -28,7 +19,7 @@ feature: docs/feature/experiments/README.md
    `--json` 发送当前进程的反馈与最终 `InvocationReceipt`，不另立 budget 的结果文档。
 
 4. 未派发 Planned attempt 不写 Member，而是以 `budget-exhausted` 解释 absence。整次 Invocation 可以是 `completion: "completed"`，但预算耗尽仍使退出码为 `1`——即使零 `failed` / `errored` 也不伪装全绿。
-5. 想补完分母时提高预算再次运行同一条命令：reuse planning 把合格的终态 Attempt 判为 reuse，本次只把 gaps 交给 planner（见 [Reuse planning](../cache.md#coordinatorplanner-与-writer)）：
+5. 想补完分母时提高预算再次运行同一条命令：reuse planning 把合格的终态 Attempt 判为 reuse，本次只把 gaps 交给 planner（见 [Reuse planning](../architecture/cache.md#coordinatorplanner-与-writer)）：
 
    ```sh
    niceeval exp regression --budget 40 --junit ./niceeval-regression.xml
@@ -39,9 +30,9 @@ feature: docs/feature/experiments/README.md
 - budget 是防止无限烧钱的安全网,不是精确计费上限:已花 + 在飞未结算的总花费可能短暂超出上限;要压吞吐用 [`--max-concurrency`](concurrency-max-global.md)。
 - 判断依据是 model、agent 报回的 token 用量与匹配的 price；observed `usage.costUSD` 不会补齐缺失的估算。连续多个已发起 agent turn 的 attempt 都拿不到可估算成本时,budget 对该域不可执行,运行器给一条去重后的 warning,而不是每个 attempt 重复提示。
   首个 agent turn 之前失败的 attempt 没有成本事实,不产生这条 warning。
-- 配置优先级是 CLI flag → experiment → config(见 [Library · 与 config 的关系](../library.md#与-config-的关系));判断仍按每个实验自己的 budget 域分别计。
+- 配置优先级是 CLI flag → experiment → config(见 [Library · 与 config 的关系](../library/README.md#与-config-的关系));判断仍按每个实验自己的 budget 域分别计。
 
 ## 相关阅读
 
 - [Runner · 调度](../../../runner.md#调度) —— 到顶停止派发、在飞跑完与并发的单源。
-- [Run · Architecture](../../run/architecture.md#run-收口与-absence) —— expected、published 与 absence reason 的边界。
+- [Run · Architecture](../../run/architecture/README.md#run-收口与-absence) —— expected、published 与 absence reason 的边界。

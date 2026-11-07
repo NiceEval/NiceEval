@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: multi-turn-sessions
-title: 多轮与并行会话：每轮各自断，跨轮显式评
-createdAt: 2026-07-22T10:19:57+08:00
-kind: use-case
-feature: docs/feature/eval/README.md
----
-
 # 多轮与并行会话：每轮各自断，跨轮显式评
 
 多轮任务里“这一轮做对了吗”和“整段对话是否一致”是不同问题。

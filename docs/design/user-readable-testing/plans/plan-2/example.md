@@ -18,4 +18,4 @@ git ls-tree -r --name-only 32f2df7f docs/roadmap/testing/example
 
 否决原因与逐项对照见 [Decision](../../DECISION.md#%E4%B8%BA%E4%BB%80%E4%B9%88%E5%90%A6%E5%86%B3-plan-2-%E4%BD%9C%E4%B8%BA%E7%BB%88%E6%80%81)和
 旧问题对账可从历史提交用 `git show eee7f377^:docs/roadmap/testing/history-problems.md` 读取。
-选定方案的代码形态见 [E2E 作者约束](../../../../engineering/testing/e2e/authoring.md)。
+选定方案的代码形态见 [E2E 作者约束](../../../../engineering/testing/architecture/e2e/authoring.md)。

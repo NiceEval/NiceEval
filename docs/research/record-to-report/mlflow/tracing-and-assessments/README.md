@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-mlflow-tracing-and-assessments
-title: MLflow Tracing、Assessment 与 Evaluation Dataset
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # MLflow Tracing、Assessment 与 Evaluation Dataset
 
 > 观察日期：2026-08-14

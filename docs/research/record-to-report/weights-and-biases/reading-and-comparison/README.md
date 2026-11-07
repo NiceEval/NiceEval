@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-weights-and-biases-reading-and-comparison
-title: W&B 怎样重开、查询、比较和展示
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # W&B 怎样重开、查询、比较和展示
 
 > 观察日期：2026-08-14

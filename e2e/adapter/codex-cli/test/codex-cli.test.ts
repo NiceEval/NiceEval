@@ -74,7 +74,7 @@ beforeAll(async () => {
   run = await niceeval.run(["exp", "--rerun", "all", "--json"], {
     timeoutMs: 44 * 60_000,
   });
-  // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
+  // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli/README.md「结束反馈与
   // receipt」）；成败与发现完整性由下面带身份的 eval 事件精确断言。
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");

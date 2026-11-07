@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: interrupted-attempt-trace-evidence
-title: "补充 #126：中断成员无 trace 入口，超时轮次缺少执行事件与 timing"
-createdAt: 2026-10-26T12:00:56.286Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# 补充 #126：中断成员无 trace 入口，超时轮次缺少执行事件与 timing
 
 ## 关联与类型
 本地补充证据稿，供既有 GitHub Issue #126（https://github.com/NiceEval/NiceEval/issues/126）后续更新；不新建重复远端 Issue。建议 enhancement、area:record、area:runner、area:adapter、needs-triage。与 live-attempt-progress 的运行中阶段提示相关，但本稿聚焦中断后的执行证据。

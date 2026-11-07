@@ -19,7 +19,7 @@ Claude Code 写用户级 `~/.claude.json`，HTTP 形态带 `type: "http"` 与 `h
 同一个 server 同时给出 `command` 与 `url` 时，before 报错点名该 server，不做静默取舍。
 
 `before` 是 factory 上的动态过程 Hook 数组：Adapter 全部安装步骤（含写 manifest）完成后，在沙箱里按数组顺序运行用户代码。
-它复用 prepare command 的 `SandboxCommand` 形状与窄上下文（`SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md#command-形状与-identity)）。
+它复用 prepare command 的 `SandboxCommand` 形状与窄上下文（`SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/library/layers.md#command-形状与-identity)）。
 agent 安装后脚本和沙箱准备命令是同一类「在沙箱里跑一段用户代码」，区别只有相对 agent 安装的时机，不值得第二套类型。
 
 成对的 `after` 数组承载收尾:按逆序、先于 agent after 执行(LIFO 镜像)。
@@ -70,7 +70,7 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 
 扩展状态每条 attempt 都验证一次，但可验证的持久原生 Plugin 不必每次安装：Runner 先执行只读探测命令，
 只有声明的精确 package/version、启用集合或可加载状态不匹配时，才调用 identity 精确配对的 installer，随后复检。
-Sandbox 复用下，沙箱带着上一条 attempt 的 `$HOME` 残留进场（生命周期见 [Sandbox 复用](../../sandbox/reuse.md)）。
+Sandbox 复用下，沙箱带着上一条 attempt 的 `$HOME` 残留进场（生命周期见 [Sandbox 复用](../../sandbox/library/reuse.md)）。
 因此安装步骤的语义是**把沙箱状态收敛到声明**，不是在空白沙箱上追加：每一步在「目标已存在、部分存在、出处不同」的沙箱上，都要得到与空白沙箱相同的结果。
 
 文件类安装天然收敛：原生配置、Skills 与 MCP 配置以整层替换写入落位，重复执行结果不变。
@@ -107,7 +107,7 @@ Plugin 安装目录每条 attempt 都被重装覆写：Plugin 运行期要跨 at
 - 同名 Skill 来自多个出处时按配置顺序安装，manifest 保留每个出处，不静默合并。
 - 安装前缀 key 必须包含所有影响 Sandbox 的配置，包括完成态 commit、sparse 选择、Bub Python packages，以及原生配置文件原始字节的 SHA-256；内容不同的两个配置文件不复用同一份安装状态。
 
-固定 Plugin、动态 overlay 与真实收尾的完整拆分见[原生 Agent Plugin](../../../roadmap/sandbox-cache/setup-prefix/use-case/原生AgentPlugin.md)。
+固定 Plugin、动态 overlay 与真实收尾的完整拆分见[原生 Agent Plugin](../../../roadmap/sandbox-cache-setup-prefix/use-case/原生AgentPlugin.md)。
 
 ## 失败语义
 

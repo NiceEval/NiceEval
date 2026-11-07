@@ -1,21 +1,15 @@
 ---
 name: memory
-description: Record, search, resolve, reopen, supersede, promote, or retire NiceEval development problems, decisions, and reusable insights.
+description: Record, search, rewrite, or link NiceEval development problems, decisions, and reusable insights.
 metadata:
-  command: concord repo memory
+  command: concord memory
   design: docs/engineering/feedback-memory/README.md
 ---
 
 # Memory
 
-Read the [Memory design](../../../docs/engineering/feedback-memory/README.md#memory) before changing structured Memory state. Run `concord repo memory --help` for current syntax.
+Run `concord --skill memory` for the Memory model and workflow, and `concord memory --help` for current syntax. Read the [Memory design](../../../docs/engineering/feedback-memory/README.md#memory) for NiceEval-specific rules.
 
-Use Problem for a reproducible problem and its root cause, Decision for an adopted choice, and Insight for know-how that remains useful without a problem lifecycle. Search existing Memory first. Do not create Feedback merely to justify a Memory.
+Search existing Memory with `concord memory search <query>` before writing a new one. Do not create an Issue merely to justify a Memory. Link a conclusion to the exact current Roadmap, Feature, Use Case, or Engineering target with `concord memory link <id> <target>`; Memory never replaces the target contract.
 
-Use native CLI fields instead of assembling metadata or resolution JSON. Create with `concord repo memory add <id> --title <title> --kind <problem|decision|insight|note> --body <path|->`; `--created-at` is optional. Send agent-generated Markdown through stdin with `--body -`; pass a path only when the Markdown already exists as a durable input. Do not create a temporary file solely to pass generated Markdown to the command. Resolve with `concord repo memory resolve <id> --kind <kind> --reason <reason>`; the profile binds the current epoch and validates its managed formal evidence under the publication lease. For author changes, use the managed `memory author set` operation from `--help`: it changes the complete author body, binds owner and author preimage digests, and preserves the current frontmatter history.
-
-Resolve a product Problem as fixed only when a current runner-inventoried case points to it and formal red, green, and complete takeover-certificate receipts validate for that same case/candidate. A diagnose receipt, legacy file metadata, retired case, or free-form proof cannot pass. Promote a conclusion by linking to the exact current Roadmap, Feature, Use Case, or Engineering target; Memory remains historical evidence and never replaces the target contract. Use `retire` when an exact promotion stops being current, and never edit promotion history by hand.
-
-For a fixed Problem, first run `concord repo docs test regression add --help` and publish the case relation plus its managed evidence index. Confirm it with `concord repo docs test show <path#caseId> --json`; only then run `concord repo memory resolve <id> --kind fixed ...`. The Memory command revalidates the persisted red, green, inventory, reliability receipts and certificate under the same Trace lease; Caller-supplied receipt or epoch metadata cannot replace that gate.
-
-Every Memory uses concord.document/v1. Captured records retain their classification without asserting a current lifecycle; activate a classified record explicitly with a reason. Notes remain captured. Superseded Problems are inapplicable records, not fixed Problems. Historical attested resolutions are unverified and never satisfy new fixed evidence gates. Historical Memory is lifecycle evidence, not a generic record that can be physically deleted. Run `check` after mutations and include only the changed Memory files in explicit Git paths. If a read reports `TraceRecoveryRequired`, do not inspect the owner directly; run `concord repo docs trace recover` and retry the public command.
+Run `concord check` after edits and include only the changed Memory files in explicit Git paths.

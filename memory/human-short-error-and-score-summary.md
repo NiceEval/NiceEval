@@ -1,47 +1,8 @@
----
-format: concord.document/v1
-id: human-short-error-and-score-summary
-title: Human 短错误丢失前文且 Score 摘要隐藏未启动计数
-createdAt: 2026-09-20
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: Preserved historical resolution declaration during merge; not current
-    verification.
-  at: 2026-09-29T23:47:24.368Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: >-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - nered_1NZ67DBK6VWY8Y3R
-            - netake_GPYRQ6D0Q344KXS7
-            - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/provider-error-feedback.test.ts#necase_7HXVADGZABWJQXEC"]}
-    proof:
-      - nered_1NZ67DBK6VWY8Y3R
-      - netake_GPYRQ6D0Q344KXS7
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/cli/test/provider-error-feedback.test.ts#necase_7HXVADGZABWJQXEC"]}
-    source:
-      path: memory/human-short-error-and-score-summary.md
-      commit: 05dec8c7f1795e13212d424ee472874d62d84345
-      digest: sha256:ef359133f6c7573b65f67cf198baca37fc24b9b414e2aa2b6d7c5cf9e76fefb6
----
 # 现象与根因
 
 Human 把预算内的 `Missing API_KEY; configure the provider before running` 截成从 `API_KEY` 开始，原因是预算判断之前先按大写 token 聚焦文本。FAILURES 按 locator 保留每条 execution error，却把条目数标为 kinds。纯 Score 摘要独立分支没有显示已有的 completion.unstarted，三次计划中的两次执行错误触发 fail-fast 后，剩余一次在结束摘要中消失。
 
-# 修复与验证
+## 修复与验证
 
 预算内安全消息直接保留；FAILURES 使用 entries，不合并执行错误；Score 摘要显示 not started，不制造 skipped。调度、选择器、Record 与四态 Verdict 不变。
 

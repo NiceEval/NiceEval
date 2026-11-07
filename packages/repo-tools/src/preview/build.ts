@@ -416,10 +416,10 @@ const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function*(r
       if (extension === ".json") {
         if (path === "concord/changes.json") {
           if (comparison === undefined) return yield* fail("Concord changes are present without an admitted PR comparison");
-          const validated = yield* validateConcordChanges(ROOT, bytes);
+          const validated = yield* validateConcordChanges(ROOT, dirname(target), bytes);
           yield* Effect.try({ try: () => assertConcordComparison(validated, comparison), catch: error => new PreviewVerificationError({ subject: path, message: String(error) }) });
           const current = yield* io("recheck-concord-bytes", target, () => readFile(target));
-          if (!bytes.equals(current)) return yield* fail("Concord changes changed during engine validation");
+          if (!bytes.equals(current)) return yield* fail("Concord changes changed during CLI verification");
         } else {
           const parsed = yield* Effect.try({ try: () => JSON.parse(bytes.toString("utf8")) as unknown, catch: error => new PreviewIoError({ operation: "parse-published-json", path, message: String(error) }) });
           const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;

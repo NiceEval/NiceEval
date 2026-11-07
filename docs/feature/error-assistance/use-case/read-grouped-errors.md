@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: read-grouped-errors
-title: 读懂同类错误摘要
-createdAt: 2026-09-20T22:07:36+08:00
-kind: use-case
-feature: docs/feature/error-assistance/README.md
----
-
 # 读懂同类错误摘要
 
 一次批量运行可能让多个评估对象命中同一个已知配置错误。

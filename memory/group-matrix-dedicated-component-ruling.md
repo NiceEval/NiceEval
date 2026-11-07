@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: group-matrix-dedicated-component-ruling
-title: GroupMatrix 走独立组件,否决扩展 MetricMatrix 的动态 Metric 方案(补记)
-createdAt: 2026-07-23T18:20:41+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/group-matrix-dedicated-component-ruling.md
-  commit: f1eee9a0a16583087bd4c0c7c6664a2726ea4536
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # GroupMatrix 走独立组件,否决扩展 MetricMatrix 的动态 Metric 方案(补记)
 
 裁决(2026-07-23,补记——这条裁决此前只存在于会话外记忆,未落 memory,现按定稿文档反推补上):
@@ -34,7 +18,7 @@ Metric / cell context」的方式扩展通用矩阵组件承载。
 - **格读法不是报告作者能配置的选项**:`MetricMatrix` 的格由用户传入任意 `Metric` 计算;
   `GroupMatrix` 的格读法是题型的固定语义——计分制读组子树内给分项挣分之和,通过制只读显式
   soft 断言(`.atLeast()` / `.soft()`)的无权均值(质量分),未链修饰符的断言缺省是 gate、不进入
-  质量分。这条语义由折叠树规则(`docs/feature/experiments/score-points.md#折叠树判定面分数面质量分`)
+  质量分。这条语义由折叠树规则(`docs/feature/experiments/library/score-points.md#折叠树判定面分数面质量分`)
   决定,不应该开放成 `cell: Metric` 参数。
 - **组是 assertion/score-entry 的子实体,不是 Attempt 身份维度**:`MetricMatrix` 的行/列维度
   历来建立在 Attempt 的身份字段(eval、experiment、flag …)上;`groupPath` 是断言/给分记录内部的
@@ -53,7 +37,7 @@ Metric / cell context」的方式扩展通用矩阵组件承载。
 - 与 `MetricMatrix`/`MetricBars` 共用跨组件族原语(`makeDataComponent`、`MetricCellView` 等),
   但不复用其 `Dimension`/`cell: Metric` 配置面。
 
-定稿依据:`docs/feature/experiments/score-points.md#得分点-组对比读取的下钻粒度`(折叠树与质量分
+定稿依据:`docs/feature/experiments/library/score-points.md#得分点-组对比读取的下钻粒度`(折叠树与质量分
 口径)、`docs/feature/reports/library/metric-views.md#groupmatrix`(组件契约,含「与 MetricMatrix
 不同,GroupMatrix 不接收任意 Metric」的显式表述)。落地实现:`src/report/components/metric-views/
 GroupMatrix.tsx`(web 面)、`compute.ts` 的 `groupMatrixData`(计算)、`faces.ts` 的

@@ -14,7 +14,7 @@ import {
 } from "./site-terminal-shell";
 
 // Hero 终端动画:跑一次对比实验，再用 `niceeval show` 在同一个终端里读当前结果。
-// 结束反馈的面板形态见 docs/feature/experiments/cli.md「结束反馈与 receipt」，
+// 结束反馈的面板形态见 docs/feature/experiments/cli/README.md「结束反馈与 receipt」，
 // show 的版式见 docs/feature/inspection/cli.md「当前 Results 示例」。数字是自洽的演示值，终端内容不做 i18n。
 
 // ---- 一次自洽的运行:8 attempt = 4 eval × 2 config,2 条缓存携入,6 条本次派发。

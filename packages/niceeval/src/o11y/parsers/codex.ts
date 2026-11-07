@@ -91,7 +91,7 @@ function readUsage(u: unknown): { input: number; output: number; cacheRead: numb
     "cacheReadTokens",
   );
   // codex-rs TokenUsage 的 cached_input_tokens 是 input_tokens 的子集,落互斥桶前扣掉
-  // (docs/feature/adapters/sdk/codex-cli/cost.md)
+  // (docs/feature/adapters/library/sdk/codex-cli/cost.md)
   const input = Math.max(0, rawInput - cacheRead);
   const output = num("output_tokens", "completion_tokens", "outputTokens", "completionTokens");
   // codex-rs TokenUsage 结构体与 Responses API usage.output_tokens_details 都拆出这项:

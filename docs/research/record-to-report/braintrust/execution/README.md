@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-braintrust-execution
-title: Braintrust Experiment 的真实执行顺序
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/braintrust/execution.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Braintrust Experiment 的真实执行顺序
 
 本文只追踪一次 Experiment 从入口到进程收尾的 control flow；对象关系见 [layers.md](../layers/README.md)，持久字段与写入 envelope 见 [storage.md](../storage/README.md)。下述主路径以公开 TypeScript SDK 与 Rust `bt` CLI 为准，并用 Python runner 核对关键收尾行为。源码核对日期为 2026-08-14。

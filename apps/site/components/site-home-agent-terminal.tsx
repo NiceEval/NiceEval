@@ -6,7 +6,7 @@ import { Appear, Cursor, Line, TerminalWindow, Typed, useAnimated, useTimeline }
 // 粘一句 prompt 之后,coding agent 自己装包、写 eval、跑实验、按 locator 下钻、
 // 改代码、只重跑失败项——这就是「Agent 也是用户」那条闭环在终端里的样子。
 //
-// niceeval 侧的每一行沿用正式输出形态:`exp` 的结束反馈见 docs/feature/experiments/cli.md
+// niceeval 侧的每一行沿用正式输出形态:`exp` 的结束反馈见 docs/feature/experiments/cli/README.md
 // 「结束反馈与 receipt」,`show` 见 docs/feature/inspection/cli.md。locator 是继续调查的主键,
 // 格式是 @1 加 12 位大写 Crockford base32。
 // Claude Code 侧沿用它自己的转录版式(banner、`>` 提示、`●` 工具调用、`⎿` 结果、折叠计数)。

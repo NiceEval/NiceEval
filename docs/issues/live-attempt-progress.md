@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: live-attempt-progress
-title: CLI JSON 进度应标识当前 Eval 与执行阶段
-createdAt: 2026-10-26T06:14:17.062Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# CLI JSON 进度应标识当前 Eval 与执行阶段
 
 ## 类型与期望工作流
 Enhancement；建议标签 area:cli、area:runner、needs-triage。

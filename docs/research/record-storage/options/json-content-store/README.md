@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-options-json-content-store
-title: 候选二：JSON envelope + Host 私有 Content store
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/options/json-content-store.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # 候选二：JSON envelope + Host 私有 Content store
 
 > 状态：Content-only 重构的领先对照方案

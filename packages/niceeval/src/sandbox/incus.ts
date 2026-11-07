@@ -81,7 +81,7 @@ function imageOf(value: unknown): IncusImageLocator {
 
 // @concord-code
 // @concord-implements docs/feature/sandbox-nested-docker/library.md
-// @concord-implements docs/feature/sandbox-nested-docker/architecture.md
+// @concord-implements docs/feature/sandbox-nested-docker/architecture/README.md
 export function normalizeIncusSandboxOptions(options: IncusSandboxOptions): NormalizedIncusSandboxOptions {
   assertRecord(options, "incusSandbox options");
   assertOnlyKeys(

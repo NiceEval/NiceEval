@@ -34,7 +34,7 @@ import type { Agent, AgentContext, AgentTracing, CommandProjection, EvidenceCove
 import { createSessionKey } from "./session-key.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
-// UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/e2e/README.md
+// UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/architecture/e2e/README.md
 // 第 2 节);events/actions/messages/status 都直接来自完整归约的协议帧,和 turnFromAiSdk/aiSdkAgent
 // 同等完整——官方 SDK 适配器应声明全通道 complete(docs/feature/adapters/architecture/evidence.md),
 // 这里唯一的例外是协议本身没有的 usage 通道,如实标 unavailable 而不是留成 unknown。
@@ -637,7 +637,7 @@ function uiMessageStreamSendEffect(
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/ai-sdk/README.md
+// @concord-implements docs/feature/adapters/library/sdk/ai-sdk/README.md
 export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agent {
   return makeDirectAgent({
     name: options.name ?? "ui-message-stream",

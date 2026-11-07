@@ -112,7 +112,7 @@ export interface DockerComposeSandboxOptions {
   /**
    * 按序前置到受管 `PATH` 的目录;作用于本 Sandbox 内全部受管命令(agent 进程、两层 prepare、
    * ensure/install),hooks 与子进程自然继承。PATH 本身是受管变量,不接受经 `env` 覆盖——
-   * 需要扩展 PATH 用这个字段(见 docs/feature/sandbox/library.md「PATH:受管变量与
+   * 需要扩展 PATH 用这个字段(见 docs/feature/sandbox/library/README.md「PATH:受管变量与
    * pathPrepend」)。省略 = 不改 PATH。
    */
   readonly pathPrepend?: readonly string[];
@@ -136,7 +136,7 @@ interface DockerfileSourceOptions {
   readonly resources?: DockerSandboxResources;
   readonly readiness?: DockerSandboxReadiness;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
+  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md)。 */
   readonly pathPrepend?: readonly string[];
 }
 
@@ -154,7 +154,7 @@ interface DockerImageSourceOptions {
   readonly resources?: DockerSandboxResources;
   readonly readiness?: DockerSandboxReadiness;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
+  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md)。 */
   readonly pathPrepend?: readonly string[];
 }
 
@@ -258,14 +258,14 @@ export interface E2BSandboxOptions {
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
   readonly user?: string;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
+  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md)。 */
   readonly pathPrepend?: readonly string[];
 }
 
 export interface VercelSandboxOptions {
   readonly snapshotId: string;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
+  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md)。 */
   readonly pathPrepend?: readonly string[];
 }
 
@@ -1591,7 +1591,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
 
 // @concord-code
 // @concord-implements docs/feature/sandbox/README.md
-// @concord-implements docs/feature/sandbox/layers.md
+// @concord-implements docs/feature/sandbox/library/layers.md
 export function sandboxLayer(): SandboxLayer<"command-only"> {
   return createLayer({
     kind: "command-only",
@@ -2703,7 +2703,7 @@ export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
  */
 // @concord-code
 // @concord-implements docs/feature/sandbox/README.md
-// @concord-implements docs/feature/sandbox/library.md
+// @concord-implements docs/feature/sandbox/library/README.md
 // @concord-implements docs/feature/sandbox-docker-profiles/README.md
 // @concord-implements docs/feature/sandbox-docker-profiles/library.md
 export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing"> {

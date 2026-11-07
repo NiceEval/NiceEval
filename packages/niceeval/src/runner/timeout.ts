@@ -1,4 +1,4 @@
-// 单 attempt 超时的解析链单源(契约见 docs/feature/experiments/architecture.md
+// 单 attempt 超时的解析链单源(契约见 docs/feature/experiments/architecture/README.md
 // 「配置解析链:一次求值,处处同源」):`--timeout` → experiment → eval → niceeval.config.ts,
 // 默认无上限。链里 config 是**缺省底,不是覆盖层**:把 config 的值提前物化进 run 配置,
 // eval 自己声明的上限就永远走不到(真机 bug 与修法见

@@ -1,15 +1,11 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-deepeval
-title: DeepEval 断言、Metric 与 Judge 作者面研究
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources:
   - https://deepeval.com/llms.txt
   - https://deepeval.com/docs/metrics-conversational-g-eval
   - https://github.com/confident-ai/deepeval/blob/0abedb84c7db59873125e3c8e66199fa874c4878/deepeval/metrics/conversational_g_eval/conversational_g_eval.py
+observedAt: 2026-08-09
 ---
+
 # DeepEval 断言、Metric 与 Judge 作者面研究
 
 > 观察日期：2026-08-09。本文以 DeepEval `4.1.5`、tag commit

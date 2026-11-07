@@ -1,5 +1,5 @@
 // @concord-file
-// @concord-implements docs/feature/plugins/lifecycle.md
+// @concord-implements docs/feature/plugins/architecture/lifecycle.md
 // @concord-implements docs/feature/plugins/use-case/terminal-bench-harness.md
 import { Data } from "effect";
 import { extendCodingAgent } from "../agents/plugin-extensions.ts";
@@ -178,7 +178,7 @@ async function runTeardowns(
 }
 
 // @concord-code
-// @concord-implements docs/feature/plugins/lifecycle.md
+// @concord-implements docs/feature/plugins/architecture/lifecycle.md
 export function preparePluginRun(run: AgentRun): PreparedPluginRun {
   let lifecycles: readonly LinkedPluginLifecycle[];
   try {
@@ -227,7 +227,7 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
 }
 
 // @concord-code
-// @concord-implements docs/feature/plugins/lifecycle.md
+// @concord-implements docs/feature/plugins/architecture/lifecycle.md
 export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPluginRun): PluginPairLink {
   try {
     const ownEvalLifecycles = linkPluginLifecycles(evalDef.plugins as readonly PluginInstance<"eval">[], "eval");

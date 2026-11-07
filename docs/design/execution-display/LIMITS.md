@@ -16,7 +16,7 @@
 
 ## L3: recordTrace 的现有契约
 
-[保存通用执行轨迹](../../feature/adapters/library.md#保存通用执行轨迹)已定下列规则：
+[保存通用执行轨迹](../../feature/adapters/library/README.md#保存通用执行轨迹)已定下列规则：
 
 - 快照是封闭 envelope，payload 是有限 plain JSON，summary 最多 512 字节。
 - 每 Attempt 最多 32 份快照、100,000 个事件、64 MiB；每事件 payload 最多 16 KiB。

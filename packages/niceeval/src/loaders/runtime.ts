@@ -249,7 +249,7 @@ function normalizeCriteriaPattern(pattern: CriteriaPattern): string {
 /**
  * 登记永不上传的 private 路径进这条 eval 的判据指纹与泄题门,不把内容读进内存。
  * solution、生成器、参考答案必须与 eval 共址时用它:发现期与全部 build context /
- * bind mount 交叉检查,任何阶段都不得进入 Agent 可见面(见 docs/feature/sandbox/case.md「泄题门」)。
+ * bind mount 交叉检查,任何阶段都不得进入 Agent 可见面(见 docs/feature/sandbox/architecture/case.md「泄题门」)。
  *
  * pattern 语法、发现期约束、空匹配与穿出项目根的报错与 `loadCriteria` 同形。
  *

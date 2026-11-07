@@ -5,8 +5,8 @@ import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
 // coding 任务工具轨:真实任务下 bub tape JSONL 归一出工具事件并完成配对。这是一个严格
 // 串行的场景(先写文件、再用 shell 读回来验证)——tape 里没有显式 call ID 的事件只能按位
-// 配对(见 docs/feature/adapters/sdk/bub/README.md),并发工具调用的配对不在本仓库断言范围
-// (docs/engineering/testing/e2e/adapter/bub.md)。
+// 配对(见 docs/feature/adapters/library/sdk/bub/README.md),并发工具调用的配对不在本仓库断言范围
+// (docs/engineering/testing/architecture/e2e/adapter/bub.md)。
 export default defineEval({
   description: "agent 先写一个文件,再串行 shell 读回来验证",
 

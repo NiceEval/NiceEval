@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: admission-health
-title: 准入健康（Admission health）
-createdAt: 2026-08-13T12:06:10+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/roadmap/admission-health/README.md
-  commit: c297a79e2b319b5cb6cdf8101039450aedf8f0c2
-kind: roadmap
-state: planned
----
-
 # 准入健康（Admission health）
 
 ## 要消除的 DX 摩擦
@@ -72,6 +59,6 @@ Eval、Plugin、Assertion collector 与 Verdict producer 都只能读取这份�
 
 - [Library](library.md) —— producer 如何声明 occurrence 与健康探测。
 - [CLI](cli.md) —— `niceeval exp` 的 dry、人读、JSON 与退出码。
-- [Architecture](architecture.md) —— 回执形状、身份、隔离与持久边界。
-- [Lifecycle](lifecycle.md) —— fresh slot 的准确时序与失败收尾。
+- [Architecture](architecture/README.md) —— 回执形状、身份、隔离与持久边界。
+- [Lifecycle](architecture/lifecycle.md) —— fresh slot 的准确时序与失败收尾。
 - [Experiments](../../feature/experiments/README.md) —— slot、Run 与 Invocation 的 owner。

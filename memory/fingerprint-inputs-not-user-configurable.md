@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: fingerprint-inputs-not-user-configurable
-title: 裁决:指纹构成不开放给用户配置,轮换坐标的家是 facts
-createdAt: 2026-07-25T10:27:54+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/fingerprint-inputs-not-user-configurable.md
-  commit: 3cd2cbe6e6aeca3763784bc44ab39446129ab37e
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 裁决:指纹构成不开放给用户配置,轮换坐标的家是 facts
 
 **裁决**(2026-07-25)。缓存指纹的输入是框架不变量,`ExperimentDef` 上**不提供**任何逐键豁免声明。
@@ -34,7 +18,7 @@ flags 算,配套对历史落盘做反事实重算 `acceptableFingerprints` 救�
    本轮快照。MemoryBench 那次 32/36 携带 = 32 条结果在报告里被归到一个它们从没连过的 endpoint 上。
    一个叫 provenance 的字段记录了错的 provenance:出处是 per-attempt 运行时事实,声明是
    per-experiment 静态配置,层级根本对不上。
-3. **通道早就有,只是缺落盘。** `docs/feature/experiments/architecture.md` 一直写着「setup 产出的
+3. **通道早就有,只是缺落盘。** `docs/feature/experiments/architecture/README.md` 一直写着「setup 产出的
    运行时值经模块闭包流动……是运行时基础设施坐标,不是实验条件」。用户违反它,是因为闭包里的值**不落盘**——
    想让「这轮连的是哪个实例」进记录,只能把它伪装成实验条件。补 `ctx.fact()` 这条记录通道即可,
    不必动指纹。

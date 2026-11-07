@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-max-global
-title: "`--max-concurrency`:本地资源耗尽或 provider 限流,收并发"
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # `--max-concurrency`:本地资源耗尽或 provider 限流,收并发
 
 ## 解决什么问题
@@ -41,7 +32,7 @@ feature: docs/feature/experiments/README.md
    turn 退避睡眠中的 attempt(ACTIVE 行形如 `turn retry 2/4 (rate_limit) — waiting 3s`)让出了并发名额但仍计 `running`,让出的位派给新 attempt。
    所以撞限流时 `running` 会**超过**上限,超出的行数恰等于正在退避的行数,任一瞬间真正持位执行的仍 ≤ 上限。
    这不是并发上限失效,是[退避让位](../../error-classification/architecture.md#重试)的正常样子。
-5. 还在撞限流时(active 行反复出现 provisioning retry、最终 `errored · sandbox.create`)，降一档重跑同一条命令：合格的终态 Attempt 由 reference Member 引用并写出 carried action，只重试挂掉的成员（见 [缓存与携带](../cache.md)）。
+5. 还在撞限流时(active 行反复出现 provisioning retry、最终 `errored · sandbox.create`)，降一档重跑同一条命令：合格的终态 Attempt 由 reference Member 引用并写出 carried action，只重试挂掉的成员（见 [缓存与携带](../architecture/cache.md)）。
 
 ## 边界
 
@@ -49,12 +40,12 @@ feature: docs/feature/experiments/README.md
 - agent 服务端按用户计「同时在跑的 run 数」的并发型限额,贴线配置(上限 = 限额值)压不稳:退避让出的位立刻被新 attempt 顶上,agent 侧并发恒在上限,睡醒的重试面对的仍是打满的限额,重试预算在持续饱和下白烧。
   把值设到限额以下留余量,或改用实验级 `maxConcurrency`——它退避不释放、被限流时真正不加压(见[限制单个实验](concurrency-max-per-experiment.md))。
 - 收并发不改变结果排序(仍按发现顺序输出)与派发优先级(瓶颈优先,见 [Runner · 派发顺序](../../../runner.md#派发顺序瓶颈优先追求最小总墙钟时间))。
-- 等待实验级 `before` 的 attempt 不持有、不预留并发名额,计数里保持 `queued`——慢启动的隧道不会让「0 running · N queued 长时间不动」变成并发配置问题(见 [CLI · 实验级 Hook 的显示](../cli.md#实验级-hook-的显示))。
+- 等待实验级 `before` 的 attempt 不持有、不预留并发名额,计数里保持 `queued`——慢启动的隧道不会让「0 running · N queued 长时间不动」变成并发配置问题(见 [CLI · 实验级 Hook 的显示](../cli/README.md#实验级-hook-的显示))。
 - 并发上限管的是资源占用,不是花费上限;封顶花钱用 [`--budget`](budget-limit.md)。
-- Experiment 声明 [`sandboxReuse: true`](../../sandbox/reuse.md) 时，每个 Sandbox 内部串行，Sandbox 之间可以并行。
+- Experiment 声明 [`sandboxReuse: true`](../../sandbox/library/reuse.md) 时，每个 Sandbox 内部串行，Sandbox 之间可以并行。
   全局 `--max-concurrency` 仍可收紧本次 Invocation 的同时执行数，但不能临时打开或关闭 Sandbox 复用。
 
 ## 相关阅读
 
 - [Runner · 调度:有界并发](../../../runner.md#调度有界并发) —— 求值链、provider 推荐值与两级限制的单源。
-- [CLI · 运行中的 live 面板](../cli.md#运行中的-live-面板) —— 计数行与 ACTIVE 区的完整体裁。
+- [CLI · 运行中的 live 面板](../cli/README.md#运行中的-live-面板) —— 计数行与 ACTIVE 区的完整体裁。

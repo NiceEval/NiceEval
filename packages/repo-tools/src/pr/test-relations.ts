@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { Effect, Schema } from "effect";
 
-import { ConcordDeclarationsSchema, requestConcordEngine, type ConcordAnnotatedCase } from "../concord-engine.js";
+import { readConcordTestList, readConcordTestListAtRevision } from "../concord-cli.js";
 import { PrTestRelationInvalid } from "./errors.js";
 import { PrFileSystem, PrGit } from "./services.js";
 
@@ -27,26 +27,24 @@ export const readPrTestDeclarations = Effect.fn("readPrTestDeclarations")(functi
   const paths = yield* Schema.decodeUnknownEffect(Schema.Array(SourcePath))(candidates).pipe(
     Effect.mapError(() => new PrTestRelationInvalid({ selector, message: "test source inventory contains a noncanonical path" })),
   );
-  const declarations: ConcordAnnotatedCase[] = [];
-  const identities = new Map<string, string>();
   const inputFiles: string[] = [];
   for (const path of paths) {
-    if (head === undefined && !(yield* fileSystem.exists(resolve(root, path)))) continue;
-    const source = head === undefined
-      ? yield* fileSystem.readText(resolve(root, path))
-      : yield* git.readBlob(head, path);
-    const decoded = yield* requestConcordEngine(root, "declarations", { file: path, source }).pipe(
-      Effect.flatMap(value => Schema.decodeUnknownEffect(ConcordDeclarationsSchema, { onExcessProperty: "error" })(value)),
-      Effect.mapError(error => new PrTestRelationInvalid({ selector, message: `${path}: ${String(error)}` })),
-    );
-    for (const declaration of decoded.annotated) {
-      if (declaration.declarationPath !== path) return yield* new PrTestRelationInvalid({ selector, message: `${path}: engine returned a different declaration path` });
-      const previous = identities.get(declaration.caseId);
-      if (previous !== undefined) return yield* new PrTestRelationInvalid({ selector, message: `${declaration.caseId} is declared by both ${previous} and ${path}` });
-      identities.set(declaration.caseId, path);
-    }
-    declarations.push(...decoded.annotated);
-    inputFiles.push(path);
+    if (head !== undefined || (yield* fileSystem.exists(resolve(root, path)))) inputFiles.push(path);
+  }
+  const cases = yield* (head === undefined ? readConcordTestList(root) : readConcordTestListAtRevision(root, head)).pipe(
+    Effect.mapError(error => new PrTestRelationInvalid({ selector, message: String(error) })),
+  );
+  const identities = new Set<string>();
+  const declarations = [];
+  for (const item of cases) {
+    if (!inputFiles.includes(item.file) || item.status !== "active") continue;
+    if (identities.has(item.id)) return yield* new PrTestRelationInvalid({ selector, message: `${item.id} has multiple current declarations` });
+    identities.add(item.id);
+    declarations.push({
+      caseId: item.id, declarationPath: item.file, testFile: item.file,
+      contract: item.contract, contractKind: item.contractKind,
+      issues: item.issues,
+    });
   }
   return { declarations, inputFiles };
 });

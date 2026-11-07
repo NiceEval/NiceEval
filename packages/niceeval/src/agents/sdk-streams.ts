@@ -110,7 +110,7 @@ export interface ClaudeSdkStream {
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/library/streaming.md
-// @concord-implements docs/feature/adapters/sdk/claude-agent-sdk/README.md
+// @concord-implements docs/feature/adapters/library/sdk/claude-agent-sdk/README.md
 export function createClaudeSdkEventStream(): ClaudeSdkStream {
   let sessionId: string | undefined;
   let usage: Usage | undefined;
@@ -266,7 +266,7 @@ export interface PiAgentStream {
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/library/streaming.md
-// @concord-implements docs/feature/adapters/sdk/pi-agent-core/README.md
+// @concord-implements docs/feature/adapters/library/sdk/pi-agent-core/README.md
 export function createPiAgentEventStream(): PiAgentStream {
   let usage: Usage | undefined;
   let failed = false;
@@ -400,7 +400,7 @@ export interface CodexThreadStream {
 /** Codex SDK 线程事件流(`thread.started` / `item.*` / `turn.completed` / `turn.failed`)→ 标准事件。 */
 // @concord-code
 // @concord-implements docs/feature/adapters/library/streaming.md
-// @concord-implements docs/feature/adapters/sdk/codex-sdk/README.md
+// @concord-implements docs/feature/adapters/library/sdk/codex-sdk/README.md
 export function createCodexThreadEventStream(): CodexThreadStream {
   let threadId: string | undefined;
   let usage: Usage | undefined;
@@ -562,7 +562,7 @@ export function createCodexThreadEventStream(): CodexThreadStream {
             const num = (v: unknown): number => (typeof v === "number" ? v : 0);
             usage = {
               // codex-rs TokenUsage 的 cached_input_tokens 是 input_tokens 的子集,
-              // 落互斥桶前扣掉(docs/feature/adapters/sdk/codex-sdk/cost.md)
+              // 落互斥桶前扣掉(docs/feature/adapters/library/sdk/codex-sdk/cost.md)
               inputTokens: (usage?.inputTokens ?? 0) + Math.max(0, num(u.input_tokens) - num(u.cached_input_tokens)),
               outputTokens: (usage?.outputTokens ?? 0) + num(u.output_tokens),
               cacheReadTokens: (usage?.cacheReadTokens ?? 0) + num(u.cached_input_tokens),

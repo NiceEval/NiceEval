@@ -9,6 +9,6 @@ export default defineConfig({
   maxConcurrency: 4,
   // 固定端口接收 OTel span；场景拓扑把被测应用的官方 @ai-sdk/otel exporter 指到
   // 同一个端口——这是本仓库对
-  // remote-agent telemetry 路径的证明(docs/engineering/testing/e2e/adapter/ai-sdk.md)。
+  // remote-agent telemetry 路径的证明(docs/engineering/testing/architecture/e2e/adapter/ai-sdk.md)。
   telemetry: { port: OTLP_PORT },
 });

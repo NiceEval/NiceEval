@@ -1,4 +1,4 @@
-// 复用失败的收尾诊断(契约见 docs/feature/sandbox/reuse.md「复用失败的可观察性」)。
+// 复用失败的收尾诊断(契约见 docs/feature/sandbox/library/reuse.md「复用失败的可观察性」)。
 //
 // 有意持久状态是合法的实验输入；失败序列本身不能证明污染或根因。
 // Run 收尾按 Sandbox 实例与承接序号聚合:首承接正常、而同一实例序号 ≥ 2 的 Attempt 集中失败或

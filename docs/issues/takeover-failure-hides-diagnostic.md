@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: takeover-failure-hides-diagnostic
-title: E2E takeover 证据失败只输出空错误，无法判断未满足的验收门槛
-createdAt: 2026-10-23T12:08:53.418Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# E2E takeover 证据失败只输出空错误，无法判断未满足的验收门槛
 
 ## 观察
 

@@ -1,16 +1,7 @@
----
-format: concord.document/v1
-id: memorybench
-title: MemoryBench：分组复用记忆条件与 Git seed
-createdAt: 2026-08-12T22:41:17+08:00
-kind: use-case
-feature: docs/feature/eval-groups/README.md
----
-
 # MemoryBench：分组复用记忆条件与 Git seed
 
-契约单源见 [Library](../library.md)、[Architecture](../architecture.md) 与
-[Lifecycle](../lifecycle.md)。本页只说明 MemoryBench 的组合方式。
+契约单源见 [Library](../library.md)、[Architecture](../architecture/README.md) 与
+[Lifecycle](../architecture/lifecycle.md)。本页只说明 MemoryBench 的组合方式。
 
 MemoryBench 把同一记忆条件下、物理 Sandbox 计划兼容的 Eval 切成多个 Group。每个 Group 使用一台
 Docker Sandbox 串行运行成员；多个 Group 同时占用 Experiment 的并发名额。这样既复用昂贵的
@@ -32,7 +23,7 @@ Remem、Obelisk 等固定版本的文档型 Skill 随 MemoryBench vendored，Plu
 ## 成员结束后保存 checkpoint {#save-checkpoint-after-members}
 
 记忆条件需要把 Sandbox 内状态保存到外部位置时，在 Sandbox cleanup 完成保存，并让该步骤发生在实例释放前。
-按 [Lifecycle](../lifecycle.md) 使用独立收尾预算；不要把最后一条成员的剩余执行时间作为保存命令的预算。
+按 [Lifecycle](../architecture/lifecycle.md) 使用独立收尾预算；不要把最后一条成员的剩余执行时间作为保存命令的预算。
 
 验证时选择一个会耗尽执行时限的成员，再检查收尾诊断和实际保存结果。
 成员超时不应让 checkpoint 命令只剩 1ms；作者为命令显式设置的 timeout 仍然有效。

@@ -25,6 +25,7 @@ function ownerTokenFromPublicRecoveryInspection(stderr: string): string {
 // @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
 // @regression memory/concurrent-run-publication-recovery-race.md
 // @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E7%9B%B8%E5%90%8C%20sharedState.key%20%E5%9C%A8%E5%89%8D%E4%B8%80%20Experiment%20teardown%20%E5%90%8E%E6%89%8D%E5%85%81%E8%AE%B8%E4%B8%8B%E4%B8%80%20Experiment%20%E8%BF%9B%E5%85%A5%20setup%22%5D%7D
 test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允许下一 Experiment 进入 setup", async () => {
   await runnerE2E.case(
     "shared-state-lifecycle",
@@ -72,6 +73,7 @@ test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允�
 });
 // @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
 // @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E5%A4%8D%E7%94%A8%20Sandbox%20%E7%9A%84%E6%AF%8F%E6%9D%A1%20Attempt%20after%20%E4%B8%8E%20Experiment%20teardown%20%E5%AE%8C%E6%88%90%E5%90%8E%E6%89%8D%E4%BA%A4%E5%87%BA%20sharedState%22%5D%7D
 test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 完成后才交出 sharedState", async () => {
   await runnerE2E.case(
     "shared-state-reuse-lifecycle",
@@ -154,6 +156,7 @@ test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 
 });
 // @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
 // @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E5%A4%8D%E7%94%A8%20Sandbox%20%E7%9A%84%20Attempt%20after%20%E5%A4%B1%E8%B4%A5%E4%B9%9F%E4%BC%9A%E4%BF%9D%E7%95%99%20sharedState%EF%BC%8C%E7%9B%B4%E5%88%B0%E5%85%AC%E5%BC%80%E6%98%BE%E5%BC%8F%E6%81%A2%E5%A4%8D%22%5D%7D
 test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState，直到公开显式恢复", async () => {
   await runnerE2E.case(
     "shared-state-pool-retire-cleanup-failure",
@@ -218,6 +221,7 @@ test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState
 });
 // @use-case docs/feature/experiments/use-case/concurrency-serialize-shared-state.md
 // @test-file e2e/runner/test/shared-state-lifecycle.test.ts
+// @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-lifecycle.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22fresh%20Sandbox%20%E7%9A%84%20Attempt%20after%20%E5%A4%B1%E8%B4%A5%E4%B9%9F%E4%BF%9D%E7%95%99%20sharedState%EF%BC%8C%E7%9B%B4%E5%88%B0%E5%85%AC%E5%BC%80%E6%98%BE%E5%BC%8F%E6%81%A2%E5%A4%8D%22%5D%7D
 test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，直到公开显式恢复", async () => {
   await runnerE2E.case(
     "shared-state-fresh-cleanup-failure",

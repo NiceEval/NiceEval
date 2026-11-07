@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: report-design-tanstack
-title: TanStack Table / Charts
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # TanStack Table / Charts
 
 > 观察日期：2026-08-14

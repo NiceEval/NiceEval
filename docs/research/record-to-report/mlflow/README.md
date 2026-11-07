@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-mlflow
-title: MLflow：Experiment、Run、Trace 与 Tracking UI
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # MLflow：Experiment、Run、Trace 与 Tracking UI
 
 > 观察日期：2026-08-14

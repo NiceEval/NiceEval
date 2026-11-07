@@ -80,7 +80,7 @@ PLAN-2 确实不能满足 G3、G5，但有些负面评分理由不成立，不�
 
 **证据：** `docs/feature/inspection/architecture.md:128` 只在附件 ID 不存在时返回 not-found。
 第 130–132 行要求验证 origin、metadata、长度和完整 SHA-256；不一致返回 `inspection-record-integrity-failure`。
-`docs/feature/adapters/library.md:273` 也要求接纳、发布与读取时验证同 owner 内容闭合。
+`docs/feature/adapters/library/README.md:273` 也要求接纳、发布与读取时验证同 owner 内容闭合。
 
 **建议：** 明确不存在与完整性错误的不同结果；若希望块级隔离，应先确定能够保留完整性原因的 typed 结果，不能伪装成缺失。
 补齐持久引用中固定的 descriptor/digest 形状，以及 carry、Snapshot 导出和读取时对 origin 附件的闭合关系。
@@ -95,12 +95,12 @@ PLAN-2 确实不能满足 G3、G5，但有些负面评分理由不成立，不�
 **判断与位置：** `plans/plan-1/architecture.md:69` 排除 eval/config/execution identity 是合理方向。
 但 `plans/plan-1/README.md:59` 排除“任何 identity”过宽；architecture 第 70 行没有给出新旧 family revision 的具体读写关系。
 
-**证据：** 同 `traceId` 的幂等比较针对规范化快照内容，见 `docs/feature/adapters/library.md:276`。
+**证据：** 同 `traceId` 的幂等比较针对规范化快照内容，见 `docs/feature/adapters/library/README.md:276`。
 这与不把观测值用于执行资格比较并不冲突。
 但 Snapshot 的 content identity、logical closure identity 与 exact Seal 明确存在，见 `docs/design/cli-insight/DECISION.md:19`。
 封存 display 改变内容，不能排除其内容完整性身份。
 
-通用 collection 的既有 revision 为 1，见 `docs/feature/adapters/architecture.md:113` 和第 115–116 行。
+通用 collection 的既有 revision 为 1，见 `docs/feature/adapters/architecture/README.md:113` 和第 115–116 行。
 “family revision 包含 display”没有说明继续使用 1 还是增加 revision，也没有给出新 reader 怎样处理两种持久形状。
 `display: absent` 只是读取投影，不能独自证明历史字节可被对应 decoder 接受。
 
@@ -110,7 +110,7 @@ PLAN-2 确实不能满足 G3、G5，但有些负面评分理由不成立，不�
 这属于采用前需要收敛的持久契约，不宜让实现者自行选择。
 
 此外，“不触发重跑”应仅指运行后展示数据不新增资格依赖。
-`docs/feature/experiments/cache.md:215` 明确 Eval sourceClosure 改变会改变 execution identity。
+`docs/feature/experiments/architecture/cache.md:215` 明确 Eval sourceClosure 改变会改变 execution identity。
 Adapter 转换代码位于受追踪源码中时，修改它是否改变 sourceClosure 为**待验证**；不能承诺所有展示代码修改都免于重跑。
 
 ## R6 · P2：C9 建模合理，但可复制命令与宽度截断冲突

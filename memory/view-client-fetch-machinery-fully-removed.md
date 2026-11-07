@@ -1,35 +1,3 @@
----
-format: concord.document/v1
-id: view-client-fetch-machinery-fully-removed
-title: view-client-fetch-machinery-fully-removed
-createdAt: 2026-07-19T17:49:52+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/view-client-fetch-machinery-fully-removed.md
-  commit: 421474faf4b046d33e385953e4f269d45944eb42
-description: Phase F 收尾——AttemptModal/CodeView/Trace/Transcript 等整棵客户端手渲染树连同 viewData.snapshots 一起删除,attempt 详情改成 fetch 独立文档塞进 dialog;记录判断"什么算真死"的依据(遗留的两处 cases.md 陈旧行已在 Phase H 处理完)
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [view-client-fetch-machinery-fully-removed](view-client-fetch-machinery-fully-removed.md) — Phase F 收尾:AttemptModal/CodeView/Trace/Transcript 整棵客户端手渲染树 + viewData.snapshots 一起删除,attempt 详情改 fetch 独立文档塞 dialog;记录判活依据、无浏览器环境下的验证手法;遗留的 cases.md 陈旧行已在 Phase H 处理(第 218 行删除,198/220 行复核后判定无需改)"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
-
 Phase F 前两次提交(`attempt/<locator>.html` 静态文档 + 本地 server 越过收窄解析)落地后,
 `src/view/app/` 里整棵旧的客户端手渲染树——`AttemptModal.tsx`/`CodeView.tsx`/`Trace.tsx`/
 `Transcript.tsx`/`CopyControls.tsx`/`ui/badge.tsx` 与它们各自的 `lib/`(`artifact-url.ts`/
@@ -41,6 +9,8 @@ Phase F 前两次提交(`attempt/<locator>.html` 静态文档 + 本地 server �
 
 # 判断"真死"的依据(不是猜的,是逐个 grep 验证的)
 
+Phase F 收尾——AttemptModal/CodeView/Trace/Transcript 等整棵客户端手渲染树连同 viewData.snapshots 一起删除,attempt 详情改成 fetch 独立文档塞进 dialog;记录判断"什么算真死"的依据(遗留的两处 cases.md 陈旧行已在 Phase H 处理完)
+
 删除前逐个 grep 确认没有除彼此外的导入者:`CodeView`/`Trace`/`Transcript`/`CopyControls`/
 `ui/badge` 只互相导入,`app/lib/` 下那几个只被这棵树导入。`viewData.snapshots` 的删除额外
 验证了：`data.ts`(server 侧生产者)之外只有 `App.tsx` 的旧 `modalResultFromLocation`/
@@ -49,7 +19,7 @@ Phase F 前两次提交(`attempt/<locator>.html` 静态文档 + 本地 server �
 多背一份序列化的 attempt 明细)。`AttemptList`/`TraceWaterfall`(内建 Attempts/Traces 页)
 不读这份数据——它们是走标准 resolve 管线的报告组件,数据来自 Scope,不是 viewData。
 
-# 修法
+## 修法
 
 - `src/view/shared/types.ts`:删掉 `ViewSnapshot`/`ViewEvalResult`,`ViewData.snapshots` 字段整个去掉。
 - `src/view/data.ts`:`annotateResult` 改名 `artifactLocation`,只算 `{base, abs}`,不再拼
@@ -72,7 +42,7 @@ Phase F 前两次提交(`attempt/<locator>.html` 静态文档 + 本地 server �
   (gzip 8.1kB → 3.8kB),JS 从 268kB 降到 264kB(react/react-dom 仍在,减量不大,大头是
   手写组件树本身,不是依赖)。
 
-# 如何验证(没有真实浏览器,靠什么确认 dialog 真的能用)
+## 如何验证(没有真实浏览器,靠什么确认 dialog 真的能用)
 
 这个仓库没有 Playwright/Puppeteer。验证靠一段一次性脚本(不进仓库,scratchpad):真实
 `createResultsWriter` 落一份带失败断言的快照,`startViewServer` 起服务,`fetch` 首页拿到
@@ -85,9 +55,9 @@ Phase F 前两次提交(`attempt/<locator>.html` 静态文档 + 本地 server �
 全部信号——真人在浏览器里点一次仍然是没做的一步,值得在真正需要强保证时(比如上线前)
 用真机核对一次。
 
-# 遗留:两处 cases.md 陈旧行 —— 已在 Phase H 处理
+## 遗留:两处 cases.md 陈旧行 —— 已在 Phase H 处理
 
-- 第 218 行(`docs/engineering/testing/unit/reports.md`)描述的"前端 artifact fetch 以
+- 第 218 行(`docs/engineering/testing/architecture/unit/reports.md`)描述的"前端 artifact fetch 以
   「页面所在目录」为基底"整套语义是 `artifact-url.ts` 的行为——那个模块已删除且无任何替代
   实现或测试,`--out` 相关章节里也没有别的行覆盖同一件事。Phase H 判定为整段作废,直接删除
   该行,不改写成别的措辞(没有对应实现,改写等于凭空发明契约)。

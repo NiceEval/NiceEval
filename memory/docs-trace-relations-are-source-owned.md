@@ -1,16 +1,9 @@
 ---
-format: concord.document/v1
-id: docs-trace-relations-are-source-owned
-title: Docs Trace 关系由事实 owner 持有
-createdAt: 2026-08-24T15:29:14+08:00
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions:
-  - docs/engineering/docs-traceability/README.md
-history: []
+relations:
+  - role: supports
+    target: docs/engineering/docs-traceability/README.md
 ---
+
 # Docs Trace 关系由事实 owner 持有
 
 ## Context

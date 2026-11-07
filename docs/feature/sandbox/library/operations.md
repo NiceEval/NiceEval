@@ -1,6 +1,6 @@
 # 操作 Sandbox
 
-`t.sandbox`、Adapter 拿到的 `Sandbox` 与 layer callback 拿到的 `SandboxCommandTarget` 共用同一套 `SandboxOperations` 词汇和退出码语义。不同视图只删能力，不允许同名方法改变行为。
+`t.sandbox`、Adapter 拿到的 `Sandbox` 与 layer callback 拿到的 `SandboxCommandTarget` 共用同一套 SandboxOperations 词汇和退出码语义。不同视图只删能力，不允许同名方法改变行为。
 
 ## 一份运行中操作协议
 

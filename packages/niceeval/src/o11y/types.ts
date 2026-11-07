@@ -9,7 +9,7 @@ import type { JsonValue, SourceLoc } from "../shared/types.ts";
  * 省略,不编造数值;不存在「默认 0」或「默认 1」的字段。三个输入侧桶恒互斥:相加才是送进模型的
  * 完整上下文量;把协议原生口径归一到互斥是 adapter 的落值义务——OpenAI 系报「含缓存的输入总量 +
  * 缓存命中子集」,落 inputTokens 前先扣掉子集(docs/feature/record/architecture.md#usage,
- * 各协议明细见 docs/feature/adapters/sdk/<name>/cost.md)。
+ * 各协议明细见 docs/feature/adapters/library/sdk/<name>/cost.md)。
  */
 export interface Usage {
   /** 未命中缓存、按全价计费的输入 token;与两个 cache 桶互斥。 */

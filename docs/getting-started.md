@@ -105,5 +105,5 @@ current NiceEval 会在只读打开时验证精确 schema、SQLite 完整性和�
 - [Record](feature/run/README.md)
 - [Inspection](feature/inspection/README.md)
 - [Insight](feature/insight/README.md)
-- [缓存与携带](feature/experiments/cache.md)
+- [缓存与携带](feature/experiments/architecture/cache.md)
 - [Assertions](feature/assertions/README.md)

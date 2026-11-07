@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-ori-eval
-title: OpenRouter Ori Eval：断言、Judge 与模型比较作者指南
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # OpenRouter Ori Eval：断言、Judge 与模型比较作者指南
 
 本文研究 Ori Eval 怎样让作者运行 Agent、断言行为、调用 Judge、比较模型并进入 CI。

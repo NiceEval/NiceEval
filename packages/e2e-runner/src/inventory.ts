@@ -2,8 +2,11 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { Data, Effect, Predicate } from "effect";
-import { bridgeBoundary, deriveTestReference, readDeclarations, engineCall } from "./concord-engine.ts";
+import { Data, Effect, Predicate, Schema } from "effect";
+import { bridgeBoundary, signPrivateArtifact } from "./repository-evidence.ts";
+import { listConcordCases, type ConcordCase } from "./concord-cases.ts";
+import ts from "typescript";
+import { nativeEntryForSource } from "./native-files.ts";
 import { InventorySchema } from "./bridge-wire.ts";
 
 import { hasSuccessfulOwnedProcessResult, OwnedProcess } from "./owned-process.js";
@@ -16,7 +19,9 @@ export interface CollectedCase {
   readonly executor: InventoryExecutor;
   readonly repo: string;
   readonly path: string;
+  readonly nativePath?: string;
   readonly project?: string;
+  readonly location?: { readonly line: number; readonly column: number };
   readonly titlePath: readonly string[];
   readonly caseId: string;
 }
@@ -45,11 +50,12 @@ export class InventoryError extends Data.TaggedError("InventoryError")<{
 export interface RawCollectedCase {
   readonly file: string;
   readonly project?: string;
+  readonly location?: { readonly line: number; readonly column: number };
   readonly titlePath: readonly string[];
 }
 
 const SOURCE_EXCLUDED_BASENAMES = new Set(["node_modules", ".git"]);
-const signInventory = (value: unknown) => engineCall("inventory", { kind: "case", action: "sign", value }, InventorySchema);
+const signInventory = (value: unknown) => signPrivateArtifact(value, "digest", InventorySchema);
 
 const text = (value: unknown, key: string): string | undefined =>
   Predicate.isObject(value) && Predicate.isString(value[key]) ? value[key] : undefined;
@@ -57,6 +63,8 @@ const text = (value: unknown, key: string): string | undefined =>
 const array = (value: unknown, key: string): readonly unknown[] =>
   Predicate.isObject(value) && Array.isArray(value[key]) ? value[key] : [];
 
+const LocationSchema = Schema.Struct({ line: Schema.Int.check(Schema.isGreaterThan(0)), column: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) });
+const nativeLocation = (value: unknown): { readonly location?: { readonly line: number; readonly column: number } } => value === undefined ? {} : { location: Schema.decodeUnknownSync(LocationSchema)(value) };
 const parseJson = (stdout: string): unknown => JSON.parse(stdout.trim());
 
 const collectVitest = (document: unknown): readonly RawCollectedCase[] => {
@@ -66,7 +74,7 @@ const collectVitest = (document: unknown): readonly RawCollectedCase[] => {
     const name = text(entry, "name") ?? text(entry, "fullName");
     if (file === undefined || name === undefined) throw new Error(`Vitest list entry ${index} is missing file/name`);
     const project = text(entry, "projectName") ?? text(entry, "project");
-    return { file, titlePath: [name], ...(project === undefined ? {} : { project }) };
+    return { file, titlePath: [name], ...(project === undefined ? {} : { project }), ...nativeLocation(Predicate.isObject(entry) ? entry.location : undefined) };
   });
 };
 
@@ -83,12 +91,13 @@ const collectPlaywright = (document: unknown): readonly RawCollectedCase[] => {
       const title = text(spec, "title");
       const specFile = text(spec, "file") ?? file;
       if (title === undefined || specFile === undefined) throw new Error("Playwright JSON spec is missing title/file");
+      const location = nativeLocation(spec.line === undefined ? undefined : { line: spec.line, column: spec.column ?? 0 });
       const tests = array(spec, "tests");
-      if (tests.length === 0) output.push({ file: specFile, titlePath: [...titlePath, title] });
+      if (tests.length === 0) output.push({ file: specFile, titlePath: [...titlePath, title], ...location });
       for (const test of tests) {
         const candidateProject = text(test, "projectName");
         const project = candidateProject === undefined || candidateProject.length === 0 ? undefined : candidateProject;
-        output.push({ file: specFile, titlePath: [...titlePath, title], ...(project === undefined ? {} : { project }) });
+        output.push({ file: specFile, titlePath: [...titlePath, title], ...(project === undefined ? {} : { project }), ...location });
       }
     }
     for (const child of array(suite, "suites")) visitSuite(child, titlePath, file);
@@ -147,17 +156,30 @@ const sourceFiles = (cwd: string): readonly string[] => {
   return output.sort();
 };
 
-const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (cwd: string, repo: string) {
-  const declarations: SourceDeclaration[] = [];
+const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (cwd: string, repo: string, markers: readonly ConcordCase[]) {
+  const declarations: (SourceDeclaration & { readonly caseId?: string })[] = [];
   for (const path of sourceFiles(cwd)) {
     const workspacePath = `e2e/${repo}/${path}`;
     const source = readFileSync(resolve(cwd, path), "utf8");
-    const decoded = yield* readDeclarations(workspacePath, source);
-    const annotatedByStart = new Map(decoded.annotated.map((entry) => [entry.declarationStart, entry]));
-    for (const entry of decoded.supported) {
-      const relation = annotatedByStart.get(entry.start);
-      declarations.push({ title: entry.title, testFile: relation?.testFile ?? workspacePath, declarationPath: workspacePath, annotated: relation !== undefined });
-    }
+    const testFile = nativeEntryForSource(workspacePath, source);
+    const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node, parents: readonly string[] = []): void => {
+      let descendants = parents;
+      if (ts.isCallExpression(node)) {
+        const name = node.expression.getText(tree);
+        const title = node.arguments[0];
+        if (/^describe(?:\.(?:concurrent|skip|only|sequential))*$/u.test(name) && title && ts.isStringLiteralLike(title)) descendants = [...parents, title.text];
+        if (/^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential))*$/u.test(name) && title && ts.isStringLiteralLike(title)) {
+          const startLine = tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
+          const fullStartLine = tree.getLineAndCharacterOfPosition(node.getFullStart()).line + 1;
+          const related = markers.filter((item: ConcordCase) => item.file === workspacePath && item.status === "active" && item.line >= fullStartLine && (item.markerEndLine ?? item.line) <= startLine);
+          const marker = related.length === 1 ? related[0] : undefined;
+          declarations.push({ title: [...parents, title.text].join(" "), testFile, declarationPath: workspacePath, annotated: marker !== undefined, ...(marker ? { caseId: marker.id } : {}) });
+        }
+      }
+      ts.forEachChild(node, child => visit(child, descendants));
+    };
+    visit(tree);
   }
   return declarations;
 }, bridgeBoundary);
@@ -174,13 +196,14 @@ const validateCases = Effect.fn("validateCases")(function* (
   const seen = new Map<string, string>();
   const files = new Set<string>();
   const cases: CollectedCase[] = [];
-  const declarations = yield* declarationsInCopy(cwd, repo);
+  const markers = yield* listConcordCases();
+  const declarations = yield* declarationsInCopy(cwd, repo, markers);
   for (const raw of rawCases) {
     const path = canonicalPath(cwd, raw.file);
     files.add(path);
     const title = raw.titlePath.at(-1) ?? "";
     const workspacePath = `e2e/${repo}/${path}`;
-    const candidates = declarations.filter((entry) => entry.testFile === workspacePath && entry.title === title);
+    const candidates = declarations.filter((entry) => entry.testFile === workspacePath && (entry.title === title || entry.title === raw.titlePath.join(" ")));
     const declaration = candidates[0];
     if (candidates.length !== 1 || declaration === undefined) {
       if (candidates.length > 1) findings.push(`AmbiguousCaseBinding: ${path}: ${JSON.stringify(title)} has ${candidates.length} statically supported declarations`);
@@ -191,15 +214,18 @@ const validateCases = Effect.fn("validateCases")(function* (
       unassignedCases.push({ ...raw, file: path });
       continue;
     }
-    const caseId = yield* deriveTestReference(workspacePath, declaration.declarationPath, title);
-    if (!CASE_ID_PATTERN.test(caseId)) throw new Error("engine returned an invalid case ID");
-    const prior = seen.get(caseId);
+    const declarationPath = declaration.declarationPath.slice(`e2e/${repo}/`.length);
+    files.add(declarationPath);
+    const caseId = declaration.caseId!;
+    if (!CASE_ID_PATTERN.test(caseId)) throw new Error("Concord test list returned an invalid case ID");
+    const witnessKey = `${caseId}\0${raw.project ?? ""}`;
+    const prior = seen.get(witnessKey);
     if (prior !== undefined) {
       findings.push(`DuplicateCaseId: ${caseId} is collected by both ${prior} and ${path}`);
       continue;
     }
-    seen.set(caseId, path);
-    cases.push({ executor, repo: suiteId, path, ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: raw.titlePath, caseId });
+    seen.set(witnessKey, path);
+    cases.push({ executor, repo: suiteId, path: declarationPath, ...(path === declarationPath ? {} : { nativePath: path }), ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: raw.titlePath, caseId, ...(raw.location === undefined ? {} : { location: raw.location }) });
   }
   return {
     cases: cases.sort((left, right) => left.path.localeCompare(right.path) || (left.project ?? "").localeCompare(right.project ?? "") || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0"))),
@@ -238,7 +264,7 @@ const resolveExecutorCli = (executor: InventoryExecutor, cwd: string): ResolvedE
 
 const executorCommand = (executor: InventoryExecutor, cli: string, nativeArgs: readonly string[]): readonly string[] =>
   executor === "vitest"
-    ? [process.execPath, cli, "list", ...nativeArgs, "--json"]
+    ? [process.execPath, cli, "list", ...nativeArgs, "--json", "--includeTaskLocation"]
     : [process.execPath, cli, "test", "--list", "--reporter=json", ...nativeArgs];
 
 const versionCommand = (cli: string): readonly string[] => [process.execPath, cli, "--version"];
@@ -253,12 +279,39 @@ export interface InventoryOptions {
   readonly executor: InventoryExecutor;
   /** E2E manifest id: the scenario directory under `e2e/`, e.g. `adapter/codex-cli`. */
   readonly repo: string;
-  /** Concord suite id written as the receipt `repo`; Concord matches it against the configured suite. */
+  /** NiceEval suite id written as the private receipt `repo`. */
   readonly suiteId: string;
   readonly cwd: string;
   readonly checkout: string;
   readonly nativeArgs: readonly string[];
 }
+
+/** Native adapter observations never consult Concord's marker identities. */
+export const collectNativeCaseInventory = Effect.fn("collectNativeCaseInventory")(function* (
+  options: Pick<InventoryOptions, "executor" | "repo" | "cwd" | "nativeArgs">,
+) {
+  const cwd = resolve(options.cwd);
+  const owned = yield* OwnedProcess;
+  const { cli } = resolveExecutorCli(options.executor, cwd);
+  const [collection, versionResult] = yield* Effect.all([
+    owned.run(executorCommand(options.executor, cli, options.nativeArgs), { cwd, output: "capture", stream: false }),
+    owned.run(versionCommand(cli), { cwd, output: "capture", stream: false }),
+  ], { concurrency: 2 });
+  if (!hasSuccessfulOwnedProcessResult(collection) || !hasSuccessfulOwnedProcessResult(versionResult)) {
+    throw new Error(`${options.executor} native collection failed: exit=${collection.exitCode}, signal=${collection.signal}; ${collection.stderr || collection.stdout}; version exit=${versionResult.exitCode}`);
+  }
+  const version = versionFrom(options.executor, versionResult.stdout);
+  const raw = options.executor === "vitest" ? collectVitest(parseJson(collection.stdout)) : collectPlaywright(parseJson(collection.stdout));
+  const declarations = yield* declarationsInCopy(cwd, options.repo, []);
+  const cases = raw.map(item => {
+    const nativeFile = canonicalPath(cwd, item.file);
+    const candidates = declarations.filter(entry => entry.testFile === `e2e/${options.repo}/${nativeFile}` && entry.title === item.titlePath.join(" "));
+    if (candidates.length > 1) throw new Error(`Ambiguous native source declaration: ${nativeFile}: ${item.titlePath.join(" ")}`);
+    const file = candidates[0]?.declarationPath.slice(`e2e/${options.repo}/`.length) ?? nativeFile;
+    return { ...item, file, ...(file === nativeFile ? {} : { nativeFile }) };
+  });
+  return { executor: { name: options.executor, version }, cases };
+}, bridgeBoundary);
 
 export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* (options: InventoryOptions) {
   const cwd = resolve(options.cwd);

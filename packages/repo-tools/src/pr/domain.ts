@@ -679,11 +679,12 @@ function expandTestDirective(
       if (context.head === undefined && !(yield* fileSystem.exists(resolve(root, contractPath)))) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `canonical contract does not exist: ${contract}` });
       context.inputFiles.add(contractPath);
       if (context.head !== undefined) yield* git.readBlob(context.head, contractPath);
-      if (item.regression !== undefined && !relation.regressions.includes(item.regression)) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `declared regression is not current: ${item.regression}` });
+      if (item.issue !== undefined && !relation.issues.includes(item.issue)) return yield* new PrTestRelationInvalid({ selector: item.selector, message: `declared Issue is not current: ${item.issue}` });
+      if (item.issue !== undefined) context.inputFiles.add(item.issue);
       narratives.push([
         `#### \`${item.selector}\``,
         "",
-        `${item.behavior.trim()} It exercises ${item.entry.trim()} and asserts ${item.assertion.trim()}. Deleting this case would allow ${item.escape.trim()}. The final contract is [${contract}](${contract}).${item.regression === undefined ? "" : ` It also prevents the regression recorded in [${item.regression}](${item.regression}).`}`,
+        `${item.behavior.trim()} It exercises ${item.entry.trim()} and asserts ${item.assertion.trim()}. Deleting this case would allow ${item.escape.trim()}. The final contract is [${contract}](${contract}).${item.issue === undefined ? "" : ` It is associated with the Issue [${item.issue}](${item.issue}).`}`,
       ].join("\n"));
     }
     const source = context.head === undefined

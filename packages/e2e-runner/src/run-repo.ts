@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, join, relative, resolve } from "node:path";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result, Scope } from "effect";
-import { projectExecutionSources } from "./concord-engine.ts";
+import { projectExecutionSources } from "./repository-evidence.ts";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { collectCaseInventory, type InventoryExecutor } from "./inventory.ts";
 import { formatCause } from "./format-cause.ts";
@@ -300,6 +300,7 @@ export const runCommand = (
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
   prefix?: string,
+  reportBytes?: number,
 ): Effect.Effect<CommandCapture, RepoRunError, OwnedProcess | Scope.Scope> =>
   runOwnedProcess(command, {
     cwd,
@@ -308,6 +309,7 @@ export const runCommand = (
     stream: true,
     timeoutMs,
     ...(prefix === undefined ? {} : { streamPrefix: prefix }),
+    ...(reportBytes === undefined ? {} : { stdoutBytes: reportBytes, stderrBytes: reportBytes }),
   }).pipe(
     Effect.map(captureOwnedProcess),
     Effect.mapError((cause) => problem("<command>", "command", cause)),
@@ -319,11 +321,13 @@ export interface CaseSelectionExpectation {
   readonly titlePath: readonly string[];
   readonly checkout: string;
   readonly only: boolean;
-  /** Concord suite id that owns the selected case. */
+  /** NiceEval suite id that owns the selected case. */
   readonly suiteId: string;
 }
 
 export interface RunRepoOptions {
+  /** Preserve the bounded native JSON report for the Concord adapter only. */
+  readonly retainNativeReport?: boolean;
   readonly caseSelection?: CaseSelectionExpectation;
   readonly caseCollectionNativeArgs?: readonly string[];
   readonly sourceDir?: string;
@@ -343,7 +347,7 @@ const verifyExecutionProjection = (
   expectedDigest: string,
   phase: string,
   prefix: string,
-): Effect.Effect<void, RepoRunError, OwnedProcess | Scope.Scope> => projectExecutionSources(directory, prefix).pipe(Effect.mapError((cause) => problem(repoId, "run", `SourceSnapshotProjectionInvalid (${phase}): ${cause.message}`)), Effect.flatMap((projection) => projection.digest === expectedDigest
+): Effect.Effect<void, RepoRunError, OwnedProcess | Scope.Scope> => projectExecutionSources(directory, prefix).pipe(Effect.mapError((cause) => problem(repoId, "run", `SourceSnapshotProjectionInvalid (${phase}): ${cause.detail}`)), Effect.flatMap((projection) => projection.digest === expectedDigest
   ? Effect.void
   : Effect.fail(problem(repoId, "run", `SourceSnapshotDrift (${phase}): expected ${expectedDigest}, got ${projection.digest}`))));
 const stage = (stages: StageReceipt[], value: StageReceipt): void => {
@@ -702,6 +706,7 @@ export const runRepoEffect = (
                       ),
                       repo.manifest.timeoutMinutes * 60_000,
                       options.logPrefix,
+                      options.retainNativeReport ? 8 * 1024 * 1024 : undefined,
                     );
                     if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-test-${attempt}`, sourceProjectionPrefix);
                     exitCode = result.exitCode;
@@ -719,10 +724,9 @@ export const runRepoEffect = (
                       ok,
                       ...(result.cancelled ? { cancelled: true } : {}),
                       command: redactSecretStrings(command, secretValues),
-                      capture: retainCapture(
-                        redactSecretCapture(result, secretValues),
-                        ok,
-                      ),
+                      capture: options.retainNativeReport
+                        ? redactSecretCapture(result, secretValues)
+                        : retainCapture(redactSecretCapture(result, secretValues), ok),
                       ...(native === undefined
                         ? {}
                         : Result.isSuccess(native)

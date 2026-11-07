@@ -1,6 +1,6 @@
 // 留存沙箱的持久注册表由 canonical ProjectDatabase 的 keep facet 持有。entry id 由
 // provider + sandboxId 做稳定散列，避免不同 attempt 与不同 niceeval 进程互相覆盖。
-// 契约见 docs/feature/sandbox/architecture.md「留存(keep)与注册表」。
+// 契约见 docs/feature/sandbox/architecture/README.md「留存(keep)与注册表」。
 
 import { readdir } from "node:fs/promises";
 import { hostname } from "node:os";

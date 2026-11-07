@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-langsmith-reading-and-comparison
-title: LangSmith 历史读取、对齐与比较
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/langsmith/reading-and-comparison.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # LangSmith 历史读取、对齐与比较
 
 本页从“历史事实怎样重新组成用户看到的视图”出发。Run、Feedback 与 Example 的保存字段见 [storage.md](../storage/README.md)；这里只讨论 query/filter/align/group/compare/render，以及 missing 如何出现。源码固定核对官方 SDK commit [`345a522`](https://github.com/langchain-ai/langsmith-sdk/commit/345a52252af163abe33699fb361038f5783c9024)（2026-08-13 UTC）。

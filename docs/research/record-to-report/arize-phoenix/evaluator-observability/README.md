@@ -1,15 +1,11 @@
 ---
-format: concord.document/v1
-id: record-to-report-arize-phoenix-evaluator-observability
-title: Phoenix Evaluator 可观察性
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources:
   - https://arize.com/docs/phoenix/evaluation/llm-evals/evaluator-traces
   - https://arize.com/docs/phoenix/datasets-and-experiments/how-to-experiments/how-to-dataset-evaluators
   - https://arize.com/docs/phoenix/tracing/concepts-tracing/annotations-concepts
+observedAt: 2026-08-14
 ---
+
 # Phoenix Evaluator 可观察性
 
 > 观察日期：2026-08-14

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-mix-fast-slow
-title: 快慢 Experiment 交给调度器混跑
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 快慢 Experiment 交给调度器混跑
 
 一批 Experiment 有的 Attempt 很慢、有的很快时，不需要手工分波或为快任务预留名额。

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-max-per-experiment
-title: 只限制撞限额的 Experiment
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 只限制撞限额的 Experiment
 
 同一批实验里只有一个 Agent 服务频繁限流时，在该 Experiment 上设置 `maxConcurrency: N`，不要降低整次 Invocation 的全局上限。
@@ -16,6 +7,6 @@ feature: docs/feature/experiments/README.md
 这个保证只在本 Invocation 内成立；多开终端后各边上限相加。即使它们追加同一 Record root，执行去重与同一 Experiment 的 dispatch claim 仍由 Coordination 处理；账户级配额用外部编排或分别调低每条命令的值。
 
 该限制在 `PLAN` 行点名（`concurrency 19 (from flag) · mempal ≤1`）。
-`--max-concurrency` 调大后并发仍上不去时，第一眼便知是哪个实验的限制在收（契约见 [CLI · live 面板](../cli.md#运行中的-live-面板)）。
+`--max-concurrency` 调大后并发仍上不去时，第一眼便知是哪个实验的限制在收（契约见 [CLI · live 面板](../cli/README.md#运行中的-live-面板)）。
 
 所有实验都受本机或 Provider 容量限制时，改用[全局并发](concurrency-max-global.md)。

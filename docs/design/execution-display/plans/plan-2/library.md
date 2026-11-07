@@ -22,7 +22,7 @@ export const game = defineAdapter({
 });
 ```
 
-`recordTrace` 事件的字段由 [保存通用执行轨迹](../../../../feature/adapters/library.md#保存通用执行轨迹) 定义。
+`recordTrace` 事件的字段由 [保存通用执行轨迹](../../../../feature/adapters/library/README.md#保存通用执行轨迹) 定义。
 
 ## formatter
 

@@ -1,4 +1,4 @@
-// JSON profile renderer(见 docs/feature/experiments/cli.md「机器怎么读:--json」与「事件与
+// JSON profile renderer(见 docs/feature/experiments/cli/README.md「机器怎么读:--json」与「事件与
 // 计划文档的 TypeScript 形状」)。合并了此前 agent.ts + ci.ts 两个 profile —— 逐项对照证实
 // agent 档/ci 档是同一消费者模型的两套参数(heartbeat 30/60s、失败展开上限 5/50、流路由、词法
 // 前缀……),没有模型差,见 memory/exp-output-two-forms-ruling.md。
@@ -464,7 +464,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         elsewhere: state.elsewhere,
         queued: state.queued,
         // 与 human 首行同一份状态、同一套划分:已了结的 attempt 按 verdict 分项,消费方不必
-        // 自己从合计数里猜成败(契约见 docs/feature/experiments/cli.md 的 ProgressEvent)。
+        // 自己从合计数里猜成败(契约见 docs/feature/experiments/cli/README.md 的 ProgressEvent)。
         passed: state.passed,
         failed: state.failed,
         errored: state.errored,
@@ -720,7 +720,7 @@ export interface JsonPlanRow {
   /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。 */
   dispatch?: JsonPlanDispatch[];
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(见
-   *  docs/feature/experiments/architecture.md「并发 Invocation:用例锁」)。`--dry` 只读锁
+   *  docs/feature/experiments/architecture/README.md「并发 Invocation:用例锁」)。`--dry` 只读锁
    *  目录,不取锁、不等待;省略等于 `false`(JSON.stringify 丢弃 `undefined` 属性,
    *  天然满足这条省略语义,不需要显式写 `locked: false`)。 */
   locked?: boolean;

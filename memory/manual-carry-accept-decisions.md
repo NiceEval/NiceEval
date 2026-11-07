@@ -1,24 +1,8 @@
----
-format: concord.document/v1
-id: manual-carry-accept-decisions
-title: 手动复用标记定稿的裁决
-createdAt: 2026-07-30T19:00:43+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/manual-carry-accept-decisions.md
-  commit: 6387770017acc7a82907dcd0f9dda6fbf2b28a4f
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 手动复用标记定稿的裁决
 
 日期:2026-07-30。背景:全局 judge model 改名把 6 题里 5 道不用 judge 的题一起作废,
 用户要「手动允许重跑与允许不重跑」的对称权限。定稿落
-`docs/feature/experiments/cache.md`(manifest、`--accept`)与 `cli.md`(`--dry` 原因、TTY 标记)。
+`docs/feature/experiments/architecture/cache.md`(manifest、`--accept`)与 `cli.md`(`--dry` 原因、TTY 标记)。
 
 ## 裁决 1:放宽是重锚,不是持久 tag,因此没有过期问题
 
@@ -70,4 +54,4 @@ history: []
 
 评审同批修正:裁决 4 的整组语义与反事实指纹判据从 memory/测试文档升格进
 `cache.md` `--accept` 节正文;`--rerun failed` 组合语义补进同节;
-`docs/engineering/testing/unit/record.md` 超时触发层声明与两员 `trigger` 枚举对齐。
+`docs/engineering/testing/architecture/unit/record.md` 超时触发层声明与两员 `trigger` 枚举对齐。

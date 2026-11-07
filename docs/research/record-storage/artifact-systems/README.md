@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-storage-artifact-systems
-title: Artifact 与 CAS 系统怎样保存大材料
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources: []
+observedAt: 2026-08-25
 ---
+
 # Artifact 与 CAS 系统怎样保存大材料
 
 > 观察日期：2026-08-25

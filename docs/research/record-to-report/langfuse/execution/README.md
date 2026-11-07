@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-langfuse-execution
-title: Langfuse 执行顺序：请求、实验、失败与 resume
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Langfuse 执行顺序：请求、实验、失败与 resume
 
 > 观察日期：2026-08-14

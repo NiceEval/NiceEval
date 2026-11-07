@@ -57,7 +57,7 @@ interface Turn {
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 
 `usage` 的 token 桶按恒互斥口径落值:`inputTokens` 是未缓存输入。
-OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Architecture](../../run/architecture.md))。
+OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Architecture](../../run/architecture/README.md))。
 各协议的原生口径与扣减明细见各 adapter 的 cost 文档。
 网关实测成本只经 `usage.costUSD` 显式带回,core 从不从 token 反推。
 
@@ -106,7 +106,7 @@ interface SandboxAgentContext extends AgentContext {
 - `progress` 是 Human active 行可覆写的短期状态;`diagnostic` 是结构化 warning/error,但不改变 Turn status 或 attempt verdict。
 - `log(msg)` 是显式 timeout breadcrumb。它也更新 Human active 行，但最近若干条会并入 timeout error。
   Adapter 不能用 `log` 承载 user message、tool input 或其它只应在运行中显示的文本。
-完整用法见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
+完整用法见 [Adapter Library · 向运行反馈进度与诊断](../library/README.md#向运行反馈进度与诊断)。
 
 ## 配置归属不变量
 
@@ -139,7 +139,7 @@ before 基础设施失败产生 `errored`，Agent 运行结果通过 Turn 表达
 `before` / `after` 遵循成对语义：`after` 当且仅当本 Attempt 走到过 agent before 时点才执行，`before` 抛错不豁免。
 Sandbox Agent 的两个 Hook 接收 `(sandbox, ctx)`；Direct Agent 的两个 Hook 只接收 `ctx`，不创建也不伪造 Sandbox。
 并发状态以 `ctx.session` 或 Adapter 自有的 Attempt 键管理。
-完整顺序见[三方准备时序](../../sandbox/lifecycle.md)。
+完整顺序见[三方准备时序](../../sandbox/architecture/lifecycle.md)。
 
 一次逻辑 `send` 的边界横跨首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试条目；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
 
@@ -158,4 +158,4 @@ before 与 send 的 `ctx.signal` 合并当前 callback fiber interruption 与 At
 after 使用 Runner 的独立 cleanup deadline，不继承已取消的 Attempt signal。
 cleanup failure 只形成 after diagnostic，不会取代原始失败。
 
-正常 keep 或 Sandbox 复用不要求清掉任务自己有意保留的服务；Agent after 则必须保证 Agent driver 不会继续发模型请求。异常路径优先保证不再执行：无法证明 driver 与命令树已静止时，不能把 Sandbox 作为可安全复用或可交互的成功现场留下（见 [Sandbox 生命周期](../../sandbox/architecture.md)）。
+正常 keep 或 Sandbox 复用不要求清掉任务自己有意保留的服务；Agent after 则必须保证 Agent driver 不会继续发模型请求。异常路径优先保证不再执行：无法证明 driver 与命令树已静止时，不能把 Sandbox 作为可安全复用或可交互的成功现场留下（见 [Sandbox 生命周期](../../sandbox/architecture/README.md)）。

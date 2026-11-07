@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: rerun-gear-replaces-force
-title: 裁决:缓存口径收敛成 `--rerun` 三档,`--force` 删除
-createdAt: 2026-07-25T10:27:54+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/rerun-gear-replaces-force.md
-  commit: 3cd2cbe6e6aeca3763784bc44ab39446129ab37e
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 裁决:缓存口径收敛成 `--rerun` 三档,`--force` 删除
 
 **裁决**(2026-07-25)。「上一轮的结果哪些还算数」是一根轴,给一个旋钮三档:
@@ -46,4 +30,4 @@ node 脚本遍历 `result.json` 拿到的,见
 全部命中缓存的零派发运行里这一行尤其是要的那条命令。
 
 落点:`docs/runner.md`「缓存:指纹去重」、`docs/feature/experiments/use-case/rerun.md`(原 force.md)、
-`docs/feature/experiments/cli.md`(flag 表 + NEXT 面板 + AI 循环)。
+`docs/feature/experiments/cli/README.md`(flag 表 + NEXT 面板 + AI 循环)。

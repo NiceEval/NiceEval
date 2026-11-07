@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/experiments-runner.md
+// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-current-niceeval
-title: NiceEval 当前存储证据
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/current-niceeval.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # NiceEval 当前存储证据
 
 > 核对日期：2026-08-25

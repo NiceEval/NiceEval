@@ -15,7 +15,7 @@ const frame = await cursor.next();
 
 ## SDK reducer
 
-完整单元事件优先交给 [`sdk/`](../sdk/README.md) 对应转换器，例如：
+完整单元事件优先交给 [`sdk/`](sdk/README.md) 对应转换器，例如：
 
 - `createClaudeSdkEventStream()`
 - `createCodexThreadEventStream()`

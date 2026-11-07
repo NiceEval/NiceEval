@@ -23,7 +23,6 @@ import { runEffect, type RunSummary } from "./run.ts";
 import { runTakeover } from "./takeover.ts";
 import { verifyRelease } from "./verify-release.ts";
 import { formatCause } from "./format-cause.ts";
-import { runRedEvidence } from "./red-evidence.ts";
 
 class E2ECliError extends Data.TaggedError("E2ECliError")<{ readonly detail: string }> {}
 
@@ -45,14 +44,6 @@ const json = Options.boolean("json").pipe(Options.withDefault(false), Options.wi
 const keepWorkdir = Options.boolean("keep-workdir").pipe(Options.withDefault(false), Options.withDescription("Retain isolated workdirs for local diagnosis."));
 const artifactRoot = optionalText("artifact-root").pipe(Options.withDescription("Durable directory for receipts and retained candidate bytes."));
 const nativeArgs = Args.string("native-test-arg").pipe(Args.variadic);
-const problem = Options.string("problem").pipe(Options.withDescription("Canonical repository-relative Problem Memory path bound into every receipt."));
-const problemEpoch = Options.integer("problem-epoch").pipe(Options.withDescription("Current non-negative Problem epoch bound into every receipt."));
-const problemBinding = (path: string, epoch: number): Effect.Effect<{ readonly path: string; readonly epoch: number }, E2ECliError> => {
-  const canonical = path.length > 0 && path === path.trim() && !path.startsWith("/") && !/[\\\0\r\n#]/u.test(path) && path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
-  return canonical && Number.isSafeInteger(epoch) && epoch >= 0
-    ? Effect.succeed({ path, epoch })
-    : Effect.fail(new E2ECliError({ detail: "--problem must be a canonical repository-relative path and --problem-epoch must be a non-negative safe integer" }));
-};
 
 type PlanConfig = {
   readonly lane: PlanCli["lane"];
@@ -120,21 +111,15 @@ const runCommand = Command.make("run", { candidate: Options.string("candidate").
   const summary = yield* runEffect({ repoIds: selection?.repoIds ?? config.repoIds, candidatePath: config.candidate, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs), keepWorkdir: config.keepWorkdir, repoConcurrency: Math.max(selection?.repoIds.length ?? config.repoIds.length, 1), ...(selection === undefined ? {} : { selection: selection.selection }) });
   yield* printSummary(summary);
 })))).pipe(Command.withDescription("Run an existing candidate for explicit repositories or one plan cell."));
-const runTakeoverCommand = (config: { readonly candidate: string; readonly repo: string; readonly selector: string; readonly inventory: string; readonly problem: string; readonly problemEpoch: number; readonly artifactRoot: string | undefined; readonly nativeArgs: readonly unknown[] }) => {
-  const nativeArgs = decodeNativeArgs(config.nativeArgs);
-  return problemBinding(config.problem, config.problemEpoch).pipe(
-    Effect.flatMap((problem) => loadRootEnv.pipe(Effect.andThen(runTakeover({ candidatePath: config.candidate, repoId: config.repo, selector: config.selector, inventoryId: config.inventory, problem, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs })))),
-    Effect.flatMap((summary) => Console.log(JSON.stringify(summary, null, 2)).pipe(Effect.andThen(summary.category === "pass" ? Effect.void : Effect.fail(new E2ECliError({ detail: summary.detail }))))),
-    Effect.mapError((cause) => new E2ECliError({ detail: errorDetail(cause) })),
-  );
-};
-const takeoverCommand = Command.make("takeover", { candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")), selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector.")), inventory: Options.string("inventory").pipe(Options.withDescription("Managed inventory ID returned by docs test inventory.")), problem, problemEpoch, artifactRoot, nativeArgs }, runTakeoverCommand).pipe(Command.withDescription("Run the deterministic reliability takeover matrix and return a managed netake_... evidence ID."));
-const redEvidenceCommand = Command.make("red", { candidate: Options.string("candidate").pipe(Options.withDescription("Required old or minimally reversed candidate .tgz path.")), candidateGitSha: Options.string("candidate-git-sha").pipe(Options.withDescription("Full Git object id identifying the candidate source or minimal reverse patch base.")), repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")), selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector.")), inventory: Options.string("inventory").pipe(Options.withDescription("Managed inventory ID returned by docs test inventory.")), problem, problemEpoch, artifactRoot, nativeArgs }, (config) => problemBinding(config.problem, config.problemEpoch).pipe(
-  Effect.flatMap((problem) => loadRootEnv.pipe(Effect.andThen(Effect.scoped(runRedEvidence({ candidatePath: config.candidate, candidateGitSha: config.candidateGitSha, repoId: config.repo, selector: config.selector, inventoryId: config.inventory, problem, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs) }))))),
-  Effect.flatMap((summary) => Console.log(JSON.stringify(summary, null, 2))),
-  Effect.mapError((cause) => new E2ECliError({ detail: errorDetail(cause) })),
-)).pipe(Command.withDescription("Run one exact collected case against an old candidate and return a managed nered_... evidence ID for an ordinary public regression."));
-const evidenceCommand = Command.make("evidence").pipe(Command.withDescription("Generate formal case evidence from root-runner public observations."), Command.withSubcommands([redEvidenceCommand]));
+const takeoverCommand = Command.make("takeover", {
+  candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")),
+  repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")),
+  selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector from concord test list.")),
+  artifactRoot, nativeArgs,
+}, (config) => loadRootEnv.pipe(
+  Effect.andThen(runTakeover({ candidatePath: config.candidate, repoId: config.repo, selector: config.selector, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs) })),
+  Effect.flatMap(summary => Console.log(JSON.stringify(summary, null, 2)).pipe(Effect.andThen(summary.category === "pass" ? Effect.void : Effect.fail(new E2ECliError({ detail: summary.detail }))))),
+)).pipe(Command.withDescription("Run NiceEval's private reliability matrix with fresh native collection; not Concord fix verification."));
 const diagnoseFrom = Options.string("from").pipe(Options.withDescription("Formal retained run summary.json path."));
 const diagnoseRepo = Options.string("repo").pipe(Options.withDescription("Single retained scenario repository id."));
 const diagnoseTimeout = Options.integer("timeout-seconds").pipe(Options.withDefault(15), Options.withDescription("Positive diagnostic command timeout in seconds (default: 15)."));
@@ -152,7 +137,7 @@ const diagnoseExecCommand = Command.make("exec", { from: diagnoseFrom, repo: dia
 const diagnoseCommand = Command.make("diagnose").pipe(Command.withDescription("Run local-only fast diagnostics from a retained formal run."), Command.withSubcommands([diagnoseTestCommand, diagnoseExecCommand]));
 const verifyReleaseCommand = Command.make("verify-release", { plan: Options.string("plan").pipe(Options.withDescription("Required release plan JSON path.")), candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), receiptRoot: Options.string("receipt-root").pipe(Options.withDescription("Required durable receipt root.")), tag: Options.string("tag").pipe(Options.withDescription("Required vX.Y.Z release tag.")) }, (config) => verifyRelease({ planPath: config.plan, candidatePath: config.candidate, receiptRoot: config.receiptRoot, tag: config.tag }).pipe(Effect.flatMap((verification) => Console.log(JSON.stringify(verification, null, 2))))).pipe(Command.withDescription("Verify a release candidate against a full plan and durable receipts."));
 
-export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, evidence, takeover, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, evidenceCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
+export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, reliability takeover, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
 
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 const signalState: { first: ShutdownSignal | undefined; offerSignal: ((signal: ShutdownSignal) => void) | undefined } = { first: undefined, offerSignal: undefined };

@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: declare-fatal-scope
-title: 抛出点声明死因:一次命中,按波及范围止损
-createdAt: 2026-07-24T18:03:58+08:00
-kind: use-case
-feature: docs/feature/error-classification/README.md
----
-
-
 # 抛出点声明死因:一次命中,按波及范围止损
 
 ## 解决什么问题
@@ -81,7 +71,7 @@ feature: docs/feature/error-classification/README.md
 
 - **实验起跑前就能探的，写在实验级 `setup` 里更早止损。**
   `ExperimentDefinition.setup` 抛错（任何错误，不需要 fatal 错误类）发生在任何 Attempt 派发之前。
-  它写 Run-scoped 执行错误通道事件 与 incomplete receipt，不伪造一批带 `errored` Verdict 的 Attempt（见 [Experiments](../../experiments/library.md#实验级共享服务setup-与-teardown)）。
+  它写 Run-scoped 执行错误通道事件 与 incomplete receipt，不伪造一批带 `errored` Verdict 的 Attempt（见 [Experiments](../../experiments/library/README.md#实验级共享服务setup-与-teardown)）。
   per-attempt 阶段里的声明兜的是「实验级 setup 过了、死因后来才暴露」的时段。
 - **只声明确定性死因,拿不准就不声明。**
   判据是可证明性:共享服务、共享凭据、fixture 确定性缺失属于能证明;「看起来像基建问题」「fixture 服务偶尔超时」不构成——抖动声明下去,会把「本可能第二次就好」的机会一并杀掉。

@@ -1,4 +1,4 @@
-// 输出形态解析(见 docs/feature/experiments/cli.md「每条命令一个人读 text 面,`--json` 是机器面」
+// 输出形态解析(见 docs/feature/experiments/cli/README.md「每条命令一个人读 text 面,`--json` 是机器面」
 // 与 memory/exp-output-two-forms-ruling.md)。只有一个分支变量:`--json` 是否传入 —— 没有
 // `auto`/CI 环境变量嗅探,没有第三档;TTY 只决定人读文本内部走哪个版式(live 面板还是非 TTY
 // 追加流),那是 human.ts 自己按 `io.stderr.isTTY` 再分派的职责,不改变这里的两选一结果。

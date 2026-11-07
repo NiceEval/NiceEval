@@ -1,19 +1,10 @@
----
-format: concord.document/v1
-id: cache-adopt-migrated-config
-title: 审阅后采用历史结果
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 审阅后采用历史结果
 
 当前目标出现缺口时，先查看原因与旧 Attempt。历史可查看不表示它适用于当前任务；
 `accept` 只采用已明确选择且通过资格检查的结果，不重新执行 Agent，也不重新评分。
 
 例如，同一份固定 digest 的 Docker 镜像换了仓库引用，任务、判据与其它运行输入都没有变化。
-先让 dry plan 检查[有限采用规则](../cache.md#显式采用的资格)，再审阅具体结果：
+先让 dry plan 检查[有限采用规则](../architecture/cache.md#显式采用的资格)，再审阅具体结果：
 
 ```sh
 niceeval view --run <source-run-id>
@@ -72,7 +63,7 @@ Attempt 的 origin Run、Core outcome、Assertions 与 locator 都不变；Verdi
 ## 改名后承接已删除实验的结果
 
 实验定义从 `compare/old` 改为 `compare/new`，旧 Run 仍保留原来的名字。先从历史 Run 中选定一次完整结果，
-再按[实验改名契约](../rename.md)采用到当前目标；不必恢复旧文件，也不需要逐个输入 Attempt ID。
+再按[实验改名契约](../cli/rename.md)采用到当前目标；不必恢复旧文件，也不需要逐个输入 Attempt ID。
 
 ```sh
 niceeval show --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706

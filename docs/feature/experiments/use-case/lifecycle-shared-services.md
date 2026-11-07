@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: lifecycle-shared-services
-title: 启动实验级共享服务
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 启动实验级共享服务
 
 一个 mock API、临时数据库或隧道只需要服务本次 Experiment 时，在 experiment `before` 中启动，通过模块闭包交给后续 prepare command 或 Agent 工厂，并在 `after` 中关闭。

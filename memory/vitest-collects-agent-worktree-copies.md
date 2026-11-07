@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: vitest-collects-agent-worktree-copies
-title: vitest 把 agent 临时 worktree 里的旧源码副本当成正式测试跑
-createdAt: 2026-07-13T14:53:04+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/vitest-collects-agent-worktree-copies.md
-  commit: b66929aff97305dc446afae83772ab8c8ef2d3f6
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [vitest-collects-agent-worktree-copies](vitest-collects-agent-worktree-copies.md) — `.claude/worktrees/` 被 git 忽略但不被 vitest 忽略,4 个废弃 agent worktree 里的整份 src 副本被当成正式测试跑(45% 的测试跑的是旧源码,抓不到回归却能凭陈旧原因弄红 CI);修为 vitest.config.ts 的 exclude 补 `.claude/**`(与 `.repos/**` 同类)"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # vitest 把 agent 临时 worktree 里的旧源码副本当成正式测试跑
 
 ## 现象
@@ -56,6 +26,6 @@ resolution:
 
 废弃 worktree 本身用 `git worktree prune` + 删目录清掉，但**不能只做这一步**——下次 agent 再开 worktree 问题就回来了。配置里的 exclude 才是根治。
 
-一条可复用的对账判据，已升格进 [`docs/engineering/testing/unit/README.md`](../docs/engineering/testing/unit/README.md)「套件边界」：**每个测试入口报出的文件数应当等于它那几个 include 目录下测试文件的实际数量，对不上就是收进了不该收的东西。**（写下这条时套件只有 `pnpm test` 一个入口，现已按验证对象分成三个。）
+一条可复用的对账判据，已升格进 [`docs/engineering/testing/architecture/unit/README.md`](../docs/engineering/testing/architecture/unit/README.md)「套件边界」：**每个测试入口报出的文件数应当等于它那几个 include 目录下测试文件的实际数量，对不上就是收进了不该收的东西。**（写下这条时套件只有 `pnpm test` 一个入口，现已按验证对象分成三个。）
 
 发现于 2026-07-13 的测试套件审计，见 [[test-budget-inverted-pyramid]]。

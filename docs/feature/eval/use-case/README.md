@@ -1,8 +1,8 @@
 # Eval 用例
 
 本目录把 `defineEval` 与 `defineScoreEval` 组合成真实场景。基础契约只在
-[Library](../library.md)、[Context](../library/context.md)、[Assertions](../../assertions/README.md) 和
-[Sandbox](../../sandbox/library.md) 定义。
+[Library](../library/README.md)、[Context](../library/context.md)、[Assertions](../../assertions/README.md) 和
+[Sandbox](../../sandbox/library/README.md) 定义。
 
 ## 会话驱动
 

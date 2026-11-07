@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: trace-mutation-validates-dependencies-before-exclusive-lease
-title: Trace 多文件发布前置条件在 exclusive lease 外验证
-createdAt: 2026-09-05
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Trace 多文件发布前置条件在 exclusive lease 外验证
 
 P1；2026-09-05，审查基线 `6c6d5ce39414df86be304fb3ed6923d27aae775a`。来源：Sol review，父 agent 独立复核。入口：`packages/repo-tools/src/docs/trace/relation-mutation.ts:1032`。

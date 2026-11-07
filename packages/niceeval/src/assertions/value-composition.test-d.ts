@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/assertions.md
+// cases: docs/engineering/testing/architecture/unit/assertions.md
 // Type-only consumer contracts, checked by package typecheck and excluded from runtime Unit collection.
 import { expectTypeOf } from "vitest";
 import { countWhere, defineValueMatch, equals, filterWhere, mapEach, mapValue, inOrder, or, not, and, toolMatch, eventMatch, defineScoreMatch, type BooleanMatch, type CollectionValue } from "./match.ts";

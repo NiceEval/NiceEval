@@ -1,6 +1,6 @@
 // JSON / JUnit 报告器:把运行结果落成机器可读 artifact,接 CI 或下游 dashboard。
 // 两者都是「整次运行结束时写一份聚合文件」,见
-// docs/feature/experiments/cli.md「输出流和落盘节奏」——一旦开始写就必须原子替换目标:
+// docs/feature/experiments/cli/README.md「输出流和落盘节奏」——一旦开始写就必须原子替换目标:
 // 半途失败(磁盘满、权限问题、进程被杀)不能把上一次成功的 JSON/JUnit 覆盖成截断文件,
 // 那会让 CI 读到一份看似存在、实际损坏的报告,比「文件不存在」更危险。
 

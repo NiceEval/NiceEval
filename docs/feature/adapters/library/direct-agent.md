@@ -61,7 +61,7 @@ export default defineAgent({
 
 ## 结构化转换
 
-应用返回某个已支持 SDK 的结果或原生事件时，使用对应 [`sdk/`](../sdk/README.md) 转换器。
+应用返回某个已支持 SDK 的结果或原生事件时，使用对应 [`sdk/`](sdk/README.md) 转换器。
 转换器只处理协议字段，fetch endpoint、请求体和应用审批接口仍在本文件中。
 
 应用协议是私有形状时，`toStreamEvents` 可以是项目自己的纯函数。

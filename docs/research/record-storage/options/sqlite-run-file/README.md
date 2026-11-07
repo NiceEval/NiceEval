@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-options-sqlite-run-file
-title: 候选三：一 Run 一 SQLite application file
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/options/sqlite-run-file.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # 候选三：一 Run 一 SQLite application file
 
 > 状态：generic collection 成立时的领先候选；采用前有硬门槛

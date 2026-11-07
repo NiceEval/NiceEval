@@ -347,7 +347,7 @@ export interface AgentContext {
    * 作用域反馈:报告此刻正在做什么(turn / tool / 安装进度)。短命状态——Human profile
    * 更新 active 行,`agent`/`ci` 不逐条打印,也不进最终结果;不要每个 token/delta 都调用。
    * runner 按当前回调所处的生命周期阶段(agent.before / agent.run / agent.after)归因,
-   * 调用方不能冒充其它阶段(见 docs/feature/experiments/library.md)。
+   * 调用方不能冒充其它阶段(见 docs/feature/experiments/library/README.md)。
    */
   progress(update: ProgressUpdate): void;
   /**

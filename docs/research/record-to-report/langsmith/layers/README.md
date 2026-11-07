@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-langsmith-layers
-title: LangSmith 的原生 layer、component 与 resource
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/langsmith/layers.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # LangSmith 的原生 layer、component 与 resource
 
 本页只回答 LangSmith 自己怎样命名产品边界、谁拥有资源、资源怎样引用。执行时序见 [execution.md](../execution/README.md)，字段和物理介质见 [storage.md](../storage/README.md)。源码固定核对官方 `langchain-ai/langsmith-sdk` commit [`345a522`](https://github.com/langchain-ai/langsmith-sdk/commit/345a52252af163abe33699fb361038f5783c9024)（2026-08-13 UTC）。

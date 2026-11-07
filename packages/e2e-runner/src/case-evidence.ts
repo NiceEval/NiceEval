@@ -1,17 +1,13 @@
-import { bridgeBoundary, engineCall, managedImplementationDigest, decodeRepositorySourceIdentityV4, sameRepositorySourceIdentity } from "./concord-engine.ts";
-import { ReceiptSchema as NativeCaseReceiptSchema, CertificateSchema as NativeReliabilityCertificateSchema, InventorySchema, WorkspaceInventorySchema, decodeWire, type NativeCaseReceipt, type NativeReliabilityCertificate, type RepositorySourceIdentityV4 } from "./bridge-wire.ts";
-import { ReadGuards } from "./bridge-guards.ts";
-import { parseBridgeJson } from "./bridge-json.ts";
+import { bridgeBoundary, signPrivateArtifact, validatePrivateArtifact, managedImplementationDigest, decodeReliabilitySourceIdentity, sameRepositorySourceIdentity } from "./repository-evidence.ts";
+import { ReceiptSchema as NativeCaseReceiptSchema, CertificateSchema as NativeReliabilityCertificateSchema, InventorySchema, type NativeCaseReceipt, type NativeReliabilityCertificate, type ReliabilitySourceIdentity } from "./bridge-wire.ts";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { Effect, Predicate, Schema } from "effect";
+import { Effect, Predicate } from "effect";
 import { CASE_ID_PATTERN, type CaseInventoryReceipt, type CollectedCase } from "./inventory.ts";
 
 export type EvidenceJson = null | boolean | number | string | readonly EvidenceJson[] | { readonly [key: string]: EvidenceJson };
 export type EvidenceResource = Readonly<Record<string, EvidenceJson>>;
 export type FormalCaseReceiptV2 = Omit<NativeCaseReceipt, "source" | "cleanup"> & {
-  readonly source: RepositorySourceIdentityV4;
+  readonly source: ReliabilitySourceIdentity;
   readonly cleanup: { readonly ok: boolean; readonly resources: readonly EvidenceResource[] };
 };
 export type FormalCaseReceipt = FormalCaseReceiptV2;
@@ -28,8 +24,7 @@ export const sha256Sri = (digest: string): string => {
   if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("candidate sha256 must be 64 lowercase hexadecimal characters");
   return `sha256-${Buffer.from(digest, "hex").toString("base64")}`;
 };
-const MANAGED_INVENTORY_ID = /^neinv_[0-9A-HJKMNP-TV-Z]{16}$/;
-export const managedInventoryImplementationDigest = managedImplementationDigest;
+export const reliabilityImplementationDigest = managedImplementationDigest;
 export const parseExactSelector = (selector: string): { readonly path: string; readonly caseId: string } => {
   const separator = selector.lastIndexOf("#"); const path = separator < 0 ? "" : selector.slice(0, separator); const caseId = separator < 0 ? "" : selector.slice(separator + 1);
   if (path.length === 0 || path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part.length === 0 || part === "." || part === "..")) throw new Error("invalid exact case selector path: " + JSON.stringify(selector));
@@ -48,7 +43,7 @@ export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: str
     : [path, "--grep", `(?:^| )${title}$`];
 };
 export const validateInventoryReceipt = Effect.fn("validateInventoryReceipt")(function* (input: unknown) {
-  const receipt = yield* engineCall("inventory", { kind: "case", action: "validate", value: input }, InventorySchema);
+  const receipt = yield* validatePrivateArtifact(input, "digest", InventorySchema);
   if (receipt.exit !== 0 || receipt.signal !== null || receipt.findings.length !== 0) throw new Error("inventory does not prove side-effect-free successful collection");
   if (receipt.executor.version.length === 0 || receipt.repo.length === 0 || receipt.checkout.length === 0) throw new Error("inventory identity is incomplete");
   const seen = new Set<string>();
@@ -63,21 +58,6 @@ export const validateInventoryReceipt = Effect.fn("validateInventoryReceipt")(fu
   return receipt;
 }, bridgeBoundary);
 
-export const readManagedInventoryReceipt = Effect.fn("readManagedInventoryReceipt")(function* (root: string, inventoryId: string, selector: string, guards = new ReadGuards(root)) {
-  if (!MANAGED_INVENTORY_ID.test(inventoryId)) throw new Error(`${inventoryId} is not a managed inventory ID`);
-  const path = resolve(root, ".repo-tools/test-inventories", `${inventoryId}.json`);
-  if (!existsSync(path)) throw new Error(`${inventoryId} is unavailable; collect a fresh inventory`);
-  const stored = decodeWire(Schema.Struct({ inventoryId: Schema.String, implementationDigest: Schema.String, inventory: WorkspaceInventorySchema }), parseBridgeJson(guards.read(path)));
-  if (stored.inventoryId !== inventoryId || stored.implementationDigest !== (yield* managedInventoryImplementationDigest(root))) throw new Error(`${inventoryId} is stale; collect a fresh inventory`);
-  const inventory = yield* engineCall("inventory", { kind: "workspace", action: "validate", value: stored.inventory }, WorkspaceInventorySchema, root);
-  const parsed = parseExactSelector(selector);
-  const receipts = inventory.repos.flatMap(entry => entry.receipts);
-  const validated = yield* Effect.forEach(receipts, validateInventoryReceipt);
-  const matches = validated.filter((receipt) => receipt.cases.some((entry) => entry.caseId === parsed.caseId && entry.path === parsed.path));
-  if (matches.length !== 1) throw new Error(`${inventoryId} does not contain exactly one receipt for ${selector}`);
-  guards.finish();
-  return matches[0]!;
-}, bridgeBoundary);
 export const selectInventoryCase = (receipt: CaseInventoryReceipt, selector: string, suiteId: string): CollectedCase => {
   const exact = parseExactSelector(selector);
   if (receipt.repo !== suiteId) throw new Error(`inventory suite ${receipt.repo} does not match selected suite ${suiteId}`);
@@ -89,10 +69,10 @@ export const selectInventoryCase = (receipt: CaseInventoryReceipt, selector: str
 };
 
 export const signFormalCaseReceipt = (unsigned: Omit<FormalCaseReceiptV2, "receiptSha256">) =>
-  engineCall("receipt", { action: "sign", value: unsigned }, NativeCaseReceiptSchema);
+  signPrivateArtifact(unsigned, "receiptSha256", NativeCaseReceiptSchema);
 export const validateFormalCaseReceipt = Effect.fn("validateFormalCaseReceipt")(function* (input: unknown) {
-  const receipt = yield* engineCall("receipt", { action: "validate", value: input }, NativeCaseReceiptSchema);
-  const source = yield* decodeRepositorySourceIdentityV4(receipt.source);
+  const receipt = yield* validatePrivateArtifact(input, "receiptSha256", NativeCaseReceiptSchema);
+  const source = yield* decodeReliabilitySourceIdentity(receipt.source);
   const selector = parseExactSelector(receipt.selector);
   if (receipt.caseId !== selector.caseId || source.caseId !== selector.caseId || source.nativeTestFile !== selector.path) throw new Error("formal receipt source identity does not bind the selector");
   if (receipt.candidate.sri !== sha256Sri(receipt.candidate.sha256)) throw new Error("formal receipt candidate SRI does not identify its sha256 bytes");
@@ -108,9 +88,9 @@ export const validateFormalCaseReceipt = Effect.fn("validateFormalCaseReceipt")(
   return { ...receipt, source, cleanup: { ...receipt.cleanup, resources } };
 }, bridgeBoundary);
 export const signTakeoverCertificate = (unsigned: Omit<TakeoverCertificateV2, "certificateSha256">) =>
-  engineCall("certificate", { action: "sign", value: unsigned }, NativeReliabilityCertificateSchema);
+  signPrivateArtifact(unsigned, "certificateSha256", NativeReliabilityCertificateSchema);
 export const validateTakeoverCertificate = Effect.fn("validateTakeoverCertificate")(function* (input: unknown, receipts: ReadonlyMap<string, FormalCaseReceipt>) {
-  const certificate = yield* engineCall("certificate", { action: "validate", value: input }, NativeReliabilityCertificateSchema);
+  const certificate = yield* validatePrivateArtifact(input, "certificateSha256", NativeReliabilityCertificateSchema);
   const observations = certificate.observations;
   const paths = [...observations.isolatedCopies, ...observations.sameCopy, observations.defaultParallel, observations.singleCase];
   if (new Set(paths).size !== 7 || observations.cleanup.length !== 7 || new Set(observations.cleanup).size !== 7 || paths.some((path) => !observations.cleanup.includes(path))) throw new Error("certificate observations are duplicate or lack cleanup coverage");
@@ -120,12 +100,12 @@ export const validateTakeoverCertificate = Effect.fn("validateTakeoverCertificat
     return yield* validateFormalCaseReceipt(receipt);
   }));
   const baseline = validated[0]!;
-  if (validated.some((receipt) => receipt.selector !== certificate.selector || receipt.caseId !== certificate.caseId || receipt.candidate.sha256 !== certificate.candidateSha256 || receipt.result.disposition !== "pass" || receipt.inventoryDigest !== baseline.inventoryDigest || canonicalJson(receipt.problem) !== canonicalJson(baseline.problem) || receipt.runner.implementationDigest !== baseline.runner.implementationDigest)) throw new Error("certificate receipts diverge from their selector, candidate, inventory, Problem, runner implementation, or source");
+  if (validated.some((receipt) => receipt.selector !== certificate.selector || receipt.caseId !== certificate.caseId || receipt.candidate.sha256 !== certificate.candidateSha256 || receipt.result.disposition !== "pass" || receipt.inventoryDigest !== baseline.inventoryDigest || receipt.runner.implementationDigest !== baseline.runner.implementationDigest)) throw new Error("certificate receipts diverge from their selector, candidate, inventory, runner implementation, or source");
   for (const receipt of validated) {
     if (!(yield* sameRepositorySourceIdentity(receipt.source, baseline.source))) throw new Error("certificate receipts diverge from their complete source identity");
   }
   if (certificate.greenReceipt !== observations.singleCase || receipts.get(observations.singleCase)!.observation !== "green" || validated.slice(0, 6).some((receipt) => receipt.observation !== "reliability")) throw new Error("certificate observations do not distinguish green from reliability receipts");
-  if (certificate.sourceDigest !== (yield* decodeRepositorySourceIdentityV4(baseline.source)).projection.digest) throw new Error("certificate source digest does not bind its receipts");
+  if (certificate.sourceDigest !== (yield* decodeReliabilitySourceIdentity(baseline.source)).projection.digest) throw new Error("certificate source digest does not bind its receipts");
   const isolated = validated.slice(0, 3).map((receipt) => receipt.native);
   if (isolated.some((native) => native.mode !== "isolated" || native.sequence !== 1 || native.caseCount !== 1 || native.parallelism !== 1) || new Set(isolated.map((native) => native.copyId)).size !== 3 || new Set(isolated.map((native) => native.copyPath)).size !== 3) throw new Error("certificate isolated observations do not prove three fresh copies");
   const sameA = validated[3]!.native;

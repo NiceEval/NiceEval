@@ -1,6 +1,6 @@
 // @concord-file
-// @concord-implements docs/feature/run/architecture.md
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run/architecture/README.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 // @concord-implements docs/feature/run-inspection/README.md
 
 import { createHash, randomUUID } from "node:crypto";
@@ -222,8 +222,8 @@ export function currentPublicationCutoffOnConnection(connection: RecordDatabase)
 }
 
 // @concord-code
-// @concord-implements docs/feature/run/architecture.md
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run/architecture/README.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 export function createRunResourceOnConnection(
   connection: RecordDatabase,
   input: CreateRunResourceInput,
@@ -269,8 +269,8 @@ export function createRunResourceOnConnection(
 }
 
 // @concord-code
-// @concord-implements docs/feature/run/architecture.md
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run/architecture/README.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 export function publishOriginAttemptOnConnection(
   connection: RecordDatabase,
   input: PublishOriginAttemptInput,
@@ -355,7 +355,7 @@ export function publishOriginAttemptOnConnection(
 }
 
 // @concord-code
-// @concord-implements docs/feature/run/architecture.md
+// @concord-implements docs/feature/run/architecture/README.md
 export function bindAttemptReferenceOnConnection(
   connection: RecordDatabase,
   input: BindAttemptReferenceInput,
@@ -445,8 +445,8 @@ function insertAbsences(
 }
 
 // @concord-code
-// @concord-implements docs/feature/run/architecture.md
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run/architecture/README.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 export function closeRunResourceOnConnection(
   connection: RecordDatabase,
   input: CloseRunResourceInput,
@@ -482,7 +482,7 @@ export function closeRunResourceOnConnection(
 }
 
 // @concord-code
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 export function recoverRunResourceOnConnection(
   connection: RecordDatabase,
   input: RecoverRunResourceInput,
@@ -566,8 +566,8 @@ function incomingReferences(connection: RecordDatabase, originRunId: string): re
 }
 
 // @concord-code
-// @concord-implements docs/feature/run/architecture.md
-// @concord-implements docs/feature/run/lifecycle.md
+// @concord-implements docs/feature/run/architecture/README.md
+// @concord-implements docs/feature/run/architecture/lifecycle.md
 export function deleteRunResourceOnConnection(
   connection: RecordDatabase,
   input: DeleteRunResourceInput,

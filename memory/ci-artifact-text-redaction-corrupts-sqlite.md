@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: ci-artifact-text-redaction-corrupts-sqlite
-title: CI 文本脱敏破坏 SQLite 诊断 artifact
-createdAt: 2026-10-18
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-promotions: []
-history: []
-evidenceRequirement: concord.native-reliability/v1
----
+# CI 文本脱敏破坏 SQLite 诊断 artifact
+
 ## 观察
 
 2026-10-17 的 [nightly E2E run 39015222188](https://github.com/NiceEval/NiceEval/actions/runs/39015222188) 中，`repo-batch-docker-9` 的 OpenCode 真实运行失败后上传了 Record，但公开 `niceeval query run --record ... --request -` 返回 `inspection-source-invalid`，原因为 `database disk image is malformed`。该 cell 的脱敏步骤报告替换 4 次。`repo-batch-docker-8` 的 OpenClaw cell 报告替换 15 次，并留下带 WAL 的未完成 Record；不能将其视为可移植的单文件输入。

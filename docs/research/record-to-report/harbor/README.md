@@ -1,13 +1,9 @@
 ---
-format: concord.document/v1
-id: record-to-report-harbor
-title: Harbor：Job、Trial、reward 与 Hub
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources:
   - https://harborframework.com/docs/run-jobs/run-evals
+observedAt: 2026-08-14
 ---
+
 # Harbor：Job、Trial、reward 与 Hub
 
 > 观察日期：2026-08-14

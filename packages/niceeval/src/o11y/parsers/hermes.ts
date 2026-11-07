@@ -1,5 +1,5 @@
 // Hermes sessions export / state.db 消息行解析器。方言只住这里,不进 core
-// (契约见 docs/feature/adapters/sdk/hermes/README.md)。
+// (契约见 docs/feature/adapters/library/sdk/hermes/README.md)。
 
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";

@@ -1,7 +1,7 @@
 // Run 级构建协调器:携带规划后只为仍需 fresh 的 BuildKey 工作。
 // single-flight、独立并发、逐 key timeout、全局准备上限、abort/cancel;
 // 写 sandbox.build timings 与 sandboxBuilds provenance;失败按依赖集合扇出。
-// 契约单源:docs/feature/sandbox/case.md「Run 级构建协调」;
+// 契约单源:docs/feature/sandbox/architecture/case.md「Run 级构建协调」;
 // 落盘形状:docs/feature/record/architecture.md「sandboxBuilds」。
 // 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Effect.sleep、
 // 并发闸用 Semaphore;公开 RunningSandboxBuilds 保持 Promise ABI,只在方法边界 runPromise。

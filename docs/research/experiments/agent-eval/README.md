@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: experiments-agent-eval
-title: Vercel agent-eval 的 ExperimentConfig
-createdAt: 2026-08-12
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/experiments/agent-eval.md
-  commit: 107a13b385b02c620a786064bded8bec766385b8
-kind: research
 sources: []
 ---
+
 # Vercel agent-eval 的 ExperimentConfig
 
 ## 它是什么

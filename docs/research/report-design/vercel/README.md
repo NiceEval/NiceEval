@@ -1,13 +1,9 @@
 ---
-format: concord.document/v1
-id: report-design-vercel
-title: Vercel `design.md`：报告网站设计指令
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources:
   - https://vercel.com/geist/vercel-brand.css
+observedAt: 2026-08-14
 ---
+
 # Vercel `design.md`：报告网站设计指令
 
 > 观察日期：2026-08-14

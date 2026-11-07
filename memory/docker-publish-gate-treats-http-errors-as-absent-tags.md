@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: docker-publish-gate-treats-http-errors-as-absent-tags
-title: Docker 发布 gate 将 HTTP 错误误判为版本 tag 不存在
-createdAt: 2026-09-05
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Docker 发布 gate 将 HTTP 错误误判为版本 tag 不存在
 
 P1；2026-09-05，审查基线 `6c6d5ce39414df86be304fb3ed6923d27aae775a`。来源：Sol review，父 agent 独立复核。入口：`.github/workflows/docker-image.yml:90`。

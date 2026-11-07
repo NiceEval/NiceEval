@@ -1,5 +1,5 @@
 // BuildKey / CaseKey 与携带门所需的身份解析。
-// 契约单源:docs/feature/sandbox/case.md「BuildKey 与 CaseKey」「身份解析」。
+// 契约单源:docs/feature/sandbox/architecture/case.md「BuildKey 与 CaseKey」「身份解析」。
 // BuildKey 管构建产物复用;CaseKey 管完整 attempt 环境身份与携带指纹。
 // 凭据值永不进身份;浮动 tag 解不出 digest 时保留声明值作为 opaque marker。
 

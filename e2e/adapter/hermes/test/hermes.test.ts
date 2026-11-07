@@ -71,7 +71,7 @@ it("真实 Hermes CLI adapter 完成运行并公开读回工具证据", async ()
         () => run.diagnostic(),
       );
 
-      // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli.md「结束反馈与
+      // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli/README.md「结束反馈与
       // receipt」）：completion、createdRunIds 与 publicationCutoff（每个 Experiment 一个 Run）。成败由下面带身份的
       // eval 事件精确断言，不从 receipt 猜计数。
       const inv = run.expReceipt();

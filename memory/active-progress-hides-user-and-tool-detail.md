@@ -1,42 +1,11 @@
 ---
-format: concord.document/v1
-id: active-progress-hides-user-and-tool-detail
-title: ACTIVE 进度隐藏用户消息与工具细节
-createdAt: 2026-08-27T11:33:07+08:00
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions:
-  - docs/feature/adapters/architecture.md#human-live-detail
-history: []
-resolution:
-  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: |-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - "E2E red: the installed-candidate local-protocol inverse removed Runner user projection and failed because the live PTY showed only the old turn summary plus tool detail, never user: local-live-user-sentinel."
-            - "E2E red: pnpm e2e test --repo eval -- --run test/active-progress-redaction.test.ts showed active-secret-c0 and the C1 OSC payload in the live dashboard instead of two <redacted> values."
-            - "E2E green: installed candidates passed cli/live-pty, eval/active-progress-redaction, adapter/local-protocol/live-progress, adapter/codex-cli/live-progress, and the two-turn adapter/claude-code/live-progress owners; the Testkit PTY lifecycle source also passed 7/7 against its built package."
-    proof:
-      - "E2E red: the installed-candidate local-protocol inverse removed Runner user projection and failed because the live PTY showed only the old turn summary plus tool detail, never user: local-live-user-sentinel."
-      - "E2E red: pnpm e2e test --repo eval -- --run test/active-progress-redaction.test.ts showed active-secret-c0 and the C1 OSC payload in the live dashboard instead of two <redacted> values."
-      - "E2E green: installed candidates passed cli/live-pty, eval/active-progress-redaction, adapter/local-protocol/live-progress, adapter/codex-cli/live-progress, and the two-turn adapter/claude-code/live-progress owners; the Testkit PTY lifecycle source also passed 7/7 against its built package."
-    source:
-      path: memory/active-progress-hides-user-and-tool-detail.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:47dd98e6e83d98e346a4777b589aff7fa5f29a429108d3d70c20ac03d79f14d0
+relations:
+  - role: supports
+    target: docs/feature/adapters/architecture/README.md#human-live-detail
 ---
+
+# ACTIVE 进度隐藏用户消息与工具细节
+
 ## Problem
 
 从安装后的 `niceeval exp` 运行 Codex 等支持原生增量事件的适配器时，Human TTY 的 ACTIVE 区只显示笼统阶段或截断的 turn 摘要，看不到 Runner 已知的完整 user message，也看不到适配器已收到的 command/tool 细节。用户因而无法在长时间运行过程中判断当前请求和动作是否正确。

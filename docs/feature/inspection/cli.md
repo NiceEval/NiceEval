@@ -41,7 +41,7 @@ comparison mode 与 fact kinds，避免调用方先取重 payload。后者以 `o
 request 只包含 `kind` 和可选的非空、去重 `experimentIds: readonly string[]`。ID 必须精确命中当前项目；
 任一 ID 未命中时整次请求失败，不输出部分结果。省略时选择当前发现的全部 Experiment。
 
-Experiment Host 一次求值当前目标，并在固定 cutoff 形成[当前适用性判断](../experiments/cache.md#当前结果可用性与执行选择)。
+Experiment Host 一次求值当前目标，并在固定 cutoff 形成[当前适用性判断](../experiments/architecture/cache.md#当前结果可用性与执行选择)。
 Inspection 消费这个冻结输入并关闭当前指标；终端与浏览器不得在历史 Overview 上自行过滤或重算。
 `project.get` 的 `project` result 字段如下，身份和指标继续使用本页既有类型：
 
@@ -60,7 +60,7 @@ Inspection 消费这个冻结输入并关闭当前指标；终端与浏览器不
 | `reuse` | `sourceRunId`、`locator`、`relation`、`action`，均指向已发布 Member 及其 exact Attempt；经身份域变更沿用时另有 `explanation`。 |
 | `gap` | `reason`、`issues`、可空 `sourceRunId`、`previous`；`previous` 为 `null` 或仅含 `sourceRunId`、`locator` 的历史入口。`reason` 为 `identity-mismatch` 或 `adoption-unproven` 时另有 `explanation`。 |
 
-`explanation` 是[差异说明](../experiments/cache.md#差异说明)的 `IdentityExplanation`，与 `exp --dry --json`、`accept --dry` 同一结构和同一比较对象。
+`explanation` 是[差异说明](../experiments/architecture/cache.md#差异说明)的 `IdentityExplanation`，与 `exp --dry --json`、`accept --dry` 同一结构和同一比较对象。
 reuse 分支只在 `kind: "match"` 时出现，`via` 列出所用的身份域变更；digest 直接相等的沿用不带该字段。
 身份差异不进入 `issues`：`issues` 只保存 reader 与 planning 的具名问题。
 
@@ -341,7 +341,7 @@ explanation 交付同一 operation 的读取范围与 fact kinds。failure 交�
 
 每个 source-bound success/explanation document 的 `source` 固定为
 `{ kind: facts.kind, publicationCutoffIdentity: facts.cutoff().identity }`。
-它不含路径。`PublicationCutoff` 只有 [Run 架构](../run/architecture.md#publicationcutoff) 定义的 `storeGeneration` 与 `revision`，不含 Run 计数；
+它不含路径。`PublicationCutoff` 只有 [Run 架构](../run/architecture/README.md#publicationcutoff) 定义的 `storeGeneration` 与 `revision`，不含 Run 计数；
 codec 的 allowed/required fields、base envelope 与 `run.list` envelope 都使用这一形状。
 
 这个 protocol document 只属于 CLI 编码边界，不是 Insight 输入、View DTO、缓存或第二份持久

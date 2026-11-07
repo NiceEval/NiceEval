@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-mlflow-schema-and-migration
-title: MLflow Schema 与 Migration
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # MLflow Schema 与 Migration
 
 > 观察日期：2026-08-14

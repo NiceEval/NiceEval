@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: carry-eligibility-and-fingerprint-scope-decisions
-title: 携带资格与指纹范围:2026-07-26 的三条设计裁决
-createdAt: 2026-07-26T12:30:35+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/carry-eligibility-and-fingerprint-scope-decisions.md
-  commit: 4b7b5e74294ff9b142231f1401f801f237bff2a0
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 携带资格与指纹范围:2026-07-26 的三条设计裁决
 
 一轮 cache.md 评审同时改了三处判据。记这条是因为其中两处的**第一版方案被推翻**,
@@ -32,7 +16,7 @@ history: []
 - **为什么需要第三个字段**:资格判据是逐条判定的热路径,让它去 `phases` 里翻一个可能不存在的
   阶段,判据就不再是「读一个字段即可判定」的简单形态——与用例锁「读锁文件即可判定」同一条纪律。
 - 日期:2026-07-26。落点:`docs/runner.md` 超时节、`docs/feature/record/architecture.md`
-  的 `AttemptRecord`、`docs/feature/experiments/cache.md` 携带资格节。
+  的 `AttemptRecord`、`docs/feature/experiments/architecture/cache.md` 携带资格节。
 
 ## 裁决二:loader 读入的数据文件**进**指纹
 
@@ -46,7 +30,7 @@ history: []
   `(路径, 内容哈希)` 即可,用户什么都不用做。被否决的规避手法则要求用户手写哈希
   (niceeval 不导出哈希函数),忘了就静默失效。
 - **真正留在线外的**:用户自己写 `fs.readFileSync` 读的文件——那才是 niceeval 看不见的。
-- 日期:2026-07-26。落点:`docs/feature/experiments/cache.md` 的「eval 源码闭包」节。
+- 日期:2026-07-26。落点:`docs/feature/experiments/architecture/cache.md` 的「eval 源码闭包」节。
 
 ## 裁决三:`--carry-ignoring-flag` 是一次重锚,不是一次豁免
 
@@ -59,7 +43,7 @@ history: []
   搬迁场景下永久正是想要的,所以改的是措辞和约束,不是行为。
 - **连带发现**:出口要对历史侧重算 configHash,而指纹是哈希、不可逆,所以立了一条规则——
   **进 configHash 的字段必须落进 `run.json`**。`strict` 当时就违反了它(进哈希、没落盘)。
-- 日期:2026-07-26。落点:`docs/feature/experiments/cache.md`、
+- 日期:2026-07-26。落点:`docs/feature/experiments/architecture/cache.md`、
   `docs/feature/record/library.md` 的 configHash 节。
 
 ## 复盘时要一起看的

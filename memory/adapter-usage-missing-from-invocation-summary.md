@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: adapter-usage-missing-from-invocation-summary
-title: Invocation 汇总遗漏 Adapter 逐调用用量
-createdAt: 2026-10-28
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-promotions: []
-history: []
-evidenceRequirement: concord.native-reliability/v1
----
 # Invocation 汇总遗漏 Adapter 逐调用用量
 
 ## 问题与根因

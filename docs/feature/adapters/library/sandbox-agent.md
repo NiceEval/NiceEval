@@ -59,7 +59,7 @@ CLI 非零、signal、transport 中断或无法辨认终态时 reject `SendFailu
 每个回调的 `ctx.progress(...)` 只更新当前 `agent.before` / `agent.run` / `agent.after` 的短期 activity。
 需要永久保留的协议降级、transcript 缺失或 cleanup 问题用 `ctx.diagnostic(...)` 写 diagnostic channel event。
 不要从 CLI stdout 的每个 frame 转发 progress,也不要直接写宿主进程的 stdout/stderr。
-完整语义见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
+完整语义见 [Adapter Library · 向运行反馈进度与诊断](README.md#向运行反馈进度与诊断)。
 
 Sandbox 级二进制、预热和跨 attempt 资源属于 Experiment layer 的 `before()` 或预构建输出；eval 的任务 Fixture 属于 Eval layer 的 `before()` 或 `test(t)`。
 三类准备不交换职责。

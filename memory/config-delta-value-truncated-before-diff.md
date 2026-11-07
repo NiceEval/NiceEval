@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: config-delta-value-truncated-before-diff
-title: 已修 差异值在构造点被截到 80 字符，截断点常落在差异点之前
-createdAt: 2026-08-04T18:01:11+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/config-delta-value-truncated-before-diff.md
-  commit: 304f18cb471498aa10fba1805c243afa8d2fc037
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "# 已修 差异值在构造点被截到 80 字符，截断点常落在差异点之前"
-    proof: []
-    source:
-      path: memory/config-delta-value-truncated-before-diff.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:82e2cd56edcd6ad07442beafa4582361a01fbde5793450fce659f143f9fc01e2
----
 # 已修 差异值在构造点被截到 80 字符，截断点常落在差异点之前
 
 - **现象**(2026-08-04，下游 compare/codex 复盘)：`--dry` 与 `--dry --json` 里 `config:sandboxLayer changed`、`plan:physical changed` 两条差异的 `from`/`to` 打印出来两侧完全相同，差异全被 `…` 吞掉；`niceeval accept` 落盘的 `acceptedFrom.differences` 与 `carriedAccepting` 留痕也是同一份被截断的字符串。用户拿着这份输出判断不了配置到底改了什么，只能去翻源码。
@@ -36,5 +6,5 @@ resolution:
   1. 构造侧完全不截断：`config-identity.ts` 与 `manifest.ts` 的截断函数改名 `serializeValue`，只做字符串投影（`JSON.stringify` 或原样返回字符串），不再限制长度。`ConfigFieldDelta`/`AcceptedDifference`/`CarriedAcceptance` 的字段形状不变（仍是 `string`），避免触发 record `schemaVersion` 升版。
   2. 落盘（`acceptedFrom.differences`、`carriedAccepting`）与 `--dry --json` 的 `ExpPlanDelta` 投影因此自动变成完整值——它们都是对构造侧输出的直接透传，没有独立的截断逻辑。
   3. 有界呈现搬到唯一的人读渲染点 `src/runner/feedback/human.ts` 的 `formatDryDelta`：新增 `windowChangedDeltaValues`，Changed 差异的双侧值对齐到第一处不同字符——公共前缀超过 24 字符时压缩显示但保留其尾部定位上下文，从差异点起两侧各留 56 字符的窗口，超出补 `…`；Added/Removed 单侧值仍按 80 字符简单上限截断（这一侧没有「两侧对比」的问题，独立截断不会丢差异点）。
-  4. 落点：`src/runner/config-identity.ts`、`src/runner/manifest.ts`、`src/runner/feedback/human.ts`；契约见 [cache.md「manifest：哈希做索引，清单做解释」](../docs/feature/experiments/cache.md#manifest哈希做索引清单做解释)；覆盖类别见 [experiments-runner.md「差异值的完整性边界」](../docs/engineering/testing/unit/experiments-runner.md)。
+  4. 落点：`src/runner/config-identity.ts`、`src/runner/manifest.ts`、`src/runner/feedback/human.ts`；契约见 [cache.md「manifest：哈希做索引，清单做解释」](../docs/feature/experiments/architecture/cache.md#manifest哈希做索引清单做解释)；覆盖类别见 [experiments-runner.md「差异值的完整性边界」](../docs/engineering/testing/architecture/unit/experiments-runner.md)。
 - **复盘**：这类 bug 的通用形状是「有界呈现的截断逻辑长在数据产出的源头而不是最终渲染点」——一旦源头截断，下游任何消费者（落盘审计、JSON 透传、多种人读格式）都拿不到完整信息去分别决定怎么呈现。构造侧只做「产出完整值」这一件事，「在哪呈现、呈现多少」留给离读者最近的那一层决定，这条分工本身值得作为通用设计判据记住。

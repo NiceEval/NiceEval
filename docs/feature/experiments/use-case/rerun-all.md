@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: rerun-all
-title: 外部条件变化后全量重验
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 外部条件变化后全量重验
 
 Agent CLI 升级、同名镜像重建或被测服务行为变化时，旧的 `passed` Attempt 也可能不再可信。
@@ -32,4 +23,4 @@ niceeval exp compare/bub-e2b memory/commit0-cachetool --rerun all
 
 提高 `revision` 或修改 `inputs` 本身会使旧指纹失效；同批使用 `--rerun all` 是一次明确的事故恢复动作，保证选中矩阵没有继续采用旧 Attempt。只运行 `--rerun all` 而不修 identity，下一轮仍可能再次采用语义已经变化的 Attempt。
 
-未登记 identity 的直接 callback 也属于这个场景：它默认不阻断跨 Run carry，但实现和动态输入变化不会自动作废旧 Attempt。发现遗漏后先改用 `defineSandboxCommand()`，再对受影响选择执行 `--rerun all`。完整契约见 [Sandbox Layer · 稳定 identity 与 opaque callback](../../sandbox/layers.md#稳定-identity-与-opaque-callback)。
+未登记 identity 的直接 callback 也属于这个场景：它默认不阻断跨 Run carry，但实现和动态输入变化不会自动作废旧 Attempt。发现遗漏后先改用 `defineSandboxCommand()`，再对受影响选择执行 `--rerun all`。完整契约见 [Sandbox Layer · 稳定 identity 与 opaque callback](../../sandbox/library/layers.md#稳定-identity-与-opaque-callback)。

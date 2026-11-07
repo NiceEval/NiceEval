@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-external-behavior-change
-title: Agent 或外部服务变化后重验
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # Agent 或外部服务变化后重验
 
 Agent CLI 升级、被测服务部署变化和 Agent 工厂内部参数通常不在 Eval 指纹中，默认运行仍可能采用旧 Attempt。

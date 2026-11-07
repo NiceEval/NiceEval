@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-retain-runtime-coordinate
-title: 留存每轮变化的运行时坐标
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 留存每轮变化的运行时坐标
 
 隧道 URL、临时实例地址等值在 before 后才知道，而且地址轮换本身不代表评估条件改变。

@@ -1,27 +1,3 @@
----
-format: concord.document/v1
-id: user-readable-testing
-title: 测试作者面与 E2E 组织方式
-createdAt: 2026-07-31T16:22:33+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/user-readable-testing/README.md
-  commit: 3f20d47ae02a7265b3e71b5f63288ce48bebdfc9
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-  - plan-4
-decision:
-  selected: plan-4
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-4
-  source:
-    path: docs/design/user-readable-testing/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:e030e4b208d5807dd11d87b9de68edb72b16010b2724c7e10bb1b0de253e1abc
-  targets: []
----
 # 测试作者面与 E2E 组织方式
 
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [PLAN-4](plans/plan-4/README.md) · [DECISION](DECISION.md) · [TESTKIT](TESTKIT.md)

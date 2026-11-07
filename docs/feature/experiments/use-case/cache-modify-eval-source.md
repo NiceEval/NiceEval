@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-modify-eval-source
-title: 修改评测源码后只重跑受影响项
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 修改评测源码后只重跑受影响项
 
 修改某个 Eval 的任务或断言，只会改变该 Eval 的源码闭包指纹；同一 Experiment 中其它 Eval 继续沿用。
@@ -36,4 +27,4 @@ feature: docs/feature/experiments/README.md
 
 改了判据没有「强制沿用旧结果」的出口，这是有意的：判据变了，旧判定就不能再采信，宁可多烧一次。
 `niceeval accept @<旧 locator> --dry` 必须解释判据变化并拒绝采用；正式采用同样失败且不写入 Run。
-判据没变但要重跑的场景走 [`--rerun`](重新运行/)。
+判据没变但要重跑的场景走 [`--rerun`](README.md#--rerun)。

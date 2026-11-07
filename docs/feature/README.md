@@ -12,17 +12,12 @@ query 或 View 交付；它不是作者可扩展的中间层。
 Feature 身份不声明同一时刻的源码状态；它表示后续实现与评审只能以这里的唯一目标为准。
 文档先行产生的 gap 只允许暂时存在，后续代码必须与 Feature 一致。
 
-查询入口是 `concord repo docs feature list` 与 `concord repo docs feature show`。结构写入从 `concord repo docs feature create --help` 与 `concord repo docs feature page --help` 进入。
+查询入口是 `concord list feature` 与 `concord show <id>`；新建 Feature 用 `concord new feature <name>`，既有页面直接编辑。布局与写法见 `concord --skill document`。
 
-## Feature 首期结构写入
+## 创建与编辑
 
-`feature create` 从共用的 [Feature Design Package](../_template/feature-design/README.md) 显式创建最小 Feature package；`feature page add` 只给既有 Feature 加入允许页面；`feature page set` 只替换既有页面正文。正文通过命令 `--help` 声明的输入参数交为候选内容，工具再负责结构、metadata、relations、lifecycle、生成区与 publication。页面命令不得隐式创建 Feature，也不得用手工路径代替它。
+`concord new feature <name> [--pages <list>]` 用 Concord 内置模板创建 Feature package，`concord new use-case <name> --feature <feature>` 在既有 Feature 下创建叶子 Use Case。既有页面与用例索引直接编辑。Roadmap 采用用 `concord roadmap start <id>`。
 
-首期不含 Feature retire、物理 delete、move 或 Roadmap adopt；这些名称不能被当作 CRUD 快捷方式，因为历史 package、relations 与 publication evidence 必须保留。
-
-`page set <feature> overview` 更新既有 Feature 首页正文，保留节点 metadata；`page add` 不重复创建首页。
-叶子 Use Case 从 `concord repo docs use-case create --help` 进入。
-它在已有 Feature 和用例索引下发布正文、节点 metadata 与可发现链接，不由 Feature 页面命令或手工建目录替代。
 Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的正文都是已裁决的目标契约。
 
 - `README.md`：用户为什么需要它、核心心智和入口。
@@ -31,26 +26,24 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - `use-case/`：CLI 的每个位置参数与 flag——或 Library 的每组公开 API——配一组用例文档。
 
   - 一篇只讲一个最小用户用例：一个问题、一次主要调用、对应反馈、边界与替代模式。
-  - 同一个 flag、API 或功能有两个以上独立用途时，为它建立子目录。
-  - 子目录 `README.md` 只负责解释选择哪篇，叶子文件各讲一个用途。
-  - 父目录已表达能力名时，叶子文件名不重复 flag 或 API 名。
+  - `use-case/` 不嵌套：同一个 flag、API 或功能有两个以上独立用途时，在 `use-case/README.md` 里为它建一节，解释选择哪篇；叶子文件平级放在 `use-case/` 下，各讲一个用途。
   - 契约单源仍在 `cli.md` / `library.md` 与对应功能页，用例篇只做叙事串联。
   - Feature 的 `use-case/README.md` 按 flag 或 API 分组列出各篇。
     Library 用例另附 API → 篇目对照表。
-- [`feature/use-case/`](use-case/README.md)：跨 Feature 的用户目标入口，例如“提高评估速度”与“调试评估”。
+- [`guides/`](../guides/README.md)：跨 Feature 的用户目标入口，例如“提高评估速度”与“调试评估”。
   每个目标使用一个中文子目录；目录 `README.md` 只做选择路径，把读者送到能力所属 Feature 的最小用例，不在这里复制缓存、Sandbox 或报告契约。
 - `reference/`：这个功能的形状从哪些外部系统学来——逐条记「是什么、学了什么、哪里有意没跟」。
   它承载的是**选型依据**，不是当前契约，所以不进 `README.md` / `library.md` / `architecture.md` 正文；正文只在需要交代出处时链过来。
   被否决的**自家**历史方案仍归 `memory/`：`reference/` 写别人的做法，`memory/` 写我们自己的弯路。
 - `architecture.md`：实现应满足的模块边界、数据建模、数据流和不变量。
   数据建模先定实体关系，再给每个公开配置与结果类型的穷尽形状；未列出的字段即不存在。
-- `lifecycle.md`：跨 owner 展开运行起点选择、build / start / install、Fixture、复用与收尾。
+- `architecture/lifecycle.md`：跨 owner 展开运行起点选择、build / start / install、Fixture、复用与收尾。
   需要描述 fresh / reuse 差异时,给出每 Invocation、每 Sandbox 实例或复用周期、每 Attempt 的次数表。
 
 除 `README.md` 外都按功能形态选用，不为凑固定结构创建空文档。
 
-`use-case/` 下的分类目录和叶子文件使用简短中文目标名，让路径本身能回答“为什么读这一篇”。
-代码标识、CLI flag 与 API 名不翻译；需要用它们分类时写在目录 `README.md` 的标题和索引中，不把一串重复英文前缀放入每个文件名。
+`use-case/` 下的叶子文件使用简短的目标名，让路径本身能回答“为什么读这一篇”。
+代码标识、CLI flag 与 API 名不翻译；需要用它们分类时写在 `use-case/README.md` 的小节标题和索引中。
 
 ## 当前 Feature
 
@@ -71,5 +64,5 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Run → Inspection → Delivery](run-inspection/README.md)：运行事实到机器或人读交付的数据边界。
 - [Sandbox](sandbox/README.md)：隔离的执行资源。
 - [State](state/README.md)：Cohort、精确 checkpoint 与状态生命周期。
-- [跨 Feature 用户目标](use-case/README.md)：从完整用户路径导航到所属 Feature 的最小 Use Case。
+- [跨 Feature 用户目标](../guides/README.md)：从完整用户路径导航到所属 Feature 的最小 Use Case。
 - [Verdict](verdict/README.md)：显式 gate 与四态折叠。

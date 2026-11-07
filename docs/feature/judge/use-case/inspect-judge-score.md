@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: inspect-judge-score
-title: 使用现成裁判并复核判分依据
-createdAt: 2026-09-13T21:49:17+08:00
-kind: use-case
-feature: docs/feature/judge/README.md
----
-
 # 使用现成裁判并复核判分依据
 
 作者要检查回答是否符合参考答案，并确认质量门失败时仍能读到实际分数和裁判依据。

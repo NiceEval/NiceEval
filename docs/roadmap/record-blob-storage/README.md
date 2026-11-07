@@ -1,15 +1,3 @@
----
-format: concord.document/v1
-id: record-blob-storage
-title: Record blob 透明分段与存取
-createdAt: 2026-08-22T22:07:32+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/roadmap/record-blob-storage/README.md
-  commit: 9e13f6b61ae2e363e2bf1a04d52aa80faec4e46d
-kind: roadmap
-state: planned
----
 # Record blob 透明分段与存取
 
 Attachment producer 需要保存大材料时，只应提交一个逻辑 blob 及其 byte stream。
@@ -84,4 +72,4 @@ reader 提供同一 logical handle 的 `byteLength`、`text`、`bytes` 与 `stre
 ## 入口
 
 - [Architecture](architecture.md) —— owner、数据流、不变量和失败边界。
-- [当前 Record Architecture](../../feature/run/architecture.md) —— 现行 Attachment closure、sealed content 与发布状态机。
+- [当前 Record Architecture](../../feature/run/architecture/README.md) —— 现行 Attachment closure、sealed content 与发布状态机。

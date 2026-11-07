@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-modify-sandbox-origin
-title: 修改 Sandbox 起点
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 修改 Sandbox 起点
 
 换 template-bearing factory，或改它任何一个参数（image、template、snapshotId、Compose file），都会改变起点身份。

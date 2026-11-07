@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: e2e-acceptance-dsl-rebaselined-to-adapter
-title: 裁决:E2E 验收 DSL 收敛为 Report 读面 adapter,不做全仓作者面也不发公共包
-createdAt: 2026-08-01T21:34:29+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/e2e-acceptance-dsl-rebaselined-to-adapter.md
-  commit: 5f32f299e6f8b5d645d2eb30e081bcf922cddd82
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 裁决:E2E 验收 DSL 收敛为 Report 读面 adapter,不做全仓作者面也不发公共包
 
 ## 裁决

@@ -1,35 +1,3 @@
----
-format: concord.document/v1
-id: attempt-faces-free-text-needs-summarytext-bounding
-title: attempt-faces-free-text-needs-summarytext-bounding
-createdAt: 2026-07-19T16:44:26+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/attempt-faces-free-text-needs-summarytext-bounding.md
-  commit: 4c248a67d8878a8e1b556ae81a23fc4011a1564e
-description: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误 message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: 已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误 message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
-    proof: []
-    source:
-      path: memory/attempt-faces-free-text-needs-summarytext-bounding.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:b0da86eeb7279aacc9e5506a9f76e40a1662faaed506046d4535ca5be9ca3451
----
-
 Phase E 用 3 条手造 fixture(source 可用/不可用/errored)走查过 `standardAttemptPage`,组件级和树级测试都全绿。
 但按 CLAUDE.md「CLI 改动要在真实 dogfood repo 里跑」的要求,在 `/Users/ctrdh/Code/coding-agent-memory-evals`
 跑 `pnpm exec niceeval show @<locator>` 后发现:一条 `includes(/regex/)` 断言失败时,`received:` 字段把
@@ -39,6 +7,8 @@ Phase E 用 3 条手造 fixture(source 可用/不可用/errored)走查过 `stand
 
 # 根因
 
+已修——真实 repo 冒烟才暴露:attempt-faces.ts 里多处自由文本(断言 received/expected、错误 message、对话逐条回复)未收口,整份源码/system prompt 会原样灌进一行
+
 `src/report/text/attempt-faces.ts` 里散落的自由文本字段(`AssertionResult.expected/received`、
 `AttemptErrorData.message`/`cause.message`、`AttemptDiagnosticsData` 每条 `message`、
 `AttemptConversationReply` 里 assistant/user/thinking/error 的 `text`、`input.request.prompt`、
@@ -47,7 +17,7 @@ Phase E 用 3 条手造 fixture(source 可用/不可用/errored)走查过 `stand
 ("text 面允许把大块内容折成摘要...不得改变判定、计数或引用"),但第一版实现只对"要不要显示这个字段"
 做了判断,没有对"字段值本身可能任意大"做处理。
 
-# 修法
+## 修法
 
 `summaryText()` 包一层,分两类:
 - **折**:`assertionLine` 的 `expected`/`received`、`attemptErrorText` 的 `message`/`cause.message`、
@@ -60,7 +30,7 @@ Phase E 用 3 条手造 fixture(source 可用/不可用/errored)走查过 `stand
 locator、`file:line:col` 锚点)还是"自由文本块"(消息正文、日志、被检查的源文件内容)?后者且有替代
 深挖入口(`--source`/`--execution`/`--diff` 等)的,一律 `summaryText()`。
 
-# 方法论:合成 fixture 走查 ≠ 真实数据走查
+## 方法论:合成 fixture 走查 ≠ 真实数据走查
 
 与 [attempt-detail-component-level-green-composite-broken](attempt-detail-component-level-green-composite-broken.md)
 是同一类"组件级/合成级测试测不出来,只有更真实的一层验证才能暴露"的问题,但这次连"拼成整页" 这层都不够——

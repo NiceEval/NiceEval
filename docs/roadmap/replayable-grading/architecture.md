@@ -6,7 +6,7 @@
 
 Execution graph 保存 Session/Turn input 与 reply、Action occurrence/result、显式 captured custom material、provenance、可信终态与 ExecutionOutcome。每个 source 使用 graph-scoped semantic ref；seal 后不能修改、补采或跨 graph 重解释。
 
-GradingDefinition 通过具名 Turn ref 和封闭 selector 选择 source。没有隐式 `last` / `current`、Session snapshot、跨 Attachment blob ref 或“沿用旧 Assertion 的 material”。缺失 source、incomplete collection 或无法隔离的 result 按 [Judge Material coverage](../judge-runtimes/material/architecture.md#绑定coverage-与顺序) 成为 unavailable。
+GradingDefinition 通过具名 Turn ref 和封闭 selector 选择 source。没有隐式 `last` / `current`、Session snapshot、跨 Attachment blob ref 或“沿用旧 Assertion 的 material”。缺失 source、incomplete collection 或无法隔离的 result 按 [Judge Material coverage](../judge-runtimes-material/architecture.md#绑定coverage-与顺序) 成为 unavailable。
 
 当前 definition 的 rubric、anchors、reference/custom bytes 与受管 loader 是 evaluator private inputs。它们不从历史 Record 执行源码，也不访问 live workspace 或任意 evidence network。
 

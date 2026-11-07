@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: accept-current-plan-identity-mismatch
-title: accept 成功后当前 dry plan 仍显示 identity-mismatch
-createdAt: 2026-10-26T09:16:15.763Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# accept 成功后当前 dry plan 仍显示 identity-mismatch
 
 ## Observation
 

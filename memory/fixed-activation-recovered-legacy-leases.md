@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: fixed-activation-recovered-legacy-leases
-title: Fixed activation mistakes legacy recovered lease receipts for live ownership
-createdAt: 2026-08-25T10:47:43+08:00
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Fixed activation mistakes legacy recovered lease receipts for live ownership
 
 ## Observation

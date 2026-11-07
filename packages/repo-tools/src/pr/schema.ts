@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { parse as parseYaml } from "yaml";
 
-import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid, PrTestRelationInvalid } from "./errors.js";
+import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid } from "./errors.js";
 import type {
   DraftMetadata,
   GitHubPullRequest,
@@ -96,7 +96,7 @@ const TestDirectiveFields = {
     entry: Schema.NonEmptyString,
     assertion: Schema.NonEmptyString,
     escape: Schema.NonEmptyString,
-    regression: Schema.optional(Schema.NonEmptyString),
+    issue: Schema.optional(Schema.NonEmptyString),
   })),
   source: Schema.optional(Schema.Union([
     Schema.Literal("full"),
@@ -153,7 +153,7 @@ const EditTestSetInputSchema = Schema.Struct({
   entry: Schema.NonEmptyString,
   assertion: Schema.NonEmptyString,
   escape: Schema.NonEmptyString,
-  regression: Schema.optional(Schema.NonEmptyString),
+  issue: Schema.optional(Schema.NonEmptyString),
   fragmentFrom: Schema.Array(Schema.String),
   fragmentThrough: Schema.Array(Schema.String),
   fragmentReason: Schema.optional(Schema.NonEmptyString),
@@ -384,24 +384,5 @@ export function decodeGitHubPullRequest(
       catch: (cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause }),
     })),
     Effect.mapError((cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause })),
-  );
-}
-
-const TestRelationsSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.e2e-case-relations/v1"),
-  testFile: Schema.NonEmptyString,
-  current: Schema.Record(Schema.String, Schema.Struct({
-    owner: Schema.NonEmptyString,
-    regressions: Schema.Array(Schema.NonEmptyString),
-  })),
-});
-
-export function decodeTestRelations(selector: string, document: string): Effect.Effect<Schema.Schema.Type<typeof TestRelationsSchema>, PrTestRelationInvalid> {
-  return Effect.try({
-    try: () => JSON.parse(document) as unknown,
-    catch: () => new PrTestRelationInvalid({ selector, message: "case relation sidecar is invalid JSON" }),
-  }).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(TestRelationsSchema, { errors: "all" })),
-    Effect.mapError((cause) => cause instanceof PrTestRelationInvalid ? cause : new PrTestRelationInvalid({ selector, message: `case relation sidecar has an invalid schema: ${String(cause)}` })),
   );
 }

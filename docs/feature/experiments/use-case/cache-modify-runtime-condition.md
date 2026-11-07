@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-modify-runtime-condition
-title: 修改运行条件后执行新的 Attempt
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 修改运行条件后执行新的 Attempt
 
 改变 `flags`、`model` 或裁判模型，会改变 Attempt 的运行或评分条件，因此历史 Attempt 不再可比，指纹自然失效并重新执行。

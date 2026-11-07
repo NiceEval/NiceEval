@@ -1,6 +1,6 @@
 // 泄题门:verifier / private 与 build context、相对 bind mount 的交叉检查。
 // 过滤规则序列化进 BuildKey 输入面——BuildKey 本身的哈希在 sandbox identity 线计算,
-// 本模块只提供规则求值、闭包判定与可序列化的规则面(见 docs/feature/sandbox/case.md「泄题门」)。
+// 本模块只提供规则求值、闭包判定与可序列化的规则面(见 docs/feature/sandbox/architecture/case.md「泄题门」)。
 
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";

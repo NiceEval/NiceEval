@@ -1,16 +1,8 @@
 ---
-format: concord.document/v1
-id: adapters-otel-genai
-title: OTel GenAI 与其它「agent 行为怎么记」的标准(调研笔记)
-createdAt: 2026-08-12
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/adapters/otel-genai.md
-  commit: 107a13b385b02c620a786064bded8bec766385b8
-kind: research
 sources:
   - https://github.com/open-telemetry/semantic-conventions-genai
 ---
+
 # OTel GenAI 与其它「agent 行为怎么记」的标准(调研笔记)
 
 **出处:** OpenTelemetry 官方文档 / [semantic-conventions-genai 仓库](https://github.com/open-telemetry/semantic-conventions-genai)、各标准官方 spec(2026-07 抓取)。
@@ -161,4 +153,4 @@ LLM 工程平台的数据模型:`Trace`(一次请求)+ 嵌套 `channel event`(sp
 - [otel-instrumentation.md](../otel-instrumentation/README.md) —— 应用侧埋点里内容默认采不采(数据可得性)。
 - [agent-eval 笔记](../agent-eval/README.md) —— 自定义路线的具体实现(采集 / 转换 / 落地、顺序配对的坑)。
 - [Observability](../../../observability.md) —— niceeval 的双轨:StreamEvent 断言 + canonical GenAI trace。
-- [Adapter Architecture](../../../feature/adapters/architecture.md) —— `StreamEvent` 词汇与证据不变量。
+- [Adapter Architecture](../../../feature/adapters/architecture/README.md) —— `StreamEvent` 词汇与证据不变量。

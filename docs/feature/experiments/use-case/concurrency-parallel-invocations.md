@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-parallel-invocations
-title: 并行 Invocation 独立发布 Run
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 并行 Invocation 独立发布 Run
 
 ## 解决什么问题
@@ -53,6 +44,6 @@ provider finalizer）和 Experiment after 完成后才释放。任一 cleanup �
 
 ## 相关阅读
 
-- [并发 Invocation 架构](../architecture.md#并发-invocation)
-- [缓存与 Attempt 采用](../cache.md#并发-invocation)
+- [并发 Invocation 架构](../architecture/README.md#并发-invocation)
+- [缓存与 Attempt 采用](../architecture/cache.md#并发-invocation)
 - [限制全局并发](concurrency-max-global.md)

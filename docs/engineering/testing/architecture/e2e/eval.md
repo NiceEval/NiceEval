@@ -1,0 +1,155 @@
+# 功能域 · Eval、Context 与 Assertions
+
+本域回答一个问题：**用户在真实 NiceEval 项目中编写并运行 Eval 时，Context、公开 Assertion 与 verdict 是否符合契约。**
+它由 `e2e/eval/` 功能 Repo 承担，使用安装后的 candidate、签入的 Eval / Experiment 和确定性 Application。
+Agent 会话场景使用 Direct Agent；只有文件、diff、shell 或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
+
+每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
+固定 `query` Inspection 的 versioned JSON 观察结果。
+Repo 的 15 分钟期限包含默认并行运行和资源终结。逐项启动已安装 CLI 的 values owner 保留 600 秒操作预算及 60 秒终结预算；大量工具事件的 scopes owner 保留 600 秒，二者不减少公开读回条目。
+不签入预生成结果，不从 Adapter Repo 注入 Eval，也不伪造 `Turn.events`、session 或 Sandbox ledger。某个契约分支需要不同 evidence
+时，直接增加一条目的明确的 Eval。
+
+## Owner 表
+
+| Owner ID | 用户结果 | 形态 | 目标文件 | Lane |
+| --- | --- | --- | --- | --- |
+| [`#eval-context`](#eval-context) | 多轮、session 与作用域 Context 只看到各自应有的真实事件和 usage | 单边界 E2E | `e2e/eval/test/context.test.ts` | PR |
+| [`#eval-assertion-values`](#eval-assertion-values) | 值 Match 登记 Assertion，并在真实 evidence 上给出 passed Verdict | 单边界 E2E | `e2e/eval/test/assertion-values.test.ts` | PR |
+| [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在大量真实工具事件上完成断言并发布有界诊断 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
+| [`#eval-assertion-score`](#eval-assertion-score) | 计分制正常返回自动封口，Assertion 分值贡献、直接给分与空计分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
+| [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox agent-attributed endpoint diff 与 shell evidence 由公开 Assertion、Report DomainView 和闭合读回观察 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
+| [`#eval-active-progress-redaction`](#eval-active-progress-redaction) | ACTIVE detail 在控制序列移除后仍脱敏已登记 secret，并在 grapheme 边界遵守 UTF-8 上限 | 单边界 E2E | `e2e/eval/test/active-progress-redaction.test.ts` | PR |
+| [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
+| [`#eval-custom-application`](#eval-custom-application) | 同一应用接口选择不同实现，原生动作与状态由公开 Assertion 观察 | 单边界 E2E | `e2e/eval/test/custom-application.test.ts` | PR |
+| [`#eval-custom-application-lifecycle`](#eval-custom-application-lifecycle) | 创建失败与取消释放资源，作者入口及时关闭 | 单边界 E2E | `e2e/eval/test/custom-application-lifecycle.test.ts` | PR |
+| [`#application-context-types`](#application-context-types) | 安装后公开类型保留应用方法推导并拒绝冲突 | 单边界 E2E | `e2e/eval/test/application-types.test.ts` | PR |
+
+## eval-context
+
+Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可区分 marker。测试分别证明 turn、session 与 `t` scope 的消息、
+工具、usage 和输出边界，以及新旧 session 的隔离。Direct Agent 足以产生的 case 不为“更真实”接外部模型；HITL、文件或 shell
+确实是契约输入时，增加对应的确定性 Agent / Sandbox Eval。
+
+这组测试以 [Context](../../../../feature/eval/library/context.md) 的公开行为为 expected，不根据 `src/` 类型或内部事件 reducer 生成答案。
+
+## eval-assertion-values
+
+值 Match 在本轮确定性回复上登记并封口为 Assertion，随后折叠为 `passed` Verdict。
+这个 owner 明确接管 `niceeval/expect` 的全部 factory。
+
+每个 value、score、tool、command 与 event matcher 都以 matched 和 mismatched 两种结果运行。
+测试从公开 Attempt readback 逐项核对结果。
+`calledTool` 还分别验证 name、input、output、status、exact count 与 at-least count；`notCalledTool` 与 `eventOrder` 也各自验证正反结果。
+
+公开 `query run --request <attempt.get request>` 必须读到这些 Assertion 与 Verdict。
+
+## eval-assertion-scopes
+
+turn、session 与 attempt scope 必须以同一批真实工具事件完成断言。
+这个 owner 明确接管 tool、command 与 event matcher，以及 present、absent、count、order、scope status 与 failed-action 等 scope assertion。
+
+候选很多时 matcher diagnostic 只保留有界解释材料，
+不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。owner 至少产生 10,001 个真实 normalized
+tool occurrences，涉及末尾 decisive witness、absence/exact/at-least 与 partial source unavailable。
+
+公开 `exp → query run --request <attempt.get request>` 核对 O(1) receipt 和 Assertion 的 criterion/materials/evaluation。
+它还核对 decision、policy、contribution、explanationRetention 与有界 explanation，不读取私有 Record。
+
+## eval-assertion-score
+
+计分制正常返回由 Runner 自动封口。匹配与不匹配的 points Assertion、直接给分都可由公开 Report
+读回；不匹配只贡献零分且 Verdict 仍为 passed。没有分值贡献时 Score 仍是完整的零分 outcome，
+由 Assertions 与 Attempt outcome 解释，不另设 durable family。即使 Experiment 开启 earlyExit，
+每个 Score Attempt 仍完整运行。
+
+## eval-assertion-sandbox
+
+Sandbox Eval 在真实 send window 中产生 modified、added 和 deleted endpoint delta；Eval 用
+`changedPaths`、`fileChanged`、`fileDeleted` 与 `notInDiff` 直接登记 post-run Assertion。测试经
+固定 `attempt.diff` Inspection 读取闭合 diff，固定 `attempt.get` Inspection 读取 Assertion；两者都不读私有落盘、SQLite 或旧投影声明。
+
+同一 owner 还让第二个 send 区间超过路径保留上限，证明 collector 发布带 `collection-cap-reached`
+的确定性 partial File Changes，而不是把证据降格成 `workspace-diff-unavailable`。确定性 Agent 用 POSIX shell
+只制造 30,001 个空文件变化，不调用模型或网络。公开 File Changes 必须只保留 1,000 条 structural changes，并登记
+`omittedAtLeast: 29,001`。
+
+这个 Experiment 使用仅测试的 read-limited custom Sandbox provider；其子进程变量集合把 `HOME`、`CODEX_HOME` 与
+`TMPDIR` 固定在该 case 的隔离项目副本内，且 `readBytes()` 对超过 4,000,000 bytes 的单次读取报错。
+旧版 5,430,371-byte 整包导出因此红灯，候选必须靠自动分段通过。
+
+公开 Timing Page 中的 `workspace.diff` 阶段必须在 9 秒内完成。Repo 的 2 分钟预算包含整条
+`exp`、安装、两次 fixed Inspection、发布和资源回收；该生命周期预算负责发现卡死，不把共享 runner 的调度与进程回收时间
+误当成 Experiment 或 `workspace.diff` 的性能。
+
+## eval-active-progress-redaction
+
+安装后候选通过公开 Sandbox command 的 `sensitiveValues` 登记两段已知 secret，再从 Eval `progress()` 发出分别由 C0 与 C1 OSC
+拆开的同一明文。真实 PTY 必须在 Attempt 仍运行时只看到两段 `<redacted>`；这证明唯一 ACTIVE 出口先完整移除控制序列，再做
+二次脱敏。后续多字节 grapheme 被截在 256 UTF-8 bytes 内，不能出现半个 cluster 或替换字符。测试只 fake 外部 Sandbox
+进程边界，不复制 Runner 的控制序列过滤或脱敏实现。
+
+## eval-assertion-judge-unavailable
+
+该 owner 验证质量评分成功，并与材料登记、请求取消 owner 一起验收 Judge 行为。作者直接提交应用返回的领域对象；登记后的原对象修改不能改变送给模型或公开读回的材料，超过 8 KiB 的合法文本必须完整保留。分数允许 `anchors` 之间的连续值，发送状态只证明本地尝试发送。
+
+非法 JSON 和未声明的 Judge 必须同步拒绝，不创建 Assertion、不执行 getter 或 `toJSON`。等待模型时取消 Attempt 必须关闭 HTTP 请求，并在公开 Assertion detail 中保留固定材料与尝试发送状态。
+
+未配置 Judge 时，声明 Judge 后 required Judge Assertion 保留 `unavailable` 并报告 model unresolved。
+Attempt 为 `errored`，CLI 退出码为 1。该场景以公开 Record 的精确原因证明未进入预检或 evaluator 网络路径，
+并核对 settlement 没有丢掉有界 failure detail。Judge 未实际返回的 rationale/evidence/detail/citations 必须分别为
+unavailable/not-recorded；输入 material 不得冒充 returned evidence，Agent-as-Judge trace 不在本 owner 范围。
+
+每条 Eval 内的 assertion 负责判分；对应原生测试只核对 discovery 没漏、预期 Eval 实际运行、进程退出与公开读回中的 assertion /
+verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不手写标准事件来让 matcher 自证。
+
+## 边界
+
+- Adapter Repo 只断言协议转换所需的工具名、入参、session、usage、HITL 等事实；调用某个 Assertion 方法不等于拥有完整契约。
+- Inspection 或 Insight Repo 可以用自己的 Eval 制造 passed / failed / errored、source、conversation 与 timing evidence，但只拥有读取和呈现结果。
+- `--dry`、carry 与 `accept` 的跨运行状态变化归 Runner Repo；本域不复制它们。
+- 只有真实 Eval 无法稳定制造或区分的纯算法等价类，才按 Unit 例外登记最小矩阵。
+## 同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。 {#eval-custom-application}
+
+同一接口契约的不同 Application 实现执行原生动作，并公开 Assertion 与缺失的会话和费用事实。
+共享断言便捷方法读取各 Attempt 的应用状态，公开 Query 逐项核对 Boolean 质量门与连续得分；方法解构后仍绑定正确实现。
+## Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。 {#eval-custom-application-lifecycle}
+
+Application 在 create 部分失败或 Attempt 取消后释放已取得资源，并拒绝迟到 Assertion 改写结果。
+
+同步 abort listener 不能登记 Assertion、修改已有 handle、再次调用顶层应用方法或调用自定义断言便捷方法。
+资源释放回调抛错不会跳过栈中其它回调；fixture journal 只观察应用自身的资源，不读取 NiceEval 私有结果。
+每个 cleanup callback 收到冻结 context；Attempt 取消后 cleanup signal 仍活动，同窗回调共享它，并在 30 秒总预算结束时取消。
+完成通知阶段再次登记资源必须同步失败。成功判定后的释放回调即使跨过执行 deadline 并抛错，也只能追加 diagnostic。
+
+## 应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。 {#application-context-types}
+
+应用上下文保留方法参数、返回对象与泛型关系，并在 TypeScript 编译时拒绝成员冲突和未提供的能力。
+自定义断言方法保留具体参数、Boolean 细化结果与 measurement 门槛；Pass 不暴露 Score 能力，直接 Adapter 与共享契约的实现保持一致。
+## Judge 材料与声明校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。 {#eval-judge-material-admission}
+
+Judge 材料与 Match 校验在登记前完成，非法输入不读取 accessor、不创建 Assertion。
+## Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。 {#eval-judge-cancellation}
+
+Attempt 取消终止实际 Judge HTTP 请求，公开 detail 保留固定材料与尝试发送事实。
+## 现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取 {#eval-judge-score-audit}
+
+现成裁判与自定义 Match 在同一计分 Eval 中给出可复核分数，模型步骤由公开 Assertion detail 读取
+## Judge Provider 整体替换与模型优先级，普通断言不触发模型调用 {#eval-judge-configuration}
+
+Judge Provider 按项目、Eval、Experiment 优先级整体替换；模型字符串只替换模型，普通断言不触发模型调用。
+## 多个 Attempt 缺少同一 Judge 凭据时，保留各自结果并集中显示修复提示与次数。 {#grouped-judge-errors}
+
+多个 Attempt 缺少同一 Judge 凭据时，保留各自结果并集中显示修复提示与次数。
+## Adapter flags 在启动前同步校验并复制冻结规范化结果。 {#adapter-parse-flags}
+
+Adapter flags 在启动前同步校验并复制冻结规范化结果。
+## 规范化 flags 与行为 revision 决定缓存复用身份。 {#adapter-flags-identity}
+
+规范化 flags 与行为 revision 决定缓存复用身份。
+## 外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。 {#external-usage}
+
+外部物理调用保留失败重试未知值及去重，并公开冲突采集错误。
+## 截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。 {#judge-image-material}
+
+截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。

@@ -1,26 +1,3 @@
----
-format: concord.document/v1
-id: prepare-commands
-title: 内置 prepare 命令:固定生命周期下的具体化声明与复用成本
-createdAt: 2026-08-01T18:25:03+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/prepare-commands/README.md
-  commit: a390ed2e3b58bad7c6a14a494837804a0d3bc114
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-decision:
-  selected: plan-1
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-1
-  source:
-    path: docs/design/prepare-commands/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:ae2f88f178c9f577fe8af29fd9100d496f6bd6492274cd6f1fb90f27ffe88513
-  targets: []
----
 # 内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 
 **相关文档**:[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md) ·

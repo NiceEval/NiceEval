@@ -1,36 +1,8 @@
----
-format: concord.document/v1
-id: render-matrix-not-just-data-matrix
-title: render-matrix-not-just-data-matrix
-createdAt: 2026-07-19T15:41:35+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/render-matrix-not-just-data-matrix.md
-  commit: 4e451858bfb5b1e0b05fbbb2255eb7561df68e88
-description: 组件测试注册表要求"两面都渲染"时,只测 attempt*Data() 返回值形状是弱化替代,必须真正调用 renderToStaticMarkup/renderNodeToText
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: '- 已修 [render-matrix-not-just-data-matrix](render-matrix-not-just-data-matrix.md) — 注册表场景写"两面渲染输出"时只测 attempt*Data() 返回形状是弱化替代,typecheck/build/test 全绿也遮不住 9/11 叶子组件渲染函数从未被真正调用过;修法=表驱动直接 renderToStaticMarkup/renderNodeToText 两态各跑一遍(src/report/attempt-components.test.tsx)'
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
+# render-matrix-not-just-data-matrix
 
-`docs/engineering/testing/unit/reports.md` 第 249 行(Attempt 详情组件族非空/空证据矩阵)登记的场景原文是"零输出态断言两面都不产生可见节点,非零输出态断言两面都含预期字段"——这句话的主语是**两面渲染输出**,不是 data 函数返回值。
+组件测试注册表要求"两面都渲染"时,只测 attempt*Data() 返回值形状是弱化替代,必须真正调用 renderToStaticMarkup/renderNodeToText
+
+`docs/engineering/testing/architecture/unit/reports.md` 第 249 行(Attempt 详情组件族非空/空证据矩阵)登记的场景原文是"零输出态断言两面都不产生可见节点,非零输出态断言两面都含预期字段"——这句话的主语是**两面渲染输出**,不是 data 函数返回值。
 
 写 Phase C(11 个叶子组件)的测试时,我把这行注册表条目实现成了 11 个 `expect(attemptXData(evidence)).toBeNull()` / `.toEqual({...})` 断言,只验证了 `attempt*Data()` 的返回形状。`pnpm run typecheck` 与 `pnpm run build:report` 都绿,套件也全绿,但 11 个叶子里有 9 个(除 AttemptSummary、AttemptTimeline 外)的 web/text 渲染函数**一次都没有被真正调用过**——`.toLocaleString()`、`JSON.stringify` 递归、`buildForest` 的 parentSpanId 查找这类只在渲染时才执行的代码路径,类型检查和"能编译"完全遮蔽不了。
 

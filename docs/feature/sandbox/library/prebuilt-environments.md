@@ -13,7 +13,7 @@
 ## 按 Eval 选预制实例
 
 一个实验里的 eval 不必共享同一个预制实例。
-每条 Eval 可以自带自己的 template-bearing factory,同一 Experiment 混跑不同起点、不同 Provider 的题目;配对规则见 [Sandbox Layer](../layers.md)。
+每条 Eval 可以自带自己的 template-bearing factory,同一 Experiment 混跑不同起点、不同 Provider 的题目;配对规则见 [Sandbox Layer](layers.md)。
 
 ```typescript
 // evals/shared/starters.ts —— 共享起点抽成普通 helper,多条 eval 复用
@@ -21,15 +21,15 @@ export const py39Astropy = () =>
   e2bSandbox({ template: "niceeval-py39-astropy42" });
 ```
 
-- factory 参数是该 provider 的原生纯数据,写错字段名由类型检查拦下。预制实例对应 case 目录里的「预制单 Sandbox」一类;完整 case 目录见 [Case](../case.md)。
-- template 检查发生在调度前。配对缺 template 或双 template 在 link 期一次穷举报错,不创建任何沙箱、不消耗预算;判定见 [Case · 缺失与不可用分开判](../case.md#缺失与不可用分开判)。
-- `defineSandbox` 自定义 provider 经[自定义 case](../case.md#自定义-case) 提供同等的 template 路径。
+- factory 参数是该 provider 的原生纯数据,写错字段名由类型检查拦下。预制实例对应 case 目录里的「预制单 Sandbox」一类;完整 case 目录见 [Case](../architecture/case.md)。
+- template 检查发生在调度前。配对缺 template 或双 template 在 link 期一次穷举报错,不创建任何沙箱、不消耗预算;判定见 [Case · 缺失与不可用分开判](../architecture/case.md#缺失与不可用分开判)。
+- `defineSandbox` 自定义 provider 经[自定义 case](../architecture/case.md#自定义-case) 提供同等的 template 路径。
 - 换起点只替换这条 eval 的 template；其它 owner 的 action 仍进入同一 occurrence schedule。
-- 逐 eval 的 template 配对结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`,见 [Record · Architecture](../../run/architecture.md)。
+- 逐 eval 的 template 配对结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`,见 [Record · Architecture](../../run/architecture/README.md)。
 
 ## 为什么没有跨 provider 构建 DSL
 
-三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界；项目应保留 Provider 原生构建脚本，把构建结果 ID 或名字写进 factory 参数。layer 的 `before()` 只处理必须按 Experiment 或 Eval 变化的小配置、真实检查和 fail-fast 预检，分层判据见 [沙箱预置放哪](../library.md#沙箱预置放哪)。
+三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界；项目应保留 Provider 原生构建脚本，把构建结果 ID 或名字写进 factory 参数。layer 的 `before()` 只处理必须按 Experiment 或 Eval 变化的小配置、真实检查和 fail-fast 预检，分层判据见 [沙箱预置放哪](README.md#沙箱预置放哪)。
 
 ## 用户怎么写自己的预制实例
 
@@ -40,7 +40,7 @@ export const py39Astropy = () =>
 3. **重建只在依赖变化时发生**:改了要装的 CLI 版本、系统包或模型 cache 才跑构建脚本;日常 `niceeval exp` 直接消费既有构建结果。
 4. **升级 agent CLI 版本 = 构建一个新 tag**,experiment 改引用即可、回滚可逆;不要原地重写同一个 tag——那会让"同一配置"在不同时间指向不同运行内容,跑分失去可比性。
 
-进不进预制实例的判据只有一条：这内容是不是所有 Attempt 都相同、且与本次实验参数无关。按实验变化的内容进入 Experiment layer 的 [`before()`](../layers.md)；按 Eval 变化的任务 Fixture 进入 Eval before 或 `test(t)`。
+进不进预制实例的判据只有一条：这内容是不是所有 Attempt 都相同、且与本次实验参数无关。按实验变化的内容进入 Experiment layer 的 [`before()`](layers.md)；按 Eval 变化的任务 Fixture 进入 Eval before 或 `test(t)`。
 
 ### Docker:Dockerfile 派生
 
@@ -98,7 +98,7 @@ pnpm tsx scripts/build-e2b-template.ts
 sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
 ```
 
-Bub 若配置 `pythonPlugins`,模板 factory 要收到同一份 package 集合:`e2bCodingAgentTemplate("bub", { bubPythonPackages: ["bub-plugin-memory==1.3.0"] })`。Factory 与 Adapter 共用规范化和 hash 代码,插件顺序、空白和重复项不会制造假差异;集合真的不同则不会误用预装实例(指纹语义见 [Bub 接入页](../../adapters/sdk/bub/README.md))。
+Bub 若配置 `pythonPlugins`,模板 factory 要收到同一份 package 集合:`e2bCodingAgentTemplate("bub", { bubPythonPackages: ["bub-plugin-memory==1.3.0"] })`。Factory 与 Adapter 共用规范化和 hash 代码,插件顺序、空白和重复项不会制造假差异;集合真的不同则不会误用预装实例(指纹语义见 [Bub 接入页](../../adapters/library/sdk/bub/README.md))。
 
 ### Vercel Sandbox:从运行实例拍 Run
 
@@ -119,19 +119,19 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 ## 官方 coding agent 起点
 
 "没有跨 provider 构建 DSL"不等于每个项目都要从空白 Sandbox 安装 coding agent。
-官方镜像与模板都在配方里声明非 root 用户(`USER`):执行身份是预制实例自己的声明([Library · 执行身份](../library.md#执行身份)),Claude Code 等 agent 在 root 下会拒绝 `--dangerously-skip-permissions`;自己写预制实例时同样在配方里声明。
+官方镜像与模板都在配方里声明非 root 用户(`USER`):执行身份是预制实例自己的声明([Library · 执行身份](README.md#执行身份)),Claude Code 等 agent 在 root 下会拒绝 `--dangerously-skip-permissions`;自己写预制实例时同样在配方里声明。
 NiceEval 为 coding Agent 维护公共 Docker image 与 E2B template：Docker image 八家齐全；E2B template 涵盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进发布清单，不导出常量）；配方同源、版本号共用：
 
 | Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |
 |---|---|---|---|
-| [Claude Code](../../adapters/sdk/claude-code/README.md) | `correctroads-default-team/niceeval-claude-code` | `niceeval/claude-code` | E2B 侧从 provider 官方 `claude` template 派生;Claude Adapter 仍检查 `claude` |
-| [Codex](../../adapters/sdk/codex-cli/README.md) | `correctroads-default-team/niceeval-codex` | `niceeval/codex` | E2B 侧从 provider 官方 `codex` template 派生;Codex Adapter 仍检查 `codex` |
-| [Bub](../../adapters/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 钉版本的配方(Bub 版本 + 同代 OTel 插件),并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装实例 |
-| [OpenCode](../../adapters/sdk/opencode/README.md) | — | `niceeval/opencode` | Docker 烘焙 `opencode-ai`;Adapter 检测 PATH 上的 `opencode` |
-| [Hermes](../../adapters/sdk/hermes/README.md) | — | `niceeval/hermes` | Docker 按 `$HOME/.local` 装 `hermes-agent`;Adapter 走同路径 |
-| [OpenClaw](../../adapters/sdk/openclaw/README.md) | — | `niceeval/openclaw` | Docker 烘焙 `openclaw`;Adapter 检测 PATH 上的 `openclaw` |
-| [Oh My Pi](../../adapters/sdk/omp/README.md) | — | `niceeval/omp` | Docker 烘焙精确版本的 Bun 与 `omp`;Adapter 同时复检两者 |
-| [DeepSeek Harness](../../adapters/sdk/deepseek-harness/README.md) | — | `niceeval/deepseek-harness` | Docker 烘焙 `dsh`;Adapter 检测 PATH 上的 `dsh` |
+| [Claude Code](../../adapters/library/sdk/claude-code/README.md) | `correctroads-default-team/niceeval-claude-code` | `niceeval/claude-code` | E2B 侧从 provider 官方 `claude` template 派生;Claude Adapter 仍检查 `claude` |
+| [Codex](../../adapters/library/sdk/codex-cli/README.md) | `correctroads-default-team/niceeval-codex` | `niceeval/codex` | E2B 侧从 provider 官方 `codex` template 派生;Codex Adapter 仍检查 `codex` |
+| [Bub](../../adapters/library/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 钉版本的配方(Bub 版本 + 同代 OTel 插件),并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装实例 |
+| [OpenCode](../../adapters/library/sdk/opencode/README.md) | — | `niceeval/opencode` | Docker 烘焙 `opencode-ai`;Adapter 检测 PATH 上的 `opencode` |
+| [Hermes](../../adapters/library/sdk/hermes/README.md) | — | `niceeval/hermes` | Docker 按 `$HOME/.local` 装 `hermes-agent`;Adapter 走同路径 |
+| [OpenClaw](../../adapters/library/sdk/openclaw/README.md) | — | `niceeval/openclaw` | Docker 烘焙 `openclaw`;Adapter 检测 PATH 上的 `openclaw` |
+| [Oh My Pi](../../adapters/library/sdk/omp/README.md) | — | `niceeval/omp` | Docker 烘焙精确版本的 Bun 与 `omp`;Adapter 同时复检两者 |
+| [DeepSeek Harness](../../adapters/library/sdk/deepseek-harness/README.md) | — | `niceeval/deepseek-harness` | Docker 烘焙 `dsh`;Adapter 检测 PATH 上的 `dsh` |
 
 Vercel 没有可公开发布的构建结果原语,官方起点止步于 E2B 与 Docker;Vercel 用户按上面的[Run 构建流程](#vercel-sandbox从运行实例拍 Run)在自己的 Project 里构建。
 
@@ -141,7 +141,7 @@ Vercel 没有可公开发布的构建结果原语,官方起点止步于 E2B 与 
 
 - **保证 npm 与 corepack,不预装 yarn 实体**。node:24-slim 自带 yarn 1.22,E2B 官方 `claude`/`codex` 起点的现状不与 Docker 侧一致;统一之后官方起点一律不再提供现成的 yarn 二进制,要 yarn 的派生项目自己 `corepack enable` 或安装。
 - **保证 python3**。两侧起点都带系统 python3。取两侧都装是因为 E2B 配方只能在官方起点上叠加、没有"卸载"路径,而运行时安装步骤(node-gyp、rustup 一类)普遍依赖它。
-- **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。起点的全局 CLI 在构建期以 root 安装,执行身份是非 root `node`(执行身份契约见[执行身份](../library.md#执行身份));这两个目录必须交给运行用户,否则运行期 `corepack enable` 与 `npm install -g` 直接 EACCES。Docker 侧由 base 构建期 chown 给 `node`,八个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承;E2B 侧由 `withNodeToolContract` 保证同一条。
+- **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。起点的全局 CLI 在构建期以 root 安装,执行身份是非 root `node`(执行身份契约见[执行身份](README.md#执行身份));这两个目录必须交给运行用户,否则运行期 `corepack enable` 与 `npm install -g` 直接 EACCES。Docker 侧由 base 构建期 chown 给 `node`,八个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承;E2B 侧由 `withNodeToolContract` 保证同一条。
 - 三条都是发布门槛,与「[官方 coding agent 起点](#官方-coding-agent-起点)」的其余契约同一批构建自检。Docker 侧由 CI 的构建自检步骤断言:`command -v yarn` 必须为空、`python3 --version` 必须成功、以镜像默认用户执行 `corepack enable && yarn --version` 必须成功。E2B 侧由 `verifyE2BNodeToolContract` 断言同样三条。任一项不过,配方不写入 registry、不推送 tag。
 
 这条契约与「版本号跟着被装的 Agent 走」共用同一条规则:配方变了(包括这次的工具面收敛)就 bump `-r`,内容没变不重建。
@@ -195,12 +195,12 @@ Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 C
 
 ## 新 provider 的预制实例义务
 
-[接一个新 provider](../architecture.md#再接一个-provider)时,预制实例的故事随接口一起交付:
+[接一个新 provider](../architecture/README.md#再接一个-provider)时,预制实例的故事随接口一起交付:
 
 - **factory 上有一个消费字段**,语义是"从这个构建结果起实例"——对应 Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`。字段名用该服务的原生词汇,不翻译成统一术语。
 - **构建留在服务原生工具**:不为新 provider 发明 niceeval 构建命令,也不包一层构建 API;项目保留原生构建脚本,spec 只引用构建结果。
 - **共享与过期语义如实文档化**:构建结果是账号私有还是可公开、会不会过期、跨 team 引用要什么 namespace,写进该 provider 的接入文档,不许诺服务给不了的可见性。
-- **服务没有可发布构建结果原语时不伪造**：factory 不加假字段；该 Provider 的用户用 layer 的 [`before()`](../layers.md)做运行时安装，或用下面的 runtime checkpoint 保存实例私有状态。
+- **服务没有可发布构建结果原语时不伪造**：factory 不加假字段；该 Provider 的用户用 layer 的 [`before()`](layers.md)做运行时安装，或用下面的 runtime checkpoint 保存实例私有状态。
 
 ## 运行时 checkpoint:`createCheckpoint` / `restoreCheckpoint`
 
@@ -217,6 +217,6 @@ await restoreCheckpoint(nextSandbox, checkpoint);
 
 ## 相关阅读
 
-- [Library](../library.md) —— 起点 factory、准备命令、沙箱预置分层。
-- [Architecture · 性能](../architecture.md#性能预制实例sandbox-复用与-sandbox-预热) —— 预制实例在性能优先级里的位置。
-- [Architecture · 再接一个 provider](../architecture.md#再接一个-provider) —— provider 接口与接入路径。
+- [Library](README.md) —— 起点 factory、准备命令、沙箱预置分层。
+- [Architecture · 性能](../architecture/README.md#性能预制实例sandbox-复用与-sandbox-预热) —— 预制实例在性能优先级里的位置。
+- [Architecture · 再接一个 provider](../architecture/README.md#再接一个-provider) —— provider 接口与接入路径。

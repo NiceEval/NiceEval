@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-batch-smoke
-title: 让一批 Eval 共用 Sandbox
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # 让一批 Eval 共用 Sandbox
 
 ## 解决什么问题
@@ -61,5 +52,5 @@ feature: docs/feature/sandbox/README.md
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md) —— 各阶段次数、Sandbox 复用寿命与状态边界。
+- [Sandbox 复用](../library/reuse.md) —— 各阶段次数、Sandbox 复用寿命与状态边界。
 - [CLI](../cli.md) —— `--keep-sandbox` 与 `sandbox` 命令组。

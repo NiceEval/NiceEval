@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-weights-and-biases-execution
-title: W&B 的发起、执行、完成与 resume
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # W&B 的发起、执行、完成与 resume
 
 > 观察日期：2026-08-14

@@ -1,27 +1,10 @@
----
-format: concord.document/v1
-id: hermes-secret-on-disk-exception
-title: Hermes 是「secret 不落盘」的唯一例外
-createdAt: 2026-07-26T11:36:55+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/hermes-secret-on-disk-exception.md
-  commit: 7c10af3044449490bb8e4f866b045a44bf6a053e
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Hermes 是「secret 不落盘」的唯一例外
 
 裁决日期 2026-07-26。
 
 ## 现象
 
-`docs/feature/adapters/sdk/hermes/README.md` 同一篇里两套答案:接入字段段说
+`docs/feature/adapters/library/sdk/hermes/README.md` 同一篇里两套答案:接入字段段说
 「secret 写进 `~/.hermes/.env`」,驱动面段末尾又留着「secret 走环境变量,
 不写进配置文件」。后一句是建页时(`a2fd0e36`)从姊妹 Agent 页抄来的跨适配器不变量,
 `0d0a3e46` 补落盘时没回头改。

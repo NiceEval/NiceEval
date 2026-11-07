@@ -32,6 +32,7 @@ export class E2ERunError extends Data.TaggedError("E2ERunError")<{
   readonly detail: string;
 }> {}
 export interface RunOptions {
+  readonly retainNativeReport?: boolean;
   readonly repoIds: readonly string[];
   readonly lane?: import("./contracts.ts").Lane;
   readonly capability?: string;
@@ -332,6 +333,7 @@ export const runEffect = (
             ...(options.caseCollectionNativeArgs?.[repo.manifest.id] === undefined ? {} : { caseCollectionNativeArgs: options.caseCollectionNativeArgs[repo.manifest.id] }),
             ...(options.copyIds?.[repo.manifest.id] === undefined ? {} : { copyId: options.copyIds[repo.manifest.id] }),
             keepWorkdir: options.keepWorkdir,
+            ...(options.retainNativeReport === undefined ? {} : { retainNativeReport: options.retainNativeReport }),
             ...(options.selection === undefined
               ? {}
               : { selection: options.selection }),

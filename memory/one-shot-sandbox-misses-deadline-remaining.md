@@ -1,27 +1,10 @@
----
-format: concord.document/v1
-id: one-shot-sandbox-misses-deadline-remaining
-title: 一次性沙箱拿不到 deadlineAt,每条命令各拿一整份 timeoutMs
-createdAt: 2026-07-31T09:42:16+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/one-shot-sandbox-misses-deadline-remaining.md
-  commit: b24b22d20da35bbb4f49adb4047376d5981bb67e
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 一次性沙箱拿不到 deadlineAt,每条命令各拿一整份 timeoutMs
 
 **状态**:发现,未修(2026-07-31,做 `--timing` 时限归属标注时顺带发现)。
 
 ## 现象
 
-`docs/feature/sandbox/architecture.md`「时限归属」声明:单条命令未显式传 `timeout` 时,上限是 attempt deadline 的**剩余量**。
+`docs/feature/sandbox/architecture/README.md`「时限归属」声明:单条命令未显式传 `timeout` 时,上限是 attempt deadline 的**剩余量**。
 一次性沙箱(非复用池)上的第二、第三条命令实际拿到的是一整份 `timeoutMs`,不是剩余量——声明 20 分钟上限的 attempt,里面每条命令各自都能跑到 20 分钟。
 
 ## 根因

@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: e2e-exact-selector-omits-native-title-prefix
-title: Exact E2E selection omits native project and suite title prefixes
-createdAt: 2026-09-05
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Exact E2E selection omits native project and suite title prefixes
+
 ## Observation
 
 The managed Insight inventory collected `e2e/insight/test/view-authorization.browser.spec.ts#necase_XDDZFNTFXA177RG0`, but `pnpm e2e evidence red` failed with `No tests found`. The runner correctly rejected this as infrastructure/selection failure, without granting a red receipt.

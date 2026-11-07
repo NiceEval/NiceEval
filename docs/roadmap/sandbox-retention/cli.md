@@ -91,7 +91,7 @@ shell 退出后，CLI 必须重新 suspend，并刷新 `lastUsedAt`、`pruneAfte
 它不能越过其它进程的有效 lease，也不能操作 legacy 条目或身份核验失败的资源。
 
 suspend 成功后才提交 registry 状态。
-调用失败时保持 operation intent，并按 [release failure](lifecycle.md#release-failure)处理。
+调用失败时保持 operation intent，并按 [release failure](architecture/lifecycle.md#release-failure)处理。
 
 ## `sandbox delete`
 

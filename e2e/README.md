@@ -1,6 +1,6 @@
 # E2E 场景 Repo
 
-正式设计见 [`docs/engineering/testing/e2e/README.md`](../docs/engineering/testing/e2e/README.md)。本目录只说明当前可运行入口；测试契约、owner 与写法不在这里复制。
+正式设计见 [`docs/engineering/testing/architecture/e2e/README.md`](../docs/engineering/testing/architecture/e2e/README.md)。本目录只说明当前可运行入口；测试契约、owner 与写法不在这里复制。
 
 ## 目录
 

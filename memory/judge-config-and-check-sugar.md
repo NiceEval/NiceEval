@@ -1,16 +1,11 @@
 ---
-format: concord.document/v1
-id: judge-config-and-check-sugar
-title: Judge 模型配置与 Match 断言分工，官方方法复用 check
-createdAt: 2026-09-13
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions:
-  - docs/feature/judge/library.md
-history: []
+relations:
+  - role: supports
+    target: docs/feature/judge/library.md
 ---
+
+# Judge 模型配置与 Match 断言分工，官方方法复用 check
+
 用户明确要求 `defineEval.judge` 为每道题配置 Judge 模型，官方 `t.factuality()`、`t.closeQA()` 等则是断言方法。把该字段解释成精确 Match 实例允许列表，会迫使作者重复声明，并混淆执行配置与评价标准。
 
 裁决：保留现有 `defineScoreMatch`、`defineJudge` 和统一 `t.check`。官方方法只构造对应 Match 后转交接收者的 check，共用材料快照、预算、求值、handle 与审计。模型配置按 Experiment、Eval、项目默认逐字段取值。

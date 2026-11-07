@@ -69,7 +69,7 @@ argv、配置、模块装载和 selector 错误发生在 Invocation 之前。CLI
 
 ## 相关阅读
 
-- [Record 架构](feature/run/architecture.md)
+- [Record 架构](feature/run/architecture/README.md)
 - [Record Library](feature/run/library.md)
 - [Record CLI](feature/run/cli.md)
 - [Runner](runner.md)

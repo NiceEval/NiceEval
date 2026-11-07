@@ -1,23 +1,8 @@
----
-format: concord.document/v1
-id: codex-cli-otel-tool-span-callid-not-in-json-protocol
-title: codex-cli-otel-tool-span-callid-not-in-json-protocol
-createdAt: 2026-07-19T08:35:09+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/codex-cli-otel-tool-span-callid-not-in-json-protocol.md
-  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: codex CLI 0.144.1 的 `--json` 事件流里 command_execution/apply_patch 等 item 只有 item.id(如 item_3),从不带 call_id;其原生 OTel span 的 exec_command/apply_patch 关联键恰恰是另一套 call_id(如 call_cBGsEAQ8I9da8AuwndfivwNv,OpenAI Responses API 风格);两边没有共同字段,niceeval 现有『call_id 精确匹配』的关联策略对 codex CLI 的工具级 span 结构性地永远关联不上——这不是选错字段,是协议本身没暴露可用于关联的字段;真机验证到此为止,是否/如何解决未定,留待裁决
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# codex-cli-otel-tool-span-callid-not-in-json-protocol
 
-**现象**:`e2e/adapter/codex-cli` 的 docs 契约(docs/engineering/testing/e2e/adapter/codex-cli.md
+codex CLI 0.144.1 的 `--json` 事件流里 command_execution/apply_patch 等 item 只有 item.id(如 item_3),从不带 call_id;其原生 OTel span 的 exec_command/apply_patch 关联键恰恰是另一套 call_id(如 call_cBGsEAQ8I9da8AuwndfivwNv,OpenAI Responses API 风格);两边没有共同字段,niceeval 现有『call_id 精确匹配』的关联策略对 codex CLI 的工具级 span 结构性地永远关联不上——这不是选错字段,是协议本身没暴露可用于关联的字段;真机验证到此为止,是否/如何解决未定,留待裁决
+
+**现象**:`e2e/adapter/codex-cli` 的 docs 契约(docs/engineering/testing/architecture/e2e/adapter/codex-cli.md
 「仓库验收」)写"OTel:...执行树的时间注释就是记录成立的展示证明"、"`show --timing` 的 OTel
 子树以 tool/model 角色挂出 span"。真机跑 `coding-task` Eval(2 次 shell 调用 + 1 次文件编辑,
 `niceeval.config.ts` 已配 `dockerSandbox()` 默认镜像 + agent 的 `tracing.configure` 写入
@@ -68,7 +53,7 @@ history: []
   tool/model 角色挂出 span"。
 
 **这次没有做的事,以及为什么**:没有据此修改 `src/o11y/execution-tree.ts` 的关联策略,也没有
-放宽 `docs/engineering/testing/e2e/adapter/codex-cli.md` 的 tracing 契约,也没有把
+放宽 `docs/engineering/testing/architecture/e2e/adapter/codex-cli.md` 的 tracing 契约,也没有把
 `verify.ts` 的两条 tracing 断言改造成会真实失败的"诚实"版本——三者都是设计/契约层决定
 (要不要在 codex CLI 场景放弃 call_id 精确关联、改成本文件开头提到的"窗口兜底归属"或干脆
 承认 codex-cli 的工具级 timing 不可得、比照 `docs/feature/eval/README.md` 或

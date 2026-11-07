@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-braintrust-reading-and-comparison
-title: Braintrust 历史读取、查询与 Experiment comparison
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/braintrust/reading-and-comparison.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Braintrust 历史读取、查询与 Experiment comparison
 
 本文从用户重新打开历史对象开始，沿 query → filter/group → align/compare → render 说明读取路径，并单列缺失/partial 怎样呈现。保存的底层 shape 见 [storage.md](../storage/README.md)。

@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: judge-quality
-title: 裁判评质量：规则写不出对错时
-createdAt: 2026-07-22T10:19:57+08:00
-kind: use-case
-feature: docs/feature/eval/README.md
----
-
-
 # 裁判评质量：规则写不出对错时
 
 “语气是否专业”“说明是否清楚”这类问题没有稳定的精确 Matcher。Judge 用 rubric 和 anchors 描述连续质量量尺，

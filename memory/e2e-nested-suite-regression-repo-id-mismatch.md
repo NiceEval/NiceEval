@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: e2e-nested-suite-regression-repo-id-mismatch
-title: 嵌套 E2E suite 无法登记 regression：runner 回执写 manifest id，Concord 按 suite id 校验
-createdAt: 2026-10-29
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# 嵌套 E2E suite 无法登记 regression：runner 回执写 manifest id，Concord 按 suite id 校验
+
 ## 现象
 
 对 `e2e/adapter/codex-cli` 的用例执行

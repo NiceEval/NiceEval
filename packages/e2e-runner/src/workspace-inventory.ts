@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { nativeEntryForSource } from "./native-files.ts";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
@@ -7,7 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.js";
 import { collectCaseInventory, InventoryError, type CaseInventoryReceipt, type CollectedCase, type InventoryExecutor } from "./inventory.js";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.js";
-import { engineCall, governanceSuiteForFile } from "./concord-engine.ts";
+import { signPrivateArtifact, governanceSuiteForFile } from "./repository-evidence.ts";
 import { InventorySchema, WorkspaceInventorySchema } from "./bridge-wire.ts";
 import { packCandidate } from "./pack.js";
 import { copyRepoIsolated, pointAtCandidateTarball } from "./run-repo.js";
@@ -16,6 +18,7 @@ import { buildTestkitPackage, injectTestkitDirectory, type TestkitPackage } from
 /** A re-collectable logical request. It deliberately contains no scratch location. */
 export interface WorkspaceCollectionSpec {
   readonly checkout: string;
+  readonly files?: readonly string[];
 }
 
 interface CollectedSubject {
@@ -139,7 +142,7 @@ const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function*(repo: D
   yield* runRequired(["pnpm", "install", "--no-frozen-lockfile", "--prefer-offline"], copy, `${repo.manifest.id}: install`);
   const executors = yield* installedExecutors(copy);
   const suite = yield* governanceSuiteForFile(repoRootDir(), `e2e/${repo.manifest.id}`).pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: `${repo.manifest.id}: ${cause.detail}` })));
-  const receipts = yield* Effect.forEach(executors, (executor) => collectCaseInventory({ executor, repo: repo.manifest.id, suiteId: suite.id, cwd: copy, checkout: spec.checkout, nativeArgs: [] }).pipe(
+  const receipts = yield* Effect.forEach(executors, (executor) => collectCaseInventory({ executor, repo: repo.manifest.id, suiteId: suite.id, cwd: copy, checkout: spec.checkout, nativeArgs: spec.files?.map(file => { const prefix = `e2e/${repo.manifest.id}/`; if (!file.startsWith(prefix)) throw new Error(`Requested file outside ${prefix}: ${file}`); const native = nativeEntryForSource(file, readFileSync(join(repoRootDir(), file), "utf8")); if (!native.startsWith(prefix)) throw new Error(`Native entry outside ${prefix}: ${native}`); return native.slice(prefix.length); }) ?? [] }).pipe(
     Effect.catchTag("InventoryError", (cause: InventoryError) => Effect.fail(new WorkspaceInventoryError({ detail: `${repo.manifest.id}/${executor}: ${cause.detail}` }))),
   ), { concurrency: "unbounded" });
   const prefix = `e2e/${repo.manifest.id}`;
@@ -148,8 +151,8 @@ const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function*(repo: D
   const unassignedCases = receipts.flatMap((receipt) => receipt.unassignedCases.map((item) => ({ executor: receipt.executor.name, repo: receipt.repo, path: `${prefix}/${item.file}`, ...(item.project === undefined ? {} : { project: item.project }), titlePath: item.titlePath })));
   const auditReceipts = yield* Effect.forEach(receipts, (receipt) => {
     const { digest: _digest, ...original } = receipt;
-    const unsigned = { ...original, files: receipt.files.map((path) => `${prefix}/${path}`), cases: receipt.cases.map((item) => ({ ...item, path: `${prefix}/${item.path}` })), unassignedCases: receipt.unassignedCases.map((item) => ({ ...item, file: `${prefix}/${item.file}` })) };
-    return engineCall("inventory", { kind: "case", action: "sign", value: unsigned }, InventorySchema);
+    const unsigned = { ...original, files: receipt.files.map((path) => `${prefix}/${path}`), cases: receipt.cases.map((item) => ({ ...item, path: `${prefix}/${item.path}`, ...(item.nativePath === undefined ? {} : { nativePath: `${prefix}/${item.nativePath}` }) })), unassignedCases: receipt.unassignedCases.map((item) => ({ ...item, file: `${prefix}/${item.file}` })) };
+    return signPrivateArtifact(unsigned, "digest", InventorySchema);
   });
   return { id: repo.manifest.id, executors: receipts.map((receipt) => receipt.executor).sort((left, right) => left.name.localeCompare(right.name)), receipts: auditReceipts, files: [...new Set(receipts.flatMap((receipt) => receipt.files.map((path) => `${prefix}/${path}`)))].sort(), subjects: subjects.sort(compareSubject), unassignedCases } satisfies PreparedWorkspaceRepo;
 });
@@ -169,8 +172,8 @@ const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*
   return prepared;
 });
 
-const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function*(checkout: string, repoId?: string) {
-  const prepared = yield* collectWorkspacePrepared({ checkout }, repoId);
+const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function*(checkout: string, repoId?: string, requestedFiles?: readonly string[]) {
+  const prepared = yield* collectWorkspacePrepared({ checkout, ...(requestedFiles === undefined ? {} : { files: requestedFiles }) }, repoId);
   const subjects = yield* collapseSourceWitnesses(prepared.flatMap((repo) => repo.subjects).sort(compareSubject));
   const byCaseId = new Map<string, CollectedSubject[]>();
   for (const subject of subjects) byCaseId.set(subject.caseId, [...(byCaseId.get(subject.caseId) ?? []), subject]);
@@ -180,13 +183,13 @@ const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function*(chec
   const cases: CollectedCase[] = subjects.map(({ subjectDigest: _subjectDigest, ...subject }) => subject).sort((left, right) => left.path.localeCompare(right.path) || left.caseId.localeCompare(right.caseId));
   const unassignedCases = prepared.flatMap((repo) => repo.unassignedCases).sort((left, right) => left.path.localeCompare(right.path) || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0")));
   const unsigned = { checkout, repos, files, cases, unassignedCases, findings: [] as readonly string[] };
-  return yield* engineCall("inventory", { kind: "workspace", action: "sign", value: unsigned }, WorkspaceInventorySchema);
+  return yield* signPrivateArtifact(unsigned, "digest", WorkspaceInventorySchema);
 });
 
 export const collectWorkspaceCaseInventory = Effect.fn("collectWorkspaceCaseInventory")(function*(checkout: string) {
   return yield* finishInventory(checkout);
 });
 
-export const collectRepoCaseInventory = Effect.fn("collectRepoCaseInventory")(function*(repoId: string, checkout: string) {
-  return yield* finishInventory(checkout, repoId);
+export const collectRepoCaseInventory = Effect.fn("collectRepoCaseInventory")(function*(repoId: string, checkout: string, files?: readonly string[]) {
+  return yield* finishInventory(checkout, repoId, files);
 });

@@ -106,7 +106,7 @@ Results 散点图只把已关闭的 USD cost 作为横轴，并把已关闭的 p
 
 Node adapter 为 `niceeval query` 和 `niceeval show` 打开短寿只读连接；本机 Insight Host 拥有 generation-bound
 connection 与 statement lifecycle。固定历史路径调用 `selectInspectionOperation(facts, operation)`。
-`project.get` 另接收 Experiment Host 生成的冻结当前输入；其 owner 规则见[当前结果可用性](../experiments/cache.md#当前结果可用性与执行选择)。
+`project.get` 另接收 Experiment Host 生成的冻结当前输入；其 owner 规则见[当前结果可用性](../experiments/architecture/cache.md#当前结果可用性与执行选择)。
 浏览器只消费 Host 交付的正式 result，不加载项目模块、不重新计算适用性。仅有 Record 的 Preview 显式显示历史 Results。
 
 每个 result envelope 包含 protocol、operation、`behaviorVersion`、source identity、`PublicationCutoff`、selection、
@@ -164,7 +164,7 @@ modelGroups 含 basis、state、groups、totalGroupCount、groupsTruncated、omi
 每组含 recordedCalls、tokens（inputTotalTokens/outputTokens/totalTokens）和官方 effective costs，完整性与已知小计分别保留。
 
 全部最多 4000 调用参与统计，最多预览 64 组；调用预览的 128 条上限不影响聚合。
-cacheRead 与 [Adapter Library](../adapters/library.md#缓存读取率) 使用相同纯投影，含 total、roles 与 models。
+cacheRead 与 [Adapter Library](../adapters/library/README.md#缓存读取率) 使用相同纯投影，含 total、roles 与 models。
 该报告不受 64 组旧预览限制；完整性由生产者 seal 声明单独判断，旧版账本不推断完整。
 attempt.usage 的最终响应预算为 16 MiB，超限返回 evidence-budget-exceeded，不截断 cacheRead 分组。
 

@@ -1,10 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design
-relations:
-  selectedPlan: docs/design/contextual-material/PLAN-1/README.md
----
-
 # 上下文材料 Match 与统一用量 —— Design Decision
 
 **相关文档**:[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md)

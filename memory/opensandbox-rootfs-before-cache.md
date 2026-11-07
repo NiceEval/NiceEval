@@ -1,15 +1,5 @@
----
-format: concord.document/v1
-id: opensandbox-rootfs-before-cache
-title: OpenSandbox rootfs 准备缓存与失败边界
-createdAt: 2026-10-26
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
+# OpenSandbox rootfs 准备缓存与失败边界
+
 ## 决策
 
 OpenSandbox 的准备缓存复用现有 Persistent before cache；不增加公开参数，不另建控制面。固定 digest 的 Base、服务地址与凭据摘要进入缓存域。捕获对象仅为 rootfs，进程、卷和 tmpfs 不属于快照内容。
@@ -34,4 +24,4 @@ procfs mountinfo 不能走 execd 文件下载：它声明零长度。实现使�
 
 ## 契约
 
-目标契约见 [Sandbox 架构](../docs/feature/sandbox/architecture.md#opensandbox-rootfs-准备缓存)。Snapshot API 删除不等于 registry blobs 回收。部署侧仍需管理 retention 与容量；当前方案不宣称进程或内存快照。
+目标契约见 [Sandbox 架构](../docs/feature/sandbox/architecture/README.md#opensandbox-rootfs-准备缓存)。Snapshot API 删除不等于 registry blobs 回收。部署侧仍需管理 retention 与容量；当前方案不宣称进程或内存快照。

@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: nested-docker-execution-products
-title: 产品与执行模型
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources: []
+observedAt: 2026-08-25
 ---
+
 # 产品与执行模型
 
 > 观察日期：2026-08-25。产品能力以本页链接的一手文档为准。

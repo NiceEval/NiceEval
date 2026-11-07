@@ -1,16 +1,8 @@
 ---
-format: concord.document/v1
-id: adapters-claude-code-otel-telemetry
-title: Claude Code 自带的 OTel 遥测 —— 能不能替代"等 CLI 跑完再读 transcript"
-createdAt: 2026-08-12
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/adapters/claude-code-otel-telemetry.md
-  commit: 107a13b385b02c620a786064bded8bec766385b8
-kind: research
 sources:
   - https://code.claude.com/docs/en/monitoring-usage
 ---
+
 # Claude Code 自带的 OTel 遥测 —— 能不能替代"等 CLI 跑完再读 transcript"
 
 **出处:** [Claude Code 官方 Monitoring 文档](https://code.claude.com/docs/en/monitoring-usage)(2026-07 抓取原始页面核对,不是转述摘要)。

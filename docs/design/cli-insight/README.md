@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: cli-insight
-title: CLI Query、Show 与 View —— Design Decision
-createdAt: 2026-08-23T11:33:47+08:00
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-decision:
-  selected: plan-3
-  reason: 固定 operation catalog 把选择、分母、partial、missing、issues、Evidence 与 comparison 留在唯一业务 owner。query、show 与 View 因而只需要各自编码或显示闭合结果，不能把 terminal 与浏览器的实现细节伪装为共享抽象。
-  at: 2026-08-29T14:34:50+08:00
-  targets: []
----
-
 # CLI Query、Show 与 View —— Design Decision
 
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](plans/plan-1/README.md) · [PLAN-2](plans/plan-2/README.md) · [PLAN-3](plans/plan-3/README.md) · [DECISION](DECISION.md)

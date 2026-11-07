@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: fixed-image-storage-root-tmpfiles-ownership
-title: Fixed-image NixOS module omits the storage root tmpfiles owner
-createdAt: 2026-08-25T10:56:46+08:00
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Fixed-image NixOS module omits the storage root tmpfiles owner
 
 ## Observation

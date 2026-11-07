@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: judge-rationale-has-no-record-field
-title: judge rationale 没有落盘字段,待裁决它的家
-createdAt: 2026-07-29T22:20:07+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/judge-rationale-has-no-record-field.md
-  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # judge rationale 没有落盘字段,待裁决它的家
 
 **现象**(2026-07-29):judge 断言的 `detail` 曾直接落成裁判模型的 rationale(spec 层没设
@@ -22,7 +6,7 @@ rationale 而不是 display.md 声明的 `closedQA("…")`。scoring 进度契�
 补上了检查方式摘要,rationale 经 finalize 既有合并变成 `closedQA("…"); <rationale>`,
 换一种方式继续污染标题。
 
-**裁决**(2026-07-29):`detail` 按 `docs/feature/assertions/architecture.md` 只放检查方式
+**裁决**(2026-07-29):`detail` 按 `docs/feature/assertions/architecture/README.md` 只放检查方式
 摘要,judge 的 evaluate 不再返回 rationale,rationale 暂不落盘。
 
 **待裁决**:rationale(裁判对分数的解释)有真实排查价值——0.4 分是「跑题」还是「漏了一半

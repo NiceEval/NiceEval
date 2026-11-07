@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: report-design
-title: Report design 产品研究
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/report-design/README.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Report design 产品研究
 
 本方向研究已经得到语义结果之后，表格、图表和报告网站怎样组织信息、控制交互状态并投影到具体媒介。

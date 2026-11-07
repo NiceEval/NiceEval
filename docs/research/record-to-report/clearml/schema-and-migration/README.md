@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-clearml-schema-and-migration
-title: ClearML schema、兼容与 migration
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/clearml/schema-and-migration.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # ClearML schema、兼容与 migration
 
 ClearML 没有一条统一的“产品 schema version”。

@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: codex-agent-send-usage-counts-only-last-request
-title: 官方 codexAgent 一轮 send 只记录最后一次模型请求的用量，却标为 complete
-createdAt: 2026-10-29T08:08:43.495Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# 官方 codexAgent 一轮 send 只记录最后一次模型请求的用量，却标为 complete
 
 ## 当前公开观察
 

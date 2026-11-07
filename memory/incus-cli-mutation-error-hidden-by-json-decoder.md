@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: incus-cli-mutation-error-hidden-by-json-decoder
-title: Incus CLI mutation error is hidden by JSON decoding
-createdAt: 2026-09-04
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Incus CLI mutation errors are parsed as JSON responses
 
 ## Observation

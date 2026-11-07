@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: observations-label-report
-title: 用 labels 标注报告坐标
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 用 labels 标注报告坐标
 
 三个实验分别使用 baseline、mempal 和 nowledge，报告需要按“记忆机制”分组，但 Agent 和 Eval 不需要读取这个词：

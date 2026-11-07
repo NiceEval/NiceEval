@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-arize-phoenix-execution
-title: Phoenix 实验的发起、调度、执行与收尾
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Phoenix 实验的发起、调度、执行与收尾
 
 > 观察日期：2026-08-14

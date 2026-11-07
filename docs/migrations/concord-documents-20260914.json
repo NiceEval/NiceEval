@@ -102,7 +102,7 @@
           {
             "kind": "feature",
             "current": [
-              "docs/feature/adapters/architecture.md#human-live-detail"
+              "docs/feature/adapters/architecture/README.md#human-live-detail"
             ],
             "history": []
           }
@@ -3287,7 +3287,7 @@
           {
             "kind": "feature",
             "current": [
-              "docs/feature/sandbox-nested-docker/lifecycle.md#sigkill-与控制进程重启"
+              "docs/feature/sandbox-nested-docker/architecture/lifecycle.md#sigkill-与控制进程重启"
             ],
             "history": []
           }
@@ -3401,7 +3401,7 @@
           {
             "kind": "feature",
             "current": [
-              "docs/feature/experiments/cli.md#派发前-sandbox-准备"
+              "docs/feature/experiments/cli/README.md#派发前-sandbox-准备"
             ],
             "history": []
           }
@@ -6002,7 +6002,7 @@
           {
             "kind": "feature",
             "current": [
-              "docs/feature/experiments/cli.md#派发前-sandbox-准备"
+              "docs/feature/experiments/cli/README.md#派发前-sandbox-准备"
             ],
             "history": []
           }
@@ -6299,7 +6299,7 @@
           {
             "kind": "feature",
             "current": [
-              "docs/feature/run/architecture.md#canonical-record-与运行中状态"
+              "docs/feature/run/architecture/README.md#canonical-record-与运行中状态"
             ],
             "history": []
           }

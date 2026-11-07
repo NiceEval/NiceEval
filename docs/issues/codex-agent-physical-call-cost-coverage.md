@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: codex-agent-physical-call-cost-coverage
-title: 官方 codexAgent 缺少可核对全部模型请求的逐调用成本证据
-createdAt: 2026-10-24T01:09:13.985Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# 官方 codexAgent 缺少可核对全部模型请求的逐调用成本证据
 
 ## 期望工作流
 

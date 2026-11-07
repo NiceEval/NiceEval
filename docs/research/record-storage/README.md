@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-storage
-title: Record 物理存储研究
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources: []
+observedAt: 2026-08-25
 ---
+
 # Record 物理存储研究
 
 > 观察日期：2026-08-25

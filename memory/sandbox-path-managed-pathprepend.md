@@ -1,40 +1,10 @@
----
-format: concord.document/v1
-id: sandbox-path-managed-pathprepend
-title: Agent env 的 PATH 被 Sandbox 静默覆盖，加 pathPrepend 显式扩展入口
-createdAt: 2026-08-04T18:38:33+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/sandbox-path-managed-pathprepend.md
-  commit: 226303f276157e9366eba4e81c8f165d93f5f9b1
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [sandbox-path-managed-pathprepend](sandbox-path-managed-pathprepend.md) — `docker.ts` 的 `runCommand` 把受管 `PATH` 无条件覆盖 `opts.env.PATH`,与 codex-cli README「`env` 追加环境变量、无例外」的声明矛盾,静默丢弃零报错;修为 `codexAgent({ env })` 构造期同步拒绝 `PATH` 键 + 新增 Sandbox factory `pathPrepend` 显式前置入口(四个内置 provider 一致支持,进 template identity)(`src/agents/codex.ts`、`src/sandbox/layer.ts`、`src/sandbox/{docker,e2b,vercel,local,compose,runtime}.ts`)"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # Agent env 的 PATH 被 Sandbox 静默覆盖，加 pathPrepend 显式扩展入口
 
 ## 现象
 
 MemoryBench 想给某个 hooks / 子进程用的可执行文件前置一段私有目录，写了 `codexAgent({ env: { PATH: "..." } })`，实际执行时不生效——找不到原因。
 
-`docs/feature/adapters/sdk/codex-cli/README.md` 声明 `env` 为每次 Codex CLI 进程「追加环境变量」，未写任何例外；但 `src/sandbox/docker.ts` 的 `runCommand` 把 `PATH: this.sandboxPath` 放在 `...opts.env` 之后，任何调用方传的 `PATH` 都被无条件覆盖，且零报错、零诊断。
+`docs/feature/adapters/library/sdk/codex-cli/README.md` 声明 `env` 为每次 Codex CLI 进程「追加环境变量」，未写任何例外；但 `src/sandbox/docker.ts` 的 `runCommand` 把 `PATH: this.sandboxPath` 放在 `...opts.env` 之后，任何调用方传的 `PATH` 都被无条件覆盖，且零报错、零诊断。
 
 ## 根因
 

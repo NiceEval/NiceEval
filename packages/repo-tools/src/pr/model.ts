@@ -175,7 +175,7 @@ export interface EditTestSetInput extends EditLocationInput {
   readonly entry: string;
   readonly assertion: string;
   readonly escape: string;
-  readonly regression?: string | undefined;
+  readonly issue?: string | undefined;
   readonly fragmentFrom: readonly string[];
   readonly fragmentThrough: readonly string[];
   readonly fragmentReason?: string | undefined;
@@ -314,7 +314,7 @@ export interface PrBodyTestCase {
   readonly entry: string;
   readonly assertion: string;
   readonly escape: string;
-  readonly regression?: string | undefined;
+  readonly issue?: string | undefined;
 }
 
 export interface PrBodyUseCase {

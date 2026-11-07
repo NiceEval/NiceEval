@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: cli-testing
-title: 复杂 CLI 测试体系对照
-createdAt: 2026-08-06
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/cli-testing/README.md
-  commit: 71929e5689b00138d13cd9c6b396ecf6d72a4d3e
-kind: research
 sources: []
 ---
+
 # 复杂 CLI 测试体系对照
 
 本研究为 NiceEval 测试体系提供外部基准。它不按测试数量评分，只比较证据链、隔离、协议真实性、lane 同构、cleanup 与矩阵所有权。
@@ -54,10 +46,10 @@ Vite、Vitest 与 Playwright 如何测试自身，以及 NiceEval 是否应自�
 以下是对现有目标契约的事实核对，不代表实现已经完成。
 
 - [Testing](../../engineering/testing/README.md) 已按 Library、installed CLI、HTTP、browser 与真实 adapter 划分可观察边界。
-- [Testing Architecture](../../engineering/testing/architecture.md) 已要求 oracle 独立、结构化输出严格解码，并把进程结果作为一等证据。
-- [Scenario Repos](../../engineering/testing/e2e/scenario-repos.md) 已要求普通 consumer repo 安装候选 tarball，并用 digest 证明被测 artifact 身份。
-- [E2E Execution](../../engineering/testing/e2e/execution.md) 已规定本地和 CI 复用 runner，并区分 PR、main、nightly 与 release lane。
-- [Portfolio](../../engineering/testing/portfolio.md) 已用唯一 matrix owner、历史 bug 杀伤力与退役条件控制重复。
+- [Testing Architecture](../../engineering/testing/architecture/README.md) 已要求 oracle 独立、结构化输出严格解码，并把进程结果作为一等证据。
+- [Scenario Repos](../../engineering/testing/architecture/e2e/scenario-repos.md) 已要求普通 consumer repo 安装候选 tarball，并用 digest 证明被测 artifact 身份。
+- [E2E Execution](../../engineering/testing/architecture/e2e/execution.md) 已规定本地和 CI 复用 runner，并区分 PR、main、nightly 与 release lane。
+- [Portfolio](../../engineering/testing/architecture/portfolio.md) 已用唯一 matrix owner、历史 bug 杀伤力与退役条件控制重复。
 - 目标契约已经要求资源级 cleanup 与失败分类。这个方向与 Git、pnpm、OpenTofu、kubectl 的成熟做法一致。
 
 因此，NiceEval 的主要问题不是缺少测试层级名称。它已经有比多数项目更严格的候选包身份链、真实 consumer repo 和矩阵所有权设计。
@@ -102,11 +94,11 @@ Vite、Vitest 与 Playwright 如何测试自身，以及 NiceEval 是否应自�
 
 | 位置 | 建议 |
 |---|---|
-| `docs/engineering/testing/architecture.md` | ProcessResult、ControlledProcess、timeout、进程树、子进程变量过滤、redaction、assertion ledger 与错误聚合 |
-| `docs/engineering/testing/e2e/scenario-repos.md` | 机器可读 candidate receipt 的包路径、digest、安装位置与入口 |
-| `docs/engineering/testing/e2e/execution.md` | owned resource、cleanup receipt、lane preflight 与显式 skip 边界 |
-| `docs/engineering/testing/portfolio.md` | 风险的唯一 owner、wiring、排除 lane、删除条件和历史 Bug 证据 |
-| `docs/engineering/testing/e2e/authoring.md` | canonical Repo 的选择与只链接、不复制测试正文的约束 |
+| `docs/engineering/testing/architecture/README.md` | ProcessResult、ControlledProcess、timeout、进程树、子进程变量过滤、redaction、assertion ledger 与错误聚合 |
+| `docs/engineering/testing/architecture/e2e/scenario-repos.md` | 机器可读 candidate receipt 的包路径、digest、安装位置与入口 |
+| `docs/engineering/testing/architecture/e2e/execution.md` | owned resource、cleanup receipt、lane preflight 与显式 skip 边界 |
+| `docs/engineering/testing/architecture/portfolio.md` | 风险的唯一 owner、wiring、排除 lane、删除条件和历史 Bug 证据 |
+| `docs/engineering/testing/architecture/e2e/authoring.md` | canonical Repo 的选择与只链接、不复制测试正文的约束 |
 | 各 scenario Repo 的进程 support | 可控子进程、分离流、timeout、进程树终止与等待退出；稳定跨 Repo 复用后再进入 Testkit |
 | 根 runner 的 server / resource support | 带 deadline 的 readiness 与 shutdown，以及 PID 消失、端口可重新绑定的终局证明 |
 | CommonJS package example | 改成真实叶子 consumer repo，安装候选 tarball 并验证 receipt，禁止 workspace/source import |

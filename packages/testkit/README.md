@@ -51,4 +51,4 @@ directory dependency 安装它。Testkit 不会被打包、上传或作为发布
 PID 与随机 ownership token：进程终止后可接管，而迟到的 releaser 不能删除 successor 的锁。调用方仍负责给出具名资源、在资源
 生命周期结束时调用返回的 release，并且不能把这项机械协调当成产品 Sandbox 隔离。
 
-正式契约见 `docs/engineering/testing/testkit.md`。
+正式契约见 `docs/engineering/testing/library.md`。

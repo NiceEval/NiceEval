@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: eve-assertion-dx
-title: Eve 断言 DX 与 Harness 需求
-createdAt: 2026-08-08
-kind: research
-observedAt: 2026-08-08
 sources: []
+observedAt: 2026-08-08
 ---
+
 # Eve 断言 DX 与 Harness 需求
 
 本研究比较 Eve 与 NiceEval 的断言作者面，并用 NiceEval-Eval Harness 检查候选 API 是否解决真实用户问题。

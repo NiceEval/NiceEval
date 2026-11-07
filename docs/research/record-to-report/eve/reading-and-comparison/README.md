@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-eve-reading-and-comparison
-title: Eve：历史 dump 怎样重新打开
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Eve：历史 dump 怎样重新打开
 
 > 观察日期：2026-08-14

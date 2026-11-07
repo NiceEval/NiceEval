@@ -1,8 +1,0 @@
-{
-  "extends": "../../../../packages/niceeval/tsconfig.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "types": []
-  },
-  "include": ["type-prototype.ts"]
-}

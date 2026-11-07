@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: strict-quality-gate
-title: 用 gate 守住质量
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/verdict/README.md
----
-
 # 用 gate 守住质量
 
 开放式质量检查先用代表性结果校准 rubric 和最低值。把最低值写在 measurement handle 的 `.gate(n)` 上，让已确定的要求参与 Verdict fold。
@@ -40,7 +31,7 @@ t.judge({ task, explanation }, explanationQuality)
 ## 终端输出案例
 
 以下是嵌入正式 `RESULTS` 或 Attempt detail 的最小字段片段，不是 `niceeval exp` 的独立完整输出。
-Invocation 的结束标题、Run block 与下钻命令由 [Experiments CLI](../../experiments/cli.md#结束反馈与-receipt)
+Invocation 的结束标题、Run block 与下钻命令由 [Experiments CLI](../../experiments/cli/README.md#结束反馈与-receipt)
 拥有；Attempt detail 的固定外层由 [Inspection CLI](../../inspection/cli.md#attempt-概览示例)拥有。`measurement`
 始终同时显示实际值与 required threshold，不能被显示成 score。
 

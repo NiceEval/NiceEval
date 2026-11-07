@@ -1,32 +1,3 @@
----
-format: concord.document/v1
-id: reuse-once-setup-supersedes-idempotent-hooks
-title: 设计裁决:沙箱复用定稿为串行复用(温基线一次装好),推翻「每 attempt 重跑幂等钩子」
-createdAt: 2026-07-21T19:29:34+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/reuse-once-setup-supersedes-idempotent-hooks.md
-  commit: aa267ec0103a5482f7b1707dfed4307d5b3a738d
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history:
-  - at: 2026-09-14T15:00:25.173Z
-    action: revise
-    reason: "- 部分被后续裁决替代
-      [reuse-once-setup-supersedes-idempotent-hooks](reuse-once-setup-supersede\
-      s-idempotent-hooks.md) — 裁决(2026-07-21):沙箱复用定稿为温基线一次装好、题间只 reset
-      workdir,推翻 runner.md 旧「每 attempt 重跑幂等钩子」;复用结果不进缓存。入口那一半已翻案:不是 CLI flag
-      `--reuse-sandbox`,是实验字段 `sandboxReuse: true`,异构批次也不报错而是按 profile
-      分组(见条目末尾)"
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
-    eventAt: 2026-07-21
----
 # 设计裁决:沙箱复用定稿为串行复用(温基线一次装好),推翻「每 attempt 重跑幂等钩子」
 
 ## 裁决
@@ -41,12 +12,12 @@ history:
 
 ## 落点
 
-新增 `docs/feature/sandbox/serial-reuse.md`;改写 `docs/runner.md` 预热与复用小节、`docs/feature/sandbox/architecture.md` 性能小节、`cli.md` keep/reuse 互斥条目、`local.md` 两处;场景行登记在 `docs/engineering/testing/unit/sandbox.md` 串行复用分区。
+新增 `docs/feature/sandbox/serial-reuse.md`;改写 `docs/runner.md` 预热与复用小节、`docs/feature/sandbox/architecture/README.md` 性能小节、`cli.md` keep/reuse 互斥条目、`local.md` 两处;场景行登记在 `docs/engineering/testing/architecture/unit/sandbox.md` 串行复用分区。
 
 ## 后续翻案:入口从 CLI flag 改成实验字段
 
 本条的「入口是短暂 CLI flag(`--reuse-sandbox`),不进 experiment 配置」这一半已被推翻。
-定稿形态是实验字段 `sandboxReuse: true`(契约在 `docs/feature/sandbox/reuse.md`,
+定稿形态是实验字段 `sandboxReuse: true`(契约在 `docs/feature/sandbox/library/reuse.md`,
 `serial-reuse.md` 已并入它):复用是可签入的实验语义,进 `configHash`,同一个 experiment
 不能由 CLI 临时开关;要全新 Sandbox 的对照就另写一个不声明它的 experiment。
 「与结果沿用双向绝缘」「与 keep / local 互斥」「按 environment profile 分组」三条仍然成立,

@@ -1,15 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-retention
-title: Sandbox 默认停驻与回收
-createdAt: 2026-08-07T09:46:20+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/roadmap/sandbox-retention/README.md
-  commit: bf8e868586a9e0a90e6aedc2f9d3df2bb38f2794
-kind: roadmap
-state: planned
----
 # Sandbox 默认停驻与回收
 
 一次运行结束后，用户不应提前猜中哪条 Attempt 会失败，才能保留一个可进入的 Sandbox 实例。
@@ -54,7 +42,7 @@ Docker 与 E2B 的 dormant 数据没有 Provider 硬到期，因此不通过 `au
 
 ## 与 Sandbox 复用的关系
 
-[Sandbox 复用](../../feature/sandbox/reuse.md)仍只复用同一次 Invocation 中的活实例。
+[Sandbox 复用](../../feature/sandbox/library/reuse.md)仍只复用同一次 Invocation 中的活实例。
 停驻是物理实例离开调度所有者后的处理，不把它变成下一次 Invocation 的干净起点。
 
 fresh Sandbox 的 checkpoint 关联一条 locator。
@@ -83,6 +71,6 @@ fresh Sandbox 的 checkpoint 关联一条 locator。
 
 - [Library](library.md) —— retention policy、默认值与配置求值。
 - [CLI](cli.md) —— 运行 flag、管理命令、输出与退出码。
-- [Architecture](architecture.md) —— Provider 能力、registry、状态机与安全边界。
-- [Lifecycle](lifecycle.md) —— fresh、复用池、进入 Sandbox 和中断收尾。
+- [Architecture](architecture/README.md) —— Provider 能力、registry、状态机与安全边界。
+- [Lifecycle](architecture/lifecycle.md) —— fresh、复用池、进入 Sandbox 和中断收尾。
 - [Use Cases](use-case/README.md) —— 失败后检查、CI 销毁与 Docker 显式停驻。

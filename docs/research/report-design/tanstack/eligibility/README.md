@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: report-design-tanstack-eligibility
-title: TanStack Table / Charts 的 Record → Report 适格性审查
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # TanStack Table / Charts 的 Record → Report 适格性审查
 
 > 观察日期：2026-08-14

@@ -1,6 +1,6 @@
 // 强杀后的收尾登记表由 canonical ProjectDatabase 的 teardown facet 持久化；每个
 // experiment/进程身份对应一条登记项。
-// 契约见 docs/feature/experiments/architecture.md「强杀后的收尾兜底:收尾登记与启动自愈」。
+// 契约见 docs/feature/experiments/architecture/README.md「强杀后的收尾兜底:收尾登记与启动自愈」。
 
 import { readFileSync } from "node:fs";
 import { Effect, Result, Schema } from "effect";
@@ -238,7 +238,7 @@ export function isOrphanedTeardownRegistration(entry: TeardownRegistration, curr
 /**
  * `niceeval exp` 启动提醒:遗留义务里「不在本次选择」的那部分,各给一行 `--after` 命令。
  * 在本次选择且仍声明 teardown 的遗留义务由 run.ts 在调度前自动补执行,不出现在这里
- * (见 docs/feature/experiments/architecture.md「强杀后的收尾兜底」)。
+ * (见 docs/feature/experiments/architecture/README.md「强杀后的收尾兜底」)。
  */
 export function orphanedTeardownReminderEffect(
   niceevalRoot: string,

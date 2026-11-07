@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-retain-validate-scene
-title: "`--keep-sandbox`:把分钟级复现压到秒级,在现场反复验证假设"
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # `--keep-sandbox`:把分钟级复现压到秒级,在现场反复验证假设
 
 ## 解决什么问题

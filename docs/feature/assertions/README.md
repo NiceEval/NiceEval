@@ -1,20 +1,10 @@
----
-format: concord.document/v1
-id: assertions
-title: Assertions
-createdAt: 2026-07-27T18:06:14+08:00
-kind: feature
----
-
-
-
 # Assertions
 
 Assertion 是一次 Attempt 内已经完成、可离线复核的检查事实。值比较、scope 检查、Sandbox 验证、资源限制和 Judge 都归一到 Attempt-owned 的 `niceeval.assertions` family（envelope `schemaVersion: 4`）。producer 在整个 Run 发布前封口它；Record、Verdict 与 Inspection 只读取已封口的事实，不重新执行 matcher 或作者代码。
 
 NiceEval 的默认 Record Host 组合九个官方 family。Assertions、File Changes、Sources 与 Artifacts 保存各自具名事实。Agent Turns、Turn Contexts、Sandbox Commands、Runner Activities、Runner Diagnostics 保存五类 source receipt。
 
-conversation、usage 与 source navigation 都只在读侧投影。第三方既可提供 Assertion criterion 的解释 schema，也可向自己的 Host 显式贡献独立 Attachment persistence；它不能修改 NiceEval 官方 family 的字段或借用其写入能力。完整 catalog、owner 与 closure 规则见 [Record architecture](../run/architecture.md)。
+conversation、usage 与 source navigation 都只在读侧投影。第三方既可提供 Assertion criterion 的解释 schema，也可向自己的 Host 显式贡献独立 Attachment persistence；它不能修改 NiceEval 官方 family 的字段或借用其写入能力。完整 catalog、owner 与 closure 规则见 [Record architecture](../run/architecture/README.md)。
 
 ## Assertions 持久化什么
 
@@ -120,17 +110,17 @@ Agent 的 `t.closeQA(question)`、`turn.closeQA(question)` 和 `session.closeQA(
 
 Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。后者仍形成一个 Assertions entry，criterion 为内建 direct-score，而不是不透明的分数旁路。Score 的 Boolean `.gate()` 与 measurement `.gate(minimum)` 形成显式质量门；gate 失败保留 earned score 并得到 `failed` Verdict。Score 不提供 generic optional contribution；它保留受约束的 `.orStop()` 控制流 barrier 与 `t.skip(reason)`。
 
-完整字段、封口、边界与读侧形成规则见 [Architecture](architecture.md)。
+完整字段、封口、边界与读侧形成规则见 [Architecture](architecture/README.md)。
 
 ## 继续阅读
 
-- [Library](library.md) —— 作者 API 和 handle 配置。
+- [Library](library/README.md) —— 作者 API 和 handle 配置。
 - [Value assertions](library/value-assertions.md) —— Match 与 refinement。
 - [Scoped assertions](library/scoped-assertions.md) —— scope snapshot、`calledTool`、`notCalledTool` 与 `succeeded`。
 - [Score Eval](library/score-points.md) —— points、rubric 与完整度。
 - [Evidence](architecture/evidence.md) —— snapshot、refs 与完整度。
 - [Source sites](architecture/source-sites.md) —— Assertions payload 内的源码位置与 Sources join。
-- [Type reference](reference/README.md) —— 可编译的作者类型边界。
-- [Record architecture](../run/architecture.md) —— 官方 family composition、closure 与 source-local read。
+- [Type reference](library/reference/README.md) —— 可编译的作者类型边界。
+- [Record architecture](../run/architecture/README.md) —— 官方 family composition、closure 与 source-local read。
 - [Verdict architecture](../verdict/architecture.md) —— 每个 Attempt 的四态折叠。
 - [Inspection Architecture](../inspection/architecture.md) —— 固定 operation 与闭合结果。

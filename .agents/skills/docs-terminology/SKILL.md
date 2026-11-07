@@ -13,8 +13,8 @@ Read the [writing rules](../../../docs/README.md#写给人读), then run `concor
 Use `concord writing --help` and `concord concepts --help` for command syntax. Concord owns the concept catalog and policy; other Markdown links to catalog definitions instead of keeping a second term table.
 
 - Run `concord concepts index --json` and `concord writing index --json` to discover owners and scopes.
-- Read an owner with `concepts show --path <path> --json` or `writing show --path <path> --json` and retain its latest digest.
-- Prepare the complete reviewed catalog Markdown or policy JSON in a temporary file. Use `concepts set` or `writing set` with `--body`, `--path`, and `--expected-digest`; inspect `--dry-run` first, then publish the same change. Only a missing owner uses `null`.
+- Read an owner with `concord concepts show --path <path> --json` or `concord writing show --path <path> --json`.
+- Edit the catalog Markdown or policy JSON directly, then run `concord writing check --path <path> --json`.
 - Run `concord docs check --json`, inspect each finding in context, then run `pnpm lint`.
 
 Global concepts live in `docs/concepts.md`: each `## term {#id}` heading gives the single accepted spelling and stable ID, the first paragraph is the sourced definition, and later text explains it. Only the term counts as usage; `其它写法` lines are search aids, not aliases. Deprecated names in the frontmatter produce unconditional derived bans. Catalog names cannot carry path exemptions. Put scoped deprecation rules in the writing policy with the concept reference in `why`, and remove their unconditional catalog duplicate. Preserve the distinction between adopted Feature terms and Roadmap candidates in the definition and source link.

@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-clean-start
-title: 准备缓存损坏时回到干净起点
-createdAt: 2026-08-29T18:01:03+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
-
 # 准备缓存损坏时回到干净起点
 
 场景：Docker image 或 E2B snapshot 的登记仍在，但 Provider 已删除对应对象、返回了不同 identity，或无法完成 restore。

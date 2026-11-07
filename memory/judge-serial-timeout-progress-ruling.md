@@ -1,27 +1,10 @@
----
-format: concord.document/v1
-id: judge-serial-timeout-progress-ruling
-title: judge 慢的治理:有界超时 + 逐条进度,否决 attempt 内并发
-createdAt: 2026-07-29T22:20:07+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/judge-serial-timeout-progress-ruling.md
-  commit: 2560d733e14dbbfc77bec57cd7dc5810f0023db2
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # judge 慢的治理:有界超时 + 逐条进度,否决 attempt 内并发
 
 **裁决**(2026-07-29):judge 判分调用慢/挂死的治理定为两条——每次调用有界
 (`judge.timeoutMs`,缺省 180_000,到点记 `judge-call-failed` unavailable)+ live 面板
 scoring 行逐条推进(`judge k/n · <检查方式>`)。attempt 内断言保持按声明顺序串行求值。
 契约落点:`docs/feature/judge/library.md#调用预算与执行顺序`、
-`docs/feature/experiments/cli.md#attempt-阶段`。
+`docs/feature/experiments/cli/README.md#attempt-阶段`。
 
 **曾选方案**:finalize 内 judge 并发求值(缩短单 attempt 判分墙钟)。
 

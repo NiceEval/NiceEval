@@ -91,7 +91,7 @@ const agent = codexAgent({
 });
 ```
 
-`before` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md)）。
+`before` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/library/layers.md)）。
 - 拿到 sandbox 句柄和 `signal`/`progress`/`diagnostic`/`facts`，不借用完整 `AgentContext`。
 - `phase` 分别是 `agent.post-setup` / `agent.pre-teardown`，`owner` 是当前 agent。
 - 多个 Hook 按数组顺序执行；成对的 `after` 数组承载收尾：按逆序、先于 agent after 执行（LIFO 镜像——`before` 跑在 agent 安装之后，`after` 就跑在 agent 收尾之前），当且仅当 `before` 的时点走到过才触发。
@@ -99,7 +99,7 @@ const agent = codexAgent({
 - `niceeval debug <experiment> <eval>` 会在 Adapter 的 opaque before / after 边界内展开 Hook；`shell()` / `command()` 显示脱敏后的声明，函数 callback 保持 opaque。
 - Hook 抛错按基础设施错误计（结构化执行错误通道事件 → `errored` Verdict），不是 agent 解题失败；Attempt lifecycle 仍不使用 verdict token。
 
-Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
+Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](sdk/codex-cli/README.md#执行信任姿态)。
 
 ## 与 Sandbox 复用组合
 
@@ -158,7 +158,7 @@ my-evals/
 
 Adapter 先从本地读取原始字节，再上传到 Sandbox 的隔离 Agent 配置目录。它不继承宿主机的 `~/.claude/settings.json` 或 `~/.codex/config.toml`；传入文件原样替换 Sandbox 中原本为空的用户配置层，不做字符串拼接、deep merge 或重新序列化。仓库自己的项目级配置仍由被测 CLI 按官方优先级读取。
 
-model、鉴权、MCP 和 OTel 导出由 experiment 与 Adapter 通过独立配置层或 CLI 参数叠加，对应的键不允许出现在原生配置文件里，冲突在 before 阶段报错，不做静默改写。配置文件内容的 SHA-256 进入安装 checkpoint key；secret 走 env var，不写进配置文件。例外只有 Hermes——它的凭据面只认 `~/.hermes` 下的文件，落盘范围与理由见 [Hermes 页](../sdk/hermes/README.md)。每个 Agent 的保留键清单见页尾链接的各 Agent 页。
+model、鉴权、MCP 和 OTel 导出由 experiment 与 Adapter 通过独立配置层或 CLI 参数叠加，对应的键不允许出现在原生配置文件里，冲突在 before 阶段报错，不做静默改写。配置文件内容的 SHA-256 进入安装 checkpoint key；secret 走 env var，不写进配置文件。例外只有 Hermes——它的凭据面只认 `~/.hermes` 下的文件，落盘范围与理由见 [Hermes 页](sdk/hermes/README.md)。每个 Agent 的保留键清单见页尾链接的各 Agent 页。
 
 上例两边都关掉内置联网检索：评测答案能被搜到时，联网会污染通过率。注意原生配置只能关掉 Agent 的检索工具，挡不住它用 shell 命令访问网络；更强的网络隔离属于 Sandbox 层。
 
@@ -198,6 +198,6 @@ Sandbox Agent before 把安装 manifest 写入具名 Attempt channel。固定 In
 
 每个 Agent 支持的字段和示例见：
 
-- [Claude Code](../sdk/claude-code/README.md)
-- [Codex CLI](../sdk/codex-cli/README.md)
-- [Bub](../sdk/bub/README.md)
+- [Claude Code](sdk/claude-code/README.md)
+- [Codex CLI](sdk/codex-cli/README.md)
+- [Bub](sdk/bub/README.md)

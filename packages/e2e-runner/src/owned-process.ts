@@ -193,8 +193,8 @@ function acquireActive(command: readonly string[], options: OwnedProcessOptions,
     }
     child.once("error", (error) => { entry.error = error.message; onFailure?.(); });
     child.stdin?.on("error", (error) => { entry.error = error.message; onFailure?.(); signal(entry, "SIGKILL", "cancelled"); });
-    child.once("exit", (code, exitSignal) => { if (code !== 0 || exitSignal !== null) onFailure?.(); });
-    child.once("close", (code, exitSignal) => { finishOutput(); entry.closed = [code, exitSignal]; if (code !== 0 || exitSignal !== null) onFailure?.(); for (const listener of entry.closeListeners) listener(entry.closed); entry.closeListeners.clear(); });
+    child.once("exit", (code, exitSignal) => { if (code === null || exitSignal !== null) onFailure?.(); });
+    child.once("close", (code, exitSignal) => { finishOutput(); entry.closed = [code, exitSignal]; if (code === null || exitSignal !== null) onFailure?.(); for (const listener of entry.closeListeners) listener(entry.closed); entry.closeListeners.clear(); });
     active.add(entry);
     if (options.stdin !== undefined) child.stdin?.end(options.stdin);
     return entry;
@@ -252,7 +252,7 @@ export function ownedProcessLayer(options: { readonly graceMs?: number; readonly
         return Effect.acquireRelease(acquireActive(command, options.inheritedGroup === undefined ? processOptions : { ...processOptions, output: "capture", stream: false }, active, options.inheritedGroup, options.inheritedGroup === undefined ? undefined : () => { stoppingSignal ??= "SIGTERM"; }), (entry) => shutdown(entry, graceMs, "cancelled").pipe(Effect.asVoid, Effect.ensuring(Effect.sync(() => active.delete(entry))))).pipe(Effect.flatMap((entry) => {
           const done = complete(entry, graceMs);
           const timed = processOptions.timeoutMs === undefined ? done : Effect.raceFirst(done, Effect.sleep(processOptions.timeoutMs).pipe(Effect.andThen(shutdown(entry, graceMs, "timeout"))));
-          return timed.pipe(Effect.tap((result) => Effect.sync(() => { active.delete(entry); if (options.inheritedGroup !== undefined && !hasSuccessfulOwnedProcessResult(result)) stoppingSignal ??= "SIGTERM"; })));
+          return timed.pipe(Effect.tap((result) => Effect.sync(() => { active.delete(entry); if (options.inheritedGroup !== undefined && (result.exitCode === null || result.signal !== null || result.timedOut || result.cancelled || result.error !== undefined)) stoppingSignal ??= "SIGTERM"; })));
         }));
       }),
       requestStop,

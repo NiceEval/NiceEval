@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-ragas
-title: Ragas 的 Metric、Judge 与聚合作者指南
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Ragas 的 Metric、Judge 与聚合作者指南
 
 > 观察日期：2026-08-09。本文以 Ragas `0.4.3`、tag commit

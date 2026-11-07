@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: nested-docker-capability
-title: 声明 Docker 能力
-createdAt: 2026-08-25T23:04:51+08:00
-kind: use-case
-feature: docs/feature/sandbox-nested-docker/README.md
----
-
 # 声明 Docker 能力
 
 题目需要 Agent 在评估现场里运行 Docker 与 Compose。

@@ -1,14 +1,3 @@
----
-format: concord.document/v1
-id: task-orchestration
-title: 任务图与 E2E 选择
-createdAt: 2026-08-22T13:35:36+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/engineering/task-orchestration/README.md
-  commit: 1f8e0b5ac9b103eb0a214ca3c43da3b5f89c9ee9
-kind: engineering
----
 # 任务图与 E2E 选择
 
 本主题定义 niceeval 仓库如何用 Nx 管理项目图、任务输入和受影响的 E2E 集合。它只负责回答“这次变更需要验证哪些项目”；
@@ -230,8 +219,8 @@ receipt；artifact 离开 Actions 后仍能说明该 Repo 为什么被选择。
 
 ### 新增或修改 E2E Repo
 
-1. 从 [测试组合](../testing/portfolio.md) 确认唯一长期结果 owner，再按
-   [真实场景 Repo](../testing/e2e/scenario-repos.md) 创建叶子。
+1. 从 [测试组合](../testing/architecture/portfolio.md) 确认唯一长期结果 owner，再按
+   [真实场景 Repo](../testing/architecture/e2e/scenario-repos.md) 创建叶子。
 2. 在叶子 `project.json` 配置 `kind:e2e`、`executor: "nx:selection-only"` 哨兵与严格 `metadata.niceeval`；真实命令只放在 metadata，由根 runner 执行。
 3. 把产品输入建模成对 `niceeval-domain-*` 的依赖；不增加 `paths`，不在 workflow 或 planner 复制 Repo ID。
 4. 用 `pnpm --silent e2e plan --repo <id> --lane pr --json` 校验 manifest，再用一个真实安装后场景验收执行生命周期。

@@ -4,7 +4,7 @@
 // DiagnosticNotice.data / FailureNotice 的具名字段上,见 ../types.ts 的类型注释)。
 //
 // `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
-//(八项恒等式,契约见 docs/feature/experiments/cli.md「等待并发 run 的显示」)在处理每一个事件
+//(八项恒等式,契约见 docs/feature/experiments/cli/README.md「等待并发 run 的显示」)在处理每一个事件
 // 之后都成立 —— 见 reducer.test.ts 的表驱动用例,每一步都断言这个不变量,不只在流程末尾断言
 // 一次。八项是互斥状态划分:每一次迁移都是「从一项减 x、往另一项加 x」的原子操作(plan →
 // queued;attempt:start queued→running;attempt:complete 从 running（或 provider waiter 的 queued）

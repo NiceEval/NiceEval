@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: judge-precheck-run-level-line-not-transient
-title: judge 预检定性为运行级生命周期行,不是「运行级瞬时通知」
-createdAt: 2026-07-24T09:37:03+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/judge-precheck-run-level-line-not-transient.md
-  commit: fce3f25e92fd4e6dd803958036ddf27b7781e522
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # judge 预检定性为运行级生命周期行,不是「运行级瞬时通知」
 
 ## 现象
@@ -32,7 +15,7 @@ history: []
 
 ## 根因(设计)
 
-judge 预检原本在 `docs/feature/experiments/cli.md` 里被归为「运行级**瞬时**通知」——契约只承诺
+judge 预检原本在 `docs/feature/experiments/cli/README.md` 里被归为「运行级**瞬时**通知」——契约只承诺
 追加一行、`--json` 不输出,前提是它一闪而过。但它其实是一次真实网络往返,可以阻塞十几秒甚至更久,
 「瞬时」这个定性没为「它会慢/会 block」准备任何进度反馈。
 

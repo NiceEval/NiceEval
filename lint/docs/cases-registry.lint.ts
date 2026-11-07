@@ -3,9 +3,9 @@ import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // Feature 测试文档与代码测试的双向挂钩由文档 lint 检查(契约见
-// docs/engineering/testing/unit/README.md「矩阵与覆盖登记」与
-// docs/engineering/testing/unit/registry.md),不引入脚本:
-// 1. src/ 下每个测试文件头部声明所属文档(// cases: docs/engineering/testing/unit/<feature>.md),
+// docs/engineering/testing/architecture/unit/README.md「矩阵与覆盖登记」与
+// docs/engineering/testing/architecture/unit/registry.md),不引入脚本:
+// 1. src/ 下每个测试文件头部声明所属文档(// cases: docs/engineering/testing/architecture/unit/<feature>.md),
 //    且声明指向真实存在的测试文档——没有这条,新增测试可以绕开覆盖登记存在,
 //    「先声明后写测」的预算闸门静默失效;
 // 2. 测试里的 `// bug: memory/<条目>.md` 引用指向真实存在的 memory 条目——修法台账靠
@@ -30,7 +30,7 @@ const isTestFile = (name: string) => name.endsWith(".test.ts") || name.endsWith(
 
 describe("Feature 测试文档 lint", () => {
   const srcTests = walk("packages/niceeval/src", isTestFile);
-  const CASES_LINE = /^\/\/ cases: (docs\/engineering\/testing\/unit\/[a-z-]+\.md)$/;
+  const CASES_LINE = /^\/\/ cases: (docs\/engineering\/testing\/architecture\/unit\/[a-z-]+\.md)$/;
 
   it("src/ 下每个测试文件前 20 行内有且仅有一行 cases 声明,且指向真实存在的测试文档", () => {
     const problems: string[] = [];
@@ -41,7 +41,7 @@ describe("Feature 测试文档 lint", () => {
         .filter((m): m is RegExpExecArray => m !== null);
       if (matches.length === 0) {
         problems.push(
-          `${file}: 前 20 行没有 cases 声明——在文件第一行加 // cases: docs/engineering/testing/unit/<feature>.md`,
+          `${file}: 前 20 行没有 cases 声明——在文件第一行加 // cases: docs/engineering/testing/architecture/unit/<feature>.md`,
         );
         continue;
       }

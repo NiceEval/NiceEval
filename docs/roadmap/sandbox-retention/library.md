@@ -1,7 +1,7 @@
 # Sandbox 默认停驻与回收 —— Library
 
 本页定义项目级 retention policy。
-命令、registry 与 Provider 能力分别见 [CLI](cli.md) 和 [Architecture](architecture.md)。
+命令、registry 与 Provider 能力分别见 [CLI](cli.md) 和 [Architecture](architecture/README.md)。
 
 ## 配置形状
 

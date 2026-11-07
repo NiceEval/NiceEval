@@ -353,7 +353,7 @@ function readUsage(result: AiSdkResultLike, stepCount: number): Usage | undefine
   const cacheRead = num(u.cachedInputTokens) ?? num(u.inputTokenDetails?.cacheReadTokens) ?? 0;
   const cacheCreation = num(u.inputTokenDetails?.cacheWriteTokens) ?? 0;
   // AI SDK 的 inputTokens 是含缓存明细的输入总量,落互斥桶前扣掉在场的明细
-  // (docs/feature/adapters/sdk/ai-sdk/cost.md)
+  // (docs/feature/adapters/library/sdk/ai-sdk/cost.md)
   const inputTokens = Math.max(0, rawInput - cacheRead - cacheCreation);
   const usage: Usage = { inputTokens, outputTokens, requests: Math.max(stepCount, 1) };
   if (cacheRead) usage.cacheReadTokens = cacheRead;
@@ -487,7 +487,7 @@ export interface AiSdkAgentOptions<M = JsonValue, Integration extends object = o
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/ai-sdk/README.md
+// @concord-implements docs/feature/adapters/library/sdk/ai-sdk/README.md
 export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
   options: AiSdkAgentOptions<M, Integration>,
 ): Agent {

@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: selection-dry-preview
-title: 选择器 + `--dry`:几十个实验里只跑要跑的,先看清计划再花钱
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
-
 # 选择器 + `--dry`:几十个实验里只跑要跑的,先看清计划再花钱
 
 ## 解决什么问题
@@ -19,7 +9,7 @@ feature: docs/feature/experiments/README.md
 ## 全流程
 
 1. 用「目录/文件名前缀」圈出一族,先 `--dry` 看计划。
-   选择规则见 [CLI · 实验选择器怎样求值](../cli.md#实验选择器怎样求值):
+   选择规则见 [CLI · 实验选择器怎样求值](../cli/README.md#实验选择器怎样求值):
 
    ```sh
    niceeval exp compare/codex --dry
@@ -49,7 +39,7 @@ feature: docs/feature/experiments/README.md
    ```
 
 4. 计划与预期一致后去掉 `--dry` 实跑。
-   `--dry` 只打印计划(人读文本或 `--json` 单文档),不运行、不落盘,也不写 JUnit(见 [CLI · 哪些参数改变什么](../cli.md#哪些参数改变什么))。
+   `--dry` 只打印计划(人读文本或 `--json` 单文档),不运行、不落盘,也不写 JUnit(见 [CLI · 哪些参数改变什么](../cli/README.md#哪些参数改变什么))。
 
    需要在花费前核对这个 Experiment 的 Sandbox before 缓存时，使用 `niceeval debug <experiment> --json`。省略 Eval selector 会规划该 Experiment 选中的全部 Eval，`beforeCachePlan` 按 prefix identity 去重消费者。
 
@@ -80,11 +70,11 @@ feature: docs/feature/experiments/README.md
 
 ## 边界
 
-- 位置参数只选「跑哪些」——experiment id / 路径与 eval id 前缀;agent 名、URL、运行配置不进位置参数,临时改 model 属于写一个新实验文件(见 [CLI · 用法错误](../cli.md#用法错误))。
+- 位置参数只选「跑哪些」——experiment id / 路径与 eval id 前缀;agent 名、URL、运行配置不进位置参数,临时改 model 属于写一个新实验文件(见 [CLI · 用法错误](../cli/README.md#用法错误))。
 - 目录段永远要求精确匹配,`dev` 不会误中 `dev-e2b`;不存在跨目录的模糊匹配。
-- 实验选中了、但 eval 前缀零命中(`total = 0`)是另一条报错(`No evals selected`,退出码非零),同样给 `--dry` 建议——两层选择分别校验,见 [CLI · 人看的结束反馈](../cli.md#人看的结束反馈)。
+- 实验选中了、但 eval 前缀零命中(`total = 0`)是另一条报错(`No evals selected`,退出码非零),同样给 `--dry` 建议——两层选择分别校验,见 [CLI · 人看的结束反馈](../cli/README.md#人看的结束反馈)。
 
 ## 相关阅读
 
-- [CLI · 实验选择器怎样求值](../cli.md#实验选择器怎样求值) —— 三级选择规则与零命中反馈的单源。
-- [Library · 路径只表达身份与选择](../library.md#路径只表达身份与选择) —— 路径怎样形成 id,`evals` 怎样选题。
+- [CLI · 实验选择器怎样求值](../cli/README.md#实验选择器怎样求值) —— 三级选择规则与零命中反馈的单源。
+- [Library · 路径只表达身份与选择](../library/README.md#路径只表达身份与选择) —— 路径怎样形成 id,`evals` 怎样选题。

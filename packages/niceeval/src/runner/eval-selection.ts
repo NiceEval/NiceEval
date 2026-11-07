@@ -2,7 +2,7 @@ import type { ResolvedModelRoles } from "../model-roles.ts";
 // 纯选题边界:发现结果 → EvalDescriptor 投影 → 用户谓词求值 → selectedEvalIds。
 // CLI 在构造每个 AgentRun 前对候选 eval 各调用一次谓词并把结果落进这里;下游(dry-run、
 // sandbox 查表、fingerprint/carry、attempt 展开、hook ctx、快照)只消费返回的
-// selectedEvalIds,不重新调用用户谓词(见 docs/feature/experiments/library.md「evals」)。
+// selectedEvalIds,不重新调用用户谓词(见 docs/feature/experiments/library/README.md「evals」)。
 
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import type { AgentRun, DiscoveredEval, EvalDescriptor, ExperimentAuthorFields } from "./types.ts";

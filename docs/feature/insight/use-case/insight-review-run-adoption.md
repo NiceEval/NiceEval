@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: insight-review-run-adoption
-title: 审阅一次 Run 怎样采用结果
-createdAt: 2026-08-26T19:54:36+08:00
-kind: use-case
-feature: docs/feature/insight/README.md
----
-
-
 # 审阅一次 Run 怎样采用结果
 
 用户从 Experiment Results 追到 exact Attempt，并以完整证据决定怎样采用该 Run 的结果。Run 无需先进入终态；Insight

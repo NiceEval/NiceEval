@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-storage-options
-title: Record storage 候选方案比较
-createdAt: 2026-08-26
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-storage/options/README.md
-  commit: 2b609121d8e2f27c6c0ed767661f65ee43e5b1ea
-kind: research
 sources: []
 ---
+
 # Record storage 候选方案比较
 
 > 比较日期：2026-08-25

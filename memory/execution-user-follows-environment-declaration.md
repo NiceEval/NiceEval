@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: execution-user-follows-environment-declaration
-title: "执行身份沿用环境声明,`root: true` 退役成 `user`"
-createdAt: 2026-08-04T11:02:16+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/execution-user-follows-environment-declaration.md
-  commit: dab9ca8c2bcafb742f862c479a3e1e48b42ac1d3
-kind: memory
-memoryKind: decision
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # 执行身份沿用环境声明,`root: true` 退役成 `user`
 
 **裁决(2026-08-04)**:Sandbox 执行身份统一成一个词 `user`,默认沿用环境自己声明的身份。
@@ -28,4 +12,4 @@ history: []
 
 **否决理由**:Terminal-Bench 全量运行暴露——226 个 dockerSandbox 题假设镜像声明的身份(写 `/app`、`apt-get install`),被静默换成非特权 UID 1000 后约 150/238 attempt 以 `Permission denied` / `sudo: command not found` 失败,而 `dockerSandbox()` 没有任何声明入口。静默覆盖不产生报错,只表现为一片权限失败,定位成本极高;环境是题目作者写的,runner 覆盖题目声明的身份属于越权。布尔 `root` 表达不了任意用户,`"image"` 哨兵与真实用户名冲突。
 
-**落点**:契约见 `docs/feature/sandbox/library.md`「执行身份」;实现涉及 `src/sandbox/layer.ts`(factory options 与 command identity)、`src/sandbox/docker.ts`(默认身份、home/PATH/chown 按身份解析)、`src/sandbox/e2b.ts`、`src/sandbox/vercel.ts`、`src/sandbox/local.ts`、`src/types.ts`(`CommandOptions`)。
+**落点**:契约见 `docs/feature/sandbox/library/README.md`「执行身份」;实现涉及 `src/sandbox/layer.ts`(factory options 与 command identity)、`src/sandbox/docker.ts`(默认身份、home/PATH/chown 按身份解析)、`src/sandbox/e2b.ts`、`src/sandbox/vercel.ts`、`src/sandbox/local.ts`、`src/types.ts`(`CommandOptions`)。

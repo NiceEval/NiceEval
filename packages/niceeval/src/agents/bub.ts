@@ -144,7 +144,7 @@ function tapePath(workspace: string, sessionId: string, bubHome: string): string
 
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/bub/README.md
+// @concord-implements docs/feature/adapters/library/sdk/bub/README.md
 export function bubAgent(config?: BubConfig): Agent {
   if (config !== undefined && Object.hasOwn(config, "apiBase")) {
     throw new TypeError("bubAgent() apiBase is no longer supported. Use baseUrl.");

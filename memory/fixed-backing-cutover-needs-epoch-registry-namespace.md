@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: fixed-backing-cutover-needs-epoch-registry-namespace
-title: Declarative fixed backing cutover needs an epoch registry namespace
-createdAt: 2026-08-25T11:23:17+08:00
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # Declarative fixed backing cutover needs an epoch registry namespace
 
 ## Observation

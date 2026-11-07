@@ -1,7 +1,7 @@
 // 协议行为:coding 任务工具轨——真实任务下 app-server 的 item 通知归一出命令
 // 与文件工具事件,优先按显式 call ID 配对(见 src/o11y/parsers/codex.ts:command_execution /
 // file_change 分支,call id 来自 item.id)。一个 Eval 里同时验两种编码工具形态(改文件 + 跑
-// 命令),不为每种形态各开一条 Eval(见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval
+// 命令),不为每种形态各开一条 Eval(见 docs/engineering/testing/architecture/e2e/adapter/README.md「仓库 Eval
 // 预算」)。codex 在 Docker Sandbox 里跑,没有 host 工作目录,文件断言一律走 t.sandbox.*。
 //
 // 两处设计都来自本仓库设计阶段的真机复现(codex-cli 0.144.1):

@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-arize-phoenix-storage
-title: Phoenix 的持久对象与权威 / 派生区分
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Phoenix 的持久对象与权威 / 派生区分
 
 > 观察日期：2026-08-14

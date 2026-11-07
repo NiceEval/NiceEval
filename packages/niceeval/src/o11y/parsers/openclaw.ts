@@ -1,5 +1,5 @@
 // OpenClaw transcript / `agent --json` 解析器。OpenClaw 方言只住这里,不进 core
-// (契约见 docs/feature/adapters/sdk/openclaw/README.md:字段事实以真实 CLI 与 transcript
+// (契约见 docs/feature/adapters/library/sdk/openclaw/README.md:字段事实以真实 CLI 与 transcript
 // fixture 固定为准;fixture 未证明的形状这里只做防御式解析,认不出的行标 parseSuccess=false,
 // 绝不从最终文本猜测工具轨迹)。
 //

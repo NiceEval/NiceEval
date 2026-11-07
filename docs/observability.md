@@ -38,7 +38,7 @@ RecordAttachment 只能由固定 query operation 或 View 读取。
 | `niceeval.sandbox-commands` | Attempt | Sandbox wrapper | command manifest、唯一终态与安全 stream |
 | `niceeval.runner-activities` | Attempt、Run | 对应 owner 的 Runner monotonic clock | activity、phase、anchor 与区间 |
 | `niceeval.runner-diagnostics` | Attempt、Run | 对应 owner 的 Runner diagnostic sink | advisory 与 execution error |
-| `niceeval.identity-manifests` | Run | Runner 在 Run 创建时 | 每个 Eval 的 identity manifest 与 domain 版本，只用于解释身份差异，见 [Cache · 差异说明](feature/experiments/cache.md#差异说明) |
+| `niceeval.identity-manifests` | Run | Runner 在 Run 创建时 | 每个 Eval 的 identity manifest 与 domain 版本，只用于解释身份差异，见 [Cache · 差异说明](feature/experiments/architecture/cache.md#差异说明) |
 
 这些 source 与 `niceeval.assertions`、`niceeval.file-changes`、`niceeval.sources`、`niceeval.artifacts` 共同组成
 Record 的 fixed catalog；各自 owner 由 catalog 声明。
@@ -74,7 +74,7 @@ source envelope 都是 exact JSON。未知 envelope 字段、超出上限、重�
 ## 通用执行轨迹
 
 执行事件保留其领域类型，conversation、turn 与 tool 是内建 producer 的特例。Adapter 通过
-[`recordTrace`](feature/adapters/library.md#保存通用执行轨迹) 提交不可变快照，事件进入原生 collection。
+[`recordTrace`](feature/adapters/library/README.md#保存通用执行轨迹) 提交不可变快照，事件进入原生 collection。
 快照头保存 schema identity、完整度和 scope 声明；事件保存主体、source 顺序、clock、显式关系与精确证据引用。
 
 导入 key、框架 eventId 和可缺失的原生 source eventId 分开。展示顺序不证明跨 source 因果，接纳或取消也不证明操作完成。
@@ -83,7 +83,7 @@ source envelope 都是 exact JSON。未知 envelope 字段、超出上限、重�
 
 Inspection 提供有界摘要、分页和精确事件/证据读取。精确 selector 不依赖默认 outline 是否展示该 ID。
 CLI 与 Web 使用同一关闭结果，领域作者不能提供执行代码或 formatter。
-人读形式由 Adapter 在写入时以封闭词汇的[事件展示块](feature/adapters/library.md#事件展示块)交付，随事件封存；
+人读形式由 Adapter 在写入时以封闭词汇的[事件展示块](feature/adapters/library/README.md#事件展示块)交付，随事件封存；
 读取不加载项目或 Adapter，同一 NiceEval 版本对同一 Record 给出相同展示。payload 与附件均须是可公开且已脱敏的证据，
 不能借开放字段保存 hidden chain of thought、secret 或未解释的私有 provider 帧。
 
@@ -211,7 +211,7 @@ query 与 View 只消费已关闭的 operation result。它们不重新打开 Re
 
 - [Observability Source receipts](feature/run/architecture/observability-attachments.md)
   —— 五个 source family 的精确 payload、限制、seal 和 failure 语义。
-- [Record 架构](feature/run/architecture.md) —— Core、closure、完成标识与 migration。
+- [Record 架构](feature/run/architecture/README.md) —— Core、closure、完成标识与 migration。
 - [Record Library](feature/run/library.md) —— fixed family read、capture contract 与 Effect API。
 - [Record → Delivery 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
   不构成当前契约。

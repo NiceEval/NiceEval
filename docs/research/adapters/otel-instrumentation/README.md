@@ -1,13 +1,4 @@
 ---
-format: concord.document/v1
-id: adapters-otel-instrumentation
-title: 应用侧 OTel 埋点生态 —— span 里到底有没有 eval 要的数据(调研笔记)
-createdAt: 2026-08-12
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/adapters/otel-instrumentation.md
-  commit: 107a13b385b02c620a786064bded8bec766385b8
-kind: research
 sources:
   - https://ai-sdk.dev/docs/ai-sdk-core/telemetry
   - https://www.traceloop.com/docs/openllmetry/{tracing/supported,privacy/traces,contributing/semantic-conventions}

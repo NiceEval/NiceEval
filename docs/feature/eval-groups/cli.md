@@ -18,7 +18,7 @@ Eval Group 不增加独立运行命令。`niceeval exp` 的 selector 仍按 Eval
 
 不同 lane 之间没有全局序号。Group lane 的严格串行不限制其它 Group 或普通 Eval 使用并发名额。
 机器形状与 schema version 的唯一契约见
-[Experiments · CLI](../experiments/cli.md#debug)。
+[Experiments · CLI](../experiments/cli/README.md#debug)。
 
 ## 运行反馈
 

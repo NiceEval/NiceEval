@@ -1,27 +1,3 @@
----
-format: concord.document/v1
-id: agent-install-recipe
-title: Agent 安装配方
-createdAt: 2026-07-30T14:54:42+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/design/agent-install-recipe/README.md
-  commit: 69f7d127fde171d7dc9fbd87332e93011b03396d
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-  - plan-4
-decision:
-  selected: plan-4
-  reason: 迁移保留 DECISION.md 中的明确裁决：plan-4
-  source:
-    path: docs/design/agent-install-recipe/DECISION.md
-    commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-    digest: sha256:725d7e8a628f05b551bc6c66c264d489224a02b2533c993f92cdd039ec7032e6
-  targets: []
----
 # Agent 安装配方
 
 `e2bCodingAgentTemplate(agent)` 把三件事焊在一个工厂里:

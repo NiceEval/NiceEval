@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-eve-schema-and-migration
-title: Eve：eval dump 的 schema 与其它面的版本
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Eve：eval dump 的 schema 与其它面的版本
 
 > 观察日期：2026-08-14

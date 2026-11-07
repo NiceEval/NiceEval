@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: machine-output-ci-gate
-title: CI 门禁:退出码、JUnit 与人读日志
-createdAt: 2026-07-23T16:46:08+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # CI 门禁:退出码、JUnit 与人读日志
 
 ## 解决什么问题
@@ -22,8 +13,8 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
    niceeval exp ci --junit ./niceeval-junit.xml
    ```
 
-2. 日志是人读追加流,整流走单一 `stdout`——CI runner 分开缓冲两个 OS stream 也不会把失败行和结束摘要打乱序([流边界](../cli.md#输出流和落盘节奏))。
-   需要机器消费运行事件(自建注解 adapter、实时看板)时加 [`--json`](../cli.md#机器怎么读--json) 换成 NDJSON,两种形态事实一致。
+2. 日志是人读追加流,整流走单一 `stdout`——CI runner 分开缓冲两个 OS stream 也不会把失败行和结束摘要打乱序([流边界](../cli/README.md#输出流和落盘节奏))。
+   需要机器消费运行事件(自建注解 adapter、实时看板)时加 [`--json`](../cli/README.md#机器怎么读--json) 换成 NDJSON,两种形态事实一致。
 3. 门禁只认退出码:`0` 全部通过且运行完整完成计划;`1` 有 `failed` / `errored`、budget 未完成计划或 required reporter 写失败;`2` 未捕获崩溃;`130` 中断。
    折叠规则见 [Runner · 退出码](../../../runner.md#退出码)。
 4. 归档文件：`--junit` 是整次运行的最终聚合，收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件，要么不存在。
@@ -82,6 +73,6 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
 ## 相关阅读
 
-- [CLI · CI 门禁](../cli.md#ci-门禁) —— 门禁 case 的单源。
+- [CLI · CI 门禁](../cli/README.md#ci-门禁) —— 门禁 case 的单源。
 - [Runner · 完成状态](../../../runner.md#完成状态) —— Run 发布、`SIGINT` 与严格失败收尾。
 - [`--json`(AI 循环)](machine-output-ai-fix-loop.md) —— 机器面的另一类消费者。

@@ -1,38 +1,8 @@
----
-format: concord.document/v1
-id: turn-retry-backoff-releases-experiment-serial-lock
-title: "turn 级重试退避释放实验级串行锁,击穿 maxConcurrency: 1 的串行契约"
-createdAt: 2026-07-23T10:32:00+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/turn-retry-backoff-releases-experiment-serial-lock.md
-  commit: 3167664e3d294295d243ba707716b2e22d1a887a
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [turn-retry-backoff-releases-experiment-serial-lock](turn-retry-backoff-releases-experiment-serial-lock.md) — turn 级重试退避把实验级 runSem 一并释放,`maxConcurrency: 1` 的串行契约被击穿(下游 mempal 记忆回存竞态、running=2 实证);修法=退避只释放 globalSem,退避期间继续持有 runSem(裁决见 experiment-gate-tenure-ruling,commit `9d7b352`+`6953d51`);MemoryBench 真机回归三条判据全过"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # turn 级重试退避释放实验级串行锁,击穿 maxConcurrency: 1 的串行契约
 
 ## 现象
 
-下游 dogfooding 仓库(coding-agent-memory-evals)的 mempal 实验声明了 `maxConcurrency: 1`(文档承诺的「载入…回存临界区声明式串行」模式,见 `docs/feature/experiments/library.md` mempal 示例与 docs-site `write-experiment.mdx`),实测却出现 `running=2`、停止时 force-clean 2 个同实验 sandbox 同时存活。后果:attempt B 的 `mempalSetup`(载入记忆)在 attempt A 的 `mempalTeardown`(回存)之前读到旧状态,跨 eval 记忆累积被静默覆盖,实验结果无效。
+下游 dogfooding 仓库(coding-agent-memory-evals)的 mempal 实验声明了 `maxConcurrency: 1`(文档承诺的「载入…回存临界区声明式串行」模式,见 `docs/feature/experiments/library/README.md` mempal 示例与 docs-site `write-experiment.mdx`),实测却出现 `running=2`、停止时 force-clean 2 个同实验 sandbox 同时存活。后果:attempt B 的 `mempalSetup`(载入记忆)在 attempt A 的 `mempalTeardown`(回存)之前读到旧状态,跨 eval 记忆累积被静默覆盖,实验结果无效。
 
 下游最初猜测的机制(「maxConcurrency 只 gate agent-run 中段,sandbox 级 setup/teardown 逃逸在外 / 预 provision 下一个 sandbox」)经核对源码**不成立**:runSem(`src/runner/run.ts` 的实验级信号量)经 `runSem.withPermits(1)(gated)` 包住整个 attempt——`runAttemptEffect` 是 `Effect.scoped`(`src/runner/attempt.ts:195`),sandbox create、`SandboxSpec.setup()` 钩子、agent run、teardown 钩子链(runAttemptBody 的 finally)、Scope release(sb.stop)全部在 permit 内完成后才归还名额。稳态路径是完全串行的。
 

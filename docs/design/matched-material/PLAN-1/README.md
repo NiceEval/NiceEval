@@ -1,9 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design-plan
-relations: {}
----
-
 # 材料验收问答
 
 ## 解决的问题

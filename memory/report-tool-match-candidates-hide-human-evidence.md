@@ -1,17 +1,11 @@
 ---
-format: concord.document/v1
-id: report-tool-match-candidates-hide-human-evidence
-title: Report 工具匹配候选隐藏可读证据
-createdAt: 2026-08-24T13:13:34+08:00
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions:
-  - docs/feature/assertions/library/display.md#单条-assertion
-history: []
+relations:
+  - role: supports
+    target: docs/feature/assertions/library/display.md#单条-assertion
 ---
+
+# Report 工具匹配候选隐藏可读证据
+
 ## 问题
 
 工具 collection 的诊断树保留了每个 occurrence 及其 `name`、`input`、`output`、`status` 子 matcher，但 Report 折叠态只显示内部候选 identity 和字段名。用户无法直接看出“第几次调用、调用了什么、整体是否命中、哪个字段的期望与实际不同”。
@@ -38,4 +32,4 @@ history: []
 
 order artifact 保存 query steps、最早 witness path 或 `failure frontier`、suffix aggregate、有界 representative diagnostics、locators 与 relation status。旧 Record 缺少逐条 relation 时只显示中立 ledger、retained old diagnostics 和明确降级文案；任何 reader 都不重跑 matcher 或合并推断。
 
-回归由 `docs/engineering/testing/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。
+回归由 `docs/engineering/testing/architecture/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有。

@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: scope-warnings-group-by-action
-title: 裁决：ScopeWarnings 按动作聚合 + 明细折叠（2026-07-17）
-createdAt: 2026-07-17T14:12:36+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/scope-warnings-group-by-action.md
-  commit: 177a151c4b41ba97515f17af597b1f91c23a9cac
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 裁决：ScopeWarnings 按动作聚合 + 明细折叠（2026-07-17）
 
 `ScopeWarnings` 的呈现契约从「逐条平铺 message、明确无折叠」翻案为「按下一步动作聚合成组，组头（存在 / 分类 / 命令）恒可见、逐条 message 收进 `<details>` 明细」。
@@ -40,4 +23,4 @@ history: []
 
 ## 落点
 
-契约：`docs/feature/reports/library/site-components.md#scopewarnings`、`docs/feature/results/library.md` kind 表两列；实现：`src/report/scope-warnings.ts`（聚合层，web/text 共用）、`src/report/web.ts` / `src/report/report.ts`（两面渲染）、`src/report/locale.ts`（chrome 词典）、`src/results/select.ts`（`gapParts` 时距单源）；测试登记：`docs/engineering/testing/unit/reports.md`，测试在 `src/report/dual-render.test.tsx`。当时 `ScopeWarnings` 组件本体尚未从宿主级警告块迁出，聚合层落在宿主渲染函数上，组件化（见 [`reports-no-privilege-chrome-rulings`](reports-no-privilege-chrome-rulings.md)）时整体搬移。
+契约：`docs/feature/reports/library/site-components.md#scopewarnings`、`docs/feature/results/library.md` kind 表两列；实现：`src/report/scope-warnings.ts`（聚合层，web/text 共用）、`src/report/web.ts` / `src/report/report.ts`（两面渲染）、`src/report/locale.ts`（chrome 词典）、`src/results/select.ts`（`gapParts` 时距单源）；测试登记：`docs/engineering/testing/architecture/unit/reports.md`，测试在 `src/report/dual-render.test.tsx`。当时 `ScopeWarnings` 组件本体尚未从宿主级警告块迁出，聚合层落在宿主渲染函数上，组件化（见 [`reports-no-privilege-chrome-rulings`](reports-no-privilege-chrome-rulings.md)）时整体搬移。

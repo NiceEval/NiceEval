@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report
-title: Record → Report 产品研究
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/README.md
-  commit: a33c7a3ca725ef6afbc188b232e318d85445fc29
-kind: research
 sources: []
 ---
+
 # Record → Report 产品研究
 
 本方向研究一类用户路径：产品先保存 Run、Trace、Experiment 或 Evaluation 的事实，随后让用户重新打开、查询、比较并形成 Dashboard 或 Report。
@@ -172,7 +164,7 @@ NiceEval 需要把同样的稳定性变成明确门槛：
 “新页面需要一个字段”或“查询代码更方便”都不是修改磁盘格式的理由。
 
 这张门槛表只总结研究对 NiceEval 的约束。
-当前契约见 [Run](../../feature/run/README.md) 与 [Run Architecture](../../feature/run/architecture.md)。
+当前契约见 [Run](../../feature/run/README.md) 与 [Run Architecture](../../feature/run/architecture/README.md)。
 
 ## migrate 是最后手段
 

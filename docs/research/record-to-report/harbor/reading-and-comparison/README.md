@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-harbor-reading-and-comparison
-title: Harbor 的读取、查询与比较
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/harbor/reading-and-comparison.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Harbor 的读取、查询与比较
 
 本页回答用户怎样重新打开本地 Job 或 Hub Job，怎样下钻 Trial、分析失败、对齐 Task，并比较 Agent、model 与 Dataset。

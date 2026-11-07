@@ -150,7 +150,7 @@ export interface TimingActivity {
 }
 
 /**
- * 一条命令生效的时限归属(词表单源在 docs/feature/sandbox/architecture.md
+ * 一条命令生效的时限归属(词表单源在 docs/feature/sandbox/architecture/README.md
  * 「时限归属:attempt deadline 是唯一默认」)。命令节点带着它,读者才不用靠「停在整 1m 0s」
  * 这种巧合反推是谁掐断了命令。
  */
@@ -269,7 +269,7 @@ export interface AttemptError {
   /**
    * 超时打断产生的 `errored` 专用:这次撞的是哪层时限、上限值多少、值从哪一层解析而来。
    * 三样一起落盘；机器读取 `attempt.get` 的错误字段和 `attempt.trace` 的 timing facts，人工读取 View detail；归属规则单源在
-   * docs/feature/sandbox/architecture.md「时限归属:attempt deadline 是唯一默认」。
+   * docs/feature/sandbox/architecture/README.md「时限归属:attempt deadline 是唯一默认」。
    */
   timeout?: TimeoutAttribution;
 }
@@ -608,7 +608,7 @@ export interface Reporter {
  * 取值决定,不是「在哪个回调阶段失败」(onInvocationStart/onEvalComplete/…)决定——后者只作为
  * 诊断消息里的次要上下文,不参与去重身份。
  *
- * `required` 语义(见 docs/feature/experiments/cli.md「运行完成状态不只看 verdict 计数」):
+ * `required` 语义(见 docs/feature/experiments/cli/README.md「运行完成状态不只看 verdict 计数」):
  * - CLI 显式 `--junit`:`required: true`——这是调用者要求的附加聚合文件,写失败必须让
  *   `InvocationCompletion` 判红、CI 退出码非零。CLI `--json` 是终端 receipt 流，不是 Reporter。
  * - 用户 `Config.reporters`:`required: false`——失败只折成一条
@@ -654,7 +654,7 @@ export type ReporterEvent =
 /**
  * 计分粒度题型:`defineEval` 恒 `"pass"`(通过制,一题一分,读通过率),`defineScoreEval` 恒
  * `"score"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.evaluationKind` 直接读取,
- * 不靠执行 `test()` 推断(见 docs/feature/experiments/score-points.md)。
+ * 不靠执行 `test()` 推断(见 docs/feature/experiments/library/score-points.md)。
  */
 import type { EvaluationKind } from "../shared/evaluation.ts";
 export type { EvaluationKind } from "../shared/evaluation.ts";
@@ -884,7 +884,7 @@ export function discoverEval(definition: AnyEvalDefinition, facts: DiscoveredEva
  * active 行的次要文本(短命状态,JSON 机器流不逐条输出),`diagnostic` 进运行级永久
  * 事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的 `result.json`;before 抛错
  * 以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。钩子的起止本身由 runner 直接发布为
- * 运行级反馈,不依赖这里的 `progress`(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。
+ * 运行级反馈,不依赖这里的 `progress`(见 docs/feature/experiments/cli/README.md「实验级 Hook 的显示」)。
  */
 export interface ExperimentHookContext extends ScopedFeedback {
   readonly experimentId: string;
@@ -952,7 +952,7 @@ export interface ExperimentAuthorFields {
    * labels 不透传 ctx / t(agent 和 eval 看不见)、不参与可比性配置(改它不作废已有结果),
    * 只原样投影进快照的 `ExperimentRunInfo.labels` 供报告维度(`label()` / `numericLabel()`)
    * 分组。`line` 键被默认报告识别:组内任一实验声明了它,散点按线归类并连线。
-   * 见 docs/feature/experiments/library.md「labels」。
+   * 见 docs/feature/experiments/library/README.md「labels」。
    */
   labels?: globalThis.Record<string, string | number>;
   /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--attempts` 覆盖时默认 1。 */
@@ -964,7 +964,7 @@ export interface ExperimentAuthorFields {
    * 这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的
    * 只读 `EvalDescriptor`,不暴露路径 / 执行字段);省略等价于 `"*"`。谓词对本次 invocation 的
    * 候选 eval 各求值一次,解析结果作为内存中的 `selectedEvalIds` 计划——不是运行时反复调用的过滤器
-   * (见 docs/feature/eval/library.md「EvalDescriptor」、docs/feature/experiments/library.md
+   * (见 docs/feature/eval/library/README.md「EvalDescriptor」、docs/feature/experiments/library/README.md
    * 「evals:遍历发现结果,自定义选择」)。
    */
   evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
@@ -1013,7 +1013,7 @@ export interface ExperimentAuthorFields {
    * runner 不做值的中介。before 抛错 → 本实验所有 Attempt 形成 `errored` Verdict
    * (code `"experiment-setup-failed"`、phase `"experiment.before"`),同批其它实验不受影响。
    * 函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
-   * 见 docs/feature/experiments/architecture.md「实验级生命周期」。
+   * 见 docs/feature/experiments/architecture/README.md「实验级生命周期」。
    */
   before?: ExperimentHook;
   /**
@@ -1116,7 +1116,7 @@ export interface DiscoveredExperiment extends ExperimentDefinition {
  * 用户谓词(`ExperimentDefinition.evals`)能看到的唯一形状——发现并扇出后的显式白名单投影,不透传
  * `DiscoveredEval` 原对象(不暴露 `sourcePath` / `baseDir` / `test` / hooks 等内部路径与执行字段)。
  * `tags` 缺省为冻结空数组;`metadata` 原样引用作者声明的对象(至少浅冻结),供 `tags.includes(...)` /
- * `metadata.<key>` 判断(见 docs/feature/eval/library.md「EvalDescriptor」)。
+ * `metadata.<key>` 判断(见 docs/feature/eval/library/README.md「EvalDescriptor」)。
  */
 export interface EvalDescriptor {
   readonly id: string;
@@ -1125,7 +1125,7 @@ export interface EvalDescriptor {
   /**
    * 计分粒度题型,`defineEval` → `"pass"`,`defineScoreEval` → `"score"`。定义期事实,
    * 每条发现出的 eval 上都有确定值。供 `ExperimentDefinition.evals` 谓词按题型过滤(见
-   * docs/feature/experiments/score-points.md「横截面聚合:同型实验,各读各的」)。
+   * docs/feature/experiments/library/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
   readonly evaluationKind: EvaluationKind;
   readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
@@ -1290,7 +1290,7 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   /**
    * `--keep-sandbox` 的留存档位:failed 留 failed/errored(含硬超时的 errored),all 全部留;
    * 省略 = 全部销毁(留存永远是显式选择)。留存决策在 verdict 定稿的收尾点按档位提交,
-   * 见 docs/feature/sandbox/architecture.md「留存(keep)与注册表」。
+   * 见 docs/feature/sandbox/architecture/README.md「留存(keep)与注册表」。
    */
   keepSandbox?: "failed" | "all";
   /** --rerun 的本次调用携带口径。 */
@@ -1384,11 +1384,11 @@ export interface Attempt {
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────
-// `niceeval exp` 的 human / json 反馈模型(见 docs/feature/experiments/cli.md)。
+// `niceeval exp` 的 human / json 反馈模型(见 docs/feature/experiments/cli/README.md)。
 // 本节定义 coordinator、纯 reducer、renderer 与 runner emitter 共用的事件及状态契约；实现分别
 // 位于 `runner/feedback/` 与 `runner/attempt.ts` / `runner/run.ts`，没有另一套阶段性事件模型。
 
-/** 两种反馈形态(见 docs/feature/experiments/cli.md「每条命令一个人读 text 面,`--json` 是机器面」):
+/** 两种反馈形态(见 docs/feature/experiments/cli/README.md「每条命令一个人读 text 面,`--json` 是机器面」):
  *  `--json` 即机器面,否则人读文本(TTY live 面板 / 非 TTY 追加流,由渲染层内部按 `io.stderr.isTTY`
  *  再分派,不是第三个 profile)。 */
 export type OutputProfile = "human" | "json";
@@ -1437,7 +1437,7 @@ export interface ActiveAttempt {
   /**
    * 这条 attempt 被派发的墙钟时间(epoch ms,取 `attempt:start` 的 `at`)—— active 行时间列的
    * **唯一**基准,`attempt:phase` 不得改写它:live 面板不做 spinner 动画,存活性完全由这一列
-   * 持续增长证明(见 docs/feature/experiments/cli.md「active 行的列序」),一列会归零的时间既
+   * 持续增长证明(见 docs/feature/experiments/cli/README.md「active 行的列序」),一列会归零的时间既
    * 证明不了存活,也让人误以为这条 eval 重跑了。阶段各自的耗时不进这里——它由结果的
    * `timing.phases` 完整落盘,live 面板要回答的是「这条还活着吗、跑了多久、正在干什么」。
    */
@@ -1461,14 +1461,14 @@ export interface QueuedAttempt {
 export type ExperimentHookName = "setup" | "teardown";
 
 /**
- * dashboard 当前可见的一个实验级钩子运行级行(见 docs/feature/experiments/cli.md
+ * dashboard 当前可见的一个实验级钩子运行级行(见 docs/feature/experiments/cli/README.md
  * 「实验级 Hook 的显示」)。与 `ActiveAttempt` 分开建模:钩子不属于任何单个 attempt、不占并发位,
  * 也不参与 `RunFeedbackState` 的计数不变量——等待 before 的
  * attempt 保持 `queued`,这行就是「为什么它们还在排队」的解释。`detail` 来自实验级
  * `ctx.progress`,后一条覆盖前一条。
  */
 /**
- * dashboard 当前可见的 judge 预检运行级行(见 docs/feature/experiments/cli.md「judge 预检的显示」)。
+ * dashboard 当前可见的 judge 预检运行级行(见 docs/feature/experiments/cli/README.md「judge 预检的显示」)。
  * 与 `ActiveExperimentHook` 分开建模:预检是 invocation 级、不挂任何 experimentId,只有一个在飞
  * 实例(整次运行至多一次预检)。`startedAt` 用于渲染运行级行持续增长的耗时,证明它还活着。
  */
@@ -1488,7 +1488,7 @@ export interface ActiveExperimentHook {
 }
 
 /**
- * dashboard 当前可见的一个「等待并行 run」运行级行(见 docs/feature/experiments/cli.md
+ * dashboard 当前可见的一个「等待并行 run」运行级行(见 docs/feature/experiments/cli/README.md
  * 「等待并发 run 的显示」)。用例锁的等待粒度是单个 `(experimentId, evalId)`,但运行级行按
  * experimentId 聚合展示——一个实验可能同时有多个用例撞锁,只占一行,给出条数与代表持有方。
  */
@@ -1508,7 +1508,7 @@ export interface ActiveLockWait {
 /**
  * dashboard 当前可见的一条 Run 级 activity 行(共享构建、制品准备等)。
  * 不占 attempt active 位,也不进五项恒等式计数;人读文本用 producer 的 `label`,不查
- * LifecyclePhase 锚点表(见 docs/feature/experiments/architecture.md「Run 级共享准备」)。
+ * LifecyclePhase 锚点表(见 docs/feature/experiments/architecture/README.md「Run 级共享准备」)。
  */
 export interface ActiveRunActivity {
   /** 与 TimingActivity.id 对齐,同一 Run 内唯一。 */
@@ -1552,7 +1552,7 @@ export interface FailureNotice extends FailureDetail {
 
 /**
  * 去重后的即时通知(info/warning/error):相同 `key` 的通知只保留一条,`count` 累加受影响次数
- *(见 docs/feature/experiments/cli.md「什么动态更新,什么逐条追加」的去重规则)。
+ *(见 docs/feature/experiments/cli/README.md「什么动态更新,什么逐条追加」的去重规则)。
  * `data` 携带结构化字段(如 budget 的 experimentId/spent/unstarted),renderer 直接读取,
  * 不解析 `message`(`message` 只是 human 展示用的一句话)。
  */
@@ -1606,7 +1606,7 @@ export interface InvocationCompletion {
  * 这份状态,不各自维护第二份推导。
  *
  * `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
- * (八项恒等式,见 docs/feature/experiments/cli.md「等待并发 run 的显示」)在处理完每一个事件
+ * (八项恒等式,见 docs/feature/experiments/cli/README.md「等待并发 run 的显示」)在处理完每一个事件
  * 之后都成立,是 reducer 的不变量:任何一次迁移都是「从一项减 x、往另一项加 x」,不存在两项
  * 同时计数或都不计数的中间态(见 reducer.test.ts 的表驱动用例,每一步都断言,不只在流程末尾
  * 断言一次)。
@@ -1618,7 +1618,7 @@ export interface RunFeedbackState {
   reused: number;
   running: number;
   /** 正被并行 Invocation 持锁运行、本次在等待中的用例的 attempt 数(用例锁,见 `lock-wait`
-   *  变体与 docs/feature/experiments/cli.md「等待并发 run 的显示」);与 `queued` 互斥——
+   *  变体与 docs/feature/experiments/cli/README.md「等待并发 run 的显示」);与 `queued` 互斥——
    *  `queued` 是「等本进程并发位/before」,`elsewhere` 是「等别的进程」。
    *  恒等式(见接口注释)在处理完每一个事件之后都成立。 */
   elsewhere: number;
@@ -1626,7 +1626,7 @@ export interface RunFeedbackState {
   /** 以下四项是本次派发并已了结的 attempt 按 verdict 的划分——reducer 不保留一个笼统的
    *  「完成数」:盯着运行的人问的是「到现在为止挂了几个」,一个合计数回答不了。携入结果的
    *  verdict 留在 `reused`,不摊进这四项(计数口径与成本口径一致地区分「本次派发」与
-   *  「缓存携入」,见 docs/feature/experiments/cli.md「运行中的 live 面板」)。 */
+   *  「缓存携入」,见 docs/feature/experiments/cli/README.md「运行中的 live 面板」)。 */
   passed: number;
   failed: number;
   errored: number;
@@ -1658,9 +1658,9 @@ export interface RunFeedbackState {
    *  这行就是「为什么它们还在排队」的解释。undefined = 当前没有在飞的预检。 */
   activePrecheck?: ActivePrecheck;
   /** 在飞的实验级钩子(experimentId → 运行级行状态),由 "experiment-hook" 事件增删、
-   *  "experiment:progress" 更新 detail(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。 */
+   *  "experiment:progress" 更新 detail(见 docs/feature/experiments/cli/README.md「实验级 Hook 的显示」)。 */
   experimentHooks: ReadonlyMap<string, ActiveExperimentHook>;
-  /** 在飞的用例锁等待,按 experimentId 聚合(见 `ActiveLockWait`、docs/feature/experiments/cli.md
+  /** 在飞的用例锁等待,按 experimentId 聚合(见 `ActiveLockWait`、docs/feature/experiments/cli/README.md
    *  「等待并发 run 的显示」)。由 "lock-wait" 事件增删/累计;没有等待用例的实验不出现在这个 map 里。 */
   lockWaits: ReadonlyMap<string, ActiveLockWait>;
   /** 在飞的 Run 级 activity(id → 运行级行状态),由 "run-activity" 事件增删。不占 attempt
@@ -1692,7 +1692,7 @@ export interface RunFeedbackPlan {
   /**
    * 声明了 `maxConcurrency` 的实验 → 各自的上限。只收声明了的实验(未声明的实验的有效宽度就是
    * 全局值,列出来只是噪音);一个都没声明时整个字段省略——`--json` 的 `start` 事件因此不会
-   * 出现空对象,human `PLAN` 行也不加附注(见 docs/feature/experiments/cli.md
+   * 出现空对象,human `PLAN` 行也不加附注(见 docs/feature/experiments/cli/README.md
    * 「运行中的 live 面板」的 `concurrency` 附注段)。
    */
   experimentConcurrency?: Readonly<globalThis.Record<string, number>>;
@@ -1704,7 +1704,7 @@ export interface RunFeedbackPlan {
 
 /**
  * 只影响 dashboard 当前帧、reducer 不为它保留历史的事件:新值使旧值失去意义,所以覆盖而不是
- * 追加(见 docs/feature/experiments/cli.md「什么动态更新,什么逐条追加」的判断标准)。
+ * 追加(见 docs/feature/experiments/cli/README.md「什么动态更新,什么逐条追加」的判断标准)。
  * `attempt:early-exit` 同样折进这一组 —— 它不打印永久行,只把已知 verdict 的省略次数收进
  * `skipped`(见 reducer 实现)。
  */
@@ -1804,7 +1804,7 @@ export type DurableFeedbackEvent =
     }
   /**
    * 实验级钩子(`ExperimentDef.before` / 它返回的 after)的起止,由 runner 在钩子真正
-   * 开始/结束时各发一次(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。`failed`
+   * 开始/结束时各发一次(见 docs/feature/experiments/cli/README.md「实验级 Hook 的显示」)。`failed`
    * 只标记钩子自身的结局——before 失败的每条 attempt 仍以 "failure" 事件逐条给出。human TTY
    * 用它维护运行级 active 行(不写 scrollback),append-only profile 起止各追加一行。
    */
@@ -1818,7 +1818,7 @@ export type DurableFeedbackEvent =
       durationMs?: number;
       /**
        * 只在 `hook: "after"` 的 `status: "started"` 上可能出现:标注这是强杀后的启动自愈
-       * 补执行(见 docs/feature/experiments/architecture.md「强杀后的收尾兜底」),不是本次 run
+       * 补执行(见 docs/feature/experiments/architecture/README.md「强杀后的收尾兜底」),不是本次 run
        * 正常触发的收尾。省略 = 正常路径。
        */
       recovery?: boolean;
@@ -1833,7 +1833,7 @@ export type DurableFeedbackEvent =
    */
   | { type: "precheck"; at: number; status: "started" | "done" | "failed"; durationMs?: number }
   /**
-   * 用例锁等待的起止(见 docs/feature/experiments/cli.md「等待并发 run 的显示」)。粒度是单个
+   * 用例锁等待的起止(见 docs/feature/experiments/cli/README.md「等待并发 run 的显示」)。粒度是单个
    * `(experimentId, evalId)`——同一 eval 的全部 attempt 作为一个整体一起等、一起解决,不按
    * attempt 拆分。emitter(run.ts)只在这批 attempt 需要重查携带时才发这对事件:全携带用例
    * 不取锁、无竞争的全新取锁(锁目录里从没出现过这个 key)都不发——静态携带规划的结论不可能
@@ -1886,6 +1886,6 @@ export type DurableFeedbackEvent =
 /**
  * runner → feedback coordinator 的内部事件通道,与公共 `Reporter` / `ReporterEvent` 分开:
  * profile renderer 只消费这里的具名字段,不解析 `ReporterEvent` 里的 i18n 文案或表格列宽
- *(见 docs/feature/experiments/cli.md「输出流和落盘节奏」)。
+ *(见 docs/feature/experiments/cli/README.md「输出流和落盘节奏」)。
  */
 export type RunFeedbackEvent = AttemptLifecycleEvent | ExperimentProgressEvent | FeedbackTickEvent | DurableFeedbackEvent;

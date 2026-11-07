@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: nested-docker-execution-ownership-and-recovery
-title: 所有权与恢复
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources: []
+observedAt: 2026-08-25
 ---
+
 # 所有权与恢复
 
 > 观察日期：2026-08-25

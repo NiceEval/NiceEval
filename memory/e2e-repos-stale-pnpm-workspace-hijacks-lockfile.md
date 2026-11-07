@@ -1,24 +1,9 @@
----
-format: concord.document/v1
-id: e2e-repos-stale-pnpm-workspace-hijacks-lockfile
-title: e2e-repos-stale-pnpm-workspace-hijacks-lockfile
-createdAt: 2026-07-19T08:35:09+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/e2e-repos-stale-pnpm-workspace-hijacks-lockfile.md
-  commit: 56e51eec8d972972b4f6c74eb82a2a9b2d3e1a5c
-description: e2e/pnpm-workspace.yaml(旧 apps/projects/shared 架构遗留)会把 e2e/adapter/<id> 下的 pnpm install 顶到 e2e/ 根的共享 lockfile/node_modules,而不是给新独立仓库生成自己的 pnpm-lock.yaml
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# e2e-repos-stale-pnpm-workspace-hijacks-lockfile
+
+e2e/pnpm-workspace.yaml(旧 apps/projects/shared 架构遗留)会把 e2e/adapter/<id> 下的 pnpm install 顶到 e2e/ 根的共享 lockfile/node_modules,而不是给新独立仓库生成自己的 pnpm-lock.yaml
 
 **现象**：在 `e2e/adapter/cli-contract`(独立测试仓库,见
-`docs/engineering/testing/e2e/README.md` §2.1/§2.2)里直接 `pnpm install`,命令报
+`docs/engineering/testing/architecture/e2e/README.md` §2.1/§2.2)里直接 `pnpm install`,命令报
 "Lockfile passes supply-chain policies (verified 5d ago)"、瞬间完成,但仓库目录下
 既没生成 `pnpm-lock.yaml` 也没生成 `node_modules`——依赖其实装到了 `e2e/node_modules`,
 版本锁在 `e2e/pnpm-lock.yaml` 里。这会让 `test/e2e-structure.test.ts` 的「每个仓库都有

@@ -1,15 +1,5 @@
----
-format: concord.document/v1
-id: check-judge-policies-belong-to-assertion
-title: Judge 与普通检查共用 Assertion，门槛归本次验收
-createdAt: 2026-09-13
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
+# Judge 与普通检查共用 Assertion，门槛归本次验收
+
 ## 裁决
 
 `check(value, match)` 是统一的登记入口；`judge(value, definition)` 让受管模型调用在作者代码中可见，并薄包装相同的检查流程。Root、Turn 与 Session 都要求显式材料。工具包装默认选择 scope 的 toolCalls；Judge 没有唯一正确的默认材料，因此不隐式发送回答或整段对话。
@@ -30,4 +20,4 @@ Judge 与普通连续 Match 只定义评价量尺，不保存本次验收政策�
 
 2026-09-13，独立 Herdr Astra design_grill 在问答裁决 Score 出口、requirement、停止配置窗口及软门槛取舍后给出 PASS。正式公开旧候选红灯来自提交 6ff241edc8098804d9d33eba720c33b4c52f488e 对应已构建候选：gate 数参被拒绝 nered_V2B7140698424BVV；连续计分与门槛/停止组合 nered_7JTK7AEM03V2XQGP；Judge 与 check 统一入口 nered_5WV8TF5QACQSMEEQ。
 
-产品契约归 docs/feature/assertions/library.md、docs/feature/judge/library.md 与 docs/feature/verdict/architecture.md。本条仅保存设计取舍，不替代正式测试收据或功能契约。
+产品契约归 docs/feature/assertions/library/README.md、docs/feature/judge/library.md 与 docs/feature/verdict/architecture.md。本条仅保存设计取舍，不替代正式测试收据或功能契约。

@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: eval-architecture-original-notes
-title: Eval 架构的原始设计笔记(从 docs/feature/eval/architecture.md 原样迁入)
-createdAt: 2026-07-14T22:32:51+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/eval-architecture-original-notes.md
-  commit: 28047ab511ebcfdaa2360058794e2b294e9aec50
-kind: memory
-memoryKind: insight
-state: captured
-epoch: 0
-promotions: []
-history: []
----
 # Eval 架构的原始设计笔记(从 docs/feature/eval/architecture.md 原样迁入)
 
 2026-07-14 按裁决把 `docs/feature/eval/architecture.md` 里的手动维护笔记原样迁到这里,正文重写为正式架构文档;本条目是出处,正文引用它、不复述叙事。原文如下(含原维护标记,未删改):
@@ -21,7 +5,7 @@ history: []
 ---
 
 <--手动维护,不允许删改本段内容,只允许添加-->
-# 核心原因
+## 核心原因
 1. API应该容易理解,不会有二义性
 1.1 负面例子,`t.messageIncludes(token)` 和 `t.calledTool(name, opts?)` 其它同样的断言API应该都是有同样语义的(比如同指是最后一次t.send,返回的消息,而不是有的是全部,有的是单轮)。如果用户想对整个消息进行评估,可以自己拼接、保存每轮的回复。
 1.2 API唯一,如无必要,不应该有两个做一样事的API。

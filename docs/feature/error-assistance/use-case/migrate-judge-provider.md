@@ -1,13 +1,3 @@
----
-format: concord.document/v1
-id: migrate-judge-provider
-title: 迁移旧 Judge 配置
-createdAt: 2026-09-20T22:07:36+08:00
-kind: use-case
-feature: docs/feature/error-assistance/README.md
----
-
-
 # 迁移旧 Judge 配置
 
 项目使用普通对象配置 Judge，升级后在项目加载阶段收到 `migration-required`。

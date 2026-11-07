@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-mlflow-layers
-title: MLflow Layers：部件、对象、owner 与依赖
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # MLflow Layers：部件、对象、owner 与依赖
 
 > 观察日期：2026-08-14

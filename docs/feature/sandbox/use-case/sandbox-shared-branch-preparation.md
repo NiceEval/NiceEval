@@ -1,14 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-shared-branch-preparation
-title: 两个配对共享准备前缀后并行
-createdAt: 2026-08-29T18:24:52+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
-
-
 # 两个配对共享 before 缓存后并行
 
 我让两个 Eval×Experiment 配对分别需要准备序列 `Base → 1 → 2 → 3` 与 `Base → 1 → 2 → 4`。我不希望相同的 runtime 和 fixture 被准备两遍，也不希望较慢的另一个末段阻塞独立后缀的并行准备。

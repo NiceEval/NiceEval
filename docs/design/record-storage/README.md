@@ -1,21 +1,3 @@
----
-format: concord.document/v1
-id: record-storage
-title: Record storage
-createdAt: 2026-08-26T15:30:32+08:00
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-  - plan-3
-  - plan-4
-decision:
-  selected: plan-4
-  reason: 若五项关闭条件全部通过，选择 PLAN-4，因为 SQLite 已提供 transaction、B-tree、crash recovery 与多进程锁；chunk rows、短事务、Host FIFO、snapshot barrier 和 sanitized snapshot关闭了本产品特有的边界。
-  at: 2026-08-31T08:55:08+08:00
-  targets: []
----
-
 # Record storage
 
 本决策比较 Record Host 怎样保存 rich Attachment、Attempt Record collection 与逻辑 Content，并裁决 NiceEval 怎样统一托管 OS-user Service state 的 SQLite 资源。

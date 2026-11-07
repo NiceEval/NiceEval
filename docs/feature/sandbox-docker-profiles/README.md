@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-docker-profiles
-title: Docker 执行配置（Docker Profile）
-createdAt: 2026-08-07T11:42:18+08:00
-kind: feature
----
-
-
 # Docker 执行配置（Docker Profile）
 
 本目录保留原 Docker Profile 入口，说明如何迁移到当前 nested-Docker public path。
@@ -44,6 +35,6 @@ not a public path
 - [Nested Docker](../sandbox-nested-docker/README.md) —— 唯一 adopted 契约。
 - [Library](library.md) —— `dockerAccess` 不是 public nested-Docker factory。
 - [CLI](cli.md) —— `niceeval docker profile *` 不是 adopted doctor。
-- [Architecture](architecture.md) —— 旧 profile 资源与 Before cache 资格的缺口说明。
-- [Lifecycle](lifecycle.md) —— 旧 watchdog / loop 路径不是 DestroyOnly Incus 生命周期。
+- [Architecture](architecture/README.md) —— 旧 profile 资源与 Before cache 资格的缺口说明。
+- [Lifecycle](architecture/lifecycle.md) —— 旧 watchdog / loop 路径不是 DestroyOnly Incus 生命周期。
 - [NiceEval-Eval 用例](use-case/niceeval-eval.md) —— 旧单容器 DinD 用例不是公开验收路径。

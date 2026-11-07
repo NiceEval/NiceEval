@@ -1,21 +1,10 @@
----
-format: concord.document/v1
-id: benchmark
-title: Phase Timings 与安装基准
-createdAt: 2026-07-12T19:14:04+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/engineering/benchmark/README.md
-  commit: 695cbaf358f8296fe46dd94c9e3d416b04862d00
-kind: engineering
----
 # Phase Timings 与安装基准
 
 本机制回答两个工程问题：一次 Attempt 慢在哪个阶段，以及不同 Sandbox provider / Agent adapter 的安装速度和成功率怎样比较。持久事实使用 owner-local named RecordAttachment；`bench/` 是不写 Record 的本地工程工具。
 
 ## 持久 timing 契约
 
-Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` RecordAttachment。该 Attachment 的 payload 形状、collection 与读取状态服从 [Record Architecture](../../feature/run/architecture.md)；它不向 Attempt core 增加字段，也不需要 schema number、projector revision 或图引用。
+Runner 把有序阶段边界写入 Attempt-owned `niceeval.timing` RecordAttachment。该 Attachment 的 payload 形状、collection 与读取状态服从 [Record Architecture](../../feature/run/architecture/README.md)；它不向 Attempt core 增加字段，也不需要 schema number、projector revision 或图引用。
 
 阶段事实至少能表达：
 

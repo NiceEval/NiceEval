@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: reading-errored
-title: 读懂一次 `errored` Verdict:框架重试过没有,为什么
-createdAt: 2026-07-24T18:03:58+08:00
-kind: use-case
-feature: docs/feature/error-classification/README.md
----
-
 # 读懂一次 `errored` Verdict:框架重试过没有,为什么
 
 ## 解决什么问题
@@ -52,7 +43,7 @@ feature: docs/feature/error-classification/README.md
 4. **恢复路径(两分支同一条)**:带 `errored` Verdict 的成员不具备携带资格，使用 `--rerun failed` 重跑失败样本；带 `passed` / `failed` channel entry 的 Member 按携带规则照常可被采用。新 Attempt 从干净沙箱起,没有上一次半途现场的污染,这正是「重发 turn」给不了的。
    偶发抖动用一次续跑吸收即可。
 
-5. **频繁复现时按层对因下药**:限流反复耗尽 → 降 `--max-concurrency`(或实验级 `maxConcurrency`,路由见[并发用例手册](../../experiments/use-case/并发/));流中断频繁 → 先调 agent 的原生重连配置,没有这层能力的 agent 给上游提 FR,再往下查 adapter 与网络路径。
+5. **频繁复现时按层对因下药**:限流反复耗尽 → 降 `--max-concurrency`(或实验级 `maxConcurrency`,路由见[并发用例手册](../../experiments/use-case/README.md#并发));流中断频繁 → 先调 agent 的原生重连配置,没有这层能力的 agent 给上游提 FR,再往下查 adapter 与网络路径。
    这是要修的问题,不是要重试的问题。
 
 ## 边界

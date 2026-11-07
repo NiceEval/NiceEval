@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-braintrust-schema-and-migration
-title: Braintrust 的 schema、version、compatibility 与 migration
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/braintrust/schema-and-migration.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # Braintrust 的 schema、version、compatibility 与 migration
 
 本文只讨论“同一份 Braintrust 数据如何随版本被继续读写，以及自托管部署怎样升级”。对象的完整字段与物理介质见 [storage.md](../storage/README.md)，运行失败与重试见 [execution.md](../execution/README.md)。研究截点为 2026-08-14；源码证据均固定到文末列出的 commit，而不是把 `main` 当作永恒契约。

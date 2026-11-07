@@ -415,8 +415,8 @@ export async function loadDockerProfileRegistry(): Promise<ReturnType<typeof ind
 }
 
 // @concord-code
-// @concord-implements docs/feature/sandbox-docker-profiles/architecture.md
-// @concord-implements docs/feature/sandbox-docker-profiles/lifecycle.md
+// @concord-implements docs/feature/sandbox-docker-profiles/architecture/README.md
+// @concord-implements docs/feature/sandbox-docker-profiles/architecture/lifecycle.md
 export function dockerProfileControlRequest<T>(
   path: string,
   request: Readonly<Record<string, unknown>>,

@@ -1,6 +1,6 @@
 // 协议行为:Skills——status-report Skill 写入可发现目录后,验证走**读取行为**(事件流中出现对 Skill 文件
 // 的读取)或 Skill 特有结果——不假设存在 Claude Code 式的自动加载事件(见
-// docs/engineering/testing/e2e/adapter/codex-cli.md)。
+// docs/engineering/testing/architecture/e2e/adapter/codex-cli.md)。
 //
 // codex 没有原生 Skill 工具,不显式提示"检查有没有 skill/guide 文件"就几乎不会主动去读装好
 // 的 skill(见 memory/codex-no-native-skill-tool.md)——prompt 里必须点名这一步。

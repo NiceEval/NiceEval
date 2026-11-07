@@ -4,7 +4,7 @@
 
 NiceEval 默认 Host 组合九个官方 family。物理 send 到 source / timing 的 navigation 是 reader-side Fact relation，
 不拥有 durable family，也不拥有 Assertion source site。第三方 family 必须由另一项 persistence 显式贡献。完整 owner、closure 与 Sources
-manifest 规则见 [Record architecture](../../run/architecture.md)。
+manifest 规则见 [Record architecture](../../run/architecture/README.md)。
 
 ## owner 与 semantic join
 
@@ -91,8 +91,8 @@ consumer 通过固定的 [`attempt.sources`](../../inspection/architecture.md#�
 
 ## 相关阅读
 
-- [Assertions architecture](../architecture.md) —— entry、criterion、result 与内嵌 sourceSites。
+- [Assertions architecture](README.md) —— entry、criterion、result 与内嵌 sourceSites。
 - [Evidence](evidence.md) —— 受限 material 与 own closure。
-- [Record architecture](../../run/architecture.md) —— Sources、官方 family composition 与 reader 边界。
+- [Record architecture](../../run/architecture/README.md) —— Sources、官方 family composition 与 reader 边界。
 - [Verdict architecture](../../verdict/architecture.md) —— Core 与 Assertions 的读侧 fold。
 - [Inspection Architecture](../../inspection/architecture.md) —— `attempt.sources` 与闭合结果。

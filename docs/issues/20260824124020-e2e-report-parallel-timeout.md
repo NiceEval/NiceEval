@@ -1,30 +1,11 @@
----
-format: concord.document/v1
-id: 20260824124020-e2e-report-parallel-timeout
-title: 多 Repo E2E 并跑把已通过的 Report suite 超时报成 regression
-createdAt: 2026-08-24T12:40:20+08:00
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-origin:
-  kind: dev
-  repository: NiceEval/NiceEval
-subject: repository
-claim: friction
-observation: 同时运行 CLI、Eval 与 Report E2E 时，Report 的 Vitest 6 files / 13 tests 已全部通过，Playwright 随后开始运行，但仓库原生 test invocation 达到总时限后收到 SIGTERM，并被 E2E runner 归类为 regression。复用同一 candidate 单独运行 Report browser owner 时 2 tests 全部通过。
-impact: 受影响仓库的多 Repo 一次性验收会产生假回归收据，维护者必须拆开 Report 的 Vitest 与 Playwright 运行才能证明同一 candidate 实际全绿。
-history:
-  - at: 2026-09-14T15:00:25.173Z
-    action: migrate
-    reason: Transferred the existing observation to its current Issue owner.
-    source:
-      path: feedback/20260824124020-e2e-report-parallel-timeout/README.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:ef0788e23ce51a39af53f7b403817bac44e6b7c53c889bdaf3a184691e58ad5b
----
+# 多 Repo E2E 并跑把已通过的 Report suite 超时报成 regression
+
+同时运行 CLI、Eval 与 Report E2E 时，Report 的 Vitest 6 files / 13 tests 已全部通过，Playwright 随后开始运行，但仓库原生 test invocation 达到总时限后收到 SIGTERM，并被 E2E runner 归类为 regression。复用同一 candidate 单独运行 Report browser owner 时 2 tests 全部通过。
+
+## Impact
+
+受影响仓库的多 Repo 一次性验收会产生假回归收据，维护者必须拆开 Report 的 Vitest 与 Playwright 运行才能证明同一 candidate 实际全绿。
+
 ## Expected Behavior
 
 `pnpm e2e test --repo cli --repo eval --repo report` 应给每个仓库足够的原生 suite 时间，或按阶段设置独立时限；已经完成的 Vitest 与随后正常推进的 Playwright 不应因共享总时限被归类为产品 regression。

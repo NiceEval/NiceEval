@@ -58,7 +58,7 @@
 
 ## 不在范围内
 
-- 不重新设计结果沿用的指纹与资格门；它们归 [Experiments 缓存](../../feature/experiments/cache.md)。
+- 不重新设计结果沿用的指纹与资格门；它们归 [Experiments 缓存](../../feature/experiments/architecture/cache.md)。
 - 不改变 `timeoutMs` 的 Attempt deadline 口径；它归 [Runner](../../runner.md)。
 - 不设计跨 Run 常驻 daemon。
   共用的 Sandbox 只活在一次 Invocation 内。

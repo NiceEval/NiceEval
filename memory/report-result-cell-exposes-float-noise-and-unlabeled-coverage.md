@@ -1,21 +1,3 @@
----
-format: concord.document/v1
-id: report-result-cell-exposes-float-noise-and-unlabeled-coverage
-title: Report 结果格泄露浮点尾数并混淆覆盖度
-createdAt: 2026-08-24T13:45:27+08:00
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history:
-  - at: 2026-09-14T15:00:25.173Z
-    action: retire-promotion
-    reason: 保留原 promotion history；迁移为历史 retire 记录。
-    ref: docs/feature/reports/library.md#中立组件与官方组合组件
-    commit: 50cf5fce5ff0189caf6c55f27717f3b162f00b3d
----
 # Report 结果格泄露浮点尾数并混淆覆盖度
 
 ## 问题
@@ -30,4 +12,4 @@ score cell 使用 `String(earned)` 直接投影 Analysis 的原始 number，没�
 
 score 只在显示层复用统一紧凑数字格式，保留原始值和排序语义。Pass Eval 主结果格把业务通过率与判定计票留在主行；部分 `samples/total` 以“结果完整度”具名放到次级行。standalone MetricValue 的紧凑覆盖展示不因此改变。
 
-回归由 `docs/engineering/testing/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有；用户确认样式前保持 Problem open。
+回归由 `docs/engineering/testing/architecture/e2e/report.md#report-browser-journey` 的安装后浏览器 Journey 拥有；用户确认样式前保持 Problem open。

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: niceeval-eval
-title: Use Case：NiceEval-Eval 单容器 DinD
-createdAt: 2026-08-07T11:42:18+08:00
-kind: use-case
-feature: docs/feature/sandbox-docker-profiles/README.md
----
-
 # Use Case：NiceEval-Eval 单容器 DinD
 
 本篇不是 nested Docker 的公开验收路径。

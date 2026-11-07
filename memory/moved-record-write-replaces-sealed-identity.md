@@ -1,41 +1,5 @@
----
-format: concord.document/v1
-id: moved-record-write-replaces-sealed-identity
-title: 移动项目后的新写入重算 Record 身份并破坏历史 Seal
-createdAt: 2026-09-12
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 保留结构化原记录声明的状态；本迁移视图不重新解释。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: |-
-      kind:
-        type: problem
-        state: resolved
-        resolution:
-          kind: fixed
-          proof:
-            - nered_C8XEDHFV486C4WY4
-            - netake_X4K538C7VH630B4N
-            - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
-    proof:
-      - nered_C8XEDHFV486C4WY4
-      - netake_X4K538C7VH630B4N
-      - niceeval.fixed-evidence/v1:{"selectors":["e2e/record/test/record-migration.test.ts#necase_W26XFXH8K05QA8C5"]}
-    source:
-      path: memory/moved-record-write-replaces-sealed-identity.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:49096f620887beffb7e1e1d6beb1f68ba4d22b295d7705355babd4f6cf0db3eb
----
+# 移动项目后的新写入重算 Record 身份并破坏历史 Seal
+
 ## 现象
 
 将真实 0.15/0.16 producer 的数据库复制到新项目后，自动迁移成功，普通 Run 列表与详情可读；执行一次新实验，再通过公开 Query 读历史 Run，得到 inspection-source-invalid。

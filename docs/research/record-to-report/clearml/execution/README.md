@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-clearml-execution
-title: ClearML Task 的真实执行顺序
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/clearml/execution.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # ClearML Task 的真实执行顺序
 
 本页按 ClearML 的 Task / Queue / Agent / Event 语义描述一次运行。

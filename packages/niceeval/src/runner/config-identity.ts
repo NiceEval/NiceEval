@@ -18,7 +18,7 @@ import type { AdapterIdentity } from "../record/model/run-context.ts";
 
 /**
  * 一次运行的**配置身份**:`computeConfigHash` 的哈希输入,字段集合与
- * docs/feature/experiments/cache.md「指纹:两个哈希嵌套」逐字对应。
+ * docs/feature/experiments/architecture/cache.md「指纹:两个哈希嵌套」逐字对应。
  *
  * 可选配置必须真的省略键，而不是写入 `undefined` 或一个 Omitted 哨兵；否则未声明配置会
  * 无端改变基础 configHash。新增公开配置字段时只在这里裁决一次「进不进 configHash」。

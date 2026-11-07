@@ -1,16 +1,4 @@
----
-format: concord.document/v1
-id: assertion-scores-overview
-title: 计分制 Attempt 的概览与 attempt.get 不给逐项得分，只能逐条查 detail
-createdAt: 2026-10-29T01:54:51.502Z
-kind: issue
-state: draft
-memoryRelations: []
-adoptions:
-  current: []
-  history: []
-history: []
----
+# 计分制 Attempt 的概览与 attempt.get 不给逐项得分，只能逐条查 detail
 
 ## 观察与期望
 计分制 Attempt 的终端概览和 `attempt.get` 都列出全部断言条目，但不给每条的结果与得分。`niceeval show @<locator>` 的 Assertion 表只有 label、Entry ID 和 Group 三列；`attempt.get` 的 `assertions.entries[]` 只有 `display` 和 `entryId`。想知道「58/99 的 41 分丢在哪」，只能对每个 entry 调用一次 `attempt.assertion.detail`。

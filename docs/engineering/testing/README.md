@@ -1,21 +1,9 @@
----
-format: concord.document/v1
-id: testing
-title: 测试体系
-createdAt: 2026-07-14T08:00:48Z
-createdAtSource:
-  kind: first-recorded
-  path: docs/engineering/testing/README.md
-  commit: 6abccb8bd882c3dfa5b28df9b3ca15e00da0c650
-kind: engineering
----
-
 # 测试体系
 
 niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 本目录是仓库测试机制的唯一正式入口，不再维护并行的 Roadmap、候选方案或代码原型。
 
-用 `concord repo docs test --help` 发现测试与产品契约的 Trace 投影；它不是代码测试 runner。
+用 `concord test --help` 发现测试与产品契约的 Trace 投影；它不是代码测试 runner。
 
 ## 目标
 
@@ -118,7 +106,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
 
 任何超出预算、缺少唯一 owner、复制已有矩阵，或因内部实现小改而连带修改的测试，都必须在合入前修正。
 [PR 模板的 Tests section](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)负责保存逐文件最终源码（仅显式 `source=link` 可改为固定提交源码与 base→head diff 链接）、删除处置与共享验证收据；
-[测试跟改率](churn.md)只用于事后发现长期偏差，不能代替本次审查。
+[测试跟改率](architecture/churn.md)只用于事后发现长期偏差，不能代替本次审查。
 
 ## 可靠性：重复运行
 
@@ -148,16 +136,15 @@ PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)�
 
 ## 测试正文约束
 
-E2E 关系以 runner 实际枚举的 case 为 subject；身份、源码注释、生命周期、证据与事务完整服从
-[E2E case 关系契约](e2e/case-relations.md)。旧 `owner:`、`regression:` 与 `issue:` 文件 metadata 仅是两阶段迁移输入，
-不能建立或改变 current relation。注释中的关系声明、普通 Markdown mention 或手写 receipt 都不能替代原生 inventory 与正式证据校验。
+E2E case 与契约的关联服从 [E2E case 关系契约](architecture/e2e/case-relations.md)。旧 `owner:`、`regression:` 与 `issue:` 文件 metadata
+不能建立或改变 current relation；普通 Markdown mention 不构成关系。
 
 - 每个 E2E case 使用自然标题；声明上方用 `@feature` 或 `@use-case` 直接关联一个契约路径。
 - 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - Journey 检查点只证明终态所需前提。独立输入、expected、修复动作或可独立失败的命题必须拆到另一文件。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
 - E2E 正文与 support 的类型、decoder、产品动作和 expected 边界统一服从
-  [E2E 正文与 support 边界](e2e/README.md#正文与-support-边界)，不在领域 owner 中另写一套 harness 或产品协议。
+  [E2E 正文与 support 边界](architecture/e2e/README.md#正文与-support-边界)，不在领域 owner 中另写一套 harness 或产品协议。
 - 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解码后再生成自己的 expected。
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
 - 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的
@@ -198,26 +185,26 @@ pnpm e2e test --lane main --repo adapter/codex-cli
 Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Tests 数不得超过 200；Testkit 不设独立 Unit 套件。
 `test.each` 展开的每个 case 都计入。不能把独立命题合并进一个大测试规避上限，也不为接近上限而补测。
 
-完整执行契约见 [本地与 CI](e2e/execution.md)；project graph、合法空计划、fallback 与 owner 维护见
+完整执行契约见 [本地与 CI](architecture/e2e/execution.md)；project graph、合法空计划、fallback 与 owner 维护见
 [任务图与 E2E 选择](../task-orchestration/README.md)。
 
 ## 文档地图
 
-- [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
-- [官方 Testkit](testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
-- [测试组合与退役](portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
-- [Unit](unit/README.md) —— 确定性语义例外的存在资格和写法；
-- [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter、Lifecycle，以及原生测试文件、命令收据、阶段、失败分类与浏览器写法；
-- [E2E 测试正文](e2e/authoring.md) —— 测试正文的写作约束；
-- [E2E case 关系](e2e/case-relations.md) —— case ID、runner inventory、源码注释、生命周期、证据、迁移与恢复；
-- [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
-- [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
+- [Architecture](architecture/README.md) —— 数据流、分类、oracle、失败与复用设施边界；
+- [官方 Testkit](library.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
+- [测试组合与退役](architecture/portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
+- [Unit](architecture/unit/README.md) —— 确定性语义例外的存在资格和写法；
+- [E2E](architecture/e2e/README.md) —— 单边界测试、Journey、Adapter、Lifecycle，以及原生测试文件、命令收据、阶段、失败分类与浏览器写法；
+- [E2E 测试正文](architecture/e2e/authoring.md) —— 测试正文的写作约束；
+- [E2E case 关系](architecture/e2e/case-relations.md) —— case 标记、回归 Issue 标记与历史归档；
+- [真实场景 Repo](architecture/e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
+- [本地与 CI](architecture/e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [任务图与 E2E 选择](../task-orchestration/README.md) —— Nx project graph、affected、fallback 与管理收据；
-- [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
-- [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
-- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Run](e2e/record.md)、[Inspection](e2e/inspection.md) 与 [Insight](e2e/insight.md) —— 各域的长期结果 owner。
+- [测试跟改率](architecture/churn.md) —— 用历史读数识别绑定实现细节的测试；
+- [`unit/<feature>.md`](architecture/unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
+- [Eval](architecture/e2e/eval.md)、[`e2e/adapter/`](architecture/e2e/adapter/README.md)、[CLI](architecture/e2e/cli.md)、[Run](architecture/e2e/record.md)、[Inspection](architecture/e2e/inspection.md) 与 [Insight](architecture/e2e/insight.md) —— 各域的长期结果 owner。
 
-历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
+历史缺陷的现象、根因与反直觉修法只留在 `memory/`。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。
 
 ## 目标闭包

@@ -183,15 +183,15 @@ createEnvironment(provider, profile)
 **调度与计时口径(R10)。** 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready发生在取得并发位之后;
 attempt deadline 与携带资格的 `executionMs` 起算点从
 `sandbox.create` 前移到 `createEnvironment`,
-[缓存契约](../../../../feature/experiments/cache.md)同步改。
+[缓存契约](../../../../feature/experiments/architecture/cache.md)同步改。
 镜像拉取与构建各带显式上限,不存在不受任何超时约束的阶段。
 新 `LifecyclePhase` 成员(建网、逐服务启动、ready 等待、
 日志采集、销毁、拆网)的插入位置与 `durationMs` 口径随
-[Record 闭集](../../../../feature/run/architecture.md)
+[Record 闭集](../../../../feature/run/architecture/README.md)
 一并定稿。
 
 **回收契约(R9)。** 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready整体纳入
-[Provisioning 失败与重试](../../../../feature/sandbox/architecture.md#provisioning-%E5%A4%B1%E8%B4%A5%E4%B8%8E%E9%87%8D%E8%AF%95):
+[Provisioning 失败与重试](../../../../feature/sandbox/architecture/README.md#provisioning-%E5%A4%B1%E8%B4%A5%E4%B8%8E%E9%87%8D%E8%AF%95):
 
 - 服务容器**与网络**创建期打同一套 provision token 与
   运行标识(docker 网络支持 label)。
@@ -244,13 +244,13 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 不得声明 `services` 能力。
 
 **证据(R7)。** 服务日志进
-[Record payload](../../../../feature/run/architecture.md) 新证据
+[Record payload](../../../../feature/run/architecture/README.md) 新证据
 `service-logs`:逐服务分文件、尾部截断带体积上限、默认随闭包复制;采集沿用 timing
 数据的脱敏纪律(env 值不回显进摘要)。
 
 **指纹与 secrets(R6)。** `{ fromEnv }` 的变量名进指纹与
 落盘投影,值两者都不进——密钥轮换不触发重跑,与
-[judge 凭据的既有裁决](../../../../feature/experiments/cache.md)
+[judge 凭据的既有裁决](../../../../feature/experiments/architecture/cache.md)
 同构;Run payload 的拓扑投影只落 env 的 key 清单与间接
 引用名,明文值不落盘。
 
@@ -274,7 +274,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 登记项没有可进入的入口;服务日志 artifact 是该场景的唯一
 证据,这句写进 keep 文档。
 
-**复用。** [Sandbox 复用](../../../../feature/sandbox/reuse.md)
+**复用。** [Sandbox 复用](../../../../feature/sandbox/library/reuse.md)
 本就按 profile 分组;带服务的组不参与复用、逐 attempt
 新建,其余组照常——不整场报错,报错只在用户显式把带服务
 组塞给复用语义时出现,文案给出拆分修法。

@@ -60,7 +60,7 @@ MemoryBench 的仓库 checkout 与依赖安装发生在 baseline 后、Agent set
 
 「baseline 之后却不进 agent diff」不靠这条顺序保证,靠变更分类账的**归因标签**:baseline 只是对照点 commit,归因由 commit 落在哪一类决定,不由它相对对照点的位置决定。首次 `t.send()` 进入前,workdir 里 EvalDef setup(checkout、依赖安装)与 SandboxSpec setup 落下的全部改动记成一笔 **eval 归因**;send 返回后才记 **agent 归因**;`t.sandbox.diff` 只折叠 agent 归因的那些提交区间。所以 checkout 无论排在对照点前后,都不会漏进 agent 的账。
 
-三类 commit 时点与排除清单的完整契约单源在 [Sandbox · 变更归因](../../../../feature/sandbox/architecture.md#%E5%8F%98%E6%9B%B4%E5%BD%92%E5%9B%A0send-%E5%8C%BA%E9%97%B4%E4%B8%8E%E5%88%86%E7%B1%BB%E8%B4%A6),本 Lifecycle 不复述,只声明 setup 层各自归哪一类。
+三类 commit 时点与排除清单的完整契约单源在 [Sandbox · 变更归因](../../../../feature/sandbox/architecture/README.md#%E5%8F%98%E6%9B%B4%E5%BD%92%E5%9B%A0send-%E5%8C%BA%E9%97%B4%E4%B8%8E%E5%88%86%E7%B1%BB%E8%B4%A6),本 Lifecycle 不复述,只声明 setup 层各自归哪一类。
 
 ## Fresh 与 Reuse
 

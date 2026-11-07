@@ -13,7 +13,7 @@
 ## 裁决
 
 采纳 [PLAN-1](plans/plan-1/README.md):官方内置命令库(`checkout()` / `installTool()`)加 `--dry` 复用成本视图。
-定稿契约在 [Feature · 准备工具](../../feature/sandbox/prepare-commands.md);本页只保留选型理由。
+定稿契约在 [Feature · 准备工具](../../feature/sandbox/library/prepare-commands.md);本页只保留选型理由。
 
 ## 为什么否决另两个候选
 

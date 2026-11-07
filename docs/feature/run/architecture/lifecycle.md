@@ -1,0 +1,79 @@
+# Run Lifecycle
+
+本页拥有 Run Host、Runner、Inspection 与内部持久 adapter 之间的跨 owner 顺序。
+
+## 创建与执行
+
+```text
+Invocation starts
+  → one transaction creates active Session + Runs + expected plannedAttempts + case-lock generations
+  → publish origin/reference plannedAttempt bindings independently
+  → close Run: terminal state + absence reasons
+  → return InvocationReceipt at one PublicationCutoff
+```
+
+Run create 与 active Invocation Session 一旦共同提交就分别进入 `run list` 与 `session list`。
+Attempt 可以分批进入内部 staging；只有 publication transaction 提交后才公开。
+
+staging aggregate 与已发布事实位于同一个 canonical `.niceeval/record.sqlite`。两者由状态、writer generation 与 publication
+revision 隔离，不得建立 per-Run、per-Attempt、Session 或 lock SQLite/sidecar。
+长期持有的 case-lock 或 Session authority 不持有长 SQLite transaction；每次观察或 mutation 都以短事务重验 exact identity 与 generation。
+Run close 不重新发布或撤销 Attempt，只冻结终态与剩余 absence reasons。
+
+正常退出停止新的 reservation，等待已经接纳的 Attempt publication，再提交 Run close。
+
+SIGINT 与 SIGTERM 走同一受控路径：发布已经完成的 Attempt，并把没有 publication 的 Planned attempt 以 `interrupted-before-publication` 收口。
+
+普通 Adapter 的在途 Attempt 先停止 forward，在固定 cleanup 总预算内排空尾部采集，再把可验证的 `errored` Attempt 发布到仍活动的 Run。
+Runner 等待这次 publication 后恢复中断，停止后续派发，再提交 Run 终态。封口或存储失败仍按 Run 失败与 absence 规则处理，不伪造已发布结果。
+
+它返回 `interrupted` receipt，并在同一收尾路径把 Session 收口为 durable Invocation projection。
+随后关闭 writer、checkpoint 并 truncate WAL，再以内建只读路径重开 canonical database。
+只有 schema、引用闭包、publication 和领域不变量验证全部通过，CLI 才成功交付 receipt 与 portable Record。
+
+## 崩溃与 recovery
+
+SIGKILL 可能在 ProjectDatabase 中留下 `active` Run 与未发布 aggregate，但不会产生半个公开 Attempt。普通读取继续展示
+Run、已发布 Attempt 与 pending Planned attempts，不根据时间推断 owner 已死，也不在打开时删除或晋升运行中 rows。
+
+`run recover` 必须取得精确 process identity 已终止的可验证证据。
+writer 在取得 generation 时封存自己的 process identity；recover 在同一台机器上重新观察同样的字段。
+Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则，只是取证位置不同：
+
+| 字段 | Linux | Darwin |
+|---|---|---|
+| 机器身份 | `/etc/machine-id` | IOPlatformUUID |
+| 启动身份 | `/proc/sys/kernel/random/boot_id` | `kern.bootsessionuuid` |
+| 进程隔离域 | `/proc/self/ns/pid` | 无，固定为整机 |
+| 进程启动时刻 | `/proc/<pid>/stat` 的 starttime | 内核保存的进程启动时刻，精度至少到秒 |
+
+判定按字段顺序进行：
+
+- 机器身份或进程隔离域不同：`unproven`，不能在别的机器上判定 owner 生死。
+- 启动身份不同：旧 owner 随上一次启动终止，判为 `terminated`。
+- 同一次启动内，pid 对应进程的启动时刻与封存值相同：`active`，recover 以 `run-owner-active` 拒绝。
+- 同一次启动内，pid 不存在或启动时刻不同：`terminated`。
+- 任一字段取证失败，或运行在其它平台：`unproven`，recover 以 `run-owner-termination-unproven` 拒绝。
+
+启动时刻只有秒级精度时，pid 在同一秒内被复用会被判为 `active`。这个误判只会拒绝恢复，不会接管仍在运行的 owner，因此可以接受。
+
+它以两阶段、可重试的 `active → recovering → interrupted` 收口。
+第一笔短事务 fence owner generation 并写入精确 recovery actor。第二笔短事务在 actor/generation 仍匹配时删除仅属该 owner 的未发布 aggregate。
+第二笔事务也写 recovery receipt，并把 Run 与 pending-Planned attempt absence reasons 共同收口。
+
+任一步崩溃留下 `recovering`，只能由新的精确 recovery actor 重试，不能把它猜回 active 或 free。证据不足时 fail closed；没有 TTL、heartbeat expiry 或“看起来很久”接管。
+
+旧 generation 无论迟到多久都不能发布 Attempt。所有终态也拒绝任何 generation 的新写入。recovery 是领域状态收口，
+不会删除 Run 或 Attempt。
+
+## 删除与 retention
+
+`run delete` 只处理已收口 Run。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
+存在依赖时零删除；用户需要先显式删除依赖 Run。
+
+删除在 canonical `.niceeval/record.sqlite` 的一个事务中验证引用、删除可删 rows 并发布 tombstone。
+事务前 crash 不改变事实；事务提交后，新的 PublicationCutoff 不再读取该 Run。删除不产生另一份 SQLite。
+
+只读 Record open 只接受精确 current schema。Host-owned 可写打开可按 [自动迁移](README.md#自动迁移) 升级明确支持的历史格式；先证明资源静止、验证历史数据并备份，再在同一数据库事务中升级。
+未知格式、损坏数据或无法证明安全的旧 locks / sessions 拒绝迁移并保留原件。迁移后的 checkpoint 与只读重开验证属于正常收尾；失败不得用旧备份替换已经提交的新数据。
+checkpoint、空间回收、generation lease 与 staging GC 都由内部 adapter 管理，不形成 maintenance 命令。

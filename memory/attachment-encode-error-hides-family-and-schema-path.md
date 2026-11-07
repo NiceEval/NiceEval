@@ -1,16 +1,5 @@
----
-format: concord.document/v1
-id: attachment-encode-error-hides-family-and-schema-path
-title: Attachment encode failure hides its family and Schema path
-createdAt: 2026-09-01
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# Attachment encode failure hides its family and Schema path
+
 ## Observation
 
 MemoryBench reported `Attempt publication failed` with `record-attachment-encode-error` through the installed NiceEval CLI. The public error did not identify the Attachment family or the failing Schema path, so the responsible constructor cannot be isolated without reading private Record storage or rerunning the paid matrix.

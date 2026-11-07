@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-modify-execution-scope
-title: 修改 timeout 或 Attempt 数量
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 修改 timeout 或 Attempt 数量
 
 提高或降低 `timeoutMs` 不改变 Eval fingerprint。

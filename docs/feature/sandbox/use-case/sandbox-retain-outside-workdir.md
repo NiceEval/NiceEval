@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-retain-outside-workdir
-title: "`--keep-sandbox`:看 agent 在 workdir 之外做了什么"
-createdAt: 2026-07-21T19:29:34+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # `--keep-sandbox`:看 agent 在 workdir 之外做了什么
 
 ## 解决什么问题
@@ -88,4 +79,4 @@ hint: run niceeval sandbox history a3f9c2d1 to list available windows
 ## 相关阅读
 
 - [CLI](../cli.md) —— `history` / `diff` 的区间语义与面板体裁。
-- [Architecture · 变更归因](../architecture.md#变更归因send-区间与分类账) —— 分类账采什么、不采什么。
+- [Architecture · 变更归因](../architecture/README.md#变更归因send-区间与分类账) —— 分类账采什么、不采什么。

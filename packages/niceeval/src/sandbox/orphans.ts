@@ -1,4 +1,4 @@
-// 孤儿核对与 prune:强杀路径的实例面兜底(见 docs/feature/sandbox/architecture.md
+// 孤儿核对与 prune:强杀路径的实例面兜底(见 docs/feature/sandbox/architecture/README.md
 // 「孤儿核对:强杀路径的实例面兜底」、docs/feature/sandbox/cli.md「sandbox list --orphans」
 // 「sandbox prune」)。docker 按 label 查本地 daemon,e2b 按 metadata 过滤 SDK 实例列表;
 // vercel 无按元数据检索实例的通道,不参与。核对与销毁以 case 的资源组为单位:Compose case 的

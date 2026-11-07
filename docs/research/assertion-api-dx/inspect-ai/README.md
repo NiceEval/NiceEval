@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-inspect-ai
-title: Inspect AI 的 Scorer、Judge 与聚合作者面
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Inspect AI 的 Scorer、Judge 与聚合作者面
 
 本文研究 Inspect AI 怎样让 Eval 作者定义单样本判分、裁判模型、跨样本 metric 与跨 epoch reducer。

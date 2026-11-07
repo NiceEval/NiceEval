@@ -64,7 +64,7 @@ export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, stri
 // Docker base 支持非 root Node runtime 切换，并显式安装 Corepack。
 export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseline, number> = {
   // r3: Dockerfile 里 npm 全局装完后显式 `USER node`——运行时不再强加执行身份,
-  // 改为沿用镜像自己声明的 USER,非 root 必须由配方自己声明(见 docs/feature/sandbox/library.md「执行身份」)
+  // 改为沿用镜像自己声明的 USER,非 root 必须由配方自己声明(见 docs/feature/sandbox/library/README.md「执行身份」)
   // r4: 跨 provider 基线工具面统一——不预装 yarn 实体,补齐 python3,
   // 并补 /usr/local 对运行用户可写(docs/feature/sandbox/library/prebuilt-environments.md
   // 「跨 provider 基线工具面」)

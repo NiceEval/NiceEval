@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/assertions.md
+// cases: docs/engineering/testing/architecture/unit/assertions.md
 // Algorithm seam: overflow must yield unavailable/null rather than a rounded or zero total.
 // Codec seam: normal published E2E results cannot expose decoder acceptance of contradictory
 // previews, unavailable-with-value or revision-crossed extra keys. Public lifecycle, collector,

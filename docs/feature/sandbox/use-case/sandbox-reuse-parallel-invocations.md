@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-reuse-parallel-invocations
-title: 并行 Invocation 隔离 Record 与 Sandbox
-createdAt: 2026-08-03T21:40:20+08:00
-kind: use-case
-feature: docs/feature/sandbox/README.md
----
-
 # 并行 Invocation 隔离 Record 与 Sandbox
 
 ## 先分清三个 owner
@@ -57,6 +48,6 @@ export default defineExperiment({
 
 ## 相关阅读
 
-- [Sandbox 复用](../reuse.md#并行-invocation)
-- [Experiments 并发 Invocation](../../experiments/architecture.md#并发-invocation)
+- [Sandbox 复用](../library/reuse.md#并行-invocation)
+- [Experiments 并发 Invocation](../../experiments/architecture/README.md#并发-invocation)
 - [并行 Invocation 使用不同 Record](../../experiments/use-case/concurrency-parallel-invocations.md)

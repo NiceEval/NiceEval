@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-resume-interrupted-run
-title: 恢复中断运行留下的协调状态
-createdAt: 2026-08-18T09:07:20+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 恢复中断运行留下的协调状态
 
 ## 解决什么问题
@@ -90,5 +81,5 @@ niceeval sandbox prune
 ## 相关阅读
 
 - [并行 Invocation](concurrency-parallel-invocations.md)
-- [Experiment CLI 反馈](../cli.md#协调等待与恢复)
-- [并发 Invocation 架构](../architecture.md#并发-invocation)
+- [Experiment CLI 反馈](../cli/README.md#协调等待与恢复)
+- [并发 Invocation 架构](../architecture/README.md#并发-invocation)

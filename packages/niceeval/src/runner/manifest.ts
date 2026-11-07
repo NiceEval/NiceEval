@@ -1,7 +1,7 @@
 import { executionDigestForExperiment, type RenameIdentityTarget } from "./rename-identity.ts";
 import { resolveIdentityDomains, rebuildOriginExecutionDigest, type IdentityRebuildInput, type IdentityDomainChange } from "./identity-domains.ts";
 // Identity explanations are detached, credential-free planning values.
-// Contract: docs/feature/experiments/cache.md, “差异说明”.
+// Contract: docs/feature/experiments/architecture/cache.md, “差异说明”.
 import { Schema } from "effect";
 import type { JsonValue } from "../types.ts";
 import type { RunContext } from "../record/model/run-context.ts";

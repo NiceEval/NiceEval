@@ -1,14 +1,10 @@
 ---
-format: concord.document/v1
-id: record-storage-eval-platforms
-title: Eval 与 tracing 平台怎样保存数据
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources:
   - https://github.com/aimhubio/aim/blob/main/docs/source/using/manage_runs.md
   - https://aimstack.readthedocs.io/_/downloads/en/v3.10.0/pdf/
+observedAt: 2026-08-25
 ---
+
 # Eval 与 tracing 平台怎样保存数据
 
 > 观察日期：2026-08-25

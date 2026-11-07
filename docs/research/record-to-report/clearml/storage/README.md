@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: record-to-report-clearml-storage
-title: ClearML 持久数据结构
-createdAt: 2026-08-14
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/record-to-report/clearml/storage.md
-  commit: 50948f0967c63b370b48e7ed0cc49a9247234b8f
-kind: research
 sources: []
 ---
+
 # ClearML 持久数据结构
 
 本页把“事实”分成四类：

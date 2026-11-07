@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: ori-eval
-title: Ori Eval：Skill、评估框架与 NiceEval 的关系
-createdAt: 2026-08-06
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/ori-eval.md
-  commit: 9cfe86f263cceec8e6346eb7f5cfbcbe5662d39d
-kind: research
 sources: []
 ---
+
 # Ori Eval：Skill、评估框架与 NiceEval 的关系
 
 > 观察日期：2026-08-06

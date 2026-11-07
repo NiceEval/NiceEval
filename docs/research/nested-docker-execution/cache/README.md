@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: nested-docker-execution-cache
-title: 缓存与快照边界
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources: []
+observedAt: 2026-08-25
 ---
+
 # 缓存与快照边界
 
 > 观察日期：2026-08-25

@@ -1,21 +1,6 @@
----
-format: concord.document/v1
-id: report-component-data-fn-spyon-must-target-component
-title: report-component-data-fn-spyon-must-target-component
-createdAt: 2026-07-12T16:49:26+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/report-component-data-fn-spyon-must-target-component.md
-  commit: 012cb77f674d5ad150f871ceb7961cf1b7016dcf
-description: report 组件的 .data 是 Object.assign 装配时按值拷贝的，vi.spyOn 源模块拦不住经组件属性发起的调用
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# report-component-data-fn-spyon-must-target-component
+
+report 组件的 .data 是 Object.assign 装配时按值拷贝的，vi.spyOn 源模块拦不住经组件属性发起的调用
 
 **现象**：`vi.spyOn(compute, "experimentListData")`（spy 源计算模块的具名导出）拦不住
 `ExperimentList.data(selection)` 这条调用路径——断言"这个计算函数被调用了几次/带什么参数"

@@ -1,10 +1,4 @@
 ---
-format: concord.document/v1
-id: record-storage-protocols-sqlite
-title: SQLite application file
-createdAt: 2026-08-25
-kind: research
-observedAt: 2026-08-25
 sources:
   - https://www.sqlite.org/appfileformat.html
   - https://www.sqlite.org/fileformat.html
@@ -13,7 +7,9 @@ sources:
   - https://www.sqlite.org/tempfiles.html
   - https://www.sqlite.org/c3ref/blob_open.html
   - https://nodejs.org/download/release/v24.19.0/docs
+observedAt: 2026-08-25
 ---
+
 # SQLite application file
 
 > 观察日期：2026-08-25

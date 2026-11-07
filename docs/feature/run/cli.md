@@ -36,4 +36,4 @@ canonical Record 固定为项目内 `.niceeval/record.sqlite`。受控退出会�
 `show`、`query`、`run list/show` 与 `view` 可以直接读取支持的历史 portable Record，无需先运行评估。
 历史格式只在私有副本中迁移；原件、历史 Run 与引用不被改写，也不创建新 Run。
 `query --record <file>` 的外部输入必须是已交付、无并发修改的单文件 Record。未知格式、非空 WAL、损坏文件或无法证明的 owner 状态明确拒绝。
-项目 operational 读取保留当前格式的实时事实；输入选择、原件保护与失败边界统一见 [自动迁移](architecture.md#自动迁移)。
+项目 operational 读取保留当前格式的实时事实；输入选择、原件保护与失败边界统一见 [自动迁移](architecture/README.md#自动迁移)。

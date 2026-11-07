@@ -365,7 +365,7 @@ export async function suspendDetached(provider: string, sandboxId: string): Prom
     }
     case "vercel": {
       // suspend = stop():自动打快照保存文件系统,之后经 Sandbox.get 恢复(留存语义见
-      // docs/feature/sandbox/architecture.md「留存(keep)与注册表」)。resume:false——这里
+      // docs/feature/sandbox/architecture/README.md「留存(keep)与注册表」)。resume:false——这里
       // 只想找到已经醒着的实例去 stop 它,不需要 get() 顺手再唤醒一次。
       const { Sandbox: VSandbox } = await import("@vercel/sandbox");
       const get = (

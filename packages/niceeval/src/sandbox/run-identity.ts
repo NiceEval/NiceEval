@@ -1,7 +1,7 @@
 // 沙箱创建期写入的运行标识元数据:host(宿主机名)、pid(runner 进程)、startedAt(快照时刻)。
 // docker 用容器 label、e2b 用 SDK metadata——与既有 `niceeval.keep-candidate` / provision token
 // 同一机制同通道;vercel 没有按元数据检索实例的通道,不写、不报错(见
-// docs/feature/sandbox/architecture.md「孤儿核对:强杀路径的实例面兜底」)。
+// docs/feature/sandbox/architecture/README.md「孤儿核对:强杀路径的实例面兜底」)。
 
 import { hostname } from "node:os";
 import { execFileSync } from "node:child_process";

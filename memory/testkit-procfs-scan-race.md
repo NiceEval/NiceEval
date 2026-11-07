@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: testkit-procfs-scan-race
-title: Testkit 单次 procfs terminal scan 会遗漏 post-snapshot descendant
-createdAt: 2026-08-20T08:09:31+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/testkit-procfs-scan-race.md
-  commit: 41d192486eefd620c14af2741016e0c161c2536c
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [testkit-procfs-scan-race](testkit-procfs-scan-race.md) — 单次 terminal procfs scan 可漏掉 snapshot 后 fork 的同组 descendant；per-handle snapshot handshake 固定红灯，连续 scan 与可验证 resource cleanup 收口"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # Testkit 单次 procfs terminal scan 会遗漏 post-snapshot descendant
 
 ## 现象
@@ -53,7 +23,7 @@ descendant 与 owned group 都终结。cleanup error 收集为 `AggregateError`�
 ## 回归收据
 
 - Owner：`e2e/lifecycle/test/process-group-zombie-cleanup.test.ts`，
-  `docs/engineering/testing/e2e/README.md#process-group-terminal-state`。
+  `docs/engineering/testing/architecture/e2e/README.md#process-group-terminal-state`。
 - 固定条件：Linux、`python>=3.11`、Lifecycle `PR_SET_CHILD_SUBREAPER` wrapper、Testkit snapshot hook。
 - 红灯：把 `waitForOwnedGroupExit()` 的 terminal branch 逆为单次 `return true` 后运行
 

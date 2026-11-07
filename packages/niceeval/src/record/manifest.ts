@@ -3,7 +3,7 @@
 // 这里只有**落盘形状与读回**;清单怎么算出(与指纹同一份输入)在 `runner/fingerprint.ts`,
 // 新旧相减出具名差异在 `runner/manifest.ts`。
 // 契约单源:docs/feature/record/architecture.md 与
-// docs/feature/experiments/cache.md「差异说明」与「NiceEval 身份域变更」。
+// docs/feature/experiments/architecture/cache.md「差异说明」与「NiceEval 身份域变更」。
 
 import type { JsonValue } from "../types.ts";
 import { CURRENT_IDENTITY_DOMAINS } from "../runner/identity-domains.ts";

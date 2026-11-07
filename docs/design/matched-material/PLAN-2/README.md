@@ -1,9 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design-plan
-relations: {}
----
-
 # Handle 追加评分
 
 ## 解决的问题

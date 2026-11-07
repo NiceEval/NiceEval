@@ -20,7 +20,7 @@ ctx reader 由 `defineContextMatch` 或 `defineMaterialMatch` 声明。
 
 ## 数值比较
 
-`niceeval/expect` 公开五个数值 Boolean matcher。无单位材料使用有限 number 阈值；带单位的 `Quantity<U>` 或 `NumericMaterial<U>` 使用同单位 Quantity 阈值。单位构造、品牌和运行时校验见 [数值单位](../library.md#数值单位)。非法 threshold 在调用 matcher 工厂时就是作者错误；candidate 已经是 number 但值为 `NaN` 或正负 `Infinity` 时，这条 Assertion 形成 unavailable，不能记为作者错误或普通 mismatch。
+`niceeval/expect` 公开五个数值 Boolean matcher。无单位材料使用有限 number 阈值；带单位的 `Quantity<U>` 或 `NumericMaterial<U>` 使用同单位 Quantity 阈值。单位构造、品牌和运行时校验见 [数值单位](README.md#数值单位)。非法 threshold 在调用 matcher 工厂时就是作者错误；candidate 已经是 number 但值为 `NaN` 或正负 `Infinity` 时，这条 Assertion 形成 unavailable，不能记为作者错误或普通 mismatch。
 
 ```ts
 declare function lessThan(threshold: number): BooleanMatch<number>;     // candidate < threshold

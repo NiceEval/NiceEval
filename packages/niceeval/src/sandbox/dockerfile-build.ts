@@ -1,6 +1,6 @@
 // 单 Dockerfile case 的 Run 级按需构建：Docker 产出内容寻址 image tag，E2B 产出
 // 内容寻址 template alias。构建只发生在 build coordinator；attempt 只消费 locator。
-// 契约单源：docs/feature/sandbox/case.md「按需构建单 Sandbox」「Run 级构建协调」。
+// 契约单源：docs/feature/sandbox/architecture/case.md「按需构建单 Sandbox」「Run 级构建协调」。
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";

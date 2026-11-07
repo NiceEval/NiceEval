@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: inspection
-title: Inspection
-createdAt: 2026-08-26T19:54:36+08:00
-kind: feature
----
-
 # Inspection
 
 Inspection 通过固定 operation 读取并解释已发布 Run 与 Attempt 事实。当前项目 operation 还消费 Experiment Host

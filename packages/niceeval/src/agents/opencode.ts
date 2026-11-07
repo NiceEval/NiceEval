@@ -32,7 +32,7 @@ import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failu
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
 // 行为轨优先 stdout JSONL,不足时 `opencode export <sessionID>`。
-// 契约见 docs/feature/adapters/sdk/opencode/README.md。
+// 契约见 docs/feature/adapters/library/sdk/opencode/README.md。
 
 const SKILL_DIR = ".agents/skills";
 /** 自定义 OpenAI 兼容网关在 opencode.json 里的 provider id。 */
@@ -103,7 +103,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 // @concord-code
 // @concord-implements docs/feature/adapters/README.md
-// @concord-implements docs/feature/adapters/sdk/opencode/README.md
+// @concord-implements docs/feature/adapters/library/sdk/opencode/README.md
 export function openCodeAgent(config?: OpenCodeConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCODE_CLI_VERSION;
   const { ensure, installer } = createNpmCliInstaller({

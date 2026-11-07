@@ -1,21 +1,18 @@
 ---
 name: feature
 description: Inspect, design, trace, or revise NiceEval Feature and Use Case contracts. Use for adopted current product behavior; use Roadmap for finalized but unadopted directions and Design for competing plans.
-metadata:
-  command: concord repo docs feature
-  design: docs/feature/README.md
 ---
 
 # Feature
 
-Read the [Feature authoring contract](../../../docs/feature/README.md) and the [Trace workflow](../../../docs/engineering/docs-traceability/README.md) before changing a Feature or Use Case. Run `concord repo docs feature --help` for current command syntax.
+Read the [Feature authoring contract](../../../docs/feature/README.md) before changing a Feature or Use Case. Run `concord --skill document` for layout, creation and adoption, `concord --skill test` for test markers, and each command's `--help` for current syntax.
 
 A Feature is the adopted current product target, even when implementation has not caught up. A finalized but unadopted direction belongs in Roadmap; alternatives that still require comparison belong in Design. Do not weaken a Feature into an implementation-status document.
 
-Before editing, use `concord repo docs feature list` and `concord repo docs feature show` to identify the exact package, page roles, direct Use Cases, runner-inventoried cases, Feedback/Memory evidence, and related docs. Test coverage is derived only through case source annotation → owner → exact contract; never infer it from directories, filenames, or readable titles.
+Before editing, use `concord list feature` and `concord show <id>` to identify the exact package, page roles, Use Cases, related tests, Issues, Memory, and docs. Test coverage is derived only through test markers → exact contract; never infer it from directories, filenames, or readable titles.
 
 Keep each fact in its owning page. Put public TypeScript shape in `library.md`, command behavior in `cli.md`, internal invariants in `architecture.md`, cross-owner sequencing in `lifecycle.md`, and one minimal user goal in each leaf Use Case. Strong relations remain with their source owner; do not add a reverse registry or formatter metadata.
 
-The Feature structure surface is limited to managed `feature create`, `feature page add`, and `feature page set`. It never creates a package implicitly, and it is not `retire`, physical delete, move, or Roadmap adoption. For a new leaf Use Case, run `concord repo docs use-case create --help`: its independent owner publishes the body, node metadata, and index link under an existing Feature and existing Use Case index. Do not copy templates, hand-write generated indexes, or fabricate a receipt.
+Create a Feature with `concord new feature <id>` and a leaf Use Case with `concord new use-case <id> --feature <feature>`; edit existing pages directly. Do not copy templates or hand-write generated indexes.
 
-After changes, rerun `concord repo docs feature show` for the affected Feature and `concord repo docs test show <path#caseId>` for every changed case. Case relations come from the `@feature` / `@use-case` source declaration; use `concord repo docs test case --help`, `regression --help`, and `issue --help` for the managed relation commands. Run `pnpm lint`; run `pnpm typecheck` when repository tooling or TypeScript examples changed. Commit only the intended Feature, Use Case, relation-owner, source-relation/history/evidence, and generated-index paths.
+After changes, run `concord show <feature>` for the affected Feature, `concord check`, and `pnpm lint`; run `pnpm typecheck` when repository tooling or TypeScript examples changed. Commit only the intended Feature, Use Case, and relation-owner paths.

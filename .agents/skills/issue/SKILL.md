@@ -9,10 +9,9 @@ Read the [Issue and Memory workflow](../../../docs/engineering/issues/README.md)
 
 An Issue is only for a public, sanitized Observation that still needs NiceEval maintainer follow-up.
 Send suspected vulnerabilities to Private Vulnerability Reporting, and stop if safe publication is uncertain.
-Do not create a Feedback for a new Observation; Feedback is retained only for legacy migration and audit.
 Use Memory for investigated Problems, Decisions, and reusable know-how; do not use an Issue as a root-cause record.
 
-For an E2E case relation, run `concord repo docs test issue add --help`. This is a local source-relation mutation, not remote Issue mutation. It must read-only verify the current repository's canonical URL, existence, non-PR identity, and direct provenance to the exact `<path>#<caseId>`, then CAS the verified remote identity before local publication. Repeat it for every Issue related to that case; repeat it separately for other cases in the same file. It never grants or consumes authorization to mutate GitHub. Remove a current relation only through `concord repo docs test issue retire --help`.
+Relate an E2E regression to a local Issue with an `@issue docs/issues/<id>.md` test marker; see `concord --skill test`. A local relation never grants or consumes authorization to mutate GitHub.
 
 ## Prepare
 
@@ -21,7 +20,7 @@ For a Feature, preserve the expected workflow, current gap, impact, usage exampl
 Do not invent a root cause or require a proposed solution.
 
 Search both open and closed Issues for a semantic duplicate.
-Record the local draft with `concord issue create <id> --title <title> --body <text>`; it writes `docs/issues/<id>.md` and never mutates GitHub.
+Record the local draft with `concord new issue <id> --title <title> --body <file|->`; it writes `docs/issues/<id>.md` and never mutates GitHub.
 Return that draft and suggested type, area, and status labels when remote mutation is not explicitly authorized.
 
 ## Remote mutation gate

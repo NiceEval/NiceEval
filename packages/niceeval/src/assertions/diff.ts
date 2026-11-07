@@ -1,6 +1,6 @@
 // agent 归因 diff 的派生视图:从落盘事实(DiffWindow[])派生文件级摘要与终态读取。
 // 派生物可随时重算、不落盘——符合「聚合在消费方」铁律(docs/feature/record/architecture.md「diff.json」)。
-// 本文件同时承载 Sandbox 事实(docs/feature/sandbox/architecture.md「变更归因:send 区间与分类账」)
+// 本文件同时承载 Sandbox 事实(docs/feature/sandbox/architecture/README.md「变更归因:send 区间与分类账」)
 // 的纯证据解析:exact touched-path set、noChanges 同源、同一 change entry 的 before/after 候选。
 // 这里只做证据解析与候选分类,不消费 BooleanMatch——matcher 应用留在接线层,避免复制 Match 内核。
 
@@ -85,7 +85,7 @@ export function diffMatches(diff: DiffData, re: RegExp): boolean {
 /**
  * 该文件最后一个触及窗口的内容有没有被省略——`get(path)` 返回 undefined 的两个原因
  * (净删除 / 从未触及,与内容被省略)由它区分:内容断言据此如实报证据不可用,
- * 不把「读不到内容」静默折成判过或判败(docs/feature/sandbox/architecture.md「导出往返是常数次」)。
+ * 不把「读不到内容」静默折成判过或判败(docs/feature/sandbox/architecture/README.md「导出往返是常数次」)。
  */
 export function elidedContentAt(diff: DiffData, path: string): NonNullable<WindowChange["elided"]> | undefined {
   for (let i = diff.windows.length - 1; i >= 0; i--) {
@@ -197,7 +197,7 @@ export type TouchedPathsOutcome =
   | { readonly outcome: "unavailable"; readonly reason: string };
 
 /**
- * exact touched-path set 的三值求值(docs/feature/sandbox/architecture.md
+ * exact touched-path set 的三值求值(docs/feature/sandbox/architecture/README.md
  * 「变更归因:send 区间与分类账」):
  * - 已观察到 expected 外的确定 path,立即 failed(partial 也如此,不会被后续窗口推翻);
  * - collector complete 时,集合相等 passed,不等 failed;

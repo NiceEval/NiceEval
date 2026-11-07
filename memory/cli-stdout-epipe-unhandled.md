@@ -1,16 +1,3 @@
----
-format: concord.document/v1
-id: cli-stdout-epipe-unhandled
-title: CLI stdout 提前关闭产生未捕获 EPIPE
-createdAt: 2026-10-28
-kind: memory
-memoryKind: problem
-state: open
-epoch: 0
-promotions: []
-history: []
-evidenceRequirement: concord.native-reliability/v1
----
 # CLI stdout 提前关闭产生未捕获 EPIPE
 
 ## 问题与根因

@@ -1,9 +1,3 @@
----
-format: niceeval.docs-node/v1
-kind: design-plan
-relations: {}
----
-
 # Experiment 统一收尾预算
 
 Attempt 是通用运行边界，Agent 在应用层提供 Session 与 Turn。

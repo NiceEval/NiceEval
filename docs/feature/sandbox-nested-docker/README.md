@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: sandbox-nested-docker
-title: Nested Docker —— 在 Sandbox 里使用 Docker
-createdAt: 2026-08-25T23:04:51+08:00
-kind: feature
----
-
-
 # Nested Docker —— 在 Sandbox 里使用 Docker
 
 Coding Agent 经常要在评估现场里执行 `docker build`、`docker run` 与 `docker compose`。
@@ -103,6 +94,6 @@ base；但在它之上，NiceEval 可以创建 Provider-native 的派生 prepara
 
 - [Library](library.md) —— `sandboxRequirements()` 与 `incusSandbox()` 的公开形状。
 - [CLI](cli.md) —— doctor、`--development`、`--dry` identity。
-- [Architecture](architecture.md) —— requirement / capability、domain、信任与安全边界。
-- [Lifecycle](lifecycle.md) —— planning、DestroyOnly、doctor 与 fail-closed。
+- [Architecture](architecture/README.md) —— requirement / capability、domain、信任与安全边界。
+- [Lifecycle](architecture/lifecycle.md) —— planning、DestroyOnly、doctor 与 fail-closed。
 - [用例](use-case/README.md) —— 声明能力与检查 domain。

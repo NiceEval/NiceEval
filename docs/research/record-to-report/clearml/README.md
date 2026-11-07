@@ -1,14 +1,10 @@
 ---
-format: concord.document/v1
-id: record-to-report-clearml
-title: ClearML：以 Task 为中心的实验管理与执行系统
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources:
   - https://github.com/clearml/clearml-docs/tree/53782832efce804072879f107ab148218ba07536
   - https://clear.ml/docs/latest/docs/
+observedAt: 2026-08-14
 ---
+
 # ClearML：以 Task 为中心的实验管理与执行系统
 
 > 观察日期：2026-08-14

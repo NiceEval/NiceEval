@@ -1,20 +1,3 @@
----
-format: concord.document/v1
-id: hard-kill-leaves-orphans-and-experiment-leaks
-title: 强杀(SIGKILL)反复漏实验 teardown:孤儿容器 + license 席位泄漏,且无事后清理入口
-createdAt: 2026-07-21T17:01:47+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/hard-kill-leaves-orphans-and-experiment-leaks.md
-  commit: 88e604df3161c0cff951c6290a30135cb801fd43
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
 # 强杀(SIGKILL)反复漏实验 teardown:孤儿容器 + license 席位泄漏,且无事后清理入口
 
 ## 现象
@@ -33,8 +16,8 @@ history: []
 
 设计定稿于 2026-07-21(契约先行,实现见 `plan/hard-kill-recovery.md`),三面兜底:
 
-- **实例面**:创建期把运行标识(`host`/`pid`/`startedAt`)写进 docker label / e2b metadata;`niceeval sandbox list --orphans` + `sandbox prune` 事后核对与收回(`docs/feature/sandbox/architecture.md` 孤儿核对节)。
-- **实验面**:收尾登记随触发时点落盘 `.niceeval/teardowns/`,重跑启动自愈(先补 teardown 再 setup),手动入口 `niceeval exp <experiment> --teardown`(`docs/feature/experiments/architecture.md` 强杀后的收尾兜底节)。
+- **实例面**:创建期把运行标识(`host`/`pid`/`startedAt`)写进 docker label / e2b metadata;`niceeval sandbox list --orphans` + `sandbox prune` 事后核对与收回(`docs/feature/sandbox/architecture/README.md` 孤儿核对节)。
+- **实验面**:收尾登记随触发时点落盘 `.niceeval/teardowns/`,重跑启动自愈(先补 teardown 再 setup),手动入口 `niceeval exp <experiment> --teardown`(`docs/feature/experiments/architecture/README.md` 强杀后的收尾兜底节)。
 - **续跑面**:携带细化为 attempt 粒度、未收尾快照参与携带——重跑同一条命令就是续跑(`docs/runner.md` 缓存节)。
 
 关键裁决(否决方案):

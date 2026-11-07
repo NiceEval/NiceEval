@@ -1,6 +1,6 @@
 name: e2e
 
-# E2E CI 编排（docs/engineering/testing/e2e/execution.md）。
+# E2E CI 编排（docs/engineering/testing/architecture/e2e/execution.md）。
 # 只做 checkout / runtime / matrix / artifact；不解释产品 expected，不复制 manifest 选择。
 #
 # prepare → plan matrix、Testkit typecheck、pack 一次 NiceEval tgz + sha256

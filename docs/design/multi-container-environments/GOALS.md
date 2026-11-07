@@ -15,7 +15,7 @@
 范围边界:本决策只管 Sandbox 的**声明形态**与**谁负责构建与启动**;
 agent 的 send 终态、命令树终止与正常任务服务寿命是所有候选方案共同的前提，
 分别由 [Agent 数据契约](../../feature/adapters/architecture/agent-contract.md) 与
-[Sandbox 命令树契约](../../feature/sandbox/architecture.md#命令树与进程寿命)定义,不参与本对比。
+[Sandbox 命令树契约](../../feature/sandbox/architecture/README.md#命令树与进程寿命)定义,不参与本对比。
 
 ---
 
@@ -28,7 +28,7 @@ agent 的 send 终态、命令树终止与正常任务服务寿命是所有候�
   workdir、变更分类账、send 区间归因、留存的参照点不动。
 - **既有裁决不推翻**:
   [没有跨 provider 构建 DSL](../../feature/sandbox/library/prebuilt-environments.md#为什么没有跨-provider-构建-dsl)
-  与 [预置放哪](../../feature/sandbox/library.md)
+  与 [预置放哪](../../feature/sandbox/library/README.md)
   的分层继续成立;候选方案与它们冲突时要把冲突摊开说清。
 - **假判断最小化优先于功能支持面**:一个方案若在某些
   provider 上做不到,宁可显式 `skipped`,不许静默降级成
@@ -79,10 +79,10 @@ agent 的 send 终态、命令树终止与正常任务服务寿命是所有候�
 
 - **agent send 终态与命令树寿命** ——
   [Agent 数据契约](../../feature/adapters/architecture/agent-contract.md)与
-  [Sandbox 命令树契约](../../feature/sandbox/architecture.md#命令树与进程寿命)。
+  [Sandbox 命令树契约](../../feature/sandbox/architecture/README.md#命令树与进程寿命)。
 - **egress / 网络出口管控** —— 独立能力,不随本决策定稿。
 - **跨实验共享、寿命长于一次 run 的外部服务** ——
-  维持[预置放哪](../../feature/sandbox/library.md)
+  维持[预置放哪](../../feature/sandbox/library/README.md)
   的「外部编排」行,不进本决策。
 - **对导出报告断言 Sandbox 行为** —— 归
-  [E2E 本地 / Docker / CI 执行契约](../../engineering/testing/e2e/execution.md)。
+  [E2E 本地 / Docker / CI 执行契约](../../engineering/testing/architecture/e2e/execution.md)。

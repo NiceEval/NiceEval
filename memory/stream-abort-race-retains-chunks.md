@@ -1,15 +1,5 @@
----
-format: concord.document/v1
-id: stream-abort-race-retains-chunks
-title: 流式拉取不能反复竞速同一个未结束的取消 Promise
-createdAt: 2026-09-28
-kind: memory
-memoryKind: insight
-state: current
-epoch: 0
-promotions: []
-history: []
----
+# 流式拉取不能反复竞速同一个未结束的取消 Promise
+
 280 MiB 附件验收中，逐块读取和写入仍出现约 303 MiB 的 RSS 增长。问题不是收集了 chunks 数组，而是每次拉取都执行 `Promise.race([iterator.next(), aborted])`，其中 `aborted` 在整个传输期间保持 pending。
 
 共享 pending Promise 持有每次竞速登记的 reaction，已结束的拉取仍可能连带保留其结果。代码表面只处理一个块，不足以证明内存有界。

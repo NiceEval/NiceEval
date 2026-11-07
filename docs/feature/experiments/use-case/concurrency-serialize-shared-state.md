@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: concurrency-serialize-shared-state
-title: 串行保护共享状态
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 串行保护共享状态
 
 先区分状态是只在本 Invocation 内累积，还是会被多个 Invocation 同时打开。它们可以追加同一 Record

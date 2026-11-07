@@ -1,33 +1,3 @@
----
-format: concord.document/v1
-id: assertion-diagnostic-tree-overflows-record
-title: Assertions matcher diagnostic 树使已完成 Run 无法发布
-createdAt: 2026-08-18T22:32:42+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/assertion-diagnostic-tree-overflows-record.md
-  commit: 9bc7efb275d53036bb27e27fbb2ec04c88c782d2
-kind: memory
-memoryKind: problem
-state: resolved
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
-resolution:
-  reason: 正文或对应 INDEX 明确使用“已修/已修复”；这是作者声明的事实，不等同于本视图验证证明。
-  at: 2026-09-14T15:00:25.173Z
-  epoch: 0
-  kind: fixed
-  evidenceLevel: attested
-  attestation:
-    statement: "- 已修 [assertion-diagnostic-tree-overflows-record](assertion-diagnostic-tree-overflows-record.md) — 上百个 occurrence × 组合 matcher 的完整诊断树撑破递归/4 MiB 边界，使已完成 Run 无法发布；collection 改存 witness + 8 个样本，runtime/document 双层有界化，大材料自动进 Assertions blob"
-    proof: []
-    source:
-      path: memory/INDEX.md
-      commit: f3d90668c55c74ec7d08e25bf6a0940d0110da1f
-      digest: sha256:67d7d964587394bf0db4632f93541d005dd00854588493e9c63fa573506473d5
----
 # Assertions matcher diagnostic 树使已完成 Run 无法发布
 
 ## 现象
@@ -49,7 +19,7 @@ collection matcher 为每个候选保留完整组合诊断树。候选数、matc
 
 ## 回归收据
 
-owner 是 `docs/engineering/testing/e2e/eval.md#eval-assertion-scopes`。确定性 Direct Agent 在一个 Turn 产生 10,000 个 filler command 和末尾目标命令，再经公开 `niceeval exp` 发布；公开 readback 核对决定性前缀 receipt 与有界 explanation。
+owner 是 `docs/engineering/testing/architecture/e2e/eval.md#eval-assertion-scopes`。确定性 Direct Agent 在一个 Turn 产生 10,000 个 filler command 和末尾目标命令，再经公开 `niceeval exp` 发布；公开 readback 核对决定性前缀 receipt 与有界 explanation。
 
 - v2 开工红灯 candidate SHA-256 `5b7bf141495043fa78297834433c31d51e3bc9427b0f704c81228b778b6c4bcc`：`exp` 与 `show` 均成功，最早失败为公开 assertion detail 缺少 typed `source`，artifact `/tmp/niceeval-e2e-artifacts-uL587v`。
 

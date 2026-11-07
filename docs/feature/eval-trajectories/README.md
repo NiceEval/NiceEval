@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: eval-trajectories
-title: Eval Trajectory —— 有向依赖路径上的分段执行
-createdAt: 2026-10-28T07:07:27.635Z
-kind: feature
-origin: docs/roadmap/eval-trajectories/README.md
----
-
 # Eval Trajectory —— 有向依赖路径上的分段执行
 
 ## 要消除的 DX 摩擦
@@ -14,7 +5,7 @@ origin: docs/roadmap/eval-trajectories/README.md
 有状态 Eval 往往靠数组顺序、Eval Group lane 或口头约定决定下一步。暂停后，操作者只能猜该接哪份状态；
 恢复又容易把通用 carry 误当成已经完成的路径前缀。这样无法解释某个 Run 是否承接了准确的先前状态。
 
-Eval Trajectory 依赖 [State](../../roadmap/state/README.md)。它以路径派生 identity 和显式 DAG 声明依赖，并为每个
+Eval Trajectory 依赖 [State](../state/README.md)。它以路径派生 identity 和显式 DAG 声明依赖，并为每个
 暂停或恢复 segment 发布一份新的 immutable Run。resume locator 将 trajectory ID、旧 Run、trajectory execution、
 frontier、Cohort、Region 和 exact `StateCheckpointRef` 绑成不可拆的一项交接事实。
 
@@ -78,7 +69,7 @@ debug checkpoint，不接受松散 identity。
 
 - [Library](library.md) —— declaration、DAG、frontier、Run ID 与 locator 形状。
 - [CLI](cli.md) —— 两条唯一命令语法、dry、debug、handoff 与退出码。
-- [Architecture](architecture.md) —— Run、expected slots、provenance、comparability 与并发边界。
-- [Lifecycle](lifecycle.md) —— start、breakpoint、resume、失败、debug 与受控 interruption。
-- [State](../../roadmap/state/README.md) —— Cohort、Region、exact checkpoint、CAS 与 fence。
+- [Architecture](architecture/README.md) —— Run、expected slots、provenance、comparability 与并发边界。
+- [Lifecycle](architecture/lifecycle.md) —— start、breakpoint、resume、失败、debug 与受控 interruption。
+- [State](../state/README.md) —— Cohort、Region、exact checkpoint、CAS 与 fence。
 - [Eval Group](../eval-groups/README.md) —— 独立的物理 Sandbox 复用 lane。

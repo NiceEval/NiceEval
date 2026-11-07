@@ -93,7 +93,7 @@ Values are string | number (validated at parse time). The line between labels an
 labels are not passed to ctx / t (the agent and eval cannot see them) and do not take part in the comparability configuration (changing them does not invalidate existing results);
 they are only projected verbatim into the snapshot's `ExperimentRunInfo.labels` for report dimensions (`label()` / `numericLabel()`)
 to group by. The default report recognizes the `line` key: when any Experiment in the group declares it, scatter points are grouped by line and connected.
-See docs/feature/experiments/library.md "labels".
+See docs/feature/experiments/library/README.md "labels".
 
 #### `attempts`
 
@@ -121,7 +121,7 @@ evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
 Which evals this Experiment covers: `"*"` for all, a string array matched by id prefix, or a custom predicate (which receives each discovered and fanned-out
 read-only `EvalDescriptor`, with no path / execution fields exposed); omitted is equivalent to `"*"`. The predicate is evaluated once per
 candidate eval of this invocation, and the result becomes the in-memory `selectedEvalIds` plan, not a filter called repeatedly at runtime
-(see docs/feature/eval/library.md "EvalDescriptor" and docs/feature/experiments/library.md
+(see docs/feature/eval/library/README.md "EvalDescriptor" and docs/feature/experiments/library/README.md
 "evals: iterate discovery results, choose your own").
 
 #### `timeoutMs`
@@ -214,7 +214,7 @@ before returns no value; write products to module-level variables, and `after` a
 the runner does not mediate values. If before throws, every Attempt of this Experiment gets an `errored` Verdict
 (code `"experiment-setup-failed"`, phase `"experiment.before"`); other Experiments in the batch are unaffected.
 The function body does not enter the fingerprint; after changing hook logic, use `--rerun all` to explicitly rerun everything.
-See docs/feature/experiments/architecture.md "Experiment-level lifecycle".
+See docs/feature/experiments/architecture/README.md "Experiment-level lifecycle".
 
 #### `after`
 

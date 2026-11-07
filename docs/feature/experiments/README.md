@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: experiments
-title: Experiments —— 怎么跑这批 eval
-createdAt: 2026-07-12T19:13:58+08:00
-kind: feature
----
-
 # Experiments —— 怎么跑这批 eval
 
 一个 eval 描述**测什么**(这轮对话该发生什么、怎么算对)。
@@ -29,7 +21,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **跨 agent / 跨配置对比是一等公民。**
   每个实验文件声明一个配置；固定 Inspection 在一个 `PublicationCutoff` 下比较同一实验组的已发布 Attempt，不在 View 打开时另选结果。
 
-实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
+实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](cli/rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
   目录组织源码、生成 id、支持 CLI 前缀选择，并且由第一段表达实验组。
 
 ## 实验组与可比边界
@@ -58,7 +50,7 @@ Coordination（协调）拥有执行去重、`maxConcurrency`、同一 Experimen
 （构建 / 租约）。case lock、Invocation Session 与其 recovery 都是唯一 ProjectDatabase `.niceeval/record.sqlite` 的 rows；
 它们不另建本地文件、sidecar 或逐文件锁。Run 与 Session 都可查询，但 live feedback 仍只属于当前进程。
 
-当前 Project Target 与本次 policy 先进入 [reuse planning](cache.md)。当前可用性为 `reuse | gap`，本次执行计划为 `reuse | execute`。
+当前 Project Target 与本次 policy 先进入 [reuse planning](architecture/cache.md)。当前可用性为 `reuse | gap`，本次执行计划为 `reuse | execute`。
 planner/scheduler 只接收 `execute` 集合；`--rerun all` 可以让可沿用的位置进入执行计划，不改变读取时的结果可用性。
 已发布只表示事实可读，不等于 reuse eligible；资格始终由当次 policy 从已发布事实重新判定。
 
@@ -125,7 +117,7 @@ earned score。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
 另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 
-`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只规定**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料或 gate／score／stop policy；这些仍只写在 Eval 定义与登记后的 Assertion handle 上。求值链见 [Architecture · 配置求值](architecture.md#配置求值链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
+`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只规定**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料或 gate／score／stop policy；这些仍只写在 Eval 定义与登记后的 Assertion handle 上。求值链见 [Architecture · 配置求值](architecture/README.md#配置求值链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
 
 `flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**。
 会改变行为的值，例如联网开关或注入的 skill，写入 `flags`，并由 `ctx.flags` / `t.flags` 使用。
@@ -138,11 +130,11 @@ Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
 运行后才存在的值，例如 `before` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进。只有 NiceEval 已发布的 typed collector 或 Adapter 能力，才能把语义匹配的运行时观测写入 Record catalog 中与 owner 匹配的 fixed family。
 没有已发布 collector 的第三方值不自动持久化，也不能查询。
 
-三个家的判据按场景查[用例手册 · 实验值归属](use-case/实验值归属/)。声明与消费见 [Library · labels 与运行时观测](library.md#labels-与运行时观测)。
+三个家的判据按场景查[用例手册 · 实验值归属](use-case/README.md#实验值归属)。声明与消费见 [Library · labels 与运行时观测](library/README.md#labels-与运行时观测)。
 
 `maxConcurrency` 是本 Invocation 内的**实验并发限制**:只让该实验的 Attempt 排队,同批其它实验照常按全局并发跑。
 它可以表达一次运行内严格串行、严格重试或只维护 N 个可复用 Sandbox，但不会因为另一个终端也选了同一 Experiment 而共享名额。
-什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);限制的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
+什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/README.md#并发);限制的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 
 `sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
 Runner 通过同一 ProjectDatabase 内的 `key` case-lock row 独占整个状态区间。同一 Record root 的多个
@@ -158,7 +150,7 @@ Provider finalizer，最后执行 Experiment `after`。
 sharedState 没有 heartbeat 过期接管或 PID 自动接管。owner token、exact process identity 与 generation 都不可变。
 heartbeat 是同一 ProjectDatabase 中 exact token/generation 专属的观察值，只作诊断。它不能改变 authority，也不会让旧 owner 影响新 generation。
 确认原 owner 已终止且远端状态已静默后，操作员才可用公开的 `niceeval exp <selector> --after` recovery flow 运行
-一次补偿 after；详见 [CLI · 协调等待与恢复](cli.md#协调等待与恢复)。这个字段只提供互斥，不代替 checkpoint
+一次补偿 after；详见 [CLI · 协调等待与恢复](cli/README.md#协调等待与恢复)。这个字段只提供互斥，不代替 checkpoint
 存储、原子提交或强杀恢复。
 
 #### Linux zombie owner recovery
@@ -178,7 +170,7 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 
 `before` 的定义值写模块级变量,`after` 与同文件的 agent 工厂 / prepare command 从闭包读——runner 不做值的中介。
 成对 `before` / `after` 只属于 Experiment 与 Agent 两层;Sandbox 与 Eval 的准备走 layer 的 `before()`,闭包传状态对两类入口同样适用(统一语义见 [Runner · 预置顺序](../../runner.md))。
-用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
+用法与失败语义见 [Library · 实验级共享服务](library/README.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture/README.md#实验级生命周期setup-与-teardown)。
 
 生命周期各层各归各位,`before` 不替代其它层:
 
@@ -188,15 +180,15 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 - 跨 Attempt 的实际 Sandbox 目录、服务或快照由 callback before 恢复，并在成功后通过 `context.onCleanup()` 登记回存；planning 在 owner 对 sharing cohort 稳定时把它编译为 physical-instance occurrence。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
-哪层放什么按场景查[用例手册 · 预置与收尾怎么放](use-case/生命周期/);完整分工表见 [Sandbox 预置分工](../sandbox/library.md)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。
+哪层放什么按场景查[用例手册 · 预置与收尾怎么放](use-case/README.md#生命周期代码放哪);完整分工表见 [Sandbox 预置分工](../sandbox/library/README.md)、准备命令的声明见 [Sandbox Layer](../sandbox/library/layers.md)。
 
 `sandbox` 字段声明本实验的 `SandboxLayer`。
 具体 Provider factory(如 `e2bSandbox({ template })`)产出携带完整起点的 template-bearing layer;`sandboxLayer()` 产出只执行准备命令的 command-only layer。
 
 每个实际选中的 Eval × Experiment 配对恰好一方带 template。
 双方都带报 `sandbox.template-conflict`,双方都不带报 `sandbox.template-missing`;link 全矩阵聚合,在创建任何资源前报错。
-配对规则见 [Sandbox Layer](../sandbox/layers.md#每个配对的-link-约束)。
-一批 eval 起点不同时,各条 Eval 自带 template-bearing factory,experiment 侧保持 command-only;写法见 [Library · 不同 Eval 自带预制起点](library.md#不同-eval-自带预制起点)。
+配对规则见 [Sandbox Layer](../sandbox/library/layers.md#每个配对的-link-约束)。
+一批 eval 起点不同时,各条 Eval 自带 template-bearing factory,experiment 侧保持 command-only;写法见 [Library · 不同 Eval 自带预制起点](library/README.md#不同-eval-自带预制起点)。
 
 `sandboxReuse: true` 是实验作者对 Sandbox 生命周期的声明，不是一次运行的提速开关。
 它表示选中的 Eval 可以在题间 reset 后共用 Sandbox。
@@ -205,30 +197,30 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 
 同时活跃的 Sandbox 数由现有并发限制决定：同一个 Sandbox 一次只执行一条 Attempt；Experiment 的 `maxConcurrency` 与全局并发名额共同限制同时运行数。
 需要严格串行时声明 `maxConcurrency: 1`。
-完整顺序、Provider 能力与 Attempt 采用边界见 [Sandbox 复用](../sandbox/reuse.md)。
+完整顺序、Provider 能力与 Attempt 采用边界见 [Sandbox 复用](../sandbox/library/reuse.md)。
 
 新的 run 需要从 checkpoint 起步时，同样在实际 Sandbox 创建后的 `before()` 恢复，并在该实例退休前的 `after()` 回存。
 需要同一条连续实例时声明 `sandboxReuse: true`；本 Invocation 需要固定顺序时另行声明 `maxConcurrency: 1`；多个 Invocation 指向同一 checkpoint 时再声明 `sharedState`。
-完整的物理 Sandbox 生命周期与复用次数见 [Sandbox 生命周期](../sandbox/lifecycle.md) 与 [Sandbox 复用](../sandbox/reuse.md)。
+完整的物理 Sandbox 生命周期与复用次数见 [Sandbox 生命周期](../sandbox/architecture/lifecycle.md) 与 [Sandbox 复用](../sandbox/library/reuse.md)。
 
 `timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。
 需要更长 Sandbox 复用寿命时，在 template-bearing factory 的 options 里声明 `lifetimeMs`。
-两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/reuse.md#两种时间不能混用)。
+两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/library/reuse.md#两种时间不能混用)。
 
 id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/codex/gpt-5.4`(禁止手写 id)。
-任意深度目录都只形成 id 前缀，见 [Library · 路径只表达身份](library.md#路径只表达身份与选择)。
+任意深度目录都只形成 id 前缀，见 [Library · 路径只表达身份](library/README.md#路径只表达身份与选择)。
 
 ## 相关阅读
 
 - [用例手册](use-case/README.md) —— 规则难懂先查这里:并发怎么配、预置放哪层、flags 还是 labels、选哪些 eval,以及各 CLI 输入面的全流程用例。
-- [Library](library.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id、与 config 的关系。
-- [缓存与携带](cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
-- [Sandbox 生命周期](../sandbox/lifecycle.md) —— 记忆库与 checkpoint 怎样在物理 Sandbox 边界恢复与回存。
+- [Library](library/README.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id、与 config 的关系。
+- [缓存与携带](architecture/cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
+- [Sandbox 生命周期](../sandbox/architecture/lifecycle.md) —— 记忆库与 checkpoint 怎样在物理 Sandbox 边界恢复与回存。
 - [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读 earned score)；混合时两种读数各算各的。
-- [计分粒度的 Experiments 边界](score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
-- [Architecture](architecture.md) —— 实体、配置求值、生命周期、跨 Invocation 协调与完成状态。
+- [计分粒度的 Experiments 边界](library/score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
+- [Architecture](architecture/README.md) —— 实体、配置求值、生命周期、跨 Invocation 协调与完成状态。
 - [设计参照](../../research/experiments/README.md) —— agent-eval 等外部方案带来了什么、哪些边界没有跟随。
-- [CLI](cli.md) —— `niceeval exp` 命令。
+- [CLI](cli/README.md) —— `niceeval exp` 命令。
 - [Authoring](../eval/README.md) —— eval 怎么写(experiment 跑的就是它们)。
 - [Observability](../../observability.md) —— 跨 agent 的质量×成本对比与 `niceeval view`。
 - [Runner](../../runner.md) —— 矩阵展开、并发、首过即停、预算的调度。

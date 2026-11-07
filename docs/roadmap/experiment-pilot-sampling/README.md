@@ -1,15 +1,3 @@
----
-format: concord.document/v1
-id: experiment-pilot-sampling
-title: 可复现的 Experiment Pilot 抽样
-createdAt: 2026-08-09T15:37:16+08:00
-createdAtSource:
-  kind: first-recorded
-  path: docs/roadmap/experiment-pilot-sampling/README.md
-  commit: 16b426cf7189ae0ea340074b3141086d9d47d9ae
-kind: roadmap
-state: planned
----
 # 可复现的 Experiment Pilot 抽样
 
 ## 用户需要

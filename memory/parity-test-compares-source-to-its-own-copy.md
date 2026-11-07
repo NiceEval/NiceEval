@@ -1,19 +1,3 @@
----
-format: concord.document/v1
-id: parity-test-compares-source-to-its-own-copy
-title: 设计裁决:「公开 API 够不够用户重建内置报告」由 fixture 能编译过证明,不由输出比对证明
-createdAt: 2026-07-13T14:53:04+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/parity-test-compares-source-to-its-own-copy.md
-  commit: b66929aff97305dc446afae83772ab8c8ef2d3f6
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
 # 设计裁决:「公开 API 够不够用户重建内置报告」由 fixture 能编译过证明,不由输出比对证明
 
 **裁决**:证明「公开 barrel 导出了用户重建内置报告所需的全部 API」,只需要一份 fixture **能通过 `pnpm run typecheck`**。不写内置报告与其拷贝的输出比对。
@@ -30,4 +14,4 @@ history: []
 
 同类反模式(**grep 源码文本当测试**)在同一文件里还有两处:`readFileSync(src/show/index.ts)` + 正则匹配它的源码文本来断言"宿主选对了报告"、grep `report.ts`/`web.ts` 有没有出现字符串 `"ExperimentComparison"`。这是 lint 规则穿了测试的马甲,改个局部变量名就红,而它们声称守护的行为在 `show.test.ts` / `view-report.test.ts` 里已有真实的行为测试。
 
-规则已升格进 [`docs/engineering/testing/unit/README.md`](../docs/engineering/testing/unit/README.md)「不写的测试」。出处见 [[test-budget-inverted-pyramid]]。
+规则已升格进 [`docs/engineering/testing/architecture/unit/README.md`](../docs/engineering/testing/architecture/unit/README.md)「不写的测试」。出处见 [[test-budget-inverted-pyramid]]。

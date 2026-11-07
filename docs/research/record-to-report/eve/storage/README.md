@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-eve-storage
-title: Eve：`.eve/evals` 落盘信封与写入 owner
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # Eve：`.eve/evals` 落盘信封与写入 owner
 
 > 观察日期：2026-08-14

@@ -10,7 +10,7 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/reference/tsconfig.json",
+    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/library/reference/tsconfig.json",
     "lint": "concord check && pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"pnpm run lint:vitest\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "lint:vitest": "concurrently --names writing,vitest \"concord docs check\" \"vitest run --project lint-docs --project lint-docs-site\"",
     "lint:docs": "concurrently --names writing,vitest \"concord docs check\" \"vitest run --project lint-docs\"",

@@ -1,15 +1,7 @@
 ---
-format: concord.document/v1
-id: adapters-eve-protocol
-title: eve 的协议机制:自产自销的运行时事件流(源码阅读笔记)
-createdAt: 2026-08-12
-createdAtSource:
-  kind: first-recorded
-  path: docs/research/adapters/eve-protocol.md
-  commit: 107a13b385b02c620a786064bded8bec766385b8
-kind: research
 sources: []
 ---
+
 # eve 的协议机制:自产自销的运行时事件流(源码阅读笔记)
 
 **出处:** 直接读 `/Users/ctrdh/Code/eve`(本机 checkout)的源码。
@@ -159,7 +151,7 @@ interface RuntimeIdentity {
    评测带三方连接的 agent 时会需要。
 7. **durable channel event payload 带独立 schema 版本。**
    `StreamEvent` 是进程内模型可以不带版本,但进入长期 Record 的 channel event stream 会跨版本读取;eve 的 `x-eve-stream-version` 头是先例。
-   niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../../feature/run/architecture.md):容器版本只属于 frozen core,领域内容用独立 typed payload media type 演进,未知 payload 原字节保留。
+   niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../../feature/run/architecture/README.md):容器版本只属于 frozen core,领域内容用独立 typed payload media type 演进,未知 payload 原字节保留。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](../otel-genai/README.md#ag-ui-%E5%92%8C-niceeval-streamevent-%E5%90%8C%E5%BD%A2%E6%80%81%E7%9A%84%E6%89%81%E5%B9%B3%E4%BA%8B%E4%BB%B6%E6%B5%81))。
 要做"实时看 agent 跑"的 view 时再回头看。
@@ -168,5 +160,5 @@ interface RuntimeIdentity {
 
 - [agent-eval 笔记](../agent-eval/README.md) —— 逆向适配路线:采集 / 转换 / 落地三层与顺序配对的坑。
 - [OTel GenAI 等标准](../otel-genai/README.md) —— 标准化遥测路线;三条路线的汇总对照表在那篇。
-- [Adapter Architecture](../../../feature/adapters/architecture.md) —— niceeval 自己的事件模型与实现不变量。
+- [Adapter Architecture](../../../feature/adapters/architecture/README.md) —— niceeval 自己的事件模型与实现不变量。
 - [Observability](../../../observability.md) —— 双轨设计:StreamEvent 断言 + canonical GenAI trace。

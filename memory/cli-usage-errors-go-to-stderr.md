@@ -1,21 +1,6 @@
----
-format: concord.document/v1
-id: cli-usage-errors-go-to-stderr
-title: cli-usage-errors-go-to-stderr
-createdAt: 2026-07-22T08:08:25+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/cli-usage-errors-go-to-stderr.md
-  commit: 4de42b0162238fb9d0583f6df47d8bca1f2d732d
-description: niceeval CLI 的用法错误/无匹配提示（page not found、No results matched、--exp 无匹配等）一律写 stderr，不是 stdout
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# cli-usage-errors-go-to-stderr
+
+niceeval CLI 的用法错误/无匹配提示（page not found、No results matched、--exp 无匹配等）一律写 stderr，不是 stdout
 
 **现象**：写 E2E `verify-*.ts` 时用 `spawnSync` 分别拿到 `stdout`/`stderr`，对预期
 失败的命令（如 `show --page bogus`、`show <无匹配前缀>`、`show --exp <无效前缀>`）只
@@ -25,7 +10,7 @@ history: []
 
 **根因**：`src/cli.ts` 把用法错误、无匹配报告这类"命令没有正常完成"的反馈统一写
 `process.stderr`，只有命令**正常完成**时的报告/榜单内容才写 `process.stdout`——这是
-一贯的 Unix 惯例（诊断信息走 stderr），但 `docs/engineering/testing/e2e/verification.md`
+一贯的 Unix 惯例（诊断信息走 stderr），但 `docs/engineering/testing/architecture/e2e/verification.md`
 的示例代码没有专门强调这一点，容易被跳过。
 
 **修法**：给预期失败的命令写断言时，检查 `stdout + "\n" + stderr` 的合并文本（或者

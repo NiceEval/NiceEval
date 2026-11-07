@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx
-title: 评估断言 API、语法与作者 DX
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # 评估断言 API、语法与作者 DX
 
 本目录一份文件对应一个产品。

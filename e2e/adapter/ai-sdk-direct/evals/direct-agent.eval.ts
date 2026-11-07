@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility
+// owner: docs/engineering/testing/architecture/e2e/adapter/ai-sdk-direct.md#adapter-ai-sdk-direct-live-compatibility
 //
 // aiSdkAgent owns the in-process lifecycle around a real AI SDK generateText call:
 // native tool evidence is normalized by turnFromAiSdk, the SDK response messages are

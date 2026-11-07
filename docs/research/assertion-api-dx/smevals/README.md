@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: assertion-api-dx-smevals
-title: Prime Radiant smevals：断言、判分与 regrade 作者指南
-createdAt: 2026-08-09
-kind: research
-observedAt: 2026-08-09
 sources: []
+observedAt: 2026-08-09
 ---
+
 # Prime Radiant smevals：断言、判分与 regrade 作者指南
 
 > - 观察日期：2026-08-09

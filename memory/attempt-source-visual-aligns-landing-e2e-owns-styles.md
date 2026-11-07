@@ -1,27 +1,13 @@
----
-format: concord.document/v1
-id: attempt-source-visual-aligns-landing-e2e-owns-styles
-title: attempt-source-visual-aligns-landing-e2e-owns-styles
-createdAt: 2026-07-20T13:05:32+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/attempt-source-visual-aligns-landing-e2e-owns-styles.md
-  commit: 3fe97543e5a060141624bc817f4ea23bdedb2d71
-description: 裁决:AttemptSource 与 landing 示例卡定为同一视觉语言的两份实现(不共享组件),样式守护从单元层移交 e2e 真实浏览器
-kind: memory
-memoryKind: decision
-state: current
-epoch: 0
-promotions: []
-history: []
----
+# attempt-source-visual-aligns-landing-e2e-owns-styles
+
+裁决:AttemptSource 与 landing 示例卡定为同一视觉语言的两份实现(不共享组件),样式守护从单元层移交 e2e 真实浏览器
 
 **裁决（2026-07-20）**：`AttemptSource` web 面与 landing eval 示例卡
 （`site/components/site-home-setup.tsx` + `globals.css` 的 `.eval-code` 族）定为**同一视觉
 语言的两份实现**，规范落成 `docs/feature/reports/library/attempt-detail.md`「AttemptSource
 web 面视觉规范」（8% 浅染整行 + 2px 左缘、行号位图标顶替行号、sticky 右缘 meta、展开区按
 cqw 换行并钉滚动视口左缘、vsDark 系暗色 token）。同批把样式/视觉守护从单元层移交
-[E2E 报告域](../docs/engineering/testing/e2e/report.md)真实浏览器验收：删除
+[E2E 报告域](../docs/engineering/testing/architecture/e2e/report.md)真实浏览器验收：删除
 `view-report.test.ts` 的 JSDOM computed-style 守护与 `attempt-components.test.tsx` 的
 markup 断言（保留 `attemptSourceData` 的 loc 投影 data 级断言），jsdom devDependency 移除。
 

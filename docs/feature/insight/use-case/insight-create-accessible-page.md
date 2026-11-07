@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: insight-create-accessible-page
-title: 制作可访问页面
-createdAt: 2026-08-26T19:54:36+08:00
-kind: use-case
-feature: docs/feature/insight/README.md
----
-
 # 制作可访问页面
 
 维护者需要打开本机 Insight，先看可比较的 Experiment 全貌，再安全进入具体 Run：

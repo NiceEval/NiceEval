@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: write-a-classifier
-title: 写分类器认第三方错误:取证、裁决、声明、验证
-createdAt: 2026-07-24T18:03:58+08:00
-kind: use-case
-feature: docs/feature/error-classification/README.md
----
-
 # 声明外部服务失败的影响范围
 
 在应用或 Adapter 调用边界，先依据结构化协议确认失败事实，再决定是否停止同一 Eval 或 Experiment 的后续派发。

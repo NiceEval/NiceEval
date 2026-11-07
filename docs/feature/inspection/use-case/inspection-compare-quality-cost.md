@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: inspection-compare-quality-cost
-title: 比较质量与成本
-createdAt: 2026-08-26T19:54:36+08:00
-kind: use-case
-feature: docs/feature/inspection/README.md
----
-
 # 比较质量与成本
 
 用户先检查当前评估的可用结果，再比较质量与成本。当前结果的分母来自当前 Experiment、Eval 和 Attempt 数量；
@@ -48,7 +39,7 @@ niceeval exp harness/canary --dry
 ```
 
 dry plan 应只执行两个缺口，其它位置沿用。判据已经变化的结果不能 accept；
-符合[有限采用规则](../../experiments/cache.md#显式采用的资格)的配置变化，才可以先预览并明确采用。
+符合[有限采用规则](../../experiments/architecture/cache.md#显式采用的资格)的配置变化，才可以先预览并明确采用。
 相同目标下，采用后当前结果可用性与后续沿用应一致。
 
 ## 按题型解释指标
@@ -156,7 +147,7 @@ niceeval show @<locator> --usage
 例如输入为 70、缓存读取为 30、含缓存输入为 100、输出为 20 时，先确认输入列的口径，再比较汇总。
 不能把互斥输入与含缓存输入相加，也不能把汇总缺失解释为实际零消耗。
 
-官方 Codex 的输入与缓存归一规则见 [Codex 用量与成本](../../adapters/sdk/codex-cli/cost.md)。
+官方 Codex 的输入与缓存归一规则见 [Codex 用量与成本](../../adapters/library/sdk/codex-cli/cost.md)。
 只有完整性与金额凭据足以支持比较时，才用成本给实验排序；已知小计仍可审阅，但不能冒充完整账单。
 
 ## 用相同价格比较历史结果

@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: observations-declare-flags
-title: 用 flags 声明运行条件
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 用 flags 声明运行条件
 
 两个实验使用同一个 agent，唯一差别是是否允许联网。

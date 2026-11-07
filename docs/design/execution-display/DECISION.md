@@ -38,7 +38,7 @@ L7 的设计缺口已由 R1、R2 的处置关闭，按设计充分性评为 sati
 ## 实现修正
 
 采用时核对读取实现：attachment 的 family revision 必须与当前 revision 相等，否则读成 `unsupported`（`packages/niceeval/src/record/host/sqlite-host.ts`）。
-审查后定下的 revision 2 会让全部历史轨迹不可读。因此按 [Adapters Architecture](../../feature/adapters/architecture.md#轨迹领域标识与持久格式) 中 header 扩宽的先例，`display` 改为 revision 1 的可选字段，不新增迁移。
+审查后定下的 revision 2 会让全部历史轨迹不可读。因此按 [Adapters Architecture](../../feature/adapters/architecture/README.md#轨迹领域标识与持久格式) 中 header 扩宽的先例，`display` 改为 revision 1 的可选字段，不新增迁移。
 
 ## 否决项
 

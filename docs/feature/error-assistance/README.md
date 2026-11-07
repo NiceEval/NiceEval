@@ -1,11 +1,3 @@
----
-format: concord.document/v1
-id: error-assistance
-title: 错误助手
-createdAt: 2026-09-20T22:07:36+08:00
-kind: feature
----
-
 # 错误助手
 
 错误助手让用户在失败现场看到原因、归属、源码位置和可行动的下一步。DX 迁移是其中需要附完整迁移指南的一种错误。

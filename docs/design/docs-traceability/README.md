@@ -1,21 +1,3 @@
----
-format: concord.document/v1
-id: docs-traceability
-title: 仓库文档追溯 —— Design Decision
-createdAt: 2026-08-23T23:19:02+08:00
-kind: design
-alternatives:
-  - plan-1
-  - plan-2
-decision:
-  selected: plan-2
-  reason: PLAN-2 保留现有 ownership：产品语义归 Feature，测试组合身份归 Engineering owner anchor，测试动作归原生 test/spec，历史证据归 Memory。它只给这些 owner 增加可机器辨认的正向指针，反向列表每次编译，不签入中央 graph。
-  at: 2026-08-24T19:33:21+08:00
-  targets:
-    - docs/engineering/docs-traceability/README.md
----
-
-
 # 仓库文档追溯 —— Design Decision
 
 **相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md) · [工程契约](../../engineering/docs-traceability/README.md)

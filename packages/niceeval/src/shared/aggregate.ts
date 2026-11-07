@@ -71,7 +71,7 @@ export function evalPrefixPredicate(evals?: string | string[]): (id: string) => 
 }
 
 /**
- * 实验选择器解析:`niceeval exp` 位置参数与 `--exp` 共用同一条规则(docs/feature/experiments/cli.md
+ * 实验选择器解析:`niceeval exp` 位置参数与 `--exp` 共用同一条规则(docs/feature/experiments/cli/README.md
  * 「实验选择器怎样解析」)。按序:①精确 id 优先,即使它同时是同目录内其它文件名的前缀;
  * ②目录段精确前缀(含更深层目录),选中该目录下全部实验;③以上都不命中且选择器形如
  * `目录/文件名前缀` 时,目录段精确匹配后按文件名段前缀选中一族配置——目录段永远精确,不跨目录
@@ -91,7 +91,7 @@ export function matchExperimentSelector(ids: readonly string[], selector: string
 }
 
 /**
- * 零命中时展示的可浏览路径清单(docs/feature/experiments/cli.md「零命中」):按 id 的顶层目录段
+ * 零命中时展示的可浏览路径清单(docs/feature/experiments/cli/README.md「零命中」):按 id 的顶层目录段
  * 去重、排序,带尾斜杠;没有目录段的顶层 experiment id 原样列出(它本身就是一个可选择的目标,
  * 不是一段路径)。这是运行选择的展示投影,不是报告分组。
  */

@@ -1,17 +1,8 @@
----
-format: concord.document/v1
-id: cache-niceeval-upgrade
-title: 升级 NiceEval 后沿用已有结果
-createdAt: 2026-10-29T01:24:28.565Z
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 升级 NiceEval 后沿用已有结果
 
 升级 NiceEval 本身不改变任务、模型或判据，已付费的结果应继续计入当前成绩。
 NiceEval 改变身份计算时必须更换 domain，并登记具名变更；用户从 dry plan 就能看出哪些结果沿用、哪些必须重跑。
-规则见[身份域变更](../cache.md#niceeval-身份域变更)。
+规则见[身份域变更](../architecture/cache.md#niceeval-身份域变更)。
 
 升级后先预览，不花钱：
 

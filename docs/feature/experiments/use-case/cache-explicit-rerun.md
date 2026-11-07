@@ -1,12 +1,3 @@
----
-format: concord.document/v1
-id: cache-explicit-rerun
-title: 指纹未变时主动重新运行
-createdAt: 2026-07-27T18:06:13+08:00
-kind: use-case
-feature: docs/feature/experiments/README.md
----
-
 # 指纹未变时主动重新运行
 
 只想复验旧失败时使用：

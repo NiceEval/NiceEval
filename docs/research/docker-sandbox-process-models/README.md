@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: docker-sandbox-process-models
-title: Docker / Agent Sandbox 进程模型：Harbor 与可比框架
-createdAt: 2026-08-07
-kind: research
-observedAt: 2026-08-07
 sources: []
+observedAt: 2026-08-07
 ---
+
 # Docker / Agent Sandbox 进程模型：Harbor 与可比框架
 
 > 观察日期：2026-08-07

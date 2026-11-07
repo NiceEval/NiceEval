@@ -1,6 +1,6 @@
 // 协议行为:usage 与实际模型——usage 逐轮到位;实际模型不能只信 experiment 传下来的请求参数
 // (网关可能改写),需要从 Codex session 侧写读取核对(见
-// docs/engineering/testing/e2e/adapter/codex-cli.md)。
+// docs/engineering/testing/architecture/e2e/adapter/codex-cli.md)。
 //
 // 核验方式:Codex 把每轮的 turn_context(含 model 字段)侧写进
 // ~/.codex/sessions/YYYY/MM/DD/rollout-*-<thread_id>.jsonl——本仓库设计阶段已用真实

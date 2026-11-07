@@ -1,12 +1,8 @@
 ---
-format: concord.document/v1
-id: record-to-report-mlflow-reading-and-comparison
-title: MLflow Reading：重开、查询、比较与缺测
-createdAt: 2026-08-14
-kind: research
-observedAt: 2026-08-14
 sources: []
+observedAt: 2026-08-14
 ---
+
 # MLflow Reading：重开、查询、比较与缺测
 
 > 观察日期：2026-08-14

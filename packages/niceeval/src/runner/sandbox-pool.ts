@@ -151,7 +151,7 @@ export class ReusableSandboxPool {
    * @param attemptDeadlineMs 这条 Attempt 实际生效的超时上限(解析链见 runner/timeout.ts)。
    * `undefined` = 四层都没声明上限:请求的寿命只能覆盖收尾预留——Attempt 本身没有 deadline,
    * 池无从知道它要跑多久,也不替它编一个数。此后实例被 provider 按自己的 `lifetimeMs` 回收
-   * 就是「不声明上限」的代价(两种时间的分界见 docs/feature/sandbox/reuse.md)。
+   * 就是「不声明上限」的代价(两种时间的分界见 docs/feature/sandbox/library/reuse.md)。
    */
   acquire(
     attemptDeadlineMs: number | undefined,
@@ -363,7 +363,7 @@ export class ReusableSandboxPool {
       );
       const sandbox = materialized.sandbox;
     // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
-    // docs/feature/sandbox/reuse.md「派发前确认」)。
+    // docs/feature/sandbox/library/reuse.md「派发前确认」)。
     const lifetime = sandboxReuseCapability(sandbox);
     if (!lifetime) {
       yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");

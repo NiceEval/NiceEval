@@ -1,21 +1,6 @@
----
-format: concord.document/v1
-id: verify-readback-mutation-orders-later-e2e-report-domains
-title: verify-readback-mutation-orders-later-e2e-report-domains
-createdAt: 2026-07-22T08:50:49+08:00
-createdAtSource:
-  kind: first-recorded
-  path: memory/verify-readback-mutation-orders-later-e2e-report-domains.md
-  commit: 031ce196afdc67380ab6ccbeb8308168b74ee9bc
-description: verifyReadback 的 verifyHistoryAndPages 在结尾对 .niceeval/main 做 2 次真实 --force/reuse 追加快照，让 evidence.main 的原始 locator 之后就不再是「当前」——晚运行的只读验收域会在 --page traces / ExperimentList 里查不到它
-kind: memory
-memoryKind: problem
-state: captured
-epoch: 0
-evidenceRequirement: concord.native-reliability/v1
-promotions: []
-history: []
----
+# verify-readback-mutation-orders-later-e2e-report-domains
+
+verifyReadback 的 verifyHistoryAndPages 在结尾对 .niceeval/main 做 2 次真实 --force/reuse 追加快照，让 evidence.main 的原始 locator 之后就不再是「当前」——晚运行的只读验收域会在 --page traces / ExperimentList 里查不到它
 
 **现象**：`e2e/report/scripts/verify-render-structure.ts`（B3，plan/testing-layer-realignment.md）
 在 `e2e.ts` 里排在 `verifyReadback` **之后**调用时，`pnpm e2e --repo report` 真机跑必现：
