@@ -18,7 +18,7 @@
 | before_cache_key | TEXT NOT NULL | 通用 planner 计算的 BeforeCacheKey |
 | base_identity | TEXT NOT NULL | 不可变 Base 身份 |
 | declaration_json | TEXT NOT NULL | 严格编码的完整累计声明（`BeforeCacheDeclaration`）；不含 secret |
-| replacement_scope | TEXT NOT NULL | 声明中 `replacementScope` 的 canonical JSON |
+| replacement_scope | TEXT NOT NULL | 按声明位置计算的摘要，算法见[替换按声明位置](architecture/remote-snapshot-cache.md#发布与竞争) |
 | generation | INTEGER UNIQUE NOT NULL CHECK > 0 | 全库单调分配，取值为已分配的最大值 + 1 |
 | snapshot_name | TEXT UNIQUE NOT NULL | `niceeval-<artifact_id>`，用于结果不确定时的精确查询 |
 | snapshot_id | TEXT NULL | Provider 返回的 locator；Ready 之前为空 |
