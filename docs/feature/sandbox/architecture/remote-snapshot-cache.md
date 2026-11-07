@@ -119,7 +119,7 @@ lookup miss
 ```
 
 - **artifact 标记**：core 以 root 写入 `/var/lib/niceeval/before-cache-artifact.json`，内容只有 `artifactId` 与 `beforeCacheKey`。每个从 snapshot 创建的实例先读取它，与账本登记比较，证明实例来自预期的 artifact。完整声明只保存在账本的 `declaration_json`，不再复制进 snapshot。
-- **挂载**：staging 初始化时 core 读取 `/proc/self/mountinfo` 记录可写挂载集合；capture 前再次读取。新增的可写挂载不在 `preserves.disks` 内时，节点结算为 `degraded`，原因 `mounted-state`。
+- **挂载**：staging 初始化时 core 读取 `/proc/self/mountinfo`，保存可写挂载集合；capture 前再次读取。新增的可写挂载不在 `preserves.disks` 内时，节点结算为 `degraded`，原因 `mounted-state`。
 - **敏感字节**：已知敏感字节在 staging 中非空时不发布，原因 `sensitive-state`；credential overlay、外部会话与 command barrier 之后的状态不进入 snapshot。
 - **quiesce**：当前 action 的前台进程都已退出；`preserves.memory` 为 false 时以 root 执行 `sync`；从 `sync` 到 snapshot Ready，core 不向 staging 发送命令。NiceEval 只承诺 crash consistency。仍在写盘、或依赖进程内存才能保持结果的后台服务，必须在 command barrier 之后启动。
 - **Base 确认**：staging ready 后 core 再调用一次 `resolveBase`。结果与计算 key 时不同，节点结算为 `degraded`，原因 `base-image-unverified`。
@@ -136,7 +136,7 @@ lookup miss
 
 ## 消费：从 snapshot 创建实例
 
-core 的 `materializeFrom` 在创建 consumer 或子节点 staging 时执行：
+Runner 创建 staging 与 consumer 都经过 core 的 `materializeFrom`，Provider 的 `materialize` 不调用任何缓存协议。来源是 `Base` 时，core 通过 `context.materializeBase` 创建实例，记录初始挂载集合并再次确认 Base；来源是 `Artifact` 时执行：
 
 1. 在账本登记 `sandbox` hold，然后调用 `createFromSnapshot`。
 2. 实例 ready 后校验 artifact 标记与账本登记一致。
@@ -234,7 +234,7 @@ replacement scope = hash(provider, execution domain, baseReference,
 
 `run` hold 保护派发前的等待期，使外部新 generation 无法在派发前删除即将使用的 artifact；它不保护活实例，所以可以过期。`sandbox` hold 保护可能仍在运行的实例，只能由确认删除来释放。
 
-**删除。** 每个使用某 `(provider, execution_domain_id)` 的 Run 在结束时清理一次该 domain 的 `deleting` 行，总数受 Run 取消约束。删除者先在一个写事务中领取：lease 为空或已过期、且没有 `sandbox` hold 与未过期的 `run` hold 时，写入自己的 token 与 lease。领取后：
+**删除。** 每个使用某 `(provider, execution_domain_id)` 的 Run 在结束时处理一次该 domain 的 `deleting` 行，总数受 Run 取消约束。删除者先在一个写事务中领取：lease 为空或已过期、且没有 `sandbox` hold 与未过期的 `run` hold 时，写入自己的 token 与 lease。领取后：
 
 - 有 `snapshot_id`：`deleteSnapshot`；`deleted` 或 `absent` 都以同一 token 改为 `deleted`。
 - 没有 `snapshot_id`：先 `findSnapshot(snapshot_name)`。`Ready` 时删除；`Absent` 时改为 `deleted`；`Pending` 时放弃 lease，留到下次。
@@ -246,8 +246,8 @@ replacement scope = hash(provider, execution domain, baseReference,
 ## E2B
 
 - **driver**：`preserves = { disks: ["/"], memory: true }`；`sourceUsableAfterSnapshot = true`。
-- **Base 身份**：`template` 引用解析为 build。`name` 取 `default` tag，`name:tag` 取对应 tag，经 `Template.getTags(name)` 得到 `buildId`；`baseIdentity` 是 `e2b-build:<buildId>`。template 或 tag 不存在时返回 `Ineligible(base-image-unverified)`；网络或服务错误是 `BeforeCacheSnapshotError`。
-- **Base 确认的局限**：E2B 不在实例信息里返回 buildId，也不能按 buildId 创建实例，core 只能靠 staging ready 后的第二次解析确认。tag 在两次解析之间被改走又改回时无法发现。前提是作者在 Run 期间不移动所用 tag；需要更强保证时，template 引用应指向只构建一次的专用 tag。
+- **Base 身份**：查询 `template` 引用当前指向的 build。`name` 取 `default` tag，`name:tag` 取对应 tag，经 `Template.getTags(name)` 得到 `buildId`；`baseIdentity` 是 `e2b-build:<buildId>`。template 或 tag 不存在时返回 `Ineligible(base-image-unverified)`；网络或服务错误是 `BeforeCacheSnapshotError`。
+- **Base 确认的局限**：E2B 不在实例信息里返回 buildId，也不能按 buildId 创建实例，core 只能靠 staging ready 后的第二次查询确认。tag 在两次查询之间被改走又改回时无法发现。前提是作者在 Run 期间不移动所用 tag；需要更强保证时，template 引用应指向只构建一次的专用 tag。
 - **Base 回退**：回退实例从声明的 template 引用创建，可能落在更新的 build 上；回退后 Attempt 真实执行全部 before，结果与不使用缓存相同。
 - **execution domain**：`hash(规范化 API domain, sha256(E2B_API_KEY))`。换 key 等同于换 domain。
 - **createSnapshot**：`Sandbox.createSnapshot(sandboxId, { name, mode: "full" })`，`mode` 进入 artifact format identity。
@@ -276,11 +276,11 @@ replacement scope = hash(provider, execution domain, baseReference,
 
 ## 验收
 
-用户路径由 [云 Sandbox 的一批 Attempt 只准备一次](../use-case/sandbox-cloud-before-cache.md) 从安装后的 CLI 验收，E2B 与 Instabox 各跑一次真实服务。下列窗口无法靠普通运行稳定触发，在 driver 边界或账本边界按 [Testing](../../../engineering/testing/README.md) 选择最小的可控 owner，以 driver 调用记录和最终资源状态作为证据：
+用户路径由 [云 Sandbox 的一批 Attempt 只准备一次](../use-case/sandbox-cloud-before-cache.md) 从安装后的 CLI 验收，E2B 与 Instabox 各跑一次真实服务。下列情形无法靠普通运行稳定触发，在 driver 边界或账本边界按 [Testing](../../../engineering/testing/README.md) 选择最小的可控 owner，以 driver 调用序列和最终资源状态作为证据：
 
 - 连续推进：E2B 与 Instabox 冷启动 `Base → 1 → 2` 只创建一个 staging；OpenSandbox 创建两个。
 - staging 创建前父 snapshot 被删除或 artifact 标记损坏：节点 `degraded(parent-unavailable)`，不发布，目标配对从更浅的可用祖先或 Base 开始。
-- snapshot 请求超时：节点 `degraded(snapshot-uncertain)`，配对照常完成；Run 结束的清理按名称查到并删除该 snapshot。
+- snapshot 请求超时：节点 `degraded(snapshot-uncertain)`，配对照常完成；Run 结束时按名称查到并删除该 snapshot。
 - author action 失败：节点与后代 `failed`，依赖它的配对在派发前失败，其它分支照常。
 - 复用池：第二条 Attempt 在同一实例上执行 before，并看见第一条在 workdir 外写下的标记与仍在运行的服务。
 - 两个 Invocation 同时冷启动同一 key：只发出一次 snapshot 请求，后者以 `hit` 消费。

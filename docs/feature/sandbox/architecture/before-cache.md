@@ -109,11 +109,11 @@ interface BeforeCachePreparer<Plan> {
     context: BeforeCachePreparationContext,
     stepsDeepestFirst: readonly BeforeCacheStep[],
   ) => Effect.Effect<BeforeCacheLookup, BeforeCacheError, Scope.Scope>;
-  /** 从 artifact 创建 staging 或 consumer；不可用时最多回退一次到 Base。 */
+  /** 创建 staging 或 consumer。staging 从 Base 创建时也经过这里；artifact 不可用时最多回退一次到 Base。 */
   readonly materializeFrom: (
     plan: Plan,
     context: BeforeCachePreparationContext,
-    artifact: BeforeCacheArtifact,
+    source: BeforeCacheSource,
     materialize: SandboxRuntimeMaterializeContext,
   ) => Effect.Effect<
     { readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart },
@@ -133,7 +133,15 @@ interface BeforeCachePreparationContext {
   /** Provider module 的 `id`。 */
   readonly providerId: string;
   readonly runId: string;
+  /** 由 core 从 module 的 `materialize` 绑定：从 Base 创建实例。 */
+  readonly materializeBase: (
+    materialize: SandboxRuntimeMaterializeContext,
+  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
 }
+
+type BeforeCacheSource =
+  | { readonly _tag: "Base" }
+  | { readonly _tag: "Artifact"; readonly artifact: BeforeCacheArtifact };
 
 interface BeforeCacheStep {
   readonly operationId: string;
@@ -169,7 +177,7 @@ Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 I
 | 普通单容器 Docker，全部可变状态在 outer writable rootfs | `AttemptCaptured` | 每 Attempt 使用已验证 exact image 的私有 writable container；不进入准备图。 |
 | Docker Profile，具备已验证的独立 fixed-image allocation | `AttemptCaptured` | 只能保存 capability receipt 声明的状态面（例如 `dockerData`）；shared loop/project-quota allocation 在运行期报 `Unsupported`。 |
 | `incusSandbox()` nested Docker | `RunPrepared` | 发布完整、quiesced 的 prepared artifact；每个 Attempt clone 私有 writable root 与 Docker data disk。 |
-| E2B | `RunPrepared` | Base 是 template 解析出的 build；full snapshot。见 [远端 snapshot Before cache](remote-snapshot-cache.md#e2b)。 |
+| E2B | `RunPrepared` | Base 是 template 引用当前指向的 build；full snapshot。见 [远端 snapshot Before cache](remote-snapshot-cache.md#e2b)。 |
 | OpenSandbox | `RunPrepared` | digest-pinned Base 的 rootfs snapshot；不包含进程、卷或 tmpfs。见 [远端 snapshot Before cache](remote-snapshot-cache.md#opensandbox)。 |
 | Instabox | `RunPrepared` | 固定 Base snapshot 之上的 root 与 `/data` 磁盘 snapshot。见 [远端 snapshot Before cache](remote-snapshot-cache.md#instabox)。 |
 | Vercel Sandbox | `Unsupported` | 不声明可验证的 before-cache capture/restore coverage，真实执行。 |
@@ -199,7 +207,7 @@ BeforeCacheKey[i] = hash(
 
 action fingerprint 固定为 `hash(auto, supplemental)`。`auto` 包含 family id、canonical input、规范化 `sandboxStep`、声明 state 与 immutable content identity；`cache.fingerprint` 只提供 `supplemental`。parent key 防止相同 action 从不同 Base 或祖先状态错误复用。
 
-exact Base image identity 必须是 Provider 承诺不可变的内容身份：Docker image ID、digest-pinned OCI image、Incus image fingerprint、Instabox snapshot ID 或 E2B template build ID。声明只给出可移动引用（tag、template 名、未 pin 的 image）时，Provider 必须在计算 key 前把它解析成不可变身份，并在实例 ready 后确认实例来自同一身份。无法解析时报 `base-image-unverified`，该配对真实 replay；前后不一致时不发布。不能用引用字符串代替内容身份：同名引用指向新内容后，旧前缀会在新 Base 上错误命中。
+exact Base image identity 必须是 Provider 承诺不可变的内容身份：Docker image ID、digest-pinned OCI image、Incus image fingerprint、Instabox snapshot ID 或 E2B template build ID。声明只给出可移动引用（tag、template 名、未 pin 的 image）时，Provider 必须在计算 key 前查出它当前指向的不可变身份，并在实例 ready 后确认实例来自同一身份。查不到时报 `base-image-unverified`，该配对真实 replay；前后不一致时不发布。不能用引用字符串代替内容身份：同名引用指向新内容后，旧前缀会在新 Base 上错误命中。
 
 BeforeCacheKey 不包含 cache lookup 结果、本地 image/container locator、Attempt UUID、调度额度或运行时 secret。Eval `test`、Assertion 和 Agent/test 阶段的输入变化也不进入未改变的 BeforeCacheKey。它们仍按各自 owner 改变 Attempt 与结果 identity；BuildKey 只由构建输入决定。
 
@@ -217,7 +225,7 @@ lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的�
 
 action 成功后 capture 失败时不得再执行该 action。当前容器仍完整时，它可以继续 uncached；已无法证明完整时，Attempt 失败。任何部分恢复或部分 capture 都不会冒充 hit，也不会形成循环 cache retry。
 
-远端 snapshot Provider 的 Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 author action 在 staging 中失败时节点才是 `failed`，依赖它的配对在派发前失败。其余不能发布的情形都让节点 `degraded`：目标配对从链上最深的可用祖先开始，其余 eligible action 在 Attempt 内真实执行。远端 Provider 的结算表见 [远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)；Incus 保留 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md) 规定的 fail-closed 边界：它的 VM、disk 与 artifact 归属由 Incus repository 判定，账本或 publication 不能证明一致时节点 `failed`。
+远端 snapshot Provider 的 Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 author action 在 staging 中失败时节点才是 `failed`，依赖它的配对在派发前失败。其余不能发布的情形都让节点 `degraded`：目标配对从链上最深的可用祖先开始，其余 eligible action 在 Attempt 内真实执行。远端 Provider 的结算表见 [远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)。Incus 保留 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md) 规定的 fail-closed 边界：它的 VM、disk 与 artifact 归属由 Incus repository 判定，账本或 publication 不能证明一致时节点 `failed`。
 
 取消只回收当前 private staging 与 Attempt 资源，不回滚已经完成验证并发布的 immutable Before cache artifact。下一次 Invocation 仍从最深 verified prefix 继续：取消时正在执行或尚未发布的 action 必须重新执行；已经发布的祖先 action 不得因取消而从 Base 重新执行。某个中间 action 的 canonical input、fingerprint、依赖或顺序变化时，它之前未变化的最长 verified prefix 继续命中，从该 action 起的变化层与全部后缀重新执行和发布。
 
