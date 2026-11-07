@@ -39,4 +39,19 @@
 存活分类依赖瞬时宿主 PID、container 与 image 事实，E2E 无法在不引入竞态的情况下固定检查时刻；最小 Unit 只区分
 verified-live、unverified 与无 owner 三类投影，防止遗留 claim 被误报为 active。它不复制 inventory 枚举或 GC 候选算法。
 
+### 远端 snapshot Before cache 竞态
+
+[远端 snapshot Before cache](../../../../feature/sandbox/architecture/remote-snapshot-cache.md#验收)的用户路径由安装后的 CLI 在 E2B 与 Instabox 上验收。
+lease 过期接管、hold 与删除互斥、snapshot 请求结果不确定和父 snapshot 失效发生在两个进程或两次 Provider 调用之间；
+真实服务无法在固定时刻暂停一个持有者，也无法稳定制造“请求已受理但响应丢失”。
+
+稳定 seam 是 `BeforeCacheSnapshotDriver`：fake 只模拟 Provider 边界的 snapshot 状态与调用结果，不复制 core 协议。
+账本使用真实 SQLite 的 UserDatabase repository，lease 到期用 Effect TestClock 推进。最小矩阵区分：
+
+- 同一 key 两个持有者并发 reserve，只发出一次 snapshot 请求，后者以 `hit` 消费；
+- lease 过期被接管后，旧持有者恢复时不发布、不删除，节点 `degraded(lease-lost)`；
+- 有 `sandbox` hold 或未过期 `run` hold 时，删除领取不成立，driver 不收到删除；
+- snapshot 请求结果不确定时行进入 `deleting` 且 `snapshot_id` 为空，回收按名称查询：`Ready` 删除、`Pending` 保留、`Absent` 结算为 `deleted`；
+- 子节点 staging 的父 snapshot 不可用时回退到 Base，不执行当前 action、不发布，节点 `degraded(parent-unavailable)`。
+
 其它 Sandbox 行为不保留 Unit。真实运行条件能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。
