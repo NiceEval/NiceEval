@@ -271,6 +271,7 @@ replacement scope = hash(provider, execution domain, baseReference,
 - **createSnapshot**：对 staging Machine 发起包含 root 与 `/data` 的 snapshot 保存请求，等待 status 变为 `ready`；`failed` 是错误。服务以明确错误码拒绝且未返回 operation 时为 `Rejected`。具体 HTTP 路径以 Instabox API 为准，像现有 Machine 接口一样在边界用 Schema 解码。
 - **一致性**：Instabox 的 live snapshot 等同于断电时的磁盘内容；两个盘是否在同一时刻捕获没有服务端证据。quiesce 保证 snapshot 期间没有 NiceEval 发起的写入，因此 core 不依赖跨盘原子性。
 - **createFromSnapshot**：以 snapshot ID 创建 Machine，沿用现有创建、探测与删除契约；Vault 与 Org Secrets 自动注入保持关闭。
+- **findSnapshot**：Instabox 不提供按名称查询，`/v1/snapshots/{id}` 只接受 ID。driver 读取 `GET /v1/snapshots` 的全部分页，按 `name` 严格相等匹配；多于一个匹配是错误。
 - **deleteSnapshot**：`DELETE /snapshots/{id}`，404 返回 `absent`。
 
 ## 验收
