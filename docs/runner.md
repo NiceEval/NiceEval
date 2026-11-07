@@ -36,9 +36,10 @@ Run Core 的 Member action 保存 reuse、adoption 或 rename 的上下文和理
    SlotIdentity；每个 Planned attempt 将当前 zero-based attempt number 直接写入 durable `attemptOrdinal`，不从顺序推断。
 2. Record Host 对已发布 Run 做 weak scan（弱扫描）。它不提供 Invocation 级 frozen snapshot（冻结快照）；并发封口的 Run 可以整体进入或整体不进入本次 reuse planning。
 3. Coordination（协调）处理 execution deduplication（执行去重）、同一 Experiment 的 dispatch claim（派发占用）、全局与 Experiment 并发名额，以及 build / lease（构建 / 租约）。这些状态位于 `.niceeval/` 的 Record 外。
-4. 执行时，Runner 取得 Sandbox，驱动 Agent，登记 Assertion，并形成 AssertionResult 与对应评估类型的 grading。
-5. 每个 `RunWriteSession` 只写自己的 SQLite staging closure。它验证 Core、固定 family closure 与 Content，最后以短 transaction 写 Seal 并发布该 Run。
-6. Runner 返回 Invocation receipt；其 `createdRunIds` 穷尽本次调用创建的 Run，并带上调用结束时的 `publicationCutoff`。
+4. 派发前，Runner 构建 gaps 需要的 BuildKey，并为 `RunPrepared` Provider 的配对结算[准备图](concepts.md#before-cache-preparation-graph)；全部结算后才派发（见 [Before cache](feature/sandbox/architecture/before-cache.md)）。
+5. 执行时，Runner 取得 Sandbox，驱动 Agent，登记 Assertion，并形成 AssertionResult 与对应评估类型的 grading。
+6. 每个 `RunWriteSession` 只写自己的 SQLite staging closure。它验证 Core、固定 family closure 与 Content，最后以短 transaction 写 Seal 并发布该 Run。
+7. Runner 返回 Invocation receipt；其 `createdRunIds` 穷尽本次调用创建的 Run，并带上调用结束时的 `publicationCutoff`。
 
 已发布 Run immutable。Runner 不提供局部编辑、删除、版本校验或 Invocation 级事务；运行中的状态只存在于当前进程和 Coordination local state（协调本地状态）。
 
@@ -74,7 +75,7 @@ receipt 只标识这次调用及其 Run。它不是第二份结果文件，也�
 
 ## 调度
 
-Runner 先展开 expected Planned attempts，再以全局和 Experiment 范围的并发限制派发。等待并发名额的 Planned attempt 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 Record writer、Run directory 或 reader 决定。
+Runner 先展开 expected Planned attempts，等准备图全部结算，再以全局和 Experiment 范围的并发限制派发。准备节点的并发受 `maxBeforeCacheConcurrency` 与 Provider `scheduling.lane.limit` 约束，不占用 `maxConcurrency` 名额。等待并发名额的 Planned attempt 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 Record writer、Run directory 或 reader 决定。
 
 带 Docker profile的 DinD还要经过 watchdog跨进程准入。Runner提交 CPU、memory、PID、container和
 `ephemeralDiskBytes`完整向量；只有 watchdog同时授予容量与私有 Docker data allocation后才创建 Attempt。等待这笔
@@ -82,7 +83,7 @@ Runner 先展开 expected Planned attempts，再以全局和 Experiment 范围�
 
 调度器先让每条独立 lane 的首槽位至少获得一次全局并发机会，再允许任一 lane 的后继槽位进入派发。首槽公平完成后，lane 只受自己的 predecessor、全局限制和 Experiment 限制约束；快 lane 不等待慢 lane 的下一槽位进入同一 wave。
 
-首过即停、预算耗尽和已声明的停止派发条件都保留 expected Planned attempt。正常停止前从未 reserved 的 Planned attempt 写作 `not-dispatched` Member，Sample 将它呈现为 `not-recorded`；Runner 不制造虚构的 Attempt 或 Verdict。
+首过即停、预算耗尽和已声明的停止派发条件都保留 expected Planned attempt。正常停止前从未 reserved 的 Planned attempt 写作 `not-dispatched` Member，Sample 将它呈现为 `not-recorded`；Runner 不制造虚构的 Attempt 或 Verdict。依赖失败准备节点的 Planned attempt 同样不派发，错误原因由关联其 slot 的 `sandbox-before-cache-failed` Run 级诊断说明（见[执行失败分类 · 止损语义](feature/error-classification/README.md#止损语义)）。
 
 运行中发生的短状态、计数和进度只显示给当前进程。Run 或 Attempt 范围的诊断、阶段、计时、
 用量与其它业务事实写入相应的固定 Core 或 family owner。
@@ -93,7 +94,7 @@ Runner 先展开 expected Planned attempts，再以全局和 Experiment 范围�
 （已预留 / 正在运行 / 待结算 Attempt）时才能 seal。`complete` 是这个 Run 的独立原子发布点；其它 Run
 不等待它，也不会与它组成 Invocation 级发布。
 
-收到 `SIGINT` 时，Runner 停止新的派发并等待资源 finalizer。已有执行 outcome 的 Attempt 原样封口；仍在飞的 reserved Attempt 以 Core `interrupted` outcome 封口，尚未 reserved 的 Planned attempt 写作 `interrupted` Member。随后 Run 通过普通 seal 发布，因此中断前已经完成的兄弟 Attempt 可以立即用 locator 读取。若这段受控收尾本身写入失败，Run 才保留为 incomplete directory。
+收到 `SIGINT` 时，Runner 停止新的派发并等待资源 finalizer。仍在准备的节点停止并回收 staging，已发布的 Before cache artifact 保留。已有执行 outcome 的 Attempt 原样封口；仍在飞的 reserved Attempt 以 Core `interrupted` outcome 封口，尚未 reserved 的 Planned attempt 写作 `interrupted` Member。随后 Run 通过普通 seal 发布，因此中断前已经完成的兄弟 Attempt 可以立即用 locator 读取。若这段受控收尾本身写入失败，Run 才保留为 incomplete directory。
 
 正常、非中断收尾若发现没有 execution outcome 的 reserved 或 pending Attempt，必须严格失败。Runner 不得把它降格成
 `not-dispatched` 或 `interrupted` Member，也不得发布该 Run。先前已经独立发布的 Run 保持可读；失败 receipt

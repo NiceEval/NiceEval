@@ -250,7 +250,7 @@ repository schema 为 generation 建立索引，分配只读索引端点，成�
 
 不同 key 可在 `maxBeforeCacheConcurrency ∩ provider scheduling.lane.limit` 内并行。相同 `(executionDomainId, BeforeCacheKey)` 仍通过跨进程 publication lease 串行发布，等待者消费同一 committed `ArtifactIntent`。
 
-Run 保留全局 pre-dispatch barrier：准备图的所有节点结算后才派发 Attempt。一个 `failed` 节点只阻断其 descendants 和依赖该 terminal prefix 的 Planned attempts；`degraded` 节点不阻断，目标配对改从更浅的可用前缀开始。其余分支照常结算。取消停止并回收未结算节点的 staging 与 publication，但不回滚已验证发布的 immutable artifact。
+Run 保留全局 pre-dispatch barrier：准备图的所有节点结算后才派发 Attempt。一个 `failed` 节点只阻断其 descendants 和依赖该 terminal prefix 的 Planned attempts：它们记为 `not-dispatched`，原因由关联其 slot 的 `sandbox-before-cache-failed` Run 级诊断说明，不伪造 `errored` Attempt（见[执行失败分类 · 止损语义](../../error-classification/README.md#止损语义)）；`degraded` 节点不阻断，目标配对改从更浅的可用前缀开始。其余分支照常结算。取消停止并回收未结算节点的 staging 与 publication，但不回滚已验证发布的 immutable artifact。
 
 `AttemptCaptured` 与 `Unsupported` 的 lookup、restore、replay、satisfaction 与 cleanup 归各自 Attempt，不因 key 相同共享 activity、locator 或可写状态。
 

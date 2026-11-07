@@ -261,7 +261,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    CLI 调用 `experimentHost.invocation.plan()` 或 `experimentHost.invocation.run()`。Host 计算带 domain 的
    input/config identity，并在其实现内通过内部 Run capability 提交 Invocation start transaction。
    该事务同时创建 Invocation Session 与带 `startedAt`、完整 Planned attempt 身份 的 `active` Run；Run 提交后立即可被发现。
-   Run 可见不等于任何 Attempt 已发布，Attempt 逐个经第 12 步发布；完整生命周期见 [Run](feature/run/architecture/README.md)。
+   Run 可见不等于任何 Attempt 已发布，Attempt 逐个经第 13 步发布；完整生命周期见 [Run](feature/run/architecture/README.md)。
 4. **reuse planning。**
    `experimentHost` 在内部把当前 ProjectTarget、ExecutionTarget 和 Run capability 交给 Runner。
    具名 policy 把每个 Planned attempt 穷尽判为 reuse 或 gap。source barrier、禁止回扫、`reuseContract`、
@@ -269,13 +269,17 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    完整契约见 [Execution reuse planning](feature/experiments/architecture/cache.md)。
 
    planner/scheduler 只接收 gaps；Host 保留完整 Planned attempt decision。
-5. **有界并发调度。**
+5. **派发前准备共享起点。**
+   gaps 需要的 BuildKey 各构建一次（见 [Run 级构建协调](feature/sandbox/architecture/case.md#run-级构建协调共享准备的预算与调度)）。
+   Provider 声明 `RunPrepared` 时，Run 按 BeforeCacheKey 把 before action 合并成[准备图](concepts.md#before-cache-preparation-graph)，每个节点只准备一次（见 [Before cache](feature/sandbox/architecture/before-cache.md)）。
+   全部节点结算后才派发 Attempt。缓存故障只让节点降级，配对改从更浅的前缀开始；只有 author action 失败时，依赖它的 Planned attempt 不派发，记一条关联这些 slot 的 Run 级诊断。
+6. **有界并发调度。**
    全局至多 `maxConcurrency` 个 gap execution 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
    重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture/README.md#provisioning-失败与重试)。
-6. **准备 Sandbox,交给 `test(t)`。**
+7. **准备 Sandbox,交给 `test(t)`。**
    沙箱型按固定顺序完成下面几步:
-   - Provider 按配对唯一的 template 启动 Sandbox 实例。
-   - 执行各 owner 的 before action(装二进制、预热、题目准备)。顺序只由 [Sandbox Layer · 顺序与依赖方向](feature/sandbox/library/layers.md#顺序与依赖方向) 定义;这一步在变更分类账参照点之前,准备输出不进入任何归因视图。
+   - Provider 按配对唯一的 template 启动 Sandbox 实例；有准备好的 Before cache artifact 时从它创建。
+   - 满足各 owner 的 before action(装二进制、预热、题目准备)：命中缓存的恢复状态、不再执行，其余真实执行。顺序只由 [Sandbox Layer · 顺序与依赖方向](feature/sandbox/library/layers.md#顺序与依赖方向) 定义;这一步在变更分类账参照点之前,准备输出不进入任何归因视图。
    - `agent.ensure` 循环安装 Agent CLI:探测、缺失时配对安装层 install、复检。
    - 打变更分类账参照点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture/README.md))。
    - 跑 agent 的 runtime `SandboxAgent.setup`(写鉴权与运行时配置)。
@@ -283,22 +287,22 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    作者按自己的顺序调 `t.sandbox.writeText` / `writeBytes` / `uploadDirectory`(准备起始文件)与 `t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)。
    `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
    顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
-7. **封口 agent 归因轨迹。**
+8. **封口 agent 归因轨迹。**
    `test(t)` 跑完后从分类账取得每个 send 区间自己的 before/after 端点，按 send 顺序形成完整轨迹，供
    `fileChanged` / `notInDiff` 等归因断言的 finalize 与固定 file-changes family 使用。它不把跨 send 区间的
    路径合成并集、`net` 或 hunk。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
-8. **断言求值。**
+9. **断言求值。**
    `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
-9. **判定。**
+10. **判定。**
    assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` /
    `errored` / `skipped`，没有中间态）。它由 Assertions 与 Attempt outcome 解释，不另建持久
    family；未来 reuse planning 按自己的 policy 决定是否采用。
-10. **首过即停。**
+11. **首过即停。**
    若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
-11. **收尾与留存。**
+12. **收尾与留存。**
     finally 里按 `SandboxAgent.teardown` → 各 owner 已登记的 after action(按实际登记栈逆序,见 [Cleanup](feature/sandbox/library/layers.md#cleanup))→ Provider finalizer 的顺序收尾。
     收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture/README.md#留存keep与注册表))。
-12. **经 Run Host 发布 Attempt、收口 Run，并返回 receipt。**
+13. **经 Run Host 发布 Attempt、收口 Run，并返回 receipt。**
     `experimentHost` 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 Runner。
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin
     anchor；采用动作是 Member Core 事实，不另设 provenance family。
@@ -311,7 +315,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     把 pinned facts 传给同一内部 selector；当前 `project.get` 另消费 Experiment Host 冻结的目标输入。selector 关闭 selection、分母、missing、
     Evidence 与 comparison；CLI、Web 与 Testkit 使用 `niceeval/inspection` 的同一 Schema、类型与 decoder。
     Delivery 不重新读取 Run facts 或执行统计。
-13. **退出码。**
+14. **退出码。**
     有 `failed` Verdict 或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
 ## 配置从代码来,凭据从进程变量来
