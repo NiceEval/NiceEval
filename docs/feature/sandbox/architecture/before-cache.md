@@ -101,17 +101,20 @@ interface BeforeCachePreparer<Plan> {
   /** 只读；可以为解析不可变 Base 做认证后的网络请求，不得创建或修改资源。 */
   readonly eligibility: (
     plan: Plan,
+    context: BeforeCachePreparationContext,
   ) => Effect.Effect<BeforeCacheEligibility, BeforeCacheError>;
-  /** 命中时在 Run 的 Scope 上持有 artifact，Scope 关闭时释放。 */
+  /** 命中时在调用方 Scope（Run）上持有 artifact，Scope 关闭时释放。 */
   readonly lookup: (
     plan: Plan,
+    context: BeforeCachePreparationContext,
     stepsDeepestFirst: readonly BeforeCacheStep[],
   ) => Effect.Effect<BeforeCacheLookup, BeforeCacheError, Scope.Scope>;
   /** 从 artifact 创建 staging 或 consumer；不可用时最多回退一次到 Base。 */
   readonly materializeFrom: (
     plan: Plan,
+    context: BeforeCachePreparationContext,
     artifact: BeforeCacheArtifact,
-    context: SandboxRuntimeMaterializeContext,
+    materialize: SandboxRuntimeMaterializeContext,
   ) => Effect.Effect<
     { readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart },
     SandboxRuntimeMaterializationError,
@@ -119,9 +122,32 @@ interface BeforeCachePreparer<Plan> {
   >;
   readonly capture: (
     plan: Plan,
+    context: BeforeCachePreparationContext,
     staging: MaterializedSandboxCase,
     step: BeforeCacheStep,
   ) => Effect.Effect<BeforeCacheCapture, BeforeCacheError, Scope.Scope>;
+}
+
+/** core 在调用时传入；Provider 不自报身份。 */
+interface BeforeCachePreparationContext {
+  /** Provider module 的 `id`。 */
+  readonly providerId: string;
+  readonly runId: string;
+}
+
+interface BeforeCacheStep {
+  readonly operationId: string;
+  readonly declaration: BeforeCacheDeclaration;
+  /** Base 之后到本节点的每一层声明位置，按顺序排列。 */
+  readonly positions: readonly BeforeCachePosition[];
+  /** 纵深防御用；只在发布前比较，从不持久化。 */
+  readonly knownSensitiveValues?: readonly string[];
+}
+
+interface BeforeCachePosition {
+  readonly ownerKind: string;
+  readonly ownerId: string;
+  readonly actionId: string;
 }
 ```
 

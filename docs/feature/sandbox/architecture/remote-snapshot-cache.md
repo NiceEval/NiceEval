@@ -22,7 +22,7 @@ BeforeCacheKey、能力分类与降级的通用规则在 [Before cache](before-c
 
 ## 协议归 core，Provider 只交原语
 
-账本、lease 与接管、artifact 标记的写入与校验、挂载与敏感字节检查、quiesce、consumer 回退和回收对三个 Provider 完全相同，由 core 实现一次（[T-6](../../../taste.md#t-6)）。Provider 只交出 `BeforeCacheSnapshotDriver`。driver 不声明自己是谁：账本的 `provider` 列取 Provider module 的 `id`，新增一个远端 Provider 不需要改 core 的类型或账本 schema（[T-3](../../../taste.md#t-3)）。core 用 `remoteSnapshotPreparer(driver)` 把它变成（`continuesStaging` 取 driver 的 `sourceUsableAfterSnapshot`） [`BeforeCachePreparer`](before-cache.md#provider-能力)：
+账本、lease 与接管、artifact 标记的写入与校验、挂载与敏感字节检查、quiesce、consumer 回退和回收对三个 Provider 完全相同，由 core 实现一次（[T-6](../../../taste.md#t-6)）。Provider 只交出 `BeforeCacheSnapshotDriver`。driver 不声明自己是谁：账本的 `provider` 列取 core 传入的 `BeforeCachePreparationContext.providerId`，即 Provider module 的 `id`；账本像其它 Provider 账本一样经 `userDatabaseHost` 打开，新增一个远端 Provider 不需要改 core 的类型或账本 schema（[T-3](../../../taste.md#t-3)）。core 用 `remoteSnapshotPreparer(driver)` 把它变成（`continuesStaging` 取 driver 的 `sourceUsableAfterSnapshot`） [`BeforeCachePreparer`](before-cache.md#provider-能力)：
 
 ```typescript
 interface BeforeCacheSnapshotDriver<Plan> {
@@ -212,7 +212,7 @@ busy 的节点等待对方结算，不在等待期间创建 staging；对方发�
 
 ```text
 replacement scope = hash(provider, execution domain, baseReference,
-                         [declaring owner kind + owner id + action id] for Base 之后到本节点的每一层)
+                         step.positions)
 ```
 
 修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。代价：两个 Experiment 在同一声明位置使用不同内容时会互相取代、交替重新准备一次。需要并存时，作者给 action 取不同的 id。
