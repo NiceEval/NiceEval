@@ -54,4 +54,16 @@ lease 过期接管、hold 与删除互斥、snapshot 请求结果不确定和父
 - snapshot 请求结果不确定时行进入 `deleting` 且 `snapshot_id` 为空，回收按名称查询：`Ready` 删除、`Pending` 保留、`Absent` 结算为 `deleted`；
 - 子节点 staging 的父 snapshot 不可用时回退到 Base，不执行当前 action、不发布，节点 `degraded(parent-unavailable)`。
 
+### Incus Before cache 故障结算
+
+[Nested Docker Architecture](../../../../feature/sandbox-nested-docker/architecture/README.md) 规定 Incus 准备节点遇到缓存故障时 `degraded`，只有 author action 失败才 `failed`。
+真实 Incus 主机无法按需制造 staging 创建失败、repository 不可用或 capture 受理结果不确定，也不能在共享开发主机上重复运行。
+
+稳定 seam 是 Incus Provider 的资源边界：fake 只模拟 Incus API 的返回与失败，Incus repository 使用真实 SQLite 的 UserDatabase。最小矩阵区分：
+
+- staging 创建失败结算为 `degraded(staging-failed)`；
+- repository 读写失败结算为 `degraded(ledger-unavailable)`，且不调用 Incus 资源接口；
+- capture 受理结果不确定时结算为 `degraded(snapshot-uncertain)`，对象留在 repository 中按 orphan 处理；
+- author action 在 prepare allocation 中失败时结算为 `failed`。
+
 其它 Sandbox 行为不保留 Unit。真实运行条件能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。
