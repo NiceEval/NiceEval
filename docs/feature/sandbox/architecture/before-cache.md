@@ -113,6 +113,8 @@ interface BeforeCachePreparer<Plan> {
   readonly materializeFrom: (
     plan: Plan,
     context: BeforeCachePreparationContext,
+    /** staging 由 Run 的准备图创建；consumer 由 Attempt 或复用池创建。 */
+    purpose: "staging" | "consumer",
     source: BeforeCacheSource,
     materialize: SandboxRuntimeMaterializeContext,
   ) => Effect.Effect<BeforeCacheMaterialized, SandboxRuntimeMaterializationError, Scope.Scope>;
@@ -156,7 +158,7 @@ type BeforeCacheLookup =
 
 type BeforeCacheMaterialized =
   | { readonly _tag: "Materialized"; readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart }
-  /** 只用于 staging：缓存帮不上忙，节点结算为 degraded；consumer 不返回这个分支。 */
+  /** 只在 `purpose` 为 `staging` 时返回：缓存帮不上忙，节点结算为 degraded。 */
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
 
 type BeforeCacheCapture =
