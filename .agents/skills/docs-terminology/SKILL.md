@@ -23,4 +23,4 @@ Global writing rules live in `docs/writing.md`: the first paragraph sets sentenc
 
 Use a scoped `concepts.md` or `writing.md` only when a directory owns a separate decision. Removing a referenced concept requires resolving its imports first.
 
-Do not mechanically replace every finding. API identifiers and historical spellings quoted as inline code are distinct from prose; inspect the owning contract before changing either. NiceEval's API-example and SVG checks remain under `lint/docs/` and read the same Concord terminology decisions where applicable.
+Do not mechanically replace every finding. API identifiers and historical spellings quoted as inline code are distinct from prose; inspect the owning contract before changing either. NiceEval has no TS lint for docs: Concord does not yet check SVG text or code examples, so reviewers apply the same terminology decisions to diagrams and verify API examples against the public signatures; request missing checks as Concord Issues.

@@ -9,7 +9,7 @@
 - 本篇定义怎样把契约变成测试，以及怎样选择最小而稳定的测试边界。
 - 真实安装、进程、网络、模型和 Sandbox 的全链路验证属于 [E2E CI](../e2e/README.md)。
 
-运行时测试可直接运行 Vitest 的 `unit` project，类型契约测试由 `pnpm run typecheck` 承担；文档守护位于 `lint/`，分别由 `pnpm lint:docs` 与 `pnpm lint:docs-site` 执行（见[套件边界与仓库守护](#套件边界与仓库守护)）。
+运行时测试可直接运行 Vitest 的 `unit` project，类型契约测试由 `pnpm run typecheck` 承担；文档由 Concord 检查（`pnpm lint:docs`），文档站守护位于 `lint/docs-site/`，由 `pnpm lint:docs-site` 执行（见[套件边界与仓库守护](#套件边界与仓库守护)）。
 
 单元层的观察面是**数据**：输入数据到输出数据的确定性语义。
 渲染输出（终端排版、DOM 结构、Run、样式）、CLI 进程行为与真实协议路径不属于本层，一律归 E2E 功能仓库——边界全文见[测试体系总纲的风险边界](../../README.md#风险边界)。
@@ -60,7 +60,7 @@ Feature 文档是语义的唯一出处。
 | **边界归一**       | 落盘格式与第三方文件怎样进入 niceeval 的标准模型            | 脱敏真实 fixture、畸形输入                  |
 | **公共组合**       | 用户可见 API、类型能力和主要组合方式能够表达 Feature 契约   | 公共子路径 import、编译 fixture、窄集成测试 |
 | **结果与计算口径** | 选择、去重、聚合、格式化与装载校验的数据语义                | 数据级断言、宿主装载等价测试                |
-| **仓库守护**       | 索引、链接、生成区块和测试收集范围等仓库约束                | `lint/docs/**` 与 `lint/docs-site/**` 下的 lint |
+| **仓库守护**       | 链接、生成区块和测试收集范围等仓库约束                      | Concord 检查与 `lint/docs-site/**` 下的 lint    |
 
 测试预算由静默错误的影响和发现难度决定，而不是按层平均分配。
 判定、证据归一、缓存、调度、结果选择和读数聚合都可能给出看似合理但错误的答案，应得到更强的组合与边界证明。
@@ -165,15 +165,14 @@ niceeval 是 TypeScript 库，类型推断和非法组合也是公共契约。
 
 ## 套件边界与仓库守护
 
-套件按**验证对象**分成三个 Vitest project，每个 project 一个入口命令，成员资格由目录决定：
+套件按**验证对象**分成两个 Vitest project，每个 project 一个入口命令，成员资格由目录决定：
 
 | project          | 验证对象           | 入口                                  | 收哪些文件                                      |
 | ---------------- | ------------------ | ------------------------------------- | ----------------------------------------------- |
 | `unit`           | 代码               | `pnpm exec vitest run --project unit` | `packages/niceeval/src/**/*.test.ts(x)`、`packages/repo-tools/src/**/*.test.ts` 与 `test/unit/**` |
-| `lint-docs`      | `docs/`、`memory/` | `pnpm lint:docs`                      | `lint/docs/**`                                  |
 | `lint-docs-site` | `apps/docs-site/`  | `pnpm lint:docs-site`                 | `lint/docs-site/**`，命令里再串 Mint 两步校验   |
 
-三个 include 互不重叠且按仓库根锚定，新增守护文件放进哪个目录就归哪个入口——不存在「三个 project 谁都没收它、于是永远不跑」的静默失效。
+两个 include 互不重叠且按仓库根锚定，新增守护文件放进哪个目录就归哪个入口——不存在「哪个 project 都没收它、于是永远不跑」的静默失效。`docs/` 与 `memory/` 的检查由 `pnpm lint:docs` 运行 `concord docs check`，不经 Vitest。
 `docs-site` 入口把 `pnpm run repo docs site validate`、`pnpm run repo docs site links` 串在 Vitest 之后：mint CLI 要 LTS Node 且每次拉 `mint@latest`，放进代码侧入口会给全部单测强加网络依赖。
 
 Vitest 只收本仓库自己的测试。
@@ -186,7 +185,7 @@ Vitest 只收本仓库自己的测试。
 临时 worktree 副本会使用过期源码产生与当前提交无关的结果，详见 [`vitest-collects-agent-worktree-copies`](../../../../../memory/vitest-collects-agent-worktree-copies.md)。
 每个入口收集到的文件数应等于它那几个 include 目录下测试文件的实际数量。
 
-索引涵盖、链接真实性、生成区块漂移和其它仓库约束写成 `lint/docs/**` 或 `lint/docs-site/**` 下的 `*.lint.ts`，复用上面的 lint 入口，不新增脚本或 hook。
+文档站的生成区块漂移和其它站点约束写成 `lint/docs-site/**` 下的 `*.lint.ts`，复用上面的 lint 入口，不新增脚本或 hook。`docs/` 的用词、链接与关系不在本仓库写 lint，由 Concord 检查。
 这些测试同样必须指出自己守护的具体约束，以及删除后会发生的静默腐坏。
 
 判对错与写输出按这条线切开：**说红绿的一律是 Vitest，写文件的才是脚本**。
@@ -198,6 +197,6 @@ Vitest 只收本仓库自己的测试。
 同一个检查既能由脚本判、又能由测试判时，两边迟早给出不同判定，而人只会记得跑其中一条。
 
 测试文档归属也在守护范围内：`packages/niceeval/src` 下每个测试文件头部用一行注释声明所属文档（`// cases: docs/engineering/testing/architecture/unit/<feature>.md`）。
-`lint/docs/cases-registry.lint.ts` 校验每条声明指向真实存在的测试文档。
-`lint/` 下的仓库守护没有 Feature 文档可指，不做此声明，它们的登记面就是自己守护的那条仓库约束（写明在文件头注释里）。
-机器守护只保证测试文档与套件不整册脱钩；类别级的影响面核对仍是评审对照证明范围规范的义务。
+这条声明没有机器守护，评审时核对它指向真实存在的测试文档。
+`lint/docs-site/` 下的守护没有 Feature 文档可指，不做此声明，它们的登记面就是自己守护的那条仓库约束（写明在文件头注释里）。
+类别级的影响面核对是评审对照证明范围规范的义务。

@@ -71,4 +71,4 @@
 pnpm lint
 ```
 
-这一条统一执行 `lint/docs/` 与 `lint/docs-site/` 下的规则、Mintlify 构建校验和 Mintlify 断链检查。Node 版本以仓库根 `package.json` 的 `engines` 为准。只想单独验其中一项时用 `pnpm run repo docs site validate` 或 `pnpm run repo docs site links`。
+这一条统一执行 Concord 的文档检查、`lint/docs-site/` 下的规则、Mintlify 构建校验和 Mintlify 断链检查。Node 版本以仓库根 `package.json` 的 `engines` 为准。只想单独验其中一项时用 `pnpm run repo docs site validate` 或 `pnpm run repo docs site links`。

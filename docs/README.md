@@ -188,13 +188,12 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 pnpm lint
 ```
 
-文档与文档站的全部 lint 都挂在这一条命令上：
+文档与文档站的全部检查都挂在这一条命令上：
 
-- `lint/docs/docs-consistency.lint.ts` 检查索引涵盖与相对链接。
-  新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
-- `lint/docs/docs-writing.lint.ts` 检查 `docs/` 与 `apps/docs-site/zh/` 的句长、段长，并按各自作用域检查禁用写法与两条立词纪律。MDX 的 frontmatter 元数据、代码、JSX 实现和明确的生成区块不算手写正文。
-  括号嵌套靠人读，没有守护。
+- `concord check` 与 `concord docs check` 检查链接与页面内定位目标、文档关系，以及 `docs/` 与 `apps/docs-site/zh/` 的句长、段长、不用的词和旧写法，规则见[写作规则](writing.md)与 [Concepts](concepts.md)。
 - `lint/docs-site/**/*.lint.ts` 检查参考区块、随包索引与站点迁移，再运行 Mintlify 校验和断链检查。
+
+新增设计页仍要从本索引或所属二级目录的 `README.md` 可发现；这一条、括号嵌套、SVG 用词与样式，以及正文 API 示例是否符合公开签名，都靠评审核对，没有机器守护。
 
 Git hook 的检查与安装从 [Repository Setup skill](../.agents/skills/repository-setup/SKILL.md) 进入。
 `pre-push` 调用同一条 `pnpm lint`，不单独维护另一份规则清单。

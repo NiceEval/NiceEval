@@ -93,7 +93,7 @@ pnpm run repo docs work finalize <run-id> [--json]
 共享 checkout 里常有其它 Agent 的未提交改动，因此 base 是否干净只按本次 run 声明的路径判断。
 任一 item 的 `read`、`write` 或 `finalizerOnly` 命中未提交、未跟踪或已暂存的路径时，base 是脏的。
 声明范围之外的改动不阻止 `prepare`，也不进入任何 item 的 digest。`run.json` 只保存 base commit 与声明范围，
-不复制范围外的路径清单。`show` 只读取本地状态。`check` 只缩小输入路径，规则实现仍来自 `lint/docs/**` 或 `lint/docs-site/**`，不得复制 lint。
+不复制范围外的路径清单。`show` 只读取本地状态。`check` 只缩小输入路径，规则实现仍来自 Concord 与 `lint/docs-site/**`，不得复制检查规则。
 
 worker 只能运行 `check --report` 并产生 `reported` receipt。父 Agent 完成 Herdr 的 wait、get/read 和独立 diff 验收后，运行 `check --verify <receipt>`；工具重新执行同一检查并产生 `verified` receipt。pane 的 idle / done、完成通知与 worker 自己的绿色检查都不能产生 `verified`。
 
