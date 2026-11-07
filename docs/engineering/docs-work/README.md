@@ -69,7 +69,7 @@ type DocsCheck =
 以下工作必须由单一 owner 或 finalizer 串行完成：
 
 - 同一 Feature Design Package 的领域模型与共享结构；
-- `docs/concepts.md`、`docs/concord-writing.json` 和目录入口索引；
+- `docs/concepts.md`、`docs/writing.md` 和目录入口索引；
 - Feature 与 Roadmap 之间的采用迁移；
 - 中英文契约源尚未固定时的双向改写；
 - 多个 item 都会生成的同一输出。

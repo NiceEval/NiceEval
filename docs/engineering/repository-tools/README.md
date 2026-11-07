@@ -61,7 +61,7 @@ PR 正文入口 `pnpm pr:body` 拥有受模板约束的 Git-private 编辑状态
 `concord new use-case <name> --feature <feature>` 在显式指定的既有 Feature 下创建一个叶子 Use Case。
 
 术语与写作政策由 Concord 基础 CLI 拥有：`concepts index/show` 读取 `docs/concepts.md`，
-`writing index/show/check` 读取与检查 `docs/concord-writing.json`；两者直接编辑，参数从各自 `--help` 发现。
+`writing index/show/check` 读取与检查 `docs/writing.md` 及各目录的 `writing.md`；两者直接编辑，参数从各自 `--help` 发现。
 Markdown 只解释关系与案例；API 示例规则由 `lint/docs/public-api-examples.json` 拥有，SVG 守护读取 Concord 的词汇裁决。
 
 Roadmap 与 Engineering 的结构写入也使用 Concord 基础 CLI 的受管入口：
