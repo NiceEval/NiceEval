@@ -116,7 +116,7 @@ consumer 从 artifact project 跨 project copy template root；Docker data 必�
 
 Incus repository 在用户级 UserDatabase 中独立持久化 replacement head、consumer hold
 与 absence receipt。这些是 NiceEval repository 术语，不是 Incus API 状态。replacement scope
-来自 provider-neutral Before cache manifest；head 只
+来自 provider-neutral 的 Before cache 声明（`BeforeCacheDeclaration`）；head 只
 指向已 committed generation。
 
 consumer handoff 在 clone 前重新核对 generation 并取得 hold，clone settlement 释放 hold。

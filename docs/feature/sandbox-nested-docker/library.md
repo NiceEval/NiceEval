@@ -210,7 +210,7 @@ core 使用 Provider-neutral code，不按 `provider === "incus"` 分支：
 |---|---|
 | `sandbox-capability-unsatisfied` | 当前 Provider 不能满足 exact requirement |
 | `sandbox-capacity-unavailable` | reservation 已满，或可写容量低于安全阈值 |
-| `sandbox-artifact-unverified` | manifest、snapshot 或 clone identity 不一致 |
+| `sandbox-artifact-unverified` | Before cache 声明、snapshot 或 clone identity 不一致 |
 | `sandbox-readiness-failed` | guest、Docker、Compose、socket 或 quota 验证失败 |
 | `sandbox-allocation-lost` | ledger 仍 active，但 Provider object 已不存在 |
 | `sandbox-destroy-incomplete` | destroy 未得到“已删除或不存在”的终态证明 |

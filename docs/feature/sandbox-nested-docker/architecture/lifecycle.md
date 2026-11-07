@@ -81,7 +81,7 @@ prepare worker 取得独立 allocation 并执行 eligible Before cache。
 成功后进入 quiesce barrier；任何进程、secret、外部 lease 或 state-surface 证明失败都取消 publication 并销毁 prepare allocation。
 
 Provider 创建 stopped immutable template instance 及其 dependent custom block Docker data volume；两者先以
-同一 `ArtifactIntent` 写入准备中的 metadata。root 与 volume 的双向 metadata、完整 action manifest 与
+同一 `ArtifactIntent` 写入准备中的 metadata。root 与 volume 的双向 metadata、完整累计声明与
 coverage/revisions 验证成功后，才提交 `ArtifactIntent` 并原子发布 artifactDigest。committed intent 是唯一
 消费线性化点；consumer 跨 project copy root，并为 data volume 生成新的 source。
 
