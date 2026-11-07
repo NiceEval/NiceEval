@@ -138,18 +138,29 @@ interface BeforeCachePreparationContext {
 interface BeforeCacheStep {
   readonly operationId: string;
   readonly declaration: BeforeCacheDeclaration;
-  /** Base 之后到本节点的每一层声明位置，按顺序排列。 */
-  readonly positions: readonly BeforeCachePosition[];
+  /** Base 之后到本节点每一层的 action id，按顺序排列；只用于远端 snapshot 的 replacement scope。 */
+  readonly positions: readonly string[];
   /** 纵深防御用；只在发布前比较，从不持久化。 */
   readonly knownSensitiveValues?: readonly string[];
 }
 
-interface BeforeCachePosition {
-  readonly ownerKind: string;
-  readonly ownerId: string;
-  readonly actionId: string;
-}
+type BeforeCacheLookup =
+  | { readonly _tag: "Miss" }
+  | { readonly _tag: "Hit"; readonly artifact: BeforeCacheArtifact }
+  /** 缓存帮不上忙，例如账本不可用；节点结算为 degraded。 */
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
+type BeforeCacheCapture =
+  | { readonly _tag: "Published"; readonly artifact: BeforeCacheArtifact }
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
+type BeforeCacheDegradedReason =
+  | "eligibility-failed" | "ledger-unavailable" | "staging-failed" | "parent-unavailable"
+  | "base-image-unverified" | "mounted-state" | "sensitive-state"
+  | "snapshot-rejected" | "snapshot-uncertain" | "lease-lost";
 ```
+
+preparer 返回 `Degraded` 时节点结算为 `degraded`；返回 `BeforeCacheError` 时节点结算为 `failed`。远端 snapshot preparer 把它能识别的全部缓存故障映射为 `Degraded`；Incus 按自己的 fail-closed 边界返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
 
 Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 Instabox 只交出 `BeforeCacheSnapshotDriver`，由 core 的 `remoteSnapshotPreparer(driver)` 实现，见 [远端 snapshot Before cache](remote-snapshot-cache.md#协议归-coreprovider-只交原语)。
 
@@ -172,19 +183,19 @@ Base 之后每个 eligible before action 都产生链式内容身份：
 
 ```text
 BeforeCacheKey[i] = hash(
-  provider + exact Base image identity,
+  provider + planner revision + exact Base image identity,
   BeforeCacheKey[i - 1],
-  occurrence kind = attempt,
-  declaring owner kind + stable owner id + owner-local ordinal,
-  linked topological order + normalized changeFrequency,
-  explicit dependency + typed capability edges,
-  action id,
-  automatic fingerprint + optional supplemental fingerprint,
+  action id + family,
+  declared state + cumulative state,
+  canonical input + automatic fingerprint + optional supplemental fingerprint,
   canonical steps digest + immutable input identities,
+  typed capability edges (requires / provides),
   target platform + execution user,
-  interpreter + Docker cache format revisions
+  preparation identity + format revisions
 )
 ```
+
+声明方、声明方内序号、拓扑顺序、`changeFrequency` 与显式依赖只决定 action 的排列，不进入 key：内容相同的准备层在不同 Experiment、Eval 或 Plugin 之间共用同一份 artifact，不因出处被拆成多份。
 
 action fingerprint 固定为 `hash(auto, supplemental)`。`auto` 包含 family id、canonical input、规范化 `sandboxStep`、声明 state 与 immutable content identity；`cache.fingerprint` 只提供 `supplemental`。parent key 防止相同 action 从不同 Base 或祖先状态错误复用。
 
@@ -245,5 +256,7 @@ nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Arc
 
 协议串、`declarationMetadata` 的 JSON 字段与 Provider 对象上的标记同样使用这组名字，例如 `niceeval.before-cache-key/v1`、`niceeval.before-cache-declaration/v1`、`niceeval.before-cache-replacement/v1` 与 Docker image label `user.niceeval.beforeCacheKey`。
 
-这些内容只决定缓存能否命中，不进入 Attempt 或结果的 execution identity。它们变化时，已有 Before cache 全部 miss 并在下次运行时重新准备一次，已落盘的评测结果不受影响。
+这些内容只决定缓存能否命中。它们变化时，已有 Before cache 全部 miss，下次运行时重新准备一次。
+
+Provider plan 的 execution identity 不包含 `beforeCache` 能力：缓存只让运行变快，不改变结果（[T-5](../../../taste.md#t-5)），换一种准备路径不应让已有结果失效。把它移出 identity 改变了 digest，按 [NiceEval 身份域变更](../../experiments/architecture/cache.md#niceeval-身份域变更) 登记为 `encoding-only`，下游无需重跑。
 

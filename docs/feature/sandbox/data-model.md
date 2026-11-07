@@ -69,7 +69,7 @@
 
 ### 建立
 
-账本由一次新的相邻 UserDatabase migration 建立，不读取、不转换任何既有缓存数据（[T-1](../../taste.md#t-1)）。同一 migration 删除既有的 E2B、OpenSandbox 与 Docker before 缓存表，并按新名字建立 Docker 的 `docker_before_cache_*` 表；Incus 的 artifact repository 保持原表。
+账本由一次新的相邻 UserDatabase migration 建立，不读取、不转换任何既有缓存数据（[T-1](../../taste.md#t-1)）。同一 migration 删除既有的 E2B、OpenSandbox、Docker 与 Incus before 缓存表，并按新名字重建 Docker 与 Incus 的表；临时的 GC lock 行同样丢弃。
 
 已有缓存因此全部失效：
 
@@ -77,6 +77,6 @@
 | --- | --- |
 | E2B、OpenSandbox 账号中 NiceEval 创建过的 snapshot | 不再登记，NiceEval 不回收；用户在 Provider 控制台删除 |
 | 本机 Docker 中的 before 缓存 image | 不再登记，`docker cache inventory` 与 `docker cache gc` 都看不到；用户自行删除 |
-| Incus prepared artifact | 仍在 Incus repository 中登记；新 key 不再命中它们，`niceeval sandbox provider gc incus --unused-for <duration>` 可回收 |
+| Incus prepared artifact（VM、disk 与 image） | 不再登记，`inventory incus` 与 `gc incus` 都看不到；用户用 `incus` CLI 按 `user.niceeval.setupPrefixKey` metadata 找到并删除 |
 
 下一次运行按新 key 重新准备并发布。

@@ -208,14 +208,14 @@ busy 的节点等待对方结算，不在等待期间创建 staging；对方发�
 - `Pending`：续期并等待它结束。
 - `Absent`：把该行改为 `deleting`（`snapshot_id` 为空），再重新 reserve。
 
-**替换按声明位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含声明位置：
+**替换按声明位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含每层的 action id 与 Base 引用：
 
 ```text
 replacement scope = hash(provider, execution domain, baseReference,
                          step.positions)
 ```
 
-修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。代价：两个 Experiment 在同一声明位置使用不同内容时会互相取代、交替重新准备一次。需要并存时，作者给 action 取不同的 id。
+与 BeforeCacheKey 一样，声明方不进入 scope，不同 Experiment 共用的准备层共用一条替换线。修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。代价：两个 Experiment 在同一位置（相同的 action id 链）使用不同内容时会互相取代、交替重新准备一次。需要并存时，作者给 action 取不同的 id。
 
 **发布。** publish 要求同一 artifact、当前 lease token、lease 未过期且 snapshot ID 已确认，并在同一事务插入 `run` hold。同一 replacement scope 已有更大 generation 发布时，较小 generation 改为 `deleting`，不发布。新 generation 发布时，同 scope 中较小的 ready 改为 `deleting`；scope 由声明位置决定，旧 artifact 的后代层也在各自位置被新链取代。lookup 只返回 ready。
 
