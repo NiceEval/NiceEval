@@ -115,11 +115,7 @@ interface BeforeCachePreparer<Plan> {
     context: BeforeCachePreparationContext,
     source: BeforeCacheSource,
     materialize: SandboxRuntimeMaterializeContext,
-  ) => Effect.Effect<
-    { readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart },
-    SandboxRuntimeMaterializationError,
-    Scope.Scope
-  >;
+  ) => Effect.Effect<BeforeCacheMaterialized, SandboxRuntimeMaterializationError, Scope.Scope>;
   readonly capture: (
     plan: Plan,
     context: BeforeCachePreparationContext,
@@ -158,6 +154,11 @@ type BeforeCacheLookup =
   /** 缓存帮不上忙，例如账本不可用；节点结算为 degraded。 */
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
 
+type BeforeCacheMaterialized =
+  | { readonly _tag: "Materialized"; readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart }
+  /** 只用于 staging：缓存帮不上忙，节点结算为 degraded；consumer 不返回这个分支。 */
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
 type BeforeCacheCapture =
   | { readonly _tag: "Published"; readonly artifact: BeforeCacheArtifact }
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
@@ -168,7 +169,7 @@ type BeforeCacheDegradedReason =
   | "snapshot-rejected" | "snapshot-uncertain" | "lease-lost";
 ```
 
-preparer 返回 `Degraded` 时节点结算为 `degraded`；返回 `BeforeCacheError` 时节点结算为 `failed`。远端 snapshot preparer 把它能识别的全部缓存故障映射为 `Degraded`；Incus 按自己的 fail-closed 边界返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
+`lookup`、`materializeFrom` 与 `capture` 返回 `Degraded` 时节点结算为 `degraded`；返回错误时节点结算为 `failed`。Runner 只看这个结果，不按 Provider 名称或错误的 cause 区分。consumer 的 `materializeFrom` 自己处理回退，Base 也创建失败时返回错误，Attempt 按普通实例创建失败处理。远端 snapshot preparer 把它能识别的全部缓存故障映射为 `Degraded`；Incus 按自己的 fail-closed 边界返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
 
 Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 Instabox 只交出 `BeforeCacheSnapshotDriver`，由 core 的 `remoteSnapshotPreparer(driver)` 实现，见 [远端 snapshot Before cache](remote-snapshot-cache.md#协议归-coreprovider-只交原语)。
 
