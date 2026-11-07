@@ -15,6 +15,8 @@ import type {
   IncusRepositoryResultFor,
 } from "../sandbox/incus/repository.ts";
 
+import type { BeforeCacheSnapshotRepositoryRequest, BeforeCacheSnapshotRepositoryResult } from "../sandbox/remote-snapshot/ledger.ts";
+
 export const DURABLE_STATE_REPOSITORY = "durable-state" as const;
 
 export interface DurableStateEntry {
@@ -37,7 +39,8 @@ export type UserDatabaseRepositoryRequest =
   | DockerCacheRepositoryRequest
   | E2BCacheRequest
   | IncusRepositoryRequest
-  | OpenSandboxCacheRequest;
+  | OpenSandboxCacheRequest
+  | BeforeCacheSnapshotRepositoryRequest;
 
 export type UserDatabaseRepositoryResult =
   | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "put"; readonly changes: number }
@@ -46,7 +49,8 @@ export type UserDatabaseRepositoryResult =
   | DockerCacheRepositoryResult
   | E2BCacheResult
   | IncusRepositoryResult
-  | OpenSandboxCacheResult;
+  | OpenSandboxCacheResult
+  | BeforeCacheSnapshotRepositoryResult;
 
 export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest> =
   Request extends DurableStateRequest
@@ -60,7 +64,8 @@ export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest>
         ? E2BCacheResultFor<Request>
         : Request extends IncusRepositoryRequest
           ? IncusRepositoryResultFor<Request>
-          : Request extends OpenSandboxCacheRequest ? OpenSandboxCacheResult : never;
+          : Request extends OpenSandboxCacheRequest ? OpenSandboxCacheResult
+            : Request extends BeforeCacheSnapshotRepositoryRequest ? BeforeCacheSnapshotRepositoryResult : never;
 
 export interface UserDatabaseMigrationReceipt {
   readonly version: number;

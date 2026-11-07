@@ -15,6 +15,7 @@ import {
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
 import { E2B_CACHE_GENERATION_INDEX_SQL, E2B_CACHE_REPOSITORY, installE2BCacheSchemaV1, isE2BCacheRequest } from "../sandbox/e2b-cache-repository.ts";
 import { INCUS_REPOSITORY, installIncusSchemaV3, isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
+import { isBeforeCacheSnapshotRepositoryRequest } from "../sandbox/remote-snapshot/ledger.ts";
 import { INCUS_GC_SCHEMA_SQL } from "../sandbox/incus/gc-store.ts";
 import {
   UserDatabaseInvalid,
@@ -393,7 +394,8 @@ function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
     isDockerCacheRepositoryRequest(request) ||
     isE2BCacheRequest(request) ||
     isOpenSandboxCacheRequest(request) ||
-    isIncusRepositoryRequest(request)
+    isIncusRepositoryRequest(request) ||
+    isBeforeCacheSnapshotRepositoryRequest(request)
   )
     ? Object.freeze({ id, kind, request })
     : undefined;

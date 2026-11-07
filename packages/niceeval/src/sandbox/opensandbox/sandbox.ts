@@ -70,13 +70,13 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   }
   get sandboxId(): string { return this.remote.id; }
 
-  static async create(options: OpenSandboxOptions, deadlineAt?: number): Promise<OpenSandboxBackend> {
+  static async create(options: OpenSandboxOptions, deadlineAt?: number, snapshotId?: string): Promise<OpenSandboxBackend> {
     const domain = process.env.OPEN_SANDBOX_DOMAIN;
     if (!domain) throw new Error("OPEN_SANDBOX_DOMAIN is required for OpenSandbox");
     const url = new URL(domain);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("OPEN_SANDBOX_DOMAIN must be an HTTP(S) URL without credentials, query or fragment");
     const connectionConfig = { domain, apiKey: process.env.OPEN_SANDBOX_API_KEY, useServerProxy: true, disableMetrics: true };
-    const remote = await OpenSandboxBackend.provision(options, connectionConfig);
+    const remote = await OpenSandboxBackend.provision(options, connectionConfig, snapshotId);
     return new OpenSandboxBackend(remote, options, connectionConfig, deadlineAt);
   }
 

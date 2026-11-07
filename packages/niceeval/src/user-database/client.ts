@@ -4,6 +4,7 @@ import { Effect, type Scope } from "effect";
 import { isDockerCacheRepositoryResult } from "../sandbox/docker-cache-repository.ts";
 import { isE2BCacheResult } from "../sandbox/e2b-cache-repository.ts";
 import { isIncusRepositoryResult } from "../sandbox/incus/repository.ts";
+import { isBeforeCacheSnapshotRepositoryResult } from "../sandbox/remote-snapshot/ledger.ts";
 import {
   UserDatabaseBusy,
   UserDatabaseInvalid,
@@ -105,7 +106,7 @@ function isResult(value: unknown): value is UserDatabaseRepositoryResult | UserD
   if (Reflect.get(value, "kind") === "void") return true;
   if (["bootstrapped", "migrated", "current"].includes(String(Reflect.get(value, "status")))) return isMigrationResult(value);
   if (Reflect.get(value, "repository") !== DURABLE_STATE_REPOSITORY) {
-    return isOpenSandboxCacheResult(value) || isDockerCacheRepositoryResult(value) || isE2BCacheResult(value) || isIncusRepositoryResult(value);
+    return isOpenSandboxCacheResult(value) || isDockerCacheRepositoryResult(value) || isE2BCacheResult(value) || isIncusRepositoryResult(value) || isBeforeCacheSnapshotRepositoryResult(value);
   }
   const operation = Reflect.get(value, "operation");
   if (operation === "put") return Number.isSafeInteger(Reflect.get(value, "changes"));
