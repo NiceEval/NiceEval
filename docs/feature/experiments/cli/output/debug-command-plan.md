@@ -27,7 +27,7 @@
 │ change frequency: 10 · rare · explicit                               │
 │ scheduling reason: ready-lowest-change-frequency                     │
 │ prefix: sha256:50d2...                                               │
-│ cache capability: persistent                                        │
+│ cache capability: attempt-captured                                  │
 │ cache lookup: not-probed                                             │
 │ eligibility: eligible                                                │
 │ command: shell "./import-runtimes.sh"                                │
@@ -43,7 +43,7 @@
 │ step 1: exec tool install 1.4.0                                      │
 │ step 2: putText .tool-version · sha256:35b4... · 5 bytes             │
 │ redaction: content projected as digest and size                      │
-│ cache capability: persistent                                        │
+│ cache capability: attempt-captured                                  │
 │ cache lookup: not-probed                                             │
 ╰──────────────────────────────────────────────────────────────────────╯
 
@@ -58,7 +58,7 @@
 │ change frequency: 40 · explicit                                      │
 │ scheduling reason: ready-lowest-change-frequency                     │
 │ prefix: sha256:aa41...                                               │
-│ cache capability: persistent                                        │
+│ cache capability: attempt-captured                                  │
 │ cache lookup: not-probed                                             │
 │ eligibility: eligible                                                │
 │ command: shell "printf fixture-ready"                                │
@@ -122,7 +122,7 @@ Human 框与 JSON `commandPlan` 投影同一棵结构化树和同一组字段；
   "schedulingReason": "ready-lowest-change-frequency",
   "cache": {
     "prefix": "sha256:aa41...",
-    "capability": "persistent",
+    "capability": "attempt-captured",
     "lookup": "not-probed",
     "eligibility": "eligible"
   },

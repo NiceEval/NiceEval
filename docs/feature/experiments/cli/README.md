@@ -87,7 +87,7 @@ Human 的 lane 顺序固定为 Group before actions → physical enter → Plann
 
 同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
 
-before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。普通持久前缀与 Provider-native prepared artifact 都投影为 `persistent`；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
+before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。capability 取 `run-prepared | attempt-captured | unsupported`，与 [Provider 能力](../../sandbox/architecture/before-cache.md#provider-能力)一一对应，让用户在运行前知道这批准备能加速到什么程度；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
 
 数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
