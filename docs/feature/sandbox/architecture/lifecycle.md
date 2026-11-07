@@ -115,7 +115,7 @@ Agent-owned before action 不固定最后；高频 `.env` 通常因数值较大�
 
 ## before 缓存的运行时序
 
-公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 把全部 attachment 编译为 attempt occurrence；`PreparedArtifact` Provider 还从这些 occurrence 投影出一个 Run 级的共享 prefix DAG。它不改变 author action 仍属于 Attempt 的事实，也不把其它 capability 伪装成共享准备。
+公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 把全部 attachment 编译为 attempt occurrence；`RunPrepared` Provider 还从这些 occurrence 投影出 Run 级的[准备图](../../../concepts.md#before-cache-preparation-graph)。它不改变 author action 仍属于 Attempt 的事实，也不把其它 capability 伪装成共享准备。
 
 ```text
 fresh: create Case -> reset baseline -> before -> Agent/test -> after
@@ -124,15 +124,15 @@ reuse: reset baseline -> before -> Agent/test -> after
 
 每个 eligible before occurrence 都产生 satisfaction 事实。hit restore verified private state，action invocation 为零；miss 或 bypass replay；unsupported 真实执行。callback before 和全部 after 不被跳过。author action 固定是 attempt occurrence，不提升为 physical-instance occurrence。
 
-`PreparedArtifact` 路径在任何 Attempt 派发前执行。Run 先以完整 `BeforeCacheKey` 合并所有 eligible prefix 节点；相同 key 在本 Run 内是一个 single-flight 节点，不按 Eval、Experiment、lane 或将来的 Attempt locator 再拆分：
+`RunPrepared` 路径在任何 Attempt 派发前执行。Run 先以完整 `BeforeCacheKey` 合并所有 eligible 节点；相同 key 在本 Run 内是一个节点、只准备一次，不按 Eval、Experiment、lane 或将来的 Attempt locator 再拆分：
 
 ```text
 BuildKey ready
   -> compile all eligible BeforeCacheKey nodes
-  -> Run prefix DAG: Base -> 1 -> 2 -> 3
+  -> 准备图:          Base -> 1 -> 2 -> 3
                               \-> 4
-  -> each node: lookup, or create staging from its parent's verified artifact
-                -> replay -> quiesce -> verify -> publish PreparedArtifact
+  -> each node: lookup, or continue the parent's staging, or create staging from its parent's artifact
+                -> replay -> quiesce -> verify -> publish
                 -> release that node's prepare Scope
   -> wait until every node is settled
   -> dispatch only plannedAttempts whose terminal prefix succeeded
@@ -140,13 +140,13 @@ BuildKey ready
   -> runtime secret overlay -> agent.ensure / Adapter runtime / Agent / Eval test
 ```
 
-节点可开始于最深 verified artifact 或 exact Base。只有父节点已发布且其 prepare Scope 完成回收，子节点才可开始；因此上图的 `1`、`2` 各只准备一次，`3` 与 `4` 可并行。实际并行数取 `maxBeforeCacheConcurrency`（或 `--max-before-cache-concurrency`）与 provider `scheduling.lane.limit` 的交集。这个 prepare permit 与 Attempt 的 `maxConcurrency` permit 分离。
+节点可开始于最深 verified artifact 或 exact Base。只有父节点已发布，子节点才可开始：它或者接过父节点的 staging 继续执行（Provider 声明 snapshot 后源实例仍可用时），或者从父节点的 artifact 新建 staging。因此上图的 `1`、`2` 各只准备一次，`3` 与 `4` 可并行。实际并行数取 `maxBeforeCacheConcurrency`（或 `--max-before-cache-concurrency`）与 provider `scheduling.lane.limit` 的交集。这个 prepare permit 与 Attempt 的 `maxConcurrency` permit 分离。
 
 `bypass` 跳过 lookup、capture 与 publication；它保留 occurrence-local DAG、identity 与 action replay，但不建立 Run 级共享节点。opaque barrier 之前仍可恢复最长前缀；barrier 之后不发布后缀。runtime secret overlay 必须在最终私有 clone 中执行，不能进入 staging 或 artifact。
 
-`Persistent`、`InvocationLocal` 与 `Unsupported` 不加入这个 Run 级 DAG，继续按其能力在 Attempt 内 restore、复用或真实 replay。它们不会因为 key 相同取得共享 staging、共享可写状态或共享 Run activity。
+`AttemptCaptured` 与 `Unsupported` 不加入准备图，继续按其能力在 Attempt 内 restore 或真实 replay。`RunPrepared` Provider 的 `sandboxReuse` 配对加入准备图，artifact 只在复用实例创建时消费一次（见[远端 snapshot Before cache · Sandbox 复用](remote-snapshot-cache.md#sandbox-复用)）。它们不会因为 key 相同取得共享 staging、共享可写状态或共享 Run activity。
 
-全局派发 barrier 等待全部 Run prefix DAG 节点结算，而非只等待某一 Planned attempt 的祖先。节点失败只阻断依赖它的 descendants 和最终需要该 prefix 的 Planned attempts；独立分支继续准备。成功节点发布后不会因其它节点失败回滚。取消会终止尚未结算的 prepare staging 与 publication，并有界回收它们；已验证发布的 immutable artifact 保留。
+全局派发 barrier 等待准备图的全部节点结算，而非只等待某一 Planned attempt 的祖先。`failed` 节点只阻断依赖它的 descendants 和最终需要该 prefix 的 Planned attempts；`degraded` 节点让目标配对从更浅的可用前缀开始（结算表见[远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)）；独立分支继续准备。成功节点发布后不会因其它节点失败回滚。取消会终止尚未结算的 prepare staging 与 publication，并有界回收它们；已验证发布的 immutable artifact 保留。
 
 prepare 过程写独立 Run activity：cache lookup、当前 action `i/n`、prepare Sandbox 创建、artifact 发布和 Scope release。它不借用 Attempt running 计数，也不创建 Attempt locator；只有通过全局 barrier 后实际 dispatch 的 Planned attempt 才分配其永久 locator。已分配的 locator 从调度、收尾反馈到 Record 提交始终不变。
 
@@ -184,7 +184,7 @@ debug 把配置的全部 attempts 列作候选 dispatch Planned attempt。正常
 
 Sandbox callback、test 与 Provider callback 保留其真实位置并标为 opaque。每个 action node 显示 declarationOrder、dependencies、changeFrequency、occurrence-local topological ordinal、schedulingReason、owner 与 attempt occurrence。
 
-同一节点还显示 phase、作者原始 changeFrequency、安全 fingerprint 和 Provider 的 `persistent | unsupported` capability。Provider-native prepared artifact 按其跨 Invocation 持久语义投影为 `persistent`，不会被误报为 `unsupported`。debug 不查询 inventory，也不求运行期资格或最终 key；固定显示 runtime `pending`、lookup 与 final key `not-probed`。实际 hit/replay 与 restore source 只进入运行反馈。
+同一节点还显示 phase、作者原始 changeFrequency、安全 fingerprint 和 Provider 的 `run-prepared | attempt-captured | unsupported` capability，与 [Provider 能力](before-cache.md#provider-能力)一一对应。debug 不查询 inventory，也不求运行期资格或最终 key；固定显示 runtime `pending`、lookup 与 final key `not-probed`。实际 hit/replay 与 restore source 只进入运行反馈。
 
 `shell()` / `command()` 显示 exact 命令与脱敏后的 env key，普通 callback 只显示 opaque。`sandbox.create` 额外显示 template owner、provider、kind 与安全的 configured locator。
 
@@ -198,7 +198,7 @@ Eval Group 的 `beforeSlots` / `afterSlots` 在 human 与 JSON 中都显式呈�
 
 静态计划只显示 `cacheLookup: "not-probed"`，不能声称 hit。运行时每个 eligible occurrence 的最终 cache 反馈固定为 `hit | replay | unsupported | degraded`。`replay` 的 reason 是 `miss | bypass`；`degraded` 必须同时产生 `cache-degraded` diagnostic，并指向被隔离的 operation id。
 
-只有 `PreparedArtifact` Provider 的 before 缓存在派发前走 Run 级 DAG；其它 capability 不建立跨 Attempt physical promotion、跨进程 single-flight 或共享 operation。无论哪条路径，共享的只能是已验证 immutable artifact，永不共享 Attempt、VM、staging 或可写状态。
+只有 `RunPrepared` Provider 的 before 缓存在派发前走准备图；其它 capability 不建立跨 Attempt physical promotion、跨进程 single-flight 或共享 operation。无论哪条路径，共享的只能是已验证 immutable artifact，永不共享 Attempt、VM、staging 或可写状态。
 
 Attempt elapsed 只计算本次 queue、restore、action replay、Agent 与 Eval test。持久事实不包含本地 image/container locator、credential value 或 secret bytes。
 

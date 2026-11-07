@@ -58,7 +58,7 @@ domain: reference
 runtime allocations: 4 free / 4 total
 prepared artifacts: 0 free / 3 total
 reason: prepared artifact capacity is exhausted
-hint: wait for consumer leases to reach zero or run the provider reconciler
+hint: wait for consumer holds to reach zero or run the provider reconciler
 ```
 
 `--development` 只证明 development domain 与 storagePool `niceeval-sandbox-dev` 这一条例外。

@@ -119,7 +119,7 @@ template 预装只是让版本检查首测即成功的一种手段。
 - 不新增执行频次、window scope 或按配对的替换表;内置命令在两层 layer 的既有位置执行。
 - Agent 前 fixture 使用 `uploadFile()` / `uploadDirectory()` action；隐藏判据使用 `sandboxContent.*()` 登记，在 `test(t)` 中传入。
 - 不提供 `t.sandbox.cloneRepo` 一类 test 期装载 API；`gitCheckout()` 是 before action。
-- Provider 不支持跨 Invocation 前缀时降级为 invocation-local 或真实 replay，不能伪造 hit。
+- Provider 不支持跨 Invocation 前缀时真实 replay，不能伪造 hit。
 
 ## 相关阅读
 

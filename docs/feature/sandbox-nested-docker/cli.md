@@ -32,12 +32,12 @@ virtual-machine type instance 或 custom storage volume 缺失时报告 `danglin
 `sandbox provider gc incus` 作为下一步；对象存在但无 committed intent 时报告 `orphan`。只有一一对应时才
 `PASS`，PASS 的保证范围写在输出里：`N committed intents, N verified object pairs`。
 
-自动回收的范围只有已被同一 replacement lineage 的新 generation 取代、consumer lease 已归零且 provider 对象双向
+自动回收的范围只有已被同一 replacement scope 的新 generation 取代、consumer hold 已归零且 provider 对象双向
 metadata 仍精确匹配的 artifact。内容变化产生新 lineage，不会让旧 lineage 被自动替代；其余回收全部走下面的
 显式两阶段 GC，不做后台删除。
 
 provider 对象使用 Incus 官方命名：virtual-machine type instance 与 custom storage volume。
-replacement head、consumer lease 与 absence receipt 由 NiceEval repository 拥有。
+replacement head、consumer hold 与 absence receipt 由 NiceEval repository 拥有。
 
 若满容量时全部 artifact 都是当前 head 或仍被引用，doctor 与 reservation 明确报告有效
 working set 容量不足，绝不按年龄删除仍有效缓存。
@@ -70,7 +70,7 @@ niceeval sandbox provider gc incus [--development] --apply <plan-id> [--json]
 ### inventory
 
 只读列出该 domain 的每份 prepared artifact。每项显示短 artifact digest、execution domain revision、state、
-generation、是否当前 head 与 consumer lease 数。每项另显示创建时间、最后成功 lease 时间、估算字节与对象核对结果
+generation、是否当前 head 与 consumer hold 数。每项另显示创建时间、最后成功 hold 时间、估算字节与对象核对结果
 （`verified` / `dangling` / `metadata-drift`）。另列 orphan 对象与 pool 字节摘要。
 
 JSON 使用
@@ -90,18 +90,18 @@ outcome 文档和退出码全部沿用 [Docker 两阶段回收](../../roadmap/sa
 | `dangling-intent` | intent 非 released，但 instance 与 volume 都已确认 absent | 否 |
 | `superseded-domain-revision` | intent 属于同一 repository 的旧 execution domain revision，当前 lookup 不可能再命中 | 否 |
 | `superseded-generation` | 已被同 lineage 新 head 取代，但自动回收被中断 | 否 |
-| `unused` | 当前 domain revision 的 committed artifact，最后成功 lease 早于 `--unused-for`；从未 lease 的按创建时间 | `--unused-for` |
+| `unused` | 当前 domain revision 的 committed artifact，最后成功 hold 早于 `--unused-for`；从未被 hold 的按创建时间 | `--unused-for` |
 
-所有规则都要求 lease 为零。`unused` 允许回收仍是 head 的 artifact：这是用户以显式时长换空间的决定，
+所有规则都要求 hold 为零。`unused` 允许回收仍是 head 的 artifact：这是用户以显式时长换空间的决定，
 下次运行只会 miss 并重新 prepare，不影响正确性。没有 `--unused-for` 时不产生 `unused` 候选，NiceEval 不替
 用户猜 LRU 阈值。
 
 已按某一 plan invalidated 的中断 retirement 可以由新 preview 沿用原 rule 和保护时点
 继续，不属于重新选择 committed `unused` 候选，也不要求再次指定时长。新 plan 仍有自己的 15 分钟有效期，
-并重新核对 lease、generation 与所有现存对象的 metadata；原 plan 过期或已有失败 outcome 不阻断接管。
+并重新核对 hold、generation 与所有现存对象的 metadata；原 plan 过期或已有失败 outcome 不阻断接管。
 orphan、`metadata-drift` 和 quarantine 对象只在 inventory 中展示，永远不是候选。
 
-apply 对每个候选重新核对 intent state、generation、lease 与双向 metadata，然后走既有状态机：
+apply 对每个候选重新核对 intent state、generation、hold 与双向 metadata，然后走既有状态机：
 `committed → invalid → retiring`，两类对象分别落 absence receipt 后写 `released`。`dangling-intent` 不调用
 delete，直接以已确认的 absence receipt 走同一条 `retiring → released`，不绕过 fenced 状态机。
 preview 摘要给出估算可回收字节；apply 结束后重新读取 pool 字节并输出前后对比。
@@ -136,7 +136,7 @@ nested Docker V1 不提供：
 - `niceeval docker profile list|doctor|exec` 作为 adopted nested-Docker 诊断；
 - 用 development doctor 替代 reference doctor；
 - doctor 的 create / destroy allocation；
-- 跳过 lease、metadata 或 orphan 门的 `gc incus --force`；
+- 跳过 hold、metadata 或 orphan 门的 `gc incus --force`；
 - 后台或运行中自动按年龄删除有效 artifact；
 - `--keep-sandbox` 与 `incusSandbox()` 的组合；
 - 让 CLI 在宿主上 mount、loop、nft、sudo、build、import 或 pull image。

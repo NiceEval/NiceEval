@@ -162,7 +162,7 @@ Testkit 直接导出公开原始 `ExpEvent`、`ExpTerminalEvent`、`ExpTerminalS
 - `completedAt` 未提供时不存在，否则为字符串；
 - `completion` 是 `"completed" | "interrupted" | "failed"`；
 - `summary` 存在并通过 `ExpTerminalSummary` 解码：起止时间、passed / failed / skipped / errored 计数、durationMs、
-  可选 token 与成本，以及 `setupPrefixes` 计数。字段全集以产品 Schema 为准。
+  可选 token 与成本，以及 `beforeCaches` 计数。字段全集以产品 Schema 为准。
 
 `expTerminal()` 返回完整终局事件；`expReceipt()` 是它的窄化，只返回内层 `InvocationReceipt`。它不检查退出码，也不折叠 Verdict 或 Attempt。
 

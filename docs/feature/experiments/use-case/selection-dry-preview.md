@@ -43,7 +43,7 @@
 
    需要在花费前核对这个 Experiment 的 Sandbox before 缓存时，使用 `niceeval debug <experiment> --json`。省略 Eval selector 会规划该 Experiment 选中的全部 Eval，`beforeCachePlan` 按 prefix identity 去重消费者。
 
-   这份静态计划固定标记 `lookup: "not-probed"`，不会把计划写成真实 cache hit。正式 `niceeval exp` 结束后，Human 摘要与机器 terminal envelope 的 `summary.beforeCaches` 按唯一 prefix node 结算 `total / hit / prepared / failed`，不与历史结果沿用或物理 Sandbox 复用混算。
+   这份静态计划固定标记 `lookup: "not-probed"`，不会把计划写成真实 cache hit。正式 `niceeval exp` 结束后，Human 摘要与机器 terminal envelope 的 `summary.beforeCaches` 按准备图的唯一节点结算 `total / hit / prepared / degraded / failed`，不与历史结果沿用或物理 Sandbox 复用混算。
 5. 选择器写错、第二个位置参数没有选中 Eval，或 argv 不能形成命令时，都在建立 Invocation 前以非零状态结束；没有 receipt。零命中只给可浏览的目录清单，不摊平打印每个已发现 id：
 
    ```sh

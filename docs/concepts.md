@@ -439,7 +439,7 @@ Provider 启动的唯一执行空间;Agent、Eval、文件 API、workdir 与 dif
 
 Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓存 before action 所形成的内容寻址 Sandbox 起点
 
-契约：[Sandbox · before 缓存](feature/sandbox/architecture/README.md#before-缓存的身份与验证边界)
+契约：[Sandbox · before 缓存](feature/sandbox/architecture/before-cache.md#身份与验证边界)
 
 其它写法：`before 缓存`、`beforeCaches`、`beforeCachePlan`、`sandboxCache.before`、`SandboxBeforeCache`。
 
@@ -447,7 +447,27 @@ Base 加上 occurrence 与 owner 包裹顺序规范化的零个或多个可缓�
 
 parent 前缀、规范化 steps、immutable inputs 与 Provider 捕获协议的链式内容身份
 
-契约：[Sandbox · before 缓存](feature/sandbox/architecture/README.md#before-缓存的身份与验证边界)
+契约：[Sandbox · before 缓存](feature/sandbox/architecture/before-cache.md#身份与验证边界)
+
+## 准备图 {#before-cache-preparation-graph}
+
+`RunPrepared` Provider 在派发 Attempt 前，按完整 BeforeCacheKey 合并全部 eligible before action 得到的 Run 级节点图；每个节点在一个 Run 内只准备一次
+
+契约：[Sandbox · before 缓存](feature/sandbox/architecture/before-cache.md#provider-能力)
+
+## lease {#lease}
+
+带到期时间的独占操作权：同一时刻只有一个持有者，持有者按时续期，过期后其它进程可以接管；操作前后都以持有的 token 为条件写入
+
+契约：[远端 snapshot Before cache · 发布与竞争](feature/sandbox/architecture/remote-snapshot-cache.md#发布与竞争)
+
+其它写法：`租约`、`publication lease`、`state lease`。
+
+## hold {#hold}
+
+阻止 Provider artifact 被删除的使用登记；同一 artifact 可以有多个 hold，全部释放后 artifact 才能被删除，hold 不授予独占操作权
+
+契约：[远端 snapshot Before cache · 回收](feature/sandbox/architecture/remote-snapshot-cache.md#回收)
 
 ## Provider artifact {#provider-artifact}
 

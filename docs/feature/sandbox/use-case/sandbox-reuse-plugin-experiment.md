@@ -49,7 +49,7 @@ Sandbox 复用:实际 Sandbox 数 × (Sandbox 创建 + 完整公共准备)
            + 固定 Plugin 前缀 restore + Attempt 数 × 动态 overlay
 ```
 
-marketplace 拉取是插件安装的大头，用 `sparse` 只拉插件所需路径能明显压低。Plugin 发布流程先查询移动 ref 当前指向的完整 commit，再交给 `gitCheckout()`；相同 commit 自动命中，推进后输入 commit 改变并自动 miss。NiceEval V1 不执行这项远端身份查找。Plugin 投影与第三方 Action 共用 [SandboxAction](../library/layers.md#action-family-与-step) 和 [before 缓存验证边界](../architecture/README.md#before-缓存的身份与验证边界)。
+marketplace 拉取是插件安装的大头，用 `sparse` 只拉插件所需路径能明显压低。Plugin 发布流程先查询移动 ref 当前指向的完整 commit，再交给 `gitCheckout()`；相同 commit 自动命中，推进后输入 commit 改变并自动 miss。NiceEval V1 不执行这项远端身份查找。Plugin 投影与第三方 Action 共用 [SandboxAction](../library/layers.md#action-family-与-step) 和 [before 缓存验证边界](../architecture/before-cache.md#身份与验证边界)。
 
 ## 相关阅读
 

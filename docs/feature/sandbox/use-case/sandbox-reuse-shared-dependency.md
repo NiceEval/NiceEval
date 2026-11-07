@@ -39,7 +39,7 @@ export default defineExperiment({
 });
 ```
 
-每条 Attempt 都要满足上传与安装 action。缓存命中通过 restore 满足，不重复传输或运行命令；miss 才 replay。`node_modules` 活过题间 clean，Provider 只支持 invocation-local 时，后续 Attempt 也只付 restore 或探测成本。
+每条 Attempt 都要满足上传与安装 action。缓存命中通过 restore 满足，不重复传输或运行命令；miss 才 replay。`node_modules` 活过题间 clean，后续 Attempt 在同一复用实例上只付 restore 或探测成本。
 安装完成后每条 Attempt 再准备自己的 Fixture。
 
 ## 实际分摊多少

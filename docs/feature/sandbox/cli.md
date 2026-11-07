@@ -31,9 +31,9 @@ niceeval exp <experiment> [eval...] --max-before-cache-concurrency 3
 
 `bypass` 禁止 Before cache lookup 与 publication，并真实 replay 全部 eligible before。BuildKey 的 lookup/build 仍照常执行；该选择不改变 BuildKey、BeforeCacheKey、CaseKey、Attempt fingerprint 或 result identity。该 flag 只用于冷路径验收、排障与绕开本机 cache，不是强制重跑历史结果的入口。
 
-`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。准备缓存只管理 NiceEval 创建并登记的 Docker image、E2B snapshot 与 Incus prepared artifact；它不接管用户声明的 image、template、snapshot 或 trusted base。
+`--dry` 无论取值都只计算计划和 identity，固定显示 `cacheLookup: "not-probed"`。运行反馈在 bypass 时显示 `replay · bypass`。Before cache 只管理 NiceEval 创建并登记的 Docker image、远端 snapshot（E2B、OpenSandbox、Instabox）与 Incus prepared artifact；它不接管用户声明的 image、template、snapshot 或 trusted base。
 
-`--max-before-cache-concurrency <n>` 是正整数，只临时替代本次 Invocation 的 Run 级 `PreparedArtifact` 前缀 DAG 并发上限；省略时使用 Config 的 `maxBeforeCacheConcurrency`（默认 `2`）。它不改变 Attempt 并发或任何身份；某 provider lane 另有 `scheduling.lane.limit` 时，prepare 的实际并发取两个上限的交集。
+`--max-before-cache-concurrency <n>` 是正整数，只临时替代本次 Invocation 的[准备图](../../concepts.md#before-cache-preparation-graph)并发上限；省略时使用 Config 的 `maxBeforeCacheConcurrency`（默认 `2`）。它不改变 Attempt 并发或任何身份；某 provider lane 另有 `scheduling.lane.limit` 时，prepare 的实际并发取两个上限的交集。
 
 ## `--keep-sandbox`:跑完留下现场
 
@@ -198,6 +198,6 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 
 ## Docker image cache inventory
 
-`niceeval docker cache inventory` 只读展示同一 `verified-managed` Docker images Domain 中由 NiceEval 登记的两类 entry：`task-build` 与 `sandbox-setup-prefix`。JSON 的 `entries` 是以 `kind` 判别的联合；每项稳定显示自身 identity、当前 state、lease/root 数、创建时间、最后成功使用时间与保护截止时间。Domain 摘要另按两种 kind 给出计数。Human 输出逐项显示同一组安全字段，不输出声明正文、holder identity、operation id 或其它内部恢复资料。
+`niceeval docker cache inventory` 只读展示同一 `verified-managed` Docker images Domain 中由 NiceEval 登记的两类 entry：`task-build` 与 `sandbox-before-cache`。JSON 的 `entries` 是以 `kind` 判别的联合；每项稳定显示自身 identity、当前 state、lease 与 hold 数、创建时间、最后成功使用时间与保护截止时间。Domain 摘要另按两种 kind 给出计数。Human 输出逐项显示同一组安全字段，不输出声明正文、holder identity、operation id 或其它内部恢复资料。
 
 Before cache 进入 inventory 只授予可见性，不把它纳入 `docker cache gc`：现有 preview/apply 仍只产生和回收 `task-build` 候选。共享 BuildKit 仍是独立的 `unverified` Provider observation。

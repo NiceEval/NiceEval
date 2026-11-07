@@ -35,7 +35,7 @@
 
 ### Docker cache owner 存活投影
 
-真实 setup-prefix inventory 与 GC 保护结果由 Lifecycle E2E 通过安装后的 CLI 拥有。进程崩溃后遗留 claim 的
+真实 Before cache inventory 与 GC 保护结果由 Lifecycle E2E 通过安装后的 CLI 拥有。进程崩溃后遗留 claim 的
 存活分类依赖瞬时宿主 PID、container 与 image 事实，E2E 无法在不引入竞态的情况下固定检查时刻；最小 Unit 只区分
 verified-live、unverified 与无 owner 三类投影，防止遗留 claim 被误报为 active。它不复制 inventory 枚举或 GC 候选算法。
 

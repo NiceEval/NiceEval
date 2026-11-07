@@ -47,7 +47,7 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 
 声明式 before action 可以形成缓存前缀。callback before、hook、plugin、secret / credential、租约、外部会话、
 `onCleanup()`、Agent layer 与 hidden input 始终真实执行，并截断后续共享捕获。after 始终真实执行。完整资格、
-`verified` 边界与 Provider 降级见 [Architecture](../architecture/README.md#before-缓存的身份与验证边界)。
+`verified` 边界与 Provider 降级见 [Architecture](../architecture/before-cache.md#身份与验证边界)。
 
 当前 occurrence 固定为 `attempt`。作者 API 不暴露 scope，也不能靠 owner kind 或低频数值要求提升。把已证明稳定的前缀提升到 physical-instance 是后续性能工作，不属于当前 capability。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](../architecture/lifecycle.md)。

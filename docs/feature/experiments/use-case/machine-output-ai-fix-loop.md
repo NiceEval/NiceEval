@@ -26,7 +26,7 @@ coding agent 不需要解读 TTY 重绘。
    ```json
    {"event":"progress","elapsedMs":30000,"total":2,"reused":0,"running":1,"elsewhere":0,"queued":1,"passed":0,"failed":0,"errored":0,"skipped":0,"active":[{"experimentId":"compare/codex","evalId":"memory/commit0","attempt":0,"phase":"eval.run","elapsedMs":29000}],"activeOmitted":0}
    {"event":"warning","code":"judge-precheck-failed","level":"error","message":"Judge precheck failed…","phase":"judge.precheck","experimentId":"compare/codex","evalId":"memory/commit0","planned":1,"errored":1}
-   {"type":"receipt","summary":{"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","passed":2,"failed":0,"errored":0,"skipped":0,"durationMs":60000,"beforeCaches":{"total":0,"hit":0,"prepared":0,"failed":0}},"receipt":{"invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","createdRunIds":["8f3d6f62-1d34-4cf3-99c7-84ba3c483706"],"publicationCutoff":"opaque-cutoff","startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
+   {"type":"receipt","summary":{"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","passed":2,"failed":0,"errored":0,"skipped":0,"durationMs":60000,"beforeCaches":{"total":0,"hit":0,"prepared":0,"degraded":0,"failed":0}},"receipt":{"invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","createdRunIds":["8f3d6f62-1d34-4cf3-99c7-84ba3c483706"],"publicationCutoff":"opaque-cutoff","startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
    ```
 
 3. 只用规范 locator 构造固定 request，并展开必要证据：

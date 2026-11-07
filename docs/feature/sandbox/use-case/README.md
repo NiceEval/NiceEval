@@ -11,6 +11,7 @@
 - [Terminal-Bench:Eval 带 template](sandbox-terminal-bench.md) —— 每道题自带 Compose,Experiment 保持 command-only。
 - [MemoryBench:Experiment 带 template](sandbox-memorybench-preparation.md) —— 实验预装实例提供起点,Eval 逐 Attempt checkout 题目仓库。
 - [共享分支准备](sandbox-shared-branch-preparation.md) —— 两个 Eval×Experiment 配对共享长前缀，再并行完成彼此的末段准备。
+- [云 Sandbox 只准备一次](sandbox-cloud-before-cache.md) —— E2B、OpenSandbox 或 Instabox 上的一批并发 Attempt 共用一次 before 准备。
 
 ## Nested Docker
 
@@ -33,7 +34,7 @@ Experiment 声明 `sandboxReuse: true` 后，指纹匹配的终态 Attempt 会�
 | 选中的 Eval 各带不同 template | [复用池按物理身份分组](sandbox-reuse-heterogeneous-batch.md) |
 | 实验声明了原生 Plugin | [声明了原生 Plugin 的实验开复用](sandbox-reuse-plugin-experiment.md) |
 | 现有 Eval 还不能使用 Sandbox 复用 | [准备可复用的 Eval](sandbox-reuse-preparable-evals.md) |
-| Docker image 或 E2B snapshot 无法验证或恢复 | [从更短前缀或 Base 重新执行准备](sandbox-reuse-clean-start.md) |
+| Docker image 或远端 snapshot 无法验证或恢复 | [从更短前缀或 Base 重新执行准备](sandbox-reuse-clean-start.md) |
 
 完整契约见 [Sandbox 复用](../library/reuse.md)。
 

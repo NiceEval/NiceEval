@@ -319,6 +319,53 @@ V1 DestroyOnly；requirement / capability、domain 与 doctor 见 [Nested Docker
 - `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。完成帧只接受 supervisor 在取得子进程状态后写出的十进制 exit code，wrapper 源码、转义诊断或子进程回显中出现的 marker 字面量都不是完成边界。timeout、取消、协议完整性失败或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
 - 文件用 `files.read` / `files.write`(文本 + 二进制)。
 - node 版本由模板决定 —— `runtime` 字段对 e2b 仅作说明。要 node24 / 烘焙好 agent CLI,用预制模板 `e2bSandbox({ template: "niceeval-agents" })`——参数的典型用途正是把 agent CLI 烘焙进模板,让后续 eval 跳过安装直接开跑(构建工作流见 [Library · 预制实例](../library/prebuilt-environments.md))。
+- Before cache 的 Base 身份是 template 当前解析到的 build，而不是 template 名字；同名 template 重建会产生新 build，旧前缀不得命中。规则见 [远端 snapshot Before cache · E2B](remote-snapshot-cache.md#e2b)。
+
+## OpenSandbox provider
+
+OpenSandbox provider 通过服务 API 将一个远端 Sandbox 绑定到现有 Attempt resource group；创建、命令、文件与销毁均由 provider 持有，Runner 不按名称分支。公开声明见 [Library](../library/README.md#opensandbox)。Docker、Kubernetes 等 runtime 由 OpenSandbox 服务端选择，不进入 NiceEval 的选项、计划 identity 或准入判断。服务部署和隔离策略归基础设施；provider 不从 runtime 名称推断专用 kernel 或 DockerExecution。
+
+`openSandbox` 使用官方 `@alibaba-group/opensandbox` SDK，依赖延迟加载。连接地址和 API key 从 `OPEN_SANDBOX_DOMAIN`、`OPEN_SANDBOX_API_KEY` 读取，API key 只进宿主 transport，不进入 identity、镜像变量集合或命令。
+
+所有请求使用 server proxy 并保留 SDK 返回的 endpoint 路由与认证 header。当前接入使用服务代理，不要求 execd 的 secureAccess；服务必须使用仅可信宿主可访问的私有入口，或在 HTTP/WebSocket 全路径前置鉴权。控制 API key 本身不能保护上游免鉴权的 proxy 路由。禁用 SDK create telemetry。目标平台由声明显式给出，不能从宿主架构推断远端镜像。
+
+起点是 image，工作目录为 `/home/sandbox/workspace`。发布 identity 包含 image、目标平台、资源限制、user、pathPrepend 与 lifetimeMs；连接与凭据不构成可分享内容。单实例只有一个销毁 owner。创建不自动重试歧义结果；获取实例后立即登记 Scope finalizer，ready 或工作目录初始化失败也销毁。作者必须显式声明有限的 lifetimeMs，实例仍随 Scope 关闭；该寿命不得短于 Attempt 剩余时限与 30 秒收尾预留。有限寿命负责客户端崩溃后的最终回收，不替代取消确认。服务拒绝该寿命时保留真实失败，不静默缩短。
+
+每次创建携带随机 provision token。创建失败后按该 token 查询并销毁已分配的实例，不接管其它请求。服务仍在处理但尚未返回的分配无法由一次查询排除，有限寿命约束这种未知状态；查询或销毁失败与原始创建失败一并报告。
+
+服务必须在销毁成功响应前终止实例及其进程，provider 才能将该响应作为回收确认。只返回异步删除受理或控制对象消失的服务不满足该契约，须在服务接入验收时验证；调用方声明 runtime 字符串不能替代这项证据。
+
+命令经原生 argv 执行，shell 明确为 `bash -lc`；cwd、env、身份与 PATH 由 provider 归一化。非零退出返回实际 exitCode，缺失终态不能伪装成功。超时、取消或命令流中断时销毁整个实例，并等待销毁确认后结束命令；这使跨命令后台任务无法在失联后继续执行。正常命令结束保留后台服务。文件接口复用统一 transfer 语义，文本与字节不混用。
+
+保留、暂停与复用报告 Unsupported / DestroyOnly；rootfs Before cache 见 [远端 snapshot Before cache · OpenSandbox](remote-snapshot-cache.md#opensandbox)。受管双向进程通过下述 pipe 桥接兑现；镜像必须提供 Node.js 24。缺少运行时直接报错，不能退化成单次 shell。验收检查 argv 注入、非零退出、二进制与目录往返、超时及取消后实例不可访问、创建后初始化失败回收、独立实例隔离和凭据不进入 sandbox。
+
+### OpenSandbox 受管进程
+
+交互 adapter 使用 execd 的 `/pty` WebSocket pipe 模式，不能使用会合并 stderr 或回显输入的 PTY 模式。provider 通过同源 server proxy 取得 endpoint 和认证 header；连接地址必须与控制服务同源，不把控制凭据转交第三方 endpoint。
+
+镜像内 Node 24 作为 provider 的字节桥接运行时。桥接进程启动独立 process group 的目标 argv，stdin 协议显式区分写字节、关闭 stdin 和 terminate；stdout/stderr 以 base64 frame 分离传输。每次写入确认在目标 stdin 的 write callback 后返回，EOF 在 end callback 后确认。桥接协议不进入公开 API，也不把 stdout 当作 JSONL 文本命令输出来重新分词。
+
+目标退出或 terminate 后，桥接先 KILL 同一 process group，并从 Linux procfs 确认没有非 zombie 成员，再发布目标 exitCode/signal。确认超时、桥接错误、WebSocket 意外关闭或缺少完整终态时退休整个 Sandbox。正常完成后删除 PTY session；资源关闭可重入，失败必须保留 Provider finalizer 失败事实。Node 缺失时返回明确启动失败，不能报告交互能力已经可用。
+
+## Instabox snapshot Provider
+
+`instabox.ts` 拥有纯配置校验、template identity 和 Provider plan；`instabox/` 拥有 HTTPS 协议解码、Machine 资源、SSH 命令与文件传输。Runner 继续只使用统一 Provider 契约，不按 Instabox 名称分支。
+
+固定服务 origin、snapshot ID、Provider revision、Linux x64 GNU 平台、显式寿命、规范化资源和 PATH 前缀组成 identity。Machine ID、创建幂等键、SSH token 与 API key 不参与 identity；不同 snapshot ID 保守地视为不同 Sandbox 起点，不声称内容等价。配置求值不访问网络。
+
+`materialize` 先验证 snapshot 的具体 ID 与 ready 状态，再以唯一幂等键创建 Machine。请求禁止自动 Vault 或 Org Secrets 注入，明确设置 delete deadline、资源与禁用自动暂停。收费计划必须允许这些设置；拒绝不能降级为可能暂停的机器。创建返回 operation 后，立刻登记资源回收，再等待 operation succeeded 与运行就绪。创建响应失联时只用相同幂等键重取受理结果，不发起第二次逻辑创建。无法取得身份时报告无法确认回收，服务端 delete deadline 是最后上界。
+
+每个 Machine 的 Scope 拥有一次删除职责。失败、取消与正常退出均调用 DELETE，附带确认 ID 和稳定删除幂等键，等待 operation succeeded。已有 operation 冲突时等待其终态后再删除；404 表示资源已不存在。删除失败保持未回收状态并传播错误，不能先标记成功。Snapshot 不由 Attempt Scope 拥有。
+
+HTTPS API 返回值在边界通过 Schema 解码；错误只交付 HTTP 状态、服务错误 code，不转交可能回显凭据的响应正文。默认请求有有界传输超时，资源等待由 Attempt deadline 或显式 lifetime 限制。回收使用独立有界时限，不继承已取消的 Attempt signal。
+
+SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每个执行连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
+
+普通命令的前台进程结束后关闭自身管道并提交退出码，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。双向进程通过 SSH channel 写 stdin 与发送 EOF。连接异常、退出码缺失、命令超时或取消均退休并删除整台 Machine，等待确认后再 settle。正常退出只关闭连接。外层 Scope 最终删除实例，包含其余后代进程。
+
+文件使用原生 HTTP bytes 接口，目录传输复用既有收集和下载能力。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力；Before cache 见 [远端 snapshot Before cache · Instabox](remote-snapshot-cache.md#instabox)。
+
+验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。
 
 ## Provisioning 失败与重试
 
@@ -396,91 +443,9 @@ Provisioning 的分类只涵盖"创建沙箱"这一步。沙箱创建成功后�
 
 provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传——需要新能力时显式建模成接口成员或 case 能力句柄,不开 `sandbox.native` 逃生口(裁决见 [memory 条目](../../../../memory/sandbox-native-escape-hatch-rejected.md))。
 
-## before 缓存的身份与验证边界
+## Before cache
 
-Base 之后每个 eligible before action 都产生链式内容身份：
-
-```text
-BeforeCacheKey[i] = hash(
-  provider + exact Base image identity,
-  BeforeCacheKey[i - 1],
-  occurrence kind = attempt,
-  owner kind + stable owner id + owner-local ordinal,
-  linked topological order + normalized changeFrequency,
-  explicit dependency + typed capability edges,
-  action id,
-  automatic fingerprint + optional supplemental fingerprint,
-  canonical steps digest + immutable input identities,
-  target platform + execution user,
-  interpreter + Docker cache format revisions
-)
-```
-
-action fingerprint 固定为 `hash(auto, supplemental)`。`auto` 包含 family id、canonical input、规范化 `sandboxStep`、声明 state 与 immutable content identity；`cache.fingerprint` 只提供 `supplemental`。parent key 防止相同 action 从不同 Base 或祖先状态错误复用。
-
-BeforeCacheKey 不包含 cache lookup 结果、本地 image/container locator、Attempt UUID、调度额度或运行时 secret。Eval `test`、Assertion 和 Agent/test 阶段的输入变化也不进入未改变的 BeforeCacheKey。它们仍按各自 owner 改变 Attempt 与结果 identity；BuildKey 只由构建输入决定。
-
-`verified` 只有三项含义：
-
-1. 声明 identity、BeforeCacheKey、manifest 与 provider artifact identity 双向一致；artifact receipt 使用 provider-neutral id，不把 provider locator 当 portable identity。
-2. Provider artifact 包含 action 声明 state 的全部结果；普通 Docker 是 outer writable rootfs，Incus 是完整、quiesced 的 prepared Sandbox artifact。
-3. 每个消费者从 immutable artifact 创建独立 writable state，不共享 writable layer 或 Docker data allocation。
-
-`verified` 不证明 action 业务语义正确，也不证明任意 shell、网络、时钟或随机读取具有确定性。`defineSandboxAction()` 是作者对确定性的承诺。普通 JSON 与文本由作者声明为非敏感；已知 `Secret`、credential handle 与 runtime binding 在 planning 拒绝。发布前对框架已知 secret bytes 的扫描只做纵深防御。
-
-## Provider preparation capability matrix
-
-Provider 按能力而非名称进入准备路径。`PreparedArtifact` 是唯一可加入 Run 级 prefix DAG 的能力。它必须能从 exact Base 或父 artifact 建 staging、完整 quiesce/capture/verify/publish，并为每个 consumer clone 独立 writable root 与所需 data disk。`Persistent`、`InvocationLocal` 与 `Unsupported` 都不进入 Run 级 DAG。
-
-| Provider / case | capability | 前缀路径与边界 |
-|---|---|---|
-| 普通单容器 Docker，全部可变状态在 outer writable rootfs | `Persistent` | 每 Attempt 使用已验证 exact image 的私有 writable container；不成为 Run 级 DAG 节点。 |
-| Docker Profile，具备已验证的独立 fixed-image allocation | `Persistent` | 只能保存 capability receipt 声明的状态面（例如 `dockerData`）；shared loop/project-quota allocation 报 `Unsupported`。 |
-| `incusSandbox()` nested Docker | `PreparedArtifact` | 发布完整、quiesced 的 prepared artifact；每个 Attempt clone 私有 writable root 与 Docker data disk，参与 Run 级 DAG。 |
-| E2B | `InvocationLocal` | template 是 Base；本 Invocation 内的可用恢复能力不等同于可发布、跨 Planned attempt 共享的 prepared artifact，不进入 Run 级 DAG。 |
-| OpenSandbox | `Persistent(all)` | 固定 Base 的 rootfs snapshot；不包含进程、卷或 tmpfs。 |
-| Vercel Sandbox | `Unsupported` | 当前不声明可验证的 before-cache capture/restore coverage，真实 replay。 |
-| `defineSandbox()` custom provider | `Unsupported` | NiceEval 不以结构探测推断能力；未经显式、已验证 capability receipt 的实现真实 replay。 |
-
-bind mount、tmpfs、Compose sidecar、host socket、raw / managed DinD、privileged outer container与无法完整捕获的 inner data-root 都不能冒充上述 capability。secret、runtime overlay、workspace、Attempt locator 与外部会话不进入可发布 artifact。
-
-## before 缓存是可失败的优化
-
-lookup 或 restore 在 action 执行前失败时，Runner 忽略不可验证的候选，并最多一次从更短的 verified prefix 或 Base 创建干净容器。该 Attempt 的剩余 action 真实 replay，运行反馈为 `degraded`。无法建立干净容器时，Attempt 失败。
-
-action 成功后 capture 失败时不得再执行该 action。当前容器仍完整时，它可以继续 uncached；已无法证明完整时，Attempt 失败。任何部分恢复或部分 capture 都不会冒充 hit，也不会形成循环 cache retry。
-
-取消只回收当前 private staging 与 Attempt 资源，不回滚已经完成验证并发布的 immutable Before cache artifact。下一次 Invocation 仍从最深 verified prefix 继续：取消时正在执行或尚未发布的 action 必须重新执行；已经发布的祖先 action 不得因取消而从 Base 重新执行。某个中间 action 的 canonical input、fingerprint、依赖或顺序变化时，它之前未变化的最长 verified prefix 继续命中，从该 action 起的变化层与全部后缀重新执行和发布。
-
-opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
-
-每个 Before cache artifact 还保存包含完整累积 action manifest 的 replacement lineage。不同 canonical input、fingerprint、steps、依赖、能力或顺序形成不同 lineage，因而对应 artifact 可同时命中。
-
-同一 canonical action lineage 的新运行时 generation 发布后，NiceEval 才立即淘汰已被替代的 Docker image 或 E2B snapshot。仍被 private clone、lease 或未完成 capture 使用的旧 generation 不会删除。最后一个 root 释放后再次尝试淘汰。
-
-generation 是 cache repository 内全局递增的整数，含义保持「已分配的最大值 + 1」。分配与 reserve 在同一个 immediate 写事务中完成。
-repository schema 为 generation 建立索引，分配只读索引端点，成本不随已保留或已 tombstone 的 entry 数增长。
-索引随 UserDatabase 的应用级相邻迁移进入，不在已存在的库上临时创建。
-
-删除失败保留登记并重试，不按年龄、名称或“不在当前 Run”猜测垃圾。用户声明的 image、template 与 snapshot 永不由 NiceEval 自动删除。作者可见的运行开关只有 `sandboxCache.before: "use" | "bypass"` 和对应 CLI flag。
-
-## 运行事实的唯一归属
-
-`PreparedArtifact` 的 Run 级 prefix DAG 按完整 `BeforeCacheKey` 节点 single-flight。相同 key 的多个 Eval×Experiment 配对共享一次 preparation；节点的 activity、staging、publication 与 Scope 归 Run，不归任何 Attempt。
-
-不同 key 可在 `maxBeforeCacheConcurrency ∩ provider scheduling.lane.limit` 内并行。相同 `(executionDomainId, BeforeCacheKey)` 仍通过跨进程 publication lease 串行发布，等待者消费同一 committed `ArtifactIntent`。
-
-Run 保留全局 pre-dispatch barrier：所有 prefix 节点结算后才派发 Attempt。一个失败节点只阻断其 descendants 和依赖该 terminal prefix 的 Planned attempts；其余分支照常结算。取消停止并回收未结算节点的 staging 与 publication，但不回滚已验证发布的 immutable artifact。
-
-`Persistent`、`InvocationLocal` 与 `Unsupported` 的 lookup、restore、replay、satisfaction 与 cleanup 仍归各自 Attempt，不因 key 相同共享 activity、locator 或可写状态。
-
-无论能力类别，持久 artifact receipt 都只保存 provider-neutral artifact id、BeforeCacheKey、manifest、execution domain 与必要的验证 revision。它不保存本地 image/container/snapshot locator、credential value、secret bytes 或 Attempt locator。
-
-Attempt locator 只在全局 barrier 后实际 dispatch 时由当前 `RecordWriteSession` 分配；从调度、收尾反馈到 Record 提交始终使用同一个值。未派发 Planned attempt、queued prefix node 与 Run activity 都不制造 locator。
-
-静态 `niceeval debug` 不读取 cache，固定输出 `cacheLookup: "not-probed"`。运行反馈的闭合结果只有 `hit`、`replay`、`unsupported` 与 `degraded`；`replay` 另带 `miss | bypass` reason。Record 不保存本地 image/container locator、credential value 或 secret bytes。
-
-nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md)。原 Docker Profile 路径的最终迁移边界见 [Docker 执行配置](../../sandbox-docker-profiles/README.md)。
+Before cache 的身份、Provider 能力矩阵、降级规则与运行事实归属见 [Before cache](before-cache.md)；E2B、OpenSandbox 与 Instabox 的远端 snapshot 契约见 [远端 snapshot Before cache](remote-snapshot-cache.md)，持久账本见 [Data Model](../data-model.md)。
 
 ## 性能:预制实例、Sandbox 复用与 Sandbox 预热
 
@@ -499,127 +464,17 @@ nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Arc
 预制实例的构建与发布归项目和 Provider 原生工具；NiceEval 的 template factory 参数负责消费（工作流见 [Library · 预制实例](../library/prebuilt-environments.md)）。
 Sandbox 预热与 Sandbox 复用是 [Runner](../../../runner.md) 的调度职责。
 
+## Docker-owned cache inventory projection
+
+Docker cache repository 以单个只读 inventory operation 在同一 transaction snapshot 中列出 task-build 与 before-cache entry 及其 active lease 与 hold。该 operation 不做 startup reconcile、lease prune、provider mutation 或 GC planning。Docker administration 再复核 task-build image identity，并把两类 entry 投影为以 `kind` 判别的公开联合；Before cache 只采用 registry 已有 state，不因 inventory 改变 generation 或索引。
+
+公开 identity 只包含定位 artifact 所需的 task build key/tag/image id，或 before-cache entry id/key/image/base image id；计数只聚合 entry-local lease 与 hold。holder、operation lineage、声明正文和 GC lock 留在 repository 内部。Before cache 的公开归属不扩大 GC：现有 task-build plan/apply 是唯一删除入口。
+
 ## 相关阅读
 
 - [README](../README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](../library/README.md) —— 使用侧 API：路径、root、before action、自定义 provider。
+- [Before cache](before-cache.md) 与 [远端 snapshot Before cache](remote-snapshot-cache.md) —— 前缀身份、Provider 能力与远端 snapshot 契约。
+- [Data Model](../data-model.md) —— 远端 snapshot 账本。
 - [Nested Docker](../../sandbox-nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
 - [Runner](../../../runner.md) —— 预热与复用的调度职责。
-
-## Docker-owned cache inventory projection
-
-Docker cache repository 以单个只读 inventory operation 在同一 transaction snapshot 中列出 task-build 与 before-cache entry 及其 active lease/root。该 operation 不做 startup reconcile、lease prune、provider mutation 或 GC planning。Docker administration 再复核 task-build image identity，并把两类 entry 投影为以 `kind` 判别的公开联合；Before cache 只采用 registry 已有 state，不因 inventory 改变 generation 或索引。
-
-公开 identity 只包含定位 artifact 所需的 task build key/tag/image id，或 setup entry id/key/image/base image id；计数只聚合 entry-local lease/root。holder、operation lineage、声明正文和 GC lock 留在 repository 内部。Before cache 的公开归属不扩大 GC：现有 task-build plan/apply 是唯一删除入口。
-
-## OpenSandbox provider
-
-OpenSandbox provider 通过服务 API 将一个远端 Sandbox 绑定到现有 Attempt resource group；创建、命令、文件与销毁均由 provider 持有，Runner 不按名称分支。公开声明见 [Library](../library/README.md#opensandbox)。Docker、Kubernetes 等 runtime 由 OpenSandbox 服务端选择，不进入 NiceEval 的选项、计划 identity 或准入判断。服务部署和隔离策略归基础设施；provider 不从 runtime 名称推断专用 kernel 或 DockerExecution。
-
-`openSandbox` 使用官方 `@alibaba-group/opensandbox` SDK，依赖延迟加载。连接地址和 API key 从 `OPEN_SANDBOX_DOMAIN`、`OPEN_SANDBOX_API_KEY` 读取，API key 只进宿主 transport，不进入 identity、镜像变量集合或命令。
-
-所有请求使用 server proxy 并保留 SDK 返回的 endpoint 路由与认证 header。当前接入使用服务代理，不要求 execd 的 secureAccess；服务必须使用仅可信宿主可访问的私有入口，或在 HTTP/WebSocket 全路径前置鉴权。控制 API key 本身不能保护上游免鉴权的 proxy 路由。禁用 SDK create telemetry。目标平台由声明显式给出，不能从宿主架构推断远端镜像。
-
-起点是 image，工作目录为 `/home/sandbox/workspace`。发布 identity 包含 image、目标平台、资源限制、user、pathPrepend 与 lifetimeMs；连接与凭据不构成可分享内容。单实例只有一个销毁 owner。创建不自动重试歧义结果；获取实例后立即登记 Scope finalizer，ready 或工作目录初始化失败也销毁。作者必须显式声明有限的 lifetimeMs，实例仍随 Scope 关闭；该寿命不得短于 Attempt 剩余时限与 30 秒收尾预留。有限寿命负责客户端崩溃后的最终回收，不替代取消确认。服务拒绝该寿命时保留真实失败，不静默缩短。
-
-每次创建携带随机 provision token。创建失败后按该 token 查询并销毁已分配的实例，不接管其它请求。服务仍在处理但尚未返回的分配无法由一次查询排除，有限寿命约束这种未知状态；查询或销毁失败与原始创建失败一并报告。
-
-服务必须在销毁成功响应前终止实例及其进程，provider 才能将该响应作为回收确认。只返回异步删除受理或控制对象消失的服务不满足该契约，须在服务接入验收时验证；调用方声明 runtime 字符串不能替代这项证据。
-
-命令经原生 argv 执行，shell 明确为 `bash -lc`；cwd、env、身份与 PATH 由 provider 归一化。非零退出返回实际 exitCode，缺失终态不能伪装成功。超时、取消或命令流中断时销毁整个实例，并等待销毁确认后结束命令；这使跨命令后台任务无法在失联后继续执行。正常命令结束保留后台服务。文件接口复用统一 transfer 语义，文本与字节不混用。
-
-保留、暂停与复用报告 Unsupported / DestroyOnly；rootfs 准备缓存使用下述 Persistent 契约。受管双向进程通过下述 pipe 桥接兑现；镜像必须提供 Node.js 24。缺少运行时直接报错，不能退化成单次 shell。验收检查 argv 注入、非零退出、二进制与目录往返、超时及取消后实例不可访问、创建后初始化失败回收、独立实例隔离和凭据不进入 sandbox。
-
-### OpenSandbox 受管进程
-
-交互 adapter 使用 execd 的 `/pty` WebSocket pipe 模式，不能使用会合并 stderr 或回显输入的 PTY 模式。provider 通过同源 server proxy 取得 endpoint 和认证 header；连接地址必须与控制服务同源，不把控制凭据转交第三方 endpoint。
-
-镜像内 Node 24 作为 provider 的字节桥接运行时。桥接进程启动独立 process group 的目标 argv，stdin 协议显式区分写字节、关闭 stdin 和 terminate；stdout/stderr 以 base64 frame 分离传输。每次写入确认在目标 stdin 的 write callback 后返回，EOF 在 end callback 后确认。桥接协议不进入公开 API，也不把 stdout 当作 JSONL 文本命令输出来重新分词。
-
-目标退出或 terminate 后，桥接先 KILL 同一 process group，并从 Linux procfs 确认没有非 zombie 成员，再发布目标 exitCode/signal。确认超时、桥接错误、WebSocket 意外关闭或缺少完整终态时退休整个 Sandbox。正常完成后删除 PTY session；资源关闭可重入，失败必须保留 Provider finalizer 失败事实。Node 缺失时返回明确启动失败，不能报告交互能力已经可用。
-
-## OpenSandbox rootfs 准备缓存
-
-OpenSandbox 使用 `Persistent` before cache，不进入 Run 级 PreparedArtifact DAG。公开 `openSandbox` 参数保持不变，既有 `sandboxCache.before` 与 CLI bypass 同时控制 lookup 和 publication。缓存命中不改变 Attempt/result identity；Provider planner revision 保持不变，新增 cache format revision 只隔离缓存身份。
-
-### 能力与验证
-
-Base 必须是 digest-pinned image。cache domain 由规范化服务 URL 与凭据的不可逆摘要绑定；URL 路径、身份、目标平台和 provider format revision 都进入 BeforeCacheKey。持久化事实与反馈不保存 API key 或原始凭据。不同 domain 的 snapshot ID 不能互用、互相删除或被判定为已有缓存。
-
-Snapshot 只保存可持久化的 rootfs 状态，不保存进程、内存、卷或 tmpfs。初始化保留系统挂载集合；捕获前检测新增挂载及 rootfs 外的用户可写挂载，发现后继续 uncached，不将不完整 snapshot 发布为 hit。用户 action 的确定性承诺仍适用；需要运行中的 daemon 或其它运行时状态的步骤放在 command barrier 后。
-
-确定性 before action 可以把需复用的 Docker images 导出成 rootfs 内的归档，并停止自己的 daemon、卸载私有临时 data-root。恢复后由不缓存的 command 启动独立 daemon 并导入归档。Provider 不复制正在写入的 Docker data-root，不替作者推断 Docker registry、tag 或启动逻辑。
-
-已知敏感字节非空时不捕获；credential overlay、外部会话和 command barrier 后的状态不得发布。框架在 rootfs 私有路径保存严格解码的 manifest，包括 Base、domain、BeforeCacheKey、完整累计 action manifest 与 artifact format。恢复后逐项与当前请求及宿主登记比较，无法匹配则销毁恢复实例并按现有规则降级。
-
-### 持久模型
-
-OpenSandbox 缓存由 UserDatabase 的 `opensandbox-cache` repository 拥有，通过新相邻 migration 增加两张表；旧 Docker、E2B 与 Incus schema 和数据含义保持不变。所有写操作由 UserDatabase worker 的 `BEGIN IMMEDIATE` 事务完成，SDK 请求不持有数据库事务。
-
-`opensandbox_cache_artifacts` 每行表示一次本工具发起的 snapshot publication：
-
-| 字段 | 类型与约束 | 含义 |
-| --- | --- | --- |
-| artifact_id | TEXT PRIMARY KEY | 由宿主生成的 UUID，不是 provider locator |
-| domain_id | TEXT NOT NULL | 服务与身份域摘要 |
-| setup_prefix_key | TEXT NOT NULL | 已由通用 planner 计算的累计内容身份 |
-| base_identity | TEXT NOT NULL | 固定镜像 digest |
-| manifest_json | TEXT NOT NULL | 严格验证后的完整声明；不包含 secret |
-| replacement_scope | TEXT NOT NULL | 通用 declarationMetadata.replacementScope 的 canonical JSON |
-| generation | INTEGER UNIQUE NOT NULL CHECK > 0 | 全库单调分配的 generation |
-| snapshot_name | TEXT UNIQUE NOT NULL | niceeval 前缀与 artifact UUID；用于同一次创建的故障恢复 |
-| snapshot_id | TEXT NULL | 上游返回的 locator，按 domain 与值联合唯一 |
-| state | TEXT NOT NULL | building、ready、deleting、deleted |
-| lease_token | TEXT NULL | publication/删除操作的 fencing UUID |
-| lease_until | INTEGER NULL | 有界操作的过期时间，Unix 毫秒 |
-| created_at | INTEGER NOT NULL | 宿主创建时间 |
-| published_at | INTEGER NULL | 首次成功发布的时间；失败候选保持 NULL |
-
-相同 domain 与 setup_prefix_key 最多一行 ready，使用条件唯一索引约束。generation、domain/key/state、domain/replacement_scope/state 与 domain/state/lease_until 建索引。building/deleting 必须同时有 lease_token 与 lease_until；ready/deleted 必须同时为空。
-
-`opensandbox_cache_roots` 每行保护一次尚未完成或仍被当前后端持有的消费。字段为 root_id TEXT PRIMARY KEY、artifact_id TEXT NOT NULL REFERENCES artifacts、sandbox_id TEXT NULL、created_at INTEGER NOT NULL。按 artifact_id 建索引。lookup 在事务中验证 ready 与 manifest，插入 root 后才返回 snapshot locator；正常销毁与恢复失败且候选实例终结后释放 root。
-
-未确认释放的 root 不凭时钟删除，保守保留对应 artifact。
-
-reserve 在同一事务分配 generation 与 building intent。同 key 已 ready 返回已有候选；正在 publication 的 key 返回 contended，当前 action 不重跑。租约过期的 building 先由本 domain 的 SDK 按精确 snapshot_name 收敛，仅处理本登记拥有的实例；Creating 状态保留稍后处理，不重试创建第二份快照。
-
-publish 要求同一 artifact、lease token、未过期 lease 和已验证的 snapshot ID；失去 fence 不发布。发布与当前验证 clone 的 root 登记必须在同一事务中完成；backend 接管该 root 后才继续。失去 fence 的 clone 必须终结，不能作为未登记消费者继续。
-
-replacement_scope 精确使用通用 manifest 的 declarationMetadata.replacementScope；它包括完整累计 actionManifest，不跨不同内容或不同前缀深度替代。发布事务只允许当前 scope 最大已发布 generation 胜出。较大 generation 的 published_at 非空即表示已有胜者；即使后来进入删除状态也保留该事实。若更大 generation 已发布，较小 generation 即使 lease 有效也不能发布，必须终结验证 clone 并进入自身 snapshot 删除流程。
-
-新 generation 发布时，只把同 domain/replacement_scope 的较小 ready 标为待删；事务同时检查 root。存在 root 的旧 generation 保留至最后一个 root 释放。SDK 删除成功后记 deleted tombstone；失败保留 intent，下次本 domain 使用时重试。不扫描、删除用户或其它客户端创建的快照。
-
-### 运行时序与失败
-
-冷路径先从 Base 创建私有 Sandbox，执行 action，写 manifest，通过公开 `createSnapshot` 创建并等待 Ready。SDK 的 name 绑定 publication intent，创建响应丢失时仅查询该 name，不再发起新的 create。捕获成功后终结源实例，再从 snapshotId 创建新实例，验证 manifest 后发布并继续。每步沿用宿主 Scope 与 Attempt deadline；不能同时留下两个活跃 workload 来规避配额。
-
-暖路径从最深已登记前缀取 root lease，校验上游 snapshot 状态、name 与登记身份，再终结新建的空 Base 并创建 snapshot clone。恢复的 remote handle 原子替换 backend；清空用户 identity 与 PATH 等实例缓存，重新执行宿主初始化。所有 Sandbox 操作与最终销毁针对当前 handle，不保留旧实例引用。
-
-lookup/restore 错误按通用规则最多从 Base 重建一次并真实 replay。只有发出 snapshot 创建请求之前的敏感状态、挂载或 publication 竞争检查可以继续 uncached。创建请求发出后的失败、超时或响应歧义一律终结源实例并使 Attempt 失败；不得依赖暂时能执行命令来推断随后不会冻结，也不在该 Attempt 重跑 action。Snapshot 进入可删除终态后回收；不能确认的操作保留登记。部分恢复、未验证 manifest、非 Ready 快照和失去 lease 均不能报 hit。资源释放失败保留登记并呈现错误，不改成静默成功。
-
-OpenSandbox Snapshot 删除不保证回收 Kubernetes registry blobs；provider 只声称删除其可控制的 Snapshot API 资源。registry retention 与容量监控属于部署方；NiceEval 不持有 registry 写凭据或直接删除 image tags。
-
-### 验收
-
-通过安装后 CLI 和真实 OpenSandbox 服务验证：冷路径 replay、另一次 Invocation 的 hit、改变 action 内容后的 miss、bypass 真执行，以及两个 clone 的写入隔离。删除上游 snapshot 或破坏 manifest 必须降级到干净 Base；捕获后的 action 不能因降级执行两次。还须验证 root release、取消和失败后无本轮活跃 Sandbox/Job，以及 UserDatabase 从前一版本迁移后原 provider cache 仍可读。运行无需付费模型。
-
-
-## Instabox snapshot Provider
-
-`instabox.ts` 拥有纯配置校验、template identity 和 Provider plan；`instabox/` 拥有 HTTPS 协议解码、Machine 资源、SSH 命令与文件传输。Runner 继续只使用统一 Provider 契约，不按 Instabox 名称分支。
-
-固定服务 origin、snapshot ID、Provider revision、Linux x64 GNU 平台、显式寿命、规范化资源和 PATH 前缀组成 identity。Machine ID、创建幂等键、SSH token 与 API key 不参与 identity；不同 snapshot ID 保守地视为不同 Sandbox 起点，不声称内容等价。配置求值不访问网络。
-
-`materialize` 先验证 snapshot 的具体 ID 与 ready 状态，再以唯一幂等键创建 Machine。请求禁止自动 Vault 或 Org Secrets 注入，明确设置 delete deadline、资源与禁用自动暂停。收费计划必须允许这些设置；拒绝不能降级为可能暂停的机器。创建返回 operation 后，立刻登记资源回收，再等待 operation succeeded 与运行就绪。创建响应失联时只用相同幂等键重取受理结果，不发起第二次逻辑创建。无法取得身份时报告无法确认回收，服务端 delete deadline 是最后上界。
-
-每个 Machine 的 Scope 拥有一次删除职责。失败、取消与正常退出均调用 DELETE，附带确认 ID 和稳定删除幂等键，等待 operation succeeded。已有 operation 冲突时等待其终态后再删除；404 表示资源已不存在。删除失败保持未回收状态并传播错误，不能先标记成功。Snapshot 不由 Attempt Scope 拥有。
-
-HTTPS API 返回值在边界通过 Schema 解码；错误只交付 HTTP 状态、服务错误 code，不转交可能回显凭据的响应正文。默认请求有有界传输超时，资源等待由 Attempt deadline 或显式 lifetime 限制。回收使用独立有界时限，不继承已取消的 Attempt signal。
-
-SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每个执行连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
-
-普通命令的前台进程结束后关闭自身管道并提交退出码，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。双向进程通过 SSH channel 写 stdin 与发送 EOF。连接异常、退出码缺失、命令超时或取消均退休并删除整台 Machine，等待确认后再 settle。正常退出只关闭连接。外层 Scope 最终删除实例，包含其余后代进程。
-
-文件使用原生 HTTP bytes 接口，目录传输复用既有收集和下载能力。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。before cache、reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力。
-
-验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。

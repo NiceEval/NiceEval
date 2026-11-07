@@ -258,7 +258,7 @@ terminal-only 不能由一次非原子 procfs 快照直接接受。只要 kernel
 Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
 测试只通过安装后 CLI 的 result 事件与固定 `query run --request <request>` 读回公开结果，不读取 `.niceeval/` 私有布局。
 
-### Sandbox setup-prefix cache {#sandbox-setup-prefix-cache}
+### Docker Before cache {#sandbox-setup-prefix-cache}
 
 `e2e/lifecycle/test/sandbox-setup-prefix-cache.test.ts` 是单容器 Docker before 缓存真实运行与复用的 Journey owner。
 它在同一个隔离消费项目中连续启动四个独立 `niceeval exp` Invocation。
@@ -337,9 +337,9 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Insight](insight.md)：View HTTP、浏览器审阅与生命周期。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。
-## 不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。 {#shared-setup-prefix-dag}
+## 不同 Eval×Experiment 配对共享准备图中的前缀，并在公共父层发布后并行准备独立后缀。 {#shared-setup-prefix-dag}
 
-不同 Eval×Experiment 配对共享 PreparedArtifact 前缀，并在公共父层发布后并行准备独立后缀。
+不同 Eval×Experiment 配对共享准备图中的前缀，并在公共父层发布后并行准备独立后缀。
 ## 通用执行轨迹在 Record 搬迁后保留有界摘要、稳定身份与精确证据读取。 {#execution-trace-portable}
 
 通用执行轨迹在 Record 搬迁后保留有界摘要、稳定身份与精确证据读取。

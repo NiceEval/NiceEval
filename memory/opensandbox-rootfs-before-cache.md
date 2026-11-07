@@ -24,4 +24,4 @@ procfs mountinfo 不能走 execd 文件下载：它声明零长度。实现使�
 
 ## 契约
 
-目标契约见 [Sandbox 架构](../docs/feature/sandbox/architecture/README.md#opensandbox-rootfs-准备缓存)。Snapshot API 删除不等于 registry blobs 回收。部署侧仍需管理 retention 与容量；当前方案不宣称进程或内存快照。
+目标契约见 [Sandbox 架构](../docs/feature/sandbox/architecture/remote-snapshot-cache.md#opensandbox)。Snapshot API 删除不等于 registry blobs 回收。部署侧仍需管理 retention 与容量；当前方案不宣称进程或内存快照。

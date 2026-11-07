@@ -1,7 +1,7 @@
 # Nested Docker —— Lifecycle
 
 V1 是 DestroyOnly。
-每条 Attempt 使用一台一次性 Incus VM；成功、失败、中断与强杀后都销毁 instance、disk、network 与 lease。
+每条 Attempt 使用一台一次性 Incus VM；成功、失败、中断与强杀后都销毁 instance、disk 与 network，并释放 hold。
 `--keep-sandbox` 与 `sandboxReuse` 在创建资源前失败。
 
 ## Pre-dispatch planning and prepare
@@ -103,23 +103,23 @@ prepared artifact 是有界资源。`committed` artifact 持续占用 descriptor
 `artifactMaxInstances`。每个 artifact 持久化 replacement scope；repository 以 scope head
 证明同 lineage 的旧 generation 已被替代。
 
-consumer handoff 在 clone 前重新验证 committed generation 并取得 lease，clone 无论成功或失败都释放 lease。
-新 generation committed 并成为 head 后，旧 head 只有在 lease 归零，且 virtual-machine type
+consumer handoff 在 clone 前重新验证 committed generation 并取得 hold，clone 无论成功或失败都释放 hold。
+新 generation committed 并成为 head 后，旧 head 只有在 hold 归零，且 virtual-machine type
 instance 与 custom storage volume 的双向 metadata 精确匹配时才进入 `retiring`。两项 provider
 对象的 absence receipt 分别落库，都确认 absent 后才写 `released`。中断恢复只继续同一个已登记
 prepared artifact。
 
 显式 GC 在 claim 后中断或删除失败时，新的合法 preview 可以接管该
 `invalid` / `retiring` intent；旧 plan 过期或已有失败 outcome 不会永久占住容量。接管沿用已登记的
-回收依据，重新确认 lease 为零、现存对象的双向 metadata 和逐对象 absence，不清除 metadata 或采纳
+回收依据，重新确认 hold 为零、现存对象的双向 metadata 和逐对象 absence，不清除 metadata 或采纳
 未知对象。新 plan 原子替换 retirement owner，旧 preview 不能夺回删除权，旧 outcome 仍只返回原结果。
 
-若满容量时没有 superseded 且无 lease 的候选，说明有效 working set 确实超出容量。
+若满容量时没有 superseded 且无 hold 的候选，说明有效 working set 确实超出容量。
 NiceEval 保留全部缓存并报告容量不足，不做 LRU 猜测；错误同时给出
 `niceeval sandbox provider inventory incus` 与 `gc incus --unused-for <duration>` 作为下一步，由用户决定
 用哪些旧缓存换空间。
 
-consumer lease 成功取得时，repository 更新该 artifact 的 `lastSuccessfulLeaseAt`。这是 `gc incus` 的
+consumer hold 成功取得时，repository 更新该 artifact 的 `lastSuccessfulHoldAt`。这是 `gc incus` 的
 `unused` 规则唯一的时间依据；lookup、inventory、doctor 与 `--dry` 不刷新它。
 
 ### 字节容量准入
@@ -153,7 +153,7 @@ descriptor 的每个 domain 都声明非负安全整数字节值 `artifactStorag
 pool 名、空闲字节、所需字节与上述两条下一步命令，不进入 Provider copy，也不隐式触发 GC。估算是 admission
 的保守下界，不是 attested 容量，不改变 reference comparable 判定。
 
-旧 revision 中没有 replacement scope 的 committed artifact 仍可按精确 identity 取得 consumer lease。
+旧 revision 中没有 replacement scope 的 committed artifact 仍可按精确 identity 取得 consumer hold。
 repository 不猜测或回填其 scope，也不把它纳入自动回收候选。
 默认检查 reference；`--development` 分开检查 development domain。
 两条结果互相不替代。

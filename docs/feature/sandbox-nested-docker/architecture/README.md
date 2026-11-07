@@ -20,7 +20,7 @@ Eval DockerExecutionRequirement
 | Owner | 拥有 | 不拥有 |
 |---|---|---|
 | NiceEval planning | requirement、capability check、CaseKey、BuildKey、BeforeCacheKey、Run 级 prepare 协调 | Provider locator 与 mount |
-| NiceEval control plane | SandboxAllocation ledger、ArtifactIntent、lease、generation、fencing、期望终态 | VM、host filesystem 与 Docker database |
+| NiceEval control plane | SandboxAllocation ledger、ArtifactIntent、hold、lease、generation、fencing、期望终态 | VM、host filesystem 与 Docker database |
 | Provider | instance、host storage pool、virtual disk、snapshot、clone、network、artifact project inventory | Attempt 结果与 Agent replay 决策 |
 | guest init / agent | guest mount、dockerd、Unix socket、quiesce receipt | host mount、allocation admission 与 artifact promotion |
 
@@ -114,18 +114,18 @@ consumer 从 artifact project 跨 project copy template root；Docker data 必�
 按 intent 和 metadata 查询，不能盲目重发。无 committed intent 的对象是 orphan；已提交但不再能验证的对象
 进入 quarantine，均不得被 warm lookup 采用。
 
-Incus repository 在用户级 UserDatabase 中独立持久化 replacement head、consumer lease
+Incus repository 在用户级 UserDatabase 中独立持久化 replacement head、consumer hold
 与 absence receipt。这些是 NiceEval repository 术语，不是 Incus API 状态。replacement scope
 来自 provider-neutral Before cache manifest；head 只
 指向已 committed generation。
 
-consumer handoff 在 clone 前重新核对 generation 并取得 lease，clone settlement 释放 lease。
-旧 head 只有在 lease 归零后才能进入 `retiring`。virtual-machine type instance 与 dependent
+consumer handoff 在 clone 前重新核对 generation 并取得 hold，clone settlement 释放 hold。
+旧 head 只有在 hold 归零后才能进入 `retiring`。virtual-machine type instance 与 dependent
 custom storage volume 的 absent 证据分别落库，二者齐全才提交 `released`。
 
 Core 只观察可复用与容量结果；Docker、E2B 与 Incus 各自拥有内部状态词汇。
 Incus adapter 使用官方的 instance、custom storage volume、project、copy 与 delete 资源/操作名。
-NiceEval repository 负责 prepared artifact、head、lease、`retiring` 与 absence receipt。
+NiceEval repository 负责 prepared artifact、head、hold、`retiring` 与 absence receipt。
 
 clean publication failure 可以回到最深的已提交 ancestor 或 exact base，重新执行后续 prefix。
 unknown acceptance、identity 漂移、metadata 不一致或无法删除 orphan 时一律 fail closed。

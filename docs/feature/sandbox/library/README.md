@@ -197,7 +197,7 @@ interface Config {
   readonly sandboxCache?: {
     readonly before?: "use" | "bypass";
   };
-  /** 同一 Run 内 PreparedArtifact 前缀节点可同时准备的最大数；省略为 2。 */
+  /** 同一 Run 内准备图可同时准备的最大节点数；省略为 2。 */
   readonly maxBeforeCacheConcurrency?: number;
 }
 
@@ -218,7 +218,7 @@ export default defineConfig({
 
 `niceeval debug` 会显示求值后的 `setupCache: use | bypass`，但仍固定显示 `cacheLookup: "not-probed"`。运行时 bypass 使用 `replay` 反馈并带 `reason: "bypass"`。
 
-`maxBeforeCacheConcurrency` 只限制一个 Run 中 `PreparedArtifact` 前缀 DAG 的同时 prepare 节点数；它必须是正整数，省略为 `2`。`niceeval exp` 的 `--max-before-cache-concurrency <n>` 只临时替代本次 Invocation 的该值。它既不改变 `BeforeCacheKey`、BuildKey、CaseKey、Attempt/result identity，也不替代 `maxConcurrency`：前者限制派发前的共享准备，后者限制已派发的 Attempt。实际同时 prepare 数还受 provider `scheduling.lane.limit` 约束，取两者交集。
+`maxBeforeCacheConcurrency` 只限制一个 Run 中[准备图](../../../concepts.md#before-cache-preparation-graph)的同时 prepare 节点数；它必须是正整数，省略为 `2`。`niceeval exp` 的 `--max-before-cache-concurrency <n>` 只临时替代本次 Invocation 的该值。它既不改变 `BeforeCacheKey`、BuildKey、CaseKey、Attempt/result identity，也不替代 `maxConcurrency`：前者限制派发前的共享准备，后者限制已派发的 Attempt。实际同时 prepare 数还受 provider `scheduling.lane.limit` 约束，取两者交集。
 
 ## 起点参数与 `lifetimeMs`
 
@@ -424,7 +424,7 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | 要准备的东西 | 放哪 | 怎么收尾 |
 |---|---|---|
 | 所有 attempt 都相同、无需运行中 daemon 的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用构建结果 | provider 的 image/template/snapshot 生命周期管理 |
-| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](../architecture/README.md#before-缓存的身份与验证边界)；typed inputs、执行内容与前缀顺序决定 BeforeCacheKey；声明 owner 只负责归属 | 普通 Docker 恢复 exact image；Incus 恢复完整 verified Provider artifact；其它 Provider 如实 replay |
+| 必须等 Provider ready 后生成的确定性状态 | [可缓存 before](../architecture/before-cache.md#身份与验证边界)；typed inputs、执行内容与前缀顺序决定 BeforeCacheKey；声明 owner 只负责归属 | 普通 Docker 恢复 exact image；Incus、E2B、OpenSandbox 与 Instabox 恢复完整 verified Provider artifact；其它 Provider 如实 replay |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../../experiments/library/README.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`before()`](layers.md);每次 occurrence 可以 restore 或 replay | 成功取得的外部资源用 `context.onCleanup()` 登记释放;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`before()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;无条件收尾用 `after()`,条件释放用 `context.onCleanup()` |
@@ -511,7 +511,7 @@ const sandbox = openSandbox({
 
 lifetimeMs 是作者显式选择的实例寿命，由服务校验，不能短于有界 Attempt 的剩余时限加 30 秒收尾预留。正常结束和取消均提前销毁，不等待寿命耗尽。命令超时或取消会销毁整个 Sandbox。保留与 Sandbox 复用不受支持。digest-pinned 镜像可使用 rootfs before cache，服务须配置公开 Snapshot API 与持久镜像存储。普通容器不提供专用 kernel 或内部 Docker daemon，不能满足 Nested Docker requirement。
 
-rootfs 缓存不保存进程、卷或 tmpfs。捕获前发现新增挂载或已知敏感字节时，当前 Attempt 继续执行但不发布缓存。运行中的服务应在 command barrier 后启动；Docker 镜像可先导出为 rootfs 内归档，再在恢复后导入独立 daemon。`sandboxCache.before` 与 CLI bypass 同时控制 lookup 和 publication。快照请求发出后失败会终结 Attempt，不重复已执行的 action。
+rootfs 缓存在派发前由 Run 准备一次，同一批 Attempt 都从同一份 snapshot 启动；它不保存进程、卷或 tmpfs。准备时发现新增挂载或已知敏感字节，不发布缓存，Attempt 照常执行剩余 before。运行中的服务应在 command barrier 后启动；Docker 镜像可先导出为 rootfs 内归档，再在恢复后导入独立 daemon。`sandboxCache.before` 与 CLI bypass 同时控制 lookup 和 publication。快照请求发出后失败会让依赖该前缀的配对在派发前失败，不重复已执行的 action。完整规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#opensandbox)。
 
 镜像必须以 root 启动 execd，并提供 Bash 和 Git。`user` 控制命令与 Agent 的身份，HOME、USER、LOGNAME 从该用户的 `/etc/passwd` entry 取得；调用方可显式替换这些变量。
 
@@ -539,7 +539,7 @@ instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
 
 Snapshot 必须提供 Linux x64 GNU 系统、Bash、Git、Node.js 24 或更新版本，以及允许免密 sudo 的非 root 登录用户。工作目录为 `/data/home/workspace`，文件和命令默认使用 snapshot 的登录身份；单条命令只额外支持 `user: "root"`。`pathPrepend` 按声明顺序作用于所有受管命令。平台和工具在 Machine ready 后检查，失败立即回收。
 
-该 Provider 的实例仅属于一条 Attempt。不支持留存、复用、before snapshot 缓存或 Nested Docker requirement；before 正常执行。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制，超时或取消在确认整台 Machine 删除后才拒绝返回。
+该 Provider 的实例仅属于一条 Attempt。不支持留存、复用或 Nested Docker requirement。声明式 before 前缀在派发前由 Run 准备一次并保存为 NiceEval 拥有的 snapshot，每个 Attempt 从它创建独立 Machine；snapshot 保存磁盘，不保存进程、内存或 tmpfs。规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#instabox)。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制，超时或取消在确认整台 Machine 删除后才拒绝返回。
 
 Snapshot 由项目的 Instabox 原生构建脚本管理，必须等到 `ready` 才写入配置。它保存系统文件和 `/data`，不保存进程；基础 snapshot 不应含 Agent 登录凭据。起点属于其 org，不能假定跨账户可见。OCI 导入会叠加 Instabox 系统文件，生成的 snapshot 与原 Docker image 是不同 Sandbox 起点。
 

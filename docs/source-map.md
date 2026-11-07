@@ -43,7 +43,8 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 | 目标行为 | 当前源码区域 |
 |---|---|
 | Experiment 发现、调度、Invocation-local 并发、共享状态租约、Sandbox 生命周期、reuse 与 receipt | `packages/niceeval/src/runner/{run,lock,shared-state-lease}.ts` 及同目录协作者；由 `experimentHost` 调用 |
-| [Setup 前缀缓存](roadmap/sandbox-cache-setup-prefix/README.md) 的 Action state、DAG 线性化、前缀协调、capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-setup-prefix-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/` 与 `packages/niceeval/src/runner/attempt.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
+| [Before cache](feature/sandbox/architecture/before-cache.md) 的 Action state、准备图、Attempt 内 capture 与 private clone | `packages/niceeval/src/sandbox/{action,backend,docker,docker-before-cache}.ts`、`packages/niceeval/src/sandbox/docker-profile/`（含 `before-cache.ts`）与 `packages/niceeval/src/runner/{before-cache-plan,before-cache-preparation,attempt}.ts`；Profile 的 raw-image artifact、lease、journal 与回收落在 `packaging/docker-profile-host/` |
+| [远端 snapshot Before cache](feature/sandbox/architecture/remote-snapshot-cache.md) 的协议与[账本](feature/sandbox/data-model.md) | `packages/niceeval/src/sandbox/remote-snapshot/{preparer,ledger,driver}.ts`；各 Provider 的 driver 在 `sandbox/e2b-snapshot-driver.ts`、`sandbox/opensandbox/snapshot-driver.ts` 与 `sandbox/instabox/snapshot-driver.ts` |
 | execution claim 与共享资源协调 | `packages/niceeval/src/coordination/`；不形成公开持久 writer 或 maintenance lease |
 | Run Core、expected slots、Attempt publication、reference binding、state 与 tombstone | 目标 owner 为 `packages/niceeval/src/run/`；当前 `packages/niceeval/src/record/{model,sqlite,host}/` 是需要向该边界收敛的内部实现 |
 | SQLite schema、migration、generation retention、checkpoint 与 GC | `packages/niceeval/src/record/sqlite/` 等内部 adapter 区域；不形成 package export、CLI 或可搬运输入 |
