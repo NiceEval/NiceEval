@@ -20,10 +20,10 @@ export interface OpenSandboxOptions {
 
 const providerModule: SandboxProviderModule<OpenSandboxOptions> = {
   id: "niceeval/opensandbox-image",
+  beforeCache: { _tag: "Unsupported", reason: "remote snapshot preparer pending" },
   capabilities: {
     retention: { _tag: "DestroyOnly" },
     reuse: { _tag: "Unsupported", reason: "OpenSandbox instances belong to one Attempt." },
-    setupPrefix: { _tag: "Persistent", coverage: "all" },
     sessionLimit: { _tag: "ProviderValidated", reason: "The OpenSandbox service validates instance lifetime." },
   },
   collectBuildPreparation: () => Effect.succeed(Option.none()),

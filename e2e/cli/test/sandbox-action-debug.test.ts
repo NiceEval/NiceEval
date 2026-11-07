@@ -12,8 +12,8 @@ import { cliE2E } from "./context.ts";
 const PRIVATE_ENV_KEY = "NICEEVAL_DEBUG_PRIVATE_TOKEN";
 const PRIVATE_ENV_VALUE = "debug-env-value-must-not-leak-91f65d";
 const PRIVATE_STDIN = "debug-stdin-must-not-leak-4a360c\n";
-const EPHEMERAL_SETUP_PREFIX_REASON =
-  "Persistent setup-prefix cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.";
+const EPHEMERAL_BEFORE_CACHE_REASON =
+  "Persistent before cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.";
 
 type CommandPlan = DebugPlanDocument["commandPlan"];
 type CommandPlanStep = CommandPlan["experiments"][number]["beforeLanes"][number];
@@ -75,7 +75,7 @@ function expectPlannedCache(node: CommandPlanStep, id: string) {
   const cache = node.cache!;
   expect(cache.lookup).toBe("not-probed");
   expect(cache.capability).toBe("unsupported");
-  expect(cache.capabilityReason).toBe(EPHEMERAL_SETUP_PREFIX_REASON);
+  expect(cache.capabilityReason).toBe(EPHEMERAL_BEFORE_CACHE_REASON);
   expect(cache.runtime).toEqual({ status: "pending", finalKey: "not-probed" });
   return cache;
 }
@@ -329,7 +329,7 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     expect(human.stdout).toContain("execution order: #");
     expect(human.stdout).toContain("cache: not-probed · unsupported · runtime pending · final key not-probed");
     expect(human.stdout.replace(/\s+/gu, "")).toContain(
-      `cache unsupported reason: ${EPHEMERAL_SETUP_PREFIX_REASON}`.replace(/\s+/gu, ""),
+      `cache unsupported reason: ${EPHEMERAL_BEFORE_CACHE_REASON}`.replace(/\s+/gu, ""),
     );
     expect(human.stdout).not.toContain(" · eligible");
     expect(human.stdout).not.toContain(" · ineligible:");

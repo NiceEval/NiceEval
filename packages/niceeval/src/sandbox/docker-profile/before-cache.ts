@@ -1,26 +1,26 @@
 import { Effect } from "effect";
 import {
-  SandboxSetupPrefixCacheAmbiguityError,
-  SandboxSetupPrefixCacheCaptureError,
-  SandboxSetupPrefixCacheCancellationError,
-  SandboxSetupPrefixCacheLookupError,
-  SandboxSetupPrefixCacheRestoreError,
-  type SandboxSetupPrefixCacheCapability,
-  type SandboxSetupPrefixCacheEligibility,
-  type SandboxSetupPrefixCacheOperation,
+  BeforeCacheAmbiguityError,
+  BeforeCacheCaptureError,
+  BeforeCacheCancellationError,
+  BeforeCacheLookupError,
+  BeforeCacheRestoreError,
+  type AttemptBeforeCache,
+  type BeforeCacheEligibility,
+  type BeforeCacheStep,
 } from "../backend.ts";
 import {
-  captureDockerProfileSetupPrefix,
+  captureDockerProfileBeforeCache,
   DockerProfileControlError,
   DockerProfileControlAmbiguityError,
   DockerProfileControlCancellationError,
-  restoreDockerProfileSetupPrefix,
+  restoreDockerProfileBeforeCache,
   type DockerProfileLease,
   type DockerProfileReservation,
-  type DockerProfileSetupPrefixArtifactIdentityV1,
+  type DockerProfileBeforeCacheArtifactIdentityV1,
 } from "./runtime.ts";
 
-export interface DockerProfileSetupPrefixSession {
+export interface DockerProfileBeforeCacheSession {
   readonly lease: DockerProfileLease;
   readonly currentReservation: () => DockerProfileReservation;
   /** Internal deterministic seam; production uses the bounded control default. */
@@ -29,9 +29,9 @@ export interface DockerProfileSetupPrefixSession {
   readonly replaceReservation: Effect.Effect<DockerProfileReservation, Error>;
 }
 
-export interface DockerProfileSetupPrefixTarget {
-  readonly session: DockerProfileSetupPrefixSession;
-  eligibility(): SandboxSetupPrefixCacheEligibility;
+export interface DockerProfileBeforeCacheTarget {
+  readonly session: DockerProfileBeforeCacheSession;
+  eligibility(): BeforeCacheEligibility;
   quiesceAndStop(signal: AbortSignal): Promise<void>;
   /** Drop Docker handles only after the outer container has been proven stopped. */
   retireStopped(): void;
@@ -52,24 +52,24 @@ function promiseEffect<A>(operation: (signal: AbortSignal) => Promise<A>): Effec
   });
 }
 
-function freshReservation(target: DockerProfileSetupPrefixTarget): Effect.Effect<DockerProfileReservation, Error> {
+function freshReservation(target: DockerProfileBeforeCacheTarget): Effect.Effect<DockerProfileReservation, Error> {
   return Effect.andThen(
     Effect.sync(() => target.retireStopped()),
     target.session.replaceReservation,
   );
 }
 
-function createCurrent(target: DockerProfileSetupPrefixTarget): Effect.Effect<string, Error> {
+function createCurrent(target: DockerProfileBeforeCacheTarget): Effect.Effect<string, Error> {
   return promiseEffect((signal) => target.createFromCurrent(signal));
 }
 
 function restoreArtifact(
-  target: DockerProfileSetupPrefixTarget,
+  target: DockerProfileBeforeCacheTarget,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
-  expected?: DockerProfileSetupPrefixArtifactIdentityV1,
+  input: BeforeCacheStep,
+  expected?: DockerProfileBeforeCacheArtifactIdentityV1,
 ) {
-  return promiseEffect((signal) => restoreDockerProfileSetupPrefix(
+  return promiseEffect((signal) => restoreDockerProfileBeforeCache(
     target.session.lease,
     reservation,
     input,
@@ -80,11 +80,11 @@ function restoreArtifact(
 }
 
 function isArtifactMiss(cause: Error): boolean {
-  return cause instanceof DockerProfileControlError && cause.code === "setup-prefix-miss";
+  return cause instanceof DockerProfileControlError && cause.code === "before-cache-miss";
 }
 
 function artifactReceipt(
-  artifact: DockerProfileSetupPrefixArtifactIdentityV1,
+  artifact: DockerProfileBeforeCacheArtifactIdentityV1,
   reservation: DockerProfileReservation,
 ): { readonly entryId: string; readonly generation: number; readonly artifactId: string } {
   return {
@@ -96,35 +96,35 @@ function artifactReceipt(
 
 function captureFailure(
   cause: Error,
-  target: DockerProfileSetupPrefixTarget,
-  input: SandboxSetupPrefixCacheOperation,
+  target: DockerProfileBeforeCacheTarget,
+  input: BeforeCacheStep,
 ) {
   const common = {
-    operation: "publish Docker profile setup-prefix artifact",
-    setupPrefixKey: input.manifest.setupPrefixKey,
+    operation: "publish Docker profile before-cache artifact",
+    beforeCacheKey: input.declaration.beforeCacheKey,
     domainId: target.session.lease.binding.profile.profileId,
     operationId: input.operationId,
   } as const;
   if (cause instanceof DockerProfileControlCancellationError ||
       (cause instanceof DockerProfileControlAmbiguityError && cause.terminal === "cancel-fenced")) {
-    return new SandboxSetupPrefixCacheCancellationError({
+    return new BeforeCacheCancellationError({
       ...common,
       terminal: "cancel-fenced",
       reason: "the Host fenced the operation and proved its unpublished state was scrubbed",
     });
   }
   if (cause instanceof DockerProfileControlAmbiguityError) {
-    return new SandboxSetupPrefixCacheAmbiguityError({
+    return new BeforeCacheAmbiguityError({
       ...common,
       terminal: "unresolved",
-      reason: "the Host could not prove whether setup-prefix publication completed",
+      reason: "the Host could not prove whether before-cache publication completed",
       diagnosticCommand: `niceeval docker profile doctor ${target.session.lease.binding.alias}`,
     });
   }
-  return new SandboxSetupPrefixCacheCaptureError({
-    operation: "capture Docker profile setup-prefix and restore a private continuation",
+  return new BeforeCacheCaptureError({
+    operation: "capture Docker profile before-cache and restore a private continuation",
     reason: reasonOf(cause),
-    setupPrefixKey: input.manifest.setupPrefixKey,
+    beforeCacheKey: input.declaration.beforeCacheKey,
     domainId: target.session.lease.binding.profile.profileId,
     cause,
   });
@@ -136,13 +136,13 @@ function captureFailure(
  * and then replays the exact original container.create spec. This module never
  * enters the ordinary local-Docker image/index cache path.
  */
-export function makeDockerProfileSetupPrefixCacheCapability(
-  target: DockerProfileSetupPrefixTarget,
-): SandboxSetupPrefixCacheCapability {
+export function makeDockerProfileBeforeCacheCapability(
+  target: DockerProfileBeforeCacheTarget,
+): AttemptBeforeCache {
   return Object.freeze({
     eligibility: () => target.eligibility(),
 
-    lookupAndRebase: (input: SandboxSetupPrefixCacheOperation) => Effect.gen(function* () {
+    lookupAndRestore: (input: BeforeCacheStep) => Effect.gen(function* () {
       yield* promiseEffect((signal) => target.quiesceAndStop(signal));
       let reservation = yield* freshReservation(target);
       const restored = yield* Effect.result(restoreArtifact(target, reservation, input));
@@ -150,14 +150,14 @@ export function makeDockerProfileSetupPrefixCacheCapability(
         const sandboxId = yield* createCurrent(target);
         return {
           _tag: "Restored" as const,
-          setupPrefixKey: input.manifest.setupPrefixKey,
+          beforeCacheKey: input.declaration.beforeCacheKey,
           ...artifactReceipt(restored.success.artifact, reservation),
           sandboxId,
         };
       }
       if (isArtifactMiss(restored.failure)) {
         yield* createCurrent(target);
-        return { _tag: "Miss" as const, setupPrefixKey: input.manifest.setupPrefixKey };
+        return { _tag: "Miss" as const, beforeCacheKey: input.declaration.beforeCacheKey };
       }
 
       // A corrupt/interrupted restore may quarantine or partially populate its
@@ -167,23 +167,23 @@ export function makeDockerProfileSetupPrefixCacheCapability(
       yield* createCurrent(target);
       return {
         _tag: "Miss" as const,
-        setupPrefixKey: input.manifest.setupPrefixKey,
+        beforeCacheKey: input.declaration.beforeCacheKey,
         recovery: "restore-failed-replayed" as const,
       };
-    }).pipe(Effect.mapError((cause) => new SandboxSetupPrefixCacheLookupError({
-      operation: "restore Docker profile setup-prefix artifact into a new private slot",
+    }).pipe(Effect.mapError((cause) => new BeforeCacheLookupError({
+      operation: "restore Docker profile before-cache artifact into a new private slot",
       reason: reasonOf(cause),
-      setupPrefixKey: input.manifest.setupPrefixKey,
+      beforeCacheKey: input.declaration.beforeCacheKey,
       domainId: target.session.lease.binding.profile.profileId,
       cause,
     }))),
 
-    captureAndRebase: (input: SandboxSetupPrefixCacheOperation) => Effect.gen(function* () {
+    capture: (input: BeforeCacheStep) => Effect.gen(function* () {
       if ((input.knownSensitiveValues?.filter((value) => value.length > 0).length ?? 0) > 0) {
         return {
           _tag: "Unsupported" as const,
           code: "sensitive-state" as const,
-          reason: "Docker Profile setup-prefix capture refuses actions with framework-known sensitive values",
+          reason: "Docker Profile before-cache capture refuses actions with framework-known sensitive values",
         };
       }
       yield* promiseEffect((signal) => target.quiesceAndStop(signal));
@@ -192,7 +192,7 @@ export function makeDockerProfileSetupPrefixCacheCapability(
       // unmounted. V1 therefore fails the Attempt and lets the existing Scope
       // owner perform reservation release/reconciliation; it never restarts the
       // old outer container from this ambiguous boundary.
-      const captured = yield* promiseEffect((signal) => captureDockerProfileSetupPrefix(
+      const captured = yield* promiseEffect((signal) => captureDockerProfileBeforeCache(
         target.session.lease,
         target.session.currentReservation(),
         input,
@@ -214,30 +214,30 @@ export function makeDockerProfileSetupPrefixCacheCapability(
       if (captured.state === "already-published") {
         return {
           _tag: "Contended" as const,
-          setupPrefixKey: input.manifest.setupPrefixKey,
+          beforeCacheKey: input.declaration.beforeCacheKey,
           reason: "indexed-generation" as const,
         };
       }
       return {
         _tag: "Captured" as const,
-        setupPrefixKey: input.manifest.setupPrefixKey,
+        beforeCacheKey: input.declaration.beforeCacheKey,
         ...artifactReceipt(captured.artifact, reservation),
         sandboxId,
       };
     }).pipe(Effect.mapError((cause) => captureFailure(cause, target, input))),
 
-    recoverCleanBase: () => Effect.gen(function* () {
+    fallBackToBase: () => Effect.gen(function* () {
       yield* promiseEffect((signal) => target.quiesceAndStop(signal));
       yield* freshReservation(target);
       const sandboxId = yield* createCurrent(target);
       const eligibility = target.eligibility();
       if (eligibility._tag !== "Eligible") return eligibility;
       return {
-        _tag: "RecoveredCleanBase" as const,
-        baseImageId: eligibility.baseImageId,
+        _tag: "FellBackToBase" as const,
+        baseIdentity: eligibility.baseIdentity,
         sandboxId,
       };
-    }).pipe(Effect.mapError((cause) => new SandboxSetupPrefixCacheRestoreError({
+    }).pipe(Effect.mapError((cause) => new BeforeCacheRestoreError({
       operation: "scrub Docker profile private slot and restore clean Base",
       reason: reasonOf(cause),
       domainId: target.session.lease.binding.profile.profileId,

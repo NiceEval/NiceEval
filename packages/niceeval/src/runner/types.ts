@@ -27,7 +27,7 @@ import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../attempt-locator.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 import type { CurrentReusedAttemptReadback } from "./reuse-readback.ts";
-import type { SetupPrefixPreparationSummary } from "./setup-prefix-preparation.ts";
+import type { BeforeCachePreparationSummary } from "./before-cache-preparation.ts";
 import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
@@ -557,7 +557,7 @@ export interface InvocationSummary {
   reusedAttempts: readonly CurrentReusedAttemptReadback[];
   results: EvalResult[];
   /** Unique provider-native before-cache nodes settled before Attempt dispatch. */
-  beforeCaches: SetupPrefixPreparationSummary;
+  beforeCaches: BeforeCachePreparationSummary;
 }
 
 /**
@@ -1145,7 +1145,7 @@ export interface Config {
   maxConcurrency?: number;
   /** Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。 */
   maxBuildConcurrency?: number;
-  /** Run 级 PreparedArtifact 前缀 DAG 准备并发；与 build / attempt 并发独立。 */
+  /** Run 级 Before cache DAG 准备并发；与 build / attempt 并发独立。 */
   maxBeforeCacheConcurrency?: number;
   /** 项目级 before cache 默认；Experiment 与显式 CLI flag 可覆盖。 */
   sandboxCache?: SandboxCacheConfig;
@@ -1330,7 +1330,7 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
   maxConcurrency: number;
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
   maxBuildConcurrency?: number;
-  /** Run 级 PreparedArtifact 前缀 DAG 并发；省略时安全默认 2。 */
+  /** Run 级 Before cache DAG 并发；省略时安全默认 2。 */
   maxBeforeCacheConcurrency?: number;
   signal?: AbortSignal;
   /**

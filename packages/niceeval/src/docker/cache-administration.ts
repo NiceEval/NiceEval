@@ -24,32 +24,32 @@ export interface DockerTaskBuildInventoryEntry {
   readonly state: "active-leased" | "cold-reusable" | "unverified";
   readonly identity: { readonly buildKey: string; readonly tag: string; readonly imageId: string };
   readonly leaseCount: number;
-  readonly rootCount: number;
+  readonly holdCount: number;
   readonly liveLeaseCount: number;
   readonly unverifiedLeaseCount: number;
-  readonly liveRootCount: number;
-  readonly unverifiedRootCount: number;
+  readonly liveHoldCount: number;
+  readonly unverifiedHoldCount: number;
   readonly createdAt: string;
   readonly lastSuccessfulUseAt: string | null;
   readonly protectedUntil: string;
 }
 
-export interface DockerSetupPrefixInventoryEntry {
-  readonly kind: "sandbox-setup-prefix";
+export interface DockerBeforeCacheInventoryEntry {
+  readonly kind: "sandbox-before-cache";
   readonly state: "reserved" | "building" | "published" | "indexed" | "invalidated" | "deleting" | "tombstoned" | "unverified";
-  readonly identity: { readonly entryId: string; readonly setupPrefixKey: string; readonly imageId: string | null; readonly baseImageId: string };
+  readonly identity: { readonly entryId: string; readonly beforeCacheKey: string; readonly imageId: string | null; readonly baseIdentity: string };
   readonly leaseCount: number;
-  readonly rootCount: number;
+  readonly holdCount: number;
   readonly liveLeaseCount: number;
   readonly unverifiedLeaseCount: number;
-  readonly liveRootCount: number;
-  readonly unverifiedRootCount: number;
+  readonly liveHoldCount: number;
+  readonly unverifiedHoldCount: number;
   readonly createdAt: string;
   readonly lastSuccessfulUseAt: string | null;
   readonly protectedUntil: string;
 }
 
-export type DockerCacheInventoryEntry = DockerTaskBuildInventoryEntry | DockerSetupPrefixInventoryEntry;
+export type DockerCacheInventoryEntry = DockerTaskBuildInventoryEntry | DockerBeforeCacheInventoryEntry;
 
 export interface DockerCacheDomainInventory {
   readonly domainId: string;

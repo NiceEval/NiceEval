@@ -11,7 +11,7 @@ export interface ArtifactInventoryEntry {
   readonly volumeAbsent: boolean;
   readonly currentHead: boolean;
   readonly superseded: boolean;
-  readonly consumerLeases: number;
+  readonly consumerHolds: number;
 }
 export interface ArtifactInventory {
   readonly entries: readonly ArtifactInventoryEntry[];
@@ -40,7 +40,7 @@ export async function readArtifactInventory(repository: IncusRepository, control
     entries.push({ intent, verification: verifyArtifactObjects(intent, vm, volume), instanceAbsent: vm === undefined, volumeAbsent: volume === undefined,
       currentHead: head?.artifactId === intent.artifactId && head.generation === intent.generation,
       superseded: head !== undefined && head.state === "committed" && head.artifactId !== intent.artifactId,
-      consumerLeases: await repository.countArtifactLeases(intent.artifactId, intent.generation) });
+      consumerHolds: await repository.countArtifactHolds(intent.artifactId, intent.generation) });
   }
   const owned = intents.filter((intent) => intent.state !== "released");
   const orphans: ArtifactInventory["orphans"] = [
@@ -58,10 +58,10 @@ export function inventoryDocument(domain: IncusDomainDescriptor, inventory: Arti
     domains: [{ domainId: domain.executionDomainId, backendKind: "incus-artifacts", project: domain.artifactProject, pool: domain.storagePool,
       entryCount: inventory.entries.length, storage: inventory.pool, estimate: "not additive" }],
     providerObservations: inventory.orphans.map((orphan) => ({ domainId: domain.executionDomainId, backendKind: "incus-artifacts", classification: "orphan", ...orphan })),
-    entries: inventory.entries.map(({ intent, verification, currentHead, consumerLeases }) => ({
-      entryId: intent.artifactId, keyDigest: intent.setupPrefixKey, executionDomainRevision: intent.executionDomainId, state: intent.state,
-      generation: intent.generation, currentHead, consumerLeases, createdAt: intent.createdAt,
-      lastSuccessfulLeaseAt: intent.lastSuccessfulLeaseAt ?? null, verification,
+    entries: inventory.entries.map(({ intent, verification, currentHead, consumerHolds }) => ({
+      entryId: intent.artifactId, keyDigest: intent.beforeCacheKey, executionDomainRevision: intent.executionDomainId, state: intent.state,
+      generation: intent.generation, currentHead, consumerHolds, createdAt: intent.createdAt,
+      lastSuccessfulHoldAt: intent.lastSuccessfulHoldAt ?? null, verification,
       estimatedArtifactBytes: intent.estimatedArtifactBytes ?? null, sizeKind: "estimate", additive: false,
     })),
   };
@@ -70,8 +70,8 @@ export function renderArtifactInventory(domain: IncusDomainDescriptor, inventory
   const lines = [`Incus artifacts · ${domain.name} · ${domain.executionDomainId}`, `${inventory.entries.length} entries · project=${domain.artifactProject} pool=${domain.storagePool}`];
   for (const entry of inventory.entries) {
     const a = entry.intent;
-    lines.push(`${a.artifactId.slice(0, 12)} · revision=${a.executionDomainId} · ${a.state} · generation=${a.generation} · head=${entry.currentHead} · leases=${entry.consumerLeases} · ${entry.verification}`);
-    lines.push(`  created=${a.createdAt} · lastSuccessfulLeaseAt=${a.lastSuccessfulLeaseAt ?? "never"}`);
+    lines.push(`${a.artifactId.slice(0, 12)} · revision=${a.executionDomainId} · ${a.state} · generation=${a.generation} · head=${entry.currentHead} · holds=${entry.consumerHolds} · ${entry.verification}`);
+    lines.push(`  created=${a.createdAt} · lastSuccessfulHoldAt=${a.lastSuccessfulHoldAt ?? "never"}`);
     lines.push(`  ${a.estimatedArtifactBytes ?? "unknown"} bytes estimate · not additive`);
   }
   for (const orphan of inventory.orphans) lines.push(`orphan ${orphan.kind} ${orphan.name} · not eligible for GC`);

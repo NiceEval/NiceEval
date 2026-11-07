@@ -49,8 +49,10 @@ import {
 } from "./dockerfile-identity.ts";
 import type { BuildKey, SandboxCaseKind } from "./identity.ts";
 import type {
-  SandboxSetupPrefixCacheEligibility,
-  SandboxSetupPrefixCacheOperation,
+  AttemptBeforeCache,
+  BeforeCacheError,
+  BeforeCacheEligibility,
+  BeforeCacheStep,
 } from "./backend.ts";
 import type {
   SandboxRuntimeBuildPreparation,
@@ -415,10 +417,9 @@ export type SandboxRuntimeReuse =
   | { readonly _tag: "Supported" }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
-export type SandboxRuntimeSetupPrefix =
-  | { readonly _tag: "Persistent"; readonly coverage: SandboxActionState }
-  | { readonly _tag: "PreparedArtifact"; readonly coverage: SandboxActionState }
-  | { readonly _tag: "InvocationLocal" }
+export type SandboxBeforeCacheCapability =
+  | { readonly _tag: "RunPrepared"; readonly coverage: SandboxActionState }
+  | { readonly _tag: "AttemptCaptured"; readonly coverage: SandboxActionState }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
 export type SandboxRuntimeSessionLimit =
@@ -435,7 +436,7 @@ export interface SandboxProviderCapabilities {
   readonly retention: SandboxRuntimeRetention;
   readonly reuse: SandboxRuntimeReuse;
   /** Static upper bound. The materialized backend still decides runtime eligibility. */
-  readonly setupPrefix: SandboxRuntimeSetupPrefix;
+  readonly beforeCache: SandboxBeforeCacheCapability;
   readonly sessionLimit: SandboxRuntimeSessionLimit;
   /** Omitted providers cannot satisfy a DockerExecution requirement. */
   readonly dockerExecution?: DockerExecutionCapability;
@@ -464,68 +465,94 @@ export interface DockerExecutionCapability {
  * Provider 私有的类型联系。`Plan` 只在 factory 与本模块内部存在；绑定到公开 plan 后被闭包捕获，
  * core 只看见已消去泛型的 `SandboxProviderBinding`，从不接触 `unknown` 或 JSON runtime input。
  */
-export interface SandboxProviderModule<Plan> {
-  readonly id: string;
-  readonly capabilities: SandboxProviderCapabilities;
-  readonly materialize: (
-    plan: Plan,
-    context: SandboxRuntimeMaterializeContext,
-  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
-  readonly collectBuildPreparation: (
-    plan: Plan,
-    published: SandboxProviderPlan,
-    evalId: string,
-  ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
-  /** Run-level, credential-free preparation. Ordinary Attempts only consume the returned locator. */
-  readonly setupPrefixPreparation?: {
-    readonly eligibility: (
-      plan: Plan,
-    ) => SandboxSetupPrefixCacheEligibility;
-    readonly lookup: (
-      plan: Plan,
-      operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[],
-    ) => Effect.Effect<SandboxPreparedSetupPrefixLookup, SandboxRuntimeMaterializationError>;
-    readonly capture: (
-      plan: Plan,
-      owned: MaterializedSandboxCase,
-      operation: SandboxSetupPrefixCacheOperation,
-    ) => Effect.Effect<SandboxPreparedSetupPrefixArtifact, SandboxRuntimeMaterializationError>;
-  };
-}
+export type SandboxBeforeCacheSupport<Plan> =
+  | { readonly _tag: "RunPrepared"; readonly coverage: SandboxActionState; readonly preparer: BeforeCachePreparer<Plan> }
+  | { readonly _tag: "AttemptCaptured"; readonly coverage: SandboxActionState }
+  | { readonly _tag: "Unsupported"; readonly reason: string };
 
-export interface SandboxPreparedSetupPrefixArtifact {
+export type BeforeCacheStart =
+  | { readonly _tag: "Restored" }
+  | { readonly _tag: "FellBackToBase"; readonly reason: string };
+
+export interface BeforeCacheArtifact {
   readonly locator: JsonValue;
-  readonly setupPrefixKey: string;
-  readonly manifestDigest: string;
+  readonly beforeCacheKey: string;
+  readonly declarationDigest: string;
 }
 
-export type SandboxPreparedSetupPrefixLookup =
-  | { readonly _tag: "Miss" }
-  | { readonly _tag: "Hit"; readonly artifact: SandboxPreparedSetupPrefixArtifact };
+export type BeforeCacheDegradedReason =
+  | "eligibility-failed" | "ledger-unavailable" | "staging-failed" | "parent-unavailable"
+  | "base-image-unverified" | "mounted-state" | "sensitive-state"
+  | "snapshot-rejected" | "snapshot-uncertain" | "lease-lost";
 
-/** 泛型已经由闭包消去的 provider binding；只有合法 constructor 产物存在于 WeakMap 中。 */
-export interface SandboxProviderBinding {
+export type BeforeCacheLookup =
+  | { readonly _tag: "Miss" }
+  | { readonly _tag: "Hit"; readonly artifact: BeforeCacheArtifact }
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
+export type BeforeCacheCapture =
+  | { readonly _tag: "Published"; readonly artifact: BeforeCacheArtifact }
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
+export type BeforeCacheSource =
+  | { readonly _tag: "Base" }
+  | { readonly _tag: "Artifact"; readonly artifact: BeforeCacheArtifact };
+
+export interface BeforeCachePreparationContext {
+  readonly providerId: string;
+  readonly runId: string;
+  readonly materializeBase: (materialize: SandboxRuntimeMaterializeContext) => Effect.Effect<
+    MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope
+  >;
+}
+
+export interface BeforeCachePreparer<Plan> {
+  readonly continuesStaging: boolean;
+  readonly eligibility: (plan: Plan, context: BeforeCachePreparationContext) => Effect.Effect<BeforeCacheEligibility, BeforeCacheError>;
+  readonly lookup: (
+    plan: Plan, context: BeforeCachePreparationContext, stepsDeepestFirst: readonly BeforeCacheStep[],
+  ) => Effect.Effect<BeforeCacheLookup, BeforeCacheError, Scope.Scope>;
+  readonly materializeFrom: (
+    plan: Plan, context: BeforeCachePreparationContext, source: BeforeCacheSource, materialize: SandboxRuntimeMaterializeContext,
+  ) => Effect.Effect<
+    { readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart },
+    SandboxRuntimeMaterializationError, Scope.Scope
+  >;
+  readonly capture: (
+    plan: Plan, context: BeforeCachePreparationContext, staging: MaterializedSandboxCase, step: BeforeCacheStep,
+  ) => Effect.Effect<BeforeCacheCapture, BeforeCacheError, Scope.Scope>;
+}
+
+type ModuleBeforeCache<Plan, Args extends readonly unknown[]> =
+  | {
+      readonly beforeCache: Extract<SandboxBeforeCacheSupport<Plan>, { readonly _tag: "AttemptCaptured" }>;
+      readonly materialize: (...args: Args) => Effect.Effect<
+        MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache },
+        SandboxRuntimeMaterializationError, Scope.Scope
+      >;
+    }
+  | {
+      readonly beforeCache: Exclude<SandboxBeforeCacheSupport<Plan>, { readonly _tag: "AttemptCaptured" }>;
+      readonly materialize: (...args: Args) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
+    };
+
+export type SandboxProviderModule<Plan> = {
+  readonly id: string;
+  readonly capabilities: Omit<SandboxProviderCapabilities, "beforeCache">;
+  readonly collectBuildPreparation: (
+    plan: Plan, published: SandboxProviderPlan, evalId: string,
+  ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
+} & ModuleBeforeCache<Plan, readonly [plan: Plan, context: SandboxRuntimeMaterializeContext]>;
+
+/** Generic runtime plans are captured by core-owned closures. */
+export type SandboxProviderBinding = {
   readonly moduleId: string;
   readonly capabilities: SandboxProviderCapabilities;
-  /** The provider owns partial acquisition cleanup and may be interrupted before returning a Case. */
   readonly interruptibleAcquisition: boolean;
-  readonly materialize: (
-    context: SandboxRuntimeMaterializeContext,
-  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
   readonly collectBuildPreparation: (
     evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
-  readonly setupPrefixPreparation?: {
-    readonly eligibility: () => SandboxSetupPrefixCacheEligibility;
-    readonly lookup: (
-      operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[],
-    ) => Effect.Effect<SandboxPreparedSetupPrefixLookup, SandboxRuntimeMaterializationError>;
-    readonly capture: (
-      owned: MaterializedSandboxCase,
-      operation: SandboxSetupPrefixCacheOperation,
-    ) => Effect.Effect<SandboxPreparedSetupPrefixArtifact, SandboxRuntimeMaterializationError>;
-  };
-}
+} & ModuleBeforeCache<void, readonly [context: SandboxRuntimeMaterializeContext]>;
 
 /**
  * physical planning 的唯一完成态。整个对象都可发布、可序列化；provider 私有的 runtime input
@@ -862,7 +889,13 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
   const target = freezeTarget(input.target);
   const scheduling = freezeScheduling(input.scheduling);
   const moduleId = nonEmptyString(input.module.id, "sandbox provider module.id");
-  const capabilities = freezeProviderCapabilities(input.module.capabilities);
+  const support = input.module.beforeCache;
+  const capabilities = freezeProviderCapabilities({
+    ...input.module.capabilities,
+    beforeCache: support._tag === "Unsupported"
+      ? { _tag: support._tag, reason: support.reason }
+      : { _tag: support._tag, coverage: support.coverage },
+  });
   const publishableIdentity = freezeJson(input.publishableIdentity);
   const privateIdentityDigest = digestOf(input.privateFingerprintIdentity);
   const build: SandboxProviderBuildPlan = input.build._tag === "None"
@@ -887,7 +920,6 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     capabilities: {
       retention: { _tag: capabilities.retention._tag },
       reuse: capabilities.reuse,
-      setupPrefix: capabilities.setupPrefix,
       sessionLimit: capabilities.sessionLimit,
       ...(capabilities.dockerExecution === undefined
         ? {}
@@ -930,24 +962,40 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     build,
     identity,
   };
-  const binding = Object.freeze({
+  const common = {
     moduleId,
     capabilities,
     interruptibleAcquisition: input.interruptibleAcquisition === true,
-    materialize: (context) => input.module.materialize(input.runtimePlan, context),
-    collectBuildPreparation: (evalId) => input.module.collectBuildPreparation(input.runtimePlan, plan, evalId),
-    ...(input.module.setupPrefixPreparation === undefined
-      ? {}
-      : {
-          setupPrefixPreparation: Object.freeze({
-            eligibility: () => input.module.setupPrefixPreparation!.eligibility(input.runtimePlan),
-            lookup: (operationsDeepestFirst: readonly SandboxSetupPrefixCacheOperation[]) =>
-              input.module.setupPrefixPreparation!.lookup(input.runtimePlan, operationsDeepestFirst),
-            capture: (owned: MaterializedSandboxCase, operation: SandboxSetupPrefixCacheOperation) =>
-              input.module.setupPrefixPreparation!.capture(input.runtimePlan, owned, operation),
-          }),
-        }),
-  } satisfies SandboxProviderBinding);
+    collectBuildPreparation: (evalId: string) => input.module.collectBuildPreparation(input.runtimePlan, plan, evalId),
+  };
+  let binding: SandboxProviderBinding;
+  const module = input.module;
+  if (module.beforeCache._tag === "AttemptCaptured") {
+    // The module's discriminated contract requires an instance implementation.
+    const captured = module as Extract<SandboxProviderModule<Plan>, { readonly beforeCache: { readonly _tag: "AttemptCaptured" } }>;
+    binding = Object.freeze({
+      ...common,
+      beforeCache: captured.beforeCache,
+      materialize: (context: SandboxRuntimeMaterializeContext) => captured.materialize(input.runtimePlan, context),
+    });
+  } else {
+    const beforeCache: Exclude<SandboxBeforeCacheSupport<void>, { readonly _tag: "AttemptCaptured" }> = support._tag === "RunPrepared"
+      ? {
+          _tag: "RunPrepared", coverage: support.coverage,
+          preparer: {
+            continuesStaging: support.preparer.continuesStaging,
+            eligibility: (_, context) => support.preparer.eligibility(input.runtimePlan, context),
+            lookup: (_, context, steps) => support.preparer.lookup(input.runtimePlan, context, steps),
+            materializeFrom: (_, context, source, materialize) => support.preparer.materializeFrom(input.runtimePlan, context, source, materialize),
+            capture: (_, context, staging, step) => support.preparer.capture(input.runtimePlan, context, staging, step),
+          },
+        }
+      : { _tag: "Unsupported", reason: (support as Extract<typeof support, { _tag: "Unsupported" }>).reason };
+    binding = Object.freeze({
+      ...common, beforeCache,
+      materialize: (context: SandboxRuntimeMaterializeContext) => module.materialize(input.runtimePlan, context),
+    });
+  }
   SANDBOX_PROVIDER_BINDINGS.set(plan, binding);
   return Object.freeze(plan);
 }
@@ -965,11 +1013,11 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
     throw new TypeError("sandbox provider bounded session limit must be a positive finite number");
   }
   if (
-    (capabilities.setupPrefix._tag === "Persistent" || capabilities.setupPrefix._tag === "PreparedArtifact") &&
-    capabilities.setupPrefix.coverage !== sandboxState.all &&
-    capabilities.setupPrefix.coverage !== sandboxState.dockerData
+    (capabilities.beforeCache._tag === "AttemptCaptured" || capabilities.beforeCache._tag === "RunPrepared") &&
+    capabilities.beforeCache.coverage !== sandboxState.all &&
+    capabilities.beforeCache.coverage !== sandboxState.dockerData
   ) {
-    throw new TypeError("sandbox provider persistent setup-prefix coverage is not a supported sandboxState value");
+    throw new TypeError("sandbox provider persistent before-cache coverage is not a supported sandboxState value");
   }
   const dockerExecution = capabilities.dockerExecution;
   if (
@@ -986,18 +1034,16 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
           _tag: "Unsupported" as const,
           reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
         }),
-    setupPrefix: capabilities.setupPrefix._tag === "Persistent" || capabilities.setupPrefix._tag === "PreparedArtifact"
+    beforeCache: capabilities.beforeCache._tag === "AttemptCaptured" || capabilities.beforeCache._tag === "RunPrepared"
       ? Object.freeze({
-          _tag: capabilities.setupPrefix._tag,
-          coverage: capabilities.setupPrefix.coverage,
+          _tag: capabilities.beforeCache._tag,
+          coverage: capabilities.beforeCache.coverage,
         })
-      : capabilities.setupPrefix._tag === "InvocationLocal"
-        ? Object.freeze({ _tag: "InvocationLocal" as const })
-        : Object.freeze({
+      : Object.freeze({
             _tag: "Unsupported" as const,
             reason: nonEmptyString(
-              capabilities.setupPrefix.reason,
-              "sandbox provider capabilities.setupPrefix.reason",
+              capabilities.beforeCache.reason,
+              "sandbox provider capabilities.beforeCache.reason",
             ),
           }),
     sessionLimit: capabilities.sessionLimit._tag === "Unlimited"
@@ -1869,27 +1915,27 @@ function loadProviderRuntime() {
 const noBuildPreparation = (): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>> =>
   Effect.succeed(Option.none());
 
-function profileHasDockerDataSetupPrefixCoverage(
+function profileHasDockerDataBeforeCacheCoverage(
   binding: DockerProfileRuntimeBinding | undefined,
 ): boolean {
   if (binding === undefined) return false;
   const filesystem = binding.profile.backend.filesystem;
-  return filesystem.setupPrefix?.coverage === sandboxState.dockerData &&
-    filesystem.setupPrefix.requiredState === sandboxState.dockerData &&
-    filesystem.setupPrefix.slotAttestation === "independent-fixed-filesystem/v1" &&
-    filesystem.setupPrefix.filesystemSizeBytes === filesystem.dockerDataPool.bytesPerAllocation &&
+  return filesystem.beforeCache?.coverage === sandboxState.dockerData &&
+    filesystem.beforeCache.requiredState === sandboxState.dockerData &&
+    filesystem.beforeCache.slotAttestation === "independent-fixed-filesystem/v1" &&
+    filesystem.beforeCache.filesystemSizeBytes === filesystem.dockerDataPool.bytesPerAllocation &&
     filesystem.dockerDataPool.attestation === "independent-fixed-filesystem/v1";
 }
 
 const dockerComposeProviderModule = Object.freeze({
   id: "niceeval/docker-compose",
+  beforeCache: Object.freeze({
+    _tag: "Unsupported",
+    reason: "Docker Compose state spans a container group and mounted resources.",
+  }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "DestroyOnly" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({
-      _tag: "Unsupported",
-      reason: "Docker Compose state spans a container group and mounted resources.",
-    }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1904,10 +1950,10 @@ const dockerComposeProviderModule = Object.freeze({
 
 const dockerfileProviderModule = Object.freeze({
   id: "niceeval/dockerfile",
+  beforeCache: Object.freeze({ _tag: "AttemptCaptured", coverage: sandboxState.all }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1920,41 +1966,41 @@ const dockerfileProviderModule = Object.freeze({
   ),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
-const dockerEphemeralSetupPrefixUnsupported = Object.freeze({
+const dockerEphemeralBeforeCacheUnsupported = Object.freeze({
   _tag: "Unsupported" as const,
   reason:
-    "Persistent setup-prefix cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.",
+    "Persistent before cache is unsupported for Docker Profile sandboxes and for read-only rootfs or tmpfs surfaces.",
 });
 
 /** Profile、tmpfs / 只读 rootfs 的状态不能由普通 rootfs cache 完整保留。 */
 const dockerfileEphemeralProviderModule = Object.freeze({
   ...dockerfileProviderModule,
   id: "niceeval/dockerfile-ephemeral",
+  beforeCache: dockerEphemeralBeforeCacheUnsupported,
   capabilities: Object.freeze({
     ...dockerfileProviderModule.capabilities,
     retention: Object.freeze({ _tag: "DestroyOnly" }),
-    setupPrefix: dockerEphemeralSetupPrefixUnsupported,
   }),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
-const dockerfileProfileSetupPrefixProviderModule = Object.freeze({
+const dockerfileProfileBeforeCacheProviderModule = Object.freeze({
   ...dockerfileEphemeralProviderModule,
   id: "niceeval/dockerfile-profile-docker-data",
+  beforeCache: Object.freeze({
+    _tag: "AttemptCaptured" as const,
+    coverage: sandboxState.dockerData,
+  }),
   capabilities: Object.freeze({
     ...dockerfileEphemeralProviderModule.capabilities,
-    setupPrefix: Object.freeze({
-      _tag: "Persistent" as const,
-      coverage: sandboxState.dockerData,
-    }),
   }),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
 const dockerImageProviderModule = Object.freeze({
   id: "niceeval/docker-image",
+  beforeCache: Object.freeze({ _tag: "AttemptCaptured", coverage: sandboxState.all }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
   materialize: (plan, context) => Effect.flatMap(
@@ -1967,31 +2013,31 @@ const dockerImageProviderModule = Object.freeze({
 const dockerImageEphemeralProviderModule = Object.freeze({
   ...dockerImageProviderModule,
   id: "niceeval/docker-image-ephemeral",
+  beforeCache: dockerEphemeralBeforeCacheUnsupported,
   capabilities: Object.freeze({
     ...dockerImageProviderModule.capabilities,
     retention: Object.freeze({ _tag: "DestroyOnly" }),
-    setupPrefix: dockerEphemeralSetupPrefixUnsupported,
   }),
 } satisfies SandboxProviderModule<DockerImageProviderPlan>);
 
-const dockerImageProfileSetupPrefixProviderModule = Object.freeze({
+const dockerImageProfileBeforeCacheProviderModule = Object.freeze({
   ...dockerImageEphemeralProviderModule,
   id: "niceeval/docker-image-profile-docker-data",
+  beforeCache: Object.freeze({
+    _tag: "AttemptCaptured" as const,
+    coverage: sandboxState.dockerData,
+  }),
   capabilities: Object.freeze({
     ...dockerImageEphemeralProviderModule.capabilities,
-    setupPrefix: Object.freeze({
-      _tag: "Persistent" as const,
-      coverage: sandboxState.dockerData,
-    }),
   }),
 } satisfies SandboxProviderModule<DockerImageProviderPlan>);
 
 const e2bProviderModule = Object.freeze({
   id: "niceeval/e2b-template",
+  beforeCache: Object.freeze({ _tag: "Unsupported", reason: "remote snapshot preparer pending" }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({ _tag: "Persistent", coverage: sandboxState.all }),
     sessionLimit: Object.freeze({
       _tag: "ProviderValidated",
       reason: "E2B validates lifetimeMs against the active account tier when the sandbox is created or renewed.",
@@ -2006,13 +2052,13 @@ const e2bProviderModule = Object.freeze({
 
 const vercelProviderModule = Object.freeze({
   id: "niceeval/vercel-snapshot",
+  beforeCache: Object.freeze({
+    _tag: "Unsupported",
+    reason: "Vercel Sandbox does not expose a NiceEval before-cache capture contract.",
+  }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    setupPrefix: Object.freeze({
-      _tag: "Unsupported",
-      reason: "Vercel Sandbox does not expose a NiceEval setup-prefix capture contract.",
-    }),
     sessionLimit: Object.freeze({
       _tag: "ProviderValidated",
       reason: "Vercel validates lifetimeMs against the active project plan when the sandbox session is created or extended.",
@@ -2031,13 +2077,13 @@ function customProviderModule(
 ): SandboxProviderModule<CustomProviderPlan> {
   return Object.freeze({
     id: `custom-provider:${name}`,
+    beforeCache: Object.freeze({
+      _tag: "Unsupported",
+      reason: "custom provider has no declared before-cache capture contract",
+    }),
     capabilities: Object.freeze({
       retention: Object.freeze({ _tag: "DestroyOnly" }),
       reuse: Object.freeze({ _tag: "Unsupported", reason: "custom provider has no reset contract" }),
-      setupPrefix: Object.freeze({
-        _tag: "Unsupported",
-        reason: "custom provider has no declared setup-prefix capture contract",
-      }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" }),
     }),
     materialize: (plan, context) => Effect.flatMap(
@@ -2053,13 +2099,13 @@ function customCaseProviderModule(
 ): SandboxProviderModule<CustomCaseProviderPlan> {
   return Object.freeze({
     id: "custom-case",
+    beforeCache: Object.freeze({
+      _tag: "Unsupported",
+      reason: "custom case has no declared before-cache capture contract",
+    }),
     capabilities: Object.freeze({
       retention: Object.freeze({ _tag: "DestroyOnly" }),
       reuse: Object.freeze({ _tag: "Unsupported", reason: "custom case has no reset contract" }),
-      setupPrefix: Object.freeze({
-        _tag: "Unsupported",
-        reason: "custom case has no declared setup-prefix capture contract",
-      }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" }),
     }),
     materialize: (plan, context) => Effect.flatMap(
@@ -2383,8 +2429,8 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             module: profileBinding !== undefined
-              ? profileHasDockerDataSetupPrefixCoverage(profileBinding)
-                ? dockerfileProfileSetupPrefixProviderModule
+              ? profileHasDockerDataBeforeCacheCoverage(profileBinding)
+                ? dockerfileProfileBeforeCacheProviderModule
                 : dockerfileEphemeralProviderModule
               : dockerRequiresDestroyOnly(resources)
                 ? dockerfileEphemeralProviderModule
@@ -2517,8 +2563,8 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             module: profileBinding !== undefined
-              ? profileHasDockerDataSetupPrefixCoverage(profileBinding)
-                ? dockerImageProfileSetupPrefixProviderModule
+              ? profileHasDockerDataBeforeCacheCoverage(profileBinding)
+                ? dockerImageProfileBeforeCacheProviderModule
                 : dockerImageEphemeralProviderModule
               : dockerRequiresDestroyOnly(resources)
                 ? dockerImageEphemeralProviderModule

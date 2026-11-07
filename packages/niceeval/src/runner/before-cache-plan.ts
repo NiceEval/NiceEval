@@ -1,20 +1,20 @@
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../shared/types.ts";
 import {
-  type SandboxSetupPrefixCacheEligibility,
-  type SandboxSetupPrefixCacheManifest,
-  type SandboxSetupPrefixCacheOperation,
+  type BeforeCacheEligibility,
+  type BeforeCacheDeclaration,
+  type BeforeCacheStep,
 } from "../sandbox/backend.ts";
 import { mergeSandboxActionState, type SandboxActionState } from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import type { ScheduledSandboxBefore } from "../sandbox/link.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 
-export const SETUP_PREFIX_INTERPRETER_REVISION = "niceeval.sandbox-step-interpreter/v1";
-export const SETUP_PREFIX_QUIESCE_REVISION = "niceeval.setup-prefix-quiesce/v1";
+export const BEFORE_CACHE_INTERPRETER_REVISION = "niceeval.sandbox-step-interpreter/v1";
+export const BEFORE_CACHE_QUIESCE_REVISION = "niceeval.before-cache-quiesce/v1";
 
 /** Consumer attribution is never part of an artifact's content identity. */
-export function setupPrefixAttribution(entry: ScheduledSandboxBefore) {
+export function beforeCacheAttribution(entry: ScheduledSandboxBefore) {
   const owner = Object.freeze({ kind: entry.owner.kind, id: entry.owner.id });
   return Object.freeze({
     owner,
@@ -27,7 +27,7 @@ export function setupPrefixAttribution(entry: ScheduledSandboxBefore) {
 }
 
 /** The ordered capture facts shared by runtime identity and the dry/debug plan. */
-export function setupPrefixActionManifest(
+export function beforeCacheActionDeclaration(
   entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>,
   cumulativeState: SandboxActionState,
 ) {
@@ -60,25 +60,26 @@ export function setupPrefixActionManifest(
   });
 }
 
-export interface PlannedSetupPrefixAction {
+export interface PlannedBeforeCacheAction {
   readonly entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>;
   readonly key: string;
-  readonly manifest: SandboxSetupPrefixCacheManifest;
+  readonly declaration: BeforeCacheDeclaration;
+  readonly positions: readonly string[];
   /** Current consumer's declarations, aligned with the prefix's action order. */
-  readonly attributionManifest: readonly ReturnType<typeof setupPrefixAttribution>[];
+  readonly attributions: readonly ReturnType<typeof beforeCacheAttribution>[];
 }
 
 /**
- * The one provider-neutral SetupPrefix key planner. CaseKey, BuildKey and an
+ * The one provider-neutral BeforeCache key planner. CaseKey, BuildKey and an
  * occurrence cohort deliberately stay out of this identity: the exact Base,
  * provider preparation identity and ordered action content are sufficient.
  */
-export function plannedSetupPrefixActions(
+export function plannedBeforeCacheActions(
   plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
   entries: readonly Extract<ScheduledSandboxBefore, { readonly kind: "action" }>[],
-  eligibility: Extract<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>,
-): readonly PlannedSetupPrefixAction[] {
-  const baseImageId = eligibility.baseImageId;
+  eligibility: Extract<BeforeCacheEligibility, { readonly _tag: "Eligible" }>,
+): readonly PlannedBeforeCacheAction[] {
+  const baseIdentity = eligibility.baseIdentity;
   const keyScope = eligibility.keyScope;
   const keyScopeIdentity: JsonValue = { ...keyScope };
   const provider = plan.providerPlan;
@@ -88,13 +89,13 @@ export function plannedSetupPrefixActions(
   };
   const revisions = Object.freeze({
     storage: keyScope.storageSchemaRevision,
-    interpreter: SETUP_PREFIX_INTERPRETER_REVISION,
-    quiesce: SETUP_PREFIX_QUIESCE_REVISION,
+    interpreter: BEFORE_CACHE_INTERPRETER_REVISION,
+    quiesce: BEFORE_CACHE_QUIESCE_REVISION,
     capture: keyScope.artifactFormatRevision,
   });
   let parentKey = `base:${digestOf({
-    protocol: "niceeval.setup-prefix-key/v3",
-    baseImageId,
+    protocol: "niceeval.before-cache-key/v1",
+    baseIdentity,
     provider: {
       id: provider.provider,
       plannerRevision: provider.plannerRevision,
@@ -103,35 +104,37 @@ export function plannedSetupPrefixActions(
     revisions,
     preparationIdentity: keyScopeIdentity,
   })}`;
-  const planned: PlannedSetupPrefixAction[] = [];
-  const actionManifest: JsonValue[] = [];
-  const attributionManifest: ReturnType<typeof setupPrefixAttribution>[] = [];
+  const planned: PlannedBeforeCacheAction[] = [];
+  const actionDeclarations: JsonValue[] = [];
+  const positions: string[] = [];
+  const attributions: ReturnType<typeof beforeCacheAttribution>[] = [];
   let cumulativeState: SandboxActionState | undefined;
   for (const entry of entries) {
     cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
-    actionManifest.push(setupPrefixActionManifest(entry, cumulativeState));
-    attributionManifest.push(setupPrefixAttribution(entry));
+    actionDeclarations.push(beforeCacheActionDeclaration(entry, cumulativeState));
+    attributions.push(beforeCacheAttribution(entry));
+    positions.push(entry.data.plan.id);
     const declarationMetadata: JsonValue = Object.freeze({
-      protocol: "niceeval.setup-prefix-manifest/v3",
+      protocol: "niceeval.before-cache-declaration/v1",
       parentKey,
-      baseImageId,
+      baseIdentity,
       provider: {
         id: provider.provider,
         plannerRevision: provider.plannerRevision,
       },
-      actionManifest: [...actionManifest],
+      actionDeclarations: [...actionDeclarations],
       // Replacement collapses only physical generations of the exact declared
       // content. Different canonical inputs remain independently addressable.
       replacementScope: Object.freeze({
-        protocol: "niceeval.setup-prefix-replacement/v3",
-        baseImageId,
+        protocol: "niceeval.before-cache-replacement/v1",
+        baseIdentity,
         provider: {
           id: provider.provider,
           plannerRevision: provider.plannerRevision,
         },
         target: targetIdentity,
         preparationIdentity: keyScopeIdentity,
-        actionManifest: [...actionManifest],
+        actionDeclarations: [...actionDeclarations],
       }),
       requiredState: cumulativeState,
       target: targetIdentity,
@@ -139,29 +142,30 @@ export function plannedSetupPrefixActions(
       preparationIdentity: keyScopeIdentity,
     });
     const key = `prefix:${digestOf(declarationMetadata)}`;
-    const manifest: SandboxSetupPrefixCacheManifest = Object.freeze({
-      baseImageId,
-      setupPrefixKey: key,
-      setupManifestDigest: `sha256:${digestOf(declarationMetadata)}`,
+    const declaration: BeforeCacheDeclaration = Object.freeze({
+      baseIdentity,
+      beforeCacheKey: key,
+      declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
       requiredState: cumulativeState,
       storageSchemaRevision: keyScope.storageSchemaRevision,
       artifactFormatRevision: keyScope.artifactFormatRevision,
       changeFrequency: entry.metadata.changeFrequency.value,
       declarationMetadata,
     });
-    planned.push(Object.freeze({ entry, key, manifest, attributionManifest: Object.freeze([...attributionManifest]) }));
+    planned.push(Object.freeze({ entry, key, declaration, positions: Object.freeze([...positions]), attributions: Object.freeze([...attributions]) }));
     parentKey = key;
   }
   return Object.freeze(planned);
 }
 
-export function setupPrefixOperation(
-  planned: PlannedSetupPrefixAction,
+export function beforeCacheStep(
+  planned: PlannedBeforeCacheAction,
   knownSensitiveValues?: readonly string[],
-): SandboxSetupPrefixCacheOperation {
+): BeforeCacheStep {
   return Object.freeze({
-    operationId: `setup-prefix-${randomUUID()}`,
-    manifest: planned.manifest,
+    operationId: `before-cache-${randomUUID()}`,
+    declaration: planned.declaration,
+    positions: planned.positions,
     ...(knownSensitiveValues === undefined || knownSensitiveValues.length === 0
       ? {}
       : { knownSensitiveValues: Object.freeze([...knownSensitiveValues]) }),

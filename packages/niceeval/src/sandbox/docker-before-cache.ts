@@ -5,19 +5,19 @@ import Docker from "dockerode";
 import { Effect } from "effect";
 import { sandboxActionStateCovers, sandboxState } from "./action.ts";
 import {
-  SandboxSetupPrefixCacheCaptureError,
-  SandboxSetupPrefixCacheCleanupError,
-  SandboxSetupPrefixCacheLookupError,
-  SandboxSetupPrefixCacheRegistryError,
-  SandboxSetupPrefixCacheRestoreError,
-  SandboxSetupPrefixCacheValidationError,
-  type SandboxSetupPrefixCacheCapability,
-  type SandboxSetupPrefixCacheCaptureResult,
-  type SandboxSetupPrefixCacheEligibility,
-  type SandboxSetupPrefixCacheError,
-  type SandboxSetupPrefixCacheLookupResult,
-  type SandboxSetupPrefixCacheManifest,
-  type SandboxSetupPrefixCacheOperation,
+  BeforeCacheCaptureError,
+  BeforeCacheCleanupError,
+  BeforeCacheLookupError,
+  BeforeCacheRegistryError,
+  BeforeCacheRestoreError,
+  BeforeCacheValidationError,
+  type AttemptBeforeCache,
+  type AttemptBeforeCacheCapture,
+  type BeforeCacheEligibility,
+  type BeforeCacheError,
+  type AttemptBeforeCacheLookup,
+  type BeforeCacheDeclaration,
+  type BeforeCacheStep,
 } from "./backend.ts";
 import {
   openDockerCacheDomain,
@@ -25,13 +25,13 @@ import {
 } from "./docker-task-build-cache.ts";
 import {
   type DockerHolderIdentity,
-  type DockerSetupPrefixEntryRow as RepositorySetupPrefixEntryRow,
-  type DockerSetupPrefixManifestFields,
-  type DockerSetupPrefixRootRow,
+  type DockerBeforeCacheEntryRow as RepositoryBeforeCacheEntryRow,
+  type DockerBeforeCacheManifestFields,
+  type DockerBeforeCacheHoldRow,
 } from "./docker-cache-repository.ts";
 import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
 
-const CACHE_KIND = "sandbox-setup-prefix";
+const CACHE_KIND = "sandbox-before-cache";
 const CACHE_PROTOCOL_VERSION = 1;
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const LEASE_HEARTBEAT_MS = 10 * 1000;
@@ -43,19 +43,19 @@ const LABEL = Object.freeze({
   kind: "io.niceeval.cache.kind",
   protocol: "io.niceeval.cache.protocol",
   domainId: "io.niceeval.cache.domain-id",
-  entryId: "io.niceeval.cache.setup-prefix.entry-id",
-  operationId: "io.niceeval.cache.setup-prefix.operation-id",
-  generation: "io.niceeval.cache.setup-prefix.generation",
-  setupPrefixKey: "io.niceeval.cache.setup-prefix.key",
-  baseImageId: "io.niceeval.cache.setup-prefix.base-image-id",
-  setupManifestDigest: "io.niceeval.cache.setup-prefix.manifest-digest",
-  declarationDigest: "io.niceeval.cache.setup-prefix.declaration-digest",
-  storageSchemaRevision: "io.niceeval.cache.setup-prefix.storage-schema",
-  artifactFormatRevision: "io.niceeval.cache.setup-prefix.artifact-format",
-  dependency: "io.niceeval.cache.setup-prefix.dependency",
+  entryId: "io.niceeval.cache.before-cache.entry-id",
+  operationId: "io.niceeval.cache.before-cache.operation-id",
+  generation: "io.niceeval.cache.before-cache.generation",
+  beforeCacheKey: "io.niceeval.cache.before-cache.key",
+  baseIdentity: "io.niceeval.cache.before-cache.base-identity",
+  declarationDigest: "io.niceeval.cache.before-cache.declaration-digest",
+  metadataDigest: "io.niceeval.cache.before-cache.metadata-digest",
+  storageSchemaRevision: "io.niceeval.cache.before-cache.storage-schema",
+  artifactFormatRevision: "io.niceeval.cache.before-cache.artifact-format",
+  dependency: "io.niceeval.cache.before-cache.dependency",
 });
 
-type SetupPrefixEntryState =
+type BeforeCacheEntryState =
   | "reserved"
   | "building"
   | "published"
@@ -65,14 +65,14 @@ type SetupPrefixEntryState =
   | "tombstoned"
   | "unverified";
 
-interface SetupPrefixEntryRow {
+interface BeforeCacheEntryRow {
   readonly entry_id: string;
-  readonly setup_prefix_key: string;
-  readonly base_image_id: string;
+  readonly before_cache_key: string;
+  readonly base_identity: string;
   readonly image_id: string | null;
   readonly declaration_json: string;
+  readonly metadata_digest: string;
   readonly declaration_digest: string;
-  readonly setup_manifest_digest: string;
   readonly storage_schema_revision: string;
   readonly artifact_format_revision: string;
   readonly dependency: "parent-backed";
@@ -82,22 +82,22 @@ interface SetupPrefixEntryRow {
   readonly created_at: string;
   readonly last_successful_use_at: string | null;
   readonly protected_until: string;
-  readonly state: SetupPrefixEntryState;
+  readonly state: BeforeCacheEntryState;
 }
 
 interface ValidatedManifest {
-  readonly value: SandboxSetupPrefixCacheManifest;
+  readonly value: BeforeCacheDeclaration;
   readonly declarationJson: string;
-  readonly declarationDigest: string;
+  readonly metadataDigest: string;
 }
 
 function replacementScope(manifest: ValidatedManifest): string {
   const metadata = manifest.value.declarationMetadata;
   if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
-    throw new TypeError("setup-prefix declaration metadata must be a record");
+    throw new TypeError("before-cache declaration metadata must be a record");
   }
   const scope = (metadata as { readonly replacementScope?: unknown }).replacementScope;
-  if (scope === undefined) throw new TypeError("setup-prefix declaration metadata has no replacement scope");
+  if (scope === undefined) throw new TypeError("before-cache declaration metadata has no replacement scope");
   return canonicalJson(scope);
 }
 
@@ -112,28 +112,28 @@ function repositoryHolder(holder: HolderIdentity): DockerHolderIdentity {
   return { hostId: holder.hostId, bootId: holder.bootId, pid: holder.pid, processStart: holder.processStart };
 }
 
-function repositoryManifest(manifest: ValidatedManifest): DockerSetupPrefixManifestFields {
+function repositoryManifest(manifest: ValidatedManifest): DockerBeforeCacheManifestFields {
   return {
-    setupPrefixKey: manifest.value.setupPrefixKey,
-    baseImageId: manifest.value.baseImageId,
+    beforeCacheKey: manifest.value.beforeCacheKey,
+    baseIdentity: manifest.value.baseIdentity,
     declarationJson: manifest.declarationJson,
-    declarationDigest: manifest.declarationDigest,
-    setupManifestDigest: manifest.value.setupManifestDigest,
+    metadataDigest: manifest.metadataDigest,
+    declarationDigest: manifest.value.declarationDigest,
     storageSchemaRevision: manifest.value.storageSchemaRevision,
     artifactFormatRevision: manifest.value.artifactFormatRevision,
     changeFrequency: manifest.value.changeFrequency,
   };
 }
 
-function localEntry(row: RepositorySetupPrefixEntryRow): SetupPrefixEntryRow {
+function localEntry(row: RepositoryBeforeCacheEntryRow): BeforeCacheEntryRow {
   return {
     entry_id: row.entryId,
-    setup_prefix_key: row.setupPrefixKey,
-    base_image_id: row.baseImageId,
+    before_cache_key: row.beforeCacheKey,
+    base_identity: row.baseIdentity,
     image_id: row.imageId,
     declaration_json: row.declarationJson,
+    metadata_digest: row.metadataDigest,
     declaration_digest: row.declarationDigest,
-    setup_manifest_digest: row.setupManifestDigest,
     storage_schema_revision: row.storageSchemaRevision,
     artifact_format_revision: row.artifactFormatRevision,
     dependency: row.dependency,
@@ -147,14 +147,14 @@ function localEntry(row: RepositorySetupPrefixEntryRow): SetupPrefixEntryRow {
   };
 }
 
-export interface DockerSetupPrefixRootOwnership {
+export interface DockerBeforeCacheHoldOwnership {
   readonly containerId: string;
   readonly release: () => Promise<void>;
 }
 
 /** Narrow Docker target. Registry code never reaches into DockerSandbox implementation fields. */
-export interface DockerSetupPrefixCacheTarget {
-  readonly eligibility: () => SandboxSetupPrefixCacheEligibility;
+export interface DockerBeforeCacheTarget {
+  readonly eligibility: () => BeforeCacheEligibility;
   readonly captureExactImage: (
     labels: Readonly<Record<string, string>>,
     knownSensitiveValues: readonly string[],
@@ -168,11 +168,11 @@ export interface DockerSetupPrefixCacheTarget {
   ) => Promise<{ readonly containerId: string; readonly imageId: string }>;
   /** Used only when a restore/rebase failed after creating a partial provider reference. */
   readonly destroyCurrentForCacheRecovery: () => Promise<void>;
-  readonly adoptSetupPrefixRoot: (root: DockerSetupPrefixRootOwnership) => void;
+  readonly adoptBeforeCacheHold: (hold: DockerBeforeCacheHoldOwnership) => void;
   /** Exact pristine Base recovery on the same stable backend object. */
-  readonly recoverCleanBase: (
+  readonly fallBackToBase: (
     signal: AbortSignal,
-  ) => Promise<{ readonly baseImageId: string; readonly sandboxId: string }>;
+  ) => Promise<{ readonly baseIdentity: string; readonly sandboxId: string }>;
 }
 
 function errorMessage(cause: unknown): string {
@@ -189,15 +189,15 @@ function safeFailureClass(cause: unknown): string {
   return "registry-operation";
 }
 
-function isSetupPrefixError(cause: unknown): cause is SandboxSetupPrefixCacheError {
+function isBeforeCacheError(cause: unknown): cause is BeforeCacheError {
   if (typeof cause !== "object" || cause === null || !("_tag" in cause)) return false;
   return new Set([
-    "SandboxSetupPrefixCacheRegistryError",
-    "SandboxSetupPrefixCacheLookupError",
-    "SandboxSetupPrefixCacheCaptureError",
-    "SandboxSetupPrefixCacheRestoreError",
-    "SandboxSetupPrefixCacheValidationError",
-    "SandboxSetupPrefixCacheCleanupError",
+    "BeforeCacheRegistryError",
+    "BeforeCacheLookupError",
+    "BeforeCacheCaptureError",
+    "BeforeCacheRestoreError",
+    "BeforeCacheValidationError",
+    "BeforeCacheCleanupError",
   ]).has(String((cause as { readonly _tag: unknown })._tag));
 }
 
@@ -250,50 +250,50 @@ function validateIdentity(value: string, field: string): void {
   }
 }
 
-function validateOperation(input: SandboxSetupPrefixCacheOperation): ValidatedManifest {
+function validateOperation(input: BeforeCacheStep): ValidatedManifest {
   validateIdentity(input.operationId, "operationId");
-  validateIdentity(input.manifest.baseImageId, "baseImageId");
-  if (!exactImageId(input.manifest.baseImageId)) {
-    throw new TypeError("baseImageId must be an exact Docker image id");
+  validateIdentity(input.declaration.baseIdentity, "baseIdentity");
+  if (!exactImageId(input.declaration.baseIdentity)) {
+    throw new TypeError("baseIdentity must be an exact Docker image id");
   }
-  validateIdentity(input.manifest.setupPrefixKey, "setupPrefixKey");
-  validateIdentity(input.manifest.setupManifestDigest, "setupManifestDigest");
+  validateIdentity(input.declaration.beforeCacheKey, "beforeCacheKey");
+  validateIdentity(input.declaration.declarationDigest, "declarationDigest");
   if (
-    input.manifest.requiredState !== sandboxState.all &&
-    input.manifest.requiredState !== sandboxState.dockerData
+    input.declaration.requiredState !== sandboxState.all &&
+    input.declaration.requiredState !== sandboxState.dockerData
   ) {
     throw new TypeError("requiredState must be sandboxState.all or sandboxState.dockerData");
   }
-  validateIdentity(input.manifest.storageSchemaRevision, "storageSchemaRevision");
-  validateIdentity(input.manifest.artifactFormatRevision, "artifactFormatRevision");
-  if (!Number.isFinite(input.manifest.changeFrequency) || input.manifest.changeFrequency < 0) {
+  validateIdentity(input.declaration.storageSchemaRevision, "storageSchemaRevision");
+  validateIdentity(input.declaration.artifactFormatRevision, "artifactFormatRevision");
+  if (!Number.isFinite(input.declaration.changeFrequency) || input.declaration.changeFrequency < 0) {
     throw new TypeError("changeFrequency must be a finite non-negative number");
   }
-  const declarationJson = canonicalJson(input.manifest.declarationMetadata);
-  const declarationDigest = digest(declarationJson);
+  const declarationJson = canonicalJson(input.declaration.declarationMetadata);
+  const metadataDigest = digest(declarationJson);
   if (
-    input.manifest.setupPrefixKey !== `prefix:${declarationDigest}` ||
-    input.manifest.setupManifestDigest !== `sha256:${declarationDigest}`
+    input.declaration.beforeCacheKey !== `prefix:${metadataDigest}` ||
+    input.declaration.declarationDigest !== `sha256:${metadataDigest}`
   ) {
-    throw new TypeError("setup-prefix key and manifest digest must match the complete canonical declaration metadata");
+    throw new TypeError("before-cache key and manifest digest must match the complete canonical declaration metadata");
   }
   return {
-    value: input.manifest,
+    value: input.declaration,
     declarationJson,
-    declarationDigest,
+    metadataDigest,
   };
 }
 
 const domainStartupReconciliations = new Map<string, Promise<void>>();
 
-async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHandle): Promise<void> {
+async function reconcileBeforeCacheDomainAtStartup(domain: DockerCacheDomainHandle): Promise<void> {
   // Startup reconciliation is shared by callers, so it owns a bounded signal
   // instead of borrowing one caller's cancellation. A cache-operation
   // finalizer may join this promise, but never indefinitely.
   const signal = AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS);
   const snapshot = await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-startup-snapshot",
+    operation: "before-cache-startup-snapshot",
     domainId: domain.domainId,
   });
   for (const lock of snapshot.locks) {
@@ -311,7 +311,7 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
     }
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-settle-delete",
+      operation: "before-cache-settle-delete",
       domainId: domain.domainId,
       entryId: lock.entryId,
       imageId: lock.imageId,
@@ -333,7 +333,7 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
   if (deleteLeaseIds.length > 0 || unverifiableLeaseIds.length > 0) {
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-prune-leases",
+      operation: "before-cache-prune-leases",
       domainId: domain.domainId,
       deleteLeaseIds,
       unverifiableLeaseIds,
@@ -371,7 +371,7 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
     }
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-startup-isolate",
+      operation: "before-cache-startup-isolate",
       domainId: domain.domainId,
       entryId: row.entry_id,
       imageId: verifiedClaims.length === 1 ? verifiedClaims[0]! : null,
@@ -394,7 +394,7 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
     }
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-startup-validate",
+      operation: "before-cache-startup-validate",
       domainId: domain.domainId,
       entryId: row.entry_id,
       valid,
@@ -402,11 +402,11 @@ async function reconcileSetupPrefixDomainAtStartup(domain: DockerCacheDomainHand
   }
 }
 
-async function openSetupPrefixDomain(): Promise<DockerCacheDomainHandle> {
+async function openBeforeCacheDomain(): Promise<DockerCacheDomainHandle> {
   const domain = await openDockerCacheDomain();
   let reconciliation = domainStartupReconciliations.get(domain.domainId);
   if (reconciliation === undefined) {
-    reconciliation = reconcileSetupPrefixDomainAtStartup(domain).catch((cause) => {
+    reconciliation = reconcileBeforeCacheDomainAtStartup(domain).catch((cause) => {
       domainStartupReconciliations.delete(domain.domainId);
       throw cause;
     });
@@ -433,7 +433,7 @@ function processIdentityIsLive(pid: number, bootId: string, processStart: string
   }
 }
 
-function labelsFor(domain: DockerCacheDomainHandle, row: SetupPrefixEntryRow): Readonly<Record<string, string>> {
+function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): Readonly<Record<string, string>> {
   return Object.freeze({
     [LABEL.kind]: CACHE_KIND,
     [LABEL.protocol]: String(CACHE_PROTOCOL_VERSION),
@@ -441,10 +441,10 @@ function labelsFor(domain: DockerCacheDomainHandle, row: SetupPrefixEntryRow): R
     [LABEL.entryId]: row.entry_id,
     [LABEL.operationId]: row.operation_id,
     [LABEL.generation]: String(row.generation),
-    [LABEL.setupPrefixKey]: row.setup_prefix_key,
-    [LABEL.baseImageId]: row.base_image_id,
-    [LABEL.setupManifestDigest]: row.setup_manifest_digest,
+    [LABEL.beforeCacheKey]: row.before_cache_key,
+    [LABEL.baseIdentity]: row.base_identity,
     [LABEL.declarationDigest]: row.declaration_digest,
+    [LABEL.metadataDigest]: row.metadata_digest,
     [LABEL.storageSchemaRevision]: row.storage_schema_revision,
     [LABEL.artifactFormatRevision]: row.artifact_format_revision,
     [LABEL.dependency]: row.dependency,
@@ -534,14 +534,14 @@ async function containerExists(containerId: string, signal?: AbortSignal): Promi
   }
 }
 
-class SetupPrefixLease {
+class BeforeCacheLease {
   private released = false;
   private heartbeatFailure: unknown;
   private readonly heartbeat: ReturnType<typeof setInterval>;
 
   constructor(
     readonly domain: DockerCacheDomainHandle,
-    readonly row: SetupPrefixEntryRow,
+    readonly row: BeforeCacheEntryRow,
     readonly leaseId: string,
     readonly kind: "build" | "handoff",
   ) {
@@ -550,13 +550,13 @@ class SetupPrefixLease {
       const now = Date.now();
       void dockerCacheRepository.request({
         repository: "docker-cache",
-        operation: "setup-heartbeat",
+        operation: "before-cache-heartbeat",
         domainId: this.domain.domainId,
         leaseId: this.leaseId,
         heartbeatAt: new Date(now).toISOString(),
         expiresAt: new Date(now + LEASE_TTL_MS).toISOString(),
       }).then((updated) => {
-        if (updated.changes !== 1) this.heartbeatFailure = new Error("the durable setup-prefix lease disappeared during use");
+        if (updated.changes !== 1) this.heartbeatFailure = new Error("the durable before-cache lease disappeared during use");
       }, (cause) => {
         // Preserve the durable row as a GC veto; surface this failure at release.
         this.heartbeatFailure = cause;
@@ -573,20 +573,20 @@ class SetupPrefixLease {
     try {
       const removed = await dockerCacheRepository.request({
         repository: "docker-cache",
-        operation: "setup-release-lease",
+        operation: "before-cache-release-lease",
         domainId: this.domain.domainId,
         leaseId: this.leaseId,
       });
-      if (removed.changes !== 1) releaseFailure = new Error("the durable setup-prefix lease disappeared before release");
+      if (removed.changes !== 1) releaseFailure = new Error("the durable before-cache lease disappeared before release");
     } catch (cause) {
       releaseFailure = cause;
     }
     const failure = releaseFailure ?? this.heartbeatFailure;
     if (failure !== undefined) {
-      throw new SandboxSetupPrefixCacheCleanupError({
-        operation: `release setup-prefix ${this.kind} lease`,
+      throw new BeforeCacheCleanupError({
+        operation: `release before-cache ${this.kind} lease`,
         reason: errorMessage(failure),
-        setupPrefixKey: this.row.setup_prefix_key,
+        beforeCacheKey: this.row.before_cache_key,
         domainId: this.domain.domainId,
         cause: failure,
       });
@@ -595,17 +595,17 @@ class SetupPrefixLease {
 }
 
 async function acquireIndexedLease(
-  operation: SandboxSetupPrefixCacheOperation,
+  operation: BeforeCacheStep,
   manifest: ValidatedManifest,
   expectedEntryId?: string,
-): Promise<SetupPrefixLease | undefined> {
-  const domain = await openSetupPrefixDomain();
+): Promise<BeforeCacheLease | undefined> {
+  const domain = await openBeforeCacheDomain();
   const holder = holderIdentity();
   const leaseId = randomUUID();
   const now = Date.now();
   const acquired = await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-acquire-indexed",
+    operation: "before-cache-acquire-indexed",
     domainId: domain.domainId,
     manifest: repositoryManifest(manifest),
     ...(expectedEntryId === undefined ? {} : { expectedEntryId }),
@@ -617,53 +617,53 @@ async function acquireIndexedLease(
   });
   return acquired.entry === null
     ? undefined
-    : new SetupPrefixLease(domain, localEntry(acquired.entry), leaseId, "handoff");
+    : new BeforeCacheLease(domain, localEntry(acquired.entry), leaseId, "handoff");
 }
 
 async function markEntryUnverified(entryId: string): Promise<void> {
-  const domain = await openSetupPrefixDomain();
+  const domain = await openBeforeCacheDomain();
   await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-mark-unverified",
+    operation: "before-cache-mark-unverified",
     domainId: domain.domainId,
     entryId,
   });
 }
 
-async function releaseDurableRoot(input: {
+async function releaseDurableHold(input: {
   readonly domainId: string;
-  readonly rootId: string;
+  readonly holdId: string;
   readonly entryId: string;
   readonly containerId: string;
-  readonly setupPrefixKey: string;
+  readonly beforeCacheKey: string;
 }): Promise<void> {
-  const domain = await openSetupPrefixDomain();
+  const domain = await openBeforeCacheDomain();
   try {
-    if (domain.domainId !== input.domainId) throw new Error("Docker cache Domain authority changed while releasing a root");
+    if (domain.domainId !== input.domainId) throw new Error("Docker cache Domain authority changed while releasing a hold");
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-begin-root-release",
+      operation: "before-cache-begin-hold-release",
       domainId: domain.domainId,
-      rootId: input.rootId,
+      holdId: input.holdId,
       entryId: input.entryId,
       containerId: input.containerId,
     });
     if (await containerExists(input.containerId, AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS))) {
-      throw new Error(`Docker container ${input.containerId} still references the setup-prefix image`);
+      throw new Error(`Docker container ${input.containerId} still references the before-cache image`);
     }
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-finish-root-release",
+      operation: "before-cache-finish-hold-release",
       domainId: domain.domainId,
-      rootId: input.rootId,
+      holdId: input.holdId,
       entryId: input.entryId,
       containerId: input.containerId,
     });
   } catch (cause) {
-    throw new SandboxSetupPrefixCacheCleanupError({
-      operation: "release durable setup-prefix root",
+    throw new BeforeCacheCleanupError({
+      operation: "release durable before-cache hold",
       reason: errorMessage(cause),
-      setupPrefixKey: input.setupPrefixKey,
+      beforeCacheKey: input.beforeCacheKey,
       domainId: input.domainId,
       cause,
     });
@@ -672,18 +672,18 @@ async function releaseDurableRoot(input: {
 }
 
 async function restoreLeaseIntoTarget(
-  target: DockerSetupPrefixCacheTarget,
-  lease: SetupPrefixLease,
-  operation: SandboxSetupPrefixCacheOperation,
+  target: DockerBeforeCacheTarget,
+  lease: BeforeCacheLease,
+  operation: BeforeCacheStep,
   signal: AbortSignal,
 ): Promise<{ readonly imageId: string; readonly sandboxId: string }> {
   signal.throwIfAborted();
   const row = lease.row;
   if (row.image_id === null || !exactImageId(row.image_id)) {
-    throw new SandboxSetupPrefixCacheValidationError({
-      operation: "restore exact setup-prefix image",
+    throw new BeforeCacheValidationError({
+      operation: "restore exact before-cache image",
       reason: "the indexed generation has no exact Docker image id",
-      setupPrefixKey: row.setup_prefix_key,
+      beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
     });
   }
@@ -694,30 +694,30 @@ async function restoreLeaseIntoTarget(
     try {
       await markEntryUnverified(row.entry_id);
     } catch (cleanupCause) {
-      throw new SandboxSetupPrefixCacheCleanupError({
-        operation: "isolate invalid setup-prefix generation",
+      throw new BeforeCacheCleanupError({
+        operation: "isolate invalid before-cache generation",
         reason: "exact-image validation failed and the generation could not be removed from the hit index",
-        setupPrefixKey: row.setup_prefix_key,
+        beforeCacheKey: row.before_cache_key,
         domainId: lease.domain.domainId,
         cause: new AggregateError([cause, cleanupCause]),
       });
     }
-    throw new SandboxSetupPrefixCacheValidationError({
-      operation: "validate exact setup-prefix image",
+    throw new BeforeCacheValidationError({
+      operation: "validate exact before-cache image",
       reason: errorMessage(cause),
-      setupPrefixKey: row.setup_prefix_key,
+      beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
       cause,
     });
   }
 
-  const rootId = randomUUID();
-  const plannedName = `niceeval-setup-prefix-${randomUUID()}`;
+  const holdId = randomUUID();
+  const plannedName = `niceeval-before-cache-${randomUUID()}`;
   const createdAt = new Date().toISOString();
-  const root: DockerSetupPrefixRootRow = {
-    rootId,
+  const hold: DockerBeforeCacheHoldRow = {
+    holdId,
     entryId: row.entry_id,
-    setupPrefixKey: row.setup_prefix_key,
+    beforeCacheKey: row.before_cache_key,
     generation: row.generation,
     sandboxId: plannedName,
     sandboxResourceIdentity: plannedName,
@@ -727,9 +727,9 @@ async function restoreLeaseIntoTarget(
   };
   await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-prepare-root",
+    operation: "before-cache-prepare-hold",
     domainId: lease.domain.domainId,
-    root,
+    hold,
   });
 
   let rebound: { readonly containerId: string; readonly imageId: string } | undefined;
@@ -741,34 +741,34 @@ async function restoreLeaseIntoTarget(
     }
     const activated = await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-activate-root",
+      operation: "before-cache-activate-hold",
       domainId: lease.domain.domainId,
-      rootId,
+      holdId,
       entryId: row.entry_id,
       generation: row.generation,
       containerId: rebound.containerId,
     });
-    if (activated.changes !== 1) throw new Error("prepared setup-prefix root could not be activated");
-    target.adoptSetupPrefixRoot({
+    if (activated.changes !== 1) throw new Error("prepared before-cache hold could not be activated");
+    target.adoptBeforeCacheHold({
       containerId: rebound.containerId,
-      release: () => releaseDurableRoot({
+      release: () => releaseDurableHold({
         domainId: lease.domain.domainId,
-        rootId,
+        holdId,
         entryId: row.entry_id,
         containerId: rebound!.containerId,
-        setupPrefixKey: row.setup_prefix_key,
+        beforeCacheKey: row.before_cache_key,
       }),
     });
     const usedAt = new Date().toISOString();
     const updated = await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-mark-used",
+      operation: "before-cache-mark-used",
       domainId: lease.domain.domainId,
       entryId: row.entry_id,
       generation: row.generation,
       usedAt,
     });
-    if (updated.changes !== 1) throw new Error("setup-prefix generation changed before delivery completed");
+    if (updated.changes !== 1) throw new Error("before-cache generation changed before delivery completed");
     return { imageId: row.image_id, sandboxId: rebound.containerId.slice(0, 12) };
   } catch (cause) {
     const cleanupFailures: unknown[] = [];
@@ -780,9 +780,9 @@ async function restoreLeaseIntoTarget(
     try {
       await dockerCacheRepository.request({
         repository: "docker-cache",
-        operation: "setup-remove-root",
+        operation: "before-cache-remove-hold",
         domainId: lease.domain.domainId,
-        rootId,
+        holdId,
       });
     } catch (cleanupCause) {
       cleanupFailures.push(cleanupCause);
@@ -793,57 +793,57 @@ async function restoreLeaseIntoTarget(
       cleanupFailures.push(cleanupCause);
     }
     if (cleanupFailures.length > 0) {
-      throw new SandboxSetupPrefixCacheCleanupError({
-        operation: "clean partial setup-prefix restore",
+      throw new BeforeCacheCleanupError({
+        operation: "clean partial before-cache restore",
         reason: "restore failed and its partial provider/registry resources could not be fully retired",
-        setupPrefixKey: row.setup_prefix_key,
+        beforeCacheKey: row.before_cache_key,
         domainId: lease.domain.domainId,
         cause: new AggregateError([cause, ...cleanupFailures]),
       });
     }
-    throw new SandboxSetupPrefixCacheRestoreError({
-      operation: "restore exact setup-prefix image",
+    throw new BeforeCacheRestoreError({
+      operation: "restore exact before-cache image",
       reason: errorMessage(cause),
-      setupPrefixKey: row.setup_prefix_key,
+      beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
       cause,
     });
   }
 }
 
-async function lookupAndRebase(
-  target: DockerSetupPrefixCacheTarget,
-  input: SandboxSetupPrefixCacheOperation,
+async function lookupAndRestore(
+  target: DockerBeforeCacheTarget,
+  input: BeforeCacheStep,
   signal: AbortSignal,
-): Promise<SandboxSetupPrefixCacheLookupResult> {
+): Promise<AttemptBeforeCacheLookup> {
   const eligibility = target.eligibility();
   if (eligibility._tag === "Unsupported") return eligibility;
   let manifest: ValidatedManifest;
   try {
     manifest = validateOperation(input);
-    if (manifest.value.baseImageId !== eligibility.baseImageId) {
-      throw new Error("setup-prefix lookup Base image does not match the initialized provider Base");
+    if (manifest.value.baseIdentity !== eligibility.baseIdentity) {
+      throw new Error("before-cache lookup Base image does not match the initialized provider Base");
     }
     if (!sandboxActionStateCovers(eligibility.coverage, manifest.value.requiredState)) {
-      throw new Error("setup-prefix lookup requires state outside the provider coverage");
+      throw new Error("before-cache lookup requires state outside the provider coverage");
     }
   } catch (cause) {
-    throw new SandboxSetupPrefixCacheValidationError({
-      operation: "validate setup-prefix lookup",
+    throw new BeforeCacheValidationError({
+      operation: "validate before-cache lookup",
       reason: errorMessage(cause),
-      setupPrefixKey: input.manifest.setupPrefixKey,
+      beforeCacheKey: input.declaration.beforeCacheKey,
       cause,
     });
   }
-  let lease: SetupPrefixLease | undefined;
+  let lease: BeforeCacheLease | undefined;
   try {
     lease = await acquireIndexedLease(input, manifest);
-    if (lease === undefined) return { _tag: "Miss", setupPrefixKey: manifest.value.setupPrefixKey } as const;
+    if (lease === undefined) return { _tag: "Miss", beforeCacheKey: manifest.value.beforeCacheKey } as const;
     signal.throwIfAborted();
     const restored = await restoreLeaseIntoTarget(target, lease, input, signal);
     return {
       _tag: "Restored",
-      setupPrefixKey: manifest.value.setupPrefixKey,
+      beforeCacheKey: manifest.value.beforeCacheKey,
       entryId: lease.row.entry_id,
       generation: lease.row.generation,
       artifactId: restored.imageId,
@@ -851,11 +851,11 @@ async function lookupAndRebase(
       sandboxId: restored.sandboxId,
     } as const;
   } catch (cause) {
-    if (isSetupPrefixError(cause)) throw cause;
-    throw new SandboxSetupPrefixCacheLookupError({
-      operation: `lookup and restore setup-prefix cache:${safeFailureClass(cause)}`,
+    if (isBeforeCacheError(cause)) throw cause;
+    throw new BeforeCacheLookupError({
+      operation: `lookup and restore before cache:${safeFailureClass(cause)}`,
       reason: errorMessage(cause),
-      setupPrefixKey: manifest.value.setupPrefixKey,
+      beforeCacheKey: manifest.value.beforeCacheKey,
       cause,
     });
   } finally {
@@ -864,19 +864,19 @@ async function lookupAndRebase(
 }
 
 async function reserveEntry(
-  input: SandboxSetupPrefixCacheOperation,
+  input: BeforeCacheStep,
   manifest: ValidatedManifest,
 ): Promise<
-  | { readonly _tag: "Reserved"; readonly lease: SetupPrefixLease }
-  | { readonly _tag: "Contended"; readonly setupPrefixKey: string; readonly reason: "active-writer" | "indexed-generation" }
+  | { readonly _tag: "Reserved"; readonly lease: BeforeCacheLease }
+  | { readonly _tag: "Contended"; readonly beforeCacheKey: string; readonly reason: "active-writer" | "indexed-generation" }
 > {
-  const domain = await openSetupPrefixDomain();
+  const domain = await openBeforeCacheDomain();
   const holder = holderIdentity();
   const leaseId = randomUUID();
   const now = new Date();
   const reserved = await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-reserve",
+    operation: "before-cache-reserve",
     domainId: domain.domainId,
     manifest: repositoryManifest(manifest),
     replacementScope: replacementScope(manifest),
@@ -890,22 +890,22 @@ async function reserveEntry(
   if (reserved.state === "contended") {
     return {
       _tag: "Contended",
-      setupPrefixKey: manifest.value.setupPrefixKey,
+      beforeCacheKey: manifest.value.beforeCacheKey,
       reason: reserved.reason,
     };
   }
   return {
     _tag: "Reserved",
-    lease: new SetupPrefixLease(domain, localEntry(reserved.entry), leaseId, "build"),
+    lease: new BeforeCacheLease(domain, localEntry(reserved.entry), leaseId, "build"),
   };
 }
 
-async function publishEntry(row: SetupPrefixEntryRow, imageId: string, signal: AbortSignal): Promise<void> {
-  const domain = await openSetupPrefixDomain();
+async function publishEntry(row: BeforeCacheEntryRow, imageId: string, signal: AbortSignal): Promise<void> {
+  const domain = await openBeforeCacheDomain();
   signal.throwIfAborted();
   await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-publish-reserve",
+    operation: "before-cache-publish-reserve",
     domainId: domain.domainId,
     entryId: row.entry_id,
     operationId: row.operation_id,
@@ -915,32 +915,32 @@ async function publishEntry(row: SetupPrefixEntryRow, imageId: string, signal: A
   signal.throwIfAborted();
   await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-publish-settle",
+    operation: "before-cache-publish-settle",
     domainId: domain.domainId,
     entryId: row.entry_id,
-    setupPrefixKey: row.setup_prefix_key,
+    beforeCacheKey: row.before_cache_key,
     imageId,
   });
 }
 
 async function failedCaptureImageCanBeRemoved(imageId: string, entryId: string): Promise<boolean> {
-  const domain = await openSetupPrefixDomain();
+  const domain = await openBeforeCacheDomain();
   const claims = await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-image-claims",
+    operation: "before-cache-image-claims",
     domainId: domain.domainId,
     imageId,
     exceptEntryId: entryId,
   });
-  return !claims.gcLocked && !claims.taskBuildClaim && !claims.siblingSetupPrefixClaim;
+  return !claims.gcLocked && !claims.taskBuildClaim && !claims.siblingBeforeCacheClaim;
 }
 
 /** Retire an artifact only after a replacement with the identical logical lineage is indexed. */
 async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: string): Promise<void> {
-  const domain = await openSetupPrefixDomain();
+  const domain = await openBeforeCacheDomain();
   const listed = await dockerCacheRepository.request({
     repository: "docker-cache",
-    operation: "setup-list-reclaim-candidates",
+    operation: "before-cache-list-reclaim-candidates",
     domainId: domain.domainId,
     ...(scope === undefined ? {} : { replacementScope: scope }),
     ...(exceptEntryId === undefined ? {} : { exceptEntryId }),
@@ -949,10 +949,10 @@ async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: str
     const candidate = localEntry(repositoryRow);
     if (candidate.image_id === null) continue;
     const imageId = candidate.image_id;
-    const planId = `setup-prefix-reclaim:${randomUUID()}`;
+    const planId = `before-cache-reclaim:${randomUUID()}`;
     const reserved = await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-reserve-delete",
+      operation: "before-cache-reserve-delete",
       domainId: domain.domainId,
       entryId: candidate.entry_id,
       planId,
@@ -972,11 +972,11 @@ async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: str
       }
     } catch {
       // A replacement is already live. Keep the old generation indexed if its
-      // provider deletion cannot be proven; a later publish/root release retries.
+      // provider deletion cannot be proven; a later publish/hold release retries.
     }
     await dockerCacheRepository.request({
       repository: "docker-cache",
-      operation: "setup-settle-delete",
+      operation: "before-cache-settle-delete",
       domainId: domain.domainId,
       entryId: candidate.entry_id,
       imageId,
@@ -986,33 +986,33 @@ async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: str
   }
 }
 
-async function captureAndRebase(
-  target: DockerSetupPrefixCacheTarget,
-  input: SandboxSetupPrefixCacheOperation,
+async function capture(
+  target: DockerBeforeCacheTarget,
+  input: BeforeCacheStep,
   signal: AbortSignal,
-): Promise<SandboxSetupPrefixCacheCaptureResult> {
+): Promise<AttemptBeforeCacheCapture> {
   const eligibility = target.eligibility();
   if (eligibility._tag === "Unsupported") return eligibility;
   let manifest: ValidatedManifest;
   try {
     manifest = validateOperation(input);
-    if (manifest.value.baseImageId !== eligibility.baseImageId) {
-      throw new Error("setup-prefix capture Base image does not match the initialized provider Base");
+    if (manifest.value.baseIdentity !== eligibility.baseIdentity) {
+      throw new Error("before-cache capture Base image does not match the initialized provider Base");
     }
     if (!sandboxActionStateCovers(eligibility.coverage, manifest.value.requiredState)) {
-      throw new Error("setup-prefix capture requires state outside the provider coverage");
+      throw new Error("before-cache capture requires state outside the provider coverage");
     }
   } catch (cause) {
-    throw new SandboxSetupPrefixCacheValidationError({
-      operation: "validate setup-prefix capture",
+    throw new BeforeCacheValidationError({
+      operation: "validate before-cache capture",
       reason: errorMessage(cause),
-      setupPrefixKey: input.manifest.setupPrefixKey,
+      beforeCacheKey: input.declaration.beforeCacheKey,
       cause,
     });
   }
 
-  let reservation: SetupPrefixLease | undefined;
-  let reservedRow: SetupPrefixEntryRow | undefined;
+  let reservation: BeforeCacheLease | undefined;
+  let reservedRow: BeforeCacheEntryRow | undefined;
   let imageId: string | undefined;
   try {
     signal.throwIfAborted();
@@ -1029,15 +1029,15 @@ async function captureAndRebase(
     await reclaimSupersededDockerImages(replacementScope(manifest), reservedRow.entry_id);
     signal.throwIfAborted();
     const lease = await acquireIndexedLease(input, manifest, reservedRow.entry_id);
-    if (lease === undefined) throw new Error("captured setup-prefix generation was not indexed");
+    if (lease === undefined) throw new Error("captured before-cache generation was not indexed");
     try {
-      // The handoff lease now closes the build-lease-to-root protection window.
+      // The handoff lease now closes the build-lease-to-hold protection window.
       await reservation.release();
       reservation = undefined;
       const restored = await restoreLeaseIntoTarget(target, lease, input, signal);
       return {
         _tag: "Captured",
-        setupPrefixKey: manifest.value.setupPrefixKey,
+        beforeCacheKey: manifest.value.beforeCacheKey,
         entryId: reservedRow.entry_id,
         generation: reservedRow.generation,
         artifactId: restored.imageId,
@@ -1078,30 +1078,30 @@ async function captureAndRebase(
       }
     }
     if (cleanupFailures.length > 0) {
-      throw new SandboxSetupPrefixCacheCleanupError({
-        operation: "clean failed setup-prefix capture",
+      throw new BeforeCacheCleanupError({
+        operation: "clean failed before-cache capture",
         reason: "capture failed and its unindexed image/registry claim could not be fully retired",
-        setupPrefixKey: manifest.value.setupPrefixKey,
+        beforeCacheKey: manifest.value.beforeCacheKey,
         cause: new AggregateError([cause, ...cleanupFailures]),
       });
     }
-    if (isSetupPrefixError(cause)) throw cause;
-    throw new SandboxSetupPrefixCacheCaptureError({
-      operation: "capture and publish setup-prefix image",
+    if (isBeforeCacheError(cause)) throw cause;
+    throw new BeforeCacheCaptureError({
+      operation: "capture and publish before-cache image",
       reason: errorMessage(cause),
-      setupPrefixKey: manifest.value.setupPrefixKey,
+      beforeCacheKey: manifest.value.beforeCacheKey,
       cause,
     });
   }
 }
 
-export function makeDockerSetupPrefixCacheCapability(
-  target: DockerSetupPrefixCacheTarget,
-): SandboxSetupPrefixCacheCapability {
+export function makeDockerBeforeCacheCapability(
+  target: DockerBeforeCacheTarget,
+): AttemptBeforeCache {
   const scopedOperation = <A>(
     run: (signal: AbortSignal) => Promise<A>,
-    mapError: (cause: unknown) => SandboxSetupPrefixCacheError,
-  ): Effect.Effect<A, SandboxSetupPrefixCacheError> => Effect.acquireUseRelease(
+    mapError: (cause: unknown) => BeforeCacheError,
+  ): Effect.Effect<A, BeforeCacheError> => Effect.acquireUseRelease(
     Effect.sync(() => {
       const controller = new AbortController();
       const promise = Promise.resolve().then(() => run(controller.signal));
@@ -1121,45 +1121,45 @@ export function makeDockerSetupPrefixCacheCapability(
       catch: mapError,
     }),
     ({ controller, settled }) => Effect.sync(() => controller.abort(
-      new DOMException("setup-prefix cache operation scope closed", "AbortError"),
+      new DOMException("before cache operation scope closed", "AbortError"),
     )).pipe(Effect.andThen(Effect.promise(() => settled))),
   );
 
   return Object.freeze({
     eligibility: target.eligibility,
-    lookupAndRebase: (input: SandboxSetupPrefixCacheOperation) => scopedOperation(
-      (signal) => lookupAndRebase(target, input, signal),
-      (cause) => isSetupPrefixError(cause)
+    lookupAndRestore: (input: BeforeCacheStep) => scopedOperation(
+      (signal) => lookupAndRestore(target, input, signal),
+      (cause) => isBeforeCacheError(cause)
         ? cause
-        : new SandboxSetupPrefixCacheLookupError({
-            operation: "lookup and restore setup-prefix cache",
+        : new BeforeCacheLookupError({
+            operation: "lookup and restore before cache",
             reason: errorMessage(cause),
-            setupPrefixKey: input.manifest.setupPrefixKey,
+            beforeCacheKey: input.declaration.beforeCacheKey,
             cause,
           }),
     ),
-    captureAndRebase: (input: SandboxSetupPrefixCacheOperation) => scopedOperation(
-      (signal) => captureAndRebase(target, input, signal),
-      (cause) => isSetupPrefixError(cause)
+    capture: (input: BeforeCacheStep) => scopedOperation(
+      (signal) => capture(target, input, signal),
+      (cause) => isBeforeCacheError(cause)
         ? cause
-        : new SandboxSetupPrefixCacheCaptureError({
-            operation: "capture and publish setup-prefix cache",
+        : new BeforeCacheCaptureError({
+            operation: "capture and publish before cache",
             reason: errorMessage(cause),
-            setupPrefixKey: input.manifest.setupPrefixKey,
+            beforeCacheKey: input.declaration.beforeCacheKey,
             cause,
           }),
     ),
-    recoverCleanBase: () => scopedOperation(
+    fallBackToBase: () => scopedOperation(
       async (signal) => {
         const eligibility = target.eligibility();
         if (eligibility._tag === "Unsupported") return eligibility;
-        const recovered = await target.recoverCleanBase(signal);
-        if (!exactImageId(recovered.baseImageId)) throw new Error("clean Base recovery did not use an exact image id");
-        return { _tag: "RecoveredCleanBase", ...recovered } as const;
+        const recovered = await target.fallBackToBase(signal);
+        if (!exactImageId(recovered.baseIdentity)) throw new Error("clean Base recovery did not use an exact image id");
+        return { _tag: "FellBackToBase", ...recovered } as const;
       },
-      (cause) => isSetupPrefixError(cause)
+      (cause) => isBeforeCacheError(cause)
         ? cause
-        : new SandboxSetupPrefixCacheRestoreError({
+        : new BeforeCacheRestoreError({
             operation: "recover a clean exact Base",
             reason: errorMessage(cause),
             cause,

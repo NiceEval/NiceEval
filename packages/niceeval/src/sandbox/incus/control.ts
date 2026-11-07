@@ -34,7 +34,7 @@ export const INCUS_METADATA = Object.freeze({
   pid: "user.niceeval.pid",
   startedAt: "user.niceeval.startedAt",
   artifactState: "user.niceeval.artifactState",
-  setupPrefixKey: "user.niceeval.setupPrefixKey",
+  beforeCacheKey: "user.niceeval.beforeCacheKey",
   manifestDigest: "user.niceeval.manifestDigest",
   runtimeProject: "user.niceeval.runtimeProject",
   pool: "user.niceeval.pool",

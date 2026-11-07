@@ -81,7 +81,6 @@ export const EXP_NORMAL_CLI_OPTIONS = Object.freeze({
   "sandbox-before-cache": option("string", "Use or bypass the Sandbox before cache."),
   // Let the root parser route retired options to this owner's migration error.
   "sandbox-setup-cache": Object.freeze({ type: "string", help: Object.freeze({ summary: "Use --sandbox-before-cache.", visibility: "hidden" }) }),
-  "max-setup-prefix-concurrency": Object.freeze({ type: "string", help: Object.freeze({ summary: "Use --max-before-cache-concurrency.", visibility: "hidden" }) }),
   timeout: option("string", "Set the per-Attempt timeout in milliseconds."),
   budget: option("string", "Set the Invocation budget in USD."),
   tag: option("string", "Select only Evals with this tag."),
@@ -401,8 +400,8 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
   return failure(operation, cause, 1, display);
 }
 
-function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number; readonly beforeCaches: { readonly total: number; readonly hit: number; readonly prepared: number; readonly failed: number } } }): string {
-  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nBefore caches: ${result.summary.beforeCaches.hit} hit · ${result.summary.beforeCaches.prepared} prepared · ${result.summary.beforeCaches.failed} failed (${result.summary.beforeCaches.total} total)\n`;
+function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number; readonly beforeCaches: { readonly total: number; readonly hit: number; readonly prepared: number; readonly degraded: number; readonly failed: number } } }): string {
+  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nBefore caches: ${result.summary.beforeCaches.hit} hit · ${result.summary.beforeCaches.prepared} prepared · ${result.summary.beforeCaches.degraded} degraded · ${result.summary.beforeCaches.failed} failed (${result.summary.beforeCaches.total} total)\n`;
 }
 
 function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly ExperimentHostDryComparison[]; readonly reason?: string; readonly scope?: string }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
@@ -529,7 +528,7 @@ function renameJson(result: ExperimentHostRenamePlan | ExperimentHostRenameResul
 function parsed(argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) {
   return Effect.flatMap(CliArguments, (argumentsService) => Effect.try({
     try: () => {
-      for (const [oldName, newName] of [["--max-setup-prefix-concurrency", "--max-before-cache-concurrency"], ["--sandbox-setup-cache", "--sandbox-before-cache"]]) {
+      for (const [oldName, newName] of [["--sandbox-setup-cache", "--sandbox-before-cache"]]) {
         if (argv.some((token) => token === oldName || token.startsWith(`${oldName}=`))) {
           throw new TypeError(`${oldName} is no longer supported. Use ${newName}.`);
         }

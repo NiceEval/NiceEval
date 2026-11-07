@@ -8,7 +8,7 @@ const cachedStep = (prefixIdentity: string): CommandPlanStep => ({
   truth: "exact",
   cache: {
     lookup: "not-probed",
-    capability: "persistent",
+    capability: "attempt-captured",
     prefixIdentity,
     runtime: { status: "pending", finalKey: "not-probed" },
     eligibility: { status: "eligible" },
@@ -49,7 +49,7 @@ describe("beforeCachePlanOf", () => {
       nodes: [{
         prefixIdentity: "prefix:a",
         lookup: "not-probed",
-        capability: "persistent",
+        capability: "attempt-captured",
         eligibility: { status: "eligible" },
         consumers: [
           { experimentId: "experiment", evalId: "eval/a" },
@@ -58,7 +58,7 @@ describe("beforeCachePlanOf", () => {
       }, {
         prefixIdentity: "prefix:shared",
         lookup: "not-probed",
-        capability: "persistent",
+        capability: "attempt-captured",
         eligibility: { status: "eligible" },
         consumers: [
           { experimentId: "experiment", evalId: "eval/a" },

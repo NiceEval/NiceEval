@@ -7,10 +7,10 @@ import { dockerProfileError, type DockerProfileError } from "./errors.ts";
 
 export const DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION: 1 = 1;
 export const DOCKER_PROFILE_NETWORK_POLICY_VERSION: 1 = 1;
-export const DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY =
+export const DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY =
   "niceeval-docker-profile-state/docker-data-snapshot/v1" as const;
-export const DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL =
-  DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY;
+export const DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL =
+  DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY;
 export const DOCKER_PROFILE_NETWORK_DENY_CIDRS: readonly [string, ...string[]] = Object.freeze([
   "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
   "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
@@ -21,7 +21,7 @@ const NETWORK_ALLOWED_PROTOCOLS: readonly ["dns", "https"] = Object.freeze(["dns
 const PROFILE_CONTROLLERS: readonly ["cpu", "memory", "pids"] = Object.freeze([
   "cpu", "memory", "pids",
 ]);
-const SETUP_PREFIX_FILESYSTEM_FEATURES: readonly [
+const BEFORE_CACHE_FILESYSTEM_FEATURES: readonly [
   "ext4",
   "fixed-size",
   "fully-allocated",
@@ -77,12 +77,12 @@ export interface DockerManagedRootlessPolicy {
 }
 
 /**
- * Opt-in host capability for copying the complete profile-owned SetupPrefix
+ * Opt-in host capability for copying the complete profile-owned BeforeCache
  * state. Absence is intentional and keeps the historical structured
  * Unsupported result for raw and managed profiles.
  */
-export interface DockerProfileSetupPrefixFullCopyCapabilityV1 {
-  readonly protocol: typeof DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL;
+export interface DockerProfileBeforeCacheFullCopyCapabilityV1 {
+  readonly protocol: typeof DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL;
   readonly coverage: "dockerData";
   readonly requiredState: "dockerData";
   readonly helperRevision: string;
@@ -137,7 +137,7 @@ export interface DockerExecutionProfileV1 {
           | "independent-fixed-filesystem/v1";
       };
       /** Presence is the descriptor's explicit, default-off full-copy capability. */
-      readonly setupPrefix?: DockerProfileSetupPrefixFullCopyCapabilityV1;
+      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1;
     };
     readonly cgroup: {
       readonly aggregatePath: string;
@@ -303,25 +303,25 @@ const CapacitySchema = plainStruct({
     description: "aggregate capacity at least as large as allocatable CPU, memory and PID capacity",
   })));
 
-const SetupPrefixFullCopyCapabilitySchema = plainStruct({
-  protocol: Schema.Literal(DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL),
+const BeforeCacheFullCopyCapabilitySchema = plainStruct({
+  protocol: Schema.Literal(DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL),
   coverage: Schema.Literal("dockerData"),
   requiredState: Schema.Literal("dockerData"),
-  helperRevision: nonEmptyString("DockerProfileSetupPrefixHelperRevision"),
+  helperRevision: nonEmptyString("DockerProfileBeforeCacheHelperRevision"),
   copyProtocol: Schema.Literal("raw-image/v1"),
-  copyRevision: nonEmptyString("DockerProfileSetupPrefixCopyRevision"),
-  quiesceRevision: nonEmptyString("DockerProfileSetupPrefixQuiesceRevision"),
+  copyRevision: nonEmptyString("DockerProfileBeforeCacheCopyRevision"),
+  quiesceRevision: nonEmptyString("DockerProfileBeforeCacheQuiesceRevision"),
   slotAttestation: Schema.Literal("independent-fixed-filesystem/v1"),
   seedPolicy: Schema.Literal("immutable-unmounted/v1"),
   publicationRevision: Schema.Literal("prepared-copy-client-commit-publish/v4"),
   recoveryRevision: Schema.Literal("epoch-capsule-no-guess-recovery/v3"),
   manifestSchema: Schema.Literal("niceeval-docker-profile-activation/v3"),
-  providerIdentity: sha256Identity("DockerProfileSetupPrefixProviderIdentity"),
-  executionDomain: sha256Identity("DockerProfileSetupPrefixExecutionDomain"),
-  filesystemSizeBytes: positiveSafeInteger("DockerProfileSetupPrefixFilesystemSizeBytes"),
+  providerIdentity: sha256Identity("DockerProfileBeforeCacheProviderIdentity"),
+  executionDomain: sha256Identity("DockerProfileBeforeCacheExecutionDomain"),
+  filesystemSizeBytes: positiveSafeInteger("DockerProfileBeforeCacheFilesystemSizeBytes"),
   filesystemFeatures: Schema.Tuple([Schema.Literal("ext4"), Schema.Literal("fixed-size"), Schema.Literal("fully-allocated"), Schema.Literal("independent-image")]),
-  seedLimitBytes: positiveSafeInteger("DockerProfileSetupPrefixSeedLimitBytes"),
-  filesystemIdentity: nonEmptyString("DockerProfileSetupPrefixFilesystemIdentity"),
+  seedLimitBytes: positiveSafeInteger("DockerProfileBeforeCacheSeedLimitBytes"),
+  filesystemIdentity: nonEmptyString("DockerProfileBeforeCacheFilesystemIdentity"),
 });
 
 /** Wire structure only; semantic revision and frozen canonical values are checked after decode. */
@@ -360,7 +360,7 @@ export const DockerExecutionProfileV1Schema: Schema.Codec<
         bytesPerAllocation: positiveSafeInteger("DockerProfileDockerDataAllocationLimitBytes"),
         attestation: Schema.Literals(["linux-project-quota/v1", "independent-fixed-filesystem/v1"]),
       }),
-      setupPrefix: Schema.optional(SetupPrefixFullCopyCapabilitySchema),
+      beforeCache: Schema.optional(BeforeCacheFullCopyCapabilitySchema),
     }),
     cgroup: plainStruct({
       aggregatePath: absolutePath("DockerProfileAggregatePath"),
@@ -408,12 +408,12 @@ function freezeProfile(profile: DockerExecutionProfileV1): DockerExecutionProfil
       filesystem: Object.freeze({
         ...profile.backend.filesystem,
         dockerDataPool: Object.freeze({ ...profile.backend.filesystem.dockerDataPool }),
-        ...(profile.backend.filesystem.setupPrefix === undefined
+        ...(profile.backend.filesystem.beforeCache === undefined
           ? {}
           : {
-              setupPrefix: Object.freeze({
-                ...profile.backend.filesystem.setupPrefix,
-                filesystemFeatures: SETUP_PREFIX_FILESYSTEM_FEATURES,
+              beforeCache: Object.freeze({
+                ...profile.backend.filesystem.beforeCache,
+                filesystemFeatures: BEFORE_CACHE_FILESYSTEM_FEATURES,
               }),
             }),
       }),
@@ -566,23 +566,23 @@ export function decodeDockerExecutionProfile(value: unknown): DockerExecutionPro
       message: "Docker data allocations must cover maxContainers and allocatable ephemeralDiskBytes",
     });
   }
-  const setupPrefix = profile.backend.filesystem.setupPrefix;
+  const beforeCache = profile.backend.filesystem.beforeCache;
   if (
-    setupPrefix !== undefined &&
+    beforeCache !== undefined &&
     (
-      setupPrefix.filesystemSizeBytes !==
+      beforeCache.filesystemSizeBytes !==
         profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
-      setupPrefix.seedLimitBytes < setupPrefix.filesystemSizeBytes ||
-      setupPrefix.seedLimitBytes % setupPrefix.filesystemSizeBytes !== 0 ||
-      setupPrefix.slotAttestation !==
+      beforeCache.seedLimitBytes < beforeCache.filesystemSizeBytes ||
+      beforeCache.seedLimitBytes % beforeCache.filesystemSizeBytes !== 0 ||
+      beforeCache.slotAttestation !==
         profile.backend.filesystem.dockerDataPool.attestation
     )
   ) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-schema-invalid",
-      path: "profile.backend.filesystem.setupPrefix",
+      path: "profile.backend.filesystem.beforeCache",
       message:
-        "Docker profile setup-prefix capability must fit one independently attested fixed Docker data allocation",
+        "Docker profile before-cache capability must fit one independently attested fixed Docker data allocation",
     });
   }
   const rawStorage = profile.securityLevel === "raw-dind-storage/v1";
@@ -655,28 +655,28 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
         dockerRootDir: profile.backend.filesystem.dockerRootDir,
         limitBytes: profile.backend.filesystem.limitBytes,
         dockerDataPool: { ...profile.backend.filesystem.dockerDataPool },
-        ...(profile.backend.filesystem.setupPrefix === undefined
+        ...(profile.backend.filesystem.beforeCache === undefined
           ? {}
           : {
-              setupPrefix: {
-                protocol: profile.backend.filesystem.setupPrefix.protocol,
-                coverage: profile.backend.filesystem.setupPrefix.coverage,
-                requiredState: profile.backend.filesystem.setupPrefix.requiredState,
-                helperRevision: profile.backend.filesystem.setupPrefix.helperRevision,
-                copyProtocol: profile.backend.filesystem.setupPrefix.copyProtocol,
-                copyRevision: profile.backend.filesystem.setupPrefix.copyRevision,
-                quiesceRevision: profile.backend.filesystem.setupPrefix.quiesceRevision,
-                slotAttestation: profile.backend.filesystem.setupPrefix.slotAttestation,
-                seedPolicy: profile.backend.filesystem.setupPrefix.seedPolicy,
-                publicationRevision: profile.backend.filesystem.setupPrefix.publicationRevision,
-                recoveryRevision: profile.backend.filesystem.setupPrefix.recoveryRevision,
-                manifestSchema: profile.backend.filesystem.setupPrefix.manifestSchema,
-                providerIdentity: profile.backend.filesystem.setupPrefix.providerIdentity,
-                executionDomain: profile.backend.filesystem.setupPrefix.executionDomain,
-                filesystemSizeBytes: profile.backend.filesystem.setupPrefix.filesystemSizeBytes,
-                filesystemFeatures: [...profile.backend.filesystem.setupPrefix.filesystemFeatures],
-                seedLimitBytes: profile.backend.filesystem.setupPrefix.seedLimitBytes,
-                filesystemIdentity: profile.backend.filesystem.setupPrefix.filesystemIdentity,
+              beforeCache: {
+                protocol: profile.backend.filesystem.beforeCache.protocol,
+                coverage: profile.backend.filesystem.beforeCache.coverage,
+                requiredState: profile.backend.filesystem.beforeCache.requiredState,
+                helperRevision: profile.backend.filesystem.beforeCache.helperRevision,
+                copyProtocol: profile.backend.filesystem.beforeCache.copyProtocol,
+                copyRevision: profile.backend.filesystem.beforeCache.copyRevision,
+                quiesceRevision: profile.backend.filesystem.beforeCache.quiesceRevision,
+                slotAttestation: profile.backend.filesystem.beforeCache.slotAttestation,
+                seedPolicy: profile.backend.filesystem.beforeCache.seedPolicy,
+                publicationRevision: profile.backend.filesystem.beforeCache.publicationRevision,
+                recoveryRevision: profile.backend.filesystem.beforeCache.recoveryRevision,
+                manifestSchema: profile.backend.filesystem.beforeCache.manifestSchema,
+                providerIdentity: profile.backend.filesystem.beforeCache.providerIdentity,
+                executionDomain: profile.backend.filesystem.beforeCache.executionDomain,
+                filesystemSizeBytes: profile.backend.filesystem.beforeCache.filesystemSizeBytes,
+                filesystemFeatures: [...profile.backend.filesystem.beforeCache.filesystemFeatures],
+                seedLimitBytes: profile.backend.filesystem.beforeCache.seedLimitBytes,
+                filesystemIdentity: profile.backend.filesystem.beforeCache.filesystemIdentity,
               },
             }),
       },

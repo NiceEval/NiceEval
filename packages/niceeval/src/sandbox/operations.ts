@@ -233,7 +233,7 @@ export function createSandboxCommandTarget(
 ): import("./commands.ts").SandboxCommandTarget {
   return {
     get sandboxId() {
-      // Docker setup-prefix restore can rebase the facade before an opaque callback starts.
+      // Docker before-cache restore can rebase the facade before an opaque callback starts.
       // Resolve lazily so the callback, its cleanup, and standalone after see the current instance.
       return sandbox.sandboxId;
     },

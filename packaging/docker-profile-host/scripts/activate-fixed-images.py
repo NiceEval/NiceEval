@@ -415,7 +415,7 @@ def assert_journals_drained(paths: list[Path]) -> None:
         )
         if not recovered_only or state.get("reservations") or state.get("queue") \
                 or state.get("builds") or state.get("containers") \
-                or state.get("setupPrefix", {}).get("operations"):
+                or state.get("beforeCache", {}).get("operations"):
             raise RuntimeError(f"activation requires a drained ownership journal: {path}")
 
 
@@ -869,7 +869,7 @@ def active_seed_status(generation: Path, capsule: dict[str, Any]) -> tuple[dict[
     latest = durable_last_state(generation / "events.ndjson")
     if latest is None:
         raise RuntimeError("durable watchdog state is absent; active seed capacity is unknown")
-    seeds = latest.get("setupPrefix", {}).get("seeds")
+    seeds = latest.get("beforeCache", {}).get("seeds")
     if not isinstance(seeds, dict) or set(seeds) != set(seed_ids) \
             or any(not isinstance(seed, dict) for seed in seeds.values()):
         raise RuntimeError("durable watchdog seed inventory differs from the active epoch registry")
@@ -1277,7 +1277,7 @@ def main() -> None:
                 atomic_text(staging_descriptor, descriptor_bytes.decode("utf-8"))
             config_bytes = json.dumps(config, sort_keys=True, indent=2).encode() + b"\n"
             slot_registry = Path(config["storage"]["slotRegistryPath"]).resolve()
-            seed_registry = Path(config["setupPrefix"]["seedRegistryPath"]).resolve()
+            seed_registry = Path(config["beforeCache"]["seedRegistryPath"]).resolve()
             manifest = {
                 "schema": SCHEMA,
                 "state": "committed",

@@ -1,20 +1,13 @@
-import type { OpenSandboxCacheRequest, OpenSandboxCacheResult } from "../sandbox/opensandbox/repository.ts";
 import type {
   DockerCacheRepositoryRequest,
   DockerCacheRepositoryResult,
   DockerCacheResultFor,
 } from "../sandbox/docker-cache-repository.ts";
 import type {
-  E2BCacheRequest,
-  E2BCacheResult,
-  E2BCacheResultFor,
-} from "../sandbox/e2b-cache-repository.ts";
-import type {
   IncusRepositoryRequest,
   IncusRepositoryResult,
   IncusRepositoryResultFor,
 } from "../sandbox/incus/repository.ts";
-
 import type { BeforeCacheSnapshotRepositoryRequest, BeforeCacheSnapshotRepositoryResult } from "../sandbox/remote-snapshot/ledger.ts";
 
 export const DURABLE_STATE_REPOSITORY = "durable-state" as const;
@@ -37,9 +30,7 @@ export type DurableStateRequest =
 export type UserDatabaseRepositoryRequest =
   | DurableStateRequest
   | DockerCacheRepositoryRequest
-  | E2BCacheRequest
   | IncusRepositoryRequest
-  | OpenSandboxCacheRequest
   | BeforeCacheSnapshotRepositoryRequest;
 
 export type UserDatabaseRepositoryResult =
@@ -47,9 +38,7 @@ export type UserDatabaseRepositoryResult =
   | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "get"; readonly entry: DurableStateEntry | null }
   | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "list"; readonly entries: readonly DurableStateEntry[] }
   | DockerCacheRepositoryResult
-  | E2BCacheResult
   | IncusRepositoryResult
-  | OpenSandboxCacheResult
   | BeforeCacheSnapshotRepositoryResult;
 
 export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest> =
@@ -60,12 +49,9 @@ export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest>
       }>
     : Request extends DockerCacheRepositoryRequest
       ? DockerCacheResultFor<Request>
-      : Request extends E2BCacheRequest
-        ? E2BCacheResultFor<Request>
-        : Request extends IncusRepositoryRequest
-          ? IncusRepositoryResultFor<Request>
-          : Request extends OpenSandboxCacheRequest ? OpenSandboxCacheResult
-            : Request extends BeforeCacheSnapshotRepositoryRequest ? BeforeCacheSnapshotRepositoryResult : never;
+      : Request extends IncusRepositoryRequest
+        ? IncusRepositoryResultFor<Request>
+        : Request extends BeforeCacheSnapshotRepositoryRequest ? BeforeCacheSnapshotRepositoryResult : never;
 
 export interface UserDatabaseMigrationReceipt {
   readonly version: number;

@@ -34,28 +34,29 @@ import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import {
-  decodeSandboxSetupPrefixCacheKeyScope,
+  decodeBeforeCacheKeyScope,
   supportedBackendCapability,
   type SandboxBackendCapabilities,
   type SandboxProviderBackend,
-  type SandboxSetupPrefixCacheEligibility,
+  type BeforeCacheEligibility,
+  type AttemptBeforeCache,
 } from "./backend.ts";
 import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
 import { DIND_CAPTURE_QUIESCE_COMMAND, dindContainerCommand } from "./dind-supervisor.ts";
 import { sandboxState } from "./action.ts";
 import { ManagedProcessOutput } from "./managed-process.ts";
 import {
-  makeDockerSetupPrefixCacheCapability,
-  type DockerSetupPrefixRootOwnership,
-} from "./docker-setup-prefix-cache.ts";
+  makeDockerBeforeCacheCapability,
+  type DockerBeforeCacheHoldOwnership,
+} from "./docker-before-cache.ts";
 import {
-  makeDockerProfileSetupPrefixCacheCapability,
-  type DockerProfileSetupPrefixSession,
-} from "./docker-profile/setup-prefix.ts";
-import { DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY } from "./docker-profile/schema.ts";
+  makeDockerProfileBeforeCacheCapability,
+  type DockerProfileBeforeCacheSession,
+} from "./docker-profile/before-cache.ts";
+import { DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY } from "./docker-profile/schema.ts";
 
 const execFileAsync = promisify(execFile);
-const SETUP_PREFIX_PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
+const BEFORE_CACHE_PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
 
 function abortableProviderRead<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (signal === undefined) return promise;
@@ -215,7 +216,7 @@ export interface DockerSandboxOptions {
   managedLabels?: Readonly<Record<string, string>>;
   rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
   /** Current profile lease/reservation; full-copy restore may only replace this reservation's private slot. */
-  profileSetupPrefix?: DockerProfileSetupPrefixSession;
+  profileBeforeCache?: DockerProfileBeforeCacheSession;
   afterStop?: () => Promise<void>;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
@@ -418,8 +419,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private runtime: string;
   private image?: string;
   /** Exact pristine source image captured during the first initialization; never advances with prefix rebases. */
-  private baseImageId?: string;
-  /** Dynamic package-manager mutation can never become a shared SetupPrefix baseline for this instance. */
+  private baseIdentity?: string;
+  /** Dynamic package-manager mutation can never become a shared BeforeCache baseline for this instance. */
   private runnerToolsInstalledDynamically = false;
   private feedback?: import("../types.ts").ScopedFeedback;
   private provisionToken?: string;
@@ -436,7 +437,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private readonly managedLabels: Readonly<Record<string, string>>;
   private containerName?: string;
   private readonly rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
-  private readonly profileSetupPrefix?: DockerProfileSetupPrefixSession;
+  private readonly profileBeforeCache?: DockerProfileBeforeCacheSession;
   private controlledCreate?: (
     spec: DockerControlCreateSpec,
     signal?: AbortSignal,
@@ -453,8 +454,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private defaultIsRoot = true;
   private npmGlobalDir = "/root/.npm-global";
   private sandboxPath: string;
-  private setupPrefixRoot?: DockerSetupPrefixRootOwnership;
-  private setupPrefixMountReason?: string;
+  private beforeCacheHold?: DockerBeforeCacheHoldOwnership;
+  private beforeCacheMountReason?: string;
   readonly capabilities: SandboxBackendCapabilities;
 
   private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
@@ -604,28 +605,28 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.dns = Object.freeze([...(options.dns ?? [])]);
     this.managedLabels = Object.freeze({ ...(options.managedLabels ?? {}) });
     this.rootlessAttestation = options.rootlessAttestation;
-    this.profileSetupPrefix = options.profileSetupPrefix;
+    this.profileBeforeCache = options.profileBeforeCache;
     this.afterStop = options.afterStop;
     this.pathPrepend = options.pathPrepend ?? [];
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
-    const setupPrefixCache = this.profileSetupPrefix === undefined
-      ? makeDockerSetupPrefixCacheCapability({
-          eligibility: () => this.setupPrefixCacheEligibility(),
+    this.attemptBeforeCache = this.profileBeforeCache === undefined
+      ? makeDockerBeforeCacheCapability({
+          eligibility: () => this.beforeCacheEligibility(),
           captureExactImage: (labels, knownSensitiveValues, signal) =>
-            this.captureSetupPrefixImage(labels, knownSensitiveValues, signal),
+            this.captureBeforeCacheImage(labels, knownSensitiveValues, signal),
           rebaseToExactImage: (imageId, plannedContainerName, signal) =>
-            this.rebaseSetupPrefixImage(imageId, plannedContainerName, signal),
+            this.rebaseBeforeCacheImage(imageId, plannedContainerName, signal),
           destroyCurrentForCacheRecovery: () => this.destroyCurrentContainer(false),
-          adoptSetupPrefixRoot: (root) => this.adoptSetupPrefixRoot(root),
-          recoverCleanBase: (signal) => this.recoverSetupPrefixCleanBase(signal),
+          adoptBeforeCacheHold: (root) => this.adoptBeforeCacheHold(root),
+          fallBackToBase: (signal) => this.recoverBeforeCacheCleanBase(signal),
         })
-      : makeDockerProfileSetupPrefixCacheCapability({
-          session: this.profileSetupPrefix,
-          eligibility: () => this.setupPrefixCacheEligibility(),
-          quiesceAndStop: (signal) => this.quiesceProfileSetupPrefix(signal),
-          resumeStopped: (signal) => this.resumeProfileSetupPrefix(signal),
-          retireStopped: () => this.retireProfileSetupPrefix(),
-          createFromCurrent: (signal) => this.createProfileSetupPrefixContinuation(signal),
+      : makeDockerProfileBeforeCacheCapability({
+          session: this.profileBeforeCache,
+          eligibility: () => this.beforeCacheEligibility(),
+          quiesceAndStop: (signal) => this.quiesceProfileBeforeCache(signal),
+          resumeStopped: (signal) => this.resumeProfileBeforeCache(signal),
+          retireStopped: () => this.retireProfileBeforeCache(),
+          createFromCurrent: (signal) => this.createProfileBeforeCacheContinuation(signal),
         });
     this.capabilities = Object.freeze({
       rootCommands: supportedBackendCapability(true as const),
@@ -634,19 +635,20 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
       setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
       managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
-      setupPrefixCache: supportedBackendCapability(setupPrefixCache),
     });
   }
 
-  private setupPrefixCacheEligibility(): SandboxSetupPrefixCacheEligibility {
-    if (this.profileSetupPrefix !== undefined) {
-      const capability = this.profileSetupPrefix.lease.binding.profile.backend.filesystem.setupPrefix;
+  readonly attemptBeforeCache: AttemptBeforeCache;
+
+  private beforeCacheEligibility(): BeforeCacheEligibility {
+    if (this.profileBeforeCache !== undefined) {
+      const capability = this.profileBeforeCache.lease.binding.profile.backend.filesystem.beforeCache;
       if (capability === undefined) {
         return {
           _tag: "Unsupported",
           code: "profile-backed-dind",
           reason:
-            `Docker Profile descriptor does not declare ${DOCKER_PROFILE_SETUP_PREFIX_CAPABILITY}; ` +
+            `Docker Profile descriptor does not declare ${DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY}; ` +
             "shared loop/project-quota profiles remain unsupported",
         };
       }
@@ -655,8 +657,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         capability.requiredState !== sandboxState.dockerData ||
         capability.slotAttestation !== "independent-fixed-filesystem/v1" ||
         capability.filesystemSizeBytes !==
-          this.profileSetupPrefix.lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
-        this.profileSetupPrefix.lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
+          this.profileBeforeCache.lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
+        this.profileBeforeCache.lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
           "independent-fixed-filesystem/v1"
       ) {
         return {
@@ -674,11 +676,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           reason: "Docker Profile docker-data snapshots require a profile-bound DinD sandbox",
         };
       }
-      if (this.baseImageId === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseImageId)) {
+      if (this.baseIdentity === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseIdentity)) {
         return {
           _tag: "Unsupported",
           code: "base-image-unverified",
-          reason: "Docker Profile setup-prefix capture requires a verified exact Base image id",
+          reason: "Docker Profile before-cache capture requires a verified exact Base image id",
         };
       }
       return {
@@ -686,8 +688,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         persistence: "persistent",
         dependency: "parent-backed",
         coverage: sandboxState.dockerData,
-        baseImageId: this.baseImageId,
-        keyScope: decodeSandboxSetupPrefixCacheKeyScope({
+        baseIdentity: this.baseIdentity,
+        keyScope: decodeBeforeCacheKeyScope({
           protocol: capability.protocol,
           storageSchemaRevision: capability.publicationRevision,
           artifactFormatRevision: capability.copyRevision,
@@ -696,7 +698,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
             coverage: capability.coverage,
             requiredState: capability.requiredState,
             semanticPolicyRevision:
-              this.profileSetupPrefix.lease.binding.profile.semanticPolicyRevision,
+              this.profileBeforeCache.lease.binding.profile.semanticPolicyRevision,
             providerIdentity: capability.providerIdentity,
             executionDomain: capability.executionDomain,
             helperRevision: capability.helperRevision,
@@ -720,7 +722,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       return {
         _tag: "Unsupported",
         code: "profile-managed",
-        reason: "persistent setup-prefix capture is limited to the default local Docker daemon",
+        reason: "persistent before-cache capture is limited to the default local Docker daemon",
       };
     }
     if (this.releaseMode === "detach") {
@@ -741,7 +743,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       return {
         _tag: "Unsupported",
         code: "read-only-rootfs",
-        reason: "persistent setup-prefix capture requires a writable outer rootfs",
+        reason: "persistent before-cache capture requires a writable outer rootfs",
       };
     }
     if (this.runnerToolsInstalledDynamically) {
@@ -758,11 +760,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         reason: "tmpfs state is not part of a Docker image commit",
       };
     }
-    if (this.setupPrefixMountReason !== undefined) {
+    if (this.beforeCacheMountReason !== undefined) {
       return {
         _tag: "Unsupported",
         code: "mounted-state",
-        reason: this.setupPrefixMountReason,
+        reason: this.beforeCacheMountReason,
       };
     }
     if (
@@ -776,11 +778,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         reason: "DinD capture requires /var/lib/docker to remain in the writable outer rootfs",
       };
     }
-    if (this.baseImageId === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseImageId)) {
+    if (this.baseIdentity === undefined || !/^sha256:[a-f0-9]{64}$/u.test(this.baseIdentity)) {
       return {
         _tag: "Unsupported",
         code: "base-image-unverified",
-        reason: "persistent setup-prefix capture requires a verified exact Base image id",
+        reason: "persistent before-cache capture requires a verified exact Base image id",
       };
     }
     return {
@@ -788,23 +790,23 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       persistence: "persistent",
       dependency: "parent-backed",
       coverage: sandboxState.all,
-      baseImageId: this.baseImageId,
-      keyScope: decodeSandboxSetupPrefixCacheKeyScope({
-        protocol: "niceeval-docker-rootfs-setup-prefix/v1",
-        storageSchemaRevision: "niceeval.setup-prefix-storage/v2",
-        artifactFormatRevision: "niceeval.setup-prefix-capture/v1",
+      baseIdentity: this.baseIdentity,
+      keyScope: decodeBeforeCacheKeyScope({
+        protocol: "niceeval-docker-rootfs-before-cache/v1",
+        storageSchemaRevision: "niceeval.before-cache-storage/v1",
+        artifactFormatRevision: "niceeval.before-cache-capture/v1",
         semanticIdentity: { capture: "outer-writable-rootfs" },
       }),
     };
   }
 
-  private async quiesceProfileSetupPrefix(signal: AbortSignal): Promise<void> {
+  private async quiesceProfileBeforeCache(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
-    if (this.profileSetupPrefix === undefined || this.dockerAccess?.mode !== "dind") {
-      throw new Error("Docker profile setup-prefix quiesce requires a bound DinD reservation");
+    if (this.profileBeforeCache === undefined || this.dockerAccess?.mode !== "dind") {
+      throw new Error("Docker profile before-cache quiesce requires a bound DinD reservation");
     }
     const container = this.container;
-    if (container === null) throw new Error("Docker profile setup-prefix private container is not available");
+    if (container === null) throw new Error("Docker profile before-cache private container is not available");
     const state = await container.inspect({ abortSignal: signal });
     if (state.State?.Running !== true) {
       throw new Error(
@@ -818,7 +820,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ].join("\n")], { user: ROOT_USER, timeoutMs: 10_000, signal });
       if (liveState.exitCode !== 0) {
         throw new Error(
-          `Docker Profile setup-prefix capture rejects live inner container state: ` +
+          `Docker Profile before-cache capture rejects live inner container state: ` +
           `${liveState.stderr.trim() || liveState.stdout.trim() || `exit ${liveState.exitCode}`}`,
         );
       }
@@ -840,7 +842,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ].join("\n")], { user: ROOT_USER, timeoutMs: 10_000, signal });
       if (durableOnly.exitCode !== 0) {
         throw new Error(
-          "Docker Profile setup-prefix capture could not prove inner daemon/build/session processes quiesced",
+          "Docker Profile before-cache capture could not prove inner daemon/build/session processes quiesced",
         );
       }
       try {
@@ -852,11 +854,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     signal.throwIfAborted();
     const stopped = await container.inspect({ abortSignal: signal });
     if (stopped.State?.Running === true) {
-      throw new Error("Docker Profile outer container is still running after setup-prefix quiesce");
+      throw new Error("Docker Profile outer container is still running after before-cache quiesce");
     }
   }
 
-  private async resumeProfileSetupPrefix(signal: AbortSignal): Promise<string> {
+  private async resumeProfileBeforeCache(signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
     if (this.container === null) throw new Error("Docker Profile stopped private container is unavailable");
     await startContainerIdempotently(this.container, signal);
@@ -865,16 +867,16 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     return this.sandboxId;
   }
 
-  private retireProfileSetupPrefix(): void {
+  private retireProfileBeforeCache(): void {
     this.container = null;
     this.network = null;
     this._containerId = "";
   }
 
-  private async createProfileSetupPrefixContinuation(signal: AbortSignal): Promise<string> {
+  private async createProfileBeforeCacheContinuation(signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
     if (
-      this.profileSetupPrefix === undefined ||
+      this.profileBeforeCache === undefined ||
       this.controlledCreate === undefined ||
       this.controlledCreateSpec === undefined
     ) {
@@ -901,14 +903,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], signal === undefined ? {} : { signal });
   }
 
-  private adoptSetupPrefixRoot(root: DockerSetupPrefixRootOwnership): void {
-    if (this.container === null || this._containerId !== root.containerId) {
-      throw new Error("cannot attach a setup-prefix durable root to a different Docker container");
+  private adoptBeforeCacheHold(hold: DockerBeforeCacheHoldOwnership): void {
+    if (this.container === null || this._containerId !== hold.containerId) {
+      throw new Error("cannot attach a before-cache durable hold to a different Docker container");
     }
-    if (this.setupPrefixRoot !== undefined) {
-      throw new Error("the previous setup-prefix durable root has not been released");
+    if (this.beforeCacheHold !== undefined) {
+      throw new Error("the previous before-cache durable hold has not been released");
     }
-    this.setupPrefixRoot = root;
+    this.beforeCacheHold = hold;
   }
 
   /** 受管 PATH:`pathPrepend` 按声明顺序前置到 npm 全局 bin + 系统默认路径。 */
@@ -1054,9 +1056,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (!/^sha256:[a-f0-9]{64}$/u.test(inspectedImage.Id)) {
       throw new Error(`Docker profile source image ${imageName} did not resolve to an exact image id`);
     }
-    sandbox.baseImageId = inspectedImage.Id;
+    sandbox.baseIdentity = inspectedImage.Id;
     const declaredVolumes = Object.keys(inspectedImage.Config?.Volumes ?? {}).sort();
-    sandbox.setupPrefixMountReason = declaredVolumes.length === 0
+    sandbox.beforeCacheMountReason = declaredVolumes.length === 0
       ? undefined
       : `image-declared volumes are outside the declared profile surfaces: ${declaredVolumes.join(", ")}`;
     const isDind = sandbox.dockerAccess?.mode === "dind";
@@ -1170,9 +1172,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (!/^sha256:[a-f0-9]{64}$/u.test(sourceInspection.Id)) {
       throw new Error(`Docker source image ${imageName} did not resolve to an exact image id`);
     }
-    this.baseImageId ??= sourceInspection.Id;
+    this.baseIdentity ??= sourceInspection.Id;
     const declaredVolumes = Object.keys(sourceInspection.Config?.Volumes ?? {}).sort();
-    this.setupPrefixMountReason = declaredVolumes.length === 0
+    this.beforeCacheMountReason = declaredVolumes.length === 0
       ? undefined
       : `image-declared volumes are outside the captured outer rootfs: ${declaredVolumes.join(", ")}`;
 
@@ -1244,7 +1246,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     }
     const providerMounts = (createdInspection.Mounts ?? []).map((mount) => mount.Destination).filter(Boolean).sort();
     if (providerMounts.length > 0) {
-      this.setupPrefixMountReason = `container mounts are outside the captured outer rootfs: ${providerMounts.join(", ")}`;
+      this.beforeCacheMountReason = `container mounts are outside the captured outer rootfs: ${providerMounts.join(", ")}`;
     }
 
   }
@@ -1969,16 +1971,16 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await writeFile(destination, await this.readBytes(sourcePath));
   }
 
-  private async captureSetupPrefixImage(
+  private async captureBeforeCacheImage(
     labels: Readonly<Record<string, string>>,
     knownSensitiveValues: readonly string[],
     signal: AbortSignal,
   ): Promise<string> {
     signal.throwIfAborted();
-    const eligibility = this.setupPrefixCacheEligibility();
+    const eligibility = this.beforeCacheEligibility();
     if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
     const container = this.container;
-    if (container === null) throw new Error("Docker setup-prefix staging container has already been released");
+    if (container === null) throw new Error("Docker before-cache staging container has already been released");
 
     if (this.dockerAccess?.mode === "dind") {
       const [command, ...args] = DIND_CAPTURE_QUIESCE_COMMAND;
@@ -2035,26 +2037,26 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     return imageId;
   }
 
-  private async rebaseSetupPrefixImage(
+  private async rebaseBeforeCacheImage(
     imageId: string,
     plannedContainerName: string,
     signal: AbortSignal,
   ): Promise<{ readonly containerId: string; readonly imageId: string }> {
-    // The setup-prefix capability is Promise-shaped. Its implementation still owns the
+    // The before-cache capability is Promise-shaped. Its implementation still owns the
     // complete restore lifecycle in one Effect, so readiness shares its Clock/fiber.
-    return Effect.runPromise(this.rebaseSetupPrefixImageEffect(imageId, plannedContainerName, signal));
+    return Effect.runPromise(this.rebaseBeforeCacheImageEffect(imageId, plannedContainerName, signal));
   }
 
-  private rebaseSetupPrefixImageEffect(
+  private rebaseBeforeCacheImageEffect(
     imageId: string,
     plannedContainerName: string,
     signal: AbortSignal,
   ): Effect.Effect<{ readonly containerId: string; readonly imageId: string }, unknown> {
     const prepare = Effect.tryPromise({ try: async () => {
       signal.throwIfAborted();
-      const eligibility = this.setupPrefixCacheEligibility();
+      const eligibility = this.beforeCacheEligibility();
       if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
-      if (!/^sha256:[a-f0-9]{64}$/u.test(imageId)) throw new Error("setup-prefix restore requires an exact image id");
+      if (!/^sha256:[a-f0-9]{64}$/u.test(imageId)) throw new Error("before-cache restore requires an exact image id");
       // DestroyOnly is intentional: cached staging never runs normal teardown/after callbacks.
       await this.destroyCurrentContainer(false, signal);
       this.image = imageId;
@@ -2081,11 +2083,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       }
       return { containerId: inspection.Id, imageId: inspection.Image };
       }, catch: (cause) => cause })),
-      Effect.catch((cause) => this.cleanupAfterSetupPrefixRebaseFailureEffect(cause, signal)),
+      Effect.catch((cause) => this.cleanupAfterBeforeCacheRebaseFailureEffect(cause, signal)),
     );
   }
 
-  private cleanupAfterSetupPrefixRebaseFailureEffect(
+  private cleanupAfterBeforeCacheRebaseFailureEffect(
     cause: unknown,
     signal: AbortSignal,
   ): Effect.Effect<never, unknown> {
@@ -2106,29 +2108,29 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     });
   }
 
-  private async recoverSetupPrefixCleanBase(
+  private async recoverBeforeCacheCleanBase(
     signal: AbortSignal,
-  ): Promise<{ readonly baseImageId: string; readonly sandboxId: string }> {
-    const baseImageId = this.baseImageId;
-    if (baseImageId === undefined || !/^sha256:[a-f0-9]{64}$/u.test(baseImageId)) {
+  ): Promise<{ readonly baseIdentity: string; readonly sandboxId: string }> {
+    const baseIdentity = this.baseIdentity;
+    if (baseIdentity === undefined || !/^sha256:[a-f0-9]{64}$/u.test(baseIdentity)) {
       throw new Error("Docker sandbox has no verified exact Base image for clean recovery");
     }
-    const recovered = await this.rebaseSetupPrefixImage(
-      baseImageId,
-      `niceeval-setup-prefix-recovery-${randomUUID()}`,
+    const recovered = await this.rebaseBeforeCacheImage(
+      baseIdentity,
+      `niceeval-before-cache-recovery-${randomUUID()}`,
       signal,
     );
-    return { baseImageId, sandboxId: recovered.containerId.slice(0, 12) };
+    return { baseIdentity, sandboxId: recovered.containerId.slice(0, 12) };
   }
 
   private async destroyCurrentContainer(runAfterStop: boolean, operationSignal?: AbortSignal): Promise<void> {
-    const cleanupSignal = operationSignal ?? AbortSignal.timeout(SETUP_PREFIX_PROVIDER_CLEANUP_TIMEOUT_MS);
+    const cleanupSignal = operationSignal ?? AbortSignal.timeout(BEFORE_CACHE_PROVIDER_CLEANUP_TIMEOUT_MS);
     const container = this.container;
     if (container === null) {
-      if (this.setupPrefixRoot !== undefined) {
-        const root = this.setupPrefixRoot;
-        await root.release();
-        if (this.setupPrefixRoot === root) this.setupPrefixRoot = undefined;
+      if (this.beforeCacheHold !== undefined) {
+        const hold = this.beforeCacheHold;
+        await hold.release();
+        if (this.beforeCacheHold === hold) this.beforeCacheHold = undefined;
       }
       return;
     }
@@ -2169,14 +2171,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         }
       }
     }
-    if (removed && this.setupPrefixRoot !== undefined) {
-      const root = this.setupPrefixRoot;
-      if (root.containerId !== container.id) {
-        cleanupErrors.push(new Error("setup-prefix durable root belongs to a different Docker container"));
+    if (removed && this.beforeCacheHold !== undefined) {
+      const hold = this.beforeCacheHold;
+      if (hold.containerId !== container.id) {
+        cleanupErrors.push(new Error("before-cache durable hold belongs to a different Docker container"));
       } else {
         try {
-          await root.release();
-          if (this.setupPrefixRoot === root) this.setupPrefixRoot = undefined;
+          await hold.release();
+          if (this.beforeCacheHold === hold) this.beforeCacheHold = undefined;
         } catch (error) {
           cleanupErrors.push(error);
         }

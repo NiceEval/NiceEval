@@ -17,7 +17,6 @@ test.concurrent("作者定义拒绝撤销字段并提供替代方式", async () 
       const { bubAgent } = await import("niceeval/adapter");
       for (const value of [undefined, "old"]) {
         assert.throws(() => defineConfig({ judgeRuntime: value }), /judgeRuntime.*judgeProvider/);
-        assert.throws(() => defineConfig({ maxSetupPrefixConcurrency: value }), /maxSetupPrefixConcurrency.*maxBeforeCacheConcurrency/);
         assert.throws(() => defineExperiment({ adapter, judgeRuntime: value }), /judgeRuntime.*judge/);
         assert.throws(() => defineConfig({ sandboxCache: { setup: value } }), /sandboxCache.setup.*sandboxCache.before/);
         assert.throws(() => bubAgent({ apiBase: value }), /apiBase.*baseUrl/);

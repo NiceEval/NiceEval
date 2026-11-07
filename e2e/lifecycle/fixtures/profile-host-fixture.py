@@ -15,9 +15,9 @@ from pathlib import Path
 
 
 MARKER = ".niceeval-docker-profile-e2e"
-SETUP_PREFIX_FILESYSTEM_BYTES = 512 * 1024 * 1024
-SETUP_PREFIX_SLOT_COUNT = 2
-SETUP_PREFIX_SEED_COUNT = 4
+BEFORE_CACHE_FILESYSTEM_BYTES = 512 * 1024 * 1024
+BEFORE_CACHE_SLOT_COUNT = 2
+BEFORE_CACHE_SEED_COUNT = 4
 PROFILE_MEMORY = "2G"
 AGGREGATE_MEMORY = "4G"
 sys.dont_write_bytecode = True
@@ -51,15 +51,15 @@ def fixture_counts(marker: Path) -> tuple[int, int]:
     try:
         value = json.loads(marker.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return SETUP_PREFIX_SLOT_COUNT, SETUP_PREFIX_SEED_COUNT
-    setup_prefix = value.get("setupPrefix") if isinstance(value, dict) else None
-    if not isinstance(setup_prefix, dict):
-        return SETUP_PREFIX_SLOT_COUNT, SETUP_PREFIX_SEED_COUNT
-    slot_count = setup_prefix.get("slotCount")
-    seed_count = setup_prefix.get("seedCount")
+        return BEFORE_CACHE_SLOT_COUNT, BEFORE_CACHE_SEED_COUNT
+    before_cache = value.get("beforeCache") if isinstance(value, dict) else None
+    if not isinstance(before_cache, dict):
+        return BEFORE_CACHE_SLOT_COUNT, BEFORE_CACHE_SEED_COUNT
+    slot_count = before_cache.get("slotCount")
+    seed_count = before_cache.get("seedCount")
     if not isinstance(slot_count, int) or not 1 <= slot_count <= 1024 \
             or not isinstance(seed_count, int) or not 1 <= seed_count <= 1024:
-        raise SystemExit(f"fixture marker has unsafe setup-prefix counts: {marker}")
+        raise SystemExit(f"fixture marker has unsafe before-cache counts: {marker}")
     return slot_count, seed_count
 
 
@@ -121,11 +121,11 @@ def setup(args: argparse.Namespace) -> None:
     if os.geteuid() != 0:
         raise SystemExit("profile E2E host fixture setup requires root")
     root = checked_root(args.root)
-    filesystem_bytes = args.setup_prefix_filesystem_bytes
-    slot_count = args.setup_prefix_slot_count
-    seed_count = args.setup_prefix_seed_count
+    filesystem_bytes = args.before_cache_filesystem_bytes
+    slot_count = args.before_cache_slot_count
+    seed_count = args.before_cache_seed_count
     if filesystem_bytes <= 0 or slot_count <= 0 or seed_count <= 0:
-        raise SystemExit("setup-prefix filesystem bytes and slot/seed counts must be positive")
+        raise SystemExit("before-cache filesystem bytes and slot/seed counts must be positive")
     fixed_ledger = (slot_count + seed_count + slot_count) * filesystem_bytes
     # The provisioner proves the complete ledger plus 1/8 of the outer image
     # from f_bavail, after ext4 metadata and reserved blocks.  A bare 1/8 byte
@@ -140,11 +140,11 @@ def setup(args: argparse.Namespace) -> None:
     root.mkdir(mode=0o700, exist_ok=True)
     (root / MARKER).write_text(json.dumps({
         "schemaVersion": 1,
-        "setupPrefix": {"slotCount": slot_count, "seedCount": seed_count},
+        "beforeCache": {"slotCount": slot_count, "seedCount": seed_count},
     }) + "\n", encoding="utf-8")
     os.chmod(root / MARKER, 0o600)
     mount = root / "data"
-    if args.setup_prefix:
+    if args.before_cache:
         storage_root = Path(args.storage_root).resolve() if args.storage_root else root
         if storage_root != root and root not in storage_root.parents:
             raise SystemExit("fixture storage override must remain inside its marked root")
@@ -156,11 +156,11 @@ def setup(args: argparse.Namespace) -> None:
         run(
             str(scripts / "prepare-loop-storage.sh"),
             "--image", str(image),
-            "--size", str(fixed_store_bytes if args.setup_prefix else (1536 * 1024**2)),
+            "--size", str(fixed_store_bytes if args.before_cache else (1536 * 1024**2)),
             "--mount", str(mount),
-            *(["--fully-allocate"] if args.setup_prefix else []),
+            *(["--fully-allocate"] if args.before_cache else []),
         )
-        run("mount", "-o", "loop" + ("" if args.setup_prefix else ",prjquota"), str(image), str(mount))
+        run("mount", "-o", "loop" + ("" if args.before_cache else ",prjquota"), str(image), str(mount))
         run("mount", "--make-rprivate", str(mount))
 
         user = pwd.getpwnam(args.user)
@@ -194,10 +194,10 @@ def setup(args: argparse.Namespace) -> None:
                 "cpus": 2,
                 "memory": args.profile_memory,
                 "pids": 2048,
-                "maxContainers": slot_count if args.setup_prefix else 1,
+                "maxContainers": slot_count if args.before_cache else 1,
                 "maxBuilds": 1,
-                "ephemeralDiskBytes": filesystem_bytes if args.setup_prefix else "1G",
-                "dockerDataAllocationCount": slot_count if args.setup_prefix else 1,
+                "ephemeralDiskBytes": filesystem_bytes if args.before_cache else "1G",
+                "dockerDataAllocationCount": slot_count if args.before_cache else 1,
                 "memorySwapBytes": 0,
             },
             "aggregate": {
@@ -207,8 +207,8 @@ def setup(args: argparse.Namespace) -> None:
                 "memorySwapBytes": 0,
             },
             "storage": {
-                "size": fixed_store_bytes if args.setup_prefix else "1536M",
-                "backing": "fixed-image-ext4" if args.setup_prefix else "loop-ext4",
+                "size": fixed_store_bytes if args.before_cache else "1536M",
+                "backing": "fixed-image-ext4" if args.before_cache else "loop-ext4",
                 "outerImagePath": str(image),
                 "legacyOuterImagePath": str(root / "storage.img"),
                 "rootDir": str(storage_root),
@@ -218,14 +218,14 @@ def setup(args: argparse.Namespace) -> None:
             "assets": {"manifestPath": str(assets)},
             "policy": {"hostLoopback": False, "tcpDockerEndpoint": False},
         }
-        if args.setup_prefix:
-            config["setupPrefix"] = {
+        if args.before_cache:
+            config["beforeCache"] = {
                 "enable": True,
                 "seedCount": seed_count,
             }
         host_config.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         os.chmod(host_config, 0o600)
-        if args.setup_prefix:
+        if args.before_cache:
             run(
                 sys.executable, str(scripts / "activate-fixed-images.py"),
                 "--host-config", str(host_config),
@@ -239,14 +239,14 @@ def setup(args: argparse.Namespace) -> None:
                 "--output", str(descriptor),
             )
         os.chmod(descriptor, 0o600)
-        if not args.setup_prefix:
+        if not args.before_cache:
             run(sys.executable, str(scripts / "install-quota-slots.py"), "--host-config", str(host_config))
         print(json.dumps({
             "assets": str(assets),
             "controlSocket": str(root / "control.sock"),
             "descriptor": str(descriptor),
             "hostConfig": str(host_config),
-            "journal": str(journal / ("fixed-image-v1/events.ndjson" if args.setup_prefix else "events.ndjson")),
+            "journal": str(journal / ("fixed-image-v1/events.ndjson" if args.before_cache else "events.ndjson")),
             "profileId": json.loads(descriptor.read_text(encoding="utf-8"))["profileId"],
             "readyFile": str(root / "ready"),
         }))
@@ -267,22 +267,22 @@ def main() -> None:
     create.add_argument("--name", default="e2e-cold-build")
     create.add_argument("--profile-memory", default=PROFILE_MEMORY)
     create.add_argument("--aggregate-memory", default=AGGREGATE_MEMORY)
-    create.add_argument("--setup-prefix", action="store_true")
+    create.add_argument("--before-cache", action="store_true")
     create.add_argument("--storage-root")
     create.add_argument(
-        "--setup-prefix-filesystem-bytes",
+        "--before-cache-filesystem-bytes",
         type=int,
-        default=SETUP_PREFIX_FILESYSTEM_BYTES,
+        default=BEFORE_CACHE_FILESYSTEM_BYTES,
     )
     create.add_argument(
-        "--setup-prefix-slot-count",
+        "--before-cache-slot-count",
         type=int,
-        default=SETUP_PREFIX_SLOT_COUNT,
+        default=BEFORE_CACHE_SLOT_COUNT,
     )
     create.add_argument(
-        "--setup-prefix-seed-count",
+        "--before-cache-seed-count",
         type=int,
-        default=SETUP_PREFIX_SEED_COUNT,
+        default=BEFORE_CACHE_SEED_COUNT,
     )
     remove = subparsers.add_parser("cleanup")
     remove.add_argument("--root", required=True)

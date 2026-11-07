@@ -504,7 +504,6 @@ function assertSandboxLayer(value: unknown, factory: string): void {
 /** 项目级配置。 */
 export function defineConfig(config: Config): Config {
   rejectRemovedField(config, "judgeRuntime", "Use judgeProvider.");
-  rejectRemovedField(config, "maxSetupPrefixConcurrency", "Use maxBeforeCacheConcurrency.");
   rejectRemovedField(config, "workspace", "Use the project directory as the working directory.");
   const sandboxCache = normalizeSandboxCache(config.sandboxCache, "defineConfig");
   const judgeProvider = config.judgeProvider === undefined

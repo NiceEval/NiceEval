@@ -1,12 +1,7 @@
-import { OPEN_SANDBOX_CACHE_REPOSITORY, openSandboxCacheRepositoryHandler } from "../../sandbox/opensandbox/repository.ts";
 import {
   DOCKER_CACHE_REPOSITORY,
   dockerCacheRepositoryHandler,
 } from "../../sandbox/docker-cache-repository.ts";
-import {
-  E2B_CACHE_REPOSITORY,
-  e2bCacheRepositoryHandler,
-} from "../../sandbox/e2b-cache-repository.ts";
 import {
   INCUS_REPOSITORY,
   incusRepositoryHandler,
@@ -23,9 +18,7 @@ import { beforeCacheSnapshotRepositoryHandler } from "../../sandbox/remote-snaps
 export const userDatabaseRepositoryCatalog = Object.freeze([
   durableStateRepositoryHandler,
   dockerCacheRepositoryHandler,
-  e2bCacheRepositoryHandler,
   incusRepositoryHandler,
-  openSandboxCacheRepositoryHandler,
   beforeCacheSnapshotRepositoryHandler,
 ]);
 
@@ -35,10 +28,6 @@ export function repositoryHandlerFor(request: UserDatabaseRepositoryRequest) {
       return durableStateRepositoryHandler;
     case DOCKER_CACHE_REPOSITORY:
       return dockerCacheRepositoryHandler;
-    case E2B_CACHE_REPOSITORY:
-      return e2bCacheRepositoryHandler;
-    case OPEN_SANDBOX_CACHE_REPOSITORY:
-      return openSandboxCacheRepositoryHandler;
     case INCUS_REPOSITORY:
       return incusRepositoryHandler;
     case BEFORE_CACHE_SNAPSHOTS_REPOSITORY:
@@ -55,10 +44,6 @@ export function dispatchUserDatabaseRepository(
       return durableStateRepositoryHandler.dispatch(database, request);
     case DOCKER_CACHE_REPOSITORY:
       return dockerCacheRepositoryHandler.dispatch(database, request);
-    case E2B_CACHE_REPOSITORY:
-      return e2bCacheRepositoryHandler.dispatch(database, request);
-    case OPEN_SANDBOX_CACHE_REPOSITORY:
-      return openSandboxCacheRepositoryHandler.dispatch(database, request);
     case INCUS_REPOSITORY:
       return incusRepositoryHandler.dispatch(database, request);
     case BEFORE_CACHE_SNAPSHOTS_REPOSITORY:

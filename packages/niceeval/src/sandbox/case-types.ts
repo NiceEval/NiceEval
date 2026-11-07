@@ -4,7 +4,8 @@
 
 import type { JsonValue } from "../shared/types.ts";
 import type { CommandResult, Sandbox } from "./types.ts";
-import type { SandboxProviderBackend } from "./backend.ts";
+import type { AttemptBeforeCache, SandboxProviderBackend } from "./backend.ts";
+import type { BeforeCacheStart } from "./layer.ts";
 import type { BuildKey, CaseKey, SandboxCaseKind } from "./identity.ts";
 
 export type { SandboxCaseKind };
@@ -46,6 +47,10 @@ export interface SandboxResourceGroup {
 
 /** materialize 成功后的完整产物:永远只有一个主 Sandbox。 */
 export interface MaterializedSandboxCase {
+  /** Present on instances produced by an AttemptCaptured module. */
+  readonly attemptBeforeCache?: AttemptBeforeCache;
+  /** Run-prepared artifact restoration receipt, owned by this materialization. */
+  readonly beforeCacheStart?: BeforeCacheStart;
   /** 唯一主 Sandbox:Agent / Eval / 文件 API / workdir / 分类账 / diff 都观察它。 */
   readonly sandbox: Sandbox;
   /**

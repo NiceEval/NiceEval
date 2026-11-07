@@ -50,7 +50,7 @@ interface RetirementRule { readonly ruleId: GcCandidate["ruleId"]; readonly prot
 async function ruleFor(repository: IncusRepository, entry: ArtifactInventoryEntry, domain: IncusDomainDescriptor, observed: number, unusedFor: number | undefined): Promise<RetirementRule | undefined> {
   const a = entry.intent;
   const rule = (ruleId: GcCandidate["ruleId"], protectedUntil = a.createdAt): RetirementRule => ({ ruleId, protectedUntil });
-  if (a.state === "released" || a.state === "quarantined" || entry.consumerLeases !== 0 || entry.verification === "metadata-drift") return undefined;
+  if (a.state === "released" || a.state === "quarantined" || entry.consumerHolds !== 0 || entry.verification === "metadata-drift") return undefined;
   if (entry.instanceAbsent && entry.volumeAbsent) return rule("dangling-intent");
   if (a.retirementPlanId !== undefined) {
     if (a.state !== "invalid" && a.state !== "retiring") return undefined;
@@ -61,7 +61,7 @@ async function ruleFor(repository: IncusRepository, entry: ArtifactInventoryEntr
     catch { return undefined; }
     if (previous.planId !== a.retirementPlanId || previous.ownerId !== repository.ownerId || gcDigest(previous) !== stored.digest) return undefined;
     const original = previous.candidates.find((candidate) => candidate.entryId === a.artifactId
-      && candidate.immutableResourceIdentity === artifactResourceIdentity(a) && candidate.manifestDigest === a.manifestDigest && candidate.keyDigest === a.setupPrefixKey);
+      && candidate.immutableResourceIdentity === artifactResourceIdentity(a) && candidate.manifestDigest === a.manifestDigest && candidate.keyDigest === a.beforeCacheKey);
     // Invalidation already made this exact generation unavailable to consumers.
     // Continue that recorded decision under a fresh plan, even after the old plan
     // expired or recorded failure. A dangling-only plan never authorizes deletion.
@@ -72,7 +72,7 @@ async function ruleFor(repository: IncusRepository, entry: ArtifactInventoryEntr
   if (a.state !== "committed" && a.state !== "retiring") return undefined;
   if (a.executionDomainId !== domain.executionDomainId) return rule("superseded-domain-revision");
   if (entry.superseded) return rule("superseded-generation");
-  if (a.state === "committed" && unusedFor !== undefined && Date.parse(a.lastSuccessfulLeaseAt ?? a.createdAt) + unusedFor < observed) return rule("unused", new Date(Date.parse(a.lastSuccessfulLeaseAt ?? a.createdAt) + unusedFor).toISOString());
+  if (a.state === "committed" && unusedFor !== undefined && Date.parse(a.lastSuccessfulHoldAt ?? a.createdAt) + unusedFor < observed) return rule("unused", new Date(Date.parse(a.lastSuccessfulHoldAt ?? a.createdAt) + unusedFor).toISOString());
   return undefined;
 }
 
@@ -85,8 +85,8 @@ async function preview(repository: IncusRepository, control: IncusControl, domai
     if (selection === undefined) continue;
     const { ruleId, protectedUntil } = selection;
     const a = entry.intent;
-    candidates.push({ entryId: a.artifactId, keyDigest: a.setupPrefixKey, immutableResourceIdentity: artifactResourceIdentity(a), manifestDigest: a.manifestDigest,
-      evidenceDigest: artifactEvidenceDigest(a), evidence: { createdAt: a.createdAt, lastSuccessfulUseAt: a.lastSuccessfulLeaseAt ?? null, protectedUntil, capacity: null }, ruleId, orderKey: `${ruleId}:${a.createdAt}:${a.artifactId}` });
+    candidates.push({ entryId: a.artifactId, keyDigest: a.beforeCacheKey, immutableResourceIdentity: artifactResourceIdentity(a), manifestDigest: a.manifestDigest,
+      evidenceDigest: artifactEvidenceDigest(a), evidence: { createdAt: a.createdAt, lastSuccessfulUseAt: a.lastSuccessfulHoldAt ?? null, protectedUntil, capacity: null }, ruleId, orderKey: `${ruleId}:${a.createdAt}:${a.artifactId}` });
   }
   candidates.sort((left, right) => left.orderKey.localeCompare(right.orderKey));
   const plan: GcPlan = { schemaVersion: 1, planId: randomUUID(), domainId: domain.executionDomainId, ownerId: repository.ownerId, ...facts,
@@ -112,7 +112,7 @@ async function applyCandidate(repository: IncusRepository, control: IncusControl
   const outcome = (status: GcItemOutcome["status"], reasonCode: GcItemOutcome["reasonCode"], message: string): GcItemOutcome => ({ entryId: candidate.entryId, resourceIdentity: candidate.immutableResourceIdentity, status, reasonCode, message });
   const initial = await repository.getArtifact(candidate.entryId);
   if (initial === undefined || !artifactBelongsToDomain(initial, domain)) return outcome("skipped", "entry-state-changed", "The planned intent is absent or outside the domain");
-  // Match the publisher's scope -> domain lock order. Leases are additionally
+  // Match the publisher's scope -> domain lock order. Holds are additionally
   // checked in the atomic claim transaction, since readers need no scope lock.
   const scope = await acquireDomainAdmissionLock(repository, `${initial.executionDomainId}:artifact-scope:${initial.replacementScopeDigest ?? initial.artifactId}`);
   try {
@@ -122,7 +122,7 @@ async function applyCandidate(repository: IncusRepository, control: IncusControl
       if (current === undefined || current.state === "quarantined") return outcome("skipped", "unverified", "The planned intent is unavailable or quarantined");
       if (artifactResourceIdentity(current) !== candidate.immutableResourceIdentity) return outcome("skipped", "resource-changed", "The immutable resource identity changed");
       if (current.manifestDigest !== candidate.manifestDigest) return outcome("skipped", "manifest-changed", "The manifest changed");
-      if (await repository.countArtifactLeases(current.artifactId, current.generation) !== 0) return outcome("skipped", "lease-acquired", "A consumer acquired the artifact");
+      if (await repository.countArtifactHolds(current.artifactId, current.generation) !== 0) return outcome("skipped", "hold-acquired", "A consumer holds the artifact; hint: wait for consumer holds to reach zero and retry.");
       const vm = await control.getInstance(current.project, current.instance);
       const volume = await control.getVolume(current.project, current.pool, current.dockerDataVolume);
       const verification = verifyArtifactObjects(current, vm, volume);
@@ -136,7 +136,7 @@ async function applyCandidate(repository: IncusRepository, control: IncusControl
         if (head === undefined || head.state !== "committed" || head.artifactId === current.artifactId) return outcome("skipped", "entry-state-changed", "There is no committed replacement head");
       }
       const claim = await repository.claimGcArtifact(plan.planId, current.artifactId);
-      if (claim.status !== "claimed" || claim.intent === null) return outcome("skipped", claim.status === "lease-acquired" ? "lease-acquired" : "entry-state-changed", "The preview evidence changed before invalidation");
+      if (claim.status !== "claimed" || claim.intent === null) return outcome("skipped", claim.status === "hold-acquired" ? "hold-acquired" : "entry-state-changed", "The preview evidence changed before invalidation");
       if (claim.intent.state === "released") return vm === undefined && volume === undefined
         ? outcome("already-absent", "already-absent", "Both absences were already durably recorded")
         : outcome("skipped", "resource-changed", "Objects reappeared after release");

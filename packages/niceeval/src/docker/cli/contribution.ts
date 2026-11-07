@@ -85,10 +85,10 @@ type CacheInventory = DockerCacheDomainInventory;
 function humanInventoryEntry(entry: DockerCacheInventoryEntry): string {
   const identity = entry.kind === "task-build"
     ? `${entry.identity.buildKey.slice(0, 12)} · ${entry.identity.tag} · ${entry.identity.imageId}`
-    : `${entry.identity.entryId} · ${entry.identity.setupPrefixKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
+    : `${entry.identity.entryId} · ${entry.identity.beforeCacheKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
   return `  ${entry.kind} · ${entry.state} · ${identity}\n` +
     `    ${entry.leaseCount} leases (${entry.liveLeaseCount} live, ${entry.unverifiedLeaseCount} unverified) · ` +
-    `${entry.rootCount} roots (${entry.liveRootCount} live, ${entry.unverifiedRootCount} unverified) · ` +
+    `${entry.holdCount} holds (${entry.liveHoldCount} live, ${entry.unverifiedHoldCount} unverified) · ` +
     `created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`;
 }
 
@@ -199,7 +199,7 @@ function cacheCommand(
             entryCount: entries.length,
             entryKinds: {
               taskBuild: entries.filter(({ kind }) => kind === "task-build").length,
-              sandboxSetupPrefix: entries.filter(({ kind }) => kind === "sandbox-setup-prefix").length,
+              sandboxBeforeCache: entries.filter(({ kind }) => kind === "sandbox-before-cache").length,
             },
           })),
           ...descriptors.filter(({ state }) => state === "unavailable" || state === "unverified")

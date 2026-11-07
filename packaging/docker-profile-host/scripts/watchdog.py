@@ -78,32 +78,32 @@ REQUIRED_ASSETS = {
     "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c",
     "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
 }
-SETUP_PREFIX_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
-SETUP_PREFIX_REQUIRED_STATE = "dockerData"
-SETUP_PREFIX_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
-SETUP_PREFIX_COPY_PROTOCOL = "raw-image/v1"
-SETUP_PREFIX_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
-SETUP_PREFIX_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
-SETUP_PREFIX_SLOT_ATTESTATION = "independent-fixed-filesystem/v1"
-SETUP_PREFIX_FILESYSTEM_FEATURES = [
+BEFORE_CACHE_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
+BEFORE_CACHE_REQUIRED_STATE = "dockerData"
+BEFORE_CACHE_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
+BEFORE_CACHE_COPY_PROTOCOL = "raw-image/v1"
+BEFORE_CACHE_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
+BEFORE_CACHE_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
+BEFORE_CACHE_SLOT_ATTESTATION = "independent-fixed-filesystem/v1"
+BEFORE_CACHE_FILESYSTEM_FEATURES = [
     "ext4",
     "fixed-size",
     "fully-allocated",
     "independent-image",
 ]
-SETUP_PREFIX_SEED_POLICY = "immutable-unmounted/v1"
-SETUP_PREFIX_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
-SETUP_PREFIX_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
-SETUP_PREFIX_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
-SETUP_PREFIX_WIRE_FIELDS = (
-    "protocol", "requiredState", "setupPrefixKey", "setupManifestDigest",
+BEFORE_CACHE_SEED_POLICY = "immutable-unmounted/v1"
+BEFORE_CACHE_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
+BEFORE_CACHE_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
+BEFORE_CACHE_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
+BEFORE_CACHE_WIRE_FIELDS = (
+    "protocol", "requiredState", "beforeCacheKey", "declarationDigest",
     "providerIdentity", "baseIdentity", "executionDomain", "helperRevision",
     "copyProtocol", "copyRevision", "quiesceRevision", "filesystemSizeBytes",
     "publicationRevision", "recoveryRevision", "manifestSchema",
     "filesystemFeatures", "daemonGeneration", "slotGeneration",
 )
-SETUP_PREFIX_ARTIFACT_BINDING_FIELDS = tuple(
-    field for field in SETUP_PREFIX_WIRE_FIELDS if field != "slotGeneration"
+BEFORE_CACHE_ARTIFACT_BINDING_FIELDS = tuple(
+    field for field in BEFORE_CACHE_WIRE_FIELDS if field != "slotGeneration"
 )
 DIAGNOSTIC_COMMAND = ["sh", "-ec", "\n".join((
     "set -eu",
@@ -148,7 +148,7 @@ def _verify_fixed_activation(host_config_path: Path, descriptor_path: Path,
     if host.get("storage", {}).get("backing") != "fixed-image-ext4":
         return None
     activation = host.get("activation")
-    if not isinstance(activation, dict) or activation.get("schema") != SETUP_PREFIX_MANIFEST_SCHEMA:
+    if not isinstance(activation, dict) or activation.get("schema") != BEFORE_CACHE_MANIFEST_SCHEMA:
         raise RuntimeError("fixed watchdog has no activation manifest binding")
     manifest_path = Path(str(activation.get("manifestPath", "")))
     digest_path = Path(str(activation.get("manifestDigestPath", "")))
@@ -174,7 +174,7 @@ def _verify_fixed_activation(host_config_path: Path, descriptor_path: Path,
         expected_empty = True if host_dependency.get("class") == "systemd-profile-slice/v1" else None
         if manifest_digest != expected_digest \
                 or expected_manifest_digest not in (None, "", manifest_digest) \
-                or manifest.get("schema") != SETUP_PREFIX_MANIFEST_SCHEMA \
+                or manifest.get("schema") != BEFORE_CACHE_MANIFEST_SCHEMA \
                 or manifest.get("state") != "committed" or manifest.get("backing") != "fixed-image-ext4" \
                 or manifest.get("alias") != host.get("name") \
                 or manifest.get("profileId") != descriptor.get("profileId") \
@@ -190,7 +190,7 @@ def _verify_fixed_activation(host_config_path: Path, descriptor_path: Path,
             raise RuntimeError("fixed activation manifest does not bind the active profile facts")
         for key, actual_path in (
             ("slotRegistry", Path(host["storage"]["slotRegistryPath"])),
-            ("seedRegistry", Path(host["setupPrefix"]["seedRegistryPath"])),
+            ("seedRegistry", Path(host["beforeCache"]["seedRegistryPath"])),
         ):
             fact = manifest.get(key, {})
             if fact.get("path") != str(actual_path.resolve()) \
@@ -266,7 +266,7 @@ class Admission:
         self.descriptor_digest = canonical_digest(self.descriptor)
         self.host_config = (json.loads(host_config.read_text(encoding="utf-8"))
                             if host_config is not None else None)
-        self.setup_prefix = self._setup_prefix_config()
+        self.before_cache = self._before_cache_config()
         self.profile_id = str(self.descriptor["profileId"])
         self.journal = journal
         self.docker_socket = docker_socket
@@ -287,24 +287,24 @@ class Admission:
             "queue": [],
             "degraded": [],
             "slots": {},
-            "setupPrefix": {"artifacts": {}, "operations": {}, "seeds": {}},
+            "beforeCache": {"artifacts": {}, "operations": {}, "seeds": {}},
         }
         self._draft_state: dict[str, Any] | None = None
         initialization_scope = self._begin_transition_scope()
         self._load()
         current = self._generation()
         self._prepare_generation_change(current)
-        self.state.setdefault("setupPrefix", {"artifacts": {}, "operations": {}, "seeds": {}})
+        self.state.setdefault("beforeCache", {"artifacts": {}, "operations": {}, "seeds": {}})
         self._load_slots()
-        self._load_setup_prefix_seeds()
-        if self.setup_prefix is not None:
+        self._load_before_cache_seeds()
+        if self.before_cache is not None:
             self._attest_independent_raw_images()
-            capacity = os.statvfs(self.setup_prefix["imageRootPath"])
+            capacity = os.statvfs(self.before_cache["imageRootPath"])
             physical_bytes = capacity.f_blocks * capacity.f_frsize
-            if int(self.setup_prefix["filesystemLimitBytes"]) > physical_bytes:
-                raise RuntimeError("setup-prefix configured filesystem limit exceeds physical capacity")
-            if self._setup_prefix_ledger()["totalBytes"] > int(self.setup_prefix["filesystemLimitBytes"]):
-                raise RuntimeError("setup-prefix fixed slot and seed images exceed configured capacity")
+            if int(self.before_cache["filesystemLimitBytes"]) > physical_bytes:
+                raise RuntimeError("before-cache configured filesystem limit exceeds physical capacity")
+            if self._before_cache_ledger()["totalBytes"] > int(self.before_cache["filesystemLimitBytes"]):
+                raise RuntimeError("before-cache fixed slot and seed images exceed configured capacity")
         asset_issue = "fixed Docker profile assets are missing, mismatched, or unsupported"
         self.state["degraded"] = [item for item in self.state["degraded"] if item != asset_issue]
         if not self.asset_facts or not all(item.get("present") is True for item in self.asset_facts):
@@ -314,12 +314,12 @@ class Admission:
             self.state["admissionOpen"] = False
             self.state["generation"] = current
             self._commit("daemon-generation-changed", {})
-            self._recover_setup_prefix_operations()
-            self._invalidate_stale_setup_prefix_artifacts()
+            self._recover_before_cache_operations()
+            self._invalidate_stale_before_cache_artifacts()
             self.state["admissionOpen"] = not self.state["degraded"]
             self._commit("daemon-generation-reconciled", {})
         self._reconcile_restarted_builds()
-        self._recover_setup_prefix_operations()
+        self._recover_before_cache_operations()
         # Recovered leases are not durable tombstones. Reconcile legacy
         # journals and same-generation restarts before the ready boundary so a
         # prior interrupted invocation cannot retain ledger ownership.
@@ -420,44 +420,44 @@ class Admission:
             self.state["admissionOpen"] = False
             self.state["degraded"].append("project-quota slot count does not match descriptor")
 
-    def _setup_prefix_config(self) -> dict[str, Any] | None:
-        capability = self.descriptor.get("backend", {}).get("filesystem", {}).get("setupPrefix")
-        raw = (self.host_config or {}).get("setupPrefix")
+    def _before_cache_config(self) -> dict[str, Any] | None:
+        capability = self.descriptor.get("backend", {}).get("filesystem", {}).get("beforeCache")
+        raw = (self.host_config or {}).get("beforeCache")
         if capability is None:
             if isinstance(raw, dict) and raw.get("enabled") is True:
-                raise RuntimeError("host setupPrefix is enabled but descriptor capability is absent")
+                raise RuntimeError("host beforeCache is enabled but descriptor capability is absent")
             return None
         if not isinstance(raw, dict) or raw.get("enabled") is not True:
-            raise RuntimeError("descriptor setupPrefix capability has no enabled host configuration")
+            raise RuntimeError("descriptor beforeCache capability has no enabled host configuration")
         expected = {
-            "protocol": SETUP_PREFIX_PROTOCOL,
-            "coverage": SETUP_PREFIX_REQUIRED_STATE,
-            "requiredState": SETUP_PREFIX_REQUIRED_STATE,
-            "helperRevision": SETUP_PREFIX_HELPER_REVISION,
-            "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
-            "copyRevision": SETUP_PREFIX_COPY_REVISION,
-            "quiesceRevision": SETUP_PREFIX_QUIESCE_REVISION,
-            "slotAttestation": SETUP_PREFIX_SLOT_ATTESTATION,
-            "seedPolicy": SETUP_PREFIX_SEED_POLICY,
-            "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
-            "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
-            "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
+            "protocol": BEFORE_CACHE_PROTOCOL,
+            "coverage": BEFORE_CACHE_REQUIRED_STATE,
+            "requiredState": BEFORE_CACHE_REQUIRED_STATE,
+            "helperRevision": BEFORE_CACHE_HELPER_REVISION,
+            "copyProtocol": BEFORE_CACHE_COPY_PROTOCOL,
+            "copyRevision": BEFORE_CACHE_COPY_REVISION,
+            "quiesceRevision": BEFORE_CACHE_QUIESCE_REVISION,
+            "slotAttestation": BEFORE_CACHE_SLOT_ATTESTATION,
+            "seedPolicy": BEFORE_CACHE_SEED_POLICY,
+            "publicationRevision": BEFORE_CACHE_PUBLICATION_REVISION,
+            "recoveryRevision": BEFORE_CACHE_RECOVERY_REVISION,
+            "manifestSchema": BEFORE_CACHE_MANIFEST_SCHEMA,
         }
         if any(capability.get(key) != value or raw.get(key) != value
                for key, value in expected.items()):
-            raise RuntimeError("descriptor and host setupPrefix revisions do not match dockerData-only v1")
+            raise RuntimeError("descriptor and host beforeCache revisions do not match dockerData-only v1")
         storage = (self.host_config or {}).get("storage", {})
         pool = self.descriptor.get("backend", {}).get("filesystem", {}).get("dockerDataPool", {})
         if storage.get("backing") == "loop-ext4" \
-                or storage.get("slotAttestation") != SETUP_PREFIX_SLOT_ATTESTATION \
-                or pool.get("attestation") != SETUP_PREFIX_SLOT_ATTESTATION:
-            raise RuntimeError("setupPrefix is forbidden for shared loop-ext4/project-quota slots")
+                or storage.get("slotAttestation") != BEFORE_CACHE_SLOT_ATTESTATION \
+                or pool.get("attestation") != BEFORE_CACHE_SLOT_ATTESTATION:
+            raise RuntimeError("beforeCache is forbidden for shared loop-ext4/project-quota slots")
         registry = Path(str(raw.get("seedRegistryPath", "")))
         if not registry.is_absolute() or registry.is_symlink() or not registry.is_file():
-            raise RuntimeError("setupPrefix seedRegistryPath must be an existing real absolute file")
+            raise RuntimeError("beforeCache seedRegistryPath must be an existing real absolute file")
         image_root = Path(str(raw.get("imageRootPath", "")))
         if not image_root.is_absolute() or image_root.is_symlink() or not image_root.is_dir():
-            raise RuntimeError("setupPrefix imageRootPath must be an existing real absolute directory")
+            raise RuntimeError("beforeCache imageRootPath must be an existing real absolute directory")
         image_root = image_root.resolve()
         backing_image = Path(str(storage.get("outerImagePath", ""))) \
             if storage.get("backing") == "fixed-image-ext4" else None
@@ -465,11 +465,11 @@ class Admission:
         if raw.get("filesystemIdentity") != actual_filesystem_identity \
                 or capability.get("filesystemIdentity") != actual_filesystem_identity:
             raise RuntimeError(
-                "setupPrefix filesystem identity does not match the actual image root or descriptor"
+                "beforeCache filesystem identity does not match the actual image root or descriptor"
             )
         copy_strategy = raw.get("copyStrategy")
         if copy_strategy != "raw-image/v1":
-            raise RuntimeError("setupPrefix copy strategy must be raw-image/v1")
+            raise RuntimeError("beforeCache copy strategy must be raw-image/v1")
         seed_limit = int(capability.get("seedLimitBytes", 0))
         filesystem_limit = parse_host_bytes(raw.get("filesystemLimitBytes", 0))
         filesystem_size = int(capability.get("filesystemSizeBytes", 0))
@@ -478,17 +478,17 @@ class Admission:
         pool_size = int(pool.get("bytesPerAllocation", 0))
         if seed_limit <= 0 or configured_seed_limit != seed_limit \
                 or filesystem_limit <= 0 or seed_limit > filesystem_limit:
-            raise RuntimeError("setupPrefix capacity limits are invalid")
+            raise RuntimeError("beforeCache capacity limits are invalid")
         if filesystem_size <= 0 or configured_size != filesystem_size or pool_size != filesystem_size:
-            raise RuntimeError("setupPrefix filesystem size does not match its fixed Docker data allocation")
-        if capability.get("filesystemFeatures") != SETUP_PREFIX_FILESYSTEM_FEATURES \
-                or raw.get("filesystemFeatures") != SETUP_PREFIX_FILESYSTEM_FEATURES:
-            raise RuntimeError("setupPrefix filesystem features are not the fixed raw-image feature set")
+            raise RuntimeError("beforeCache filesystem size does not match its fixed Docker data allocation")
+        if capability.get("filesystemFeatures") != BEFORE_CACHE_FILESYSTEM_FEATURES \
+                or raw.get("filesystemFeatures") != BEFORE_CACHE_FILESYSTEM_FEATURES:
+            raise RuntimeError("beforeCache filesystem features are not the fixed raw-image feature set")
         provider_identity = capability.get("providerIdentity")
         execution_domain = capability.get("executionDomain")
         if not isinstance(provider_identity, str) or re.fullmatch(r"sha256:[a-f0-9]{64}", provider_identity) is None \
                 or not isinstance(execution_domain, str) or re.fullmatch(r"sha256:[a-f0-9]{64}", execution_domain) is None:
-            raise RuntimeError("setupPrefix provider identity or execution domain is invalid")
+            raise RuntimeError("beforeCache provider identity or execution domain is invalid")
         filesystem = self.descriptor["backend"]["filesystem"]
         expected_provider_identity = canonical_digest({
             "schemaVersion": 1,
@@ -502,7 +502,7 @@ class Admission:
             "dockerDataSnapshot": {
                 **expected,
                 "filesystemSizeBytes": filesystem_size,
-                "filesystemFeatures": SETUP_PREFIX_FILESYSTEM_FEATURES,
+                "filesystemFeatures": BEFORE_CACHE_FILESYSTEM_FEATURES,
             },
         })
         expected_execution_domain = canonical_digest({
@@ -514,7 +514,7 @@ class Admission:
             "slotAttestation": pool["attestation"],
         })
         if provider_identity != expected_provider_identity or execution_domain != expected_execution_domain:
-            raise RuntimeError("setupPrefix provider identity or execution domain does not match the descriptor")
+            raise RuntimeError("beforeCache provider identity or execution domain does not match the descriptor")
         return {
             **expected,
             "seedRegistryPath": registry,
@@ -523,21 +523,21 @@ class Admission:
             "seedLimitBytes": seed_limit,
             "filesystemLimitBytes": filesystem_limit,
             "filesystemSizeBytes": filesystem_size,
-            "filesystemFeatures": list(SETUP_PREFIX_FILESYSTEM_FEATURES),
+            "filesystemFeatures": list(BEFORE_CACHE_FILESYSTEM_FEATURES),
             "filesystemIdentity": actual_filesystem_identity,
             "providerIdentity": provider_identity,
             "executionDomain": execution_domain,
         }
 
-    def _load_setup_prefix_seeds(self) -> None:
-        if self.setup_prefix is None:
+    def _load_before_cache_seeds(self) -> None:
+        if self.before_cache is None:
             return
-        installed = json.loads(self.setup_prefix["seedRegistryPath"].read_text(encoding="utf-8"))
+        installed = json.loads(self.before_cache["seedRegistryPath"].read_text(encoding="utf-8"))
         if installed.get("schemaVersion") != 1 \
-                or installed.get("slotAttestation") != SETUP_PREFIX_SLOT_ATTESTATION \
-                or installed.get("filesystemIdentity") != self.setup_prefix["filesystemIdentity"]:
-            raise RuntimeError("setup-prefix seed registry attestation is invalid")
-        seeds = self.state["setupPrefix"].setdefault("seeds", {})
+                or installed.get("slotAttestation") != BEFORE_CACHE_SLOT_ATTESTATION \
+                or installed.get("filesystemIdentity") != self.before_cache["filesystemIdentity"]:
+            raise RuntimeError("before-cache seed registry attestation is invalid")
+        seeds = self.state["beforeCache"].setdefault("seeds", {})
         total = 0
         installed_ids: set[str] = set()
         for raw in installed.get("seeds", []):
@@ -545,30 +545,30 @@ class Admission:
             path = Path(str(raw.get("path", "")))
             if re.fullmatch(r"seed-[a-z0-9]{8,64}", seed_id) is None or not path.is_absolute() \
                     or path.is_symlink() or not path.is_dir() \
-                    or raw.get("attestation") != SETUP_PREFIX_SLOT_ATTESTATION:
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} is not independently attested")
+                    or raw.get("attestation") != BEFORE_CACHE_SLOT_ATTESTATION:
+                raise RuntimeError(f"before-cache seed {seed_id!r} is not independently attested")
             try:
                 _, _, image_limit = self._raw_image_record(raw)
             except Exception as error:
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} raw image is invalid: {error}") from error
-            if image_limit != int(self.setup_prefix["filesystemSizeBytes"]):
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} does not match the fixed filesystem size")
+                raise RuntimeError(f"before-cache seed {seed_id!r} raw image is invalid: {error}") from error
+            if image_limit != int(self.before_cache["filesystemSizeBytes"]):
+                raise RuntimeError(f"before-cache seed {seed_id!r} does not match the fixed filesystem size")
             if self._raw_image_mount_source(path) is not None:
                 owned_recovery = any(
                     operation.get("kind") in ("capture", "stale-artifact")
                     and operation.get("seedId") == seed_id
-                    for operation in self.state["setupPrefix"].get("operations", {}).values()
+                    for operation in self.state["beforeCache"].get("operations", {}).values()
                 )
                 if not owned_recovery:
-                    raise RuntimeError(f"setup-prefix seed {seed_id!r} must remain unmounted")
+                    raise RuntimeError(f"before-cache seed {seed_id!r} must remain unmounted")
             seed_options = {str(item) for item in raw.get("mountOptions", [])}
             if not {"ro", "noload"}.issubset(seed_options):
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} must be mounted ro,noload")
+                raise RuntimeError(f"before-cache seed {seed_id!r} must be mounted ro,noload")
             limit = int(raw.get("limitBytes", 0))
             if limit <= 0 or limit != image_limit:
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} has no fixed size")
+                raise RuntimeError(f"before-cache seed {seed_id!r} has no fixed size")
             if seed_id in installed_ids:
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} is duplicated")
+                raise RuntimeError(f"before-cache seed {seed_id!r} is duplicated")
             installed_ids.add(seed_id)
             total += limit
             existing = seeds.get(seed_id)
@@ -577,19 +577,19 @@ class Admission:
                 "baselineUsageBytes", "ownerUid", "ownerGid", "mode", "fsType", "mountOptions",
             )}
             if existing is not None and any(existing.get(key) != value for key, value in immutable.items()):
-                raise RuntimeError(f"setup-prefix seed {seed_id!r} registry facts changed across restart")
+                raise RuntimeError(f"before-cache seed {seed_id!r} registry facts changed across restart")
             seeds.setdefault(seed_id, {**raw, "seedId": seed_id, "limitBytes": limit, "state": "free"})
-        if set(seeds) != installed_ids or not seeds or total != int(self.setup_prefix["seedLimitBytes"]):
-            raise RuntimeError("setup-prefix fixed seed filesystems do not equal seedLimitBytes")
+        if set(seeds) != installed_ids or not seeds or total != int(self.before_cache["seedLimitBytes"]):
+            raise RuntimeError("before-cache fixed seed filesystems do not equal seedLimitBytes")
 
     def _attest_independent_raw_images(self) -> None:
-        assert self.setup_prefix is not None
-        expected_size = int(self.setup_prefix["filesystemSizeBytes"])
+        assert self.before_cache is not None
+        expected_size = int(self.before_cache["filesystemSizeBytes"])
         image_paths: set[Path] = set()
         image_inodes: set[tuple[int, int]] = set()
         filesystem_identities: set[str] = set()
         records = [*self.state["slots"].values(),
-                   *self.state["setupPrefix"]["seeds"].values()]
+                   *self.state["beforeCache"]["seeds"].values()]
         for record in records:
             mountpoint, image, limit = self._raw_image_record(record)
             if limit != expected_size:
@@ -663,14 +663,14 @@ class Admission:
                 or self.state.get("fixedDescriptorDigest") == fixed_descriptor:
             return
         leases = self.state.get("leases", {})
-        setup_prefix = self.state.get("setupPrefix", {})
+        before_cache = self.state.get("beforeCache", {})
         recovered_only = isinstance(leases, dict) and all(
             isinstance(lease, dict) and lease.get("state") == "recovered"
             for lease in leases.values()
         )
         if not recovered_only or self.state.get("reservations") or self.state.get("queue") \
                 or self.state.get("builds") or self.state.get("containers") \
-                or not isinstance(setup_prefix, dict) or setup_prefix.get("operations"):
+                or not isinstance(before_cache, dict) or before_cache.get("operations"):
             raise RuntimeError("fixed activation generation changed with live journal ownership")
         # Exclusive activation already proved the old generation drained.  Its
         # slot, seed, artifact, and recovered-lease facts belong to the prior
@@ -683,7 +683,7 @@ class Admission:
         self.state["queue"] = []
         self.state["degraded"] = []
         self.state["slots"] = {}
-        self.state["setupPrefix"] = {"artifacts": {}, "operations": {}, "seeds": {}}
+        self.state["beforeCache"] = {"artifacts": {}, "operations": {}, "seeds": {}}
         self.state["fixedDescriptorDigest"] = fixed_descriptor
 
     def _asset_facts(self) -> list[dict[str, Any]]:
@@ -851,7 +851,7 @@ class Admission:
         st = path.lstat()
         if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
             raise RuntimeError("slot is not a real directory")
-        if slot.get("attestation") == SETUP_PREFIX_SLOT_ATTESTATION:
+        if slot.get("attestation") == BEFORE_CACHE_SLOT_ATTESTATION:
             _, image, hard = self._raw_image_record(slot)
             source = self._raw_image_mount_source(path)
             loop_devices = self._run_host("losetup", "-j", str(image), check=False).stdout
@@ -965,7 +965,7 @@ class Admission:
             raise RuntimeError("raw dockerData mountpoint is not an attested real directory")
         if not image.is_absolute() or image.is_symlink() or not image.is_file():
             raise RuntimeError("raw dockerData image is not an attested real file")
-        image_root = self.setup_prefix.get("imageRootPath") if self.setup_prefix else None
+        image_root = self.before_cache.get("imageRootPath") if self.before_cache else None
         if image_root is None or image.resolve().parent != Path(image_root).resolve() \
                 or image.parent.is_symlink():
             raise RuntimeError("raw dockerData image escaped its attested image root")
@@ -1030,7 +1030,7 @@ class Admission:
 
     def _restore_fixed_slot_allocation(self, slot: dict[str, Any]) -> None:
         """Restore physical allocation lost while scrubbing a writable ext4 slot."""
-        if slot.get("attestation") != SETUP_PREFIX_SLOT_ATTESTATION:
+        if slot.get("attestation") != BEFORE_CACHE_SLOT_ATTESTATION:
             return
         mountpoint = Path(str(slot["path"]))
         image = Path(str(slot["imagePath"]))
@@ -1048,7 +1048,7 @@ class Admission:
             if self._raw_image_mount_source(mountpoint) is None:
                 self._mount_raw_image(slot)
 
-    def _scrub_setup_prefix_seed(
+    def _scrub_before_cache_seed(
         self,
         seed: dict[str, Any],
         *,
@@ -1063,22 +1063,22 @@ class Admission:
         mountpoint, _, _ = self._raw_image_record(seed)
         if self._raw_image_mount_source(mountpoint) is not None:
             if not recover_mounted:
-                raise RuntimeError("setup-prefix seed unexpectedly remained mounted before scrub")
+                raise RuntimeError("before-cache seed unexpectedly remained mounted before scrub")
             self._run_host("umount", "--", str(mountpoint))
         if self._slot_references(seed):
-            raise RuntimeError("setup-prefix seed has an external mount or process reference")
+            raise RuntimeError("before-cache seed has an external mount or process reference")
         mounted = False
         try:
             self._mount_raw_image(seed, ["rw", "noatime", "nodev", "nosuid"])
             mounted = True
             self._scrub_slot(seed)
             if os.listdir(mountpoint):
-                raise RuntimeError("setup-prefix seed is not empty after scrub")
+                raise RuntimeError("before-cache seed is not empty after scrub")
         finally:
             if mounted and self._raw_image_mount_source(mountpoint) is not None:
                 self._run_host("umount", "--", str(mountpoint))
         if self._raw_image_mount_source(mountpoint) is not None:
-            raise RuntimeError("setup-prefix seed remained mounted after scrub")
+            raise RuntimeError("before-cache seed remained mounted after scrub")
 
     @staticmethod
     def _temporary_clone_path(target_image: Path, operation_id: str) -> Path:
@@ -1162,7 +1162,7 @@ class Admission:
             # UUID: tune2fs refuses an unclean superblock, while replay is the
             # same recovery the clone would perform on its next mount. Do not
             # run a general repair here; an error beyond journal recovery is
-            # not an exact setup-prefix artifact.
+            # not an exact before-cache artifact.
             journal_replay = self._run_host(
                 "e2fsck", "-p", "-E", "journal_only", str(temporary),
                 check=False, timeout=15 * 60,
@@ -1223,11 +1223,11 @@ class Admission:
 
     def _record_copy_stage(self, operation_id: str, stage: str, facts: dict[str, Any]) -> None:
         with self._transition():
-            operation = self.state["setupPrefix"]["operations"].get(operation_id)
+            operation = self.state["beforeCache"]["operations"].get(operation_id)
             if operation is None:
                 raise RuntimeError("raw dockerData copy lost its journaled operation")
             operation.update({"state": stage, "copyStage": stage, **facts})
-            self._commit("setup-prefix-copy-stage", {
+            self._commit("before-cache-copy-stage", {
                 "operationId": operation_id,
                 "stage": stage,
                 **facts,
@@ -1235,20 +1235,20 @@ class Admission:
 
     def _copy_docker_data_image(self, source: dict[str, Any], target: dict[str, Any],
                                 operation_id: str) -> str:
-        assert self.setup_prefix is not None
-        strategy = self.setup_prefix["copyStrategy"]
+        assert self.before_cache is not None
+        strategy = self.before_cache["copyStrategy"]
         if strategy != "raw-image/v1":
             raise RuntimeError(f"unsupported dockerData copy strategy {strategy!r}")
         return self._copy_raw_image(source, target, operation_id)
 
     def _remove_managed_tree(self, parent: Path, name: str) -> None:
         if re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,127}", name) is None:
-            raise RuntimeError("setup-prefix managed path name is invalid")
+            raise RuntimeError("before-cache managed path name is invalid")
         path = parent / name
         if not path.exists():
             return
         if path.is_symlink() or path.resolve().parent != parent.resolve():
-            raise RuntimeError("setup-prefix managed path escaped its parent")
+            raise RuntimeError("before-cache managed path escaped its parent")
         root_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             self._scrub_fd(root_fd)
@@ -1262,11 +1262,11 @@ class Admission:
         finally:
             os.close(parent_fd)
 
-    def _setup_prefix_ledger(self, extra_temporary: int = 0) -> dict[str, int]:
-        if self.setup_prefix is None:
+    def _before_cache_ledger(self, extra_temporary: int = 0) -> dict[str, int]:
+        if self.before_cache is None:
             return {"seedBytes": 0, "slotBytes": 0, "temporaryCloneBytes": 0, "activeBytes": 0,
                     "recoveryBytes": 0, "totalBytes": 0, "limitBytes": 0}
-        setup_state = self.state.setdefault("setupPrefix", {"artifacts": {}, "operations": {}, "seeds": {}})
+        setup_state = self.state.setdefault("beforeCache", {"artifacts": {}, "operations": {}, "seeds": {}})
         # Every slot and seed image consumes fixed host capacity even while it
         # is free. Operation clones are a second simultaneous charge until
         # their atomic replacement is published or removed.
@@ -1291,15 +1291,15 @@ class Admission:
         return {"seedBytes": seed, "slotBytes": slot_bytes,
                 "temporaryCloneBytes": temporary, "activeBytes": active,
                 "recoveryBytes": recovery, "totalBytes": total,
-                "limitBytes": int(self.setup_prefix["filesystemLimitBytes"])}
+                "limitBytes": int(self.before_cache["filesystemLimitBytes"])}
 
-    def _check_setup_prefix_capacity(self, size: int, *, capture: bool) -> None:
-        assert self.setup_prefix is not None
-        ledger = self._setup_prefix_ledger(extra_temporary=size)
+    def _check_before_cache_capacity(self, size: int, *, capture: bool) -> None:
+        assert self.before_cache is not None
+        ledger = self._before_cache_ledger(extra_temporary=size)
         if ledger["totalBytes"] > ledger["limitBytes"]:
-            raise ProtocolError("setup-prefix-capacity-exhausted", "setup-prefix filesystem capacity is exhausted")
+            raise ProtocolError("before-cache-capacity-exhausted", "before-cache filesystem capacity is exhausted")
 
-    def _setup_prefix_response(
+    def _before_cache_response(
         self,
         wire: dict[str, Any],
         artifact: dict[str, Any],
@@ -1312,87 +1312,87 @@ class Admission:
             "artifact": {
                 "artifactId": artifact["artifactId"],
                 "sizeBytes": artifact["sizeBytes"],
-                "requiredState": SETUP_PREFIX_REQUIRED_STATE,
-                "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
-                "copyRevision": SETUP_PREFIX_COPY_REVISION,
+                "requiredState": BEFORE_CACHE_REQUIRED_STATE,
+                "copyProtocol": BEFORE_CACHE_COPY_PROTOCOL,
+                "copyRevision": BEFORE_CACHE_COPY_REVISION,
             },
-            "status": {"state": state, "capacity": self._setup_prefix_ledger()},
+            "status": {"state": state, "capacity": self._before_cache_ledger()},
         }
 
     @staticmethod
-    def _validate_setup_prefix_key(raw: Any) -> str:
+    def _validate_before_cache_key(raw: Any) -> str:
         if not isinstance(raw, str) or not raw or len(raw.encode("utf-8")) > 512 \
                 or any(ord(character) < 0x20 for character in raw):
-            raise ProtocolError("setup-prefix-key-invalid", "setupPrefixKey must be a bounded non-empty string")
+            raise ProtocolError("before-cache-key-invalid", "beforeCacheKey must be a bounded non-empty string")
         return raw
 
     @staticmethod
     def _validate_sha256(raw: Any, field: str) -> str:
         if not isinstance(raw, str) or re.fullmatch(r"sha256:[a-f0-9]{64}", raw) is None:
-            raise ProtocolError("setup-prefix-identity-invalid", f"{field} must be an exact sha256 digest")
+            raise ProtocolError("before-cache-identity-invalid", f"{field} must be an exact sha256 digest")
         return raw
 
     @staticmethod
     def _artifact_matches_wire(artifact: dict[str, Any], wire: dict[str, Any]) -> bool:
         return all(
             artifact.get(field) == wire.get(field)
-            for field in SETUP_PREFIX_ARTIFACT_BINDING_FIELDS
+            for field in BEFORE_CACHE_ARTIFACT_BINDING_FIELDS
         )
 
     @staticmethod
-    def _clear_setup_prefix_seed_state(seed: dict[str, Any]) -> None:
-        for field in (*SETUP_PREFIX_WIRE_FIELDS, "operationId", "artifactId", "sizeBytes",
+    def _clear_before_cache_seed_state(seed: dict[str, Any]) -> None:
+        for field in (*BEFORE_CACHE_WIRE_FIELDS, "operationId", "artifactId", "sizeBytes",
                       "sourceSlotGeneration", "publicationOperationId", "publishedAt",
                       "preparedAt", "quarantineReason", "corruptReason"):
             seed.pop(field, None)
 
-    def _setup_prefix_request(
+    def _before_cache_request(
         self,
         request: dict[str, Any],
         *,
         capture: bool,
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-        if self.setup_prefix is None:
-            raise ProtocolError("setup-prefix-unsupported", "this host profile has no setup-prefix capability")
+        if self.before_cache is None:
+            raise ProtocolError("before-cache-unsupported", "this host profile has no before-cache capability")
         if "requiredState" not in request:
-            raise ProtocolError("setup-prefix-state-required", "requiredState=dockerData is required")
-        if request.get("requiredState") != SETUP_PREFIX_REQUIRED_STATE:
+            raise ProtocolError("before-cache-state-required", "requiredState=dockerData is required")
+        if request.get("requiredState") != BEFORE_CACHE_REQUIRED_STATE:
             raise ProtocolError(
-                "setup-prefix-state-unsupported",
+                "before-cache-state-unsupported",
                 "only sandboxState.dockerData can be captured or restored",
             )
         allowed = {"kind", "invocationId", "leaseToken", "reservationId", "daemonGeneration",
                    "slotGeneration", "protocol", "requiredState", "descriptorDigest",
                    "operationId",
-                   "setupPrefixKey", "setupManifestDigest", "providerIdentity", "baseIdentity",
+                   "beforeCacheKey", "declarationDigest", "providerIdentity", "baseIdentity",
                    "executionDomain", "helperRevision", "copyProtocol", "copyRevision", "quiesceRevision",
                    "publicationRevision", "recoveryRevision", "manifestSchema",
                    "filesystemSizeBytes", "filesystemFeatures"}
         if set(request) != allowed:
-            raise ProtocolError("setup-prefix-host-input", "setup-prefix frames accept no host paths or helper controls")
+            raise ProtocolError("before-cache-host-input", "before-cache frames accept no host paths or helper controls")
         operation_id = request.get("operationId")
         if not isinstance(operation_id, str) or not operation_id \
                 or len(operation_id.encode("utf-8")) > 512 \
                 or any(ord(character) < 0x20 or ord(character) == 0x7f for character in operation_id):
-            raise ProtocolError("setup-prefix-operation-invalid", "setup-prefix operationId is invalid")
+            raise ProtocolError("before-cache-operation-invalid", "before-cache operationId is invalid")
         expected_wire = {
-            "protocol": SETUP_PREFIX_PROTOCOL,
-            "providerIdentity": self.setup_prefix["providerIdentity"],
-            "executionDomain": self.setup_prefix["executionDomain"],
-            "helperRevision": SETUP_PREFIX_HELPER_REVISION,
-            "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
-            "copyRevision": SETUP_PREFIX_COPY_REVISION,
-            "quiesceRevision": SETUP_PREFIX_QUIESCE_REVISION,
-            "publicationRevision": SETUP_PREFIX_PUBLICATION_REVISION,
-            "recoveryRevision": SETUP_PREFIX_RECOVERY_REVISION,
-            "manifestSchema": SETUP_PREFIX_MANIFEST_SCHEMA,
-            "filesystemSizeBytes": self.setup_prefix["filesystemSizeBytes"],
-            "filesystemFeatures": self.setup_prefix["filesystemFeatures"],
+            "protocol": BEFORE_CACHE_PROTOCOL,
+            "providerIdentity": self.before_cache["providerIdentity"],
+            "executionDomain": self.before_cache["executionDomain"],
+            "helperRevision": BEFORE_CACHE_HELPER_REVISION,
+            "copyProtocol": BEFORE_CACHE_COPY_PROTOCOL,
+            "copyRevision": BEFORE_CACHE_COPY_REVISION,
+            "quiesceRevision": BEFORE_CACHE_QUIESCE_REVISION,
+            "publicationRevision": BEFORE_CACHE_PUBLICATION_REVISION,
+            "recoveryRevision": BEFORE_CACHE_RECOVERY_REVISION,
+            "manifestSchema": BEFORE_CACHE_MANIFEST_SCHEMA,
+            "filesystemSizeBytes": self.before_cache["filesystemSizeBytes"],
+            "filesystemFeatures": self.before_cache["filesystemFeatures"],
         }
         if request.get("descriptorDigest") != self.descriptor_digest \
                 or any(request.get(field) != value for field, value in expected_wire.items()):
             raise ProtocolError(
-                "setup-prefix-descriptor-mismatch",
+                "before-cache-descriptor-mismatch",
                 "dockerData snapshot wire does not match the attested descriptor",
             )
         if request.get("daemonGeneration") != self.state["generation"]:
@@ -1405,26 +1405,26 @@ class Admission:
         slot = self.state["slots"].get(reservation.get("slotId"))
         if slot is None or int(request.get("slotGeneration", -1)) != int(reservation.get("slotGeneration", -2)) \
                 or int(request.get("slotGeneration", -1)) != int(slot.get("generation", -3)):
-            raise ProtocolError("setup-prefix-slot-generation", "reservation slot generation is stale")
+            raise ProtocolError("before-cache-slot-generation", "reservation slot generation is stale")
         expected_reservation = "committed" if capture else "granted"
         expected_slot = "active" if capture else "granted"
         if reservation.get("state") != expected_reservation or slot.get("state") != expected_slot:
-            raise ProtocolError("setup-prefix-reservation-state", "reservation slot is not in the required state")
-        key = self._validate_setup_prefix_key(request.get("setupPrefixKey"))
+            raise ProtocolError("before-cache-reservation-state", "reservation slot is not in the required state")
+        key = self._validate_before_cache_key(request.get("beforeCacheKey"))
         manifest_digest = self._validate_sha256(
-            request.get("setupManifestDigest"), "setupManifestDigest"
+            request.get("declarationDigest"), "declarationDigest"
         )
         if key != f"prefix:{manifest_digest.removeprefix('sha256:')}":
             raise ProtocolError(
-                "setup-prefix-key-invalid",
-                "setupPrefixKey must be bound to the complete setup manifest digest",
+                "before-cache-key-invalid",
+                "beforeCacheKey must be bound to the complete setup manifest digest",
             )
         base_identity = self._validate_sha256(request.get("baseIdentity"), "baseIdentity")
         wire = {
             **expected_wire,
-            "requiredState": SETUP_PREFIX_REQUIRED_STATE,
-            "setupPrefixKey": key,
-            "setupManifestDigest": manifest_digest,
+            "requiredState": BEFORE_CACHE_REQUIRED_STATE,
+            "beforeCacheKey": key,
+            "declarationDigest": manifest_digest,
             "baseIdentity": base_identity,
             "daemonGeneration": self.state["generation"],
             "slotGeneration": int(slot["generation"]),
@@ -1439,7 +1439,7 @@ class Admission:
     ) -> None:
         containers, _ = self._resource_ids(reservation)
         if containers != [reservation.get("containerId")]:
-            raise ProtocolError("setup-prefix-outer-not-quiesced", "outer container is not uniquely attested")
+            raise ProtocolError("before-cache-outer-not-quiesced", "outer container is not uniquely attested")
         result = self._docker(
             "inspect", "--format", "{{json .}}", str(reservation["containerId"]), check=False,
         )
@@ -1451,17 +1451,17 @@ class Admission:
         if result.returncode != 0 or not isinstance(state, dict) \
                 or state.get("Running") is not False or int(state.get("Pid", -1)) != 0:
             raise ProtocolError(
-                "setup-prefix-outer-not-quiesced",
+                "before-cache-outer-not-quiesced",
                 "outer container and inner dockerd/containerd/shim must be fully stopped",
             )
         if inspected.get("Image") != base_identity:
             raise ProtocolError(
-                "setup-prefix-base-identity",
+                "before-cache-base-identity",
                 "outer container base image does not match the exact request identity",
             )
         references = self._slot_references(slot)
         if references:
-            raise ProtocolError("setup-prefix-slot-busy", "slot still has a mount or open process user")
+            raise ProtocolError("before-cache-slot-busy", "slot still has a mount or open process user")
 
     def _verify_restore_target(self, slot: dict[str, Any]) -> None:
         if self._slot_references(slot):
@@ -1474,39 +1474,39 @@ class Admission:
 
     def _verify_seed_target(self, seed: dict[str, Any]) -> None:
         mountpoint, _, limit = self._raw_image_record(seed)
-        if limit != int(self.setup_prefix["filesystemSizeBytes"]):
-            raise RuntimeError("setup-prefix seed has the wrong fixed filesystem size")
+        if limit != int(self.before_cache["filesystemSizeBytes"]):
+            raise RuntimeError("before-cache seed has the wrong fixed filesystem size")
         if self._raw_image_mount_source(mountpoint) is not None:
-            raise RuntimeError("setup-prefix seed must be immutable and unmounted")
+            raise RuntimeError("before-cache seed must be immutable and unmounted")
         if self._slot_references(seed):
-            raise RuntimeError("setup-prefix seed has an external mount or process reference")
+            raise RuntimeError("before-cache seed has an external mount or process reference")
 
     def _load_artifact(self, artifact: dict[str, Any]) -> dict[str, Any]:
-        seed = self.state["setupPrefix"]["seeds"].get(artifact.get("seedId"))
+        seed = self.state["beforeCache"]["seeds"].get(artifact.get("seedId"))
         if seed is None or seed.get("state") != "published" \
-                or seed.get("setupPrefixKey") != artifact.get("setupPrefixKey"):
-            raise RuntimeError("setup-prefix artifact has no independently published seed filesystem")
+                or seed.get("beforeCacheKey") != artifact.get("beforeCacheKey"):
+            raise RuntimeError("before-cache artifact has no independently published seed filesystem")
         self._verify_seed_target(seed)
         _, image, limit = self._raw_image_record(seed)
         expected_artifact_id = self._raw_image_digest(image)
         if artifact.get("artifactId") != expected_artifact_id \
                 or int(artifact.get("sizeBytes", -1)) != limit:
-            raise RuntimeError("setup-prefix raw image artifactId or fixed size is corrupt")
+            raise RuntimeError("before-cache raw image artifactId or fixed size is corrupt")
         return seed
 
     def _clear_setup_operation(self, operation_id: str, reservation_id: str, event: str,
                                detail: dict[str, Any]) -> None:
-        operation = self.state["setupPrefix"]["operations"].pop(operation_id, None)
+        operation = self.state["beforeCache"]["operations"].pop(operation_id, None)
         reservation = self.state["reservations"].get(reservation_id)
-        if reservation is not None and reservation.get("setupPrefixOperation") == operation_id:
-            reservation.pop("setupPrefixOperation", None)
+        if reservation is not None and reservation.get("beforeCacheOperation") == operation_id:
+            reservation.pop("beforeCacheOperation", None)
         self._commit(event, {"operationId": operation_id, "reservationId": reservation_id,
                              **detail, "operation": operation})
 
     def _fence_cancelled_captures(self, invocation_id: str, reason: str) -> list[dict[str, Any]]:
         prepared: list[dict[str, Any]] = []
         fenced: list[str] = []
-        for operation in self.state["setupPrefix"].get("operations", {}).values():
+        for operation in self.state["beforeCache"].get("operations", {}).values():
             if operation.get("kind") != "capture" or operation.get("invocationId") != invocation_id:
                 continue
             operation["cancelRequested"] = True
@@ -1516,7 +1516,7 @@ class Admission:
             if operation.get("state") == "prepared":
                 prepared.append(copy.deepcopy(operation))
         if fenced:
-            self._commit("setup-prefix-capture-cancel-fenced", {
+            self._commit("before-cache-capture-cancel-fenced", {
                 "invocationId": invocation_id,
                 "operationIds": fenced,
                 "reason": reason,
@@ -1526,70 +1526,70 @@ class Admission:
     def _scrub_cancelled_prepared_captures(self, operations: list[dict[str, Any]]) -> None:
         for operation in operations:
             operation_id = str(operation["operationId"])
-            seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+            seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
             if seed is None:
                 raise RuntimeError("cancelled prepared capture lost its seed")
             self._remove_temporary_clone(seed, operation_id)
-            self._scrub_setup_prefix_seed(seed)
+            self._scrub_before_cache_seed(seed)
             self._verify_seed_target(seed)
             seed["state"] = "free"
-            self._clear_setup_prefix_seed_state(seed)
+            self._clear_before_cache_seed_state(seed)
             self._clear_setup_operation(
                 operation_id,
                 str(operation["reservationId"]),
-                "setup-prefix-capture-cancelled",
+                "before-cache-capture-cancelled",
                 {"status": "scrubbed-unpublished-seed", "seedId": seed["seedId"],
                  "seedScrubbed": True},
             )
 
-    def _handle_setup_prefix_capture(self, request: dict[str, Any]) -> dict[str, Any]:
+    def _handle_before_cache_capture(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
-            _, reservation, slot, wire = self._setup_prefix_request(request, capture=True)
-            key = wire["setupPrefixKey"]
-            existing = self.state["setupPrefix"]["artifacts"].get(key)
+            _, reservation, slot, wire = self._before_cache_request(request, capture=True)
+            key = wire["beforeCacheKey"]
+            existing = self.state["beforeCache"]["artifacts"].get(key)
             if existing is not None:
                 if not self._artifact_matches_wire(existing, wire):
                     raise ProtocolError(
-                        "setup-prefix-artifact-mismatch",
+                        "before-cache-artifact-mismatch",
                         "published artifact identity does not match this dockerData request",
                     )
-                return self._setup_prefix_response(wire, existing, "already-published")
+                return self._before_cache_response(wire, existing, "already-published")
             operation_id = str(request["operationId"])
-            active_operation_id = reservation.get("setupPrefixOperation")
+            active_operation_id = reservation.get("beforeCacheOperation")
             if active_operation_id == operation_id:
-                active_operation = self.state["setupPrefix"]["operations"].get(operation_id)
+                active_operation = self.state["beforeCache"]["operations"].get(operation_id)
                 candidate = active_operation.get("candidateArtifact") if isinstance(active_operation, dict) else None
                 if active_operation is not None and active_operation.get("state") == "prepared" \
                         and isinstance(candidate, dict) and self._artifact_matches_wire(candidate, wire):
-                    return self._setup_prefix_response(wire, candidate, "prepared")
+                    return self._before_cache_response(wire, candidate, "prepared")
             if active_operation_id:
-                raise ProtocolError("setup-prefix-operation-active", "reservation already has a setup-prefix operation")
-            seed = next((item for item in self.state["setupPrefix"]["seeds"].values()
+                raise ProtocolError("before-cache-operation-active", "reservation already has a before-cache operation")
+            seed = next((item for item in self.state["beforeCache"]["seeds"].values()
                          if item.get("state") == "free"
                          and int(item["limitBytes"]) == int(slot["limitBytes"])), None)
             if seed is None:
-                raise ProtocolError("setup-prefix-capacity-exhausted",
+                raise ProtocolError("before-cache-capacity-exhausted",
                                     "no free equal-size independent seed filesystem is available")
-            if operation_id in self.state["setupPrefix"]["operations"]:
-                raise ProtocolError("setup-prefix-operation-active", "setup-prefix operationId is already active")
+            if operation_id in self.state["beforeCache"]["operations"]:
+                raise ProtocolError("before-cache-operation-active", "before-cache operationId is already active")
             operation = {
                 "operationId": operation_id, "kind": "capture", "state": "capturing",
                 "invocationId": reservation["invocationId"], "reservationId": reservation["reservationId"],
                 "slotId": slot["slotId"], "slotGeneration": slot["generation"],
-                "setupPrefixKey": key, "seedId": seed["seedId"],
+                "beforeCacheKey": key, "seedId": seed["seedId"],
                 "chargedBytes": int(seed["limitBytes"]), "startedAt": now(),
                 "temporaryClone": {"targetId": seed["seedId"],
                                    "bytes": int(seed["limitBytes"])},
                 "wire": copy.deepcopy(wire),
             }
-            self._check_setup_prefix_capacity(int(seed["limitBytes"]), capture=True)
-            self.state["setupPrefix"]["operations"][operation_id] = operation
-            reservation["setupPrefixOperation"] = operation_id
+            self._check_before_cache_capacity(int(seed["limitBytes"]), capture=True)
+            self.state["beforeCache"]["operations"][operation_id] = operation
+            reservation["beforeCacheOperation"] = operation_id
             seed.update({"state": "capturing", "operationId": operation_id,
-                         "setupPrefixKey": key, "setupManifestDigest": wire["setupManifestDigest"]})
-            self._commit("setup-prefix-capture-intent", {"operationId": operation_id,
+                         "beforeCacheKey": key, "declarationDigest": wire["declarationDigest"]})
+            self._commit("before-cache-capture-intent", {"operationId": operation_id,
                                                            "reservationId": reservation["reservationId"],
-                                                           "setupPrefixKey": key,
+                                                           "beforeCacheKey": key,
                                                            "seedId": seed["seedId"]})
             reservation_snapshot, slot_snapshot, seed_snapshot = (
                 copy.deepcopy(reservation), copy.deepcopy(slot), copy.deepcopy(seed)
@@ -1604,11 +1604,11 @@ class Admission:
             )
             self._verify_seed_target(seed_snapshot)
             with self._transition():
-                current = self.state["setupPrefix"]["operations"].get(operation_id)
+                current = self.state["beforeCache"]["operations"].get(operation_id)
                 if current is None:
-                    raise ProtocolError("setup-prefix-operation-cancelled", "capture intent is no longer current")
+                    raise ProtocolError("before-cache-operation-cancelled", "capture intent is no longer current")
                 current.update({"state": "capturing"})
-                self._commit("setup-prefix-capture-copying", {"operationId": operation_id,
+                self._commit("before-cache-capture-copying", {"operationId": operation_id,
                                                                 "sizeBytes": int(seed_snapshot["limitBytes"])})
             copy_started = True
             artifact_id = self._copy_docker_data_image(slot_snapshot, seed_snapshot, operation_id)
@@ -1620,73 +1620,73 @@ class Admission:
                         "chargedBytes": int(seed_snapshot["limitBytes"]),
                         "state": "prepared", "preparedAt": now()}
             with self._transition():
-                current = self.state["setupPrefix"]["operations"].get(operation_id)
+                current = self.state["beforeCache"]["operations"].get(operation_id)
                 reservation = self.state["reservations"].get(reservation_snapshot["reservationId"])
                 lease = self.state["leases"].get(reservation_snapshot["invocationId"])
                 slot = self.state["slots"].get(slot_snapshot["slotId"])
                 if current is None or reservation is None or lease is None or slot is None \
                         or lease.get("state") != "active" \
                         or current.get("cancelRequested") is True \
-                        or reservation.get("setupPrefixOperation") != operation_id \
+                        or reservation.get("beforeCacheOperation") != operation_id \
                         or int(slot.get("generation", -1)) != int(slot_snapshot["generation"]) \
                         or self.state["generation"] != wire["daemonGeneration"]:
                     raise ProtocolError(
-                        "setup-prefix-operation-cancelled",
+                        "before-cache-operation-cancelled",
                         "capture ownership, lease, or slot generation changed before staging",
                     )
-                seed = self.state["setupPrefix"]["seeds"][seed_snapshot["seedId"]]
-                seed.update({**wire, "state": "prepared", "setupPrefixKey": key,
+                seed = self.state["beforeCache"]["seeds"][seed_snapshot["seedId"]]
+                seed.update({**wire, "state": "prepared", "beforeCacheKey": key,
                              "artifactId": artifact_id, "sizeBytes": size})
                 current.update({"state": "prepared", "candidateArtifact": artifact})
-                self._commit("setup-prefix-capture-prepared", {
+                self._commit("before-cache-capture-prepared", {
                     "operationId": operation_id,
                     "reservationId": reservation_snapshot["reservationId"],
-                    "setupPrefixKey": key,
+                    "beforeCacheKey": key,
                     "artifactId": artifact_id,
                     "sizeBytes": size,
                     "seedId": seed["seedId"],
                 })
-                return self._setup_prefix_response(wire, artifact, "prepared")
+                return self._before_cache_response(wire, artifact, "prepared")
         except Exception as error:
             scrub_error: Exception | None = None
             if copy_started:
                 try:
-                    self._scrub_setup_prefix_seed(seed_snapshot)
+                    self._scrub_before_cache_seed(seed_snapshot)
                     self._verify_seed_target(seed_snapshot)
                 except Exception as cleanup_error:
                     scrub_error = cleanup_error
             with self._transition():
-                if operation_id in self.state["setupPrefix"]["operations"]:
-                    seed = self.state["setupPrefix"]["seeds"][seed_snapshot["seedId"]]
+                if operation_id in self.state["beforeCache"]["operations"]:
+                    seed = self.state["beforeCache"]["seeds"][seed_snapshot["seedId"]]
                     if scrub_error is None:
                         seed.clear()
                         seed.update({**seed_snapshot, "state": "free"})
-                        self._clear_setup_prefix_seed_state(seed)
+                        self._clear_before_cache_seed_state(seed)
                     else:
                         seed.update({"state": "quarantined", "quarantineReason": str(scrub_error)})
                     self._clear_setup_operation(operation_id, reservation_snapshot["reservationId"],
-                                                "setup-prefix-capture-failed",
-                                                {"setupPrefixKey": key, "reason": str(error)[-2000:],
+                                                "before-cache-capture-failed",
+                                                {"beforeCacheKey": key, "reason": str(error)[-2000:],
                                                  "seedScrubbed": scrub_error is None})
             if isinstance(error, ProtocolError):
                 raise
-            raise ProtocolError("setup-prefix-capture-failed", str(error)[-2000:]) from error
+            raise ProtocolError("before-cache-capture-failed", str(error)[-2000:]) from error
 
-    def _handle_setup_prefix_capture_publish(self, request: dict[str, Any]) -> dict[str, Any]:
+    def _handle_before_cache_capture_publish(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
-            lease, reservation, slot, wire = self._setup_prefix_request(request, capture=True)
-            key = wire["setupPrefixKey"]
+            lease, reservation, slot, wire = self._before_cache_request(request, capture=True)
+            key = wire["beforeCacheKey"]
             operation_id = str(request["operationId"])
-            existing = self.state["setupPrefix"]["artifacts"].get(key)
+            existing = self.state["beforeCache"]["artifacts"].get(key)
             if existing is not None:
                 if existing.get("publicationOperationId") != operation_id \
                         or not self._artifact_matches_wire(existing, wire):
                     raise ProtocolError(
-                        "setup-prefix-publication-conflict",
+                        "before-cache-publication-conflict",
                         "published artifact does not belong to this capture commit",
                     )
-                return self._setup_prefix_response(wire, existing, "already-published")
-            operation = self.state["setupPrefix"]["operations"].get(operation_id)
+                return self._before_cache_response(wire, existing, "already-published")
+            operation = self.state["beforeCache"]["operations"].get(operation_id)
             candidate = operation.get("candidateArtifact") if isinstance(operation, dict) else None
             if operation is None or operation.get("kind") != "capture" \
                     or operation.get("state") != "prepared" \
@@ -1694,22 +1694,22 @@ class Admission:
                     or operation.get("reservationId") != reservation["reservationId"] \
                     or operation.get("slotId") != slot["slotId"] \
                     or operation.get("wire") != wire \
-                    or reservation.get("setupPrefixOperation") != operation_id \
+                    or reservation.get("beforeCacheOperation") != operation_id \
                     or not isinstance(candidate, dict):
                 raise ProtocolError(
-                    "setup-prefix-publication-not-prepared",
+                    "before-cache-publication-not-prepared",
                     "capture commit has no matching uncancelled prepared copy",
                 )
-            seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+            seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
             if seed is None or seed.get("state") != "prepared" \
                     or seed.get("operationId") != operation_id \
                     or seed.get("artifactId") != candidate.get("artifactId"):
-                raise ProtocolError("setup-prefix-publication-corrupt", "prepared seed ownership is invalid")
+                raise ProtocolError("before-cache-publication-corrupt", "prepared seed ownership is invalid")
             self._verify_seed_target(seed)
             _, seed_image, seed_size = self._raw_image_record(seed)
             if self._raw_image_digest(seed_image) != candidate.get("artifactId") \
                     or seed_size != int(candidate.get("sizeBytes", -1)):
-                raise ProtocolError("setup-prefix-publication-corrupt", "prepared seed digest is invalid")
+                raise ProtocolError("before-cache-publication-corrupt", "prepared seed digest is invalid")
             published = {
                 **candidate,
                 "state": "published",
@@ -1719,39 +1719,39 @@ class Admission:
             seed.update({"state": "published", "publishedAt": published["publishedAt"],
                          "publicationOperationId": operation_id})
             seed.pop("operationId", None)
-            self.state["setupPrefix"]["artifacts"][key] = published
+            self.state["beforeCache"]["artifacts"][key] = published
             self._clear_setup_operation(
                 operation_id,
                 reservation["reservationId"],
-                "setup-prefix-captured",
-                {"setupPrefixKey": key, "artifactId": published["artifactId"],
+                "before-cache-captured",
+                {"beforeCacheKey": key, "artifactId": published["artifactId"],
                  "sizeBytes": published["sizeBytes"], "seedId": seed["seedId"]},
             )
-            return self._setup_prefix_response(wire, published, "captured")
+            return self._before_cache_response(wire, published, "captured")
 
-    def _handle_setup_prefix_restore(self, request: dict[str, Any]) -> dict[str, Any]:
+    def _handle_before_cache_restore(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
-            _, reservation, slot, wire = self._setup_prefix_request(request, capture=False)
-            key = wire["setupPrefixKey"]
-            restored = reservation.get("restoredSetupPrefix")
+            _, reservation, slot, wire = self._before_cache_request(request, capture=False)
+            key = wire["beforeCacheKey"]
+            restored = reservation.get("restoredBeforeCache")
             if isinstance(restored, dict):
-                if restored.get("setupPrefixKey") != key:
-                    raise ProtocolError("setup-prefix-restore-conflict", "reservation already restored another artifact")
-                artifact = self.state["setupPrefix"]["artifacts"].get(key)
+                if restored.get("beforeCacheKey") != key:
+                    raise ProtocolError("before-cache-restore-conflict", "reservation already restored another artifact")
+                artifact = self.state["beforeCache"]["artifacts"].get(key)
                 if artifact is None or artifact.get("artifactId") != restored.get("artifactId") \
                         or not self._artifact_matches_wire(artifact, wire):
-                    raise ProtocolError("setup-prefix-artifact-corrupt", "restored artifact is no longer journaled")
-                return self._setup_prefix_response(wire, artifact, "already-restored")
-            artifact = self.state["setupPrefix"]["artifacts"].get(key)
+                    raise ProtocolError("before-cache-artifact-corrupt", "restored artifact is no longer journaled")
+                return self._before_cache_response(wire, artifact, "already-restored")
+            artifact = self.state["beforeCache"]["artifacts"].get(key)
             if artifact is None or artifact.get("state") != "published":
-                raise ProtocolError("setup-prefix-miss", "no published setup-prefix artifact matches the key")
+                raise ProtocolError("before-cache-miss", "no published before-cache artifact matches the key")
             if not self._artifact_matches_wire(artifact, wire):
                 raise ProtocolError(
-                    "setup-prefix-artifact-mismatch",
+                    "before-cache-artifact-mismatch",
                     "published artifact identity does not match this dockerData request",
                 )
-            if reservation.get("setupPrefixOperation"):
-                raise ProtocolError("setup-prefix-operation-active", "reservation already has a setup-prefix operation")
+            if reservation.get("beforeCacheOperation"):
+                raise ProtocolError("before-cache-operation-active", "reservation already has a before-cache operation")
             reservation_snapshot, slot_snapshot = copy.deepcopy(reservation), copy.deepcopy(slot)
             artifact_snapshot = copy.deepcopy(artifact)
 
@@ -1759,46 +1759,46 @@ class Admission:
             self._load_artifact(artifact_snapshot)
         except Exception as error:
             with self._transition():
-                current = self.state["setupPrefix"]["artifacts"].get(key)
+                current = self.state["beforeCache"]["artifacts"].get(key)
                 if current is not None:
                     current["state"] = "corrupt"
                     current["corruptReason"] = str(error)[-2000:]
-                    seed = self.state["setupPrefix"]["seeds"].get(current.get("seedId"))
+                    seed = self.state["beforeCache"]["seeds"].get(current.get("seedId"))
                     if seed is not None:
                         seed["state"] = "corrupt"
                         seed["corruptReason"] = str(error)[-2000:]
-                    self._commit("setup-prefix-artifact-corrupt", {"setupPrefixKey": key,
+                    self._commit("before-cache-artifact-corrupt", {"beforeCacheKey": key,
                                                                     "artifactId": current.get("artifactId"),
                                                                     "reason": str(error)[-2000:]})
-            raise ProtocolError("setup-prefix-artifact-corrupt", str(error)[-2000:]) from error
+            raise ProtocolError("before-cache-artifact-corrupt", str(error)[-2000:]) from error
 
         size = int(artifact_snapshot["sizeBytes"])
         operation_id = secrets.token_hex(16)
         with self._transition():
-            _, reservation, slot, current_wire = self._setup_prefix_request(request, capture=False)
+            _, reservation, slot, current_wire = self._before_cache_request(request, capture=False)
             if current_wire != wire:
                 raise ProtocolError("attestation-changed", "dockerData snapshot wire changed before restore")
-            seed = self.state["setupPrefix"]["seeds"].get(artifact_snapshot["seedId"])
+            seed = self.state["beforeCache"]["seeds"].get(artifact_snapshot["seedId"])
             if seed is None or seed.get("state") != "published":
-                raise ProtocolError("setup-prefix-artifact-corrupt", "artifact seed is no longer published")
-            self._check_setup_prefix_capacity(int(slot["limitBytes"]), capture=False)
+                raise ProtocolError("before-cache-artifact-corrupt", "artifact seed is no longer published")
+            self._check_before_cache_capacity(int(slot["limitBytes"]), capture=False)
             operation = {
                 "operationId": operation_id, "kind": "restore", "state": "restoring",
                 "invocationId": reservation["invocationId"], "reservationId": reservation["reservationId"],
                 "slotId": slot["slotId"], "slotGeneration": slot["generation"],
-                "setupPrefixKey": key, "seedId": artifact_snapshot["seedId"],
+                "beforeCacheKey": key, "seedId": artifact_snapshot["seedId"],
                 "chargedBytes": int(slot["limitBytes"]), "startedAt": now(),
                 "temporaryClone": {"targetId": slot["slotId"],
                                    "bytes": int(slot["limitBytes"])},
                 "wire": copy.deepcopy(wire),
             }
-            self.state["setupPrefix"]["operations"][operation_id] = operation
-            reservation["setupPrefixOperation"] = operation_id
+            self.state["beforeCache"]["operations"][operation_id] = operation
+            reservation["beforeCacheOperation"] = operation_id
             reservation["state"] = "restoring"
             slot["state"] = "restoring"
-            self._commit("setup-prefix-restore-intent", {"operationId": operation_id,
+            self._commit("before-cache-restore-intent", {"operationId": operation_id,
                                                           "reservationId": reservation["reservationId"],
-                                                          "setupPrefixKey": key,
+                                                          "beforeCacheKey": key,
                                                           "sourceSeedId": artifact_snapshot["seedId"],
                                                           "sourceArtifactId": artifact_snapshot["artifactId"],
                                                           "targetSlotId": slot["slotId"]})
@@ -1814,116 +1814,116 @@ class Admission:
             with self._transition():
                 reservation = self.state["reservations"].get(reservation_snapshot["reservationId"])
                 slot = self.state["slots"].get(slot_snapshot["slotId"])
-                operation = self.state["setupPrefix"]["operations"].get(operation_id)
+                operation = self.state["beforeCache"]["operations"].get(operation_id)
                 lease = self.state["leases"].get(reservation_snapshot["invocationId"])
                 if reservation is None or slot is None or operation is None \
                         or lease is None or lease.get("state") != "active" \
-                        or reservation.get("setupPrefixOperation") != operation_id \
+                        or reservation.get("beforeCacheOperation") != operation_id \
                         or int(slot.get("generation", -1)) != int(slot_snapshot["generation"]) \
                         or self.state["generation"] != wire["daemonGeneration"]:
                     raise RuntimeError("restore ownership changed before publication")
                 reservation["state"] = "granted"
                 slot["state"] = "granted"
-                reservation["restoredSetupPrefix"] = {
-                    "setupPrefixKey": key, "artifactId": artifact_snapshot["artifactId"],
-                    "setupManifestDigest": wire["setupManifestDigest"],
+                reservation["restoredBeforeCache"] = {
+                    "beforeCacheKey": key, "artifactId": artifact_snapshot["artifactId"],
+                    "declarationDigest": wire["declarationDigest"],
                     "slotGeneration": slot["generation"],
                 }
                 self._clear_setup_operation(operation_id, reservation["reservationId"],
-                                            "setup-prefix-restored",
-                                            {"setupPrefixKey": key,
+                                            "before-cache-restored",
+                                            {"beforeCacheKey": key,
                                              "sourceSeedId": artifact_snapshot["seedId"],
                                              "sourceArtifactId": artifact_snapshot["artifactId"],
                                              "targetSlotId": slot["slotId"],
                                              "restoredSlotDigest": restored_slot_digest,
                                              "sizeBytes": size})
-                return self._setup_prefix_response(wire, artifact_snapshot, "restored")
+                return self._before_cache_response(wire, artifact_snapshot, "restored")
         except Exception as error:
             with self._transition():
                 reservation = self.state["reservations"].get(reservation_snapshot["reservationId"])
                 if reservation is not None:
-                    reservation.pop("setupPrefixOperation", None)
-                    self.state["setupPrefix"]["operations"].pop(operation_id, None)
-                    self._quarantine(reservation, f"setup-prefix restore failed for {key}: {error}")
+                    reservation.pop("beforeCacheOperation", None)
+                    self.state["beforeCache"]["operations"].pop(operation_id, None)
+                    self._quarantine(reservation, f"before-cache restore failed for {key}: {error}")
             if isinstance(error, ProtocolError):
                 raise
-            raise ProtocolError("setup-prefix-restore-failed", str(error)[-2000:]) from error
+            raise ProtocolError("before-cache-restore-failed", str(error)[-2000:]) from error
 
-    def _recover_setup_prefix_operations(self) -> None:
-        if self.setup_prefix is None:
+    def _recover_before_cache_operations(self) -> None:
+        if self.before_cache is None:
             return
-        operations = list(self.state.setdefault("setupPrefix", {"artifacts": {}, "operations": {}, "seeds": {}})["operations"].values())
+        operations = list(self.state.setdefault("beforeCache", {"artifacts": {}, "operations": {}, "seeds": {}})["operations"].values())
         for operation in operations:
             operation_id = str(operation.get("operationId", ""))
             reservation_id = str(operation.get("reservationId", ""))
             try:
                 if operation.get("kind") == "capture":
-                    seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+                    seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
                     slot = self.state["slots"].get(operation.get("slotId"))
                     if seed is None:
                         raise RuntimeError("capturing seed filesystem disappeared from its registry")
                     self._remove_temporary_clone(seed, operation_id)
                     if slot is not None:
                         self._ensure_raw_image_mounted(slot)
-                    self._scrub_setup_prefix_seed(seed, recover_mounted=True)
+                    self._scrub_before_cache_seed(seed, recover_mounted=True)
                     self._verify_seed_target(seed)
                     seed["state"] = "free"
-                    self._clear_setup_prefix_seed_state(seed)
+                    self._clear_before_cache_seed_state(seed)
                     self._clear_setup_operation(operation_id, reservation_id,
-                                                "setup-prefix-capture-recovered",
+                                                "before-cache-capture-recovered",
                                                 {"status": "scrubbed-unpublished-seed",
                                                  "seedId": seed["seedId"],
                                                  "seedScrubbed": True})
                 elif operation.get("kind") == "restore":
                     reservation = self.state["reservations"].get(reservation_id)
                     slot = self.state["slots"].get(operation.get("slotId"))
-                    seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+                    seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
                     if slot is not None:
                         self._remove_temporary_clone(slot, operation_id)
                         self._ensure_raw_image_mounted(slot)
                     if seed is not None:
                         self._verify_seed_target(seed)
-                    self.state["setupPrefix"]["operations"].pop(operation_id, None)
+                    self.state["beforeCache"]["operations"].pop(operation_id, None)
                     if reservation is not None:
-                        reservation.pop("setupPrefixOperation", None)
+                        reservation.pop("beforeCacheOperation", None)
                         self._quarantine(
                             reservation,
-                            f"setup-prefix restore interrupted by helper restart for {operation.get('setupPrefixKey')}",
+                            f"before-cache restore interrupted by helper restart for {operation.get('beforeCacheKey')}",
                         )
                 elif operation.get("kind") == "stale-artifact":
-                    key = str(operation.get("setupPrefixKey", ""))
-                    seed = self.state["setupPrefix"]["seeds"].get(operation.get("seedId"))
+                    key = str(operation.get("beforeCacheKey", ""))
+                    seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
                     if seed is None:
-                        raise RuntimeError("stale setup-prefix seed disappeared from its registry")
+                        raise RuntimeError("stale before-cache seed disappeared from its registry")
                     seed["state"] = "quarantined"
                     seed["quarantineReason"] = "published seed belongs to a stale daemon generation"
                     raise RuntimeError(
                         f"published seed {seed['seedId']} is immutable; explicit offline disposition is required"
                     )
                 else:
-                    raise RuntimeError("journaled setup-prefix operation kind is invalid")
+                    raise RuntimeError("journaled before-cache operation kind is invalid")
             except Exception as error:
                 self.state["admissionOpen"] = False
-                message = f"setup-prefix recovery blocked for {operation_id}: {error}"
+                message = f"before-cache recovery blocked for {operation_id}: {error}"
                 if message not in self.state["degraded"]:
                     self.state["degraded"].append(message)
-                self._commit("setup-prefix-recovery-blocked", {"operationId": operation_id,
+                self._commit("before-cache-recovery-blocked", {"operationId": operation_id,
                                                                 "reason": str(error)[-2000:]})
 
-    def _invalidate_stale_setup_prefix_artifacts(self) -> None:
-        if self.setup_prefix is None:
+    def _invalidate_stale_before_cache_artifacts(self) -> None:
+        if self.before_cache is None:
             return
         current_generation = self.state["generation"]
-        for key, artifact in list(self.state["setupPrefix"]["artifacts"].items()):
+        for key, artifact in list(self.state["beforeCache"]["artifacts"].items()):
             if artifact.get("daemonGeneration") == current_generation:
                 continue
-            seed = self.state["setupPrefix"]["seeds"].get(artifact.get("seedId"))
+            seed = self.state["beforeCache"]["seeds"].get(artifact.get("seedId"))
             if seed is None:
                 self.state["admissionOpen"] = False
-                reason = f"stale setup-prefix artifact {key} has no seed"
+                reason = f"stale before-cache artifact {key} has no seed"
                 self.state["degraded"].append(reason)
-                self._commit("setup-prefix-stale-artifact-blocked", {
-                    "setupPrefixKey": key, "reason": reason,
+                self._commit("before-cache-stale-artifact-blocked", {
+                    "beforeCacheKey": key, "reason": reason,
                 })
                 continue
             artifact["state"] = "stale"
@@ -1931,11 +1931,11 @@ class Admission:
             seed["state"] = "quarantined"
             seed["quarantineReason"] = "published seed belongs to a stale daemon generation"
             self.state["admissionOpen"] = False
-            reason = f"published setup-prefix seed {seed['seedId']} is immutable across daemon generations"
+            reason = f"published before-cache seed {seed['seedId']} is immutable across daemon generations"
             if reason not in self.state["degraded"]:
                 self.state["degraded"].append(reason)
-            self._commit("setup-prefix-stale-artifact-blocked", {
-                "setupPrefixKey": key,
+            self._commit("before-cache-stale-artifact-blocked", {
+                "beforeCacheKey": key,
                 "seedId": seed["seedId"],
                 "artifactDaemonGeneration": artifact.get("daemonGeneration"),
                 "daemonGeneration": current_generation,
@@ -2601,12 +2601,12 @@ class Admission:
         return {"containerId": container_id, "networkId": network_id, "state": "active"}
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
-        if request.get("kind") == "setup-prefix.capture":
-            return self._handle_setup_prefix_capture(request)
-        if request.get("kind") == "setup-prefix.capture.publish":
-            return self._handle_setup_prefix_capture_publish(request)
-        if request.get("kind") == "setup-prefix.restore":
-            return self._handle_setup_prefix_restore(request)
+        if request.get("kind") == "before-cache.capture":
+            return self._handle_before_cache_capture(request)
+        if request.get("kind") == "before-cache.capture.publish":
+            return self._handle_before_cache_capture_publish(request)
+        if request.get("kind") == "before-cache.restore":
+            return self._handle_before_cache_restore(request)
         with self.lock:
             scope_owner = self._begin_transition_scope()
             try:
@@ -2646,26 +2646,26 @@ class Admission:
                         "degraded": list(self.state["degraded"]),
                         "journal": {"state": "healthy", "durableTransitions": True},
                         "assets": {"state": "verified" if assets and all(item["present"] for item in assets) else "missing", "images": assets}}
-                if self.setup_prefix is not None:
-                    result["setupPrefix"] = {
-                        "protocol": SETUP_PREFIX_PROTOCOL,
-                        "coverage": SETUP_PREFIX_REQUIRED_STATE,
-                        "requiredState": SETUP_PREFIX_REQUIRED_STATE,
-                        "helperRevision": SETUP_PREFIX_HELPER_REVISION,
-                        "copyProtocol": SETUP_PREFIX_COPY_PROTOCOL,
-                        "copyRevision": SETUP_PREFIX_COPY_REVISION,
-                        "quiesceRevision": SETUP_PREFIX_QUIESCE_REVISION,
-                        "slotAttestation": SETUP_PREFIX_SLOT_ATTESTATION,
-                        "providerIdentity": self.setup_prefix["providerIdentity"],
-                        "executionDomain": self.setup_prefix["executionDomain"],
-                        "filesystemSizeBytes": self.setup_prefix["filesystemSizeBytes"],
-                        "filesystemFeatures": self.setup_prefix["filesystemFeatures"],
-                        "capacity": self._setup_prefix_ledger(),
+                if self.before_cache is not None:
+                    result["beforeCache"] = {
+                        "protocol": BEFORE_CACHE_PROTOCOL,
+                        "coverage": BEFORE_CACHE_REQUIRED_STATE,
+                        "requiredState": BEFORE_CACHE_REQUIRED_STATE,
+                        "helperRevision": BEFORE_CACHE_HELPER_REVISION,
+                        "copyProtocol": BEFORE_CACHE_COPY_PROTOCOL,
+                        "copyRevision": BEFORE_CACHE_COPY_REVISION,
+                        "quiesceRevision": BEFORE_CACHE_QUIESCE_REVISION,
+                        "slotAttestation": BEFORE_CACHE_SLOT_ATTESTATION,
+                        "providerIdentity": self.before_cache["providerIdentity"],
+                        "executionDomain": self.before_cache["executionDomain"],
+                        "filesystemSizeBytes": self.before_cache["filesystemSizeBytes"],
+                        "filesystemFeatures": self.before_cache["filesystemFeatures"],
+                        "capacity": self._before_cache_ledger(),
                         "artifacts": [
                             {key: value for key, value in artifact.items() if key != "seedId"}
-                            for artifact in self.state["setupPrefix"]["artifacts"].values()
+                            for artifact in self.state["beforeCache"]["artifacts"].values()
                         ],
-                        "operations": list(self.state["setupPrefix"]["operations"].values()),
+                        "operations": list(self.state["beforeCache"]["operations"].values()),
                     }
                 return result
             if kind == "build.lookup":
@@ -2781,8 +2781,8 @@ class Admission:
             if kind == "reservation.commit":
                 raise ProtocolError("control-create-unimplemented", "container create must be owned by the control service; client-supplied IDs are forbidden")
             if kind == "container.create":
-                if reservation.get("setupPrefixOperation"):
-                    raise ProtocolError("setup-prefix-operation-active", "container create cannot race setup-prefix restore")
+                if reservation.get("beforeCacheOperation"):
+                    raise ProtocolError("before-cache-operation-active", "container create cannot race before-cache restore")
                 if reservation["kind"] != "container" or reservation["state"] not in ("granted", "provisioning", "committed"):
                     raise ProtocolError("reservation-state", "container reservation is not createable")
                 spec = self._validate_create(request.get("create"))
@@ -2815,12 +2815,12 @@ class Admission:
                 self._commit("build-cancel-requested", {"reservationId": reservation_id})
                 return {"cancelRequested": True}
             if kind == "reservation.release":
-                if reservation.get("setupPrefixOperation"):
+                if reservation.get("beforeCacheOperation"):
                     prepared = self._fence_cancelled_captures(
                         lease["invocationId"], "reservation release before capture publication commit",
                     )
                     self._scrub_cancelled_prepared_captures(prepared)
-                    raise ProtocolError("setup-prefix-operation-active", "reservation release cannot race setup-prefix operation")
+                    raise ProtocolError("before-cache-operation-active", "reservation release cannot race before-cache operation")
                 if reservation["kind"] == "build":
                     if "terminationEvidence" in request:
                         raise ProtocolError("build-release-client-evidence-forbidden", "build termination proof is control-owned")
@@ -2918,8 +2918,8 @@ class Admission:
                 unresolved = False
                 for reservation in owned:
                     recovery_error = f"recovery blocked for {reservation['reservationId']}"
-                    if reservation.get("setupPrefixOperation"):
-                        # The setup-prefix transaction owns cleanup until its
+                    if reservation.get("beforeCacheOperation"):
+                        # The before-cache transaction owns cleanup until its
                         # copy boundary publishes or rolls back. Concurrent
                         # lease recovery must not scrub its source/target.
                         unresolved = True
@@ -3031,11 +3031,11 @@ class Handler(socketserver.StreamRequestHandler):
                 response = {"ok": True, "result": admission.handle(request)}
         except ProtocolError as error:
             response = {"ok": False, "error": {"code": error.code, "message": str(error)}}
-            if request is not None and str(request.get("kind", "")).startswith("setup-prefix."):
-                setup_key = request.get("setupPrefixKey")
+            if request is not None and str(request.get("kind", "")).startswith("before-cache."):
+                setup_key = request.get("beforeCacheKey")
                 artifact = None
                 if admission is not None and isinstance(setup_key, str):
-                    artifact = admission.state.get("setupPrefix", {}).get("artifacts", {}).get(setup_key)
+                    artifact = admission.state.get("beforeCache", {}).get("artifacts", {}).get(setup_key)
                 response["error"].update({
                     "protocol": request.get("protocol"),
                     "requiredState": request.get("requiredState"),
@@ -3054,8 +3054,8 @@ class Handler(socketserver.StreamRequestHandler):
                     "filesystemFeatures": request.get("filesystemFeatures"),
                     "daemonGeneration": admission.state["generation"] if admission is not None else None,
                     "slotGeneration": request.get("slotGeneration"),
-                    "setupPrefixKey": setup_key,
-                    "setupManifestDigest": request.get("setupManifestDigest"),
+                    "beforeCacheKey": setup_key,
+                    "declarationDigest": request.get("declarationDigest"),
                     "artifact": {"artifactId": artifact.get("artifactId") if artifact else None},
                     "status": {"state": "failed", "diagnostic": error.code},
                 })
@@ -3065,7 +3065,7 @@ class Handler(socketserver.StreamRequestHandler):
             if context_path is not None:
                 context_path.unlink(missing_ok=True)
         try:
-            if (request is not None and request.get("kind") == "setup-prefix.capture.publish"
+            if (request is not None and request.get("kind") == "before-cache.capture.publish"
                     and os.environ.pop("NICEEVAL_TEST_DROP_CAPTURE_PUBLISH_RESPONSE_ONCE", "") == "1"
                     and response.get("ok") is True):
                 # Test-only transport fault: commit has completed, but the
@@ -3121,7 +3121,7 @@ def main() -> None:
             ready += json.dumps({
                 "activationEpoch": activation[0]["epoch"],
                 "manifestDigest": activation_manifest_digest,
-                "copyRevision": SETUP_PREFIX_COPY_REVISION,
+                "copyRevision": BEFORE_CACHE_COPY_REVISION,
             }, sort_keys=True) + "\n"
         Path(args.ready_file).write_text(ready, encoding="utf-8")
     thread = threading.Thread(target=admission.recovery_loop, daemon=True)

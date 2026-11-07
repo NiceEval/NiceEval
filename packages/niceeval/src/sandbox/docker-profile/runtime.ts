@@ -5,15 +5,15 @@ import { connect } from "node:net";
 import { dirname, join, parse } from "node:path";
 import type { Readable } from "node:stream";
 import { Effect, type Scope } from "effect";
-import type { SandboxSetupPrefixCacheOperation } from "../backend.ts";
+import type { BeforeCacheStep } from "../backend.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import { digestOf } from "../identity.ts";
 import { sandboxState } from "../action.ts";
 import { indexDockerProfiles, resolveDockerProfile, type ResolvedDockerProfileEntry } from "./registry.ts";
 import {
-  DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL,
+  DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL,
   type DockerExecutionProfileV1,
-  type DockerProfileSetupPrefixFullCopyCapabilityV1,
+  type DockerProfileBeforeCacheFullCopyCapabilityV1,
 } from "./schema.ts";
 
 export const DOCKER_PROFILE_REGISTRY_DIR = "/etc/niceeval/docker-profiles";
@@ -134,29 +134,29 @@ export interface DockerProfileBuildCreateResult {
   readonly cleanupProven?: boolean;
 }
 
-export interface DockerProfileSetupPrefixArtifactIdentityV1 {
+export interface DockerProfileBeforeCacheArtifactIdentityV1 {
   readonly requiredState: "dockerData";
-  readonly copyProtocol: DockerProfileSetupPrefixFullCopyCapabilityV1["copyProtocol"];
+  readonly copyProtocol: DockerProfileBeforeCacheFullCopyCapabilityV1["copyProtocol"];
   readonly copyRevision: string;
   /** Provider-neutral identifier; it is not a Docker image id or a raw-filesystem digest slot. */
   readonly artifactId: string;
   readonly sizeBytes: number;
 }
 
-interface DockerProfileSetupPrefixReceiptV1 {
+interface DockerProfileBeforeCacheReceiptV1 {
   readonly daemonGeneration: string;
   readonly slotGeneration: number;
   readonly requiredState: "dockerData";
-  readonly setupPrefixKey: string;
-  readonly setupManifestDigest: string;
-  readonly artifact: DockerProfileSetupPrefixArtifactIdentityV1;
+  readonly beforeCacheKey: string;
+  readonly declarationDigest: string;
+  readonly artifact: DockerProfileBeforeCacheArtifactIdentityV1;
 }
 
-export interface DockerProfileSetupPrefixCaptureResultV1 extends DockerProfileSetupPrefixReceiptV1 {
+export interface DockerProfileBeforeCacheCaptureResultV1 extends DockerProfileBeforeCacheReceiptV1 {
   readonly state: "captured" | "already-published";
 }
 
-export interface DockerProfileSetupPrefixRestoreResultV1 extends DockerProfileSetupPrefixReceiptV1 {
+export interface DockerProfileBeforeCacheRestoreResultV1 extends DockerProfileBeforeCacheReceiptV1 {
   readonly state: "restored" | "already-restored";
 }
 
@@ -470,15 +470,15 @@ export function dockerProfileControlRequest<T>(
   });
 }
 
-function setupPrefixCapability(
+function beforeCacheCapability(
   lease: DockerProfileLease,
-): DockerProfileSetupPrefixFullCopyCapabilityV1 {
-  const capability = lease.binding.profile.backend.filesystem.setupPrefix;
+): DockerProfileBeforeCacheFullCopyCapabilityV1 {
+  const capability = lease.binding.profile.backend.filesystem.beforeCache;
   if (capability === undefined) {
-    throw new Error("Docker profile descriptor does not declare setup-prefix full-copy capability");
+    throw new Error("Docker profile descriptor does not declare before-cache full-copy capability");
   }
   if (
-    capability.protocol !== DOCKER_PROFILE_SETUP_PREFIX_CONTROL_PROTOCOL ||
+    capability.protocol !== DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL ||
     capability.coverage !== sandboxState.dockerData ||
     capability.requiredState !== sandboxState.dockerData ||
     lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
@@ -487,26 +487,26 @@ function setupPrefixCapability(
       capability.filesystemSizeBytes
   ) {
     throw new Error(
-      "Docker profile setup-prefix capability is not backed by independent fixed-filesystem slots",
+      "Docker profile before-cache capability is not backed by independent fixed-filesystem slots",
     );
   }
   return capability;
 }
 
-function setupPrefixExpectedWire(
+function beforeCacheExpectedWire(
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
+  input: BeforeCacheStep,
 ): Readonly<Record<string, unknown>> {
-  const capability = setupPrefixCapability(lease);
+  const capability = beforeCacheCapability(lease);
   return Object.freeze({
     protocol: capability.protocol,
     requiredState: capability.requiredState,
     descriptorDigest: lease.binding.descriptorDigest,
-    setupPrefixKey: input.manifest.setupPrefixKey,
-    setupManifestDigest: input.manifest.setupManifestDigest,
+    beforeCacheKey: input.declaration.beforeCacheKey,
+    declarationDigest: input.declaration.declarationDigest,
     providerIdentity: capability.providerIdentity,
-    baseIdentity: input.manifest.baseImageId,
+    baseIdentity: input.declaration.baseIdentity,
     executionDomain: capability.executionDomain,
     helperRevision: capability.helperRevision,
     copyProtocol: capability.copyProtocol,
@@ -522,25 +522,25 @@ function setupPrefixExpectedWire(
   });
 }
 
-function setupPrefixControlFrame(
-  kind: "setup-prefix.capture" | "setup-prefix.capture.publish" | "setup-prefix.restore",
+function beforeCacheControlFrame(
+  kind: "before-cache.capture" | "before-cache.capture.publish" | "before-cache.restore",
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
+  input: BeforeCacheStep,
 ): Readonly<Record<string, unknown>> {
   if (!Number.isSafeInteger(reservation.slotGeneration) || reservation.slotGeneration! < 0) {
     throw new Error("Docker profile reservation has no attested private slot generation");
   }
-  const manifestDigest = digestOf(input.manifest.declarationMetadata as JsonValue);
+  const manifestDigest = digestOf(input.declaration.declarationMetadata as JsonValue);
   if (
-    input.manifest.requiredState !== sandboxState.dockerData ||
-    input.manifest.setupPrefixKey !== `prefix:${manifestDigest}` ||
-    input.manifest.setupManifestDigest !== `sha256:${manifestDigest}`
+    input.declaration.requiredState !== sandboxState.dockerData ||
+    input.declaration.beforeCacheKey !== `prefix:${manifestDigest}` ||
+    input.declaration.declarationDigest !== `sha256:${manifestDigest}`
   ) {
-    throw new Error("Docker profile setup-prefix key is not bound to its complete canonical manifest identity");
+    throw new Error("Docker profile before-cache key is not bound to its complete canonical manifest identity");
   }
   if (input.operationId.length === 0 || input.operationId.length > 512 || /[\u0000-\u001f\u007f]/u.test(input.operationId)) {
-    throw new Error("Docker profile setup-prefix operationId is invalid");
+    throw new Error("Docker profile before-cache operationId is invalid");
   }
   return Object.freeze({
     kind,
@@ -548,18 +548,18 @@ function setupPrefixControlFrame(
     leaseToken: lease.leaseToken,
     reservationId: reservation.reservationId,
     operationId: input.operationId,
-    ...setupPrefixExpectedWire(lease, reservation, input),
+    ...beforeCacheExpectedWire(lease, reservation, input),
   });
 }
 
-function setupPrefixWireRecord(value: unknown): Readonly<Record<string, unknown>> {
+function beforeCacheWireRecord(value: unknown): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Docker profile setup-prefix control response is not an object");
+    throw new Error("Docker profile before-cache control response is not an object");
   }
   return value as Readonly<Record<string, unknown>>;
 }
 
-function validateExactSetupPrefixFields(
+function validateExactBeforeCacheFields(
   value: Readonly<Record<string, unknown>>,
   expectedFields: readonly string[],
   label: string,
@@ -571,32 +571,32 @@ function validateExactSetupPrefixFields(
     actual.some((field, index) => field !== expected[index])
   ) {
     throw new Error(
-      `Docker profile setup-prefix ${label} fields changed: ` +
+      `Docker profile before-cache ${label} fields changed: ` +
       `expected ${expected.join(", ")}; received ${actual.join(", ")}`,
     );
   }
 }
 
-function validateSetupPrefixArtifactIdentity(
+function validateBeforeCacheArtifactIdentity(
   value: unknown,
   lease: DockerProfileLease,
-  expected?: DockerProfileSetupPrefixArtifactIdentityV1,
-): DockerProfileSetupPrefixArtifactIdentityV1 {
-  const artifact = setupPrefixWireRecord(value);
-  validateExactSetupPrefixFields(
+  expected?: DockerProfileBeforeCacheArtifactIdentityV1,
+): DockerProfileBeforeCacheArtifactIdentityV1 {
+  const artifact = beforeCacheWireRecord(value);
+  validateExactBeforeCacheFields(
     artifact,
     ["requiredState", "copyProtocol", "copyRevision", "artifactId", "sizeBytes"],
     "artifact receipt",
   );
-  const capability = setupPrefixCapability(lease);
+  const capability = beforeCacheCapability(lease);
   if (artifact.requiredState !== capability.requiredState) {
-    throw new Error("Docker profile setup-prefix artifact requiredState does not match the descriptor");
+    throw new Error("Docker profile before-cache artifact requiredState does not match the descriptor");
   }
   if (artifact.copyProtocol !== capability.copyProtocol) {
-    throw new Error("Docker profile setup-prefix artifact copyProtocol does not match the descriptor");
+    throw new Error("Docker profile before-cache artifact copyProtocol does not match the descriptor");
   }
   if (artifact.copyRevision !== capability.copyRevision) {
-    throw new Error("Docker profile setup-prefix artifact copyRevision does not match the descriptor");
+    throw new Error("Docker profile before-cache artifact copyRevision does not match the descriptor");
   }
   if (
     typeof artifact.artifactId !== "string" ||
@@ -604,13 +604,13 @@ function validateSetupPrefixArtifactIdentity(
     artifact.artifactId.length > 512 ||
     /[\u0000-\u001f\u007f]/u.test(artifact.artifactId)
   ) {
-    throw new Error("Docker profile setup-prefix artifactId is not a bounded provider identity");
+    throw new Error("Docker profile before-cache artifactId is not a bounded provider identity");
   }
   if (!Number.isSafeInteger(artifact.sizeBytes) || (artifact.sizeBytes as number) < 0) {
-    throw new Error("Docker profile setup-prefix artifact sizeBytes is invalid");
+    throw new Error("Docker profile before-cache artifact sizeBytes is invalid");
   }
   if ((artifact.sizeBytes as number) > capability.seedLimitBytes) {
-    throw new Error("Docker profile setup-prefix artifact exceeds descriptor seedLimitBytes");
+    throw new Error("Docker profile before-cache artifact exceeds descriptor seedLimitBytes");
   }
   if (
     capability.copyProtocol === "raw-image/v1" &&
@@ -635,7 +635,7 @@ function validateSetupPrefixArtifactIdentity(
       identity.sizeBytes !== expected.sizeBytes
     )
   ) {
-    throw new Error("Docker profile setup-prefix restored artifact identity changed after capture");
+    throw new Error("Docker profile before-cache restored artifact identity changed after capture");
   }
   return identity;
 }
@@ -648,112 +648,112 @@ function wireValueMatches(actual: unknown, expected: unknown): boolean {
   return actual === expected;
 }
 
-function validateSetupPrefixWireBinding(
+function validateBeforeCacheWireBinding(
   receipt: Readonly<Record<string, unknown>>,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
+  input: BeforeCacheStep,
   label: string,
 ): void {
-  const expected = setupPrefixExpectedWire(lease, reservation, input);
+  const expected = beforeCacheExpectedWire(lease, reservation, input);
   for (const [field, value] of Object.entries(expected)) {
     if (!wireValueMatches(receipt[field], value)) {
-      throw new Error(`Docker profile setup-prefix ${label} ${field} changed`);
+      throw new Error(`Docker profile before-cache ${label} ${field} changed`);
     }
   }
 }
 
-function validateSetupPrefixReceipt(
+function validateBeforeCacheReceipt(
   value: unknown,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
-  expectedArtifact?: DockerProfileSetupPrefixArtifactIdentityV1,
-): DockerProfileSetupPrefixReceiptV1 & { readonly status: Readonly<Record<string, unknown>> } {
-  const response = setupPrefixWireRecord(value);
-  validateExactSetupPrefixFields(
+  input: BeforeCacheStep,
+  expectedArtifact?: DockerProfileBeforeCacheArtifactIdentityV1,
+): DockerProfileBeforeCacheReceiptV1 & { readonly status: Readonly<Record<string, unknown>> } {
+  const response = beforeCacheWireRecord(value);
+  validateExactBeforeCacheFields(
     response,
-    [...Object.keys(setupPrefixExpectedWire(lease, reservation, input)), "artifact", "status"],
+    [...Object.keys(beforeCacheExpectedWire(lease, reservation, input)), "artifact", "status"],
     "success receipt",
   );
-  validateSetupPrefixWireBinding(response, lease, reservation, input, "response");
-  const status = setupPrefixWireRecord(response.status);
-  validateExactSetupPrefixFields(status, ["state", "capacity"], "success status");
-  setupPrefixWireRecord(status.capacity);
+  validateBeforeCacheWireBinding(response, lease, reservation, input, "response");
+  const status = beforeCacheWireRecord(response.status);
+  validateExactBeforeCacheFields(status, ["state", "capacity"], "success status");
+  beforeCacheWireRecord(status.capacity);
   return Object.freeze({
     daemonGeneration: response.daemonGeneration as string,
     slotGeneration: response.slotGeneration as number,
     requiredState: response.requiredState as "dockerData",
-    setupPrefixKey: response.setupPrefixKey as string,
-    setupManifestDigest: response.setupManifestDigest as string,
-    artifact: validateSetupPrefixArtifactIdentity(response.artifact, lease, expectedArtifact),
+    beforeCacheKey: response.beforeCacheKey as string,
+    declarationDigest: response.declarationDigest as string,
+    artifact: validateBeforeCacheArtifactIdentity(response.artifact, lease, expectedArtifact),
     status,
   });
 }
 
-function validateSetupPrefixControlError(
+function validateBeforeCacheControlError(
   cause: unknown,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
+  input: BeforeCacheStep,
 ): void {
   if (!(cause instanceof DockerProfileControlError)) return;
   try {
-    const details = setupPrefixWireRecord(cause.details);
-    validateExactSetupPrefixFields(
+    const details = beforeCacheWireRecord(cause.details);
+    validateExactBeforeCacheFields(
       details,
       [
         "code",
         "message",
-        ...Object.keys(setupPrefixExpectedWire(lease, reservation, input)),
+        ...Object.keys(beforeCacheExpectedWire(lease, reservation, input)),
         "artifact",
         "status",
       ],
       "failure receipt",
     );
-    validateSetupPrefixWireBinding(details, lease, reservation, input, "failure receipt");
+    validateBeforeCacheWireBinding(details, lease, reservation, input, "failure receipt");
     if (
       typeof details.code !== "string" || details.code.length === 0 || details.code !== cause.code ||
       typeof details.message !== "string" || details.message.length === 0 || details.message.length > 65_536
     ) {
-      throw new Error("Docker profile setup-prefix failure code or message identity is invalid");
+      throw new Error("Docker profile before-cache failure code or message identity is invalid");
     }
-    const artifact = setupPrefixWireRecord(details.artifact);
-    validateExactSetupPrefixFields(artifact, ["artifactId"], "failure artifact receipt");
+    const artifact = beforeCacheWireRecord(details.artifact);
+    validateExactBeforeCacheFields(artifact, ["artifactId"], "failure artifact receipt");
     if (artifact.artifactId !== null) {
-      throw new Error("Docker profile setup-prefix terminal failure must not claim an artifact identity");
+      throw new Error("Docker profile before-cache terminal failure must not claim an artifact identity");
     }
-    const status = setupPrefixWireRecord(details.status);
-    validateExactSetupPrefixFields(status, ["state", "diagnostic"], "failure status");
+    const status = beforeCacheWireRecord(details.status);
+    validateExactBeforeCacheFields(status, ["state", "diagnostic"], "failure status");
     if (status.state !== "failed" || status.diagnostic !== cause.code) {
-      throw new Error("Docker profile setup-prefix failure status does not match its diagnostic");
+      throw new Error("Docker profile before-cache failure status does not match its diagnostic");
     }
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error), { cause });
   }
 }
 
-export async function captureDockerProfileSetupPrefix(
+export async function captureDockerProfileBeforeCache(
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
+  input: BeforeCacheStep,
   signal?: AbortSignal,
   controlTimeoutMs = 120_000,
-): Promise<DockerProfileSetupPrefixCaptureResultV1> {
-  setupPrefixCapability(lease);
+): Promise<DockerProfileBeforeCacheCaptureResultV1> {
+  beforeCacheCapability(lease);
   let rawResponse: unknown;
   try {
     rawResponse = await dockerProfileControlRequest<unknown>(
       lease.binding.controlSocketPath,
-      setupPrefixControlFrame("setup-prefix.capture", lease, reservation, input),
+      beforeCacheControlFrame("before-cache.capture", lease, reservation, input),
       signal,
       controlTimeoutMs,
     );
   } catch (cause) {
-    validateSetupPrefixControlError(cause, lease, reservation, input);
+    validateBeforeCacheControlError(cause, lease, reservation, input);
     throw cause;
   }
-  let response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
+  let response = validateBeforeCacheReceipt(rawResponse, lease, reservation, input);
   let state = response.status.state;
   if (state === "prepared") {
     // Copy/prepare may legitimately use the caller's long control budget. Publish is
@@ -772,21 +772,21 @@ export async function captureDockerProfileSetupPrefix(
       try {
         rawResponse = await dockerProfileControlRequest<unknown>(
           lease.binding.controlSocketPath,
-          setupPrefixControlFrame("setup-prefix.capture.publish", lease, reservation, input),
+          beforeCacheControlFrame("before-cache.capture.publish", lease, reservation, input),
           reconcileController.signal,
           reconcileTimeoutMs,
         );
-        response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input);
+        response = validateBeforeCacheReceipt(rawResponse, lease, reservation, input);
         lastError = undefined;
         clearTimeout(reconcileTimer);
         break;
       } catch (cause) {
         clearTimeout(reconcileTimer);
-        validateSetupPrefixControlError(cause, lease, reservation, input);
+        validateBeforeCacheControlError(cause, lease, reservation, input);
         lastError = cause;
         if (cause instanceof DockerProfileControlError &&
-            (cause.code === "setup-prefix-operation-cancelled" || cause.code === "setup-prefix-operation-cancel-fenced")) {
-          throw new DockerProfileControlCancellationError(input.operationId, "setup-prefix capture was fenced and scrubbed");
+            (cause.code === "before-cache-operation-cancelled" || cause.code === "before-cache-operation-cancel-fenced")) {
+          throw new DockerProfileControlCancellationError(input.operationId, "before-cache capture was fenced and scrubbed");
         }
         if (attempt === 2) break;
         await new Promise<void>((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
@@ -794,56 +794,56 @@ export async function captureDockerProfileSetupPrefix(
     }
     if (lastError !== undefined) {
       throw new DockerProfileControlAmbiguityError(input.operationId, "unresolved",
-        "setup-prefix publish outcome is ambiguous; retry/reconcile is exhausted");
+        "before-cache publish outcome is ambiguous; retry/reconcile is exhausted");
     }
     state = response.status.state;
   }
   if (state !== "captured" && state !== "already-published") {
-    throw new Error(`Docker profile setup-prefix capture returned invalid state ${JSON.stringify(state)}`);
+    throw new Error(`Docker profile before-cache capture returned invalid state ${JSON.stringify(state)}`);
   }
   return Object.freeze({
     daemonGeneration: response.daemonGeneration,
     slotGeneration: response.slotGeneration,
     requiredState: response.requiredState,
-    setupPrefixKey: response.setupPrefixKey,
-    setupManifestDigest: response.setupManifestDigest,
+    beforeCacheKey: response.beforeCacheKey,
+    declarationDigest: response.declarationDigest,
     state,
     artifact: response.artifact,
   });
 }
 
-export async function restoreDockerProfileSetupPrefix(
+export async function restoreDockerProfileBeforeCache(
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: SandboxSetupPrefixCacheOperation,
-  expected?: DockerProfileSetupPrefixArtifactIdentityV1,
+  input: BeforeCacheStep,
+  expected?: DockerProfileBeforeCacheArtifactIdentityV1,
   signal?: AbortSignal,
   controlTimeoutMs = 120_000,
-): Promise<DockerProfileSetupPrefixRestoreResultV1> {
-  setupPrefixCapability(lease);
+): Promise<DockerProfileBeforeCacheRestoreResultV1> {
+  beforeCacheCapability(lease);
   let rawResponse: unknown;
   try {
     rawResponse = await dockerProfileControlRequest<unknown>(
       lease.binding.controlSocketPath,
-      setupPrefixControlFrame("setup-prefix.restore", lease, reservation, input),
+      beforeCacheControlFrame("before-cache.restore", lease, reservation, input),
       signal,
       controlTimeoutMs,
     );
   } catch (cause) {
-    validateSetupPrefixControlError(cause, lease, reservation, input);
+    validateBeforeCacheControlError(cause, lease, reservation, input);
     throw cause;
   }
-  const response = validateSetupPrefixReceipt(rawResponse, lease, reservation, input, expected);
+  const response = validateBeforeCacheReceipt(rawResponse, lease, reservation, input, expected);
   const state = response.status.state;
   if (state !== "restored" && state !== "already-restored") {
-    throw new Error(`Docker profile setup-prefix restore returned invalid state ${JSON.stringify(state)}`);
+    throw new Error(`Docker profile before-cache restore returned invalid state ${JSON.stringify(state)}`);
   }
   return Object.freeze({
     daemonGeneration: response.daemonGeneration,
     slotGeneration: response.slotGeneration,
     requiredState: response.requiredState,
-    setupPrefixKey: response.setupPrefixKey,
-    setupManifestDigest: response.setupManifestDigest,
+    beforeCacheKey: response.beforeCacheKey,
+    declarationDigest: response.declarationDigest,
     state,
     artifact: response.artifact,
   });
@@ -1391,7 +1391,7 @@ export async function releaseDockerProfileReservation(
     // absent and no reservation-specific recovery uncertainty remains.
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
-      // Setup-prefix copy work can outlive a cancelled client socket. The host
+      // Before cache copy work can outlive a cancelled client socket. The host
       // rejects release while that journaled operation is active; retry until
       // it publishes/rolls back, then perform the same verified scrub release.
       const retried = await release().catch(() => undefined);

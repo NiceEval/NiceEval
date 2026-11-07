@@ -18,7 +18,7 @@ export type SandboxBackendSupport<T> =
   | { readonly _tag: "Supported"; readonly value: T }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
-export type SandboxSetupPrefixCacheUnsupportedCode =
+export type BeforeCacheUnsupportedCode =
   | "provider-unsupported"
   | "profile-managed"
   | "compose"
@@ -30,20 +30,22 @@ export type SandboxSetupPrefixCacheUnsupportedCode =
   | "sensitive-state"
   | "profile-backed-dind";
 
-const SandboxSetupPrefixCacheKeyScopeSchema = Schema.Struct({
+const BeforeCacheKeyScopeSchema = Schema.Struct({
   protocol: Schema.String,
   storageSchemaRevision: Schema.String,
   artifactFormatRevision: Schema.String,
   semanticIdentity: Schema.Json.pipe(Schema.refine(isJsonValue)),
 });
 
+export type BeforeCacheKeyScope = Schema.Schema.Type<typeof BeforeCacheKeyScopeSchema>;
+
 /** Provider boundary: a completed cache plan never relies on core defaults. */
-export const decodeSandboxSetupPrefixCacheKeyScope = Schema.decodeUnknownSync(
-  SandboxSetupPrefixCacheKeyScopeSchema,
+export const decodeBeforeCacheKeyScope = Schema.decodeUnknownSync(
+  BeforeCacheKeyScopeSchema,
   { onExcessProperty: "error" },
 );
 
-export type SandboxSetupPrefixCacheEligibility =
+export type BeforeCacheEligibility =
   | {
       readonly _tag: "Eligible";
       readonly persistence: "persistent";
@@ -51,22 +53,22 @@ export type SandboxSetupPrefixCacheEligibility =
       /** Complete action-state surface this provider captures and restores. */
       readonly coverage: SandboxActionState;
       /** Exact immutable Base resolved and verified during provider initialization. */
-      readonly baseImageId: string;
+      readonly baseIdentity: string;
       /** Complete provider-owned identity, decoded before entering core planning. */
-      readonly keyScope: Schema.Schema.Type<typeof SandboxSetupPrefixCacheKeyScopeSchema>;
+      readonly keyScope: BeforeCacheKeyScope;
     }
   | {
       readonly _tag: "Unsupported";
-      readonly code: SandboxSetupPrefixCacheUnsupportedCode;
+      readonly code: BeforeCacheUnsupportedCode;
       readonly reason: string;
     };
 
-export interface SandboxSetupPrefixCacheManifest {
+export interface BeforeCacheDeclaration {
   /** Exact immutable Base identity; floating source references never enter the durable root key alone. */
-  readonly baseImageId: string;
+  readonly baseIdentity: string;
   /** Content-addressed key planned by the provider-neutral runtime. */
-  readonly setupPrefixKey: string;
-  readonly setupManifestDigest: string;
+  readonly beforeCacheKey: string;
+  readonly declarationDigest: string;
   /** Cumulative state required by this exact logical prefix. */
   readonly requiredState: SandboxActionState;
   readonly storageSchemaRevision: string;
@@ -76,81 +78,82 @@ export interface SandboxSetupPrefixCacheManifest {
   readonly declarationMetadata: unknown;
 }
 
-export interface SandboxSetupPrefixCacheOperation {
+export interface BeforeCacheStep {
   readonly operationId: string;
-  readonly manifest: SandboxSetupPrefixCacheManifest;
+  readonly declaration: BeforeCacheDeclaration;
+  readonly positions: readonly string[];
   /** Defense-in-depth only; values are checked before an image is published and are never persisted. */
   readonly knownSensitiveValues?: readonly string[];
 }
 
-interface SandboxSetupPrefixCacheErrorFields {
+interface BeforeCacheErrorFields {
   readonly operation: string;
   readonly reason: string;
-  readonly setupPrefixKey?: string;
+  readonly beforeCacheKey?: string;
   readonly domainId?: string;
   readonly cause?: unknown;
 }
 
-export class SandboxSetupPrefixCacheRegistryError extends Data.TaggedError("SandboxSetupPrefixCacheRegistryError")<
-  SandboxSetupPrefixCacheErrorFields
+export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<
+  BeforeCacheErrorFields
 > {}
 
-export class SandboxSetupPrefixCacheLookupError extends Data.TaggedError("SandboxSetupPrefixCacheLookupError")<
-  SandboxSetupPrefixCacheErrorFields
+export class BeforeCacheLookupError extends Data.TaggedError("BeforeCacheLookupError")<
+  BeforeCacheErrorFields
 > {}
 
-export class SandboxSetupPrefixCacheCaptureError extends Data.TaggedError("SandboxSetupPrefixCacheCaptureError")<
-  SandboxSetupPrefixCacheErrorFields
+export class BeforeCacheCaptureError extends Data.TaggedError("BeforeCacheCaptureError")<
+  BeforeCacheErrorFields
 > {}
 
-export class SandboxSetupPrefixCacheRestoreError extends Data.TaggedError("SandboxSetupPrefixCacheRestoreError")<
-  SandboxSetupPrefixCacheErrorFields
+export class BeforeCacheRestoreError extends Data.TaggedError("BeforeCacheRestoreError")<
+  BeforeCacheErrorFields
 > {}
 
-export class SandboxSetupPrefixCacheValidationError extends Data.TaggedError("SandboxSetupPrefixCacheValidationError")<
-  SandboxSetupPrefixCacheErrorFields
+export class BeforeCacheValidationError extends Data.TaggedError("BeforeCacheValidationError")<
+  BeforeCacheErrorFields
 > {}
 
-export class SandboxSetupPrefixCacheCleanupError extends Data.TaggedError("SandboxSetupPrefixCacheCleanupError")<
-  SandboxSetupPrefixCacheErrorFields
+export class BeforeCacheCleanupError extends Data.TaggedError("BeforeCacheCleanupError")<
+  BeforeCacheErrorFields
 > {}
 
-export class SandboxSetupPrefixCacheAmbiguityError extends Data.TaggedError(
-  "SandboxSetupPrefixCacheAmbiguityError",
-)<SandboxSetupPrefixCacheErrorFields & {
+export class BeforeCacheAmbiguityError extends Data.TaggedError(
+  "BeforeCacheAmbiguityError",
+)<BeforeCacheErrorFields & {
   readonly operationId: string;
   readonly terminal: "unresolved";
   readonly diagnosticCommand: string;
 }> {}
 
-export class SandboxSetupPrefixCacheCancellationError extends Data.TaggedError(
-  "SandboxSetupPrefixCacheCancellationError",
-)<SandboxSetupPrefixCacheErrorFields & {
+export class BeforeCacheCancellationError extends Data.TaggedError(
+  "BeforeCacheCancellationError",
+)<BeforeCacheErrorFields & {
   readonly operationId: string;
   readonly terminal: "cancel-fenced";
 }> {}
 
-export type SandboxSetupPrefixCacheError =
-  | SandboxSetupPrefixCacheRegistryError
-  | SandboxSetupPrefixCacheLookupError
-  | SandboxSetupPrefixCacheCaptureError
-  | SandboxSetupPrefixCacheRestoreError
-  | SandboxSetupPrefixCacheValidationError
-  | SandboxSetupPrefixCacheCleanupError
-  | SandboxSetupPrefixCacheAmbiguityError
-  | SandboxSetupPrefixCacheCancellationError;
+export type BeforeCacheError =
+  | BeforeCacheRegistryError
+  | BeforeCacheLookupError
+  | BeforeCacheCaptureError
+  | BeforeCacheRestoreError
+  | BeforeCacheValidationError
+  | BeforeCacheCleanupError
+  | BeforeCacheAmbiguityError
+  | BeforeCacheCancellationError;
 
-export type SandboxSetupPrefixCacheLookupResult =
-  | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>
+export type AttemptBeforeCacheLookup =
+  | Exclude<BeforeCacheEligibility, { readonly _tag: "Eligible" }>
   | {
       readonly _tag: "Miss";
-      readonly setupPrefixKey: string;
+      readonly beforeCacheKey: string;
       /** A failed hit was scrubbed in the same private slot before this clean miss receipt. */
       readonly recovery?: "restore-failed-replayed";
     }
   | {
       readonly _tag: "Restored";
-      readonly setupPrefixKey: string;
+      readonly beforeCacheKey: string;
       readonly entryId: string;
       readonly generation: number;
       /** Provider-neutral immutable artifact identity. */
@@ -160,11 +163,11 @@ export type SandboxSetupPrefixCacheLookupResult =
       readonly sandboxId: string;
     };
 
-export type SandboxSetupPrefixCacheCaptureResult =
-  | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>
+export type AttemptBeforeCacheCapture =
+  | Exclude<BeforeCacheEligibility, { readonly _tag: "Eligible" }>
   | {
       readonly _tag: "Contended";
-      readonly setupPrefixKey: string;
+      readonly beforeCacheKey: string;
       readonly reason: "active-writer" | "indexed-generation";
     }
   | {
@@ -174,13 +177,13 @@ export type SandboxSetupPrefixCacheCaptureResult =
        * that action and must disable publication for the remainder of Attempt.
        */
       readonly _tag: "ContinuedUncached";
-      readonly setupPrefixKey: string;
+      readonly beforeCacheKey: string;
       readonly reason: "capture-failed" | "publish-failed";
       readonly sandboxId: string;
     }
   | {
       readonly _tag: "Captured";
-      readonly setupPrefixKey: string;
+      readonly beforeCacheKey: string;
       readonly entryId: string;
       readonly generation: number;
       /** Provider-neutral immutable artifact identity. */
@@ -190,22 +193,22 @@ export type SandboxSetupPrefixCacheCaptureResult =
       readonly sandboxId: string;
     };
 
-export type SandboxSetupPrefixCacheRecoveryResult =
-  | Exclude<SandboxSetupPrefixCacheEligibility, { readonly _tag: "Eligible" }>
+export type AttemptBeforeCacheFallback =
+  | Exclude<BeforeCacheEligibility, { readonly _tag: "Eligible" }>
   | {
-      readonly _tag: "RecoveredCleanBase";
-      readonly baseImageId: string;
+      readonly _tag: "FellBackToBase";
+      readonly baseIdentity: string;
       readonly sandboxId: string;
     };
 
-export interface SandboxSetupPrefixCacheCapability {
-  eligibility(): SandboxSetupPrefixCacheEligibility;
-  lookupAndRebase(
-    input: SandboxSetupPrefixCacheOperation,
-  ): Effect.Effect<SandboxSetupPrefixCacheLookupResult, SandboxSetupPrefixCacheError>;
-  captureAndRebase(
-    input: SandboxSetupPrefixCacheOperation,
-  ): Effect.Effect<SandboxSetupPrefixCacheCaptureResult, SandboxSetupPrefixCacheError>;
+export interface AttemptBeforeCache {
+  eligibility(): BeforeCacheEligibility;
+  lookupAndRestore(
+    input: BeforeCacheStep,
+  ): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
+  capture(
+    input: BeforeCacheStep,
+  ): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
   /**
    * One-shot degraded-path seam, only valid before any Action has succeeded in
    * the current Attempt. The provider DestroyOnly-retires a failed lookup
@@ -213,7 +216,7 @@ export interface SandboxSetupPrefixCacheCapability {
    * failure paths must return ContinuedUncached or fail; they must never call
    * this seam and replay an already-successful Action.
    */
-  recoverCleanBase(): Effect.Effect<SandboxSetupPrefixCacheRecoveryResult, SandboxSetupPrefixCacheError>;
+  fallBackToBase(): Effect.Effect<AttemptBeforeCacheFallback, BeforeCacheError>;
 }
 
 export interface SandboxBackendCapabilities {
@@ -226,8 +229,6 @@ export interface SandboxBackendCapabilities {
   >;
   readonly setCommandDeadline: SandboxBackendSupport<(deadlineAt?: number) => void>;
   readonly managedProcess: SandboxBackendSupport<(input: ManagedProcessStart) => Promise<ManagedProcess>>;
-  /** Missing providers are normalized to an explicit Unsupported result by setupPrefixCacheCapability(). */
-  readonly setupPrefixCache?: SandboxBackendSupport<SandboxSetupPrefixCacheCapability>;
 }
 
 export interface SandboxProviderBackend extends Omit<SandboxTransferOperations, "upload"> {
@@ -265,15 +266,6 @@ export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.f
 
 export function supportedBackendCapability<T>(value: T): SandboxBackendSupport<T> {
   return Object.freeze({ _tag: "Supported", value });
-}
-
-/** Provider-neutral query seam; absence never masquerades as a cache miss. */
-export function setupPrefixCacheCapability(
-  capabilities: SandboxBackendCapabilities,
-): SandboxBackendSupport<SandboxSetupPrefixCacheCapability> {
-  return capabilities.setupPrefixCache ?? unsupportedBackendCapabilityBecause(
-    "the provider does not implement persistent sandbox setup-prefix caching",
-  );
 }
 
 function providerBoundaryError(cause: unknown): Error {

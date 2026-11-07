@@ -1,4 +1,3 @@
-import { OPEN_SANDBOX_CACHE_REPOSITORY, OPEN_SANDBOX_CACHE_SCHEMA_SQL, OPEN_SANDBOX_CACHE_SCHEMA_OBJECTS, isOpenSandboxCacheRequest } from "../sandbox/opensandbox/repository.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { access, link, mkdir, open as openFile, unlink } from "node:fs/promises";
@@ -12,9 +11,8 @@ import {
   SqliteMigrationKernelFailure,
   sqliteMigrationLedgerSql,
 } from "../sqlite-migration-kernel.ts";
-import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
-import { E2B_CACHE_GENERATION_INDEX_SQL, E2B_CACHE_REPOSITORY, installE2BCacheSchemaV1, isE2BCacheRequest } from "../sandbox/e2b-cache-repository.ts";
-import { INCUS_REPOSITORY, installIncusSchemaV3, isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
+import { DOCKER_BEFORE_CACHE_SCHEMA_SQL, DOCKER_IMAGE_GC_LOCK_SCHEMA_SQL, isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
+import { INCUS_REPOSITORY, INCUS_BEFORE_CACHE_SCHEMA_SQL, isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import { isBeforeCacheSnapshotRepositoryRequest } from "../sandbox/remote-snapshot/ledger.ts";
 import { INCUS_GC_SCHEMA_SQL } from "../sandbox/incus/gc-store.ts";
 import {
@@ -38,6 +36,37 @@ import {
   userDatabaseRepositoryCatalog,
 } from "./repositories/catalog.ts";
 
+import {
+  USER_DATABASE_DOCKER_V1_SQL, USER_DATABASE_E2B_V1_SQL, USER_DATABASE_INCUS_V1_SQL,
+  USER_DATABASE_E2B_V2_SQL, USER_DATABASE_OPENSANDBOX_V4_SQL,
+} from "./historical-cache-schema.ts";
+import { BEFORE_CACHE_SNAPSHOT_SCHEMA_SQL, BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS, assertBeforeCacheSnapshotSchema } from "./before-cache-schema.ts";
+
+const BeforeCacheMigrationSQL = `
+DROP TABLE opensandbox_cache_roots;
+DROP TABLE opensandbox_cache_artifacts;
+DROP TABLE e2b_cache_roots;
+DROP TABLE e2b_cache_replacement_heads;
+DROP TABLE e2b_cache_entries;
+DROP TABLE docker_setup_prefix_roots;
+DROP TABLE docker_setup_prefix_leases;
+DROP TABLE docker_setup_prefix_replacement_heads;
+DROP TABLE docker_setup_prefix_replacement_scopes;
+DROP TABLE docker_setup_prefix_index;
+DROP TABLE docker_setup_prefix_generation_fences;
+DROP TABLE docker_setup_prefix_entries;
+DROP TABLE docker_image_gc_locks;
+DROP TABLE incus_artifact_consumer_leases;
+DROP TABLE incus_artifact_gc_plans;
+DROP TABLE incus_artifact_release_receipts;
+DROP TABLE incus_artifact_replacement_heads;
+DROP TABLE incus_artifact_intents;
+${INCUS_BEFORE_CACHE_SCHEMA_SQL}
+${DOCKER_IMAGE_GC_LOCK_SCHEMA_SQL}
+${DOCKER_BEFORE_CACHE_SCHEMA_SQL}
+${BEFORE_CACHE_SNAPSHOT_SCHEMA_SQL}
+`;
+
 const LedgerTable = "__niceeval_user_database_schema_migrations";
 const CreateLedger = sqliteMigrationLedgerSql(LedgerTable);
 const HostFormatTable = "__niceeval_user_database_format";
@@ -45,7 +74,7 @@ const HostFormatIdentity = "niceeval-user-database/0.14.0";
 const UnsupportedPrereleaseIdentities = new Set(["niceeval-user-database/v2"]);
 const MigrationBaseline = "0.14.0";
 const CreateHostFormat = `CREATE TABLE ${HostFormatTable} (format_id TEXT PRIMARY KEY CHECK(format_id = '${HostFormatIdentity}')) STRICT`;
-const CurrentVersion = 4;
+const CurrentVersion = 5;
 
 function schemaObjectKey([type, name, table]: readonly string[]): string {
   return `${type}\u0000${name}\u0000${table}`;
@@ -53,7 +82,7 @@ function schemaObjectKey([type, name, table]: readonly string[]): string {
 
 /** UserDatabase is one static application format with one complete final schema. */
 const AllowedSchemaObjects = new Set<string>([
-  ...OPEN_SANDBOX_CACHE_SCHEMA_OBJECTS,
+  ...BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS,
   ["table", HostFormatTable, HostFormatTable],
   ["table", LedgerTable, LedgerTable],
   ["table", "durable_state_entries", "durable_state_entries"],
@@ -64,57 +93,49 @@ const AllowedSchemaObjects = new Set<string>([
   ["table", "docker_task_build_roots", "docker_task_build_roots"],
   ["table", "docker_cache_gc_plans", "docker_cache_gc_plans"],
   ["table", "docker_image_gc_locks", "docker_image_gc_locks"],
-  ["table", "docker_setup_prefix_entries", "docker_setup_prefix_entries"],
-  ["table", "docker_setup_prefix_index", "docker_setup_prefix_index"],
-  ["table", "docker_setup_prefix_generation_fences", "docker_setup_prefix_generation_fences"],
-  ["table", "docker_setup_prefix_replacement_scopes", "docker_setup_prefix_replacement_scopes"],
-  ["table", "docker_setup_prefix_replacement_heads", "docker_setup_prefix_replacement_heads"],
-  ["table", "docker_setup_prefix_leases", "docker_setup_prefix_leases"],
-  ["table", "docker_setup_prefix_roots", "docker_setup_prefix_roots"],
-  ["table", "e2b_cache_entries", "e2b_cache_entries"],
-  ["table", "e2b_cache_roots", "e2b_cache_roots"],
-  ["table", "e2b_cache_replacement_heads", "e2b_cache_replacement_heads"],
+  ["table", "docker_before_cache_entries", "docker_before_cache_entries"],
+  ["table", "docker_before_cache_index", "docker_before_cache_index"],
+  ["table", "docker_before_cache_generation_fences", "docker_before_cache_generation_fences"],
+  ["table", "docker_before_cache_replacement_scopes", "docker_before_cache_replacement_scopes"],
+  ["table", "docker_before_cache_replacement_heads", "docker_before_cache_replacement_heads"],
+  ["table", "docker_before_cache_leases", "docker_before_cache_leases"],
+  ["table", "docker_before_cache_holds", "docker_before_cache_holds"],
   ["table", "incus_allocation_intents", "incus_allocation_intents"],
   ["table", "incus_artifact_intents", "incus_artifact_intents"],
   ["table", "incus_admission_leases", "incus_admission_leases"],
   ["table", "incus_artifact_replacement_heads", "incus_artifact_replacement_heads"],
-  ["table", "incus_artifact_consumer_leases", "incus_artifact_consumer_leases"],
+  ["table", "incus_artifact_consumer_holds", "incus_artifact_consumer_holds"],
   ["table", "incus_artifact_destroy_receipts", "incus_artifact_destroy_receipts"],
   ["table", "incus_artifact_release_receipts", "incus_artifact_release_receipts"],
   ["table", "incus_artifact_gc_plans", "incus_artifact_gc_plans"],
-  ["index", "docker_setup_prefix_writer", "docker_setup_prefix_entries"],
-  ["index", "docker_setup_prefix_replacement_scope", "docker_setup_prefix_replacement_scopes"],
-  ["index", "e2b_cache_entries_cleanup", "e2b_cache_entries"],
-  ["index", "e2b_cache_entries_generation", "e2b_cache_entries"],
-  ["trigger", "docker_setup_prefix_exact_base_insert", "docker_setup_prefix_entries"],
-  ["trigger", "docker_setup_prefix_exact_base_update", "docker_setup_prefix_entries"],
+  ["index", "docker_before_cache_generation", "docker_before_cache_entries"],
+  ["index", "docker_before_cache_writer", "docker_before_cache_entries"],
+  ["index", "docker_before_cache_replacement_scope", "docker_before_cache_replacement_scopes"],
+  ["trigger", "docker_before_cache_exact_base_insert", "docker_before_cache_entries"],
+  ["trigger", "docker_before_cache_exact_base_update", "docker_before_cache_entries"],
   ["index", "sqlite_autoindex___niceeval_user_database_format_1", HostFormatTable],
   ["index", "sqlite_autoindex_durable_state_entries_1", "durable_state_entries"],
   ["index", "sqlite_autoindex_docker_cache_domains_1", "docker_cache_domains"],
   ["index", "sqlite_autoindex_docker_cache_gc_plans_1", "docker_cache_gc_plans"],
   ["index", "sqlite_autoindex_docker_cache_metadata_1", "docker_cache_metadata"],
   ["index", "sqlite_autoindex_docker_image_gc_locks_1", "docker_image_gc_locks"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_entries_1", "docker_setup_prefix_entries"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_entries_2", "docker_setup_prefix_entries"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_generation_fences_1", "docker_setup_prefix_generation_fences"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_index_1", "docker_setup_prefix_index"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_index_2", "docker_setup_prefix_index"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_leases_1", "docker_setup_prefix_leases"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_replacement_heads_1", "docker_setup_prefix_replacement_heads"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_replacement_scopes_1", "docker_setup_prefix_replacement_scopes"],
-  ["index", "sqlite_autoindex_docker_setup_prefix_roots_1", "docker_setup_prefix_roots"],
+  ["index", "sqlite_autoindex_docker_before_cache_entries_1", "docker_before_cache_entries"],
+  ["index", "sqlite_autoindex_docker_before_cache_entries_2", "docker_before_cache_entries"],
+  ["index", "sqlite_autoindex_docker_before_cache_generation_fences_1", "docker_before_cache_generation_fences"],
+  ["index", "sqlite_autoindex_docker_before_cache_index_1", "docker_before_cache_index"],
+  ["index", "sqlite_autoindex_docker_before_cache_index_2", "docker_before_cache_index"],
+  ["index", "sqlite_autoindex_docker_before_cache_leases_1", "docker_before_cache_leases"],
+  ["index", "sqlite_autoindex_docker_before_cache_replacement_heads_1", "docker_before_cache_replacement_heads"],
+  ["index", "sqlite_autoindex_docker_before_cache_replacement_scopes_1", "docker_before_cache_replacement_scopes"],
+  ["index", "sqlite_autoindex_docker_before_cache_holds_1", "docker_before_cache_holds"],
   ["index", "sqlite_autoindex_docker_task_build_entries_1", "docker_task_build_entries"],
   ["index", "sqlite_autoindex_docker_task_build_leases_1", "docker_task_build_leases"],
   ["index", "sqlite_autoindex_docker_task_build_roots_1", "docker_task_build_roots"],
-  ["index", "sqlite_autoindex_e2b_cache_entries_1", "e2b_cache_entries"],
-  ["index", "sqlite_autoindex_e2b_cache_entries_2", "e2b_cache_entries"],
-  ["index", "sqlite_autoindex_e2b_cache_replacement_heads_1", "e2b_cache_replacement_heads"],
-  ["index", "sqlite_autoindex_e2b_cache_roots_1", "e2b_cache_roots"],
   ["index", "sqlite_autoindex_incus_admission_leases_1", "incus_admission_leases"],
   ["index", "sqlite_autoindex_incus_allocation_intents_1", "incus_allocation_intents"],
   ["index", "sqlite_autoindex_incus_artifact_intents_1", "incus_artifact_intents"],
   ["index", "sqlite_autoindex_incus_artifact_replacement_heads_1", "incus_artifact_replacement_heads"],
-  ["index", "sqlite_autoindex_incus_artifact_consumer_leases_1", "incus_artifact_consumer_leases"],
+  ["index", "sqlite_autoindex_incus_artifact_consumer_holds_1", "incus_artifact_consumer_holds"],
   ["index", "sqlite_autoindex_incus_artifact_destroy_receipts_1", "incus_artifact_destroy_receipts"],
   ["index", "sqlite_autoindex_incus_artifact_release_receipts_1", "incus_artifact_release_receipts"],
   ["index", "sqlite_autoindex_incus_artifact_gc_plans_1", "incus_artifact_gc_plans"],
@@ -129,7 +150,7 @@ const Migration1Digest = createHash("sha256")
   .update("\0")
   .update(CreateLedger)
   .update("\0")
-  .update(userDatabaseRepositoryCatalog.filter((entry) => entry.id !== OPEN_SANDBOX_CACHE_REPOSITORY).map((entry) => entry.id).join("\n"))
+  .update(["durable-state", "docker-cache", "e2b-cache", "incus"].join("\n"))
   .digest("hex");
 
 function exactSql(sql: string): string {
@@ -216,6 +237,7 @@ function assertCurrentDatabase(database: DatabaseSync): void {
   const appliedVersion = inspectMigrationReceipts(database);
   if (appliedVersion !== CurrentVersion) throw invalid("UserDatabase global migration receipts do not reach the current version");
   for (const handler of userDatabaseRepositoryCatalog) handler.assertCurrentSchema(database);
+  assertBeforeCacheSnapshotSchema(database);
   assertStaticSchemaObjectAllowlist(database);
 }
 
@@ -224,20 +246,18 @@ const UserDatabaseMigrationCatalog = defineSqliteMigrationCatalog([
     version: 1,
     digest: Migration1Digest,
     apply: (database: DatabaseSync): void => {
-      for (const handler of userDatabaseRepositoryCatalog) {
-        if (handler.id === OPEN_SANDBOX_CACHE_REPOSITORY) continue;
-        if (handler.id === E2B_CACHE_REPOSITORY) installE2BCacheSchemaV1(database);
-        else if (handler.id === INCUS_REPOSITORY) installIncusSchemaV3(database);
-        else handler.installCurrentSchema(database);
-      }
+      database.exec(USER_DATABASE_DOCKER_V1_SQL);
+      database.exec(USER_DATABASE_E2B_V1_SQL);
+      database.exec(USER_DATABASE_INCUS_V1_SQL);
+      userDatabaseRepositoryCatalog.find((handler) => handler.id === DURABLE_STATE_REPOSITORY)!.installCurrentSchema(database);
       database.exec(CreateHostFormat);
       database.prepare(`INSERT INTO ${HostFormatTable}(format_id) VALUES (?)`).run(HostFormatIdentity);
     },
   }),
   Object.freeze({
     version: 2,
-    digest: createHash("sha256").update(`niceeval.user-database/${MigrationBaseline}/migration/2\0`).update(E2B_CACHE_GENERATION_INDEX_SQL).digest("hex"),
-    apply: (database: DatabaseSync): void => { database.exec(E2B_CACHE_GENERATION_INDEX_SQL); },
+    digest: createHash("sha256").update(`niceeval.user-database/${MigrationBaseline}/migration/2\0`).update(USER_DATABASE_E2B_V2_SQL).digest("hex"),
+    apply: (database: DatabaseSync): void => { database.exec(USER_DATABASE_E2B_V2_SQL); },
   }),
   Object.freeze({
     version: 3,
@@ -246,8 +266,13 @@ const UserDatabaseMigrationCatalog = defineSqliteMigrationCatalog([
   }),
   Object.freeze({
     version: 4,
-    digest: createHash("sha256").update(`niceeval.user-database/${MigrationBaseline}/migration/4\0`).update(OPEN_SANDBOX_CACHE_SCHEMA_SQL).digest("hex"),
-    apply: (database: DatabaseSync): void => { database.exec(OPEN_SANDBOX_CACHE_SCHEMA_SQL); },
+    digest: createHash("sha256").update(`niceeval.user-database/${MigrationBaseline}/migration/4\0`).update(USER_DATABASE_OPENSANDBOX_V4_SQL).digest("hex"),
+    apply: (database: DatabaseSync): void => { database.exec(USER_DATABASE_OPENSANDBOX_V4_SQL); },
+  }),
+  Object.freeze({
+    version: 5,
+    digest: createHash("sha256").update(`niceeval.user-database/${MigrationBaseline}/migration/5\0`).update(BeforeCacheMigrationSQL).digest("hex"),
+    apply: (database: DatabaseSync): void => { database.exec(BeforeCacheMigrationSQL); },
   }),
 ], CurrentVersion);
 
@@ -392,8 +417,6 @@ function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
   return kind === "repository" && (
     isDurableStateRequest(request) ||
     isDockerCacheRepositoryRequest(request) ||
-    isE2BCacheRequest(request) ||
-    isOpenSandboxCacheRequest(request) ||
     isIncusRepositoryRequest(request) ||
     isBeforeCacheSnapshotRepositoryRequest(request)
   )

@@ -606,7 +606,7 @@ function buildSummaryLines(
     { kind: "line", text: formatSummaryCostLine(state) },
     {
       kind: "line",
-      text: `Before caches: ${summary.beforeCaches.hit} hit · ${summary.beforeCaches.prepared} prepared · ${summary.beforeCaches.failed} failed (${summary.beforeCaches.total} total)`,
+      text: `Before caches: ${summary.beforeCaches.hit} hit · ${summary.beforeCaches.prepared} prepared · ${summary.beforeCaches.degraded} degraded · ${summary.beforeCaches.failed} failed (${summary.beforeCaches.total} total)`,
     },
   ];
   const blocks: string[][] = [

@@ -92,7 +92,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
           expect.soft(detail).toMatchObject({
             denominator: { expected: 3, published: 0, missing: 3 },
             diagnostics: [expect.objectContaining({
-              code: "sandbox-setup-prefix-failed",
+              code: "sandbox-before-cache-failed",
               phase: "run.dispatch",
               summary: expect.stringContaining("req_prefix_capacity_123"),
               affectedPlannedAttemptIds: expect.arrayContaining(detail.plannedAttempts.map((member) => member.plannedAttemptId)),
@@ -105,7 +105,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
           expect.soft(shown.stdout).toContain("Before dispatch");
           expect.soft(shown.stdout).toContain("Affected attempt count");
           expect.soft(shown.stdout).toContain("greet/hello");
-          expect.soft(shown.stdout).not.toContain("sandbox-setup-prefix-failed");
+          expect.soft(shown.stdout).not.toContain("sandbox-before-cache-failed");
           expect.soft(shown.stdout).not.toContain("run.dispatch");
           expect.soft(shown.stdout).toContain("req_prefix_capacity_123");
         }
@@ -160,7 +160,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
       });
       expect(prefixJson.exitCode, prefixJson.diagnostic()).toBe(1);
       expect.soft(prefixJson.expEvents()).toEqual(expect.arrayContaining([
-        expect.objectContaining({ event: "diagnostic", code: "sandbox-setup-prefix-failed", message: expect.stringContaining("req_prefix_capacity_123") }),
+        expect.objectContaining({ event: "diagnostic", code: "sandbox-before-cache-failed", message: expect.stringContaining("req_prefix_capacity_123") }),
       ]));
       expect(prefixJson.expReceipt().createdRunIds).toHaveLength(1);
 

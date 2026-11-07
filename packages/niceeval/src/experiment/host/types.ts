@@ -7,7 +7,7 @@ import type { FeedbackCoordinator } from "../../runner/feedback/coordinator.ts";
 import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
-import type { SetupPrefixPreparationSummary } from "../../runner/setup-prefix-preparation.ts";
+import type { BeforeCachePreparationSummary } from "../../runner/before-cache-preparation.ts";
 
 export type ExperimentHostJsonValue =
   | null
@@ -267,7 +267,7 @@ export interface ExperimentHostInvocationSummary {
   readonly inputTokens?: number;
   readonly outputTokens?: number;
   readonly estimatedCostUSD?: number;
-  readonly beforeCaches: SetupPrefixPreparationSummary;
+  readonly beforeCaches: BeforeCachePreparationSummary;
 }
 
 export interface ExperimentHostInvocationResult {

@@ -10,11 +10,11 @@ import {
   uploadDirectory,
   type SandboxActionDefinition,
 } from "niceeval/sandbox";
-import { setupPrefixAgent } from "../agents/setup-prefix.ts";
-import { setupPrefixResumeGate } from "../fixtures/setup-prefix/resume-gate.ts";
+import { beforeCacheAgent } from "../agents/before-cache.ts";
+import { beforeCacheResumeGate } from "../fixtures/before-cache/resume-gate.ts";
 
-const floatingImage = process.env.NICEEVAL_E2E_SETUP_PREFIX_IMAGE;
-const setupPrefixMode = process.env.NICEEVAL_E2E_SETUP_PREFIX_MODE ?? "default";
+const floatingImage = process.env.NICEEVAL_E2E_BEFORE_CACHE_IMAGE;
+const beforeCacheMode = process.env.NICEEVAL_E2E_BEFORE_CACHE_MODE ?? "default";
 if (![
   "default",
   "dynamic-tools",
@@ -23,22 +23,22 @@ if (![
   "capture-cancellation",
   "layer-resume",
   "canonical-json",
-].includes(setupPrefixMode)) {
-  throw new Error(`unsupported NICEEVAL_E2E_SETUP_PREFIX_MODE ${JSON.stringify(setupPrefixMode)}`);
+].includes(beforeCacheMode)) {
+  throw new Error(`unsupported NICEEVAL_E2E_BEFORE_CACHE_MODE ${JSON.stringify(beforeCacheMode)}`);
 }
-const cancellation = setupPrefixMode === "capture-cancellation";
-const contention = setupPrefixMode === "contention";
-const canonicalJsonProbe = setupPrefixMode === "canonical-json";
-const middleVersion = process.env.NICEEVAL_E2E_SETUP_PREFIX_MIDDLE_VERSION ?? "alpha";
+const cancellation = beforeCacheMode === "capture-cancellation";
+const contention = beforeCacheMode === "contention";
+const canonicalJsonProbe = beforeCacheMode === "canonical-json";
+const middleVersion = process.env.NICEEVAL_E2E_BEFORE_CACHE_MIDDLE_VERSION ?? "alpha";
 if (middleVersion !== "alpha" && middleVersion !== "beta") {
-  throw new Error("NICEEVAL_E2E_SETUP_PREFIX_MIDDLE_VERSION must be alpha or beta");
+  throw new Error("NICEEVAL_E2E_BEFORE_CACHE_MIDDLE_VERSION must be alpha or beta");
 }
 
-let setupPrefixSandbox = dockerSandbox({
+let beforeCacheSandbox = dockerSandbox({
   source: floatingImage === undefined
     ? {
         type: "dockerfile",
-        context: new URL("../fixtures/setup-prefix/image/", import.meta.url),
+        context: new URL("../fixtures/before-cache/image/", import.meta.url),
       }
     : { type: "image", image: floatingImage },
   user: "node",
@@ -46,19 +46,19 @@ let setupPrefixSandbox = dockerSandbox({
     cpus: 1,
     memoryBytes: 512 * 1024 ** 2,
     pidsLimit: 128,
-    ...(setupPrefixMode === "external-tmpfs"
-      ? { tmpfs: { "/tmp/setup-prefix-external": { sizeBytes: 16 * 1024 ** 2, mode: 0o700, uid: 1000, gid: 1000 } } }
+    ...(beforeCacheMode === "external-tmpfs"
+      ? { tmpfs: { "/tmp/before-cache-external": { sizeBytes: 16 * 1024 ** 2, mode: 0o700, uid: 1000, gid: 1000 } } }
       : {}),
   },
 });
 
 if (cancellation) {
-  setupPrefixSandbox = setupPrefixSandbox.before(shell({
+  beforeCacheSandbox = beforeCacheSandbox.before(shell({
     id: "capture-cancellation-payload",
     command: [
       "set -eu",
-      "mkdir -p .setup-prefix",
-      "dd if=/dev/urandom of=.setup-prefix/capture-payload.bin bs=1M count=256 status=none",
+      "mkdir -p .before-cache",
+      "dd if=/dev/urandom of=.before-cache/capture-payload.bin bs=1M count=256 status=none",
     ].join("\n"),
     changeFrequency: 15,
   }));
@@ -80,7 +80,7 @@ if (canonicalJsonProbe) {
   const unknownSchema = (niceevalRequire("effect") as {
     readonly Schema: { readonly Unknown: unknown };
   }).Schema.Unknown as DangerousMetadataSchema;
-  const variant = process.env.NICEEVAL_E2E_SETUP_PREFIX_CANONICAL_VARIANT ?? "alpha";
+  const variant = process.env.NICEEVAL_E2E_BEFORE_CACHE_CANONICAL_VARIANT ?? "alpha";
   if (variant !== "alpha" && variant !== "beta") {
     throw new Error(`unsupported canonical metadata variant ${JSON.stringify(variant)}`);
   }
@@ -92,27 +92,27 @@ if (canonicalJsonProbe) {
     throw new Error("canonical metadata fixture must retain dangerous names as own JSON keys");
   }
   const canonicalMetadataAction = defineSandboxAction<DangerousMetadata, DangerousMetadata>({
-    id: "niceeval.e2e.setup-prefix-canonical-json",
+    id: "niceeval.e2e.before-cache-canonical-json",
     input: unknownSchema,
     steps: () => [sandboxStep.exec({
       executable: "sh",
       args: [
         "-lc",
-        "mkdir -p .setup-prefix && " +
+        "mkdir -p .before-cache && " +
           "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' " +
-          "> .setup-prefix/canonical-token",
+          "> .before-cache/canonical-token",
       ],
     })] as const,
   });
-  setupPrefixSandbox = setupPrefixSandbox.before(canonicalMetadataAction(metadata, {
+  beforeCacheSandbox = beforeCacheSandbox.before(canonicalMetadataAction(metadata, {
     id: "canonical-metadata-probe",
     changeFrequency: 12,
   }));
 }
 
-setupPrefixSandbox = setupPrefixSandbox.before(uploadDirectory({
+beforeCacheSandbox = beforeCacheSandbox.before(uploadDirectory({
   id: "stable-fixture",
-  source: new URL("../fixtures/setup-prefix/visible/", import.meta.url),
+  source: new URL("../fixtures/before-cache/visible/", import.meta.url),
   to: "fixture",
   changeFrequency: changeFrequency.rare,
   ...(cancellation || canonicalJsonProbe
@@ -132,9 +132,9 @@ setupPrefixSandbox = setupPrefixSandbox.before(uploadDirectory({
     id: "fixture-execution-probe",
     command: [
       "set -eu",
-      "test \"$(cat fixture/input.txt)\" = \"stable setup-prefix fixture\"",
-      "mkdir -p .setup-prefix",
-      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .setup-prefix/fixture-token",
+      "test \"$(cat fixture/input.txt)\" = \"stable before-cache fixture\"",
+      "mkdir -p .before-cache",
+      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .before-cache/fixture-token",
       ...(contention ? ["sleep 3"] : []),
     ].join("\n"),
     changeFrequency: 20,
@@ -144,21 +144,21 @@ setupPrefixSandbox = setupPrefixSandbox.before(uploadDirectory({
     id: "middle-execution-probe",
     command: [
       "set -eu",
-      ...setupPrefixResumeGate(1),
-      "test \"$(cat fixture/input.txt)\" = \"stable setup-prefix fixture\"",
-      "mkdir -p .setup-prefix",
-      `printf '%s\\n' '${middleVersion}' > .setup-prefix/middle-version`,
-      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .setup-prefix/middle-token",
+      ...beforeCacheResumeGate(1),
+      "test \"$(cat fixture/input.txt)\" = \"stable before-cache fixture\"",
+      "mkdir -p .before-cache",
+      `printf '%s\\n' '${middleVersion}' > .before-cache/middle-version`,
+      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .before-cache/middle-token",
     ].join("\n"),
     changeFrequency: 25,
     dependsOn: [actionRef("fixture-execution-probe")],
   }));
 
 export default defineExperiment({
-  description: "persistent Docker SetupPrefix restore and private writable clones",
-  adapter: setupPrefixAgent,
-  sandbox: setupPrefixSandbox,
-  evals: ["setup-prefix-cache"],
+  description: "persistent Docker BeforeCache restore and private writable clones",
+  adapter: beforeCacheAgent,
+  sandbox: beforeCacheSandbox,
+  evals: ["before-cache"],
   attempts: 1,
   // This owner intentionally overlaps several cold Docker journeys. Preserve
   // the functional deadline under the default CI parallel load without

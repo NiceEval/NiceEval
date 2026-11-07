@@ -15,11 +15,11 @@ const DOCKER_CACHE_STATE = Object.freeze({
   prepared: "prepared", active: "active", releasing: "releasing", released: "released",
   expiredUnverified: "expired-unverified", ended: "ended",
 } as const);
-const DOCKER_CACHE_KIND = Object.freeze({ taskBuild: "task-build", sandboxSetupPrefix: "sandbox-setup-prefix" } as const);
+const DOCKER_CACHE_KIND = Object.freeze({ taskBuild: "task-build", sandboxBeforeCache: "sandbox-before-cache" } as const);
 const DOCKER_LEASE_KIND = Object.freeze({ build: "build", read: "read", handoff: "handoff" } as const);
 const DOCKER_CACHE_DOMAIN = Object.freeze({
   providerFamily: "docker", adminProtocolVersion: 1, backendKind: "docker-images",
-  verifiedState: "verified-managed", setupDependency: "parent-backed",
+  verifiedState: "verified-managed", beforeCacheDependency: "parent-backed",
 } as const);
 const DOCKER_RESERVATION_DISPOSITION = Object.freeze({ reserved: "reserved", contended: "contended" } as const);
 const DOCKER_CONTENTION_REASON = Object.freeze({ activeWriter: "active-writer", indexedGeneration: "indexed-generation" } as const);
@@ -33,40 +33,40 @@ const DOCKER_RESERVATION_REASONS = Object.freeze(Object.values(DOCKER_RESERVATIO
 const DOCKER_TASK_ENTRY_STATES = Object.freeze([
   DOCKER_CACHE_STATE.indexed, DOCKER_CACHE_STATE.deleting, DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.unverified,
 ] as const);
-const DOCKER_SETUP_ENTRY_STATES = Object.freeze([
+const DOCKER_BEFORE_CACHE_ENTRY_STATES = Object.freeze([
   DOCKER_CACHE_STATE.reserved, DOCKER_CACHE_STATE.building, DOCKER_CACHE_STATE.published, DOCKER_CACHE_STATE.indexed,
   DOCKER_CACHE_STATE.invalidated, DOCKER_CACHE_STATE.deleting, DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.unverified,
 ] as const);
-const DOCKER_SETUP_WRITER_STATES = Object.freeze([
+const DOCKER_BEFORE_CACHE_WRITER_STATES = Object.freeze([
   DOCKER_CACHE_STATE.reserved, DOCKER_CACHE_STATE.building, DOCKER_CACHE_STATE.published, DOCKER_CACHE_STATE.deleting,
 ] as const);
-const DOCKER_SETUP_STARTUP_STATES = Object.freeze([
+const DOCKER_BEFORE_CACHE_STARTUP_STATES = Object.freeze([
   DOCKER_CACHE_STATE.reserved, DOCKER_CACHE_STATE.building, DOCKER_CACHE_STATE.published,
   DOCKER_CACHE_STATE.indexed, DOCKER_CACHE_STATE.deleting,
 ] as const);
-const DOCKER_SETUP_RESERVABLE_STATES = Object.freeze([DOCKER_CACHE_STATE.reserved, DOCKER_CACHE_STATE.building] as const);
-const DOCKER_SETUP_PUBLICATION_STATES = Object.freeze([DOCKER_CACHE_STATE.published, DOCKER_CACHE_STATE.indexed] as const);
+const DOCKER_BEFORE_CACHE_RESERVABLE_STATES = Object.freeze([DOCKER_CACHE_STATE.reserved, DOCKER_CACHE_STATE.building] as const);
+const DOCKER_BEFORE_CACHE_PUBLICATION_STATES = Object.freeze([DOCKER_CACHE_STATE.published, DOCKER_CACHE_STATE.indexed] as const);
 const DOCKER_DELETE_SETTLEMENT_STATES = Object.freeze([
   DOCKER_CACHE_STATE.indexed, DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.unverified,
 ] as const);
 const DOCKER_DELETE_RECOVERY_STATES = Object.freeze([DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.unverified] as const);
 const DOCKER_DELETE_TRANSITION_STATES = Object.freeze([DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.deleting] as const);
 const DOCKER_TASK_ROOT_STATES = Object.freeze([DOCKER_CACHE_STATE.prepared, DOCKER_CACHE_STATE.active] as const);
-const DOCKER_SETUP_ROOT_STATES = Object.freeze([
+const DOCKER_BEFORE_CACHE_HOLD_STATES = Object.freeze([
   DOCKER_CACHE_STATE.prepared, DOCKER_CACHE_STATE.active, DOCKER_CACHE_STATE.releasing,
 ] as const);
-const DOCKER_SETUP_LEASE_STATES = Object.freeze([
+const DOCKER_BEFORE_CACHE_LEASE_STATES = Object.freeze([
   DOCKER_CACHE_STATE.active, DOCKER_CACHE_STATE.released, DOCKER_CACHE_STATE.expiredUnverified, DOCKER_CACHE_STATE.ended,
 ] as const);
-const DOCKER_ACTIVE_SETUP_LEASE_STATES = Object.freeze([DOCKER_CACHE_STATE.active, DOCKER_CACHE_STATE.expiredUnverified] as const);
-const DOCKER_CACHE_KINDS = Object.freeze([DOCKER_CACHE_KIND.taskBuild, DOCKER_CACHE_KIND.sandboxSetupPrefix] as const);
-const DOCKER_SETUP_LEASE_KINDS = Object.freeze([DOCKER_LEASE_KIND.build, DOCKER_LEASE_KIND.read, DOCKER_LEASE_KIND.handoff] as const);
+const DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES = Object.freeze([DOCKER_CACHE_STATE.active, DOCKER_CACHE_STATE.expiredUnverified] as const);
+const DOCKER_CACHE_KINDS = Object.freeze([DOCKER_CACHE_KIND.taskBuild, DOCKER_CACHE_KIND.sandboxBeforeCache] as const);
+const DOCKER_BEFORE_CACHE_LEASE_KINDS = Object.freeze([DOCKER_LEASE_KIND.build, DOCKER_LEASE_KIND.read, DOCKER_LEASE_KIND.handoff] as const);
 
 export const DOCKER_CACHE_REPOSITORY = "docker-cache" as const;
 export const DOCKER_CACHE_REPOSITORY_REVISION = 1;
 
 export type DockerCacheEntryState = FiniteValue<typeof DOCKER_TASK_ENTRY_STATES>;
-export type DockerSetupPrefixEntryState = FiniteValue<typeof DOCKER_SETUP_ENTRY_STATES>;
+export type DockerBeforeCacheEntryState = FiniteValue<typeof DOCKER_BEFORE_CACHE_ENTRY_STATES>;
 
 export interface DockerCacheDomainRow {
   readonly domainId: string;
@@ -131,32 +131,32 @@ export interface DockerImageGcLockRow {
   readonly createdAt: string;
 }
 
-export interface DockerSetupPrefixEntryRow {
+export interface DockerBeforeCacheEntryRow {
   readonly entryId: string;
-  readonly setupPrefixKey: string;
-  readonly baseImageId: string;
+  readonly beforeCacheKey: string;
+  readonly baseIdentity: string;
   readonly imageId: string | null;
   readonly declarationJson: string;
+  readonly metadataDigest: string;
   readonly declarationDigest: string;
-  readonly setupManifestDigest: string;
   readonly storageSchemaRevision: string;
   readonly artifactFormatRevision: string;
-  readonly dependency: typeof DOCKER_CACHE_DOMAIN.setupDependency;
+  readonly dependency: typeof DOCKER_CACHE_DOMAIN.beforeCacheDependency;
   readonly changeFrequency: number;
   readonly generation: number;
   readonly operationId: string;
   readonly createdAt: string;
   readonly lastSuccessfulUseAt: string | null;
   readonly protectedUntil: string;
-  readonly state: DockerSetupPrefixEntryState;
+  readonly state: DockerBeforeCacheEntryState;
 }
 
-export interface DockerSetupPrefixLeaseRow {
+export interface DockerBeforeCacheLeaseRow {
   readonly leaseId: string;
   readonly entryId: string;
-  readonly setupPrefixKey: string;
+  readonly beforeCacheKey: string;
   readonly generation: number;
-  readonly kind: FiniteValue<typeof DOCKER_SETUP_LEASE_KINDS>;
+  readonly kind: FiniteValue<typeof DOCKER_BEFORE_CACHE_LEASE_KINDS>;
   readonly operationId: string;
   readonly holderHostId: string;
   readonly holderBootId: string;
@@ -165,27 +165,27 @@ export interface DockerSetupPrefixLeaseRow {
   readonly heartbeatSequence: number;
   readonly heartbeatAt: string;
   readonly expiresAt: string;
-  readonly state: FiniteValue<typeof DOCKER_SETUP_LEASE_STATES>;
+  readonly state: FiniteValue<typeof DOCKER_BEFORE_CACHE_LEASE_STATES>;
 }
 
-export interface DockerSetupPrefixRootRow {
-  readonly rootId: string;
+export interface DockerBeforeCacheHoldRow {
+  readonly holdId: string;
   readonly entryId: string;
-  readonly setupPrefixKey: string;
+  readonly beforeCacheKey: string;
   readonly generation: number;
   readonly sandboxId: string;
   readonly sandboxResourceIdentity: string;
   readonly operationId: string;
-  readonly state: FiniteValue<typeof DOCKER_SETUP_ROOT_STATES>;
+  readonly state: FiniteValue<typeof DOCKER_BEFORE_CACHE_HOLD_STATES>;
   readonly createdAt: string;
 }
 
-export interface DockerSetupPrefixManifestFields {
-  readonly setupPrefixKey: string;
-  readonly baseImageId: string;
+export interface DockerBeforeCacheManifestFields {
+  readonly beforeCacheKey: string;
+  readonly baseIdentity: string;
   readonly declarationJson: string;
+  readonly metadataDigest: string;
   readonly declarationDigest: string;
-  readonly setupManifestDigest: string;
   readonly storageSchemaRevision: string;
   readonly artifactFormatRevision: string;
   readonly changeFrequency: number;
@@ -224,27 +224,27 @@ export type DockerCacheRepositoryRequest =
   | RepositoryRequestBase & { readonly operation: "task-settle-delete"; readonly domainId: string; readonly planId: string; readonly buildKey: string; readonly imageId: string; readonly generation: number; readonly state: FiniteValue<typeof DOCKER_DELETE_SETTLEMENT_STATES> }
   | RepositoryRequestBase & { readonly operation: "task-list-delete-locks"; readonly domainId: string }
   | RepositoryRequestBase & { readonly operation: "task-recover-delete"; readonly domainId: string; readonly lock: DockerImageGcLockRow; readonly buildKey: string; readonly state: FiniteValue<typeof DOCKER_DELETE_RECOVERY_STATES> }
-  | RepositoryRequestBase & { readonly operation: "setup-startup-snapshot"; readonly domainId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-prune-leases"; readonly domainId: string; readonly deleteLeaseIds: readonly string[]; readonly unverifiableLeaseIds: readonly string[] }
-  | RepositoryRequestBase & { readonly operation: "setup-startup-isolate"; readonly domainId: string; readonly entryId: string; readonly imageId: string | null }
-  | RepositoryRequestBase & { readonly operation: "setup-startup-validate"; readonly domainId: string; readonly entryId: string; readonly valid: boolean }
-  | RepositoryRequestBase & { readonly operation: "setup-acquire-indexed"; readonly domainId: string; readonly manifest: DockerSetupPrefixManifestFields; readonly expectedEntryId?: string; readonly leaseId: string; readonly operationId: string; readonly holder: DockerHolderIdentity; readonly now: string; readonly expiresAt: string }
-  | RepositoryRequestBase & { readonly operation: "setup-reserve"; readonly domainId: string; readonly manifest: DockerSetupPrefixManifestFields; readonly replacementScope: string; readonly operationId: string; readonly leaseId: string; readonly holder: DockerHolderIdentity; readonly now: string; readonly protectedUntil: string; readonly expiresAt: string }
-  | RepositoryRequestBase & { readonly operation: "setup-heartbeat"; readonly domainId: string; readonly leaseId: string; readonly heartbeatAt: string; readonly expiresAt: string }
-  | RepositoryRequestBase & { readonly operation: "setup-release-lease"; readonly domainId: string; readonly leaseId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-mark-unverified"; readonly domainId: string; readonly entryId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-publish-reserve"; readonly domainId: string; readonly entryId: string; readonly operationId: string; readonly generation: number; readonly imageId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-publish-settle"; readonly domainId: string; readonly entryId: string; readonly setupPrefixKey: string; readonly imageId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-prepare-root"; readonly domainId: string; readonly root: DockerSetupPrefixRootRow }
-  | RepositoryRequestBase & { readonly operation: "setup-activate-root"; readonly domainId: string; readonly rootId: string; readonly entryId: string; readonly generation: number; readonly containerId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-remove-root"; readonly domainId: string; readonly rootId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-begin-root-release"; readonly domainId: string; readonly rootId: string; readonly entryId: string; readonly containerId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-finish-root-release"; readonly domainId: string; readonly rootId: string; readonly entryId: string; readonly containerId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-mark-used"; readonly domainId: string; readonly entryId: string; readonly generation: number; readonly usedAt: string }
-  | RepositoryRequestBase & { readonly operation: "setup-image-claims"; readonly domainId: string; readonly imageId: string; readonly exceptEntryId: string }
-  | RepositoryRequestBase & { readonly operation: "setup-list-reclaim-candidates"; readonly domainId: string; readonly replacementScope?: string; readonly exceptEntryId?: string }
-  | RepositoryRequestBase & { readonly operation: "setup-reserve-delete"; readonly domainId: string; readonly entryId: string; readonly planId: string; readonly holder: DockerHolderIdentity; readonly createdAt: string }
-  | RepositoryRequestBase & { readonly operation: "setup-settle-delete"; readonly domainId: string; readonly entryId: string; readonly imageId: string; readonly generation: number; readonly state: FiniteValue<typeof DOCKER_DELETE_SETTLEMENT_STATES> };
+  | RepositoryRequestBase & { readonly operation: "before-cache-startup-snapshot"; readonly domainId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-prune-leases"; readonly domainId: string; readonly deleteLeaseIds: readonly string[]; readonly unverifiableLeaseIds: readonly string[] }
+  | RepositoryRequestBase & { readonly operation: "before-cache-startup-isolate"; readonly domainId: string; readonly entryId: string; readonly imageId: string | null }
+  | RepositoryRequestBase & { readonly operation: "before-cache-startup-validate"; readonly domainId: string; readonly entryId: string; readonly valid: boolean }
+  | RepositoryRequestBase & { readonly operation: "before-cache-acquire-indexed"; readonly domainId: string; readonly manifest: DockerBeforeCacheManifestFields; readonly expectedEntryId?: string; readonly leaseId: string; readonly operationId: string; readonly holder: DockerHolderIdentity; readonly now: string; readonly expiresAt: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-reserve"; readonly domainId: string; readonly manifest: DockerBeforeCacheManifestFields; readonly replacementScope: string; readonly operationId: string; readonly leaseId: string; readonly holder: DockerHolderIdentity; readonly now: string; readonly protectedUntil: string; readonly expiresAt: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-heartbeat"; readonly domainId: string; readonly leaseId: string; readonly heartbeatAt: string; readonly expiresAt: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-release-lease"; readonly domainId: string; readonly leaseId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-mark-unverified"; readonly domainId: string; readonly entryId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-publish-reserve"; readonly domainId: string; readonly entryId: string; readonly operationId: string; readonly generation: number; readonly imageId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-publish-settle"; readonly domainId: string; readonly entryId: string; readonly beforeCacheKey: string; readonly imageId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-prepare-hold"; readonly domainId: string; readonly hold: DockerBeforeCacheHoldRow }
+  | RepositoryRequestBase & { readonly operation: "before-cache-activate-hold"; readonly domainId: string; readonly holdId: string; readonly entryId: string; readonly generation: number; readonly containerId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-remove-hold"; readonly domainId: string; readonly holdId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-begin-hold-release"; readonly domainId: string; readonly holdId: string; readonly entryId: string; readonly containerId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-finish-hold-release"; readonly domainId: string; readonly holdId: string; readonly entryId: string; readonly containerId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-mark-used"; readonly domainId: string; readonly entryId: string; readonly generation: number; readonly usedAt: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-image-claims"; readonly domainId: string; readonly imageId: string; readonly exceptEntryId: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-list-reclaim-candidates"; readonly domainId: string; readonly replacementScope?: string; readonly exceptEntryId?: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-reserve-delete"; readonly domainId: string; readonly entryId: string; readonly planId: string; readonly holder: DockerHolderIdentity; readonly createdAt: string }
+  | RepositoryRequestBase & { readonly operation: "before-cache-settle-delete"; readonly domainId: string; readonly entryId: string; readonly imageId: string; readonly generation: number; readonly state: FiniteValue<typeof DOCKER_DELETE_SETTLEMENT_STATES> };
 
 type Result<Operation extends DockerCacheRepositoryRequest["operation"], Value extends object = Record<never, never>> = Readonly<{
   repository: typeof DOCKER_CACHE_REPOSITORY;
@@ -259,24 +259,24 @@ export type DockerCacheRepositoryResult =
     readonly taskEntries: readonly DockerTaskBuildEntryRow[];
     readonly taskLeases: readonly DockerTaskBuildLeaseRow[];
     readonly taskRoots: readonly DockerTaskBuildRootRow[];
-    readonly setupEntries: readonly DockerSetupPrefixEntryRow[];
-    readonly setupLeases: readonly DockerSetupPrefixLeaseRow[];
-    readonly setupRoots: readonly DockerSetupPrefixRootRow[];
+    readonly beforeCacheEntries: readonly DockerBeforeCacheEntryRow[];
+    readonly beforeCacheLeases: readonly DockerBeforeCacheLeaseRow[];
+    readonly beforeCacheHolds: readonly DockerBeforeCacheHoldRow[];
   }>
   | Result<"task-get-indexed", { readonly entry: DockerTaskBuildEntryRow | null }>
-  | Result<"task-mark-unverified" | "task-publish" | "task-heartbeat" | "task-release-use" | "task-prune-owners" | "task-save-plan" | "task-save-plan-outcome" | "task-settle-delete" | "task-recover-delete" | "setup-prune-leases" | "setup-startup-isolate" | "setup-startup-validate" | "setup-release-lease" | "setup-mark-unverified" | "setup-publish-reserve" | "setup-publish-settle" | "setup-prepare-root" | "setup-activate-root" | "setup-remove-root" | "setup-begin-root-release" | "setup-finish-root-release" | "setup-mark-used" | "setup-settle-delete", { readonly changes: number }>
-  | Result<"task-acquire-use" | "task-reserve-delete" | "setup-reserve-delete", { readonly reserved: boolean; readonly reason?: FiniteValue<typeof DOCKER_RESERVATION_REASONS> }>
+  | Result<"task-mark-unverified" | "task-publish" | "task-heartbeat" | "task-release-use" | "task-prune-owners" | "task-save-plan" | "task-save-plan-outcome" | "task-settle-delete" | "task-recover-delete" | "before-cache-prune-leases" | "before-cache-startup-isolate" | "before-cache-startup-validate" | "before-cache-release-lease" | "before-cache-mark-unverified" | "before-cache-publish-reserve" | "before-cache-publish-settle" | "before-cache-prepare-hold" | "before-cache-activate-hold" | "before-cache-remove-hold" | "before-cache-begin-hold-release" | "before-cache-finish-hold-release" | "before-cache-mark-used" | "before-cache-settle-delete", { readonly changes: number }>
+  | Result<"task-acquire-use" | "task-reserve-delete" | "before-cache-reserve-delete", { readonly reserved: boolean; readonly reason?: FiniteValue<typeof DOCKER_RESERVATION_REASONS> }>
   | Result<"task-list-entries", { readonly entries: readonly DockerTaskBuildEntryRow[] }>
   | Result<"task-list-owners", { readonly leases: readonly DockerTaskBuildLeaseRow[]; readonly roots: readonly DockerTaskBuildRootRow[] }>
   | Result<"task-read-safety-revision", { readonly revision: number }>
   | Result<"task-get-plan", { readonly plan: { readonly expiresAt: string; readonly payload: string; readonly digest: string; readonly outcome: string | null } | null }>
   | Result<"task-list-delete-locks", { readonly locks: readonly DockerImageGcLockRow[] }>
-  | Result<"setup-startup-snapshot", { readonly entries: readonly DockerSetupPrefixEntryRow[]; readonly leases: readonly DockerSetupPrefixLeaseRow[]; readonly locks: readonly DockerImageGcLockRow[] }>
-  | Result<"setup-acquire-indexed", { readonly entry: DockerSetupPrefixEntryRow | null }>
-  | Result<"setup-reserve", { readonly state: typeof DOCKER_RESERVATION_DISPOSITION.reserved; readonly entry: DockerSetupPrefixEntryRow } | { readonly state: typeof DOCKER_RESERVATION_DISPOSITION.contended; readonly reason: FiniteValue<typeof DOCKER_CONTENTION_REASONS> }>
-  | Result<"setup-heartbeat", { readonly changes: number }>
-  | Result<"setup-image-claims", { readonly gcLocked: boolean; readonly taskBuildClaim: boolean; readonly siblingSetupPrefixClaim: boolean }>
-  | Result<"setup-list-reclaim-candidates", { readonly entries: readonly DockerSetupPrefixEntryRow[] }>;
+  | Result<"before-cache-startup-snapshot", { readonly entries: readonly DockerBeforeCacheEntryRow[]; readonly leases: readonly DockerBeforeCacheLeaseRow[]; readonly locks: readonly DockerImageGcLockRow[] }>
+  | Result<"before-cache-acquire-indexed", { readonly entry: DockerBeforeCacheEntryRow | null }>
+  | Result<"before-cache-reserve", { readonly state: typeof DOCKER_RESERVATION_DISPOSITION.reserved; readonly entry: DockerBeforeCacheEntryRow } | { readonly state: typeof DOCKER_RESERVATION_DISPOSITION.contended; readonly reason: FiniteValue<typeof DOCKER_CONTENTION_REASONS> }>
+  | Result<"before-cache-heartbeat", { readonly changes: number }>
+  | Result<"before-cache-image-claims", { readonly gcLocked: boolean; readonly taskBuildClaim: boolean; readonly siblingBeforeCacheClaim: boolean }>
+  | Result<"before-cache-list-reclaim-candidates", { readonly entries: readonly DockerBeforeCacheEntryRow[] }>;
 
 export type DockerCacheResultFor<Request extends DockerCacheRepositoryRequest> =
   DockerCacheRepositoryResult extends infer Candidate
@@ -293,13 +293,13 @@ const TABLES = Object.freeze({
   taskRoots: "docker_task_build_roots",
   plans: "docker_cache_gc_plans",
   locks: "docker_image_gc_locks",
-  setupEntries: "docker_setup_prefix_entries",
-  setupIndex: "docker_setup_prefix_index",
-  setupFences: "docker_setup_prefix_generation_fences",
-  setupScopes: "docker_setup_prefix_replacement_scopes",
-  setupHeads: "docker_setup_prefix_replacement_heads",
-  setupLeases: "docker_setup_prefix_leases",
-  setupRoots: "docker_setup_prefix_roots",
+  beforeCacheEntries: "docker_before_cache_entries",
+  beforeCacheIndex: "docker_before_cache_index",
+  beforeCacheFences: "docker_before_cache_generation_fences",
+  beforeCacheScopes: "docker_before_cache_replacement_scopes",
+  beforeCacheHeads: "docker_before_cache_replacement_heads",
+  beforeCacheLeases: "docker_before_cache_leases",
+  beforeCacheHolds: "docker_before_cache_holds",
 });
 
 const CREATE_SCHEMA = `
@@ -343,58 +343,66 @@ CREATE TABLE ${TABLES.locks} (
   holder_boot_id TEXT NOT NULL, holder_process_start TEXT NOT NULL, created_at TEXT NOT NULL,
   PRIMARY KEY(domain_id, image_id)
 ) STRICT;
-CREATE TABLE ${TABLES.setupEntries} (
-  domain_id TEXT NOT NULL REFERENCES ${TABLES.domains}(domain_id), entry_id TEXT NOT NULL, setup_prefix_key TEXT NOT NULL,
-  base_image_id TEXT NOT NULL, image_id TEXT, declaration_json TEXT NOT NULL, declaration_digest TEXT NOT NULL,
-  setup_manifest_digest TEXT NOT NULL, storage_schema_revision TEXT NOT NULL, artifact_format_revision TEXT NOT NULL,
-  dependency TEXT NOT NULL CHECK(dependency = ${sqlLiteral(DOCKER_CACHE_DOMAIN.setupDependency)}), change_frequency REAL NOT NULL, generation INTEGER NOT NULL,
+CREATE TABLE ${TABLES.beforeCacheEntries} (
+  domain_id TEXT NOT NULL REFERENCES ${TABLES.domains}(domain_id), entry_id TEXT NOT NULL, before_cache_key TEXT NOT NULL,
+  base_identity TEXT NOT NULL, image_id TEXT, declaration_json TEXT NOT NULL, metadata_digest TEXT NOT NULL,
+  declaration_digest TEXT NOT NULL, storage_schema_revision TEXT NOT NULL, artifact_format_revision TEXT NOT NULL,
+  dependency TEXT NOT NULL CHECK(dependency = ${sqlLiteral(DOCKER_CACHE_DOMAIN.beforeCacheDependency)}), change_frequency REAL NOT NULL, generation INTEGER NOT NULL,
   operation_id TEXT NOT NULL, created_at TEXT NOT NULL, last_successful_use_at TEXT, protected_until TEXT NOT NULL,
-  state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_SETUP_ENTRY_STATES)})),
-  PRIMARY KEY(domain_id, entry_id), UNIQUE(domain_id, setup_prefix_key, generation)
+  state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_BEFORE_CACHE_ENTRY_STATES)})),
+  PRIMARY KEY(domain_id, entry_id), UNIQUE(domain_id, before_cache_key, generation)
 ) STRICT;
-CREATE UNIQUE INDEX docker_setup_prefix_writer ON ${TABLES.setupEntries}(domain_id, setup_prefix_key)
-  WHERE state IN (${sqlIn(DOCKER_SETUP_WRITER_STATES)});
-CREATE TABLE ${TABLES.setupIndex} (
-  domain_id TEXT NOT NULL, setup_prefix_key TEXT NOT NULL, entry_id TEXT NOT NULL,
-  PRIMARY KEY(domain_id, setup_prefix_key), UNIQUE(domain_id, entry_id),
-  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.setupEntries}(domain_id, entry_id)
+CREATE UNIQUE INDEX docker_before_cache_generation ON ${TABLES.beforeCacheEntries}(generation);
+CREATE UNIQUE INDEX docker_before_cache_writer ON ${TABLES.beforeCacheEntries}(domain_id, before_cache_key)
+  WHERE state IN (${sqlIn(DOCKER_BEFORE_CACHE_WRITER_STATES)});
+CREATE TABLE ${TABLES.beforeCacheIndex} (
+  domain_id TEXT NOT NULL, before_cache_key TEXT NOT NULL, entry_id TEXT NOT NULL,
+  PRIMARY KEY(domain_id, before_cache_key), UNIQUE(domain_id, entry_id),
+  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.beforeCacheEntries}(domain_id, entry_id)
 ) STRICT;
-CREATE TABLE ${TABLES.setupFences} (
-  domain_id TEXT NOT NULL REFERENCES ${TABLES.domains}(domain_id), setup_prefix_key TEXT NOT NULL,
-  next_generation INTEGER NOT NULL, PRIMARY KEY(domain_id, setup_prefix_key)
+CREATE TABLE ${TABLES.beforeCacheFences} (
+  domain_id TEXT NOT NULL REFERENCES ${TABLES.domains}(domain_id), before_cache_key TEXT NOT NULL,
+  next_generation INTEGER NOT NULL, PRIMARY KEY(domain_id, before_cache_key)
 ) STRICT;
-CREATE TABLE ${TABLES.setupScopes} (
+CREATE TABLE ${TABLES.beforeCacheScopes} (
   domain_id TEXT NOT NULL, entry_id TEXT NOT NULL, replacement_scope TEXT NOT NULL, PRIMARY KEY(domain_id, entry_id),
-  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.setupEntries}(domain_id, entry_id)
+  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.beforeCacheEntries}(domain_id, entry_id)
 ) STRICT;
-CREATE INDEX docker_setup_prefix_replacement_scope ON ${TABLES.setupScopes}(domain_id, replacement_scope);
-CREATE TABLE ${TABLES.setupHeads} (
+CREATE INDEX docker_before_cache_replacement_scope ON ${TABLES.beforeCacheScopes}(domain_id, replacement_scope);
+CREATE TABLE ${TABLES.beforeCacheHeads} (
   domain_id TEXT NOT NULL, replacement_scope TEXT NOT NULL, entry_id TEXT NOT NULL,
   PRIMARY KEY(domain_id, replacement_scope),
-  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.setupEntries}(domain_id, entry_id)
+  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.beforeCacheEntries}(domain_id, entry_id)
 ) STRICT;
-CREATE TABLE ${TABLES.setupLeases} (
-  domain_id TEXT NOT NULL, lease_id TEXT NOT NULL, entry_id TEXT NOT NULL, setup_prefix_key TEXT NOT NULL,
-  generation INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN (${sqlIn(DOCKER_SETUP_LEASE_KINDS)})), operation_id TEXT NOT NULL,
+CREATE TABLE ${TABLES.beforeCacheLeases} (
+  domain_id TEXT NOT NULL, lease_id TEXT NOT NULL, entry_id TEXT NOT NULL, before_cache_key TEXT NOT NULL,
+  generation INTEGER NOT NULL, kind TEXT NOT NULL CHECK(kind IN (${sqlIn(DOCKER_BEFORE_CACHE_LEASE_KINDS)})), operation_id TEXT NOT NULL,
   holder_host_id TEXT NOT NULL, holder_boot_id TEXT NOT NULL, holder_pid INTEGER NOT NULL,
   holder_process_start TEXT NOT NULL, heartbeat_sequence INTEGER NOT NULL, heartbeat_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_SETUP_LEASE_STATES)})),
-  PRIMARY KEY(domain_id, lease_id), FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.setupEntries}(domain_id, entry_id)
+  expires_at TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_BEFORE_CACHE_LEASE_STATES)})),
+  PRIMARY KEY(domain_id, lease_id), FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.beforeCacheEntries}(domain_id, entry_id)
 ) STRICT;
-CREATE TABLE ${TABLES.setupRoots} (
-  domain_id TEXT NOT NULL, root_id TEXT NOT NULL, entry_id TEXT NOT NULL, setup_prefix_key TEXT NOT NULL,
+CREATE TABLE ${TABLES.beforeCacheHolds} (
+  domain_id TEXT NOT NULL, hold_id TEXT NOT NULL, entry_id TEXT NOT NULL, before_cache_key TEXT NOT NULL,
   generation INTEGER NOT NULL, sandbox_id TEXT NOT NULL, sandbox_resource_identity TEXT NOT NULL,
-  operation_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_SETUP_ROOT_STATES)})),
-  created_at TEXT NOT NULL, PRIMARY KEY(domain_id, root_id),
-  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.setupEntries}(domain_id, entry_id)
+  operation_id TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_BEFORE_CACHE_HOLD_STATES)})),
+  created_at TEXT NOT NULL, PRIMARY KEY(domain_id, hold_id),
+  FOREIGN KEY(domain_id, entry_id) REFERENCES ${TABLES.beforeCacheEntries}(domain_id, entry_id)
 ) STRICT;
-CREATE TRIGGER docker_setup_prefix_exact_base_insert BEFORE INSERT ON ${TABLES.setupEntries}
-WHEN length(NEW.base_image_id) != 71 OR substr(NEW.base_image_id, 1, 7) != 'sha256:' OR substr(NEW.base_image_id, 8) GLOB '*[^0-9a-f]*'
-BEGIN SELECT RAISE(ABORT, 'setup-prefix exact Base identity is required'); END;
-CREATE TRIGGER docker_setup_prefix_exact_base_update BEFORE UPDATE OF base_image_id ON ${TABLES.setupEntries}
-WHEN length(NEW.base_image_id) != 71 OR substr(NEW.base_image_id, 1, 7) != 'sha256:' OR substr(NEW.base_image_id, 8) GLOB '*[^0-9a-f]*'
-BEGIN SELECT RAISE(ABORT, 'setup-prefix exact Base identity is required'); END;
+CREATE TRIGGER docker_before_cache_exact_base_insert BEFORE INSERT ON ${TABLES.beforeCacheEntries}
+WHEN length(NEW.base_identity) != 71 OR substr(NEW.base_identity, 1, 7) != 'sha256:' OR substr(NEW.base_identity, 8) GLOB '*[^0-9a-f]*'
+BEGIN SELECT RAISE(ABORT, 'before-cache exact Base identity is required'); END;
+CREATE TRIGGER docker_before_cache_exact_base_update BEFORE UPDATE OF base_identity ON ${TABLES.beforeCacheEntries}
+WHEN length(NEW.base_identity) != 71 OR substr(NEW.base_identity, 1, 7) != 'sha256:' OR substr(NEW.base_identity, 8) GLOB '*[^0-9a-f]*'
+BEGIN SELECT RAISE(ABORT, 'before-cache exact Base identity is required'); END;
 `;
+
+/** New Before cache tables and transient GC ownership use the renamed vocabulary. */
+export const DOCKER_BEFORE_CACHE_SCHEMA_SQL = CREATE_SCHEMA.slice(CREATE_SCHEMA.indexOf("CREATE TABLE " + TABLES.beforeCacheEntries));
+export const DOCKER_IMAGE_GC_LOCK_SCHEMA_SQL = CREATE_SCHEMA.slice(
+  CREATE_SCHEMA.indexOf("CREATE TABLE " + TABLES.locks),
+  CREATE_SCHEMA.indexOf("CREATE TABLE " + TABLES.beforeCacheEntries),
+);
 
 interface SchemaObject {
   readonly type: string;
@@ -486,23 +494,23 @@ function taskEntry(row: unknown): DockerTaskBuildEntryRow {
   });
 }
 
-function setupEntry(row: unknown): DockerSetupPrefixEntryRow {
-  const value = record(row, "setup-prefix row");
-  const state = exactString(value.state, "setup-prefix state");
-  if (!isFiniteValue(DOCKER_SETUP_ENTRY_STATES, state)) {
-    throw invalid(`docker-cache setup-prefix state ${state} is invalid`);
+function beforeCacheEntry(row: unknown): DockerBeforeCacheEntryRow {
+  const value = record(row, "before-cache row");
+  const state = exactString(value.state, "before-cache state");
+  if (!isFiniteValue(DOCKER_BEFORE_CACHE_ENTRY_STATES, state)) {
+    throw invalid(`docker-cache before-cache state ${state} is invalid`);
   }
   const dependency = exactString(value.dependency, "dependency");
-  if (dependency !== DOCKER_CACHE_DOMAIN.setupDependency) throw invalid(`docker-cache setup-prefix dependency ${dependency} is invalid`);
+  if (dependency !== DOCKER_CACHE_DOMAIN.beforeCacheDependency) throw invalid(`docker-cache before-cache dependency ${dependency} is invalid`);
   const changeFrequency = value.change_frequency;
   if (typeof changeFrequency !== "number" || !Number.isFinite(changeFrequency) || changeFrequency < 0) {
     throw invalid("docker-cache change_frequency is invalid");
   }
   return Object.freeze({
-    entryId: exactString(value.entry_id, "entry_id"), setupPrefixKey: exactString(value.setup_prefix_key, "setup_prefix_key"),
-    baseImageId: exactString(value.base_image_id, "base_image_id"), imageId: nullableString(value.image_id, "image_id"),
-    declarationJson: exactString(value.declaration_json, "declaration_json"), declarationDigest: exactString(value.declaration_digest, "declaration_digest"),
-    setupManifestDigest: exactString(value.setup_manifest_digest, "setup_manifest_digest"),
+    entryId: exactString(value.entry_id, "entry_id"), beforeCacheKey: exactString(value.before_cache_key, "before_cache_key"),
+    baseIdentity: exactString(value.base_identity, "base_identity"), imageId: nullableString(value.image_id, "image_id"),
+    declarationJson: exactString(value.declaration_json, "declaration_json"), metadataDigest: exactString(value.metadata_digest, "metadata_digest"),
+    declarationDigest: exactString(value.declaration_digest, "declaration_digest"),
     storageSchemaRevision: exactString(value.storage_schema_revision, "storage_schema_revision"),
     artifactFormatRevision: exactString(value.artifact_format_revision, "artifact_format_revision"),
     dependency, changeFrequency, generation: exactInteger(value.generation, "generation"),
@@ -534,17 +542,17 @@ function taskRoot(row: unknown): DockerTaskBuildRootRow {
   });
 }
 
-function setupLease(row: unknown): DockerSetupPrefixLeaseRow {
-  const value = record(row, "setup-prefix lease");
+function beforeCacheLease(row: unknown): DockerBeforeCacheLeaseRow {
+  const value = record(row, "before-cache lease");
   const kind = exactString(value.kind, "kind");
-  if (!isFiniteValue(DOCKER_SETUP_LEASE_KINDS, kind)) throw invalid(`docker-cache setup-prefix lease kind ${kind} is invalid`);
+  if (!isFiniteValue(DOCKER_BEFORE_CACHE_LEASE_KINDS, kind)) throw invalid(`docker-cache before-cache lease kind ${kind} is invalid`);
   const state = exactString(value.state, "state");
-  if (!isFiniteValue(DOCKER_SETUP_LEASE_STATES, state)) {
-    throw invalid(`docker-cache setup-prefix lease state ${state} is invalid`);
+  if (!isFiniteValue(DOCKER_BEFORE_CACHE_LEASE_STATES, state)) {
+    throw invalid(`docker-cache before-cache lease state ${state} is invalid`);
   }
   return Object.freeze({
     leaseId: exactString(value.lease_id, "lease_id"), entryId: exactString(value.entry_id, "entry_id"),
-    setupPrefixKey: exactString(value.setup_prefix_key, "setup_prefix_key"), generation: exactInteger(value.generation, "generation"),
+    beforeCacheKey: exactString(value.before_cache_key, "before_cache_key"), generation: exactInteger(value.generation, "generation"),
     kind, operationId: exactString(value.operation_id, "operation_id"),
     holderHostId: exactString(value.holder_host_id, "holder_host_id"), holderBootId: exactString(value.holder_boot_id, "holder_boot_id"),
     holderPid: exactInteger(value.holder_pid, "holder_pid"), holderProcessStart: exactString(value.holder_process_start, "holder_process_start"),
@@ -553,13 +561,13 @@ function setupLease(row: unknown): DockerSetupPrefixLeaseRow {
   });
 }
 
-function setupRoot(row: unknown): DockerSetupPrefixRootRow {
-  const value = record(row, "setup-prefix root");
+function beforeCacheHold(row: unknown): DockerBeforeCacheHoldRow {
+  const value = record(row, "before-cache hold");
   const state = exactString(value.state, "state");
-  if (!isFiniteValue(DOCKER_SETUP_ROOT_STATES, state)) throw invalid(`docker-cache setup-prefix root state ${state} is invalid`);
+  if (!isFiniteValue(DOCKER_BEFORE_CACHE_HOLD_STATES, state)) throw invalid(`docker-cache before-cache hold state ${state} is invalid`);
   return Object.freeze({
-    rootId: exactString(value.root_id, "root_id"), entryId: exactString(value.entry_id, "entry_id"),
-    setupPrefixKey: exactString(value.setup_prefix_key, "setup_prefix_key"), generation: exactInteger(value.generation, "generation"),
+    holdId: exactString(value.hold_id, "hold_id"), entryId: exactString(value.entry_id, "entry_id"),
+    beforeCacheKey: exactString(value.before_cache_key, "before_cache_key"), generation: exactInteger(value.generation, "generation"),
     sandboxId: exactString(value.sandbox_id, "sandbox_id"),
     sandboxResourceIdentity: exactString(value.sandbox_resource_identity, "sandbox_resource_identity"),
     operationId: exactString(value.operation_id, "operation_id"), state, createdAt: exactString(value.created_at, "created_at"),
@@ -602,18 +610,18 @@ function readTransaction<A>(database: DatabaseSync, run: () => A): A {
   }
 }
 
-function bump(database: DatabaseSync, domainId: string, key: "taskSafetyRevision" | "setupPrefixSafetyRevision"): void {
+function bump(database: DatabaseSync, domainId: string, key: "taskSafetyRevision" | "beforeCacheSafetyRevision"): void {
   const changed = database.prepare(`UPDATE ${TABLES.metadata} SET value = CAST(value AS INTEGER) + 1 WHERE domain_id = ? AND key = ?`)
     .run(domainId, key);
   if (changed.changes !== 1) throw invalid(`docker-cache ${key} is missing`);
 }
 
-function manifestMatches(row: DockerSetupPrefixEntryRow, manifest: DockerSetupPrefixManifestFields): boolean {
-  return row.setupPrefixKey === manifest.setupPrefixKey && row.baseImageId === manifest.baseImageId &&
-    row.declarationJson === manifest.declarationJson && row.declarationDigest === manifest.declarationDigest &&
-    row.setupManifestDigest === manifest.setupManifestDigest && row.storageSchemaRevision === manifest.storageSchemaRevision &&
+function manifestMatches(row: DockerBeforeCacheEntryRow, manifest: DockerBeforeCacheManifestFields): boolean {
+  return row.beforeCacheKey === manifest.beforeCacheKey && row.baseIdentity === manifest.baseIdentity &&
+    row.declarationJson === manifest.declarationJson && row.metadataDigest === manifest.metadataDigest &&
+    row.declarationDigest === manifest.declarationDigest && row.storageSchemaRevision === manifest.storageSchemaRevision &&
     row.artifactFormatRevision === manifest.artifactFormatRevision &&
-    row.dependency === DOCKER_CACHE_DOMAIN.setupDependency;
+    row.dependency === DOCKER_CACHE_DOMAIN.beforeCacheDependency;
 }
 
 function changes(value: number | bigint): number {
@@ -687,7 +695,7 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
         }
         database.prepare(`INSERT OR IGNORE INTO ${TABLES.metadata}(domain_id, key, value) VALUES (?, 'taskSafetyRevision', '1')`)
           .run(request.domain.domainId);
-        database.prepare(`INSERT OR IGNORE INTO ${TABLES.metadata}(domain_id, key, value) VALUES (?, 'setupPrefixSafetyRevision', '1')`)
+        database.prepare(`INSERT OR IGNORE INTO ${TABLES.metadata}(domain_id, key, value) VALUES (?, 'beforeCacheSafetyRevision', '1')`)
           .run(request.domain.domainId);
         return decoded;
       });
@@ -702,9 +710,9 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
         taskEntries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.taskEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY build_key`).all(request.domainId).map(taskEntry)),
         taskLeases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.taskLeases} WHERE domain_id = ? ORDER BY lease_id`).all(request.domainId).map(taskLease)),
         taskRoots: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.taskRoots} WHERE domain_id = ? ORDER BY root_id`).all(request.domainId).map(taskRoot)),
-        setupEntries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY setup_prefix_key, generation`).all(request.domainId).map(setupEntry)),
-        setupLeases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_SETUP_LEASE_STATES)}) ORDER BY lease_id`).all(request.domainId).map(setupLease)),
-        setupRoots: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupRoots} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_SETUP_ROOT_STATES)}) ORDER BY root_id`).all(request.domainId).map(setupRoot)),
+        beforeCacheEntries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY before_cache_key, generation`).all(request.domainId).map(beforeCacheEntry)),
+        beforeCacheLeases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) ORDER BY lease_id`).all(request.domainId).map(beforeCacheLease)),
+        beforeCacheHolds: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.beforeCacheHolds} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_HOLD_STATES)}) ORDER BY hold_id`).all(request.domainId).map(beforeCacheHold)),
       }));
     case "task-get-indexed": {
       const row = database.prepare(`SELECT * FROM ${TABLES.taskEntries} WHERE domain_id = ? AND build_key = ? AND state = ${sqlLiteral(DOCKER_CACHE_STATE.indexed)}`)
@@ -833,8 +841,8 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
         if (entry.state !== DOCKER_CACHE_STATE.indexed || JSON.stringify(entry) !== JSON.stringify(request.entry)) return { reserved: false, reason: DOCKER_RESERVATION_REASON.entryChanged } as const;
         const lease = database.prepare(`SELECT 1 FROM ${TABLES.taskLeases} WHERE domain_id = ? AND build_key = ? LIMIT 1`).get(request.domainId, entry.buildKey);
         const root = database.prepare(`SELECT 1 FROM ${TABLES.taskRoots} WHERE domain_id = ? AND build_key = ? LIMIT 1`).get(request.domainId, entry.buildKey);
-        const setupClaim = database.prepare(`SELECT 1 FROM ${TABLES.setupEntries} WHERE domain_id = ? AND image_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, entry.imageId);
-        if (lease !== undefined || root !== undefined || setupClaim !== undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.entryLeaseRootOrCrossKindClaim } as const;
+        const beforeCacheClaim = database.prepare(`SELECT 1 FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND image_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, entry.imageId);
+        if (lease !== undefined || root !== undefined || beforeCacheClaim !== undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.entryLeaseRootOrCrossKindClaim } as const;
         const lock = database.prepare(`SELECT 1 FROM ${TABLES.locks} WHERE domain_id = ? AND image_id = ?`).get(request.domainId, entry.imageId);
         if (lock !== undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.activeDeleteConflict } as const;
         database.prepare(`INSERT INTO ${TABLES.locks}(
@@ -875,245 +883,244 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-startup-snapshot":
+    case "before-cache-startup-snapshot":
       return result(request.operation, {
-        entries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_SETUP_STARTUP_STATES)}) ORDER BY setup_prefix_key, generation`).all(request.domainId).map(setupEntry)),
-        leases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.setupLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_SETUP_LEASE_STATES)}) ORDER BY lease_id`).all(request.domainId).map(setupLease)),
-        locks: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.sandboxSetupPrefix)} ORDER BY created_at, image_id LIMIT 128`).all(request.domainId).map(gcLock)),
+        entries: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_STARTUP_STATES)}) ORDER BY before_cache_key, generation`).all(request.domainId).map(beforeCacheEntry)),
+        leases: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) ORDER BY lease_id`).all(request.domainId).map(beforeCacheLease)),
+        locks: Object.freeze(database.prepare(`SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.sandboxBeforeCache)} ORDER BY created_at, image_id LIMIT 128`).all(request.domainId).map(gcLock)),
       });
-    case "setup-prune-leases": {
+    case "before-cache-prune-leases": {
       const count = transaction(database, () => {
         let changed = 0;
-        for (const leaseId of request.deleteLeaseIds) changed += changes(database.prepare(`DELETE FROM ${TABLES.setupLeases} WHERE domain_id = ? AND lease_id = ?`).run(request.domainId, leaseId).changes);
-        for (const leaseId of request.unverifiableLeaseIds) changed += changes(database.prepare(`UPDATE ${TABLES.setupLeases} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.expiredUnverified)} WHERE domain_id = ? AND lease_id = ? AND state = ${sqlLiteral(DOCKER_CACHE_STATE.active)}`).run(request.domainId, leaseId).changes);
+        for (const leaseId of request.deleteLeaseIds) changed += changes(database.prepare(`DELETE FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND lease_id = ?`).run(request.domainId, leaseId).changes);
+        for (const leaseId of request.unverifiableLeaseIds) changed += changes(database.prepare(`UPDATE ${TABLES.beforeCacheLeases} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.expiredUnverified)} WHERE domain_id = ? AND lease_id = ? AND state = ${sqlLiteral(DOCKER_CACHE_STATE.active)}`).run(request.domainId, leaseId).changes);
         return changed;
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-startup-isolate": {
+    case "before-cache-startup-isolate": {
       const count = transaction(database, () => {
-        database.prepare(`DELETE FROM ${TABLES.setupIndex} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, request.entryId);
-        const updated = database.prepare(`UPDATE ${TABLES.setupEntries} SET image_id = ?, state = ${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id = ? AND entry_id = ? AND state IN (${sqlIn(DOCKER_SETUP_RESERVABLE_STATES)})`)
+        database.prepare(`DELETE FROM ${TABLES.beforeCacheIndex} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, request.entryId);
+        const updated = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET image_id = ?, state = ${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id = ? AND entry_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_RESERVABLE_STATES)})`)
           .run(request.imageId, request.domainId, request.entryId);
-        bump(database, request.domainId, "setupPrefixSafetyRevision");
+        bump(database, request.domainId, "beforeCacheSafetyRevision");
         return changes(updated.changes);
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-startup-validate": {
+    case "before-cache-startup-validate": {
       const count = transaction(database, () => {
-        const found = database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id = ? AND entry_id = ?`).get(request.domainId, request.entryId);
+        const found = database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND entry_id = ?`).get(request.domainId, request.entryId);
         if (found === undefined) return 0;
-        const entry = setupEntry(found);
+        const entry = beforeCacheEntry(found);
         if (!request.valid) {
-          database.prepare(`DELETE FROM ${TABLES.setupIndex} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, entry.entryId);
-          return changes(database.prepare(`UPDATE ${TABLES.setupEntries} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, entry.entryId).changes);
+          database.prepare(`DELETE FROM ${TABLES.beforeCacheIndex} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, entry.entryId);
+          return changes(database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, entry.entryId).changes);
         }
         if (entry.state === DOCKER_CACHE_STATE.published) {
-          const active = database.prepare(`SELECT entry_id FROM ${TABLES.setupIndex} WHERE domain_id = ? AND setup_prefix_key = ?`).get(request.domainId, entry.setupPrefixKey);
-          if (active === undefined || exactString(record(active, "setup index").entry_id, "entry_id") === entry.entryId) {
-            database.prepare(`INSERT OR IGNORE INTO ${TABLES.setupIndex}(domain_id, setup_prefix_key, entry_id) VALUES (?, ?, ?)`).run(request.domainId, entry.setupPrefixKey, entry.entryId);
-            return changes(database.prepare(`UPDATE ${TABLES.setupEntries} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.indexed)} WHERE domain_id = ? AND entry_id = ? AND state = ${sqlLiteral(DOCKER_CACHE_STATE.published)}`).run(request.domainId, entry.entryId).changes);
+          const active = database.prepare(`SELECT entry_id FROM ${TABLES.beforeCacheIndex} WHERE domain_id = ? AND before_cache_key = ?`).get(request.domainId, entry.beforeCacheKey);
+          if (active === undefined || exactString(record(active, "before cache index").entry_id, "entry_id") === entry.entryId) {
+            database.prepare(`INSERT OR IGNORE INTO ${TABLES.beforeCacheIndex}(domain_id, before_cache_key, entry_id) VALUES (?, ?, ?)`).run(request.domainId, entry.beforeCacheKey, entry.entryId);
+            return changes(database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.indexed)} WHERE domain_id = ? AND entry_id = ? AND state = ${sqlLiteral(DOCKER_CACHE_STATE.published)}`).run(request.domainId, entry.entryId).changes);
           }
         }
-        const active = database.prepare(`SELECT entry_id FROM ${TABLES.setupIndex} WHERE domain_id = ? AND setup_prefix_key = ?`).get(request.domainId, entry.setupPrefixKey);
-        if (active === undefined || exactString(record(active, "setup index").entry_id, "entry_id") !== entry.entryId) {
-          return changes(database.prepare(`UPDATE ${TABLES.setupEntries} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, entry.entryId).changes);
+        const active = database.prepare(`SELECT entry_id FROM ${TABLES.beforeCacheIndex} WHERE domain_id = ? AND before_cache_key = ?`).get(request.domainId, entry.beforeCacheKey);
+        if (active === undefined || exactString(record(active, "before cache index").entry_id, "entry_id") !== entry.entryId) {
+          return changes(database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state = ${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id = ? AND entry_id = ?`).run(request.domainId, entry.entryId).changes);
         }
         return 0;
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-acquire-indexed": {
+    case "before-cache-acquire-indexed": {
       const entry = transaction(database, () => {
-        const found = database.prepare(`SELECT entry.* FROM ${TABLES.setupIndex} active JOIN ${TABLES.setupEntries} entry ON entry.domain_id=active.domain_id AND entry.entry_id=active.entry_id WHERE active.domain_id=? AND active.setup_prefix_key=?`)
-          .get(request.domainId, request.manifest.setupPrefixKey);
+        const found = database.prepare(`SELECT entry.* FROM ${TABLES.beforeCacheIndex} active JOIN ${TABLES.beforeCacheEntries} entry ON entry.domain_id=active.domain_id AND entry.entry_id=active.entry_id WHERE active.domain_id=? AND active.before_cache_key=?`)
+          .get(request.domainId, request.manifest.beforeCacheKey);
         if (found === undefined) return null;
-        const row = setupEntry(found);
+        const row = beforeCacheEntry(found);
         if (row.state !== DOCKER_CACHE_STATE.indexed || (request.expectedEntryId !== undefined && row.entryId !== request.expectedEntryId) || !manifestMatches(row, request.manifest)) return null;
-        database.prepare(`INSERT INTO ${TABLES.setupLeases}(
-          domain_id, lease_id, entry_id, setup_prefix_key, generation, kind, operation_id,
+        database.prepare(`INSERT INTO ${TABLES.beforeCacheLeases}(
+          domain_id, lease_id, entry_id, before_cache_key, generation, kind, operation_id,
           holder_host_id, holder_boot_id, holder_pid, holder_process_start,
           heartbeat_sequence, heartbeat_at, expires_at, state
         ) VALUES (?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_LEASE_KIND.handoff)}, ?, ?, ?, ?, ?, 0, ?, ?, ${sqlLiteral(DOCKER_CACHE_STATE.active)})`)
-          .run(request.domainId, request.leaseId, row.entryId, row.setupPrefixKey, row.generation, request.operationId, request.holder.hostId, request.holder.bootId, request.holder.pid, request.holder.processStart, request.now, request.expiresAt);
+          .run(request.domainId, request.leaseId, row.entryId, row.beforeCacheKey, row.generation, request.operationId, request.holder.hostId, request.holder.bootId, request.holder.pid, request.holder.processStart, request.now, request.expiresAt);
         return row;
       });
       return result(request.operation, { entry });
     }
-    case "setup-reserve": {
+    case "before-cache-reserve": {
       const reserved = transaction(database, () => {
-        const indexedRow = database.prepare(`SELECT entry.* FROM ${TABLES.setupIndex} active JOIN ${TABLES.setupEntries} entry ON entry.domain_id=active.domain_id AND entry.entry_id=active.entry_id WHERE active.domain_id=? AND active.setup_prefix_key=?`)
-          .get(request.domainId, request.manifest.setupPrefixKey);
+        const indexedRow = database.prepare(`SELECT entry.* FROM ${TABLES.beforeCacheIndex} active JOIN ${TABLES.beforeCacheEntries} entry ON entry.domain_id=active.domain_id AND entry.entry_id=active.entry_id WHERE active.domain_id=? AND active.before_cache_key=?`)
+          .get(request.domainId, request.manifest.beforeCacheKey);
         if (indexedRow !== undefined) {
-          if (!manifestMatches(setupEntry(indexedRow), request.manifest)) throw invalid("indexed setup-prefix generation does not match requested manifest");
+          if (!manifestMatches(beforeCacheEntry(indexedRow), request.manifest)) throw invalid("indexed before-cache generation does not match requested manifest");
         return { state: DOCKER_RESERVATION_DISPOSITION.contended, reason: DOCKER_CONTENTION_REASON.indexedGeneration } as const;
         }
-        const writerRow = database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id=? AND setup_prefix_key=? AND state IN (${sqlIn(DOCKER_SETUP_WRITER_STATES)}) ORDER BY generation DESC LIMIT 1`)
-          .get(request.domainId, request.manifest.setupPrefixKey);
-        const writer = writerRow === undefined ? undefined : setupEntry(writerRow);
+        const writerRow = database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND before_cache_key=? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_WRITER_STATES)}) ORDER BY generation DESC LIMIT 1`)
+          .get(request.domainId, request.manifest.beforeCacheKey);
+        const writer = writerRow === undefined ? undefined : beforeCacheEntry(writerRow);
         if (writer !== undefined) {
-          if (writer.operationId === request.operationId && !manifestMatches(writer, request.manifest)) throw invalid("operation id was reused with different setup-prefix metadata");
-          const lease = database.prepare(`SELECT 1 FROM ${TABLES.setupLeases} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_ACTIVE_SETUP_LEASE_STATES)}) LIMIT 1`).get(request.domainId, writer.entryId);
+          if (writer.operationId === request.operationId && !manifestMatches(writer, request.manifest)) throw invalid("operation id was reused with different before-cache metadata");
+          const lease = database.prepare(`SELECT 1 FROM ${TABLES.beforeCacheLeases} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) LIMIT 1`).get(request.domainId, writer.entryId);
           if (writer.state === DOCKER_CACHE_STATE.published || writer.state === DOCKER_CACHE_STATE.deleting || lease !== undefined) return { state: DOCKER_RESERVATION_DISPOSITION.contended, reason: DOCKER_CONTENTION_REASON.activeWriter } as const;
-          database.prepare(`UPDATE ${TABLES.setupEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_SETUP_RESERVABLE_STATES)})`).run(request.domainId, writer.entryId);
-          bump(database, request.domainId, "setupPrefixSafetyRevision");
+          database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_RESERVABLE_STATES)})`).run(request.domainId, writer.entryId);
+          bump(database, request.domainId, "beforeCacheSafetyRevision");
         }
-        const existingOperation = database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id=? AND setup_prefix_key=? AND operation_id=? ORDER BY generation DESC LIMIT 1`)
-          .get(request.domainId, request.manifest.setupPrefixKey, request.operationId);
-        if (existingOperation !== undefined && setupEntry(existingOperation).entryId !== writer?.entryId) throw invalid("operation id already settled for setup-prefix key");
-        const maximum = database.prepare(`SELECT COALESCE(MAX(generation),0) generation FROM ${TABLES.setupEntries} WHERE domain_id=? AND setup_prefix_key=?`)
-          .get(request.domainId, request.manifest.setupPrefixKey);
-        const fence = database.prepare(`SELECT next_generation FROM ${TABLES.setupFences} WHERE domain_id=? AND setup_prefix_key=?`)
-          .get(request.domainId, request.manifest.setupPrefixKey);
+        const existingOperation = database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND before_cache_key=? AND operation_id=? ORDER BY generation DESC LIMIT 1`)
+          .get(request.domainId, request.manifest.beforeCacheKey, request.operationId);
+        if (existingOperation !== undefined && beforeCacheEntry(existingOperation).entryId !== writer?.entryId) throw invalid("operation id already settled for before-cache key");
+        const maximum = database.prepare(`SELECT COALESCE(MAX(generation),0) generation FROM ${TABLES.beforeCacheEntries}`).get();
+        const fence = database.prepare(`SELECT next_generation FROM ${TABLES.beforeCacheFences} WHERE domain_id=? AND before_cache_key=?`)
+          .get(request.domainId, request.manifest.beforeCacheKey);
         const generation = Math.max(exactInteger(record(maximum, "generation").generation, "generation") + 1, fence === undefined ? 1 : exactInteger(record(fence, "generation fence").next_generation, "next_generation"));
         const entryIdentity = createHash("sha256")
-          .update(`${request.manifest.setupPrefixKey}\0${generation}\0${request.operationId}`)
+          .update(`${request.manifest.beforeCacheKey}\0${generation}\0${request.operationId}`)
           .digest("hex");
-        const entryId = `sandbox-setup-prefix:${entryIdentity}`;
-        database.prepare(`INSERT INTO ${TABLES.setupEntries}(
-          domain_id, entry_id, setup_prefix_key, base_image_id, image_id, declaration_json, declaration_digest,
-          setup_manifest_digest, storage_schema_revision, artifact_format_revision, dependency, change_frequency,
+        const entryId = `sandbox-before-cache:${entryIdentity}`;
+        database.prepare(`INSERT INTO ${TABLES.beforeCacheEntries}(
+          domain_id, entry_id, before_cache_key, base_identity, image_id, declaration_json, metadata_digest,
+          declaration_digest, storage_schema_revision, artifact_format_revision, dependency, change_frequency,
           generation, operation_id, created_at, last_successful_use_at, protected_until, state
-        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.setupDependency)}, ?, ?, ?, ?, NULL, ?, ${sqlLiteral(DOCKER_CACHE_STATE.building)})`)
-          .run(request.domainId, entryId, request.manifest.setupPrefixKey, request.manifest.baseImageId, request.manifest.declarationJson, request.manifest.declarationDigest, request.manifest.setupManifestDigest, request.manifest.storageSchemaRevision, request.manifest.artifactFormatRevision, request.manifest.changeFrequency, generation, request.operationId, request.now, request.protectedUntil);
-        database.prepare(`INSERT INTO ${TABLES.setupScopes}(domain_id, entry_id, replacement_scope) VALUES (?, ?, ?)`).run(request.domainId, entryId, request.replacementScope);
-        database.prepare(`INSERT INTO ${TABLES.setupLeases}(
-          domain_id, lease_id, entry_id, setup_prefix_key, generation, kind, operation_id,
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.beforeCacheDependency)}, ?, ?, ?, ?, NULL, ?, ${sqlLiteral(DOCKER_CACHE_STATE.building)})`)
+          .run(request.domainId, entryId, request.manifest.beforeCacheKey, request.manifest.baseIdentity, request.manifest.declarationJson, request.manifest.metadataDigest, request.manifest.declarationDigest, request.manifest.storageSchemaRevision, request.manifest.artifactFormatRevision, request.manifest.changeFrequency, generation, request.operationId, request.now, request.protectedUntil);
+        database.prepare(`INSERT INTO ${TABLES.beforeCacheScopes}(domain_id, entry_id, replacement_scope) VALUES (?, ?, ?)`).run(request.domainId, entryId, request.replacementScope);
+        database.prepare(`INSERT INTO ${TABLES.beforeCacheLeases}(
+          domain_id, lease_id, entry_id, before_cache_key, generation, kind, operation_id,
           holder_host_id, holder_boot_id, holder_pid, holder_process_start,
           heartbeat_sequence, heartbeat_at, expires_at, state
         ) VALUES (?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_LEASE_KIND.build)}, ?, ?, ?, ?, ?, 0, ?, ?, ${sqlLiteral(DOCKER_CACHE_STATE.active)})`)
-          .run(request.domainId, request.leaseId, entryId, request.manifest.setupPrefixKey, generation, request.operationId, request.holder.hostId, request.holder.bootId, request.holder.pid, request.holder.processStart, request.now, request.expiresAt);
-        const row = database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, entryId);
-        return { state: DOCKER_RESERVATION_DISPOSITION.reserved, entry: setupEntry(row) } as const;
+          .run(request.domainId, request.leaseId, entryId, request.manifest.beforeCacheKey, generation, request.operationId, request.holder.hostId, request.holder.bootId, request.holder.pid, request.holder.processStart, request.now, request.expiresAt);
+        const row = database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, entryId);
+        return { state: DOCKER_RESERVATION_DISPOSITION.reserved, entry: beforeCacheEntry(row) } as const;
       });
       return result(request.operation, reserved);
     }
-    case "setup-heartbeat": {
-      const receipt = database.prepare(`UPDATE ${TABLES.setupLeases} SET heartbeat_sequence=heartbeat_sequence+1, heartbeat_at=?, expires_at=? WHERE domain_id=? AND lease_id=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.active)}`)
+    case "before-cache-heartbeat": {
+      const receipt = database.prepare(`UPDATE ${TABLES.beforeCacheLeases} SET heartbeat_sequence=heartbeat_sequence+1, heartbeat_at=?, expires_at=? WHERE domain_id=? AND lease_id=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.active)}`)
         .run(request.heartbeatAt, request.expiresAt, request.domainId, request.leaseId);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-release-lease": {
-      const receipt = database.prepare(`DELETE FROM ${TABLES.setupLeases} WHERE domain_id=? AND lease_id=?`).run(request.domainId, request.leaseId);
+    case "before-cache-release-lease": {
+      const receipt = database.prepare(`DELETE FROM ${TABLES.beforeCacheLeases} WHERE domain_id=? AND lease_id=?`).run(request.domainId, request.leaseId);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-mark-unverified": {
+    case "before-cache-mark-unverified": {
       const count = transaction(database, () => {
-        database.prepare(`DELETE FROM ${TABLES.setupIndex} WHERE domain_id=? AND entry_id=?`).run(request.domainId, request.entryId);
-        const receipt = database.prepare(`UPDATE ${TABLES.setupEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id=? AND entry_id=? AND state NOT IN (${sqlIn(DOCKER_DELETE_TRANSITION_STATES)})`).run(request.domainId, request.entryId);
-        bump(database, request.domainId, "setupPrefixSafetyRevision");
+        database.prepare(`DELETE FROM ${TABLES.beforeCacheIndex} WHERE domain_id=? AND entry_id=?`).run(request.domainId, request.entryId);
+        const receipt = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.unverified)} WHERE domain_id=? AND entry_id=? AND state NOT IN (${sqlIn(DOCKER_DELETE_TRANSITION_STATES)})`).run(request.domainId, request.entryId);
+        bump(database, request.domainId, "beforeCacheSafetyRevision");
         return changes(receipt.changes);
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-publish-reserve": {
+    case "before-cache-publish-reserve": {
       const count = transaction(database, () => {
         const lock = database.prepare(`SELECT cache_kind, plan_id FROM ${TABLES.locks} WHERE domain_id=? AND image_id=?`).get(request.domainId, request.imageId);
-        if (lock !== undefined) throw invalid("exact setup-prefix image is fenced by an active GC plan");
-        const receipt = database.prepare(`UPDATE ${TABLES.setupEntries} SET image_id=?, state=${sqlLiteral(DOCKER_CACHE_STATE.published)} WHERE domain_id=? AND entry_id=? AND operation_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.building)}`)
+        if (lock !== undefined) throw invalid("exact before-cache image is fenced by an active GC plan");
+        const receipt = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET image_id=?, state=${sqlLiteral(DOCKER_CACHE_STATE.published)} WHERE domain_id=? AND entry_id=? AND operation_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.building)}`)
           .run(request.imageId, request.domainId, request.entryId, request.operationId, request.generation);
         if (receipt.changes !== 1) {
-          const current = database.prepare(`SELECT image_id,state FROM ${TABLES.setupEntries} WHERE domain_id=? AND entry_id=? AND operation_id=? AND generation=?`)
+          const current = database.prepare(`SELECT image_id,state FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND entry_id=? AND operation_id=? AND generation=?`)
             .get(request.domainId, request.entryId, request.operationId, request.generation);
-          const value = current === undefined ? undefined : record(current, "setup publication");
-          if (value === undefined || value.image_id !== request.imageId || !isFiniteValue(DOCKER_SETUP_PUBLICATION_STATES, String(value.state))) throw invalid("setup-prefix publication lost operation/generation fence");
+          const value = current === undefined ? undefined : record(current, "before cache publication");
+          if (value === undefined || value.image_id !== request.imageId || !isFiniteValue(DOCKER_BEFORE_CACHE_PUBLICATION_STATES, String(value.state))) throw invalid("before-cache publication lost operation/generation fence");
         }
         return changes(receipt.changes);
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-publish-settle": {
+    case "before-cache-publish-settle": {
       const count = transaction(database, () => {
-        const current = database.prepare(`SELECT state,image_id FROM ${TABLES.setupEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, request.entryId);
-        if (current === undefined) throw invalid("setup-prefix publication entry disappeared");
-        const value = record(current, "setup publication");
+        const current = database.prepare(`SELECT state,image_id FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, request.entryId);
+        if (current === undefined) throw invalid("before-cache publication entry disappeared");
+        const value = record(current, "before cache publication");
         if (value.state === DOCKER_CACHE_STATE.indexed && value.image_id === request.imageId) return 0;
-        if (value.state !== DOCKER_CACHE_STATE.published || value.image_id !== request.imageId) throw invalid("published setup-prefix identity changed before indexing");
-        database.prepare(`INSERT INTO ${TABLES.setupIndex}(domain_id,setup_prefix_key,entry_id) VALUES (?,?,?)`).run(request.domainId, request.setupPrefixKey, request.entryId);
-        const updated = database.prepare(`UPDATE ${TABLES.setupEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)} WHERE domain_id=? AND entry_id=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.published)}`).run(request.domainId, request.entryId);
-        database.prepare(`INSERT INTO ${TABLES.setupHeads}(domain_id,replacement_scope,entry_id) SELECT domain_id,replacement_scope,entry_id FROM ${TABLES.setupScopes} WHERE domain_id=? AND entry_id=? ON CONFLICT(domain_id,replacement_scope) DO UPDATE SET entry_id=excluded.entry_id`)
+        if (value.state !== DOCKER_CACHE_STATE.published || value.image_id !== request.imageId) throw invalid("published before-cache identity changed before indexing");
+        database.prepare(`INSERT INTO ${TABLES.beforeCacheIndex}(domain_id,before_cache_key,entry_id) VALUES (?,?,?)`).run(request.domainId, request.beforeCacheKey, request.entryId);
+        const updated = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)} WHERE domain_id=? AND entry_id=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.published)}`).run(request.domainId, request.entryId);
+        database.prepare(`INSERT INTO ${TABLES.beforeCacheHeads}(domain_id,replacement_scope,entry_id) SELECT domain_id,replacement_scope,entry_id FROM ${TABLES.beforeCacheScopes} WHERE domain_id=? AND entry_id=? ON CONFLICT(domain_id,replacement_scope) DO UPDATE SET entry_id=excluded.entry_id`)
           .run(request.domainId, request.entryId);
-        bump(database, request.domainId, "setupPrefixSafetyRevision");
+        bump(database, request.domainId, "beforeCacheSafetyRevision");
         return changes(updated.changes);
       });
       return result(request.operation, { changes: count });
     }
-    case "setup-prepare-root": {
-      const root = request.root;
-      const receipt = database.prepare(`INSERT INTO ${TABLES.setupRoots}(
-        domain_id,root_id,entry_id,setup_prefix_key,generation,sandbox_id,sandbox_resource_identity,operation_id,state,created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(request.domainId, root.rootId, root.entryId, root.setupPrefixKey, root.generation, root.sandboxId, root.sandboxResourceIdentity, root.operationId, root.state, root.createdAt);
+    case "before-cache-prepare-hold": {
+      const hold = request.hold;
+      const receipt = database.prepare(`INSERT INTO ${TABLES.beforeCacheHolds}(
+        domain_id,hold_id,entry_id,before_cache_key,generation,sandbox_id,sandbox_resource_identity,operation_id,state,created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(request.domainId, hold.holdId, hold.entryId, hold.beforeCacheKey, hold.generation, hold.sandboxId, hold.sandboxResourceIdentity, hold.operationId, hold.state, hold.createdAt);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-activate-root": {
-      const receipt = database.prepare(`UPDATE ${TABLES.setupRoots} SET sandbox_id=?,sandbox_resource_identity=?,state=${sqlLiteral(DOCKER_CACHE_STATE.active)} WHERE domain_id=? AND root_id=? AND entry_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.prepared)}`)
-        .run(request.containerId, request.containerId, request.domainId, request.rootId, request.entryId, request.generation);
+    case "before-cache-activate-hold": {
+      const receipt = database.prepare(`UPDATE ${TABLES.beforeCacheHolds} SET sandbox_id=?,sandbox_resource_identity=?,state=${sqlLiteral(DOCKER_CACHE_STATE.active)} WHERE domain_id=? AND hold_id=? AND entry_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.prepared)}`)
+        .run(request.containerId, request.containerId, request.domainId, request.holdId, request.entryId, request.generation);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-remove-root": {
-      const receipt = database.prepare(`DELETE FROM ${TABLES.setupRoots} WHERE domain_id=? AND root_id=?`).run(request.domainId, request.rootId);
+    case "before-cache-remove-hold": {
+      const receipt = database.prepare(`DELETE FROM ${TABLES.beforeCacheHolds} WHERE domain_id=? AND hold_id=?`).run(request.domainId, request.holdId);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-begin-root-release": {
-      const receipt = database.prepare(`UPDATE ${TABLES.setupRoots} SET state=${sqlLiteral(DOCKER_CACHE_STATE.releasing)} WHERE domain_id=? AND root_id=? AND entry_id=? AND sandbox_resource_identity=? AND state IN (${sqlIn(DOCKER_SETUP_ROOT_STATES)})`)
-        .run(request.domainId, request.rootId, request.entryId, request.containerId);
+    case "before-cache-begin-hold-release": {
+      const receipt = database.prepare(`UPDATE ${TABLES.beforeCacheHolds} SET state=${sqlLiteral(DOCKER_CACHE_STATE.releasing)} WHERE domain_id=? AND hold_id=? AND entry_id=? AND sandbox_resource_identity=? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_HOLD_STATES)})`)
+        .run(request.domainId, request.holdId, request.entryId, request.containerId);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-finish-root-release": {
-      const receipt = database.prepare(`DELETE FROM ${TABLES.setupRoots} WHERE domain_id=? AND root_id=? AND entry_id=? AND sandbox_resource_identity=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.releasing)}`)
-        .run(request.domainId, request.rootId, request.entryId, request.containerId);
+    case "before-cache-finish-hold-release": {
+      const receipt = database.prepare(`DELETE FROM ${TABLES.beforeCacheHolds} WHERE domain_id=? AND hold_id=? AND entry_id=? AND sandbox_resource_identity=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.releasing)}`)
+        .run(request.domainId, request.holdId, request.entryId, request.containerId);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-mark-used": {
-      const receipt = database.prepare(`UPDATE ${TABLES.setupEntries} SET last_successful_use_at=? WHERE domain_id=? AND entry_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)}`)
+    case "before-cache-mark-used": {
+      const receipt = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET last_successful_use_at=? WHERE domain_id=? AND entry_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)}`)
         .run(request.usedAt, request.domainId, request.entryId, request.generation);
       return result(request.operation, { changes: changes(receipt.changes) });
     }
-    case "setup-image-claims": {
+    case "before-cache-image-claims": {
       const gcLocked = database.prepare(`SELECT 1 FROM ${TABLES.locks} WHERE domain_id=? AND image_id=?`).get(request.domainId, request.imageId) !== undefined;
       const taskBuildClaim = database.prepare(`SELECT 1 FROM ${TABLES.taskEntries} WHERE domain_id=? AND image_id=? AND state!=${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, request.imageId) !== undefined;
-      const siblingSetupPrefixClaim = database.prepare(`SELECT 1 FROM ${TABLES.setupEntries} WHERE domain_id=? AND image_id=? AND entry_id!=? AND state!=${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, request.imageId, request.exceptEntryId) !== undefined;
-      return result(request.operation, { gcLocked, taskBuildClaim, siblingSetupPrefixClaim });
+      const siblingBeforeCacheClaim = database.prepare(`SELECT 1 FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND image_id=? AND entry_id!=? AND state!=${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, request.imageId, request.exceptEntryId) !== undefined;
+      return result(request.operation, { gcLocked, taskBuildClaim, siblingBeforeCacheClaim });
     }
-    case "setup-list-reclaim-candidates": {
-      const entries = database.prepare(`SELECT entry.* FROM ${TABLES.setupEntries} entry JOIN ${TABLES.setupScopes} scope ON scope.domain_id=entry.domain_id AND scope.entry_id=entry.entry_id JOIN ${TABLES.setupHeads} head ON head.domain_id=scope.domain_id AND head.replacement_scope=scope.replacement_scope WHERE entry.domain_id=? AND entry.state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)} AND (? IS NULL OR scope.replacement_scope=?) AND (? IS NULL OR entry.entry_id!=?) AND entry.entry_id!=head.entry_id ORDER BY entry.created_at,entry.entry_id`)
+    case "before-cache-list-reclaim-candidates": {
+      const entries = database.prepare(`SELECT entry.* FROM ${TABLES.beforeCacheEntries} entry JOIN ${TABLES.beforeCacheScopes} scope ON scope.domain_id=entry.domain_id AND scope.entry_id=entry.entry_id JOIN ${TABLES.beforeCacheHeads} head ON head.domain_id=scope.domain_id AND head.replacement_scope=scope.replacement_scope WHERE entry.domain_id=? AND entry.state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)} AND (? IS NULL OR scope.replacement_scope=?) AND (? IS NULL OR entry.entry_id!=?) AND entry.entry_id!=head.entry_id ORDER BY entry.created_at,entry.entry_id`)
         .all(request.domainId, request.replacementScope ?? null, request.replacementScope ?? null, request.exceptEntryId ?? null, request.exceptEntryId ?? null)
-        .map(setupEntry);
+        .map(beforeCacheEntry);
       return result(request.operation, { entries: Object.freeze(entries) });
     }
-    case "setup-reserve-delete": {
+    case "before-cache-reserve-delete": {
       const outcome = transaction(database, () => {
-        const found = database.prepare(`SELECT * FROM ${TABLES.setupEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, request.entryId);
+        const found = database.prepare(`SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, request.entryId);
         if (found === undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.entryMissing } as const;
-        const entry = setupEntry(found);
+        const entry = beforeCacheEntry(found);
         if (entry.state !== DOCKER_CACHE_STATE.indexed || entry.imageId === null) return { reserved: false, reason: DOCKER_RESERVATION_REASON.entryChanged } as const;
-        const activeLease = database.prepare(`SELECT 1 FROM ${TABLES.setupLeases} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_ACTIVE_SETUP_LEASE_STATES)}) LIMIT 1`).get(request.domainId, entry.entryId);
-        const activeRoot = database.prepare(`SELECT 1 FROM ${TABLES.setupRoots} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_SETUP_ROOT_STATES)}) LIMIT 1`).get(request.domainId, entry.entryId);
+        const activeLease = database.prepare(`SELECT 1 FROM ${TABLES.beforeCacheLeases} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) LIMIT 1`).get(request.domainId, entry.entryId);
+        const activeHold = database.prepare(`SELECT 1 FROM ${TABLES.beforeCacheHolds} WHERE domain_id=? AND entry_id=? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_HOLD_STATES)}) LIMIT 1`).get(request.domainId, entry.entryId);
         const taskClaim = database.prepare(`SELECT 1 FROM ${TABLES.taskEntries} WHERE domain_id=? AND image_id=? AND state!=${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, entry.imageId);
-        const siblingClaim = database.prepare(`SELECT 1 FROM ${TABLES.setupEntries} WHERE domain_id=? AND image_id=? AND entry_id!=? AND state!=${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, entry.imageId, entry.entryId);
-        if (activeLease !== undefined || activeRoot !== undefined || taskClaim !== undefined || siblingClaim !== undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.activeOwnerOrCrossKindClaim } as const;
+        const siblingClaim = database.prepare(`SELECT 1 FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND image_id=? AND entry_id!=? AND state!=${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} LIMIT 1`).get(request.domainId, entry.imageId, entry.entryId);
+        if (activeLease !== undefined || activeHold !== undefined || taskClaim !== undefined || siblingClaim !== undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.activeOwnerOrCrossKindClaim } as const;
         if (database.prepare(`SELECT 1 FROM ${TABLES.locks} WHERE domain_id=? AND image_id=?`).get(request.domainId, entry.imageId) !== undefined) return { reserved: false, reason: DOCKER_RESERVATION_REASON.activeDeleteConflict } as const;
-        database.prepare(`INSERT INTO ${TABLES.locks}(domain_id,image_id,cache_kind,plan_id,entry_id,entry_generation,holder_pid,holder_boot_id,holder_process_start,created_at) VALUES (?,?,${sqlLiteral(DOCKER_CACHE_KIND.sandboxSetupPrefix)},?,?,?,?,?,?,?)`)
+        database.prepare(`INSERT INTO ${TABLES.locks}(domain_id,image_id,cache_kind,plan_id,entry_id,entry_generation,holder_pid,holder_boot_id,holder_process_start,created_at) VALUES (?,?,${sqlLiteral(DOCKER_CACHE_KIND.sandboxBeforeCache)},?,?,?,?,?,?,?)`)
           .run(request.domainId, entry.imageId, request.planId, entry.entryId, entry.generation, request.holder.pid, request.holder.bootId, request.holder.processStart, request.createdAt);
-        const marked = database.prepare(`UPDATE ${TABLES.setupEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.deleting)} WHERE domain_id=? AND entry_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)}`).run(request.domainId, entry.entryId, entry.generation);
-        if (marked.changes !== 1) throw invalid("setup-prefix generation changed before deleting transition");
-        database.prepare(`DELETE FROM ${TABLES.setupIndex} WHERE domain_id=? AND entry_id=?`).run(request.domainId, entry.entryId);
+        const marked = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state=${sqlLiteral(DOCKER_CACHE_STATE.deleting)} WHERE domain_id=? AND entry_id=? AND generation=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.indexed)}`).run(request.domainId, entry.entryId, entry.generation);
+        if (marked.changes !== 1) throw invalid("before-cache generation changed before deleting transition");
+        database.prepare(`DELETE FROM ${TABLES.beforeCacheIndex} WHERE domain_id=? AND entry_id=?`).run(request.domainId, entry.entryId);
         return { reserved: true } as const;
       });
       return result(request.operation, outcome);
     }
-    case "setup-settle-delete": {
+    case "before-cache-settle-delete": {
       const count = transaction(database, () => {
-        const updated = database.prepare(`UPDATE ${TABLES.setupEntries} SET state=? WHERE domain_id=? AND entry_id=? AND generation=? AND image_id=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.deleting)}`)
+        const updated = database.prepare(`UPDATE ${TABLES.beforeCacheEntries} SET state=? WHERE domain_id=? AND entry_id=? AND generation=? AND image_id=? AND state=${sqlLiteral(DOCKER_CACHE_STATE.deleting)}`)
           .run(request.state, request.domainId, request.entryId, request.generation, request.imageId);
-        database.prepare(`DELETE FROM ${TABLES.locks} WHERE domain_id=? AND image_id=? AND cache_kind=${sqlLiteral(DOCKER_CACHE_KIND.sandboxSetupPrefix)} AND entry_id=? AND entry_generation=?`)
+        database.prepare(`DELETE FROM ${TABLES.locks} WHERE domain_id=? AND image_id=? AND cache_kind=${sqlLiteral(DOCKER_CACHE_KIND.sandboxBeforeCache)} AND entry_id=? AND entry_generation=?`)
           .run(request.domainId, request.imageId, request.entryId, request.generation);
         if (request.state === DOCKER_CACHE_STATE.indexed) {
-          const row = database.prepare(`SELECT setup_prefix_key FROM ${TABLES.setupEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, request.entryId);
-          if (row !== undefined) database.prepare(`INSERT OR IGNORE INTO ${TABLES.setupIndex}(domain_id,setup_prefix_key,entry_id) VALUES (?,?,?)`).run(request.domainId, exactString(record(row, "setup key").setup_prefix_key, "setup_prefix_key"), request.entryId);
+          const row = database.prepare(`SELECT before_cache_key FROM ${TABLES.beforeCacheEntries} WHERE domain_id=? AND entry_id=?`).get(request.domainId, request.entryId);
+          if (row !== undefined) database.prepare(`INSERT OR IGNORE INTO ${TABLES.beforeCacheIndex}(domain_id,before_cache_key,entry_id) VALUES (?,?,?)`).run(request.domainId, exactString(record(row, "before cache key").before_cache_key, "before_cache_key"), request.entryId);
         }
-        bump(database, request.domainId, "setupPrefixSafetyRevision");
+        bump(database, request.domainId, "beforeCacheSafetyRevision");
         return changes(updated.changes);
       });
       return result(request.operation, { changes: count });
@@ -1151,9 +1158,9 @@ function holderValue(value: unknown): value is DockerHolderIdentity {
   return isObject(value) && strings(value, ["hostId", "bootId", "processStart"]) && Number.isSafeInteger(value.pid);
 }
 
-function manifestValue(value: unknown): value is DockerSetupPrefixManifestFields {
+function manifestValue(value: unknown): value is DockerBeforeCacheManifestFields {
   return isObject(value) && strings(value, [
-    "setupPrefixKey", "baseImageId", "declarationJson", "declarationDigest", "setupManifestDigest",
+    "beforeCacheKey", "baseIdentity", "declarationJson", "metadataDigest", "declarationDigest",
     "storageSchemaRevision", "artifactFormatRevision",
   ]) && typeof value.changeFrequency === "number" && Number.isFinite(value.changeFrequency) && value.changeFrequency >= 0;
 }
@@ -1165,21 +1172,21 @@ function taskEntryValue(value: unknown): value is DockerTaskBuildEntryRow {
     Number.isSafeInteger(value.generation) && isFiniteValue(DOCKER_TASK_ENTRY_STATES, String(value.state));
 }
 
-function setupEntryValue(value: unknown): value is DockerSetupPrefixEntryRow {
+function beforeCacheEntryValue(value: unknown): value is DockerBeforeCacheEntryRow {
   return isObject(value) && strings(value, [
-    "entryId", "setupPrefixKey", "baseImageId", "declarationJson", "declarationDigest", "setupManifestDigest",
+    "entryId", "beforeCacheKey", "baseIdentity", "declarationJson", "metadataDigest", "declarationDigest",
     "storageSchemaRevision", "artifactFormatRevision", "dependency", "operationId", "createdAt", "protectedUntil", "state",
   ]) && (value.imageId === null || typeof value.imageId === "string") &&
     (value.lastSuccessfulUseAt === null || typeof value.lastSuccessfulUseAt === "string") &&
-    value.dependency === DOCKER_CACHE_DOMAIN.setupDependency && typeof value.changeFrequency === "number" && Number.isFinite(value.changeFrequency) &&
+    value.dependency === DOCKER_CACHE_DOMAIN.beforeCacheDependency && typeof value.changeFrequency === "number" && Number.isFinite(value.changeFrequency) &&
     Number.isSafeInteger(value.generation) &&
-    isFiniteValue(DOCKER_SETUP_ENTRY_STATES, String(value.state));
+    isFiniteValue(DOCKER_BEFORE_CACHE_ENTRY_STATES, String(value.state));
 }
 
-function setupRootValue(value: unknown): value is DockerSetupPrefixRootRow {
+function beforeCacheHoldValue(value: unknown): value is DockerBeforeCacheHoldRow {
   return isObject(value) && strings(value, [
-    "rootId", "entryId", "setupPrefixKey", "sandboxId", "sandboxResourceIdentity", "operationId", "state", "createdAt",
-  ]) && Number.isSafeInteger(value.generation) && isFiniteValue(DOCKER_SETUP_ROOT_STATES, String(value.state));
+    "holdId", "entryId", "beforeCacheKey", "sandboxId", "sandboxResourceIdentity", "operationId", "state", "createdAt",
+  ]) && Number.isSafeInteger(value.generation) && isFiniteValue(DOCKER_BEFORE_CACHE_HOLD_STATES, String(value.state));
 }
 
 function gcLockValue(value: unknown): value is DockerImageGcLockRow {
@@ -1226,7 +1233,7 @@ export function isDockerCacheRepositoryRequest(value: unknown): value is DockerC
       return strings(value, ["domainId"]) && stringArray(value.leaseIds) && stringArray(value.rootIds);
     case "task-read-safety-revision":
     case "task-list-delete-locks":
-    case "setup-startup-snapshot":
+    case "before-cache-startup-snapshot":
       return strings(value, ["domainId"]);
     case "task-save-plan":
       return strings(value, ["domainId", "planId", "createdAt", "expiresAt", "payload", "digest"]);
@@ -1242,44 +1249,44 @@ export function isDockerCacheRepositoryRequest(value: unknown): value is DockerC
     case "task-recover-delete":
       return strings(value, ["domainId", "buildKey", "state"]) && gcLockValue(value.lock) &&
         isFiniteValue(DOCKER_DELETE_RECOVERY_STATES, String(value.state));
-    case "setup-prune-leases":
+    case "before-cache-prune-leases":
       return strings(value, ["domainId"]) && stringArray(value.deleteLeaseIds) && stringArray(value.unverifiableLeaseIds);
-    case "setup-startup-isolate":
+    case "before-cache-startup-isolate":
       return strings(value, ["domainId", "entryId"]) && (value.imageId === null || typeof value.imageId === "string");
-    case "setup-startup-validate":
+    case "before-cache-startup-validate":
       return strings(value, ["domainId", "entryId"]) && typeof value.valid === "boolean";
-    case "setup-acquire-indexed":
+    case "before-cache-acquire-indexed":
       return strings(value, ["domainId", "leaseId", "operationId", "now", "expiresAt"]) && optionalString(value.expectedEntryId) &&
         manifestValue(value.manifest) && holderValue(value.holder);
-    case "setup-reserve":
+    case "before-cache-reserve":
       return strings(value, ["domainId", "replacementScope", "operationId", "leaseId", "now", "protectedUntil", "expiresAt"]) &&
         manifestValue(value.manifest) && holderValue(value.holder);
-    case "setup-heartbeat":
+    case "before-cache-heartbeat":
       return strings(value, ["domainId", "leaseId", "heartbeatAt", "expiresAt"]);
-    case "setup-release-lease":
-    case "setup-mark-unverified":
-    case "setup-remove-root":
-      return strings(value, ["domainId", value.operation === "setup-remove-root" ? "rootId" : value.operation === "setup-release-lease" ? "leaseId" : "entryId"]);
-    case "setup-publish-reserve":
+    case "before-cache-release-lease":
+    case "before-cache-mark-unverified":
+    case "before-cache-remove-hold":
+      return strings(value, ["domainId", value.operation === "before-cache-remove-hold" ? "holdId" : value.operation === "before-cache-release-lease" ? "leaseId" : "entryId"]);
+    case "before-cache-publish-reserve":
       return strings(value, ["domainId", "entryId", "operationId", "imageId"]) && Number.isSafeInteger(value.generation);
-    case "setup-publish-settle":
-      return strings(value, ["domainId", "entryId", "setupPrefixKey", "imageId"]);
-    case "setup-prepare-root":
-      return strings(value, ["domainId"]) && setupRootValue(value.root);
-    case "setup-activate-root":
-      return strings(value, ["domainId", "rootId", "entryId", "containerId"]) && Number.isSafeInteger(value.generation);
-    case "setup-begin-root-release":
-    case "setup-finish-root-release":
-      return strings(value, ["domainId", "rootId", "entryId", "containerId"]);
-    case "setup-mark-used":
+    case "before-cache-publish-settle":
+      return strings(value, ["domainId", "entryId", "beforeCacheKey", "imageId"]);
+    case "before-cache-prepare-hold":
+      return strings(value, ["domainId"]) && beforeCacheHoldValue(value.hold);
+    case "before-cache-activate-hold":
+      return strings(value, ["domainId", "holdId", "entryId", "containerId"]) && Number.isSafeInteger(value.generation);
+    case "before-cache-begin-hold-release":
+    case "before-cache-finish-hold-release":
+      return strings(value, ["domainId", "holdId", "entryId", "containerId"]);
+    case "before-cache-mark-used":
       return strings(value, ["domainId", "entryId", "usedAt"]) && Number.isSafeInteger(value.generation);
-    case "setup-image-claims":
+    case "before-cache-image-claims":
       return strings(value, ["domainId", "imageId", "exceptEntryId"]);
-    case "setup-list-reclaim-candidates":
+    case "before-cache-list-reclaim-candidates":
       return strings(value, ["domainId"]) && optionalString(value.replacementScope) && optionalString(value.exceptEntryId);
-    case "setup-reserve-delete":
+    case "before-cache-reserve-delete":
       return strings(value, ["domainId", "entryId", "planId", "createdAt"]) && holderValue(value.holder);
-    case "setup-settle-delete":
+    case "before-cache-settle-delete":
       return strings(value, ["domainId", "entryId", "imageId", "state"]) && Number.isSafeInteger(value.generation) &&
         isFiniteValue(DOCKER_DELETE_SETTLEMENT_STATES, String(value.state));
     default:
@@ -1309,12 +1316,12 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
         Array.isArray(value.taskRoots) && value.taskRoots.every((root) =>
           isObject(root) && strings(root, ["rootId", "buildKey", "holderBootId", "holderProcessStart", "state", "createdAt"]) &&
             Number.isSafeInteger(root.holderPid) && Number.isSafeInteger(root.generation)) &&
-        Array.isArray(value.setupEntries) && value.setupEntries.every(setupEntryValue) &&
-        Array.isArray(value.setupLeases) && value.setupLeases.every((lease) => isObject(lease) && strings(lease, [
-          "leaseId", "entryId", "setupPrefixKey", "kind", "operationId", "holderHostId", "holderBootId",
+        Array.isArray(value.beforeCacheEntries) && value.beforeCacheEntries.every(beforeCacheEntryValue) &&
+        Array.isArray(value.beforeCacheLeases) && value.beforeCacheLeases.every((lease) => isObject(lease) && strings(lease, [
+          "leaseId", "entryId", "beforeCacheKey", "kind", "operationId", "holderHostId", "holderBootId",
           "holderProcessStart", "heartbeatAt", "expiresAt", "state",
         ]) && Number.isSafeInteger(lease.generation) && Number.isSafeInteger(lease.holderPid) && Number.isSafeInteger(lease.heartbeatSequence)) &&
-        Array.isArray(value.setupRoots) && value.setupRoots.every(setupRootValue);
+        Array.isArray(value.beforeCacheHolds) && value.beforeCacheHolds.every(beforeCacheHoldValue);
     case "task-get-indexed":
       return value.entry === null || taskEntryValue(value.entry);
     case "task-list-entries":
@@ -1333,25 +1340,25 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
         (value.plan.outcome === null || typeof value.plan.outcome === "string"));
     case "task-list-delete-locks":
       return Array.isArray(value.locks) && value.locks.every(gcLockValue);
-    case "setup-startup-snapshot":
-      return Array.isArray(value.entries) && value.entries.every(setupEntryValue) && Array.isArray(value.leases) &&
+    case "before-cache-startup-snapshot":
+      return Array.isArray(value.entries) && value.entries.every(beforeCacheEntryValue) && Array.isArray(value.leases) &&
         value.leases.every((lease) => isObject(lease) && strings(lease, [
-          "leaseId", "entryId", "setupPrefixKey", "kind", "operationId", "holderHostId", "holderBootId",
+          "leaseId", "entryId", "beforeCacheKey", "kind", "operationId", "holderHostId", "holderBootId",
           "holderProcessStart", "heartbeatAt", "expiresAt", "state",
         ]) && Number.isSafeInteger(lease.generation) && Number.isSafeInteger(lease.holderPid) && Number.isSafeInteger(lease.heartbeatSequence)) &&
         Array.isArray(value.locks) && value.locks.every(gcLockValue);
-    case "setup-acquire-indexed":
-      return value.entry === null || setupEntryValue(value.entry);
-    case "setup-reserve":
-      return value.state === DOCKER_RESERVATION_DISPOSITION.reserved ? setupEntryValue(value.entry) :
+    case "before-cache-acquire-indexed":
+      return value.entry === null || beforeCacheEntryValue(value.entry);
+    case "before-cache-reserve":
+      return value.state === DOCKER_RESERVATION_DISPOSITION.reserved ? beforeCacheEntryValue(value.entry) :
         value.state === DOCKER_RESERVATION_DISPOSITION.contended && isFiniteValue(DOCKER_CONTENTION_REASONS, String(value.reason));
-    case "setup-image-claims":
-      return typeof value.gcLocked === "boolean" && typeof value.taskBuildClaim === "boolean" && typeof value.siblingSetupPrefixClaim === "boolean";
-    case "setup-list-reclaim-candidates":
-      return Array.isArray(value.entries) && value.entries.every(setupEntryValue);
+    case "before-cache-image-claims":
+      return typeof value.gcLocked === "boolean" && typeof value.taskBuildClaim === "boolean" && typeof value.siblingBeforeCacheClaim === "boolean";
+    case "before-cache-list-reclaim-candidates":
+      return Array.isArray(value.entries) && value.entries.every(beforeCacheEntryValue);
     case "task-acquire-use":
     case "task-reserve-delete":
-    case "setup-reserve-delete":
+    case "before-cache-reserve-delete":
       return typeof value.reserved === "boolean" &&
         (value.reason === undefined || isFiniteValue(DOCKER_RESERVATION_REASONS, String(value.reason)));
     case "task-mark-unverified":
@@ -1363,21 +1370,21 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
     case "task-save-plan-outcome":
     case "task-settle-delete":
     case "task-recover-delete":
-    case "setup-prune-leases":
-    case "setup-startup-isolate":
-    case "setup-startup-validate":
-    case "setup-heartbeat":
-    case "setup-release-lease":
-    case "setup-mark-unverified":
-    case "setup-publish-reserve":
-    case "setup-publish-settle":
-    case "setup-prepare-root":
-    case "setup-activate-root":
-    case "setup-remove-root":
-    case "setup-begin-root-release":
-    case "setup-finish-root-release":
-    case "setup-mark-used":
-    case "setup-settle-delete":
+    case "before-cache-prune-leases":
+    case "before-cache-startup-isolate":
+    case "before-cache-startup-validate":
+    case "before-cache-heartbeat":
+    case "before-cache-release-lease":
+    case "before-cache-mark-unverified":
+    case "before-cache-publish-reserve":
+    case "before-cache-publish-settle":
+    case "before-cache-prepare-hold":
+    case "before-cache-activate-hold":
+    case "before-cache-remove-hold":
+    case "before-cache-begin-hold-release":
+    case "before-cache-finish-hold-release":
+    case "before-cache-mark-used":
+    case "before-cache-settle-delete":
       return Number.isSafeInteger(value.changes);
     default:
       return false;

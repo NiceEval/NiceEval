@@ -125,7 +125,7 @@ const CacheEligibilitySchema = Schema.Union([
 
 const CacheSchema = Schema.Struct({
   lookup: Schema.Literal("not-probed"),
-  capability: Schema.Literals(["persistent", "invocation-local", "unsupported"]),
+  capability: Schema.Literals(["run-prepared", "attempt-captured", "unsupported"]),
   prefixIdentity: Schema.optional(Schema.String),
   capabilityReason: Schema.optional(Schema.String),
   runtime: Schema.Struct({ status: Schema.Literal("pending"), finalKey: Schema.Literal("not-probed") }),
@@ -248,7 +248,7 @@ const BeforeCachePlanSchema: Schema.Codec<BeforeCachePlan> = Schema.Struct({
   nodes: Schema.Array(Schema.Struct({
     prefixIdentity: Schema.String,
     lookup: Schema.Literal("not-probed"),
-    capability: Schema.Literals(["persistent", "invocation-local", "unsupported"]),
+    capability: Schema.Literals(["run-prepared", "attempt-captured", "unsupported"]),
     eligibility: CacheEligibilitySchema,
     consumers: Schema.Array(Schema.Struct({ experimentId: Schema.String, evalId: Schema.String })),
   })),

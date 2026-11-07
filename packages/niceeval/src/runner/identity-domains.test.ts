@@ -13,7 +13,7 @@ import { linkPluginPair, preparePluginRun } from "../plugin/link.ts";
 import { discoverEval, type AgentRun } from "./types.ts";
 import { configIdentityForRun } from "./config-identity.ts";
 import { fingerprintWithManifest, hashConfigIdentity } from "./fingerprint.ts";
-import { slotExecutionIdentityDigestHex } from "./execution-identity.ts";
+import { hashIdentityPayload, slotExecutionIdentityDigestHex } from "./execution-identity.ts";
 import {
   CURRENT_IDENTITY_DOMAINS,
   IDENTITY_DOMAIN_CHANGES,
@@ -153,9 +153,37 @@ describe("identity domain release contract", () => {
     expect(Object.isFrozen(samples[0].input.configIdentity)).toBe(true);
   });
 
+  it("reconstructs the retired provider cache slot without changing execution inputs", async () => {
+    const sample = await calculateSample(releaseSnapshot.samples[0].fixture);
+    const providerPlan = {
+      version: 3, providerModule: "niceeval/docker-image",
+      capabilities: { retention: { _tag: "Suspendable" }, reuse: { _tag: "Supported" }, sessionLimit: { _tag: "Unlimited" } },
+    };
+    const pairPlan = { mode: "sandbox", providerPlan };
+    const input = { ...sample.input, fingerprintPayload: { ...sample.input.fingerprintPayload, pairPlan } };
+    const resolution = resolveIdentityDomains(side({ fingerprintAlgorithm: 3 }), side());
+    expect(resolution.kind).toBe("encoding-only");
+    if (resolution.kind !== "encoding-only") throw new Error("Missing provider identity transition");
+    const oldPayload = { ...input.fingerprintPayload, pairPlan: {
+      ...pairPlan, providerPlan: { ...providerPlan, capabilities: {
+        ...providerPlan.capabilities, setupPrefix: { _tag: "Persistent", coverage: "all" },
+      } },
+    } };
+    const expected = slotExecutionIdentityDigestHex({
+      experimentId: input.experimentId, evalId: input.evalId, attempt: input.attempt,
+      input: { domain: "niceeval.input/fingerprint-v1", value: hashIdentityPayload(oldPayload) },
+      config: { domain: "niceeval.config/identity-v1", value: sample.digests.configIdentity }, timeout: input.timeout,
+    });
+    expect(rebuildOriginExecutionDigest(resolution, input)).toBe(expected);
+    expect(providerPlan.capabilities).not.toHaveProperty("setupPrefix");
+    expect(rebuildOriginExecutionDigest(resolution, { ...input, fingerprintPayload: {
+      ...input.fingerprintPayload, pairPlan: { ...pairPlan, providerPlan: { ...providerPlan, providerModule: "unknown/provider" } },
+    } })).toBeUndefined();
+  });
+
   it("rejects an unregistered domain, same-domain drift and absent or incorrect old computation", async () => {
     const sample = await calculateSample(releaseSnapshot.samples[0].fixture);
-    const oldSnapshot: Snapshot = { ...releaseSnapshot, samples: [{ ...releaseSnapshot.samples[0], digests: sample.digests }] };
+    const oldSnapshot: Snapshot = { ...releaseSnapshot, samples: [{ ...releaseSnapshot.samples[0], domains: CURRENT_IDENTITY_DOMAINS, digests: sample.digests }] };
     const newer = { ...CURRENT_IDENTITY_DOMAINS, inputIdentity: 2 };
     const entry = encoding(1, 2);
     const current = {

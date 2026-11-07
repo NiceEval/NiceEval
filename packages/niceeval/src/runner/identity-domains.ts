@@ -1,4 +1,5 @@
 import type { JsonValue } from "../types.ts";
+import { fingerprintPayloadWithHistoricalProviderCache } from "./historical-provider-identity.ts";
 import type { ConfigIdentity } from "./config-identity.ts";
 import { hashIdentityPayload, slotExecutionIdentityDigestHex } from "./execution-identity.ts";
 
@@ -12,7 +13,7 @@ export interface IdentityDomains {
 }
 
 export const CURRENT_IDENTITY_DOMAINS: IdentityDomains = Object.freeze({
-  fingerprintAlgorithm: 3,
+  fingerprintAlgorithm: 4,
   fingerprintCoverage: 2,
   inputIdentity: 1,
   configIdentity: 1,
@@ -71,7 +72,20 @@ export type IdentityDomainChange = (
   | { readonly effect: "behavior-changing" }
 );
 
-export const IDENTITY_DOMAIN_CHANGES: readonly IdentityDomainChange[] = Object.freeze([]);
+export const IDENTITY_DOMAIN_CHANGES: readonly IdentityDomainChange[] = Object.freeze([{
+  kind: "core",
+  name: "provider-before-cache-capability/3-to-4",
+  revision: "fingerprintAlgorithm",
+  from: 3,
+  to: 4,
+  effect: "encoding-only",
+  summary: "Exclude transparent Before cache capabilities from provider execution identity.",
+  applies: (input: IdentityRebuildInput) => fingerprintPayloadWithHistoricalProviderCache(input) !== undefined,
+  rebuild: (input: IdentityRebuildInput) => ({
+    ...input,
+    fingerprintPayload: fingerprintPayloadWithHistoricalProviderCache(input)!,
+  }),
+}]);
 
 export interface IdentityDomainSide {
   readonly domains: IdentityDomains;

@@ -32,6 +32,7 @@ export const ExpTerminalSummarySchema = Schema.Struct({
     total: NonNegativeIntegerSchema,
     hit: NonNegativeIntegerSchema,
     prepared: NonNegativeIntegerSchema,
+    degraded: NonNegativeIntegerSchema,
     failed: NonNegativeIntegerSchema,
   }),
 });

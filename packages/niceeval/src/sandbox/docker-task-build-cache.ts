@@ -291,11 +291,11 @@ async function pruneTaskOwners(domainId: string, buildKey?: string): Promise<num
   return owners.leases.length + owners.roots.length - leaseIds.length - rootIds.length;
 }
 
-async function setupPrefixClaimsImage(domainId: string, exactImageId: string): Promise<boolean> {
+async function beforeCacheClaimsImage(domainId: string, exactImageId: string): Promise<boolean> {
   const claims = await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "setup-image-claims", domainId, imageId: exactImageId, exceptEntryId: "",
+    repository: "docker-cache", operation: "before-cache-image-claims", domainId, imageId: exactImageId, exceptEntryId: "",
   });
-  return claims.siblingSetupPrefixClaim;
+  return claims.siblingBeforeCacheClaim;
 }
 
 const domainStartupReconciliations = new Map<string, Promise<void>>();
@@ -326,7 +326,7 @@ async function reconcileCrashedTaskBuildDeletes(domain: DockerCacheDomainHandle,
       }
       const locator = await imageId(row.tag, dockerSocketPath);
       const protectedByReference = await pruneTaskOwners(domain.domainId, row.buildKey) > 0 ||
-        await setupPrefixClaimsImage(domain.domainId, lock.imageId) || await hasContainerReference(lock.imageId, dockerSocketPath);
+        await beforeCacheClaimsImage(domain.domainId, lock.imageId) || await hasContainerReference(lock.imageId, dockerSocketPath);
       if (exact !== lock.imageId || locator !== lock.imageId || protectedByReference) {
         await settle("unverified");
         continue;
@@ -578,42 +578,42 @@ export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promi
     const leases = listed.taskLeases.filter((lease) => lease.buildKey === row.buildKey);
     const roots = listed.taskRoots.filter((root) => root.buildKey === row.buildKey);
     const leaseCounts = inventoryOwnerCounts(leases, holderIsVerifiablyLive);
-    const rootCounts = inventoryOwnerCounts(roots, holderIsVerifiablyLive);
+    const holdCounts = inventoryOwnerCounts(roots, holderIsVerifiablyLive);
     const actual = await imageId(row.tag, dockerSocketPath);
     entries.push({
       kind: "task-build", identity: { buildKey: row.buildKey, tag: row.tag, imageId: row.imageId },
-      leaseCount: leaseCounts.total, rootCount: rootCounts.total,
+      leaseCount: leaseCounts.total, holdCount: holdCounts.total,
       liveLeaseCount: leaseCounts.live, unverifiedLeaseCount: leaseCounts.unverified,
-      liveRootCount: rootCounts.live, unverifiedRootCount: rootCounts.unverified,
+      liveHoldCount: holdCounts.live, unverifiedHoldCount: holdCounts.unverified,
       createdAt: row.createdAt,
       lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
       state: taskBuildInventoryState(
         actual,
         row.imageId,
         leaseCounts.live,
-        leaseCounts.unverified + rootCounts.unverified,
+        leaseCounts.unverified + holdCounts.unverified,
       ),
     });
   }
-  for (const row of listed.setupEntries) {
-    const leases = listed.setupLeases.filter((lease) => lease.entryId === row.entryId);
-    const roots = listed.setupRoots.filter((root) => root.entryId === row.entryId);
+  for (const row of listed.beforeCacheEntries) {
+    const leases = listed.beforeCacheLeases.filter((lease) => lease.entryId === row.entryId);
+    const holds = listed.beforeCacheHolds.filter((hold) => hold.entryId === row.entryId);
     const leaseCounts = inventoryOwnerCounts(
       leases,
       (lease) => lease.state === "active" && holderIsVerifiablyLive(lease),
     );
-    const liveRoots = await Promise.all(roots.map((root) => containerIsVerifiablyLive(root.sandboxId, dockerSocketPath)));
-    const rootCounts = inventoryOwnerCounts(liveRoots, Boolean);
+    const liveHolds = await Promise.all(holds.map((hold) => containerIsVerifiablyLive(hold.sandboxId, dockerSocketPath)));
+    const holdCounts = inventoryOwnerCounts(liveHolds, Boolean);
     const providerVerified = row.imageId === null
       ? row.state === "reserved" || row.state === "building"
       : await imageId(row.imageId, dockerSocketPath) === row.imageId;
     entries.push({
-      kind: "sandbox-setup-prefix",
-      state: !providerVerified || leaseCounts.unverified > 0 || rootCounts.unverified > 0 ? "unverified" : row.state,
-      identity: { entryId: row.entryId, setupPrefixKey: row.setupPrefixKey, imageId: row.imageId, baseImageId: row.baseImageId },
-      leaseCount: leaseCounts.total, rootCount: rootCounts.total,
+      kind: "sandbox-before-cache",
+      state: !providerVerified || leaseCounts.unverified > 0 || holdCounts.unverified > 0 ? "unverified" : row.state,
+      identity: { entryId: row.entryId, beforeCacheKey: row.beforeCacheKey, imageId: row.imageId, baseIdentity: row.baseIdentity },
+      leaseCount: leaseCounts.total, holdCount: holdCounts.total,
       liveLeaseCount: leaseCounts.live, unverifiedLeaseCount: leaseCounts.unverified,
-      liveRootCount: rootCounts.live, unverifiedRootCount: rootCounts.unverified,
+      liveHoldCount: holdCounts.live, unverifiedHoldCount: holdCounts.unverified,
       createdAt: row.createdAt, lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
     });
   }
@@ -628,7 +628,7 @@ export async function planTaskBuildGc(domainId: string): Promise<TaskBuildGcPlan
   const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-entries", domainId });
   for (const row of listed.entries) {
     if (row.state !== "indexed" || !passesGcAgePolicy(row, now.getTime())) continue;
-    if (await pruneTaskOwners(domainId, row.buildKey) > 0 || await setupPrefixClaimsImage(domainId, row.imageId)) continue;
+    if (await pruneTaskOwners(domainId, row.buildKey) > 0 || await beforeCacheClaimsImage(domainId, row.imageId)) continue;
     if (await imageId(row.tag) !== row.imageId || await hasContainerReference(row.imageId)) continue;
     candidates.push({
       buildKey: row.buildKey, tag: row.tag, imageId: row.imageId, manifestDigest: row.manifestDigest,
@@ -713,7 +713,7 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
       }
       continue;
     }
-    if (actual !== candidate.imageId || await setupPrefixClaimsImage(domainId, candidate.imageId) || await hasContainerReference(candidate.imageId)) {
+    if (actual !== candidate.imageId || await beforeCacheClaimsImage(domainId, candidate.imageId) || await hasContainerReference(candidate.imageId)) {
       await settle("unverified");
       outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "resource-or-reference-changed" });
       continue;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { retainAttemptNotes } from "./attempt-notes.ts";
 import type { AttemptNotesCollector } from "../context/notes.ts";
 import { AttemptCancellationController } from "./attempt-cancellation.ts";
@@ -113,12 +114,11 @@ import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/
 import {
   inheritSandboxCapabilities,
   sandboxCapabilities,
-  setupPrefixCacheCapability,
-  SandboxSetupPrefixCacheAmbiguityError,
-  type SandboxSetupPrefixCacheCapability,
+  BeforeCacheAmbiguityError,
+  type AttemptBeforeCache,
 } from "../sandbox/backend.ts";
 import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
-import type { SandboxPreparedSetupPrefixArtifact } from "../sandbox/layer.ts";
+import type { PreparedBeforeCacheUse } from "./before-cache-preparation.ts";
 import {
   mergeSandboxActionState,
   sandboxActionStateCovers,
@@ -142,9 +142,9 @@ import {
 } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import {
-  plannedSetupPrefixActions,
-  setupPrefixOperation,
-} from "./setup-prefix-plan.ts";
+  plannedBeforeCacheActions,
+  beforeCacheStep,
+} from "./before-cache-plan.ts";
 import type { AttemptPluginContext } from "../plugin/contracts.ts";
 import { attemptPluginLifecycles } from "../plugin/link.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
@@ -296,10 +296,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Run-level prepared prefix already materialized as this Attempt's starting sandbox. */
-  readonly preparedSetupPrefix?: {
-    readonly artifact: SandboxPreparedSetupPrefixArtifact;
-    readonly satisfiedActionCount: number;
-  };
+  readonly preparedBeforeCache?: PreparedBeforeCacheUse;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
   readonly runTiming?: import("./timing.ts").RunTimingRecorder;
   /**
@@ -334,7 +331,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
   /** An unresolved Host publication stops later Invocation dispatch without interrupting running siblings. */
-  onEnvironmentIncomplete?: (failure: SandboxSetupPrefixCacheAmbiguityError) => void;
+  onEnvironmentIncomplete?: (failure: BeforeCacheAmbiguityError) => void;
   /**
    * Sandbox cleanup normally turns errors into diagnostics so the remaining
    * finalizers can run. An Experiment with sharedState must still retain every
@@ -378,7 +375,7 @@ export function runAttemptEffect<
   {
     attachmentScope,
     buildLocators,
-    preparedSetupPrefix,
+    preparedBeforeCache,
     runTiming,
     parentSignal,
     invocationSignal,
@@ -1029,9 +1026,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       diagnostic: freshSandboxLifecycleFeedback.diagnostic,
                     },
                     buildLocators,
-                    ...(preparedSetupPrefix === undefined
+                    ...(preparedBeforeCache?.artifact === undefined
                       ? {}
-                      : { setupPrefixArtifact: preparedSetupPrefix.artifact.locator }),
+                      : { beforeCacheArtifact: preparedBeforeCache.artifact, beforeCachePreparationContext: preparedBeforeCache.context }),
                     agent: agent.kind === "sandbox" ? agent : undefined,
                     ...(runTiming !== undefined ? { runTiming } : {}),
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
@@ -1440,7 +1437,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             sensitiveValues,
             observabilityRuntime,
             ...(materializedCase === undefined ? {} : { materializedCase }),
-            ...(preparedSetupPrefix === undefined ? {} : { preparedSetupPrefix }),
+            ...(preparedBeforeCache === undefined ? {} : { preparedBeforeCache }),
             concurrencySlot,
             declareFailure,
             onEnvironmentIncomplete,
@@ -1724,7 +1721,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             ...withPhases,
             sandbox: {
               ...sandboxFacts,
-              // SetupPrefix restore/capture rebases the stable backend onto a new private clone.
+              // BeforeCache restore/capture rebases the stable backend onto a new private clone.
               // Read the final dynamic facade here instead of retaining the acquisition id.
               sandboxId: currentSandbox?.sandboxId ?? sandboxFacts.sandboxId,
               ...(kept ? { kept: true as const } : {}),
@@ -2153,11 +2150,11 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
-  if (e instanceof SandboxSetupPrefixCacheAmbiguityError) {
+  if (e instanceof BeforeCacheAmbiguityError) {
     return {
       code: "sandbox-environment-incomplete",
       message:
-        `Setup-prefix operation ${JSON.stringify(e.operationId)} has no proven publish terminal; ` +
+        `Before cache operation ${JSON.stringify(e.operationId)} has no proven publish terminal; ` +
         `run \`${e.diagnosticCommand}\` before starting another Invocation.`,
       origin: attemptOrigin(phase ?? "sandbox.prepare"),
     };
@@ -2242,12 +2239,9 @@ function assertDeadlineFitsPlan(
 interface AttemptResources {
   judgeUsage: JudgeUsageCollector;
   sandbox: Sandbox;
-  /** Fresh provider-owned backend; setup-prefix capability mutates this stable object across rebases. */
+  /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase?: MaterializedSandboxCase;
-  preparedSetupPrefix?: {
-    readonly artifact: SandboxPreparedSetupPrefixArtifact;
-    readonly satisfiedActionCount: number;
-  };
+  preparedBeforeCache?: PreparedBeforeCacheUse;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
@@ -2288,7 +2282,7 @@ interface AttemptResources {
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
-  onEnvironmentIncomplete?: (failure: SandboxSetupPrefixCacheAmbiguityError) => void;
+  onEnvironmentIncomplete?: (failure: BeforeCacheAmbiguityError) => void;
   /** `timeoutTo` 已经裁定 deadline 后才为 true；用于区分它触发的协作式 abort 与外层 fiber 取消。 */
   isDeadlineTimedOut: () => boolean;
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 全局 LIFO 执行。 */
@@ -2554,7 +2548,7 @@ async function runAttemptBody(
     assertFirst,
     registerAssertions,
     prepareCoordinator,
-    preparedSetupPrefix,
+    preparedBeforeCache,
   } = res;
   const usesSandbox = agent.kind === "sandbox";
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
@@ -2735,14 +2729,14 @@ async function runAttemptBody(
     entry: ScheduledSandboxBefore,
   ): void => feedback.progress({
     message: status === "unsupported-state" || status === "unsupported-state-ancestor"
-      ? `setup-prefix cache=unsupported reason=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
+      ? `before-cache cache=unsupported reason=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
       : status === "replay(contended)"
-      ? `setup-prefix cache=replay reason=contended action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
+      ? `before-cache cache=replay reason=contended action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
       : status === "replay(restore-failed)"
-        ? `setup-prefix cache=replay reason=restore-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
+        ? `before-cache cache=replay reason=restore-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
         : status === "executed(publish-failed)"
-          ? `setup-prefix cache=uncached reason=publish-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
-      : `setup-prefix cache=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`,
+          ? `before-cache cache=uncached reason=publish-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
+      : `before-cache cache=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`,
   });
 
   const restoreFailedDiagnostic = (
@@ -2750,7 +2744,7 @@ async function runAttemptBody(
   ): void => feedback.diagnostic({
     code: "cache-restore-failed-replayed",
     level: "warning",
-    message: "Sandbox setup-prefix restore failed; the provider scrubbed the same private slot before a clean replay.",
+    message: "Sandbox before-cache restore failed; the provider scrubbed the same private slot before a clean replay.",
     data: {
       operation: "restore",
       state: "restore-failed/replayed",
@@ -2793,47 +2787,60 @@ async function runAttemptBody(
       return;
     }
 
-    if (preparedSetupPrefix !== undefined) {
-      const satisfied = preparedSetupPrefix.satisfiedActionCount;
-      if (!Number.isSafeInteger(satisfied) || satisfied <= 0 || satisfied > structurallyEligibleCount) {
+    if (preparedBeforeCache !== undefined) {
+      const satisfied = preparedBeforeCache.satisfiedActionCount;
+      if (!Number.isSafeInteger(satisfied) || satisfied < 0 || satisfied > structurallyEligibleCount) {
         throw new SandboxStepOperationUnavailableError(
-          "setupPrefix.preparedArtifact",
-          "Run-level prepared setup-prefix coverage does not match the linked before plan.",
+          "beforeCache.preparedArtifact",
+          "Run-level prepared before-cache coverage does not match the linked before plan.",
         );
       }
-      for (let index = 0; index < satisfied; index++) {
+      const start = materializedCase.beforeCacheStart;
+      const degraded = start?._tag === "FellBackToBase"
+        ? { reason: start.reason, operationId: `before-cache-${randomUUID()}` }
+        : preparedBeforeCache.degraded;
+      const restoredCount = start?._tag === "FellBackToBase" ? 0 : satisfied;
+      if (degraded !== undefined) {
+        feedback.diagnostic({
+          code: "cache-degraded",
+          level: "warning",
+          message: "Before cache is unavailable; the remaining before actions will run on the usable sandbox state.",
+          data: { operation: "before-cache.restore", operationId: degraded.operationId, reason: degraded.reason },
+        });
+      }
+      for (let index = 0; index < restoredCount; index++) {
         cacheProgress("hit", linked.before[index]!);
       }
-      for (let index = satisfied; index < linked.before.length; index++) {
-        cacheProgress("replay(miss)", linked.before[index]!);
+      for (let index = restoredCount; index < linked.before.length; index++) {
+        cacheProgress(degraded === undefined ? "replay(miss)" : "degraded", linked.before[index]!);
         await executeBefore(linked.before[index]!);
       }
       return;
     }
 
-    const support = setupPrefixCacheCapability(materializedCase.authorBackend.capabilities);
-    if (support._tag === "Unsupported") {
+    if (a.plan._tag !== "Sandbox" || a.plan.providerPlan.capabilities.beforeCache._tag !== "AttemptCaptured") {
       await replayAllBefore(linked.before, "unsupported");
       return;
     }
-    const capability: SandboxSetupPrefixCacheCapability = support.value;
-    let eligibility: ReturnType<SandboxSetupPrefixCacheCapability["eligibility"]>;
+    // The module's AttemptCaptured materializer must supply this implementation.
+    const capability: AttemptBeforeCache = materializedCase.attemptBeforeCache!;
+    let eligibility: ReturnType<AttemptBeforeCache["eligibility"]>;
     try {
       eligibility = capability.eligibility();
     } catch (cause) {
       feedback.diagnostic({
         code: "cache-degraded",
         level: "warning",
-        message: "Sandbox setup-prefix eligibility failed; recovering the clean Base and replaying every before action.",
+        message: "Sandbox before-cache eligibility failed; recovering the clean Base and replaying every before action.",
         data: { operation: "eligibility" },
       });
-      const recovered = await assertFirst.requestEffect(Effect.result(capability.recoverCleanBase()));
-      if (Result.isFailure(recovered) || recovered.success._tag !== "RecoveredCleanBase") {
+      const recovered = await assertFirst.requestEffect(Effect.result(capability.fallBackToBase()));
+      if (Result.isFailure(recovered) || recovered.success._tag !== "FellBackToBase") {
         throw Result.isFailure(recovered)
           ? recovered.failure
           : new SandboxStepOperationUnavailableError(
-              "setupPrefix.recoverCleanBase",
-              "Setup-prefix clean Base recovery is unsupported.",
+              "beforeCache.fallBackToBase",
+              "Before cache clean Base recovery is unsupported.",
             );
       }
       await replayAllBefore(linked.before, "degraded");
@@ -2880,7 +2887,7 @@ async function runAttemptBody(
       await replayAllBefore(linked.before, "unsupported");
       return;
     }
-    const planned = plannedSetupPrefixActions(a.plan, prefixEntries, eligibility);
+    const planned = plannedBeforeCacheActions(a.plan, prefixEntries, eligibility);
     if (planned.length === 0) {
       await replayAllBefore(linked.before, "unsupported");
       return;
@@ -2891,19 +2898,19 @@ async function runAttemptBody(
     let actionSucceededInAttempt = false;
     const recoverLookupAndReplay = async (
       entry: ScheduledSandboxBefore,
-      failure: import("../sandbox/backend.ts").SandboxSetupPrefixCacheError,
+      failure: import("../sandbox/backend.ts").BeforeCacheError,
     ): Promise<void> => {
         if (actionSucceededInAttempt) {
           throw new SandboxStepOperationUnavailableError(
-            "setupPrefix.lookupAfterAction",
-            "Setup-prefix lookup failed after an Action succeeded; clean-Base replay is forbidden.",
+            "beforeCache.lookupAfterAction",
+            "Before cache lookup failed after an Action succeeded; clean-Base replay is forbidden.",
           );
         }
         feedback.diagnostic({
           code: "cache-degraded",
           level: "warning",
           message:
-            `Sandbox setup-prefix lookup failed for action ${JSON.stringify(entry.id)}; ` +
+            `Sandbox before-cache lookup failed for action ${JSON.stringify(entry.id)}; ` +
             `recovering the clean Base once and replaying every before action ` +
             `(${failure._tag}/${failure.operation}: ${failure.reason}).`,
           data: {
@@ -2917,12 +2924,12 @@ async function runAttemptBody(
           },
           dedupeKey: `cache-degraded:${run.experimentId}:${evalDef.id}`,
         });
-        const recovered = await assertFirst.requestEffect(Effect.result(capability.recoverCleanBase()));
+        const recovered = await assertFirst.requestEffect(Effect.result(capability.fallBackToBase()));
         if (Result.isFailure(recovered)) throw recovered.failure;
-        if (recovered.success._tag !== "RecoveredCleanBase") {
+        if (recovered.success._tag !== "FellBackToBase") {
           throw new SandboxStepOperationUnavailableError(
-            "setupPrefix.recoverCleanBase",
-            `Setup-prefix recovery is unsupported after an operational failure: ${recovered.success.reason}`,
+            "beforeCache.fallBackToBase",
+            `Before cache recovery is unsupported after an operational failure: ${recovered.success.reason}`,
           );
         }
         cacheAvailable = false;
@@ -2932,7 +2939,7 @@ async function runAttemptBody(
     for (let index = planned.length - 1; index >= 0; index--) {
       const candidate = planned[index]!;
       const lookup = await assertFirst.requestEffect(Effect.result(
-        capability.lookupAndRebase(setupPrefixOperation(candidate)),
+        capability.lookupAndRestore(beforeCacheStep(candidate)),
       ));
       if (Result.isFailure(lookup)) {
         await recoverLookupAndReplay(candidate.entry, lookup.failure);
@@ -2971,7 +2978,7 @@ async function runAttemptBody(
         // Re-query closes the lookup-to-capture window. A cross-process winner that appears
         // after this read is reported as typed Contended by capture; this staging remains private.
         const lookup = await assertFirst.requestEffect(Effect.result(
-          capability.lookupAndRebase(setupPrefixOperation(candidate)),
+          capability.lookupAndRestore(beforeCacheStep(candidate)),
         ));
         if (Result.isFailure(lookup)) {
           await recoverLookupAndReplay(candidate.entry, lookup.failure);
@@ -2995,15 +3002,15 @@ async function runAttemptBody(
         await executeBefore(candidate.entry);
         actionSucceededInAttempt = true;
         const captured = await assertFirst.requestEffect(Effect.result(
-          capability.captureAndRebase(setupPrefixOperation(candidate, [...sensitiveValues])),
+          capability.capture(beforeCacheStep(candidate, [...sensitiveValues])),
         ));
         if (Result.isFailure(captured)) {
-          if (captured.failure instanceof SandboxSetupPrefixCacheAmbiguityError) {
+          if (captured.failure instanceof BeforeCacheAmbiguityError) {
             feedback.diagnostic({
               code: "sandbox-environment-incomplete",
               level: "error",
               message:
-                `Sandbox environment is incomplete because setup-prefix operation ` +
+                `Sandbox environment is incomplete because before-cache operation ` +
                 `${JSON.stringify(captured.failure.operationId)} has no proven publish terminal. ` +
                 `Run \`${captured.failure.diagnosticCommand}\` before starting another Invocation.`,
               data: {
@@ -3021,7 +3028,7 @@ async function runAttemptBody(
             code: "cache-capture-failed-after-execution",
             level: "error",
             message:
-              `Sandbox setup-prefix capture failed after action ${JSON.stringify(candidate.entry.id)} succeeded; ` +
+              `Sandbox before-cache capture failed after action ${JSON.stringify(candidate.entry.id)} succeeded; ` +
               "the action will not be replayed.",
             data: {
               operation: "capture",
@@ -3041,7 +3048,7 @@ async function runAttemptBody(
             code: "cache-publication-contended",
             level: "warning",
             message:
-              `setup-prefix cache=replay reason=contended action=${candidate.entry.id} ` +
+              `before-cache cache=replay reason=contended action=${candidate.entry.id} ` +
               `owner=${candidate.entry.owner.kind}:${candidate.entry.owner.id}`,
             data: {
               operation: "capture",
@@ -3059,7 +3066,7 @@ async function runAttemptBody(
             code: "cache-publication-failed",
             level: "warning",
             message:
-              `Sandbox setup-prefix publication failed after action ${JSON.stringify(candidate.entry.id)} succeeded; ` +
+              `Sandbox before-cache publication failed after action ${JSON.stringify(candidate.entry.id)} succeeded; ` +
               "continuing in the same private sandbox without further publication.",
             data: {
               operation: "capture",

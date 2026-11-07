@@ -9,7 +9,7 @@ import { command, only, pollUntil, waitForPathOrProcessExit, withProcess, withPr
 import { expect, test } from "vitest";
 import { inspectAttempt } from "./inspection.ts";
 
-interface SetupPrefixEvidence {
+interface BeforeCacheEvidence {
   readonly baseVersion: string;
   readonly runtimeMode: string;
   readonly canonicalToken: string;
@@ -35,16 +35,16 @@ interface IncusJournalRecord {
   };
 }
 
-type SetupPrefixSummary = ReturnType<ProcessReceipt["expTerminal"]>["summary"]["beforeCaches"];
+type BeforeCacheSummary = ReturnType<ProcessReceipt["expTerminal"]>["summary"]["beforeCaches"];
 
-function setupPrefixSummary(receipt: ProcessReceipt): SetupPrefixSummary {
+function beforeCacheSummary(receipt: ProcessReceipt): BeforeCacheSummary {
   const setup = receipt.expTerminal().summary.beforeCaches;
-  expect(setup.total, receipt.diagnostic()).toBe(setup.hit + setup.prepared + setup.failed);
+  expect(setup.total, receipt.diagnostic()).toBe(setup.hit + setup.prepared + setup.degraded + setup.failed);
   return setup;
 }
 
-function humanSetupPrefixLine(summary: SetupPrefixSummary): string {
-  return `Before caches: ${summary.hit} hit · ${summary.prepared} prepared · ${summary.failed} failed (${summary.total} total)`;
+function humanBeforeCacheLine(summary: BeforeCacheSummary): string {
+  return `Before caches: ${summary.hit} hit · ${summary.prepared} prepared · ${summary.degraded} degraded · ${summary.failed} failed (${summary.total} total)`;
 }
 
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -52,21 +52,21 @@ const docker = command(["docker"]);
 const binary = resolve("node_modules/.bin/niceeval");
 const projectCopy = {
   from: process.cwd(),
-  prefix: "niceeval-e2e-setup-prefix-project-",
+  prefix: "niceeval-e2e-before-cache-project-",
   omitTopLevel: [".niceeval", "node_modules", "test"],
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function decodeEvidence(trace: QuerySuccessDocumentFor<"attempt.trace">["trace"]): SetupPrefixEvidence {
+function decodeEvidence(trace: QuerySuccessDocumentFor<"attempt.trace">["trace"]): BeforeCacheEvidence {
   const messages = trace.conversation.items.flatMap((item) => item.kind === "message" ? [item] : []);
-  const evidenceMessages = messages.filter((item) => item.text.includes("setup-prefix-evidence:"));
+  const evidenceMessages = messages.filter((item) => item.text.includes("before-cache-evidence:"));
   expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
   expect(evidenceMessages[0]!.textTruncated, "public Agent evidence must fit the stable trace projection").toBe(false);
   const encoded = new Set(
-    [...evidenceMessages[0]!.text.matchAll(/setup-prefix-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
+    [...evidenceMessages[0]!.text.matchAll(/before-cache-evidence:([A-Za-z0-9_-]+)/gu)].map((match) => match[1]!),
   );
   expect(encoded.size, "public Inspection trace must expose exactly one Agent evidence payload").toBe(1);
-  const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<SetupPrefixEvidence>;
+  const value = JSON.parse(Buffer.from([...encoded][0]!, "base64url").toString("utf8")) as Partial<BeforeCacheEvidence>;
   for (const key of [
     "baseVersion",
     "runtimeMode",
@@ -84,7 +84,7 @@ function decodeEvidence(trace: QuerySuccessDocumentFor<"attempt.trace">["trace"]
     expect(value[key], `${key} must be a non-empty public evidence string`).toEqual(expect.any(String));
     expect(value[key]!.length, `${key} must be non-empty`).toBeGreaterThan(0);
   }
-  return value as SetupPrefixEvidence;
+  return value as BeforeCacheEvidence;
 }
 
 async function waitForSandboxGone(sandboxId: string, cwd: string): Promise<void> {
@@ -93,7 +93,7 @@ async function waitForSandboxGone(sandboxId: string, cwd: string): Promise<void>
       const inspected = await docker.run(["inspect", sandboxId], { cwd });
       return inspected.exitCode !== 0 ? true : undefined;
     },
-    { timeoutMs: 15_000, intervalMs: 100, label: `private SetupPrefix clone ${sandboxId} to be removed` },
+    { timeoutMs: 15_000, intervalMs: 100, label: `private BeforeCache clone ${sandboxId} to be removed` },
   );
 }
 
@@ -105,20 +105,20 @@ async function containersForInvocation(pid: number, cwd: string): Promise<readon
   return result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
 }
 
-type SetupPrefixResumeLayer = 1 | 2 | 3;
+type BeforeCacheResumeLayer = 1 | 2 | 3;
 
 const layerTokenPaths = [
-  ".setup-prefix/fixture-token",
-  ".setup-prefix/middle-token",
-  ".setup-prefix/env-token",
+  ".before-cache/fixture-token",
+  ".before-cache/middle-token",
+  ".before-cache/env-token",
 ] as const;
 
 async function waitForResumeGate(
   pid: number,
   root: string,
-  afterLayer: SetupPrefixResumeLayer,
+  afterLayer: BeforeCacheResumeLayer,
 ): Promise<string> {
-  const gate = `.setup-prefix/resume-after-${afterLayer}`;
+  const gate = `.before-cache/resume-after-${afterLayer}`;
   return pollUntil(
     async () => {
       for (const id of await containersForInvocation(pid, root)) {
@@ -133,14 +133,14 @@ async function waitForResumeGate(
       }
       return undefined;
     },
-    { timeoutMs: 180_000, intervalMs: 25, label: `Docker setup-prefix gate after layer ${afterLayer}` },
+    { timeoutMs: 180_000, intervalMs: 25, label: `Docker before-cache gate after layer ${afterLayer}` },
   );
 }
 
 async function readPublishedLayerTokens(
   containerId: string,
   root: string,
-  completedLayers: SetupPrefixResumeLayer,
+  completedLayers: BeforeCacheResumeLayer,
 ): Promise<readonly string[]> {
   const paths = layerTokenPaths.slice(0, completedLayers);
   const result = await docker.run([
@@ -160,9 +160,9 @@ async function readPublishedLayerTokens(
 async function releaseResumeGate(
   containerId: string,
   root: string,
-  afterLayer: SetupPrefixResumeLayer,
+  afterLayer: BeforeCacheResumeLayer,
 ): Promise<void> {
-  const gate = `.setup-prefix/resume-after-${afterLayer}`;
+  const gate = `.before-cache/resume-after-${afterLayer}`;
   const released = await docker.run([
     "exec",
     containerId,
@@ -173,7 +173,7 @@ async function releaseResumeGate(
   expect(released.exitCode, released.diagnostic()).toBe(0);
 }
 
-function evidenceLayerTokens(evidence: SetupPrefixEvidence): readonly string[] {
+function evidenceLayerTokens(evidence: BeforeCacheEvidence): readonly string[] {
   return [evidence.fixtureToken, evidence.middleToken, evidence.envToken];
 }
 
@@ -206,7 +206,7 @@ interface InvokeOptions {
     | "canonical-json";
   readonly canonicalVariant?: "alpha" | "beta";
   readonly middleVersion?: "alpha" | "beta";
-  readonly cancelAfter?: SetupPrefixResumeLayer;
+  readonly cancelAfter?: BeforeCacheResumeLayer;
   readonly niceevalHome?: string;
 }
 
@@ -217,18 +217,18 @@ function invocationEnvironment(
 ): NodeJS.ProcessEnv {
   const mode = options.mode ?? "default";
   return {
-    NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV: publicEnv,
-    NICEEVAL_E2E_SETUP_PREFIX_MODE: mode,
-    ...(options.image === undefined ? {} : { NICEEVAL_E2E_SETUP_PREFIX_IMAGE: options.image }),
+    NICEEVAL_E2E_BEFORE_CACHE_PUBLIC_ENV: publicEnv,
+    NICEEVAL_E2E_BEFORE_CACHE_MODE: mode,
+    ...(options.image === undefined ? {} : { NICEEVAL_E2E_BEFORE_CACHE_IMAGE: options.image }),
     ...(options.canonicalVariant === undefined
       ? {}
-      : { NICEEVAL_E2E_SETUP_PREFIX_CANONICAL_VARIANT: options.canonicalVariant }),
+      : { NICEEVAL_E2E_BEFORE_CACHE_CANONICAL_VARIANT: options.canonicalVariant }),
     ...(options.middleVersion === undefined
       ? {}
-      : { NICEEVAL_E2E_SETUP_PREFIX_MIDDLE_VERSION: options.middleVersion }),
+      : { NICEEVAL_E2E_BEFORE_CACHE_MIDDLE_VERSION: options.middleVersion }),
     ...(options.cancelAfter === undefined
       ? {}
-      : { NICEEVAL_E2E_SETUP_PREFIX_CANCEL_AFTER: String(options.cancelAfter) }),
+      : { NICEEVAL_E2E_BEFORE_CACHE_CANCEL_AFTER: String(options.cancelAfter) }),
     NICEEVAL_HOME: options.niceevalHome ?? join(root, ".niceeval-user"),
   };
 }
@@ -238,7 +238,7 @@ async function invoke(
   demand: "v1" | "v2",
   publicEnv: "PUBLIC_MODE=alpha\n" | "PUBLIC_MODE=beta\n",
   options: InvokeOptions = {},
-): Promise<SetupPrefixEvidence> {
+): Promise<BeforeCacheEvidence> {
   return (await invokeDetailed(root, demand, publicEnv, options)).evidence;
 }
 
@@ -248,12 +248,12 @@ async function invokeDetailed(
   publicEnv: "PUBLIC_MODE=alpha\n" | "PUBLIC_MODE=beta\n",
   options: InvokeOptions = {},
 ): Promise<{
-  readonly evidence: SetupPrefixEvidence;
+  readonly evidence: BeforeCacheEvidence;
   readonly diagnostic: string;
-  readonly beforeCaches: SetupPrefixSummary;
+  readonly beforeCaches: BeforeCacheSummary;
 }> {
   const invocationEnv = invocationEnvironment(root, publicEnv, options);
-  const run = await niceeval.run(["exp", options.experimentId ?? "setup-prefix-cache", "--rerun", "all", "--json"], {
+  const run = await niceeval.run(["exp", options.experimentId ?? "before-cache", "--rerun", "all", "--json"], {
     cwd: root,
     env: invocationEnv,
     timeoutMs: 360_000,
@@ -261,49 +261,49 @@ async function invokeDetailed(
   return inspectCompletedInvocation(root, demand, publicEnv, options, invocationEnv, run);
 }
 
-async function assertSetupPrefixInventory(root: string, niceevalHome: string): Promise<void> {
+async function assertBeforeCacheInventory(root: string, niceevalHome: string): Promise<void> {
   const env = { NICEEVAL_HOME: niceevalHome };
   const inventory = await niceeval.run(["docker", "cache", "inventory", "--json"], { cwd: root, env });
   expect(inventory.exitCode, inventory.diagnostic()).toBe(0);
   const document = JSON.parse(inventory.stdout) as {
-    readonly domains: readonly { readonly domainId: string; readonly entryKinds: { readonly sandboxSetupPrefix: number } }[];
+    readonly domains: readonly { readonly domainId: string; readonly entryKinds: { readonly sandboxBeforeCache: number } }[];
   };
-  const domain = only(document.domains, (candidate) => candidate.entryKinds.sandboxSetupPrefix > 0, inventory.diagnostic());
+  const domain = only(document.domains, (candidate) => candidate.entryKinds.sandboxBeforeCache > 0, inventory.diagnostic());
   const detail = await niceeval.run([
     "docker", "cache", "inventory", "--domain", domain.domainId, "--json",
   ], { cwd: root, env });
   expect(detail.exitCode, detail.diagnostic()).toBe(0);
   const entries = (JSON.parse(detail.stdout) as { readonly entries: readonly Record<string, unknown>[] }).entries
-    .filter((entry) => entry.kind === "sandbox-setup-prefix");
+    .filter((entry) => entry.kind === "sandbox-before-cache");
   expect(entries.length, detail.diagnostic()).toBeGreaterThan(0);
   for (const entry of entries) {
     expect(entry).toMatchObject({
-      kind: "sandbox-setup-prefix",
+      kind: "sandbox-before-cache",
       state: "indexed",
       identity: {
         entryId: expect.any(String),
-        setupPrefixKey: expect.stringMatching(/^prefix:[a-f0-9]{64}$/u),
+        beforeCacheKey: expect.stringMatching(/^prefix:[a-f0-9]{64}$/u),
         imageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-        baseImageId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+        baseIdentity: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
       },
       leaseCount: 0,
-      rootCount: 0,
+      holdCount: 0,
       liveLeaseCount: 0,
       unverifiedLeaseCount: 0,
-      liveRootCount: 0,
-      unverifiedRootCount: 0,
+      liveHoldCount: 0,
+      unverifiedHoldCount: 0,
     });
     expect(Object.keys(entry).sort()).toEqual([
-      "createdAt", "identity", "kind", "lastSuccessfulUseAt", "leaseCount", "liveLeaseCount",
-      "liveRootCount", "protectedUntil", "rootCount", "state", "unverifiedLeaseCount", "unverifiedRootCount",
+      "createdAt", "holdCount", "identity", "kind", "lastSuccessfulUseAt", "leaseCount", "liveHoldCount",
+      "liveLeaseCount", "protectedUntil", "state", "unverifiedHoldCount", "unverifiedLeaseCount",
     ]);
   }
   expect(detail.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
 
   const human = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId], { cwd: root, env });
   expect(human.exitCode, human.diagnostic()).toBe(0);
-  expect(human.stdout).toContain("sandbox-setup-prefix · indexed");
-  expect(human.stdout).toContain("0 leases (0 live, 0 unverified) · 0 roots (0 live, 0 unverified)");
+  expect(human.stdout).toContain("sandbox-before-cache · indexed");
+  expect(human.stdout).toContain("0 leases (0 live, 0 unverified) · 0 holds (0 live, 0 unverified)");
   expect(human.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
 
   const preview = await niceeval.run([
@@ -327,23 +327,23 @@ async function inspectCompletedInvocation(
   invocationEnv: NodeJS.ProcessEnv,
   run: ProcessReceipt,
 ): Promise<{
-  readonly evidence: SetupPrefixEvidence;
+  readonly evidence: BeforeCacheEvidence;
   readonly diagnostic: string;
-  readonly beforeCaches: SetupPrefixSummary;
+  readonly beforeCaches: BeforeCacheSummary;
 }> {
   const mode = options.mode ?? "default";
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
   expect(run.expReceipt(), "InvocationReceipt must remain a lightweight hand-off")
     .not.toHaveProperty("beforeCaches");
-  const beforeCaches = setupPrefixSummary(run);
+  const beforeCaches = beforeCacheSummary(run);
   const evaluation = only(
     run.expEvalEvents(),
-    (event) => event.evalId === "setup-prefix-cache",
+    (event) => event.evalId === "before-cache",
     run.diagnostic(),
   );
   expect(evaluation, run.diagnostic()).toMatchObject({
-    experimentId: options.experimentId ?? "setup-prefix-cache",
+    experimentId: options.experimentId ?? "before-cache",
     verdict: "passed",
     attempts: 1,
     passed: 1,
@@ -362,7 +362,7 @@ async function inspectCompletedInvocation(
   expect(evidence).toMatchObject({
     demand,
     publicEnv,
-    fixture: "stable setup-prefix fixture\n",
+    fixture: "stable before-cache fixture\n",
     baseVersion: options.baseVersion ?? "default",
     runtimeMode: mode,
     canonicalToken: mode === "canonical-json" ? expect.any(String) : "not-requested",
@@ -374,12 +374,12 @@ async function inspectCompletedInvocation(
 
 async function interruptAfterPublishedLayer(
   root: string,
-  afterLayer: SetupPrefixResumeLayer,
+  afterLayer: BeforeCacheResumeLayer,
   options: InvokeOptions,
 ): Promise<{ readonly tokens: readonly string[]; readonly diagnostic: string }> {
   const invocationEnv = invocationEnvironment(root, "PUBLIC_MODE=alpha\n", options);
   const interrupted = await withProcess(
-    [binary, "exp", "setup-prefix-cache", "--rerun", "all", "--json"],
+    [binary, "exp", "before-cache", "--rerun", "all", "--json"],
     {
       cwd: root,
       env: invocationEnv,
@@ -408,12 +408,12 @@ async function interruptAfterPublishedLayer(
 
 async function retryAndReleaseLayerGate(
   root: string,
-  afterLayer: SetupPrefixResumeLayer,
+  afterLayer: BeforeCacheResumeLayer,
   options: InvokeOptions,
-): Promise<{ readonly evidence: SetupPrefixEvidence; readonly diagnostic: string }> {
+): Promise<{ readonly evidence: BeforeCacheEvidence; readonly diagnostic: string }> {
   const invocationEnv = invocationEnvironment(root, "PUBLIC_MODE=alpha\n", options);
   const receipt = await withProcess(
-    [binary, "exp", "setup-prefix-cache", "--rerun", "all", "--json"],
+    [binary, "exp", "before-cache", "--rerun", "all", "--json"],
     {
       cwd: root,
       env: invocationEnv,
@@ -447,21 +447,21 @@ async function retryAndReleaseLayerGate(
 // @regression memory/before-cache-declaration-attribution.md
 
 test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-owner-home-", async (niceevalHome) =>
+  await withTempDir("niceeval-e2e-before-cache-owner-home-", async (niceevalHome) =>
     withProjectCopy(projectCopy, async ({ root }) => {
       // A unique context byte makes the first invocation a true cold BuildKey even
       // when a reliability repetition reuses the same host Docker daemon.
       await writeFile(
-        join(root, "fixtures/setup-prefix/image/build-seed.txt"),
+        join(root, "fixtures/before-cache/image/build-seed.txt"),
         `${randomUUID()}\n`,
         "utf8",
       );
 
       const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { niceevalHome });
       const cold = coldRun.evidence;
-      await assertSetupPrefixInventory(root, niceevalHome);
+      await assertBeforeCacheInventory(root, niceevalHome);
 
-      const evalPath = join(root, "evals/setup-prefix-cache.eval.ts");
+      const evalPath = join(root, "evals/before-cache.eval.ts");
       const originalEval = await readFile(evalPath, "utf8");
       const changedEval = originalEval
         .replace('const DEMAND = "v1";', 'const DEMAND = "v2";')
@@ -471,16 +471,16 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
 
       // A different Experiment owns the same ordered action content. Scheduling
       // metadata changes without changing that order must also retain the cache.
-      const experimentSource = await readFile(join(root, "experiments/setup-prefix-cache.ts"), "utf8");
+      const experimentSource = await readFile(join(root, "experiments/before-cache.ts"), "utf8");
       const movedDeclaration = experimentSource
         .replace("changeFrequency: 20,", "changeFrequency: 21,")
         .replace("changeFrequency: 25,", "changeFrequency: 26,")
         .replace('dependsOn: [actionRef("fixture-execution-probe")],', "");
       expect(movedDeclaration).not.toBe(experimentSource);
-      await writeFile(join(root, "experiments/setup-prefix-shared.ts"), movedDeclaration, "utf8");
+      await writeFile(join(root, "experiments/before-cache-shared.ts"), movedDeclaration, "utf8");
       const changedDemandRun = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", {
         niceevalHome,
-        experimentId: "setup-prefix-shared",
+        experimentId: "before-cache-shared",
       });
       const changedDemand = changedDemandRun.evidence;
       expect(changedDemandRun.beforeCaches.hit).toBe(changedDemandRun.beforeCaches.total);
@@ -513,7 +513,7 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
       expect(changedEnv.evidence.middleToken).toBe(changedMiddle.evidence.middleToken);
       expect(changedEnv.evidence.envToken).not.toBe(changedMiddle.evidence.envToken);
 
-      const human = await niceeval.run(["exp", "setup-prefix-cache", "--rerun", "all"], {
+      const human = await niceeval.run(["exp", "before-cache", "--rerun", "all"], {
         cwd: root,
         env: invocationEnvironment(root, "PUBLIC_MODE=beta\n", {
           middleVersion: "beta",
@@ -522,7 +522,7 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
         timeoutMs: 360_000,
       });
       expect(human.exitCode, human.diagnostic()).toBe(0);
-      expect(human.stdout).toContain(humanSetupPrefixLine(changedDemandRun.beforeCaches));
+      expect(human.stdout).toContain(humanBeforeCacheLine(changedDemandRun.beforeCaches));
 
       expect(new Set([
         cold.sandboxId,
@@ -538,8 +538,8 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
 
 test.concurrent("浮动 Docker tag 改指后从新的 exact Base 建立准备前缀", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
-    const image = `niceeval-e2e/setup-prefix-floating:${randomUUID()}`;
-    const context = join(root, "fixtures/setup-prefix/image");
+    const image = `niceeval-e2e/before-cache-floating:${randomUUID()}`;
+    const context = join(root, "fixtures/before-cache/image");
     try {
       const firstBuild = await docker.run([
         "build", "--build-arg", "SETUP_BASE_VERSION=v1", "--tag", image, context,
@@ -565,9 +565,9 @@ test.concurrent("浮动 Docker tag 改指后从新的 exact Base 建立准备前
 // @feature docs/feature/sandbox/README.md
 
 test.concurrent("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且返回 alpha 时命中原前缀", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-canonical-json-home-", async (niceevalHome) => {
+  await withTempDir("niceeval-e2e-before-cache-canonical-json-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
-      await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
+      await writeFile(join(root, "fixtures/before-cache/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
       const alpha = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
         mode: "canonical-json",
         canonicalVariant: "alpha",
@@ -594,8 +594,8 @@ test.concurrent("危险名称 Action metadata 在 alpha 与 beta 间不碰撞且
 
 test.concurrent("动态安装 runner tools 的实例永久 Unsupported 并真实重放 before", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
-    const image = `niceeval-e2e/setup-prefix-dynamic-tools:${randomUUID()}`;
-    const context = join(root, "fixtures/setup-prefix/image");
+    const image = `niceeval-e2e/before-cache-dynamic-tools:${randomUUID()}`;
+    const context = join(root, "fixtures/before-cache/image");
     try {
       const built = await docker.run([
         "build", "--file", join(context, "Dockerfile.dynamic-tools"), "--tag", image, context,
@@ -625,7 +625,7 @@ test.concurrent("动态安装 runner tools 的实例永久 Unsupported 并真实
 
 test.concurrent("tmpfs 外置 mutable state 为 Unsupported 且每次都真实重放", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
-    await writeFile(join(root, "fixtures/setup-prefix/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
+    await writeFile(join(root, "fixtures/before-cache/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
     const first = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", { mode: "external-tmpfs" });
     const second = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", { mode: "external-tmpfs" });
     expect(second.buildToken).toBe(first.buildToken);
@@ -638,11 +638,11 @@ test.concurrent("tmpfs 外置 mutable state 为 Unsupported 且每次都真实�
 // @feature docs/feature/sandbox/README.md
 
 test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 staging 并禁用后续 publication", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-contention-home-", async (niceevalHome) => {
+  await withTempDir("niceeval-e2e-before-cache-contention-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root: firstRoot }) => {
       await withProjectCopy(projectCopy, async ({ root: secondRoot }) => {
-        const image = `niceeval-e2e/setup-prefix-contention:${randomUUID()}`;
-        const context = join(firstRoot, "fixtures/setup-prefix/image");
+        const image = `niceeval-e2e/before-cache-contention:${randomUUID()}`;
+        const context = join(firstRoot, "fixtures/before-cache/image");
         try {
           const built = await docker.run(["build", "--tag", image, context], {
             cwd: firstRoot,
@@ -665,7 +665,7 @@ test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 stag
           const competingDiagnostics = [first.diagnostic, second.diagnostic];
           expect(
             competingDiagnostics.some((value) =>
-              value.includes("setup-prefix cache=replay reason=contended")),
+              value.includes("before-cache cache=replay reason=contended")),
             competingDiagnostics.join("\n\n--- competing invocation ---\n\n"),
           ).toBe(true);
 
@@ -689,21 +689,21 @@ test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 stag
 // @feature docs/feature/sandbox/README.md
 
 test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、adopt 或 rebase", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-cancellation-home-", async (niceevalHome) => {
+  await withTempDir("niceeval-e2e-before-cache-cancellation-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
-      const image = `niceeval-e2e/setup-prefix-cancellation:${randomUUID()}`;
-      const context = join(root, "fixtures/setup-prefix/image");
+      const image = `niceeval-e2e/before-cache-cancellation:${randomUUID()}`;
+      const context = join(root, "fixtures/before-cache/image");
       try {
         const built = await docker.run(["build", "--tag", image, context], { cwd: root, timeoutMs: 180_000 });
         expect(built.exitCode, built.diagnostic()).toBe(0);
         const interrupted = await withProcess(
-          [binary, "exp", "setup-prefix-cache", "--rerun", "all", "--json"],
+          [binary, "exp", "before-cache", "--rerun", "all", "--json"],
           {
             cwd: root,
             env: {
-              NICEEVAL_E2E_SETUP_PREFIX_PUBLIC_ENV: "PUBLIC_MODE=alpha\n",
-              NICEEVAL_E2E_SETUP_PREFIX_IMAGE: image,
-              NICEEVAL_E2E_SETUP_PREFIX_MODE: "capture-cancellation",
+              NICEEVAL_E2E_BEFORE_CACHE_PUBLIC_ENV: "PUBLIC_MODE=alpha\n",
+              NICEEVAL_E2E_BEFORE_CACHE_IMAGE: image,
+              NICEEVAL_E2E_BEFORE_CACHE_MODE: "capture-cancellation",
               NICEEVAL_HOME: niceevalHome,
             },
             processGroup: true,
@@ -722,7 +722,7 @@ test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、ad
                 }
                 return undefined;
               },
-              { timeoutMs: 60_000, intervalMs: 25, label: "outer Docker container stopped for setup-prefix capture" },
+              { timeoutMs: 60_000, intervalMs: 25, label: "outer Docker container stopped for before-cache capture" },
             );
             expect(controlled.signal("SIGINT")).toBe(true);
             const receipt = await controlled.done;
@@ -734,7 +734,7 @@ test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、ad
         expect(interrupted.receipt.exitCode).toBe(130);
         await pollUntil(
           async () => (await containersForInvocation(interrupted.pid, root)).length === 0 ? true : undefined,
-          { timeoutMs: 15_000, intervalMs: 100, label: "cancelled setup-prefix staging and clone cleanup" },
+          { timeoutMs: 15_000, intervalMs: 100, label: "cancelled before-cache staging and clone cleanup" },
         );
 
         const retry = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", {
@@ -753,10 +753,10 @@ test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、ad
 // @feature docs/feature/sandbox/README.md
 
 test.concurrent("SIGINT 在任一已发布 Docker setup 层后取消，重试从该层继续", async () => {
-  await withTempDir("niceeval-e2e-setup-prefix-resume-home-", async (niceevalHome) => {
+  await withTempDir("niceeval-e2e-before-cache-resume-home-", async (niceevalHome) => {
     await withProjectCopy(projectCopy, async ({ root }) => {
-      const image = `niceeval-e2e/setup-prefix-resume:${randomUUID()}`;
-      const context = join(root, "fixtures/setup-prefix/image");
+      const image = `niceeval-e2e/before-cache-resume:${randomUUID()}`;
+      const context = join(root, "fixtures/before-cache/image");
       try {
         const built = await docker.run(["build", "--tag", image, context], { cwd: root, timeoutMs: 180_000 });
         expect(built.exitCode, built.diagnostic()).toBe(0);

@@ -23,10 +23,10 @@ const decodeOptions = Schema.decodeUnknownSync(Options, { onExcessProperty: "err
 const revision = "instabox-snapshot-1";
 const providerModule: SandboxProviderModule<InstaboxSandboxOptions> = {
   id: "niceeval/instabox-snapshot",
+  beforeCache: { _tag: "Unsupported", reason: "remote snapshot preparer pending" },
   capabilities: {
     retention: { _tag: "DestroyOnly" },
     reuse: { _tag: "Unsupported", reason: "Instabox machines belong to one Attempt." },
-    setupPrefix: { _tag: "Unsupported", reason: "Instabox before snapshot caching is not supported." },
     sessionLimit: { _tag: "ProviderValidated", reason: "Instabox validates the declared deletion deadline." },
   },
   collectBuildPreparation: () => Effect.succeed(Option.none()),

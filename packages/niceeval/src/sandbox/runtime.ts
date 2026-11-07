@@ -33,6 +33,7 @@ import {
   customSandboxBackend,
   providerBoundaryEffect,
   type SandboxProviderBackend,
+  type AttemptBeforeCache,
 } from "./backend.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { applyCommandDeadline } from "./deadline.ts";
@@ -41,6 +42,8 @@ import { currentRunIdentity } from "./run-identity.ts";
 import {
   sandboxProviderBindingOf,
   type SandboxProviderBinding,
+  type BeforeCacheArtifact,
+  type BeforeCachePreparationContext,
   type CustomCaseProviderPlan,
   type CustomCaseMaterializeResult,
   type CustomCaseSandboxOptions,
@@ -107,7 +110,8 @@ export interface SandboxRuntimeMaterializeInput {
   readonly hookContext: SandboxHookContext;
   readonly buildLocators: ReadonlyMap<BuildKey, JsonValue>;
   /** Committed provider-native setup artifact selected by the Run-level coordinator. */
-  readonly setupPrefixArtifact?: JsonValue;
+  readonly beforeCacheArtifact?: BeforeCacheArtifact;
+  readonly beforeCachePreparationContext?: BeforeCachePreparationContext;
   readonly provisionSlot:
     | { readonly _tag: "Detached" }
     | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
@@ -145,7 +149,7 @@ export interface SandboxRuntimeCapabilities {
   readonly admission: "Shared" | "Exclusive";
   readonly retention: SandboxProviderCapabilities["retention"];
   readonly reuse: SandboxProviderCapabilities["reuse"];
-  readonly setupPrefix: SandboxProviderCapabilities["setupPrefix"];
+  readonly beforeCache: SandboxProviderCapabilities["beforeCache"];
   readonly sessionLimit: SandboxProviderCapabilities["sessionLimit"];
 }
 
@@ -398,6 +402,17 @@ export function wrapSingleSandbox(
   });
 }
 
+function wrapAttemptCapturedSandbox(
+  backend: SandboxProviderBackend & { readonly attemptBeforeCache: AttemptBeforeCache },
+  context: SandboxRuntimeMaterializeContext,
+  facts: JsonValue,
+): MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache } {
+  return Object.freeze({
+    ...wrapSingleSandbox(backend, context, facts),
+    attemptBeforeCache: backend.attemptBeforeCache,
+  });
+}
+
 function normalizeMaterialized(
   materialized: Omit<MaterializedSandboxCase, "sandbox"> & { readonly sandbox: CustomProviderSandbox },
   context: SandboxRuntimeMaterializeContext,
@@ -440,10 +455,10 @@ function normalizeMaterialized(
   return Object.freeze({ ...materialized, sandbox, group });
 }
 
-function materializationEffect<R>(
+function materializationEffect<A extends MaterializedSandboxCase, R>(
   context: SandboxRuntimeMaterializeContext,
-  acquire: Effect.Effect<MaterializedSandboxCase, unknown, R>,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, R> {
+  acquire: Effect.Effect<A, unknown, R>,
+): Effect.Effect<A, SandboxRuntimeMaterializationError, R> {
   return acquire.pipe(
     Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
   );
@@ -483,7 +498,7 @@ export function materializeDockerComposeProviderPlan(
 export function materializeDockerfileProviderPlan(
   plan: DockerfileProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
+): Effect.Effect<MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache }, SandboxRuntimeMaterializationError, Scope.Scope> {
   return Option.match(Option.fromNullishOr(context.buildLocators.get(plan.buildKey)), {
     onNone: () => Effect.fail(runtimeFailure(
       context,
@@ -535,7 +550,7 @@ export function materializeDockerfileProviderPlan(
                       daemonId: plan.profileBinding.daemonId,
                       dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
                     },
-                    profileSetupPrefix: {
+                    profileBeforeCache: {
                       lease: managed!.lease,
                       currentReservation: () => managed!.reservation,
                       replaceReservation: managed!.replaceReservation,
@@ -559,7 +574,7 @@ export function materializeDockerfileProviderPlan(
                   ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
                   : Effect.void,
               );
-              return wrapSingleSandbox(backend, context, { image: resolved.locator });
+              return wrapAttemptCapturedSandbox(backend, context, { image: resolved.locator });
             }).pipe(
               Effect.onError(() => managed === undefined
                 ? Effect.void
@@ -715,7 +730,7 @@ export function buildDockerfileAgentImageWithServices(
 export function materializeDockerImageProviderPlan(
   plan: DockerImageProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
+): Effect.Effect<MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache }, SandboxRuntimeMaterializationError, Scope.Scope> {
   return materializationEffect(context, Effect.gen(function* () {
     if (plan.profileBinding === undefined) yield* admitImmediately(context);
     const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
@@ -750,7 +765,7 @@ export function materializeDockerImageProviderPlan(
             daemonId: plan.profileBinding.daemonId,
             dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
           },
-          profileSetupPrefix: {
+          profileBeforeCache: {
             lease: managed!.lease,
             currentReservation: () => managed!.reservation,
             replaceReservation: managed!.replaceReservation,
@@ -774,7 +789,7 @@ export function materializeDockerImageProviderPlan(
           ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
           : Effect.void,
       );
-      return wrapSingleSandbox(backend, context, { image: plan.image });
+      return wrapAttemptCapturedSandbox(backend, context, { image: plan.image });
     }).pipe(
       Effect.onError(() => managed === undefined
         ? Effect.void
@@ -1336,7 +1351,8 @@ export function acquireSandboxRunPlan(
     signal: input.signal,
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
-    ...(input.setupPrefixArtifact === undefined ? {} : { setupPrefixArtifact: input.setupPrefixArtifact }),
+    ...(input.beforeCacheArtifact === undefined ? {} : { beforeCacheArtifact: input.beforeCacheArtifact }),
+    ...(input.beforeCachePreparationContext === undefined ? {} : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
@@ -1346,7 +1362,16 @@ export function acquireSandboxRunPlan(
   return Effect.andThen(
     verifyBuildLocators(context),
     Effect.flatMap(providerBinding(input.plan), (binding) => {
-      const acquire = binding.materialize(context);
+      const support = binding.beforeCache;
+      if (input.beforeCacheArtifact !== undefined && input.beforeCachePreparationContext === undefined) {
+        return Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error("Before cache materialization requires its Record Run context.")));
+      }
+      const acquire = input.beforeCachePreparationContext !== undefined && support._tag === "RunPrepared"
+        ? support.preparer.materializeFrom(undefined, input.beforeCachePreparationContext,
+            input.beforeCacheArtifact === undefined ? { _tag: "Base" } : { _tag: "Artifact", artifact: input.beforeCacheArtifact }, context).pipe(
+            Effect.map(({ sandbox, start }) => Object.freeze({ ...sandbox, beforeCacheStart: start })),
+          )
+        : binding.materialize(context);
       const release = (owned: MaterializedSandboxCase) => releaseOwned(input, owned);
       // Profile admission registers its reservation owner before queueing. Its
       // queue/reacquire segment must remain interruptible so an Attempt deadline
@@ -1377,7 +1402,8 @@ export function prepareMaterializedSandboxRunPlan(
     signal: input.signal,
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
-    ...(input.setupPrefixArtifact === undefined ? {} : { setupPrefixArtifact: input.setupPrefixArtifact }),
+    ...(input.beforeCacheArtifact === undefined ? {} : { beforeCacheArtifact: input.beforeCacheArtifact }),
+    ...(input.beforeCachePreparationContext === undefined ? {} : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
@@ -1418,7 +1444,7 @@ export function sandboxRuntimeCapabilities(
     admission: plan.providerPlan.scheduling.admission._tag,
     retention: capabilities.retention,
     reuse: capabilities.reuse,
-    setupPrefix: capabilities.setupPrefix,
+    beforeCache: capabilities.beforeCache,
     sessionLimit: capabilities.sessionLimit,
   });
 }

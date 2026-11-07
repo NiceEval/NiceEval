@@ -104,9 +104,9 @@ import {
 import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 import {
-  prepareSetupPrefixes,
-  type SetupPrefixPreparationActivityEvent,
-} from "./setup-prefix-preparation.ts";
+  prepareBeforeCaches,
+  type BeforeCachePreparationActivityEvent,
+} from "./before-cache-preparation.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -118,26 +118,28 @@ export class RunModeConflictError extends Data.TaggedError("RunModeConflictError
   readonly message: string;
 }> {}
 
-function setupPrefixActivityLabel(event: SetupPrefixPreparationActivityEvent): string {
+function beforeCacheActivityLabel(event: BeforeCachePreparationActivityEvent): string {
   const scope = `${event.experimentId} × ${event.evalId}`;
-  if (event.status === "started") return `checking sandbox setup cache · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
+  if (event.status === "started") return `checking sandbox before cache · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   if (event.status === "done") {
     return event.outcome === "hit"
-      ? `sandbox setup cache hit · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
-      : `sandbox setup prepared · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
+      ? `sandbox before cache hit · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
+      : event.outcome === "degraded"
+      ? `sandbox before cache degraded · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
+      : `sandbox before cache prepared · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   }
-  if (event.status === "failed") return `sandbox setup failed · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
+  if (event.status === "failed") return `sandbox before cache failed · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
 
   const progress = `action ${event.actionIndex}/${event.actionCount} · ${event.attempts} attempts`;
   switch (event.phase) {
     case "materialize":
-      return `creating sandbox setup builder · ${scope} · ${event.provider} · ${progress}`;
+      return `creating sandbox before cache staging · ${scope} · ${event.provider} · ${progress}`;
     case "action":
-      return `preparing sandbox setup · ${scope} · ${event.actionId} · ${progress}`;
+      return `preparing sandbox before cache · ${scope} · ${event.actionId} · ${progress}`;
     case "capture":
-      return `publishing sandbox setup · ${scope} · ${event.actionId} · ${progress}`;
+      return `publishing sandbox before cache · ${scope} · ${event.actionId} · ${progress}`;
     case "provider":
-      return `preparing sandbox setup · ${scope} · ${event.detail ?? ""} · ${progress}`;
+      return `preparing sandbox before cache · ${scope} · ${event.detail ?? ""} · ${progress}`;
   }
 }
 
@@ -499,19 +501,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }));
   }
 
-  // Provider-native setup-prefix artifacts are a Run-level pre-dispatch gate.
+  // Provider-native before-cache artifacts are a Run-level pre-dispatch gate.
   // At capacity one every unique prefix is completed serially and the live
   // prepare VM is released before any ordinary Attempt can acquire a VM.
-  const setupPrefixPreparation = yield* prepareSetupPrefixes(
+  const beforeCachePreparation = yield* prepareBeforeCaches(
     attempts,
     {
+      runIds,
       signal: opts.signal,
       maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
       onActivity: (event) => {
         reportRunActivity({
           id: event.id,
           key: event.key,
-          label: setupPrefixActivityLabel(event),
+          label: beforeCacheActivityLabel(event),
           status: event.status,
           ...(event.status === "done" || event.status === "failed"
             ? { durationMs: event.durationMs }
@@ -1966,10 +1969,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   };
 
   const haltInvocationForEnvironment = (
-    failure: import("../sandbox/backend.ts").SandboxSetupPrefixCacheAmbiguityError,
+    failure: import("../sandbox/backend.ts").BeforeCacheAmbiguityError,
   ): void => {
     const message =
-      `Sandbox environment is incomplete: setup-prefix operation ${JSON.stringify(failure.operationId)} ` +
+      `Sandbox environment is incomplete: before-cache operation ${JSON.stringify(failure.operationId)} ` +
       `has no proven publish terminal. Run \`${failure.diagnosticCommand}\` before starting another Invocation.`;
     const seen = new Set<HaltGate>();
     for (const attempt of attempts) {
@@ -2610,7 +2613,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
                 })();
             const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
-            const setupPrefixFailure = setupPrefixPreparation.failuresByPair.get(
+            const beforeCacheFailure = beforeCachePreparation.failuresByPair.get(
               cacheKey(a.run, a.evalDef.id),
             );
             let blockedError: AttemptError | undefined = recordFatalController.signal.aborted
@@ -2621,21 +2624,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 }
               : Option.isSome(setupFailure)
                 ? setupFailure.value
-              : setupPrefixFailure !== undefined
-                  ? errorFromThrown(setupPrefixFailure, "sandbox.prepare")
+              : beforeCacheFailure !== undefined
+                  ? errorFromThrown(beforeCacheFailure, "sandbox.prepare")
                 : buildFailure !== undefined
                   ? buildFailure
                   : undefined;
             if (blockedError !== undefined) cancelReuseAttempt(a, true);
             if (Option.isSome(setupFailure)) {
               recordPreDispatchFailure(a, setupFailure.value, "experiment-setup-failed", "experiment.setup", "before");
-            } else if (setupPrefixFailure !== undefined) {
-              let failureId = prefixFailureIds.get(setupPrefixFailure);
+            } else if (beforeCacheFailure !== undefined) {
+              let failureId = prefixFailureIds.get(beforeCacheFailure);
               if (failureId === undefined) {
                 failureId = prefixFailureIds.size;
-                prefixFailureIds.set(setupPrefixFailure, failureId);
+                prefixFailureIds.set(beforeCacheFailure, failureId);
               }
-              recordPreDispatchFailure(a, errorFromThrown(setupPrefixFailure, "sandbox.prepare"), "sandbox-setup-prefix-failed", "sandbox.queue", String(failureId));
+              recordPreDispatchFailure(a, errorFromThrown(beforeCacheFailure, "sandbox.prepare"), "sandbox-before-cache-failed", "sandbox.queue", String(failureId));
             } else if (buildFailure !== undefined) {
               recordPreDispatchFailure(a, buildFailure, "sandbox-build-failed", "sandbox.queue",
                 buildFailure.origin.scope === "run" ? buildFailure.origin.timingNodeId : a.evalDef.id);
@@ -2792,10 +2795,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   {
                     attachmentScope: invocationScope,
                     buildLocators,
-                    ...(setupPrefixPreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)) === undefined
+                    ...(beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)) === undefined
                       ? {}
                       : {
-                          preparedSetupPrefix: setupPrefixPreparation.preparedByPair.get(
+                          preparedBeforeCache: beforeCachePreparation.preparedByPair.get(
                             cacheKey(a.run, a.evalDef.id),
                           )!,
                         }),
@@ -3350,7 +3353,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     startedAt,
     Date.now() - t0,
     opts.config.name,
-    setupPrefixPreparation.summary,
+    beforeCachePreparation.summary,
   );
   yield* emitReporterEvent(reporters, { type: "invocation:summary", summary });
   for (const reg of reporters) {

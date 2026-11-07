@@ -40,7 +40,7 @@ import {
   type SandboxReusePoolDescriptor,
 } from "./sandbox-reuse.ts";
 import type { LinkedPluginLifecycle } from "../plugin/contracts.ts";
-import { setupPrefixActionManifest, setupPrefixAttribution } from "./setup-prefix-plan.ts";
+import { beforeCacheActionDeclaration, beforeCacheAttribution } from "./before-cache-plan.ts";
 
 export interface CommandPlanOwner {
   readonly kind: "eval" | "eval-group" | "experiment" | "adapter" | "agent" | "provider";
@@ -127,7 +127,7 @@ export interface CommandPlanStep {
   };
 }
 
-export type CommandPlanCacheCapability = "persistent" | "invocation-local" | "unsupported";
+export type CommandPlanCacheCapability = "run-prepared" | "attempt-captured" | "unsupported";
 
 export interface CommandPlanSlot {
   readonly evalId: string;
@@ -203,7 +203,7 @@ export interface BeforeCachePlan {
   readonly nodes: readonly BeforeCachePlanNode[];
 }
 
-/** Deduplicate the selected command plan by the setup-prefix declaration identity. */
+/** Deduplicate the selected command plan by the before-cache declaration identity. */
 export function beforeCachePlanOf(commandPlan: CommandPlan): BeforeCachePlan {
   const nodes = new Map<string, {
     cache: NonNullable<CommandPlanStep["cache"]>;
@@ -270,7 +270,7 @@ export interface AssembleCommandPlanInput {
   readonly rows: readonly CommandPlanRowInput[];
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   /** Backend wiring may replace the static provider declaration; debug still never performs lookup. */
-  readonly setupPrefixCapability?: (pair: PreparedRunPair) => CommandPlanCacheCapability;
+  readonly beforeCacheCapability?: (pair: PreparedRunPair) => CommandPlanCacheCapability;
 }
 
 const DISPATCH_MAY_NOT_RUN: SandboxCommandPlanCondition = Object.freeze({
@@ -481,48 +481,30 @@ function stepForLinkedBefore(pair: PreparedRunPair, entry: ScheduledSandboxBefor
     : stepFromDeclaration(declaration, "sandbox.before", owner);
 }
 
-function cacheCapabilityTag(value: unknown): CommandPlanCacheCapability | undefined {
-  if (value === "persistent" || value === "invocation-local" || value === "unsupported") return value;
-  if (value === null || typeof value !== "object") return undefined;
-  const tag = Reflect.get(value, "_tag");
-  if (tag === "Persistent" || tag === "PreparedArtifact") return "persistent";
-  if (tag === "InvocationLocal") return "invocation-local";
-  if (tag === "Unsupported") return "unsupported";
-  return undefined;
-}
-
-/** Static debug projection only; a runtime/backend resolver can be supplied to assembleCommandPlan. */
-export function providerDeclaredSetupPrefixCapability(pair: PreparedRunPair): CommandPlanCacheCapability {
+/** Static projection from the module-owned declaration; debug never probes cache. */
+export function providerDeclaredBeforeCacheCapability(pair: PreparedRunPair): CommandPlanCacheCapability {
   if (pair.plan._tag !== "Sandbox") return "unsupported";
-  const capabilities = pair.plan.providerPlan.capabilities as object;
-  return cacheCapabilityTag(Reflect.get(capabilities, "setupPrefix")) ??
-    cacheCapabilityTag(Reflect.get(capabilities, "setupPrefixCache")) ??
-    "unsupported";
+  switch (pair.plan.providerPlan.capabilities.beforeCache._tag) {
+    case "RunPrepared": return "run-prepared";
+    case "AttemptCaptured": return "attempt-captured";
+    case "Unsupported": return "unsupported";
+  }
 }
 
-function providerDeclaredSetupPrefixCoverage(
+function providerDeclaredBeforeCacheCoverage(
   pair: PreparedRunPair,
 ): SandboxActionState | "unsupported" {
   if (pair.plan._tag !== "Sandbox") return "unsupported";
-  const declaration = pair.plan.providerPlan.capabilities.setupPrefix;
-  return declaration._tag === "Persistent" || declaration._tag === "PreparedArtifact"
+  const declaration = pair.plan.providerPlan.capabilities.beforeCache;
+  return declaration._tag === "AttemptCaptured" || declaration._tag === "RunPrepared"
     ? declaration.coverage
     : "unsupported";
 }
 
-function providerDeclaredSetupPrefixReason(pair: PreparedRunPair): string | undefined {
+function providerDeclaredBeforeCacheReason(pair: PreparedRunPair): string | undefined {
   if (pair.plan._tag !== "Sandbox") return undefined;
-  const capabilities = pair.plan.providerPlan.capabilities as object;
-  for (const candidate of [
-    Reflect.get(capabilities, "setupPrefix"),
-    Reflect.get(capabilities, "setupPrefixCache"),
-  ]) {
-    if (candidate === null || typeof candidate !== "object") continue;
-    if (Reflect.get(candidate, "_tag") !== "Unsupported") continue;
-    const reason = Reflect.get(candidate, "reason");
-    if (typeof reason === "string" && reason !== "") return reason;
-  }
-  return undefined;
+  const declaration = pair.plan.providerPlan.capabilities.beforeCache;
+  return declaration._tag === "Unsupported" ? declaration.reason : undefined;
 }
 
 function hasOpaqueSetupAncestor(pair: PreparedRunPair): boolean {
@@ -532,11 +514,11 @@ function hasOpaqueSetupAncestor(pair: PreparedRunPair): boolean {
   return authorSetup || pluginSetup;
 }
 
-function linkedSetupPrefixBaseIdentity(pair: PreparedRunPair): string {
+function linkedBeforeCacheBaseIdentity(pair: PreparedRunPair): string {
   if (pair.plan._tag !== "Sandbox") return "linked-base:unsupported";
   const provider = pair.plan.providerPlan;
   const identity = {
-    protocol: "niceeval.setup-prefix-linked-plan/v2",
+    protocol: "niceeval.before-cache-linked-plan/v1",
     provider: {
       id: provider.provider,
       plannerRevision: provider.plannerRevision,
@@ -553,15 +535,15 @@ function linkedSetupPrefixBaseIdentity(pair: PreparedRunPair): string {
   return `linked-base:${digestOf(identity)}`;
 }
 
-function linkedSetupPrefixActionIdentity(
+function linkedBeforeCacheActionIdentity(
   parentIdentity: string,
   entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>,
   cumulativeState: SandboxActionState,
 ): string {
   const identity = {
-    protocol: "niceeval.setup-prefix-linked-plan/v2",
+    protocol: "niceeval.before-cache-linked-plan/v1",
     parentIdentity,
-    ...setupPrefixActionManifest(entry, cumulativeState),
+    ...beforeCacheActionDeclaration(entry, cumulativeState),
   } as unknown as JsonValue;
   return `linked-prefix:${digestOf(identity)}`;
 }
@@ -577,13 +559,13 @@ function scheduledBeforeSteps(
   let unsupportedStateAncestor = false;
   let unsupportedStateBarrierActionId: string | undefined;
   let cumulativeState: SandboxActionState | undefined;
-  let parentPrefixIdentity = linkedSetupPrefixBaseIdentity(pair);
+  let parentPrefixIdentity = linkedBeforeCacheBaseIdentity(pair);
   const capability = capabilityOf(pair);
-  const providerCoverage = capability === "persistent"
-    ? providerDeclaredSetupPrefixCoverage(pair)
+  const providerCoverage = capability !== "unsupported"
+    ? providerDeclaredBeforeCacheCoverage(pair)
     : "unsupported";
   const capabilityReason = capability === "unsupported"
-    ? providerDeclaredSetupPrefixReason(pair)
+    ? providerDeclaredBeforeCacheReason(pair)
     : undefined;
   return Object.freeze(scheduled.map((entry): CommandPlanStep => {
     const projected = { ...stepForLinkedBefore(pair, entry), ...(entry.pluginSource === undefined ? {} : { label: entry.pluginSource }) };
@@ -596,7 +578,7 @@ function scheduledBeforeSteps(
       ? "opaque" as const
       : cumulativeState!;
     const prefixIdentity = entry.kind === "action" && !opaqueAncestor && !currentOpaque
-      ? linkedSetupPrefixActionIdentity(parentPrefixIdentity, entry, cumulativeState!)
+      ? linkedBeforeCacheActionIdentity(parentPrefixIdentity, entry, cumulativeState!)
       : undefined;
     // Provider capability and linked lineage are independent facts. Preserve the
     // earliest structural barrier even when this provider cannot cache any prefix;
@@ -621,7 +603,7 @@ function scheduledBeforeSteps(
           : undefined;
     const step: CommandPlanStep = Object.freeze({
       ...projected,
-      ...setupPrefixAttribution(entry),
+      ...beforeCacheAttribution(entry),
       action: entry.kind === "action"
         ? projected.action
         : Object.freeze({
@@ -1169,7 +1151,7 @@ function countEvidence(steps: readonly CommandPlanStep[]): { opaque: number; red
  * 虚假的全局序号；Group lane 只按规范化 Eval ID、再 attempt index 稳定串行。
  */
 export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPlan {
-  const setupPrefixCapability = input.setupPrefixCapability ?? providerDeclaredSetupPrefixCapability;
+  const beforeCacheCapability = input.beforeCacheCapability ?? providerDeclaredBeforeCacheCapability;
   const rows: RowWithPair[] = input.rows.map((row) => {
     const pair = input.preparedPairsByKey.get(runPairKey(row.experimentId, row.evalId));
     if (pair === undefined) {
@@ -1197,7 +1179,7 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
       }
     }
     const lanes = [...byLane.values()].map(({ rows: laneRows, spec }) =>
-      laneFor(laneRows, spec, setupPrefixCapability));
+      laneFor(laneRows, spec, beforeCacheCapability));
     const hasDispatch = lanes.some((lane) => lane.slots.some((slot) => slot.action === "dispatch"));
     const representative = experimentRows[0]!.pair;
     experiments.push({

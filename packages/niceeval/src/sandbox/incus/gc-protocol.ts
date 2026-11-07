@@ -20,7 +20,7 @@ export const GcPlanSchema = Schema.Struct({
 export const GcItemOutcomeSchema = Schema.Struct({
   entryId: Schema.String, resourceIdentity: Schema.String,
   status: Schema.Literals(["deleted", "already-absent", "skipped", "failed", "not-attempted"]),
-  reasonCode: Schema.Literals(["deleted", "already-absent", "lease-acquired", "root-present", "provider-reference", "entry-state-changed", "manifest-changed", "resource-changed", "unverified", "delete-conflict", "delete-failed", "domain-stopped"]),
+  reasonCode: Schema.Literals(["deleted", "already-absent", "hold-acquired", "hold-present", "provider-reference", "entry-state-changed", "manifest-changed", "resource-changed", "unverified", "delete-conflict", "delete-failed", "domain-stopped"]),
   message: Schema.String,
 });
 export const GcOutcomeSchema = Schema.Struct({

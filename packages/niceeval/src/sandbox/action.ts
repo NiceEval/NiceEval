@@ -30,7 +30,7 @@ export const changeFrequency = Object.freeze({
   frequent: 1_000,
 } as const);
 
-/** Complete mutable-state promises understood by V1 Setup Prefix providers. */
+/** Complete mutable-state promises understood by V1 Before cache providers. */
 export const sandboxState = Object.freeze({
   all: "all",
   dockerData: "dockerData",

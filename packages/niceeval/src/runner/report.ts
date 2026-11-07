@@ -146,7 +146,7 @@ export function summarize(
   startedAt: string,
   durationMs: number,
   name?: LocalizedText,
-  beforeCaches: InvocationSummary["beforeCaches"] = Object.freeze({ total: 0, hit: 0, prepared: 0, failed: 0 }),
+  beforeCaches: InvocationSummary["beforeCaches"] = Object.freeze({ total: 0, hit: 0, prepared: 0, degraded: 0, failed: 0 }),
 ): InvocationSummary {
   const counts = { passed: 0, failed: 0, skipped: 0, errored: 0 };
   let inTok: number | undefined = 0;

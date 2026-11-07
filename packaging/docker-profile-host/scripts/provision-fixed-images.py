@@ -294,7 +294,7 @@ def validate_published_registry(
     for index, raw in enumerate(records):
         expected_id = f"seed-{index:08d}" if seed else f"slot-{index:04d}"
         id_key = "seedId" if seed else "slotId"
-        image_name = f"setup-prefix-seed-{index:08d}.img" if seed else f"docker-data-slot-{index:04d}.img"
+        image_name = f"before-cache-seed-{index:08d}.img" if seed else f"docker-data-slot-{index:04d}.img"
         image = image_root / image_name
         mountpoint = mount_root / expected_id
         required_keys = {
@@ -373,12 +373,12 @@ def main() -> None:
     config_path = Path(args.host_config)
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
     storage = cfg.get("storage", {})
-    policy = cfg.get("setupPrefix", {})
+    policy = cfg.get("beforeCache", {})
     if cfg.get("securityLevel") != "raw-dind-storage/v1":
         raise SystemExit("fixed-image-ext4 is supported only for raw-dind-storage/v1")
     setup_enabled = policy.get("enable", policy.get("enabled"))
     if storage.get("backing") != BACKING or setup_enabled is not True:
-        raise SystemExit("fixed-image provisioning requires storage.backing=fixed-image-ext4 and setupPrefix.enable=true")
+        raise SystemExit("fixed-image provisioning requires storage.backing=fixed-image-ext4 and beforeCache.enable=true")
     count = int(cfg["capacity"].get("dockerDataAllocationCount", cfg["capacity"]["maxContainers"]))
     seed_count = int(policy.get("seedCount", 0))
     size = parse_bytes(cfg["capacity"]["ephemeralDiskBytes"])
@@ -493,7 +493,7 @@ def main() -> None:
                 uid=user.pw_uid, gid=group.gr_gid, seed=False, temporary_paths=temporary_paths,
             ) for index in range(count)]
             seeds = [ensure_image(
-                image_root / f"setup-prefix-seed-{index:08d}.img",
+                image_root / f"before-cache-seed-{index:08d}.img",
                 seed_root / f"seed-{index:08d}", size=size,
                 uid=0, gid=0, seed=True, temporary_paths=temporary_paths,
             ) for index in range(seed_count)]
@@ -513,7 +513,7 @@ def main() -> None:
             "slotRootPath": str(slot_root),
             "slotRegistryPath": str(slot_registry),
         })
-        cfg["setupPrefix"] = {
+        cfg["beforeCache"] = {
             "enabled": True,
             **SETUP_CONSTANTS,
             "seedRegistryPath": str(seed_registry),
