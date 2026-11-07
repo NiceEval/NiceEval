@@ -5,6 +5,7 @@ Inspection 的命令与输出契约单源始终在 [CLI](../cli.md)，读取语�
 
 - [核对数据完整度](inspection-check-completeness.md)：发现可问问题，再审计一个有界结果的完整性。
 - [比较质量与成本](inspection-compare-quality-cost.md)：以固定 comparison mode 比较两组持续可读 Run。
+- [把终端里看到的结果交给脚本](inspection-show-as-json.md)：在 `show` 后加 `-o json`，取得与 `query run` 逐字相同的 document。
 
 需要在浏览器审阅同一已发布事实时，进入 [Insight](../../insight/README.md)。Insight 经
 sqlite-wasm 在固定 `PublicationCutoff` 上运行相同的 query definition；UI 只呈现其 result，不读取 CLI protocol document。

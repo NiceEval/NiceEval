@@ -14,7 +14,7 @@ request 有两种等价传输。`--request` 读取文件或 stdin；`--request-j
 两者恰好择一，同时给出或都缺席是用法错误。两条路径得到同一份 request 后走完全相同的解码与校验，
 `--request-json` 不接受 operation 简写、位置参数或部分字段，也不另设一套 flag 化的 selector。
 
-`query` 是 machine 入口：它只以 `niceeval.query/v3` 输出结构化结果，不接受 human 输出模式。每份 stdout
+`query` 是完整的 machine 入口：它只以 `niceeval.query/v3` 输出结构化结果，不接受 human 输出模式。`show` 已有投影的 operation 也可以用 `niceeval show … -o json` 取得逐字相同的 document，见[输出格式](#输出格式)。每份 stdout
 document 都显式包含 `outcome: discovery | success | explanation | failure`。
 人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
 [Insight](../insight/README.md) 的 `niceeval view` 提供。
@@ -359,20 +359,22 @@ discovery 或 request 重新开始。
 ## `niceeval show`
 
 ```sh
-niceeval show
+niceeval show [-o text|json]
 niceeval show --all
-niceeval show --run <run-id>...
-niceeval show --experiment <experiment-id>...
-niceeval show @<locator>
-niceeval show @<locator> --source
-niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>]
-niceeval show @<locator> --timing
-niceeval show @<locator> --usage
-niceeval show @<locator> --diff
+niceeval show --run <run-id>... [-o text|json]
+niceeval show --experiment <experiment-id>... [-o text|json]
+niceeval show @<locator> [-o text|json]
+niceeval show @<locator> --source [-o text|json]
+niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>] [-o text|json]
+niceeval show @<locator> --timing [-o text|json]
+niceeval show @<locator> --usage [-o text|json]
+niceeval show @<locator> --diff [-o text|json]
 ```
 
-`show` 是英文 human text 入口。它不调用 `query` stdout 或解码 `niceeval.query/v3`，而是与
-`query` 一样打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result。
+人在终端里找到想看的投影后，加 `-o json` 就得到同一批数据的机器形态，换成 `niceeval view` 就在浏览器打开同一个 selection；三者用同一套 selector，不需要改写成另一种语法。
+
+`show` 默认是英文 human text 入口。它不调用 `query` stdout 或解码 `niceeval.query/v3`，而是与
+`query` 一样打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result；`-o json` 只换编码，不换 operation。
 
 show 的每个投影只接受对应具名 operation 的 typed result；必填 shape 缺失时失败，只有契约
 明示的 `null`、optional、`not-recorded` 或 `partial` 才能显示业务 fallback。
@@ -430,6 +432,35 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> --diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
 
+### 输出格式
+
+`-o text` 是默认值，输出上文的人读投影。`-o json` 按下表的固定顺序，为投影调用的每个 operation 向 stdout 写一行 `InspectionDocument`（JSON Lines）。
+每一行与以同一 request 调用 `niceeval query run` 的 stdout document 逐字相同；全部行来自同一个 `PublicationCutoff`。
+
+| 投影 | 依次调用的 operation |
+| --- | --- |
+| 无 selector | `project.get` |
+| `--record <file>` | `overview.get`；与 `--experiment` 同用时为 `experiment.get` |
+| `--experiment` | 每个去重后的 ID 一次 `experiment.get`，按 ID 排序 |
+| `--run` | 每个去重后的 ID 一次 `run.get`，按 ID 排序 |
+| `@<locator>` | `attempt.get`、`attempt.usage` |
+| `@<locator> --source` | `attempt.sources` |
+| `@<locator> --execution` | `attempt.trace`，带 `--actor`、`--type` 与 `--continuation`；有 `--expand` 时为 `attempt.trace.detail` |
+| `@<locator> --timing` | `attempt.timing` |
+| `@<locator> --usage` | `attempt.usage` |
+| `@<locator> --diff` | `attempt.diff` |
+
+`-o json` 不输出标题、表格、`See more`、`Next` 或浏览器提示，也不按 `--all` 改变内容：`--all` 只控制文本展开，因此不能与 `-o json` 同用。
+某个 operation 返回 `outcome: failure` 时，该行照常写出，后续 operation 不再调用，进程以与 `query run` 相同的状态退出。
+argv 错误、source 无法打开等无法形成 document 的失败与文本模式一样只写 stderr。
+
+`show` 没有投影的 operation（例如 `attempt.assertion.detail` 与 `attempt.assertion.image`）只经 `query` 读取。`-o` 不接受 `csv`、`table` 或其它取值。
+
+### 在浏览器打开同一个 selection
+
+文本模式在输出末尾给出一行 `Open: niceeval view <selector>`，selector 与本次命令相同：无 selector 时为 `niceeval view`，`--experiment` 与 `--run` 原样保留，Attempt 详情的 `--source` 等投影 flag 不带入。
+`--record` 读取的是搬迁文件，没有对应的 View，省略这一行。[`niceeval view`](../insight/cli.md#niceeval-view) 接受与 `show` 相同的 selector。
+
 ### 展示块呈现
 
 通用事件有展示块时，`show --execution` 按块呈现；没有展示块的事件显示 envelope 与 `summary`。
@@ -467,7 +498,7 @@ Events 的全部人读字符串按码点去掉控制字符与双向格式控制�
 轨迹输出分别标明捕获状态、每条 trace 的 producer collection 状态及限制、当前页是否还有后续。
 `partial` 的空索引显示其限制，页尾不能被描述为生产者证据完整。
 
-`--all` 只适用于无 selector 的 Results，不能与 `--experiment`、`--run`、Attempt locator 或 Attempt detail flag 同用。
+`--all` 只适用于无 selector 的 Results，不能与 `--experiment`、`--run`、Attempt locator、Attempt detail flag 或 `-o json` 同用。
 
 ### 当前 Results 示例
 
@@ -503,6 +534,7 @@ Attempts · my-agent
   See more  niceeval show --experiment my-agent
 
 Next: niceeval exp my-agent --dry
+Open: niceeval view
 ```
 
 `Verdicts` 与 `Pass rate` 只统计 covered 位置，缺口不计 failed；有缺口时 Pass rate 的 state 是 `partial`，人读输出保留该标记。纯计分制范围显示 `Score` 而不显示 `Pass rate`，
@@ -599,6 +631,8 @@ Next
   niceeval show @01JSHOWATTEMPT --timing
   niceeval show @01JSHOWATTEMPT --usage
   niceeval show @01JSHOWATTEMPT --diff
+
+Open: niceeval view @01JSHOWATTEMPT
 ```
 
 Experiment selector 是下钻动作，直接显示完整明细，不再要求 `--all`：
@@ -627,6 +661,8 @@ Experiment main
   --------------  -------  --------
   @ATTEMPT-PASS-1 passed   18.34 s
   @ATTEMPT-PASS-2 passed   20.12 s
+
+Open: niceeval view --experiment main
 ```
 
 `--experiment` 读取该 Experiment 各计划 Attempt 最新已发布结果，不求值当前源码；当前缺口只在默认 `show` 中显示。
@@ -635,8 +671,8 @@ Experiment main
 当前目标求值失败、source 读取失败、显式 Run / Experiment / locator 未命中、required result shape 不合法与 `--expand` 未命中，都以英文诊断写 stderr 并非零退出。
 不输出半张表，不把 typed missing/partial 或正常的当前缺口改写成进程失败。
 
-`show` 不提供 `--json`、`--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、
-component、renderer、静态导出、显示位置 handle 或其它作者面。`query` 是唯一 JSON 入口；`view` 不接受 Attempt locator。
+`show` 不提供 `--report`、history、stats、fresh、grep 或自由 statistics，也不接受 Page、theme、
+component、renderer、静态导出、显示位置 handle 或其它作者面。机器输出只有 `-o json` 一种，它不新增 operation 或 result shape。
 CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英语文本，不建立中文或英语 message catalog。
 
 读取失败保留底层 Record 错误分类、操作与原因。只有明确需要 schema migration 时才提示迁移；忙碌读取和资源限额表示本次读取未完成，不推断已发布数据损坏。
@@ -655,7 +691,7 @@ CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英�
 
 `show @<locator>` 在 Assertions 后展示 Notes，按调用顺序呈现 label 与 value；`null` 显示为 unavailable。
 Quantity 使用其单位格式显示，例如 `512 ms`、`61.2%` 和 `$0.031`。
-`show @<locator> --json` 与 `query` 的 `attempt.get` 都在 Attempt 结果中返回 `notes`。
+`show @<locator> -o json` 与 `query` 的 `attempt.get` 都在 Attempt 结果中返回 `notes`。
 
 `show --exp <experiment-id>` 按 label 和 unit 分组展示数值 Note 的 count、min、median、p90、max。
 JSON 对象、字符串、布尔值与 `null` 不参与这些数值统计。旧 Record 没有 Note 时返回空列表。
