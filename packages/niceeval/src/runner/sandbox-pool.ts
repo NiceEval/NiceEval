@@ -4,6 +4,8 @@ import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
+import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
+import type { PreparedBeforeCacheUse } from "./before-cache-preparation.ts";
 import {
   materializeSandboxRunPlan,
   liveSandboxRuntimeServices,
@@ -25,6 +27,7 @@ export interface ReusableSandboxLease {
   readonly sandbox: Sandbox;
   readonly reuseSandbox: number;
   readonly reuseOrdinal: number;
+  readonly materializedCase: MaterializedSandboxCase;
   /** 提交本次 Attempt 的归还决策；Scope 退出负责实际 reset/retire，漏提交默认 Retire。 */
   commit(disposition: ReusableLeaseRelease): Effect.Effect<void>;
 }
@@ -63,6 +66,7 @@ type EntryLifecycle =
   | { readonly _tag: "Retired" };
 
 interface Entry {
+  readonly materializedCase: MaterializedSandboxCase;
   /** 资源面 Sandbox:registry / stop / suspend / ledger / lifetime / deadline 都用它。 */
   sandbox: Sandbox;
   /** 物化时的 raw provider backend:只用于逐次租借构建 author facade,不保存 facade/executor。 */
@@ -125,6 +129,7 @@ export class ReusableSandboxPool {
     private readonly nextReuseSandboxNumber?: () => number,
     private readonly groupPlugins: readonly LinkedPluginLifecycle[] = Object.freeze([]),
     private readonly groupPluginContext?: GroupPluginContext,
+    private readonly preparedBeforeCache?: PreparedBeforeCacheUse,
   ) {
     this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
   }
@@ -346,6 +351,10 @@ export class ReusableSandboxPool {
         signal: this.setupContext.signal,
         hookContext: lifecycleHookContext,
         buildLocators,
+        ...(this.preparedBeforeCache === undefined ? {} : {
+          beforeCachePreparationContext: this.preparedBeforeCache.context,
+          ...(this.preparedBeforeCache.artifact === undefined ? {} : { beforeCacheArtifact: this.preparedBeforeCache.artifact }),
+        }),
         ...(this.agent !== undefined ? { agent: this.agent } : {}),
         ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
         provisionSlot: { _tag: "Detached" },
@@ -410,6 +419,7 @@ export class ReusableSandboxPool {
         : this.nextReuseSandboxNumber();
       return {
         sandbox,
+        materializedCase: materialized,
         authorBackend: materialized.authorBackend,
         scope: entryScope,
         lifetime,
@@ -484,6 +494,7 @@ export class ReusableSandboxPool {
         sandbox: authorSandbox,
         reuseSandbox: entry.reuseSandbox,
         reuseOrdinal: entry.ordinal,
+        materializedCase: entry.materializedCase,
         commit: (release) => Effect.sync(() => {
           if (lifecycle._tag !== "Open") return;
           lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };

@@ -3,6 +3,7 @@
 import { Data, Effect, Schema } from "effect";
 import { isJsonValue } from "../shared/json-value.ts";
 import type { SandboxActionState } from "./action.ts";
+import type { BeforeCacheDegradedReason } from "./layer.ts";
 import type {
   CommandOptions,
   CommandResult,
@@ -46,6 +47,7 @@ export const decodeBeforeCacheKeyScope = Schema.decodeUnknownSync(
 );
 
 export type BeforeCacheEligibility =
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string }
   | {
       readonly _tag: "Eligible";
       readonly persistence: "persistent";

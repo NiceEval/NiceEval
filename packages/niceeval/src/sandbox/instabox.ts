@@ -4,6 +4,8 @@ import { computeCaseKey } from "./identity.ts";
 import { defineSandboxTemplate, sandboxProviderPlan, type SandboxLayer, type SandboxProviderModule } from "./layer.ts";
 import { providerBoundaryEffect } from "./backend.ts";
 import { SandboxRuntimeMaterializationError } from "./runtime.ts";
+import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
+import { instaboxSnapshotDriver } from "./instabox/snapshot-driver.ts";
 
 export interface InstaboxSandboxOptions {
   readonly snapshotId: string;
@@ -23,7 +25,7 @@ const decodeOptions = Schema.decodeUnknownSync(Options, { onExcessProperty: "err
 const revision = "instabox-snapshot-1";
 const providerModule: SandboxProviderModule<InstaboxSandboxOptions> = {
   id: "niceeval/instabox-snapshot",
-  beforeCache: { _tag: "Unsupported", reason: "remote snapshot preparer pending" },
+  beforeCache: { _tag: "RunPrepared", coverage: "all", preparer: remoteSnapshotPreparer(instaboxSnapshotDriver) },
   capabilities: {
     retention: { _tag: "DestroyOnly" },
     reuse: { _tag: "Unsupported", reason: "Instabox machines belong to one Attempt." },

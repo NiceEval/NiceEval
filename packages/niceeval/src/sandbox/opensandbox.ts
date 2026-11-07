@@ -7,6 +7,8 @@ import {
 } from "./layer.ts";
 import { providerBoundaryEffect } from "./backend.ts";
 import { SandboxRuntimeMaterializationError } from "./runtime.ts";
+import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
+import { openSandboxSnapshotDriver } from "./opensandbox/snapshot-driver.ts";
 
 export interface OpenSandboxOptions {
   readonly image: string;
@@ -20,7 +22,7 @@ export interface OpenSandboxOptions {
 
 const providerModule: SandboxProviderModule<OpenSandboxOptions> = {
   id: "niceeval/opensandbox-image",
-  beforeCache: { _tag: "Unsupported", reason: "remote snapshot preparer pending" },
+  beforeCache: { _tag: "RunPrepared", coverage: "all", preparer: remoteSnapshotPreparer(openSandboxSnapshotDriver) },
   capabilities: {
     retention: { _tag: "DestroyOnly" },
     reuse: { _tag: "Unsupported", reason: "OpenSandbox instances belong to one Attempt." },

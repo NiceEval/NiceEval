@@ -1367,9 +1367,11 @@ export function acquireSandboxRunPlan(
         return Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error("Before cache materialization requires its Record Run context.")));
       }
       const acquire = input.beforeCachePreparationContext !== undefined && support._tag === "RunPrepared"
-        ? support.preparer.materializeFrom(undefined, input.beforeCachePreparationContext,
+        ? support.preparer.materializeFrom(undefined, input.beforeCachePreparationContext, "consumer",
             input.beforeCacheArtifact === undefined ? { _tag: "Base" } : { _tag: "Artifact", artifact: input.beforeCacheArtifact }, context).pipe(
-            Effect.map(({ sandbox, start }) => Object.freeze({ ...sandbox, beforeCacheStart: start })),
+            Effect.flatMap((result) => result._tag === "Degraded"
+              ? Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error(result.detail)))
+              : Effect.succeed(Object.freeze({ ...result.sandbox, beforeCacheStart: result.start }))),
           )
         : binding.materialize(context);
       const release = (owned: MaterializedSandboxCase) => releaseOwned(input, owned);

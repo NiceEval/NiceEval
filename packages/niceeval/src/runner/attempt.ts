@@ -355,6 +355,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
     sandbox: Sandbox;
     reuseSandbox: number;
     reuseOrdinal: number;
+    materializedCase: MaterializedSandboxCase;
   };
 }
 
@@ -992,7 +993,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           }),
         );
       }
-      let materializedCase: MaterializedSandboxCase | undefined;
+      let materializedCase: MaterializedSandboxCase | undefined = reusedSandbox?.materializedCase;
       const sandbox =
         reusedSandbox?.sandbox ??
         (agent.kind === "sandbox"
@@ -1026,9 +1027,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       diagnostic: freshSandboxLifecycleFeedback.diagnostic,
                     },
                     buildLocators,
-                    ...(preparedBeforeCache?.artifact === undefined
+                    ...(preparedBeforeCache === undefined
                       ? {}
-                      : { beforeCacheArtifact: preparedBeforeCache.artifact, beforeCachePreparationContext: preparedBeforeCache.context }),
+                      : { beforeCachePreparationContext: preparedBeforeCache.context,
+                          ...(preparedBeforeCache.artifact === undefined ? {} : { beforeCacheArtifact: preparedBeforeCache.artifact }) }),
                     agent: agent.kind === "sandbox" ? agent : undefined,
                     ...(runTiming !== undefined ? { runTiming } : {}),
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
@@ -1437,7 +1439,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             sensitiveValues,
             observabilityRuntime,
             ...(materializedCase === undefined ? {} : { materializedCase }),
-            ...(preparedBeforeCache === undefined ? {} : { preparedBeforeCache }),
+            ...(preparedBeforeCache === undefined ? {} : { preparedBeforeCache:
+              reusedSandbox !== undefined && reusedSandbox.reuseOrdinal > 1
+                ? { context: preparedBeforeCache.context, satisfiedActionCount: 0 }
+                : preparedBeforeCache }),
             concurrencySlot,
             declareFailure,
             onEnvironmentIncomplete,
@@ -2846,8 +2851,10 @@ async function runAttemptBody(
       await replayAllBefore(linked.before, "degraded");
       return;
     }
-    if (eligibility._tag === "Unsupported") {
-      await replayAllBefore(linked.before, "unsupported");
+    if (eligibility._tag !== "Eligible") {
+      if (eligibility._tag === "Degraded") feedback.diagnostic({ code: "cache-degraded", level: "warning", message: eligibility.detail,
+        data: { operation: "eligibility", reason: eligibility.reason } });
+      await replayAllBefore(linked.before, eligibility._tag === "Unsupported" ? "unsupported" : "degraded");
       return;
     }
 
@@ -2945,6 +2952,11 @@ async function runAttemptBody(
         await recoverLookupAndReplay(candidate.entry, lookup.failure);
         return;
       }
+      if (lookup.success._tag === "Degraded") {
+        feedback.diagnostic({ code: "cache-degraded", level: "warning", message: lookup.success.detail, data: { reason: lookup.success.reason } });
+        await replayAllBefore(linked.before, "degraded");
+        return;
+      }
       if (lookup.success._tag === "Unsupported") {
         cacheAvailable = false;
         break;
@@ -2982,6 +2994,11 @@ async function runAttemptBody(
         ));
         if (Result.isFailure(lookup)) {
           await recoverLookupAndReplay(candidate.entry, lookup.failure);
+          return "degraded";
+        }
+        if (lookup.success._tag === "Degraded") {
+          feedback.diagnostic({ code: "cache-degraded", level: "warning", message: lookup.success.detail, data: { reason: lookup.success.reason } });
+          await replayAllBefore(linked.before.slice(index), "degraded");
           return "degraded";
         }
         if (lookup.success._tag === "Unsupported") {
@@ -3039,6 +3056,11 @@ async function runAttemptBody(
             dedupeKey: `cache-capture-failed-after-execution:${run.experimentId}:${evalDef.id}`,
           });
           throw captured.failure;
+        }
+        if (captured.success._tag === "Degraded") {
+          cacheAvailable = false;
+          feedback.diagnostic({ code: "cache-degraded", level: "warning", message: captured.success.detail, data: { reason: captured.success.reason } });
+          return "continued-uncached";
         }
         if (captured.success._tag === "Unsupported") {
           return "unsupported-capture";

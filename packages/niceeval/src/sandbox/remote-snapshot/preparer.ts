@@ -7,7 +7,7 @@ import { BeforeCacheLookupError, type BeforeCacheError, type BeforeCacheStep } f
 import type { MaterializedSandboxCase } from "../case-types.ts";
 import { digestOf } from "../identity.ts";
 import type {
-  BeforeCacheArtifact, BeforeCacheCapture, BeforeCacheDegradedReason, BeforeCacheLookup,
+  BeforeCacheArtifact, BeforeCacheCapture, BeforeCacheDegradedReason, BeforeCacheLookup, BeforeCacheMaterialized,
   BeforeCachePreparationContext, BeforeCachePreparer, BeforeCacheSource,
 } from "../layer.ts";
 import { SandboxRuntimeMaterializationError, type SandboxRuntimeMaterializeContext } from "../runtime.ts";
@@ -277,6 +277,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
   ))));
 
   const rememberStaging = Effect.fn("remoteSnapshot.rememberStaging")(function*(plan: Plan, context: BeforeCachePreparationContext, sandbox: MaterializedSandboxCase) {
+    const planned = targets.get(contextKey(context))?.get(plan);
     const resolved = yield* Effect.result(resolve(plan, context));
     if (Result.isFailure(resolved)) {
       stagingProofs.set(sandbox, { _tag: "Rejected", reason: "eligibility-failed", detail: "Staging Base could not be resolved" });
@@ -287,19 +288,28 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       stagingProofs.set(sandbox, { _tag: "Rejected", reason: "base-image-unverified", detail: target.reason });
       return;
     }
+    if (planned !== undefined && (planned.baseIdentity !== target.baseIdentity || planned.executionDomainId !== target.executionDomainId)) {
+      stagingProofs.set(sandbox, { _tag: "Rejected", reason: "base-image-unverified", detail: "Staging Base changed after planning" });
+      return;
+    }
     const mounts = yield* Effect.result(readMounts(sandbox));
     stagingProofs.set(sandbox, Result.isSuccess(mounts) ? { _tag: "Verified", target, mounts: mounts.success }
       : { _tag: "Rejected", reason: "mounted-state", detail: "Staging writable mounts could not be recorded" });
   });
 
   const materializeFrom = Effect.fn("remoteSnapshot.materializeFrom")(function*(
-    plan: Plan, context: BeforeCachePreparationContext, source: BeforeCacheSource, materialize: SandboxRuntimeMaterializeContext,
+    plan: Plan, context: BeforeCachePreparationContext, purpose: "staging" | "consumer", source: BeforeCacheSource, materialize: SandboxRuntimeMaterializeContext,
   ) {
     const base = Effect.fn("remoteSnapshot.materializeBase")(function*(reason?: string) {
       const sandbox = yield* context.materializeBase(materialize);
       // Proof failure disables capture, not an otherwise valid Base instance.
       yield* rememberStaging(plan, context, sandbox);
-      return { sandbox, start: reason === undefined ? { _tag: "Restored" as const } : { _tag: "FellBackToBase" as const, reason } };
+      const proof = stagingProofs.get(sandbox);
+      if (purpose === "staging" && proof?._tag === "Rejected") {
+        yield* io(() => sandbox.group.stop());
+        return degraded(proof.reason, proof.detail);
+      }
+      return { _tag: "Materialized" as const, sandbox, start: reason === undefined ? { _tag: "Restored" as const } : { _tag: "FellBackToBase" as const, reason } };
     });
     if (source._tag === "Base") return yield* base();
     const parsed = yield* Effect.result(Effect.try({ try: () => decodeLocator(source.artifact.locator), catch: () => ledgerError() }));
@@ -355,7 +365,19 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       return yield* base("Snapshot artifact marker could not be verified");
     }
     yield* rememberStaging(plan, context, sandbox);
-    return { sandbox, start: { _tag: "Restored" as const } };
+    const proof = stagingProofs.get(sandbox);
+    if (purpose === "staging" && proof?._tag === "Rejected") {
+      yield* close();
+      return degraded(proof.reason, proof.detail);
+    }
+    return { _tag: "Materialized" as const, sandbox, start: { _tag: "Restored" as const } };
+  }, (effect, _plan, context, purpose) => {
+    const materialized = effect.pipe(Effect.mapError((error) => error instanceof SandboxRuntimeMaterializationError ? error
+      : new SandboxRuntimeMaterializationError({ code: "sandbox.materialization-failed", provider: context.providerId,
+          message: "Snapshot instance could not be retired", cause: error })));
+    return purpose === "consumer" ? materialized : materialized.pipe(
+      Effect.catch((): Effect.Effect<BeforeCacheMaterialized> => Effect.succeed(degraded("staging-failed", "Snapshot staging could not become ready"))),
+    );
   });
 
   const capture = Effect.fn("remoteSnapshot.capture")(function*(
@@ -416,11 +438,12 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
   return {
     continuesStaging: driver.sourceUsableAfterSnapshot,
     eligibility: (plan, context) => driver.resolveBase(plan).pipe(
-      Effect.mapError(() => new BeforeCacheLookupError({ operation: "eligibility", reason: "eligibility-failed" })),
       Effect.map((target) => target._tag === "Ineligible"
       ? { _tag: "Unsupported" as const, code: target.code, reason: target.reason }
       : { _tag: "Eligible" as const, persistence: "persistent" as const, dependency: "parent-backed" as const,
-        coverage: "all" as const, baseIdentity: target.baseIdentity, keyScope: target.keyScope })),
+        coverage: "all" as const, baseIdentity: target.baseIdentity, keyScope: target.keyScope }),
+      Effect.catch(() => Effect.succeed(degraded("eligibility-failed", "Snapshot Base identity could not be resolved"))),
+    ),
     lookup, materializeFrom, capture,
   };
 }

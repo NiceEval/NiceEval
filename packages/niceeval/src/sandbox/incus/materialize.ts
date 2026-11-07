@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Effect, Option, Scope } from "effect";
+import { Effect, Option, Result, Scope } from "effect";
 import type { JsonValue } from "../../shared/types.ts";
 import { digestOf } from "../identity.ts";
 import {
@@ -469,11 +469,20 @@ export function incusProviderModule(
       coverage: sandboxState.all,
       preparer: {
       continuesStaging: false,
-      materializeFrom: (plan: IncusRuntimePlan, preparationContext: BeforeCachePreparationContext, source: BeforeCacheSource, context: SandboxRuntimeMaterializeContext) =>
+      materializeFrom: (plan: IncusRuntimePlan, preparationContext: BeforeCachePreparationContext, purpose: "staging" | "consumer", source: BeforeCacheSource, context: SandboxRuntimeMaterializeContext) =>
         (source._tag === "Base"
-          ? preparationContext.materializeBase(context)
-          : materializeIncusProviderPlan(plan, { ...context, beforeCacheArtifact: source.artifact })).pipe(
-          Effect.map((sandbox) => ({ sandbox, start: { _tag: "Restored" as const } })),
+          ? preparationContext.materializeBase(context).pipe(Effect.map((sandbox) => ({
+              _tag: "Materialized" as const, sandbox, start: { _tag: "Restored" as const },
+            })))
+          : materializeIncusProviderPlan(plan, { ...context, beforeCacheArtifact: source.artifact }).pipe(
+              Effect.map((sandbox) => ({ _tag: "Materialized" as const, sandbox, start: { _tag: "Restored" as const } })),
+              Effect.catch(() => preparationContext.materializeBase({ ...context, beforeCacheArtifact: undefined }).pipe(
+                Effect.map((sandbox) => ({ _tag: "Materialized" as const, sandbox,
+                  start: { _tag: "FellBackToBase" as const, reason: "parent-unavailable" } })),
+              )),
+            )).pipe(
+          Effect.catch((error) => purpose === "consumer" ? Effect.fail(error)
+            : Effect.succeed({ _tag: "Degraded" as const, reason: "staging-failed" as const, detail: "Incus staging is unavailable; reconcile orphan allocations with doctor and gc incus" })),
         ),
       eligibility: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext) => Effect.succeed(Object.freeze({
         _tag: "Eligible" as const,
@@ -516,10 +525,14 @@ export function incusProviderModule(
           });
           if (lookup._tag === "Hit") yield* holdRunArtifact(repository, lookup.artifact);
           return lookup;
-        }),
+        }).pipe(Effect.catch(() => Effect.succeed({ _tag: "Degraded" as const, reason: "ledger-unavailable" as const,
+          detail: "Incus artifact lookup is unavailable; before actions will run normally" }))),
       capture: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext, owned: MaterializedSandboxCase, operation: BeforeCacheStep) =>
         Effect.gen(function* () {
-          const repository = yield* incusRepositoryHost.open().pipe(Effect.mapError(preparationFailure));
+          const opened = yield* Effect.result(incusRepositoryHost.open());
+          if (Result.isFailure(opened)) return { _tag: "Degraded" as const, reason: "ledger-unavailable" as const,
+            detail: "Incus artifact repository is unavailable; before actions will run normally" };
+          const repository = opened.success;
           const artifact = yield* Effect.tryPromise({
             try: async () => {
             if (!(owned.authorBackend instanceof IncusSandbox)) {
@@ -556,7 +569,8 @@ export function incusProviderModule(
           });
           yield* holdRunArtifact(repository, artifact);
           return Object.freeze({ _tag: "Published" as const, artifact });
-        }),
+        }).pipe(Effect.catch(() => Effect.succeed({ _tag: "Degraded" as const, reason: "snapshot-uncertain" as const,
+          detail: "Incus artifact publication is unverified; reconcile orphan artifacts with doctor and gc incus" }))),
       },
     },
   });

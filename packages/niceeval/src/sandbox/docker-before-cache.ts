@@ -817,7 +817,7 @@ async function lookupAndRestore(
   signal: AbortSignal,
 ): Promise<AttemptBeforeCacheLookup> {
   const eligibility = target.eligibility();
-  if (eligibility._tag === "Unsupported") return eligibility;
+  if (eligibility._tag !== "Eligible") return eligibility;
   let manifest: ValidatedManifest;
   try {
     manifest = validateOperation(input);
@@ -992,7 +992,7 @@ async function capture(
   signal: AbortSignal,
 ): Promise<AttemptBeforeCacheCapture> {
   const eligibility = target.eligibility();
-  if (eligibility._tag === "Unsupported") return eligibility;
+  if (eligibility._tag !== "Eligible") return eligibility;
   let manifest: ValidatedManifest;
   try {
     manifest = validateOperation(input);
@@ -1152,7 +1152,7 @@ export function makeDockerBeforeCacheCapability(
     fallBackToBase: () => scopedOperation(
       async (signal) => {
         const eligibility = target.eligibility();
-        if (eligibility._tag === "Unsupported") return eligibility;
+        if (eligibility._tag !== "Eligible") return eligibility;
         const recovered = await target.fallBackToBase(signal);
         if (!exactImageId(recovered.baseIdentity)) throw new Error("clean Base recovery did not use an exact image id");
         return { _tag: "FellBackToBase", ...recovered } as const;

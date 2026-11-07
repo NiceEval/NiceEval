@@ -7,7 +7,8 @@ import {
   sandboxStepExecutionOf,
   type SandboxActionState,
 } from "../sandbox/action.ts";
-import { sandboxCapabilities } from "../sandbox/backend.ts";
+import { sandboxCapabilities, providerBoundaryEffect } from "../sandbox/backend.ts";
+import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
 import {
   sandboxProviderBindingOf,
@@ -16,7 +17,6 @@ import {
   type BeforeCachePreparer,
 } from "../sandbox/layer.ts";
 import {
-  acquireSandboxRunPlan,
   liveSandboxRuntimeServices,
   type SandboxRuntimeMaterializeInput,
 } from "../sandbox/runtime.ts";
@@ -203,6 +203,8 @@ function materializePreparationNode(
     actionId: string,
     detail?: string,
   ) => void,
+  inherited?: MaterializedSandboxCase,
+  onPrepared?: (result: PreparationWorkResult, staging: MaterializedSandboxCase) => Effect.Effect<void>,
 ): Effect.Effect<PreparationWorkResult, Error, Scope.Scope> {
   return Effect.gen(function* () {
     const preparation = node.preparer;
@@ -242,8 +244,16 @@ function materializePreparationNode(
           services: liveSandboxRuntimeServices,
           release: { _tag: "Stop" },
         };
-        const owned = yield* acquireSandboxRunPlan(runtimeInput).pipe(Effect.mapError(asError));
-        if (parent !== undefined && owned.beforeCacheStart?._tag === "FellBackToBase") {
+        const created = inherited === undefined
+          ? yield* preparation.materializeFrom(undefined, node.context, "staging",
+              parent === undefined ? { _tag: "Base" } : { _tag: "Artifact", artifact: parent }, runtimeInput).pipe(Effect.mapError(asError))
+          : { _tag: "Materialized" as const, sandbox: inherited, start: { _tag: "Restored" as const } };
+        if (created._tag === "Degraded") return {
+          outcome: "degraded" as const, reason: created.reason, operationId: `before-cache-${randomUUID()}`,
+        };
+        const owned = created.sandbox;
+        if (inherited === undefined) yield* Effect.addFinalizer(() => providerBoundaryEffect(() => owned.group.stop()).pipe(Effect.orDie));
+        if (parent !== undefined && created.start._tag === "FellBackToBase") {
           return { outcome: "degraded" as const, reason: "parent-unavailable", operationId: `before-cache-${randomUUID()}` };
         }
         const commandTarget = createSandboxCommandTarget(owned.sandbox);
@@ -269,17 +279,14 @@ function materializePreparationNode(
         if (capture._tag === "Degraded") return {
           outcome: "degraded" as const, reason: capture.reason, operationId: step.operationId,
         };
-        return { outcome: "prepared" as const, artifact: capture.artifact };
+        const result = { outcome: "prepared" as const, artifact: capture.artifact };
+        if (result.artifact.beforeCacheKey !== node.key || result.artifact.declarationDigest !== candidate.declaration.declarationDigest) {
+          return yield* Effect.fail(new Error("Provider captured an artifact with the wrong before-cache identity."));
+        }
+        if (onPrepared !== undefined) yield* onPrepared(result, owned);
+        return result;
       }));
       if (captured.outcome === "degraded") return captured;
-      if (
-        captured.artifact.beforeCacheKey !== node.key ||
-        captured.artifact.declarationDigest !== candidate.declaration.declarationDigest
-      ) {
-        return yield* Effect.fail(
-          new Error("Provider captured an artifact with the wrong before-cache identity."),
-        );
-      }
       return Object.freeze({
         artifact: captured.artifact,
         outcome: "prepared" as const,
@@ -290,8 +297,8 @@ function materializePreparationNode(
 /**
  * Compile and complete every unique provider-native prefix before any Attempt
  * dispatch. Nodes are single-flight by complete BeforeCacheKey. A child becomes
- * ready only after its parent's publication effect and scoped materialization
- * have both completed.
+ * ready after its parent's publication completes. A continuing child borrows
+ * the parent's live staging while the parent retains its Scope and permits.
  */
 export function prepareBeforeCaches(
   attempts: readonly Attempt[],
@@ -301,6 +308,8 @@ export function prepareBeforeCaches(
     const nodes = new Map<string, PreparationNode>();
     const targets = new Map<string, PreparationTarget>();
     const contextsByPair = new Map<string, BeforeCachePreparationContext>();
+    const preparedByPair = new Map<string, PreparedBeforeCacheUse>();
+    const failuresByPair = new Map<string, Error>();
     for (const attempt of attempts) {
       const pairKey = cacheKey(attempt.run, attempt.evalDef.id);
       if (
@@ -309,6 +318,7 @@ export function prepareBeforeCaches(
         attempt.plan.providerPlan.capabilities.beforeCache._tag !== "RunPrepared" ||
         attempt.plan.providerPlan.build.buildKeys.length > 0
       ) continue;
+      if (contextsByPair.has(pairKey)) continue;
       const binding = Option.getOrUndefined(sandboxProviderBindingOf(attempt.plan.providerPlan));
       if (binding === undefined || binding.beforeCache._tag !== "RunPrepared") {
         return yield* Effect.fail(new Error("RunPrepared plan has no matching provider binding."));
@@ -318,7 +328,17 @@ export function prepareBeforeCaches(
       if (runId === undefined) return yield* Effect.fail(new Error("Before cache preparation has no Record Run identity."));
       const context = Object.freeze({ providerId: binding.moduleId, runId, materializeBase: binding.materialize });
       contextsByPair.set(pairKey, context);
-      const eligibility = yield* preparation.eligibility(undefined, context).pipe(Effect.mapError(asError));
+      const eligible = yield* Effect.result(preparation.eligibility(undefined, context));
+      if (Result.isFailure(eligible)) {
+        failuresByPair.set(pairKey, asError(eligible.failure));
+        continue;
+      }
+      const eligibility = eligible.success;
+      if (eligibility._tag === "Degraded") {
+        preparedByPair.set(pairKey, { context, satisfiedActionCount: 0,
+          degraded: { reason: eligibility.reason, operationId: `before-cache-${randomUUID()}` } });
+        continue;
+      }
       if (eligibility._tag !== "Eligible") continue;
       const entries = continuousEligibleActions(attempt.plan, eligibility.coverage);
       if (entries.length === 0) continue;
@@ -377,8 +397,6 @@ export function prepareBeforeCaches(
       }
     }
 
-    const preparedByPair = new Map<string, PreparedBeforeCacheUse>();
-    const failuresByPair = new Map<string, Error>();
     const globalGate = yield* Semaphore.make(Math.max(1, options.maxConcurrency ?? 2));
     const laneGates = new Map<string, Semaphore.Semaphore>();
     for (const node of nodes.values()) {
@@ -388,6 +406,7 @@ export function prepareBeforeCaches(
     const completions = new Map<string, Deferred.Deferred<NodeResult>>();
     for (const node of nodes.values()) completions.set(node.key, yield* Deferred.make<NodeResult>());
     const claimed = new Set<string>();
+    const stagingOffers = new Map<string, MaterializedSandboxCase>();
     const outcomes = new Map<string, "hit" | "prepared" | "degraded" | "failed">();
 
     const resolveNode = (key: string): Effect.Effect<NodeResult, never, Scope.Scope> => Effect.suspend(() => {
@@ -403,8 +422,11 @@ export function prepareBeforeCaches(
           attempts: 1, actionCount: node.actionIndex,
         } as const;
         const startedAt = Date.now();
+        let finished = false;
         options.onActivity?.({ ...activity, status: "started", phase: "lookup" });
         const finish = (result: NodeResult): Effect.Effect<NodeResult> => Effect.gen(function* () {
+          if (finished) return result;
+          finished = true;
           outcomes.set(node.key, Result.isFailure(result) ? "failed" : result.success.outcome);
           const durationMs = Math.max(0, Date.now() - startedAt);
           options.onActivity?.(Result.isFailure(result)
@@ -421,15 +443,29 @@ export function prepareBeforeCaches(
         const parent = parentResult !== undefined && Result.isSuccess(parentResult) && parentResult.success.outcome !== "degraded"
           ? parentResult.success.artifact : undefined;
         const laneGate = laneGates.get(node.laneKey)!;
-        const lookup = yield* Effect.result(globalGate.withPermits(1)(laneGate.withPermits(1)(lookupPreparationNode(node))));
+        const inherited = stagingOffers.get(node.key);
+        stagingOffers.delete(node.key);
+        const withGate = <A, E, R>(effect: Effect.Effect<A, E, R>) => inherited === undefined
+          ? globalGate.withPermits(1)(laneGate.withPermits(1)(effect)) : effect;
+        const lookup = yield* Effect.result(withGate(lookupPreparationNode(node)));
         if (Result.isFailure(lookup)) return yield* finish(Result.fail(lookup.failure));
         if (lookup.success !== undefined) return yield* finish(Result.succeed(lookup.success));
-        const result = yield* Effect.result(globalGate.withPermits(1)(laneGate.withPermits(1)(
+        const result = yield* Effect.result(withGate(
           materializePreparationNode(node, parent, (phase, actionIndex, actionId, detail) =>
             options.onActivity?.({ ...activity, status: "progress", phase, actionIndex, actionId,
               ...(detail === undefined ? {} : { detail }) }),
-          ),
-        )));
+          inherited, (prepared, staging) => Effect.gen(function*() {
+            if (!node.preparer.continuesStaging) return;
+            const child = [...nodes.values()].filter((candidate) => candidate.parentKey === node.key)
+              .sort((left, right) => left.key.localeCompare(right.key))[0];
+            if (child === undefined) return;
+            stagingOffers.set(child.key, staging);
+            // Publish the parent before waking the child, while its staging Scope
+            // and both concurrency permits remain owned by this chain.
+            yield* finish(Result.succeed(prepared));
+            yield* Deferred.await(completions.get(child.key)!);
+          })),
+        ));
         return yield* finish(result);
       });
     });

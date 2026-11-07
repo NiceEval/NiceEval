@@ -62,6 +62,8 @@ import type {
 import { dockerProfileError } from "./docker-profile/errors.ts";
 import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
 import { dindSupervisorRevision } from "./dind-supervisor.ts";
+import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
+import { e2bSnapshotDriver } from "./e2b-snapshot-driver.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -494,6 +496,10 @@ export type BeforeCacheCapture =
   | { readonly _tag: "Published"; readonly artifact: BeforeCacheArtifact }
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
 
+export type BeforeCacheMaterialized =
+  | { readonly _tag: "Materialized"; readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart }
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
 export type BeforeCacheSource =
   | { readonly _tag: "Base" }
   | { readonly _tag: "Artifact"; readonly artifact: BeforeCacheArtifact };
@@ -513,9 +519,9 @@ export interface BeforeCachePreparer<Plan> {
     plan: Plan, context: BeforeCachePreparationContext, stepsDeepestFirst: readonly BeforeCacheStep[],
   ) => Effect.Effect<BeforeCacheLookup, BeforeCacheError, Scope.Scope>;
   readonly materializeFrom: (
-    plan: Plan, context: BeforeCachePreparationContext, source: BeforeCacheSource, materialize: SandboxRuntimeMaterializeContext,
+    plan: Plan, context: BeforeCachePreparationContext, purpose: "staging" | "consumer", source: BeforeCacheSource, materialize: SandboxRuntimeMaterializeContext,
   ) => Effect.Effect<
-    { readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart },
+    BeforeCacheMaterialized,
     SandboxRuntimeMaterializationError, Scope.Scope
   >;
   readonly capture: (
@@ -986,7 +992,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
             continuesStaging: support.preparer.continuesStaging,
             eligibility: (_, context) => support.preparer.eligibility(input.runtimePlan, context),
             lookup: (_, context, steps) => support.preparer.lookup(input.runtimePlan, context, steps),
-            materializeFrom: (_, context, source, materialize) => support.preparer.materializeFrom(input.runtimePlan, context, source, materialize),
+            materializeFrom: (_, context, purpose, source, materialize) => support.preparer.materializeFrom(input.runtimePlan, context, purpose, source, materialize),
             capture: (_, context, staging, step) => support.preparer.capture(input.runtimePlan, context, staging, step),
           },
         }
@@ -2034,7 +2040,7 @@ const dockerImageProfileBeforeCacheProviderModule = Object.freeze({
 
 const e2bProviderModule = Object.freeze({
   id: "niceeval/e2b-template",
-  beforeCache: Object.freeze({ _tag: "Unsupported", reason: "remote snapshot preparer pending" }),
+  beforeCache: Object.freeze({ _tag: "RunPrepared", coverage: "all", preparer: remoteSnapshotPreparer(e2bSnapshotDriver) }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),

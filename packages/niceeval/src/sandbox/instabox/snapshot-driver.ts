@@ -5,7 +5,6 @@ import { Effect, Schema } from "effect";
 import type { InstaboxSandboxOptions } from "../instabox.ts";
 import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../remote-snapshot/driver.ts";
 import { InstaboxApi, InstaboxApiError } from "./api.ts";
-import { materializeInstabox } from "./materialize.ts";
 
 const Snapshot = Schema.Struct({ id: Schema.String, name: Schema.String, status: Schema.Literals(["pending", "ready", "failed"]) });
 const SnapshotList = Schema.Struct({ snapshots: Schema.Array(Snapshot) });
@@ -39,7 +38,10 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
       },
     };
   }),
-  createFromSnapshot: (plan, snapshotId, context) => materializeInstabox({ ...plan, snapshotId }, context).pipe(Effect.mapError(() => fail("restore"))),
+  createFromSnapshot: (plan, snapshotId, context) => boundary("restore", () => import("./materialize.ts")).pipe(
+    Effect.flatMap((module) => module.materializeInstabox({ ...plan, snapshotId }, context)),
+    Effect.mapError(() => fail("restore")),
+  ),
   createSnapshot: Effect.fn("instaboxSnapshotDriver.createSnapshot")(function*(plan, source, name) {
     const client = yield* Effect.try({ try: api, catch: () => fail("create") });
     const created = yield* Effect.tryPromise({

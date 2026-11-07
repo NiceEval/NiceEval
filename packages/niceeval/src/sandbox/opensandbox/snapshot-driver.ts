@@ -5,7 +5,6 @@ import { Effect } from "effect";
 import type { SandboxManager } from "@alibaba-group/opensandbox";
 import type { OpenSandboxOptions } from "../opensandbox.ts";
 import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../remote-snapshot/driver.ts";
-import { materializeOpenSandbox } from "./materialize.ts";
 
 const fail = (operation: string) => new BeforeCacheSnapshotError({ operation, reason: "OpenSandbox snapshot operation failed" });
 const snapshotSettleMs = 300_000;
@@ -43,7 +42,10 @@ export const openSandboxSnapshotDriver: BeforeCacheSnapshotDriver<OpenSandboxOpt
       },
     };
   }),
-  createFromSnapshot: (plan, snapshotId, context) => materializeOpenSandbox(plan, context, snapshotId).pipe(Effect.mapError(() => fail("restore"))),
+  createFromSnapshot: (plan, snapshotId, context) => Effect.tryPromise({ try: () => import("./materialize.ts"), catch: () => fail("restore") }).pipe(
+    Effect.flatMap((module) => module.materializeOpenSandbox(plan, context, snapshotId)),
+    Effect.mapError(() => fail("restore")),
+  ),
   createSnapshot: Effect.fn("openSandboxSnapshotDriver.createSnapshot")(function*(plan, source, name) {
     let snapshot = yield* withManager("create", (manager) => manager.createSnapshot(source.group.primary.sandboxId, { name }));
     const started = yield* Effect.clockWith((clock) => clock.currentTimeMillis);

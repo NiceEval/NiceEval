@@ -131,7 +131,8 @@ test.concurrent.each(["ready", "pending", "absent-before-settle", "absent-after-
   await runWithTestClock(Effect.scoped(Effect.gen(function*() {
     expect((yield* preparer.lookup(undefined, f.context, [f.step]))._tag).toBe("Miss");
     const result = yield* Effect.scoped(Effect.gen(function*() {
-      const staging = yield* preparer.materializeFrom(undefined, f.context, { _tag: "Base" }, materialize);
+      const staging = yield* preparer.materializeFrom(undefined, f.context, "staging", { _tag: "Base" }, materialize);
+      if (staging._tag !== "Materialized") throw new Error("Expected staging");
       return yield* preparer.capture(undefined, f.context, staging.sandbox, f.step);
     }));
     expect(result).toMatchObject({ _tag: "Degraded", reason: "snapshot-uncertain" });
@@ -172,7 +173,8 @@ test.concurrent("two cold invocations wait for one snapshot publication and the 
     const waiting = yield* Effect.forkScoped(second.lookup(undefined, follower, [f.step]));
     while (!Array.from(yield* TestClock.sleeps()).includes(500)) yield* Effect.yieldNow;
     const prepared = yield* Effect.scoped(Effect.gen(function*() {
-      const staging = yield* first.materializeFrom(undefined, f.context, { _tag: "Base" }, materialize);
+      const staging = yield* first.materializeFrom(undefined, f.context, "staging", { _tag: "Base" }, materialize);
+      if (staging._tag !== "Materialized") throw new Error("Expected staging");
       return yield* first.capture(undefined, f.context, staging.sandbox, f.step);
     }));
     expect(prepared._tag).toBe("Published");
@@ -198,7 +200,8 @@ test.concurrent("a writer resumed after takeover reports lease loss without publ
     }) };
     const preparer = remoteSnapshotPreparer(driver);
     yield* preparer.lookup(undefined, f.context, [f.step]);
-    const staging = yield* preparer.materializeFrom(undefined, f.context, { _tag: "Base" }, materialize);
+    const staging = yield* preparer.materializeFrom(undefined, f.context, "staging", { _tag: "Base" }, materialize);
+    if (staging._tag !== "Materialized") throw new Error("Expected staging");
     const original = yield* Effect.forkScoped(preparer.capture(undefined, f.context, staging.sandbox, f.step));
     yield* Deferred.await(accepted);
     const database = yield* userDatabaseHost.open({ home });
@@ -225,13 +228,15 @@ test.concurrent("an unavailable parent snapshot yields one clean Base instance w
   await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     yield* preparer.lookup(undefined, f.context, [f.step]);
     const published = yield* Effect.scoped(Effect.gen(function*() {
-      const staging = yield* preparer.materializeFrom(undefined, f.context, { _tag: "Base" }, materialize);
+      const staging = yield* preparer.materializeFrom(undefined, f.context, "staging", { _tag: "Base" }, materialize);
+      if (staging._tag !== "Materialized") throw new Error("Expected staging");
       return yield* preparer.capture(undefined, f.context, staging.sandbox, f.step);
     }));
     expect(published._tag).toBe("Published");
     if (published._tag !== "Published") throw new Error("Expected parent publication");
     f.makeUnavailable();
-    const child = yield* Effect.scoped(preparer.materializeFrom(undefined, f.context, { _tag: "Artifact", artifact: published.artifact }, materialize));
+    const child = yield* Effect.scoped(preparer.materializeFrom(undefined, f.context, "staging", { _tag: "Artifact", artifact: published.artifact }, materialize));
+    if (child._tag !== "Materialized") throw new Error("Expected fallback staging");
     expect(child.start._tag).toBe("FellBackToBase");
     expect(f.snapshotCalls()).toBe(1);
   })));

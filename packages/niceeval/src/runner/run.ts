@@ -763,12 +763,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
   const reusePoolKeyOf = (a: Attempt): string | undefined => {
-    return sandboxReusePoolDescriptor({
+    const physical = sandboxReusePoolDescriptor({
       run: a.run,
       evalId: a.evalDef.id,
       ...(a.evalDef.evalGroup === undefined ? {} : { evalGroupId: a.evalDef.evalGroup.id }),
       plan: a.plan,
     })?.key;
+    if (physical === undefined) return undefined;
+    const prepared = beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id));
+    return JSON.stringify([physical, prepared?.artifact?.beforeCacheKey ?? null]);
   };
   const acquiredReuseAttempts = new WeakSet<Attempt>();
   const authorizedReuseAttempts = new WeakSet<Attempt>();
@@ -832,7 +835,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         diagnostic: setupContext.diagnostic,
       }, setupContext, liveSandboxRuntimeServices, agent, runTiming, materializationOwnerId, () => nextReuseSandboxNumber(a.run),
       groupPluginLifecycles(a.evalDef, a.run),
-      groupPluginContext);
+      groupPluginContext, beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)));
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -2814,6 +2817,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                             sandbox: lease.sandbox,
                             reuseSandbox: lease.reuseSandbox,
                             reuseOrdinal: lease.reuseOrdinal,
+                            materializedCase: lease.materializedCase,
                           },
                         }
                       : {}),
