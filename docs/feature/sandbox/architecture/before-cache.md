@@ -156,6 +156,12 @@ type BeforeCacheLookup =
   /** 缓存帮不上忙，例如账本不可用；节点结算为 degraded。 */
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
 
+type BeforeCacheEligibility =
+  | { readonly _tag: "Eligible"; readonly coverage: SandboxActionState; readonly baseIdentity: string; readonly keyScope: BeforeCacheKeyScope }
+  | { readonly _tag: "Unsupported"; readonly code: BeforeCacheUnsupportedCode; readonly reason: string }
+  /** 暂时无法判断，例如解析 Base 时网络失败：配对不进入准备图，eligible action 在 Attempt 内真实执行，反馈为 `degraded`。 */
+  | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string };
+
 type BeforeCacheMaterialized =
   | { readonly _tag: "Materialized"; readonly sandbox: MaterializedSandboxCase; readonly start: BeforeCacheStart }
   /** 只在 `purpose` 为 `staging` 时返回：缓存帮不上忙，节点结算为 degraded。 */
@@ -171,7 +177,7 @@ type BeforeCacheDegradedReason =
   | "snapshot-rejected" | "snapshot-uncertain" | "lease-lost";
 ```
 
-`lookup`、`materializeFrom` 与 `capture` 返回 `Degraded` 时节点结算为 `degraded`；返回错误时节点结算为 `failed`。Runner 只看这个结果，不按 Provider 名称或错误的 cause 区分。consumer 的 `materializeFrom` 自己处理回退，Base 也创建失败时返回错误，Attempt 按普通实例创建失败处理。preparer 把它能识别的全部缓存故障映射为 `Degraded`，只有 author action 失败与无法继续执行的基础设施故障返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
+`lookup`、`materializeFrom` 与 `capture` 返回 `Degraded` 时节点结算为 `degraded`；返回错误时节点结算为 `failed`。`eligibility` 作用于单个配对：返回 `Degraded` 或错误时只影响这个配对，前者按 `degraded` 真实执行，后者让它在派发前失败；准备图的其余部分照常结算。Runner 只看这个结果，不按 Provider 名称或错误的 cause 区分。consumer 的 `materializeFrom` 自己处理回退，Base 也创建失败时返回错误，Attempt 按普通实例创建失败处理。preparer 把它能识别的全部缓存故障映射为 `Degraded`，只有 author action 失败与无法继续执行的基础设施故障返回错误。原因的含义见[远端 snapshot 的节点结算](remote-snapshot-cache.md#run-级节点结算)。
 
 Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 Instabox 只交出 `BeforeCacheSnapshotDriver`，由 core 的 `remoteSnapshotPreparer(driver)` 实现，见 [远端 snapshot Before cache](remote-snapshot-cache.md#协议归-coreprovider-只交原语)。
 
