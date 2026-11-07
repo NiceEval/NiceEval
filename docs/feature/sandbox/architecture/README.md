@@ -319,7 +319,7 @@ V1 DestroyOnly；requirement / capability、domain 与 doctor 见 [Nested Docker
 - `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。完成帧只接受 supervisor 在取得子进程状态后写出的十进制 exit code，wrapper 源码、转义诊断或子进程回显中出现的 marker 字面量都不是完成边界。timeout、取消、协议完整性失败或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
 - 文件用 `files.read` / `files.write`(文本 + 二进制)。
 - node 版本由模板决定 —— `runtime` 字段对 e2b 仅作说明。要 node24 / 烘焙好 agent CLI,用预制模板 `e2bSandbox({ template: "niceeval-agents" })`——参数的典型用途正是把 agent CLI 烘焙进模板,让后续 eval 跳过安装直接开跑(构建工作流见 [Library · 预制实例](../library/prebuilt-environments.md))。
-- Before cache 的 Base 身份是 template 当前解析到的 build，而不是 template 名字；同名 template 重建会产生新 build，旧前缀不得命中。规则见 [远端 snapshot Before cache · E2B](remote-snapshot-cache.md#e2b)。
+- Before cache 的 Base 身份是 template 引用当前指向的 build，而不是 template 名字；同名 template 重建会产生新 build，旧前缀不得命中。规则见 [远端 snapshot Before cache · E2B](remote-snapshot-cache.md#e2b)。
 
 ## OpenSandbox provider
 

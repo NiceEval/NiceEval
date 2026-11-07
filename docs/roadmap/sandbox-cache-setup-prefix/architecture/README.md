@@ -96,7 +96,7 @@ step protocol 的解释语义由 `interpreterRevision` 标识，并进入 linked
 
 ## 损坏与精确失效
 
-Setup prefix cache 是优化，不是 Attempt 正确性的必要条件。lookup 或 restore 在任何 action 执行前失败时，Runner 忽略不可验证的 image，最多一次从可信的更短前缀或 Base 重建。只有 exact image ID、labels、manifest 和私有容器全部验证完成后才报告 hit。
+Before cache 是优化，不是 Attempt 正确性的必要条件。lookup 或 restore 在任何 action 执行前失败时，Runner 忽略不可验证的 image，最多一次从可信的更短前缀或 Base 重建。只有 exact image ID、labels、manifest 和私有容器全部验证完成后才报告 hit。
 
 action 已成功执行后，capture 失败不得再次执行该 action。当前容器仍完整时，Runner 在原实例继续 uncached；无法证明完整时让 Attempt 失败。取消只能阻止未完成的 image publication；cleanup 使用独立 signal，不继承 caller abort。
 

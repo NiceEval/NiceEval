@@ -136,7 +136,7 @@ lookup miss
 
 ## 消费：从 snapshot 创建实例
 
-Runner 创建 staging 与 consumer 都经过 core 的 `materializeFrom`，Provider 的 `materialize` 不调用任何缓存协议。来源是 `Base` 时，core 通过 `context.materializeBase` 创建实例，记录初始挂载集合并再次确认 Base；来源是 `Artifact` 时执行：
+Runner 创建 staging 与 consumer 都经过 core 的 `materializeFrom`，Provider 的 `materialize` 不调用任何缓存协议。`source` 为 `Base` 时，core 通过 `context.materializeBase` 创建实例，保存初始挂载集合并再次确认 Base；`source` 为 `Artifact` 时执行：
 
 1. 在账本登记 `sandbox` hold，然后调用 `createFromSnapshot`。
 2. 实例 ready 后校验 artifact 标记与账本登记一致。

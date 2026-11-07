@@ -33,7 +33,7 @@ Inspection selector。相应边界内部才取得 Scope、Layer、lease、reader
 | Repository root 的 argv、`effect/unstable/cli` command tree、Layer、进程交付与唯一 `@effect/platform-node` `NodeRuntime.runMain` | `packages/repo-tools/src/cli.ts` |
 | `docs` contribution 的装配与显式 domain contribution protocol | `packages/repo-tools/src/docs/{command,contribution}.ts` |
 | Feature、Use Case、测试标记与关系追踪 | 全局 `concord`：`list`、`show`、`test`、`trace` |
-| 本地 Issue、Memory 关系与远端来源 | 全局 `concord`：`issue`、`memory`、`feedback` |
+| 本地 Issue、Memory 关系与外部反馈源 | 全局 `concord`：`issue`、`memory`、`feedback` |
 
 这些命令属于仓库自身，不进入发布的 `niceeval` 产品 CLI。中立治理直接从全局 `concord` 进入，NiceEval 自有文档生成从 `pnpm run repo docs` 进入。
 领域 handler 返回结构化 receipt，只有根 `cli.ts` 读取 argv、写 stdout/stderr 和设置退出码。

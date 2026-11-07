@@ -135,7 +135,7 @@ interface CacheManifest {
 }
 ```
 
-Setup Prefix 的普通 Docker exact-image cache 不进入这个 Cache Manifest 或两阶段 GC 协议，也不出现在公开 inventory。它自己的私有 key index、single-writer lease 与 consumer ownership 只服务自动 lookup/capture/clone。链式身份、支持边界与失败语义见 [Setup Prefix Architecture](../sandbox-cache-setup-prefix/architecture/README.md) 与 [Lifecycle](../sandbox-cache-setup-prefix/architecture/lifecycle.md)。
+Before cache 的普通 Docker exact-image cache 不进入这个 Cache Manifest 或两阶段 GC 协议，也不出现在公开 inventory。它自己的私有 key index、single-writer lease 与 consumer ownership 只服务自动 lookup/capture/clone。链式身份、支持边界与失败语义见 [Before cache 路线图架构](../sandbox-cache-setup-prefix/architecture/README.md) 与 [Lifecycle](../sandbox-cache-setup-prefix/architecture/lifecycle.md)。
 
 缺少必需兼容轴或遇到未知 schema 时，entry 为 `unverified`。
 `intentProjection` 只解释同一意图的旧配方，不授予命中、迁移或删除资格。

@@ -48,7 +48,7 @@
 | hold_id | TEXT PRIMARY KEY | 宿主生成的 UUID |
 | artifact_id | TEXT NOT NULL REFERENCES before_cache_snapshots | 被保护的 artifact |
 | holder | TEXT NOT NULL CHECK IN ('run', 'sandbox') | 持有者种类 |
-| sandbox_id | TEXT NULL | `sandbox` hold 在实例创建成功后记录的 Provider 实例 ID；`run` 恒为 NULL |
+| sandbox_id | TEXT NULL | `sandbox` hold 在实例创建成功后写入的 Provider 实例 ID；`run` 恒为 NULL |
 | expires_at | INTEGER NULL | `run` 必填，随 Run 心跳延后；`sandbox` 恒为 NULL |
 | created_at | INTEGER NOT NULL | 写入时间，Unix 毫秒 |
 

@@ -6,8 +6,8 @@
 - 你在写文档 / 代码,想跟现有用法保持一致;
 - 你需要一页纸把整套词汇过一遍。
 
-本页是 Concord 管理的全局术语 catalog：每个二级标题是一个概念，标题文字是正文唯一的写法，`{#id}` 是稳定身份，紧随其后的段落是定义，再往后是解释。写作政策由 [`concord-writing.json`](concord-writing.json) 拥有。
-直接编辑本页后运行 `concord writing check`；不要另建词表。
+本页是 Concord 管理的全局术语 catalog：每个二级标题是一个概念，标题文字是正文唯一的写法，`{#id}` 是稳定身份，紧随其后的段落是定义，再往后是解释。写作规则由 [`writing.md`](writing.md) 拥有。
+直接编辑本页后运行 `concord docs check`；不要另建词表。
 
 ```sh
 concord concepts index --json
@@ -15,7 +15,7 @@ concord concepts show --path docs/concepts.md --json
 concord writing index --json
 ```
 
-正文链接到定义时写 `concepts.md#<id>`。「其它写法」列出迁移前的另一语言首选名与代码标识别名，仅供检索；它们不算概念使用，也不派生禁词。
+正文链接到定义时写 `concepts.md#<id>`。「其它写法」列出另一语言的首选名与代码标识别名，仅供检索；它们不算概念使用，也不派生禁词。要淘汰某个写法时，在该概念下写一段「旧写法：」，Concord 会在正文里报告它并建议改用概念的写法。
 代码示例仍服从对应 Feature 的公开 API。
 
 ### 概念关系与案例

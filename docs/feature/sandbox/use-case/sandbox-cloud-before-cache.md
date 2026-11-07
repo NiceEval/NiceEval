@@ -6,7 +6,7 @@
 
 ## 起始状态
 
-- Experiment 用 `e2bSandbox()`、`openSandbox()` 或 `instaboxSandbox()` 声明 template，Base 可解析为不可变身份：E2B template 有可解析的 build，OpenSandbox image 带 digest，Instabox 使用 `sn_` snapshot ID。
+- Experiment 用 `e2bSandbox()`、`openSandbox()` 或 `instaboxSandbox()` 声明 template，Base 能对应到不可变身份：E2B template 能查到当前 build，OpenSandbox image 带 digest，Instabox 使用 `sn_` snapshot ID。
 - 准备写成声明式 before action，例如 `gitCheckout()` 与 `shell()`；Experiment 没有声明 `sandboxReuse: true`。
 - `maxConcurrency` 为 3，三个 Eval 的 before 前缀完全相同，本机 UserDatabase 中没有对应的 Before cache。
 
@@ -51,7 +51,7 @@ before cache: hit · 2/2
 | author action 失败（例如 `pnpm install` 退出码非零） | 依赖该前缀的配对在派发前失败，其它配对照常运行；这是唯一让配对失败的情形 |
 | 声明了 `sandboxReuse: true` | E2B 复用实例的第一条 Attempt 报告 `hit`，同一实例上的后续 Attempt 真实执行 before；OpenSandbox 与 Instabox 不支持复用，在规划时拒绝 |
 
-## 契约来源
+## 相关契约
 
 - [Before cache](../architecture/before-cache.md) —— 身份、Provider 能力与降级。
 - [Sandbox 数据模型](../data-model.md) —— 远端 snapshot 账本。

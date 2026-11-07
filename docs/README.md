@@ -65,7 +65,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 - [API 设计](api-design.md)、[Origin 接入](origin-integration.md)、[Observability](observability.md)、[Runner](runner.md) 与 [CLI](cli.md)。
 - [错误反馈](error-feedback.md)、[外部参考](references.md)、[Source Map](source-map.md) 与 [SVG 视觉契约](SVG-DESIGN.md)。
 - [品味](taste.md)：审阅 Spec 与代码时共同的判断标准。
-- [`concord-writing.json`](concord-writing.json)：由 Concord 管理的句长、段长与禁用写法政策。
+- [写作规则](writing.md)：Concord 检查的句长、段长、不用的词与检查范围。
 
 ## 文档的唯一归属
 
@@ -144,9 +144,9 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 用词由 [Concepts](concepts.md) 拥有：每个概念有唯一写法、稳定 ID、定义与解释。
 
 - 同一概念在正文里始终写同一个词，不换同义词，也不临时造中文译名。
-- 要用 catalog 里没有的概念，先直接编辑 [Concepts](concepts.md) 登记定义和契约链接，运行 `concord writing check`，再在正文使用。`concepts index` 只读汇总全项目词条。
-- 唯一写法由 catalog 裁决，只有它算概念使用。不带豁免的弃用名写在 catalog frontmatter 的 `deprecated`；带历史目录豁免的弃用规则由写作政策拥有，并引用对应 concept。
-- 其它禁用写法直接编辑 [`concord-writing.json`](concord-writing.json) 后运行 `concord writing check`，每项带 `term` / `use` / `why`。每项 `roots` 保留设计文档、中文站或两者的作用范围。
+- 要用 catalog 里没有的概念，先直接编辑 [Concepts](concepts.md) 登记定义和契约链接，运行 `concord docs check`，再在正文使用。`concepts index` 只读汇总全项目词条。
+- 唯一写法由 catalog 裁决，只有它算概念使用。全站淘汰的写法写在概念下的「旧写法：」；只在部分目录淘汰的写法写进[写作规则](writing.md)的「不用的词」，用「只在」限定目录，并在「为什么」里引用对应 concept。
+- 其它禁用写法直接编辑 [写作规则](writing.md) 的表格后运行 `concord docs check`，每行写明词、改成什么、为什么、只在哪些目录生效与例外。
 - `concord docs check --json` 检查当前正文，`pnpm lint` 同时执行 Concord 与 NiceEval 专用的示例、SVG 和站点守护。
 - 要在正文里引用某个禁用写法本身（例如说明为什么不写它），把它写成行内代码：检查会先剥掉行内代码与代码块。
 

@@ -256,7 +256,7 @@ SVG 的文字按文字底线定位，盒内第一行的文字底线这样算：
 `pnpm lint` 逐张图查这两格：`.label` 里的每个中文词都要在 `docs/` 或 `apps/docs-site/` 正文（含 [concepts](concepts.md) 的术语总表）里出现过，一次命中都不许有。
 被点名时有两条路——改用正文已有的说法，或者这个词本来就该先在正文里立起来。
 
-同一遍检查读取[写作政策](concord-writing.json)和[概念 catalog](concepts.md) 中的弃用名，将同一裁决应用到图上，`<text>`、`<tspan>`、`<title>`、`<desc>` 一视同仁。
+同一遍检查读取[写作规则](writing.md)的不用的词和[概念 catalog](concepts.md) 中的旧写法，将同一裁决应用到图上，`<text>`、`<tspan>`、`<title>`、`<desc>` 一视同仁。
 
 图标题、注解和说明句不按词判：它们是为这张图现写的句子，不是词。
 摆不下的时候把长名字挪进这几格，别在盒标题里造简称。

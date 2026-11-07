@@ -143,7 +143,7 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 它拒绝没有显式 candidate、Repo 或 selector 的调用；takeover 自行在隔离副本中做原生收集并构造原生 target，
 不是把普通 `run` 重复五次冒充可靠性门。成功时只输出 `certificate` 与 `certificatePath`（`niceeval.native-reliability/v1`）。
 
-source snapshot、receipt 与 certificate 是 NiceEval 私有材料，只用于候选隔离、快照、清理和重复性检查，不用来关闭 Concord Issue。
+source snapshot、receipt 与 certificate 是 NiceEval 私有材料，只用于候选隔离、快照、删除临时候选和重复性检查，不用来关闭 Concord Issue。
 用例关联与缺陷修复只走 `concord test list/show`、`concord test run/verify` 与 `concord issue close --fixed`。
 
 接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit scratch
