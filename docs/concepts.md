@@ -525,17 +525,11 @@ Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，
 
 其它写法：`Sandbox allocation`。
 
-## Docker storage profile {#docker-storage-profile}
-
-raw DinD显式选择的宿主声明；只证明 Docker data allocation磁盘配额、跨进程准入与强杀恢复
-
-契约：[Docker 执行配置](feature/sandbox-docker-profiles/README.md)
-
 ## Docker data allocation {#docker-data-allocation}
 
-每 Attempt独占、带 project quota hard limit的磁盘配额分配；固定挂到 inner `/var/lib/docker`，内部可由预建目录池兑现
+每条 Attempt 独占的 Docker data 磁盘；nested Docker 中是 guest 内独立 virtual disk，容量由 `dockerDataBytes` 声明，并绑定 SandboxAllocation 的 allocationId 与 generation
 
-契约：[Docker profile architecture](feature/sandbox-docker-profiles/architecture/README.md#单容器资源)
+契约：[Nested Docker Architecture](feature/sandbox-nested-docker/architecture/README.md#四个-owner)
 
 ## template owner {#template-owner}
 

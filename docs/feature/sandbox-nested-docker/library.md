@@ -201,6 +201,8 @@ development domain 不是 reference，也不能参加 reference 对照。
 | 省略 `acceptDevelopmentDomain` 却选择 development project / pool | fail-closed，不改走 reference 伪装 |
 | `acceptDevelopmentDomain: true` 配 reference project / pool | `sandbox-capability-unsatisfied` |
 | `dockerAccess` socket / raw / managed DinD | 不是 nested Docker public path，也不能满足 `docker/v1` |
+| managed DinD 失败后改 raw 或 socket | 禁止 fallback |
+| 把 `sandboxState.dockerData` 当作 nested Docker cache | 不是 public state surface |
 
 ## 错误码
 

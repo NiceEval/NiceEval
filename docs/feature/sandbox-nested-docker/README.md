@@ -63,7 +63,25 @@ incusSandbox({
 `dockerSandbox({ dockerAccess })` 的宿主 socket、raw privileged DinD 与 managed rootless DinD
 不是这条路径，也不能降为 fallback。
 它们不能满足 `docker/v1` 与 `dedicated-kernel/v1`，不属于支持目标。
-迁移说明见 [Docker 执行配置](../sandbox-docker-profiles/README.md)。
+迁移方式见[从 Docker Profile 迁移](#docker-profile-migration)。
+
+## 从 Docker Profile 迁移 {#docker-profile-migration}
+
+原 Docker Profile 把宿主 socket、单容器 DinD、profile registry 与预建磁盘池组合成一条 Docker 执行路径。
+它们都不能生成 `dedicated-kernel/v1` receipt，不属于支持目标，也不能作为 nested Docker 的 fallback。
+普通无 Docker API 的单容器起点仍是 `dockerSandbox({ source })`，不挂 socket，也不启动 guest dockerd。
+
+| 原写法 | 改为 |
+| --- | --- |
+| `dockerSandbox({ dockerAccess: { mode: "socket" } })` | Eval 写 `sandboxRequirements({ docker })`，Experiment 写 `incusSandbox()` |
+| `dockerAccess: { mode: "dind", isolation: "raw-privileged" \| "managed-rootless" }` | 同上；managed 失败后改 raw 或 socket 同样被禁止 |
+| `niceeval docker profile list` / `doctor` / `exec` | `niceeval sandbox provider doctor incus [--development]`；见 [CLI](cli.md) |
+| `storageProfile`、profile 别名与预建 Docker data 目录池 | `incusSandbox({ resources: { dockerDataBytes } })` 的 guest 内独立 virtual disk |
+| `sandboxState.dockerData` 作为 Docker cache | prepared Sandbox artifact；`sandboxState.dockerData` 不是 public state surface |
+| NiceEval-Eval 单容器 DinD 与 `docker:<version>-dind` 派生镜像 | [声明 Docker 能力](use-case/nested-docker-capability.md) |
+
+旧 `/data/niceeval-dind-pool.img` 对 Incus storage 与 SandboxAllocation ledger 都不可见。
+doctor、activation、reconciler 与 GC 都不得自动打开、挂载、fsck、adopt、rename 或 delete 它。
 
 ## 范围
 

@@ -106,7 +106,7 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [Case](architecture/case.md) —— 一份 Sandbox 声明的完整运行单位:五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
 - [Nested Docker](../sandbox-nested-docker/README.md) —— `sandboxRequirements()`、`incusSandbox()`、资源配额、prepared artifact 与 DestroyOnly 生命周期。
-- [原 Docker Profile 迁移](../sandbox-docker-profiles/README.md) —— 普通 Docker container 与原 raw / managed DinD 路径的边界，以及迁移到 Incus 的方式。
+- [原 Docker Profile 迁移](../sandbox-nested-docker/README.md#docker-profile-migration) —— 普通 Docker container 与原 raw / managed DinD 路径的边界，以及迁移到 Incus 的方式。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
 - [Sandbox 复用](library/reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。

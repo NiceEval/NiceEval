@@ -5,7 +5,7 @@
 正文写产品最终满足的契约，不描述实现过程；代码不满足时属于实现缺口。
 
 跨 Run、Inspection 与 Delivery 的数据边界由
-[Run → Inspection → Delivery](run-inspection/README.md) 统一说明。Inspection 关闭读取语义，再由固定
+[Run → Inspection → Insight](inspection/architecture.md#run-inspection-insight) 统一说明。Inspection 关闭读取语义，再由固定
 query 或 View 交付；它不是作者可扩展的中间层。
 
 已经定稿但尚未被产品采用为当前契约的方向放 [`../roadmap/`](../roadmap/)。
@@ -61,7 +61,6 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Judge](judge/README.md)：裁判模型配置、调用与 unavailable。
 - [Plugins](plugins/README.md)：带稳定身份的生命周期组合语法。
 - [Run](run/README.md)：Run 生命周期、Attempt publication 与精确引用。
-- [Run → Inspection → Delivery](run-inspection/README.md)：运行事实到机器或人读交付的数据边界。
 - [Sandbox](sandbox/README.md)：隔离的执行资源。
 - [State](state/README.md)：Cohort、精确 checkpoint 与状态生命周期。
 - [跨 Feature 用户目标](../guides/README.md)：从完整用户路径导航到所属 Feature 的最小 Use Case。

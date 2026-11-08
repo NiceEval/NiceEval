@@ -23,7 +23,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 组合或替代 CLI / Web host | [Architecture](architecture.md#公开-host-composition-sdk) → 对应 Feature Library |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解 Run 与 Attempt 怎样经过 Inspection 到 Insight | [Run → Inspection → Insight](feature/run-inspection/README.md) |
+| 理解 Run 与 Attempt 怎样经过 Inspection 到 Insight | [Run → Inspection → Insight](feature/inspection/architecture.md#run-inspection-insight) |
 | 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/architecture/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/library/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/architecture/lifecycle.md) |
 | 让 Agent 在 Sandbox 内使用 Docker / Compose | [Nested Docker](feature/sandbox-nested-docker/README.md) |

@@ -5,7 +5,7 @@
 - [Run](../../../../feature/run/README.md)
 - [Architecture](../../../../feature/run/architecture/README.md)
 - [Library](../../../../feature/run/library.md)
-- [Run → Inspection → Delivery](../../../../feature/run-inspection/README.md)
+- [Run → Inspection → Delivery](../../../../feature/inspection/architecture.md#run-inspection-insight)
 
 本页登记 Run Core 与内部 SQLite adapter 中可稳定隔离的算法 seam。真实 Run 创建、Attempt publication、CLI 读取与
 Inspection/View 接线由安装后的 E2E owner 验收。内部 adapter 名称、表、migration、generation 与 GC 都不形成公开契约。

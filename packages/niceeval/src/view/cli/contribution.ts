@@ -1,6 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/insight/README.md
-// @concord-implements docs/feature/run-inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { Effect, Result, Schema, Scope } from "effect";

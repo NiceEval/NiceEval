@@ -2756,8 +2756,6 @@ export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
 // @concord-code
 // @concord-implements docs/feature/sandbox/README.md
 // @concord-implements docs/feature/sandbox/library/README.md
-// @concord-implements docs/feature/sandbox-docker-profiles/README.md
-// @concord-implements docs/feature/sandbox-docker-profiles/library.md
 export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing"> {
   assertRecord(options, "dockerSandbox options");
   assertOnlyKeys(

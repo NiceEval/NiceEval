@@ -1,7 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/run/architecture/README.md
 // @concord-implements docs/feature/run/architecture/lifecycle.md
-// @concord-implements docs/feature/run-inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 
 import { createHash, randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";

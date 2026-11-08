@@ -1,6 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/architecture.md
-// @concord-implements docs/feature/run-inspection/README.md
+// @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 import { Effect, Result } from "effect";
 
 import { decodeInspectionRequest, QUERY_PROTOCOL } from "../inspection/codec.ts";

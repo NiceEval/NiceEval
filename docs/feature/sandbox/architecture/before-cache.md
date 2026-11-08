@@ -266,7 +266,7 @@ Attempt locator 只在全局 barrier 后实际 dispatch 时由当前 `RecordWrit
 
 静态 `niceeval debug` 不读取 cache，固定输出 `cacheLookup: "not-probed"`。运行反馈的闭合结果只有 `hit`、`replay`、`unsupported` 与 `degraded`；`replay` 另带 `miss | bypass` reason。Record 不保存本地 image/container locator、credential value 或 secret bytes。
 
-nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md)。原 Docker Profile 路径的最终迁移边界见 [Docker 执行配置](../../sandbox-docker-profiles/README.md)。
+nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Architecture](../../sandbox-nested-docker/architecture/README.md)。原 Docker Profile 路径的最终迁移边界见[从 Docker Profile 迁移](../../sandbox-nested-docker/README.md#docker-profile-migration)。
 ## 名字与哈希内容
 
 代码与文档使用同一组名字：概念是 Before cache，类型、字段、表、诊断值与活动名都从它派生，例如 `BeforeCacheKey`、`BeforeCacheStep`、`BeforeCacheDeclaration`、`before_cache_key`、`before-cache.restore` 与 `sandbox.before-cache.prepare`。
