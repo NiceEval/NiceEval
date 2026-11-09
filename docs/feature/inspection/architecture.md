@@ -195,7 +195,7 @@ Agent 为 reported-sends 与 physical-call-identity-not-recorded，不把配置�
 judgeUsage 读取同一 origin Attempt 的独立物理调用账本；旧缺源为 unavailable，完整空账本为已知零调用，指标完整性独立于调用集合完整性。
 totalCosts 包含 state、values（currency/value/source）、missingSources，按币种汇总全部应用与 Judge 已知金额。
 两者均完整时为 complete；有缺口且有已知金额（包括明确零）时为 partial，否则 unavailable。不推断应用与 Judge 的合并总调用数。
-Judge 调用、价证、有界预览与摘要的穷尽形状遵守[Judge 读面契约](../../design/judge-physical-usage/plans/plan-1/library.md)。
+Judge 调用、价证、有界预览与摘要的穷尽形状见 [Query 契约](cli.md#judge-用量与总费用)。
 
 既有 totals.costs 和 costUSD 仍表示应用费用，不改变历史口径。价格匹配仍按模型字符串，不声称独立 provider/model 定价。
 
@@ -207,6 +207,31 @@ usage 仅含 state、configuredModels、modelGroups、judgeUsage、totalCosts、
 
 experiment.get 的最终 JSON 响应上限为 4 MiB；完整 aggregate/cells 保留逐断言证据完整度，因此独立于attempt.usage 的专属 16 MiB 上限。
 最终响应字节预算内保留完整 Attempt 摘要前缀，omittedAttemptCount 反映省略数量；保留摘要中的金额及完整度不变，不以预览重算总量。
+
+
+## Judge 用量投影
+
+Inspection 在同一 origin Attempt 和 PublicationCutoff 读取应用与 Judge 附件，引用 Run 不复制或重复计算 origin。
+缺 Judge family 为 unavailable；已被当前 reader 接受的 family 编码损坏为 invalid。
+未来 revision 在 reader session 形成前遵守 unsupported-format 边界，不强行降为局部 judgeUsage.invalid。
+新完整空账本证明零发送；历史没有 family 时，即使没有 QA 或存在成功 audit，也不能补造空账本。
+
+全部 calls 与价证参与 totals，预览只控制返回行。请求集合、token 与费用各自保留完整性，unknown outcome 不抹去独立已知金额。
+完整空账本的 requests/tokens 为 0、observationCount 为 0，costs complete、values=[]、totalCalls=0。
+collection complete 不能代替 token/cost 完整度，也不证明服务端已经停止。
+预览按 entryIndex、logicalOrdinal、transmissionOrdinal 排序，调用与其价证作为完整单元保留前缀；金额不从截断预览求和。
+
+公开调用行保留正式 entryId，使用当前 locator 与 entryId 下钻 assertion.detail，由身份查找固定 origin。
+断言正文或审计不可读时仍保留已验证的账本金额与调用，不让费用完整性依赖审计解码。
+文字材料 detail 的 projector 与最终交付采用同一个 [断言专用预算](cli.md#从-attempt-outline-下钻到一项详情)，不经过通用 boundedJson 的默认限制。
+show 人读 preview 不改变完整 content 或容量诊断。
+
+TotalCosts 对同币种使用精确十进制定点累加，不换汇。missingSources 固定 application、judge 顺序，无重复。
+任一 owner 不完整都列入缺口；有缺口且有已知金额（含明确零）为 partial，否则 unavailable。
+完整且没有收费调用可以 values=[]，不凭空制造某个币种的零回执。应用 totals.costs 与 costUSD 仍是原应用口径。
+
+Show 与 View 只呈现 [公开费用结果](cli.md#judge-用量与总费用)，不另建价格计算或 Provider 解码。
+实验用同一 costSummary，不从 modelUsage 的 64 项展示预览相加。
 
 
 ## 实验总费用与应用完整性
@@ -260,3 +285,9 @@ revision 3 仍检查用途引用属于 origin Run 的配置。未声明的新账
 
 该 operation 使用与 attempt.usage 相同的 16 MiB 响应预算；超限明确失败，不通过删调用或价格证据伪装完整。
 验收从已安装 query 入口使用两个价格版本读取同一 Attempt，核对新估算与完整性，并比较读取前后的公开历史结果。
+
+## State 事实投影
+
+`attempt.get` 成功 document 的 `attempt.sandboxState` 与 `run.get` 的 `run.value.sandboxState` 使用 [State 结果形状](../state/library.md#结果形状)，共享 `niceeval/run` 的严格 Schema。
+query 以同一 PublicationCutoff 读取 Attempt context 与所有 State execution；不能只保留 lineage 最后一代，也不访问 operational checkpoint。
+固定 Run 的 portable 读取只依赖封存事实；缺失为 unavailable，不补 fresh、零次写入或成功保存。

@@ -6,7 +6,9 @@
 
 ```text
 Invocation starts
-  → one transaction creates active Session + Runs + expected plannedAttempts + case-lock generations
+  → one transaction creates active Session + Runs + expected plannedAttempts + Run writer generations
+  → each Experiment independently acquires its required leases
+  → claim case locks at execution admission
   → publish origin/reference plannedAttempt bindings independently
   → close Run: terminal state + absence reasons
   → return InvocationReceipt at one PublicationCutoff
@@ -30,6 +32,26 @@ Runner 等待这次 publication 后恢复中断，停止后续派发，再提交
 它返回 `interrupted` receipt，并在同一收尾路径把 Session 收口为 durable Invocation projection。
 随后关闭 writer、checkpoint 并 truncate WAL，再以内建只读路径重开 canonical database。
 只有 schema、引用闭包、publication 和领域不变量验证全部通过，CLI 才成功交付 receipt 与 portable Record。
+
+## 材料 receiver 与 Judge 封存
+
+Attempt 创建时先建立 Assertion runtime、统计 owner 与 Judge collector，但 application receiver 尚未开放。
+create 正常返回后，先重验 Attempt 仍开放，再创建 guarded app 与 receiver。
+assertions factory 只装配同步方法，此时 app 访问与材料读取均被 guard 拒绝。
+方法与返回对象全部校验通过后一次开放 app/receiver，再交付 Eval facade 开始 test；失败则关闭 receiver，不留下部分开放能力。
+
+取消先关闭作者登记和全部 receiver，再中止受管模型，资源沿既有独立 cleanup 阶段释放。
+create 在取消后迟到返回仍承担 Adapter cleanup 义务，但不组装 Eval facade、不安装 ctx，也不重开 reader。
+Agent receiver 同样在自身 facade 就绪后开放，并在 Attempt 取消时统一关闭。
+完整材料与临时预留按 [Evidence 结算规则](../../assertions/architecture/evidence.md#材料预留与封口收据) 处理。
+
+Judge collector 在应用 create 前创建；新的已执行 Attempt 即使 create 失败也封存完整空账本。
+未执行或跳过的计划 Attempt 不虚构 collector。root、Session 与 Turn 使用同一 Attempt owner，应用用量仍保持独立。
+
+Attempt 终止先关闭所有 entry admission 与打开的传输 capability，再触发 abort。
+在既有有界释放期限内收拢 transport 资源后冻结账本；同次 Assertions 预发布结果将 entryIndex 绑定为正式 entryId。
+Assertions 与 Judge 附件在同一 Attempt publication closure 中提交；费用完整性不依赖 QA 判定或审计正文是否可读。
+传输的首次回执截止、entry 局部超时和释放上限由 [Judge 生命周期](../../judge/architecture.md#judge-传输生命周期) 拥有。
 
 ## 崩溃与 recovery
 
@@ -60,6 +82,8 @@ Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则
 它以两阶段、可重试的 `active → recovering → interrupted` 收口。
 第一笔短事务 fence owner generation 并写入精确 recovery actor。第二笔短事务在 actor/generation 仍匹配时删除仅属该 owner 的未发布 aggregate。
 第二笔事务也写 recovery receipt，并把 Run 与 pending-Planned attempt absence reasons 共同收口。
+绑定 State 时，这笔事务先按 [State 事实终结](../../experiments/data-model.md#状态事实终结) 对账并终结全部 execution，再写同一 cutoff 的 Run 终态。
+集合 recovery 必须调用这个 Run recovery actor；Run recovery 不释放 State 租约，也不执行 Experiment after。
 
 任一步崩溃留下 `recovering`，只能由新的精确 recovery actor 重试，不能把它猜回 active 或 free。证据不足时 fail closed；没有 TTL、heartbeat expiry 或“看起来很久”接管。
 
@@ -68,7 +92,8 @@ Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则
 
 ## 删除与 retention
 
-`run delete` 只处理已收口 Run。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
+`run delete` 只处理已收口 Run。
+若其 State 租约集合仍为 active 或 recovering，以 `run-state-recovery-required` 拒绝；先完成集合恢复，避免删除对账所需事实。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
 存在依赖时零删除；用户需要先显式删除依赖 Run。
 
 删除在 canonical `.niceeval/record.sqlite` 的一个事务中验证引用、删除可删 rows 并发布 tombstone。

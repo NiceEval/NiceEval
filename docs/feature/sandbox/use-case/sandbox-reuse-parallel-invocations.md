@@ -2,14 +2,14 @@
 
 ## 先分清三个 owner
 
-一条写 Invocation 独占一个 Record root 的 writer session；reader 仍可并发。`sandboxReuse: true` 只让这条 Invocation 内的 Attempt 复用 Sandbox。`sharedState.key` 只保护多个进程共同访问的外部 checkpoint 或服务。
+同一 ProjectDatabase 可以接收多条 Invocation；每条持有自己的 Session、Run 与精确 case-lock generation，reader 可并发。`sandboxReuse: true` 只让这条 Invocation 内的 Attempt 复用 Sandbox。`sharedState.key` 只保护多个进程共同访问的外部 checkpoint 或服务。
 
 | 目标 | 做法 | 结果 |
 |---|---|---|
 | 一条命令内复用 Sandbox | `sandboxReuse: true` | 当前 Invocation 的池内复用 |
-| 两条命令并行运行 | 指定不同 `--project` root | 各自拥有 Run、Attempt 与 Sandbox |
-| 两条命令访问同一 checkpoint | 不同 root，再声明相同 `sharedState.key` | 外部状态生命周期串行，Record 仍分离 |
-| 两条命令写同一 root | 不支持 | 后打开者得到 `record-writer-busy`；固定 `query` 与 `view` 仍可读已发布 Run |
+| 两条命令并行运行 | 同项目选择独立位置，或指定不同 `--project` root | 各自拥有 Run、Attempt 与 Sandbox |
+| 两条命令访问同一 checkpoint | 同一 ProjectDatabase，声明相同 `sharedState.key` | 外部状态生命周期串行，Run 仍分离 |
+| 两条命令写同一 ProjectDatabase | 支持 | case lock 协调冲突位置，独立位置可以并行 |
 
 ## 独立 Sandbox 可以并行
 
@@ -38,7 +38,7 @@ export default defineExperiment({
 });
 ```
 
-状态 owner 从 Experiment 与 physical before 之前持有到 checkpoint save、Sandbox finalizer 与 Experiment after 之后。等待方不创建 Sandbox；取得状态 owner 后，它继续自己的既有计划，不打开另一个 Record。
+状态 owner 从 Experiment before 之前持有到 checkpoint save、Sandbox finalizer 与 Experiment after 之后。等待方不创建 Sandbox；取得状态 owner 后，它继续自己的既有计划，不打开另一个 Record。
 
 `sharedState` 不保存 checkpoint，也不提供事务回滚。强杀可能留下半次外部写入；作者仍要原子提交 checkpoint，或换新 key 与干净 cohort。
 
@@ -51,3 +51,5 @@ export default defineExperiment({
 - [Sandbox 复用](../library/reuse.md#并行-invocation)
 - [Experiments 并发 Invocation](../../experiments/architecture/README.md#并发-invocation)
 - [并行 Invocation 使用不同 Record](../../experiments/use-case/concurrency-parallel-invocations.md)
+
+不同数据库的同名 sharedState.key 不互斥；共享 checkpoint 的两个 Invocation 必须使用同一 ProjectDatabase authority，或由作者在外部协调。

@@ -1,6 +1,6 @@
 # 多容器环境设计:正反评审台账(2026-07-30)
 
-**背景**:`docs/design/multi-container-environments/` 定稿前,两个子代理分别做红队攻击(对照十篇既有契约)与下游落地验证(三个真实 Terminal-Bench 任务逐题写代码)。结论并入 PLAN-1 与 DECISION;本条目存评审揭出的翻案与反直觉点,供复盘。
+**背景**:多容器环境定稿前,两个子代理分别做红队攻击(对照十篇既有契约)与下游落地验证(三个真实 Terminal-Bench 任务逐题写代码)。结论并入当时的候选与裁决；本条目存评审揭出的翻案与反直觉点,供复盘。现行契约见 [Sandbox Case](../docs/feature/sandbox/architecture/case.md)。
 
 **红队确认的 fatal 类(全部采纳修法)**:
 

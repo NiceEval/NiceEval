@@ -19,7 +19,7 @@ Invocation
 ```
 
 Runner 在调用开始时取得 `invocationId`，并为每个选中的 Experiment 形成 `ExecutionTarget`。一次 start transaction
-共同冻结 active Session、`runId`、`startedAt`、`invocationId`、完整 expected Planned attempts 与 case-lock generation，提交后 Session 和 Run
+共同冻结 active Session、`runId`、`startedAt`、`invocationId`、完整 expected Planned attempts 与 Run writer generation，提交后 Session 和 Run
 立即可发现。reuse planning 在一个 `PublicationCutoff` 下只考察已发布 Attempt；不要求 origin Run 已经收口。
 
 Invocation receipt 以 `createdRunIds` 关联本次已提交创建的 Run。终态 Session 是 receipt 的 durable portable Invocation projection；
@@ -62,7 +62,10 @@ Experiment Host 在当前声明和固定 cutoff 上形成一次适用性判断�
 
 `apiKeyEnv` 只声明凭据位置，不进入可比性身份，也不写入 Record。所有消费者使用同一份已求值配置；调度、fingerprint、Core execution identity 与反馈不能各算一份。每个 `Eval × Experiment` 的有效 Judge 配置进入 execution identity；Run 的原始配置 identity 不被某个 Eval 改写。
 
-Eval sourceClosure、登记数据与有效配置共同决定自动失效。runtime version/config 摘要只解释已经发生的评价，不能证明尚未执行的定义没有变化。未捕获的宿主运行条件、外部包或动态 import 改变时，必须对选中范围使用 `--rerun all`；不带范围的 `--rerun` 不足以重验。
+Eval sourceClosure、登记数据、可达 dependency、NiceEval runtime revision 与有效配置共同决定自动失效。
+外部根的 owner 与模块投影由 [Eval 装载](../../eval/architecture.md#外部-eval-发现与装载) 拥有；逐 Eval 身份与动态输入规则见 [身份与携带](cache.md#外部-eval-的身份与携带)。
+Judge 的运行时 version/config 摘要只解释已经发生的评价，不能证明尚未执行的定义没有变化。
+未捕获的宿主条件改变时，必须对选中范围使用 `--rerun all`；无法完整捕获的动态依赖不能自动携带。
 
 ## Coordination（协调）与 Run 级共享准备
 
@@ -101,7 +104,12 @@ Hook 通过 `ExperimentHookContext` 上报 Run 范围的 progress 与 diagnostic
 
 Runner 在触发 `before` 前，把 after 所需的稳定输入写入 ProjectDatabase 的 teardown-obligation row；它属于 Invocation Session，不建立 `.niceeval/teardowns/` 目录。
 
-正常退出时，Runner 执行 after 并以短事务完成对应 obligation。进程被强杀后，下一次启动先检查本 Experiment 的 row；确认原宿主进程已结束后，补执行一次 after，再进入新的 before。若该 Experiment 声明 `sharedState.key`，启动自愈必须先取得该 key 的当前 exact authority，才可读取、完成或执行旧 obligation。active 或 recovering generation 只会让它等待，绝不自动接管、执行旧 after 或替换该 generation。
+正常退出时，Runner 执行 after 并以短事务完成对应 obligation。下一次启动先按旧 obligation 的持久归属决定恢复入口，不根据当前声明推断。
+通过集合的唯一 `after_registration_id` 关联到 State 集合时，启动自愈和普通 `exp --after` 都不能仅凭原宿主死亡执行或删除旧义务。
+active/recovering 集合必须走显式集合恢复：验证 exact token、原 owner 终止与远端静默，再依次执行 Run 对账、exact after 和整组释放。
+
+这也适用于纯 State，以及当前配置已删除或改变 State/sharedState 的情况；等待不占用新集合或执行资源。
+非集合义务继续沿用原规则：确认原宿主结束后补 after；旧义务关联 sharedState key 时，还须取得该 key 的 exact authority。active/recovering 只等待，不自动接管。
 
 这项启动义务独立于 `ExperimentLifecycleCell`：即使本次所有结果都 carry、没有任何 Attempt，selected Experiment 也必须等到旧登记已在同 key authority 下完成，或等操作员显式恢复；它不会借零 Attempt 跳过安全边界。
 
@@ -133,7 +141,7 @@ sharedState authority 是 owner-token-checked 的不可变 generation transition
 
 作者后来改名或删除当前 `sharedState` 声明时，旧 key 仍保留公开 inspection 与恢复入口。
 
-随后 CLI 要求 selector 唯一，且它的 Experiment id 必须等于 immutable evidence 的 id。当前 target 的 `after` 必须是函数。
+随后 CLI 要求 selector 唯一，且它的 Experiment id 必须等于 immutable evidence 的 id。作者 sharedState target 的 `after` 必须是函数；纯 State 集合按 [集合恢复](../data-model.md#显式恢复) 判断已登记义务。
 selector 不唯一、Experiment 不匹配或 after 缺失/非函数时，CLI 不进入 recovery transition，当前 active generation 保持原样。
 
 recovery claim 后只核对由 immutable `{ experimentId, host, pid, processIdentity }` 绑定的那一条旧 after 登记。它绝不按
@@ -218,3 +226,9 @@ receipt 不复制 locator、Verdict、Usage、cost 或 Attempt 计数。需要�
 - [实验改名](../cli/rename.md) —— 以 Core reference Member + `accepted` action 表达 Experiment 身份变化。
 - [CLI](../cli/README.md) —— Invocation、accept、查询与机器输出。
 - [Run](../../run/README.md) —— Run、Member、Attempt publication 与 lifecycle 的 owner。
+
+## Sandbox State 租约集合
+
+绑定 State 的 Experiment 使用 [持久租约集合](../data-model.md)，在全部 Run 原子创建后、Hook 与 Sandbox 前原子冻结全部成员。
+每个 Experiment 独立通过此门禁，不等待其它集合；case-lock claim 在集合取得后按执行准入建立。
+集合沿用上述单 key authority 与 immutable generation，补充整组取得、fencing、恢复和释放；单 key 不能绕过集合 owner 转移。

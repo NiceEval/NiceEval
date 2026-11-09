@@ -2,7 +2,8 @@
 
 Eval 文件树既是模块树，也是用户可读的题目目录。递归扫描若不承认目录入口的所有权，就会把一个任务目录中的共享模块、fixture 或子任务误认成另一条 Eval，并让同一物理内容拥有不稳定的发现身份。
 
-本 Roadmap 用 folder-entry ownership 定义结构边界。一个目录中显式存在 eval.ts 或 eval.tsx 时，该目录由这条 folder entry 完整拥有；发现器将入口加入发现清单后停止向其后代递归。
+目录入口与递归截止由 [Eval](../../feature/eval/README.md#文件夹入口一道题一个目录) 定义，外部根配置由 [Config.evalRoots](../../feature/eval/library/sharing.md#配置外部根) 定义。
+本 Roadmap 在这些规则上增加发现 provenance、稳定装载顺序与 root、symlink、race 的完整诊断。
 
 ## 解决的 DX 摩擦
 
@@ -16,13 +17,13 @@ Discovery root 是允许扫描的边界。entry 是一个实际被导入的 Eval
 
 目录内存在 folder entry 时，其后代作为这条 Eval 可导入的模块或资产存在。它们继续受 owner root、source capture、transfer 和泄漏检查约束。
 
-file entry 与 folder entry 都从路径推导 Eval id。所有根完成独立扫描和装载后，最终 id 只允许有一个 owner；发现器不按根、目录、文件系统或并发完成顺序替换冲突项。
+路径派生 id 与多根冲突规则沿用 [Eval 发现](../../feature/eval/architecture.md#路径与-package-定位)，本方向增加可审计的 root、entry 与 cutoff 投影。
 
 ## 范围
 
 本方向包含：
 
-- eval.ts 与 eval.tsx 的 folder-entry ownership 和递归截止；
+- eval.ts 与 eval.tsx 的 folder-entry ownership 的可审计投影；
 - 稳定的 root、entry、id 与装载顺序；
 - root 重叠、重复 id、symlink、escape 与 load failure 的封闭语义；
 - list、check、dry 和 JSON 的发现 provenance。

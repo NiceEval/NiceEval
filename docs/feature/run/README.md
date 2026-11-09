@@ -34,6 +34,12 @@ Host-owned 可写打开会自动迁移明确支持的历史 ProjectDatabase，�
 未知格式、无法验证的数据与不安全的历史运行状态拒绝读取，不自动修复。
 版本范围与安全条件见 [自动迁移](architecture/README.md#自动迁移)。
 
+## 用户路径
+
+- 查看结果：[查看运行](use-case/查看运行.md)、[应用中列出运行](use-case/应用中列出运行.md)。
+- 管理运行：[恢复中断运行](use-case/恢复中断运行.md)、[删除终态运行](use-case/删除终态运行.md)。
+- 按命令或 API 选择：[用户路径索引](use-case/README.md)。
+
 ## 入口
 
 - [Library](library.md) —— 高层 `runHost` 组合能力。

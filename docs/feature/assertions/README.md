@@ -112,6 +112,14 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 
 完整字段、封口、边界与读侧形成规则见 [Architecture](architecture/README.md)。
 
+## 用户路径
+
+- 确认结果与行为：[检查输出并在前提失败时停止](use-case/check-values.md)、[检查指定会话范围内的工具行为](use-case/check-tool-behavior.md)。
+- 评价完成程度：[计分并设置质量门](use-case/score-with-gate.md)。
+- 检查观测数值：[检查响应耗时与分位数](use-case/check-measurements.md)。
+
+按公开 API 选择篇目，见 [用户路径索引](use-case/README.md)。
+
 ## 继续阅读
 
 - [Library](library/README.md) —— 作者 API 和 handle 配置。

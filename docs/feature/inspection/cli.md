@@ -68,7 +68,11 @@ reuse 分支只在 `kind: "match"` 时出现，`via` 列出所用的身份域变
 
 - `no-result`、`pending`、`not-published`；
 - `identity-mismatch`、`outcome-ineligible`、`score-incomplete`；
-- `evidence-unavailable`、`timeout-exceeded`、`adoption-unproven`。
+- `evidence-unavailable`、`timeout-exceeded`、`adoption-unproven`、`stateful-input`。
+
+State 位置在 `project.get` 中是 `gap`，reason 为 `stateful-input`；没有 reader 错误时 issues 为空，previous 可以指向历史 Attempt。
+例如位置片段为 `{"experimentId":"codex-mempal","evalId":"react-hook-form/first","attemptOrdinal":1,"state":"gap","reason":"stateful-input","issues":[],"sourceRunId":null,"previous":null}`。
+这不修改固定历史 Run 的 Verdict；`exp --dry` 说明本轮执行，不能把历史 saved 当作下一次起点等价证明。
 
 底层 reader 或 planning 的具名原因及其作用域保留在 `issues`，不能把损坏或不支持折成 `no-result`。
 `previous` 只提供已发布 Attempt 的查看入口；即使它来自更旧 Run，也不能替代当前 source barrier。
@@ -161,6 +165,11 @@ artifacts、timing、usage、commands 与 diagnostics，状态为 `available | n
 按稳定 `entryId` 与 `imageId` 使用 `attempt.assertion.image` 读取封存原图，`offset` 是原始字节偏移，
 `limit` 每页最多 256 KiB。响应交付 `mediaType`、`byteLength`、`sha256`、`base64` 与 `nextOffset`，
 最后一页的 `nextOffset` 为 `null`。这个固定 operation 同样支持 `--record` 搬迁读取，不访问作者路径或模型。
+
+文字上下文材料的 `attempt.assertion.detail` 完整机器结果上限为 32 MiB，保留完整 source content 与裁判审计。
+它容纳 4 MiB 事实内容、8 MiB 审计 envelope 的 base64、解码审计及字段开销，不经过默认 512 KiB 的结果截断。
+多模态 detail 沿用 512 KiB 的 metadata 与解码审计结果，原图仍按上述 operation 分页。
+`show` 的人读正文保持有界 preview，但直接显示 [材料容量诊断](../assertions/library/custom-assertions.md#材料选择)，不因正文较大省略原因。
 
 detail 保留完整已封存 Assertion entry、display 与 source sites，并另给规范化 `check`。
 check 与每个 diagnostic node 都明确包含 `label`、`state`、`expected`、`observed`、`reason`、`anchor` 与有序
@@ -677,7 +686,75 @@ CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英�
 
 读取失败保留底层 Record 错误分类、操作与原因。只有明确需要 schema migration 时才提示迁移；忙碌读取和资源限额表示本次读取未完成，不推断已发布数据损坏。
 
+## Judge 用量与总费用
+
+`attempt.usage` 的应用 calls/totals/modelGroups 与 Judge 账本分别呈现。judgeUsage 使用以下联合；experiment.get 的每个 origin Attempt 使用不含调用预览的 JudgeUsageSummary。
+所有 number 计数为非负安全整数。TokenTotal 沿用 available/partial/unavailable、value:number|null、observationCount。
+
+CostTotals 沿用应用的费用字段：state、source、values、totalCalls；每币种保留 coveredCalls、totalCalls 与 reported/estimated 计价依据。
+JudgePriceReceipt 复用现有价格证明字段，只把 kind 定为 judge-call-price-estimate；不能出现 application 用途字段。
+
+```ts
+type JudgeUsage =
+  | { state: "unavailable"; reason: "judge-usage-not-recorded" }
+  | { state: "invalid"; reason: "judge-usage-source-invalid" }
+  | {
+      state: "complete" | "partial";
+      coverage: "physical-transmissions";
+      collection: CollectionState;
+      calls: readonly JudgeUsageCall[];
+      callsTruncated: boolean;
+      omittedCallCount: number;
+      totals: {
+        requests: TokenTotal;
+        inputTotalTokens: TokenTotal;
+        outputTokens: TokenTotal;
+        totalTokens: TokenTotal;
+        costs: CostTotals;
+      };
+      priceReceipts: readonly JudgePriceReceipt[];
+    };
+```
+
+JudgeUsageCall 的穷尽形状见 [Judge 账本定义](../judge/architecture.md#持久形状)。公开调用预览最多 128 条，按 entryIndex、logicalOrdinal、transmissionOrdinal 排序。
+priceReceipts 仅返回预览调用的证明，全部证明仍留在附件。所有 totals 必须从全账本计算。
+
+调用加对应价证按 canonical UTF-8 总字节选择完整前缀，预览最多 128 KiB；放不下一条时 calls=[] 且 omitted 为全量。
+最终 attempt.usage envelope 超过 16 MiB 时继续缩短该前缀，不删 totals、完整度或已知金额；仍放不下才按既有预算错误拒绝。
+截断必须同步 callsTruncated/omittedCallCount，不能只按行数限制。
+
+请求计数只依赖登记完整性；token 和费用各自计算完整性。state complete 表示调用集合完整，不能替代指标完整度。
+完整空账本的 requests/tokens 为已知 0、observationCount 0，costs complete 且 values=[]、totalCalls=0。
+
+```ts
+type JudgeUsageSummary =
+  | Extract<JudgeUsage, { state: "unavailable" | "invalid" }>
+  | Omit<Extract<JudgeUsage, { state: "complete" | "partial" }>,
+      "calls" | "callsTruncated" | "omittedCallCount" | "priceReceipts">;
+
+interface TotalCosts {
+  state: "complete" | "partial" | "unavailable";
+  values: readonly {
+    currency: string;
+    value: string;
+    source: "reported" | "estimated" | "mixed";
+  }[];
+  missingSources: readonly ("application" | "judge")[];
+}
+```
+
+missingSources 固定 application、judge 顺序，无重复。任一 owner 不完整就列入；没有缺口为 complete。
+有缺口且有已知金额为 partial，否则 unavailable。完整但无收费调用可 values=[]，不伪造某个币种的零。
+精确十进制按相同币种相加；不转换汇率。旧 application costUSD 和 totals.costs 不改为总成本。
+
+旧应用缺源仍未知；合法完整空应用账本可在 totalCosts 判断为无应用收费调用，不更改旧应用 totals 的展示语义。
+
 ## 模型用途与成本
+
+默认 `show @attempt`、`show @attempt --usage` 与实验单局详情首先显示同一 totalCosts。
+完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 与 Missing sources，不能把应用费用称为整局价格。
+完整空 Judge 账本显示 No Judge calls；缺账本显示 Judge usage unavailable；有调用但缺费用显示 Cost unavailable。
+明确零费用显示币种、0、已知费用调用数和全部调用数；Judge 明细保留物理请求数、输入/输出/总 token 与各自完整度。
 
 `show @attempt --usage` 区分模型配置、实际调用、应用费用、Judge 缺口与总费用已知小计。
 单模型保持简洁摘要；多模型按用途逐行列配置模型、effort 和 recordedCalls，另表列实际 serving provider、model、调用数、tokens 与费用完整度。
@@ -686,6 +763,11 @@ CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英�
 `show --experiment <id>` 的 Models and usage 区按当前已选 origin Attempt 展示同一读面，标明 locator 和 origin Run。
 重复 origin 只展示一次，不合并不同局的配置；超出 64 个 Attempt 时说明省略数，未找到的成员另列。
 此区域不从调用或模型组预览重算实验总费用。旧应用 costUSD 口径不变，Judge 未登记与带缺口合计保持显式状态。
+
+实验结果首先显示同一 `experiment.get.costSummary` 的总额、范围、唯一 origin 完整度与未定位计划 Attempt。
+完整时为 Experiment total costs，否则为 Experiment known subtotal；不将这一范围称为某次 invocation 或全历史账单。
+View 消费同一 Query 结果，保留中英 catalog，不解码 Provider 原文、不重算价格，也不累加显示预览。
+
 
 ## Notes
 
@@ -722,3 +804,9 @@ JSON 对象、字符串、布尔值与 `null` 不参与这些数值统计。旧 
 
 结果是本次价格表下的假设估算，历史结果和金额不变。比较 application、judge 与 total 的完整性后再使用金额；
 partial 只代表已知小计。没有价格或调用证据不能按零费用比较。详细规则见[历史成本重计价](architecture.md#historical-repricing)。
+
+## Sandbox State 查询
+
+`run.get` 成功 document 的 `run.value.sandboxState` 使用 [RunSandboxState](../state/library.md#结果形状)。
+`attempt.get` 的 `attempt.sandboxState` 使用同页的 AttemptStateResult；`state` 继续表示各自原有生命周期。
+这些字段遵守同一 cutoff，包含全部实例世代，不从外部 checkpoint 推测事实。

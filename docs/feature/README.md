@@ -54,7 +54,6 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Error Assistance](error-assistance/README.md)：安全错误说明、源码位置、迁移指南与同类聚合。
 - [Eval](eval/README.md)：评估定义与 `defineEval`。
 - [Eval Groups](eval-groups/README.md)：封闭成员集内的 Sandbox 复用与组间并行。
-- [Eval Trajectory](eval-trajectories/README.md)：有向依赖路径上的分段执行、暂停与恢复。
 - [Experiments](experiments/README.md)：运行配置与 `defineExperiment`。
 - [Insight](insight/README.md)：受保护的本机 SPA、Snapshot 与人读审阅。
 - [Inspection](inspection/README.md)：固定 query、闭合结果与机器查看。
@@ -62,6 +61,6 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Plugins](plugins/README.md)：带稳定身份的生命周期组合语法。
 - [Run](run/README.md)：Run 生命周期、Attempt publication 与精确引用。
 - [Sandbox](sandbox/README.md)：隔离的执行资源。
-- [State](state/README.md)：Cohort、精确 checkpoint 与状态生命周期。
+- [State](state/README.md)：跨 Attempt 保留的 Sandbox 状态，按 cohort 隔离，并在 Run 中写明每条 Attempt 的状态起点。
 - [跨 Feature 用户目标](../guides/README.md)：从完整用户路径导航到所属 Feature 的最小 Use Case。
 - [Verdict](verdict/README.md)：显式 gate 与四态折叠。

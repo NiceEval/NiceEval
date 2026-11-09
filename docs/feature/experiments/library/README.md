@@ -143,6 +143,10 @@ export default defineExperiment({
 
 谓词对已发现的 `EvalDescriptor` 求值。`e.id` 是项目内逻辑 ID；简单前缀可写成 `evals: ["memory/"]`，全部运行可以省略或写成 `"*"`。
 
+外部根挂载后沿用同一选择规则，例如 `evals: ["terminal-bench/"]`。
+谓词也可读取 `e.origin?.package.name`；安装身份的完整形状见 [Eval](../../eval/library/sharing.md#安装身份)。
+挂载不会自动运行全部外部题，也不会装载上游 Experiment 或配置。
+
 一次实际选择只能包含一种 `evaluationKind`。同时命中 `defineEval()` 与 `defineScoreEval()` 时，`niceeval check`、
 `niceeval exp --dry` 与普通运行在 Agent、Sandbox、fingerprint 和 Record 写入前拒绝，并分别列出 Pass/Score Eval ID。
 两种题型需要复用同一 Agent 配置时仍写两个 Experiment 文件；CLI 前缀可以继续收窄一个本来更宽的选择，只要本次实际集合保持同型。

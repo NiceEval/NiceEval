@@ -125,6 +125,8 @@ before/after 链只保留原 kind:不能把 command-only layer 变成 template-b
 
 ## Template-bearing factory
 
+SandboxTemplate 是 template-bearing layer 携带的完整起点，由具体 factory 同时选定 Provider。
+
 ```typescript
 interface DockerComposeSandboxOptions {
   readonly file: string | URL;

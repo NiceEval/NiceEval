@@ -34,7 +34,8 @@ root identity 先以 kind、mount 与逻辑 root 排序。一个 root 内的目�
 
 ## root、symlink 与 escape
 
-root 配置路径必须是 owner root 内的普通相对路径。root 自身可以是 symlink，但 realpath 后必须仍位于它的 project owner 或 package owner 内。重叠判定使用这个真实 root。
+root 配置与 owner 内 realpath 边界沿用 [Eval 文件访问边界](../../feature/eval/architecture.md#文件访问边界)。
+本方向使用真实 root 判定重叠，并补充以下发现专属限制。
 
 root 内的 symlink 永远不是发现 entry，也不会被递归穿越。名字看起来像 eval.ts、eval.tsx、*.eval.ts 或 *.eval.tsx 的 symlink 以 discovery.entry-symlink 失败，即使 target 位于 owner 内；这避免同一个 module 经两个 logical 路径得到两个 identity。
 

@@ -310,7 +310,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
               actions: { status: "unavailable", reason },
               usage: { status: "unavailable", reason },
             };
-            ctx.log("openclaw transcript unavailable: tool trajectory missing for this turn, negative assertions are unreliable");
+            ctx.log("openclaw transcript unavailable: tool trace missing for this turn, negative assertions are unreliable");
             if (runJson.text) events.push({ type: "message", role: "assistant", text: runJson.text });
           } else if (!parsed.parseSuccess) {
             const reason = "some transcript lines could not be parsed";

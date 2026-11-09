@@ -2,8 +2,8 @@
 
 ## 裁决
 
-2026-08-01,现位于 `docs/roadmap/testing/dsl/` 的方案按[测试作者面决策](../docs/design/user-readable-testing/DECISION.md)整体重定基线:
-它设计的是 [PLAN-2](../docs/design/user-readable-testing/plans/plan-2/README.md) 领域读面**底下**的 adapter,不是测试作者面本身。
+2026-08-01,当时的 E2E 验收 DSL 方案整体重定基线为领域读面**底下**的 adapter，而非测试作者面。
+这段历史不定义现行测试写法；现行边界见[测试正文约束](../docs/engineering/testing/README.md#测试正文约束)。
 测试正文只出现 Report 领域对象与 `Observed<T>`;`section`、`row`、`line`、YAML 结构期望、role locator 与正则全部降进 adapter 内部。
 
 同批落定的边界(逐条对应 DECISION「现有 E2E Acceptance DSL 的处理」十项):

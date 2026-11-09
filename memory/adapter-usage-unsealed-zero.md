@@ -6,4 +6,4 @@ Adapter 创建成功但未能读取应用账本，没有上报调用时，当前
 
 修复目标是官方完整性封存能力，保存已知物理调用与费用，明确未封存、partial 与显式完整空账本。普通和实验费用读取同一声明，不读取业务 journal 或诊断字符串猜测。
 
-设计见 docs/design/judge-physical-usage/plans/plan-1/library.md。正式回归 usage-unsealed 已取得旧候选红灯及当前候选完整可靠性证明，包含隔离副本、同副本重复、默认并行和资源清理。sealUsage 将账本完整性与业务 Verdict 分开；历史 v1/v2/v3 金额保留，但新总费用不把旧自动完整声明视为生产者封存。
+契约见 [应用账本完整性](../docs/feature/inspection/architecture.md#实验总费用与应用完整性)。正式回归 usage-unsealed 已取得旧候选红灯及当前候选完整可靠性证明，包含隔离副本、同副本重复、默认并行和资源清理。sealUsage 将账本完整性与业务 Verdict 分开；历史 v1/v2/v3 金额保留，但新总费用不把旧自动完整声明视为生产者封存。

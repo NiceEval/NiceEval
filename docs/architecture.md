@@ -68,6 +68,31 @@ src/
 
 收容区之间也不交叉引用名字：`o11y/otlp/mappers/` 不读 Sandbox 名字，`docker/` 不读 Agent 名字。
 
+## 持久化与 Repository 边界
+
+NiceEval 的 live application SQLite 分为项目级 ProjectDatabase 与 OS-user 级 UserDatabase。
+项目唯一的 `<project>/.niceeval/record.sqlite` 保存 Run 与项目协调事实；其 publication、portable gate 和迁移由 [Run 架构](feature/run/architecture/README.md) 拥有。
+`${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 是跨项目 UserDatabase 的唯一权威，不进入项目 Record 的 publication closure 或 portable artifact。
+它不保存 secret，也不提供 raw portable backup。
+
+UserDatabase 静态组合有限的第一方 Repository。
+它们保存 durable user state、Provider cache registry 与 Incus allocation/artifact ledger。
+user-level lease/coordination 与 credential reference 也由具名 Repository 拥有。
+
+central owner 独占路径、连接、短事务、busy deadline、maintenance lease 与 migration orchestration。
+Repository 就近拥有 schema、固定 operations 与 typed row decoder；领域与 Service 不取得 raw connection、SQL 或自选 table/namespace 的能力。
+
+UserDatabase 的 application schema 使用全局连续版本与相邻 migration，所有 Repository 共用同一迁移 catalog。
+这与 [UserDatabase 迁移验收](engineering/testing/architecture/e2e/migrate.md) 使用同一版本边界。
+不建立全局 State module/SPI、lifecycle DSL、通用 SQL executor、extension、`ATTACH` 或第三方动态注册。
+cache Repository 的 cleanup 或业务错误只使其所属操作失败，不成为其它 durable Repository 的逻辑前置。
+共享文件的 corruption、disk-full、WAL recovery 与 lock 影响范围则由同一 UserDatabase 承担。
+
+内部 SQLite adapter 使用 Node 24.15.0+ 的 `node:sqlite`、仓库内 SQL、固定 prepared statements 与 typed row decoder。
+它不引入 Drizzle 或自定义 rolling pack。SQL result 经过 Schema 或具名 decoder 后才越过 Host 边界。
+单 writer、WAL/checkpoint、二进制 Git diff 与数据库级迁移影响范围是接受的代价；不据此另设领域容量上限或性能 SLO。
+增量写入与读取的内部约束见 [SQLite 存储与资源生命周期](feature/run/architecture/storage.md)。
+
 ## 程序设计边界：纯函数、完整 ADT 与 Effect
 
 NiceEval 的内部实现只有两类计算。
@@ -152,6 +177,13 @@ client 或持久 adapter coordination。`Layer` 只负责在 bootstrap 组合这
 `NodeRecordLive`，requirement 为 `never`；内部 runtime 保留 Record 与 coordination 的真实 requirement，
 CLI contribution 继续消费 bootstrap 的资源。每次公开执行拥有独立 Scope，退出和中断都释放其连接与 worker，
 包括初始化尚未完成的 worker。包装不创建嵌套 runtime，不转换 interruption Cause，也不公开内部 Service tag。
+
+ProjectStateDatabase 的 opening 状态持有自己的初始化 AbortController。
+关闭先冻结 closed 状态并中止初始化，再等待 worker 终止，不能先等待 ready。
+worker 在发送 initialize 前接入该信号；取消时拒绝 pending request，并复用同一个 termination Promise。
+初始化成功后移除监听，已就绪 worker 继续使用正常 close 协议。
+初始化失败也等待终止，晚到 ready 不能把 closed 提升为 open；重复 close 等待同一个关闭 Promise。
+finalizer 不依赖调用者 signal 再次触发，外层 interruption 保持原 Cause，不增加公开取消类型。
 
 每个 contribution 连同 parser shape、help metadata 和 handler 一起冻结。根 router 聚合这些 schema，只为让
 `parseArgs` 在不知道命令位置时取得 indexed tokens；第一个 positional token 是 root，投影时只删除这一个

@@ -21,12 +21,12 @@ export default defineExperiment({
 
 ## 完整路径
 
-1. 运行前执行 `pnpm exec niceeval debug cloud-batch <eval>`，两条 before 的 capability 都显示 `run-prepared`，我在花钱前就知道这批准备只会做一次。{#preview}
-2. 第一次运行 `pnpm exec niceeval exp cloud-batch`。派发任何 Attempt 前，Run 为这段前缀创建一个 staging 实例，执行 `project` 后发布第一份 snapshot，在同一实例上继续执行 `install` 并发布第二份，然后删除 staging（OpenSandbox 为第二层另建一个 staging）。进度只出现一次准备活动。{#cold-prepare}
-3. 三个 Attempt 都从这份 snapshot 创建各自的实例，两条 before 都报告 `hit`，Agent 直接开始工作。一个 Attempt 写入 workdir 的文件不会出现在另一个 Attempt 里。{#cold-dispatch}
-4. 再运行一次 `pnpm exec niceeval exp cloud-batch --rerun all`。Run 在 lookup 阶段直接命中，不创建 staging，三个 Attempt 都报告 `hit`。{#warm-hit}
-5. 把 `install` 的命令改成 `pnpm install --frozen-lockfile --prod` 后再运行。`project` 继续命中，只有 `install` 在新的 staging 中重新执行并发布一次。{#suffix-change}
-6. 用 `--sandbox-before-cache bypass` 运行一次。所有 before 在各自 Attempt 中真实执行，反馈为 `replay · bypass`，不发布新的 snapshot。{#bypass}
+1. 运行前执行 `pnpm exec niceeval debug cloud-batch <eval>`，两条 before 的 capability 都显示 `run-prepared`，我在花钱前就知道这批准备只会做一次。 {#preview}
+2. 第一次运行 `pnpm exec niceeval exp cloud-batch`。派发任何 Attempt 前，Run 为这段前缀创建一个 staging 实例，执行 `project` 后发布第一份 snapshot，在同一实例上继续执行 `install` 并发布第二份，然后删除 staging（OpenSandbox 为第二层另建一个 staging）。进度只出现一次准备活动。 {#cold-prepare}
+3. 三个 Attempt 都从这份 snapshot 创建各自的实例，两条 before 都报告 `hit`，Agent 直接开始工作。一个 Attempt 写入 workdir 的文件不会出现在另一个 Attempt 里。 {#cold-dispatch}
+4. 再运行一次 `pnpm exec niceeval exp cloud-batch --rerun all`。Run 在 lookup 阶段直接命中，不创建 staging，三个 Attempt 都报告 `hit`。 {#warm-hit}
+5. 把 `install` 的命令改成 `pnpm install --frozen-lockfile --prod` 后再运行。`project` 继续命中，只有 `install` 在新的 staging 中重新执行并发布一次。 {#suffix-change}
+6. 用 `--sandbox-before-cache bypass` 运行一次。所有 before 在各自 Attempt 中真实执行，反馈为 `replay · bypass`，不发布新的 snapshot。 {#bypass}
 
 预期输出（第一次运行的准备阶段与派发后，摘要）：
 

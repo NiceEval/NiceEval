@@ -3,6 +3,7 @@
 Run Core 拥有 Run、expected Planned attempt、Planned attempt binding、Attempt publication、Run state 与 deletion tombstone。
 Experiment 拥有计划、absence reason 与复用资格；Inspection 拥有固定 cutoff 下的读取和聚合。SQLite adapter
 实现事务与持久化，但不进入公开领域 API。
+物理分块、command 重试、短事务与公平写入由 [SQLite 存储与资源生命周期](storage.md) 定义。
 
 ## Canonical Record 与运行中状态
 
@@ -28,7 +29,8 @@ operational state，不会因存在于 canonical database 就成为公开事实�
 位置，不能充当 Attempt identity。
 
 Invocation start transaction 同时提交 Invocation Session、完整 target Run、expected Planned attempts、`invocationId` 与初始 `active` state。
-它也提交 writer generation、case-lock identity/generation 与 publication revision。未提交的候选 Session、Run 或锁不存在。
+它也提交 Run writer generation 与 publication revision。未提交的候选 Session 或 Run 不存在。
+case-lock identity/generation 在执行准入时以独立短事务取得；需要 Experiment 租约时先通过其门禁，等待租约不持有 case lock。
 
 Session 是 Invocation 的唯一 durable projection。终态 Session 与 `createdRunIds`、completion、cutoff 一起留在 portable Record，
 而 live feedback 仍只属于当前进程。
@@ -255,3 +257,12 @@ Record 格式版本独立于 npm 包版本，不能用产品版本号推断数�
 每项含 `label`、零起始且连续的 `sequence`、JSON `value` 与可选 `unit`；顺序与调用顺序一致。
 它与 Assertions 分开保存，不参与 Verdict、score、coverage 或 Assertion 数量。
 旧 Record 缺少该 family 时读取为空列表，不补造 Note。
+
+## State 的持久事实与 portable gate
+
+[State repository](../../state/data-model.md) 在同一 ProjectDatabase 保存 HEAD、checkpoint 字节与执行事实。
+最终事务同时验证 Run writer generation、所有租约与 predecessor，并发布 saved；没有文件指针与数据库回执的双提交。
+
+portable gate 还拒绝未终结 State execution、unknown commit、staging bytes 与未释放 State 租约。
+回收 staging 后 canonical 文件本身仍是 portable artifact；checkpoint 随文件保留，不引入导出或旁挂文件。
+Run delete 保留 lineage 与 checkpoint，只删除本 Run 的执行事实；严格外部 reader 只验证和读取，不取得执行权限。

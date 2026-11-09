@@ -173,4 +173,4 @@ Verdict Policy 只有同时满足以下条件才算交付：
 - [Eval E2E owner](eval.md) —— 确定性 Eval owner 的稳定结果。
 - [Adapter E2E](adapter/README.md) —— live compatibility、事件断言与公开读回。
 - [官方 Testkit](../../library.md) —— 机械设施与领域 expected 的边界。
-- [测试作者面决策](../../../../design/user-readable-testing/README.md) —— 不建立第二套 Behavior、World 或 DSL 的既有裁决。
+- [测试正文约束](../../README.md#测试正文约束) —— 原生动作、独立 expected 与机械设施的边界。

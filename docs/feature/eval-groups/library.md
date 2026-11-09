@@ -43,14 +43,14 @@ discovery 仍复核运行时品牌与实际 Layer 状态，拦住 JavaScript、�
 | `stop-group` | 当前物理失败如实结束，停止该 Group 后续未开始 Planned attempt |
 | `replace-sandbox` | 退休失败实例，下一条 Planned attempt 建立一次替代实例；同阶段再次失败后停止 Group |
 
-该策略只处理 Sandbox create、reset 与 Sandbox Plugin setup 的不可用失败。
+该策略处理 Sandbox create、reset、资源准备、Sandbox Plugin setup 与 State restore/initialize 的不可用失败。
 Eval 断言失败、Agent 失败和普通业务结果不触发替换。
 
 ## Sandbox 与 Plugin
 
-Group 的 `sandbox` 可以提供 template、逐物理实例生命周期和逐 Attempt 命令。
+Group 的 `sandbox` 可以提供 template 与逐 Attempt 命令，不把作者 before/after 提升为物理阶段。
 Experiment 与 Group 之间仍遵守唯一 template owner。Group Plugin 提供 lane lifecycle；
-若同一 occurrence 声明 `sandbox` fragment，runner 自动把它注入 Group 使用的每台物理实例，
+若声明 `sandbox` fragment，Runner 将它注入每条真实 Attempt，
 但 Plugin 仍不能修改 template。
 
 ## 加载错误

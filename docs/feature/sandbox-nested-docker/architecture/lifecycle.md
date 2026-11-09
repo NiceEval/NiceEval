@@ -75,10 +75,17 @@ NiceEval 不在 activation 中重建 Provider mount tree，也不把旧 pathname
 所有上次在飞 allocation 遵循 DestroyOnly。
 committed Provider artifact 保持 immutable，可供新的 Invocation clone。
 
+policy 发布中断时只恢复最后一个 committed policy。
+pending policy 不授予资源归属；它创建的对象仍须按 metadata 对账，并销毁未提交 generation 的对象。
+
 ## Artifact capture, publication and reconcile
 
 prepare worker 取得独立 allocation 并执行 eligible Before cache。
 成功后进入 quiesce barrier；任何进程、secret、外部 lease 或 state-surface 证明失败都取消 publication 并销毁 prepare allocation。
+
+quiesce 必须证明 inner container、Compose project、BuildKit session 与 shim 数量为零。
+随后停止 dockerd/containerd、sync，并卸载 data volume 或关闭 guest，才允许 Provider 捕获起点。
+consumer clone 启动时重建 machine-id、network identity、transient socket、lease agent 与 runtime log，不继承 prepare 的运行身份。
 
 Provider 创建 stopped immutable template instance 及其 dependent custom block Docker data volume；两者先以
 同一 `ArtifactIntent` 写入准备中的 metadata。root 与 volume 的双向 metadata、完整累计声明与

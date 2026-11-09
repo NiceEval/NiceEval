@@ -80,6 +80,7 @@ interface EvalDescriptor {
   tags: readonly string[];
   evaluationKind: "pass" | "score";   // 题型:defineEval → "pass",defineScoreEval → "score"
   metadata?: Readonly<Record<string, JsonValue>>;
+  readonly origin?: ExternalEvalOrigin; // 外部 package 的只读安装身份，本地 Eval 省略
 }
 
 export default defineExperiment({
@@ -103,6 +104,7 @@ export default defineExperiment({
   sandboxCache?: SandboxCacheConfig;         // Host 的执行缓存策略(sandboxCache.before: "use" | "bypass");不参与身份计算
   sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
   plugins?: PluginStack<"experiment">;       // 本实验挂载的 Plugin(见 Plugins Library)
+  state?: readonly StateBinding[];           // Group Sandbox 的持久状态，见 State Library
   sharedState?: { readonly key: string };    // 共享 checkpoint / 数据库的跨 Invocation 独占身份
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限制本 Invocation 内该实验的 attempt
@@ -112,6 +114,8 @@ export default defineExperiment({
 ```
 
 `evals` 的一次实际选择必须全是通过制或全是计分制 eval；混型在启动前拒绝并列出两类 ID。
+`ExternalEvalOrigin` 的完整形状由 [Eval 的安装身份](../eval/library/sharing.md#安装身份) 定义。
+挂载后的 id 仍是项目内选择身份，package name 与版本不替代它。
 题型由 `EvalDescriptor.evaluationKind` 给报告：通过制读 Verdict 的通过率，计分制读 sealed Assertions 的
 earned score。两种 Eval 的每个 Attempt 都有四态 Verdict，Score Eval
 另有 complete、partial 或 unavailable 的 score state。`points` 只是 Assertion 分值，不是第三种题型。
@@ -177,7 +181,8 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 - 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `before()` 命令,每条 Attempt 在变更分类账标记前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `before()` 或 `test(t)` 普通代码。
 - 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.before`。
-- 跨 Attempt 的实际 Sandbox 目录、服务或快照由 callback before 恢复，并在成功后通过 `context.onCleanup()` 登记回存；planning 在 owner 对 sharing cohort 稳定时把它编译为 physical-instance occurrence。
+- 跨 Attempt 保留的 Sandbox 文件目录使用 [State](../state/README.md)，由 Runner 在物理实例建成与退役时恢复和保存。作者 callback before 与其 `onCleanup()` 始终逐 Attempt，不自动提升到物理阶段。
+- 外部服务的状态由 Experiment Hook 或作者协调服务拥有；State 不为后台数据库提供快照。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
 哪层放什么按场景查[用例手册 · 预置与收尾怎么放](use-case/README.md#生命周期代码放哪);完整分工表见 [Sandbox 预置分工](../sandbox/library/README.md)、准备命令的声明见 [Sandbox Layer](../sandbox/library/layers.md)。
@@ -224,3 +229,7 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [Authoring](../eval/README.md) —— eval 怎么写(experiment 跑的就是它们)。
 - [Observability](../../observability.md) —— 跨 agent 的质量×成本对比与 `niceeval view`。
 - [Runner](../../runner.md) —— 矩阵展开、并发、首过即停、预算的调度。
+
+## State 协调实体
+
+自动 State keys 与作者 sharedState.key 的持久归属、完整集合与恢复顺序见 [Data Model](data-model.md)。

@@ -87,7 +87,7 @@ export default defineExperiment({
 - 需要实例 handle、secret、租约或外部会话时使用普通 callback before，并接受 opaque barrier。
 
 template 预装只是让版本检查首测即成功的一种手段。
-声明照常保留；预装缺失或漂移时命令现场补齐，与 [LIMITS「Manifest 不是状态证明」](../../../design/environment-model/LIMITS.md)同向。
+声明照常保留；预装缺失或漂移时命令现场补齐。
 
 安装进 workdir 的内容会成为 action artifact 的一部分；restore 后仍存在。Sandbox reuse reset 必须回到包含 physical prefix 的 verified baseline，不能只按旧 workdir 规则猜测安装是否存续。分摊判据见 [沙箱预置放哪](README.md#沙箱预置放哪)。
 
@@ -126,4 +126,3 @@ template 预装只是让版本检查首测即成功的一种手段。
 - [Sandbox Layer](layers.md) —— before action、command identity 与 opaque 规则。
 - [三方准备时序](../architecture/lifecycle.md) —— occurrence、缓存满足与错误归属。
 - [Sandbox 复用](reuse.md) —— reset、复用池键与污染诊断。
-- [选型存档](../../../design/prepare-commands/DECISION.md) —— 为什么是官方内置命令而不是意图分类或纯惯用法。

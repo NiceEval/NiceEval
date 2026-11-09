@@ -28,6 +28,7 @@ console.log(page.runs.map((run) => run.runId));
 无效 Run ID、缺失 Run、无效 continuation、删除 active Run、恢复 terminal Run 或仍活跃的 owner，都是领域拒绝。
 它们通过相应 `RunReadError`、`RunDeleteError` 或 `RunRecoverError` 的失败通道返回，可由 `Effect.catchTag` 处理后继续操作。
 正常领域拒绝不作为 defect 抛出，也不改写既有 Run 事实。
+State 集合尚未释放时，delete 通过 RunDeleteError 返回 `run-state-recovery-required`；与 [CLI 删除规则](cli.md) 相同。
 
 Runner 通过内部、owner-scoped capability 创建 Run、发布 Attempt 与收口；这些写能力不导出给 Eval、Adapter、Plugin
 或第三方 Host。运行事实只经 NiceEval 具名 typed collector、Adapter 能力或其它已发布领域 API 进入。
@@ -44,3 +45,9 @@ decoder 严格接受 CLI `run list --json` 的 `operation: "run.list"` 或 `show
 
 该入口不包含 `runHost`、SQLite、writer、delete、recover 或 migration 能力；需要生命周期操作的应用仍显式使用
 `niceeval/run/host`。
+
+## State 只读事实
+
+`RunResult.run.sandboxState` 与 `RunGetDocument.run.sandboxState` 使用 [RunSandboxState](../state/library.md#结果形状)。
+同一 `niceeval/run` Schema 导出 State 的全部只读类型，严格验证关联、闭合集与数组对应关系；不增加写 API。
+历史缺失为 unavailable，新运行无 State 为 known 空数组；portable Record 也保留完整 execution 事实。

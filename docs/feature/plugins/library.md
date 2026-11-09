@@ -27,7 +27,7 @@ defineExperiment({
 
 `definePlugin(spec)` 直接返回冻结的 Plugin 实例；`definePlugin((options) => spec)` 返回只接收一个参数的工厂。
 `name` 必须是非空字符串。`key` 省略时为 `"default"`。`identity` 必须是 JSON 对象，可为 `{}`，用于声明条件版本。
-至少声明 `agent`、`experiment`、`group`、`sandbox`、`attempt` 中的一项。生命周期字段使用 `before` 与 `after`，各自接受一个元素或 readonly 数组。
+至少声明 `agent`、`experiment`、`group`、`sandbox`、`attempt`、`state` 中的一项。生命周期字段使用 `before` 与 `after`，各自接受一个元素或 readonly 数组。
 
 `behaviorRevision`、`instanceKey`、旧 `eval` 字段和 `setup` / `teardown` 在定义期拒绝。组合使用 readonly 数组，不提供 `pluginStack()`。
 
@@ -36,7 +36,7 @@ defineExperiment({
 | 挂载点 | 允许的字段 | 作用范围 |
 | --- | --- | --- |
 | `Experiment.plugins` | 全部 | 本次 Experiment 选择的全部 Eval |
-| `EvalGroup.plugins` | `group`、`sandbox`、`attempt` | 本 Group 的成员 |
+| `EvalGroup.plugins` | `group`、`sandbox`、`attempt`、`state` | 本 Group 的成员 |
 | `Eval.plugins` | `sandbox`、`attempt` | 本 Eval |
 
 类型与加载期均拒绝不允许的字段。同一 Attempt 的生效集合中，跨挂载点重复的 `(name, key)` 也会拒绝。
@@ -58,6 +58,10 @@ defineExperiment({
 
 DAG 先按依赖，再按 changeFrequency，最后按 owner 与声明序号排序。Plugin 元素排在同一 owner 的作者元素之后；数组顺序不代替 `dependsOn`。
 Eval 挂载的 Sandbox 字段隔离普通 reuse pool；同一 Group 成员的该字段身份不一致时，在创建前报 `eval-group-incompatible`。
+
+## State
+
+`state` 接受 [State](../state/README.md) binding 数组，语义与 Experiment 的 `state` 字段相同：在 Eval Group 物理 Sandbox 的恢复点恢复、退役时保存。它需要 Eval Group，使用 `state` 的 Plugin 应同时声明 `requires: { evalGroup: true }`。细则见 [State Library](../state/library.md#挂载)。
 
 ## Agent 扩展
 

@@ -4,7 +4,7 @@
 
 ## 收敛方案
 
-按 attempt-cleanup/PLAN-1 的 Host 组合边界提供具名 Node edge，内部 raw runtime 保留要求，CLI 继续由 bootstrap 组合。初始化期间的 worker 也必须由 Scope 终止；不能只等待 ready 才释放。
+按 [Host 组合边界](../docs/architecture.md#cli-feature-composition)提供具名 Node edge，内部 raw runtime 保留要求，CLI 继续由 bootstrap 组合。初始化期间的 worker 也必须由 Scope 终止；不能只等待 ready 才释放。
 
 ## 验收
 

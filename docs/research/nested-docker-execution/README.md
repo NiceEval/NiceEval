@@ -61,4 +61,4 @@ registry mirror 与 BuildKit external cache。只有确定性 setup 才能由受
 - [产品与执行模型](products/README.md)——自托管 VM、托管 Sandbox、system container 与直接 microVM。
 - [缓存与快照边界](cache/README.md)——哪些内容可以共享，什么时候才允许捕获完整磁盘状态。
 - [所有权与恢复](ownership-and-recovery/README.md)——mount namespace、唯一 owner、fencing 与 orphan 回收。
-- [设计决策](../../design/nested-docker-execution/README.md)——把研究事实变成 NiceEval 候选与裁决。
+- [Nested Docker 契约](../../feature/sandbox-nested-docker/architecture/README.md)——采用的 Incus、storage policy 与资源边界；托管接入见 [Runloop Roadmap](../../roadmap/nested-docker-runloop/README.md)。

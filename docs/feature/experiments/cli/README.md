@@ -248,7 +248,7 @@ niceeval exp <selector> --after \
 
 CLI 先要求 selector 最终只匹配一个 Experiment。它保留不带 token 或确认的只读 owner-evidence inspection。只有 token 与
 双确认齐全、即将开始 recovery generation 时，CLI 才检查这个唯一 Experiment 是否声明 `after`。selector 不唯一或
-target 缺少 `after` 都以非零状态结束，当前 active generation 保持不变，不会进入 recovering 或 free。
+作者 sharedState target 缺少 `after` 都以非零状态结束，当前 active generation 保持不变，不会进入 recovering 或 free。
 
 不带 token 或确认时，该公开入口只显示 key、Experiment、owner token、host、PID、process identity 与当前 exact
 token/generation 匹配时的 heartbeat 诊断。这是 owner token 的唯一普通可见面。
@@ -257,6 +257,11 @@ token/generation 匹配时的 heartbeat 诊断。这是 owner token 的唯一普
 generation，错误/旧 token 不会修改 lease，也不能删除恢复后的新 holder。
 
 成功显示 `explicitly recovered sharedState key`；cleanup 失败保留时显示 `state-lease-recovery-required`。
+
+State 自动租约集合使用同一入口，集合由持久化 owner evidence 确定，不能按当前配置重建或只释放一个 key。
+纯自动集合只有未登记 after 义务时允许缺少作者 after；混有作者 sharedState 时仍要求 after。
+集合 recovery 先调用 Run recovery 对账并关闭非终态 Run，再执行精确 after 义务和整组释放；完整模型见 [租约集合](../data-model.md)。
+整组 exact token/generation 一起推进，确认、静默与失败保留规则相同。细则见 [State 恢复](../../state/architecture.md#并发与恢复)。
 
 显式 recovery 没有 NDJSON 或 receipt 形状。带完整 recovery 参数的 `--json` 组合在选择、读取 owner evidence 或
 改变 generation 之前以具名错误拒绝；调用方必须改用人读 recovery 流程，不能从 stderr 拼装机器接口。

@@ -75,6 +75,8 @@ receipt 只标识这次调用及其 Run。它不是第二份结果文件，也�
 
 ## 调度
 
+全局并发名额和实验并发限制共同决定该 Experiment 的有效宽度。
+
 Runner 先展开 expected Planned attempts，等准备图全部结算，再以全局和 Experiment 范围的并发限制派发。准备节点的并发受 `maxBeforeCacheConcurrency` 与 Provider `scheduling.lane.limit` 约束，不占用 `maxConcurrency` 名额。等待并发名额的 Planned attempt 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 Record writer、Run directory 或 reader 决定。
 
 带 Docker profile的 DinD还要经过 watchdog跨进程准入。Runner提交 CPU、memory、PID、container和

@@ -102,7 +102,8 @@ doctor、activation、reconciler 与 GC 都不得自动打开、挂载、fsck、
 - `--keep-sandbox` 或 `sandboxReuse`；
 - `sandboxState.dockerData` 特殊缓存；
 - NiceEval 在宿主上 mount、loop、nft、sudo、build、import 或 pull **base image**；
-- 把 development 绿灯当成 reference 通过。
+- 把 development 绿灯当成 reference 通过；
+- Runloop 托管 Provider 的公开接入；该方向由 [Runloop Roadmap](../../roadmap/nested-docker-runloop/README.md) 拥有。
 
 `image` 仍是 exact trusted base，不是业务 cache 的公开入口。NiceEval 不 build、import 或 pull 这个
 base；但在它之上，NiceEval 可以创建 Provider-native 的派生 preparation artifact，以复用已经验证的

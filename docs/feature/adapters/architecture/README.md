@@ -27,6 +27,31 @@ transport ──► raw frames / transcript
 
 同一个 SDK 的 reducer 是稳定、可复用的协议知识，应放在独立转换器中；应用自己的 endpoint 与审批接口仍留在 Adapter 的 transport 粘合代码里。
 
+## Attempt 取消与排空时序
+
+公开取消原因与预算由 [Library](../library/README.md#attempt-取消与资源释放预算) 定义。
+Attempt owner 让 deadline 与外部取消共用首次赢家 controller；先关闭 authoring，再通知 Attempt signal。
+已裁定 timeout 后的外部取消不改原因，外部取消先赢时也不由迟到 timer 改判 timeout。
+取消原因来自领域事实，不从异常名称、文案或上游任意 reason 推断。
+
+整个 Attempt body 的真实 Effect interruption 归一化为 cancelled。
+中断回调放在 execution race 外、资源 Scope 内；内部 race loser 的中断不能触发它。
+回调仍先关闭 authoring，再通知同一个 controller，保留原 Cause，也不替换已裁定的 timeout。
+Agent 的组合 send signal 不因此承诺 `AttemptSignal` 的窄 reason 类型。
+
+执行与 cleanup 各在 Effect 实际开始执行时固定唯一计时起点。
+运行时保存单调耗时，并从同一起点投影 Unix deadlineAt；timer 安装时只使用剩余量。
+正常 Assertion seal 退役执行 timer，首次外部取消不提前消耗 cleanup 预算。
+
+cleanup owner 对整个 LIFO 回调队列、晚到注册、已登记 handoff 和归档使用同一截止。
+所有回调取得同一个冻结 context 和独立于执行取消的 signal，不逐项重启计时。
+等待未结清 handoff 时，晚到 `onCleanup` 注册必须独立唤醒 drain，并重新检查 LIFO 队列。
+释放不能等 handoff 自己结清后才开始，晚到回调或 handoff 也不能延长截止。
+
+cleanup 完成或截止时，先关闭 usage 与 trace 接纳，再关闭附件入口，最后中止附件 producer 与 cleanup signal。
+同步 abort listener 也不能越过采集关闭；迟到 Promise 不能修改采集器或已封存 Assertion。
+cleanup 预算只扩大允许排空的时间，不增加采集权限，也不把 abort 当作物理请求完成回执。
+
 ## 行为轨与时间轨
 
 ![行为轨与时间轨](../assets/behavior-time-tracks.svg)

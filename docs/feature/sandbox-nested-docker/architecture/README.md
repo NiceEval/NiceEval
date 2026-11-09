@@ -38,7 +38,7 @@ NiceEval control plane 才拥有 business cache 的意图、key、生命周期�
 
 ## requirement 与 capability
 
-Eval 的 `DockerExecutionRequirement` 是 provider-neutral 比较键。
+Eval 用 Sandbox 能力要求声明 provider-neutral 约束；`DockerExecutionRequirement` 是 Docker 场景的比较键。
 它不编码 Incus、ZFS 或某个 pathname。
 
 Incus planner 返回 `DockerExecutionCapability`。
@@ -79,6 +79,31 @@ development directory 只用于明确 opt-in 的 Unattested 功能 dogfood，不
 
 改变 execution domain 后，旧 artifact 是 foreign。
 系统可以只读列出，不能自动 adopt。
+
+## 自托管 storage policy
+
+NixOS reference Provider 使用 Incus VM，首个 storage policy 是专用 ZFS pool，挂载到 `/data/niceeval-sandbox`。
+它使用 Incus 的原生 snapshot、clone、quota 与 reservation。
+preflight 必须确认专用 block device 或 partition；缺失时失败，不用 loop-backed pool 代替。
+
+deployment 为每个并发 allocation 预留声明的 Docker writable budget，root、workspace、artifact、metadata 与 emergency cleanup reserve 另算。
+CoW 节省的 immutable blocks 不能重复计入可承诺的 writable capacity。
+
+| 后端 | policy 范围 |
+|---|---|
+| ZFS | 自托管 reference；专用 pool 与 block-backed attestation 都必须成立 |
+| LVM-thin | 第二自托管 policy；须验证 thin pool 的 data/metadata 余量、reservation 与同一容量 attestation |
+| Btrfs | 可选自托管 policy，不是 reference policy；仍须满足 dedicated block-backed CoW 与同一容量 attestation |
+| loop-ext4 image | 不属于支持的 storage policy |
+
+这些 policy 不增加 `incusSandbox()` 字段，不把 storage driver 写入 Eval 的 requirement。
+driver 只影响 Provider artifact format、capacity receipt 与 deployment identity；domain 改变后旧 artifact 按 foreign 处理。
+development domain 保留上节的显式 Unattested 例外，不因可运行而获得 reference 资格。
+
+deployment policy revision 与 execution domain identity 分离。
+pool 未变时，新 allocation 使用新 policy revision 与 generation；在飞 allocation 仍由原 generation 完成或按 DestroyOnly 回收。
+artifact 只有在完整 manifest 与 domain identity 相等时才能继承。
+lease、reservation、pending intent、quarantine 与 transient health 不继承，Provider inventory 不因 policy 文本变化而改写。
 
 ## 镜像信任
 

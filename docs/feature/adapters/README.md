@@ -37,6 +37,13 @@ NiceEval 不要求被测对象实现统一协议。`defineAdapter` 提供原生�
 | 查看外部协议与生态调研 | [Research](../../research/adapters/README.md) |
 | 查看已经定稿、等待外部接口满足准入条件的接入目标 | [Roadmap](../../roadmap/README.md#adapter-准入目标) |
 
+## 用户路径
+
+- 接入被测对象：[用原生操作评估订单应用](use-case/native-operations.md)、[连接保留会话历史的服务](use-case/direct-conversation.md)、[在 Sandbox 中运行 coding-agent CLI](use-case/sandbox-cli.md)。
+- 驱动交互：[回答审批并继续同一会话](use-case/resume-approval.md)。
+
+按公开 API 选择篇目，见 [用户路径索引](use-case/README.md)。
+
 ## 目录索引
 
 ```text

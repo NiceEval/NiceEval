@@ -8,11 +8,11 @@
 
 迁移前固定实际 checkout、branch 与输入分支 commit，保存原始 metadata 和正文摘要。通过目录入口查找现有 owner；已存在的主题直接维护，不因工具变化复制第二套正文。
 
-节点只保留一个文件开头的 frontmatter。普通 supporting page 不声明第二套节点 metadata；嵌在正文中的旧 frontmatter 要核对其含义，再清除已被正式 metadata 取代的重复内容。
+Spec、Roadmap 与 Design 不写 frontmatter，身份、名称和所属关系由路径与一级标题派生。Issue 与 Memory 只在文件开头保存当前模型需要的关系或外部对象 provenance；嵌在正文中的旧 metadata 不能成为第二套身份。
 
 原生 host 负责 collection，仓库治理配置负责声明套件。声明目录与实际消费项目对应；全部消费项目都须声明，包括 Adapter 套件。Concord suite ID 使用合法 slug；NiceEval 的 Repo ID 可以包含斜线，host 按声明目录关联两者。不能因为 host 能找到测试，就认为静态关系扫描也包含它们。
 
-新增结构使用当前安装包的具名命令；先读 `--help`，再选择模板页。修改正文使用最新整文件 digest 和受管 author/page 命令。索引链接随正文一起维护，避免新增页无法发现。
+新增结构使用当前安装包的具名命令；先读 `--help`，再选择正文页。既有正文直接编辑，索引链接随正文一起维护，避免新增页无法发现。
 
 ## 合并旧分支时保持语义
 

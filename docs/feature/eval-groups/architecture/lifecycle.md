@@ -4,7 +4,7 @@ Group 的物理 Sandbox 在第一条真实 Attempt 前按需取得，并由整�
 
 ```text
 provider acquire
-  -> physical SandboxLayer before
+  -> State restore
   -> selected resource materialize
   -> verified reset baseline
   -> each real Attempt
@@ -15,13 +15,13 @@ provider acquire
        -> agent ensure / setup / test / teardown
        -> attempt after in reverse registration order
   -> resource release in reverse order
-  -> physical SandboxLayer cleanup / after
+  -> State save
   -> provider finalizer
 ```
 
-Sandbox create、reset、健康检查或故障退休可能建立替代实例。因此 physical occurrence、resource
-acquisition、release、after 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
-文件恰好一次”。同一时刻仍只有一台实例服务 Group 的一条 Attempt。
+Sandbox create、reset、健康检查或故障退休可能建立替代实例。因此 State restore/save、resource
+acquisition、release 与 finalizer 都是“每台实际实例一次”，不是“每个 Group
+文件恰好一次”。同一时刻仍只有一台实例服务 Group 的一条 Attempt。State 的恢复与保存规则见 [State Architecture](../../state/architecture.md#生命周期位置)。
 
 Group author 与 Plugin lifecycle 围住所选 Planned attempts，只执行 selected slice，不要求 CLI 选择自动扩回全组。`niceeval debug` 的 human 和 JSON 都在 `beforeSlots` / `afterSlots` 显示这层包裹；`physicalLifecycleTemplate` 则是每台实际实例一次，不能读成整个 Group lane 只 acquire / finalize 一次。
 

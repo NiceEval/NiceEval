@@ -2,7 +2,7 @@
 
 ## 裁决
 
-2026-08-01,环境模型采纳 PLAN-10:Eval 与 Experiment 用同一个可选 `sandbox` 字段声明 `SandboxLayer`,每个实际配对恰好一方 template-bearing,顺序固定为 template owner → 另一 owner → Agent,普通 command 只有逐 Attempt 的 `prepare()` 一种频次。定稿契约在 `docs/feature/sandbox/library/layers.md` 与 `docs/feature/sandbox/architecture/lifecycle.md`,完整理由在 `docs/design/environment-model/DECISION.md`。
+2026-08-01,环境模型采纳 PLAN-10:Eval 与 Experiment 用同一个可选 `sandbox` 字段声明 `SandboxLayer`,每个实际配对恰好一方 template-bearing,顺序固定为 template owner → 另一 owner → Agent,普通 command 只有逐 Attempt 的 `prepare()` 一种频次。现行契约见 [Sandbox Layer](../docs/feature/sandbox/library/layers.md)与[三方准备时序](../docs/feature/sandbox/architecture/lifecycle.md)。
 
 命名同批裁决:弃用 PLAN-10 文中的 root layer / extension layer,并回 GOALS / CASES 已用的 template 词族(template-bearing / command-only / template owner)。root 与命令选项 `root: true` 一词两义,`sandbox.root-conflict` 读起来像权限错误。
 

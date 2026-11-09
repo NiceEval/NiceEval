@@ -95,7 +95,7 @@ export default defineEval({
   - provider 往返量是 `O(totalBytes / partBytes)`，不按路径、send 区间或 blob 逐项调用，也不把大证据灌进命令 stdout。临时 manifest 与分段在成功或失败后都删除。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
 
-- **路径与区间上限。** 导出阶段单个 send 区间最多扫描 100,000 个路径；File Changes 最多保留 256 个 send 区间。v1 decoder 继续接受每个区间与整份 Attachment 最多 10,000 个 changes；新 producer 每个区间与整份 Attachment 只保留 1,000 个 changes。超过 producer 保留上限但未超过扫描上限时，collector 保存确定性前缀并写 `collection-cap-reached`，不能把 partial 证据报告为 diff unavailable。1,000 条只是不让 durable structural trajectory 膨胀，不承诺大文本最坏情况也满足空文件的性能门。
+- **路径与区间上限。** 导出阶段单个 send 区间最多扫描 100,000 个路径；File Changes 最多保留 256 个 send 区间。v1 decoder 继续接受每个区间与整份 Attachment 最多 10,000 个 changes；新 producer 每个区间与整份 Attachment 只保留 1,000 个 changes。超过 producer 保留上限但未超过扫描上限时，collector 保存确定性前缀并写 `collection-cap-reached`，不能把 partial 证据报告为 diff unavailable。1,000 条只是不让 durable 文件变化轨迹膨胀，不承诺大文本最坏情况也满足空文件的性能门。
 - **内容与 policy 上限。** 导出阶段单个 send 区间最多扫描 256 MiB 去重文本；File Changes 最多保留 20,000 个 blobs、128 MiB blob bytes 和 16 MiB payload JSON。完整 text revision 与单个 blob 最多 1 MiB。超过保留上限但未超过扫描上限时由 collector 省略后续 content 并写 partial limitation。归因 policy 的 `include` 与 `ignore` 各最多 256 项，每项最多 4,096 UTF-8 bytes。
 - **固定截断顺序。** collector 先按 send sequence，再按同一 send 区间内 path 的 ASCII 字节序处理。达到任一采集上限时，它停止在第一个放不下的候选，不跳过该项去采后面的项。已捕获的安全前缀连同 `collection-cap-reached` limitation 写成 `partial`。
 - **内容形态不偷换。** 二进制或超过 1 MiB 的 text revision 写为 `elided`，带 `binary` 或 `oversized-text` 原因与 byteLength；这本身是完整采集。content blob 碰到 collection cap 时，text content 写为 `omitted(collection-cap)` 并形成 partial。尺寸在传输前核算。内容被省略时，路径与状态断言仍可确定，依赖文本的断言如实成为 `unavailable`。

@@ -79,6 +79,7 @@ interface ScoreMatchContext {
       readonly rubric: string;
       readonly choices: readonly string[];
       readonly material: JudgeMaterial;
+      readonly evidenceIds?: readonly string[];
     }): Effect.Effect<LlmClassifyResult, ScoreMatchLlmFailure>;
     extract(input: {
       readonly rubric: string;
@@ -150,6 +151,24 @@ capture 默认256项、48 KiB、16384节点、深度32，可分别提高至16384
 容量不足保留已捕获完整前缀及精确限制原因，不将前缀冒充完整材料。
 存在性可利用确定见证；整体 Judge 必须得到全部命中材料。
 Judge 的命中材料与 audit 另设预算，最大分别4 MiB、8 MiB。
+
+预算必须是合法范围内的正整数，非法配置抛 TypeError；合法容量耗尽产生 unavailable 与具体诊断。
+capture 字节包括集合状态、ID、原文、元数据和显式 undefined 标记；Judge 材料字节包括问题与命中项，不包括未命中项。
+详细诊断保留 code、说明和有界观测值；`source-unavailable` 只是断言结果总类，不能替代具体原因。
+
+| code | 触发条件 |
+|---|---|
+| `source-item-limit` | 源集合项数超过捕获上限。 |
+| `source-byte-limit` | 完整下一项无法进入捕获字节预算。 |
+| `source-node-limit` | 完整下一项无法进入捕获节点预算。 |
+| `source-depth-limit` | 材料嵌套超过深度上限。 |
+| `judge-material-budget` | 全部命中材料及问题超过 Judge 材料预算。 |
+| `judge-audit-budget` | 完整请求、响应预留和封存 envelope 无法进入审计预算。 |
+| `assertion-retention-budget` | Attempt 无法预留本断言的完整材料、审计及诊断；不执行 reader 或模型。 |
+
+源 partial/unavailable、predicate 未知、cut 不一致与不可捕获值各自保留原始 reason。
+reader 抛错保留 producer 失败因果，不把未知材料判为不匹配。
+完整材料、收据与预留结算见 [Evidence](../architecture/evidence.md#上下文材料的两类快照)。
 
 ## ctx 单事实评分
 

@@ -293,3 +293,10 @@ Sandbox Plugin fragment 与四类 owner 的 action 进入同一个 DAG，不创�
 - [Sandbox 复用](../library/reuse.md) —— reset、寿命确认与复用失败诊断。
 - [Agent Ensure](../../adapters/architecture/agent-ensure.md) —— ensure 声明与 Agent 安装层的协议。
 - [Experiments · 缓存与携带](../../experiments/architecture/cache.md) —— fingerprint 与 configHash 的完整输入清单。
+
+## Eval Group 的 State 阶段
+
+绑定 [State](../../state/architecture.md#生命周期位置) 时，Runner 在取得物理实例后、任何 Attempt 前完成路径验证与恢复。
+所有成员的 before/after 仍逐 Attempt；State 不创建隐式 physical SandboxLayer occurrence。
+绑定 State 的实例禁用 before cache capture/restore，workdir reset 不得改 State 根。
+全部 Attempt cleanup 与 resource release 结束并证明写入静默后，才提交 State；随后释放 Provider。

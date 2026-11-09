@@ -22,6 +22,7 @@ expected/published/missing、Planned attempt bindings、Attempt locators、absen
 
 `run delete` 只接受终态 Run。目标仍为 `active` 时提示先 recover；存在 incoming reference 时零删除，并列出依赖
 Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批量删除。
+若关联 State 租约集合仍为 active/recovering，返回 `run-state-recovery-required`、零删除、非零退出；先按 [State 恢复](../state/cli.md#中断后恢复) 处理整个集合。
 
 `run recover` 只在 NiceEval 能证明旧 owner 已终止时 fence writer generation 并把 Run 收口为 `interrupted`。
 它先进入可检查、可重试的 `recovering`，再以匹配 generation 收口；证据不足时拒绝，且不删除任何已发布 Attempt。

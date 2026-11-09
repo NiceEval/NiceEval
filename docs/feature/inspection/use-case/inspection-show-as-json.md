@@ -11,13 +11,13 @@
 
 ## 完整路径
 
-1. 在终端查看这条 Attempt 的用量。`show` 输出人读的总费用、模型用途和调用明细，末尾给出浏览器入口 `Open: niceeval view @01JSHOWATTEMPT`。{#read-text}
+1. 在终端查看这条 Attempt 的用量。`show` 输出人读的总费用、模型用途和调用明细，末尾给出浏览器入口 `Open: niceeval view @01JSHOWATTEMPT`。 {#read-text}
 
    ```sh
    niceeval show @01JSHOWATTEMPT --usage
    ```
 
-2. 加上 `-o json`，同一条命令改为输出 `attempt.usage` 的 `niceeval.query/v3` document，一行一个，没有标题、表格或提示行。{#same-command-json}
+2. 加上 `-o json`，同一条命令改为输出 `attempt.usage` 的 `niceeval.query/v3` document，一行一个，没有标题、表格或提示行。 {#same-command-json}
 
    预期输出（摘要）：
 
@@ -26,7 +26,7 @@
    {"protocol":"niceeval.query/v3","outcome":"success", … }
    ```
 
-3. 脚本需要判定和用量两部分时，去掉投影 flag。`@<locator>` 依次调用 `attempt.get` 与 `attempt.usage`，输出两行，它们来自同一个 `PublicationCutoff`。{#attempt-two-lines}
+3. 脚本需要判定和用量两部分时，去掉投影 flag。`@<locator>` 依次调用 `attempt.get` 与 `attempt.usage`，输出两行，它们来自同一个 `PublicationCutoff`。 {#attempt-two-lines}
 
    ```sh
    niceeval show @01JSHOWATTEMPT -o json | wc -l
@@ -34,7 +34,7 @@
 
    预期输出：`2`。
 
-4. 核对这份数据与 machine 入口一致：以同一 request 调用 `query run`，两边逐字相同，`diff` 不输出任何内容。{#same-as-query}
+4. 核对这份数据与 machine 入口一致：以同一 request 调用 `query run`，两边逐字相同，`diff` 不输出任何内容。 {#same-as-query}
 
    ```sh
    diff \
@@ -42,7 +42,7 @@
      <(niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{"kind":"attempt.usage","locator":"@01JSHOWATTEMPT"}}')
    ```
 
-5. 需要某一项 Assertion 的完整调试依据时，`show` 没有对应投影，脚本改用 `query run` 的 `attempt.assertion.detail`。{#query-only-operation}
+5. 需要某一项 Assertion 的完整调试依据时，`show` 没有对应投影，脚本改用 `query run` 的 `attempt.assertion.detail`。 {#query-only-operation}
 
 ## 结果
 

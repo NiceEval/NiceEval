@@ -1,78 +1,78 @@
 # State —— CLI
 
-State 不增加 `niceeval state`、`niceeval checkpoint` 或手工 restore 命令。状态生命周期由既有 `niceeval exp`
-承接；需要 restore 时，Experiment 或上层 trajectory declaration 已经持有 provider-issued exact
-`StateCheckpointRef`。
+Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`show` 与 `query` 读取 Run 事实。下列输出均为预期输出。
 
-## Dry
+## 状态反馈
 
-```sh
-niceeval exp memory/codex --dry
-niceeval exp memory/codex --dry --json
+每条人读事件都包含 Experiment、Group 与 State 名称；失败显示安全原因，不打印归档内容或私有路径。
+
+| 事件 | 人读输出示例 |
+| --- | --- |
+| `restored` | `state mempal · codex / react-hook-form restored sha256:… (1.4 MB)` |
+| `initialized` | `state mempal · codex / react-hook-form initialized` |
+| `empty` | `state mempal · codex / react-hook-form empty` |
+| `restore-failed` | `state mempal · codex / react-hook-form restore failed: layout-mismatch` |
+| `saved` | `state mempal · codex / react-hook-form saved sha256:… (1.4 MB)` |
+| `save-skipped` | `state mempal · codex / react-hook-form save skipped: interrupted` |
+| `save-conflict` | `state mempal · codex / react-hook-form save rejected: lineage changed` |
+| `save-failed` | `state mempal · codex / react-hook-form save failed: capture-failed` |
+| `save-unknown` | `state mempal · codex / react-hook-form save unknown: storage-failed` |
+
+失败使用 `state-<event>` diagnostic；save-skipped/no-attempts 仅为 info。其余失败产生 execution error 并非零退出，不改写 Attempt Verdict。
+中断按现有中断退出规则；Assertion failed 仍可保存，但不会因此变成成功。
+
+## JSON 事件
+
+`--json` 的 NDJSON state 事件使用下列严格联合；引用类型见 [结果形状](library.md#结果形状)。
+
+```ts
+interface StateEventIdentity {
+  readonly type: "state";
+  readonly runId: string;
+  readonly executionId: string;
+  readonly lineage: StateLineage;
+}
+type StateEvent = StateEventIdentity & (
+  | { readonly event: "restored" | "saved"; readonly checkpoint: StateCheckpoint }
+  | { readonly event: "initialized" | "empty" }
+  | { readonly event: "restore-failed" | "save-skipped" | "save-failed";
+      readonly reason: StateFailureReason }
+  | { readonly event: "save-conflict";
+      readonly expected: StateCheckpoint | null;
+      readonly actual: StateCheckpoint | null }
+  | { readonly event: "save-unknown"; readonly reason: "storage-failed" }
+);
 ```
 
-dry 显示 state declaration、provider identity、是否 fresh 或 exact restore，以及安全的 Cohort / Region / persistence
-boundary 摘要。
-它不 acquire StateProvider、不 restore checkpoint、不 mint commit ID，也不写 Run。
+saved 事件只在全部 binding 提交后发送，每个 binding 一条。NDJSON 是进度，不是持久回执；进程在 commit 后退出可能尚未输出，query 仍能读到已提交事实。
+一项恢复失败时对失败项发 restore-failed，整个集合发 save-skipped；其它项不能输出 saved。
+
+## `--dry`
+
+`niceeval exp <selector> --dry` 只读当前 HEAD，不取得租约、不创建 Sandbox、不建立 Run、不预约起点。
+真实运行拿到全部租约后重新读取；两次看到的起点可能不同。只有确定不存在 HEAD 才显示 fresh，不可读或损坏时非零退出。
 
 ```text
-STATE DECLARATION
-provider pr_7R…  namespace ns_4Q…  schema sc_v3…
-cohort co_7R…  region rg_2A…  start exact-checkpoint ck_91…  content-digest 8ae1…
-persistence intentional  sandbox-path 1  external-resource 0
+state mempal · codex / react-hook-form cohort 2026-11 · from sha256:3f9a…c21e
+state mempal · codex / downshift cohort 2026-11 · no checkpoint (initialize)
 ```
 
-若 declaration 的 ref 处于 debug，dry 只展示封闭 debug reasons；它不探测 provider 以尝试补齐 digest 或能力。
+`--dry --json` 在每个 Group plan 的 `state` 数组中给出 `{ lineage: StateLineage, origin: StateOrigin }`，按 lineage 排序；未绑定时为空数组。
+它是观察值，不包含 executionId 或 lease token；不能证明远端路径校验、初始化或恢复能成功。
 
-## 人读反馈
-
-真实执行的 TTY 依次显示 restore、commit 和 reconciliation。它只显示 provider 允许展示的短引用与 digest 前缀，
-不会显示 state payload、凭据或 provider 私有 locator。
+## 读取状态起点
 
 ```text
-state restore  cohort co_7R…  region rg_2A…  checkpoint ck_91…  content-digest 8ae1…
-state commit   checkpoint ck_B2… saved
-state debug    Provider could not guarantee exclusive state access; results are not comparable.
-state change   expected change recorded
-state change   unexpected change detected
+State mempal cohort 2026-11 · from sha256:3f9a…c21e · 3 earlier attempts in this sandbox
 ```
 
-debug execution 在 Human 中逐项显示普通语言原因，在 JSON 中保留 `StateDebugReason`。它不是成功恢复比较能力的提示，
-也不能被终端摘要隐藏。
+`show <attempt>` 根据 context.executionId 联结同 cutoff 的 State execution，展示起点与该实例的保存结果。
+`attempt.get` 的 `attempt.sandboxState` 与 `run.get` 的 `run.value.sandboxState` 使用 [Library 结果形状](library.md#结果形状)，全部物理世代保留；unknown 或 unavailable 不能显示成 saved。
+固定 Run 的历史读取不要求当前 State 定义仍存在，也不读取 checkpoint 字节。
 
-## JSON 与退出码
+## 中断后恢复
 
-`--json` 的 state event 和 Run-owned receipt 使用同一字段集合。commit receipt 总是回显 `commitId`、完整
-`expectedPredecessor`、完整 `newCheckpoint` 与 `fencing`。每个 checkpoint object 都包含 provider、namespace、
-cohort、schema、region、checkpoint，并只在可比较 ref 上带 `contentDigest`。
-
-```json
-{"type":"state-commit","runId":"01J...","commitId":"cm_1K...","expectedPredecessor":{"provider":"pr_7R...","namespace":"ns_4Q...","cohort":"co_7R...","schema":"sc_v3...","region":"rg_2A...","checkpoint":"ck_91...","contentDigest":{"algorithm":"sha256","value":"8ae1..."}},"newCheckpoint":{"provider":"pr_7R...","namespace":"ns_4Q...","cohort":"co_7R...","schema":"sc_v3...","region":"rg_2A...","checkpoint":"ck_B2...","contentDigest":{"algorithm":"sha256","value":"f3c9..."}},"fencing":"accepted","status":"committed"}
-{"type":"state-commit","runId":"01J...","commitId":"cm_2P...","expectedPredecessor":null,"newCheckpoint":null,"fencing":"unknown","status":"indeterminate"}
-```
-
-| 结果 | `niceeval exp` 退出行为 |
-|---|---|
-| state lifecycle 确定完成，且没有 Eval `failed` / `errored` | `0` |
-| Eval `failed` / `errored`，或任一受控 State failure、restore / commit / Scope 收尾失败、commit 不能确定 | `1` |
-| argv、state declaration 或 opaque identity 无法建立 Invocation | `1` |
-| 未捕获崩溃 / 受控中断 | `2` / `130` |
-
-commit `indeterminate` 时，CLI 先发起同一 `commitId`、同一完整 `expectedPredecessor`、同一 fence 的 reconciliation。
-只有得到 accepted receipt 才能继续；`not-committed` 与 `StateCommitIndeterminate` 都以退出码 `1` 停止，不自动提交
-新的 checkpoint。
-
-本方向继承 [CLI 的统一退出码](../../cli.md#退出码)，不新增 State 专用状态码。
-
-## 并发与审计边界
-
-`sharedState.key` 在 StateProvider acquire 之前取得，在 Scope finalizer 全部结束后释放。等待者不建立 Sandbox、
-不 restore checkpoint，也不读取写入者的局部状态。provider fence 仍是跨进程与跨 host 的最终写入边界，不能被该
-key 取代。
-
-Run-owned receipt 是审计的唯一业务事实。CLI、JSON、query 与 View 读取它；它们不向 provider 另发查询来猜补
-commit 的未知结果。
-
-CLI 只根据 sealed mutation observation 显示 `intentional-state`、`unexpected-mutation` 或
-`classification-unavailable`。它不再从“第一题通过、后续题失败”等 Verdict 形状推断污染。State 分类与
-access/reset/isolation/cleanup/commit 问题并列显示；前者不能隐藏后者或改变退出码。
+`niceeval exp <selector> --after --recover-shared-state <key>` 只读展示整个自动 State 租约集合的 owner evidence。
+操作员确认原 owner 终止、远端写入静默后，使用该入口既有的 token 与双确认参数恢复；不支持 JSON recovery。
+纯 State 自动集合仅在没有已登记 after 义务时不要求作者 after；Runner 先调用 Run recovery 对账，再释放集合。混有作者 sharedState 时仍执行作者 after；失败不释放任何 key。
+完整参数与拒绝规则由 [Experiment recovery](../experiments/cli/README.md#协调等待与恢复) 拥有。

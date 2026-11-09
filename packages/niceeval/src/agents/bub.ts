@@ -312,7 +312,7 @@ ${last}`);
         const events = [...parsed.events];
         let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
         if (!raw?.trim()) {
-          const reason = "Bub tape was unavailable; tool trajectory was not observed.";
+          const reason = "Bub tape was unavailable; tool trace was not observed.";
           turnEvidenceCoverage = {
             events: { status: "unavailable", reason },
             actions: { status: "unavailable", reason },

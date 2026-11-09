@@ -2,7 +2,7 @@
 
 ## 裁决
 
-2026-08-01,prepare-commands 主题采纳 PLAN-1:`niceeval/sandbox` 提供内置 prepare 命令 `checkout({ repo, ref })` 与 `installTool({ tool, identity, probe, install })`,全部是 `defineSandboxCommand()` 封装;`--dry` 对复用 Experiment 逐命令展示成本类别(检查命中型 / 每题重放)。Runner 与 SandboxLayer 协议零改动。定稿契约在 `docs/feature/sandbox/library/prepare-commands.md`,选型理由在 `docs/design/prepare-commands/DECISION.md`。
+2026-08-01,prepare-commands 主题采纳 PLAN-1:`niceeval/sandbox` 提供内置 prepare 命令 `checkout({ repo, ref })` 与 `installTool({ tool, identity, probe, install })`,全部是 `defineSandboxCommand()` 封装;`--dry` 对复用 Experiment 逐命令展示成本类别(检查命中型 / 每题重放)。Runner 与 SandboxLayer 协议零改动。现行契约见[内置 before action](../docs/feature/sandbox/library/prepare-commands.md)。
 
 ## 曾选方案
 

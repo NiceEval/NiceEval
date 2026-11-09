@@ -169,6 +169,8 @@ measurement handle 可用 `.orStop(minimum)` 建立 stop-only condition，或在
 
 ## 相关阅读
 
+- [跨项目复用 Eval](library/sharing.md) —— 安装依赖后挂载外部 Eval 根，使用消费项目的 Experiment 运行。
+- [发现 CLI](cli.md) —— list、安装身份 preflight 与外部根错误。
 - [Library](library/README.md) —— API 全景、测试集从输入数组生成多条 eval契约与命名组织约定。
 - [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。

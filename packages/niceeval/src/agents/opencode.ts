@@ -246,7 +246,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
           const hasErrorEvent = events.some((e) => e.type === "error");
           let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
           if (!raw?.trim()) {
-            const reason = "OpenCode transcript/export was unavailable; tool trajectory was not observed.";
+            const reason = "OpenCode transcript/export was unavailable; tool trace was not observed.";
             turnEvidenceCoverage = {
               events: { status: "unavailable", reason },
               actions: { status: "unavailable", reason },

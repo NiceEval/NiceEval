@@ -53,11 +53,12 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 ### 并行 Invocation
 
 Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 Sandbox handle。
-同一 Record root 不接受第二条 Invocation。需要同时运行两个进程时，为它们指定不同 Record root；每条 Invocation 各自创建 Sandbox、Run 与 Attempt，结果不自动合并。
+同一 ProjectDatabase 可以承接多个 Invocation；各自的 Run 与 Sandbox 池独立，case lock 与 generation 由数据库协调。
 
-两个不同 Record root 的池都会读写同一外部 checkpoint 时，Experiment 必须另行声明 `sharedState: { key }`。
-共享状态租约在创建任何 Sandbox 之前取得，并一直持有到所有 Attempt cleanup 与 Provider finalizer 完成。
-等待方不创建 Sandbox；租约释放后，它只继续自己已经形成的计划，不读取另一个 Record 的结果。
+两个 Invocation 写同一外部 checkpoint 时，在同一 authority 声明相同 `sharedState.key`。
+不同数据库中的同字符串不互斥；跨数据库或跨机器的外部状态由作者自己的协调服务保护。
+共享租约在创建 Sandbox 前取得，持有到全部 cleanup、Provider finalizer 与 Experiment after 结束。
+等待方不占用 Sandbox 或 dispatch 名额，取得租约后重新读取外部起点。
 完整场景见[并行 Invocation 与状态边界](../use-case/sandbox-reuse-parallel-invocations.md)。
 
 ### 各阶段次数
@@ -238,7 +239,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 
 ## 相关阅读
 
-- [实验加速 Design](../../../design/experiment-speed/README.md) —— 真实耗时、候选方案与选择。
+- [Sandbox 生命周期](../architecture/lifecycle.md) —— fresh、reuse 与各 owner 的准备及收尾时序。
 - [Experiments](../../experiments/README.md) —— `sandboxReuse` 在 Experiment 中的归属。
 - [预制实例](prebuilt-environments.md) —— 把稳定安装移到构建期。
 - [Architecture](../architecture/README.md) —— 分类账与 Provider 实现。

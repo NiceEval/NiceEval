@@ -6,7 +6,7 @@ import { judgeUsageChatResponse, judgeUsageHttp } from "../fixtures/judge-usage-
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
 // OpenRouter receipt fields and reported-cost precedence follow
-// docs/design/judge-physical-usage/plans/plan-1/architecture.md.
+// docs/feature/judge/architecture.md#响应映射.
 // @feature docs/feature/inspection/README.md
 test.concurrent("OpenRouter 已报告费用与明确零覆盖两次传输，整局费用完整并可追查", async () => {
   await inspectionE2E.case("judge-usage-reported", {

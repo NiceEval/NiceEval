@@ -80,7 +80,7 @@ function parseFrames(frames: readonly unknown[], reported: Set<string>): { event
 
 function coverage(frames: readonly unknown[], parsed: ReturnType<typeof parseFrames>): TurnEvidenceCoverage {
   if (frames.length === 0) {
-    const reason = "Claude Code stream-json output was unavailable; tool trajectory was not observed.";
+    const reason = "Claude Code stream-json output was unavailable; tool trace was not observed.";
     return { events: { status: "unavailable", reason }, actions: { status: "unavailable", reason }, usage: { status: "unavailable", reason } };
   }
   if (!parsed.parseSuccess) {

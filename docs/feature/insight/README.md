@@ -30,7 +30,7 @@ Experiment、Eval 与 Attempt 行的 token 和单一 cost 列读取同一个 Ins
 并集聚合，不因引用或展示分页重复计量；partial 与 unknown 在每一层保持可见。
 
 Run debugger 显示 state、`expected`／`published`／`missing`、pending/absence、coverage、指标分母、Planned attempt bindings 与
-Attempt locators。Attempt debugger 连续呈现身份、判定、source、assertions、trajectory、tool input/output、timeline、
+Attempt locators。Attempt debugger 连续呈现身份、判定、source、assertions、trace、tool input/output、timeline、
 usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated 始终是可见事实。
 
 自定义 Adapter 的领域事件使用统一通用轨迹展示：默认只载入有界摘要页，保留主体、独立时钟、完整性和测量范围。

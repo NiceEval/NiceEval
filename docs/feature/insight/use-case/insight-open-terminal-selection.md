@@ -11,7 +11,7 @@
 
 ## 完整路径
 
-1. 在终端查看 Experiment。输出末尾给出同一 selector 的浏览器命令。{#show-experiment}
+1. 在终端查看 Experiment。输出末尾给出同一 selector 的浏览器命令。 {#show-experiment}
 
    预期输出（末尾）：
 
@@ -26,7 +26,7 @@
    Open: niceeval view --experiment main
    ```
 
-2. 下钻到失败的 Attempt。概览末尾同样给出浏览器命令。{#show-attempt}
+2. 下钻到失败的 Attempt。概览末尾同样给出浏览器命令。 {#show-attempt}
 
    ```text
    $ niceeval show @ATTEMPT-FAIL
@@ -34,13 +34,13 @@
    Open: niceeval view @ATTEMPT-FAIL
    ```
 
-3. 把 `show` 换成 `view`、参数不变。命令在 stdout 写出一次 loopback URL，浏览器直接打开这条 Attempt 的详情，与复制的 Attempt URL 硬加载时内容相同。{#open-attempt}
+3. 把 `show` 换成 `view`、参数不变。命令在 stdout 写出一次 loopback URL，浏览器直接打开这条 Attempt 的详情，与复制的 Attempt URL 硬加载时内容相同。 {#open-attempt}
 
    ```sh
    niceeval view @ATTEMPT-FAIL
    ```
 
-4. 在远程机器上只要 URL、不打开浏览器时加 `--no-open`；Experiment selector 打开预选了 `main` 的 Results。{#open-experiment-remote}
+4. 在远程机器上只要 URL、不打开浏览器时加 `--no-open`；Experiment selector 打开预选了 `main` 的 Results。 {#open-experiment-remote}
 
    ```sh
    niceeval view --experiment main --no-open

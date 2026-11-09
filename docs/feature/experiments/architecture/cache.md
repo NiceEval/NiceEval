@@ -15,6 +15,7 @@ Run 保存已发布 Attempt 与 Planned attempt binding。当前目标先逐位�
 | 有符合输入与证据条件的 Attempt | `reuse` | 按 Pass 或 Score 规则计入 | 沿用 |
 | 没有历史位置或 Member | `gap`，保留具体缺失原因 | 不计零分 | 执行 |
 | 只有输入不同的旧 Attempt | `gap: identity-mismatch`，附旧 locator | 旧分数只在历史中显示 | 执行，或先审阅允许的采用 |
+| 绑定 State 的位置 | `gap: stateful-input` | 历史分数只在固定 Run 中显示 | 真实执行，仍受预算与取消约束 |
 | 最近位置仍在运行 | `gap`，显示 pending | 不计零分 | 按 Coordination 的占用等待 |
 | 历史执行出错、证据不完整或时长不合格 | `gap`，显示实际原因 | 不以旧分数补齐 | 执行 |
 
@@ -213,7 +214,59 @@ Score 的 partial 或 unavailable 不能作为完整结果沿用；`scored` 不�
 
 fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 execution identity；reuse planning 只比较 Core digest，不重新发现配置，也不把 digest 回填成两份 identity。凭据不进入 identity 或 manifest；Judge Provider 的 `apiKeyEnv` 只表示读取凭据的位置。`sharedState` 未声明时不在配置身份对象或 manifest 写键，因而保持既有 base config hash；声明、删除或变更 key 分别产生具名 `config:sharedState.key` added、removed、changed 差异。
 
-自动 `carried` 只沿用同一逻辑位置最新 source barrier 中、通过全部资格条件的 Attempt。Eval sourceClosure、已登记的 Judge 数据或该 `Eval × Experiment` 的有效 Judge 配置任一变化，都会改变 execution identity 并形成 `identity-mismatch`。运行时 version/config 摘要只解释已完成的 Judge 评价，不能证明尚未执行的定义未变。未被 sourceClosure 捕获的宿主条件、外部包或动态 import 发生变化时，必须用 `--rerun all` 重验选中范围；不带范围的 `--rerun` 不足以替代它。
+自动 `carried` 只沿用同一逻辑位置最新 source barrier 中、通过全部资格条件的 Attempt。
+Eval sourceClosure、已登记的 Judge 数据或该配对的有效 Judge 配置变化，都会改变 execution identity 并形成 `identity-mismatch`。
+Judge 的运行时 version/config 摘要只解释已完成的评价，不能证明尚未执行的定义未变。
+未捕获的宿主条件改变时，必须用 `--rerun all` 重验选中范围；不带范围的 `--rerun` 不足以替代它。
+
+## 外部 Eval 的身份与携带
+
+[挂载](../../eval/library/sharing.md) 不增加专用 cache。ProjectTarget 按每条 Eval 的运行输入形成 identity，再交给既有组合 execution identity 与 source barrier 比较。
+输入包括已求值配置、项目内 Eval id、源码闭包、可达 bare dependency、NiceEval runtime revision、loader 数据、Sandbox 身份、可重验 transfer 输入与 Eval 的运行字段。
+
+package 的 name、version、repository、安装 commit 与 lockDigest 是审计事实，不是整套题的失效键。
+root 用于定位输入，挂载前缀则通过最终 Eval id 影响逻辑身份；改变前缀形成新的项目内结果身份。
+不能因为 package version 未变而忽略实际 dependency 变化，也不能因 package commit 改变而作废所有未受影响的题。
+
+| 变化 | 身份影响 |
+| --- | --- |
+| 单题源码、Fixture、判据或 Sandbox 输入 | 只影响引用这些输入的 Eval |
+| 项目内共享模块或其登记数据 | 影响模块 DAG 中可达它的 Eval |
+| bare dependency | 影响实际可达该 locator/content identity 的 Eval |
+| workspace/file/link 内容但 lockfile 未改 | 按实际内容摘要影响可达 Eval |
+| NiceEval runtime contract revision | 进入 Eval 身份，不能只保存消费 package 的展示版本 |
+| 无关说明、上游配置、Experiment 或未引用文件 | 不改变 Eval 指纹 |
+
+模块 DAG 与数据投影由 [Eval 装载](../../eval/architecture.md#模块与数据投影) 拥有。
+无法完备查明的动态 import、非字面量 CJS require 或运行期依赖使对应 Eval 失去自动携带资格，不能只提醒用户手工重跑。
+随机 Sandbox 输入仍进入身份；框架不能猜测某个 env value 只是命名而将它排除。
+这类 Eval 可以原样运行，但跨进程保守重跑。
+
+### transfer 输入
+
+发现期从真实模块图与语法树建立 transfer plan。
+可静态求值的 folder-local string 或 `new URL(..., import.meta.url)` 在计划期展开并计算内容摘要。
+非字面量路径或依赖运行期分支的传输，使对应 Eval 不可自动携带。
+
+普通 `uploadFile` / `uploadDirectory` 无需改写为共享 API。
+执行时通用 Sandbox wrapper 保存 owner-relative 文件集合、内容摘要、Sandbox 目标与 send 区间，形成 [transfer manifest](../../../concepts.md#transfer-manifest)，并核对实际 transfer 与静态 plan。
+
+后续计划必须同时证明定义输入未变、transfer plan 能在 owner 内完整重算且实际清单与 plan 一致。
+内容、文件增删或匹配集变化都产生重跑；历史执行清单只提供审计与一致性证据，不能单独把任意动态路径变成安全 cache key。
+源码闭包变化后，旧依赖集合不证明完整性，须执行并产生新的清单。
+
+### definition 与 execution origin
+
+Record 对已知外部 Eval 保存本轮 `definitionOrigin`，包含 [ExternalEvalOrigin](../../eval/library/sharing.md#安装身份) 的精确安装身份。
+fresh Attempt 的 `executionOrigin` 来自实际执行它的定义；携带时仍引用原 Attempt，不改写其 origin 或复制结果事实。
+
+新 Run 的 definition origin 可以指向新 commit，而 execution origin 沿原 Attempt 的精确引用保持旧 commit。
+读取面必须能区分这两者，并保留原 locator 与携带链；不能把“本轮定义来自新 package”显示成“旧结果由新 package 执行”。
+provenance 可去重保存，但去重不改变 owner 与不可变性，也不在每个 artifact 重复整份身份。
+所有公开投影去除凭据、宿主绝对路径与本地 cache 路径。
+
+项目 package lock 负责安装选择；逐 Eval manifest 只读投影文件、可达 dependency、runtime revision 与 transfer 输入。
+它不能重新安装 package 或反向改写 lockfile，也不成为第二份资格事实。
 
 ## 差异说明
 
@@ -237,7 +290,7 @@ interface IdentityManifestEntry {
   readonly config: Readonly<Record<string, JsonValue>>; // config identity 的展开路径与值
   readonly plan?: JsonValue;                            // pair link 与 Provider physical plan
   readonly plugins?: Readonly<Record<string, JsonValue>>;
-  readonly source: Readonly<Record<string, string>>;    // 项目相对路径 → sha256
+  readonly source: Readonly<Record<string, string>>;    // owner 相对逻辑路径 → sha256，不含宿主绝对路径
   readonly data: Readonly<Record<string, string>>;      // 受管数据路径 → sha256
 }
 
@@ -538,3 +591,9 @@ policy 可以改变当前 planner 的 source barrier、rerun 与 sandbox 行为�
 - [实验改名](../cli/rename.md) —— explicit adoption 怎样表达 Experiment 身份变化。
 - [Run](../../run/README.md) —— Attempt publication、Planned attempt binding 与持久引用。
 - [Inspection](../../inspection/README.md) —— 已发布 Attempt 怎样进入固定读取与比较。
+
+## State 的结果适用性
+
+绑定 State 时不能证明下一次起点相同，因此不自动 carry，也不接受 accept 或 rename 对该位置的显式采用。
+请求以 `state-adoption-unsupported` 拒绝；普通文件改名建立新 lineage，不迁移 checkpoint。
+固定 Run 历史读取保留原结果与状态起点；没有 State 的位置继续遵守本文其它规则。细则见 [State](../../state/architecture.md#结果携带)。

@@ -3,6 +3,90 @@
 Eval 拥有任务与判定，Adapter 拥有应用操作，Attempt 拥有一次执行与资源作用域。
 公开形状见 [Library](library/README.md)，持久事实与封口见 [Assertions](../assertions/README.md)。
 
+## 外部 Eval 发现与装载
+
+[外部根](library/sharing.md) 只增加发现输入，不增加第二种 Eval、Attempt 或结果格式。
+发现、源码捕获、Sandbox 与文件传输必须共用同一份 owner 边界，不能只扩展扫描目录。
+
+```text
+消费项目配置与已安装依赖
+  → 定位 dependency key、精确安装身份与 root
+  → preflight 展示去凭据的安装身份
+  → 本地与外部 root 分别扫描、装载、展开
+  → root 内相对 id 拼接消费项目挂载前缀
+  → 合并检查最终 id 冲突
+  → 逐 Eval 投影模块、数据、dependency 与 transfer 输入
+  → 普通 Experiment 选择与执行
+```
+
+### 路径与 package 定位
+
+| 路径 | 职责 |
+| --- | --- |
+| 消费项目 root | 定位 package.json、lockfile 与本地 evals/ |
+| 外部 package root | 依赖查找、源码捕获与受管宿主路径的边界 |
+| 配置的 root | 外部相对 Eval id 的发现起点 |
+| 挂载前缀 | 最终项目内 Eval id 的前缀 |
+
+package locator 从消费项目直接 dependency key 取得安装目录，跟随 package manager 的链接后读取 package.json。
+它不执行 main，不依赖 package export，不扫描全局 cache，也不在缺包时联网。
+dependency alias 与 manifest name 分别保存，不能因名称不同拒绝合法 alias。
+
+每个根独立按普通入口规则装载并展开数组或 keyed record，相对 id 合法后才拼前缀。
+合并后检查最终 id；冲突列出双方文件、package、root 与挂载点，不能按根顺序替换。
+上游配置、Agent 与 Experiment 不参与发现，也不取得消费项目的生命周期。
+
+### 单一运行时
+
+外部根装载要求 Node >=22.15 的同步 `node:module.registerHooks()`。
+CLI 在动态导入配置或 Eval 前注册查找 hook，并与 tsx 的 ESM/CJS 转译 hook 按固定顺序组成链。
+不支持同步 hook 时，在执行第三方 Eval 代码前报 `eval-root.node-unsupported`。
+
+只有 importer 的真实路径位于声明的外部 package root 内时，`niceeval` 与 `niceeval/*` 才重定向到消费 CLI 所属 package。
+Node builtin、相对 import 与其它 bare package 继续从 importer 所属 package 查找。
+消费项目普通模块查找不受影响；传递 dependency 在自身 package 内 import NiceEval 时不自动重定向，也不支持借此返回另一份私有品牌对象。
+
+每个 owner 使用自己的 module type 与 TypeScript 编译上下文。
+模块图由 Node 实际查找结果与语法树形成，不能用正则近似 import。
+消费运行时缺少 export 时不回退到外部 NiceEval；可判定错误与动态访问边界见 [CLI 错误](cli.md#外部根错误)。
+
+### 文件访问边界
+
+本地 Eval 的 owner root 是消费项目 root，外部 Eval 的 owner root 是所属 package root。
+内部发现事实保存 `ownerRoot`、`evalRoot`、`baseDir`、`sourcePath`、模块依赖事实与 definition origin。
+`ownerRoot` 是 NiceEval 受管宿主路径的 capability 边界，不只是展示 metadata。
+
+静态相对 import 在所属 owner 内递归捕获。
+相对 import、loader 文件、Sandbox build context、bind mount 与运行期上传的宿主文件逃出 owner 时失败。
+校验使用 realpath 后的跨平台祖先关系，不使用字符串前缀；不存在的目标先检查最近已存在祖先，再在创建或读取时复核。
+
+Node builtin 与 NiceEval 运行时源码不复制进源码闭包；NiceEval runtime revision 进入身份。
+静态可达 bare dependency 保存实际命中的 locator 与安装内容摘要；workspace/file/link 依赖按实际内容计算，不只信 lockfile 文本。
+
+### 模块与数据投影
+
+共享模块可能只被 Node 求值一次，发现器不能依赖逐 Eval 重复求值来收集 loader 事实。
+模块 DAG 保存每个模块登记的 loader、criteria 与 private 输入，再把传递闭包投影到每条可达 Eval。
+两条 Eval import 同一模块时，都得到该模块的数据事实；仅改变该模块时，只使可达它的 Eval 重新规划。
+
+路径校验和文件哈希按 package root 缓存，共享物理文件只读一次，再生成逐 Eval manifest。
+缓存使用真实路径、stat 与内容哈希，不能以 package version 作为整套题的失效键。
+依赖、运行时与传输输入的身份规则由 [Experiments](../experiments/architecture/cache.md#外部-eval-的身份与携带) 拥有。
+
+### 装载验收
+
+正式装载须以真实安装矩阵验证，不能只用模块 mock：
+
+| 维度 | 必需组合 |
+| --- | --- |
+| Node | 22 与 24，外部根满足 >=22.15 |
+| 外部 package | ESM 与 CJS，保留自己的 package type 与 tsconfig |
+| package manager | npm、pnpm、Yarn node-modules linker |
+| 运行时隔离 | 外部 package 内安装另一版 NiceEval，仍使用消费运行时解释原生定义 |
+| 输入完整度 | 共享模块数据投影、可达依赖变化、owner escape 与 transfer 重验 |
+
+loader、owner capability、dependency projection 与 transfer manifest 必须一同满足，安装矩阵通过后才能验收共享能力。
+
 ## 应用契约与实现身份
 
 Agent 提供会话操作，用户应用提供自己的上下文对象。它们共用 Eval、Attempt、Assertion 与 Run publication。

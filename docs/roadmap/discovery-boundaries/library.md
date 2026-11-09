@@ -1,25 +1,13 @@
 # Eval 发现边界 —— Library
 
-本方向不增加 defineEval、defineScoreEval、defineConfig 或 Config.evalRoots 的过滤字段。作者继续用既有 file entry、folder entry 和 discovery root 写法组织 Eval。
+作者继续使用 [Eval 目录入口](../../feature/eval/README.md#文件夹入口一道题一个目录) 与 [Config.evalRoots](../../feature/eval/library/sharing.md#配置外部根)。
+本方向不增加 Eval factory 或过滤字段；它为既有发现结果增加下述 provenance 与结构诊断。
 
 ## 入口语言
 
-```text
-evals/search.eval.ts       -> Eval id "search"
-evals/search/eval.ts       -> Eval id "search"
-evals/search/eval.tsx      -> Eval id "search"
-```
-
-file entry 的名字必须以 .eval.ts 或 .eval.tsx 结束。folder entry 的名字必须正好是 eval.ts 或 eval.tsx，且它的父目录必须位于 discovery root 的命名子目录中。
-
-```text
-evals/payroll/eval.ts
-evals/payroll/checks/smoke.eval.ts
-```
-
-上例只发现 payroll。payroll/eval.ts 拥有 payroll/ 目录；checks/smoke.eval.ts 是 payroll Eval 的普通模块或资产，不是第二条 Eval。
-
-根目录中的 eval.ts 或 eval.tsx 没有非空 id，因此以 discovery.root-folder-entry 失败。file entry 与 folder entry 映射到同一 base id 时，以 discovery.duplicate-id 失败。
+`eval.tsx` 同样是 folder entry，父目录必须位于 discovery root 的命名子目录中。
+root 内直接出现 `eval.ts` 或 `eval.tsx` 没有非空 id，以 `discovery.root-folder-entry` 失败。
+普通 file entry、目录截止与重复 id 的基础行为沿用 Feature，不在本页重新定义。
 
 ## 公开 provenance
 
@@ -77,7 +65,7 @@ interface EvalDescriptor {
 
 ## root 与重叠
 
-本地 project root 的默认 discovery root 是 evals。package root 继续由 Config.evalRoots 的 package、root 与 mount 表示；这个方向不改变 package owner、mount prefix 或安装身份的契约。
+root 输入与 package owner 沿用 [外部根配置](../../feature/eval/library/sharing.md#配置外部根)；本方向只增加 root 间的物理重叠检查。
 
 所有 configured root 在发现前以真实路径规范化。两个 root 的真实路径相同，或任一真实路径是另一个的祖先或后代时，整体以 discovery.root-overlap 失败，即使它们有不同 mount 或暂时不会产生重复 id。
 
@@ -85,9 +73,7 @@ interface EvalDescriptor {
 
 ## 没有过滤 API
 
-不存在 discovery.ignore、exclude、include、glob、priority、override 或 childEntries。普通目录只要没有 folder entry，就按既有 entry 名称规则递归发现。
-
-要让 child 成为独立 Eval，目录不能同时由祖先 folder entry 拥有。要让 child 成为父 Eval 的模块或资产，保留父目录中的 folder entry 即可；不需要再写忽略模式。
+本方向不扩展 [现行配置的选择边界](../../feature/eval/library/sharing.md#安装与内容边界)，也不引入 `discovery.ignore`、`glob`、`priority`、`override` 或 `childEntries`。
 
 ## 生产入口验收
 

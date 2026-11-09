@@ -3,6 +3,9 @@
 Eval 定义任务与判定，Experiment 选择连接评估对象的 Adapter，Attempt 独立执行一次任务。
 Agent、游戏和普通应用都属于评估对象。Adapter 提供对象自己的操作与证据；会话是 Agent 接入提供的能力。
 
+已安装项目中的原生 Eval 通过 [Config.evalRoots](sharing.md) 挂载。
+该页拥有 package/root/挂载前缀、安装身份与外部 import 契约；本地与外部 Eval 使用同一套定义和结果。
+
 ## 自定义应用
 
 `defineAdapter` 从 `niceeval` 导出。作者在 `create(ctx)` 中返回一个普通对象，其字段与方法成为评估的 `t`。

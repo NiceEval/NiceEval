@@ -214,7 +214,7 @@ function protocolEvents(frames: readonly unknown[], reported: Set<string>): { ev
 
 function evidence(frames: readonly unknown[], parseSuccess: boolean, events: readonly StreamEvent[]): TurnEvidenceCoverage {
   if (frames.length === 0) {
-    const reason = "Codex app-server protocol output was unavailable; tool trajectory was not observed.";
+    const reason = "Codex app-server protocol output was unavailable; tool trace was not observed.";
     return { events: { status: "unavailable", reason }, actions: { status: "unavailable", reason }, usage: { status: "unavailable", reason } };
   }
   if (!parseSuccess) {

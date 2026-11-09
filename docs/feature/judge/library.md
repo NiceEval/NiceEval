@@ -50,7 +50,21 @@ MaterialMatch 的 reader 从当前 ctx 取出业务事实，单项 predicate 在
 问题是材料验收条件，不是预设答案；不会逐项评分或只挑成功样本。
 所有 closeQA 写法组合一个受管评分 Match 后交同一 check，返回同一种 measurement handle。
 完整空集为0且零模型调用；partial、unknown、超限或模型不可判定为 unavailable。
+
+Agent 默认历史与 EventMatch/ToolMatch 简写采用 16384 项、4 MiB、1048576 节点、深度 64 的捕获上限。
+显式 MaterialMatch 使用自己的 capture 配置；Judge 命中材料与审计预算仍由 options 独立指定。
 ctx 材料读取与存在性使用见 [材料选择](../assertions/library/custom-assertions.md#材料选择)。
+
+## Judge 用量与费用
+
+closeQA、defineJudge 与受管 ScoreMatch 自动登记每次实际 HTTP 传输，失败、重试和中断均保留。
+未通过发送前校验的逻辑步骤不算物理请求；取消表示本地停止等待，不证明服务端停工。
+现有 `defineConfig.pricing` 可对请求模型提供显式估价；真实报告费用（含零）优先，不在读取时重新定价。
+`t.usage` 仍只表示被测应用用量，Adapter 无需替裁判上报用量。
+
+Query、Show 与 View 从同一已封存账本读取 Judge 数量、tokens、费用和完整度，应用费用与总费用分别呈现。
+缺账本不是零调用；费用缺项不是零费用。完整空账本证明没有发送，但不制造 USD 0 回执。
+完整结果与已知小计、币种及缺口的形状见 [Inspection 费用读面](../inspection/cli.md#judge-用量与总费用)。
 
 ## 自由评分定义
 

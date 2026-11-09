@@ -1,6 +1,7 @@
 # Eval 发现边界 —— CLI
 
-本方向不新增 CLI 命令或 flag。niceeval list、niceeval check、niceeval exp --dry 与普通 niceeval exp 都消费同一份 discovery transaction。
+本方向不新增 CLI 命令或 flag。[Eval CLI](../../feature/eval/cli.md) 拥有安装身份 preflight、package origin 与前缀选择。
+本页只扩展 root、entry、cutoff 的展示；list、check、dry 与 exp 共用同一 discovery transaction。
 
 ## 人类输出
 

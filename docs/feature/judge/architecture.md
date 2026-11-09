@@ -156,6 +156,7 @@ interface LlmScoreResult {
 interface LlmClassifyResult {
   readonly choice: string;
   readonly rationale: string;
+  readonly citations?: readonly string[];
 }
 interface LlmExtractResult {
   readonly items: readonly string[];
@@ -349,43 +350,197 @@ fingerprint 与字段差异。字符串模型 override 继承声明，作者负�
 
 ## 匹配材料的整组问答
 
-`closeQA(materialMatch, question)` 在登记处注入当前 ctx，捕获 reader 返回的事实，用既有 Boolean Match 对全部候选求值。
+`closeQA(materialMatch, question)` 在登记处注入当前 receiver ctx，同步捕获 reader 事实，并用既有 Boolean Match 对同一候选求值。
+匹配与发送快照、私有 owner 校验和无模型终态收据由 [Assertions Evidence](../assertions/architecture/evidence.md#上下文材料的两类快照) 拥有。
+receiver 的开放事务与取消顺序见 [Run 生命周期](../run/architecture/lifecycle.md#材料-receiver-与-judge-封存)，不建立 source binder 或全局 callback registry。
 
+源完整、捕获穷尽、全部 predicate 可判定且命中集合非空时，全部命中材料保序交给一次 classify。
+satisfied=1，not-satisfied=0，insufficient-evidence=unavailable。
+完整零命中为 0、零调用；partial、unknown 或容量不足为 unavailable，不能截断材料继续评分。
+实际输入只有 question、全部命中原文及身份和完整 selection receipt；业务失败或未采用项不被预先过滤。
+材料只是数据，不能改写 rubric 或引入外部知识。
 
-Match快照保留原值；发送给模型的JSON材料独立捕获。
+调用复用同一 entry 的失败锁存、配置、预算、timeout、signal、usage 和审计，不创建第二个 runtime。
+无模型终态保留 question、source、原因与 evaluation.receipt，不声明不存在的请求。
+中断先关闭进度写入，再封口选择计数；晚到 callback 不修改已封存 entry。
 
-Agent保留原关联row、scope与locator，跨Attempt拒绝。
+### 引用与严格审计
 
+classify 只有显式 evidenceIds 时才请求引用；最多 16384 个唯一 ID，每个最多 128 UTF-8 bytes。
+聊天 response 必须含无重复的 citations 数组，且所有成员属于命中 ID 集；空数组表示模型实际返回空引用。
+聊天审计 reader 同时 exact decode 请求、原始 response 与 output，并验证 ID 子集，不能只验证最终映射。
+TypeSafe mapping reader 验证可选 evidenceIds 与映射；wire 不请求其没有的引用能力，output 不带 citations，读面标记 not-recorded。
+未请求引用的原语保持原结果形状，不生成引用。
 
-完整命中材料保序交给一次 classify；satisfied=1，not-satisfied=0，insufficient-evidence=unavailable。
-
-
-完整空集为0且零调用；这类局部终态保存 question 与 source，不声明不存在的模型 audit。
-
-partial、unknown与超限形成 unavailable，不截断材料继续评分。
-
-
-选中项计数保存在既有 evaluation.receipt，含完整度与穷尽范围；中断时封口进度，晚到求值不能更新。
-
-
-Adapter binder只有装配阶段可登记，校验成功后一次提交；关闭作者阶段清空读取方法，已登记entry只持有快照。
-
-
-引用协议在明确提供evidenceIds时要求聊天模型返回citations，并严格验证ID子集。
-
-TypeSafe未提供引用时不生成引用。
-
-
-详见 [定案](../../design/matched-material/PLAN-1/architecture.md)。
-
+ScoreMatch measured/unavailable 可保留实际 rationale 与 citations，insufficient-evidence 同样保留它们。
+受管 gateway 与 Inspection 只保存真实返回值；Provider 失败已锁存时，callback 不能伪造正常结果恢复。
 
 ## Judge 物理用量账本
 
-每个已执行 Attempt 封存独立 Judge 调用账本；发送前登记每次实际 HTTP 传输，重试各计一次。
-费用和 token 在传输回执边界接纳，先于判分解码，失败或取消不抹除已经接纳的事实。
-未发送为完整空集；历史缺源、未收到回执及缺字段保持未知。应用用量与 Judge 用量分别保留，总费用显式列出缺失的账本。
+每个已执行 Attempt 拥有独立 Judge collector；应用与 Agent 的所有 Assertion scope 共用该 owner。
+它统计 NiceEval 实际发起的 HTTP 传输，重试各计一次，不把逻辑原语次数、模型、QA 结果或 Provider response ID 当去重键。
+账本与评分审计分开封存，使失败费用不依赖材料大小或审计正文解码。
 
-持久形状、容量与价证遵守[物理账本定案](../../design/judge-physical-usage/plans/plan-1/architecture.md)，
-逐次传输的回执截止与资源释放遵守[生命周期](../../design/judge-physical-usage/plans/plan-1/lifecycle.md)，
-公共 Query、Show 与 View 使用同一[读面契约](../../design/judge-physical-usage/plans/plan-1/library.md)。
-Vercel Chat 未证实的费用及 serving provider 路径保持未知；显式 pricing 可产生带完整性状态的封存估价。
+### 调用身份
+
+每个已执行 Attempt 恰有一个私有 Judge collector。Assertion runtime 从它获得绑定 entryIndex 的能力，所有 scope 共用。
+物理键是 originRunId + originAttemptId + judge + entryIndex + logicalOrdinal + transmissionOrdinal。
+
+局部 callId 为 `judge:<entryIndex>:<logicalOrdinal>:<transmissionOrdinal>`。entryIndex 从 0 开始，另两项从 1 开始。
+登记时固定 entryIndex，延迟 material QA 只使用该能力，不在求值完成后读取 entries.length。
+
+发布时使用同一次 PreparedAssertionsAttachment.entryIds 将 entryIndex 绑定为 entryId，账本保存该正式 ID。
+entryId 使用正式 AssertionEntryId Schema；引用不一致为发布错误，不能把数组序号当 detail identity。
+
+Query call 保留 entryId，客户端通过当前 Attempt locator 与 entryId 调用 assertion.detail；origin 由现有身份查找固定。
+若详情读取不可用仍保留账本金额和调用行，不能据此抹去费用。
+不以模型、Provider、QA 结果、响应 ID 或引用 Run 去重。只登记 NiceEval 发起的 HTTP 请求，不推断网关内部重试。
+
+### 持久形状
+
+Attempt family `niceeval.judge-usage` 使用 revision 1，沿用 Record family 存储，不改写历史应用 usage family。
+附件通过现有 attachment manifest/body 事务随 Attempt 发布；所有 current/persistence/reader 注册保持同一 revision。
+
+```ts
+interface JudgeUsageCall {
+  callId: string;
+  entryIndex: number;
+  entryId: string;
+  logicalOrdinal: number;
+  transmissionOrdinal: number;
+  operation: "score" | "classify" | "extract" | "batchClassify";
+  requestModel: string;
+  transportProvider: "openai" | "vercel" | "openrouter" | "typesafe";
+  provider: string | null;
+  model: string | null;
+  status: "succeeded" | "failed" | "cancelled" | "unknown";
+  httpStatus: number | null;
+  inputTokens: number | null;
+  inputTotalTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  cost: { amount: string; currency: string; source: { kind: "reported"; id: string } } | null;
+  receipt: {
+    state: "available" | "unavailable";
+    reason: string | null;
+    responseDigest: string | null;
+    fields: readonly { path: string; value: string | number | null }[];
+  };
+}
+interface JudgeUsageAttachment {
+  collection: CollectionState;
+  calls: readonly JudgeUsageCall[];
+  priceReceipts: readonly JudgePriceReceipt[];
+}
+```
+
+requestModel、响应 model 和价证 selector 均最长 8192 UTF-8 bytes，保留 Provider 的现有合法输入。
+其它身份最长 256 bytes，数值数量为非负安全整数，金额为既有 canonical decimal，币种用既有 CurrencyCode。
+不得截断 requestModel 或价证 selector。超长响应 model 记 null 和固定限制原因，不影响独立有效的 token/费用。
+
+HTTP status 为 100–599 或 null。callId 必须由三个序号生成，唯一；同一步重试 ordinal 连续，不跨 entry。
+collection complete 说明全部进入边界的请求已登记，不保证远端物理完成或费用已知。
+待决请求内部保留 pending，发布前投影 unknown；取消表示本地终止等待，不证明服务端停工。
+
+receipt 只保存白名单字段及完整有界响应的 SHA-256，不保存 Authorization、URL、headers、任意错误消息或业务正文。
+fields 最多 24 项，path 最长 128 bytes，字符串值最长 8192 bytes，receipt 最多 32 KiB。
+白名单 path 唯一并按字典序排列；只保留已验证的 scalar 字段，不复制 provider error message。
+
+解码非法字段只使对应观察未知，保留固定 reason。receipt available 表示完整 body 可解码且至少一项白名单事实可用。
+无 body、取消、超限、非法 JSON、缺少字段分别用 response-unavailable、cancelled、response-too-large、invalid-json、usage-not-reported。
+字段值非法用 invalid-usage；独立有效字段仍保留，reason 可与 available 并存。
+
+超大响应不能解码截断 JSON，也不生成完整响应 digest。响应边界保留 httpStatus，费用未知。
+
+### 响应映射
+
+映射只由显式 Provider 协议选择；读取 2xx 与非 2xx 的同层回执，早于 QA 内容解码。
+Chat 协议读取 usage.prompt_tokens、usage.completion_tokens、usage.prompt_tokens_details.cached_tokens。
+
+inputTotalTokens 为 prompt_tokens；cache-read 来自 cached_tokens，OpenRouter cache-write 来自 usage.prompt_tokens_details.cache_write_tokens。
+只有 read/write 两桶都有明确值且总和不大于 prompt 时，inputTokens 才为 prompt-read-write。
+
+任一 cache 桶缺失为 null，不能把 prompt-cached 当已知 fresh input；省略字段不代表零。
+prompt 明确为 0 且没有正数/非法/矛盾子桶时，由非负总量证明 input/read/write 均为 0。
+子桶和超过总量或与完整互斥桶不一致时，相关 token 指标未知并保存 invalid-usage；不能制造已知费用小计。
+
+usage.total_tokens 用于一致性核对；totalTokens 由已知 inputTotalTokens+outputTokens 推导，不再加 cache 或 reasoning。
+矛盾或负数不静默修正，相关指标未知；其它独立有效费用仍可保留。
+
+Vercel Chat 的 reported 金额与 serving provider 保持未知；Responses 回执不能证明 Chat 的费用路径。
+`provider_metadata.gateway.cost` 与 `provider_metadata.gateway.routing.finalProvider` 只属于已核对的 Responses 回执，不授权 Chat 映射。
+
+人工构造的 Chat fixture 只验证 token 与显式 pricing，不作为供应商费用路径的证据。
+OpenRouter 的金额读取 usage.cost，币种 USD；serving provider 读取响应 provider。OpenAI 与 TypeSafe 没有正式费用字段时保持未知。
+model 只读取响应 model；请求配置单独在 requestModel，不冒充实际模型。transportProvider 永远是显式 Provider 类型。
+
+TypeSafe systemone 读取 usage.input_tokens 为 inputTotalTokens，usage.output_tokens 为 outputTokens，先于 answers 解码。
+20/10 回执得到 totalTokens=30；三次传输合计 60/30/90，能力拒绝不增加调用。
+其 cache 桶与互斥 fresh input 无证明为 null；费用无已支持字段时仍未知。
+
+金额允许有限非负 number 或 canonical decimal string，number 先走既有精确定点转换；reported 0 永远优先。
+这些路径以协议资料和真实 fixture 为证，不按 hostname 或模型前缀推导 provider。
+
+### 显式估价
+
+复用 defineConfig.pricing 的 selector、rates、digest、source、缺桶与定点算法，按 requestModel 选择并封存证明。
+选择请求模型表示作者明确接受该配置价格基准，不宣称回退模型实际售价。不得使用未封存的内置价格或读取时重新定价。
+
+Judge validator 将 proof.pricing.requestModel 绑定 call.requestModel，不能沿用应用 validator 与 call.model 的比较。
+每 call 至多一条 proof，存在 reported cost 时禁止同 call 的 estimate；proof bucket 与已证明的互斥 token 逐项对应。
+
+缺 reported 才估价；缺桶或缺费率保留 partial，不能用 known subtotal 通过预算。已有 reported 不追加估价。
+内部共用纯金额/分桶算法，Judge proof kind 为 judge-call-price-estimate，应用 proof kind 和历史字节不变。
+
+### 容量与封存
+
+collector 使用现有 defineRecordAttachment 正式编码通道，不扩大全局 Record 限制。
+上限为 payload canonical JSON 1,048,576 bytes、100,000 nodes、10,000 object keys、深度 64，以及最多 4000 物理调用。
+
+4000 仅为 count 上限，不承诺最坏字段和价证下仍能到达。发送前预留附件 framing、entryId、当前完整 ledger、打开项最坏终态和新项最坏终态。
+预留基于已知 requestModel/selector/profile 的实际编码和未知回执字段的明示最大长度，同时核对 bytes/nodes/keys/depth。
+不得只预留固定 4096 bytes 元数据。内部共享 Record 当前编码上限和计量，避免两份不同限制。
+
+预留不足则 ScoreMatch unavailable/judge-usage-capacity-exceeded，零新发送；已有项不截断、不采样、不丢弃。
+已预留响应字段超界只保存有界 reason 与未知对应字段，不得令终态对象超过预留或拒绝发布已发生的费用。
+终态后退还保守预留与实际编码的差额，使正常小回执不会长期占用最坏槽位。
+新的已执行 Attempt 即使创建应用失败也发布空账本；未执行或跳过的 Attempt 不虚构 collector。
+
+费用完整只表示已登记 inference 回执或显式估价范围内完整，不是账户账单；网关附加服务费不属于该投影。
+响应映射只依赖明确协议与真实回执，不按 hostname 或模型前缀推导 Provider。
+公共投影、预览与总计见 [Inspection](../inspection/architecture.md#judge-用量投影)。
+
+## Judge 传输生命周期
+
+1. Attempt 初始化创建 collector，冻结 pricing。应用与 Agent 共享同一拥有者。
+2. check 登记时固定 entryIndex，把内部记账能力传入延迟 material QA 或直接受管 ScoreMatch。
+3. 每个逻辑步骤完成预算、凭据、协议、材料校验，准备有界请求。此时尚未登记物理请求。
+
+4. 每次 HTTP 重试分别创建 transmission capability。signal 已 abort 则拒绝；否则预留容量、登记 pending，紧接着调用 fetch，中间不 await。
+5. transport 收到 headers 立即同步提交 httpStatus；有界 body 完成后同步解码并提交白名单回执，然后才兑现 Promise 供评分解码。
+
+6. 同一个 capability 的 response-commit 与 abort/close 以首次同步发生者为准。已提交 token/cost 不因之后取消或 QA 错误回退。
+7. HTTP 非成功、断连或内容错误不删除调用。重试等待不计调用，下一次 fetch 使用新的 transmission ordinal。
+
+8. entry timeout 只关闭该 entry 的全部 capability，禁止该 entry 继续发送，不关闭 Attempt 或其它 entry 的调用能力。
+9. Attempt 终止则关闭所有 entry admission 及打开 capability，随后触发 abort；终态前冻结账本，并在 Record 发布时绑定正式 entryId。
+
+### 取消与回执截止
+
+每个 transmission 的唯一回执接纳截止是 body-commit、signal abort、entry close、Attempt close 中最先发生的同步动作。
+headers 先到则 httpStatus 可保留；仅 headers 不表示收到 token 或费用。abort 后 body 才返回，即使其它 entry 仍执行，也不得补写该项。
+
+调用状态 succeeded/failed 表示收到完整 HTTP body 的 2xx/非 2xx；2xx 的 QA 内容非法仍是 succeeded 传输。
+本地 abort 为 cancelled，终态仍未闭合的项为 unknown；两者都不声称远端物理完成。
+
+上层求值中断会忽略迟到 resume，不能据此认为底层 Promise 已结清。账本写入放在 transport 自己的 capability 回调，不依赖评分任务恢复。
+transport 独占 reader、abort listener 和资源释放 Promise；abort 先关闭 capability，再取消 body、释放 reader lock 并移除 listener。
+
+body 读取与 abort 竞争，确保本地读取任务有界结束。取消后的资源释放最多 1000 ms，沿已有 Judge timeout/Attempt 剩余期限取更小值，不延长应用测量。
+未结清的 cancel promise 需显式挂 catch，不能留下未处理拒绝；无法证明资源释放完成时保留诊断，不宣称服务端完成。
+
+需要先返回的取消路径仍跟踪资源释放任务，Attempt 封存前在该有界等待期限内等待，不把求值任务的 finalizer 当作底层 Promise 的证明。
+
+物理次数精确定义为 NiceEval 已调用 fetch 的传输尝试；连接建立失败也算一次。网关内重试无法由本机推导。
+传输取消与 Attempt cancellation reason 遵守既有 first-winner，不引入新取消协议。

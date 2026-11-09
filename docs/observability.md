@@ -213,6 +213,5 @@ query 与 View 只消费已关闭的 operation result。它们不重新打开 Re
   —— 五个 source family 的精确 payload、限制、seal 和 failure 语义。
 - [Record 架构](feature/run/architecture/README.md) —— Core、closure、完成标识与 migration。
 - [Record Library](feature/run/library.md) —— fixed family read、capture contract 与 Effect API。
-- [Record → Delivery 设计地图](design/record-to-report-stack.md) —— 各层决策、依赖与合法组合，
-  不构成当前契约。
+- [Run → Inspection → Insight](feature/inspection/architecture.md#run-inspection-insight) —— 各层职责、依赖与交付边界。
 - [Assertions 证据](feature/assertions/architecture/evidence.md) —— evidence 完整度怎样影响断言。

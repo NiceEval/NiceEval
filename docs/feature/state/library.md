@@ -1,423 +1,198 @@
 # State —— Library
 
-State 从 `niceeval/state` 导出。所有 identity component 都是 provider-issued opaque handle；作者只能从 provider
-取得它们，不能用 object literal、字符串或类型断言构造。公开 `StateCheckpointRef` 是唯一的 checkpoint
-reference 名称，`contentDigest` 也只在这个形状上公开。
+`defineState()`、`StateInput`、`StateDefinition` 与 `StateBinding` 从 `niceeval` 根入口导出。
+
+## 定义
 
 ```ts
-import { Context, Effect, Layer, Result, Scope } from "effect";
-import type { SandboxIsolationIssue, SandboxPath } from "niceeval/sandbox";
-import type {
-  StateRegionRef as PublicStateRegionRef,
-} from "niceeval/state";
-
-declare const target: PublicStateRegionRef;
-declare const StateProviderLive: Layer.Layer<StateProvider>;
-declare const useLease: (lease: StateLease) => Effect.Effect<void, StateFailure>;
-
-const program = Effect.scoped(
-  Effect.gen(function* () {
-    const provider = yield* StateProvider;
-    const binding = Result.getOrThrow(provider.bind({
-      target,
-      expected: { kind: "fresh", expectedPredecessor: null },
-    }));
-    const lease = yield* provider.acquire(binding);
-    yield* useLease(lease);
-  }),
-).pipe(Effect.provide(StateProviderLive));
-
-await Effect.runPromise(program);
-```
-
-`bind()` 是同步、无 I/O 的 `Result.Result` 边界。`acquire()` 在 ambient `Scope.Scope` 内取得 lease；`restore()`、
-`commit()` 与 `reconcile()` 是已取得 lease 的 Effect v4 operation，保留 `StateFailure` typed failure，但不各自要求或关闭
-Scope。内部模块不启动 runtime；只有 CLI 或应用最外层在 `Effect.scoped` 已关闭 Scope 后运行 Promise facade。
-
-```ts
-declare const StateProviderIdTypeId: unique symbol;
-declare const StateNamespaceTypeId: unique symbol;
-declare const StateSchemaTypeId: unique symbol;
-declare const CohortTypeId: unique symbol;
-declare const RegionTypeId: unique symbol;
-declare const CheckpointTypeId: unique symbol;
-declare const FenceTypeId: unique symbol;
-declare const StateExecutionIdTypeId: unique symbol;
-declare const StateCommitIdTypeId: unique symbol;
-declare const StatePersistenceBoundaryIdTypeId: unique symbol;
-
-interface StateProviderId {
-  readonly [StateProviderIdTypeId]: typeof StateProviderIdTypeId;
+interface StateInput {
+  readonly name: string;
+  readonly version: string;
+  readonly paths: readonly [string, ...string[]];
+  readonly initialize?: SandboxAction;
 }
 
-interface StateNamespace {
-  readonly [StateNamespaceTypeId]: typeof StateNamespaceTypeId;
-}
+declare const stateDefinitionBrand: unique symbol;
+declare const stateBindingBrand: unique symbol;
 
-interface StateSchema {
-  readonly [StateSchemaTypeId]: typeof StateSchemaTypeId;
-}
-
-interface Cohort {
-  readonly [CohortTypeId]: typeof CohortTypeId;
-}
-
-interface Region {
-  readonly [RegionTypeId]: typeof RegionTypeId;
-}
-
-interface Checkpoint {
-  readonly [CheckpointTypeId]: typeof CheckpointTypeId;
-}
-
-interface FencingToken {
-  readonly [FenceTypeId]: typeof FenceTypeId;
-}
-
-interface StateExecutionId {
-  readonly [StateExecutionIdTypeId]: typeof StateExecutionIdTypeId;
-}
-
-interface StateCommitId {
-  readonly [StateCommitIdTypeId]: typeof StateCommitIdTypeId;
-}
-
-interface StatePersistenceBoundaryId {
-  readonly [StatePersistenceBoundaryIdTypeId]: typeof StatePersistenceBoundaryIdTypeId;
-}
-
-interface StateContentDigest {
-  readonly algorithm: "sha256";
-  readonly value: string;
-}
-
-/** Provider-issued identity is inseparable from its Cohort. */
-interface StateProviderIdentity {
-  readonly provider: StateProviderId;
-  readonly namespace: StateNamespace;
-  readonly cohort: Cohort;
-  readonly schema: StateSchema;
-}
-
-/** Region is valid only for the Cohort carried in this same reference. */
-interface StateRegionRef extends StateProviderIdentity {
-  readonly region: Region;
-}
-
-/** The only public exact checkpoint reference. */
-interface StateCheckpointRef extends StateRegionRef {
-  readonly checkpoint: Checkpoint;
-  readonly contentDigest?: StateContentDigest;
-}
-
-type StatePersistenceSurface =
-  | {
-      readonly kind: "sandbox-path";
-      readonly match: "exact" | "subtree";
-      readonly path: SandboxPath;
-    }
-  | {
-      readonly kind: "external-resource";
-    };
-
-interface StatePersistenceBoundary extends StateRegionRef {
-  readonly boundaryId: StatePersistenceBoundaryId;
-  readonly surfaces: readonly [
-    StatePersistenceSurface,
-    ...StatePersistenceSurface[],
-  ];
+interface StateDefinition {
+  readonly [stateDefinitionBrand]: true;
+  readonly name: string;
+  bind(options: { readonly cohort: string }): StateBinding;
 }
 
 interface StateBinding {
-  readonly provider: StateProviderService;
-  readonly target: StateRegionRef;
-  readonly boundary: StatePersistenceBoundary;
-  readonly expected: ExpectedPersistence;
+  readonly [stateBindingBrand]: true;
 }
 
-type ComparableStateCheckpointRef = StateCheckpointRef & {
-  readonly contentDigest: StateContentDigest;
-};
-
-type NonEmptyReadonlyArray<A> = readonly [A, ...A[]];
-
-type StateDebugReason =
-  | "content-digest-unavailable"
-  | "cas-guarantee-unavailable"
-  | "idempotency-guarantee-unavailable"
-  | "fencing-guarantee-unavailable";
-
-type StateExecutionComparability =
-  | { readonly kind: "comparable" }
-  | {
-      readonly kind: "debug";
-      readonly reasons: NonEmptyReadonlyArray<StateDebugReason>;
-    };
-
-type ExpectedPersistence =
-  | {
-      readonly kind: "fresh";
-      readonly expectedPredecessor: null;
-    }
-  | {
-      readonly kind: "restore";
-      readonly expectedPredecessor: StateCheckpointRef;
-    };
-
-type ComparableExpectedPersistence =
-  | {
-      readonly kind: "fresh";
-      readonly expectedPredecessor: null;
-    }
-  | {
-      readonly kind: "restore";
-      readonly expectedPredecessor: ComparableStateCheckpointRef;
-    };
-
-interface StateProviderService {
-  readonly providerId: StateProviderId;
-  readonly namespace: StateNamespace;
-  readonly schema: StateSchema;
-  readonly bind: (
-    input: StateBindingInput,
-  ) => Result.Result<StateBinding, StateBindingError>;
-  readonly acquire: (
-    binding: StateBinding,
-  ) => Effect.Effect<StateLease, StateFailure, Scope.Scope>;
-}
-
-export class StateProvider extends Context.Service<
-  StateProvider,
-  StateProviderService
->()("niceeval/state/StateProvider") {}
-
-interface StateBindingInput {
-  readonly target: StateRegionRef;
-  readonly expected: ExpectedPersistence;
-}
-
-type StateBindingError =
-  | { readonly code: "state-boundary-unavailable" }
-  | { readonly code: "state-boundary-identity-mismatch" }
-  | { readonly code: "state-boundary-surface-invalid" };
-
-interface StateLeaseBase {
-  readonly executionId: StateExecutionId;
-  readonly target: StateRegionRef;
-  readonly fence: FencingToken;
-  readonly restore: (
-    input: { readonly checkpoint: StateCheckpointRef },
-  ) => Effect.Effect<StateRestoreReceipt, StateFailure>;
-  readonly commit: (
-    input: StateCommitRequest,
-  ) => Effect.Effect<StateCommitReceipt, StateFailure>;
-  readonly reconcile: (
-    input: StateReconcileRequest,
-  ) => Effect.Effect<StateReconciliation, StateFailure>;
-}
-
-type StateLease =
-  | (StateLeaseBase & {
-      readonly expected: ComparableExpectedPersistence;
-      readonly comparability: { readonly kind: "comparable" };
-    })
-  | (StateLeaseBase & {
-      readonly expected: ExpectedPersistence;
-      readonly comparability: {
-        readonly kind: "debug";
-        readonly reasons: NonEmptyReadonlyArray<StateDebugReason>;
-      };
-    });
-
-type StateRestoreReceipt =
-  | {
-      readonly checkpoint: ComparableStateCheckpointRef;
-      readonly comparability: { readonly kind: "comparable" };
-    }
-  | {
-      readonly checkpoint: StateCheckpointRef;
-      readonly comparability: {
-        readonly kind: "debug";
-        readonly reasons: NonEmptyReadonlyArray<StateDebugReason>;
-      };
-    };
-
-interface StateCommitRequest {
-  readonly commitId: StateCommitId;
-  readonly expectedPredecessor: StateCheckpointRef | null;
-  readonly fence: FencingToken;
-}
-
-interface StateReconcileRequest {
-  readonly commitId: StateCommitId;
-  readonly expectedPredecessor: StateCheckpointRef | null;
-  readonly fence: FencingToken;
-  readonly indeterminateReceipt: StateCommitIndeterminateReceipt;
-}
+declare function defineState(input: StateInput): StateDefinition;
 ```
 
-`StateProvider` 是 Effect v4 service tag，`StateProviderService` 是它提供的 capability。Node runtime 为选定 provider
-构造一个 `Layer`，并在 CLI / application 的 composition edge 一次提供；Layer 的获取与共享由 Effect 管理，State core 不缓存
-跨 invocation 的 provider instance。provider 的 Node SDK Promise 可拒绝时以 `Effect.tryPromise` 映射为 `StateFailure`；
-只有承诺不会 reject 的边界才使用 `Effect.promise`。
+品牌不导出；只有工厂能建立 definition 与 binding。工厂复制并冻结输入，运行期校验品牌；手写对象、spread 与 JSON 不能构造 binding。
 
-`contentDigest` 在 `StateCheckpointRef` 上是可选字段，只有 `ComparableStateCheckpointRef` 将它收紧为必填。
-首次 acquire 若 provider 不能提供 digest，或不能保证 CAS、同一 `commitId` 的 idempotency、fencing，Runner
-立即将 lease 的 `comparability` 固定成 `debug`。任何后续 ref 缺 digest 也只能向 `debug` 降级，不能补写或猜算
-digest 使 execution 恢复可比较。
+| 字段 | 规则 |
+| --- | --- |
+| `name` | 项目内唯一，匹配 `[a-z0-9]+(-[a-z0-9]+)*` |
+| `version` | 匹配 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；改变它就开始新 lineage |
+| `paths` | 非空的 Sandbox 绝对路径或 `~/` 路径；安全规则见下节 |
+| `initialize` | 仅接受声明式 SandboxAction；无 checkpoint 时真实执行一次，不读写 before 缓存 |
+| `cohort` | 匹配 `[a-z0-9][a-z0-9._-]{0,63}`；写入 Run，不包含凭据 |
 
-`StateProvider.bind()` 是无 I/O 的声明归一化边界。它验证 boundary 与 target 的 provider、namespace、Cohort、
-schema、Region 全部相同；Sandbox path 必须是目标 Sandbox 内的规范虚拟路径，selector 互不重叠。
-`external-resource` 只表示同一 Region 的 provider-owned 外部载体，不授权忽略任何 Sandbox 路径变化。
-无法签发完整 boundary 时 planning 失败，不能退回作者路径字符串或污染启发式。
+`initialize` 不接受 callback、StableSandboxCommand 或生命周期登记。只允许 command、shell、writeText、writeBytes、uploadFile、uploadDirectory 与 gitCheckout action。
+它使用所选 Sandbox 用户、物理实例的 signal 与 deadline，诊断关联 State execution，不伪造 Attempt。完整 action identity 进入条件身份；其 DAG 元数据必须为空。
 
-`StateProvider.acquire()` 只接受这份已封口的 `StateBinding`，不会从 target 与 expected 重新推导或丢失 boundary。
+初始化命令必须只修改 State 路径，不留下后台写入者；工具在镜像中准备好。有 checkpoint 时不重新初始化，安装步骤不能依赖每次执行 `initialize`。
+普通 SandboxLayer 与 Plugin before 仍逐 Attempt 执行，必须保留 State 内容；不能用它们清空记忆目录。
+
+## 路径边界
+
+Runner 在规划期拒绝空段、`.`、`..`、NUL、根目录与词法重复；`~/` 只能由目标 Sandbox 的用户 home 定位，不能使用宿主 HOME。
+取得实例后、任何删除前，核对全部有效 binding 的实际路径：
+
+- 不同 State 的路径也不能相等或互相包含。
+- 路径与 workdir、Runner 内部目录不能双向包含。
+- 路径及现有祖先不得是 symlink；归档不接受 symlink、hardlink、设备、socket、FIFO。
+- 路径必须位于受管可写文件树；只有不存在可以记为缺席，权限与读取错误必须失败。
+
+运行期路径 resolution 由 Sandbox 文件操作 owner 负责。删除、打包、解包使用不跟随链接的目录句柄与逐成员白名单，拒绝绝对归档成员、`..` 与重复成员。
+验证后路径仍可能变化，执行每个文件操作时继续验证；不能先检查一次再执行不受约束的 tar。
+
+checkpoint 保留排序后的逻辑根及实际绝对根 manifest。任何根、home 或布局变化都在删除前报 `state-layout-mismatch`，要求改 `version`；不把旧目录解包到新路径。
+State 只支持可静默复制的文件树。所有写入者必须随 Attempt 命令与 cleanup 结束；持续后台数据库不在支持范围。
+
+## 挂载
+
+| 挂载点 | 写法 | 作用范围 |
+| --- | --- | --- |
+| Experiment | `defineExperiment({ state: [binding, ...] })` | 选中的全部 Eval Group |
+| Plugin | `definePlugin({ state: [binding, ...] })` | 挂到 Experiment 或 Eval Group 后的范围 |
+
+Eval 与 Eval 上的 Plugin 不接受 `state`。同一 Attempt 的 binding 中 `name` 不重复；同项目同名 definition 必须具有相同的 version、paths 与 initialize identity。
+State 必须配合 Eval Group，所有成员的有效 binding 集合一致。未分组、不同 binding 或不支持安全文件操作的 Provider 均在创建前拒绝。
+
+同台实例的全部 State 一起恢复、一起提交；一项失败不推进任何 lineage。需要独立保存时使用不同 Group。
+运行不会因历史结果复用跳过 State Attempt，但仍服从选择范围、预算、early exit 与取消。
+
+## 错误
+
+| code | 时机 | 条件 |
+| --- | --- | --- |
+| `state-invalid` | 定义期 | 字段、action、品牌或词法路径不合法 |
+| `state-duplicate` | 加载期 | binding 重名或同名 definition 不一致 |
+| `state-requires-eval-group` | 规划期 | 选中未分组 Eval |
+| `state-provider-unsupported` | 规划期 | Provider 不能兑现安全文件树操作与写入静默验证 |
+| `state-path-in-workdir` | 规划或 acquire 后 | 与 workdir 双向包含 |
+| `state-path-conflict` | 规划或 acquire 后 | 根重叠、内部路径重叠或链接逃逸 |
+| `state-layout-mismatch` | 恢复前 | checkpoint 根 manifest 与声明不一致 |
+
+能够静态确定的错误在任何 build、Hook 或 Sandbox 创建前拒绝。依赖远端 home 的校验在 acquire 后、删除前拒绝。
+成员的 binding 不一致使用 Group 的 `eval-group-incompatible`。运行失败与退出码见 [CLI](cli.md)。
+
+## 结果形状
+
+State execution 是一台 Group 物理 Sandbox 的状态生命周期；Runner 为它生成一次 `executionId`，替代实例生成新 ID。
+以下只读类型由 `niceeval/run` 导出，同一 Schema 用于 Run 与 Inspection，不接受额外字段。
 
 ```ts
-type FencingOutcome = "accepted" | "rejected" | "unknown";
-
-type StateAcceptedCommitReceipt =
-  | {
-      readonly status: "committed" | "replayed";
-      readonly commitId: StateCommitId;
-      readonly expectedPredecessor: StateCheckpointRef | null;
-      readonly newCheckpoint: ComparableStateCheckpointRef;
-      readonly comparability: { readonly kind: "comparable" };
-      readonly fencing: "accepted";
-    }
-  | {
-      readonly status: "committed" | "replayed";
-      readonly commitId: StateCommitId;
-      readonly expectedPredecessor: StateCheckpointRef | null;
-      readonly newCheckpoint: StateCheckpointRef;
-      readonly comparability: {
-        readonly kind: "debug";
-        readonly reasons: NonEmptyReadonlyArray<StateDebugReason>;
-      };
-      readonly fencing: "accepted";
-    };
-
-type StateCommitRejectedReceipt = {
-  readonly status: "rejected";
-  readonly commitId: StateCommitId;
-  readonly expectedPredecessor: StateCheckpointRef | null;
-  readonly newCheckpoint: null;
-  readonly comparability: StateExecutionComparability;
-  readonly fencing: "rejected";
-  readonly reason: "predecessor-mismatch" | "fence-rejected";
-};
-
-type StateCommitIndeterminateReceipt = {
-  readonly status: "indeterminate";
-  readonly commitId: StateCommitId;
-  readonly expectedPredecessor: StateCheckpointRef | null;
-  readonly newCheckpoint: null;
-  readonly comparability: StateExecutionComparability;
-  readonly fencing: "unknown";
-  readonly reason: "transport-lost" | "provider-unavailable";
-};
-
-type StateCommitReceipt =
-  | StateAcceptedCommitReceipt
-  | StateCommitRejectedReceipt
-  | StateCommitIndeterminateReceipt;
-
-type StateReconciliation =
-  | {
-      readonly status: "committed";
-      readonly receipt: StateAcceptedCommitReceipt;
-      readonly commitId: StateCommitId;
-      readonly expectedPredecessor: StateCheckpointRef | null;
-      readonly newCheckpoint: StateCheckpointRef;
-      readonly fencing: "accepted";
-    }
-  | {
-      readonly status: "not-committed";
-      readonly commitId: StateCommitId;
-      readonly expectedPredecessor: StateCheckpointRef | null;
-      readonly newCheckpoint: null;
-      readonly fencing: "rejected";
-    };
-
-type StateOperation = "acquire" | "restore" | "commit" | "reconcile" | "release";
-
-type StateMutationClassification =
-  | {
-      readonly kind: "intentional-state";
-      readonly boundaryId: StatePersistenceBoundaryId;
-    }
-  | {
-      readonly kind: "unexpected-mutation";
-      readonly issue: SandboxIsolationIssue;
-    }
-  | {
-      readonly kind: "classification-unavailable";
-      readonly reason: "observation-partial" | "observation-unavailable";
-    };
-
-type StateFailure =
-  | {
-      readonly _tag: "StateAcquireUnavailable";
-      readonly target: StateRegionRef;
-    }
-  | {
-      readonly _tag: "StateCohortNotFound";
-      readonly identity: StateProviderIdentity;
-    }
-  | {
-      readonly _tag: "StateCheckpointNotFound";
-      readonly checkpoint: StateCheckpointRef;
-    }
-  | {
-      readonly _tag: "StateIdentityMismatch";
-      readonly expected: StateProviderIdentity;
-      readonly received: StateProviderIdentity;
-    }
-  | {
-      readonly _tag: "StateDigestMismatch";
-      readonly checkpoint: StateCheckpointRef;
-      readonly expected: StateContentDigest;
-      readonly received: StateContentDigest | null;
-    }
-  | {
-      readonly _tag: "StateConflict";
-      readonly expectedPredecessor: StateCheckpointRef | null;
-      readonly actualPredecessor: StateCheckpointRef | null;
-    }
-  | {
-      readonly _tag: "StateLeaseLost";
-      readonly target: StateRegionRef;
-      readonly fence: FencingToken;
-    }
-  | {
-      readonly _tag: "StateTransferFailed";
-      readonly operation: "restore" | "commit" | "reconcile";
-    }
-  | {
-      readonly _tag: "StateCommitIndeterminate";
-      readonly commitId: StateCommitId;
-      readonly expectedPredecessor: StateCheckpointRef | null;
-      readonly fence: FencingToken;
-    }
-  | {
-      readonly _tag: "StateTimeout";
-      readonly operation: StateOperation;
-    }
-  | {
-      readonly _tag: "StateInterrupted";
-      readonly operation: StateOperation;
-    };
+interface StateLineage {
+  readonly name: string;
+  readonly version: string;
+  readonly cohort: string;
+  readonly experimentId: string;
+  readonly evalGroupId: string;
+}
+interface StateCheckpoint {
+  readonly checkpointId: string;
+  readonly digest: string; // sha256:<64 lowercase hex>
+  readonly bytes: number; // nonnegative safe integer
+}
+type StateOrigin =
+  | { readonly kind: "fresh" }
+  | { readonly kind: "checkpoint"; readonly checkpoint: StateCheckpoint };
+type StateFailureReason =
+  | "path-invalid" | "layout-mismatch" | "checkpoint-invalid"
+  | "initialize-failed" | "restore-failed" | "reset-failed"
+  | "prepare-failed" | "cleanup-failed" | "resource-failed"
+  | "not-quiescent" | "provider-lost" | "interrupted"
+  | "timeout" | "capture-failed" | "storage-failed" | "owner-lost"
+  | "no-attempts" | "recovered";
+interface StateExecutionBinding {
+  readonly lineage: StateLineage;
+  readonly origin: StateOrigin;
+}
+type StateRestore =
+  | { readonly status: "pending" }
+  | { readonly status: "ready" }
+  | { readonly status: "failed"; readonly reason: StateFailureReason };
+type StateSave =
+  | { readonly status: "pending" }
+  | { readonly status: "saved"; readonly checkpoints: readonly StateCheckpoint[] }
+  | { readonly status: "skipped" | "failed"; readonly reason: StateFailureReason }
+  | { readonly status: "conflict"; readonly actual: readonly (StateCheckpoint | null)[] }
+  | { readonly status: "unknown"; readonly reason: "storage-failed" };
+interface StateExecution {
+  readonly executionId: string;
+  readonly runId: string;
+  readonly experimentId: string;
+  readonly evalGroupId: string;
+  readonly generation: number; // positive instance ordinal within this Run/Group
+  readonly bindings: readonly StateExecutionBinding[];
+  readonly restore: StateRestore;
+  readonly save: StateSave;
+}
+interface AttemptState {
+  readonly executionId: string;
+  readonly earlierAttempts: number; // nonnegative safe integer
+}
+type RunSandboxState =
+  | { readonly status: "unavailable" }
+  | { readonly status: "known"; readonly executions: readonly StateExecution[] };
+type AttemptStateResult =
+  | { readonly status: "unavailable" }
+  | { readonly status: "known"; readonly context: AttemptState | null };
 ```
 
-`StateCommitId` 只由 Runner mint。相同 `commitId` 的重复提交必须回显同一份 accepted receipt，不能产生第二个
-checkpoint。
+数组按 lineage 五元组排序；保存的 checkpoints 与 conflict 的 actual 逐项对应 bindings，不允许部分数组或乱序。`null` 表示该 lineage 没有 HEAD。
+`checkpointId` 与 `executionId` 是 Runner 生成的随机 128-bit 小写 hex，不由作者提供；同内容重复保存可以 digest 相同，但 checkpointId 必须不同。
 
-`indeterminate` receipt 的唯一后续 API 是带同一 `commitId`、同一完整 `expectedPredecessor` 与同一 fence 的
-`reconcile()`。它只能得到确定 committed、确定 not-committed，或 `StateCommitIndeterminate` failure；后两者都停止
-execution，不能换 ID 重写。
+所有新增字段命名为 `sandboxState`；生命周期的 `RunState` 与 `state` 字段保持原含义。精确嵌套位置如下。
 
-`StateProvider` 不接收通用 JSON state payload；它在自己的 scoped lease 内捕获和写入它拥有的状态。
+| 公开值 | 字段路径 | 类型 |
+| --- | --- | --- |
+| Run Host `RunResult` | `run.sandboxState` | RunSandboxState |
+| `RunGetDocument` | `run.sandboxState` | RunSandboxState |
+| Inspection `run.get` 成功 document | `run.value.sandboxState` | RunSandboxState |
+| Inspection `attempt.get` 成功 document | `attempt.sandboxState` | AttemptStateResult |
 
-`StateMutationClassification` 由 Sandbox isolation 对实际 observation 与 provider-issued boundary 做纯分类。
-它不是 State failure、Assertion 或 Verdict。任何 access、reset、cleanup、symlink、isolation 或 commit failure
-保持自己的 typed owner；分类结果不能删除、改写或降级这些问题。
+这些是现有严格 shape 的必填新增字段；wrapper 的其它字段由各自协议 owner 定义，不另加顶层 state。
+历史缺事实为 unavailable，正式无 State 为 known 空数组或 null。
+Attempt 仅在 restore ready 后发布 context。`earlierAttempts` 计本实例此前已进入 Agent 阶段且已结束的 Attempt，包括失败题，不表示成功写入数。
+
+active Run 可以读到 pending；替代实例、零 Attempt 的恢复失败也保留在 executions。Attempt context 与执行事实用 executionId 关联，禁止只返回最后一代。
+所有字段按同一 PublicationCutoff 读取；保存发生在 Attempt 发布后，不回写其 context 或 Verdict。完整存储与恢复规则见 [Architecture](architecture.md#run-事实)。
+
+## 与 Plugin 组合
+
+```ts
+import { defineState } from "niceeval";
+import { definePlugin } from "niceeval/plugin";
+import { shell } from "niceeval/sandbox";
+
+const mempalState = defineState({
+  name: "mempal",
+  version: "0.9.0",
+  paths: ["~/.mempal"],
+  initialize: shell({ command: "mempal init ~/.mempal" }),
+});
+
+export const mempal = definePlugin((options: { cohort: string }) => ({
+  name: "mempal",
+  key: options.cohort,
+  identity: { version: "0.9.0", cohort: options.cohort },
+  requires: { evalGroup: true },
+  agent: { skills: [{ kind: "local", path: "./skills/mempal" }] },
+  state: [mempalState.bind({ cohort: options.cohort })],
+}));
+```
+
+Plugin 的其余字段见 [Plugins Library](../plugins/library.md)。

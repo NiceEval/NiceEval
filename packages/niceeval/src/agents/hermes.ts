@@ -254,7 +254,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
 
         let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
         if (!raw || parsed.events.length === 0) {
-          const reason = "hermes session export/state.db unavailable; tool trajectory missing";
+          const reason = "hermes session export/state.db unavailable; tool trace missing";
           turnEvidenceCoverage = {
             events: { status: "unavailable", reason },
             actions: { status: "unavailable", reason },

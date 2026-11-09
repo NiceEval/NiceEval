@@ -1187,29 +1187,41 @@ Roadmap 候选：每条 fresh Planned attempt 在 Agent 进入前，对 producer
 
 其它写法：`Admission health`。
 
+## State {#state}
+
+声明为跨 Attempt 保留的一组 Sandbox 路径；在 Eval Group 物理 Sandbox 建成时恢复、退役时保存
+
+契约：[State](feature/state/README.md)
+
 ## State cohort {#state-cohort}
 
-Roadmap 候选：State Provider 颁发身份的一条持久状态 lineage，约束 Checkpoint、Region 与 schema 的共同归属
+作者为一批比较选择的名字；与 State 名称、版本、Experiment、Eval Group 共同决定一条 lineage，换 cohort 即从空状态开始
 
-契约：[持久状态](feature/state/README.md)
+契约：[State Library](feature/state/library.md#定义)
 
 其它写法：`状态 Cohort`。
 
+## State lineage {#state-lineage}
+
+由 State 名称、版本、cohort、Experiment 与 Eval Group 五项决定的 checkpoint 序列；同一时刻只有一个当前 checkpoint
+
+契约：[State Architecture](feature/state/architecture.md#lineage)
+
+其它写法：`lineage`。
+
+## State execution {#state-execution}
+
+一台 Eval Group 物理 Sandbox 的状态恢复、使用与保存过程；替代实例有独立身份，Attempt 引用它以区分状态继承
+
+契约：[State 结果形状](feature/state/library.md#结果形状)
+
 ## State checkpoint {#state-checkpoint}
 
-Roadmap 候选：State cohort 内由 Provider 发布的 immutable exact 状态点；Comparable 状态必须带内容摘要
+一条 lineage 内由一次成功保存产生的 immutable 状态归档，以 checkpointId 区分提交，sha256 digest 校验内容
 
-契约：[持久状态](feature/state/README.md)
+契约：[State Architecture](feature/state/architecture.md#lineage)
 
 其它写法：`状态 Checkpoint`。
-
-## Eval Trajectory {#eval-trajectory}
-
-Roadmap 候选：由源码路径定身份、用显式依赖组成，并能从 exact Checkpoint 跨 immutable Run segment 恢复的 Eval DAG
-
-契约：[Eval Trajectory](feature/eval-trajectories/README.md)
-
-其它写法：`Eval trajectory`。
 
 ## Workspace access evidence {#workspace-access-evidence}
 

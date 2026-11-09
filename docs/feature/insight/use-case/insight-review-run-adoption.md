@@ -23,6 +23,6 @@ URL 是本机 session material。自动化需要启动 View 时，使用 `--no-o
 Run debugger 只消费 `run.get`。它显示 identity、state、expected/published/missing、coverage、指标分母、Planned attempt binding、
 Attempt locator，以及 active pending 或 terminal absence。这样读者能区分“尚未发布完”“终态缺席”和“已发布指标较差”。
 
-Attempt debugger 把 source、assertions、trajectory、tool input/output、timeline、usage、commands、diagnostics 和 diff 排成
+Attempt debugger 把 source、assertions、trace、tool input/output、timeline、usage、commands、diagnostics 和 diff 排成
 连续证据路径。软导航保留 Results；深链接硬加载同一详情。partial、unavailable 或 truncated 会显示状态、原因与边界，
 不会被填成成功或完整结果。

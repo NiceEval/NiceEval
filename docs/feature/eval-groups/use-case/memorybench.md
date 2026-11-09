@@ -22,7 +22,8 @@ Remem、Obelisk 等固定版本的文档型 Skill 随 MemoryBench vendored，Plu
 
 ## 成员结束后保存 checkpoint {#save-checkpoint-after-members}
 
-记忆条件需要把 Sandbox 内状态保存到外部位置时，在 Sandbox cleanup 完成保存，并让该步骤发生在实例释放前。
+跨 Attempt 的 Sandbox 文件状态使用 [State](../../state/README.md)，由 Runner 在实例退役时保存。
+下列作者自管的外部 checkpoint cleanup 不等于 State；两者的保存条件不能混用。
 按 [Lifecycle](../architecture/lifecycle.md) 使用独立收尾预算；不要把最后一条成员的剩余执行时间作为保存命令的预算。
 
 验证时选择一个会耗尽执行时限的成员，再检查收尾诊断和实际保存结果。

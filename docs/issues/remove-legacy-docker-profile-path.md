@@ -2,7 +2,7 @@
 
 ## 观察
 
-2026-11-08 整理 Feature 时确认：`docs/design/nested-docker-execution/DECISION.md` 已裁定删除 `dockerAccess.mode: "socket" | "dind"` 的 nested-execution 路径、raw privileged / managed rootless bootstrap、Docker storage profile、fixed slot / seed、activation / watchdog、loop attach 与 raw copy。现行契约只保留[从 Docker Profile 迁移](../feature/sandbox-nested-docker/README.md#docker-profile-migration)一节，说明这些写法不属于支持目标。
+2026-11-08 整理 Feature 时确认：[Nested Docker 迁移边界](../feature/sandbox-nested-docker/README.md#docker-profile-migration)要求删除 `dockerAccess.mode: "socket" | "dind"` 的 nested-execution 路径、raw privileged / managed rootless bootstrap、Docker storage profile、fixed slot / seed、activation / watchdog、loop attach 与 raw copy，说明这些写法不属于支持目标。
 
 源码仍完整保留这条路径，并通过公开入口暴露：
 

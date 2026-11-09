@@ -13,4 +13,4 @@
 修法落在 `src/sandbox/layer.ts`、`src/sandbox/link.ts`、`src/sandbox/plan.ts`、`src/runner/fingerprint.ts` 与 `src/runner/accept.ts`；测试覆盖 pinned/floating Docker image、Dockerfile、Compose 与 custom provider 的旧 identity 投影和 passed/failed carry。
 
 不要把本条重新解释成「外部内容会自动触发 stale」：同名 tag、ref 或 callback 语义暗变只能由作者声明 revision 或显式 `--rerun all` 表达。
-`docs/design/environment-model/PLAN-9`、`PLAN-10` 与 `docs/design/multi-container-environments/PLAN-4` 中关于 `carryEligible = false` 或禁用携带的候选文字属于已被当前契约替代的历史方案，不得作为实现依据。
+旧环境模型与多容器候选中关于 `carryEligible = false` 或禁用携带的文字属于历史方案，不得作为实现依据；现行规则见[缓存与携带](../docs/feature/experiments/architecture/cache.md)。
