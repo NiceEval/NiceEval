@@ -27,7 +27,7 @@ export function runProcess(
   const configured = ChildProcess.make(command, args, {
     cwd: options.cwd,
     ...(options.input === undefined ? {} : { stdin: Stream.fromIterable([new TextEncoder().encode(options.input)]) }),
-    ...(options.environment === undefined ? {} : { env: options.environment }),
+    ...(options.environment === undefined ? {} : { env: options.environment, extendEnv: true }),
   });
 
   return Effect.scoped(Effect.gen(function*() {
