@@ -65,6 +65,19 @@
   docker container prune -f
   ```
 
+### 4. 线上沙箱遭遇非正常中断时的原生防泄漏
+
+当评测在云端（如 Instabox 或 E2B）运行，而本地客户端遭遇断网、断电或 `kill -9` 强杀时：
+
+1. **服务端硬超时自动保底**：创建时声明的云端 TTL 确保实例在预设上限（如 10 分钟）到达后由 Provider 云端控制平面直接强制销毁，杜绝计费资损；
+2. **CI 流水线 Always 步骤**：在 CI 脚本中利用原生 CLI 作为保底销毁命令：
+
+   ```yaml
+   - name: Cleanup remote sandboxes
+     if: always()
+     run: instabox rm $(instabox list -q --filter "label.niceeval.run_id=${{ env.NICEEVAL_RUN_ID }}") || true
+   ```
+
 ## 结果
 
 沙箱实例的底层归属始终属于 Provider 本身。不自建内部注册表和中间回收工具，使得：

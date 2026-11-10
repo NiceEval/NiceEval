@@ -130,6 +130,14 @@ NiceEval 不在项目内部维护脆弱的私有注册表或自研孤儿轮询�
 
 由于使用的是底层 Provider 的原生 CLI，即使 `niceeval.config.ts`、测试集代码损坏或出现语法错误，开发者也能直接运行 `docker ps` 或 `instabox list` 排查并销毁资源，绝不会被上层配置错误阻断。
 
+### 4. 线上沙箱异常中断防护（Server-Side TTL 与原生保底）
+
+当本地进程遭遇 `kill -9`、CI 超时强杀或宿主断电时，客户端任何生命周期 Hook 都无法执行。对于按时长计费的线上沙箱（Instabox、E2B、云端 VM），NiceEval 绝不在客户端试图自建脆弱的保活守护进程，而是彻底利用 Provider 的服务端原生防护：
+
+- **服务端硬超时（Server-Side TTL）**：创建线上沙箱时强制注入云端生效的生命周期上限（`ttlMs`），超时后由 Provider 控制平面直接物理销毁；
+- **原生空闲挂起（Idle Auto-Pause）**：启用 Instabox 等 Provider 的自动空闲暂停机制，客户端中断失联后沙箱在数分钟内自动休眠停计费；
+- **CI 流水线 Always 步骤**：在持续集成流水线中，通过 CI 编排的 `always()` 步骤直接调用原生 CLI 进行批销毁，确保哪怕评测任务被中断，线上云资源也能被可靠收回。
+
 ## 运行期现场连接与原生调试指引
 
 NiceEval 不自建中间终端代理或伪终端转发服务，保持 core 中立并交由底层 Provider 的成熟 CLI 负责接入。

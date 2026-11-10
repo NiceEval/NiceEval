@@ -243,6 +243,19 @@ agent.ensure 循环默认不卸载 CLI;临时 payload 由 Agent 安装层与 Run
 Case 的 service、watcher、日志与 volume 不走 `onCleanup()`,由 Provider Case finalizer 整组关闭。
 cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;cleanup 失败保留原结果、写入诊断,并在无法证明可恢复时退休复用周期。
 
+## 线上沙箱中断与保底销毁（Server-Side Deadline & Provider Safety Net）
+
+当进程遭遇 `SIGKILL`、CI 宿主强杀、内存 OOM 或断网时，客户端进程瞬间终止，进程内 finalizer 与生命周期 Hook 无法执行。对于本地 Docker 实例，仅表现为宿主停驻容器；但对于按时长计费的线上沙箱（Instabox、E2B、云端 VM），必须依赖 Provider 服务端的原生防护网，绝不假设客户端一定能优雅退出：
+
+1. **服务端硬超时（Server-Side Hard TTL）**：
+   向云端 Provider 创建沙箱时，NiceEval 必须显式声明服务端超时上限（`ttlMs` 或 `timeoutMs`，按 Attempt 预算上限追加安全缓冲，默认 10~15 分钟）。该计时器由 Provider 云端控制平面拥有，即使客户端宿主机断电、断网或被强杀，云端到期后由 Provider 强制物理销毁，杜绝无限期计费。
+2. **Provider 原生空闲自动挂起（Idle Auto-Pause）**：
+   接入支持空闲检测的 Provider（如 Instabox `idle_auto_pause` 或 E2B pause）时默认激活该能力。客户端异常失联后，通信流量归零，沙箱在数分钟无活动后自动进入零算力休眠态。
+3. **规范标签与 CI 原生 Always 步骤**：
+   创建实例时向 Provider 注入标准标签（`niceeval.run_id`、`niceeval.created_at`）。在 GitHub Actions 等 CI 流水线中，由 CI 原生流水线的 `if: always()` 步骤直接调用 Provider 原生 CLI 批量销毁未闭合的实例。
+4. **事后恢复与重试自愈**：
+   在后续运行或执行 `niceeval run recover` 时，检测到上一次非正常中断的 Run 事实，读取其关联的实例 ID 并调用 Provider 原生接口完成扫尾。
+
 ## 身份与复用池
 
 完整 Attempt fingerprint 至少包含:
