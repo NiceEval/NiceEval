@@ -192,6 +192,7 @@ interface JudgeProviderSettings {
   readonly baseUrl?: string;
   readonly timeoutMs?: number;
   readonly maxResponseBytes?: number;
+  readonly headers?: Readonly<Record<string, string>>;
 }
 type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
   readonly maxOutputTokens?: number;
@@ -236,8 +237,10 @@ interface ExperimentJudgeSettings {
 | `timeoutMs` | 正安全整数，约束整条 Assertion 的 callback、请求、重试与等待 | `180_000` |
 | `maxResponseBytes` | 正安全整数，最多 256 KiB；JSON parse 前的响应硬字节上限 | `16_384` |
 | `maxOutputTokens` | 仅聊天服务工厂接受的正安全整数，传给服务端的输出 token 上限 | `1_024` |
+| `headers` | 随每次请求发送的额外 HTTP 头映射；键名大小写保留，值逐字发出并脱敏 | 无 |
 
-未知字段、accessor 和非法选项在构造时拒绝。TypeSafe 不接受 `maxOutputTokens`，因为它的协议没有这一限制；
+未知字段、accessor 和非法选项在构造时拒绝。TypeSafe 不接受 `maxOutputTokens`，因为它的协议没有这一限制。
+若宿主进程变量存在 `CF_ACCESS_CLIENT_ID` 与 `CF_ACCESS_CLIENT_SECRET`，Provider 在未显式声明同名头时自动追加对应 Cloudflare Access 服务头。
 响应字节限制不等价于服务端生成量或费用限制。实际响应上限还受当前 Assertion 剩余审计容量约束。
 
 ### 模型与 Provider 替换

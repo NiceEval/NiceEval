@@ -39,8 +39,7 @@ stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；H
 `marketplace.sparse` 列出 sparse 拉取的路径，每个元素生成一个 `--sparse <path>`（codex 的 `--sparse` 必须带路径参数、可重复），大仓库只拉插件所需路径；省略或空数组即全量 clone。
 它只影响拉取速度，不影响装出来的内容，manifest 不记它。
 
-鉴权与路由有两个字段：`apiKey` 是代理 / OpenAI API key，省略时读 `CODEX_API_KEY` env var；`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `CODEX_BASE_URL`。
-模型选择不在这里——它归 experiment 的 `model` 维度。
+鉴权与路由支持基础端点与网关认证。`apiKey` 是代理 / OpenAI API key，省略时读 `CODEX_API_KEY` env var。`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `CODEX_BASE_URL`。`headers` 是传给自定义 provider 的静态 HTTP 请求头（如 Cloudflare Access 的 Service Token 头）。声明 `headers` 时，Adapter 将其写入 `[model_providers.s2a.http_headers]` 并脱敏。若当前进程变量集合存在 `CF_ACCESS_CLIENT_ID` 与 `CF_ACCESS_CLIENT_SECRET`，还会写入 `env_http_headers`。模型选择不在这里——它归 experiment 的 `model` 维度。
 
 ## Agent 进程 env var
 
