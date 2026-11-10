@@ -22,10 +22,22 @@ export const INSTABOX_MACHINE_SPECS = {
 
 export type InstaboxMachineSpec = keyof typeof INSTABOX_MACHINE_SPECS;
 
+export type InstaboxOfficialTemplateId =
+  | "universal"
+  | "agent-browser"
+  | "android"
+  | "ci"
+  | "herdr"
+  | "orca"
+  | "t3"
+  | "omarchy";
+
+export type InstaboxTemplateId = InstaboxOfficialTemplateId | (string & {});
+
 export interface InstaboxSandboxOptions {
   readonly snapshotId?: string;
-  readonly templateId?: string;
-  readonly template?: string;
+  readonly templateId?: InstaboxTemplateId;
+  readonly template?: InstaboxTemplateId;
   readonly lifetimeMs: number;
   readonly spec?: InstaboxMachineSpec;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };

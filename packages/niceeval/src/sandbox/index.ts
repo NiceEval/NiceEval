@@ -16,7 +16,7 @@ export {
 export { incusSandbox } from "./incus.ts";
 export { openSandbox } from "./opensandbox.ts";
 export { instaboxSandbox, INSTABOX_MACHINE_SPECS } from "./instabox.ts";
-export type { InstaboxSandboxOptions, InstaboxMachineSpec } from "./instabox.ts";
+export type { InstaboxSandboxOptions, InstaboxMachineSpec, InstaboxOfficialTemplateId, InstaboxTemplateId } from "./instabox.ts";
 export type { OpenSandboxOptions } from "./opensandbox.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
 export {
