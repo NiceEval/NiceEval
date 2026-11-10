@@ -156,10 +156,14 @@ artifacts、timing、usage、commands 与 diagnostics，状态为 `available | n
   "operation": {
     "kind": "attempt.assertion.detail",
     "locator": "@<locator>",
-    "entryId": "assertion_<stable-id>"
+    "entryId": "assertion_<stable-id>",
+    "projection": "compact"
   }
 }
 ```
+
+`projection` 可选 `full | compact`，省略时默认为 `full`。`compact` 只返回 `check`、判定状态与 `rationale`，
+省略完整工具调用行与原始材料全文，保证单次响应体积安全，避免外部脚本管道溢出。
 
 图片 Judge 的 detail 只交付图片元数据和已验证的 v3 审计，不重复内嵌原始图片或审计的 base64。
 按稳定 `entryId` 与 `imageId` 使用 `attempt.assertion.image` 读取封存原图，`offset` 是原始字节偏移，
@@ -368,23 +372,25 @@ discovery 或 request 重新开始。
 ## `niceeval show`
 
 ```sh
-niceeval show [-o text|json]
+niceeval show [--json | -o text|json]
 niceeval show --all
-niceeval show --run <run-id>... [-o text|json]
-niceeval show --experiment <experiment-id>... [-o text|json]
-niceeval show --compare --left <run-id>... --right <run-id>... [--mode paired|side-by-side|exact] [--max-regressions <n>] [-o text|json]
-niceeval show @<locator> [-o text|json]
-niceeval show @<locator> --source [-o text|json]
-niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>] [-o text|json]
-niceeval show @<locator> --timing [-o text|json]
-niceeval show @<locator> --usage [-o text|json]
-niceeval show @<locator> --diff [-o text|json]
+niceeval show --reference [--json | -o text|json]
+niceeval show --run <run-id>... [--json | -o text|json]
+niceeval show --experiment <experiment-id>... [--json | -o text|json]
+niceeval show --compare --left <run-id>... --right <run-id>... [--mode paired|side-by-side|exact] [--max-regressions <n>] [--json | -o text|json]
+niceeval show @<locator> [--json | -o text|json]
+niceeval show @<locator> --assertions [--entry <id>] [--compact] [--json | -o text|json]
+niceeval show @<locator> --source [--json | -o text|json]
+niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>] [--json | -o text|json]
+niceeval show @<locator> --timing [--json | -o text|json]
+niceeval show @<locator> --usage [--json | -o text|json]
+niceeval show @<locator> --diff [--json | -o text|json]
 ```
 
-人在终端里找到想看的投影后，加 `-o json` 就得到同一批数据的机器形态，换成 `niceeval view` 就在浏览器打开同一个 selection；三者用同一套 selector，不需要改写成另一种语法。
+人在终端里找到想看的投影后，加 `-o json` 或 `--json` 就得到同一批数据的机器形态，换成 `niceeval view` 就在浏览器打开同一个 selection；三者用同一套 selector，不需要改写成另一种语法。`--json` 是 `-o json` 的等价一等缩写。
 
 `show` 默认是英文 human text 入口。它不调用 `query` stdout 或解码 `niceeval.query/v3`，而是与
-`query` 一样打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result；`-o json` 只换编码，不换 operation。
+`query` 一样打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result；`-o json` 与 `--json` 只换编码，不换 operation。
 
 show 的每个投影只接受对应具名 operation 的 typed result；必填 shape 缺失时失败，只有契约
 明示的 `null`、optional、`not-recorded` 或 `partial` 才能显示业务 fallback。
@@ -419,6 +425,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   标题为 `Current results`，先显示 `Covered N/M` 与 `Gaps K`。
   分母来自当前目标；缺口显示具名原因、可用的旧 locator 与下一步。已删除的 Experiment 只出现在 `History`，不计当前分数。
   不用 `Observed` 把历史发布数量暗示成当前结果可用性；目标求值失败显示错误与历史读取命令。
+  当当前目标因配置或身份变更产生缺口，且存在对应历史 Attempt 时，当前状态仍忠实显示缺口，不将旧结果计入当前分数（[T-11](../../../taste.md#t-11)）。
+  但在缺口明细下方，总览呈现独立的 `Reference results` 摘要，汇总对应历史 Attempt 的判定分布与参考得分。
+  调用方亦可使用 `niceeval show --reference` 聚焦并展开这批历史已发布参照结果。
   有缺口时末尾给出 `Next: niceeval exp <experimentId> --dry`，每个有缺口的 Experiment 一行；没有缺口时省略 `Next`。
   完整形态见下文[当前 Results 示例](#当前-results-示例)。
 - 一个或多个 `--experiment` 逐个读取 exact `experiment.get`；任一 ID 未命中时整次失败。
@@ -436,7 +445,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   Transition 列区分 `stable-passed`、`stable-failed`、`regressed`、`improved` 与 `incomparable`。
   指定 `--max-regressions <n>` 时，若退化题数超过门限则以非零退出，用于 CI 对照版本发布门禁（见 [REL-6](../../../user-story.md#周芷宁在发布前选出更合适的-agent-配置)）。
 - `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
-  摘要、section states 与 limitations。另给出可复制的 source、execution、timing、usage 和 diff 后续命令。
+  摘要、section states 与 limitations。另给出可复制的 assertions、source、execution、timing、usage 和 diff 后续命令。
+- `@<locator> --assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
+  指定 `--entry <id>` 选择单项断言；默认以 compact 紧凑摘要交付，指定 `--full` 包含完整原始材料与上下文行。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
   source state、location、limitations 与 Evidence；不从文本推断断言或运行时原文。
 - `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline，展示块的呈现见下文[展示块呈现](#展示块呈现)。`--expand <stable-id>`
@@ -460,6 +471,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 | `--experiment` | 每个去重后的 ID 一次 `experiment.get`，按 ID 排序 |
 | `--run` | 每个去重后的 ID 一次 `run.get`，按 ID 排序 |
 | `@<locator>` | `attempt.get`、`attempt.usage` |
+| `@<locator> --assertions` | `attempt.assertion.detail` |
 | `@<locator> --source` | `attempt.sources` |
 | `@<locator> --execution` | `attempt.trace`，带 `--actor`、`--type` 与 `--continuation`；有 `--expand` 时为 `attempt.trace.detail` |
 | `@<locator> --timing` | `attempt.timing` |
@@ -470,7 +482,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 某个 operation 返回 `outcome: failure` 时，该行照常写出，后续 operation 不再调用，进程以与 `query run` 相同的状态退出。
 argv 错误、source 无法打开等无法形成 document 的失败与文本模式一样只写 stderr。
 
-`show` 没有投影的 operation（例如 `attempt.assertion.detail` 与 `attempt.assertion.image`）只经 `query` 读取。`-o` 不接受 `csv`、`table` 或其它取值。
+`show` 没有投影的 operation（例如 `attempt.assertion.image`）只经 `query` 读取。`-o` 不接受 `csv`、`table` 或其它取值。
 
 ### 在浏览器打开同一个 selection
 

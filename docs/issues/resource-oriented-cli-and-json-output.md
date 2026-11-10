@@ -45,3 +45,10 @@
 
 ## 环境与来源
 2026-11，Linux，Node.js 24，pnpm 11.12.0；项目：NiceEval 与 NiceEval-Eval。架构设计源于对现有 CLI 交互摩擦的深入反思与开发者体验（DX）重构诉求。
+
+## 处理裁决与契约采纳
+
+- **状态**：`accepted`（已定稿采纳）
+- **采纳契约**：[`docs/feature/inspection/cli.md`](../feature/inspection/cli.md#niceeval-show)
+- **裁决结论**：
+  采纳定位符与统一检查动词模型。以 `@<locator>` 与 `<run-id>` 作为一等实体标识，由 `niceeval show` 提供全量资源检查入口，并全面确立 `--json` 为一等机器输出旗标；增加 `@<locator> --assertions` 投影。`query` 协议下沉为底层通信与调试通道，日常交互不再强制手写 RPC JSON 信封。

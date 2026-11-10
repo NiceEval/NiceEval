@@ -223,7 +223,7 @@ collection complete 不能代替 token/cost 完整度，也不证明服务端已
 
 公开调用行保留正式 entryId，使用当前 locator 与 entryId 下钻 assertion.detail，由身份查找固定 origin。
 断言正文或审计不可读时仍保留已验证的账本金额与调用，不让费用完整性依赖审计解码。
-文字材料 detail 的 projector 与最终交付采用同一个 [断言专用预算](cli.md#从-attempt-outline-下钻到一项详情)，不经过通用 boundedJson 的默认限制。
+文字材料 detail 的 projector 与最终交付采用同一个 [断言专用预算](cli.md#从-attempt-outline-下钻到一项详情)，不经过通用 boundedJson 的默认限制。`attempt.assertion.detail` 支持 `projection: "compact" | "full"`。`compact` 模式仅交付判定结果、分值与理由，裁剪全量原始材料，确保外部进程调用具有安全体积边界。
 show 人读 preview 不改变完整 content 或容量诊断。
 
 TotalCosts 对同币种使用精确十进制定点累加，不换汇。missingSources 固定 application、judge 顺序，无重复。

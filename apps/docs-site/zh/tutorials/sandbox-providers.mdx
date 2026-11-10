@@ -99,13 +99,13 @@ import { instaboxSandbox } from "niceeval/sandbox";
 const sandbox = instaboxSandbox({
   snapshotId: "sn_your_snapshot_id",
   lifetimeMs: 60 * 60_000,
-  spec: "4/8",
+  spec: "instabox-medium",
 });
 ```
 
 Snapshot 需要 Linux x64 GNU 环境、Bash、Git、Node.js 24 或更新版本，以及可免密 sudo 的非 root 登录用户。默认工作目录是 `/data/home/workspace`。稳定依赖在构建 snapshot 时准备；服务启动和 Agent 鉴权在运行时处理，避免把登录凭据保存到 snapshot。
 
-`spec` 支持 `2/4`、`4/8`、`8/16`、`16/32`、`32/64`，对应别名为 `small`、`medium`、`large`、`xlarge`、`2xlarge`。数字分别表示 vCPU 与 GiB 内存。显式 `resources: { vcpus, memMiB }` 优先于 `spec`；两者均省略时使用 `4/8`。
+`spec` 优先支持官方标准规格 `instabox-small`、`instabox-medium`、`instabox-large`、`instabox-xlarge`、`instabox-2xlarge`，以及数值别名 `2/4`、`4/8`、`8/16`、`16/32`、`32/64`。显式 `resources: { vcpus, memMiB }` 优先于 `spec`；两者均省略时使用 `instabox-medium`。
 
 每条 Attempt 创建独立 Machine，完成后删除；基础 snapshot 保留。`lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，至少覆盖 Attempt 剩余时限加 30 秒。它控制失联后的自动删除，正常收尾会提前删除。命令取消或超时也会删除整台机器。
 

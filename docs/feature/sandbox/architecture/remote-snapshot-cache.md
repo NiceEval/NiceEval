@@ -270,7 +270,7 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 ## Instabox
 
 - **driver**：`preserves = { disks: ["/", "/data"], memory: false }`（默认 workdir 在 `/data/home/workspace`）；`sourceUsableAfterSnapshot = true`。retention 与 Nested Docker 仍为 Unsupported，不支持 Sandbox 复用。
-- **Base 身份**：声明的 `snapshotId`（`sn_` 开头）或 `template`（省略时默认为 `universal`）；Instabox snapshot 的内容按 ID 不可变。
+- **Base 身份**：声明的 `snapshotId`（`sn_` 开头）或 `templateId`（别名 `template`，省略时默认为 `universal`）；Instabox snapshot 的内容按 ID 不可变。
 - **execution domain**：`hash("https://api.instabox.sh", sha256(API key))`。
 - **createSnapshot**：对 staging Machine 发起包含 root 与 `/data` 的 snapshot 保存请求，等待 status 变为 `ready`；`failed` 是错误。服务以明确错误码拒绝且未返回 operation 时为 `Rejected`。具体 HTTP 路径以 Instabox API 为准，像现有 Machine 接口一样在边界用 Schema 解码。
 - **一致性**：Instabox 的 live snapshot 等同于断电时的磁盘内容；两个盘是否在同一时刻捕获没有服务端证据。quiesce 保证 snapshot 期间没有 NiceEval 发起的写入，因此 core 不依赖跨盘原子性。
