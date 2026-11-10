@@ -33,6 +33,42 @@ Run debugger 显示 state、`expected`／`published`／`missing`、pending/absen
 Attempt locators。Attempt debugger 连续呈现身份、判定、source、assertions、trace、tool input/output、timeline、
 usage、commands、diagnostics 与 diff。partial、unavailable 与 truncated 始终是可见事实。
 
+## 预设调试能力：Match 判定、Trace 瀑布图与 Diff
+
+Insight 坚持第一方预设与零配置体验，不要求开发者编写前端展示代码，也不提供拖拽式低代码分析面板。系统开箱提供三项高价值预设排查能力：
+
+### 1. Match 结果与证据卡片（Match Inspector）
+
+Attempt debugger 以卡片形式集中呈现该 Attempt 的全部 Match 求值结果：
+
+- **判定与测量值**：清晰展示每个 Match 的测量值、布尔通过状态与错误码；
+- **门禁与计分**：显式区分质量门（Gate）要求与评分点数（Score Points）贡献；
+- **证据快照（Evidence）**：点击任意 Match 可下钻已落盘的证据快照。例如 Judge 裁判模型的理由分析与打分快照，或值比对的结构化差异；
+- 无论是值匹配、正则、语义相似度还是 LLM Judge，统一遵循同一套高信噪比卡片呈现，无需手动提取变量。
+
+### 2. 执行轨迹与调用耗时瀑布图（Trace & Waterfall Timeline）
+
+Insight 预设集成基于树形拓扑的耗时瀑布图，为单次 Attempt 的性能与链路排障提供第一方视觉呈现：
+
+- **阶段瀑布流**：将 Sandbox 准备、Turn 交互、LLM 请求、Tool 执行与断言按真实时序展开，直观暴露耗时瓶颈；
+- **节点下钻抽屉**：点击任意 Trace 节点，即时滑出该调用的上下文详情（包括输入参数、标准输出与标准错误、Token 消耗及底层退出状态）；
+- **错误定位**：发生非零退出、执行超时或协议异常的节点高亮标红，直接关联至原始诊断信息。
+
+### 3. 工作区变动对比（Workspace Diff Viewer）
+
+页面原生提供标准代码 Diff 视窗：
+
+- 完整呈现 Agent 在工作目录内引发的文件修改、新增与删除；
+- 采用标准 Unified Diff 格式与行级高亮，方便开发者在浏览器中直接复核代码补丁，无需手动运行终端比对。
+
+## 用户工作流：如何使用 Insight
+
+开发者通过以下三种日常路径使用 Insight 完成调试：
+
+1. **终端精准直达**：评测失败后，终端收尾面板输出失败 Attempt 定位符（如 `@1VE05BR7061YN`）。开发者执行 `niceeval view @1VE05BR7061YN`，浏览器直接拉起该 Attempt 的全屏 Attempt debugger 详情页面；
+2. **质量大盘下钻**：执行 `niceeval view` 打开完整 Results 概览，通过成本 × 分数散点图与结果矩阵快速定位异常单元格，点击任意 Attempt 即可滑出抽屉审阅 Match 与 Trace；
+3. **活动运行实时审阅**：评测进行中，已封口的 Attempt 事实立即可读。页面提示有新发布事实时，点击刷新即可在评测尚未跑完前提前排查已失败的题目。
+
 自定义 Adapter 的领域事件使用统一通用轨迹展示：默认只载入有界摘要页，保留主体、独立时钟、完整性和测量范围。
 读者可以点击事件或输入稳定 ID，按需读取同一 Inspection detail；原始证据以已登记的精确 JSON 定位分块展开。
 没有会话事件不代表没有执行轨迹。事件带展示块时按 `kind` 呈现文本、对话、键值、等宽文本与图片；文本以文本节点插入，
