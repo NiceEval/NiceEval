@@ -67,8 +67,18 @@ scope 固定为 `eval.run`,eval 不能借此把自己显示成 sandbox 或 agent
 
 ## 读取链路事实：t.trace
 
-`t.trace` 提供本次 Attempt 执行链路的只读查询能力。
-作者可通过 `t.trace.findSpans({ kind })` 筛选 `llm`、`retriever` 或自定义角色节点；也可通过 `t.trace.getDocuments()` 直接获取召回切片。
-查询得到的结果可作为普通值传入 `t.check(subject, match)` 登记断言。
+`t.trace` 承载本次 Attempt 执行链路的只读事实。
+链路断言延续单参 Contextual Match 契约：状态已在 Attempt 内捕获时，直接通过 `t.check(match)` 登记，不需要作者手动提取变量。
+`faithfulness()`、`contextRecall(truth)` 与 `llmCalls(match)` 自动从链路事实中提取材料。
+`t.trace` 同时也提供对齐 `t.calledTool` 的作用域断言：
+
+```typescript
+t.check(contextRecall(row.groundTruthDocs)).label("检索召回完整度");
+t.check(faithfulness()).label("无幻觉忠实度");
+t.trace.count("llm", equals(1)).label("单次模型调用");
+t.trace.duration("retriever", atMost(300)).label("检索耗时达标");
+```
+
+外部业务函数直接返回的值，才使用双参 `t.check(res.answer, includes("成功"))` 显式传入。
 
 怎样对这些结果评分，见 [Assertions](../../assertions/library/README.md)；内部作用域绑定见 [Assertions Architecture](../../assertions/architecture/scopes.md)。

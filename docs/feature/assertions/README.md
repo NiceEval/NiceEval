@@ -98,6 +98,7 @@ turn.closeQA("这轮全部材料是否支持结论？").gate(0.8);
 领域断言通过同一 Match 和 `check` 登记，不另建 evaluator。分层边界见 [Architecture](../../architecture.md#一个评估模型按应用组合上下文)。
 
 `check(value, match)` 检查显式事实；`check(contextualMatch)` 从当前接收者的只读 ctx 读取材料或单个聚合事实。
+链路追踪事实与会话事件均属于 Attempt 内建状态；`faithfulness()`、`contextRecall(truth)` 与 `llmCalls(match)` 作为 Contextual Matcher 直接读取上下文，无需外部手动提取变量。
 `defineJudge` 返回真实 ScoreMatch；`judge(value, scoreMatch)` 是转交同一 `check` 的便利入口。
 这些入口与 scope 方法都登记同一种 Assertion，handle 只配置该 entry。
 
