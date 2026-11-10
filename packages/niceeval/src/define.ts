@@ -26,12 +26,15 @@ import type {
   ScoreTestContext,
   TestContext,
   JsonValue,
+  DatasetInput,
+  DatasetDefinition,
 } from "./types.ts";
 import { normalizeJudgeSelection } from "./runner/judge-config.ts";
 import { isJudgeProvider } from "./judge/provider.ts";
 import { MigrationRequiredError, captureMigrationSource } from "./error-assistance/index.ts";
 
 import {
+  brandDatasetDefinition,
   brandEvalDefinition,
   brandEvalGroupDefinition,
   brandExperimentDefinition,
@@ -244,6 +247,38 @@ export function defineScoreEval<
   def: ScoreEvalInput<Sandbox>,
 ): EvalDefinition<"score", ScoreTestContext, Sandbox> {
   return defineEvalForContext("score", def);
+}
+
+/** 数据集评测(通过制:按数据行展开一批 eval)。禁止提供 id —— 从路径推导。 */
+export function defineDataset<TRow>(
+  def: Omit<DatasetInput<TRow, "pass">, "evaluationKind">,
+): DatasetDefinition<TRow, "pass"> {
+  if (typeof def.test !== "function") {
+    throw new TypeError("defineDataset requires an async test(t, row) function.");
+  }
+  if (!Array.isArray(def.data) && typeof def.data !== "function") {
+    throw new TypeError("defineDataset data must be an array or a function returning an array.");
+  }
+  return brandDatasetDefinition({
+    ...def,
+    evaluationKind: "pass",
+  });
+}
+
+/** 计分制数据集评测(按数据行展开一批 score eval)。禁止提供 id —— 从路径推导。 */
+export function defineScoreDataset<TRow>(
+  def: Omit<DatasetInput<TRow, "score">, "evaluationKind">,
+): DatasetDefinition<TRow, "score"> {
+  if (typeof def.test !== "function") {
+    throw new TypeError("defineScoreDataset requires an async test(t, row) function.");
+  }
+  if (!Array.isArray(def.data) && typeof def.data !== "function") {
+    throw new TypeError("defineScoreDataset data must be an array or a function returning an array.");
+  }
+  return brandDatasetDefinition({
+    ...def,
+    evaluationKind: "score",
+  });
 }
 
 type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> =

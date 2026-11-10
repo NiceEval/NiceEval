@@ -167,6 +167,34 @@ measurement handle 可用 `.orStop(minimum)` 建立 stop-only condition，或在
 完整 score 语义见 [Assertions · Score Eval](../assertions/library/score-points.md)，完整场景见
 [Score Eval 用例](use-case/rubric-points.md)。
 
+## defineDataset：数据驱动的测试集
+
+`defineDataset` 与 `defineScoreDataset` 统一批量用例的声明。
+数据源支持数组或异步加载函数；每一行作为参数传入 `test(t, row)`。
+省略 `key` 时按四位数字索引生成唯一 id；提供 `key` 时使用行内的稳定业务标识。
+
+```typescript
+import { defineDataset } from "niceeval";
+import { loadJson } from "niceeval/loaders";
+import { equals, faithfulness } from "niceeval/expect";
+import { askRag } from "../src/rag";
+
+export default defineDataset({
+  description: "企业知识库问答",
+  tags: ["rag", "faq"],
+  data: () => loadJson("evals/data/faq.json"),
+  key: (row) => row.id,
+  async test(t, row) {
+    const res = await askRag(row.question);
+    t.check(res.answer, faithfulness(res.contexts)).label("忠实度");
+    t.check(res.answer, equals(row.expected)).label("精确匹配");
+  },
+});
+```
+
+这避免了手写 `rows.map(...)` 展开的样板代码，并支持惰性加载与 CLI 采样参数。
+计分题型使用 `defineScoreDataset`，在 `test(t, row)` 中直接调用 `t.score(points)`。
+
 ## 相关阅读
 
 - [跨项目复用 Eval](library/sharing.md) —— 安装依赖后挂载外部 Eval 根，使用消费项目的 Experiment 运行。

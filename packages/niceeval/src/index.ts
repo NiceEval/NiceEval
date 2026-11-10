@@ -1,7 +1,7 @@
 // niceeval 公开导出(import { … } from "niceeval")。
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
-export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
+export { defineEval, defineScoreEval, defineDataset, defineScoreDataset, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
 export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";
 export type { ManagedScoreMatchOptions, ScoreMatch, ScoreMatchAnchor, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./assertions/match.ts";
@@ -63,6 +63,8 @@ export type {
   EvalAuthorFields,
   EvalInput,
   ScoreEvalInput,
+  DatasetInput,
+  DatasetDefinition,
   EvalDefinition,
   AnyEvalDefinition,
   EvalGroupMember,

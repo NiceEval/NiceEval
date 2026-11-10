@@ -20,7 +20,34 @@
        sql: SELECT * FROM orders ORDER BY created_at DESC LIMIT 10;
    ```
 
-2. 行没有稳定业务标识时导出**数组**，位置就是身份，生成 `sql/0000`、`sql/0001`……：
+2. 使用 `defineDataset` 声明测试集：
+
+   ```typescript
+   // evals/sql.eval.ts
+   import { defineDataset } from "niceeval";
+   import { loadYaml } from "niceeval/loaders";
+   import { equals } from "niceeval/expect";
+   import { z } from "zod";
+
+   const SqlCases = z.object({
+     cases: z.array(z.object({ task: z.string(), prompt: z.string(), sql: z.string() })),
+   });
+
+   export default defineDataset({
+     data: async () => {
+       const doc = await loadYaml("evals/data/sql-cases.yaml", (value) => SqlCases.parse(value));
+       return doc.cases;
+     },
+     key: (row) => row.task,
+     async test(t, row) {
+       await t.send(row.prompt);
+       t.succeeded();
+       t.check(t.reply, equals(row.sql));
+     },
+   });
+   ```
+
+3. 行没有稳定业务标识时也可直接导出**数组**，位置就是身份，生成 `sql/0000`、`sql/0001`……：
 
    ```typescript
    // evals/sql.eval.ts
@@ -47,7 +74,7 @@
    );
    ```
 
-3. 数据源已有稳定 key（case id、issue 号、benchmark id）时导出 **keyed record**，key 就是身份，生成 `swelancer/15193`：
+4. 数据源已有稳定 key（case id、issue 号、benchmark id）时导出 **keyed record**，key 就是身份，生成 `swelancer/15193`：
 
    ```typescript
    // evals/swelancer.eval.ts

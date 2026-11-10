@@ -807,6 +807,34 @@ export function isEvalGroupDefinition(value: unknown): value is EvalGroupDefinit
     (value as { readonly [EVAL_GROUP_DEFINITION]?: unknown })[EVAL_GROUP_DEFINITION] === true;
 }
 
+const DATASET_DEFINITION: unique symbol = Symbol("niceeval.datasetDefinition");
+
+export interface DatasetInput<TRow = unknown, Kind extends EvaluationKind = "pass"> {
+  readonly description?: string;
+  readonly tags?: readonly string[];
+  readonly timeoutMs?: number;
+  readonly evaluationKind?: Kind;
+  readonly data: readonly TRow[] | (() => Promise<readonly TRow[]> | readonly TRow[]);
+  readonly key?: (row: TRow, index: number) => string;
+  test(t: Kind extends "score" ? ScoreTestContext : TestContext, row: TRow): EvalTestReturn;
+}
+
+export interface DatasetDefinition<TRow = unknown, Kind extends EvaluationKind = "pass"> extends DatasetInput<TRow, Kind> {
+  readonly [DATASET_DEFINITION]: true;
+}
+
+export function brandDatasetDefinition<TRow, Kind extends EvaluationKind>(
+  value: DatasetInput<TRow, Kind>,
+): DatasetDefinition<TRow, Kind> {
+  Object.defineProperty(value, DATASET_DEFINITION, { value: true });
+  return Object.freeze(value) as DatasetDefinition<TRow, Kind>;
+}
+
+export function isDatasetDefinition(value: unknown): value is DatasetDefinition {
+  return typeof value === "object" && value !== null &&
+    (value as { readonly [DATASET_DEFINITION]?: unknown })[DATASET_DEFINITION] === true;
+}
+
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
 export function brandEvalDefinition<
   Kind extends EvaluationKind,

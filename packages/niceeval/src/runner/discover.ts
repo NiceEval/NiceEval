@@ -35,6 +35,7 @@ import {
   isEvalDefinition,
   isExperimentDefinition,
   isEvalGroupDefinition,
+  isDatasetDefinition,
 } from "../types.ts";
 import type {
   AnyEvalDefinition,
@@ -42,7 +43,9 @@ import type {
   DiscoveredExperiment,
   ExperimentDefinition,
   EvalGroupDefinition,
+  DatasetDefinition,
 } from "../types.ts";
+import { defineEvalForContext } from "../define.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import { captureSourceClosure } from "./source-closure.ts";
 import { splitByEvaluationKind } from "./eval-selection.ts";
@@ -86,7 +89,8 @@ interface EvalEntry {
 type EvalModuleExport =
   | AnyEvalDefinition
   | readonly AnyEvalDefinition[]
-  | Readonly<globalThis.Record<string, AnyEvalDefinition>>;
+  | Readonly<globalThis.Record<string, AnyEvalDefinition>>
+  | DatasetDefinition;
 
 interface EvalModule {
   readonly default: EvalModuleExport;
@@ -102,11 +106,16 @@ const EvalDefinitionSchema = Schema.declare(isEvalDefinition, {
   identifier: "EvalDefinition",
   description: "a value returned by defineEval() or defineScoreEval()",
 });
+const DatasetDefinitionSchema = Schema.declare(isDatasetDefinition, {
+  identifier: "DatasetDefinition",
+  description: "a value returned by defineDataset() or defineScoreDataset()",
+});
 const EvalModuleSchema: Schema.Schema<EvalModule> = Schema.Struct({
   default: Schema.Union([
     Schema.toType(EvalDefinitionSchema),
     Schema.Array(Schema.toType(EvalDefinitionSchema)),
     Schema.Record(Schema.String, Schema.toType(EvalDefinitionSchema)),
+    Schema.toType(DatasetDefinitionSchema),
   ]),
 });
 const ExperimentDefinitionSchema = Schema.declare(isExperimentDefinition, {
@@ -332,6 +341,42 @@ function expandEvalExport(
       id: `${entry.baseId}/${pad4(index)}`,
       definition,
     }))));
+  }
+  if (isDatasetDefinition(exported)) {
+    return Effect.tryPromise({
+      try: async () => {
+        const rows = typeof exported.data === "function" ? await exported.data() : exported.data;
+        if (!Array.isArray(rows)) {
+          throw new TypeError("Dataset data must evaluate to an array.");
+        }
+        return rows.map((row, index) => {
+          const key = exported.key ? exported.key(row, index) : pad4(index);
+          if (!validDatasetKey(key)) {
+            throw new Error(`Invalid dataset key ${JSON.stringify(key)}.`);
+          }
+          const kind = exported.evaluationKind ?? "pass";
+          const definition = defineEvalForContext(kind, {
+            description: exported.description,
+            tags: exported.tags ? [...exported.tags] : undefined,
+            timeoutMs: exported.timeoutMs,
+            test: (t) => exported.test(t as never, row),
+          });
+          return {
+            id: `${entry.baseId}/${key}`,
+            definition,
+          };
+        });
+      },
+      catch: (cause) => issue(
+        relative(root, entry.file),
+        "discovery.invalid-dataset-key",
+        causeMessage(cause),
+        ["Check that dataset data and keys are valid."],
+        cause,
+      ),
+    }).pipe(
+      Effect.map((items) => Object.freeze(items)),
+    );
   }
   // `Array.isArray` does not narrow readonly arrays; the array branch above has already returned.
   const dataset = exported;

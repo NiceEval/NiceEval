@@ -204,6 +204,25 @@ social.defineScoreEval({
 
 封存与完整性检查由应用负责。断言方法不自动执行动作、等待或补跑；缺证据应抛出明确错误，不能转成匹配失败或空历史。取消或作者执行阶段结束后的应用方法、断言方法与 `check` 都拒绝继续调用。
 
+## 数据集评测：defineDataset 与 defineScoreDataset
+
+`defineDataset` 和 `defineScoreDataset` 统一批量数据用例的定义。
+入参包含数据源 `data`、键提取器 `key` 与每行执行逻辑 `test(t, row)`。
+数据源既可为纯数组，也支持异步加载函数。未提供 `key` 时按四位数字索引生成 id。
+
+```typescript
+export interface DatasetDefinition<TRow = unknown, Kind extends "pass" | "score" = "pass"> {
+  readonly description?: string;
+  readonly tags?: readonly string[];
+  readonly timeoutMs?: number;
+  readonly data: readonly TRow[] | (() => Promise<readonly TRow[]> | readonly TRow[]);
+  readonly key?: (row: TRow, index: number) => string;
+  test(t: Kind extends "score" ? ScoreTestContext : TestContext, row: TRow): void | Promise<void>;
+}
+```
+
+作者直接调用自己的被测函数，并使用统一的 `t.check(subject, match)` 登记结果。
+
 ## 封装自己的接入工厂
 
 `defineAdapter` 定义接入方式，不创建业务应用本身。用户可以通过普通 TypeScript 函数封装 `defineTwitter`、`defineGame` 或其它领域工厂。
