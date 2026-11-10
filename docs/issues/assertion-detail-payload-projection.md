@@ -33,3 +33,10 @@
 
 ## 环境与来源
 2026-11，Linux，Node.js 24，pnpm 11.12.0；项目：NiceEval-Eval（消费 niceeval@0.19.1-canary.117 / 本地开发候选）。
+
+## 处理裁决与契约采纳
+
+- **状态**：`accepted`（已定稿采纳）
+- **采纳契约**：[`docs/feature/inspection/cli.md`](../feature/inspection/cli.md#从-attempt-outline-下钻到一项详情)、[`docs/feature/inspection/architecture.md`](../feature/inspection/architecture.md)
+- **裁决结论**：
+  将判定诊断与原始材料归档解耦。在 `attempt.assertion.detail` 契约中支持 `projection: "compact" | "full"`。`compact` 模式仅交付判定结果、分值、结构化理由与聚焦证据，裁剪庞大的原始工具调用行全文，保证单次响应体积安全，彻底避免管道溢出。

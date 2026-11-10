@@ -38,3 +38,10 @@ Current results
 
 ## 环境与来源
 2026-11，Linux，Node.js 24，pnpm 11.12.0；项目：NiceEval-Eval。观察来自真实项目版本演进与总览排查体验。
+
+## 处理裁决与契约采纳
+
+- **状态**：`accepted`（已定稿采纳）
+- **采纳契约**：[`docs/feature/inspection/cli.md`](../feature/inspection/cli.md#niceeval-show)
+- **裁决结论**：
+  拒绝将历史旧结果混入当前 `Totals` 分母的假阳性方案（遵守 [T-11](../../taste.md#t-11)）。当前状态依然诚实显示缺口；但在缺口明细下方，总览呈现独立的 `Reference results` 摘要栏，汇总对应历史 Attempt 的判定分布与参考得分；并支持 `niceeval show --reference` 快速聚焦与展开历史参照结果。

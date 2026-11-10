@@ -37,3 +37,11 @@ niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{
 
 ## 环境与来源
 2026-11，Linux，Node.js 24，pnpm 11.12.0；项目：NiceEval-Eval（消费 niceeval@0.19.1-canary.117 / 本地开发候选）。观察来自真实评测诊断与自动化脚本编写体验。
+
+## 处理裁决
+
+- **状态**：`closed (duplicate/superseded)`
+- **主要工作项**：[`docs/issues/resource-oriented-cli-and-json-output.md`](resource-oriented-cli-and-json-output.md)
+- **采纳契约**：[`docs/feature/inspection/cli.md`](../feature/inspection/cli.md#niceeval-show)
+- **裁决结论**：
+  不采用在 `query` 协议上添加语法糖别名的局部修补方案（避免把内部协议方法暴露为 CLI 语义）。统一通过 `niceeval show @<locator> --json` 与 `niceeval show --run <id> --json` 提供零协议信封的纯净 JSON 输出，`query` 保持为底层严格协议通道。
