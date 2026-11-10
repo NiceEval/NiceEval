@@ -83,7 +83,7 @@ For how parameters flow from the Experiment to the Adapter, and how to split sta
 Two architectural rules must not be broken when writing the Adapter:
 
 - **Do not make an in-process direct call.** Even if the agent runtime and the evals live in the same codebase, the Adapter must use HTTP (or the matching transport). Do not replace `fetch` with a direct `import` of the function under test. See "why not call it directly" in [Connect Your Agent](/tutorials/connect-your-agent).
-- **The eval side does not manage the process under test.** Do not spawn the application or open another port. The user starts the application the way they normally do (`pnpm dev` and so on). When the Adapter cannot connect, report a clear error such as "start the application first". Do not start the service yourself.
+- **The eval side does not manage the global process under test.** Do not spawn the application or open ports inside individual eval tests or `send()`. When the target service is not yet running, start it **following the target project's own best practices** (using its official CLI, documentation commands, containers, or inside Experiment `before`/`after` lifecycle hooks) and verify readiness. If startup fails, check the project's output logs to resolve dependency or configuration issues, and retry until it is truly healthy, ensuring the evaluation connects and yields genuine scores.
 
 ## Step 4: Run and verify
 

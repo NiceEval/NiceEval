@@ -83,7 +83,7 @@ export default defineConfig({
 架构上有两条硬规则，写 Adapter 时不要违反：
 
 - **不做进程内直调**。就算 agent runtime 和评估用例在同一个代码库里，Adapter 也要走 HTTP（或对应传输层），不要把 `fetch` 换成直接 `import` 被测函数——原因见[接入自己的 Agent](/zh/tutorials/connect-your-agent) 里「为什么不直调」。
-- **评估用例侧不代管被测进程**。不 spawn 应用、不另开端口。应用由用户自己按平时的方式启动（`pnpm dev` 之类），Adapter 连不上时报「先起应用」这类明确的错误，不要自己起服务。
+- **评估用例侧不代管全局被测进程**。不要在单条评估用例（`evals/*.eval.ts`）内或 `send()` 每次调用时临时 spawn 应用。对于尚未就绪的目标服务，应当**遵照目标项目自身的最佳实践**（通过项目官方 CLI、文档约定的启动命令、容器或在 Experiment 的 `before`/`after` lifecycle 中）准备并等待健康就绪（Readiness）。若启动报错，应检查目标项目自身的输出日志排查依赖或配置缺失，修复后重试直到服务正常可用；Adapter 专注于连接真实健康的接口，确保评估能跑出确定的真实分数。
 
 ## 第 4 步：跑通并验证
 

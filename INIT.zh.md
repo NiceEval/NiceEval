@@ -23,7 +23,7 @@
 
 niceeval 是一个 TypeScript evals 库：用声明式 API 定义"什么是好结果"，再施加到 coding agent、已部署的 agent/服务、或一个纯函数上。记住五条就够安装决策用：
 
-1. 三个文件各管一件事——**adapter**（怎么连被测对象）、**experiment**（评谁、用什么配置、怎样起停真实目标、跑几次）、**eval**（发什么输入、断言什么）。目标不是独立托管的现成部署时，必须由 Experiment、Plugin 或 Sandbox lifecycle 启动服务，把凭证只注入该进程，等待 readiness，并在失败时也可靠清理。运行前手工启动进程不算可复现的 Experiment。
+1. 三个文件各管一件事——**adapter**（怎么连被测对象）、**experiment**（评谁、用什么配置、怎样起停真实目标、跑几次）、**eval**（发什么输入、断言什么）。目标不是独立托管的现成部署时，应按照项目自身的最佳实践（如通过项目官方 CLI 启动并探测就绪，或由 Experiment、Plugin、Sandbox lifecycle 托管）准备服务，把凭证只注入该进程，等待 readiness，并在失败时也可靠清理。确保服务真实可用，使评估能拿到确定的真实分数。
 2. niceeval **不定义任何 agent 协议**。连你自己的服务，adapter 里就是发一个普通 HTTP 请求；URL、鉴权是 adapter 的工厂参数，不是 niceeval 的配置项。
 3. CLI 位置参数只用来筛"跑哪些 eval"（按 id 前缀）。选"对着哪个 agent/model 跑"永远是 flag 或 experiment 文件，不要把 URL、agent 名塞进位置参数。
 4. **「跑通」不是完成标准。** eval 的输入必须让被测系统执行有区分度的核心能力，不能退化成元问题、普通算术或通用聊天。数据产品要通过数据专用模式查询真实配置的表或数据源；工具型 Agent 要实际经过工具路径。必须能从 Eval 输入，经 Adapter 请求字段，一直追到业务断言。负例也要针对同一项真实能力：查询不存在的表、字段、文档或工具结果，并断言目标拒绝编造。开放输出使用能容纳合法变体的 matcher 或 Judge，确定性的数字和 ID 才使用精确匹配。运行后区分执行失败 `errored` 与已经完成的业务结果 `passed`、`failed` 或计分结果，再检查逐项 Assertion。
