@@ -24,7 +24,7 @@ function makeSiteCommand(deliver: TerminalDeliverySink) {
   )).pipe(Command.withDescription(`Prepare the repository-owned Mintlify ${MINT_VERSION} runtime.`));
 
   const dev = Command.make("dev", {
-    args: Args.string("mint-arg").pipe(Args.variadic({ min: 0 })),
+    args: Args.String("mint-arg").pipe(Args.variadic({ min: 0 })),
   }, ({ args }) => deliverDomainResult(
     runDocsSite("dev", args),
     false,

@@ -291,6 +291,7 @@ export function attemptFailureDeclaration(
 }
 
 export interface RunAttemptEffectOptions<SealRequirements = never> {
+  readonly runId?: string;
   /** Retains staged attachment files through publication and releases them on every Invocation exit. */
   readonly attachmentScope: Scope.Scope;
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
@@ -375,6 +376,7 @@ export function runAttemptEffect<
   sandboxSem: Semaphore.Semaphore,
   {
     attachmentScope,
+    runId,
     buildLocators,
     preparedBeforeCache,
     runTiming,
@@ -1015,6 +1017,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     ? { _tag: "Unlimited" }
                     : { _tag: "Bounded", timeoutMs: attemptTimeout.timeoutMs, deadlineAt };
                   const runtimeInput: SandboxRuntimeMaterializeInput = {
+                    runId,
                     plan: sandboxPlan,
                     evalId: evalDef.id,
                     deadline: runtimeDeadline,

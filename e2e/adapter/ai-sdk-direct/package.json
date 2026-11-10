@@ -14,7 +14,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.101",
     "ai": "^7.0.152",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.117",
     "zod": "^4.6.7"
   },
   "devDependencies": {

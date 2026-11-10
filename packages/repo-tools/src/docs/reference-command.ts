@@ -10,11 +10,11 @@ import { renderDocsDomainFailure } from "./internal/errors.js";
 import { generateReference } from "./generators.js";
 import type { CommandReceipt } from "./model.js";
 
-const dryRunOption = Options.boolean("dry-run").pipe(
+const dryRunOption = Options.Boolean("dry-run").pipe(
   Options.withDefault(false),
   Options.withDescription("Return changed paths without writing generated reference regions."),
 );
-const jsonOption = Options.boolean("json").pipe(
+const jsonOption = Options.Boolean("json").pipe(
   Options.withDefault(false),
   Options.withDescription("Emit this reference-generation receipt as JSON."),
 );

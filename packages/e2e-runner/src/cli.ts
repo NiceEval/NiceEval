@@ -30,20 +30,20 @@ const errorDetail = (cause: unknown): string =>
   typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string"
     ? cause.detail
     : cause instanceof Error ? cause.message : String(cause);
-const optionalText = (name: string) => Options.string(name).pipe(Options.optional, Options.map(Option.getOrUndefined));
-const lane = Options.choice("lane", LANES).pipe(Options.withDefault("pr"), Options.withDescription("Manifest lane to plan (default: pr)."));
-const repos = Options.string("repo").pipe(Options.atLeast(0), Options.withDescription("Scenario repository id; may be repeated."));
-const diffPaths = Options.string("diff-path").pipe(Options.atLeast(0), Options.withDescription("Changed path for affected planning; may be repeated."));
-const noDiff = Options.boolean("no-diff").pipe(Options.withDefault(false), Options.withDescription("Plan the full lane instead of affected repositories."));
+const optionalText = (name: string) => Options.String(name).pipe(Options.optional, Options.map(Option.getOrUndefined));
+const lane = Options.Literals("lane", LANES).pipe(Options.withDefault("pr"), Options.withDescription("Manifest lane to plan (default: pr)."));
+const repos = Options.String("repo").pipe(Options.atLeast(0), Options.withDescription("Scenario repository id; may be repeated."));
+const diffPaths = Options.String("diff-path").pipe(Options.atLeast(0), Options.withDescription("Changed path for affected planning; may be repeated."));
+const noDiff = Options.Boolean("no-diff").pipe(Options.withDefault(false), Options.withDescription("Plan the full lane instead of affected repositories."));
 const base = optionalText("base").pipe(Options.withDescription("Base revision; requires --head."));
 const head = optionalText("head").pipe(Options.withDescription("Head revision; requires --base."));
 const capability = optionalText("capability").pipe(Options.withDescription("Select repositories declaring this capability."));
-const excludeExternalNetwork = Options.boolean("exclude-external-network").pipe(Options.withDefault(false), Options.withDescription("Exclude repositories that require external network access."));
-const batch = Options.boolean("batch").pipe(Options.withDefault(false), Options.withDescription("Group compatible selected repositories into plan cells."));
-const json = Options.boolean("json").pipe(Options.withDefault(false), Options.withDescription("Render the plan as JSON."));
-const keepWorkdir = Options.boolean("keep-workdir").pipe(Options.withDefault(false), Options.withDescription("Retain isolated workdirs for local diagnosis."));
+const excludeExternalNetwork = Options.Boolean("exclude-external-network").pipe(Options.withDefault(false), Options.withDescription("Exclude repositories that require external network access."));
+const batch = Options.Boolean("batch").pipe(Options.withDefault(false), Options.withDescription("Group compatible selected repositories into plan cells."));
+const json = Options.Boolean("json").pipe(Options.withDefault(false), Options.withDescription("Render the plan as JSON."));
+const keepWorkdir = Options.Boolean("keep-workdir").pipe(Options.withDefault(false), Options.withDescription("Retain isolated workdirs for local diagnosis."));
 const artifactRoot = optionalText("artifact-root").pipe(Options.withDescription("Durable directory for receipts and retained candidate bytes."));
-const nativeArgs = Args.string("native-test-arg").pipe(Args.variadic);
+const nativeArgs = Args.String("native-test-arg").pipe(Args.variadic);
 
 type PlanConfig = {
   readonly lane: PlanCli["lane"];
@@ -78,7 +78,7 @@ const rejectDiagnosticInCi = process.env.CI !== undefined
 
 const planned = (config: PlanConfig) => resolveConfiguredPlan(config).pipe(Effect.catch((error) => planFailure(error, config.json)));
 const planCommand = Command.make("plan", { lane, repoIds: repos, diffPaths, noDiff, base, head, capability, excludeExternalNetwork, batch, json }, (config) => planned(config).pipe(Effect.tap(printPlan))).pipe(Command.withDescription("Resolve selected scenario repositories without packing or running them."));
-const packCommand = Command.make("pack", { out: Options.string("out").pipe(Options.withDescription("Required .tgz destination for the packed NiceEval candidate.")) }, ({ out }) => Effect.scoped(packCandidate(repoRootDir(), out).pipe(Effect.flatMap((candidate) => Console.log(JSON.stringify(candidate, null, 2)))))).pipe(Command.withDescription("Pack exactly one NiceEval candidate tarball."));
+const packCommand = Command.make("pack", { out: Options.String("out").pipe(Options.withDescription("Required .tgz destination for the packed NiceEval candidate.")) }, ({ out }) => Effect.scoped(packCandidate(repoRootDir(), out).pipe(Effect.flatMap((candidate) => Console.log(JSON.stringify(candidate, null, 2)))))).pipe(Command.withDescription("Pack exactly one NiceEval candidate tarball."));
 const testCommand = Command.make("test", { lane, repoIds: repos, diffPaths, noDiff, base, head, capability, excludeExternalNetwork, keepWorkdir, artifactRoot, nativeArgs }, (config) => rejectKeepWorkdirInCi(config.keepWorkdir).pipe(
   Effect.andThen(planned({ ...config, batch: false, json: false })),
   Effect.tap(printPlan),
@@ -101,7 +101,7 @@ const readPlanCell = (path: string, cellId: string): Effect.Effect<{ readonly re
   return { repoIds: cell.repoIds, selection: { mode: plan.mode, reason: plan.reason, lane: plan.lane, cellId: cell.id, ...(plan.range === undefined ? {} : { range: plan.range }) } };
 });
 
-const runCommand = Command.make("run", { candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), repoIds: repos, plan: optionalText("plan").pipe(Options.withDescription("Plan JSON path; requires --cell.")), cell: optionalText("cell").pipe(Options.withDescription("Plan cell id; requires --plan.")), artifactRoot, keepWorkdir, nativeArgs }, (config) => rejectKeepWorkdirInCi(config.keepWorkdir).pipe(Effect.andThen(Effect.gen(function* () {
+const runCommand = Command.make("run", { candidate: Options.String("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), repoIds: repos, plan: optionalText("plan").pipe(Options.withDescription("Plan JSON path; requires --cell.")), cell: optionalText("cell").pipe(Options.withDescription("Plan cell id; requires --plan.")), artifactRoot, keepWorkdir, nativeArgs }, (config) => rejectKeepWorkdirInCi(config.keepWorkdir).pipe(Effect.andThen(Effect.gen(function* () {
   const usesPlan = config.plan !== undefined || config.cell !== undefined;
   if (usesPlan && (config.plan === undefined || config.cell === undefined)) return yield* Effect.fail(new E2ECliError({ detail: "--plan and --cell must be supplied together" }));
   if (usesPlan && config.repoIds.length > 0) return yield* Effect.fail(new E2ECliError({ detail: "--repo cannot be combined with --plan and --cell" }));
@@ -112,17 +112,17 @@ const runCommand = Command.make("run", { candidate: Options.string("candidate").
   yield* printSummary(summary);
 })))).pipe(Command.withDescription("Run an existing candidate for explicit repositories or one plan cell."));
 const takeoverCommand = Command.make("takeover", {
-  candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")),
-  repo: Options.string("repo").pipe(Options.withDescription("Required scenario repository id.")),
-  selector: Options.string("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector from concord test list.")),
+  candidate: Options.String("candidate").pipe(Options.withDescription("Required candidate .tgz path.")),
+  repo: Options.String("repo").pipe(Options.withDescription("Required scenario repository id.")),
+  selector: Options.String("selector").pipe(Options.withDescription("Exact <path>#<caseId> selector from concord test list.")),
   artifactRoot, nativeArgs,
 }, (config) => loadRootEnv.pipe(
   Effect.andThen(runTakeover({ candidatePath: config.candidate, repoId: config.repo, selector: config.selector, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs) })),
   Effect.flatMap(summary => Console.log(JSON.stringify(summary, null, 2)).pipe(Effect.andThen(summary.category === "pass" ? Effect.void : Effect.fail(new E2ECliError({ detail: summary.detail }))))),
 )).pipe(Command.withDescription("Run NiceEval's private reliability matrix with fresh native collection; not Concord fix verification."));
-const diagnoseFrom = Options.string("from").pipe(Options.withDescription("Formal retained run summary.json path."));
-const diagnoseRepo = Options.string("repo").pipe(Options.withDescription("Single retained scenario repository id."));
-const diagnoseTimeout = Options.integer("timeout-seconds").pipe(Options.withDefault(15), Options.withDescription("Positive diagnostic command timeout in seconds (default: 15)."));
+const diagnoseFrom = Options.String("from").pipe(Options.withDescription("Formal retained run summary.json path."));
+const diagnoseRepo = Options.String("repo").pipe(Options.withDescription("Single retained scenario repository id."));
+const diagnoseTimeout = Options.Int("timeout-seconds").pipe(Options.withDefault(15), Options.withDescription("Positive diagnostic command timeout in seconds (default: 15)."));
 const runDiagnoseCommand = (mode: DiagnosticMode, config: { readonly from: string; readonly repo: string; readonly timeoutSeconds: number; readonly nativeArgs: readonly unknown[] }) =>
   rejectDiagnosticInCi.pipe(
     Effect.andThen(loadRootEnv),
@@ -135,7 +135,7 @@ const runDiagnoseCommand = (mode: DiagnosticMode, config: { readonly from: strin
 const diagnoseTestCommand = Command.make("test", { from: diagnoseFrom, repo: diagnoseRepo, timeoutSeconds: diagnoseTimeout, nativeArgs }, (config) => runDiagnoseCommand("test", config)).pipe(Command.withDescription("Run native test targets in one retained formal scenario copy."));
 const diagnoseExecCommand = Command.make("exec", { from: diagnoseFrom, repo: diagnoseRepo, timeoutSeconds: diagnoseTimeout, nativeArgs }, (config) => runDiagnoseCommand("exec", config)).pipe(Command.withDescription("Run an argv command in a short-lived copy of one retained scenario."));
 const diagnoseCommand = Command.make("diagnose").pipe(Command.withDescription("Run local-only fast diagnostics from a retained formal run."), Command.withSubcommands([diagnoseTestCommand, diagnoseExecCommand]));
-const verifyReleaseCommand = Command.make("verify-release", { plan: Options.string("plan").pipe(Options.withDescription("Required release plan JSON path.")), candidate: Options.string("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), receiptRoot: Options.string("receipt-root").pipe(Options.withDescription("Required durable receipt root.")), tag: Options.string("tag").pipe(Options.withDescription("Required vX.Y.Z release tag.")) }, (config) => verifyRelease({ planPath: config.plan, candidatePath: config.candidate, receiptRoot: config.receiptRoot, tag: config.tag }).pipe(Effect.flatMap((verification) => Console.log(JSON.stringify(verification, null, 2))))).pipe(Command.withDescription("Verify a release candidate against a full plan and durable receipts."));
+const verifyReleaseCommand = Command.make("verify-release", { plan: Options.String("plan").pipe(Options.withDescription("Required release plan JSON path.")), candidate: Options.String("candidate").pipe(Options.withDescription("Required candidate .tgz path.")), receiptRoot: Options.String("receipt-root").pipe(Options.withDescription("Required durable receipt root.")), tag: Options.String("tag").pipe(Options.withDescription("Required vX.Y.Z release tag.")) }, (config) => verifyRelease({ planPath: config.plan, candidatePath: config.candidate, receiptRoot: config.receiptRoot, tag: config.tag }).pipe(Effect.flatMap((verification) => Console.log(JSON.stringify(verification, null, 2))))).pipe(Command.withDescription("Verify a release candidate against a full plan and durable receipts."));
 
 export const e2eCommand = Command.make("e2e").pipe(Command.withDescription("NiceEval E2E planning, packing, execution, diagnosis, reliability takeover, and release verification."), Command.withSubcommands([testCommand, diagnoseCommand, planCommand, packCommand, runCommand, takeoverCommand, verifyReleaseCommand]));
 

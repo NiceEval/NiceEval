@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.117",
     "niceeval": "0.19.0",
     "openai": "6.49.0"
   },

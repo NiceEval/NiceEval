@@ -14,7 +14,7 @@ import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { parseHermesTranscript, sessionIdFromHermesOutput } from "../o11y/parsers/hermes.ts";
 import { DEFAULT_HERMES_CLI_VERSION } from "./coding-cli-versions.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import type { Agent, AgentInstallationManifest, Sandbox, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
+import type { Agent, AgentInstallationManifest, Turn, Sandbox, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 
@@ -198,7 +198,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
     }),
 
     send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
+      try: async (): Promise<Turn> => {
         const sb = ctx.sandbox;
         const baseUrl = resolveBaseUrl(config);
         const args = ["chat", "-q", input.text, "--yolo", "-Q"];

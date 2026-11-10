@@ -37,15 +37,15 @@ class CliInputError extends Data.TaggedError("CliInputError")<{
   readonly message: string;
 }> {}
 
-const jsonOption = Options.boolean("json").pipe(
+const jsonOption = Options.Boolean("json").pipe(
   Options.withDefault(false),
   Options.withDescription("Emit the complete structured outcome as JSON."),
 );
-const dryRunOption = Options.boolean("dry-run").pipe(
+const dryRunOption = Options.Boolean("dry-run").pipe(
   Options.withDefault(false),
   Options.withDescription("Validate and return the planned outcome without writing."),
 );
-const inputOption = Options.string("input").pipe(
+const inputOption = Options.String("input").pipe(
   Options.withDescription("Path to a JSON input document."),
 );
 
@@ -144,11 +144,11 @@ function renderUnhandledError(error: unknown): string {
   return String(error);
 }
 
-const prNumberOption = Options.integer("pr").pipe(Options.withDescription("GitHub pull request number."));
-const sourceOption = Options.string("source").pipe(Options.withDescription(
+const prNumberOption = Options.Int("pr").pipe(Options.withDescription("GitHub pull request number."));
+const sourceOption = Options.String("source").pipe(Options.withDescription(
   "Managed draft path; when omitted, the command selects its matching Git-private draft.",
 ));
-const baseOption = Options.string("base").pipe(Options.withDescription("Locked base ref or target branch."));
+const baseOption = Options.String("base").pipe(Options.withDescription("Locked base ref or target branch."));
 function runPr(input: unknown, json: boolean) {
   return Effect.matchEffect(prBodyCommandContribution.run(input), {
     onFailure: (error) => deliverTerminal({
@@ -212,10 +212,10 @@ const prEditReset = Command.make("reset", {
 const prEditProblem = Command.make("problem", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  userGoal: Options.string("user-goal"),
-  currentLimitation: Options.string("current-limitation"),
-  requiredCapability: Options.string("required-capability"),
-  userOutcome: Options.string("user-outcome"),
+  userGoal: Options.String("user-goal"),
+  currentLimitation: Options.String("current-limitation"),
+  requiredCapability: Options.String("required-capability"),
+  userOutcome: Options.String("user-outcome"),
   json: jsonOption,
 }, ({ currentLimitation, json, pr, requiredCapability, source, userGoal, userOutcome }) => runPr({
   command: "edit",
@@ -228,7 +228,7 @@ const prEditProblem = Command.make("problem", {
   userOutcome,
 }, json)).pipe(Command.withDescription("Set the four required Problem fields."));
 
-const prClosingIssueOption = Options.integer("issue").pipe(Options.withDescription("GitHub issue number."));
+const prClosingIssueOption = Options.Int("issue").pipe(Options.withDescription("GitHub issue number."));
 const prEditClosingIssueAdd = Command.make("add", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional), issue: prClosingIssueOption, json: jsonOption,
 }, ({ pr, source, issue, json }) => runPr({ command: "edit", operation: "closing-issue-add", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), issue }, json)).pipe(Command.withDescription("Add a GitHub closing keyword for one issue."));
@@ -237,9 +237,9 @@ const prEditClosingIssueRemove = Command.make("remove", {
 }, ({ pr, source, issue, json }) => runPr({ command: "edit", operation: "closing-issue-remove", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), issue }, json)).pipe(Command.withDescription("Remove one GitHub closing issue reference."));
 const prEditClosingIssue = Command.make("closing-issue").pipe(Command.withDescription("Maintain issue references that close when the PR merges."), Command.withSubcommands([prEditClosingIssueAdd, prEditClosingIssueRemove]));
 
-const prCaseSectionOption = Options.choice("section", PR_BODY_CASE_SECTIONS).pipe(Options.withDescription("PR template section owned by this case."));
-const prCaseDirectionOption = Options.choice("direction", PR_BODY_CASE_DIRECTIONS);
-const prCaseNameOption = Options.string("name").pipe(Options.withDescription("Stable Case heading."));
+const prCaseSectionOption = Options.Literals("section", PR_BODY_CASE_SECTIONS).pipe(Options.withDescription("PR template section owned by this case."));
+const prCaseDirectionOption = Options.Literals("direction", PR_BODY_CASE_DIRECTIONS);
+const prCaseNameOption = Options.String("name").pipe(Options.withDescription("Stable Case heading."));
 
 const prEditCaseSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
@@ -247,12 +247,12 @@ const prEditCaseSet = Command.make("set", {
   section: prCaseSectionOption,
   direction: prCaseDirectionOption,
   name: prCaseNameOption,
-  beforeInput: Options.string("before-input"),
-  beforeOutput: Options.string("before-output"),
-  afterInput: Options.string("after-input").pipe(Options.optional),
-  afterOutput: Options.string("after-output"),
-  userImpact: Options.string("user-impact"),
-  language: Options.string("language").pipe(Options.optional),
+  beforeInput: Options.String("before-input"),
+  beforeOutput: Options.String("before-output"),
+  afterInput: Options.String("after-input").pipe(Options.optional),
+  afterOutput: Options.String("after-output"),
+  userImpact: Options.String("user-impact"),
+  language: Options.String("language").pipe(Options.optional),
   json: jsonOption,
 }, ({
   afterInput,
@@ -308,9 +308,9 @@ const prEditCase = Command.make("case").pipe(
 const prEditUseCaseSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
   direction: prCaseDirectionOption, name: prCaseNameOption,
-  contract: Options.string("contract"), startingState: Options.string("starting-state"),
-  action: Options.string("action"), result: Options.string("result"),
-  explanation: Options.string("explanation"), language: Options.string("language").pipe(Options.optional), json: jsonOption,
+  contract: Options.String("contract"), startingState: Options.String("starting-state"),
+  action: Options.String("action"), result: Options.String("result"),
+  explanation: Options.String("explanation"), language: Options.String("language").pipe(Options.optional), json: jsonOption,
 }, ({ pr, source, direction, name, contract, startingState, action, result, explanation, language, json }) => runPr({
   command: "edit", operation: "use-case-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name, contract, startingState, action, result, explanation, language: Option.getOrUndefined(language),
 }, json)).pipe(Command.withDescription("Add or replace one Added, Changed, or Removed canonical NiceEval Use Case."));
@@ -323,7 +323,7 @@ const prEditUseCase = Command.make("use-case").pipe(Command.withDescription("Mai
 
 const prEditRecordNewWriteSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
-  action: Options.string("action"), result: Options.string("result"), json: jsonOption,
+  action: Options.String("action"), result: Options.String("result"), json: jsonOption,
 }, ({ pr, source, action, result, json }) => runPr({
   command: "edit", operation: "record-new-write-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), action, result,
 }, json)).pipe(Command.withDescription("Set the public new-Record writer action and observed result."));
@@ -337,7 +337,7 @@ const prEditRecordNewWrite = Command.make("new-write").pipe(
 
 const prEditRecordExistingReadSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
-  action: Options.string("action"), result: Options.string("result"), json: jsonOption,
+  action: Options.String("action"), result: Options.String("result"), json: jsonOption,
 }, ({ pr, source, action, result, json }) => runPr({
   command: "edit", operation: "record-existing-read-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), action, result,
 }, json)).pipe(Command.withDescription("Set the public existing-Record reader action and observed result."));
@@ -351,10 +351,10 @@ const prEditRecordExistingRead = Command.make("existing-read").pipe(
 
 const prEditRecordUpgradeSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
-  version: Options.string("version").pipe(Options.withDescription("Dotted numeric version transition, for example 0.15 -> 0.16.")),
-  beforeInput: Options.string("before-input"), beforeOutput: Options.string("before-output"),
-  afterInput: Options.string("after-input"), afterOutput: Options.string("after-output"),
-  safety: Options.string("safety"), userImpact: Options.string("user-impact"), evidence: Options.string("evidence"),
+  version: Options.String("version").pipe(Options.withDescription("Dotted numeric version transition, for example 0.15 -> 0.16.")),
+  beforeInput: Options.String("before-input"), beforeOutput: Options.String("before-output"),
+  afterInput: Options.String("after-input"), afterOutput: Options.String("after-output"),
+  safety: Options.String("safety"), userImpact: Options.String("user-impact"), evidence: Options.String("evidence"),
   json: jsonOption,
 }, ({ pr, source, json, ...upgrade }) => runPr({
   command: "edit", operation: "record-upgrade-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), ...upgrade,
@@ -369,8 +369,8 @@ const prEditRecordUpgrade = Command.make("upgrade").pipe(
 
 const prEditRecordPrivateSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
-  name: prCaseNameOption, before: Options.string("before"), after: Options.string("after"),
-  userImpact: Options.string("user-impact"), json: jsonOption,
+  name: prCaseNameOption, before: Options.String("before"), after: Options.String("after"),
+  userImpact: Options.String("user-impact"), json: jsonOption,
 }, ({ pr, source, name, before, after, userImpact, json }) => runPr({
   command: "edit", operation: "record-private-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), name, before, after, userImpact,
 }, json)).pipe(Command.withDescription("Add or replace one explicitly private persisted-data case."));
@@ -390,10 +390,10 @@ const prEditRecord = Command.make("record").pipe(
 const prEditEnvironmentSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
   direction: prCaseDirectionOption, name: prCaseNameOption,
-  beforeInput: Options.string("before-input"), beforeOutput: Options.string("before-output"),
-  afterInput: Options.string("after-input").pipe(Options.optional), afterOutput: Options.string("after-output").pipe(Options.optional),
-  boundary: Options.string("boundary"), necessity: Options.string("necessity").pipe(Options.optional),
-  securityImpact: Options.string("security-impact"), json: jsonOption,
+  beforeInput: Options.String("before-input"), beforeOutput: Options.String("before-output"),
+  afterInput: Options.String("after-input").pipe(Options.optional), afterOutput: Options.String("after-output").pipe(Options.optional),
+  boundary: Options.String("boundary"), necessity: Options.String("necessity").pipe(Options.optional),
+  securityImpact: Options.String("security-impact"), json: jsonOption,
 }, ({ pr, source, direction, name, beforeInput, beforeOutput, afterInput, afterOutput, boundary, necessity, securityImpact, json }) => runPr({
   command: "edit", operation: "environment-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source),
   direction, name, beforeInput, beforeOutput, afterInput: Option.getOrUndefined(afterInput), afterOutput: Option.getOrUndefined(afterOutput),
@@ -408,12 +408,12 @@ const prEditEnvironment = Command.make("environment").pipe(
   Command.withSubcommands([prEditEnvironmentSet, prEditEnvironmentRemove]),
 );
 
-const prTerminologyDirectionOption = Options.choice("direction", PR_BODY_TERMINOLOGY_DIRECTIONS);
+const prTerminologyDirectionOption = Options.Literals("direction", PR_BODY_TERMINOLOGY_DIRECTIONS);
 const prEditTerminologySet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional), source: sourceOption.pipe(Options.optional),
   direction: prTerminologyDirectionOption, name: prCaseNameOption,
-  before: Options.string("before"), after: Options.string("after"), explanation: Options.string("explanation"),
-  canonical: Options.string("canonical").pipe(Options.withDescription("Canonical docs/concepts.md#<Unicode-anchor> link.")), json: jsonOption,
+  before: Options.String("before"), after: Options.String("after"), explanation: Options.String("explanation"),
+  canonical: Options.String("canonical").pipe(Options.withDescription("Canonical docs/concepts.md#<Unicode-anchor> link.")), json: jsonOption,
 }, ({ pr, source, direction, name, before, after, explanation, canonical, json }) => runPr({
   command: "edit", operation: "terminology-set", pr: Option.getOrUndefined(pr), source: Option.getOrUndefined(source), direction, name, before, after, explanation, canonical,
 }, json)).pipe(Command.withDescription("Add or replace one preferred-term addition or removal."));
@@ -429,16 +429,16 @@ const prEditTerminology = Command.make("terminology").pipe(
 const prEditTestSet = Command.make("set", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  selector: Args.string("path#caseId"),
-  behavior: Options.string("behavior"),
-  entry: Options.string("entry"),
-  assertion: Options.string("assertion"),
-  escape: Options.string("escape"),
-  issue: Options.string("issue").pipe(Options.optional),
-  fragmentFrom: Options.string("fragment-from").pipe(Options.withDescription("Unique complete source line, or <BOF> for the file start."), Options.atLeast(0)),
-  fragmentThrough: Options.string("fragment-through").pipe(Options.withDescription("Unique complete source line, or <EOF> for the file end."), Options.atLeast(0)),
-  fragmentReason: Options.string("fragment-reason").pipe(Options.optional),
-  sourceMode: Options.choice("source-mode", ["full", "link"] as const).pipe(
+  selector: Args.String("path#caseId"),
+  behavior: Options.String("behavior"),
+  entry: Options.String("entry"),
+  assertion: Options.String("assertion"),
+  escape: Options.String("escape"),
+  issue: Options.String("issue").pipe(Options.optional),
+  fragmentFrom: Options.String("fragment-from").pipe(Options.withDescription("Unique complete source line, or <BOF> for the file start."), Options.atLeast(0)),
+  fragmentThrough: Options.String("fragment-through").pipe(Options.withDescription("Unique complete source line, or <EOF> for the file end."), Options.atLeast(0)),
+  fragmentReason: Options.String("fragment-reason").pipe(Options.optional),
+  sourceMode: Options.Literals("source-mode", ["full", "link"] as const).pipe(
     Options.optional,
     Options.withDescription("How the PR presents test source; link emits immutable GitHub source and diff links."),
   ),
@@ -477,7 +477,7 @@ const prEditTestSet = Command.make("set", {
 const prEditTestRemove = Command.make("remove", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  selector: Args.string("path#caseId"),
+  selector: Args.String("path#caseId"),
   json: jsonOption,
 }, ({ json, selector, pr, source }) => runPr({
   command: "edit",
@@ -495,12 +495,12 @@ const prEditTest = Command.make("test").pipe(
 const prEditVerification = Command.make("verification", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  candidate: Options.string("candidate"),
-  red: Options.string("red").pipe(Options.optional),
-  green: Options.string("green"),
-  repeatability: Options.string("repeatability"),
-  fixedConditions: Options.string("fixed-conditions"),
-  unitCount: Options.string("unit-count"),
+  candidate: Options.String("candidate"),
+  red: Options.String("red").pipe(Options.optional),
+  green: Options.String("green"),
+  repeatability: Options.String("repeatability"),
+  fixedConditions: Options.String("fixed-conditions"),
+  unitCount: Options.String("unit-count"),
   json: jsonOption,
 }, ({ pr, source, json, red, ...receipt }) => runPr({
   command: "edit",
@@ -530,7 +530,7 @@ const prEdit = Command.make("edit").pipe(
 const prRender = Command.make("render", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  out: Options.string("out").pipe(Options.optional),
+  out: Options.String("out").pipe(Options.optional),
   json: jsonOption,
 }, ({ json, out, pr, source }) => runPr({
   command: "render",
@@ -542,7 +542,7 @@ const prRender = Command.make("render", {
 const prCheck = Command.make("check", {
   pr: prNumberOption.pipe(Options.optional),
   source: sourceOption.pipe(Options.optional),
-  remote: Options.boolean("remote").pipe(
+  remote: Options.Boolean("remote").pipe(
     Options.withDefault(false),
     Options.withDescription("Compare body and head with GitHub; local validation is the default."),
   ),
@@ -566,7 +566,7 @@ const prApply = Command.make("apply", {
 
 const prCreate = Command.make("create", {
   source: sourceOption.pipe(Options.optional),
-  title: Options.string("title"),
+  title: Options.String("title"),
   base: baseOption.pipe(Options.optional),
   json: jsonOption,
 }, ({ base, json, source, title }) => runPr({
@@ -594,13 +594,13 @@ const docsContributions = Object.freeze([
 const docs = makeDocsCommand(docsContributions, deliverTerminal);
 
 const examplesCheck = Command.make("check", {
-  name: Args.string("tier-name").pipe(Args.optional),
+  name: Args.String("tier-name").pipe(Args.optional),
   json: jsonOption,
 }, ({ json, name }) => checkExamples(Option.getOrUndefined(name)).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
 )).pipe(Command.withDescription("Check example tier state without writing Git objects or files."));
 const examplesApply = Command.make("apply", {
-  name: Args.string("tier-name").pipe(Args.optional),
+  name: Args.String("tier-name").pipe(Args.optional),
   json: jsonOption,
 }, ({ json, name }) => {
   const selected = Option.getOrUndefined(name);
@@ -618,7 +618,7 @@ const examples = Command.make("examples").pipe(
 );
 
 const link = Command.make("link", {
-  project: Args.string("project-directory"),
+  project: Args.String("project-directory"),
   json: jsonOption,
 }, ({ json, project }) => linkDownstreamCandidate(project).pipe(
   Effect.flatMap((receipt) => emit(receipt, json)),
@@ -665,13 +665,13 @@ function runPreviewReceipt<A, R>(effect: Effect.Effect<A, PreviewError, R>) {
 }
 
 const previewBuild = Command.make("build", {
-  local: Options.boolean("local").pipe(
+  local: Options.Boolean("local").pipe(
     Options.withDefault(false),
     Options.withDescription("Run explicitly as a local build without reading or fabricating Netlify identity."),
   ),
-  base: Options.string("base").pipe(Options.optional),
-  head: Options.string("head").pipe(Options.withDefault("HEAD")),
-  baseLabel: Options.string("base-label").pipe(Options.optional),
+  base: Options.String("base").pipe(Options.optional),
+  head: Options.String("head").pipe(Options.withDefault("HEAD")),
+  baseLabel: Options.String("base-label").pipe(Options.optional),
 }, ({ local, base, head, baseLabel }) => runPreviewReceipt(buildPreview({ local, ...(Option.isSome(base) ? { comparison: { base: base.value, head, ...(Option.isSome(baseLabel) ? { baseLabel: baseLabel.value } : {}) } } : {}) }))).pipe(
   Command.withDescription("Build and seal the pinned Preview repository with the exact current NiceEval tarball."),
 );
@@ -685,11 +685,11 @@ const previewAccept = Command.make("accept", {
 )).pipe(Command.withDescription("Verify an immutable deployed Preview manifest and emit an acceptance receipt."));
 
 const previewChanges = Command.make("changes", {
-  root: Options.string("root").pipe(Options.withDefault(ROOT)),
-  base: Options.string("base"),
-  head: Options.string("head").pipe(Options.withDefault("HEAD")),
-  baseLabel: Options.string("base-label").pipe(Options.optional),
-  out: Options.string("out"),
+  root: Options.String("root").pipe(Options.withDefault(ROOT)),
+  base: Options.String("base"),
+  head: Options.String("head").pipe(Options.withDefault("HEAD")),
+  baseLabel: Options.String("base-label").pipe(Options.optional),
+  out: Options.String("out"),
 }, ({ root, base, head, baseLabel, out }) => runPreviewReceipt(exportConcordChanges({ root, base, head, ...(Option.isSome(baseLabel) ? { baseLabel: baseLabel.value } : {}), out }))).pipe(
   Command.withDescription("Export and verify a static Concord comparison using the installed pinned package; no platform query or deployment."),
 );

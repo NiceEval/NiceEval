@@ -610,9 +610,9 @@ export const runRepoEffect = (
               const virtualStore = yield* assertContainedRealDirectory(copy, join(copy, "node_modules", ".pnpm"), "isolated pnpm virtual store");
               if (!effectRealPath.startsWith(`${virtualStore}/`))
                 return { ok: false as const, detail: `Effect resolution escapes the isolated pnpm virtual store: ${effectRealPath}` };
-              if (!/"version"\s*:\s*"4\.0\.0-rc\.112"/.test(effectPackage))
-                return { ok: false as const, detail: `Effect resolution is not effect@4.0.0-rc.112: ${effectRealPath}` };
-              if (/(?:^|\n)\s*(?:effect|@effect\/[^:]+)@(?:3\.|4\.0\.0-(?!rc\.112))/m.test(lockText))
+              if (!/"version"\s*:\s*"4\.0\.0-rc\.117"/.test(effectPackage))
+                return { ok: false as const, detail: `Effect resolution is not effect@4.0.0-rc.117: ${effectRealPath}` };
+              if (/(?:^|\n)\s*(?:effect|@effect\/[^:]+)@(?:3\.|4\.0\.0-(?!rc\.117))/m.test(lockText))
                 return { ok: false as const, detail: "installed dependency graph contains an Effect v3 or mismatched Effect v4 resolution" };
 
               if (!consumesTestkit || testkit === undefined) {

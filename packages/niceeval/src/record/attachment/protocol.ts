@@ -15,7 +15,7 @@ const definitionAliases = new WeakMap<object, AnyDefinition>();
 const persistences = new WeakSet<object>();
 const references = new WeakMap<object, ReferenceRuntime>();
 const referenceDeclarations = new WeakMap<object, ReferenceDeclarationRuntime>();
-const referenceDeclarationRuns = new WeakMap<SchemaAST.DeclarationRun, ReferenceDeclarationRuntime>();
+const referenceDeclarationRuns = new WeakMap<SchemaAST.Declaration["run"], ReferenceDeclarationRuntime>();
 
 /** Shared admission limits for producers using the current attachment encoder. */
 export const RecordAttachmentEncodingLimits = Object.freeze({

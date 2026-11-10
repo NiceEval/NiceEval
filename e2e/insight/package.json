@@ -14,7 +14,7 @@
     "postinstall": "playwright install chromium"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.117",
     "niceeval": "0.19.0"
   },
   "devDependencies": {

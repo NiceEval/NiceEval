@@ -19,7 +19,7 @@ import {
   runPostSetupHooks,
   runPreTeardownHooks,
 } from "./post-setup.ts";
-import type { Agent, AgentInstallationManifest, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
+import type { Agent, AgentInstallationManifest, Turn, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -281,7 +281,7 @@ ${last}`);
     }),
 
     send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
+      try: async (): Promise<Turn> => {
         const sb = ctx.sandbox;
         const info = sessionInfo.get(sb.sandboxId);
         if (!info) throw new Error(`bub adapter setup() has not run in this sandbox (missing home/workspace info). The runner must call setup before send.`);

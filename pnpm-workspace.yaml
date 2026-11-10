@@ -9,6 +9,10 @@ trustPolicy: off
 
 # Security fixes for transitive dependencies pinned by upstream packages.
 overrides:
+  # Effect RC packages must share one revision, including transitive dependencies.
+  effect: 4.0.0-rc.117
+  '@effect/platform-node': 4.0.0-rc.117
+  '@effect/platform-node-shared': 4.0.0-rc.117
   'glob@>=9.0.0 <14.0.2': 14.0.2
   'minimatch@>=7.0.0 <11.0.1': 11.0.1
   'dockerode@4>uuid': 11.1.1
@@ -28,13 +32,31 @@ allowBuilds:
   ssh2: false
 
 minimumReleaseAgeExclude:
-  - '@next/env@16.2.10'
-  - '@next/swc-darwin-arm64@16.2.10'
-  - '@next/swc-darwin-x64@16.2.10'
-  - '@next/swc-linux-arm64-gnu@16.2.10'
-  - '@next/swc-linux-arm64-musl@16.2.10'
-  - '@next/swc-linux-x64-gnu@16.2.10'
-  - '@next/swc-linux-x64-musl@16.2.10'
-  - '@next/swc-win32-arm64-msvc@16.2.10'
-  - '@next/swc-win32-x64-msvc@16.2.10'
-  - next@16.2.10
+  - '@next/env@16.2.10 || 16.4.6'
+  - '@next/swc-darwin-arm64@16.2.10 || 16.4.6'
+  - '@next/swc-darwin-x64@16.2.10 || 16.4.6'
+  - '@next/swc-linux-arm64-gnu@16.2.10 || 16.4.6'
+  - '@next/swc-linux-arm64-musl@16.2.10 || 16.4.6'
+  - '@next/swc-linux-x64-gnu@16.2.10 || 16.4.6'
+  - '@next/swc-linux-x64-musl@16.2.10 || 16.4.6'
+  - '@next/swc-win32-arm64-msvc@16.2.10 || 16.4.6'
+  - '@next/swc-win32-x64-msvc@16.2.10 || 16.4.6'
+  - next@16.2.10 || 16.4.6
+  - '@rolldown/binding-android-arm-eabi@1.2.18'
+  - '@rolldown/binding-android-arm64@1.2.18'
+  - '@rolldown/binding-darwin-arm64@1.2.18'
+  - '@rolldown/binding-darwin-x64@1.2.18'
+  - '@rolldown/binding-freebsd-x64@1.2.18'
+  - '@rolldown/binding-linux-arm-gnueabihf@1.2.18'
+  - '@rolldown/binding-linux-arm64-gnu@1.2.18'
+  - '@rolldown/binding-linux-arm64-musl@1.2.18'
+  - '@rolldown/binding-linux-ppc64-gnu@1.2.18'
+  - '@rolldown/binding-linux-s390x-gnu@1.2.18'
+  - '@rolldown/binding-linux-x64-gnu@1.2.18'
+  - '@rolldown/binding-linux-x64-musl@1.2.18'
+  - '@rolldown/binding-openharmony-arm64@1.2.18'
+  - '@rolldown/binding-win32-arm64-msvc@1.2.18'
+  - '@rolldown/binding-win32-x64-msvc@1.2.18'
+  - lucide-react@1.71.0
+  - rolldown@1.2.18
+  - vite@8.3.7

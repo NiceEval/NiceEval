@@ -26,7 +26,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@openai/codex-sdk": "0.147.0",
     "ai": "7.0.30",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.117",
     "niceeval": "0.19.0",
     "openai": "6.49.0",
     "typebox": "1.1.38",

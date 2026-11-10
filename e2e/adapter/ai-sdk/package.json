@@ -20,7 +20,7 @@
     "@opentelemetry/resources": "^2.12.0",
     "@opentelemetry/sdk-trace-node": "^2.12.0",
     "ai": "^7.0.152",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.117",
     "zod": "^4.6.7"
   },
   "devDependencies": {

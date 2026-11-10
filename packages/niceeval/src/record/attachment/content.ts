@@ -18,7 +18,7 @@ export interface RecordContentDeclarationMetadata {
   readonly maximumBytes: number | undefined;
 }
 const contentDeclarations = new WeakMap<object, RecordContentDeclarationMetadata>();
-const contentDeclarationRuns = new WeakMap<SchemaAST.DeclarationRun, RecordContentDeclarationMetadata>();
+const contentDeclarationRuns = new WeakMap<SchemaAST.Declaration["run"], RecordContentDeclarationMetadata>();
 
 function mintedDeclarationMetadata(value: object): RecordContentDeclarationMetadata | undefined {
   const direct = contentDeclarations.get(value);
