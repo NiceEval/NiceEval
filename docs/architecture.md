@@ -1,7 +1,7 @@
 # Architecture
 
 NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**发布与检查**事实并按需交付。
-核心拥有这四段里对所有被测对象都一样的部分。Adapter 定义怎样连接被测系统；Agent 是提供会话协议的适配器特例。
+核心拥有这四段里对所有被测对象都一样的部分。普通应用可直接在 `test(t)` 调用；Adapter 定义怎样连接复杂外部系统；Agent 是提供会话协议的适配器特例。
 自定义适配器直接提供系统的原生操作，隔离运行资源属于 Sandbox。作者入口见 [Eval Library](feature/eval/library/README.md#自定义应用)。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
@@ -224,13 +224,14 @@ reuse policy 必须从已发布事实重新验证资格。SQLite migration 与�
 
 ## 一个评估模型，按应用组合上下文
 
-Adapter 定义被测应用操作，Eval 声明任务和判定，Experiment 选择实现。
+普通应用函数可直接在 `test(t)` 导入调用；Adapter 定义复杂被测系统操作，Eval 与 Dataset 声明任务和判定。
 每次实际执行由同一个 Attempt owner 管理期限、取消、Assertion、资源释放与结果发布。
-Agent 是提供会话操作与观测的 Adapter，不是普通应用必须实现的基础协议。
+Agent 是提供会话操作与观测的 Adapter 特例，不是普通应用必须实现的基础协议。
 
-| Adapter | 应用提供的操作 | 专属观测 |
+| 接入形态 | 应用提供的操作 | 专属观测 |
 |---|---|---|
-| 用户应用 | `post`、`reply`、`generateImage` 或作者自己的方法 | 应用返回值与业务 ctx 的只读事实 |
+| 直接函数 / LLM App | 业务代码导出的 async 函数或 fetch | 原生返回值与 `t.trace` 链路事实 |
+| 自定义 Adapter | `post`、`reply`、`generateImage` 等自选方法 | 应用返回值与业务 ctx 的只读事实 |
 | Direct Agent | `send`、`sendFile`、`newSession` 等会话操作 | Session、Turn 与实际采集的工具和用量 |
 | Sandbox Agent | 会话操作与 Sandbox 操作 | 上述观测，加文件、命令与变更归因 |
 

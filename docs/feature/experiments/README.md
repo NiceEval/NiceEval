@@ -85,8 +85,9 @@ interface EvalDescriptor {
 
 export default defineExperiment({
   description?: string;                       // 人读
-  agent?: Agent;                             // 对话 Adapter 的简写;agent 与 adapter 必须且只能提供一个
-  adapter?: Adapter;                         // 本实验使用的 Adapter 实现(见 Library · 自定义应用)
+  agent?: Agent;                             // 对话 Adapter 的简写;与 adapter 互斥，直接调用函数时两者皆可省略
+  adapter?: Adapter;                         // 本实验使用的 Adapter 实现(直接调用函数时可省略)
+  maxConcurrency?: number;                   // 单一并发限制：本实验同时运行的最大并发 Attempt 数
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   models?: Readonly<Record<string, { model: string; reasoningEffort?: string }>>; // 普通 Adapter 的命名模型用途;与 model、reasoningEffort 互斥
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
