@@ -58,11 +58,17 @@ scope 固定为 `eval.run`,eval 不能借此把自己显示成 sandbox 或 agent
 
 | 对象 | 常用字段 |
 |---|---|
-| `t` | `reply`、`sessionId`、主 session 即时 `events` |
+| `t` | `reply`、`sessionId`、主 session 即时 `events`、`trace` |
 | session | `reply`、`sessionId`、该 session 的 `events` |
 | turn | `message`、`data`、`status`、`events`、`usage` |
 
 `t.events` 是主 session 的即时读取视图；最终的 `t.*` 作用域断言会聚合本 attempt 的全部 session。
 `turn.status` 为 `completed`、`failed` 或 `waiting`；`turn.usage` 是否存在取决于 Adapter 能否提供。
+
+## 读取链路事实：t.trace
+
+`t.trace` 提供本次 Attempt 执行链路的只读查询能力。
+作者可通过 `t.trace.findSpans({ kind })` 筛选 `llm`、`retriever` 或自定义角色节点；也可通过 `t.trace.getDocuments()` 直接获取召回切片。
+查询得到的结果可作为普通值传入 `t.check(subject, match)` 登记断言。
 
 怎样对这些结果评分，见 [Assertions](../../assertions/library/README.md)；内部作用域绑定见 [Assertions Architecture](../../assertions/architecture/scopes.md)。

@@ -113,6 +113,14 @@ OTel bridge 只在事件发生时把 span 绑定到 exact Run 或 Attempt、同�
 稳定 phase / label 与 capture-time refs。它不在事后从 epoch 推回 owner offset。不能同时证明这些条件的
 span 不形成 activity，并使 Runner Activities source 以 `unsupported-input` 保持 partial。
 
+### 链路主干统一，细节属性开放
+
+LLM App 的调用轨迹使用分层 Span 树表示。
+拓扑结构与核心角色统一为四类：`llm`（单次模型调用）、`retriever`（检索与召回）、`tool`（工具或函数执行）、`chain`（复合管道容器）。
+四类核心角色固定常用事实（模型名、Token 消耗、检索片段、输入输出），支撑通用瀑布图与聚合呈现。
+各步骤专有的业务参数在 `attributes` 键值对中自由挂载；非标准步骤允许使用自定义角色。
+执行上下文通过 `t.trace` 暴露只读查询接口，供作者提取中间切片或统计数据并登记为断言。
+
 ### 每个 Agent 一个薄 mapper
 
 每个 Adapter 把自己的协议输入映射成 terminal Turn。mapper 不能让 Inspection 依赖 provider 分支，也不能以

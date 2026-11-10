@@ -17,8 +17,8 @@ NiceEval 不要求被测对象实现统一协议。`defineAdapter` 提供原生�
    URL、鉴权、CLI 参数与原始协议属于 Adapter，不成为 niceeval 的通用 CLI 参数。
 2. **Agent 与 Sandbox 正交。**
    Agent 决定测谁，Sandbox 决定 sandbox 型 Agent 在哪里运行；任意 sandbox Agent 可以与任意 Sandbox provider 组合。
-3. **行为轨与时间轨分离。**
-   `Turn.events` 是断言的唯一行为依据；OTel span 只进入 trace 瀑布图，不生成事件，也不参与断言。
+3. **行为轨与时间轨协同。**
+   Agent 会话中 `Turn.events` 是工具调用的行为依据；链路追踪提供统一树形 Span（llm、retriever、tool、chain），供瀑布图呈现与 `t.trace` 细粒度断言。
 4. **能力由构造证明。**
    Adapter 实际返回的状态、事件、usage 与会话行为决定哪些 eval 判定可信，不使用一张声明式 capability 问卷。
 
