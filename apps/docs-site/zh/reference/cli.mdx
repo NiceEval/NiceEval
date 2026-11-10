@@ -184,6 +184,11 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 | `--request-json` | `niceeval query` | string | 从一个 argv 值读取完整的 niceeval.query/v3 request。 |
 | `--record` | `niceeval query`、`niceeval show` | string | 读取一个外部 canonical SQLite Record。 |
 | `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
+| `--compare` | `niceeval show` | boolean | Compare baseline and candidate Runs. |
+| `--left` | `niceeval show` | string[] | Baseline Run ID; repeatable. |
+| `--right` | `niceeval show` | string[] | Candidate Run ID; repeatable. |
+| `--mode` | `niceeval show` | string | Comparison mode: paired (default), side-by-side, or exact. |
+| `--max-regressions` | `niceeval show` | string | Maximum allowed regressions (non-negative integer; paired or exact). |
 | `--json` | `niceeval show` | boolean | 写出该命令的机器文档或事件流。 |
 | `--exp` | `niceeval show` | string[] | Show one Experiment; repeat to show more. |
 | `--run` | `niceeval show` | string[] | 显示一个已封口的 Run；可重复传入。 |

@@ -144,6 +144,11 @@ The table below is generated from each command's own option definitions. Flags n
 | `--request-json` | `niceeval query` | string | Read one complete niceeval.query/v3 request from an argv value. |
 | `--record` | `niceeval query`, `niceeval show` | string | Read an external canonical SQLite Record. |
 | `--help` | `niceeval query` | boolean | Print help for this command. |
+| `--compare` | `niceeval show` | boolean | Compare two groups of sealed Runs. |
+| `--left` | `niceeval show` | string[] | Left baseline Run ID; can be repeated. |
+| `--right` | `niceeval show` | string[] | Right candidate Run ID; can be repeated. |
+| `--mode` | `niceeval show` | string | Comparison mode: paired, side-by-side, or exact. |
+| `--max-regressions` | `niceeval show` | string | Maximum allowed regressed attempts before exiting with code 1. |
 | `--json` | `niceeval show` | boolean | Print the public Attempt query result as JSON. |
 | `--exp` | `niceeval show` | string[] | Show one Experiment; repeat to show more. |
 | `--run` | `niceeval show` | string[] | Show one sealed Run; can be repeated. |

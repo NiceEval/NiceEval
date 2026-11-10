@@ -372,6 +372,7 @@ niceeval show [-o text|json]
 niceeval show --all
 niceeval show --run <run-id>... [-o text|json]
 niceeval show --experiment <experiment-id>... [-o text|json]
+niceeval show --compare --left <run-id>... --right <run-id>... [--mode paired|side-by-side|exact] [--max-regressions <n>] [-o text|json]
 niceeval show @<locator> [-o text|json]
 niceeval show @<locator> --source [-o text|json]
 niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>] [-o text|json]
@@ -428,6 +429,12 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 - 一个或多个 `--run` 逐个调用 exact `run.get`，并且只消费这一份闭合 result。
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
   重复 flag 的输入顺序不是业务排序 authority。
+- `--compare` 调用固定 Inspection 操作 `runs.compare`，比较两组已封口的 Run。`--left` 与 `--right` 分别指定对照版本与候选 Run ID，各至少一项。
+  `--mode` 默认为 `paired`，亦可选 `side-by-side` 或 `exact`。
+
+  `paired` 模式按 `(evalId, attemptOrdinal)` 逐题配对，呈现两侧 Verdict、Score、Transition、得分差与成本差。
+  Transition 列区分 `stable-passed`、`stable-failed`、`regressed`、`improved` 与 `incomparable`。
+  指定 `--max-regressions <n>` 时，若退化题数超过门限则以非零退出，用于 CI 对照版本发布门禁（见 [REL-6](../../../user-story.md#周芷宁在发布前选出更合适的-agent-配置)）。
 - `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations。另给出可复制的 source、execution、timing、usage 和 diff 后续命令。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留

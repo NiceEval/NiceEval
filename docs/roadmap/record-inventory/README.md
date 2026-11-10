@@ -1,7 +1,8 @@
 # Record 库存
 
 `niceeval exp` 的 Run 交接已经由现行 [InvocationReceipt](../../feature/experiments/cli/README.md#结束反馈与-receipt) 完成。
-本方向只补齐 receipt 交付前进程退出时的只读库存，让操作者从 frozen Record snapshot 找回已经发布的 Run。
+单文件 SQLite 项目数据库已将已发布 Run 的只读枚举纳入现行 [Run CLI](../../feature/run/cli.md) 的 `niceeval run list`。
+本篇保留早期多目录快照阶段的库存设计契约，作为跨格式归档与历史分析参考。
 它不选择分析对象、不推导最新结果，也不创建第二份运行结果。
 
 ## `niceeval record list` 的 Record 库存

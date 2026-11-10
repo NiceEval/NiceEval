@@ -56,3 +56,14 @@ SQLite integrity 不能代替 publication closure、Content length/digest 与引
 
 50,000 items 与合计 144 MiB Content 的功能依据见[SQLite 采用收据](../../../research/record-storage/root-wide-sqlite-receipt.md)。
 它证明增量处理、完整性与资源生命周期，不构成 heap、RSS、latency、throughput、database growth 或 Git growth SLO。
+
+## 跨库汇合与子集导出
+
+跨库汇合由 `run import` 驱动。它先以只读 defensive reader 验证外部单文件 Record 的 Schema、publication closure 与 Content digest。
+验证通过后，在 ProjectDatabase 的短事务内增量写入选定 Run、Planned attempt、Attempt immutable closure、family facts 与对应 Content chunks。
+若目标库已存在相同 Run ID 且各字段散列一致，判定为幂等跳过；若 Run ID 冲突但内容不一致，则完整回滚并报告具名错误。
+提交后更新当前 ProjectDatabase 的发布时钟，使汇入事实对后续 Inspection 与缓存复用立即生效。
+
+子集导出由 `run export` 驱动。它接收显式 Run ID 列表，提取目标 Run 及其传递依赖的全部 Attempt、family facts 与 Content chunks。
+导出直接写入独立的全新单文件 SQLite 数据库，并封口为自洽的 Record publication envelope。
+导出文件不包含未选中的历史 Run、临时 coordination 状态与未引用的 chunk，确保离线交付独立可用。

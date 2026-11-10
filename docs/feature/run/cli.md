@@ -3,10 +3,12 @@
 Run 生命周期命令为：
 
 ```sh
-niceeval run list [--invocation <invocation-id>] [--json]
-niceeval show --run <run-id> [--json]
+niceeval run list [--invocation <invocation-id>] [--record <file>] [--json]
+niceeval show --run <run-id> [--record <file>] [--json]
 niceeval run delete <run-id> [--yes] [--json]
 niceeval run recover <run-id> [--yes] [--json]
+niceeval run import <record-file> [--json]
+niceeval run export --run <run-id> [--run <run-id>...] --out <file> [--json]
 niceeval invocation list [--all] [<experiment-prefix>] [--json]
 niceeval invocation show <invocation-id> [--json]
 ```
@@ -30,9 +32,16 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 `session list` 默认只列 active Invocation；`--all` 加入已收口的 durable Session。`session show` 以 exact invocation ID
 显示这次 Invocation 的 terminal projection、created Run IDs、completion 与 publication cutoff；它不会重新构建 live 面板，也不提供后台接管。
 
+`run import` 将外部已交付、已验证的单文件 Record 中的已发布 Run、Attempt 闭包、family 事实与 Content chunk 汇入当前项目数据库。
+它只导入完整封口的已发布 Run。目标项目已存在相同 Run ID 且散列一致时幂等跳过；Run ID 冲突但内容不一致时完整拒绝且零写入。
+导入成功后更新项目发布时钟，新汇入的 Run 立即对 Inspection 与后续沿用可见。
+
+`run export` 将一个或多个选定 Run 及其传递依赖的 Attempt、family 事实与 Content chunk 导出为自洽的单文件 portable Record。
+导出文件剔除未选中的历史 Run、未引用的临时状态与项目内部会话。输出文件自动完成只读完整性验证，可直接用于离线审计交付或跨机汇合。
+
 canonical Record 固定为项目内 `.niceeval/record.sqlite`。受控退出会自动 close writer、checkpoint、truncate WAL，并以内建
-只读验证通过后才成功。portable gate 仅由正在收尾的 Invocation 发起，且任何 active work 都会完整拒绝；该文件本身即可复制或归档，
-不存在 snapshot/export、`clean` 或 `migrate` 命令。
+只读验证通过后才成功。portable gate 仅由正在收尾的 Invocation 发起，且任何 active work 都会完整拒绝；该文件本身即可直接复制或归档。
+跨机器分片汇合使用 `run import`，离线审计交付选定子集使用 `run export`；无需手工运行 `clean` 或 `migrate` 命令。
 
 `show`、`query`、`run list/show` 与 `view` 可以直接读取支持的历史 portable Record，无需先运行评估。
 历史格式只在私有副本中迁移；原件、历史 Run 与引用不被改写，也不创建新 Run。

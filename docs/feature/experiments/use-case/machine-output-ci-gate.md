@@ -63,6 +63,21 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
 退出码与 JUnit 是原 Runner 进程当时形成的交付物。之后发布且身份仍匹配的新 Run 只会进入新的 Inspection selection，不会追溯改写已经结束进程的退出状态或已归档 JUnit；已发布 Run 没有受支持的编辑 API。
 
+## 对照版本发布门禁
+
+前沿 Benchmark（如 SWE-bench 或复杂 Agent 评估）整体通过率通常不足百分之百。将这类实验作为 PR 门禁时，平台不能因存在 `failed` 题直接判红，而应基于固定的对照 Run 检查是否有非预期的能力回退（见 [REL-6](../../../user-story.md#周芷宁在发布前选出更合适的-agent-配置)）。
+
+流程如下：
+
+1. 运行候选 Experiment，取得本次生成的 Run ID。
+2. 针对预先固定的对照 Run 执行对比检查：
+
+   ```sh
+   niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --max-regressions 0
+   ```
+
+3. 检查逐题配对结果。若候选 Run 在对照版本原本通过的题目上出现失败（`regressed`），命令输出退化题目明细并以退出码 `1` 阻断发布；若仅有偶发波动且 `regressed` 数量未超门限，则判定通过。
+
 ## 边界
 
 - `--junit` 不是终端格式开关,与输出形态正交;它是 required reporter,写失败必须判红,不降级成 warning。

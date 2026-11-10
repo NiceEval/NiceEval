@@ -176,10 +176,13 @@ type ExecutionReusePlanSlot = ReusePlanSlot | ExecutePlanSlot;
 
 ## project-target/v2 的 source barrier
 
-对每个目标 `(experimentId, evalId, attemptOrdinal)`，只选择 cutoff 内包含该位置的最新 Run。
+对每个目标 `(experimentId, evalId, attemptOrdinal)`，只选择 cutoff 内包含该位置且未标记删除的最新 Run。
 按 Run create 的 publication revision 排序，同一 publication 内以规范 `runId` bytes 打破并列；不按宿主时钟排序。
 选择依据是 expected Planned attempt，
 不要求已经有 Member，也不要求 Run 已终止。
+
+通过 `niceeval run delete` 标记删除的 Run 不进入 source barrier 候选范围。
+当某次试跑因中断、取消或配置错误被回收删除后，该位置的 source barrier 自动退回至更早未被删除的最新 Run，恢复历史合格 Attempt 的沿用资格（见 [RUN-11](../../../user-story.md#周芷宁修复后只重跑真正需要复验的部分)）。
 
 该位置没有 Member、引用失效、Attempt 无 origin 锚，或核心及所需事实损坏，都会形成具名 gap；不得回扫同一位置的更旧 Run。
 active 空位置显示 pending，终态空位置保留 absence reason。其它 ordinal 独立选择自己的最近位置，
