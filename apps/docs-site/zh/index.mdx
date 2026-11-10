@@ -16,23 +16,15 @@ description: "像写单元测试一样写评估，像做实验一样比较 Agent
 
 所有运行都在你自己的机器和 CI 里完成，不需要注册账号。
 
-## 直接检查数值和比例
+## 一套评估，对比多种配置
 
-在 `defineScoreEval` 的 `test(t)` 中，已计算好的 0 到 1 比例可以直接计分，不需要自定义 fraction matcher：
+NiceEval 将评估用例（要做什么、怎样算做对）与 Experiment（对着谁跑、跑几次）解耦。写好评估后，可以直接拿它对比两个模型或两版 prompt：
 
-```ts
-import { atMost, isTrue, measured, quantile } from "niceeval/expect";
-
-t.score(completionRate, { weight: 20 });
-t.score(measured(optionalRate, { unavailable: "no-samples" }), { weight: 10 });
-t.check(ready, isTrue()).gate();
-t.check(measured(latencyMs, { unavailable: "no-actions" }), atMost(1200)).gate();
-t.check(quantile(intervalsMs, 0.9), atMost(3000)).gate();
+```bash
+pnpm exec niceeval exp local-gpt4o   # 运行 GPT-4o 实验
+pnpm exec niceeval exp local-claude  # 运行 Claude 实验
+pnpm exec niceeval show              # 在终端直观查看对比，失败项排在最前
 ```
-
-`measured` 将 null 保留为带原因的不可判定材料，不会当成零。`t.score` 要求比例在 0 到 1 之间，不隐式截断；领域确需限定范围时请显式处理。
-`quantile` 默认采用线性插值，也可传 `{ method: "nearest-rank" }`。结果的 `statistics` 提供样本数、分位点和算法；空样本返回 `no-samples`，无效样本返回 `non-finite-sample`。
-纯统计报告可以由 Adapter 用 `ctx.attach` 保存为 Markdown 或 JSON 附件，无需创建恒真 check。
 
 ## 从这里开始
 

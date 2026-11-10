@@ -54,8 +54,8 @@ Each `await t.send(...)` is a new turn in the same conversation. Assign each res
 ```ts
 const draft = await t.send("Help me draft a follow-up email.");
 draft.succeeded().label("Draft completed");
-t.check(draft.message, includes("Best regards"));
-t.judge({ request: draft.input, draft: draft.message }, toneQuality)
+t.check(draft.reply, includes("Best regards"));
+t.judge({ request: draft.input, draft: draft.reply }, toneQuality)
   .gate(0.6).label("Professional tone");
 
 await t.send("Okay, send it.");

@@ -52,14 +52,14 @@ export default defineEval({
 
     // 确定的事实用确定的规则检查
     turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "北京" }) }));
-    t.check(turn.message, pattern(/°C|气温|晴|多云|雨/));
+    t.check(turn.reply, pattern(/°C|气温|晴|多云|雨/));
 
     // 第二轮要接得上上下文
     const second = await t.send("那上海明天呢？");
-    t.check(second.message, includes("上海"));
+    t.check(second.reply, includes("上海"));
 
     // 开放式的质量交给裁判模型
-    t.judge({ question: turn.input, answer: turn.message }, groundedAnswer).gate(0.7);
+    t.judge({ question: turn.input, answer: turn.reply }, groundedAnswer).gate(0.7);
   },
 });
 ```

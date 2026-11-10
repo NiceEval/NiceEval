@@ -50,7 +50,7 @@ description: "安装 NiceEval，写一个 Adapter、一个 Experiment 和一条�
 - 请求体是 `{ "message": "...", "model": "..." }`；
 - 响应体是 `{ "reply": "..." }`。
 
-你的接口不一样也没关系，只需要改 Adapter 里的地址、请求体和读取回复的那一行。手边还没有能启动的应用时，先从 [Examples](/zh/examples) 挑一个可运行项目。
+你的接口不一样也没关系，只需要改 Adapter 里的地址、请求体和读取回复的那一行。手边还没有能启动的应用时，可以在 Adapter 里直接模拟返回，也可以从 [Examples](/zh/examples) 挑一个可运行项目。
 
 ### 安装
 
@@ -89,7 +89,9 @@ export default defineAgent({
 });
 ```
 
-`events` 是 NiceEval 读懂回复的方式。这里只交回一条助手消息，后面可以再加工具调用、用量等事件。
+`events` 是 NiceEval 读懂回复的方式。这里只交回一条助手消息，后面可以再加工具调用、用量等事件。`evidenceCoverage` 声明 Adapter 负责覆盖哪些证据通道，接入初始阶段传入 `completeEvidenceCoverage` 即可。
+
+如果当前环境暂未启动真实后端服务，也可以先在 `send` 中直接返回模拟数据（例如根据输入包含退款返回“支持30天内全额退款”），确认 NiceEval 命令和链路跑通后，再替换为真实 `fetch` 请求。
 
 ### 写 Experiment
 

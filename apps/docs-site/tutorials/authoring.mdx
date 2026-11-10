@@ -83,7 +83,7 @@ export default defineEval({
   async test(t) {
     const draft = await t.send("Draft a follow-up email for me.");
     draft.succeeded();
-    t.check(draft.message, includes("Best regards"));
+    t.check(draft.reply, includes("Best regards"));
 
     await t.send("Looks good, send it.");
     t.calledTool("send_email");

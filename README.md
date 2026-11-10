@@ -52,14 +52,14 @@ export default defineEval({
 
     // Check deterministic facts with deterministic rules
     turn.calledTool(toolMatch("get_weather", { input: jsonMatch({ city: "Beijing" }) }));
-    t.check(turn.message, pattern(/°C|temperature|sunny|cloudy|rain/));
+    t.check(turn.reply, pattern(/°C|temperature|sunny|cloudy|rain/));
 
     // The second turn should retain the context
     const second = await t.send("What about Shanghai tomorrow?");
-    t.check(second.message, includes("Shanghai"));
+    t.check(second.reply, includes("Shanghai"));
 
     // Let a judge model assess open-ended quality
-    t.judge({ question: turn.input, answer: turn.message }, groundedAnswer).gate(0.7);
+    t.judge({ question: turn.input, answer: turn.reply }, groundedAnswer).gate(0.7);
   },
 });
 ```

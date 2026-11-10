@@ -115,6 +115,24 @@ export default defineEval({
 可以独立失败、计权或显示原因的要求应各登记一条 Judge。计分制可以在同一条 Judge 上组合 `.gate(minimum)` 与 `.score(points)`；
 measurement 乘 points 得到贡献值，gate 决定 Verdict。同一条 Judge 只执行一次。
 
+## 检查数值与比例
+
+在 `defineScoreEval` 的 `test(t)` 中，已计算好的 0 到 1 比例可以直接计分，不需要自定义 fraction matcher：
+
+```ts
+import { atMost, isTrue, measured, quantile } from "niceeval/expect";
+
+t.score(completionRate, { weight: 20 });
+t.score(measured(optionalRate, { unavailable: "no-samples" }), { weight: 10 });
+t.check(ready, isTrue()).gate();
+t.check(measured(latencyMs, { unavailable: "no-actions" }), atMost(1200)).gate();
+t.check(quantile(intervalsMs, 0.9), atMost(3000)).gate();
+```
+
+`measured` 将 null 保留为带原因的不可判定材料，不会当成零。`t.score` 要求比例在 0 到 1 之间，不隐式截断；领域确需限定范围时请显式处理。
+`quantile` 默认采用线性插值，也可传 `{ method: "nearest-rank" }`。结果的 `statistics` 提供样本数、分位点和算法；空样本返回 `no-samples`，无效样本返回 `non-finite-sample`。
+纯统计报告可以由 Adapter 用 `ctx.attach` 保存为 Markdown 或 JSON 附件，无需创建恒真 check。
+
 ## 代码任务用真实命令验收
 
 ```ts

@@ -31,7 +31,7 @@ export default defineEval({
       .label("运行项目测试");
     report.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }))
       .label("没有删除项目文件");
-    report.check(report.message, includes("测试")).label("说明检查结果");
+    report.check(report.reply, includes("测试")).label("说明检查结果");
   },
 });
 ```

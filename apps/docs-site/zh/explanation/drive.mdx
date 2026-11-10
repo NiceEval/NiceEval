@@ -54,8 +54,8 @@ t.check(turn.reply, includes("$"));
 ```ts
 const draft = await t.send("帮我拟一封跟进邮件。");
 draft.succeeded().label("草稿完成");
-t.check(draft.message, includes("此致"));
-t.judge({ request: draft.input, draft: draft.message }, toneQuality)
+t.check(draft.reply, includes("此致"));
+t.judge({ request: draft.input, draft: draft.reply }, toneQuality)
   .gate(0.6).label("语气专业");
 
 await t.send("好,发出去。");

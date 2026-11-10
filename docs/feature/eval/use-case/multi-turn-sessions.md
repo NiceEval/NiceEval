@@ -13,11 +13,11 @@
    const request = "帮我拟一封跟进邮件。";
    const draft = await t.send(request);
    draft.succeeded().label("草稿发送成功");
-   t.check(draft.message, includes("此致")).label("邮件落款");
+   t.check(draft.reply, includes("此致")).label("邮件落款");
 
    draft.instructionFollowing({
      instructions: ["使用专业语气", "保留邮件落款"],
-     output: draft.message,
+     output: draft.reply,
    }).gate(0.8).label("草稿语气");
    ```
 

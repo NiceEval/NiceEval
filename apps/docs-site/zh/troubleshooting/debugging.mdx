@@ -63,6 +63,14 @@ query discover
 
 不要从 `show` 的排版文本反推断言字段。完整 request 示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
 
+## 常见开发期问题
+
+| 现象 | 原因 | 处理方法 |
+| --- | --- | --- |
+| 改了代码或 Prompt，再次运行却跳过了评估 | 命中结果沿用机制，输入和运行身份未变 | 加上 `--rerun` 重跑失败项，或用 `--rerun all` 强制重跑全部选中项。 |
+| Judge 打分报错或 Attempt 显示 `errored` | 裁判模型缺少 API Key 或端点不可达 | 检查对应环境变量（如 `OPENAI_API_KEY`）或自定义 `judgeProvider`，参考[验证 Judge](/zh/tutorials/verify-judge)。 |
+| 执行时报 ESM 语法或模块解析错误 | 项目缺少 ESM 配置或模块规范冲突 | 确认当前评估工作区的 `package.json` 包含 `"type": "module"`。 |
+
 ## 无法打开结果
 
 | 错误 | 下一步 |

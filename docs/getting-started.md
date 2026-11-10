@@ -22,7 +22,7 @@ import { includes } from "niceeval/expect";
 export default defineEval({
   async test(t) {
     const turn = await t.send("用一句话介绍 NiceEval");
-    t.check(turn.message, includes("NiceEval"));
+    t.check(turn.reply, includes("NiceEval"));
   },
 });
 ~~~

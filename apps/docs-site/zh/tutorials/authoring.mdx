@@ -84,7 +84,7 @@ export default defineEval({
   async test(t) {
     const draft = await t.send("帮我起草一封跟进邮件。");
     draft.succeeded();
-    t.check(draft.message, includes("此致"));
+    t.check(draft.reply, includes("此致"));
 
     await t.send("可以，发出去吧。");
     t.calledTool("send_email");

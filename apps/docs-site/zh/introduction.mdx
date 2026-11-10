@@ -47,7 +47,7 @@ export default defineEval({
     t.check(turn.reply, includes("天气")).label("说明天气");
 
     const second = await t.send("那上海明天呢？");
-    t.check(second.message, includes("上海")).label("第二轮接得上上下文");
+    t.check(second.reply, includes("上海")).label("第二轮接得上上下文");
 
     t.judge({ question: turn.input, answer: turn.reply }, groundedAnswer).gate(0.7)
       .label("回答有依据");
