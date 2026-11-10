@@ -17,6 +17,7 @@ export interface JudgeProviderSettings {
   readonly baseUrl?: string;
   readonly timeoutMs?: number;
   readonly maxResponseBytes?: number;
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 export type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
@@ -36,6 +37,7 @@ export interface JudgeProviderIdentity {
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
   readonly supportsImages?: boolean;
+  readonly headers?: Readonly<Record<string, string>>;
   readonly protocol:
     | { readonly kind: "chat-completions"; readonly revision: 1; readonly maxOutputTokens: number }
     | { readonly kind: "typesafe-system-one"; readonly revision: 1 };
@@ -107,11 +109,34 @@ function environmentName(value: unknown, fallback: string, label: string): strin
   return candidate;
 }
 
+function normalizeHeaders(value: unknown, label: string): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!Predicate.isObject(value) || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
+  const headers: Record<string, string> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") throw new TypeError(`${label} keys must be strings`);
+    const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`${label}.${key} must be an enumerable data property`);
+    }
+    const val = descriptor.value;
+    if (key.trim() === "" || /\p{Cc}/u.test(key)) {
+      throw new TypeError(`${label} keys must be non-empty and control-free`);
+    }
+    if (typeof val !== "string" || val.trim() === "" || /\p{Cc}/u.test(val)) {
+      throw new TypeError(`${label}.${key} must be a non-empty and control-free string`);
+    }
+    headers[key] = val;
+  }
+  return headers;
+}
+
 function freezeIdentity(identity: JudgeProviderIdentity): JudgeProviderIdentity {
   return Object.freeze({
     ...identity,
     credential: Object.freeze({ ...identity.credential }),
     protocol: Object.freeze({ ...identity.protocol }),
+    ...(identity.headers !== undefined ? { headers: Object.freeze({ ...identity.headers }) } : {}),
   });
 }
 
@@ -122,8 +147,8 @@ function createProvider(
 ): JudgeProvider {
   const label = `${provider === "typesafe" ? "Typesafe" : provider === "openai" ? "OpenAI" : provider === "openrouter" ? "OpenRouter" : "Vercel"}Provider() options`;
   const allowed = protocolKind === "chat-completions"
-    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens", "supportsImages"]
-    : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes"];
+    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens", "supportsImages", "headers"]
+    : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "headers"];
   const input = exactOptions(raw, label, allowed);
   const model = boundedText(input.model, `${label}.model`, 8 * 1024);
   const baseUrl = normalizedBaseUrl(input.baseUrl, defaults[provider].baseUrl, `${label}.baseUrl`);
@@ -131,6 +156,18 @@ function createProvider(
   const maxResponseBytes = positiveInteger(input.maxResponseBytes, 16_384, `${label}.maxResponseBytes`, 256 * 1024);
   if (input.supportsImages !== undefined && typeof input.supportsImages !== "boolean") throw new TypeError(`${label}.supportsImages must be boolean`);
   if (input.apiKey !== undefined && input.apiKeyEnv !== undefined) throw new TypeError(`${label}.apiKey and apiKeyEnv are mutually exclusive`);
+
+  const parsedHeaders = normalizeHeaders(input.headers, `${label}.headers`);
+  const effectiveHeaders: Record<string, string> = { ...(parsedHeaders ?? {}) };
+  const cfId = process.env.CF_ACCESS_CLIENT_ID;
+  const cfSecret = process.env.CF_ACCESS_CLIENT_SECRET;
+  if (cfId && cfSecret) {
+    const hasClientId = Object.keys(effectiveHeaders).some((k) => k.toLowerCase() === "cf-access-client-id");
+    const hasClientSecret = Object.keys(effectiveHeaders).some((k) => k.toLowerCase() === "cf-access-client-secret");
+    if (!hasClientId) effectiveHeaders["CF-Access-Client-Id"] = cfId;
+    if (!hasClientSecret) effectiveHeaders["CF-Access-Client-Secret"] = cfSecret;
+  }
+  const headers = Object.keys(effectiveHeaders).length > 0 ? Object.freeze(effectiveHeaders) : undefined;
 
   let credential: JudgeProviderIdentity["credential"];
   let resolveCredential: () => string | undefined;
@@ -152,8 +189,17 @@ function createProvider(
         maxOutputTokens: positiveInteger(input.maxOutputTokens, 1_024, `${label}.maxOutputTokens`, Number.MAX_SAFE_INTEGER),
       })
     : Object.freeze({ kind: "typesafe-system-one" as const, revision: 1 as const });
-  const identity = freezeIdentity({ provider, model, baseUrl, credential, timeoutMs, maxResponseBytes, protocol,
-    ...(input.supportsImages === true ? { supportsImages: true } : {}) });
+  const identity = freezeIdentity({
+    provider,
+    model,
+    baseUrl,
+    credential,
+    timeoutMs,
+    maxResponseBytes,
+    protocol,
+    ...(headers !== undefined ? { headers } : {}),
+    ...(input.supportsImages === true ? { supportsImages: true } : {}),
+  });
   const value = Object.create(null) as Record<PropertyKey, unknown>;
   Object.defineProperty(value, judgeProviderBrand, { value: true, enumerable: false, writable: false, configurable: false });
   const frozen = Object.freeze(value) as unknown as JudgeProvider;

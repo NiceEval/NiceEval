@@ -79,6 +79,7 @@ export function projectAttemptAssertionDetail(
   input: InspectionAssertionsRead,
   agentTurns: InspectionAgentTurnsRead,
   entryId: string,
+  projection: "full" | "compact" = "full",
 ): AssertionDetailResult | undefined {
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") {
@@ -96,10 +97,10 @@ export function projectAttemptAssertionDetail(
   const result = closeJson(Object.freeze({
     entryId: entry.entryId,
     display: entry.display,
-    entry: projectEntry(source, entry, assertions.contents),
+    entry: projectEntry(source, entry, assertions.contents, projection === "compact"),
     sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
     check: projectCheck(entry),
-    matcher: projectMatcher(entry, agentTurns),
+    matcher: projectMatcher(entry, agentTurns, projection),
   }));
   if (jsonByteLength(result) > INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT) {
     throw new Error("Assertion detail exceeds its fixed result byte limit");
@@ -190,7 +191,9 @@ function projectEntry(
   source: InspectionFactSource,
   entry: AssertionEntry,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
+  deferContent = false,
 ): InspectionJson {
+  if (deferContent) return projectSealedValue(source, entry, contentMetadata, true);
   const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";
   const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement/v1";
   if (currentScoreMatch) {
@@ -360,6 +363,7 @@ function policyExpected(policy: unknown): unknown | null {
 function projectMatcher(
   entry: AssertionEntry,
   agentTurns: InspectionAgentTurnsRead,
+  projection: "full" | "compact",
 ): InspectionJson {
   const evaluation = entry.evaluation;
   if (evaluation.kind === "ordinary") return closeJson(Object.freeze({
@@ -370,7 +374,7 @@ function projectMatcher(
   if (evaluation.kind === "matcher-legacy") return closeJson(Object.freeze({
     state: "legacy" as const, sourceState: "unavailable", comparator: null, sourceLedger: null,
     receipt: null, result: null, targets: Object.freeze([]), reason: evaluation.reason,
-    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns),
+    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection),
     sandboxCommandJoin: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
   }));
   const artifact = evaluation.artifact;
@@ -382,7 +386,7 @@ function projectMatcher(
     sourceLedger: Object.freeze({ sourceSnapshot: artifact.sourceSnapshot, receipt: artifact.receipt }),
     receipt: artifact.receipt,
     result: artifact.kind === "ordered-sequence" ? artifact.result : null,
-    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns),
+    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection),
     targets: Object.freeze(artifact.retainedRows.map((row) => Object.freeze({
       state: row.result,
       anchor: row.locator.kind === "tool-occurrence"
@@ -918,6 +922,7 @@ function closeLegacySourceRows(
 function projectMatcherDebugger(
   entry: MatcherAssertionEntry,
   agentTurns: InspectionAgentTurnsRead,
+  projection: "full" | "compact",
 ): InspectionJson {
   const subject = matcherSubject(entry);
   if (entry.evaluation.kind === "matcher-legacy") {
@@ -929,7 +934,9 @@ function projectMatcherDebugger(
         reason: "historical-not-recorded" as const,
       }),
       source: Object.freeze({
-        final: closeLegacySourceRows(subject, agentTurns),
+        final: projection === "compact"
+          ? { ...closeLegacySourceRows(subject, agentTurns) as object, rows: [] }
+          : closeLegacySourceRows(subject, agentTurns),
         atEvaluation: sourceUnavailableCollection("historical-not-recorded"),
       }),
       identityRelation: Object.freeze({
@@ -1050,12 +1057,12 @@ function projectMatcherDebugger(
     : "partial" as const;
   const final = currentSourceCollection(
     agentTurns.value.collection.state,
-    rows.final,
+    projection === "compact" ? [] : rows.final,
     agentTurns.value.collection.limitations,
   );
   const atEvaluation = currentSourceCollection(
     sourceState,
-    rows.atEvaluation,
+    projection === "compact" ? [] : rows.atEvaluation,
     agentTurns.value.collection.limitations,
   );
   const retainedCount = overlays.size;

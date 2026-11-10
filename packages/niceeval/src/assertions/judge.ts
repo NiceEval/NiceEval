@@ -404,6 +404,7 @@ export async function requestScoreMatchProvider(input: {
   readonly baseUrl: string;
   readonly endpoint: "chat/completions" | "systemone";
   readonly apiKey: string;
+  readonly headers?: Readonly<Record<string, string>>;
   readonly body: string;
   readonly maxBytes: number;
   readonly signal: AbortSignal;
@@ -421,7 +422,11 @@ export async function requestScoreMatchProvider(input: {
   try {
     request = fetch(`${input.baseUrl.replace(/\/$/u, "")}/${input.endpoint}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.apiKey}`,
+        ...(input.headers ?? {}),
+      },
       body: input.body, signal: input.signal,
     });
     const response = await Promise.race([request, interrupted.promise]);

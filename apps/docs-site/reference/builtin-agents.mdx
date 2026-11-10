@@ -160,6 +160,14 @@ baseUrl?: string;
 
 OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back to the `CODEX_BASE_URL` env var if omitted.
 
+#### `headers`
+
+```ts
+headers?: Readonly<globalThis.Record<string, string>>;
+```
+
+Static HTTP headers to include with each request to a custom model provider, such as Cloudflare Access Service Token headers. Values are automatically redacted.
+
 #### `env`
 
 ```ts

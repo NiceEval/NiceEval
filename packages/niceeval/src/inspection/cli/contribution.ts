@@ -196,7 +196,7 @@ function writeQueryFailure(
   });
 }
 
-function queryFailureDocument(
+export function queryFailureDocument(
   error: Error,
   operation?: InspectionOperationId,
 ): InspectionFailureDocument {

@@ -330,6 +330,7 @@ function selectOperation(
         assertions,
         readInspectionAgentTurns(traceAttachments(resolved).agentTurns),
         operation.entryId,
+        operation.projection,
       );
       if (assertion === undefined) {
         throw selectionMissing(

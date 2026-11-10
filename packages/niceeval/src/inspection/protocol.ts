@@ -102,7 +102,7 @@ export const inspectionProtocolRegistry = Object.freeze({
   "run.list": spec({ request: operation("run.list", { continuation: Schema.optional(Schema.String) }), result: { runs: InspectionRunListResultSchema, continuation: Schema.optional(Schema.String) }, factKinds: ["core"] }),
   "run.get": spec({ request: operation("run.get", { runId: RunIdSchema }), result: { run: InspectionRunResultSchema }, factKinds: ["core", "assertions", "agent-turns", "adapter-usage", "judge-usage"] }),
   "attempt.get": spec({ request: operation("attempt.get", { locator: AttemptLocatorSchema }), result: { attempt: InspectionAttemptResultSchema }, factKinds: ["core", "assertions", "attempt-note"] }),
-  "attempt.assertion.detail": spec({ request: operation("attempt.assertion.detail", { locator: AttemptLocatorSchema, entryId: AssertionEntryIdSchema }), result: { assertion: AssertionDetailResultSchema }, factKinds: ["assertions", "agent-turns", "sources"] }),
+  "attempt.assertion.detail": spec({ request: operation("attempt.assertion.detail", { locator: AttemptLocatorSchema, entryId: AssertionEntryIdSchema, projection: Schema.optional(Schema.Literals(["full", "compact"])) }), result: { assertion: AssertionDetailResultSchema }, factKinds: ["assertions", "agent-turns", "sources"] }),
   "attempt.assertion.image": spec({ request: operation("attempt.assertion.image", { locator: AttemptLocatorSchema,
     entryId: AssertionEntryIdSchema, imageId: Schema.String,
     offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactLimitSchema) }),

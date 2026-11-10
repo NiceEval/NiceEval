@@ -150,6 +150,12 @@ The table below is generated from each command's own option definitions. Flags n
 | `--mode` | `niceeval show` | string | Comparison mode: paired, side-by-side, or exact. |
 | `--max-regressions` | `niceeval show` | string | Maximum allowed regressed attempts before exiting with code 1. |
 | `--json` | `niceeval show` | boolean | Print the public Attempt query result as JSON. |
+| `--output` | `niceeval show` | string | Output format: text (default) or json. |
+| `--assertions` | `niceeval show` | boolean | Show Assertion decisions, scores, and reasons. |
+| `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |
+| `--compact` | `niceeval show` | boolean | Omit raw Assertion materials and context rows (default). |
+| `--full` | `niceeval show` | boolean | Include complete Assertion materials and context rows. |
+| `--reference` | `niceeval show` | boolean | Expand historical published reference results. |
 | `--exp` | `niceeval show` | string[] | Show one Experiment; repeat to show more. |
 | `--run` | `niceeval show` | string[] | Show one sealed Run; can be repeated. |
 | `--experiment` | `niceeval show` | string[] | Show one exact Experiment; can be repeated. |

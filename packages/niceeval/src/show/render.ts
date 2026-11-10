@@ -1,6 +1,8 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/cli.md
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
+import type { AssertionDetailResult } from "../inspection/assertion-projection.ts";
+import type { AssertionFactValue } from "../assertions/record/model.ts";
 import { formatNumericUnit } from "../assertions/quantity.ts";
 import {
   renderTerminal,
@@ -744,6 +746,7 @@ export function renderAttempt(value: AttemptView): string {
           ],
         },
         { kind: "divider", title: "Next" },
+        { kind: "command", command: `niceeval show ${value.locator} --assertions` },
         { kind: "command", command: `niceeval show ${value.locator} --source` },
         {
           kind: "command",
@@ -2068,4 +2071,47 @@ export function renderComparison(comparison: Comparison, attempts: ComparisonAtt
     { key: "Exact member set", value: String(comparison.exactMemberSet) },
   ] });
   return terminal(blocks);
+}
+
+export function renderReferences(project: InspectionProjectResult): string {
+  return terminal([{
+    kind: "panel", title: "Historical reference results", blocks: [{
+      kind: "table", columns: [{ header: "Experiment" }, { header: "Eval" }, { header: "Attempt" }, { header: "Previous result" }],
+      rows: project.history.map((slot) => [slot.experimentId, slot.evalId, String(slot.attemptOrdinal), slot.locator ?? slot.sourceRunId]),
+    }],
+  }]);
+}
+
+export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[]): string {
+  const blocks: TerminalPanelContentBlock[] = [];
+  for (const assertion of assertions) {
+    if (!("entry" in assertion)) {
+      blocks.push({ kind: "divider", title: `${assertion.entryId}: ${assertion.state}` });
+      continue;
+    }
+    const entry = assertion.entry;
+    const status = entry.decision.result === "matched" ? "PASS" : entry.decision.result === "mismatched" ? "FAIL" : entry.decision.result.toUpperCase();
+    const contribution = entry.contribution;
+    const points = contribution.state === "earned" ? `${fmt(contribution.earned)}/${fmt(contribution.points)}` : contribution.state;
+    blocks.push({ kind: "divider", title: `[${status}] ${entry.display.key ?? entry.entryId} · ${assertion.check.label} (${points})` });
+    const reasons = assertionReasons(entry.evaluation.observed);
+    if (entry.explanationRetention.state === "retained") reasons.push(...assertionReasons(entry.explanationRetention.value));
+    blocks.push({ kind: "keyValue", entries: [
+      ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: entry.decision.reason }]),
+      ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
+    ] });
+    blocks.push({ kind: "divider", title: "Next" });
+    blocks.push({ kind: "command", command: `niceeval show ${locator} --assertions --entry ${JSON.stringify(entry.entryId)} --full` });
+  }
+  if (assertions.length === 0) blocks.push({ kind: "divider", title: "No Assertion entries recorded" });
+  return terminal([{ kind: "panel", title: `Assertions ${locator}`, blocks }]);
+}
+
+function assertionReasons(value: AssertionFactValue): string[] {
+  if (value.kind !== "fields") return [];
+  return value.fields.flatMap((field) => {
+    if ((field.label === "rationale" || field.label === "reason") && field.value.kind === "value" && typeof field.value.value === "string")
+      return [field.value.value];
+    return assertionReasons(field.value);
+  });
 }

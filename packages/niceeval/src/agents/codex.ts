@@ -96,6 +96,11 @@ export interface CodexConfig {
   /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 CODEX_BASE_URL env。 */
   baseUrl?: string;
   /**
+   * 传给自定义 provider 的静态 HTTP 请求头（如 Cloudflare Access 的 Service Token 头）。
+   * 当 base_url 存在时写入 [model_providers.s2a.http_headers] 并脱敏。
+   */
+  headers?: Readonly<globalThis.Record<string, string>>;
+  /**
    * 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
    * 使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
    * 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 before manifest，并全部按
@@ -360,17 +365,45 @@ export function codexAgent(config?: CodexConfig): Agent {
       // Adapter 用 heredoc 写 config.toml 而进入 command/timing/error 证据；一旦在这里登记，
       // Attempt 最终封口也会清掉随后 hook 或 CLI 错误里回显的同一值。
       const providerSensitiveValues = base ? [base] : [];
+      if (config?.headers) {
+        for (const v of Object.values(config.headers)) {
+          if (v) providerSensitiveValues.push(v);
+        }
+      }
+      if (process.env.CF_ACCESS_CLIENT_ID) {
+        providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_ID);
+      }
+      if (process.env.CF_ACCESS_CLIENT_SECRET) {
+        providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_SECRET);
+      }
 
       const topLevel = base
         ? modelLine + `model_provider = "s2a"\n` + effortLine
         : modelLine + effortLine;
-      const providerTable = base
-        ? `[model_providers.s2a]\n` +
-          `name = "s2a"\n` +
-          `base_url = "${base}"\n` +
-          `env_key = "CODEX_API_KEY"\n` +
-          `wire_api = "responses"\n`
-        : "";
+      let providerTable = "";
+      if (base) {
+        const lines: string[] = [
+          `[model_providers.s2a]`,
+          `name = "s2a"`,
+          `base_url = "${base}"`,
+          `env_key = "CODEX_API_KEY"`,
+          `wire_api = "responses"`,
+        ];
+        if (config?.headers && Object.keys(config.headers).length > 0) {
+          lines.push(`[model_providers.s2a.http_headers]`);
+          for (const [k, v] of Object.entries(config.headers)) {
+            lines.push(`"${k}" = "${v}"`);
+          }
+        }
+        const hasCfId = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
+        const hasCfSecret = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
+        if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
+          lines.push(`[model_providers.s2a.env_http_headers]`);
+          lines.push(`"CF-Access-Client-Id" = "CF_ACCESS_CLIENT_ID"`);
+          lines.push(`"CF-Access-Client-Secret" = "CF_ACCESS_CLIENT_SECRET"`);
+        }
+        providerTable = lines.join("\n") + "\n";
+      }
 
       if (!nativeConfig) {
         yield* Effect.tryPromise({
@@ -514,7 +547,15 @@ export function codexAgent(config?: CodexConfig): Agent {
     send: (input, ctx) => Effect.tryPromise({
       try: () => {
         const apiKey = getApiKey();
+        const hasCfId = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
+        const hasCfSecret = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
+        const cfEnv: Record<string, string> = {};
+        if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
+          cfEnv.CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
+          cfEnv.CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
+        }
         return sendCodexAppServer(input, ctx, {
+          ...cfEnv,
           ...agentEnv,
           CODEX_API_KEY: apiKey,
           ...ctx.telemetry?.env,

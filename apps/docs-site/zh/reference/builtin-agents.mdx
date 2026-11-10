@@ -178,6 +178,15 @@ baseUrl?: string;
 
 OpenAI 兼容代理 base URL(如 `https://s2a.example.com/v1`)。省略时读 CODEX_BASE_URL env。
 
+#### `headers`
+
+```ts
+headers?: Readonly<globalThis.Record<string, string>>;
+```
+
+传给自定义 provider 的静态 HTTP 请求头（如 Cloudflare Access 的 Service Token 头）。
+当 base_url 存在时写入 [model_providers.s2a.http_headers] 并脱敏。
+
 #### `env`
 
 ```ts
