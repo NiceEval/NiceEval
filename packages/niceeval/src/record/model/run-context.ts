@@ -33,7 +33,7 @@ export type RunContextJsonValue = RecordJson;
 export type RunContextJsonObject = RecordJsonObject;
 
 /** Credential-free, presentation-neutral identity of the Adapter evaluated by a Run. */
-export type AdapterIdentity = {
+export type AdapterIdentity = null | {
   readonly name: string;
   /** Descriptive contract name; pairing and capabilities use runtime construction evidence. */
   readonly contract: string;
@@ -94,12 +94,12 @@ const RunContextJsonObjectSchema: Schema.Codec<RunContextJsonObject> = Schema.Re
 
 const NonEmptyStringSchema = Schema.String.pipe(Schema.check(Schema.isMinLength(1)));
 
-export const AdapterIdentitySchema: Schema.Codec<AdapterIdentity> = Schema.Struct({
+export const AdapterIdentitySchema = Schema.NullOr(Schema.Struct({
   name: NonEmptyStringSchema,
   contract: NonEmptyStringSchema,
   behaviorRevision: Schema.NullOr(NonEmptyStringSchema),
   cleanupTimeoutMs: Schema.optionalKey(AdapterCleanupTimeoutMsSchema),
-});
+}));
 
 export const RunPluginIdentitySchema: Schema.Codec<RunPluginIdentity> = Schema.Struct({
   name: NonEmptyStringSchema,

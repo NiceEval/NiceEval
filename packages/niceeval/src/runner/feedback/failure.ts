@@ -63,7 +63,7 @@ export function failureDetailFromResult(
   return {
     locator,
     identity: { experimentId: result.experimentId, evalId: result.id, attempt: result.attempt },
-    who: runWho({ agentName: result.adapter.name, model: result.model, experimentId: result.experimentId }),
+    who: runWho({ agentName: (result.adapter?.name ?? ""), model: result.model, experimentId: result.experimentId }),
     verdict: result.verdict,
     reason,
     ...(fact !== undefined ? { fact } : {}),
@@ -182,7 +182,7 @@ export function failureDetailFromCurrentReusedAttempt(
       attempt: readback.target.attempt,
     },
     who: runWho({
-      agentName: run.adapter.name,
+      agentName: (run.adapter?.name ?? ""),
       model: run.model,
       experimentId: run.experimentId,
     }),

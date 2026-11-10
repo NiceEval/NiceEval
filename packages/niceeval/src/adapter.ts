@@ -608,7 +608,8 @@ function makeAdapterContract<
 }
 
 /** The single credential-free persistence projection for an Adapter. */
-export function adapterIdentity(adapter: Adapter): AdapterIdentity {
+export function adapterIdentity(adapter: Adapter | undefined): AdapterIdentity {
+  if (adapter === undefined) return null;
   return adapter.kind === "custom"
     ? Object.freeze({
         name: adapter.name,
@@ -624,11 +625,11 @@ export function adapterIdentity(adapter: Adapter): AdapterIdentity {
 }
 
 /** @internal Runtime contract pairing; the token itself never enters persistence. */
-export function adapterAcceptsEval(adapter: Adapter, definition: object): boolean {
+export function adapterAcceptsEval(adapter: Adapter | undefined, definition: object): boolean {
   const required = (definition as { readonly [EVAL_ADAPTER_CONTRACT_TOKEN]?: unknown })[
     EVAL_ADAPTER_CONTRACT_TOKEN
   ];
-  if (adapter.kind === "custom") {
+  if (adapter?.kind === "custom") {
     const provided = adapter[ADAPTER_CONTRACT_TOKEN];
     return required !== undefined && provided !== undefined && required === provided;
   }

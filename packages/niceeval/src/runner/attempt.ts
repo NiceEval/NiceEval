@@ -594,7 +594,7 @@ export function runAttemptEffect<
   // capture after all Runner evidence is sealed. No public result field or
   // legacy artifact is used as a transport.
   const observabilityRuntime = createRunnerAttemptObservabilityRuntime({
-    providerName: adapter.name,
+    providerName: adapter?.name ?? "niceeval",
     sensitiveValues,
   });
   const recordDiagnostic = (input: DiagnosticInput) => {
@@ -719,7 +719,7 @@ export function runAttemptEffect<
       Effect.tap(() => Effect.sync(() => {
         markExecutionTerminal();
       })),
-      Effect.tap((sealed) => adapter.kind === "custom"
+      Effect.tap((sealed) => (adapter === undefined || adapter.kind === "custom")
         ? Effect.sync(() => { adapterSealedAssertions = sealed; })
         : onSealedEvaluation?.(sealed) ?? Effect.void),
     );
@@ -850,7 +850,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // author context, and observations.
       yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
       const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
-      if (adapter.kind === "custom") {
+      if (adapter === undefined || adapter.kind === "custom") {
         const pluginHooks = attemptPluginLifecycles(evalDef, run);
         let activated = 0;
         const pluginContext: AttemptPluginContext = {
@@ -869,20 +869,22 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           if (entry.setup !== undefined) yield* Effect.tryPromise({ try: () => Promise.resolve(entry.setup!(pluginContext)), catch: (cause) => cause });
         }
         const resources = new AdapterAttemptResources(() => {
-          adapterUsageSnapshot = adapterUsage!.close();
-          adapterExecutionTraces!.close();
-          adapterAttachments!.close();
+          adapterUsageSnapshot = adapterUsage?.close();
+          adapterExecutionTraces?.close();
+          adapterAttachments?.close();
         });
         adapterResources = resources;
-        adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen(), config.pricing, run.models ?? Object.freeze({}));
-        adapterAttachments = createAdapterAttachmentCollector(`${recordRootPaths(opts.recordRoot)!.portableRoot}/attachment-staging`);
-        const ownedAttachments = adapterAttachments;
-        yield* Scope.addFinalizer(attachmentScope, Effect.promise(() => ownedAttachments.dispose()));
-        adapterExecutionTraces = createAdapterExecutionTraceCollector(adapterAttachments.artifacts);
+        if (adapter !== undefined) {
+          adapterUsage = new AdapterUsageCollector(() => resources.assertCaptureOpen(), config.pricing, run.models ?? Object.freeze({}));
+          adapterAttachments = createAdapterAttachmentCollector(`${recordRootPaths(opts.recordRoot)!.portableRoot}/attachment-staging`);
+          const ownedAttachments = adapterAttachments;
+          yield* Scope.addFinalizer(attachmentScope, Effect.promise(() => ownedAttachments.dispose()));
+          adapterExecutionTraces = createAdapterExecutionTraceCollector(adapterAttachments.artifacts);
+        }
 
         // Scope LIFO freezes Assertions before releasing author resources.
         // The final execution outcome is handed off only after capture drains.
-        yield* Effect.addFinalizer(() =>
+        if (adapter !== undefined) yield* Effect.addFinalizer(() =>
           cleanupAdapterResources(resources, {
             timeoutMs: adapter.cleanupTimeoutMs,
             enterPhase,
@@ -1656,7 +1658,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
     // 是否取消只由 invocationSignal 裁决；其它中断在本 attempt 内封成 errored，随后由调度器
     // 的 earlyExit 去重分支丢弃。兄弟 fiber 的真实 defect 仍由它自己的 Cause 向外传播。
     Effect.catchCause((cause) =>
-      isAttemptAborted(invocationSignal) && adapter.kind !== "custom"
+      isAttemptAborted(invocationSignal) && adapter !== undefined && adapter.kind !== "custom"
         ? Effect.interrupt
         : Effect.suspend(() => {
             invocationInterrupted = isAttemptAborted(invocationSignal) && Cause.hasInterruptsOnly(cause);
@@ -1697,7 +1699,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         : withSealedAssertions(result, timeoutSealedAssertions),
     ),
     Effect.flatMap((result) => Effect.gen(function* () {
-      if (adapter.kind !== "custom") return result;
+      if (adapter !== undefined && adapter.kind !== "custom") return result;
       const captureFailure = adapterUsage?.failure ?? adapterAttachments?.failure() ?? adapterExecutionTraces?.failure();
       // Cleanup must not erase the original execution failure or timeout attribution.
       // Its own timeout remains independently recorded as a teardown diagnostic.
@@ -1794,12 +1796,12 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
 interface AdapterAttemptBodyInput {
   readonly a: Attempt;
   readonly base: EvalResult;
-  readonly adapter: AdapterRuntimeDefinition;
+  readonly adapter: AdapterRuntimeDefinition | undefined;
   readonly resources: AdapterAttemptResources;
-  readonly usage: AdapterUsageCollector;
+  readonly usage: AdapterUsageCollector | undefined;
   readonly judgeUsage: JudgeUsageCollector;
-  readonly attachments: AdapterAttachmentCollector;
-  readonly executionTraces: AdapterExecutionTraceCollector;
+  readonly attachments: AdapterAttachmentCollector | undefined;
+  readonly executionTraces: AdapterExecutionTraceCollector | undefined;
   readonly signal: AttemptSignal;
   readonly sourceCapture: RunnerAttemptSourceCapture;
   readonly sourceRegistry: SourceRegistry;
@@ -1861,7 +1863,7 @@ function runAdapterAttemptBody(
   } = input;
   return Effect.gen(function* () {
     const { context: core, state } = createAssertFirstCoreContext({
-      readUsage: () => usage.snapshot(),
+      ...(usage === undefined ? {} : { readUsage: () => usage.snapshot() }),
       judgeUsage: input.judgeUsage,
       elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
@@ -1881,46 +1883,53 @@ function runAdapterAttemptBody(
     let skipReason: string | undefined;
     let context: object | undefined;
 
-    enterPhase("attempt.setup");
-    log(`creating Adapter ${adapter.name}...`);
-    const createExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () => {
-      const created = adapter.create({
-        evalId: a.evalDef.id,
-        experimentId: a.run.experimentId,
-        attempt: a.attempt,
-        signal,
-        models: a.run.models ?? Object.freeze({}),
-        model: a.run.model,
-        reasoningEffort: a.run.reasoningEffort,
-        flags: a.run.flags,
-        progress: feedback.progress,
-        diagnostic: feedback.diagnostic,
-        log,
-        onCleanup: (cleanup) => resources.onCleanup(cleanup),
-        recordUsage: usage.record,
-        sealUsage: usage.seal,
-        attach: (input) => resources.trackHandoff(attachments.attach(input)),
-        recordTrace: executionTraces.recordTrace,
-      });
-      // A synchronous plain object is validated before Promise assimilation;
-      // async factories are validated only after their Promise settles.
-      return created instanceof Promise
-        ? created.then((value) => bindAdapterEvalContext(core, value, adapter, () => resources.assertForwardOpen()))
-        : bindAdapterEvalContext(core, created, adapter, () => resources.assertForwardOpen());
-    }));
-    if (Exit.isSuccess(createExit)) {
-      context = createExit.value;
-    } else if (!Cause.hasInterruptsOnly(createExit.cause)) {
-      const cause = Cause.squash(createExit.cause);
-      declareFailure("attempt.setup", cause);
-      error = errorFromThrown(cause, "attempt.setup");
+    if (adapter === undefined) {
+      context = core;
     } else {
-      return yield* Effect.interrupt;
+      if (usage === undefined || attachments === undefined || executionTraces === undefined) {
+        return yield* Effect.die(new Error("Adapter capture resources were not acquired"));
+      }
+      enterPhase("attempt.setup");
+      log(`creating Adapter ${adapter.name}...`);
+      const createExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () => {
+        const created = adapter.create({
+          evalId: a.evalDef.id,
+          experimentId: a.run.experimentId,
+          attempt: a.attempt,
+          signal,
+          models: a.run.models ?? Object.freeze({}),
+          model: a.run.model,
+          reasoningEffort: a.run.reasoningEffort,
+          flags: a.run.flags,
+          progress: feedback.progress,
+          diagnostic: feedback.diagnostic,
+          log,
+          onCleanup: (cleanup) => resources.onCleanup(cleanup),
+          recordUsage: usage.record,
+          sealUsage: usage.seal,
+          attach: (input) => resources.trackHandoff(attachments.attach(input)),
+          recordTrace: executionTraces.recordTrace,
+        });
+        // A synchronous plain object is validated before Promise assimilation;
+        // async factories are validated only after their Promise settles.
+        return created instanceof Promise
+          ? created.then((value) => bindAdapterEvalContext(core, value, adapter, () => resources.assertForwardOpen()))
+          : bindAdapterEvalContext(core, created, adapter, () => resources.assertForwardOpen());
+      }));
+      if (Exit.isSuccess(createExit)) {
+        context = createExit.value;
+      } else if (!Cause.hasInterruptsOnly(createExit.cause)) {
+        const cause = Cause.squash(createExit.cause);
+        declareFailure("attempt.setup", cause);
+        error = errorFromThrown(cause, "attempt.setup");
+      } else {
+        return yield* Effect.interrupt;
+      }
     }
 
     if (context !== undefined) {
       enterPhase("eval.run");
-      log(`running Adapter Eval...`);
+      log("running Eval...");
       const testExit = yield* Effect.exit(adapterAuthorCallbackEffect(resources, signal, () =>
         a.evalDef.test(context as never)
       ));
@@ -2543,7 +2552,7 @@ async function runAttemptBody(
   const { evalDef, run, attempt } = a;
   const agent = run.agent;
   if (agent === undefined) {
-    throw new Error(`Agent Adapter ${JSON.stringify(run.adapter.name)} is missing its Agent runtime`);
+    throw new Error(`Agent Adapter ${JSON.stringify(run.adapter?.name)} is missing its Agent runtime`);
   }
   let cleanupVerdict: EvalResult["verdict"] = "errored";
   const {

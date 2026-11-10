@@ -380,7 +380,7 @@ function runForExperiment(
 ): AgentRun {
   return Object.freeze({
     adapter: experiment.adapter,
-    ...(experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
+    ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     ...(experiment.reasoningEffort === undefined
@@ -424,7 +424,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
     experimentId: run.experimentId,
     execution: {
       adapter: adapterIdentity(run.adapter),
-      ...(run.adapter.kind === "custom" ? { models: run.models ?? Object.freeze({}) } : {}),
+      ...(run.adapter?.kind === "custom" ? { models: run.models ?? Object.freeze({}) } : {}),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,

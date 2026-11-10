@@ -154,7 +154,7 @@ function debugAgentRun(
 ): AgentRun {
   return {
     adapter: experiment.adapter,
-    ...(experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
+    ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
     model: experiment.model,
     reasoningEffort: experiment.reasoningEffort,

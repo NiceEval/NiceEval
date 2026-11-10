@@ -335,25 +335,22 @@ export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonl
   if (Object.hasOwn(def, "id")) {
     throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
   }
-  if (def.adapter === undefined) {
-    throw new Error(`defineExperiment requires adapter.`);
-  }
   const adapter = def.adapter;
-  if (adapter.kind !== "custom" && def.models !== undefined) {
+  if (adapter?.kind !== "custom" && def.models !== undefined) {
     throw new TypeError("Experiment models is only supported by custom Adapters.");
   }
-  const models = adapter.kind === "custom" ? normalizeModelRoles(def) : undefined;
-  if (adapter.kind === "custom") assertRequiredModelRoles(adapter.requiredModelRoles, models, `Adapter "${adapter.name}"`);
+  const models = adapter?.kind === "custom" ? normalizeModelRoles(def) : undefined;
+  if (adapter?.kind === "custom") assertRequiredModelRoles(adapter.requiredModelRoles, models, `Adapter "${adapter.name}"`);
   const judge = def.judge === undefined
     ? undefined
     : normalizeDefinitionJudge(def.judge, "defineExperiment() judge");
   assertSandboxLayer(def.sandbox, "defineExperiment");
-  if (adapter.kind === "custom") {
+  if (adapter === undefined || adapter.kind === "custom") {
     if (def.sandbox !== undefined || def.sandboxReuse === true || def.sandboxCache !== undefined) {
-      throw new Error(`Custom Adapter experiments do not support sandbox, sandboxReuse, or sandboxCache.`);
+      throw new Error(`${adapter === undefined ? "Experiments without an Adapter" : "Custom Adapter experiments"} do not support sandbox, sandboxReuse, or sandboxCache.`);
     }
     if (def.budget !== undefined) {
-      throw new Error(`Custom Adapter experiments do not support budget because Adapter usage is not collected.`);
+      throw new Error(`${adapter === undefined ? "Experiments without an Adapter" : "Custom Adapter experiments"} do not support budget because complete application usage is not collected.`);
     }
   }
   assertAuthorLifecycleNames(def, "Experiment");
@@ -395,7 +392,7 @@ export function defineExperiment(def: Omit<ExperimentInput, "flags"> & { readonl
       reasoningEffort: models.default?.reasoningEffort ?? undefined,
     }),
     adapter,
-    flags: adapter.kind === "custom" && adapter.parseFlags !== undefined
+    flags: adapter?.kind === "custom" && adapter.parseFlags !== undefined
       ? parseAdapterFlags(adapter.parseFlags, flags)
       : flags,
     labels: Object.freeze({ ...(def.labels ?? {}) }),

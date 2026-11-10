@@ -191,7 +191,9 @@ export function linkRunSandboxes(
       if (!adapterAcceptsEval(run.adapter, evalDef)) {
         return Effect.fail(new SandboxRunPlanningInvariantError({
           code: "sandbox.run-planning-invariant",
-          message: run.adapter.kind === "custom"
+          message: run.adapter === undefined
+            ? `Eval ${JSON.stringify(evalDef.id)} requires Adapter contract ${JSON.stringify(requiredContract)}; select an Adapter.`
+            : run.adapter.kind === "custom"
             ? `Adapter ${JSON.stringify(run.adapter.name)} does not implement the runtime contract required by Eval ${JSON.stringify(evalDef.id)} (${JSON.stringify(requiredContract)}).`
             : `Agent adapter ${JSON.stringify(run.adapter.name)} cannot execute Adapter Eval ${JSON.stringify(evalDef.id)}.`,
         }));
@@ -213,7 +215,9 @@ export function linkRunSandboxes(
         throw error;
       }
       let linkedAdapter: SandboxLayerPairInput["agent"];
-      if (run.adapter.kind === "custom") {
+      if (run.adapter === undefined) {
+        linkedAdapter = null;
+      } else if (run.adapter.kind === "custom") {
         linkedAdapter = { kind: "custom", name: run.adapter.name };
       } else {
         const agent = run.agent;
@@ -247,7 +251,7 @@ export function linkRunSandboxes(
       };
       records.push(Object.freeze({
         input,
-        ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent.name]),
+        ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent?.name ?? ""]),
         key: runPairKey(experimentId, evalDef.id),
         sourceRun,
         run,

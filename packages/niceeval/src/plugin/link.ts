@@ -193,7 +193,7 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
   });
   let adapter = run.adapter;
   if (contributions.length > 0) {
-    if (adapter.kind === "custom") throw pluginError([{ code: "plugin-owner-unsupported", experimentId: run.experimentId,
+    if (adapter === undefined || adapter.kind === "custom") throw pluginError([{ code: "plugin-owner-unsupported", experimentId: run.experimentId,
       message: "Custom Adapters do not support Plugin agent extensions.", actions: ["Use a built-in coding Agent for agent extensions."] }]);
     try { adapter = extendCodingAgent(adapter, contributions); }
     catch (error) { throw pluginError([{ code: "plugin-owner-unsupported", experimentId: run.experimentId,
@@ -222,7 +222,7 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
         if (pluginFailure !== undefined) throw pluginFailure;
       };
   const pluginBehavior = Object.freeze({ version: 1, lifecycles: pluginAttachmentProjection(lifecycles) }) as JsonValue;
-  const effective = Object.freeze({ ...run, adapter, ...(adapter.kind === "custom" ? {} : { agent: adapter }), ...(setup === undefined ? {} : { setup }), ...(teardown === undefined ? {} : { teardown }), pluginBehavior }) as AgentRun;
+  const effective = Object.freeze({ ...run, adapter, ...(adapter === undefined || adapter.kind === "custom" ? {} : { agent: adapter }), ...(setup === undefined ? {} : { setup }), ...(teardown === undefined ? {} : { teardown }), pluginBehavior }) as AgentRun;
   return Object.freeze({ sourceRun: run, run: effective, experimentOccurrences: linkedOccurrences, experimentLifecycles: lifecycles });
 }
 
@@ -249,7 +249,7 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
     }
     const groupLifecycles = groupPluginLifecycles(evalDef, preparedRun.run);
     const evalLifecycles = attemptPluginLifecycles(evalDef, preparedRun.run);
-    if (preparedRun.run.adapter.kind !== "sandbox" && allLifecycles.some((entry) => entry.sandboxLayer !== undefined)) {
+    if (preparedRun.run.adapter?.kind !== "sandbox" && allLifecycles.some((entry) => entry.sandboxLayer !== undefined)) {
       throw new TypeError("Plugin sandbox layer requires a Sandbox Agent and a physical Sandbox plan.");
     }
     const evalOccurrences = occurrences(ownEvalLifecycles, "eval", evalDef.id, evalDef.sourcePath);

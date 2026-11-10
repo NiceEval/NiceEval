@@ -66,7 +66,7 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
             attempt,
             evaluationKind: definition.evaluationKind,
             executionIdentityDigest: digest,
-            ...(run.adapter.kind === "custom" && run.adapter.behaviorRevision === null ? { reuseEligibility: "adapter-behavior-revision-required" as const } : {}),
+            ...(run.adapter?.kind === "custom" && run.adapter.behaviorRevision === null ? { reuseEligibility: "adapter-behavior-revision-required" as const } : {}),
           }));
         }
       }

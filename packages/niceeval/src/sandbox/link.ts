@@ -66,7 +66,7 @@ export interface SandboxLayerPairInput {
   readonly eval: SandboxLayerContributionInput;
   readonly group?: SandboxLayerContributionInput;
   readonly experiment: SandboxLayerContributionInput;
-  readonly agent: {
+  readonly agent: null | {
     readonly kind: "direct" | "sandbox" | "custom";
     readonly name: string;
     readonly sandbox?: SandboxLayer<"command-only">;
@@ -139,7 +139,7 @@ export interface SandboxLinkIssue {
   readonly pair: {
     readonly evalId: string;
     readonly experimentId: string;
-    readonly agentKind: "direct" | "sandbox" | "custom";
+    readonly agentKind: "direct" | "sandbox" | "custom" | "none";
     readonly agentName: string;
   };
   readonly eval: SandboxLayerDeclarationView;
@@ -626,7 +626,7 @@ function fingerprintLifecycle(
 }
 
 function normalizeAgentContribution(
-  input: SandboxLayerPairInput["agent"],
+  input: NonNullable<SandboxLayerPairInput["agent"]>,
 ): NormalizedScheduleContribution {
   const owner = Object.freeze({ kind: "agent" as const, id: input.name });
   const state = sandboxLayerStateOf(input.sandbox ?? OMITTED_LAYER);
@@ -697,8 +697,8 @@ function pairRef(input: SandboxLayerPairInput): SandboxLinkIssue["pair"] {
   return Object.freeze({
     evalId: input.eval.id,
     experimentId: input.experiment.id,
-    agentKind: input.agent.kind,
-    agentName: input.agent.name,
+    agentKind: input.agent?.kind ?? "none",
+    agentName: input.agent?.name ?? "",
   });
 }
 
@@ -1098,7 +1098,7 @@ export function linkSandboxLayers(
       const evalContribution = normalizeContribution("eval", input.eval);
       const experimentContribution = normalizeContribution("experiment", input.experiment);
       const groupContribution = input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
-      if (pair.agentKind === "direct" || pair.agentKind === "custom") {
+      if (input.agent === null || pair.agentKind === "direct" || pair.agentKind === "custom") {
         if (groupContribution !== undefined) {
           issues.push(issue("eval-group-direct-agent", pair, evalContribution, experimentContribution, groupContribution));
         } else if (evalContribution.explicit || experimentContribution.explicit) {

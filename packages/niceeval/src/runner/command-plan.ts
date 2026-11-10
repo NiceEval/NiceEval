@@ -899,7 +899,7 @@ function attemptBody(
   capabilityOf: (pair: PreparedRunPair) => CommandPlanCacheCapability,
 ): readonly CommandPlanStep[] {
   const evalOwner: CommandPlanOwner = { kind: "eval", id: pair.evalDef.id };
-  const adapterOwner: CommandPlanOwner = {
+  const adapterOwner: CommandPlanOwner = pair.run.adapter === undefined ? evalOwner : {
     kind: pair.run.adapter.kind === "custom" ? "adapter" : "agent",
     id: pair.run.adapter.name,
   };
@@ -928,14 +928,14 @@ function attemptBody(
           { owner: provider! },
         )]
       : []),
-    ...agentSetupSteps(pair, adapterOwner),
+    ...(pair.run.adapter === undefined ? [] : agentSetupSteps(pair, adapterOwner)),
     opaque(
       "eval.test",
       "eval-test-callback",
       "Eval test and any Agent.send calls are runtime callbacks; their commands and branches are not inspected",
       { owner: evalOwner },
     ),
-    ...agentTeardownSteps(pair, adapterOwner),
+    ...(pair.run.adapter === undefined ? [] : agentTeardownSteps(pair, adapterOwner)),
     ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "teardown", evalOwner),
     ...afterSteps(pair),
     ...(pair.plan._tag === "Sandbox"
@@ -968,6 +968,7 @@ function stepsForDispatch(
   capabilityOf: (pair: PreparedRunPair) => CommandPlanCacheCapability,
 ): readonly CommandPlanStep[] {
   if (pair.plan._tag === "Direct") {
+    if (pair.run.adapter === undefined) return attemptBody(pair, false, capabilityOf);
     const adapterOwner: CommandPlanOwner = {
       kind: pair.run.adapter.kind === "custom" ? "adapter" : "agent",
       id: pair.run.adapter.name,

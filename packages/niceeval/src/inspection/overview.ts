@@ -492,10 +492,10 @@ function adapterValue(
 ): InspectionAdapterValue {
   const first = values[0];
   if (first === undefined || values.some((value) =>
-    value.name !== first.name ||
-    value.contract !== first.contract ||
-    value.behaviorRevision !== first.behaviorRevision ||
-    value.cleanupTimeoutMs !== first.cleanupTimeoutMs
+    value?.name !== first?.name ||
+    value?.contract !== first?.contract ||
+    value?.behaviorRevision !== first?.behaviorRevision ||
+    value?.cleanupTimeoutMs !== first?.cleanupTimeoutMs
   )) {
     return Object.freeze({ state: "mixed" as const });
   }

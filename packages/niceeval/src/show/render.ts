@@ -387,6 +387,7 @@ export function renderOverview(
 function adapterValue(value: import("./model.ts").AdapterValue): string {
   if (value.state === "mixed") return "mixed";
   const identity = value.value;
+  if (identity === null) return "—";
   return identity.behaviorRevision === null
     ? `${identity.name} (${identity.contract}; revision not declared)`
     : `${identity.name} (${identity.contract}; revision ${identity.behaviorRevision})`;

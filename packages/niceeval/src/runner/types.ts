@@ -1062,7 +1062,7 @@ type ExperimentFlagsFields<A extends Adapter> = {
   readonly flags?: NoInfer<AdapterFlagsValue<ExperimentFlagsParser<A>>>;
 };
 
-type ExperimentAdapterSelection<A extends Adapter> = { readonly adapter: A };
+type ExperimentAdapterSelection<A extends Adapter> = { readonly adapter?: A };
 
 type ExperimentModelFields<A extends Adapter> = A extends { readonly kind: "custom" }
   ? ({ readonly models: Readonly<Record<string, ModelRoleSelection>>; readonly model?: never; readonly reasoningEffort?: never }
@@ -1078,7 +1078,7 @@ export type ExperimentInput<A extends Adapter = Adapter> = Omit<ExperimentAuthor
 export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly models?: ResolvedModelRoles;
   readonly description?: string;
-  readonly adapter: A;
+  readonly adapter?: A;
   readonly model?: string;
   readonly reasoningEffort?: string;
   readonly judge?: JudgeSelection;
@@ -1257,7 +1257,7 @@ export function runWho(run: { agentName: string; model?: string; experimentId?: 
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
 export interface AdapterRun {
   readonly models?: ResolvedModelRoles;
-  readonly adapter: Adapter;
+  readonly adapter?: Adapter;
   /** Present exactly when `adapter` is an Agent implementation. */
   readonly agent?: Agent;
   readonly model?: string;

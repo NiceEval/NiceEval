@@ -106,7 +106,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
   const { sharedState, ...withoutSharedState } = identity;
   return Object.freeze({
     ...withoutSharedState,
-    adapter: Object.freeze({ ...identity.adapter }),
+    adapter: identity.adapter === null ? null : Object.freeze({ ...identity.adapter }),
     ...(identity.models === undefined ? {} : { models: Object.freeze({
       version: 1 as const,
       slots: Object.freeze(Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]))),
@@ -156,7 +156,7 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
 
 /** 计划期一次性冻结全部 ensure/installer 配对；运行事实与 staged digest 不反写配置身份。 */
 export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
-  if (run.adapter.kind === "custom") return Object.freeze([]);
+  if (run.adapter === undefined || run.adapter.kind === "custom") return Object.freeze([]);
   const agent = run.agent;
   if (agent === undefined) throw new Error("Agent AdapterRun requires its Agent execution implementation.");
   if (agent.kind === "direct") return Object.freeze([]);
@@ -200,7 +200,7 @@ export function configIdentityForRun(
 ): ConfigIdentity {
   return freezeConfigIdentity({
     adapter: adapterIdentity(run.adapter),
-    ...(run.adapter.kind === "custom" ? { models: { version: 1 as const, slots: run.models ?? Object.freeze({}) } } : {}),
+    ...(run.adapter?.kind === "custom" ? { models: { version: 1 as const, slots: run.models ?? Object.freeze({}) } } : {}),
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
@@ -244,10 +244,14 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const putDeclared = <Value extends JsonValue>(path: string, value: DeclaredConfigValue<Value>): void => {
     if (value._tag === "Configured") put(path, value.value);
   };
-  put("adapter.name", identity.adapter.name);
-  put("adapter.contract", identity.adapter.contract);
-  put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
-  if (identity.adapter.cleanupTimeoutMs !== undefined) put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
+  if (identity.adapter === null) {
+    put("adapter", null);
+  } else {
+    put("adapter.name", identity.adapter.name);
+    put("adapter.contract", identity.adapter.contract);
+    put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
+    if (identity.adapter.cleanupTimeoutMs !== undefined) put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
+  }
   if (identity.models !== undefined) {
     put("models.version", identity.models.version);
     for (const [slot, selection] of Object.entries(identity.models.slots)) {

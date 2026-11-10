@@ -319,7 +319,7 @@ function summaryOfExperiment(
   return Object.freeze({
     id: experiment.id,
     ...(experiment.description === undefined ? {} : { description: experiment.description }),
-    adapter: experiment.adapter.name,
+    adapter: experiment.adapter?.name ?? null,
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
     attempts: experiment.attempts ?? 1,
@@ -357,7 +357,7 @@ function agentRunFromExperiment(
 ): AgentRun {
   return Object.freeze({
     adapter: experiment.adapter,
-    ...(experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
+    ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
     model: experiment.model,
     reasoningEffort: experiment.reasoningEffort,

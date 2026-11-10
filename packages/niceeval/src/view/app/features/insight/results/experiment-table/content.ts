@@ -422,6 +422,7 @@ function executionCell(value: ExperimentListItem["model"]): Cell {
 function adapterCell(value: ExperimentListItem["adapter"]): Cell {
   if (value.state === "mixed") return { kind: "missing", code: "mixedExecution" };
   const identity = value.value;
+  if (identity === null) return { kind: "notApplicable" };
   return textCell(
     identity.name,
     `${identity.contract} · ${identity.behaviorRevision ?? "—"}`,

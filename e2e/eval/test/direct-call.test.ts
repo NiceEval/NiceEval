@@ -32,14 +32,24 @@ test.concurrent("普通业务函数无需 Adapter 即可完成评测并公开断
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "direct-call", run.diagnostic());
     expect(event).toMatchObject({ verdict: "passed", attempts: 1, passed: 1 });
     if (event.locator === undefined) throw new Error("Direct-call Attempt must be published");
-    const show = await niceeval.run(["show", event.locator, "--json"]);
+    const requestPath = join(projectRoot, "direct-call.request.json");
+    await writeFile(requestPath, JSON.stringify({
+      protocol: "niceeval.query/v3",
+      operation: { kind: "attempt.get", locator: event.locator },
+    }));
+    const show = await niceeval.run(["query", "run", "--request", requestPath]);
     expect(show.exitCode, show.diagnostic()).toBe(0);
     const attempt = show.querySuccess("attempt.get").attempt;
-    expect(attempt.core.outcome).toBe("passed");
+    expect(attempt.originRun.context.execution.adapter).toBeNull();
+    expect(attempt.core.outcome).toBe("completed");
+    expect(attempt.verdict).toBe("passed");
     expect(attempt.assertions.entries.map(({ display }) => display.label)).toEqual([
       "business total", "experiment flags",
     ]);
     expect(attempt.notes).toEqual([{ label: "total", sequence: 0, value: 10 }]);
+    const human = await niceeval.run(["show", event.locator]);
+    expect(human.exitCode, human.diagnostic()).toBe(0);
+    expect(human.stdout).toContain("business total");
     const types = await tsc.run([
       "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext",
       "--skipLibCheck", "--allowImportingTsExtensions", "--types", "node",

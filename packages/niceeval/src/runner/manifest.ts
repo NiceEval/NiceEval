@@ -96,7 +96,8 @@ export function legacyIdentityDeltas(input: {
     prior[path] = value; current[path] = input.current.config[path]!;
   };
   if (execution !== undefined) {
-    for (const [key, value] of Object.entries(execution.adapter)) put(`adapter.${key}`, value);
+    if (execution.adapter === null) put("adapter", null);
+    for (const [key, value] of Object.entries(execution.adapter ?? {})) put(`adapter.${key}`, value);
     for (const path of ["model", "reasoningEffort"] as const) {
       if (Object.hasOwn(input.current.config, path)) {
         current[path] = input.current.config[path]!;

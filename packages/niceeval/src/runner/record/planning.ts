@@ -152,7 +152,7 @@ function runContextFor(
     execution: {
       adapter: adapterIdentity(run.adapter),
       ...(uniquePlugins.length === 0 ? {} : { plugins: uniquePlugins }),
-      ...(run.adapter.kind === "custom" ? { models: run.models ?? Object.freeze({}) } : {}),
+      ...(run.adapter?.kind === "custom" ? { models: run.models ?? Object.freeze({}) } : {}),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,
@@ -349,7 +349,7 @@ export function targetForRunnerRecordRun(input: {
       configIdentity: entry.reuse.configIdentity,
       ...(entry.reuse.renameFingerprint === undefined ? {} : { renameFingerprint: entry.reuse.renameFingerprint }),
       ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
-      ...(input.planned.run.adapter.kind === "custom"
+      ...(input.planned.run.adapter?.kind === "custom"
         && input.planned.run.adapter.behaviorRevision === null
         ? { reuseEligibility: "adapter-behavior-revision-required" as const }
         : {}),

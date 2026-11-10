@@ -31,8 +31,8 @@ export function RunPage({ model, locale }: {
         ? { kind: "notApplicable" }
         : {
             kind: "text",
-            text: model.adapter.name,
-            detail: `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
+            text: model.adapter?.name ?? "—",
+            detail: model.adapter === null ? undefined : `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
           },
       eval: { kind: "text", text: member.evalId },
       attempt: { kind: "text", text: String(member.attemptOrdinal + 1) },

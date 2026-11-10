@@ -62,7 +62,7 @@ export interface ExperimentHostExperimentSummary {
   readonly models?: ResolvedModelRoles;
   readonly id: string;
   readonly description?: string;
-  readonly adapter: string;
+  readonly adapter: string | null;
   readonly model?: string;
   readonly attempts: number;
   readonly evalIds: readonly string[];

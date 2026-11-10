@@ -26,7 +26,7 @@ export function AttemptSummary({ locator, data, locale }: { readonly locator: st
   // totalScore is projected only from a complete score. Zero is a completed
   // assessment too; the canonical Verdict remains unchanged in the model.
   const scored = data.verdict === "passed" && data.totalScore !== undefined;
-  const adapter = `${data.adapter.name} · ${data.adapter.contract} · ${data.adapter.behaviorRevision === null
+  const adapter = data.adapter === null ? "—" : `${data.adapter.name} · ${data.adapter.contract} · ${data.adapter.behaviorRevision === null
     ? t("attempt.adapterRevisionNotDeclared")
     : data.adapter.behaviorRevision}`;
   return <div className="niceeval-attempt-summary">
