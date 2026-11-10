@@ -515,7 +515,7 @@ rootfs 缓存在派发前由 Run 准备一次，同一批 Attempt 都从同一�
 
 镜像必须以 root 启动 execd，并提供 Bash 和 Git。`user` 控制命令与 Agent 的身份，HOME、USER、LOGNAME 从该用户的 `/etc/passwd` entry 取得；调用方可显式替换这些变量。
 
-`codexAgent` 与 `claudeCodeAgent` 使用双向受管进程；镜像必须提供 Node.js 24。服务接入验收必须证明销毁成功响应代表实例及其进程已经终止；仅受理异步删除不能作为回收确认。该要求按服务行为验证，不按 runtime 名称判断。
+`codexAgent` 与 `claudeCodeAgent` 使用双向受管进程；镜像必须提供 Node.js 22 或更新版本。服务接入验收必须证明销毁成功响应代表实例及其进程已经终止；仅受理异步删除不能作为回收确认。该要求按服务行为验证，不按 runtime 名称判断。
 
 
 ## Instabox
@@ -544,7 +544,7 @@ instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
 
 宿主设置 `INSTABOX_API_KEY`，并安装可选依赖 `ssh2@1.17.0`。服务地址固定为 `https://api.instabox.sh`。Key 与临时 SSH token 只保存在运行时内存，不进入公开配置、身份、命令事实或 Sandbox。创建关闭 Vault 与 Org Secrets 自动注入。
 
-Snapshot 必须提供 Linux x64 GNU 系统、Bash、Git、Node.js 24 或更新版本，以及允许免密 sudo 的非 root 登录用户。工作目录为 `/data/home/workspace`，文件和命令默认使用 snapshot 的登录身份；单条命令只额外支持 `user: "root"`。`pathPrepend` 按声明顺序作用于所有受管命令。平台和工具在 Machine ready 后检查，失败立即回收。
+Snapshot 必须提供 Linux x64 GNU 系统、Bash、Git、Node.js 22 或更新版本，以及允许免密 sudo 的非 root 登录用户。工作目录为 `/data/home/workspace`，文件和命令默认使用 snapshot 的登录身份；单条命令只额外支持 `user: "root"`。`pathPrepend` 按声明顺序作用于所有受管命令。平台和工具在 Machine ready 后检查，失败立即回收。
 
 该 Provider 的实例仅属于一条 Attempt。不支持留存、复用或 Nested Docker requirement。声明式 before 前缀在派发前由 Run 准备一次并保存为 NiceEval 拥有的 snapshot，每个 Attempt 从它创建独立 Machine；snapshot 保存磁盘，不保存进程、内存或 tmpfs。规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#instabox)。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制，超时或取消在确认整台 Machine 删除后才拒绝返回。
 

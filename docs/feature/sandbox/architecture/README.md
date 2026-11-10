@@ -337,7 +337,7 @@ OpenSandbox provider 通过服务 API 将一个远端 Sandbox 绑定到现有 At
 
 命令经原生 argv 执行，shell 明确为 `bash -lc`；cwd、env、身份与 PATH 由 provider 归一化。非零退出返回实际 exitCode，缺失终态不能伪装成功。超时、取消或命令流中断时销毁整个实例，并等待销毁确认后结束命令；这使跨命令后台任务无法在失联后继续执行。正常命令结束保留后台服务。文件接口复用统一 transfer 语义，文本与字节不混用。
 
-保留、暂停与复用报告 Unsupported / DestroyOnly；rootfs Before cache 见 [远端 snapshot Before cache · OpenSandbox](remote-snapshot-cache.md#opensandbox)。受管双向进程通过下述 pipe 桥接兑现；镜像必须提供 Node.js 24。缺少运行时直接报错，不能退化成单次 shell。验收检查 argv 注入、非零退出、二进制与目录往返、超时及取消后实例不可访问、创建后初始化失败回收、独立实例隔离和凭据不进入 sandbox。
+保留、暂停与复用报告 Unsupported / DestroyOnly；rootfs Before cache 见 [远端 snapshot Before cache · OpenSandbox](remote-snapshot-cache.md#opensandbox)。受管双向进程通过下述 pipe 桥接兑现；镜像必须提供 Node.js 22 或更新版本。缺少运行时直接报错，不能退化成单次 shell。验收检查 argv 注入、非零退出、二进制与目录往返、超时及取消后实例不可访问、创建后初始化失败回收、独立实例隔离和凭据不进入 sandbox。
 
 ### OpenSandbox 受管进程
 
