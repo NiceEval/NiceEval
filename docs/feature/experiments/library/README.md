@@ -36,8 +36,7 @@ Inspection 关闭分母与指标；固定 `overview.get`、`experiment.get`、Ru
 
 ## 选择 Adapter
 
-`defineExperiment` 通过可选字段 `adapter: Adapter` 选择被测系统。`defineAgent` 与 `defineSandboxAgent` 的返回值可以直接传入；直接调用业务代码或纯数据集评测时可省略 `adapter`。
-两者都给出属于定义错误。Definition 只保留统一的被测接入声明。
+`defineExperiment` 通过可选字段 `adapter?: Adapter` 选择被测系统。`defineAgent` 与 `defineSandboxAgent` 的返回值可以直接传入；直接调用业务函数、无状态应用或纯数据集评测时可省略 `adapter`。Definition 保持统一的被测接入声明。
 
 ```ts
 export default defineExperiment({

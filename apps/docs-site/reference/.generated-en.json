@@ -64,6 +64,8 @@
   "cli-flags/exp/--dry": "Plan without creating an Invocation.",
   "cli-flags/exp/--rerun": "Request a rerun of failed targets or all targets.",
   "cli-flags/exp/--keep-sandbox": "Keep the Sandbox of failed or all finished Attempts.",
+  "cli-flags/exp/--pause-on-failure": "Pause failed Attempts before cleanup for native debugging.",
+  "cli-flags/exp/--no-pause": "Disable failure pauses configured by the project.",
   "cli-flags/exp/--early-exit": "Stop the Eval's remaining Attempts after one result passes.",
   "cli-flags/exp list/--json": "Write this command's machine document or event stream.",
   "cli-flags/exp rename/--run": "Select one exact Run to adopt into the target Experiment; repeating it is rejected.",

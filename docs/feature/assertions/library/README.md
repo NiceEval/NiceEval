@@ -18,7 +18,7 @@ t.judge({ request, summary: turn.reply }, summaryQuality)
 
 root `t`、Session 与 Turn 都提供同形态的 `check(subject, match)` 和 `judge(material, definition)`。`check` 接受普通 Match，也接受 `JudgeDefinition`；`judge` 是只接受 `JudgeDefinition` 的薄包装。两者进入同一个 dispatcher，每次调用只登记一个 entry，并且只求值一次。`judge` 不隐式选择 `Turn.message`、transcript 或其它材料。
 
-两种入口都严格接收两个参数，不接收 options、已有 handle、已有 Assertion 或省略第二参数的形状。handle 不能作为 subject。自定义 Adapter 的上下文顶层保留 `judge` 名称；类型检查与运行时检查都拒绝应用成员占用它。
+`check` 支持两种入参形态：外部返回值与显式材料使用双参 `check(subject, match)`；内部状态使用单参 `check(contextualMatch)`，自动从当前绑定的只读上下文中提取材料求值，作者无需手动保存并搬运内部变量。`judge(material, definition)` 严格接收两个参数。两者不接收 options、已有 handle 或已完成的 Assertion。handle 不能作为 subject。自定义 Adapter 的上下文顶层保留 `judge` 名称；类型检查与运行时检查都拒绝应用成员占用它。
 
 `toolCalls` 与 `eventOccurrences` 是合法 managed subject；原始 `events` 是合法普通 Value subject。`t.check(turn.toolCalls, m)` 与 `turn.check(turn.toolCalls, m)` 等价。cut 由 subject 携带，不由调用 `check` 的 ctx 重新裁切。完整规则见 [Scoped assertions](scoped-assertions.md)。
 

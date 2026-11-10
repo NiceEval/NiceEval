@@ -1,84 +1,92 @@
 ---
 title: "保留 Sandbox 现场排查问题"
 sidebarTitle: "保留 Sandbox 现场"
-description: "用 --keep-sandbox 把失败 Attempt 的 Sandbox 保留成可随时唤醒的现场，用 niceeval sandbox enter 进去手动排查，用 sandbox list / stop 查看和清理。"
+description: "用 --keep-sandbox 或 --pause-on-failure 留存或挂起失败 Attempt 的 Sandbox，直接使用 Docker 或 Instabox 原生 CLI 接入现场排查，并通过底层命令查看和清理。"
 ---
 
-Sandbox 默认在每个 Attempt 结束后销毁。大多数问题先用 `niceeval show @<attempt-locator>` 或 `niceeval view` 查看判定、断言、文件改动、命令和对话就能定位，完整路线见[排查手册](/zh/troubleshooting/debugging)。
+Sandbox 默认在每个 Attempt 结束后销毁。大多数问题先用 `niceeval show @<attempt-locator>` 或 `niceeval view` 查看判定、断言、文件改动、命令和调用耗时瀑布图就能定位，完整路线见[排查手册](/zh/troubleshooting/debugging)。
 
 但有些问题只能进活的环境里看：
 
-- **环境起不来**：setup 阶段装依赖失败、agent CLI 启动不了。这时 agent 还没开始跑，对话记录是空的，最快的办法是进 Sandbox 手动重跑一遍安装命令。
-- **改动落在 `git diff` 之外**：全局装了什么包、`$HOME` 下写了什么配置、`PATH` 实际是什么，保存下来的文件改动不包含这些内容。
-- **重跑太慢**：冷启动加安装要几分钟。想逐条验证猜测时，留着现场比每次重跑快得多。
+- **环境起不来**：setup 阶段装依赖失败、agent CLI 启动不了。这时 agent 还没开始跑，对话记录是空的，最快的方式是连入现场手动重跑一遍安装命令。
+- **改动落在 `git diff` 之外**：全局装了什么包、`$HOME` 下写了什么配置、`PATH` 实际是什么，工作区文件变动不包含这些内容。
+- **验证假设**：冷启动加安装要几分钟。想逐条验证猜测时，留着现场敲命令比每次重跑快得多。
 
-## 跑的时候保留现场
+## 跑的时候挂起或保留现场
 
-在 `niceeval exp` 上加 `--keep-sandbox`：
+在 `niceeval exp` 上加 `--pause-on-failure` 或 `--keep-sandbox`：
 
 ```bash
+# 失败时立即暂停并保留现场，终端等待确认后再清理
+pnpm exec niceeval exp local onboarding/tool-first --pause-on-failure
+
+# 跑完直接留下现场，事后离线排查
 pnpm exec niceeval exp local onboarding/tool-first --keep-sandbox        # 等价 --keep-sandbox=failed
 pnpm exec niceeval exp local onboarding/tool-first --keep-sandbox=all    # 通过的也保留
 ```
 
-`--keep-sandbox` 有两档：
+`--pause-on-failure` 会在发生断言失败或异常时阻断自动销毁流程，终端直接打印底层 Provider 的原生直连命令并进入等待。
 
-- `failed`（默认值）保留判定为 `failed` 或 `errored` 的 Attempt，包括超时被打断的。
-- `all` 连通过的也保留。调 setup Hook、核对通过时环境的真实状态时用它，不用故意让一条评估用例失败。
-
-不带这个参数时全部销毁。加了 `--keep-sandbox` 的运行总会真实执行，不会沿用上次的结果。
-
-运行结束后，摘要里会列出保留了哪些 Sandbox、怎么进去：
+留存发生时，终端收尾面板会清晰给出底层 Provider 的原生调试与清理命令：
 
 ```text
-Kept sandboxes (1)
-  @0123456789ABCDEFGHJKMNPQRS  onboarding/tool-first #1  errored  docker · a3f9c2d1
-             enter: niceeval sandbox enter a3f9c2d1
-Stop them with: niceeval sandbox stop --all
+╭─ KEPT SANDBOXES ─────────────────────────────────────────────────── 1 kept ─╮
+│ @0123456789ABCDEFGHJKMNPQRS  onboarding/tool-first #1  errored  docker · a3f9c2d1 │
+│            debug: docker exec -it a3f9c2d1 /bin/bash                       │
+│            clean: docker rm -f a3f9c2d1                                    │
+╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-每行给三样东西：Attempt locator、Sandbox 实例 id、进入现场的命令。这次 Attempt 保存下来的结果，用 `niceeval show @<attempt-locator>` 或 `niceeval view --run <run-id>` 查看。
+## 使用原生 CLI 接入现场排查
 
-保留下来的 Sandbox 不会一直跑着消耗资源：Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。
+NiceEval 不自建中间终端代理或二次命令封装，开发者或 AI Coding Agent 依据指引直接使用底层的成熟 CLI：
 
-## 进入现场
+### 1. 人类开发者交互调试
+直接在另一个终端窗口中粘贴原生直连命令：
+
+- **Docker Sandbox**：
+  ```bash
+  docker exec -it a3f9c2d1 /bin/bash
+  ```
+- **Instabox Sandbox**：
+  ```bash
+  instabox ssh niceeval-97511d9a
+  ```
+
+进入后可直接手跑构建命令看报错、检查 `$HOME` 配置、核对环境变量与后台进程。
+
+### 2. AI Coding Agent 自动化排查
+Coding Agent 避免进入交互式 Shell，而是直接调用原生的单次非交互命令，获取结构化标准输出：
 
 ```bash
-pnpm exec niceeval sandbox enter a3f9c2d1
+# Docker 非交互执行
+docker exec a3f9c2d1 cat /workspace/build.log
+
+# Instabox 非交互执行
+instabox exec niceeval-97511d9a -- ps aux
 ```
 
-`niceeval sandbox enter` 会先唤醒再进入，在工作目录打开 shell。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
+## 查看与清理残留资源
 
-退出 shell 后，现场自动回到休眠。想让它保持运行，加 `--leave-running`。
-
-## 查看和清理
-
-保留下来的 Sandbox 由项目记录在案，用 `niceeval sandbox` 管理：
+Sandbox 的生命状态与清理动作彻底委托给底层的成熟工具链：
 
 ```bash
-pnpm exec niceeval sandbox list              # 列出保留的 Sandbox 和现场状态
-pnpm exec niceeval sandbox enter a3f9c2d1    # 唤醒并进入，退出后自动回到休眠
-pnpm exec niceeval sandbox stop a3f9c2d1     # 销毁指定 Sandbox（id 可以只写唯一前缀）
-pnpm exec niceeval sandbox stop --all        # 全部销毁
+# Docker 容器查看与清理
+docker ps -a --filter "label=niceeval"                     # 查看所有 NiceEval 容器
+docker rm -f a3f9c2d1                                      # 销毁指定容器
+docker rm -f $(docker ps -aq --filter "label=niceeval")    # 批量清理残留容器
+docker container prune -f                                  # 回收孤儿/悬空资源
+
+# Instabox 实例查看与清理
+instabox list                                              # 查看活跃实例
+instabox rm niceeval-97511d9a                              # 销毁指定实例
 ```
 
-这些管理命令不读取 `niceeval.config.ts`。即使配置文件暂时无法执行，你仍可以查看或销毁现场。命令会读取 `.env` 来准备 Provider 凭据；`.env` 不可读时，先修复它再重试。
+即使项目的 `niceeval.config.ts` 存在语法错误，底层的原生 CLI 也永远 100% 可用，绝不被上层配置错误阻断。
 
-`sandbox` 命令没有 `--json` 输出。`niceeval sandbox list --json` 会直接提示 `Unknown option '--json'`，不会继续打印人读文本。
+## 线上 Sandbox 中断防泄漏
 
-`stop` 可以重复执行。Sandbox 已经不在了（手动删过、云端过期）不算错误，命令只会把记录移掉并说明。如果 Provider 销毁失败，命令会保留记录并返回错误，方便稍后重试，不会把仍活着的资源从列表里藏掉。
+当评测在云端（Instabox、E2B）运行而本地进程遭遇断网、断电或 `kill -9` 时：
 
-忘了清理也有提醒：下次运行开始时，如果还有上次保留的 Sandbox，终端会打一行提示。
-
-## 各 Provider 的差别
-
-- **Docker**：容器停在磁盘上，不占内存，重启 Docker 也还在，进入时自动启动。容器不会自己消失，是唯一需要主动清理的 Provider。除了 `niceeval sandbox stop`，也可以用 `docker ps -a -f label=niceeval.keep-candidate=true` 直接核对。
-- **E2B**：暂停微 VM，文件和内存整体保存。暂停期间停止计费、无限期保留，进入时自动恢复。
-- **Vercel Sandbox**：停止微 VM，文件系统保存、之后可恢复，但内存状态不保留，唤醒后进程要重新启动。超过 Provider 的保留期限后，`niceeval sandbox list` 会标成 `expired`。
-- **自定义 Provider**：`defineSandbox` 产出的 Provider 不支持保留现场。事后的 `sandbox stop` 不加载用户配置，无法在新进程里安全找回你写的销毁函数。
-
-## 边界
-
-保留的 Sandbox 只用来排查，不能接着跑，也不能重新评分。判定、断言和文件改动以已经保存的结果为准。在现场里改了什么都不会写回结果。查看结果的方法见[查看运行结果](/zh/tutorials/viewing-results)。
-
-运行被强杀后留下、没有登记的 Sandbox 不在 `sandbox list` 里，回收方法见[运行被强杀后恢复](/zh/troubleshooting/recover-after-kill#收回强杀留下的-sandbox)。
+- **服务端硬超时（Server-Side TTL）**：创建线上 Sandbox 时强制注入了预设的云端硬生命周期上限（如 10 分钟），到期后由云端控制平面直接强制物理销毁，杜绝无限期计费；
+- **原生空闲挂起**：支持自动空闲休眠（如 Instabox `idle_auto_pause`），客户端失联数分钟后实例自动停计费。

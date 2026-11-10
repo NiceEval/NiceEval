@@ -124,6 +124,8 @@ The table below is generated from each command's own option definitions. Flags n
 | `--dry` | `niceeval exp` | boolean | Plan without creating an Invocation. |
 | `--rerun` (alone means `failed`) / `--rerun=failed\|all` / `--rerun failed\|all` | `niceeval exp` | `failed` \| `all` | Request a rerun of failed targets or all targets. |
 | `--keep-sandbox` (alone means `failed`) / `--keep-sandbox=failed\|all` | `niceeval exp` | `failed` \| `all` | Keep the Sandbox of failed or all finished Attempts. |
+| `--pause-on-failure` | `niceeval exp` | boolean | Pause failed Attempts before cleanup for native debugging. |
+| `--no-pause` | `niceeval exp` | boolean | Disable failure pauses configured by the project. |
 | `--early-exit` / `--no-early-exit` | `niceeval exp` | boolean | Stop the Eval's remaining Attempts after one result passes. |
 | `--json` | `niceeval exp list` | boolean | Write this command's machine document or event stream. |
 | `--run` | `niceeval exp rename` | string[] | Select one exact Run to adopt into the target Experiment; repeating it is rejected. |
