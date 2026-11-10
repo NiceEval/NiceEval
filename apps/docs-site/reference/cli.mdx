@@ -182,13 +182,6 @@ The table below is generated from each command's own option definitions. Flags n
 | `--domain` | `niceeval docker cache inventory`, `niceeval docker cache gc` | string | Select one Docker cache domain managed by NiceEval. |
 | `--apply` | `niceeval docker cache gc` | string | Apply a previously issued Docker cache reclamation plan. |
 | `--help` | `niceeval docker` | boolean | Print help for this command. |
-| `--all` | `niceeval sandbox stop` | boolean | Destroy all retained Sandboxes. |
-| `--window` | `niceeval sandbox diff` | string | Select one recorded change window. |
-| `--path` | `niceeval sandbox diff` | string | Select one path in the Sandbox diff. |
-| `--leave-running` | `niceeval sandbox enter` | boolean | Keep the Sandbox after leaving the shell. |
-| `--record-root` | `niceeval sandbox list`, `niceeval sandbox enter`, `niceeval sandbox history`, `niceeval sandbox diff`, `niceeval sandbox stop`, `niceeval sandbox prune` | string | Use the given NiceEval Record root. |
-| `--orphans` | `niceeval sandbox list` | boolean | Check for unregistered Sandbox instances left by terminated runs. |
-| `--force` | `niceeval sandbox prune` | boolean | Also clean up unverified orphan candidates. |
 | `--development` | `niceeval sandbox` | boolean | Diagnose the isolated Incus development domain instead of reference. |
 | `--json` | `niceeval sandbox` | boolean | Print Incus artifact inventory or GC as JSON. |
 | `--apply` | `niceeval sandbox` | string | Apply an immutable Incus GC preview by plan id. |

@@ -21,7 +21,7 @@ export async function suspendSandbox(sandbox: Sandbox): Promise<void> {
 }
 
 /**
- * provider 原生的进入命令(记进注册表供直连与审计;日常入口是 `niceeval sandbox enter`)。
+ * provider 原生的进入命令，供现场直连与审计；Docker 命令用于 alive 容器。
  * `sandboxId` 对 vercel 而言是沙箱的持久 `name`——官方 CLI(独立 npm 包 `sandbox`,别名
  * `sbx`)按 name 索引,`sandbox connect <name>`(别名 `ssh`/`shell`)唤醒并打开交互式 shell,
  * 与 docker/e2b 的"原生命令即可直连"语义一致(vercel.com/docs/sandbox/cli-reference)。
@@ -29,7 +29,9 @@ export async function suspendSandbox(sandbox: Sandbox): Promise<void> {
 export function nativeEnterCommand(provider: string, sandboxId: string): string | undefined {
   switch (provider) {
     case "docker":
-      return `docker start ${sandboxId} && docker exec -it ${sandboxId} bash`;
+      return `docker exec -it ${sandboxId} /bin/bash`;
+    case "instabox":
+      return `instabox ssh ${sandboxId}`;
     case "e2b":
       return `e2b sandbox connect ${sandboxId}`;
     case "vercel":

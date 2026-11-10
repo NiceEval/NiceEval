@@ -1,20 +1,11 @@
 import { Effect } from "effect";
 import {
   CliArguments,
-  CliInvocationFacts,
   CliOutput,
-  CliPath,
   type CliOptionDefinition,
   type CliParsedTokens,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
-import { ProjectConfiguration } from "../../cli/project-configuration.ts";
-import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
-import {
-  runSandboxCommandEffect,
-  type SandboxCommandFacts,
-  type SandboxCommandFlags,
-} from "../cli-commands.ts";
 import {
   doctorExitCode,
   doctorIncusProvider,
@@ -24,13 +15,6 @@ import { runIncusMaintenance } from "../incus/maintenance.ts";
 
 /** Sandbox owns this schema: its flags never enter the core CLI parser. */
 export const SANDBOX_CLI_OPTIONS = Object.freeze({
-  all: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Destroy every kept sandbox.", visibility: "public" }) }),
-  window: Object.freeze({ type: "string", help: Object.freeze({ summary: "Select one recorded change window.", visibility: "public" }) }),
-  path: Object.freeze({ type: "string", help: Object.freeze({ summary: "Select one path in a sandbox diff.", visibility: "public" }) }),
-  "leave-running": Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Keep a sandbox alive after leaving its shell.", visibility: "public" }) }),
-  "record-root": Object.freeze({ type: "string", help: Object.freeze({ summary: "Use a specific NiceEval record root.", visibility: "public" }) }),
-  orphans: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Inspect unregistered sandbox instances left by terminated runs.", visibility: "public" }) }),
-  force: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Prune unverified orphan candidates too.", visibility: "public" }) }),
   development: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Diagnose the isolated Incus development domain instead of reference.", visibility: "public" }) }),
   json: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Print Incus artifact inventory or GC as JSON.", visibility: "public" }) }),
   apply: Object.freeze({ type: "string", help: Object.freeze({ summary: "Apply an immutable Incus GC preview by plan id.", visibility: "public" }) }),
@@ -75,13 +59,13 @@ development domain separately. Doctor is fail closed and read-only; it never
 creates, pulls, imports, or destroys allocations.
 `;
 
-const SANDBOX_SUBCOMMANDS = ["list", "enter", "history", "diff", "stop", "prune", "provider"] as const;
+const RETIRED_SANDBOX_SUBCOMMANDS: readonly string[] = ["list", "enter", "history", "diff", "stop", "prune"];
+const SANDBOX_SUBCOMMANDS = ["provider"] as const;
 type SandboxSubcommand = (typeof SANDBOX_SUBCOMMANDS)[number];
 
 interface ParsedSandboxArgs {
   readonly positionals: readonly string[];
   readonly providedOptions: readonly string[];
-  readonly flags: SandboxCommandFlags;
   readonly help: boolean;
   readonly development: boolean;
   readonly json: boolean;
@@ -103,9 +87,6 @@ function parseSandboxArgs(
   argv: readonly string[],
   parse: (argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) => CliParsedTokens,
 ): ParsedSandboxArgs {
-  if (argv.some((token) => token === "--record" || token.startsWith("--record="))) {
-    throw new TypeError("sandbox --record is no longer supported. Use --record-root.");
-  }
   const parsed = parse(argv, SANDBOX_CLI_OPTIONS);
   return Object.freeze({
     positionals: Object.freeze([...parsed.positionals]),
@@ -117,25 +98,10 @@ function parseSandboxArgs(
     json: parsed.values.json === true,
     ...(typeof parsed.values.apply === "string" ? { apply: parsed.values.apply } : {}),
     ...(typeof parsed.values["unused-for"] === "string" ? { unusedFor: parsed.values["unused-for"] } : {}),
-    flags: Object.freeze({
-      all: parsed.values.all === true,
-      ...(typeof parsed.values.window === "string" ? { window: parsed.values.window } : {}),
-      ...(typeof parsed.values.path === "string" ? { path: parsed.values.path } : {}),
-      leaveRunning: parsed.values["leave-running"] === true,
-      ...(typeof parsed.values["record-root"] === "string" ? { record: parsed.values["record-root"] } : {}),
-      orphans: parsed.values.orphans === true,
-      force: parsed.values.force === true,
-    }),
   });
 }
 
 const SANDBOX_SUBCOMMAND_OPTIONS: Readonly<Record<SandboxSubcommand, readonly string[]>> = Object.freeze({
-  list: Object.freeze(["orphans", "record-root", "help"]),
-  enter: Object.freeze(["leave-running", "record-root", "help"]),
-  history: Object.freeze(["record-root", "help"]),
-  diff: Object.freeze(["window", "path", "record-root", "help"]),
-  stop: Object.freeze(["all", "record-root", "help"]),
-  prune: Object.freeze(["force", "record-root", "help"]),
   provider: Object.freeze(["development", "help", "json", "apply", "unused-for"]),
 });
 
@@ -217,13 +183,17 @@ function runProviderDoctor(
  * not load .env, config, or a provider SDK.
  */
 export const sandboxCliCommand: CliCommandContribution<
-  CliArguments | CliInvocationFacts | CliOutput | CliPath | ProjectConfiguration | ProjectStateDatabase,
+  CliArguments | CliOutput,
   SandboxCliError
 > = Object.freeze({
   name: "sandbox",
-  summary: "inspect, enter, and clean up kept sandboxes",
+  summary: "diagnose and maintain sandbox providers",
   options: SANDBOX_CLI_OPTIONS,
   run: (argv: readonly string[]) => Effect.gen(function* () {
+    if (argv[0] !== undefined && RETIRED_SANDBOX_SUBCOMMANDS.includes(argv[0])) {
+      yield* write("stderr", `niceeval sandbox ${argv[0]} has been retired. Use native provider CLIs instead.\n\nDocker: docker ps -a; docker exec -it <sandboxId> /bin/bash; docker rm -f <sandboxId>.\nInstabox: instabox list; instabox ssh <sandboxId>; instabox rm <sandboxId>.\nInspect workspace changes with git status, git log, and git diff inside the sandbox.\n`);
+      return 1;
+    }
     const argumentsService = yield* CliArguments;
     const parsed = yield* Effect.try({
       try: () => parseSandboxArgs(argv, argumentsService.parse),
@@ -247,36 +217,12 @@ export const sandboxCliCommand: CliCommandContribution<
         "stderr",
         `niceeval sandbox ${subcommand} does not accept --${unsupportedOption}.\n`,
       );
-      return subcommand === "provider" ? 2 : 1;
+      return 2;
     }
     if (parsed.help) {
-      yield* write("stdout", subcommand === "provider" ? PROVIDER_DOCTOR_HELP : SANDBOX_HELP);
+      yield* write("stdout", PROVIDER_DOCTOR_HELP);
       return 0;
     }
-    if (subcommand === "provider") {
-      return yield* runProviderDoctor(parsed);
-    }
-
-    const invocation = yield* CliInvocationFacts;
-    const facts = yield* invocation.facts.pipe(Effect.mapError((cause) => sandboxFailure("read invocation facts", cause)));
-    const configuration = yield* ProjectConfiguration;
-    yield* configuration.prepare(facts.cwd).pipe(
-      Effect.mapError((cause) => sandboxFailure("prepare project credentials", cause)),
-    );
-    const path = yield* CliPath;
-    const record = parsed.flags.record === undefined ? undefined : path.resolve(facts.cwd, parsed.flags.record);
-    const commandFacts: SandboxCommandFacts = Object.freeze({
-      leaseHolder: `${facts.pid}@${facts.hostname}`,
-      ...(facts.noColor === undefined ? {} : { noColor: facts.noColor }),
-      stdout: facts.stdout,
-    });
-    const output = yield* CliOutput;
-    return yield* runSandboxCommandEffect(
-      facts.cwd,
-      [...parsed.positionals],
-      record === undefined ? parsed.flags : { ...parsed.flags, record },
-      { out: output.writeStdoutSync, err: output.writeStderrSync },
-      commandFacts,
-    ).pipe(Effect.mapError((cause) => sandboxFailure("run sandbox command", cause)));
+    return yield* runProviderDoctor(parsed);
   }),
 });
