@@ -7,11 +7,27 @@ import { SandboxRuntimeMaterializationError } from "./runtime.ts";
 import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
 import { instaboxSnapshotDriver } from "./instabox/snapshot-driver.ts";
 
+export const INSTABOX_MACHINE_SPECS = {
+  "2/4": { vcpus: 2, memMiB: 4096 },
+  "4/8": { vcpus: 4, memMiB: 8192 },
+  "8/16": { vcpus: 8, memMiB: 16384 },
+  "16/32": { vcpus: 16, memMiB: 32768 },
+  "32/64": { vcpus: 32, memMiB: 65536 },
+  small: { vcpus: 2, memMiB: 4096 },
+  medium: { vcpus: 4, memMiB: 8192 },
+  large: { vcpus: 8, memMiB: 16384 },
+  xlarge: { vcpus: 16, memMiB: 32768 },
+  "2xlarge": { vcpus: 32, memMiB: 65536 },
+} as const;
+
+export type InstaboxMachineSpec = keyof typeof INSTABOX_MACHINE_SPECS;
+
 export interface InstaboxSandboxOptions {
   readonly snapshotId?: string;
   readonly templateId?: string;
   readonly template?: string;
   readonly lifetimeMs: number;
+  readonly spec?: InstaboxMachineSpec;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };
   readonly pathPrepend?: readonly string[];
 }
@@ -23,6 +39,7 @@ const Options = Schema.Struct({
   template: Schema.optionalKey(Schema.String),
   lifetimeMs: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }), Schema.isMultipleOf(1000)),
   resources: Schema.optionalKey(Schema.Struct({ vcpus: positiveInteger, memMiB: positiveInteger })),
+  spec: Schema.optionalKey(Schema.Literals(Object.keys(INSTABOX_MACHINE_SPECS) as InstaboxMachineSpec[])),
   pathPrepend: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isPattern(/^\/[^\0:\r\n]*$/)))),
 });
 const decodeOptions = Schema.decodeUnknownSync(Options, { onExcessProperty: "error" });
@@ -50,7 +67,8 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
   const plan = Object.freeze({
     ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { templateId: parsed.templateId ?? parsed.template ?? "universal" }),
     lifetimeMs: parsed.lifetimeMs,
-    resources: Object.freeze({ ...(parsed.resources ?? { vcpus: 4, memMiB: 8192 }) }),
+    resources: Object.freeze({ ...(parsed.resources ?? INSTABOX_MACHINE_SPECS[parsed.spec ?? "4/8"]) }),
+    ...(parsed.spec !== undefined ? { spec: parsed.spec } : {}),
     pathPrepend: Object.freeze([...(parsed.pathPrepend ?? [])]),
   });
   const identity: JsonValue = { provider: "instabox", origin: "https://api.instabox.sh", revision, ...plan, pathPrepend: [...plan.pathPrepend] };

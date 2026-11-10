@@ -9,7 +9,7 @@ import { collectLocalFiles } from "../local-files.ts";
 import { downloadDirectoryByList } from "../download-directory.ts";
 import { resolveLocalPath, resolveSandboxPath } from "../paths.ts";
 import type { CommandOptions, CommandResult, ManagedProcessStart, ManagedProcess } from "../types.ts";
-import type { InstaboxSandboxOptions } from "../instabox.ts";
+import { INSTABOX_MACHINE_SPECS, type InstaboxSandboxOptions } from "../instabox.ts";
 import { InstaboxApi, InstaboxApiError, Machine, Operation, Snapshot, SSHToken } from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
 
@@ -49,7 +49,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     const body = JSON.stringify({
       ...(options.snapshotId !== undefined ? { snapshotId: options.snapshotId } : { templateId: options.templateId ?? options.template ?? "universal" }),
       name: `niceeval-${idempotencyKey}`,
-      ...(options.resources ?? { vcpus: 4, memMiB: 8192 }),
+      ...(options.resources ?? INSTABOX_MACHINE_SPECS["4/8"]),
       deleteAfterSeconds: options.lifetimeMs / 1000,
       autoSuspendAfterSeconds: 0, maxRunMinutes: -1,
       vault: false, secrets: [],
