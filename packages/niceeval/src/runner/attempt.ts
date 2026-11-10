@@ -2272,12 +2272,12 @@ function assertDeadlineFitsPlan(
 }
 
 interface AttemptResources {
+  readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   judgeUsage: JudgeUsageCollector;
   sandbox: Sandbox;
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase?: MaterializedSandboxCase;
   preparedBeforeCache?: PreparedBeforeCacheUse;
-  readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
@@ -2549,12 +2549,12 @@ async function runAttemptBody(
   // entered. An interruption before tryPromise invokes this body must not make
   // Scope shutdown wait for cleanup that can never start.
   res.assertFirst.expectCleanup();
+  let cleanupVerdict: EvalResult["verdict"] = "errored";
   const { evalDef, run, attempt } = a;
   const agent = run.agent;
   if (agent === undefined) {
     throw new Error(`Agent Adapter ${JSON.stringify(run.adapter?.name)} is missing its Agent runtime`);
   }
-  let cleanupVerdict: EvalResult["verdict"] = "errored";
   const {
     sandbox: rawSandbox,
     materializedCase,
@@ -3603,12 +3603,12 @@ async function runAttemptBody(
       state.manager.releaseObservedEvaluationSegments();
     }
     const verdict = sealedAssertions.verdict.state;
+    cleanupVerdict = verdict;
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
     // 先经【每-agent mapper】把原生 span 归一到 canonical GenAI semconv(定 SpanKind),
     // 再 selectTraceSpans 按 kind 挑出回合/模型/工具,丢掉 "other" 噪声(干净小 trace 整段保留)。
-    cleanupVerdict = verdict;
     let trace: TraceSpan[] | undefined;
     if (receiver) {
       enterPhase("telemetry.collect");
@@ -3725,12 +3725,12 @@ async function runAttemptBody(
     }, pricingEstimateReceipt);
     return value;
   } catch (e) {
+    cleanupVerdict = "errored";
     // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断
     // 降成 AttemptError 或 warning。外层 Effect 会负责中止并运行 release/finalizer。
     if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw e;
     recorder.failCurrent();
     // SandboxLayer command / agent.before / 评分链路抛出的终局失败:同样先读空间轴回执,
-    cleanupVerdict = "errored";
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
     declareFailure(getPhase() ?? "eval.run", e);
     const error = errorFromThrown(e, getPhase(), res.attemptTimeout);
@@ -3773,12 +3773,12 @@ async function runAttemptBody(
     // 并经 finalizer 计成 sandbox.stop。没有对应 teardown/cleanup 的段直接跳过，不产生空阶段。
     if (assertFirst.beginCleanup()) {
       try {
+        await assertFirst.requestCleanup(res.pauseBeforeCleanup(cleanupVerdict));
         if (agentSetupReached && agent.after) {
           enterPhase("agent.teardown");
           await recorder
             .measureClosing("agent.teardown", async () => {
               try {
-        await assertFirst.requestCleanup(res.pauseBeforeCleanup(cleanupVerdict));
                 const context = { ...sandboxAttemptCtx, signal };
                 await assertFirst.requestCleanup(withCleanupTimeout(
                   withAgentCallbackContext(
