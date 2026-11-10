@@ -90,7 +90,23 @@ export const RunGetDocumentSchema = Schema.Struct({
   run: RunDetailSchema,
 });
 
+export const RunImportDocumentSchema = Schema.Struct({
+  protocol: Schema.Literal(RUN_PROTOCOL),
+  operation: Schema.Literal("run.import"),
+  outcome: Schema.Literals(["imported", "already-present"]),
+  imported: Schema.Array(Schema.String),
+  alreadyPresent: Schema.Array(Schema.String),
+});
+export const RunExportDocumentSchema = Schema.Struct({
+  protocol: Schema.Literal(RUN_PROTOCOL),
+  operation: Schema.Literal("run.export"),
+  outcome: Schema.Literal("exported"),
+  runIds: Schema.Array(Schema.String),
+});
+
 export const RunDocumentSchema = Schema.Union([
+  RunImportDocumentSchema,
+  RunExportDocumentSchema,
   RunListDocumentSchema,
   RunGetDocumentSchema,
 ]);
@@ -110,7 +126,7 @@ export type RunProtocolDecodeResult<Value extends RunDocument = RunDocument> =
   | { readonly success: true; readonly value: Value }
   | { readonly success: false; readonly reason: string };
 
-/** Strictly decode one public read-only `niceeval.run/v1` document. */
+/** Strictly decode one public `niceeval.run/v1` document. */
 export function decodeRunDocument(input: unknown): RunProtocolDecodeResult {
   const decoded = Schema.decodeUnknownResult(RunDocumentSchema, {
     errors: "all",

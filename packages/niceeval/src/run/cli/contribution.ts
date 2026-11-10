@@ -1,3 +1,5 @@
+import { importRuns, exportRuns } from "../host/transfer.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 import { Effect, Result } from "effect";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
@@ -38,6 +40,8 @@ const option = (value: CliOptionDefinition): CliOptionDefinition =>
   Object.freeze(value);
 
 export const RUN_CLI_OPTIONS = Object.freeze({
+  run: option({ type: "string", multiple: true, help: help("Select an exact Run ID for export; repeat to select multiple Runs.") }),
+  out: option({ type: "string", help: help("Write the exported single-file Record to this path.") }),
   invocation: option({
     type: "string",
     help: help("Filter Run discovery by one exact Invocation ID."),
@@ -52,7 +56,9 @@ type Error = CliFeatureError;
 type HostFailure = RunReadError | RunDeleteError | RunRecoverError;
 
 function failure(operation: string, cause: unknown): Error {
-  const hostFailure = isHostFailure(cause) ? cause : undefined;
+  const hostFailure = isHostFailure(cause) ? cause : cause instanceof SqliteRecordError
+    ? { code: cause.cause instanceof Error && cause.cause.name.startsWith("run-") ? cause.cause.name : cause.code, message: cause.message }
+    : undefined;
   return new CliFeatureError({
     feature: "run",
     operation,
@@ -117,16 +123,42 @@ Usage:
   niceeval run list [--invocation <invocation-id>] [--json]
   niceeval run delete <run-id> [--yes] [--json]
   niceeval run recover <run-id> [--yes] [--json]
+  niceeval run import <record-file> [--json]
+  niceeval run export --run <run-id> [--run <run-id>...] --out <file> [--json]
 `);
       return 0;
     }
     const action = parsed.positionals[0];
-    if (action === undefined || !["list", "delete", "recover"].includes(action)) {
-      return yield* usage(`niceeval run expects exactly one of list, delete, or recover.
+    if (action === undefined || !["list", "delete", "recover", "import", "export"].includes(action)) {
+      return yield* usage(`niceeval run expects exactly one of list, delete, recover, import, or export.
 `.trimEnd());
     }
     const facts = yield* invocationFacts();
     const json = parsed.values.json === true;
+
+    if (action === "import" || action === "export") {
+      const unsupported = unsupportedOption(parsed, action === "import" ? ["json"] : ["json", "run", "out"]);
+      if (unsupported !== undefined) return yield* usage(`--${unsupported} is not valid with niceeval run ${action}.`);
+      if (action === "import") {
+        if (parsed.positionals.length !== 2 || parsed.positionals[1]!.length === 0) {
+          return yield* usage("niceeval run import requires one Record file.");
+        }
+        const receipt = yield* importRuns(facts.cwd, parsed.positionals[1]!).pipe(Effect.mapError((cause) => failure("import", cause)));
+        if (json) yield* writeJson({ protocol: RUN_PROTOCOL, operation: "run.import", outcome: receipt.imported.length === 0 ? "already-present" : "imported", ...receipt });
+        else yield* write("stdout", `Imported ${receipt.imported.length} Runs; already-present ${receipt.alreadyPresent.length}.\n`);
+      } else {
+        const runIds = parsed.values.run;
+        const out = parsed.values.out;
+        if (parsed.positionals.length !== 1 || !Array.isArray(runIds) || runIds.length === 0 ||
+          runIds.some((id) => id.length === 0) || typeof out !== "string" || out.length === 0) {
+          return yield* usage("niceeval run export requires --run <run-id> and --out <file>.");
+        }
+        const receipt = yield* exportRuns(facts.cwd, runIds, out).pipe(Effect.mapError((cause) => failure("export", cause)));
+        if (json) yield* writeJson({ protocol: RUN_PROTOCOL, operation: "run.export", outcome: "exported", ...receipt });
+        else yield* write("stdout", `Exported ${receipt.runIds.length} Runs to ${out}.\n`);
+      }
+      return 0;
+    }
 
     if (action === "list") {
       if (parsed.positionals.length !== 1) {

@@ -56,6 +56,8 @@ export type InvocationCommand =
   | { readonly _tag: "invocation-close"; readonly invocationId: string; readonly owner: import("./coordination-repository.ts").FencedOwner; readonly state: "completed" | "interrupted" | "failed"; readonly at: string; readonly projection: Uint8Array; readonly deadlineEpochMs: number };
 
 export type RunCommand =
+  | { readonly _tag: "run-import"; readonly path: string; readonly deadlineEpochMs: number }
+  | { readonly _tag: "run-export"; readonly runIds: readonly string[]; readonly path: string; readonly deadlineEpochMs: number }
   | { readonly _tag: "run-cutoff" }
   | { readonly _tag: "run-create"; readonly input: import("../../run/storage/types.ts").CreateRunResourceInput }
   | { readonly _tag: "run-publish-attempt"; readonly input: import("../../run/storage/types.ts").PublishOriginAttemptInput }

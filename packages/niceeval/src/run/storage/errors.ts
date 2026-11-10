@@ -1,6 +1,7 @@
 import type { RunReferenceDependency } from "./types.ts";
 
 export type RunStorageErrorCode =
+  | "run-id-collision"
   | "run-not-found"
   | "run-not-active"
   | "writer-generation-mismatch"

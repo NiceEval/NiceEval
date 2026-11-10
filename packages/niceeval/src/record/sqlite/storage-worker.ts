@@ -1,3 +1,4 @@
+import { importRunsOnConnection, exportRunsOnConnection } from "../../run/storage/transfer.ts";
 import { isMainThread, parentPort } from "node:worker_threads";
 import {
   closeRecordDatabase,
@@ -121,7 +122,7 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
       return request.command._tag !== "invocation-list";
     case "run":
       return request.command._tag !== "run-cutoff" && request.command._tag !== "run-read" &&
-        request.command._tag !== "run-list" && request.command._tag !== "run-read-attempt";
+        request.command._tag !== "run-export" && request.command._tag !== "run-list" && request.command._tag !== "run-read-attempt";
     case "persist-sealed-run":
     case "begin-run":
     case "admit-attempt":
@@ -150,7 +151,7 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
     WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
   // Run deletion owns the transactional portable-to-open transition. Keep
   // rejecting draining databases and active write freezes before dispatch.
-  const reopensPortable = request.operation === "run" && request.command._tag === "run-delete";
+  const reopensPortable = request.operation === "run" && (request.command._tag === "run-delete" || request.command._tag === "run-import");
   if (state === undefined || (state.barrier_state !== "open" && !(reopensPortable && state.barrier_state === "portable"))) {
     throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the portable barrier");
   }
@@ -194,6 +195,8 @@ function executeInvocation(connection: RecordDatabase, command: InvocationComman
 
 function executeRun(connection: RecordDatabase, command: RunCommand): StorageWorkerResult {
   switch (command._tag) {
+    case "run-import": return importRunsOnConnection(connection, command.path, command.deadlineEpochMs);
+    case "run-export": return exportRunsOnConnection(connection, command.runIds, command.path, command.deadlineEpochMs);
     case "run-cutoff": return currentPublicationCutoffOnConnection(connection);
     case "run-create": return createRunResourceOnConnection(connection, command.input);
     case "run-publish-attempt": return publishOriginAttemptOnConnection(connection, command.input);
