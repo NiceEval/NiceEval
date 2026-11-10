@@ -94,7 +94,7 @@ export function retainRunnerAttemptSourceCapture(
 }
 
 function sourceCaptureForResult(
-  result: EvalResult,
+  result: object,
 ): RunnerAttemptSourceCaptureSnapshot | undefined {
   return sourceCaptureByResult.get(result);
 }
@@ -200,7 +200,7 @@ export function createRunnerAttemptSourceCapture(
 
 export interface RunnerSourceOriginInput {
   readonly slotId: SlotId;
-  readonly result: EvalResult;
+  readonly result: Pick<EvalResult, "sources">;
   /** Minted by the same Assertions producer that will write this Attempt. */
   readonly assertionEntryIds: readonly AssertionEntryId[];
 }

@@ -5,7 +5,8 @@ import { RecordCoordination, type RecordCoordinationService } from "../../coordi
 import { makeRecordAttachmentCatalog, type AnyRecordAttachmentPersistence, type RecordAttachmentCatalog, type RecordAttachmentDefinition, type RecordAttachmentPersistence } from "../attachment/index.ts";
 import { enumerateRecordAttachmentClosure, hydrateRecordAttachmentCurrent, isRecordAttachmentSchema, mintRecordAttachmentReference, recordAttachmentReferenceWire, resolveRecordAttachmentDefinition, RecordAttachmentReference } from "../attachment/protocol.ts";
 import { isRecordTextContentHandle, mintRecordContentHandle, type RecordContentHandle, type RecordTextContentHandle } from "../attachment/content.ts";
-import { AttemptIdSchema, RecordFormatSchema, RecordIdSchema, RunIdSchema, Sha256DigestSchema } from "../codec/identifiers.ts";
+import { AttemptIdSchema, RecordBlobKeySchema, RecordFormatSchema, RecordIdSchema, RunIdSchema, Sha256DigestSchema } from "../codec/identifiers.ts";
+import { ATTACHMENT_INLINE_BYTES, ATTACHMENT_PAYLOAD_HANDLE, attachmentPayloadPointerBytes, attachmentValueContents, readAttachmentPayload } from "../sqlite/attachment-payload.ts";
 import { decodeAttemptDocument, decodeMemberDocument, decodeRecordDocument, decodeRunDocument, encodeAttemptDocument, encodeMemberDocument, encodeRecordDocument, encodeRunDocument } from "../codec/index.ts";
 import { canonicalizeRecordJson } from "../definition/canonical.ts";
 import { RecordCoreInvalid, RecordReferenceInvalid, nonEmptyRecordIssues, recordIssue, type NonEmptyRecordIssues } from "../errors/record-errors.ts";
@@ -463,7 +464,16 @@ function writeAttachment<Owner extends RecordAttachmentOwner, Value>(input: { re
     const contents = yield* Effect.forEach(prepared.contents, (source) => processContent({ run: input.run, attachmentId, source }), { concurrency: 1 });
     const references: PersistedAttachmentReference[] = prepared.references.map((reference, ordinal) => { const bytes = canonicalBytes(reference); if (bytes === undefined) throw new Error("invalid reference"); return Object.freeze({ ordinal, owner: reference.owner, family: reference.family, canonicalBytes: bytes, referenceDigest: digest(bytes) }); });
     for (let offset = 0; offset < references.length; offset += RECORD_SQLITE_MAX_PUBLISH_ROWS) { const refs = Object.freeze(references.slice(offset, offset + RECORD_SQLITE_MAX_PUBLISH_ROWS)); yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) => input.run.client.stageAttachmentReferences({ runId: input.run.runId, writerGeneration: input.run.writerGeneration, attachmentId, references: refs, deadlineEpochMs })); }
-    const metadata = attachmentMetadata({ attachmentId, payloadBytes: prepared.payloadBytes, references, contents });
+    let payloadBytes = prepared.payloadBytes;
+    if (payloadBytes.byteLength > ATTACHMENT_INLINE_BYTES) {
+      const key = Schema.decodeUnknownSync(RecordBlobKeySchema)(ATTACHMENT_PAYLOAD_HANDLE);
+      contents.push(yield* processContent({ run: input.run, attachmentId, source: {
+        key, logicalHandle: ATTACHMENT_PAYLOAD_HANDLE, kind: "bytes", maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
+        stream: Stream.succeed(payloadBytes),
+      } }));
+      payloadBytes = attachmentPayloadPointerBytes;
+    }
+    const metadata = attachmentMetadata({ attachmentId, payloadBytes, references, contents });
     input.run.attachments.set(attachmentId, Object.freeze({ metadata, ownerKind: input.owner, ...(input.attempt === undefined ? {} : { ownerAttemptId: input.attempt.attemptId }), family, revision: input.persistence.revision }));
   }).pipe(Effect.tapError((error) => Effect.sync(() => poison(input.run, error as RecordWriteError)))) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
 }
@@ -704,11 +714,13 @@ function contentReader(runtime: ReaderRuntime): RecordAttachmentContentReader {
 }
 function hydrateAttachment(runtime: ReaderRuntime, attachment: SealedAttachmentMetadata, persistence: AnyPersistence): RecordAttachmentRead<unknown> {
   if (attachment.familyRevision !== persistence.revision) return Object.freeze({ state: "unsupported", family: attachment.family, revision: attachment.familyRevision });
-  const payload = parseJson(attachment.canonicalBytes); if (payload === undefined) return Object.freeze({ state: "invalid", issues: invalidIssues(["attachment"]) });
   if (digest(attachment.canonicalBytes) !== attachment.canonicalDigest || digest(attachment.logicalInventoryBytes) !== attachment.inventoryDigest) return Object.freeze({ state: "invalid", issues: invalidIssues(["attachment", "digest"]) });
-  const byHandle = new Map(attachment.contents.map((content) => [content.logicalHandle, content])), used = new Set<string>();
+  const payload = parseJson(readAttachmentPayload(attachment, (id, after, size) => runtime.session.readContentChunkPage(id, after, size)));
+  if (payload === undefined) return Object.freeze({ state: "invalid", issues: invalidIssues(["attachment"]) });
+  const contents = attachmentValueContents(attachment);
+  const byHandle = new Map(contents.map((content) => [content.logicalHandle, content])), used = new Set<string>();
   const hydrated = hydrateRecordAttachmentCurrent(persistence.attachment, payload, { content: (token, declaration) => { const logicalHandle = exactMarker(token, "$niceeval.record.content"); if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) return Result.succeed(undefined); const metadata = typeof logicalHandle === "string" ? byHandle.get(logicalHandle) : undefined; if (metadata === undefined || declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes) return Result.fail({ code: "current-content-bind-failed" as const }); const handle = mintRecordContentHandle(declaration.kind); runtime.content.set(handle, metadata); used.add(logicalHandle as string); return Result.succeed(handle); }, reference: (token, declaration) => { const marker = exactMarker(token, "$niceeval.record.reference"); if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) return Result.succeed(undefined); if (typeof marker !== "object" || marker === null || Array.isArray(marker)) return Result.fail({ code: "current-reference-bind-failed" as const }); const value = marker as Record<string, unknown>; if (value.owner !== declaration.definition.owner || value.family !== declaration.definition.family || !("value" in value)) return Result.fail({ code: "current-reference-bind-failed" as const }); return Result.succeed(mintRecordAttachmentReference(RecordAttachmentReference.to(declaration.definition, declaration.valueSchema), value.value)); } });
-  if (Result.isFailure(hydrated) || used.size !== attachment.contents.length) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
+  if (Result.isFailure(hydrated) || used.size !== contents.length) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
   const closure = enumerateRecordAttachmentClosure(persistence.attachment, hydrated.success);
   if (Result.isFailure(closure)) return Object.freeze({ state: "invalid", issues: invalidIssues(["closure"]) });
   const logicalReferences = new Map<string, { readonly owner: RecordAttachmentOwner; readonly family: string }>();

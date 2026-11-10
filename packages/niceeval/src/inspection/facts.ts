@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/architecture.md
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 import { Result, Schema } from "effect";
+import { attachmentValueContents, readAttachmentPayload } from "../record/sqlite/attachment-payload.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import {
@@ -360,12 +361,15 @@ export function decodeInspectionRun(
     let value: InspectionJson | undefined;
     let decoded = false;
     return Object.freeze({
-      physical: attachment,
+      physical: Object.freeze(Object.defineProperties({}, {
+        ...Object.getOwnPropertyDescriptors(attachment),
+        contents: { enumerable: true, get: () => attachmentValueContents(attachment) },
+      })) as typeof attachment,
       get value(): InspectionJson {
         if (!decoded) {
           verifyDigest(attachment.canonicalBytes, attachment.canonicalDigest, "Attachment");
           verifyDigest(attachment.logicalInventoryBytes, attachment.inventoryDigest, "Attachment inventory");
-          value = parseInspectionJson(attachment.canonicalBytes, "Attachment");
+          value = parseInspectionJson(readAttachmentPayload(attachment, source.readContentPage), "Attachment");
           decoded = true;
         }
         return value!;
