@@ -1992,3 +1992,80 @@ export function traceSelector(value: TraceView, id: string) {
   }
   return undefined;
 }
+
+type Comparison = import("../inspection/index.ts").InspectionSuccessDocumentFor<"runs.compare">["comparison"];
+export type ComparisonAttempt = Pick<AttemptView, "verdict" | "score" | "totalCosts">;
+type ComparisonAttempts = ReadonlyMap<string, ComparisonAttempt>;
+
+export function comparisonTransition(left: Pick<AttemptView, "verdict">, right: Pick<AttemptView, "verdict">): string {
+  if (left.verdict === "passed" && right.verdict === "passed") return "stable-passed";
+  if (left.verdict === "failed" && right.verdict === "failed") return "stable-failed";
+  if (left.verdict === "passed" && right.verdict === "failed") return "regressed";
+  if (left.verdict === "failed" && right.verdict === "passed") return "improved";
+  return "incomparable";
+}
+
+export function comparisonRegressions(comparison: Comparison, attempts: ComparisonAttempts): number {
+  return comparison.pairs.filter(({ left, right }) =>
+    comparisonTransition(attempts.get(left.locator)!, attempts.get(right.locator)!) === "regressed",
+  ).length;
+}
+
+function comparisonCostDelta(left: ComparisonAttempt, right: ComparisonAttempt): string {
+  if (left.totalCosts?.state !== "complete" || right.totalCosts?.state !== "complete") return "unavailable";
+  const currencies = new Set([...left.totalCosts.values, ...right.totalCosts.values].map(({ currency }) => currency));
+  return [...currencies].map((currency) => {
+    const a = left.totalCosts!.values.find((value) => value.currency === currency);
+    const b = right.totalCosts!.values.find((value) => value.currency === currency);
+    if (a === undefined || b === undefined) return `${currency} unavailable`;
+    // Align decimal places before subtraction so recorded money never passes through binary floats.
+    const places = Math.max(a.value.split(".")[1]?.length ?? 0, b.value.split(".")[1]?.length ?? 0);
+    const integer = (value: string) => {
+      const [whole, fraction = ""] = value.split(".");
+      return BigInt(`${whole}${fraction.padEnd(places, "0")}`);
+    };
+    const delta = integer(b.value) - integer(a.value);
+    const digits = (delta < 0n ? -delta : delta).toString().padStart(places + 1, "0");
+    return `${currency} ${delta < 0n ? "-" : delta > 0n ? "+" : ""}${places === 0 ? digits : `${digits.slice(0, -places)}.${digits.slice(-places)}`}`;
+  }).join("; ") || "No charged calls";
+}
+
+export function renderComparison(comparison: Comparison, attempts: ComparisonAttempts): string {
+  const blocks: TerminalBlock[] = [{ kind: "divider", title: `Run comparison · ${comparison.mode}` }];
+  const memberRows = (members: Comparison["left"]["members"]) => members.map((member) => {
+    const attempt = attempts.get(member.locator)!;
+    return [member.evalId, String(member.attemptOrdinal), member.locator, attempt.verdict ?? "unavailable", score(attempt.score, attempt.verdict), attempt.totalCosts?.values.map(({ currency, value }) => `${currency} ${value}`).join("; ") || "unavailable", attempt.totalCosts?.state ?? "unavailable"];
+  });
+  if (comparison.mode === "side-by-side") {
+    for (const side of ["left", "right"] as const) {
+      blocks.push({ kind: "divider", title: side === "left" ? "Baseline" : "Candidate" }, {
+        kind: "table", columns: ["Eval", "Ordinal", "Attempt", "Verdict", "Score", "Costs", "Cost state"].map((header) => ({ header })),
+        rows: memberRows(comparison[side].members), overflow: "wrap",
+      });
+    }
+  } else {
+    for (const { left, right } of comparison.pairs) {
+      const a = attempts.get(left.locator)!;
+      const b = attempts.get(right.locator)!;
+      const delta = a.score.state === "complete" && b.score.state === "complete" && a.score.possible === b.score.possible
+        ? fmt(b.score.earned - a.score.earned) : "unavailable";
+      blocks.push({ kind: "divider", title: `${left.evalId} · ${left.attemptOrdinal}` }, {
+        kind: "keyValue", entries: [
+          { key: "Baseline", value: `${left.locator} · ${a.verdict ?? "unavailable"} · ${score(a.score, a.verdict)}` },
+          { key: "Candidate", value: `${right.locator} · ${b.verdict ?? "unavailable"} · ${score(b.score, b.verdict)}` },
+          { key: "Transition", value: comparisonTransition(a, b) },
+          { key: "Score delta", value: delta },
+          { key: "Cost delta", value: comparisonCostDelta(a, b) },
+        ],
+      });
+    }
+  }
+  blocks.push({ kind: "keyValue", entries: [
+    { key: "Members", value: `${comparison.left.members.length} baseline; ${comparison.right.members.length} candidate` },
+    { key: "Paired", value: String(comparison.pairs.length) },
+    ...["stable-passed", "stable-failed", "improved", "incomparable"].map((transition) => ({ key: transition, value: comparison.mode === "side-by-side" ? "not evaluated" : String(comparison.pairs.filter(({ left, right }) => comparisonTransition(attempts.get(left.locator)!, attempts.get(right.locator)!) === transition).length) })),
+    { key: "Regressed", value: comparison.mode === "side-by-side" ? "not evaluated" : String(comparisonRegressions(comparison, attempts)) },
+    { key: "Exact member set", value: String(comparison.exactMemberSet) },
+  ] });
+  return terminal(blocks);
+}

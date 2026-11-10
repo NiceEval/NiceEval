@@ -30,6 +30,8 @@ import { ProjectConfiguration } from "../cli/project-configuration.ts";
 import { CurrentTargetUnavailable } from "../experiment/host/current.ts";
 import { openCurrentProjectSource } from "../inspection/project-source.ts";
 import {
+  renderComparison,
+  comparisonRegressions,
   renderAttempt,
   renderDiff,
   renderExperiment,
@@ -59,6 +61,11 @@ const help = (summary: string) =>
 const option = (value: CliOptionDefinition): CliOptionDefinition =>
   Object.freeze(value);
 export const SHOW_CLI_OPTIONS = Object.freeze({
+  compare: option({ type: "boolean", help: help("Compare baseline and candidate Runs.") }),
+  left: option({ type: "string", multiple: true, help: help("Baseline Run ID; repeatable.") }),
+  right: option({ type: "string", multiple: true, help: help("Candidate Run ID; repeatable.") }),
+  mode: option({ type: "string", help: help("Comparison mode: paired (default), side-by-side, or exact.") }),
+  "max-regressions": option({ type: "string", help: help("Maximum allowed regressions (non-negative integer; paired or exact).") }),
   json: option({ type: "boolean", help: help("Print the public Attempt query result as JSON.") }),
   exp: option({ type: "string", multiple: true, help: help("Show one Experiment; repeat to show more.") }),
   record: option({
@@ -122,6 +129,11 @@ Usage:
   niceeval show @<locator> --timing
   niceeval show @<locator> --usage
   niceeval show @<locator> --diff
+
+Comparison:
+  --compare --left <run-id> --right <run-id>
+  --mode paired|side-by-side|exact  Default: paired.
+  --max-regressions <n>             Fail when regressions exceed n.
 
 Selectors:
   --record <file>               Read an external canonical SQLite Record.
@@ -263,6 +275,27 @@ function runShow(
       return yield* usage(
         "--all applies only to Results, not --experiment, --run, or an Attempt locator.",
       );
+    const compare = parsed.values.compare === true;
+    const compareOptions = ["left", "right", "mode", "max-regressions"] as const;
+    if (!compare && compareOptions.some((key) => parsed.values[key] !== undefined))
+      return yield* usage("--left, --right, --mode, and --max-regressions require --compare.");
+    const leftRunIds = parseRunIds(parsed.values.left, "left");
+    const rightRunIds = parseRunIds(parsed.values.right, "right");
+    if (typeof leftRunIds === "string") return yield* usage(leftRunIds);
+    if (typeof rightRunIds === "string") return yield* usage(rightRunIds);
+    const mode = parsed.values.mode ?? "paired";
+    if (mode !== "paired" && mode !== "side-by-side" && mode !== "exact")
+      return yield* usage("--mode must be paired, side-by-side, or exact.");
+    const threshold = parsed.values["max-regressions"];
+    const maxRegressions = threshold === undefined ? undefined : Number(threshold);
+    if (threshold !== undefined && (typeof threshold !== "string" || !/^[0-9]+$/u.test(threshold) || !Number.isSafeInteger(maxRegressions)))
+      return yield* usage("--max-regressions must be a non-negative safe integer.");
+    if (compare && (leftRunIds.length === 0 || rightRunIds.length === 0))
+      return yield* usage("--compare requires at least one --left and --right Run ID.");
+    if (compare && (locator !== undefined || runIds.length > 0 || experimentIds.length > 0 || all || json || detailModes > 0))
+      return yield* usage("--compare cannot be combined with other show selectors.");
+    if (compare && mode === "side-by-side" && maxRegressions !== undefined)
+      return yield* usage("--max-regressions requires paired or exact mode.");
     const facts = yield* Effect.flatMap(
       CliInvocationFacts,
       ({ facts }) => facts,
@@ -272,7 +305,7 @@ function runShow(
       : operationalInspectionSource(facts.cwd);
     return yield* Effect.scoped(
       Effect.gen(function* () {
-        const current = decodedLocator === undefined && runIds.length === 0 && experimentIds.length === 0 && typeof parsed.values.record !== "string";
+        const current = !compare && decodedLocator === undefined && runIds.length === 0 && experimentIds.length === 0 && typeof parsed.values.record !== "string";
         const prepare = current ? Effect.gen(function* () {
           const project = yield* ProjectConfiguration;
           const config = yield* project.load(facts.cwd).pipe(Effect.mapError((cause) => new CurrentTargetUnavailable({ code: "current-target-unavailable", reason: String(cause), cause })));
@@ -297,6 +330,27 @@ function runShow(
             try: evaluate,
             catch: (cause) => failure(`project ${operation} result`, cause),
           });
+        if (compare) {
+          const document = yield* select("runs.compare", () => selectInspectionOperation(opened, {
+            kind: "runs.compare", mode, leftRunIds, rightRunIds,
+          }));
+          if (document.issues.length > 0)
+            return yield* usage(`Comparison incomplete: ${document.issues.map((issue) => issue.code).join(", ")}.`);
+          const attempts = new Map<string, ReturnType<typeof projectAttempt>>();
+          for (const member of [...document.comparison.left.members, ...document.comparison.right.members]) {
+            if (attempts.has(member.locator)) continue;
+            const attempt = yield* select("attempt.get", () => selectInspectionOperation(opened, { kind: "attempt.get", locator: member.locator }));
+            const usageDocument = yield* select("attempt.usage", () => selectInspectionOperation(opened, { kind: "attempt.usage", locator: member.locator }));
+            attempts.set(member.locator, yield* project("attempt.get", () => projectAttempt(attempt, usageDocument)));
+          }
+          yield* write("stdout", renderComparison(document.comparison, attempts));
+          const regressed = comparisonRegressions(document.comparison, attempts);
+          if (comparisonGateExitCode(regressed, maxRegressions) === 1) {
+            yield* write("stderr", `Regression gate failed: ${regressed} regressed; maximum ${maxRegressions}.\n`);
+            return 1;
+          }
+          return 0;
+        }
         if (
           decodedLocator === undefined &&
           runIds.length === 0 &&
@@ -465,13 +519,13 @@ function runShow(
           }),
         );
         if (json) { yield* write("stdout", `${JSON.stringify(document)}\n`); return 0; }
-        const usage = yield* select("attempt.usage", () =>
+        const attemptUsage = yield* select("attempt.usage", () =>
           selectInspectionOperation(opened, { kind: "attempt.usage", locator: selectedLocator }),
         );
         yield* write(
           "stdout",
           renderAttempt(
-            yield* project("attempt.get", () => projectAttempt(document, usage)),
+            yield* project("attempt.get", () => projectAttempt(document, attemptUsage)),
           ),
         );
         return 0;
@@ -514,6 +568,7 @@ function selectTraceDetailByStableId(
 
 function parseRunIds(
   value: string | boolean | string[] | undefined,
+  flag = "run",
 ): readonly Schema.Schema.Type<typeof RunIdSchema>[] | string {
   const values =
     typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
@@ -521,7 +576,7 @@ function parseRunIds(
   for (const candidate of values) {
     const decoded = Schema.decodeUnknownResult(RunIdSchema)(candidate);
     if (Result.isFailure(decoded))
-      return `Invalid --run value ${JSON.stringify(candidate)}.`;
+      return `Invalid --${flag} value ${JSON.stringify(candidate)}.`;
     if (!output.includes(decoded.success)) output.push(decoded.success);
   }
   return Object.freeze(output.sort(compareIdentity));
@@ -555,3 +610,7 @@ export const showCliCommand: CliCommandContribution<Requirements, Error> =
     options: SHOW_CLI_OPTIONS,
     run: runShow,
   });
+
+export function comparisonGateExitCode(regressed: number, maximum: number | undefined): 0 | 1 {
+  return maximum !== undefined && regressed > maximum ? 1 : 0;
+}
