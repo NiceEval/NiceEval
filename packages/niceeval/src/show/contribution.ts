@@ -62,7 +62,7 @@ import {
 
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import { canonicalInspectionJson } from "../inspection/canonical.ts";
-import { queryFailureDocument } from "../inspection/cli/contribution.ts";
+import { QUERY_FAILURE_EXIT_CODE, queryFailureDocument } from "../inspection/cli/contribution.ts";
 import type { InspectionDocument, InspectionOperation, InspectionOperationId } from "../inspection/protocol.ts";
 
 const help = (summary: string) =>
@@ -179,7 +179,7 @@ Attempt details:
 `;
 type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration;
 type Error = CliFeatureError;
-const failure = (operation: string, cause: unknown) => {
+const failure = (operation: string, cause: unknown, exitCode = 1) => {
   const detail = cause instanceof CurrentTargetUnavailable || cause instanceof InspectionOperationError && cause.code === "current-target-unavailable"
     ? `current-target-unavailable: ${cause.reason}\nRead fixed history: niceeval show --run <run-id>`
     : cause instanceof InspectionIntegrityError
@@ -197,7 +197,7 @@ const failure = (operation: string, cause: unknown) => {
     feature: "show",
     operation,
     cause,
-    exitCode: 1,
+    exitCode,
     ...(detail === undefined
       ? {}
       : { display: `show ${operation} failed: ${detail}\n` }),
@@ -360,7 +360,8 @@ function runShow(
         ): Effect.Effect<A, Error, CliOutput> =>
           Effect.try({
             try: evaluate,
-            catch: (cause) => failure(`execute ${operation}`, cause),
+            catch: (cause) => failure(`execute ${operation}`, cause,
+              json && !(cause instanceof InspectionOperationError && cause.code === "inspection-selection-missing") ? QUERY_FAILURE_EXIT_CODE : 1),
           }).pipe(Effect.tapError((error) =>
             !json || error.cause instanceof InspectionOperationError && error.cause.code === "inspection-selection-missing"
               ? Effect.void

@@ -414,6 +414,11 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         if (!decoded.success) throw new Error(decoded.reason);
         expect(decoded.value).toMatchObject({ outcome: "success", operation: "attempt.assertion.detail" });
       }
+      const invalidPage = await niceeval.run(["show", locator, "--execution", "--continuation", "invalid", "--json"]);
+      const invalidPageQuery = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator, continuation: "invalid" } })]);
+      expect(invalidPageQuery.exitCode, invalidPageQuery.diagnostic()).toBe(2);
+      expect(invalidPage.exitCode, invalidPage.diagnostic()).toBe(invalidPageQuery.exitCode);
+      expect(invalidPage.stdout).toBe(invalidPageQuery.stdout);
       const assertionsText = await niceeval.run(["show", locator, "--assertions"]);
       expect(assertionsText.exitCode, assertionsText.diagnostic()).toBe(0);
       expect(assertionsText.stdout).toContain("[PASS]");

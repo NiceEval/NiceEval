@@ -11,7 +11,7 @@ import type { SSHToken } from "./api.ts";
 const supervisor = String.raw`
 const { spawn } = require('node:child_process');
 const c = JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8'));
-if (Number(process.versions.node.split('.')[0]) < 24) process.exit(126);
+if (Number(process.versions.node.split('.')[0]) < 22) process.exit(126);
 const env = { ...process.env, ...c.env };
 if (c.pathPrepend.length) env.PATH = c.pathPrepend.join(':') + ':' + env.PATH;
 const child = spawn(c.argv[0], c.argv.slice(1), { cwd: c.cwd, env, detached: true, stdio: ['pipe','pipe','pipe'] });

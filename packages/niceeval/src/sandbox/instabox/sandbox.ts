@@ -78,7 +78,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     });
     if (this.token.machineId !== this.sandboxId) throw new Error("Instabox SSH grant belongs to another Machine");
     const probe = await this.runShell('test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace', { cwd: "/data/home", signal: bounded });
-    if (probe.exitCode !== 0) throw new Error("Instabox snapshot requires Linux x64 GNU, Node.js 24+, Bash, Git and a non-root user with passwordless sudo");
+    if (probe.exitCode !== 0) throw new Error(`Instabox snapshot requires Linux x64 GNU, Node.js 22+, Bash, Git and a non-root user with passwordless sudo; exitCode: ${probe.exitCode}; stdout: ${probe.stdout}; stderr: ${probe.stderr}`);
   }
 
   private async startProcess(input: ManagedProcessStart, root = false): Promise<ManagedProcess> {

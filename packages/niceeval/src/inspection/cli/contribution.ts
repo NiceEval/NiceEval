@@ -47,7 +47,7 @@ Usage:
 
 type Requirements = CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration;
 type Error = CliFeatureError;
-const QUERY_FAILURE_EXIT_CODE = 2;
+export const QUERY_FAILURE_EXIT_CODE = 2;
 
 function failure(operation: string, cause: unknown): Error {
   return new CliFeatureError({ feature: "inspection query", operation, cause, exitCode: 1 });
