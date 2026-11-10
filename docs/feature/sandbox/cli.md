@@ -175,6 +175,27 @@ origin Attempt 的 FileChanges 是折叠后的 agent 归因增量;留存现场�
 - 幂等:实例已不存在不算错误;某台销毁失败时如实列出并退出 1,其余照常处理,不能把仍活着的资源从核对面隐藏掉。
 - 与 `list` / `stop` 同一纪律:不读 config、不执行用户代码,按运行标识里的 provider 名路由 detached 销毁。
 
+## 运行期现场连接与调试
+
+评测运行中若需要实时观察沙箱内部状态，CLI 提供免密直连提示与统一交互入口。实例就绪后，Human 面板与事件流展示对应 Provider 的原生调试入口（如 Instabox 的 `instabox ssh <id>` 或 Docker 的 `docker exec -it <id> bash`）。
+
+NiceEval 另提供运行时命令以访问活跃 Attempt：
+
+```bash
+niceeval sandbox ps                           # 列出当前运行中的沙箱实例与对应 Attempt
+niceeval sandbox attach <locator|id>          # 连入运行中的沙箱并打开交互 shell
+niceeval sandbox exec <locator|id> -- <cmd>   # 在运行中的沙箱内执行单次调试命令
+```
+
+`attach` 建立独立的双向交互会话，不阻塞或劫持正在执行的受管动作流。用户退出 attach 会话后，沙箱生命周期与评估进程不受影响并保持运行。
+
+## 断点调试与暂停机制：--breakpoint 与 --pause-on-failure
+
+为支持精确定位准备或执行异常，`niceeval exp` 提供运行期断点与失败暂停选项：
+
+- `--pause-on-failure`（等价于 `--breakpoint=failure`）：当任何受管动作失败或发生意外错误时，挂起当前 Attempt。实例不触发自动销毁，终端显示直连提示并等待用户确认回车后才继续收尾。
+- `--breakpoint=before-agent`：在初始化与全部 Before 动作完成、被测 Agent 正式接管前暂停，便于检查初始工作区与依赖状态。
+
 ## 与九个固定运行事实 family 的分工
 
 留存现场不替代 Record：
