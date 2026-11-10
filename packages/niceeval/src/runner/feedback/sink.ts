@@ -124,6 +124,8 @@ export interface KeptInput {
  *  定义在这里(而不是从 coordinator.ts 导入)是为了让 sink.ts 不必在运行时依赖 coordinator.ts,
  *  避免两个模块互相 import 造成的循环依赖 —— coordinator.ts 反过来 `import type` 这个接口。 */
 export interface FeedbackSink {
+  /** Human interaction on stderr, including when structured output uses stdout. */
+  pausePrompt?(text: string): void;
   activity(text: string): void;
   diagnostic(input: DiagnosticInput): void;
   interrupted(): void;
@@ -188,6 +190,12 @@ export function reportActivity(text: string): void {
     return;
   }
   writeStderrLine(text.endsWith("\n") ? text : `${text}\n`);
+}
+
+export function reportPausePrompt(text: string): void {
+  const sink = current();
+  if (sink?.pausePrompt) sink.pausePrompt(text);
+  else writeStderrLine(`${text}\n`);
 }
 
 /** 需要去重、要出现在两种 profile 永久事件流里的一条 info/warning/error。 */

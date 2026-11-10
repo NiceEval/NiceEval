@@ -104,6 +104,7 @@ export interface ExperimentHostRunOverrides {
   readonly budget?: number;
   readonly rerun?: "failed" | "all";
   readonly keepSandbox?: "failed" | "all";
+  readonly pauseOnFailure?: boolean;
   readonly maxConcurrency?: number;
   readonly maxBuildConcurrency?: number;
   readonly maxBeforeCacheConcurrency?: number;

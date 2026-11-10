@@ -89,6 +89,8 @@ export const EXP_NORMAL_CLI_OPTIONS = Object.freeze({
   dry: option("boolean", "Plan without creating an Invocation."),
   rerun: optionalTier("Require failed or all targets to run again.", "failed", ["failed", "all"], true),
   "keep-sandbox": optionalTier("Keep failed or all finished Sandboxes.", "failed", ["failed", "all"]),
+  "pause-on-failure": option("boolean", "Pause failed Attempts before cleanup for native debugging."),
+  "no-pause": option("boolean", "Disable failure pauses configured by the project."),
   "early-exit": option("boolean", "Stop remaining attempts after a passing result."),
   "no-early-exit": option("boolean", "Force all configured attempts to run."),
   help: HELP_OPTION,
@@ -174,6 +176,8 @@ Run options:
   --tag <tag>                    select only Evals with this tag
   --rerun[=failed|all]           require selected targets to run again
   --keep-sandbox[=failed|all]    retain selected finished Sandboxes
+  --pause-on-failure            wait for Enter before cleaning up failed Attempts
+  --no-pause                    disable configured failure pauses
   --early-exit / --no-early-exit
   --dry                          plan without creating an Invocation
   --json                         write machine output or the Invocation event stream
@@ -586,6 +590,7 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
     ...(maxBeforeCacheConcurrency === undefined ? {} : { maxBeforeCacheConcurrency }),
     ...(rerun === undefined ? {} : { rerun: rerun as "failed" | "all" }),
     ...(keepSandbox === undefined ? {} : { keepSandbox: keepSandbox as "failed" | "all" }),
+    ...(values["no-pause"] === true ? { pauseOnFailure: false } : values["pause-on-failure"] === true ? { pauseOnFailure: true } : {}),
     ...(sandboxBeforeCache === undefined
       ? {}
       : { sandboxBeforeCache: sandboxBeforeCache as "use" | "bypass" }),

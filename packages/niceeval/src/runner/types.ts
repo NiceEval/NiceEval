@@ -1327,6 +1327,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
    * 见 docs/feature/sandbox/architecture/README.md「留存(keep)与注册表」。
    */
   keepSandbox?: "failed" | "all";
+  /** Invocation override for Config.pauseOnFailure. */
+  pauseOnFailure?: boolean;
   /** --rerun 的本次调用携带口径。 */
   rerun?: "failed" | "all";
   /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */

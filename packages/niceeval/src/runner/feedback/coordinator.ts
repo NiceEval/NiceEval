@@ -438,6 +438,13 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     start,
     emit,
     forceRedraw,
+    pausePrompt: (text) => {
+      queue.push(async () => {
+        await renderer.clearDynamic?.();
+        io.stderr.write(`${text}\n`);
+        if (phase === "active") await renderer.redrawDynamic?.(state);
+      });
+    },
     activity,
     diagnostic,
     interrupted,

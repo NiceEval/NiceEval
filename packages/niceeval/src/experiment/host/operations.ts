@@ -716,6 +716,10 @@ function multiplexFeedbackSink(
   };
   return {
     activity: (detail) => forward((sink, value) => sink.activity(value), detail),
+    pausePrompt: (text) => {
+      if (isFeedbackStarted() && feedback?.pausePrompt) feedback.pausePrompt(text);
+      else process.stderr.write(`${text}\n`);
+    },
     diagnostic: (input) => forward((sink, value) => sink.diagnostic(value), input),
     interrupted: () => forward((sink) => sink.interrupted()),
     reporterError: (input) => forward((sink, value) => sink.reporterError(value), input),
@@ -832,6 +836,7 @@ export function runInvocation(
         coordinationRoot: state.coordinationRoot,
         recordRoot: state.recordRoot,
         ...(state.overrides.keepSandbox === undefined ? {} : { keepSandbox: state.overrides.keepSandbox }),
+        ...(state.overrides.pauseOnFailure === undefined ? {} : { pauseOnFailure: state.overrides.pauseOnFailure }),
         ...(state.overrides.rerun === undefined ? {} : { rerun: state.overrides.rerun }),
         session,
         ...(input.signal === undefined ? {} : { signal: input.signal }),

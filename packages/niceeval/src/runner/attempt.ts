@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { pauseOnFailure } from "./pause-on-failure.ts";
 import { retainAttemptNotes } from "./attempt-notes.ts";
 import type { AttemptNotesCollector } from "../context/notes.ts";
 import { AttemptCancellationController } from "./attempt-cancellation.ts";
@@ -830,8 +831,19 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
   };
 
   const layerCleanups: LayerCleanupEntry[] = [];
+  let pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void> = () => Effect.void;
   return Effect.uninterruptibleMask((restore) => restore(Effect.scoped(
     Effect.gen(function* () {
+      const pause = yield* Effect.cached(Effect.suspend(() => pauseOnFailure(
+        sandboxFacts === undefined ? undefined : nativeEnterCommand(sandboxFacts.provider, sandboxFacts.sandboxId),
+        parentSignal ?? invocationSignal,
+      )));
+      pauseBeforeCleanup = (verdict) =>
+        (opts.pauseOnFailure ?? config.pauseOnFailure ?? false)
+          && (verdict === "failed" || verdict === "errored")
+          && !invocationSignal?.aborted
+          && !parentSignal?.aborted
+          ? pause : Effect.void;
       // Every Adapter kind enters through the same Attempt-owned bridge,
       // execution deadline, Assertion seal, feedback sink, and publication
       // callback. The driver below contributes only its own preparation,
@@ -1092,6 +1104,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     () => acquireSandboxRunPlan(runtimeInput),
                     () => provisioningPermit.release,
                   );
+                  // Keep the physical identity available if preparation fails.
+                  sandboxFacts = { provider: runtimeCapabilities.provider, sandboxId: materialized.sandbox.sandboxId };
                   // Legacy layer/plugin setup is the earliest opaque barrier and runs after
                   // provider admission has been returned, while the same Attempt Scope still owns release.
                   if (sandboxPlan.pair.setupHooks.length > 0 || sandboxPlan.pair.pluginLifecycles.length > 0) {
@@ -1465,6 +1479,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               fileChangesCapture = capture;
             },
             assertFirst,
+            pauseBeforeCleanup,
             registerAssertions: (runtime, state) => {
               liveNotes = state.notes;
               if (liveAssertions !== undefined && liveAssertions !== runtime) {
@@ -1621,6 +1636,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       return bodyResult;
     }).pipe(
       applyAttemptDeadline,
+      Effect.onExit((exit) => Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) && !timedOut
+        ? Effect.void
+        : pauseBeforeCleanup(Exit.isSuccess(exit) ? exit.value.verdict : "errored")),
       // Observe only interruption of the complete Attempt execution, never a
       // losing internal race fiber. The original Cause continues unchanged.
       Effect.onInterrupt(() => Effect.sync(() => {
@@ -2250,6 +2268,7 @@ interface AttemptResources {
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase?: MaterializedSandboxCase;
   preparedBeforeCache?: PreparedBeforeCacheUse;
+  readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
@@ -2526,6 +2545,7 @@ async function runAttemptBody(
   if (agent === undefined) {
     throw new Error(`Agent Adapter ${JSON.stringify(run.adapter.name)} is missing its Agent runtime`);
   }
+  let cleanupVerdict: EvalResult["verdict"] = "errored";
   const {
     sandbox: rawSandbox,
     materializedCase,
@@ -3579,6 +3599,7 @@ async function runAttemptBody(
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
     // 先经【每-agent mapper】把原生 span 归一到 canonical GenAI semconv(定 SpanKind),
     // 再 selectTraceSpans 按 kind 挑出回合/模型/工具,丢掉 "other" 噪声(干净小 trace 整段保留)。
+    cleanupVerdict = verdict;
     let trace: TraceSpan[] | undefined;
     if (receiver) {
       enterPhase("telemetry.collect");
@@ -3700,6 +3721,7 @@ async function runAttemptBody(
     if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw e;
     recorder.failCurrent();
     // SandboxLayer command / agent.before / 评分链路抛出的终局失败:同样先读空间轴回执,
+    cleanupVerdict = "errored";
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
     declareFailure(getPhase() ?? "eval.run", e);
     const error = errorFromThrown(e, getPhase(), res.attemptTimeout);
@@ -3747,6 +3769,7 @@ async function runAttemptBody(
           await recorder
             .measureClosing("agent.teardown", async () => {
               try {
+        await assertFirst.requestCleanup(res.pauseBeforeCleanup(cleanupVerdict));
                 const context = { ...sandboxAttemptCtx, signal };
                 await assertFirst.requestCleanup(withCleanupTimeout(
                   withAgentCallbackContext(
