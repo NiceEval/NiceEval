@@ -130,6 +130,7 @@ export class ReusableSandboxPool {
     private readonly groupPlugins: readonly LinkedPluginLifecycle[] = Object.freeze([]),
     private readonly groupPluginContext?: GroupPluginContext,
     private readonly preparedBeforeCache?: PreparedBeforeCacheUse,
+    private readonly runId?: string,
   ) {
     this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
   }
@@ -339,6 +340,7 @@ export class ReusableSandboxPool {
         diagnostic: lifecycleFeedback.diagnostic,
       };
       const materialized = yield* Scope.provide(materializeSandboxRunPlan({
+        runId: this.runId,
         plan: this.plan,
         evalId: this.materializationOwnerId,
         deadline,

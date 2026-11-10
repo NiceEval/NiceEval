@@ -1,3 +1,4 @@
+import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { Effect, Option, Result, Scope } from "effect";
 import type { JsonValue } from "../../shared/types.ts";
@@ -277,6 +278,7 @@ async function createReadySandbox(
   });
   const cpus = plan.resources.cpus;
   const memoryBytes = plan.resources.memoryBytes;
+  const creationMetadata = Object.fromEntries(Object.entries(sandboxCreationMetadata(context.runId)).map(([key, value]) => [`user.${key}`, value]));
   let createStage: "volume-create" | "instance-create" | "known" = "volume-create";
   try {
     if (artifact === undefined) {
@@ -286,12 +288,12 @@ async function createReadySandbox(
         name: volumeName,
         contentType: "block",
         sizeBytes: plan.allocatedDockerDataBytes,
-        config: configFor(creating),
+        config: { ...configFor(creating), ...creationMetadata },
       });
     } else {
       await cloneIncusArtifactConsumer(repository, control, artifact, {
         project: plan.project, pool: plan.storagePool, network: plan.network,
-        instance: name, volume: volumeName, config: configFor(creating),
+        instance: name, volume: volumeName, config: { ...configFor(creating), ...creationMetadata },
       });
     }
     const createdVolume = await control.getVolume(plan.project, plan.storagePool, volumeName);
@@ -316,6 +318,7 @@ async function createReadySandbox(
       network: plan.network,
       config: {
         ...configFor(creating),
+        ...creationMetadata,
         ...(cpus === undefined ? {} : { "limits.cpu": String(cpus) }),
         ...(memoryBytes === undefined ? {} : { "limits.memory": `${memoryBytes}` }),
       },

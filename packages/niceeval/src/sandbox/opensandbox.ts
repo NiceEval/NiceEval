@@ -16,7 +16,7 @@ export interface OpenSandboxOptions {
   readonly resources?: { readonly cpu?: string; readonly memory?: string };
   readonly user?: string;
   /** Finite instance lifetime; normal completion still destroys it immediately. */
-  readonly lifetimeMs: number;
+  readonly lifetimeMs?: number;
   readonly pathPrepend?: readonly string[];
 }
 
@@ -60,7 +60,7 @@ export function openSandbox(options: OpenSandboxOptions): SandboxLayer<"template
   if (platform?._tag !== "Linux" || platform.os !== "linux" || !["x64", "arm64"].includes(platform.arch) || !["gnu", "musl"].includes(platform.libc)) {
     throw new TypeError("OpenSandbox targetPlatform must specify Linux x64/arm64 and gnu/musl");
   }
-  if (!Number.isSafeInteger(options.lifetimeMs) || options.lifetimeMs <= 0) throw new TypeError("OpenSandbox lifetimeMs must be an explicit positive integer");
+  if (options.lifetimeMs !== undefined && (!Number.isSafeInteger(options.lifetimeMs) || options.lifetimeMs <= 0)) throw new TypeError("OpenSandbox lifetimeMs must be an explicit positive integer");
   if (options.pathPrepend !== undefined && !Array.isArray(options.pathPrepend)) throw new TypeError("OpenSandbox pathPrepend must be an array");
   const pathPrepend = (options.pathPrepend ?? []).map((value) => nonempty(value, "pathPrepend"));
   const resources: { cpu?: string; memory?: string } = {};
@@ -70,10 +70,10 @@ export function openSandbox(options: OpenSandboxOptions): SandboxLayer<"template
     if (options.resources.cpu !== undefined) resources.cpu = nonempty(options.resources.cpu, "resources.cpu");
     if (options.resources.memory !== undefined) resources.memory = nonempty(options.resources.memory, "resources.memory");
   }
-  const plan: OpenSandboxOptions = Object.freeze({ image, lifetimeMs: options.lifetimeMs, targetPlatform: Object.freeze({ ...platform }), resources: Object.freeze(resources), pathPrepend: Object.freeze(pathPrepend),
+  const plan: OpenSandboxOptions = Object.freeze({ image, ...(options.lifetimeMs === undefined ? {} : { lifetimeMs: options.lifetimeMs }), targetPlatform: Object.freeze({ ...platform }), resources: Object.freeze(resources), pathPrepend: Object.freeze(pathPrepend),
     ...(options.user === undefined ? {} : { user: nonempty(options.user, "user") }),
   });
-  const identity: JsonValue = { image, lifetimeMs: plan.lifetimeMs, targetPlatform: { os: platform.os, arch: platform.arch, libc: platform.libc }, resources, pathPrepend,
+  const identity: JsonValue = { image, ...(plan.lifetimeMs === undefined ? {} : { lifetimeMs: plan.lifetimeMs }), targetPlatform: { os: platform.os, arch: platform.arch, libc: platform.libc }, resources, pathPrepend,
     ...(plan.user === undefined ? {} : { user: plan.user }),
   };
   return defineSandboxTemplate({

@@ -1,3 +1,4 @@
+import { cloudLifetimeMs } from "./cloud-lifetime.ts";
 // Vercel Sandbox provider:用 @vercel/sandbox SDK 把 Vercel microVM 当隔离工作区跑 eval。
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox 可互换。
 
@@ -130,11 +131,11 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // 给了 snapshotId 就从快照起 microVM(预制模板:烘焙好 agent CLI 的快照)。
     const sourceParams = opts.snapshotId ? { source: { type: "run", snapshotId: opts.snapshotId } } : {};
 
-    // 未声明 lifetimeMs 时交给 provider 选择默认值；声明后原值交给 provider 校验，绝不按
-    // 本地假定的账号上限静默压短。
+    // Always send the server-side lifetime; explicit values remain provider-validated.
+    const lifetimeMs = cloudLifetimeMs(opts.lifetimeMs, opts.timeout);
     const vsb = await VSandbox.create({
       runtime,
-      ...(opts.lifetimeMs !== undefined ? { timeout: opts.lifetimeMs } : {}),
+      timeout: lifetimeMs,
       ...sourceParams,
       ...credParams,
     } as Parameters<typeof VSandbox.create>[0]);
@@ -142,7 +143,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // session 在 rotate / stop-resume 之间会变,name 才是 `Sandbox.get({ name })` 能找回的
     // 稳定身份(SDK 与官方文档都按 name 索引,见 vercel.com/docs/sandbox/cli-reference)。
     const id = vsb.name;
-    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.pathPrepend ?? [], opts.lifetimeMs, opts.deadlineAt);
+    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.pathPrepend ?? [], lifetimeMs, opts.deadlineAt);
   }
 
   // 当前 session 的真实剩余寿命不足以覆盖即将执行的命令时，拍快照并请求一条新 session。

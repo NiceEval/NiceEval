@@ -835,7 +835,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         diagnostic: setupContext.diagnostic,
       }, setupContext, liveSandboxRuntimeServices, agent, runTiming, materializationOwnerId, () => nextReuseSandboxNumber(a.run),
       groupPluginLifecycles(a.evalDef, a.run),
-      groupPluginContext, beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)));
+      groupPluginContext, beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)), runIds.get(a.run.experimentId));
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -2796,6 +2796,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   attemptOptions,
                   sandboxSem,
                   {
+                    runId: runIds.get(a.run.experimentId),
                     attachmentScope: invocationScope,
                     buildLocators,
                     ...(beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)) === undefined

@@ -3,18 +3,20 @@
 // 同一机制同通道;vercel 没有按元数据检索实例的通道,不写、不报错(见
 // docs/feature/sandbox/architecture/README.md「孤儿核对:强杀路径的实例面兜底」)。
 
+import { sandboxCreationMetadata } from "./cloud-lifetime.ts";
 import { hostname } from "node:os";
 import { execFileSync } from "node:child_process";
 
 export interface RunIdentity {
+  runId?: string;
   host: string;
   pid: number;
   startedAt: string;
 }
 
 /** 创建沙箱时快照一次当前 runner 进程的运行标识。 */
-export function currentRunIdentity(): RunIdentity {
-  return { host: hostname(), pid: process.pid, startedAt: new Date().toISOString() };
+export function currentRunIdentity(runId?: string): RunIdentity {
+  return { runId, host: hostname(), pid: process.pid, startedAt: new Date().toISOString() };
 }
 
 export const DOCKER_HOST_LABEL = "niceeval.host";
@@ -32,6 +34,7 @@ export const E2B_STARTED_AT_METADATA = "niceeval-started-at";
 
 export function dockerRunIdentityLabels(identity: RunIdentity): globalThis.Record<string, string> {
   return {
+    ...sandboxCreationMetadata(identity.runId, identity.startedAt),
     [DOCKER_HOST_LABEL]: identity.host,
     [DOCKER_PID_LABEL]: String(identity.pid),
     [DOCKER_STARTED_AT_LABEL]: identity.startedAt,

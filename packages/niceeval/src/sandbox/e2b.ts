@@ -7,6 +7,7 @@
 
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
 import { Clock, Effect } from "effect";
+import { sandboxCreationMetadata } from "./cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -283,17 +284,12 @@ class E2BCommandCompletion {
 const RECONCILE_LIST_MAX_ATTEMPTS = 3;
 const RECONCILE_LIST_RETRY_DELAY_MS = 500;
 
-/**
- * E2B 创建请求必须明确说明寿命是作者声明、attempt deadline 派生，还是没有 deadline 可派生。
- * 把这个区分留在类型里，运行时就不会再把「没有显式 lifetimeMs」误传成 SDK 的短默认值。
- */
-export type E2BSandboxLifetime =
-  | { readonly _tag: "ProviderDefault" }
-  | {
-      readonly _tag: "Requested";
-      readonly milliseconds: number;
-      readonly source: "explicit" | "attempt-deadline";
-    };
+/** Resolved finite lifetime sent to the E2B control plane. */
+export type E2BSandboxLifetime = {
+  readonly _tag: "Requested";
+  readonly milliseconds: number;
+  readonly source: "explicit" | "attempt-deadline" | "default";
+};
 
 interface E2BSandboxCreateOptions {
   readonly timeout?: number;
@@ -314,6 +310,7 @@ interface E2BSandboxCreateOptions {
   /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
    *  (见 docs/feature/sandbox/architecture/README.md「孤儿核对」)。 */
   readonly runIdentity?: RunIdentity;
+  readonly runId?: string;
 }
 
 /**
@@ -488,12 +485,6 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
    * 无归属的 sandbox 消失。宁可在这里如实报 `ready: false` 让 runner 轮换实例。
    */
   async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
-    if (this.lifetime._tag === "ProviderDefault") {
-      return {
-        ready: false,
-        reason: "the e2b sandbox has no requested lifetime; an unlimited attempt must declare lifetimeMs before sandboxReuse",
-      };
-    }
     try {
       const remainingMs = async () => (await this.sbx.getInfo()).endAt.getTime() - Date.now();
       const before = await remainingMs();
@@ -507,7 +498,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
             ready: false,
             reason:
               `e2b capped this sandbox's lifetime at ${Math.round(after / 1000)}s after renewing to the ${
-                this.lifetime.source === "explicit" ? "declared" : "attempt-deadline-derived"
+                this.lifetime.source
               } ` +
               `lifetimeMs=${this.lifetime.milliseconds}ms; the next attempt needs ${Math.round(minRemainingMs / 1000)}s`,
           };
@@ -519,21 +510,21 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   static async create(opts: E2BSandboxCreateOptions): Promise<E2BSandbox> {
     // 单条命令没有 provider 级默认:上限恒从 attempt deadline 派生(见 deadline.ts)。
     const commandTimeoutMs = opts.timeout;
+    const lifetime = opts.lifetime;
     // e2b 的 node 版本由模板决定,runtime 仅作记录(不在创建时选)。
     const apiKey = process.env.E2B_API_KEY;
     // provision token 与运行标识都经 metadata 打进实例(同一通道):歧义类失败(fetch failed ·
     // other side closed)重试前按 token 检索远端、销毁可能已创建的实例(见 reconcileProvision);
     // 运行标识供 `sandbox list --orphans` 按 metadata 过滤事后核对。
     const metadata: globalThis.Record<string, string> = {
+      ...sandboxCreationMetadata(opts.runId, opts.runIdentity?.startedAt),
       ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
       ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
     };
-    // bounded attempt 一定携带由 runtime 派生的 timeoutMs；只有没有 deadline 可派生的
-    // unlimited attempt 才允许 ProviderDefault。NiceEval 不把某个账号档位观测到的上限硬编码
-    // 成全体用户的契约。
+    // Always send a finite server-side timeout, including unlimited Attempts.
     const sdkOpts = {
       apiKey,
-      ...(opts.lifetime._tag === "Requested" ? { timeoutMs: opts.lifetime.milliseconds } : {}),
+      timeoutMs: lifetime.milliseconds,
       ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     } as const;
     // 有 template 就从模板起,否则用 e2b 默认 "base"。
@@ -546,9 +537,9 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         // 惹的祸、也不说上限是多少。把 provider 的理由原样带出来并指到 lifetimeMs 上——
         // 「不能静默压短」的另一半是「压不下就把原因说清楚」
         // (见 docs/feature/sandbox/library/reuse.md「派发前确认」)。
-        if (opts.lifetime._tag === "Requested" && /timeout cannot be greater than/i.test(e instanceof Error ? e.message : String(e))) {
+        if (/timeout cannot be greater than/i.test(e instanceof Error ? e.message : String(e))) {
           throw new Error(
-            `e2b rejected the ${opts.lifetime.source === "explicit" ? "declared" : "attempt-deadline-derived"} ` +
+            `e2b rejected the ${opts.lifetime.source} ` +
               `lifetimeMs=${opts.lifetime.milliseconds}ms for this account: ${e instanceof Error ? e.message : String(e)}. ` +
               "Lower the attempt timeout or lifetimeMs to fit the plan's maximum sandbox lifetime, or raise that maximum " +
               "on the e2b side; niceeval will not silently shorten it.",
@@ -568,7 +559,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         sbx,
         sbx.sandboxId,
         commandTimeoutMs,
-        opts.lifetime,
+        lifetime,
         opts.user,
         opts.pathPrepend ?? [],
         opts.deadlineAt,

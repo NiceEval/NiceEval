@@ -134,7 +134,7 @@ eval 因此不必感知底下是哪个 provider。
 `runCommand` / `runShell` 的 options 收一个 `timeout`(毫秒),给这一条命令自己的上限。
 **省略是常态**:省略时上限就是 attempt deadline 的剩余量,provider 层没有独立默认。
 显式传一个更短的值是有意声明,照常生效;撞线时归属记成命令显式 `timeout`。
-完整规则见 [Architecture · 时限归属](../architecture/README.md#时限归属attempt-deadline-是唯一默认)。
+完整规则见 [Architecture · 时限归属](../architecture/README.md#命令时限与实例寿命)。
 
 ```typescript
 await sandbox.runShell("pnpm build");                  // 上限 = deadline 剩余量
@@ -291,7 +291,7 @@ e2bSandbox({
 `lifetimeMs` 属于 Sandbox Provider 配置，与 Experiment `timeoutMs` 不同。
 前者控制一个 Sandbox 的生命周期，后者限制一条 Attempt；复用时 Runner 还会在派发前确认现有 Sandbox 能否承接下一条 Attempt。
 
-对 E2B，带 deadline 的 Attempt 在未声明 `lifetimeMs` 时会请求 `timeoutMs + 30s` 收尾预留，不能退回 SDK 的短默认值。声明了 `lifetimeMs` 时它必须不少于同一最低值；不足会在创建实例前报错，NiceEval 不会静默把作者声明加长。未声明 Attempt deadline 时没有可推导的有限寿命；需要该保证就显式声明 `lifetimeMs`。
+云 Provider 未声明 `lifetimeMs` 时，按 Attempt 时限加 2 分钟请求服务端寿命；无界 Attempt 默认 15 分钟。创建标签与 Provider 能力边界见下述完整规则。
 完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
 
 起点参数只在对应 Provider 内部消费——**核心不按 provider 名分支**,Runner 只消费 factory 归一出的 template 与 Provider planner。
@@ -526,9 +526,9 @@ const sandbox = openSandbox({
 });
 ```
 
-`OpenSandboxOptions` 接受必填 `image: string`、有限的 `lifetimeMs: number` 与 Linux `targetPlatform`，以及可选 `resources: { cpu?: string; memory?: string }`、`user: string`、`pathPrepend: readonly string[]`。正式实验使用 digest-pinned 镜像。工作目录为 `/home/sandbox/workspace`；默认以 execd 的 root 用户运行，`user` 接受 `/etc/passwd` 中的用户名或数字 uid，单条命令可另选身份。
+`OpenSandboxOptions` 接受必填 `image: string` 与 Linux `targetPlatform`，可选的有限 `lifetimeMs: number`，以及可选 `resources: { cpu?: string; memory?: string }`、`user: string`、`pathPrepend: readonly string[]`。正式实验使用 digest-pinned 镜像。工作目录为 `/home/sandbox/workspace`；默认以 execd 的 root 用户运行，`user` 接受 `/etc/passwd` 中的用户名或数字 uid，单条命令可另选身份。
 
-lifetimeMs 是作者显式选择的实例寿命，由服务校验，不能短于有界 Attempt 的剩余时限加 30 秒收尾预留。正常结束和取消均提前销毁，不等待寿命耗尽。命令超时或取消会销毁整个 Sandbox。保留与 Sandbox 复用不受支持。digest-pinned 镜像可使用 rootfs before cache，服务须配置公开 Snapshot API 与持久镜像存储。普通容器不提供专用 kernel 或内部 Docker daemon，不能满足 Nested Docker requirement。
+显式 lifetimeMs 是作者选择的实例寿命，由服务校验，不能短于有界 Attempt 的剩余时限加 30 秒收尾预留。正常结束和取消均提前销毁，不等待寿命耗尽。命令超时或取消会销毁整个 Sandbox。保留与 Sandbox 复用不受支持。digest-pinned 镜像可使用 rootfs before cache，服务须配置公开 Snapshot API 与持久镜像存储。普通容器不提供专用 kernel 或内部 Docker daemon，不能满足 Nested Docker requirement。
 
 rootfs 缓存在派发前由 Run 准备一次，同一批 Attempt 都从同一份 snapshot 启动；它不保存进程、卷或 tmpfs。准备时发现新增挂载或已知敏感字节，不发布缓存，Attempt 照常执行剩余 before。运行中的服务应在 command barrier 后启动；Docker 镜像可先导出为 rootfs 内归档，再在恢复后导入独立 daemon。`sandboxCache.before` 与 CLI bypass 同时控制 lookup 和 publication。快照请求发出后失败会让依赖该前缀的配对在派发前失败，不重复已执行的 action。完整规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#opensandbox)。
 
@@ -546,7 +546,7 @@ interface InstaboxSandboxOptions {
   readonly snapshotId?: string;
   readonly templateId?: InstaboxTemplateId;
   readonly template?: InstaboxTemplateId;
-  readonly lifetimeMs: number;
+  readonly lifetimeMs?: number;
   readonly spec?: InstaboxMachineSpec;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };
   readonly pathPrepend?: readonly string[];
@@ -557,7 +557,7 @@ instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
 
 `InstaboxTemplateId` 支持官方模板标识（如 `universal`、`agent-browser`、`android`、`ci`）与自定义模板名称。`snapshotId` 必须是 `sn_` 开头的具体 ID，优先于模板标识。省略时使用 `templateId`，`template` 是别名；两者都提供时以 `templateId` 为准，都省略时使用 `universal`。计划、命令定位与创建请求统一使用 `templateId`。
 
-`lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。
+显式 `lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。
 
 `InstaboxMachineSpec` 接受官方标准命名 `instabox-small`、`instabox-medium`、`instabox-large`、`instabox-xlarge`、`instabox-2xlarge`，以及数值别名 `2/4`、`4/8`、`8/16`、`16/32`、`32/64`。`INSTABOX_MACHINE_SPECS` 导出各规格的 `vcpus` 与 `memMiB`，内存按 1024 MiB/GiB 换算。显式 `resources` 优先于 `spec`；都省略时使用 `instabox-medium`，即 4 vCPU、8192 MiB。计划保留配置求值后的资源与显式传入的 `spec`；无效规格在配置校验时报错。显式资源仍由账户配额校验。
 

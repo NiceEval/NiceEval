@@ -144,9 +144,9 @@ runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP �
 `/tmp` 不可写属于宿主运行条件缺陷，报错必须点名不可写路径与修法，不透传 SDK 的原始错误串。
 它发生在必需的 ledger 等运行路径时仍是执行错误；只阻断 OTLP 接收器等 supplemental 证据时写 diagnostic 并继续，不能用宿主运行条件缺陷这一分类绕过证据依赖边界。
 
-## 时限归属:attempt deadline 是唯一默认
+## 命令时限与实例寿命
 
-attempt 内的一切沙箱时限都从 attempt deadline **派生**,provider 层没有独立默认:实例寿命请求涵盖 deadline 加收尾预留([复用寿命](../library/reuse.md)同一规则),单条命令未显式传 `timeout` 时,上限就是 deadline 的剩余量。
+单条命令未显式传 `timeoutMs` 时，上限从 Attempt deadline 的剩余量派生。云端实例寿命另有服务端安全上界，派生规则、无界 Attempt 默认值与标签通道统一见[复用寿命](../library/reuse.md#两种时间不能混用)。
 理由与 [`timeoutMs` 的配置求值链](../../experiments/architecture/README.md)相同:时限在链外另有出处,症状就是「实验声明 20 分钟,命令在整 600 秒被另一层杀掉」——配置的值不生效,报错还落在离配置最远的地方。
 用户代码显式给单条命令传更短的 `timeoutMs` 仍然生效,那是有意声明,不是默认值。
 
@@ -281,7 +281,7 @@ handle 或可再次写盘的回调。
 - **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
 - **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 到执行身份修正属主(putArchive 以 root 写入)。
 - **多路复用流** —— Docker 的 exec 流把 stdout/stderr 复用在一条流上(8 字节头 + payload),需要按帧拆分。
-- **超时** —— 命令到点销毁流并报错;上限按[时限归属](#时限归属attempt-deadline-是唯一默认)从 attempt deadline 派生。
+- **超时** —— 命令到点销毁流并报错;上限按[时限归属](#命令时限与实例寿命)从 attempt deadline 派生。
 
 这条路径不把 Docker API 交给 Agent。
 Agent 需要 `docker` / `compose` 时走 [Nested Docker](../../sandbox-nested-docker/README.md) 的 Incus VM。

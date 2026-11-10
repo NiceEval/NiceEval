@@ -1,4 +1,5 @@
 import { Sandbox as RemoteSandbox, SandboxApiException, SandboxManager } from "@alibaba-group/opensandbox";
+import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -32,25 +33,25 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   private stopping?: Promise<void>;
   private readonly identities = new Map<string, Promise<ExecutionIdentity>>();
 
-  private constructor(private remote: RemoteSandbox, private readonly options: OpenSandboxOptions,
+  private constructor(private remote: RemoteSandbox, private readonly options: OpenSandboxOptions & { readonly lifetimeMs: number },
     private readonly connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean },
     private deadlineAt?: number) {
   }
 
   get sandboxId(): string { return this.remote.id; }
 
-  static async create(options: OpenSandboxOptions, deadlineAt?: number, snapshotId?: string): Promise<OpenSandboxBackend> {
+  static async create(options: OpenSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, snapshotId?: string, runId?: string): Promise<OpenSandboxBackend> {
     const domain = process.env.OPEN_SANDBOX_DOMAIN;
     if (!domain) throw new Error("OPEN_SANDBOX_DOMAIN is required for OpenSandbox");
     const url = new URL(domain);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("OPEN_SANDBOX_DOMAIN must be an HTTP(S) URL without credentials, query or fragment");
     const connectionConfig = { domain, apiKey: process.env.OPEN_SANDBOX_API_KEY, useServerProxy: true, disableMetrics: true };
-    const remote = await OpenSandboxBackend.provision(options, connectionConfig, snapshotId);
+    const remote = await OpenSandboxBackend.provision(options, connectionConfig, snapshotId, runId);
     return new OpenSandboxBackend(remote, options, connectionConfig, deadlineAt);
   }
 
-  private static async provision(options: OpenSandboxOptions, connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean }, snapshotId?: string): Promise<RemoteSandbox> {
-    const metadata = { "niceeval-provision-token": randomUUID() };
+  private static async provision(options: OpenSandboxOptions & { readonly lifetimeMs: number }, connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean }, snapshotId?: string, runId?: string): Promise<RemoteSandbox> {
+    const metadata = { ...sandboxCreationMetadata(runId), "niceeval-provision-token": randomUUID() };
     let remote: RemoteSandbox;
     try { remote = await RemoteSandbox.create({
       ...(snapshotId === undefined ? { image: options.image } : { snapshotId }),

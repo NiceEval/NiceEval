@@ -63,6 +63,7 @@ import {
 import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
 import type { LinkedRunPlan } from "./plan.ts";
 import { ArtifactPrepareCoordinator, platformKey, runAgentEnsure } from "../agents/provisioner.ts";
+import { cloudLifetimeMs } from "./cloud-lifetime.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
 import type { CustomProviderSandbox } from "./types.ts";
@@ -101,6 +102,7 @@ export type SandboxRuntimeRelease =
     };
 
 export interface SandboxRuntimeMaterializeInput {
+  readonly runId?: string;
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
   readonly evalId: string;
   readonly deadline: SandboxRuntimeDeadline;
@@ -313,7 +315,7 @@ export function e2bLifetimeRequest(
   const declared = configuredLifetime(lifetime);
   if (deadline._tag === "Unlimited") {
     return declared === undefined
-      ? { _tag: "ProviderDefault" }
+      ? { _tag: "Requested", milliseconds: cloudLifetimeMs(undefined), source: "default" }
       : { _tag: "Requested", milliseconds: declared, source: "explicit" };
   }
 
@@ -328,7 +330,7 @@ export function e2bLifetimeRequest(
     }
     return { _tag: "Requested", milliseconds: declared, source: "explicit" };
   }
-  return { _tag: "Requested", milliseconds: required, source: "attempt-deadline" };
+  return { _tag: "Requested", milliseconds: cloudLifetimeMs(undefined, deadline.timeoutMs), source: "attempt-deadline" };
 }
 
 function boundProvisionSlot(context: SandboxRuntimeMaterializeContext): ProvisionSlot | undefined {
@@ -491,6 +493,7 @@ export function materializeDockerComposeProviderPlan(
     ...deadlineOptions(context.deadline),
     feedback: context.feedback,
     provisionSlot: boundProvisionSlot(context),
+    runId: context.runId,
     lifetimeMs: configuredLifetime(plan.lifetime),
   }).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context)))));
 }
@@ -539,7 +542,7 @@ export function materializeDockerfileProviderPlan(
                   pathPrepend: plan.pathPrepend,
                   feedback: context.feedback,
                   provisionToken,
-                  runIdentity: currentRunIdentity(),
+                  runIdentity: currentRunIdentity(context.runId),
                   ...(plan.profileBinding === undefined ? {} : {
                     dockerSocketPath: plan.profileBinding.dockerSocketPath,
                     ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
@@ -754,7 +757,7 @@ export function materializeDockerImageProviderPlan(
         pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
         provisionToken,
-        runIdentity: currentRunIdentity(),
+        runIdentity: currentRunIdentity(context.runId),
         ...(plan.profileBinding === undefined ? {} : {
           dockerSocketPath: plan.profileBinding.dockerSocketPath,
           ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
@@ -809,6 +812,7 @@ export function materializeE2BProviderPlan(
       () => import("./e2b.ts"),
     );
     const provisionToken = randomUUID();
+    const runIdentity = currentRunIdentity(context.runId);
     const backend = yield* withProvisionRetry(
       providerBoundaryEffect(() => E2BSandbox.create({
         ...deadlineOptions(context.deadline),
@@ -818,7 +822,8 @@ export function materializeE2BProviderPlan(
         lifetime,
         pathPrepend: plan.pathPrepend,
         provisionToken,
-        runIdentity: currentRunIdentity(),
+        runId: context.runId,
+        runIdentity,
       })),
       classifyProvisionError,
       boundProvisionSlot(context),
@@ -1344,6 +1349,7 @@ export function acquireSandboxRunPlan(
   input: SandboxRuntimeMaterializeInput,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   const context: SandboxRuntimeMaterializeContext = {
+    runId: input.runId,
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,
@@ -1397,6 +1403,7 @@ export function prepareMaterializedSandboxRunPlan(
   owned: MaterializedSandboxCase,
 ): Effect.Effect<void, SandboxRuntimeMaterializationError> {
   const context: SandboxRuntimeMaterializeContext = {
+    runId: input.runId,
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,

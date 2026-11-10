@@ -1,3 +1,4 @@
+import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -29,7 +30,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
 
   private constructor(
     private readonly api: InstaboxApi,
-    private readonly options: InstaboxSandboxOptions,
+    private readonly options: InstaboxSandboxOptions & { readonly lifetimeMs: number },
     private readonly operation: Operation,
     private readonly deadlineAt?: number,
   ) {}
@@ -37,7 +38,8 @@ export class InstaboxBackend implements SandboxProviderBackend {
   get sandboxId(): string { return this.operation.machineId; }
   private get path(): string { return `/machines/${encodeURIComponent(this.sandboxId)}`; }
 
-  static async create(options: InstaboxSandboxOptions, deadlineAt?: number): Promise<InstaboxBackend> {
+  static async create(options: InstaboxSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, runId?: string): Promise<InstaboxBackend> {
+    if (options.lifetimeMs < 60_000 || options.lifetimeMs > 86_400_000) throw new Error("Instabox lifetimeMs must be between 60 seconds and 24 hours");
     const key = process.env.INSTABOX_API_KEY;
     if (!key) throw new Error("INSTABOX_API_KEY is required for Instabox");
     const api = new InstaboxApi(key);
@@ -50,10 +52,10 @@ export class InstaboxBackend implements SandboxProviderBackend {
       ...(options.snapshotId !== undefined ? { snapshotId: options.snapshotId } : { templateId: options.templateId ?? options.template ?? "universal" }),
       name: `niceeval-${idempotencyKey}`,
       ...(options.resources ?? INSTABOX_MACHINE_SPECS["4/8"]),
-      deleteAfterSeconds: options.lifetimeMs / 1000,
+      deleteAfterSeconds: Math.ceil(options.lifetimeMs / 1000),
       autoSuspendAfterSeconds: 0, maxRunMinutes: -1,
       vault: false, secrets: [],
-      metadata: { "niceeval.provision": idempotencyKey },
+      metadata: { ...sandboxCreationMetadata(runId), "niceeval.provision": idempotencyKey },
     });
     const request = () => api.json(Operation, "/machines", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body });
     let operation: Operation;
@@ -74,7 +76,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     const machine = await this.api.json(Machine, this.path, { signal: bounded });
     if (machine.id !== this.sandboxId || machine.state !== "running" || !machine.runtime.ready) throw new Error("Instabox Machine is not ready");
     this.token = await this.api.json(SSHToken, `${this.path}/ssh-tokens`, {
-      method: "POST", body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: this.options.lifetimeMs / 1000 }), signal: bounded,
+      method: "POST", body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: Math.ceil(this.options.lifetimeMs / 1000) }), signal: bounded,
     });
     if (this.token.machineId !== this.sandboxId) throw new Error("Instabox SSH grant belongs to another Machine");
     const probe = await this.runShell('test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace', { cwd: "/data/home", signal: bounded });

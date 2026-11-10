@@ -38,7 +38,7 @@ export interface InstaboxSandboxOptions {
   readonly snapshotId?: string;
   readonly templateId?: InstaboxTemplateId;
   readonly template?: InstaboxTemplateId;
-  readonly lifetimeMs: number;
+  readonly lifetimeMs?: number;
   readonly spec?: InstaboxMachineSpec;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };
   readonly pathPrepend?: readonly string[];
@@ -49,7 +49,7 @@ const Options = Schema.Struct({
   snapshotId: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^sn_[A-Za-z0-9_-]+$/))),
   templateId: Schema.optionalKey(Schema.String),
   template: Schema.optionalKey(Schema.String),
-  lifetimeMs: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }), Schema.isMultipleOf(1000)),
+  lifetimeMs: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }), Schema.isMultipleOf(1000))),
   resources: Schema.optionalKey(Schema.Struct({ vcpus: positiveInteger, memMiB: positiveInteger })),
   spec: Schema.optionalKey(Schema.Literals(Object.keys(INSTABOX_MACHINE_SPECS) as InstaboxMachineSpec[])),
   pathPrepend: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isPattern(/^\/[^\0:\r\n]*$/)))),
@@ -78,7 +78,7 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
   const parsed = decodeOptions(options);
   const plan = Object.freeze({
     ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { templateId: parsed.templateId ?? parsed.template ?? "universal" }),
-    lifetimeMs: parsed.lifetimeMs,
+    ...(parsed.lifetimeMs === undefined ? {} : { lifetimeMs: parsed.lifetimeMs }),
     resources: Object.freeze({ ...(parsed.resources ?? INSTABOX_MACHINE_SPECS[parsed.spec ?? "instabox-medium"]) }),
     ...(parsed.spec !== undefined ? { spec: parsed.spec } : {}),
     pathPrepend: Object.freeze([...(parsed.pathPrepend ?? [])]),

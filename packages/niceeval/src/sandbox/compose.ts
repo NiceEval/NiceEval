@@ -1129,6 +1129,7 @@ export function buildComposeIdentityOverlay(opts: {
 }
 
 export interface MaterializeComposeOpts {
+  readonly runId?: string;
   readonly ctx: SandboxMaterializeContext;
   readonly timeout?: number;
   readonly feedback?: ScopedFeedback;
@@ -1204,7 +1205,7 @@ export function materializeDockerComposeProviderCase(
     });
 
     const identityYaml = buildComposeIdentityOverlay({
-      identity: currentRunIdentity(),
+      identity: currentRunIdentity(opts.runId),
       serviceNames: collection.inspection.services.map((s) => s.name),
       networkNames: collection.inspection.networkNames,
     });

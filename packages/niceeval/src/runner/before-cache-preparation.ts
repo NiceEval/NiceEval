@@ -225,6 +225,7 @@ function materializePreparationNode(
       const captured = yield* Effect.scoped(Effect.gen(function* () {
         const signal = yield* Effect.abortSignal;
         const runtimeInput: SandboxRuntimeMaterializeInput = {
+          runId: node.context.runId,
           plan: node.plan,
           evalId: node.representative.evalDef.id,
           deadline: { _tag: "Unlimited" },
