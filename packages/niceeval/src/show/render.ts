@@ -2114,13 +2114,8 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
 
   if (total > 0) {
     blocks.push({
-      kind: "keyValue",
-      entries: [
-        {
-          key: "Summary",
-          value: `Passed ${passed}, Failed ${failed}, Total ${total}${totalScore > 0 ? ` (score: ${fmt(earnedScore)}/${fmt(totalScore)})` : ""}`,
-        },
-      ],
+      kind: "divider",
+      title: `Passed ${passed}, Failed ${failed}, Total ${total}${totalScore > 0 ? ` (score: ${fmt(earnedScore)}/${fmt(totalScore)})` : ""}`,
     });
   }
 
