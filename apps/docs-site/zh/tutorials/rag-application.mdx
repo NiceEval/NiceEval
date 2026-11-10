@@ -1,0 +1,119 @@
+---
+title: "评测 RAG 与知识库助手：检索、依据与防幻觉"
+sidebarTitle: "评测 RAG 应用"
+description: "评测检索增强生成（RAG）与知识库助手：断言检索工具调用、检查引用格式、用 Judge 验证回答依据，并测试面对未知问题时的拒答表现。"
+---
+
+检索增强生成（RAG）和知识库问答助手，其正确性通常由四个环节共同决定：是否发起了正确的检索请求、检索回来的文档是否被正确引用、回复内容是否完全忠于检索材料（无幻觉），以及面对知识库外的问题时是否诚实拒答。
+
+这一页说明怎样用 NiceEval 给 RAG 应用编写完整的端到端评估用例。
+
+## 检索过程与工具断言
+
+RAG 应用通常由模型决定何时调用检索工具。如果问题包含明确的实体，检索请求应当包含对应的查询参数。
+
+用 `turn.calledTool` 配合 `toolMatch` 和 `jsonMatch` 检查检索调用：
+
+```ts
+// evals/rag-search.eval.ts
+import { defineEval } from "niceeval";
+import { jsonMatch, toolMatch } from "niceeval/expect";
+
+export default defineEval({
+  description: "准确调用检索工具并传递正确查询实体",
+  async test(t) {
+    const turn = await t.send("帮我查一下 2026 年夏季产品退换货政策。");
+    turn.succeeded().label("Turn 成功");
+
+    // 检查是否调用了检索工具，且查询词包含核心实体
+    turn.calledTool(
+      toolMatch("knowledge_search", {
+        input: jsonMatch({ query: /退换货政策/ }),
+      })
+    ).label("发起知识库检索");
+  },
+});
+```
+
+如果应用要求必须在单轮内完成检索，可以通过 `.exactly(1)` 约束调用次数。
+
+## 检查引用标记与确定性事实
+
+知识库系统通常要求回复中附带文档来源标识或角标。这类规则属于确定性事实，使用确定性 Match 检查：
+
+```ts
+import { includes, pattern } from "niceeval/expect";
+
+// 检查是否包含统一的文档引用格式，如 [doc-1] 或【参考来源】
+t.check(turn.reply, pattern(/\[doc-\d+\]|【参考来源】/)).label("包含文档引用标记");
+
+// 检查是否准确提到了关键政策条款
+t.check(turn.reply, includes("7天无理由退货")).label("说明退货期限");
+```
+
+确定性规则只用于断言固定的数字、条款编号或格式要求。开放式的语义表述留给 Judge。
+
+## 用 Judge 验证回答依据与防幻觉
+
+RAG 最严重的质量问题是模型编造检索文档里不存在的信息（幻觉）。可以通过 `defineJudge` 声明一个裁判模型，把用户问题、检索到的文档片段与助手的实际回复组合为材料交由 Judge 打分：
+
+```ts
+// evals/rag-groundedness.eval.ts
+import { defineEval } from "niceeval";
+import { defineJudge } from "niceeval/expect";
+
+const groundednessJudge = defineJudge({
+  name: "rag-groundedness",
+  rubric: "评估 answer 中的事实声明是否完全由 context 支持。如果 answer 包含 context 中没有提及的政策细节或条款，判为不通过。",
+});
+
+export default defineEval({
+  description: "回答内容完全忠实于检索结果",
+  judge: groundednessJudge,
+  async test(t) {
+    const turn = await t.send("退货运费由谁承担？");
+    turn.succeeded();
+
+    // 假定检索到的上下文片段
+    const retrievedDocs = "非质量问题退换货，退回运费由买家自行承担；质量问题由平台承担。";
+
+    t.judge(
+      {
+        question: turn.input,
+        context: retrievedDocs,
+        answer: turn.reply,
+      },
+      groundednessJudge
+    ).gate(0.8).label("回答完全忠实于上下文");
+  },
+});
+```
+
+低于 0.8 时判定未达到质量要求。
+
+## 测试未知问题的诚实拒答
+
+高质量的 RAG 系统不仅要在有答案时答对，还要在知识库缺失相关信息时明确告知用户，而不是凭空猜测。这类用例称为负向测试。
+
+```ts
+// evals/rag-refusal.eval.ts
+import { defineEval } from "niceeval";
+import { pattern } from "niceeval/expect";
+
+export default defineEval({
+  description: "知识库无对应内容时诚实拒答",
+  async test(t) {
+    // 提问一个知识库明确没有收录的无关问题
+    const turn = await t.send("公司今年内部晋升答辩的时间表是什么？");
+    turn.succeeded();
+
+    // 检查回复是否表达了未找到相关信息或建议咨询对应部门
+    t.check(
+      turn.reply,
+      pattern(/未找到|暂无相关|未查询到|没有记录|无法解答/)
+    ).label("明确说明未检索到信息");
+  },
+});
+```
+
+把正向问答与负向拒答一起放入评估测试集，可以防止改动 Prompt 导致助手过度自信或胡乱回答。

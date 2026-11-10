@@ -1,0 +1,116 @@
+---
+title: "Evaluating RAG and Knowledge Base Agents"
+sidebarTitle: "Evaluating RAG"
+description: "Evaluate Retrieval-Augmented Generation (RAG) and knowledge base agents: assert retrieval tool calls, check citation formats, verify grounding with a Judge, and test refusal on unknown queries."
+---
+
+The correctness of Retrieval-Augmented Generation (RAG) and knowledge base assistants typically depends on four stages: whether the correct retrieval tool was called, whether retrieved documents are cited properly, whether the final response is strictly grounded in the context without hallucination, and whether the assistant refuses queries outside its knowledge base.
+
+This tutorial guides you through writing end-to-end evaluations for RAG applications with NiceEval.
+
+## Retrieval Tool Assertions
+
+In RAG applications, the model determines when to trigger retrieval. When an inquiry contains specific entities, the search query should include them.
+
+Use `turn.calledTool` with `toolMatch` and `jsonMatch` to verify retrieval tool execution:
+
+```ts
+// evals/rag-search.eval.ts
+import { defineEval } from "niceeval";
+import { jsonMatch, toolMatch } from "niceeval/expect";
+
+export default defineEval({
+  description: "Call knowledge retrieval tool with matching query entities",
+  async test(t) {
+    const turn = await t.send("Look up the 2026 summer return policy.");
+    turn.succeeded().label("Turn succeeded");
+
+    // Check that the retrieval tool was invoked with relevant query keywords
+    turn.calledTool(
+      toolMatch("knowledge_search", {
+        input: jsonMatch({ query: /return policy/i }),
+      })
+    ).label("Trigger knowledge search");
+  },
+});
+```
+
+You can append `.exactly(1)` to ensure the retrieval is executed only once.
+
+## Checking Citations and Deterministic Facts
+
+Knowledge base assistants often require citations or document tags in responses. Use deterministic matchers for these requirements:
+
+```ts
+import { includes, pattern } from "niceeval/expect";
+
+// Verify document citation tags, e.g., [doc-1] or [source: ...]
+t.check(turn.reply, pattern(/\[doc-\d+\]|\[source:[^\]]+\]/i)).label("Includes citation markers");
+
+// Verify essential terms
+t.check(turn.reply, includes("30-day window")).label("States return window");
+```
+
+Save deterministic rules for strict numbers, IDs, and formats. Leave subjective semantic assessment to a Judge.
+
+## Verifying Grounding and Preventing Hallucinations
+
+Hallucination is the primary risk in RAG applications. Use `defineJudge` to create a Judge model that evaluates whether the answer is strictly supported by the retrieved context:
+
+```ts
+// evals/rag-groundedness.eval.ts
+import { defineEval } from "niceeval";
+import { defineJudge } from "niceeval/expect";
+
+const groundednessJudge = defineJudge({
+  name: "rag-groundedness",
+  rubric: "Assess whether all factual statements in answer are directly supported by context. Fail if answer contains details not mentioned in context.",
+});
+
+export default defineEval({
+  description: "Answer must be strictly grounded in retrieved documents",
+  judge: groundednessJudge,
+  async test(t) {
+    const turn = await t.send("Who pays for the return shipping?");
+    turn.succeeded();
+
+    const retrievedDocs = "For non-defective returns, the customer covers shipping; defective items are covered by the store.";
+
+    t.judge(
+      {
+        question: turn.input,
+        context: retrievedDocs,
+        answer: turn.reply,
+      },
+      groundednessJudge
+    ).gate(0.8).label("Response is grounded in context");
+  },
+});
+```
+
+A score below 0.8 marks this assertion as failed.
+
+## Testing Refusal on Unanswerable Queries
+
+A robust RAG assistant must also know when not to answer. Negative tests ensure the assistant refuses gracefully instead of fabricating responses:
+
+```ts
+// evals/rag-refusal.eval.ts
+import { defineEval } from "niceeval";
+import { pattern } from "niceeval/expect";
+
+export default defineEval({
+  description: "Refuse unanswerable questions outside the knowledge base",
+  async test(t) {
+    const turn = await t.send("What is the schedule for internal employee promotions?");
+    turn.succeeded();
+
+    t.check(
+      turn.reply,
+      pattern(/not found|cannot find|no information|unable to answer/i)
+    ).label("Explicitly states lack of knowledge");
+  },
+});
+```
+
+Including both positive queries and negative refusal cases protects against regressions when prompts or models are updated.

@@ -35,6 +35,20 @@ t.check(turn.data, matches(OrderSchema));
 t.check(turn.reply.length, satisfies("回复不是空文本", (length) => length > 0));
 ```
 
+## 常用 Match 速查
+
+按你要检查的目标选择 Match：
+
+| 检查目标 | 推荐写法 | 说明 |
+|---|---|---|
+| 文本包含特定词汇或短语 | `includes("文本")` | 确定性包含 |
+| 文本匹配多种表述或正则表达式 | `pattern(/正则/)` | 允许有限措辞变体 |
+| 严格相等（数字、状态枚举或结构） | `equals(expected)` | 深比较，字符串要求逐字一致 |
+| 结构满足 Schema | `matches(Schema)` | 校验对象结构 |
+| 工具调用存在与参数 | `calledTool(toolMatch(name, { input }))` | 过程级断言 |
+| 语义依据与开放式质量 | `t.judge(material, definition)` | 裁判模型评估 |
+| 步骤进度或连续测量值 | `measured(...)` / `.score(n)` | 计分制贡献 |
+
 结果是 `matched` 还是 `mismatched`，只说明这个值是否满足这条规则，不说明规则本身写得对不对。任务允许多种正确结果时，规则要覆盖所有这些结果。
 
 `equals(expected)` 做深相等比较；比较字符串时，要求一字不差。如果任务接受多种等价写法，先把产物解析或归一化成任务关心的值，再比较。只有字面写法本身就是任务要求时，才直接比较字符串。

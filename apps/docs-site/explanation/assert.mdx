@@ -35,6 +35,20 @@ t.check(turn.data, matches(OrderSchema));
 t.check(turn.reply.length, satisfies("Reply is not empty", (length) => length > 0));
 ```
 
+## Common Match Reference
+
+Choose a Match based on your assertion target:
+
+| Target | Recommended Approach | Note |
+|---|---|---|
+| Specific substring | `includes("text")` | Deterministic substring check |
+| RegEx or wording variations | `pattern(/regex/)` | Tolerates minor formatting variations |
+| Deep equality (numbers, enums, objects) | `equals(expected)` | Exact deep equality |
+| Object conforms to Schema | `matches(Schema)` | Type/schema validation |
+| Tool calls and arguments | `calledTool(toolMatch(name, { input }))` | Process assertion |
+| Subjective quality or semantic grounding | `t.judge(material, definition)` | LLM-as-a-judge model |
+| Stepwise progress or scores | `measured(...)` / `.score(n)` | Score contributions |
+
 Whether the result is `matched` or `mismatched` only says whether the value satisfies this rule. It does not say whether the rule itself is written correctly. When a task allows several correct results, the rule must cover all of them.
 
 `equals(expected)` does a deep equality comparison; for strings, it requires an exact match. If the task accepts several equivalent forms, first parse or normalize the output into the value the task cares about, then compare. Compare strings directly only when the literal form is itself the task requirement.
