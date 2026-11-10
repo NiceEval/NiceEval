@@ -1,4 +1,6 @@
-import { Exit, Result, Schema } from "effect";
+import * as Exit from "effect/Exit";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import {
   type RecordJson,
   type RecordJsonObject,

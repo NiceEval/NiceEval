@@ -1,12 +1,8 @@
 import { defineConfig } from "vitest/config";
 import { configDefaults } from "vitest/config";
 
-// 两个 project 按「验证对象」切，代码可直接运行 unit project，文档站走统一 lint：
-//   unit           → 代码           `pnpm exec vitest run --project unit`  src/ 单元测试
-//   lint-docs-site → apps/docs-site/ `pnpm lint:docs-site`                生成区块、随包索引与 Mint 校验
-// project 成员资格由目录决定，不由清单决定——新守护文件放进哪个目录就归哪个入口，
-// 不存在「两个 include 谁都没收它、于是永远不跑」的静默失效。真机 Docker 验收由
-// vitest.docker.config.ts 显式进入，不属于默认 suite。
+// unit 收集代码测试与 test/unit 下的仓库守护；Mint 构建与断链检查走 pnpm lint:docs-site。
+// include 按仓库根锚定，正式安装后 E2E 由独立 runner 执行，不属于默认 suite。
 const EXCLUDE = [
   ...configDefaults.exclude,
   // include 已按仓库根锚定（src/、test/ 开头），下面这些沙箱型目录本就匹配不到；
@@ -30,13 +26,6 @@ export default defineConfig({
           name: "unit",
           include: ["packages/niceeval/src/**/*.test.ts", "packages/niceeval/src/**/*.test.tsx", "packages/repo-tools/src/**/*.test.ts", "test/unit/**/*.test.ts"],
           exclude: UNIT_EXCLUDE,
-        },
-      },
-      {
-        test: {
-          name: "lint-docs-site",
-          include: ["lint/docs-site/**/*.lint.ts"],
-          exclude: EXCLUDE,
         },
       },
     ],

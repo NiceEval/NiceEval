@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 /** Attachment-local data and closure failures for the closed fixed catalog. */
 export const RecordAttachmentIssueCodeSchema = Schema.Literals([

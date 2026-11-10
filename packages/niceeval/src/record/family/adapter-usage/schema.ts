@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { CollectionStateSchema, NonNegativeSafeIntegerSchema, PositiveSafeIntegerSchema } from "../common.ts";
 import { CanonicalDecimalSchema, CurrencyCodeSchema } from "../source-receipt/codec.ts";

@@ -13,7 +13,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 
-import type { ChildProcessSpawner } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
 import { Effect } from "effect";
 
 import {

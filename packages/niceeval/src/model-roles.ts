@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 /** A model selected for one application-defined purpose. */
 export interface ModelRoleSelection {

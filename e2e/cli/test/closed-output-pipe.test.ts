@@ -2,8 +2,7 @@ import { withProcess } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { cliBinary, cliE2E } from "./context.ts";
 
-// @feature docs/feature/inspection/README.md
-test.concurrent.each(["stdout", "stderr"] as const)("下游关闭 %s 后 CLI 静默退出且不打印未捕获异常", async (stream) => {
+async function assertClosedOutputPipe(stream: "stdout" | "stderr"): Promise<void> {
   await cliE2E.case(`closed-output-pipe-${stream}`, async ({ paths }) => {
     await withProcess([
       process.execPath, "--input-type=module", "-e", `
@@ -22,4 +21,10 @@ test.concurrent.each(["stdout", "stderr"] as const)("下游关闭 %s 后 CLI 静
       expect(result.stderr, result.diagnostic()).toBe("");
     });
   });
-});
+}
+
+// @feature docs/feature/inspection/README.md
+test.concurrent("下游关闭 stdout 后 CLI 静默退出且不打印未捕获异常", () => assertClosedOutputPipe("stdout"));
+
+// @feature docs/feature/inspection/README.md
+test.concurrent("下游关闭 stderr 后 CLI 静默退出且不打印未捕获异常", () => assertClosedOutputPipe("stderr"));

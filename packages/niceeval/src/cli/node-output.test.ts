@@ -18,7 +18,7 @@ test.each(["stdout", "stderr"] as const)("%s handles asynchronous EPIPE after th
     getter.mockRestore();
   }
   await closed;
-  expect(writable.listenerCount("error")).toBe(1);
+  expect(writable.errored).toMatchObject({ code: "EPIPE" });
 });
 
 // @feature docs/feature/experiments/README.md

@@ -1,6 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/architecture.md#historical-repricing
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { createAdapterCallPriceReceipts } from "../o11y/adapter-call-price.ts";
 import { createJudgeCallPriceReceipts } from "../o11y/judge-call-price.ts";
 import { AdapterCallPriceReceiptSchema, type ReadableAdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";

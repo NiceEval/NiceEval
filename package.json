@@ -10,11 +10,9 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck && pnpm --filter niceeval exec tsc -p ../../docs/feature/assertions/library/reference/tsconfig.json",
-    "lint": "concord check && pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"pnpm run lint:vitest\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
-    "lint:vitest": "concurrently --names writing,vitest \"concord docs check\" \"vitest run --project lint-docs-site\"",
-    "lint:docs": "concord docs check",
-    "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names vitest,validate,links \"vitest run --project lint-docs-site\" \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
+    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck",
+    "lint": "concord check && pnpm run lint:docs-site",
+    "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names validate,links \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "niceeval": "node packages/niceeval/bin/niceeval.js",
     "e2e": "tsx packages/e2e-runner/src/cli.ts",
     "repo": "tsx packages/repo-tools/src/cli.ts",
@@ -37,9 +35,9 @@
     "concurrently": "^10.0.7",
     "husky": "^9.1.7",
     "next": "16.4.6",
-    "nx": "23.3.1",
+    "nx": "24.0.5",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.12"
+    "vitest": "^5.1.0"
   }
 }

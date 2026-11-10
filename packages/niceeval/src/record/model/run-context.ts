@@ -1,6 +1,7 @@
 import { ResolvedModelRolesSchema, type ResolvedModelRoles } from "../../model-roles.ts";
 import { AdapterCleanupTimeoutMsSchema } from "../../shared/adapter-cleanup.ts";
-import { Result, Schema } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import {
   canonicalRecordJsonText,
   defineRecordCore,

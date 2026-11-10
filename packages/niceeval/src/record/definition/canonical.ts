@@ -1,4 +1,4 @@
-import { Result } from "effect";
+import * as Result from "effect/Result";
 
 /** JSON object values are represented by an interface to keep recursion finite to TypeScript. */
 export interface RecordJsonObject {

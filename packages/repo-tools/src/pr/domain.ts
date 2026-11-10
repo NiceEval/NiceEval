@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
 import { stringify as stringifyYaml } from "yaml";
 import { readPrTestDeclarations } from "./test-relations.js";
 

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { Effect, Layer, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { PrFileFailure, PrGitFailure, PrGitHubFailure } from "./errors.js";
 import { decodeGitHubPullRequest } from "./schema.js";

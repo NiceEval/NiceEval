@@ -1,5 +1,5 @@
 import { Context, type Effect } from "effect";
-import type { ChildProcessSpawner } from "effect/unstable/process";
+import type { ChildProcessSpawner } from "effect/process";
 
 import type { GitHubPullRequest } from "./model.js";
 import type { PrFileFailure, PrGitFailure, PrGitHubFailure } from "./errors.js";

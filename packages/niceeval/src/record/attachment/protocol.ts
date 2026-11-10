@@ -1,4 +1,6 @@
-import { Result, Schema, SchemaAST } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as SchemaAST from "effect/SchemaAST";
 
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import { isRecordAttachmentName } from "../model/identifiers.ts";

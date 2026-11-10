@@ -1,4 +1,5 @@
-import { Result, Schema } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import type { PriceOverride } from "../runner/types.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import { JudgePriceReceiptSchema, type JudgePriceReceipt, type JudgeUsageCall } from "../record/family/judge-usage/schema.ts";

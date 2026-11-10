@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
-import { getAllBlogPosts } from "../../apps/site/lib/blog";
-import { proxy } from "../../apps/site/proxy";
-import { absoluteUrl, copy, withLocale } from "../../apps/site/lib/content";
-import { createPagesSitemap } from "../../apps/site/lib/sitemap";
+import { getAllBlogPosts } from "../../../apps/site/lib/blog";
+import { proxy } from "../../../apps/site/proxy";
+import { absoluteUrl, copy, withLocale } from "../../../apps/site/lib/content";
+import { createPagesSitemap } from "../../../apps/site/lib/sitemap";
 
 // 仓库守护:产品站英文正式 URL 是无前缀路径,旧 /en/* 永久去前缀,根路径不按请求语言漂移。
 // 删除这组守护后,站内链接/SEO 产物或 Proxy 任一处回到旧口径,构建仍可能成功而搜索引擎与用户
 // 会分别看到重复地址或错误语言——这类回归没有其它核心测试会报警。
-const ROOT = resolve(import.meta.dirname, "../..");
+const ROOT = resolve(import.meta.dirname, "../../..");
 
 describe("产品站英文 URL 迁移", () => {
   it("helper 为英文生成根路径,中文保留 /zh,绝对 URL 与首页 title 契约一致", () => {

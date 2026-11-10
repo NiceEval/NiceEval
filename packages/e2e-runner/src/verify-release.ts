@@ -140,7 +140,7 @@ const extractPackageJson = (contents: Uint8Array): Effect.Effect<Buffer, VerifyR
       }
       settle(Effect.succeed(matches[0]));
     };
-    const onEntry = (header: tar.Headers, stream: NodeJS.ReadableStream, next: (error?: Error | null) => void) => {
+    const onEntry = (...[header, stream, next]: tar.ExtractEvents["entry"]) => {
       if (header.type !== "file" || header.name !== "package/package.json") {
         const onEnd = () => next();
         const onStreamError = (cause: unknown) => settle(Effect.fail(operationError("tarball", cause)));
@@ -155,7 +155,13 @@ const extractPackageJson = (contents: Uint8Array): Effect.Effect<Buffer, VerifyR
         return;
       }
       const chunks: Buffer[] = [];
-      const onData = (chunk: Buffer) => chunks.push(chunk);
+      const onData = (chunk: unknown) => {
+        if (!Buffer.isBuffer(chunk)) {
+          settle(Effect.fail(operationError("tarball", "tar entry emitted a non-buffer chunk")));
+          return;
+        }
+        chunks.push(chunk);
+      };
       const onStreamError = (cause: unknown) => settle(Effect.fail(operationError("tarball", cause)));
       const onEnd = () => {
         stream.off("data", onData);

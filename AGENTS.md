@@ -41,7 +41,7 @@
 - CLI 与 Node runtime 的人读文案由各自 contribution、feedback renderer 或错误 owner 直接拥有，只提供英语文本；不要建立 message-key catalog、通用翻译函数、`Config.locale`、系统 locale 探测，或为读 locale 而预加载配置。列表、缩进、面板和截断继续复用 CLI 呈现能力，数量文案不按单复数分支。浏览器 `view` 保留中英 catalog 与语言切换，不要删、不要和 CLI 文案混用。
 - 公共 API、可观察行为或文档变更时，沿对应目录入口完成同步与验证；测试命令以 `package.json` 和局部入口文档为准。
 - NiceEval 的发布运行时由 `pnpm run build:package` 固定构建。修改会影响打包入口或 `niceeval view` 时，在用 CLI 或 workspace/link 下游验收前先运行该命令；已经开着的 `niceeval view` 进程需要重启。pnpm 的 `Already up to date` 只表示依赖安装状态，不表示当前 `dist/**` 已与源码同步。
-- 文档的用词、句长、链接与关系由 Concord 检查（`docs/writing.md`、`docs/concepts.md`、`concord check`），不在本仓库另写 TS lint；Concord 缺的能力向 Concord 提 Issue。文档站的构建守护放进 `lint/docs-site/**/*.lint.ts`。两者统一复用 `pnpm lint`；pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。
+- 文档的用词、句长、链接与关系由 Concord 检查（`docs/writing.md`、`docs/concepts.md`、`concord check`），不在本仓库另写 TS lint；Concord 缺的能力向 Concord 提 Issue。文档站的构建校验由 `pnpm lint:docs-site` 执行，测试守护位于 `test/unit/docs-site/`。统一复用 `pnpm lint`；pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。
 - 设计只落 `docs/`，不另写执行计划。定稿的契约本身就是实现输入：要做什么写进 `docs/` 正文，为什么这么定写进正文的理由句或 `reference/`，翻案与弯路写进 `memory/`。单独维护一份任务分解会把契约复述一遍，并且落后于 `docs/` 的下一次迭代；多 agent 并行按 `docs/` 的目录边界切工作，不按计划文件里的节点切。
 
 ## 下游验证

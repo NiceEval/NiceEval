@@ -51,7 +51,7 @@ const PREVIEW_FUNCTION_PATH = join(ROOT, ".netlify-functions");
 const PREVIEW_FUNCTION_NAME = "niceeval-inspection";
 const PREVIEW_FUNCTION_RUNTIME = "nodejs24.x" as const;
 
-type BuildServices = import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
+type BuildServices = import("effect/process").ChildProcessSpawner.ChildProcessSpawner;
 
 export interface PreviewBuildOptions {
   readonly local: boolean;

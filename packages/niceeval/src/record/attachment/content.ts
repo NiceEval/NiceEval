@@ -1,4 +1,5 @@
-import { Schema, SchemaAST } from "effect";
+import * as Schema from "effect/Schema";
+import * as SchemaAST from "effect/SchemaAST";
 
 /**
  * Package-owned logical content declarations. Both are opaque handles: the

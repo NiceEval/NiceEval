@@ -3,7 +3,7 @@ import { projectLifecyclePhase } from "./lifecycle.ts";
 import { RUN_ACTIVITY_PHASES } from "../record/family/protocol-values.ts";
 import { AttemptNotesSchema, AttemptNoteSchema } from "../record/family/attempt-note/schema.ts";
 import { CacheReadReportSchema } from "../o11y/cache-read.ts";
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { PlannedAttemptSchema, InspectionAttemptCoreSchema, InspectionRunCoreSchema, InspectionMemberSchema, PlannedAttemptPublicationSchema } from "./planned-attempt.ts";
 import {
   AdapterCallPriceReceiptSchema,

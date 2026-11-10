@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import type { ResolvedModelRoles } from "../model-roles.ts";
 import type { AdapterUsageCall, ReadableAdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
 import { NonNegativeSafeIntegerSchema } from "../record/family/common.ts";

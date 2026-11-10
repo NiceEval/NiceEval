@@ -40,6 +40,6 @@
     "niceeval": "*"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.117"
+    "effect": "4.1.3"
   }
 }

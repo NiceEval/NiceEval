@@ -10,7 +10,7 @@ import { isQuantity, type Quantity, type Unit, formatNumericUnit } from "./quant
 // 折成 mismatch 或 unavailable。
 
 import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import type {
   CommandProjection,

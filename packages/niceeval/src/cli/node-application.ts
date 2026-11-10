@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Predicate } from "effect";
 import {
   CliArguments,
   CliInvocationError,
@@ -25,11 +25,30 @@ export const NodeInvocationFactsLive = Layer.succeed(CliInvocationFacts, {
   })),
 });
 
+export function ignoreBrokenOutputPipe(cause: unknown): void {
+  if (!Predicate.hasProperty(cause, "code") || cause.code !== "EPIPE") throw cause;
+}
+
+function writeNodeOutput(stream: NodeJS.WritableStream, text: string): void {
+  // These process-owned streams can emit errors after the application Scope
+  // closes. Keep one listener per stream, including standalone CliOutput use.
+  if (!stream.listeners("error").includes(ignoreBrokenOutputPipe)) {
+    stream.on("error", ignoreBrokenOutputPipe);
+  }
+  try {
+    stream.write(text);
+  } catch (cause) {
+    ignoreBrokenOutputPipe(cause);
+    // Notify bootstrap's interruption owner for synchronous failures too.
+    stream.emit("error", cause);
+  }
+}
+
 export const NodeCliOutputLive = Layer.succeed(CliOutput, {
-  writeStdout: (text) => Effect.try({ try: () => { process.stdout.write(text); }, catch: (cause) => failure("write-stdout", cause) }),
-  writeStderr: (text) => Effect.try({ try: () => { process.stderr.write(text); }, catch: (cause) => failure("write-stderr", cause) }),
-  writeStdoutSync: (text) => { process.stdout.write(text); },
-  writeStderrSync: (text) => { process.stderr.write(text); },
+  writeStdout: (text) => Effect.try({ try: () => writeNodeOutput(process.stdout, text), catch: (cause) => failure("write-stdout", cause) }),
+  writeStderr: (text) => Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
+  writeStdoutSync: (text) => writeNodeOutput(process.stdout, text),
+  writeStderrSync: (text) => writeNodeOutput(process.stderr, text),
 });
 
 interface OptionalValueOccurrence {

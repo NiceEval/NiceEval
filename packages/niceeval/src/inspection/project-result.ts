@@ -1,5 +1,5 @@
 import { IdentityExplanationSchema } from "../runner/manifest.ts";
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { ExperimentIdSchema, EvalIdSchema, RunIdSchema } from "../record/codec/identifiers.ts";
 import { NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
 import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";

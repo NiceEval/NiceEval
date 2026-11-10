@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { AGENT_TURN_OUTCOMES } from "../protocol-values.ts";
 
 import { projectObservedSourceEvents } from "../../../o11y/derive.ts";

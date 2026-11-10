@@ -129,16 +129,17 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const credParams = token && teamId ? { token, teamId, projectId } : {};
 
     // 给了 snapshotId 就从快照起 microVM(预制模板:烘焙好 agent CLI 的快照)。
-    const sourceParams = opts.snapshotId ? { source: { type: "run", snapshotId: opts.snapshotId } } : {};
+    const sourceParams = opts.snapshotId
+      ? { source: { type: "snapshot" as const, snapshotId: opts.snapshotId } }
+      : { runtime };
 
     // Always send the server-side lifetime; explicit values remain provider-validated.
     const lifetimeMs = cloudLifetimeMs(opts.lifetimeMs, opts.timeout);
     const vsb = await VSandbox.create({
-      runtime,
       timeout: lifetimeMs,
       ...sourceParams,
       ...credParams,
-    } as Parameters<typeof VSandbox.create>[0]);
+    });
     // sandboxId = 沙箱的持久 name(留存唤醒的查找键),不是当前 session 的 sessionId——
     // session 在 rotate / stop-resume 之间会变,name 才是 `Sandbox.get({ name })` 能找回的
     // 稳定身份(SDK 与官方文档都按 name 索引,见 vercel.com/docs/sandbox/cli-reference)。
@@ -165,11 +166,10 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       const snap = await this.vsb.snapshot();
       const snapshotId = snap.snapshotId;
       const newVsb = await VSandbox.create({
-        runtime: this.runtime,
         timeout: requestedLifetimeMs,
         source: { type: "snapshot", snapshotId },
         ...credParams,
-      } as Parameters<typeof VSandbox.create>[0]);
+      });
       const oldVsb = this.vsb;
       this.vsb = newVsb;
       this.sessionCreatedAt = Date.now();

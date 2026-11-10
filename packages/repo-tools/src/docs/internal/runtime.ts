@@ -3,7 +3,7 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { dirname, join } from "node:path";
 
 import { Effect, Schema, SchemaIssue } from "effect";
-import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, type ChildProcessSpawner } from "effect/process";
 
 import { repositoryRoot } from "../../root.js";
 import { DocsDecodeError, DocsFileError, DocsProcessError, errorMessage } from "./errors.js";

@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { regenerateBundledIndex } from "../../packages/repo-tools/src/docs/reference-compiler.js";
-import { loadBundledPages } from "../../packages/repo-tools/src/docs/generators.js";
+import { regenerateBundledIndex } from "../../../packages/repo-tools/src/docs/reference-compiler.js";
+import { loadBundledPages } from "../../../packages/repo-tools/src/docs/generators.js";
 
 // 包根 INDEX.md 是 coding agent 读随包文档的单点入口(机制见 docs/engineering/agent-docs/)。
 // 它是构建产物:`prepare`(build:index)在安装/发版打包前从 INDEX.template.md + 各页 frontmatter
 // 生成,不签入 git——所以没有漂移可守;这里守护的是「发版时一定能生成、生成一定不漏页」提前红灯,
 // 以及入口路径与打包链全仓库只有一套。
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 const INDEX_SOURCE_ROOT = join(PACKAGE_ROOT, "docs-source");
 const INDEX_TEMPLATE = join(INDEX_SOURCE_ROOT, "INDEX.template.md");

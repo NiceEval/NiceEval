@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
+import { Readable } from "node:stream";
 import { Data, Effect } from "effect";
 import * as tar from "tar-stream";
 import {
@@ -268,7 +269,7 @@ export function dockerBuildTag(buildKey: BuildKey): string {
 }
 
 /** Stream the exact filtered context whose file list contributed to BuildKey. */
-export function packDockerfileBuildContext(details: DockerfileBuildDetails): tar.Pack {
+export function packDockerfileBuildContext(details: DockerfileBuildDetails): Readable {
   const pack = tar.pack();
   void (async () => {
     const dockerfile = relative(details.contextDir, details.dockerfilePath).split(sep).join("/");
@@ -296,7 +297,7 @@ export function packDockerfileBuildContext(details: DockerfileBuildDetails): tar
     }
     pack.finalize();
   })().catch((error: unknown) => pack.destroy(error instanceof Error ? error : new Error(String(error))));
-  return pack;
+  return Readable.from(pack, { objectMode: false });
 }
 
 function e2bBuildName(buildKey: BuildKey): string {

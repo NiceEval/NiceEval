@@ -3,7 +3,7 @@
 // stays graph-only; packing, environment loading and owned processes are only
 // introduced by the commands that actually need them.
 
-import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/cli";
 import * as FileSystem from "effect/FileSystem";
 import { NodeServices } from "@effect/platform-node";
 import { join, resolve } from "node:path";

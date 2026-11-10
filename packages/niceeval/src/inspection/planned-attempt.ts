@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import {
   AttemptDocumentSchema, MemberDocumentSchema, RecordSlotIdentitySchema, RunDocumentSchema,
 } from "../record/codec/core.ts";

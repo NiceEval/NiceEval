@@ -27,7 +27,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 - `INIT.zh.md` / `INIT.md`：安装自举文件。
   它们工作的阶段包还不在 `node_modules`，从官网 / GitHub raw 读取，因此内容收敛到安装前就能定稿的三件事：心智模型、前置条件、安装命令。装完立即交接给随包 `INDEX.md`。
-  自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关。接入流程正文住在随包页面 [`apps/docs-site/zh/tutorials/agent-onboarding.mdx`](../../../apps/docs-site/zh/tutorials/agent-onboarding.mdx)，`lint/docs-site/bundled-docs-index.lint.ts` 拦截向导里出现的线上文档链接。
+  自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关。接入流程正文住在随包页面 [`apps/docs-site/zh/tutorials/agent-onboarding.mdx`](../../../apps/docs-site/zh/tutorials/agent-onboarding.mdx)，`test/unit/docs-site/bundled-docs-index.test.ts` 拦截向导里出现的线上文档链接。
 - `apps/docs-site/` 的英文入口与站点配置（`docs.json` 等）：服务网站构建，不服务包内读者。
 - `docs/`、`memory/`：内部设计契约与过程条目，读者是维护 niceeval 仓库的人，不是用户项目里的 agent。
 
@@ -76,9 +76,9 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 | 守护 | 落点 | 校验内容 |
 | --- | --- | --- |
-| 可生成 | `lint/docs-site/bundled-docs-index.lint.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在输出里——与发版时 `prepack` 同一条失败路径，提前到 `pnpm lint:docs-site` |
+| 可生成 | `test/unit/docs-site/bundled-docs-index.test.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在输出里——与发版时 `prepack` 同一条失败路径，提前到 `pnpm test` |
 | 完整 | 生成器自身 | 树由文件系统枚举构造，存在与完整性天然成立；缺 `title` / `description` 的页面在生成时报错并指明落点，发布被挡下 |
-| 单点入口与打包链 | `lint/docs-site/bundled-docs-index.lint.ts` | `packages/niceeval/package.json` `files`、`INIT.zh.md`、Project Host 的 init 托管模板三处指向的都是包根 `INDEX.md`；`prepack` 链包含 `build:index`，缺了发出去的包就没有索引 |
+| 单点入口与打包链 | `test/unit/docs-site/bundled-docs-index.test.ts` | `packages/niceeval/package.json` `files`、`INIT.zh.md`、Project Host 的 init 托管模板三处指向的都是包根 `INDEX.md`；`prepack` 链包含 `build:index`，缺了发出去的包就没有索引 |
 
 ## 生成与打包的时机链
 

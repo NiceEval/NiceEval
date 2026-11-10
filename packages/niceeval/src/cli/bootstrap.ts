@@ -27,7 +27,7 @@ import {
   CliPath,
   type CliInterruptionService,
 } from "./application.ts";
-import { NodeCliPlatformLive } from "./node-application.ts";
+import { ignoreBrokenOutputPipe, NodeCliPlatformLive } from "./node-application.ts";
 import { ConfigModuleLoaderLive, ProjectConfiguration, ProjectConfigurationLayer, ProjectCredentialsLive } from "./project-configuration.ts";
 import { NodeRecordLive } from "../record/index.ts";
 import { RecordCoordination } from "../coordination/record-leases.ts";
@@ -59,7 +59,7 @@ type SignalOwnership =
   | "graceful-aborted";
 
 let signalOwnership: SignalOwnership = "root";
-let interruptedByClosedStdout = false;
+let interruptedByClosedOutput = false;
 const invocationInterruption = new AbortController();
 let fiber: ReturnType<typeof Effect.runFork> | undefined;
 
@@ -108,21 +108,24 @@ const onInterrupt = (signal: NodeJS.Signals): void => {
 process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 
-// A pipe consumer may exit before an asynchronous stdout write completes.
+// A pipe consumer may exit before an asynchronous stdout/stderr write completes.
 // Keep this process-owned listener after the application fiber finishes so
 // Node can flush pending writes without an unhandled EPIPE. While work is
 // active, use its existing interruption owner so Scope finalizers still drain.
-process.stdout.on("error", (error: NodeJS.ErrnoException) => {
-  if (error.code !== "EPIPE") throw error;
+const onOutputError = (error: unknown): void => {
+  ignoreBrokenOutputPipe(error);
+  interruptedByClosedOutput = true;
+  process.exitCode = 0;
   if (signalOwnership === "root") {
-    interruptedByClosedStdout = true;
     signalOwnership = "root-interrupted";
     fiber?.interruptUnsafe();
   } else if (signalOwnership === "graceful-dispatch") {
     signalOwnership = "graceful-aborted";
     invocationInterruption.abort();
   }
-});
+};
+process.stdout.on("error", onOutputError);
+process.stderr.on("error", onOutputError);
 
 type CliFeatureRequirements =
   | DockerCacheAdministration
@@ -185,7 +188,7 @@ const application = Effect.scoped(Effect.gen(function* () {
   // A normal nonzero command result must flush through Node naturally; do not
   // use process.exit and skip Scope finalizers or piped stdout.
   Effect.tap((exitCode) => Effect.sync(() => {
-    process.exitCode = exitCode;
+    process.exitCode = interruptedByClosedOutput ? 0 : exitCode;
   })),
   Effect.asVoid,
   // Defects remain defects and interruption remains interruption. Suppress
@@ -216,7 +219,7 @@ fiber.addObserver((exit) => {
     // signal interruption receives 130; a closed output consumer is normal
     // termination, and defects remain exit 2.
     process.exitCode = Cause.hasInterruptsOnly(exit.cause)
-      ? interruptedByClosedStdout ? 0 : 130
+      ? interruptedByClosedOutput ? 0 : 130
       : 2;
   }
 });

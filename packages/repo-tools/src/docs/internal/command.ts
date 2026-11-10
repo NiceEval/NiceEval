@@ -1,6 +1,6 @@
 import type * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect } from "effect";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 
 export interface TerminalDelivery {
   readonly stdout: string;

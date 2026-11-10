@@ -1,4 +1,4 @@
-import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
+import { Argument as Args, Command, Flag as Options } from "effect/cli";
 import { Effect, Option } from "effect";
 
 import {

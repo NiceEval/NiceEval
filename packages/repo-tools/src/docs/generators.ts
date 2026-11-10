@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { Effect, Schema } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { compileDiffCode } from "./diff-code-compiler.js";
 import { DocsFileError, type DocsDomainError, DocsProcessError, errorMessage } from "./internal/errors.js";

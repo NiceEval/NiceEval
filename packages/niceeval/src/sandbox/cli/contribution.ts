@@ -22,28 +22,21 @@ export const SANDBOX_CLI_OPTIONS = Object.freeze({
   help: Object.freeze({ type: "boolean", short: "h", help: Object.freeze({ summary: "Show Sandbox command help.", visibility: "public" }) }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
-const SANDBOX_HELP = `niceeval sandbox — inspect and manage kept sandboxes
+const SANDBOX_HELP = `niceeval sandbox — diagnose and maintain sandbox providers
 
 Usage:
-  niceeval sandbox list [--orphans] [--record-root <record-root>]
-  niceeval sandbox enter <id> [--leave-running] [--record-root <record-root>]
-  niceeval sandbox history <id> [--record-root <record-root>]
-  niceeval sandbox diff <id> [--window <window>] [--path <file>] [--record-root <record-root>]
-  niceeval sandbox stop <id...> [--all] [--record-root <record-root>]
-  niceeval sandbox prune [--force] [--record-root <record-root>]
   niceeval sandbox provider doctor incus [--development]
   niceeval sandbox provider inventory incus [--development] [--json]
   niceeval sandbox provider gc incus [--development] [--unused-for <duration>] [--json]
   niceeval sandbox provider gc incus [--development] --apply <plan-id> [--json]
 
+Native Debugging & Management:
+  NiceEval delegates direct interaction and resource inspection to native provider CLIs:
+  - Docker:   docker exec -it <id> bash, docker ps -a, docker rm -f <id>
+  - Instabox: instabox ssh <id>, instabox list, instabox rm <id>
+
 Commands:
-  list       list kept sandboxes or inspect orphan candidates
-  enter      open a shell in a kept sandbox
-  history    show the kept sandbox's change windows
-  diff       print patches from one or all change windows
-  stop       destroy kept sandboxes and remove their registry entries
-  prune      destroy orphaned sandbox instances
-  provider   diagnose a sandbox provider (currently incus)
+  provider   diagnose and maintain a sandbox provider (currently incus)
 `;
 
 const PROVIDER_DOCTOR_HELP = `niceeval sandbox provider doctor — diagnose a sandbox provider

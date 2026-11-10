@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/README.md
-import { Result, Schema } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import {
   InspectionRequestSchema,

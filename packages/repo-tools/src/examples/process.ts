@@ -1,4 +1,4 @@
-import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, type ChildProcessSpawner } from "effect/process";
 import { Effect, Stream } from "effect";
 
 import { ExamplesGitError, ExamplesProcessError } from "./model.js";

@@ -6,14 +6,13 @@ import {
   compileEnglishReferenceRegions,
   regenerateEnglishReferenceDoc,
   regenerateReferenceDoc,
-} from "../../packages/repo-tools/src/docs/reference-compiler.js";
-import { loadEnglishReferenceTranslations, loadReferenceSources } from "../../packages/repo-tools/src/docs/generators.js";
+} from "../../../packages/repo-tools/src/docs/reference-compiler.js";
+import { loadEnglishReferenceTranslations, loadReferenceSources } from "../../../packages/repo-tools/src/docs/generators.js";
 
 // Docs 领域从源码(TypeScript compiler API)生成
 // 中英文 reference 的 `{/* GENERATED:BEGIN <region-id> */}` 标记区块。
-// 这个 lint 复用生成器导出的纯函数,在内存里重新计算每个 region,与已提交的文件逐字节
-// 比对——源码改了但忘记跑 `pnpm run repo docs reference` 时,这里会失败并提示怎么修。
-const ROOT = resolve(import.meta.dirname, "../..");
+// 复用生成器导出的纯函数,在内存里重新计算每个 region,与已提交的文件逐字节比对。
+const ROOT = resolve(import.meta.dirname, "../../..");
 
 describe("参考文档生成漂移守护", () => {
   const sources = loadReferenceSources();

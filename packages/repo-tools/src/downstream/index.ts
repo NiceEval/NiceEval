@@ -25,7 +25,7 @@ export * from "./model.js";
 const ROOT = repositoryRoot();
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 
-type DownstreamServices = FileSystem.FileSystem | import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
+type DownstreamServices = FileSystem.FileSystem | import("effect/process").ChildProcessSpawner.ChildProcessSpawner;
 
 function decodeInput(input: unknown) {
   return Schema.decodeUnknownEffect(DownstreamCommandInputSchema, { errors: "all" })(input).pipe(

@@ -1,4 +1,5 @@
-import { Result, type Schema } from "effect";
+import * as Result from "effect/Result";
+import type * as Schema from "effect/Schema";
 
 import type { RecordAttachmentOwner } from "../model/core.ts";
 import type { RecordAttachmentSpiFailure } from "./errors.ts";

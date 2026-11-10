@@ -27,7 +27,7 @@ const RootManifestSchema = Schema.Struct({
   engines: Schema.Struct({ node: TrimmedNonEmptyString }),
 });
 
-type RepositoryServices = FileSystem.FileSystem | import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner;
+type RepositoryServices = FileSystem.FileSystem | import("effect/process").ChildProcessSpawner.ChildProcessSpawner;
 
 function decodeInput(input: unknown) {
   return Schema.decodeUnknownEffect(RepositoryCommandInputSchema, { errors: "all" })(input).pipe(

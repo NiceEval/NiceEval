@@ -213,7 +213,7 @@ function collectAll<A, B>(
   f: (value: A) => Effect.Effect<B, DiscoveryError>,
 ): Effect.Effect<readonly B[], DiscoveryError> {
   return Effect.partition(values, f, { concurrency: 1 }).pipe(
-    Effect.flatMap(([errors, groups]) => errors.length > 0
+    Effect.flatMap(([groups, errors]) => errors.length > 0
       ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
       : Effect.succeed(Object.freeze(groups))),
   );
@@ -733,7 +733,7 @@ export function discoverEvals(
     const entries = yield* collectEvalEntries(dir, root);
     const discoveredEntries = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, load));
     const evals = yield* propagateLoaderProvenance(discoveredEntries, root);
-    const [leakErrors] = yield* Effect.partition(evals, (evalDef) => runLeakGate(evalDef.definition, {
+    const [, leakErrors] = yield* Effect.partition(evals, (evalDef) => runLeakGate(evalDef.definition, {
       evalId: evalDef.id,
       file: relative(root, evalDef.sourcePath).split(sep).join("/"),
       baseDir: evalDef.baseDir,
@@ -892,7 +892,7 @@ export function discoverExperiments(
       (file) => discoverExperimentFile(file, root, dir, load),
       { concurrency: 1 },
     )),
-    Effect.flatMap(([errors, groups]) => errors.length > 0
+    Effect.flatMap(([groups, errors]) => errors.length > 0
       ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
       : Effect.succeed(Object.freeze(groups.flat()))),
   );

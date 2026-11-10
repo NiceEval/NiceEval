@@ -1,4 +1,4 @@
-import { Argument as Args, Command } from "effect/unstable/cli";
+import { Argument as Args, Command } from "effect/cli";
 
 import {
   defineDocsCommandContribution,

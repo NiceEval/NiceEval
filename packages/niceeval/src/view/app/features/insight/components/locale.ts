@@ -49,7 +49,7 @@ export function localeText(
   key: ReportMessageKey,
   vars?: globalThis.Record<string, string | number>,
 ): string {
-  return i18n.getFixedT(locale)(key, vars);
+  return i18n.getFixedT(locale)(key, vars ?? {});
 }
 
 /** 内置消息键 → 覆盖 DISPLAY_LOCALES 的 LocalizedText。 */

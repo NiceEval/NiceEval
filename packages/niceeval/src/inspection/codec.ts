@@ -1,4 +1,5 @@
-import { Result, Schema } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { QUERY_PROTOCOL } from "./protocol-values.ts";
 import { InspectionRequestSchema, type InspectionOperation, type InspectionRequest } from "./protocol.ts";
 export { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";

@@ -1,4 +1,9 @@
-import { Cause, Exit, Result, Schema, SchemaAST, SchemaIssue } from "effect";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as SchemaAST from "effect/SchemaAST";
+import * as SchemaIssue from "effect/SchemaIssue";
 import {
   canonicalizeRecordValue,
   type RecordCanonicalizationFailure,

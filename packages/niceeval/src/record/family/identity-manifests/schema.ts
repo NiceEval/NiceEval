@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import type { JsonValue } from "../../../types.ts";
 import { EvalIdSchema, CanonicalProjectRelativePathSchema, Sha256DigestSchema } from "../../codec/identifiers.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";

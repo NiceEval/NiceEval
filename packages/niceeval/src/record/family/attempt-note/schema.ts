@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 import { NonNegativeSafeIntegerSchema } from "../common.ts";
 
 export type NoteValue = string | number | boolean | null | readonly NoteValue[] | { readonly [key: string]: NoteValue };

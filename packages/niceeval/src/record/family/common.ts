@@ -1,4 +1,5 @@
-import { Result, Schema } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { RecordExactParseOptions } from "../codec/core.ts";
 
 /** Shared current payload envelope; individual families tighten it only when their contract requires it. */

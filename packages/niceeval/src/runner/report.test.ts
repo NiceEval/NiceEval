@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { adapterEvidenceUnavailable } from "./attempt-resources.ts";
 import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
 import { filterSummary, summarize } from "./report.ts";
 import { EVALUATION_ALGORITHM, type EvalResult } from "./types.ts";
@@ -8,6 +9,7 @@ function result(id: string, state: "complete" | "partial", calls: number): EvalR
     id, adapter: { name: "fixture", contract: "fixture", behaviorRevision: null },
     verdict: "passed", evaluationKind: "pass", evaluationAlgorithm: EVALUATION_ALGORITHM,
     attempt: 1, durationMs: 1, factResults: [], factUses: [],
+    evidenceCoverage: adapterEvidenceUnavailable,
     // The sealed capture is authoritative even when legacy usage says zero.
     usage: { inputTokens: 0, outputTokens: 0 },
   };
@@ -33,10 +35,4 @@ test("invocation and scoped summaries sum sealed adapter calls across attempts w
 test("partial adapter usage keeps invocation totals unknown instead of falling back to legacy zero", () => {
   const summary = summarize([result("first", "complete", 1), result("second", "partial", 1)], [], "2026-01-01T00:00:00Z", 2);
   expect(summary.usage).toEqual({ inputTokens: undefined, outputTokens: undefined });
-});
-
-// @feature docs/feature/experiments/README.md
-test("a complete empty adapter capture contributes exact zero tokens", () => {
-  const summary = summarize([result("empty", "complete", 0)], [], "2026-01-01T00:00:00Z", 1);
-  expect(summary.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
 });

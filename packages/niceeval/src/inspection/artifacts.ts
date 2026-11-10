@@ -1,4 +1,6 @@
-import { Data, Result, Schema } from "effect";
+import * as Data from "effect/Data";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { mintRecordContentHandle } from "../record/attachment/content.ts";

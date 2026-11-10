@@ -1,4 +1,4 @@
-import { Result } from "effect";
+import * as Result from "effect/Result";
 import {
   nonEmptyRecordIssues,
   recordIssue,

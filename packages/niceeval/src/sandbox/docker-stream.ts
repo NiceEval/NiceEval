@@ -3,6 +3,7 @@
 
 import * as tar from "tar-stream";
 import { StringDecoder } from "node:string_decoder";
+import { Readable } from "node:stream";
 
 /**
  * Docker exec 复用流(8 字节头 + 载荷)的增量解析器。
@@ -83,7 +84,10 @@ export async function extractFileFromTar(tarBuf: Buffer): Promise<Buffer> {
       if (!found) {
         found = true;
         const chunks: Buffer[] = [];
-        stream.on("data", (c: Buffer) => chunks.push(c));
+        stream.on("data", (chunk) => {
+          if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+          else reject(new TypeError("tar entry emitted a non-buffer chunk"));
+        });
         stream.on("end", () => { resolve(Buffer.concat(chunks)); next(); });
         stream.on("error", reject);
       } else {
@@ -113,7 +117,10 @@ export async function extractFilesFromTar(tarBuf: Buffer): Promise<{ name: strin
         return;
       }
       const chunks: Buffer[] = [];
-      stream.on("data", (c: Buffer) => chunks.push(c));
+      stream.on("data", (chunk) => {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+        else reject(new TypeError("tar entry emitted a non-buffer chunk"));
+      });
       stream.on("end", () => {
         files.push({ name: header.name, content: Buffer.concat(chunks) });
         next();
@@ -127,11 +134,11 @@ export async function extractFilesFromTar(tarBuf: Buffer): Promise<{ name: strin
 }
 
 /** 把若干文件打成 tar 流(putArchive 用)。 */
-export function packFilesToTar(entries: readonly { name: string; content: Buffer }[]): tar.Pack {
+export function packFilesToTar(entries: readonly { name: string; content: Buffer }[]): Readable {
   const pack = tar.pack();
   for (const entry of entries) {
     pack.entry({ name: entry.name }, entry.content);
   }
   pack.finalize();
-  return pack;
+  return Readable.from(pack, { objectMode: false });
 }

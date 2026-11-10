@@ -202,7 +202,7 @@ function verifyRemoteInspection(base: string) {
   });
 }
 
-export function acceptPreview(input: unknown): Effect.Effect<PreviewAcceptanceReceipt, import("./model.js").PreviewError, import("effect/unstable/process").ChildProcessSpawner.ChildProcessSpawner> {
+export function acceptPreview(input: unknown): Effect.Effect<PreviewAcceptanceReceipt, import("./model.js").PreviewError, import("effect/process").ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function*() {
     const decoded = yield* decodeInput(input);
     yield* validateMetadata(decoded);

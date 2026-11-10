@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 export const DEFAULT_ADAPTER_CLEANUP_TIMEOUT_MS = 30_000;
 export const AdapterCleanupTimeoutMsSchema = Schema.Finite.check(

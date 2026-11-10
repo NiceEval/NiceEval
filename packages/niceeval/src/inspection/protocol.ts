@@ -2,7 +2,8 @@
 // @concord-implements docs/feature/inspection/README.md
 // @concord-implements docs/feature/inspection/architecture.md
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
-import { Result, Schema } from "effect";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import { ATTEMPT_LOCATOR_PATTERN } from "../attempt-locator.ts";
