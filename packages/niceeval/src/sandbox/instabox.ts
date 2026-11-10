@@ -12,12 +12,12 @@ export const INSTABOX_MACHINE_SPECS = {
   "4/8": { vcpus: 4, memMiB: 8192 },
   "8/16": { vcpus: 8, memMiB: 16384 },
   "16/32": { vcpus: 16, memMiB: 32768 },
-  "32/64": { vcpus: 32, memMiB: 65536 },
-  small: { vcpus: 2, memMiB: 4096 },
-  medium: { vcpus: 4, memMiB: 8192 },
-  large: { vcpus: 8, memMiB: 16384 },
-  xlarge: { vcpus: 16, memMiB: 32768 },
-  "2xlarge": { vcpus: 32, memMiB: 65536 },
+  "32/64": { vcpus: 32, memMiB: 64536 },
+  "instabox-small": { vcpus: 2, memMiB: 4096 },
+  "instabox-medium": { vcpus: 4, memMiB: 8192 },
+  "instabox-large": { vcpus: 8, memMiB: 16384 },
+  "instabox-xlarge": { vcpus: 16, memMiB: 32768 },
+  "instabox-2xlarge": { vcpus: 32, memMiB: 64536 },
 } as const;
 
 export type InstaboxMachineSpec = keyof typeof INSTABOX_MACHINE_SPECS;
@@ -79,7 +79,7 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
   const plan = Object.freeze({
     ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { templateId: parsed.templateId ?? parsed.template ?? "universal" }),
     lifetimeMs: parsed.lifetimeMs,
-    resources: Object.freeze({ ...(parsed.resources ?? INSTABOX_MACHINE_SPECS[parsed.spec ?? "4/8"]) }),
+    resources: Object.freeze({ ...(parsed.resources ?? INSTABOX_MACHINE_SPECS[parsed.spec ?? "instabox-medium"]) }),
     ...(parsed.spec !== undefined ? { spec: parsed.spec } : {}),
     pathPrepend: Object.freeze([...(parsed.pathPrepend ?? [])]),
   });
