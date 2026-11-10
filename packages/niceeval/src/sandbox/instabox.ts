@@ -12,12 +12,12 @@ export const INSTABOX_MACHINE_SPECS = {
   "4/8": { vcpus: 4, memMiB: 8192 },
   "8/16": { vcpus: 8, memMiB: 16384 },
   "16/32": { vcpus: 16, memMiB: 32768 },
-  "32/64": { vcpus: 32, memMiB: 64536 },
+  "32/64": { vcpus: 32, memMiB: 65536 },
   "instabox-small": { vcpus: 2, memMiB: 4096 },
   "instabox-medium": { vcpus: 4, memMiB: 8192 },
   "instabox-large": { vcpus: 8, memMiB: 16384 },
   "instabox-xlarge": { vcpus: 16, memMiB: 32768 },
-  "instabox-2xlarge": { vcpus: 32, memMiB: 64536 },
+  "instabox-2xlarge": { vcpus: 32, memMiB: 65536 },
 } as const;
 
 export type InstaboxMachineSpec = keyof typeof INSTABOX_MACHINE_SPECS;
