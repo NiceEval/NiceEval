@@ -31,11 +31,12 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
         _tag: "Ineligible" as const, code: "base-image-unverified" as const, reason: "Instabox Base snapshot is not ready",
       };
     }
-    const baseIdentity = snapshotId ?? `template:${plan.template ?? "universal"}`;
+    const templateId = plan.templateId ?? plan.template ?? "universal";
+    const baseIdentity = snapshotId ?? `template:${templateId}`;
     const credentialHash = createHash("sha256").update(key).digest("hex");
     const executionDomainId = createHash("sha256").update(JSON.stringify(["https://api.instabox.sh", credentialHash])).digest("hex");
     return {
-      _tag: "Resolved" as const, executionDomainId, baseIdentity, baseReference: snapshotId ?? plan.template ?? "universal",
+      _tag: "Resolved" as const, executionDomainId, baseIdentity, baseReference: snapshotId ?? templateId,
       keyScope: {
         protocol: "niceeval.before-cache-key/v1", storageSchemaRevision: "remote-snapshot/1",
         artifactFormatRevision: "instabox-root-and-data/1", semanticIdentity: { executionDomainId, platform: "linux-x64-gnu" },

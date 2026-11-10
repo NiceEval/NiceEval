@@ -47,7 +47,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     }
     const idempotencyKey = randomUUID();
     const body = JSON.stringify({
-      ...(options.snapshotId !== undefined ? { snapshotId: options.snapshotId } : { template: options.template ?? "universal" }),
+      ...(options.snapshotId !== undefined ? { snapshotId: options.snapshotId } : { templateId: options.templateId ?? options.template ?? "universal" }),
       name: `niceeval-${idempotencyKey}`,
       ...(options.resources ?? { vcpus: 4, memMiB: 8192 }),
       deleteAfterSeconds: options.lifetimeMs / 1000,

@@ -520,11 +520,13 @@ rootfs 缓存在派发前由 Run 准备一次，同一批 Attempt 都从同一�
 
 ## Instabox
 
-`instaboxSandbox()` 用固定 snapshot ID 声明一个 template-bearing layer。每条 Attempt 从 snapshot 创建独立 Machine；起点不在运行中构建。
+`instaboxSandbox()` 用固定 snapshot ID 或模板标识声明一个 template-bearing layer。每条 Attempt 从该起点创建独立 Machine；起点不在运行中构建。
 
 ```ts
 interface InstaboxSandboxOptions {
-  readonly snapshotId: string;
+  readonly snapshotId?: string;
+  readonly templateId?: string;
+  readonly template?: string;
   readonly lifetimeMs: number;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };
   readonly pathPrepend?: readonly string[];
@@ -533,7 +535,9 @@ interface InstaboxSandboxOptions {
 instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
 ```
 
-`snapshotId` 必须是 `sn_` 开头的具体 ID，不接受名称。`lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。资源默认固定为 4 vCPU、8192 MiB；显式 vCPU 与内存配置由账户配额校验。
+`snapshotId` 必须是 `sn_` 开头的具体 ID，不接受名称，并优先于模板标识。省略时使用 `templateId`，`template` 是它的别名；两者同时提供时以 `templateId` 为准，都省略时使用 `universal`。计划、命令定位与创建请求统一使用 `templateId`。
+
+`lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。资源默认固定为 4 vCPU、8192 MiB；显式 vCPU 与内存配置由账户配额校验。
 
 宿主设置 `INSTABOX_API_KEY`，并安装可选依赖 `ssh2@1.17.0`。服务地址固定为 `https://api.instabox.sh`。Key 与临时 SSH token 只保存在运行时内存，不进入公开配置、身份、命令事实或 Sandbox。创建关闭 Vault 与 Org Secrets 自动注入。
 

@@ -9,6 +9,7 @@ import { instaboxSnapshotDriver } from "./instabox/snapshot-driver.ts";
 
 export interface InstaboxSandboxOptions {
   readonly snapshotId?: string;
+  readonly templateId?: string;
   readonly template?: string;
   readonly lifetimeMs: number;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };
@@ -18,6 +19,7 @@ export interface InstaboxSandboxOptions {
 const positiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
 const Options = Schema.Struct({
   snapshotId: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^sn_[A-Za-z0-9_-]+$/))),
+  templateId: Schema.optionalKey(Schema.String),
   template: Schema.optionalKey(Schema.String),
   lifetimeMs: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }), Schema.isMultipleOf(1000)),
   resources: Schema.optionalKey(Schema.Struct({ vcpus: positiveInteger, memMiB: positiveInteger })),
@@ -46,7 +48,7 @@ const providerModule: SandboxProviderModule<InstaboxSandboxOptions> = {
 export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"template-bearing"> {
   const parsed = decodeOptions(options);
   const plan = Object.freeze({
-    ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { template: parsed.template ?? "universal" }),
+    ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { templateId: parsed.templateId ?? parsed.template ?? "universal" }),
     lifetimeMs: parsed.lifetimeMs,
     resources: Object.freeze({ ...(parsed.resources ?? { vcpus: 4, memMiB: 8192 }) }),
     pathPrepend: Object.freeze([...(parsed.pathPrepend ?? [])]),
@@ -56,7 +58,7 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
     provider: "instabox", kind: "snapshot", publishableIdentity: identity, privateFingerprintIdentity: identity,
     commandPlanLocator: { _tag: "Exact", fields: ["snapshotId" in plan
       ? { name: "snapshotId", value: plan.snapshotId }
-      : { name: "template", value: plan.template }] }, leakGate: { _tag: "None" },
+      : { name: "templateId", value: plan.templateId }] }, leakGate: { _tag: "None" },
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: "instabox", plannerRevision: revision, caseKind: "prebuilt",
       target: { platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" }, source: "provider-defined" },

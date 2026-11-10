@@ -16,7 +16,7 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(function*(pl
   );
   const materialized = wrapSingleSandbox(backend, context, plan.snapshotId !== undefined
     ? { snapshotId: plan.snapshotId }
-    : { template: plan.template ?? "universal" });
+    : { templateId: plan.templateId ?? plan.template ?? "universal" });
   yield* Effect.addFinalizer(() => providerBoundaryEffect(() => materialized.group.stop()).pipe(Effect.orDie));
   yield* providerBoundaryEffect((signal) => backend.initialize(signal));
   return materialized;

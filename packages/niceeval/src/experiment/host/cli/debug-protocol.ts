@@ -29,6 +29,7 @@ const LocatorFieldNameSchema = Schema.Literals([
   "target",
   "workspaceService",
   "template",
+  "templateId",
   "snapshotId",
   "dir",
 ]);

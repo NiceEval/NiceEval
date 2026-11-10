@@ -338,6 +338,7 @@ export type SandboxTemplateLocatorFieldName =
   | "target"
   | "workspaceService"
   | "template"
+  | "templateId"
   | "snapshotId"
   | "dir";
 
@@ -731,6 +732,7 @@ const LOCATOR_FIELD_NAMES = new Set<SandboxTemplateLocatorFieldName>([
   "target",
   "workspaceService",
   "template",
+  "templateId",
   "snapshotId",
   "dir",
 ]);
