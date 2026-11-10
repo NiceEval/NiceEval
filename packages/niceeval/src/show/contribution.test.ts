@@ -16,8 +16,8 @@ const base = { current: true, runIds: [], experimentIds: [] } as const;
 test.concurrent("resource JSON selects the documented operations and preserves Attempt line order", () => {
   expect(showOperations(base)).toEqual([{ kind: "project.get" }]);
   expect(showOperations({ ...base, current: false })).toEqual([{ kind: "overview.get" }]);
-  const runIds = ["run-a", "run-b"].map(Schema.decodeUnknownSync(RunIdSchema));
-  const experimentIds = ["main", "next"].map(Schema.decodeUnknownSync(ExperimentIdSchema));
+  const runIds = ["run-a", "run-b"].map((id) => Schema.decodeUnknownSync(RunIdSchema)(id));
+  const experimentIds = ["main", "next"].map((id) => Schema.decodeUnknownSync(ExperimentIdSchema)(id));
   expect(showOperations({ ...base, runIds })).toEqual([{ kind: "run.get", runId: "run-a" }, { kind: "run.get", runId: "run-b" }]);
   expect(showOperations({ ...base, experimentIds })).toEqual([{ kind: "experiment.get", experimentId: "main" }, { kind: "experiment.get", experimentId: "next" }]);
   expect(showOperations({ ...base, locator })).toEqual([{ kind: "attempt.get", locator }, { kind: "attempt.usage", locator }]);
@@ -55,7 +55,7 @@ test.concurrent.each([
   const status = await Effect.runPromise(showCliCommand.run(argv).pipe(
     Effect.provide(NodeCliArgumentsLive),
     Effect.provideService(CliInvocationFacts, { facts: unexpected }),
-    Effect.provideService(ProjectConfiguration, { load: () => unexpected }),
+    Effect.provideService(ProjectConfiguration, { prepare: () => unexpected, load: () => unexpected, rebuild: () => unexpected }),
     Effect.provideService(CliOutput, {
       writeStdout: (value) => Effect.sync(() => { stdout += value; }),
       writeStderr: (value) => Effect.sync(() => { stderr += value; }),

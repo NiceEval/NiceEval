@@ -271,6 +271,16 @@ export function renderOverview(
             ...(value.totals.evaluationKind === "pass" ? [] : [{ key: "Score", value: metric(value.totals.score) }]),
           ],
         },
+        ...(current !== undefined && current.coverage.gaps > 0 && current.history.length > 0 ? [
+          { kind: "divider" as const, title: "Reference results (from previous recorded attempts)" },
+          {
+            kind: "keyValue" as const,
+            entries: [
+              { key: "Notice", value: "Prior configuration; rerun required to update target" },
+              { key: "Previous attempts", value: `${current.history.length} recorded` },
+            ],
+          },
+        ] : []),
       ],
     },
   ];
@@ -2084,6 +2094,36 @@ export function renderReferences(project: InspectionProjectResult): string {
 
 export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[]): string {
   const blocks: TerminalPanelContentBlock[] = [];
+  let passed = 0;
+  let failed = 0;
+  let total = 0;
+  let earnedScore = 0;
+  let totalScore = 0;
+
+  for (const assertion of assertions) {
+    if (!("entry" in assertion)) continue;
+    total += 1;
+    const entry = assertion.entry;
+    if (entry.decision.result === "matched") passed += 1;
+    else if (entry.decision.result === "mismatched") failed += 1;
+    if (entry.contribution.state === "earned") {
+      earnedScore += entry.contribution.earned;
+      totalScore += entry.contribution.points;
+    }
+  }
+
+  if (total > 0) {
+    blocks.push({
+      kind: "keyValue",
+      entries: [
+        {
+          key: "Summary",
+          value: `Passed ${passed}, Failed ${failed}, Total ${total}${totalScore > 0 ? ` (score: ${fmt(earnedScore)}/${fmt(totalScore)})` : ""}`,
+        },
+      ],
+    });
+  }
+
   for (const assertion of assertions) {
     if (!("entry" in assertion)) {
       blocks.push({ kind: "divider", title: `${assertion.entryId}: ${assertion.state}` });

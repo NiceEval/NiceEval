@@ -2,6 +2,7 @@
 
 import { only, waitForOutput, waitForPathOrProcessExit, type ProcessReceipt } from "@niceeval/testkit";
 import { readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
+import { decodeInspectionDocument } from "niceeval/inspection";
 import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -387,6 +388,37 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(diff.stdout).toContain("inspection-agent-change.txt");
       expect(diff.stdout).toContain("created");
 
+      const sourceJson = await niceeval.run(["show", locator, "--source", "--json"]);
+      expect(sourceJson.exitCode, sourceJson.diagnostic()).toBe(0);
+      expect(sourceJson.querySuccess("attempt.sources").sources).toBeDefined();
+      const attemptJson = await niceeval.run(["show", locator, "-o", "json"]);
+      expect(attemptJson.exitCode, attemptJson.diagnostic()).toBe(0);
+      const lines = attemptJson.stdout.trim().split("\n");
+      expect(lines).toHaveLength(2);
+      const documents = lines.map((line) => {
+        const decoded = decodeInspectionDocument(JSON.parse(line));
+        if (!decoded.success) throw new Error(decoded.reason);
+        return decoded.value;
+      });
+      expect(documents).toMatchObject([{ operation: "attempt.get" }, { operation: "attempt.usage" }]);
+      const attemptQuery = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator } })]);
+      const usageQuery = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator } })]);
+      expect(attemptQuery.exitCode, attemptQuery.diagnostic()).toBe(0);
+      expect(usageQuery.exitCode, usageQuery.diagnostic()).toBe(0);
+      expect(attemptJson.stdout).toBe(attemptQuery.stdout + usageQuery.stdout);
+      const assertionsJson = await niceeval.run(["show", locator, "--assertions", "--json"]);
+      expect(assertionsJson.exitCode, assertionsJson.diagnostic()).toBe(0);
+      expect(assertionsJson.stdout.trim().split("\n")).toHaveLength(attemptQuery.querySuccess("attempt.get").attempt.assertions.entries.length);
+      for (const line of assertionsJson.stdout.trim().split("\n")) {
+        const decoded = decodeInspectionDocument(JSON.parse(line));
+        if (!decoded.success) throw new Error(decoded.reason);
+        expect(decoded.value).toMatchObject({ outcome: "success", operation: "attempt.assertion.detail" });
+      }
+      const assertionsText = await niceeval.run(["show", locator, "--assertions"]);
+      expect(assertionsText.exitCode, assertionsText.diagnostic()).toBe(0);
+      expect(assertionsText.stdout).toContain("[PASS]");
+      expect(assertionsText.stdout).toContain("Next");
+
       const usageErrors: readonly {
         readonly argv: readonly string[];
         readonly stderr: readonly string[];
@@ -403,7 +435,7 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         { argv: ["show", locator, "--execution", "--expand", "item_missing"], stderr: ["item_missing"] },
         { argv: ["show", locator, "--execution", "--expand", "t1.c1"], stderr: ["stable", "itemId"] },
         { argv: ["show", locator, "--execution", "--expand", "cmd1"], stderr: ["stable", "commandId"] },
-        { argv: ["show", locator, "--source", "--json"], stderr: ["--json"] },
+        { argv: ["show", "--all", "--json"], stderr: ["--all", "--json"] },
         { argv: ["show", locator, "--report", "standard"], stderr: ["--report"] },
         { argv: ["show", "@does-not-exist"], stderr: ["does-not-exist"] },
       ];
