@@ -1180,6 +1180,12 @@ export interface Config {
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
   timeoutMs?: number;
   /**
+   * 失败时挂起 Attempt 供原生 CLI 排查。
+   * 支持布尔值（如 `pauseOnFailure: !process.env.CI`）。
+   * CLI `--pause-on-failure` / `--no-pause` 具有更高优先级。
+   */
+  pauseOnFailure?: boolean;
+  /**
    * OTLP 接收配置,niceeval 项目内唯一入口(不读 NICEEVAL_OTLP_* 环境变量)。
    * `port` 钉住接收端口(固定端口模式:长驻服务把 OTEL_EXPORTER_OTLP_ENDPOINT 一次性指到
    * http://localhost:<port>/v1/traces,跑多少次评估用例都不用改)。省略 = 每次运行动态分配
