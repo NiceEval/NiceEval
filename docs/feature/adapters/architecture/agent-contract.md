@@ -76,6 +76,15 @@ Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不�
 ## AgentContext
 
 ```ts
+interface ProgressUpdate {
+  readonly message: string;
+  readonly kind?: "thinking" | "commentary" | "tool" | "status";
+  readonly commentary?: string;
+  readonly tokens?: { readonly input?: number; readonly output?: number };
+  readonly current?: number;
+  readonly total?: number;
+}
+
 interface AgentContext {
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -84,7 +93,7 @@ interface AgentContext {
   readonly session: AgentSession;
   readonly telemetry?: Telemetry;
   readonly experimentId?: string;
-  progress(update: { message: string; current?: number; total?: number }): void;
+  progress(update: ProgressUpdate): void;
   diagnostic(input: DiagnosticInput): void;
   log(msg: string): void;
 }

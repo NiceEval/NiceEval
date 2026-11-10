@@ -167,7 +167,8 @@ Runner 从当前进程内的事件流维护 TTY 面板：progress 可以替换�
 短于采样间隔的 detail 可以省略，已结束 Attempt 不补写历史进度。进度输出重置 30 秒空闲 heartbeat，TTY 继续使用动态面板。
 
 每次 Agent send 开始时，Runner 在当前 Attempt 显示 `user: <message>`。
-具备可信增量协议的 Adapter 可以随后用 `tool: <name> <input>` 或其它原生 activity 替换当前 detail。
+具备可信增量协议的 Adapter 可以随后用 `tool: <name> <input>`、自述说明（commentary）或其它原生 activity 替换当前 detail。
+TTY live 面板在高度允许时展示活跃 Attempt 的自述说明、执行中的工具与实时 token 用量；多 Attempt 并发时合并为单行紧凑展示。若 Attempt 处于同一活动超过 120 秒无更新，面板显示持续等待提示与直连排查建议。
 两者都只走 `progress()`，不进入 timeout breadcrumb；退出后才读取到的 transcript 不能回填成实时 detail。
 
 | 信息 | 当前进程 | 已发布 Run 事实 |

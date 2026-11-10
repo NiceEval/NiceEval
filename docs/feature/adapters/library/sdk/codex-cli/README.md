@@ -93,7 +93,8 @@ Adapter 为每条 NiceEval Session 启动一个 Codex app-server stdio 连接。
 
 Runner 统一显示 `user:`；Codex Adapter 不从 `userMessage` 提取正文来重复显示。
 命令显示 shell 内容，MCP 显示 server、tool 与参数，搜索和文件变更显示查询词或路径。
-reasoning 与 assistant message 只显示 `thinking` / `assistant response`，不复制正文。
+reasoning 存在文本摘要时提取为单行思考概要，缺少摘要时显示 `thinking`；assistant message 提取其实质性阶段自述（commentary）作为活跃进展展示。
+原生 `thread/tokenUsage/updated` 通知按当前 turn 累计更新，并作为实时 tokens 投影至 progress。
 这些 detail 只表示当前活动，不进入 Record 或 timeout error；未知 item 不把原生类型名直接显示给用户。
 
 `request_user_input` 通过 app-server 的 `item/tool/requestUserInput` JSON-RPC request 暂停。
