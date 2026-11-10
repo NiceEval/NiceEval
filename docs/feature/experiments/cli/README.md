@@ -373,7 +373,8 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 任一贡献缺失、部分采集或无效时省略对应字段，不补零、不把已知小计表示为完整总量。完整的零值仍输出为零。
 逐调用证据、缓存桶、完整性和 Judge 用量通过 `attempt.usage` 核对。
 
-连续 30 秒没有永久事件时输出 `progress` 心跳。它保留计数，并以 `active` 列出当前 Attempt 的 `experimentId`（存在时）、`evalId`、从零开始的 `attempt`、`phase`、从派发开始的 `elapsedMs`，以及脱敏后的短 `detail` 与阶段自述 `commentary`（存在时）。条目按 Experiment、Eval、ordinal 排序，最多 64 条；`activeOmitted` 给出省略数量。命令正文与凭据继续脱敏，不输出未脱敏的私有内容。
+连续 30 秒没有永久事件时输出单行 `progress` 心跳，只更新全局计数与耗时，不重复倒出庞大的静态数组以节约调用方 token。
+当 Attempt 产生工具调用、自述说明（commentary）或阶段推进时，实时发射单行紧凑的 `activity` 增量事件，直率交付实际命令与说明，不进行假性遮蔽或截断。
 
 progress 与 diagnostic 形状服务当前 Invocation，不是 Run 事实解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 `createdRunIds` 与 `publicationCutoff` 读取业务数据。
 
