@@ -47,7 +47,7 @@ positional token 是 root，路由只删除它。root 前后的 option、值与 
 $ niceeval --json exp list
 {"format":"niceeval.experiments","schemaVersion":1,"experiments":[]}
 
-$ niceeval sandbox list --json
+$ niceeval check --json
 niceeval error: Unknown option '--json'
 ```
 
@@ -74,8 +74,8 @@ $ niceeval check compare/codex --tag smoke
 Sandbox layers linked: 2 pairs.
 ```
 
-Docker 的 profile、image cache 和 BuildKit 是 Docker contribution 的完整领域，不是 Sandbox 的最小公分母。
-因此 rich command 仍留在 `docker` 下；`sandbox` 只负责已留存实例与 orphan 的检查、进入和回收。
+Docker 的 profile、image cache 和 BuildKit 是 Docker contribution 的完整领域，不是通用 Sandbox 的最小公分母。
+因此 rich command 仍留在 `docker` 下。
 
 ```console
 $ niceeval docker cache inventory --json
@@ -87,11 +87,11 @@ $ niceeval docker cache inventory --json
   "providerObservations": []
 }
 
-$ niceeval sandbox list --json
+$ niceeval check --json
 niceeval error: Unknown option '--json'
 ```
 
-第一个命令由 Docker 自己定义 JSON 文档。第二个命令由 Sandbox schema 在任何 Provider I/O 前拒绝；它不会因
+第一个命令由 Docker 自己定义 JSON 文档。第二个命令由 check schema 在任何 Provider I/O 前拒绝；它不会因
 另一个 contribution 使用同名 option 而接受它。
 
 ## 三条数据路径

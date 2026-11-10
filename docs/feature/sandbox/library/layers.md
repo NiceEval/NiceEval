@@ -49,6 +49,10 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 `onCleanup()`、Agent layer 与 hidden input 始终真实执行，并截断后续共享捕获。after 始终真实执行。完整资格、
 `verified` 边界与 Provider 降级见 [Architecture](../architecture/before-cache.md#身份与验证边界)。
 
+- **Snapshot 物理实体**：每个缓存节点在底层 Provider（如 E2B、Instabox、OpenSandbox、Docker）中形成物理快照，并在容器内写入 `/var/lib/niceeval/before-cache-artifact.json` 指纹。快照本体由对应基础设施保存，命名统一为 `niceeval-<artifact_id>`。
+- **复用机制与存储位置**：下次运行的复用匹配信息保存在宿主机本地的 UserDatabase（SQLite）账本中。`before_cache_snapshots` 登记 `BeforeCacheKey`、快照 locator 与生命周期；`before_cache_snapshot_holds` 维护引用锁，防止未完成的 Run 或活跃实例被提前回收。
+- **匹配与容错**：下次运行通过计算最长匹配前缀从已就绪快照快速恢复实例；若远端快照失效，自动回退到 Base 镜像现场执行，不阻断评测。完整规则见 [远端 snapshot Before cache](../architecture/remote-snapshot-cache.md) 与 [数据模型](../data-model.md#远端-snapshot-账本)。
+
 当前 occurrence 固定为 `attempt`。作者 API 不暴露 scope，也不能靠 owner kind 或低频数值要求提升。把已证明稳定的前缀提升到 physical-instance 是后续性能工作，不属于当前 capability。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](../architecture/lifecycle.md)。
 

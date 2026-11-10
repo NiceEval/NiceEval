@@ -69,12 +69,7 @@ recovery 不会改变 carry 资格、Attempt 身份或退出码。sharedState ex
 
 ## 与 Sandbox orphan 的边界
 
-协调状态接管不等于 Sandbox cleanup。被强杀的运行还可能留下 orphan Sandbox；用户通过公开命令列出并终止它们：
-
-```bash
-niceeval sandbox list --orphans
-niceeval sandbox prune
-```
+协调状态接管不等于 Sandbox cleanup。被强杀的运行留下的实例已委托给底层成熟工具链：云端实例依赖服务端硬超时（Server-Side TTL）自动物理销毁，本地容器通过 `docker ps -a --filter label=niceeval` 查看并回收。
 
 不需要 orphan cleanup 时，直接重新运行即可。Runner 会沿用仍符合资格的已发布 Attempt，只派发缺口。
 

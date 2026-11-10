@@ -188,8 +188,8 @@ finalizer 不依赖调用者 signal 再次触发，外层 interruption 保持原
 每个 contribution 连同 parser shape、help metadata 和 handler 一起冻结。根 router 聚合这些 schema，只为让
 `parseArgs` 在不知道命令位置时取得 indexed tokens；第一个 positional token 是 root，投影时只删除这一个
 token，root 前后的 option 与 `--` 都保持原顺序。聚合 parse 不是 option 的语义验收：命令取得投影后的 argv
-后必须用自己的 schema 再做语法检查。因此其它命令也拥有的 `--json` 不会让 `sandbox list --json` 合法，它会在
-Sandbox 读取凭据、配置或 Provider 之前以 unknown option 失败。
+后必须用自己的 schema 再做语法检查。因此其它命令也拥有的 `--json` 不会让 `check --json` 合法，它会在
+check 读取凭据、配置或 Provider 之前以 unknown option 失败。
 
 Feature 自己拥有子命令、有效 option、command help、human/JSON presentation 与 typed failure。应用级
 `--help` / `--version`、最终 failure/exit、OS signal 和唯一 Effect runtime 仍由 CLI core/bootstrap 拥有。

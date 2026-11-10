@@ -40,23 +40,22 @@ pnpm exec niceeval run recover <run-id> --yes
 
 ## 收回强杀留下的 Sandbox
 
-强杀时正在运行的 Sandbox 不会被登记，`niceeval sandbox list` 看不到它们。先只读列出这些遗留实例：
+强杀时正在运行的 Sandbox 实例已委托给底层的原生成熟工具链，直接通过对应的 Provider CLI 查看和回收：
 
 ```bash
-pnpm exec niceeval sandbox list --orphans
+# Docker 遗留容器查看与销毁
+docker ps -a --filter "label=niceeval"                     # 查看所有 NiceEval 容器
+docker rm -f $(docker ps -aq --filter "label=niceeval")    # 批量销毁残留容器
+docker container prune -f                                  # 回收悬空容器
+
+# Instabox 实例查看与销毁
+instabox list                                              # 查看活跃实例
+instabox rm <instance-name>                                # 销毁指定实例
 ```
 
-确认后再回收：
-
-```bash
-pnpm exec niceeval sandbox prune
-```
-
-- `orphan` 表示同一台主机上创建它的进程已被证明终止，可以安全销毁。
-- `unverified` 表示来自另一台主机或无法确认，默认不会删除。确认它确实没人在用后，才使用 `pnpm exec niceeval sandbox prune --force`。
-- Compose 的伴随容器和网络会作为一组列出和销毁。
-- Vercel Sandbox 无法检索遗留实例，到 Provider 的保留期限后自行回收。
-- 用 `--keep-sandbox` 留下的现场不受 `prune` 影响，仍用 `niceeval sandbox stop` 管理，见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
+- **Docker 与 Compose**：使用带 `label=niceeval` 的原生命令管理，即使配置损坏也 100% 可用；
+- **云端 Sandbox（Instabox / E2B）**：物理创建时已自动注入服务端硬超时（Server-Side TTL），客户端失联数分钟后由云端控制面强制物理销毁，避免费用泄漏；
+- **保留现场**：留存的排查现场同样直接使用原生 CLI 查看与销毁，见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
 
 ## 恢复共享状态租约
 

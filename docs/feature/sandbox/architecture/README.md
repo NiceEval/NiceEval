@@ -204,15 +204,11 @@ attempt 的最终 `locator` 在调度前已经由当前 `RecordWriteSession` 分
 
 entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时文件、`fsync` 文件后 `rename` 成 `<entry-id>.json`,再 `fsync` 目录;不同 attempt 与不同 niceeval 进程不会互相改写。
 
-`sandbox stop` 先完成 detached 销毁(实例已不存在也算完成),再删除对应条目并同步目录;销毁失败则保留条目并退出 1,不能为了让列表变干净而制造无主资源。
+留存实例的排查与销毁全面委托给原生成熟 Provider 工具（Docker CLI、Instabox CLI 等），自研管理命令已下线。
 
-受支持的正常返回、异常、超时和 Ctrl+C 路径因此保持:沙箱要么仍在内存收尾集合,要么已有可被 `list` / `stop` 发现的持久条目。
-
-无法拦截的进程 `SIGKILL` / 宿主断电不承诺分布式原子性;这类外部中断留下的实例由[孤儿核对](#孤儿核对强杀路径的实例面回退)按创建期写入的运行标识事后收回。
+受支持的正常返回、异常、超时和 Ctrl+C 路径保持资源受控；无法拦截的进程 `SIGKILL` 或宿主断电留下的实例，由底层 Provider 的硬超时（Server-Side TTL）或标签筛选（如 `label=niceeval`）事后回收。
 
 `nativeCommand` 是 provider 原生的进入命令，直接呈现给用户或 Coding Agent（如 `docker exec -it <id> /bin/bash` 或 `instabox ssh <id>`）；NiceEval 不自建中间终端代理或伪终端隧道，现场接入彻底委托给 Provider 原生 CLI。`expiresAt` 是现场可找回的截止时刻——provider 声明了保留期限才写(vercel 写,e2b pause 无限期保留则不写)。
-
-`sandbox list` / `stop` 按注册表条目的 `provider` 名路由到各 provider 的 **detached 销毁**能力——不需要原来的 run 进程或 `Sandbox` 实例还活着(docker:`rm -f`;e2b / vercel:SDK 按 id kill)。这层按名字路由发生在 CLI / 注册表边界,符合[核心中立](../../../architecture.md)的分界:运行器与评分路径仍不感知 provider 名。
 
 各 provider 的留存语义——suspend 把现场转入该 provider **最持久的低成本形态(休眠)**,「留下」不等于「继续跑」:
 
@@ -396,7 +392,7 @@ provider 没认出的错误再过一遍与文件 IO 重试共用的保守瞬时�
 - up 的 projectName 与 overlay 在整个重试闭包内固定，每次重试前先对同一 project 执行独立于 Attempt signal 的有界 `compose down --volumes --remove-orphans`，清掉半启动服务后再 up。
 - 附着主服务后由 Docker provider 探测分类账所需的 git；题目镜像没带时以 root 通过已有的 apt/apk/dnf/yum 补齐，而不是要求每条 Eval 修改 Dockerfile。
 - 整个 case 最终仍由主实例及伴随资源的 finalizer 回收；即使前向工作已经 timeout/cancel，finalizer 也拿新的 8s cleanup signal。
-- 只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` Observability diagnostic、保留 project labels 供同轮强清重试或 `sandbox prune` 事后认领，不改写原 Attempt 的 Verdict。
+- 只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` Observability diagnostic、保留 project labels 供同轮强清重试或原生 CLI 工具事后回收，不改写原 Attempt 的 Verdict。
 - **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例见 memory 的 e2b-provision-429-duplicate-sandbox 条目)。都由重试前对账兜住。
 - **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴。SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
 
