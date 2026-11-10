@@ -46,6 +46,8 @@ export default defineExperiment({
 });
 ```
 
+省略 `adapter` 时，评测直接运行 Eval 的测试主体，不分配 Agent 会话或 Sandbox 实例。在持久化 Record 架构、公开查询结果与展示中，缺席的 Adapter 身份统一表达为 `adapter: null`，不生成伪装的占位 Adapter 空壳。若 Eval 显式声明了依赖的自定义 Adapter 契约而 Experiment 未提供 `adapter`，运行预检在分配资源前明确拒绝。
+
 Adapter 可以是 Agent 会话接入，也可以是 `defineAdapter` 创建的自定义适配器。
 Eval 绑定品牌接口契约，Experiment 选择该接口的具体实现；同名但独立定义的契约不相容，配对在创建资源前检查。
 接口相容只允许执行相同任务，不允许不同实现自动携带结果。
