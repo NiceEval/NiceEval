@@ -32,6 +32,10 @@ identity 冲突或后台 storage failure 使所属 writer fail closed，不能�
 网络、Provider、模型、Sandbox 与 producer 等待都在事务外，Content 按有界 row/byte batch 提交并释放锁。
 WAL 只用于具备相应 shared-memory 与 locking 语义的本机 filesystem。
 
+高并发批量执行时，多个 Attempt 并发封存产生的 command 汇总至 storage worker 内部 mailbox。
+worker 采用带等待时延与批量上限的写入防抖策略，在事务内以紧凑批次提交 collection items 与 Content chunks，
+避免高频微事务竞争 SQLite 文件锁。
+
 SQLite file lock 不提供公平性。
 worker 在尝试 write lock 前先进入 ProjectDatabase 内 Host-owned coordination tables 的 FIFO writer admission。
 每个进程至多一个 waiter，每张 ticket 只执行一个有界 batch；提交后交还 ticket，有 backlog 时重新排队。

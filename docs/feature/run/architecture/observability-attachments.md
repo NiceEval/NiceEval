@@ -90,6 +90,24 @@ collector 先验证整份输入和同 Attempt 的附件证据，再接纳不可�
 兼容承诺是新 reader 读取当前支持格式的既有 Record，不要求旧 reader 接受新 family 或新的 Inspection 结果。
 历史附件中的 trace JSON 不会被静默转换为执行轨迹，也不回写历史评分。
 
+## 观测生命周期与冷热分级
+
+高并发批量评测时，内存占用与 I/O 成本由生命周期与冷热分级共同约束。
+
+评测执行期间，`TestContext` 与内存链路追踪收集器的堆生命周期严格限定在 Attempt 内。
+当 `test(t)` 函数执行完毕后，执行轨迹立即封存并移交给 dedicated storage worker 的内部 mailbox，
+随后解除 `TestContext` 与闭包引用以供垃圾回收，避免海量样本长期滞留内存堆。
+
+内存收集期同步维护核心角色指针索引。
+当接收到 `llm`、`retriever`、`tool`、`chain` 核心角色 Span 时，收集器直接登记分类指针。
+单参数上下文断言算子可直接按指针提取切片或模型事实，无需逐层遍历整棵 Span 树。
+
+持久化按冷热数据进行物理切分。
+执行轨迹的树形拓扑、耗时、状态、Token 与 Cost 摘要保存在主 collection item 行中作为热数据，
+支撑大盘秒级聚合与瀑布图初次呈现。
+大段检索切片文本、完整输入 Prompt 与模型原始输出作为 Content chunks 进入分块存储，
+仅在用户下钻单条样本详情时按需流式提取，避免宽表读放大。
+
 ## 外部调用用量
 
 `niceeval.adapter-usage` 的持久 revision 为 `2`，owner 为 origin Attempt。它保存最终快照，不保存可变的请求状态机。
