@@ -7,11 +7,12 @@
 ```text
 published Run and Attempt facts
   → Inspection fixed operation at PublicationCutoff
-  → query/show | browser Worker → Insight SPA
+  → show (text/json) / query | browser Worker → Insight SPA
 ```
 
 - [Run](../run/README.md) 是持久领域事实的唯一 owner：已发布 Attempt、Planned attempt binding、状态与 absence。
 - Inspection 是 selection、cutoff、member、denominator、coverage、limits、issues、Evidence 与 comparison 的唯一 owner。
+- `show` 统一承担面向资源的检查入口，按需交付终端文本或 `--json` 机器数据。`query` 仅作为底层协议信封通道保留。
 - [Insight](../insight/README.md) 只呈现闭合结果，不从 SQLite rows 或逐项结果重算业务语义。
 
 默认 source 是项目内唯一 canonical `.niceeval/record.sqlite`；Run 为 `active` 时它已经包含 Run create 和全部已发布

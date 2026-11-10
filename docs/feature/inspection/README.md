@@ -9,10 +9,11 @@ Run facts at PublicationCutoff → shared fixed Inspection operation
                               └── browser adapter → Insight View
 ```
 
-## `query` 与 `show` 承接的查看结果
+## 资源检查与查看结果
 
-`niceeval query` 把固定结果交付给 Agent 和自动化，只输出机器 JSON。
-`niceeval show` 是同一批固定 Inspection operation 的一等英文终端读面，面向人的快速审阅和逐项下钻。
+`niceeval show` 是固定 Inspection operation 的面向资源统一读面，服务人读审阅与脚本自动化。
+默认输出格式化终端视图，追加 `--json` 原样交付结构化机器数据。
+`niceeval query` 是底层机器协议信封通道，用于跨进程通信与低级协议校验。
 它只格式化已关闭的 result，不建立第二个 selection、聚合或证据语义。
 
 | 用户要查看什么 | 固定 query 怎样承接 |

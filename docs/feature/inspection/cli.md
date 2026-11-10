@@ -1,6 +1,10 @@
 # Inspection CLI
 
-## `niceeval query`
+## 面向资源的检查与协议通道
+
+Inspection 提供面向资源的统一检查入口与底层协议通道。
+`niceeval show` 是面向资源的一等公开检查入口：默认输出人类友好的终端排版，追加 `--json` 原样交付结构化机器数据，终端与自动化脚本共享同一套实体定位符与投影语义。
+`niceeval query` 是底层机器协议信封通道，用于跨进程通信与 `niceeval.query/v3` 规范验证。
 
 ```sh
 niceeval query discover
@@ -8,15 +12,10 @@ niceeval query explain (--request <file|-> | --request-json <document>)
 niceeval query run (--request <file|-> | --request-json <document>)
 ```
 
-request 有两种等价传输。`--request` 读取文件或 stdin；`--request-json` 把完整 request 文档作为一个 argv
-值传入。它服务不能写 stdin、也不应在被测工作区写临时文件的调用方。
-例如 Eval 内的 `t.sandbox.runCommand("niceeval", ["query", "run", "--request-json", JSON.stringify(request)])`。
-两者恰好择一，同时给出或都缺席是用法错误。两条路径得到同一份 request 后走完全相同的解码与校验，
-`--request-json` 不接受 operation 简写、位置参数或部分字段，也不另设一套 flag 化的 selector。
-
-`query` 是完整的 machine 入口：它只以 `niceeval.query/v3` 输出结构化结果，不接受 human 输出模式。`show` 已有投影的 operation 也可以用 `niceeval show … -o json` 取得逐字相同的 document，见[输出格式](#输出格式)。每份 stdout
-document 都显式包含 `outcome: discovery | success | explanation | failure`。
-人在终端中审阅同一批固定 operation 时使用下文的 `niceeval show`；浏览器体验仍由
+`query` 仅作为底层 protocol envelope 通道保留，服务不能写 stdin、也不应在工作区写临时文件的沙箱调用。
+`--request` 读取文件或 stdin；`--request-json` 将完整 JSON 字符串作为 argv 传入。
+两条路径得到同一份 request 后执行相同的解码与校验，不设简写或 flag 化的 selector。
+日常检查与自动化脚本优先使用下文的 `niceeval show` 及 `--json` 旗标；浏览器体验仍由
 [Insight](../insight/README.md) 的 `niceeval view` 提供。
 
 `discover` 是静态 catalog，不打开 source。它输出 `outcome: discovery` 的 compact bootstrap，只列出当前版本支持的
@@ -569,6 +568,38 @@ Open: niceeval view
 规则同下文历史 Results。当前目标求值失败时不输出这张表，stderr 给出错误并提示 `niceeval show --run <run-id>`
 等固定历史读取命令。
 
+### 全缺口与参照结果示例
+
+当前目标因配置变动导致全部成员产生缺口，且存在可用历史 Attempt 时，总览呈现独立的 `Reference results` 参照区，并在末尾给出补跑规划指引：
+
+```text
+$ niceeval show
+Current results
+  Totals
+
+  Covered    0/14
+  Gaps       14
+  Verdicts   0 passed; 0 failed; 0 errored; 0 skipped
+  Pass rate  unavailable
+
+Reference results (from previous recorded attempts)
+  Verdicts   12 passed; 2 failed; 0 errored; 0 skipped
+  Pass rate  85.71%
+  Notice     Prior configuration; rerun required to update target
+
+Attempts · install/canary
+  Eval db-gpt
+  Gap identity-mismatch
+  Previous result @1Z2NDWH8SWVYJ (passed)
+
+  Eval gpt-researcher
+  Gap identity-mismatch
+  Previous result @1EM9AT9SZYR96 (passed)
+
+Next: niceeval exp install/canary --dry
+Open: niceeval view
+```
+
 ### 固定 Record 的历史 Results 示例
 
 human renderer 将 pass rate 显示为百分比。`available` 是健康 metric 的默认状态，不附加在数值后；
@@ -654,6 +685,7 @@ Sections
   diff        not-recorded
 
 Next
+  niceeval show @01JSHOWATTEMPT --assertions
   niceeval show @01JSHOWATTEMPT --source
   niceeval show @01JSHOWATTEMPT --execution
   niceeval show @01JSHOWATTEMPT --timing
@@ -661,6 +693,33 @@ Next
   niceeval show @01JSHOWATTEMPT --diff
 
 Open: niceeval view @01JSHOWATTEMPT
+```
+
+### Attempt 断言详情示例
+
+`show @<locator> --assertions` 呈现该 Attempt 各断言条目的判定、分值与理由：
+
+```text
+$ niceeval show @01JSHOWATTEMPT --assertions
+Assertions @01JSHOWATTEMPT
+  Passed 4, Failed 1, Total 5 (score: 3/4)
+
+  [PASS] file_created · package.json exists (+1)
+  [PASS] syntax_valid · TypeScript compilation passed (+1)
+  [PASS] test_passed · unit test suite passed (+1)
+  [FAIL] lockfile_clean · package-lock.json matches dependencies (0/1)
+         Rationale: expected 15 packages in lockfile, observed 12.
+         Target: package-lock.json
+
+Next: niceeval show @01JSHOWATTEMPT --assertions --entry lockfile_clean --full
+Open: niceeval view @01JSHOWATTEMPT
+```
+
+追加 `--json` 原样交付结构化机器数据：
+
+```text
+$ niceeval show @01JSHOWATTEMPT --assertions --json
+{"protocol":"niceeval.query/v3","outcome":"success", … }
 ```
 
 Experiment selector 是下钻动作，直接显示完整明细，不再要求 `--all`：

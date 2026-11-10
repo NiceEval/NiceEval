@@ -17,36 +17,40 @@
    niceeval show @01JSHOWATTEMPT --usage
    ```
 
-2. 加上 `-o json`，同一条命令改为输出 `attempt.usage` 的 `niceeval.query/v3` document，一行一个，没有标题、表格或提示行。 {#same-command-json}
+2. 加上 `--json`（或 `-o json`），同一条命令改为输出 `attempt.usage` 的 `niceeval.query/v3` document，一行一个，没有标题、表格或提示行。 {#same-command-json}
 
    预期输出（摘要）：
 
    ```text
-   $ niceeval show @01JSHOWATTEMPT --usage -o json
+   $ niceeval show @01JSHOWATTEMPT --usage --json
    {"protocol":"niceeval.query/v3","outcome":"success", … }
    ```
 
 3. 脚本需要判定和用量两部分时，去掉投影 flag。`@<locator>` 依次调用 `attempt.get` 与 `attempt.usage`，输出两行，它们来自同一个 `PublicationCutoff`。 {#attempt-two-lines}
 
    ```sh
-   niceeval show @01JSHOWATTEMPT -o json | wc -l
+   niceeval show @01JSHOWATTEMPT --json | wc -l
    ```
 
    预期输出：`2`。
 
-4. 核对这份数据与 machine 入口一致：以同一 request 调用 `query run`，两边逐字相同，`diff` 不输出任何内容。 {#same-as-query}
+4. 脚本需要断言明细时，使用 `--assertions` 投影。默认以紧凑 `compact` 摘要输出，避免超大材料撑爆管道。 {#attempt-assertions}
+
+   ```sh
+   niceeval show @01JSHOWATTEMPT --assertions --json
+   ```
+
+5. 核对这份数据与 machine 入口一致：以同一 request 调用底层 `query run`，两边逐字相同，`diff` 不输出任何内容。 {#same-as-query}
 
    ```sh
    diff \
-     <(niceeval show @01JSHOWATTEMPT --usage -o json) \
+     <(niceeval show @01JSHOWATTEMPT --usage --json) \
      <(niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{"kind":"attempt.usage","locator":"@01JSHOWATTEMPT"}}')
    ```
 
-5. 需要某一项 Assertion 的完整调试依据时，`show` 没有对应投影，脚本改用 `query run` 的 `attempt.assertion.detail`。 {#query-only-operation}
-
 ## 结果
 
-脚本拿到的数据与终端显示的出自同一组 operation 和同一个 cutoff，不需要另写解码或换算。`show -o json` 不新增任何 result shape；`show` 没有投影的 operation 仍只经 `query` 读取。
+脚本拿到的数据与终端显示的出自同一组 operation 和同一个 cutoff，不需要另写解码或换算。`show --json` 不新增任何 result shape；`show` 没有投影的 operation（如 `attempt.assertion.image`）仍只经 `query` 读取。
 
 | 情形 | 用户看到的结果 |
 | --- | --- |

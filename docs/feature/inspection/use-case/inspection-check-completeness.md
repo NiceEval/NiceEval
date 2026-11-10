@@ -45,6 +45,7 @@ Attempt evidence 继续通过 locator 下钻：
 
 ```sh
 niceeval show @ATTEMPT-NEXT
+niceeval show @ATTEMPT-NEXT --assertions
 niceeval show @ATTEMPT-NEXT --source
 niceeval show @ATTEMPT-NEXT --execution
 niceeval show @ATTEMPT-NEXT --execution --expand tool_example_install
