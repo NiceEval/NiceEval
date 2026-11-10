@@ -36,6 +36,7 @@ import {
   type PanelRow,
 } from "../../terminal/panel.ts";
 import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../terminal/text-layout.ts";
+import { nativeEnterCommand } from "../../sandbox/keep.ts";
 import type {
   CommandPlan,
   CommandPlanLane,
@@ -645,7 +646,7 @@ function buildSummaryLines(
   }
 
   // 留存授予块(--keep-sandbox,见 docs/feature/sandbox/cli.md「run 收尾输出」):
-  // 每条给 locator(接 niceeval view)、provider 与实例 id、进入现场的命令,下边框嵌批量清理。
+  // 每条给 locator(接 niceeval view)、provider 与实例 id、原生直连调试命令。
   if (state.kept.length > 0) {
     const keptRows: PanelRow[] = [];
     for (const k of state.kept) {
@@ -653,16 +654,16 @@ function buildSummaryLines(
         kind: "line",
         text: `${k.locator}  ${k.identity.evalId} #${k.identity.attempt}  ${k.verdict}  ${k.provider} · ${k.sandboxId}`,
       });
+      const cmd = nativeEnterCommand(k.provider, k.sandboxId) ?? `docker exec -it ${k.sandboxId.slice(0, 12)} /bin/bash`;
       keptRows.push({
         kind: "line",
-        text: `${" ".repeat(stringWidth(k.locator) + 2)}enter: niceeval sandbox enter ${k.sandboxId.slice(0, 12)}`,
+        text: `${" ".repeat(stringWidth(k.locator) + 2)}debug: ${cmd}`,
       });
     }
     blocks.push(
       renderPanel({
         title: `KEPT SANDBOXES`,
         meta: `${state.kept.length} kept`,
-        footerCommand: "niceeval sandbox stop --all",
         rows: keptRows,
         width: panel.width,
         mode: panel.mode,

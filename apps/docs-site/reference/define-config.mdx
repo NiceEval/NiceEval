@@ -89,6 +89,14 @@ timeoutMs?: number;
 
 The project-level default timeout for one Attempt (milliseconds); the CLI flag, Experiment, or `EvalDef` setting with the same name has higher priority.
 
+#### `pauseOnFailure`
+
+```ts
+pauseOnFailure?: boolean;
+```
+
+Suspend the Attempt and retain the Sandbox when an error or failure occurs, displaying native direct connect commands for debugging before cleanup.
+
 #### `telemetry`
 
 ```ts

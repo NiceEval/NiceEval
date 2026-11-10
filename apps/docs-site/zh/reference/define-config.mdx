@@ -89,6 +89,16 @@ timeoutMs?: number;
 
 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。
 
+#### `pauseOnFailure`
+
+```ts
+pauseOnFailure?: boolean;
+```
+
+失败时挂起 Attempt 供原生 CLI 排查。
+支持布尔值（如 `pauseOnFailure: !process.env.CI`）。
+CLI `--pause-on-failure` / `--no-pause` 具有更高优先级。
+
 #### `telemetry`
 
 ```ts
