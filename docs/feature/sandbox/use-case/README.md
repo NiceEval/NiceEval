@@ -51,3 +51,7 @@ Experiment 声明 `sandboxReuse: true` 后，指纹匹配的终态 Attempt 会�
 | 项目配置已经损坏，仍需查看或销毁留存现场 | [配置损坏时仍能管理现场](sandbox-retain-broken-config.md) |
 
 完整 CLI 契约见[留存现场](../cli.md)。
+
+## 运行中挂起与断点（--pause-on-failure 与 --breakpoint）
+
+- [失败挂起与原生 CLI 直连排查](sandbox-pause-on-failure-debug.md) —— 在失败或 Agent 接管前暂停 Attempt，通过底层 Docker 或 Instabox 原生命令接入现场。
