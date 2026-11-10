@@ -884,9 +884,13 @@ class AssertionsRuntimeImplementation {
       if (args.length !== 1) throw new TypeError("check(contextualMatch) accepts one argument");
       return this.contextualRegistration(receiver, value);
     }
-    return Reflect.apply(this.check, this, args) as BooleanHandle | MeasurementHandle;
+    if (args.length !== 2) {
+      throw new TypeError("t.check() accepts (contextualMatch) or (value, match)");
+    }
+    return this.checkValue(value, args[1]);
   }
 
+  check(match: ContextualMatch): BooleanHandle | MeasurementHandle;
   check(value: import("./match.ts").NumericMaterial, match: NumericComparisonMatch): BooleanHandle;
   check<Value, Refined extends Value>(
     value: Value,
@@ -897,10 +901,11 @@ class AssertionsRuntimeImplementation {
   check(value: ManagedEventOccurrences, match: import("./match.ts").EventMatch): BooleanHandle;
   check<Value>(value: Value, match: CollectionMatch<NoInfer<Value>>): BooleanHandle;
   check<Value>(value: Value, match: ScoreMatch<NoInfer<Value>>): MeasurementHandle;
-  check(value: unknown, match?: unknown, ...extra: readonly unknown[]): BooleanHandle | MeasurementHandle {
-    if (extra.length > 0) {
-      throw new TypeError("t.check() accepts exactly (value, match)");
-    }
+  check(...args: readonly unknown[]): BooleanHandle | MeasurementHandle {
+    return this.checkFor(this.t.check, args);
+  }
+
+  private checkValue(value: unknown, match: unknown): BooleanHandle | MeasurementHandle {
     this.assertCanRegister();
     assertAssertionSubject(value, "check");
     if (

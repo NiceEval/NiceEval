@@ -1551,6 +1551,8 @@ export function createAssertFirstCoreContext(
   const runtime: AssertionsRuntime<RuntimeKind> = deps.evaluationKind === "score"
     ? createAssertionsRuntime({ evaluationKind: "score", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal, ...(deps.judgeUsage === undefined ? {} : { judgeUsage: deps.judgeUsage }) })
     : createAssertionsRuntime({ evaluationKind: "pass", executeStop: deps.executeStop, ...(deps.judge === undefined ? {} : { judge: deps.judge }), signal: deps.signal, ...(deps.judgeUsage === undefined ? {} : { judgeUsage: deps.judgeUsage }) });
+  // Preserve the function identity: contextual Matches resolve their bound
+  // receiver through this check, independently of JavaScript's call-site `this`.
   const check = runtime.t.check;
   const judge = ((subject: unknown, definition: unknown, ...extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError("judge() accepts exactly (subject, definition)");

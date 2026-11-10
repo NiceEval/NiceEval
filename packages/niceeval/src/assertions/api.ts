@@ -737,6 +737,11 @@ export interface AssertionCheck<Kind extends AssertionCheckKind, Context = unkno
   <T>(match: import("./context-match.ts").MaterialMatch<Context, T>): CheckedBooleanHandle<Kind, void>;
   <T>(match: import("./context-match.ts").ContextBooleanMatch<Context, T>): CheckedBooleanHandle<Kind, void>;
   <T>(match: import("./context-match.ts").ContextScoreMatch<Context, T>): CheckedMeasurementHandle<Kind>;
+  (match:
+    | import("./context-match.ts").MaterialMatch<Context, unknown>
+    | import("./context-match.ts").ContextBooleanMatch<Context, unknown>
+    | import("./context-match.ts").ContextScoreMatch<Context, unknown>
+  ): CheckedBooleanHandle<Kind, void> | CheckedMeasurementHandle<Kind>;
   (value: import("./match.ts").NumericMaterial, match: NumericComparisonMatch): CheckedBooleanHandle<Kind, number>;
   <Value, Refined extends Value>(
     value: AssertionSubject<Value>,
