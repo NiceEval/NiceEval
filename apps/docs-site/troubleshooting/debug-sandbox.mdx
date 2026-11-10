@@ -77,25 +77,24 @@ instabox exec niceeval-97511d9a -- ps aux
 Sandbox resource management is delegated to mature native tools:
 
 ```bash
-# Docker container management
-docker ps -a --filter "label=niceeval.keep-candidate=true"                 # List kept NiceEval containers
-docker rm -f a3f9c2d1                                                      # Destroy a specific container
-docker rm -f $(docker ps -aq --filter "label=niceeval.keep-candidate=true")# Batch cleanup kept containers
-docker container prune --filter "label=niceeval.keep-candidate=true" -f   # Prune only kept NiceEval containers
+# List NiceEval containers first, then check status and Run labels
+docker ps -a --filter "label=niceeval.keep-candidate=true"
+docker inspect a3f9c2d1
 
-# Instabox instance management
-instabox list                                                              # List active instances
-instabox rm niceeval-97511d9a                                              # Destroy an instance
+# Delete by ID once confirmed the Run has ended and state retention is no longer needed
+docker rm -f a3f9c2d1
+
+# Inspect and delete Instabox instances similarly
+instabox list
+instabox rm niceeval-97511d9a
 ```
 
-> [!NOTE]
-> Running an unconstrained `docker container prune -f` removes all stopped containers system-wide. Always filter by `label=niceeval.keep-candidate=true` or use targeted `docker rm -f` to avoid deleting containers from unrelated projects.
+`niceeval.keep-candidate=true` is attached when a container is created; it does not indicate the container has stopped or been kept. Label filter results may include active Runs and should not be batch-deleted without inspection.
 
-Even if `niceeval.config.ts` has syntax errors, native CLIs remain 100% operational.
+Native CLIs do not load `niceeval.config.ts`, but still require valid Provider connectivity and credentials.
 
 ## Server-side safety net against client interruption
 
-When evaluations run in cloud providers (Instabox, E2B) and the local client is killed by `kill -9` or a power outage:
+When creating cloud Sandboxes, NiceEval sends a server-side lifetime bound. When not explicitly specified, it derives from the Attempt timeout plus a 2-minute buffer, defaulting to 15 minutes when no Attempt timeout is declared.
 
-- **Server-Side Hard TTL**: Creation requests enforce a server-side timeout deadline (derived from attempt deadline + 2m buffer, default 15m) to bound instance lifespan and mitigate billing leaks if the local client disconnects;
-- **Idle Auto-Pause**: Cloud providers automatically suspend idle instances when network activity drops to zero where supported.
+When a local process is terminated by network loss, power outage, or `kill -9`, this server-side bound limits the remote instance's lifetime. Expiration actions and billing rules depend on the Provider and should be verified via native tools. Lifetime limits and idle auto-pause are distinct mechanisms; one should not assume instances immediately pause or cease billing upon network disconnection.

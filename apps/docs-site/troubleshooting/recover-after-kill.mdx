@@ -43,19 +43,21 @@ When you need complete results, run the original Experiment again. The new run c
 Reclaiming residual Sandbox instances after an interruption is fully delegated to native mature toolchains. Use provider CLIs directly to inspect and remove leftover containers or instances:
 
 ```bash
-# Docker leftover inspection and cleanup
-docker ps -a --filter "label=niceeval.host"                                # Inspect all NiceEval containers
-docker rm -f $(docker ps -aq --filter "label=niceeval.host")               # Batch remove leftover NiceEval containers
-docker container prune --filter "label=niceeval.host" -f                   # Reclaim only NiceEval stopped containers
+# List containers with NiceEval labels, then verify target status and Run labels
+docker ps -a --filter "label=niceeval.host"
+docker inspect <container-id>
 
-# Instabox instance inspection and cleanup
-instabox list                                                              # Inspect active instances
-instabox rm <instance-name>                                                # Remove specific instance
+# Delete by ID once confirmed the Run has ended and state retention is no longer needed
+docker rm -f <container-id>
+
+# Inspect and remove Instabox instances similarly
+instabox list
+instabox rm <instance-name>
 ```
 
-- **Docker and Compose**: Managed natively using `label=niceeval.host` (or `niceeval.keep-candidate=true` for kept ones), 100% resilient to upper-layer config syntax errors;
-- **Cloud Sandboxes (Instabox / E2B)**: Hard TTL is injected upon creation, capping remote instance lifespan and preventing billing leaks even after unexpected client termination;
-- **Retained Sandboxes**: Sandboxes kept for inspection are also managed and cleaned up directly via native provider CLIs; see [Keep Sandbox state to debug problems](/troubleshooting/debug-sandbox).
+- **Docker and Compose**: Both `niceeval.host` and `niceeval.keep-candidate=true` can be present on containers of active Runs. Labels do not prove a resource is an orphan; do not batch-delete solely based on labels.
+- **Cloud Sandboxes (Instabox / E2B)**: Creation requests enforce a server-side lifetime bound. Expiration actions and billing rules depend on the Provider; after a client kill, verify resource status via native tools.
+- **Retained Sandboxes**: Confirm further investigation is no longer needed before deleting specific instances; see [Keep Sandbox state to debug problems](/troubleshooting/debug-sandbox).
 
 ## Recover a shared-state lease
 

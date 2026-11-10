@@ -77,25 +77,24 @@ instabox exec niceeval-97511d9a -- ps aux
 Sandbox 的生命状态与销毁动作彻底委托给底层的成熟工具链：
 
 ```bash
-# Docker 容器查看与销毁
-docker ps -a --filter "label=niceeval.keep-candidate=true"                 # 查看留存的 NiceEval 容器
-docker rm -f a3f9c2d1                                                      # 销毁指定容器
-docker rm -f $(docker ps -aq --filter "label=niceeval.keep-candidate=true")# 批量销毁留存容器
-docker container prune --filter "label=niceeval.keep-candidate=true" -f   # 仅回收留存的 NiceEval 停止容器
+# 先列出 NiceEval 容器，再检查目标的状态与 Run 标签
+docker ps -a --filter "label=niceeval.keep-candidate=true"
+docker inspect a3f9c2d1
 
-# Instabox 实例查看与销毁
-instabox list                                                              # 查看活跃实例
-instabox rm niceeval-97511d9a                                              # 销毁指定实例
+# 确认所属 Run 已结束且无需保留现场后，按 ID 删除
+docker rm -f a3f9c2d1
+
+# Instabox 同样先检查，再删除指定实例
+instabox list
+instabox rm niceeval-97511d9a
 ```
 
-> [!NOTE]
-> 不带过滤条件的 `docker container prune -f` 会直接删除整台宿主机上所有已停止的容器。请始终附加 `label=niceeval.keep-candidate=true` 过滤或使用显式 `docker rm -f`，避免误删其它项目的容器。
+`niceeval.keep-candidate=true` 在创建容器时就会设置，不表示容器已经停止或留存。标签筛选结果可能包含活跃 Run，不应直接批量删除。
 
-即使项目的 `niceeval.config.ts` 存在语法错误，底层的原生 CLI 也永远 100% 可用，绝不被上层配置错误阻断。
+原生 CLI 不加载 `niceeval.config.ts`，但仍需要可用的 Provider 连接与凭据。
 
 ## 线上 Sandbox 中断防泄漏
 
-当评测在云端（Instabox、E2B）运行而本地进程遭遇断网、断电或 `kill -9` 时：
+创建云端 Sandbox 时，NiceEval 发送服务端生命周期上限。未显式指定时，使用 Attempt 超时加 2 分钟；没有 Attempt 超时时默认 15 分钟。
 
-- **服务端硬超时（Server-Side TTL）**：创建线上 Sandbox 时注入了服务端生命周期上限（基于 Attempt deadline 加上 2 分钟 buffer，默认 15 分钟），即使本地客户端异常失联，云端控制面到期后也会自动强制回收，杜绝无限期计费；
-- **原生空闲挂起**：支持自动空闲休眠（如 Instabox `idle_auto_pause`），客户端失联数分钟后实例自动停计费。
+本地进程遭遇断网、断电或 `kill -9` 后，服务端上限仍用于约束远端实例生命周期。到期动作和计费规则由 Provider 决定，应通过原生工具确认状态。生命周期上限与空闲自动暂停是不同机制，不能据此推断断网后会立即暂停或停止计费。
