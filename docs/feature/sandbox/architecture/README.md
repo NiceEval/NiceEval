@@ -113,7 +113,7 @@ FileChanges 的持久读取只由 `available`、`not-recorded`、`unsupported` �
 这条 required / supplemental 分界的单源在 [Assertion 证据与完整性](../../assertions/architecture/evidence.md#判定依赖与补充证据)。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 区间归因,按 provider 分支还破坏[核心中立](../../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐区间归因的引擎,这是选它的理由,不是历史惯性。
 
-agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐区间回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](../cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
+agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有完整的沙箱现场。在现场中可直接通过原生 `git status` / `git diff` 核对工作区修改，或由固定 Inspection operation 读取已封口事实。
 
 这条链上每个实际执行的环节都被计时并封入 Attempt-owned Observability 的 timing collection：排队与创建分列、各 owner 的 before 逐条形成时间树，收尾段（Agent 收尾 / cleanup / `stop`）在判定口径之外单独计时。
 
@@ -210,7 +210,7 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 
 无法拦截的进程 `SIGKILL` / 宿主断电不承诺分布式原子性;这类外部中断留下的实例由[孤儿核对](#孤儿核对强杀路径的实例面回退)按创建期写入的运行标识事后收回。
 
-`enter` 是 provider 原生的进入命令,记进注册表供直连与审计;日常入口是 [`niceeval sandbox enter <id>`](../cli.md#sandbox-enter),由它负责唤醒、进入与退出后重新休眠。`expiresAt` 是现场可找回的截止时刻——provider 声明了保留期限才写(vercel 写,e2b pause 无限期保留则不写)。
+`nativeCommand` 是 provider 原生的进入命令，直接呈现给用户或 Coding Agent（如 `docker exec -it <id> /bin/bash` 或 `instabox ssh <id>`）；NiceEval 不自建中间终端代理或伪终端隧道，现场接入彻底委托给 Provider 原生 CLI。`expiresAt` 是现场可找回的截止时刻——provider 声明了保留期限才写(vercel 写,e2b pause 无限期保留则不写)。
 
 `sandbox list` / `stop` 按注册表条目的 `provider` 名路由到各 provider 的 **detached 销毁**能力——不需要原来的 run 进程或 `Sandbox` 实例还活着(docker:`rm -f`;e2b / vercel:SDK 按 id kill)。这层按名字路由发生在 CLI / 注册表边界,符合[核心中立](../../../architecture.md)的分界:运行器与评分路径仍不感知 provider 名。
 
@@ -268,7 +268,7 @@ handle 或可再次写盘的回调。
 
 - **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(Run 时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的回退是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
 - **孤儿的判定是三条「与」**:带 niceeval 运行标识、不在留存注册表、且属主 run 已被证实死亡(标识里的 `host` 等于当前宿主机名,且 `pid` 探测不存活)。三条缺一不可:注册表里的 kept 沙箱是被管理的现场,不是孤儿;属主 run 还活着的实例属于并发运行中的另一次 run,绝不能收;`host` 不匹配或 pid 无法核对的实例标 `unverified`,列出但不自动销毁——误杀一台活实例的代价高于多留一台待人工确认,判定必须偏保守。
-- **核对与收回分成只读、破坏两个入口**:[`niceeval sandbox list --orphans`](../cli.md#sandbox-list---orphans) 只读列出,[`niceeval sandbox prune`](../cli.md#sandbox-prune) 销毁已核实孤儿;`unverified` 只有显式 `--force` 才销毁。两个入口与 sandbox 命令组其余成员同一契约:不读 config、不执行用户代码,销毁走各 provider 的 detached 通道。
+- **核对与收回依托 Provider 原生管理工具**:用户使用 Provider 原生命令（如 `docker ps -a` 查看状态，`docker rm -f` / `docker container prune` 销毁已核实孤儿）进行维护，不通过自建注册表伪造管理层。两个通道均走各 provider 的原生链路。
 - **核对与收回按 case 的实例及伴随资源整体进行**:单 Sandbox 实例只有主实例;Compose 实例的运行标识写在 project label 上,伴随容器与网络随主实例整组列出、整组销毁。prune 是强杀与中断后唯一的官方收尾手段,case 新增资源种类(sidecar 容器、网络、volume、云端资源)时,把它接入孤儿核对词表是该 case 契约的一部分,不允许有 prune 看不见的残留。
 - 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,回退在实验面,机制见 [Experiments · 强杀后的收尾回退](../../experiments/architecture/README.md#强杀后的收尾回退收尾登记与启动自愈)。
 

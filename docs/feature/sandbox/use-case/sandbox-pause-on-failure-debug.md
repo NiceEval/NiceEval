@@ -8,10 +8,23 @@
 
 ## 全流程
 
-1. 启动评测并指定失败挂起选项：
+1. 在项目配置中开启本地开发默认失败挂起，或在命令行临时指定选项：
+
+   ```ts title="niceeval.config.ts"
+   import { defineConfig } from "niceeval";
+
+   export default defineConfig({
+     // 本地开发默认挂起现场便于排查，CI 流水线自动禁用
+     pauseOnFailure: !process.env.CI,
+   });
+   ```
+
+   或者在单次执行时通过命令行显式指定：
 
    ```bash
    niceeval exp install/canary install/db-gpt --pause-on-failure
+   # 或显式关闭挂起行为：
+   niceeval exp install/canary install/db-gpt --no-pause
    ```
 
 2. 出现异常或断点触发时，Attempt 暂停收尾并在终端输出原生调试命令：

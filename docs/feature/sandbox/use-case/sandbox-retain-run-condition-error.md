@@ -1,69 +1,65 @@
-# `--keep-sandbox`:宿主运行条件类 errored,进现场手动重跑准备命令
+# 宿主运行条件错误：进现场重跑准备命令排查
 
 ## 解决什么问题
 
-准备链装包失败、agent CLI 起不来——Attempt 的 Verdict 为 `errored`,而这正是证据最薄的场景:agent 根本没跑,没有可用 conversation 或 trace；手里只有 Observability execution diagnostic 与 timing([为什么](../cli.md))。
-要定位「这条命令在那个现场里到底怎么失败的」,只能进活现场重跑一遍。
+在沙箱前置准备（`before` 命令、依赖安装、构建）或 Agent CLI 启动阶段失败时，Attempt 的 Verdict 通常为 `errored`。此时被测 Agent 甚至尚未正式接管执行，缺少对话历史或模型调用链，错误通常仅表现为非零退出码或进程启动失败。
+
+要准确定位沙箱准备为何失败，最有效的方式是在失败时保留现场，并通过底层 Provider 的原生命令在容器中手动重跑那条失败的准备指令，查看原生的标准错误输出。
 
 ## 全流程
 
-1. 收窄到挂的那条,带 flag 重跑(单独使用 `--keep-sandbox` 即 `failed` 档,含 `errored`):
+1. 启动评测并指定失败时暂停或保留现场：
 
    ```bash
-   niceeval exp local onboarding/tool-first --keep-sandbox
+   niceeval exp local onboarding/tool-first --pause-on-failure
    ```
 
-2. run 收尾在摘要后给出留存面板(体裁见 [CLI · run 收尾输出](../cli.md#run-收尾输出)),每条带 attempt 定位符、实例 id 和进入命令。
-
-## 反馈
+2. 发生错误时，NiceEval 阻断自动销毁流程，终端显示原生调试指引：
 
    ```text
-   ╭─ KEPT SANDBOXES ─────────────────────────────────────────────────── 1 kept ─╮
-   │ @1VE05BR7061YN  onboarding/tool-first #1  errored  docker · a3f9c2d1                         │
-   │            enter: niceeval sandbox enter a3f9c2d1                           │
-   ╰─────────────────────────────────────────────── niceeval sandbox stop --all ─╯
+   ⏸ Attempt paused on failure. Sandbox retained for debugging.
+     ➜ Debug natively: docker exec -it a3f9c2d1 /bin/bash
+     ➜ Or execute:      docker exec a3f9c2d1 apt-get update
+   Press [Enter] to resume cleanup and exit...
    ```
 
-   留存与共享 Sandbox 不兼容时，不创建实例，直接给出可操作的失败：
-
-   ```text
-   $ niceeval exp local shared-batch --keep-sandbox
-niceeval error: --keep-sandbox cannot be used because experiment local/shared-batch declares sandboxReuse: true
-hint: remove --keep-sandbox to share one Sandbox, or remove sandboxReuse from the experiment to keep this Attempt's Sandbox
-   ```
-
-3. 进现场。
-   `enter` 自动唤醒休眠实例、落在 workdir:
+3. 开发者利用底层原生命令连入沙箱：
 
    ```bash
-   niceeval sandbox enter a3f9c2d1
+   docker exec -it a3f9c2d1 /bin/bash
    ```
 
-4. 在现场手动重新执行失败的 before action，看真实报错：镜像缺系统依赖、registry 不通，还是版本冲突。再在 `niceeval view`
-   的 Run/Attempt 导航中选择 `@6ZCNAVRHPQ4D2KG9EFW5TB8167`，用 timing 对照失败阶段。
-5. 退出 shell,现场自动回休眠,不烧资源;还要再看时重复 `enter`。
-6. 定位后修 layer 声明，给 image layer 接一条具名 root action 补依赖：
+4. 在现场中手动执行失败的准备动作，观察最真实的底层报错信息：
+
+   ```bash
+   # 手动重跑失败的依赖安装命令
+   npm install --frozen-lockfile
+   # 或重跑构建
+   cargo build
+   ```
+
+   通过终端观察原汁原味的报错：是镜像缺少 gcc/make 等编译工具？网络镜像源无法连通？还是 Node.js 版本不兼容？
+
+5. 排查清楚后，在 NiceEval 终端按回车结束挂起并触发销毁。
+
+6. 在 Sandbox 声明或配置中补充缺失的系统依赖：
 
    ```typescript
-   .before(command("apt-get", ["install", "-y", "libfoo"], {
-     id: "install-libfoo",
+   // 在 sandbox layer 中补充系统依赖动作
+   .before(command("apt-get", ["install", "-y", "build-essential"], {
+     id: "install-build-deps",
      user: "root",
    }))
    ```
 
-   正常重跑验证，然后销毁：
-
-   ```bash
-   niceeval sandbox stop a3f9c2d1
-   ```
+7. 重新发起评测，验证准备动作全部顺利通过。
 
 ## 边界
 
-- 被 Ctrl+C 中断的 run 不留存——留存授予发生在 verdict 定稿的收尾点。
-- `defineSandbox` 自定义 provider 不支持 `--keep-sandbox`(创建前报错)。
-- 与 Experiment 的 [`sandboxReuse: true`](../library/reuse.md) 互斥：留存的现场必须只属于那一次 Attempt。
+- 挂起与留存仅保留现场供人工排障或 Coding Agent 非交互排查，不提供现场续跑或自动修补机制。
+- 若使用 `--keep-sandbox` 进行离线排查，排障结束后直接运行 `docker rm -f <sandboxId>` 或 `instabox rm <sandboxId>` 销毁。
 
 ## 相关阅读
 
-- [CLI](../cli.md) —— 两档语义、面板体裁、`sandbox` 命令组全集。
-- [Architecture · 留存与注册表](../architecture/README.md#留存keep与注册表) —— 各 provider 的休眠形态。
+- [Sandbox CLI](../cli.md) —— 运行期断点与原生命令指引。
+- [在现场反复验证假设](sandbox-retain-validate-scene.md) —— 调试定位与假设检验。

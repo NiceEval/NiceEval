@@ -11,7 +11,7 @@
 - **安全** —— agent 可能跑出危险命令,不能碰你的机器。
 - **可复现** —— 每个 case 从干净状态起步,互不污染。
 - **可并发** —— 几十个 case 同时跑,各自独立。
-- **可采集** —— 跑完用 `git diff` 取改动、读 transcript,Sandbox 随后销毁;要进活现场 debug 时用 [`--keep-sandbox`](cli.md) 显式留存,事后 `niceeval sandbox stop` 停止。
+- **可采集** —— 跑完用 `git diff` 取改动、读 transcript,Sandbox 随后销毁;要进活现场 debug 时用 [`--keep-sandbox`](cli.md) 或 `--pause-on-failure` 显式留存或挂起,事后通过 Provider 原生命令销毁。
 
 这些约束由容器 / 微 VM provider 兑现。`defineSandbox` 接入的自定义 provider 也必须由作者负责提供与其用途相符的隔离边界；NiceEval 不会替自定义实现补上文件系统、进程、网络或凭据隔离。
 
@@ -107,7 +107,7 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [预制实例](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从中启动。
 - [Nested Docker](../sandbox-nested-docker/README.md) —— `sandboxRequirements()`、`incusSandbox()`、资源配额、prepared artifact 与 DestroyOnly 生命周期。
 - [原 Docker Profile 迁移](../sandbox-nested-docker/README.md#docker-profile-migration) —— 普通 Docker container 与原 raw / managed DinD 路径的边界，以及迁移到 Incus 的方式。
-- [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
+- [CLI](cli.md) —— `--keep-sandbox` 与 `--pause-on-failure` 挂起与留存现场，以及原生 CLI 现场接入与资源管理。
 - [Sandbox 复用](library/reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。

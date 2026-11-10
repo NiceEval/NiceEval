@@ -24,8 +24,7 @@ NiceEval 创建的旧 generation 只有在新 generation 已发布且没有 priv
 
 ## 与孤儿 Sandbox 的边界
 
-Docker cache image 与 E2B setup snapshot 不是正在运行或留存的 Sandbox。`niceeval sandbox list --orphans` 只核对强杀后遗留的 Docker container
-或 E2B Sandbox，不列 Docker cache image 或 E2B setup snapshot；`sandbox prune` 也不删除准备缓存。
+Docker cache image 与 E2B setup snapshot 不是正在运行或留存的 Sandbox。强杀后遗留的 Docker container 或 E2B Sandbox 通过底层 Provider 原生管理工具（如 `docker ps -a` / `docker rm`）核对回收，不列 Docker cache image 或 E2B setup snapshot；准备缓存也不被普通容器删除操作销毁。
 
 Incus prepared artifact 不走这条降级路径。它由 Run 级 coordinator 在派发前发布；Provider inventory、
 双向 metadata 与 `ArtifactIntent` 无法闭合时必须 fail closed，并通过 Incus doctor 报告 exact Provider object locator。

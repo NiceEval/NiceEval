@@ -1,91 +1,77 @@
-# 配置损坏时仍能管理现场
+# 配置损坏或异常中断时：利用原生 CLI 直接管理沙箱
 
-场景：一次 Experiment 留下了 Sandbox，但随后 `niceeval.config.ts` 的开发中改动暂时无法求值。你需要先确认
-现场是否还在，或销毁会继续占用资源的实例，不能被运行配置错误挡住。
+## 解决什么问题
 
-Sandbox contribution 先检查自己的命令与 option 语法，准备 `.env` 投递的 provider 凭据，然后只进入留存注册表和
-detached provider 操作。它不会 import 或求值 `niceeval.config.ts`，所以上面的命令不受配置模块错误影响。
+在进行评测配置调试或重构时，`niceeval.config.ts`、测试集文件或 Adapter 代码可能处于语法错误或类型报错的损坏状态。同时，若此前评测曾留存了沙箱，或者进程曾遭遇 `SIGKILL`、断电强杀而遗留了无主沙箱，开发者需要确认哪些沙箱还在运行、并销毁不再需要的容器。
 
-## 反馈
+如果沙箱的列出与销毁强依赖 NiceEval 内部的 CLI 或配置求值，那么只要配置文件存在语法错误，用户连销毁残留容器都无法执行。
 
-即使 `niceeval.config.ts` 损坏，`list` 仍以注册表为唯一输入；空注册表是成功，不是配置错误：
+将沙箱管理与连接彻底交由底层 Provider 的原生 CLI，能够保证：**无论上层 NiceEval 项目如何损坏、代码如何报错，底层原生 CLI（`docker` / `instabox`）永远不受影响，随时开箱即用。**
 
-```console
-$ niceeval sandbox list
-No kept sandboxes.
-```
+## 全流程
 
-有现场时，人读列表把每条的下一步动作贴在该条目下面：
+### 1. 查看存活与留存的沙箱列表
 
-```text
-$ niceeval sandbox list
-╭─ SANDBOXES ─────────────────────────────────────────────────────────── 2 kept ─╮
-│ ID        PROVIDER  STATE     FROM                                             │
-│ a3f9c2d1  docker    dormant   onboarding/tool-first #1 · errored · @1VE05BR7061YN │
-│           2026-07-14 15:02 · enter: niceeval sandbox enter a3f9c2d1            │
-│ 9f21c07b  vercel    expired   onboarding/tool-first #2 · failed · @30SYZCNAVRHPQ4D2KG9EFW5TB8 │
-│           expired 2026-07-14 14:36 — remove: niceeval sandbox stop 9f21c07b    │
-╰────────────────────────────────────────────────────────────────────────────────╯
-```
+当项目配置无法加载或处于编译报错时，直接使用宿主上的成熟命令查看当前存在的沙箱：
 
-凭据准备仍是管理云端现场所需的真实前置条件。如果 `.env` 不可读，命令在连接 Docker、E2B、Vercel 或未来
-Provider 之前失败；修复凭据文件后原样重试。不要用其它命令的机器输出 flag 绕过这一步：
+- **Docker Sandbox**：
+  NiceEval 创建的容器均带有统一标签标识，使用标准 `docker ps` 即可一目了然：
 
-```console
-$ niceeval sandbox list --json
-niceeval error: Unknown option '--json'
-```
+  ```bash
+  # 列出所有由 NiceEval 启动的存活或停驻容器
+  docker ps -a --filter "label=niceeval"
+  ```
 
-`--json` 不属于 Sandbox 命令。聚合 router 能识别其它 contribution 的同名 option，只用于定位 root；最终仍由
-Sandbox 自己的 schema 拒绝。找不到项目根时也不把它当空列表：
+  输出清晰展示当前容器的 CONTAINER ID、镜像、创建时间与运行状态。
 
-```text
-$ niceeval sandbox list --project /tmp/no-project
-niceeval error: no Sandbox registry found at /tmp/no-record/.niceeval/sandboxes
-```
+- **Instabox Sandbox**：
+  直接使用 Instabox 原生客户端查询账号下活跃的沙箱：
 
-销毁具名现场时继续使用原命令；已被外部删除的实例仍会从注册表收敛掉：
+  ```bash
+  instabox list
+  ```
 
-```console
-$ niceeval sandbox stop a3f9c2d1
-stopped a3f9c2d1 (docker)
+### 2. 销毁指定的残留沙箱
 
-$ niceeval sandbox stop --all
-stopped a3f9c2d1 (docker)
-9f21c07b (e2b) already gone — removed from registry
+直接使用 Provider 的原生删除命令销毁目标沙箱，无需启动 Node 进程或求值配置文件：
 
-$ niceeval sandbox stop
-niceeval error: specify sandbox ids or --all
-```
+- **Docker**：
 
-## 孤儿与 `prune`
+  ```bash
+  # 强制删除指定沙箱
+  docker rm -f a3f9c2d1
+  ```
 
-强杀后不在注册表里的实例由 `list --orphans` 单独列出；`unverified` 不会被普通 prune 猜测为可删：
+- **Instabox**：
 
-```text
-$ niceeval sandbox list --orphans
-ID        PROVIDER  OWNER              STARTED            STATE
-f31b9a02  docker    pid 4242@mbp dead  2026-07-20 14:02   orphan
-77e01bc2  e2b       pid 913@ci-07      2026-07-20 13:40   unverified
-Remove orphans with: niceeval sandbox prune
+  ```bash
+  # 销毁指定的云端沙箱
+  instabox rm niceeval-97511d9a
+  ```
 
-$ niceeval sandbox prune
-pruned 2 orphan sandboxes
-  f31b9a02  docker  pid 4242@mbp dead · started 2026-07-20 14:02
-  09aa41c7  docker  pid 4242@mbp dead · started 2026-07-20 14:03
-1 could not be verified
-  details: niceeval sandbox list --orphans
-  remove after manual verification: niceeval sandbox prune --force
-```
+### 3. 批量销毁所有残留与孤儿沙箱
 
-provider 的查询失败不能伪装成没有孤儿，普通 prune 的逐项失败也保留仍活着的资源供重试：
+在发生进程强杀、崩溃导致一批沙箱未被收回时，利用原生管道或 Provider 自带的 prune 能力一键回收：
 
-```text
-$ niceeval sandbox list --orphans
-niceeval error: could not inspect e2b sandbox metadata: credentials unavailable
-hint: repair .env credentials and retry; no sandboxes were removed
+- **Docker 批量销毁 NiceEval 残留容器**：
 
-$ niceeval sandbox prune
-failed to prune f31b9a02 (docker): daemon unavailable
-1 orphan sandbox remains; retry: niceeval sandbox prune
-```
+  ```bash
+  docker rm -f $(docker ps -aq --filter "label=niceeval")
+  ```
+
+- **Docker 回收无主悬空资源**：
+
+  ```bash
+  docker container prune -f
+  ```
+
+## 结果
+
+沙箱实例的底层归属始终属于 Provider 本身。不自建内部注册表和中间回收工具，使得：
+1. 即使当前项目的 TypeScript 源码无法编译、配置文件缺失或存在语法错误，资源的可见性与销毁路径永不被阻断；
+2. 开发者和系统运维可以直接沿用现有的容器运维习惯（Docker Desktop、Portainer、系统定时脚本等）监控和管理资源。
+
+## 相关阅读
+
+- [Sandbox CLI](../cli.md) —— 原生 CLI 现场接入与资源管理。
+- [在现场反复验证假设](sandbox-retain-validate-scene.md) —— 调试定位与假设检验。

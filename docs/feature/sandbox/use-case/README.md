@@ -38,19 +38,19 @@ Experiment 声明 `sandboxReuse: true` 后，指纹匹配的终态 Attempt 会�
 
 完整契约见 [Sandbox 复用](../library/reuse.md)。
 
-## `--keep-sandbox`(留存现场)
+## `--keep-sandbox`（留存现场）与原生 CLI 排查
 
-`--keep-sandbox` 为某次真实 Attempt 留下可进入的 Sandbox 现场。
+`--keep-sandbox` 与 `--pause-on-failure` 为 Attempt 留下或挂起现场，结合底层成熟 CLI 进行排障。
 先按要回答的问题选用例：
 
 | 目标 | 用例 |
 |---|---|
-| before 或 Agent 安装阶段报错，落盘证据不足 | [进入现场重跑 before action](sandbox-retain-run-condition-error.md) |
-| 怀疑 agent 修改了 workdir 之外的状态 | [检查全局运行态](sandbox-retain-outside-workdir.md) |
-| 一个失败有多个假设，不想每次冷启动 | [在同一现场反复验证](sandbox-retain-validate-scene.md) |
-| 项目配置已经损坏，仍需查看或销毁留存现场 | [配置损坏时仍能管理现场](sandbox-retain-broken-config.md) |
+| before 或 Agent 安装阶段报错，落盘证据不足 | [进入现场重跑准备命令](sandbox-retain-run-condition-error.md) |
+| 怀疑 agent 修改了 workdir 之外的状态 | [利用原生命令核对全局变更](sandbox-retain-outside-workdir.md) |
+| 一个失败有多个假设，不想每次冷启动 | [在现场反复验证假设](sandbox-retain-validate-scene.md) |
+| 项目配置已经损坏，仍需查看或销毁留存现场 | [配置损坏时利用原生 CLI 管理现场](sandbox-retain-broken-config.md) |
 
-完整 CLI 契约见[留存现场](../cli.md)。
+完整 CLI 契约见[原生 CLI 现场接入与资源管理](../cli.md#原生-cli-现场接入与资源管理)。
 
 ## 运行中挂起与断点（--pause-on-failure 与 --breakpoint）
 

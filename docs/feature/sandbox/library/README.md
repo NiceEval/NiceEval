@@ -220,6 +220,27 @@ export default defineConfig({
 
 `maxBeforeCacheConcurrency` 只限制一个 Run 中[准备图](../../../concepts.md#before-cache-preparation-graph)的同时 prepare 节点数；它必须是正整数，省略为 `2`。`niceeval exp` 的 `--max-before-cache-concurrency <n>` 只临时替代本次 Invocation 的该值。它既不改变 `BeforeCacheKey`、BuildKey、CaseKey、Attempt/result identity，也不替代 `maxConcurrency`：前者限制派发前的共享准备，后者限制已派发的 Attempt。实际同时 prepare 数还受 provider `scheduling.lane.limit` 约束，取两者交集。
 
+## 失败挂起配置
+
+项目可在 `niceeval.config.ts` 中声明 `pauseOnFailure`，在 Attempt 遇到错误或异常时暂停销毁，供排查者通过原生 CLI 直连：
+
+```typescript
+interface Config {
+  /**
+   * 失败时挂起 Attempt 供原生 CLI 排查。
+   * 支持布尔值（如 `pauseOnFailure: !process.env.CI`）。
+   * CLI `--pause-on-failure` / `--no-pause` 具有更高优先级。
+   */
+  readonly pauseOnFailure?: boolean;
+}
+
+export default defineConfig({
+  pauseOnFailure: !process.env.CI,
+});
+```
+
+省略时默认 `false`。优先级固定为 CLI 参数（`--pause-on-failure` / `--no-pause`）→ `defineConfig().pauseOnFailure` → `false`。
+
 ## 起点参数与 `lifetimeMs`
 
 provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱 Run ID"。
@@ -472,9 +493,7 @@ provider 的分配失败必须进入 Effect error channel。
 资源成功创建后由 NiceEval 的 Scope 接管。
 Scope release 统一执行 stop 或已经提交的 keep disposition。
 
-自定义 provider 不支持 `--keep-sandbox`。
-留存后的 `niceeval sandbox stop` 是不加载 config / eval 模块的新进程,无法安全找回用户对象上的销毁函数;框架也不会用“删登记项、让用户手工销毁”冒充完整生命周期。
-组合使用会在调用 `create()` 前报错,不会先起一个无法纳管的实例。
+自定义 provider 实例的销毁通常依赖特定宿主运行条件，若未接入标准化生命周期，组合使用会在调用 `create()` 前明确报错，避免产生不可控的悬空资源。
 
 要贡献进 niceeval 本体(像 docker/vercel/e2b 那样内置)走另一条路,见 [Architecture · 再接一个 provider](../architecture/README.md#再接一个-provider)。
 
@@ -485,7 +504,7 @@ Scope release 统一执行 stop 或已经提交的 keep disposition。
 - [Nested Docker](../../sandbox-nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [三方准备时序](../architecture/lifecycle.md) —— link 规划、action schedule 与 fresh / reuse 次数。
 - [预制实例](prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
-- [CLI](../cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 销毁命令。
+- [CLI](../cli.md) —— `--keep-sandbox`、`--pause-on-failure` 与原生 CLI 现场接入与资源管理。
 - [操作 Sandbox](operations.md) —— `t.sandbox` 的文件与命令 API。
 - [断言 Sandbox 结果](asserting-results.md) —— diff、文件和 shell 行为怎么评分。
 - [Architecture](../architecture/README.md) —— provider 内部实现、生命周期时序、性能与重试。

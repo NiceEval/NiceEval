@@ -1,82 +1,75 @@
-# `--keep-sandbox`:看 agent 在 workdir 之外做了什么
+# 检查工作目录外状态：利用原生命令核对全局变更
 
 ## 解决什么问题
 
-FileChanges 采的是 workdir 内按 send 区间归因的变更;agent 全局装了什么包、往 `$HOME` 写了什么配置、PATH 实际长什么样,落盘证据结构性地采不到([盲区](../cli.md))。
-题通过了但你怀疑它靠的是「装了个全局工具」这类越界手段,或者要核对 passed 现场的真实状态——需要进活现场看。
+评测框架的常规采集通常只关注评测工作区（`workdir`）内的文件变动。如果被测 Agent 在工作区之外改动了系统全局配置（例如往 `$HOME` 注入了隐秘配置、全局安装了未声明的工具包、篡改了系统全局 `PATH` 或遗留了后台常驻守护进程），评测用例虽然通过，但可能依赖了这类非预期的越界行为。
+
+当评测通过或异常但需要审计系统全局状态时，开发者可以通过留存现场并使用底层 Provider 的原生 CLI 连入容器，运用标准的 Linux / Git 工具直接排查工作区内外的全部变动。
 
 ## 全流程
 
-1. 用 `all` 档留存(passed 也留,不用故意使其失败一条 eval 才能拿到现场)。
-   `all` 档下历史终态一律不参与携带——即使这条题上一轮刚 `passed`,本次也真实重跑,现场才存在([契约](../cli.md)):
+1. 启动评测并指定保留现场（包括通过的 Attempt）：
 
    ```bash
    niceeval exp local onboarding/tool-first --keep-sandbox=all
    ```
 
-2. 从收尾面板拿实例 id,进现场:
+2. 运行结束后，收尾面板输出实例信息与原生直连命令：
 
-   ```bash
-   niceeval sandbox enter a3f9c2d1
+   ```text
+   ╭─ KEPT SANDBOXES ─────────────────────────────────────────────────── 1 kept ─╮
+   │ @1VE05BR7061YN  onboarding/tool-first #1  passed  docker · a3f9c2d1          │
+   │            debug: docker exec -it a3f9c2d1 /bin/bash                       │
+   │            clean: docker rm -f a3f9c2d1                                    │
+   ╰────────────────────────────────────────────────────────────────────────────╯
    ```
 
-3. 查 workdir 之外的世界:
+3. 使用底层 Provider 的原生 CLI 连入沙箱：
 
    ```bash
-   ls -la ~ && cat ~/.npmrc 2>/dev/null     # $HOME 下写了什么
-   npm ls -g --depth=0                      # 全局装了什么
-   echo $PATH && which -a node              # PATH 实际形态
-   ps aux | grep -v grep | tail             # 有没有留后台进程
+   docker exec -it a3f9c2d1 /bin/bash
    ```
 
-4. workdir 之内的历史用留存现场的完整分类账回放,与区间对照:
+4. 在沙箱现场内使用标准系统工具检查工作目录之外的状态：
 
    ```bash
-   niceeval sandbox history a3f9c2d1
-   niceeval sandbox diff a3f9c2d1 --window turn2
+   # 1. 检查用户主目录是否被写入配置
+   ls -la ~ && cat ~/.npmrc 2>/dev/null
+
+   # 2. 检查是否有未声明的全局 npm/pip 包被安装
+   npm ls -g --depth=0
+   pip list
+
+   # 3. 检查全局环境变量与 PATH 劫持
+   echo $PATH && which -a node
+
+   # 4. 检查是否遗留未经管制的后台进程
+   ps aux | grep -v grep
    ```
 
-## 反馈
-
-`history` 以 anchor 为 baseline，并把可传给 `diff` 的 send 区间 token 原样显示：
-
-```text
-$ niceeval sandbox history a3f9c2d1
-╭─ HISTORY · a3f9c2d1 ────────────────────────────── anchor 2026-07-14 15:00:12 ─╮
-│ eval    +3 files            (fixture)                                          │
-│ turn1   agent   M manager_decisions.json                                       │
-│ eval    +1 file             (post-send validation)                             │
-│ turn2   agent   M manager_decisions.json · A notes/decision-log.md             │
-╰──────────────────────────────── niceeval sandbox diff a3f9c2d1 --window turn2 ─╯
-
-$ niceeval sandbox diff a3f9c2d1 --window turn2 --path notes/decision-log.md
-A notes/decision-log.md · window turn2
-@@ -0,0 +1,18 @@
-+# Decision log
-+…
-```
-
-send 区间不是序号猜测；拼错时不返回全部 patch：
-
-```text
-$ niceeval sandbox diff a3f9c2d1 --window turn3
-niceeval error: no change window named 'turn3' in sandbox a3f9c2d1
-hint: run niceeval sandbox history a3f9c2d1 to list available windows
-```
-
-5. 判读结果落进 eval(比如补一条「不得全局安装」的断言)或 adapter 修正,然后销毁:
+5. 在工作目录内直接利用 Git 原生机制核对代码改动：
 
    ```bash
-   niceeval sandbox stop --all
+   cd /workspace
+   git status
+   git diff
    ```
+
+6. 审计完成后，使用底层命令销毁现场：
+
+   ```bash
+   docker rm -f a3f9c2d1
+   ```
+
+   如果是云端 Instabox 沙箱，直接使用 `instabox rm niceeval-97511d9a`。
 
 ## 边界
 
-- 留存只跳过销毁：Agent runtime teardown 与已登记 cleanup 照常执行，看到的是收尾完成后的状态；physical after 只在保留的实例真正退休时执行。
-- 现场销毁后逐区间账本随之消失；已发布 Run 中的 FileChanges DomainView 仍可由 Report 读取，不依赖私有 `diff.json`。
-- `all` 档一次会留多个容器,跑完及时 `stop --all`;下次 `exp` 启动会有残留提醒。
+- 现场保留了收尾后的真实状态，适合做越界行为的事后安全审计。
+- 工作区内的规范化变更应以已落盘的运行事实（`niceeval show attempt.sources` 或 `niceeval view`）为准；现场直接使用原生 `git diff` 可提供细粒度的补丁排查。
+- 留存的容器由底层 Provider 原生管理，审计完毕后使用 `docker rm` 或 `instabox rm` 及时释放。
 
 ## 相关阅读
 
-- [CLI](../cli.md) —— `history` / `diff` 的区间语义与面板体裁。
-- [Architecture · 变更归因](../architecture/README.md#变更归因send-区间与分类账) —— 分类账采什么、不采什么。
+- [Sandbox CLI](../cli.md) —— 原生 CLI 现场接入与资源管理。
+- [在现场反复验证假设](sandbox-retain-validate-scene.md) —— 调试定位与假设检验。
