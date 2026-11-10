@@ -44,17 +44,17 @@ pnpm exec niceeval run recover <run-id> --yes
 
 ```bash
 # Docker 遗留容器查看与销毁
-docker ps -a --filter "label=niceeval"                     # 查看所有 NiceEval 容器
-docker rm -f $(docker ps -aq --filter "label=niceeval")    # 批量销毁残留容器
-docker container prune -f                                  # 回收悬空容器
+docker ps -a --filter "label=niceeval.host"                                # 查看该主机上的所有 NiceEval 容器
+docker rm -f $(docker ps -aq --filter "label=niceeval.host")               # 批量销毁残留容器
+docker container prune --filter "label=niceeval.host" -f                   # 仅回收 NiceEval 停止容器
 
 # Instabox 实例查看与销毁
-instabox list                                              # 查看活跃实例
-instabox rm <instance-name>                                # 销毁指定实例
+instabox list                                                              # 查看活跃实例
+instabox rm <instance-name>                                                # 销毁指定实例
 ```
 
-- **Docker 与 Compose**：使用带 `label=niceeval` 的原生命令管理，即使配置损坏也 100% 可用；
-- **云端 Sandbox（Instabox / E2B）**：物理创建时已自动注入服务端硬超时（Server-Side TTL），客户端失联数分钟后由云端控制面强制物理销毁，避免费用泄漏；
+- **Docker 与 Compose**：使用带 `label=niceeval.host`（或留存用的 `niceeval.keep-candidate=true`）的原生命令管理，配置损坏时仍可用；
+- **云端 Sandbox（Instabox / E2B）**：物理创建时已自动注入服务端硬超时（Server-Side TTL），在客户端异常失联时由云端控制面到期强制回收，杜绝无限期计费；
 - **保留现场**：留存的排查现场同样直接使用原生 CLI 查看与销毁，见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
 
 ## 恢复共享状态租约

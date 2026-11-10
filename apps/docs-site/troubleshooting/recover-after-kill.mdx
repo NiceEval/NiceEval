@@ -44,17 +44,17 @@ Reclaiming residual Sandbox instances after an interruption is fully delegated t
 
 ```bash
 # Docker leftover inspection and cleanup
-docker ps -a --filter "label=niceeval"                     # Inspect all NiceEval containers
-docker rm -f $(docker ps -aq --filter "label=niceeval")    # Batch remove leftover containers
-docker container prune -f                                  # Reclaim orphan resources
+docker ps -a --filter "label=niceeval.host"                                # Inspect all NiceEval containers
+docker rm -f $(docker ps -aq --filter "label=niceeval.host")               # Batch remove leftover NiceEval containers
+docker container prune --filter "label=niceeval.host" -f                   # Reclaim only NiceEval stopped containers
 
 # Instabox instance inspection and cleanup
-instabox list                                              # Inspect active instances
-instabox rm <instance-name>                                # Remove specific instance
+instabox list                                                              # Inspect active instances
+instabox rm <instance-name>                                                # Remove specific instance
 ```
 
-- **Docker and Compose**: Managed natively using `label=niceeval`, 100% resilient to upper-layer config syntax errors;
-- **Cloud Sandboxes (Instabox / E2B)**: Hard TTL is injected upon creation, guaranteeing automated destruction on the provider side even after hard client termination;
+- **Docker and Compose**: Managed natively using `label=niceeval.host` (or `niceeval.keep-candidate=true` for kept ones), 100% resilient to upper-layer config syntax errors;
+- **Cloud Sandboxes (Instabox / E2B)**: Hard TTL is injected upon creation, capping remote instance lifespan and preventing billing leaks even after unexpected client termination;
 - **Retained Sandboxes**: Sandboxes kept for inspection are also managed and cleaned up directly via native provider CLIs; see [Keep Sandbox state to debug problems](/troubleshooting/debug-sandbox).
 
 ## Recover a shared-state lease

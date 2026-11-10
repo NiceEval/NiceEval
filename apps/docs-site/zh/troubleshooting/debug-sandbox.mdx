@@ -42,15 +42,21 @@ pnpm exec niceeval exp local onboarding/tool-first --keep-sandbox=all    # 通�
 NiceEval 不自建中间终端代理或二次命令封装，开发者或 AI Coding Agent 依据指引直接使用底层的成熟 CLI：
 
 ### 1. 人类开发者交互调试
-直接在另一个终端窗口中粘贴原生直连命令：
+直接在另一个终端窗口中执行原生直连命令：
 
-- **Docker Sandbox**：
+- **单步挂起现场（`--pause-on-failure`）**：
+  Sandbox 在等待确认期间仍在后台活跃运行，直连命令立即可用：
   ```bash
+  # Docker Sandbox（活跃运行中）
   docker exec -it a3f9c2d1 /bin/bash
-  ```
-- **Instabox Sandbox**：
-  ```bash
+
+  # Instabox Sandbox（活跃运行中）
   instabox ssh niceeval-97511d9a
+  ```
+- **评测收尾留存现场（`--keep-sandbox`）**：
+  评测结束后 Docker 会将容器挂起（`docker stop`），停用内存但完整保留磁盘文件。连入前需先将其启动：
+  ```bash
+  docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash
   ```
 
 进入后可直接手跑构建命令看报错、检查 `$HOME` 配置、核对环境变量与后台进程。
@@ -59,28 +65,31 @@ NiceEval 不自建中间终端代理或二次命令封装，开发者或 AI Codi
 Coding Agent 避免进入交互式 Shell，而是直接调用原生的单次非交互命令，获取结构化标准输出：
 
 ```bash
-# Docker 非交互执行
+# Docker 非交互执行（若为 --keep-sandbox 留存的容器需先 docker start）
 docker exec a3f9c2d1 cat /workspace/build.log
 
 # Instabox 非交互执行
 instabox exec niceeval-97511d9a -- ps aux
 ```
 
-## 查看与清理残留资源
+## 查看与销毁残留资源
 
-Sandbox 的生命状态与清理动作彻底委托给底层的成熟工具链：
+Sandbox 的生命状态与销毁动作彻底委托给底层的成熟工具链：
 
 ```bash
-# Docker 容器查看与清理
-docker ps -a --filter "label=niceeval"                     # 查看所有 NiceEval 容器
-docker rm -f a3f9c2d1                                      # 销毁指定容器
-docker rm -f $(docker ps -aq --filter "label=niceeval")    # 批量清理残留容器
-docker container prune -f                                  # 回收孤儿/悬空资源
+# Docker 容器查看与销毁
+docker ps -a --filter "label=niceeval.keep-candidate=true"                 # 查看留存的 NiceEval 容器
+docker rm -f a3f9c2d1                                                      # 销毁指定容器
+docker rm -f $(docker ps -aq --filter "label=niceeval.keep-candidate=true")# 批量销毁留存容器
+docker container prune --filter "label=niceeval.keep-candidate=true" -f   # 仅回收留存的 NiceEval 停止容器
 
-# Instabox 实例查看与清理
-instabox list                                              # 查看活跃实例
-instabox rm niceeval-97511d9a                              # 销毁指定实例
+# Instabox 实例查看与销毁
+instabox list                                                              # 查看活跃实例
+instabox rm niceeval-97511d9a                                              # 销毁指定实例
 ```
+
+> [!NOTE]
+> 不带过滤条件的 `docker container prune -f` 会直接删除整台宿主机上所有已停止的容器。请始终附加 `label=niceeval.keep-candidate=true` 过滤或使用显式 `docker rm -f`，避免误删其它项目的容器。
 
 即使项目的 `niceeval.config.ts` 存在语法错误，底层的原生 CLI 也永远 100% 可用，绝不被上层配置错误阻断。
 
@@ -88,5 +97,5 @@ instabox rm niceeval-97511d9a                              # 销毁指定实例
 
 当评测在云端（Instabox、E2B）运行而本地进程遭遇断网、断电或 `kill -9` 时：
 
-- **服务端硬超时（Server-Side TTL）**：创建线上 Sandbox 时强制注入了预设的云端硬生命周期上限（如 10 分钟），到期后由云端控制平面直接强制物理销毁，杜绝无限期计费；
+- **服务端硬超时（Server-Side TTL）**：创建线上 Sandbox 时注入了服务端生命周期上限（基于 Attempt deadline 加上 2 分钟 buffer，默认 15 分钟），即使本地客户端异常失联，云端控制面到期后也会自动强制回收，杜绝无限期计费；
 - **原生空闲挂起**：支持自动空闲休眠（如 Instabox `idle_auto_pause`），客户端失联数分钟后实例自动停计费。
