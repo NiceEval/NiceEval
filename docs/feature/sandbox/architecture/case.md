@@ -359,8 +359,8 @@ interface SandboxGroupEntry {
 ```
 
 `resources` 是 provider 自己可序列化、可 detached stop 的定位数据。
-`sandbox enter` 仍进入 `primary`;`sandbox stop` 把整组交回对应 provider 销毁。
-provider 只返回 primary 时没有伴随资源,现有行为是新模型的严格子集;单实例留存的注册表纪律与各 provider 的休眠语义见 [Architecture · 留存与注册表](README.md#留存keep与注册表)。
+现场直连与调试命令仍定位 `primary`；整组资源交回对应 provider 原生销毁。
+provider 只返回 primary 时没有伴随资源,现有行为是新模型的严格子集;单实例留存与各 provider 的休眠语义见 [Architecture · 留存与注册表](README.md#留存keep与注册表)。
 
 Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后重过 ready 门、失败时保留可再次销毁的注册项。
 只暂停主 Sandbox、让 sidecar 继续运行或丢失的实现不得声明。
