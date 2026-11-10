@@ -16,6 +16,49 @@ import { ADOPTION_CONFIG_IDENTITY_DOMAIN, ADOPTION_INPUT_IDENTITY_DOMAIN } from 
 import { executionDigestForManifestOrigin } from "./manifest.ts";
 import { executionDigestForExperiment } from "./rename-identity.ts";
 
+// @feature docs/feature/experiments/README.md
+it.concurrent("删除最新 Run 后回退到最近未删除的 source barrier，全部删除后不再选择来源", async () => {
+  const experimentId = Schema.decodeUnknownSync(ExperimentIdSchema)("current");
+  const expected = Schema.decodeUnknownSync(RecordSlotIdentitySchema)({
+    slotId: "source-slot", evalId: "case", attemptOrdinal: 0,
+    executionIdentityDigest: "a".repeat(64),
+  });
+  const runs: CurrentAssessmentRun<never>[] = [1, 2, 3, 4].map((revision) => ({
+    createdRevision: revision,
+    document: {
+      runId: Schema.decodeUnknownSync(RunIdSchema)(`source-${revision}`),
+      experimentId, startedAt: Schema.decodeUnknownSync(UtcMillisSchema)(revision),
+      expectedSlots: [expected],
+    },
+    ...(revision >= 3 ? { lifecycle: { state: "deleted" as const, slots: [] } } : {}),
+    members: [],
+  }));
+  const assess = (sources: readonly CurrentAssessmentRun<never>[]) => Effect.runPromise(assessCurrentTargetSlot({
+    target: {
+      experimentId, evalId: expected.evalId, attempt: 0, evaluationKind: "pass" as const,
+      executionIdentityDigest: expected.executionIdentityDigest,
+      inputIdentity: { domain: "input", value: "current" },
+      configIdentity: { domain: "config", value: "current" },
+    },
+    policy: { identity: projectTargetPolicyIdentity, reuseContract: { domain: "reuse", value: "current" }, rerun: "none", keepSandbox: false },
+    runs: sources, byRunId: new Map(sources.map((run) => [run.document.runId, run])),
+    selectionHasProblem: false, coreIssues: [],
+    readAttempt: () => { throw new Error("No source member to read"); },
+    readAssertions: () => { throw new Error("No source assertions to read"); },
+    readActivities: () => { throw new Error("No source activities to read"); },
+    sourceFor: () => { throw new Error("No source attempt to select"); },
+  }));
+  expect(await assess(runs)).toMatchObject({
+    state: "gap", reason: "source-member-missing",
+    sourceBarrier: { runId: runs[1]!.document.runId, startedAt: runs[1]!.document.startedAt },
+  });
+  const withoutSources = await assess(runs.map((run) => ({
+    ...run, lifecycle: { state: "deleted", slots: [] },
+  })));
+  expect(withoutSources).toMatchObject({ state: "gap", reason: "no-source-run" });
+  expect(withoutSources).not.toHaveProperty("sourceBarrier");
+});
+
 it("完整执行仍不能沿用含不适用计分证据的不完整 Score", async () => {
   const runId = Schema.decodeUnknownSync(RunIdSchema)("source-run");
   const experimentId = Schema.decodeUnknownSync(ExperimentIdSchema)("current");

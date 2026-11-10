@@ -197,7 +197,10 @@ export type CurrentTargetSlot = Omit<TargetSlot, "runId" | "slotId">;
 
 export interface CurrentAssessmentRun<Ref> {
   readonly createdRevision?: number;
-  readonly lifecycle?: Pick<ReadableRunResource, "state" | "slots">;
+  readonly lifecycle?: {
+    readonly state: ReadableRunResource["state"] | "deleted";
+    readonly slots: ReadableRunResource["slots"];
+  };
   readonly document: Pick<RunDocument, "runId" | "experimentId" | "startedAt" | "expectedSlots"> & { readonly context?: RunDocument["context"] };
   readonly members: readonly {
     readonly document: MemberDocument;
@@ -867,6 +870,7 @@ function latestSourceRun<Ref>(
 ): CurrentAssessmentRun<Ref> | undefined {
   const candidates = runs.filter((run) =>
     run.document.experimentId === target.experimentId
+    && run.lifecycle?.state !== "deleted"
     // Execution refreshes may see their own already-created pending Run.
     // Logical current targets have no Run identity and keep every barrier.
     && (!("runId" in target) || run.document.runId !== target.runId)
