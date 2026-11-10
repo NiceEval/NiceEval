@@ -8,7 +8,8 @@ import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
 import { instaboxSnapshotDriver } from "./instabox/snapshot-driver.ts";
 
 export interface InstaboxSandboxOptions {
-  readonly snapshotId: string;
+  readonly snapshotId?: string;
+  readonly template?: string;
   readonly lifetimeMs: number;
   readonly resources?: { readonly vcpus: number; readonly memMiB: number };
   readonly pathPrepend?: readonly string[];
@@ -16,7 +17,8 @@ export interface InstaboxSandboxOptions {
 
 const positiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0));
 const Options = Schema.Struct({
-  snapshotId: Schema.String.check(Schema.isPattern(/^sn_[A-Za-z0-9_-]+$/)),
+  snapshotId: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^sn_[A-Za-z0-9_-]+$/))),
+  template: Schema.optionalKey(Schema.String),
   lifetimeMs: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }), Schema.isMultipleOf(1000)),
   resources: Schema.optionalKey(Schema.Struct({ vcpus: positiveInteger, memMiB: positiveInteger })),
   pathPrepend: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isPattern(/^\/[^\0:\r\n]*$/)))),
@@ -40,11 +42,11 @@ const providerModule: SandboxProviderModule<InstaboxSandboxOptions> = {
   }))),
 };
 
-/** Start an independent Instabox machine from a fixed snapshot. */
+/** Start an independent Instabox machine from a snapshot or template (default: universal). */
 export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"template-bearing"> {
   const parsed = decodeOptions(options);
   const plan = Object.freeze({
-    snapshotId: parsed.snapshotId,
+    ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { template: parsed.template ?? "universal" }),
     lifetimeMs: parsed.lifetimeMs,
     resources: Object.freeze({ ...(parsed.resources ?? { vcpus: 4, memMiB: 8192 }) }),
     pathPrepend: Object.freeze([...(parsed.pathPrepend ?? [])]),
@@ -52,7 +54,9 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
   const identity: JsonValue = { provider: "instabox", origin: "https://api.instabox.sh", revision, ...plan, pathPrepend: [...plan.pathPrepend] };
   return defineSandboxTemplate({
     provider: "instabox", kind: "snapshot", publishableIdentity: identity, privateFingerprintIdentity: identity,
-    commandPlanLocator: { _tag: "Exact", fields: [{ name: "snapshotId", value: plan.snapshotId }] }, leakGate: { _tag: "None" },
+    commandPlanLocator: { _tag: "Exact", fields: ["snapshotId" in plan
+      ? { name: "snapshotId", value: plan.snapshotId }
+      : { name: "template", value: plan.template }] }, leakGate: { _tag: "None" },
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: "instabox", plannerRevision: revision, caseKind: "prebuilt",
       target: { platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" }, source: "provider-defined" },

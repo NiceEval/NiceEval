@@ -24,14 +24,18 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
   resolveBase: Effect.fn("instaboxSnapshotDriver.resolveBase")(function*(plan) {
     const key = process.env.INSTABOX_API_KEY;
     if (!key) return yield* fail("resolve-base");
-    const snapshot = yield* boundary("resolve-base", (signal) => api().json(Snapshot, `/snapshots/${encodeURIComponent(plan.snapshotId)}`, { signal }));
-    if (snapshot.id !== plan.snapshotId || snapshot.status !== "ready") return {
-      _tag: "Ineligible" as const, code: "base-image-unverified" as const, reason: "Instabox Base snapshot is not ready",
-    };
+    const snapshotId = plan.snapshotId;
+    if (snapshotId !== undefined) {
+      const snapshot = yield* boundary("resolve-base", (signal) => api().json(Snapshot, `/snapshots/${encodeURIComponent(snapshotId)}`, { signal }));
+      if (snapshot.id !== snapshotId || snapshot.status !== "ready") return {
+        _tag: "Ineligible" as const, code: "base-image-unverified" as const, reason: "Instabox Base snapshot is not ready",
+      };
+    }
+    const baseIdentity = snapshotId ?? `template:${plan.template ?? "universal"}`;
     const credentialHash = createHash("sha256").update(key).digest("hex");
     const executionDomainId = createHash("sha256").update(JSON.stringify(["https://api.instabox.sh", credentialHash])).digest("hex");
     return {
-      _tag: "Resolved" as const, executionDomainId, baseIdentity: plan.snapshotId, baseReference: plan.snapshotId,
+      _tag: "Resolved" as const, executionDomainId, baseIdentity, baseReference: snapshotId ?? plan.template ?? "universal",
       keyScope: {
         protocol: "niceeval.before-cache-key/v1", storageSchemaRevision: "remote-snapshot/1",
         artifactFormatRevision: "instabox-root-and-data/1", semanticIdentity: { executionDomainId, platform: "linux-x64-gnu" },

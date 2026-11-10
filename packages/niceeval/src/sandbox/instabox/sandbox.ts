@@ -41,11 +41,14 @@ export class InstaboxBackend implements SandboxProviderBackend {
     const key = process.env.INSTABOX_API_KEY;
     if (!key) throw new Error("INSTABOX_API_KEY is required for Instabox");
     const api = new InstaboxApi(key);
-    const snapshot = await api.json(Snapshot, `/snapshots/${encodeURIComponent(options.snapshotId)}`);
-    if (snapshot.id !== options.snapshotId || snapshot.status !== "ready") throw new Error("Instabox snapshot must match the configured ID and be ready");
+    if (options.snapshotId !== undefined) {
+      const snapshot = await api.json(Snapshot, `/snapshots/${encodeURIComponent(options.snapshotId)}`);
+      if (snapshot.id !== options.snapshotId || snapshot.status !== "ready") throw new Error("Instabox snapshot must match the configured ID and be ready");
+    }
     const idempotencyKey = randomUUID();
     const body = JSON.stringify({
-      snapshotId: options.snapshotId, name: `niceeval-${idempotencyKey}`,
+      ...(options.snapshotId !== undefined ? { snapshotId: options.snapshotId } : { template: options.template ?? "universal" }),
+      name: `niceeval-${idempotencyKey}`,
       ...(options.resources ?? { vcpus: 4, memMiB: 8192 }),
       deleteAfterSeconds: options.lifetimeMs / 1000,
       autoSuspendAfterSeconds: 0, maxRunMinutes: -1,
