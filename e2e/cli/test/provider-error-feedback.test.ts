@@ -166,7 +166,9 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
       }
 
       const prefixJson = await niceeval.run(["exp", "provider-error/prefix", "--rerun", "all", "--json"], {
-        env: providerEnvironment,
+        // This fixture rejects allocations and does not implement recovery;
+        // give the independent JSON observation its own provider ledger.
+        env: { ...providerEnvironment, NICEEVAL_HOME: join(paths.projectRoot, "json-user") },
       });
       expect(prefixJson.exitCode, prefixJson.diagnostic()).toBe(1);
       expect(prefixJson.expTerminal().summary.beforeCaches).toEqual({ total: 1, hit: 0, prepared: 0, degraded: 1, failed: 0 });

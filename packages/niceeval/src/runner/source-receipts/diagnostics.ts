@@ -93,7 +93,7 @@ export function normalizeAttemptDiagnostics(input: {
         return Effect.void;
       }
       const retainedSummary = makeBoundedSafeText(
-        value.detail,
+        boundedErrorText(value.detail, MAX_DIAGNOSTIC_SUMMARY_BYTES),
         MAX_DIAGNOSTIC_SUMMARY_BYTES,
       );
       if (retainedSummary === undefined) {
@@ -111,8 +111,8 @@ export function normalizeAttemptDiagnostics(input: {
           phase: attemptDiagnosticPhase(value.origin),
           // The result's one-line detail is already Runner-redacted. Causes,
           // stacks, paths, and arbitrary context remain outside this durable
-          // family. An unsafe or oversized detail is deliberately replaced by
-          // a generic bounded summary and represented as partial coverage.
+          // family. Preserve both ends of oversized text; an unsafe detail is
+          // replaced by a generic summary and partial coverage.
           summary: retainedSummary ?? makeBoundedSafeText(
             value.kind === "execution-error"
               ? "Runner recorded an execution error."

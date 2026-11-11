@@ -1,4 +1,4 @@
-import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
+import { compactAssertionSummary, stripControl, summaryText } from "../../assertions/display.ts";
 import type {
   AssertionCriterion,
   AssertionSnapshotObject,
@@ -40,8 +40,8 @@ export function failureDetailFromResult(
   const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
   // 执行错误只给一层可行动摘要(docs/feature/experiments/cli/README.md「运行反馈」):message 取首行
   // ——多行 message 的后续行(如 diagnose 的 output tail)归固定 query result 或 View detail 展开,不进
-  // scrollback;再过 summaryText 剥控制字节并按摘要上限收口,adapter 组装的文本里混进
-  // ANSI 着色时不泄漏进终端事实行。
+  // scrollback;剥控制字节但保留整条安全首行。Human renderer 自己按首尾预算收口，
+  // JSON 保留原因；不能先套 Assertion 的前缀摘要而丢失 provider request ID。
   // 超时的那条 reason 后面直接接归属:哪层时限、上限多少、值从哪来。一行里说清「谁把它掐的」,
   // 不让人先读 `attempt.get` / `attempt.trace` 或 View detail 才知道自己撞的是哪条线(见 docs/feature/sandbox/architecture/README.md
   // 「时限归属」)。
@@ -50,7 +50,7 @@ export function failureDetailFromResult(
     ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})`
     : "";
   const reason = fallbackError !== undefined
-    ? `${summaryText(firstLine(fallbackError.message))}${attribution}`
+    ? `${executionErrorReason(fallbackError.message)}${attribution}`
     : fact !== undefined
       ? compactAssertionSummary(fact)
       : summaryText(result.verdict);
@@ -71,6 +71,10 @@ export function failureDetailFromResult(
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
   };
+}
+
+function executionErrorReason(message: string): string {
+  return stripControl(firstLine(message)).replace(/\s+/gu, " ").trim();
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -189,7 +193,7 @@ export function failureDetailFromCurrentReusedAttempt(
     verdict: "failed",
     reason: diagnostic === undefined
       ? summaryText(readback.verdict)
-      : summaryText(firstLine(diagnostic.summary)),
+      : executionErrorReason(diagnostic.summary),
   };
 }
 
