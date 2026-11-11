@@ -27,7 +27,7 @@
    niceeval exp install/canary install/db-gpt --no-pause
    ```
 
-2. 出现异常或断点触发时，Attempt 暂停收尾并在终端输出原生调试命令：
+2. 出现异常或断点触发时，Attempt 暂停销毁并在终端输出原生调试命令：
 
    ```text
    ⏸ Attempt paused on failure. Sandbox retained for debugging.
@@ -41,12 +41,16 @@
    - 开发者直接另起终端界面，粘贴原生命令（如 `instabox ssh niceeval-97511d9a` 或 `docker exec -it <container> bash`）进入交互式 shell。
    - Coding Agent 则使用非交互式命令（如 `instabox exec niceeval-97511d9a -- cat /tmp/error.log`）单次读取输出并排查，避免交互式挂起。
 
-4. 排查完毕后，在 NiceEval 运行终端按下回车键，框架恢复生命周期并完成沙箱的正常销毁与资源回收。
+4. 恢复生命周期或非阻塞收尾：
+
+   - 单任务交互终端下（TTY 且单并发），排查完毕后在运行终端按下回车键，框架恢复生命周期并完成沙箱销毁。
+   - 并发执行（并发上限大于 1）或非 TTY（Agent、CI 与自动化管道）运行条件下，框架自动退化为非阻塞现场保留。Attempt 输出现场直连指引后立即完成判定收录并释放并发许可，主 Runner 继续并发推进其它计划 Attempt，不阻塞标准输入。
 
 ## 边界
 
+- 挂起是 Attempt 隔离的现场状态，不卡住 Runner 主进程调度，也不阻塞并发队列中其它评测项。
 - NiceEval 不自建中间层终端转发服务，保持 core 中立与稳定性。
-- 沙箱保留底层 Provider 的超时 TTL 保护，避免长期闲置造成资损。
+- 沙箱保留底层 Provider 的超时 TTL 保护与空闲休眠机制，避免长期闲置造成资损。
 
 ## 相关阅读
 

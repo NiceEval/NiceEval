@@ -222,7 +222,7 @@ export default defineConfig({
 
 ## 失败挂起配置
 
-项目可在 `niceeval.config.ts` 中声明 `pauseOnFailure`，在 Attempt 遇到错误或异常时暂停销毁，供排查者通过原生 CLI 直连：
+项目可在 `niceeval.config.ts` 中声明 `pauseOnFailure`，在 Attempt 遇到错误或异常时暂停销毁，供排查者通过原生 CLI 直连。挂起属于 Attempt 隔离状态，不阻占主 Runner 并发槽位；非 TTY 或并发模式下自动退化为非阻塞现场保留。
 
 ```typescript
 interface Config {
