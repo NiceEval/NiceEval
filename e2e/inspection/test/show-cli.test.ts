@@ -463,7 +463,10 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       const changedPlan = await niceeval.run(["exp", mainExperimentId, "--dry"]);
       expect(changedPlan.exitCode, changedPlan.diagnostic()).toBe(0);
       expect(changedPlan.stdout).toContain("identity-mismatch");
-      expect(changedPlan.stdout).toContain(`niceeval accept ${locator}`);
+      expect(changedPlan.stdout).toContain("source:evals/inspection.eval.ts changed");
+      expect(changedPlan.stdout).toContain(`source ${locator}`);
+      expect(changedPlan.stdout).toContain("verdict passed");
+      expect(changedPlan.stdout).not.toContain("niceeval accept");
 
       const historicalOverview = await niceeval.run(["show", "--all", "--record", join(paths.projectRoot, ".niceeval", "record.sqlite")]);
       expect(historicalOverview.exitCode, historicalOverview.diagnostic()).toBe(0);

@@ -402,7 +402,20 @@ test.concurrent("历史公开 producer Record 首次只读即可自动迁移并�
             });
           }
 
-          const accepted = await niceeval.run(["accept", origin.attemptLocator]);
+          // Historical facts remain readable without proving their execution
+          // identity equivalent to the changed current Eval and configuration.
+          const beforeAdoption = await niceeval.run(["run", "list", "--json"]);
+          expect(beforeAdoption.exitCode, beforeAdoption.diagnostic()).toBe(0);
+          const refused = await niceeval.run(["accept", origin.attemptLocator]);
+          expect(refused.exitCode, refused.diagnostic()).not.toBe(0);
+          expect(refused.stderr, refused.diagnostic()).toContain("accept-ineligible");
+          const afterRefusal = await niceeval.run(["run", "list", "--json"]);
+          expect(afterRefusal.exitCode, afterRefusal.diagnostic()).toBe(0);
+          expect(afterRefusal.runListDocument()).toEqual(beforeAdoption.runListDocument());
+
+          // The freshly executed current identity is eligible for an explicit
+          // reference, without copying or rewriting that Attempt's evidence.
+          const accepted = await niceeval.run(["accept", currentSlot.publication.attemptLocator]);
           expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
           const acceptedRunMatch = accepted.stdout.match(
             /into new Run ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\. Result locator remains (@1[0-9A-HJKMNP-TV-Z]{12})\./u,
@@ -410,7 +423,9 @@ test.concurrent("历史公开 producer Record 首次只读即可自动迁移并�
           expect(acceptedRunMatch, accepted.diagnostic()).not.toBeNull();
           const acceptedRunId = acceptedRunMatch?.[1];
           if (acceptedRunId === undefined) throw new Error("accept did not publish its Run identity");
-          expect(acceptedRunMatch?.[2]).toBe(origin.attemptLocator);
+          expect(acceptedRunId).not.toBe(currentRunId);
+          expect(acceptedRunId).not.toBe(origin.runId);
+          expect(acceptedRunMatch?.[2]).toBe(currentSlot.publication.attemptLocator);
 
           const acceptedShownReceiptRequest = join(projectRoot, "acceptedShownReceipt.query.json");
           await writeFile(acceptedShownReceiptRequest, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.get", runId: acceptedRunId } }));
@@ -424,8 +439,9 @@ test.concurrent("历史公开 producer Record 首次只读即可自动迁移并�
           expect(acceptedSlot.publication).toMatchObject({
             state: "published",
             action: "accepted",
-            attemptLocator: origin.attemptLocator,
-            originRunId: origin.runId,
+            attemptId: currentSlot.publication.attemptId,
+            attemptLocator: currentSlot.publication.attemptLocator,
+            originRunId: currentRunId,
           });
 
           const acceptedRequest = join(projectRoot, `${predecessor.version}-${experiment.id}-accepted.request.json`);
@@ -439,7 +455,7 @@ test.concurrent("历史公开 producer Record 首次只读即可自动迁移并�
           expect(acceptedDocument.run.members).toEqual([
             expect.objectContaining({
               action: "accepted",
-              attempt: expect.objectContaining({ originRunId: origin.runId }),
+              attempt: expect.objectContaining({ attemptId: currentSlot.publication.attemptId, originRunId: currentRunId }),
             }),
           ]);
           expect(acceptedDocument.run.value.context?.execution.adapter).toEqual({

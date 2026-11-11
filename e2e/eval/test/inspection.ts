@@ -65,10 +65,11 @@ export async function inspectAssertionEntries(
   entries: readonly AssertionIndexEntry[],
   options: RunProcessOptions = {},
   checkpoint?: AssertionInspectionCheckpoint,
+  concurrency = ASSERTION_DETAIL_QUERY_CONCURRENCY,
 ): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }[]> {
   const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }[] = [];
-  for (let offset = 0; offset < entries.length; offset += ASSERTION_DETAIL_QUERY_CONCURRENCY) {
-    const batch = entries.slice(offset, offset + ASSERTION_DETAIL_QUERY_CONCURRENCY);
+  for (let offset = 0; offset < entries.length; offset += concurrency) {
+    const batch = entries.slice(offset, offset + concurrency);
     const batchDetails = await Promise.all(batch.map(async (entry) => {
       const detail = await inspectAssertion(niceeval, projectRoot, locator, entry.entryId, options, checkpoint);
       return { entry, ...detail };

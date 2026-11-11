@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
+import { decodeInspectionDocument, narrowInspectionSuccess } from "niceeval/inspection";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { inspectAttempt } from "./inspection.ts";
@@ -68,6 +69,16 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
     expect(show.stdout.indexOf("Notes")).toBeGreaterThan(show.stdout.indexOf("assertions"));
     const json = await niceeval.run(["show", event.locator, "--json"]);
     expect(json.exitCode, json.diagnostic()).toBe(0);
-    expect(json.querySuccess("attempt.get").attempt.notes).toEqual(document.attempt.notes);
+    const documents = json.ndjson<unknown>().map((value) => {
+      const decoded = decodeInspectionDocument(value);
+      if (!decoded.success) throw new Error(`${decoded.reason}\n\n${json.diagnostic()}`);
+      return decoded.value;
+    });
+    expect(documents.map((entry) => "operation" in entry ? entry.operation : undefined)).toEqual(["attempt.get", "attempt.usage"]);
+    const attempt = narrowInspectionSuccess(documents[0]!, "attempt.get");
+    if (!attempt.success) throw new Error(`${attempt.reason}\n\n${json.diagnostic()}`);
+    const usage = narrowInspectionSuccess(documents[1]!, "attempt.usage");
+    if (!usage.success) throw new Error(`${usage.reason}\n\n${json.diagnostic()}`);
+    expect(attempt.value.attempt.notes).toEqual(document.attempt.notes);
   });
 });

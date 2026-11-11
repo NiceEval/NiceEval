@@ -4,9 +4,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
-// @feature docs/feature/experiments/README.md
+// @feature docs/feature/sandbox-nested-docker/README.md
 
-test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () => {
+test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完成用法检查", async () => {
   await cliE2E.case("sandbox-config-free", async ({ commands: { niceeval }, paths }) => {
     await mkdir(join(paths.projectRoot, ".niceeval"));
     await writeFile(
@@ -20,14 +20,24 @@ test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () 
       "utf8",
     );
 
-    const receipt = await niceeval.run(["sandbox", "list"]);
+    const descriptor = join(paths.projectRoot, "missing-incus-provider.json");
+    const receipt = await niceeval.run(["sandbox", "provider", "doctor", "incus"], {
+      env: {
+        NICEEVAL_HOME: join(paths.projectRoot, "maintenance-home"),
+        NICEEVAL_INCUS_DESCRIPTOR: descriptor,
+      },
+    });
 
-    expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-    expect(receipt.stdout).toBe("No kept sandboxes.\n");
+    expect(receipt.exitCode, receipt.diagnostic()).toBe(1);
+    expect(receipt.stdout).toContain("niceeval sandbox provider doctor incus");
+    expect(receipt.stdout).toContain("domain: reference");
+    expect(receipt.stdout).toContain(`descriptor: ${descriptor}`);
+    expect(receipt.stdout).toContain("status: FAIL (fail closed)");
+    expect(receipt.stdout).toContain("descriptor: FAIL [incus-undeployed]");
     expect(receipt.stderr).toBe("");
   });
 
-  await cliE2E.case("sandbox-credentials-preflight", async ({ commands: { niceeval }, paths }) => {
+  await cliE2E.case("sandbox-with-unreadable-project-credentials", async ({ commands: { niceeval }, paths }) => {
     await mkdir(join(paths.projectRoot, ".niceeval"));
     await writeFile(
       join(paths.projectRoot, "niceeval.config.ts"),
@@ -36,12 +46,18 @@ test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () 
     );
     await mkdir(join(paths.projectRoot, ".env"));
 
-    const receipt = await niceeval.run(["sandbox", "list"]);
+    const descriptor = join(paths.projectRoot, "missing-incus-provider.json");
+    const receipt = await niceeval.run(["sandbox", "provider", "doctor", "incus"], {
+      env: {
+        NICEEVAL_HOME: join(paths.projectRoot, "maintenance-home"),
+        NICEEVAL_INCUS_DESCRIPTOR: descriptor,
+      },
+    });
 
-    expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
-    expect(receipt.stdout).toBe("");
-    expect(receipt.stderr).toMatch(/ProjectCredentialsError|EISDIR|read-dotenv/);
-    expect(receipt.stderr).not.toContain("sandbox config must stay unloaded");
+    expect(receipt.exitCode, receipt.diagnostic()).toBe(1);
+    expect(receipt.stdout).toContain(`descriptor: ${descriptor}`);
+    expect(receipt.stdout).toContain("descriptor: FAIL [incus-undeployed]");
+    expect(receipt.stderr).toBe("");
   });
 
   await cliE2E.case("sandbox-owned-options", async ({ commands: { niceeval }, paths }) => {
@@ -55,15 +71,15 @@ test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () 
 
     const receipts = [];
     for (const argv of [
-      ["sandbox", "list", "--json"],
-      ["--json", "sandbox", "list"],
+      ["sandbox", "provider", "doctor", "incus", "--json"],
+      ["--json", "sandbox", "provider", "doctor", "incus"],
     ]) {
       receipts.push(await niceeval.run(argv));
     }
     for (const receipt of receipts) {
       expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
       expect(receipt.stdout).toBe("");
-      expect(receipt.stderr).toContain("niceeval sandbox list does not accept --json.");
+      expect(receipt.stderr).toContain("Incus maintenance flags require inventory or gc.");
       expect(receipt.stderr).not.toMatch(/ProjectCredentialsError|EISDIR|read-dotenv/);
       expect(receipt.stderr).not.toContain("sandbox config must stay unloaded");
     }
@@ -78,8 +94,8 @@ test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () 
     await mkdir(join(paths.projectRoot, ".env"));
 
     const helpCases = [
-      { argv: ["--help", "sandbox", "list"], expected: "niceeval —" },
-      { argv: ["sandbox", "list", "--help"], expected: "niceeval sandbox —" },
+      { argv: ["--help", "sandbox", "provider", "doctor", "incus"], expected: "niceeval —" },
+      { argv: ["sandbox", "provider", "doctor", "incus", "--help"], expected: "niceeval sandbox provider doctor —" },
       { argv: ["docker", "--help"], expected: "niceeval docker —" },
       { argv: ["exp", "--help"], expected: "niceeval exp" },
       { argv: ["query", "--help"], expected: "niceeval query" },
@@ -97,7 +113,7 @@ test("Sandbox 管理命令准备项目凭据但不求值项目配置", async () 
 
     const rejectedCases = [
       { argv: ["docker", "cache", "inventory", "--record", ".niceeval/record"], option: "--record" },
-      { argv: ["sandbox", "list", "--domain", "docker-owned"], option: "--domain" },
+      { argv: ["sandbox", "provider", "doctor", "incus", "--domain", "docker-owned"], option: "--domain" },
     ] as const;
 
     for (const { argv, option } of rejectedCases) {

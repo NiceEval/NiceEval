@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
 // @feature docs/feature/plugins/README.md
 
-test("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行", async () => {
+test.concurrent("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物理实例运行", async () => {
   await e2e.case("eval-owner-lifecycle", async ({ paths, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "eval-plugin", "--rerun", "all", "--json"], {
       timeoutMs: 180_000,

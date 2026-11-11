@@ -251,9 +251,10 @@ const sandbox = incusSandbox({ image: "niceeval/docker-execution-v1@sha256:${dig
 export default defineExperiment({ adapter: quickAgent, sandbox, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
 `, "utf8");
       const evictionStart = (await journal(journalPath)).length;
-      const eviction = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
+      const eviction = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all", "--json"], { cwd: projectRoot, env: baseEnv });
       expect(eviction.exitCode).not.toBe(0);
-      expect(`${eviction.stdout}\n${eviction.stderr}`).toContain("still-current replacement lineage");
+      expect(eviction.expTerminal().summary.beforeCaches).toEqual({ total: 1, hit: 0, prepared: 0, degraded: 1, failed: 0 });
+      expect(eviction.expEvalEvents()).toEqual([expect.objectContaining({ evalId: "probe", verdict: "errored", locator: expect.any(String) })]);
       const evictionRecords = (await journal(journalPath)).slice(evictionStart);
       expect(artifactDeletes(evictionRecords)).toHaveLength(0);
       expect(artifactPublishes(evictionRecords)).toHaveLength(0);
@@ -265,7 +266,7 @@ import { incusSandbox, shell } from "niceeval/sandbox";
 import { quickAgent } from "../agents/deterministic.ts";
 const sandbox = incusSandbox({ image: "niceeval/docker-execution-v1@sha256:${digest}", project: "${runtimeProject}", storagePool: "niceeval-sandbox-dev", acceptDevelopmentDomain: true, resources: { dockerDataBytes: ${1024 ** 3} } })
   .before(shell({ id: "incus-ledger-prefix", command: "true", changeFrequency: 10 }));
-export default defineExperiment({ adapter: quickAgent, sandbox, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
+export default defineExperiment({ adapter: quickAgent, sandbox, sandboxCache: { before: "bypass" }, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
 `, "utf8");
       await writeFile(`${state}.fail-next`, `POST /1.0/instances?project=${runtimeProject}\n`, "utf8");
       const failedMutation = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {

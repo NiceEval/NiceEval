@@ -535,7 +535,9 @@ test.concurrent("存在引用时拒绝删除 origin，删除依赖后可安全�
       const beforeReceipt = await niceeval.run(["run", "list", "--json"]);
       expect(beforeReceipt.exitCode, beforeReceipt.diagnostic()).toBe(0);
       const known = new Set(beforeReceipt.runListDocument().runs.map((run) => run.runId));
-      const accepted = await niceeval.run(["accept", published.publication.attemptLocator]);
+      const accepted = await niceeval.run(["accept", published.publication.attemptLocator], {
+        env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+      });
       expect(accepted.exitCode, accepted.diagnostic()).toBe(0);
       const afterReceipt = await niceeval.run(["run", "list", "--json"]);
       expect(afterReceipt.exitCode, afterReceipt.diagnostic()).toBe(0);

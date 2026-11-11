@@ -73,8 +73,8 @@ function assertionOutcomeMap(entries: readonly { display: unknown; decision: unk
 
 test.concurrent("值与连续 Match 登记可审阅的检查结果", async () => {
   const startedAt = performance.now();
-  // CI needs about 4.4s per installed CLI detail read (113 entries).
-  // Retain headroom for the full readback and 60s for termination/staging.
+  // Read independent details four at a time; retain every assertion and
+  // 60s for termination/staging without extending the case deadline.
   const deadlineAt = startedAt + 600_000;
   await evalE2E.case(
     "values",
@@ -196,6 +196,7 @@ test.concurrent("值与连续 Match 登记可审阅的检查结果", async () =>
           inspected.document.attempt.assertions.entries,
           {},
           checkpoint,
+          4,
         );
         await stage("outcome", "assertion-outcomes");
         const entries = details.map((detail) => {

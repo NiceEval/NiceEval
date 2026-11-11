@@ -19,6 +19,7 @@ const OPERATION_CATALOG = [
   "attempt.trace.detail",
   "attempt.timing",
   "attempt.usage",
+  "attempt.reprice",
   "attempt.diff",
   "attempt.sources",
   "attempt.artifacts",

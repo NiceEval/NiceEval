@@ -61,9 +61,12 @@ export default defineExperiment({ adapter: quickAgent,
       expect(low.stdout).toContain("artifact-storage: FAIL");
       expect(low.stdout).toContain("storage-bytes");
       expect(low.stdout).toContain("4 free of 4");
-      const refused = await cli.run(["exp", "incus-storage", "probe", "--rerun=all"], { cwd: root, env });
+      const refused = await cli.run(["exp", "incus-storage", "probe", "--rerun=all", "--json"], { cwd: root, env });
       expect(refused.exitCode, refused.diagnostic()).not.toBe(0);
-      expect(`${refused.stdout}\n${refused.stderr}`).toContain("storage-bytes");
+      expect(refused.expTerminal().summary.beforeCaches).toEqual({ total: 1, hit: 0, prepared: 0, degraded: 1, failed: 0 });
+      // Cache admission cannot copy into the exhausted pool, but a cache
+      // failure still dispatches the Attempt from Base (this fake fails ensure).
+      expect(refused.expEvalEvents()).toEqual([expect.objectContaining({ evalId: "probe", verdict: "errored", locator: expect.any(String) })]);
       expect(await readFile(journal, "utf8")).not.toContain('"type":"copy"');
 
       const provider = JSON.parse(await readFile(state, "utf8"));
