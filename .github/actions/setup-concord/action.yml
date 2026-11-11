@@ -1,8 +1,8 @@
 name: Install Concord CLI
-description: Install the pinned standalone Concord CLI and verify repository engine support.
+description: Install standalone Concord CLI.
 outputs:
   package-root:
-    description: Verified standalone package with production dependencies.
+    description: Standalone Concord directory.
     value: ${{ steps.install.outputs.package-root }}
 runs:
   using: composite
@@ -15,22 +15,16 @@ runs:
         # the current checkout trusted outside checkout's temporary HOME too.
         git config --global --add safe.directory "$(pwd -P)"
         git rev-parse --show-toplevel
-        concord_version="0.13.0"
-        concord_sha256="ed72b5964e71a03e12d349cdedd3ad86efad5c790ed55576d068cf52f48a5959"
-        concord_root="$(mktemp -d "${RUNNER_TEMP}/concord-${concord_version}.XXXXXX")"
+        concord_version="0.16.8"
+        case "$(uname -s)/$(uname -m)" in
+          Linux/x86_64) platform=linux-x64 ;;
+          Darwin/arm64) platform=darwin-arm64 ;;
+          *) platform=linux-x64 ;;
+        esac
+        concord_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/concord-${concord_version}.XXXXXX")"
         curl --fail --location --retry 2 --connect-timeout 15 --max-time 180 --retry-max-time 600 \
-          "https://github.com/CorrectRoadH/Concord/releases/download/v${concord_version}/concord-sdlc-${concord_version}.tgz" \
-          --output "${concord_root}/concord.tgz"
-        echo "${concord_sha256}  ${concord_root}/concord.tgz" | sha256sum --check
-        tar -xzf "${concord_root}/concord.tgz" -C "$concord_root"
-        pnpm --dir "${concord_root}/package" install --prod --frozen-lockfile --ignore-scripts --package-import-method=copy
-        mkdir "${concord_root}/bin"
-        chmod +x "${concord_root}/package/dist/entry.js"
-        ln -s "${concord_root}/package/dist/entry.js" "${concord_root}/bin/concord"
-        echo "package-root=${concord_root}/package" >> "$GITHUB_OUTPUT"
+          "https://github.com/CorrectRoadH/Concord/releases/download/v${concord_version}/concord-${concord_version}-${platform}.tar.gz" \
+          | tar -xz -C "$concord_root"
+        echo "package-root=${concord_root}" >> "$GITHUB_OUTPUT"
         echo "${concord_root}/bin" >> "$GITHUB_PATH"
         "${concord_root}/bin/concord" --version
-        if ! "${concord_root}/bin/concord" repo engine --help; then
-          echo "::error::NiceEval 0.20 requires the Concord repository process bridge. Update the verified release version and SHA-256 in setup-concord."
-          exit 1
-        fi

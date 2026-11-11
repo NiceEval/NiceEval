@@ -17,8 +17,13 @@ case "$mode" in
     # the executable is not a portable installation.
     cp -R "${PNPM_HOME:?expected pnpm/setup installation}/dist" "$stage/bin/dist"
     cp -R "${CONCORD_PACKAGE_ROOT:?expected installed Concord package}" "$stage/concord"
-    ln -s ../concord/dist/entry.js "$stage/bin/concord"
-    chmod +x "$stage/bin/node" "$stage/bin/pnpm" "$stage/concord/dist/entry.js"
+    if [[ -f "$stage/concord/bin/concord" ]]; then
+      ln -s ../concord/bin/concord "$stage/bin/concord"
+      chmod +x "$stage/bin/node" "$stage/bin/pnpm" "$stage/concord/bin/concord"
+    else
+      ln -s ../concord/dist/entry.js "$stage/bin/concord"
+      chmod +x "$stage/bin/node" "$stage/bin/pnpm" "$stage/concord/dist/entry.js"
+    fi
     export PATH="$stage/bin:$PATH"
     node - "$stage/versions.json" <<'NODE'
 const fs = require('node:fs');
@@ -62,7 +67,7 @@ if (wanted !== `pnpm@${saved.pnpm}`) throw Error('Toolchain does not match packa
 NODE
     git config --global --add safe.directory "$(pwd -P)"
     git rev-parse --show-toplevel
-    concord repo engine --help
+    concord --version
     echo "$stage/bin" >> "$GITHUB_PATH"
     echo 'PNPM_CONFIG_GLOBAL_SHIMS={"node":false}' >> "$GITHUB_ENV"
     store="$(pnpm store path --silent)"

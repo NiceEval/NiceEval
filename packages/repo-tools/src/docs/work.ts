@@ -345,7 +345,7 @@ function changedSince(base: string): Effect.Effect<readonly string[], DocsProces
 
 function runOneCheck(check: DocsCheck): Effect.Effect<DocsWorkReceipt["checks"][number], DocsProcessError, ChildProcessSpawner.ChildProcessSpawner> {
   const invocation = check.kind === "docs-lint"
-    ? ["run", "lint:docs"]
+    ? ["exec", "concord", "check"]
     : check.kind === "docs-site-lint"
     ? ["run", "lint:docs-site"]
     : ["run", check.script, "--", ...check.args];

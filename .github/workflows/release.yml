@@ -85,8 +85,8 @@ jobs:
       # 发版闸门只看包自身对不对:类型检查 + docs/memory 守护。docs-site 的 mint 校验
       # (lint:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
       # 随包 INDEX.md 的生成失败由 pack 里的 prepare/build:index 直接报错。
-      - name: Lint docs
-        run: pnpm run lint:docs
+      - name: Check Concord relations
+        run: concord check
 
       - name: Pack exact versioned candidate once
         id: pack

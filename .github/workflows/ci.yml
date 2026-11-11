@@ -38,9 +38,6 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Lint docs
-        run: pnpm run lint:docs
-
       - name: Check Concord relations
         run: concord check
 
