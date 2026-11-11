@@ -27,15 +27,18 @@ export class InstaboxApiError extends Error {
   }
 }
 
+export type InstaboxRequestInit = RequestInit & { readonly timeoutMs?: number };
+
 /** Fixed-origin authenticated transport. Never includes response text in errors. */
 export class InstaboxApi {
   constructor(private readonly key: string) {}
 
-  async request(path: string, init: RequestInit = {}): Promise<Response> {
+  async request(path: string, init: InstaboxRequestInit = {}): Promise<Response> {
+    const timeoutMs = init.timeoutMs ?? 30_000;
     const response = await fetch(`https://api.instabox.sh/v1${path}`, {
       ...init, redirect: "error",
       headers: { "Content-Type": "application/json", ...init.headers, "X-API-Key": this.key },
-      signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(init.signal ? [init.signal] : [])]),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(init.signal ? [init.signal] : [])]),
     });
     if (!response.ok) {
       let code = "invalid-error-response";

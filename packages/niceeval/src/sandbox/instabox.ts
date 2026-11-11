@@ -92,7 +92,7 @@ export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: "instabox", plannerRevision: revision, caseKind: "prebuilt",
       target: { platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" }, source: "provider-defined" },
-      scheduling: { recommendedConcurrency: 4, lane: { key: "instabox", limit: 4 }, admission: { _tag: "Shared" } },
+      scheduling: { recommendedConcurrency: 10, lane: { key: "instabox", limit: 10 }, admission: { _tag: "Shared" } },
       module: providerModule, runtimePlan: plan,
       build: { _tag: "None", caseKey: computeCaseKey({ caseKind: "prebuilt", materializerRevision: revision, buildKeys: [], caseParams: identity }), buildKeys: [] },
       publishableIdentity: identity, privateFingerprintIdentity: identity,

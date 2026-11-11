@@ -92,6 +92,10 @@ export function classifySandboxIoError(error: unknown): SandboxIoErrorKind {
     const name = record && typeof record.name === "string" ? record.name : "";
     const message = current instanceof Error ? current.message : String(current);
 
+    if (/TimeoutError|HeadersTimeoutError|BodyTimeoutError|ConnectTimeoutError/i.test(name) || /aborted due to timeout|timed? ?out|timeout exceeded|deadline exceeded/i.test(message)) {
+      return "network";
+    }
+
     if (/abort|cancel|terminated|killed|sandbox.*(closed|stopped)/i.test(`${name} ${message}`)) return "unknown";
 
     const status = numericStatus(record);

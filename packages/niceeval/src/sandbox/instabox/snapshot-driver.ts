@@ -19,7 +19,7 @@ const boundary = <A>(operation: string, run: (signal: AbortSignal) => Promise<A>
 
 export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOptions> = {
   preserves: { disks: ["/", "/data"], memory: false },
-  sourceUsableAfterSnapshot: true,
+  sourceUsableAfterSnapshot: false,
   snapshotSettleMs,
   resolveBase: Effect.fn("instaboxSnapshotDriver.resolveBase")(function*(plan) {
     const key = process.env.INSTABOX_API_KEY;

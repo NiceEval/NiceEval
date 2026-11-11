@@ -82,9 +82,12 @@ export async function startInstaboxProcess(input: {
         });
         channel.once("close", () => {
           if (terminal) return;
-          if (exit === undefined) { void fail(); return; }
-          terminal = true;
-          output.end(); resolveDone(exit); client.end(); unregister();
+          setImmediate(() => {
+            if (terminal) return;
+            if (exit === undefined) { void fail(); return; }
+            terminal = true;
+            output.end(); resolveDone(exit); client.end(); unregister();
+          });
         });
         resolve(channel);
       });

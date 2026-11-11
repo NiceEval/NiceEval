@@ -138,13 +138,17 @@ export class InstaboxBackend implements SandboxProviderBackend {
 
   runShell(script: string, options?: CommandOptions): Promise<CommandResult> { return this.runCommand("bash", ["-c", script], options); }
   async readBytes(path: string): Promise<Uint8Array> {
-    const response = await this.api.request(`${this.path}/files/content?path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`);
+    const response = await this.api.request(`${this.path}/files/content?path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`, {
+      timeoutMs: 120_000,
+    });
     return new Uint8Array(await response.arrayBuffer());
   }
   async readText(path: string): Promise<string> { return Buffer.from(await this.readBytes(path)).toString("utf8"); }
   async writeBytes(path: string, bytes: Uint8Array): Promise<void> {
+    const timeoutMs = Math.max(60_000, Math.ceil(bytes.byteLength / (64 * 1024)) * 1000);
     const response = await this.api.request(`${this.path}/files?parents=true&path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`, {
       method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: Buffer.from(bytes),
+      timeoutMs,
     });
     await response.arrayBuffer();
   }
