@@ -11,7 +11,7 @@ test.concurrent.each([
   { outcome: "errored", configured: false, flags: ["--pause-on-failure"], paused: true },
   { outcome: "failed", configured: true, flags: ["--no-pause"], paused: false },
   { outcome: "passed", configured: true, flags: [], paused: false },
-])("$outcome: config=$configured flags=$flags retains the sandbox until Enter", async ({ outcome, configured, flags, paused }) => {
+])("$outcome: config=$configured flags=$flags completes without Enter on piped stdin", async ({ outcome, configured, flags, paused }) => {
   await runnerE2E.case(`pause-${outcome}-${paused}`, async ({ paths }) => {
     await writeFile(join(paths.projectRoot, "niceeval.config.ts"), `
       import { defineConfig } from "niceeval";
@@ -41,27 +41,13 @@ test.concurrent.each([
         ${outcome === "errored" ? 'throw new Error("pause fixture execution error");' : `t.check("actual", includes(${JSON.stringify(outcome === "passed" ? "actual" : "missing")}));`}
       }});
     `);
-    // This external driver owns the child's terminal input. It observes public
-    // fixture cleanup receipts before sending Enter, without importing Runner.
+    // Keep piped stdin open without sending Enter or EOF. Completion must not
+    // depend on an input event in a non-interactive invocation.
     await withProcess([process.execPath, "--input-type=module", "-e", `
       import { spawn } from "node:child_process";
-      import { existsSync } from "node:fs";
       const child = spawn(process.argv[1], process.argv.slice(2), { stdio: ["pipe", "pipe", "pipe"] });
-      let text = "", acknowledged = false;
       child.stdout.pipe(process.stdout);
-      child.stderr.on("data", (chunk) => {
-        process.stderr.write(chunk);
-        text += chunk;
-        if (!acknowledged && text.includes("Press [Enter] to resume cleanup and exit...")) {
-          acknowledged = true;
-          if (existsSync("pause-agent-cleaned") || existsSync("provider-group-stop-started")) {
-            console.error("CLEANUP_RAN_BEFORE_ENTER");
-            process.exitCode = 90;
-          }
-          console.error("PAUSE_OBSERVED");
-          child.stdin.write("\\n");
-        }
-      });
+      child.stderr.pipe(process.stderr);
       child.on("error", (error) => { console.error(error); process.exitCode = 91; });
       child.on("close", (code) => { process.exitCode ??= code ?? 92; });
     `, join(paths.projectRoot, "node_modules/.bin/niceeval"), "exp", "pause-debug", "--rerun", "all", "--json", ...flags], {
@@ -72,8 +58,8 @@ test.concurrent.each([
     }, async (child) => {
       const result = await child.done;
       expect(result.timedOut, result.diagnostic()).toBe(false);
-      expect(result.stderr, result.diagnostic()).not.toContain("CLEANUP_RAN_BEFORE_ENTER");
-      expect(result.stderr.includes("PAUSE_OBSERVED"), result.diagnostic()).toBe(paused);
+      expect(result.stderr, result.diagnostic()).not.toContain("Press [Enter]");
+      expect(result.stderr.includes("Sandbox retained for debugging."), result.diagnostic()).toBe(paused);
       expect(result.expReceipt().createdRunIds, result.diagnostic()).toHaveLength(1);
       expect(await readFile(join(paths.projectRoot, "pause-agent-cleaned"), "utf8")).toBe("cleaned");
       expect(await readFile(join(paths.projectRoot, "provider-group-stop-complete"), "utf8")).toBe("");

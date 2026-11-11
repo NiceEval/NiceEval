@@ -9,7 +9,19 @@ const terminal = Semaphore.makeUnsafe(1);
 export const pauseOnFailure = Effect.fn("pauseOnFailure")(function* (
   nativeCommand: string | undefined,
   invocationSignal: AbortSignal | undefined,
+  options: { readonly nonInteractive?: boolean } = {},
 ) {
+  if (process.stdin.isTTY !== true || options.nonInteractive === true) {
+    try {
+      reportPausePrompt([
+        "Sandbox retained for debugging. Continuing without waiting for input.",
+        ...(nativeCommand === undefined ? [] : [`  ➜ Debug natively: ${nativeCommand}`]),
+      ].join("\n"));
+    } catch {
+      // A closed output stream must not prevent cleanup.
+    }
+    return;
+  }
   yield* terminal.withPermit(Effect.callback<void>((resume) => {
     const input = process.stdin;
     if (invocationSignal?.aborted || input.destroyed || input.readableEnded) {

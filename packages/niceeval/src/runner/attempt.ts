@@ -837,6 +837,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       const pause = yield* Effect.cached(Effect.suspend(() => pauseOnFailure(
         sandboxFacts === undefined ? undefined : nativeEnterCommand(sandboxFacts.provider, sandboxFacts.sandboxId),
         parentSignal ?? invocationSignal,
+        { nonInteractive: opts.maxConcurrency > 1 || process.stdin.isTTY !== true },
       )));
       pauseBeforeCleanup = (verdict) =>
         (opts.pauseOnFailure ?? config.pauseOnFailure ?? false)
