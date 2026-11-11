@@ -15,6 +15,7 @@ const SECONDARY_ERROR_TAIL = "request req_docker_secondary_987";
 // @feature docs/feature/experiments/README.md
 // @regression memory/human-short-error-and-score-summary.md
 // @regression memory/pre-dispatch-run-diagnostics.md
+// @issue docs/issues/attempt-error-tail.md
 
 test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属 details", async () => {
   await cliE2E.case(
@@ -64,8 +65,10 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
       expect(compact, result.diagnostic()).toContain("checking build cache");
       expect(compact.match(/checking build cache · docker:dockerfile:greet\/hello · 1 attempt/gu) ?? []).toHaveLength(2);
       expect(compact.match(/build failed · docker:dockerfile:greet\/hello · 1 attempt/gu) ?? []).toHaveLength(2);
-      expect.soft(compact, result.diagnostic()).toContain("7 attempts not started");
-      expect(compact).toContain("req_prefix_capacity_123");
+      expect.soft(compact, result.diagnostic()).toContain("4 attempts not started");
+      expect(compact).toContain("Before caches: 0 hit · 0 prepared · 1 degraded · 0 failed (1 total)");
+      expect(compact).toContain("error: PREFIX_ALLOCATION_FAILED");
+      expect.soft(compact, result.diagnostic()).toContain("req_prefix_capacity_123");
       expect(result.stdout).not.toContain("e2b-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toContain("vercel-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toMatch(/shared failure:|\bBuildKey\b|\btiming node\b|\bfailureId\b|\bcause:|\bfix:/u);
@@ -90,24 +93,13 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
         const run = detail.value;
         if (run.experimentId === "provider-error/prefix") {
           expect.soft(detail).toMatchObject({
-            denominator: { expected: 3, published: 0, missing: 3 },
-            diagnostics: [expect.objectContaining({
-              code: "sandbox-before-cache-failed",
-              phase: "run.dispatch",
-              summary: expect.stringContaining("req_prefix_capacity_123"),
-              affectedPlannedAttemptIds: expect.arrayContaining(detail.plannedAttempts.map((member) => member.plannedAttemptId)),
-            })],
+            denominator: { expected: 3, published: 3, missing: 0 },
+            diagnostics: [],
           });
-          expect.soft(detail.diagnostics[0]?.affectedPlannedAttemptIds).toHaveLength(3);
-          const shown = await niceeval.run(["show", "--run", run.runId]);
-          expect(shown.exitCode, shown.diagnostic()).toBe(0);
-          expect.soft(shown.stdout).toContain("Run error");
-          expect.soft(shown.stdout).toContain("Before dispatch");
-          expect.soft(shown.stdout).toContain("Affected attempt count");
-          expect.soft(shown.stdout).toContain("greet/hello");
-          expect.soft(shown.stdout).not.toContain("sandbox-before-cache-failed");
-          expect.soft(shown.stdout).not.toContain("run.dispatch");
-          expect.soft(shown.stdout).toContain("req_prefix_capacity_123");
+          expect(detail.plannedAttempts).toHaveLength(3);
+          for (const member of detail.plannedAttempts) {
+            expect(member).toMatchObject({ state: "executed", publication: { state: "published", attemptLocator: expect.any(String) } });
+          }
         }
         if (run.experimentId === "provider-error/before") {
           expect.soft(detail).toMatchObject({
@@ -120,6 +112,17 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
             })],
           });
           expect.soft(detail.diagnostics[0]?.affectedPlannedAttemptIds).toHaveLength(2);
+          // Experiment setup still fails before dispatch. Keep the Run-level
+          // human error guarantees here; cache degradation publishes Attempts.
+          const shown = await niceeval.run(["show", "--run", run.runId]);
+          expect(shown.exitCode, shown.diagnostic()).toBe(0);
+          expect.soft(shown.stdout).toContain("Run error");
+          expect.soft(shown.stdout).toContain("Experiment before");
+          expect.soft(shown.stdout).toContain("Affected attempt count");
+          expect.soft(shown.stdout).toContain("greet/hello");
+          expect.soft(shown.stdout).not.toContain("experiment-setup-failed");
+          expect.soft(shown.stdout).not.toContain("run.before");
+          expect.soft(shown.stdout).toContain("req_before_123");
         }
         if (run.experimentId === "provider-error/sandbox" || run.experimentId === "provider-error/sandbox-secondary") {
           expect.soft(detail).toMatchObject({
@@ -128,6 +131,13 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
               affectedPlannedAttemptIds: [detail.plannedAttempts[0]!.plannedAttemptId],
             })],
           });
+          const shown = await niceeval.run(["show", "--run", run.runId]);
+          expect(shown.exitCode, shown.diagnostic()).toBe(0);
+          expect(shown.stdout).toContain("Run error");
+          expect(shown.stdout).toContain("Before dispatch");
+          expect(shown.stdout).toContain("Affected attempt count");
+          expect(shown.stdout).not.toContain("sandbox-build-failed");
+          expect(shown.stdout).not.toContain("run.dispatch");
         }
         const output = run.experimentId === "short-error" ? shortOutput : compact;
         expect(output).toContain(
@@ -143,7 +153,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
       expect(compact).not.toContain("details: niceeval view");
       const errorLocators = summaries.flatMap(({ run }) => run.plannedAttempts)
         .flatMap(({ publication, state }) => publication.state === "published" && state === "executed" ? [publication.attemptLocator] : []);
-      expect(errorLocators).toHaveLength(4);
+      expect(errorLocators).toHaveLength(7);
       for (const [index, locator] of errorLocators.entries()) {
         const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
           kind: "attempt.trace", locator,
@@ -152,16 +162,23 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });
-        expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden|Missing API_KEY/u);
+        expect(JSON.stringify(document.trace)).toMatch(/401 Unauthorized|403 Forbidden|Missing API_KEY|PREFIX_ALLOCATION_FAILED/u);
       }
 
       const prefixJson = await niceeval.run(["exp", "provider-error/prefix", "--rerun", "all", "--json"], {
         env: providerEnvironment,
       });
       expect(prefixJson.exitCode, prefixJson.diagnostic()).toBe(1);
-      expect.soft(prefixJson.expEvents()).toEqual(expect.arrayContaining([
-        expect.objectContaining({ event: "diagnostic", code: "sandbox-before-cache-failed", message: expect.stringContaining("req_prefix_capacity_123") }),
-      ]));
+      expect(prefixJson.expTerminal().summary.beforeCaches).toEqual({ total: 1, hit: 0, prepared: 0, degraded: 1, failed: 0 });
+      expect(prefixJson.expEvalEvents()).toEqual([
+        expect.objectContaining({ evalId: "greet/hello", verdict: "errored", attempts: 3, passed: 0, locator: expect.any(String) }),
+      ]);
+      expect(prefixJson.expErrorEvents()).toEqual(Array.from({ length: 3 }, () =>
+        expect.objectContaining({ phase: "sandbox.create", reason: expect.stringContaining("PREFIX_ALLOCATION_FAILED") }),
+      ));
+      for (const error of prefixJson.expErrorEvents()) {
+        expect.soft(error.reason, prefixJson.diagnostic()).toContain("req_prefix_capacity_123");
+      }
       expect(prefixJson.expReceipt().createdRunIds).toHaveLength(1);
 
       const judge = await niceeval.run(

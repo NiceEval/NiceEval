@@ -84,7 +84,7 @@ export const preContextErrorAgent = defineSandboxAgent({
   name: "cli-pre-context-error",
   evidenceCoverage: completeEvidenceCoverage,
   ensure: {
-    identity: { fixture: "cli-pre-context-error", revision: "1" },
+    identity: { agent: "cli-pre-context-error", version: "1.0.0", revision: "1" },
     probe: shell("true"),
   },
   send: () => Effect.die(new Error("pre-context error fixture unexpectedly reached the agent")),
