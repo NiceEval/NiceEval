@@ -8,7 +8,8 @@ This file is responsible for exactly one thing: getting the package into the pro
 
 When the user says "install niceeval," the bar for done is **not** "added the dependency." It is **getting at least one real evaluation to run against the system under test in this repo, then inspecting it through the fixed public surface: an agent or script first uses `niceeval query discover`, then executes a fixed `runs.list` request with `niceeval query run --request <file>` to confirm the sealed Run is visible; a person uses `niceeval view`**. Before you begin, turn the checklist below into a checkable TODO and track it item by item — don't call it done the moment the package is installed:
 
-- [ ] Install the package and run `init` (Steps 1–2)
+- [ ] Inspect the repo's existing package manager, workspace, and lockfile ownership; install the package and run `init` within that structure (Steps 1–2)
+- [ ] Verify the local CLI from the repository root using the command the user will receive; preserve existing scripts and module format, and verify a frozen/immutable install with the updated lockfile
 - [ ] Read `node_modules/niceeval/INDEX.md` and pick the "onboarding from scratch" tutorial page; from this step on, do every step by following the bundled docs (Step 3)
 - [ ] Explore this repo: identify the system's core user job; every plausible public endpoint and the distinct job each one serves; the chosen endpoint's protocol and request-response shape; and how its service or runtime is started, checked for readiness, configured, and stopped. Do not stop at the first route named `chat` or `completions` when the product has a more specific data, tool, or agent path
 - [ ] Before writing code, record the discovered integration plan: target endpoint / protocol / request-response shape; startup, readiness, cleanup, and credential boundaries; available tracing / OTel; configuration variants; and integration tier. Respect an explicit plan or authorization already in the task. Ask the user only when a material decision is still missing; otherwise proceed with the documented plan.
@@ -33,20 +34,27 @@ niceeval is a TypeScript evals library: you define "what a good result looks lik
 
 - The system under test can be built with any language or platform (iOS, Python service, anything else). niceeval only requires that this machine has Node and can run commands like `npx` or `pnpm exec`. The adapter/experiment/eval trio is written in TS, but the host repo does not need to be a TS/JS project. Do not stop just because the host project uses another language.
 - The only real prerequisite is: this machine can install Node dependencies and run Node commands. Only if even that is confirmed impossible, tell the user honestly and stop for their decision.
-- Check whether niceeval is already installed: look for `niceeval.config.ts`, an `evals/` directory, or a `niceeval` dependency in `package.json`. If it is already set up, skip installing, go straight to Step 3 and read the bundled docs, then add the missing files within the existing structure. Do not run `init` again.
-- **Decide where the eval workspace lives — before detecting the package manager.** If the repo root's own `package.json` *is* the system under test (a JS/TS host project), install there as a devDependency. Otherwise — a Python or other-language host, or a repo that merely *contains* JS subprojects (`web/`, `frontend/`, a docs site) — create a fresh subdirectory (e.g. `niceeval/`) with its own new `package.json` and install there — and give that new `package.json` `"type": "module"` (`npm init -y` defaults to CommonJS; niceeval runs either way, but ESM keeps top-level `await` available in config and eval files). **Never install into an existing subproject's `package.json`**: its lockfile and toolchain belong to the system under test, and mixing the eval harness into them can break the niceeval CLI (older loaders in the host's `node_modules` cannot resolve it) and pull the host's own type errors into your typecheck.
-- Detect the package manager **from the lockfile at the chosen install location only** (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`), and use it for every command afterward. A lockfile deep inside a host subproject does not decide for you. In a fresh subdirectory, use any package manager available on this machine; do not default to npm when a lockfile says otherwise.
+- Check whether NiceEval is already set up: locate its dependency declaration and config, then verify the installed local package and CLI. An `evals/` directory alone may belong to another framework; a manifest entry alone does not prove dependencies are installed. Reuse a working setup and go to Step 3 without running `init` again. Repair a partial installation within its existing dependency boundary and preserve authored files.
+- **Identify dependency ownership before choosing an install directory.** Read the root `package.json`, its package-manager declaration, workspace configuration, lockfile, scripts, and repository instructions. The target application's language does not determine where Node tooling belongs: a Python or mixed-language repo can already manage development tools at its root.
+- **Prefer the existing root tooling project.** Add `niceeval` there as a devDependency when it owns repository tools. Preserve its package manager, scripts, dependency declarations, and module format. Do not change an existing `"type"` just to install NiceEval; the CLI supports both CommonJS and ESM hosts.
+- If the repo convention puts development tools in workspace packages, follow that convention and its shared lockfile. Do not create a second dependency-management boundary, bypass workspace membership, or add a nested lockfile merely to isolate evals. An existing frontend or docs package is not automatically the right owner either; follow its actual responsibility.
+- Create a standalone subdirectory only when there is no suitable existing Node tooling owner, or a concrete incompatibility requires isolation. Explain that reason. A new package may use `"type": "module"`; do not rewrite the host package's format. Reuse the repository's package-manager choice where one exists, even when the new directory has no lockfile yet.
+- Keep the user's starting directory usable. A root install should support the repository's normal local CLI invocation (for example, `pnpm exec niceeval`). For a workspace or standalone subdirectory, provide a root script or an explicit root-relative command (for example, `pnpm --dir niceeval exec niceeval`) and actually test it from the repository root. Do not rely on an unmentioned `cd`, a global CLI, or a runner that downloads a missing package.
 
 ## Step 2: Install
 
-Installing is adding one dev dependency — cheap and reversible. You do not need to understand the whole project before doing it; exploring the project belongs to the post-install integration workflow:
+After identifying the dependency owner, add one devDependency using that package manager's syntax. For example, in a pnpm project:
 
 ```sh
-<detected package manager> add -D niceeval
-<detected package manager> exec niceeval init
+pnpm add -D niceeval
+pnpm exec niceeval init
 ```
 
 `init` generates `niceeval.config.ts` and `evals/`, and adds a managed block to the project's `AGENTS.md` (or to `CLAUDE.md` when that is the only file present), reminding future coding agents to read the bundled docs. Do not delete or hand-edit the content inside the markers; re-run `init` after upgrading niceeval to refresh it.
+
+Use the package manager's root-workspace option when required (for example, `pnpm add -Dw niceeval`). Install the version explicitly requested by the user; otherwise resolve the current stable npm version instead of guessing from memory. Keep the manifest and owning lockfile consistent.
+
+From the repository root, run the delivered local command with `--version` and `list`. After writing the integration, verify discovery and `exp <experiment> --dry` through that same entry point. Run the owning package manager's frozen/immutable install (for pnpm, `pnpm install --frozen-lockfile`; for npm, `npm ci`) and the affected existing project checks. Report any external blocker without claiming those checks passed. Installing a local CLI successfully in a nested directory does not prove the user's root command works.
 
 ## Step 3: Hand off to the bundled docs
 
