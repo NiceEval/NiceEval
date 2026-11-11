@@ -126,8 +126,16 @@ const selectedPlaywright = (input: unknown, titlePath: readonly string[]): Nativ
   return { caseCount: 1, passed: target.status === "expected" ? 1 : 0, failed: target.status === "expected" ? 0 : 1, skipped: 0, retries: 0 };
 };
 
+export const VITEST_JSON_REPORTER_PATH = ".e2e-artifacts/niceeval-json-reporter.mjs";
+// Vitest 5 defaults to a report file. Configure its public reporter explicitly
+// so native evidence remains on stdout for both Concord and takeover.
+export const VITEST_JSON_REPORTER_SOURCE = `import { JsonReporter } from "vitest/node";
+export default class extends JsonReporter {
+  constructor() { super({ stdout: true }); }
+}
+`;
 export const nativeReporterArgs = (executor: InventoryExecutor): readonly string[] =>
-  executor === "vitest" ? ["--reporter=json"] : ["--reporter=json"];
+  executor === "vitest" ? [`--reporter=./${VITEST_JSON_REPORTER_PATH}`] : ["--reporter=json"];
 
 export function observeNativeTestResult(executor: InventoryExecutor, stdout: string, selection: { readonly only: boolean; readonly titlePath: readonly string[] }): NativeTestObservation {
   const input = decodeJson(stdout);

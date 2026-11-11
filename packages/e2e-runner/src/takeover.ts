@@ -82,7 +82,9 @@ export interface TakeoverSummary {
 type TakeoverRequirements = FileSystem.FileSystem | OwnedProcess;
 
 const operationError = (operation: TakeoverOperationError["operation"], cause: unknown): TakeoverOperationError =>
-  new TakeoverOperationError({ operation, detail: cause instanceof Error ? cause.message : String(cause) });
+  new TakeoverOperationError({ operation, detail: typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string"
+    ? cause.detail
+    : cause instanceof Error ? cause.message : String(cause) });
 
 /** Node's `stat` follows links; snapshot admission needs the non-following primitive. */
 const lstatSnapshotEntry = (path: string): Effect.Effect<Stats, TakeoverOperationError> =>

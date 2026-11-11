@@ -73,9 +73,9 @@ function assertionOutcomeMap(entries: readonly { display: unknown; decision: unk
 
 test.concurrent("值与连续 Match 登记可审阅的检查结果", async () => {
   const startedAt = performance.now();
-  // Read independent details four at a time; retain every assertion and
-  // 60s for termination/staging without extending the case deadline.
-  const deadlineAt = startedAt + 600_000;
+  // CI completed 129 of 131 serial detail reads in 600s. Budget 780s for
+  // the full public readback, plus 60s cleanup within the 15-minute Repo cap.
+  const deadlineAt = startedAt + 780_000;
   await evalE2E.case(
     "values",
     { artifacts: [
@@ -196,7 +196,6 @@ test.concurrent("值与连续 Match 登记可审阅的检查结果", async () =>
           inspected.document.attempt.assertions.entries,
           {},
           checkpoint,
-          4,
         );
         await stage("outcome", "assertion-outcomes");
         const entries = details.map((detail) => {
@@ -238,4 +237,4 @@ test.concurrent("值与连续 Match 登记可审阅的检查结果", async () =>
       }
     },
   );
-}, 660_000);
+}, 840_000);

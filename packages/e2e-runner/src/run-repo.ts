@@ -8,7 +8,7 @@ import { projectExecutionSources } from "./repository-evidence.ts";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { collectCaseInventory, type InventoryExecutor } from "./inventory.ts";
 import { formatCause } from "./format-cause.ts";
-import { observeNativeTestResult } from "./native-observation.ts";
+import { observeNativeTestResult, VITEST_JSON_REPORTER_PATH, VITEST_JSON_REPORTER_SOURCE } from "./native-observation.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
 import { verifyInjection } from "./injection.ts";
@@ -674,7 +674,7 @@ export const runRepoEffect = (
             }
             const runTests = (
               attempt: number,
-            ): Effect.Effect<void, RepoRunError, OwnedProcess | Scope.Scope> =>
+            ): Effect.Effect<void, RepoRunError, FileSystem.FileSystem | OwnedProcess | Scope.Scope> =>
               attempt > runs || !browser.ok
                 ? Effect.void
                 : Effect.gen(function* () {
@@ -691,6 +691,10 @@ export const runRepoEffect = (
                     }
                     const invocation = randomUUID();
                     invocationIds.push(invocation);
+                    if (nativeArgs.includes(`--reporter=./${VITEST_JSON_REPORTER_PATH}`)) {
+                      yield* durable(id, ensureContainedRealDirectory(copy, join(copy, ".e2e-artifacts"), "native reporter directory"));
+                      yield* durable(id, writeContainedUtf8File(copy, join(copy, VITEST_JSON_REPORTER_PATH), VITEST_JSON_REPORTER_SOURCE, "native JSON reporter"));
+                    }
                     const command = [
                       ...repo.manifest.command,
                       ...nativeArgs,
