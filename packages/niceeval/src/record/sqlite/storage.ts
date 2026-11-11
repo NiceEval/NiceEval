@@ -1863,7 +1863,8 @@ export function readCollectionItemPage(
       FROM ne19_collection_items i
       JOIN ne19_attachments a ON a.attachment_id=i.attachment_id JOIN ne19_runs r ON r.run_id=a.owner_run_id
       WHERE i.attachment_id=? AND i.ordinal>? AND
-        ((r.status='sealed' AND (NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id) OR a.owner_kind='run')) OR
+        (r.status='sealed' OR EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id)) AND
+        (a.owner_kind='run' OR NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id) OR
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM ne19_attempt_publications p
            WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
       ORDER BY i.ordinal LIMIT ?`)
@@ -2235,7 +2236,8 @@ export function readContentChunkPage(
       FROM ne19_content_chunks c
       JOIN ne19_contents n ON n.content_id=c.content_id JOIN ne19_attachments a ON a.attachment_id=n.attachment_id
       JOIN ne19_runs r ON r.run_id=a.owner_run_id WHERE c.content_id=? AND c.ordinal>? AND
-        ((r.status='sealed' AND (NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id) OR a.owner_kind='run')) OR
+        (r.status='sealed' OR EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id)) AND
+        (a.owner_kind='run' OR NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id) OR
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM ne19_attempt_publications p
            WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
       ORDER BY c.ordinal LIMIT ?`).iterate(contentId, afterOrdinal, pageSize) as unknown as Iterable<Row>;
