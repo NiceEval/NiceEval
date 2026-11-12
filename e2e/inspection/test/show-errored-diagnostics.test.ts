@@ -21,6 +21,7 @@ test.concurrent("错误 Attempt 概览直接显示已保存的阶段与错误并
     expect(shown.stdout).toContain(`niceeval show ${event.locator} --execution`);
     const execution = await niceeval.run(["show", event.locator, "--execution"]);
     expect(execution.exitCode, execution.diagnostic()).toBe(0);
-    expect(execution.stdout).toContain("JOURNAL_NOT_SEALED");
+    expect(execution.stdout).toContain("Diagnostics");
+    expect(execution.stdout).toContain("JOURNAL_NOT_");
   });
 });

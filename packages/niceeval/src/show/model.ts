@@ -119,6 +119,7 @@ export interface RunView {
   }[];
 }
 export interface AttemptView {
+  readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["diagnostics"];
   readonly notes: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["notes"];
   readonly totalCosts?: InspectionSuccessDocumentFor<"attempt.usage">["usage"]["totalCosts"];
   readonly locator: string;
@@ -137,6 +138,7 @@ export interface AttemptView {
     readonly timing: SectionState;
     readonly usage: SectionState;
     readonly diff: SectionState;
+    readonly diagnostics: SectionState;
   };
   readonly assertions: {
     readonly state: SourceState;
@@ -307,11 +309,12 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.get">): R
 }
 // @concord-code
 // @concord-implements docs/feature/inspection/cli.md
-export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">, usage?: InspectionSuccessDocumentFor<"attempt.usage">): AttemptView {
+export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">, usage?: InspectionSuccessDocumentFor<"attempt.usage">, trace?: InspectionSuccessDocumentFor<"attempt.trace">): AttemptView {
   const value = document.attempt;
   return {
     locator: value.locator,
     notes: value.notes,
+    diagnostics: trace?.trace.diagnostics,
     totalCosts: usage?.usage.totalCosts,
     verdict: value.verdict,
     attemptId: value.core.attemptId,
@@ -328,6 +331,7 @@ export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.g
       timing: value.sections.timing.state,
       usage: value.sections.usage.state,
       diff: value.sections.diff.state,
+      diagnostics: value.sections.diagnostics.state,
     },
     assertions: {
       state: value.assertions.state,

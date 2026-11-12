@@ -611,10 +611,15 @@ function runShow(
         const attemptUsage = yield* select("attempt.usage", () =>
           selectInspectionOperation(opened, { kind: "attempt.usage", locator: selectedLocator }),
         );
+        const attemptTrace = document.attempt.core.outcome === "errored"
+          ? yield* select("attempt.trace", () =>
+            selectInspectionOperation(opened, { kind: "attempt.trace", locator: selectedLocator }),
+          )
+          : undefined;
         yield* write(
           "stdout",
           renderAttempt(
-            yield* project("attempt.get", () => projectAttempt(document, attemptUsage)),
+            yield* project("attempt.get", () => projectAttempt(document, attemptUsage, attemptTrace)),
           ),
         );
         return 0;

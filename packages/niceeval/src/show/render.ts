@@ -689,6 +689,22 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Score", value: score(value.score, value.verdict) },
           ],
         },
+        ...(value.outcome !== "errored" ? [] : [
+          { kind: "divider" as const, title: "Failure diagnostics" },
+          ...(value.diagnostics?.items.length ? value.diagnostics.items.map((diagnostic) => ({
+            kind: "keyValue" as const,
+            entries: [
+              { key: "Phase", value: diagnostic.phase },
+              { key: "Code", value: diagnostic.code },
+              { key: "Error", value: diagnostic.summary },
+              ...(diagnostic.summaryTruncated ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }] : []),
+            ],
+          })) : [{
+            kind: "keyValue" as const,
+            entries: [{ key: "Diagnostics", value: `unavailable: no recorded diagnostic items (${value.diagnostics?.state ?? "not-read"}); see --execution and --timing for the closest recorded evidence` }],
+          }]),
+          ...(value.diagnostics?.hasMore ? [{ kind: "keyValue" as const, entries: [{ key: "More diagnostics", value: "see --execution" }] }] : []),
+        ]),
         {
           kind: "divider",
           title: `assertions ${value.sections.assertions} · ${value.assertions.entries.length} entries`,
@@ -744,6 +760,7 @@ export function renderAttempt(value: AttemptView): string {
           entries: [
             { key: "Source", value: value.sections.sources },
             { key: "Execution", value: value.sections.trace },
+            { key: "Diagnostics", value: value.sections.diagnostics },
             { key: "Timing", value: value.sections.timing },
             { key: "Usage", value: value.sections.usage },
             { key: "Diff", value: value.sections.diff },
