@@ -243,9 +243,6 @@ const compactContinuation = (
     ];
 };
 
-const stateCount = (state: string, count: number, noun: string): string =>
-  `${state}; ${count} ${noun}s`;
-
 const textOrNotRecorded = (value: string | null | undefined): string =>
   value ?? "not-recorded";
 
@@ -701,11 +698,7 @@ export function renderAttempt(value: AttemptView): string {
           entries: [
             {
               key: "Summary",
-              value: stateCount(
-                value.sections.assertions,
-                value.assertions.entries.length,
-                "entry",
-              ),
+              value: `${value.sections.assertions}; entries: ${value.assertions.entries.length}`,
             },
           ],
         },
