@@ -246,7 +246,7 @@ import { commandMatch } from "niceeval/expect";
 turn.calledTool(commandMatch("pnpm", { argsStart: ["test"] }));
 ```
 
-`ToolMatch` 每次比较一次工具调用。完整的筛选条件，以及 JSON、路径、输出和计数规则，见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。
+`ToolMatch` 每次比较一次工具调用，名称、输入、输出和状态必须在同一次调用上满足。JSON、路径、输出材料和计数规则见 [匹配工具调用](/zh/reference/expect#匹配工具调用)。
 
 原生协议直接给出一条命令的结构化 argv 时，用 `niceeval/adapter` 导出的构造器生成命令信息：
 

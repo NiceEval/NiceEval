@@ -21,7 +21,7 @@ export function absoluteUrl(path: string) {
   return path === "/" ? siteOrigin : `${siteOrigin}${path}`;
 }
 
-export const githubUrl = "https://github.com/CorrectRoadH/niceeval";
+export const githubUrl = "https://github.com/NiceEval/NiceEval";
 export const blogSegment = "blog";
 
 // 文档站按语言分入口:en 是默认语言走根路径,zh 走 /zh 前缀。

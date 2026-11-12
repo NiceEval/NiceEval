@@ -6,10 +6,13 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 用户面契约（AI 应该怎么读、init 写什么）单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](architecture/agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](architecture/agent-debug-eval.md)。
 
-## 打包方案：原样发布，不转换
+## 打包方案：正文随包，示例按版本固定
 
 `package.json` 的 `files` 白名单收录三项文档面。
-`apps/docs-site/` 是仓库单源。`packages/niceeval` 的 `prepack` 每次先清空旧 staging，再把 `apps/docs-site/zh/` 与 `apps/docs-site/images/` 原样复制到 package closure。源、目标的完整相对清单和内容 digest 必须相同。tarball 内仍使用 `docs-site/**`，`INDEX.md` 同样由 `prepack` 现场生成（时机链见下）：
+`apps/docs-site/` 是仓库单源。`packages/niceeval` 的 `prepack` 每次先清空旧 staging，再复制 `apps/docs-site/zh/` 与 `apps/docs-site/images/`。
+随包正文中的仓库示例链接固定到 `tree/v<package version>/examples/**`，仓库地址统一为 `NiceEval/NiceEval`。本地 `0.0.0-development` 没有发布 tag，示例固定到构建时的完整 Git HEAD。
+源、目标的完整相对清单必须相同；正文改写后的内容 digest 必须与目标一致，图片保持原始字节。随包文档不得包含指向本仓库 `main` 的 `blob`、`tree` 或 `raw` 链接；所需内部设计事实直接写进随包 reference。
+tarball 内仍使用 `docs-site/**`，`INDEX.md` 同样由 `prepack` 现场生成（时机链见下）：
 
 | 进包内容 | 角色 |
 | --- | --- |

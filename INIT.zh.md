@@ -1,6 +1,6 @@
 # niceeval 安装向导（给 AI 读的执行步骤）
 
-你正在被要求把 [niceeval](https://github.com/CorrectRoadH/niceeval) 接入**当前打开的这个仓库**（不是 niceeval 自己的源码仓库）。用用户的语言与用户交流。不要凭训练记忆里的旧 API 现编。
+你正在被要求把 [niceeval](https://github.com/NiceEval/NiceEval) 接入**当前打开的这个仓库**（不是 niceeval 自己的源码仓库）。用用户的语言与用户交流。不要凭训练记忆里的旧 API 现编。
 
 本文件只负责一件事：把包装进项目。接入流程本身（探索项目、与用户确认路径、写 adapter / experiment / eval、跑通）全部住在随包文档里，与安装版本一起发布——所以本文件不含任何线上文档链接，装完以 `node_modules/niceeval/INDEX.md` 的路由为准。随包文档目前只有中文；不要为了找英文版去抓官网或 GitHub——那里可能是另一个版本的 API。
 

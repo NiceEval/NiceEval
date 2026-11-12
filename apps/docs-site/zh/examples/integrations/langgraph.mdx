@@ -8,8 +8,8 @@ description: "一个纯 Python LangGraph + LangSmith OTel 导出的应用，接�
 
 对比对象：
 
-- **before**：[`origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。
-- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。
+- **before**：[`origin/langgraph`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。
+- **after**：[https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/langgraph](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。
 
 **接入方式**：这个应用使用自定义 JSON 帧，因此 Adapter 需要自行把每一帧转成 NiceEval 的标准事件。
 `tool-input` 映射为 `operation.started`，`tool-output` 映射为 `operation.finished`，`text-delta` 累积成 `message`。

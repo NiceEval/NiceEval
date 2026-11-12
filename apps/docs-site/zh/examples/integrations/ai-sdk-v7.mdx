@@ -8,8 +8,8 @@ description: "一个 AI SDK v7 聊天应用，对着它的 HTTP 接口无侵入�
 
 对比对象：
 
-- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) —— 普通的 AI SDK v7 聊天应用（HTTP 服务器 + React 聊天 UI），还没接任何评估用例。
-- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。
+- **before**：[https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/ai-sdk-v7) —— 普通的 AI SDK v7 聊天应用（HTTP 服务器 + React 聊天 UI），还没接任何评估用例。
+- **after**：[https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。
 
 **接入方式**：内置的 `uiMessageStreamAgent` 可以直接连接 AI SDK UI Message Stream，也就是 `useChat` 后端使用的标准 SSE 协议。
 Adapter 只需填写接口地址，并说明如何把 `model` 放进请求体。NiceEval 会处理会话重放、HITL 审批，以及工具和消息事件。

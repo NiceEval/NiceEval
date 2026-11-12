@@ -85,7 +85,7 @@ export default defineAgent({
     });
     ```
 
-    exporter 走标准 OTel Node SDK，endpoint 指向 [NiceEval](https://niceeval.com/)（注入的 env 或固定端口）。可跑示例：应用侧埋点见 [`examples/zh/origin/ai-sdk-v7`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7)（`src/backend/otel.ts`，官方 `@ai-sdk/otel`），接入后的完整评测项目见 [`examples/zh/tier1/ai-sdk-v7`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7)。
+    exporter 走标准 OTel Node SDK，endpoint 指向 [NiceEval](https://niceeval.com/)（注入的 env 或固定端口）。可跑示例：应用侧埋点见 [`examples/zh/origin/ai-sdk-v7`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/ai-sdk-v7)（`src/backend/otel.ts`，官方 `@ai-sdk/otel`），接入后的完整评测项目见 [`examples/zh/tier1/ai-sdk-v7`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/ai-sdk-v7)。
   </Tab>
   <Tab title="LangGraph / LangChain">
     零依赖路线，三个环境变量：
@@ -98,7 +98,7 @@ export default defineAgent({
     node server.js   # 端点值按「向应用提供端点」一节选择：注入的 env 或固定端口
     ```
 
-    `LANGSMITH_OTEL_ONLY` 表示只发 OTLP、不发 LangSmith 云端。需要双发时移除该变量。**Python** 版 `langsmith` SDK 会在 import 时自动注册 OTel hook。**JS** 版（`langsmith@0.7.x`）还需要显式调用 `langsmith/experimental/otel/setup` 导出的 `initializeOTEL()`，否则只输出警告，不产生 span。三个环境变量保持不变。Python 后端示例见 [`examples/zh/origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph)，完整评测项目见 [`examples/zh/tier1/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph)。
+    `LANGSMITH_OTEL_ONLY` 表示只发 OTLP、不发 LangSmith 云端。需要双发时移除该变量。**Python** 版 `langsmith` SDK 会在 import 时自动注册 OTel hook。**JS** 版（`langsmith@0.7.x`）还需要显式调用 `langsmith/experimental/otel/setup` 导出的 `initializeOTEL()`，否则只输出警告，不产生 span。三个环境变量保持不变。Python 后端示例见 [`examples/zh/origin/langgraph`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/langgraph)，完整评测项目见 [`examples/zh/tier1/langgraph`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/langgraph)。
   </Tab>
   <Tab title="OpenLLMetry">
     ```ts

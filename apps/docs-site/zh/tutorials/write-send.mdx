@@ -258,7 +258,7 @@ Chat Completions 响应**不保证列出全过程**。应用可能在服务端�
 
 等待时还没读完的东西，例如一条读到一半的 SSE 流，也存在 `ctx.session` 上。Adapter 用 `createSessionKey<Pending>()` 声明一份私有状态，等待时 `ctx.session.set(...)` 存进去，回答轮开头 `ctx.session.take(...)` 取回。取出后它就被清掉，只能取一次。
 
-HITL 几乎总发生在流式接口上，应用停在流的中间。所以这一步的示例换成一个用 SSE 透传原生事件的应用，它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）：
+HITL 几乎总发生在流式接口上，应用停在流的中间。所以这一步的示例换成一个用 SSE 透传原生事件的应用，它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1)）：
 
 ```ts
 // agents/my-app.ts

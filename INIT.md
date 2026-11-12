@@ -1,6 +1,6 @@
 # niceeval Setup Guide (Execution Steps for AI)
 
-You are being asked to integrate [niceeval](https://github.com/CorrectRoadH/niceeval) into **the repository currently open here** (not niceeval's own source repository). Communicate with the user in the user's language. Do not improvise from stale API knowledge in model memory.
+You are being asked to integrate [niceeval](https://github.com/NiceEval/NiceEval) into **the repository currently open here** (not niceeval's own source repository). Communicate with the user in the user's language. Do not improvise from stale API knowledge in model memory.
 
 This file is responsible for exactly one thing: getting the package into the project. The integration workflow itself (exploring the project, confirming the path with the user, writing adapter / experiment / eval, getting the first run green) lives entirely in the bundled docs, which ship with the installed version — so this file contains no online doc links. Once installed, route everything through `node_modules/niceeval/INDEX.md`. The bundled docs are written in Chinese — read them anyway; they are the version-accurate source, and you still communicate with the user in the user's language. In particular, do not fetch niceeval.com or GitHub looking for an English version of a page: an English page for a different version is worse than a Chinese page for yours.
 

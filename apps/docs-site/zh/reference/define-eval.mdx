@@ -130,7 +130,7 @@ root、Session 和 Turn 上的 `judge` 都要求显式传入材料。官方提�
 
 普通的计算公式直接用 TypeScript 算，再用 `t.score(ratio, { weight: 50 }).label("完成耗时")` 登记。`ratio` 是 0 到 1 之间的数，`weight` 是非负的有限数。结果里会保留 ratio、对应的分值和实际得分。依据的数值材料拿不到时，这一项的得分记为未知。
 
-`defineScoreEval` 的 `ScoreTestContext` 还提供 `t.score(n)`，直接登记一项得分；已有的断言用 `.score(n)` 计入分数。两处的 `n` 都必须是不小于零的有限数，写 0 也算一项明确的得分。`calledTool` 和 `notCalledTool` 的完整规则见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。全部成员如下：
+`defineScoreEval` 的 `ScoreTestContext` 还提供 `t.score(n)`，直接登记一项得分；已有的断言用 `.score(n)` 计入分数。两处的 `n` 都必须是不小于零的有限数，写 0 也算一项明确的得分。工具调用的匹配与计数规则见 [匹配工具调用](/zh/reference/expect#匹配工具调用)。全部成员如下：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -480,13 +480,13 @@ Agent 场景可以用 `turn.closeQA(question)`、`session.closeQA(question)` 和
 - 聊天类服务用强制函数调用（forced-function）请求，TypeSafe 用 `/systemone` 接口，两者都会严格校验响应。
 - 网络传输出错或超时，结果为 unavailable；HTTP 400 或协议不兼容，结果为 errored。
 
-完整规则见[自定义 Match](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md)。
+自定义 Match 必须可复用、不可变且无副作用，只比较显式传入的材料。它不保存调用位置、scope、label、score 或 gate，也不隐式读取 ctx。普通 evaluator 必须确定性；需要 LLM 时使用受管能力，遵守定义中的调用和材料预算。
 
 ## `Turn` 返回类型
 
 `t.send(...)` 返回一个 `TurnHandle`。它包含从事件流整理出来的常用字段，以及一整套只针对这一轮的断言。
 
-`calledTool` 和 `notCalledTool` 也是 Turn 上的断言，签名和匹配规则见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。
+`calledTool` 和 `notCalledTool` 也是 Turn 上的断言，匹配和计数规则见 [匹配工具调用](/zh/reference/expect#匹配工具调用)。Turn 只检查当前轮，Session 检查调用处之前的全部轮次；根 `t` 检查调用时已启动 Session 的各自前缀。之后发生的调用不进入已登记的断言。
 
 {/* GENERATED:BEGIN turn-handle */}
 

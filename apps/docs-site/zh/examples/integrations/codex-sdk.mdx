@@ -8,8 +8,8 @@ description: "一个 Codex SDK（目录里的编码 agent）后端，接入 Nice
 
 对比对象：
 
-- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk) —— 独立的 `@openai/codex-sdk` HTTP 服务，还没接任何评估用例。
-- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) —— 同一个应用接入 NiceEval 之后的样子。
+- **before**：[https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/codex-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/codex-sdk) —— 独立的 `@openai/codex-sdk` HTTP 服务，还没接任何评估用例。
+- **after**：[https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/codex-sdk) —— 同一个应用接入 NiceEval 之后的样子。
 
 **接入方式**：`createCodexThreadEventStream`（从 `"niceeval/adapter"` 导出）把 Codex SDK 的 `ThreadEvent` 转成 NiceEval 的标准事件。
 消息文本直接来自事件流。转换器会把 `command_execution`、`mcp_tool_call` 和 `file_change` 配对成 `operation.started` 与 `operation.finished`。

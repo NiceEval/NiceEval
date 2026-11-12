@@ -29,7 +29,7 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 <Warning>
 三个内置 sandbox agent 都**不支持 HITL**：`send` 只返回 `"completed"` / `"failed"`，从不返回 `"waiting"`，也不吐 `input.requested` 事件。
 
-需要 `t.respond()` / `t.requireInputRequest()` 时：被测对象是 AI SDK `useChat` 后端的话，用下文的内置 `uiMessageStreamAgent`（v7 tool approval 原生映射成 HITL）。其它被测对象自己写 adapter：实现 `waiting` 状态 + `input.requested` 事件 + resume 交回，[`examples/zh/tier1/pi-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) / [`examples/zh/tier1/claude-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) 都有手写 HITL 的现成参考。
+需要 `t.respond()` / `t.requireInputRequest()` 时：被测对象是 AI SDK `useChat` 后端的话，用下文的内置 `uiMessageStreamAgent`（v7 tool approval 原生映射成 HITL）。其它被测对象自己写 adapter：实现 `waiting` 状态 + `input.requested` 事件 + resume 交回，[`examples/zh/tier1/pi-sdk`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/pi-sdk) / [`examples/zh/tier1/claude-sdk`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/claude-sdk) 都有手写 HITL 的现成参考。
 </Warning>
 
 ## 逐 agent 细节
@@ -369,7 +369,7 @@ export default uiMessageStreamAgent({
 - **拒绝**：调用以 `rejected` 落进事件流，且默认带「不要重试」的 reason（`denyReason` 可覆盖）——不带的话模型经常原样重发同一个调用。
 - **usage / 瀑布图**：UI Message Stream 协议帧里没有 usage，所以 `t.maxTokens` 这类用量断言在这个内置件上默认没有数据（应用把 usage 放进 message metadata 属于应用自己的协议扩展）。瀑布图是另一回事：应用有 OTel 埋点（如官方 `@ai-sdk/otel`）时，按 [OTel 接入](/zh/tutorials/connect-otel)把 span 发给 [NiceEval](https://niceeval.com/)，`niceeval view` 就有完整瀑布图——span 只进瀑布图，不喂断言。
 
-需要在评估用例项目里安装 `ai`（可选 peer 依赖，协议 reducer 来自它）。完整可跑示例：[`examples/zh/tier1/ai-sdk-v7`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7)。
+需要在评估用例项目里安装 `ai`（可选 peer 依赖，协议 reducer 来自它）。完整可跑示例：[`examples/zh/tier1/ai-sdk-v7`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/ai-sdk-v7)。
 
 `uiMessageStreamAgent(options)` 完整参数（`UiMessageStreamAgentOptions`）：
 
@@ -488,7 +488,7 @@ return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()�
 - **`createPiAgentEventStream`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。
 - **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类。工具项包括：`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → 配对的 tool `operation.started` + `operation.finished`。`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
 
-可运行的参考实现位于 [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)。其中 Claude SDK、pi SDK 和 Codex SDK 的 Adapter 都由转换器、`driveFrameStream` 和应用接口配置组成。
+可运行的参考实现位于 [`examples/zh/tier1`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1)。其中 Claude SDK、pi SDK 和 Codex SDK 的 Adapter 都由转换器、`driveFrameStream` 和应用接口配置组成。
 
 ## 通用「拼装方式」件：`driveFrameStream` / `deltaStream` + `ctx.session`
 
@@ -548,7 +548,7 @@ export default defineAgent({
 ## 怎么选
 
 - 被测对象是 AI SDK 应用（`useChat` 后端）：内置 `uiMessageStreamAgent` 无侵入接入，零映射（含 HITL）。
-- 被测对象是其它 agent 系统（HTTP / gRPC 服务）：无侵入接入，手写事件映射（官方转换器能覆盖大半）——[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下五个示例全是这条路。应用已埋 OTel 的话顺手接上，多一张瀑布图。
+- 被测对象是其它 agent 系统（HTTP / gRPC 服务）：无侵入接入，手写事件映射（官方转换器能覆盖大半）——[`examples/zh/tier1`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1) 下五个示例全是这条路。应用已埋 OTel 的话顺手接上，多一张瀑布图。
 - 需要调用瀑布图（`niceeval view` 的 trace）：`claude-code` / `codex` / `bub` 三个都自发 OTLP（claude-code 走 CLI 的 beta 遥测，span 只有结构与计时）。自己写的 adapter 声明 `tracing` 即可（见 OTel 指南）。
 - 需要人工审批 / 多步确认（HITL）：`uiMessageStreamAgent` 原生支持（AI SDK v7 tool approval）。Sandbox 型三个都不支持，其它被测对象自己写 Adapter，拿 `driveFrameStream` + typed key 拼（Tier 1 示例里 pi-sdk / claude-sdk 有现成写法）。
 - 想跑一个 coding agent 改代码、看 diff、判断工具调用：`claude-code` / `codex` / `bub`（收发 + 事件流 + 会话续接 + workspace + sandbox）。
