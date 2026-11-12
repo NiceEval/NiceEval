@@ -317,6 +317,12 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         id: "llm-measurement/v1" as const,
         data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
       });
+    case "sandbox-change-scope":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "sandbox-change-scope/v1" as const,
+        data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
+      });
     case "sandbox-result": {
       switch (criterion.operation) {
         case "changed-paths":

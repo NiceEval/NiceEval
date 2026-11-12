@@ -178,6 +178,11 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "sandbox-change-scope/v1";
+      readonly data: { readonly paths: readonly string[] };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "sandbox-result/v1";
       readonly data: {
         readonly operation: "changed-paths";

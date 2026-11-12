@@ -2159,6 +2159,22 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: entry.decision.reason }]),
       ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
     ] });
+    if (options.full) {
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-change-scope/v1") {
+        blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: entry.criterion.value.id }, { key: "Allowed paths", value: entry.criterion.value.data.paths.join(", ") }] });
+      }
+      if (entry.explanationRetention.state === "retained") {
+        const value = entry.explanationRetention.value;
+        if (value.kind === "fields") {
+          const labels: Readonly<Record<string, string>> = { message: "Diagnostic", expected: "Expected", received: "Received" };
+          blocks.push({ kind: "keyValue", entries: value.fields.flatMap(field => labels[field.label] !== undefined && field.value.kind === "value" && typeof field.value.value === "string"
+            ? [{ key: labels[field.label]!, value: field.value.value }] : []) });
+        }
+      }
+      if (assertion.matcher.state === "available" && assertion.matcher.sourceLedger.sourceSnapshot.scope === "session") {
+        blocks.push({ kind: "keyValue", entries: [{ key: "Session", value: assertion.matcher.sourceLedger.sourceSnapshot.sessionId }] });
+      }
+    }
     const debuggerView = assertion.matcher.debugger;
     if (options.full && debuggerView?.state === "current" && debuggerView.steps.length > 0) {
       blocks.push({ kind: "table", columns: [{ header: "Step" }, { header: "State" }, { header: "Source row" }],

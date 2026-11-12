@@ -686,3 +686,21 @@ Agent 场景的 `read` 从 `AgentMatchContext<Scope>` 读取 NiceEval 整理好�
 
 `t.maxTokens(max)` 限制 token 总量。`t.maxCost(usd)` 按美元成本限制：优先用实际扣费金额，扣费为 0 也算；没有实际扣费时，才用你显式配置的价格算出的估算。
 `t.elapsedMs` 是从 Attempt 开始到读取这一刻经过的毫秒数，可以交给 `t.check(..., atMost(limit))`。业务里“第一次完成”的时间点仍要用业务自己的匹配条件判断。
+
+## Sandbox 结果断言
+
+这组方法检查 agent 在每次发送窗口两端之间产生的工作区变化，返回只能配置 key、label、group、optional 和 gate 的 post-run 断言句柄。
+
+| 方法 | 含义 |
+| --- | --- |
+| `t.sandbox.changedPaths(paths)` | agent 变化路径的无序集合恰好等于 `paths`；路径是工作区相对的规范路径。 |
+| `t.sandbox.noChanges()` | 等价于 `changedPaths([])`，要求没有变化。 |
+| `t.sandbox.changedOnlyWithin(paths)` | 每条变化路径都等于某个允许项或位于该目录之下；零变化也满足。 |
+| `t.sandbox.fileChanged(path, options?)` | 同一次发送窗口内，该路径发生变化且同时满足 `status`、`before`、`after`；内容条件使用字符串 Match。 |
+| `t.sandbox.fileDeleted(path)` | 找到该路径的删除变化；不要求它在整个 Attempt 结束时仍不存在。 |
+| `t.sandbox.notInDiff(pattern, options?)` | 正则表达式未命中变化路径及变化行；`content` 选 `added`、`removed` 或默认的 `both`，不扫描未变化上下文。 |
+
+`changedPaths(["src/a.ts"])` 要求恰好修改这个文件；`changedOnlyWithin(["src"])` 允许不改文件，也允许只改 `src` 内的部分文件。后者按路径组件匹配，`agents` 不覆盖 `agents-old`；至少提供一个范围，空数组请改用 `noChanges()`。
+路径含 `*` 或 `?` 时抛出 `TypeError`：不支持 glob，目录前缀直接写目录名。
+
+这些断言沿用 `diff.ignore` 和发送窗口归因。作者自己写入的 Fixture 不算 agent 变化；同一次发送内恢复原状没有端点变化，不同发送间修改后还原仍会保留变化。材料采集失败或不完整时为 unavailable；内容被省略时，仅依赖该内容的匹配无法判定，不会伪装成匹配。

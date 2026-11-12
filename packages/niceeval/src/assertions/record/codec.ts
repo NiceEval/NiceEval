@@ -2,6 +2,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { isRecordContentHandle } from "../../record/attachment/content.ts";
 import { assertionRuntimeLimits } from "../limits.ts";
+import { isCanonicalWorkspaceRelativePath } from "../diff.ts";
 import { NUMERIC_COMPARATORS } from "../match.ts";
 import {
   ASSERTION_ENTRY_ID_BRAND,
@@ -502,6 +503,17 @@ const LlmMeasurementCriterionSchema = Schema.Struct({
   }),
 });
 
+const SandboxChangeScopeCriterionSchema = Schema.Struct({
+  kind: Schema.Literal("builtin"),
+  id: Schema.Literal("sandbox-change-scope/v1"),
+  data: Schema.Struct({
+    paths: Schema.Array(BoundedJsonStringSchema).check(Schema.makeFilter(
+      paths => paths.length > 0 && paths.every(path => isCanonicalWorkspaceRelativePath(path) && !/[*?]/u.test(path)),
+      { identifier: "SandboxChangeScopePaths", description: "at least one canonical workspace-relative directory or file path without glob patterns" },
+    )),
+  }),
+});
+
 const SandboxResultCriterionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("builtin"),
@@ -564,6 +576,7 @@ export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
     JudgeMeasurementCriterionV2Schema,
     LlmMeasurementCriterionSchema,
     SandboxResultCriterionSchema,
+    SandboxChangeScopeCriterionSchema,
     DirectScoreCriterionSchema,
   ]);
 
@@ -1320,6 +1333,7 @@ const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
   "judge-measurement/v2",
   "llm-measurement/v1",
   "sandbox-result/v1",
+  "sandbox-change-scope/v1",
   "direct-score/v1",
 ]);
 

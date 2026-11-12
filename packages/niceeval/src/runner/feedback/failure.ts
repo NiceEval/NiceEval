@@ -96,6 +96,8 @@ function criterionTitle(criterion: AssertionCriterion): string {
     case "judge-measurement":
     case "managed-score-measurement":
       return criterion.name;
+    case "sandbox-change-scope":
+      return "changes stayed within allowed paths";
     case "sandbox-result":
       return criterion.operation.replaceAll("-", " ");
     case "direct-score":

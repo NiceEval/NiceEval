@@ -333,6 +333,7 @@ export interface FileChangedOptions {
 export interface AssertFirstSandbox<Kind extends RuntimeKind>
   extends SandboxOperations, SandboxTransferOperations {
   changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandle<Kind, void>;
+  changedOnlyWithin(paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void>;
   noChanges(): PostRunBooleanAssertionHandle<Kind, void>;
   fileChanged(
     path: string,
@@ -1289,6 +1290,29 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     }));
   };
 
+  const changedOnlyWithin = (paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void> => {
+    requireCapability();
+    if (!Array.isArray(paths) || paths.length === 0) throw new TypeError("changedOnlyWithin() requires at least one allowed path; use noChanges() for zero allowed paths");
+    for (const path of paths) {
+      assertDiffPath(path, "changedOnlyWithin()");
+      if (/[*?]/u.test(path)) throw new TypeError("changedOnlyWithin() does not support glob patterns; use the directory name directly for a directory prefix");
+    }
+    const allowed = Object.freeze([...new Set(paths)].sort());
+    return register(Object.freeze({ kind: "sandbox-change-scope", paths: allowed }), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      const outside = [...new Set(diff.document.windows.flatMap(window => window.changes.map(change => change.path)))]
+        .filter(path => !allowed.some(prefix => path === prefix || path.startsWith(`${prefix}/`))).sort();
+      return outside.length === 0
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : Object.freeze({ state: "mismatched" as const, diagnostic: {
+          code: "outside-allowed-paths", message: "Agent changes exceeded the allowed paths", path: [],
+          expected: allowed.slice(0, 16).join(", "), received: outside.slice(0, 16).join(", "),
+          ...(outside.length <= 16 ? {} : { reason: `Showing 16 of ${outside.length} paths outside the allowed scope` }),
+        } });
+    }));
+  };
+
   const fileChanged = (
     path: string,
     rawOptions?: FileChangedOptions,
@@ -1425,6 +1449,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       return input.sandbox.downloadDirectory(sourceDir, targetDir, options);
     },
     changedPaths,
+    changedOnlyWithin,
     noChanges,
     fileChanged,
     fileDeleted,
