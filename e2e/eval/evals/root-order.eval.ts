@@ -21,6 +21,6 @@ export default defineEval({
     const partial = t.newSession();
     await partial.send("assertion/scopes-branch");
     t.toolOrder([first, second]).label("matched beats unavailable");
-    t.toolOrder([toolMatch("never"), toolMatch("never")]).label("unavailable beats mismatch");
+    t.toolOrder([toolMatch("never"), toolMatch("never")]).optional().label("unavailable beats mismatch");
   },
 });

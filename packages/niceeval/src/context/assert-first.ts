@@ -50,6 +50,7 @@ import {
   validateExpectedTouchedPaths,
 } from "../assertions/diff.ts";
 import {
+  collectionMatchRegistration,
   freezeManagedEventOccurrences,
   freezeManagedToolCalls,
 } from "../assertions/collection.ts";
@@ -445,6 +446,8 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetM
   calledTool(name: string): BooleanAssertionHandle<Kind, void>;
   notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
   notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
+  toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+  eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
   usedNoTools(): BooleanAssertionHandle<Kind, void>;
   maxToolCalls(max: number): BooleanAssertionHandle<Kind, void>;
   noFailedActions(): BooleanAssertionHandle<Kind, void>;
@@ -2381,6 +2384,37 @@ export function createAssertFirstEvalContext(
   bindAssertionContext(check, () => Object.freeze({ scope: "attempt" as const, get toolCalls() { return attemptCalls(); }, get eventOccurrences() { return attemptEventOccurrences(); }, get usage() { return readAttemptUsage(); } }), () => latchHistoryCut(rootFrame, attemptSourceSnapshot(observedMatcherTurns(), attemptCoverage().actions, true)), () => releaseHistoryFrame(rootFrame));
   const { maxTokens: rootMaxTokens, maxCost: rootMaxCost } = usageBudgetMethods(runtime, readAttemptUsage);
 
+  const rootOrder = (occurrence: "tool" | "event", matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]] | readonly [EventMatch, EventMatch, ...EventMatch[]], extra: readonly unknown[]) => {
+    if (extra.length > 0) throw new TypeError(`${occurrence}Order() accepts exactly one ordered match list`);
+    runtime.assertAuthoringOpen();
+    const match = inOrder(matches as readonly [ToolMatch, ToolMatch, ...ToolMatch[]]);
+    const registrations = sessions.filter(scope => scope.started).map(scope => ({
+      sessionId: scope.session.observedSnapshot().sessionId,
+      registration: occurrence === "tool"
+        ? collectionMatchRegistration(managedToolCalls("session", sessionToolScope(scope), check), match)
+        : collectionMatchRegistration(managedEventOccurrences("session", sessionEventScope(scope), check), match),
+    }));
+    return scopedBooleanHandle({
+      runtime,
+      criterion: Object.freeze({ kind: "occurrence", scope: "attempt", occurrence, assertion: "order", matcher: matches.map(item => item.name).join(", ") }),
+      snapshot: attemptSnapshot(),
+      evaluate: () => Effect.gen(function* () {
+        let selected: BooleanAssertionEvaluation<void> = mismatchedVoid();
+        for (const { sessionId, registration } of registrations) {
+          const result = yield* registration.evaluate();
+          const evaluation: BooleanAssertionEvaluation<void> = {
+            ...result,
+            ...(result.state === "matched" ? { value: undefined } : {}),
+            diagnostic: { code: "session-order", message: `Order witness Session: ${sessionId}`, path: [], ...(result.diagnostic === undefined ? {} : { children: [{ index: 0, state: result.state, diagnostic: result.diagnostic }] }) },
+          } as BooleanAssertionEvaluation<void>;
+          if (evaluation.state === "matched") return evaluation;
+          if (selected.state !== "unavailable" || evaluation.state === "unavailable") selected = evaluation;
+        }
+        return selected;
+      }),
+    });
+  };
+
   const base = {
     ...Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(core.context)).filter(([, descriptor]) => "value" in descriptor).map(([key, descriptor]) => [key, descriptor.value])),
     ...agentJudgePresetMethods<RuntimeKind, "attempt">(check as import("../assertions/api.ts").AssertionCheck<RuntimeKind, AgentMatchContext<"attempt">>, rootFrame),
@@ -2451,6 +2485,8 @@ export function createAssertFirstEvalContext(
         target,
       });
     },
+    toolOrder: (matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]], ...extra: readonly unknown[]) => rootOrder("tool", matches, extra),
+    eventOrder: (matches: readonly [EventMatch, EventMatch, ...EventMatch[]], ...extra: readonly unknown[]) => rootOrder("event", matches, extra),
     usedNoTools: rootUsedNoTools,
     maxToolCalls: rootMaxToolCalls,
     noFailedActions: rootNoFailedActions,

@@ -309,6 +309,18 @@ readonly usage: EvalUsage;
 succeeded(): BooleanAssertionHandle<Kind, void>;
 ```
 
+#### `toolOrder`
+
+```ts
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+```
+
+#### `eventOrder`
+
+```ts
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
+```
+
 #### `usedNoTools`
 
 ```ts

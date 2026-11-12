@@ -396,3 +396,5 @@ t.check(t.reply, validEmail());
 ```
 
 布尔自定义 Match 用 `defineValueMatch`，连续分数用 `defineScoreMatch`。两者只实现单候选比较；读取文件、扫描事件、决定 coverage 或修改判定仍由 Assertion 登记入口与 Runner 负责。
+
+根 `t.toolOrder(matches)` 与 `t.eventOrder(matches)` 在调用处冻结所有已启动会话的前缀，各会话独立检查顺序，不跨会话拼接步骤。任一会话匹配即满足；全部不匹配时不满足；否则材料不足。没有已启动会话时不满足。主会话可以跨多轮匹配，诊断保留见证会话与逐步结果。

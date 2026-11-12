@@ -292,6 +292,8 @@
   "test-context/sandbox": "",
   "test-context/usage": "",
   "test-context/succeeded": "",
+  "test-context/toolOrder": "",
+  "test-context/eventOrder": "",
   "test-context/usedNoTools": "",
   "test-context/maxToolCalls": "",
   "test-context/noFailedActions": "",
