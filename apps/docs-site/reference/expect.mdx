@@ -275,7 +275,7 @@ turn.calledTool(
 
 turn.calledTool(
   toolMatch("read_file", {
-    input: referencesAnyPath([".env", "secrets"]),
+    input: referencesAnyPath([".env", "secrets/**"]),
   }),
 ).label("Read a restricted path");
 
@@ -284,11 +284,7 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 
 Use `jsonMatch` for ordinary JSON, `referencesAnyPath` for paths, and `commandMatch` for command tokens. When output is absent, material is incomplete, or HITL has not finished, the Match becomes unavailable; it does not pretend to be an ordinary mismatch.
 
-`referencesAnyPath` searches every string value throughout the JSON input for case-sensitive path components. Matches require component boundaries: `agents` does not match `agents-old`. A directory name is a prefix, so `secrets` matches `secrets/api.key`. Both `/` and `\` separate components; repeated separators and `.` components are ignored.
-
-Glob patterns are unsupported. Paths containing `*` or `?` throw `TypeError` during construction; use the directory name directly to cover paths below it.
-
-The name, `input`, `output`, and `status` of a `toolMatch` must all match the same tool call. An ordinary selector requires at least one match. `.exactly(n)` requires exactly n known matches and every remaining candidate to be decidable; `.atLeast(n)` succeeds once n known matches exist. `notCalledTool` requires every candidate to be decidable and zero matches. Incomplete material that prevents a count from being determined remains unavailable rather than becoming zero.
+For complete signatures, material states, and three-valued counting rules, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md).
 
 ### Common usage examples
 
