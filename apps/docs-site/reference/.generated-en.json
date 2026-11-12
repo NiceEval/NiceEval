@@ -307,6 +307,7 @@
   "judge-image/JudgeImageInput/body": "Original encoded image bytes; copied synchronously, at most 4 MiB.",
   "judge-image/JudgeImageInput/mediaType": "Must match the encoded image. Paths, URLs and SVG are not accepted.",
   "turn-handle/input": "",
+  "turn-handle/inputRequests": "",
   "turn-handle/events": "",
   "turn-handle/toolCalls": "",
   "turn-handle/eventOccurrences": "",

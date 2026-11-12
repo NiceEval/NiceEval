@@ -349,6 +349,7 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
 export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends AgentJudgePresetMethods<Kind, AgentMatchContext<"turn">> {
   readonly input: string;
   readonly events: readonly StreamEvent[];
+  readonly inputRequests: readonly InputRequest[];
   readonly toolCalls: ManagedToolCalls<"turn">;
   readonly eventOccurrences: ManagedEventOccurrences<"turn">;
   readonly status: "completed" | "failed" | "waiting";
@@ -1459,6 +1460,17 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   return Object.freeze(view);
 }
 
+function freezeInputRequest(request: InputRequest): InputRequest {
+  const freeze = <Value>(value: Value): Value => {
+    if (value !== null && typeof value === "object") {
+      for (const child of Object.values(value)) freeze(child);
+      Object.freeze(value);
+    }
+    return value;
+  };
+  return freeze(structuredClone(request));
+}
+
 function requireInputRequest(
   session: RunSession,
   filter: InputRequestFilter | undefined,
@@ -2130,6 +2142,7 @@ export function createAssertFirstEvalContext(
     return Object.freeze({
       input: snapshot.input,
       events: snapshot.events,
+      inputRequests: Object.freeze(snapshot.events.flatMap(event => event.type === "input.requested" ? [freezeInputRequest(event.request)] : [])),
       toolCalls: snapshot.toolCalls,
       eventOccurrences,
       status: snapshot.status,

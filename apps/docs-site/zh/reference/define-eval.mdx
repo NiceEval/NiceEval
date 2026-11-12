@@ -500,6 +500,16 @@ Agent 场景可以用 `turn.closeQA(question)`、`session.closeQA(question)` 和
 
 `calledTool` 和 `notCalledTool` 也是 Turn 上的断言，匹配和计数规则见 [匹配工具调用](/zh/reference/expect#匹配工具调用)。Turn 只检查当前轮，Session 检查调用处之前的全部轮次；根 `t` 检查调用时已启动 Session 的各自前缀。之后发生的调用不进入已登记的断言。
 
+`turn.inputRequests` 是本轮事件里全部 `input.requested` 请求的只读、深冻结投影，顺序与事件流一致；没有请求时为 `[]`。
+它适合读取任意数量的请求，已有 `requireInputRequest` 仍要求恰好一个匹配请求。
+
+```ts
+const turn = await t.send("检查变更");
+if (turn.inputRequests.length > 0) {
+  await t.respond(...turn.inputRequests.map(request => ({ request, optionId: "approve" })));
+}
+```
+
 {/* GENERATED:BEGIN turn-handle */}
 
 {/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
@@ -514,6 +524,12 @@ readonly input: string;
 
 ```ts
 readonly events: readonly StreamEvent[];
+```
+
+#### `inputRequests`
+
+```ts
+readonly inputRequests: readonly InputRequest[];
 ```
 
 #### `toolCalls`
