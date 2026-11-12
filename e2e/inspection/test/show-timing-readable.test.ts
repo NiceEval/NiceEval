@@ -1,11 +1,11 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
+import { inspectionE2E } from "./support.ts";
 
 // @feature docs/feature/inspection/README.md
 // @issue docs/issues/show-timing-identifiers-truncated.md
 test.concurrent("管道时间线保留完整标识并单列失败活动", async () => {
-  await inspectionE2E.case("show-timing-readable", { artifacts: inspectionCaseArtifacts() }, async ({ commands: { niceeval } }) => {
+  await inspectionE2E.case("show-timing-readable", async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "timing-failure", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(1);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "inspection", run.diagnostic());

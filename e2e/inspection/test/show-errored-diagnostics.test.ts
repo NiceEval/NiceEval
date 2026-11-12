@@ -1,11 +1,11 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
+import { inspectionE2E } from "./support.ts";
 
 // @use-case docs/feature/error-classification/use-case/reading-errored.md
 // @issue docs/issues/show-errored-diagnostics-hidden.md
 test.concurrent("错误 Attempt 概览直接显示已保存的阶段与错误并链接执行诊断", async () => {
-  await inspectionE2E.case("show-errored-diagnostics", { artifacts: inspectionCaseArtifacts() }, async ({ commands: { niceeval } }) => {
+  await inspectionE2E.case("show-errored-diagnostics", async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "usage-unsealed", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(1);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "usage-unsealed", run.diagnostic());

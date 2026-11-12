@@ -6,7 +6,7 @@ import { runnerE2E } from "./context.ts";
 // @use-case docs/feature/experiments/use-case/selection-dry-preview.md
 // @issue docs/issues/dry-structured-difference-hidden.md
 test.concurrent("预览区分不完整的结构摘要并明确无法比较的原因", async () => {
-  await runnerE2E.case("dry-structured-difference", { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] }, async ({ paths, commands: { niceeval } }) => {
+  await runnerE2E.case("dry-structured-difference", async ({ paths, commands: { niceeval } }) => {
     const initial = await niceeval.run(["exp", "dry-structured", "--json"]);
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
     const path = join(paths.projectRoot, "experiments/dry-structured.ts");
