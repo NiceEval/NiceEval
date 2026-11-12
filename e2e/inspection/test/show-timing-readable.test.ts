@@ -17,6 +17,6 @@ test.concurrent("管道时间线保留完整标识并单列失败活动", async 
     expect(shown.stdout, shown.diagnostic()).not.toContain("…");
     expect(shown.stdout).toContain("Failed activities");
     expect(shown.stdout.slice(shown.stdout.indexOf("Failed activities"))).toMatch(/Phase\s+sandbox\./u);
-    expect(shown.stdout).toContain("sandbox.before.experiment");
+    expect(shown.stdout).toContain("sandbox.prepare");
   });
 });

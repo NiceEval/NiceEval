@@ -1595,7 +1595,23 @@ function commandOutcome(value: CommandDetail["outcome"]): string {
 }
 
 export function renderTiming(value: TimingView): string {
-  return terminal([
+  const piped = process.stdout.isTTY !== true;
+  const headers = piped
+    ? ["Activity ID", "Parent", "Turn", "Phase", "Label", "Start", "Duration", "Outcome"]
+    : ["Phase", "Label", "Duration", "Outcome"];
+  const rows = value.activities.map((activity) => piped ? [
+    activity.activityId,
+    activity.parentActivityId ?? "none",
+    activity.turnId ?? "none",
+    activity.phase,
+    activity.label,
+    `${fmt(activity.startOffsetMs)} ms`,
+    `${fmt(activity.durationMs)} ms`,
+    activity.outcome,
+  ] : [activity.phase, activity.label, `${fmt(activity.durationMs)} ms`, activity.outcome]);
+  const widths = headers.map((header, index) => Math.max(stringWidth(header), ...rows.map((row) => stringWidth(row[index]!))));
+  const width = piped ? Math.max(80, widths.reduce((sum, size) => sum + size, 0) + 2 * headers.length) : process.stdout.columns || 80;
+  return renderTerminal([
     {
       kind: "panel",
       title: `Timing ${value.locator}`,
@@ -1618,30 +1634,27 @@ export function renderTiming(value: TimingView): string {
         { kind: "divider", title: "Activities" },
         {
           kind: "table",
-          columns: [
-            { header: "Activity ID" },
-            { header: "Parent" },
-            { header: "Turn" },
-            { header: "Phase" },
-            { header: "Label" },
-            { header: "Start" },
-            { header: "Duration" },
-            { header: "Outcome" },
-          ],
-          rows: value.activities.map((activity) => [
-            activity.activityId,
-            activity.parentActivityId ?? "none",
-            activity.turnId ?? "none",
-            activity.phase,
-            activity.label,
-            `${fmt(activity.startOffsetMs)} ms`,
-            `${fmt(activity.durationMs)} ms`,
-            activity.outcome,
-          ]),
+          columns: headers.map((header, index) => ({ header, maxWidth: widths[index] })),
+          rows,
+          overflow: "wrap",
         },
+        ...(value.activities.some((activity) => activity.outcome === "failed") ? [
+          { kind: "divider" as const, title: "Failed activities" },
+          ...value.activities.filter((activity) => activity.outcome === "failed").map((activity) => ({
+            kind: "keyValue" as const,
+            entries: [
+              { key: "Label", value: activity.label },
+              { key: "Phase", value: activity.phase },
+              { key: "Activity ID", value: activity.activityId },
+              { key: "Parent", value: activity.parentActivityId ?? "none" },
+              { key: "Turn", value: activity.turnId ?? "none" },
+              { key: "Duration", value: `${fmt(activity.durationMs)} ms` },
+            ],
+          })),
+        ] : []),
       ],
     },
-  ]);
+  ], { ...TERMINAL_OPTIONS, width });
 }
 
 type UsageTotals = UsageView["totals"];
