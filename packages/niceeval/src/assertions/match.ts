@@ -1593,6 +1593,8 @@ function findReferencedPath(
   }
 }
 
+// @concord-code
+// @concord-implements docs/feature/assertions/README.md
 /** 在 JSON 任意字符串中按路径组件与目录前缀搜索。默认区分大小写；ignoreCase 使用 Unicode 简单大小写折叠。不支持 glob。 */
 export function referencesAnyPath(
   paths: readonly [string, ...string[]],

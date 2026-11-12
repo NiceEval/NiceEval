@@ -1291,6 +1291,8 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     }));
   };
 
+  // @concord-code
+  // @concord-implements docs/feature/sandbox/README.md
   const changedOnlyWithin = (paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void> => {
     requireCapability();
     if (!Array.isArray(paths) || paths.length === 0) throw new TypeError("changedOnlyWithin() requires at least one allowed path; use noChanges() for zero allowed paths");
@@ -2014,6 +2016,8 @@ export function createAssertFirstEvalContext(
     });
   };
 
+  // @concord-code
+  // @concord-implements docs/feature/eval/README.md
   const makeTurn = <Kind extends RuntimeKind>(
     scope: SessionScopeState,
     turn: Turn,
@@ -2422,6 +2426,8 @@ export function createAssertFirstEvalContext(
   bindAssertionContext(check, () => Object.freeze({ scope: "attempt" as const, get toolCalls() { return attemptCalls(); }, get eventOccurrences() { return attemptEventOccurrences(); }, get usage() { return readAttemptUsage(); } }), () => latchHistoryCut(rootFrame, attemptSourceSnapshot(observedMatcherTurns(), attemptCoverage().actions, true)), () => releaseHistoryFrame(rootFrame));
   const { maxTokens: rootMaxTokens, maxCost: rootMaxCost } = usageBudgetMethods(runtime, readAttemptUsage);
 
+  // @concord-code
+  // @concord-implements docs/feature/assertions/README.md
   const rootOrder = (occurrence: "tool" | "event", matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]] | readonly [EventMatch, EventMatch, ...EventMatch[]], extra: readonly unknown[]) => {
     if (extra.length > 0) throw new TypeError(`${occurrence}Order() accepts exactly one ordered match list`);
     runtime.assertAuthoringOpen();
