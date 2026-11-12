@@ -39,6 +39,7 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 变化路径与某一项相等，或位于该项之下，即在范围内：`agents` 允许 `agents/a.ts`，不允许 `agents-old/a.ts`。
 它不支持 glob，路径含 `*` 或 `?` 时抛出 `TypeError`；空数组同样抛出，零范围用 `noChanges()`。
 归因、`diff.ignore` 与 unavailable 规则和 `changedPaths` 相同。不满足时，诊断列出越界路径的有界预览。
+它的持久 criterion 是 `sandbox-change-scope/v1`，形状见 [Assertions 架构](../../assertions/architecture/README.md#criterion-envelope-与内建-criterion)。
 
 变化的归因单位是一次 `t.send()` 的两个端点，而不是 syscall 审计。不同 send 内修改后又还原仍可见；同一 send 内还原到相同端点则没有 delta。`fileChanged()` 的内容 matcher 只读取该候选的 before/after endpoint；内容被 binary 或 oversized elision 取代时，只有依赖该内容的一次匹配会是 `unavailable`。路径和 status 本身仍可确定。
 
