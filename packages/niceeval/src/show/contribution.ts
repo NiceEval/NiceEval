@@ -411,7 +411,7 @@ function runShow(
             }));
             details.push(document.assertion);
           }
-          yield* write("stdout", renderAssertions(selectedLocator, details));
+          yield* write("stdout", renderAssertions(selectedLocator, details, { full, entryId }));
           return 0;
         }
         if (compare) {

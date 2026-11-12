@@ -2093,7 +2093,7 @@ export function renderReferences(project: InspectionProjectResult): string {
   }]);
 }
 
-export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[]): string {
+export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[], options: { readonly full: boolean; readonly entryId?: string } = { full: false }): string {
   const blocks: TerminalPanelContentBlock[] = [];
   let passed = 0;
   let failed = 0;
@@ -2136,8 +2136,15 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: entry.decision.reason }]),
       ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
     ] });
-    blocks.push({ kind: "divider", title: "Next" });
-    blocks.push({ kind: "command", command: `niceeval show ${locator} --assertions --entry ${JSON.stringify(entry.entryId)} --full` });
+    const debuggerView = assertion.matcher.debugger;
+    if (options.full && debuggerView?.state === "current" && debuggerView.steps.length > 0) {
+      blocks.push({ kind: "table", columns: [{ header: "Step" }, { header: "State" }, { header: "Source row" }],
+        rows: debuggerView.steps.map((step) => [String(step.step), step.state, step.sourceRow ?? "not-recorded"]), overflow: "wrap" });
+    }
+    if (!options.full || options.entryId !== entry.entryId) {
+      blocks.push({ kind: "divider", title: "Next" });
+      blocks.push({ kind: "command", command: `niceeval show ${locator} --assertions --entry ${JSON.stringify(entry.entryId)} --full` });
+    }
   }
   if (assertions.length === 0) blocks.push({ kind: "divider", title: "No Assertion entries recorded" });
   return terminal([{ kind: "panel", title: `Assertions ${locator}`, blocks }]);
@@ -2145,9 +2152,17 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
 
 function assertionReasons(value: AssertionFactValue): string[] {
   if (value.kind !== "fields") return [];
+  const state = value.fields.find((field) => field.label === "state")?.value;
+  if (state?.kind === "value" && state.value === "unavailable") return [];
   return value.fields.flatMap((field) => {
-    if ((field.label === "rationale" || field.label === "reason") && field.value.kind === "value" && typeof field.value.value === "string")
-      return [field.value.value];
+    if (field.label === "rationale" || field.label === "reason") {
+      if (field.value.kind === "value" && typeof field.value.value === "string") return [field.value.value];
+      if (field.label === "rationale" && field.value.kind === "fields") {
+        const state = field.value.fields.find((item) => item.label === "state")?.value;
+        const text = field.value.fields.find((item) => item.label === "value")?.value;
+        if (state?.kind === "value" && state.value === "available" && text?.kind === "value" && typeof text.value === "string") return [text.value];
+      }
+    }
     return assertionReasons(field.value);
   });
 }
