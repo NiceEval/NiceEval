@@ -1,3 +1,9 @@
+---
+relations:
+  - role: root-cause
+    target: memory/cli-diagnostic-projections-lose-saved-evidence.md
+---
+
 # Timing output truncates activity names and failure locations
 
 ## Observation

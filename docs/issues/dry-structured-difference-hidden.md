@@ -1,3 +1,9 @@
+---
+relations:
+  - role: root-cause
+    target: memory/cli-diagnostic-projections-lose-saved-evidence.md
+---
+
 # Dry preview collapses structured differences into identical placeholders
 
 ## Observation

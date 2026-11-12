@@ -1,3 +1,9 @@
+---
+relations:
+  - role: root-cause
+    target: memory/cli-diagnostic-projections-lose-saved-evidence.md
+---
+
 # Errored Attempt overview hides recorded failure diagnostics
 
 ## Observation
