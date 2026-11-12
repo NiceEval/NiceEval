@@ -1,15 +1,15 @@
-# judge rationale 没有落盘字段,待裁决它的家
+---
+relations:
+  - role: supports
+    target: docs/feature/inspection/README.md
+---
 
-**现象**(2026-07-29):judge 断言的 `detail` 曾直接落成裁判模型的 rationale(spec 层没设
-检查方式摘要,evaluate 返回 `detail: result.rationale`),show/view 的判定行标题因此显示
-rationale 而不是 display.md 声明的 `closedQA("…")`。scoring 进度契约落地时给 spec.detail
-补上了检查方式摘要,rationale 经 finalize 既有合并变成 `closedQA("…"); <rationale>`,
-换一种方式继续污染标题。
+# Judge rationale 读取要识别独立材料状态
 
-**裁决**(2026-07-29):`detail` 按 `docs/feature/assertions/architecture/README.md` 只放检查方式
-摘要,judge 的 evaluate 不再返回 rationale,rationale 暂不落盘。
+人读输出缺少 Judge 理由时，先用公开 `attempt.assertion.detail` 区分呈现遗漏与真正未保存，不能直接推断持久化缺字段。
 
-**待裁决**:rationale(裁判对分数的解释)有真实排查价值——0.4 分是「跑题」还是「漏了一半
-要求」只有它能说。但记录契约里没有它的家:`detail` 是摘要、`evidence` 是判分**输入**材料,
-塞哪个都改变既有字段语义。要留它就得给 AssertionResult 增字段(如 `rationale`)并同步
-architecture.md 与 display.md(view 折叠展示位),独立设计迭代做。
+2026-11 的下游调查发现，`entry.explanationRetention` 已保存理由。其 `rationale` 是含 `state` 和 `value` 的嵌套事实，不是直接字符串。只读取字符串的 renderer 会漏掉它；递归收集所有 `reason` 又会把相邻 citations 的 `not-recorded` 误标成理由。
+
+呈现时按材料自己的状态读取内容，保留 rationale 与 citations 的独立可用性。终端自动换行后，验证完整内容需要忽略呈现增加的空白，不能把未折行的 query 字符串直接作为 stdout 子串。
+
+早期把 rationale 当作展示标题的做法会污染检查标签。标题与判分理由仍应分别呈现，公开契约见 [Assertions](../docs/feature/assertions/README.md)。
