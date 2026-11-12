@@ -1,6 +1,6 @@
 # Assertions —— scoped methods
 
-本页是 `calledTool`、`notCalledTool`、`usedNoTools`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段或计数规则。
+本页是 `calledTool`、`notCalledTool`、`usedNoTools`、`toolOrder`、`eventOrder`、`ToolMatch` 与计数的唯一公开契约。其它页面只链接本页，不重复签名、字段或计数规则。
 
 每一次调用都通过同一 `check` 登记 Boolean Assertion。receiver 在调用处取得 snapshot；随后发生的 Session 或 Turn 不能改写这条 entry。Boolean handle 仍可 `await .orStop()`，它只等待并控制同一条已登记 Assertion。
 
@@ -12,6 +12,8 @@ calledTool(name: string): BooleanAssertionHandle<Kind, void>;
 notCalledTool(match: ToolMatch): BooleanAssertionHandle<Kind, void>;
 notCalledTool(name: string): BooleanAssertionHandle<Kind, void>;
 usedNoTools(): BooleanAssertionHandle<Kind, void>;
+toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanAssertionHandle<Kind, void>;
+eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanAssertionHandle<Kind, void>;
 ```
 
 根 `t`、Session 与 Turn 使用相同签名。`calledTool` 与 `notCalledTool` 只接一个 Match 或工具名；`usedNoTools()` 完全零参数，也不接额外 Match。
@@ -57,11 +59,47 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 `referencesAnyPath` 在整个 JSON 输入的任意字符串值中搜索路径，按路径组件匹配且区分大小写。匹配要求组件边界，因此 `agents` 不匹配 `agents-old`。目录名直接作为前缀：`secrets` 能匹配 `secrets/api.key`。
 路径分隔符支持 `/` 和 `\`，忽略重复分隔符及 `.` 组件。不支持 glob；路径含 `*` 或 `?` 时，构造函数抛出 `TypeError`，不能用静默不匹配掩盖无效的禁区条件。
 
+```ts
+referencesAnyPath(paths: readonly [string, ...string[]], options?: { readonly ignoreCase?: boolean }): Match;
+```
+
+`ignoreCase` 默认为 `false`。设为 `true` 时，各组件按 Unicode 简单大小写折叠后比较，其余规则不变。
+它用于大小写无关的名字，例如 URL 的主机名和 GitHub 的 owner 与 repo。
+折叠后相同的两条路径算重复，构造函数抛出 `TypeError`；未知的 option 键同样抛出。
+
+不传 `options` 与传 `ignoreCase: false` 得到同一个 Match，名称与身份和没有这个选项时相同。
+`ignoreCase: true` 进入该 Match 的身份。
+
 ## 一个 occurrence 的合取
 
 `ToolMatch` 每次只比较一个 `LogicalToolOccurrence`。名称、`input`、`output` 与 `status` 是同一 occurrence 上的 AND 条件。计数只数完整满足这一组条件的 occurrence，不会把一笔调用的输入和另一笔调用的输出拼成命中。
 
 `toolMatch` 适用于官方工具和第三方工具。两者都按 Adapter 归一后的 occurrence、原始名称与材料状态求值，没有官方工具的特权分支。
+
+## 顺序
+
+`toolOrder` 和 `eventOrder` 各接收至少两个 Match。它们要求 receiver 的材料里按给定先后各出现一次匹配。
+匹配按子序进行：两步之间可以夹着别的调用，同一个 occurrence 只能满足一步。
+
+```ts
+turn.toolOrder([toolMatch("read_file"), toolMatch("write_file")]).label("先读后写");
+t.toolOrder([
+  toolMatch({ input: referencesAnyPath(["docs/INDEX.md"]) }),
+  toolMatch({ input: referencesAnyPath(["docs/guide.md"]) }),
+]).label("先读索引，再读正文");
+```
+
+Turn 在该 Turn 内求值。Session 在它的前缀内求值，所以一个顺序可以跨越同一 Session 的多个 Turn。
+
+根 `t` 的顺序断言问的是：是否存在一条 Session，它的前缀满足这个顺序。
+NiceEval 对 vector cut 内的每条 Session 各自按 Session 的规则求值，再合并结果。
+任一 Session matched 即 matched。全部 Session 都可判定且都是 mismatched 才是 mismatched。
+没有 Session matched 且至少一条是 unavailable 时，结果是 unavailable。
+cut 内没有已启动的 Session 时是 mismatched。
+
+一个顺序的各步不会跨 Session 拼接，根 scope 仍然没有全局时间线。
+Attempt 只有主会话时，`t.toolOrder` 等同于主会话的 Session 级顺序断言，读取它的全部 Turn。
+诊断逐步给出 matched 或 blocked，并写明见证来自哪条 Session。
 
 ## 输入、输出与 HITL
 
@@ -76,6 +114,7 @@ HITL 等待中的工具已有 `operation.started`，却还没有相配的 finish
 Turn receiver 只读取该不可变 Turn。Session receiver 读取该 Session 在调用处之前的全部 Turn，所以可以断言跨 Turn 的工具行为。
 
 根 `t` 在调用处冻结所有已启动 Session 的 vector cut。每个 Session 保留自己的前缀，根 scope 不把多个 Session 伪造成一条全局时间线。之后新增的 Turn、Session 或工具调用不进入已登记 Assertion。
+根上的顺序断言因此按 Session 逐条求值，规则见[顺序](#顺序)。
 
 ## 三值计数
 

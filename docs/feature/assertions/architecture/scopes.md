@@ -22,6 +22,7 @@ Session 从第一次交互开始算已启动。仅创建空 handle 不会进入�
 matched，早晚两次 getter 可以得到不同引用。
 
 Session scope 包含本 Session 在 getter 处之前的全部 Turn，因此 scoped tool Assertion 可以检查跨 Turn 的行为。根 `t` 冻结所有已启动 Session 的 vector cut，并按 Session 保留前缀。它不把独立 Session 拼成一条全局事件顺序。
+根上的 `toolOrder` 与 `eventOrder` 对每条 Session 的前缀分别求值，再按存在量词合并。
 
 `toolCalls`、`eventOccurrences`、collection Match 与包装的 selector、材料状态和三值计数只在 [Scoped assertions](../library/scoped-assertions.md) 定义。这里的 snapshot 规则决定 collection 在何处读取 occurrence，不另立匹配契约。
 

@@ -12,6 +12,7 @@ Sandbox Eval 的 `t.sandbox` 在作者阶段只提供下列 agent-attributed、p
 ```ts
 t.sandbox.changedPaths(["src/index.ts", "src/legacy.ts"]);
 t.sandbox.noChanges();
+t.sandbox.changedOnlyWithin(["experiments/local.ts", "docs"]);
 
 t.sandbox.fileChanged("src/index.ts", {
   status: "modified",
@@ -26,9 +27,18 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 |---|---|
 | `changedPaths(paths)` | 断言所有 agent send-window endpoint delta 的路径构成的无序集合，恰好等于 `paths`。|
 | `noChanges()` | `changedPaths([])` 的零路径形式。|
+| `changedOnlyWithin(paths)` | 断言每一条 agent send-window endpoint delta 的路径都落在 `paths` 允许的范围内；没有任何变化也满足。|
 | `fileChanged(path, options?)` | 在至少一个 agent send window 找到该 path 的一个 endpoint delta；`status`、`before` 与 `after` 必须同时满足同一条变化。|
 | `fileDeleted(path)` | 找到 agent 归因的 `deleted` endpoint delta；它不声明该文件在 Attempt 最终不存在。|
 | `notInDiff(pattern, options?)` | 在变化路径和运行时结构化 changed-hunk corpus 中找不到 pattern。`content` 选 `added`、`removed` 或默认的 `both`。|
+
+`changedPaths` 回答“改动恰好是这些文件”，`changedOnlyWithin` 回答“改动没有越出这个范围”。
+后者用于授权范围检查：agent 可以不改，也可以只改范围内的一部分。
+
+`changedOnlyWithin` 的每一项是工作区相对路径，按路径组件比较。
+变化路径与某一项相等，或位于该项之下，即在范围内：`agents` 允许 `agents/a.ts`，不允许 `agents-old/a.ts`。
+它不支持 glob，路径含 `*` 或 `?` 时抛出 `TypeError`；空数组同样抛出，零范围用 `noChanges()`。
+归因、`diff.ignore` 与 unavailable 规则和 `changedPaths` 相同。不满足时，诊断列出越界路径的有界预览。
 
 变化的归因单位是一次 `t.send()` 的两个端点，而不是 syscall 审计。不同 send 内修改后又还原仍可见；同一 send 内还原到相同端点则没有 delta。`fileChanged()` 的内容 matcher 只读取该候选的 before/after endpoint；内容被 binary 或 oversized elision 取代时，只有依赖该内容的一次匹配会是 `unavailable`。路径和 status 本身仍可确定。
 

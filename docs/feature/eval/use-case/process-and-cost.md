@@ -10,7 +10,7 @@ t.calledTool(toolMatch("file_read").exactly(2)).label("读取两次");
 t.notCalledTool(toolMatch("raw_record_reader")).label("未直接读取记录");
 ```
 
-工具的名称、输入、输出与状态都在 `toolMatch(...)` 中表达。次数也由同一个 Match 的 `.exactly(n)`、`.atLeast(n)`、`.atMost(n)`、`.lessThan(n)` 或 `.greaterThan(n)` 表达；`calledTool` 只有一个 Match 参数。需要验证相对顺序时，把至少两个 `ToolMatch` 按顺序传给 `turn.toolOrder` 或 `session.toolOrder`：
+工具的名称、输入、输出与状态都在 `toolMatch(...)` 中表达。次数也由同一个 Match 的 `.exactly(n)`、`.atLeast(n)`、`.atMost(n)`、`.lessThan(n)` 或 `.greaterThan(n)` 表达；`calledTool` 只有一个 Match 参数。需要验证相对顺序时，把至少两个 `ToolMatch` 按顺序传给 `turn.toolOrder`、`session.toolOrder` 或 `t.toolOrder`：
 
 ```typescript
 turn.toolOrder([toolMatch("read_file"), toolMatch("write_file")]).label("先读后写");

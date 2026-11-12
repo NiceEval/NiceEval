@@ -60,10 +60,14 @@ scope 固定为 `eval.run`,eval 不能借此把自己显示成 sandbox 或 agent
 |---|---|
 | `t` | `reply`、`sessionId`、主 session 即时 `events`、`trace` |
 | session | `reply`、`sessionId`、该 session 的 `events` |
-| turn | `message`、`data`、`status`、`events`、`usage` |
+| turn | `message`、`data`、`status`、`events`、`inputRequests`、`usage` |
 
 `t.events` 是主 session 的即时读取视图；最终的 `t.*` 作用域断言会聚合本 attempt 的全部 session。
 `turn.status` 为 `completed`、`failed` 或 `waiting`；`turn.usage` 是否存在取决于 Adapter 能否提供。
+
+`turn.inputRequests` 是该 Turn 事件流里全部 `input.requested` 的 request，按事件顺序排列，只读且深冻结。
+它和 `turn.events` 是同一份事实的投影，不新增落盘内容；Turn 没有提出请求时是空数组。
+需要“有几个请求就答几个，没有就照常续轮”时读它；要求恰好一个请求时仍用 `requireInputRequest`。
 
 ## 读取链路事实：t.trace
 
