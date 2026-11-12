@@ -284,7 +284,10 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 
 普通 JSON 用 `jsonMatch`，路径用 `referencesAnyPath`，命令 token 用 `commandMatch`。输出不存在、材料不完整或 HITL 尚未完成时，Match 会成为 unavailable，不会伪装成普通不匹配。
 
-`referencesAnyPath` 在整个 JSON 输入的任意字符串值中搜索路径，按路径组件匹配且区分大小写。匹配要求组件边界：`agents` 不匹配 `agents-old`。目录名就是前缀，`secrets` 能匹配 `secrets/api.key`。分隔符支持 `/` 和 `\`，忽略重复分隔符及 `.` 组件。
+`referencesAnyPath(paths, options?)` 在整个 JSON 输入的任意字符串值中搜索路径，按路径组件匹配，默认区分大小写。匹配要求组件边界：`agents` 不匹配 `agents-old`。目录名就是前缀，`secrets` 能匹配 `secrets/api.key`。分隔符支持 `/` 和 `\`，忽略重复分隔符及 `.` 组件。
+
+`options` 只接受 `ignoreCase?: boolean`，默认为 `false`。例如 `referencesAnyPath(["NiceEval/NiceEval"], { ignoreCase: true })` 可以匹配 URL 中大小写不同的 owner 与 repo。
+该选项使用 Unicode 简单大小写折叠；折叠后相同的两条路径视为重复并抛出 `TypeError`，未知选项也会抛出。省略选项或传 `false` 保持默认 Match 的名称与身份；`true` 进入 Match 身份。
 
 它不支持 glob。含 `*` 或 `?` 的路径会在构造时抛出 `TypeError`；要覆盖目录下的路径，直接写目录名。
 

@@ -1486,24 +1486,29 @@ function normalizeReferencePath(value: unknown, label: string): readonly string[
   return Object.freeze(components);
 }
 
-function pathPattern(components: readonly string[]): RegExp {
+function pathPattern(components: readonly string[], ignoreCase = false): RegExp {
   // Whitespace / quoting can bound a path embedded in a tool input, while '-' and '.' stay in a component so
   // `agents` cannot match `agents-old` and `.niceeval` cannot match `.niceevaluation`.
   const componentChar = "\\p{L}\\p{N}_.-";
   const betweenComponents = "[\\\\/]+(?:\\.[\\\\/]+)*";
   const source = components.map(escapeRegExp).join(betweenComponents);
-  return new RegExp(`(?<![${componentChar}])${source}(?![${componentChar}])`, "u");
+  return new RegExp(`(?<![${componentChar}])${source}(?![${componentChar}])`, ignoreCase ? "iu" : "u");
 }
 
-function normalizeReferencePatterns(paths: readonly [string, ...string[]]): readonly ReferencePathPattern[] {
+function normalizeReferencePatterns(paths: readonly [string, ...string[]], ignoreCase = false): readonly ReferencePathPattern[] {
   if (!Array.isArray(paths) || paths.length === 0) throw new TypeError("referencesAnyPath() requires at least one path");
   const seen = new Set<string>();
+  const seenComponents: (readonly string[])[] = [];
   const patterns = paths.map((path, index) => {
     const components = normalizeReferencePath(path, `referencesAnyPath() paths[${index}]`);
     const identity = components.join("\u0000");
     if (seen.has(identity)) throw new TypeError(`referencesAnyPath() has duplicate normalized path ${quoted(path)}`);
+    if (ignoreCase && seenComponents.some((prior) => prior.length === components.length && prior.every((part, index) => new RegExp(`^${escapeRegExp(part)}$`, "iu").test(components[index]!)))) {
+      throw new TypeError(`referencesAnyPath() has duplicate normalized path ${quoted(path)}`);
+    }
     seen.add(identity);
-    return Object.freeze({ original: path, components, matcher: pathPattern(components) });
+    seenComponents.push(components);
+    return Object.freeze({ original: path, components, matcher: pathPattern(components, ignoreCase) });
   });
   return Object.freeze(patterns);
 }
@@ -1588,11 +1593,21 @@ function findReferencedPath(
   }
 }
 
+/** 在 JSON 任意字符串中按路径组件与目录前缀搜索。默认区分大小写；ignoreCase 使用 Unicode 简单大小写折叠。不支持 glob。 */
 export function referencesAnyPath(
   paths: readonly [string, ...string[]],
+  options?: { readonly ignoreCase?: boolean },
 ): BooleanMatch<JsonValue, JsonValue, "value"> {
-  const patterns = normalizeReferencePatterns(paths);
-  const name = `referencesAnyPath(${patterns.length} paths)`;
+  if (options !== undefined) {
+    if (options === null || typeof options !== "object" || Array.isArray(options)) throw new TypeError("referencesAnyPath() options must be an object");
+    for (const key of Reflect.ownKeys(options)) {
+      if (key !== "ignoreCase") throw new TypeError(`referencesAnyPath() has unknown option ${String(key)}`);
+    }
+    if (options.ignoreCase !== undefined && typeof options.ignoreCase !== "boolean") throw new TypeError("referencesAnyPath() ignoreCase must be a boolean");
+  }
+  const ignoreCase = options?.ignoreCase === true;
+  const patterns = normalizeReferencePatterns(paths, ignoreCase);
+  const name = `referencesAnyPath(${patterns.length} paths${ignoreCase ? ", ignoreCase: true" : ""})`;
   return createBooleanMatch(
     "value",
     name,
