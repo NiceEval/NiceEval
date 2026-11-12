@@ -275,7 +275,7 @@ turn.calledTool(
 
 turn.calledTool(
   toolMatch("read_file", {
-    input: referencesAnyPath([".env", "secrets/**"]),
+    input: referencesAnyPath([".env", "secrets"]),
   }),
 ).label("读取受限路径");
 
@@ -284,7 +284,11 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 
 普通 JSON 用 `jsonMatch`，路径用 `referencesAnyPath`，命令 token 用 `commandMatch`。输出不存在、材料不完整或 HITL 尚未完成时，Match 会成为 unavailable，不会伪装成普通不匹配。
 
-完整签名、材料状态与三值计数规则见 [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md)。
+`referencesAnyPath` 在整个 JSON 输入的任意字符串值中搜索路径，按路径组件匹配且区分大小写。匹配要求组件边界：`agents` 不匹配 `agents-old`。目录名就是前缀，`secrets` 能匹配 `secrets/api.key`。分隔符支持 `/` 和 `\`，忽略重复分隔符及 `.` 组件。
+
+它不支持 glob。含 `*` 或 `?` 的路径会在构造时抛出 `TypeError`；要覆盖目录下的路径，直接写目录名。
+
+`toolMatch` 的名称、`input`、`output` 和 `status` 必须在同一次工具调用上同时满足。普通 selector 代表至少一次匹配；`.exactly(n)` 要求已知匹配数恰好为 n 且其余候选均可判定，`.atLeast(n)` 在已知匹配数达到 n 时成立。`notCalledTool` 要求全部候选可判定且匹配数为零。材料不完整、无法确定数量时保留 unavailable，不能当成零。
 
 ### 常见用法示例
 

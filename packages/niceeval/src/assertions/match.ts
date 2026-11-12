@@ -1480,6 +1480,7 @@ function escapeRegExp(value: string): string {
 
 function normalizeReferencePath(value: unknown, label: string): readonly string[] {
   assertNonEmptyString(value, label);
+  if (/[*?]/u.test(value)) throw new TypeError(`${label} does not support glob patterns; use the directory name directly for a directory prefix`);
   const components = value.split(/[\\/]+/u).filter((component) => component.length > 0 && component !== ".");
   if (components.length === 0) throw new TypeError(`${label} normalizes to an empty path`);
   return Object.freeze(components);
