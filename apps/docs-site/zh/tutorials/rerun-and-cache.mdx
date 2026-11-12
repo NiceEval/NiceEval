@@ -17,16 +17,24 @@ pnpm exec niceeval exp checkout --dry
 ```
 
 ```text
-PLAN
-checkout  cart/add-item     Attempt #1  using result @1K1P0VJAPVJ12
-checkout  cart/remove-item  Attempt #1  will run — configuration changed: source:evals/cart/remove-item.eval.ts
-2 targets · 1 reused · 1 to run
+plan: 2 attempts · 2 evals × 1 configs · runs 1
+reuse: 1/2 exact current Record attempts
+plugins: 0 lifecycle occurrences
+checkout  cart/add-item     reused 0
+  source @1K1P0VJAPVJ12 · reused · verdict passed
+checkout  cart/remove-item  gap 0:identity-mismatch: source:evals/cart/remove-item.eval.ts changed (0d25e7bd615c → 9bfe84e42112)
 ```
 
-每一行是一次 Attempt。`using result` 后面是要沿用的旧结果 locator；`will run` 后面是要重跑的原因，以及具体哪一项变了。
+每行是实验与评估用例的组合。`reused 0` 表示第 0 次 Attempt 会沿用，`source` 后是旧结果 locator；`gap 0:...` 表示该槽位不能沿用，后面给出原因与差异。
 上面第二行表示这道题的评估用例文件内容变了。改模型会显示 `config:model`，改判分标准文件会显示 `data:` 开头的路径。
 
 结果和你预期的不一样时，先看这些具体差异。例如你只改了报告里的分组名，却看到整批要重跑，差异会指出一起变了的那项输入。
+
+看到 `locked · gap 0:source-member-missing` 时，表示检测到了执行锁，而对应槽位还没有发布成员；它不是一次新的失败判定。
+先等持锁执行结束，用 `niceeval show --run <run-id>` 查看，再运行 `--dry`。状态词、全部缺口代码和处理命令见 [CLI Reference](/zh/reference/cli)。
+
+结构化值可能只保存了有界摘要。两侧的 `summary sha256:` 用来区分摘要；若显示 `comparison unavailable`，说明现有摘要无法解释具体差异。
+这不会改变沿用决定。先用 `--dry --json` 查看已保存的比较信息，确认范围和费用后再执行。
 
 ## 哪些结果会被沿用
 
@@ -79,10 +87,9 @@ pnpm exec niceeval exp checkout --dry
 ```
 
 ```text
-PLAN
-checkout  cart/add-item     Attempt #1  using result @1K1P0VJAPVJ12 — via fingerprint-algorithm/3-to-4
-checkout  cart/remove-item  Attempt #1  will run — identity domain changed: opensandbox-prepare/1-to-2 (behavior-changing)
-2 targets · 1 reused · 1 to run
+checkout  cart/add-item     reused 0 via fingerprint-algorithm/3-to-4
+checkout  cart/remove-item  gap 0:identity-mismatch: identity-domain-changed: Sandbox preparation behavior changed
+  limitation: opensandbox-prepare/1-to-2 (behavior-changing)
 ```
 
 - `via` 后面是新版本对计算方式的一次具名调整。NiceEval 已经验证这道题的输入没有变化，直接沿用旧结果，不需要 `accept`。

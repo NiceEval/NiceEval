@@ -12,4 +12,5 @@ export default defineExperiment({
   adapter: deterministicAgent,
   evals: ["accept/accept-target"],
   plugins: [identity({})],
+  flags: { payload: `{"padding":"${"x".repeat(700)}","revision":"before"}` },
 });

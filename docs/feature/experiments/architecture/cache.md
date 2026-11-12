@@ -349,6 +349,10 @@ interface IdentityDiagnostic {
 Human `--dry` 在原因后列出 selector 与有界值，例如 `will run — configuration changed: config:judge.model (gpt-5.6 → gpt-5.6-sol)`；
 `unexplained` 显示诊断摘要与 facts。`--dry --json`、`project.get` 与 `accept --dry` 输出同一结构，不各自相减或降级成没有语义的文案。
 
+结构化值的有界摘要不是完整 JSON 时，Human 用两侧摘要的短 SHA-256 区分可观察内容，明确标为摘要哈希，不称为执行身份 digest。
+若两份不完整摘要相同，Human 只说明一次无法比较及原因，不在箭头两侧重复相同占位文本。
+摘要缺口不改变沿用资格，也不要求改写历史 manifest。
+
 ## NiceEval 身份域变更
 
 身份由 NiceEval 计算的部分和 owner 声明的部分组成，两者各有自己的 domain。origin 的 domain 一律从它的 identity manifest 读取：

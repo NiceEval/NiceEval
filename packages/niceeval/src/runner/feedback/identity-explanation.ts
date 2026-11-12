@@ -1,5 +1,6 @@
 import type { IdentityExplanation, IdentityDiagnostic } from "../manifest.ts";
 import { stripControl } from "../../assertions/display.ts";
+import { createHash } from "node:crypto";
 
 const DELTA_COMMON_PREFIX_CAP = 24;
 const DELTA_DIFF_WINDOW = 56;
@@ -87,13 +88,34 @@ function singleLine(value: string): string {
 export function formatIdentityExplanation(explanation: IdentityExplanation): string[] {
   switch (explanation.kind) {
     case "match": return [`via ${boundedList(explanation.via, (name) => boundedSingleSide(singleLine(name))).join(", ")}`];
-    case "changed": return [boundedList(explanation.deltas, (delta) => formatDryDelta({
-      ...delta,
-      ...(delta.from === undefined ? {} : { from: humanDeltaValue(delta.from) }),
-      ...(delta.to === undefined ? {} : { to: humanDeltaValue(delta.to) }),
-    })).join(", ")];
+    case "changed": return [boundedList(explanation.deltas, formatHumanDelta).join(", ")];
     case "unexplained": return formatIdentityDiagnostic(explanation.diagnostic);
   }
+}
+
+function incompleteStructuredSummary(value: string): boolean {
+  if (!/^\s*[{[]/u.test(value)) return false;
+  try { JSON.parse(value); return false; } catch { return true; }
+}
+
+// Hash only the available display summary, never the execution identity or manifest.
+function summaryHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+function formatHumanDelta(delta: DisplayDelta): string {
+  if (delta.from !== undefined && delta.to !== undefined
+    && (incompleteStructuredSummary(delta.from) || incompleteStructuredSummary(delta.to))) {
+    if (delta.from === delta.to) {
+      return `${delta.selector} changed (comparison unavailable: recorded structured summaries are incomplete and identical)`;
+    }
+    return `${delta.selector} changed (summary sha256:${summaryHash(delta.from)} → summary sha256:${summaryHash(delta.to)}; structured summaries incomplete)`;
+  }
+  return formatDryDelta({
+    ...delta,
+    ...(delta.from === undefined ? {} : { from: humanDeltaValue(delta.from) }),
+    ...(delta.to === undefined ? {} : { to: humanDeltaValue(delta.to) }),
+  });
 }
 
 /** Structured manifest summaries become human key=value lists rather than JSON. */
@@ -104,7 +126,7 @@ function humanDeltaValue(value: string): string {
       // difference beyond the first entries of a structured summary.
       return diagnosticValue(JSON.parse(value), 0, false);
     } catch {
-      return "structured value (summary incomplete)";
+      return `summary sha256:${summaryHash(value)} (structured summary incomplete)`;
     }
   }
   return singleLine(value);
@@ -141,11 +163,7 @@ function renderDiagnostic(diagnostic: DisplayDiagnostic, indent: string, depth: 
     lines.push(`${indent}  observed inputs: no differences in comparable manifest fields`);
   } else {
     lines.push(`${indent}  observed inputs:`);
-    for (const delta of boundedList(diagnostic.observedDeltas, (delta) => formatDryDelta({
-      ...delta,
-      ...(delta.from === undefined ? {} : { from: humanDeltaValue(delta.from) }),
-      ...(delta.to === undefined ? {} : { to: humanDeltaValue(delta.to) }),
-    }))) lines.push(`${indent}    ${delta}`);
+    for (const delta of boundedList(diagnostic.observedDeltas, formatHumanDelta)) lines.push(`${indent}    ${delta}`);
   }
   for (const limitation of boundedList(diagnostic.limitations ?? [], (limitation) => `limitation: ${boundedSingleSide(singleLine(limitation))}`)) {
     lines.push(`${indent}  ${limitation}`);

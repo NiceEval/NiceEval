@@ -27,6 +27,8 @@ pnpm exec niceeval exp list --json > experiments.json
 
 ## 只跑其中一部分
 
+预览里的 `reused`、`gap`、`locked` 与缺口代码，统一见 [CLI Reference](/zh/reference/cli)。`locked` 表示检测到执行锁，不能当作结果已完成。
+
 第一个位置参数选择 Experiment，可以写 ID、目录或文件名前缀。后面的参数按评估用例 ID 前缀继续收窄：
 
 ```sh
