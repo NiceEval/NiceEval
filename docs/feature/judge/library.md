@@ -114,7 +114,7 @@ declare function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition;
 `binaryJudge` 从 `niceeval/expect` 导出，选项校验、材料与审计预算和 `defineJudge` 相同，但不接受 `anchors`。
 它通过一次受管 `classify` 请求在 `satisfied` 与 `not-satisfied` 中选择，由代码分别映射成 `1` 与 `0`。它不调用允许连续值的 `score`，不阈值化概率或置信度。
 合法 measurement 只有 `0` 或 `1`；无效输出、预算或 Provider 失败沿用 Judge 的错误与 unavailable 规则，不映射为 `0`。
-`.gate()` 不带参数时门槛为 `1`，`.score(points)` 得到 `0` 或满分。recipe identity 包含二值分类算法与 revision，审计保留类别、理由和映射结果。
+返回值使用普通 measurement handle，以 `.gate(1)` 建立质量门，`.score(points)` 得到 `0` 或满分。recipe identity 包含二值分类算法与 revision，审计保留类别、理由和映射结果。
 
 ## 现成裁判
 
