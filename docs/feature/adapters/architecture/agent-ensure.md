@@ -153,7 +153,7 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
    需要安装时，存在 `progress.installing` 就先投影到 Human active 行。
 
    安装事实（`hit`、`repaired` 或 `installed`）、探测未命中的原因与修复失败的原因出现在 Human active 行与 `invocation show` 的 Attempt detail 里。
-   它们目前不落盘：既有 runner diagnostics 的 context 是闭合形状，放不下这些字段，本契约不为此新增持久 family 或升级既有格式。
+   它们不落盘：既有 runner diagnostics 的 context 是闭合形状，放不下这些字段，本契约不为此新增持久 family 或升级既有格式。
    本页别处所说的“随安装 channel event 保存”以这一段为准，Attempt 结束后不能从 Record 读回安装事实。
 
 离线网络与内部镜像源走同样的两条出路:预装进 Prebuilt environment,或用 `installTool` 按内部渠道安装;ensure 循环只认 探测 的运行事实,不问安装出自哪条渠道。
