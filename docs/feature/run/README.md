@@ -11,6 +11,7 @@ Run 是 NiceEval 管理的运行资源。Runner 为一次选中的 Experiment �
 Run 状态是闭集：
 
 - `active`：仍允许当前 writer generation 发布新的 Planned attempt binding；
+- `recovering`：恢复已经开始、尚未收口；只在 recover 途中出现，被打断时停留在这里，由下一次 recover 继续；
 - `completed`：运行按策略收口；
 - `interrupted`：运行在用户中断或已证明 owner 终止后收口；
 - `failed`：运行因无法继续的执行或收尾错误收口。

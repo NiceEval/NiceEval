@@ -149,6 +149,22 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 
 离线网络与内部镜像源走同样的两条出路:预装进 Prebuilt environment,或用 `installTool` 按内部渠道安装;ensure 循环只认 探测 的运行事实,不问安装出自哪条渠道。
 
+### 探测未命中的原因
+
+探测以非零 exit code 正常结束时，Runner 取 stderr 的最后一条非空行作为未命中原因，先移除 ANSI escape 与控制字符，再截断到 200 Unicode code points。
+它出现在 Human active 行，并随安装 channel event 保存；没有可显示的原因时写 `probe exited <code> without a reason`。
+启动失败、timeout、signal 中断与取消沿用执行错误规则，不伪造 exit code 或正常未命中，不因此进入安装分支。
+内置 Adapter 的探测逐项检查，并在第一项不满足时写出它：
+
+```text
+checking Codex CLI 0.167.2
+probe miss: apply_patch on the login PATH is not the native Codex binary
+installing official OpenAI Codex CLI 0.167.2
+Codex CLI 0.167.2 ready
+```
+
+作者据此知道自己预装的内容差在哪一项，不必进入 Sandbox 排查（[T-31](../../../taste.md#t-31)）。原因只用于显示与诊断，不进入 identity，也不改变循环的走向。
+
 ### 为什么拆成声明与安装两半
 
 - **协议与安装的变化轴不同。**

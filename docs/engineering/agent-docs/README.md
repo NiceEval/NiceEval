@@ -4,7 +4,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 本机制把中文文档随 npm 包发布，让 agent 永远读「与当前安装版本一起发布」的文档：官网服务人，`node_modules/niceeval/` 里的文档服务 AI。
 
-用户面契约（AI 应该怎么读、init 写什么）单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](architecture/agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](architecture/agent-debug-eval.md)。
+用户旅程、每份文件的格式与不变量由 [AI-native](../../feature/ai-native/README.md) 拥有。页面里给 AI 的具体文案单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](architecture/agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](architecture/agent-debug-eval.md)。
 
 ## 打包方案：正文随包，示例按版本固定
 
@@ -51,7 +51,7 @@ tarball 内仍使用 `docs-site/**`，`INDEX.md` 同样由 `prepack` 现场生�
 
 `INDEX.md` 由一份签入的模板和一个构建输出组成：
 
-- **模板 `packages/niceeval/docs-source/INDEX.template.md`（签入 git）**：手写导语——给 AI 的阅读契约（不要按训练数据猜 API、路径相对包根、各分区含义、按任务挑 1–3 页读）、跑通实验与诊断问题的工作方法、版本规则，以及一个空的 `<!-- GENERATED:BEGIN bundled-docs-tree -->` 区块。模板由独立 Nx 项目拥有，只下游到 package E2E；生成物仍写入 npm 包根。
+- **模板 `packages/niceeval/docs-source/INDEX.template.md`（签入 git）**：手写导语——给 AI 的阅读契约（不要按训练数据猜 API、路径相对包根、各分区含义、按任务挑 1–3 页读）、按任务路由、版本规则，以及一个空的 `<!-- GENERATED:BEGIN bundled-docs-tree -->` 区块。模板由独立 Nx 项目拥有，只下游到 package E2E；生成物仍写入 npm 包根。
   导语内容不存在于任何单页的 frontmatter 里，是这套机制里唯一需要人维护的文案。
 - **输出 `INDEX.md`（不签入，gitignore）**：生成器读模板、把文档树填进区块、写出包根 `INDEX.md`。
   树按 `docs-site/zh` 顶层目录分组，顺序按 agent 的使用顺序排（tutorials → explanation → how-to → reference → troubleshooting → examples）。清单外的新目录自动排在其后；每页一行「路径 — `title`：`description`」。

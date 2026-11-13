@@ -22,15 +22,15 @@
      description: "检索后汇报且不删除文件",
      async test(t) {
        const session = t.newSession();
-       const searched = await session.send("调用 search 检索项目发布说明。");
+       const searched = await session.send("最近一次发布改了哪些东西？");
        searched.calledTool(toolMatch("search").atLeast(1))
          .label("本轮进行检索");
 
-       const summary = await session.send("仅根据已有结果汇报，不再调用工具。");
+       const summary = await session.send("就按刚才查到的内容，给我写三句话的总结。");
        summary.usedNoTools().label("汇报轮不用工具");
        session.calledTool("search").label("会话包含检索");
 
-       await t.send("简短问候用户。");
+       await t.send("顺便看看 CHANGELOG 里有没有错别字。");
        t.notCalledTool("delete_file").label("全部会话未删除文件");
      },
    });

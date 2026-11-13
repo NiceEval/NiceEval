@@ -594,7 +594,7 @@ Experiments
 Attempts · my-agent
   Eval refund-policy
   Gap identity-mismatch
-  Previous result @1K1P0VJAPVJ12
+  Previous result @1K1P0VJAPVJ12 (passed)
 
   Eval weather-tool
   Attempt         Verdict  Duration
@@ -744,7 +744,7 @@ Open: niceeval view @01JSHOWATTEMPT
 ### Attempt 断言详情示例
 
 `show @<locator> --assertions` 呈现该 Attempt 各断言条目的判定、分值与理由。
-每个条目的标记写它对结果起什么作用，读者不必读源码就知道哪一条决定了 Verdict：
+每个条目的标记写它对结果起什么作用，读者不必读源码就知道哪一条决定了 Verdict（[T-23](../../taste.md#t-23)）：
 
 | 标记 | 条目 | 取值 |
 |---|---|---|

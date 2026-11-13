@@ -178,6 +178,9 @@ batchClassify 必须恰好包含请求的全部唯一 ID，结果顺序可不同
 complete=false 是合法提取响应，但该必要调用以 unavailable 结束，并在审计中保留原始响应。
 
 分类的合法标签和标签到分数的映射进入冻结配置。
+`binaryJudge` 使用 `classify` 的 `satisfied` / `not-satisfied`，由代码映射为 1 / 0。它与 `defineJudge` 共享 `defineScoreMatch` 的登记、材料冻结、预算、取消、Provider 和审计；算法及 revision 独立进入 recipe identity。
+二值保证来自 exact choice 解码与代码映射，不来自两个 score anchor。无效 choice 沿用原语解码错误，不通过四舍五入产生合法分数。
+
 两答案比较以候选答案为计分方向：候选优于参考为 1，平局为 0.5，参考更优为 0。
 该分数表达本次偏好判定，不声称是胜率或消除了位置偏差。
 

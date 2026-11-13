@@ -93,6 +93,29 @@ anchors 默认提供 0 与 1 的描述；显式 anchors 有 2 至 32 项，measu
 预算默认值与总账规则由 [Architecture](architecture.md#预算与生命周期) 拥有。
 定义中的 rubric、anchors、算法版本与预算参与身份，handle 的质量门和分值不改变 Judge 请求。
 
+## 二值裁判
+
+只问“满足还是不满足”的判据用 `binaryJudge`，不必每个项目自己封装两个 anchor：
+
+```ts
+import { binaryJudge } from "niceeval/expect";
+
+t.judge({ reply: turn.reply, verified }, binaryJudge({
+  name: "handoff-names-violation",
+  rubric: "Y 当且仅当回复指出了被读取的禁区路径，并且报告的结果与 verified 一致。",
+})).score(2);
+```
+
+```ts
+type BinaryJudgeOptions = Omit<JudgeOptions, "anchors">;
+declare function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition;
+```
+
+`binaryJudge` 从 `niceeval/expect` 导出，选项校验、材料与审计预算和 `defineJudge` 相同，但不接受 `anchors`。
+它通过一次受管 `classify` 请求在 `satisfied` 与 `not-satisfied` 中选择，由代码分别映射成 `1` 与 `0`。它不调用允许连续值的 `score`，不阈值化概率或置信度。
+合法 measurement 只有 `0` 或 `1`；无效输出、预算或 Provider 失败沿用 Judge 的错误与 unavailable 规则，不映射为 `0`。
+返回值使用普通 measurement handle，以 `.gate(1)` 建立质量门，`.score(points)` 得到 `0` 或满分。recipe identity 包含二值分类算法与 revision，审计保留类别、理由和映射结果。
+
 ## 现成裁判
 
 ```ts
