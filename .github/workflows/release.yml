@@ -249,3 +249,50 @@ jobs:
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes $PRERELEASE_FLAG
           fi
+
+  promote-init:
+    name: Promote verified stable installation guide
+    needs: [prepare-release, publish]
+    if: ${{ !contains(needs.prepare-release.outputs.version, '-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: stable-init-promotion
+      cancel-in-progress: false
+    steps:
+      - name: Checkout promotion tooling and stable state
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Verify npm publication before promoting
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+          EXPECTED_SHA256: ${{ needs.prepare-release.outputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          npm view "niceeval@$VERSION" dist.integrity --json > "${RUNNER_TEMP}/init-integrity.json"
+          test -s "${RUNNER_TEMP}/init-integrity.json"
+      - name: Download published candidate identity
+        uses: actions/download-artifact@v8
+        with:
+          name: niceeval-release-candidate
+          path: ${{ runner.temp }}/niceeval-release-candidate
+      - name: Check exact published integrity and promote tag content
+        env:
+          TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          expected="$(jq -r '.integrity' "${RUNNER_TEMP}/niceeval-release-candidate/candidate-pack.json")"
+          actual="$(jq -r '.' "${RUNNER_TEMP}/init-integrity.json")"
+          test "$expected" = "$actual"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          node .github/scripts/promote-init.mjs --promote "$TAG"

@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck",
-    "lint": "concord check && pnpm run lint:docs-site",
+    "lint": "concord check && node .github/scripts/promote-init.mjs --check && pnpm run lint:docs-site",
     "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names validate,links \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "niceeval": "node packages/niceeval/bin/niceeval.js",
     "e2e": "tsx packages/e2e-runner/src/cli.ts",

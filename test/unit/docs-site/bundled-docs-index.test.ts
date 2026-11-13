@@ -66,6 +66,7 @@ describe("随包 AI 文档索引", () => {
     // 接入流程正文住在随包页面(docs-site/zh/tutorials/agent-onboarding.mdx),向导只做心智模型、前置与安装。
     for (const name of ["INIT.zh.md", "INIT.md"]) {
       const text = await readFile(join(ROOT, name), "utf-8");
+      expect(Buffer.byteLength(text, "utf8"), `${name} 不超过 16384 UTF-8 bytes`).toBeLessThanOrEqual(16384);
       expect(text, `${name} 不得引用线上文档页面`).not.toMatch(/niceeval\.com\/docs/);
       expect(text, `${name} 不得引用 GitHub raw 文档`).not.toContain("raw.githubusercontent.com");
     }

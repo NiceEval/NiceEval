@@ -33,6 +33,10 @@ Usage:
 
 Options:
   -h, --help  print this help
+
+Creates evals/ and config in the current package. Refreshes all repository-root
+AGENTS.md / CLAUDE.md files and both .agents and .claude NiceEval skills.
+Requires node_modules/niceeval/INDEX.md on disk.
 `;
 
 type ProjectCliRequirement =
@@ -87,10 +91,14 @@ export const projectInitCliCommand: CliCommandContribution<
       return 1;
     }
     const initialized = yield* projectHost.initialize().pipe(
-      Effect.mapError((cause) => projectFailure("initialize project", cause)),
+      Effect.catch((cause) => Effect.gen(function* () {
+        yield* stderr(`${cause.message ?? String(cause.cause)}\n`);
+        return undefined;
+      })),
     );
+    if (initialized === undefined) return 1;
     yield* stdout(
-      "Ready: evals/, niceeval.config.ts, and the niceeval agent-rules block in AGENTS.md (tells coding agents to read the bundled docs before writing evals).\n",
+      "Ready: evals/, niceeval.config.ts, repository agent rules and both NiceEval skills (read the installed bundled index before writing evals).\n",
     );
     if (!initialized.prefersEsm) {
       yield* stdout(

@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { Effect, Layer } from "effect";
+import { dirname, join, relative, resolve } from "node:path";
+import { Effect, Layer, Schema } from "effect";
 import {
   ProjectFileSystem,
   ProjectManifestFacts,
@@ -63,7 +64,10 @@ const nodeProjectFileSystem: ProjectFileSystemService = {
   writeText: ({ root, path, text }) => {
     const target = managedPath(root, path);
     return Effect.tryPromise({
-      try: () => writeFile(target, text, "utf8"),
+      try: async () => {
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, text, "utf8");
+      },
       catch: (cause) => failure("write-file", target, cause),
     });
   },
@@ -104,6 +108,48 @@ export const NodeProjectManifestFactsLive = Layer.succeed(ProjectManifestFacts, 
 });
 
 export const NodeProjectProcessFactsLive = Layer.succeed(ProjectProcessFacts, {
+  guidance: (cwd) => Effect.gen(function* () {
+    const repositoryRoot = yield* Effect.sync(() => {
+      try {
+        return execFileSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000,
+        }).trim();
+      } catch { return cwd; }
+    });
+    const prefix = relative(repositoryRoot, cwd).split("\\").join("/");
+    const manager = yield* Effect.tryPromise({
+      try: async () => {
+        let directory = resolve(cwd);
+        while (true) {
+          try {
+            const manifest = Schema.decodeUnknownSync(Schema.Struct({ packageManager: Schema.optional(Schema.String) }))(
+              JSON.parse(await readFile(join(directory, "package.json"), "utf8")),
+            );
+            if (manifest.packageManager !== undefined) return manifest.packageManager.split("@")[0];
+          } catch (cause) {
+            if (!(cause instanceof SyntaxError) && !(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
+          }
+          for (const [lock, manager] of [["pnpm-lock.yaml", "pnpm"], ["yarn.lock", "yarn"], ["package-lock.json", "npm"], ["bun.lock", "bun"], ["bun.lockb", "bun"]]) {
+            try { await lstat(join(directory, lock!)); return manager!; }
+            catch (cause) { if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause; }
+          }
+          if (directory === repositoryRoot) break;
+          const parent = dirname(directory);
+          if (parent === directory) break;
+          directory = parent;
+        }
+        return (process.env.npm_config_user_agent ?? "").split("/")[0];
+      },
+      catch: (cause) => failure("inspect-package-manifest", cwd, cause),
+    });
+    const tool = ["pnpm", "yarn", "npm", "bun"].includes(manager) ? manager : "pnpm";
+    const quoted = prefix === "" ? "" : `'${prefix.replaceAll("'", "'\\''")}'`;
+    const command = tool === "pnpm" ? `pnpm${quoted ? ` --dir ${quoted}` : ""} exec niceeval`
+      : tool === "npm" ? `npm${quoted ? ` --prefix ${quoted}` : ""} exec -- niceeval`
+      : tool === "yarn" ? `yarn${quoted ? ` --cwd ${quoted}` : ""} exec niceeval`
+      : `bun${quoted ? ` --cwd ${quoted}` : ""} run niceeval`;
+    return { repositoryRoot, indexPath: `${prefix ? `${prefix}/` : ""}node_modules/niceeval/INDEX.md`, command };
+  }),
   cwd: Effect.try({
     try: () => process.cwd(),
     catch: (cause) => failure("read-process-cwd", "cwd", cause),

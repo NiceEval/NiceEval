@@ -6,6 +6,15 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 
 这一页是 Coding Agent 把 NiceEval 接入一个项目的执行步骤。前提：`niceeval` 依赖已经装进项目、`niceeval init` 已经运行，你是从随包 `INDEX.md` 进入本页的。用用户的语言与用户交流。所有 API、字段和 CLI 行为以随包文档为准，不要凭训练记忆现编。
 
+`init` 在依赖所属包目录创建 `evals/` 与配置，在 Git 仓库根刷新每个已有的 `AGENTS.md` 和 `CLAUDE.md`。
+两者都没有时创建 `AGENTS.md`，并始终写入 `.agents/skills/niceeval/SKILL.md` 与 `.claude/skills/niceeval/SKILL.md`。
+指引记录相对仓库根的随包索引路径；重复运行不会改写内容相同的文件。
+
+索引未落盘时，`init` 报 `bundled-docs-not-on-disk`；先在当前包目录安装依赖再重试，Yarn Plug'n'Play 不受支持。
+规则标记损坏时，按错误里的文件与行号保留一组成对标记，或同时移除两枚标记，再重试。
+同名 skill 不含托管注释时，先移走自己的文件；这些校验失败都不会写入任何项目指引。
+
+
 编写评估前，按 [NiceEval Taste](/zh/tutorials/niceeval-taste) 确定业务判据、充分证据与权重。交付时让读者只读评估正文就能解释通过条件与计分。
 
 ## 第 1 步：探索项目，再和用户确认
