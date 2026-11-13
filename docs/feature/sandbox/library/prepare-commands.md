@@ -86,6 +86,27 @@ export default defineExperiment({
 - 普通 shell、网络与时钟读取是否确定由作者承诺。版本、下载内容身份和安装协议必须固定；NiceEval 不对 script 做通用污点证明。
 - 需要实例 handle、secret、租约或外部会话时使用普通 callback before，并接受 opaque barrier。
 
+### 脚本文件与显示名
+
+脚本超过几行时放进独立文件，用 `script` 代替 `command`：
+
+```typescript
+shell({
+  id: "prepare-runtimes",
+  label: "准备 Node 与 inner runtime 镜像",
+  script: new URL("./prepare-runtimes.sh", import.meta.url),
+  user: "root",
+})
+```
+
+- `script` 接受 Eval 或 Experiment 模块相对的 `file:` URL，与 `command` 二选一；两者都给或都不给在 planning 失败。
+- 文件内容在 planning 时读取，与内联 `command` 一样进入自动指纹；改脚本一个字节就让这一步及其后缀重新执行。文件不存在或穿出项目根时 planning 失败并写出路径。
+- 文件内容原样交给 shell，不做插值。需要传值时用 `env` 声明子进程变量，值进入指纹。
+- `niceeval debug` 对 `script` 显示项目相对路径与内容摘要；`--full` 显示完整脚本。
+
+Human 进度行只写 `label`，省略时写 `id`，不写命令文本。
+`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；完整命令由 `niceeval debug` 与 `show @<locator> --timing` 提供。
+
 template 预装只是让版本检查首测即成功的一种手段。
 声明照常保留；预装缺失或漂移时命令现场补齐。
 

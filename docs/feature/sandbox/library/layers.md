@@ -17,7 +17,7 @@ one linked pair
   + one Agent layer
 
 before order
-  = dependencies
+  = dependencies (explicit edges + same-layer chain order)
   -> lowest normalized changeFrequency
   -> experiment / eval-group / eval / agent
   -> stable owner id
@@ -443,6 +443,20 @@ declare const changeFrequency: {
 
 这些常量只提高可读性。作者可以使用任意合法小数；常量名称不进入 identity，规范化后的数值进入。
 
+同一个 layer 的 `.before()` 链按书写顺序执行。链上每个 before 隐式依赖同一 layer 里写在它前面的那个 before，声明式 action 与 callback 都算。
+作者不需要为顺序再写 `dependsOn`，也不需要给 `changeFrequency` 加偏移。
+
+```typescript
+sandbox: instaboxSandbox({ templateId: "universal" })
+  .before(installToolchain)   // 第一步
+  .before(uploadSeed)         // 隐式依赖 installToolchain
+  .before(installCandidate)   // 隐式依赖 uploadSeed
+```
+
+`changeFrequency` 因此只决定不同 owner 的 action 怎样交错：planning 在满足全部依赖后，仍从 ready set 选择数值最小的 action。
+同一条链里后一步的数值比前一步小是合法的，它不会让后一步提前。
+`dependsOn` 与 capability 用来表达跨 owner 的先后，或同一 layer 中由不同函数各自拼出的链之间的先后。
+
 `dependsOn` 与具名 `provides` / `requires` capability 形成边。普通 inputs 只参与 identity、缓存资格与 occurrence 编译，不形成边。缺失 action、重复 capability provider、跨 occurrence 依赖或循环在 Provider I/O 前报错。
 Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,也不自动并行。
 
@@ -492,6 +506,8 @@ interface SandboxActionDefinition<A, I extends JsonValue> {
 
 interface SandboxBeforeActionOptions {
   readonly id: string;
+  /** Human 进度与 debug 的显示名；不进入 identity。省略时显示 id。 */
+  readonly label?: string;
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
   readonly requires?: readonly SandboxCapability[];
