@@ -455,13 +455,20 @@ function runShow(
         ) {
           if (current) {
             const document = yield* select("project.get", () => selectInspectionOperation(opened, { kind: "project.get" }));
+            const references = new Map<string, InspectionSuccessDocumentFor<"attempt.get">["attempt"]>();
+            for (const slot of document.project.plannedAttempts) {
+              if (slot.state !== "gap" || slot.previous === null || references.has(slot.previous.locator)) continue;
+              const previous = slot.previous;
+              const attempt = yield* select("attempt.get", () => selectInspectionOperation(opened, { kind: "attempt.get", locator: previous.locator }));
+              references.set(previous.locator, attempt.attempt);
+            }
             if (reference) {
-              yield* write("stdout", renderReferences(document.project));
+              yield* write("stdout", renderReferences(document.project, references));
               return 0;
             }
             // The presentation model only extracts already-closed aggregate fields.
             const view = yield* project("project.get", () => projectOverview({ ...document, operation: "overview.get", overview: document.project }));
-            yield* write("stdout", renderOverview(view, { all, current: document.project }));
+            yield* write("stdout", renderOverview(view, { all, current: document.project, references }));
             return 0;
           }
           const document = yield* select("overview.get", () =>

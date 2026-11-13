@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/inspection/cli.md
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 import { assertionRoleLabel, assertionRoleCounts, assertionVerdictLine } from "../assertions/display.ts";
+import type { InspectionAttemptResult } from "../inspection/results.ts";
 import type { AssertionDetailResult } from "../inspection/assertion-projection.ts";
 import type { AssertionFactValue } from "../assertions/record/model.ts";
 import { formatNumericUnit } from "../assertions/quantity.ts";
@@ -247,9 +248,36 @@ const compactContinuation = (
 const textOrNotRecorded = (value: string | null | undefined): string =>
   value ?? "not-recorded";
 
+type ReferenceAttempts = ReadonlyMap<string, InspectionAttemptResult>;
+
+function previousResultText(locator: string, attempts: ReferenceAttempts): string {
+  const attempt = attempts.get(locator);
+  const outcome = attempt === undefined ? "unavailable" : `${attempt.verdict ?? "unavailable"}${attempt.score.state === "not-scored" ? "" : `, ${attempt.score.state === "unavailable" ? "?" : fmt(attempt.score.earned)}/${fmt(attempt.score.possible)}`}`;
+  return `Previous result ${locator} (${outcome})`;
+}
+
+function referenceSummary(project: InspectionProjectResult, attempts: ReferenceAttempts): TerminalPanelContentBlock[] {
+  const previous = project.plannedAttempts.flatMap(slot => slot.state === "gap" && slot.previous !== null ? [slot.previous] : []);
+  if (previous.length === 0) return [];
+  const results = previous.flatMap(slot => { const attempt = attempts.get(slot.locator); return attempt === undefined ? [] : [attempt]; });
+  const pass = results.filter(attempt => attempt.score.state === "not-scored");
+  const scored = results.flatMap(attempt => attempt.score.state === "not-scored" ? [] : [attempt.score]);
+  const passDenominator = pass.filter(attempt => attempt.verdict !== null).length;
+  return [
+    { kind: "divider", title: "Reference results (from previous recorded attempts)" },
+    { kind: "keyValue", entries: [
+      { key: "Previous attempts", value: `${previous.length} of ${project.coverage.gaps} gaps` },
+      { key: "Verdicts", value: ["passed", "failed", "errored", "skipped"].map(verdict => `${results.filter(attempt => attempt.verdict === verdict).length} ${verdict}`).join("; ") },
+      ...(pass.length === 0 ? [] : [{ key: "Pass rate", value: passDenominator === 0 ? "unavailable" : `${fmt(100 * pass.filter(attempt => attempt.verdict === "passed").length / passDenominator)}%` }]),
+      ...(scored.length === 0 ? [] : [{ key: "Score", value: `${scored.some(score => score.state === "unavailable") ? "?" : fmt(scored.reduce((sum, score) => sum + score.earned, 0))}/${fmt(scored.reduce((sum, score) => sum + score.possible, 0))}` }]),
+      { key: "Notice", value: "Prior configuration; rerun required to update target" },
+    ] },
+  ];
+}
+
 export function renderOverview(
   value: OverviewView,
-  options: { readonly all?: boolean; readonly recorded?: boolean; readonly current?: InspectionProjectResult } = {},
+  options: { readonly all?: boolean; readonly recorded?: boolean; readonly current?: InspectionProjectResult; readonly references?: ReferenceAttempts } = {},
 ): string {
   const all = options.all === true;
   const current = options.current;
@@ -269,16 +297,7 @@ export function renderOverview(
             ...(value.totals.evaluationKind === "pass" ? [] : [{ key: "Score", value: metric(value.totals.score) }]),
           ],
         },
-        ...(current !== undefined && current.coverage.gaps > 0 && current.history.length > 0 ? [
-          { kind: "divider" as const, title: "Reference results (from previous recorded attempts)" },
-          {
-            kind: "keyValue" as const,
-            entries: [
-              { key: "Notice", value: "Prior configuration; rerun required to update target" },
-              { key: "Previous attempts", value: `${current.history.length} recorded` },
-            ],
-          },
-        ] : []),
+        ...(current === undefined ? [] : referenceSummary(current, options.references ?? new Map())),
       ],
     },
   ];
@@ -335,7 +354,7 @@ export function renderOverview(
             ...gaps.flatMap((slot): TerminalPanelContentBlock[] => slot.state !== "gap" ? [] : [
               { kind: "divider", title: `Eval ${relativeToGroup(slot.evalId, group.name)}`, attachNext: true },
               { kind: "divider", title: `Gap ${slot.reason}`, attachNext: slot.previous !== null },
-              ...(slot.previous === null ? [] : [{ kind: "divider" as const, title: `Previous result ${slot.previous.locator}` }]),
+              ...(slot.previous === null ? [] : [{ kind: "divider" as const, title: previousResultText(slot.previous.locator, options.references ?? new Map()) }]),
             ]),
             ...attemptBlocks(experimentCells, group.name, all, true),
             ...compactContinuation(experimentCells, experiment.experimentId, all, true),
@@ -2108,12 +2127,14 @@ export function renderComparison(comparison: Comparison, attempts: ComparisonAtt
   return terminal(blocks);
 }
 
-export function renderReferences(project: InspectionProjectResult): string {
+export function renderReferences(project: InspectionProjectResult, attempts: ReferenceAttempts = new Map()): string {
+  const previous = project.plannedAttempts.flatMap(slot => slot.state === "gap" && slot.previous !== null ? [{ ...slot, previous: slot.previous }] : []);
   return terminal([{
-    kind: "panel", title: "Historical reference results", blocks: [{
-      kind: "table", columns: [{ header: "Experiment" }, { header: "Eval" }, { header: "Attempt" }, { header: "Previous result" }],
-      rows: project.history.map((slot) => [slot.experimentId, slot.evalId, String(slot.attemptOrdinal), slot.locator ?? slot.sourceRunId]),
-    }],
+    kind: "panel", title: "Historical reference results", blocks: [
+      ...referenceSummary(project, attempts),
+      ...previous.map(slot => ({ kind: "divider" as const, title: `${slot.experimentId} · ${slot.evalId} · ${slot.attemptOrdinal} · ${previousResultText(slot.previous.locator, attempts)}` })),
+      ...(project.history.length === 0 ? [] : [{ kind: "table" as const, columns: [{ header: "Experiment" }, { header: "Eval" }, { header: "Attempt" }, { header: "Historical result" }], rows: project.history.map(slot => [slot.experimentId, slot.evalId, String(slot.attemptOrdinal), slot.locator ?? slot.sourceRunId]) }]),
+    ],
   }]);
 }
 
