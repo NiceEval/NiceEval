@@ -10,6 +10,7 @@ const NonNegativeIntegerSchema = Schema.Number.pipe(
 
 export const RunStateSchema = Schema.Literals([
   "active",
+  "recovering",
   "completed",
   "interrupted",
   "failed",
@@ -59,6 +60,16 @@ const RunCoverageSchema = Schema.Struct({
   missing: NonNegativeIntegerSchema,
 });
 
+/** Observe a live Run owner; unknown observations explain why recovery cannot be authorized. */
+export const RunOwnerObservationSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literals(["alive", "gone"]), observedAt: Schema.String }),
+  Schema.Struct({
+    state: Schema.Literal("unknown"),
+    reason: Schema.Literals(["other-host", "identity-not-recorded", "portable-record", "probe-failed"]),
+    observedAt: Schema.String,
+  }),
+]);
+
 export const RunSummarySchema = Schema.Struct({
   runId: Schema.String,
   invocationId: Schema.String,
@@ -67,6 +78,8 @@ export const RunSummarySchema = Schema.Struct({
   startedAt: Schema.String,
   completedAt: Schema.optional(Schema.String),
   coverage: RunCoverageSchema,
+  /** Present only for active or recovering Runs; never use this observation as mutation authority. */
+  owner: Schema.optional(RunOwnerObservationSchema),
 });
 
 export const RunDetailSchema = RunSummarySchema.pipe(Schema.fieldsAssign({
@@ -82,6 +95,8 @@ export const RunListDocumentSchema = Schema.Struct({
   protocol: Schema.Literal(RUN_PROTOCOL),
   operation: Schema.Literal("run.list"),
   runs: Schema.Array(RunSummarySchema),
+  /** Count matching Runs excluded by the requested limit at the same cutoff. */
+  omitted: NonNegativeIntegerSchema,
   continuation: Schema.optional(Schema.String),
 });
 
@@ -105,11 +120,23 @@ export const RunExportDocumentSchema = Schema.Struct({
   runIds: Schema.Array(Schema.String),
 });
 
+/** Decode the independent outcomes returned by `run recover --orphaned --yes --json`. */
+export const RunRecoverOrphanedDocumentSchema = Schema.Struct({
+  protocol: Schema.Literal(RUN_PROTOCOL),
+  operation: Schema.Literal("run.recover-orphaned"),
+  items: Schema.Array(Schema.Struct({
+    runId: Schema.String,
+    outcome: Schema.Literals(["recovered", "skipped", "failed"]),
+    reason: Schema.optional(Schema.String),
+  })),
+});
+
 export const RunDocumentSchema = Schema.Union([
   RunImportDocumentSchema,
   RunExportDocumentSchema,
   RunListDocumentSchema,
   RunGetDocumentSchema,
+  RunRecoverOrphanedDocumentSchema,
 ]);
 
 export type RunState = Schema.Schema.Type<typeof RunStateSchema>;
@@ -120,6 +147,10 @@ export type RunSummary = Schema.Schema.Type<typeof RunSummarySchema>;
 export type RunDetail = Schema.Schema.Type<typeof RunDetailSchema>;
 export type PublicationCutoff = Schema.Schema.Type<typeof PublicationCutoffSchema>;
 export type RunListDocument = Schema.Schema.Type<typeof RunListDocumentSchema>;
+/** Read the owner state and observation time attached to a nonterminal Run. */
+export type RunOwnerObservation = Schema.Schema.Type<typeof RunOwnerObservationSchema>;
+/** Inspect each recovered, skipped, or failed Run after an orphan recovery request. */
+export type RunRecoverOrphanedDocument = Schema.Schema.Type<typeof RunRecoverOrphanedDocumentSchema>;
 export type RunGetDocument = Schema.Schema.Type<typeof RunGetDocumentSchema>;
 export type RunDocument = Schema.Schema.Type<typeof RunDocumentSchema>;
 

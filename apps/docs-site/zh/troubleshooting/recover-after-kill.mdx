@@ -15,12 +15,15 @@ description: "进程被 kill -9、CI 超时或断电中断后，保留已经跑�
 ```bash
 pnpm exec niceeval run list --invocation <invocation-id>
 pnpm exec niceeval show --run <run-id>
-pnpm exec niceeval show --run <run-id>
 ```
 
 也可以在浏览器里看：`pnpm exec niceeval view --run <run-id>`。
 
 被强杀的 Run 状态仍是 `active`。它会显示已经跑完的 Attempt，还没跑的显示为 `pending`。不要根据运行时长、PID 过期或心跳停止就认定它可以被接管。
+
+不知道 Invocation ID 时，可以用 `pnpm exec niceeval run list --state active --state recovering --experiment <experiment-prefix> --limit 20` 找到待处理的 Run。`--experiment` 按路径前缀匹配；列表按新到旧排列，并说明省略了多少项。
+
+owner 为 `gone` 表示已证明原进程终止；`alive` 表示观察时仍在运行；`unknown` 表示证据不足，并会写出原因。外部 Record 的 owner 始终显示为 `unknown`。这些都是观察时的结果，恢复时还会重新核实。
 
 ## 结束失去进程的 Run
 
@@ -28,11 +31,17 @@ pnpm exec niceeval show --run <run-id>
 
 ```bash
 pnpm exec niceeval run recover <run-id> --yes
+# 对列表中可证明原进程终止的候选逐项恢复
+pnpm exec niceeval run recover --orphaned --yes --json
 ```
 
 `run recover` 会先核实原进程确实已经终止。核实通过后，它把 Run 标成 `interrupted`，并为没跑完的 Attempt 写明缺失原因。它不会删除 Run 或已经跑完的 Attempt，原进程即使残留也不能再写入。
 
 证据不足时，命令会拒绝恢复。这时先确认原进程、CI job 和可能的远程 worker 都已停止，再重试。不要因为“已经等了很久”就绕过这个检查。
+
+集合恢复会跳过 alive、unknown owner，并逐项报告原因。单项失败不阻止其余项，但整条命令会非零退出。JSON 模式需要 `--yes`；交互终端可以不传，核对候选后确认一次。
+
+如果恢复本身被中断，Run 可能停在 `recovering`。确认上一次恢复进程已结束后，重试同一命令即可继续。它保留已发布的 Attempt，不会替你释放共享 State、执行 Experiment after 或清理 Sandbox。
 
 ## 补跑没完成的部分
 

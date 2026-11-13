@@ -9,6 +9,7 @@ import {
   currentPublicationCutoff,
   deleteRunResource,
   observeRunWriterTermination,
+  createRunWriterGeneration,
   readRunResource,
   recoverRunResource,
   RunStorageError,
@@ -139,7 +140,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
             message: `Run ${runId} was not found.`,
           }));
         }
-        if (run.state === "active") {
+        if (run.state === "active" || run.state === "recovering") {
           return yield* Effect.fail(new RunDeleteError({
             operation: "delete",
             code: "run-active",
@@ -174,7 +175,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
             message: `Run ${runId} was not found.`,
           }));
         }
-        if (run.state !== "active") {
+        if (run.state !== "active" && run.state !== "recovering") {
           return yield* Effect.fail(new RunRecoverError({
             operation: "recover",
             code: "run-terminal",
@@ -199,7 +200,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
         yield* recoverRunResource(root, {
           runId,
           expectedWriterGeneration: run.writerGeneration,
-          recoveryWriterGeneration: `recovery-v1:${randomUUID()}`,
+          recoveryWriterGeneration: createRunWriterGeneration(`recovery-v1:${randomUUID()}`),
           completedAt: DateTime.formatIso(now),
           evidence: {
             kind: observation.evidenceKind,

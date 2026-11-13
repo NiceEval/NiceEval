@@ -11,7 +11,14 @@ export type { RunDetail, RunSlot, RunState, RunSummary } from "../protocol.ts";
 
 export interface RunListRequest {
   readonly cwd: string;
+  /** Select exactly one Invocation, as with `run list --invocation`. */
   readonly invocationId?: string;
+  /** Include any selected state; provide at least one when filtering. */
+  readonly states?: readonly [RunState, ...RunState[]];
+  /** Match an Experiment ID path prefix, as with `run list --experiment`. */
+  readonly experimentIdPrefix?: string;
+  /** Keep the newest n matching Runs; must be a positive safe integer. */
+  readonly limit?: number;
   readonly continuation?: string;
 }
 
@@ -28,6 +35,8 @@ export interface RunListResult {
   readonly operation: "run.list";
   readonly publicationCutoff: PublicationCutoff;
   readonly runs: readonly RunSummary[];
+  /** Count matching Runs excluded by limit at this publication cutoff. */
+  readonly omitted: number;
   readonly continuation?: string;
 }
 
@@ -54,6 +63,7 @@ export class RunReadError extends Data.TaggedError("RunReadError")<{
     | "run-not-found"
     | "run-continuation-invalid"
     | "run-invocation-filter-unavailable"
+    | "run-filter-invalid"
     | "run-read-failed";
   readonly message: string;
   readonly cause?: unknown;

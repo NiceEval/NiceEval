@@ -16,6 +16,7 @@ import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { RECORD_SQLITE_MAX_ROW_BYTES } from "../../record/sqlite/types.ts";
 import { RunStorageError, type RunStorageErrorCode } from "./errors.ts";
+import { observeRunWriterTermination } from "./owner-identity.ts";
 import {
   RUN_ABSENCE_REASONS,
   RUN_TERMINAL_STATES,
@@ -182,6 +183,9 @@ function requireActiveWriter(connection: RecordDatabase, runId: string, writerGe
   if (run.terminalState !== undefined) throw new RunStorageError("run-not-active", `Run ${runId} is already ${run.terminalState}`);
   if (run.writerGeneration !== writerGeneration) {
     throw new RunStorageError("writer-generation-mismatch", `Run ${runId} writer generation is fenced`);
+  }
+  if (recordStatement(connection, "SELECT 1 FROM ne19_run_recoveries WHERE run_id=?").get(runId) !== undefined) {
+    throw new RunStorageError("run-not-active", `Run ${runId} is recovering`);
   }
   return run;
 }
@@ -497,8 +501,35 @@ export function recoverRunResourceOnConnection(
   if (input.expectedWriterGeneration === input.recoveryWriterGeneration) {
     throw new RunStorageError("recovery-evidence-required", "Recovery must advance to a distinct writer generation");
   }
-  return withImmediateTransaction(connection, input.deadlineEpochMs, "recover-run-resource", () => {
-    requireActiveWriter(connection, input.runId, input.expectedWriterGeneration);
+  // The first commit fences publication before cleanup. The existing recovery
+  // row records its first visible revision; retries retain that cutoff fact.
+  withImmediateTransaction(connection, input.deadlineEpochMs, "begin-run-recovery", () => {
+    const run = runHeader(connection, input.runId);
+    if (run === undefined) throw new RunStorageError("run-not-found", `Run ${input.runId} does not exist`);
+    if (run.terminalState !== undefined) throw new RunStorageError("run-not-active", `Run ${input.runId} is terminal`);
+    if (run.writerGeneration !== input.expectedWriterGeneration) throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} writer changed before recovery`);
+    const observation = observeRunWriterTermination(run.writerGeneration);
+    if (observation.state !== "terminated" || input.evidence.identity !== observation.evidenceIdentity || input.evidence.kind !== observation.evidenceKind) {
+      throw new RunStorageError("recovery-evidence-required", `Run ${input.runId} owner termination could not be revalidated`);
+    }
+    const revision = nextRevision(connection);
+    recordStatement(connection, "UPDATE ne19_run_resources SET current_writer_generation=? WHERE run_id=? AND current_writer_generation=? AND terminal_state IS NULL")
+      .run(input.recoveryWriterGeneration, input.runId, input.expectedWriterGeneration);
+    recordStatement(connection, `INSERT INTO ne19_run_recoveries(run_id,previous_writer_generation,recovery_writer_generation,
+      evidence_kind,evidence_identity,evidence_observed_at,recovery_revision) VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(run_id) DO UPDATE SET previous_writer_generation=excluded.previous_writer_generation,
+      recovery_writer_generation=excluded.recovery_writer_generation,evidence_kind=excluded.evidence_kind,
+      evidence_identity=excluded.evidence_identity,evidence_observed_at=excluded.evidence_observed_at`).run(
+      input.runId, input.expectedWriterGeneration, input.recoveryWriterGeneration,
+      observation.evidenceKind, observation.evidenceIdentity, input.evidence.observedAt, revision,
+    );
+  });
+  return withImmediateTransaction(connection, input.deadlineEpochMs, "finish-run-recovery", () => {
+    const run = runHeader(connection, input.runId);
+    const actor = recordStatement(connection, "SELECT recovery_writer_generation FROM ne19_run_recoveries WHERE run_id=?").get(input.runId) as Row | undefined;
+    if (run?.terminalState !== undefined || run?.writerGeneration !== input.recoveryWriterGeneration || actor === undefined || text(actor, "recovery_writer_generation") !== input.recoveryWriterGeneration) {
+      throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
+    }
     const absences = pendingSlotIds(connection, input.runId).map((slotId) => Object.freeze({
       slotId,
       reason: "interrupted-before-publication" as const,
@@ -511,7 +542,7 @@ export function recoverRunResourceOnConnection(
       input.completedAt,
       revision,
       input.runId,
-      input.expectedWriterGeneration,
+      input.recoveryWriterGeneration,
     );
     if (Number(changed.changes) !== 1) {
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} changed before recovery fence`);
@@ -524,16 +555,6 @@ export function recoverRunResourceOnConnection(
       .run(input.runId, input.runId);
     recordStatement(connection, `DELETE FROM ne19_attempts WHERE origin_run_id=? AND
       attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)`).run(input.runId, input.runId);
-    recordStatement(connection, `INSERT INTO ne19_run_recoveries(run_id,previous_writer_generation,recovery_writer_generation,
-      evidence_kind,evidence_identity,evidence_observed_at,recovery_revision) VALUES (?,?,?,?,?,?,?)`).run(
-      input.runId,
-      input.expectedWriterGeneration,
-      input.recoveryWriterGeneration,
-      input.evidence.kind,
-      input.evidence.identity,
-      input.evidence.observedAt,
-      revision,
-    );
     return Object.freeze({
       runId: input.runId,
       previousWriterGeneration: input.expectedWriterGeneration,
@@ -673,9 +694,11 @@ function readRunAtCutoff(
   const closeVisible = closeRevision !== undefined && closeRevision <= cutoff.revision;
   const terminalState = optionalText(row, "terminal_state");
   if (terminalState !== undefined) requireTerminalState(terminalState);
+  const recovery = recordStatement(connection, "SELECT recovery_revision FROM ne19_run_recoveries WHERE run_id=?").get(runId) as Row | undefined;
+  const recovering = recovery !== undefined && integer(recovery, "recovery_revision") <= cutoff.revision;
   const state: RunState = closeVisible
     ? terminalState ?? (() => { throw invalid(`Run ${runId} close revision lacks terminal state`); })()
-    : "active";
+    : recovering ? "recovering" : "active";
   const slotRows = recordStatement(connection, `SELECT slot_id,eval_id,attempt_ordinal,execution_identity_digest
     FROM ne19_run_expected_slots WHERE run_id=? ORDER BY ordinal LIMIT ?`).all(
       runId,
@@ -699,7 +722,7 @@ function readRunAtCutoff(
     startedAt: text(row, "started_at"),
     ...(closeVisible ? { completedAt: text(row, "completed_at") } : {}),
     state,
-    writerGeneration: text(row, closeVisible ? "current_writer_generation" : "initial_writer_generation"),
+    writerGeneration: text(row, closeVisible || recovering ? "current_writer_generation" : "initial_writer_generation"),
     createdRevision: integer(row, "created_revision"),
     ...(closeVisible && closeRevision !== undefined ? { closeRevision } : {}),
     expected: slots.length,

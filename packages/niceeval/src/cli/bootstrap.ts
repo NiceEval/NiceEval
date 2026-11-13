@@ -133,6 +133,7 @@ type CliFeatureRequirements =
   | CliInterruption
   | CliInvocationFacts
   | CliOutput
+  | import("./application.ts").CliConfirmation
   | CliPath
   | ExperimentCliTerminal
   | ProjectConfiguration

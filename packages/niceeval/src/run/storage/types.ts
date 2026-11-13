@@ -7,7 +7,7 @@ export { RUN_ABSENCE_REASONS, type RunAbsenceReason };
 
 export const RUN_TERMINAL_STATES = ["completed", "interrupted", "failed"] as const;
 export type RunTerminalState = (typeof RUN_TERMINAL_STATES)[number];
-export type RunState = "active" | RunTerminalState;
+export type RunState = "active" | "recovering" | RunTerminalState;
 
 export interface PublicationCutoff {
   readonly storeGeneration: string;
