@@ -151,6 +151,9 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
    - `verify-only` 不修改文件系统，声明了 `repair` 也不执行。
 
    需要安装时，存在 `progress.installing` 就先投影到 Human active 行。
+
+   本页所说的安装 channel event 落在既有的 runner diagnostics 里：`agent.ensure` 相位的一条 advisory，code 为 `agent-ensure`，
+   context 给出安装事实（`hit`、`repaired` 或 `installed`）、探测未命中的原因与修复失败的原因。它不新增持久 family，也不改变既有 family 的格式。
    - `staged` 执行宿主侧 `prepareArtifact()` 和主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。
    - 安装后复检同一个 探测。复检成功时，投影可选的 `progress.ready`。
 3. install 失败或复检仍未命中：写 `agent.ensure` 结构化执行错误通道事件，并形成 Attempt 的 `errored` Verdict。
