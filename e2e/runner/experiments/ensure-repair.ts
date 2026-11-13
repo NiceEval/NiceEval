@@ -1,12 +1,15 @@
 import { defineExperiment } from "niceeval";
 import { completeEvidenceCoverage, defineSandboxAgent, type AgentInstaller } from "niceeval/adapter";
 import { dockerSandbox, shell, type SandboxCommandTarget } from "niceeval/sandbox";
+import { pollUntil } from "@niceeval/testkit";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 
 const identity = { agent: "repair-fixture", version: "1.0.0", revision: "1" };
 const scenario: string = "repaired";
 const repair = async (sandbox: SandboxCommandTarget) => {
   console.error("ensure-repair-callback-entered");
-  if (scenario === "repair-throws") throw new Error("fixture repair failed");
+  if (scenario === "repair-throws" || scenario === "repair-detail") throw new Error("fixture repair failed");
   if (scenario !== "repair-misses") await sandbox.runShellOrThrow("touch /tmp/ensure-repaired");
 };
 const installer: AgentInstaller = scenario === "verify-only" ? {
@@ -18,13 +21,19 @@ const installer: AgentInstaller = scenario === "verify-only" ? {
 } : {
   identity, installMode: "sandbox-network", repair,
   async install(sandbox) {
+    if (scenario === "repair-detail") {
+      await writeFile("ensure-install-entered", "ready");
+      await pollUntil(async () => existsSync("ensure-install-release") ? true : undefined, { timeoutMs: 60_000, intervalMs: 50, label: "installation inspection release" });
+    }
     await sandbox.runShellOrThrow("touch /tmp/ensure-repaired");
   },
 };
 export default defineExperiment({
   adapter: defineSandboxAgent({
     name: "repair-fixture", evidenceCoverage: completeEvidenceCoverage,
-    ensure: { identity, probe: shell("test -f /tmp/ensure-repaired || { printf 'missing fixture link\\n' >&2; exit 1; }") },
+    ensure: { identity, probe: shell(scenario === "repair-detail"
+      ? `test -f /tmp/ensure-repaired || { printf 'earlier line\\n\\033[31mmissing ${"x".repeat(191)}😀tail\\007\\033[0m\\n\\n' >&2; exit 1; }`
+      : "test -f /tmp/ensure-repaired || { printf 'missing fixture link\\n' >&2; exit 1; }") },
     installers: [installer],
     async send() { return { status: "completed", events: [] }; },
   }),
