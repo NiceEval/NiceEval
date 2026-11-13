@@ -359,20 +359,26 @@ SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fing
 
 Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
 
-supervisor 不依赖 SSH 会话存活。它为每个进程在 Machine 上建一个只属于该进程的 spool 目录，把 stdout、stderr 按原始字节追加写入各自的文件，进程结束后原子写入退出文件（退出码或信号）。channel 只是这些文件的读取端：客户端保存每个流已经交付的字节偏移，读到退出文件之后进程才算结束。普通命令的前台进程结束后写入退出文件，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。
+supervisor 不依赖 SSH 会话存活。它为每个进程在 Machine 上建一个只属于该进程的 spool 目录，把 stdout、stderr 按原始字节追加写入各自的文件，进程结束后原子写入退出文件（退出码或信号）。channel 只是这些文件的读取端：客户端保存每个流已经交付的字节偏移，读到退出文件之后进程才算结束。
 
-连接断开不等于进程丢失。连接或 channel 异常时，Provider 在 60 秒内最多重连 3 次，重连成功后从已交付的偏移继续读取同一个 spool，调用方看到的输出不重复、不缺失，命令事实只有一条。重连期间命令自己的时限照常计时。以下情况才退休并删除整台 Machine，等待确认后再 settle：
+stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 stdin 字节数持久化在 spool 里，EOF 是否已送达也在其中；客户端保留尚未被确认的字节，收到确认后才丢弃。Agent 驱动进程这类全程开着 stdin 的双向进程靠这一条跨过断线：它运行时间最长，丢一次就是整个 Attempt。普通命令的前台进程结束后写入退出文件，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。
+
+连接断开不等于进程丢失。连接或 channel 异常时，Provider 在 60 秒内最多重连 3 次，重连成功后从已交付的偏移继续读取同一个 spool，并向 supervisor 取回已接收的 stdin 字节数，从该偏移补发未确认的字节与 EOF。调用方看到的输出不重复、不缺失，目标进程收到的 stdin 不重复、不缺失，命令事实只有一条。同一台 Machine 上的全部进程共用这一次重连。重连期间命令自己的时限照常计时。以下情况才退休并删除整台 Machine，等待确认后再 settle：
 
 - 重连次数或时限用完；
 - 重连后 spool 目录或 supervisor 不存在；
-- 断开时该进程的 stdin 还没有发送 EOF，已写入的字节无法确认是否送达；
 - 命令超时或取消。
 
-退休时抛出的错误写明触发原因（keepalive 超时、连接被对端关闭、channel 错误、握手失败等 ssh 层给出的原因）、重连次数、进程已运行时长和已交付的字节数，随 Attempt 的 failure diagnostic 保存。错误文本不含 token。成功重连写一条 `sandbox-transport-reconnected` Observability diagnostic，带同样的原因与次数，不改变命令结果与 Verdict。正常退出只归还 channel。外层 Scope 最终删除实例，包含其余后代进程。
+退休时抛出的错误写明触发原因（keepalive 超时、连接被对端关闭、channel 错误、握手失败等 ssh 层给出的原因）、重连次数、进程已运行时长和已交付的字节数，随 Attempt 的 failure diagnostic 保存。错误文本不含 token。成功重连写一条 `sandbox-transport-reconnected` Observability diagnostic，带同样的原因与次数，不改变命令结果与 Verdict。Machine 因传输失败退休之后，对同一个 Sandbox 的后续命令与文件操作都以这次退休的原因失败，不把服务端返回的 404 当作首要错误交给调用方。正常退出只归还 channel。外层 Scope 最终删除实例，包含其余后代进程。
 
 文件使用原生 HTTP bytes 接口。目录上传把整棵目录打成一个归档，经一次 HTTP 写入送达，再用一条命令展开并一次设好全部权限位；命令条数与目录里的文件数、目录数无关。目录下载同样是一条归档命令加一次 HTTP 读取。归档展开失败按命令失败处理，不留下只展开了一部分却报告成功的目录。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力；Before cache 见 [远端 snapshot Before cache · Instabox](remote-snapshot-cache.md#instabox)。
 
-验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。连接复用、断线续读与目录传输另有三条验收：同一台 Machine 上连续命令的耗时关系；命令运行中由测试从客户端一侧强行断开 SSH 连接，命令仍以原退出码结束、输出逐字节完整，并留下 `sandbox-transport-reconnected`；上传一棵含多层目录与可执行文件的目录后，Record 里只有一条展开命令，权限位读回一致。
+验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。连接复用、断线续读与目录传输另有四条验收：
+
+- 同一台 Machine 上连续命令的耗时关系。
+- 命令运行中由测试从客户端一侧强行断开 SSH 连接，命令仍以原退出码结束、输出逐字节完整，并留下 `sandbox-transport-reconnected`。
+- 一个持续读写 stdin 的双向进程在两次写入之间被断开，重连后对端收到的字节序列与发送的完全一致，EOF 只送达一次。
+- 上传一棵含多层目录与可执行文件的目录后，Record 里只有一条展开命令，权限位读回一致。
 
 ## Provisioning 失败与重试
 

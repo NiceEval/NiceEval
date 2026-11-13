@@ -134,6 +134,21 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 调用方不需要设置 `TMPDIR`；副本内的 `node_modules/.pnpm` 目录链仍拒绝 symlink。
 `verify-release` 读取保留 tarball 时也做同一目录链核验。
 
+## 参数化用例的身份
+
+Concord 的用例 ID 标在一条声明上。`test.each`、`test.concurrent.each`、`it.each` 及 Playwright 的循环声明在运行时展开成多条原生用例，
+它们共用这一条声明的 ID：一个 ID 选中的是该声明展开出的全部用例，不存在只选其中一条的身份。
+`concord test run/verify`、`concord issue close --fixed` 与 `pnpm e2e takeover --selector` 都按这条规则选择。
+
+- **匹配。** 声明的标题是模板（含 `%s`、`%i`、`%d`、`%j`、`%o`、`%#`、`%%` 或 `$name`）时，原生报告里标题符合该模板、且位于同一文件与同一 describe 路径下的用例都属于它。
+  模板里的占位符匹配任意文本，其余字符逐字匹配。没有占位符的标题仍然要求恰好一条。
+- **结果。** 展开出的用例全部通过才是 passed，任一失败就是 failed；`caseCount` 是展开条数，报告逐条列出原生标题与各自结果。
+- **不成立的情形。** 展开为零条、任一条被跳过、重试过，或运行了不属于该声明的用例，都是 invalid，不计为 red 或 green。
+  同一文件里两个声明的模板能匹配到同一条原生用例时，收集阶段就以具名错误拒绝，要求改标题。
+- **单项运行。** 原生命令用能选中整组展开的过滤条件（Vitest 的 `-t` 取模板里最长的一段字面文本，再由报告按模板精确筛选），不为每条展开各起一个进程。
+
+接管的五类运行、收集与默认负载阶段对参数化声明使用同一条规则，不跳过它们，也不放松完整矩阵检查。
+
 ## Owner 接管运行
 
 新增、接管或实质修改确定性 owner 时，必须使用根入口：
