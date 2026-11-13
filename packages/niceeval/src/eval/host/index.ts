@@ -3,6 +3,7 @@
 import { Data, Effect } from "effect";
 import { discoverEvals } from "../../runner/discover.ts";
 
+/** Identifies a discovered Eval with tags and Pass or Score kind; its ID is the selection identity rather than its display description. */
 export interface EvalCatalogEntry {
   readonly id: string;
   readonly description?: string;
@@ -10,10 +11,12 @@ export interface EvalCatalogEntry {
   readonly evaluationKind: "pass" | "score";
 }
 
+/** Lists discovered Evals without executing tests; catalog entries describe definitions rather than published results. */
 export interface EvalCatalog {
   readonly entries: readonly EvalCatalogEntry[];
 }
 
+/** Reports failure to discover the Eval catalog; this is a Host operation error rather than an Attempt Verdict. */
 export class EvalCatalogError extends Data.TaggedError("EvalCatalogError")<{
   readonly operation: "catalog";
   readonly cause: unknown;
