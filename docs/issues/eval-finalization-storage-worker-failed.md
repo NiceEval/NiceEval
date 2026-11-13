@@ -29,3 +29,7 @@ Invocation：`s_c42c070b-b816-44c1-8d82-0e4cf8235f4b`。安装 Run：`7c0bcfef-c
 本轮未重跑下游付费实验，未读取或修改下游私有 Record 文件。已定位诊断丢失点：Record Host 对非 SqliteRecordError 的 worker Promise rejection 使用固定文案包装，上层只展示该 message。通过安装后 CLI 与真实 SQLite worker，向外部 worker 传输边界注入 EIO，确认该底层原因在 stderr 丢失。此确定性回归仅证明诊断缺陷，不证明真实两次失败是 EIO、OOM、锁竞争或数据库损坏。
 
 原运行未记录 worker 原始 error/exit，现有证据不足以裁定其根因。下一次若仍发生，需要保留改进后的底层 error code/message、worker 操作、Invocation Run ID 与收尾日志；在此之前不改变发布、事务或资源时限语义。本 Issue 保持本地 draft，真实大运行的根因仍待调查。
+
+## 确定性的公开复现
+
+补充大型矩阵验收时发现：在同一 Invocation 中，两个 Experiment 分别写入 550 条有 key 的确定性 Assertion（每份附件均低于 4 MiB，合并矩阵超过 1000 行），通过安装后 CLI 连续运行 3 个 Attempt，稳定在 `stage-final-metadata` 报 `DataCloneError: Cannot transfer object of unsupported type`。命令为 `niceeval exp assertion-matrix --rerun all --json`，不调用任何模型。两个隔离重复都命中同一底层错误；初始候选的回归日志为 `/tmp/ne-dx4-bounds2.log`。这证明存在可独立修复的 worker 传输缺陷；历史两次真实失败没有原始 cause，仍不能直接将其追溯认定为同一个错误。

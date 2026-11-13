@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectionE2E } from "./support.ts";
@@ -38,5 +40,24 @@ test.concurrent("作者跨实验比较判据，保留重复身份、缺项和每
       const invalid = await niceeval.run(["show", ...flags]);
       expect(invalid.exitCode, invalid.diagnostic()).not.toBe(0);
     }
+  });
+});
+
+// @feature docs/feature/inspection/README.md
+// @issue docs/issues/eval-finalization-storage-worker-failed.md
+test.concurrent("大型判据矩阵保留可读的部分结果并报告省略数量", async () => {
+  await inspectionE2E.case("assertion-matrix-bounds", {}, async ({ commands: { niceeval }, paths }) => {
+    const file = join(paths.projectRoot, "evals", "assertion-matrix.eval.ts");
+    await writeFile(file, (await readFile(file, "utf8")).replace("test(t) {", 'test(t) { for (let index = 0; index < 550; index++) t.check(true, equals(true)).key(`${t.flags.variant ?? "base"}-bulk-${index}`).label(`Bulk ${index}`);'));
+    const run = await niceeval.run(["exp", "assertion-matrix", "--rerun", "all", "--json"]);
+    expect(run.exitCode, run.diagnostic()).toBe(0);
+    const shown = await niceeval.run(["show", "--experiment", "assertion-matrix/base", "--experiment", "assertion-matrix/next", "--assertions", "--json"]);
+    expect(shown.exitCode, shown.diagnostic()).toBe(0);
+    const { matrix } = shown.querySuccess("experiments.assertions");
+    expect(matrix.state).toBe("partial");
+    expect(matrix.omitted.rows).toBeGreaterThan(0);
+    expect(matrix.evals.flatMap((evaluation) => evaluation.rows).length).toBeLessThanOrEqual(1000);
+    expect(new TextEncoder().encode(JSON.stringify(matrix.evals)).length).toBeLessThanOrEqual(450000);
+    expect(matrix.evals[0]!.rows.length).toBeGreaterThan(0);
   });
 });
