@@ -144,14 +144,21 @@ const lifecycleContract = defineAdapterContract<CustomLifecycleAdapter>({ name: 
     hasMarker(value: string) { return check(value, equals("registered-before-timeout")); },
   }));
 
-let registerAfterTimeout: (() => void) | undefined;
+// Config reporters and fresh discovery can evaluate this fixture in different
+// module generations. The retained callback belongs to this consumer process
+// and project, so share it explicitly instead of relying on module cache identity.
+const closedRegistrationKey = Symbol.for("niceeval.e2e.closed-registration");
+const processState = globalThis as typeof globalThis & {
+  [closedRegistrationKey]?: Map<string, () => Promise<void>>;
+};
+const closedRegistration = processState[closedRegistrationKey] ??= new Map();
 export const timeoutClosedRegistrationReporter: Reporter = {
   async onEvalComplete(result) {
     if (result.id !== "custom-timeout-cancel") return;
+    const registerAfterTimeout = closedRegistration.get(process.cwd());
     if (registerAfterTimeout === undefined) throw new Error("fixture did not retain its registration callback");
-    let outcome = "accepted";
-    try { registerAfterTimeout(); } catch { outcome = "rejected"; }
-    await writeJournal({ scenario: "timeout", event: `closed-registration-${outcome}`, attempt: result.attempt });
+    closedRegistration.delete(process.cwd());
+    await registerAfterTimeout();
   },
 };
 
@@ -198,7 +205,11 @@ export const customTimeoutCancellation = lifecycleContract.implement({
           ? "typed-attempt-timeout" : `invalid-attempt-reason:${JSON.stringify(reason)}:now=${Date.now()}:frozen=${Object.isFrozen(reason)}`,
       });
     }, { once: true });
-    registerAfterTimeout = () => context.onCleanup(() => {});
+    closedRegistration.set(process.cwd(), async () => {
+      let outcome = "accepted";
+      try { context.onCleanup(() => {}); } catch { outcome = "rejected"; }
+      await writeJournal({ scenario: "timeout", event: `closed-registration-${outcome}`, attempt: context.attempt });
+    });
     let acknowledgeLateObservation!: () => void;
     const lateObservation = new Promise<void>((resolve) => { acknowledgeLateObservation = resolve; });
     let cleanupWindowSignal: AbortSignal | undefined;
