@@ -50,7 +50,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-模板常量指向已发布并验证的制品。当前源码配方使用 Claude Code `2.1.323`、Codex `0.167.2`，Bub 保留 `0.5.1`；配方更新不代表新版模板已经发布。模板版本形如 `0.167.2-r1`，由 Agent 版本和配方修订组成，与 NiceEval 库版本无关。项目中使用模板常量；下面的命令用于构建自己的派生环境。
+模板常量指向已发布并验证的 E2B template。当前源码配方使用 Claude Code `2.1.323`、Codex `0.167.2`，Bub 保留 `0.5.1`；配方更新不代表对应版本的 E2B template 已经发布。模板版本形如 `0.167.2-r1`，由 Agent 版本和配方修订组成，与 NiceEval 库版本无关。项目中使用模板常量；下面的命令用于构建自己的派生环境。
 
 这批公共模板里，Claude Code 模板沿用 E2B 官方的 `/usr` npm prefix，普通用户不能直接写全局模块。运行时要再装 pnpm、yarn 等全局 Node 工具时，显式装到 `/usr/local`，两个模板都已经把它加进 PATH：
 
