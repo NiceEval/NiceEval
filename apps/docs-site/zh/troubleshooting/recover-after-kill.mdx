@@ -75,18 +75,18 @@ instabox rm <instance-name>
 先运行不带 token 的检查命令，查看当前持有者的信息：
 
 ```bash
-pnpm exec niceeval exp <experiment> --teardown \
+pnpm exec niceeval exp <experiment> --after \
   --recover-shared-state <key>
 ```
 
 确认原运行已经终止，它操作的远程服务和 checkpoint 也都已停止变化后，复制命令显示的 token，再显式确认：
 
 ```bash
-pnpm exec niceeval exp <experiment> --teardown \
+pnpm exec niceeval exp <experiment> --after \
   --recover-shared-state <key> \
   --owner-token <displayed-token> \
   --confirm-owner-terminated \
   --confirm-remote-quiesced
 ```
 
-恢复只为这个 Experiment 补跑 `teardown`。token 错误、token 已过期或 teardown 失败时，租约不会被释放，也不会影响之后新持有者的租约。修好 teardown 后，用当前显示的 token 再试。
+恢复只为这个 Experiment 补跑 `after`。token 错误、token 已过期或 after 失败时，租约不会被释放，也不会影响之后新持有者的租约。修好 after 后，用当前显示的 token 再试。
