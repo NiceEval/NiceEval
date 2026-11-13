@@ -12,4 +12,4 @@
   4. Direct Agent 不需要这些方法;放在 `Agent` 联合上会给 direct 分支带一组恒 undefined 的可选方法(踩 CLAUDE.md「可选字段加进共享接口要数调用点」的反面)。
   「知识属于 adapter」不构成反对:默认 provisioner 就由 adapter 作者在工厂内部定义,对象只是让它可整体拔插。
 - **check 返回形态**:结构化事实而非 boolean——「检查命中 / 本次安装 + 实际版本」要落 attempt facts,boolean 会逼 adapter 在旁边再探测一次同样的信息。
-- **契约落点**:`docs/feature/adapters/architecture/agent-ensure.md`(理由段与 `AgentCheckResult` 同页)。
+- **契约落点**:`docs/feature/adapters/architecture/agent-install.md`(理由段与 `AgentCheckResult` 同页)。

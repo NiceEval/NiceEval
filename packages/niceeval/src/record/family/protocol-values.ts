@@ -16,7 +16,7 @@ export type AgentTurnOutcome = (typeof AGENT_TURN_OUTCOMES)[number];
 export const RUNNER_PHASE = Object.freeze({
   attemptSetup: "attempt.setup" as const,
   sandboxPrepare: "sandbox.prepare" as const,
-  agentEnsure: "agent.ensure" as const,
+  agentInstall: "agent.install" as const,
   evalRun: "eval.run" as const,
   agentSend: "agent.send" as const,
   sandboxCommand: "sandbox.command" as const,
@@ -31,12 +31,12 @@ export const RUNNER_PHASE = Object.freeze({
   collection: "collection" as const,
 });
 export const ATTEMPT_ACTIVITY_PHASES = [
-  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentEnsure,
+  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentInstall, "agent.ensure",
   RUNNER_PHASE.evalRun, RUNNER_PHASE.agentSend, RUNNER_PHASE.sandboxCommand,
   RUNNER_PHASE.assertionEvaluate, RUNNER_PHASE.verdictFold, RUNNER_PHASE.attemptTeardown,
 ] as const;
 export const ATTEMPT_NON_AGENT_ACTIVITY_PHASES = [
-  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentEnsure,
+  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentInstall, "agent.ensure",
   RUNNER_PHASE.evalRun, RUNNER_PHASE.sandboxCommand, RUNNER_PHASE.assertionEvaluate,
   RUNNER_PHASE.verdictFold, RUNNER_PHASE.attemptTeardown,
 ] as const;
@@ -54,7 +54,7 @@ export const RUN_DIAGNOSTIC_PHASES = [
   ...DIAGNOSTIC_PROJECTION_PHASES,
 ] as const;
 export const SANDBOX_COMMAND_PHASES = [
-  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentEnsure,
+  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentInstall, "agent.ensure",
   RUNNER_PHASE.evalRun, RUNNER_PHASE.sandboxCommand, RUNNER_PHASE.attemptTeardown,
 ] as const;
 

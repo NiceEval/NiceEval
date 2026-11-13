@@ -120,7 +120,7 @@ export interface DockerComposeSandboxOptions {
   readonly lifetimeMs?: number;
   /**
    * 按序前置到受管 `PATH` 的目录;作用于本 Sandbox 内全部受管命令(agent 进程、两层 prepare、
-   * ensure/install),hooks 与子进程自然继承。PATH 本身是受管变量,不接受经 `env` 覆盖——
+   * install),hooks 与子进程自然继承。PATH 本身是受管变量,不接受经 `env` 覆盖——
    * 需要扩展 PATH 用这个字段(见 docs/feature/sandbox/library/README.md「PATH:受管变量与
    * pathPrepend」)。省略 = 不改 PATH。
    */

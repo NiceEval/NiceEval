@@ -154,21 +154,22 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
   };
 }
 
-/** 计划期一次性冻结全部 ensure/installer 配对；运行事实与 staged digest 不反写配置身份。 */
+/** 计划期一次性冻结全部 install/installer 配对；运行事实与 staged digest 不反写配置身份。 */
 export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
   if (run.adapter === undefined || run.adapter.kind === "custom") return Object.freeze([]);
   const agent = run.agent;
   if (agent === undefined) throw new Error("Agent AdapterRun requires its Agent execution implementation.");
   if (agent.kind === "direct") return Object.freeze([]);
-  return Object.freeze(agent.ensure.map((ensure, index) => freezeJson({
+  return Object.freeze(agent.install.map((declaration, index) => freezeJson({
     order: index,
+    // Frozen identity encoding; author spelling is normalized before this boundary.
     ensure: {
-      agent: ensure.identity.agent,
-      version: ensure.identity.version,
-      revision: ensure.identity.revision,
+      agent: declaration.identity.agent,
+      version: declaration.identity.version,
+      revision: declaration.identity.revision,
     },
     installer: installerIdentity(
-      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, ensure.identity)),
+      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, declaration.identity)),
     ),
   })));
 }

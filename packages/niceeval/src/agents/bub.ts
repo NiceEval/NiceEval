@@ -176,7 +176,7 @@ export function bubAgent(config?: BubConfig): Agent {
 
   return attachCodingAgentExtensions(registerAgentLifecycleHookCommands(makeSandboxAgent({
     name: "bub",
-    ensure: { identity, probe },
+    install: { identity, probe },
     installers: [{
       identity,
       installMode: "sandbox-network",
@@ -225,7 +225,7 @@ ${last}`);
         if (!home) throw new Error(`Failed to detect sandbox $HOME (empty output from \`printf $HOME\`). Refusing to fall back to a provider-specific path; check the sandbox provider.`);
         const workspace = sb.workdir;
         sessionInfo.set(sb.sandboxId, { home, workspace, unknown: new UnrecognizedAgentEvents() });
-        // Agent CLI 已由 runner 的 agent.ensure 循环完成安装与复检。
+        // Agent CLI 已由 runner 的 agent.install 循环完成安装与复检。
         // adapter setup 只写本 Attempt 的 runtime config。
         if (!(await sb.pathExists(`${workspace}/AGENTS.md`))) {
           await shared.writeFile(

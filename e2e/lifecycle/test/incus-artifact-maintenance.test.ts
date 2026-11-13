@@ -58,7 +58,7 @@ export default defineExperiment({ adapter: quickAgent,
   evals: ["probe"], attempts: 1, maxConcurrency: 1 });
 `);
       const cold = await cli.run(["exp", "incus-maintenance", "probe", "--rerun=all"], { cwd: root, env });
-      expect(cold.exitCode, "the external provider fixture fails agent.ensure after copying the artifact").not.toBe(0);
+      expect(cold.exitCode, "the external provider fixture fails agent.install after copying the artifact").not.toBe(0);
       const healthy = await cli.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: root, env });
       expect(healthy.exitCode, `${cold.diagnostic()}\n${healthy.diagnostic()}`).toBe(0);
       expect(healthy.stdout).toContain("1 committed intents, 1 verified object pairs");

@@ -13,7 +13,7 @@
 
 Human live 面板会依次显示 `checking Codex CLI <version>`、`installing official OpenAI Codex CLI <version>` 与 `Codex CLI <version> ready`。这是 Codex Adapter 声明的短期进度，不进入 JSON、落盘结果或 Sandbox 身份。
 
-安装过程属于 Agent 层，而不是 Sandbox layer 的 `before()`。后者只放题目或实验自身的运行依赖，例如系统包、数据、预热和内部工具。完整的身份、平台与失败归属契约见 [Agent Install](../../../architecture/agent-ensure.md)。
+安装过程属于 Agent 层，而不是 Sandbox layer 的 `before()`。后者只放题目或实验自身的运行依赖，例如系统包、数据、预热和内部工具。完整的身份、平台与失败归属契约见 [Agent Install](../../../architecture/agent-install.md)。
 
 ```ts
 import { codexAgent } from "niceeval/adapter";
@@ -132,7 +132,7 @@ Codex CLI 启动时把自带的 `apply_patch` 等命令放进一个临时目录�
 探测不要求 `codex` 本身是原生二进制。用 `npm install -g @openai/codex@<锁定版本>` 装出来的 `codex` 是 JS 启动器，
 这是 OpenAI 官方的安装方式，也是多数预装镜像的做法，必须算作已安装。
 
-只有第二件事不满足时走就地修复（[Agent Install](../../../architecture/agent-ensure.md#agentinstall-相位runner-组装的循环)）：
+只有第二件事不满足时走就地修复（[Agent Install](../../../architecture/agent-install.md#agentinstall-相位runner-组装的循环)）：
 在已有安装里找到原生二进制，并在登录 `PATH` 上已存在、可写的目录里建立 `apply_patch` 链接。
 原生二进制的位置按安装形态确定：`codex` 自身就是原生二进制时用它；npm 安装时是包内平台可选依赖的 `vendor/*/bin/codex`。
 找不到原生二进制时修复失败，循环照常安装锁定版本的官方发行包。

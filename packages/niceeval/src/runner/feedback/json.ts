@@ -518,7 +518,7 @@ function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | und
     case "sandbox.prepare.eval":
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
-    case "agent.ensure":
+    case "agent.install":
     case "workspace.baseline":
     case "agent.setup":
     case "telemetry.configure":

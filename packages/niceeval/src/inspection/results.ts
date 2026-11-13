@@ -504,7 +504,7 @@ const TraceDiagnosticsSchema = Schema.Struct({
     phase: Schema.Literals([
       "attempt.before",
       "sandbox.prepare",
-      "agent.ensure",
+      "agent.install",
       "eval.run",
       "agent.send",
       "sandbox.command",
@@ -751,7 +751,7 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
     workingDirectory: WorkingDirectorySchema,
     outcome: CommandOutcomeSchema,
     turnId: Schema.NullOr(Schema.String),
-    phase: Schema.Literals(["attempt.before", "sandbox.prepare", "agent.ensure", "eval.run", "sandbox.command", "attempt.after"]),
+    phase: Schema.Literals(["attempt.before", "sandbox.prepare", "agent.install", "eval.run", "sandbox.command", "attempt.after"]),
     sequence: Schema.Number,
     stdout: CommandStreamSchema,
     stderr: CommandStreamSchema,

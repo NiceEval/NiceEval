@@ -1922,7 +1922,7 @@ function projectDiagnostics(
     const causes = diagnostic.causes.slice(0, MAX_DIAGNOSTIC_CAUSES).map((cause) => {
       const causeSummary = boundedText(cause.summary, MAX_DIAGNOSTIC_CAUSE_BYTES);
       return Object.freeze({
-        code: cause.code,
+        code: projectLifecyclePhase(cause.code),
         summary: causeSummary.value,
         summaryTruncated: causeSummary.truncated,
       });
@@ -1933,7 +1933,7 @@ function projectDiagnostics(
       turnId: diagnostic.turnId,
       phase: projectLifecyclePhase(diagnostic.phase),
       kind: diagnostic.kind,
-      code: diagnostic.code,
+      code: projectLifecyclePhase(diagnostic.code),
       summary: summary.value,
       summaryTruncated: summary.truncated,
       causes: Object.freeze(causes),

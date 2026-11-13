@@ -295,31 +295,31 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     const suffixCache = expectPlannedCache(requireAction(nodes, "opaque-suffix"), "opaque-suffix");
     expect(JSON.stringify(suffixCache.eligibility)).toContain("opaque-ancestor");
 
-    const ensureNodes = stepsInPlan(document.commandPlan).filter((node) => node.phase === "agent.ensure");
-    const ensureParents = ensureNodes.filter((node) => node.truth === "conditional");
-    expect(ensureParents).toHaveLength(1);
-    expect(ensureParents[0]).toEqual(expect.objectContaining({
+    const installNodes = stepsInPlan(document.commandPlan).filter((node) => node.phase === "agent.install");
+    const installParents = installNodes.filter((node) => node.truth === "conditional");
+    expect(installParents).toHaveLength(1);
+    expect(installParents[0]).toEqual(expect.objectContaining({
       truth: "conditional",
       owner: { kind: "agent", id: "cli-sandbox-action-debug" },
     }));
-    expect(ensureParents[0]!.action).toBeUndefined();
-    expect(ensureParents[0]!.children, "agent.ensure children").toBeDefined();
-    const ensureChildren = ensureParents[0]!.children!;
-    expect(ensureChildren).toHaveLength(2);
-    expect(ensureChildren[0]).toEqual(expect.objectContaining({
-      phase: "agent.ensure",
+    expect(installParents[0]!.action).toBeUndefined();
+    expect(installParents[0]!.children, "agent.install children").toBeDefined();
+    const installChildren = installParents[0]!.children!;
+    expect(installChildren).toHaveLength(2);
+    expect(installChildren[0]).toEqual(expect.objectContaining({
+      phase: "agent.install",
       truth: "opaque",
       label: "probe #0",
       owner: { kind: "agent", id: "cli-sandbox-action-debug" },
     }));
-    expect(ensureChildren[1]).toEqual(expect.objectContaining({
-      phase: "agent.ensure",
+    expect(installChildren[1]).toEqual(expect.objectContaining({
+      phase: "agent.install",
       truth: "known-no-command",
       label: "install #0",
       owner: { kind: "agent", id: "cli-sandbox-action-debug" },
       condition: expect.objectContaining({ code: "probe-miss" }),
     }));
-    expect(ensureNodes).toHaveLength(1 + ensureChildren.length);
+    expect(installNodes).toHaveLength(1 + installChildren.length);
     expect(nodes.some((node) => actionId(node) === "debug-agent-probe")).toBe(false);
 
     const human = await niceeval.run([
@@ -330,7 +330,7 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     expect(human.exitCode, human.diagnostic()).toBe(0);
     expect(human.stderr).toBe("");
     expect(human.stdout).toContain("COMMAND PLAN");
-    expect(human.stdout).toContain("agent.ensure");
+    expect(human.stdout).toContain("agent.install");
     expect(human.stdout).toContain("action: frequency-low");
     expect(human.stdout).toContain("change frequency: 10 · explicit · rare");
     expect(human.stdout).toContain("action: dag-fast-dependent");

@@ -8,7 +8,7 @@ const downloadAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "lifecycle-download", version: "1.0.0", revision: "1" },
     probe: shell("node --version >/dev/null && git --version >/dev/null"),
   },

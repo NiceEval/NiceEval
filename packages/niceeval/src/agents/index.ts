@@ -188,8 +188,11 @@ export type {
   AgentInstallMode,
   AgentArtifactPlatform,
   AgentStagedArtifact,
+  AgentInstallOutcome,
   AgentEnsureOutcome,
   AgentEnsure,
+  AgentEnsureContext,
+  AgentInstall,
   AgentInstaller,
   AgentArtifactContext,
   AgentInstallContext,
@@ -217,3 +220,5 @@ export type {
 } from "../types.ts";
 
 export type { ModelRoleSelection, ResolvedModelRole, ResolvedModelRoles } from "../model-roles.ts";
+
+export { AgentInstallError, AgentEnsureError } from "./provisioner.ts";

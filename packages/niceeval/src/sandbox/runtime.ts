@@ -62,7 +62,7 @@ import {
 } from "./layer.ts";
 import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
 import type { LinkedRunPlan } from "./plan.ts";
-import { ArtifactPrepareCoordinator, platformKey, runAgentEnsure } from "../agents/provisioner.ts";
+import { ArtifactPrepareCoordinator, platformKey, runAgentInstall } from "../agents/provisioner.ts";
 import { cloudLifetimeMs } from "./cloud-lifetime.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
@@ -635,19 +635,19 @@ function dockerfileAgentCacheRequest(
   taskLocator: string,
   targetPlatform: import("../agents/types.ts").AgentArtifactPlatform,
 ): DockerfileAgentCacheRequest | undefined {
-  if (agent === undefined || agent.ensure.length !== 1) return undefined;
-  const ensure = agent.ensure[0];
-  if (ensure === undefined) return undefined;
+  if (agent === undefined || agent.install.length !== 1) return undefined;
+  const install = agent.install[0];
+  if (install === undefined) return undefined;
   const installer = agent.installers.find((candidate) =>
     candidate.installMode === "staged" &&
     isDockerfileAgentCacheSafeInstaller(candidate) &&
-    sameAgentIdentity(candidate.identity, ensure.identity)
+    sameAgentIdentity(candidate.identity, install.identity)
   );
   if (installer === undefined) return undefined;
   return {
     taskLocator,
     platform: `${plan.platform}|${platformKey(targetPlatform)}`,
-    ensure,
+    install,
     installer,
   };
 }
@@ -715,8 +715,8 @@ export function buildDockerfileAgentImageWithServices(
       // build cause，而不是在 cleanup 路径把 interruption/defect 改写成 typed failure。
       (sandbox) => providerBoundaryEffect(() => sandbox.stop()).pipe(Effect.catch(() => Effect.void)),
     );
-    yield* runAgentEnsure(
-      [request.ensure],
+    yield* runAgentInstall(
+      [request.install],
       [request.installer],
       provisioned.operations,
       {

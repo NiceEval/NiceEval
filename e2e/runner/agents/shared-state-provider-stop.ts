@@ -152,7 +152,7 @@ export const sharedStateProviderStopAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic Provider stop fixture has no token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-shared-state-provider-stop", version: "1", revision: "1" },
     probe: shell("true"),
   },

@@ -17,4 +17,4 @@
 
 ## 落点
 
-契约:`docs/feature/adapters/architecture/agent-ensure.md`(主页)、`docs/feature/sandbox/library/layers.md` Agent layer 节、`docs/feature/sandbox/architecture/lifecycle.md`;词条在 `docs/concepts.md`。
+契约:`docs/feature/adapters/architecture/agent-install.md`(主页)、`docs/feature/sandbox/library/layers.md` Agent layer 节、`docs/feature/sandbox/architecture/lifecycle.md`;词条在 `docs/concepts.md`。

@@ -143,7 +143,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
 
   return makeSandboxAgent({
     name: "hermes",
-    ensure: { identity, probe },
+    install: { identity, probe },
     installers: [{
       identity,
       installMode: "sandbox-network",

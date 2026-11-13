@@ -13,7 +13,7 @@ const agent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" } as const,
   },
-  ensure: {
+  install: {
     identity: { agent: "docker-profile-cold-build-fixture", version: "1.0.0", revision: "1" },
     probe: shell("docker info >/dev/null"),
   },

@@ -19,7 +19,7 @@ import type { Agent, AgentInstallationManifest, SkillSpec, StreamEvent, TurnEvid
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { shell } from "../sandbox/commands.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import type { AgentEnsure, AgentInstaller } from "./types.ts";
+import type { AgentInstall, AgentInstaller } from "./types.ts";
 import {
   exactNpmPluginRevision,
   normalizeExactNpmPlugins,
@@ -43,7 +43,7 @@ const SKILL_DIR = ".agents/skills";
 /** 自定义 OpenAI 兼容网关在 openclaw.json 里的 provider id。 */
 const COMPAT_PROVIDER = "compat";
 
-// Resolve the public SDK from the exact CLI selected by ensure, rather than
+// Resolve the public SDK from the exact CLI selected by install, rather than
 // from NiceEval's host dependencies. Modern OpenClaw owns its SQLite schema;
 // its accessor returns the same raw events consumed by the transcript parser.
 const READ_SESSION_TRANSCRIPT = `
@@ -93,7 +93,7 @@ export interface OpenClawConfig {
 function openClawPluginLayer(
   cliVersion: string,
   plugins: readonly ExactNpmPlugin[],
-): { ensure: AgentEnsure; installer: AgentInstaller } {
+): { install: AgentInstall; installer: AgentInstaller } {
   const identity = {
     agent: "openclaw-plugins",
     version: cliVersion,
@@ -110,7 +110,7 @@ function openClawPluginLayer(
     `const ordered=expected.map(e=>found.find(x=>x.name===e.name&&x.version===e.version));` +
     `for(const x of ordered){if(!x||x.pkgVersion!==x.version||!config.plugins?.entries?.[x.id]?.enabled||!/^[A-Za-z0-9._-]+$/.test(x.id))process.exit(1);}`;
   return {
-    ensure: { identity, probe: shell(`node -e ${shellQuote(verifyFiles)}`) },
+    install: { identity, probe: shell(`node -e ${shellQuote(verifyFiles)}`) },
     installer: {
       identity,
       installMode: "sandbox-network",
@@ -162,7 +162,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
   const plugins = normalizeExactNpmPlugins(config?.plugins, "openClawAgent plugins");
-  const { ensure, installer } = createNpmCliInstaller({
+  const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "openclaw",
       version,
@@ -181,7 +181,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
-    ensure: pluginLayer === undefined ? ensure : [ensure, pluginLayer.ensure],
+    install: pluginLayer === undefined ? install : [install, pluginLayer.install],
     installers: pluginLayer === undefined ? [installer] : [installer, pluginLayer.installer],
 
     tracing: {

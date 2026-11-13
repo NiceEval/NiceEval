@@ -34,7 +34,7 @@ const ensure = {
   probe: shell('test "$(node --version)" = "v24.19.0"'),
 };
 
-const managedProcessEnsure = {
+const managedProcessInstall = {
   identity: { agent: "lifecycle-managed-process", version: "1.0.0", revision: "1" },
   probe: shell("node --version >/dev/null"),
 };
@@ -135,7 +135,7 @@ async function collect(process: Awaited<ReturnType<typeof acquireManagedProcess>
 export const managedProcessAgent = defineSandboxAgent({
   name: "lifecycle-managed-process",
   evidenceCoverage,
-  ensure: managedProcessEnsure,
+  install: managedProcessInstall,
   send: async (_input, ctx) => {
       const payload = Buffer.alloc(2 * 1024 * 1024, 0x5a);
       const natural = await acquireManagedProcess(ctx, "lifecycle-fixture", {

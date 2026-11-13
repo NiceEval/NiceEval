@@ -83,7 +83,7 @@ export function deterministicAgent(name: string): Agent {
 export const preContextErrorAgent = defineSandboxAgent({
   name: "cli-pre-context-error",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: {
+  install: {
     identity: { agent: "cli-pre-context-error", version: "1.0.0", revision: "1" },
     probe: shell("true"),
   },

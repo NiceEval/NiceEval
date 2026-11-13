@@ -10,7 +10,7 @@ before action 面向题目或实验自己的运行依赖：安装系统工具、
 选择 `codexAgent()`、`claudeCodeAgent()` 等内置 Sandbox Agent 时，CLI 的检查与安装由对应 Adapter 自动完成；作者不需要复制官方安装脚本，也不应把它写进题目 fixture。
 
 Adapter 知道目标 CLI 的精确版本、官方发行物、目标平台与复检方式。这些信息进入 Agent 身份和结果可比性；把安装降成普通 Sandbox action 会丢失该绑定，并让用户手工维护两份版本声明。
-需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `shell()` 或第三方 `defineSandboxAction()` family。完整分工见 [Adapter · Agent Install](../../adapters/architecture/agent-ensure.md)。
+需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `shell()` 或第三方 `defineSandboxAction()` family。完整分工见 [Adapter · Agent Install](../../adapters/architecture/agent-install.md)。
 
 ## 导出入口
 

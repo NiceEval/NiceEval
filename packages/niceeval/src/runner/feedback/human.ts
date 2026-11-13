@@ -993,7 +993,7 @@ function phaseLabel(phase: LifecyclePhase): string {
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return `preparing sandbox`;
-    case "agent.ensure":
+    case "agent.install":
       return `preparing agent`;
     case "workspace.baseline":
       return `preparing workspace`;

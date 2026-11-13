@@ -117,7 +117,7 @@ export function ompAgent(config?: OmpConfig): Agent {
   return makeSandboxAgent({
     name: "omp",
     evidenceCoverage: OMP_EVIDENCE_COVERAGE,
-    ensure: [bunInstall.ensure, ompInstall.ensure],
+    install: [bunInstall.install, ompInstall.install],
     installers: [bunInstall.installer, ompInstall.installer],
 
     before: (sb, ctx) => Effect.tryPromise({

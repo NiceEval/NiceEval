@@ -1,9 +1,9 @@
-# Adapters 怎么测（Agent Ensure 与确定性 Adapter 逻辑）
+# Adapters 怎么测（Agent Install 与确定性 Adapter 逻辑）
 
 契约出处：
 
 - [Adapters](../../../../feature/adapters/README.md)
-- [Agent Ensure](../../../../feature/adapters/architecture/agent-ensure.md)
+- [Agent Install](../../../../feature/adapters/architecture/agent-install.md)
 - [会话与 HITL 状态模型](../../../../feature/adapters/architecture/session-state.md)
 - [Sandbox Agent](../../../../feature/adapters/library/sandbox-agent.md)
 - [Sandbox 实例与伴随资源](../../../../feature/sandbox/architecture/case.md)
@@ -67,12 +67,12 @@ function scriptedInstaller(steps: {
   - `search`、`run` 等可能属于被测应用的单字动词不能由通用表猜成系统工具。
   - Unit 只展开这张 NiceEval 自有的确定性基表。某个 SDK / CLI 是否同时写入正确原始名与规范分类，
     仍由对应 Adapter E2E 证明，不在这里复制上游 wire fixture。
-- **探测 命中、staged 安装、复检失败**（[Agent Ensure](../../../../feature/adapters/architecture/agent-ensure.md)）：
+- **探测 命中、staged 安装、复检失败**（[Agent Install](../../../../feature/adapters/architecture/agent-install.md)）：
 
   - 探测 命中 → 记下命中的安装事实，不调用 install。
   - 探测 未命中 → 按 identity 配对安装层 install → 同一个 探测 复检；全部经主 Sandbox 的命令与文件 API。
-  - 安装退出 0、复检仍未命中 → `agent.ensure` `errored`，附期望版本与下一步，不记成做题 `failed`。
-  - 探测 未命中且无 identity 匹配的安装层 → `agent.ensure` `errored`，错误信息给出预制 environment 与 `installTool` 两条出路。
+  - 安装退出 0、复检仍未命中 → `agent.install` `errored`，附期望版本与下一步，不记成做题 `failed`。
+  - 探测 未命中且无 identity 匹配的安装层 → `agent.install` `errored`，错误信息给出预制 environment 与 `installTool` 两条出路。
   - 不按 template 名短路；三种安装模式失败后不静默降级到另一种。
   - `installMode: "verify-only"` 的 探测 未命中立即 `errored`，不联网、不改文件系统。
 - **Agent identity / artifact identity**：
@@ -93,7 +93,7 @@ function scriptedInstaller(steps: {
 
   - 故障 DNS / `extra_hosts` / 被替换工具在 ensure 循环前后逐字保持。
   - 默认 staged 路径经宿主准备 + 主 Sandbox 文件 API 安装，不依赖也不修复题面网络。
-  - 删除 staged 路径后同类题必须失败在 `agent.ensure`——这是与「静默改网络再装」的区分力。
+  - 删除 staged 路径后同类题必须失败在 `agent.install`——这是与「静默改网络再装」的区分力。
 - **Sandbox 复用命中与 environment 隔离**：
 
   - 同一 Sandbox 复用时，第一次安装后后续 attempt 的 探测 快速命中。

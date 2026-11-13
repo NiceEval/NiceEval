@@ -854,7 +854,7 @@ Agent-owned before action 与其它 owner 进入同一个 DAG，数值更小时�
 
 Agent layer 由 Runner 组装,没有作者可导入的组装 API;Adapter 与 Eval / Experiment 作者都不手工排列安装组件。
 Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eval 或 Experiment 必须显式提供兼容 template,link 与 physical planning 用 Adapter 声明的 capability requirement 检查它。
-完整协议见 [Agent Install](../../adapters/architecture/agent-ensure.md)。
+完整协议见 [Agent Install](../../adapters/architecture/agent-install.md)。
 
 ## 相关阅读
 
@@ -863,4 +863,4 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 - [Nested Docker](../../sandbox-nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [Library](README.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
-- [Agent Install](../../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。
+- [Agent Install](../../adapters/architecture/agent-install.md) —— Agent layer 的安装协议与事实。

@@ -227,7 +227,7 @@ export interface Telemetry {
 
 /**
  * agent 的 OTLP 导出配置 —— 「沙箱里怎么让这个 CLI 把 trace 发到 endpoint」。
- * 刻意从 before 里拆出来:before 管运行配置,这里只管 otel 导出。CLI 安装归 `agent.ensure`。两种投递方式
+ * 刻意从 before 里拆出来:before 管运行配置,这里只管 otel 导出。CLI 安装归 `agent.install`。两种投递方式
  * (互不排斥,按 CLI 而定):
  *   · env-based(标准 OTEL_* 环境变量,如 bub/Python OTel SDK)—— 用 `env`;
  *   · file-based(CLI 自有配置文件,如 codex 的 config.toml [otel] 块)—— 用 `configure`。
@@ -391,9 +391,9 @@ export interface AgentBeforeContext extends SandboxAgentContext {
 
 /**
  * agent 自己的沙箱运行时生命周期(每个 Attempt 一次,与「每轮 send」分开):
- * CLI 安装属于 runner 的 agent.ensure；`before` 只写 model/base/auth 等本 Attempt 运行配置，`send` 只管把一轮 prompt
+ * CLI 安装属于 runner 的 agent.install；`before` 只写 model/base/auth 等本 Attempt 运行配置，`send` 只管把一轮 prompt
  * 跑起来(第一次 fresh / 后续 resume)+ 解析 transcript,`after` 清理。
- * 运行器在 layer prepare → agent.ensure → baseline 后、第一次 send 前调一次 `before`,不返回值;
+ * 运行器在 layer prepare → agent.install → baseline 后、第一次 send 前调一次 `before`,不返回值;
  * `after` 当且仅当本 attempt 走到过 `before` 时点才执行(`before` 抛错不豁免——半初始化
  * 的现场同样要扫尾),在 finally 里跑。要把 `before` 里创建的句柄传给 `after`,以
  * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
@@ -432,12 +432,12 @@ interface AgentBase {
   classifySendFailure?: SendFailureClassifier;
 }
 
-// ───────────────────────── Agent Ensure / Installer ─────────────────────────
+// ───────────────────────── Agent Install / Installer ─────────────────────────
 
 /**
  * Agent 安装身份:纯数据,进 configHash 与 `run.json`。
  * 与 sandbox case 身份正交——改 Agent 版本不重建任务 BuildKey。
- * 见 docs/feature/adapters/architecture/agent-ensure.md。
+ * 见 docs/feature/adapters/architecture/agent-install.md。
  */
 export interface AgentIdentity {
   /** Agent 名(与 adapter 显示名对齐,如 `codex`)。 */
@@ -494,22 +494,31 @@ export type AgentArtifactInstallShape =
   | { readonly kind: "npm-tarball" }
   | { readonly kind: "self-contained"; readonly binPath: string };
 
-/** `agent.ensure` 的事实：探测命中、已有安装修复或本次安装。 */
-export type AgentEnsureOutcome = "hit" | "repaired" | "installed";
+/** `agent.install` 的事实：探测命中、已有安装修复或本次安装。 */
+export type AgentInstallOutcome = "hit" | "repaired" | "installed";
 
 /**
- * Adapter 声明的纯 Ensure 义务：身份与只读 probe。probe 的非零退出是未命中，不是
+ * Adapter 声明的纯 Install 义务：身份与只读 probe。probe 的非零退出是未命中，不是
  * Agent 任务失败；Runner 决定是否交给 identity 精确匹配的 installer。
  */
-export interface AgentEnsure {
+export interface AgentInstall {
   readonly identity: AgentIdentity;
   readonly probe: StableSandboxCommand;
-  /** Human-only transient labels; omitted adapters do not add an ensure detail. */
+  /** Human-only transient labels; omitted adapters do not add an install detail. */
   readonly progress?: {
     readonly checking?: string;
     readonly ready?: string;
   };
 }
+
+/** Compatibility name for AgentInstall.
+ * @deprecated Use AgentInstall.
+ */
+export type AgentEnsure = AgentInstall;
+/** Compatibility name for AgentInstallOutcome.
+ * @deprecated Use AgentInstallOutcome.
+ */
+export type AgentEnsureOutcome = AgentInstallOutcome;
 
 export interface AgentInstallContext {
   readonly identity: AgentIdentity;
@@ -517,6 +526,11 @@ export interface AgentInstallContext {
   readonly signal: AbortSignal;
   progress(update: ProgressUpdate): void;
 }
+
+/** Compatibility name for AgentInstallContext.
+ * @deprecated Use AgentInstallContext.
+ */
+export type AgentEnsureContext = AgentInstallContext;
 
 export interface AgentArtifactContext {
   readonly targetPlatform: AgentArtifactPlatform;
@@ -528,7 +542,7 @@ export interface StagedAgentInstallContext extends AgentInstallContext {
 }
 
 interface AgentInstallerBase {
-  /** 必须与某条 ensure identity 完全相同；Runner 不做近似匹配。 */
+  /** 必须与某条 install identity 完全相同；Runner 不做近似匹配。 */
   readonly identity: AgentIdentity;
   /** 支持的目标平台键(`linux-x64-gnu` 等)；省略表示 installer 自己支持所有平台。 */
   readonly platforms?: readonly string[];
@@ -566,7 +580,7 @@ export interface SandboxAgent extends AgentBase {
   /** Adapter-owned command-only contribution to the unified Sandbox action DAG. */
   readonly sandbox?: SandboxLayer<"command-only">;
   /** Runner 在 author layers 后、before 前按声明顺序执行。 */
-  readonly ensure: readonly AgentEnsure[];
+  readonly install: readonly AgentInstall[];
   /** 官方或第三方随 adapter 提供的安装层；仅 identity 精确匹配时可接手。 */
   readonly installers: readonly AgentInstaller[];
   before?: AgentBefore;
@@ -588,7 +602,7 @@ export interface DirectAgent extends AgentBase {
 export type Agent = SandboxAgent | DirectAgent;
 
 /** `defineSandboxAgent()` 的入参形状(见 src/define.ts)——`kind: "sandbox"` 由 define 固定填入,不由用户声明。 */
-export interface SandboxAgentDef {
+interface SandboxAgentDefinition {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
   /** 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。 */
@@ -596,16 +610,16 @@ export interface SandboxAgentDef {
   /** Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。 */
   sandbox?: SandboxLayer<"command-only">;
   /** 单条或数组都按声明顺序规范化为 Agent layer。 */
-  ensure: AgentEnsure | readonly AgentEnsure[];
+  readonly install: AgentInstall | readonly AgentInstall[];
   /**
    * 配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
-   * `agent.ensure` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
+   * `agent.install` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
    */
   installers?: readonly AgentInstaller[];
   /**
    * 每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
-   * 本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.ensure`。运行器在 Sandbox
-   * 备好(layer prepare/ensure/baseline 之后)、第一次 send 前调用一次,不返回值。
+   * 本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.install`。运行器在 Sandbox
+   * 备好(layer prepare/install/baseline 之后)、第一次 send 前调用一次,不返回值。
    */
   before?: AgentBefore;
   /** OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 before 拆出。 */
@@ -620,6 +634,15 @@ export interface SandboxAgentDef {
    * 在 finally 里跑一次。 */
   after?: AgentAfter;
 }
+
+/** Author declaration; install and its deprecated alias are mutually exclusive. */
+export type SandboxAgentDef =
+  | (SandboxAgentDefinition & { readonly ensure?: never })
+  | (Omit<SandboxAgentDefinition, "install"> & {
+      /** @deprecated Use install. */
+      readonly ensure: AgentInstall | readonly AgentInstall[];
+      readonly install?: never;
+    });
 
 /** `defineAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
 export interface DirectAgentDef {

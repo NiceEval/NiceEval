@@ -62,7 +62,7 @@ export interface ExperimentRunInfo {
   /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
   judgeRuntime?: JudgeProviderIdentity;
   /**
-   * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
+   * Agent Install 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
    * 实际 artifact digest/platform 属运行 provenance，不进入这里。
    */
   agentInstalls: JsonValue[];
@@ -97,7 +97,7 @@ export type LifecyclePhase =
   | "sandbox.prepare.eval" // 仅错误/诊断归因,不单列计时
   | "sandbox.prepare.group" // Eval Group 作者与 Plugin command 的错误/诊断归因
   | "sandbox.prepare.experiment" // 仅错误/诊断归因,不单列计时
-  | "agent.ensure" // Runner 的 probe → 缺失才 install → 同一 probe 复检
+  | "agent.install" // Runner 的 probe → 缺失才 install → 同一 probe 复检
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "agent.setup" // Adapter runtime 配置 / 凭据 / state setup
   | "telemetry.configure" // tracing 出口配置

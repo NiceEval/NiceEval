@@ -178,7 +178,7 @@ Eval `test`、Assertion 与 Agent/test 阶段输入不进入未改变的 BeforeC
 逐 attempt 的容器名、临时目录和随机 project name 由 Provider 生成,不进 CaseKey，也不成为 portable Record identity。创建命令、计时与诊断需要可观察时，按其内容进入 Observability。
 
 作者不能用 `container_name` 固定任一 service 的容器名；这会绕开受管 project namespace,让并发 Case 争用同一个宿主资源。
-Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Install](../../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
+Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Install](../../adapters/architecture/agent-install.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
 Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不改变上面的任务身份语义:
 
@@ -337,7 +337,7 @@ defineSandboxCase({
 | 声明合法但平台、能力或 locator 不可用 | physical planning 聚合错误 | 整个 Run 零资源失败;作者用 selector 显式排除 |
 | 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-owned Runner Diagnostic；同一 owner 的 Runner Activity 读出归属 |
 | Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属，附 Sandbox Command、Runner Activity 与 Runner Diagnostic |
-| Agent Install 失败 | Attempt 形成 `errored` Verdict | `agent.install` 归属(见 [Agent Install](../../adapters/architecture/agent-ensure.md)) |
+| Agent Install 失败 | Attempt 形成 `errored` Verdict | `agent.install` 归属(见 [Agent Install](../../adapters/architecture/agent-install.md)) |
 
 Agent 完成任务但断言未达标时，才形成 `failed` Verdict。
 每个 case 至少产出创建与 ready 的 command、activity 与 diagnostic；它们分别归 Sandbox Commands、Runner Activities 与 Runner Diagnostics。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready activity；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期或留存注册表。
@@ -397,5 +397,5 @@ folder eval 的测试文件与构建输入共址时，Provider builder 与普通
 - [Library](../library/README.md) —— provider 选择、生命周期 Hook、自定义 provider。
 - [Architecture](README.md) —— 生命周期时序、留存注册表、孤儿核对、重试。
 - [Record Architecture](../../run/architecture/README.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
-- [Adapters · Agent Install](../../adapters/architecture/agent-ensure.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
+- [Adapters · Agent Install](../../adapters/architecture/agent-install.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
 - [Experiments · 缓存与携带](../../experiments/architecture/cache.md) —— CaseKey 怎样进入指纹与携带门。

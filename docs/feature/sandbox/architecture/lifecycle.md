@@ -304,7 +304,7 @@ Sandbox Plugin fragment 与四类 owner 的 action 进入同一个 DAG，不创�
 - [Sandbox Layer](../library/layers.md) —— 作者声明、配对规则与 command identity。
 - [Case](case.md) —— BuildKey / CaseKey、构建协调与 Compose 义务。
 - [Sandbox 复用](../library/reuse.md) —— reset、寿命确认与复用失败诊断。
-- [Agent Install](../../adapters/architecture/agent-ensure.md) —— install 声明与 Agent 安装层的协议。
+- [Agent Install](../../adapters/architecture/agent-install.md) —— install 声明与 Agent 安装层的协议。
 - [Experiments · 缓存与携带](../../experiments/architecture/cache.md) —— fingerprint 与 configHash 的完整输入清单。
 
 ## Eval Group 的 State 阶段

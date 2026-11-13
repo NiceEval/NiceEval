@@ -55,7 +55,7 @@ import {
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
-import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
+import { runAgentInstall, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { agentBeforeEffect, agentAfterEffect, authorCallbackEffect } from "../agents/agent-effects.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
@@ -2343,7 +2343,7 @@ interface AttemptResources {
     runtime: AssertionsRuntime<"pass" | "score">,
     state: AssertFirstContextState,
   ) => void;
-  /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
+  /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.install 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
   /** Attempt Scope-owned registry for adapter processes spanning sends. */
   attemptResources: ManagedAttemptResources;
@@ -3233,29 +3233,29 @@ async function runAttemptBody(
         }
       }
 
-      // 两侧作者的环境准备完成后，Runner 统一执行 Agent ensure；adapter setup 只能写运行时
+      // 两侧作者的环境准备完成后，Runner 统一执行 Agent install；adapter setup 只能写运行时
       // 配置/凭据，不能自行安装或跳过 probe → install → recheck 循环。
       if (agent.kind === "sandbox") {
         if (a.plan._tag !== "Sandbox") {
           throw new Error(`sandbox agent ${JSON.stringify(agent.name)} received a Direct plan`);
         }
-        enterPhase("agent.ensure");
+        enterPhase("agent.install");
         log(`preparing agent...`);
         const verified = await assertFirst.requestEffect(Effect.result(
           verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
         ));
         if (Result.isFailure(verified)) throw verified.failure;
-        const ensureEffect = runAgentEnsure(agent.ensure, agent.installers, sandbox, {
+        const installEffect = runAgentInstall(agent.install, agent.installers, sandbox, {
           coordinator: Option.fromNullishOr(prepareCoordinator),
           targetPlatform: a.plan.providerPlan.target.platform,
           signal,
           progress: feedback.progress,
         });
-        const ensured = await assertFirst.requestEffect(Effect.result(ensureEffect));
-        if (Result.isFailure(ensured)) throw ensured.failure;
+        const installed = await assertFirst.requestEffect(Effect.result(installEffect));
+        if (Result.isFailure(installed)) throw installed.failure;
       }
 
-      // 作者准备与 Agent ensure 都不属于 Agent diff；Runner 在这些
+      // 作者准备与 Agent install 都不属于 Agent diff；Runner 在这些
       // 基础设施活动完成后建立统一的 Agent 可归因起点。
       enterPhase("workspace.baseline");
       ledger = await createChangeLedger(sandbox, evalDef.diff === undefined

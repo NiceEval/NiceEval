@@ -20,7 +20,7 @@ import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
 import type {
   AgentArtifactPlatform,
-  AgentEnsure,
+  AgentInstall,
   AgentIdentity,
   AgentInstaller,
   AgentStagedArtifact,
@@ -425,11 +425,11 @@ function expandSandboxHomePathEffect(
 }
 
 /**
- * 内置 Node CLI Agent 的默认 staged ensure + installer 对。
+ * 内置 Node CLI Agent 的默认 staged install + installer 对。
  * 官方 / 自建预装命中同一条 check;缺失或错版本走宿主 pack + 文件 API 安装。
  */
 export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
-  readonly ensure: AgentEnsure;
+  readonly install: AgentInstall;
   readonly installer: Extract<AgentInstaller, { installMode: "staged" }>;
 } {
   const parseVersion = opts.parseVersion ?? defaultParseVersion;
@@ -460,7 +460,7 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
       { signal: context.signal },
     ).then((exit) => {
       if (Exit.isSuccess(exit)) return;
-      // `runPromise` wraps a typed Effect failure in FiberFailure. The Ensure
+      // `runPromise` wraps a typed Effect failure in FiberFailure. The Install
       // loop must see the original command-exit value so a version miss takes
       // the install path instead of being misclassified as a broken probe.
       throw Cause.squash(exit.cause);
@@ -499,7 +499,7 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
     ),
   };
   return {
-    ensure: {
+    install: {
       identity: opts.identity,
       probe,
       ...(opts.progress?.checking !== undefined || opts.progress?.ready !== undefined

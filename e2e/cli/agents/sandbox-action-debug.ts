@@ -21,7 +21,7 @@ export const sandboxActionDebugAgent = defineSandboxAgent({
   sandbox: sandboxLayer()
     .before(plannedDebugAction("agent-frequency-first", 5))
     .before(plannedDebugAction("tie-agent", 100)),
-  ensure: {
+  install: {
     identity: {
       agent: "cli-sandbox-action-debug",
       version: "1",

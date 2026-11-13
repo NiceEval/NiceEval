@@ -600,7 +600,7 @@ function beforeFromDeclaration(
   });
 }
 
-/** @internal Agent ensure uses the same command declaration/link path as author-owned before entries. */
+/** @internal Agent install uses the same command declaration/link path as author-owned before entries. */
 export function linkSandboxCommandBefore(
   owner: SandboxScheduleOwnerRef,
   ordinal: number,

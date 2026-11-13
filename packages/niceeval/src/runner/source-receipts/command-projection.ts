@@ -39,8 +39,8 @@ function commandManifestPhase(
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return "sandbox.prepare";
-    case "agent.ensure":
-      return "agent.ensure";
+    case "agent.install":
+      return "agent.install";
     case "eval.run":
       return "eval.run";
     case "agent.run":

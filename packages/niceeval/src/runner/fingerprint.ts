@@ -418,7 +418,7 @@ export interface ProjectTargetPlan {
 
 /**
  * 只做 discovery 之后的 link + physical identity planning 与 fingerprint；不读 Record，
- * 不调用 setup/create/build/Agent Ensure，也不决定 reuse/派发。
+ * 不调用 setup/create/build/Agent Install，也不决定 reuse/派发。
  */
 export function planProjectTarget(
   evals: readonly DiscoveredEval[],

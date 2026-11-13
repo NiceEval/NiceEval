@@ -8,7 +8,7 @@ export const sandboxStepActivityAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture does not report token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "cli-sandbox-step-activity", version: "1", revision: "1" },
     probe: shell("true"),
   },

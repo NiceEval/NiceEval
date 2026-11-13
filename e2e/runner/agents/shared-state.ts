@@ -124,7 +124,7 @@ export const sharedStateExclusiveLaneAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-shared-state-exclusive-lane", version: "1", revision: "1" },
     probe: shell("true"),
   },
@@ -171,7 +171,7 @@ export const sharedStateReuseAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic lifecycle fixture" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-shared-state-reuse", version: "1", revision: "1" },
     probe: shell("true"),
   },

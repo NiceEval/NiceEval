@@ -11,7 +11,7 @@ export default defineExperiment({
   attempts: 4, maxConcurrency: 4, earlyExit: false,
   adapter: defineSandboxAgent({
     name: "staged-payload-fixture", evidenceCoverage: completeEvidenceCoverage,
-    ensure: { identity, probe: shell("test -f /tmp/staged-payload-ready") },
+    install: { identity, probe: shell("test -f /tmp/staged-payload-ready") },
     installers: [{
       identity, installMode: "staged",
       async prepareArtifact({ targetPlatform }) {

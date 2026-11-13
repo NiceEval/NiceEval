@@ -123,9 +123,18 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   assertAuthorLifecycleNames(def, "Agent");
   if (!def.name) throw new Error(`defineSandboxAgent requires name.`);
   assertEvidenceCoverage(def.evidenceCoverage, "defineSandboxAgent");
-  if (def.ensure === undefined) throw new Error(`defineSandboxAgent requires an ensure declaration.`);
-  const ensure = Array.isArray(def.ensure) ? def.ensure : [def.ensure];
-  if (ensure.length === 0) throw new Error(`defineSandboxAgent requires an ensure declaration.`);
+  if (Object.hasOwn(def, "install") && Object.hasOwn(def, "ensure")) {
+    throw new TypeError("defineSandboxAgent cannot declare both install and ensure; use install only.");
+  }
+  const declaration = def.install ?? def.ensure;
+  if (declaration === undefined) throw new Error("defineSandboxAgent requires an install declaration.");
+  const install = Array.isArray(declaration) ? declaration : [declaration];
+  if (install.length === 0) throw new Error("defineSandboxAgent requires an install declaration.");
+  if (def.ensure !== undefined) {
+    const source = captureMigrationSource();
+    const file = source.state === "located" ? `${source.file}:${source.line}` : "source unavailable";
+    console.warn(`${file}: defineSandboxAgent({ ensure }) is deprecated; replace ensure with install: defineSandboxAgent({ install }).`);
+  }
   if (def.sandbox !== undefined) {
     if (!isSandboxLayer(def.sandbox)) {
       throw new TypeError(
@@ -145,7 +154,7 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     defineScoreEval,
     evidenceCoverage: def.evidenceCoverage,
     ...(def.sandbox === undefined ? {} : { sandbox: def.sandbox }),
-    ensure,
+    install,
     installers: def.installers ?? [],
     before: def.before,
     tracing: def.tracing,
@@ -163,7 +172,9 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
 
 /** @internal Creates a Promise facade while retaining a built-in Effect runtime. */
 export function makeSandboxAgent(
-  def: Omit<SandboxAgentDef, "send" | "before" | "after"> & InternalSandboxAgentDefinition,
+  def: Omit<SandboxAgentDef, "send" | "before" | "after" | "install" | "ensure"> & {
+    readonly install: NonNullable<SandboxAgentDef["install"]>;
+  } & InternalSandboxAgentDefinition,
 ): SandboxAgent {
   const { send, before, after, ...publicDefinition } = def;
   const agent = defineSandboxAgent({

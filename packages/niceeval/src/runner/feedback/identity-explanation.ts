@@ -129,9 +129,10 @@ function agentInstallDifference(from: string, to: string): string | undefined {
     if (!Array.isArray(before) || !Array.isArray(after)) return undefined;
     const describe = (value: unknown): string | undefined => {
       if (typeof value !== "object" || value === null) return undefined;
-      const ensure: unknown = Reflect.get(value, "ensure");
-      if (typeof ensure !== "object" || ensure === null) return undefined;
-      const agent = Reflect.get(ensure, "agent"), version = Reflect.get(ensure, "version"), revision = Reflect.get(ensure, "revision");
+      // Read the frozen agentInstalls identity encoding, independent of author API spelling.
+      const declaration: unknown = Reflect.get(value, "ensure");
+      if (typeof declaration !== "object" || declaration === null) return undefined;
+      const agent = Reflect.get(declaration, "agent"), version = Reflect.get(declaration, "version"), revision = Reflect.get(declaration, "revision");
       if (typeof agent !== "string" || typeof version !== "string" || typeof revision !== "string") return undefined;
       return `${singleLine(agent)} ${singleLine(version)} (recipe ${singleLine(revision)})`;
     };

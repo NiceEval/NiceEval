@@ -63,8 +63,8 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return Object.freeze({ kind: "attempt" as const, phase: "sandbox.prepare" as const, label });
-    case "agent.ensure":
-      return Object.freeze({ kind: "attempt" as const, phase: "agent.ensure" as const, label });
+    case "agent.install":
+      return Object.freeze({ kind: "attempt" as const, phase: "agent.install" as const, label });
     case "eval.run":
       return Object.freeze({ kind: "attempt" as const, phase: "eval.run" as const, label });
     case "assertions.evaluate":

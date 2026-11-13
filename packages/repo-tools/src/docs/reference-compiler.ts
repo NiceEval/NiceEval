@@ -1149,7 +1149,8 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         },
         {
           heading: "SandboxAgentDef",
-          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "SandboxAgentDef"),
+          // The public input adds a deprecated alias branch; document its canonical declaration.
+          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "SandboxAgentDefinition"),
         },
         {
           heading: "AgentContext",

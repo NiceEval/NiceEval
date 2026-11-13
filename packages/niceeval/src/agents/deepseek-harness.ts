@@ -7,7 +7,7 @@ import { shared } from "./shared.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { shell } from "../sandbox/commands.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import type { AgentEnsure, AgentInstaller } from "./types.ts";
+import type { AgentInstall, AgentInstaller } from "./types.ts";
 import {
   exactNpmPluginRevision,
   normalizeExactNpmPlugins,
@@ -43,7 +43,7 @@ const DSH_PNPM_VERSION = "10.17.1";
 function dshPluginLayer(
   cliVersion: string,
   plugins: readonly ExactNpmPlugin[],
-): { ensure: AgentEnsure; installer: AgentInstaller } {
+): { install: AgentInstall; installer: AgentInstaller } {
   const identity = {
     agent: "deepseek-harness-plugins",
     version: cliVersion,
@@ -63,7 +63,7 @@ function dshPluginLayer(
     `if(p.name!==x.name||p.version!==x.version||!p.dsh?.bundle)process.exit(1);}`;
   const probeScript = `DSH_HOME="$HOME/.niceeval-dsh" node -e ${shellQuote(verify)}`;
   return {
-    ensure: { identity, probe: shell(probeScript) },
+    install: { identity, probe: shell(probeScript) },
     installer: {
       identity,
       installMode: "sandbox-network",
@@ -114,7 +114,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
   return makeSandboxAgent({
     name: "deepseek-harness",
     evidenceCoverage: DSH_EVIDENCE_COVERAGE,
-    ensure: pluginLayer === undefined ? install.ensure : [install.ensure, pluginLayer.ensure],
+    install: pluginLayer === undefined ? install.install : [install.install, pluginLayer.install],
     installers: pluginLayer === undefined
       ? [install.installer]
       : [install.installer, pluginLayer.installer],

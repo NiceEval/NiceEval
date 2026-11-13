@@ -45,7 +45,7 @@ export const providerCapacityAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-provider-capacity", version: "1", revision: "1" },
     probe: shell("node --version >/dev/null"),
   },

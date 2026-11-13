@@ -393,60 +393,60 @@ function matchingInstaller(
   return installers.find((candidate) => sameIdentity(candidate.identity, identity));
 }
 
-function ensureStep(pair: PreparedRunPair, index: number): CommandPlanStep {
+function installStep(pair: PreparedRunPair, index: number): CommandPlanStep {
   const agent = pair.run.agent;
   if (agent === undefined || agent.kind !== "sandbox") {
-    throw new Error("Command plan invariant failed: Direct Agent has no Sandbox ensure step.");
+    throw new Error("Command plan invariant failed: Direct Agent has no Sandbox install step.");
   }
   const owner: CommandPlanOwner = { kind: "agent", id: agent.name };
-  const ensure = agent.ensure[index];
-  if (ensure === undefined) throw new Error(`Command plan invariant failed: missing Agent ensure #${index}.`);
-  const probe = sandboxCommandPlanOf(ensure.probe);
+  const install = agent.install[index];
+  if (install === undefined) throw new Error(`Command plan invariant failed: missing Agent install #${index}.`);
+  const probe = sandboxCommandPlanOf(install.probe);
   const probeStep = probe === undefined
     ? opaque(
-        "agent.ensure",
+        "agent.install",
         "agent-probe-callback",
-        "custom Agent ensure probe; commands are only known when it runs",
+        "custom Agent install probe; commands are only known when it runs",
         { owner, label: `probe #${index}` },
       )
-    : stepFromDeclaration({ ...probe, label: `probe #${index}` }, "agent.ensure", owner);
-  const installer = matchingInstaller(agent.installers, ensure.identity);
+    : stepFromDeclaration({ ...probe, label: `probe #${index}` }, "agent.install", owner);
+  const installer = matchingInstaller(agent.installers, install.identity);
   const children: CommandPlanStep[] = [probeStep];
   if (installer === undefined) {
     children.push(knownNoCommand(
-      "agent.ensure",
+      "agent.install",
       "installer-missing",
       "probe miss stops with a missing-installer error",
       { owner, label: `install #${index}`, condition: PROBE_MISS },
     ));
   } else if (installer.installMode === "verify-only") {
     children.push(knownNoCommand(
-      "agent.ensure",
+      "agent.install",
       "verify-only",
       "probe miss stops because this installer is verify-only",
       { owner, label: `install #${index}`, condition: PROBE_MISS },
     ));
   } else {
     children.push(opaque(
-      "agent.ensure",
+      "agent.install",
       "agent-installer-callback",
       `${installer.installMode} installer callback; commands are only known when it runs`,
       { owner, label: `install #${index}`, condition: PROBE_MISS },
     ));
     children.push(probe === undefined
       ? opaque(
-          "agent.ensure",
+          "agent.install",
           "agent-probe-callback",
-          "custom Agent ensure recheck; commands are only known when it runs",
+          "custom Agent install recheck; commands are only known when it runs",
           { owner, label: `recheck #${index}`, condition: PROBE_MISS },
         )
-      : stepFromDeclaration({ ...probe, label: `recheck #${index}` }, "agent.ensure", owner, PROBE_MISS));
+      : stepFromDeclaration({ ...probe, label: `recheck #${index}` }, "agent.install", owner, PROBE_MISS));
   }
   return {
-    phase: "agent.ensure",
+    phase: "agent.install",
     truth: "conditional",
     owner,
-    label: `${ensure.identity.agent}@${ensure.identity.version}`,
+    label: `${install.identity.agent}@${install.identity.version}`,
     children,
   };
 }
@@ -923,7 +923,7 @@ function attemptBody(
     ...scheduledBeforeSteps(pair, capabilityOf),
     ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "setup", evalOwner),
     ...(pair.run.agent?.kind === "sandbox"
-      ? pair.run.agent.ensure.map((_, index) => ensureStep(pair, index))
+      ? pair.run.agent.install.map((_, index) => installStep(pair, index))
       : []),
     ...(pair.plan._tag === "Sandbox"
       ? [opaque(

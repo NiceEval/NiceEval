@@ -106,7 +106,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
 // @concord-implements docs/feature/adapters/library/sdk/opencode/README.md
 export function openCodeAgent(config?: OpenCodeConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCODE_CLI_VERSION;
-  const { ensure, installer } = createNpmCliInstaller({
+  const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "opencode",
       version,
@@ -121,7 +121,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
     name: "opencode",
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapGenericSpans,
-    ensure,
+    install,
     installers: [installer],
 
     tracing: {

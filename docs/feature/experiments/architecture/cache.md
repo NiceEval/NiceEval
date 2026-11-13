@@ -361,7 +361,7 @@ Human `--dry` 在原因后列出 selector 与有界值，例如 `will run — co
 |---|---|
 | Eval input 的指纹算法、纳入的输入集合与外层编码 | `domains.fingerprintAlgorithm`、`fingerprintCoverage` 与 `inputIdentity` |
 | config identity 的配方与组合 slot 输入 | `domains.configIdentity` 与 `slotInput` |
-| Provider、Agent installer 等 owner 声明的 identity | owner 写入已求值配置的 domain 值，即 manifest 的某条 `config:` 条目，见 [Agent install](../../adapters/architecture/agent-ensure.md) |
+| Provider、Agent installer 等 owner 声明的 identity | owner 写入已求值配置的 domain 值，即 manifest 的某条 `config:` 条目，见 [Agent install](../../adapters/architecture/agent-install.md) |
 
 NiceEval 对身份稳定性作以下承诺：
 

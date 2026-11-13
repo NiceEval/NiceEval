@@ -26,7 +26,7 @@ test.concurrent.each([
       export default defineExperiment({
         adapter: defineSandboxAgent({
           name: "pause-debug", evidenceCoverage: completeEvidenceCoverage,
-          ensure: { identity: { agent: "pause-debug", version: "1", revision: "1" }, probe: shell("true") },
+          install: { identity: { agent: "pause-debug", version: "1", revision: "1" }, probe: shell("true") },
           send: async () => ({ status: "completed", events: [] }),
           after: async () => { await writeFile("pause-agent-cleaned", "cleaned"); },
         }),

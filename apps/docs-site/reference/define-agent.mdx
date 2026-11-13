@@ -359,10 +359,10 @@ sandbox?: SandboxLayer<"command-only">;
 
 The Adapter's own Sandbox actions; an Agent cannot choose or contribute a template.
 
-#### `ensure`
+#### `install`
 
 ```ts
-ensure: AgentEnsure | readonly AgentEnsure[];
+readonly install: AgentInstall | readonly AgentInstall[];
 ```
 
 A single entry or an array is normalized into Agent layers in declaration order.
@@ -374,7 +374,7 @@ installers?: readonly AgentInstaller[];
 ```
 
 Paired installation layers; omitted means this adapter provides only the probe protocol, and on a miss the Runner
-names the exact missing identity at `agent.ensure`. The factory normalizes an omission into an empty array.
+names the exact missing identity at `agent.install`. The factory normalizes an omission into an empty array.
 
 #### `before`
 
@@ -383,8 +383,8 @@ before?: AgentBefore;
 ```
 
 Once per Attempt (not once per send): writes config.toml / authentication configuration (model/base/auth and other
-runtime configuration that does not change within this Attempt). Probing, installing, and rechecking the CLI belong to `agent.ensure`. The runner calls it once after the Sandbox
-is ready (after layer prepare/ensure/baseline) and before the first send; it returns no value.
+runtime configuration that does not change within this Attempt). Probing, installing, and rechecking the CLI belong to `agent.install`. The runner calls it once after the Sandbox
+is ready (after layer prepare/install/baseline) and before the first send; it returns no value.
 
 #### `tracing`
 

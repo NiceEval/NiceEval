@@ -97,7 +97,7 @@ function expectCommandSummary(document: InspectionAttemptTraceDocument): Inspect
     expect([
       "attempt.before",
       "sandbox.prepare",
-      "agent.ensure",
+      "agent.install",
       "eval.run",
       "sandbox.command",
       "attempt.after",

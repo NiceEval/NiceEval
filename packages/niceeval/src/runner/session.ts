@@ -47,7 +47,7 @@ export interface SessionExperimentRecord {
   activeAttempts?: SessionActiveAttemptRecord[];
 }
 
-const LifecyclePhaseSchema = Schema.Literals(["judge.precheck", "experiment.before", "experiment.after", "attempt.before", "attempt.after", "sandbox.queue", "sandbox.create", "sandbox.prepare", "sandbox.prepare.eval", "sandbox.prepare.group", "sandbox.prepare.experiment", "agent.ensure", "workspace.baseline", "agent.before", "telemetry.configure", "eval.run", "agent.run", "workspace.diff", "assertions.evaluate", "telemetry.collect", "agent.after", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
+const LifecyclePhaseSchema = Schema.Literals(["judge.precheck", "experiment.before", "experiment.after", "attempt.before", "attempt.after", "sandbox.queue", "sandbox.create", "sandbox.prepare", "sandbox.prepare.eval", "sandbox.prepare.group", "sandbox.prepare.experiment", "agent.install", "workspace.baseline", "agent.before", "telemetry.configure", "eval.run", "agent.run", "workspace.diff", "assertions.evaluate", "telemetry.collect", "agent.after", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
 
 export const SessionActiveAttemptsSchema = Schema.mutable(Schema.Array(Schema.Struct({
   evalId: Schema.String, attemptOrdinal: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
@@ -209,7 +209,19 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
   if (raw.attempts !== undefined && (attempts === undefined || attempts.some((item) => item === undefined))) {
     return undefined;
   }
-  const activeRead = raw.activeAttempts === undefined ? undefined : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(raw.activeAttempts);
+  const normalizedActive = Array.isArray(raw.activeAttempts) ? raw.activeAttempts.map((value) => {
+    const active = asRecord(value);
+    if (active?.phase !== "agent.ensure") return value;
+    const detail = asRecord(active.detail);
+    return {
+      ...active,
+      phase: projectLifecyclePhase(active.phase),
+      ...(typeof detail?.text !== "string" ? {} : {
+        detail: { ...detail, text: detail.text.replace(/\bagent\.ensure\b/g, "agent.install") },
+      }),
+    };
+  }) : raw.activeAttempts;
+  const activeRead = normalizedActive === undefined ? undefined : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(normalizedActive);
   if (activeRead?._tag === "Failure") return undefined;
   const activeAttempts = activeRead?.success;
   return {

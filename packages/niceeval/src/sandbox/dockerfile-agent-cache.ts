@@ -4,7 +4,7 @@
 import { Deferred, Effect, Exit } from "effect";
 import { digestOf, type BuildKey } from "./identity.ts";
 import { AGENT_DOCKERFILE_CACHE_SAFE, type DockerfileAgentCacheSafeInstaller } from "../agents/cache-marker.ts";
-import type { AgentEnsure, AgentIdentity, AgentInstaller } from "../agents/types.ts";
+import type { AgentInstall, AgentIdentity, AgentInstaller } from "../agents/types.ts";
 import type { RunTimingRecorder } from "../runner/timing.ts";
 
 export const DOCKERFILE_AGENT_DERIVED_MATERIALIZER_REVISION = "dockerfile-agent-1";
@@ -12,7 +12,7 @@ export const DOCKERFILE_AGENT_DERIVED_MATERIALIZER_REVISION = "dockerfile-agent-
 export interface DockerfileAgentCacheRequest {
   readonly taskLocator: string;
   readonly platform: string;
-  readonly ensure: AgentEnsure;
+  readonly install: AgentInstall;
   readonly installer: AgentInstaller;
 }
 
@@ -21,7 +21,7 @@ export interface DockerfileAgentDerivedImageBuildInput {
   readonly derivedLocator: string;
   readonly derivedKey: BuildKey;
   readonly platform: string;
-  readonly ensureIdentity: AgentIdentity;
+  readonly installIdentity: AgentIdentity;
   readonly installerIdentity: AgentIdentity;
   readonly installMode: "staged";
 }
@@ -55,10 +55,11 @@ export function dockerfileAgentDerivedKey(input: DockerfileAgentCacheRequest): B
     materializerRevision: DOCKERFILE_AGENT_DERIVED_MATERIALIZER_REVISION,
     taskLocator: input.taskLocator,
     platform: input.platform,
+    // Frozen cache-key encoding: keep the historical key to preserve the digest.
     ensure: {
-      agent: input.ensure.identity.agent,
-      version: input.ensure.identity.version,
-      revision: input.ensure.identity.revision,
+      agent: input.install.identity.agent,
+      version: input.install.identity.version,
+      revision: input.install.identity.revision,
     },
     installer: {
       agent: input.installer.identity.agent,
@@ -124,7 +125,7 @@ export class DockerfileAgentImageCoordinator {
             derivedLocator,
             derivedKey,
             platform: input.platform,
-            ensureIdentity: input.ensure.identity,
+            installIdentity: input.install.identity,
             installerIdentity: input.installer.identity,
             installMode: "staged",
           }, signal),

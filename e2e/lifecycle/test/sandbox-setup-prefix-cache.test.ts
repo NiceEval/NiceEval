@@ -939,7 +939,7 @@ export default defineEval({
           return controlled.done;
         },
       );
-      expect(receipt.exitCode, "the fake provider deliberately fails agent.ensure after pre-dispatch preparation").not.toBe(0);
+      expect(receipt.exitCode, "the fake provider deliberately fails agent.install after pre-dispatch preparation").not.toBe(0);
       const completedJournal = await readIncusJournal(journalPath);
       const barrierReadyIndex = completedJournal.findIndex((record) => record.event === "prefix-children-ready");
       const childReleaseIndexes = completedJournal.flatMap((record, index) =>

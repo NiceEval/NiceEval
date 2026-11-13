@@ -38,7 +38,7 @@ export const orStopParallelSandbox = dockerSandbox({
 export const orStopParallelAgent = defineSandboxAgent({
   name: "runner-or-stop-parallel",
   evidenceCoverage: { ...completeEvidenceCoverage, usage: { status: "unavailable", reason: "deterministic fixture" } },
-  ensure: {
+  install: {
     identity: { agent: "runner-or-stop-parallel", version: "1", revision: "1" },
     probe: shell("true"),
   },

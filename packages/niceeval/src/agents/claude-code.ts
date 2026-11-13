@@ -132,7 +132,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
   const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
-  const { ensure, installer } = createNpmCliInstaller({
+  const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "claude-code",
       version: DEFAULT_CLAUDE_CODE_CLI_VERSION,
@@ -147,7 +147,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapClaudeCodeSpans,
-    ensure,
+    install,
     installers: [installer],
 
     // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,

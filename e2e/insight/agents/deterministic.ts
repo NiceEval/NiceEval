@@ -27,7 +27,7 @@ export function deterministicAgent(options: { readonly partialUsage?: boolean } 
   return defineSandboxAgent({
     name: "inspection-fixture",
     evidenceCoverage: completeEvidenceCoverage,
-    ensure: {
+    install: {
       identity: { agent: "inspection-fixture", version: "1", revision: "1" },
       probe: shell("true"),
     },

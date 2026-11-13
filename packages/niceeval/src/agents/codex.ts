@@ -308,7 +308,7 @@ export function codexAgent(config?: CodexConfig): Agent {
     },
   });
 
-  const { ensure, installer } = withCodexPatch(cliInstall.ensure, cliInstall.installer);
+  const { install, installer } = withCodexPatch(cliInstall.install, cliInstall.installer);
 
   return attachCodingAgentExtensions(registerAgentLifecycleHookCommands(makeSandboxAgent({
     name: "codex",
@@ -316,7 +316,7 @@ export function codexAgent(config?: CodexConfig): Agent {
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapCodexSpans,
     classifySendFailure: classifyCodexSendFailure,
-    ensure,
+    install,
     installers: [installer],
 
     before: (sb, ctx) => Effect.gen(function* () {
