@@ -486,7 +486,9 @@ function writeAttachment<Owner extends RecordAttachmentOwner, Value>(input: { re
         key, logicalHandle: ATTACHMENT_PAYLOAD_HANDLE, kind: "bytes", maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
         stream: Stream.succeed(payloadBytes),
       } }));
-      payloadBytes = attachmentPayloadPointerBytes;
+      // Final metadata transfers ownership to the worker. Never detach the
+      // shared pointer template used by later attachments and Runs.
+      payloadBytes = attachmentPayloadPointerBytes.slice();
     }
     const metadata = attachmentMetadata({ attachmentId, payloadBytes, references, contents });
     input.run.attachments.set(attachmentId, Object.freeze({ metadata, ownerKind: input.owner, ...(input.attempt === undefined ? {} : { ownerAttemptId: input.attempt.attemptId }), family, revision: input.persistence.revision }));

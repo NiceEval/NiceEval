@@ -113,7 +113,7 @@ describe("Record storage worker client failure lifecycle", () => {
       operation: "worker-protocol",
     });
     expect(workerHarness.instances[0]?.terminated).toBe(1);
-    await expect(client.validate()).rejects.toThrow("closed");
+    await expect(client.validate()).rejects.toThrow("Record storage worker returned an invalid response");
   });
 
   it("settles pending work when close wins the response race and terminates only once", async () => {
