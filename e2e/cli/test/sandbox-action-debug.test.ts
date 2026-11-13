@@ -190,6 +190,13 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     expect(dependencies[0]).toEqual(expect.objectContaining({ source: "explicit" }));
 
     const orderedIds = nodes.map((node) => actionId(node));
+    expect(nodes.filter((node) => node.owner?.kind === "experiment").map(actionId)).toEqual([
+      "frequency-high", "dependency-root", "fingerprint-prototype-alpha",
+      "fingerprint-prototype-beta", "fingerprint-constructor-beta",
+      "builtin-fingerprint-alpha", "builtin-fingerprint-beta",
+      "tie-experiment-first", "tie-experiment-second", "sensitive-command",
+      "opaque-barrier", "opaque-suffix",
+    ]);
     const index = (id: string): number => orderedIds.indexOf(id);
     expect(index("frequency-low")).toBeLessThan(index("frequency-high"));
     expect(index("agent-frequency-first")).toBeLessThan(index("frequency-low"));
