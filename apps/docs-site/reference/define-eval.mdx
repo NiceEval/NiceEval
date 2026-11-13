@@ -130,7 +130,7 @@ How an assertion affects the result by default depends on the Eval type:
 
 Compute ordinary formulas directly in TypeScript, then register them with `t.score(ratio, { weight: 50 }).label("Completion time")`. `ratio` is a number between 0 and 1, and `weight` is a non-negative finite number. The result keeps the ratio, the corresponding points, and the actual score. When the numeric material it depends on is unavailable, the item's score is recorded as unknown.
 
-The `ScoreTestContext` of `defineScoreEval` also provides `t.score(n)`, which registers a score item directly; existing assertions count toward the score with `.score(n)`. In both places `n` must be a finite number not less than zero, and 0 is also an explicit score. For the complete rules of `calledTool` and `notCalledTool`, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md). All members are:
+The `ScoreTestContext` of `defineScoreEval` also provides `t.score(n)`, which registers a score item directly; existing assertions count toward the score with `.score(n)`. In both places `n` must be a finite number not less than zero, and 0 is also an explicit score. For tool call matching and counting rules, see [Match tool calls](/reference/expect#match-tool-calls). All members are:
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -511,13 +511,23 @@ They share the call budget, timeout settings, and audit records with the ready-m
 - Chat-style services use forced-function requests, and TypeSafe uses the `/systemone` endpoint; both validate responses strictly.
 - Network transport errors or timeouts make the result unavailable; HTTP 400 or protocol incompatibility makes it errored.
 
-For the complete rules, see [Custom Matches](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/custom-assertions.md).
+Custom Matches must be reusable, immutable, and free of side effects, comparing only explicitly supplied material. They do not store the call site, scope, label, score, or gate, and do not implicitly read ctx. Ordinary evaluators must be deterministic; when an LLM is needed, use managed capabilities and obey the definition's call and material budgets.
 
 ## The `Turn` return type
 
 `t.send(...)` returns a `TurnHandle`. It contains common fields derived from the event stream, plus a full set of assertions scoped to this turn only.
 
-`calledTool` and `notCalledTool` are also assertions on the Turn; for their signatures and matching rules, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md).
+`calledTool` and `notCalledTool` are also assertions on the Turn; for matching and counting rules, see [Match tool calls](/reference/expect#match-tool-calls). A Turn checks only the current turn, a Session checks all turns up to the call site, and root `t` checks the prefix of each Session already started when called. Later calls do not enter an already registered assertion.
+
+`turn.inputRequests` is a read-only, deeply frozen projection of every `input.requested` request in this turn's events, in event-stream order; it is `[]` when there are no requests.
+Use it to read any number of requests; the existing `requireInputRequest` still requires exactly one matching request.
+
+```ts
+const turn = await t.send("Review the changes");
+if (turn.inputRequests.length > 0) {
+  await t.respond(...turn.inputRequests.map(request => ({ request, optionId: "approve" })));
+}
+```
 
 {/* GENERATED:BEGIN turn-handle */}
 
@@ -714,11 +724,24 @@ In Agent scenarios, `read` reads the tool calls (`toolCalls`) or events (`eventO
 
 ## Sandbox result assertions
 
+These methods check workspace changes the agent produces between the endpoints of each send window. They return post-run assertion handles that support only key, label, group, optional, and gate configuration.
+
 | Method | Meaning |
 | --- | --- |
+| `t.sandbox.changedPaths(paths)` | The unordered set of paths changed by the agent exactly equals `paths`; paths must be normalized and relative to the workspace. |
+| `t.sandbox.noChanges()` | Equivalent to `changedPaths([])`; requires no changes. |
+| `t.sandbox.changedOnlyWithin(paths)` | Every changed path equals an allowed entry or lies under that directory; no changes also satisfies it. |
 | `t.sandbox.unchangedWithin(paths)` | Protects the listed files and directories; any changed path within those scopes makes the condition unmet. No changes also satisfies it. |
+| `t.sandbox.fileChanged(path, options?)` | Within the same send window, the path changed and satisfies `status`, `before`, and `after` together; content conditions use string Matches. |
+| `t.sandbox.fileDeleted(path)` | Finds a deletion of the path; the path does not have to remain absent at the end of the entire Attempt. |
+| `t.sandbox.notInDiff(pattern, options?)` | The regular expression matches neither changed paths nor changed lines; `content` selects `added`, `removed`, or the default `both`. Unchanged context is not scanned. |
 | `t.sandbox.inDiff(pattern, options?)` | The condition is satisfied when the regular expression matches a changed path or selected changed line; `content` accepts the same values and default as `notInDiff`. |
+
+`changedPaths(["src/a.ts"])` requires exactly that file to change; `changedOnlyWithin(["src"])` allows no changes or changes to only some files under `src`. The latter matches path components, so `agents` does not cover `agents-old`. Provide at least one scope; use `noChanges()` instead of an empty array.
+Paths containing `*` or `?` throw `TypeError`: globs are not supported, so write the directory name directly for a directory prefix.
 
 `unchangedWithin(["agents", "niceeval.config.ts"])` protects the run configuration while allowing changes to other files; it is not the logical inverse of `changedOnlyWithin`. The same path-component matching and rejection rules for globs and empty arrays apply as for allowed-scope checks.
 
 `inDiff` does not scan unchanged context. When there is no match and the selected content is elided, the result is unavailable; a match in a path or known changed line still establishes that the condition is satisfied. Match evidence keeps the first matching path and a bounded preview. To match only content, choose a pattern that avoids matching paths.
+
+These assertions follow `diff.ignore` and send-window attribution. Fixtures written by the author do not count as agent changes. Restoring the original state within one send leaves no endpoint change; changing and restoring across different sends still preserves the changes. Failed or incomplete material collection yields unavailable. When content is elided, only matches that depend on that content become undecidable; they are never reported as matched.

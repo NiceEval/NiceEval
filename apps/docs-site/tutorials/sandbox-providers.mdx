@@ -20,6 +20,7 @@ Start by choosing based on where you run evals:
 | Incus VM | Agents that need Docker or Compose with a dedicated kernel | An administrator-provisioned Incus environment, trusted image, and Provider descriptor |
 | Vercel Sandbox | When you need cloud isolation, more resources, or a more stable environment | A Vercel token or OIDC configuration |
 | E2B | When you need heavy parallelism, or want to use a ready-made Agent template directly | An E2B account and `e2b auth login` |
+| Instabox | Independent cloud Linux machines started from a fixed snapshot | An Instabox API key, a plan that allows disabling auto-pause, and a prepared snapshot |
 | OpenSandbox | Remote containers managed by an existing service | An OpenSandbox endpoint, API key, and image |
 
 Choose one in the Experiment's `sandbox` field:
@@ -47,6 +48,7 @@ Provider SDKs are not installed with NiceEval. Install only the one you use, so 
 | `vercelSandbox({ snapshotId })` | `pnpm add @vercel/sandbox` |
 | `e2bSandbox({ template })` | `pnpm add e2b` |
 | `openSandbox({ image, targetPlatform, lifetimeMs })` | `pnpm add @alibaba-group/opensandbox@1.1.1` |
+| `instaboxSandbox({ snapshotId, lifetimeMs })` | `pnpm add ssh2@1.17.0` |
 
 If it is missing, creating the Sandbox reports an error with the install command, for example `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`. Install it as shown and run again.
 
@@ -86,6 +88,30 @@ When the service enables rootfs snapshots, images pinned to a digest can use bef
 Use `sandboxCache: { before: "bypass" }` or `--sandbox-before-cache bypass` when troubleshooting to execute preparation again and skip cache reads and publication. If a snapshot request fails after it has been sent, the current Attempt ends. Completed preparation steps are not automatically replayed within that Attempt.
 
 When connecting a service, verify that a successful destruction response means the instance and its processes have stopped. A service that only acknowledges asynchronous deletion cannot meet this requirement; naming the runtime does not replace verification.
+
+### Instabox: start from a snapshot
+
+Set `INSTABOX_API_KEY` in the host's `.env`, then select a specific snapshot ID that is ready to use:
+
+```ts
+import { instaboxSandbox } from "niceeval/sandbox";
+
+const sandbox = instaboxSandbox({
+  snapshotId: "sn_your_snapshot_id",
+  lifetimeMs: 60 * 60_000,
+  spec: "instabox-medium",
+});
+```
+
+The snapshot needs a Linux x64 GNU environment, Bash, Git, Node.js 24 or later, and a non-root login user with passwordless sudo. The default working directory is `/data/home/workspace`. Prepare stable dependencies when building the snapshot; start services and authenticate the Agent at run time to avoid saving login credentials in the snapshot.
+
+`spec` supports the official standard sizes `instabox-small`, `instabox-medium`, `instabox-large`, `instabox-xlarge`, and `instabox-2xlarge`, along with the numeric aliases `2/4`, `4/8`, `8/16`, `16/32`, and `32/64`. Explicit `resources: { vcpus, memMiB }` takes priority over `spec`; when both are omitted, the default is `instabox-medium`.
+
+Each Attempt creates its own Machine and deletes it on completion; the base snapshot is kept. `lifetimeMs` is a whole-second duration in milliseconds, from 60 seconds to 24 hours, and must cover the remaining Attempt deadline plus 30 seconds. It controls automatic deletion after a lost connection; normal cleanup deletes the Machine sooner. Cancelling or timing out a command also deletes the entire Machine.
+
+This Provider does not support retention, reuse across Attempts, or before snapshot caching. The host must be able to reach the Instabox gateway over SSH. Neither the HTTP API key nor the SSH token is written into the Machine. Creation disables automatic Vault and Org Secrets injection.
+
+For snapshot build steps, see [Prebuilt Sandbox Environments](/tutorials/prebuilt-sandbox).
 
 ### Docker Compose: `workspaceService` names the main Sandbox
 

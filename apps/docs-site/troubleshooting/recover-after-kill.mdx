@@ -75,18 +75,18 @@ For an Experiment that declares `sharedState.key`, only one run can hold the sam
 First run the check command without a token to see the current holder's information:
 
 ```bash
-pnpm exec niceeval exp <experiment> --teardown \
+pnpm exec niceeval exp <experiment> --after \
   --recover-shared-state <key>
 ```
 
 After confirming that the original run has ended, and that the remote services and checkpoints it operated on have stopped changing, copy the token the command shows and confirm explicitly:
 
 ```bash
-pnpm exec niceeval exp <experiment> --teardown \
+pnpm exec niceeval exp <experiment> --after \
   --recover-shared-state <key> \
   --owner-token <displayed-token> \
   --confirm-owner-terminated \
   --confirm-remote-quiesced
 ```
 
-Recovery reruns `teardown` only for this Experiment. When the token is wrong, the token has expired, or teardown fails, the lease is not released, and later holders' leases are not affected. After fixing teardown, try again with the token currently shown.
+Recovery reruns `after` only for this Experiment. When the token is wrong, the token has expired, or the after callback fails, the lease is not released, and later holders' leases are not affected. Fix the after callback, then try again with the token currently shown.
