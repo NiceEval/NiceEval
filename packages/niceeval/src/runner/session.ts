@@ -289,7 +289,10 @@ function decodeSessionBytes(bytes: Uint8Array): SessionRecord | undefined {
   try { return decodeSession(JSON.parse(new TextDecoder().decode(bytes))); } catch { return undefined; }
 }
 
+type SessionObservationWrite = { readonly _tag: "observe"; snapshot: SessionRecord };
+
 type SessionPersistenceRequest =
+  | SessionObservationWrite
   | {
     readonly _tag: "write";
     readonly snapshot: SessionRecord;
@@ -335,6 +338,7 @@ export class SessionTracker {
   readonly sessionId: string;
   private record: SessionRecord | undefined;
   private persistence: SessionPersistence | undefined;
+  private pendingObservation: SessionObservationWrite | undefined;
   private started = false;
   private closed = false;
   private owner: FencedOwner | undefined;
@@ -620,7 +624,13 @@ export class SessionTracker {
     // 反馈 API 受 coordinator 的同步 callback 契约限制，不能在这里启动 runtime。Queue 是
     // Effect worker 的同步入口；false 只会发生在 close 已关闭队列的竞态，此时最终 flush
     // 已覆盖当前 record。
-    Queue.offerUnsafe(persistence.requests, { _tag: "write", snapshot });
+    if (this.pendingObservation !== undefined) {
+      this.pendingObservation.snapshot = snapshot;
+      return;
+    }
+    const request: SessionObservationWrite = { _tag: "observe", snapshot };
+    this.pendingObservation = request;
+    if (!Queue.offerUnsafe(persistence.requests, request)) this.pendingObservation = undefined;
   }
 
   private persistenceWorkerEffect(
@@ -629,6 +639,10 @@ export class SessionTracker {
     const handle = (request: SessionPersistenceRequest): Effect.Effect<void> => {
       if (request._tag === "barrier") {
         return Deferred.succeed(request.completion, undefined).pipe(Effect.asVoid);
+      }
+      if (request._tag === "observe") {
+        if (this.pendingObservation === request) this.pendingObservation = undefined;
+        return this.persistActive(request.snapshot).pipe(Effect.ignore);
       }
       // Each request owns a frozen snapshot. Capture the full Exit before
       // settling its waiter so a failed heartbeat cannot kill the serial
@@ -677,6 +691,7 @@ export class SessionTracker {
     persistence: SessionPersistence,
     snapshot: SessionRecord,
   ): Effect.Effect<void, unknown> {
+    this.pendingObservation = undefined;
     return Effect.gen(function* () {
       const completion = yield* Deferred.make<void, unknown>();
       const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
@@ -689,6 +704,7 @@ export class SessionTracker {
   }
 
   private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, unknown> {
+    this.pendingObservation = undefined;
     return Effect.gen(function* () {
       const completion = yield* Deferred.make<void, unknown>();
       const accepted = yield* Effect.sync(() => Queue.offerUnsafe(

@@ -9,6 +9,7 @@ export default defineExperiment({
     name: "invocation-active-fixture", evidenceCoverage: completeEvidenceCoverage,
     ensure: { identity: { agent: "invocation-active-fixture", version: "1", revision: "1" }, probe: shell("true") },
     async send(_input, ctx) {
+      for (let index = 0; index < 100; index++) ctx.progress({ message: `Activity ${index}` });
       ctx.progress({ message: "Waiting for inspection release" });
       await writeFile("invocation-active-ready", "ready");
       while (!existsSync("invocation-active-release")) {
