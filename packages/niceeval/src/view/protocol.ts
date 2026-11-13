@@ -19,8 +19,11 @@ export const ViewLifecycleEventSchema = Schema.Union([
   ViewClosedLifecycleEventSchema,
 ]);
 
+/** Publishes the usable View server URL after startup; server creation alone is not a ready receipt. */
 export type ViewReadyLifecycleEvent = Schema.Schema.Type<typeof ViewReadyLifecycleEventSchema>;
+/** Signals closure of a View lifecycle stream; it carries no new server URL. */
 export type ViewClosedLifecycleEvent = Schema.Schema.Type<typeof ViewClosedLifecycleEventSchema>;
+/** A versioned ready or closed event emitted by view --json as NDJSON; startup failure may produce an empty stream. */
 export type ViewLifecycleEvent = Schema.Schema.Type<typeof ViewLifecycleEventSchema>;
 
 /** Serialize one lifecycle event as the single NDJSON line owned by the View CLI. */

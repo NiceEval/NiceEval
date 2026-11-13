@@ -4,6 +4,7 @@ import { assertManagedValueMatch, isManagedToolMatch, isManagedEventMatch, type 
 // A named container keeps recursive array elements deferred until they are read.
 interface ReadonlyMaterialArray<T> extends ReadonlyArray<ReadonlyMaterial<T>> {}
 
+/** Makes captured context material deeply readonly while preserving managed collection brands; it does not create a new snapshot by itself. */
 export type ReadonlyMaterial<T> =
   T extends ManagedToolCalls | ManagedEventOccurrences ? T
   : T extends (...args: infer A) => infer R ? (...args: A) => ReadonlyMaterial<R>
@@ -13,19 +14,28 @@ export type ReadonlyMaterial<T> =
     ? ReadonlyMaterialArray<T[number]>
     : { readonly [K in keyof T]: ReadonlyMaterial<T[K]> }
   : T extends object ? { readonly [K in keyof T]: ReadonlyMaterial<T[K]> } : T;
+/** Provides the readonly application context seen by a contextual Match reader; readers must not mutate live application state. */
 export type MatchContext<C> = ReadonlyMaterial<C>;
+/** Carries one collection fact with a stable, nonempty ID unique within that collection; the ID is retained for evidence citations. */
 export interface MaterialItem<T> { readonly id: string; readonly value: T }
+/** Reports collection completeness alongside identified items; a partial prefix must never be presented as a complete collection. */
 export type MaterialCollection<T> =
   | { readonly state: "complete"; readonly items: readonly MaterialItem<T>[] }
   | { readonly state: "partial"; readonly items: readonly MaterialItem<T>[]; readonly reason: string }
   | { readonly state: "unavailable"; readonly reason: string };
+/** Bounds contextual material capture by items, UTF-8 bytes, nodes and depth; exceeding a valid budget preserves an explicit incompleteness reason. */
 export interface MaterialCaptureBudget { readonly maxItems?: number; readonly maxBytes?: number; readonly maxNodes?: number; readonly maxDepth?: number }
+/** Bounds capture of one aggregated context fact; item-count limits apply only to material collections. */
 export type FactCaptureBudget = Omit<MaterialCaptureBudget, "maxItems">;
+/** Distinguishes a readable context fact from unavailable evidence; missing evidence must not be replaced with a fabricated value. */
 export type MatchFact<T> = { readonly state: "available"; readonly value: T } | { readonly state: "unavailable"; readonly reason: string };
 const contextBrand: unique symbol = Symbol("niceeval.match.context");
 const valueBrand: unique symbol = Symbol("niceeval.match.fact");
+/** Selects matching items from context material for check or closeQA; check needs a witness while closeQA needs the complete selection. */
 export interface MaterialMatch<in C, out T> { readonly kind: "material"; readonly [contextBrand]: (ctx: C) => void; readonly [valueBrand]: T }
+/** Checks one aggregated fact read from the receiving context; its reader is supplied the current receiver rather than a captured Attempt. */
 export interface ContextBooleanMatch<in C, out T> { readonly kind: "context-boolean"; readonly [contextBrand]: (ctx: C) => void; readonly [valueBrand]: T }
+/** Measures one aggregated context fact with a ScoreMatch; configure the quality threshold on the resulting assertion handle. */
 export interface ContextScoreMatch<in C, out T> { readonly kind: "context-score"; readonly [contextBrand]: (ctx: C) => void; readonly [valueBrand]: T }
 /** @internal Erased descriptor; only the owning receiver supplies a context. */
 export type ContextualMatch = MaterialMatch<never, unknown> | ContextBooleanMatch<never, unknown> | ContextScoreMatch<never, unknown>;
@@ -76,12 +86,19 @@ function declare(value: unknown, collection: boolean): ContextualMatch {
   definitions.set(match, Object.freeze({ name: spec.name, read: spec.read as ContextMatchDefinition["read"], match: spec.match, kind, capture: captureBudget(spec.capture, !collection) }));
   return match;
 }
+/** Defines a synchronous context collection reader and item selector. Preserve collection completeness and unique item IDs instead of silently discarding unknown items. */
 export function defineMaterialMatch<C, T>(definition: { readonly name: string; readonly read: (ctx: MatchContext<C>) => MaterialCollection<ReadonlyMaterial<T>>; readonly match: BooleanMatch<ReadonlyMaterial<T>, ReadonlyMaterial<T>>; readonly capture?: MaterialCaptureBudget }): MaterialMatch<C, ReadonlyMaterial<T>>;
+/** Defines a synchronous context collection reader and item selector. Preserve collection completeness and unique item IDs instead of silently discarding unknown items. */
 export function defineMaterialMatch<C>(definition: { readonly name: string; readonly read: (ctx: MatchContext<C>) => ManagedToolCalls; readonly match: ToolMatch; readonly capture?: MaterialCaptureBudget }): MaterialMatch<C, ToolOccurrenceView>;
+/** Defines a synchronous context collection reader and item selector. Preserve collection completeness and unique item IDs instead of silently discarding unknown items. */
 export function defineMaterialMatch<C>(definition: { readonly name: string; readonly read: (ctx: MatchContext<C>) => ManagedEventOccurrences; readonly match: EventMatch; readonly capture?: MaterialCaptureBudget }): MaterialMatch<C, EventOccurrenceView>;
+/** Defines a synchronous context collection reader and item selector. Preserve collection completeness and unique item IDs instead of silently discarding unknown items. */
 export function defineMaterialMatch(definition: unknown): ContextualMatch { return declare(definition, true); }
+/** Defines a synchronous readonly context reader and a Match for one fact. Return an unavailable fact explicitly when evidence cannot be read. */
 export function defineContextMatch<C, T>(definition: { readonly name: string; readonly read: (ctx: MatchContext<C>) => MatchFact<ReadonlyMaterial<T>>; readonly match: BooleanMatch<ReadonlyMaterial<T>, ReadonlyMaterial<T>>; readonly capture?: FactCaptureBudget }): ContextBooleanMatch<C, ReadonlyMaterial<T>>;
+/** Defines a synchronous readonly context reader and a Match for one fact. Return an unavailable fact explicitly when evidence cannot be read. */
 export function defineContextMatch<C, T>(definition: { readonly name: string; readonly read: (ctx: MatchContext<C>) => MatchFact<ReadonlyMaterial<T>>; readonly match: ScoreMatch<ReadonlyMaterial<T>>; readonly capture?: FactCaptureBudget }): ContextScoreMatch<C, ReadonlyMaterial<T>>;
+/** Defines a synchronous readonly context reader and a Match for one fact. Return an unavailable fact explicitly when evidence cannot be read. */
 export function defineContextMatch(definition: unknown): ContextualMatch { return declare(definition, false); }
 /** @internal Brands are verified without probing application names. */
 export function isContextualMatch(value: unknown): value is ContextualMatch { return Predicate.isObject(value) && definitions.has(value); }

@@ -7,34 +7,40 @@ export type TraceJson =
   | readonly TraceJson[]
   | { readonly [key: string]: TraceJson };
 
+/** Explains a known execution-trace coverage gap; absence of an event must not be interpreted as proof when coverage is limited. */
 export interface ExecutionTraceLimitation {
   readonly code: string;
   readonly message: string;
 }
 
+/** Defines an application trace boundary with a stable scope ID; membership is declared separately for each event. */
 export interface ExecutionTraceScope {
   readonly scopeId: string;
   readonly label: string;
   readonly boundary: TraceJson;
 }
 
+/** Preserves an application's original source and optional event sequence; it is separate from the stored event ID returned by recordTrace. */
 export interface ExecutionTraceSource {
   readonly id: string;
   readonly eventId?: string;
   readonly sequence?: number;
 }
 
+/** Identifies a participant within a submitted execution trace; labels are display text and must not replace stable actor IDs. */
 export interface ExecutionTraceActor {
   readonly id: string;
   readonly label?: string;
 }
 
+/** Carries a timestamp with its explicit clock and unit; values from different clocks must not be ordered as if they shared a timebase. */
 export interface ExecutionTraceTime {
   readonly clockId: string;
   readonly value: number;
   readonly unit: string;
 }
 
+/** Relates an event to another event key or records an unresolved source reference; unresolved links must not be fabricated as resolved events. */
 export type ExecutionTraceLink =
   | { readonly relation: string; readonly targetKey: string }
   | {
@@ -45,6 +51,7 @@ export type ExecutionTraceLink =
       };
     };
 
+/** Links a trace event to an attached artifact and pointer; attach the artifact before referencing its receipt ID. */
 export interface ExecutionTraceEvidence {
   readonly key: string;
   readonly label: string;
@@ -52,6 +59,7 @@ export interface ExecutionTraceEvidence {
   readonly pointer: string;
 }
 
+/** States whether an event belongs to a declared trace scope; unknown membership is distinct from exclusion. */
 export interface ExecutionTraceScopeMembership {
   readonly scopeId: string;
   readonly state: "included" | "excluded" | "unknown";
@@ -98,6 +106,7 @@ export interface ExecutionTraceEvent<
   readonly display?: readonly ExecutionDisplayBlock[];
 }
 
+/** Submits application-owned events, scopes and completeness evidence; a partial collection must retain its limitations. */
 export interface ExecutionTraceInput<
   out Event extends ExecutionTraceEvent = ExecutionTraceEvent,
 > {
@@ -111,6 +120,7 @@ export interface ExecutionTraceInput<
   readonly events: readonly Event[];
 }
 
+/** Maps accepted application event and evidence keys to stored IDs; retain the receipt for later navigation rather than guessing IDs. */
 export interface ExecutionTraceReceipt {
   readonly state: "accepted";
   readonly traceId: string;

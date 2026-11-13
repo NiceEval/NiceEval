@@ -4,12 +4,14 @@ import {
   type WindowChange,
 } from "./diff.ts";
 
+/** Records default exclusions and explicit include and ignore patterns for a workspace diff; excluded paths are outside the captured evidence. */
 export interface AgentWorkspaceDiffPolicy {
   readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
   readonly include: readonly string[];
   readonly ignore: readonly string[];
 }
 
+/** Identifies one physical send window by turn and optional session; it is not a cross-Attempt identity. */
 export interface AgentSendWindowIdentity {
   readonly session?: number;
   readonly turn: number;
@@ -31,6 +33,7 @@ export interface AgentWorkspaceDiffHunks {
   readonly removed: readonly string[];
 }
 
+/** Describes one path's before and after states and available hunks within a send window; unavailable hunks are not an empty diff. */
 export interface AgentWorkspaceDiffWindowChange {
   readonly path: string;
   readonly status: WindowChange["status"];
@@ -39,6 +42,7 @@ export interface AgentWorkspaceDiffWindowChange {
   readonly hunks: AgentWorkspaceDiffHunks;
 }
 
+/** Groups frozen workspace changes for one physical send window; it must not be replaced by the current live workspace. */
 export interface AgentWorkspaceDiffWindow {
   readonly identity: AgentSendWindowIdentity;
   readonly changes: readonly AgentWorkspaceDiffWindowChange[];

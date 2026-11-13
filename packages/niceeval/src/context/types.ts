@@ -32,6 +32,7 @@ export type SendInput = string | {
   readonly files?: readonly import("../agents/types.ts").InputFile[];
 };
 
+/** Selects pending input requests using identity, text, action, input and option filters; omitted constraints do not require those fields to be empty. */
 export interface InputRequestFilter {
   readonly id?: string | RegExp;
   readonly prompt?: string | RegExp;
@@ -41,6 +42,7 @@ export interface InputRequestFilter {
   readonly optionIds?: readonly string[];
 }
 
+/** Pairs an answer with the exact input request being answered; preserve that request instead of constructing a replacement identity. */
 export type RespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
 /** A completed Assert-first Agent turn. */

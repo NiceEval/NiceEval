@@ -1,5 +1,6 @@
 import type { JsonValue } from "../shared/types.ts";
 
+/** Locates an error in source or explains why no location is available; unavailable coordinates must not be guessed. */
 export type ErrorSource =
   | {
       readonly state: "located";
@@ -12,6 +13,7 @@ export type ErrorSource =
       readonly reason: "not-recorded" | "unresolvable" | "budget-exhausted";
     };
 
+/** Identifies one migration guide, subject and source location; multiple occurrences may refer to the same guide. */
 export interface MigrationOccurrence {
   readonly guideId: string;
   readonly source: ErrorSource;

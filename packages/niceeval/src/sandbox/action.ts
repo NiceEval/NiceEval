@@ -73,6 +73,8 @@ export interface SandboxChangeFrequency {
 
 export interface SandboxBeforeActionOptions {
   readonly id: string;
+  /** Human 进度与 debug 的显示名；省略时显示 id，不参与身份。 */
+  readonly label?: string;
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
   readonly requires?: readonly SandboxCapability[];
@@ -92,6 +94,7 @@ export interface SandboxActionCacheOptions {
 /** Reusable family instances default to the family id; inline built-ins keep SandboxBeforeActionOptions. */
 export interface SandboxActionInstanceOptions {
   readonly id?: string;
+  readonly label?: string;
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
   readonly requires?: readonly SandboxCapability[];
@@ -105,6 +108,7 @@ export interface SandboxAfterActionOptions {
 
 export interface NormalizedSandboxBeforeMetadata {
   readonly id: string;
+  readonly label?: string;
   readonly changeFrequency: SandboxChangeFrequency;
   readonly dependsOn: readonly SandboxActionRef[];
   readonly requires: readonly SandboxCapability[];
@@ -245,6 +249,7 @@ export interface SandboxActionFingerprintPlan {
 
 export interface SandboxActionPlan {
   readonly id: string;
+  readonly label?: string;
   readonly family: string;
   readonly state: SandboxActionState;
   readonly input: JsonValue;
@@ -397,7 +402,13 @@ export function normalizeSandboxBeforeMetadata(
   path = "Sandbox before options",
 ): NormalizedSandboxBeforeMetadata {
   assertRecord(value, path);
-  assertOnlyKeys(value, new Set(["id", "changeFrequency", "dependsOn", "requires", "provides", "cache"]), path);
+  assertOnlyKeys(value, new Set(["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"]), path);
+  if (value.label !== undefined && (
+    typeof value.label !== "string" || value.label.trim() === "" ||
+    /\p{Cc}/u.test(value.label) || [...value.label].length > 256
+  )) {
+    throw actionError("metadata", `${path}.label must be non-empty, contain no control characters, and have at most 256 Unicode code points`, `${path}.label`);
+  }
   normalizeSandboxActionCache(value.cache, `${path}.cache`);
   const dependsOn = value.dependsOn === undefined ? [] : value.dependsOn;
   if (!Array.isArray(dependsOn) || dependsOn.some((ref) => !isSandboxActionRef(ref))) {
@@ -409,6 +420,7 @@ export function normalizeSandboxBeforeMetadata(
   }
   return Object.freeze({
     id: nonEmptyString(value.id, `${path}.id`),
+    ...(value.label === undefined ? {} : { label: value.label as string }),
     changeFrequency: normalizeSandboxChangeFrequency(value.changeFrequency, `${path}.changeFrequency`),
     dependsOn: Object.freeze([...dependsOn]),
     requires: normalizeCapabilities(value.requires, `${path}.requires`),
@@ -1000,6 +1012,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
       steps: Object.freeze([...steps]),
       plan: Object.freeze({
         id: metadata.id,
+        ...(metadata.label === undefined ? {} : { label: metadata.label }),
         family: familyId,
         state,
         input: canonicalInput,
@@ -1014,7 +1027,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
     assertRecord(selected, "Sandbox action instance options");
     assertOnlyKeys(
       selected,
-      new Set(["id", "changeFrequency", "dependsOn", "requires", "provides", "cache"]),
+      new Set(["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"]),
       "Sandbox action instance options",
     );
     const cache = normalizeSandboxActionCache(selected.cache, "Sandbox action instance options.cache");
@@ -1153,11 +1166,12 @@ export interface GitCheckoutActionFactory {
   readonly after: (input: GitCheckoutAfterActionInput) => SandboxAfterAction;
 }
 
-const INLINE_BEFORE_KEYS = ["id", "changeFrequency", "dependsOn", "requires", "provides", "cache"] as const;
+const INLINE_BEFORE_KEYS = ["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"] as const;
 
 function inlineBeforeOptions(input: SandboxBeforeActionOptions): SandboxActionInstanceOptions {
   return {
     id: input.id,
+    ...(input.label === undefined ? {} : { label: input.label }),
     ...(input.changeFrequency === undefined ? {} : { changeFrequency: input.changeFrequency }),
     ...(input.dependsOn === undefined ? {} : { dependsOn: input.dependsOn }),
     ...(input.requires === undefined ? {} : { requires: input.requires }),

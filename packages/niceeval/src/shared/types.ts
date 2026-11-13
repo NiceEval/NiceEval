@@ -32,6 +32,7 @@ export type JsonMatch =
 
 /** 一次 Attempt 的互斥终态；跳过是已结束但不构成可执行结论的结果。 */
 export const VERDICTS = ["passed", "failed", "errored", "skipped"] as const;
+/** Reports passed, failed, errored or skipped after folding execution and sealed assertion facts; it is distinct from score completeness. */
 export type Verdict = (typeof VERDICTS)[number];
 export const VERDICT_PROJECTION_STATE = Object.freeze({ unknown: "unknown" as const });
 export const PROJECTED_VERDICTS = [...VERDICTS, VERDICT_PROJECTION_STATE.unknown] as const;

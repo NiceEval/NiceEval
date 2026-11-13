@@ -5,12 +5,15 @@
 
 import type { FailureClass } from "./failure-class.ts";
 
+/** Limits retained external diagnostic fields to text and numbers; complex live objects are not accepted as scalar facts. */
 export type ExternalCauseScalar = string | number;
 
+/** Distinguishes an absent diagnostic property from a captured value; an absent property must not be replaced with an invented default. */
 export type ExternalCauseFact<Value> =
   | { readonly _tag: "Absent" }
   | { readonly _tag: "Present"; readonly value: Value };
 
+/** Preserves a nested cause or records cycle or depth truncation; truncated chains are not proof that no further cause exists. */
 export type ExternalCauseLink =
   | { readonly _tag: "Absent" }
   | { readonly _tag: "Cause"; readonly value: ExternalCause }
@@ -26,6 +29,7 @@ interface ExternalObjectFacts {
   readonly cause: ExternalCauseLink;
 }
 
+/** Preserves bounded diagnostic facts from an external thrown value; it does not retain or serialize the original live object. */
 export type ExternalCause =
   | ({ readonly _tag: "Error" } & ExternalObjectFacts)
   | ({ readonly _tag: "Object" } & ExternalObjectFacts)

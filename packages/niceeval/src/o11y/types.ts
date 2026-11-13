@@ -323,6 +323,7 @@ export interface SubagentCall {
   status: "pending" | "completed" | "failed";
 }
 
+/** Summarizes observed events into tool calls, input requests and counts; summary counts do not replace reading individual evidence entries. */
 export interface DerivedFacts {
   readonly toolCalls: readonly ToolCall[];
   readonly subagentCalls: readonly SubagentCall[];

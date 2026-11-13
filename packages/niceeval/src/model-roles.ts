@@ -11,6 +11,7 @@ export interface ResolvedModelRole {
   readonly model: string | null;
   readonly reasoningEffort: string | null;
 }
+/** Provides readonly application model selections indexed by role; these are application models rather than Judge Provider settings. */
 export type ResolvedModelRoles = Readonly<Record<string, ResolvedModelRole>>;
 
 const modelText = Schema.String.check(Schema.isPattern(/\S/u));

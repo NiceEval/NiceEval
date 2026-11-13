@@ -1565,6 +1565,9 @@ function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
 
   return [
     `action: ${action.id}`,
+    ...(step.scriptSource === undefined ? [] : [
+      `script file: ${JSON.stringify(step.scriptSource.path)} · ${step.scriptSource.digest} · ${step.scriptSource.bytes} bytes`,
+    ]),
     ...(family === undefined ? [] : [`family: ${family}`]),
     ...(order === undefined
       ? []
@@ -1628,7 +1631,11 @@ function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
     switch (actionStep.kind) {
       case "exec":
         return [
-          `${prefix}: argv ${JSON.stringify([actionStep.executable, ...actionStep.args])}`,
+          ...("family" in action && action.family === "niceeval.sandbox.shell"
+            ? (actionStep.args[1]!.includes("\n")
+              ? [`${prefix}: shell script`, ...actionStep.args[1]!.split("\n").map((line) => `  │ ${line}`)]
+              : [`${prefix}: shell ${JSON.stringify(actionStep.args[1])}`])
+            : [`${prefix}: argv ${JSON.stringify([actionStep.executable, ...actionStep.args])}`]),
           ...(actionStep.cwd === undefined ? [] : [`${prefix} cwd: ${JSON.stringify(actionStep.cwd)}`]),
           ...(actionStep.user === undefined ? [] : [`${prefix} user: ${JSON.stringify(actionStep.user)}`]),
           ...(actionStep.timeoutMs === undefined ? [] : [`${prefix} timeout: ${actionStep.timeoutMs}ms`]),

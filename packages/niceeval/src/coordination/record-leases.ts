@@ -46,18 +46,21 @@ export interface RecordWriteFreeze {
   readonly [recordWriteFreezeTypeId]: typeof recordWriteFreezeTypeId;
 }
 
+/** Reports an unusable absolute Unix-millisecond coordination deadline; it does not represent an elapsed duration. */
 export interface RecordCoordinationDeadlineInvalid {
   readonly code: "record-coordination-deadline-invalid";
   readonly operation: RecordCoordinationWaitKind;
   readonly deadlineEpochMs: number;
 }
 
+/** Reports that a coordination operation reached its absolute Unix-millisecond deadline; this does not prove the competing operation stopped. */
 export interface RecordCoordinationTimedOut {
   readonly code: "record-coordination-timed-out";
   readonly operation: RecordCoordinationWaitKind;
   readonly deadlineEpochMs: number;
 }
 
+/** Reports cancellation while waiting for a Record coordination operation; it is distinct from timing out. */
 export interface RecordCoordinationCanceled {
   readonly code: "record-coordination-canceled";
   readonly operation: RecordCoordinationWaitKind;
@@ -69,6 +72,7 @@ export interface RecordCoordinationStateInvalid {
   readonly cause?: unknown;
 }
 
+/** Describes filesystem, maintenance or coordination failures when accessing a Record; inspect the discriminant before retrying. */
 export type RecordCoordinationError =
   | RecordFileSystemError
   | RecordMaintenanceBusy

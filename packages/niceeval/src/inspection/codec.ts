@@ -7,6 +7,7 @@ export { INSPECTION_OPERATION_IDS, InspectionOperationIdSchema, InspectionReques
 export type { InspectionFailureDocument, InspectionOperation, InspectionOperationId, InspectionRequest } from "./protocol.ts";
 export type InspectionDocument = import("./protocol.ts").InspectionOperationDocument;
 
+/** Explains why an Inspection request or result failed strict decoding; it is a protocol error rather than an evaluation Verdict. */
 export interface InspectionCodecError {
   readonly code: "inspection-request-invalid" | "inspection-result-invalid";
   readonly reason: string;
@@ -18,6 +19,7 @@ const strictDecodeRequest = Schema.decodeUnknownResult(InspectionRequestSchema, 
   onExcessProperty: "error",
 });
 
+/** Strictly validates a complete Inspection request and returns a success or failure Result. Unknown fields are rejected instead of ignored. */
 export function decodeInspectionRequest(
   input: unknown,
 ): Result.Result<InspectionRequest, InspectionCodecError> {

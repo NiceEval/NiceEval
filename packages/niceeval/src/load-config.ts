@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { freshImportModule, importProjectModule } from "./fresh-import.ts";
+import { withSandboxScriptRoot } from "./sandbox/script.ts";
 import type { Config } from "./runner/types.ts";
 
 function loadConfigModule(cwd: string, rebuild: boolean): Effect.Effect<Config, unknown> {
@@ -19,7 +20,7 @@ Ways to fix:
     }, catch: (cause) => cause });
     const mod = yield* (rebuild
       ? freshImportModule(path)
-      : Effect.tryPromise({ try: () => importProjectModule(path), catch: (cause) => cause }));
+      : Effect.tryPromise({ try: () => withSandboxScriptRoot(cwd, () => importProjectModule(path)), catch: (cause) => cause }));
     return yield* Effect.try({ try: () => {
       if (!mod.default) throw new Error(`niceeval.config.ts must default export defineConfig(...).`);
       return mod.default as Config;

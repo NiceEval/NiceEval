@@ -144,6 +144,7 @@ export const inspectionProtocolRegistry = Object.freeze({
   "runs.compare": spec({ request: operation("runs.compare", { mode: Schema.Literals(["side-by-side", "exact", "paired"]), leftRunIds: RunIdsSchema, rightRunIds: RunIdsSchema }), result: { comparison: RunsCompareResultSchema }, factKinds: ["core"] }),
 });
 
+/** Names one operation in the fixed Inspection catalog; applications cannot register ad hoc query operations. */
 export type InspectionOperationId = keyof typeof inspectionProtocolRegistry;
 export const INSPECTION_OPERATION_IDS = Object.freeze(Object.keys(inspectionProtocolRegistry) as InspectionOperationId[]);
 export const InspectionOperationIdSchema = Schema.Literals(INSPECTION_OPERATION_IDS);
@@ -152,8 +153,11 @@ export const InspectionRequestSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL),
   operation: Schema.Union(specs.map(([, entry]) => entry.request)),
 });
+/** A versioned request for a fixed Inspection operation; use discovery for the operation's complete supported shape. */
 export type InspectionRequest = Schema.Schema.Type<typeof InspectionRequestSchema>;
+/** Selects one fixed Inspection operation and its declared inputs; arbitrary SQL, JSON paths and callbacks are not accepted. */
 export type InspectionOperation = InspectionRequest["operation"];
+/** Selects the request shape for one operation ID; selectors and limits belong to that operation's declared contract. */
 export type InspectionOperationFor<Kind extends InspectionOperationId> = Extract<
   InspectionOperation,
   { readonly kind: Kind }
@@ -218,9 +222,11 @@ type ResultFields<Kind extends InspectionOperationId> = {
     ? Schema.Schema.Type<Registry[Kind]["result"][Field]>
     : never
 };
+/** Types one successful operation's metadata and result fields; operation identity must match before consuming these fields. */
 export type InspectionSuccessDocumentFor<Kind extends InspectionOperationId> = Kind extends InspectionOperationId
   ? MetadataFor<Kind> & { readonly operation: Kind } & ResultFields<Kind>
   : never;
+/** Contains a successful fixed-operation result with its metadata; missing and partial evidence remain explicit inside the result. */
 export type InspectionSuccessDocument = InspectionSuccessDocumentFor<InspectionOperationId>;
 type SuccessEncodedFor<Kind extends InspectionOperationId> = Kind extends InspectionOperationId
   ? (Kind extends "run.list" ? Schema.Codec.Encoded<typeof RunsListSuccessMetadataSchema>
@@ -231,18 +237,26 @@ type SuccessEncodedFor<Kind extends InspectionOperationId> = Kind extends Inspec
         ? Schema.Codec.Encoded<Registry[Kind]["result"][Field]> : never }
   : never;
 type InspectionSuccessEncoded = SuccessEncodedFor<InspectionOperationId>;
+/** Narrows an explanation to one fixed operation and its fact kinds; it carries metadata rather than queried result fields. */
 export type InspectionExplanationDocumentFor<Kind extends InspectionOperationId> = Kind extends InspectionOperationId
   ? Omit<MetadataFor<Kind>, "outcome"> & { readonly outcome: "explanation"; readonly operation: Kind; readonly factKinds: Registry[Kind]["factKinds"] }
   : never;
+/** Explains a supported operation's sources and interpretation without executing it; it is not a successful data result. */
 export type InspectionExplanationDocument = InspectionExplanationDocumentFor<InspectionOperationId>;
+/** Contains either an explanation or successful operation result; inspect outcome before treating it as queried facts. */
 export type InspectionOperationDocument = InspectionSuccessDocument | InspectionExplanationDocument;
+/** Lists the fixed Inspection operations and their request contracts; discovery does not execute a query. */
 export type InspectionDiscoveryDocument = Schema.Schema.Type<typeof InspectionDiscoveryDocumentSchema>;
+/** Reports an Inspection protocol or execution failure; failure to read evidence must not be interpreted as a failed Attempt. */
 export type InspectionFailureDocument = Schema.Schema.Type<typeof InspectionFailureDocumentSchema>;
+/** A decoded discovery, operation result or failure envelope; check its outcome before accessing operation-specific facts. */
 export type InspectionDocument = InspectionDiscoveryDocument | InspectionOperationDocument | InspectionFailureDocument;
+/** Returns a decoded protocol value or a reason for rejection; check success before reading value. */
 export type InspectionProtocolDecodeResult<A> = { readonly success: true; readonly value: A } | { readonly success: false; readonly reason: string };
 
 // @concord-code
 // @concord-implements docs/feature/inspection/architecture.md
+/** Strictly validates an Inspection response envelope. A successful decode may still contain a failure outcome, so inspect outcome separately. */
 export function decodeInspectionDocument(input: unknown): InspectionProtocolDecodeResult<InspectionDocument> {
   const decoded = Schema.decodeUnknownResult(InspectionDocumentSchema, { errors: "all", onExcessProperty: "error" })(input);
   return Result.isSuccess(decoded)
@@ -250,6 +264,7 @@ export function decodeInspectionDocument(input: unknown): InspectionProtocolDeco
     : { success: false, reason: String(decoded.failure) };
 }
 
+/** Checks that a decoded document is a successful result for the requested operation. Protocol decoding alone does not establish this narrower outcome. */
 export function narrowInspectionSuccess<Kind extends InspectionOperationId>(
   document: InspectionDocument,
   operationId: Kind,
@@ -259,6 +274,7 @@ export function narrowInspectionSuccess<Kind extends InspectionOperationId>(
     : { success: false, reason: `expected success ${operationId}, received ${document.outcome}${"operation" in document ? ` ${document.operation}` : ""}` };
 }
 
+/** Checks that a decoded document is an explanation for the requested operation. Returns a rejection reason rather than casting a different outcome. */
 export function narrowInspectionExplanation<Kind extends InspectionOperationId>(
   document: InspectionDocument,
   operationId: Kind,

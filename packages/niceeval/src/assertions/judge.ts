@@ -12,10 +12,12 @@ import { defineScoreMatch, type ScoreMatch } from "./match.ts";
 import type { JsonValue } from "../shared/types.ts";
 import { isJudgeImage, readJudgeImage, type JudgeImage, type JudgeMaterial } from "../judge/image.ts";
 
+/** Describes a rubric measurement anchor in [0,1]; model measurements may fall between anchors and are not confidence values. */
 export interface JudgeAnchor {
   readonly measurement: number;
   readonly description: string;
 }
+/** Defines a reusable rubric and resource budgets; explicit anchors must increase strictly and include both 0 and 1. */
 export interface JudgeOptions {
   readonly name: string;
   readonly rubric: string;
@@ -24,6 +26,7 @@ export interface JudgeOptions {
   readonly maxCalls?: number;
   readonly maxAuditBytes?: number;
 }
+/** A reusable rubric-backed ScoreMatch; gate thresholds and point contributions belong on its assertion handle. */
 export type JudgeDefinition = ScoreMatch<unknown>;
 
 /** Configure a binary rubric and Judge budgets; anchors are not accepted. */

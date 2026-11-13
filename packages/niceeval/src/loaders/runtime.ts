@@ -62,6 +62,7 @@ export function enterLoaderDiscoveryHost(): void {
   discoveryHostEntered = true;
 }
 
+/** Reports a loader read after discovery has closed; load data at module top level and retain it for tests and lifecycle hooks. */
 export class LoaderOutsideDiscoveryError extends Error {
   constructor(path: string) {
     super(`Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`);
@@ -195,6 +196,7 @@ type DecodedData<T> = unknown extends T ? never : T;
  */
 export type DataDecoder<T> = (value: unknown) => DecodedData<T> | Promise<DecodedData<T>>;
 
+/** Loads JSON and validates the parsed value through the supplied decoder. Call at module top level during discovery, not inside a running test or hook. */
 export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): Promise<T> {
   const raw = await readFile(resolvedPath(path), "utf-8");
   const parsed: unknown = JSON.parse(raw);
@@ -218,6 +220,7 @@ export interface RelativeCriteriaPattern {
   readonly relativeTo: URL;
 }
 
+/** Selects criteria files with a glob or an explicitly based relative pattern; it describes discovery input rather than runtime filesystem access. */
 export type CriteriaPattern = string | RelativeCriteriaPattern;
 
 /**

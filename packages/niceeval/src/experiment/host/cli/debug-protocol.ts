@@ -98,6 +98,7 @@ const ActionStepSchema = Schema.Union([
 const ActionSchema = Schema.Union([
   Schema.Struct({
     id: Schema.String,
+    label: Schema.optional(Schema.String),
     family: Schema.String,
     state: ActionStateSchema,
     input: JsonValueSchema,
@@ -150,6 +151,7 @@ const CacheSchema = Schema.Struct({
 const CommandPlanStepSchema: Schema.Codec<CommandPlanStep> = Schema.suspend(() => Schema.Struct({
   phase: Schema.String,
   label: Schema.optional(Schema.String),
+  scriptSource: Schema.optional(Schema.Struct({ path: Schema.String, digest: Schema.String, bytes: Schema.Number })),
   owner: Schema.optional(OwnerSchema),
   truth: Schema.Literals(["exact", "conditional", "opaque", "known-no-command"]),
   condition: Schema.optional(ConditionSchema),

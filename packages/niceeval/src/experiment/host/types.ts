@@ -9,6 +9,7 @@ import type { SessionListDocument, SessionShowDocument } from "../../runner/sess
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
 import type { BeforeCachePreparationSummary } from "../../runner/before-cache-preparation.ts";
 
+/** Restricts Host protocol data to JSON values; functions, undefined and live service instances cannot cross this boundary. */
 export type ExperimentHostJsonValue =
   | null
   | boolean
@@ -17,6 +18,7 @@ export type ExperimentHostJsonValue =
   | readonly ExperimentHostJsonValue[]
   | { readonly [key: string]: ExperimentHostJsonValue };
 
+/** Identifies the Host operation associated with execution or failure; planning and apply operations remain distinct. */
 export type ExperimentHostOperation =
   | "catalog"
   | "check"
@@ -51,6 +53,7 @@ export interface ExperimentHostSelectionInput {
   readonly tag?: string;
 }
 
+/** Describes a discovered Eval's identity, tags and evaluation kind; Score and Pass results require different quality interpretations. */
 export interface ExperimentHostEvalSummary {
   readonly id: string;
   readonly description?: string;
@@ -58,6 +61,7 @@ export interface ExperimentHostEvalSummary {
   readonly evaluationKind: "pass" | "score";
 }
 
+/** Summarizes discovered execution settings and Eval membership; hasBefore and hasAfter describe declared lifecycle hooks rather than completed work. */
 export interface ExperimentHostExperimentSummary {
   readonly models?: ResolvedModelRoles;
   readonly id: string;
@@ -72,6 +76,7 @@ export interface ExperimentHostExperimentSummary {
   readonly sharedStateKey?: string;
 }
 
+/** Lists discovered Evals and Experiments without executing them; catalog membership does not prove that the selected pairs can link. */
 export interface ExperimentHostCatalog {
   readonly status: "listed";
   readonly evals: readonly ExperimentHostEvalSummary[];
@@ -79,6 +84,7 @@ export interface ExperimentHostCatalog {
   readonly experiments: readonly ExperimentHostExperimentSummary[];
 }
 
+/** Explains an unmatched or empty Experiment and Eval selection with candidate IDs; absence of matches is not a successful zero-work plan. */
 export type ExperimentHostSelectionProblem =
   | {
       readonly status: "experiment-no-match";
@@ -97,6 +103,7 @@ export type ExperimentHostSelectionProblem =
       readonly candidates: readonly string[];
     };
 
+/** Supplies per-invocation execution overrides; timeoutMs uses milliseconds, and rerun policy does not change historical reuse eligibility. */
 export interface ExperimentHostRunOverrides {
   readonly attempts?: number;
   readonly earlyExit?: boolean;
@@ -110,11 +117,13 @@ export interface ExperimentHostRunOverrides {
   readonly maxBeforeCacheConcurrency?: number;
 }
 
+/** Validates Experiment and Eval linking with explicit Config and optional execution overrides; checking does not run Attempts. */
 export interface ExperimentHostCheckRequest extends ExperimentHostSelectionInput {
   readonly config: Config;
   readonly overrides?: ExperimentHostRunOverrides;
 }
 
+/** Reports linked pairs or a selection problem; handle non-linked statuses instead of assuming an empty selection succeeded. */
 export type ExperimentHostCheckResult =
   | ExperimentHostSelectionProblem
   | {
@@ -135,6 +144,7 @@ export interface ExperimentHostInvocationPlan {
   readonly [invocationPlanBrand]: typeof invocationPlanBrand;
 }
 
+/** Summarizes planned workload and concurrency limits; build, before-cache and Attempt concurrency are separate budgets. */
 export interface ExperimentHostInvocationShape {
   readonly experiments: number;
   readonly evals: number;
@@ -147,6 +157,7 @@ export interface ExperimentHostInvocationShape {
   readonly experimentConcurrency: Readonly<Record<string, number>>;
 }
 
+/** Identifies an exact planned slot, execution identity and zero-based attempt index; preserve group identity when present. */
 export interface ExperimentHostDrySlotTarget {
   readonly runId: string;
   readonly slotId: string;
@@ -158,6 +169,7 @@ export interface ExperimentHostDrySlotTarget {
   readonly attempt: number;
 }
 
+/** Explains one recorded identity claim's reuse comparison; display strings are diagnostic summaries rather than executable comparison rules. */
 export interface ExperimentHostDryComparison {
   readonly explanation?: IdentityExplanation;
   readonly attachment: string;
@@ -167,6 +179,7 @@ export interface ExperimentHostDryComparison {
   readonly reason: string;
 }
 
+/** Reports whether one target slot can reuse a source or has a gap; a gap is missing applicable evidence rather than a failed Attempt. */
 export type ExperimentHostDrySlot =
   | {
       readonly state: "reuse";
@@ -188,6 +201,7 @@ export type ExperimentHostDrySlot =
       readonly comparisons: readonly ExperimentHostDryComparison[];
     };
 
+/** Describes current target reuse and gaps with pinned readbacks; it is a preview of applicability rather than a new Run result. */
 export interface ExperimentHostDryPlan {
   readonly policy: { readonly name: "project-target"; readonly version: 1 };
   readonly slots: readonly ExperimentHostDrySlot[];
@@ -195,6 +209,7 @@ export interface ExperimentHostDryPlan {
   readonly lockedPairs: readonly string[];
 }
 
+/** Returns a ready executable plan or an explicit selection problem; only a ready result may be passed to invocation execution. */
 export type ExperimentHostInvocationPlanResult =
   | ExperimentHostSelectionProblem
   | {
@@ -209,6 +224,7 @@ export type ExperimentHostInvocationPlanResult =
       readonly dry?: ExperimentHostDryPlan;
     };
 
+/** Plans selected targets with explicit Config, overrides and optional dry preview; coordinationRoot is a host path rather than a result locator. */
 export interface ExperimentHostInvocationPlanRequest extends ExperimentHostSelectionInput {
   readonly config: Config;
   /** Host path to process coordination state; defaults to cwd/.niceeval. */
@@ -222,6 +238,7 @@ export interface ExperimentHostInvocationFeedback {
   readonly coordinator: FeedbackCoordinator;
 }
 
+/** Executes an already prepared Host plan with optional cancellation and feedback; do not reconstruct the opaque plan from display output. */
 export interface ExperimentHostInvocationRunRequest {
   readonly plan: ExperimentHostInvocationPlan;
   readonly signal?: AbortSignal;
@@ -240,15 +257,19 @@ export interface ExperimentHostInvocationStatusListRequest {
   readonly experimentSelector?: string;
 }
 
+/** Selects an Invocation Session relative to an explicit project cwd; the selector targets an Invocation rather than an Attempt locator. */
 export interface ExperimentHostInvocationStatusShowRequest {
   readonly cwd: string;
   readonly invocationSelector: string;
 }
 
+/** Lists Invocation Sessions for status inspection; Session status is distinct from durable Run publication state. */
 export type ExperimentHostInvocationStatusList = SessionListDocument;
 
+/** Describes one selected Invocation Session; use its Run references to read published evaluation facts. */
 export type ExperimentHostInvocationStatusShow = SessionShowDocument;
 
+/** Records every Run created by an Invocation and its publication cutoff; published Attempts may be readable before a Run closes. */
 export interface ExperimentHostInvocationReceipt {
   readonly invocationId: string;
   readonly createdRunIds: readonly string[];
@@ -258,6 +279,7 @@ export interface ExperimentHostInvocationReceipt {
   readonly completion: "completed" | "interrupted" | "failed";
 }
 
+/** Summarizes Attempt Verdict counts and elapsed milliseconds; optional token and estimated USD fields must not be treated as complete usage when absent. */
 export interface ExperimentHostInvocationSummary {
   readonly total: number;
   readonly passed: number;
@@ -271,6 +293,7 @@ export interface ExperimentHostInvocationSummary {
   readonly beforeCaches: BeforeCachePreparationSummary;
 }
 
+/** Returns a finished invocation receipt and summary; completion describes execution completion, while quality remains in individual Verdicts and scores. */
 export interface ExperimentHostInvocationResult {
   readonly status: "finished";
   readonly receipt: ExperimentHostInvocationReceipt;
@@ -289,7 +312,9 @@ export interface ExperimentHostRenameRequest {
   readonly config?: Config;
   readonly operatorReason?: string;
 }
+/** Names a failed explicit-adoption eligibility check; a rename must not bypass it by rewriting historical Attempt identities. */
 export type ExperimentHostRenameReason = import("../../runner/adoption.ts").ExplicitAdoptionFailureCode;
+/** Previews adopting a source Run under another Experiment identity; blocked records explain why apply cannot safely proceed. */
 export interface ExperimentHostRenamePlan {
   readonly status: "plan";
   readonly sourceRunId: string;
@@ -304,6 +329,7 @@ export interface ExperimentHostRenamePlan {
   }[];
   readonly blocked?: { readonly reason: ExperimentHostRenameReason; readonly detail: string };
 }
+/** Reports a rejected rename or a newly published adoption Run; successful migration references source Attempts without rerunning them. */
 export type ExperimentHostRenameResult =
   | {
       readonly status: "rejected";
@@ -330,6 +356,7 @@ export type ExperimentHostRenameResult =
       }[];
     };
 
+/** Requests explicit adoption of exact Attempt locators into the current target; accepting a result does not rerun or rewrite its origin evidence. */
 export interface ExperimentHostAcceptRequest {
   readonly cwd: string;
   readonly locators: readonly string[];
@@ -337,6 +364,7 @@ export interface ExperimentHostAcceptRequest {
   readonly operatorReason?: string;
 }
 
+/** Identifies the new reference member and its unchanged source Attempt locator; adoption preserves the original execution evidence. */
 export interface ExperimentHostAcceptedAttempt {
   readonly invocationId: string;
   readonly runId: string;
@@ -346,10 +374,12 @@ export interface ExperimentHostAcceptedAttempt {
   readonly fingerprint: string;
 }
 
+/** Selects one exact source Run for adoption; its ID is not an Experiment prefix selector. */
 export interface ExperimentHostAcceptRunRequest extends Omit<ExperimentHostAcceptRequest, "locators"> {
   readonly runId: string;
 }
 
+/** Lists source Run members and identity comparisons proposed for adoption; inspect the plan before applying an explicit acceptance. */
 export interface ExperimentHostAcceptRunPlan {
   readonly sourceRunId: string;
   readonly members: readonly {
@@ -362,6 +392,7 @@ export interface ExperimentHostAcceptRunPlan {
   }[];
 }
 
+/** Identifies a shared lifecycle owner and its last heartbeat; stale heartbeat alone does not prove a local or remote process has terminated. */
 export interface ExperimentHostSharedStateEvidence {
   readonly key: string;
   readonly experimentId: string;
@@ -372,6 +403,7 @@ export interface ExperimentHostSharedStateEvidence {
   readonly heartbeatAt: string;
 }
 
+/** Selects shared Experiment lifecycle evidence for teardown inspection; currentHost identifies the caller rather than proving a remote owner has stopped. */
 export interface ExperimentHostAfterInspectRequest {
   readonly cwd: string;
   readonly experimentSelector?: string;
@@ -380,6 +412,7 @@ export interface ExperimentHostAfterInspectRequest {
   readonly recoveryKey?: string;
 }
 
+/** Reports whether teardown evidence is absent, ambiguous, mismatched or ready; inspect status before attempting cleanup. */
 export type ExperimentHostAfterInspection =
   | { readonly status: "no-evidence"; readonly key: string }
   | ExperimentHostSelectionProblem
@@ -405,6 +438,7 @@ export type ExperimentHostAfterInspection =
       readonly evidence?: ExperimentHostSharedStateEvidence;
     };
 
+/** Requests teardown or recovery with optional cancellation and ownership confirmations; confirm termination or remote quiescence only from real evidence. */
 export interface ExperimentHostAfterRequest extends ExperimentHostAfterInspectRequest {
   readonly observer?: ExperimentHostAfterObserver;
   readonly signal?: AbortSignal;
@@ -413,6 +447,7 @@ export interface ExperimentHostAfterRequest extends ExperimentHostAfterInspectRe
   readonly confirmRemoteQuiesced?: boolean;
 }
 
+/** Reports teardown progress, diagnostics and hook completion; these events do not replace the final recovery result. */
 export type ExperimentHostAfterEvent =
   | {
       readonly type: "experiment-progress";
@@ -435,10 +470,12 @@ export type ExperimentHostAfterEvent =
       readonly recovery?: true;
     };
 
+/** Receives structured teardown events for presentation; it must not reinterpret them as authorization to recover an owner. */
 export interface ExperimentHostAfterObserver {
   readonly observe: (event: ExperimentHostAfterEvent) => void;
 }
 
+/** Reports teardown or recovery status and any required confirmation; a completed operation may still contain failed experiment teardown outcomes. */
 export type ExperimentHostAfterResult =
   | ExperimentHostAfterInspection
   | {
@@ -466,6 +503,7 @@ export type ExperimentHostAfterResult =
       readonly error: string;
     };
 
+/** Provides supported catalog, planning, execution, adoption and recovery operations; effects must be run by the integrating host. */
 export interface ExperimentHostHighLevelSDK {
   readonly catalog: (
     input: ExperimentHostSelectionInput,

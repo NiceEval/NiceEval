@@ -14,20 +14,24 @@ export interface JudgePresetOptions {
   readonly maxAuditBytes?: number;
 }
 
+/** Supplies the question, candidate and reference for factuality scoring; expected is the author's reference rather than independently verified truth. */
 export interface FactualityMaterial {
   readonly input: string;
   readonly output: string;
   readonly expected: string;
 }
+/** Supplies candidate claims and their supporting context; faithfulness uses that context rather than outside knowledge. */
 export interface FaithfulnessMaterial {
   readonly input: string;
   readonly output: string;
   readonly context: string | readonly string[];
 }
+/** Supplies 1–32 nonempty instructions and the output to check against every instruction. */
 export interface InstructionFollowingMaterial {
   readonly instructions: readonly string[];
   readonly output: string;
 }
+/** Supplies instructions, candidate output and comparison reference; the resulting score expresses preference rather than a win probability. */
 export interface PairwisePreferenceMaterial {
   readonly instructions: string;
   readonly output: string;

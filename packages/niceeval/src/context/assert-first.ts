@@ -468,6 +468,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetM
   maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
 } & (Kind extends "score" ? { readonly score: ScoreFunction } : {});
 
+/** Supplies readonly Agent facts for the current turn, session or Attempt; managed collections cannot be mixed across receivers or Attempts. */
 export interface AgentMatchContext<Scope extends "turn" | "session" | "attempt" = "attempt"> {
   readonly scope: Scope;
   readonly toolCalls: ManagedToolCalls<Scope>;

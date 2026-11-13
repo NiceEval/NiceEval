@@ -194,14 +194,25 @@ changeFrequency.frequent // 1000
 
 Experiment、评估组、评估用例和 Sandbox Agent 的准备步骤进入同一个依赖图。每条链保持书写顺序，跨链用 `dependsOn` 或 capability 声明依赖，再按频率选择已经就绪的步骤。每个 Plugin 的准备数组单独成链，与作者 layer 之间不自动连边。
 
-运行时，每个准备步骤都会显示在进度里，但不会泄露内容：
+脚本超过几行时，放进独立文件，用 `script` 代替 `command`：
 
-- `shell()` 显示你写的 command，不显示外面包的 `/bin/sh -lc`；`command()` 和 `exec` 显示可执行文件和参数。
-- `writeText()` / `writeBytes()` 只显示目标路径、字节数和摘要，不显示正文。
-- 上传只显示摘要、目标路径和字节数，不显示宿主机上的源路径。
-- Git checkout 的地址会去掉用户信息、query 和 fragment；环境变量只列出名字。
+```ts
+shell({
+  id: "prepare-runtimes",
+  label: "准备运行环境",
+  script: new URL("./scripts/prepare-runtimes.sh", import.meta.url),
+  user: "root",
+  env: { CANDIDATE_VERSION: "0.20.0" },
+})
+```
 
-很短的进度更新可能被合并显示。想稳定看到一个长脚本的细粒度进度，把它拆成几个较小的步骤，并让每一步本身运行得足够久，或者自己报告进度。NiceEval 不追踪 shell 脚本内部的步骤。动态回调的进度由 `context.progress()` 自己报告。
+`script` 接受模块相对的 `file:` URL，与 `command` 二选一。文件必须在项目根内；URL 不能含 query 或 fragment，symlink 也不能指向项目外。文件不存在、不可读或不是 UTF-8 文本时，运行在创建 Sandbox 前失败并指出路径。
+
+NiceEval 在规划时读一次脚本，冻结原始内容，执行时不重读。脚本内容和 `env` 的值进入指纹；文件路径、文件名和 `label` 不进入。改一个字节会使这一步及后缀重新执行。
+
+运行进度只显示 `label`，省略时显示 `id`。`label` 必须非空、不含控制字符，最多 256 Unicode code points。内置 action 和自定义 family 都遵守这条规则。用 `niceeval debug <experiment> <eval>` 查看完整脚本、相对路径与摘要；用 `niceeval show @<locator> --execution` 查看实际执行命令。
+
+很短的进度更新可能被合并显示。需要分步观察时，把长脚本拆成几个有名字的 action。NiceEval 不追踪 shell 脚本内部的步骤。动态回调的进度由 `context.progress()` 自己报告。
 
 ### 声明准备缓存覆盖范围
 

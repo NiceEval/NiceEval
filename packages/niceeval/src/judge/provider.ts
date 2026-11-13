@@ -2,16 +2,20 @@ import { Predicate } from "effect";
 
 const judgeProviderBrand: unique symbol = Symbol("niceeval.judge.provider");
 
+/** An opaque, frozen Judge capability created by a provider factory; plain objects, spread copies and deserialized JSON cannot substitute for it. */
 export interface JudgeProvider {
   readonly [judgeProviderBrand]: true;
 }
 
+/** Overrides either the model string or the complete Provider; a string preserves the selected Provider's endpoint, credentials and limits. */
 export type JudgeSelection = string | JudgeProvider;
 
+/** Selects an inline key or one environment variable, never both; environment credentials are resolved only when a request is needed. */
 export type JudgeCredentials =
   | { readonly apiKey?: never; readonly apiKeyEnv?: string }
   | { readonly apiKey: string; readonly apiKeyEnv?: never };
 
+/** Selects the Judge model, endpoint and bounded execution settings; timeoutMs is in milliseconds and maxResponseBytes caps bytes before JSON parsing. */
 export interface JudgeProviderSettings {
   readonly model: string;
   readonly baseUrl?: string;
@@ -20,13 +24,16 @@ export interface JudgeProviderSettings {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
+/** Configures a managed Chat Completions Judge; image support requires explicit opt-in and a model that supports images and forced tool output. */
 export type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
   readonly maxOutputTokens?: number;
   readonly supportsImages?: boolean;
 };
 
+/** Configures TypeSafe System One credentials and execution limits; maxOutputTokens is not supported by this protocol. */
 export type TypesafeProviderOptions = JudgeProviderSettings & JudgeCredentials;
 
+/** Describes the selected Judge protocol and execution settings without secret key values; credential selectors identify a source rather than exposing credentials. */
 export interface JudgeProviderIdentity {
   readonly provider: "openai" | "vercel" | "openrouter" | "typesafe";
   readonly model: string;
@@ -207,18 +214,22 @@ function createProvider(
   return frozen;
 }
 
+/** Constructs a managed OpenAI Chat Completions Judge without making a request. Credentials default to OPENAI_API_KEY and are read at call time. */
 export function OpenAIProvider(options: ChatJudgeProviderOptions): JudgeProvider {
   return createProvider("openai", options, "chat-completions");
 }
 
+/** Constructs a Judge using Vercel AI Gateway without making a request. This selects the Gateway protocol, not a Vercel Sandbox or an AI SDK model object. */
 export function VercelProvider(options: ChatJudgeProviderOptions): JudgeProvider {
   return createProvider("vercel", options, "chat-completions");
 }
 
+/** Constructs a managed OpenRouter Judge without making a request. Credentials default to OPENROUTER_API_KEY; model availability is checked by actual calls. */
 export function OpenRouterProvider(options: ChatJudgeProviderOptions): JudgeProvider {
   return createProvider("openrouter", options, "chat-completions");
 }
 
+/** Constructs a TypeSafe System One Judge without making a request. Extraction and more than ten scoring anchors are unavailable rather than emulated. */
 export function TypesafeProvider(options: TypesafeProviderOptions): JudgeProvider {
   return createProvider("typesafe", options, "typesafe-system-one");
 }

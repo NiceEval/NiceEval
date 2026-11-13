@@ -2,7 +2,8 @@
 // rerun: pnpm e2e test --repo cli -- --run test/sandbox-step-activity.test.ts
 
 import { withPty } from "@niceeval/testkit";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decodeDebugPlanDocument, type DebugPlanDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
@@ -43,11 +44,18 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
     await writeFile(renamedPath, `${SHELL_COMMAND}\n`);
     await rename(renamedPath, scriptPath);
     await writeFile(evalPath, originalEval);
+    const experimentPath = join(paths.projectRoot, "experiments/sandbox-step-activity.ts");
+    const experiment = await readFile(experimentPath, "utf8");
+    await writeFile(experimentPath, 'import { writeFileSync } from "node:fs";\n' + experiment.replace(
+      '  description:',
+      '  before() { writeFileSync(new URL("../fixtures/sandbox-step-activity/prepare.sh", import.meta.url), "exit 91\\n"); },\n  description:',
+    ));
+    let attemptLocator: string | undefined;
     await withPty(
       [...cliBinary, "exp", "sandbox-step-activity", "--rerun", "all"],
       { cwd: paths.projectRoot, columns: 240, rows: 48, timeoutMs: 120_000 },
       async (pty) => {
-        const active = await pty.waitForText(/preparing sandbox/u, {
+        const active = await pty.waitForText(/Prepare runtime marker/u, {
           timeoutMs: 90_000,
           whileRunning: true,
           label: "the running Sandbox preparation phase",
@@ -66,6 +74,7 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
         expect(receipt.raw).not.toContain("sandbox-write-private-body");
         expect(receipt.raw).not.toContain("fixtures/sandbox-step-activity/upload.txt");
         expect(receipt.raw).not.toContain("host-upload-private-body");
+        attemptLocator = /(@1[0-9A-HJKMNP-TV-Z]{12})/u.exec(receipt.clean)?.[1];
 
         expect(receipt.cleanup).toEqual({
           candidateGroup: expect.stringMatching(/gone|terminal/),
@@ -74,5 +83,58 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
         });
       },
     );
+    // Actual command evidence is read through the public show surface, never storage files.
+    expect(attemptLocator).toBeDefined();
+    const execution = await niceeval.run(["show", attemptLocator!, "--execution"]);
+    expect(execution.exitCode, execution.diagnostic()).toBe(0);
+    const commandIds = [...new Set(execution.stdout.match(/command_[a-z0-9]+/gu) ?? [])];
+    expect(commandIds.length).toBeGreaterThan(0);
+    let recordedScript = "";
+    for (const commandId of commandIds) {
+      const detail = await niceeval.run(["show", attemptLocator!, "--execution", "--expand", commandId]);
+      expect(detail.exitCode, detail.diagnostic()).toBe(0);
+      if (detail.stdout.includes("sandbox-shell-ready")) {
+        recordedScript = detail.stdout;
+        break;
+      }
+    }
+    expect(recordedScript).toContain("sandbox-shell-ready");
   });
 });
+
+// @use-case docs/feature/sandbox/use-case/sandbox-ordered-preparation.md
+test.concurrent.each(["both", "neither", "missing", "query", "fragment", "utf8", "nul", "symlink", "label-empty", "label-control", "label-long"] as const)(
+  "脚本准备在创建 Sandbox 前拒绝无效声明：%s", async (invalid) => {
+    await cliE2E.case(`sandbox-script-invalid-${invalid}`, async ({ paths, commands: { niceeval } }) => {
+      const evalPath = join(paths.projectRoot, "evals/sandbox-step-activity/display.eval.ts");
+      let source = await readFile(evalPath, "utf8");
+      const scriptPath = join(paths.projectRoot, "fixtures/sandbox-step-activity/prepare.sh");
+      const outside = await mkdtemp(join(tmpdir(), "niceeval-script-outside-"));
+      try {
+        if (invalid === "both") source = source.replace('      script:', '      command: "true",\n      script:');
+        if (invalid === "neither") source = source.replace(/      script:.*\n/u, "");
+        if (invalid === "missing") source = source.replace("prepare.sh", "missing.sh");
+        if (invalid === "query") source = source.replace("prepare.sh", "prepare.sh?version=1");
+        if (invalid === "fragment") source = source.replace("prepare.sh", "prepare.sh#version");
+        if (invalid === "utf8") await writeFile(scriptPath, Buffer.from([0xff, 0xfe]));
+        if (invalid === "nul") await writeFile(scriptPath, Buffer.from([0]));
+        if (invalid === "symlink") {
+          const target = join(outside, "outside.sh");
+          await writeFile(target, "true\n");
+          await rm(scriptPath);
+          await symlink(target, scriptPath);
+        }
+        if (invalid.startsWith("label-")) source = source.replace('"Prepare runtime marker"', JSON.stringify(
+          invalid === "label-empty" ? "" : invalid === "label-control" ? "bad\nlabel" : "😀".repeat(257),
+        ));
+        await writeFile(evalPath, source);
+        const receipt = await niceeval.run(["debug", "sandbox-step-activity", "sandbox-step-activity/display", "--json"]);
+        expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
+        expect(receipt.stdout).toBe("");
+        expect(receipt.stderr).toContain(invalid.startsWith("label-") ? ".label" : invalid === "both" || invalid === "neither" ? "exactly one" : "shell script");
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    });
+  },
+);

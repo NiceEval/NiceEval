@@ -97,6 +97,7 @@ export type {
   CommandAfterActionOptions,
   CommandActionFactory,
   ShellActionInput,
+  ShellActionOptions,
   ShellAfterActionInput,
   ShellActionFactory,
   StableSandboxCommand,

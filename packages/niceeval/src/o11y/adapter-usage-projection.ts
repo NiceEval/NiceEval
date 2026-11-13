@@ -140,6 +140,7 @@ export function projectAdapterModelUsage(
     }),
   });
 }
+/** Projects recorded application calls and price receipts at a call-time cut; retain exact, lower-bound and unavailable numeric states rather than filling gaps with zero. */
 export interface AdapterAttemptUsageSnapshot {
   readonly source: "adapter";
   readonly scope: "recorded-calls";
@@ -155,6 +156,7 @@ export interface AdapterAttemptUsageSnapshot {
   readonly totalTokens: NumericMaterial;
   readonly costs: ReturnType<typeof effectiveCostTotals>;
 }
+/** Distinguishes an Adapter-owned usage projection from an unbound usage owner; unavailable usage is not an empty ledger. */
 export type AttemptUsageSnapshot = AdapterAttemptUsageSnapshot | { readonly source: "unavailable"; readonly reason: "usage-owner-not-bound" };
 export function projectAdapterUsageSnapshot(usage: ReadableAdapterUsageAttachment): AdapterAttemptUsageSnapshot {
   const calls = effectiveUsageCalls(usage);

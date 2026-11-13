@@ -8,6 +8,7 @@ import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
 import { agentLifecycleHookCommandsOf } from "../agents/post-setup.ts";
 import {
   sandboxCommandPlanOf,
+  sandboxShellScriptSourceOf,
   type SandboxCommand,
   type SandboxCommandPlanCommand,
   type SandboxCommandPlanCondition,
@@ -41,6 +42,7 @@ import {
 } from "./sandbox-reuse.ts";
 import type { LinkedPluginLifecycle } from "../plugin/contracts.ts";
 import { beforeCacheActionDeclaration, beforeCacheAttribution } from "./before-cache-plan.ts";
+import type { SandboxScriptSource } from "../sandbox/script.ts";
 
 export interface CommandPlanOwner {
   readonly kind: "eval" | "eval-group" | "experiment" | "adapter" | "agent" | "provider";
@@ -63,6 +65,7 @@ export interface CommandPlanSandboxTemplate {
 export interface CommandPlanStep {
   readonly phase: string;
   readonly label?: string;
+  readonly scriptSource?: SandboxScriptSource;
   readonly owner?: CommandPlanOwner;
   readonly truth: "exact" | "conditional" | "opaque" | "known-no-command";
   readonly condition?: SandboxCommandPlanCondition;
@@ -459,6 +462,8 @@ function stepForLinkedBefore(pair: PreparedRunPair, entry: ScheduledSandboxBefor
       phase: "sandbox.before",
       truth: "exact",
       owner,
+      label: entry.metadata.label ?? entry.id,
+      ...(sandboxShellScriptSourceOf(entry.data) === undefined ? {} : { scriptSource: sandboxShellScriptSourceOf(entry.data) }),
       action: Object.freeze({ ...entry.data.plan, kind: "action" as const }),
     };
   }
