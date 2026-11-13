@@ -12,6 +12,10 @@ query 或 View 交付；它不是作者可扩展的中间层。
 Feature 身份不声明同一时刻的源码状态；它表示后续实现与评审只能以这里的唯一目标为准。
 文档先行产生的 gap 只允许暂时存在，后续代码必须与 Feature 一致。
 
+Feature 目录名是这个功能的唯一名字（[T-34](../taste.md#t-34)）。它在 `packages/niceeval/src/` 下的源码目录与 `e2e/` 下的验收仓库使用同一个词，单复数也相同。
+一个功能的命令、宿主入口与错误文案放在它自己的源码目录里；多个功能共用的代码按它提供的能力命名，不叫 `utils` 或 `helpers`。
+[源码地图](../source-map.md)只说明目录内部的分工，不承担在不同名字之间做翻译。
+
 查询入口是 `concord list feature` 与 `concord show <id>`；新建 Feature 用 `concord new feature <name>`，既有页面直接编辑。布局与写法见 `concord --skill document`。
 
 ## 创建与编辑
