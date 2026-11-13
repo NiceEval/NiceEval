@@ -10,6 +10,7 @@ const withNode = <Input, Output, Error>(
 ): ((input: Input) => Effect.Effect<Output, Error>) => (input) =>
   Effect.suspend(() => operation(input)).pipe(Effect.provide(NodeRecordLive, { local: true }));
 
+/** Composes supported Experiment operations plus debug planning; use the Host operations rather than assembling internal Runner state. */
 export interface ExperimentHostSDK extends ExperimentHostHighLevelSDK {
   readonly debug: typeof rawExperimentHost.debug;
 }

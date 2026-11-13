@@ -89,6 +89,7 @@ function discoverSelection(input: {
   });
 }
 
+/** Selects an Experiment and optional Eval for readonly debug planning using an explicit cwd and Config; it does not authorize execution. */
 export interface ExperimentHostDebugPlanRequest {
   readonly cwd: string;
   readonly config: Config;

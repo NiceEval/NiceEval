@@ -65,8 +65,10 @@ export const ExpProgressEventSchema = Schema.Struct({
   })).check(Schema.makeFilter((value) => value.length <= 64)),
   activeOmitted: NonNegativeIntegerSchema,
 });
+/** A versioned exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */
 export type ExpProgressEvent = Schema.Schema.Type<typeof ExpProgressEventSchema>;
 
+/** Strictly decodes one exp progress event and rejects unknown properties. Use this decoder at the package boundary instead of rebuilding its Schema in another runtime. */
 export function decodeExpProgressEvent(input: unknown): ExpProgressEvent {
   return Schema.decodeUnknownSync(ExpProgressEventSchema, {
     errors: "all",
@@ -83,10 +85,14 @@ export const ExpDiagnosticEventSchema = Schema.Struct({
   experimentId: Schema.String,
   phase: Schema.optional(Schema.String),
 });
+/** Carries one structured diagnostic in the exp JSON stream; diagnostics are distinct from terminal completion and invocation receipts. */
 export type ExpDiagnosticEvent = Schema.Schema.Type<typeof ExpDiagnosticEventSchema>;
 
+/** Lists the Runs created by one Invocation and its publication cutoff; a completed Invocation does not imply all Attempts passed. */
 export type ExpInvocationReceipt = Schema.Schema.Type<typeof ExpInvocationReceiptSchema>;
+/** Summarizes the terminal exp outcome; absent usage or cost fields must not be inferred to be zero. */
 export type ExpTerminalSummary = Schema.Schema.Type<typeof ExpTerminalSummarySchema>;
+/** Closes the exp event stream with completion information; use the receipt to locate published Runs rather than relying on progress messages. */
 export type ExpTerminalEvent = Schema.Schema.Type<typeof ExpTerminalEventSchema>;
 
 /** Strictly decode the sole terminal envelope written by `niceeval exp --json`. */

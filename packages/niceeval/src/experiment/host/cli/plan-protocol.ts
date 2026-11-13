@@ -90,6 +90,7 @@ export const ExpPlanDocumentSchema = Schema.Struct({
   plugins: Schema.Array(Schema.Unknown),
 });
 
+/** Describes an exp invocation plan for machine consumers; reading a plan does not execute it or publish Attempt results. */
 export type ExpPlanDocument = Schema.Schema.Type<typeof ExpPlanDocumentSchema>;
 
 /** Strictly decode the single document written by `niceeval exp --dry --json`. */
