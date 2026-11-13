@@ -1,0 +1,27 @@
+{
+  "name": "niceeval-e2e-instabox",
+  "version": "0.1.0",
+  "private": true,
+  "nx": {
+    "includedScripts": []
+  },
+  "type": "module",
+  "scripts": {
+    "e2e": "vitest run",
+    "test": "node -e \"console.error('Use pnpm e2e test --lane main --repo instabox'); process.exit(1)\"",
+    "eval": "niceeval",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "4.1.3",
+    "niceeval": "0.19.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "ssh2": "1.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  }
+}
