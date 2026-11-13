@@ -46,7 +46,7 @@ FROM base AS codex
 
 # npm 全局安装(root)→ /usr/local/bin/codex,该路径对所有用户可执行。收尾切到 node
 # 用户;version smoke test 在切换后跑,顺带验证非 root 身份能直接调用装好的 CLI。
-ARG CODEX_VERSION=0.144.1
+ARG CODEX_VERSION=0.167.2
 RUN npm install -g @openai/codex@${CODEX_VERSION}
 USER node
 RUN codex --version
@@ -55,7 +55,7 @@ FROM base AS claude-code
 
 # npm 全局安装(root)→ /usr/local/bin/claude。Claude Code 在 root 下拒绝
 # --dangerously-skip-permissions,收尾必须声明非 root USER,不能只装完就结束。
-ARG CLAUDE_CODE_VERSION=2.1.207
+ARG CLAUDE_CODE_VERSION=2.1.323
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 USER node
 RUN claude --version
@@ -63,7 +63,7 @@ RUN claude --version
 FROM base AS opencode
 
 # npm 全局安装(root)→ /usr/local/bin/opencode（包名 opencode-ai）。收尾切到 node 用户。
-ARG OPENCODE_VERSION=1.18.5
+ARG OPENCODE_VERSION=1.19.5
 RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 USER node
 RUN opencode --version
@@ -72,7 +72,7 @@ FROM base AS openclaw
 
 # npm 全局安装(root)→ /usr/local/bin/openclaw。OpenClaw CLI 要求 Node >=22.22.3 或
 # >=24。收尾切到 node 用户。
-ARG OPENCLAW_VERSION=2026.7.1-2
+ARG OPENCLAW_VERSION=2026.11.3
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
 USER node
 RUN openclaw --version

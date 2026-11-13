@@ -104,6 +104,10 @@ function summaryHash(value: string): string {
 }
 
 function formatHumanDelta(delta: DisplayDelta): string {
+  if (delta.selector === "config:agentInstalls" && delta.from !== undefined && delta.to !== undefined) {
+    const installs = agentInstallDifference(delta.from, delta.to);
+    if (installs !== undefined) return `${delta.selector} changed (${installs})`;
+  }
   if (delta.from !== undefined && delta.to !== undefined
     && (incompleteStructuredSummary(delta.from) || incompleteStructuredSummary(delta.to))) {
     if (delta.from === delta.to) {
@@ -116,6 +120,31 @@ function formatHumanDelta(delta: DisplayDelta): string {
     ...(delta.from === undefined ? {} : { from: humanDeltaValue(delta.from) }),
     ...(delta.to === undefined ? {} : { to: humanDeltaValue(delta.to) }),
   });
+}
+
+/** Presentation only: the stored manifest and execution identity remain unchanged. */
+function agentInstallDifference(from: string, to: string): string | undefined {
+  try {
+    const before: unknown = JSON.parse(from), after: unknown = JSON.parse(to);
+    if (!Array.isArray(before) || !Array.isArray(after)) return undefined;
+    const describe = (value: unknown): string | undefined => {
+      if (typeof value !== "object" || value === null) return undefined;
+      const ensure: unknown = Reflect.get(value, "ensure");
+      if (typeof ensure !== "object" || ensure === null) return undefined;
+      const agent = Reflect.get(ensure, "agent"), version = Reflect.get(ensure, "version"), revision = Reflect.get(ensure, "revision");
+      if (typeof agent !== "string" || typeof version !== "string" || typeof revision !== "string") return undefined;
+      return `${singleLine(agent)} ${singleLine(version)} (recipe ${singleLine(revision)})`;
+    };
+    const changes: string[] = [];
+    for (let index = 0; index < Math.max(before.length, after.length); index++) {
+      if (JSON.stringify(before[index]) === JSON.stringify(after[index])) continue;
+      const left = index < before.length ? describe(before[index]) : "absent";
+      const right = index < after.length ? describe(after[index]) : "absent";
+      if (left === undefined || right === undefined || left === right) return undefined;
+      changes.push(`${boundedSingleSide(left)} → ${boundedSingleSide(right)}`);
+    }
+    return changes.length ? boundedList(changes, (value) => value).join(", ") : undefined;
+  } catch { return undefined; }
 }
 
 /** Structured manifest summaries become human key=value lists rather than JSON. */

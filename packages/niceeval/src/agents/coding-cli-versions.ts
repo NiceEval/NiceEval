@@ -1,6 +1,6 @@
 /** Coding-agent CLI versions used by runtime fallback installs and official sandbox recipes. */
-export const DEFAULT_CODEX_CLI_VERSION = "0.144.1";
-export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.207";
+export const DEFAULT_CODEX_CLI_VERSION = "0.167.2";
+export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.323";
 
 /**
  * Bub release installed from PyPI by runtime fallback installs and official sandbox recipes.
@@ -11,17 +11,17 @@ export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.207";
 export const DEFAULT_BUB_VERSION = "0.5.1";
 
 /** OpenCode CLI（npm `opencode-ai`）默认钉的版本。 */
-export const DEFAULT_OPENCODE_CLI_VERSION = "1.18.5";
+export const DEFAULT_OPENCODE_CLI_VERSION = "1.19.5";
 
 /** Hermes Agent（PyPI `hermes-agent`）默认钉的版本。 */
 export const DEFAULT_HERMES_CLI_VERSION = "0.19.0";
 
 /** OpenClaw CLI（npm `openclaw`）默认钉的版本。 */
-export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.7.1-2";
+export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.11.3";
 
 /** Oh My Pi coding-agent CLI (npm) and its Bun runtime. */
-export const DEFAULT_OMP_CLI_VERSION = "17.3.5";
-export const DEFAULT_BUN_VERSION = "1.3.14";
+export const DEFAULT_OMP_CLI_VERSION = "18.20.0";
+export const DEFAULT_BUN_VERSION = "1.4.4";
 
 /** DeepSeek Harness CLI (npm `@deepseek-ai/dsh`). */
 export const DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION = "0.1.7-rc.2";
@@ -68,27 +68,27 @@ export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseli
   // r4: 跨 provider 基线工具面统一——不预装 yarn 实体,补齐 python3,
   // 并补 /usr/local 对运行用户可写(docs/feature/sandbox/library/prebuilt-environments.md
   // 「跨 provider 基线工具面」)
-  "claude-code": 5,
+  "claude-code": 1,
   // r3: staged 安装改用自带运行时的原生平台包(不再要求沙箱里有 node / npm)
   // r4: 同上「USER node」配方变更
   // r5: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
-  codex: 6,
+  codex: 1,
   bub: 1,
   // r2: 同上「USER node」配方变更
   // r3: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
-  opencode: 4,
+  opencode: 1,
   // r2: 跨 provider 基线工具面统一——本 target 原本单独装的 python3 现由 base 统一提供,
   // 配方内容变了但不预装 yarn 不改变行为(同上,含可写性)
   hermes: 3,
   // r2: 同上「USER node」配方变更
   // r3: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
-  openclaw: 4,
-  omp: 2,
+  openclaw: 1,
+  omp: 1,
   "deepseek-harness": 1,
 };
 
 /**
- * 官方基线制品的版本 tag：`<Agent 版本>-r<配方修订>`，如 `0.144.1-r2`。
+ * 官方基线制品的版本 tag：`<Agent 版本>-r<配方修订>`，如 `0.167.2-r2`。
  *
  * niceeval 自身的版本不参与命名——库与制品内容无关，发版不该连带重建没变的制品，
  * 换 Agent 版本也不该等库发版。
