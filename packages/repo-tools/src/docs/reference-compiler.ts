@@ -1340,6 +1340,10 @@ const BUNDLED_INDEX_PROVENANCE =
 
 /** 纯函数:把文档树填进模板(INDEX.template.md 内容)的区块,返回完整 INDEX.md 内容。不接触文件系统。 */
 export function regenerateBundledIndex(templateContent: string, pages: ZhPage[]): string {
+  const introduction = templateContent.split("<!-- GENERATED:BEGIN bundled-docs-tree -->")[0]!;
+  if (Buffer.byteLength(introduction, "utf8") > 4096) {
+    throw new Error("Bundled INDEX.md introduction exceeds 4096 UTF-8 bytes");
+  }
   const body = `${BUNDLED_INDEX_PROVENANCE}\n\n${renderBundledIndexTree(pages)}`;
   return replaceMdRegion(templateContent, BUNDLED_INDEX_REGION, body);
 }

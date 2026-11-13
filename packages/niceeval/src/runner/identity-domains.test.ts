@@ -130,7 +130,14 @@ function assertReleaseSnapshot(
   require(currentSample, "Missing fixed digests in the current domains");
   for (const entry of registry) {
     if (entry.effect === "encoding-only" && entry.retired !== true) {
-      require(covered.has(entry.name), `Missing old-domain sample for ${entry.name}`);
+      const target = entry.kind === "core"
+        ? { domains: { ...domains, [entry.revision]: entry.to }, config: {} }
+        : { domains, config: { [entry.configPath]: entry.to } };
+      // A later behavior change forbids rebuilding through that hop. Historical
+      // encoding recipes are checked separately against their frozen snapshot.
+      if (resolveIdentityDomains(target, { domains, config: {} }, registry).kind !== "behavior-changing") {
+        require(covered.has(entry.name), `Missing old-domain sample for ${entry.name}`);
+      }
     }
   }
 }
@@ -147,6 +154,15 @@ describe("identity domain release contract", () => {
   it("keeps the released Eval, configuration and slot digests in their declared domains", async () => {
     const samples = await Promise.all(releaseSnapshot.samples.map((sample) => calculateSample(sample.fixture)));
     assertReleaseSnapshot(releaseSnapshot, samples);
+    const historicalDomains = { ...CURRENT_IDENTITY_DOMAINS, fingerprintAlgorithm: 4 };
+    const historicalRegistry = IDENTITY_DOMAIN_CHANGES.filter((entry) => entry.name === "provider-before-cache-capability/3-to-4");
+    assertReleaseSnapshot({
+      domains: historicalDomains,
+      registryNames: historicalRegistry.map((entry) => entry.name),
+      samples: releaseSnapshot.samples.slice(0, 2),
+    }, samples.slice(0, 2).map((sample) => ({
+      ...sample, input: { ...sample.input, domains: historicalDomains },
+    })), historicalDomains, historicalRegistry);
     expect(FINGERPRINT_ALGORITHM_VERSION).toBe(CURRENT_IDENTITY_DOMAINS.fingerprintAlgorithm);
     expect(FINGERPRINT_COVERAGE_VERSION).toBe(CURRENT_IDENTITY_DOMAINS.fingerprintCoverage);
     expect(Object.isFrozen(samples[0].input.fingerprintPayload)).toBe(true);
@@ -160,8 +176,8 @@ describe("identity domain release contract", () => {
       capabilities: { retention: { _tag: "Suspendable" }, reuse: { _tag: "Supported" }, sessionLimit: { _tag: "Unlimited" } },
     };
     const pairPlan = { mode: "sandbox", providerPlan };
-    const input = { ...sample.input, fingerprintPayload: { ...sample.input.fingerprintPayload, pairPlan } };
-    const resolution = resolveIdentityDomains(side({ fingerprintAlgorithm: 3 }), side());
+    const input = { ...sample.input, domains: { ...sample.input.domains, fingerprintAlgorithm: 4 }, fingerprintPayload: { ...sample.input.fingerprintPayload, pairPlan } };
+    const resolution = resolveIdentityDomains(side({ fingerprintAlgorithm: 3 }), side({ fingerprintAlgorithm: 4 }));
     expect(resolution.kind).toBe("encoding-only");
     if (resolution.kind !== "encoding-only") throw new Error("Missing provider identity transition");
     const oldPayload = { ...input.fingerprintPayload, pairPlan: {

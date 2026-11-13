@@ -4,6 +4,9 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
 
+import { validateInitGuide } from "./check-ai-docs.mjs";
+import { checkPublicUsage } from "./check-public-usage.mjs";
+
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
@@ -366,6 +369,7 @@ async function build() {
 
     await copyRuntimeAssets(outputRoot);
     await writeDualDeclarations(rawTypes, outputRoot);
+    await checkPublicUsage(ROOT, outputRoot);
     // Internal tools that read dist source paths receive ESM facades over the
     // same canonical CJS graph; public entries receive explicit .mjs facades.
     for (const source of runtimeSources) {
@@ -385,4 +389,5 @@ async function build() {
   }
 }
 
+validateInitGuide(await readFile(join(ROOT, "../../INIT.md"), "utf8"));
 await build();

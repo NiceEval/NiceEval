@@ -731,11 +731,17 @@ Agent 场景的 `read` 从 `AgentMatchContext<Scope>` 读取 NiceEval 整理好�
 | `t.sandbox.changedPaths(paths)` | agent 变化路径的无序集合恰好等于 `paths`；路径是工作区相对的规范路径。 |
 | `t.sandbox.noChanges()` | 等价于 `changedPaths([])`，要求没有变化。 |
 | `t.sandbox.changedOnlyWithin(paths)` | 每条变化路径都等于某个允许项或位于该目录之下；零变化也满足。 |
+| `t.sandbox.unchangedWithin(paths)` | 保护列出的文件和目录，任何变化路径落入范围都不满足；零变化也满足。 |
 | `t.sandbox.fileChanged(path, options?)` | 同一次发送窗口内，该路径发生变化且同时满足 `status`、`before`、`after`；内容条件使用字符串 Match。 |
 | `t.sandbox.fileDeleted(path)` | 找到该路径的删除变化；不要求它在整个 Attempt 结束时仍不存在。 |
 | `t.sandbox.notInDiff(pattern, options?)` | 正则表达式未命中变化路径及变化行；`content` 选 `added`、`removed` 或默认的 `both`，不扫描未变化上下文。 |
+| `t.sandbox.inDiff(pattern, options?)` | 正则表达式命中变化路径或所选变化行即满足；`content` 的取值与默认值同 `notInDiff`。 |
 
 `changedPaths(["src/a.ts"])` 要求恰好修改这个文件；`changedOnlyWithin(["src"])` 允许不改文件，也允许只改 `src` 内的部分文件。后者按路径组件匹配，`agents` 不覆盖 `agents-old`；至少提供一个范围，空数组请改用 `noChanges()`。
 路径含 `*` 或 `?` 时抛出 `TypeError`：不支持 glob，目录前缀直接写目录名。
+
+`unchangedWithin(["agents", "niceeval.config.ts"])` 保护运行配置，允许修改其余文件；它与 `changedOnlyWithin` 不是逻辑取反。路径组件、glob 和空数组的拒绝规则与允许范围检查相同。
+
+`inDiff` 不扫描未变化上下文。没有命中且所选内容被省略时，结果为 unavailable；路径或已知变化行命中时仍可确定满足。匹配的证据保留首个命中路径与有界预览。只想匹配内容时，pattern 应避免命中路径。
 
 这些断言沿用 `diff.ignore` 和发送窗口归因。作者自己写入的 Fixture 不算 agent 变化；同一次发送内恢复原状没有端点变化，不同发送间修改后还原仍会保留变化。材料采集失败或不完整时为 unavailable；内容被省略时，仅依赖该内容的匹配无法判定，不会伪装成匹配。

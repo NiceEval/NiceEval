@@ -17,9 +17,9 @@ Tailwind 只提供 utility，供 `components/magicui/` 下从 [Magic UI](https:/
 
 ## 验证
 
-`/INIT.md` 由 `app/INIT.md/route.ts` 在构建时读取仓库根 `INIT.md` 并生成静态
-Markdown 响应。根文件是唯一内容来源；部署不依赖跨目录的 `public` 符号链接。
-修改该入口后，启动构建产物并通过 HTTP 检查状态、`Content-Type` 与根文件内容一致。
+`/INIT.md` 由 `app/INIT.md/route.ts` 在构建时读取`stable/INIT.md` 并生成静态
+Markdown 响应。稳定副本是唯一内容来源；部署不依赖跨目录的 `public` 符号链接。
+修改该入口后，启动构建产物并通过 HTTP 检查状态、`Content-Type` 与稳定副本内容一致。
 
 ```sh
 pnpm run site:build

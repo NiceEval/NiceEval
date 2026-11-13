@@ -180,6 +180,15 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "sandbox-change-scope/v1";
       readonly data: { readonly paths: readonly string[] };
+    }  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-unchanged-within/v1";
+      readonly data: { readonly paths: readonly string[] };
+    }
+  | {
+      readonly kind: "builtin";
+      readonly id: "sandbox-in-diff/v1";
+      readonly data: { readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" };
     }
   | {
       readonly kind: "builtin";

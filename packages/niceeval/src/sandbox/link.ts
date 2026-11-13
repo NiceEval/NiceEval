@@ -92,7 +92,7 @@ export interface SandboxDeclarationOrder {
 
 export interface SandboxBeforeDependencyProjection {
   readonly id: string;
-  readonly source: "explicit" | "capability";
+  readonly source: "explicit" | "capability" | "same-layer";
   readonly capability?: string;
 }
 
@@ -854,6 +854,21 @@ export function scheduleSandboxBefore(
       dependencies.set(dependent.id, projections);
     };
 
+    const chains = new Map<string, LinkedSandboxBefore[]>();
+    for (const entry of entries) {
+      const chainKey = JSON.stringify([entry.owner.kind, entry.owner.id, entry.pluginSource ?? null]);
+      const chain = chains.get(chainKey) ?? [];
+      chain.push(entry);
+      chains.set(chainKey, chain);
+    }
+    for (const chain of chains.values()) {
+      chain.sort((left, right) => left.ordinal - right.ordinal);
+      for (let index = 1; index < chain.length; index++) {
+        const previous = chain[index - 1]!;
+        addEdge(previous, chain[index]!, { id: previous.id, source: "same-layer" });
+      }
+    }
+
     for (const entry of entries) {
       for (const reference of entry.metadata.dependsOn) {
         const dependency = byId.get(reference.id);
@@ -900,7 +915,7 @@ export function scheduleSandboxBefore(
         }),
         schedulingReason: entryDependencies.length === 0
           ? `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`
-          : `dependencies satisfied (${entryDependencies.map((dependency) => dependency.id).join(", ")}); ` +
+          : `dependencies satisfied (${entryDependencies.map((dependency) => `${dependency.id} [${dependency.source}]`).join(", ")}); ` +
             `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`,
       }));
       for (const dependentId of outgoing.get(entry.id) ?? []) {

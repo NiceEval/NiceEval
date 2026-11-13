@@ -1,13 +1,14 @@
 {
   "domains": {
-    "fingerprintAlgorithm": 4,
+    "fingerprintAlgorithm": 5,
     "fingerprintCoverage": 2,
     "inputIdentity": 1,
     "configIdentity": 1,
     "slotInput": 1
   },
   "registryNames": [
-    "provider-before-cache-capability/3-to-4"
+    "provider-before-cache-capability/3-to-4",
+    "sandbox-before-chain-order/4-to-5"
   ],
   "samples": [
     {
@@ -48,6 +49,40 @@
       "name": "direct-eval-config-slot-without-cache-capability",
       "domains": {
         "fingerprintAlgorithm": 4,
+        "fingerprintCoverage": 2,
+        "inputIdentity": 1,
+        "configIdentity": 1,
+        "slotInput": 1
+      },
+      "ownerDomains": {},
+      "fixture": {
+        "experimentId": "release/baseline",
+        "evalId": "release/sample",
+        "attempt": 2,
+        "timeoutMs": 4000,
+        "flags": {
+          "mode": "fixture",
+          "limit": 2
+        },
+        "tags": [
+          "release"
+        ],
+        "metadata": {
+          "language": "en"
+        },
+        "sourcePath": "evals/identity-domain-release.eval.ts",
+        "sourceContent": "export const value = 42;\n"
+      },
+      "digests": {
+        "fingerprint": "ede505170ec258dbe6581bbdfb47fd801e2e5b73c0f58887b5afa030a491243c",
+        "configIdentity": "1ea29299510b6ed34fdbec7cbc59092bfbc7911d911c044b2ba359a4a3b8dcaf",
+        "slotInput": "cf050b8f192b88fed41573325c6a15a8a19118eadc11356e8285018ff794f26d"
+      }
+    },
+    {
+      "name": "direct-eval-config-slot-with-ordered-before-domain",
+      "domains": {
+        "fingerprintAlgorithm": 5,
         "fingerprintCoverage": 2,
         "inputIdentity": 1,
         "configIdentity": 1,

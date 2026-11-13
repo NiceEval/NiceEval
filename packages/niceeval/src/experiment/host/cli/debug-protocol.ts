@@ -183,7 +183,7 @@ const CommandPlanStepSchema: Schema.Codec<CommandPlanStep> = Schema.suspend(() =
   schedulingReason: Schema.optional(Schema.String),
   dependencies: Schema.optional(Schema.Array(Schema.Struct({
     id: Schema.String,
-    source: Schema.Literals(["explicit", "capability"]),
+    source: Schema.Literals(["explicit", "capability", "same-layer"]),
     capability: Schema.optional(Schema.String),
   }))),
   occurrence: Schema.optional(Schema.Struct({ kind: Schema.Literal("attempt") })),

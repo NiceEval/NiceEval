@@ -41,6 +41,7 @@ import {
   agentWorkspaceDiffChangesForPath,
   agentWorkspaceDiffPathsMatch,
   evaluateWorkspaceDiffNotIn,
+  evaluateWorkspaceDiffIn,
   type AgentWorkspaceDiffEndpoint,
   type PostRunWorkspaceDiffState,
   type WorkspaceDiffNotInOptions,
@@ -334,12 +335,19 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
   extends SandboxOperations, SandboxTransferOperations {
   changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandle<Kind, void>;
   changedOnlyWithin(paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void>;
+  /** 保护列出的文件或目录，任何 agent 归因变化落入范围都不满足；至少提供一项且不支持 glob。 */
+  unchangedWithin(paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void>;
   noChanges(): PostRunBooleanAssertionHandle<Kind, void>;
   fileChanged(
     path: string,
     options?: FileChangedOptions,
   ): PostRunBooleanAssertionHandle<Kind, void>;
   fileDeleted(path: string): PostRunBooleanAssertionHandle<Kind, void>;
+  /** 正则命中变化路径或所选变化行时满足；所选内容省略且未命中时为 unavailable。 */
+  inDiff(
+    pattern: RegExp,
+    options?: WorkspaceDiffNotInOptions,
+  ): PostRunBooleanAssertionHandle<Kind, void>;
   notInDiff(
     pattern: RegExp,
     options?: WorkspaceDiffNotInOptions,
@@ -1213,16 +1221,17 @@ function normalizeFileChangedOptions(
 
 function normalizeNotInDiffOptions(
   value: WorkspaceDiffNotInOptions | undefined,
+  operation = "notInDiff()",
 ): Readonly<WorkspaceDiffNotInOptions> {
   if (value === undefined) return Object.freeze({});
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("notInDiff() options must be an object");
+    throw new TypeError(`${operation} options must be an object`);
   }
   for (const key of Object.keys(value)) {
-    if (key !== "content") throw new TypeError(`notInDiff() options has unknown key ${JSON.stringify(key)}`);
+    if (key !== "content") throw new TypeError(`${operation} options has unknown key ${JSON.stringify(key)}`);
   }
   if (value.content !== undefined && value.content !== "added" && value.content !== "removed" && value.content !== "both") {
-    throw new TypeError("notInDiff() options.content must be added, removed, or both");
+    throw new TypeError(`${operation} options.content must be added, removed, or both`);
   }
   return Object.freeze({ ...value });
 }
@@ -1267,10 +1276,12 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       unknown,
       never
     >,
+    terminalEvidence?: () => readonly AssertionMaterial[],
   ): PostRunBooleanAssertionHandle<Kind, void> => postRunBooleanAssertionHandle(
     input.runtime.registerBoolean<void>({
       criterion,
       subject: diffReferenceMaterial(),
+      ...(terminalEvidence === undefined ? {} : { terminalEvidence }),
       evaluate,
     }),
     input.runtime.evaluationKind,
@@ -1312,6 +1323,31 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
           code: "outside-allowed-paths", message: "Agent changes exceeded the allowed paths", path: [],
           expected: allowed.slice(0, 16).join(", "), received: outside.slice(0, 16).join(", "),
           ...(outside.length <= 16 ? {} : { reason: `Showing 16 of ${outside.length} paths outside the allowed scope` }),
+        } });
+    }));
+  };
+
+  // @concord-code
+  // @concord-implements docs/feature/sandbox/README.md
+  const unchangedWithin = (paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void> => {
+    requireCapability();
+    if (!Array.isArray(paths) || paths.length === 0) throw new TypeError("unchangedWithin() requires at least one protected path");
+    for (const path of paths) {
+      assertDiffPath(path, "unchangedWithin()");
+      if (/[*?]/u.test(path)) throw new TypeError("unchangedWithin() does not support glob patterns; use the directory name directly for a directory prefix");
+    }
+    const protectedPaths = Object.freeze([...new Set(paths)].sort());
+    return register(Object.freeze({ kind: "sandbox-unchanged-within", paths: protectedPaths }), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      const protectedChanges = [...new Set(diff.document.windows.flatMap(window => window.changes.map(change => change.path)))]
+        .filter(path => protectedPaths.some(prefix => path === prefix || path.startsWith(`${prefix}/`))).sort();
+      return protectedChanges.length === 0
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : Object.freeze({ state: "mismatched" as const, diagnostic: {
+          code: "protected-paths-changed", message: "Agent changed protected paths", path: [],
+          expected: protectedPaths.slice(0, 16).join(", "), received: protectedChanges.slice(0, 16).join(", "),
+          ...(protectedChanges.length <= 16 ? {} : { reason: `Showing 16 of ${protectedChanges.length} paths within the protected scope` }),
         } });
     }));
   };
@@ -1366,6 +1402,35 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
           ? Object.freeze({ state: "mismatched" as const })
           : unavailableDiffResult();
     }));
+  };
+
+  const inDiff = (
+    pattern: RegExp,
+    rawOptions?: WorkspaceDiffNotInOptions,
+  ): PostRunBooleanAssertionHandle<Kind, void> => {
+    requireCapability();
+    if (!(pattern instanceof RegExp)) throw new TypeError("inDiff() pattern must be a RegExp");
+    const options = normalizeNotInDiffOptions(rawOptions, "inDiff()");
+    const frozenPattern = new RegExp(pattern.source, pattern.flags);
+    let evidence: readonly AssertionMaterial[] = Object.freeze([]);
+    return register(Object.freeze({
+      kind: "sandbox-in-diff", pattern: frozenPattern.source,
+      flags: frozenPattern.flags, content: options.content ?? "both",
+    }), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      const result = evaluateWorkspaceDiffIn(diff.document, frozenPattern, options);
+      if (result.state === "unavailable") return unavailableDiffResult();
+      if (result.state === "mismatched") return Object.freeze({ state: "mismatched" as const });
+      evidence = Object.freeze([Object.freeze({
+        kind: "snapshot" as const,
+        value: Object.freeze({ path: result.path, preview: result.preview }),
+      })]);
+      return Object.freeze({ state: "matched" as const, value: undefined, diagnostic: {
+        code: "diff-pattern-witness", message: "Pattern matched agent changes", path: [],
+        expected: frozenPattern.toString(), received: `${result.path}: ${result.preview}`,
+      } });
+    }), () => evidence);
   };
 
   const noChanges = (): PostRunBooleanAssertionHandle<Kind, void> => {
@@ -1453,10 +1518,12 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     },
     changedPaths,
     changedOnlyWithin,
+    unchangedWithin,
     noChanges,
     fileChanged,
     fileDeleted,
     notInDiff,
+    inDiff,
   };
   Object.setPrototypeOf(view, null);
   return Object.freeze(view);
