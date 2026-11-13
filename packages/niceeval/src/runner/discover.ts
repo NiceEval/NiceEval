@@ -30,6 +30,7 @@ import {
 import { acquireFreshImportGeneration, importProjectModule, type FreshImportGeneration } from "../fresh-import.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
+import { withSandboxScriptRoot } from "../sandbox/script.ts";
 import {
   discoverEval,
   discoverExperiment,
@@ -168,7 +169,7 @@ function importModule(
   load: DiscoveryModuleLoader = cachedModuleLoader,
 ): Effect.Effect<unknown, DiscoveryError> {
   return Effect.tryPromise({
-    try: () => load(file),
+    try: () => withSandboxScriptRoot(root, () => load(file)),
     catch: (cause) => issue(
       relative(root, file),
       "discovery.import-failed",

@@ -10,8 +10,10 @@ import {
   normalizeSandboxBeforeMetadata,
   sandboxStep,
   sandboxShellStep,
+  sandboxActionDataOf,
   type NormalizedSandboxBeforeMetadata,
   type SandboxAction,
+  type SandboxActionData,
   type SandboxActionInstanceOptions,
   type SandboxActionRef,
   type SandboxAfterAction,
@@ -19,6 +21,7 @@ import {
   type SandboxCapability,
 } from "./action.ts";
 import { isRegisteredSandboxContent, type RegisteredSandboxContent } from "./content.ts";
+import { readSandboxScript, type SandboxScriptSource } from "./script.ts";
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -38,10 +41,16 @@ export interface CommandAfterActionOptions extends SandboxExecOptions {
   readonly id: string;
 }
 
-export interface ShellActionInput extends SandboxExecOptions, SandboxBeforeActionOptions {
-  readonly command: string;
+/** shell({ id, command }) 或 shell({ id, script }) 共用的执行与调度选项。 */
+export interface ShellActionOptions extends SandboxExecOptions, SandboxBeforeActionOptions {
   readonly inputs?: readonly RegisteredSandboxContent[];
 }
+
+/** 内联 command 与模块相对 file: URL 二选一；脚本内容在 planning 冻结。 */
+export type ShellActionInput = ShellActionOptions & (
+  | { readonly command: string; readonly script?: never }
+  | { readonly script: URL; readonly command?: never }
+);
 
 export interface ShellAfterActionInput extends SandboxExecOptions {
   readonly id: string;
@@ -584,7 +593,7 @@ const shellActionFamily = defineSandboxAction({
   }, input.executable)] as const,
 });
 
-const INLINE_SCHEDULING_KEYS = ["id", "changeFrequency", "dependsOn", "requires", "provides", "cache"] as const;
+const INLINE_SCHEDULING_KEYS = ["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"] as const;
 const INLINE_EXEC_KEYS = ["cwd", "env", "user", "timeoutMs", "stdin"] as const;
 
 function pickExecOptions(value: globalThis.Record<string, unknown>): SandboxCommandOptions {
@@ -620,6 +629,7 @@ function normalizeInlineOptions(
   if (after) return Object.freeze({ id, exec });
   normalizeSandboxBeforeMetadata({
     id,
+    ...(value.label === undefined ? {} : { label: value.label }),
     ...(value.changeFrequency === undefined ? {} : { changeFrequency: value.changeFrequency }),
     ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn }),
     ...(value.requires === undefined ? {} : { requires: value.requires }),
@@ -628,6 +638,7 @@ function normalizeInlineOptions(
   }, path);
   const scheduling: SandboxActionInstanceOptions = Object.freeze({
     id,
+    ...(value.label === undefined ? {} : { label: value.label as string }),
     ...(value.changeFrequency === undefined ? {} : { changeFrequency: value.changeFrequency as number }),
     ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn as readonly SandboxActionRef[] }),
     ...(value.requires === undefined ? {} : { requires: value.requires as readonly SandboxCapability[] }),
@@ -791,10 +802,20 @@ const shellImpl = (function (
   legacyOptions?: SandboxCommandOptions,
 ): StableSandboxCommand | SandboxAction {
   if (typeof input === "string") return legacyShell(input, legacyOptions);
-  const normalized = normalizeInlineOptions(input, "shell input", ["command", "inputs"], false);
-  const script = nonEmptyString(input.command, "shell input.command");
+  const normalized = normalizeInlineOptions(input, "shell input", ["command", "script", "inputs"], false);
+  if ((input.command !== undefined) === (input.script !== undefined)) {
+    throw new TypeError("shell input must declare exactly one of command or script");
+  }
+  const file = input.script === undefined ? undefined : readSandboxScript(input.script);
+  const script = file?.command ?? nonEmptyString(input.command, "shell input.command");
   const inputs = declaredShellInputs(input.inputs, "shell input.inputs");
-  return shellActionFamily(execPayload(script, [], normalized.exec, inputs), normalized.scheduling);
+  const payload = execPayload(script, [], normalized.exec, inputs);
+  const action = shellActionFamily(file === undefined ? payload : {
+    ...payload,
+    declaredInputsJson: JSON.stringify([...JSON.parse(payload.declaredInputsJson), { kind: "script", digest: file.source.digest }]),
+  }, normalized.scheduling);
+  if (file !== undefined) SHELL_SCRIPT_SOURCES.set(sandboxActionDataOf(action), file.source);
+  return action;
 }) as ShellActionFactory;
 Object.defineProperty(shellImpl, "after", {
   value: (input: ShellAfterActionInput): SandboxAfterAction => {
@@ -808,6 +829,12 @@ Object.defineProperty(shellImpl, "after", {
   },
 });
 export const shell = Object.freeze(shellImpl);
+
+const SHELL_SCRIPT_SOURCES = new WeakMap<SandboxActionData, SandboxScriptSource>();
+/** Display-only provenance; it must never enter execution or cache identity. */
+export function sandboxShellScriptSourceOf(data: SandboxActionData): SandboxScriptSource | undefined {
+  return SHELL_SCRIPT_SOURCES.get(data);
+}
 
 export function sandboxCommandDeclarationOf(command: SandboxCommand): SandboxCommandDeclaration {
   if (typeof command !== "function") throw new TypeError("SandboxLayer.before requires an Action or command function");

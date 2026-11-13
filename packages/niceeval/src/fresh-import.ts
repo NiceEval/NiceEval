@@ -8,6 +8,7 @@ import { createJiti, type Jiti } from "jiti";
 import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withSandboxScriptRoot } from "./sandbox/script.ts";
 
 const generationGate = Semaphore.makeUnsafe(1);
 const loaderOptions = Object.freeze({
@@ -102,7 +103,7 @@ export function acquireFreshImportGeneration(
     };
     return Object.freeze({
       // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
-      import: importFresh,
+      import: (absPath: string) => withSandboxScriptRoot(projectRoot, () => importFresh(absPath)),
     });
   });
 }

@@ -124,8 +124,6 @@ import {
   mergeSandboxActionState,
   sandboxActionStateCovers,
   sandboxStepExecutionOf,
-  sandboxStepPresentationOf,
-  formatSandboxStepActivity,
   type SandboxActionData,
   type SandboxActionState,
 } from "../sandbox/action.ts";
@@ -2407,7 +2405,7 @@ export async function executeSandboxAction(
   progress: (update: { readonly message: string }) => void,
 ): Promise<void> {
   for (const step of data.steps) {
-    progress({ message: formatSandboxStepActivity(sandboxStepPresentationOf(step)) });
+    progress({ message: data.metadata.label ?? data.metadata.id });
     const execution = sandboxStepExecutionOf(step);
     switch (execution.kind) {
       case "exec": {

@@ -247,7 +247,6 @@
     "sandbox/commands.d.mts#SandboxCommandOptions",
     "sandbox/commands.d.mts#SandboxExecOptions",
     "sandbox/commands.d.mts#ShellActionFactory",
-    "sandbox/commands.d.mts#ShellActionInput",
     "sandbox/commands.d.mts#ShellAfterActionInput",
     "sandbox/commands.d.mts#StableSandboxCommand",
     "sandbox/commands.d.mts#command",
