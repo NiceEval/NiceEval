@@ -48,7 +48,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-These templates have all been verified by actually starting them: Claude Code `2.1.207`, Codex `0.144.1`, and Bub `0.4.0`. The template version follows the Agent inside it, in the form `0.144.1-r1`: the Agent version plus NiceEval's build revision. The three Agents release independently, unrelated to the NiceEval library's version. So use the constants in your project, do not copy these strings, and you do not need to track versions yourself. When a derived template needs to record its base template, use the constant's value too.
+Template constants point to published, verified artifacts. Current source recipes use Claude Code `2.1.323` and Codex `0.167.2`, while Bub remains at `0.5.1`; updated recipes do not mean new templates have been published. Tags such as `0.167.2-r1` combine the Agent version and recipe revision, independently of the NiceEval library version. Use the template constants in projects. The commands below build your own derived environments.
 
 In this batch of public templates, the Claude Code template keeps E2B's official `/usr` npm prefix, so ordinary users cannot write global modules directly. When you need to install more global Node tools such as pnpm or yarn at run time, install them explicitly into `/usr/local`, which both templates already put on PATH:
 
@@ -71,7 +71,7 @@ const template = e2bCodingAgentTemplate("codex")
   .runCmd("corepack enable && pnpm --version")
   .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
 
-await Template.build(template, "acme-codex-evals:0.144.1-r1", {
+await Template.build(template, "acme-codex-evals:0.167.2-r1", {
   cpuCount: 2,
   memoryMB: 4096,
 });
@@ -87,7 +87,7 @@ Then reference only the build result in the Experiment:
 ```ts
 import { e2bSandbox } from "niceeval/sandbox";
 
-sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
+sandbox: e2bSandbox({ template: "acme-codex-evals:0.167.2-r1" })
 ```
 
 You can also derive directly from a NiceEval public template and pay build time only for your project's own dependencies:
@@ -134,11 +134,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 # npm installs globally into /usr/local/bin, which is on the Sandbox's PATH
-RUN npm install -g @openai/codex@0.144.1
+RUN npm install -g @openai/codex@0.167.2
 ```
 
 ```bash
-docker build -t acme-codex-evals:0.144.1-r1 .
+docker build -t acme-codex-evals:0.167.2-r1 .
 ```
 
 Then reference only the build result in the Experiment:
@@ -146,7 +146,7 @@ Then reference only the build result in the Experiment:
 ```ts
 import { dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.144.1-r1" } })
+sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.167.2-r1" } })
 ```
 
 A Docker Sandbox runs commands as the user the image itself declares. The Dockerfile above does not set `USER`, so it runs as root by default; `/usr/local/bin` is already on root's PATH, and commands installed with `npm install -g` work directly.
@@ -165,7 +165,7 @@ import { Sandbox } from "@vercel/sandbox";
 const sandbox = await Sandbox.create({ runtime: "node24" }); // Start a microVM from the official runtime
 await sandbox.runCommand({
   cmd: "npm",
-  args: ["install", "-g", "@openai/codex@0.144.1"],
+  args: ["install", "-g", "@openai/codex@0.167.2"],
   sudo: true, // Install globally into /usr/local/bin, which is on the Sandbox's PATH
 });
 const { snapshotId } = await sandbox.snapshot();
