@@ -1,11 +1,11 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
+import { inspectionE2E } from "./support.ts";
 
 // @feature docs/feature/inspection/README.md
 // @issue docs/issues/assertion-score-matrix.md
 test.concurrent("作者跨实验比较判据，保留重复身份、缺项和每次 Attempt 的分值", async () => {
-  await inspectionE2E.case("assertion-matrix", { artifacts: inspectionCaseArtifacts() }, async ({ commands: { niceeval } }) => {
+  await inspectionE2E.case("assertion-matrix", {}, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "assertion-matrix", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const discover = await niceeval.run(["query", "discover"]);

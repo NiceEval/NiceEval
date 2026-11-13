@@ -72,6 +72,26 @@ After selecting an Attempt, add any one of the options below to look at one aspe
 - When paging with `--continuation <token>`, pass the same filters.
 - Expand one item directly with `--expand <stable-id>`. The ID must come from an `itemId`, `toolOccurrenceId`, or `commandId` in the outline, not a positional number. `--expand` works only with `--execution`, and cannot appear together with filter or paging arguments.
 
+### Compare Assertions across Experiments
+
+```sh
+niceeval show --experiment baseline --experiment candidate --assertions
+niceeval show --experiment baseline --experiment candidate --assertions --eval install/db-gpt -o json
+```
+
+Each table covers one Eval. Columns identify the Experiment, Attempt ordinal, and copyable locator.
+Scores show earned/possible points; unscored cells show the decision. Missing entries show `—`.
+A `*` marks rows whose scores or decisions differ between columns.
+
+The operation is `experiments.assertions`, with `experimentIds` and optional `evalIdPrefix`.
+Requests accept 1–32 IDs, deduplicate and sort them, and fail if any Experiment is missing.
+`matrix.evals[]` contains `columns`, `rows`, and per-column `unkeyed` counts.
+Duplicate identities retain all cell `entries[]`. Unreadable facts retain `not-recorded`, `unsupported`, or `failed`.
+
+Limits are 100 Evals, 100 columns per Eval, 1000 total rows, 10000 cells, and 450000 UTF-8 bytes for the Eval JSON array.
+Each duplicate entry consumes one cell. Limited results use `matrix.state: "partial"` and report omitted Eval, row, and column counts in `matrix.omitted`.
+`--entry`, `--compact`, and `--full` select a single Attempt's details and cannot be combined with a matrix.
+
 ## `niceeval view`
 
 ```sh
