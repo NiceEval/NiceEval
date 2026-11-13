@@ -19,6 +19,7 @@ export interface InspectionQuery {
   ): Promise<InspectionSuccessDocumentFor<Kind>>;
 }
 
+/** Reports a malformed request, invalid source or failed operation; its code describes query failure rather than evaluation quality. */
 export interface InspectionQueryProtocolError {
   readonly classification: "protocol/query";
   readonly code:
@@ -34,6 +35,7 @@ export interface InspectionQueryProtocolError {
   readonly cause?: unknown;
 }
 
+/** Reports that the requested Inspection selection is missing; it must not be converted into an empty successful result. */
 export interface InspectionQuerySelectionError {
   readonly classification: "selection";
   readonly code: "inspection-selection-missing";
@@ -41,10 +43,12 @@ export interface InspectionQuerySelectionError {
   readonly cause?: unknown;
 }
 
+/** Distinguishes a missing selection from a protocol or evidence-reading failure; callers should branch on classification. */
 export type InspectionQueryError =
   | InspectionQueryProtocolError
   | InspectionQuerySelectionError;
 
+/** Rejects an invalid fixed-operation request at the query boundary; no query execution is implied. */
 export interface InspectionOperationDecodeError extends InspectionQueryProtocolError {
   readonly code: "inspection-request-invalid";
 }

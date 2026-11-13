@@ -173,6 +173,7 @@ export const PlannedAttemptMemberSchema = Schema.Struct({
   publication: PlannedAttemptPublicationSchema,
   ...PlannedAttemptMetricsSchema.fields,
 });
+/** Describes a Run's planned Attempt member for Inspection; planned membership does not by itself prove that an Attempt was published. */
 export type PlannedAttemptMember = Schema.Schema.Type<typeof PlannedAttemptMemberSchema>;
 const InspectionExecutionValueSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("available"), value: Schema.String }),
