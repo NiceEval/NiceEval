@@ -46,6 +46,7 @@ function freezeSource(source: ErrorSource): ErrorSource {
     : Object.freeze({ state: "unavailable" as const, reason: source.reason });
 }
 
+/** Rejects configuration that needs an explicit migration and carries located occurrences; use the matching guide rather than silently adapting old shapes. */
 export class MigrationRequiredError extends Error {
   override readonly name = "MigrationRequiredError";
   readonly code = "migration-required" as const;

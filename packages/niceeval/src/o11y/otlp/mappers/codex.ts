@@ -35,6 +35,7 @@ function codexTag(span: TraceSpan): SpanTag {
   return heuristicTag(span);
 }
 
+/** Tags Codex OTLP spans with canonical operation and span kinds. Unknown names use generic heuristics rather than being discarded. */
 export function mapCodexSpans(spans: TraceSpan[]): TraceSpan[] {
   return spans.map((s) => tagSpan(s, codexTag(s)));
 }

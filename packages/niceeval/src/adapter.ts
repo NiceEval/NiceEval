@@ -116,6 +116,7 @@ const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "toLocaleString",
 ] as const;
 
+/** Lists framework-owned context names that an Adapter's returned object must not shadow. */
 export type ReservedAdapterContextKey = typeof RESERVED_ADAPTER_CONTEXT_KEYS[number];
 
 type InvalidContextBranch<Context> = Context extends unknown
@@ -177,6 +178,7 @@ type AdapterFactory<Context extends object, Flags extends AdapterFlagsParser = u
   context: AdapterCreateContext<AdapterFlagsOutput<Flags>>,
 ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
 
+/** Provides one shared cleanup window with a Unix-millisecond deadline and independent abort signal; each callback does not receive a fresh budget. */
 export interface AdapterCleanupContext {
   /** 整个清理窗口的固定毫秒预算，不为每个回调续期。 */
   readonly timeoutMs: number;
@@ -186,6 +188,7 @@ export interface AdapterCleanupContext {
   readonly signal: AbortSignal;
 }
 
+/** Provides Attempt-local services to an application factory; register acquired resources with onCleanup and propagate the execution signal. */
 export interface AdapterCreateContext<Flags = ExperimentFlags, Roles extends string = string> {
   /** Frozen application model selections for this Attempt. */
   readonly models: Readonly<Record<Roles, ResolvedModelRole>>;
@@ -260,6 +263,7 @@ type AdapterScoreEvalFields = Omit<ScoreEvalInput<undefined>, "test" | "sandbox"
   readonly diff?: never;
 };
 
+/** Defines a Pass Eval over the Adapter's native operations and parsed flags; test receives the framework context plus readonly application members. */
 export type AdapterEvalInput<
   Context extends object,
   Assertions extends object | undefined = undefined,
@@ -272,6 +276,7 @@ export type AdapterEvalInput<
   ): void | Promise<void>;
 };
 
+/** Defines a Score Eval over the Adapter's native operations; explicitly assign score contributions instead of treating low measurements as automatic failures. */
 export type AdapterScoreEvalInput<
   Context extends object,
   Assertions extends object | undefined = undefined,
@@ -298,6 +303,7 @@ interface AdapterContractToken<
   readonly context: (value: Context) => Context;
 }
 
+/** A Pass or Score Eval bound to its originating Adapter contract; a structurally similar implementation from another contract is not interchangeable. */
 export interface AdapterEvalDefinition<
   Kind extends EvaluationKind,
   Context extends object,
@@ -346,6 +352,7 @@ export interface AdapterRuntimeDefinition {
   create(context: AdapterCreateContext<unknown>): object | Promise<object>;
 }
 
+/** Runs one concrete implementation of a shared Adapter contract; create owns per-Attempt resources and must register their cleanup. */
 export interface AdapterImplementation<
   Context extends object,
   Assertions extends object | undefined = undefined,
@@ -359,6 +366,7 @@ export interface AdapterImplementation<
   create(context: AdapterCreateContext<AdapterFlagsOutput<Flags>>): Context | Promise<Context>;
 }
 
+/** Configures an implementation factory and behavior revision; cleanupTimeoutMs is a total cleanup budget, defaulting to 30000 milliseconds. */
 export type AdapterImplementationInput<
   Context extends object,
   ImplementationContext extends Context = Context,
@@ -371,6 +379,7 @@ export type AdapterImplementationInput<
   readonly create: AdapterFactory<ImplementationContext, Flags>;
 } & AdapterContextValidation<NoInfer<ImplementationContext>>;
 
+/** Binds Eval factories and implementations to one application contract; create compatible implementations through implement rather than matching names manually. */
 export interface AdapterContract<
   Context extends object,
   Assertions extends object | undefined = undefined,
@@ -394,6 +403,7 @@ export interface AdapterContract<
   ): AdapterContract<Context, NextAssertions, Flags>;
 }
 
+/** Accepts an Agent or a custom application runtime definition; use an Agent only when the application follows the send-and-Turn protocol. */
 export type Adapter = import("./agents/types.ts").Agent | AdapterRuntimeDefinition;
 
 function assertNonEmptyString(value: unknown, field: string, factory: string): asserts value is string {

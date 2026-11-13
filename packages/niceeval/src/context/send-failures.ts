@@ -34,6 +34,7 @@ export interface SendFailure {
   };
 }
 
+/** Classifies a captured send failure, or returns undefined to defer classification; it must not turn cancellation into an ordinary application failure. */
 export type SendFailureClassifier = (failure: SendFailure) => FailureClass | undefined;
 
 /** 构造可跨 package 副本识别的纯数据 envelope；识别不依赖 instanceof。 */
