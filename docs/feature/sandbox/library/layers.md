@@ -444,7 +444,7 @@ declare const changeFrequency: {
 
 这些常量只提高可读性。作者可以使用任意合法小数；常量名称不进入 identity，规范化后的数值进入。
 
-同一个 layer 的 `.before()` 链按书写顺序执行。链上每个 before 隐式依赖同一 layer 里写在它前面的那个 before，声明式 action 与 callback 都算。
+同一个 layer 的 `.before()` 链按书写顺序执行（[T-29](../../../taste.md#t-29)）。链上每个 before 隐式依赖同一 layer 里写在它前面的那个 before，声明式 action 与 callback 都算。
 作者不需要为顺序再写 `dependsOn`，也不需要给 `changeFrequency` 加偏移。
 
 ```typescript

@@ -42,7 +42,7 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 它不支持 glob，路径含 `*` 或 `?` 时抛出 `TypeError`；空数组同样抛出，零范围用 `noChanges()`。
 归因、`diff.ignore` 与 unavailable 规则和 `changedPaths` 相同。不满足时，诊断列出越界路径的有界预览。
 
-`unchangedWithin` 是它的反面，用于保护区检查：列出的文件和目录不许动，其余随意。
+`unchangedWithin` 是它的反面，用于保护区检查：列出的文件和目录不许动，其余随意（[T-25](../../../taste.md#t-25)）。
 路径写法、组件比较、空数组与 glob 的拒绝规则都和 `changedOnlyWithin` 相同；不满足时，诊断列出落在保护区内的变化路径。
 两者共用 criterion `sandbox-change-scope/v1`，以 `mode: "only-within" | "none-within"` 区分。
 它的持久 criterion 是 `sandbox-change-scope/v1`，形状见 [Assertions 架构](../../assertions/architecture/README.md#criterion-envelope-与内建-criterion)。

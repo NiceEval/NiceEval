@@ -162,7 +162,7 @@ installing official OpenAI Codex CLI 0.167.2
 Codex CLI 0.167.2 ready
 ```
 
-作者据此知道自己预装的内容差在哪一项，不必进入 Sandbox 排查。原因只用于显示与诊断，不进入 identity，也不改变循环的走向。
+作者据此知道自己预装的内容差在哪一项，不必进入 Sandbox 排查（[T-31](../../../taste.md#t-31)）。原因只用于显示与诊断，不进入 identity，也不改变循环的走向。
 
 ### 安装进入 before 缓存
 

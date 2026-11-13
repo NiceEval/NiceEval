@@ -100,7 +100,7 @@ shell({
 ```
 
 - `script` 接受 Eval 或 Experiment 模块相对的 `file:` URL，与 `command` 二选一；两者都给或都不给在 planning 失败。
-- 文件内容在 planning 时读取，与内联 `command` 一样进入自动指纹；改脚本一个字节就让这一步及其后缀重新执行。文件不存在或穿出项目根时 planning 失败并写出路径。
+- 文件内容在 planning 时读取，与内联 `command` 一样进入自动指纹；改脚本一个字节就让这一步及其后缀重新执行（[T-30](../../../taste.md#t-30)）。文件不存在或穿出项目根时 planning 失败并写出路径。
 - 文件内容原样交给 shell，不做插值。需要传值时用 `env` 声明子进程变量，值进入指纹。
 - `niceeval debug` 对 `script` 显示项目相对路径与内容摘要；`--full` 显示完整脚本。
 
