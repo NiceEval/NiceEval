@@ -1,3 +1,4 @@
+import { captureAssertionFeedback } from "./feedback/assertions.ts";
 // @concord-file
 // @concord-implements docs/feature/experiments/architecture/README.md
 // @concord-implements docs/feature/run/architecture/lifecycle.md
@@ -2850,6 +2851,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       // the Attempt restores interruption and halts dispatch.
                       const published = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
                       if (published !== undefined) result.locator = published.locator;
+                      captureAssertionFeedback(result, sealedEvaluation);
                       results.push(result);
                       reportAttemptLifecycle({
                         type: "attempt:complete",
@@ -2970,6 +2972,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               lastErrorCode.delete(a.key);
             }
 
+            captureAssertionFeedback(result, sealedEvaluation);
             results.push(result);
             // 反馈层的永久失败通知(见 sink.ts 的 FailureInput / docs/feature/experiments/
             // cli.md「什么动态更新,什么逐条追加」表的「failed / errored + locator」行)——

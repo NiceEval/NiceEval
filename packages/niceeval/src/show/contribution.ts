@@ -413,9 +413,8 @@ function runShow(
         }
         if (assertions) {
           const selectedLocator = decodedLocator!.locator;
-          const entryIds = entryId === undefined
-            ? (yield* select("attempt.get", () => selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }))).attempt.assertions.entries.map((entry) => entry.entryId)
-            : [entryId];
+          const attempt = (yield* select("attempt.get", () => selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }))).attempt;
+          const entryIds = entryId === undefined ? attempt.assertions.entries.map((entry) => entry.entryId) : [entryId];
           const details: InspectionSuccessDocumentFor<"attempt.assertion.detail">["assertion"][] = [];
           for (const id of entryIds) {
             const document = yield* select("attempt.assertion.detail", () => selectInspectionOperation(opened, {
@@ -423,7 +422,7 @@ function runShow(
             }));
             details.push(document.assertion);
           }
-          yield* write("stdout", renderAssertions(selectedLocator, details, { full, entryId }));
+          yield* write("stdout", renderAssertions(selectedLocator, details, { full, entryId, verdict: attempt.verdict ?? "unavailable", score: attempt.score }));
           return 0;
         }
         if (compare) {

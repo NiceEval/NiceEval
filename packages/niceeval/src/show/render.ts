@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/cli.md
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
+import { assertionRoleLabel, assertionRoleCounts, assertionVerdictLine } from "../assertions/display.ts";
 import type { AssertionDetailResult } from "../inspection/assertion-projection.ts";
 import type { AssertionFactValue } from "../assertions/record/model.ts";
 import { formatNumericUnit } from "../assertions/quantity.ts";
@@ -2116,32 +2117,12 @@ export function renderReferences(project: InspectionProjectResult): string {
   }]);
 }
 
-export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[], options: { readonly full: boolean; readonly entryId?: string } = { full: false }): string {
+export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[], options: { readonly full: boolean; readonly entryId?: string; readonly verdict?: string; readonly score?: ScoredValue } = { full: false }): string {
   const blocks: TerminalPanelContentBlock[] = [];
-  let passed = 0;
-  let failed = 0;
-  let total = 0;
-  let earnedScore = 0;
-  let totalScore = 0;
-
-  for (const assertion of assertions) {
-    if (!("entry" in assertion)) continue;
-    total += 1;
-    const entry = assertion.entry;
-    if (entry.decision.result === "matched") passed += 1;
-    else if (entry.decision.result === "mismatched") failed += 1;
-    if (entry.contribution.state === "earned") {
-      earnedScore += entry.contribution.earned;
-      totalScore += entry.contribution.points;
-    }
-  }
-
-  if (total > 0) {
-    blocks.push({
-      kind: "divider",
-      title: `Passed ${passed}, Failed ${failed}, Total ${total}${totalScore > 0 ? ` (score: ${fmt(earnedScore)}/${fmt(totalScore)})` : ""}`,
-    });
-  }
+  const roles = assertions.flatMap(assertion => "entry" in assertion ? [{ gate: assertion.entry.decision.gate, result: assertion.entry.decision.result, contribution: assertion.entry.contribution }] : []);
+  if (options.verdict !== undefined) blocks.push({ kind: "divider", title: assertionVerdictLine(options.verdict, options.score) });
+  const counts = assertionRoleCounts(roles);
+  if (counts !== "") blocks.push({ kind: "divider", title: counts });
 
   for (const assertion of assertions) {
     if (!("entry" in assertion)) {
@@ -2149,10 +2130,7 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       continue;
     }
     const entry = assertion.entry;
-    const status = entry.decision.result === "matched" ? "PASS" : entry.decision.result === "mismatched" ? "FAIL" : entry.decision.result.toUpperCase();
-    const contribution = entry.contribution;
-    const points = contribution.state === "earned" ? `${fmt(contribution.earned)}/${fmt(contribution.points)}` : contribution.state;
-    blocks.push({ kind: "divider", title: `[${status}] ${entry.display.key ?? entry.entryId} · ${assertion.check.label} (${points})` });
+    blocks.push({ kind: "divider", title: `${assertionRoleLabel({ gate: entry.decision.gate, result: entry.decision.result, contribution: entry.contribution })}  ${entry.display.key ?? entry.entryId} · ${assertion.check.label}` });
     const reasons = assertionReasons(entry.evaluation.observed);
     if (entry.explanationRetention.state === "retained") reasons.push(...assertionReasons(entry.explanationRetention.value));
     blocks.push({ kind: "keyValue", entries: [

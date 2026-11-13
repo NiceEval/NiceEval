@@ -1,3 +1,4 @@
+import { assertionFeedbackLines } from "./assertions.ts";
 // Human profile renderer(见 docs/feature/experiments/cli/README.md「人在终端里怎么用」)。
 //
 // 两个变体,由 `io.stderr.isTTY` 在构造时选一次(profile 是消费者模型,TTY 只是传输能力 ——
@@ -622,6 +623,12 @@ function buildSummaryLines(
       width: panel.width,
       mode: panel.mode,
     }));
+  }
+
+  for (const result of summary.results) {
+    const lines = assertionFeedbackLines(result);
+    if (lines.length === 0) continue;
+    blocks.push(renderPanel({ title: `Assertions ${result.locator ?? result.id}`, rows: lines.map(text => ({ kind: "line" as const, text })), width: panel.width, mode: panel.mode }));
   }
 
   const preAttemptErrors = buildPreAttemptErrorRows(summary.results, state.runIdsByExperiment, panel);

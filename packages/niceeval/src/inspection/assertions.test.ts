@@ -39,8 +39,8 @@ test.concurrent("compact assertions keep decisions and rationales without readin
   expect(JSON.stringify(compact)).not.toContain("base64");
   expect(compact).toMatchObject({ entry: { contribution: { earned: 0, points: 1 } }, check: { state: "mismatched", reason: "condition-not-met" } });
   const text = renderAssertions("@1000000000000", [compact]);
-  expect(text).toContain("Passed 0, Failed 1, Total 1");
-  expect(text).toContain("[FAIL]");
+  expect(text).toContain("Gates 1 fail · Scored 1");
+  expect(text).toContain("GATE fail  SCORE 0/1");
   expect(text).toContain("0/1");
   expect(text).toContain("Expected answer was absent.");
   expect(text).toContain("Next");
