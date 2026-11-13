@@ -2162,6 +2162,9 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-change-scope/v1") {
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: entry.criterion.value.id }, { key: "Allowed paths", value: entry.criterion.value.data.paths.join(", ") }] });
       }
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-unchanged-within/v1") {
+        blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: entry.criterion.value.id }, { key: "Protected paths", value: entry.criterion.value.data.paths.join(", ") }] });
+      }
       if (entry.explanationRetention.state === "retained") {
         const value = entry.explanationRetention.value;
         if (value.kind === "fields") {

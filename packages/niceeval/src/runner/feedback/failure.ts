@@ -98,6 +98,8 @@ function criterionTitle(criterion: AssertionCriterion): string {
       return criterion.name;
     case "sandbox-change-scope":
       return "changes stayed within allowed paths";
+    case "sandbox-unchanged-within":
+      return "protected paths stayed unchanged";
     case "sandbox-result":
       return criterion.operation.replaceAll("-", " ");
     case "direct-score":

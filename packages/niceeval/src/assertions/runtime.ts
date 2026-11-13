@@ -250,7 +250,7 @@ function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
  * only after the author phase settles. They are never evaluated by a stop barrier.
  */
 function isPostRunSandboxCriterion(criterion: AssertionCriterion): boolean {
-  return criterion.kind === "sandbox-result" || criterion.kind === "sandbox-change-scope";
+  return criterion.kind === "sandbox-result" || criterion.kind === "sandbox-change-scope" || criterion.kind === "sandbox-unchanged-within";
 }
 
 function isAssertionStop(value: unknown): value is AssertionStopError {

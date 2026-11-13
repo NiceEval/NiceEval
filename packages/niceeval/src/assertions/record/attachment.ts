@@ -323,6 +323,12 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         id: "sandbox-change-scope/v1" as const,
         data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
       });
+    case "sandbox-unchanged-within":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "sandbox-unchanged-within/v1" as const,
+        data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
+      });
     case "sandbox-result": {
       switch (criterion.operation) {
         case "changed-paths":

@@ -13,7 +13,7 @@ test.concurrent("保护范围检查识别文件与子目录，保留独立 crite
     };
     for (const evalId of ["unchanged-within", "unchanged-within-empty"]) {
       const event = only(run.expEvalEvents(), event => event.evalId === evalId, run.diagnostic());
-      expect(event.verdict, run.diagnostic()).toBe("passed");
+      expect(event.verdict, run.diagnostic()).toBe(evalId === "unchanged-within" ? "failed" : "passed");
       const attempt = await inspectAttempt(niceeval, projectRoot, event.locator!, "attempt.get");
       expect(attempt.document.attempt.assertions.entries).toHaveLength(evalId === "unchanged-within" ? 3 : 1);
       for (const detail of await inspectAssertionEntries(niceeval, projectRoot, event.locator!, attempt.document.attempt.assertions.entries)) {

@@ -151,6 +151,7 @@ export type AssertionCriterion =
       readonly paths: readonly string[];
     }
   | { readonly kind: "sandbox-change-scope"; readonly paths: readonly string[] }
+  | { readonly kind: "sandbox-unchanged-within"; readonly paths: readonly string[] }
   | { readonly kind: "sandbox-result"; readonly operation: "no-changes" }
   | {
       readonly kind: "sandbox-result";

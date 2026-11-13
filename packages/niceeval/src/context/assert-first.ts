@@ -334,6 +334,8 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
   extends SandboxOperations, SandboxTransferOperations {
   changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandle<Kind, void>;
   changedOnlyWithin(paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void>;
+  /** 保护列出的文件或目录，任何 agent 归因变化落入范围都不满足；至少提供一项且不支持 glob。 */
+  unchangedWithin(paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void>;
   noChanges(): PostRunBooleanAssertionHandle<Kind, void>;
   fileChanged(
     path: string,
@@ -1316,6 +1318,31 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     }));
   };
 
+  // @concord-code
+  // @concord-implements docs/feature/sandbox/README.md
+  const unchangedWithin = (paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void> => {
+    requireCapability();
+    if (!Array.isArray(paths) || paths.length === 0) throw new TypeError("unchangedWithin() requires at least one protected path");
+    for (const path of paths) {
+      assertDiffPath(path, "unchangedWithin()");
+      if (/[*?]/u.test(path)) throw new TypeError("unchangedWithin() does not support glob patterns; use the directory name directly for a directory prefix");
+    }
+    const protectedPaths = Object.freeze([...new Set(paths)].sort());
+    return register(Object.freeze({ kind: "sandbox-unchanged-within", paths: protectedPaths }), () => Effect.sync(() => {
+      const diff = input.late.diff;
+      if (diff.state !== "available") return unavailableDiffResult();
+      const protectedChanges = [...new Set(diff.document.windows.flatMap(window => window.changes.map(change => change.path)))]
+        .filter(path => protectedPaths.some(prefix => path === prefix || path.startsWith(`${prefix}/`))).sort();
+      return protectedChanges.length === 0
+        ? Object.freeze({ state: "matched" as const, value: undefined })
+        : Object.freeze({ state: "mismatched" as const, diagnostic: {
+          code: "protected-paths-changed", message: "Agent changed protected paths", path: [],
+          expected: protectedPaths.slice(0, 16).join(", "), received: protectedChanges.slice(0, 16).join(", "),
+          ...(protectedChanges.length <= 16 ? {} : { reason: `Showing 16 of ${protectedChanges.length} paths within the protected scope` }),
+        } });
+    }));
+  };
+
   const fileChanged = (
     path: string,
     rawOptions?: FileChangedOptions,
@@ -1453,6 +1480,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     },
     changedPaths,
     changedOnlyWithin,
+    unchangedWithin,
     noChanges,
     fileChanged,
     fileDeleted,
