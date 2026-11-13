@@ -10,6 +10,7 @@ export default defineEval({
     t.sandbox.unchangedWithin(["agents"]).label("protected subtree").optional();
     t.sandbox.unchangedWithin(["single.ts"]).label("protected file").optional();
     t.sandbox.unchangedWithin(["agent", "agents/a", "ignored.txt"]).label("component boundary and ignored");
+    await t.sandbox.runShellOrThrow("rm -f agents/a.ts single.ts agents-old/outside.ts ignored.txt");
     await t.send("change");
   },
 });

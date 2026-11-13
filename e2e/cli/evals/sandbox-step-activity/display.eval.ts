@@ -2,14 +2,13 @@ import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";
 import { command, sandboxLayer, shell, uploadFile, writeText } from "niceeval/sandbox";
 
-const SHELL_COMMAND = "printf 'sandbox-shell-ready\\n' > /tmp/sandbox-shell-ready && sleep 2";
-
 export default defineEval({
   description: "Sandbox preparation reports each concrete declarative step safely",
   sandbox: sandboxLayer()
     .before(shell({
       id: "activity-shell",
-      command: SHELL_COMMAND,
+      label: "Prepare runtime marker",
+      script: new URL("../../fixtures/sandbox-step-activity/prepare.sh", import.meta.url),
     }))
     .before(command("/bin/sh", ["-c", "sleep 2", "activity-arg\tvalue"], {
       id: "activity-exec",
@@ -26,6 +25,7 @@ export default defineEval({
       to: "/tmp/runtime-upload.txt",
     })),
   async test(t) {
+    t.check(await t.sandbox.readText("/tmp/sandbox-shell-ready"), includes("sandbox-shell-ready"));
     const turn = await t.send("Confirm that the declared Sandbox preparation completed.");
     await turn.succeeded().orStop();
     t.check(turn.reply, includes("sandbox steps completed"));
