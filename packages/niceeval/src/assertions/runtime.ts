@@ -245,6 +245,14 @@ function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Sandbox result criteria read the Attempt-owned workspace diff, which is frozen
+ * only after the author phase settles. They are never evaluated by a stop barrier.
+ */
+function isPostRunSandboxCriterion(criterion: AssertionCriterion): boolean {
+  return criterion.kind === "sandbox-result" || criterion.kind === "sandbox-change-scope";
+}
+
 function isAssertionStop(value: unknown): value is AssertionStopError {
   return isRecord(value) && value._tag === "AssertionStopError";
 }
@@ -1592,7 +1600,7 @@ class AssertionsRuntimeImplementation {
   private settleThrough(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
     return Effect.forEach(
       this.entries.slice(0, entry.index + 1)
-        .filter((candidate) => candidate.criterion.kind !== "sandbox-result"),
+        .filter((candidate) => !isPostRunSandboxCriterion(candidate.criterion)),
       (candidate) => this.settle(candidate),
     ).pipe(
       Effect.map((settlements) => {
