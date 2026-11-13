@@ -178,18 +178,18 @@ Eval `test`、Assertion 与 Agent/test 阶段输入不进入未改变的 BeforeC
 逐 attempt 的容器名、临时目录和随机 project name 由 Provider 生成,不进 CaseKey，也不成为 portable Record identity。创建命令、计时与诊断需要可观察时，按其内容进入 Observability。
 
 作者不能用 `container_name` 固定任一 service 的容器名；这会绕开受管 project namespace,让并发 Case 争用同一个宿主资源。
-Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Ensure](../../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
+Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Install](../../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
 Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不改变上面的任务身份语义:
 
 - 任务 `BuildKey` / `niceeval-build` 永远不含 Agent;派生身份只在 DockerfileProviderPlan 的 Sandbox creation 阶段计算。
 - 只有内置 `createNpmCliInstaller()` 产生并明确标记为 cache-safe 的 staged installer 可以 opt in;其它 installer 走普通 task image 路径。
-- 派生 key 包含不可变 task image locator 或 digest、目标平台、ensure / installer 的稳定 identity 与安装 mode。它还包含派生 image builder revision，不读取 before action、credential value 或 Agent runtime setup。
+- 派生 key 包含不可变 task image locator 或 digest、目标平台、install / installer 的稳定 identity 与安装 mode。它还包含派生 image builder revision，不读取 before action、credential value 或 Agent runtime setup。
 - 派生 key 命中时跨 Run 先做 Docker image inspect。同 key 在进程内 single-flight。
 - miss 时从干净 task image 创建临时 Docker sandbox。
-- 临时 sandbox 照常执行 Agent ensure、staged install 与复检。
+- 临时 sandbox 照常执行 Agent install、staged install 与复检。
 - 只提交临时 sandbox 为 `niceeval-agent:<derived-key 前 32 位>`，随后销毁它。attempt 容器绝不作为派生镜像提交对象。
-- attempt 从派生 locator 启动，但仍执行正常 `runAgentEnsure` 并写入 探测 hit。
+- attempt 从派生 locator 启动，但仍执行正常 `runAgentInstall` 并写入 探测 hit。
 - 其它 provider 或不满足 opt-in 条件时直接回落 task image。
 
 身份计算发生在携带决策之前。
@@ -225,7 +225,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 预算分两层,口径不混:
 
 - **Run 级共享准备**:BuildKey 构建、共享拉取或发布受独立构建并发、逐 key timeout、全局准备上限和 Invocation abort 约束,不占 attempt 并发名额。构建并发由 `maxBuildConcurrency` / `--max-build-concurrency` 控制，默认 2；它与 `maxConcurrency` / `--max-concurrency` 正交。
-- **attempt 级启动**:从 image / template / snapshot 启动主 Sandbox 实例和伴随资源、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发名额和 deadline。attempt deadline 从拿到构建结果并开始启动 Sandbox 时起算。
+- **attempt 级启动**:从 image / template / snapshot 启动主 Sandbox 实例和伴随资源、等待服务 ready;Agent Install、执行与评分共享同一个 attempt 并发名额和 deadline。attempt deadline 从拿到构建结果并开始启动 Sandbox 时起算。
 
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份 Record 里只出现一次时间。
 共享构建的 activity 与失败诊断分别归 Run-owned Runner Activities 与 Runner Diagnostics；Attempt 内的受管命令才归 Sandbox Commands。用于解释构建输入的源码 closure 归 Sources，需要保留的大型构建输出归 Artifacts。
@@ -337,7 +337,7 @@ defineSandboxCase({
 | 声明合法但平台、能力或 locator 不可用 | physical planning 聚合错误 | 整个 Run 零资源失败;作者用 selector 显式排除 |
 | 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-owned Runner Diagnostic；同一 owner 的 Runner Activity 读出归属 |
 | Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属，附 Sandbox Command、Runner Activity 与 Runner Diagnostic |
-| Agent Ensure 失败 | Attempt 形成 `errored` Verdict | `agent.ensure` 归属(见 [Agent Ensure](../../adapters/architecture/agent-ensure.md)) |
+| Agent Install 失败 | Attempt 形成 `errored` Verdict | `agent.install` 归属(见 [Agent Install](../../adapters/architecture/agent-ensure.md)) |
 
 Agent 完成任务但断言未达标时，才形成 `failed` Verdict。
 每个 case 至少产出创建与 ready 的 command、activity 与 diagnostic；它们分别归 Sandbox Commands、Runner Activities 与 Runner Diagnostics。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready activity；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期或留存注册表。
@@ -397,5 +397,5 @@ folder eval 的测试文件与构建输入共址时，Provider builder 与普通
 - [Library](../library/README.md) —— provider 选择、生命周期 Hook、自定义 provider。
 - [Architecture](README.md) —— 生命周期时序、留存注册表、孤儿核对、重试。
 - [Record Architecture](../../run/architecture/README.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
-- [Adapters · Agent Ensure](../../adapters/architecture/agent-ensure.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
+- [Adapters · Agent Install](../../adapters/architecture/agent-ensure.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
 - [Experiments · 缓存与携带](../../experiments/architecture/cache.md) —— CaseKey 怎样进入指纹与携带门。

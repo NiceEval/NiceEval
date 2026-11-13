@@ -26,7 +26,7 @@ export default defineExperiment({
 
 ## Oracle 不是 Plugin
 
-Terminal-Bench 的 Oracle 会读取当前 `AgentContext.evalId`,上传该题的 `solution.sh` / `solution.yaml`,再执行已知正确答案。它拥有自己的 Agent identity、ensure、evidence coverage 与 send 语义:
+Terminal-Bench 的 Oracle 会读取当前 `AgentContext.evalId`,上传该题的 `solution.sh` / `solution.yaml`,再执行已知正确答案。它拥有自己的 Agent identity、install、evidence coverage 与 send 语义:
 
 ```ts
 export default defineExperiment({

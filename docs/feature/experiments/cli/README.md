@@ -110,7 +110,7 @@ Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage 
 
 真实 `exp` 结束页与机器 terminal envelope 的 `summary.beforeCaches` 从同一份稳定结算读取准备结果。它按本次 Invocation 准备图的唯一节点计数 `total / hit / prepared / degraded / failed`，与[节点终态](../../sandbox/architecture/remote-snapshot-cache.md#run-级节点结算)一一对应；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。
 
-`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
+`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、install 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
 计划把 Experiment 配置的全部 attempts 都列成候选 dispatch Planned attempt。这不是实际运行保证：正常 `exp` 仍可能因 carry、首过即停、预算、fail-fast 或取消而阻止某个 Planned attempt 启动。`debug` 只接受 `--json`；`--help` 与 `--version` 仍由全局 CLI 处理。
 
@@ -190,7 +190,7 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `sandbox.queue` | waiting for sandbox |
 | `sandbox.create` | creating sandbox |
 | `sandbox.prepare.*` | preparing sandbox |
-| `agent.ensure` | preparing agent |
+| `agent.install` | preparing agent |
 | `agent.before` | agent before |
 | `eval.run` / `agent.run` | running eval |
 | `workspace.diff` | capturing diff |

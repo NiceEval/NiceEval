@@ -301,25 +301,25 @@ agent 等待人工输入;`waiting` + `input.requested` 构成能力证据
 
 其它写法：`人工介入`、`human-in-the-loop`。
 
-## Agent Ensure {#agent-ensure}
+## Agent Install {#agent-install}
 
-Runner 在 `agent.ensure` 相位执行的 ensure 循环:Adapter 的 探测 未命中时由 Agent 安装层 install,装后复检
+Runner 在 `agent.install` 相位执行的 install 循环:Adapter 的 探测 未命中时由 Agent 安装层安装,装后复检
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-ensure.md)
 
-## AgentEnsure {#agent-ensure-declaration}
+## AgentInstall {#agent-install-declaration}
 
 Adapter 对自己 CLI 的目标 identity 与只读 探测;纯适配器在 Sandbox 内只保留这一份声明
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-ensure.md)
 
-其它写法：`Adapter 的 ensure 声明`。
+其它写法：`Adapter 的 install 声明`。
 
 ## Agent 安装层 {#agent-installer}
 
-官方按 ensure identity 配对的安装实现;拥有 staged payload、平台探测与安装模式
+官方按 install identity 配对的安装实现;拥有 staged payload、平台探测与安装模式
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-ensure.md)
 
 其它写法：`AgentInstaller`。
 
@@ -327,7 +327,7 @@ Adapter 对自己 CLI 的目标 identity 与只读 探测;纯适配器在 Sandbo
 
 题面网络之外准备、经主 Sandbox 文件 API 送入的一组版本锁定安装文件;归 Agent 安装层
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-ensure.md)
 
 ## Sandbox {#sandbox}
 
@@ -557,9 +557,9 @@ Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，
 
 契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 
-## ensure {#ensure}
+## install 循环 {#install-loop}
 
-「探测 → 缺失才 install → 复检」的循环语义;`installTool` 是工具版,`agent.ensure` 相位是 Agent 版
+「探测 → 缺失才安装 → 复检」的循环语义;`installTool` 是工具版,`agent.install` 相位是 Agent 版
 
 契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 

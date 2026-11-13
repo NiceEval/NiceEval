@@ -14,7 +14,7 @@ deepSeekHarnessAgent({
 `settings.yaml` 只保存 `deepseek-official` provider、实验 model 与 `danger-full-access` 权限预设；
 secret 只通过 `DEEPSEEK_API_KEY` 注入子进程。
 
-CLI 与插件是两条有顺序的 Agent Ensure。插件探测命令只读验证 headless profile 的直接依赖、实际 package
+CLI 与插件是两条有顺序的 Agent Install。插件探测命令只读验证 headless profile 的直接依赖、实际 package
 版本、`dsh.bundle` 声明与启用 bundle 集合；全部命中便跳过。缺失或集合不一致时，installer 用 DSH 原生
 `dsh plugin --profile headless add` 一次性安装完整声明，并用可加载的 dump-config 复检。派生镜像只要使用
 同一运行用户、`HOME` 与 `DSH_HOME=$HOME/.niceeval-dsh` 预装，就会直接命中该层；普通镜像首次联网安装，

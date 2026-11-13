@@ -76,7 +76,7 @@ JSON 和终端输出是同一份计划，只是去掉了框线。每个步骤带
 
 ## 它不会创建任何资源
 
-`debug` 不运行 before callback、test、after、ensure 或 Provider 的收尾函数，也不创建 Run、锁、Sandbox 或构建任务，不写入结果文件。
+`debug` 不运行 before callback、test、after、install 或 Provider 的收尾函数，也不创建 Run、锁、Sandbox 或构建任务，不写入结果文件。
 
 它会加载你的 Experiment 定义并执行 `evals` 选择函数。Provider 在规划时也可能读取本地文件、调用只读 CLI 或查询远端服务，所以仍然只在可信项目里运行它。
 

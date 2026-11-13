@@ -48,6 +48,6 @@ Hermes 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
 ## Prebuilt environment
 
-Adapter 的必填 ensure 用 `$HOME/.local/bin/hermes` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
+Adapter 的必填 install 用 `$HOME/.local/bin/hermes` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 NiceEval 公共镜像 `niceeval/hermes`（`NICEEVAL_HERMES_DOCKER_IMAGE`）按同一布局烘焙。
 具体分发命令属于 Installer，不属于 `before`。`before` 只写本 Attempt 的鉴权与运行时配置；预装只是快速路径，不是正确性前提。

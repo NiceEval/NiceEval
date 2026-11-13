@@ -65,7 +65,7 @@ import { command } from "niceeval/sandbox";
 export default defineSandboxAgent({
   name: "my-cli-agent",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: {
+  install: {
     identity: { agent: "my-cli-agent", version: "1.0.0", revision: "1" },
     probe: command("my-agent", ["--version"]),
   },
@@ -359,10 +359,10 @@ sandbox?: SandboxLayer<"command-only">;
 
 Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。
 
-#### `ensure`
+#### `install`
 
 ```ts
-ensure: AgentEnsure | readonly AgentEnsure[];
+install: AgentInstall | readonly AgentInstall[];
 ```
 
 单条或数组都按声明顺序规范化为 Agent layer。
@@ -374,7 +374,7 @@ installers?: readonly AgentInstaller[];
 ```
 
 配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
-`agent.ensure` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
+`agent.install` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
 
 #### `before`
 
@@ -383,8 +383,8 @@ before?: AgentBefore;
 ```
 
 每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
-本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.ensure`。运行器在 Sandbox
-备好(layer prepare/ensure/baseline 之后)、第一次 send 前调用一次,不返回值。
+本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.install`。运行器在 Sandbox
+备好(layer prepare/install/baseline 之后)、第一次 send 前调用一次,不返回值。
 
 #### `tracing`
 

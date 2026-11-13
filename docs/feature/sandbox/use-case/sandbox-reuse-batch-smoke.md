@@ -32,7 +32,7 @@
    ```
 
 4. 第一题开跑前支付一次 Sandbox 创建；Case 就绪后建立复用 Sandbox 的题间重置点。
-5. Runner 按 occurrence schedule 满足两层作者与 Agent 的 before action，再通过 agent.ensure 屏障并启动 Agent runtime。
+5. Runner 按 occurrence schedule 满足两层作者与 Agent 的 before action，再通过 agent.install 屏障并启动 Agent runtime。
    昂贵安装可以 restore 已验证前缀；稳定的 Agent CLI 仍适合进入预制实例。
 6. 题间把 workdir reset 回题间重置点，再按 occurrence schedule 满足 attempt before。
    Runner 每次派发前确认 Sandbox 复用寿命，不足时续期或轮换。

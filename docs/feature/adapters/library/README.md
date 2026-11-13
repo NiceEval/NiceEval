@@ -72,7 +72,7 @@ user message 与 tool input 等短命内容只能走 `progress`。
 ## Sandbox Agent
 
 被测对象是在隔离 Sandbox 中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
-CLI 身份写在必填 `ensure` 中，由 Runner 负责 探测、配对 Installer、安装与复检。
+CLI 身份写在必填 `install` 中，由 Runner 负责 探测、配对 Installer、安装与复检。
 `before` 只写鉴权、运行时配置和扩展；每轮执行与 transcript 采集放在 `send`：
 
 ```ts
@@ -82,7 +82,7 @@ import { shell } from "niceeval/sandbox";
 export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: {
+  install: {
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },

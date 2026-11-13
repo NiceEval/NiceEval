@@ -49,7 +49,7 @@ Bub 没有 provider 官方 template。
 NiceEval 用固定版本配方（锁定 Bub 版本与 OTel 插件 commit）构建公共模板 `correctroads-default-team/niceeval-bub` 与公共镜像 `niceeval/bub`。
 并在 Sandbox 里写安装规格 marker。
 
-Adapter 的 ensure 只接受 identity marker 完全匹配的预装 Sandbox，不把 PATH 上任意一个 `bub` 当成兼容版本。
+Adapter 的 install 只接受 identity marker 完全匹配的预装 Sandbox，不把 PATH 上任意一个 `bub` 当成兼容版本。
 
 `version`、默认模型客户端闭包、`otelPlugin` 与 `pythonPlugins` 集合都参与 identity（factory 与 Installer 共用规范化代码，顺序、空白、重复项不制造假差异）；任一不同就由匹配的新 Installer 完整安装并复检。旧预制实例不含当前默认闭包时 marker 不匹配，Adapter 会在 Sandbox 内完整重装，不会把旧实例误当成命中。
 

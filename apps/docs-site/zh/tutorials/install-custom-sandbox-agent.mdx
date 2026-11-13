@@ -1,7 +1,7 @@
 ---
 title: "为自定义 Sandbox Agent 安装 CLI"
 sidebarTitle: "安装自定义 Agent CLI"
-description: "用 ensure 和 installer 检查、安装并复检自定义 coding-agent CLI 的精确版本。"
+description: "用 install 和 installer 检查、安装并复检自定义 coding-agent CLI 的精确版本。"
 ---
 
 你在评估一个内置适配器还不支持的 Coding Agent CLI，或者需要固定某个特定版本。每次手动在镜像里装好它很容易出错：版本悄悄升级了，两次评估比较的就不是同一个 Agent。
@@ -23,7 +23,7 @@ import {
   type ResponseLike,
 } from "niceeval/adapter";
 
-const { ensure, installer } = createNpmCliInstaller({
+const { install, installer } = createNpmCliInstaller({
   identity: {
     agent: "my-agent",
     version: "1.0.0",
@@ -41,7 +41,7 @@ const { ensure, installer } = createNpmCliInstaller({
 export default defineSandboxAgent({
   name: "my-agent",
   evidenceCoverage: responsesEvidenceCoverage,
-  ensure,
+  install,
   installers: [installer],
 
   async setup(sandbox) {
@@ -101,7 +101,7 @@ pnpm exec niceeval exp my-agent fixtures/button
 
 ## 检查安装失败
 
-安装或安装后的复检失败时，这个 Attempt 会在 `agent.ensure` 阶段变成 `errored`，终端会给出它的 locator：
+安装或安装后的复检失败时，这个 Attempt 会在 `agent.install` 阶段变成 `errored`，终端会给出它的 locator：
 
 ```shell
 pnpm exec niceeval show @<attempt-locator>

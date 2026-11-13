@@ -181,7 +181,7 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 
 - 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `before()` 命令,每条 Attempt 在变更分类账标记前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `before()` 或 `test(t)` 普通代码。
-- 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.before`。
+- 装 Agent CLI 归 Agent layer(Adapter 的 install 声明 + 配对安装层),连 agent 归 `SandboxAgent.before`。
 - 跨 Attempt 保留的 Sandbox 文件目录使用 [State](../state/README.md)，由 Runner 在物理实例建成与退役时恢复和保存。作者 callback before 与其 `onCleanup()` 始终逐 Attempt，不自动提升到物理阶段。
 - 外部服务的状态由 Experiment Hook 或作者协调服务拥有；State 不为后台数据库提供快照。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。

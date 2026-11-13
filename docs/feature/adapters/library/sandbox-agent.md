@@ -10,7 +10,7 @@ import { shell } from "niceeval/sandbox";
 export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: {
+  install: {
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
@@ -18,7 +18,7 @@ export default defineSandboxAgent({
   async before(sandbox, ctx) {
     ctx.progress({ message: "configuring my-agent" });
     // 写鉴权、CLI 主配置、skills / plugins；每个 attempt 只执行一次。
-    // 安装与版本探测不写在这里：归 ensure 声明与配对的 Agent 安装层（见下文生命周期）。
+    // 安装与版本探测不写在这里：归 install 声明与配对的 Agent 安装层（见下文生命周期）。
   },
 
   async send(input, ctx) {
@@ -47,7 +47,7 @@ export default defineSandboxAgent({
 
 ## 生命周期
 
-[Agent Ensure](../architecture/agent-ensure.md)（探测 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.ensure` 相位按 Adapter 的 ensure 声明执行，排在四类 owner 的 before 之后。
+[Agent Install](../architecture/agent-ensure.md)（探测 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.install` 相位按 Adapter 的 install 声明执行，排在四类 owner 的 before 之后。
 `before` 只做 Agent runtime 准备：写鉴权、Agent 配置和扩展；不安装 CLI。失败会被 Runner 规范化为结构化执行错误通道事件，而不是写入 Attempt state。
 `send` 只执行一轮任务，多轮时会重复调用。只有协议给出完整可信终态才返回 Turn。
 

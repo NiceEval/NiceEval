@@ -13,7 +13,7 @@
 
 ![复用 Sandbox 的并行与生命周期](../../../assets/sandbox-reuse-lanes.svg)
 
-每条 Attempt 开始前,Runner 先把 workdir reset 回题间重置点,再按 occurrence schedule 满足 attempt before,随后执行 agent.ensure 循环与 Agent runtime。
+每条 Attempt 开始前,Runner 先把 workdir reset 回题间重置点,再按 occurrence schedule 满足 attempt before,随后执行 agent.install 循环与 Agent runtime。
 图中的 `git reset --hard` 和 `git clean` 由 Runner 自动执行,Eval 作者不写这两条命令。
 无论 fresh 或 reuse,普通 command 都只有逐 Attempt 一种频次;各阶段的完整次数表见 [Sandbox 复用](../library/reuse.md#各阶段次数)。
 
@@ -22,8 +22,8 @@
 reset 删除了某个已安装内容时,当前 Attempt 的检查未命中并重新安装——这是正确性结果,不是缓存失败。
 
 Codex CLI 这类稳定且每条 Attempt 相同的重依赖，优先烘进 provider 的 image / template / snapshot。
-agent.ensure 循环每条 Attempt 重探:模板已预装 CLI 时 探测 命中即快速返回;鉴权、MCP、skills 和本 Attempt 的原生配置仍由 `agent.setup` 写入。
-没有可发布的预制实例时,配对安装层在 `agent.ensure` 里安装,每条 Attempt 付一次探测或安装成本。
+agent.install 循环每条 Attempt 重探:模板已预装 CLI 时 探测 命中即快速返回;鉴权、MCP、skills 和本 Attempt 的原生配置仍由 `agent.setup` 写入。
+没有可发布的预制实例时,配对安装层在 `agent.install` 里安装,每条 Attempt 付一次探测或安装成本。
 
 `clone` 和 `pnpm install` 的归属取决于 checkout 随什么变化：
 
@@ -51,7 +51,7 @@ export default defineExperiment({
   sandboxReuse: true,
   maxConcurrency: 1,
 
-  // ── Agent layer(Adapter 的 ensure 声明 + 配对安装层,由 Runner 组装)──────
+  // ── Agent layer(Adapter 的 install 声明 + 配对安装层,由 Runner 组装)──────
   // 只能放:怎么连上这个 agent——CLI probe 与安装、鉴权、agent 主配置、MCP、skills。
   // 不许放:任何读「当前是哪条 eval」的分支。这条不是建议,是配置归属不变量。
   // 每条 Attempt 重探:模板已预装 CLI,probe 命中即快速返回,只写本 Attempt 的鉴权与主配置。
@@ -101,7 +101,7 @@ const RUST_VERSION = "1.88.0";
 export const ensureRustToolchain = defineSandboxCommand(
   { id: "toggl-cli/rust-toolchain", revision: "1", inputs: { rust: RUST_VERSION } },
   async (sandbox, context) => {
-    // ensure 式检查:探真实版本,命中即快速返回。普通 runCommand 允许任意退出码，
+    // install 式检查:探真实版本,命中即快速返回。普通 runCommand 允许任意退出码，
     // 所以未命中的非零结果只是 probe 证据，不是执行异常。
     const probe = await sandbox.runCommand("/usr/local/cargo/bin/cargo", ["--version"]);
     if (probe.exitCode === 0 && probe.stdout.includes(RUST_VERSION)) return;
@@ -222,7 +222,7 @@ agent 自己起的进程不经作者命令取得,在 `test(t)` 末尾收:`await 
 | 构建期(image / template / snapshot) | 所有实验都要的重依赖 | 跑之前就装好了，before 检查因此秒级命中 | 写进 before 又不带检查 → 每条 Attempt 重装 |
 | Experiment layer `before()` | 不随 Eval 变的工具链、共享 checkout 与预热 | 每 occurrence 满足；可以 restore verified prefix | 放了随 Eval 变的素材会污染其它题，失败归因也记错 owner |
 | Eval layer `before()` | 只有这条 eval 要的题目准备 | 按输入编译 occurrence；attempt 时每题满足 | 放了公共安装 → 每道题各自声明、对照组被注入 |
-| Agent layer(ensure 声明 + 配对安装层) | 怎么连上这个 agent:CLI 探测 与安装、鉴权、主配置 | 每 Attempt 重探,命中快速返回 | 放了题目材料 → 同一 Eval 换不了 Agent |
+| Agent layer(install 声明 + 配对安装层) | 怎么连上这个 agent:CLI 探测 与安装、鉴权、主配置 | 每 Attempt 重探,命中快速返回 | 放了题目材料 → 同一 Eval 换不了 Agent |
 | `test(t)` | 任务、判分材料、断言 | 每题重跑 | 放了公共安装 → 省不下冷启动 |
 | `context.onCleanup()` | 命令成功取得资源后的对应 cleanup | 每 Attempt 只按实际登记栈 LIFO | 不登记 → 后台进程、端口残留给下一题 |
 

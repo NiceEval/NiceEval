@@ -14,7 +14,7 @@ interface SandboxAgent {
   /** Adapter 常态证据覆盖声明；六类证据面必填，可用 completeEvidenceCoverage。见 evidence.md。 */
   readonly evidenceCoverage: EvidenceCoverage;
   /** Agent CLI 与所需运行时是否达到声明 identity；每条 probe 只读、可重复调用。 */
-  readonly ensure: AgentEnsure | readonly AgentEnsure[];
+  readonly install: AgentInstall | readonly AgentInstall[];
   before?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
   tracing?: AgentTracing;
   spanMapper?: SpanMapper;
@@ -140,7 +140,7 @@ Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用�
 
 ## 生命周期不变量
 
-Sandbox Agent 的 CLI 与所需运行时只由 `ensure` 和 identity 匹配的 Installer 安装。
+Sandbox Agent 的 CLI 与所需运行时只由 `install` 和 identity 匹配的 Installer 安装。
 `before` 只连接 runtime、注入鉴权、写运行配置与扩展，并且每 Attempt 只执行一次。
 准备逻辑属于 Eval / Experiment layer 的 `before()`，任务 Fixture 属于 `test(t)`。
 before 基础设施失败产生 `errored`，Agent 运行结果通过 Turn 表达。

@@ -33,7 +33,7 @@ atomically create Session and all Runs
   -> selected resource materialize / verified workdir baseline
   -> each selected real Attempt
        -> reset workdir / resource prepare
-       -> per-Attempt before / agent ensure / setup / test / teardown
+       -> per-Attempt before / agent install / setup / test / teardown
        -> per-Attempt cleanup and after
   -> resource release
   -> verify all writers quiescent

@@ -10,7 +10,7 @@
  Sandbox Case create / build / start / ready
   → reset                                     # 复用时每 Attempt 都执行
   → attempt before                            # 四类 owner 的 DAG 按依赖与 changeFrequency 排队
-  → agent.ensure 循环                      # agent.ensure:probe、缺失时配对安装层 install、复检
+  → agent.install 循环                      # agent.install:probe、缺失时配对安装层 install、复检
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → Agent runtime setup                    # agent.setup:本 Attempt 的连接与运行配置
   → test(t)                                # ← 驱动 Agent 与读取结果:
@@ -79,7 +79,7 @@ export default defineEval({
 });
 ```
 
-- **三类 commit 时点。** baseline 一笔（`workspace.baseline` 阶段，各 owner 的 before 与 `agent.ensure` 循环之后）。
+- **三类 commit 时点。** baseline 一笔（`workspace.baseline` 阶段，各 owner 的 before 与 `agent.install` 循环之后）。
   每次 `t.send()` 进入前,workdir 有尚未入账的变化就落一笔 **eval 归因**(`test(t)` 里 send 前的 fixture 写入与 `runCommand` 副作用都在这类)。
   `t.send()` 返回后落一笔 **agent 归因**。
   `agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 区间之外,不需要 exclude 一类补丁。
@@ -117,7 +117,7 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCom
 
 这条链上每个实际执行的环节都被计时并封入 Attempt-owned Observability 的 timing collection：排队与创建分列、各 owner 的 before 逐条形成时间树，收尾段（Agent 收尾 / cleanup / `stop`）在判定口径之外单独计时。
 
-Sandbox 创建成功后，core 只包装一次返回的中性 `Sandbox`。所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase、command 或 turn 下。`sandbox.before.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、Adapter runtime、workspace baseline/diff 与 callback after 的回存命令，都能继续展开到真实 shell。Provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次，不重复计时。
+Sandbox 创建成功后，core 只包装一次返回的中性 `Sandbox`。所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase、command 或 turn 下。`sandbox.before.<owner>` 的依赖安装、`agent.install` 的 CLI 安装、Adapter runtime、workspace baseline/diff 与 callback after 的回存命令，都能继续展开到真实 shell。Provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次，不重复计时。
 
 runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点。例如 `workspace.diff` 落一次 `export workspace diff` operation,其下是一条涵盖全部区间的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
 
@@ -137,7 +137,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 阶段与时间树口径见 [Phase Timings](../../../engineering/benchmark/README.md)。machine query 与 [Insight](../../insight/README.md) 都通过 [Inspection](../../inspection/README.md) 的固定 operation 读取闭合 Observability facts。
 
-核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../../eval/use-case/sandbox-coding.md)。
+核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.install 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../../eval/use-case/sandbox-coding.md)。
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
@@ -464,7 +464,7 @@ Before cache 的身份、Provider 能力矩阵、降级规则与运行事实归�
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
 - **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
-  Case create / ready 每个实际实例满足一次；before、agent.ensure 循环与 Agent runtime 每 Attempt 满足一次。before 缓存命中 restore verified state，miss 或 unsupported 才调用 action。
+  Case create / ready 每个实际实例满足一次；before、agent.install 循环与 Agent runtime 每 Attempt 满足一次。before 缓存命中 restore verified state，miss 或 unsupported 才调用 action。
   派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。
   完整契约见 [Sandbox 复用](../library/reuse.md)。
 

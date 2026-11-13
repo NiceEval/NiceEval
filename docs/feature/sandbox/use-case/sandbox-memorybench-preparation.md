@@ -67,14 +67,14 @@ Experiment E2B template
   -> physical before 恢复 checkpoint（一次）
   -> Experiment shell(install-mempal)
   -> Eval checkout 与依赖安装
-  -> agent.ensure
+  -> agent.install
   -> Agent runtime
 ```
 
 `install-mempal` Action 每条 Attempt 都用 shell 内的探测检查实际版本。
 template 已预装正确版本时首测即成功；缺失时现场安装并复检；template 名本身不代替实际检查。
 
-开启 Sandbox 复用后，Runner 每条 Attempt 仍先 reset，再满足 install-mempal、checkout 与 `agent.ensure`。
+开启 Sandbox 复用后，Runner 每条 Attempt 仍先 reset，再满足 install-mempal、checkout 与 `agent.install`。
 mempal 装在 workdir 外，reset 后探测命中；`gitCheckout()` 的完成态 commit 与前缀身份让相同 checkout 直接 restore。Provider 支持 Before cache 时，后续 Attempt 也不再访问远端。
 逐 Attempt 的 action 都在 attempt before 中满足。物理实例的记忆目录由 physical callback before 恢复，并在成功后立即用 `context.onCleanup()` 登记回存。
 

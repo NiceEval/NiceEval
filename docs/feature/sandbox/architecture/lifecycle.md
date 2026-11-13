@@ -15,11 +15,11 @@
 |---|---|---|
 | Eval layer | 可选 template、逐 Attempt 的 SandboxCommand、test | 题目起点、题目准备、Agent 交互与判分 |
 | Experiment layer | 可选 template、逐 Attempt 的 SandboxCommand | 实验起点或实验准备 |
-| Agent layer | Adapter 的 ensure 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、探测、payload、平台、安装与复检 |
+| Agent layer | Adapter 的 install 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、探测、payload、平台、安装与复检 |
 | Provider Case | template planner、build、start、ready、finalizer | 创建、观测、复用并整组销毁 |
 
 Eval 与 Experiment 的 `sandbox` 字段使用同一个 `SandboxLayer` 类型。
-Agent layer 只共享排序位置,ensure 循环的协议不降格成普通命令。
+Agent layer 只共享排序位置,install 循环的协议不降格成普通命令。
 
 ## Run 级 link 与规划
 
@@ -76,7 +76,7 @@ fresh Case 默认在 Scope 退出时整组 stop。
 	  -> 每条 Attempt:
 	       reset 到 Provider baseline
 	       -> occurrence DAG:依赖就绪后按 changeFrequency 从小到大满足 before
-       -> agent.ensure 循环(按 ensure 声明顺序)
+       -> agent.install 循环(按 install 声明顺序)
        -> 建立 Agent 可归因起点
        -> Adapter runtime setup / Agent run / Eval test / runtime teardown
 	       -> after / dynamic cleanup(同一实际登记栈 LIFO)
@@ -95,7 +95,7 @@ Compose Eval 自己选择 Docker Compose Provider;同一 Experiment 不需要知
 	  -> 每条 Attempt:
 	       reset 到 Provider baseline
        -> occurrence DAG:依赖就绪后按 changeFrequency 从小到大满足 before
-       -> agent.ensure 循环(按 ensure 声明顺序)
+       -> agent.install 循环(按 install 声明顺序)
        -> 建立 Agent 可归因起点
        -> Adapter runtime setup / Agent run / Eval test / runtime teardown
 	       -> after / dynamic cleanup(同一实际登记栈 LIFO)
@@ -103,14 +103,14 @@ Compose Eval 自己选择 Docker Compose Provider;同一 Experiment 不需要知
 ```
 
 MemoryBench 走这条路径。
-Experiment 的 E2B template 只提供起点。mempal、checkout 与 Agent `.env` action 按依赖和 changeFrequency 排队；Agent CLI ensure 在全部 attempt before 满足后收敛。
+Experiment 的 E2B template 只提供起点。mempal、checkout 与 Agent `.env` action 按依赖和 changeFrequency 排队；Agent CLI install 在全部 attempt before 满足后收敛。
 
 ## 为什么 Agent runtime 固定最后
 
 Agent CLI 与 Adapter 配置可以依赖 template 提供的系统能力,也可以依赖 Experiment / Eval 准备的证书、runtime 或目录。
 普通题目准备不应依赖某个 Agent Adapter 的私有安装路径,否则同一 Eval 无法更换 Agent。
 
-因此 agent.ensure 循环是 action schedule 后的一道强制屏障。
+因此 agent.install 循环是 action schedule 后的一道强制屏障。
 Agent-owned before action 不固定最后；高频 `.env` 通常因数值较大自然靠后。循环完成探测、缺失时的 install 与复检后,Runner 才进入 Agent runtime；Adapter 不能暗中替换 template。
 
 ## before 缓存的运行时序
@@ -137,7 +137,7 @@ BuildKey ready
   -> wait until every node is settled
   -> dispatch only plannedAttempts whose terminal prefix succeeded
   -> each dispatched Attempt clones its final immutable artifact privately
-  -> runtime secret overlay -> agent.ensure / Adapter runtime / Agent / Eval test
+  -> runtime secret overlay -> agent.install / Adapter runtime / Agent / Eval test
 ```
 
 节点可开始于最深 verified artifact 或 exact Base。只有父节点已发布，子节点才可开始：它或者接过父节点的 staging 继续执行（Provider 声明 snapshot 后源实例仍可用时），或者从父节点的 artifact 新建 staging。因此上图的 `1`、`2` 各只准备一次，`3` 与 `4` 可并行。实际并行数取 `maxBeforeCacheConcurrency`（或 `--max-before-cache-concurrency`）与 provider `scheduling.lane.limit` 的交集。这个 prepare permit 与 Attempt 的 `maxConcurrency` permit 分离。
@@ -161,7 +161,7 @@ prepare 过程写独立 Run activity：cache lookup、当前 action `i/n`、prep
 | Case create / ready | 每 Attempt | 每复用周期 |
 | reset | 唯一 Attempt 进入前 | 每 Attempt 回到 Provider baseline |
 | before | 每 Attempt 满足一次 | 每 Attempt 满足一次 |
-| agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
+| agent.install 循环(探测、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
 | after | 每 Attempt 登记栈逆序 | 每 Attempt 登记栈逆序 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command 已登记 cleanup | 每 Attempt 逆序 | 每 Attempt 逆序 |
@@ -215,7 +215,7 @@ Attempt elapsed 只计算本次 queue、restore、action replay、Agent 与 Eval
 
 ## 准备、lifecycle 与 baseline
 
-四类 owner 的 before 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动，每次 Attempt 都执行。拥有可用 Sandbox 的 occurrence 进入时登记 standalone after；callback before 成功取得资源后立即登记动态 cleanup。cleanup 在 Adapter runtime teardown 后按实际登记栈全局逆序执行。
+四类 owner 的 before 和 agent.install 循环都属于 Agent 开始前的基础设施活动，每次 Attempt 都执行。拥有可用 Sandbox 的 occurrence 进入时登记 standalone after；callback before 成功取得资源后立即登记动态 cleanup。cleanup 在 Adapter runtime teardown 后按实际登记栈全局逆序执行。
 
 因此:
 
@@ -239,7 +239,7 @@ Runner 只对本条 Attempt 实际取得的资源执行 cleanup,顺序为全局 
 	  -> Provider Case finalizer
 ```
 
-agent.ensure 循环默认不卸载 CLI;临时 payload 由 Agent 安装层与 Runner 的专用 finalizer 处理。
+agent.install 循环默认不卸载 CLI;临时 payload 由 Agent 安装层与 Runner 的专用 finalizer 处理。
 Case 的 service、watcher、日志与 volume 不走 `onCleanup()`,由 Provider Case finalizer 整组关闭。
 cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;cleanup 失败保留原结果、写入诊断,并在无法证明可恢复时退休复用周期。
 
@@ -264,7 +264,7 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 - provider plan identity、BuildKey、CaseKey 与目标平台；不含每次创建的实例 locator；
 - 固定 layer 顺序;
 - 四类 owner layer 中已登记的 action、command 与 after identity;
-- Agent ensure identity:ensure 声明 identity、配对安装层 identity、payload digest、平台与安装模式;
+- Agent install identity:install 声明 identity、配对安装层 identity、payload digest、平台与安装模式;
 - Eval、Experiment、Agent、输入与 transfer manifest identity。
 
 同一 Run 中不同配对即使使用相同物理 template,也不能省略 owner 与 layer 顺序。
@@ -273,7 +273,7 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 Sandbox 复用池的键只固定物理实例共享所需的输入:
 
 ```text
-(Provider plan identity, Provider reset baseline identity, Agent ensure identity)
+(Provider plan identity, Provider reset baseline identity, Agent install identity)
 ```
 
 池键包含 Provider reset baseline identity。callback 函数体不进入 fingerprint；opaque marker 与 attachment owner 进入 identity 并截断共享捕获。before 仍在每条 Attempt 内满足。
@@ -295,7 +295,7 @@ Sandbox Plugin fragment 与四类 owner 的 action 进入同一个 DAG，不创�
 | Provider build / start / ready | 形成 `errored` Verdict,归 Case |
 | owner before action | 形成 `errored` Verdict,归 `sandbox.before.<owner>` |
 | 第二作者 layer 的 action | 形成 `errored` Verdict，归对应 owner 的 `sandbox.before` |
-| agent.ensure 循环的 探测 配对、install 或复检 | 形成 `errored` Verdict,归 `agent.ensure` |
+| agent.install 循环的 探测 配对、install 或复检 | 形成 `errored` Verdict,归 `agent.install` |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用周期 |
 | Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup Observability diagnostic 并保留可重试/孤儿认领的资源所有权，不改写原始 Verdict |
 
@@ -304,7 +304,7 @@ Sandbox Plugin fragment 与四类 owner 的 action 进入同一个 DAG，不创�
 - [Sandbox Layer](../library/layers.md) —— 作者声明、配对规则与 command identity。
 - [Case](case.md) —— BuildKey / CaseKey、构建协调与 Compose 义务。
 - [Sandbox 复用](../library/reuse.md) —— reset、寿命确认与复用失败诊断。
-- [Agent Ensure](../../adapters/architecture/agent-ensure.md) —— ensure 声明与 Agent 安装层的协议。
+- [Agent Install](../../adapters/architecture/agent-ensure.md) —— install 声明与 Agent 安装层的协议。
 - [Experiments · 缓存与携带](../../experiments/architecture/cache.md) —— fingerprint 与 configHash 的完整输入清单。
 
 ## Eval Group 的 State 阶段

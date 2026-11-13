@@ -42,7 +42,7 @@ Skills 落到 `.agents/skills/<name>/`，并写发现指引进 `AGENTS.md`。
 OpenClaw 不接受 Claude/Codex 的 `mcpServers`，但接受自己的 `plugins: string[]`：每项必须是精确 npm
 `package@version`，tag、range 与同名重复项会在创建 Agent 时拒绝。
 
-原生插件与 CLI 分成有顺序的 Agent Ensure。插件探测命令验证 OpenClaw 管理的 npm project、实际 package
+原生插件与 CLI 分成有顺序的 Agent Install。插件探测命令验证 OpenClaw 管理的 npm project、实际 package
 version、manifest id 与启用状态；缺失或存在额外外部插件时，installer 用 `openclaw plugins uninstall/install`
 收敛到声明集合。`before` 合并并保留原生命令写入的 `plugins` 配置，随后现有 live owner 用
 `plugins inspect --runtime` 验证 local embedded runtime 已加载且没有 diagnostics。派生镜像预装状态和复用
@@ -52,6 +52,6 @@ Sandbox 都能命中并跳过安装；插件声明及协议修订进入 Agent in
 
 ## Prebuilt environment
 
-Adapter 的必填 ensure 用 PATH 上 `openclaw` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
+Adapter 的必填 install 用 PATH 上 `openclaw` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 NiceEval 公共镜像 `niceeval/openclaw`（`NICEEVAL_OPENCLAW_DOCKER_IMAGE`）把 CLI 烘焙进 `/usr/local/bin`。
 `before` 不安装 CLI，只写本 Attempt 的鉴权与运行时配置。预装只是快速路径，不是正确性前提。

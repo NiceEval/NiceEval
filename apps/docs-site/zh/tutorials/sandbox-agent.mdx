@@ -168,7 +168,7 @@ import {
   agentBin,
 } from "niceeval/adapter";
 
-const { ensure, installer } = createNpmCliInstaller({
+const { install, installer } = createNpmCliInstaller({
   identity: { agent: "my-agent", version: "1.0.0", revision: "1" },
   packageName: "my-agent",
   bin: "my-agent",
@@ -177,7 +177,7 @@ const { ensure, installer } = createNpmCliInstaller({
 export default defineSandboxAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure,
+  install,
   installers: [installer],
   async send(input, ctx) {
     ctx.progress({ message: "运行 my-agent CLI" });
