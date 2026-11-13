@@ -152,6 +152,7 @@ export type AssertionCriterion =
     }
   | { readonly kind: "sandbox-change-scope"; readonly paths: readonly string[] }
   | { readonly kind: "sandbox-unchanged-within"; readonly paths: readonly string[] }
+  | { readonly kind: "sandbox-in-diff"; readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" }
   | { readonly kind: "sandbox-result"; readonly operation: "no-changes" }
   | {
       readonly kind: "sandbox-result";
@@ -547,6 +548,8 @@ export interface AssertionRegistrationBase {
  */
 export interface BooleanAssertionRegistration<Refined>
   extends AssertionRegistrationBase {
+  /** Same-owner evidence produced by the post-run evaluator and sealed once. */
+  readonly terminalEvidence?: () => readonly AssertionMaterial[];
   /** Sealed when Attempt interruption prevents the ordinary evaluator from running. */
   readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
   readonly evaluate: () => Effect.Effect<

@@ -15,7 +15,7 @@ test.concurrent("变化内容正向匹配保留 witness，未知内容保持 una
     };
     for (const evalId of ["in-diff", "in-diff-elided"]) {
       const event = only(run.expEvalEvents(), event => event.evalId === evalId, run.diagnostic());
-      expect(event.verdict, run.diagnostic()).toBe("passed");
+      expect(event.verdict, run.diagnostic()).toBe("failed");
       const attempt = await inspectAttempt(niceeval, projectRoot, event.locator!, "attempt.get");
       expect(attempt.document.attempt.assertions.entries).toHaveLength(evalId === "in-diff" ? 7 : 3);
       for (const detail of await inspectAssertionEntries(niceeval, projectRoot, event.locator!, attempt.document.attempt.assertions.entries)) {

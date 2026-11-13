@@ -187,6 +187,11 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "sandbox-in-diff/v1";
+      readonly data: { readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "sandbox-result/v1";
       readonly data: {
         readonly operation: "changed-paths";

@@ -352,6 +352,39 @@ function selectedSides(
   return content === "both" ? ["added", "removed"] : [content];
 }
 
+type DiffSearchOutcome =
+  | { readonly state: "matched"; readonly path: string; readonly preview: string }
+  | { readonly state: "mismatched" }
+  | { readonly state: "unavailable"; readonly reason: "content-elided" };
+
+/** Search only changed paths and selected changed hunks, retaining the first witness. */
+export function evaluateWorkspaceDiffIn(
+  document: AgentWorkspaceDiff,
+  pattern: RegExp,
+  options?: WorkspaceDiffNotInOptions,
+): DiffSearchOutcome {
+  const sides = selectedSides(options);
+  let elided = false;
+  const witness = (path: string, text: string): DiffSearchOutcome => Object.freeze({
+    state: "matched", path, preview: Array.from(text).slice(0, 1024).join(""),
+  });
+  for (const window of document.windows) {
+    for (const change of window.changes) {
+      if (matchesPattern(pattern, change.path)) return witness(change.path, change.path);
+      for (const side of sides) {
+        const endpoint = side === "added" ? change.after : change.before;
+        if (endpoint.state === "elided") elided = true;
+        for (const hunk of change.hunks[side]) {
+          if (matchesPattern(pattern, hunk)) return witness(change.path, hunk);
+        }
+      }
+    }
+  }
+  return elided
+    ? Object.freeze({ state: "unavailable", reason: "content-elided" })
+    : Object.freeze({ state: "mismatched" });
+}
+
 export function evaluateWorkspaceDiffNotIn(
   document: AgentWorkspaceDiff,
   pattern: RegExp,
