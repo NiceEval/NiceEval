@@ -6,7 +6,8 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Data, Deferred, Effect, Exit, Option, Schema } from "effect";
+import { stripVTControlCharacters } from "node:util";
+import { Data, Deferred, Effect, Exit, Option, Result, Schema } from "effect";
 import type { Sandbox, SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import { isRegisteredSandboxContent } from "../sandbox/content.ts";
@@ -45,6 +46,12 @@ export interface AgentEnsureContext {
 
 export type AgentEnsureResult =
   | { readonly outcome: "hit"; readonly identity: AgentIdentity }
+  | {
+      readonly outcome: "repaired";
+      readonly identity: AgentIdentity;
+      readonly installMode: "staged" | "sandbox-network";
+      readonly targetPlatform: AgentArtifactPlatform;
+    }
   | {
       readonly outcome: "installed";
       readonly identity: AgentIdentity;
@@ -405,14 +412,14 @@ export function runAgentEnsure(
       if (ensure.progress?.checking !== undefined) {
         context.progress({ message: ensure.progress.checking });
       }
-      const hit = yield* probeMatches(ensure, target, context, "probe");
-      if (hit) {
-        if (ensure.progress?.ready !== undefined) {
-          context.progress({ message: ensure.progress.ready });
-        }
+      const probe = yield* probeMatches(ensure, target, context, "probe");
+      if (probe.hit) {
+        reportEnsureFact(ensure, context, "hit");
         results.push({ outcome: "hit", identity: ensure.identity });
         continue;
       }
+      const probeDetail = `probe miss: ${probe.reason}`;
+      context.progress({ message: probeDetail });
       const installer = installers.find((candidate) => sameIdentity(candidate.identity, ensure.identity));
       if (installer === undefined) {
         return yield* new AgentEnsureError({
@@ -439,10 +446,35 @@ export function runAgentEnsure(
           message: `Agent installer for ${ensure.identity.agent}@${ensure.identity.version} does not support ${platformKey(platform)}.`,
         });
       }
-      if (installer.installMode === "staged") {
-        if (installer.progress?.installing !== undefined) {
-          context.progress({ message: installer.progress.installing });
+      let repairFailure: string | undefined;
+      if (installer.repair !== undefined) {
+        if (context.signal.aborted) return yield* Effect.interrupt;
+        context.progress({ message: [installer.progress?.repairing, probeDetail].filter(Boolean).join("; ") });
+        const repaired = yield* Effect.result(Effect.tryPromise({
+          try: (signal) => Promise.resolve(installer.repair!(target, {
+            identity: ensure.identity,
+            targetPlatform: platform,
+            signal: AbortSignal.any([context.signal, signal]),
+            progress: context.progress,
+          })),
+          catch: errorMessage,
+        }));
+        if (context.signal.aborted) return yield* Effect.interrupt;
+        if (Result.isSuccess(repaired)) {
+          const recheck = yield* probeMatches(ensure, target, context, "recheck");
+          if (recheck.hit) {
+            reportEnsureFact(ensure, context, "repaired", probeDetail);
+            results.push({ outcome: "repaired", identity: ensure.identity, installMode: installer.installMode, targetPlatform: platform });
+            continue;
+          }
+          repairFailure = recheck.reason;
+        } else {
+          repairFailure = boundedReason(repaired.failure) || "repair failed without a reason";
         }
+      }
+      const detail = [probeDetail, repairFailure === undefined ? undefined : `repair failed: ${repairFailure}`].filter(Boolean).join("; ");
+      context.progress({ message: [installer.progress?.installing, detail].filter(Boolean).join("; ") });
+      if (installer.installMode === "staged") {
         const coordinator = yield* Option.match(context.coordinator, {
           onNone: () => Effect.fail(new AgentEnsureError({
             reason: "coordinator-missing",
@@ -466,12 +498,10 @@ export function runAgentEnsure(
         if (ensure.progress?.checking !== undefined) {
           context.progress({ message: ensure.progress.checking });
         }
-        if (!(yield* probeMatches(ensure, target, context, "recheck"))) {
+        if (!(yield* probeMatches(ensure, target, context, "recheck")).hit) {
           return yield* recheckMissed(ensure.identity);
         }
-        if (ensure.progress?.ready !== undefined) {
-          context.progress({ message: ensure.progress.ready });
-        }
+        reportEnsureFact(ensure, context, "installed", detail);
         results.push({
           outcome: "installed",
           identity: ensure.identity,
@@ -480,9 +510,6 @@ export function runAgentEnsure(
           artifact,
         });
       } else {
-        if (installer.progress?.installing !== undefined) {
-          context.progress({ message: installer.progress.installing });
-        }
         yield* runInstaller(
           installer,
           () => installer.install(target, {
@@ -495,12 +522,10 @@ export function runAgentEnsure(
         if (ensure.progress?.checking !== undefined) {
           context.progress({ message: ensure.progress.checking });
         }
-        if (!(yield* probeMatches(ensure, target, context, "recheck"))) {
+        if (!(yield* probeMatches(ensure, target, context, "recheck")).hit) {
           return yield* recheckMissed(ensure.identity);
         }
-        if (ensure.progress?.ready !== undefined) {
-          context.progress({ message: ensure.progress.ready });
-        }
+        reportEnsureFact(ensure, context, "installed", detail);
         results.push({
           outcome: "installed",
           identity: ensure.identity,
@@ -517,12 +542,21 @@ function sameIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
   return a.agent === b.agent && a.version === b.version && a.revision === b.revision;
 }
 
+function boundedReason(text: string): string {
+  const cleaned = stripVTControlCharacters(text).replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/gu, "");
+  return Array.from(cleaned.split("\n").map((line) => line.trim()).filter(Boolean).at(-1) ?? "").slice(0, 200).join("");
+}
+
+function reportEnsureFact(ensure: AgentEnsure, context: AgentEnsureContext, outcome: "hit" | "repaired" | "installed", detail?: string): void {
+  context.progress({ message: [ensure.progress?.ready, `agent.ensure ${outcome}`, detail].filter(Boolean).join("; ") });
+}
+
 function probeMatches(
   ensure: AgentEnsure,
   sandbox: SandboxCommandTarget,
   context: AgentEnsureContext,
   phase: "probe" | "recheck",
-): Effect.Effect<boolean, AgentEnsureError> {
+): Effect.Effect<{ readonly hit: true } | { readonly hit: false; readonly reason: string }, AgentEnsureError> {
   return Effect.tryPromise({
     try: () => Promise.resolve(ensure.probe(sandbox, {
       phase: "before",
@@ -532,11 +566,11 @@ function probeMatches(
       progress: context.progress,
       diagnostic: () => {},
       onCleanup: () => {},
-    } satisfies SandboxCommandContext)).then(() => true),
+    } satisfies SandboxCommandContext)).then(() => ({ hit: true as const })),
     catch: (cause) => cause,
   }).pipe(
     Effect.catch((cause) => cause instanceof SandboxCommandExitError
-      ? Effect.succeed(false)
+      ? Effect.succeed({ hit: false as const, reason: boundedReason(cause.result.stderr) || `probe exited ${cause.result.exitCode} without a reason` })
       : Effect.fail(new AgentEnsureError({
           reason: "probe-failed",
           phase,

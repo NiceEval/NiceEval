@@ -494,8 +494,8 @@ export type AgentArtifactInstallShape =
   | { readonly kind: "npm-tarball" }
   | { readonly kind: "self-contained"; readonly binPath: string };
 
-/** `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
-export type AgentEnsureOutcome = "hit" | "installed";
+/** `agent.ensure` 的事实：探测命中、已有安装修复或本次安装。 */
+export type AgentEnsureOutcome = "hit" | "repaired" | "installed";
 
 /**
  * Adapter 声明的纯 Ensure 义务：身份与只读 probe。probe 的非零退出是未命中，不是
@@ -535,7 +535,10 @@ interface AgentInstallerBase {
   /** Human-only transient label; omitted installers do not add an install detail. */
   readonly progress?: {
     readonly installing?: string;
+    readonly repairing?: string;
   };
+  /** 只用已有安装就地补齐探测条件；不下载 payload、不联网、不换版本。失败后继续安装。 */
+  repair?(sandbox: SandboxCommandTarget, context: AgentInstallContext): MaybePromise<void>;
   /** @internal 只由内置 cache-safe staged installer 写入。 */
   readonly [AGENT_DOCKERFILE_CACHE_SAFE]?: true;
 }
