@@ -1,5 +1,6 @@
 import { bridgeBoundary, signPrivateArtifact, validatePrivateArtifact, managedImplementationDigest, decodeReliabilitySourceIdentity, sameRepositorySourceIdentity } from "./repository-evidence.ts";
 import { ReceiptSchema as NativeCaseReceiptSchema, CertificateSchema as NativeReliabilityCertificateSchema, InventorySchema, type NativeCaseReceipt, type NativeReliabilityCertificate, type ReliabilitySourceIdentity } from "./bridge-wire.ts";
+import { escapeTitlePattern, titlePathPattern, titleTemplate } from "./title-template.ts";
 import { createHash } from "node:crypto";
 import { Effect, Predicate } from "effect";
 import { CASE_ID_PATTERN, type CaseInventoryReceipt, type CollectedCase } from "./inventory.ts";
@@ -31,13 +32,16 @@ export const parseExactSelector = (selector: string): { readonly path: string; r
   if (!CASE_ID_PATTERN.test(caseId)) throw new Error("invalid exact case selector id: " + JSON.stringify(caseId));
   return { path, caseId };
 };
-const escapePattern = (value: string): string => value.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
 export const exactCaseNativeArgs = (executor: "vitest" | "playwright", path: string, titlePath: readonly string[]): readonly string[] => {
   if (titlePath.length === 0 || titlePath.some((title) => title.length === 0)) throw new Error("invalid exact case title path");
-  const title = escapePattern(titlePath.join(" "));
+  const template = titleTemplate(titlePath.at(-1)!);
+  const title = escapeTitlePattern(titlePath.join(" "));
+  if (template.parameterized) return executor === "vitest"
+    ? [path, "--testNamePattern", escapeTitlePattern(template.filter)]
+    : [path, "--grep", `(?:^| )${titlePathPattern(titlePath).source.slice(1)}`];
   // Keep the native file path for scenario commands that route by extension.
   // Both runners filter paths; fresh collection in the execution copy proves
-  // the complete argv selects exactly one case before formal execution.
+  // the complete argv selects exactly one declaration before formal execution.
   return executor === "vitest"
     ? [path, "--testNamePattern", `^${title}$`]
     : [path, "--grep", `(?:^| )${title}$`];
@@ -79,11 +83,11 @@ export const validateFormalCaseReceipt = Effect.fn("validateFormalCaseReceipt")(
   if (!receipt.cleanup.ok || receipt.result.signal !== null || receipt.result.timedOut || receipt.result.startupFailed) throw new Error("formal receipt records failed cleanup or abnormal termination");
   if (receipt.native.skipped !== 0 || receipt.native.retries !== 0 || receipt.native.passed + receipt.native.failed !== receipt.native.caseCount) throw new Error("formal receipt has skip, retry, or inconsistent native counts");
   if (receipt.observation === "red") {
-    if (receipt.result.disposition !== "regression" || receipt.result.exitCode === null || receipt.result.exitCode <= 0 || receipt.native.failed !== 1 || receipt.native.passed !== 0) throw new Error("red receipt must record one ordinary native regression failure");
+    if (receipt.result.disposition !== "regression" || receipt.result.exitCode === null || receipt.result.exitCode <= 0 || receipt.native.failed < 1 || receipt.native.caseCount < 1) throw new Error("red receipt must record an ordinary native regression failure");
   } else if (receipt.result.disposition !== "pass" || receipt.result.exitCode !== 0 || receipt.native.failed !== 0 || receipt.native.passed !== receipt.native.caseCount) {
     throw new Error("green and reliability receipts must record successful native execution");
   }
-  if (receipt.observation !== "reliability" && (receipt.native.mode !== "single" || receipt.native.caseCount !== 1 || receipt.native.parallelism !== 1 || receipt.native.sequence !== 1)) throw new Error("red and green receipts must record one selected case");
+  if (receipt.observation !== "reliability" && (receipt.native.mode !== "single" || receipt.native.caseCount < 1 || receipt.native.parallelism !== 1 || receipt.native.sequence !== 1)) throw new Error("red and green receipts must record one selected declaration");
   const resources = receipt.cleanup.resources;
   return { ...receipt, source, cleanup: { ...receipt.cleanup, resources } };
 }, bridgeBoundary);
@@ -107,10 +111,13 @@ export const validateTakeoverCertificate = Effect.fn("validateTakeoverCertificat
   if (certificate.greenReceipt !== observations.singleCase || receipts.get(observations.singleCase)!.observation !== "green" || validated.slice(0, 6).some((receipt) => receipt.observation !== "reliability")) throw new Error("certificate observations do not distinguish green from reliability receipts");
   if (certificate.sourceDigest !== (yield* decodeReliabilitySourceIdentity(baseline.source)).projection.digest) throw new Error("certificate source digest does not bind its receipts");
   const isolated = validated.slice(0, 3).map((receipt) => receipt.native);
-  if (isolated.some((native) => native.mode !== "isolated" || native.sequence !== 1 || native.caseCount !== 1 || native.parallelism !== 1) || new Set(isolated.map((native) => native.copyId)).size !== 3 || new Set(isolated.map((native) => native.copyPath)).size !== 3) throw new Error("certificate isolated observations do not prove three fresh copies");
+  const single = validated[6]!.native;
+  const memberSet = (native: typeof single) => canonicalJson([...(native.items ?? [])].sort((a, b) => canonicalJson(a.titlePath).localeCompare(canonicalJson(b.titlePath))));
+  if (validated.filter((_, index) => index !== 5).some(receipt => receipt.native.caseCount !== single.caseCount || memberSet(receipt.native) !== memberSet(single))) throw new Error("certificate selected declaration expansions differ across runs");
+  if (isolated.some((native) => native.mode !== "isolated" || native.sequence !== 1 || native.caseCount < 1 || native.parallelism !== 1) || new Set(isolated.map((native) => native.copyId)).size !== 3 || new Set(isolated.map((native) => native.copyPath)).size !== 3) throw new Error("certificate isolated observations do not prove three fresh copies");
   const sameA = validated[3]!.native;
   const sameB = validated[4]!.native;
-  if (sameA.mode !== "same" || sameB.mode !== "same" || sameA.copyId !== sameB.copyId || sameA.copyPath !== sameB.copyPath || sameB.sequence !== sameA.sequence + 1 || sameA.caseCount !== 1 || sameB.caseCount !== 1 || sameA.parallelism !== 1 || sameB.parallelism !== 1) throw new Error("certificate same-copy observations are not consecutive executions on one copy");
+  if (sameA.mode !== "same" || sameB.mode !== "same" || sameA.copyId !== sameB.copyId || sameA.copyPath !== sameB.copyPath || sameB.sequence !== sameA.sequence + 1 || sameA.caseCount < 1 || sameB.caseCount !== sameA.caseCount || sameA.parallelism !== 1 || sameB.parallelism !== 1) throw new Error("certificate same-copy observations are not consecutive executions on one copy");
   if (validated[5]!.native.mode !== "parallel" || validated[5]!.native.parallelism < 2) throw new Error("certificate default-parallel observation lacks parallel capacity");
   if (new Set(validated.map((receipt) => receipt.invocationId)).size !== 7) throw new Error("certificate invocation identities must be unique");
   return certificate;

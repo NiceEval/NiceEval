@@ -6,6 +6,7 @@ import { Data, Effect, Predicate, Schema } from "effect";
 import { bridgeBoundary, signPrivateArtifact } from "./repository-evidence.ts";
 import { listConcordCases, type ConcordCase } from "./concord-cases.ts";
 import ts from "typescript";
+import { matchesTitlePath, titleTemplate } from "./title-template.ts";
 import { nativeEntryForSource } from "./native-files.ts";
 import { InventorySchema } from "./bridge-wire.ts";
 
@@ -24,6 +25,7 @@ export interface CollectedCase {
   readonly location?: { readonly line: number; readonly column: number };
   readonly titlePath: readonly string[];
   readonly caseId: string;
+  readonly members?: readonly (readonly string[])[];
 }
 
 export interface CaseInventoryReceipt {
@@ -137,6 +139,7 @@ const canonicalPath = (cwd: string, file: string): string => {
 
 interface SourceDeclaration {
   readonly title: string;
+  readonly titlePath: readonly string[];
   readonly testFile: string;
   readonly declarationPath: string;
   readonly annotated: boolean;
@@ -166,15 +169,19 @@ const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (cwd: strin
     const visit = (node: ts.Node, parents: readonly string[] = []): void => {
       let descendants = parents;
       if (ts.isCallExpression(node)) {
-        const name = node.expression.getText(tree);
-        const title = node.arguments[0];
-        if (/^describe(?:\.(?:concurrent|skip|only|sequential))*$/u.test(name) && title && ts.isStringLiteralLike(title)) descendants = [...parents, title.text];
-        if (/^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential))*$/u.test(name) && title && ts.isStringLiteralLike(title)) {
+        const expression = ts.isCallExpression(node.expression) ? node.expression.expression : ts.isTaggedTemplateExpression(node.expression) ? node.expression.tag : node.expression;
+        const name = expression.getText(tree);
+        const titleNode = node.arguments[0];
+        const title = titleNode && ts.isStringLiteralLike(titleNode) ? titleNode.text
+          : titleNode && ts.isTemplateExpression(titleNode) ? titleNode.head.text + titleNode.templateSpans.map(span => `%s${span.literal.text}`).join("")
+          : undefined;
+        if (/^(?:test\.)?describe(?:\.(?:concurrent|skip|only|sequential))*$/u.test(name) && title !== undefined) descendants = [...parents, title];
+        if ((!name.endsWith(".each") || ts.isCallExpression(node.expression) || ts.isTaggedTemplateExpression(node.expression)) && /^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential|each))*$/u.test(name) && title !== undefined) {
           const startLine = tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
           const fullStartLine = tree.getLineAndCharacterOfPosition(node.getFullStart()).line + 1;
           const related = markers.filter((item: ConcordCase) => item.file === workspacePath && item.status === "active" && item.line >= fullStartLine && (item.markerEndLine ?? item.line) <= startLine);
           const marker = related.length === 1 ? related[0] : undefined;
-          declarations.push({ title: [...parents, title.text].join(" "), testFile, declarationPath: workspacePath, annotated: marker !== undefined, ...(marker ? { caseId: marker.id } : {}) });
+          declarations.push({ titlePath: [...parents, title], title: [...parents, title].join(" "), testFile, declarationPath: workspacePath, annotated: marker !== undefined, ...(marker ? { caseId: marker.id } : {}) });
         }
       }
       ts.forEachChild(node, child => visit(child, descendants));
@@ -203,10 +210,10 @@ const validateCases = Effect.fn("validateCases")(function* (
     files.add(path);
     const title = raw.titlePath.at(-1) ?? "";
     const workspacePath = `e2e/${repo}/${path}`;
-    const candidates = declarations.filter((entry) => entry.testFile === workspacePath && (entry.title === title || entry.title === raw.titlePath.join(" ")));
+    const candidates = declarations.filter((entry) => entry.testFile === workspacePath && (matchesTitlePath(entry.titlePath, raw.titlePath) || executor === "playwright" && matchesTitlePath(entry.titlePath, raw.titlePath.slice(1))));
     const declaration = candidates[0];
     if (candidates.length !== 1 || declaration === undefined) {
-      if (candidates.length > 1) findings.push(`AmbiguousCaseBinding: ${path}: ${JSON.stringify(title)} has ${candidates.length} statically supported declarations`);
+      if (candidates.length > 1) findings.push(`ParameterizedDeclarationConflict: ${path}: ${JSON.stringify(title)} has ${candidates.length} statically supported declarations`);
       unassignedCases.push({ ...raw, file: path });
       continue;
     }
@@ -221,11 +228,17 @@ const validateCases = Effect.fn("validateCases")(function* (
     const witnessKey = `${caseId}\0${raw.project ?? ""}`;
     const prior = seen.get(witnessKey);
     if (prior !== undefined) {
-      findings.push(`DuplicateCaseId: ${caseId} is collected by both ${prior} and ${path}`);
+      if (!titleTemplate(declaration.titlePath.at(-1)!).parameterized) findings.push(`DuplicateCaseId: ${caseId} is collected by both ${prior} and ${path}`);
+      else {
+        const index = cases.findIndex(entry => entry.caseId === caseId && entry.project === raw.project);
+        const entry = cases[index]!;
+        if (entry.members?.some(member => JSON.stringify(member) === JSON.stringify(raw.titlePath))) findings.push(`DuplicateNativeTitle: ${path}: ${JSON.stringify(raw.titlePath)}`);
+        cases[index] = { ...entry, members: [...(entry.members ?? []), raw.titlePath] };
+      }
       continue;
     }
     seen.set(witnessKey, path);
-    cases.push({ executor, repo: suiteId, path: declarationPath, ...(path === declarationPath ? {} : { nativePath: path }), ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: raw.titlePath, caseId, ...(raw.location === undefined ? {} : { location: raw.location }) });
+    cases.push({ executor, repo: suiteId, path: declarationPath, ...(path === declarationPath ? {} : { nativePath: path }), ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: executor === "playwright" ? [...raw.titlePath.slice(0, raw.titlePath.length - declaration.titlePath.length), ...declaration.titlePath] : declaration.titlePath, caseId, ...(titleTemplate(declaration.titlePath.at(-1)!).parameterized ? { members: [raw.titlePath] } : {}), ...(raw.location === undefined ? {} : { location: raw.location }) });
   }
   return {
     cases: cases.sort((left, right) => left.path.localeCompare(right.path) || (left.project ?? "").localeCompare(right.project ?? "") || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0"))),
@@ -264,7 +277,7 @@ const resolveExecutorCli = (executor: InventoryExecutor, cwd: string): ResolvedE
 
 const executorCommand = (executor: InventoryExecutor, cli: string, nativeArgs: readonly string[]): readonly string[] =>
   executor === "vitest"
-    ? [process.execPath, cli, "list", ...nativeArgs, "--json", "--includeTaskLocation"]
+    ? [process.execPath, cli, "list", ...nativeArgs, "--json", "--includeTaskLocation", "--staticParse=false"]
     : [process.execPath, cli, "test", "--list", "--reporter=json", ...nativeArgs];
 
 const versionCommand = (cli: string): readonly string[] => [process.execPath, cli, "--version"];
@@ -305,10 +318,14 @@ export const collectNativeCaseInventory = Effect.fn("collectNativeCaseInventory"
   const declarations = yield* declarationsInCopy(cwd, options.repo, []);
   const cases = raw.map(item => {
     const nativeFile = canonicalPath(cwd, item.file);
-    const candidates = declarations.filter(entry => entry.testFile === `e2e/${options.repo}/${nativeFile}` && entry.title === item.titlePath.join(" "));
-    if (candidates.length > 1) throw new Error(`Ambiguous native source declaration: ${nativeFile}: ${item.titlePath.join(" ")}`);
+    const candidates = declarations.filter(entry => entry.testFile === `e2e/${options.repo}/${nativeFile}` && (matchesTitlePath(entry.titlePath, item.titlePath) || options.executor === "playwright" && matchesTitlePath(entry.titlePath, item.titlePath.slice(1))));
+    if (candidates.length > 1) throw new Error(`ParameterizedDeclarationConflict: ${nativeFile}: ${item.titlePath.join(" ")}`);
     const file = candidates[0]?.declarationPath.slice(`e2e/${options.repo}/`.length) ?? nativeFile;
-    return { ...item, file, ...(file === nativeFile ? {} : { nativeFile }) };
+    const declaration = candidates[0];
+    const declarationTitlePath = declaration && titleTemplate(declaration.titlePath.at(-1)!).parameterized
+      ? options.executor === "playwright" ? [...item.titlePath.slice(0, item.titlePath.length - declaration.titlePath.length), ...declaration.titlePath] : declaration.titlePath
+      : undefined;
+    return { ...item, file, ...(file === nativeFile ? {} : { nativeFile }), ...(declarationTitlePath === undefined ? {} : { declarationTitlePath }) };
   });
   return { executor: { name: options.executor, version }, cases };
 }, bridgeBoundary);

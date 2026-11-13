@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { NodeRuntime } from "@effect/platform-node";
 import { Cause, Effect, Schema } from "effect";
 import { repoRootDir } from "./discovery.ts";
-import { CollectionSchema, observeExecution } from "./adapter-observation.ts";
+import { CollectionSchema, observeExecutionDetails } from "./adapter-observation.ts";
 import { ADAPTER_BYTES, CAPABILITY_VERSION, ContextSchema, ManifestSchema, PayloadSchemas, PlanSchema, ReportSchema, RequestSchema, SelectionSchema, Text, capabilities, decode, json, nativeId, parse, type Captured, type Context, type NativeResult, type Selection } from "./adapter-wire.ts";
 
 const BindingSchema = Schema.Struct({ nativeId: Text, selection: SelectionSchema });
 const CollectContextSchema = Schema.Struct({ context: ContextSchema, files: Schema.Array(Text), invocationId: Text });
-const RunContextSchema = Schema.Struct({ context: ContextSchema, bindings: Schema.Array(BindingSchema) });
+const RunGroupSchema = Schema.Struct({ selection: SelectionSchema, bindings: Schema.NonEmptyArray(BindingSchema) });
+const RunContextSchema = Schema.Struct({ context: ContextSchema, groups: Schema.Array(RunGroupSchema) });
 const sameContext = (actual: Context, expected: Context): void => {
   if (json(actual) !== json(expected)) throw new Error("adapter plan context mismatch");
 };
@@ -74,24 +75,47 @@ function execute(request: typeof RequestSchema.Type): unknown {
         if (!selection.file.startsWith(`e2e/${selection.repo}/`) || selection.nativeFile !== undefined && !selection.nativeFile.startsWith(`e2e/${selection.repo}/`)) throw new Error("selection file is outside native repo");
         return { nativeId: id, selection };
       });
-      return decode(PlanSchema, { invocations: bindings.map((binding, index) => invocation(context, `case-${index}`, { op: "test", selection: binding.selection }, [binding.nativeId])), planContext: { context, bindings } });
+      const grouped = new Map<string, typeof bindings>();
+      for (const binding of bindings) {
+        const selection = binding.selection;
+        const key = json({ ...selection, titlePath: selection.declarationTitlePath ?? selection.titlePath });
+        grouped.set(key, [...(grouped.get(key) ?? []), binding]);
+      }
+      const groups = [...grouped.values()].map(members => {
+        const first = members[0]!.selection;
+        if (first.declarationTitlePath === undefined) return { selection: first, bindings: members };
+        const all = payload.manifest.cases.filter(item => {
+          const selection = decode(SelectionSchema, parse(item.selection.opaqueId));
+          return json({ ...selection, titlePath: selection.declarationTitlePath ?? selection.titlePath }) === json({ ...first, titlePath: first.declarationTitlePath });
+        });
+        if (all.length !== members.length) throw new Error("NativeSelectionInvalid: a parameterized declaration must select all expansions");
+        return { selection: { ...first, titlePath: first.declarationTitlePath, members: members.map(member => member.selection.titlePath) }, bindings: members };
+      });
+      return decode(PlanSchema, { invocations: groups.map((group, index) => invocation(context, `case-${index}`, { op: "test", selection: group.selection }, group.bindings.map(binding => binding.nativeId))), planContext: { context, groups } });
     }
     case "report-parse": {
       const payload = decode(PayloadSchemas[request.op], request.payload);
       const plan = decode(RunContextSchema, payload.planContext);
       sameContext(plan.context, context);
-      if (json(payload.requested) !== json(plan.bindings.map(binding => binding.nativeId))) throw new Error("requested selection differs from plan");
+      if (json([...payload.requested].sort()) !== json(plan.groups.flatMap(group => group.bindings.map(binding => binding.nativeId)).sort())) throw new Error("requested selection differs from plan");
       const gaps: string[] = [];
       const observed: NativeResult[] = [];
-      if (payload.captures.length !== plan.bindings.length || new Set(payload.captures.map(capture => capture.status.invocationId)).size !== payload.captures.length) gaps.push("Invocation captures are missing or duplicated");
-      for (const [index, binding] of plan.bindings.entries()) {
+      if (payload.captures.length !== plan.groups.length || new Set(payload.captures.map(capture => capture.status.invocationId)).size !== payload.captures.length) gaps.push("Invocation captures are missing or duplicated");
+      for (const [index, group] of plan.groups.entries()) {
         const capture = payload.captures.find(item => item.status.invocationId === `case-${index}`);
-        if (!capture || !normal(capture)) { gaps.push(`Native invocation incomplete: ${binding.nativeId}`); continue; }
-        try { observed.push(observeExecution(reportValue(capture), binding.selection, binding.nativeId)); }
+        if (!capture || !normal(capture)) { gaps.push(`Native invocation incomplete: case-${index}`); continue; }
+        try {
+          const result = observeExecutionDetails(reportValue(capture), group.selection);
+          for (const binding of group.bindings) {
+            const item = result.items?.find(item => item.titlePath.join(" ") === binding.selection.titlePath.join(" "));
+            if (!item) throw new Error(`NativeSelectionInvalid: missing expanded result ${binding.nativeId}`);
+            observed.push({ nativeId: binding.nativeId, outcome: item.outcome, provenance: `NiceEval ${binding.selection.executor} JSON reporter; ${JSON.stringify(item.titlePath)}: ${item.outcome}; declaration caseCount=${result.caseCount}` });
+          }
+        }
         catch (cause) { gaps.push(`Native observation unavailable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       }
-      if (payload.captures.some(item => !/^case-(0|[1-9]\d*)$/u.test(item.status.invocationId) || Number(item.status.invocationId.slice(5)) >= plan.bindings.length)) gaps.push("Unexpected native invocation capture");
-      return decode(ReportSchema, { observed, capabilities, completeness: { complete: gaps.length === 0, gaps } });
+      if (payload.captures.some(item => !/^case-(0|[1-9]\d*)$/u.test(item.status.invocationId) || Number(item.status.invocationId.slice(5)) >= plan.groups.length)) gaps.push("Unexpected native invocation capture");
+      return decode(ReportSchema, { observed, capabilities: { ...capabilities, parameterGroups: plan.groups.some(group => group.selection.declarationTitlePath !== undefined) }, completeness: { complete: gaps.length === 0, gaps } });
     }
   }
 }

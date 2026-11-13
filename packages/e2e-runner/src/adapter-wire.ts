@@ -39,7 +39,7 @@ export const PayloadSchemas = {
 };
 export const RequestSchema = Schema.Struct({ format: Schema.Literal("concord.test-adapter/v1"), op: Schema.Literals(["collect-plan", "collect-parse", "select-plan", "report-parse"]), requestId: Text, context: ContextSchema, payload: Schema.Unknown });
 export const capabilities: typeof CapabilitiesSchema.Type = { realCollection: true, leaf: true, parameterGroups: false, exactSelection: true, perItemReport: true, range: false, tags: false, skipVisibility: false, rangeTrivia: false };
-export const SelectionSchema = Schema.Struct({ executor: Schema.Literals(["vitest", "playwright"]), repo: RelativePath, file: RelativePath, nativeFile: Schema.optionalKey(RelativePath), project: Text, titlePath: Schema.NonEmptyArray(Text) });
+export const SelectionSchema = Schema.Struct({ executor: Schema.Literals(["vitest", "playwright"]), repo: RelativePath, file: RelativePath, nativeFile: Schema.optionalKey(RelativePath), project: Text, titlePath: Schema.NonEmptyArray(Text), declarationTitlePath: Schema.optionalKey(Schema.NonEmptyArray(Text)), members: Schema.optionalKey(Schema.NonEmptyArray(Schema.NonEmptyArray(Text))) });
 export type Selection = typeof SelectionSchema.Type;
 export const CAPABILITY_VERSION = "niceeval-native/1";
 export const nativeId = (selection: Selection): string => `niceeval:${encodeURIComponent(json(selection))}`;

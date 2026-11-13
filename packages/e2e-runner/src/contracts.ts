@@ -250,6 +250,7 @@ export const StageReceiptSchema = Schema.Struct({
   collected: Schema.optional(Schema.Array(RepoIdSchema)),
   path: Schema.optional(Schema.String),
   native: Schema.optional(Schema.Struct({
+    items: Schema.optional(Schema.Array(Schema.Struct({ titlePath: Schema.Array(Schema.String), outcome: Schema.Literals(["passed", "failed"]) }))),
     caseCount: NonNegativeSafeIntegerSchema,
     passed: NonNegativeSafeIntegerSchema,
     failed: NonNegativeSafeIntegerSchema,

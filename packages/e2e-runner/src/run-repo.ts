@@ -319,6 +319,8 @@ export interface CaseSelectionExpectation {
   readonly executor: InventoryExecutor;
   readonly caseId: string;
   readonly titlePath: readonly string[];
+  readonly members?: readonly (readonly string[])[];
+  readonly file?: string;
   readonly checkout: string;
   readonly only: boolean;
   /** NiceEval suite id that owns the selected case. */

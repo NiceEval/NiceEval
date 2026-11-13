@@ -7,11 +7,11 @@ import { cliE2E, writeInspectionRequest } from "./context.ts";
 // @feature docs/feature/sandbox/README.md
 // @issue docs/issues/takeover-parameterized-cli.md
 test.concurrent.each([
-  { name: "bounded[default]", timeoutMs: 60_000, lifetimeMs: undefined, seconds: 180 },
-  { name: "unlimited+default", timeoutMs: undefined, lifetimeMs: undefined, seconds: 900 },
-  { name: "explicit(sandbox)", timeoutMs: 60_000, lifetimeMs: 600_000, seconds: 600 },
-])("cloud creation sends a hard deadline and the Record Run identity ($name)", async ({ name, timeoutMs, lifetimeMs, seconds }) => {
-  await cliE2E.case(`cloud-lifetime-${name}`, {}, async ({ commands: { niceeval }, paths }) => {
+  { id: "bounded", name: "bounded[default]", timeoutMs: 60_000, lifetimeMs: undefined, seconds: 180 },
+  { id: "unlimited", name: "unlimited+default", timeoutMs: undefined, lifetimeMs: undefined, seconds: 900 },
+  { id: "explicit", name: "explicit(sandbox)", timeoutMs: 60_000, lifetimeMs: 600_000, seconds: 600 },
+])("cloud creation sends a hard deadline and the Record Run identity ($name)", async ({ id, timeoutMs, lifetimeMs, seconds }) => {
+  await cliE2E.case(`cloud-lifetime-${id}`, {}, async ({ commands: { niceeval }, paths }) => {
     await writeFile(join(paths.projectRoot, "niceeval.config.ts"), `import { defineConfig } from "niceeval";
 export default defineConfig({ name: { en: "cloud-lifetime", "zh-CN": "cloud-lifetime" }, sandboxCache: { before: "bypass" } });\n`);
     await writeFile(join(paths.projectRoot, "experiments", "cloud-lifetime.ts"), `

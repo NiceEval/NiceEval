@@ -84,7 +84,7 @@ const program = Effect.gen(function*() {
       }
       for (const item of raw) {
         if (!files.includes(item.path)) continue;
-        const selection = decode(SelectionSchema, { executor: item.executor, repo: repo.manifest.id, file: item.path, ...("nativePath" in item && item.nativePath !== undefined ? { nativeFile: item.nativePath } : {}), project: item.project ?? "default", titlePath: item.titlePath });
+        const selection = decode(SelectionSchema, { executor: item.executor, repo: repo.manifest.id, file: item.path, ...("nativePath" in item && item.nativePath !== undefined ? { nativeFile: item.nativePath } : {}), project: item.project ?? "default", titlePath: item.titlePath, ...(item.declarationTitlePath === undefined ? {} : { declarationTitlePath: item.declarationTitlePath }) });
         selections.push(selection);
         if (item.location !== undefined) {
           let source = sources.get(item.path);
@@ -92,7 +92,7 @@ const program = Effect.gen(function*() {
           const range = nativeDeclarationRange(item.path, source, item.location);
           if (range !== undefined) {
             ranges[nativeId(selection)] = range;
-            groups[nativeId(selection)] = `niceeval:${item.path}:${item.location.line}:${item.location.column}`;
+            groups[nativeId(selection)] = `niceeval:${item.path}:${range.startLine}:${range.endLine}`;
           }
         }
       }
