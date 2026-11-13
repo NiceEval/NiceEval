@@ -1,14 +1,14 @@
 import { defineEval } from "niceeval";
 import { equals, includes, isDefined, satisfies } from "niceeval/expect";
 
-const CLI_MODEL = "opencode-go/deepseek-v4-flash";
+const CLI_MODEL = "opencode-go/deepseek-v4.1-flash";
 const PROVIDER = "opencode-go";
-const API_MODEL = "deepseek-v4-flash";
+const API_MODEL = "deepseek-v4.1-flash";
 const LIVE_MARKER = "OPENCODE-GO-DEEPSEEK-V4-FLASH-E2E-731";
 
 export default defineEval({
   description:
-    "OpenCode Go 路由:完整 CLI 模型映射到 deepseek-v4-flash API 模型并完成真实请求",
+    "OpenCode Go 路由:完整 CLI 模型映射到 deepseek-v4.1-flash API 模型并完成真实请求",
   async test(t) {
     t.check(t.model, equals(CLI_MODEL));
 

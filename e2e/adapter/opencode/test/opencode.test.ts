@@ -270,7 +270,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   const goEvents = assertExpEvalOutcomes(
     goRun.expEvalEvents(),
     [
-      // Go routing：真实请求须落到 deepseek-v4-flash 并从官方 export 读回；期望 passed/1。
+      // Go routing：真实请求须落到 deepseek-v4.1-flash 并从官方 export 读回；期望 passed/1。
       {
         experimentId: "go",
         evalId: GO_EVAL,
