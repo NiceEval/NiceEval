@@ -30,6 +30,7 @@ type AttemptSlotProjectedEntry<Value> =
 import type { Verdict } from "../../shared/types.ts";
 import { reportActivity } from "../feedback/sink.ts";
 
+/** Selects the Braintrust project, experiment and optional comparison baseline; omitted credentials are resolved by the SDK from BRAINTRUST_API_KEY. */
 export interface BraintrustConfig {
   /** Braintrust 项目名;省略时用 "niceeval"。 */
   project?: string;

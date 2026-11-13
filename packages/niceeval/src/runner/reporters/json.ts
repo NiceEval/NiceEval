@@ -34,6 +34,7 @@ async function atomicWriteFile(path: string, content: string): Promise<void> {
   }
 }
 
+/** Creates a Reporter that atomically writes the materialized Invocation summary as JSON. This export is a result snapshot rather than the public Inspection query protocol. */
 export function Json(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {
@@ -48,6 +49,7 @@ export function Json(path: string): Reporter {
   };
 }
 
+/** Creates a Reporter that atomically writes JUnit XML on Invocation completion. Testcase time is reported in seconds, while NiceEval durations are milliseconds. */
 export function JUnit(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {

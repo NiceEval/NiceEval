@@ -14,20 +14,26 @@ import type { ClaudeCodeConfig } from "../agents/claude-code.ts";
 import type { BubConfig } from "../agents/bub.ts";
 import type { SkillSpec, McpServer } from "../agents/types.ts";
 
+/** Identifies where a Plugin is mounted; each owner allows only its supported contribution fields. */
 export type PluginOwner = "experiment" | "group" | "eval";
+/** Identifies which lifecycle a Plugin contribution participates in; mount ownership and execution scope are separate concepts. */
 export type PluginScope = "experiment" | "group" | "sandbox" | "attempt";
+/** Chooses whether an unavailable grouped Sandbox stops the Group or is replaced; the policy concerns the physical instance rather than an ordinary assertion failure. */
 export type PluginOnUnavailable = "stop-group" | "replace-sandbox";
 declare const PLUGIN_INSTANCE: unique symbol;
+/** An opaque frozen condition returned by definePlugin; its allowed owners constrain where it may be mounted. */
 export interface PluginInstance<Owners extends PluginOwner = PluginOwner> {
   readonly [PLUGIN_INSTANCE]: (owner: Owners) => void;
 }
 export type PluginHook<Context> = (context: Context) => void | Promise<void>;
+/** Provides feedback and cancellation for one Eval Group lane; group lifecycle is not run for ungrouped Evals. */
 export interface GroupPluginContext extends ScopedFeedback {
   readonly experimentId: string;
   readonly evalGroupId: string;
   readonly signal: AbortSignal;
 }
 type EvalGroupRef = NonNullable<SandboxCommandContext["evalGroup"]>;
+/** Provides feedback, cancellation and identity for one fresh Attempt; evalGroup is available only when the selected Eval belongs to a Group. */
 export interface AttemptPluginContext extends ScopedFeedback {
   readonly experimentId: string;
   readonly evalId: string;
@@ -35,21 +41,28 @@ export interface AttemptPluginContext extends ScopedFeedback {
   readonly evalGroup?: EvalGroupRef;
   readonly signal: AbortSignal;
 }
+/** Provides selected Eval identities and feedback for Experiment lifecycle work; this scope is shared across its Attempts. */
 export type ExperimentPluginContext = ExperimentHookContext;
 export type PluginElements<Element> = Element | readonly Element[];
+/** Declares before and after elements as one value or a readonly array; lifecycle scheduling is owned by the receiving scope. */
 export type PluginLifecycleFragment<Hook> = Readonly<{
   readonly before?: PluginElements<Hook>;
   readonly after?: PluginElements<Hook>;
 }>;
+/** Declares Experiment-level lifecycle work; it is distinct from per-Attempt and per-Sandbox preparation. */
 export type ExperimentPluginFragment = PluginLifecycleFragment<PluginHook<ExperimentHookContext>>;
+/** Declares lifecycle work once per Group lane; use this for lane-wide work rather than per-Attempt Sandbox fragments. */
 export type GroupPluginFragment = PluginLifecycleFragment<PluginHook<GroupPluginContext>>;
 type GroupContext<Context, Required extends boolean> = Required extends true
   ? Omit<Context, "evalGroup"> & { readonly evalGroup: EvalGroupRef } : Context;
+/** Declares before and after work for each fresh Attempt; requiring an Eval Group makes its context mandatory at selection time. */
 export type AttemptPluginFragment<Required extends boolean = false> = PluginLifecycleFragment<PluginHook<GroupContext<AttemptPluginContext, Required>>>;
+/** Adds managed actions or callbacks to the owner's Sandbox lifecycle; these run for fresh Attempts and do not create a separate physical Sandbox lifecycle. */
 export interface SandboxPluginFragment<Required extends boolean = false> {
   readonly before?: PluginElements<SandboxAction | ((sandbox: SandboxCommandTarget, context: GroupContext<SandboxCommandContext, Required>) => void | Promise<void>)>;
   readonly after?: PluginElements<SandboxAfterAction | ((sandbox: SandboxCommandTarget, context: GroupContext<Omit<SandboxCommandContext, "onCleanup">, Required>) => void | Promise<void>)>;
 }
+/** Adds supported Agent skills, servers and native configuration from an Experiment-mounted Plugin; custom Adapters do not accept Agent extensions. */
 export interface PluginAgentExtensions {
   readonly skills?: readonly SkillSpec[];
   readonly mcpServers?: readonly McpServer[];
@@ -81,6 +94,7 @@ interface PluginIdentity {
 }
 type GroupRequiredPluginDefinition = PluginIdentity & { readonly requires: { readonly evalGroup: true } } & NonEmptyFields<true>;
 type OptionalGroupPluginDefinition = PluginIdentity & { readonly requires?: { readonly evalGroup?: false } } & NonEmptyFields<false>;
+/** Declares a reusable condition's identity and scoped contributions; bump identity when callback semantics change because callback bodies are not fingerprinted. */
 export type PluginDefinition = GroupRequiredPluginDefinition | OptionalGroupPluginDefinition;
 type OwnersOf<Definition> = Definition extends { readonly agent: unknown } | { readonly experiment: unknown }
   ? "experiment" : Definition extends { readonly group: unknown } ? "experiment" | "group" : PluginOwner;
@@ -256,11 +270,15 @@ function createPlugin(spec: unknown): PluginInstance {
   pluginInstances.set(instance, data);
   return instance;
 }
+/** Creates a frozen reusable experiment condition or a single-options factory. Declare explicit JSON identity because callback body changes alone do not invalidate reuse. */
 export function definePlugin<const Definition extends GroupRequiredPluginDefinition>(spec: Definition): PluginInstance<OwnersOf<Definition>>;
+/** Creates a frozen reusable experiment condition or a single-options factory. Declare explicit JSON identity because callback body changes alone do not invalidate reuse. */
 export function definePlugin<const Definition extends OptionalGroupPluginDefinition>(spec: Definition): PluginInstance<OwnersOf<Definition>>;
+/** Creates a frozen reusable experiment condition or a single-options factory. Declare explicit JSON identity because callback body changes alone do not invalidate reuse. */
 export function definePlugin<Options, const Required extends boolean = false, const Definition extends PluginIdentity = PluginIdentity>(factory: (options: Options) => Definition & { readonly requires?: { readonly evalGroup: Required } } & NonEmptyFields<Required>): (options: Options) => PluginInstance<OwnersOf<Definition>>;
 // @concord-code
 // @concord-implements docs/feature/plugins/library.md
+/** Creates a frozen reusable experiment condition or a single-options factory. Declare explicit JSON identity because callback body changes alone do not invalidate reuse. */
 export function definePlugin(spec: unknown): PluginInstance | ((options: unknown) => PluginInstance) {
   if (typeof spec !== "function") return createPlugin(spec);
   return (...args: readonly unknown[]) => {
