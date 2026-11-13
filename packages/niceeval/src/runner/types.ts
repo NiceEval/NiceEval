@@ -68,6 +68,7 @@ export interface ExperimentRunInfo {
   agentInstalls: JsonValue[];
 }
 
+/** Describes the Sandbox provider and parameters attached to execution metadata; a fingerprint is an identity claim rather than a live instance handle. */
 export interface SandboxRunInfo {
   provider: string;
   params?: globalThis.Record<string, JsonValue>;
@@ -388,6 +389,7 @@ export interface RetryAttemptRecord {
   usage?: Usage;
 }
 
+/** Carries a completed Attempt's execution and evaluation facts for reporting; missing optional evidence must not be replaced with current workspace data. */
 export interface EvalResult {
   id: string;
   description?: string;
@@ -592,6 +594,7 @@ export interface InvocationShape {
   runIds?: ReadonlyMap<string, string>;
 }
 
+/** Receives Invocation and Eval lifecycle notifications for exporting results; reporting callbacks do not own evaluation policy or durable publication. */
 export interface Reporter {
   onEvent?(event: ReporterEvent): void | Promise<void>;
   onInvocationStart?(evals: { id: string }[], shape?: InvocationShape): void | Promise<void>;
@@ -623,6 +626,7 @@ export interface ReporterRegistration {
   target?: string;
 }
 
+/** Describes one live reporting event; progress and summary notifications are separate from durable Attempt evidence. */
 export type ReporterEvent =
   | { type: "invocation:start"; evals: { id: string }[]; shape: InvocationShape }
   | { type: "eval:start"; eval: { id: string }; adapter: import("../record/model/run-context.ts").AdapterIdentity; model?: string; attempt: number; experimentId?: string }
@@ -775,6 +779,7 @@ export interface EvalDefinition<
   readonly [EVAL_DEFINITION]: true;
 }
 
+/** Accepts a Pass or Score Eval, including Adapter-bound definitions; preserve evaluationKind when handling their different scoring semantics. */
 export type AnyEvalDefinition =
   | EvalDefinition<"pass", TestContext, SandboxLayer | undefined>
   | EvalDefinition<"score", ScoreTestContext, SandboxLayer | undefined>
@@ -785,9 +790,11 @@ const EVAL_GROUP_DEFINITION: unique symbol = Symbol("niceeval.evalGroupDefinitio
 
 /** A group member must not own a Sandbox template or instance lifecycle. Runtime discovery revalidates this. */
 export type EvalGroupMemberSandbox = SandboxLayer<"command-only"> | undefined;
+/** An Eval eligible for an ordered Group lane; its Sandbox requirements must remain compatible with the other members. */
 export type EvalGroupMember =
   | EvalDefinition<"pass", TestContext, EvalGroupMemberSandbox>
   | EvalDefinition<"score", ScoreTestContext, EvalGroupMemberSandbox>;
+/** Groups a nonempty sequence of Evals into one Sandbox lane; explicitly select the physical-instance policy for unavailability. */
 export interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
   readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
   readonly sandbox?: Sandbox;
@@ -795,6 +802,7 @@ export interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = Sandb
   readonly onUnavailable: PluginOnUnavailable;
   readonly plugins?: readonly PluginInstance<"group">[];
 }
+/** A defined ordered Eval Group sharing a physical Sandbox lane; it is distinct from the directory-derived Experiment comparison group. */
 export interface EvalGroupDefinition extends EvalGroupInput {
   readonly [EVAL_GROUP_DEFINITION]: true;
 }
@@ -809,6 +817,7 @@ export function isEvalGroupDefinition(value: unknown): value is EvalGroupDefinit
 
 const DATASET_DEFINITION: unique symbol = Symbol("niceeval.datasetDefinition");
 
+/** Defines data rows and a test that runs for each row; evaluationKind selects Pass or Score semantics rather than being inferred from returned values. */
 export interface DatasetInput<TRow = unknown, Kind extends EvaluationKind = "pass"> {
   readonly description?: string;
   readonly tags?: readonly string[];
@@ -819,6 +828,7 @@ export interface DatasetInput<TRow = unknown, Kind extends EvaluationKind = "pas
   test(t: Kind extends "score" ? ScoreTestContext : TestContext, row: TRow): EvalTestReturn;
 }
 
+/** A dataset declaration created by defineDataset; use stable row keys to preserve identity when dataset order changes. */
 export interface DatasetDefinition<TRow = unknown, Kind extends EvaluationKind = "pass"> extends DatasetInput<TRow, Kind> {
   readonly [DATASET_DEFINITION]: true;
 }
@@ -936,6 +946,7 @@ export interface SharedStateConfig {
 /** Host-only before cache policy. It is resolved per AgentRun and never participates in identity. */
 export type SandboxBeforeCache = "use" | "bypass";
 
+/** Configures before-action caching; this is separate from reusing already published evaluation results. */
 export interface SandboxCacheConfig {
   readonly before?: SandboxBeforeCache;
 }
@@ -1069,6 +1080,7 @@ type ExperimentModelFields<A extends Adapter> = A extends { readonly kind: "cust
     | { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string })
   : { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string };
 
+/** Defines execution conditions for selected Evals; the Experiment ID comes from its file path rather than an authored id field. */
 export type ExperimentInput<A extends Adapter = Adapter> = Omit<ExperimentAuthorFields, "adapter" | "flags" | "models" | "model" | "reasoningEffort"> & ExperimentModelFields<A> &
   ExperimentAdapterSelection<A> & ExperimentFlagsFields<NoInfer<A>> & {
   id?: ExperimentIdComesFromFilePath;
@@ -1159,6 +1171,7 @@ export interface EvalDescriptor {
   readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
+/** Defines project defaults for execution, reporting and Judge selection; higher-priority invocation and Experiment settings may override these defaults. */
 export interface Config {
   /**
    * 项目名,显示在 `niceeval view` 顶部 hero(`<h1>`),省略则回退到通用标题。
