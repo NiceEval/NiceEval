@@ -6,6 +6,14 @@ description: "The full onboarding flow for a Coding Agent: explore the project, 
 
 This page is the execution guide for a Coding Agent integrating NiceEval into a project. Prerequisites: the `niceeval` dependency is installed in the project, `niceeval init` has run, and you reached this page from the bundled `INDEX.md`. Talk to the user in the user's language. Every API, field, and CLI behavior follows the bundled docs. Do not make them up from training memory.
 
+`init` creates `evals/` and the config in the package directory that owns the dependency, and refreshes every existing `AGENTS.md` and `CLAUDE.md` at the Git repository root.
+When neither exists it creates `AGENTS.md`, and it always writes `.agents/skills/niceeval/SKILL.md` and `.claude/skills/niceeval/SKILL.md`.
+The guidance stores the bundled index path relative to the repository root; running `init` again does not rewrite files whose content is unchanged.
+
+When the index is not on disk, `init` fails with `bundled-docs-not-on-disk`; install dependencies in the current package directory and retry. Yarn Plug'n'Play is not supported.
+When the rule markers are damaged, keep one matched pair at the file and line named in the error, or remove both markers, then retry.
+When a skill with the same name has no managed comment, move your own file away first. None of these validation failures writes any project guidance.
+
 Before writing evals, use [NiceEval Taste](/tutorials/niceeval-taste) to decide the business criteria, sufficient evidence, and weights. At delivery, a reader should be able to explain the pass conditions and scoring by reading only the eval body.
 
 ## Step 1: Explore the project, then confirm with the user
