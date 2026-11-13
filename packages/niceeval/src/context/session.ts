@@ -457,7 +457,6 @@ export class SessionManager {
       const userDetail = text.trim().length > 0
         ? text
         : files?.[0]?.filename ?? `[file]`;
-      this.deps.feedback?.progress({ message: `user: ${userDetail}${attach}` });
       const timingNow = this.deps.timingNow ?? (() => performance.now());
       const startOffsetMs = timingNow();
 
@@ -712,7 +711,12 @@ export class SessionManager {
       );
       return beforeSend.pipe(
         Effect.andThen(
-          Effect.sync(() => this.deps.onSendActive?.(true)).pipe(
+          Effect.sync(() => {
+            this.deps.onSendActive?.(true);
+            // Entering agent.run clears the previous phase's detail. Publish
+            // this send's user message only after that transition.
+            this.deps.feedback?.progress({ message: `user: ${userDetail}${attach}` });
+          }).pipe(
             Effect.andThen(send),
             Effect.ensuring(Effect.sync(() => this.deps.onSendActive?.(false))),
             // send 返回后:这个 send 窗口内的全部 workspace 变化落 agent 归因。

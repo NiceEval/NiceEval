@@ -21,3 +21,7 @@ Runner 把 `progress()` 实现为 `log()` 的别名，使只应短命显示的 u
 ## Repair boundary
 
 Runner 统一投影其发送时已知的 `user:`，并在唯一 ACTIVE 出口做 secret redaction、终端控制字符清理、空白归一与 UTF-8/grapheme 有界化；`progress` 保持短命，只有显式 `log` 可进入 timeout breadcrumb。适配器只投影原生协议能证明属于当前物理 send 且输入已经完整的 tool/action；仅在结束后获得 transcript 的适配器不伪造实时细节。
+
+## Phase transition ordering
+
+`attempt:phase` 会清空旧阶段的 detail。为在 send 期间投影 `agent.run` 而新增阶段事件时，必须先进入阶段，再发布本轮 `user:`，然后调用 Adapter；send 结束后才恢复外层阶段。若先发布 user progress，紧接着的阶段事件会在下一帧前把它清空。此时 PTY 可以正常输出工具活动并以零退出，但 user sentinel 永远不可见；延长等待或修改 PTY 夹具不能修复这个顺序错误。
