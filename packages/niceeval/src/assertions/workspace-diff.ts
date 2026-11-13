@@ -365,17 +365,24 @@ export function evaluateWorkspaceDiffIn(
 ): DiffSearchOutcome {
   const sides = selectedSides(options);
   let elided = false;
-  const witness = (path: string, text: string): DiffSearchOutcome => Object.freeze({
-    state: "matched", path, preview: Array.from(text).slice(0, 1024).join(""),
-  });
+  const witness = (path: string, text: string): DiffSearchOutcome | undefined => {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(text);
+    if (match === null) return undefined;
+    // Keep the decisive match in the preview even when it occurs late in a hunk.
+    const start = Math.max(0, match.index - 128);
+    return Object.freeze({ state: "matched", path, preview: Array.from(text.slice(start, start + 2048)).slice(0, 1024).join("") });
+  };
   for (const window of document.windows) {
     for (const change of window.changes) {
-      if (matchesPattern(pattern, change.path)) return witness(change.path, change.path);
+      const pathWitness = witness(change.path, change.path);
+      if (pathWitness !== undefined) return pathWitness;
       for (const side of sides) {
         const endpoint = side === "added" ? change.after : change.before;
         if (endpoint.state === "elided") elided = true;
         for (const hunk of change.hunks[side]) {
-          if (matchesPattern(pattern, hunk)) return witness(change.path, hunk);
+          const hunkWitness = witness(change.path, hunk);
+          if (hunkWitness !== undefined) return hunkWitness;
         }
       }
     }
