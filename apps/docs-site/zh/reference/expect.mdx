@@ -62,6 +62,8 @@ export function and(
 ): BooleanMatch<unknown, unknown, MatchDomain> { ... }
 ```
 
+Requires every Boolean Match to hold for the same candidate. All operands must belong to the same domain.
+
 #### `or`
 
 ```ts
@@ -71,11 +73,15 @@ export function or(
 ): BooleanMatch<unknown, unknown, MatchDomain> { ... }
 ```
 
+Accepts a candidate when any Boolean Match holds. All operands must belong to the same domain, and unknown evidence is not a definite mismatch.
+
 #### `not`
 
 ```ts
 export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): BooleanMatch<T, T, "value"> { ... }
 ```
+
+Negates a Boolean Match within its domain. Unavailable evidence remains unavailable rather than becoming a successful negation.
 
 #### `includes`
 
@@ -83,17 +89,23 @@ export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): Boolean
 export function includes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> { ... }
 ```
 
+Checks that text contains a substring. Comment stripping is opt-in, and an empty expected string is rejected.
+
 #### `excludes`
 
 ```ts
 export function excludes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> { ... }
 ```
 
+Checks that text does not contain a substring. Comment stripping is opt-in, and an empty expected string is rejected.
+
 #### `pattern`
 
 ```ts
 export function pattern(expression: RegExp, options?: TextMatchOptions): BooleanMatch<string, string> { ... }
 ```
+
+Checks text against a regular expression. Each evaluation starts with a fresh cursor and leaves the supplied expression unchanged.
 
 #### `similarity`
 
@@ -155,6 +167,8 @@ CommandResult-like candidate 的 exitCode === 0 matcher；不读取 stdout / std
 export function equals<const T>(expected: T): BooleanMatch<unknown, T> { ... }
 ```
 
+Checks deep value equality against the supplied reference. It compares structure rather than object identity.
+
 #### `matches`
 
 ```ts
@@ -162,6 +176,8 @@ export function matches<S extends StandardSchema>(
   schema: S,
 ): BooleanMatch<unknown, StandardSchema.InferInput<S>, "value"> { ... }
 ```
+
+Validates a value using Standard Schema v1. Refinement preserves the original candidate and ignores schema transforms.
 
 #### `satisfies`
 
@@ -172,6 +188,8 @@ export function satisfies<T, R extends T = T>(
 ): BooleanMatch<T, R> | BooleanMatch<T, T> { ... }
 ```
 
+Wraps a named synchronous or asynchronous Boolean predicate as a value Match. The callback must return a Boolean and remain deterministic and free of side effects.
+
 #### `defineValueMatch`
 
 ```ts
@@ -180,6 +198,8 @@ export function defineValueMatch<T, R extends T = T>(spec: {
   readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
 }): BooleanMatch<T, R> | BooleanMatch<T, T> { ... }
 ```
+
+Defines a reusable Boolean value comparison with optional refinement. Report unknown evidence explicitly as unavailable rather than returning false.
 
 #### `defineScoreMatch`
 
@@ -190,6 +210,8 @@ export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScore
 }): ScoreMatch<T> { ... }
 ```
 
+Defines a reusable finite [0,1] measurement, optionally using managed LLM primitives. Apply thresholds through the assertion handle, not inside Match configuration.
+
 #### `eventMatch`
 
 ```ts
@@ -198,6 +220,8 @@ export function eventMatch<K extends keyof EventOptionsByType>(
   options?: EventOptionsByType[K],
 ): EventMatch<Extract<EventOccurrenceView, { readonly type: K }>> { ... }
 ```
+
+Matches a supported message or operation event. Use event-specific filters; tool filters belong on operation events.
 
 #### `mapValue`
 
@@ -246,11 +270,15 @@ Compare an exact match count only after every item in a complete collection is k
 export function defineMaterialMatch(definition: unknown): ContextualMatch { ... }
 ```
 
+Defines a synchronous context collection reader and item selector. Preserve collection completeness and unique item IDs instead of silently discarding unknown items.
+
 #### `defineContextMatch`
 
 ```ts
 export function defineContextMatch(definition: unknown): ContextualMatch { ... }
 ```
+
+Defines a synchronous readonly context reader and a Match for one fact. Return an unavailable fact explicitly when evidence cannot be read.
 
 {/* GENERATED:END expect-matchers */}
 
