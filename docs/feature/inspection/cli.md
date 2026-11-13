@@ -594,6 +594,7 @@ Experiments
 Attempts · my-agent
   Eval refund-policy
   Gap identity-mismatch
+  Changed  source:evals/refund-policy.eval.ts (3f9a1c20 → b71e04d5)
   Previous result @1K1P0VJAPVJ12 (passed)
 
   Eval weather-tool
@@ -611,6 +612,20 @@ Open: niceeval view
 `Verdicts` 与 `Pass rate` 只统计 covered 位置，缺口不计 failed；有缺口时 Pass rate 的 state 是 `partial`，人读输出保留该标记。纯计分制范围显示 `Score` 而不显示 `Pass rate`，
 规则同下文历史 Results。当前目标求值失败时不输出这张表，stderr 给出错误并提示 `niceeval show --run <run-id>`
 等固定历史读取命令。
+
+### 缺口写出变的是哪一项 {#缺口的变化}
+
+带 `explanation` 的缺口在人读输出里紧跟一段说明，内容直接取自同一份 `IdentityExplanation`，不另行比较（[T-31](../../taste.md#t-31)）：
+
+| `explanation.kind` | 说明行 |
+|---|---|
+| `changed` | 每条 delta 一行：`Changed  <selector> (<from> → <to>)`；`added` 与 `removed` 只写一侧的值并注明 `added` 或 `removed` |
+| `unexplained` | `Unexplained  <diagnostic.summary>` |
+
+一个缺口最多显示三条 delta，其余合成一行 `+N more`；完整列表由 `Next` 行的 `exp <id> --dry` 给出。
+同一个 Experiment 的全部缺口说明相同时，说明只在 `Attempts · <experiment>` 标题下写一次并注明 `all N gaps`，各缺口不再重复。
+说明相同指 delta 的数量、顺序、`selector`、`kind`、`from` 与 `to` 全部相等。
+`from` 与 `to` 沿用差异说明的有界摘要；内容哈希显示前 8 位。其余 reason 没有说明行，它们的 reason code 已经写明原因。
 
 ### 全缺口与参照结果示例
 
@@ -634,6 +649,8 @@ Reference results (from previous recorded attempts)
   Notice             Prior configuration; rerun required to update target
 
 Attempts · install/canary
+  Changed  config:agentInstalls (codex 0.144.1 → codex 0.167.2) · all 2 gaps
+
   Eval db-gpt
   Gap identity-mismatch
   Previous result @1Z2NDWH8SWVYJ (passed)

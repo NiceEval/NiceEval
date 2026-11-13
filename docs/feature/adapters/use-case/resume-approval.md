@@ -21,7 +21,7 @@ Adapter 按 request ID 处理 `input.responses`，并恢复同一会话。以下
    export default defineEval({
      description: "批准测试部署后恢复执行",
      async test(t) {
-       const waiting = await t.send("部署到测试环境，执行前请先请求批准。");
+       const waiting = await t.send("把当前分支部署到测试环境。");
        await t.check(waiting.status, equals("waiting"))
          .label("等待审批")
          .orStop();
