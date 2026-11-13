@@ -183,6 +183,15 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "sandbox-in-diff/v1";
+      readonly data: {
+        readonly pattern: string;
+        readonly flags: string;
+        readonly content: "added" | "removed" | "both";
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "direct-score/v1";
       readonly data: { readonly source: "author" };
     };
@@ -195,6 +204,9 @@ type BuiltInCriterion =
 
 `sandbox-unchanged-within/v1` 是 `t.sandbox.unchangedWithin(paths)` 的 criterion，`paths` 是至少一项的归一化保护范围。
 它不向 `sandbox-change-scope/v1` 追加 `mode` 字段；旧 reader 对新 identity 显示 `unsupported`，已有允许范围 criterion 仍可 exact decode。两种 criterion 的无变化、越界、unavailable 与持久读回分别验收。
+
+`sandbox-in-diff/v1` 是 `t.sandbox.inDiff(pattern, options?)` 的 criterion，`pattern` 与 `flags` 是正则的 source 与 flags，写法与 `not-in-diff` operation 的同名字段一致。
+它同样使用独立 identity；命中、未命中、elision 导致的 unavailable 与持久读回分别验收。
 
 这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或作者 API 对象。第三方闭包不可序列化时，writer 使用诚实的 declared/unavailable 状态，不伪造 AST。criterion 以外的 materials、evaluation、decision、policy、contribution 与 explanation retention 提供本次检查的唯一审计事实。
 

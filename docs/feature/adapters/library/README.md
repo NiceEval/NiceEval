@@ -3,33 +3,6 @@
 Adapter 作者从 `niceeval/adapter` 导入构造器、转换器与流式组合件。
 这一页从可运行代码开始；内部数据结构和不变量见 [Architecture](../architecture/README.md)。
 
-## Attempt 取消与资源释放预算
-
-普通应用以 Attempt 为运行边界，Session 与 Turn 仅属于 Agent 应用协议。
-应用可以自行提供 start、waitUntil 与 finalize；框架不生成隐式轮次。
-Agent 的 send 等待一次应用交互完成，即时应用可以等待业务事件或状态条件成立。
-两者都在等待事实后继续评估；应用决定交互与观察边界，通用 Match 不订阅事件，也不承担等待循环。
-
-`defineAdapter` 与 `AdapterContract.implement` 的 `cleanupTimeoutMs` 声明该实现的整个 cleanup 时段。
-默认 30000 ms，允许整数 1–300000 ms。预算由实现固定，不接受 Experiment、Config 或 CLI 替换。
-它进入公开 Adapter identity 和配置指纹；不同预算不能默默复用相同运行配置。
-
-`AdapterCreateContext.signal` 为 `AttemptSignal`，未取消时 reason 为 undefined。
-取消后 reason 是冻结的判别联合：timeout 包含 timeoutMs、source 和 Unix 毫秒 deadlineAt；cancelled 表示外部或 Host Effect 取消。
-source 使用执行时限的 flag、experiment、eval、config 四层词表，不通过异常文案猜测。
-
-`onCleanup` 的冻结 context 提供独立 signal、timeoutMs 与 deadlineAt。
-预算从实际进入 cleanup 开始，全部回调、晚到注册、handoff 和归档共享同一截止，不逐项重新计时。
-预算到期先关闭所有采集入口，再通知取消。应用自建 signal 不能延长框架时段。
-
-正常路径先停止输入、排空并封存事实，再执行最终 check/judge。
-执行取消时先关闭断言登记，cleanup 只允许上报用量、附件、trace 和诊断。
-abort 不证明物理请求已结束，真实完成必须来自应用回执。
-游戏测量截止与排空尾部分开，cleanup 不延长已固定的业务时间。
-
-普通 cleanup 回调抛错保留 warning 并继续其它释放。总时段超时产生 adapter-cleanup-timeout 执行错误。
-需要排空成功才能评分时，作者在正常 test 中等待 finalize。第二次 OS signal 仍可强制退出。
-
 ## Direct Agent
 
 被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineAgent`：
@@ -172,6 +145,33 @@ export default defineSandboxAgent({
 | 安装 Skills、MCP 和原生 Plugins | [配置 Coding Agent 扩展](coding-agent-extensions.md) |
 
 事件数据结构、会话状态模型和负断言完整性属于实现不变量，分别见 [标准事件模型](../architecture/events.md)、[会话状态模型](../architecture/session-state.md) 和 [断言证据](../architecture/evidence.md)。
+
+## Attempt 取消与资源释放预算
+
+普通应用以 Attempt 为运行边界，Session 与 Turn 仅属于 Agent 应用协议。
+应用可以自行提供 start、waitUntil 与 finalize；框架不生成隐式轮次。
+Agent 的 send 等待一次应用交互完成，即时应用可以等待业务事件或状态条件成立。
+两者都在等待事实后继续评估；应用决定交互与观察边界，通用 Match 不订阅事件，也不承担等待循环。
+
+`defineAdapter` 与 `AdapterContract.implement` 的 `cleanupTimeoutMs` 声明该实现的整个 cleanup 时段。
+默认 30000 ms，允许整数 1–300000 ms。预算由实现固定，不接受 Experiment、Config 或 CLI 替换。
+它进入公开 Adapter identity 和配置指纹；不同预算不能默默复用相同运行配置。
+
+`AdapterCreateContext.signal` 为 `AttemptSignal`，未取消时 reason 为 undefined。
+取消后 reason 是冻结的判别联合：timeout 包含 timeoutMs、source 和 Unix 毫秒 deadlineAt；cancelled 表示外部或 Host Effect 取消。
+source 使用执行时限的 flag、experiment、eval、config 四层词表，不通过异常文案猜测。
+
+`onCleanup` 的冻结 context 提供独立 signal、timeoutMs 与 deadlineAt。
+预算从实际进入 cleanup 开始，全部回调、晚到注册、handoff 和归档共享同一截止，不逐项重新计时。
+预算到期先关闭所有采集入口，再通知取消。应用自建 signal 不能延长框架时段。
+
+正常路径先停止输入、排空并封存事实，再执行最终 check/judge。
+执行取消时先关闭断言登记，cleanup 只允许上报用量、附件、trace 和诊断。
+abort 不证明物理请求已结束，真实完成必须来自应用回执。
+游戏测量截止与排空尾部分开，cleanup 不延长已固定的业务时间。
+
+普通 cleanup 回调抛错保留 warning 并继续其它释放。总时段超时产生 adapter-cleanup-timeout 执行错误。
+需要排空成功才能评分时，作者在正常 test 中等待 finalize。第二次 OS signal 仍可强制退出。
 
 ## SDK 与协议转换器
 

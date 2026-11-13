@@ -166,7 +166,7 @@ interface Sandbox extends SandboxOperations, SandboxTransferOperations {
 }
 
 interface EvalSandbox extends SandboxOperations, SandboxTransferOperations {
-  // 归因断言声明:changedPaths / noChanges / fileChanged / fileDeleted / notInDiff。
+  // 归因断言声明:changedPaths / noChanges / changedOnlyWithin / unchangedWithin / fileChanged / fileDeleted / inDiff / notInDiff。
   // 完整契约见「断言 Sandbox 结果」;不存在通用或延迟的 diff subject。
 }
 
