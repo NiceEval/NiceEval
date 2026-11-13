@@ -5,6 +5,11 @@ let connectCount = 0;
 const connect = ssh2.Client.prototype.connect;
 ssh2.Client.prototype.connect = function(config) {
   appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `connect ${++connectCount}\n`);
+  if (disconnected && connectCount <= 3) {
+    appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `reconnect-reset ${connectCount}\n`);
+    queueMicrotask(() => this.emit("error", new Error("read ECONNRESET (fixture reconnect)")));
+    return this;
+  }
   return connect.call(this, config);
 };
 const exec = ssh2.Client.prototype.exec;
