@@ -50,26 +50,6 @@
     "agents/types.d.mts#StagedAgentInstallContext",
     "agents/types.d.mts#TurnInput",
     "agents/ui-message-stream.d.mts#UIMessagePartLike",
-    "agents/ui-message-stream.d.mts#UiMessageStreamAgentOptions",
-    "experiment/host/cli/debug-protocol.d.mts#DebugPlanDocument",
-    "sandbox/docker-profile/errors.d.mts#DockerProfileErrorOptions",
-    "sandbox/docker-profile/errors.d.mts#dockerProfileError",
-    "sandbox/docker-profile/registry.d.mts#DockerProfileRegistryEntry",
-    "sandbox/docker-profile/registry.d.mts#DockerProfileRegistryIndex",
-    "sandbox/docker-profile/registry.d.mts#DockerProfileRegistryInput",
-    "sandbox/docker-profile/registry.d.mts#DockerProfileRegistryOptions",
-    "sandbox/docker-profile/registry.d.mts#ResolvedDockerProfileEntry",
-    "sandbox/docker-profile/schema.d.mts#DockerExecutionProfileSecurityLevel",
-    "sandbox/docker-profile/schema.d.mts#DockerExecutionProfileV1",
-    "sandbox/docker-profile/schema.d.mts#DockerExecutionProfileV1Draft",
-    "sandbox/docker-profile/schema.d.mts#DockerProfileUnixEndpoint",
-    "sandbox/docker-profile/schema.d.mts#decodeDockerExecutionProfile",
-    "sandbox/docker-profile/schema.d.mts#defineDockerExecutionProfile",
-    "sandbox/docker-profile/schema.d.mts#dockerExecutionProfileSemanticPolicyRevisionOf",
-    "sandbox/docker-profile/schema.d.mts#dockerExecutionProfileV1Digest",
-    "sandbox/docker-profile/schema.d.mts#dockerProfileDigestOf",
-    "sandbox/docker-profile/schema.d.mts#dockerProfilePublicSummaryOf",
-    "sandbox/docker-profile/schema.d.mts#dockerProfileSemanticPolicyRevisionOf",
-    "sandbox/docker-profile/schema.d.mts#isDockerExecutionProfileV1"
+    "agents/ui-message-stream.d.mts#UiMessageStreamAgentOptions"
   ]
 }

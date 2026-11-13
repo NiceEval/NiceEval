@@ -266,6 +266,7 @@ export const DebugPlanDocumentSchema = Schema.Struct({
   commandPlan: CommandPlanSchema,
 });
 
+/** Describes the readonly debug plan before Sandbox creation; planned commands and cache eligibility are declarations rather than proof of execution or a cache hit. */
 export type DebugPlanDocument = Schema.Schema.Type<typeof DebugPlanDocumentSchema>;
 
 /** Strictly decode the current candidate's sole `niceeval debug --json` document. */

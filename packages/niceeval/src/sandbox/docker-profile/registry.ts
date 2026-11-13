@@ -17,6 +17,7 @@ export interface DockerProfileRegistryFileFacts {
   readonly parentModes?: readonly number[];
 }
 
+/** Associates a profile alias with a descriptor and optional file facts; a descriptor value alone does not establish host file ownership. */
 export interface DockerProfileRegistryEntry {
   readonly alias: string;
   readonly profile?: unknown;
@@ -25,11 +26,13 @@ export interface DockerProfileRegistryEntry {
   readonly fileFacts?: DockerProfileRegistryFileFacts;
 }
 
+/** Sets expected descriptor ownership for registry validation; pure parsing cannot invent missing file permission evidence. */
 export interface DockerProfileRegistryOptions {
   /** descriptor 必须由 root 持有；未提供 file facts 时纯解析不会臆造权限事实。 */
   readonly expectedOwnerUid?: number;
 }
 
+/** Binds a registry alias to a decoded profile and descriptor digest; this does not attest dedicated-kernel/v1 execution. */
 export interface ResolvedDockerProfileEntry {
   readonly alias: string;
   readonly profile: DockerExecutionProfileV1;
@@ -38,10 +41,12 @@ export interface ResolvedDockerProfileEntry {
   readonly source?: string;
 }
 
+/** Contains resolved profile aliases and validated descriptor identities; registry membership does not prove live execution capability. */
 export interface DockerProfileRegistryIndex {
   readonly entries: readonly ResolvedDockerProfileEntry[];
 }
 
+/** Accepts an alias map or explicit registry entries; aliases are lookup names rather than runtime isolation attestations. */
 export type DockerProfileRegistryInput =
   | readonly DockerProfileRegistryEntry[]
   | Readonly<globalThis.Record<string, unknown>>

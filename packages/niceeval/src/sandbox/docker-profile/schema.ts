@@ -28,10 +28,12 @@ const BEFORE_CACHE_FILESYSTEM_FEATURES: readonly [
   "independent-image",
 ] = Object.freeze(["ext4", "fixed-size", "fully-allocated", "independent-image"]);
 
+/** Distinguishes managed-rootless and raw DinD storage profiles; neither establishes the dedicated kernel required for supported nested Docker. */
 export type DockerExecutionProfileSecurityLevel =
   | "managed-rootless/v1"
   | "raw-dind-storage/v1";
 
+/** Names a Unix socket and expected peer UID; a path alone does not establish the peer's identity. */
 export interface DockerProfileUnixEndpoint {
   readonly path: string;
   readonly peerUid: number;
@@ -107,6 +109,7 @@ export interface DockerProfileBeforeCacheFullCopyCapabilityV1 {
   readonly filesystemIdentity: string;
 }
 
+/** Describes Docker sockets, host storage, capacity and policy in a versioned descriptor; it is not a supported substitute for an Incus dedicated-kernel receipt. */
 export interface DockerExecutionProfileV1 {
   readonly schemaVersion: 1;
   readonly profileId: string;
@@ -163,6 +166,7 @@ export interface DockerExecutionProfileV1 {
   readonly policy: DockerRawStoragePolicy | DockerManagedRootlessPolicy;
 }
 
+/** Supplies profile fields before the semantic policy revision is derived; use defineDockerExecutionProfile to compute and validate the completed descriptor. */
 export type DockerExecutionProfileV1Draft =
   Omit<DockerExecutionProfileV1, "semanticPolicyRevision">;
 
@@ -488,12 +492,14 @@ function semanticPolicyJson(input: DockerExecutionProfileSemanticInput): JsonVal
   };
 }
 
+/** Derives a short revision from the profile's semantic policy fields. It is not the digest of the complete descriptor. */
 export function dockerExecutionProfileSemanticPolicyRevisionOf(
   input: DockerExecutionProfileSemanticInput,
 ): string {
   return digestOf(semanticPolicyJson(input)).slice(0, 8);
 }
 
+/** Computes the short semantic-policy revision. Unlike dockerProfileDigestOf, it does not hash the entire descriptor. */
 export const dockerProfileSemanticPolicyRevisionOf =
   dockerExecutionProfileSemanticPolicyRevisionOf;
 
@@ -548,6 +554,7 @@ function schemaError(value: unknown, error: SchemaIssue.Issue): DockerProfileErr
   });
 }
 
+/** Strictly validates and freezes a Docker profile descriptor, including capacity consistency. It does not probe the host or establish dedicated-kernel execution. */
 export function decodeDockerExecutionProfile(value: unknown): DockerExecutionProfileV1 {
   const decoded = Schema.decodeUnknownResult(DockerExecutionProfileV1Schema, ParseOptions)(value);
   if (Result.isFailure(decoded)) throw schemaError(value, decoded.failure.issue);
@@ -608,6 +615,7 @@ export function decodeDockerExecutionProfile(value: unknown): DockerExecutionPro
 }
 
 
+/** Derives the semantic policy revision and validates a Docker profile draft. Descriptor construction does not activate or attest its host resources. */
 export function defineDockerExecutionProfile(
   input: DockerExecutionProfileV1Draft,
 ): DockerExecutionProfileV1 {
@@ -618,6 +626,7 @@ export function defineDockerExecutionProfile(
 }
 
 
+/** Checks whether a value passes Docker profile decoding and consistency validation. A true result does not establish host readiness or dedicated-kernel isolation. */
 export function isDockerExecutionProfileV1(value: unknown): value is DockerExecutionProfileV1 {
   try {
     decodeDockerExecutionProfile(value);
@@ -706,12 +715,15 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
   };
 }
 
+/** Validates a complete descriptor and returns its canonical SHA-256 identity. This is a content digest rather than proof of live host capability. */
 export function dockerExecutionProfileV1Digest(profile: DockerExecutionProfileV1): string {
   return `sha256:${digestOf(canonicalJson(decodeDockerExecutionProfile(profile)))}`;
 }
 
+/** Computes the validated descriptor's canonical SHA-256 identity. It is the same operation as dockerExecutionProfileV1Digest, not a host probe. */
 export const dockerProfileDigestOf = dockerExecutionProfileV1Digest;
 
+/** Validates a descriptor and returns its bounded identity and capacity summary. The summary is not the complete descriptor or a runtime attestation. */
 export function dockerProfilePublicSummaryOf(
   profile: DockerExecutionProfileV1,
 ): DockerProfilePublicSummary {

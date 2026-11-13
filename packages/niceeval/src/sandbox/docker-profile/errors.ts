@@ -24,6 +24,7 @@ export type DockerProfileErrorCode =
   | "sandbox.docker-profile-required"
   | "sandbox.docker-profile-resources-required";
 
+/** Supplies a Docker profile diagnostic code, location and optional candidates; diagnostic details must not carry secrets. */
 export interface DockerProfileErrorOptions {
   readonly code: DockerProfileErrorCode;
   readonly message: string;
@@ -37,6 +38,7 @@ export interface DockerProfileErrorOptions {
 /** 纯数据 profile 边界的统一、可判别错误。 */
 export class DockerProfileError extends Data.TaggedError("DockerProfileError")<DockerProfileErrorOptions> {}
 
+/** Constructs a structured Docker profile error with copied, frozen candidates. Creating the error neither validates a profile nor probes its host. */
 export function dockerProfileError(options: DockerProfileErrorOptions): DockerProfileError {
   return new DockerProfileError({
     ...options,
