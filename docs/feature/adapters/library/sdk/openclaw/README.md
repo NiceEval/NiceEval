@@ -30,9 +30,11 @@ const agent = openClawAgent({
 
 ## 行为轨与会话
 
-行为轨优先来自 session transcript（`~/.openclaw/agents/**/sessions/*.jsonl`，pi-agent 系消息格式）。
+行为轨来自当前 session 的原生 transcript（pi-agent 系消息格式）。
 工具调用按 `toolCall` / `toolResult` 的 call ID 配对。
-采集优先读 `--json` 封包里的 `meta.agentMeta.sessionFile`；否则取该目录 mtime 最新的 session `*.jsonl`，并排除同目录 `*.trajectory.jsonl`（旁路轨迹，不是消息轨）。
+默认 CLI `2026.11.3` 的会话由 SQLite 存储。Adapter 从实际运行的 CLI 定位官方 `openclaw/plugin-sdk/session-transcript-runtime`，按 session id 读取原生事件；不直接查询其数据库表。
+显式选择未提供该 session accessor 或 runtime 初始化入口的旧版 CLI 时，采集读 `--json` 封包里的 `meta.agentMeta.sessionFile`；否则取 session 目录 mtime 最新的 `*.jsonl`，并排除 `*.trajectory.jsonl`（旁路轨迹）。
+SDK accessor 失败时声明证据不可用，不用旧 JSONL 或其它 session 的轨迹补齐。
 
 transcript 拿不到时，只保留 `--json` 封包的最终回复，并声明负断言不可信——不从最终文本猜测工具行为。
 

@@ -43,6 +43,37 @@ const SKILL_DIR = ".agents/skills";
 /** 自定义 OpenAI 兼容网关在 openclaw.json 里的 provider id。 */
 const COMPAT_PROVIDER = "compat";
 
+// Resolve the public SDK from the exact CLI selected by ensure, rather than
+// from NiceEval's host dependencies. Modern OpenClaw owns its SQLite schema;
+// its accessor returns the same raw events consumed by the transcript parser.
+const READ_SESSION_TRANSCRIPT = `
+import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+const require = createRequire(realpathSync(process.argv[1]));
+let transcriptPath;
+let runtimePath;
+try {
+  transcriptPath = require.resolve("openclaw/plugin-sdk/session-transcript-runtime");
+  runtimePath = require.resolve("openclaw/plugin-sdk/runtime-config-snapshot");
+} catch (error) {
+  if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED" || error.code === "MODULE_NOT_FOUND") process.exit(42);
+  throw error;
+}
+const transcript = await import(pathToFileURL(transcriptPath).href);
+const runtime = await import(pathToFileURL(runtimePath).href);
+if (typeof transcript.resolveSessionTranscriptIdentity !== "function" ||
+    typeof transcript.readSessionTranscriptEvents !== "function" ||
+    typeof runtime.captureRuntimeConfigAsyncReader !== "function") process.exit(42);
+await runtime.captureRuntimeConfigAsyncReader()();
+const target = await transcript.resolveSessionTranscriptIdentity({
+  agentId: "main", sessionId: process.argv[2], sessionKey: "",
+});
+for (const event of await transcript.readSessionTranscriptEvents(target)) {
+  process.stdout.write(JSON.stringify(event) + "\\n");
+}
+`;
+
 export interface OpenClawConfig {
   /** 模型 API key。省略时读 OPENCLAW_API_KEY,再回落 ANTHROPIC_API_KEY。 */
   apiKey?: string;
@@ -280,22 +311,30 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
           // 首轮已用自发 id 落地时不覆盖)。
           ctx.session.capture(runJson.sessionId);
 
-          // 完整工具轨迹的唯一来源:session transcript。
-          // 优先读封包给出的 sessionFile(精确);否则在 agents 目录取最新 *.jsonl,
-          // 但排除同目录旁路产物 *.trajectory.jsonl(mtime 常更新、却不是消息轨——
-          // 误读会导致 events 为空、整轮 coverage 降成 unavailable)。
+          // Read the exact session through OpenClaw's public storage accessor.
+          // Only CLI versions without that export use the legacy JSONL path.
           let raw: string | undefined;
-          if (runJson.sessionFile) {
-            try {
-              raw = await sb.readText(runJson.sessionFile);
-            } catch {
-              raw = undefined;
+          const transcript = await sb.runCommand("node", [
+            "--input-type=module", "-e", READ_SESSION_TRANSCRIPT,
+            openclawBin, runJson.sessionId ?? sessionId,
+          ], { signal });
+          if (transcript.exitCode === 0) {
+            raw = transcript.stdout;
+          } else if (transcript.exitCode === 42) {
+            if (runJson.sessionFile) {
+              try {
+                raw = await sb.readText(runJson.sessionFile);
+              } catch {
+                raw = undefined;
+              }
             }
-          }
-          if (raw === undefined) {
-            raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents", {
-              excludeName: /\.trajectory\.jsonl$/i,
-            });
+            if (raw === undefined) {
+              raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents", {
+                excludeName: /\.trajectory\.jsonl$/i,
+              });
+            }
+          } else {
+            ctx.log("openclaw session accessor failed; tool trace was not collected");
           }
           const parsed = parseOpenClawTranscript(raw);
           const events: StreamEvent[] = [...parsed.events];
