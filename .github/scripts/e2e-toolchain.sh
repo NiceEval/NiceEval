@@ -13,9 +13,12 @@ case "$mode" in
     mkdir "$stage/bin"
     cp -L "$(command -v node)" "$stage/bin/node"
     cp -L "$(command -v pnpm)" "$stage/bin/pnpm"
-    # pnpm's native executable loads the adjacent dist tree; copying only
-    # the executable is not a portable installation.
-    cp -R "${PNPM_HOME:?expected pnpm/setup installation}/dist" "$stage/bin/dist"
+    # pnpm/setup links dist to the producer's tool cache. Materialize the
+    # tree: preserving that absolute link passes capture on this runner but
+    # leaves the archive unusable on another runner or inside a container.
+    cp -RL "${PNPM_HOME:?expected pnpm/setup installation}/dist" "$stage/bin/dist"
+    test ! -L "$stage/bin/dist"
+    test -f "$stage/bin/dist/pnpm.mjs"
     cp -R "${CONCORD_PACKAGE_ROOT:?expected installed Concord package}" "$stage/concord"
     if [[ -f "$stage/concord/bin/concord" ]]; then
       ln -s ../concord/bin/concord "$stage/bin/concord"
@@ -28,7 +31,11 @@ case "$mode" in
     node - "$stage/versions.json" <<'NODE'
 const fs = require('node:fs');
 const cp = require('node:child_process');
-const version = command => cp.execFileSync(command, ['--version'], { encoding: 'utf8' }).trim();
+const version = command => {
+  const actual = cp.execFileSync(command, ['--version'], { encoding: 'utf8' }).trim();
+  console.log(`${command}: ${actual}`);
+  return actual;
+};
 fs.writeFileSync(process.argv[2], JSON.stringify({
   platform: process.platform, arch: process.arch,
   node: version('node'), pnpm: version('pnpm'), concord: version('concord'),
