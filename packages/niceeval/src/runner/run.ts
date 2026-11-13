@@ -1,4 +1,3 @@
-import { captureAssertionFeedback } from "./feedback/assertions.ts";
 // @concord-file
 // @concord-implements docs/feature/experiments/architecture/README.md
 // @concord-implements docs/feature/run/architecture/lifecycle.md
@@ -7,6 +6,7 @@ import { captureAssertionFeedback } from "./feedback/assertions.ts";
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
+import { captureAssertionFeedback } from "./feedback/assertions.ts";
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
 import { adapterIdentity } from "../adapter.ts";
 import { boundedErrorText } from "../shared/bounded-error-text.ts";
