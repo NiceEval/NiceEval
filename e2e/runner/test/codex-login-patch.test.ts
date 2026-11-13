@@ -2,7 +2,7 @@ import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { expect, test } from "vitest";
+import { expect, it, test } from "vitest";
 
 // @feature docs/feature/adapters/README.md
 test.concurrent("Codex 准备完成后，非 root 用户在登录 shell 中使用原生 apply_patch", async () => {
@@ -15,7 +15,7 @@ test.concurrent("Codex 准备完成后，非 root 用户在登录 shell 中使�
 });
 
 // @feature docs/feature/adapters/README.md
-test.concurrent.each([
+it.concurrent.each([
   ["npm-missing-patch", false, false],
   ["native-missing-patch", true, false],
   ["npm-ready", false, true],
