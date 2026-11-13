@@ -18,7 +18,9 @@ test.concurrent("commands and open stdin resume together after client disconnect
     console.info("Instabox command timing (single ms, total20 ms):", log.match(/^timing (.+)$/m)?.[1]);
     expect(log, result.diagnostic()).toContain("client-destroyed");
     expect(result.exitCode, result.diagnostic()).toBe(0);
-    expect(log.match(/^connect /gm)).toHaveLength(4);
+    expect(log).toContain("write-ack-destroyed");
+    expect(log).toContain("eof-ack-destroyed");
+    expect(log.match(/^connect /gm)).toHaveLength(6);
     expect(log.match(/^reconnect-reset /gm)).toHaveLength(2);
     const locator = result.expEvalEvents()[0]?.locator;
     expect(locator).toBeDefined();
