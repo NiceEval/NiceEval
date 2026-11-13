@@ -155,6 +155,7 @@ niceeval show [--record <file>]
 niceeval show --run <run-id>... [--record <file>]
 niceeval show --experiment <experiment-id>... [--record <file>]
 niceeval show @<locator> [--record <file>]
+niceeval show @<locator> --assertions [--entry <entry-id>] [--record <file>]
 niceeval show @<locator> --source [--record <file>]
 niceeval show @<locator> --execution [--expand <stable-id>] [--record <file>]
 niceeval show @<locator> --timing [--record <file>]
@@ -176,8 +177,9 @@ niceeval show @<locator> --diff [--record <file>]
 
 `@<locator>` 选中一个 Attempt。一条命令最多给一个 locator，它不能和 `--run` 或 `--experiment` 同时使用；`--run` 和 `--experiment` 之间也不能同时使用。
 
-选中 Attempt 后，可以加下面任意一个选项看某一方面。这五个选项互斥，都必须配合 Attempt locator：
+选中 Attempt 后，可以加下面任意一个选项看某一方面。这六个选项互斥，都必须配合 Attempt locator：
 
+- `--assertions`：断言的角色、判定、分数与理由；用 `--entry <entry-id>` 查看一条断言。
 - `--source`：记录下来的源码信息，以及每条断言在源码里的位置。
 - `--execution`：执行过程的概要，篇幅有上限。
 - `--timing`：各阶段的耗时。
@@ -189,6 +191,18 @@ niceeval show @<locator> --diff [--record <file>]
 - 用 `--actor <id>` 和 `--type <event-type>` 按参与方和事件类型筛选。
 - 用 `--continuation <token>` 翻页时，要带上相同的筛选条件。
 - 用 `--expand <stable-id>` 直接展开一项详情。ID 必须取自概要里的 `itemId`、`toolOccurrenceId` 或 `commandId`，不能用位置序号。`--expand` 只能和 `--execution` 一起用，也不能和筛选、翻页参数同时出现。
+
+### 断言角色与参照结果
+
+`--assertions`、`--entry` 的条目标题和运行结束时的断言反馈使用相同标记：
+
+- `GATE pass` / `GATE fail` / `GATE n/a`：该条是否满足 gate。
+- `SCORE earned/possible`：计分贡献；同时承担 gate 的条目并列显示两种标记。
+- `NOTE met` / `NOTE unmet`：只记录条件是否满足，包括 stop-only 条件。
+
+详情先显示 `Verdict failed · Score 1/4`，再显示 `Gates 1 pass, 1 fail · Scored 3 · Notes 1 met, 1 unmet`。条目自己的名称即使含有“gate”，也不决定它的角色。机器 JSON 与 query 继续保留结构化字段。
+
+当前计划有缺口且存在旧结果时，总览显示 `Reference results (from previous recorded attempts)`。`Previous attempts N of K gaps` 只统计当前缺口能找到的上次结果；其后列出 `Verdicts`、通过制的 `Pass rate` 和计分制的 `Score earned/possible`。每条 `Previous result @…` 后显示判定，计分制同时显示分数。这些结果来自先前配置，更新当前目标需要重跑。`niceeval show --reference` 展开相同的参照摘要和条目。
 
 ## `niceeval view`
 
@@ -272,11 +286,11 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 | `--json` | `niceeval show` | boolean | 写出该命令的机器文档或事件流。 |
 | `--output` | `niceeval show` | string | Output format: text (default) or json. |
 | `--eval` | `niceeval show` | string | Filter Eval ID path prefix; requires --experiment with --assertions. |
-| `--assertions` | `niceeval show` | boolean | Show Assertion decisions, scores, and reasons. |
+| `--assertions` | `niceeval show` | boolean | Show Assertion roles, Verdict, Score, and reasons. |
 | `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |
 | `--compact` | `niceeval show` | boolean | Omit raw Assertion materials and context rows (default). |
 | `--full` | `niceeval show` | boolean | Include complete Assertion materials and context rows. |
-| `--reference` | `niceeval show` | boolean | Expand historical published reference results. |
+| `--reference` | `niceeval show` | boolean | Show previous gap results with Verdicts, pass rate, and Score. |
 | `--exp` | `niceeval show` | string[] | Show one Experiment; repeat to show more. |
 | `--run` | `niceeval show` | string[] | 显示一个已封口的 Run；可重复传入。 |
 | `--experiment` | `niceeval show` | string[] | 显示一个精确的 Experiment；可重复传入。 |

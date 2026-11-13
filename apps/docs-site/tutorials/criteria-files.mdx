@@ -72,6 +72,6 @@ When you changed a test but it shows `reuse`, first check whether the file was r
 
 ## Common mistakes
 
-- **`loadText` must be at the module top level.** Whether to rerun is decided before the run starts; reading in `test(t)` only happens at run time, which is too late. NiceEval reports an error directly and tells you to move it to the top level.
+- **Read at module top level during NiceEval discovery.** `loadText`, `loadJson`, `loadYaml`, and `loadCriteria` can live in Eval files or statically imported shared modules; inputs are registered for every reachable Eval. In a process that has never entered discovery, they only read and return, without registration, so ordinary unit tests can import shared modules directly. Later discovery in that process evaluates and registers the shared inputs again. Once the process has entered discovery, calls after discovery (including `test(t)` and lifecycle hooks) throw `LoaderOutsideDiscoveryError`. Its message includes the path and advice to move the read into a module-level constant.
 - **Read files the Agent changed with `t.sandbox`, not `loadText`.** Files in the Sandbox are this run's results, different each time, and should not decide whether to rerun. Read them with `await t.sandbox.readText(path)`, then pass the string to `t.check`.
 - When the scoring standard is structured data (such as a case lookup table), use `loadYaml` / `loadJson`; see [Data-Driven Tests](/tutorials/dataset-fanout).

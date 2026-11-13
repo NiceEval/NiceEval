@@ -275,7 +275,7 @@ turn.calledTool(
 
 turn.calledTool(
   toolMatch("read_file", {
-    input: referencesAnyPath([".env", "secrets/**"]),
+    input: referencesAnyPath([".env", "secrets"]),
   }),
 ).label("Read a restricted path");
 
@@ -283,6 +283,8 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 ```
 
 Use `jsonMatch` for ordinary JSON, `referencesAnyPath` for paths, and `commandMatch` for command tokens. When output is absent, material is incomplete, or HITL has not finished, the Match becomes unavailable; it does not pretend to be an ordinary mismatch.
+
+`referencesAnyPath` searches literal path components and directory prefixes, with case-sensitive matching by default. It does not support glob patterns or interpret command semantics. Use `secrets`, rather than `secrets/**`, for that directory. For example, `rg --files -g '!secrets/**'` still mentions `secrets` and matches even though it excludes the directory. A match does not prove that a file was read or changed. Use `commandMatch` for command arguments and file-change assertions for changes.
 
 For complete signatures, material states, and three-valued counting rules, see [Scoped assertions](https://github.com/NiceEval/NiceEval/blob/main/docs/feature/assertions/library/scoped-assertions.md).
 

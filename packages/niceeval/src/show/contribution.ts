@@ -79,11 +79,11 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
   json: option({ type: "boolean", help: help("Print Inspection documents as JSON Lines.") }),
   output: option({ type: "string", short: "o", help: help("Output format: text (default) or json.") }),
   eval: option({ type: "string", help: help("Filter Eval ID path prefix; requires --experiment with --assertions.") }),
-  assertions: option({ type: "boolean", help: help("Show Assertion decisions, scores, and reasons.") }),
+  assertions: option({ type: "boolean", help: help("Show Assertion roles, Verdict, Score, and reasons.") }),
   entry: option({ type: "string", help: help("Select one exact Assertion entry ID; requires --assertions.") }),
   compact: option({ type: "boolean", help: help("Omit raw Assertion materials and context rows (default).") }),
   full: option({ type: "boolean", help: help("Include complete Assertion materials and context rows.") }),
-  reference: option({ type: "boolean", help: help("Expand historical published reference results.") }),
+  reference: option({ type: "boolean", help: help("Show previous gap results with Verdicts, pass rate, and Score.") }),
   exp: option({ type: "string", multiple: true, help: help("Show one Experiment; repeat to show more.") }),
   record: option({
     type: "string",
@@ -159,11 +159,11 @@ Selectors:
   --all                         Show Attempts hidden by compact Results.
 
 Attempt details:
-  --assertions                  Show Assertion decisions, scores, and reasons.
+  --assertions                  Show Assertion roles, Verdict, Score, and reasons.
   --entry <id>                  Select one Assertion; requires --assertions.
   --compact                     Omit raw materials and context rows (default).
   --full                        Include complete materials and context rows.
-  --reference                   Expand historical published reference results.
+  --reference                   Show previous gap results with Verdicts, pass rate, and Score.
   --json, -o json               Print Inspection documents as JSON Lines.
   -o text                       Print the terminal view (default).
   --source                      Show captured sources and Assertion sites.
