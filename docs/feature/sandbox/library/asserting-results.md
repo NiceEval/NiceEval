@@ -22,6 +22,7 @@ t.sandbox.fileChanged("src/index.ts", {
 });
 t.sandbox.fileDeleted("src/legacy.ts");
 t.sandbox.notInDiff(/console\.log/, { content: "both" });
+t.sandbox.inDiff(/it\("rejects an expired token"/, { content: "added" });
 ```
 
 | API | 判定 |
@@ -33,6 +34,7 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 | `fileChanged(path, options?)` | 在至少一个 agent send window 找到该 path 的一个 endpoint delta；`status`、`before` 与 `after` 必须同时满足同一条变化。|
 | `fileDeleted(path)` | 找到 agent 归因的 `deleted` endpoint delta；它不声明该文件在 Attempt 最终不存在。|
 | `notInDiff(pattern, options?)` | 在变化路径和运行时结构化 changed-hunk corpus 中找不到 pattern。`content` 选 `added`、`removed` 或默认的 `both`。|
+| `inDiff(pattern, options?)` | 在同一份变化路径与 changed-hunk corpus 中至少找到一处 pattern。`content` 的取值与默认值同 `notInDiff`。|
 
 `changedPaths` 回答“改动恰好是这些文件”，`changedOnlyWithin` 回答“改动没有越出这个范围”。
 后者用于授权范围检查：agent 可以不改，也可以只改范围内的一部分。
@@ -49,6 +51,11 @@ t.sandbox.notInDiff(/console\.log/, { content: "both" });
 变化的归因单位是一次 `t.send()` 的两个端点，而不是 syscall 审计。不同 send 内修改后又还原仍可见；同一 send 内还原到相同端点则没有 delta。`fileChanged()` 的内容 matcher 只读取该候选的 before/after endpoint；内容被 binary 或 oversized elision 取代时，只有依赖该内容的一次匹配会是 `unavailable`。路径和 status 本身仍可确定。
 
 `notInDiff()` 从不扫描未变化上下文。路径命中或已知 added/removed hunk 命中立即为 mismatch；没有命中但所选内容侧存在 binary 或 oversized elision 时为 unavailable。`content` 未参与的路径判定不因 elision 失去确定性。
+
+`inDiff()` 回答“改动里有没有出现这段内容”，不要求事先知道它落在哪个文件；已知路径时用 `fileChanged(path, { after })`（[T-25](../../../taste.md#t-25)）。
+它读取的范围、`content` 选项与参数校验都和 `notInDiff()` 相同。路径命中或已知 hunk 命中即为 match；没有命中且所选内容侧存在 elision 时为 unavailable，其余为 mismatch。
+两者在 unavailable 时结果相同，所以不是逻辑取反。pattern 同样会与变化路径比较：只想匹配内容时，写一个不会出现在路径里的 pattern。
+match 的 Evidence 给出首个命中的路径与有界预览。`inDiff` 使用独立的 criterion `sandbox-in-diff/v1`，不向已封口的 `sandbox-result/v1` 追加 operation。
 
 Runner 在作者 settle 后只导出并冻结一次 workspace diff 语义值。它是 Assertion evaluator 与 FileChanges collector
 共享的内存输入。封口时 collector 以归因策略、采集状态和按顺序排列的 send 区间端点轨迹形成 origin Attempt 的
