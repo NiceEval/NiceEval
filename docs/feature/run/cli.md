@@ -3,10 +3,11 @@
 Run 生命周期命令为：
 
 ```sh
-niceeval run list [--invocation <invocation-id>] [--record <file>] [--json]
+niceeval run list [--state <state>]... [--experiment <id-prefix>] [--limit <n>] [--invocation <invocation-id>] [--record <file>] [--json]
 niceeval show --run <run-id> [--record <file>] [--json]
 niceeval run delete <run-id> [--yes] [--json]
 niceeval run recover <run-id> [--yes] [--json]
+niceeval run recover --orphaned [--yes] [--json]
 niceeval run import <record-file> [--json]
 niceeval run export --run <run-id> [--run <run-id>...] --out <file> [--json]
 niceeval invocation list [--all] [<experiment-prefix>] [--json]
@@ -19,6 +20,19 @@ niceeval invocation show <invocation-id> [--json]
 开始/结束时间、`published / expected` coverage 与 invocationId。`active` 的空 Planned attempt 显示 pending；终态空 Planned attempt 显示
 闭合 absence reason。
 
+列表按开始时间从新到旧排列，开始时间相同时按 Run ID。`--state` 可重复，取值为 `active`、`completed`、`interrupted`、`failed`；
+`--experiment` 按 Experiment ID 前缀过滤；`--limit` 只保留最前面的 n 项，并在末尾写出被省略的数量。过滤只缩小列表，不改变任何 Run。
+
+每个 `active` Run 另带一项 owner 观察：
+
+| 取值 | 含义 |
+|---|---|
+| `owner alive` | owner 进程仍在，或 heartbeat 仍在前进 |
+| `owner gone` | NiceEval 能证明 owner 已终止；这个 Run 可以 recover |
+| `owner unknown` | 无法证明；例如 owner 在另一台机器上 |
+
+`owner gone` 的判定与 `run recover` 使用同一份证明，列表不放宽它。存在 `owner gone` 的 Run 时，Human 输出末尾给出 `Next: niceeval run recover --orphaned`。
+
 `show --run` 消费唯一 canonical Run Inspection operation `run.get`，不拼接多份近义 operation，也不使用 Run Host 自己的投影。结果包含 Run identity、state、
 expected/published/missing、Planned attempt bindings、Attempt locators、absence、Verdict、score、Evidence、usage 与 limitations。
 
@@ -28,6 +42,11 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 
 `run recover` 只在 NiceEval 能证明旧 owner 已终止时 fence writer generation 并把 Run 收口为 `interrupted`。
 它先进入可检查、可重试的 `recovering`，再以匹配 generation 收口；证据不足时拒绝，且不删除任何已发布 Attempt。
+
+`run recover --orphaned` 对每个 `owner gone` 的 `active` Run 执行同一个 recover，不接受其它选择条件。
+它先列出将要收口的 Run 并请求一次确认；`--yes` 跳过确认。`owner alive` 与 `owner unknown` 的 Run 原样跳过并各写出原因。
+每个 Run 独立收口：某一个失败不撤销已经收口的 Run。全部可证明的 Run 都收口时退出码为 0，任一 recover 失败时非零。
+没有可收口的 Run 时输出 `No orphaned runs` 并以 0 退出。`--json` 逐项给出 Run ID、结果与跳过或失败的原因。
 
 `session list` 默认只列 active Invocation；`--all` 加入已收口的 durable Session。`session show` 以 exact invocation ID
 显示这次 Invocation 的 terminal projection、created Run IDs、completion 与 publication cutoff；它不会重新构建 live 面板，也不提供后台接管。

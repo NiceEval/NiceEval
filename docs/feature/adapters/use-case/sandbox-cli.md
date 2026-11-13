@@ -52,6 +52,8 @@
    ```
 
    预期输出：Human 进度显示 `checking Codex CLI <version>`，缺少锁定版本时继续显示安装进度，最后显示 `Codex CLI <version> ready`。
+   探测未命中时，中间多一行 `probe miss: <原因>`，写明镜像里差的是哪一项。
+   Provider 支持 before 缓存时，同一 Experiment 的第二条 Attempt 从缓存恢复已安装的 CLI，进度只有 `checking` 与 `ready` 两行。
    `<version>` 表示 Adapter 锁定的版本。协议返回 completed Turn 时，完成检查匹配，Attempt 为 `passed`。
 
 ## 结果

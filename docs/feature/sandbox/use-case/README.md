@@ -11,6 +11,7 @@
 - [Terminal-Bench:Eval 带 template](sandbox-terminal-bench.md) —— 每道题自带 Compose,Experiment 保持 command-only。
 - [MemoryBench:Experiment 带 template](sandbox-memorybench-preparation.md) —— 实验预装实例提供起点,Eval 逐 Attempt checkout 题目仓库。
 - [共享分支准备](sandbox-shared-branch-preparation.md) —— 两个 Eval×Experiment 配对共享长前缀，再并行完成彼此的末段准备。
+- [按书写顺序准备多步 Sandbox](sandbox-ordered-preparation.md) —— 一条 `.before()` 链、脚本文件与带名字的进度。
 - [云 Sandbox 只准备一次](sandbox-cloud-before-cache.md) —— E2B、OpenSandbox 或 Instabox 上的一批并发 Attempt 共用一次 before 准备。
 
 ## Nested Docker
