@@ -25,5 +25,10 @@ export default defineEval({
       const ignored = await stat(join(downloaded, "nested/file-18.bin")).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
       if (ignored) throw new Error("Directory download did not ignore the requested basename");
     } finally { await rm(downloaded, { recursive: true, force: true }); }
+    await t.sandbox.writeText("broken-target/sentinel", "original");
+    let rejected = false;
+    try { await t.sandbox.upload(directory, "broken-target"); } catch { rejected = true; }
+    if (!rejected) throw new Error("A truncated archive was reported successful");
+    if ((await t.sandbox.readText("broken-target/sentinel")) !== "original" || await t.sandbox.pathExists("broken-target/nested/file-0.bin")) throw new Error("Failed expansion installed a partial directory");
   },
 });

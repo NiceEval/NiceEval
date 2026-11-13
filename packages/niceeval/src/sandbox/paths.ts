@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { CommandOptions, Sandbox } from "../types.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
 import { enrichTransferErrors, withTransferErrors } from "./transfer-errors.ts";
-import { putSandboxContent, successfulCommandResult, type DirectoryContentTransfer } from "./operations.ts";
+import { directoryContentTransfer, putSandboxContent, successfulCommandResult, type DirectoryContentTransfer } from "./operations.ts";
 import {
   providerBoundaryEffect,
   providerCompatibilityPromise,
@@ -99,6 +99,7 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     pathExists: (path) => providerCompatibilityPromise(() =>
       sandbox.pathExists(resolveSandboxPath(sandbox.workdir, path)),
     ),
+    ...directoryContentTransfer(sandbox as SandboxProviderBackend & DirectoryContentTransfer),
     get upload(): Sandbox["upload"] {
       const transfer = sandbox as SandboxProviderBackend & DirectoryContentTransfer;
       const commands = transfer.uploadContentDirectory === undefined ? normalized : this;
@@ -217,6 +218,7 @@ export function makeSandboxAuthorFacade(
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.pathExists(abs))));
     },
+    ...directoryContentTransfer(sandbox as SandboxProviderBackend & DirectoryContentTransfer),
     get upload(): Sandbox["upload"] {
       const transfer = sandbox as SandboxProviderBackend & DirectoryContentTransfer;
       const commands = transfer.uploadContentDirectory === undefined ? normalized : this;

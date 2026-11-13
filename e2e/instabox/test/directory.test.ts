@@ -1,10 +1,10 @@
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { context, verifyMachinesAbsent } from "./context.ts";
 // @feature docs/feature/sandbox/README.md
-test("directory upload records one expansion and preserves bytes and modes", async () => {
+test.concurrent("directory upload records one expansion and preserves bytes and modes", async () => {
   await context.case("directory-archive", {}, async ({ commands: { niceeval }, paths }) => {
     const tree = join(paths.projectRoot, "fixtures/tree/nested");
     await mkdir(tree, { recursive: true });
@@ -12,12 +12,17 @@ test("directory upload records one expansion and preserves bytes and modes", asy
     await writeFile(join(tree, "run.sh"), "#!/bin/sh\nexit 0\n");
     await chmod(join(tree, "run.sh"), 0o751);
     const machines = join(paths.projectRoot, "machines.txt");
+    const transfers = join(paths.projectRoot, "transfers.txt");
     const result = await niceeval.run(["exp", "directory", "--rerun", "all", "--json"], { env: {
-      NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/machines.mjs")).href}`,
+      NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/machines.mjs")).href} --import=${pathToFileURL(join(paths.projectRoot, "fixtures/archive.mjs")).href}`,
       NICEEVAL_TRANSPORT_MACHINES: machines,
+      NICEEVAL_ARCHIVE_RECEIPT: transfers,
     } });
     await verifyMachinesAbsent(machines);
     expect(result.exitCode, result.diagnostic()).toBe(0);
+    const transferLog = await readFile(transfers, "utf8");
+    expect(transferLog.match(/^archive-put$/gm)).toHaveLength(3);
+    expect(transferLog.match(/^archive-get$/gm)).toHaveLength(1);
     const locator = result.expEvalEvents()[0]?.locator;
     expect(locator, result.diagnostic()).toBeDefined();
     const request = join(paths.projectRoot, "trace.json");

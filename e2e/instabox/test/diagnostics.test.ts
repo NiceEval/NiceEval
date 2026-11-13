@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { context, verifyMachinesAbsent } from "./context.ts";
 // @feature docs/feature/sandbox/README.md
-test("retired commands explain the SSH failure and delivered bytes", async () => {
+test.concurrent("retired commands explain the SSH failure and delivered bytes", async () => {
   await context.case("transport-diagnostics", {}, async ({ commands: { niceeval }, paths }) => {
     const receipt = join(paths.projectRoot, "fault.txt");
     const result = await niceeval.run(["exp", "transport", "--rerun", "all"], { env: {

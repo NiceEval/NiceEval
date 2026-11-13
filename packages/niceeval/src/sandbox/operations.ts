@@ -29,6 +29,13 @@ export interface DirectoryContentTransfer {
   ): Promise<void>;
 }
 
+const DIRECTORY_CONTENT_TRANSFER = Symbol("sandbox.provider-directory-content-transfer");
+
+/** Private facade capability, retained through command-recording Proxies. */
+export function directoryContentTransfer(transfer: DirectoryContentTransfer): object {
+  return transfer.uploadContentDirectory === undefined ? {} : { [DIRECTORY_CONTENT_TRANSFER]: transfer };
+}
+
 async function putContentBytes(
   sandbox: SandboxOperations,
   targetPath: string,
@@ -237,8 +244,9 @@ export async function putSandboxContent(
     return;
   }
 
-  if (directoryTransfer?.uploadContentDirectory !== undefined) {
-    await directoryTransfer.uploadContentDirectory(snapshot, targetPath, sandbox);
+  const transfer = directoryTransfer ?? (sandbox as SandboxOperations & { readonly [DIRECTORY_CONTENT_TRANSFER]?: DirectoryContentTransfer })[DIRECTORY_CONTENT_TRANSFER];
+  if (transfer?.uploadContentDirectory !== undefined) {
+    await transfer.uploadContentDirectory(snapshot, targetPath, sandbox);
     return;
   }
   await ensureContentDirectory(sandbox, targetPath);

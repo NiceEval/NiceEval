@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { context, verifyMachinesAbsent } from "./context.ts";
 // @feature docs/feature/sandbox/README.md
-test("an EOF command resumes after client disconnection with one reconnect diagnostic", async () => {
+test.concurrent("an EOF command resumes after client disconnection with one reconnect diagnostic", async () => {
   await context.case("transport-reconnect", {}, async ({ commands: { niceeval }, paths }) => {
     const machines = join(paths.projectRoot, "machines.txt");
     const connections = join(paths.projectRoot, "connections.txt");
