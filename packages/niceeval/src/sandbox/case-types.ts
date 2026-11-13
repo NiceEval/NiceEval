@@ -69,6 +69,7 @@ export interface MaterializedSandboxCase {
   readonly facts: JsonValue;
 }
 
+/** Provides case identity, cancellation and prepared build locators to materialization; consume supplied locators rather than independently rebuilding the same keys. */
 export interface SandboxMaterializeContext {
   readonly evalId: string;
   readonly profile: string;

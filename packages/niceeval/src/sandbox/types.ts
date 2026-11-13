@@ -4,6 +4,7 @@
 import type { ScopedFeedback } from "../shared/types.ts";
 import type { SandboxContent } from "./content.ts";
 
+/** Returns captured stdout, stderr and exit code; nonzero exit is a command outcome rather than necessarily a rejected Promise. */
 export interface CommandResult {
   stdout: string;
   stderr: string;
@@ -45,6 +46,7 @@ export type SandboxHook = (
   ctx: SandboxHookContext,
 ) => void | Promise<void>;
 
+/** Controls one running Sandbox command; timeoutMs uses milliseconds, relative cwd uses workdir, and cancellation must terminate the command tree. */
 export interface CommandOptions {
   /**
    * 这条命令已知会处理的敏感明文（例如 API key、token、HTTP header value）。Runner 仍把
@@ -103,6 +105,7 @@ export interface CommandOptions {
   readonly signal?: AbortSignal;
 }
 
+/** A command result known to have exit code zero; this does not establish the semantic correctness of its output. */
 export interface SuccessfulCommandResult extends CommandResult {
   readonly exitCode: 0;
 }
@@ -190,6 +193,7 @@ export interface SandboxTransferOperations {
   ): Promise<void>;
 }
 
+/** Owns a live provider instance and its operations; the Runner manages its lifecycle, and stop makes the handle unusable. */
 export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
   /** 销毁 Sandbox 占用的计算资源(容器/microVM)。调用后 Sandbox 不可再用;是否可安全重复调用因 provider 而异,不要依赖这一点。 */
   stop(): Promise<void>;

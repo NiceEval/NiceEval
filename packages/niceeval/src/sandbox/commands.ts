@@ -25,6 +25,7 @@ import { readSandboxScript, type SandboxScriptSource } from "./script.ts";
 
 export type MaybePromise<T> = T | Promise<T>;
 
+/** Configures one lifecycle command's cwd, environment, user, stdin and millisecond timeout; omitted cwd uses the Sandbox workdir. */
 export interface SandboxCommandOptions {
   readonly cwd?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
@@ -33,10 +34,13 @@ export interface SandboxCommandOptions {
   readonly stdin?: string;
 }
 
+/** Configures execution settings shared by lifecycle command actions; timeoutMs is an explicit millisecond cap rather than a new Attempt budget. */
 export interface SandboxExecOptions extends SandboxCommandOptions {}
 
+/** Combines argv execution settings with before-action identity and scheduling; timeoutMs is milliseconds and label does not affect identity. */
 export interface CommandActionOptions extends SandboxExecOptions, SandboxBeforeActionOptions {}
 
+/** Names an unconditional argv cleanup action; it must be safe when preceding preparation did not complete. */
 export interface CommandAfterActionOptions extends SandboxExecOptions {
   readonly id: string;
 }
@@ -52,12 +56,14 @@ export type ShellActionInput = ShellActionOptions & (
   | { readonly script: URL; readonly command?: never }
 );
 
+/** Declares an unconditional shell cleanup action with explicit immutable inputs; script text must not embed secrets. */
 export interface ShellAfterActionInput extends SandboxExecOptions {
   readonly id: string;
   readonly command: string;
   readonly inputs?: readonly RegisteredSandboxContent[];
 }
 
+/** Declares argv-based lifecycle work as an action or stable command; arguments are literal and shell syntax requires shell instead. */
 export interface CommandActionFactory {
   (
     executable: string,
@@ -76,6 +82,7 @@ export interface CommandActionFactory {
   ) => SandboxAfterAction;
 }
 
+/** Declares shell-interpreted lifecycle work; unlike command, it interprets pipes, expansions and other shell syntax. */
 export interface ShellActionFactory {
   (input: ShellActionInput): SandboxAction;
   (script: string, options?: SandboxCommandOptions): StableSandboxCommand;
@@ -92,6 +99,7 @@ export interface SandboxCommandTarget extends SandboxOperations {
   putContent(content: RegisteredSandboxContent, targetPath: string): Promise<void>;
 }
 
+/** Identifies the current Attempt and its zero-based index for lifecycle callbacks; this is not a physical Sandbox reuse ordinal. */
 export interface AttemptRef {
   readonly id: string;
   readonly index: number;
@@ -105,11 +113,13 @@ export type SandboxProgress = (update: {
 
 export type SandboxDiagnosticSink = (input: DiagnosticInput) => void;
 
+/** Releases resources through the cleanup Sandbox and context; cleanup cannot register another cleanup callback. */
 export type SandboxCleanupCommand = (
   sandbox: SandboxCommandTarget,
   context: Omit<SandboxCommandContext, "onCleanup">,
 ) => MaybePromise<void>;
 
+/** Provides owner, Attempt, cancellation and cleanup registration for one lifecycle invocation; onCleanup is valid only while its owning callback is running. */
 export interface SandboxCommandContext {
   readonly phase: "before" | "agent.before" | "agent.after";
   /** 当前 Attempt 的 Eval Group；未分组 Eval 省略。 */
@@ -129,6 +139,7 @@ export interface SandboxCommandContext {
   onCleanup(command: SandboxCleanupCommand): void;
 }
 
+/** Runs opaque lifecycle work against the current Sandbox; acquired resources must be registered with context.onCleanup before the callback settles. */
 export interface SandboxCommand {
   (
     sandbox: SandboxCommandTarget,
@@ -136,6 +147,7 @@ export interface SandboxCommand {
   ): MaybePromise<void>;
 }
 
+/** Allows declared JSON data and registered immutable content in command identity; do not include live handles or secrets. */
 export type SandboxCommandIdentityValue =
   | null
   | boolean
@@ -145,12 +157,14 @@ export type SandboxCommandIdentityValue =
   | readonly SandboxCommandIdentityValue[]
   | { readonly [key: string]: SandboxCommandIdentityValue };
 
+/** Identifies opaque command behavior with an explicit revision and inputs; update revision when hidden callback semantics change. */
 export interface SandboxCommandIdentity {
   readonly id: string;
   readonly revision: string;
   readonly inputs: SandboxCommandIdentityValue;
 }
 
+/** Declares stable callback identity and scheduling metadata; a stable identity does not make opaque callbacks eligible for before caching. */
 export interface SandboxCommandDefinition extends SandboxCommandIdentity {
   readonly changeFrequency?: number;
   readonly dependsOn?: readonly SandboxActionRef[];
@@ -170,6 +184,7 @@ export interface SandboxCommandMetadata {
   readonly explicitId: boolean;
 }
 
+/** An opaque callback with declared stable identity; it still executes for every occurrence and blocks subsequent shared cache capture. */
 export interface StableSandboxCommand extends SandboxCommand {
   readonly [STABLE_SANDBOX_COMMAND]: true;
 }
@@ -364,6 +379,7 @@ function normalizeCommandMetadata(value: SandboxCommandDefinition): NormalizedSa
 // @concord-code
 // @concord-implements docs/feature/sandbox/library/operations.md
 // @concord-implements docs/feature/sandbox/library/prepare-commands.md
+/** Binds an explicit identity and schedule to an opaque callback. It always runs and remains a cache barrier even when identity is stable. */
 export function defineSandboxCommand(
   identity: SandboxCommandDefinition,
   run: SandboxCommand,
@@ -795,6 +811,7 @@ Object.defineProperty(commandImpl, "after", {
     );
   },
 });
+/** Declares executable-and-argv lifecycle work. Arguments are not shell-expanded; use shell when pipelines or expansions are intended. */
 export const command = Object.freeze(commandImpl);
 
 const shellImpl = (function (
@@ -828,6 +845,7 @@ Object.defineProperty(shellImpl, "after", {
     );
   },
 });
+/** Declares shell-interpreted lifecycle work from inline text or a script file. Choose exactly one source, and never embed secrets in script text. */
 export const shell = Object.freeze(shellImpl);
 
 const SHELL_SCRIPT_SOURCES = new WeakMap<SandboxActionData, SandboxScriptSource>();

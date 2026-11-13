@@ -10,6 +10,7 @@ import { SandboxRuntimeMaterializationError } from "./runtime.ts";
 import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
 import { openSandboxSnapshotDriver } from "./opensandbox/snapshot-driver.ts";
 
+/** Selects an OpenSandbox image and explicit Linux target platform; omitted user uses the service's root identity rather than the image USER. */
 export interface OpenSandboxOptions {
   readonly image: string;
   readonly targetPlatform: Extract<SandboxTargetPlatform, { readonly _tag: "Linux" }>;

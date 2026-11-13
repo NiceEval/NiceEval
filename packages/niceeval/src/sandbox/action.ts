@@ -36,8 +36,10 @@ export const sandboxState = Object.freeze({
   dockerData: "dockerData",
 } as const);
 
+/** Selects which Sandbox state an action declares for caching; this declaration does not prove arbitrary callback determinism. */
 export type SandboxState = typeof sandboxState[keyof typeof sandboxState];
 /** @internal Provider/runtime spelling for the same public V1 state values. */
+/** Selects the captured state domain of an action; it is a cache declaration rather than the action's execution status. */
 export type SandboxActionState = SandboxState;
 
 /** @internal `all` dominates a cumulative action lineage. */
@@ -58,19 +60,23 @@ export function sandboxActionStateCovers(
   return coverage === sandboxState.all || required === sandboxState.dockerData;
 }
 
+/** Refers to a declared action ID for dependency edges; the referenced action must exist in the linked schedule. */
 export interface SandboxActionRef {
   readonly [SANDBOX_ACTION_REF]: true;
   readonly id: string;
 }
 
+/** Names a declared capability linking before-action requirements and providers; a string alone does not prove runtime capability availability. */
 export type SandboxCapability = string;
 
+/** Records normalized action frequency and whether it was explicit; it is a scheduling hint rather than an execution-count guarantee. */
 export interface SandboxChangeFrequency {
   readonly value: number;
   readonly source: "explicit" | "defaulted";
   readonly preset?: keyof typeof changeFrequency;
 }
 
+/** Names and schedules a before action; lower changeFrequency wins only among dependency-ready actions, and label affects display rather than identity. */
 export interface SandboxBeforeActionOptions {
   readonly id: string;
   /** Human 进度与 debug 的显示名；省略时显示 id，不参与身份。 */
@@ -102,6 +108,7 @@ export interface SandboxActionInstanceOptions {
   readonly cache?: SandboxActionCacheOptions;
 }
 
+/** Names an action instance used during cleanup; after actions execute from the cleanup stack and are not cached. */
 export interface SandboxAfterActionOptions {
   readonly id?: string;
 }
@@ -115,6 +122,7 @@ export interface NormalizedSandboxBeforeMetadata {
   readonly provides: readonly SandboxCapability[];
 }
 
+/** Declares one argv-based Sandbox process step; arguments are passed literally and timeoutMs is in milliseconds. */
 export interface ExecSandboxStepInput {
   readonly executable: string;
   readonly args?: readonly string[];
@@ -125,11 +133,13 @@ export interface ExecSandboxStepInput {
   readonly stdin?: string;
 }
 
+/** Declares text to write at a Sandbox path; the content is literal and is not a template or shell expression. */
 export interface PutTextSandboxStepInput {
   readonly path: string;
   readonly text: string;
 }
 
+/** Declares bytes to write at a Sandbox path; relative paths resolve from the Sandbox workdir rather than the host module. */
 export interface PutBytesSandboxStepInput {
   readonly path: string;
   readonly bytes: Uint8Array;
@@ -138,16 +148,19 @@ export interface PutBytesSandboxStepInput {
 /** Low-level transfer steps only accept an immutable, digest-backed content handle. */
 export type SandboxTransferSource = RegisteredSandboxContent;
 
+/** Transfers declared file content into a Sandbox destination; relative destination paths resolve from the Sandbox workdir. */
 export interface TransferFileSandboxStepInput {
   readonly source: SandboxTransferSource;
   readonly to: string;
 }
 
+/** Transfers declared directory content into a Sandbox destination; use captured content rather than an untracked host path. */
 export interface TransferDirectorySandboxStepInput {
   readonly source: SandboxTransferSource;
   readonly to: string;
 }
 
+/** Checks out a public HTTPS repository into the Sandbox; ref must be a complete immutable commit object ID rather than a branch or tag. */
 export interface CheckoutGitSandboxStepInput {
   readonly repository: string;
   readonly ref: string;
@@ -158,6 +171,7 @@ export interface CheckoutGitSandboxStepInput {
   };
 }
 
+/** An opaque supported primitive in a declarative action; third parties compose these primitives rather than registering new step kinds. */
 export interface SandboxStep {
   readonly [SANDBOX_STEP]: true;
   readonly kind:
@@ -169,6 +183,7 @@ export interface SandboxStep {
     | "checkoutGit";
 }
 
+/** Describes the executable primitive plan with bounded content identities; environment values and stdin contents are not exposed in its public projection. */
 export type SandboxStepPlan =
   | {
       readonly kind: "exec";
@@ -241,12 +256,14 @@ export type SandboxStepExecution =
   | { readonly kind: "transferDirectory"; readonly input: Readonly<TransferDirectorySandboxStepInput> }
   | { readonly kind: "checkoutGit"; readonly input: Readonly<CheckoutGitSandboxStepInput> };
 
+/** Separates automatic, supplemental and combined action fingerprints; supplemental identity cannot replace the automatically captured inputs. */
 export interface SandboxActionFingerprintPlan {
   readonly automatic: string;
   readonly supplemental: string;
   readonly combined: string;
 }
 
+/** Describes normalized action input, steps and fingerprints for planning; it is not a mutable live execution handle. */
 export interface SandboxActionPlan {
   readonly id: string;
   readonly label?: string;
@@ -263,18 +280,22 @@ export interface SandboxActionData {
   readonly steps: readonly SandboxStep[];
 }
 
+/** An opaque declarative before action with stable identity; create it through a supported factory rather than constructing a matching object. */
 export interface SandboxAction {
   readonly [SANDBOX_ACTION]: true;
   readonly id: string;
 }
 
+/** An opaque unconditional cleanup action; it must remain safe when a preceding acquisition never succeeded. */
 export interface SandboxAfterAction {
   readonly [SANDBOX_AFTER_ACTION]: true;
   readonly id: string;
 }
 
+/** Requires at least one supported primitive step in an action family; steps form a linear sequence rather than an implicit shell-derived DAG. */
 export type NonEmptySandboxSteps = readonly [SandboxStep, ...SandboxStep[]];
 
+/** Defines a deterministic action family from schema-validated input and primitive steps; hidden secrets, leases or external resources require an opaque callback instead. */
 export interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly id: string;
   readonly input: Schema.Codec<A, I, never, never>;
@@ -285,6 +306,7 @@ export interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly steps: (input: A) => NonEmptySandboxSteps;
 }
 
+/** Creates before and after instances of a schema-defined action; after instances do not participate in before caching. */
 export interface SandboxActionFamily<A> {
   (input: A, options?: SandboxActionInstanceOptions): SandboxAction;
   readonly after: (input: A, options?: SandboxAfterActionOptions) => SandboxAfterAction;
@@ -300,6 +322,7 @@ export type SandboxActionDefinitionErrorReason =
   | "steps"
   | "metadata";
 
+/** Reports an invalid declarative action definition or input; inspect reason and field rather than treating it as a command exit failure. */
 export class SandboxActionDefinitionError extends Data.TaggedError("SandboxActionDefinitionError")<{
   readonly reason: SandboxActionDefinitionErrorReason;
   readonly message: string;
@@ -385,6 +408,7 @@ function normalizeCapabilities(value: unknown, path: string): readonly SandboxCa
   return capabilities;
 }
 
+/** Creates an opaque dependency reference to an action ID. Empty IDs are rejected, and the linked schedule must contain the target. */
 export function actionRef(id: string): SandboxActionRef {
   const normalized = nonEmptyString(id, "actionRef id");
   const ref = { id: normalized } as SandboxActionRef;
@@ -887,6 +911,7 @@ function makeAfterAction(data: SandboxActionData): SandboxAfterAction {
 // @concord-code
 // @concord-implements docs/feature/sandbox/library/prepare-commands.md
 // @concord-implements docs/feature/sandbox/architecture/README.md
+/** Defines a schema-validated family of deterministic primitive steps. Declaring determinism is the author's responsibility; use callbacks for secrets and external resources. */
 export function defineSandboxAction<A, I extends JsonValue>(
   definition: SandboxActionDefinition<A, I>,
 ): SandboxActionFamily<A> {
@@ -1081,34 +1106,40 @@ export function sandboxAfterActionDataOf(action: SandboxAfterAction): SandboxAct
   return data;
 }
 
+/** Declares literal text and scheduling metadata for a Sandbox write; shell interpolation is not performed. */
 export interface WriteTextActionInput extends SandboxBeforeActionOptions {
   readonly path: string;
   readonly text: string;
 }
 
+/** Declares an unconditional literal-text write during cleanup; it must be safe if later before work never ran. */
 export interface WriteTextAfterActionInput {
   readonly id: string;
   readonly path: string;
   readonly text: string;
 }
 
+/** Declares a byte write with scheduling metadata; path is a Sandbox destination and bytes must contain declared non-sensitive input. */
 export interface WriteBytesActionInput extends SandboxBeforeActionOptions {
   readonly path: string;
   readonly bytes: Uint8Array;
 }
 
+/** Declares an unconditional byte write during cleanup; after actions are not eligible for before-cache reuse. */
 export interface WriteBytesAfterActionInput {
   readonly id: string;
   readonly path: string;
   readonly bytes: Uint8Array;
 }
 
+/** Declares a file upload with scheduling metadata; source is a module-anchored URL and to is resolved in the Sandbox. */
 export interface UploadFileActionInput extends SandboxBeforeActionOptions {
   /** Declaration-time host content must be anchored explicitly to its definition module. */
   readonly source: URL;
   readonly to: string;
 }
 
+/** Declares an unconditional file upload at cleanup; do not assume a preceding before action acquired a resource. */
 export interface UploadFileAfterActionInput {
   readonly id: string;
   /** Declaration-time host content must be anchored explicitly to its definition module. */
@@ -1116,9 +1147,12 @@ export interface UploadFileAfterActionInput {
   readonly to: string;
 }
 
+/** Declares a directory upload with scheduling metadata; source must be a URL anchored to the declaring module, not an implicit cwd-relative string. */
 export interface UploadDirectoryActionInput extends UploadFileActionInput {}
+/** Declares an unconditional directory upload at cleanup; source is a module-anchored host URL and to is a Sandbox path. */
 export interface UploadDirectoryAfterActionInput extends UploadFileAfterActionInput {}
 
+/** Declares a cacheable source checkout with scheduling metadata; use a full commit object ID and a credential-free public HTTPS repository. */
 export interface GitCheckoutActionInput extends SandboxBeforeActionOptions {
   readonly repository: string;
   /** V1 accepts only a complete immutable Git object id; moving refs require a future planning lookup seam. */
@@ -1130,6 +1164,7 @@ export interface GitCheckoutActionInput extends SandboxBeforeActionOptions {
   };
 }
 
+/** Declares an unconditional Git checkout during cleanup; it must be safe even when later before steps never ran. */
 export interface GitCheckoutAfterActionInput {
   readonly id: string;
   readonly repository: string;
@@ -1141,26 +1176,31 @@ export interface GitCheckoutAfterActionInput {
   };
 }
 
+/** Creates declarative literal-text writes for before or after; constructing the action does not mutate a running Sandbox. */
 export interface WriteTextActionFactory {
   (input: WriteTextActionInput): SandboxAction;
   readonly after: (input: WriteTextAfterActionInput) => SandboxAfterAction;
 }
 
+/** Creates declarative byte writes for before or after; constructing the action does not write to a running Sandbox. */
 export interface WriteBytesActionFactory {
   (input: WriteBytesActionInput): SandboxAction;
   readonly after: (input: WriteBytesAfterActionInput) => SandboxAfterAction;
 }
 
+/** Creates file-upload actions from module-anchored host content; the factory declares work rather than transferring it immediately. */
 export interface UploadFileActionFactory {
   (input: UploadFileActionInput): SandboxAction;
   readonly after: (input: UploadFileAfterActionInput) => SandboxAfterAction;
 }
 
+/** Creates directory-upload actions from module-anchored host content; after actions are unconditional cleanup work rather than cached preparation. */
 export interface UploadDirectoryActionFactory {
   (input: UploadDirectoryActionInput): SandboxAction;
   readonly after: (input: UploadDirectoryAfterActionInput) => SandboxAfterAction;
 }
 
+/** Creates a declarative Git checkout action or unconditional after action; before checkout requires an immutable commit rather than a moving ref. */
 export interface GitCheckoutActionFactory {
   (input: GitCheckoutActionInput): SandboxAction;
   readonly after: (input: GitCheckoutAfterActionInput) => SandboxAfterAction;
@@ -1334,6 +1374,7 @@ Object.defineProperty(writeTextImpl, "after", {
     return writeTextFamily.after({ path: input.path, text: input.text }, { id: input.id });
   },
 });
+/** Declares a literal text write as lifecycle work. Text is written verbatim without shell expansion. */
 export const writeText = Object.freeze(writeTextImpl);
 
 const writeBytesImpl = ((input: WriteBytesActionInput): SandboxAction => {
@@ -1354,6 +1395,7 @@ Object.defineProperty(writeBytesImpl, "after", {
     );
   },
 });
+/** Declares a literal byte write as lifecycle work. The destination is a Sandbox path, and creating the declaration does not perform I/O there. */
 export const writeBytes = Object.freeze(writeBytesImpl);
 
 const uploadFileImpl = ((input: UploadFileActionInput): SandboxAction => {
@@ -1372,6 +1414,7 @@ Object.defineProperty(uploadFileImpl, "after", {
     );
   },
 });
+/** Declares a file upload as lifecycle work. Use a module-anchored host source URL rather than relying on the host working directory. */
 export const uploadFile = Object.freeze(uploadFileImpl);
 
 const uploadDirectoryImpl = ((input: UploadDirectoryActionInput): SandboxAction => {
@@ -1390,6 +1433,7 @@ Object.defineProperty(uploadDirectoryImpl, "after", {
     );
   },
 });
+/** Declares a directory upload as lifecycle work. Anchor the host source URL to the definition module; the destination is inside the Sandbox. */
 export const uploadDirectory = Object.freeze(uploadDirectoryImpl);
 
 const gitCheckoutImpl = ((input: GitCheckoutActionInput): SandboxAction => {
@@ -1402,4 +1446,5 @@ Object.defineProperty(gitCheckoutImpl, "after", {
     return gitCheckoutFamily.after(normalizeGitCheckout(input), { id: input.id });
   },
 });
+/** Declares a public HTTPS source checkout before or after execution. Pin a complete commit object ID; moving refs and credential-bearing repository URLs are rejected. */
 export const gitCheckout = Object.freeze(gitCheckoutImpl);

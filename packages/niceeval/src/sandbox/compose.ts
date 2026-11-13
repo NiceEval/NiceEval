@@ -163,6 +163,7 @@ export interface ComposeBuildDecl {
   readonly platforms?: readonly string[];
 }
 
+/** Describes one inspected Compose service; its platform overrides the default build platform when explicitly set. */
 export interface ComposeServiceInspection {
   readonly name: string;
   readonly build?: ComposeBuildDecl;
@@ -175,6 +176,7 @@ export interface ComposeServiceInspection {
   readonly volumes: readonly string[];
 }
 
+/** Describes resolved Compose services, managed networks and local file inputs; only non-external networks belong to the managed resource group. */
 export interface ComposeInspection {
   readonly services: readonly ComposeServiceInspection[];
   /** 受管网络名:服务实际加入的非 external 网络;没有任何服务声明网络时是 Compose 的 `default`。 */
@@ -346,6 +348,7 @@ function volumeStrings(value: unknown): string[] {
 // 黑名单:只保护核心不变量
 // ---------------------------------------------------------------------------
 
+/** Reports one forbidden Compose service field and its reason; findings describe rejected configuration rather than runtime container failures. */
 export interface ComposeBlacklistFinding {
   readonly service: string;
   readonly field: string;
@@ -735,6 +738,7 @@ function resolveComposeFile(file: string | URL, baseDir?: string): string {
 // BuildKey 收集 + SandboxBuildProvider
 // ---------------------------------------------------------------------------
 
+/** Collects Compose build work and frozen configuration inputs; service image references may still need resolution during coordination or materialization. */
 export interface ComposeBuildCollection {
   readonly buildKeys: readonly BuildKey[];
   readonly works: readonly SandboxBuildWork[];
@@ -1060,6 +1064,7 @@ function composeBuildTag(buildKey: BuildKey): string {
 // Overlay + materialize
 // ---------------------------------------------------------------------------
 
+/** Carries the generated Compose overlay and project identity; its optional path is a host-side materialization detail. */
 export interface ComposeOverlay {
   readonly yaml: string;
   readonly projectName: string;
@@ -1128,6 +1133,7 @@ export function buildComposeIdentityOverlay(opts: {
   return lines.length > 0 ? `${lines.join("\n")}\n` : "";
 }
 
+/** Supplies prepared case context and resource-lifetime controls for Compose materialization; lifetimeMs caps the physical resource group, not just one command. */
 export interface MaterializeComposeOpts {
   readonly runId?: string;
   readonly ctx: SandboxMaterializeContext;

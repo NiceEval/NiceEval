@@ -20,12 +20,14 @@ import { parseIncusImageLocator, type IncusImageLocator } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
 import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
+/** Bounds VM CPU, memory and Docker data capacity; memoryBytes and dockerDataBytes use bytes rather than MiB. */
 export interface IncusSandboxResources {
   readonly cpus?: number;
   readonly memoryBytes?: number;
   readonly dockerDataBytes?: number;
 }
 
+/** Selects the Incus image, project, storage pool and VM resources; accepting a development domain is an explicit opt-in. */
 export interface IncusSandboxOptions {
   readonly image: string;
   readonly project: string;

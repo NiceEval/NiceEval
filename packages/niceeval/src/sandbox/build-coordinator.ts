@@ -18,8 +18,10 @@ import type { BuildKey } from "./identity.ts";
 export const SANDBOX_BUILD_ACTIVITY = "sandbox.build" as const;
 
 declare const MaterializationScopeIdBrand: unique symbol;
+/** Identifies one materialization coordination scope; it must not be reused as a durable Run or Attempt ID. */
 export type MaterializationScopeId = string & { readonly [MaterializationScopeIdBrand]: true };
 declare const SandboxBuildRefBrand: unique symbol;
+/** Identifies a build request within shared preparation; it is distinct from the content-derived BuildKey. */
 export type SandboxBuildRef = string & { readonly [SandboxBuildRefBrand]: true };
 
 export function materializationScopeId(input: {
@@ -50,11 +52,13 @@ export interface SandboxBuildWork {
   readonly label?: string;
 }
 
+/** Holds one use of a prepared artifact; release it after materialization so the artifact is not retained indefinitely. */
 export interface SandboxBuildUseHandle {
   readonly locator: JsonValue;
   release(): Promise<void> | void;
 }
 
+/** Owns a prepared build artifact and grants scoped use handles; release both uses and source ownership according to their lifetimes. */
 export interface SandboxBuildArtifactSource {
   readonly locator: JsonValue;
   readonly source: "cache" | "build";
@@ -62,6 +66,7 @@ export interface SandboxBuildArtifactSource {
   release(): Promise<void> | void;
 }
 
+/** Distinguishes a reusable artifact hit from a miss or unsupported caching; unsupported lookup must not be mistaken for a failed build. */
 export type SandboxBuildLookup =
   | { readonly _tag: "Hit"; readonly source: SandboxBuildArtifactSource }
   | { readonly _tag: "Miss" }
@@ -85,6 +90,7 @@ export interface SandboxBuildExecutionContext {
   readonly parent: TimingActivity;
 }
 
+/** Controls shared build preparation independently of Attempt concurrency; timeout and retry delays use milliseconds. */
 export interface PrepareSandboxBuildsOptions {
   readonly timing: RunTimingRecorder;
   readonly provider: SandboxBuildProvider;
@@ -128,6 +134,7 @@ export type SandboxBuildActivityEvent =
       durationMs: number;
     };
 
+/** Records a failed or cancelled BuildKey with its Run timing origin; cancellation is distinct from a failed build. */
 export interface SandboxBuildFailure {
   readonly ref: SandboxBuildRef;
   readonly buildKey: BuildKey;
@@ -136,6 +143,7 @@ export interface SandboxBuildFailure {
   readonly error: NonNullable<SandboxBuildRecord["error"]>;
 }
 
+/** Returns prepared sources, provenance and per-key failures; only keys actually queried or built appear in its records. */
 export interface SandboxBuildPreparation {
   /** 成功(hit / built)的 BuildKey → locator。 */
   readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;

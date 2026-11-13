@@ -21,6 +21,7 @@ import {
 import { SandboxCommandExitError } from "./operations.ts";
 import type { CommandResult } from "./types.ts";
 
+/** Configures an opaque Git checkout relative to workdir; repository URLs must not embed credentials, query strings or fragments. */
 export interface CheckoutOptions {
   /** Git remote;HTTP(S) URL 中的 userinfo / query / fragment 一律拒绝，凭据只走 Git 原生机制。 */
   readonly repo: string;
@@ -30,6 +31,7 @@ export interface CheckoutOptions {
   readonly into?: string;
 }
 
+/** Declares a named tool's identity, probe and installer; zero probe exit means present, and installation runs only after a nonzero probe. */
 export interface InstallToolOptions {
   /** 人可读、也进入 identity 的工具名；不从命令文本猜测。 */
   readonly tool: string;

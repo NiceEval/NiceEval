@@ -20,8 +20,10 @@ export const INSTABOX_MACHINE_SPECS = {
   "instabox-2xlarge": { vcpus: 32, memMiB: 65536 },
 } as const;
 
+/** Selects a named Instabox machine size; use explicit resource settings only according to the factory's selection rules. */
 export type InstaboxMachineSpec = keyof typeof INSTABOX_MACHINE_SPECS;
 
+/** Names an official Instabox template; arbitrary custom template IDs use the wider InstaboxTemplateId type. */
 export type InstaboxOfficialTemplateId =
   | "universal"
   | "agent-browser"
@@ -32,8 +34,10 @@ export type InstaboxOfficialTemplateId =
   | "t3"
   | "omarchy";
 
+/** Accepts an official or custom Instabox template ID; it names a template rather than a saved snapshot. */
 export type InstaboxTemplateId = InstaboxOfficialTemplateId | (string & {});
 
+/** Selects an Instabox template or snapshot and resource limits; lifetimeMs uses milliseconds while explicit memory resources use MiB. */
 export interface InstaboxSandboxOptions {
   readonly snapshotId?: string;
   readonly templateId?: InstaboxTemplateId;

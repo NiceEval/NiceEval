@@ -125,6 +125,7 @@ function resourcesJson(resources: IncusSandboxResources): JsonValue {
 // @concord-implements docs/feature/sandbox-nested-docker/README.md
 // @concord-implements docs/feature/sandbox-nested-docker/library.md
 // @concord-implements docs/feature/sandbox-nested-docker/use-case/nested-docker-capability.md
+/** Declares a disposable Incus VM as the Sandbox template. Select an explicit project, storage pool and image rather than assuming a host-global default. */
 export function incusSandbox(options: IncusSandboxOptions): SandboxLayer<"template-bearing"> {
   const normalized = normalizeIncusSandboxOptions(options);
   const origin = displayIncusOrigin({

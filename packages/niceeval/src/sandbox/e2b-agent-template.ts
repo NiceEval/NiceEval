@@ -22,6 +22,7 @@ import {
  */
 export type E2BCodingAgent = "claude-code" | "codex" | "bub";
 
+/** Adds packages to the E2B coding-Agent template's Bub tool environment; those packages also affect its compatibility marker. */
 export interface E2BCodingAgentTemplateOptions {
   /** Extra packages installed in Bub's uv tool environment and included in its compatibility marker. */
   bubPythonPackages?: readonly string[];

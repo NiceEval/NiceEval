@@ -65,6 +65,7 @@ import { dindSupervisorRevision } from "./dind-supervisor.ts";
 import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
 import { e2bSnapshotDriver } from "./e2b-snapshot-driver.ts";
 
+/** Distinguishes a template-bearing starting point from command-only preparation; each linked Eval and Experiment pair needs exactly one template. */
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
 const SANDBOX_LAYER: unique symbol = Symbol("niceeval.sandbox.layer");
@@ -80,6 +81,7 @@ const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-p
 const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-5";
 const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-4";
 
+/** Declares an owner's contribution to one Sandbox lifecycle; it is neither a live Sandbox handle nor a Docker image layer. */
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
   before(action: SandboxAction | SandboxCommand): SandboxLayer<Kind>;
@@ -94,13 +96,16 @@ export interface DockerExecutionRequirement {
   readonly minimumDataBytes: number;
 }
 
+/** Declares Docker execution requirements for a command-only layer; it does not create or select an execution environment. */
 export interface SandboxRequirementsOptions {
   readonly docker?: DockerExecutionRequirement;
 }
 
+/** Declares a required runtime capability without selecting a provider; the chosen template must satisfy it during linking. */
 export type SandboxRequirement =
   | { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
 
+/** Selects a Compose workspace service as the Sandbox template; extend PATH through pathPrepend and keep credential values in credentialEnv. */
 export interface DockerComposeSandboxOptions {
   readonly file: string | URL;
   readonly workspaceService: string;
@@ -162,6 +167,7 @@ interface DockerImageSourceOptions {
   readonly pathPrepend?: readonly string[];
 }
 
+/** Bounds one writable tmpfs mount in bytes; executable access is disabled unless explicitly enabled. */
 export interface DockerSandboxTmpfsOptions {
   readonly sizeBytes: number;
   readonly mode?: number;
@@ -171,6 +177,7 @@ export interface DockerSandboxTmpfsOptions {
   readonly executable?: boolean;
 }
 
+/** Bounds container CPU, memory, processes and writable storage; a readonly rootfs requires each writable tmpfs path to be declared explicitly. */
 export interface DockerSandboxResources {
   readonly cpus?: number;
   readonly memoryBytes?: number;
@@ -182,11 +189,13 @@ export interface DockerSandboxResources {
   readonly tmpfs?: Readonly<globalThis.Record<string, DockerSandboxTmpfsOptions>>;
 }
 
+/** Selects a prebuilt Docker image as the Sandbox starting point; Dockerfile builds use the alternative source variant. */
 export interface DockerImageSource {
   readonly type: "image";
   readonly image: string;
 }
 
+/** Selects a build context and optional Dockerfile, target and build arguments; context is host-side input rather than a Sandbox path. */
 export interface DockerfileSource {
   readonly type: "dockerfile";
   readonly context: string | URL;
@@ -195,8 +204,10 @@ export interface DockerfileSource {
   readonly target?: string;
 }
 
+/** Selects either an existing image or a Dockerfile build; exactly one source variant defines the starting point. */
 export type DockerSandboxSource = DockerImageSource | DockerfileSource;
 
+/** Describes bounded managed-rootless container resources; this does not establish the dedicated-kernel/v1 isolation required by nested Docker. */
 export interface ManagedDockerResources extends DockerSandboxResources {
   readonly cpus: number;
   readonly memoryBytes: number;
@@ -205,6 +216,7 @@ export interface ManagedDockerResources extends DockerSandboxResources {
   readonly readOnlyRootfs: true;
 }
 
+/** Polls an argv command until the Sandbox is ready; timeoutMs and intervalMs use milliseconds and the command is not shell text. */
 export interface DockerSandboxReadiness {
   readonly command: readonly [string, ...string[]];
   readonly user?: string;
@@ -212,6 +224,7 @@ export interface DockerSandboxReadiness {
   readonly intervalMs?: number;
 }
 
+/** Selects the Docker starting point, user and readiness policy; omitted user preserves the image's execution identity. */
 export interface DockerSandboxCommonOptions {
   readonly source: DockerSandboxSource;
   readonly user?: string;
@@ -220,6 +233,7 @@ export interface DockerSandboxCommonOptions {
   readonly pathPrepend?: readonly string[];
 }
 
+/** Describes socket or DinD access declarations; these cannot satisfy dedicated-kernel/v1 requirements, which require the Incus path. */
 export type DockerSandboxAccess =
   | {
       readonly mode: "socket";
@@ -237,6 +251,7 @@ export type DockerSandboxAccess =
       readonly profile: string;
     };
 
+/** Declares a Docker Sandbox template and resource policy; use Incus for supported nested Docker with a dedicated kernel. */
 export type DockerSandboxOptions =
   | (DockerSandboxCommonOptions & {
       readonly dockerAccess?: undefined;
@@ -257,6 +272,7 @@ export type DockerSandboxOptions =
       readonly resources: ManagedDockerResources;
     });
 
+/** Selects an E2B template and optional user and lifetime; omitted user retains the template default and lifetimeMs uses milliseconds. */
 export interface E2BSandboxOptions {
   readonly template: string;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
@@ -266,6 +282,7 @@ export interface E2BSandboxOptions {
   readonly pathPrepend?: readonly string[];
 }
 
+/** Selects a Vercel snapshot as the starting point; lifetimeMs is milliseconds and pathPrepend extends the managed PATH. */
 export interface VercelSandboxOptions {
   readonly snapshotId: string;
   readonly lifetimeMs?: number;
@@ -273,6 +290,7 @@ export interface VercelSandboxOptions {
   readonly pathPrepend?: readonly string[];
 }
 
+/** Defines a custom provider factory and target platform; the implementation owns isolation and cleanup rather than receiving them automatically. */
 export interface CustomProviderSandboxOptions {
   readonly name: string;
   readonly targetPlatform: SandboxTargetPlatform;
@@ -283,6 +301,7 @@ export interface CustomProviderSandboxOptions {
   ) => Effect.Effect<CustomProviderSandbox, CustomSandboxMaterializationError>;
 }
 
+/** Reports a custom provider's materialization failure with its cause; this is distinct from a failed command inside an already usable Sandbox. */
 export class CustomSandboxMaterializationError extends Data.TaggedError(
   "CustomSandboxMaterializationError",
 )<{
@@ -297,14 +316,17 @@ export interface CustomProviderMaterializeContext {
   readonly feedback: ScopedFeedback;
 }
 
+/** Declares whether a custom case supports services; this capability declaration is separate from its materialized service controller. */
 export type CustomCaseServices =
   | { readonly _tag: "Supported" }
   | { readonly _tag: "Unsupported" };
 
+/** States whether the materialized case exposes a service controller; absence is explicit rather than an empty fabricated controller. */
 export type CustomCaseMaterializedServices =
   | { readonly _tag: "None" }
   | { readonly _tag: "Available"; readonly value: ServiceController };
 
+/** Returns the Sandbox, owning resource group, service state and materialization facts; callback cases do not provide detached retention. */
 export interface CustomCaseMaterializeResult {
   readonly sandbox: CustomProviderSandbox;
   readonly group: SandboxResourceGroup;
@@ -314,6 +336,7 @@ export interface CustomCaseMaterializeResult {
   readonly retention?: never;
 }
 
+/** Defines a custom case's identity, platform and materializer; declare service capability before materialization and return the owning resource group. */
 export interface CustomCaseSandboxOptions {
   readonly identity: JsonValue;
   readonly targetPlatform: SandboxTargetPlatform;
@@ -387,6 +410,7 @@ export type SandboxLeakGate =
       readonly workspaceService: string;
     };
 
+/** Declares the actual target OS, architecture and Linux libc; use target facts rather than assuming the host's platform. */
 export type SandboxTargetPlatform =
   | { readonly _tag: "Linux"; readonly os: "linux"; readonly arch: string; readonly libc: "gnu" | "musl" }
   | { readonly _tag: "Darwin"; readonly os: "darwin"; readonly arch: string }
@@ -1646,6 +1670,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
 // @concord-code
 // @concord-implements docs/feature/sandbox/README.md
 // @concord-implements docs/feature/sandbox/library/layers.md
+/** Creates a command-only Sandbox declaration for before and after work. Its linked Eval or Experiment partner must supply the single template. */
 export function sandboxLayer(): SandboxLayer<"command-only"> {
   return createLayer({
     kind: "command-only",
@@ -2745,10 +2770,13 @@ const LIVE_FACTORIES = createBuiltinSandboxFactories({
   }),
 });
 
+/** Declares a Compose workspace service as a Sandbox template. Select exactly one workspace service and avoid declaring a second template on its linked pair. */
 export const dockerComposeSandbox = LIVE_FACTORIES.dockerComposeSandbox;
 const dockerfileSourceLayer = LIVE_FACTORIES.dockerfileSourceLayer;
 const dockerImageSourceLayer = LIVE_FACTORIES.dockerImageSourceLayer;
+/** Declares an E2B template as the Sandbox starting point. It creates a declaration rather than immediately allocating a live instance. */
 export const e2bSandbox = LIVE_FACTORIES.e2bSandbox;
+/** Declares a Vercel snapshot as the Sandbox starting point. Supply the snapshot ID rather than a live Sandbox instance ID. */
 export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
 
 /**
@@ -2876,6 +2904,7 @@ export function customProviderSandbox(
   });
 }
 
+/** Declares a custom case with explicit platform, identity and service capability. Its materializer must return the owning resource group and cannot offer detached retention. */
 export function defineSandboxCase(
   options: CustomCaseSandboxOptions,
 ): SandboxLayer<"template-bearing"> {

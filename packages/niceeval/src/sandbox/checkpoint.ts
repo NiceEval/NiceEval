@@ -22,6 +22,7 @@ function tmpTarPath(tag: string): string {
 /** 把 paths 列出的目录打成 gzip tar,返回 Buffer。 */
 type CheckpointSandbox = Pick<SandboxCommandTarget, "runShell" | "readBytes" | "writeBytes">;
 
+/** Archives selected Sandbox paths as gzip-compressed tar bytes. An empty path list or failed archive rejects, and its temporary archive is removed afterward. */
 export async function createCheckpoint(sb: CheckpointSandbox, paths: string[]): Promise<Buffer> {
   if (paths.length === 0) throw new Error(`checkpoint: tar is empty (paths: ${"(none)"})`);
   const tmp = tmpTarPath("cp");

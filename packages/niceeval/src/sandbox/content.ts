@@ -17,6 +17,7 @@ const REGISTERED_SANDBOX_CONTENT: unique symbol = Symbol("niceeval.sandbox.conte
 const REGISTERED_CONTENTS = new WeakSet<object>();
 const REGISTERED_CONTENT_LOCATORS = new WeakMap<object, { readonly path: string }>();
 
+/** Identifies a captured host file or directory by immutable content digest; constructing a similar plain object does not grant transfer capability. */
 export interface RegisteredSandboxContent {
   readonly [REGISTERED_SANDBOX_CONTENT]: true;
   readonly digest: string;
@@ -26,6 +27,7 @@ export interface RegisteredSandboxContent {
 /** Public name for an immutable, digest-backed host payload. */
 export type SandboxContent = RegisteredSandboxContent;
 
+/** Creates immutable file and directory transfer sources from module-anchored URLs; host content must be declared explicitly. */
 export interface SandboxContentFactory {
   file(source: URL): SandboxContent;
   directory(source: URL): SandboxContent;
@@ -177,8 +179,11 @@ function captureSource(path: string): RegisteredSandboxContentSnapshot {
   throw new Error(`registerSandboxContent source must be a file or directory: ${path}`);
 }
 
+/** Captures a host file or directory and returns a branded content identity. Resolve relative strings against the supplied definition URL rather than process cwd. */
 export function registerSandboxContent(source: URL): RegisteredSandboxContent;
+/** Captures a host file or directory and returns a branded content identity. Resolve relative strings against the supplied definition URL rather than process cwd. */
 export function registerSandboxContent(source: string, definitionUrl: string | URL): RegisteredSandboxContent;
+/** Captures a host file or directory and returns a branded content identity. Resolve relative strings against the supplied definition URL rather than process cwd. */
 export function registerSandboxContent(
   source: string | URL,
   definitionUrl?: string | URL,
