@@ -48,6 +48,7 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     get workdir() {
       return sandbox.workdir;
     },
+    get nativeInstanceId() { return sandbox.nativeInstanceId; },
     get sandboxId() {
       return sandbox.sandboxId;
     },
@@ -157,6 +158,7 @@ export function makeSandboxAuthorFacade(
     get workdir() {
       return sandbox.workdir;
     },
+    get nativeInstanceId() { return sandbox.nativeInstanceId; },
     get sandboxId() {
       return sandbox.sandboxId;
     },

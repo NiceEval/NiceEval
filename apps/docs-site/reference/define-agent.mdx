@@ -727,6 +727,14 @@ readonly sandboxId: string;
 
 This Sandbox's stable identifier (each provider's native ID, such as a Docker container ID prefix); used to correlate session state of the same Sandbox across calls, and for log display.
 
+#### `nativeInstanceId`
+
+```ts
+readonly nativeInstanceId?: string;
+```
+
+Provider-native instance selector for read-only diagnostics; absent when unavailable.
+
 #### `otlpHost`
 
 ```ts

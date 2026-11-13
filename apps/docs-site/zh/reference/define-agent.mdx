@@ -727,6 +727,14 @@ readonly sandboxId: string;
 
 本 Sandbox 的稳定标识(各 provider 原生 ID,如 Docker 容器 ID 前缀);用于跨调用关联同一 Sandbox 的会话状态,也用于日志展示。
 
+#### `nativeInstanceId`
+
+```ts
+readonly nativeInstanceId?: string;
+```
+
+Provider-native instance selector for read-only diagnostics; absent when unavailable.
+
 #### `otlpHost`
 
 ```ts

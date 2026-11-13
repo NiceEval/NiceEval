@@ -65,6 +65,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private runtime: string;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
+  get nativeInstanceId(): string { return this.sandboxId; }
   readonly sandboxId: string;
   readonly capabilities = {
     rootCommands: supportedBackendCapability(true as const),

@@ -741,6 +741,9 @@ function multiplexFeedbackSink(
       if (
         event.type === "attempt:queued" ||
         event.type === "attempt:start" ||
+        event.type === "attempt:phase" ||
+        event.type === "attempt:progress" ||
+        event.type === "attempt:sandbox" ||
         event.type === "attempt:complete" ||
         event.type === "attempt:early-exit"
       ) {

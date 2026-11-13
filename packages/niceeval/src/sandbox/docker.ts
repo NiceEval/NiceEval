@@ -1487,6 +1487,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   /** 容器短 ID(像 Docker CLI 那样取前 12 位)。 */
+  get nativeInstanceId(): string { return this._containerId; }
+
   get sandboxId(): string {
     return this._containerId.slice(0, 12);
   }

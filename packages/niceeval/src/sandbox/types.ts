@@ -195,6 +195,8 @@ export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
   stop(): Promise<void>;
   /** 本 Sandbox 的稳定标识(各 provider 原生 ID,如 Docker 容器 ID 前缀);用于跨调用关联同一 Sandbox 的会话状态,也用于日志展示。 */
   readonly sandboxId: string;
+  /** Provider-native instance selector for read-only diagnostics; absent when unavailable. */
+  readonly nativeInstanceId?: string;
   /**
    * OTLP receiver 的放置能力。
    * - `string`:Sandbox 内可通过该 hostname 访问宿主 receiver。

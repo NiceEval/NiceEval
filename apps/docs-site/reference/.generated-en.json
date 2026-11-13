@@ -244,6 +244,7 @@
   "sandbox-methods/SandboxTransferOperations/uploadDirectory": "",
   "sandbox-methods/SandboxTransferOperations/downloadFile": "",
   "sandbox-methods/SandboxTransferOperations/downloadDirectory": "",
+  "sandbox-methods/Sandbox/nativeInstanceId": "Provider-native instance selector for read-only diagnostics; absent when unavailable.",
   "sandbox-methods/Sandbox/stop": "Destroys the compute resources the Sandbox occupies (container/microVM). The Sandbox cannot be used after the call; whether repeated calls are safe varies by provider, so do not rely on it.",
   "sandbox-methods/Sandbox/sandboxId": "This Sandbox's stable identifier (each provider's native ID, such as a Docker container ID prefix); used to correlate session state of the same Sandbox across calls, and for log display.",
   "sandbox-methods/Sandbox/otlpHost": "The placement capability of the OTLP receiver.\n- `string`: the host receiver is reachable from inside the Sandbox through this hostname.\n- `null`: the provider does not promise a connection back to the host; the runner tries to start an attempt-scope receiver inside the Sandbox.\n  This does not guarantee tracing succeeds; when the image lacks the runtime the receiver needs, only a supplemental diagnostic is recorded.\n`defineConfig({ telemetry: { host } })` can override it explicitly when the author already provides a controlled tunnel.",

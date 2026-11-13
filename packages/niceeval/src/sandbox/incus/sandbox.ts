@@ -63,6 +63,7 @@ function commandLabel(argv: readonly string[]): string {
 export class IncusSandbox implements SandboxProviderBackend {
   readonly workdir = INCUS_WORKDIR;
   readonly sandboxId: string;
+  get nativeInstanceId(): string { return this.instanceName; }
   readonly otlpHost = INCUS_OTLP_HOST;
   readonly capabilities = {
     ...noSandboxBackendCapabilities,

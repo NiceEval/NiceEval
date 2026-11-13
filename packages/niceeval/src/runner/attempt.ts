@@ -1109,6 +1109,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   );
                   // Keep the physical identity available if preparation fails.
                   sandboxFacts = { provider: runtimeCapabilities.provider, sandboxId: materialized.sandbox.sandboxId };
+                  reportAttemptLifecycle({ type: "attempt:sandbox", at: Date.now(), identity, provider: runtimeCapabilities.provider, nativeInstanceId: materialized.sandbox.nativeInstanceId ?? null });
                   // Legacy layer/plugin setup is the earliest opaque barrier and runs after
                   // provider admission has been returned, while the same Attempt Scope still owns release.
                   if (sandboxPlan.pair.setupHooks.length > 0 || sandboxPlan.pair.pluginLifecycles.length > 0) {
@@ -1131,6 +1132,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // 一次性沙箱的租借时刻:实例到手就定归属,后面无论走到哪一步终结都带着它。
       if (agent.kind === "sandbox" && !sandboxFacts) {
         sandboxFacts = { provider: runtimeCapabilities!.provider, sandboxId: sandbox.sandboxId };
+        reportAttemptLifecycle({ type: "attempt:sandbox", at: Date.now(), identity, provider: runtimeCapabilities!.provider, nativeInstanceId: sandbox.nativeInstanceId ?? null });
       }
       if (agent.kind !== "sandbox") log(`using Direct Agent (no Sandbox created)...`);
 
@@ -1449,6 +1451,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             getPhase: () => (sendActive ? "agent.run" : lastPhase),
             setSendActive: (active) => {
               sendActive = active;
+              reportAttemptLifecycle({ type: "attempt:phase", at: Date.now(), identity, phase: active ? "agent.run" : (lastPhase ?? "eval.run") });
             },
             recorder,
             ...(attemptTimeout ? { attemptTimeout } : {}),

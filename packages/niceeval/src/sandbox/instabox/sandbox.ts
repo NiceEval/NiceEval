@@ -35,6 +35,8 @@ export class InstaboxBackend implements SandboxProviderBackend {
     private readonly deadlineAt?: number,
   ) {}
 
+  get nativeInstanceId(): string { return this.instanceName; }
+  private instanceName = "";
   get sandboxId(): string { return this.operation.machineId; }
   private get path(): string { return `/machines/${encodeURIComponent(this.sandboxId)}`; }
 
@@ -66,7 +68,9 @@ export class InstaboxBackend implements SandboxProviderBackend {
       try { operation = await request(); }
       catch { throw new Error("Instabox allocation could not be reconciled; the declared deletion deadline bounds any allocated Machine"); }
     }
-    return new InstaboxBackend(api, options, operation, deadlineAt);
+    const backend = new InstaboxBackend(api, options, operation, deadlineAt);
+    backend.instanceName = `niceeval-${idempotencyKey}`;
+    return backend;
   }
 
   async initialize(signal: AbortSignal): Promise<void> {

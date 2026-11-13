@@ -4,6 +4,9 @@
 // Attempt / verdict / artifact 继续由 Run 记录保存。所有写入都走逐条目原子
 // 文件原语，Session 不参与用例锁或实验级闸的判定。
 
+import { Schema } from "effect";
+import type { LifecyclePhase } from "./types.ts";
+import { projectLifecyclePhase } from "../inspection/lifecycle.ts";
 import { randomUUID } from "node:crypto";
 import { Cause, Deferred, Effect, Exit, Fiber, Queue, Scope } from "effect";
 import {
@@ -41,6 +44,25 @@ export interface SessionExperimentRecord {
   elsewhere?: number;
   /** Only currently queued Attempts with an actionable, stable reason are expanded. */
   attempts?: SessionQueuedAttemptRecord[];
+  activeAttempts?: SessionActiveAttemptRecord[];
+}
+
+const LifecyclePhaseSchema = Schema.Literals(["judge.precheck", "experiment.before", "experiment.after", "attempt.before", "attempt.after", "sandbox.queue", "sandbox.create", "sandbox.prepare", "sandbox.prepare.eval", "sandbox.prepare.group", "sandbox.prepare.experiment", "agent.ensure", "workspace.baseline", "agent.before", "telemetry.configure", "eval.run", "agent.run", "workspace.diff", "assertions.evaluate", "telemetry.collect", "agent.after", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
+
+export const SessionActiveAttemptsSchema = Schema.mutable(Schema.Array(Schema.Struct({
+  evalId: Schema.String, attemptOrdinal: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  phase: LifecyclePhaseSchema, phaseEnteredAt: Schema.String,
+  sandbox: Schema.NullOr(Schema.Struct({ provider: Schema.String, nativeInstanceId: Schema.NullOr(Schema.String) })),
+  detail: Schema.NullOr(Schema.Struct({ text: Schema.String, at: Schema.String })),
+})));
+
+export interface SessionActiveAttemptRecord {
+  evalId: string;
+  attemptOrdinal: number;
+  phase: ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>;
+  phaseEnteredAt: string;
+  sandbox: { provider: string; nativeInstanceId: string | null } | null;
+  detail: { text: string; at: string } | null;
 }
 
 export interface SessionQueuedAttemptRecord {
@@ -105,6 +127,7 @@ export interface SessionCloseInput {
  * every feedback event that cannot change its small progress projection.
  */
 export type SessionInvocationEvent =
+  | Extract<RunFeedbackEvent, { type: "attempt:phase" | "attempt:progress" | "attempt:sandbox" }>
   | {
       readonly type: "attempt:queued";
       readonly identity?: AttemptRef;
@@ -113,6 +136,8 @@ export type SessionInvocationEvent =
   | {
       readonly type: "attempt:start" | "attempt:complete" | "attempt:early-exit";
       readonly identity?: AttemptRef;
+      readonly phase?: LifecyclePhase;
+      readonly at?: number;
     }
   | {
       readonly type: "lock-wait";
@@ -184,6 +209,9 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
   if (raw.attempts !== undefined && (attempts === undefined || attempts.some((item) => item === undefined))) {
     return undefined;
   }
+  const activeRead = raw.activeAttempts === undefined ? undefined : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(raw.activeAttempts);
+  if (activeRead?._tag === "Failure") return undefined;
+  const activeAttempts = activeRead?.success;
   return {
     experimentId: raw.experimentId,
     runId: raw.runId,
@@ -193,6 +221,7 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
     ...(queued !== undefined ? { queued: queued as number } : {}),
     ...(elsewhere !== undefined ? { elsewhere: elsewhere as number } : {}),
     ...(attempts === undefined ? {} : { attempts: attempts as SessionQueuedAttemptRecord[] }),
+    ...(activeAttempts === undefined ? {} : { activeAttempts }),
   };
 }
 
@@ -243,6 +272,7 @@ function cloneRecord(record: SessionRecord): SessionRecord {
     ...record,
     experiments: record.experiments.map((experiment) => ({
       ...experiment,
+      ...(experiment.activeAttempts === undefined ? {} : { activeAttempts: experiment.activeAttempts.map((item) => ({ ...item, sandbox: item.sandbox === null ? null : { ...item.sandbox }, detail: item.detail === null ? null : { ...item.detail } })) }),
       ...(experiment.attempts === undefined
         ? {}
         : { attempts: experiment.attempts.map((attempt) => ({ ...attempt })) }),
@@ -401,6 +431,9 @@ export class SessionTracker {
   onFeedback(event: RunFeedbackEvent, _state?: RunFeedbackState): void {
     if (
       event.type === "attempt:start" ||
+      event.type === "attempt:phase" ||
+      event.type === "attempt:progress" ||
+      event.type === "attempt:sandbox" ||
       event.type === "attempt:queued" ||
       event.type === "attempt:complete" ||
       event.type === "attempt:early-exit" ||
@@ -449,7 +482,18 @@ export class SessionTracker {
       else experiment.attempts = attempts;
       return true;
     };
-    if (event.type === "attempt:queued" && experiment && identity) {
+    const active = experiment?.activeAttempts?.find((item) => item.evalId === identity?.evalId && item.attemptOrdinal === (identity?.attempt ?? -2) + 1);
+    if (event.type === "attempt:phase" && active) {
+      active.phase = projectLifecyclePhase(event.phase);
+      active.phaseEnteredAt = new Date(event.at).toISOString();
+      changed = true;
+    } else if (event.type === "attempt:progress" && active) {
+      active.detail = { text: event.detail, at: new Date(event.at).toISOString() };
+      changed = true;
+    } else if (event.type === "attempt:sandbox" && active) {
+      active.sandbox = { provider: event.provider, nativeInstanceId: event.nativeInstanceId };
+      changed = true;
+    } else if (event.type === "attempt:queued" && experiment && identity) {
       removeQueuedAttempt();
       experiment.attempts = [
         ...(experiment.attempts ?? []),
@@ -462,8 +506,10 @@ export class SessionTracker {
       experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
       experiment.running = (experiment.running ?? 0) + 1;
       experiment.state = "running";
+      if (identity !== undefined) experiment.activeAttempts = [...(experiment.activeAttempts ?? []), { evalId: identity.evalId, attemptOrdinal: identity.attempt + 1, phase: projectLifecyclePhase(event.phase ?? "sandbox.create"), phaseEnteredAt: new Date(event.at ?? Date.now()).toISOString(), sandbox: null, detail: null }];
       changed = true;
     } else if (event.type === "attempt:complete" && experiment) {
+      experiment.activeAttempts = experiment.activeAttempts?.filter((item) => item !== active);
       const completedWhileQueued = removeQueuedAttempt();
       if (completedWhileQueued) experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
       else experiment.running = Math.max(0, (experiment.running ?? 0) - 1);
@@ -537,6 +583,7 @@ export class SessionTracker {
         delete experiment.queued;
         delete experiment.elsewhere;
         delete experiment.attempts;
+        delete experiment.activeAttempts;
       }
       const snapshot = cloneRecord(this.record);
       const persistence = this.persistence;
@@ -840,9 +887,10 @@ export function renderSessionShowText(document: SessionShowDocument): string {
   const lines = [`SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`, `pid ${session.pid} · started ${session.startedAt}`];
   if ("status" in session) lines.push(`status ${session.status}${session.completedAt ? ` · completed ${session.completedAt}` : ""}`);
   if ("experiments" in session) {
-    lines.push(...session.experiments.map((experiment) =>
-      renderExperimentLine(experiment, publishedForSession(experiment, session.status))
-    ));
+    lines.push(...session.experiments.flatMap((experiment) => [
+      renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
+      ...(session.status === "active" ? (experiment.activeAttempts ?? []).map((attempt) => `    ${attempt.evalId} #${attempt.attemptOrdinal} · ${projectLifecyclePhase(attempt.phase)} since ${attempt.phaseEnteredAt} · ${attempt.sandbox === null ? "no Sandbox" : `${attempt.sandbox.provider} ${attempt.sandbox.nativeInstanceId ?? "no native instance identifier"}`}\n      ${attempt.detail === null ? "no detail" : `${attempt.detail.at} ${attempt.detail.text}`}`) : []),
+    ]));
   }
   if (document.expired) lines.push(`NEXT rerun the original command`);
   return `${lines.join("\n")}\n`;

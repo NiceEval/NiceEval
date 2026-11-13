@@ -1,3 +1,4 @@
+import { SessionActiveAttemptsSchema } from "../../../runner/session.ts";
 import { Schema } from "effect";
 import type {
   ExpiredSessionRecord,
@@ -45,6 +46,7 @@ const SessionExperimentSchema: Schema.Codec<SessionExperimentRecord> = Schema.St
   running: Schema.optional(NonNegativeIntegerSchema),
   queued: Schema.optional(NonNegativeIntegerSchema),
   elsewhere: Schema.optional(NonNegativeIntegerSchema),
+  activeAttempts: Schema.optional(SessionActiveAttemptsSchema),
   attempts: Schema.optional(Schema.mutable(Schema.Array(SessionQueuedAttemptSchema))),
 });
 

@@ -419,6 +419,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         }),
       };
 
+    case "attempt:sandbox":
+      return state;
+
     case "summary":
     case "receipt":
       // 终局通知:发出时 counts/active 已经由前面的 attempt 事件更新到位,状态本身不再变化——

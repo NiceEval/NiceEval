@@ -1747,6 +1747,7 @@ export interface RunFeedbackPlan {
 export type AttemptLifecycleEvent =
   | { type: "attempt:queued"; at: number; identity: AttemptRef; who: string; reason: AttemptQueueReason }
   | { type: "attempt:start"; at: number; identity: AttemptRef; who: string; phase: LifecyclePhase }
+  | { type: "attempt:sandbox"; at: number; identity: AttemptRef; provider: string; nativeInstanceId: string | null }
   | { type: "attempt:phase"; at: number; identity: AttemptRef; phase: LifecyclePhase }
   | { type: "attempt:progress"; at: number; identity: AttemptRef; detail: string }
   | {

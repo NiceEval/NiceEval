@@ -395,6 +395,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   private readonly userOverride?: string;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
+  get nativeInstanceId(): string { return this.sandboxId; }
   sandboxId: string;
 
   private deadlineAt?: number;

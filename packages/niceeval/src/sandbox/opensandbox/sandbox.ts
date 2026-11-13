@@ -38,6 +38,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
     private deadlineAt?: number) {
   }
 
+  get nativeInstanceId(): string { return this.remote.id; }
   get sandboxId(): string { return this.remote.id; }
 
   static async create(options: OpenSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, snapshotId?: string, runId?: string): Promise<OpenSandboxBackend> {

@@ -39,6 +39,7 @@ export function withEvalLocalPaths(sandbox: Sandbox, baseDir: string): Sandbox {
     get workdir() {
       return sandbox.workdir;
     },
+    get nativeInstanceId() { return sandbox.nativeInstanceId; },
     get sandboxId() {
       return sandbox.sandboxId;
     },

@@ -166,6 +166,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       case "attempt:early-exit":
         queue.push(() => renderer.onLifecycle?.(event, run));
         return;
+      case "attempt:sandbox":
+        return;
       case "experiment:progress":
         // 短命状态,只进 reducer(上面已更新 state.experimentHooks 的 detail);下一次 tick 的
         // 重画会读到新值,不为每条 progress 单独排一次渲染任务。
