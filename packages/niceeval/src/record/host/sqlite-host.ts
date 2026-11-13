@@ -63,8 +63,23 @@ function coreInvalid(): RecordCoreInvalid { return new RecordCoreInvalid({ code:
 function deadline(): number { return Date.now() + WRITE_DEADLINE_MS; }
 function storageRoot(root: RecordRoot): string | undefined { return recordRootPaths(root)?.portableRoot; }
 function sameRoot(a: RecordRoot, b: RecordRoot): boolean { return storageRoot(a) !== undefined && storageRoot(a) === storageRoot(b); }
+function storageFailureCause(cause: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 4 && cause !== undefined && !seen.has(cause); depth++) {
+    seen.add(cause);
+    if (!(cause instanceof Error)) {
+      parts.push(typeof cause === "string" ? cause : `non-Error failure (${typeof cause})`);
+      break;
+    }
+    const code: unknown = Reflect.get(cause, "code");
+    parts.push(`${cause.name}${typeof code === "string" ? ` [${code}]` : ""}: ${cause.message}`);
+    cause = cause.cause;
+  }
+  return parts.join("; caused by: ");
+}
 function sqliteEffect<A>(operation: () => Promise<A>): Effect.Effect<A, SqliteRecordError> {
-  return Effect.tryPromise({ try: operation, catch: (cause) => cause instanceof SqliteRecordError ? cause : new SqliteRecordError("record-sqlite-error", "record-host", "storage worker failed", { cause }) });
+  return Effect.tryPromise({ try: operation, catch: (cause) => cause instanceof SqliteRecordError ? cause : new SqliteRecordError("record-sqlite-error", "record-host", `storage worker failed: ${storageFailureCause(cause)}`, { cause }) });
 }
 function withWriteAdmission<A>(
   coordination: RecordCoordinationService,

@@ -28,6 +28,7 @@ Worker.prototype.postMessage = function(message, ...rest) {
     });
     expect(result.exitCode, result.diagnostic()).not.toBe(0);
     expect(result.stderr).toContain("fixture storage transport EIO");
+    expect(result.stderr).toContain("operation: prepare-finalization");
     const recovery = result.stderr.match(/niceeval run recover ([0-9a-f-]{36}) --yes/u);
     expect(recovery, result.diagnostic()).not.toBeNull();
     const recovered = await niceeval.run(["run", "recover", recovery![1]!, "--yes"]);

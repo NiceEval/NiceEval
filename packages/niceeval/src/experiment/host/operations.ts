@@ -5,6 +5,7 @@ import { Clock, Data, Effect, Result } from "effect";
 
 import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { acceptLocators, acceptRun, planAcceptRun, planAcceptLocators } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
@@ -772,6 +773,7 @@ function summaryOf(summary: InvocationSummary): ExperimentHostInvocationSummary 
 export function runInvocation(
   input: ExperimentHostInvocationRunRequest,
 ): Effect.Effect<ExperimentHostInvocationResult, ExperimentHostError, ExperimentHostRequirements> {
+  const invocationRuns = new Set<string>();
   return Effect.scoped(closeOperation("invocation-run", Effect.gen(function* () {
     const state = invocationPlans.get(input.plan as object);
     if (state === undefined || state.consumed) {
@@ -844,6 +846,7 @@ export function runInvocation(
         session,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
         onCurrentRecordReusePlan: (current) => Effect.sync(() => {
+          for (const runId of current.runIds.values()) invocationRuns.add(runId);
           if (feedback === undefined) return;
           feedback.start({
             shape: Object.freeze({
@@ -915,7 +918,13 @@ export function runInvocation(
         }, completion),
       }),
     });
-  })));
+  }).pipe(Effect.mapError((cause) => {
+    if (!(cause instanceof SqliteRecordError) || invocationRuns.size === 0) return cause;
+    const runs = [...invocationRuns];
+    return new SqliteRecordError(cause.code, cause.operation,
+      `${cause.message} (operation: ${cause.operation}). Invocation Runs: ${runs.join(", ")}. After the owner exits, inspect saved coverage and recover unfinished Runs: ${runs.map((runId) => `niceeval run recover ${runId} --yes`).join("; ")}`,
+      { cause });
+  }))));
 }
 
 export function planRename(

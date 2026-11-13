@@ -101,6 +101,15 @@ function requestTransferList(message: RequestWithoutId): readonly ArrayBuffer[] 
   return buffers;
 }
 
+function storageWorkerFailure(operation: string, cause: unknown): SqliteRecordError {
+  if (cause instanceof SqliteRecordError) return cause;
+  const code: unknown = cause instanceof Error ? Reflect.get(cause, "code") : undefined;
+  const detail = cause instanceof Error
+    ? `${cause.name}${typeof code === "string" ? ` [${code}]` : ""}: ${cause.message}`
+    : typeof cause === "string" ? cause : `non-Error failure (${typeof cause})`;
+  return new SqliteRecordError("record-sqlite-error", operation, `Record storage worker failed: ${detail}`, { cause });
+}
+
 export async function makeStorageWorkerClient(
   recordStorageRoot: string,
   busyTimeoutMs = 5_000,
@@ -117,6 +126,7 @@ export async function makeStorageWorkerClient(
   });
   let nextId = 1;
   let closed = false;
+  let terminalFailure: unknown;
   let termination: Promise<number> | undefined;
   let closing: Promise<void> | undefined;
   const pending = new Map<number, { readonly resolve: (value: StorageWorkerResult) => void; readonly reject: (cause: unknown) => void }>();
@@ -129,6 +139,7 @@ export async function makeStorageWorkerClient(
   const fail = (cause: unknown): void => {
     if (closed) return;
     closed = true;
+    terminalFailure = cause;
     rejectAll(cause);
     void terminate().catch(() => undefined);
   };
@@ -171,15 +182,15 @@ export async function makeStorageWorkerClient(
   });
 
   const request = <Result extends StorageWorkerResult>(message: RequestWithoutId): Promise<Result> => {
-    if (closed) return Promise.reject(new Error("Record storage worker is closed"));
+    if (closed) return Promise.reject(storageWorkerFailure(message.operation, terminalFailure ?? new Error("Record storage worker is closed")));
     const id = nextId++;
     return new Promise<Result>((resolve, reject) => {
-      pending.set(id, { resolve: (value) => resolve(value as Result), reject });
+      pending.set(id, { resolve: (value) => resolve(value as Result), reject: (cause) => reject(storageWorkerFailure(message.operation, cause)) });
       try {
         worker.postMessage({ ...message, id }, requestTransferList(message));
       } catch (cause) {
         pending.delete(id);
-        reject(cause);
+        reject(storageWorkerFailure(message.operation, cause));
       }
     });
   };
