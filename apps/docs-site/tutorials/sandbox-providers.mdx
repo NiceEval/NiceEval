@@ -156,7 +156,9 @@ const sandbox = dockerSandbox({
   }));
 ```
 
-`changeFrequency` decides the order of steps: steps with small values that rarely change come first, and steps with large values that change often come later. That way, when only a later step changes, earlier steps can reuse the last result directly. It is an ordinary non-negative number; the built-in constants are only for readability:
+Within one layer, `.before()` steps run in the order they are written. A callback also counts as a step, and `.after()` does not break the chain. A later step waits for the previous one even when its `changeFrequency` is lower.
+
+`changeFrequency` decides how different chains interleave: once dependencies are satisfied, steps with lower values run first. Put stable preparation steps early in the chain so they can reuse the cache when only later steps change. The frequency is an ordinary non-negative number; the built-in constants make it easier to read:
 
 ```ts
 changeFrequency.rare     // 10
@@ -164,16 +166,27 @@ changeFrequency.normal   // 100
 changeFrequency.frequent // 1000
 ```
 
-The preparation steps of the Experiment, eval group, eval, and Sandbox Agent are placed in one order: explicit `dependsOn` is satisfied first, then steps run from small to large values. So a rarely changing step in an eval group can come before a frequently changing step in the Experiment.
+The preparation steps of the Experiment, eval group, eval, and Sandbox Agent enter the same dependency graph. Each chain keeps its written order. Use `dependsOn` or capabilities to declare dependencies across chains, then frequency chooses among the ready steps. Each Plugin's preparation array forms its own chain, with no automatic dependency edges to author layers.
 
-At run time, each preparation step appears in the progress display without leaking content:
+When a script is longer than a few lines, put it in a separate file and use `script` instead of `command`:
 
-- `shell()` shows the command you wrote, not the wrapping `/bin/sh -lc`; `command()` and `exec` show the executable and arguments.
-- `writeText()` / `writeBytes()` show only the target path, byte count, and digest, not the body.
-- Uploads show only the digest, target path, and byte count, not the source path on the host.
-- Git checkout addresses have user info, query, and fragment removed; environment variables list only names.
+```ts
+shell({
+  id: "prepare-runtimes",
+  label: "Prepare runtimes",
+  script: new URL("./scripts/prepare-runtimes.sh", import.meta.url),
+  user: "root",
+  env: { CANDIDATE_VERSION: "0.20.0" },
+})
+```
 
-Very short progress updates may be merged in the display. To reliably see fine-grained progress for a long script, split it into several smaller steps, each running long enough on its own, or report progress yourself. NiceEval does not track steps inside shell scripts. Dynamic callbacks report their own progress with `context.progress()`.
+`script` accepts a module-relative `file:` URL. Choose either `script` or `command`. The file must be inside the project root; the URL cannot contain a query or fragment, and a symlink cannot point outside the project. If the file is missing, unreadable, or not UTF-8 text, the run fails before creating a Sandbox and identifies the path.
+
+NiceEval reads the script once during planning and freezes its original contents; execution does not read it again. The script contents and `env` values enter the fingerprint; the file path, file name, and `label` do not. Changing one byte reruns this step and every step after it.
+
+Run progress shows only `label`, or `id` when the label is omitted. A `label` must be non-empty, contain no control characters, and be at most 256 Unicode code points. Built-in actions and custom families follow the same rule. Use `niceeval debug <experiment> <eval>` to see the full script, relative path, and digest; use `niceeval show @<locator> --execution` to see the commands actually executed.
+
+Very short progress updates may be merged in the display. To observe progress step by step, split a long script into several named actions. NiceEval does not track steps inside shell scripts. Dynamic callbacks report their own progress with `context.progress()`.
 
 ### Declare preparation cache coverage
 

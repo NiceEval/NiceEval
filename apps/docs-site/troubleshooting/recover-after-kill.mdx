@@ -15,12 +15,15 @@ List the Runs this run created. If you got the `invocationId` from `--json` outp
 ```bash
 pnpm exec niceeval run list --invocation <invocation-id>
 pnpm exec niceeval show --run <run-id>
-pnpm exec niceeval show --run <run-id>
 ```
 
 You can also look in the browser: `pnpm exec niceeval view --run <run-id>`.
 
-A Run that was force-killed is still `active`. It shows the Attempts that already finished, and the ones that did not show --run as `pending`. Do not decide it can be taken over based on how long it has run, an expired PID, or a stopped heartbeat.
+A Run that was force-killed is still `active`. It shows the Attempts that already finished, and unfinished ones appear as `pending`. Do not decide it can be taken over based on how long it has run, an expired PID, or a stopped heartbeat.
+
+If you do not know the Invocation ID, use `pnpm exec niceeval run list --state active --state recovering --experiment <experiment-prefix> --limit 20` to find Runs that need attention. `--experiment` matches by path prefix; the list is ordered newest first and reports how many items were omitted.
+
+An owner observation of `gone` means the original process was proved to have terminated; `alive` means it was still running when observed; `unknown` means the evidence is insufficient, with a reason provided. Owners in external Records always show as `unknown`. These are observations at a point in time; recovery checks again.
 
 ## End the Run that lost its process
 
@@ -28,11 +31,17 @@ Run the recovery only after confirming the original process has ended:
 
 ```bash
 pnpm exec niceeval run recover <run-id> --yes
+# Recover each listed candidate whose original process can be proved to have terminated
+pnpm exec niceeval run recover --orphaned --yes --json
 ```
 
 `run recover` first verifies that the original process really has ended. Once verified, it marks the Run `interrupted` and records why each unfinished Attempt is missing. It does not delete the Run or the finished Attempts, and the original process cannot write again even if it lingers.
 
 When the evidence is insufficient, the command refuses to recover. In that case, first confirm that the original process, the CI job, and any remote workers have all stopped, then retry. Do not bypass this check because "it has waited long enough".
+
+Recovery of a set skips owners observed as `alive` or `unknown` and reports the reason for each. A failure for one Run does not stop the others, but the command exits nonzero. JSON mode requires `--yes`; in an interactive terminal, you can omit it, review the candidates, and confirm once.
+
+If recovery itself is interrupted, the Run may remain `recovering`. After confirming that the previous recovery process has ended, retry the same command to continue. It preserves published Attempts and does not release shared State, run Experiment after, or clean up Sandboxes.
 
 ## Rerun the unfinished part
 

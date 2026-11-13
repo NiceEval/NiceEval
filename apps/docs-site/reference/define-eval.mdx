@@ -411,6 +411,25 @@ Which model the Judge uses is decided in order: first the project config's `judg
 
 Both pass/fail and scored Evals can call `.gate(minimum)`. Scored Evals can also call `.score(n)`, and the item keeps its score when the gate fails.
 
+### Binary judges
+
+When you only need to decide whether a condition is satisfied, import `binaryJudge` from `niceeval/expect`:
+
+```ts
+import { binaryJudge } from "niceeval/expect";
+
+const namesEntry = binaryJudge({
+  name: "names-entry",
+  rubric: "Satisfied if and only if the reply explicitly names verified.entry.",
+});
+t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
+```
+
+`binaryJudge(options: BinaryJudgeOptions)` returns an ordinary `ScoreMatch`. `BinaryJudgeOptions` is `JudgeOptions` without `anchors`:
+`name` and `rubric` are required; `maxCalls`, `maxMaterialBytes`, and `maxAuditBytes` are optional. Validation and budgets are the same as for `defineJudge`.
+It classifies only as `satisfied` or `not-satisfied`, yielding `1` or `0` respectively. As a result, `.score(n)` awards either full points or zero; use `.gate(1)` when the condition must be satisfied.
+Invalid output, insufficient budget, or service failures retain their errored or unavailable state and do not count as zero. The audit keeps the category, reason, and mapped result for review with `show @<locator> --assertions`.
+
 ### Image material
 
 Import `judgeImage` from `niceeval/judge`; it copies the original image data immediately. The limits are:
@@ -692,3 +711,14 @@ In Agent scenarios, `read` reads the tool calls (`toolCalls`) or events (`eventO
 
 `t.maxTokens(max)` limits total tokens. `t.maxCost(usd)` limits by USD cost: it prefers the actual charged amount, and a charge of 0 also counts; only when there is no actual charge does it use an estimate computed from prices you configured explicitly.
 `t.elapsedMs` is the milliseconds elapsed from the start of the Attempt to the moment it is read, and can be passed to `t.check(..., atMost(limit))`. The business moment of "first completion" still has to be judged with the business's own match condition.
+
+## Sandbox result assertions
+
+| Method | Meaning |
+| --- | --- |
+| `t.sandbox.unchangedWithin(paths)` | Protects the listed files and directories; any changed path within those scopes makes the condition unmet. No changes also satisfies it. |
+| `t.sandbox.inDiff(pattern, options?)` | The condition is satisfied when the regular expression matches a changed path or selected changed line; `content` accepts the same values and default as `notInDiff`. |
+
+`unchangedWithin(["agents", "niceeval.config.ts"])` protects the run configuration while allowing changes to other files; it is not the logical inverse of `changedOnlyWithin`. The same path-component matching and rejection rules for globs and empty arrays apply as for allowed-scope checks.
+
+`inDiff` does not scan unchanged context. When there is no match and the selected content is elided, the result is unavailable; a match in a path or known changed line still establishes that the condition is satisfied. Match evidence keeps the first matching path and a bounded preview. To match only content, choose a pattern that avoids matching paths.

@@ -32,6 +32,11 @@ Paged results carry a continuation token. The token remembers the operation, the
 
 ## `niceeval show`
 
+For identity gaps, `niceeval show` explains the changes directly: `Changed` lists selectors for configuration, source, or data, with bounded summaries of both sides.
+Source and data hashes show only the first 8 characters; additions and removals are marked `added` or `removed`. Each gap lists at most three items, with the rest shown as `+N more`.
+When every gap in an Experiment has the same explanation, it appears once with `all N gaps`.
+An identity change that cannot be explained shows `Unexplained` and a diagnostic summary. Run the `niceeval exp <experiment> --dry` command suggested under `Next` at the end of the run to see all changes.
+
 ```sh
 niceeval show [--record <file>]
 niceeval show --run <run-id>... [--record <file>]
@@ -130,6 +135,29 @@ All three paths read the same results, but each owns its own layout and presenta
 | Let a person or coding agent view a summary of the overview, a Run, an Experiment, or an Attempt in a terminal | `niceeval show` |
 | Review the overview or a Run in a browser | `niceeval view` |
 | Read the same results on another machine | Copy `.niceeval/record.sqlite`, then point to it with `--record` |
+
+## Find and recover Runs
+
+`niceeval run list` lists Runs by creation time, newest first, sorting ties by Run ID. Repeated `--state` filters match any selected state; different filters must all match:
+
+```bash
+niceeval run list --state active --state recovering --experiment suite --limit 10
+niceeval run list --invocation <invocation-id> --json
+niceeval run list --record ./record.sqlite --state active --json
+```
+
+`--experiment suite` matches `suite` and `suite/...`, but not `suite-other`. `--limit` must be a positive integer; omitting it leaves the list untruncated. In JSON, `omitted` counts the filtered results left out.
+
+Rows in `active` or `recovering` show an owner observation of `alive`, `gone`, or `unknown`, along with the observation time. `alive` means the recorded process still existed when observed; `gone` means its termination was proved. For `unknown`, the reason distinguishes records from another machine, missing process identity, external Records, and probe failures. Observations do not change Run state; reading an external Record does not probe local processes.
+
+```bash
+niceeval run recover <run-id> --yes
+niceeval run recover --orphaned --yes --json
+```
+
+`--orphaned` freezes the set of `active` and `recovering` candidates at one read boundary, lists their Run IDs before confirmation, then rechecks each one's state, write generation, and process identity. It skips owners observed as `alive` or `unknown`. A failure for one Run does not stop the others, but any failure makes the command exit nonzero. JSON `items` list each Run's `recovered`, `skipped`, or `failed` result. No candidates is a successful empty result. JSON mode requires `--yes`; human-readable mode asks for confirmation once, only in an interactive terminal.
+
+`recovering` means recovery has acquired write ownership, but the Run has not yet been marked as ended. If the recovery process is interrupted, retry the same command; termination of the previous recovery process must still be proved. Recovery only records absence for unpublished slots and ends this Run, preserving published Attempts. It does not release shared State, run Experiment after, or clean up Sandboxes; those operations require their own explicit commands.
 
 ## CLI flags
 
