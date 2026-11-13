@@ -19,7 +19,7 @@ export default defineExperiment({ evals: ${JSON.stringify(evals)}, adapter: defi
     for (const [id, body] of [["pass", 'defineEval({ test(t) { t.check(true, equals(true)); } })'], ["fail", 'defineEval({ test(t) { t.check(false, equals(true)); } })'], ["score", 'defineScoreEval({ test(t) { t.score(3); t.check(false, equals(true)).score(1); } })']]) {
       await writeFile(join(projectRoot, `evals/${id}.eval.ts`), `import { defineEval, defineScoreEval } from "niceeval";\nimport { equals } from "niceeval/expect";\nexport default ${body};\n`);
     }
-    const run = await niceeval.run(["exp", "reference-pass", "reference-score", "--json"]);
+    const run = await niceeval.run(["exp", "--experiment", "reference-pass", "--experiment", "reference-score", "--json"]);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
     expect(run.expEvalEvents()).toHaveLength(3);
     for (const id of ["pass", "fail", "score"]) {
