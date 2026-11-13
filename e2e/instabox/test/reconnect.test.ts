@@ -16,6 +16,7 @@ test.concurrent("commands and open stdin resume together after client disconnect
     await verifyMachinesAbsent(machines);
     const log = await readFile(connections, "utf8");
     console.info("Instabox command timing (single ms, total20 ms):", log.match(/^timing (.+)$/m)?.[1]);
+    console.info("Instabox connection evidence:\n" + log);
     expect(log, result.diagnostic()).toContain("client-destroyed");
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(log).toContain("write-ack-destroyed");

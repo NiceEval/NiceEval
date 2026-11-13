@@ -31,6 +31,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   private stopped = false;
   private stopping?: Promise<void>;
   private connection?: InstaboxConnection;
+  private retirementCause?: Error;
   private readonly deleteKey = randomUUID();
 
   private constructor(
@@ -95,15 +96,20 @@ export class InstaboxBackend implements SandboxProviderBackend {
   }
 
   private async startProcess(input: ManagedProcessStart, root = false): Promise<ManagedProcess> {
+    this.assertAvailable();
     if (this.stopped || this.stopping || this.token === undefined || this.connection === undefined) throw new Error("Instabox Machine is not available");
     return startInstaboxProcess({
       token: this.token, process: { ...input, cwd: resolveSandboxPath(this.workdir, input.cwd) },
-      pathPrepend: this.options.pathPrepend ?? [], root, retire: () => this.stop(),
+      pathPrepend: this.options.pathPrepend ?? [], root, retire: cause => {
+        this.retirementCause ??= cause;
+        return this.stop();
+      },
       connection: this.connection, diagnostic: this.diagnostic,
     });
   }
 
   async runCommand(command: string, args: readonly string[] = [], options: CommandOptions = {}): Promise<CommandResult> {
+    this.assertAvailable();
     if (options.user !== undefined && options.user !== "root") throw new Error("Instabox supports only the snapshot login user or an explicit root override");
     options.signal?.throwIfAborted();
     const limit = commandLimit(options, { deadlineAt: this.deadlineAt });
@@ -144,14 +150,27 @@ export class InstaboxBackend implements SandboxProviderBackend {
       return result;
     } catch (cause) {
       if (signal.aborted) return await cancelled;
-      await this.stop();
+      try { await this.stop(); }
+      catch (cleanup) {
+        const reason = this.retirementCause ?? cause;
+        throw new AggregateError([cause, cleanup], `${reason instanceof Error ? reason.message : String(reason)}; Machine cleanup failed`);
+      }
       throw cause;
     } finally { signal.removeEventListener("abort", cancel); }
   }
 
   runShell(script: string, options?: CommandOptions): Promise<CommandResult> { return this.runCommand("bash", ["-c", script], options); }
+  private assertAvailable(): void {
+    if (this.retirementCause) throw this.retirementCause;
+    if (this.stopped || this.stopping) throw new Error("Instabox Machine is not available");
+  }
+  private async fileRequest(...args: Parameters<InstaboxApi["request"]>): Promise<Response> {
+    this.assertAvailable();
+    try { return await this.api.request(...args); }
+    catch (cause) { throw this.retirementCause ?? cause; }
+  }
   async readBytes(path: string): Promise<Uint8Array> {
-    const response = await this.api.request(`${this.path}/files/content?path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`, {
+    const response = await this.fileRequest(`${this.path}/files/content?path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`, {
       timeoutMs: 120_000,
     });
     return new Uint8Array(await response.arrayBuffer());
@@ -159,7 +178,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   async readText(path: string): Promise<string> { return Buffer.from(await this.readBytes(path)).toString("utf8"); }
   async writeBytes(path: string, bytes: Uint8Array): Promise<void> {
     const timeoutMs = Math.max(60_000, Math.ceil(bytes.byteLength / (64 * 1024)) * 1000);
-    const response = await this.api.request(`${this.path}/files?parents=true&path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`, {
+    const response = await this.fileRequest(`${this.path}/files?parents=true&path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`, {
       method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: Buffer.from(bytes),
       timeoutMs,
     });
@@ -168,27 +187,31 @@ export class InstaboxBackend implements SandboxProviderBackend {
   writeText(path: string, text: string): Promise<void> { return this.writeBytes(path, Buffer.from(text)); }
   async pathExists(path: string): Promise<boolean> {
     try {
-      const response = await this.api.request(`${this.path}/files?path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`);
+      const response = await this.fileRequest(`${this.path}/files?path=${encodeURIComponent(resolveSandboxPath(this.workdir, path))}`);
       await response.arrayBuffer();
       return true;
     } catch (cause) {
       if (cause instanceof InstaboxApiError && cause.status === 404) {
         // Distinguish an absent file from a deleted Machine.
-        await this.api.json(Machine, this.path);
+        this.assertAvailable();
+        try { await this.api.json(Machine, this.path); }
+        catch (error) { throw this.retirementCause ?? error; }
         return false;
       }
       throw cause;
     }
   }
   async uploadFile(source: string | URL, target: string): Promise<void> {
+    this.assertAvailable();
     const body = await openAsBlob(resolveLocalPath(undefined, source));
-    const response = await this.api.request(`${this.path}/files?parents=true&path=${encodeURIComponent(resolveSandboxPath(this.workdir, target))}`, {
+    const response = await this.fileRequest(`${this.path}/files?parents=true&path=${encodeURIComponent(resolveSandboxPath(this.workdir, target))}`, {
       method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body,
       timeoutMs: Math.max(60_000, Math.ceil(body.size / (64 * 1024)) * 1000),
     });
     await response.arrayBuffer();
   }
   async uploadDirectory(source: string | URL, target?: string, options: { readonly ignore?: readonly string[] } = {}): Promise<void> {
+    this.assertAvailable();
     const snapshot = registeredSandboxContentSnapshotOf(registerSandboxContent(resolveLocalPath(undefined, source), import.meta.url));
     if (snapshot.kind !== "directory") throw new Error("uploadDirectory requires a directory");
     const ignored = new Set(options.ignore ?? []);
@@ -197,6 +220,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     });
   }
   async uploadContentDirectory(snapshot: DirectorySnapshot, targetPath: string, commands: Pick<SandboxOperations, "runCommandOrThrow">): Promise<void> {
+    this.assertAvailable();
     const id = randomUUID();
     const target = resolveSandboxPath(this.workdir, targetPath).replace(/\/+$/, "");
     if (!target) throw new Error("Cannot replace the filesystem root with a directory archive");
@@ -207,6 +231,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     await commands.runCommandOrThrow("node", ["-e", expandDirectory, config], { cwd: "/tmp" });
   }
   async downloadFile(source: string, target: string | URL): Promise<void> {
+    this.assertAvailable();
     const destination = resolveLocalPath(undefined, target);
     await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, await this.readBytes(source));
   }

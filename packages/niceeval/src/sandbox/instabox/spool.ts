@@ -12,7 +12,13 @@ const out = fs.openSync(c.spool + '/stdout', 'a', 0600);
 const err = fs.openSync(c.spool + '/stderr', 'a', 0600);
 fs.writeFileSync(c.spool + '/pid', String(process.pid));
 const sockets = new Set();
-let child, finished = false, stdinClosed = false;
+let child, finished = false;
+let stdinState = { offset: 0, eof: false }, operations = Promise.resolve();
+const persistStdin = () => {
+  fs.writeFileSync(c.spool + '/stdin.tmp', JSON.stringify(stdinState), { mode: 0600 });
+  fs.renameSync(c.spool + '/stdin.tmp', c.spool + '/stdin');
+};
+persistStdin();
 const finish = (exitCode, signal) => {
   if (finished) return;
   finished = true;
@@ -37,11 +43,34 @@ const server = net.createServer(socket => {
       const line = buffered.slice(0, index); buffered = buffered.slice(index + 1);
       let message;
       try { message = JSON.parse(line); } catch { socket.destroy(); return; }
-      const ack = error => { if (!socket.destroyed) socket.write(JSON.stringify({ id: message.id, ...(error ? { error: error.message } : {}) }) + '\n'); };
-      if (!child || finished || stdinClosed) { ack(Error('Process stdin is closed')); continue; }
-      if (message.kind === 'eof') { stdinClosed = true; child.stdin.end(() => ack()); }
-      else if (message.kind === 'write') child.stdin.write(Buffer.from(message.bytes, 'base64'), ack);
-      else ack(Error('Invalid stdin operation'));
+      // Serialize across old and replacement sockets. A status request cannot
+      // overtake a write whose callback has not yet persisted its receipt.
+      operations = operations.then(async () => {
+        const ack = error => { if (!socket.destroyed) socket.write(JSON.stringify({ id: message.id, ...stdinState, ...(error ? { error: error.message } : {}) }) + '\n'); };
+        try {
+          if (message.kind === 'status') { ack(); return; }
+          if (!Number.isSafeInteger(message.offset) || message.offset < 0 || message.offset > stdinState.offset) throw Error('Invalid stdin offset');
+          if (message.kind === 'write') {
+            const bytes = Buffer.from(message.bytes, 'base64');
+            const remaining = bytes.subarray(Math.min(bytes.length, stdinState.offset - message.offset));
+            if (!remaining.length) { ack(); return; }
+            if (!child || finished || stdinState.eof) throw Error('Process stdin is closed');
+            await new Promise((resolve, reject) => child.stdin.write(remaining, error => error ? reject(error) : resolve()));
+            stdinState.offset += remaining.length;
+          } else if (message.kind === 'eof') {
+            if (message.offset !== stdinState.offset) throw Error('Invalid EOF offset');
+            if (!stdinState.eof) {
+              if (!child || finished) throw Error('Process stdin is closed');
+              await new Promise((resolve, reject) => {
+                child.stdin.once('error', reject);
+                child.stdin.end(() => { child.stdin.removeListener('error', reject); resolve(); });
+              });
+              stdinState.eof = true;
+            }
+          } else throw Error('Invalid stdin operation');
+          persistStdin(); ack();
+        } catch (error) { ack(error); }
+      });
     }
   });
 });
@@ -87,7 +116,7 @@ const alive = () => { try { process.kill(Number(fs.readFileSync(c.spool + '/pid'
   if (!exists(c.spool + '/stdout') || (!exists(c.spool + '/exit') && !alive())) {
     await frame(6, { reason: 'spool or supervisor is missing' }); process.exit(1); return;
   }
-  if (c.initial && !exists(c.spool + '/exit')) {
+  if (!exists(c.spool + '/exit')) {
     const until = Date.now() + 10000;
     while (!exists(c.spool + '/exit')) {
       socket = net.connect(c.spool + '/stdin.sock');
@@ -104,18 +133,34 @@ const alive = () => { try { process.kill(Number(fs.readFileSync(c.spool + '/pid'
     }
   }
   if (socket) {
+    let ready = false, resolveReady, rejectReady;
+    const stdinReady = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    socket.on('close', () => {
+      if (ready) return;
+      if (exists(c.spool + '/exit')) {
+        ready = true;
+        void frame(3, JSON.parse(fs.readFileSync(c.spool + '/stdin', 'utf8'))).then(resolveReady, rejectReady);
+      } else rejectReady(Error('Supervisor stdin socket closed before status'));
+    });
     let buffered = '';
     socket.on('data', bytes => {
       buffered += bytes.toString('utf8');
       let index;
       while ((index = buffered.indexOf('\n')) !== -1) {
         const line = buffered.slice(0, index); buffered = buffered.slice(index + 1);
-        void frame(4, JSON.parse(line));
+        const receipt = JSON.parse(line);
+        if (receipt.id === 0) {
+          ready = true;
+          void frame(3, receipt).then(resolveReady, rejectReady);
+        } else void frame(4, receipt);
       }
     });
+    socket.write(JSON.stringify({ id: 0, kind: 'status' }) + '\n');
     process.stdin.pipe(socket);
+    await stdinReady;
+  } else {
+    await frame(3, JSON.parse(fs.readFileSync(c.spool + '/stdin', 'utf8')));
   }
-  await frame(3, {});
   let stdout = c.stdoutOffset, stderr = c.stderrOffset;
   const out = fs.openSync(c.spool + '/stdout', 'r'), err = fs.openSync(c.spool + '/stderr', 'r');
   const read = async (fd, offset, limit, tag) => {
