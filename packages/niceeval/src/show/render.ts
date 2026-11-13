@@ -2205,3 +2205,19 @@ function assertionReasons(value: AssertionFactValue): string[] {
     return assertionReasons(field.value);
   });
 }
+
+export function renderAssertionMatrix(matrix: import("../inspection/assertion-matrix.ts").AssertionMatrix): string {
+  const blocks: TerminalBlock[] = [];
+  for (const value of matrix.evals) {
+    blocks.push({ kind: "divider", title: value.evalId });
+    blocks.push({ kind: "raw", text: "* marks different decisions or scores across columns." });
+    value.columns.forEach((column, index) => blocks.push({ kind: "raw", text: `${index + 1}: ${column.experimentId} #${column.attemptOrdinal} ${column.locator ?? (column.publication.state === "absent" ? column.publication.reason : "pending")}` }));
+    blocks.push({ kind: "table", columns: [{ header: "Criterion" }, ...value.columns.map((_, index) => ({ header: String(index + 1) }))], rows: [
+      ["Verdict / score", ...value.columns.map((column) => `${column.verdict ?? "—"} / ${metric(column.score)}`)],
+      ...value.rows.map((row) => [`${row.distinct ? "* " : ""}${[...row.groupPath, row.label ?? row.key ?? ""].join(" / ")}`, ...row.cells.map((cell) => cell.state === "absent" ? "—" : cell.state !== "available" ? cell.state : cell.entries.map(({ result, contribution }) => contribution.state === "earned" ? `${fmt(contribution.earned)}/${fmt(contribution.points)}` : contribution.state === "unavailable" ? `${result} (—/${fmt(contribution.points)})` : result).join("; "))]),
+    ] });
+    if (value.unkeyed.some((count) => count > 0)) blocks.push({ kind: "raw", text: `Unkeyed entries by column: ${value.unkeyed.join(", ")}` });
+  }
+  blocks.push({ kind: "raw", text: `Matrix ${matrix.state}; omitted: ${matrix.omitted.evals} evals, ${matrix.omitted.rows} rows, ${matrix.omitted.columns} columns.` });
+  return terminal(blocks);
+}

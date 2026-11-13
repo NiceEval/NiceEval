@@ -25,6 +25,8 @@ import {
   InspectionTraceDetailResultSchema, InspectionTraceResultSchema,
 } from "./results.ts";
 
+import { AssertionMatrixSchema } from "./assertion-matrix.ts";
+
 const AttemptLocatorSchema = Schema.String.pipe(Schema.refine(
   (value): value is string => ATTEMPT_LOCATOR_PATTERN.test(value),
   { identifier: "AttemptLocator", description: "a canonical @-prefixed Attempt locator" },
@@ -99,6 +101,7 @@ const spec = <Request extends Schema.Constraint, ResultFields extends Schema.Str
 export const inspectionProtocolRegistry = Object.freeze({
   "project.get": spec({ request: operation("project.get", { experimentIds: Schema.optional(ProjectExperimentIdsSchema) }), result: { project: InspectionProjectResultSchema }, factKinds: ["current-project", "core", "assertions", "attempt-cost"] }),
   "overview.get": spec({ request: operation("overview.get", { runIds: Schema.optional(RunIdsSchema) }), result: { overview: InspectionOverviewResultSchema }, factKinds: ["core", "assertions", "attempt-cost"] }),
+  "experiments.assertions": spec({ request: operation("experiments.assertions", { experimentIds: Schema.Array(ExperimentIdSchema).check(Schema.makeFilter((ids) => ids.length > 0 && ids.length <= 32)), evalIdPrefix: Schema.optional(Schema.String) }), result: { matrix: AssertionMatrixSchema }, factKinds: ["core", "assertions"] }),
   "experiment.get": spec({ request: operation("experiment.get", { experimentId: ExperimentIdSchema }), result: { experiment: InspectionExperimentResultSchema }, factKinds: ["core", "attempt-note", "assertions", "attempt-cost", "agent-turns", "adapter-usage", "judge-usage"] }),
   "run.list": spec({ request: operation("run.list", { continuation: Schema.optional(Schema.String) }), result: { runs: InspectionRunListResultSchema, continuation: Schema.optional(Schema.String) }, factKinds: ["core"] }),
   "run.get": spec({ request: operation("run.get", { runId: RunIdSchema }), result: { run: InspectionRunResultSchema }, factKinds: ["core", "assertions", "agent-turns", "adapter-usage", "judge-usage"] }),

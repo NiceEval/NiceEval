@@ -36,6 +36,7 @@ import {
   comparisonRegressions,
   renderAttempt,
   renderAssertions,
+  renderAssertionMatrix,
   renderReferences,
   renderDiff,
   renderExperiment,
@@ -77,6 +78,7 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
   "max-regressions": option({ type: "string", help: help("Maximum allowed regressions (non-negative integer; paired or exact).") }),
   json: option({ type: "boolean", help: help("Print Inspection documents as JSON Lines.") }),
   output: option({ type: "string", short: "o", help: help("Output format: text (default) or json.") }),
+  eval: option({ type: "string", help: help("Filter Eval ID path prefix; requires --experiment with --assertions.") }),
   assertions: option({ type: "boolean", help: help("Show Assertion decisions, scores, and reasons.") }),
   entry: option({ type: "string", help: help("Select one exact Assertion entry ID; requires --assertions.") }),
   compact: option({ type: "boolean", help: help("Omit raw Assertion materials and context rows (default).") }),
@@ -290,7 +292,11 @@ function runShow(
       return yield* usage(
         "--assertions, --source, --execution, --timing, --usage, and --diff are mutually exclusive.",
       );
-    if (detailModes > 0 && locator === undefined)
+    const matrix = assertions && experimentIds.length > 0;
+    const evalIdPrefix = typeof parsed.values.eval === "string" ? parsed.values.eval : undefined;
+    if (evalIdPrefix !== undefined && !matrix) return yield* usage("--eval requires --experiment with --assertions.");
+    if (matrix && (entryId !== undefined || compact || full)) return yield* usage("--entry, --compact, and --full require an Attempt locator.");
+    if (detailModes > 0 && locator === undefined && !matrix)
       return yield* usage(
         "--assertions, --source, --execution, --timing, --usage, and --diff require one Attempt locator.",
       );
@@ -381,6 +387,12 @@ function runShow(
             ? Effect.fail(failure("encode result", encoded.failure))
             : write("stdout", encoded.success);
         };
+        if (matrix) {
+          const document = yield* select("experiments.assertions", () => selectInspectionOperation(opened, { kind: "experiments.assertions", experimentIds, ...(evalIdPrefix === undefined ? {} : { evalIdPrefix }) }));
+          if (json) yield* writeJson(document);
+          else yield* write("stdout", renderAssertionMatrix(document.matrix));
+          return 0;
+        }
         if (json && !compare) {
           const selectedLocator = decodedLocator?.locator;
           const entries = assertions && entryId === undefined
@@ -715,6 +727,7 @@ export function showOperations(input: {
   readonly runIds: readonly InspectionOperationFor<"run.get">["runId"][];
   readonly experimentIds: readonly InspectionOperationFor<"experiment.get">["experimentId"][];
   readonly locator?: string;
+  readonly evalIdPrefix?: string;
   readonly slice?: "assertions" | "source" | "execution" | "timing" | "usage" | "diff";
   readonly entryIds?: readonly string[];
   readonly projection?: "compact" | "full";
@@ -723,6 +736,7 @@ export function showOperations(input: {
   readonly continuation?: string;
 }): readonly InspectionOperation[] {
   if (input.runIds.length > 0) return input.runIds.map((runId) => ({ kind: "run.get", runId }));
+  if (input.experimentIds.length > 0 && input.slice === "assertions") return [{ kind: "experiments.assertions", experimentIds: [...new Set(input.experimentIds)].sort(), ...(input.evalIdPrefix === undefined ? {} : { evalIdPrefix: input.evalIdPrefix }) }];
   if (input.experimentIds.length > 0) return input.experimentIds.map((experimentId) => ({ kind: "experiment.get", experimentId }));
   const locator = input.locator;
   if (locator === undefined) return [{ kind: input.current ? "project.get" : "overview.get" }];

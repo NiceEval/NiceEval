@@ -619,10 +619,12 @@ export const AssertionLimitationSchema: Schema.Schema<AssertionLimitation> =
     Schema.Struct({ kind: Schema.Literal("capacity-limited"), capturedItems: NonNegativeIntegerSchema, knownTotalItems: NonNegativeIntegerSchema, omittedBytes: Schema.NullOr(NonNegativeIntegerSchema) }),
   ]);
 
-const NoScoreContributionSchema: Schema.Schema<NoScoreContribution> =
+export const AssertionDecisionResultSchema = Schema.Literals(["matched", "mismatched", "unavailable", "errored", "not-applicable"]);
+
+export const NoScoreContributionSchema: Schema.Schema<NoScoreContribution> =
   Schema.Struct({ state: Schema.Literal("not-scored") });
 
-const EarnedScoreContributionSchema: Schema.Schema<EarnedScoreContribution> =
+export const EarnedScoreContributionSchema: Schema.Schema<EarnedScoreContribution> =
   Schema.Struct({
     state: Schema.Literal("earned"),
     points: NonNegativeNumberSchema,
@@ -634,7 +636,7 @@ const EarnedScoreContributionSchema: Schema.Schema<EarnedScoreContribution> =
     }),
   );
 
-const UnavailableScoreContributionSchema: Schema.Schema<UnavailableScoreContribution> =
+export const UnavailableScoreContributionSchema: Schema.Schema<UnavailableScoreContribution> =
   Schema.Struct({
     state: Schema.Literal("unavailable"),
     points: NonNegativeNumberSchema,
@@ -1113,7 +1115,7 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     }),
   ]);
   const decision = Schema.Struct({
-    result: Schema.Literals(["matched", "mismatched", "unavailable", "errored", "not-applicable"]),
+    result: AssertionDecisionResultSchema,
     reason: Schema.NullOr(Schema.Literals([
       "condition-not-met", "evidence-unavailable", "source-unavailable", "redacted",
       "evaluator-failed", "producer-interrupted", "invalid-subject", "coverage-not-applicable",

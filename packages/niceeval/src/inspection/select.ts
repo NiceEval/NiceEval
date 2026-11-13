@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
+import { projectAssertionMatrix, type MatrixInput } from "./assertion-matrix.ts";
 import { projectPlannedAttempt, projectAttemptCore, projectRunCore, projectMember } from "./planned-attempt.ts";
 import { projectLifecyclePhase } from "./lifecycle.ts";
 import { readAttemptNotes, aggregateAttemptNotes } from "./notes.ts";
@@ -221,6 +222,25 @@ function selectOperation(
           selectInspectionOverview(selection.selected, supporting),
         ),
       });
+    }
+    case "experiments.assertions": {
+      const experimentIds = [...new Set(operation.experimentIds)].sort();
+      const input: MatrixInput[] = [];
+      const matching = loadSelectedInspectionRuns(source, [...new Set(experimentIds.flatMap((id) => source.findExperimentRunIds(id)))]);
+      const selected = loadReferencedOrigins(source, matching);
+      const overview = selectInspectionOverview(matching, selected);
+      for (const experimentId of experimentIds) {
+        if (!overview.experiments.some((item) => item.experimentId === experimentId)) throw selectionMissing(operation.kind, `Experiment ${experimentId} was not found`);
+        for (const cell of overview.cells.filter((item) => item.experimentId === experimentId && (operation.evalIdPrefix === undefined || item.evalId === operation.evalIdPrefix || item.evalId.startsWith(operation.evalIdPrefix.replace(/\/$/u, "") + "/")))) {
+          for (const member of cell.members) {
+            const locator = member.publication.state === "published" ? member.publication.attemptLocator : null;
+            const assertions = locator === null ? undefined : readInspectionAssertions(requireAttemptFromSource(source, operation.kind, locator));
+            input.push({ evalId: cell.evalId, column: { experimentId, attemptOrdinal: member.attemptOrdinal, locator, publication: member.publication, verdict: member.verdict, score: member.score },
+              assertions: assertions?.state === "available" ? { state: "available", entries: assertions.value.entries } : { state: assertions?.state ?? "not-recorded" } });
+          }
+        }
+      }
+      return { ...resultMetadata(source, operation.kind, selected, [], [], locators(selected)), matrix: projectAssertionMatrix(experimentIds, input) };
     }
     case "experiment.get": {
       const matching = loadSelectedInspectionRuns(source, source.findExperimentRunIds(operation.experimentId));
@@ -682,6 +702,11 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
       requestedRunIds: requested,
       missingRunIds: selection.missing,
     };
+  }
+  if (operation.kind === "experiments.assertions") {
+    const ids = [...new Set(operation.experimentIds)].sort();
+    for (const id of ids) if (source.findExperimentRunIds(id).length === 0) throw selectionMissing(operation.kind, `Experiment ${id} was not found`);
+    return { selected: loadReferencedOrigins(source, loadSelectedInspectionRuns(source, [...new Set(ids.flatMap((id) => source.findExperimentRunIds(id)))])), requestedRunIds: [], missingRunIds: [] };
   }
   if (operation.kind === "experiment.get") {
     return { selected: loadReferencedOrigins(source, loadSelectedInspectionRuns(source,

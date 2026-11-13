@@ -88,6 +88,26 @@ niceeval query run [--record <file>] (--request <file|-> | --request-json <docum
 
 结果分页时会带一个续读 token。这个 token 记住了 operation、请求内容、读取的记录文件和这次读取的可见边界。任何一项变了，`query` 都不会接着读，而是返回 restart correction，表示调用方要从 `discover` 或重新发请求开始。
 
+### 跨实验比较判据
+
+```sh
+niceeval show --experiment baseline --experiment candidate --assertions
+niceeval show --experiment baseline --experiment candidate --assertions --eval install/db-gpt -o json
+```
+
+每张表对应一条评估用例，每列对应一个实验中的一次 Attempt。列标题给出实验 ID、Attempt 序号与可复制的定位符。
+计分项显示得分与满分，不计分项显示判定，缺项显示 `—`。`*` 标记在各列间得分或判定不同的行。
+
+机器读面是 `experiments.assertions`，请求包含 `experimentIds`，以及可选的 `evalIdPrefix` 路径前缀。
+实验 ID 至少一个、最多 32 个，去重后排序；任一 ID 不存在时整个请求失败。
+结果 `matrix.evals[]` 提供 `columns`、`rows` 与逐列 `unkeyed` 计数。同一 Attempt 内的重复身份保存在 cell 的 `entries[]`，不互相覆盖。
+断言事实不可读时，cell 保留 `not-recorded`、`unsupported` 或 `failed`，不把这些状态冒充缺项。
+
+矩阵最多包含 100 条评估用例，每条最多 100 列，总共最多 1000 行与 10000 格。
+重复身份的每个条目各占一格；结果正文的 JSON 数组最多 450000 UTF-8 字节。
+超限时 `matrix.state` 为 `partial`，`matrix.omitted` 分别列出省略的评估用例、行与列数。
+`--entry`、`--compact` 和 `--full` 仅供查看单个 Attempt 的详情，不与矩阵组合。
+
 ### 常用 operation 的请求与结果字段
 
 下面只列读取运行结果时常用的字段。请求顶层必须包含 `protocol: "niceeval.query/v3"` 和 `operation`，表中的参数放在 `operation` 内，与 `kind` 并列。成功响应的顶层 `outcome` 为 `"success"`。
@@ -251,6 +271,7 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 | `--max-regressions` | `niceeval show` | string | Maximum allowed regressions (non-negative integer; paired or exact). |
 | `--json` | `niceeval show` | boolean | 写出该命令的机器文档或事件流。 |
 | `--output` | `niceeval show` | string | Output format: text (default) or json. |
+| `--eval` | `niceeval show` | string | Filter Eval ID path prefix; requires --experiment with --assertions. |
 | `--assertions` | `niceeval show` | boolean | Show Assertion decisions, scores, and reasons. |
 | `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |
 | `--compact` | `niceeval show` | boolean | Omit raw Assertion materials and context rows (default). |

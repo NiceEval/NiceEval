@@ -10,6 +10,7 @@ const OPERATION_CATALOG = [
   "project.get",
   "overview.get",
   "experiment.get",
+  "experiments.assertions",
   "run.list",
   "run.get",
   "attempt.get",

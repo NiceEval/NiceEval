@@ -104,6 +104,7 @@
   "cli-flags/show/--mode": "Comparison mode: paired, side-by-side, or exact.",
   "cli-flags/show/--max-regressions": "Maximum allowed regressed attempts before exiting with code 1.",
   "cli-flags/show/--output": "Output format: text (default) or json.",
+  "cli-flags/show/--eval": "Filter Eval ID path prefix; requires --experiment with --assertions.",
   "cli-flags/show/--assertions": "Show Assertion decisions, scores, and reasons.",
   "cli-flags/show/--entry": "Select one exact Assertion entry ID; requires --assertions.",
   "cli-flags/show/--compact": "Omit raw Assertion materials and context rows (default).",
