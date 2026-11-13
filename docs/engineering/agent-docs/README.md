@@ -39,12 +39,13 @@ tarball 内仍使用 `docs-site/**`，`INDEX.md` 同样由 `prepack` 现场生�
 发现链只有两跳，全部是静态文件路径，不依赖任何运行时接口：
 
 1. **项目指引 → 包根索引**。
-   `niceeval init` 往用户项目写托管指引区块（已有 `AGENTS.md` 写 `AGENTS.md`；只有 `CLAUDE.md` 写 `CLAUDE.md`；都没有则新建 `AGENTS.md`），区块指向 `node_modules/niceeval/INDEX.md`。
-   升级 niceeval 后重跑 `init` 刷新区块。
+   `niceeval init` 往用户项目写托管指引区块与 skill，两者都指向安装目录里的 `INDEX.md`。
+   写进哪些文件、索引路径怎样写入，由 [AI-native · 项目指引](../../feature/ai-native/format.md#项目指引)规定，本页不另写一份。
+   升级 niceeval 后重跑 `init` 刷新。
 2. **包根索引 → 任务页面**。
    `INDEX.md` 按任务路由到 `docs-site/zh/**` 的具体页面；页面再引用其它概念或参考时，agent 继续读包内文件。
 
-`node_modules/niceeval/INDEX.md` 这个路径本身是契约：托管区块、`INIT.zh.md`、教程文案引用的都是它。
+包根的 `INDEX.md` 这个位置本身是契约：托管区块、skill、`INIT.zh.md` 与教程文案引用的都是它；依赖装在子目录时，写进项目指引的是带该目录的路径。
 文档站怎么重组都不改这个入口——重组的代价被收敛在「重新生成一次 `INDEX.md`」以内，已经写进各用户项目的托管区块不需要跟着变。
 
 ## INDEX.md：导语手写在模板，文档树打包时生成
