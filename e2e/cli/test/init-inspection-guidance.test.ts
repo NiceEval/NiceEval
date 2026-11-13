@@ -34,9 +34,14 @@ test.concurrent("init 刷新全部项目指引并保留用户内容", async () =
 });
 
 // @feature docs/feature/ai-native/README.md
-test.concurrent("init 在写入前拒绝损坏的规则标记", async () => {
+test.concurrent.each([
+  ["missing end", "<!-- BEGIN:niceeval-agent-rules -->\n"],
+  ["missing begin", "<!-- END:niceeval-agent-rules -->\n"],
+  ["reversed", "<!-- END:niceeval-agent-rules -->\n<!-- BEGIN:niceeval-agent-rules -->\n"],
+  ["duplicate", "<!-- BEGIN:niceeval-agent-rules -->\n<!-- END:niceeval-agent-rules -->\n<!-- BEGIN:niceeval-agent-rules -->\n<!-- END:niceeval-agent-rules -->\n"],
+])("init 在写入前拒绝损坏的规则标记 %s", async (_kind, markers) => {
   await e2e.case("init-invalid-markers", async ({ paths, commands: { niceeval } }) => {
-    const agents = "User rules\n<!-- BEGIN:niceeval-agent-rules -->\n";
+    const agents = `User rules\n${markers}`;
     const claude = "User claude rules\n";
     await writeFile(join(paths.projectRoot, "AGENTS.md"), agents);
     await writeFile(join(paths.projectRoot, "CLAUDE.md"), claude);
