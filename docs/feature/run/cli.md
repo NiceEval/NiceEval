@@ -52,7 +52,7 @@ interface RunListDocument {
 }
 ```
 
-`decodeRunDocument` 接受带这两处的 document；缺少 `omitted` 或出现表外取值时拒绝。Library 的 `runHost.list` 请求接受同名过滤字段，结果带同样的两处。
+`decodeRunDocument` 接受带这两处的 document；缺少 `omitted` 或出现表外取值时拒绝。Library 的 `runHost.list` 接受对应的过滤字段，结果带同样的两处；字段名见 [Run Library](library.md)。
 
 每个 `active` Run 另带一项 owner 观察：
 
