@@ -39,5 +39,10 @@ test("directory upload records one expansion and preserves bytes and modes", asy
     expect(end).toBeGreaterThan(start);
     console.info("Directory upload timing:", JSON.stringify(items[end]));
     expect(items.slice(start + 1, end), commands.diagnostic()).toHaveLength(1);
+    const actionStart = items.findIndex(item => JSON.stringify(item).includes("directory-action-start"));
+    const actionEnd = items.findIndex(item => JSON.stringify(item).includes("directory-action-end"));
+    expect(actionStart).toBeGreaterThanOrEqual(0);
+    expect(actionEnd).toBeGreaterThan(actionStart);
+    expect(items.slice(actionStart + 1, actionEnd), "A declaration-time directory action must also use one expansion").toHaveLength(1);
   });
 });

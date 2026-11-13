@@ -6,6 +6,7 @@ import { join } from "node:path";
 export default defineEval({
   description: "A directory arrives in one archive with its captured permission bits",
   async test(t) {
+    if ((await t.sandbox.readText("action-target/data.txt")).trim() !== "directory action payload") throw new Error("Directory action lost its payload");
     const directory = sandboxContent.directory(new URL("../fixtures/tree/", import.meta.url));
     await t.sandbox.runCommandOrThrow("true", ["directory-upload-start"]);
     const startedAt = performance.now();
