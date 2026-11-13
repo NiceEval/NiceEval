@@ -20,7 +20,7 @@ NiceEval 发了新版本。用户想让 agent 完成升级，并保证之后 age
 2. agent 升级依赖并刷新项目指引。 {#refresh}
 
    ```sh
-   pnpm up niceeval
+   pnpm up niceeval@latest
    pnpm exec niceeval init
    ```
 

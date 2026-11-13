@@ -14,7 +14,7 @@ niceeval invocation list [--all] [<experiment-prefix>] [--json]
 niceeval invocation show <invocation-id> [--json]
 ```
 
-所有 Run ID 都要求 exact identity，不接受前缀、`latest` 或隐式当前 Run。
+凡显式传入 Run ID 都要求 exact identity，不接受前缀、`latest` 或隐式当前 Run。`recover --orphaned` 是显式的集合恢复入口，按下文冻结完整 ID 集合，不把 selector 当作 Run ID。
 
 `run list` 在一个 PublicationCutoff 下列出已经提交 create transaction 且未删除的 Run。每项显示 state、Experiment、
 开始/结束时间、`published / expected` coverage 与 invocationId。`active` 的空 Planned attempt 显示 pending；终态空 Planned attempt 显示
@@ -27,11 +27,13 @@ niceeval invocation show <invocation-id> [--json]
 
 | 取值 | 含义 |
 |---|---|
-| `owner alive` | owner 进程仍在，或 heartbeat 仍在前进 |
-| `owner gone` | NiceEval 能证明 owner 已终止；这个 Run 可以 recover |
+| `owner alive` | 同机、同启动与隔离域内，进程启动身份与封存身份相同 |
+| `owner gone` | 按 recovery 判据证明封存的 owner 已终止；可请求 recover，执行时仍须重验 |
 | `owner unknown` | 无法证明；例如 owner 在另一台机器上 |
 
-`owner gone` 的判定与 `run recover` 使用同一份证明，列表不放宽它。存在 `owner gone` 的 Run 时，Human 输出末尾给出 `Next: niceeval run recover --orphaned`。
+三种观察分别映射 [recovery 判据](architecture/lifecycle.md#崩溃与-recovery) 的 `active`、`terminated` 与 `unproven`。heartbeat 只作诊断，不参与证明。
+观察附带取证时间，不属于 PublicationCutoff 上的历史事实，也不授予恢复权限。只读 portable Record 不对当前机器取证，显示 `owner unknown`。
+存在 `owner gone` 的 Run 时，Human 输出末尾给出 `Next: niceeval run recover --orphaned`。
 
 `show --run` 消费唯一 canonical Run Inspection operation `run.get`，不拼接多份近义 operation，也不使用 Run Host 自己的投影。结果包含 Run identity、state、
 expected/published/missing、Planned attempt bindings、Attempt locators、absence、Verdict、score、Evidence、usage 与 limitations。
@@ -45,6 +47,11 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 
 `run recover --orphaned` 对每个 `owner gone` 的 `active` Run 执行同一个 recover，不接受其它选择条件。
 它先列出将要收口的 Run 并请求一次确认；`--yes` 跳过确认。`owner alive` 与 `owner unknown` 的 Run 原样跳过并各写出原因。
+
+候选集来自当前项目的一次固定 cutoff，确认前冻结 exact Run ID 集合；确认后不加入新 Run。每项 mutation 在事务边界重新验证 state、精确 process identity 与 writer generation，不能复用列表的旧观察授权写入。
+
+`--orphaned` 与位置 Run ID 互斥。`--json` 不请求交互确认，缺少 `--yes` 时零写入并非零退出。本入口只收口 Run，不释放 State 租约、不执行 Experiment after，也不销毁 Sandbox。
+
 每个 Run 独立收口：某一个失败不撤销已经收口的 Run。全部可证明的 Run 都收口时退出码为 0，任一 recover 失败时非零。
 没有可收口的 Run 时输出 `No orphaned runs` 并以 0 退出。`--json` 逐项给出 Run ID、结果与跳过或失败的原因。
 

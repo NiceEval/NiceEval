@@ -56,7 +56,8 @@ defineExperiment({
 它投影到挂载点对应的 owner layer；每条 Attempt 在 reset 后形成 occurrence，不增加物理生命周期。
 受管 Action 进入既有 DAG 与 before 缓存，回调每条 fresh Attempt 执行。需要 lane 只做一次的工作应使用 `group`。
 
-DAG 先按依赖，再按 changeFrequency，最后按 owner 与声明序号排序。Plugin 元素排在同一 owner 的作者元素之后；数组顺序不代替 `dependsOn`。
+DAG 先按依赖，再按 changeFrequency，最后按 owner 与声明序号排序。每个 Plugin 的 `sandbox.before` 数组按书写顺序连边；作者 layer 与各 Plugin fragment 之间没有隐式边。
+频率相同时，Plugin 元素排在同一 owner 的作者元素之后，再按 Plugin 挂载序号排序。跨 fragment 的顺序使用 `dependsOn` 或 capability，见 [Sandbox Layer](../sandbox/library/layers.md#顺序与依赖方向)。
 Eval 挂载的 Sandbox 字段隔离普通 reuse pool；同一 Group 成员的该字段身份不一致时，在创建前报 `eval-group-incompatible`。
 
 ## State

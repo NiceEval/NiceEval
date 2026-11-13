@@ -454,9 +454,16 @@ sandbox: instaboxSandbox({ templateId: "universal" })
   .before(installCandidate)   // 隐式依赖 uploadSeed
 ```
 
-`changeFrequency` 因此只决定不同 owner 的 action 怎样交错：planning 在满足全部依赖后，仍从 ready set 选择数值最小的 action。
+链以最终返回的 `SandboxLayer` 为边界，不以函数、模块或源码行号划分。`addB(addA(layer))` 中追加的 before 仍是同一条链；`.after()` 不切断链。复用同一个不可变 layer 值不会修改其它派生链。
+
+`changeFrequency` 决定不同链的 action 怎样交错：planning 在满足全部依赖后，仍从 ready set 选择数值最小的 action。
 同一条链里后一步的数值比前一步小是合法的，它不会让后一步提前。
-`dependsOn` 与 capability 用来表达跨 owner 的先后，或同一 layer 中由不同函数各自拼出的链之间的先后。
+`dependsOn` 与 capability 用来表达跨 owner 或独立 fragment 的先后。同一条链上的反向显式依赖形成循环，在 Provider I/O 前拒绝；需要相反顺序时调整追加顺序。
+
+Eval Group 的 `sandbox` 遵守同一规则。每个 Plugin 的 `sandbox.before` 数组独立形成一条链；作者 layer 与各 Plugin fragment 之间不自动连边。Plugin 挂载位置与数组序号只作为稳定 tie-break，跨 fragment 的依赖仍显式声明。
+
+最终线性顺序不变时，隐式边不额外进入 `BeforeCacheKey`，未变化的最长前缀仍可共享。线性顺序改变时，从首个变化位置起重算前缀；`sandboxReuse` 每条 Attempt 使用同一 schedule，不能把链提升为物理生命周期。
+书写顺序改变既有数值排序结果时属于执行行为变化，必须按[身份域变更](../../experiments/architecture/cache.md#niceeval-身份域变更)登记 `behavior-changing`。不得仅以 action 内容未变为由沿用旧结果。
 
 `dependsOn` 与具名 `provides` / `requires` capability 形成边。普通 inputs 只参与 identity、缓存资格与 occurrence 编译，不形成边。缺失 action、重复 capability provider、跨 occurrence 依赖或循环在 Provider I/O 前报错。
 Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,也不自动并行。
@@ -723,11 +730,14 @@ interface SandboxExecOptions {
 interface CommandActionOptions
   extends SandboxExecOptions, SandboxBeforeActionOptions {}
 
-interface ShellActionInput
+interface ShellActionOptions
   extends SandboxExecOptions, SandboxBeforeActionOptions {
-  readonly command: string;
   readonly inputs?: readonly SandboxContent[];
 }
+type ShellActionInput = ShellActionOptions & (
+  | { readonly command: string; readonly script?: never }
+  | { readonly script: URL; readonly command?: never }
+);
 
 interface SandboxContent {
   readonly digest: string;

@@ -151,8 +151,9 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 
 ### 探测未命中的原因
 
-探测未命中时，Runner 把探测进程 stderr 的最后一行作为未命中原因。它出现在 Human active 行，并随安装 channel event 保存。
-原因最长 200 个字符，超出部分截断；stderr 为空时写 `probe exited <code> without a reason`。
+探测以非零 exit code 正常结束时，Runner 取 stderr 的最后一条非空行作为未命中原因，先移除 ANSI escape 与控制字符，再截断到 200 Unicode code points。
+它出现在 Human active 行，并随安装 channel event 保存；没有可显示的原因时写 `probe exited <code> without a reason`。
+启动失败、timeout、signal 中断与取消沿用执行错误规则，不伪造 exit code 或正常未命中，不因此进入安装分支。
 内置 Adapter 的探测逐项检查，并在第一项不满足时写出它：
 
 ```text

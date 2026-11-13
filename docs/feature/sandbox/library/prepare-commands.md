@@ -100,12 +100,14 @@ shell({
 ```
 
 - `script` 接受 Eval 或 Experiment 模块相对的 `file:` URL，与 `command` 二选一；两者都给或都不给在 planning 失败。
-- 文件内容在 planning 时读取，与内联 `command` 一样进入自动指纹；改脚本一个字节就让这一步及其后缀重新执行（[T-30](../../../taste.md#t-30)）。文件不存在或穿出项目根时 planning 失败并写出路径。
+- planning 根据 URL 定位文件并读取一次，严格按 UTF-8 解码，不改写换行。URL 不接受 query 或 fragment；不存在、不可读、非文本或 realpath 穿出项目根时 planning 失败并写出路径，symlink 不能绕过边界。
+- 原始文件 bytes 的 digest 进入自动指纹，执行消费同次读取后冻结的内容，不在执行时重读文件。改脚本一个字节就让这一步及其后缀重新执行（[T-30](../../../taste.md#t-30)）。主机绝对路径不进入指纹，项目相对路径只作声明位置诊断；同内容的文件改名不改变这部分身份。
 - 文件内容原样交给 shell，不做插值。需要传值时用 `env` 声明子进程变量，值进入指纹。
-- `niceeval debug` 对 `script` 显示项目相对路径与内容摘要；`--full` 显示完整脚本。
+- `niceeval debug` 同时显示项目相对路径、内容摘要与完整脚本，遵守下文命令计划的多行显示规则，不另设 `--full` 模式。
 
 Human 进度行只写 `label`，省略时写 `id`，不写命令文本。
-`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；完整命令由 `niceeval debug` 与 `show @<locator> --timing` 提供。
+`label` 提供时须非空、不含控制字符，最多 256 Unicode code points；它只用于显示，不参与动作或结果身份。
+`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；静态完整命令由 `niceeval debug` 提供，实际执行命令由 `show @<locator> --execution` 提供。`--timing` 只提供阶段归因与耗时。
 
 template 预装只是让版本检查首测即成功的一种手段。
 声明照常保留；预装缺失或漂移时命令现场补齐。

@@ -29,7 +29,7 @@ READ https://niceeval.com/INIT.md and install niceeval for this repo.
 
 ## 怎样工作
 
-整条路径只有静态文件和本地命令，没有需要联网查询的服务。每一跳只指向下一跳，不复述下一跳的内容。
+阅读入口由静态文件与本地命令组成；初次读取 `INIT.md` 与安装包需要网络。每一跳只指向下一跳，不复述下一跳的内容。
 
 ```mermaid
 flowchart LR
@@ -50,7 +50,8 @@ flowchart LR
 | 随包页面 | 教程、概念、参考与排查 | 与包在同一个 tarball 里发布 |
 | 本地命令与类型声明 | 精确的参数、字段和每个公开 API 的一句用法说明 | 就是已安装的那份程序 |
 
-项目指引是这条路径里唯一留在用户仓库的部分。它让以后的每个新对话都能回到 `INDEX.md`，不依赖用户记得再贴一次那句话。
+项目指引是这条阅读路径里留在用户仓库的入口。托管区块与 skill 是并行入口，都经 `INDEX.md` 到页面，发现子链仍只有两跳；安装与执行的完整旅程不受这个跳数限制。
+指引提供返回索引的入口；运行时是否加载、模型是否遵守，由下文评估测量。
 
 ## 范围与验收
 
@@ -59,7 +60,7 @@ flowchart LR
 
 验收看 agent 的实际行为，不看文档是否写得完整：
 
-- 新仓库里只给那一句话，agent 在不读官网和 GitHub `main` 的情况下跑出一条非 `errored` 的 Attempt。
+- 新仓库里只给那一句话，agent 读取官网的 `INIT.md` 后，只用随包文档跑出一条非 `errored` 的 Attempt，不读取官网 API 文档或 GitHub `main`。
 - 已接入的仓库里开新对话，agent 的第一批读取落在项目指引和 `INDEX.md` 上，随后才读具体页面。
 - agent 没有为了弄清 API 去读 `node_modules/niceeval/dist` 或 `src` 下的实现。
 - agent 没有直接读取 `.niceeval/` 下的文件。

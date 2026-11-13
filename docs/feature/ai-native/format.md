@@ -43,7 +43,7 @@ READ https://niceeval.com/INIT.md and install niceeval for this repo.
 
 - 不含任何线上文档链接。接入流程的正文只在随包页面里。
 - 不含会随版本变化的 API 示例；需要代码的内容交给随包页面。
-- 长度不超过 16 KiB，保证 agent 一次读完。
+- UTF-8 编码后不超过 16384 bytes，由仓库检查与稳定版发布检查守护；此上限不保证模型会一次读取全文。
 
 ## 项目指引 {#项目指引}
 
@@ -77,7 +77,7 @@ READ https://niceeval.com/INIT.md and install niceeval for this repo.
 
 ### skill {#skill}
 
-部分 agent 运行时按任务描述加载 skill，而不是每次都读完整的 `AGENTS.md`。`init` 为检测到的运行时各写一份内容相同的 skill：
+部分 agent 运行时按任务描述加载 skill，而不是每次都读完整的 `AGENTS.md`。下表仅以已有目录作为写入提示，不能据此证明用户正在使用哪种运行时：
 
 | 仓库里已有 | 写入 |
 |---|---|
@@ -100,34 +100,43 @@ Read `node_modules/niceeval/INDEX.md` first and follow the bundled page it route
 skill 的正文与托管区块的四件事相同。整个文件归 `init` 所有，刷新时整体重写。
 skill 不复制随包页面的内容；它和托管区块一样只有一跳，终点都是 `INDEX.md`。
 
+Codex 的项目入口是 `.agents/skills/<name>/SKILL.md`，从 cwd 向上到仓库根发现；`.codex/` 不是发现前提。
+Claude Code 的项目入口是 `.claude/skills/<name>/SKILL.md`。两者都先读取 name、description 等元数据，再按任务加载正文，不能保证每个对话都隐式触发。
+发现规则以 [Codex skills](https://learn.chatgpt.com/docs/build-skills) 与 [Claude Code skills](https://code.claude.com/docs/en/skills) 为准；CLI 的默认发现不等同于所有 SDK 的默认配置。
+
 ## INDEX.md
 
 `node_modules/niceeval/INDEX.md` 这个路径是契约，托管区块、skill 与 `INIT.md` 引用的都是它。文件由两部分组成：
 
 | 部分 | 内容 |
 |---|---|
-| 导语 | 阅读契约、按任务路由、跑通实验的方法、发现并解决问题的方法 |
+| 导语 | 阅读契约与按任务路由 |
 | 页面树 | 每个随包页面一行：`路径 — 标题:一句话自述`，按目录分组 |
 
-“按任务路由”固定给出四个入口：已有项目要运行或复验、只读诊断、编写或修正评估、首次接入。
-每个入口点名先读的页面，其余页面由 agent 从页面树里按自述挑选。
+“按任务路由”说明怎样从页面自述选取一至三页，服务运行与复验、只读诊断、编写评估与首次接入等意图，不维护手写的任务到页面映射表。
+页面路径由随包文件枚举，标题与自述由 frontmatter 生成，遵守[随包 AI 文档的单源裁决](../../engineering/agent-docs/README.md)。
+
+导语不写运行、诊断或编写评估的步骤。这些方法各有一个随包页面作单源，导语只把 agent 送到那一页（[T-32](../../taste.md#t-32)）。
+导语不超过 4 KiB，使索引的大部分篇幅留给页面树。
 
 ## 随包页面与类型声明
 
 - 页面是中文 MDX 原文，路径相对包根。页面之间用包内相对路径互相引用。
 - 页面不含指向本仓库 `main` 的链接；仓库示例固定到与包版本相同的 tag。
 - 每个从公开入口导出的函数与类型，在类型声明里带一句用法说明。函数的说明写它判断什么或做什么，以及最容易写错的一点。
-  agent 用编辑器或 `grep` 查到声明时，不必再读实现就能正确调用。
+  验收检查实际发布的声明文件是否保留说明；agent 能否据此正确调用，由效果评估测量，不作为对模型行为的绝对保证。
 
 ## 校验
 
 | 情形 | 结果 |
 |---|---|
-| `init` 找到开始标记却找不到结束标记，或标记顺序颠倒 | 以 `agent-rules-markers-invalid` 失败，写出文件与行号，不修改该文件 |
+| `init` 缺少任一成对标记，或标记顺序颠倒 | 以 `agent-rules-markers-invalid` 失败，写出文件与行号，不修改该文件 |
 | `init` 发现文件里有多组标记 | 同上；用户保留一组后重试 |
 | skill 目标路径已存在且不含托管注释 | 以 `agent-skill-not-managed` 失败，不改写用户自己的 skill |
 | 打包时某个页面缺标题或自述 | 打包失败并指出页面 |
 | 打包时随包页面含指向 `main` 的链接 | 打包失败并指出页面与链接 |
 | `INIT.md` 含线上文档链接或超过长度上限 | 仓库检查失败 |
 
+首次写入时没有任何标记是合法情形。写入前检查所有指引目标的标记与托管所有权；校验失败时不写入任何指引目标。
+多文件写入不承诺文件系统事务；I/O 中途失败时返回非零退出码，列出已更新与未更新的路径。只重试 `init`，不要求重装依赖。
 `init` 可以重复运行：内容没有变化时不改写文件，退出码为 0。
