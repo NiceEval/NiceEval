@@ -72,6 +72,7 @@ description: "用 query、show 和 view 读取运行记录。"
 
 ## `niceeval query`
 
+
 ```sh
 niceeval query discover
 niceeval query explain [--record <file>] (--request <file|-> | --request-json <document>)
@@ -149,6 +150,12 @@ niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{
 选择的 Run、实验或 Attempt 不存在时，响应顶层为 `outcome: "failure"`，`failure.code` 为 `"inspection-selection-missing"`，退出码为 `2`。这表示选择对象缺失，不是评估判定为 `failed`；先用 `run.list` 核对 ID，并确认读取的是对应项目的运行记录。
 
 ## `niceeval show`
+
+`niceeval show` 在身份缺口下直接说明变化：`Changed` 后列出配置、源码或数据的 selector，以及两侧的有界摘要。
+源码和数据哈希只显示前 8 位；新增与移除注明 `added` 或 `removed`。每个缺口最多列三项，其余显示 `+N more`。
+同一 Experiment 的全部缺口说明相同时，只显示一次并注明 `all N gaps`。
+无法解释的身份变化显示 `Unexplained` 和诊断摘要。运行末尾 `Next` 提示的 `niceeval exp <experiment> --dry` 查看完整变化。
+
 
 ```sh
 niceeval show [--record <file>]

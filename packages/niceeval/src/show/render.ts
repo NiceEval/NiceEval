@@ -38,6 +38,7 @@ import type {
 import { decodeBase64Bytes } from "../inspection/bytes.ts";
 import { displayTextHasForbiddenCharacter } from "../record/family/execution-traces/schema.ts";
 import type { InspectionProjectResult } from "../inspection/project-result.ts";
+import type { IdentityExplanation } from "../runner/manifest.ts";
 
 const TERMINAL_OPTIONS = Object.freeze({ width: 80, mode: "plain" as const });
 
@@ -250,6 +251,33 @@ const textOrNotRecorded = (value: string | null | undefined): string =>
 
 type ReferenceAttempts = ReadonlyMap<string, InspectionAttemptResult>;
 
+function explanationKey(explanation: IdentityExplanation | undefined): string | undefined {
+  if (explanation?.kind === "changed") return JSON.stringify(explanation.deltas.map(
+    ({ selector, kind, from, to }) => [selector, kind, from ?? null, to ?? null],
+  ));
+  if (explanation?.kind === "unexplained") return JSON.stringify(explanation.diagnostic);
+  return undefined;
+}
+
+function gapExplanation(explanation: IdentityExplanation | undefined, count?: number): TerminalPanelContentBlock[] {
+  if (explanation === undefined || explanation.kind === "match") return [];
+  const suffix = count === undefined ? "" : ` · all ${count} gaps`;
+  const lines = explanation.kind === "unexplained"
+    ? [`Unexplained  ${explanation.diagnostic.summary}`]
+    : [
+      ...explanation.deltas.slice(0, 3).map((delta) => {
+        const bounded = (value: string | undefined): string => value === undefined ? "?"
+          : /^(?:source|data):/u.test(delta.selector) ? value.slice(0, 8) : value;
+        const detail = delta.kind === "added" ? `${bounded(delta.to)}; added`
+          : delta.kind === "removed" ? `${bounded(delta.from)}; removed`
+          : `${bounded(delta.from)} → ${bounded(delta.to)}`;
+        return `Changed  ${delta.selector} (${detail})`;
+      }),
+      ...(explanation.deltas.length > 3 ? [`+${explanation.deltas.length - 3} more`] : []),
+    ];
+  return lines.map((line, index) => ({ kind: "divider", title: line + (index === 0 ? suffix : ""), attachNext: true }));
+}
+
 function previousResultText(locator: string, attempts: ReferenceAttempts): string {
   const attempt = attempts.get(locator);
   const outcome = attempt === undefined ? "unavailable" : `${attempt.verdict ?? "unavailable"}${attempt.score.state === "not-scored" ? "" : `, ${attempt.score.state === "unavailable" ? "?" : fmt(attempt.score.earned)}/${fmt(attempt.score.possible)}`}`;
@@ -349,11 +377,16 @@ export function renderOverview(
         blocks: group.experiments.flatMap((experiment) => {
           const experimentCells = value.cells.filter((cell) => cell.experimentId === experiment.experimentId && cell.members.length > 0);
           const gaps = current.plannedAttempts.filter((slot) => slot.experimentId === experiment.experimentId && slot.state === "gap");
+          const firstExplanation = gaps[0]?.explanation;
+          const key = explanationKey(firstExplanation);
+          const sharedExplanation = key !== undefined && gaps.every((slot) => explanationKey(slot.explanation) === key);
           return [
             ...(group.name === null ? [] : [{ kind: "divider" as const, title: `Experiment ${experiment.experimentId}`, attachNext: true }]),
+            ...(sharedExplanation ? gapExplanation(firstExplanation, gaps.length) : []),
             ...gaps.flatMap((slot): TerminalPanelContentBlock[] => slot.state !== "gap" ? [] : [
               { kind: "divider", title: `Eval ${relativeToGroup(slot.evalId, group.name)}`, attachNext: true },
               { kind: "divider", title: `Gap ${slot.reason}`, attachNext: slot.previous !== null },
+              ...(sharedExplanation ? [] : gapExplanation(slot.explanation)),
               ...(slot.previous === null ? [] : [{ kind: "divider" as const, title: previousResultText(slot.previous.locator, options.references ?? new Map()) }]),
             ]),
             ...attemptBlocks(experimentCells, group.name, all, true),

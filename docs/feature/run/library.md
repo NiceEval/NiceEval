@@ -20,6 +20,26 @@ const page = await Effect.runPromise(runHost.list({ cwd: process.cwd() }));
 console.log(page.runs.map((run) => run.runId));
 ```
 
+`list` 的过滤与 CLI 的选项一一对应，省略的字段不参与过滤：
+
+```ts
+interface RunListRequest {
+  readonly cwd: string;
+  /** 对应 --invocation。 */
+  readonly invocationId?: string;
+  /** 对应可重复的 --state；至少一项，取并集。 */
+  readonly states?: readonly [RunState, ...RunState[]];
+  /** 对应 --experiment，按 Experiment ID 的路径前缀匹配。 */
+  readonly experimentIdPrefix?: string;
+  /** 对应 --limit；正整数。 */
+  readonly limit?: number;
+  // 既有的 continuation 字段不变
+}
+```
+
+不同字段之间是“且”，排序固定为新到旧。结果的每个 `RunSummary` 带 `owner`，`RunListResult` 带 `omitted`，含义与 [CLI](cli.md) 的 machine document 相同。
+空的 `states`、非正整数的 `limit` 与未知 state 是领域拒绝，经 `RunReadError` 返回。
+
 四个操作返回惰性的 Effect：构造 Effect 不探测项目或获取资源，执行时才读取请求 cwd 的当前状态。
 每次执行独立取得并关闭资源；成功、typed failure 与 interruption 都完成所属资源的收尾。
 同一应用可以顺序或并发访问不同 cwd，也可以在自己的 Layer 中组合操作，不会把一个项目的数据库实例用于另一个项目。
