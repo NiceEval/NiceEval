@@ -152,13 +152,9 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 
    需要安装时，存在 `progress.installing` 就先投影到 Human active 行。
 
-   本页所说的安装 channel event 落在既有的 runner diagnostics 里：`agent.ensure` 相位的一条 advisory，code 为 `agent-ensure`，
-   context 给出安装事实（`hit`、`repaired` 或 `installed`）、探测未命中的原因与修复失败的原因。它不新增持久 family，也不改变既有 family 的格式。
-   - `staged` 执行宿主侧 `prepareArtifact()` 和主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。
-   - 安装后复检同一个 探测。复检成功时，投影可选的 `progress.ready`。
-3. install 失败或复检仍未命中：写 `agent.ensure` 结构化执行错误通道事件，并形成 Attempt 的 `errored` Verdict。
-   Attempt lifecycle 仍只收束为 `completed` 或 `abandoned`，不记成 Agent 做题的 `failed` channel entry。
-4. 探测 未命中且没有 identity 匹配的安装层:同样形成上述 channel event 与 `errored` Verdict；错误信息给两条出路——换预装该版本的 Prebuilt environment 让 探测 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/library/prepare-commands.md) 自装。
+   安装事实（`hit`、`repaired` 或 `installed`）、探测未命中的原因与修复失败的原因出现在 Human active 行与 `invocation show` 的 Attempt detail 里。
+   它们目前不落盘：既有 runner diagnostics 的 context 是闭合形状，放不下这些字段，本契约不为此新增持久 family 或升级既有格式。
+   本页别处所说的“随安装 channel event 保存”以这一段为准，Attempt 结束后不能从 Record 读回安装事实。
 
 离线网络与内部镜像源走同样的两条出路:预装进 Prebuilt environment,或用 `installTool` 按内部渠道安装;ensure 循环只认 探测 的运行事实,不问安装出自哪条渠道。
 
