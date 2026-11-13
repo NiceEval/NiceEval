@@ -430,6 +430,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   调用方亦可使用 `niceeval show --reference` 聚焦并展开这批历史已发布参照结果。
   有缺口时末尾给出 `Next: niceeval exp <experimentId> --dry`，每个有缺口的 Experiment 一行；没有缺口时省略 `Next`。
   完整形态见下文[当前 Results 示例](#当前-results-示例)。
+- `Reference results` 摘要汇总每个带有历史 Attempt 的缺口，并写出 `Previous attempts N of K gaps`；没有历史 Attempt 的缺口不计入摘要。
+  `Verdicts` 行总是出现。参照 Attempt 含 pass 制时显示 `Pass rate`，含 score 制时显示 `Score earned/possible`，两者都有时并排显示。
+  缺口明细里的每条 `Previous result` 在 locator 后写出该 Attempt 的 Verdict；score 制再写出它的得分。
 - 一个或多个 `--experiment` 逐个读取 exact `experiment.get`；任一 ID 未命中时整次失败。
   首先显示官方 costSummary 的实验总费用或已知小计、完整度和数量，再显示各评估结果与 Attempt 明细。
   范围是各计划 Attempt 最新已发布结果，明确标注 Latest recorded attempts；不表示全部历史支出或当前源码中的目标集合。
@@ -611,7 +614,8 @@ Open: niceeval view
 
 ### 全缺口与参照结果示例
 
-当前目标因配置变动导致全部成员产生缺口，且存在可用历史 Attempt 时，总览呈现独立的 `Reference results` 参照区，并在末尾给出补跑规划指引：
+当前目标因配置变动导致全部成员产生缺口，且存在可用历史 Attempt 时，总览呈现独立的 `Reference results` 参照区，并在末尾给出补跑规划指引。
+score 制的参照 Attempt 写成 `Previous result @1FH9Y2RVQFPWN (failed, 34/72)`，参照区相应显示 `Score 61/144`：
 
 ```text
 $ niceeval show
@@ -624,9 +628,10 @@ Current results
   Pass rate  unavailable
 
 Reference results (from previous recorded attempts)
-  Verdicts   12 passed; 2 failed; 0 errored; 0 skipped
-  Pass rate  85.71%
-  Notice     Prior configuration; rerun required to update target
+  Previous attempts  14 of 14 gaps
+  Verdicts           12 passed; 2 failed; 0 errored; 0 skipped
+  Pass rate          85.71%
+  Notice             Prior configuration; rerun required to update target
 
 Attempts · install/canary
   Eval db-gpt
@@ -738,19 +743,38 @@ Open: niceeval view @01JSHOWATTEMPT
 
 ### Attempt 断言详情示例
 
-`show @<locator> --assertions` 呈现该 Attempt 各断言条目的判定、分值与理由：
+`show @<locator> --assertions` 呈现该 Attempt 各断言条目的判定、分值与理由。
+每个条目的标记写它对结果起什么作用，读者不必读源码就知道哪一条决定了 Verdict：
+
+| 标记 | 条目 | 取值 |
+|---|---|---|
+| `GATE` | `decision.gate` 不是 `not-gate` | `pass`、`fail`、`unavailable`、`n/a` |
+| `SCORE` | `contribution` 是 `earned` 或 `unavailable` | `earned/points`；无法计算时写 `?/points` |
+| `NOTE` | 既不是 gate 也不计分 | `met`、`unmet`、`unavailable`、`errored`、`n/a` |
+
+同时是 gate 又计分的条目两个标记都写，`GATE` 在前。
+`NOTE` 条目不影响 Verdict 与 score，包括只用 `.orStop()` 控制流程的条目；它的 `unmet` 不写成 `FAIL`。
+计分条目不写 `PASS` 或 `FAIL`：零分与满分的区别由 `earned/points` 表达。
+
+标题下第一行写 Verdict 与 score，第二行按作用计数；某一类没有条目时省略该段。
+`Total N` 之类不分作用的合计不再出现。运行结束时的断言反馈与 `--entry` 的条目标题使用同一组标记。
+机器结果的字段不随人读标记改变。
 
 ```text
 $ niceeval show @01JSHOWATTEMPT --assertions
 Assertions @01JSHOWATTEMPT
-  Passed 4, Failed 1, Total 5 (score: 3/4)
+  Verdict failed · Score 3/6
+  Gates 1 pass, 1 fail · Scored 4 · Notes 1 met, 1 unmet
 
-  [PASS] file_created · package.json exists (+1)
-  [PASS] syntax_valid · TypeScript compilation passed (+1)
-  [PASS] test_passed · unit test suite passed (+1)
-  [FAIL] lockfile_clean · package-lock.json matches dependencies (0/1)
-         Rationale: expected 15 packages in lockfile, observed 12.
-         Target: package-lock.json
+  GATE  pass          candidate_installed · exact candidate version installed
+  SCORE 1/1           file_created · package.json exists
+  SCORE 2/2           syntax_valid · TypeScript compilation passed
+  SCORE 0/2           docs_first · read the bundled index before editing
+  GATE  fail  SCORE 0/1  lockfile_clean · package-lock.json matches dependencies
+        Rationale: expected 15 packages in lockfile, observed 12.
+        Target: package-lock.json
+  NOTE  met           used_cli · ran the project CLI at least once
+  NOTE  unmet         first_run_green · first run passed without a retry
 
 Next: niceeval show @01JSHOWATTEMPT --assertions --entry lockfile_clean --full
 Open: niceeval view @01JSHOWATTEMPT

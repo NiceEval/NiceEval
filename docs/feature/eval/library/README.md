@@ -223,6 +223,31 @@ export interface DatasetDefinition<TRow = unknown, Kind extends "pass" | "score"
 
 作者直接调用自己的被测函数，并使用统一的 `t.check(subject, match)` 登记结果。
 
+## Loader 的读取时机
+
+`niceeval/loaders` 的 `loadText`、`loadJson`、`loadYaml` 与 `loadCriteria` 读取会进入 Eval 指纹的文件。
+调用位置决定这次读取能否登记，规则只有三条：
+
+| 调用发生在 | 结果 |
+|---|---|
+| 发现期的模块顶层：Eval 文件，或它静态 import 的共享模块 | 读取并登记；内容进入每条经 import 可达该模块的 Eval 的指纹 |
+| `test(t)`、lifecycle hook 或其它运行期代码 | 抛出 `LoaderOutsideDiscoveryError`，不读取文件 |
+| 没有 NiceEval 宿主的进程 | 只读取并返回内容，不登记 |
+
+没有 NiceEval 宿主的进程，指从未进入 NiceEval 发现的进程，例如用 `node --test` 或 `tsx` 直接导入共享模块的单元测试。
+这样的进程里没有 Eval 指纹，所以不存在漏登记；共享模块因此可以脱离 NiceEval 单独测试。
+CLI 与库入口的进程一经进入发现，就一直算有宿主，发现结束后的 loader 调用仍然报错。
+
+```ts
+// lib/probes.ts：被多条 Eval import，也被 tests/probes.test.ts 直接 import
+import { loadText } from "niceeval/loaders";
+
+export const LAYOUT_SCRIPT = await loadText(new URL("./probes/layout.cjs", import.meta.url));
+```
+
+`LoaderOutsideDiscoveryError` 的 message 写出被读路径，并说明应把读取移到模块顶层的常量。
+发现总在自己的模块图里求值 Eval；同一进程早先的无宿主读取不能代替登记。
+
 ## 封装自己的接入工厂
 
 `defineAdapter` 定义接入方式，不创建业务应用本身。用户可以通过普通 TypeScript 函数封装 `defineTwitter`、`defineGame` 或其它领域工厂。

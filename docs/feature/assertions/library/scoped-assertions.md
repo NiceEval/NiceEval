@@ -57,6 +57,9 @@ turn.notCalledTool(commandMatch("rm", { argsStart: ["-rf"] }));
 普通 JSON 结构交给受管的 `jsonMatch`。路径搜索交给 `referencesAnyPath`，二者用在 `toolMatch` 的 JSON 条件中。命令 token 交给可直接作为 selector 的 `commandMatch`；不在局部 JSON 中写命令正则或自定义函数。
 
 `referencesAnyPath` 在整个 JSON 输入的任意字符串值中搜索路径，按路径组件匹配且区分大小写。匹配要求组件边界，因此 `agents` 不匹配 `agents-old`。目录名直接作为前缀：`secrets` 能匹配 `secrets/api.key`。
+它只做字面搜索，不理解命令或工具的语义：排除某个路径的输入同样命中。
+例如 `rg --files -g '!secrets/**'` 的输入含有 `secrets` 这个路径组件，会命中 `referencesAnyPath(["secrets"])`。
+需要区分读取与排除时，用 `commandMatch` 限定可执行名与参数，或改查 Sandbox 的文件变化。
 路径分隔符支持 `/` 和 `\`，忽略重复分隔符及 `.` 组件。不支持 glob；路径含 `*` 或 `?` 时，构造函数抛出 `TypeError`，不能用静默不匹配掩盖无效的禁区条件。
 
 ```ts
