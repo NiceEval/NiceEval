@@ -10,6 +10,10 @@
 
 - [检查指定会话范围内的工具行为](check-tool-behavior.md)：分别检查单轮、跨轮与多会话工具事实。
 
+## 禁区与保护区：`referencesAnyPath`、`unchangedWithin`
+
+- [规定 Agent 不许碰哪些文件](protect-paths.md)：把“不许读”和“不许改”写成各自读正确证据的检查。
+
 ## 分值与质量门：`.score()` 与 `.gate()`
 
 - [计分并设置质量门](score-with-gate.md)：给完成程度计分，同时要求达到最低值。
@@ -24,5 +28,6 @@
 |---|---|
 | `check`、`equals`、`includes`、`.label`、`.orStop` | [值检查与停止](check-values.md) |
 | `calledTool`、`notCalledTool`、`usedNoTools`、`toolMatch` | [工具行为范围](check-tool-behavior.md) |
+| `referencesAnyPath`、`unchangedWithin`、`changedOnlyWithin` | [禁区与保护区](protect-paths.md) |
 | `defineScoreEval`、`defineScoreMatch`、`.score`、`.gate`、`t.score` | [计分与质量门](score-with-gate.md) |
 | `measured`、`quantile`、`atMost`、`ms` | [观测数值检查](check-measurements.md) |
