@@ -447,6 +447,14 @@ async function retryAndReleaseLayerGate(
 // @regression memory/before-cache-declaration-attribution.md
 
 test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
+  const startedAt = performance.now();
+  const checkpoint = (stage: string, summary?: BeforeCacheSummary) => {
+    console.info("before-cache suffix journey", JSON.stringify({
+      stage,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      ...(summary === undefined ? {} : { beforeCaches: summary }),
+    }));
+  };
   await withTempDir("niceeval-e2e-before-cache-owner-home-", async (niceevalHome) =>
     withProjectCopy(projectCopy, async ({ root }) => {
       // A unique context byte makes the first invocation a true cold BuildKey even
@@ -457,9 +465,12 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
         "utf8",
       );
 
+      checkpoint("cold invocation started");
       const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { niceevalHome });
+      checkpoint("cold invocation inspected", coldRun.beforeCaches);
       const cold = coldRun.evidence;
       await assertBeforeCacheInventory(root, niceevalHome);
+      checkpoint("cache inventory and GC inspected");
 
       const evalPath = join(root, "evals/before-cache.eval.ts");
       const originalEval = await readFile(evalPath, "utf8");
@@ -478,10 +489,12 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
         .replace('dependsOn: [actionRef("fixture-execution-probe")],', "");
       expect(movedDeclaration).not.toBe(experimentSource);
       await writeFile(join(root, "experiments/before-cache-shared.ts"), movedDeclaration, "utf8");
+      checkpoint("changed demand invocation started");
       const changedDemandRun = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", {
         niceevalHome,
         experimentId: "before-cache-shared",
       });
+      checkpoint("changed demand invocation inspected", changedDemandRun.beforeCaches);
       const changedDemand = changedDemandRun.evidence;
       expect(changedDemandRun.beforeCaches.hit).toBe(changedDemandRun.beforeCaches.total);
       expect(changedDemandRun.beforeCaches.prepared).toBe(0);
@@ -492,10 +505,12 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
       expect(changedDemand.middleToken, demandDiagnostic).toBe(cold.middleToken);
       expect(changedDemand.envToken, demandDiagnostic).toBe(cold.envToken);
 
+      checkpoint("changed middle invocation started");
       const changedMiddle = await invokeDetailed(root, "v2", "PUBLIC_MODE=alpha\n", {
         middleVersion: "beta",
         niceevalHome,
       });
+      checkpoint("changed middle invocation inspected", changedMiddle.beforeCaches);
       expect(changedMiddle.beforeCaches.hit).toBe(0);
       expect(changedMiddle.beforeCaches.prepared).toBe(changedMiddle.beforeCaches.total);
       expect(changedMiddle.beforeCaches.failed).toBe(0);
@@ -504,15 +519,18 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
       expect(changedMiddle.evidence.middleToken).not.toBe(changedDemand.middleToken);
       expect(changedMiddle.evidence.envToken).not.toBe(changedDemand.envToken);
 
+      checkpoint("changed env invocation started");
       const changedEnv = await invokeDetailed(root, "v2", "PUBLIC_MODE=beta\n", {
         middleVersion: "beta",
         niceevalHome,
       });
+      checkpoint("changed env invocation inspected", changedEnv.beforeCaches);
       expect(changedEnv.evidence.buildToken).toBe(cold.buildToken);
       expect(changedEnv.evidence.fixtureToken).toBe(cold.fixtureToken);
       expect(changedEnv.evidence.middleToken).toBe(changedMiddle.evidence.middleToken);
       expect(changedEnv.evidence.envToken).not.toBe(changedMiddle.evidence.envToken);
 
+      checkpoint("human cache-hit invocation started");
       const human = await niceeval.run(["exp", "before-cache", "--rerun", "all"], {
         cwd: root,
         env: invocationEnvironment(root, "PUBLIC_MODE=beta\n", {
@@ -523,6 +541,7 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
       });
       expect(human.exitCode, human.diagnostic()).toBe(0);
       expect(human.stdout).toContain(humanBeforeCacheLine(changedDemandRun.beforeCaches));
+      checkpoint("human cache-hit invocation completed");
 
       expect(new Set([
         cold.sandboxId,

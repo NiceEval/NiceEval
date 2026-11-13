@@ -28,7 +28,7 @@ description: "用 query、show 和 view 读取运行记录。"
 `source` 后面的 `verdict` 是历史判定：`passed` 为通过，`failed` 为断言失败，`errored` 为执行出错，`skipped` 为跳过。
 `errored`、`skipped` 需要按缺口原因决定重跑；用 `niceeval show @<locator>` 查看详情。
 若显示 `not-recorded`、`migration-required`、`unsupported` 或 `invalid`，表示判定附件未记录、需要迁移、版本不支持或内容无效；不能把它们读成通过。
-先运行 `niceeval show @<locator> --assertions` 取证。仅在明确要求迁移时运行 `niceeval migrate`；不支持或无效的记录应保留并报告。
+先运行 `niceeval show @<locator> --assertions` 取证。支持的历史格式由 NiceEval 自动升级；不支持或无效的记录应保留并报告。
 
 ### `--dry` 缺口代码
 
@@ -43,7 +43,7 @@ description: "用 query、show 和 view 读取运行记录。"
 | `source-core-invalid` | 来源的核心记录或关联不合法 | 保留证据，用 `niceeval show --run <run-id>` 取证并报告；不要改写 Record |
 | `source-publication-unavailable` | 来源 Attempt 的发布证据不可用 | 用 `niceeval show @<locator>` 取证；确认运行结束后重跑缺口 |
 | `source-attachment-unavailable` | 沿用所需附件未记录或缺失 | 用 `niceeval show @<locator> --assertions` 和 `--timing` 取证，再重跑 |
-| `source-attachment-migration-required` | 所需附件需要格式迁移 | 按诊断运行 `niceeval migrate`，再运行 `--dry` |
+| `source-attachment-migration-required` | 所需附件需要格式迁移 | 保留原项目及 `.niceeval`，用原 NiceEval 版本读取或导出；需要重新执行时使用不含 `.niceeval` 的独立项目副本 |
 | `source-attachment-unsupported` | 当前安装版本不支持来源附件 | 核对安装版本，用 `niceeval show @<locator>` 保存诊断并报告 |
 | `source-attachment-invalid` | 所需附件内容无效 | 保留记录，用 `niceeval show @<locator>` 取证并报告 |
 | `reuse-contract-domain-mismatch` | 两次结果采用不同的沿用契约版本域 | 核对 `--dry --json`；无法证明等价时重跑 |
