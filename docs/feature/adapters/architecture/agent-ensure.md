@@ -165,38 +165,6 @@ Codex CLI 0.167.2 ready
 
 作者据此知道自己预装的内容差在哪一项，不必进入 Sandbox 排查（[T-31](../../../taste.md#t-31)）。原因只用于显示与诊断，不进入 identity，也不改变循环的走向。
 
-### 安装进入 before 缓存
-
-`staged` 安装层除了 `install()`，还向 Runner 交出一个声明式安装 action。Runner 把它作为 Agent owner 的 before 放进 occurrence DAG：
-
-| 项 | 取值 |
-|---|---|
-| family | `niceeval.agent-install` |
-| input | ensure identity、installer identity 与 revision、staged payload digest、目标平台 |
-| steps | 写入 staged payload，再执行“探测命中则退出，否则安装并复检” |
-| `changeFrequency` | `changeFrequency.rare` |
-| 缓存资格 | eligible，与 `shell()`、`gitCheckout()` 相同 |
-
-这个 action 命中缓存时由 restore 满足，安装命令执行零次。未命中时真实执行一次，并随前缀发布。
-`agent.ensure` 相位保持不变并且仍在全部 before 之后执行：这时探测通常已经命中，循环只记下安装事实。
-Provider 不支持捕获、前缀被 opaque barrier 截断或 restore 降级时，行为与缓存出现之前相同，由循环现场安装。
-
-三条边界：
-
-- `sandbox-network` 与 `verify-only` 安装层不交出安装 action。前者依赖题面网络，不能承诺确定性；后者从不安装。
-- 安装 action 只进入 `BeforeCacheKey` 链，不进入结果的 eligibility identity。Agent 的版本与配方已经由 `config:agentInstalls` 表达，
-  所以引入它不会让已发布的结果失效；排在它之后的 before 缓存会重新准备一次。
-- 凭据与鉴权不在安装 action 里，仍由 Adapter 的 runtime `before` 逐 Attempt 真实执行。
-
-安装层需要作者准备的运行时（例如某个 Node 版本）时，作者在 Adapter 工厂上声明先后：
-
-```typescript
-codexAgent({ install: { dependsOn: [actionRef("toolchain")] } })
-```
-
-省略时安装 action 没有额外依赖，数值相同时排在 Experiment、Eval Group 与 Eval 的 action 之后。
-`niceeval debug` 把它列为普通 before 节点，owner 为 agent，并显示它依赖的 payload digest。
-
 ### 为什么拆成声明与安装两半
 
 - **协议与安装的变化轴不同。**

@@ -46,8 +46,7 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 4. before 按依赖与数值排队。成功取得资源后用 `context.onCleanup()` 登记释放；无条件 after 在入口登记，所有收尾按实际登记栈逆序退出。
 
 声明式 before action 可以形成缓存前缀。callback before、hook、plugin、secret / credential、租约、外部会话、
-`onCleanup()`、Agent runtime before 与 hidden input 始终真实执行，并截断后续共享捕获。
-官方 `staged` 安装层交出的安装 action 是声明式 action，可以进入缓存前缀，见 [Agent Ensure](../../adapters/architecture/agent-ensure.md#安装进入-before-缓存)。after 始终真实执行。完整资格、
+`onCleanup()`、Agent layer 与 hidden input 始终真实执行，并截断后续共享捕获。
 `verified` 边界与 Provider 降级见 [Architecture](../architecture/before-cache.md#身份与验证边界)。
 
 - **Snapshot 物理实体**：每个缓存节点在底层 Provider（如 E2B、Instabox、OpenSandbox、Docker）中形成物理快照，并在容器内写入 `/var/lib/niceeval/before-cache-artifact.json` 指纹。快照本体由对应基础设施保存，命名统一为 `niceeval-<artifact_id>`。

@@ -20,8 +20,39 @@ niceeval invocation show <invocation-id> [--json]
 开始/结束时间、`published / expected` coverage 与 invocationId。`active` 的空 Planned attempt 显示 pending；终态空 Planned attempt 显示
 闭合 absence reason。
 
-列表按开始时间从新到旧排列，开始时间相同时按 Run ID。`--state` 可重复，取值为 `active`、`completed`、`interrupted`、`failed`；
-`--experiment` 按 Experiment ID 前缀过滤；`--limit` 只保留最前面的 n 项，并在末尾写出被省略的数量。过滤只缩小列表，不改变任何 Run。
+列表按开始时间从新到旧排列，开始时间相同时按 Run ID 升序。过滤只缩小列表，不改变任何 Run：
+
+| 选项 | 规则 |
+|---|---|
+| `--state <state>` | 可重复，取值为 `active`、`recovering`、`completed`、`interrupted`、`failed`；多个取值之间是“或” |
+| `--experiment <id-prefix>` | 按 Experiment ID 的路径前缀匹配 |
+| `--invocation <invocation-id>` | exact Invocation ID |
+| `--limit <n>` | 正整数；只保留排序后最前面的 n 项。省略时不截断 |
+
+不同选项之间是“且”。`--limit` 截断时，Human 输出末尾写出被省略的数量。
+
+`run list --json` 的 `run.list` document 相应增加两处，其余字段不变：
+
+```ts
+interface RunSummary {
+  // ……既有字段
+  /** 只在 state 为 active 或 recovering 时出现。 */
+  readonly owner?: {
+    readonly state: "alive" | "gone" | "unknown";
+    /** state 为 unknown 时的具名原因。 */
+    readonly reason?: "other-host" | "identity-not-recorded" | "portable-record" | "probe-failed";
+    readonly observedAt: string;
+  };
+}
+
+interface RunListDocument {
+  // ……既有字段
+  /** 同一 cutoff 下满足过滤条件、因 --limit 未列出的数量；没有截断时为 0。 */
+  readonly omitted: number;
+}
+```
+
+`decodeRunDocument` 接受带这两处的 document；缺少 `omitted` 或出现表外取值时拒绝。Library 的 `runHost.list` 请求接受同名过滤字段，结果带同样的两处。
 
 每个 `active` Run 另带一项 owner 观察：
 
@@ -46,6 +77,7 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 它先进入可检查、可重试的 `recovering`，再以匹配 generation 收口；证据不足时拒绝，且不删除任何已发布 Attempt。
 
 `run recover --orphaned` 对每个 `owner gone` 的 `active` Run 执行同一个 recover，不接受其它选择条件。
+上一次恢复中途被打断而停在 `recovering`、且恢复进程已经终止的 Run 同样纳入，由同一个 recover 从它停下的地方继续。
 它先列出将要收口的 Run 并请求一次确认；`--yes` 跳过确认。`owner alive` 与 `owner unknown` 的 Run 原样跳过并各写出原因。
 
 候选集来自当前项目的一次固定 cutoff，确认前冻结 exact Run ID 集合；确认后不加入新 Run。每项 mutation 在事务边界重新验证 state、精确 process identity 与 writer generation，不能复用列表的旧观察授权写入。
@@ -53,7 +85,20 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 `--orphaned` 与位置 Run ID 互斥。`--json` 不请求交互确认，缺少 `--yes` 时零写入并非零退出。本入口只收口 Run，不释放 State 租约、不执行 Experiment after，也不销毁 Sandbox。
 
 每个 Run 独立收口：某一个失败不撤销已经收口的 Run。全部可证明的 Run 都收口时退出码为 0，任一 recover 失败时非零。
-没有可收口的 Run 时输出 `No orphaned runs` 并以 0 退出。`--json` 逐项给出 Run ID、结果与跳过或失败的原因。
+没有可收口的 Run 时输出 `No orphaned runs` 并以 0 退出；候选全部被跳过时同样以 0 退出。`--json` 输出：
+
+```ts
+interface RunRecoverOrphanedDocument {
+  readonly protocol: string;
+  readonly operation: "run.recover-orphaned";
+  readonly items: readonly {
+    readonly runId: string;
+    readonly outcome: "recovered" | "skipped" | "failed";
+    /** skipped 时是 owner 观察的取值与原因；failed 时是 RunRecoverError 的 code。 */
+    readonly reason?: string;
+  }[];
+}
+```
 
 `session list` 默认只列 active Invocation；`--all` 加入已收口的 durable Session。`session show` 以 exact invocation ID
 显示这次 Invocation 的 terminal projection、created Run IDs、completion 与 publication cutoff；它不会重新构建 live 面板，也不提供后台接管。
