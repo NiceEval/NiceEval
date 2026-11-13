@@ -79,7 +79,12 @@ interface AgentInstallerBase {
   /** 支持的目标平台;不支持的平台在安装前报错点名,不猜近似路径。 */
   readonly platforms?: readonly string[];
   /** 可选的 Human live detail;安装层自己说明正在安装什么。 */
-  readonly progress?: { readonly installing?: string };
+  readonly progress?: { readonly installing?: string; readonly repairing?: string };
+  /**
+   * 可选的就地修复:只用 Sandbox 里已有的安装补齐探测要求的事实,例如补一个链接。
+   * 不取 staged payload、不联网、不换版本。做不到时抛错,循环随后照常安装。
+   */
+  repair?(sandbox: SandboxCommandTarget, context: AgentInstallContext): Promise<void>;
 }
 
 type AgentInstaller =
@@ -140,7 +145,12 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 每条 `AgentEnsure` 按声明顺序走同一条循环:
 
 1. 探测 用 `runCommand` 执行；存在 `progress.checking` 时先投影到 Human active 行。退出码零命中，非零是正常未命中，记下命中的安装事实；命中时投影可选的 `progress.ready`。
-2. 未命中时按 identity 精确匹配 `AgentInstaller`。存在 `progress.installing` 时，先投影到 Human active 行。
+2. 未命中时按 identity 精确匹配 `AgentInstaller`。安装层声明了 `repair` 时先就地修复，再复检同一个 探测：
+   - 复检命中即结束，安装事实记为 `repaired`，不调用 `prepareArtifact()`，也不上传任何 payload。
+   - `repair` 抛错或复检仍未命中时继续下面的安装，修复失败的原因随安装 channel event 保存，不单独成为错误。
+   - `verify-only` 不修改文件系统，声明了 `repair` 也不执行。
+
+   需要安装时，存在 `progress.installing` 就先投影到 Human active 行。
    - `staged` 执行宿主侧 `prepareArtifact()` 和主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。
    - 安装后复检同一个 探测。复检成功时，投影可选的 `progress.ready`。
 3. install 失败或复检仍未命中：写 `agent.ensure` 结构化执行错误通道事件，并形成 Attempt 的 `errored` Verdict。
@@ -188,6 +198,9 @@ Codex CLI 0.167.2 ready
   探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件;命中或本次安装作为 Attempt stream 的安装 channel event 写入。
 - **不按 template 名短路。**
   官方 template 也必须 探测——template 名、tag 或出处不是运行事实,被错误替换的官方 template 不能因为名字受信绕过验证。
+- **已有的安装先修复，不重装。**
+  Sandbox 里已经有锁定版本、只差探测要求的某个附带事实时，安装层用 `repair` 就地补齐。
+  为一个缺失的链接重新取得并上传整份发行包，是把几十毫秒的事做成几分钟，并发 Attempt 多时会拖住整次运行。
 - **安装必须收敛。**
   安装锁定精确 Agent 版本;安装成功后重跑同一个 探测。
   install 退出 0、复检仍未命中时按 Sandbox 准备失败处理,不把坏 Sandbox 交给 Agent。
@@ -219,6 +232,8 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
   不一致立即以 Sandbox 准备失败终止，绝不拿实际结果改写计划或换另一份 staged payload。
 - prepare key 由 ensure identity、installer revision 与计划目标 platform / libc 组成。
   Run 级只取得一次安装文件，多个同目标 attempt 通过 single-flight 共享。
+- 宿主进程对同一 prepare key 只持有一份 payload 字节：并发 Attempt 的上传从同一份只读缓存文件流式读取，
+  不为每个 Attempt 各读一份进内存。payload 上百 MB、并发十路时，各持一份会让宿主进程占用数 GB。
 - 校验 digest 后进入本地 / 远端共享 cache。实际 payload digest 与实际平台只作为 runtime provenance channel event 落盘，
   不进入 eligibility identity；可比性由 installer 静态 identity domain 与 ProviderPlan target 分别承担。
 - 准备时间以 Run-scoped `agent.artifact.prepare` timing boundary channel event 写入，并由 timing decoder 读出（见 [Record · 两层时间模型](../../run/architecture/README.md)），不占 Attempt 并发名额。
