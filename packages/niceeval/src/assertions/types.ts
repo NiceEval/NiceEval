@@ -166,6 +166,7 @@ export interface PrimaryFactSummary {
 }
 
 
+/** Reports script success and captured output for an assertion; nonempty output alone does not establish success. */
 export interface ScriptResult {
   success: boolean;
   output: string;

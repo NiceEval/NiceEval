@@ -674,6 +674,7 @@ interface PostRunScoreBooleanAssertionHandle<
   ): PostRunScoreBooleanAssertionHandle<Refined, HasGate, true>;
 }
 
+/** Configures an already recorded Boolean assertion for Pass or Score evaluation; modifiers update the same entry rather than rerunning its Match. */
 export type PostRunBooleanAssertionHandle<
   Kind extends AssertionEvaluationKind,
   Refined,

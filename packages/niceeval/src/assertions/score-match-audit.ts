@@ -33,6 +33,7 @@ export type ScoreMatchAuditCall =
         | ScoreMatchAuditFailure
         | { readonly state: "interrupted" };
     };
+/** Stores the v1 managed scoring definition, input, calls and terminal result; historical audit data is evidence rather than an instruction to rerun the model. */
 export interface ScoreMatchAudit {
   readonly schemaVersion: 1;
   readonly protocol: "niceeval.score-match-audit/v1";
@@ -54,6 +55,7 @@ export interface ScoreMatchAudit {
     | ScoreMatchAuditFailure
     | { readonly state: "interrupted" };
 }
+/** Carries chunked audit text with byte lengths and digest for verification; content chunks must be interpreted with their manifest. */
 export interface ScoreMatchAuditEnvelope {
   readonly manifest: {
     readonly schemaVersion: 1;
@@ -97,12 +99,14 @@ export type ScoreMatchAuditCallV3 = Extract<ScoreMatchAuditCall, { readonly stat
   readonly attempts: readonly ScoreMatchAuditAttempt[];
   readonly result: Extract<ScoreMatchAuditCall, { readonly state: "admitted" }>["result"];
 };
+/** Stores an image-aware scoring audit with image references and call templates; image bytes are read separately through the owning assertion. */
 export interface ScoreMatchAuditV3 extends Omit<ScoreMatchAudit, "schemaVersion" | "protocol" | "calls"> {
   readonly schemaVersion: 3;
   readonly protocol: "niceeval.score-match-audit/v3";
   readonly images: readonly ScoreMatchAuditImage[];
   readonly calls: readonly ScoreMatchAuditCallV3[];
 }
+/** Carries sealed PNG or JPEG bytes for one indexed audit image; bytes are image content rather than a filesystem path. */
 export interface ScoreMatchAuditImageContent { readonly evidenceIndex: number; readonly mediaType: "image/png" | "image/jpeg"; readonly bytes: Uint8Array }
 export interface ScoreMatchAuditEnvelopeV2 extends Omit<ScoreMatchAuditEnvelope, "manifest"> {
   readonly manifest: Omit<ScoreMatchAuditEnvelope["manifest"], "schemaVersion" | "protocol"> & {
@@ -111,6 +115,7 @@ export interface ScoreMatchAuditEnvelopeV2 extends Omit<ScoreMatchAuditEnvelope,
   };
 }
 export type ScoreMatchAuditAny = ScoreMatchAudit | ScoreMatchAuditV2 | ScoreMatchAuditV3;
+/** Distinguishes a verified audit from invalid or unsupported historical data; unsupported versions must not be silently reinterpreted. */
 export type ScoreMatchAuditReadResult =
   | { readonly state: "available"; readonly audit: ScoreMatchAuditAny }
   | { readonly state: "invalid" }

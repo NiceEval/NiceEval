@@ -16,7 +16,9 @@ export function measured(value: number | Quantity | null, options: { readonly un
     : Object.freeze({ state: "unavailable", reason: "non-finite-number" });
 }
 
+/** Chooses linear interpolation or nearest-rank sample quantiles; the method is part of the observation and must not be inferred. */
 export type QuantileMethod = "linear" | "nearest-rank";
+/** Carries a quantile observation with sample count, probability and method; retain unavailable or lower-bound state when the sample cannot prove an exact value. */
 export type QuantileMaterial<U extends Unit | undefined = undefined> = NumericMaterial<U> & {
   readonly statistics: {
     readonly sampleCount: number;

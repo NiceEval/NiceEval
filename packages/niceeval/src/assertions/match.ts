@@ -23,6 +23,7 @@ import { stripComments } from "../util.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import type { MaterialCollection, MaterialItem } from "./context-match.ts";
 
+/** Separates value comparisons from managed tool and event comparisons; Boolean compositions must stay within one domain. */
 export type MatchDomain = "value" | "tool" | "event";
 
 type MatchPathSegment = string | number;
@@ -113,6 +114,7 @@ export interface NumericComparison {
   readonly unit?: Unit;
 }
 
+/** Carries an exact number, a known lower bound or an unavailable reason; a lower bound must not be treated as an exact count. */
 export type NumericMaterial<U extends Unit | undefined = undefined> = { readonly unit?: U; readonly provenance?: { readonly source: string; readonly scope: string; readonly unit: string; readonly cut: string } } & (
   | {
       readonly state: "exact";
@@ -127,6 +129,7 @@ export type NumericMaterial<U extends Unit | undefined = undefined> = { readonly
       readonly reason: string;
     });
 
+/** Describes reusable value, tool or event comparison; it owns neither assertion policy nor the current receiver's material. */
 export interface Match<in T, D extends MatchDomain> {
   readonly domain: D;
   readonly name: string;
@@ -134,22 +137,29 @@ export interface Match<in T, D extends MatchDomain> {
   readonly [matchEvaluatorBrand]: (candidate: T) => Promise<unknown>;
 }
 
+/** Compares a subject and optionally refines its type; unavailable evidence is distinct from a definite mismatch. */
 export interface BooleanMatch<in T, out R extends T, D extends MatchDomain = "value"> extends Match<T, D> {
   readonly kind: "boolean";
   readonly [matchRefinementBrand]: () => R;
 }
 
+/** Compares numeric facts against a threshold with a matching unit; it is a Boolean Match rather than a continuous ScoreMatch. */
 export interface NumericComparisonMatch<U extends Unit | undefined = undefined> extends BooleanMatch<U extends Unit ? Quantity<U> : number, U extends Unit ? Quantity<U> : number, "value"> {
   readonly [numericComparisonMatchBrand]: (unit: U) => U;
 }
 
+/** Measures a value on the finite [0,1] scale; set minimum quality on the assertion handle rather than on the Match. */
 export interface ScoreMatch<in T> extends Match<T, "value"> {
   readonly kind: "score";
 }
 
+/** Associates an ordered [0,1] measurement with a rubric description; anchors describe scores rather than confidence. */
 export interface ScoreMatchAnchor { readonly measurement: number; readonly description: string; }
+/** Distinguishes unavailable LLM evidence from an errored managed call; catching it cannot erase the assertion's latched failure. */
 export type ScoreMatchLlmFailure = { readonly _tag: "ScoreMatchLlmUnavailable"; readonly code: string; readonly message: string } | { readonly _tag: "ScoreMatchLlmErrored"; readonly code: string; readonly message: string };
+/** Returns a finite [0,1] measurement or an explicit unavailable or errored outcome; missing evidence must not become zero. */
 export type ScoreMatchResult = number | { readonly state: "measured"; readonly measurement: number; readonly rationale?: string; readonly citations?: readonly string[] } | { readonly state: "unavailable"; readonly reason: string; readonly rationale?: string; readonly citations?: readonly string[] } | { readonly state: "errored"; readonly code: string; readonly message: string };
+/** Provides managed LLM scoring, classification and extraction within one assertion; calls share its budgets, cancellation and audit. */
 export interface ScoreMatchContext {
   readonly llm: {
     score(input: { readonly rubric: string; readonly anchors: readonly ScoreMatchAnchor[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly measurement: number; readonly rationale: string }, ScoreMatchLlmFailure>;
@@ -158,6 +168,7 @@ export interface ScoreMatchContext {
     batchClassify(input: { readonly rubric: string; readonly choices: readonly string[]; readonly items: readonly { readonly id: string; readonly text: string }[]; readonly material: JudgeMaterial }): Effect.Effect<{ readonly items: readonly { readonly id: string; readonly choice: string; readonly rationale: string }[] }, ScoreMatchLlmFailure>;
   };
 }
+/** Defines a versioned, explicitly configured scoring algorithm with managed LLM budgets; the callback must use the provided bounded primitives. */
 export interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {
   readonly name: string;
   readonly version: string;
@@ -189,12 +200,15 @@ export function managedScoreMatchOf(value: unknown): ManagedScoreMatchDefinition
   return typeof value === "object" && value !== null ? managedScoreMatches.get(value) : undefined;
 }
 
+/** Accepts either a Boolean comparison or continuous measurement of an explicit value; only the assertion handle assigns gates and points. */
 export type ValueMatch<T, R extends T = T> = BooleanMatch<T, R, "value"> | ScoreMatch<T>;
 
+/** A logical tool occurrence with a parsed command projection; a tool name alone does not prove a shell command executed. */
 export type LogicalCommandOccurrence = LogicalToolOccurrence & {
   readonly command: Extract<CommandProjection, { readonly kind: "command" }>;
 };
 
+/** Constrains counts of matching tools in a managed collection; exact counts and upper bounds need complete evidence. */
 export interface ToolOccurrenceQuantifiers {
   atLeast(count: number): ToolOccurrenceMatch;
   lessThan(count: number): ToolUpperBoundOccurrenceMatch;
@@ -203,6 +217,7 @@ export interface ToolOccurrenceQuantifiers {
   exactly(count: number): ToolOccurrenceMatch;
 }
 
+/** Matches a logical tool occurrence and exposes count constraints; unavailable lifecycle or collection evidence is not proof of absence. */
 export type ToolMatch<R extends LogicalToolOccurrence = LogicalToolOccurrence> =
   & BooleanMatch<LogicalToolOccurrence, R, "tool">
   & ToolOccurrenceQuantifiers;
@@ -262,6 +277,7 @@ export type AssertionEvent =
     };
 
 export type MatchableEvent = AssertionEvent;
+/** Constrains how many managed events match; upper bounds require sufficient collection completeness to prove absence. */
 export interface EventOccurrenceQuantifiers {
   atLeast(count: number): EventOccurrenceMatch;
   lessThan(count: number): EventUpperBoundOccurrenceMatch;
@@ -270,6 +286,7 @@ export interface EventOccurrenceQuantifiers {
   exactly(count: number): EventOccurrenceMatch;
 }
 
+/** Matches one managed event and exposes occurrence quantifiers; event counts are distinct from numeric value comparisons. */
 export type EventMatch<R extends EventOccurrenceView = EventOccurrenceView> =
   & BooleanMatch<EventOccurrenceView, R, "event">
   & EventOccurrenceQuantifiers;
@@ -587,26 +604,38 @@ function numericMatch<U extends Unit | undefined>(comparator: NumericComparator,
   return match;
 }
 
+/** Checks a strict numeric upper threshold. Use atMost when equality should pass, and match the candidate's unit. */
 export function lessThan<U extends Unit>(threshold: Quantity<U>): NumericComparisonMatch<U>;
+/** Checks a strict numeric upper threshold. Use atMost when equality should pass, and match the candidate's unit. */
 export function lessThan(threshold: number): NumericComparisonMatch;
+/** Checks a strict numeric upper threshold. Use atMost when equality should pass, and match the candidate's unit. */
 export function lessThan(threshold: number | Quantity): NumericComparisonMatch<any> {
   return numericMatch("less-than", threshold);
 }
 
+/** Checks an inclusive numeric upper threshold. A lower-bound observation cannot prove an upper bound without sufficient evidence. */
 export function atMost<U extends Unit>(threshold: Quantity<U>): NumericComparisonMatch<U>;
+/** Checks an inclusive numeric upper threshold. A lower-bound observation cannot prove an upper bound without sufficient evidence. */
 export function atMost(threshold: number): NumericComparisonMatch;
+/** Checks an inclusive numeric upper threshold. A lower-bound observation cannot prove an upper bound without sufficient evidence. */
 export function atMost(threshold: number | Quantity): NumericComparisonMatch<any> {
   return numericMatch("at-most", threshold);
 }
 
+/** Checks a strict numeric lower threshold. Use atLeast when equality should pass, and match the candidate's unit. */
 export function greaterThan<U extends Unit>(threshold: Quantity<U>): NumericComparisonMatch<U>;
+/** Checks a strict numeric lower threshold. Use atLeast when equality should pass, and match the candidate's unit. */
 export function greaterThan(threshold: number): NumericComparisonMatch;
+/** Checks a strict numeric lower threshold. Use atLeast when equality should pass, and match the candidate's unit. */
 export function greaterThan(threshold: number | Quantity): NumericComparisonMatch<any> {
   return numericMatch("greater-than", threshold);
 }
 
+/** Checks an inclusive numeric lower threshold. Quantity thresholds must use the candidate's unit; invalid thresholds throw at definition time. */
 export function atLeast<U extends Unit>(threshold: Quantity<U>): NumericComparisonMatch<U>;
+/** Checks an inclusive numeric lower threshold. Quantity thresholds must use the candidate's unit; invalid thresholds throw at definition time. */
 export function atLeast(threshold: number): NumericComparisonMatch;
+/** Checks an inclusive numeric lower threshold. Quantity thresholds must use the candidate's unit; invalid thresholds throw at definition time. */
 export function atLeast(threshold: number | Quantity): NumericComparisonMatch<any> {
   return numericMatch("at-least", threshold);
 }
@@ -871,6 +900,7 @@ function assertComposableMatches(
   return { domain: firstInternal.domain, matches };
 }
 
+/** Requires every Boolean Match to hold for the same candidate. All operands must belong to the same domain. */
 export function and<
   T,
   R extends T,
@@ -883,6 +913,7 @@ export function and<
   first: BooleanMatch<T, R, D>,
   ...rest: Rest
 ): BooleanMatchForDomain<T, T & R & RefinementIntersection<Rest>, D>;
+/** Requires every Boolean Match to hold for the same candidate. All operands must belong to the same domain. */
 export function and(
   first: BooleanMatch<unknown, unknown, MatchDomain>,
   ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
@@ -900,6 +931,7 @@ export function and(
   });
 }
 
+/** Accepts a candidate when any Boolean Match holds. All operands must belong to the same domain, and unknown evidence is not a definite mismatch. */
 export function or<
   T,
   R extends T,
@@ -912,6 +944,7 @@ export function or<
   first: BooleanMatch<T, R, D>,
   ...rest: Rest
 ): BooleanMatchForDomain<T, T & (R | RefinementOf<Rest[number]>), D>;
+/** Accepts a candidate when any Boolean Match holds. All operands must belong to the same domain, and unknown evidence is not a definite mismatch. */
 export function or(
   first: BooleanMatch<unknown, unknown, MatchDomain>,
   ...rest: readonly BooleanMatch<unknown, unknown, MatchDomain>[]
@@ -952,6 +985,7 @@ export function or(
   });
 }
 
+/** Negates a Boolean Match within its domain. Unavailable evidence remains unavailable rather than becoming a successful negation. */
 export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): BooleanMatch<T, T, "value"> {
   assertBooleanMatch(match, "not() argument", "value");
   return createBooleanMatch("value", `not(${match.name})`, async (candidate) => {
@@ -980,6 +1014,7 @@ export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): Boolean
   });
 }
 
+/** Controls text normalization before matching; comment stripping is opt-in and changes the text being compared. */
 export interface TextMatchOptions {
   readonly stripComments?: boolean;
 }
@@ -1001,6 +1036,7 @@ function textCandidate(value: unknown, options: TextMatchOptions): string | unde
 // @concord-implements docs/feature/assertions/library/value-assertions.md
 // @concord-implements docs/feature/eval/use-case/first-single-turn.md
 
+/** Checks that text contains a substring. Comment stripping is opt-in, and an empty expected string is rejected. */
 export function includes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> {
   assertNonEmptyString(text, "includes() text");
   const normalizedOptions = normalizeTextOptions(options, "includes() options");
@@ -1017,6 +1053,7 @@ export function includes(text: string, options?: TextMatchOptions): BooleanMatch
   });
 }
 
+/** Checks that text does not contain a substring. Comment stripping is opt-in, and an empty expected string is rejected. */
 export function excludes(text: string, options?: TextMatchOptions): BooleanMatch<string, string> {
   assertNonEmptyString(text, "excludes() text");
   const normalizedOptions = normalizeTextOptions(options, "excludes() options");
@@ -1033,6 +1070,7 @@ export function excludes(text: string, options?: TextMatchOptions): BooleanMatch
   });
 }
 
+/** Checks text against a regular expression. Each evaluation starts with a fresh cursor and leaves the supplied expression unchanged. */
 export function pattern(expression: RegExp, options?: TextMatchOptions): BooleanMatch<string, string> {
   if (!(expression instanceof RegExp)) throw new TypeError("pattern() expression must be a RegExp");
   const normalizedOptions = normalizeTextOptions(options, "pattern() options");
@@ -1202,6 +1240,7 @@ function deepEqualInner(a: unknown, b: unknown, seen: Map<object, object>): bool
   return true;
 }
 
+/** Checks deep value equality against the supplied reference. It compares structure rather than object identity. */
 export function equals<const T>(expected: T): BooleanMatch<unknown, T> {
   const name = "equals(value)";
   return createBooleanMatch<unknown, T, "value">("value", name, (candidate) => {
@@ -1227,6 +1266,7 @@ function standardIssuePath(value: unknown, label: string): readonly MatchPathSeg
   });
 }
 
+/** Validates a value using Standard Schema v1. Refinement preserves the original candidate and ignores schema transforms. */
 export function matches<S extends StandardSchema>(
   schema: S,
 ): BooleanMatch<unknown, StandardSchema.InferInput<S>, "value"> {
@@ -1276,14 +1316,17 @@ export async function validateSchema(value: unknown, schema: unknown): Promise<b
   }
 }
 
+/** Wraps a named synchronous or asynchronous Boolean predicate as a value Match. The callback must return a Boolean and remain deterministic and free of side effects. */
 export function satisfies<T, R extends T>(
   label: string,
   predicate: (value: T) => value is R,
 ): BooleanMatch<T, R>;
+/** Wraps a named synchronous or asynchronous Boolean predicate as a value Match. The callback must return a Boolean and remain deterministic and free of side effects. */
 export function satisfies<T>(
   label: string,
   predicate: (value: T) => boolean | Promise<boolean>,
 ): BooleanMatch<T, T>;
+/** Wraps a named synchronous or asynchronous Boolean predicate as a value Match. The callback must return a Boolean and remain deterministic and free of side effects. */
 export function satisfies<T, R extends T = T>(
   label: string,
   predicate: (value: T) => boolean | Promise<boolean>,
@@ -1298,10 +1341,12 @@ export function satisfies<T, R extends T = T>(
   });
 }
 
+/** Defines a reusable Boolean value comparison with optional refinement. Report unknown evidence explicitly as unavailable rather than returning false. */
 export function defineValueMatch<T, R extends T>(spec: {
   readonly name: string;
   readonly evaluate: (value: T) => value is R;
 }): BooleanMatch<T, R>;
+/** Defines a reusable Boolean value comparison with optional refinement. Report unknown evidence explicitly as unavailable rather than returning false. */
 export function defineValueMatch<T>(spec: {
   readonly name: string;
   readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
@@ -1309,6 +1354,7 @@ export function defineValueMatch<T>(spec: {
 // @concord-code
 // @concord-implements docs/feature/assertions/library/value-assertions.md
 
+/** Defines a reusable Boolean value comparison with optional refinement. Report unknown evidence explicitly as unavailable rather than returning false. */
 export function defineValueMatch<T, R extends T = T>(spec: {
   readonly name: string;
   readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
@@ -1325,11 +1371,14 @@ export function defineValueMatch<T, R extends T = T>(spec: {
   });
 }
 
+/** Defines a reusable finite [0,1] measurement, optionally using managed LLM primitives. Apply thresholds through the assertion handle, not inside Match configuration. */
 export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E>): ScoreMatch<T>;
+/** Defines a reusable finite [0,1] measurement, optionally using managed LLM primitives. Apply thresholds through the assertion handle, not inside Match configuration. */
 export function defineScoreMatch<T>(spec: {
   readonly name: string;
   readonly score: (value: T) => number | Promise<number>;
 }): ScoreMatch<T>;
+/** Defines a reusable finite [0,1] measurement, optionally using managed LLM primitives. Apply thresholds through the assertion handle, not inside Match configuration. */
 export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E> | {
   readonly name: string;
   readonly score: (value: T) => number | Promise<number>;
@@ -1634,14 +1683,17 @@ export function referencesAnyPath(
   );
 }
 
+/** Selects an available logical tool lifecycle status; pending is distinct from completed, failed and rejected. */
 export type ToolStatus = Extract<LogicalToolOccurrence["lifecycle"], { readonly state: "available" }>["status"];
 
+/** Constrains parsed command tokens and lifecycle status; argsStart matches an argument prefix and excludes lists forbidden tokens. */
 export interface CommandMatchOptions {
   readonly argsStart?: readonly string[];
   readonly excludes?: readonly string[];
   readonly status?: ToolStatus;
 }
 
+/** Filters a tool's JSON input, output and lifecycle status; input and output filters must be Boolean value Matches. */
 export interface ToolMatchOptions {
   readonly input?: BooleanMatch<JsonValue, JsonValue, "value">;
   readonly output?: BooleanMatch<JsonValue, JsonValue, "value">;
@@ -1853,8 +1905,11 @@ async function toolEvidenceResult(
   );
 }
 
+/** Matches logical tool name, JSON fields or status. Omitting a name allows any tool; occurrence counts belong on its quantifiers. */
 export function toolMatch(name: string, options?: ToolMatchOptions): ToolMatch;
+/** Matches logical tool name, JSON fields or status. Omitting a name allows any tool; occurrence counts belong on its quantifiers. */
 export function toolMatch(options: ToolMatchOptions | Record<string, never>): ToolMatch;
+/** Matches logical tool name, JSON fields or status. Omitting a name allows any tool; occurrence counts belong on its quantifiers. */
 export function toolMatch(
   nameOrOptions:
     | string
@@ -2039,6 +2094,7 @@ function commandResult(
   );
 }
 
+/** Matches a parsed executable and optional argument and status constraints. It compares command tokens rather than searching raw shell text. */
 export function commandMatch(executable: string, options?: CommandMatchOptions): ToolMatch<LogicalCommandOccurrence> {
   assertNonEmptyString(executable, "commandMatch() executable");
   const normalized = assertPlainOptions(options, "commandMatch() options", ["argsStart", "excludes", "status"]);
@@ -2063,6 +2119,7 @@ export function commandMatch(executable: string, options?: CommandMatchOptions):
   });
 }
 
+/** Defines filters for supported message and operation events; message text filters are value Matches, while operation filters are tool Matches. */
 export interface EventOptionsByType {
   readonly message: {
     readonly role?: "assistant" | "user";
@@ -2120,6 +2177,7 @@ async function toolEventResult(event: EventOccurrenceView, match: ToolMatch | un
   return evaluateBooleanMatch(match, occurrence);
 }
 
+/** Matches a supported message or operation event. Use event-specific filters; tool filters belong on operation events. */
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
@@ -2173,11 +2231,13 @@ const occurrenceMatchBrand: unique symbol = Symbol("niceeval.occurrence-match");
 const collectionMatches = new WeakMap<object, CollectionMatchSpec>();
 const MAX_ORDER_STEPS = 64;
 
+/** Describes a managed collection comparison; use a framework-provided collection rather than fabricating its scope or completeness. */
 export interface CollectionMatch<in T> {
   readonly kind: "collection-match";
   readonly [collectionInputBrand]: (candidate: T) => void;
 }
 
+/** Exposes captured tool name, input, output and status to readers; omitted fields mean evidence is missing rather than empty. */
 export interface ToolOccurrenceView {
   readonly name: string;
   readonly input?: unknown;
@@ -2185,6 +2245,7 @@ export interface ToolOccurrenceView {
   readonly status?: "pending" | "completed" | "failed" | "rejected";
 }
 
+/** A scope-branded tool collection captured by NiceEval; ordinary arrays cannot substitute for its ownership and completeness evidence. */
 export type ManagedToolCalls<
   S extends "turn" | "session" | "attempt" = "turn" | "session" | "attempt",
 > = readonly ToolOccurrenceView[] & {
@@ -2281,15 +2342,19 @@ function quantifiedOccurrenceMatch(
   }, `${domain}-${upperBound ? "upper-bound" : "positive"}`) as ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch;
 }
 
+/** Checks an ordered subsequence with distinct occurrences, without requiring adjacency. Do not mix value, tool and event steps. */
 export function inOrder(
   matches: readonly [EventMatch, EventMatch, ...EventMatch[]],
 ): EventSequenceMatch;
+/** Checks an ordered subsequence with distinct occurrences, without requiring adjacency. Do not mix value, tool and event steps. */
 export function inOrder(
   matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]],
 ): ToolSequenceMatch;
+/** Checks an ordered subsequence with distinct occurrences, without requiring adjacency. Do not mix value, tool and event steps. */
 export function inOrder<T, Subject extends CollectionValue<T>>(
   matches: readonly [BooleanMatch<T, NoInfer<T>>, BooleanMatch<T, NoInfer<T>>, ...BooleanMatch<T, NoInfer<T>>[]],
 ): SubjectSequenceMatch<Subject>;
+/** Checks an ordered subsequence with distinct occurrences, without requiring adjacency. Do not mix value, tool and event steps. */
 export function inOrder(
   matches: readonly unknown[],
 ): ToolSequenceMatch | EventSequenceMatch | BooleanMatch<CollectionValue<unknown>, CollectionValue<unknown>> {
