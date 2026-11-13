@@ -23,6 +23,7 @@ import {
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import {
   captureLoadedFiles,
+  enterLoaderDiscoveryHost,
   type LoaderCaptureOrigin,
   type LoaderCapturePaths,
 } from "../loaders/runtime.ts";
@@ -730,6 +731,7 @@ export function discoverEvals(
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
   const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> => Effect.gen(function*() {
+    enterLoaderDiscoveryHost();
     const entries = yield* collectEvalEntries(dir, root);
     const discoveredEntries = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, load));
     const evals = yield* propagateLoaderProvenance(discoveredEntries, root);
@@ -842,7 +844,6 @@ export function discoverEvals(
     return Object.freeze(evals.map((item) => annotated.get(item.definition) ?? item));
   });
   if (options.generation !== undefined) return discoverWith(options.generation.import);
-  if (!options.freshImport) return discoverWith(cachedModuleLoader);
   return Effect.scoped(
     acquireFreshImportGeneration(root).pipe(
       Effect.flatMap((fresh) => discoverWith(fresh.import)),

@@ -5,7 +5,9 @@
 
 import { Effect, Semaphore, type Scope } from "effect";
 import { createJiti, type Jiti } from "jiti";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const generationGate = Semaphore.makeUnsafe(1);
 const loaderOptions = Object.freeze({
@@ -64,11 +66,43 @@ export function acquireFreshImportGeneration(
     // Register this finalizer before constructing the loader: Jiti setup or cache eviction
     // may throw, but neither may strand the generation permit.
     yield* Effect.acquireRelease(generationGate.take(1), () => generationGate.release(1));
-    const loader = createJiti(import.meta.url, loaderOptions);
+    const loader = createJiti(import.meta.url, { ...loaderOptions, tryNative: false });
     clearProjectModules(loader, projectRoot);
+    const evaluated = new Map<string, Promise<{ default?: unknown }>>();
+    const importFresh = (absPath: string): Promise<{ default?: unknown }> => {
+      const existing = evaluated.get(absPath);
+      if (existing !== undefined) return existing;
+      const pending = evaluate(absPath, new Set());
+      evaluated.set(absPath, pending);
+      return pending;
+    };
+    const evaluate = async (absPath: string, ancestors: ReadonlySet<string>): Promise<{ default?: unknown }> => {
+      const source = await readFile(absPath, "utf8");
+      const visiting = new Set([...ancestors, absPath]);
+      // Native ESM imports bypass Jiti's evictable cache, even with tryNative:false.
+      // Evaluate the static project closure through Jiti before importing its parent.
+      // Package dependencies retain their canonical runtime and are never re-evaluated.
+      const transformed = loader.transform({ filename: absPath, source, async: true, ts: /\.[cm]?tsx?$/.test(absPath) });
+      const runtimeImports = new Set([...transformed.matchAll(/\bjitiImport\(["']([^"']+)["']/g)].map(match => match[1]));
+      for (const match of source.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)) {
+        const specifier = match[1];
+        if (specifier === undefined || !runtimeImports.has(specifier) || (!specifier.startsWith(".") && !specifier.startsWith("/"))) continue;
+        const url = loader.esmResolve(specifier, pathToFileURL(absPath).href);
+        if (!url.startsWith("file:")) continue;
+        const dependency = fileURLToPath(url);
+        if (!dependency.startsWith(`${resolve(projectRoot)}${sep}`) || dependency.includes(`${sep}node_modules${sep}`) || !/\.[cm]?[jt]sx?$/.test(extname(dependency)) || visiting.has(dependency)) continue;
+        let pending = evaluated.get(dependency);
+        if (pending === undefined) {
+          pending = evaluate(dependency, visiting);
+          evaluated.set(dependency, pending);
+        }
+        await pending;
+      }
+      return unwrapDefault(await loader.evalModule(source, { filename: absPath, async: true, forceTranspile: true }));
+    };
     return Object.freeze({
       // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
-      import: (absPath: string) => importWith(loader, absPath),
+      import: importFresh,
     });
   });
 }

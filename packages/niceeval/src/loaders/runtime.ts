@@ -4,7 +4,7 @@
 // 经这里读入或登记的文件都进读它那条 eval 的指纹。
 // 单文件路径两种写法等价:项目根相对字符串,或 eval 文件相对的 `file:` URL。
 // glob 不能塞进 URL(`?` 会变 query、`{}` 会编码),所以相对 glob 把 pattern 与基准 URL 分开传。
-// 登记只在发现期的模块求值里成立,所以 capture 不在场时直接报错,不静默漏登记。
+// 无宿主进程只读；进入发现后，只有发现期的模块求值允许 loader 读取。
 
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -55,6 +55,23 @@ export interface LoaderCapturePaths {
 }
 
 let activeCapture: LoaderCapture | undefined;
+let discoveryHostEntered = false;
+
+/** Discovery keeps its host identity even after an empty or failed generation. */
+export function enterLoaderDiscoveryHost(): void {
+  discoveryHostEntered = true;
+}
+
+export class LoaderOutsideDiscoveryError extends Error {
+  constructor(path: string) {
+    super(`Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`);
+    this.name = "LoaderOutsideDiscoveryError";
+  }
+}
+
+function assertLoaderTiming(path: string): void {
+  if (discoveryHostEntered && activeCapture === undefined) throw new LoaderOutsideDiscoveryError(path);
+}
 
 /**
  * 发现期包住一个 eval 模块的求值，记录它经公开 loader 读取的数据文件（`paths`）、
@@ -72,6 +89,7 @@ export async function captureLoadedFiles<T>(
   origins: readonly LoaderCaptureOrigin[];
   unattributed: LoaderCapturePaths;
 }> {
+  enterLoaderDiscoveryHost();
   const previous = activeCapture;
   const capture: LoaderCapture = {
     data: new Set<string>(),
@@ -154,7 +172,7 @@ function registerCapturePath(bucket: LoaderCaptureBucketName, absolute: string):
 // 就够,不需要 import node:url。
 function resolvedPath(path: string | URL): string {
   const absolute = typeof path === "string" ? resolve(process.cwd(), path) : fromFileUrl(path);
-  if (!activeCapture) throw new Error(`Read of "${String(path)}" happened outside discovery: loaders may only be called at the module top level of an eval file (while discovery evaluates that module), which is the only point early enough for the file's content to enter this eval's fingerprint. Move the read to the module top level and keep the result in a constant that test(t) uses; loaders cannot be called at run time from test(t) or from lifecycle hooks.`);
+  assertLoaderTiming(String(path));
   registerCapturePath("data", absolute);
   return absolute;
 }
@@ -188,6 +206,7 @@ export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): P
  * shell 模板都是判据文件。读入即宣告「它参与判定」——文件内容哈希进读它的那条 eval
  * 的指纹,改一字节就重跑那条 eval。用 `fs` 自行读入的文件不进指纹。
  * 路径写项目根相对的字符串,或 eval 文件相对的 `new URL(p, import.meta.url)`。
+ * 无宿主时只读取；进入过发现后，发现期外调用抛出 LoaderOutsideDiscoveryError。
  */
 export async function loadText(path: string | URL): Promise<string> {
   return readFile(resolvedPath(path), "utf-8");
@@ -212,8 +231,8 @@ export type CriteriaPattern = string | RelativeCriteriaPattern;
  * `!` 前缀为排除;按声明顺序求值,后写的覆盖先写的。匹配集按文件系统枚举、不看 git:
  * 新写的判据没 `git add` 也照样进指纹,代价是本地跑测冒出的生成物同样被盖到,用 `!` 排除。
  *
- * 只能在 eval 文件的模块顶层调用(发现期求值那一刻),`test(t)` 运行期调用直接报错——
- * 携带决策发生在任何 attempt 执行之前,那时才登记已经来不及。
+ * 无宿主进程只枚举并返回；进入过发现的进程只允许在发现期的模块顶层调用。
+ * 发现结束后调用抛出 LoaderOutsideDiscoveryError；共享模块登记到每条可达 Eval。
  *
  * 两种用法错误直接抛:某个 include pattern 一个文件都没匹配到(或命中的都被 `!` 排除了)——
  * 多半是写错了或文件搬走了,别的 pattern 有命中也不放过,静默放过等于判据悄悄变窄;
@@ -223,14 +242,7 @@ export type CriteriaPattern = string | RelativeCriteriaPattern;
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
 export async function loadCriteria(...patterns: CriteriaPattern[]): Promise<string[]> {
-  if (!activeCapture) {
-    const path = patterns
-      .map((pattern) =>
-        typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`,
-      )
-      .join(" ");
-    throw new Error(`Read of "${path}" happened outside discovery: loaders may only be called at the module top level of an eval file (while discovery evaluates that module), which is the only point early enough for the file's content to enter this eval's fingerprint. Move the read to the module top level and keep the result in a constant that test(t) uses; loaders cannot be called at run time from test(t) or from lifecycle hooks.`);
-  }
+  assertLoaderTiming(patterns.map(pattern => typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`).join(" "));
   return registerGlobPatterns(patterns.map(normalizeCriteriaPattern), "criteria");
 }
 
@@ -257,6 +269,7 @@ function normalizeCriteriaPattern(pattern: CriteriaPattern): string {
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
 export async function loadPrivate(...patterns: string[]): Promise<string[]> {
+  if (activeCapture === undefined) throw new LoaderOutsideDiscoveryError(patterns.join(" "));
   return registerGlobPatterns(patterns, "private");
 }
 
@@ -264,8 +277,7 @@ async function registerGlobPatterns(
   patterns: string[],
   bucket: "criteria" | "private",
 ): Promise<string[]> {
-  const capture = activeCapture;
-  if (!capture) throw new Error(`Read of "${patterns.join(" ")}" happened outside discovery: loaders may only be called at the module top level of an eval file (while discovery evaluates that module), which is the only point early enough for the file's content to enter this eval's fingerprint. Move the read to the module top level and keep the result in a constant that test(t) uses; loaders cannot be called at run time from test(t) or from lifecycle hooks.`);
+  assertLoaderTiming(patterns.join(" "));
   const root = process.cwd();
   const compiled = compilePatterns(patterns);
   const matched = new Set<string>();

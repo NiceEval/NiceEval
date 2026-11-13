@@ -269,7 +269,7 @@ function selectionProblem(
   return undefined;
 }
 
-function closeSelection(input: ExperimentHostSelectionInput, options: { readonly freshImport?: boolean } = {}): Effect.Effect<ClosedSelection, unknown> {
+function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<ClosedSelection, unknown> {
   const selectWith = (generation?: FreshImportGeneration) => Effect.gen(function* () {
     if (input.experimentIds !== undefined && (input.experimentIds.length === 0 || input.experimentSelector !== undefined)) {
       return yield* Effect.fail(new TypeError("experimentIds must be non-empty and cannot be combined with experimentSelector"));
@@ -308,9 +308,7 @@ function closeSelection(input: ExperimentHostSelectionInput, options: { readonly
       selections: freezeArray(selections),
     });
   });
-  return options.freshImport
-    ? Effect.scoped(acquireFreshImportGeneration(input.cwd).pipe(Effect.flatMap(selectWith)))
-    : selectWith();
+  return Effect.scoped(acquireFreshImportGeneration(input.cwd).pipe(Effect.flatMap(selectWith)));
 }
 
 function summaryOfExperiment(
@@ -401,7 +399,7 @@ export function prepareRuns(input: ExperimentHostSelectionInput & {
   readonly config: ExperimentHostInvocationPlanRequest["config"];
   readonly overrides?: ExperimentHostRunOverrides;
 }, options: { readonly allowEmptySelection?: boolean; readonly freshImport?: boolean } = {}): Effect.Effect<PreparedRuns, unknown> {
-  return closeSelection(input, options).pipe(Effect.flatMap((selected): Effect.Effect<
+  return closeSelection(input).pipe(Effect.flatMap((selected): Effect.Effect<
     PreparedRuns,
     ExperimentEvaluationKindAdmissionError
   > => {
