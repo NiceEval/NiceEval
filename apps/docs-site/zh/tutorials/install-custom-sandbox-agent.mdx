@@ -95,6 +95,10 @@ pnpm exec niceeval exp my-agent fixtures/button
 
 普通 npm 包要求 Sandbox 里有 Node.js 和 npm。`createNpmCliInstaller` 在宿主机打包、上传，再在 Sandbox 里执行 `npm install -g`。只有自带运行时的 `platformPackage` 才不需要 Node.js 和 npm。
 
+安装层可以提供 `repair(sandbox, context)`，在版本正确但缺少链接等条件时就地补齐。NiceEval 先运行它，再用原来的探测复检；命中后跳过 payload 准备和上传。修复只使用已有安装，不联网、不下载、不换版本；抛错或复检未命中时才继续安装。`progress.repairing` 提供修复期间的终端文案，`verify-only` 始终不执行修复。
+
+`codexAgent` 自带这项修复：npm 安装的 JS 启动器满足锁定版本时，会从已有安装中找到原生二进制并补上登录 shell 的 `apply_patch` 链接。
+
 ## 检查安装失败
 
 安装或安装后的复检失败时，这个 Attempt 会在 `agent.ensure` 阶段变成 `errored`，终端会给出它的 locator：
