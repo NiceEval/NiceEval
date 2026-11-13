@@ -5,7 +5,6 @@ import { expect, test } from "vitest";
 import { cliE2E, writeInspectionRequest } from "./context.ts";
 
 // @feature docs/feature/sandbox/README.md
-// @issue docs/issues/takeover-parameterized-cli.md
 test.concurrent.each([
   { id: "bounded", name: "bounded[default]", timeoutMs: 60_000, lifetimeMs: undefined, seconds: 180 },
   { id: "unlimited", name: "unlimited+default", timeoutMs: undefined, lifetimeMs: undefined, seconds: 900 },
