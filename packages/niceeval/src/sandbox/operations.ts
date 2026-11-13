@@ -11,6 +11,7 @@ import {
   registeredSandboxContentSnapshotOf,
   registeredSandboxContentFileOf,
   type RegisteredSandboxContent,
+  type RegisteredSandboxContentSnapshot,
 } from "./content.ts";
 import { redactSensitiveText } from "./redaction.ts";
 
@@ -18,6 +19,15 @@ import { redactSensitiveText } from "./redaction.ts";
 // Attempt budget. Keep each write comfortably below that boundary, then replace
 // the destination only after every part has arrived.
 const PUT_CONTENT_CHUNK_BYTES = 8 * 1024 * 1024;
+
+/** Private optional transfer specialization; content is verified before delegation. */
+export interface DirectoryContentTransfer {
+  uploadContentDirectory?(
+    snapshot: Extract<RegisteredSandboxContentSnapshot, { kind: "directory" }>,
+    targetPath: string,
+    commands: SandboxOperations,
+  ): Promise<void>;
+}
 
 async function putContentBytes(
   sandbox: SandboxOperations,
@@ -196,6 +206,7 @@ export async function putSandboxContent(
   sandbox: SandboxOperations,
   content: RegisteredSandboxContent,
   targetPath: string,
+  directoryTransfer?: DirectoryContentTransfer,
 ): Promise<void> {
   const file = registeredSandboxContentFileOf(content);
   if (file !== undefined) {
@@ -226,6 +237,10 @@ export async function putSandboxContent(
     return;
   }
 
+  if (directoryTransfer?.uploadContentDirectory !== undefined) {
+    await directoryTransfer.uploadContentDirectory(snapshot, targetPath, sandbox);
+    return;
+  }
   await ensureContentDirectory(sandbox, targetPath);
   const directories: Array<{ readonly path: string; readonly mode: number }> = [];
   // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。

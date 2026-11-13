@@ -7,10 +7,12 @@ import { StringDecoder } from "node:string_decoder";
 import type { Client } from "ssh2";
 import { noSandboxBackendCapabilities, supportedBackendCapability, type SandboxProviderBackend } from "../backend.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "../deadline.ts";
-import { collectLocalFiles } from "../local-files.ts";
-import { downloadDirectoryByList } from "../download-directory.ts";
+import { registerSandboxContent, registeredSandboxContentSnapshotOf } from "../content.ts";
+import { shellQuote } from "../shell.ts";
+import { successfulCommandResult } from "../operations.ts";
+import { directoryArchive, expandDirectory, extractDirectory, type DirectorySnapshot } from "./archive.ts";
 import { resolveLocalPath, resolveSandboxPath } from "../paths.ts";
-import type { CommandOptions, CommandResult, ManagedProcessStart, ManagedProcess } from "../types.ts";
+import type { CommandOptions, CommandResult, ManagedProcessStart, ManagedProcess, SandboxOperations } from "../types.ts";
 import { INSTABOX_MACHINE_SPECS, type InstaboxSandboxOptions } from "../instabox.ts";
 import { InstaboxApi, InstaboxApiError, Machine, Operation, Snapshot, SSHToken } from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
@@ -181,16 +183,34 @@ export class InstaboxBackend implements SandboxProviderBackend {
     await response.arrayBuffer();
   }
   async uploadDirectory(source: string | URL, target?: string, options: { readonly ignore?: readonly string[] } = {}): Promise<void> {
-    for (const file of await collectLocalFiles(resolveLocalPath(undefined, source), options.ignore)) await this.writeBytes(resolveSandboxPath(resolveSandboxPath(this.workdir, target), file.path), file.content);
+    const snapshot = registeredSandboxContentSnapshotOf(registerSandboxContent(resolveLocalPath(undefined, source), import.meta.url));
+    if (snapshot.kind !== "directory") throw new Error("uploadDirectory requires a directory");
+    const ignored = new Set(options.ignore ?? []);
+    await this.uploadContentDirectory({ ...snapshot, entries: snapshot.entries.filter(entry => !entry.path.split("/").some(part => ignored.has(part))) }, resolveSandboxPath(this.workdir, target), {
+      runCommandOrThrow: async (command, args) => successfulCommandResult(await this.runCommand(command, args)),
+    });
+  }
+  async uploadContentDirectory(snapshot: DirectorySnapshot, targetPath: string, commands: Pick<SandboxOperations, "runCommandOrThrow">): Promise<void> {
+    const id = randomUUID();
+    const target = resolveSandboxPath(this.workdir, targetPath).replace(/\/+$/, "");
+    if (!target) throw new Error("Cannot replace the filesystem root with a directory archive");
+    const archive = `/tmp/niceeval-upload-${id}.tar`;
+    const bytes = await directoryArchive(snapshot);
+    await this.writeBytes(archive, bytes);
+    const config = Buffer.from(JSON.stringify({ target, archive, id, entries: snapshot.entries.map(entry => ({ path: entry.path, kind: entry.kind })) })).toString("base64");
+    await commands.runCommandOrThrow("node", ["-e", expandDirectory, config], { cwd: "/tmp" });
   }
   async downloadFile(source: string, target: string | URL): Promise<void> {
     const destination = resolveLocalPath(undefined, target);
     await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, await this.readBytes(source));
   }
-  downloadDirectory(source: string, target: string | URL, options: { readonly ignore?: readonly string[] } = {}): Promise<void> {
+  async downloadDirectory(source: string, target: string | URL, options: { readonly ignore?: readonly string[] } = {}): Promise<void> {
     const remoteDir = resolveSandboxPath(this.workdir, source);
-    return downloadDirectoryByList({ localDir: resolveLocalPath(undefined, target), ignore: options.ignore ?? [],
-      runShell: (script) => this.runShell(script, { cwd: remoteDir }), readOne: (path) => this.readBytes(`${remoteDir}/${path}`) });
+    // The archive is Machine-owned temporary data, reclaimed with its Scope.
+    const archive = `/tmp/niceeval-download-${randomUUID()}.tar`;
+    const result = await this.runShell(`tar --hard-dereference -cpf ${shellQuote(archive)} -C ${shellQuote(remoteDir)} .`);
+    successfulCommandResult(result);
+    await extractDirectory(await this.readBytes(archive), resolveLocalPath(undefined, target), options.ignore ?? []);
   }
 
   async stop(): Promise<void> {

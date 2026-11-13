@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { CommandOptions, Sandbox } from "../types.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
 import { enrichTransferErrors, withTransferErrors } from "./transfer-errors.ts";
-import { putSandboxContent, successfulCommandResult } from "./operations.ts";
+import { putSandboxContent, successfulCommandResult, type DirectoryContentTransfer } from "./operations.ts";
 import {
   providerBoundaryEffect,
   providerCompatibilityPromise,
@@ -99,7 +99,11 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     pathExists: (path) => providerCompatibilityPromise(() =>
       sandbox.pathExists(resolveSandboxPath(sandbox.workdir, path)),
     ),
-    upload: (content, targetPath) => putSandboxContent(normalized, content, targetPath),
+    get upload(): Sandbox["upload"] {
+      const transfer = sandbox as SandboxProviderBackend & DirectoryContentTransfer;
+      const commands = transfer.uploadContentDirectory === undefined ? normalized : this;
+      return (content, targetPath) => putSandboxContent(commands, content, targetPath, transfer);
+    },
     uploadFile: (source, targetPath) => {
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
       return providerCompatibilityPromise(() => withTransferErrors(
@@ -213,7 +217,11 @@ export function makeSandboxAuthorFacade(
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.pathExists(abs))));
     },
-    upload: (content, targetPath) => putSandboxContent(normalized, content, targetPath),
+    get upload(): Sandbox["upload"] {
+      const transfer = sandbox as SandboxProviderBackend & DirectoryContentTransfer;
+      const commands = transfer.uploadContentDirectory === undefined ? normalized : this;
+      return (content, targetPath) => putSandboxContent(commands, content, targetPath, transfer);
+    },
     uploadFile: (source, targetPath) => {
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
       return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadFile(source, abs))).pipe(
