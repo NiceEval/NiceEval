@@ -421,7 +421,11 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(invalidPage.stdout).toBe(invalidPageQuery.stdout);
       const assertionsText = await niceeval.run(["show", locator, "--assertions"]);
       expect(assertionsText.exitCode, assertionsText.diagnostic()).toBe(0);
-      expect(assertionsText.stdout).toContain("[PASS]");
+      expect(assertionsText.stdout).toMatch(/NOTE met\s+\S+ · Inspection tool occurrence/u);
+      expect(assertionsText.stdout).toMatch(/SCORE 34\.11\/34\.11\s+\S+ · Compact score contribution/u);
+      expect(assertionsText.stdout).toMatch(/SCORE 0\/5\s+\S+ · Mismatched Boolean contributes zero/u);
+      expect(assertionsText.stdout).toMatch(/GATE pass\s+SCORE 3\/4\s+\S+ · Measurement contributes three points/u);
+      expect(assertionsText.stdout).toMatch(/NOTE met\s+\S+ · Collection evidence remains bounded/u);
       expect(assertionsText.stdout).toContain("Next");
 
       const usageErrors: readonly {
