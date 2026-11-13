@@ -32,6 +32,18 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 `session list` 默认只列 active Invocation；`--all` 加入已收口的 durable Session。`session show` 以 exact invocation ID
 显示这次 Invocation 的 terminal projection、created Run IDs、completion 与 publication cutoff；它不会重新构建 live 面板，也不提供后台接管。
 
+对 active Invocation，`invocation show` 还列出每个已派发、尚未发布的 Planned attempt，让另一个终端里的人或 agent 不必解读运行日志：
+
+- Experiment ID、Eval ID 与从 1 开始的 Attempt 序号；
+- 当前阶段及进入该阶段的时间。阶段取自 Runner 的 lifecycle，与 live 面板和 `show @<locator> --timing` 使用同一组名称；
+- Sandbox provider 名与 provider 原生的实例标识（例如 Instabox 的实例名、Docker 的容器名）。实例尚未创建或 Eval 不使用 Sandbox 时写明没有；
+- 最近一条 Attempt detail 及其时间，与非 TTY Human 输出的 detail 行是同一份文本。
+
+实例标识用于排查者以 provider 的原生 CLI 直连现场，NiceEval 不代理这次连接。这些行是 owner 进程随活动写入的非权威观察值，
+与 heartbeat 同级：owner 被暂停时可以停止前进，读取方只按原样显示写入时间，不据此判断 Attempt 死活。
+已发布的 Attempt 不再出现在这里，改由 `show @<locator>` 读取；排队中尚未派发的 Planned attempt 只按 Experiment 计数。
+`--json` 输出同一组字段。凭据、env var 值与 Sandbox 内的文件内容不进入这些行。
+
 `run import` 将外部已交付、已验证的单文件 Record 中的已发布 Run、Attempt 闭包、family 事实与 Content chunk 汇入当前项目数据库。
 它只导入完整封口的已发布 Run。目标项目已存在相同 Run ID 且散列一致时幂等跳过；Run ID 冲突但内容不一致时完整拒绝且零写入。
 导入成功后更新项目发布时钟，新汇入的 Run 立即对 Inspection 与后续沿用可见。

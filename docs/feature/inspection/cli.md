@@ -376,6 +376,7 @@ niceeval show --all
 niceeval show --reference [--json | -o text|json]
 niceeval show --run <run-id>... [--json | -o text|json]
 niceeval show --experiment <experiment-id>... [--json | -o text|json]
+niceeval show --experiment <experiment-id>... --assertions [--eval <eval-id-prefix>] [--json | -o text|json]
 niceeval show --compare --left <run-id>... --right <run-id>... [--mode paired|side-by-side|exact] [--max-regressions <n>] [--json | -o text|json]
 niceeval show @<locator> [--json | -o text|json]
 niceeval show @<locator> --assertions [--entry <id>] [--compact] [--json | -o text|json]
@@ -447,6 +448,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   摘要、section states 与 limitations。另给出可复制的 assertions、source、execution、timing、usage 和 diff 后续命令。
 - `@<locator> --assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
   指定 `--entry <id>` 选择单项断言；默认以 compact 紧凑摘要交付，指定 `--full` 包含完整原始材料与上下文行。
+- `--experiment <id>... --assertions` 调用 `experiments.assertions`，按 Eval 把各 Experiment 的断言条目排成判据矩阵，见[跨 Experiment 的判据矩阵](#跨-experiment-的判据矩阵)。
 - `@<locator> --source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
   source state、location、limitations 与 Evidence；不从文本推断断言或运行时原文。
 - `@<locator> --execution` 调用 `attempt.trace` 显示有界 outline，展示块的呈现见下文[展示块呈现](#展示块呈现)。`--expand <stable-id>`
@@ -468,6 +470,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 | 无 selector | `project.get` |
 | `--record <file>` | `overview.get`；与 `--experiment` 同用时为 `experiment.get` |
 | `--experiment` | 每个去重后的 ID 一次 `experiment.get`，按 ID 排序 |
+| `--experiment ... --assertions` | 一次 `experiments.assertions`，带全部去重后的 ID 与 `--eval` 前缀 |
 | `--run` | 每个去重后的 ID 一次 `run.get`，按 ID 排序 |
 | `@<locator>` | `attempt.get`、`attempt.usage` |
 | `@<locator> --assertions` | `attempt.assertion.detail` |
@@ -526,6 +529,44 @@ Events 的全部人读字符串按码点去掉控制字符与双向格式控制�
 `partial` 的空索引显示其限制，页尾不能被描述为生产者证据完整。
 
 `--all` 只适用于无 selector 的 Results，不能与 `--experiment`、`--run`、Attempt locator、Attempt detail flag 或 `-o json` 同用。
+
+`--assertions` 可以与 Attempt locator 同用，也可以与 `--experiment` 同用；与 `--run` 同用是 argv 错误。
+`--eval` 只能与 `--experiment ... --assertions` 同用，`--entry`、`--compact` 与 `--full` 只能与 Attempt locator 同用。
+
+### 跨 Experiment 的判据矩阵
+
+校准评分判据时，作者要回答三个问题：哪条判据在所有候选上都是零分或满分，哪条只在某个候选上丢分，哪条没有被求值。
+单个 Attempt 的断言列表回答不了这些问题。`experiments.assertions` 在一个 `PublicationCutoff` 下读取一组 Experiment，
+按 Eval 把它们的断言条目排成「判据 × Planned attempt」矩阵。
+
+```sh
+niceeval show --experiment harness/v0.19.0 --experiment harness/canary --assertions
+niceeval show --experiment install/v0.20.0 --experiment install/canary --assertions --eval install/db-gpt
+```
+
+request 是 `{ kind: "experiments.assertions", experimentIds, evalIdPrefix? }`。`experimentIds` 至少一项，去重后按 ID 排序；
+任一 ID 未命中时整次失败。`evalIdPrefix` 按 Eval ID 的路径前缀筛选，省略时包含全部 Eval。
+
+成员选择与 `experiment.get` 完全相同：每个 Experiment 的每个 Planned attempt 取当前已发布结果。
+这个 operation 不重新选择成员，不求值当前源码，也不把被替换的旧执行算进来。
+
+result 按 Eval ID 排序，每个 Eval 给出：
+
+- `columns`：每列是一个 `(experimentId, attemptOrdinal)`，带该成员的 locator、Verdict 与 score；没有已发布 Attempt 的列带闭合的 absence reason。
+- `rows`：每行是一条判据，带 `key`、`label`、`groupPath`，以及与 `columns` 等长的 `cells`。
+- `cells` 的每一格是该 Attempt 中这条判据的 `entryId`、判定结果与 contribution，取值与 `attempt.assertion.detail` 的同名字段相同；
+  该 Attempt 没有这条判据时是 `absent`。
+- `distinct`：这一行各列的判定结果与得分不全相同时为 `true`。只有一列时恒为 `false`。
+
+行的身份是断言条目的 `key`。没有 `key` 的条目以 `groupPath` 加 `label` 为身份；两者都没有的条目不成行，
+在该 Eval 的 `unkeyed` 里按列计数。同一 Attempt 内身份重复的条目不合并，按出现顺序成为同一行里的多格，
+不能让后一条静默替换前一条。行按在各列中首次出现的顺序排列，先出现的列优先。
+
+result 有界：行数或格数超过上限时 `state` 为 `partial`，并给出被省略的 Eval、行与列的数量；不能静默截断。
+
+文本投影每个 Eval 一张表：第一行是各列的 Verdict 与 score，其后每行一条判据。计分条目显示 `得分/满分`，
+不计分条目显示判定结果，`absent` 显示 `—`。`distinct` 为 `true` 的行有可见标记，标题下注明该标记的含义。
+每列的表头给出 Experiment ID、Attempt 序号与 locator，读者可以直接复制 locator 下钻。
 
 ### 当前 Results 示例
 

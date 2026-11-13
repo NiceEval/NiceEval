@@ -118,6 +118,17 @@ hook 信任 bypass 与审批 bypass 属同一信任层级。沙箱运行是 head
 app-server 没有 `exec --dangerously-bypass-hook-trust` 这一顶层 flag；Adapter 在
 `thread/start.config` 中传入 runtime-only `bypass_hook_trust = true`。Plugin hook 的声明与配置仍只来自本 Attempt before。
 
+## `apply_patch` 在登录 shell 中可用
+
+Codex CLI 启动时把自带的 `apply_patch` 等命令放进一个临时目录，并把该目录加到子进程 `PATH` 的最前面。
+它执行模型命令时使用登录 shell（`bash -lc`）。Debian 系镜像的 `/etc/profile` 会无条件重置 `PATH`，这个临时目录随之丢失。
+没有被 Codex 当作原生补丁工具接管的 `apply_patch` 调用就会得到 `command not found`，模型随后浪费若干步去寻找它或改用别的写法。
+
+`codexAgent` 保证：Agent 运行期间，Sandbox 内以 Agent 用户身份执行 `bash -lc 'command -v apply_patch'` 成功，
+并且找到的命令就是锁定版本 Codex CLI 自带的补丁工具，接受 Codex 的 `*** Begin Patch` 格式。
+这条保证属于 Agent ensure，与 CLI 版本一起检查；预装镜像缺少它时由 Adapter 补上，而不是要求作者在 Sandbox layer 里安装。
+Adapter 不修改 `/etc/profile`、不改变 Agent 用户登录 shell 的其它 `PATH` 条目，也不提供自己重新实现的补丁工具。
+
 ## Prebuilt environment
 
 `codexAgent` 在 PATH 上检查 `codex` 的精确版本。预装命中会直接进入运行；未命中时，内置安装层自动准备锁定版本的官方发行包并确认安装结果。
