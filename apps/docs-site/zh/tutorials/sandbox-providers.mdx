@@ -182,7 +182,9 @@ const sandbox = dockerSandbox({
   }));
 ```
 
-`changeFrequency` 决定步骤的顺序：数值小、很少变的步骤排在前面，数值大、经常变的排在后面。这样只改了后面的步骤时，前面的步骤可以直接沿用上次的结果。它是一个普通的非负数，内置常量只是方便阅读：
+同一个 layer 的 `.before()` 按书写顺序执行，回调也算一步，`.after()` 不会切断这条链。后一步的 `changeFrequency` 即使更小，也会等待前一步。
+
+`changeFrequency` 决定不同链之间怎样交错：依赖满足后，数值小的步骤先执行。把稳定的准备步骤写在链的前面，只改后面的步骤时，前面的步骤可以沿用缓存。频率是普通的非负数，内置常量方便阅读：
 
 ```ts
 changeFrequency.rare     // 10
@@ -190,7 +192,7 @@ changeFrequency.normal   // 100
 changeFrequency.frequent // 1000
 ```
 
-Experiment、评估组、评估用例和 Sandbox Agent 的准备步骤排进同一个顺序：先满足显式的 `dependsOn`，再按数值从小到大执行。所以评估组里很少变的步骤，可以排在 Experiment 里经常变的步骤前面。
+Experiment、评估组、评估用例和 Sandbox Agent 的准备步骤进入同一个依赖图。每条链保持书写顺序，跨链用 `dependsOn` 或 capability 声明依赖，再按频率选择已经就绪的步骤。每个 Plugin 的准备数组单独成链，与作者 layer 之间不自动连边。
 
 运行时，每个准备步骤都会显示在进度里，但不会泄露内容：
 

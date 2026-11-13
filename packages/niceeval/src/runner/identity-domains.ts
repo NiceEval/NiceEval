@@ -13,7 +13,7 @@ export interface IdentityDomains {
 }
 
 export const CURRENT_IDENTITY_DOMAINS: IdentityDomains = Object.freeze({
-  fingerprintAlgorithm: 4,
+  fingerprintAlgorithm: 5,
   fingerprintCoverage: 2,
   inputIdentity: 1,
   configIdentity: 1,
@@ -85,6 +85,14 @@ export const IDENTITY_DOMAIN_CHANGES: readonly IdentityDomainChange[] = Object.f
     ...input,
     fingerprintPayload: fingerprintPayloadWithHistoricalProviderCache(input)!,
   }),
+}, {
+  kind: "core",
+  name: "sandbox-before-chain-order/4-to-5",
+  revision: "fingerprintAlgorithm",
+  from: 4,
+  to: 5,
+  effect: "behavior-changing",
+  summary: "Execute each Sandbox before chain in declaration order, including callbacks and Plugin fragments.",
 }]);
 
 export interface IdentityDomainSide {
