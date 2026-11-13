@@ -5,7 +5,6 @@ import { writeFile } from "node:fs/promises";
 import { expect, test } from "vitest";
 
 // @feature docs/feature/adapters/README.md
-// @issue docs/issues/codex-login-patch.md
 test.concurrent("Codex 准备完成后，非 root 用户在登录 shell 中使用原生 apply_patch", async () => {
   await withProjectCopy({ from: process.cwd(), prefix: "niceeval-codex-login-patch-", omitTopLevel: [".niceeval", "node_modules", "test"], links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }] }, async ({ root }) => {
     const result = await command([resolve("node_modules/.bin/niceeval")]).run(["exp", "codex-login-patch", "--rerun", "all", "--json"], { cwd: root, timeoutMs: 240_000 });
@@ -16,7 +15,6 @@ test.concurrent("Codex 准备完成后，非 root 用户在登录 shell 中使�
 });
 
 // @feature docs/feature/adapters/README.md
-// @issue docs/issues/codex-ensure-reuploads-when-only-link-missing.md
 test.concurrent.each([
   ["npm-missing-patch", false, false],
   ["native-missing-patch", true, false],

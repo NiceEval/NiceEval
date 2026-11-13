@@ -5,7 +5,6 @@ import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
 // @feature docs/feature/run/README.md
-// @issue docs/issues/eval-finalization-storage-worker-failed.md
 test.concurrent("存储传输失败时保留原因、Run 与恢复命令", async () => {
   await runnerE2E.case("finalization-diagnostic", {}, async ({ commands: { niceeval }, paths }) => {
     const preload = join(paths.projectRoot, "storage-transport-fault.mjs");

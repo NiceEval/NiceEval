@@ -6,7 +6,6 @@ import { decodeSessionListDocument, decodeSessionShowDocument } from "niceeval/e
 import { expect, test } from "vitest";
 
 // @feature docs/feature/run/README.md
-// @issue docs/issues/invocation-active-attempts.md
 test.concurrent("另一个终端查看运行中 Attempt 的阶段、最近活动及 Docker 原生实例", async () => {
   await withProjectCopy({ from: process.cwd(), prefix: "niceeval-invocation-active-", omitTopLevel: [".niceeval", "node_modules", "test"], links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }] }, async ({ root }) => {
     const binary = resolve("node_modules/.bin/niceeval");

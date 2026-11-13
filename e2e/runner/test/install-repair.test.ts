@@ -7,7 +7,6 @@ import { existsSync } from "node:fs";
 import { decodeSessionListDocument, decodeSessionShowDocument } from "niceeval/experiment/host";
 
 // @feature docs/feature/adapters/README.md
-// @issue docs/issues/codex-ensure-reuploads-when-only-link-missing.md
 test.concurrent("install 就地修复后复检，成功时不准备或上传 staged payload", async () => {
   await runnerE2E.case("install-repair", {}, async ({ commands: { niceeval } }) => {
     const result = await niceeval.run(["exp", "install-repair", "--rerun", "all", "--json"]);
@@ -18,7 +17,6 @@ test.concurrent("install 就地修复后复检，成功时不准备或上传 sta
 });
 
 // @feature docs/feature/adapters/README.md
-// @issue docs/issues/codex-ensure-reuploads-when-only-link-missing.md
 test.concurrent("invocation show 显示清洗并按 Unicode 截断的探测原因与修复失败原因", async () => {
   await runnerE2E.case("install-repair-detail", {}, async ({ commands: { niceeval }, paths }) => {
     const source = join(paths.projectRoot, "experiments/install-repair.ts");

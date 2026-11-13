@@ -3,7 +3,6 @@ import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
 // @feature docs/feature/adapters/README.md
-// @issue docs/issues/codex-ensure-reuploads-when-only-link-missing.md
 test.concurrent("并发 Attempt 共享一次 staged 准备，上传不各自持有整份 payload 字节", async () => {
   await runnerE2E.case("staged-payload", {}, async ({ commands: { niceeval } }) => {
     const result = await niceeval.run(["exp", "staged-payload", "--rerun", "all", "--json"], { timeoutMs: 180_000 });

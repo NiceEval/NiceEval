@@ -44,7 +44,6 @@ test.concurrent("作者跨实验比较判据，保留重复身份、缺项和每
 });
 
 // @feature docs/feature/inspection/README.md
-// @issue docs/issues/eval-finalization-storage-worker-failed.md
 test.concurrent("大型判据矩阵保留可读的部分结果并报告省略数量", async () => {
   await inspectionE2E.case("assertion-matrix-bounds", {}, async ({ commands: { niceeval }, paths }) => {
     const file = join(paths.projectRoot, "evals", "assertion-matrix.eval.ts");
