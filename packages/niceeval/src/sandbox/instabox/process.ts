@@ -50,6 +50,8 @@ export async function startInstaboxProcess(input: {
   const client = new Client();
   const unregister = input.register(client);
   const output = new ManagedProcessOutput();
+  const startedAt = performance.now();
+  let stdoutBytes = 0, stderrBytes = 0;
   let terminal = false;
   let exit: ManagedProcessExit | undefined;
   let resolveDone!: (exit: ManagedProcessExit) => void;
@@ -58,10 +60,12 @@ export async function startInstaboxProcess(input: {
   void done.catch(() => undefined);
   let rejectReady!: (cause: unknown) => void;
   let failure: Promise<void> | undefined;
-  const fail = (): Promise<void> => failure ??= (async () => {
+  const fail = (reason: unknown): Promise<void> => failure ??= (async () => {
     if (terminal) return;
     terminal = true;
-    let cause: Error = new Error("Instabox SSH process lost its confirmed exit; retiring the Machine");
+    const detail = (reason instanceof Error ? reason.message : String(reason))
+      .replaceAll(input.token.token, "[REDACTED]");
+    let cause: Error = new Error(`Instabox SSH process lost its confirmed exit; retiring the Machine; reason=${detail}; reconnectAttempts=0; elapsedMs=${Math.round(performance.now() - startedAt)}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`);
     try { await input.retire(); }
     catch (cleanup) { cause = new AggregateError([cause, cleanup], "Instabox process and Machine cleanup failed"); }
     client.destroy(); unregister(); output.end();
@@ -73,10 +77,10 @@ export async function startInstaboxProcess(input: {
       const config = Buffer.from(JSON.stringify({ ...input.process, pathPrepend: input.pathPrepend })).toString("base64");
       const command = `${input.root ? "sudo -n -- " : ""}node -e ${shellQuote(supervisor)} ${shellQuote(config)}`;
       client.exec(command, { pty: false }, (error, channel) => {
-        if (error) { void fail(); return; }
-        channel.on("data", (bytes: Buffer) => output.push({ _tag: "Stdout", bytes }));
-        channel.stderr.on("data", (bytes: Buffer) => output.push({ _tag: "Stderr", bytes }));
-        channel.on("error", () => { void fail(); });
+        if (error) { void fail(error); return; }
+        channel.on("data", (bytes: Buffer) => { if (!terminal) { stdoutBytes += bytes.byteLength; output.push({ _tag: "Stdout", bytes }); } });
+        channel.stderr.on("data", (bytes: Buffer) => { if (!terminal) { stderrBytes += bytes.byteLength; output.push({ _tag: "Stderr", bytes }); } });
+        channel.on("error", (error: Error) => { void fail(error); });
         channel.once("exit", (code: number | null, signal?: string) => {
           exit = { exitCode: typeof code === "number" ? code : null, ...(signal ? { signal } : {}) };
         });
@@ -84,7 +88,7 @@ export async function startInstaboxProcess(input: {
           if (terminal) return;
           setImmediate(() => {
             if (terminal) return;
-            if (exit === undefined) { void fail(); return; }
+            if (exit === undefined) { void fail("channel closed without an exit status"); return; }
             terminal = true;
             output.end(); resolveDone(exit); client.end(); unregister();
           });
@@ -92,8 +96,8 @@ export async function startInstaboxProcess(input: {
         resolve(channel);
       });
     });
-    client.on("error", () => { void fail(); });
-    client.once("close", () => { if (!terminal) void fail(); });
+    client.on("error", (error: Error) => { void fail(error); });
+    client.once("close", () => { if (!terminal) void fail("SSH connection closed by peer"); });
     client.connect({
       host: input.token.host, port: input.token.port, username: input.token.token,
       authHandler: ["none"], readyTimeout: 30_000, keepaliveInterval: 10_000, keepaliveCountMax: 3,
@@ -108,7 +112,7 @@ export async function startInstaboxProcess(input: {
     writeStdin: (bytes) => new Promise((resolve, reject) => {
       if (stdinClosed || terminal) { reject(new Error("Instabox process stdin is closed")); return; }
       channel.write(Buffer.from(bytes), (error?: Error | null) => {
-        if (error) void fail().then(() => reject(new Error("Instabox process stdin write failed")));
+        if (error) void fail(error).then(() => reject(new Error("Instabox process stdin write failed")));
         else resolve();
       });
     }),
