@@ -4,7 +4,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 本机制把中文文档随 npm 包发布，让 agent 永远读「与当前安装版本一起发布」的文档：官网服务人，`node_modules/niceeval/` 里的文档服务 AI。
 
-用户面契约（AI 应该怎么读、init 写什么）单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](architecture/agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](architecture/agent-debug-eval.md)。
+用户旅程、每份文件的格式与不变量由 [AI-native](../../feature/ai-native/README.md) 拥有。页面里给 AI 的具体文案单源在 [`apps/docs-site/zh/tutorials/agent-feedback-loop.mdx`](../../../apps/docs-site/zh/tutorials/agent-feedback-loop.mdx) 与 [`apps/docs-site/zh/reference/cli.mdx`](../../../apps/docs-site/zh/reference/cli.mdx)。本篇只定义仓库侧的打包、发现与守护机制。这套机制对 agent 是否真的有效，由独立评估仓库给出证据——接入链路见 [`agent-install-eval.md`](architecture/agent-install-eval.md)，接入后的结果诊断链路见 [`agent-debug-eval.md`](architecture/agent-debug-eval.md)。
 
 ## 打包方案：正文随包，示例按版本固定
 

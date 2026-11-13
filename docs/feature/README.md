@@ -47,6 +47,7 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 
 ## 当前 Feature
 
+- [AI-native](ai-native/README.md)：用户复制一句话后，coding agent 从安装到日常使用的阅读路径与项目指引。
 - [Adapter](adapters/README.md)：连接 AI / Agent，各 SDK 契约由 `adapters/sdk/` 继续索引。
 - [Assertion](assertions/README.md)：检查、作用域、证据与 `AssertionResult`。
 - [Compile-time Contracts](compile-time-contracts/README.md)：作者输入与派生事实的阶段边界。
