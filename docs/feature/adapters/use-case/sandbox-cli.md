@@ -2,7 +2,7 @@
 
 ## 用户目标
 
-评估作者要在 Sandbox 实例中运行 Codex CLI，验证 Agent 可以完成一次任务，不在题目中维护 CLI 安装脚本。
+评估作者要在 Sandbox 实例中运行 Codex CLI，验证 Agent 可以完成一次真实的改动任务，不在题目中维护 CLI 安装脚本。
 
 ## 起始状态
 
@@ -11,19 +11,24 @@
 
 ## 完整路径
 
-1. 在 Eval 目录保存 `greet.ts`，只描述任务与完成检查。 {#task}
+1. 在 Eval 目录保存 `rename-script.ts`，只描述任务与完成检查。 {#task}
 
    ```ts
    import { defineEval } from "niceeval";
+   import { includes } from "niceeval/expect";
 
    export default defineEval({
-     description: "Agent 完成一次问候",
+     description: "Agent 把 package.json 里的 start 脚本改名为 dev",
      async test(t) {
-       const turn = await t.send("请简短问候用户。");
-       turn.succeeded().label("完成问候");
+       const turn = await t.send("我们统一用 dev 启动本地服务，把 start 脚本改个名。");
+       turn.succeeded().label("Turn 正常结束");
+       t.sandbox.fileChanged("package.json", { after: includes('"dev"') }).label("脚本已改名");
+       t.sandbox.changedOnlyWithin(["package.json"]).label("没有改别的文件");
      },
    });
    ```
+
+   题面只说用户要什么，判据核对文件里的事实（[T-27](../../../taste.md#t-27)）。
 
    预期输出：Eval 定义完成；此时尚未启动 CLI，也没有发送模型请求。
 
@@ -45,10 +50,10 @@
 
    预期输出：Experiment 选择了在 Docker Sandbox 中运行的 Codex Adapter；不需要把安装命令放入 Eval。
 
-3. 执行问候评估，观察 Agent 准备与任务结果。 {#run}
+3. 执行这条评估，观察 Agent 准备与任务结果。 {#run}
 
    ```sh
-   niceeval exp coding greet
+   niceeval exp coding rename-script
    ```
 
    预期输出：Human 进度显示 `checking Codex CLI <version>`，缺少锁定版本时继续显示安装进度，最后显示 `Codex CLI <version> ready`。

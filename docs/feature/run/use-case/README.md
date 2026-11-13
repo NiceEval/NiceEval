@@ -8,6 +8,10 @@
 - [查看运行](查看运行.md)：从列表找到 exact Run，辨别已发布结果与缺口。
 - [应用中列出运行](应用中列出运行.md)：Node 应用用 `runHost.list` 获取运行列表。
 
+## 观察：`invocation list`、`invocation show`
+
+- [观察运行中的批次](观察运行中的批次.md)：从另一个终端看每条 Attempt 的阶段、最近进展与 Sandbox 实例。
+
 ## 收口：`run recover`
 
 - [恢复中断运行](恢复中断运行.md)：旧 owner 终止后收口遗留的 active Run，保留已发布结果。

@@ -594,7 +594,7 @@ Experiments
 Attempts · my-agent
   Eval refund-policy
   Gap identity-mismatch
-  Previous result @1K1P0VJAPVJ12
+  Previous result @1K1P0VJAPVJ12 (passed)
 
   Eval weather-tool
   Attempt         Verdict  Duration
