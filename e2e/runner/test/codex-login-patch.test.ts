@@ -17,10 +17,14 @@ test.concurrent("Codex 准备完成后，非 root 用户在登录 shell 中使�
 
 // @feature docs/feature/adapters/README.md
 // @issue docs/issues/codex-ensure-reuploads-when-only-link-missing.md
-test.concurrent("npm 预装的锁定 Codex 只修复 apply_patch，重复 ensure 不上传发行包", async () => {
+test.concurrent.each([
+  ["npm-missing-patch", false, false],
+  ["native-missing-patch", true, false],
+  ["npm-ready", false, true],
+] as const)("预装锁定 Codex（%s）直接命中或只修复 apply_patch，不上传发行包", async (_name, native, patchReady) => {
   const docker = command(["docker"]);
   const image = `niceeval-e2e-codex-repair:${randomUUID()}`;
-  const built = await docker.run(["build", "-t", image, "fixtures/codex-npm"], { timeoutMs: 240_000 });
+  const built = await docker.run(["build", "--build-arg", `NATIVE=${native}`, "--build-arg", `PATCH_READY=${patchReady}`, "-t", image, "fixtures/codex-npm"], { timeoutMs: 240_000 });
   expect(built.exitCode, built.diagnostic()).toBe(0);
   try {
     await withProjectCopy({ from: process.cwd(), prefix: "niceeval-codex-npm-repair-", omitTopLevel: [".niceeval", "node_modules", "test"], links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }] }, async ({ root }) => {
@@ -32,6 +36,7 @@ const adapter = codexAgent({ apiKey: "unused-no-model-call" });
 if (adapter.kind !== "sandbox") throw new Error("expected Sandbox Agent");
 export default defineExperiment({
   adapter: { ...adapter, installers: adapter.installers.map(installer => ({ ...installer,
+    ${patchReady ? 'repair() { throw new Error("ready npm installation must hit the read-only probe"); },' : ""}
     prepareArtifact() { throw new Error("REGRESSION: preinstalled Codex must not prepare or upload a payload"); },
   })) },
   sandbox: dockerSandbox({ source: { type: "image", image: ${JSON.stringify(image)} }, user: "node" }),
