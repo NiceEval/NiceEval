@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { constants } from "node:os";
 import { StringDecoder } from "node:string_decoder";
-import type { Client } from "ssh2";
+import type { DiagnosticInput } from "../../types.ts";
 import { noSandboxBackendCapabilities, supportedBackendCapability, type SandboxProviderBackend } from "../backend.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "../deadline.ts";
 import { registerSandboxContent, registeredSandboxContentSnapshotOf } from "../content.ts";
@@ -16,6 +17,7 @@ import type { CommandOptions, CommandResult, ManagedProcessStart, ManagedProcess
 import { INSTABOX_MACHINE_SPECS, type InstaboxSandboxOptions } from "../instabox.ts";
 import { InstaboxApi, InstaboxApiError, Machine, Operation, Snapshot, SSHToken } from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
+import { InstaboxConnection } from "./connection.ts";
 
 export class InstaboxBackend implements SandboxProviderBackend {
   readonly workdir = "/data/home/workspace";
@@ -28,7 +30,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   private token?: SSHToken;
   private stopped = false;
   private stopping?: Promise<void>;
-  private readonly clients = new Set<Client>();
+  private connection?: InstaboxConnection;
   private readonly deleteKey = randomUUID();
 
   private constructor(
@@ -36,6 +38,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     private readonly options: InstaboxSandboxOptions & { readonly lifetimeMs: number },
     private readonly operation: Operation,
     private readonly deadlineAt?: number,
+    private readonly diagnostic: (input: DiagnosticInput) => void = () => {},
   ) {}
 
   get nativeInstanceId(): string { return this.instanceName; }
@@ -43,7 +46,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   get sandboxId(): string { return this.operation.machineId; }
   private get path(): string { return `/machines/${encodeURIComponent(this.sandboxId)}`; }
 
-  static async create(options: InstaboxSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, runId?: string): Promise<InstaboxBackend> {
+  static async create(options: InstaboxSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, runId?: string, diagnostic?: (input: DiagnosticInput) => void): Promise<InstaboxBackend> {
     if (options.lifetimeMs < 60_000 || options.lifetimeMs > 86_400_000) throw new Error("Instabox lifetimeMs must be between 60 seconds and 24 hours");
     const key = process.env.INSTABOX_API_KEY;
     if (!key) throw new Error("INSTABOX_API_KEY is required for Instabox");
@@ -71,7 +74,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
       try { operation = await request(); }
       catch { throw new Error("Instabox allocation could not be reconciled; the declared deletion deadline bounds any allocated Machine"); }
     }
-    const backend = new InstaboxBackend(api, options, operation, deadlineAt);
+    const backend = new InstaboxBackend(api, options, operation, deadlineAt, diagnostic);
     backend.instanceName = `niceeval-${idempotencyKey}`;
     return backend;
   }
@@ -86,16 +89,17 @@ export class InstaboxBackend implements SandboxProviderBackend {
       method: "POST", body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: Math.ceil(this.options.lifetimeMs / 1000) }), signal: bounded,
     });
     if (this.token.machineId !== this.sandboxId) throw new Error("Instabox SSH grant belongs to another Machine");
+    this.connection = new InstaboxConnection(this.token);
     const probe = await this.runShell('test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace', { cwd: "/data/home", signal: bounded });
     if (probe.exitCode !== 0) throw new Error(`Instabox snapshot requires Linux x64 GNU, Node.js 22+, Bash, Git and a non-root user with passwordless sudo; exitCode: ${probe.exitCode}; stdout: ${probe.stdout}; stderr: ${probe.stderr}`);
   }
 
   private async startProcess(input: ManagedProcessStart, root = false): Promise<ManagedProcess> {
-    if (this.stopped || this.stopping || this.token === undefined) throw new Error("Instabox Machine is not available");
+    if (this.stopped || this.stopping || this.token === undefined || this.connection === undefined) throw new Error("Instabox Machine is not available");
     return startInstaboxProcess({
       token: this.token, process: { ...input, cwd: resolveSandboxPath(this.workdir, input.cwd) },
       pathPrepend: this.options.pathPrepend ?? [], root, retire: () => this.stop(),
-      register: (client) => { this.clients.add(client); return () => this.clients.delete(client); },
+      connection: this.connection, diagnostic: this.diagnostic,
     });
   }
 
@@ -129,8 +133,10 @@ export class InstaboxBackend implements SandboxProviderBackend {
       if (outTail) await options.onStdout?.(outTail);
       if (errTail) await options.onStderr?.(errTail);
       const result = await process.wait();
-      if (result.exitCode === null) throw new Error("Instabox command exited without a numeric status");
-      return { stdout, stderr, exitCode: result.exitCode };
+      const exitCode = result.exitCode ?? (result.signal && result.signal in constants.signals
+        ? 128 + constants.signals[result.signal as keyof typeof constants.signals] : undefined);
+      if (exitCode === undefined) throw new Error("Instabox command exited without a numeric status or known signal");
+      return { stdout, stderr, exitCode };
     };
     try {
       const result = await Promise.race([execute(), cancelled]);
@@ -246,8 +252,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
         }
       }
     } finally {
-      for (const client of this.clients) client.destroy();
-      this.clients.clear();
+      this.connection?.close();
     }
   }
 }

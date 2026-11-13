@@ -1,134 +1,189 @@
-import { createHash } from "node:crypto";
-import { Client, type ClientChannel } from "ssh2";
+import { randomUUID } from "node:crypto";
+import type { Client, ClientChannel } from "ssh2";
 import { ManagedProcessOutput } from "../managed-process.ts";
 import type { ManagedProcess, ManagedProcessExit, ManagedProcessStart } from "../types.ts";
 import { shellQuote } from "../shell.ts";
 import type { SSHToken } from "./api.ts";
-
-// The supervisor owns only the foreground command. Deliberately independent
-// background services live until the Machine is deleted. Closing inherited output
-// pipes on foreground exit prevents those services from holding the command open.
-const supervisor = String.raw`
-const { spawn } = require('node:child_process');
-const c = JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8'));
-if (Number(process.versions.node.split('.')[0]) < 22) process.exit(126);
-const env = { ...process.env, ...c.env };
-if (c.pathPrepend.length) env.PATH = c.pathPrepend.join(':') + ':' + env.PATH;
-const child = spawn(c.argv[0], c.argv.slice(1), { cwd: c.cwd, env, detached: true, stdio: ['pipe','pipe','pipe'] });
-process.stdin.pipe(child.stdin);
-child.stdin.on('error', () => {});
-child.stdout.pipe(process.stdout, { end: false });
-child.stderr.pipe(process.stderr, { end: false });
-let ended = false;
-const finish = (code) => {
-  if (ended) return;
-  ended = true;
-  process.stdin.unpipe(child.stdin);
-  process.stdin.pause();
-  child.stdout.unpipe(process.stdout);
-  child.stderr.unpipe(process.stderr);
-  child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy(); child.unref();
-  let pending = 2;
-  const flushed = () => { if (--pending === 0) process.exit(code); };
-  process.stdout.write('', flushed); process.stderr.write('', flushed);
-};
-child.once('error', (error) => { process.stderr.write(error.message + '\n'); finish(error.code === 'ENOENT' ? 127 : 126); });
-child.once('exit', (code, signal) => {
-  // Let already-readable foreground output drain before closing inherited pipes.
-  setImmediate(() => finish(code === null ? 128 + (require('node:os').constants.signals[signal] || 0) : code));
-});
-`;
+import { InstaboxConnection } from "./connection.ts";
+import { spoolReader, spoolSupervisor } from "./spool.ts";
+import type { DiagnosticInput } from "../../types.ts";
 
 export async function startInstaboxProcess(input: {
   readonly token: SSHToken;
+  readonly connection: InstaboxConnection;
   readonly process: ManagedProcessStart;
   readonly pathPrepend: readonly string[];
   readonly root: boolean;
   readonly retire: () => Promise<void>;
-  readonly register: (client: Client) => () => void;
+  readonly diagnostic: (input: DiagnosticInput) => void;
 }): Promise<ManagedProcess> {
-  const client = new Client();
-  const unregister = input.register(client);
   const output = new ManagedProcessOutput();
   const startedAt = performance.now();
-  let stdoutBytes = 0, stderrBytes = 0;
-  let terminal = false;
-  let exit: ManagedProcessExit | undefined;
+  const spool = `/tmp/niceeval-process-${randomUUID()}`;
+  let stdoutBytes = 0, stderrBytes = 0, reconnectAttempts = 0;
+  let terminal = false, stdinClosed = false, stdinClosing: Promise<void> | undefined;
+  let channel: ClientChannel | undefined;
+  let detach: (() => void) | undefined;
+  let reconnecting: Promise<void> | undefined;
+  let queuedRecovery: { reason: unknown; client: Client } | undefined;
+  let recoveryDeadline: number | undefined;
+  let originalReason: unknown;
+  let failure: Promise<void> | undefined;
+  let sequence = 0;
+  const pending = new Map<number, { readonly eof: boolean; readonly resolve: () => void; readonly reject: (cause: unknown) => void }>();
   let resolveDone!: (exit: ManagedProcessExit) => void;
   let rejectDone!: (cause: unknown) => void;
   const done = new Promise<ManagedProcessExit>((resolve, reject) => { resolveDone = resolve; rejectDone = reject; });
   void done.catch(() => undefined);
-  let rejectReady!: (cause: unknown) => void;
-  let failure: Promise<void> | undefined;
+  const detail = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason)).replaceAll(input.token.token, "[REDACTED]");
+  const counters = () => ({ reconnectAttempts, elapsedMs: Math.round(performance.now() - startedAt), stdoutBytes, stderrBytes });
+  const closeChannel = () => { detach?.(); detach = undefined; channel?.destroy(); channel = undefined; };
+  const rejectPending = (cause: unknown) => { for (const item of pending.values()) item.reject(cause); pending.clear(); };
   const fail = (reason: unknown): Promise<void> => failure ??= (async () => {
     if (terminal) return;
     terminal = true;
-    const detail = (reason instanceof Error ? reason.message : String(reason))
-      .replaceAll(input.token.token, "[REDACTED]");
-    let cause: Error = new Error(`Instabox SSH process lost its confirmed exit; retiring the Machine; reason=${detail}; reconnectAttempts=0; elapsedMs=${Math.round(performance.now() - startedAt)}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`);
+    closeChannel();
+    const stats = counters();
+    let cause: Error = new Error(`Instabox SSH process lost its confirmed exit; retiring the Machine; reason=${detail(originalReason ?? reason)}; recovery=${detail(reason)}; reconnectAttempts=${stats.reconnectAttempts}; elapsedMs=${stats.elapsedMs}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`);
     try { await input.retire(); }
     catch (cleanup) { cause = new AggregateError([cause, cleanup], "Instabox process and Machine cleanup failed"); }
-    client.destroy(); unregister(); output.end();
-    rejectReady(cause); rejectDone(cause);
+    output.end(); rejectPending(cause); rejectDone(cause);
   })();
-  const ready = new Promise<ClientChannel>((resolve, reject) => {
-    rejectReady = reject;
-    client.once("ready", () => {
-      const config = Buffer.from(JSON.stringify({ ...input.process, pathPrepend: input.pathPrepend })).toString("base64");
-      const command = `${input.root ? "sudo -n -- " : ""}node -e ${shellQuote(supervisor)} ${shellQuote(config)}`;
-      client.exec(command, { pty: false }, (error, channel) => {
-        if (error) { void fail(error); return; }
-        channel.on("data", (bytes: Buffer) => { if (!terminal) { stdoutBytes += bytes.byteLength; output.push({ _tag: "Stdout", bytes }); } });
-        channel.stderr.on("data", (bytes: Buffer) => { if (!terminal) { stderrBytes += bytes.byteLength; output.push({ _tag: "Stderr", bytes }); } });
-        channel.on("error", (error: Error) => { void fail(error); });
-        channel.once("exit", (code: number | null, signal?: string) => {
-          exit = { exitCode: typeof code === "number" ? code : null, ...(signal ? { signal } : {}) };
-        });
-        channel.once("close", () => {
-          if (terminal) return;
-          setImmediate(() => {
-            if (terminal) return;
-            if (exit === undefined) { void fail("channel closed without an exit status"); return; }
-            terminal = true;
-            output.end(); resolveDone(exit); client.end(); unregister();
+
+  const recover = (reason: unknown, client: Client): void => {
+    if (terminal) return;
+    if (reconnecting) { queuedRecovery = { reason, client }; return; }
+    originalReason ??= reason;
+    if (!stdinClosed) { void fail(reason); return; }
+    recoveryDeadline ??= performance.now() + 60_000;
+    closeChannel();
+    input.connection.invalidate(client);
+    reconnecting = (async () => {
+      let lastReason = reason;
+      while (!terminal && reconnectAttempts < 3 && performance.now() < recoveryDeadline!) {
+        reconnectAttempts++;
+        try {
+          await attach(false, Math.max(1, recoveryDeadline! - performance.now()));
+          // A short-lived target may already have exited while disconnected.
+          input.diagnostic({ code: "sandbox-transport-reconnected", level: "warning",
+            message: `Instabox SSH transport reconnected: ${detail(originalReason)}`,
+            data: { reason: detail(originalReason), ...counters() },
           });
-        });
-        resolve(channel);
-      });
+          return;
+        } catch (error) { lastReason = error; }
+      }
+      if (!terminal) await fail(lastReason);
+    })().finally(() => {
+      reconnecting = undefined;
+      const queued = queuedRecovery; queuedRecovery = undefined;
+      if (queued && !terminal) recover(queued.reason, queued.client);
     });
-    client.on("error", (error: Error) => { void fail(error); });
-    client.once("close", () => { if (!terminal) void fail("SSH connection closed by peer"); });
-    client.connect({
-      host: input.token.host, port: input.token.port, username: input.token.token,
-      authHandler: ["none"], readyTimeout: 30_000, keepaliveInterval: 10_000, keepaliveCountMax: 3,
-      hostVerifier: (key: Buffer) => `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}` === input.token.hostKeyFingerprint.replace(/=+$/, ""),
+    void reconnecting.catch(fail);
+  };
+
+  const attach = async (initial: boolean, timeoutMs = 30_000): Promise<void> => {
+    let attachedClient: Client | undefined;
+    let rejectAttach!: (cause: unknown) => void;
+    let attached = false, active = true;
+    const fault = (reason: unknown) => {
+      if (terminal || !active) return;
+      if (!attached) { rejectAttach(reason); return; }
+      if (attachedClient) recover(reason, attachedClient);
+    };
+    const attempt = new Promise<void>((resolve, reject) => {
+      rejectAttach = reject;
+      void input.connection.get().then(client => {
+        attachedClient = client;
+        if (!active || terminal) { reject(new Error("Instabox process is already terminal")); return; }
+        const onError = (error: Error) => fault(error);
+        const onClose = () => fault(new Error("SSH connection closed by peer"));
+        client.on("error", onError); client.on("close", onClose);
+        detach = () => { active = false; client.removeListener("error", onError); client.removeListener("close", onClose); };
+        const config = Buffer.from(JSON.stringify({ ...input.process, pathPrepend: input.pathPrepend, spool, initial,
+          stdoutOffset: stdoutBytes, stderrOffset: stderrBytes, ...(initial ? { supervisor: spoolSupervisor } : {}),
+        })).toString("base64");
+        const command = `${input.root ? "sudo -n -- " : ""}node -e ${shellQuote(spoolReader)} ${shellQuote(config)}`;
+        client.exec(command, { pty: false }, (error, opened) => {
+          if (!active || terminal) { opened?.destroy(); return; }
+          if (error) { fault(error); return; }
+          channel = opened;
+          let buffered: Buffer = Buffer.alloc(0);
+          let readerError = "";
+          opened.stderr.on("data", (bytes: Buffer) => { readerError = (readerError + bytes.toString("utf8")).slice(-2048); });
+          opened.on("data", (bytes: Buffer) => {
+            if (!active || terminal) return;
+            buffered = buffered.length ? Buffer.concat([buffered, bytes]) : bytes;
+            try {
+              while (buffered.length >= 5) {
+                const tag = buffered[0]!, size = buffered.readUInt32BE(1);
+                if (size > 16 * 1024 * 1024) throw new Error("Invalid Instabox spool frame length");
+                if (buffered.length < 5 + size) return;
+                const payload = buffered.subarray(5, 5 + size);
+                buffered = buffered.subarray(5 + size);
+                if (tag === 1 || tag === 2) {
+                  if (tag === 1) stdoutBytes += size; else stderrBytes += size;
+                  output.push({ _tag: tag === 1 ? "Stdout" : "Stderr", bytes: payload });
+                } else if (tag === 3) { attached = true; resolve(); }
+                else if (tag === 4) {
+                  const ack = JSON.parse(payload.toString("utf8")) as { id: number; error?: string };
+                  const item = pending.get(ack.id);
+                  if (item) {
+                    pending.delete(ack.id);
+                    if (ack.error) item.reject(new Error(detail(ack.error)));
+                    else { if (item.eof) stdinClosed = true; item.resolve(); }
+                  }
+                } else if (tag === 5) {
+                  const exit = JSON.parse(payload.toString("utf8")) as ManagedProcessExit & { stdoutSize: number; stderrSize: number };
+                  if ((exit.exitCode !== null && !Number.isInteger(exit.exitCode)) || stdoutBytes !== exit.stdoutSize || stderrBytes !== exit.stderrSize) throw new Error("Incomplete Instabox spool exit");
+                  terminal = true;
+                  for (const item of pending.values()) { if (item.eof) item.resolve(); else item.reject(new Error("Instabox process exited before stdin acknowledgement")); }
+                  pending.clear(); closeChannel(); output.end(); resolveDone({ exitCode: exit.exitCode, ...(exit.signal ? { signal: exit.signal } : {}) });
+                  return;
+                } else if (tag === 6) {
+                  const missing = JSON.parse(payload.toString("utf8")) as { reason: string };
+                  reject(new Error(missing.reason)); void fail(missing.reason); return;
+                } else throw new Error("Invalid Instabox spool frame type");
+              }
+            } catch (error) { fault(error); }
+          });
+          opened.on("error", (error: Error) => fault(error));
+          opened.once("close", () => { if (active && !terminal) fault(new Error(readerError || "channel closed without a spool exit")); });
+        });
+      }, reject);
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([attempt, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error("SSH spool attachment timed out")), Math.ceil(timeoutMs)); })]);
+    } catch (error) {
+      active = false; closeChannel();
+      if (attachedClient) input.connection.invalidate(attachedClient);
+      throw error;
+    } finally { clearTimeout(timer); }
+  };
+
+  try { await attach(true); }
+  catch (error) { await fail(error); await done; }
+
+  const write = (eof: boolean, bytes?: Uint8Array): Promise<void> => new Promise((resolve, reject) => {
+    if (terminal) { if (eof) resolve(); else reject(new Error("Instabox process stdin is closed")); return; }
+    if (stdinClosed || (!eof && stdinClosing)) { reject(new Error("Instabox process stdin is closed")); return; }
+    const id = ++sequence;
+    pending.set(id, { eof, resolve, reject });
+    channel!.write(JSON.stringify({ id, kind: eof ? "eof" : "write", ...(bytes ? { bytes: Buffer.from(bytes).toString("base64") } : {}) }) + "\n", (error?: Error | null) => {
+      if (error) void fail(error);
     });
   });
-  const channel = await ready;
-  let stdinClosed = false;
   let termination: Promise<void> | undefined;
   return {
-    output,
-    writeStdin: (bytes) => new Promise((resolve, reject) => {
-      if (stdinClosed || terminal) { reject(new Error("Instabox process stdin is closed")); return; }
-      channel.write(Buffer.from(bytes), (error?: Error | null) => {
-        if (error) void fail(error).then(() => reject(new Error("Instabox process stdin write failed")));
-        else resolve();
-      });
-    }),
-    closeStdin: () => new Promise((resolve) => {
-      if (stdinClosed || terminal) { resolve(); return; }
-      stdinClosed = true;
-      channel.end(resolve);
-    }),
+    output, writeStdin: bytes => write(false, bytes),
+    closeStdin: () => stdinClosing ??= write(true),
     wait: () => done,
     terminate: () => termination ??= (async () => {
       if (terminal) { await done; return; }
-      // A channel signal cannot prove descendant termination. Retire the VM.
-      terminal = true;
-      try { await input.retire(); resolveDone({ exitCode: null, signal: "SIGKILL" }); }
-      catch (cause) { rejectDone(cause); throw cause; }
-      finally { output.end(); client.destroy(); unregister(); }
+      terminal = true; closeChannel();
+      try { await input.retire(); rejectPending(new Error("Instabox process terminated")); resolveDone({ exitCode: null, signal: "SIGKILL" }); }
+      catch (cause) { rejectPending(cause); rejectDone(cause); throw cause; }
+      finally { output.end(); }
     })(),
   };
 }

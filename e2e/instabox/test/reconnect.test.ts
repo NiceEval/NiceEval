@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
@@ -15,13 +15,16 @@ test("an EOF command resumes after client disconnection with one reconnect diagn
     } });
     await verifyMachinesAbsent(machines);
     const log = await readFile(connections, "utf8");
-    expect(log).toContain("client-destroyed");
+    console.info("Instabox command timing (single ms, total20 ms):", log.match(/^timing (.+)$/m)?.[1]);
+    expect(log, result.diagnostic()).toContain("client-destroyed");
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(log.match(/^connect /gm)).toHaveLength(2);
     const locator = result.expEvalEvents()[0]?.locator;
     expect(locator).toBeDefined();
-    const trace = await niceeval.run(["show", locator!, "--execution"]);
+    const request = join(paths.projectRoot, "trace.json");
+    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } }));
+    const trace = await niceeval.run(["query", "run", "--request", request]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
-    expect(trace.stdout).toContain("sandbox-transport-reconnected");
+    expect(JSON.stringify(trace.querySuccess("attempt.trace").trace)).toContain("sandbox-transport-reconnected");
   });
 });

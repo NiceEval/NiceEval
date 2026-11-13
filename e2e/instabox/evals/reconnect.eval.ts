@@ -10,6 +10,7 @@ export default defineEval({
     const total = performance.now() - repeated;
     await t.sandbox.runCommandOrThrow("true", ["command-timing", String(Math.round(single)), String(Math.round(total))]);
     if (total > single + 20 * single) throw new Error(`Repeated commands exceeded the measured round-trip allowance: single=${single}, total20=${total}`);
+    await t.sandbox.runShellOrThrow("sleep 60 &", { timeoutMs: 10_000 });
     await (await t.send("exercise raw-byte process reconnect")).succeeded().orStop();
   },
 });

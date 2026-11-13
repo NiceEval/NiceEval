@@ -12,7 +12,7 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(function*(pl
     return yield* Effect.fail(new Error("Instabox lifetimeMs must cover the remaining Attempt deadline plus 30 seconds"));
   }
   const backend = yield* Effect.acquireRelease(
-    providerBoundaryEffect(() => InstaboxBackend.create({ ...plan, lifetimeMs: cloudLifetimeMs(plan.lifetimeMs, context.deadline._tag === "Bounded" ? context.deadline.timeoutMs : undefined) }, deadlineAt, context.runId)),
+    providerBoundaryEffect(() => InstaboxBackend.create({ ...plan, lifetimeMs: cloudLifetimeMs(plan.lifetimeMs, context.deadline._tag === "Bounded" ? context.deadline.timeoutMs : undefined) }, deadlineAt, context.runId, context.feedback.diagnostic)),
     (backend) => providerBoundaryEffect(() => backend.stop()).pipe(Effect.orDie),
   );
   const materialized = wrapSingleSandbox(backend, context, plan.snapshotId !== undefined

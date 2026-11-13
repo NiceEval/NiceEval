@@ -9,6 +9,11 @@ ssh2.Client.prototype.connect = function(config) {
 };
 const exec = ssh2.Client.prototype.exec;
 ssh2.Client.prototype.exec = function(command, options, callback) {
+  const config = command.match(/'([A-Za-z0-9+/=]+)'$/)?.[1];
+  if (config) {
+    const { argv } = JSON.parse(Buffer.from(config, "base64"));
+    if (argv?.[1] === "command-timing") appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `timing ${argv[2]} ${argv[3]}\n`);
+  }
   return exec.call(this, command, options, (error, channel) => {
     if (channel) channel.on("data", bytes => {
       if (!disconnected && bytes.includes(Buffer.from("transport-resume-ready"))) {
