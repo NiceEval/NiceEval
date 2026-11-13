@@ -354,5 +354,16 @@
   "test-context/observability": "",
   "turn-handle/reply": "",
   "cli-flags/show/--json": "Print the public Attempt query result as JSON.",
-  "cli-flags/show/--exp": "Show one Experiment; repeat to show more."
+  "cli-flags/show/--exp": "Show one Experiment; repeat to show more.",
+  "cli-flags/run list/--state": "Filter by Run state; repeat to match any of the selected states.",
+  "cli-flags/run list/--experiment": "Filter Runs by one Experiment ID path prefix.",
+  "cli-flags/run list/--limit": "Limit the number of Runs and report the omitted count.",
+  "cli-flags/run list/--record": "Read an external canonical SQLite Record without probing local owner processes.",
+  "cli-flags/run list/--invocation": "Filter Runs by one exact Invocation ID.",
+  "cli-flags/run recover/--orphaned": "Recover frozen candidates whose owner termination can be proved.",
+  "cli-flags/run export/--run": "Select exact Run IDs to export; repeat to select multiple Runs.",
+  "cli-flags/run export/--out": "Write the exported single-file Record to this path.",
+  "cli-flags/run delete,run export,run import,run list,run recover/--json": "Print Run results as JSON.",
+  "cli-flags/run delete,run recover/--yes": "Confirm Run recovery or deletion.",
+  "cli-flags/run delete,run export,run import,run list,run recover/--help": "Print Run command help."
 }

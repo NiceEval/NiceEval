@@ -180,6 +180,17 @@ The table below is generated from each command's own option definitions. Flags n
 | `--request-json` | `niceeval query` | string | Read one complete niceeval.query/v3 request from an argv value. |
 | `--record` | `niceeval query`, `niceeval show` | string | Read an external canonical SQLite Record. |
 | `--help` | `niceeval query` | boolean | Print help for this command. |
+| `--state` | `niceeval run list` | string[] | Filter by Run state; repeat to match any of the selected states. |
+| `--experiment` | `niceeval run list` | string[] | Filter Runs by one Experiment ID path prefix. |
+| `--limit` | `niceeval run list` | string | Limit the number of Runs and report the omitted count. |
+| `--record` | `niceeval run list` | string | Read an external canonical SQLite Record without probing local owner processes. |
+| `--orphaned` | `niceeval run recover` | boolean | Recover frozen candidates whose owner termination can be proved. |
+| `--run` | `niceeval run export` | string[] | Select exact Run IDs to export; repeat to select multiple Runs. |
+| `--out` | `niceeval run export` | string | Write the exported single-file Record to this path. |
+| `--invocation` | `niceeval run list` | string | Filter Runs by one exact Invocation ID. |
+| `--json` | `niceeval run list`, `niceeval run recover`, `niceeval run delete`, `niceeval run import`, `niceeval run export` | boolean | Print Run results as JSON. |
+| `--yes` | `niceeval run recover`, `niceeval run delete` | boolean | Confirm Run recovery or deletion. |
+| `--help` | `niceeval run list`, `niceeval run recover`, `niceeval run delete`, `niceeval run import`, `niceeval run export` | boolean | Print Run command help. |
 | `--compare` | `niceeval show` | boolean | Compare two groups of sealed Runs. |
 | `--left` | `niceeval show` | string[] | Left baseline Run ID; can be repeated. |
 | `--right` | `niceeval show` | string[] | Right candidate Run ID; can be repeated. |

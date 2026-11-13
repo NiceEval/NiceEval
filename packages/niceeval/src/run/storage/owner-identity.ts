@@ -22,7 +22,7 @@ export interface VerifiedWriterIdentity extends Schema.Schema.Type<typeof Verifi
 export type WriterTerminationObservation =
   | { readonly state: "terminated"; readonly evidenceIdentity: string; readonly evidenceKind: string }
   | { readonly state: "active" }
-  | { readonly state: "unproven" };
+  | { readonly state: "unproven"; readonly reason: "other-host" | "identity-not-recorded" | "probe-failed" };
 
 function nonEmptyFile(path: string): string {
   const value = readFileSync(path, "utf8").trim();
@@ -110,8 +110,8 @@ function encodeVerified(identity: VerifiedWriterIdentity): string {
 }
 
 function decodeVerified(value: string): VerifiedWriterIdentity | undefined {
-  const prefix = verifiedPrefix();
-  if (prefix === undefined || !value.startsWith(prefix)) return undefined;
+  const prefix = [VERIFIED_WRITER_PREFIX, DARWIN_WRITER_PREFIX].find((candidate) => value.startsWith(candidate));
+  if (prefix === undefined) return undefined;
   try {
     const encoded = value.slice(prefix.length);
     const decoded: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
@@ -153,13 +153,15 @@ export function createRunWriterGeneration(generation: string): string {
 /** Verifies termination without treating age, permission failures, or a foreign host as evidence. */
 export function observeRunWriterTermination(writerGeneration: string): WriterTerminationObservation {
   const identity = decodeVerified(writerGeneration);
-  if (identity === undefined) return { state: "unproven" };
+  if (identity === undefined) return { state: "unproven", reason: "identity-not-recorded" };
+  const localPrefix = verifiedPrefix();
+  if (localPrefix === undefined || !writerGeneration.startsWith(localPrefix)) return { state: "unproven", reason: "other-host" };
   try {
     const darwin = process.platform === "darwin";
     const machineId = darwin ? darwinMachineId() : nonEmptyFile("/etc/machine-id");
-    if (machineId !== identity.machineId) return { state: "unproven" };
+    if (machineId !== identity.machineId) return { state: "unproven", reason: "other-host" };
     const pidNamespace = darwin ? DARWIN_PROCESS_DOMAIN : readlinkSync("/proc/self/ns/pid");
-    if (pidNamespace !== identity.pidNamespace) return { state: "unproven" };
+    if (pidNamespace !== identity.pidNamespace) return { state: "unproven", reason: "other-host" };
     const currentBootId = darwin ? darwinBootId() : nonEmptyFile("/proc/sys/kernel/random/boot_id");
     const terminated = (): WriterTerminationObservation => ({
       state: "terminated", evidenceIdentity: writerGeneration,
@@ -172,6 +174,6 @@ export function observeRunWriterTermination(writerGeneration: string): WriterTer
     if (currentProcessStart === identity.processStart) return { state: "active" };
     return terminated();
   } catch {
-    return { state: "unproven" };
+    return { state: "unproven", reason: "probe-failed" };
   }
 }

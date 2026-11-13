@@ -95,7 +95,7 @@ export interface RunView {
   readonly runId: string;
   readonly experimentId: string;
   readonly adapter: AdapterIdentity | null;
-  readonly state: "active" | "completed" | "interrupted" | "failed";
+  readonly state: "active" | "recovering" | "completed" | "interrupted" | "failed";
   readonly startedAt: number;
   readonly completedAt?: number;
   readonly expected: number;

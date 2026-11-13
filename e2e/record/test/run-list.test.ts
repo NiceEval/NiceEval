@@ -22,7 +22,7 @@ test.concurrent("列表按新到旧过滤运行，并说明截断数量", async 
     expect(empty.exitCode, empty.diagnostic()).toBe(0);
     expect(empty.runListDocument()).toMatchObject({ runs: [], omitted: 0 });
     const ids: string[] = [];
-    for (const experiment of ["migration-agent", "migration-custom", "migration-agent"]) {
+    for (const experiment of ["run-list/agent", "migration-custom", "run-list/agent"]) {
       const result = await niceeval.run(["exp", experiment, "--rerun", "all", "--json"]);
       expect(result.exitCode, result.diagnostic()).toBe(0);
       ids.push(result.expReceipt().createdRunIds[0]!);
@@ -33,11 +33,11 @@ test.concurrent("列表按新到旧过滤运行，并说明截断数量", async 
     expect(listed.runs.map((run) => run.runId)).toEqual([...ids].reverse());
     expect(listed).toMatchObject({ omitted: 0 });
     expect(listed.runs.every((run) => !("owner" in run))).toBe(true);
-    const selected = await niceeval.run(["run", "list", "--state", "failed", "--state", "completed", "--experiment", "migration-a", "--limit", "1", "--json"]);
+    const selected = await niceeval.run(["run", "list", "--state", "failed", "--state", "completed", "--experiment", "run-list", "--limit", "1", "--json"]);
     expect(selected.exitCode, selected.diagnostic()).toBe(0);
     expect(selected.runListDocument()).toMatchObject({ runs: [{ runId: ids[2] }], omitted: 1 });
     expect(selected.runListDocument().runs).toHaveLength(1);
-    const human = await niceeval.run(["run", "list", "--experiment", "migration-a", "--limit", "1"]);
+    const human = await niceeval.run(["run", "list", "--experiment", "run-list", "--limit", "1"]);
     expect(human.exitCode, human.diagnostic()).toBe(0);
     expect(human.stdout).toContain("1 Runs omitted");
     const invocation = listed.runs[0]!.invocationId;
@@ -47,7 +47,7 @@ test.concurrent("列表按新到旧过滤运行，并说明截断数量", async 
     const wrong = await niceeval.run(["run", "list", "--invocation", invocation.slice(0, -1), "--json"]);
     expect(wrong.exitCode, wrong.diagnostic()).toBe(0);
     expect(wrong.runListDocument().runs).toEqual([]);
-    const library = await Effect.runPromise(runHost.list({ cwd: paths.projectRoot, ...{ state: ["completed" as const], experiment: "migration-a", limit: 1 } }));
+    const library = await Effect.runPromise(runHost.list({ cwd: paths.projectRoot, states: ["completed"], experimentIdPrefix: "run-list", limit: 1 }));
     expect(library).toMatchObject({ runs: [{ runId: ids[2] }], omitted: 1 });
     expect(library.runs).toHaveLength(1);
     expect(decodeRunDocument({ protocol: "niceeval.run/v1", operation: "run.list", runs: [] }).success).toBe(false);

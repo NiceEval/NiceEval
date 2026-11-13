@@ -236,6 +236,29 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 | 在浏览器里审阅总览或某个 Run | `niceeval view` |
 | 在另一台机器上读取同一份结果 | 复制 `.niceeval/record.sqlite`，再用 `--record` 指定它 |
 
+## 发现和恢复 Run
+
+`niceeval run list` 按创建时间从新到旧列出 Run；时间相同则按 Run ID 排序。多个 `--state` 取并集，不同筛选项取交集：
+
+```bash
+niceeval run list --state active --state recovering --experiment suite --limit 10
+niceeval run list --invocation <invocation-id> --json
+niceeval run list --record ./record.sqlite --state active --json
+```
+
+`--experiment suite` 匹配 `suite` 和 `suite/...`，不会匹配 `suite-other`。`--limit` 必须是正整数；不传时不截断。JSON 的 `omitted` 是筛选后被省略的数量。
+
+active、recovering 行会显示 owner 的 `alive`、`gone` 或 `unknown` 观察及观察时间。`alive` 表示观察时记录的进程仍存在，`gone` 表示已证明终止。`unknown` 的 reason 区分异机记录、缺失进程身份、外部 Record 或探测失败。观察不会修改 Run 状态；读取外部 Record 不会探测本机进程。
+
+```bash
+niceeval run recover <run-id> --yes
+niceeval run recover --orphaned --yes --json
+```
+
+`--orphaned` 在一次读取边界上冻结 active、recovering 候选集，确认前列出 Run ID，再逐项重验状态、写入世代和进程身份。它会跳过 alive、unknown owner；单项失败不阻止其余项，存在失败时退出码非零。JSON 的 `items` 为每个 Run 列出 `recovered`、`skipped` 或 `failed` 结果。没有候选是成功的空结果。JSON 模式必须传 `--yes`；人读模式只在交互终端询问一次确认。
+
+recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为结束。恢复进程中断后可重试同一命令；仍需证明上一个恢复进程已终止。恢复只为未发布的位置补上 absence 并结束这个 Run，保留已发布的 Attempt。它不会释放共享 State、执行 Experiment after 或清理 Sandbox；这些操作需要各自的显式命令。
+
 ## CLI flags
 
 下表从各命令自己的选项定义生成。表里没有的 flag 会被当作未知参数拒绝。
@@ -285,6 +308,17 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 | `--request-json` | `niceeval query` | string | 从一个 argv 值读取完整的 niceeval.query/v3 request。 |
 | `--record` | `niceeval query`、`niceeval show` | string | 读取一个外部 canonical SQLite Record。 |
 | `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
+| `--state` | `niceeval run list` | string[] | 按 Run 状态筛选；可重复传入，任一状态匹配即可。 |
+| `--experiment` | `niceeval run list` | string[] | 按一个 Experiment ID 路径前缀筛选 Run。 |
+| `--limit` | `niceeval run list` | string | 最多返回指定数量的 Run，并报告省略数量。 |
+| `--record` | `niceeval run list` | string | 只读一个外部 canonical SQLite Record，不探测本机 owner。 |
+| `--orphaned` | `niceeval run recover` | boolean | 恢复已冻结候选集中可证明 owner 已终止的 Run。 |
+| `--run` | `niceeval run export` | string[] | 选择要导出的精确 Run ID；可重复传入。 |
+| `--out` | `niceeval run export` | string | 将导出的单文件 Record 写到指定路径。 |
+| `--invocation` | `niceeval run list` | string | 按一个精确的 Invocation ID 筛选 Run。 |
+| `--json` | `niceeval run list`、`niceeval run recover`、`niceeval run delete`、`niceeval run import`、`niceeval run export` | boolean | 以 JSON 输出 Run 结果。 |
+| `--yes` | `niceeval run recover`、`niceeval run delete` | boolean | 确认 Run 恢复或删除。 |
+| `--help` | `niceeval run list`、`niceeval run recover`、`niceeval run delete`、`niceeval run import`、`niceeval run export` | boolean | 打印 Run 命令的帮助。 |
 | `--compare` | `niceeval show` | boolean | Compare baseline and candidate Runs. |
 | `--left` | `niceeval show` | string[] | Baseline Run ID; repeatable. |
 | `--right` | `niceeval show` | string[] | Candidate Run ID; repeatable. |

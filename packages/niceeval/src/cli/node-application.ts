@@ -2,9 +2,11 @@ import { readFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { createInterface } from "node:readline/promises";
 import { Effect, Layer, Predicate } from "effect";
 import {
   CliArguments,
+  CliConfirmation,
   CliInvocationError,
   CliInvocationFacts,
   CliOutput,
@@ -49,6 +51,17 @@ export const NodeCliOutputLive = Layer.succeed(CliOutput, {
   writeStderr: (text) => Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
   writeStdoutSync: (text) => writeNodeOutput(process.stdout, text),
   writeStderrSync: (text) => writeNodeOutput(process.stderr, text),
+});
+
+const NodeCliConfirmationLive = Layer.succeed(CliConfirmation, {
+  confirm: (message) => Effect.suspend(() => {
+    if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) return Effect.succeed(false);
+    return Effect.acquireUseRelease(
+      Effect.sync(() => createInterface({ input: process.stdin, output: process.stderr })),
+      (terminal) => Effect.tryPromise({ try: (signal) => terminal.question(`${message} [y/N] `, { signal }), catch: (cause) => failure("confirm", cause) }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
+      (terminal) => Effect.sync(() => terminal.close()),
+    );
+  }),
 });
 
 interface OptionalValueOccurrence {
@@ -207,6 +220,7 @@ export const NodePackageMetadataLive = Layer.succeed(PackageMetadata, {
 export const NodeCliPlatformLive = Layer.mergeAll(
   NodeInvocationFactsLive,
   NodeCliOutputLive,
+  NodeCliConfirmationLive,
   NodeCliArgumentsLive,
   NodeCliPathLive,
   NodePackageMetadataLive,
