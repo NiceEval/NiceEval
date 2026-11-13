@@ -26,6 +26,7 @@ import {
   runPostSetupHooks,
   runPreTeardownHooks,
 } from "./post-setup.ts";
+import { withCodexPatch } from "./codex-patch.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentInstallationManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
@@ -291,7 +292,7 @@ export function codexAgent(config?: CodexConfig): Agent {
   const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
   const cliVersion = DEFAULT_CODEX_CLI_VERSION;
   const cliRecipeRevision = String(AGENT_BASELINE_RECIPE_REVISION.codex);
-  const { ensure, installer } = createNpmCliInstaller({
+  const cliInstall = createNpmCliInstaller({
     identity: {
       agent: "codex",
       version: cliVersion,
@@ -306,6 +307,8 @@ export function codexAgent(config?: CodexConfig): Agent {
       ready: `Codex CLI ${cliVersion} ready`,
     },
   });
+
+  const { ensure, installer } = withCodexPatch(cliInstall.ensure, cliInstall.installer);
 
   return attachCodingAgentExtensions(registerAgentLifecycleHookCommands(makeSandboxAgent({
     name: "codex",

@@ -1,3 +1,4 @@
+import { CODEX_NPM_PATCH_SETUP } from "../../packages/niceeval/src/agents/codex-patch.ts";
 // 构建 Vercel Sandbox 的预制快照:起一个 microVM,跑与 Dockerfile 等价的安装
 // (codex / claude-code / bub 都装到 /usr/local/bin),snapshot 后打印 snapshotId。
 //
@@ -54,6 +55,8 @@ await run(
   sb,
   `npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION} @anthropic-ai/claude-code@${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
 );
+
+await run(sb, CODEX_NPM_PATCH_SETUP);
 
 console.log("按运行时用户装 uv + bub，并写安装规格指纹…");
 await run(

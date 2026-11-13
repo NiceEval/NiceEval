@@ -47,7 +47,10 @@ FROM base AS codex
 # npm 全局安装(root)→ /usr/local/bin/codex,该路径对所有用户可执行。收尾切到 node
 # 用户;version smoke test 在切换后跑,顺带验证非 root 身份能直接调用装好的 CLI。
 ARG CODEX_VERSION=0.167.2
-RUN npm install -g @openai/codex@${CODEX_VERSION}
+RUN npm install -g @openai/codex@${CODEX_VERSION} \
+ && codex_native=$(find "$(npm root -g)/@openai/codex" -type f -path '*/vendor/*/bin/codex' -print -quit) \
+ && test -n "$codex_native" \
+ && ln -sf "$codex_native" /usr/local/bin/apply_patch
 USER node
 RUN codex --version
 

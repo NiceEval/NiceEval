@@ -1,3 +1,4 @@
+import { CODEX_NPM_PATCH_SETUP } from "../agents/codex-patch.ts";
 import { Template, type TemplateBuilder } from "e2b";
 import {
   BUB_INSTALL_MARKER,
@@ -172,7 +173,8 @@ export function e2bCodingAgentTemplate(
         { user: E2B_RUN_USER },
       );
     }
-    return template.runCmd(`npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`, { user: "root" });
+    return template.runCmd(`npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`, { user: "root" })
+      .runCmd(CODEX_NPM_PATCH_SETUP, { user: "root" });
   }
 
   const packages = normalizeBubPackages(options.bubPythonPackages ?? []);
