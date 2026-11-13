@@ -9,21 +9,26 @@ import type {
 
 export type { RunDetail, RunSlot, RunState, RunSummary } from "../protocol.ts";
 
+/** Selects a project Run listing with optional Invocation filter and continuation; preserve the returned continuation rather than deriving one from IDs. */
 export interface RunListRequest {
   readonly cwd: string;
   readonly invocationId?: string;
   readonly continuation?: string;
 }
 
+/** Selects an exact Run ID in the project at cwd; this is not an Experiment prefix or Attempt locator. */
 export interface RunGetRequest {
   readonly cwd: string;
   readonly runId: string;
 }
 
+/** Selects an exact Run to delete in the project at cwd; deletion is subject to lifecycle and reference checks. */
 export interface RunDeleteRequest extends RunGetRequest {}
 
+/** Selects an exact Run for abandoned-owner recovery; selecting it does not itself prove the owner has terminated. */
 export interface RunRecoverRequest extends RunGetRequest {}
 
+/** Returns one Run page at a publication cutoff with an optional next-page continuation; active Runs may already contain readable published Attempts. */
 export interface RunListResult {
   readonly operation: "run.list";
   readonly publicationCutoff: PublicationCutoff;
@@ -31,22 +36,26 @@ export interface RunListResult {
   readonly continuation?: string;
 }
 
+/** Returns exact Run detail at a publication cutoff; Run completion state is separate from individual Attempt Verdicts. */
 export interface RunResult {
   readonly operation: "run.get";
   readonly publicationCutoff: RunListResult["publicationCutoff"];
   readonly run: RunDetail;
 }
 
+/** Confirms deletion of the selected Run; it is distinct from interrupting or recovering an active owner. */
 export interface RunDeleteReceipt {
   readonly runId: string;
   readonly state: "deleted";
 }
 
+/** Confirms that recovery closed the selected Run as interrupted; previously published Attempts remain immutable and readable. */
 export interface RunRecoverReceipt {
   readonly runId: string;
   readonly state: "interrupted";
 }
 
+/** Reports a refused or failed Run read with a domain code; missing Runs are errors rather than fabricated empty results. */
 export class RunReadError extends Data.TaggedError("RunReadError")<{
   readonly operation: "list" | "get";
   readonly code:
@@ -59,6 +68,7 @@ export class RunReadError extends Data.TaggedError("RunReadError")<{
   readonly cause?: unknown;
 }> {}
 
+/** Reports a refused or failed Run deletion; active or referenced Runs cannot be deleted through this operation. */
 export class RunDeleteError extends Data.TaggedError("RunDeleteError")<{
   readonly operation: "delete";
   readonly code:
@@ -72,6 +82,7 @@ export class RunDeleteError extends Data.TaggedError("RunDeleteError")<{
   readonly cause?: unknown;
 }> {}
 
+/** Reports refused or failed recovery; owner termination must be established before an abandoned Run can be recovered. */
 export class RunRecoverError extends Data.TaggedError("RunRecoverError")<{
   readonly operation: "recover";
   readonly code:
@@ -86,6 +97,7 @@ export class RunRecoverError extends Data.TaggedError("RunRecoverError")<{
   readonly cause?: unknown;
 }> {}
 
+/** Provides lazy Node Host operations for listing, reading, deleting and recovering Runs; each execution owns and closes its resources. */
 export interface RunHost {
   readonly list: (
     request: RunListRequest,

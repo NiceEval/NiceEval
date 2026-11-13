@@ -112,17 +112,28 @@ export const RunDocumentSchema = Schema.Union([
   RunGetDocumentSchema,
 ]);
 
+/** Describes Run publication lifecycle rather than evaluation quality; a completed Run can contain failed Attempts. */
 export type RunState = Schema.Schema.Type<typeof RunStateSchema>;
+/** Explains why a terminal Run has no published Attempt for one planned slot; absence is not a failed or lost Attempt. */
 export type RunAbsenceReason = Schema.Schema.Type<typeof RunAbsenceReasonSchema>;
+/** Distinguishes pending, published and terminally absent slots; a published reference preserves the Attempt's original Run identity. */
 export type RunSlotPublication = Schema.Schema.Type<typeof RunSlotPublicationSchema>;
+/** Identifies a frozen planned Attempt slot with a zero-based ordinal; its publication field determines whether an Attempt is available. */
 export type RunSlot = Schema.Schema.Type<typeof RunSlotSchema>;
+/** Summarizes Run identity, lifecycle and expected versus published coverage; missing members are not automatically failed evaluations. */
 export type RunSummary = Schema.Schema.Type<typeof RunSummarySchema>;
+/** Describes a Run and its frozen planned slots with publication state; expected membership may exceed published membership. */
 export type RunDetail = Schema.Schema.Type<typeof RunDetailSchema>;
+/** Pins a Record identity and publication revision for consistent reads; it is not a wall-clock timestamp. */
 export type PublicationCutoff = Schema.Schema.Type<typeof PublicationCutoffSchema>;
+/** Carries a page of Run summaries and optional continuation; Run creation makes an active Run discoverable before Attempts finish. */
 export type RunListDocument = Schema.Schema.Type<typeof RunListDocumentSchema>;
+/** Carries exact Run detail in the machine protocol; it is a readonly value rather than a live lifecycle handle. */
 export type RunGetDocument = Schema.Schema.Type<typeof RunGetDocumentSchema>;
+/** A versioned Run protocol envelope; inspect operation before consuming operation-specific data. */
 export type RunDocument = Schema.Schema.Type<typeof RunDocumentSchema>;
 
+/** Returns a validated Run document or rejection reason; successful protocol decoding does not imply successful evaluation quality. */
 export type RunProtocolDecodeResult<Value extends RunDocument = RunDocument> =
   | { readonly success: true; readonly value: Value }
   | { readonly success: false; readonly reason: string };
