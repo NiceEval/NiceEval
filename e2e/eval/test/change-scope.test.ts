@@ -4,7 +4,6 @@ import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertionEntries, inspectAttempt } from "./inspection.ts";
 
 // @feature docs/feature/sandbox/README.md
-// @issue docs/issues/change-scope-settled-before-diff.md
 test.concurrent("允许范围检查遵循组件边界并将独立 criterion 读成 available", async () => {
   await evalE2E.case("change-scope", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "change-scope", "--rerun", "all", "--json"]);
