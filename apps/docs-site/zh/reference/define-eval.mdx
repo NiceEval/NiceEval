@@ -411,6 +411,25 @@ Judge 用哪个模型按顺序决定：先取项目配置的 `judgeProvider`，�
 
 通过制和计分制都可以调用 `.gate(minimum)`。计分制还可以调用 `.score(n)`，gate 失败时仍保留这一项的得分。
 
+### 二值裁判
+
+只需判断满足或不满足时，从 `niceeval/expect` 导入 `binaryJudge`：
+
+```ts
+import { binaryJudge } from "niceeval/expect";
+
+const namesEntry = binaryJudge({
+  name: "names-entry",
+  rubric: "满足当且仅当回复明确写出了 verified.entry。",
+});
+t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
+```
+
+`binaryJudge(options: BinaryJudgeOptions)` 返回普通 `ScoreMatch`。`BinaryJudgeOptions` 是不含 `anchors` 的 `JudgeOptions`：
+`name`、`rubric` 必填，`maxCalls`、`maxMaterialBytes` 与 `maxAuditBytes` 可选，校验和预算与 `defineJudge` 相同。
+它只分类为 `satisfied` 或 `not-satisfied`，分别得到 `1` 或 `0`。`.score(n)` 因而只给满分或零分；必须满足时使用 `.gate(1)`。
+非法输出、预算不足或服务故障保留错误或不可用状态，不计作零分。审计保留类别、理由和映射结果，供 `show @<locator> --assertions` 查看。
+
 ### 图片材料
 
 从 `niceeval/judge` 导入 `judgeImage`，它会立即复制一份原图数据。限制如下：

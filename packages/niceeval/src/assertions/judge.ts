@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/judge/README.md
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/use-case/verify-judge.md
+// @concord-implements docs/feature/judge/use-case/binary-criteria.md
 // @concord-implements docs/feature/eval/use-case/judge-quality.md
 // Native LLM-as-Judge evaluator. Definition and material capture are pure;
 // provider I/O, timeout, retry, and interruption stay in the owning Effect.
@@ -24,6 +25,9 @@ export interface JudgeOptions {
   readonly maxAuditBytes?: number;
 }
 export type JudgeDefinition = ScoreMatch<unknown>;
+
+/** Configure a binary rubric and Judge budgets; anchors are not accepted. */
+export type BinaryJudgeOptions = Omit<JudgeOptions, "anchors">;
 
 const UTF8 = new TextEncoder();
 const DEFAULT_ANCHORS = Object.freeze([
@@ -96,6 +100,27 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
       .pipe(Effect.map((result) => ({ state: "measured" as const, ...result }))),
   });
   return definition;
+}
+
+/** Classify explicit material as satisfied (1) or not-satisfied (0); use .gate(1) for a required criterion. */
+export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
+  const input = exactDataObject(options, "binaryJudge() options", ["name", "rubric", "maxMaterialBytes", "maxCalls", "maxAuditBytes"]);
+  const name = boundedText(input.name, "Judge name", 128, true);
+  const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
+  const choices = ["satisfied", "not-satisfied"] as const;
+  return defineScoreMatch<unknown>({
+    name,
+    version: "1",
+    config: { algorithm: "binary-classification", revision: 1, rubric, choices: [...choices], scores: { satisfied: 1, "not-satisfied": 0 } },
+    llm: {
+      maxMaterialBytes: input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024),
+      ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
+      ...(input.maxAuditBytes === undefined ? {} : { maxAuditBytes: positiveInteger(input.maxAuditBytes, "Judge maxAuditBytes", 8 * 1024 * 1024) }),
+    },
+    score: (material, context) => context.llm.classify({ rubric, choices, material: material as JudgeMaterial }).pipe(
+      Effect.map((result) => ({ state: "measured" as const, measurement: result.choice === "satisfied" ? 1 : 0, rationale: result.rationale })),
+    ),
+  });
 }
 
 export interface CapturedImageReference {

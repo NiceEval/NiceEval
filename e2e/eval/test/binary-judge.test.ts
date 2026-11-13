@@ -41,7 +41,23 @@ test.concurrent("二值裁判只给零分或满分，非法输出与服务故障
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing fixture address");
   try {
-    await evalE2E.case("binary-judge", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+    await evalE2E.case("binary-judge", async ({ paths: { projectRoot }, commands: { niceeval, tsc } }) => {
+      await writeFile(join(projectRoot, "fixtures/binary-types.mts"), `import { defineScoreEval } from "niceeval";
+import { binaryJudge, type BinaryJudgeOptions } from "niceeval/expect";
+const options: BinaryJudgeOptions = { name: "criterion", rubric: "explicitly satisfied", maxCalls: 1, maxMaterialBytes: 1024, maxAuditBytes: 4096 };
+const rule = binaryJudge(options);
+defineScoreEval({ test(t) {
+  t.judge({ answer: "yes" }, rule).gate(1).score(2);
+  t.judge({ answer: "yes" }, rule).score(2).gate(1);
+} });
+// @ts-expect-error binary classification has no numeric anchors
+binaryJudge({ name: "criterion", rubric: "satisfied", anchors: [] });
+`);
+      const types = await tsc.run([
+        "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext",
+        "--skipLibCheck", "--types", "node", "fixtures/binary-types.mts",
+      ]);
+      expect(types.exitCode, types.diagnostic()).toBe(0);
       await writeFile(join(projectRoot, "evals/binary.eval.ts"), `
 import { defineScoreEval } from "niceeval";
 import { binaryJudge } from "niceeval/expect";
@@ -86,6 +102,8 @@ export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name
           expect(recorded).not.toMatchObject({ contribution: { earned: 0 } });
         } else {
           expect(audit.audit.result).toMatchObject({ state: "measured", value });
+          expect(recorded.decision.gate).toBe(value === 1 ? "satisfied" : "failed");
+          expect(recorded.contribution).toEqual({ state: "earned", points: value === 1 ? 2 : 3, earned: value === 1 ? 2 : 0 });
           expect(JSON.stringify(audit.audit.calls)).toContain(value === 1 ? "satisfied" : "not-satisfied");
           expect(JSON.stringify(recorded)).toContain(`Fixture chose ${value === 1 ? "satisfied" : "not-satisfied"}`);
         }
