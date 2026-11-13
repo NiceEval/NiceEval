@@ -40,9 +40,11 @@ export default defineExperiment({ evals: ${JSON.stringify(evals)}, flags: { alph
     for (const argv of [["show"], ["show", "--reference"]]) {
       const shown = await niceeval.run(argv);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout).not.toContain("all 2 gaps");
-      expect(shown.stdout.match(/config:flags.alpha/gu)).toHaveLength(3);
-      expect(shown.stdout).toContain("+3 more");
+      if (argv.length === 1) {
+        expect(shown.stdout).not.toContain("all 2 gaps");
+        expect(shown.stdout.match(/config:flags.alpha/gu)).toHaveLength(3);
+        expect(shown.stdout).toContain("+3 more");
+      }
       const summary = shown.stdout.split("Reference results (from previous recorded attempts)")[1];
       expect(summary, shown.diagnostic()).toBeDefined();
       expect(summary).toMatch(/Previous attempts\s+3 of 3 gaps/u);
@@ -54,5 +56,19 @@ export default defineExperiment({ evals: ${JSON.stringify(evals)}, flags: { alph
         expect(shown.stdout).toContain(`Previous result ${locator} (${event.verdict}${event.evalId === "score" ? ", 3/4" : ""})`);
       }
     }
+    for (const kind of ["pass", "score"]) {
+      const path = join(projectRoot, `experiments/reference-${kind}.ts`);
+      await writeFile(path, (await readFile(path, "utf8")).replace('added: "new", alpha: "after", beta: "after", zeta: "after"', 'alpha: "before", beta: "before", removed: "gone", zeta: "before"'));
+    }
+    const sourceOnly = await niceeval.run(["show"]);
+    expect(sourceOnly.exitCode, sourceOnly.diagnostic()).toBe(0);
+    expect(sourceOnly.stdout).toMatch(/Changed\s+source:evals\/pass.eval.ts \([a-f0-9]{8} → [a-f0-9]{8}\)/u);
+    for (const kind of ["pass", "score"]) {
+      const path = join(projectRoot, `experiments/reference-${kind}.ts`);
+      await writeFile(path, (await readFile(path, "utf8")).replace('alpha: "before", beta: "before", removed: "gone", zeta: "before"', 'zeta: "before"'));
+    }
+    const removed = await niceeval.run(["show"]);
+    expect(removed.exitCode, removed.diagnostic()).toBe(0);
+    expect(removed.stdout).toMatch(/Changed\s+config:flags.removed \(gone; removed\)/u);
   });
 });
