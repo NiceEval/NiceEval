@@ -10,7 +10,7 @@ import { stripVTControlCharacters } from "node:util";
 import { Data, Deferred, Effect, Exit, Option, Result, Schema } from "effect";
 import type { Sandbox, SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
-import { isRegisteredSandboxContent } from "../sandbox/content.ts";
+import { isRegisteredSandboxContent, prepareRegisteredSandboxContentFile } from "../sandbox/content.ts";
 import type { SandboxCommandContext, SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
@@ -362,6 +362,10 @@ export class ArtifactPrepareCoordinator {
       }),
     }).pipe(
       Effect.flatMap((artifact) => decodePreparedArtifact(artifact, installer.identity, platform)),
+      Effect.flatMap((artifact) => Effect.tryPromise({
+        try: (runtimeSignal) => prepareRegisteredSandboxContentFile(artifact.content, defaultArtifactCacheDir(), AbortSignal.any([signal, runtimeSignal])).then(() => artifact),
+        catch: (cause) => new AgentEnsureError({ reason: "artifact-invalid", phase: "installer", identity: installer.identity, message: errorMessage(cause) }),
+      })),
     );
     return this.timing === undefined
       ? prepared

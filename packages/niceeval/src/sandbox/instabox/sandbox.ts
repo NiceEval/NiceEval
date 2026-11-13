@@ -1,5 +1,6 @@
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
+import { openAsBlob } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -171,7 +172,14 @@ export class InstaboxBackend implements SandboxProviderBackend {
       throw cause;
     }
   }
-  async uploadFile(source: string | URL, target: string): Promise<void> { await this.writeBytes(target, await readFile(resolveLocalPath(undefined, source))); }
+  async uploadFile(source: string | URL, target: string): Promise<void> {
+    const body = await openAsBlob(resolveLocalPath(undefined, source));
+    const response = await this.api.request(`${this.path}/files?parents=true&path=${encodeURIComponent(resolveSandboxPath(this.workdir, target))}`, {
+      method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body,
+      timeoutMs: Math.max(60_000, Math.ceil(body.size / (64 * 1024)) * 1000),
+    });
+    await response.arrayBuffer();
+  }
   async uploadDirectory(source: string | URL, target?: string, options: { readonly ignore?: readonly string[] } = {}): Promise<void> {
     for (const file of await collectLocalFiles(resolveLocalPath(undefined, source), options.ignore)) await this.writeBytes(resolveSandboxPath(resolveSandboxPath(this.workdir, target), file.path), file.content);
   }

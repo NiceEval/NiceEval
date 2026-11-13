@@ -1,7 +1,7 @@
 // registerSandboxContent():在 discovery / planning 前把宿主内容收敛成 digest-backed handle。
 // Handle 不公开 live path；后续 putContent() 必须先取得本模块校验后的不可变 snapshot。
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstatSync,
   readFileSync,
@@ -9,13 +9,19 @@ import {
   readlinkSync,
   realpathSync,
   statSync,
+  createReadStream,
+  createWriteStream,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { chmod, lstat, mkdir, rename, rm } from "node:fs/promises";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REGISTERED_SANDBOX_CONTENT: unique symbol = Symbol("niceeval.sandbox.content.registered");
 const REGISTERED_CONTENTS = new WeakSet<object>();
 const REGISTERED_CONTENT_LOCATORS = new WeakMap<object, { readonly path: string }>();
+const STAGED_CONTENT_FILES = new WeakMap<object, { readonly path: string; readonly mode: number; readonly size: number }>();
 
 /** Identifies a captured host file or directory by immutable content digest; constructing a similar plain object does not grant transfer capability. */
 export interface RegisteredSandboxContent {
@@ -262,4 +268,40 @@ export function registeredSandboxContentSnapshotOf(
     );
   }
   return snapshot;
+}
+
+/** Internal staged prepare boundary: verify once and freeze one disk snapshot for all uploads. */
+export async function prepareRegisteredSandboxContentFile(content: RegisteredSandboxContent, cacheDir: string, signal: AbortSignal): Promise<void> {
+  if (!isRegisteredSandboxContent(content) || content.kind !== "file") throw new TypeError("staged payload requires registered file content");
+  if (STAGED_CONTENT_FILES.has(content)) return;
+  const source = REGISTERED_CONTENT_LOCATORS.get(content);
+  if (source === undefined) throw new TypeError("staged payload has no private locator");
+  const info = await lstat(source.path);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error("staged payload source must remain a regular file");
+  const mode = permissionMode(info.mode);
+  const hash = createHash("sha256").update("file\0").update(`${mode.toString(8)}\0`);
+  const directory = join(cacheDir, "payloads");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const path = join(directory, `${content.digest.slice(7)}.payload`);
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  let size = 0;
+  try {
+    await pipeline(
+      createReadStream(source.path),
+      new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); size += chunk.byteLength; done(null, chunk); } }),
+      createWriteStream(temporary, { flags: "wx", mode: 0o600 }),
+      { signal },
+    );
+    if (`sha256:${hash.digest("hex")}` !== content.digest) throw new Error("registered staged payload changed before preparation");
+    await chmod(temporary, 0o444);
+    await rename(temporary, path);
+    STAGED_CONTENT_FILES.set(content, Object.freeze({ path, mode, size }));
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+/** Only handles frozen by the staged prepare boundary can use this private streaming path. */
+export function registeredSandboxContentFileOf(content: RegisteredSandboxContent): { readonly path: string; readonly mode: number; readonly size: number } | undefined {
+  return STAGED_CONTENT_FILES.get(content);
 }

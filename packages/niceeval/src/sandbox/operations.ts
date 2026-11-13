@@ -6,8 +6,10 @@ import type {
   SandboxOperations,
   SuccessfulCommandResult,
 } from "./types.ts";
+import { createReadStream } from "node:fs";
 import {
   registeredSandboxContentSnapshotOf,
+  registeredSandboxContentFileOf,
   type RegisteredSandboxContent,
 } from "./content.ts";
 import { redactSensitiveText } from "./redaction.ts";
@@ -27,6 +29,16 @@ async function putContentBytes(
     await sandbox.writeBytes(targetPath, bytes);
     return;
   }
+
+  function* chunks(): Iterable<Uint8Array> {
+    for (let offset = 0; offset < bytes.byteLength; offset += PUT_CONTENT_CHUNK_BYTES) {
+      yield bytes.subarray(offset, offset + PUT_CONTENT_CHUNK_BYTES);
+    }
+  }
+  await putContentChunks(sandbox, targetPath, chunks(), digest);
+}
+
+async function putContentChunks(sandbox: SandboxOperations, targetPath: string, chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>, digest: string): Promise<void> {
 
   const suffix = digest.replace(/^sha256:/, "").slice(0, 16);
   const partsDir = `${targetPath}.niceeval-parts-${suffix}`;
@@ -48,9 +60,9 @@ async function putContentBytes(
 
   try {
     let index = 0;
-    for (let offset = 0; offset < bytes.byteLength; offset += PUT_CONTENT_CHUNK_BYTES) {
+    for await (const chunk of chunks) {
       const part = `${partsDir}/part-${String(index).padStart(6, "0")}`;
-      await sandbox.writeBytes(part, bytes.subarray(offset, offset + PUT_CONTENT_CHUNK_BYTES));
+      await sandbox.writeBytes(part, chunk);
       index += 1;
     }
     await sandbox.runCommandOrThrow("sh", [
@@ -185,6 +197,22 @@ export async function putSandboxContent(
   content: RegisteredSandboxContent,
   targetPath: string,
 ): Promise<void> {
+  const file = registeredSandboxContentFileOf(content);
+  if (file !== undefined) {
+    if (file.size === 0) {
+      await sandbox.writeBytes(targetPath, new Uint8Array());
+      await chmodContentPath(sandbox, targetPath, file.mode);
+      return;
+    }
+    const stream = createReadStream(file.path, { highWaterMark: PUT_CONTENT_CHUNK_BYTES });
+    try {
+      await putContentChunks(sandbox, targetPath, stream, content.digest);
+    } finally {
+      stream.destroy();
+    }
+    await chmodContentPath(sandbox, targetPath, file.mode);
+    return;
+  }
   // 先完成 live source 复读、digest 校验和不可变快照，再发起任何 provider I/O。
   const snapshot = registeredSandboxContentSnapshotOf(content);
   if (snapshot.kind === "file") {
