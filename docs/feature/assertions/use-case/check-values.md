@@ -2,12 +2,12 @@
 
 ## 用户目标
 
-评估作者要先确认 Agent 完成任务，再检查输出；前提不满足时，不继续登记依赖它的内容检查。
+评估作者要先确认 Agent 完成任务，再检查回复里有没有它实际建立的工单号；前提不满足时，不继续登记依赖它的内容检查。
 
 ## 起始状态
 
 项目有选择 Agent Adapter 的 Experiment `support`，发现目录中可以添加 Eval。
-服务可返回可信的 `completed`、`failed` 或 `waiting` Turn。以下结果均为预期输出，未实际发送消息。
+服务可返回可信的 `completed`、`failed` 或 `waiting` Turn，并提供按订单查询工单的公开接口。以下结果均为预期输出，未实际发送消息。
 
 ## 完整路径
 
@@ -16,20 +16,24 @@
    ```ts
    import { defineEval } from "niceeval";
    import { equals, includes } from "niceeval/expect";
+   import { latestTicket } from "../src/support-client";
 
    export default defineEval({
-     description: "完成回答后说明下一步",
+     description: "处理卡住的退款并告知工单号",
      async test(t) {
-       const turn = await t.send("说明处理方案，并用“下一步”引出后续操作。");
+       const turn = await t.send("订单 4821 的退款卡了三天，帮我处理一下。");
        await t.check(turn.status, equals("completed"))
          .label("回答已完成")
          .orStop();
 
-       t.check(turn.reply, includes("下一步"))
-         .label("说明后续操作");
+       const ticket = await latestTicket({ order: "4821" });
+       t.check(turn.reply, includes(ticket.id))
+         .label("回复给出工单号");
      },
    });
    ```
+
+   题面只说用户的问题。工单号从应用的公开接口读出，题面里没有它，照抄题面的回复拿不到这一项（[T-27](../../../taste.md#t-27)）。
 
    预期输出：状态匹配后继续检查 `turn.reply`；这两个 `check` 各登记一条断言。
    `.label` 与 `.orStop` 配置或等待第一条断言，不额外登记检查。
@@ -42,8 +46,8 @@
 
    | 返回事实 | 预期输出 |
    |---|---|
-   | completed，正文包含“下一步” | 两项匹配，Attempt 为 `passed`。 |
-   | completed，正文不包含“下一步” | 内容检查不匹配，Attempt 为 `failed`。 |
+   | completed，正文包含工单号 | 两项匹配，Attempt 为 `passed`。 |
+   | completed，正文不包含工单号 | 内容检查不匹配，Attempt 为 `failed`。 |
    | failed 或 waiting | 状态检查不匹配，Attempt 为 `failed`；不登记内容检查。 |
    | send 无法取得可信 Turn | 进入执行错误路径，不能伪造一个状态不匹配的 Turn。 |
 

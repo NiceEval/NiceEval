@@ -23,7 +23,7 @@ export default defineEval({
     },
   }),
   async test(t) {
-    await t.send("用 docker compose 安装并验证服务。");
+    await t.send("把这个仓库的服务跑起来。");
   },
 });
 ```
