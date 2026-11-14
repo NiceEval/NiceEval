@@ -10,7 +10,6 @@ export const JUDGE_AUTHORING_REVISION = 2 as const;
 export interface JudgePresetOptions {
   readonly maxCalls?: number;
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 
 /** Supplies the question, candidate and reference for factuality scoring; expected is the author's reference rather than independently verified truth. */
@@ -50,15 +49,15 @@ export function optionsFor(defaultName: string, options: JudgePresetOptions): {
   if (!Predicate.isObject(options) || Array.isArray(options)) throw new TypeError("Judge preset options must be an object");
   const captured: Record<string, unknown> = {};
   for (const key of Reflect.ownKeys(options)) {
-    if (typeof key !== "string" || !["maxCalls", "maxMaterialBytes", "maxAuditBytes"].includes(key)) {
+    if (typeof key !== "string" || !["maxCalls", "maxMaterialBytes"].includes(key)) {
       throw new TypeError("Judge preset options contain an unknown property");
     }
     const descriptor = Reflect.getOwnPropertyDescriptor(options, key);
     if (descriptor === undefined || !("value" in descriptor)) throw new TypeError("Judge preset options must be data properties");
     captured[key] = descriptor.value;
   }
-  const limits: { maxCalls?: number; maxMaterialBytes?: number; maxAuditBytes?: number } = {};
-  for (const key of ["maxCalls", "maxMaterialBytes", "maxAuditBytes"] as const) {
+  const limits: { maxCalls?: number; maxMaterialBytes?: number } = {};
+  for (const key of ["maxCalls", "maxMaterialBytes"] as const) {
     const value = captured[key];
     if (value === undefined) continue;
     if (typeof value !== "number") throw new TypeError(`Judge preset ${key} must be a number`);

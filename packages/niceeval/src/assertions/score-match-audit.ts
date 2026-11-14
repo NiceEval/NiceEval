@@ -43,8 +43,8 @@ export interface ScoreMatchAudit {
     readonly digest: string;
     readonly limits: {
       readonly maxCalls: number;
-      readonly maxMaterialBytes: number;
-      readonly maxAuditBytes: number;
+      readonly maxMaterialBytes?: number;
+      readonly contextWindow?: number;
     };
   };
   readonly input: string;
@@ -609,7 +609,7 @@ export function readScoreMatchAudit(value: unknown, expectedMeasurement?: number
     }
     const outer = exact(value, ["manifest", "content"]);
     const manifest = exact(outer?.manifest, ["schemaVersion", "protocol", "byteLength", "digest", "chunkByteLengths"]);
-    if (outer === undefined || manifest === undefined || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) || manifest.protocol !== expectedProtocol || !Array.isArray(outer.content) || outer.content.length === 0 || outer.content.length > 2050 || !Array.isArray(manifest.chunkByteLengths) || manifest.chunkByteLengths.length !== outer.content.length || !positiveInteger(manifest.byteLength, 8 * 1024 * 1024) || typeof manifest.digest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.digest)) return Object.freeze({ state: "invalid" });
+    if (outer === undefined || manifest === undefined || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) || manifest.protocol !== expectedProtocol || !Array.isArray(outer.content) || outer.content.length === 0 || !Array.isArray(manifest.chunkByteLengths) || manifest.chunkByteLengths.length !== outer.content.length || !positiveInteger(manifest.byteLength, Number.MAX_SAFE_INTEGER) || typeof manifest.digest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.digest)) return Object.freeze({ state: "invalid" });
     const chunks: string[] = [];
     for (let index = 0; index < outer.content.length; index += 1) {
       const chunk = outer.content[index];
@@ -623,13 +623,14 @@ export function readScoreMatchAudit(value: unknown, expectedMeasurement?: number
     if (canonicalScoreMatchAuditJson(parsed) !== content) return Object.freeze({ state: "invalid" });
     const audit = exact(parsed, manifest.schemaVersion === 3 ? ["schemaVersion", "protocol", "definition", "input", "images", "calls", "result"] : ["schemaVersion", "protocol", "definition", "input", "calls", "result"]);
     const definition = exact(audit?.definition, ["version", "config", "digest", "limits"]);
-    const limits = exact(definition?.limits, ["maxCalls", "maxMaterialBytes", "maxAuditBytes"]);
-    if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.version) || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024) || !positiveInteger(limits.maxAuditBytes, 8 * 1024 * 1024) || manifest.byteLength > limits.maxAuditBytes || utf8ByteLength(canonicalScoreMatchAuditJson({ manifest, content: chunks })) > limits.maxAuditBytes) return Object.freeze({ state: "invalid" });
+    const rawLimits = record(definition?.limits);
+    const limits = rawLimits === undefined ? undefined : exact(rawLimits, ["maxCalls", ...("maxMaterialBytes" in rawLimits ? ["maxMaterialBytes"] : []), ...("contextWindow" in rawLimits ? ["contextWindow"] : [])]);
+    if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.version) || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || limits.maxMaterialBytes !== undefined && !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024) || limits.contextWindow !== undefined && !positiveInteger(limits.contextWindow, Number.MAX_SAFE_INTEGER)) return Object.freeze({ state: "invalid" });
     const configValue = JSON.parse(definition.config);
     if (canonicalScoreMatchAuditJson(configValue) !== definition.config || definition.digest !== scoreMatchDefinitionDigest({ version: definition.version, config: definition.config, limits: limits as unknown as ScoreMatchAudit["definition"]["limits"] })) return Object.freeze({ state: "invalid" });
     const images = manifest.schemaVersion === 3 ? validImages(audit.images, audit.input as string, imageContent) : undefined;
     const initialMaterialRejected = record(audit.result)?.state === "unavailable" && record(audit.result)?.code === "score-match-material-budget" && Array.isArray(audit.calls) && audit.calls.length === 0;
-    if (typeof audit.input !== "string" || utf8ByteLength(audit.input) > limits.maxMaterialBytes && !initialMaterialRejected || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || manifest.schemaVersion === 3 && images === undefined || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : manifest.schemaVersion === 2 ? !validTypeSafeCall(call, index + 1) : !validV3Call(call, index + 1, images!))) return Object.freeze({ state: "invalid" });
+    if (typeof audit.input !== "string" || typeof limits.maxMaterialBytes === "number" && utf8ByteLength(audit.input) > limits.maxMaterialBytes && !initialMaterialRejected || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || manifest.schemaVersion === 3 && images === undefined || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : manifest.schemaVersion === 2 ? !validTypeSafeCall(call, index + 1) : !validV3Call(call, index + 1, images!))) return Object.freeze({ state: "invalid" });
     const result = record(audit.result);
     const validResult = result?.state === "measured"
       ? exact(result, ["state", "value"]) !== undefined && unit(result.value) && (expectedMeasurement === undefined || Object.is(result.value, expectedMeasurement))

@@ -94,7 +94,6 @@ export default defineScoreEval({
     // 验收需要查询结果和后续建议，交给 Judge 的是完整交互历史。
     t.closeQA("最后的带伞建议是否符合工具返回的天气，且理由没有编造天气事实？", {
       maxMaterialBytes: 256 * 1024,
-      maxAuditBytes: 1024 * 1024,
     }).score(80).label("建议有依据");
 
     t.maxTokens(10_000).gate().label("用量上限");

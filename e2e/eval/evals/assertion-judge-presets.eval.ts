@@ -3,7 +3,7 @@ import { defineAdapter } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 import { and, defineValueMatch, defineMaterialMatch, defineContextMatch, defineScoreMatch, type ScoreMatch } from "niceeval/expect";
 
-const limits = { maxAuditBytes: 2 * 1024 * 1024 };
+const limits = {};
 const quality = defineJudge({ rubric: "Rate the clarity of the answer.", ...limits });
 // A Judge is a ScoreMatch, not a separate kind accepted by another check overload.
 const ordinaryMatch: ScoreMatch<unknown> = quality;
@@ -66,7 +66,6 @@ export default judgePresetApplication.defineScoreEval({
   judge: "judge-eval-override",
   test(t) {
     const output = t.answer();
-    t.closeQA(source(actor), "ACCEPT: all original events?", { maxAuditBytes: 1 }).label("Material QA tiny audit");
     t.factuality({ input: "Describe Paris", output, expected: "Paris is the capital of France and has museums." }, limits)
       .score(10).label("Factuality");
     t.faithfulness({ input: "Describe Paris", output, context: "Paris is the capital of France and has museums." }, limits)
@@ -93,13 +92,13 @@ export default judgePresetApplication.defineScoreEval({
       { id: "split-1", value: { actor: "a", kind: "operation", text: "operation", adopted: true } },
       { id: "split-2", value: { actor: "b", kind: "speech", text: "speech", adopted: true } },
     ] }, and(actor, speech))).score(1).label("Same event conjunction");
-    t.closeQA(materialMatch({ state: "complete", items: Array.from({ length: 257 }, (_, index) => ({ id: `large-${index}`, value: { actor: "a", kind: "speech" as const, text: "large", adopted: true } })) }, actor), "ACCEPT: is every item natural?", { maxAuditBytes: 8 * 1024 }).label("Material QA over capacity");
-    t.closeQA(materialMatch({ state: "complete", items: [{ id: "undefined", value: { actor: "a", original: undefined } }] }, defineValueMatch({ name: "actor-undefined", evaluate: (event: { actor: string; original: undefined }) => event.actor === "a" })), "ACCEPT: is the original available?", { maxAuditBytes: 8 * 1024 }).label("Material QA non JSON");
+    t.closeQA(materialMatch({ state: "complete", items: Array.from({ length: 257 }, (_, index) => ({ id: `large-${index}`, value: { actor: "a", kind: "speech" as const, text: "large", adopted: true } })) }, actor), "ACCEPT: is every item natural?", {}).label("Material QA over capacity");
+    t.closeQA(materialMatch({ state: "complete", items: [{ id: "undefined", value: { actor: "a", original: undefined } }] }, defineValueMatch({ name: "actor-undefined", evaluate: (event: { actor: string; original: undefined }) => event.actor === "a" })), "ACCEPT: is the original available?", {}).label("Material QA non JSON");
 
     const capacity = { maxItems: 4096, maxBytes: 4 * 1024 * 1024, maxNodes: 1048576, maxDepth: 64 };
     const fullOperations = defineMaterialMatch<ApplicationContext, Event>({ name: "operations", read: (ctx) => ctx.operations(), match: actor, capture: capacity });
     const fullDialogue = defineMaterialMatch<ApplicationContext, Event>({ name: "dialogue", read: (ctx) => ctx.dialogue(), match: speech, capture: capacity });
-    const wholeJudge = { maxMaterialBytes: 4 * 1024 * 1024, maxAuditBytes: 8 * 1024 * 1024 };
+    const wholeJudge = { maxMaterialBytes: 4 * 1024 * 1024 };
     t.closeQA(fullOperations, "ACCEPT: evaluate all 1000 actual operations including failures", wholeJudge).score(1).label("Whole operations");
     t.closeQA(fullDialogue, "ACCEPT: evaluate the complete two-person 180-second dialogue", wholeJudge).score(1).label("Whole dialogue");
     t.check(defineMaterialMatch<ApplicationContext, Event>({ name: "bounded-witness", read: (ctx) => ctx.operations(), match: actor, capture: { ...capacity, maxItems: 1 } })).gate().label("Capacity known witness");

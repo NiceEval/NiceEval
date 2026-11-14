@@ -20,7 +20,7 @@ describe("defineScoreMatch", () => {
     expect(definition.canonicalConfig).toBe('{"labels":["yes","no"],"weights":{"correctness":1}}');
     expect(Object.isFrozen(definition.config)).toBe(true);
     expect(Object.isFrozen((definition.config as { weights: object }).weights)).toBe(true);
-    expect(definition.llm).toEqual({ maxCalls: 4, maxMaterialBytes: 32 * 1024, maxAuditBytes: 96 * 1024 });
+    expect(definition.llm).toEqual({ maxCalls: 4 });
   });
 
   it("rejects ambiguous, accessor, and out-of-range managed options", () => {

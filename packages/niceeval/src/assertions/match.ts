@@ -176,7 +176,6 @@ export interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {
   readonly llm: {
     readonly maxCalls?: number;
     readonly maxMaterialBytes?: number;
-    readonly maxAuditBytes?: number;
   };
   readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
 }
@@ -189,8 +188,7 @@ export interface ManagedScoreMatchDefinition<T = unknown, E = unknown> {
   readonly canonicalConfig: string;
   readonly llm: {
     readonly maxCalls: number;
-    readonly maxMaterialBytes: number;
-    readonly maxAuditBytes: number;
+    readonly maxMaterialBytes?: number;
   };
   readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
 }
@@ -1448,7 +1446,7 @@ function boundedPositiveInteger(value: unknown, fallback: number, maximum: numbe
 /** @internal Shared managed-model budget validation. */
 export function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["llm"] {
   if (!isRecord(value) || Array.isArray(value)) throw new TypeError("defineScoreMatch() spec.llm must be an object");
-  const allowed = ["maxCalls", "maxMaterialBytes", "maxAuditBytes"];
+  const allowed = ["maxCalls", "maxMaterialBytes"];
   const output: Record<string, unknown> = {};
   for (const key of Reflect.ownKeys(value)) {
     if (typeof key !== "string" || !allowed.includes(key)) throw new TypeError(`defineScoreMatch() spec.llm has unknown option ${String(key)}`);
@@ -1458,8 +1456,7 @@ export function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["ll
   }
   return Object.freeze({
     maxCalls: boundedPositiveInteger(output.maxCalls, 4, 16, "defineScoreMatch() spec.llm.maxCalls"),
-    maxMaterialBytes: boundedPositiveInteger(output.maxMaterialBytes, 32 * 1024, 4 * 1024 * 1024, "defineScoreMatch() spec.llm.maxMaterialBytes"),
-    maxAuditBytes: boundedPositiveInteger(output.maxAuditBytes, 96 * 1024, 8 * 1024 * 1024, "defineScoreMatch() spec.llm.maxAuditBytes"),
+    ...(output.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: boundedPositiveInteger(output.maxMaterialBytes, 1, 4 * 1024 * 1024, "defineScoreMatch() spec.llm.maxMaterialBytes") }),
   });
 }
 

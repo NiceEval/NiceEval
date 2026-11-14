@@ -12,7 +12,7 @@ const encoder = new TextEncoder();
 const digest = (value: string) => new InspectionSha256().update(encoder.encode(value)).digestHex();
 
 function retained(measurement = 0.5): unknown {
-  const limits = { maxCalls: 4, maxMaterialBytes: 32 * 1024, maxAuditBytes: 96 * 1024 } as const;
+  const limits = { maxCalls: 4 } as const;
   const config = canonicalScoreMatchAuditJson({ labels: { yes: 1, no: 0 } });
   const request = canonicalScoreMatchAuditJson({
     messages: [

@@ -880,9 +880,8 @@ class AssertionsRuntimeImplementation {
     const receiver = contextByCheck.get(check);
     if (receiver?.read === undefined) throw new TypeError("Contextual Match requires an application-bound Assertion receiver");
     const definition = contextMatchDefinitionOf(match);
-    const managed = definition.kind === "context-score" ? managedScoreMatchOf(definition.match as ScoreMatch<unknown>) : undefined;
-    const auditBytes = qa === undefined ? managed?.llm.maxAuditBytes ?? 0 : exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm).maxAuditBytes;
-    const reservation = definition.capture.maxBytes + auditBytes + 64 * 1024;
+    if (qa !== undefined) exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm);
+    const reservation = definition.capture.maxBytes + 64 * 1024;
     const admitted = this.retainedProducerBytes + reservation <= 64 * 1024 * 1024;
     if (admitted) this.retainedProducerBytes += reservation;
     let reserved = admitted ? reservation : 0;

@@ -6,7 +6,7 @@ const utf8 = new TextEncoder();
 const contentByMaterial = new WeakMap<AssertionMaterial, string>();
 
 /** @internal Complete data-only content; the Runtime value remains a display preview. */
-export function captureFullAssertionSnapshot(value: unknown): CapturedAssertionSnapshot {
+export function captureFullAssertionSnapshot(value: unknown, maximumContentBytes = maximumBytes): CapturedAssertionSnapshot {
   const parts: string[] = [];
   const ancestors = new WeakSet<object>();
   let byteLength = 0;
@@ -16,12 +16,12 @@ export function captureFullAssertionSnapshot(value: unknown): CapturedAssertionS
   };
   const append = (part: string): void => {
     const observed = byteLength + utf8.encode(part).byteLength;
-    if (observed > maximumBytes) reject("assertion-full-content-byte-limit", "Assertion full content exceeds 16777216 UTF-8 bytes");
+    if (observed > maximumContentBytes) reject("assertion-full-content-byte-limit", "Assertion full content exceeds 16777216 UTF-8 bytes");
     byteLength = observed;
     parts.push(part);
   };
   const quoted = (text: string): void => {
-    if (text.length > maximumBytes - byteLength) reject("assertion-full-content-byte-limit", "Assertion full content exceeds 16777216 UTF-8 bytes");
+    if (text.length > maximumContentBytes - byteLength) reject("assertion-full-content-byte-limit", "Assertion full content exceeds 16777216 UTF-8 bytes");
     append(JSON.stringify(text));
   };
   const visit = (item: unknown, depth: number): void => {

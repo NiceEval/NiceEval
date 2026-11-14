@@ -20,6 +20,21 @@ export const CURRENT_IDENTITY_DOMAINS: IdentityDomains = Object.freeze({
   slotInput: 1,
 });
 
+/** Conditional owner recipe: preserve the legacy judgeAuthoring payload and all
+ * non-Judge digests. The source closure deliberately over-selects imports,
+ * aliases, wrappers and calls of the ordinary Judge authoring primitives. */
+export const ORDINARY_JUDGE_IDENTITY_CHANGE = Object.freeze({
+  name: "ordinary-judge-model-context-budget/v1",
+  effect: "behavior-changing" as const,
+  payloadPath: "ordinaryJudge",
+  algorithm: 1,
+  summary: "Model context admission replaces default material/audit byte caps. Select source closures containing defineJudge, binaryJudge, factuality, faithfulness, instructionFollowing, pairwisePreference, defineScoreMatch or closeQA (including aliased imports), or a .judge call. Preserve the legacy judgeAuthoring field and omit ordinaryJudge entirely for other Evals.",
+});
+
+export function selectsOrdinaryJudge(source: readonly (readonly [string, string])[]): boolean {
+  return source.some(([, content]) => /\b(?:defineJudge|binaryJudge|factuality|faithfulness|instructionFollowing|pairwisePreference|defineScoreMatch|closeQA)\b|\.\s*judge\s*\(/u.test(content));
+}
+
 export type IdentityChangeEffect = "encoding-only" | "behavior-changing";
 
 /**

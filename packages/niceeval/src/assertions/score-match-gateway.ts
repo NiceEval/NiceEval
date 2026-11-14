@@ -1,11 +1,13 @@
+import { fitJudgeContext, isJudgeContextOverflow } from "./judge-context-budget.ts";
 import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
 import { Cause, Clock, Effect, Fiber, Random, Schema } from "effect";
 import { createHash } from "node:crypto";
 import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
-import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
+import { captureFullAssertionSnapshot } from "./full-content.ts";
 import type { ManagedScoreMatchDefinition, ScoreMatch, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./match.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import type { JsonValue } from "../shared/types.ts";
+import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { resolveJudgeCredential } from "../judge/provider.ts";
 import { readJudgeImage, type JudgeImage, type JudgeMaterial } from "../judge/image.ts";
 import { chunkUtf8, errorSummary, interruptibleByCaller, isTransientJudgeFailure, isTransportFailure, requestScoreMatchProvider, responseByteCap, retryAfterMs, snapshotScoreMatchMaterial, snapshotJudgeMaterial, projectJudgeMaterial, type CapturedImageReference } from "./judge.ts";
@@ -24,7 +26,6 @@ const bytes = (value: string): number => utf8.encode(value).byteLength;
 const chatProtocol = "niceeval.score-match-audit/v1" as const;
 const typesafeProtocol = "niceeval.score-match-audit/v2" as const;
 const imageProtocol = "niceeval.score-match-audit/v3" as const;
-const terminalReserve = 2048;
 const toolName = "record_score_match";
 
 function failure(state: "unavailable" | "errored", code: string, message: string): ScoreMatchAuditFailure {
@@ -297,13 +298,14 @@ export function prepareManagedScoreMatch(input: {
 }): MeasurementAssertionRegistration & { readonly terminalEvidence: () => readonly AssertionMaterial[]; readonly actualRetainedBytes: () => number } {
   const { options } = input;
   let deadlineAt = Infinity;
-  const snapshot = snapshotJudgeMaterial(input.material as JudgeMaterial, options.llm.maxMaterialBytes - 13);
+  const snapshot = snapshotJudgeMaterial(input.material as JudgeMaterial, options.llm.maxMaterialBytes === undefined ? Infinity : options.llm.maxMaterialBytes - 13);
   const material = snapshot.material;
   const imageByValue = snapshot.imageByValue;
   const images = snapshot.images;
   const captured = canonical(projectJudgeMaterial(material, imageByValue).json);
-  const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }).material;
-  const definitionBase = { version: options.version, config: containsConversationMaterial(material) ? canonical({ definition: JSON.parse(options.canonicalConfig), conversationMaterialRevision }) : options.canonicalConfig, limits: options.llm };
+  const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }, Infinity).material;
+  const contextWindow = input.judge === undefined ? undefined : input.judge.contextWindow ?? builtinContextWindow(input.judge.model);
+  const definitionBase = { version: options.version, config: containsConversationMaterial(material) ? canonical({ definition: JSON.parse(options.canonicalConfig), conversationMaterialRevision }) : options.canonicalConfig, limits: { ...options.llm, ...(contextWindow === undefined ? {} : { contextWindow }) } };
   const definition = { ...definitionBase, digest: scoreMatchDefinitionDigest(definitionBase) };
   const typesafe = input.judge?.protocol.kind === "typesafe-system-one";
   const auditProtocol = images.length > 0 ? imageProtocol : typesafe ? typesafeProtocol : chatProtocol;
@@ -331,14 +333,11 @@ export function prepareManagedScoreMatch(input: {
       content: chunks,
     };
   };
-  const auditSize = (value: ScoreMatchAuditAny): number => Math.max(bytes(canonical(value)), bytes(canonical(envelopeOf(value))));
   const latch = (problem: ScoreMatchAuditFailure): ScoreMatchAuditFailure => {
     if (!closed) latched ??= problem;
     return latched ?? problem;
   };
-  const canRetainAudit = auditSize(audit()) + terminalReserve * 2 <= options.llm.maxAuditBytes;
-  if (!canRetainAudit) latch(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain the definition, input and terminal result"));
-  else if (bytes(captured) > options.llm.maxMaterialBytes) latch(failure("unavailable", "score-match-material-budget", "ScoreMatch material exceeds its byte budget"));
+  if (options.llm.maxMaterialBytes !== undefined && bytes(captured) > options.llm.maxMaterialBytes) latch(failure("unavailable", "score-match-material-budget", "ScoreMatch material exceeds its explicit byte budget"));
 
   const invoke = <K extends Operation>(operation: K, raw: PrimitiveInput<K>): Effect.Effect<PrimitiveResult<K>, ScoreMatchLlmFailure> =>
     Effect.suspend(() => {
@@ -369,23 +368,21 @@ export function prepareManagedScoreMatch(input: {
       if (profile.protocol.kind === "typesafe-system-one" && operation === "score" && (prepared.options.anchors as readonly unknown[]).length > 10) {
         return reject(failure("unavailable", "judge-capability-unavailable", "TypeSafe Provider supports at most 10 score anchors"));
       }
-      if (bytes(prepared.material) > options.llm.maxMaterialBytes) return reject(failure("unavailable", "score-match-material-budget", "LLM step material exceeds its byte budget"));
-      const prospective = { ...audit(), calls: [...calls, {
-        ordinal: calls.length + 1, operation, state: "admitted",
-        ...(prepared.requestTemplate === undefined ? { request: prepared.request } : { requestTemplate: prepared.requestTemplate, wireBody: prepared.wireBody }),
-        ...(prepared.mapping === undefined ? {} : { mapping: prepared.mapping }),
-        attempts: [], result: { state: "interrupted" },
-      }] } as ScoreMatchAuditAny;
-      const remaining = options.llm.maxAuditBytes - auditSize(prospective) - terminalReserve * 4;
-      const providerResponseCap = profile.protocol.kind === "chat-completions"
-        ? Math.min(profile.maxResponseBytes, responseByteCap(profile.protocol.maxOutputTokens))
-        : profile.maxResponseBytes;
-      const responseCap = Math.min(providerResponseCap, Math.floor(remaining / 25));
-      // Successful output can occur only once. Failed transmissions retain bounded
-      // metadata. Reserve the worst JSON escaping of that response and its decoded
-      // output in both the canonical audit and the persisted envelope, including
-      // chunk metadata, three attempt records and the terminal rejection reserve.
-      if (responseCap < 1_024) return reject(failure("unavailable", "score-match-audit-budget", "Audit budget cannot retain this request and its bounded response"));
+      if (options.llm.maxMaterialBytes !== undefined && bytes(prepared.material) > options.llm.maxMaterialBytes) return reject(failure("unavailable", "score-match-material-budget", "LLM step material exceeds its explicit byte budget"));
+      {
+        const requestFor = (material: unknown) => profile.protocol.kind === "chat-completions"
+          ? chatRequestFor(operation, { ...prepared.options, material }, profile, imageByValue, images.length > 0)
+          : typesafeRequestFor(operation as Exclude<Operation, "extract">, { ...prepared.options, material }, profile);
+        const fitted = fitJudgeContext({
+          model: profile.model, ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
+          maxOutputTokens: profile.protocol.kind === "chat-completions" ? profile.protocol.maxOutputTokens : 0, material: prepared.options.material,
+          encodeRequest: (material) => { const request = requestFor(material); return request.requestTemplate ?? request.request; },
+        });
+        if (fitted.state === "unavailable") return reject(failure("unavailable", fitted.code, fitted.message));
+        if (fitted.material !== prepared.options.material) prepared = requestFor(fitted.material);
+      }
+      const responseCap = profile.protocol.kind === "chat-completions"
+        ? Math.min(profile.maxResponseBytes, responseByteCap(profile.protocol.maxOutputTokens)) : profile.maxResponseBytes;
       const apiKey = resolveJudgeCredential(profile);
       if (!apiKey) {
         const source = profile.credential.kind === "environment" ? ` environment ${profile.credential.name}` : " inline credential";
@@ -439,12 +436,18 @@ export function prepareManagedScoreMatch(input: {
             ? Object.assign(new Error(`HTTP ${outcome.value.status}`), { status: outcome.value.status, headers: outcome.value.headers })
             : outcome.ok ? undefined : outcome.error;
           if (error !== undefined) {
+            if (outcome.ok && isJudgeContextOverflow(outcome.value.body)) {
+              attempts[attempt - 1] = { ordinal: attempt, transport: "attempted", result: { state: "returned", response: outcome.value.body } };
+              const problem = latch(failure("unavailable", "judge-context-overflow", "Judge model reported a context overflow"));
+              callResult = problem; update();
+              return yield* Effect.fail(typedFailure(problem));
+            }
             if (error instanceof JudgeUsageAdmissionError) {
               const problem = latch(failure("unavailable", "judge-usage-capacity-exceeded", "Judge usage cannot retain another physical transmission"));
               callResult = problem; update();
               return yield* Effect.fail(typedFailure(problem));
             }
-            attempts[attempt - 1] = { ordinal: attempt, transport: "attempted", result: { state: "failed", code: "judge-call-failed", message: errorSummary(error) } };
+            attempts[attempt - 1] = { ordinal: attempt, transport: "attempted", result: outcome.ok ? { state: "returned", response: outcome.value.body } : { state: "failed", code: "judge-call-failed", message: errorSummary(error) } };
             update();
             if (isTransientJudgeFailure(error) && attempt < 3) {
               const headers = typeof error === "object" && error !== null && "headers" in error ? error.headers : undefined;
@@ -547,11 +550,9 @@ export function prepareManagedScoreMatch(input: {
   };
   return {
     criterion: { kind: "managed-score-measurement", name: options.name, scale: "unit-interval" },
-    terminalCriterion: () => canRetainAudit
-      ? { kind: "managed-score-measurement", name: options.name, scale: "unit-interval" }
-      : { kind: "value-match", subject: "explicit-value", matcher: { state: "declared", name: options.name } },
+    terminalCriterion: () => ({ kind: "managed-score-measurement", name: options.name, scale: "unit-interval" }),
     subject,
-    retainedBytes: fullAssertionContentByteLength(subject)! + options.llm.maxAuditBytes,
+    retainedBytes: 0,
     retainedImageBytes: images.reduce((sum, image) => sum + image.byteLength, 0),
     evidence: Object.freeze(images.map((image) => ({ kind: "judge-image" as const, image: image.image }))),
     evaluate,
@@ -559,11 +560,11 @@ export function prepareManagedScoreMatch(input: {
       if (sealed !== undefined) return sealed;
       input.usage?.close();
       closed = true;
-      const payload = canRetainAudit ? envelopeOf(audit()) : { failure: latched };
-      sealed = Object.freeze([captureFullAssertionSnapshot(payload).material]);
+      const payload = envelopeOf(audit());
+      sealed = Object.freeze([captureFullAssertionSnapshot(payload, Infinity).material]);
       return sealed;
     },
-    actualRetainedBytes: () => fullAssertionContentByteLength(subject)! + (sealed ?? []).reduce((sum, evidence) => sum + (fullAssertionContentByteLength(evidence) ?? 0), 0),
+    actualRetainedBytes: () => 0,
   };
 }
 

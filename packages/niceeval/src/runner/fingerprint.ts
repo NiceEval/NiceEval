@@ -1,3 +1,4 @@
+import { ORDINARY_JUDGE_IDENTITY_CHANGE, selectsOrdinaryJudge } from "./identity-domains.ts";
 // ProjectTarget planning: current eval sources + resolved configuration become
 // immutable input identities. Reuse is decided only by Frozen Record planning.
 
@@ -199,6 +200,7 @@ function fingerprintPreparedPair(
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
       ...(selectsAgentJudge ? { agentJudge: { algorithm: 6, prompt: 2, tools: 3, scheduling: 1, ...agentJudgeRuntime } } : {}),
+      ...(selectsOrdinaryJudge(source) ? { ordinaryJudge: { algorithm: ORDINARY_JUDGE_IDENTITY_CHANGE.algorithm } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,
         revision: JUDGE_AUTHORING_REVISION,

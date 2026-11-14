@@ -24,7 +24,6 @@ export interface JudgeOptions {
   readonly anchors?: readonly JudgeAnchor[];
   readonly maxMaterialBytes?: number;
   readonly maxCalls?: number;
-  readonly maxAuditBytes?: number;
 }
 /** A reusable rubric-backed ScoreMatch; gate thresholds and point contributions belong on its assertion handle. */
 export type JudgeDefinition = ScoreMatch<unknown>;
@@ -67,7 +66,7 @@ function positiveInteger(value: unknown, label: string, maximum: number): number
 
 /** Defines one immutable scoring standard and returns the managed Match itself. */
 export function defineJudge(options: JudgeOptions): JudgeDefinition {
-  const input = exactDataObject(options, "defineJudge() options", ["rubric", "anchors", "maxMaterialBytes", "maxCalls", "maxAuditBytes"]);
+  const input = exactDataObject(options, "defineJudge() options", ["rubric", "anchors", "maxMaterialBytes", "maxCalls"]);
   const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
   const rawAnchors = input.anchors ?? DEFAULT_ANCHORS;
   if (!Array.isArray(rawAnchors) || rawAnchors.length < 2 || rawAnchors.length > 32) throw new TypeError("Judge anchors must contain between 2 and 32 entries");
@@ -88,15 +87,13 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
     anchors.push(Object.freeze({ measurement, description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024) }));
   }
   if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1) throw new TypeError("Judge anchors must include 0 and 1");
-  const maxMaterialBytes = input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024);
   const definition = defineScoreMatch<unknown>({
     name: "rubric-judge",
     version: "1",
     config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
     llm: {
-      maxMaterialBytes,
+      ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024) }),
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
-      ...(input.maxAuditBytes === undefined ? {} : { maxAuditBytes: positiveInteger(input.maxAuditBytes, "Judge maxAuditBytes", 8 * 1024 * 1024) }),
     },
     score: (material, context) => context.llm.score({ rubric, anchors, material: material as JudgeMaterial })
       .pipe(Effect.map((result) => ({ state: "measured" as const, ...result }))),
@@ -106,7 +103,7 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
 
 /** Classify explicit material as satisfied (1) or not-satisfied (0); use .gate(1) for a required criterion. */
 export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
-  const input = exactDataObject(options, "binaryJudge() options", ["rubric", "maxMaterialBytes", "maxCalls", "maxAuditBytes"]);
+  const input = exactDataObject(options, "binaryJudge() options", ["rubric", "maxMaterialBytes", "maxCalls"]);
   const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
   const choices = ["satisfied", "not-satisfied"] as const;
   return defineScoreMatch<unknown>({
@@ -114,9 +111,8 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
     version: "1",
     config: { algorithm: "binary-classification", revision: 2, rubric, choices: [...choices], scores: { satisfied: 1, "not-satisfied": 0 } },
     llm: {
-      maxMaterialBytes: input.maxMaterialBytes === undefined ? 32 * 1024 : positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024),
+      ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024) }),
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
-      ...(input.maxAuditBytes === undefined ? {} : { maxAuditBytes: positiveInteger(input.maxAuditBytes, "Judge maxAuditBytes", 8 * 1024 * 1024) }),
     },
     score: (material, context) => context.llm.classify({ rubric: `Does the material satisfy this criterion? ${rubric} Select satisfied if it does, otherwise not-satisfied.`, choices, material: material as JudgeMaterial }).pipe(
       Effect.map((result) => ({ state: "measured" as const, measurement: result.choice === "satisfied" ? 1 : 0, rationale: result.rationale })),

@@ -436,7 +436,7 @@ t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
 ```
 
 `binaryJudge(options: BinaryJudgeOptions)` returns an ordinary `ScoreMatch`. `BinaryJudgeOptions` is `JudgeOptions` without `anchors`:
-`rubric` is required; `maxCalls`, `maxMaterialBytes`, and `maxAuditBytes` are optional. Validation and budgets are the same as for `defineJudge`.
+`rubric` is required; `maxCalls` and `maxMaterialBytes` are optional. Validation and budgets are the same as for `defineJudge`.
 It classifies only as `satisfied` or `not-satisfied`, yielding `1` or `0` respectively. As a result, `.score(n)` awards either full points or zero; use `.gate(1)` when the condition must be satisfied.
 Invalid output, insufficient budget, or service failures retain their errored or unavailable state and do not count as zero. The audit keeps the category, reason, and mapped result for review with `show @<locator> --assertions`.
 

@@ -434,7 +434,7 @@ t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
 ```
 
 `binaryJudge(options: BinaryJudgeOptions)` 返回普通 `ScoreMatch`。`BinaryJudgeOptions` 是不含 `anchors` 的 `JudgeOptions`：
-`rubric` 必填，`maxCalls`、`maxMaterialBytes` 与 `maxAuditBytes` 可选，校验和预算与 `defineJudge` 相同。
+`rubric` 必填，`maxCalls` 与 `maxMaterialBytes` 可选，校验和预算与 `defineJudge` 相同。
 它只分类为 `satisfied` 或 `not-satisfied`，分别得到 `1` 或 `0`。`.score(n)` 因而只给满分或零分；必须满足时使用 `.gate(1)`。
 非法输出、预算不足或服务故障保留错误或不可用状态，不计作零分。审计保留类别、理由和映射结果，供 `show @<locator> --assertions` 查看。
 

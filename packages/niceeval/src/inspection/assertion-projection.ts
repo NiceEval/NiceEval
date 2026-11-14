@@ -24,7 +24,7 @@ const ExpandedContentSchema = Schema.Struct({
   state: Schema.Literal("available"), byteLength: Schema.Number,
   sha256: Schema.String, base64: Schema.String,
 });
-const DeferredContentSchema = Schema.Struct({ state: Schema.Literal("available"), byteLength: Schema.Number, sha256: Schema.String });
+const DeferredContentSchema = Schema.Struct({ state: Schema.Literal("available"), ...AssertionContentReferenceSchema.fields });
 const ProjectedMaterialSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
   Schema.Struct({
@@ -34,6 +34,7 @@ const ProjectedMaterialSchema = Schema.Union([
   }),
 ]);
 const JudgeMaterialReadResultSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("paged"), content: AssertionContentReferenceSchema }),
   Schema.Struct({ state: Schema.Literal("available"), request: Schema.String }),
   Schema.Struct({ state: Schema.Literal("invalid") }),
   Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
@@ -67,8 +68,8 @@ const AuditCallSchema = Schema.Union([
 const ScoreMatchAuditSchema: Schema.Schema<ScoreMatchAudit> = Schema.Struct({
   schemaVersion: Schema.Literal(1), protocol: Schema.Literal("niceeval.score-match-audit/v1"),
   definition: Schema.Struct({
-    name: Schema.String, version: Schema.String, config: Schema.String, digest: Schema.String,
-    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.Number, maxAuditBytes: Schema.Number }),
+    version: Schema.String, config: Schema.String, digest: Schema.String,
+    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.optionalKey(Schema.Number), contextWindow: Schema.optionalKey(Schema.Number) }),
   }),
   input: Schema.String, calls: Schema.Array(AuditCallSchema),
   result: Schema.Union([
@@ -113,8 +114,8 @@ const TypeSafeAuditCallSchema = Schema.Union([
 const ScoreMatchAuditV2Schema: Schema.Schema<ScoreMatchAuditV2> = Schema.Struct({
   schemaVersion: Schema.Literal(2), protocol: Schema.Literal("niceeval.score-match-audit/v2"),
   definition: Schema.Struct({
-    name: Schema.String, version: Schema.String, config: Schema.String, digest: Schema.String,
-    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.Number, maxAuditBytes: Schema.Number }),
+    version: Schema.String, config: Schema.String, digest: Schema.String,
+    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.optionalKey(Schema.Number), contextWindow: Schema.optionalKey(Schema.Number) }),
   }),
   input: Schema.String, calls: Schema.Array(TypeSafeAuditCallSchema),
   result: Schema.Union([
@@ -125,8 +126,8 @@ const ScoreMatchAuditV2Schema: Schema.Schema<ScoreMatchAuditV2> = Schema.Struct(
 });
 const ScoreMatchAuditV3Schema: Schema.Schema<ScoreMatchAuditV3> = Schema.Struct({
   schemaVersion: Schema.Literal(3), protocol: Schema.Literal("niceeval.score-match-audit/v3"),
-  definition: Schema.Struct({ name: Schema.String, version: Schema.String, config: Schema.String, digest: Schema.String,
-    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.Number, maxAuditBytes: Schema.Number }) }),
+  definition: Schema.Struct({ version: Schema.String, config: Schema.String, digest: Schema.String,
+    limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.optionalKey(Schema.Number), contextWindow: Schema.optionalKey(Schema.Number) }) }),
   input: Schema.String,
   images: Schema.Array(Schema.Struct({ imageId: Schema.String, evidenceIndex: Schema.Number,
     mediaType: Schema.Literals(["image/png", "image/jpeg"]), byteLength: Schema.Number, sha256: Schema.String,
@@ -151,7 +152,9 @@ const BaseProjectedAssertionEntrySchema = createAssertionsRecordSchemas(Projecte
 const ProjectedAssertionEntrySchema = Schema.Struct({
   ...BaseProjectedAssertionEntrySchema.fields,
   judgeMaterial: Schema.optional(JudgeMaterialReadResultSchema),
-  scoreMatchAudit: Schema.optional(ScoreMatchAuditReadResultSchema),
+  scoreMatchAudit: Schema.optional(Schema.Union([ScoreMatchAuditReadResultSchema,
+    Schema.Struct({ state: Schema.Literal("paged"), content: AssertionContentReferenceSchema }),
+  ])),
   agentJudgeAudit: Schema.optional(Schema.Union([
     Schema.Struct({ state: Schema.Literal("available"), audit: Schema.Struct({ ...AgentJudgeAuditSchema.fields, trace: AssertionContentReferenceSchema }) }),
     Schema.Struct({ state: Schema.Literal("invalid") }), Schema.Struct({ state: Schema.Literal("unsupported") }),

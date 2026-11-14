@@ -94,7 +94,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
       expect(evaluation.verdict, JSON.stringify(attempt.document)).toBe("failed");
       const entries = attempt.document.attempt.assertions.entries;
-      expect(entries).toHaveLength(23);
+      expect(entries).toHaveLength(22);
       const expected = [
         ["Factuality", 0.5, 1], ["Faithfulness", 2 / 3, 2], ["Instructions", 0.5, 1],
         ["Preference", 0.5, 1], ["Quality", 0.75, 1], ["Custom", 0.8, 1],
@@ -124,13 +124,12 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
           .toMatchObject({ state: "available", audit: { result: { state: "unavailable" } } });
       }
 
-      for (const label of ["Material QA tiny audit", "Material QA empty", "Material QA partial", "Material QA over capacity", "Material QA predicate unknown", "Material QA non JSON"]) {
+      for (const label of ["Material QA empty", "Material QA partial", "Material QA over capacity", "Material QA predicate unknown", "Material QA non JSON"]) {
         const entry = only(entries, (item) => item.display.label === label);
         const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         const serialized = JSON.stringify(detail.document);
         expect(serialized).not.toContain('"scoreMatchAudit":{"state":"invalid"}');
-        if (label === "Material QA tiny audit") expect(serialized).toContain("score-match-audit-budget");
         expect(serialized).toContain(label === "Material QA empty" ? '"value":0' : '"state":"unavailable"');
       }
       const accepted = requests.find(({ body }) => body.includes("ACCEPT: do all"))!;

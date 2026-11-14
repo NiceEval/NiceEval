@@ -276,7 +276,8 @@ function projectEntry(
   const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement/v1";
   if (currentScoreMatch) {
     const hasImages = entry.materials.evidence.some((material) => material.kind === "content" && material.encoding === "binary");
-    const projected = projectSealedValue(source, entry, contentMetadata, hasImages) as Readonly<Record<string, InspectionJson>>;
+    const pageContent = assertionContentByteLength(entry, contentMetadata) > 12 * 1024 * 1024;
+    const projected = projectSealedValue(source, entry, contentMetadata, hasImages || pageContent) as Readonly<Record<string, InspectionJson>>;
     try {
       const criterionData = entry.criterion.value.data;
       const name = isRecord(criterionData) && typeof criterionData.name === "string" ? criterionData.name : undefined;
@@ -286,6 +287,7 @@ function projectEntry(
       }
       const metadata = contentMetadata.get(material.content);
       if (metadata === undefined) return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
+      if (pageContent) return closeJson({ ...projected, scoreMatchAudit: { state: "paged", content: { id: metadata.contentId, byteLength: metadata.byteLength, sha256: metadata.digest } } });
       const bytes = readSealedBytes(source, metadata);
       if (material.byteLength !== bytes.byteLength) return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
       const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -306,7 +308,8 @@ function projectEntry(
     }
   }
   if (!currentJudge) return projectSealedValue(source, entry, contentMetadata);
-  const projected = projectSealedValue(source, entry, contentMetadata) as Readonly<Record<string, InspectionJson>>;
+  const pageContent = assertionContentByteLength(entry, contentMetadata) > 12 * 1024 * 1024;
+  const projected = projectSealedValue(source, entry, contentMetadata, pageContent) as Readonly<Record<string, InspectionJson>>;
   try {
     const material = entry.materials.source;
     if (material.kind !== "content" || !isRecordContentHandle(material.content)) {
@@ -314,6 +317,7 @@ function projectEntry(
     }
     const metadata = contentMetadata.get(material.content);
     if (metadata === undefined) return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    if (pageContent) return closeJson({ ...projected, judgeMaterial: { state: "paged", content: { id: metadata.contentId, byteLength: metadata.byteLength, sha256: metadata.digest } } });
     const bytes = readSealedBytes(source, metadata);
     if (material.byteLength !== bytes.byteLength || material.encoding !== "json") {
       return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
@@ -344,6 +348,15 @@ function observedMeasurement(value: RecordedAssertionFactValue): number | undefi
     : undefined;
 }
 
+// An inline audit is represented both as decoded JSON and as encoded Content.
+// Reserve space for both forms below the 32 MiB inspection response boundary.
+function assertionContentByteLength(value: unknown, metadata: WeakMap<object, PersistedContentMetadata>): number {
+  if (isRecordContentHandle(value)) return metadata.get(value)?.byteLength ?? 0;
+  if (Array.isArray(value)) return value.reduce((total, child) => total + assertionContentByteLength(child, metadata), 0);
+  if (value === null || typeof value !== "object") return 0;
+  return Object.values(value).reduce<number>((total, child) => total + assertionContentByteLength(child, metadata), 0);
+}
+
 function projectSealedValue(
   source: InspectionFactSource,
   value: unknown,
@@ -357,7 +370,7 @@ function projectSealedValue(
       state: "available" as const,
       byteLength: metadata.byteLength,
       sha256: metadata.digest,
-      ...(deferContent ? {} : { base64: base64(readSealedBytes(source, metadata)) }),
+      ...(deferContent ? { id: metadata.contentId } : { base64: base64(readSealedBytes(source, metadata)) }),
     }));
   }
   if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {

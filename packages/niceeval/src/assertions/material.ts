@@ -407,8 +407,8 @@ export function materialQARegistration(prepared: PreparedMaterial, question: str
     const evaluation = yield* gateway.evaluate();
     return { ...evaluation, receipt: selected.terminal() };
   });
-  return { ...registrationBase(prepared), criterion, terminalCriterion: () => gateway?.terminalCriterion?.() ?? gateway?.criterion ?? criterion, retainedBytes: prepared.sourceBytes + managed.llm.maxAuditBytes,
-    actualRetainedBytes: () => gateway === undefined ? prepared.sourceBytes : gateway.actualRetainedBytes() - fullAssertionContentByteLength(gateway.subject)! + prepared.sourceBytes,
+  return { ...registrationBase(prepared), criterion, terminalCriterion: () => gateway?.terminalCriterion?.() ?? gateway?.criterion ?? criterion, retainedBytes: prepared.sourceBytes,
+    actualRetainedBytes: () => prepared.sourceBytes,
     terminalEvidence: () => gateway?.terminalEvidence() ?? Object.freeze([]),
     terminalReceipt: selected.terminal,
     terminalDetail: () => selectionProblem === undefined ? { question } : { question, ...problemDetail(selectionProblem) },
@@ -432,8 +432,7 @@ export function contextScoreRegistration(prepared: PreparedFact, judge: Resolved
       return unavailableFactScore(prepared, error.problem);
     }
     const registration = prepareManagedScoreMatch({ match, options: managed, material: prepared.value, judge, ...(signal === undefined ? {} : { signal }), ...(usage === undefined ? {} : { usage }) });
-    const originalSubjectBytes = fullAssertionContentByteLength(registration.subject)!;
-    return { ...registration, ...registrationBase(prepared), retainedBytes: registration.retainedBytes! - originalSubjectBytes + prepared.sourceBytes, actualRetainedBytes: () => registration.actualRetainedBytes() - originalSubjectBytes + prepared.sourceBytes };
+    return { ...registration, ...registrationBase(prepared), retainedBytes: prepared.sourceBytes, actualRetainedBytes: () => prepared.sourceBytes };
   }
   if (!prepared.available) return unavailableFactScore(prepared, prepared.problem!);
   return { ...registrationBase(prepared), criterion: valueCriterion(prepared.predicate), actualRetainedBytes: () => prepared.sourceBytes, evaluate: () => evaluateScoreMatch(match, prepared.value).pipe(Effect.map((value) => ({ state: "measured" as const, value }))) };

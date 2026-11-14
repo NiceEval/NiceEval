@@ -2,15 +2,12 @@ import { Schema } from "effect";
 
 import {
   RecordBytesContentSchema,
-  recordContent,
 } from "../../attachment/index.ts";
 import type { AssertionMaterial } from "../../../assertions/record/model.ts";
 import { NonNegativeSafeIntegerSchema } from "../common.ts";
 
 /** Assertions material is always an Attachment-private sealed content value. */
-export const AssertionsMaterialContentSchema = RecordBytesContentSchema.pipe(
-  recordContent.maximumBytes(16 * 1024 * 1024),
-);
+export const AssertionsMaterialContentSchema = RecordBytesContentSchema;
 
 export type AssertionsMaterialContent = typeof AssertionsMaterialContentSchema.Type;
 

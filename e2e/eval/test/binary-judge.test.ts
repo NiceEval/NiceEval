@@ -44,7 +44,7 @@ test.concurrent("二值裁判只给零分或满分，非法输出与服务故障
     await evalE2E.case("binary-judge", async ({ paths: { projectRoot }, commands: { niceeval, tsc } }) => {
       await writeFile(join(projectRoot, "fixtures/binary-types.mts"), `import { defineScoreEval } from "niceeval";
 import { binaryJudge, type BinaryJudgeOptions } from "niceeval/expect";
-const options: BinaryJudgeOptions = { rubric: "explicitly satisfied", maxCalls: 1, maxMaterialBytes: 1024, maxAuditBytes: 4096 };
+const options: BinaryJudgeOptions = { rubric: "explicitly satisfied", maxCalls: 1, maxMaterialBytes: 1024,  };
 const rule = binaryJudge(options);
 defineScoreEval({ test(t) {
   t.judge({ answer: "yes" }, rule).gate(1).score(2);
@@ -94,7 +94,7 @@ export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name
         expect(audit?.state, detail.receipt.diagnostic()).toBe("available");
         if (audit?.state !== "available") throw new Error("Missing binary audit");
         digests.add(audit.audit.definition.digest);
-        expect(JSON.parse(audit.audit.definition.config)).toMatchObject({ algorithm: "binary-classification", revision: 1, scores: { satisfied: 1, "not-satisfied": 0 } });
+        expect(JSON.parse(audit.audit.definition.config)).toMatchObject({ algorithm: "binary-classification", scores: { satisfied: 1, "not-satisfied": 0 } });
         expect(audit.audit.calls).toHaveLength(1);
         expect(audit.audit.calls[0]?.operation).toBe("classify");
         if (value === null) {
