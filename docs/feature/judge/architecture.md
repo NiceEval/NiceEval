@@ -241,7 +241,7 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 - 用量直接取 pi coding agent 会话报告的 usage（含压缩摘要请求），按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。NiceEval 不逐次保存 HTTP 尝试；pi 内部的重试只体现在 pi 报告的 usage 里。
 - 审计保存 pi session 的完整内容：开场消息、每条 user / assistant 消息、工具调用参数与有限结果、pi 的压缩条目（摘要文本、压缩前 token），以及每道题的提交。它就是评审实际看到的对话，不是另行重建的请求副本。
 - `maxTurns` 计每道题的 assistant 轮次，替代 maxCalls。整次会话的期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值。
-- 审计容量默认 4 MiB（`maxAuditBytes` 可改）。轨迹超出容量时，当前与之后的评分题为 `unavailable`，已提交的题保留 measurement；不截断已写入的对话来腾空间。不做发送前的字节预留。
+- 审计不设字节上限，也不计入 Attempt 的文字材料与 audit 总账：完整的 pi 会话经受管 Content 分块保存，读取由 Inspection 分页。只有存储写入本身失败才影响结果，归为 errored；不因会话大小判 unavailable，也不截断对话。
 - bash 与 read 的截断发生在形成工具结果之前，模型与审计看到同一个有限结果。
 - 第一次合法提交锁定这道题的分数；同批后续工具与迟到的提交不能重新打开它。命令非零退出、文件不存在和非法提交是可纠正的工具结果。
 - 模型协议损坏与框架 defect 为 errored；pi 报告的最终请求失败、超时与未提交为 unavailable。Attempt 取消保持 interruption。

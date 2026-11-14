@@ -257,7 +257,6 @@ interface AgentJudgeDefinition {
   readonly maxTurns?: number;                 // 每道评分题的逻辑模型轮次上限，默认 40
   readonly timeoutMs?: number;                // 整次会话的墙钟上限，默认 600_000
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 
 interface AgentJudgeReview {
@@ -275,7 +274,7 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
 - 每个 `judge` 或 `grade` 是一个独立断言 entry；`chat(message)` 不产生 entry，只出现在会话轨迹里。同一会话的评分题与 chat 按调用顺序进入会话。
 - 会话只执行到最后一道评分题为止：最后一道题之后的 `chat` 不发送；没有任何评分题的会话不执行、不发模型请求，也不报错。
 - 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
-- 材料预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值与总账；审计上限默认 4 MiB，足够一次几十轮的工具评审。容量不足会得到 unavailable，不能静默丢弃轨迹。
+- 开场材料预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值。评审会话的审计不设字节上限，完整保存 pi 会话；会话大小已受模型上下文、`maxTurns` 与期限约束，存储大小不能变成评分结果。
 - 只能用在每条 Attempt 独占 Sandbox 的 Eval。评审有完整写权限，可能改动 State 路径或组内共享的现场，所以声明了 State、属于共享 Sandbox 的 Eval Group 或启用 `sandboxReuse` 的配对登记 Agent Judge 时，在规划阶段报 `judge.agent-shared-sandbox`。
 - Agent Judge 不能挂 `.stop()`：它在被测运行结束后才执行，不能作为提前停止的屏障，挂上时登记报错。
 - 模型使用 Eval × Experiment 生效的 Judge 配置，不增加 Match 级模型替换。身份与缓存规则见 [Agent Judge 架构](architecture.md#agent-judge)。
@@ -316,7 +315,7 @@ type SubmitEvaluationInput = (
 - 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本，整个提交受响应和审计字节上限约束。非法参数作为工具错误留存，模型可在这道题剩余的轮次内修正。
 - 会话很长时，pi coding agent 按它的默认设置自动压缩较早的历史再继续；压缩不占用题目的轮次。压缩后仍放不下，当前与之后的题为 `unavailable`。细则见 [架构：上下文与压缩](architecture.md#上下文与压缩)。
 - 一道题超过 `maxTurns` 仍未提交，这道题为 `unavailable`，会话继续下一项；会话期限耗尽或传输最终失败时，当前与之后的评分题都为 `unavailable`，已提交的题保留各自的 measurement。
-- 审计容量不足，或模型不调用评分工具就停止回答，当前评分题为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
+- 模型不调用评分工具就停止回答，当前评分题为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
 - 同一响应中的工具按返回顺序串行执行。一道题合法提交之后不执行同批剩余工具；失败锁存与取消不能被迟到提交清除。
 - 工具本身的失败（命令非零退出、文件不存在）作为工具结果返回给评审，不终止评审；Sandbox 传输失败让断言 `unavailable`。
 
