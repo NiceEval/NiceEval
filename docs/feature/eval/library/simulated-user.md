@@ -80,7 +80,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 | --- | --- |
 | `simulated-user-invalid-turn` | `foreign-turn`、`stale-turn`、`session-busy`、`waiting-without-requests` 或 `closed`；拒绝本次调用，不发模型请求或下一轮输入 |
 | `simulated-user-unsupported-provider` | `typesafe`；零发送，执行错误 |
-| `simulated-user-failed` | `provider-unconfigured`、`pi-unavailable`、`invalid-answer`、`no-answer`、`timeout`、`transport`、`context-overflow` 或 `capacity`；不发送下一轮输入，执行错误 |
+| `simulated-user-failed` | `provider-unconfigured`、`pi-unavailable`、`invalid-answer`、`no-answer`、`timeout`、`transport`、`context-overflow` 或 `storage`；不发送下一轮输入，执行错误 |
 
 模拟用户生成不进入 Agent send 的重试执行体，框架不额外重新发送 pi 模型请求。
 终局失败默认 `retryable: false`、`scope: "attempt"`；仅凭 Provider 类型或错误文字不触发 Eval 或 Experiment 级止损。
