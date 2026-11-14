@@ -912,7 +912,7 @@ Open: niceeval view exp:main
 component、renderer、静态导出、显示位置 handle 或其它作者面。机器输出只有 `--json` 一种，它不新增 operation 或 result shape。
 CLI 不探测 locale，只输出由 Inspection CLI presenter 直接拥有的英语文本，不建立中文或英语 message catalog。
 
-读取失败保留底层 Record 错误分类、操作与原因。只有明确需要 schema migration 时才提示迁移；忙碌读取和资源限额表示本次读取未完成，不推断已发布数据损坏。
+读取失败保留底层 Record 错误分类、操作与原因。旧格式明确提示保留原存储后重新运行，不建议不存在的迁移命令；忙碌读取和资源限额表示本次读取未完成，不推断已发布数据损坏。
 
 ## Judge 用量与总费用
 

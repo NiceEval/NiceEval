@@ -45,7 +45,7 @@ positional token 是 root，路由只删除它。root 前后的 option、值与 
 
 ```console
 $ niceeval --json exp list
-{"format":"niceeval.experiments","schemaVersion":1,"experiments":[]}
+{"experiments":[]}
 
 $ niceeval check --json
 niceeval error: Unknown option '--json'
@@ -76,12 +76,12 @@ Sandbox layers linked: 2 pairs.
 
 Docker 的 profile、image cache 和 BuildKit 是 Docker contribution 的完整领域，不是通用 Sandbox 的最小公分母。
 因此 rich command 仍留在 `docker` 下。
+Docker inventory、profile list 与 doctor 的即时 JSON 不附 `format` 或 `schemaVersion`；
+管理员提供的独立 Profile descriptor 与持久可执行 GC plan 仍受各自边界约束。
 
 ```console
 $ niceeval docker cache inventory --json
 {
-  "format": "niceeval.cache-inventory",
-  "schemaVersion": 1,
   "scope": { "kind": "domains" },
   "domains": [],
   "providerObservations": []

@@ -90,4 +90,4 @@ niceeval show @<locator> fc_<id>
 ```
 
 family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。固定 operation 不给 `show` 或 View 任何额外特权，
-也不承担 schema migration；格式演进只由 Record maintenance 的相邻 migration 处理。
+也不转换历史格式；旧 Record 在 reader 建立前拒绝，保留原存储后用当前候选重新运行。

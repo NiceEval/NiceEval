@@ -133,10 +133,14 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 YAML、Netlify 配置和 hooks 只决定平台何时调用正式命令、传入哪些可信参数，以及如何保存 artifact。选择、校验、生成、重试、领域 receipt 与错误呈现都属于 domain contribution。平台文件不得复制文件列表、状态机或成功判定。
 
 官方 Preview 的平台入口是 `pnpm preview:build`。Preview contribution 固定下游编排器，并构建当前 exact package artifact。
-它通过候选包的同一 Record 导入入口验证和迁移下游的历史 portable 数据，不重跑评估或改写下游原件。
+它通过候选包的同一 Record 导入入口验证当前格式的 portable 数据，不改写下游原件。
+旧格式明确拒绝；下游保留原存储并重新运行后，再提供新的 portable 数据。
 Function 的 Record、cutoff 和摘要来自同一已验证私有 generation；staging 完成前持有该 generation，并核对实际打包字节。
 
 同一 contribution 关闭 Netlify context identity，形成发布 closure 与 build receipt。`netlify.toml` 只调用入口并声明 publish directory 与 response headers。部署后的只读验收从 `pnpm preview:accept --input <file>` 进入，不把 Netlify token 或 GitHub token 交给领域命令。
+
+Preview 的 build receipt 保留一个完整 artifact 的格式标记。静态闭包只允许经过 Concord 正式验证的
+`concord/changes.json`，其它 JSON 一律拒绝；不保留旧 `view-page` 子格式的读取分支。
 
 PR 的文档与源码审阅由 [Concord 变更预览](architecture.md)提供。Preview contribution 取得实际目标分支与提交身份，将只读页面纳入同一发布目录；产品页读取 Record，差异页读取 Git 提交。
 

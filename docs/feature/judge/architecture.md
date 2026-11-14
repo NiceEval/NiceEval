@@ -30,8 +30,8 @@ gateway 和审计 reader 共用纯协议 Schema 与概率投影，reader 另外�
 框架同时沿用 Eval 的源码身份；不以 `Function.toString()` 推断隐藏闭包或外部状态。
 作者必须把影响评分的参数写入 config，并在算法改变时更新 version。
 自定义 criterion 只声明名称和测量尺度，不声称证明 callback 的实际语义。
-内置算法的版本、分类映射和配置共同定义它的解释。Judge authoring protocol 的 fingerprint 版本由内置算法
-owner 随规则改变维护；它不是历史 durable schema 的迁移信号。
+内置算法的行为计数、分类映射和配置共同定义它的解释。prompt 与工具 Schema 直接以实际内容计算摘要；
+无法由内容表达的算法变化才更新所属能力的行为计数，不另建 authoring protocol 编码版本。
 
 ## 预算与生命周期
 

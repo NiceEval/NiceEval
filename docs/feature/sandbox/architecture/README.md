@@ -245,8 +245,8 @@ provider 实例 id、复用池编号、承接序号、live / dormant 状态、wo
 
 读取一个已知 current family 只会得到 `available`、`not-recorded` 或 `invalid`。这三态描述已发布 closure
 的可读性；unknown/future durable bytes 在 reader session 形成前返回 `unsupported-format`，I/O 与 permission
-failure 仍是值形成前的 typed Record read error。schema 演进和 migration 只由
-Record maintenance 安排，Sandbox 不建立 converter、group 或读取侧 fallback。
+failure 仍是值形成前的 typed Record read error。旧格式不迁移；保留原存储后重新运行。
+Sandbox 不建立 converter、group 或读取侧 fallback。
 
 公开读取经过固定 Inspection operation 的闭合 result，而不是 Sandbox 直接暴露存储能力：
 

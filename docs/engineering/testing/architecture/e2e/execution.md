@@ -478,3 +478,13 @@ PR、main 与 nightly 的 E2E 继续在独立 workflow 运行。`release` lane �
 - Adapter 与 Insight Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
 - 共用 runner 不等于共用 Repo；同 batch 的功能与 Adapter 可以混装，但仍保留各自的依赖安装、secret 白名单、结果根、receipt 与 cleanup。
+
+## 工具证据的格式边界
+
+完整 case receipt 与 reliability certificate 各自保留一个持久边界标记。
+嵌套 source 与 projection 不再携带 `format` 或 `algorithm` 编码版本；严格 decoder、内容摘要、
+selector、candidate、cleanup 与签名闭包全部保留。实现闭包继续由 binding 的 implementationDigest 绑定。
+
+候选输入摘要使用无版本域分隔 `niceeval-candidate-inputs`，并纳入当前 checkout 的
+`packages/e2e-runner/src/candidate-cache.ts` 实际字节；投影规则改变会使构建缓存失效。
+不因 HEAD、无关提交或生成输出变化重建，既有输入路径、依赖闭包与 mode 仍参与摘要。

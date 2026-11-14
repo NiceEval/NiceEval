@@ -73,6 +73,20 @@ realpath 校验和逃出 owner 的处理遵循 [Eval 文件访问边界](../../e
 字符串中的能力名仍可形成保守选择。只有依赖该能力的 Eval 才加入对应内容摘要与行为计数。
 Eval Group 定义模块使用同样的文件摘要与模块图，非源码的 Group 输入仍按其实际内容计算。
 
+## 框架声明与准备输入
+
+框架生成的 hook 状态、Provider plan、Sandbox template、Plugin pair、Eval Group 与复用池描述，
+只保存实际输入，不附固定的编码 `version`。hook 仍区分 absent 与 opaque；Provider 和插件作者声明的行为 revision 保留。
+Group 的源码摘要、顺序、层与 onUnavailable，复用池的 scope、实例所有权与物理生命周期都继续参与身份。
+复用池 key 的域分隔名称为 `sandbox-reuse-pool`，不附编码版本。
+
+Docker build manifest 的摘要来自 scopeId、buildKey、provider 与 inputs，不重复加入 schemaVersion。
+DinD 准备身份对实际 bootstrap、supervisor 文本与 quiesce 命令数组组成的有序 JSON tuple 取 SHA-256；
+任一执行文本变化都会改变摘要，不用手写 revision 代替。普通排版变化不改变执行文本时，摘要不变。
+
+当前目标策略的行为计数由 runner 的 `projectTargetPolicyIdentity` 唯一拥有。
+Host dry 输出直接使用该值及其类型，不能另写一个固定副本。
+
 ## 边界与验收
 
 将源码本身作为业务数据的 `Function.prototype.toString()`、直接文件读取或依赖 `Error.stack` 行列的逻辑，不享有注释等价保证。

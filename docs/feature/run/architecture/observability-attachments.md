@@ -69,8 +69,8 @@ source 替代损坏事实。total token、cost、duration coverage、grouping �
 例如 conversation 的 unsupported item 不会把完整的 usage facts 投影成 partial。
 
 大 collection 的 view 使用 `openCollection()` 流式投影；不得先调用 whole-value `read()` 取得完整数组再分页。每个 Stream
-execution 持有自己的 storage-generation lease，physical-only migration 后可重开同一 `LogicalSealIdentity`，family migration
-后必须 restart。
+execution 持有自己的 storage-generation lease；generation 退休后必须 restart。
+不跨格式重开或转换 collection，旧 Record 格式在 reader 建立前拒绝。
 
 ## 通用事件 collection
 

@@ -262,7 +262,8 @@ replacement scope = hash(provider, execution domain, baseReference,
 
 BeforeCacheKey 不含声明方，内容相同的层仍共享同一份 artifact。共享 artifact 登记在首个发布它的声明方的替换线上：该声明方改了内容时会取代它，另一方下一次运行按 key 未命中，重新准备一次并登记在自己的线上，之后各自独立。声明方改名或删除后，它的旧替换线不再被取代，对应 snapshot 会留在账号里；这是为了不按年龄或名称猜测垃圾而接受的代价。
 
-算法版本为 `niceeval.before-cache-replacement/v2`。v1（不含声明方）登记的行仍按 BeforeCacheKey 正常命中，只是不再被 v2 的发布取代。
+replacement scope 使用声明位置与声明方的实际内容摘要，不附算法编码版本。
+账本只接受当前缓存格式；旧格式在 lookup 或发布之前明确拒绝，不尝试解释旧替换线。
 
 **发布。** publish 要求同一 artifact、当前 lease token、lease 未过期且 snapshot ID 已确认，并在同一事务插入 `run` hold。同一 replacement scope 已有更大 generation 发布时，较小 generation 改为 `deleting`，不发布。新 generation 发布时，同 scope 中较小的 ready 改为 `deleting`；scope 由声明位置决定，旧 artifact 的后代层也在各自位置被新链取代。lookup 只返回 ready。
 

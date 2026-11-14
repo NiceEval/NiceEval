@@ -26,11 +26,11 @@ Testkit 不生成 expected，也不把 `failed`、`errored`、`skipped` 互相�
 `niceeval/inspection` 拥有 16 项 operation registry、完整 document decoder 与精确窄化；Testkit 调用产品 decoder，
 不在自己的 Effect 副本中重解产品 Schema，也不重建 envelope 或 payload。
 
-成功结果可通过泛型 `querySuccess(operation)` 或具名方法读取：`overview()`、`experiment()`、`runsList()`、
+成功结果可通过泛型 `inspectionSuccess(operation)` 或具名方法读取：`overview()`、`experiment()`、`runsList()`、
 `run()`、`runSummary()`、`runOverview()`、`attempt()`、`attemptAssertionDetail()`、`attemptSources()`、
 `attemptTrace()`、`attemptTraceDetail()`、`attemptTiming()`、`attemptUsage()`、`attemptDiff()`、
-`attemptArtifacts()` 与 `runsCompare()`。`queryExplanation(operation)` 返回同一 operation 的精确 explanation；
-`queryDiscovery()` 与 `queryFailure()` 分别读取 discovery 和 failure outcome。完整解码会统一拒绝错误 protocol、
+`attemptArtifacts()` 与 `runsCompare()`。`inspectionExplanation(operation)` 返回同一 operation 的精确 explanation；
+`inspectionFailure()` 读取 failure outcome。完整解码会统一拒绝额外协议字段、
 错误 operation、多余字段及不匹配的 outcome；failure 或 explanation 不会被成功方法接收。任何失败都会附带同一命令的
 stdout/stderr diagnostic。Testkit 不折叠或兼容 verdict、phase 等产品语义。
 
@@ -38,7 +38,7 @@ Run lifecycle CLI 的 machine document 与 Inspection 不同。`runListDocument(
 `niceeval run list --json`，`runGetDocument()` 严格读取 `niceeval run show --json`；两者直接调用候选包
 `niceeval/run` 的唯一 decoder，并返回候选包派生的 `RunListDocument` / `RunGetDocument` 正式类型。
 Testkit 从根入口转出这些必要类型，但不复制 Run Schema。既有 `runsList()` / `run()` 继续只表示
-`niceeval.query/v2` inspection operation。
+当前 Inspection 的 `run.list` / `run.get` operation。
 
 `retryFailedExpEvalsOnce({ events, targets, runRetry })` 只机械执行调用方明确选出的 live Eval 单次补跑：
 串行调用保留在 owner 正文中的完整 argv，严格核对唯一返回身份、`passed` verdict 与零退出码，再按

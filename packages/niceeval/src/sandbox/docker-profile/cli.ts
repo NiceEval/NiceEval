@@ -270,8 +270,7 @@ export async function runDockerProfileCommand(
         endpointKind: entry.profile.transport.kind,
         health: "descriptor-valid",
       }));
-      if (options.json)
-        options.out(`${JSON.stringify({ format: "niceeval.docker-profiles", schemaVersion: 1, profiles: rows })}\n`);
+      if (options.json) options.out(`${JSON.stringify({ profiles: rows })}\n`);
       else
         for (const row of rows)
           options.out(
@@ -355,10 +354,7 @@ export async function runDockerProfileCommand(
       : ordered.some((check) => check.status === "BLOCKED")
         ? "BLOCKED"
         : "PASS";
-    if (options.json)
-      options.out(
-        `${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, status, checks: ordered })}\n`,
-      );
+    if (options.json) options.out(`${JSON.stringify({ alias, status, checks: ordered })}\n`);
     else
       for (const check of ordered)
         options.out(

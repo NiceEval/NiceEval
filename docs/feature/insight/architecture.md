@@ -68,7 +68,7 @@ continuation 无法在原 cutoff 继续时显示 restart-required。
 把启动错误局部化为可恢复页面；HTTP 错误携带稳定 typed code，不依赖异常文本分类，也不泄露路径、SQL、stack 或部署目录。
 
 SIGINT、SIGTERM 或页面关闭时，本机 Host 停止 listener、失效 session，并等待请求 drain 后关闭 generation readers。物理数据库、
-migration 与持久事实回收属于 Run 持久 adapter，不形成 Insight 用户流程。
+格式检查与持久事实回收属于 Run 持久 adapter；旧格式在 reader 建立前拒绝，不形成 Insight 迁移流程。
 
 PR Preview 的 SPA、唯一获准的 Function 与 Function-private canonical Record 必须属于同一 immutable deploy，并由同一
 receipt 绑定 candidate commit、Function runtime 与 Record digest。静态站不得下载 Record。Preview 只加载仓库控制的合成
