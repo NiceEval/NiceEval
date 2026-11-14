@@ -449,6 +449,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   指定 `--max-regressions <n>` 时，若退化题数超过门限则以非零退出，用于 CI 对照版本发布门禁（见 [REL-6](../../../user-story.md#周芷宁在发布前选出更合适的-agent-配置)）。
 - `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations。另给出可复制的 assertions、source、execution、timing、usage 和 diff 后续命令。
+  errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，诊断下方直接指向 `--execution` 里的命令输出。
 - `@<locator> --assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
   指定 `--entry <id>` 选择单项断言；默认以 compact 紧凑摘要交付，指定 `--full` 包含完整原始材料与上下文行。
 - `--experiment <id>... --assertions` 调用 `experiments.assertions`，按 Eval 把各 Experiment 的断言条目排成判据矩阵，见[跨 Experiment 的判据矩阵](#跨-experiment-的判据矩阵)。
@@ -458,6 +459,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   必须和 `--execution` 一起使用，按持久事件、证据、`itemId`、`toolOccurrenceId` 或 `commandId`
   直接调用 `attempt.trace.detail`。目标可以位于默认摘要之外。导入 key、原生 source eventId、
   `t<N>.c<M>`、`cmd<N>` 或数组位置不能替代持久身份；找不到时返回 selection error，不猜测相邻项。
+  命令 outline 的 Outcome 写出退出码或终止原因；每条没有以退出码 0 结束的命令，在 Next 下给出可复制的
+  `niceeval show @<locator> --execution --expand <commandId>`，展开后显示该命令完整保留的 stdout 与 stderr。
+  错误摘要里的命令输出只是截断后的尾部，读者不必猜完整输出在哪（[T-31](../../taste.md#t-31)）。
 - `@<locator> --timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
 - `@<locator> --usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
