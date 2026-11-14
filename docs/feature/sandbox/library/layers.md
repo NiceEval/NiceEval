@@ -832,7 +832,7 @@ Provider 的声明 identity、BuildKey 或 opaque marker 直接进入 fingerprin
 
 Runner 对已成功登记的 cleanup 只按实际登记栈 LIFO 执行；未执行或取得失败的命令不会产生虚假 cleanup。cleanup 保留登记时的 phase、owner 与反馈归因，只把 signal 替换成独立有界 cleanup signal。
 
-单项失败追加 `teardown-failed` diagnostic 后继续收尾。动态 cleanup 先于入口登记的 standalone after，Provider finalizer 最后运行。
+单项失败追加 `teardown-failed` diagnostic 后继续收尾；同一段收尾里多个资源各自失败时，diagnostic 按顺序列出每个失败的类型、code 与消息，服从既有的有界摘要与截断标记，不只留一句总标题。动态 cleanup 先于入口登记的 standalone after，Provider finalizer 最后运行。
 绑定完整 Case 的资源由 Provider finalizer 回收。跨 Run checkpoint 由 callback before 恢复，并在成功取得 handle 后用 `onCleanup()` 登记回存。无条件收尾使用已登记的 after；这些入口不建立第二套生命周期 API。
 
 公开入口的生命周期验收涉及以下最小矩阵：

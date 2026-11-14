@@ -215,6 +215,8 @@ Codex CLI 0.167.2 ready
   install 退出 0、复检仍未命中时按 Sandbox 准备失败处理,不把坏 Sandbox 交给 Agent。
 - **失败归准备阶段。**
   探测 配对、install 与复检都属于 `agent.install`;失败写执行错误通道事件 并形成 `errored` Verdict，附缺失命令、期望版本与下一步,不记成 Agent 做题的 `failed` channel entry。
+  错误码是 `agent.install.<reason>`，reason 沿用安装失败的具名原因（如 `verify-only`、`install-failed`、`recheck-missed`），不折成通用的 `unexpected-error`。
+  诊断正文写明失败所在的内部阶段与完整 install identity；installer 的 install 抛错属于 install 阶段，install 成功后探测仍未命中才属于复检。
 - **不静默降级。**
   安装缺少 root、可写目录或前置运行时时点名缺项;内置安装层不猜一个近似命令继续跑,也不在安装模式之间静默切换。
 
@@ -239,7 +241,9 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
   同一个 Experiment 可以选择目标平台不同的 Eval，staged payload 因此按计划目标分桶。
 - 主 Sandbox 创建后仍执行 `uname -s` / `uname -m` / `ldd`，但它只验证实际平台与计划目标完全一致；
   不一致立即以 Sandbox 准备失败终止，绝不拿实际结果改写计划或换另一份 staged payload。
-- prepare key 由 install identity、installer revision 与计划目标 platform / libc 组成。
+  读不到实际平台记 `sandbox-target-platform-detect-failed`，读到但与计划不一致记 `sandbox-target-platform-mismatch`，诊断给出计划与实际平台。
+- prepare key 由 install identity、installer revision 与计划目标 platform / libc 组成，按结构化 tuple 无歧义编码；
+  各字段的取值即使含 `@`、`+` 或 `|` 也不会让不同 identity 拼出同一个 key。
   Run 级只取得一次安装文件，多个同目标 attempt 通过 single-flight 共享。
 - 宿主进程对同一 prepare key 只持有一份 payload 字节：并发 Attempt 的上传从同一份只读缓存文件流式读取，
   不为每个 Attempt 各读一份进内存。payload 上百 MB、并发十路时，各持一份会让宿主进程占用数 GB。
