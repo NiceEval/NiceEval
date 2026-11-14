@@ -240,9 +240,9 @@ Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 autho
 
 opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
 
-每个 Before cache artifact 还保存 replacement scope：provider、execution domain、Base 引用与每层的 action id 链，不含 action 内容（定义与理由见[替换按声明位置](remote-snapshot-cache.md#发布与竞争)）。同一位置换了内容，新 generation 取代旧的；内容相同的不同声明方共用一条替换线。
+每个 Before cache artifact 还保存 replacement scope：provider、execution domain、Base 引用、每层的 action id 链与这一层的声明方，不含 action 内容（定义与理由见[替换按声明方与位置](remote-snapshot-cache.md#发布与竞争)）。同一声明方在同一位置换了内容，新 generation 取代旧的；不同声明方互不取代，内容相同时仍按 BeforeCacheKey 共享 artifact。
 
-同一 Invocation 里，两个配对落在同一 replacement scope 却有不同 BeforeCacheKey 时（例如多个 Experiment 用同一个 action id 安装不同版本），它们会互相取代、每次运行都重新准备。planning 对此发出 warning，指出冲突的 action id 与声明方，并建议给各自的 action 取不同的 id。
+同一个声明方在一次 Invocation 里落在同一 replacement scope 却有不同 BeforeCacheKey 时，它们会互相取代、每次运行都重新准备。planning 对此发出 warning，指出冲突的 action id 与声明方，并建议给各自的 action 取不同的 id。
 
 同一 replacement scope 的新 generation 发布后，NiceEval 才淘汰已被替代的 Docker image 或远端 snapshot。仍被 private clone、hold、lease 或未完成 capture 使用的旧 generation 不会删除。最后一个 hold 释放后再次尝试淘汰。
 

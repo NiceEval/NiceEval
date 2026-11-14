@@ -251,14 +251,18 @@ busy 的节点等待对方结算，不在等待期间创建 staging。对方发�
 - `Pending`：续期并等待它结束。
 - `Absent`：把该行改为 `deleting`（`snapshot_id` 为空），再重新 reserve。
 
-**替换按声明位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含每层的 action id 与 Base 引用：
+**替换按声明方与位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含每层的 action id、Base 引用，以及这一层的声明方：
 
 ```text
 replacement scope = hash(provider, execution domain, baseReference,
-                         step.positions)
+                         step.positions, declaringOwner)
 ```
 
-与 BeforeCacheKey 一样，声明方不进入 scope，不同 Experiment 共用的准备层共用一条替换线。修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。代价：两个 Experiment 在同一位置（相同的 action id 链）使用不同内容时会互相取代、交替重新准备一次。需要并存时，作者给 action 取不同的 id。
+`declaringOwner` 是这一层 action 所在的 layer owner（`experiment:<id>`、`eval-group:<id>`、`eval:<id>` 或 `agent:<id>`）。同一个声明方修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。不同声明方即使用了同名 action、内容又不同，也各在自己的替换线上，互不取代。
+
+BeforeCacheKey 不含声明方，内容相同的层仍共享同一份 artifact。共享 artifact 登记在首个发布它的声明方的替换线上：该声明方改了内容时会取代它，另一方下一次运行按 key 未命中，重新准备一次并登记在自己的线上，之后各自独立。声明方改名或删除后，它的旧替换线不再被取代，对应 snapshot 会留在账号里；这是为了不按年龄或名称猜测垃圾而接受的代价。
+
+算法版本为 `niceeval.before-cache-replacement/v2`。v1（不含声明方）登记的行仍按 BeforeCacheKey 正常命中，只是不再被 v2 的发布取代。
 
 **发布。** publish 要求同一 artifact、当前 lease token、lease 未过期且 snapshot ID 已确认，并在同一事务插入 `run` hold。同一 replacement scope 已有更大 generation 发布时，较小 generation 改为 `deleting`，不发布。新 generation 发布时，同 scope 中较小的 ready 改为 `deleting`；scope 由声明位置决定，旧 artifact 的后代层也在各自位置被新链取代。lookup 只返回 ready。
 
@@ -327,6 +331,7 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 - author action 失败：节点与后代 `failed`，依赖它的配对在派发前失败，其它分支照常。
 - 复用池：第二条 Attempt 在同一实例上执行 before，并看见第一条在 workdir 外写下的标记与仍在运行的服务。
 - 两个 Invocation 同时冷启动同一 key：只发出一次 snapshot 请求，后者以 `hit` 消费。
+- 两个 Eval 用同名 action 声明不同内容：各自发布、互不取代，下一次运行都命中；同一 Eval 改内容仍取代自己的旧 artifact。
 - 同一 Invocation 的两个 Experiment 共享前缀、之后分叉：共享节点只准备一次；两个 Run 的配对都从共享 artifact `Restored`，不出现 `hold-missing`；E2B、Instabox 与 OpenSandbox 三个 driver 各验一次。
 - busy 等待后对方发布：等待方持有自己的 `run` hold 并以 `hit` 消费。
 - 每种消费回退各给出对应的具名原因。
