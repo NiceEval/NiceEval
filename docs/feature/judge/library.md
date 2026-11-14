@@ -202,43 +202,63 @@ Agent Judge 是一个带工具的评审 agent。它在这条 Attempt 的主 Sand
 
 ### 定义与调用
 
+一次评审包含多条判据：评审 agent 把现场探索一次，再逐条提交。每条判据仍是独立的断言 entry，各自有 measurement、gate 与 score。
+二十条开放式判据不需要二十个评审各自把同一个仓库读一遍。
+
 ```ts
 import { defineAgentJudge } from "niceeval/expect";
 
-const layoutOwner = defineAgentJudge({
-  name: "install.layout.owner",
-  rubric: "Y 当且仅当 NiceEval 装进了适用的现有根工具项目或 workspace，保留原有包管理器与锁文件归属……",
-  anchors: [
-    { measurement: 0, description: "不满足 rubric" },
-    { measurement: 1, description: "完全满足 rubric" },
-  ],
+const sourceReview = defineAgentJudge({
+  name: "install.source-review",
+  instructions: "评审被测 agent 在这个仓库里为 DB-GPT 写的 NiceEval 接入：Adapter、Experiment 与 Eval 源码。",
+  criteria: {
+    "install.layout.owner": {
+      rubric: "Y 当且仅当 NiceEval 装进了适用的现有根工具项目或 workspace，保留原有包管理器与锁文件归属……",
+    },
+    "install.adapter.error-propagation": {
+      rubric: "Y 当且仅当在非 2xx、解析错误或连接中断时抛出或映射为失败……",
+    },
+  },
 });
 
 export default defineScoreEval({
   sandbox: /* … */,
   async test(t) {
     const turn = await t.send("把 niceeval 接入这个仓库。");
-    t.judge({ handoff: turn.reply }, layoutOwner).gate(0.5).score(2);
+    const review = { handoff: turn.reply };
+    t.judge(review, sourceReview.criterion("install.layout.owner")).score(3);
+    t.judge(review, sourceReview.criterion("install.adapter.error-propagation")).score(2);
   },
 });
 ```
 
 ```ts
+interface AgentJudgeCriterion {
+  readonly rubric: string;
+  readonly anchors?: readonly JudgeAnchor[];  // 省略时为二值：0 不满足，1 满足
+}
+
 interface AgentJudgeDefinition {
   readonly name: string;
-  readonly rubric: string;
-  readonly anchors: readonly JudgeAnchor[];
-  readonly maxTurns?: number;                 // 逻辑模型轮次上限，默认 40
+  readonly instructions?: string;             // 这次评审看什么、从哪里开始，所有判据共用
+  readonly criteria: Readonly<Record<string, AgentJudgeCriterion>>;  // 至少一条
+  readonly maxTurns?: number;                 // 整次评审的逻辑模型轮次上限，默认 40
   readonly timeoutMs?: number;                // 整次评审的墙钟上限，默认 600_000
   readonly maxMaterialBytes?: number;
   readonly maxAuditBytes?: number;
 }
 
-declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<JudgeMaterial>;
+interface AgentJudge {
+  readonly name: string;
+  criterion(key: string): ScoreMatch<JudgeMaterial>;
+}
+
+declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
 ```
 
-- `defineAgentJudge` 与 `AgentJudgeDefinition` 从 `niceeval/expect` 导出。name、rubric、anchors 沿用 `defineJudge` 的校验；anchors 必填。两个执行上限必须为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。
-- `t.judge(material, agentJudge)` 仍要求显式材料；没有开场上下文时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。冻结的是开场材料，Sandbox 是评审执行时的可变现场。
+- `defineAgentJudge`、`AgentJudge` 与相关类型从 `niceeval/expect` 导出。name、每条 rubric 与 anchors 沿用 `defineJudge` 的校验；criteria 的 key 是非空文本。两个执行上限必须为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。`criterion(key)` 对未声明的 key 立即报错。
+- 一条 Attempt 里，同一个 AgentJudge 登记的全部判据由一次评审完成，评审只被问到本次实际登记的判据。这些登记必须传入相同的开场材料，材料不一致在登记时报 `judge.agent-material-mismatch`。同一 AgentJudge 的同一 key 在一条 Attempt 里只能登记一次。
+- `t.judge(material, agentJudge.criterion(key))` 仍要求显式材料；没有开场上下文时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。冻结的是开场材料，Sandbox 是评审执行时的可变现场。
 - 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
 - 材料预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值与总账；审计上限默认 4 MiB，足够一次几十轮的工具评审。容量不足会得到 unavailable，不能静默丢弃轨迹。
 - 只能用在每条 Attempt 独占 Sandbox 的 Eval。评审有完整写权限，可能改动 State 路径或组内共享的现场，所以声明了 State、属于共享 Sandbox 的 Eval Group 或启用 `sandboxReuse` 的配对登记 Agent Judge 时，在规划阶段报 `judge.agent-shared-sandbox`。
@@ -272,6 +292,7 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<
 
 ```ts
 interface SubmitEvaluationInput {
+  readonly criterion: string;                 // 本次评审被问到的判据 key
   readonly measurement: number;               // [0,1] 内的有限数
   readonly rationale: string;                 // 对照 rubric 与 anchors 的理由
   readonly evidence: readonly {               // 支撑理由的证据，至少一条
@@ -282,16 +303,17 @@ interface SubmitEvaluationInput {
 }
 ```
 
-- 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本；整个提交受响应和审计字节上限约束。第一次合法提交结束评审；非法参数作为工具错误留存，模型可在剩余预算内修正。
-- 达到轮次或期限、最终传输失败、审计容量不足，或模型没有提交就停止，断言为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
-- 同一响应中的工具按返回顺序串行执行。合法提交之后不执行同批剩余工具，也不再发送模型请求；失败锁存与取消不能被迟到提交清除。
+- 每条判据提交一次；提交严格拒绝未知字段、未被问到的 criterion 与重复提交，rationale、ref 与 note 为非空文本，整个提交受响应和审计字节上限约束。非法参数作为工具错误留存，模型可在剩余预算内修正。
+- 全部判据都有合法提交时评审结束。评审结束时仍没有提交的判据各自为 `unavailable`；已合法提交的判据保留各自的 measurement。
+- 达到轮次或期限、最终传输失败、审计容量不足，或模型没有交齐就停止，尚未提交的判据为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
+- 同一响应中的工具按返回顺序串行执行。最后一条判据合法提交之后不执行同批剩余工具，也不再发送模型请求；失败锁存与取消不能被迟到提交清除。
 - 工具本身的失败（命令非零退出、文件不存在）作为工具结果返回给评审，不终止评审；Sandbox 传输失败让断言 `unavailable`。
 
 ### 执行顺序
 
-`assertions.evaluate` 先求值其它全部断言，再按登记顺序逐个执行 Agent Judge，同一 Attempt 内不并发。
+`assertions.evaluate` 先求值其它全部断言，再按每个 AgentJudge 首条判据的登记顺序逐次执行评审，同一 Attempt 内不并发。
 普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。普通断言的 `.stop()` 屏障跳过 Agent Judge，不会让它提前执行。
-后面的 Agent Judge 能看到前面评审写入的内容。rubric 的不写文件要求只是模型指令，不提供隔离保证。
+后面的评审能看到前面评审写入的内容。rubric 的不写文件要求只是模型指令，不提供隔离保证。
 
 评审命令与模型调用归属于该 Judge entry，不能进入被测 agent 的 history、工具计数、usage 或归因断言。
 评审发生在 telemetry 收口前，trace 必须能区分评审与被测应用；时间先后不能代替归属。
@@ -299,7 +321,7 @@ interface SubmitEvaluationInput {
 ### 审计、用量与读回
 
 - 每次模型请求按 Judge 用量登记，与其它受管 Judge 共用费用、预算与取消路径。
-- 断言审计保存评审实际收到的完整轨迹：每轮模型输出、工具调用参数、有限工具结果与截断标记、最终提交。截断前的原始文件和命令输出不属于完整轨迹承诺。`niceeval show @<locator> --assertions --entry <id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
+- 一次评审的完整轨迹由它的各条判据共享，每条判据的审计引用同一份轨迹并保存自己的提交。轨迹包含评审实际收到的内容：每轮模型输出、工具调用参数、有限工具结果与截断标记、最终提交。截断前的原始文件和命令输出不属于完整轨迹承诺。`niceeval show @<locator> --assertions --entry <id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
 - 理由与证据是模型的自述，不证明引用对象存在、模型实际读到或判断正确。工具轨迹留存实际观察范围，供人复核（[T-12](../../taste.md#t-12)）。
 
 ### 不做什么
@@ -315,7 +337,7 @@ interface SubmitEvaluationInput {
 - 评审不提交、超过轮次或期限、传输失败得到 unavailable；畸形模型协议与 HTTP 400 得到 errored。非法提交可修正；合法提交后同批工具与后续请求均为零。
 - direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
 - 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对登记 Agent Judge：规划阶段报 `judge.agent-shared-sandbox`；Agent Judge 挂 `.stop()` 登记报错；普通断言的 stop 屏障不触发 Agent Judge。
-- 同一 Attempt 两个 Agent Judge 按登记顺序串行，后者能读到前者写入的文件。登记在它们之后的普通归因断言先执行，结果不含评审活动。
+- 同一 AgentJudge 的三条判据只产生一次评审、三份提交；少交一条时只有这一条为 unavailable。同一 Attempt 两个 AgentJudge 按首条登记顺序串行，后者能读到前者写入的文件。材料不一致与重复登记在登记时报错。登记在它们之后的普通归因断言先执行，结果不含评审活动。
 - 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
 - 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。
 - 身份验收包含 rubric、预算、工具协议和生效模型改变后的重规划，以及未使用 Agent Judge 的既有身份不因新增默认字段漂移。历史审计保持原协议读取。

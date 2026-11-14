@@ -204,7 +204,9 @@ Agent Judge 的公开定义与工具行为单源在 [Library](library.md#agent-j
 取证工具、提交工具及其 schema 与提示模板共同由 Judge owner 管理。
 
 封口调度把待求值 entry 稳定分成普通断言与 Agent Judge 两组。
-先完成普通组，再按登记顺序串行执行 Agent Judge；entry identity、展示顺序和账本 entryIndex 仍按原登记顺序。
+先完成普通组，再按每个 AgentJudge 首条判据的登记顺序串行执行评审，一次评审结算该 AgentJudge 在本 Attempt 登记的全部判据。
+entry identity、展示顺序和账本 entryIndex 仍按原登记顺序。
+
 已求值 entry 复用 settlement，不重复执行。无 Agent Judge 时维持既有调度语义。
 普通断言的 stop 屏障只结算普通组，不触发 Agent Judge；Agent Judge 自身挂 `.stop()` 是登记错误。
 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对在规划阶段拒绝 Agent Judge（`judge.agent-shared-sandbox`），评审的写入因此只落在本 Attempt 独占、随后销毁的现场。
@@ -260,7 +262,8 @@ HTTP 取消与释放沿用现有账本关闭规则，本地关闭不声称远端
 它复用 Content 分块与摘要机制，不将工具调用写入 score-match v1/v2/v3 的封闭 operation 枚举。
 既有审计 schema、图片捕获与读取解释不变；Agent Judge 的图片开场材料仍走受管图片 Content，不能把 bytes 写进普通 JSON。
 
-审计由一个 entry 拥有，包含以下必需事实；所有序号从 1 连续递增，工具引用使用模型实际 call id。
+一次评审的轨迹（definition、input、generations、tools）只写一份，归属于该 AgentJudge 在本 Attempt 的首条判据 entry；其余判据 entry 的审计引用这份轨迹的摘要，只各自保存 submission 与 result。
+读取任一判据的 detail 都能取到完整轨迹；轨迹缺失或摘要不符时，该判据的审计为 invalid。所有序号从 1 连续递增，工具引用使用模型实际 call id。
 
 | 事实 | 内容与验证 |
 |---|---|
@@ -268,7 +271,7 @@ HTTP 取消与释放沿用现有账本关闭规则，本地关闭不声称远端
 | input | 冻结开场材料；图片保留受管 Content 描述符、摘要和初始位置 |
 | generations | 每轮 ordinal、准入或拒绝、实际请求及逐次 HTTP 尝试、原始响应或具名失败 |
 | tools | 所属轮次、call id、name、原始 arguments、校验结果、执行状态、实际有限结果与截断事实 |
-| submission | 第一次合法 SubmitEvaluationInput 与对应轮次、call id；未提交为 null |
+| submission | 该判据第一次合法的 SubmitEvaluationInput 与对应轮次、call id；未提交为 null |
 | result | measured、AuditFailure 或 interrupted；measured 必须与 submission 和 entry measurement 一致 |
 
 工具执行状态区分 completed、failed、interrupted 与 not-started。
@@ -282,14 +285,14 @@ Query、Show 与 View 共用严格 decoder，验证精确 schema、摘要、序�
 预算不足、零发送、非法提交修正与取消均保存可解释终态，不伪造完整分数。
 
 Judge 用量给 Agent Judge 每轮模型生成使用独立 operation `agent`。
-它需要 `niceeval.judge-usage` 的新 revision 2，沿用 revision 1 的全部字段，仅扩展 operation；reader 同时识别两个 revision。
-仅含既有原语的 Attempt 继续写 revision 1，含 Agent Judge 的 Attempt 写 revision 2，不能往 revision 1 写未知枚举。
+`niceeval.judge-usage` 仍是 revision 1，只在 operation 枚举里加入 `agent`；已有的 judge-usage 附件不含它，照常按同一 schema 读取。
+不为旧版本 reader 保留向前兼容：旧版本 NiceEval 读到含 `agent` 的附件按协议错误处理。
 logicalOrdinal 对应生成轮次，transmissionOrdinal 对应该轮实际 HTTP 尝试；工具调用不增加模型请求计数。
 费用、失败和取消的结算独立于工具审计容量，审计失败不能抹去已发请求。
 
 ### 身份与缓存
 
-定义摘要纳入规范化 name、rubric、anchors、所有预算、算法 version、系统提示 revision、工具 schema 与执行语义 revision。
+定义摘要纳入规范化 name、instructions、各判据的 key、rubric 与 anchors、所有预算、算法 version、系统提示 revision、工具 schema 与执行语义 revision。
 pi 依赖的可达版本由既有依赖闭包身份追踪；影响执行的适配算法改变还必须更新 owner revision。
 有效 Provider、模型、端点、执行限制与凭据声明位置沿用 Eval × Experiment 的求值身份，不保存凭据值及其 hash。
 评审中读到的文件与模型输出是结果事实，不追加入执行前 identity。
