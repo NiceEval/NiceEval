@@ -92,12 +92,14 @@ export default defineExperiment({
 
 ```typescript
 shell({
-  id: "prepare-runtimes",
-  label: "准备 Node 与 inner runtime 镜像",
-  script: new URL("./prepare-runtimes.sh", import.meta.url),
+  id: "inner-python-runtime",
+  label: "组装带 Node 的 Python runtime 镜像",
+  script: new URL("./inner-python-runtime.sh", import.meta.url),
   user: "root",
 })
 ```
+
+脚本文件仍只承担一步。装 Node、装 pnpm、拉镜像各是一步，就写成链上相邻的几个 `.before()`，不要合进一个文件（[T-36](../../../taste.md#t-36)）；这样进度、失败归因与缓存前缀都落在实际的步骤上。
 
 - `script` 接受 Eval 或 Experiment 模块相对的 `file:` URL，与 `command` 二选一；两者都给或都不给在 planning 失败。
 - planning 根据 URL 定位文件并读取一次，严格按 UTF-8 解码，不改写换行。URL 不接受 query 或 fragment；不存在、不可读、非文本或 realpath 穿出项目根时 planning 失败并写出路径，symlink 不能绕过边界。

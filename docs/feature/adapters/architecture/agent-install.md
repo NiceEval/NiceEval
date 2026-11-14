@@ -286,7 +286,7 @@ Agent install 静态身份进入 config identity；pair-owned ProviderPlan 进�
 
 - 官方构建输出可以继续由 provider 原生构建脚本预装 Agent,发布前执行同一个 探测。
 - 项目自建 template 只装任务依赖也合法;运行时的 install 循环负责补 Agent。
-- provider 可以维护带 Agent identity 的派生 cache 作为 探测 命中优化;未命中时回到任务构建输出后装 Agent。
+- provider 可以维护带 Agent identity 的派生 cache 作为 探测 命中优化;未命中时回到任务构建输出后装 Agent。Dockerfile 用[派生镜像](../../sandbox/architecture/case.md),远端 snapshot Provider 用[Agent 派生节点](../../sandbox/architecture/remote-snapshot-cache.md#agent-派生节点);作者不在 before 里预装被测 Agent。
 - 构建命令与运行时命令不强求逐字符同源;漂移由发布门与运行时复检发现。
 
 ## Sandbox 复用与复用池隔离

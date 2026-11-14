@@ -177,6 +177,7 @@ type BeforeCacheStart =
 | `snapshot-rejected` | 服务在受理前拒绝 |
 | `snapshot-uncertain` | snapshot 请求可能已被受理但没有得到 Ready |
 | `lease-lost` | 失去 `preparing` 行的 lease |
+| `agent-install-failed` | [Agent 派生节点](#agent-派生节点)的安装或复检失败 |
 
 只有 author action 失败才让配对失败：同一 action 在 Attempt 内也会以同样方式失败，提前结算省掉一批注定失败的实例（[T-5](../../../taste.md#t-5)）。其余原因都只说明缓存这次帮不上忙；Provider 若真的不可用，Attempt 会在创建自己的实例时以自己的错误失败。
 
@@ -187,6 +188,19 @@ type BeforeCacheStart =
 - 降级配对不在 Attempt 内做 lookup 或 capture，避免变成 N 个 Attempt 各自竞争。
 
 `resolveBase` 返回 `Ineligible` 的配对不进入准备图，Attempt 按 `unsupported` 真实执行。
+
+## Agent 派生节点
+
+内置 coding Agent 的 staged payload 上百 MB。Agent install 排在全部 before 之后，不在 before 前缀里；没有派生节点时，每条 Attempt 都要重新上传、解压一次，作者只好在 before 里手工预装同一版 CLI，维护第二份版本声明（[T-33](../../../taste.md#t-33)、[T-36](../../../taste.md#t-36)）。
+派生节点是[Agent install](../../adapters/architecture/agent-install.md#构建期与运行时的关系)允许的“带 Agent identity 的派生 cache”，与 [Dockerfile 派生镜像](case.md) 同一条规则：它只让 探测 首测命中，不改变安装循环、Attempt 身份或结果。
+
+- **位置**：配对的准备链（[core 的捕获步骤](#core-的捕获步骤)）之后追加一个节点，父节点是链上最后一个 eligible 节点；链为空时父节点是 Base。链在第一个 opaque action 处截断，派生节点接在截断点之前，不接在 opaque action 之后。
+- **条件**：配对的每条 install 声明都配到 installer，installer 是 `staged` 模式并带内部 cache-safe 标记；其中任一条不满足时不追加派生节点，配对照常在 Attempt 内安装。第三方 installer 与 `verify-only` 模式不参与。
+- **身份**：`AgentDerivedKey = hash(父节点 BeforeCacheKey 或 Base 身份, 计划 target platform/libc, 按声明顺序的 install identity 与 installer identity/revision/installMode, 派生节点 revision)`。它不读取 before 之后的 opaque action、credential value 或 Agent runtime before；它不进入任何 Attempt、config 或 input identity。
+- **准备**：在父节点的 staging 上（可连续推进时沿用，否则从父 snapshot 新建）按声明顺序执行与 `agent.install` 相同的 install 循环：探测、未命中时用 Run 级已准备的 staged payload 安装、复检。复检通过后照常写 artifact 标记、做挂载与敏感字节检查、quiesce 并发布 `niceeval-<artifactId>`。
+- **结算**：派生节点没有 author action，安装或复检失败都只结算为 `degraded`，原因 `agent-install-failed`，配对消费父节点，Attempt 内的安装循环按原样报告真实失败。不会因派生节点失败而让配对在派发前失败。
+- **消费**：目标配对消费派生节点时，opaque action 及其后的 before 照常在 Attempt 内真实执行；`agent.install` 仍执行完整循环，探测命中，`niceeval.agent-install` 写入的安装事件注明命中来自派生节点（[T-31](../../../taste.md#t-31)）。opaque action 改动了 Agent 目录时，探测不命中，循环照常安装。
+- **复用与回收**：派生节点与链上节点共用同一账本、hold、lease 与回收规则；`satisfiedActionCount` 不计入派生节点。
 
 ## Sandbox 复用
 
@@ -292,4 +306,6 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 - 删除领取与消费互斥：有 `sandbox` hold 或未过期 `run` hold 时不调用删除。
 - 新增不在 `preserves.disks` 内的可写挂载：`degraded(mounted-state)`；Instabox `/data` 中的 action 结果正常恢复。
 - 换 domain：不命中，也不删除另一 domain 的 artifact。
+- Agent 派生节点：第一次运行发布派生 snapshot，同批其它 Attempt 与下一次 Invocation 的 `agent.install` 探测命中、不上传 payload。
+  改 before 链上任一 eligible action，只重建该节点、其后代与派生节点；链中有 opaque callback 时，派生节点仍接在它之前并命中。
 - 取消：保留已发布的祖先，不留活跃 staging、自有 `preparing` lease 或 `run` hold。
