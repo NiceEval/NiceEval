@@ -58,8 +58,8 @@
 - `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm run repo docs reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取各 Feature/Host contribution 自有 option schema 的 help metadata；region 与源码的映射见 `packages/repo-tools/src/docs/reference-compiler.ts`）。要改这些文案，改 owner 源码后从仓库根跑 `pnpm run repo docs reference`；手改会被 `pnpm lint` 的漂移 lint 拦下。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。
 - 机器规则只是最低门槛，通过 lint 不等于文案已经好读。提交前逐段朗读；遇到「传输粘合」「停轮判定」这类内部名词串，改写成明确的主语、动作和结果，例如「Adapter 请求应用接口」「当前 Turn 等待用户选择」。
-- `apps/docs-site/zh/` 与 `docs/` 共用 `docs/writing-rules.json` 的可读性上限：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
-- 公开站禁词也从同一份 JSON 的 `siteBannedTerms` 与 `siteOnlyBannedTerms` 取值，不在这里另护一份清单。frontmatter 元数据、代码、JSX 实现与明确的生成区块不按正文计数。
+- `apps/docs-site/zh/` 与 `docs/` 的可读性上限由 `docs/writing.md` 声明：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
+- 公开站禁词由 `docs/writing.md` 的“不用的词”表及其作用范围管理，不在这里另护一份清单。frontmatter 元数据、代码、JSX 实现与明确的生成区块不按正文计数。
 - 教程正文和标题使用陈述句或祈使句，不用设问带出内容。Eval 输入、Judge 标准、终端输出等需要展示真实问句的示例不受此限制。
 - 写作指南: apps/docs-site/docs-ref/00-index.md
 

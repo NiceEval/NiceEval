@@ -23,7 +23,7 @@ pnpm run repo
   → explicit domain contribution：命令、options、help、JSON、receipt、errors、renderer
 ```
 
-Repository root 只负责进程机制。它用 `effect/unstable/cli` 解码顶层 selector，组装 `Context.Service` 所需的 Layer，并把唯一根 Effect 交给 `@effect/platform-node` 的 `NodeRuntime.runMain`。
+Repository root 只负责进程机制。它用 `effect/cli` 解码顶层 selector，组装 `Context.Service` 所需的 Layer，并把唯一根 Effect 交给 `@effect/platform-node` 的 `NodeRuntime.runMain`。
 它把最终 renderer 的输出交给终端，不拥有文档 verb、option、help、JSON shape、receipt、错误或文本 renderer。
 
 Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解释领域输入或归一化领域结果。每个领域自行定义自己的 verbs、options、`--help`、机器结果、receipt、错误和人读 renderer；不同领域可以有不同的输入与输出形状。

@@ -209,7 +209,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 
 ## 目标闭包
 
-- 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
+- 根 runner 按[候选形态](architecture/e2e/execution.md#候选形态)准备并核对 source、built 或 tarball；每个场景 Repo 在隔离副本消费所选候选，并保留原始进程收据和单文件重跑入口。
 - Testkit 跟随 checkout 测试并按 runner invocation clean-build 一次；场景 Repo 只在隔离副本安装该目录依赖，不产生第二份 tarball 信任链。
 - 每个自动化测试文件只有一个稳定 owner；Journey 不把独立结果压进同一个 `test()`。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。

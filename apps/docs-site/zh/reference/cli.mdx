@@ -22,13 +22,13 @@ description: "用 show 和 view 读取运行记录。"
 | `gap` | 当前槽位没有可沿用的结果；先核对冒号后的原因 | `niceeval exp <experiment> <eval-prefix> --dry --json` 查看比较明细 |
 | `locked` | 检测到该实验与评估用例的执行锁；不代表已完成，也不代表可沿用 | 等持锁执行结束，用 `niceeval show run:<run-id>` 查看，再运行 `--dry` |
 | `prior` | `source` 行是历史候选，并未被这次计划采用；无需删除旧结果 | `niceeval show @<locator>` 查看候选，按 `gap` 原因处理 |
-| `via` | 通过具名的身份计算版本变更证明输入等价；无需手动接受 | `niceeval exp <experiment> --dry --json` 核对变更名 |
+| `via` | 列出证明输入符合有限等价条件的规则名 | `niceeval exp <experiment> --dry --json` 核对依据；它不表示旧格式已迁移 |
 | `no slots` | 这一行没有当前计划槽位；不能当作成功执行 | `niceeval exp <experiment> --dry --json` 核对选择范围 |
 
 `source` 后面的 `verdict` 是历史判定：`passed` 为通过，`failed` 为断言失败，`errored` 为执行出错，`skipped` 为跳过。
 `errored`、`skipped` 需要按缺口原因决定重跑；用 `niceeval show @<locator>` 查看详情。
-若显示 `not-recorded`、`migration-required`、`unsupported` 或 `invalid`，表示判定附件未记录、需要迁移、版本不支持或内容无效；不能把它们读成通过。
-先运行 `niceeval show @<locator> assertions` 取证。支持的历史格式由 NiceEval 自动升级；不支持或无效的记录应保留并报告。
+若显示 `not-recorded`、`unsupported` 或 `invalid`，表示判定附件未记录、不支持或内容无效；不能把它们读成通过。
+先运行 `niceeval show @<locator> assertions` 取证。旧格式 Record 在打开时明确拒绝，不自动升级；保留或归档原文件后再重新执行。
 
 ### `--dry` 缺口代码
 
@@ -43,19 +43,17 @@ description: "用 show 和 view 读取运行记录。"
 | `source-core-invalid` | 来源的核心记录或关联不合法 | 保留证据，用 `niceeval show run:<run-id>` 取证并报告；不要改写 Record |
 | `source-publication-unavailable` | 来源 Attempt 的发布证据不可用 | 用 `niceeval show @<locator>` 取证；确认运行结束后重跑缺口 |
 | `source-attachment-unavailable` | 沿用所需附件未记录或缺失 | 用 `niceeval show @<locator> assertions` 和 `timing` 取证，再重跑 |
-| `source-attachment-migration-required` | 所需附件需要格式迁移 | 保留原项目及 `.niceeval`，用原 NiceEval 版本读取或导出；需要重新执行时使用不含 `.niceeval` 的独立项目副本 |
 | `source-attachment-unsupported` | 当前安装版本不支持来源附件 | 核对安装版本，用 `niceeval show @<locator>` 保存诊断并报告 |
 | `source-attachment-invalid` | 所需附件内容无效 | 保留记录，用 `niceeval show @<locator>` 取证并报告 |
-| `reuse-contract-domain-mismatch` | 两次结果采用不同的沿用契约版本域 | 核对 `--dry --json`；无法证明等价时重跑 |
 | `reuse-contract-mismatch` | 沿用契约不同 | 核对 `--dry --json` 中的比较项，再重跑 |
 | `identity-mismatch` | 当前执行身份与来源不同 | 阅读具体差异；必要时用 `niceeval accept @<locator> --dry` 检查采用资格，否则重跑 |
-| `identity-domain-mismatch` | 身份计算的版本域不同 | 核对 `--dry --json` 中的诊断；未登记的变化应报告，行为变化需要重跑 |
 | `duration-domain-mismatch` | 历史耗时与当前超时规则使用不同的计量域 | 用 `niceeval show @<locator> timing` 核对，再重跑 |
 | `timeout-exceeded` | 历史执行耗时超过当前超时限制 | 核对当前 `timeout`；用 `timing` 查看耗时，确认限制后重跑 |
 | `attempt-outcome-ineligible` | 历史执行状态不符合沿用条件 | 用 `niceeval show @<locator>` 排查执行问题，再重跑 |
 | `adoption-unproven` | 无法证明引用的旧结果适用于当前目标 | 用 `niceeval accept @<locator> --dry` 查看拒绝原因；不要强行采用，必要时重跑 |
 | `verdict-ineligible` | 历史判定不是可沿用的 `passed` 或 `failed` | 用 `niceeval show @<locator>` 排查 `errored` 或 `skipped`，再重跑 |
 | `score-incomplete` | 纯分数评估没有完整分数 | 用 `niceeval show @<locator> assertions` 排查判分，再重跑 |
+| `dynamic-module-unresolved` | 无法静态确定源码依赖，不能证明旧结果仍适用 | 按诊断的文件与行列改用字面量导入或受管 loader，再运行 `--dry`；保持动态加载时每次执行 |
 | `adapter-behavior-revision-required` | Adapter 未声明可用于沿用的行为版本 | 作者声明 `behaviorRevision` 后再运行 `--dry`；不要把缺失版本当作等价 |
 | `rerun-requested` | 本次 `--rerun` 主动要求执行 | 符合意图就执行；希望沿用时去掉 `--rerun` 再预览 |
 | `sandbox-retention-requested` | 本次 `--keep-sandbox` 要求真实执行 | 符合意图就执行；希望沿用时去掉该选项再预览 |
@@ -64,7 +62,7 @@ description: "用 show 和 view 读取运行记录。"
 ### `--dry` 差异摘要
 
 `changed`、`added`、`removed` 分别表示输入变化、新增或移除；先审阅该输入，再决定执行。`unknown` 表示无法比较，应查看 `--dry --json` 的诊断。
-`config:` 是配置，`plan:physical` 是执行计划，`plugins:` 是生命周期插件，`source:` 与 `data:` 分别是源码和受管数据。
+`niceeval:` 是依赖的框架能力，`config:` 是配置，`plan:physical` 是执行计划，`plugins:` 是生命周期插件，`source:` 与 `data:` 分别是源码和受管数据。
 
 结构化摘要完整时会显示具体值。摘要不完整时，`summary sha256:<短哈希>` 区分两侧已保存的摘要；它不是完整执行身份的 digest，也不能恢复被省略的字段。
 如果两份不完整摘要恰好相同，会显示一次 `comparison unavailable`，并说明无法比较的原因；这不代表输入相同。

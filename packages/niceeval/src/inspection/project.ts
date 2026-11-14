@@ -189,7 +189,6 @@ function gapReason(
     case "source-publication-unavailable":
       return "not-published";
     case "identity-mismatch":
-    case "identity-domain-mismatch":
       return "identity-mismatch";
     case "attempt-outcome-ineligible":
     case "verdict-ineligible":

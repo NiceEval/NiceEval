@@ -45,6 +45,9 @@ consumer 不能经 alias、fallback 或 Node 专用入口取得 source lifecycle
 closure 也不能进入 NiceEval 的 Inspection source、select、facts、projection、CLI、Scope、service 或 layer 边界。
 该检查不读取 candidate exports 来生成 expected，也不扫描会受 minify、chunk 或命名变化影响的 bundle 文本。
 
+模块归属按安装入口实际解析出的包根判断，不依赖路径中是否含 `node_modules/niceeval`。纯 Record Schema（包括 source receipt）属于协议数据；不能仅凭名称含 `source` 将它当成 Inspection 的资源读取入口。
+协议校验所需的排序规则、限额和 Schema 与业务聚合、Node 身份计算分开定义；读写双方共用同一份纯定义。
+
 ## 不重复建立的测试
 
 - 预制配方中的具体依赖版本、安装命令拼写和 marker hash 不属于 Package 的稳定输出契约，不复制进 expected。
