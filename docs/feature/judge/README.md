@@ -17,7 +17,6 @@ export default defineConfig({
 });
 
 const followsIntent = defineJudge({
-  name: "follows-intent",
   rubric: "根据 intent 评价 post 是否保留明确要求，没有编造未给出的时间。",
   anchors: [
     { measurement: 0, description: "偏离意图或编造关键信息" },
