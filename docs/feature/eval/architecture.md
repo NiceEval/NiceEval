@@ -68,6 +68,8 @@ Node builtin 与 NiceEval 运行时源码不复制进源码闭包；NiceEval run
 共享模块可能只被 Node 求值一次，发现器不能依赖逐 Eval 重复求值来收集 loader 事实。
 模块 DAG 保存每个模块登记的 loader、criteria 与 private 输入，再把传递闭包投影到每条可达 Eval。
 两条 Eval import 同一模块时，都得到该模块的数据事实；仅改变该模块时，只使可达它的 Eval 重新规划。
+模块的数据事实只包含该模块顶层求值期间的读取。读取时调用栈（含 `async` 帧）上出现当前 Eval 入口，
+就只归这条 Eval，不进入执行读取的共享模块；Eval 顶层调用共享函数逐题读 fixture 时，各题指纹互不包含。
 
 路径校验和文件哈希按 package root 缓存，共享物理文件只读一次，再生成逐 Eval manifest。
 缓存使用真实路径、stat 与内容哈希，不能以 package version 作为整套题的失效键。

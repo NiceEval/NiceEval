@@ -230,9 +230,13 @@ export interface DatasetDefinition<TRow = unknown, Kind extends "pass" | "score"
 
 | 调用发生在 | 结果 |
 |---|---|
-| 发现期的模块顶层：Eval 文件，或它静态 import 的共享模块 | 读取并登记；内容进入每条经 import 可达该模块的 Eval 的指纹 |
+| 发现期的模块顶层：Eval 文件，或它静态 import 的共享模块 | 读取并登记；共享模块在自己顶层读入的文件进入每条经 import 可达该模块的 Eval 的指纹 |
 | `test(t)`、lifecycle hook 或其它运行期代码 | 抛出 `LoaderOutsideDiscoveryError`，不读取文件 |
 | 没有 NiceEval 宿主的进程 | 只读取并返回内容，不登记 |
+
+登记归属看读取发生时谁在求值，不看 loader 调用写在哪个文件。
+Eval 文件在顶层调用共享模块导出的函数，函数里的 loader 读取只进入这条 Eval 的指纹，即使中间有 `await`；
+所以每题各读各自 fixture 的公共函数可以放在共享模块里，新增一道题不会作废其它题。
 
 没有 NiceEval 宿主的进程，指从未进入 NiceEval 发现的进程，例如用 `node --test` 或 `tsx` 直接导入共享模块的单元测试。
 这样的进程里没有 Eval 指纹，所以不存在漏登记；共享模块因此可以脱离 NiceEval 单独测试。

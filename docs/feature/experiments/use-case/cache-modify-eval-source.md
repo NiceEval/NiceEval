@@ -14,6 +14,8 @@
 `loadYaml` / `loadJson` / `loadText` 读入的文件也属于源码闭包。
 改一行测试数据或判据文件时，依赖它的 Eval 重新计算指纹，不需要手动使用 `--rerun`。
 需要把单个文件内容读进定义值时用 `loadText`；用 `fs` 自行读入的文件进不了指纹。
+Eval 顶层调用共享模块里的函数读自己的 fixture 时，改这份 fixture 只重跑这条 Eval；
+共享模块在自己顶层读入的文件改了，所有导入它的 Eval 重跑。
 
 通过普通本地上传实际读取的测试树会进入 transfer manifest（用法见[本地测试文件](../../eval/use-case/criteria-files.md)），对树的每类改动按下表查后果：
 
