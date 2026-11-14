@@ -17,13 +17,13 @@
    niceeval show @01JSHOWATTEMPT usage
    ```
 
-2. 加上 `--json`，同一条命令改为输出 `attempt.usage` 的 `niceeval.inspection/v1` document，一行一个，没有标题、表格或提示行。 {#same-command-json}
+2. 加上 `--json`，同一条命令改为输出 `attempt.usage` 的 document，一行一个，没有标题、表格或提示行。 {#same-command-json}
 
    预期输出（摘要）：
 
    ```text
    $ niceeval show @01JSHOWATTEMPT usage --json
-   {"protocol":"niceeval.inspection/v1","outcome":"success", … }
+   {"outcome":"success", … }
    ```
 
 3. 脚本需要判定和用量两部分时，去掉方面词。`@<locator>` 依次调用 `attempt.get` 与 `attempt.usage`，输出两行，它们来自同一个 `PublicationCutoff`。 {#attempt-two-lines}

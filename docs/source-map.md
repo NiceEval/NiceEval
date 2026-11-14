@@ -18,7 +18,7 @@ Run 保存已发布 Attempt 与运行生命周期事实，固定 Inspection Oper
 | Experiment 命令与 Invocation status | `packages/niceeval/src/experiment/host/` 的高层 typed operations 与 `cli/` contributions；Runner 与 session 存储保持 Host 私有 |
 | 项目初始化 | `packages/niceeval/src/project/` 的 Host operation、平台 capability 与 `init` contribution |
 | Run 发现、读取、删除与 recovery | `packages/niceeval/src/run/host/index.ts` 是公开 Node Host 入口；`runtime.ts` 保留真实 Service requirement，供 CLI bootstrap 组合；`packages/niceeval/src/record/` 是内部 SQLite adapter，不是公开边界 |
-| 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/{protocol,public,select,facts,source,sources}.ts`：`protocol.ts` 的 typed registry 是 operation 全集的唯一出处，并唯一派生 request、success、explanation、discovery、Schema、公开类型与 decoder；`niceeval/inspection` 是唯一纯跨运行时公开入口。Node CLI 与 View Host 都在 Node 进程内打开 Run facts 并调用内部 selector；浏览器只经 HTTP 取得关闭后的 document。 |
+| 固定运行后 discovery、detail 与 comparison | `packages/niceeval/src/inspection/{protocol,public,select,facts,source,sources}.ts`：`protocol.ts` 的 typed registry 是 operation 全集的唯一出处，并唯一派生 request、success、explanation、failure、Schema、公开类型与 decoder；`niceeval/inspection` 是唯一纯跨运行时公开入口。Node CLI 与 View Host 都在 Node 进程内打开 Run facts 并调用内部 selector；浏览器只经 HTTP 取得关闭后的 document。 |
 | `show` / `compare` 与 runtime View | `packages/niceeval/src/show/`、`packages/niceeval/src/inspection/cli/` 与 `packages/niceeval/src/view/`；Delivery 不重新解释 Run facts |
 
 `packages/niceeval/src/cli/bootstrap.ts` 只能组合这些 Host、source adapter 与 Feature contribution。它不直接调用 `packages/niceeval/src/runner/`、内部 SQLite reader、family decoder 或

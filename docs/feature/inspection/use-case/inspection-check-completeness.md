@@ -51,7 +51,7 @@ outline 只允许以它暴露的稳定 identity 展开 detail。missing、partia
 Evidence 都是结果的一部分；renderer 不猜相邻项、不读取当前工作树补事实，也不输出已经成功 section 的半张结果。
 
 有界列表继续读取时，调用方原样传回 opaque continuation token，即执行 `next-page` link 的命令。token 所绑定的 request、source identity、
-`PublicationCutoff` 或 `behaviorVersion` 变化时，调用方重新开始，不能拼接不同读取边界的页。
+或 `PublicationCutoff` 变化时，调用方重新开始，不能拼接不同读取边界的页。
 
 需要浏览器连续审阅时进入 [Insight](../../insight/README.md)；Insight 在自己的读取开始时固定 cutoff，并执行相同的
 Inspection operation，而不是消费本次 CLI document。

@@ -43,7 +43,7 @@ Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff
 
 测试再验证每个固定 operation 都能由一条 `show` 命令到达，并以 `show … --explain` 审计 selection 和 fact kinds。
 
-`show --json` 返回含 operation identity、behavior version、publication cutoff、issues、Evidence、usage 与 Run / Attempt 公开身份的闭合 `niceeval.inspection/v1` document。每个 operation 各写一行 canonical JSON document，交付协议与 behavior version。fixture 显式携带 conversation partial limitation；完整 usage 保留 input/output totals。
+`show --json` 返回含 operation identity、publication cutoff、issues、Evidence、usage 与 Run / Attempt 公开身份的闭合 document，不带协议名或版本号。每个 operation 各写一行 canonical JSON document。fixture 显式携带 conversation partial limitation；完整 usage 保留 input/output totals。
 
 `overview.get` 必须在一次读取中关闭 `main`／`alternate` × `inspection` cell 的 latest logical-slot membership。
 

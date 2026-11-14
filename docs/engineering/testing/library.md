@@ -106,7 +106,7 @@ candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未�
 |---|---|
 | `process.ts` | `Argv`、`RunProcessOptions`、`DiagnosticTruncation`、`ProcessReceipt`、`ProcessStartError`、`runProcess`、`command`、`DIAGNOSTIC_LIMIT`；`ExpEvent` / `ExpStartEvent` / `ExpEvalEvent` / `ExpErrorEvent` 及对应 Schema |
 | `exp-protocol.ts` | 转出 `niceeval/experiment/host` 的 `ExpTerminalEvent`、`ExpTerminalSummary`、`InvocationReceipt` 与 `decodeExpTerminalEvent` |
-| `query-protocol.ts` | 转出 `niceeval/inspection` 的 `QUERY_PROTOCOL`、`INSPECTION_OPERATION_IDS`、`decodeInspectionDocument`、`narrowInspectionSuccess`、`narrowInspectionExplanation` 与 Query 文档类型 |
+| `query-protocol.ts` | 转出 `niceeval/inspection` 的 `INSPECTION_OPERATION_IDS`、`decodeInspectionDocument`、`narrowInspectionSuccess`、`narrowInspectionExplanation` 与 Inspection document 类型 |
 | `inspection-request.ts` | `withInspectionRequest` |
 | `run-protocol.ts` | 转出 `niceeval/run` 的 `RUN_PROTOCOL`、`decodeRunDocument`、`RunListDocument`、`RunGetDocument` 等 |
 | `view-lifecycle.ts` | 转出 `niceeval/view` 的 `VIEW_LIFECYCLE_PROTOCOL`、`decodeViewLifecycle` 与 lifecycle 事件类型 |
@@ -124,8 +124,8 @@ candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未�
 
 - 通用：`diagnostic()`、`json()`、`ndjson()`；
 - `niceeval.exp`：`expTerminal()`、`expReceipt()`、`expEvents()`、`expEvalEvents()`、`expErrorEvents()`；
-- `niceeval.inspection`：`inspectionSuccess(operation)`、`inspectionExplanation(operation)`、`inspectionFailure()`，读取 `show --json` 与 `show --explain` 的 document；
-- `niceeval.inspection` 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
+- Inspection：`inspectionSuccess(operation)`、`inspectionExplanation(operation)`、`inspectionFailure()`，读取 `show --json` 与 `show --explain` 的 document；
+- Inspection 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
 - `niceeval.run`：`runListDocument()`、`runGetDocument()`。
 
 
@@ -140,7 +140,7 @@ argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` �
 `niceeval/run` 唯一严格 decoder，并分别返回正式 `RunListDocument` 与 `RunGetDocument`。Testkit 只转出这些
 候选包类型，不维护第二套 Run Schema；错误 protocol、operation、多余字段或非法闭合集取值都由产品 decoder 拒绝，
 错误再附上同一 `ProcessReceipt` diagnostic。它们不替代 inspection 的 `runsList()` / `run()`，后两者读取
-`niceeval.inspection/v1`。
+`show --json` 的 document。
 
 ### E2E 正文准入门
 

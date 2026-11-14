@@ -11,4 +11,4 @@ Inspection 的命令与输出契约单源始终在 [CLI](../cli.md)，读取语�
 - [把终端里看到的结果交给脚本](inspection-show-as-json.md)：在 `show` 后加 `--json` 取得 document，再顺着 `links` 下钻。
 
 需要在浏览器审阅同一已发布事实时，进入 [Insight](../../insight/README.md)。Insight 经
-sqlite-wasm 在固定 `PublicationCutoff` 上运行相同的 operation definition；UI 只呈现其 result，不读取 CLI protocol document。
+sqlite-wasm 在固定 `PublicationCutoff` 上运行相同的 operation definition；UI 只呈现其 result，不读取 CLI 输出的 document。

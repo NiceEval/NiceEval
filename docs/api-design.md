@@ -803,6 +803,6 @@ slot 在仓库里同时指 Run 的 expected 位置、全局并发名额、Adapte
 Planned attempt 与 Attempt 的关系不变：Attempt 是已发布的执行事实，Planned attempt 是 Run 对它的期望位置，
 通过 Member 以 origin 或 reference 方式绑定，未绑定时以 absence reason 收口。
 
-Inspection document 的字段按上表改名，其余结构不变；`/inspection` 的 decoder 只接受当前协议 `niceeval.inspection/v1`。
+Inspection document 的字段按上表改名，其余结构不变；机器输出不带协议标识，`/inspection` 的 decoder 只接受当前形状。
 Record 的 slot 列、`RunSlotPublication` 等持久编码与 identity 编码不改，只在 projection 边界映射。
 `docs/concepts.md` 的 `执行槽位` 条目改为「计划 Attempt / Planned attempt」，所有 Feature 与公开文档同步。

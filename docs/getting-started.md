@@ -98,7 +98,7 @@ current NiceEval 会在只读打开时验证精确 schema、SQLite 完整性和�
 ## 接进 CI
 
 在 CI 中运行同一条 `niceeval exp` 命令。进程退出状态结合 Invocation completion 和 Verdict；
-机器调用方使用 `show --json` 的 `niceeval.inspection/v1` document 读取已停稳结果，不打开 Record 私有文件或 reader API。
+机器调用方使用 `show --json` 的 document 读取已停稳结果，不打开 Record 私有文件或 reader API。
 
 ## 接着读
 

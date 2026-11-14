@@ -265,7 +265,7 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 这不是整局附件的下载入口，也不重新调用外部系统。
 
 `attempt.trace` 的可选 `traceId`、`sourceId`、`actorId`、`eventType` 精确筛选通用轨迹；每页最多 32 个事件且事件摘要至多 64 KiB。
-`execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff、family revision 和 behavior version；
+`execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff 和 family revision；
 续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
 Inspection 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”只表示完整取回
@@ -319,8 +319,7 @@ interface PlannedAttemptMember {
 `relation`、`outcome`、`coverage`、`usage` 与 `limitations`；`experiment.get` 追加 `runId` 与 `labels`。
 追加字段只增不改共享字段的位置。
 
-这个形状属于 `niceeval.inspection/v1`；decoder 只接受 `niceeval.inspection/v1`，读到其它 protocol ID 的 document 时以 protocol 不匹配失败，
-而不是在旧路径上静默得到 `undefined`。
+decoder 只接受这一形状；缺少必填字段或带未知字段的 document 明确解码失败，而不是在旧路径上静默得到 `undefined`。
 
 Run 已命中但 expected Member 未观测时，result 保留 `missing` Member 与不相等的 denominator。
 partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败或零补齐。
@@ -328,9 +327,9 @@ partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败
 
 ## machine 输出与错误面
 
-`show --json` 与 `show --explain` 输出的 document 使用 protocol `niceeval.inspection/v1`。投影调用的每个 operation 恰好向 stdout 写一行 canonical
-`InspectionDocument`。其 `outcome` 穷尽为 `success | explanation | failure`。
-success 编码 operation result，并带 `behaviorVersion`、source、`PublicationCutoff`、selection、limits、issues、Evidence 与 [`links`](#下一步与-links)。
+`show --json` 与 `show --explain` 为投影调用的每个 operation 恰好向 stdout 写一行 canonical `InspectionDocument`。
+document 不带协议名或版本号（[T-40](../../taste.md#t-40)）。其 `outcome` 穷尽为 `success | explanation | failure`。
+success 编码 operation result，并带 source、`PublicationCutoff`、selection、limits、issues、Evidence 与 [`links`](#下一步与-links)。
 explanation 交付同一 operation 的读取范围与 fact kinds。failure 交付 code、reason 与 correction。
 
 `--explain` 对同一对象、方面与 ID 输出 explanation document：将读取的 source、selection、comparison mode 与 fact kinds，
@@ -345,7 +344,7 @@ CLI 的对象、方面与 ID 不合法属于 argv 错误，见下文。
 它不含路径。`PublicationCutoff` 只有 [Run 架构](../run/architecture/README.md#publicationcutoff) 定义的 `storeGeneration` 与 `revision`，不含 Run 计数；
 codec 的 allowed/required fields、base envelope 与 `run.list` envelope 都使用这一形状。
 
-这个 protocol document 只属于 CLI 编码边界，不是 Insight 输入、View DTO、缓存或第二份持久
+这个 document 只属于 CLI 编码边界，不是 Insight 输入、View DTO、缓存或第二份持久
 artifact。CLI、Web 与 Testkit 都从 `niceeval/inspection` 取得同一 Schema、类型与 decoder。Testkit 与 E2E 通过 `show --json` 或库内 `selectInspectionOperation` 取得 document，
 只在完整 decode `InspectionDocument` 后按 `outcome` 和 operation 语义窄化，不维护宽松 JSON shape。浏览器不打开 facts、不运行 selector：View Host 在 Node 进程内执行同一 operation，经 HTTP 返回 document；浏览器不请求或反序列化 `show --json` stdout。
 
@@ -867,7 +866,7 @@ Open: niceeval view @01JSHOWATTEMPT assertions
 
 ```text
 $ niceeval show @01JSHOWATTEMPT assertions --json
-{"protocol":"niceeval.inspection/v1","outcome":"success", … ,"links":[{"rel":"assertion","command":"niceeval show @01JSHOWATTEMPT ae_5c8e2a0f7d3b1e6c9a4f --full"}, …]}
+{"outcome":"success", … ,"links":[{"rel":"assertion","command":"niceeval show @01JSHOWATTEMPT ae_5c8e2a0f7d3b1e6c9a4f --full"}, …]}
 ```
 
 Experiment 对象是下钻动作，直接显示完整明细，不要求 `--all`：

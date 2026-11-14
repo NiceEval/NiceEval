@@ -28,7 +28,7 @@ Run facts at PublicationCutoff → shared fixed Inspection operation
 | 两组 Run 的质量与成本 | `runs.compare` 以 `side-by-side`、`exact` 或 `paired` 返回成员、分母、missing、Evidence 与可比性。 |
 | 一次读取会读什么、怎样解释 | 任一 `show` 命令加 `--explain`，给出 source、selection、comparison mode 与 fact kinds，不读取重 payload。 |
 
-machine protocol 始终保留 selection audit、denominator、limits、issues 与 Evidence。
+机器 document 始终保留 selection audit、denominator、limits、issues 与 Evidence。
 Human renderer 只能在这些闭合值上排序、控制宽度和选择文字布局，不得重算业务判断。
 
 ## 固定 operation 边界

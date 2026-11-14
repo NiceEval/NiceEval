@@ -83,7 +83,7 @@ collector 先验证整份输入和同 Attempt 的附件证据，再接纳不可�
 原生 collection 的 plain-data 限制不取消此闭合义务，未经校验的 artifactId 字符串不能替代验证。
 
 读取按存储页扫描并控制内存，不宣称常数时间索引查询。每页响应受条数和 UTF-8 字节预算共同限制。
-分页省略与采集 partial 分开；continuation 固定 origin Attempt、source、cutoff、revision、operation、behaviorVersion 和全部过滤条件。
+分页省略与采集 partial 分开；continuation 固定 origin Attempt、source、cutoff、revision、operation 和全部过滤条件。
 任一条件变化要求重新开始，不能从另一个快照继续。旧 identityIndex 也必须有界且报告遗漏。
 
 新 family 缺席为 not-recorded；内建 Agent 投影可以同时存在，但不能遮盖损坏的新 family。

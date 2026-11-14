@@ -132,14 +132,14 @@ connection 与 statement lifecycle。固定历史路径调用 `selectInspectionO
 `project.get` 另接收 Experiment Host 生成的冻结当前输入；其 owner 规则见[当前结果可用性](../experiments/architecture/cache.md#当前结果可用性与执行选择)。
 浏览器只消费 Host 交付的正式 result，不加载项目模块、不重新计算适用性。仅有 Record 的 Preview 显式显示历史 Results。
 
-每个 result envelope 包含 protocol、operation、`behaviorVersion`、source identity、`PublicationCutoff`、selection、
+每个 result envelope 包含 operation、source identity、`PublicationCutoff`、selection、
 limits、issues、Evidence 与 result。source provenance 不含物理路径。Node operation 在编码前关闭 reader 与内容 handle；
 浏览器在切换 cutoff 后释放旧 generation。
 
 列表与重 payload 使用 bounded domain page。
 读取身份包含同一 pinned transaction 内的 publication clock。Run 创建、Attempt publication 和 Run 收口都改变该身份；仅散列已发布 Core 不能表示生命周期变化。
 
-opaque continuation token 绑定 operation、canonical request、source identity、`PublicationCutoff` 与 `behaviorVersion`。
+opaque continuation token 绑定 operation、canonical request、source identity 与 `PublicationCutoff`。
 任一变化都返回 restart-required，不能把不同 cutoff 的页拼成一个结果。
 
 Inspection 拥有已发布事实及冻结当前输入的选择、解释与闭合 result。当前目标求值及沿用资格属于 Experiment Host。

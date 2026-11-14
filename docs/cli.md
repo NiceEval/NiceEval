@@ -146,7 +146,7 @@ canonical .niceeval/record.sqlite or hostile external import
 pinned facts
   ↓ internal Inspection selector
 closed operation document
-  ├─ protocol codec → niceeval.inspection/v1 outcome union
+  ├─ document codec → outcome union
   └─ viewHost → fixed loopback View
 ```
 
