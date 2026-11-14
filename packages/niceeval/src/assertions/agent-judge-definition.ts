@@ -3,8 +3,8 @@
 // @concord-implements docs/feature/judge/architecture.md
 
 import { Predicate } from "effect";
-import { defineJudge, type JudgeAnchor } from "./judge.ts";
-import { managedScoreMatchOf } from "./match.ts";
+import type { JudgeAnchor } from "./judge.ts";
+import { judgeMaterialBudget, judgeRubricAndAnchors } from "./judge-definition.ts";
 
 /** Configures one reviewer for conversational scoring in the Attempt's exclusive Sandbox. */
 export interface AgentJudgeDefinition {
@@ -70,12 +70,7 @@ export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
     "timeoutMs",
     "maxMaterialBytes",
   ]);
-  managedScoreMatchOf(
-    defineJudge({
-      rubric: "Review the requested question using Sandbox evidence.",
-      ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: input.maxMaterialBytes as number }),
-    }),
-  )!;
+  judgeMaterialBudget(input.maxMaterialBytes);
   if (
     input.instructions !== undefined &&
     (typeof input.instructions !== "string" ||
@@ -105,9 +100,12 @@ export function agentJudgeQuestion(
   const input = options === undefined ? {} : dataObject(options, "Agent Judge question options", ["anchors"]);
   if (kind === "grade" && input.anchors === undefined) throw new TypeError("Agent Judge grade requires anchors");
   if (kind === "judge" && options !== undefined) throw new TypeError("Agent Judge judge accepts only a criterion");
-  const definition = managedScoreMatchOf(
-    defineJudge({ rubric: prompt, ...(kind === "grade" ? { anchors: input.anchors as readonly JudgeAnchor[] } : {}) }),
-  )!;
-  const config = definition.config as unknown as { readonly rubric: string; readonly anchors: readonly JudgeAnchor[] };
-  return { rubric: config.rubric, anchors: kind === "grade" ? config.anchors : null };
+  const question = judgeRubricAndAnchors(prompt, kind === "grade" ? input.anchors : undefined);
+  // Match config capture sorts object keys; preserve that observable anchor order.
+  const anchors = Object.freeze(
+    question.anchors.map(({ description, measurement }) =>
+      Object.freeze({ description, measurement: Object.is(measurement, -0) ? 0 : measurement }),
+    ),
+  );
+  return { rubric: question.rubric, anchors: kind === "grade" ? anchors : null };
 }

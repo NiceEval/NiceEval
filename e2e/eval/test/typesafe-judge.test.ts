@@ -48,7 +48,7 @@ test.concurrent("TypeSafe 概率映射与批量分类可复核且提取能力明
         const audit = assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit;
         expect(audit?.state, detail.receipt.diagnostic()).toBe("available");
         if (audit?.state !== "available") throw new Error("Missing TypeSafe audit");
-        expect(audit.audit.schemaVersion).toBe(2);
+        expect(audit.audit.kind).toBe("typed");
         if (value === null) {
           expect(audit.audit.result).toMatchObject({ state: "unavailable", code: "judge-capability-unavailable" });
         } else {

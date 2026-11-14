@@ -53,7 +53,7 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", 
       expect(JSON.stringify(detail.document.assertion)).toContain("attempted");
       expect(JSON.stringify(detail.document.assertion)).toContain("pending-marker");
       expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
-        state: "available", audit: { schemaVersion: 3, result: { state: "interrupted" },
+        state: "available", audit: { kind: "images", result: { state: "interrupted" },
           images: [{ mediaType: "image/png" }],
           calls: [{ state: "admitted", attempts: [{ transport: "attempted", result: { state: "interrupted" } }] }],
         },

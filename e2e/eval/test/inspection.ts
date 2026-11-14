@@ -6,6 +6,7 @@ export type AttemptInspectionOperation =
   | "attempt.get"
   | "attempt.trace"
   | "attempt.timing"
+  | "attempt.usage"
   | "attempt.diff";
 
 export type AssertionIndexEntry = InspectionSuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
@@ -79,7 +80,7 @@ export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
   options: RunProcessOptions = {},
 ): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<Kind> }> {
 
-  const receipt = await niceeval.run(["show", locator, ...({ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.diff": ["diff"] }[operation]), "--json"], options);
+  const receipt = await niceeval.run(["show", locator, ...({ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.usage": ["usage"], "attempt.diff": ["diff"] }[operation]), "--json"], options);
   return { receipt, document: receipt.inspectionSuccess(operation) };
 }
 
