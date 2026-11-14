@@ -227,22 +227,30 @@ export default defineScoreEval({
 interface AgentJudgeDefinition {
   readonly name: string;
   readonly rubric: string;
-  readonly anchors: readonly JudgeAnchor[];   // 与 defineJudge 同形，至少两个，measurement 落在 [0,1]
-  readonly maxTurns?: number;                 // 模型轮次上限，默认 40
-  readonly timeoutMs?: number;                // 整次评审的墙钟上限，默认 10 分钟
+  readonly anchors: readonly JudgeAnchor[];
+  readonly maxTurns?: number;                 // 逻辑模型轮次上限，默认 40
+  readonly timeoutMs?: number;                // 整次评审的墙钟上限，默认 600_000
+  readonly maxMaterialBytes?: number;
+  readonly maxAuditBytes?: number;
 }
 
 declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<JudgeMaterial>;
 ```
 
-- 材料可选：`t.judge(material, agentJudge)` 的材料作为评审开场上下文（例如被测 agent 的交接回复）；没有材料时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。
+- `defineAgentJudge` 与 `AgentJudgeDefinition` 从 `niceeval/expect` 导出。name、rubric、anchors 沿用 `defineJudge` 的校验；anchors 必填。两个执行上限必须为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。
+- `t.judge(material, agentJudge)` 仍要求显式材料；没有开场上下文时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。冻结的是开场材料，Sandbox 是评审执行时的可变现场。
 - 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
-- 名字、rubric、anchors、`maxTurns`、`timeoutMs` 与工具集 revision 进入断言定义身份，改动后这条 Eval 重新规划。
+- 材料与审计预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值、上限与总账。较长评审应显式提高 `maxAuditBytes`；容量不足会得到 unavailable，不能静默丢弃轨迹。
+- 模型使用 Eval × Experiment 生效的 Judge 配置，不增加 Match 级模型替换。身份与缓存规则见 [Agent Judge 架构](architecture.md#agent-judge)。
 
 ### 评审 agent
 
 评审 agent 由 NiceEval 在宿主进程里用 `@earendil-works/pi-agent-core` 运行（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步）。
-模型取这条 Eval 生效的 Judge Provider 与模型：`OpenAIProvider`、`OpenRouterProvider`、`VercelProvider` 走它们的 OpenAI 兼容接口；`TypesafeProvider` 不支持对话与工具，这条断言为 `unavailable`，原因 `agent-judge-unsupported-provider`。
+模型取这条 Eval 生效的 Judge Provider 与模型。聊天 Provider 通过受管 Chat Completions 工具协议执行；接口兼容不保证所选模型支持工具。
+`TypesafeProvider` 在发送前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。
+
+`maxTurns` 计每轮逻辑模型生成，重试不另占轮次，工具调用不算模型轮次。第 40 轮仍可提交；需要第 41 轮才超限。
+有效期限取定义 timeout、Provider 整条 Assertion timeout 与 Attempt 剩余期限的最小值，包含模型、工具和等待。默认 Provider 下最多 180 秒；需要 10 分钟时须同时调整 Provider 与 Attempt 期限。
 
 系统提示写明 rubric、anchors、评分工具的用法，以及“只根据你在 Sandbox 里亲眼看到的证据评分”。材料作为不可信 user 内容进入首条消息。
 
@@ -257,6 +265,8 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<
 | `submit_evaluation` | 交出评分并结束评审 |
 
 工具不限制只读。评审在 `workspace.diff` 冻结之后执行，它的写入不计入被测 agent 的改动，也不改变已冻结的 diff 证据。
+输出限制按 UTF-8 bytes 计算并保留字符边界；工具返回值注明保留范围与是否截断。`read` 可用行范围继续取证。
+工具截断是明确的观察范围，不代表完整文件或完整命令输出；模型响应与审计超限则终止评审，不裁剪成合法提交。
 
 ```ts
 interface SubmitEvaluationInput {
@@ -270,34 +280,42 @@ interface SubmitEvaluationInput {
 }
 ```
 
-- 第一次合法的 `submit_evaluation` 结束评审；参数不合法时工具返回错误，评审可以修正后重交。
-- 达到 `maxTurns`、`timeoutMs`，模型调用失败，或评审没有调用评分工具就停止，断言为 `unavailable`，不按零分处理。
+- 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本；整个提交受响应和审计字节上限约束。第一次合法提交结束评审；非法参数作为工具错误留存，模型可在剩余预算内修正。
+- 达到轮次或期限、最终传输失败、审计容量不足，或模型没有提交就停止，断言为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
+- 同一响应中的工具按返回顺序串行执行。合法提交之后不执行同批剩余工具，也不再发送模型请求；失败锁存与取消不能被迟到提交清除。
 - 工具本身的失败（命令非零退出、文件不存在）作为工具结果返回给评审，不终止评审；Sandbox 传输失败让断言 `unavailable`。
 
 ### 执行顺序
 
 `assertions.evaluate` 先求值其它全部断言，再按登记顺序逐个执行 Agent Judge，同一 Attempt 内不并发。
-后面的 Agent Judge 能看到前面评审写入的内容；需要互不影响时，rubric 里要求评审不写文件。
+普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。
+后面的 Agent Judge 能看到前面评审写入的内容。rubric 的不写文件要求只是模型指令，不提供隔离保证。
+
+评审命令与模型调用归属于该 Judge entry，不能进入被测 agent 的 history、工具计数、usage 或归因断言。
+评审发生在 telemetry 收口前，trace 必须能区分评审与被测应用；时间先后不能代替归属。
 
 ### 审计、用量与读回
 
 - 每次模型请求按 Judge 用量登记，与其它受管 Judge 共用费用、预算与取消路径。
-- 断言审计保存完整评审轨迹：每轮模型输出、工具调用参数与结果（按上表截断）、最终提交。`niceeval show @<locator> --assertions --entry <id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
-- 理由与证据只证明评审看到了什么，不证明判断正确；判分可复核的依据是工具轨迹本身（[T-12](../../taste.md#t-12)）。
+- 断言审计保存评审实际收到的完整轨迹：每轮模型输出、工具调用参数、有限工具结果与截断标记、最终提交。截断前的原始文件和命令输出不属于完整轨迹承诺。`niceeval show @<locator> --assertions --entry <id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
+- 理由与证据是模型的自述，不证明引用对象存在、模型实际读到或判断正确。工具轨迹留存实际观察范围，供人复核（[T-12](../../taste.md#t-12)）。
 
 ### 不做什么
 
-- 不提供只读模式或工具白名单配置；需要更窄的权限时，在 rubric 里约束，或改用确定性检查。
-- 不让评审访问宿主文件、宿主网络凭据或其它 Attempt 的 Sandbox。
+- 不提供只读模式或工具白名单配置。rubric 不是权限边界；需要限制权限时由 Sandbox 隔离配置承担，或改用确定性检查。
+- 工具只得到当前主 Sandbox 的能力，不授予宿主文件或其它 Sandbox 的句柄。Provider 凭据留在宿主受管传输中，不注入 Sandbox。Sandbox 已有的挂载、网络与凭据权限仍由它的配置决定。
 - 不把 Agent Judge 当作 `defineJudge` 的替代：材料已经齐全的判据继续用 `defineJudge`，它更便宜、更稳定。
 
 ### 验收
 
 - 安装后的 CLI 运行一条带 Sandbox 的 Eval：评审读取被测 agent 写的文件并提交，Assertion detail 显示 measurement、理由、证据与工具轨迹；Judge 用量出现在 `show --usage`。
 - 评审写入文件后，`show --diff` 仍只显示被测 agent 的改动。
-- 评审不调用评分工具、超过 `maxTurns`、模型返回错误：断言均为 `unavailable`，原因可读。
+- 评审不提交、超过轮次或期限、传输失败得到 unavailable；畸形模型协议与 HTTP 400 得到 errored。非法提交可修正；合法提交后同批工具与后续请求均为零。
 - direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
-- 同一 Attempt 两个 Agent Judge 按登记顺序串行，后者能读到前者写入的文件。
+- 同一 Attempt 两个 Agent Judge 按登记顺序串行，后者能读到前者写入的文件。登记在它们之后的普通归因断言先执行，结果不含评审活动。
+- 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
+- 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。
+- 身份验收包含 rubric、预算、工具协议和生效模型改变后的重规划，以及未使用 Agent Judge 的既有身份不因新增默认字段漂移。历史审计保持原协议读取。
 
 ## Runtime 配置
 

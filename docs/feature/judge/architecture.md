@@ -191,6 +191,114 @@ extract 输出必须包含 `complete: boolean`，表示模型是否完成了本�
 最终分数由代码计算 supported / total，完整分母与每项判定保留在原语输出中。
 模型对陈述的抽取与支持性判断仍可能出错，框架不把这个比例解释为事实正确性的证明。
 
+## Agent Judge
+
+Agent Judge 的公开定义与工具行为单源在 [Library](library.md#agent-judge--在-sandbox-里自己取证再评分)。
+它是内建受管 ScoreMatch 的独立算法，不是第五种允许执行任意代码的 LLM 原语。
+四个窄原语仍只处理冻结材料；工具执行能力只授予当前 Agent Judge entry，普通 callback 不能取得 Sandbox 句柄。
+
+### 材料、调度与归属
+
+登记时冻结的 subject 只是开场上下文，不能解释成 Sandbox 快照。
+每次工具调用留存的是该时刻的现场观察；后续写入可以改变现场，但不能回写 subject、已封存的 diff 或早先工具结果。
+取证工具、提交工具及其 schema 与提示模板共同由 Judge owner 管理。
+
+封口调度把待求值 entry 稳定分成普通断言与 Agent Judge 两组。
+先完成普通组，再按登记顺序串行执行 Agent Judge；entry identity、展示顺序和账本 entryIndex 仍按原登记顺序。
+已求值 entry 复用 settlement，不重复执行。无 Agent Judge 时维持既有调度语义。
+不能只依靠作者把 Judge 登记在最后来保证此顺序。
+
+Runner 在 workspace.diff 冻结之后交出当前主 Sandbox 的短期能力，在 Agent runtime teardown 与 Sandbox release 之前收回。
+工具调用归属于 assertions.evaluate 下的对应 entry；不走被测 Agent Adapter 的 send 或事件归一入口。
+模型用量只进入 Judge collector，不进入 t.usage。评审产生的命令与 trace 不能被当作应用工具事件或被测 agent 的改动。
+telemetry.collect 可以继续收口被测应用的迟到数据，但必须按事件 producer 隔离评审活动。
+
+### pi 与受管 Provider
+
+宿主创建真实 pi Agent，prompt 前订阅事件，结束时取消订阅。
+pi 负责对话与工具循环；模型传输经注入的 streamFn 或等价官方接口交给 NiceEval 受管 Provider。
+不能让 pi 默认 provider 注册表选择模型、端点或凭据，也不能由 SDK 自行 retry、定价或建立独立 timeout。
+适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
+
+聊天 Provider 的 Agent Judge 请求发送 Chat Completions messages、tools 与 tool_choice，不发送普通评分的封闭 response_format。
+工具定义使用 function schema；保留 assistant tool_calls 的 id、name、arguments 与对应 tool_call_id 的结果消息。
+同一响应的工具按出现顺序执行；每个已执行调用恰有一个结果，未执行调用不得伪造成功。
+工具结果只作为不可信 tool 内容返回，文件、命令输出和模型文字都不能升级成 system 规则。
+
+OpenAI、OpenRouter 与 Vercel 使用各自生效的 endpoint、headers、模型与凭据选择。
+所选模型的工具能力由实际请求验证，不额外发探测请求；HTTP 协议错误沿用现有 errored 分类。
+TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，不制造 Chat Completions 请求或改走普通 score。
+
+### 预算与关闭
+
+maxTurns 替代该算法的 maxCalls，不能隐式受普通原语默认 4 次、最多 16 次限制。
+每轮逻辑生成拥有连续 ordinal，最多三次传输尝试；重试复用同一请求，不能重跑已经执行过的工具。
+材料、审计容量、发送前预留、Attempt 总账与终态保留空间沿用受管 Judge owner。
+实际请求含累积历史，各轮请求都按真实留存字节计账，不能只计算新增消息。
+
+工具参数、工具结果、模型响应及最终 envelope 都计入审计预算。
+执行工具之前预留参数和有界结果空间；容量不足时不执行副作用，只留 not-started 与拒绝原因。
+bash 与 read 的截断发生在形成模型可见结果之前，模型与审计看到同一个有限结果。
+完整请求、已准入模型响应与合法最终提交不能为腾空间而截断；超限锁存 unavailable。
+
+第一次合法提交锁定候选分数并关闭新动作准入；在资源收拢、审计校验成功后才能封口 measured。
+同批后续工具、pi 的自动续轮、迟到 callback 与失败后的重提交均不能重新开启 entry。
+命令非零退出、文件不存在和非法提交是可纠正的工具结果；传输与容量失败不能由模型提交掩盖。
+HTTP 400、模型协议损坏与框架 defect 为 errored，最终传输失败、超时与未提交为 unavailable。
+Attempt 取消保持 interruption，不转换成普通工具错误再交模型重试。
+
+关闭时同时停止 pi、abort HTTP、终止在途 Sandbox 命令树并有界等待资源释放，最后解除订阅与收回工具能力。
+不能只取消宿主 Promise 而允许 Sandbox 命令继续写入。若无法证明命令树静止，保留诊断并禁止将实例视作安全复用。
+HTTP 取消与释放沿用现有账本关闭规则，本地关闭不声称远端停止生成。
+
+### 审计与历史读取
+
+工具往返使用独立 criterion 与 `niceeval.agent-judge-audit/v1`，schemaVersion 为 1。
+它复用 Content 分块与摘要机制，不将工具调用写入 score-match v1/v2/v3 的封闭 operation 枚举。
+既有审计 schema、图片捕获与读取解释不变；Agent Judge 的图片开场材料仍走受管图片 Content，不能把 bytes 写进普通 JSON。
+
+审计由一个 entry 拥有，包含以下必需事实；所有序号从 1 连续递增，工具引用使用模型实际 call id。
+
+| 事实 | 内容与验证 |
+|---|---|
+| definition | name、算法 version、canonical config、digest，以及有效 turns、期限和字节限制 |
+| input | 冻结开场材料；图片保留受管 Content 描述符、摘要和初始位置 |
+| generations | 每轮 ordinal、准入或拒绝、实际请求及逐次 HTTP 尝试、原始响应或具名失败 |
+| tools | 所属轮次、call id、name、原始 arguments、校验结果、执行状态、实际有限结果与截断事实 |
+| submission | 第一次合法 SubmitEvaluationInput 与对应轮次、call id；未提交为 null |
+| result | measured、AuditFailure 或 interrupted；measured 必须与 submission 和 entry measurement 一致 |
+
+工具执行状态区分 completed、failed、interrupted 与 not-started。
+截断事实含字节上限、实际保留范围与 truncated；未知原始总长记为未知，不能捏造完整字节数。
+工具参数校验失败保留原始参数与错误；不能先规范化成合法输入再保存。
+每轮请求的历史必须与前轮响应和已执行工具结果一致；合法提交之后不得出现新传输或工具执行。
+完整终态要求提交与执行轨迹均可严格校验，不能只相信 rationale 或 evidence 的自由文本引用。
+
+Query、Show 与 View 共用严格 decoder，验证精确 schema、摘要、序号、call id 关联与终态。
+未知协议为 unsupported，协议损坏为 invalid。旧 reader 只把未知 criterion 标为 unsupported，不影响其它 entry。
+预算不足、零发送、非法提交修正与取消均保存可解释终态，不伪造完整分数。
+
+Judge 用量给 Agent Judge 每轮模型生成使用独立 operation `agent`。
+它需要 `niceeval.judge-usage` 的新 revision 2，沿用 revision 1 的全部字段，仅扩展 operation；reader 同时识别两个 revision。
+仅含既有原语的 Attempt 继续写 revision 1，含 Agent Judge 的 Attempt 写 revision 2，不能往 revision 1 写未知枚举。
+logicalOrdinal 对应生成轮次，transmissionOrdinal 对应该轮实际 HTTP 尝试；工具调用不增加模型请求计数。
+费用、失败和取消的结算独立于工具审计容量，审计失败不能抹去已发请求。
+
+### 身份与缓存
+
+定义摘要纳入规范化 name、rubric、anchors、所有预算、算法 version、系统提示 revision、工具 schema 与执行语义 revision。
+pi 依赖的可达版本由既有依赖闭包身份追踪；影响执行的适配算法改变还必须更新 owner revision。
+有效 Provider、模型、端点、执行限制与凭据声明位置沿用 Eval × Experiment 的求值身份，不保存凭据值及其 hash。
+评审中读到的文件与模型输出是结果事实，不追加入执行前 identity。
+
+新增 ScoreMatch 类型不能仅靠运行时登记的 digest 声称 Eval 已正确重规划；规划端须从既有源码闭包和声明配置捕获定义输入。
+普通与 Agent Judge 的调度分组 revision 属于选择该算法的身份。未使用该算法时，不写新的默认配置键，也不改变普通 Judge 协议 revision。
+这保证新增算法本身不让无关 Eval 的 digest 漂移；不承诺跨任意 NiceEval runtime revision 自动取得沿用资格。
+
+若实现改变身份投影、输入集合或 domain，必须按 [身份域变更](../experiments/architecture/cache.md#niceeval-身份域变更) 登记 registry 与固定样例。
+新算法的首次显式选择不等于更换所有既有 owner domain；不能为方便整体 bump 而使无关结果失配。
+历史结果保持原解释，不能因新 reader 支持 Agent Judge 就重写历史 measurement 或材料。
+
 ## Provider 求值与身份
 
 公开工厂和配置优先级单源在 [Library](library.md#runtime-配置)。Provider 是带运行时构造凭据的冻结值，
