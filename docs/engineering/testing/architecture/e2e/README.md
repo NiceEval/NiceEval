@@ -14,7 +14,7 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../../README.md
 每个叶子目录是一个能被复制到仓库外使用的 NiceEval 项目：
 
 - 自己的 `package.json` 与签入 lockfile；
-- NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
+- NiceEval dependency，由根 runner 在副本中替换成候选：本地默认 link 到构建输出，CI 安装 tarball（见[候选形态](execution.md#候选形态)）；
 - `project.json` 中 `targets.e2e.metadata.niceeval.harness.testkit: true` 声明消费意图。根 runner 把当前 checkout 的
   Testkit 直接编译到 invocation-local scratch snapshot，并只在副本中注入该目录依赖；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 agent、服务或 Docker Compose；
@@ -30,7 +30,7 @@ Vitest / Playwright 的 case 与契约关联另见 [E2E case 关系](case-relati
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Insight 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
-- 根 `pnpm e2e test` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
+- 根 `pnpm e2e test` 只实现 NiceEval 特有的候选准备（link 或 tarball）、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
 - 独立 [Testkit](../../library.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
