@@ -240,7 +240,9 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<
 - `defineAgentJudge` 与 `AgentJudgeDefinition` 从 `niceeval/expect` 导出。name、rubric、anchors 沿用 `defineJudge` 的校验；anchors 必填。两个执行上限必须为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。
 - `t.judge(material, agentJudge)` 仍要求显式材料；没有开场上下文时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。冻结的是开场材料，Sandbox 是评审执行时的可变现场。
 - 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
-- 材料与审计预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值、上限与总账。较长评审应显式提高 `maxAuditBytes`；容量不足会得到 unavailable，不能静默丢弃轨迹。
+- 材料预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值与总账；审计上限默认 4 MiB，足够一次几十轮的工具评审。容量不足会得到 unavailable，不能静默丢弃轨迹。
+- 只能用在每条 Attempt 独占 Sandbox 的 Eval。评审有完整写权限，可能改动 State 路径或组内共享的现场，所以声明了 State、属于共享 Sandbox 的 Eval Group 或启用 `sandboxReuse` 的配对登记 Agent Judge 时，在规划阶段报 `judge.agent-shared-sandbox`。
+- Agent Judge 不能挂 `.stop()`：它在被测运行结束后才执行，不能作为提前停止的屏障，挂上时登记报错。
 - 模型使用 Eval × Experiment 生效的 Judge 配置，不增加 Match 级模型替换。身份与缓存规则见 [Agent Judge 架构](architecture.md#agent-judge)。
 
 ### 评审 agent
@@ -250,7 +252,7 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<
 `TypesafeProvider` 在发送前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。
 
 `maxTurns` 计每轮逻辑模型生成，重试不另占轮次，工具调用不算模型轮次。第 40 轮仍可提交；需要第 41 轮才超限。
-有效期限取定义 timeout、Provider 整条 Assertion timeout 与 Attempt 剩余期限的最小值，包含模型、工具和等待。默认 Provider 下最多 180 秒；需要 10 分钟时须同时调整 Provider 与 Attempt 期限。
+有效期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值，包含模型、工具和等待；它取代 Provider 对整条 Assertion 的时限，单次模型请求仍受 Provider 的请求时限约束。
 
 系统提示写明 rubric、anchors、评分工具的用法，以及“只根据你在 Sandbox 里亲眼看到的证据评分”。材料作为不可信 user 内容进入首条消息。
 
@@ -288,7 +290,7 @@ interface SubmitEvaluationInput {
 ### 执行顺序
 
 `assertions.evaluate` 先求值其它全部断言，再按登记顺序逐个执行 Agent Judge，同一 Attempt 内不并发。
-普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。
+普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。普通断言的 `.stop()` 屏障跳过 Agent Judge，不会让它提前执行。
 后面的 Agent Judge 能看到前面评审写入的内容。rubric 的不写文件要求只是模型指令，不提供隔离保证。
 
 评审命令与模型调用归属于该 Judge entry，不能进入被测 agent 的 history、工具计数、usage 或归因断言。
@@ -312,6 +314,7 @@ interface SubmitEvaluationInput {
 - 评审写入文件后，`show --diff` 仍只显示被测 agent 的改动。
 - 评审不提交、超过轮次或期限、传输失败得到 unavailable；畸形模型协议与 HTTP 400 得到 errored。非法提交可修正；合法提交后同批工具与后续请求均为零。
 - direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
+- 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对登记 Agent Judge：规划阶段报 `judge.agent-shared-sandbox`；Agent Judge 挂 `.stop()` 登记报错；普通断言的 stop 屏障不触发 Agent Judge。
 - 同一 Attempt 两个 Agent Judge 按登记顺序串行，后者能读到前者写入的文件。登记在它们之后的普通归因断言先执行，结果不含评审活动。
 - 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
 - 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。

@@ -206,6 +206,8 @@ Agent Judge 的公开定义与工具行为单源在 [Library](library.md#agent-j
 封口调度把待求值 entry 稳定分成普通断言与 Agent Judge 两组。
 先完成普通组，再按登记顺序串行执行 Agent Judge；entry identity、展示顺序和账本 entryIndex 仍按原登记顺序。
 已求值 entry 复用 settlement，不重复执行。无 Agent Judge 时维持既有调度语义。
+普通断言的 stop 屏障只结算普通组，不触发 Agent Judge；Agent Judge 自身挂 `.stop()` 是登记错误。
+声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对在规划阶段拒绝 Agent Judge（`judge.agent-shared-sandbox`），评审的写入因此只落在本 Attempt 独占、随后销毁的现场。
 不能只依靠作者把 Judge 登记在最后来保证此顺序。
 
 Runner 在 workspace.diff 冻结之后交出当前主 Sandbox 的短期能力，在 Agent runtime teardown 与 Sandbox release 之前收回。
@@ -233,7 +235,8 @@ TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，�
 
 maxTurns 替代该算法的 maxCalls，不能隐式受普通原语默认 4 次、最多 16 次限制。
 每轮逻辑生成拥有连续 ordinal，最多三次传输尝试；重试复用同一请求，不能重跑已经执行过的工具。
-材料、审计容量、发送前预留、Attempt 总账与终态保留空间沿用受管 Judge owner。
+材料、发送前预留、Attempt 总账与终态保留空间沿用受管 Judge owner；审计容量默认 4 MiB，定义里写了 `maxAuditBytes` 时以它为准。
+整条评审的期限由定义的 `timeoutMs` 与 Attempt 剩余期限决定，取代 Provider 的整条 Assertion 时限；单次请求时限仍归 Provider。
 实际请求含累积历史，各轮请求都按真实留存字节计账，不能只计算新增消息。
 
 工具参数、工具结果、模型响应及最终 envelope 都计入审计预算。
