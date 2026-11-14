@@ -83,6 +83,19 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 | `simulated-user-unsupported-provider` | `typesafe`；零发送，执行错误 |
 | `simulated-user-failed` | `provider-unconfigured`、`pi-unavailable`、`invalid-answer`、`no-answer`、`timeout`、`transport`、`context-overflow` 或 `storage`；不发送下一轮输入，执行错误 |
 
+`simulated-user-failed` 的 reason 按失败发生在哪一层确定，与 [Agent Judge 的失败分类](../../judge/architecture.md#用量审计与预算) 同一套边界，不按错误文案匹配：
+
+| reason | 失败发生在 |
+| --- | --- |
+| `provider-unconfigured` | 没有可用的 Judge Provider，或所选 Provider 缺少凭据；诊断写明是哪一项 |
+| `pi-unavailable` | 可选的 pi 依赖未安装或无法加载 |
+| `session-failed` | pi 会话创建或初始化抛出异常 |
+| `transport` | pi 以 assistant 消息结算的最终请求失败，含 pi 折入的畸形模型响应 |
+| `context-overflow` | pi 的 `isContextOverflow` 判定或压缩失败事件 |
+| `defect` | NiceEval 内部不变量被破坏（例如已注册的 `reply_to_agent` 工具消失）或未识别的异常；不冒充网络失败 |
+
+诊断正文附上 pi 给出的有界错误文字，不包含凭据、请求头或 endpoint 配置。
+
 模拟用户生成不进入 Agent send 的重试执行体，框架不额外重新发送 pi 模型请求。
 终局失败默认 `retryable: false`、`scope: "attempt"`；仅凭 Provider 类型或错误文字不触发 Eval 或 Experiment 级止损。
 
@@ -94,7 +107,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的执行活动自带用量：pi 报告的每条 assistant 消息与压缩摘要的 input / output tokens，以及按 Judge Provider 显式估价得到的金额（没有估价时为 unpriced）；失败请求的用量同样保留。
 - Attempt 的费用汇总把模拟用户作为独立费用类别 `simulated-user` 计入，和 application、judge 并列显示；未使用模拟用户的 Attempt 没有这个类别。
 - 不给每个 Eval 单独增加身份输入。instructions 写在 Eval 源码里，随源码闭包进入 Eval 指纹；生效的 Judge runtime 已经属于既有配置身份，换模型照常让旧结果失效。未使用模拟用户的 Eval 身份不变。
-- 模拟用户的系统提示模板、`reply_to_agent` schema 与回答语义属于 NiceEval 运行时行为。改变它们按 [身份域规则](../../experiments/architecture/cache.md#niceeval-身份域变更) 处理：更换对应 domain 并登记为 `behavior-changing` 的具名变更，不声明为 `encoding-only`。首次引入本功能不改变任何既有输入的编码，不需要升域。
+- 模拟用户的系统提示模板、`reply_to_agent` schema、回答语义与失败分类属于 NiceEval 运行时行为，只进入使用模拟用户的 Eval 的身份：源码闭包出现 `defineSimulatedUser(` 或 `.simulatedUser(` 时，身份载荷追加 `simulatedUser: { behavior, piCodingAgent, piAi }`，未使用者的载荷逐字不变。改变上述行为时提高 `behavior`，不更换全局 domain。`behavior` 从 1 开始，对应按失败发生在哪一层分类的版本；此前没有这个字段的模拟用户结果因此失效，这是预期的行为变化。
 
 ## 验收
 

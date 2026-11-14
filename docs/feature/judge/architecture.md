@@ -241,7 +241,14 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 - 审计不设字节上限，也不计入 Attempt 的文字材料与 audit 总账：完整的 pi 会话经受管 Content 分块保存，读取由 Inspection 分页。只有存储写入本身失败才影响结果，归为 errored；不因会话大小判 unavailable，也不截断对话。
 - bash 与 read 的截断发生在形成工具结果之前，模型与审计看到同一个有限结果。
 - 第一次合法提交锁定这道题的分数；同批后续工具与迟到的提交不能重新打开它。命令非零退出、文件不存在和非法提交是可纠正的工具结果。
-- 模型协议损坏与框架 defect 为 errored；pi 报告的最终请求失败、超时与未提交为 unavailable。Attempt 取消保持 interruption。
+- 失败按发生在哪一层分类，不按错误文案匹配：
+  - pi 会话接口抛出的异常（创建会话、发送、工具注册等不变量被破坏）是框架 defect，结果为 errored。
+  - 以 assistant 消息结算且 `stopReason` 为 `error` 的回合，是 pi 用尽自身重试后报告的最终请求失败，结果为 unavailable（`judge-call-failed`）。
+  - pi 会把畸形的模型响应折进同一种消息，NiceEval 无法把它与网络失败区分，同样按最终请求失败处理，pi 给出的原始错误文字保留为证据。
+  - NiceEval 自己能判定的协议损坏为 errored，例如 pi 报告的 usage 结构不合法；提交参数不符合 schema 是可纠正的工具结果，不在此列。
+  - 上下文溢出只依据 pi 的 `isContextOverflow` 判定与 pi 的压缩失败事件，NiceEval 不另维护溢出文案表。
+  - 期限与未提交为 unavailable。由本次取消或期限触发的 `aborted` 按取消或超时处理，Attempt 取消保持 interruption；不是本方触发的 `aborted` 按最终请求失败处理。
+- 失败分类属于 Agent Judge 的运行时行为，进入使用 Agent Judge 的 Eval 的身份（`agentJudge.algorithm`），未使用者身份不变。
 
 ### 审计与历史读取
 
