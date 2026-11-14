@@ -272,3 +272,10 @@ NiceEval 为每类准备都给了位置：起点进 Provider 模板或快照，R
 
 - 好的样子：能直接读到的事实用确定性检查；回复这类现成材料交给 `defineJudge`；需要探索的开放式判据开一次 [Agent Judge](feature/judge/library.md#agent-judge--在-sandbox-里自己取证再评分) 会话，评审自己读文件、跑命令，同一会话里逐题打分。
 - 坏的样子：顺着 import 遍历源码拼一份 512 KiB 的材料再交给 Judge；每条判据各开一个评审，把同一个仓库重读二十遍；把 verdict、退出码这类事实也交给评审判断。
+
+## T-39 判据写成陈述，提问交给模拟用户，不在题目里手写对话分支 {#t-39}
+
+是否题的判据是一条可以成立或不成立的陈述，是否的问法由 `binaryJudge` 与 Agent Judge 的 `review.judge` 负责；在 rubric 里再写“Y 当且仅当”“否则判 N”，是在替产品重复它已经有的协议。被测 agent 中途提问时，回答取决于它怎么问；按关键词猜问题、拼预设答案，或用 `status === "waiting"` 分支在 `respond` 与 `send` 之间手动切换，都把对话逻辑写进了题目。
+
+- 好的样子：`binaryJudge({ rubric: "回复报告的结果与 verified 一致。" })`，反例写成“只说‘调 API’不算”；作者写下用户已经决定的事，用 [`t.simulatedUser(owner).reply(turn)`](feature/eval/library/simulated-user.md) 回答，评价那一轮时直接把 Turn 交给 Judge。
+- 坏的样子：每条 rubric 以“Y 当且仅当”开头、以“判 N”结尾；一个 `answerRequestedChoice` 用正则匹配 `model|budget|key` 再拼答案；为了交给 Judge 先手写一份 `{ commands, inputRequests, reply }` 投影。
