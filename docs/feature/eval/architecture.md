@@ -197,22 +197,22 @@ Sandbox 文件可见性与归因继续由 send 区间确定，规则见 [Sandbox
 ## 模拟用户
 
 [模拟用户](library/simulated-user.md) 属于 Agent Session 的执行输入生成能力，不属于 Assertion 求值或 Adapter 实现。
-Eval owner 创建并持有每个实例的 pi harness；Provider owner 继续拥有模型、凭据、预算、传输与用量采集。
+Eval owner 创建并持有每个实例的 pi coding agent 会话；Provider owner 继续拥有模型、凭据、预算、传输与用量采集。
 定义不持有运行期会话，普通应用上下文不获得隐式 Session。
 
 每次调用捕获源 Turn 与当前待处理请求，把 Turn 的回复和完整请求作为不可信消息交给 pi。
 instructions 属于可信作者输入，不把被测 Agent 的回复提升为系统规则。
 工具 schema 使用互斥的 text / optionId 分支，校验严格拒绝未知字段，并验证 requestId 集合与当前请求一一对应。
-第一个合法提交只锁定回答候选；关闭模型动作准入、收拢 harness 与校验审计后，再复核 Session 状态并调用原 `respond` / `send` 一次。
+第一个合法提交只锁定回答候选；关闭模型动作准入、收拢会话与校验审计后，再复核 Session 状态并调用原 `respond` / `send` 一次。
 
-直接使用 pi，与 [Agent Judge](../judge/architecture.md#pi-与受管-provider) 相同：NiceEval 只定义 system prompt 与 `reply_to_agent`，模型请求、上下文、压缩、usage 与 abort 都是 pi 的。
+与 [Agent Judge](../judge/architecture.md#pi-coding-agent-与受管-provider) 相同，直接使用 pi coding agent 会话：NiceEval 只追加 system prompt 并提供 `reply_to_agent`，模型请求、上下文、压缩、重试、usage 与 abort 都是 pi coding agent 的。
 每次 reply 最多 4 轮普通生成，每次溢出最多压缩一次再重发；摘要调用不占普通轮数，但计入同一期限、审计与物理用量。
 单次 reply 的墙钟期限为定义上限与 Attempt 剩余期限的较小值，包含生成、压缩、资源收拢与下一轮发送；Provider 的单请求上限继续有效。
 每次 reply 的审计保存 pi session 内容，最多 4 MiB；超出时这次 reply 失败（`simulated-user-failed`），不截断已写入的对话。
 
-Attempt 终止先关闭提交和新请求准入，再取消 harness 与 HTTP 并解除订阅，按已有有界关闭规则等待释放。
+Attempt 终止先关闭提交和新请求准入，再 abort 会话并解除订阅，按已有有界关闭规则等待释放。
 迟到事件不能驱动 Session、补写已封存用量或改变 outcome。
-同一实例的 pi 会话在 reply 间保留；Attempt 关闭后不再接受调用，不能借压缩或重建 harness 复活。
+同一实例的 pi 会话在 reply 间保留；Attempt 关闭后不再接受调用，不能借压缩或重建会话复活。
 
 模拟用户审计与执行活动绑定源 Session、源 Turn 和新 Turn，内部模型历史与被测 Agent history 分别归各自 owner。
 被测 Agent 只收到最终普通消息或结构化 responses；它的 history 不包含模拟用户的 instructions、内部工具调用或压缩摘要。

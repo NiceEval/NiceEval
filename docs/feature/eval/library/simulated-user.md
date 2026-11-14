@@ -59,10 +59,10 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 
 ## 模拟用户 agent
 
-模拟用户由 NiceEval 在宿主进程里用 pi-agent-core 的 `AgentHarness` 运行，和 [Agent Judge](../../judge/library.md#agent-judge--在-sandbox-里自己取证再评分) 一样直接用 pi：NiceEval 只定义 system prompt 与 `reply_to_agent` 工具，模型请求、上下文、溢出时压缩、usage 与 abort 都交给 pi。
+模拟用户和 [Agent Judge](../../judge/library.md#agent-judge--在-sandbox-里自己取证再评分) 一样是一个 pi coding agent 会话（`@earendil-works/pi-coding-agent` SDK，在宿主内运行，与宿主 pi 配置隔离）。NiceEval 只追加 system prompt，关闭全部内置工具，只提供自定义工具 `reply_to_agent`；模型请求、上下文、自动压缩、重试、usage 与 abort 都是 pi coding agent 的。
 
 - 模型取这条 Eval × Experiment 生效的 Judge Provider 与模型，包含 Experiment 替换后的模型、endpoint、凭据声明和协议配置，不新增独立模型配置。模拟用户是执行输入生成者，共用 Provider 不使它成为评分者。
-- `TypesafeProvider` 不支持，`reply` 抛出 `simulated-user-unsupported-provider`；拒绝发生在创建 harness、读取凭据与发送之前。未配置 Provider 或缺少可选 pi 依赖同样零发送，报告 `simulated-user-failed` 与具名 reason。
+- `TypesafeProvider` 不支持，`reply` 抛出 `simulated-user-unsupported-provider`；拒绝发生在创建会话、读取凭据与发送之前。未配置 Provider 或缺少可选 pi 依赖同样零发送，报告 `simulated-user-failed` 与具名 reason。
 - 没有 Sandbox 工具：模拟用户只读被测 agent 的提问，不查看现场。唯一的工具是 `reply_to_agent`，参数 schema 随当前 turn 变化：等待输入时是 `{ answers: { requestId, text | optionId }[] }`，要求每个请求恰好一条；否则是 `{ message }`。
 - 系统提示写明扮演用户、只依据 instructions 回答、不替被测 agent 做实现决定、不编造 instructions 里没有的事实。被测 agent 的回复与请求作为不可信 user 内容进入消息。
 - 每次 `reply` 最多 4 轮普通模型生成。未调用工具或参数非法时，允许在剩余轮数内修正；第一个合法提交锁定回答，同批后续工具与 pi 自动续轮都不能再次发送。工具执行只交付回答候选，不直接驱动被测 Agent。
@@ -102,10 +102,10 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - mock 不调用工具或参数一直非法时，Attempt 为 errored，原因 `simulated-user-failed`；TypeSafe 零发送并抛出 `simulated-user-unsupported-provider`。
 - `show --execution` 显示模拟用户活动与回答；执行活动含用量，Attempt 费用汇总含 `simulated-user` 类别。
 - 未使用模拟用户的 Eval 身份不变（identity-domains release 测试保持通过）；改 instructions 或换 Judge 模型让使用它的 Eval 重新规划。
-- mock 只替代外部 HTTP 模型边界，执行安装后候选的公开 API 与真实 pi harness。兼容 Chat Completions 的流式工具调用与 usage，捕获请求体；不 mock 核心 Session、工具校验、缓存规划或账本。
+- mock 只替代外部 HTTP 模型边界，执行安装后候选的公开 API 与真实 pi coding agent 会话。兼容 Chat Completions 的流式工具调用与 usage，捕获请求体；不 mock 核心 Session、工具校验、缓存规划或账本。
 - 重复、缺失、未知 requestId、错误 option id 与同时出现 text/optionId 均零 Adapter 发送；修正后只发送一次。旧 Turn、跨 Session Turn、并发驱动与关闭后调用均按错误契约拒绝，互不污染历史。
 - 验证首个合法提交后，同批重复工具和迟到响应不会再次驱动；超时、取消和压缩失败不发送回答，取消后没有继续发出的模型请求。
-- 通过脚本化溢出响应触发真实 `compact()`，核对摘要请求、重发与用量；四轮上限与同一 reply 的 deadline 不因压缩重置。
+- 通过脚本化溢出响应触发 pi coding agent 的溢出恢复，核对摘要请求、重试与用量；四轮上限与同一 reply 的 deadline 不因压缩重置。
 - 未使用模拟用户的 Eval 不新增任何身份字段；失败请求的用量与审计可离线读回。
 
 HTTP mock 证明协议、状态与归属的确定性结果，不证明真实模型会忠实遵守 instructions；事实遵循的质量评估属于独立的模型实验。

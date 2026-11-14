@@ -216,30 +216,29 @@ Runner 在 workspace.diff 冻结之后交出当前主 Sandbox 的短期能力，
 模型用量只进入 Judge collector，不进入 t.usage。评审产生的命令与 trace 不能被当作应用工具事件或被测 agent 的改动。
 telemetry.collect 可以继续收口被测应用的迟到数据，但必须按事件 producer 隔离评审活动。
 
-### pi 与受管 Provider
+### pi coding agent 与受管 Provider
 
-Agent Judge 就是一个 pi agent：NiceEval 只定义 system prompt、工具与开场材料，其余全部直接用 pi。对话循环、模型请求、重试、上下文、压缩与 usage 都是 pi 的，NiceEval 不包装 pi 的 provider，不在请求层加钩子，也不另写传输或消息副本。
+Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prompt、提供 Sandbox operations 与评分工具，其余全部是 pi coding agent 的行为。NiceEval 不实现自己的 bash/read/write/edit，不包装模型请求，不另写压缩或重试。
 
-- 宿主创建 pi-agent-core 的 `AgentHarness`。`models` 用 pi-ai 的标准构造方式，只填受管 Provider 生效配置里的 Chat Completions endpoint、headers、模型 ID 与凭据；不使用 pi 默认的 provider 注册表或宿主进程变量选择它们。
-- 工具是 pi 的 `AgentHarnessTool`：bash、read、write、edit 绑定当前 Attempt 主 Sandbox，submit_evaluation 交评分。参数校验与有限结果由 NiceEval 的工具实现负责。
-- 每道 `chat`、`judge` 或 `grade` 作为一次 harness prompt 发出，同一会话复用同一个 harness 与 session，后面的题能看到前面的历史。
-- 取消与期限用 pi 自己的 abort：会话期限到达或 Attempt 取消时调用 `harness.abort()`，同时终止在途 Sandbox 命令。
+- 宿主用 `@earendil-works/pi-coding-agent` SDK 的 `createAgentSession` 创建会话。模型只从受管 Provider 生效配置注入（Chat Completions endpoint、headers、模型 ID 与凭据），不使用 pi 默认的 provider 注册表、`~/.pi` 凭据或宿主进程变量。
+- 会话与宿主隔离：settings 与 session 使用内存实现，资源加载关闭全部发现（context files、skills、extensions、prompt templates、MCP），不读写宿主的 pi 配置目录。
+- 内置 `bash`、`read`、`write`、`edit` 通过 pi 的 `BashOperations`、`ReadOperations`、`WriteOperations`、`EditOperations` 接到当前 Attempt 主 Sandbox；其它内置工具不启用。`submit_evaluation` 是 `customTools` 里的自定义工具，参数校验由 NiceEval 负责。
+- 每道 `chat`、`judge` 或 `grade` 是同一个会话上的一次 `prompt()`，后面的题能看到前面的历史。以 `agent_settled` 判断 pi 不会再自动继续。
+- 取消与期限用会话的 `abort()`，并终止在途 Sandbox 命令。
 - 工具结果只作为不可信 tool 内容返回，文件、命令输出和模型文字都不能升级成 system 规则。
-- 所选模型的工具能力由实际请求验证，不额外发探测请求。TypeSafe 在创建 harness 之前拒绝，零发送，结果 unavailable。
-- 适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
+- 所选模型的工具能力由实际请求验证，不额外发探测请求。TypeSafe 在创建会话之前拒绝，零发送，结果 unavailable。
 
 ### 上下文与压缩
 
-会话上下文由 pi 的 session 持有。某轮 assistant 消息被 pi-ai `isContextOverflow` 判定为上下文溢出时，NiceEval 调用 `harness.compact()`，按 pi 的默认设置压缩较早的历史，然后重发当前这道题。这是 NiceEval 唯一在 pi 之外补的一步，和 pi coding agent 的做法一致。
+上下文与压缩完全交给 pi coding agent：超过阈值时自动压缩，模型报告溢出时由 pi 做一次压缩后重试。NiceEval 不补任何压缩逻辑，只读取结果：
 
-- 压缩不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响。
-- 每次溢出最多压缩一次再重发。压缩失败、无可压缩内容，或压缩后仍然溢出时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
-- 只处理模型明确报告的溢出；静默截断输入的 Provider 无法检测。
+- 压缩与重试不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响。
+- pi 的溢出恢复仍失败、这道题因此结束而未提交时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
 
 ### 用量、审计与预算
 
-- 用量直接取 pi 的结果：每条 assistant 消息的 usage，加上 `compact()` 返回的摘要 usage，按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。NiceEval 不逐次记录 HTTP 尝试；pi 内部的重试只体现在 pi 报告的 usage 里。
-- 审计保存 pi session 的完整内容：开场消息、每条 user / assistant 消息、工具调用参数与有限结果、压缩条目（摘要文本、压缩前 token），以及每道题的提交。它就是评审实际看到的对话，不是另行重建的请求副本。
+- 用量直接取 pi coding agent 会话报告的 usage（含压缩摘要请求），按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。NiceEval 不逐次保存 HTTP 尝试；pi 内部的重试只体现在 pi 报告的 usage 里。
+- 审计保存 pi session 的完整内容：开场消息、每条 user / assistant 消息、工具调用参数与有限结果、pi 的压缩条目（摘要文本、压缩前 token），以及每道题的提交。它就是评审实际看到的对话，不是另行重建的请求副本。
 - `maxTurns` 计每道题的 assistant 轮次，替代 maxCalls。整次会话的期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值。
 - 审计容量默认 4 MiB（`maxAuditBytes` 可改）。轨迹超出容量时，当前与之后的评分题为 `unavailable`，已提交的题保留 measurement；不截断已写入的对话来腾空间。不做发送前的字节预留。
 - bash 与 read 的截断发生在形成工具结果之前，模型与审计看到同一个有限结果。

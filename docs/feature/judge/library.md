@@ -282,28 +282,19 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
 
 ### 评审 agent
 
-评审 agent 由 NiceEval 在宿主进程里用 `@earendil-works/pi-agent-core` 运行（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步）。
-模型取这条 Eval 生效的 Judge Provider 与模型。聊天 Provider 通过受管 Chat Completions 工具协议执行；接口兼容不保证所选模型支持工具。
-`TypesafeProvider` 在发送前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。
+评审 agent 就是 pi coding agent：NiceEval 在宿主进程里用 `@earendil-works/pi-coding-agent` 的 SDK 创建会话（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步），只追加评审的 system prompt、把内置工具接到 Sandbox，并加一个评分工具。
+自动压缩、溢出恢复、请求重试与会话管理都用 pi coding agent 自己的行为。
 
-`maxTurns` 计每轮逻辑模型生成，重试不另占轮次，工具调用不算模型轮次。第 40 轮仍可提交；需要第 41 轮才超限。
-有效期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值，包含模型、工具和等待；它取代 Provider 对整条 Assertion 的时限，单次模型请求仍受 Provider 的请求时限约束。
+模型取这条 Eval 生效的 Judge Provider 与模型。聊天 Provider 按 Chat Completions 接入；接口兼容不保证所选模型支持工具。
+`TypesafeProvider` 在创建会话前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。
 
-系统提示写明评分工具的用法，每道题的 user 消息写明这是是否题还是打分题以及判据或 anchors，以及“只根据你在 Sandbox 里亲眼看到的证据评分”。材料作为不可信 user 内容进入首条消息。
+`maxTurns` 计每道题的 assistant 轮次，pi 的自动重试不另占轮次。第 40 轮仍可提交；需要第 41 轮才超限。
+有效期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值，到期时 abort 会话。
 
-工具都作用在这条 Attempt 的主 Sandbox，以 Sandbox 默认用户、默认 workdir 执行：
+追加的 system prompt 写明评分工具的用法与“只根据你在 Sandbox 里亲眼看到的证据评分”；每道题的 user 消息写明它是是否题还是打分题，以及判据或 anchors。材料作为不可信 user 内容进入首条消息。
 
-| 工具 | 作用 |
-|---|---|
-| `bash` | `command` 交给 `sandbox.runShell`，返回退出码、stdout、stderr；单次默认 120 秒超时，输出各保留末尾 64 KiB |
-| `read` | 读一个文件，可带行范围；超过 256 KiB 截断并注明 |
-| `write` | 写入整个文件 |
-| `edit` | 对一个文件做精确字符串替换 |
-| `submit_evaluation` | 交出评分并结束评审 |
-
+工具是 pi coding agent 的内置 `bash`、`read`、`write`、`edit`，通过 pi 的可插拔 operations 作用在这条 Attempt 的主 Sandbox（Sandbox 默认用户、默认 workdir），输出截断与超时沿用 pi 的默认行为；另加自定义工具 `submit_evaluation` 交出评分。
 工具不限制只读。评审在 `workspace.diff` 冻结之后执行，它的写入不计入被测 agent 的改动，也不改变已冻结的 diff 证据。
-输出限制按 UTF-8 bytes 计算并保留字符边界；工具返回值注明保留范围与是否截断。`read` 可用行范围继续取证。
-工具截断是明确的观察范围，不代表完整文件或完整命令输出；模型响应与审计超限则终止评审，不裁剪成合法提交。
 
 `submit_evaluation` 的参数 schema 随当前题目变化：是否题提交 `satisfied`，打分题提交 `measurement`，其余字段相同。
 
@@ -323,7 +314,7 @@ type SubmitEvaluationInput = (
 
 - 会话按调用顺序处理：`chat` 作为一条 user 消息发出，评审回答后进入下一项；`judge` 或 `grade` 作为一条评分题发出，评审取证后调用 `submit_evaluation` 结束这道题，再进入下一项。
 - 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本，整个提交受响应和审计字节上限约束。非法参数作为工具错误留存，模型可在这道题剩余的轮次内修正。
-- 会话很长、超出模型上下文上限时，评审像 pi 平时一样自动压缩较早的历史再继续；压缩不占用题目的轮次。压缩后仍放不下，当前与之后的题为 `unavailable`。细则见 [架构：上下文与压缩](architecture.md#上下文与压缩)。
+- 会话很长时，pi coding agent 按它的默认设置自动压缩较早的历史再继续；压缩不占用题目的轮次。压缩后仍放不下，当前与之后的题为 `unavailable`。细则见 [架构：上下文与压缩](architecture.md#上下文与压缩)。
 - 一道题超过 `maxTurns` 仍未提交，这道题为 `unavailable`，会话继续下一项；会话期限耗尽或传输最终失败时，当前与之后的评分题都为 `unavailable`，已提交的题保留各自的 measurement。
 - 审计容量不足，或模型不调用评分工具就停止回答，当前评分题为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
 - 同一响应中的工具按返回顺序串行执行。一道题合法提交之后不执行同批剩余工具；失败锁存与取消不能被迟到提交清除。
