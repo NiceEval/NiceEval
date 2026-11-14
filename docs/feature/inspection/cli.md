@@ -378,6 +378,9 @@ continuation token 绑定 operation、canonical request、source identity 与 `P
 | `experiment` | `show exp:<experiment-id>` |
 | `next-page` | 同一条命令加 `--continuation <token>` |
 
+有字节上限的单个对象（执行证据、产物正文）超出一页时，result 带 `next-page` link：同一条 `show @<locator> <ID>` 命令加 `--continuation <token>` 读取下一段，token 绑定同一对象与同一读取 cutoff。
+断言图片总是把完整字节写入 `--output` 指定的文件，不分页。
+
 `links` 只列出这一份 result 已经暴露的稳定 ID，有界，不为了列链接额外读取事实。
 每条命令原样执行都成功；agent 在命令后加 `--json` 得到下一份 document。带 `--record <file>` 读取时，命令保留同一个 `--record`。
 文本 `Next` 另外可以给出 `niceeval exp <experimentId> --dry` 这类不属于读取的命令，它们不进入 `links`。
