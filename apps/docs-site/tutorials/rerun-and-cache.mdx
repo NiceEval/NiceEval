@@ -17,14 +17,24 @@ pnpm exec niceeval exp checkout --dry
 ```
 
 ```text
-PLAN
-checkout  cart/add-item  ordinal 0  reuse @1K1P0VJAPVJ12
-checkout  cart/add-item  ordinal 1  execute: input-identity-changed
+plan: 2 attempts · 2 evals × 1 configs · runs 1
+reuse: 1/2 exact current Record attempts
+plugins: 0 lifecycle occurrences
+checkout  cart/add-item     reused 0
+  source @1K1P0VJAPVJ12 · reused · verdict passed
+checkout  cart/remove-item  gap 0:identity-mismatch: source:evals/cart/remove-item.eval.ts changed (0d25e7bd615c → 9bfe84e42112)
 ```
 
-Each line is one Attempt. After `reuse` is the locator of the old result to reuse; after `execute` is the reason for rerunning. The `input-identity-changed` on the second line above means this eval's input changed, for example you changed the eval, the Fixture, or the model.
+Each entry is an Experiment and eval combination. `reused 0` means Attempt 0 will be reused, and `source` gives the old result's locator. `gap 0:...` means that slot cannot be reused, followed by the reason and differences.
+The second entry above shows that the eval file's contents changed. A model change appears as `config:model`; a change to a scoring criteria file appears as a path starting with `data:`.
 
-When the result differs from what you expected, look at the reason first. For example, if you only changed a group name in the report but see the whole batch as `execute`, some input that affects results changed along with it.
+When the plan differs from what you expected, look at these specific differences first. For example, if you only changed a group name in the report but the whole batch needs to rerun, the differences identify the input that changed along with it.
+
+If you see `locked · gap 0:source-member-missing`, an execution lock was detected, but the corresponding slot has no published member yet. This is not a new failed verdict.
+Wait for the execution holding the lock to finish, check it with `niceeval show run:<run-id>`, then run `--dry` again. For status terms, all gap codes, and recovery commands, see [CLI Reference](/reference/cli).
+
+Structured values may only have a bounded summary saved. The `summary sha256:` values distinguish the two summaries. If you see `comparison unavailable`, the saved summaries cannot explain the specific difference.
+This does not change the reuse decision. Use `--dry --json` to inspect the saved comparison information, then confirm the scope and cost before executing.
 
 ## Which results are reused
 
@@ -57,7 +67,7 @@ A bare `--rerun` is the same as `--rerun failed`, and evals that already passed 
 
 ## Confirm old results still hold under a new configuration
 
-Sometimes a change makes NiceEval decide that old results cannot be reused, but you know they are actually unaffected. For example, you added a logging switch to the Agent, and this eval's behavior did not change at all. NiceEval does not guess for you; you need to accept them explicitly:
+Sometimes a change makes NiceEval decide that old results cannot be reused, but you know they are unaffected. For example, you moved the base image to a new registry: its contents are byte-for-byte identical, and only the address changed. You need to accept the results explicitly. NiceEval then verifies that the change does not affect them:
 
 ```sh
 pnpm exec niceeval accept @1K1P0VJAPVJ12
@@ -65,7 +75,29 @@ pnpm exec niceeval accept @1K1P0VJAPVJ12
 
 `accept` creates a new Run that references this old Attempt, and the original Attempt stays unchanged. To accept several, put all the locators in one command; NiceEval checks every input first and never accepts only half of them.
 
+Only a few kinds of verifiable changes can be accepted. If the model, flags, Judge, task, or scoring criteria changed, `accept` refuses; rerun those evals instead.
 For how to get candidate locators and what to check before accepting, see [Review and Accept Historical Attempts](/tutorials/accept-results).
+
+## After upgrading NiceEval
+
+After upgrading, first check that the storage can be opened, then preview which evals need to run:
+
+```sh
+pnpm exec niceeval show runs --json
+pnpm exec niceeval exp checkout --dry
+```
+
+NiceEval only reads the current storage format. If the format does not match, the command explicitly refuses to open it and preserves the original files.
+Stop any processes still using the old storage, archive it, then rerun in a new results directory. Do not edit or delete database fields to bypass the check.
+
+When the storage is readable, the plan distinguishes changes to your inputs from changes to NiceEval itself.
+`niceeval-identity-changed` means the library's contents or behavioral inputs differ. Entries such as `config:`, `source:`, and `data:` describe differences in project inputs.
+Results with different inputs need to be executed again. `accept` cannot establish equivalence after a library upgrade.
+Check the scope and cost before rerunning, and run only the evals you are authorized to execute.
+
+Ordinary comments, indentation, and blank lines do not invalidate results when the normalized source stays the same.
+Strings, compiler directives, actual dependencies, and line breaks that affect automatic semicolon insertion still count as inputs.
+When the plan reports `dynamic-module-unresolved`, the affected evals cannot be reused. The plan identifies the file, line, and column where a dependency could not be determined. Use literal imports or a managed loader to restore reuse.
 
 ## See the results after the run
 
