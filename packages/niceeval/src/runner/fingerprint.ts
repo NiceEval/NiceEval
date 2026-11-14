@@ -174,7 +174,8 @@ function fingerprintPreparedPair(
     if (selectsAgentJudge && pair.plan._tag === "Sandbox" && (pair.run.sandboxReuse === true || evalDef.evalGroup !== undefined || pair.run.sharedState !== undefined)) {
       return yield* Effect.fail(invariant("judge.agent-shared-sandbox: Agent Judge requires an exclusive Attempt Sandbox"));
     }
-    const agentJudgeRuntime = selectsAgentJudge ? yield* Effect.sync(() => {
+    const selectsSimulatedUser = source.some(([, content]) => /\bdefineSimulatedUser\s*\(|\.simulatedUser\s*\(/u.test(content));
+    const piRuntime = selectsAgentJudge || selectsSimulatedUser ? yield* Effect.sync(() => {
       try {
         const runtime = resolvePiCodingAgent();
         return { piCodingAgent: runtime.codingVersion, piAi: runtime.aiVersion };
@@ -212,8 +213,9 @@ function fingerprintPreparedPair(
         prompt: AGENT_JUDGE_PROMPT_REVISION,
         tools: AGENT_JUDGE_TOOL_REVISION,
         scheduling: 1,
-        ...agentJudgeRuntime,
+        ...piRuntime,
       } } : {}),
+      ...(selectsSimulatedUser ? { simulatedUser: { behavior: 1, ...piRuntime } } : {}),
       ...(selectsOrdinaryJudge(source) ? { ordinaryJudge: { algorithm: ORDINARY_JUDGE_IDENTITY_CHANGE.algorithm } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,

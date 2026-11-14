@@ -100,10 +100,10 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
         } catch (cause) {
           if (deps.signal.aborted) throw cause;
           const error = signal.aborted
-            ? new SimulatedUserError("simulated-user-failed", "timeout")
+            ? new SimulatedUserError("simulated-user-failed", "timeout", cause)
             : cause instanceof SimulatedUserError
               ? cause
-              : new SimulatedUserError("simulated-user-failed", "transport");
+              : new SimulatedUserError("simulated-user-failed", "defect", cause, "Unexpected simulated user failure");
           failure = { code: error.code, reason: error.reason };
           deps.latchFailure(error);
           throw error;
@@ -142,7 +142,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
           });
         } catch (cause) {
           if (deps.signal.aborted) throw cause;
-          const error = new SimulatedUserError("simulated-user-failed", "storage");
+          const error = new SimulatedUserError("simulated-user-failed", "storage", cause);
           deps.latchFailure(error);
           throw error;
         } finally {

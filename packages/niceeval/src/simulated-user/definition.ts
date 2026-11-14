@@ -52,8 +52,10 @@ export class SimulatedUserError extends Error {
   constructor(
     readonly code: "simulated-user-invalid-turn" | "simulated-user-unsupported-provider" | "simulated-user-failed",
     readonly reason: string,
+    cause?: unknown,
+    diagnostic?: string,
   ) {
-    super(`${code}: ${reason}`);
+    super(`${code}: ${reason}${diagnostic === undefined ? "" : `: ${diagnostic}`}`, cause === undefined ? undefined : { cause });
     this.name = "SimulatedUserError";
   }
 }

@@ -39,12 +39,11 @@ import {
   projectJudgeMaterial,
   interruptibleByCaller,
   isTransportFailure,
-  errorSummary,
 } from "./judge.ts";
 import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
-import { createManagedPiSession, promptPiSession } from "../judge/pi-runtime.ts";
+import { createManagedPiSession } from "../judge/pi-runtime.ts";
 import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
-import { resolveJudgeCredential } from "../judge/provider.ts";
+import { managedPiCredential, piDefect, piUsageFailure, type PiFailure } from "../judge/pi-failure.ts";
 import { fitJudgeContext } from "./judge-context-budget.ts";
 
 const utf8 = new TextEncoder();
@@ -127,6 +126,31 @@ export class AgentJudgeSession {
     this.definition = { ...base, digest: agentJudgeDigest(canonical(base)) };
     if (judge.maxMaterialBytes !== undefined && size(this.captured) > judge.maxMaterialBytes)
       this.fail("unavailable", "agent-judge-material-budget", "Agent Judge material exceeds its byte budget");
+  }
+
+  private failPi(error: PiFailure): void {
+    switch (error.kind) {
+      case "dependency":
+        return this.fail("errored", "agent-judge-dependency-missing", error.message);
+      case "provider":
+        return this.fail("unavailable", "judge-provider-unresolved", error.message);
+      case "credential":
+        return this.fail("unavailable", "judge-key-unresolved", error.message);
+      case "session-init":
+      case "defect":
+        return this.fail("errored", "agent-judge-defect", error.message);
+      case "model-request":
+        return this.fail("unavailable", "judge-call-failed", error.message);
+      case "context-overflow":
+        return this.fail("unavailable", "agent-judge-context-overflow", error.message);
+      case "cancelled":
+        // The owning Effect interruption/timeout decides the caller's terminal.
+        return;
+      default: {
+        const exhaustive: never = error.kind;
+        return exhaustive;
+      }
+    }
   }
 
   private images() {
@@ -256,9 +280,9 @@ export class AgentJudgeSession {
           this.running = this.run(this.controller.signal).finally(() => signal.removeEventListener("abort", stop));
           return this.running;
         },
-        catch: (error) => error,
+        catch: piDefect,
       }).pipe(
-        Effect.catch((error) => Effect.sync(() => this.fail("errored", "agent-judge-defect", errorSummary(error)))),
+        Effect.catchTag("PiFailure", (error) => Effect.sync(() => this.failPi(error))),
         Effect.timeoutOrElse({
           duration: this.judge.timeoutMs,
           orElse: () =>
@@ -371,16 +395,12 @@ export class AgentJudgeSession {
       this.fail("unavailable", "judge-capability-unavailable", "Judge Provider does not support image material");
       return;
     }
-    const apiKey = resolveJudgeCredential(profile);
-    if (!apiKey) {
-      this.fail("unavailable", "judge-key-unresolved", "Judge Provider credential is unresolved");
-      return;
-    }
+    const apiKey = managedPiCredential(profile);
     const parameters = () =>
       (this.steps[this.currentStep - 1]?.kind === "judge"
         ? binaryParameters
         : gradeParameters) as import("@earendil-works/pi-coding-agent").ToolDefinition["parameters"];
-    const { session: agent, sessionManager } = await createManagedPiSession({
+    const { session: agent, sessionManager, prompt } = await createManagedPiSession({
       paths: this.pi!,
       profile,
       apiKey,
@@ -572,12 +592,10 @@ export class AgentJudgeSession {
             };
             if (event.result.usage !== undefined) this.recordUsage(event.result.usage, "succeeded");
           } else if (!event.willRetry) {
-            this.fail(
-              "unavailable",
-              "agent-judge-context-overflow",
-              event.errorMessage ?? "pi could not compact the context",
-            );
-            this.compactions[index] = { ...compact, failure: this.problem! };
+            this.compactions[index] = { ...compact, failure: {
+              state: "unavailable", code: "agent-judge-context-overflow",
+              message: event.errorMessage ?? "pi could not compact the context",
+            } };
           }
           captureSession();
         }
@@ -595,19 +613,12 @@ export class AgentJudgeSession {
           submitTool.parameters = (
             step.kind === "judge" ? binaryParameters : gradeParameters
           ) as import("@earendil-works/pi-coding-agent").ToolDefinition["parameters"];
-        await promptPiSession(agent, stepPrompt(step));
-        captureSession();
-        const response = agent.messages.findLast((message) => message.role === "assistant");
-        if (response?.role === "assistant" && response.stopReason === "error" && this.problem === undefined) {
-          const error = response.errorMessage ?? "pi model request failed";
-          this.fail(
-            /Cannot read|choices|Unexpected|JSON|undefined|finish_reason/iu.test(error) ? "errored" : "unavailable",
-            /context.*(?:length|overflow)|maximum context/iu.test(error)
-              ? "agent-judge-context-overflow"
-              : "judge-call-failed",
-            error,
-          );
+        try {
+          await prompt(stepPrompt(step), signal);
+        } catch (cause) {
+          this.failPi(piDefect(cause));
         }
+        captureSession();
         if (step.key !== null && !this.submissions.has(step.key))
           this.results.set(
             step.key,
@@ -650,6 +661,8 @@ export class AgentJudgeSession {
 
   private recordUsage(usage: Usage, status: "succeeded" | "failed"): void {
     if (this.closed) return;
+    const invalid = piUsageFailure(usage);
+    if (invalid !== undefined) { this.failPi(invalid); return; }
     const profile = this.profile!;
     const ordinal = ++this.usageOrdinal;
     const call = this.usage?.begin({

@@ -48,6 +48,8 @@ AgentSession.prototype.prompt = async function(...args) {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
       errorMessage: mode === "json" ? "JSON provider temporarily unavailable" : mode === "unexpected" ? "Unexpected remote failure" : mode === "overflow" ? "prompt is too long: 200000 tokens > 128000 maximum" : "fixture final request failure",
     };
+    if (mode === "safe") message.errorMessage = "fixture failure at http://127.0.0.1:1/v1 with fixture-only and fixture-header-secret\\nAuthorization: Bearer hidden-header\\n" + "x".repeat(3000);
+    if (mode === "usage") message.usage.input = -1;
     if (mode === "tool") {
       message.stopReason = "toolUse";
       message.content = [{ type: "toolCall", id: "answer", name: "reply_to_agent", arguments: { message: "Continue" } }];
@@ -72,7 +74,7 @@ if (mode === "unknown") AgentSession.prototype.setActiveToolsByName = () => { th
     await writeFile(join(projectRoot, "niceeval.config.ts"), `
 import { defineConfig } from "niceeval";
 import { OpenAIProvider } from "niceeval/judge";
-export default defineConfig({ timeoutMs: 30000, ${mode === "provider" ? "" : `judgeProvider: OpenAIProvider({ model: "failure-fixture", baseUrl: "http://127.0.0.1:1/v1", ${mode === "credential" ? 'apiKeyEnv: "NICEEVAL_FIXTURE_MISSING_CREDENTIAL"' : 'apiKey: "fixture-only"'}, contextWindow: 128000, maxOutputTokens: 128 })`} });
+export default defineConfig({ timeoutMs: 30000, ${mode === "provider" ? "" : `judgeProvider: OpenAIProvider({ model: "failure-fixture", baseUrl: "http://127.0.0.1:1/v1", ${mode === "credential" ? 'apiKeyEnv: "NICEEVAL_FIXTURE_MISSING_CREDENTIAL"' : 'apiKey: "fixture-only"'}, contextWindow: 128000, maxOutputTokens: 128, headers: { "X-Fixture": "fixture-header-secret" } })`} });
 `);
     await writeFile(join(projectRoot, "experiments/failure.ts"), `
 import { defineExperiment } from "niceeval";
@@ -113,7 +115,16 @@ export default defineEval({ async test(t) {
       const caught = JSON.parse(await readFile(join(projectRoot, "caught.json"), "utf8"));
       if (mode === "provider") expect(caught.message).toContain("Provider is not configured");
       if (mode === "credential") expect(caught.message).toContain("credential is unresolved");
-      if (["session", "prompt", "unknown", "tool", "json", "aborted"].includes(mode)) expect(caught.cause).toBe(true);
+      if (["session", "prompt", "unknown", "tool", "json", "aborted", "safe", "usage"].includes(mode)) expect(caught.cause).toBe(true);
+      if (mode === "safe") {
+        const persisted = JSON.stringify(diagnostic);
+        for (const secret of ["http://127.0.0.1:1/v1", "fixture-only", "fixture-header-secret", "hidden-header"]) {
+          expect(persisted).not.toContain(secret);
+          expect(caught.message).not.toContain(secret);
+        }
+        expect(caught.message.length).toBeLessThan(1100);
+        expect(persisted).toContain("fixture failure");
+      }
     } else {
       const attempt = await withInspectionRequest({ kind: "attempt.get", locator }, async path => (await niceeval.run(["query", "run", "--request", path])).querySuccess("attempt.get"));
       const entry = only(attempt.attempt.assertions.entries, () => true);
@@ -133,6 +144,7 @@ test.concurrent.each([
   ["json", "unavailable", "judge-call-failed"],
   ["unexpected", "unavailable", "judge-call-failed"],
   ["prompt", "errored", "agent-judge-defect"],
+  ["usage", "errored", "agent-judge-defect"],
   ["overflow", "unavailable", "agent-judge-context-overflow"],
   ["aborted", "unavailable", "judge-call-failed"],
   ["cancel", "interrupted", ""],
@@ -144,4 +156,5 @@ test.concurrent.each([
   ["dependency", "pi-unavailable"], ["session", "session-failed"],
   ["tool", "defect"], ["unknown", "defect"], ["prompt", "defect"],
   ["json", "transport"], ["aborted", "transport"], ["overflow", "context-overflow"],
+  ["safe", "transport"], ["usage", "defect"],
 ])("Simulated user reports the failing layer with runtime cause: %s", (mode, code) => exercise(mode, true, "errored", code));

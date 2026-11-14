@@ -2206,7 +2206,7 @@ export function errorFromThrown(
 ): AttemptError {
   if (e instanceof SimulatedUserError) return {
     code: e.code, message: e.message, origin: attemptOrigin("eval.run"),
-    cause: { code: e.reason, message: e.reason },
+    cause: { code: e.reason, message: e.message },
   };
   if (e instanceof AgentInstallError) return {
     ...describeError(e),

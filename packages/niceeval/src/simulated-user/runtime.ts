@@ -6,8 +6,8 @@ import {
 import type { AgentSession, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
-import { resolveJudgeCredential } from "../judge/provider.ts";
-import { createManagedPiSession, promptPiSession } from "../judge/pi-runtime.ts";
+import { managedPiCredential, piDefect, piUsageFailure, safePiFailureMessage, PiFailure } from "../judge/pi-failure.ts";
+import { createManagedPiSession } from "../judge/pi-runtime.ts";
 import { pricingEstimate } from "../o11y/cost.ts";
 import type { PriceOverride } from "../types.ts";
 import type { SimulatedUserConversation } from "./binding.ts";
@@ -25,6 +25,7 @@ export function createSimulatedUserConversation(
   pricing: Record<string, PriceOverride> | undefined,
 ): SimulatedUserConversation {
   let session: AgentSession | undefined;
+  let prompt: Awaited<ReturnType<typeof createManagedPiSession>>["prompt"] | undefined;
   let sessionManager: SessionManager | undefined;
   let current: GenerationInput | undefined;
   let closed = false;
@@ -36,8 +37,22 @@ export function createSimulatedUserConversation(
   let running: Promise<void> | undefined;
   let unsubscribe: (() => void) | undefined;
   let closing: Promise<void> | undefined;
-  let lastResponse: AssistantMessage | undefined;
-  const fail = (reason: string) => (failure ??= new SimulatedUserError("simulated-user-failed", reason));
+  const fail = (reason: string, cause?: unknown, diagnostic?: string) =>
+    (failure ??= new SimulatedUserError("simulated-user-failed", reason, cause, diagnostic));
+  const failPi = (error: PiFailure): SimulatedUserError => {
+    const diagnostic = safePiFailureMessage(error, profile);
+    switch (error.kind) {
+      case "dependency": return fail("pi-unavailable", error.cause ?? error, diagnostic);
+      case "provider":
+      case "credential": return fail("provider-unconfigured", error.cause ?? error, diagnostic);
+      case "session-init": return fail("session-failed", error.cause ?? error, diagnostic);
+      case "model-request": return fail("transport", error.cause ?? error, diagnostic);
+      case "context-overflow": return fail("context-overflow", error.cause ?? error, diagnostic);
+      case "cancelled": return fail("timeout", error.cause ?? error, diagnostic);
+      case "defect": return fail("defect", error.cause ?? error, diagnostic);
+      default: { const exhaustive: never = error.kind; return exhaustive; }
+    }
+  };
   const active = () => !closed && !submitted && !current?.signal.aborted && failure === undefined;
   const snapshot = () => JSON.stringify(sessionManager?.getEntries() ?? []);
   const abort = () => {
@@ -45,6 +60,10 @@ export function createSimulatedUserConversation(
   };
   const record = (kind: "turn" | "compaction", usage: PiUsage | undefined) => {
     if (current === undefined) return;
+    if (usage !== undefined) {
+      const invalidUsage = piUsageFailure(usage);
+      if (invalidUsage !== undefined) { failPi(invalidUsage); abort(); return; }
+    }
     const estimate =
       usage === undefined
         ? undefined
@@ -92,7 +111,8 @@ export function createSimulatedUserConversation(
     turns = 0;
     failure = undefined;
     invalid = false;
-    if (profile === undefined) throw fail("provider-unconfigured");
+    if (profile === undefined)
+      throw failPi(new PiFailure({ kind: "provider", message: "Judge Provider is not configured" }));
     if (profile.protocol.kind !== "chat-completions")
       throw new SimulatedUserError("simulated-user-unsupported-provider", "typesafe");
     if (closed) throw new SimulatedUserError("simulated-user-invalid-turn", "closed");
@@ -101,11 +121,10 @@ export function createSimulatedUserConversation(
       let paths: ReturnType<typeof resolvePiCodingAgent>;
       try {
         paths = resolvePiCodingAgent();
-      } catch {
-        throw fail("pi-unavailable");
-      }
-      const apiKey = resolveJudgeCredential(profile);
-      if (!apiKey) throw fail("provider-unconfigured");
+      } catch (cause) { throw failPi(piDefect(cause)); }
+      let apiKey: string;
+      try { apiKey = managedPiCredential(profile); }
+      catch (cause) { throw failPi(piDefect(cause)); }
       try {
         const managed = await createManagedPiSession({
           paths,
@@ -117,9 +136,8 @@ export function createSimulatedUserConversation(
         });
         session = managed.session;
         sessionManager = managed.sessionManager;
-      } catch {
-        throw fail("pi-unavailable");
-      }
+        prompt = managed.prompt;
+      } catch (cause) { throw failPi(piDefect(cause)); }
       input.signal.throwIfAborted();
       const originalPayload = session.agent.onPayload;
       session.agent.onPayload = async (payload, model) => {
@@ -148,19 +166,17 @@ export function createSimulatedUserConversation(
       unsubscribe = session.subscribe((event) => {
         if (event.type === "tool_execution_end" && event.toolName === "reply_to_agent" && event.isError) invalid = true;
         if (event.type === "message_end" && event.message.role === "assistant") {
-          lastResponse = event.message;
           record("turn", event.message.usage);
         }
         if (event.type === "compaction_start") compacting = true;
         if (event.type === "compaction_end") {
           compacting = false;
           if (event.result !== undefined) record("compaction", event.result.usage);
-          if (event.errorMessage !== undefined && !submitted && !current?.signal.aborted) fail("context-overflow");
         }
       });
     } else {
       const definition = session.getToolDefinition("reply_to_agent");
-      if (definition === undefined) throw fail("pi-unavailable");
+      if (definition === undefined) throw failPi(piDefect(new Error("pi reply_to_agent tool disappeared")));
       // pi's registered wrapper retains this schema object. Mutate its contents
       // so the next request and tool validation see this Turn's exact schema.
       for (const key of Object.keys(definition.parameters)) Reflect.deleteProperty(definition.parameters, key);
@@ -171,23 +187,11 @@ export function createSimulatedUserConversation(
     if (input.signal.aborted) abort();
     try {
       do {
-        lastResponse = undefined;
-        await promptPiSession(session, turns === 0 ? input.question : SIMULATED_USER_CORRECTION);
-        // pi can omit the unsuccessful response while preparing overflow
-        // recovery. Its emitted response still determines a settled failure.
-        const last = lastResponse as AssistantMessage | undefined;
-        if (
-          !submitted &&
-          last !== undefined &&
-          (last.stopReason === "error" || last.stopReason === "aborted") &&
-          !input.signal.aborted &&
-          failure === undefined
-        ) {
-          fail(
-            /context.*(?:length|overflow)|maximum context/iu.test(last.errorMessage ?? "")
-              ? "context-overflow"
-              : "transport",
-          );
+        try {
+          await prompt!(turns === 0 ? input.question : SIMULATED_USER_CORRECTION, input.signal);
+        } catch (cause) {
+          if (input.signal.aborted) input.signal.throwIfAborted();
+          if (failure === undefined) throw failPi(piDefect(cause));
         }
       } while (active() && turns < 4);
       if (failure !== undefined) throw failure;
@@ -198,7 +202,10 @@ export function createSimulatedUserConversation(
   };
   return {
     generate(input) {
-      running = generate(input);
+      running = generate(input).catch((cause: unknown) => {
+        if (cause instanceof SimulatedUserError || input.signal.aborted) throw cause;
+        throw failPi(piDefect(cause));
+      });
       return running;
     },
     async snapshot() {
