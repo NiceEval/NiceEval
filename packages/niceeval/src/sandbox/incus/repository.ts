@@ -71,7 +71,7 @@ export interface ArtifactIntent extends IncusArtifactLocator {
   readonly baseFingerprint: string;
   readonly providerRevision: string;
   readonly guestInitRevision: string;
-  readonly captureRevision: string;
+  readonly cacheFormat: string;
   readonly coverage: string;
   readonly resourcesDigest: string;
   readonly replacementScopeDigest?: string;
@@ -218,7 +218,7 @@ const ArtifactIntentSchema = Schema.Struct({
   baseFingerprint: Schema.String,
   providerRevision: Schema.String,
   guestInitRevision: Schema.String,
-  captureRevision: Schema.String,
+  cacheFormat: Schema.String,
   coverage: Schema.String,
   resourcesDigest: Schema.String,
   replacementScopeDigest: Schema.optional(Schema.String),
@@ -380,7 +380,7 @@ function sameArtifactIdentity(left: ArtifactIntent, right: ArtifactIntent): bool
     left.manifestDigest === right.manifestDigest && left.executionDomainId === right.executionDomainId &&
     left.runtimeProject === right.runtimeProject && left.pool === right.pool &&
     left.baseFingerprint === right.baseFingerprint && left.providerRevision === right.providerRevision &&
-    left.guestInitRevision === right.guestInitRevision && left.captureRevision === right.captureRevision &&
+    left.guestInitRevision === right.guestInitRevision && left.cacheFormat === right.cacheFormat &&
     left.coverage === right.coverage && left.resourcesDigest === right.resourcesDigest &&
     left.replacementScopeDigest === right.replacementScopeDigest &&
     left.createdAt === right.createdAt;
@@ -424,18 +424,12 @@ function assertCurrentSchema(database: DatabaseSync): void {
   const automaticIndexes = rows.filter((row) => row.type === "index" && expected.has(row.tbl_name) && row.sql === null);
   if (rows.length !== 14 || tables.length !== 7 || automaticIndexes.length !== 7 ||
     tables.some((row) => exactSql(row.sql ?? "") !== exactSql(expected.get(row.name) ?? ""))) {
-    throw invalid("Incus repository schema does not match revision 4");
+    throw invalid("Incus repository schema does not match the current UserDatabase format");
   }
 }
 
-export const INCUS_BEFORE_CACHE_SCHEMA_SQL = `${CreateArtifacts}; ${CreateArtifactHeads}; ${CreateArtifactHolds}; ${CreateArtifactRelease}; ${INCUS_GC_SCHEMA_SQL};`;
-
-export function installIncusSchemaV3(database: DatabaseSync): void {
-  database.exec(`${CreateAllocations}; ${CreateArtifacts}; ${CreateAdmission}; ${CreateArtifactHeads}; ${CreateArtifactHolds}; ${CreateArtifactRelease};`);
-}
 function installCurrentSchema(database: DatabaseSync): void {
-  installIncusSchemaV3(database);
-  database.exec(INCUS_GC_SCHEMA_SQL);
+  database.exec(`${CreateAllocations}; ${CreateArtifacts}; ${CreateAdmission}; ${CreateArtifactHeads}; ${CreateArtifactHolds}; ${CreateArtifactRelease}; ${INCUS_GC_SCHEMA_SQL};`);
   assertCurrentSchema(database);
 }
 

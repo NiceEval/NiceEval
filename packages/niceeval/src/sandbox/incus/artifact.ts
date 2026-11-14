@@ -28,14 +28,14 @@ export interface ArtifactIdentity {
   readonly artifactStorageReserveBytes: number;
   readonly artifactEstimatedBytes?: number;
   readonly network: string; readonly baseFingerprint: string; readonly beforeCacheKey: string; readonly manifestDigest: string;
-  readonly providerRevision: string; readonly guestInitRevision: string; readonly captureRevision: string;
+  readonly providerRevision: string; readonly guestInitRevision: string; readonly cacheFormat: string;
   readonly coverage: string; readonly resourcesDigest: string;
   readonly replacementScopeDigest: string;
 }
 
 export interface ArtifactPreparationIdentityInput {
   readonly beforeCacheKey: string; readonly manifestDigest: string; readonly providerRevision: string;
-  readonly guestInitRevision: string; readonly captureRevision: string; readonly coverage: string; readonly resourcesDigest: string;
+  readonly guestInitRevision: string; readonly cacheFormat: string; readonly coverage: string; readonly resourcesDigest: string;
   readonly replacementScopeDigest: string;
 }
 
@@ -51,7 +51,7 @@ function samePreparationIdentity(intent: ArtifactIntent, identity: ArtifactIdent
     && intent.manifestDigest === identity.manifestDigest
     && intent.providerRevision === identity.providerRevision
     && intent.guestInitRevision === identity.guestInitRevision
-    && intent.captureRevision === identity.captureRevision
+    && intent.cacheFormat === identity.cacheFormat
     && intent.coverage === identity.coverage
     && intent.resourcesDigest === identity.resourcesDigest
     && intent.replacementScopeDigest === identity.replacementScopeDigest;
@@ -70,7 +70,7 @@ export function incusArtifactPreparationIdentity(
     artifactStorageReserveBytes: plan.artifactStorageReserveBytes, ...(plan.artifactEstimatedBytes === undefined ? {} : { artifactEstimatedBytes: plan.artifactEstimatedBytes }),
     runtimeProject: plan.project, pool: plan.storagePool, network: plan.network, baseFingerprint: plan.imageFingerprint,
     beforeCacheKey: input.beforeCacheKey, manifestDigest: input.manifestDigest, providerRevision: input.providerRevision,
-    guestInitRevision: input.guestInitRevision, captureRevision: input.captureRevision, coverage: input.coverage,
+    guestInitRevision: input.guestInitRevision, cacheFormat: input.cacheFormat, coverage: input.coverage,
     resourcesDigest: input.resourcesDigest, replacementScopeDigest: input.replacementScopeDigest });
 }
 const artifactConfig = (a: ArtifactIntent): Record<string, string> => ({
@@ -78,7 +78,7 @@ const artifactConfig = (a: ArtifactIntent): Record<string, string> => ({
   [INCUS_METADATA.executionDomainId]: a.executionDomainId, [INCUS_METADATA.artifactState]: "committed",
   [INCUS_METADATA.beforeCacheKey]: a.beforeCacheKey, [INCUS_METADATA.manifestDigest]: a.manifestDigest,
   [INCUS_METADATA.runtimeProject]: a.runtimeProject, [INCUS_METADATA.pool]: a.pool,
-  [INCUS_METADATA.baseFingerprint]: a.baseFingerprint, [INCUS_METADATA.captureRevision]: a.captureRevision,
+  [INCUS_METADATA.baseFingerprint]: a.baseFingerprint, [INCUS_METADATA.cacheFormat]: a.cacheFormat,
   ...(a.replacementScopeDigest === undefined ? {} : { [INCUS_METADATA.replacementScopeDigest]: a.replacementScopeDigest }),
 });
 export function artifactMetadataMatches(config: Readonly<Record<string, string>>, a: ArtifactIntent): boolean {
@@ -123,7 +123,7 @@ export async function reserveIncusArtifact(
   return reserveArtifactIntent(repository, { artifactId, generation: 1, project: identity.artifactProject, instance: `nea-${artifactId.replaceAll("-", "").slice(0, 20)}`,
     dockerDataVolume: `nea-${artifactId.replaceAll("-", "").slice(0, 18)}-dd`, beforeCacheKey: identity.beforeCacheKey, manifestDigest: identity.manifestDigest,
     state: "reserved", executionDomainId: identity.executionDomainId, runtimeProject: identity.runtimeProject, pool: identity.pool, baseFingerprint: identity.baseFingerprint,
-    providerRevision: identity.providerRevision, guestInitRevision: identity.guestInitRevision, captureRevision: identity.captureRevision, coverage: identity.coverage, resourcesDigest: identity.resourcesDigest, replacementScopeDigest: identity.replacementScopeDigest, createdAt: now, updatedAt: now },
+    providerRevision: identity.providerRevision, guestInitRevision: identity.guestInitRevision, cacheFormat: identity.cacheFormat, coverage: identity.coverage, resourcesDigest: identity.resourcesDigest, replacementScopeDigest: identity.replacementScopeDigest, createdAt: now, updatedAt: now },
     identity.artifactMaxInstances + (occupying.length >= identity.artifactMaxInstances ? 1 : 0));
   } finally { await capacityLock.release(); }
 }

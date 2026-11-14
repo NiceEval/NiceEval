@@ -204,7 +204,7 @@ export const beforeCacheSnapshotRepositoryHandler: UserDatabaseRepositoryHandler
   BeforeCacheSnapshotRepositoryRequest, BeforeCacheSnapshotRepositoryResult
 > = Object.freeze({
   id: BEFORE_CACHE_SNAPSHOTS_REPOSITORY,
-  // UserDatabase's single application migration owns schema installation.
+  // UserDatabase's atomic initialization owns schema installation.
   installCurrentSchema: assertBeforeCacheSnapshotSchema,
   assertCurrentSchema: assertBeforeCacheSnapshotSchema,
   dispatch,

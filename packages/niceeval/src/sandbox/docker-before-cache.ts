@@ -33,7 +33,6 @@ import {
 import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
 
 const CACHE_KIND = "sandbox-before-cache";
-const CACHE_PROTOCOL_VERSION = 1;
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const LEASE_HEARTBEAT_MS = 10 * 1000;
 const LEASE_TTL_MS = 60 * 1000;
@@ -42,7 +41,6 @@ const PROVIDER_CLEANUP_TIMEOUT_MS = 30 * 1000;
 
 const LABEL = Object.freeze({
   kind: "io.niceeval.cache.kind",
-  protocol: "io.niceeval.cache.protocol",
   domainId: "io.niceeval.cache.domain-id",
   entryId: "io.niceeval.cache.before-cache.entry-id",
   operationId: "io.niceeval.cache.before-cache.operation-id",
@@ -51,8 +49,7 @@ const LABEL = Object.freeze({
   baseIdentity: "io.niceeval.cache.before-cache.base-identity",
   declarationDigest: "io.niceeval.cache.before-cache.declaration-digest",
   metadataDigest: "io.niceeval.cache.before-cache.metadata-digest",
-  storageSchemaRevision: "io.niceeval.cache.before-cache.storage-schema",
-  artifactFormatRevision: "io.niceeval.cache.before-cache.artifact-format",
+  cacheFormat: "io.niceeval.cache.before-cache.format",
   dependency: "io.niceeval.cache.before-cache.dependency",
 });
 
@@ -74,8 +71,7 @@ interface BeforeCacheEntryRow {
   readonly declaration_json: string;
   readonly metadata_digest: string;
   readonly declaration_digest: string;
-  readonly storage_schema_revision: string;
-  readonly artifact_format_revision: string;
+  readonly cache_format: string;
   readonly dependency: "parent-backed";
   readonly change_frequency: number;
   readonly generation: number;
@@ -114,8 +110,7 @@ function repositoryManifest(manifest: ValidatedManifest): DockerBeforeCacheManif
     declarationJson: manifest.declarationJson,
     metadataDigest: manifest.metadataDigest,
     declarationDigest: manifest.value.declarationDigest,
-    storageSchemaRevision: manifest.value.storageSchemaRevision,
-    artifactFormatRevision: manifest.value.artifactFormatRevision,
+    cacheFormat: manifest.value.cacheFormat,
     changeFrequency: manifest.value.changeFrequency,
   };
 }
@@ -129,8 +124,7 @@ function localEntry(row: RepositoryBeforeCacheEntryRow): BeforeCacheEntryRow {
     declaration_json: row.declarationJson,
     metadata_digest: row.metadataDigest,
     declaration_digest: row.declarationDigest,
-    storage_schema_revision: row.storageSchemaRevision,
-    artifact_format_revision: row.artifactFormatRevision,
+    cache_format: row.cacheFormat,
     dependency: row.dependency,
     change_frequency: row.changeFrequency,
     generation: row.generation,
@@ -260,8 +254,7 @@ function validateOperation(input: BeforeCacheStep): ValidatedManifest {
   ) {
     throw new TypeError("requiredState must be sandboxState.all or sandboxState.dockerData");
   }
-  validateIdentity(input.declaration.storageSchemaRevision, "storageSchemaRevision");
-  validateIdentity(input.declaration.artifactFormatRevision, "artifactFormatRevision");
+  validateIdentity(input.declaration.cacheFormat, "cacheFormat");
   if (!Number.isFinite(input.declaration.changeFrequency) || input.declaration.changeFrequency < 0) {
     throw new TypeError("changeFrequency must be a finite non-negative number");
   }
@@ -432,7 +425,6 @@ function processIdentityIsLive(pid: number, bootId: string, processStart: string
 function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): Readonly<Record<string, string>> {
   return Object.freeze({
     [LABEL.kind]: CACHE_KIND,
-    [LABEL.protocol]: String(CACHE_PROTOCOL_VERSION),
     [LABEL.domainId]: domain.domainId,
     [LABEL.entryId]: row.entry_id,
     [LABEL.operationId]: row.operation_id,
@@ -441,8 +433,7 @@ function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): R
     [LABEL.baseIdentity]: row.base_identity,
     [LABEL.declarationDigest]: row.declaration_digest,
     [LABEL.metadataDigest]: row.metadata_digest,
-    [LABEL.storageSchemaRevision]: row.storage_schema_revision,
-    [LABEL.artifactFormatRevision]: row.artifact_format_revision,
+    [LABEL.cacheFormat]: row.cache_format,
     [LABEL.dependency]: row.dependency,
   });
 }
@@ -506,6 +497,9 @@ function validateImageLabels(
 ): void {
   if (inspection.Id !== imageId) throw new Error(`Docker inspect returned ${inspection.Id} for exact image ${imageId}`);
   const actual = inspection.Config?.Labels ?? {};
+  if (actual[LABEL.cacheFormat] !== expected[LABEL.cacheFormat]) {
+    throw new Error(`Docker cache image ${imageId} was written by an older NiceEval or has an unsupported format; reconcile its consumers, clean up this image, and rerun.`);
+  }
   for (const [key, value] of Object.entries(expected)) {
     if (actual[key] !== value) throw new Error(`Docker image ${imageId} has invalid managed label ${key}`);
   }

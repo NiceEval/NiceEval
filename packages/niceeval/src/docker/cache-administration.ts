@@ -2,7 +2,6 @@ import { Context, Effect } from "effect";
 
 export interface DockerCacheDomainDescriptor {
   readonly providerFamily: "docker";
-  readonly adminProtocolVersion: number;
   readonly domainId: string;
   readonly backendKind: string;
   readonly state: "verified-managed" | "verified-read-only" | "unverified" | "unavailable";

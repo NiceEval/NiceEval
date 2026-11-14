@@ -71,14 +71,18 @@
 
 ### 建立
 
-账本由一次新的相邻 UserDatabase migration 建立，不读取、不转换任何既有缓存数据（[T-1](../../taste.md#t-1)）。同一 migration 删除既有的 E2B、OpenSandbox、Docker 与 Incus before 缓存表，并按新名字重建 Docker 与 Incus 的表；临时的 GC lock 行同样丢弃。
+UserDatabase 只有一个格式标记。新库在私有临时文件中原子建立全部当前表，再发布到用户库路径。
+打开已有库时先核对格式标记，再验证当前表结构；不读取历史 DDL，不执行迁移，不静默清空登记。
+旧格式立即拒绝，反馈明确给出用户库路径，并提示停止消费者、核对远端 artifact 与 hold 后清理该库并重跑（[T-40](../../taste.md#t-40)）。
+清理用户库不授权删除 Provider 资源。租约、generation 与 hold 仍表达资源归属，不能因格式变化而跳过核对。
 
-已有缓存因此全部失效：
+格式不符时保留原库与 Provider 资源，不把原登记解释为当前格式。
+用户清理前先停止全部消费者，并在 Provider 控制台核对远端 snapshot，或通过 Docker、Incus CLI 核对 image、VM 与 disk。
+只有确认没有消费者与 hold 后，才显式清理对应资源和用户库。下一次运行从空库按当前 key 重新准备并发布。
 
-| 遗留物 | 结果 |
-| --- | --- |
-| E2B、OpenSandbox 账号中 NiceEval 创建过的 snapshot | 不再登记，NiceEval 不回收；用户在 Provider 控制台删除 |
-| 本机 Docker 中的 before 缓存 image | 不再登记，`docker cache inventory` 与 `docker cache gc` 都看不到；用户自行删除 |
-| Incus prepared artifact（VM、disk 与 image） | 不再登记，`inventory incus` 与 `gc incus` 都看不到；用户用 `incus` CLI 按 `user.niceeval.setupPrefixKey` metadata 找到并删除 |
+## 缓存格式
 
-下一次运行按新 key 重新准备并发布。
+Docker、Incus 与远端 snapshot 的缓存声明各带一个 `cacheFormat`，同时约束存储解释与 artifact 读取。
+该标记与实际 Base、准备内容及 Provider 的语义身份共同参与缓存键。格式不符时拒绝沿用，提示清理对应 artifact 并重新准备。
+Docker 与 Incus 的内部登记表由 UserDatabase 的格式标记统一保护，不另设 schema 或 admin protocol 版本。
+第三方 Provider 的 opaque artifact 能力标识仍由其 owner 提供；外部 Docker Profile 与 Incus descriptor 协议保持独立。

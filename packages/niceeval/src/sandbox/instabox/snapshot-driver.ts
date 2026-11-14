@@ -38,8 +38,7 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
     return {
       _tag: "Resolved" as const, executionDomainId, baseIdentity, baseReference: snapshotId ?? templateId,
       keyScope: {
-        protocol: "niceeval.before-cache-key/v1", storageSchemaRevision: "remote-snapshot/1",
-        artifactFormatRevision: "instabox-root-and-data/1", semanticIdentity: { executionDomainId, platform: "linux-x64-gnu" },
+        cacheFormat: "niceeval-instabox-cache/current", semanticIdentity: { executionDomainId, platform: "linux-x64-gnu" },
       },
     };
   }),

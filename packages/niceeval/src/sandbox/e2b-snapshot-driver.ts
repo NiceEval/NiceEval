@@ -35,7 +35,7 @@ export const e2bSnapshotDriver: BeforeCacheSnapshotDriver<E2BProviderPlan> = {
     const executionDomainId = createHash("sha256").update(JSON.stringify([domain, createHash("sha256").update(key).digest("hex")])).digest("hex");
     return {
       _tag: "Resolved" as const, executionDomainId, baseIdentity: `e2b-build:${selected.buildId}`, baseReference: reference,
-      keyScope: { protocol: "niceeval.before-cache-key/v1", storageSchemaRevision: "remote-snapshot/1", artifactFormatRevision: "e2b-full/1", semanticIdentity: { executionDomainId, mode: "full" } },
+      keyScope: { cacheFormat: "niceeval-e2b-cache/current", semanticIdentity: { executionDomainId, mode: "full" } },
     };
   }),
   createFromSnapshot: (plan, snapshotId, context) => Effect.acquireRelease(

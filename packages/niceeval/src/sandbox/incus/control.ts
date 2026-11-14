@@ -39,7 +39,7 @@ export const INCUS_METADATA = Object.freeze({
   runtimeProject: "user.niceeval.runtimeProject",
   pool: "user.niceeval.pool",
   baseFingerprint: "user.niceeval.baseFingerprint",
-  captureRevision: "user.niceeval.captureRevision",
+  cacheFormat: "user.niceeval.cacheFormat",
   replacementScopeDigest: "user.niceeval.replacementScopeDigest",
 });
 

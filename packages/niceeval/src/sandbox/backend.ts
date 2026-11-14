@@ -32,9 +32,7 @@ export type BeforeCacheUnsupportedCode =
   | "profile-backed-dind";
 
 const BeforeCacheKeyScopeSchema = Schema.Struct({
-  protocol: Schema.String,
-  storageSchemaRevision: Schema.String,
-  artifactFormatRevision: Schema.String,
+  cacheFormat: Schema.String,
   semanticIdentity: Schema.Json.pipe(Schema.refine(isJsonValue)),
 });
 
@@ -79,8 +77,7 @@ export interface BeforeCacheDeclaration {
   readonly declarationDigest: string;
   /** Cumulative state required by this exact logical prefix. */
   readonly requiredState: SandboxActionState;
-  readonly storageSchemaRevision: string;
-  readonly artifactFormatRevision: string;
+  readonly cacheFormat: string;
   readonly changeFrequency: number;
   /** Frozen, non-sensitive declaration metadata used for bidirectional registry validation. */
   readonly declarationMetadata: unknown;

@@ -24,8 +24,8 @@ const decodeMarker = Schema.decodeUnknownSync(Marker, { onExcessProperty: "error
 const decodeLocator = Schema.decodeUnknownSync(Locator, { onExcessProperty: "error" });
 const Declaration = Schema.Struct({
   baseIdentity: Schema.String, beforeCacheKey: Schema.String, declarationDigest: Schema.String,
-  requiredState: Schema.Literals(["all", "dockerData"]), storageSchemaRevision: Schema.String,
-  artifactFormatRevision: Schema.String, changeFrequency: Schema.Number, declarationMetadata: Schema.Json,
+  requiredState: Schema.Literals(["all", "dockerData"]), cacheFormat: Schema.String,
+  changeFrequency: Schema.Number, declarationMetadata: Schema.Json,
 });
 const decodeDeclaration = Schema.decodeUnknownSync(Declaration, { onExcessProperty: "error" });
 const degraded = (reason: BeforeCacheDegradedReason, detail: string) => ({ _tag: "Degraded" as const, reason, detail });

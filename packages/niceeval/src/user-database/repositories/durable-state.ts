@@ -42,7 +42,7 @@ function assertCurrentSchema(database: DatabaseSync): void {
   const table = rows.find((row) => row.type === "table" && row.name === EntriesTable && row.tbl_name === EntriesTable);
   const automaticIndex = rows.find((row) => row.type === "index" && row.tbl_name === EntriesTable && row.sql === null);
   if (rows.length !== 2 || table === undefined || exactSql(table.sql ?? "") !== exactSql(CreateEntries) || automaticIndex === undefined) {
-    throw invalid("durable-state schema does not match revision 1");
+    throw invalid("durable-state schema does not match the current UserDatabase format");
   }
 }
 

@@ -221,7 +221,7 @@ type BeforeCacheStart =
 
 - **位置**：配对的准备链（[core 的捕获步骤](#core-的捕获步骤)）之后追加一个节点，父节点是链上最后一个 eligible 节点；链为空时父节点是 Base。链在第一个 opaque action 处截断，派生节点接在截断点之前，不接在 opaque action 之后。
 - **条件**：配对的每条 install 声明都配到 installer，installer 是 `staged` 模式并带内部 cache-safe 标记；其中任一条不满足时不追加派生节点，配对照常在 Attempt 内安装。第三方 installer 与 `verify-only` 模式不参与。
-- **身份**：`AgentDerivedKey = hash(父节点 BeforeCacheKey 或 Base 身份, 计划 target platform/libc, 按声明顺序的 install identity 与 installer identity/revision/installMode, 派生节点 revision)`。它不读取 before 之后的 opaque action、credential value 或 Agent runtime before；它不进入任何 Attempt、config 或 input identity。
+- **身份**：`AgentDerivedKey = hash(父节点 BeforeCacheKey 或 Base 身份, 计划 target platform/libc, 按声明顺序的 install identity 与 installer identity/revision/installMode, 当前缓存格式)`。它不读取 before 之后的 opaque action、credential value 或 Agent runtime before；它不进入任何 Attempt、config 或 input identity。
 - **准备**：在父节点的 staging 上（可连续推进时沿用，否则从父 snapshot 新建）按声明顺序执行与 `agent.install` 相同的 install 循环：探测、未命中时用 Run 级已准备的 staged payload 安装、复检。复检通过后照常写 artifact 标记、做挂载与敏感字节检查、quiesce 并发布 `niceeval-<artifactId>`。
 - **结算**：派生节点没有 author action，安装或复检失败都只结算为 `degraded`，原因 `agent-install-failed`，配对消费父节点，Attempt 内的安装循环按原样报告真实失败。不会因派生节点失败而让配对在派发前失败。
 - **消费**：目标配对消费派生节点时，opaque action 及其后的 before 照常在 Attempt 内真实执行；`agent.install` 仍执行完整循环，探测命中，`niceeval.agent-install` 写入的安装事件注明命中来自派生节点（[T-31](../../../taste.md#t-31)）。opaque action 改动了 Agent 目录时，探测不命中，循环照常安装。
@@ -305,7 +305,7 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 
 - **driver**：`preserves = { disks: ["/"], memory: false }`；`sourceUsableAfterSnapshot = false`。不保存进程、卷或 tmpfs。
 - **Base 身份**：必须是 digest-pinned image，否则 `Ineligible(base-image-unverified)`。
-- **execution domain**：规范化服务 URL 与凭据的不可逆摘要；URL 路径、目标平台与 Provider format revision 进入 key scope。
+- **execution domain**：规范化服务 URL 与凭据的不可逆摘要；URL 路径、目标平台与 Provider 的 `cacheFormat` 进入 key scope。
 - **createSnapshot / findSnapshot / deleteSnapshot**：公开 Snapshot API，按 `name` 创建与精确查询。
 - **createFromSnapshot**：从 snapshotId 创建实例；remote handle 原子替换 backend，清空用户身份与 PATH 等实例缓存后重新执行宿主初始化，不保留旧实例引用。
 - **回收边界**：Snapshot 删除不保证回收 Kubernetes registry blobs。registry retention 与容量监控属于部署方，NiceEval 不持有 registry 写凭据。

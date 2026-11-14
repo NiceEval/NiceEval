@@ -13,7 +13,6 @@ import type {
   DockerCacheDomainDescriptor as CacheDomainDescriptor,
 } from "../docker/cache-administration.ts";
 import {
-  DOCKER_CACHE_REPOSITORY_REVISION,
   type DockerHolderIdentity,
   type DockerImageGcLockRow,
   type DockerTaskBuildEntryRow,
@@ -21,7 +20,6 @@ import {
 import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
 
 const execFileAsync = promisify(execFile);
-export const DOCKER_CACHE_REGISTRY_SCHEMA_VERSION = DOCKER_CACHE_REPOSITORY_REVISION;
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_TASK_BUILD_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const PLAN_TTL_MS = 15 * 60 * 1000;
@@ -369,7 +367,7 @@ async function openDomain(dockerSocketPath?: string): Promise<DockerCacheDomainH
     operation: "verify-domain",
     domain: {
       domainId, ownerId: owner.ownerId, daemonId, storageDriver, sentinelId, backendIdentity,
-      providerFamily: "docker", adminProtocolVersion: 1, backendKind: "docker-images",
+      providerFamily: "docker", backendKind: "docker-images",
     },
     candidateAuthorityEpoch: randomUUID(),
     verifiedAt: new Date().toISOString(),
@@ -426,7 +424,7 @@ export const openDockerCacheDomainEffect = Effect.fn("openDockerCacheDomainEffec
       operation: "verify-domain",
       domain: {
         domainId, ownerId: owner.ownerId, daemonId, storageDriver, sentinelId, backendIdentity,
-        providerFamily: "docker", adminProtocolVersion: 1, backendKind: "docker-images",
+        providerFamily: "docker", backendKind: "docker-images",
       },
       candidateAuthorityEpoch: randomUUID(),
       verifiedAt: new Date().toISOString(),
@@ -451,7 +449,6 @@ export const listDockerCacheDomainsEffect = Effect.fn("listDockerCacheDomainsEff
     const listed = yield* dockerCacheRepository.requestEffect({ repository: "docker-cache", operation: "list-domains" });
     return listed.domains.map((row) => ({
       providerFamily: "docker" as const,
-      adminProtocolVersion: row.adminProtocolVersion,
       domainId: row.domainId,
       backendKind: row.backendKind,
       state: row.domainId === current.domainId ? "verified-managed" as const : "unavailable" as const,
@@ -463,7 +460,7 @@ export async function listDockerCacheDomains(): Promise<readonly CacheDomainDesc
   const current = await openDomain();
   const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "list-domains" });
   return listed.domains.map((row) => ({
-    providerFamily: "docker", adminProtocolVersion: row.adminProtocolVersion, domainId: row.domainId,
+    providerFamily: "docker", domainId: row.domainId,
     backendKind: row.backendKind, state: row.domainId === current.domainId ? "verified-managed" : "unavailable",
   }));
 }

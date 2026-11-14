@@ -105,7 +105,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
     snapshotSettleMs: 60_000,
     resolveBase: () => Effect.succeed({
       _tag: "Resolved", executionDomainId: domain, baseIdentity: "immutable-base", baseReference: "declared-base",
-      keyScope: { protocol: "test", storageSchemaRevision: "1", artifactFormatRevision: "1", semanticIdentity: {} },
+      keyScope: { cacheFormat: "test", semanticIdentity: {} },
     }),
     createFromSnapshot: (_plan, id) => Effect.suspend(() => {
       const snapshot = snapshots.get(id);
@@ -134,7 +134,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
   const step: BeforeCacheStep = {
     operationId: randomUUID(), positions: ["prepare"], declaringOwner: "eval:prepare", declaration: {
       baseIdentity: "immutable-base", beforeCacheKey: `prefix:${domain}`, declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
-      requiredState: "all", storageSchemaRevision: "1", artifactFormatRevision: "1", changeFrequency: 100, declarationMetadata,
+      requiredState: "all", cacheFormat: "test", changeFrequency: 100, declarationMetadata,
     },
   };
   const context: BeforeCachePreparationContext = { providerId: "test/recording-snapshot", runId: randomUUID(), materializeBase: () => own() };

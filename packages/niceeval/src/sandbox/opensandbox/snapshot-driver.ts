@@ -37,7 +37,7 @@ export const openSandboxSnapshotDriver: BeforeCacheSnapshotDriver<OpenSandboxOpt
       _tag: "Resolved" as const, executionDomainId, baseIdentity: plan.image,
       baseReference: plan.image.slice(0, plan.image.lastIndexOf("@")),
       keyScope: {
-        protocol: "niceeval.before-cache-key/v1", storageSchemaRevision: "remote-snapshot/1", artifactFormatRevision: "opensandbox-rootfs/1",
+        cacheFormat: "niceeval-opensandbox-cache/current",
         semanticIdentity: { executionDomainId, urlPath: new URL(config.domain).pathname, targetPlatform: { ...plan.targetPlatform } },
       },
     };

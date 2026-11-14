@@ -691,9 +691,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         coverage: sandboxState.dockerData,
         baseIdentity: this.baseIdentity,
         keyScope: decodeBeforeCacheKeyScope({
-          protocol: capability.protocol,
-          storageSchemaRevision: capability.publicationRevision,
-          artifactFormatRevision: capability.copyRevision,
+          cacheFormat: JSON.stringify({ protocol: capability.protocol, publication: capability.publicationRevision, copy: capability.copyRevision }),
           semanticIdentity: Object.freeze({
             component: "durable-docker-data",
             coverage: capability.coverage,
@@ -793,9 +791,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       coverage: sandboxState.all,
       baseIdentity: this.baseIdentity,
       keyScope: decodeBeforeCacheKeyScope({
-        protocol: "niceeval-docker-rootfs-before-cache/v1",
-        storageSchemaRevision: "niceeval.before-cache-storage/v1",
-        artifactFormatRevision: "niceeval.before-cache-capture/v1",
+        cacheFormat: "niceeval-docker-cache/current",
         semanticIdentity: { capture: "outer-writable-rootfs" },
       }),
     };

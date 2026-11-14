@@ -124,7 +124,7 @@ portable Record 是同一个 canonical 文件，包含 checkpoint 字节；只�
 只有作为项目 canonical ProjectDatabase 的写入口可以恢复执行；不新增导出、旁挂目录或第二份数据库。
 复制整个已停机项目形成独立 authority，保留 checkpoint 但不跨副本协调；移动同一项目保留状态。新建数据库从空状态开始。
 旧 checkpoint 不自动回收；Run delete 不清空它。跨项目迁移、merge、后台服务快照与独立 checkpoint 命令不在范围内。
-现有 `niceeval state migrate` 只管 UserDatabase schema，与此 Sandbox State 无关。
+UserDatabase 格式不符时拒绝打开，不提供迁移命令；清理规则见 [Sandbox 数据模型](../sandbox/data-model.md)。
 
 ## 验收
 

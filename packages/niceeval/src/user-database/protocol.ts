@@ -53,36 +53,8 @@ export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest>
         ? IncusRepositoryResultFor<Request>
         : Request extends BeforeCacheSnapshotRepositoryRequest ? BeforeCacheSnapshotRepositoryResult : never;
 
-export interface UserDatabaseMigrationReceipt {
-  readonly version: number;
-  readonly digest: string;
-}
-
-export type UserDatabaseMigrationResult =
-  | {
-      readonly status: "bootstrapped";
-      readonly baseline: "0.14.0";
-      readonly fromVersion: 0;
-      readonly toVersion: number;
-      readonly receipts: readonly UserDatabaseMigrationReceipt[];
-    }
-  | {
-      readonly status: "migrated";
-      readonly baseline: "0.14.0";
-      readonly fromVersion: number;
-      readonly toVersion: number;
-      readonly receipts: readonly UserDatabaseMigrationReceipt[];
-    }
-  | {
-      readonly status: "current";
-      readonly baseline: "0.14.0";
-      readonly version: number;
-      readonly receipts: readonly UserDatabaseMigrationReceipt[];
-    };
-
 export type UserDatabaseWorkerRequest =
   | { readonly id: number; readonly kind: "repository"; readonly request: UserDatabaseRepositoryRequest }
-  | { readonly id: number; readonly kind: "maintenance"; readonly operation: "migrate-all" }
   | { readonly id: number; readonly kind: "close" };
 
 export type UserDatabaseWorkerRequestWithoutId = UserDatabaseWorkerRequest extends infer Request
@@ -99,16 +71,14 @@ export interface UserDatabaseWorkerFailure {
   readonly code: "user-database-invalid" | "user-database-busy" | "user-database-unsupported" | "user-database-legacy-found";
   readonly message: string;
   readonly repository?: string;
-  readonly databaseBaseline?: string;
-  readonly supportedBaseline?: string;
   readonly legacyPath?: string;
   readonly databasePath?: string;
 }
 
 export type UserDatabaseWorkerStartup =
-  | { readonly state: "ready"; readonly migration: UserDatabaseMigrationResult }
+  | { readonly state: "ready" }
   | { readonly state: "startup-failure"; readonly error: UserDatabaseWorkerFailure };
 
 export type UserDatabaseWorkerResponse =
-  | { readonly id: number; readonly state: "success"; readonly result: UserDatabaseRepositoryResult | UserDatabaseMigrationResult | { readonly kind: "void" } }
+  | { readonly id: number; readonly state: "success"; readonly result: UserDatabaseRepositoryResult | { readonly kind: "void" } }
   | { readonly id: number; readonly state: "failure"; readonly error: UserDatabaseWorkerFailure };

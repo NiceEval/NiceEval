@@ -18,7 +18,7 @@ const DOCKER_CACHE_STATE = Object.freeze({
 const DOCKER_CACHE_KIND = Object.freeze({ taskBuild: "task-build", sandboxBeforeCache: "sandbox-before-cache" } as const);
 const DOCKER_LEASE_KIND = Object.freeze({ build: "build", read: "read", handoff: "handoff" } as const);
 const DOCKER_CACHE_DOMAIN = Object.freeze({
-  providerFamily: "docker", adminProtocolVersion: 1, backendKind: "docker-images",
+  providerFamily: "docker", backendKind: "docker-images",
   verifiedState: "verified-managed", beforeCacheDependency: "parent-backed",
 } as const);
 const DOCKER_RESERVATION_DISPOSITION = Object.freeze({ reserved: "reserved", contended: "contended" } as const);
@@ -63,7 +63,6 @@ const DOCKER_CACHE_KINDS = Object.freeze([DOCKER_CACHE_KIND.taskBuild, DOCKER_CA
 const DOCKER_BEFORE_CACHE_LEASE_KINDS = Object.freeze([DOCKER_LEASE_KIND.build, DOCKER_LEASE_KIND.read, DOCKER_LEASE_KIND.handoff] as const);
 
 export const DOCKER_CACHE_REPOSITORY = "docker-cache" as const;
-export const DOCKER_CACHE_REPOSITORY_REVISION = 1;
 
 export type DockerCacheEntryState = FiniteValue<typeof DOCKER_TASK_ENTRY_STATES>;
 export type DockerBeforeCacheEntryState = FiniteValue<typeof DOCKER_BEFORE_CACHE_ENTRY_STATES>;
@@ -77,7 +76,6 @@ export interface DockerCacheDomainRow {
   readonly backendIdentity: string;
   readonly authorityEpoch: string;
   readonly providerFamily: typeof DOCKER_CACHE_DOMAIN.providerFamily;
-  readonly adminProtocolVersion: typeof DOCKER_CACHE_DOMAIN.adminProtocolVersion;
   readonly backendKind: typeof DOCKER_CACHE_DOMAIN.backendKind;
   readonly firstVerifiedAt: string;
   readonly lastVerifiedAt: string;
@@ -139,8 +137,7 @@ export interface DockerBeforeCacheEntryRow {
   readonly declarationJson: string;
   readonly metadataDigest: string;
   readonly declarationDigest: string;
-  readonly storageSchemaRevision: string;
-  readonly artifactFormatRevision: string;
+  readonly cacheFormat: string;
   readonly dependency: typeof DOCKER_CACHE_DOMAIN.beforeCacheDependency;
   readonly changeFrequency: number;
   readonly generation: number;
@@ -186,8 +183,7 @@ export interface DockerBeforeCacheManifestFields {
   readonly declarationJson: string;
   readonly metadataDigest: string;
   readonly declarationDigest: string;
-  readonly storageSchemaRevision: string;
-  readonly artifactFormatRevision: string;
+  readonly cacheFormat: string;
   readonly changeFrequency: number;
 }
 
@@ -306,7 +302,7 @@ const CREATE_SCHEMA = `
 CREATE TABLE ${TABLES.domains} (
   domain_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, daemon_id TEXT NOT NULL, storage_driver TEXT NOT NULL,
   sentinel_id TEXT NOT NULL, backend_identity TEXT NOT NULL, authority_epoch TEXT NOT NULL,
-  provider_family TEXT NOT NULL CHECK(provider_family = ${sqlLiteral(DOCKER_CACHE_DOMAIN.providerFamily)}), admin_protocol_version INTEGER NOT NULL CHECK(admin_protocol_version = ${DOCKER_CACHE_DOMAIN.adminProtocolVersion}),
+  provider_family TEXT NOT NULL CHECK(provider_family = ${sqlLiteral(DOCKER_CACHE_DOMAIN.providerFamily)}),
   backend_kind TEXT NOT NULL CHECK(backend_kind = ${sqlLiteral(DOCKER_CACHE_DOMAIN.backendKind)}), first_verified_at TEXT NOT NULL,
   last_verified_at TEXT NOT NULL, last_state TEXT NOT NULL CHECK(last_state = ${sqlLiteral(DOCKER_CACHE_DOMAIN.verifiedState)})
 ) STRICT;
@@ -346,7 +342,7 @@ CREATE TABLE ${TABLES.locks} (
 CREATE TABLE ${TABLES.beforeCacheEntries} (
   domain_id TEXT NOT NULL REFERENCES ${TABLES.domains}(domain_id), entry_id TEXT NOT NULL, before_cache_key TEXT NOT NULL,
   base_identity TEXT NOT NULL, image_id TEXT, declaration_json TEXT NOT NULL, metadata_digest TEXT NOT NULL,
-  declaration_digest TEXT NOT NULL, storage_schema_revision TEXT NOT NULL, artifact_format_revision TEXT NOT NULL,
+  declaration_digest TEXT NOT NULL, cache_format TEXT NOT NULL,
   dependency TEXT NOT NULL CHECK(dependency = ${sqlLiteral(DOCKER_CACHE_DOMAIN.beforeCacheDependency)}), change_frequency REAL NOT NULL, generation INTEGER NOT NULL,
   operation_id TEXT NOT NULL, created_at TEXT NOT NULL, last_successful_use_at TEXT, protected_until TEXT NOT NULL,
   state TEXT NOT NULL CHECK(state IN (${sqlIn(DOCKER_BEFORE_CACHE_ENTRY_STATES)})),
@@ -396,13 +392,6 @@ CREATE TRIGGER docker_before_cache_exact_base_update BEFORE UPDATE OF base_ident
 WHEN length(NEW.base_identity) != 71 OR substr(NEW.base_identity, 1, 7) != 'sha256:' OR substr(NEW.base_identity, 8) GLOB '*[^0-9a-f]*'
 BEGIN SELECT RAISE(ABORT, 'before-cache exact Base identity is required'); END;
 `;
-
-/** New Before cache tables and transient GC ownership use the renamed vocabulary. */
-export const DOCKER_BEFORE_CACHE_SCHEMA_SQL = CREATE_SCHEMA.slice(CREATE_SCHEMA.indexOf("CREATE TABLE " + TABLES.beforeCacheEntries));
-export const DOCKER_IMAGE_GC_LOCK_SCHEMA_SQL = CREATE_SCHEMA.slice(
-  CREATE_SCHEMA.indexOf("CREATE TABLE " + TABLES.locks),
-  CREATE_SCHEMA.indexOf("CREATE TABLE " + TABLES.beforeCacheEntries),
-);
 
 interface SchemaObject {
   readonly type: string;
@@ -511,8 +500,7 @@ function beforeCacheEntry(row: unknown): DockerBeforeCacheEntryRow {
     baseIdentity: exactString(value.base_identity, "base_identity"), imageId: nullableString(value.image_id, "image_id"),
     declarationJson: exactString(value.declaration_json, "declaration_json"), metadataDigest: exactString(value.metadata_digest, "metadata_digest"),
     declarationDigest: exactString(value.declaration_digest, "declaration_digest"),
-    storageSchemaRevision: exactString(value.storage_schema_revision, "storage_schema_revision"),
-    artifactFormatRevision: exactString(value.artifact_format_revision, "artifact_format_revision"),
+    cacheFormat: exactString(value.cache_format, "cache_format"),
     dependency, changeFrequency, generation: exactInteger(value.generation, "generation"),
     operationId: exactString(value.operation_id, "operation_id"), createdAt: exactString(value.created_at, "created_at"),
     lastSuccessfulUseAt: nullableString(value.last_successful_use_at, "last_successful_use_at"),
@@ -619,8 +607,7 @@ function bump(database: DatabaseSync, domainId: string, key: "taskSafetyRevision
 function manifestMatches(row: DockerBeforeCacheEntryRow, manifest: DockerBeforeCacheManifestFields): boolean {
   return row.beforeCacheKey === manifest.beforeCacheKey && row.baseIdentity === manifest.baseIdentity &&
     row.declarationJson === manifest.declarationJson && row.metadataDigest === manifest.metadataDigest &&
-    row.declarationDigest === manifest.declarationDigest && row.storageSchemaRevision === manifest.storageSchemaRevision &&
-    row.artifactFormatRevision === manifest.artifactFormatRevision &&
+    row.declarationDigest === manifest.declarationDigest && row.cacheFormat === manifest.cacheFormat &&
     row.dependency === DOCKER_CACHE_DOMAIN.beforeCacheDependency;
 }
 
@@ -636,7 +623,7 @@ function assertCurrentSchema(database: DatabaseSync): void {
     expectedNames.has(object.name) || expectedTables.has(object.table));
   if (actual.length !== expected.length || actual.some((object, index) =>
     schemaObjectIdentity(object) !== schemaObjectIdentity(expected[index]!))) {
-    throw invalid(`docker-cache schema does not match revision ${DOCKER_CACHE_REPOSITORY_REVISION}`);
+    throw invalid("docker-cache schema does not match the current UserDatabase format");
   }
 }
 
@@ -652,7 +639,7 @@ function domainRow(row: unknown): DockerCacheDomainRow {
     daemonId: exactString(value.daemon_id, "daemon_id"), storageDriver: exactString(value.storage_driver, "storage_driver"),
     sentinelId: exactString(value.sentinel_id, "sentinel_id"), backendIdentity: exactString(value.backend_identity, "backend_identity"),
     authorityEpoch: exactString(value.authority_epoch, "authority_epoch"), providerFamily: DOCKER_CACHE_DOMAIN.providerFamily,
-    adminProtocolVersion: DOCKER_CACHE_DOMAIN.adminProtocolVersion, backendKind: DOCKER_CACHE_DOMAIN.backendKind,
+    backendKind: DOCKER_CACHE_DOMAIN.backendKind,
     firstVerifiedAt: exactString(value.first_verified_at, "first_verified_at"),
     lastVerifiedAt: exactString(value.last_verified_at, "last_verified_at"), lastState: DOCKER_CACHE_DOMAIN.verifiedState,
   });
@@ -677,8 +664,8 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
         database.prepare(`
           INSERT INTO ${TABLES.domains}(
             domain_id, owner_id, daemon_id, storage_driver, sentinel_id, backend_identity, authority_epoch,
-            provider_family, admin_protocol_version, backend_kind, first_verified_at, last_verified_at, last_state
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.providerFamily)}, ${DOCKER_CACHE_DOMAIN.adminProtocolVersion}, ${sqlLiteral(DOCKER_CACHE_DOMAIN.backendKind)}, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.verifiedState)})
+            provider_family, backend_kind, first_verified_at, last_verified_at, last_state
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.providerFamily)}, ${sqlLiteral(DOCKER_CACHE_DOMAIN.backendKind)}, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.verifiedState)})
           ON CONFLICT(domain_id) DO UPDATE SET
             last_verified_at=excluded.last_verified_at, last_state=${sqlLiteral(DOCKER_CACHE_DOMAIN.verifiedState)}
           WHERE owner_id=excluded.owner_id AND daemon_id=excluded.daemon_id AND storage_driver=excluded.storage_driver
@@ -980,10 +967,10 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
         const entryId = `sandbox-before-cache:${entryIdentity}`;
         database.prepare(`INSERT INTO ${TABLES.beforeCacheEntries}(
           domain_id, entry_id, before_cache_key, base_identity, image_id, declaration_json, metadata_digest,
-          declaration_digest, storage_schema_revision, artifact_format_revision, dependency, change_frequency,
+          declaration_digest, cache_format, dependency, change_frequency,
           generation, operation_id, created_at, last_successful_use_at, protected_until, state
-        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.beforeCacheDependency)}, ?, ?, ?, ?, NULL, ?, ${sqlLiteral(DOCKER_CACHE_STATE.building)})`)
-          .run(request.domainId, entryId, request.manifest.beforeCacheKey, request.manifest.baseIdentity, request.manifest.declarationJson, request.manifest.metadataDigest, request.manifest.declarationDigest, request.manifest.storageSchemaRevision, request.manifest.artifactFormatRevision, request.manifest.changeFrequency, generation, request.operationId, request.now, request.protectedUntil);
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ${sqlLiteral(DOCKER_CACHE_DOMAIN.beforeCacheDependency)}, ?, ?, ?, ?, NULL, ?, ${sqlLiteral(DOCKER_CACHE_STATE.building)})`)
+          .run(request.domainId, entryId, request.manifest.beforeCacheKey, request.manifest.baseIdentity, request.manifest.declarationJson, request.manifest.metadataDigest, request.manifest.declarationDigest, request.manifest.cacheFormat, request.manifest.changeFrequency, generation, request.operationId, request.now, request.protectedUntil);
         database.prepare(`INSERT INTO ${TABLES.beforeCacheScopes}(domain_id, entry_id, replacement_scope) VALUES (?, ?, ?)`).run(request.domainId, entryId, request.replacementScope);
         database.prepare(`INSERT INTO ${TABLES.beforeCacheLeases}(
           domain_id, lease_id, entry_id, before_cache_key, generation, kind, operation_id,
@@ -1161,7 +1148,7 @@ function holderValue(value: unknown): value is DockerHolderIdentity {
 function manifestValue(value: unknown): value is DockerBeforeCacheManifestFields {
   return isObject(value) && strings(value, [
     "beforeCacheKey", "baseIdentity", "declarationJson", "metadataDigest", "declarationDigest",
-    "storageSchemaRevision", "artifactFormatRevision",
+    "cacheFormat",
   ]) && typeof value.changeFrequency === "number" && Number.isFinite(value.changeFrequency) && value.changeFrequency >= 0;
 }
 
@@ -1175,7 +1162,7 @@ function taskEntryValue(value: unknown): value is DockerTaskBuildEntryRow {
 function beforeCacheEntryValue(value: unknown): value is DockerBeforeCacheEntryRow {
   return isObject(value) && strings(value, [
     "entryId", "beforeCacheKey", "baseIdentity", "declarationJson", "metadataDigest", "declarationDigest",
-    "storageSchemaRevision", "artifactFormatRevision", "dependency", "operationId", "createdAt", "protectedUntil", "state",
+    "cacheFormat", "dependency", "operationId", "createdAt", "protectedUntil", "state",
   ]) && (value.imageId === null || typeof value.imageId === "string") &&
     (value.lastSuccessfulUseAt === null || typeof value.lastSuccessfulUseAt === "string") &&
     value.dependency === DOCKER_CACHE_DOMAIN.beforeCacheDependency && typeof value.changeFrequency === "number" && Number.isFinite(value.changeFrequency) &&
@@ -1210,7 +1197,6 @@ export function isDockerCacheRepositoryRequest(value: unknown): value is DockerC
       const domain = value.domain;
       return strings(domain, ["domainId", "ownerId", "daemonId", "storageDriver", "sentinelId", "backendIdentity", "providerFamily", "backendKind"]) &&
         domain.providerFamily === DOCKER_CACHE_DOMAIN.providerFamily &&
-        domain.adminProtocolVersion === DOCKER_CACHE_DOMAIN.adminProtocolVersion &&
         domain.backendKind === DOCKER_CACHE_DOMAIN.backendKind;
     }
     case "task-get-indexed":
@@ -1303,8 +1289,7 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
       return isObject(value.domain) && strings(value.domain, [
         "domainId", "ownerId", "daemonId", "storageDriver", "sentinelId", "backendIdentity", "authorityEpoch",
         "providerFamily", "backendKind", "firstVerifiedAt", "lastVerifiedAt", "lastState",
-      ]) && value.domain.providerFamily === DOCKER_CACHE_DOMAIN.providerFamily &&
-        value.domain.adminProtocolVersion === DOCKER_CACHE_DOMAIN.adminProtocolVersion;
+      ]) && value.domain.providerFamily === DOCKER_CACHE_DOMAIN.providerFamily;
     case "list-domains":
       return Array.isArray(value.domains) && value.domains.every((domain) =>
         isObject(domain) && strings(domain, ["domainId", "ownerId", "backendIdentity", "authorityEpoch"]));

@@ -30,7 +30,7 @@ export function plannedAgentDerivedNode(
     installer[AGENT_DOCKERFILE_CACHE_SAFE] !== true)) return undefined;
 
   const declarationMetadata = {
-    protocol: "niceeval.remote-snapshot-agent-derived/v1",
+    domain: "niceeval.remote-snapshot-agent-derived",
     parent: parent?.key ?? {
       baseIdentity: eligibility.baseIdentity,
       provider: plan.providerPlan.provider,
@@ -43,7 +43,6 @@ export function plannedAgentDerivedNode(
       installer: { ...matched[index]!.identity },
       installMode: matched[index]!.installMode,
     })),
-    revision: "remote-snapshot-agent-1",
   };
   const key = `agent-derived:${digestOf(declarationMetadata)}`;
   return Object.freeze({
@@ -57,8 +56,7 @@ export function plannedAgentDerivedNode(
       beforeCacheKey: key,
       declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
       requiredState: "all" as const,
-      storageSchemaRevision: eligibility.keyScope.storageSchemaRevision,
-      artifactFormatRevision: eligibility.keyScope.artifactFormatRevision,
+      cacheFormat: eligibility.keyScope.cacheFormat,
       changeFrequency: 100,
       declarationMetadata,
     }),
