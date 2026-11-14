@@ -42,6 +42,7 @@ Attempt 的断言完成后，`telemetry.collect` 收集这个 Attempt 的全部 
 
 整个 `telemetry.collect` 有一个总预算，默认 30 秒。到期时停止仍在进行的子活动，保留已经取回并解码的 span，trace 收集记一条 `telemetry-budget-exceeded` limitation，同时写入同名诊断与已知字节数、span 数。
 预算到期不改变已定的 Verdict，接收器与远端连接照常释放。
+预算约束 `telemetry.settle`、`telemetry.read` 与 `telemetry.decode`。`telemetry.map` 调用 Agent 的同步 `spanMapper`，无法中途打断，只对预算到期前已解码的 span 运行一次；它的耗时照常记入 Timing。
 Sandbox 接收器分块取回 span 文件，每块取回后即解码，预算到期时已解码的部分照常保留。筛选与映射只在宿主进行：Sandbox 里不一定有 Node 或其它运行时，不能假设能在里面执行筛选程序。
 
 ## 接入决策树
