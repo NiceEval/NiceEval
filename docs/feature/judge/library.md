@@ -252,6 +252,7 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
 - `defineAgentJudge` 与相关类型从 `niceeval/expect` 导出，`t.agentJudge` 在官方 root、custom Adapter 的 `t`、Session 与 Turn 上可用。name、prompt 与 anchors 沿用 `defineJudge` 的校验，prompt 与 message 为非空文本；执行上限必须为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。
 - `t.agentJudge(reviewer, material)` 只登记会话，不立即执行；材料是会话的开场上下文，没有时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。冻结的是开场材料，Sandbox 是评审执行时的可变现场。
 - 每个 `judge(prompt)` 是一个独立断言 entry；`chat(message)` 不产生 entry，只出现在会话轨迹里。同一会话的 judge 与 chat 按调用顺序进入会话。
+- 会话只执行到最后一道评分题为止：最后一道题之后的 `chat` 不发送；没有任何评分题的会话不执行、不发模型请求，也不报错。
 - 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
 - 材料预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值与总账；审计上限默认 4 MiB，足够一次几十轮的工具评审。容量不足会得到 unavailable，不能静默丢弃轨迹。
 - 只能用在每条 Attempt 独占 Sandbox 的 Eval。评审有完整写权限，可能改动 State 路径或组内共享的现场，所以声明了 State、属于共享 Sandbox 的 Eval Group 或启用 `sandboxReuse` 的配对登记 Agent Judge 时，在规划阶段报 `judge.agent-shared-sandbox`。
