@@ -20,6 +20,7 @@ test.concurrent("列表按新到旧过滤运行，并说明截断数量", async 
   await e2e.case("run-list-filters", async ({ paths, commands: { niceeval } }) => {
     const empty = await niceeval.run(["run", "list", "--state", "completed", "--limit", "1", "--json"]);
     expect(empty.exitCode, empty.diagnostic()).toBe(0);
+    expect(Object.keys(empty.runListDocument()).sort()).toEqual(["omitted", "operation", "runs"]);
     expect(empty.runListDocument()).toMatchObject({ runs: [], omitted: 0 });
     const ids: string[] = [];
     for (const experiment of ["run-list/agent", "migration-custom", "run-list/agent"]) {

@@ -43,11 +43,11 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.stderr).toBe("");
     const document = JSON.parse(result.stdout) as {
-      format: string;
       domains: unknown[];
       providerObservations: Array<Record<string, unknown>>;
     };
-    expect(document.format).toBe("niceeval.cache-inventory");
+    expect(document).not.toHaveProperty("format");
+    expect(document).not.toHaveProperty("schemaVersion");
     expect(document.domains).toEqual([{
       domainId: expect.any(String),
       providerFamily: "docker",
@@ -93,15 +93,17 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
     });
     expect(preview.exitCode, preview.diagnostic()).toBe(0);
-    const previewDocument = JSON.parse(preview.stdout) as { format: string; plan: { planId: string; candidates: unknown[] } };
-    expect(previewDocument.format).toBe("niceeval.cache-gc-plan");
+    const previewDocument = JSON.parse(preview.stdout) as { plan: { planId: string; candidates: unknown[] } };
+    expect(Object.keys(previewDocument).sort()).toEqual(["plan", "summary"]);
     expect(previewDocument.plan.candidates).toEqual([]);
 
     const apply = await niceeval.run(["docker", "cache", "gc", "--domain", domainId, "--apply", previewDocument.plan.planId, "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
     });
     expect(apply.exitCode, apply.diagnostic()).toBe(0);
-    expect(JSON.parse(apply.stdout)).toMatchObject({ format: "niceeval.cache-gc-outcome", outcomes: [] });
+    expect(JSON.parse(apply.stdout)).toMatchObject({ outcomes: [] });
+    expect(JSON.parse(apply.stdout)).not.toHaveProperty("format");
+    expect(JSON.parse(apply.stdout)).not.toHaveProperty("schemaVersion");
 
     for (const [name, prepare, expectedPath] of [
       [
