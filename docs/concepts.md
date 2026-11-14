@@ -451,7 +451,7 @@ parent 前缀、规范化 steps、immutable inputs 与 Provider 捕获协议的�
 
 ## 准备图 {#before-cache-preparation-graph}
 
-`RunPrepared` Provider 在派发 Attempt 前，按完整 BeforeCacheKey 合并全部 eligible before action 得到的 Run 级节点图；每个节点在一个 Run 内只准备一次
+`RunPrepared` Provider 在派发 Attempt 前，按完整 BeforeCacheKey 合并全部 eligible before action 得到的 Invocation 级节点图；同一 Invocation 内各 Experiment 的 Record Run 共用，每个节点只准备一次
 
 契约：[Sandbox · before 缓存](feature/sandbox/architecture/before-cache.md#provider-能力)
 

@@ -45,7 +45,7 @@ Provider API   template、image、snapshot、实例
 
 Provider 按能力而非名称进入准备路径。三种能力按“谁负责准备”区分：
 
-- `RunPrepared`：Run 负责准备。派发任何 Attempt 前，Run 按完整 BeforeCacheKey 建立准备图，相同 key 在一个 Run 内只准备一次；每个 consumer 从不可变 artifact 创建独立 writable state。
+- `RunPrepared`：Invocation 负责准备。派发任何 Attempt 前，按完整 BeforeCacheKey 为整个 Invocation 建立一张准备图，各 Experiment 的 Record Run 共用它，相同 key 只准备一次。每个 consumer 从不可变 artifact 创建独立 writable state。
 - `AttemptCaptured`：每个 Attempt 在自己的实例里 restore 或 capture，artifact 跨 Invocation 持久。同一 Run 内相同 key 的并发 Attempt 不合并，没拿到 publication 的 Attempt 继续 uncached。
 - `Unsupported`：真实执行。
 
@@ -240,7 +240,9 @@ Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 autho
 
 opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
 
-每个 Before cache artifact 还保存 replacement scope：除 parent key 与 revision 之外的完整累计声明。不同 canonical input、fingerprint、steps、依赖、能力或顺序形成不同 replacement scope，对应 artifact 可同时命中。
+每个 Before cache artifact 还保存 replacement scope：provider、execution domain、Base 引用与每层的 action id 链，不含 action 内容（定义与理由见[替换按声明位置](remote-snapshot-cache.md#发布与竞争)）。同一位置换了内容，新 generation 取代旧的；内容相同的不同声明方共用一条替换线。
+
+同一 Invocation 里，两个配对落在同一 replacement scope 却有不同 BeforeCacheKey 时（例如多个 Experiment 用同一个 action id 安装不同版本），它们会互相取代、每次运行都重新准备。planning 对此发出 warning，指出冲突的 action id 与声明方，并建议给各自的 action 取不同的 id。
 
 同一 replacement scope 的新 generation 发布后，NiceEval 才淘汰已被替代的 Docker image 或远端 snapshot。仍被 private clone、hold、lease 或未完成 capture 使用的旧 generation 不会删除。最后一个 hold 释放后再次尝试淘汰。
 
@@ -252,7 +254,7 @@ repository schema 为 generation 建立索引，分配只读索引端点，成�
 
 ## 运行事实归属
 
-`RunPrepared` 的准备图按完整 `BeforeCacheKey` 合并节点，每个节点在一个 Run 内只准备一次。相同 key 的多个 Eval×Experiment 配对共享这次准备；节点的 activity、staging、publication 与 Scope 归 Run，不归任何 Attempt。
+`RunPrepared` 的准备图按完整 `BeforeCacheKey` 跨 Experiment 合并节点，每个节点在一个 Invocation 内只准备一次。相同 key 的多个 Eval×Experiment 配对共享这次准备，即使它们属于不同的 Record Run；staging、publication、hold 与 Scope 归 Invocation 的共享准备，不按 Record Run 拆分，也不归任何 Attempt。节点的 activity 与 diagnostic 按配对所在的 Run 呈现。归属细则见[一次 Invocation 一份准备](remote-snapshot-cache.md#一次-invocation-一份准备)。
 
 不同 key 可在 `maxBeforeCacheConcurrency ∩ provider scheduling.lane.limit` 内并行。相同 `(executionDomainId, BeforeCacheKey)` 仍通过跨进程 publication lease 串行发布，等待者消费同一 committed `ArtifactIntent`。
 

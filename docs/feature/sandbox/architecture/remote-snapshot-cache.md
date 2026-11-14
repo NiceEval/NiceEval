@@ -20,6 +20,17 @@ BeforeCacheKey、能力分类与降级的通用规则在 [Before cache](before-c
 
 三个 Provider 都满足 `RunPrepared` 的条件：snapshot 一经 Ready 即不随源实例变化；staging 可以从 exact Base 或父 snapshot 创建；每个 consumer 从 snapshot 创建独立实例，不共享可写状态。
 
+### 一次 Invocation 一份准备
+
+一次 Invocation 常常同时运行多个 Experiment，每个 Experiment 落成自己的 Record Run。这些 Run 共用同一份准备状态：
+
+- 准备图按完整 BeforeCacheKey 跨 Experiment 合并，相同 key 在整个 Invocation 里只准备一次。
+- 账本视图、`run` hold、lease 与节点结算都归这份共享准备，不按 Record Run 拆分。任一 Run 的配对都能消费共享准备持有的 artifact。
+- `run` hold 在依赖它的全部配对（不论属于哪个 Run）完成交接后释放；Invocation 结束或取消时一并释放。
+- 节点的 activity 与 diagnostic 仍按每个配对所在的 Run 呈现，读者在自己的 Run 里看得到它等了谁、命中了什么。
+
+不同 Invocation 之间仍是普通的竞争，按[发布与竞争](#发布与竞争)处理。
+
 ## 协议归 core，Provider 只交原语
 
 账本、lease 与接管、artifact 标记的写入与校验、挂载与敏感字节检查、quiesce、consumer 回退和回收对三个 Provider 完全相同，由 core 实现一次（[T-6](../../../taste.md#t-6)）。Provider 只交出 `BeforeCacheSnapshotDriver`。driver 不声明自己是谁：账本的 `provider` 列取 core 传入的 `BeforeCachePreparationContext.providerId`，即 Provider module 的 `id`；账本像其它 Provider 账本一样经 `userDatabaseHost` 打开，新增一个远端 Provider 不需要改 core 的类型或账本 schema（[T-3](../../../taste.md#t-3)）。core 用 `remoteSnapshotPreparer(driver)` 把它变成（`continuesStaging` 取 driver 的 `sourceUsableAfterSnapshot`） [`BeforeCachePreparer`](before-cache.md#provider-能力)：
@@ -153,6 +164,20 @@ type BeforeCacheStart =
 ```
 
 - consumer 收到 `FellBackToBase` 后，Attempt 真实执行全部 before，eligible action 的反馈为 `degraded`，并带 `cache-degraded` diagnostic。
+- `FellBackToBase.reason` 是具名原因，不能把几种情况合成一句。消费前的检查各有自己的原因：
+
+| 原因 | 说明 |
+|---|---|
+| `ledger-disabled` | 本次准备已对该 domain 停用账本 |
+| `artifact-unavailable` | 本次准备已把该 artifact 标为不可用 |
+| `artifact-missing` | 账本没有这一行，或行里没有 snapshot ID |
+| `hold-missing` | 共享准备没有持有该 artifact 的 `run` hold |
+| `domain-mismatch` | artifact 的 execution domain 与当前不同 |
+| `key-mismatch` | 账本行的 BeforeCacheKey 与要消费的不同 |
+| `snapshot-gone` | snapshot 已不存在或实例不能 Ready |
+| `marker-mismatch` | 实例上的 artifact 标记与账本不一致 |
+
+`hold-missing` 出现时说明准备与消费的归属不一致，是缺陷而不是正常降级。
 - 子节点的 staging 收到 `FellBackToBase` 时，干净实例缺少父前缀的结果，core 不执行当前 action、不发布，删除该 staging，节点结算为 `degraded`。
 
 ## Run 级节点结算
@@ -216,7 +241,7 @@ lookup 与 reserve 在同一个写事务中完成，结果有三种：
 - 可以写入：分配 generation 并插入 `preparing` 行。
 - 同一 `(provider, execution_domain_id, before_cache_key)` 已被其它进程以活跃 lease 持有：返回 busy。
 
-busy 的节点等待对方结算，不在等待期间创建 staging；对方发布后按 `hit` 消费，对方放弃或 lease 过期后重新 reserve。等待受 Run 取消约束；期间 Run 反馈显示该节点正在等待其它运行。
+busy 的节点等待对方结算，不在等待期间创建 staging。对方发布后，等待方重新执行同一个 lookup 与 reserve 写事务：读到 ready 时插入自己这份准备的 `run` hold，再按 `hit` 结算；不能沿用对方的结算结果而不持有 hold。对方放弃或 lease 过期后重新 reserve。等待受 Run 取消约束；期间 Run 反馈显示该节点正在等待其它运行。
 
 **lease。** `preparing` 行的 lease 单次有效 2 分钟，持有者每 30 秒续期。续期以 `artifact_id`、`lease_token`、`state = 'preparing'` 与 `lease_until >= now` 为条件；条件不满足即失去 lease。失去 lease 的进程只删除自己的 staging，不发布、不删除 snapshot，也不再操作该行，节点结算为 `degraded(lease-lost)`。
 
@@ -302,6 +327,9 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 - author action 失败：节点与后代 `failed`，依赖它的配对在派发前失败，其它分支照常。
 - 复用池：第二条 Attempt 在同一实例上执行 before，并看见第一条在 workdir 外写下的标记与仍在运行的服务。
 - 两个 Invocation 同时冷启动同一 key：只发出一次 snapshot 请求，后者以 `hit` 消费。
+- 同一 Invocation 的两个 Experiment 共享前缀、之后分叉：共享节点只准备一次；两个 Run 的配对都从共享 artifact `Restored`，不出现 `hold-missing`；E2B、Instabox 与 OpenSandbox 三个 driver 各验一次。
+- busy 等待后对方发布：等待方持有自己的 `run` hold 并以 `hit` 消费。
+- 每种消费回退各给出对应的具名原因。
 - 旧持有者暂停超过 lease、接管者发布后旧持有者恢复：旧持有者不发布、不删除，节点 `degraded(lease-lost)`。
 - 删除领取与消费互斥：有 `sandbox` hold 或未过期 `run` hold 时不调用删除。
 - 新增不在 `preserves.disks` 内的可写挂载：`degraded(mounted-state)`；Instabox `/data` 中的 action 结果正常恢复。

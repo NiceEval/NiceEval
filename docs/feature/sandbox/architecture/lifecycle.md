@@ -115,7 +115,7 @@ Agent-owned before action 不固定最后；高频 `.env` 通常因数值较大�
 
 ## before 缓存的运行时序
 
-公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 把全部 attachment 编译为 attempt occurrence；`RunPrepared` Provider 还从这些 occurrence 投影出 Run 级的[准备图](../../../concepts.md#before-cache-preparation-graph)。它不改变 author action 仍属于 Attempt 的事实，也不把其它 capability 伪装成共享准备。
+公开 API 统一声明 owner 的 before 与 after，不暴露 scope。link 把全部 attachment 编译为 attempt occurrence；`RunPrepared` Provider 还从这些 occurrence 投影出 Invocation 级的[准备图](../../../concepts.md#before-cache-preparation-graph)，同一 Invocation 内各 Experiment 的 Record Run 共用（见[一次 Invocation 一份准备](remote-snapshot-cache.md#一次-invocation-一份准备)）。它不改变 author action 仍属于 Attempt 的事实，也不把其它 capability 伪装成共享准备。
 
 ```text
 fresh: create Case -> reset baseline -> before -> Agent/test -> after
