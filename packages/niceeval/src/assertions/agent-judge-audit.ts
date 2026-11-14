@@ -44,11 +44,10 @@ export const AgentJudgeTraceSchema = Schema.Struct({
 export type AgentJudgeTrace = typeof AgentJudgeTraceSchema.Type;
 export const AgentJudgeAuditSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1), protocol: Schema.Literal("niceeval.agent-judge-audit/v1"),
-  trace: Schema.Union([Schema.Struct({ state: Schema.Literal("inline"), value: AgentJudgeTraceSchema }),
-    Schema.Struct({ state: Schema.Literal("reference"), entryIndex: bytes, digest })]),
+  trace: Schema.Struct({ state: Schema.Literal("reference"), entryIndex: bytes, digest }),
   criterion: text, prompt: text, submission, result,
 });
-/** Retained question result and its inline or referenced conversation trajectory. */
+/** Retained question result and its referenced conversation trajectory. */
 export type AgentJudgeAudit = typeof AgentJudgeAuditSchema.Type;
 const envelope = Schema.Struct({
   manifest: Schema.Struct({ schemaVersion: Schema.Literal(1), protocol: Schema.Literal("niceeval.agent-judge-audit/v1"), byteLength: bytes, digest, chunkByteLengths: Schema.Array(bytes) }),
@@ -72,6 +71,11 @@ export function decodeAgentJudgeEnvelope(raw: unknown): AgentJudgeAudit {
   return Schema.decodeUnknownSync(AgentJudgeAuditSchema, { onExcessProperty: "error" })(JSON.parse(body));
 }
 
+/** Decodes the complete pi trajectory retrieved through Content pagination. */
+export function decodeAgentJudgeTrace(raw: unknown): AgentJudgeTrace {
+  return Schema.decodeUnknownSync(AgentJudgeTraceSchema, { onExcessProperty: "error" })(raw);
+}
+
 /** Strict historical reader; references are resolved only within this Assertion attachment. */
 export function readAgentJudgeAudit(raw: unknown, measurement: number | undefined,
   resolve: (entryIndex: number) => unknown, imageContents: readonly { readonly mediaType: string; readonly bytes: Uint8Array }[] = []): AgentJudgeAuditReadResult {
@@ -81,9 +85,7 @@ export function readAgentJudgeAudit(raw: unknown, measurement: number | undefine
       if (typeof manifest === "object" && manifest !== null && "protocol" in manifest && manifest.protocol !== "niceeval.agent-judge-audit/v1") return { state: "unsupported" };
     }
     const audit = decodeAgentJudgeEnvelope(raw);
-    const root = audit.trace.state === "inline" ? audit : decodeAgentJudgeEnvelope(resolve(audit.trace.entryIndex));
-    if (root.trace.state !== "inline") throw new Error("Chained Agent Judge reference");
-    const trace = root.trace.value;
+    const trace = decodeAgentJudgeTrace(resolve(audit.trace.entryIndex));
     if (audit.trace.state === "reference" && audit.trace.digest !== agentJudgeDigest(canonical(trace))) throw new Error("Agent Judge trace digest mismatch");
     if (!trace.criteria.includes(audit.criterion) || new Set(trace.criteria).size !== trace.criteria.length ||
       trace.definition.digest !== agentJudgeDigest(canonical({ version: trace.definition.version, config: trace.definition.config, limits: trace.definition.limits }))) throw new Error("Agent Judge definition mismatch");

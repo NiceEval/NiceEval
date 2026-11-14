@@ -45,5 +45,5 @@ export {
   type ScoreMatchAuditReadResult,
 } from "../assertions/score-match-audit.ts";
 
-export { readAgentJudgeAudit, decodeAgentJudgeEnvelope, AgentJudgeAuditReadResultSchema, type AgentJudgeAudit, type AgentJudgeAuditReadResult, type AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
+export { readAgentJudgeAudit, decodeAgentJudgeEnvelope, decodeAgentJudgeTrace, AgentJudgeAuditReadResultSchema, type AgentJudgeAudit, type AgentJudgeAuditReadResult, type AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 export { decodeSimulatedUserActivity, type SimulatedUserActivity } from "../simulated-user/audit.ts";

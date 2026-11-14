@@ -1,7 +1,9 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/README.md
 // @concord-implements docs/feature/assertions/README.md
-import { readAgentJudgeAudit, decodeAgentJudgeEnvelope } from "../assertions/agent-judge-audit.ts";
+export { AssertionContentReferenceSchema } from "./assertion-content.ts";
+import { InspectionExecutionTraceError, type ExecutionTraceDetailResult } from "./execution-traces.ts";
+import { readAgentJudgeAudit, decodeAgentJudgeEnvelope, decodeAgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../record/attachment/content.ts";
 import type {
@@ -18,7 +20,7 @@ import type { AssertionsAttachment } from "../record/family/assertions/schema.ts
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 import type { PersistedContentMetadata } from "../record/sqlite/index.ts";
 import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
-import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
+import { InspectionSha256, utf8ByteLength, encodeBase64Bytes } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT, INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
@@ -107,6 +109,39 @@ export function projectAttemptAssertionDetail(
     throw new Error("Assertion detail exceeds its fixed result byte limit");
   }
   return decodeAssertionDetail(result);
+}
+
+/** Pages sealed Assertion Content through the existing execution-evidence selector. */
+export function projectAssertionContentDetail(
+  source: InspectionFactSource, input: InspectionAssertionsRead,
+  selector: { readonly evidenceId: string; readonly offset?: number; readonly limit?: number },
+): ExecutionTraceDetailResult | undefined {
+  const assertions = readCurrentAssertions(input);
+  if (assertions.state !== "available") return undefined;
+  let selected: { entry: AssertionEntry; metadata: PersistedContentMetadata } | undefined;
+  const visit = (value: unknown, entry: AssertionEntry): void => {
+    if (isRecordContentHandle(value)) {
+      const metadata = assertions.contents.get(value);
+      if (metadata?.contentId === selector.evidenceId) selected = { entry, metadata };
+      return;
+    }
+    if (Array.isArray(value)) for (const child of value) visit(child, entry);
+    else if (typeof value === "object" && value !== null) for (const child of Object.values(value)) visit(child, entry);
+  };
+  for (const entry of assertions.value.entries) visit(entry, entry);
+  if (selected === undefined) return undefined;
+  const { entry, metadata } = selected;
+  const offset = selector.offset ?? 0;
+  const limit = selector.limit ?? 64 * 1024;
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > metadata.byteLength ||
+    !Number.isSafeInteger(limit) || limit < 1 || limit > 256 * 1024) {
+    throw new InspectionExecutionTraceError("inspection-request-invalid", "Assertion Content offset or limit is invalid.");
+  }
+  const bytes = readSealedBytes(source, metadata).subarray(offset, Math.min(metadata.byteLength, offset + limit));
+  return { kind: "execution-evidence", evidenceId: metadata.contentId, eventId: entry.entryId, traceId: metadata.contentId,
+    key: "assertion-content", label: "Assertion Content", artifactId: metadata.contentId, pointer: "",
+    artifactSha256: metadata.digest, targetSha256: metadata.digest, targetByteLength: metadata.byteLength,
+    offset, base64: encodeBase64Bytes(bytes), nextOffset: offset + bytes.byteLength < metadata.byteLength ? offset + bytes.byteLength : null };
 }
 
 export function projectAttemptAssertionImage(
@@ -214,24 +249,27 @@ function projectEntry(
         return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, undefined, () => undefined) });
       }
       const decoded = decodeAgentJudgeEnvelope(raw);
-      const root = decoded.trace.state === "inline" ? entry : entries[decoded.trace.entryIndex];
+      const root = entries[decoded.trace.entryIndex];
       if (root === undefined) throw new Error("Missing Agent Judge root");
-      const rootAudit = decodeAgentJudgeEnvelope(readEnvelope(root));
-      if (rootAudit.trace.state !== "inline") throw new Error("Invalid Agent Judge root");
-      const images = rootAudit.trace.value.images.map((descriptor) => {
+      const traceMaterial = root.materials.evidence.at(-2);
+      if (traceMaterial?.kind !== "content" || traceMaterial.encoding !== "json" || !isRecordContentHandle(traceMaterial.content)) throw new Error("Missing Agent Judge trajectory");
+      const traceMetadata = contentMetadata.get(traceMaterial.content);
+      if (traceMetadata === undefined) throw new Error("Missing Agent Judge trajectory Content");
+      const trace = decodeAgentJudgeTrace(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(readSealedBytes(source, traceMetadata))));
+      const images = trace.images.map((descriptor) => {
         const image = root.materials.evidence[descriptor.evidenceIndex];
         if (image?.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content)) throw new Error("Missing Agent Judge image");
         const metadata = contentMetadata.get(image.content);
         if (metadata === undefined) throw new Error("Missing Agent Judge image Content");
         return { mediaType: descriptor.mediaType, bytes: readSealedBytes(source, metadata) };
       });
-      const data = entry.criterion.value.data;
-      const name = isRecord(data) && typeof data.name === "string" ? data.name : "";
-      return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, observedMeasurement(entry.evaluation.observed), (index) => {
-        const candidate = entries[index];
-        if (candidate === undefined) throw new Error("Missing Agent Judge reference");
-        return readEnvelope(candidate);
-      }, images) });
+      const read = readAgentJudgeAudit(raw, observedMeasurement(entry.evaluation.observed), (index) => {
+        if (entries[index] !== root) throw new Error("Invalid Agent Judge reference");
+        return trace;
+      }, images);
+      return closeJson({ ...projected, agentJudgeAudit: read.state === "available"
+        ? { state: "available", audit: { ...read.audit, trace: { id: traceMetadata.contentId, byteLength: traceMetadata.byteLength, sha256: traceMetadata.digest } } }
+        : read });
     } catch { return closeJson({ ...projected, agentJudgeAudit: { state: "invalid" } }); }
   }
   const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";

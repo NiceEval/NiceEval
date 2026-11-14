@@ -1,5 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/cli.md
+import { decodeAgentJudgeTrace, type AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
+import { decodeBase64Bytes, InspectionSha256 } from "../inspection/bytes.ts";
 import { Effect, Result, Schema } from "effect";
 
 import {
@@ -422,7 +424,30 @@ function runShow(
             }));
             details.push(document.assertion);
           }
-          yield* write("stdout", renderAssertions(selectedLocator, details, { full, entryId, verdict: attempt.verdict ?? "unavailable", score: attempt.score }));
+          const agentJudgeTraces = new Map<string, AgentJudgeTrace>();
+          if (full) for (const detail of details) {
+            const audit = "entry" in detail ? detail.entry.agentJudgeAudit : undefined;
+            if (audit?.state !== "available" || agentJudgeTraces.has(audit.audit.trace.id)) continue;
+            const reference = audit.audit.trace;
+            const bytes = new Uint8Array(reference.byteLength);
+            let offset = 0;
+            while (true) {
+              const document = yield* select("attempt.trace.detail", () => selectInspectionOperation(opened, {
+                kind: "attempt.trace.detail", locator: selectedLocator,
+                selector: { kind: "execution-evidence", evidenceId: reference.id, offset, limit: 256 * 1024 },
+              }));
+              const page = document.detail;
+              if (page.kind !== "execution-evidence" || page.offset !== offset || page.targetByteLength !== reference.byteLength || page.targetSha256 !== reference.sha256) throw new Error("Invalid Assertion Content page");
+              const chunk = decodeBase64Bytes(page.base64);
+              bytes.set(chunk, offset);
+              offset += chunk.byteLength;
+              if (page.nextOffset === null) break;
+              if (page.nextOffset !== offset || chunk.byteLength === 0) throw new Error("Invalid Assertion Content continuation");
+            }
+            if (offset !== bytes.byteLength || new InspectionSha256().update(bytes).digestHex() !== reference.sha256) throw new Error("Invalid Assertion Content digest");
+            agentJudgeTraces.set(reference.id, decodeAgentJudgeTrace(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))));
+          }
+          yield* write("stdout", renderAssertions(selectedLocator, details, { full, agentJudgeTraces, entryId, verdict: attempt.verdict ?? "unavailable", score: attempt.score }));
           return 0;
         }
         if (compare) {

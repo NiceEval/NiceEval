@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { decodeAgentJudgeTrace, type AgentJudgeTrace } from "niceeval/inspection";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
@@ -57,7 +59,7 @@ function modelServer(mode: string) {
       const submit = call("submit_evaluation", { ...(step.kind === "judge" ? { satisfied: true } : { measurement: 1 }), rationale: "Observed real Sandbox evidence", evidence: [{ kind: "file", ref: "application.txt", note: "Read application evidence" }] });
       let calls: unknown[] = [];
       let text: string | null = null;
-      if (step.kind === "chat") text = mode === "large-audit" ? "Complete audit evidence. ".repeat(220000) : "Ready to inspect.";
+      if (step.kind === "chat") text = ["large-audit", "oversized-audit"].includes(mode) ? "AUDIT_BEGIN\n" + "Complete audit evidence. ".repeat(mode === "oversized-audit" ? 750000 : 220000) + "\nAUDIT_END" : "Ready to inspect.";
       else if (mode === "cancel") calls = [call("bash", { command: "touch judge-running; sleep 30; touch late-write" })];
       else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question") calls = [call("read", { path: "application.txt" })];
@@ -74,7 +76,7 @@ function modelServer(mode: string) {
 }
 
 // @feature docs/feature/judge/README.md
-test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "large-audit", "large-material", "context-material", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
+test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "large-audit", "oversized-audit", "large-material", "context-material", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
   const { server, bodies } = modelServer(mode);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -94,6 +96,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
       expect(attempt.attempt.assertions.entries, run.diagnostic()).toHaveLength(mode === "barrier" ? 5 : 4);
       const entries = attempt.attempt.assertions.entries.filter((entry) => ["First review", "Second review", "Following session"].includes(entry.display.label ?? ""));
       let reportedCalls = 0;
+      const traces = new Map<string, AgentJudgeTrace>();
       for (const [index, entry] of entries.slice(0, 3).entries()) {
         await withInspectionRequest({ kind: "attempt.assertion.detail", locator, entryId: entry.entryId }, async (path) => {
           const result = await niceeval.run(["query", "run", "--request", path]);
@@ -102,36 +105,70 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           const audit = detail.assertion.entry.agentJudgeAudit;
           expect(audit, JSON.stringify(detail)).toMatchObject({ state: "available" });
           if (audit?.state !== "available") throw new Error("Missing audit");
-          if (index !== 1) reportedCalls += audit.trace.session.filter(raw => typeof raw === "object" && raw !== null && "message" in raw &&
+          const reference = audit.audit.trace;
+          expect(reference).toMatchObject({ id: expect.any(String), byteLength: expect.any(Number), sha256: expect.stringMatching(/^[a-f0-9]{64}$/u) });
+          expect(audit).not.toHaveProperty("trace");
+          expect(JSON.stringify(detail).length).toBeLessThan(128 * 1024);
+          if (!traces.has(reference.id)) {
+            const chunks: Buffer[] = [];
+            let offset = 0;
+            while (true) {
+              const page = await withInspectionRequest({ kind: "attempt.trace.detail", locator,
+                selector: { kind: "execution-evidence", evidenceId: reference.id, offset, limit: 256 * 1024 } }, async (request) => {
+                  const read = await niceeval.run(["query", "run", "--request", request]);
+                  expect(read.exitCode, read.diagnostic()).toBe(0);
+                  return read.querySuccess("attempt.trace.detail").detail;
+                });
+              if (page.kind !== "execution-evidence") throw new Error("Missing Assertion Content page");
+              expect(page.offset).toBe(offset);
+              expect(page.targetSha256).toBe(reference.sha256);
+              expect(page.targetByteLength).toBe(reference.byteLength);
+              const chunk = Buffer.from(page.base64, "base64");
+              chunks.push(chunk);
+              offset += chunk.byteLength;
+              if (page.nextOffset === null) break;
+              expect(page.nextOffset).toBe(offset);
+            }
+            const bytes = Buffer.concat(chunks);
+            expect(bytes.byteLength).toBe(reference.byteLength);
+            expect(createHash("sha256").update(bytes).digest("hex")).toBe(reference.sha256);
+            if (["large-audit", "oversized-audit"].includes(mode) && index === 0) {
+              expect(bytes.toString()).toContain("AUDIT_BEGIN");
+              expect(bytes.toString()).toContain("AUDIT_END");
+            }
+            traces.set(reference.id, decodeAgentJudgeTrace(JSON.parse(bytes.toString("utf8"))));
+          }
+          const trace = defined(traces.get(reference.id));
+          if (index !== 1) reportedCalls += trace.session.filter(raw => typeof raw === "object" && raw !== null && "message" in raw &&
             typeof raw.message === "object" && raw.message !== null && "role" in raw.message && raw.message.role === "assistant").length +
-            audit.trace.compactions.filter(compact => compact.summary !== null).length;
-          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit", "large-material"].includes(mode) || mode === "context-material" && index === 2 || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : mode === "malformed" ? "errored" : "unavailable";
-          expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify({ result: audit.audit.result, tools: audit.trace.tools, compactions: audit.trace.compactions })}`).toBe(expected);
+            trace.compactions.filter(compact => compact.summary !== null).length;
+          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit", "oversized-audit", "large-material"].includes(mode) || mode === "context-material" && index === 2 || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : mode === "malformed" ? "errored" : "unavailable";
+          expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify({ result: audit.audit.result, tools: trace.tools, compactions: trace.compactions })}`).toBe(expected);
           if (mode === "context-material" && index < 2) expect(audit.audit.result).toMatchObject({ code: "judge-material-exceeds-context" });
-          if (mode === "large-material" && index === 0) expect(audit.trace.input.length).toBeGreaterThan(32 * 1024);
-          if (mode === "large-audit" && index === 0) expect(JSON.stringify(audit.trace.session).length).toBeGreaterThan(4 * 1024 * 1024);
-          expect(audit.trace.steps.filter((step) => step.kind !== "chat")).toHaveLength(index === 2 ? 1 : 2);
+          if (mode === "large-material" && index === 0) expect(trace.input.length).toBeGreaterThan(32 * 1024);
+          if (["large-audit", "oversized-audit"].includes(mode) && index === 0) expect(JSON.stringify(trace.session).length).toBeGreaterThan((mode === "oversized-audit" ? 16 : 5) * 1024 * 1024);
+          expect(trace.steps.filter((step) => step.kind !== "chat")).toHaveLength(index === 2 ? 1 : 2);
           if (mode.startsWith("compact-") && index === 1) {
-            expect(audit.trace.compactions).toHaveLength(1);
-            expect(audit.trace.compactions[0]?.summary).toContain("First question was submitted");
+            expect(trace.compactions).toHaveLength(1);
+            expect(trace.compactions[0]?.summary).toContain("First question was submitted");
             if (mode === "compact-overflow") expect(audit.audit.result).toMatchObject({ code: "agent-judge-context-overflow" });
           }
           if (mode === "truncation" && index === 0) {
-            const read = audit.trace.tools.find((tool) => tool.name === "read");
+            const read = trace.tools.find((tool) => tool.name === "read");
             expect(read?.result).toContain("exceeds 50.0KB limit");
             expect(read?.result).not.toContain("�");
           }
           if (mode === "success") {
             expect(audit.audit.submission?.value).toMatchObject(index === 1 ? { measurement: 1 } : { satisfied: true });
-            const question = audit.trace.steps.find(step => step.key === audit.audit.criterion);
+            const question = trace.steps.find(step => step.key === audit.audit.criterion);
             expect(question?.kind).toBe(index === 1 ? "grade" : "judge");
-            if (index < 2) expect(audit.trace.tools.some(tool => tool.name === "submit_evaluation" && tool.validation === "invalid")).toBe(true);
+            if (index < 2) expect(trace.tools.some(tool => tool.name === "submit_evaluation" && tool.validation === "invalid")).toBe(true);
           }
-          if (index === 1) expect(audit.audit.trace.state).toBe("reference");
+          if (index === 1) expect(audit.audit.trace.id).toBe([...traces.keys()][0]);
           if (mode === "success" && index === 0) {
-            expect(audit.trace.tools.some((tool) => tool.name === "read" && tool.result?.includes("application evidence"))).toBe(true);
-            expect(audit.trace.tools.filter((tool) => tool.name === "write" && tool.state === "completed")).toHaveLength(1);
-            expect(audit.trace.tools.some((tool) => tool.state === "not-started")).toBe(true);
+            expect(trace.tools.some((tool) => tool.name === "read" && tool.result?.includes("application evidence"))).toBe(true);
+            expect(trace.tools.filter((tool) => tool.name === "write" && tool.state === "completed")).toHaveLength(1);
+            expect(trace.tools.some((tool) => tool.state === "not-started")).toBe(true);
           }
         });
       }

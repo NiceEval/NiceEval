@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/cli.md
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
+import type { AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 import { assertionRoleLabel, assertionRoleCounts, assertionVerdictLine } from "../assertions/display.ts";
 import type { InspectionAttemptResult } from "../inspection/results.ts";
 import type { AssertionDetailResult } from "../inspection/assertion-projection.ts";
@@ -2208,8 +2209,9 @@ export function renderReferences(project: InspectionProjectResult, attempts: Ref
   }]);
 }
 
-export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[], options: { readonly full: boolean; readonly entryId?: string; readonly verdict?: string; readonly score?: ScoredValue } = { full: false }): string {
+export function renderAssertions(locator: string, assertions: readonly AssertionDetailResult[], options: { readonly full: boolean; readonly agentJudgeTraces?: ReadonlyMap<string, AgentJudgeTrace>; readonly entryId?: string; readonly verdict?: string; readonly score?: ScoredValue } = { full: false }): string {
   const blocks: TerminalPanelContentBlock[] = [];
+  const renderedAgentTraces = new Set<string>();
   const roles = assertions.flatMap(assertion => "entry" in assertion ? [{ gate: assertion.entry.decision.gate, result: assertion.entry.decision.result, contribution: assertion.entry.contribution }] : []);
   if (options.verdict !== undefined) blocks.push({ kind: "divider", title: assertionVerdictLine(options.verdict, options.score) });
   const counts = assertionRoleCounts(roles);
@@ -2238,13 +2240,16 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
           ...agentAudit.audit.submission.value.evidence.map((item) => ({ key: `Evidence (${item.kind})`, value: `${item.ref}: ${item.note}` })),
         ]),
       ] });
-      if (options.full) {
-        for (const compact of agentAudit.trace.compactions) blocks.push({ kind: "keyValue", entries: [
+      const trace = options.agentJudgeTraces?.get(agentAudit.audit.trace.id);
+      if (options.full && trace !== undefined && !renderedAgentTraces.has(agentAudit.audit.trace.id)) {
+        renderedAgentTraces.add(agentAudit.audit.trace.id);
+        for (const compact of trace.compactions) blocks.push({ kind: "keyValue", entries: [
           { key: "Compaction", value: `After turn ${compact.trigger}; ${compact.tokensBefore ?? "unknown"} tokens` },
           { key: "Summary", value: compact.summary ?? compact.failure?.message ?? "not recorded" },
         ] });
         blocks.push({ kind: "table", columns: [{ header: "Turn" }, { header: "Tool" }, { header: "State" }, { header: "Arguments" }, { header: "Result" }],
-          rows: agentAudit.trace.tools.map((tool) => [String(tool.generation), tool.name, tool.state, tool.arguments, tool.result ?? "not recorded"]), overflow: "wrap" });
+          rows: trace.tools.map((tool) => [String(tool.generation), tool.name, tool.state, tool.arguments, tool.result ?? "not recorded"]), overflow: "wrap" });
+        blocks.push({ kind: "keyValue", entries: [{ key: "pi session", value: JSON.stringify(trace.session, null, 2) }] });
       }
     } else if (agentAudit !== undefined) blocks.push({ kind: "keyValue", entries: [{ key: "Agent Judge audit", value: agentAudit.state }] });
     if (options.full) {

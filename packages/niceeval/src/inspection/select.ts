@@ -40,7 +40,7 @@ import {
   type InspectionSourceProvenance,
 } from "./codec.ts";
 import { INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT, INSPECTION_RESULT_BYTE_LIMIT, INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT, INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
-import { projectAttemptAssertionDetail, projectAttemptAssertionImage } from "./assertions.ts";
+import { projectAttemptAssertionDetail, projectAttemptAssertionImage, projectAssertionContentDetail } from "./assertions.ts";
 import { InspectionRepricingResultSchema } from "./repricing.ts";
 import { projectAttemptRepricing } from "./trace.ts";
 import {
@@ -400,13 +400,15 @@ function selectOperation(
     }
     case "attempt.trace.detail": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      let detail = operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
+      const assertionContent = operation.selector.kind === "execution-evidence"
+        ? projectAssertionContentDetail(resolved.origin.source, readInspectionAssertions(resolved), operation.selector) : undefined;
+      let detail = assertionContent ?? (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
         ? projectExecutionTraceDetail(resolved, operation.selector)
         : projectAttemptTraceDetail(
             resolved.origin.source,
             traceAttachments(resolved),
             operation.selector,
-          );
+          ));
       if (detail === undefined && operation.selector.kind === "execution-event") {
         type ItemSelector = Extract<
           Parameters<typeof projectAttemptTraceDetail>[2],

@@ -84,7 +84,7 @@ export class AgentJudgeSession {
     private readonly signal: AbortSignal | undefined, private readonly usageForEntry: ((index: number) => JudgeUsageEntry) | undefined) {
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
-    this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }).material;
+    this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }, Infinity).material;
     const base = { version: "1", config: canonical({ ...judge, contextWindow: profile?.contextWindow ?? (profile === undefined ? undefined : builtinContextWindow(profile.model)) ?? null, ...(containsConversationMaterial(this.snapshot.material) ? { conversationMaterialRevision } : {}), algorithmRevision: 6, promptRevision: 2, toolRevision: 3, gradeParameters, binaryParameters }),
       limits: { maxTurns: judge.maxTurns, timeoutMs: judge.timeoutMs, ...(judge.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: judge.maxMaterialBytes }) } };
     this.definition = { ...base, digest: agentJudgeDigest(canonical(base)) };
@@ -127,14 +127,14 @@ export class AgentJudgeSession {
     const previous = this.evidence.get(key); if (previous !== undefined) return previous;
     this.closed = true;
     this.sealedTrace ??= structuredClone(this.trace());
-    const evidence = Object.freeze([captureFullAssertionSnapshot(this.envelope(key, first)).material]);
+    const evidence = Object.freeze([...(first ? [captureFullAssertionSnapshot(JSON.parse(canonical(this.sealedTrace)), Infinity).material] : []), captureFullAssertionSnapshot(this.envelope(key), Infinity).material]);
     this.evidence.set(key, evidence); return evidence;
   }
 
-  private envelope(key: string, first: boolean) {
+  private envelope(key: string) {
     const trace = this.sealedTrace ?? this.trace();
     const payload: AgentJudgeAudit = { schemaVersion: 1, protocol: "niceeval.agent-judge-audit/v1",
-      trace: first ? { state: "inline", value: trace } : { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
+      trace: { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
       criterion: key, prompt: this.steps.find((step) => step.key === key)!.message, submission: this.submissions.get(key) ?? null, result: this.results.get(key) ?? { state: "interrupted" } };
     const body = canonical(payload); const content = chunkUtf8(body);
     return { manifest: { schemaVersion: 1, protocol: "niceeval.agent-judge-audit/v1", byteLength: size(body), digest: agentJudgeDigest(body), chunkByteLengths: content.map(size) }, content };
@@ -172,8 +172,8 @@ export class AgentJudgeSession {
       const submitted = this.submissions.get(key);
       if (submitted !== undefined && this.cleanup.state === "released") {
         this.results.set(key, { state: "measured", value: agentJudgeMeasurement(submitted.value) });
-        const checked = readAgentJudgeAudit(this.envelope(key, key === this.keys[0]), agentJudgeMeasurement(submitted.value),
-          () => this.envelope(this.keys[0]!, true), this.snapshot.images.map((image) => ({ mediaType: image.mediaType, bytes: readJudgeImage(image.image).body })));
+        const checked = readAgentJudgeAudit(this.envelope(key), agentJudgeMeasurement(submitted.value),
+          () => this.trace(), this.snapshot.images.map((image) => ({ mediaType: image.mediaType, bytes: readJudgeImage(image.image).body })));
         if (checked.state !== "available") {
           const failure = { state: "errored" as const, code: "agent-judge-audit-invalid", message: "Agent Judge terminal audit failed validation" };
           this.results.set(key, failure);

@@ -3,7 +3,7 @@ import { defineAgentJudge } from "niceeval/expect";
 
 const mode = process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE ?? "success";
 const reviewer = defineAgentJudge({ maxTurns: mode === "turns" ? 1 : 8,
-  timeoutMs: mode === "cancel-http" ? 60_000 : mode === "timeout" ? 100 : 20_000,
+  timeoutMs: ["cancel-http", "large-audit", "oversized-audit"].includes(mode) ? 60_000 : mode === "timeout" ? 100 : 20_000,
   ...(mode === "material" ? { maxMaterialBytes: 1 } : {}),
 });
 export default defineScoreEval({
