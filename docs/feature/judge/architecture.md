@@ -233,6 +233,21 @@ OpenAI、OpenRouter 与 Vercel 使用各自生效的 endpoint、headers、模型
 所选模型的工具能力由实际请求验证，不额外发探测请求；HTTP 协议错误沿用现有 errored 分类。
 TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，不制造 Chat Completions 请求或改走普通 score。
 
+### 上下文与压缩
+
+会话上下文由 pi 持有。每次模型请求发送 pi 当前给出的 system prompt 与消息，NiceEval 只负责把它们映射成 Chat Completions 并经受管 Provider 发出，不另外维护一份消息副本。
+这样 pi 的压缩直接作用于实际发出的请求，审计记录的也是实际请求。
+
+上下文超出模型窗口时，会话自动压缩后继续，不把溢出当作协议错误：
+
+- 受管 Provider 返回的失败经 pi-ai 的 `isContextOverflow` 判定为上下文溢出时，用 pi-agent-core 的 `prepareCompaction` 与 `compact`（`DEFAULT_COMPACTION_SETTINGS`）把较早的历史压成摘要，保留最近的部分，然后重发同一轮请求。
+- 摘要请求走同一个受管 Provider 与传输路径：计入 Judge 用量（operation `agent`）、会话期限与审计预算，不取得独立 timeout 或 retry。
+- 压缩不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响；当前评分题的提示必须留在保留部分或摘要里。
+- 每次溢出最多压缩一次再重发。压缩失败、无可压缩内容，或压缩后重发仍然溢出时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
+- 只处理 Provider 明确报告的溢出。不报错、静默截断输入的 Provider 无法检测，按它返回的内容继续。
+
+会话轨迹记录每次压缩：触发它的那轮 ordinal、压缩前的估计 token、摘要请求及其 HTTP 尝试、摘要文本与保留起点。`show --assertions --entry <id> --full` 在轨迹里按发生位置显示压缩。
+
 ### 预算与关闭
 
 maxTurns 替代该算法的 maxCalls，不能隐式受普通原语默认 4 次、最多 16 次限制。
@@ -249,7 +264,7 @@ bash 与 read 的截断发生在形成模型可见结果之前，模型与审计
 第一次合法提交锁定候选分数并关闭新动作准入；在资源收拢、审计校验成功后才能封口 measured。
 同批后续工具、pi 的自动续轮、迟到 callback 与失败后的重提交均不能重新开启 entry。
 命令非零退出、文件不存在和非法提交是可纠正的工具结果；传输与容量失败不能由模型提交掩盖。
-HTTP 400、模型协议损坏与框架 defect 为 errored，最终传输失败、超时与未提交为 unavailable。
+HTTP 400（上下文溢出除外，见[上下文与压缩](#上下文与压缩)）、模型协议损坏与框架 defect 为 errored，最终传输失败、超时与未提交为 unavailable。
 Attempt 取消保持 interruption，不转换成普通工具错误再交模型重试。
 
 关闭时同时停止 pi、abort HTTP、终止在途 Sandbox 命令树并有界等待资源释放，最后解除订阅与收回工具能力。

@@ -298,6 +298,7 @@ interface SubmitEvaluationInput {
 
 - 会话按调用顺序处理：`chat` 作为一条 user 消息发出，评审回答后进入下一项；`judge` 作为一条评分题发出，评审取证后调用 `submit_evaluation` 结束这道题，再进入下一项。
 - 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本，整个提交受响应和审计字节上限约束。非法参数作为工具错误留存，模型可在这道题剩余的轮次内修正。
+- 会话很长、超出模型上下文窗口时，评审像 pi 平时一样自动压缩较早的历史再继续；压缩不占用题目的轮次。压缩后仍放不下，当前与之后的题为 `unavailable`。细则见 [架构：上下文与压缩](architecture.md#上下文与压缩)。
 - 一道题超过 `maxTurns` 仍未提交，这道题为 `unavailable`，会话继续下一项；会话期限耗尽或传输最终失败时，当前与之后的评分题都为 `unavailable`，已提交的题保留各自的 measurement。
 - 审计容量不足，或模型不调用评分工具就停止回答，当前评分题为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
 - 同一响应中的工具按返回顺序串行执行。一道题合法提交之后不执行同批剩余工具；失败锁存与取消不能被迟到提交清除。
@@ -334,6 +335,7 @@ interface SubmitEvaluationInput {
 - 一个会话的 chat、judge、judge 按调用顺序在同一个 pi 会话里处理，产生两个 entry、一份共享轨迹；某道题超轮次只有它为 unavailable，后续题照常评分。同一 Attempt 两个会话按登记顺序串行，后者能读到前者写入的文件。登记在它们之后的普通归因断言先执行，结果不含评审活动。
 - 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
 - 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。
+- 压缩验收：本地 mock 在某轮返回 OpenAI 形式的上下文溢出错误，评审发出 pi 的摘要请求后重发，重发请求含摘要且不含被压缩的早期工具输出，评审照常提交；Judge 用量含摘要请求，`--full` 轨迹显示压缩。压缩后仍溢出时，当前与之后的题为 `unavailable`（`agent-judge-context-overflow`），之前已提交的题保留分数。
 - 身份验收包含 rubric、预算、工具协议和生效模型改变后的重规划，以及未使用 Agent Judge 的既有身份不因新增默认字段漂移。历史审计保持原协议读取。
 
 ## Runtime 配置
