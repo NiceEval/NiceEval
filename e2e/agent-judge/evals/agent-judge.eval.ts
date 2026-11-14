@@ -5,7 +5,6 @@ const mode = process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE ?? "success";
 const reviewer = defineAgentJudge({ maxTurns: mode === "turns" ? 1 : 8,
   timeoutMs: mode === "cancel-http" ? 60_000 : mode === "timeout" ? 100 : 20_000,
   ...(mode === "material" ? { maxMaterialBytes: 1 } : {}),
-  ...(mode === "budget" ? { maxAuditBytes: 1024 } : {}),
 });
 export default defineScoreEval({
   diff: {},

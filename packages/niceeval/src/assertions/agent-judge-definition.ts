@@ -12,7 +12,6 @@ export interface AgentJudgeDefinition {
   readonly maxTurns?: number;
   readonly timeoutMs?: number;
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 declare const agentJudgeBrand: unique symbol;
 /** Immutable reviewer created by defineAgentJudge. Open a conversation with t.agentJudge. */
@@ -28,7 +27,6 @@ export interface NormalizedAgentJudge {
   readonly maxTurns: number;
   readonly timeoutMs: number;
   readonly maxMaterialBytes: number;
-  readonly maxAuditBytes: number;
 }
 const definitions = new WeakMap<object, NormalizedAgentJudge>();
 /** @internal Validates the opaque reviewer without reading consumer properties. */
@@ -58,11 +56,10 @@ function positive(value: unknown, fallback: number, label: string): number {
 
 /** Defines an immutable reviewer; questions and score policies are registered at the call site. */
 export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
-  const input = dataObject(definition, "defineAgentJudge() options", ["instructions", "maxTurns", "timeoutMs", "maxMaterialBytes", "maxAuditBytes"]);
+  const input = dataObject(definition, "defineAgentJudge() options", ["instructions", "maxTurns", "timeoutMs", "maxMaterialBytes"]);
   managedScoreMatchOf(defineJudge({
     rubric: "Review the requested question using Sandbox evidence.",
     ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: input.maxMaterialBytes as number }),
-    maxAuditBytes: input.maxAuditBytes === undefined ? 4 * 1024 * 1024 : input.maxAuditBytes as number,
   }))!;
   if (input.instructions !== undefined && (typeof input.instructions !== "string" || input.instructions.trim() === "" || new TextEncoder().encode(input.instructions).byteLength > 8192)) {
     throw new TypeError("Agent Judge instructions must be non-empty and at most 8192 UTF-8 bytes");
@@ -72,7 +69,6 @@ export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
     maxTurns: positive(input.maxTurns, 40, "Agent Judge maxTurns"),
     timeoutMs: positive(input.timeoutMs, 600_000, "Agent Judge timeoutMs"),
     maxMaterialBytes: positive(input.maxMaterialBytes, 32 * 1024, "Agent Judge maxMaterialBytes"),
-    maxAuditBytes: positive(input.maxAuditBytes, 4 * 1024 * 1024, "Agent Judge maxAuditBytes"),
   });
   const reviewer = Object.freeze({}) as AgentJudge;
   definitions.set(reviewer, normalized);

@@ -10,7 +10,7 @@ import { createJudgeCallPriceReceipts } from "./judge-call-price.ts";
 type TransmissionInput = Pick<JudgeUsageCall, "logicalOrdinal" | "transmissionOrdinal" | "operation" | "requestModel" | "transportProvider">;
 export interface JudgeUsageTransmission {
   headers(status: number): void;
-  body(body: string): void;
+  body(body: string, succeeded?: boolean): void;
   fail(reason: "response-unavailable" | "response-too-large"): void;
   cancel(): void;
   trackCleanup(work: Promise<unknown>, deadlineAt: number): void;
@@ -73,12 +73,12 @@ export class JudgeUsageCollector {
           headers: (status: number) => {
             if (row.open && Number.isInteger(status) && status >= 100 && status <= 599) row.call = Object.freeze({ ...row.call, httpStatus: status });
           },
-          body: (body: string) => {
+          body: (body: string, succeeded?: boolean) => {
             if (!row.open) return;
             // No await may separate the receipt cut and its immutable contribution.
             const receipt = normalizeJudgeUsageResponse(input.transportProvider, body);
             row.open = false;
-            row.call = freeze({ ...row.call, ...receipt, status: row.call.httpStatus !== null && row.call.httpStatus >= 200 && row.call.httpStatus < 300 ? "succeeded" : "failed" });
+            row.call = freeze({ ...row.call, ...receipt, status: (succeeded ?? (row.call.httpStatus !== null && row.call.httpStatus >= 200 && row.call.httpStatus < 300)) ? "succeeded" : "failed" });
           },
           fail: (reason: "response-unavailable" | "response-too-large") => terminal("failed", reason),
           cancel: () => terminal("cancelled", "cancelled"),

@@ -27,6 +27,8 @@ export interface JudgeProviderSettings {
 /** Configures a managed Chat Completions Judge; image support requires explicit opt-in and a model that supports images and forced tool output. */
 export type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
   readonly maxOutputTokens?: number;
+  /** Context tokens for pi coding-agent sessions; omitted values use the built-in model catalog. */
+  readonly contextWindow?: number;
   readonly supportsImages?: boolean;
 };
 
@@ -44,6 +46,7 @@ export interface JudgeProviderIdentity {
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
   readonly supportsImages?: boolean;
+  readonly contextWindow?: number;
   readonly headers?: Readonly<Record<string, string>>;
   readonly protocol:
     | { readonly kind: "chat-completions"; readonly revision: 1; readonly maxOutputTokens: number }
@@ -154,7 +157,7 @@ function createProvider(
 ): JudgeProvider {
   const label = `${provider === "typesafe" ? "Typesafe" : provider === "openai" ? "OpenAI" : provider === "openrouter" ? "OpenRouter" : "Vercel"}Provider() options`;
   const allowed = protocolKind === "chat-completions"
-    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens", "supportsImages", "headers"]
+    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens", "contextWindow", "supportsImages", "headers"]
     : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "headers"];
   const input = exactOptions(raw, label, allowed);
   const model = boundedText(input.model, `${label}.model`, 8 * 1024);
@@ -205,6 +208,7 @@ function createProvider(
     maxResponseBytes,
     protocol,
     ...(headers !== undefined ? { headers } : {}),
+    ...(input.contextWindow === undefined ? {} : { contextWindow: positiveInteger(input.contextWindow, 1, `${label}.contextWindow`, Number.MAX_SAFE_INTEGER) }),
     ...(input.supportsImages === true ? { supportsImages: true } : {}),
   });
   const value = Object.create(null) as Record<PropertyKey, unknown>;

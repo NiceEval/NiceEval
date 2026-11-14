@@ -169,8 +169,8 @@ function fingerprintPreparedPair(
       return yield* Effect.fail(invariant("judge.agent-shared-sandbox: Agent Judge requires an exclusive Attempt Sandbox"));
     }
     const agentJudgeRuntime = selectsAgentJudge ? yield* Effect.sync(() => {
-      try { const runtime = resolveAgentJudgePi(); return { piAgentCore: runtime.coreVersion, piAi: runtime.aiVersion }; }
-      catch { return { piAgentCore: "uninstalled", piAi: "uninstalled" }; }
+      try { const runtime = resolveAgentJudgePi(); return { piCodingAgent: runtime.codingVersion, piAi: runtime.aiVersion }; }
+      catch { return { piCodingAgent: "uninstalled", piAi: "uninstalled" }; }
     }) : undefined;
     const loaderData = yield* Effect.forEach(
       [...(evalDef.loaderDataPaths ?? [])].sort(),
@@ -198,7 +198,7 @@ function fingerprintPreparedPair(
     const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
-      ...(selectsAgentJudge ? { agentJudge: { algorithm: 3, prompt: 2, tools: 2, scheduling: 1, ...agentJudgeRuntime } } : {}),
+      ...(selectsAgentJudge ? { agentJudge: { algorithm: 5, prompt: 2, tools: 3, scheduling: 1, ...agentJudgeRuntime } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,
         revision: JUDGE_AUTHORING_REVISION,

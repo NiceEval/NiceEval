@@ -57,7 +57,7 @@ function modelServer(mode: string) {
       const submit = call("submit_evaluation", { ...(step.kind === "judge" ? { satisfied: true } : { measurement: 1 }), rationale: "Observed real Sandbox evidence", evidence: [{ kind: "file", ref: "application.txt", note: "Read application evidence" }] });
       let calls: unknown[] = [];
       let text: string | null = null;
-      if (step.kind === "chat") text = "Ready to inspect.";
+      if (step.kind === "chat") text = mode === "large-audit" ? "Complete audit evidence. ".repeat(220000) : "Ready to inspect.";
       else if (mode === "cancel") calls = [call("bash", { command: "touch judge-running; sleep 30; touch late-write" })];
       else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question") calls = [call("read", { path: "application.txt" })];
@@ -74,7 +74,7 @@ function modelServer(mode: string) {
 }
 
 // @feature docs/feature/judge/README.md
-test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "budget", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
+test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "large-audit", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
   const { server, bodies } = modelServer(mode);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -93,21 +93,21 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
       });
       expect(attempt.attempt.assertions.entries, run.diagnostic()).toHaveLength(mode === "barrier" ? 5 : 4);
       const entries = attempt.attempt.assertions.entries.filter((entry) => ["First review", "Second review", "Following session"].includes(entry.display.label ?? ""));
+      let reportedCalls = 0;
       for (const [index, entry] of entries.slice(0, 3).entries()) {
         await withInspectionRequest({ kind: "attempt.assertion.detail", locator, entryId: entry.entryId }, async (path) => {
           const result = await niceeval.run(["query", "run", "--request", path]);
           const detail = result.attemptAssertionDetail();
           if (!("entry" in detail.assertion)) throw new Error(result.diagnostic());
           const audit = detail.assertion.entry.agentJudgeAudit;
-          if (mode === "budget") {
-            expect(audit).toBeUndefined();
-            expect(JSON.stringify(detail)).toContain("agent-judge-audit-budget");
-            return;
-          }
           expect(audit, JSON.stringify(detail)).toMatchObject({ state: "available" });
           if (audit?.state !== "available") throw new Error("Missing audit");
-          const expected = ["success", "barrier", "truncation", "compact-continue"].includes(mode) || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : ["http400", "malformed"].includes(mode) ? "errored" : "unavailable";
-          expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify(audit.audit.result)}`).toBe(expected);
+          if (index !== 1) reportedCalls += audit.trace.session.filter(raw => typeof raw === "object" && raw !== null && "message" in raw &&
+            typeof raw.message === "object" && raw.message !== null && "role" in raw.message && raw.message.role === "assistant").length +
+            audit.trace.compactions.filter(compact => compact.summary !== null).length;
+          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit"].includes(mode) || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : mode === "malformed" ? "errored" : "unavailable";
+          expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify({ result: audit.audit.result, tools: audit.trace.tools, compactions: audit.trace.compactions })}`).toBe(expected);
+          if (mode === "large-audit" && index === 0) expect(JSON.stringify(audit.trace.session).length).toBeGreaterThan(4 * 1024 * 1024);
           expect(audit.trace.steps.filter((step) => step.kind !== "chat")).toHaveLength(index === 2 ? 1 : 2);
           if (mode.startsWith("compact-") && index === 1) {
             expect(audit.trace.compactions).toHaveLength(1);
@@ -116,7 +116,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           }
           if (mode === "truncation" && index === 0) {
             const read = audit.trace.tools.find((tool) => tool.name === "read");
-            expect(read?.result).toContain('"truncated":true');
+            expect(read?.result).toContain("exceeds 50.0KB limit");
             expect(read?.result).not.toContain("�");
           }
           if (mode === "success") {
@@ -137,9 +137,10 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
         const result = await niceeval.run(["query", "run", "--request", path]);
         const usage = result.querySuccess("attempt.usage").usage.judgeUsage;
         expect(usage.state, result.diagnostic()).toBe("complete");
-        if (usage.state !== "complete") throw new Error("Missing physical Judge usage");
-        if (mode === "timeout") expect(usage.calls.length).toBeGreaterThanOrEqual(bodies.length);
-        else expect(usage.calls).toHaveLength(bodies.length);
+        if (usage.state !== "complete") throw new Error("Missing pi Judge usage");
+        // pi may finish an aborted assistant after the deadline closes usage collection.
+        if (mode === "timeout") expect(usage.calls.length).toBeLessThanOrEqual(reportedCalls);
+        else expect(usage.calls).toHaveLength(reportedCalls);
         expect(usage.totals.requests.value).toBe(usage.calls.length);
         expect(usage.calls.every((call) => call.operation === "agent")).toBe(true);
         if (["http400", "transport"].includes(mode)) expect(usage.calls.every((call) => call.status === "failed")).toBe(true);
@@ -151,6 +152,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
         expect(bodies.filter((body) => JSON.parse(body).messages[0]?.content?.includes("context summarization assistant"))).toHaveLength(1);
       }
       if (mode === "success") {
+        expect(bodies.some(body => JSON.parse(body).tools?.some((tool: { function?: { name?: string } }) => tool.function?.name === "submit_evaluation"))).toBe(true);
         const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[0]!.entryId, "--full"]);
         expect(shown.stdout).toContain("Measurement"); expect(shown.stdout).toContain("Observed real Sandbox evidence"); expect(shown.stdout).toContain("application evidence");
         const diff = await niceeval.run(["show", locator, "--diff"]);
@@ -161,7 +163,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
       expect(JSON.stringify(bodies)).not.toContain("MUTATED_MATERIAL");
       expect(JSON.stringify(bodies)).not.toContain("CHAT_ONLY_MUST_NOT_SEND");
       expect(JSON.stringify(bodies)).not.toContain("TRAILING_CHAT_MUST_NOT_SEND");
-      if (["budget", "material", "typesafe"].includes(mode)) expect(bodies).toHaveLength(0);
+      if (["material", "typesafe"].includes(mode)) expect(bodies).toHaveLength(0);
     });
   } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); }
 });
@@ -217,9 +219,8 @@ test.concurrent.each(["cancel", "cancel-http"])("Cancelling Agent Judge releases
             const usage = result.querySuccess("attempt.usage").usage.judgeUsage;
             expect(usage.state, result.diagnostic()).toBe("complete");
             if (usage.state !== "complete") throw new Error("Missing interrupted Judge usage");
-            expect(usage.calls).toHaveLength(count);
-            expect(usage.calls.every((call) => call.operation === "agent")).toBe(true);
-            expect(usage.calls.at(-1)?.status).toBe("cancelled");
+            // No assistant receipt exists for an aborted first request. pi owns HTTP attempts.
+            expect(usage.calls).toHaveLength(0);
           });
         }
         expect(bodies).toHaveLength(count);

@@ -2240,7 +2240,7 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       ] });
       if (options.full) {
         for (const compact of agentAudit.trace.compactions) blocks.push({ kind: "keyValue", entries: [
-          { key: "Compaction", value: `After turn ${compact.trigger}; ${compact.tokensBefore ?? "unknown"} tokens; summary requests ${compact.generations.join(", ")}` },
+          { key: "Compaction", value: `After turn ${compact.trigger}; ${compact.tokensBefore ?? "unknown"} tokens` },
           { key: "Summary", value: compact.summary ?? compact.failure?.message ?? "not recorded" },
         ] });
         blocks.push({ kind: "table", columns: [{ header: "Turn" }, { header: "Tool" }, { header: "State" }, { header: "Arguments" }, { header: "Result" }],
