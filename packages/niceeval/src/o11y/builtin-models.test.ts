@@ -20,7 +20,7 @@ test("model metadata prefers exact names, then bare names, then undated names", 
 });
 
 // @feature docs/feature/judge/README.md
-test("known model context limits share pricing normalization without changing estimates", () => {
+test("context and pricing lookups normalize known models and preserve unknown models", () => {
   for (const [model, limit, amountUSD] of [
     ["gpt-5", 400_000, 11.25],
     ["claude-sonnet-4-5", 200_000, 18],
@@ -31,10 +31,6 @@ test("known model context limits share pricing normalization without changing es
         .toMatchObject({ state: "available", receipt: { amountUSD, priceSource: { kind: "builtin", selector: model } } });
     }
   }
-});
-
-// @feature docs/feature/judge/README.md
-test("unknown model context limits stay unknown", () => {
   for (const model of ["unknown-model", "gateway/unknown-model-20990101", "toString", "__proto__"]) {
     expect(builtinContextWindow(model)).toBeUndefined();
     expect(pricingEstimate(model, { inputTokens: 1 })).toEqual({ state: "unavailable", reason: "price-source-not-found" });

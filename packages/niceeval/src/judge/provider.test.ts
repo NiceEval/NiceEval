@@ -31,7 +31,7 @@ describe("Judge Provider headers and Cloudflare Access", () => {
   });
 
   describe("exactOptions and headers validation", () => {
-    test("rejects non-object headers", () => {
+    test("rejects header containers outside the enumerable data-property contract", () => {
       expect(() =>
         OpenAIProvider({
           model: "gpt-4o",
@@ -47,9 +47,6 @@ describe("Judge Provider headers and Cloudflare Access", () => {
           headers: ["a", "b"] as never,
         }),
       ).toThrow("headers must be an object");
-    });
-
-    test("rejects headers with accessors or non-enumerable properties", () => {
       const accessorHeaders = {};
       Object.defineProperty(accessorHeaders, "X-Custom", {
         get: () => "val",
@@ -75,9 +72,6 @@ describe("Judge Provider headers and Cloudflare Access", () => {
           headers: nonEnumerableHeaders as never,
         }),
       ).toThrow("must be an enumerable data property");
-    });
-
-    test("rejects empty or control-character keys", () => {
       expect(() =>
         OpenAIProvider({
           model: "gpt-4o",

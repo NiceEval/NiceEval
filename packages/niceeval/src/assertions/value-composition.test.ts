@@ -121,28 +121,30 @@ test("combinators reject fabricated, score and domain matches at construction", 
   mapValue("typed", (value: number) => value, stringOnly);
 });
 
-test.each([
-  { subject: [1, 2], state: "matched" },
-  { subject: [1, 0, 2], state: "matched" },
-  { subject: [2, 1], state: "mismatched" },
-  { subject: [], state: "mismatched" },
-  { subject: [1], state: "mismatched" },
-  { subject: [undefined, 1, 2], state: "matched" },
-  { subject: [1, undefined, 2], state: "matched" },
-  { subject: [undefined, 2], state: "unavailable" },
-  { subject: [1, undefined], state: "unavailable" },
-  { subject: [undefined, 0], state: "mismatched" },
-  { subject: [0, undefined], state: "mismatched" },
-  { subject: [undefined], state: "mismatched" },
-  { subject: [undefined, undefined], state: "unavailable" },
-  { subject: [null, 2], state: "unavailable" },
-  { subject: [NaN, 2], state: "unavailable" },
-  { subject: [Infinity, 2], state: "unavailable" },
-  { subject: [-Infinity, 2], state: "unavailable" },
-])("ordered values distinguish known witnesses and possible chains: $subject -> $state", async ({ subject, state }) => {
-  const result = await evaluateBooleanMatch(inOrder([equals(1), equals(2)]), subject);
-  expect(result.state).toBe(state);
-  if (result.state === "matched") expect(result.value).toBe(subject);
+test("ordered values distinguish known witnesses and possible chains", async () => {
+  for (const { subject, state } of [
+    { subject: [1, 2], state: "matched" },
+    { subject: [1, 0, 2], state: "matched" },
+    { subject: [2, 1], state: "mismatched" },
+    { subject: [], state: "mismatched" },
+    { subject: [1], state: "mismatched" },
+    { subject: [undefined, 1, 2], state: "matched" },
+    { subject: [1, undefined, 2], state: "matched" },
+    { subject: [undefined, 2], state: "unavailable" },
+    { subject: [1, undefined], state: "unavailable" },
+    { subject: [undefined, 0], state: "mismatched" },
+    { subject: [0, undefined], state: "mismatched" },
+    { subject: [undefined], state: "mismatched" },
+    { subject: [undefined, undefined], state: "unavailable" },
+    { subject: [null, 2], state: "unavailable" },
+    { subject: [NaN, 2], state: "unavailable" },
+    { subject: [Infinity, 2], state: "unavailable" },
+    { subject: [-Infinity, 2], state: "unavailable" },
+  ]) {
+    const result = await evaluateBooleanMatch(inOrder([equals(1), equals(2)]), subject);
+    expect(result.state, `subject: ${subject.map(String).join(", ")}`).toBe(state);
+    if (result.state === "matched") expect(result.value).toBe(subject);
+  }
 });
 
 test("ordered steps require distinct items and compose alternative sequences and negation", async () => {
