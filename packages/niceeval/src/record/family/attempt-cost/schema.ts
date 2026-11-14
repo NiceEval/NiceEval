@@ -33,6 +33,12 @@ const EstimatedCostFactSchema = Schema.Struct({
 
 /** Raw Attempt-owned cost facts; comparison selection is intentionally absent. */
 export const AttemptCostAttachmentSchema = Schema.Struct({
+  simulatedUser: Schema.optional(Schema.Struct({
+    source: Schema.Literal("simulated-user"),
+    state: Schema.Literals(["complete", "partial", "unpriced"]),
+    amountUSD: Schema.NullOr(USD),
+    calls: NonNegativeSafeIntegerSchema,
+  })),
   observed: Schema.optional(ObservedCostFactSchema),
   estimated: Schema.optional(EstimatedCostFactSchema),
 });

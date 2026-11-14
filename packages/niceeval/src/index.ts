@@ -3,6 +3,8 @@
 
 export { defineEval, defineScoreEval, defineDataset, defineScoreDataset, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
+export { defineSimulatedUser } from "./simulated-user/definition.ts";
+export type { SimulatedUser, SimulatedUserDefinition } from "./simulated-user/definition.ts";
 export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";
 export type { ManagedScoreMatchOptions, ScoreMatch, ScoreMatchAnchor, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./assertions/match.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";

@@ -920,6 +920,7 @@ function traceAttachments(
   resolved: ResolvedInspectionAttempt,
 ): AttemptTraceAttachments {
   return Object.freeze({
+    attemptCost: attemptAttachment(resolved, NiceEvalRecordAttachments.attemptCost.family),
     models: resolved.origin.run.context.execution.models,
     adapterUsage: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
     judgeUsage: attemptAttachment(resolved, NiceEvalRecordAttachments.judgeUsage.family),

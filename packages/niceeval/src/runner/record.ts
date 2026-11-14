@@ -95,6 +95,7 @@ import type {
   EvalResult,
 } from "./types.ts";
 import type { AttemptCostAttachment } from "../record/family/attempt-cost/definition.ts";
+import { simulatedUserActivitiesForResult } from "../simulated-user/audit.ts";
 import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 import type { SessionTracker } from "./session.ts";
 
@@ -138,7 +139,15 @@ export type RecordAttemptLocator = AttemptLocator;
 
 function createAttemptCostAttachment(result: EvalResult): AttemptCostAttachment {
   const receipt = getPricingEstimateReceipt(result);
+  const activities = simulatedUserActivitiesForResult(result);
+  const calls = activities.flatMap(activity => activity.generations);
+  const priced = calls.filter(call => call.costUSD !== null);
   return Object.freeze({
+    ...(activities.length === 0 ? {} : { simulatedUser: {
+      source: "simulated-user" as const,
+      state: calls.length === 0 || priced.length === calls.length ? "complete" as const : priced.length > 0 ? "partial" as const : "unpriced" as const,
+      amountUSD: calls.length === 0 ? 0 : priced.length === 0 ? null : priced.reduce((sum, call) => sum + call.costUSD!, 0), calls: calls.length,
+    } }),
     ...(result.usage?.costUSD === undefined ? {} : {
       observed: Object.freeze({ kind: "observed" as const, amountUSD: result.usage.costUSD }),
     }),

@@ -879,14 +879,20 @@ const ModelGroupsSchema = Schema.Union([
   }),
 ]);
 const TotalUsageCostsSchema = Schema.Struct({
+  simulatedUser: Schema.optional(Schema.Struct({
+    source: Schema.Literal("simulated-user"),
+    state: Schema.Literals(["complete", "partial", "unpriced"]),
+    amountUSD: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+    calls: NonNegativeSafeIntegerSchema,
+  })),
   state: Schema.Literals(["complete", "partial", "unavailable"]),
   values: Schema.Array(Schema.Struct({
     currency: UsageCurrencySchema,
     value: UsageDecimalSchema,
     source: Schema.Literals(["reported", "estimated", "mixed"]),
   })),
-  missingSources: Schema.Array(Schema.Literals(["application", "judge"])).check(Schema.makeFilter((sources) =>
-    sources.length <= 2 && sources.every((source, index) => index === 0 || sources[index - 1] === "application" && source === "judge"))),
+  missingSources: Schema.Array(Schema.Literals(["application", "judge", "simulated-user"])).check(Schema.makeFilter((sources) =>
+    sources.length <= 3 && sources.every((source, index) => index === 0 || ["application", "judge", "simulated-user"].indexOf(sources[index - 1]!) < ["application", "judge", "simulated-user"].indexOf(source)))),
 }).check(Schema.makeFilter((value) => value.state === (value.missingSources.length === 0
     ? "complete" : value.values.length === 0 ? "unavailable" : "partial") &&
   value.values.every((entry, index) => index === 0 || value.values[index - 1]!.currency < entry.currency)));

@@ -83,6 +83,7 @@ export interface TraceAttachmentInput {
 }
 
 export interface AttemptTraceAttachments {
+  readonly attemptCost?: TraceAttachmentInput;
   /** Only the sealed origin Run's configuration may validate or describe these calls. */
   readonly models?: ResolvedModelRoles;
   readonly adapterUsage?: TraceAttachmentInput;
@@ -1380,9 +1381,11 @@ export function projectAttemptUsage(
     : Object.freeze({ state: "unavailable" as const, reason: "judge-usage-not-recorded" as const });
   const applicationEmptyComplete = attachments.adapterUsage !== undefined &&
     usage.totals.requests.state === "available" && usage.totals.requests.value === 0 && usage.totals.costs?.totalCalls === 0;
+  const cost = readCurrentAttachment(NiceEvalCurrentRecordAttachments.attemptCost, attachments.attemptCost);
+  const simulatedUser = cost.state === "available" ? cost.value.simulatedUser : undefined;
   return Object.freeze({ ...usage, judgeUsage,
     totalCosts: projectTotalUsageCosts(usage.totals, judgeUsage, applicationEmptyComplete,
-      attachments.adapterUsage === undefined || attachments.adapterUsage.physical.familyRevision === 4) });
+      attachments.adapterUsage === undefined || attachments.adapterUsage.physical.familyRevision === 4, simulatedUser) });
 }
 
 function projectApplicationUsage(

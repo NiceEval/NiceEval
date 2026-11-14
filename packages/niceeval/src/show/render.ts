@@ -1046,7 +1046,9 @@ export function renderTrace(value: TraceView): string {
           },
         ]),
         { kind: "divider", title: "Event page" },
-        ...value.execution.events.flatMap<TerminalPanelContentBlock>((event) => [
+        ...value.execution.events.filter(event => event.source.id !== "niceeval.simulated-user" ||
+          !value.conversation.turns.some(turn => event.scopeMemberships.some(scope => scope.scopeId === turn.turnId && scope.state === "included")))
+          .flatMap<TerminalPanelContentBlock>((event) => [
           { kind: "divider", title: safeEventText(event.type) },
           {
             kind: "keyValue",

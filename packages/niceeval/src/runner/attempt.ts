@@ -30,6 +30,8 @@ import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./clean
 import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
 import { JudgeUsageCollector } from "../o11y/judge-usage.ts";
 import { retainJudgeUsage } from "./judge-usage.ts";
+import { SimulatedUserError } from "../simulated-user/definition.ts";
+import { captureSimulatedUserActivity, retainSimulatedUserActivities, type SimulatedUserActivity } from "../simulated-user/audit.ts";
 import { createAdapterAttachmentCollector, retainAdapterAttachments, type AdapterAttachmentCollector } from "./adapter-attachments.ts";
 import {
   createAdapterExecutionTraceCollector,
@@ -513,6 +515,7 @@ export function runAttemptEffect<
   let adapterUsageSnapshot: ReturnType<AdapterUsageCollector["close"]> | undefined;
   let adapterAttachments: AdapterAttachmentCollector | undefined;
   let adapterExecutionTraces: AdapterExecutionTraceCollector | undefined;
+  const simulatedUserActivities: SimulatedUserActivity[] = [];
   let adapterSealedAssertions: SealedAttemptAssertions | undefined;
   let adapterCleanupError: AttemptError | undefined;
   let invocationInterrupted = false;
@@ -849,6 +852,15 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       // author context, and observations.
       yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
       const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
+      // Agent input generators use the same sealed evidence transport with
+      // their own producer; creating collectors does not add identity inputs.
+      if (adapter?.kind !== "custom") {
+        adapterAttachments = createAdapterAttachmentCollector(`${recordRootPaths(opts.recordRoot)!.portableRoot}/attachment-staging`);
+        const ownedAttachments = adapterAttachments;
+        yield* Scope.addFinalizer(attachmentScope, Effect.promise(() => ownedAttachments.dispose()));
+        adapterExecutionTraces = createAdapterExecutionTraceCollector(ownedAttachments.artifacts);
+        yield* Effect.addFinalizer(() => Effect.sync(() => { adapterExecutionTraces?.close(); adapterAttachments?.close(); }));
+      }
       if (adapter === undefined || adapter.kind === "custom") {
         const pluginHooks = attemptPluginLifecycles(evalDef, run);
         let activated = 0;
@@ -1435,6 +1447,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       const bodyFiber = yield* Effect.forkChild(
         tryPromiseAsDefect((interruptSignal) =>
           runAttemptBody(a, config, t0, base, {
+            captureSimulatedUser: async activity => {
+              simulatedUserActivities.push(activity);
+              await captureSimulatedUserActivity(activity, adapterAttachments!, adapterExecutionTraces!);
+            },
             judgeUsage,
             sandbox,
             sourceRegistry,
@@ -1777,6 +1793,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       }
       retainAttemptNotes(finalResult, liveNotes?.snapshot() ?? []);
       retainJudgeUsage(finalResult, judgeUsage.snapshot());
+      retainSimulatedUserActivities(finalResult, simulatedUserActivities);
       if (adapterUsageSnapshot !== undefined) retainAdapterUsage(finalResult, adapterUsageSnapshot);
       if (adapterAttachments !== undefined) retainAdapterAttachments(finalResult, adapterAttachments.snapshot());
       if (adapterExecutionTraces !== undefined) retainAdapterExecutionTraces(finalResult, adapterExecutionTraces.snapshot());
@@ -2187,6 +2204,10 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
+  if (e instanceof SimulatedUserError) return {
+    code: e.code, message: e.message, origin: attemptOrigin("eval.run"),
+    cause: { code: e.reason, message: e.reason },
+  };
   if (e instanceof BeforeCacheAmbiguityError) {
     return {
       code: "sandbox-environment-incomplete",
@@ -2274,6 +2295,7 @@ function assertDeadlineFitsPlan(
 }
 
 interface AttemptResources {
+  readonly captureSimulatedUser: (activity: SimulatedUserActivity) => Promise<void>;
   readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   judgeUsage: JudgeUsageCollector;
   sandbox: Sandbox;
@@ -3328,6 +3350,8 @@ async function runAttemptBody(
     enterPhase("eval.run");
     log(`driving agent...`);
     const { context, state } = createAssertFirstEvalContext({
+      captureSimulatedUser: res.captureSimulatedUser,
+      ...(res.deadlineAt === undefined ? {} : { deadlineAt: res.deadlineAt }),
       agent,
       sandbox,
       evalId: evalDef.id,
@@ -3446,6 +3470,11 @@ async function runAttemptBody(
       }
     }
 
+    await state.closeSimulatedUsers();
+    if (error === undefined && state.simulatedUserFailure !== undefined) {
+      declareFailure("eval.run", state.simulatedUserFailure);
+      error = errorFromThrown(state.simulatedUserFailure, "eval.run");
+    }
     if (skipReason) log(`skip: ${skipReason}`);
 
     // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。Direct Agent 没有 workspace。

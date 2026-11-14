@@ -1,5 +1,9 @@
 import { bindConversationMaterial, projectConversation } from "../assertions/conversation-material.ts";
 import { AttemptNotesCollector } from "./notes.ts";
+import { bindSimulatedUser } from "../simulated-user/binding.ts";
+import { SimulatedUserError, type SimulatedUser, type SimulatedUserDefinition } from "../simulated-user/definition.ts";
+import type { SimulatedUserActivity } from "../simulated-user/audit.ts";
+import { createSimulatedUserConversation } from "../simulated-user/runtime.ts";
 import { compareCanonicalDecimal } from "../o11y/adapter-usage-projection.ts";
 import { canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
 import { ownMaterialCollection } from "../assertions/material.ts";
@@ -145,6 +149,8 @@ export interface AssertFirstLateResult {
 }
 
 export interface AssertFirstContextState {
+  simulatedUserFailure?: SimulatedUserError;
+  readonly closeSimulatedUsers: () => Promise<void>;
   readonly notes: AttemptNotesCollector;
   readonly assertions: AssertionsRuntime<"pass" | "score">;
   readonly manager: SessionManager;
@@ -199,6 +205,8 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
 export interface AssertFirstContextDeps {
+  readonly captureSimulatedUser?: (activity: SimulatedUserActivity) => Promise<void>;
+  readonly deadlineAt?: number;
   readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
   readonly agent: Agent;
   readonly sandbox: Sandbox;
@@ -387,6 +395,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends AgentJu
 }
 
 export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends AgentJudgePresetMethods<Kind, AgentMatchContext<"session">> {
+  simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
   send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<AssertFirstTurnHandle<Kind>>;
   sendFile(path: string, text?: string): Promise<AssertFirstTurnHandle<Kind>>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
@@ -424,6 +433,7 @@ type JudgeFunction<Kind extends RuntimeKind> = <Value>(
 ) => MeasurementAssertionHandle<Kind>;
 
 export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetMethods<Kind, AgentMatchContext<"attempt">> & {
+  simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
   /** 保存 JSON 值或 Quantity 供结果展示，不登记 Assertion，也不影响 Verdict、score 或 coverage。 */
   note: AssertFirstCoreTestContext<Kind>["note"];
   readonly evaluationKind: Kind;
@@ -1782,7 +1792,17 @@ export function createAssertFirstEvalContext(
   const runtime = core.state.assertions;
   const check = core.context.check;
   const judge = core.context.judge;
+  const simulatedUserCleanups: Array<() => Promise<void>> = [];
+  let simulatedUsersClosed = false;
+  const closeSimulatedUsers = async () => {
+    simulatedUsersClosed = true;
+    deps.signal.removeEventListener("abort", abortSimulatedUsers);
+    await Promise.all(simulatedUserCleanups.map(close => close()));
+  };
+  const abortSimulatedUsers = () => { void closeSimulatedUsers().catch(() => undefined); };
+  deps.signal.addEventListener("abort", abortSimulatedUsers, { once: true });
   const state: AssertFirstContextState = {
+    closeSimulatedUsers,
     notes: core.state.notes,
     assertions: runtime,
     manager,
@@ -1803,6 +1823,9 @@ export function createAssertFirstEvalContext(
   }
 
   interface SessionScopeState {
+    latestTurn?: AssertFirstTurnHandle<RuntimeKind>;
+    simulatedUserBusy?: boolean;
+    queuedDrives?: number;
     readonly session: RunSession;
     readonly turns: MatcherScopeTurn[];
     started: boolean;
@@ -1812,6 +1835,7 @@ export function createAssertFirstEvalContext(
   }
 
   const sessions: SessionScopeState[] = [];
+  const turnOwners = new WeakMap<object, { readonly scope: SessionScopeState; readonly turnId: string }>();
   let attemptToolScopeCache: ToolScopeProjectionCache | undefined;
   const matcherSource = Object.freeze({
     family: "niceeval.agent-turns" as const,
@@ -2226,7 +2250,7 @@ export function createAssertFirstEvalContext(
       return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, eventOccurrences, inOrder(matches));
     };
     const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readTurnUsage);
-    return bindConversationMaterial(Object.freeze({
+    const handle = bindConversationMaterial(Object.freeze({
       input: snapshot.input,
       events: snapshot.events,
       inputRequests: Object.freeze(snapshot.events.flatMap(event => event.type === "input.requested" ? [freezeInputRequest(event.request)] : [])),
@@ -2260,6 +2284,9 @@ export function createAssertFirstEvalContext(
       maxTokens,
       maxCost,
     }), () => projectConversation([conversationTurn(matcherTurn)]));
+    scope.latestTurn = handle;
+    turnOwners.set(handle, { scope, turnId: observed.turnId });
+    return handle;
   };
 
   const sendEffect = <Kind extends RuntimeKind>(
@@ -2290,10 +2317,12 @@ export function createAssertFirstEvalContext(
     text: string,
     files?: readonly InputFile[],
     responses?: readonly InputResponse[],
-  ): Promise<AssertFirstTurnHandle<Kind>> =>
-    deps.requestEffect(
+  ): Promise<AssertFirstTurnHandle<Kind>> => {
+    scope.queuedDrives = (scope.queuedDrives ?? 0) + 1;
+    return deps.requestEffect(
       sendEffect<Kind>(scope, text, files, responses, captureLoc({ registry: deps.sourceRegistry })),
-    );
+    ).finally(() => { scope.queuedDrives!--; });
+  };
 
   const makeSession = <Kind extends RuntimeKind>(scope: SessionScopeState): AssertFirstSessionHandle<Kind> => {
     const session = scope.session;
@@ -2366,6 +2395,39 @@ export function createAssertFirstEvalContext(
     };
     const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readSessionUsage);
     return bindConversationMaterial(Object.freeze({
+      simulatedUser: (definition: SimulatedUserDefinition) => bindSimulatedUser<Kind>(definition, {
+        assertCurrent(turn) {
+          if (simulatedUsersClosed) throw new SimulatedUserError("simulated-user-invalid-turn", "closed");
+          const owner = turn !== null && typeof turn === "object" ? turnOwners.get(turn) : undefined;
+          if (owner?.scope !== scope) throw new SimulatedUserError("simulated-user-invalid-turn", "foreign-turn");
+          if (scope.latestTurn !== turn) throw new SimulatedUserError("simulated-user-invalid-turn", "stale-turn");
+          if (scope.inFlight > 0 || (scope.queuedDrives ?? 0) > 0) throw new SimulatedUserError("simulated-user-invalid-turn", "session-busy");
+          if (turn.status === "waiting" && JSON.stringify(turn.inputRequests) !== JSON.stringify(session.pendingInputRequests)) throw new SimulatedUserError("simulated-user-invalid-turn", "stale-turn");
+          return { sessionId: session.sessionScopeId, turnId: owner.turnId };
+        },
+        acquire() {
+          if (scope.simulatedUserBusy) throw new SimulatedUserError("simulated-user-invalid-turn", "session-busy");
+          scope.simulatedUserBusy = true;
+          return () => { scope.simulatedUserBusy = false; };
+        },
+        drive(answer, deadlineAt) {
+          const operation = "message" in answer ? sendEffect<Kind>(scope, answer.message)
+            : sendEffect<Kind>(scope, answer.text, undefined, answer.responses);
+          return deps.requestEffect(operation.pipe(Effect.timeoutOrElse({
+            duration: Math.max(0, deadlineAt - Date.now()),
+            orElse: () => Effect.fail(new SimulatedUserError("simulated-user-failed", "timeout")),
+          })));
+        },
+      }, {
+        signal: deps.signal,
+        assertOpen: () => runtime.assertAuthoringOpen(),
+        now: deps.timingNow ?? (() => performance.now()),
+        ...(deps.deadlineAt === undefined ? {} : { deadlineAt: deps.deadlineAt }),
+        createConversation: definition => createSimulatedUserConversation(definition, deps.judge, deps.pricing),
+        latchFailure: error => { state.simulatedUserFailure ??= error; },
+        capture: activity => deps.captureSimulatedUser?.(activity) ?? Promise.resolve(),
+        onClose: close => { simulatedUserCleanups.push(close); },
+      }),
       send: (input: string | { readonly text: string; readonly files?: readonly InputFile[] }) => {
         const text = typeof input === "string" ? input : input.text;
         const files = typeof input === "string" ? undefined : input.files;
@@ -2373,11 +2435,12 @@ export function createAssertFirstEvalContext(
       },
       sendFile: (path: string, text?: string) => {
         const loc = captureLoc({ registry: deps.sourceRegistry });
+        scope.queuedDrives = (scope.queuedDrives ?? 0) + 1;
         return deps.requestEffect(
           readInputFileEffect(path).pipe(
             Effect.flatMap((file) => sendEffect<Kind>(scope, text ?? "", [file], undefined, loc)),
           ),
-        );
+        ).finally(() => { scope.queuedDrives!--; });
       },
       requireInputRequest: (filter?: InputRequestFilter) => requireInputRequest(session, filter),
       async respond(...responses: readonly (string | AssertFirstRespondAnswer)[]) {
@@ -2549,6 +2612,7 @@ export function createAssertFirstEvalContext(
     ...agentJudgePresetMethods<RuntimeKind, "attempt">(check as import("../assertions/api.ts").AssertionCheck<RuntimeKind, AgentMatchContext<"attempt">>, rootFrame),
     get elapsedMs() { return core.context.elapsedMs; },
     send: primary.send,
+    simulatedUser: primary.simulatedUser,
     sendFile: primary.sendFile,
     requireInputRequest: primary.requireInputRequest,
     respond: primary.respond,

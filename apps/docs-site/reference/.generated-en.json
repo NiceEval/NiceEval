@@ -270,6 +270,7 @@
   "test-context/note": "Stores a JSON value or Quantity for display without registering an Assertion or affecting Verdict, score, or coverage.",
   "test-context/evaluationKind": "",
   "test-context/send": "",
+  "test-context/simulatedUser": "",
   "test-context/sendFile": "",
   "test-context/requireInputRequest": "",
   "test-context/respond": "",

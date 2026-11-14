@@ -1,5 +1,5 @@
 import type { JudgeUsageAttachment, JudgeUsageCall } from "../record/family/judge-usage/schema.ts";
-import { addCanonicalDecimals } from "../record/family/adapter-usage/pricing.ts";
+import { addCanonicalDecimals, canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
 import { effectiveCostTotals, type EffectiveCallCost } from "./adapter-usage-projection.ts";
 import type {
   InspectionAttemptUsageResult, JudgeUsage, JudgeUsageSummary, TotalUsageCosts,
@@ -98,27 +98,37 @@ export function projectTotalUsageCosts(
   judge: JudgeUsageSummary,
   applicationEmptyComplete = false,
   applicationCollectionProven = true,
+  simulatedUser?: TotalUsageCosts["simulatedUser"],
 ): TotalUsageCosts {
   const applicationValues = application.costs !== undefined ? application.costs.values
     : (application.providerCosts?.values ?? []).map(({ currency, value }) => ({ currency, value, source: "reported" as const }));
   const judgeCosts = judge.state === "complete" || judge.state === "partial" ? judge.totals.costs : undefined;
   const completeApplication = applicationCollectionProven && (applicationEmptyComplete || application.costs?.state === "complete" ||
     application.costs === undefined && application.providerCosts?.state === "available");
-  const missingSources: ("application" | "judge")[] = [];
+  const missingSources: ("application" | "judge" | "simulated-user")[] = [];
   if (!completeApplication) missingSources.push("application");
   if (judgeCosts?.state !== "complete") missingSources.push("judge");
-  const values = sumCostValues([...applicationValues, ...(judgeCosts?.values ?? [])]);
+  if (simulatedUser !== undefined && simulatedUser.state !== "complete") missingSources.push("simulated-user");
+  const values = sumCostValues([...applicationValues, ...(judgeCosts?.values ?? []), ...(simulatedUser?.amountUSD == null ? [] : [{ currency: "USD", value: canonicalDecimalFromNumber(simulatedUser.amountUSD)!, source: "estimated" as const }])]);
   return Object.freeze({ state: missingSources.length === 0 ? "complete" : values.length === 0 ? "unavailable" : "partial",
-    values, missingSources: Object.freeze(missingSources) });
+    values, missingSources: Object.freeze(missingSources), ...(simulatedUser === undefined ? {} : { simulatedUser }) });
 }
 
 /** Inputs are unique origin Attempts, never preview rows or verdict-filtered members. */
 export function combineTotalUsageCosts(totals: readonly TotalUsageCosts[], unresolved = false): TotalUsageCosts {
-  const missingSources = (["application", "judge"] as const).filter((source) =>
-    unresolved || totals.some((total) => total.missingSources.includes(source)));
+  const missingSources = (["application", "judge", "simulated-user"] as const).filter((source) =>
+    unresolved && source !== "simulated-user" || totals.some((total) => total.missingSources.includes(source)));
   const values = sumCostValues(totals.flatMap((total) => total.values));
+  const sources = totals.flatMap(total => total.simulatedUser === undefined ? [] : [total.simulatedUser]);
+  const amounts = sources.flatMap(source => source.amountUSD === null ? [] : [source.amountUSD]);
+  const simulatedUser: TotalUsageCosts["simulatedUser"] = sources.length === 0 ? undefined : {
+    source: "simulated-user",
+    state: sources.every(source => source.state === "complete") ? "complete" : amounts.length > 0 ? "partial" : "unpriced",
+    amountUSD: amounts.length === 0 ? null : amounts.reduce((sum, amount) => sum + amount, 0),
+    calls: sources.reduce((sum, source) => sum + source.calls, 0),
+  };
   return Object.freeze({ state: missingSources.length === 0 ? "complete" : values.length === 0 ? "unavailable" : "partial",
-    values, missingSources: Object.freeze(missingSources) });
+    values, missingSources: Object.freeze(missingSources), ...(simulatedUser === undefined ? {} : { simulatedUser }) });
 }
 
 function sumCostValues(entries: TotalUsageCosts["values"]): TotalUsageCosts["values"] {
