@@ -57,11 +57,13 @@ manifest 投影使用同一个字符串，载荷不再保存源码原文。规�
 采用 `oxc-parser`，在 NiceEval 的依赖里固定到精确版本，只使用它的原生 binding：
 
 - 不使用 wasm 或 webcontainer 回退，也不在运行时安装 binding。当前平台没有可用 binding 时，规划以环境错误失败，写明平台与缺少的包。
+- binding 装载入口必须在执行包内自动回退逻辑前完成原生目标检查，并验证 binding 与解析器版本一致。环境变量指定的替代 binding 或 WASI 后端不能改变身份配方。
 - 语言与模块类型按扩展名决定：`.ts`、`.mts` 为 TypeScript module，`.cts` 为 TypeScript CommonJS，`.tsx` 为 TSX，`.js`、`.mjs` 为 module，`.cjs` 为 CommonJS，`.jsx` 为 JSX。
 - 区间按解析器返回的 UTF-16 索引切片，不与 UTF-8 字节偏移混用。
 
 解析器报告任何错误时，规划失败并给出文件、行列与解析器消息，不使用错误恢复得到的 AST，也不退回原始字节。
 jiti 能运行而解析器拒绝的语法因此会阻止规划；这比用不完整的闭包或另一种编码计算身份更安全。
+错误反馈说明当前语法模式与文件扩展名，并保留固定历史 Run 的读取入口。旧闭包独有文件的错误只影响迁移，不扩大为当前模块图的解析失败。
 升级解析器时，发布校验的固定样例必须证明规范化文本、依赖成员与能力选择全部不变，否则更换 `fingerprintAlgorithm`。
 
 ### 闭包成员与能力识别
@@ -69,59 +71,36 @@ jiti 能运行而解析器拒绝的语法因此会阻止规划；这比用不完
 模块依赖只有一个 owner：发现阶段用解析器为每个模块建立依赖边，形成冻结的模块图。
 loader、criteria 与 private 输入的逐 Eval 传播、Eval Group 的 definition hash、源码捕获与指纹都消费这一份模块图。
 `runner/source-closure.ts`、`fingerprint.ts` 与 fresh import 里的正则扫描全部删除，不再各自扫描磁盘。
+模块图保留依赖边的语法种类与求值时机。身份覆盖保守收集的 `import()`、条件 `require()` 不能成为 fresh import 提前求值的指令；未执行的分支保持不执行。
 
 依赖边按以下规则收集，specifier 使用 AST 解码后的字符串，按 jiti 实际使用的模块解析规则查找：
 
 | 写法 | 是否进入闭包 |
 | --- | --- |
 | `import ... from`、`import "x"`、`export ... from`、`export * from` | 进入 |
-| 整句的 `import type` 与 `export type` | 不进入：编译后不执行目标模块 |
-| 同一句里混有值与 `type` 修饰的导入 | 进入：仍执行目标模块 |
+| 整句的 `import type`、`export type` 与 `import type x = require()` | 不进入：编译后不执行目标模块 |
+| 同一句里混有值与 `type` 修饰的导入 | 保守进入；jiti 可能擦除未使用的值导入，不能声称目标必定执行 |
+| 只含逐项 `type` 修饰的导入或重导出 | 不进入：编译后不执行目标模块 |
 | 参数为字符串字面量的 `import()` | 进入，不论这个分支是否执行 |
 | 参数为字符串字面量、且 `require` 未被局部遮蔽的 `require()`；TypeScript `import x = require()` | 进入 |
+| 未被局部遮蔽的 CommonJS `module.require()`，参数为字符串字面量 | 进入 |
+| TypeScript `export = expression` | 遍历表达式中的依赖调用；`export = require("x")` 按 `require()` 规则进入 |
 | 参数不是字符串字面量的 `import()` 或 `require()` | 不进入；规划给出 `dynamic-module-unresolved` warning，写明文件与行列 |
 
-查找结果按 realpath 遵守 [Eval 架构](../feature/eval/architecture.md#文件访问边界) 的 owner 边界；包名依赖（不以 `.` 或 `/` 开头的 specifier）沿用既有的安装内容摘要规则。
+查找结果按 realpath 遵守 [Eval 架构](../feature/eval/architecture.md#文件访问边界) 的 owner 边界。
+依赖类别按实际查找结果确定，不能只看 specifier 前缀。tsconfig 本地别名及 package imports 映射到 owner 内源码时，进入同一模块图；实际包依赖沿用安装内容摘要规则。
+
+非字面量调用的 warning 不是完整依赖证明。`require` 别名、`createRequire()` 与其它间接加载同样可能执行项目文件，不能无诊断地视为无依赖。
+`import.meta.glob` 等 jiti 不支持的扩展语法不属于模块图保证。
 
 Agent Judge、普通 Judge 与模拟用户的能力识别扫描规范化文本，注释不再触发识别。字符串里出现这些名字仍会被识别，属于保守误判。
 非 JavaScript / TypeScript 文件（例如被 import 的 `.json`）继续按原始字节计算，条目使用 `r1:`。
 
-### 身份域迁移
+### 身份域变更
 
-登记两条 `encoding-only` 变更，各自负责一个 revision：
-
-| 变更 | 内容 |
-|---|---|
-| `fingerprint-algorithm/5-to-6` | 文件条目由原文改为带配方前缀的哈希；能力识别扫描规范化文本；解析器版本与选项进入配方 |
-| `fingerprint-coverage/3-to-4` | 闭包成员与 loader、criteria、private 的逐 Eval 投影改由模块图决定 |
-
-三个组合域的配方：
-
-| 组合域 | 闭包成员与投影 | 文件条目 | 能力识别 |
-| --- | --- | --- | --- |
-| algorithm 5 / coverage 3（旧） | 旧正则 | 原文 | 原文 |
-| algorithm 6 / coverage 3（中间） | 旧正则 | 带配方前缀的哈希 | 规范化文本 |
-| algorithm 6 / coverage 4（新） | 模块图 | 带配方前缀的哈希 | 规范化文本 |
-
-registry 按相反顺序重建：先由 coverage 4 还原到中间域，再由 algorithm 6 还原到旧域。
-
-规划发现 origin 处于旧域时，一次性冻结迁移材料：旧正则闭包的成员、每个成员的原文与规范化文本、旧投影，以及新旧配方各自的能力识别结果。
-重建只消费这份冻结材料，不再读磁盘。旧闭包独有的文件无法读取或无法解析时，只判这次迁移不可用，不阻止当前身份的规划。
-
-两步各有谓词，任一不成立即拒绝重建，结果显示 `identity-domain-changed`：
-
-- coverage 4 → 3：新闭包的每个成员都属于旧闭包，且每条 Eval 的 loader、criteria 与 private 投影在两种成员规则下相同。
-  旧闭包多出的成员（例如只出现在注释里的 import）不阻止迁移；新闭包多出的成员会阻止，因为旧结果从未覆盖它。
-- algorithm 6 → 5：Agent Judge、普通 Judge 与模拟用户的能力识别在原文与规范化文本上得到相同结果。
-
-例如入口一直写着 `import("./worker.ts")`：旧正则闭包没有 `worker.ts`，第一条谓词不成立，这条 Eval 重跑一次，不会因为旧 digest 恰好相等而沿用。
-模拟用户等能力条件项各自的行为版本按所属 owner 的身份规则处理，源码编码迁移不改变它们。
-
-后果：
-
-- 升级 NiceEval 后，源码未变、闭包没有新增成员、能力识别不变的 Eval 直接沿用，不需要重跑，也不需要 `accept`。
-- 升级前后都改过源码的 Eval，与今天一样作废；升级之后，只改普通注释与排版不再作废。
-- 闭包因新规则新增了成员的 Eval（例如用到 `import()` 或 `require`）重跑一次。
+登记一条 `behavior-changing` 变更，同时把 `fingerprintAlgorithm` 由 5 升到 6、`fingerprintCoverage` 由 3 升到 4：文件条目改为带配方前缀的哈希，能力识别扫描规范化文本，闭包成员与投影改由模块图决定。
+不提供旧域重建：升级后所有已有结果显示 `identity-domain-changed`，重跑一次。这是用户接受的代价，换来不需要冻结旧材料、中间组合域与迁移谓词。
+之后只改普通注释与排版的 Eval 不再作废。
 
 ## 取舍
 
@@ -147,10 +126,9 @@ registry 按相反顺序重建：先由 coverage 4 还原到中间域，再由 a
 - HTML 风格注释、hashbang、类型位置注释、`/*#__PURE__*/` 与 `//# sourceMappingURL` 按实际装载器验证；只忽略不改变执行的注释。
 - 注释掉的 import 指向的文件被修改：不影响该 Eval；去掉注释后它进入闭包。
 - 注释里写 `agentJudge(`：载荷不出现 `agentJudge` 项。
-- 用 NiceEval 升级前的 Record 运行 `--dry`：满足谓词的 Eval 显示 `match`，`via` 列出对应变更名。
-  新增未被旧域覆盖的依赖及新增非等价能力条件项拒绝重建；不得自动沿用。
-- 纯编码迁移、纯覆盖迁移、组合迁移及谓词不成立分别验证；冻结后改变磁盘内容不能影响重建结果。
+- 用 NiceEval 升级前的 Record 运行 `--dry`：全部已有结果显示 `identity-domain-changed`，列出这条变更名；不出现 `identity-domain-unregistered` 或 `unversioned-identity-change`。
 - 解析器报错与 binding 缺失分别以具名错误使规划失败，不产生任何身份；不使用错误恢复 AST。
 - 依赖边规则表的每一行各有样例，`dynamic-module-unresolved` warning 写明文件与行列；discovery 的 loader 传播与指纹使用同一份模块图。
+- tsconfig 本地别名、`module.require()`、`export = require()` 与仅类型导入分别验证；解析到同一真实文件的不同 specifier 共用模块事实。
 - 公开读取 carried Attempt 的断言位置时，仍 join exact origin Run 的 Sources，不能用规范化哈希绑定当前文件。
 - 发布校验的固定样例覆盖以上每种输入。
