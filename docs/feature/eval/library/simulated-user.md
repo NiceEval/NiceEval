@@ -33,7 +33,7 @@ export default defineScoreEval({
 ```ts
 interface SimulatedUserDefinition {
   readonly instructions: string;        // 这位用户是谁、知道什么、已经决定了什么
-  readonly timeoutMs?: number;          // 单次 reply 的墙钟上限，默认 120_000
+  readonly timeoutMs?: number;          // 单次回答生成的墙钟上限，默认 120_000
 }
 
 interface SimulatedUser {
@@ -69,6 +69,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 模型生成、校验与发送约束见[模拟用户架构](../architecture.md#模拟用户)。模型未提交合法回答、期限耗尽、容量不足、压缩失败或传输失败时，`reply` 抛出 `simulated-user-failed`。这些是执行错误，不生成失败 Assertion，也不制造合法的 failed Turn。
 - 模拟用户执行失败锁存到 Attempt 的执行 outcome，即使作者捕获异常也不能形成成功结果；[Verdict](../../verdict/README.md) 依既有规则折叠为 `errored`，保留此前的 Assertion facts。Attempt 取消保持 interruption，Attempt deadline 保持原 timeout 归属。
 - 回答提交后，下一轮直接经过原 Session 的 `respond` / `send`；发送失败与合法 `Turn.status === "failed"` 保持原契约，不包装成模拟用户失败，不重新生成回答重发。
+- `timeoutMs` 只约束回答生成。生成结束即解除该期限，下一轮使用原 Agent / Attempt 的期限；`reply` 等待下一轮完成，因此总耗时可以超过这个值。
 
 ### 错误归属
 

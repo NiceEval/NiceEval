@@ -206,7 +206,8 @@ instructions 属于可信作者输入，不把被测 Agent 的回复提升为系
 第一个合法提交只锁定回答候选；关闭模型动作准入、收拢会话与校验审计后，再复核 Session 状态并调用原 `respond` / `send` 一次。
 
 与 [Agent Judge](../judge/architecture.md#pi-coding-agent-与受管-provider) 相同，直接使用 pi coding agent 会话：NiceEval 只追加 system prompt 并提供 `reply_to_agent`；模型请求、上下文、压缩、重试、usage 与 abort 都是 pi 的。
-每次 reply 最多 4 个 assistant 轮次，pi 的压缩与重试不占轮次。期限取定义上限与 Attempt 剩余期限的较小值。
+每次 reply 最多 4 个 assistant 轮次，pi 的压缩与重试不占轮次。回答生成期限取定义上限与 Attempt 剩余期限的较小值。
+生成结束后解除模拟用户期限，下一轮只由原 Session / Attempt 的期限约束，保持发送失败与取消的原有归属。
 
 每次 reply 的审计完整保存 pi session，不设字节上限，经受管 Content 分块保存、由 Inspection 分页读取。会话大小不会让 reply 失败；只有存储写入本身失败才是 `simulated-user-failed`。
 

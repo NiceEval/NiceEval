@@ -9,7 +9,7 @@ import type { SimulatedUserActivity, SimulatedUserGeneration } from "./audit.ts"
 export interface SimulatedUserSession<Kind extends "pass" | "score"> {
   assertCurrent(turn: TurnHandle<Kind>): { readonly sessionId: string; readonly turnId: string };
   acquire(): () => void;
-  drive(answer: SimulatedUserAnswer, deadlineAt: number): Promise<TurnHandle<Kind>>;
+  drive(answer: SimulatedUserAnswer): Promise<TurnHandle<Kind>>;
 }
 
 /** The pi owner retains conversation history, but never drives an Agent Session. */
@@ -80,9 +80,11 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
         throw error;
       }
       // A concurrent author drive may have changed pending requests while pi ran.
+      // The generation budget ends here; the Agent keeps its normal send deadline.
+      clearTimeout(timer);
       session.assertCurrent(turn);
       deps.assertOpen();
-      const next = await session.drive(answer, deadlineAt);
+      const next = await session.drive(answer);
       targetTurnId = session.assertCurrent(next).turnId;
       return next;
     } catch (cause) {

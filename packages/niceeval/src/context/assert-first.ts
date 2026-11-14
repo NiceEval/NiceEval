@@ -2410,13 +2410,10 @@ export function createAssertFirstEvalContext(
           scope.simulatedUserBusy = true;
           return () => { scope.simulatedUserBusy = false; };
         },
-        drive(answer, deadlineAt) {
+        drive(answer) {
           const operation = "message" in answer ? sendEffect<Kind>(scope, answer.message)
             : sendEffect<Kind>(scope, answer.text, undefined, answer.responses);
-          return deps.requestEffect(operation.pipe(Effect.timeoutOrElse({
-            duration: Math.max(0, deadlineAt - Date.now()),
-            orElse: () => Effect.fail(new SimulatedUserError("simulated-user-failed", "timeout")),
-          })));
+          return deps.requestEffect(operation);
         },
       }, {
         signal: deps.signal,

@@ -16,7 +16,6 @@ const scenario = createE2EContext({ repoId: "agent-judge", project: {
 
 // Only the external HTTP model is scripted; the installed Session and pi are real.
 // @feature docs/feature/eval/README.md
-// @issue docs/issues/simulated-user-resume-timeout.md
 test.concurrent.each(["waiting", "message", "invalid", "no-answer", "typesafe", "timeout", "cancel", "stale", "foreign", "busy", "clone", "closed", "race", "duplicate", "missing", "unknown", "both", "correct", "compact", "compact-failed", "large-session"])("Simulated user answers within its Session and retains execution evidence: %s", async mode => {
   const bodies: string[] = [];
   let ordinary = 0;

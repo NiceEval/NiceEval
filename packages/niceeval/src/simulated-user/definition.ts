@@ -4,6 +4,7 @@ import type { TurnHandle } from "../context/types.ts";
 /** Author-provided facts used by a simulated user. */
 export interface SimulatedUserDefinition {
   readonly instructions: string;
+  /** Answer generation budget; the subsequent Agent Turn uses its normal deadline. */
   readonly timeoutMs?: number;
 }
 
