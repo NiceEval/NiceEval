@@ -544,7 +544,6 @@ export function encodeSealedAssertionEntry(
   const result = encodeAssertionResult(entry.result);
   return Object.freeze({
     display: Object.freeze({
-      ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
       ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
       groupPath: Object.freeze([...entry.display.groupPath]),
     }),

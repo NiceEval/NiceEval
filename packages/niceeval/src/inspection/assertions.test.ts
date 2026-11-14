@@ -17,7 +17,7 @@ test.concurrent("compact assertions keep decisions and rationales without readin
   const input = {
     state: "available", issues: [],
     value: { entries: [{
-      entryId, display: { key: "answer", label: "Answer matches", groupPath: [] }, criterion: unavailable,
+      entryId, display: { label: "Answer matches", groupPath: [] }, criterion: unavailable,
       materials: { source: { kind: "content", content: handle, encoding: "utf-8", byteLength: bytes.length, preview: "large material" }, evidence: [], coverage: { state: "complete" }, limitations: [] },
       evaluation: { kind: "ordinary", observed: { kind: "fields", fields: [{ label: "rationale", value: { kind: "value", value: "Expected answer was absent." } }] } },
       decision: { result: "mismatched", reason: "condition-not-met", gate: "failed" },

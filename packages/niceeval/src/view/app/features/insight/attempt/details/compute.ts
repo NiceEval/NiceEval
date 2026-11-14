@@ -129,7 +129,6 @@ export interface AttemptMatcherDetail {
 export interface AttemptClosedAssertionEntry {
   readonly entryId: string;
   readonly display: {
-    readonly key?: string;
     readonly label?: string;
     readonly groupPath: readonly string[];
   };

@@ -323,7 +323,6 @@ const AssertionIndexSchema = Schema.Struct({
     entryId: Schema.String,
     display: Schema.Struct({
       label: Schema.optional(Schema.String),
-      key: Schema.optional(Schema.String),
       groupPath: Schema.Array(Schema.String),
     }),
   })),

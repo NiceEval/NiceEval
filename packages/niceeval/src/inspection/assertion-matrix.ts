@@ -21,12 +21,12 @@ export const MatrixColumnSchema = Schema.Struct({
   verdict: PlannedAttemptMemberSchema.fields.verdict, score: PlannedAttemptMemberSchema.fields.score,
 });
 const RowSchema = Schema.Struct({
-  key: Schema.NullOr(Schema.String), label: Schema.NullOr(Schema.String), groupPath: Schema.Array(Schema.String),
+  label: Schema.String, groupPath: Schema.Array(Schema.String),
   cells: Schema.Array(CellSchema), distinct: Schema.Boolean,
 });
 export const AssertionMatrixSchema = Schema.Struct({
   state: Schema.Literals(["complete", "partial"]), experimentIds: Schema.Array(Schema.String),
-  evals: Schema.Array(Schema.Struct({ evalId: Schema.String, columns: Schema.Array(MatrixColumnSchema), rows: Schema.Array(RowSchema), unkeyed: Schema.Array(Schema.Number) })),
+  evals: Schema.Array(Schema.Struct({ evalId: Schema.String, columns: Schema.Array(MatrixColumnSchema), rows: Schema.Array(RowSchema), unlabeled: Schema.Array(Schema.Number) })),
   omitted: Schema.Struct({ evals: Schema.Number, rows: Schema.Number, columns: Schema.Number }),
 });
 export type AssertionMatrix = typeof AssertionMatrixSchema.Type;
@@ -47,17 +47,17 @@ export function projectAssertionMatrix(experimentIds: readonly string[], input: 
     const selected = all.slice(0, 100);
     omitted.columns += all.length - selected.length;
     const columns = selected.map((item) => item.column);
-    const unkeyed = selected.map(() => 0);
-    const rows = new Map<string, { key: string | null; label: string | null; groupPath: readonly string[]; cells: typeof CellSchema.Type[]; distinct: boolean }>();
+    const unlabeled = selected.map(() => 0);
+    const rows = new Map<string, { label: string; groupPath: readonly string[]; cells: typeof CellSchema.Type[]; distinct: boolean }>();
     selected.forEach(({ assertions }, col) => {
       if (assertions.state !== "available") return;
       for (const entry of assertions.entries) {
-        const { key, label, groupPath } = entry.display;
-        if (key === undefined && label === undefined && groupPath.length === 0) { unkeyed[col]++; continue; }
-        const identity = key === undefined ? JSON.stringify(["display", groupPath, label ?? null]) : JSON.stringify(["key", key]);
+        const { label, groupPath } = entry.display;
+        if (label === undefined) { unlabeled[col]++; continue; }
+        const identity = JSON.stringify([groupPath, label]);
         let row = rows.get(identity);
         if (row === undefined) {
-          row = { key: key ?? null, label: label ?? null, groupPath, distinct: false, cells: selected.map(({ assertions: a }) => a.state === "available" ? { state: "absent" } : { state: a.state }) };
+          row = { label, groupPath, distinct: false, cells: selected.map(({ assertions: a }) => a.state === "available" ? { state: "absent" } : { state: a.state }) };
           rows.set(identity, row);
         }
         const cell = row.cells[col]!;
@@ -70,11 +70,11 @@ export function projectAssertionMatrix(experimentIds: readonly string[], input: 
       if (rowBudget <= 0 || cost > cellBudget) { omitted.rows++; continue; }
       const signature = (cell: typeof CellSchema.Type) => JSON.stringify(cell.state === "available" ? cell.entries.map(({ result, contribution }) => ({ result, contribution })) : cell);
       row.distinct = row.cells.some((cell) => signature(cell) !== signature(row.cells[0]!));
-      const candidate = { evalId, columns, rows: [...kept, row], unkeyed };
+      const candidate = { evalId, columns, rows: [...kept, row], unlabeled };
       if (new TextEncoder().encode(JSON.stringify([...evals, candidate])).length > 450000) { omitted.rows++; continue; }
       rowBudget--; cellBudget -= cost; kept.push(row);
     }
-    const evaluation = { evalId, columns, rows: kept, unkeyed };
+    const evaluation = { evalId, columns, rows: kept, unlabeled };
     if (new TextEncoder().encode(JSON.stringify([...evals, evaluation])).length > 450000) {
       omitted.evals++; omitted.columns += selected.length; omitted.rows += kept.length;
     } else evals.push(evaluation);

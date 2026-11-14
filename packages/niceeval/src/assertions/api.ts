@@ -42,7 +42,6 @@ export interface AssertionSnapshotObject {
 }
 
 export interface AssertionDisplay {
-  readonly key?: string;
   readonly label?: string;
   readonly groupPath: readonly string[];
 }
@@ -422,7 +421,6 @@ export interface AssertionHandleBase<
   readonly [assertionHandleBrand]: true;
   readonly [assertionConditionStateBrand]: HasCondition;
   readonly [assertionScoreStateBrand]: HasScore;
-  key(value: string): this;
   label(value: string): this;
   /** Adds one display-only group segment to this already registered entry. */
   group(title: string): this;

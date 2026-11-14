@@ -781,7 +781,7 @@ export function renderAttempt(value: AttemptView): string {
             { header: "Group" },
           ],
           rows: value.assertions.entries.map((entry) => [
-            entry.label ?? entry.key ?? entry.entryId,
+            entry.label ?? entry.entryId,
             entry.entryId,
             entry.groupPath.length === 0 ? "root" : entry.groupPath.join(" / "),
           ]),
@@ -2205,7 +2205,7 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       continue;
     }
     const entry = assertion.entry;
-    blocks.push({ kind: "divider", title: `${assertionRoleLabel({ gate: entry.decision.gate, result: entry.decision.result, contribution: entry.contribution })}  ${entry.display.key ?? entry.entryId} · ${assertion.check.label}` });
+    blocks.push({ kind: "divider", title: `${assertionRoleLabel({ gate: entry.decision.gate, result: entry.decision.result, contribution: entry.contribution })}  ${entry.entryId} · ${assertion.check.label}` });
     const reasons = assertionReasons(entry.evaluation.observed);
     if (entry.explanationRetention.state === "retained") reasons.push(...assertionReasons(entry.explanationRetention.value));
     blocks.push({ kind: "keyValue", entries: [
@@ -2289,9 +2289,9 @@ export function renderAssertionMatrix(matrix: import("../inspection/assertion-ma
     value.columns.forEach((column, index) => blocks.push({ kind: "raw", text: `${index + 1}: ${column.experimentId} #${column.attemptOrdinal} ${column.locator ?? (column.publication.state === "absent" ? column.publication.reason : "pending")}` }));
     blocks.push({ kind: "table", columns: [{ header: "Criterion" }, ...value.columns.map((_, index) => ({ header: String(index + 1) }))], rows: [
       ["Verdict / score", ...value.columns.map((column) => `${column.verdict ?? "—"} / ${metric(column.score)}`)],
-      ...value.rows.map((row) => [`${row.distinct ? "* " : ""}${[...row.groupPath, row.label ?? row.key ?? ""].join(" / ")}`, ...row.cells.map((cell) => cell.state === "absent" ? "—" : cell.state !== "available" ? cell.state : cell.entries.map(({ result, contribution }) => contribution.state === "earned" ? `${fmt(contribution.earned)}/${fmt(contribution.points)}` : contribution.state === "unavailable" ? `${result} (—/${fmt(contribution.points)})` : result).join("; "))]),
+      ...value.rows.map((row) => [`${row.distinct ? "* " : ""}${[...row.groupPath, row.label].join(" / ")}`, ...row.cells.map((cell) => cell.state === "absent" ? "—" : cell.state !== "available" ? cell.state : cell.entries.map(({ result, contribution }) => contribution.state === "earned" ? `${fmt(contribution.earned)}/${fmt(contribution.points)}` : contribution.state === "unavailable" ? `${result} (—/${fmt(contribution.points)})` : result).join("; "))]),
     ] });
-    if (value.unkeyed.some((count) => count > 0)) blocks.push({ kind: "raw", text: `Unkeyed entries by column: ${value.unkeyed.join(", ")}` });
+    if (value.unlabeled.some((count) => count > 0)) blocks.push({ kind: "raw", text: `Unlabeled entries by column: ${value.unlabeled.join(", ")}` });
   }
   blocks.push({ kind: "raw", text: `Matrix ${matrix.state}; omitted: ${matrix.omitted.evals} evals, ${matrix.omitted.rows} rows, ${matrix.omitted.columns} columns.` });
   return terminal(blocks);

@@ -338,7 +338,7 @@ function projectCheck(entry: AssertionEntry): InspectionJson {
   const expected = policyExpected(entry.policy);
   const observed = entry.evaluation.observed;
   return diagnosticNode(
-    entry.display.label ?? entry.display.key ?? entry.entryId,
+    entry.display.label ?? entry.entryId,
     entry.decision.result,
     expected,
     observed,

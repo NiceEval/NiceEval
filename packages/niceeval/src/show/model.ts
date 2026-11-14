@@ -145,7 +145,6 @@ export interface AttemptView {
     readonly entries: readonly {
       readonly entryId: string;
       readonly label?: string;
-      readonly key?: string;
       readonly groupPath: readonly string[];
     }[];
   };

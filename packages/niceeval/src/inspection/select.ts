@@ -1050,7 +1050,6 @@ function assertionIndex(
       entryId: entry.entryId,
       display: Object.freeze({
         ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
-        ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
         groupPath: Object.freeze([...entry.display.groupPath]),
       }),
     }))),

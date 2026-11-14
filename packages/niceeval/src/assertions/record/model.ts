@@ -22,7 +22,6 @@ export type BoundedJsonValue =
   | BoundedJsonObject;
 
 export interface AssertionDisplay {
-  readonly key?: string;
   readonly label?: string;
   readonly groupPath: readonly string[];
 }

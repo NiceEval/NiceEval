@@ -101,7 +101,7 @@ A `*` marks rows whose scores or decisions differ between columns.
 
 The operation is `experiments.assertions`, with `experimentIds` and an optional `evalIdPrefix` path prefix.
 Requests accept 1–32 IDs, deduplicate and sort them, and fail if any Experiment is missing.
-`matrix.evals[]` contains `columns`, `rows`, and per-column `unkeyed` counts.
+`matrix.evals[]` contains `columns`, `rows`, and per-column `unlabeled` counts.
 Duplicate identities within an Attempt retain all cell `entries[]` without overwriting each other. Unreadable assertion facts retain `not-recorded`, `unsupported`, or `failed` in the cell; these states are not shown as missing entries.
 
 Limits are 100 Evals, 100 columns per Eval, 1000 total rows, 10000 cells, and 450000 UTF-8 bytes for the Eval JSON array.

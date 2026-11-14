@@ -144,7 +144,7 @@ function assertionCandidate(
       }
     : {};
   return {
-    title: entry.display.label ?? entry.display.key ?? criterionTitle(entry.criterion),
+    title: entry.display.label ?? criterionTitle(entry.criterion),
     ...diagnostic,
     ...scopeStatus,
     ...(errorReason === undefined ? {} : { reason: errorReason }),

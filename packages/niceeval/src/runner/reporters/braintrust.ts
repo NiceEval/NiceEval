@@ -299,7 +299,6 @@ function assertionMetadata(entries: readonly AssertionEntryRead<unknown>[]): Jso
       scoreContribution: scoreContributionMetadata(entry.entry.contribution),
     };
     if (display.label !== undefined) item.label = display.label;
-    if (display.key !== undefined) item.key = display.key;
     const reason = assertionReason(entry);
     if (reason !== undefined) item.reason = reason;
     metadata.push(item);

@@ -355,7 +355,6 @@ export const AssertionEntryIdSchema: Schema.Codec<AssertionEntryId, string> =
 
 export const AssertionDisplaySchema: Schema.Schema<AssertionDisplay> =
   Schema.Struct({
-    key: Schema.optional(AssertionDisplayTextSchema),
     label: Schema.optional(AssertionDisplayTextSchema),
     groupPath: Schema.Array(AssertionDisplayTextSchema).check(
     Schema.makeFilter((groupPath) => groupPath.length <= assertionRuntimeLimits.groupDepth, {

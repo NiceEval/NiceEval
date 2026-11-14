@@ -157,7 +157,6 @@ interface AssertionEntry {
   readonly initialLimitations: readonly AssertionLimitation[];
   readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
   readonly display: {
-    key: string | undefined;
     label: string | undefined;
     groupPath: string[];
   };
@@ -638,11 +637,6 @@ class HandleBase {
     assertionHandleRegistry.add(this);
   }
 
-  key(value: string): this {
-    this.runtime.configureKey(this.entry, value);
-    return this;
-  }
-
   label(value: string): this {
     this.runtime.configureLabel(this.entry, value);
     return this;
@@ -715,10 +709,6 @@ export function postRunBooleanAssertionHandle<
       configurable: false,
     },
     kind: descriptor("boolean"),
-    key: descriptor((value: string) => {
-      handle.key(value);
-      return view;
-    }),
     label: descriptor((value: string) => {
       handle.label(value);
       return view;
@@ -1138,13 +1128,6 @@ class AssertionsRuntimeImplementation {
     }
   }
 
-  configureKey(entry: AssertionEntry, value: string): void {
-    this.assertMutable(entry, "key()");
-    assertDisplayText(value, "key() value");
-    if (entry.display.key !== undefined) throw new Error("An Assertion key is already configured");
-    entry.display.key = value;
-  }
-
   configureLabel(entry: AssertionEntry, value: string): void {
     this.assertMutable(entry, "label()");
     assertDisplayText(value, "label() value");
@@ -1409,7 +1392,7 @@ class AssertionsRuntimeImplementation {
       initialCoverage: input.coverage,
       initialLimitations: input.limitations,
       evaluate: input.evaluate,
-      display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
+      display: { label: undefined, groupPath: [...this.groupStack] },
       directScorePoints: input.directScorePoints,
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
       terminalReceipt: input.terminalReceipt,
@@ -1698,7 +1681,6 @@ class AssertionsRuntimeImplementation {
     const settlement = entry.settled;
     if (settlement === undefined) throw new Error("Attempted to seal an unsettled Assertion entry");
     const display: AssertionDisplay = Object.freeze({
-      ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
       ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
       groupPath: Object.freeze([...entry.display.groupPath]),
     });

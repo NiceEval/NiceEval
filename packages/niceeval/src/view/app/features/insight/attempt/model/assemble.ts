@@ -244,7 +244,6 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   const closed: AttemptClosedAssertionEntry = Object.freeze({
     entryId: stringField(detail, "entryId"),
     display: Object.freeze({
-      ...(typeof display.key === "string" ? { key: display.key } : {}),
       ...(typeof display.label === "string" ? { label: display.label } : {}),
       groupPath: Object.freeze(stringArray(display.groupPath)),
     }),
@@ -255,9 +254,7 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   });
   const name = typeof display.label === "string"
     ? display.label
-    : typeof display.key === "string"
-      ? display.key
-      : closed.entryId;
+    : closed.entryId;
   const score = closeScore(contribution);
   const gate = decision.gate;
   const outcome = result === "matched"

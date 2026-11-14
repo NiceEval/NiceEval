@@ -13,7 +13,7 @@ export function captureAssertionFeedback(result: EvalResult, sealed: SealedAttem
   linesByResult.set(result, [
     assertionVerdictLine(result.verdict, result.evaluationKind === "score" ? { state: sealed.score?.state ?? "unavailable", earned, possible } : undefined),
     assertionRoleCounts(entries),
-    ...sealed.entries.map((entry, index) => `${assertionRoleLabel(entries[index]!)}  ${summaryText(entry.display.label ?? entry.display.key ?? "Assertion")}`),
+    ...sealed.entries.map((entry, index) => `${assertionRoleLabel(entries[index]!)}  ${summaryText(entry.display.label ?? "Assertion")}`),
   ]);
 }
 
