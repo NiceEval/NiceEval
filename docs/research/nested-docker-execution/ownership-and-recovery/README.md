@@ -57,7 +57,7 @@ cleanup 不是“按进程扫描并尽量删”。它必须用 ledger 与 Provid
 
 控制平面可恢复，不代表 Agent turn 可再次执行。CLI 被 `SIGKILL`、Provider client 丢失、VM 消失或宿主
 重启后，V1 把在飞 Attempt 标为 `environment incomplete`，fence 旧 generation，并销毁 VM、磁盘、
-network 与 lease。新的 Invocation 可以从相同 trusted SetupPrefix 和 Provider artifact 再开始，
+network 与 lease。新的 Invocation 可以从相同 trusted `SetupPrefix` 和 Provider artifact 再开始，
 但不会自动重新发送模型请求，也不会再次执行已有外部副作用的 turn。
 
 真正的 resume 需要独立的 checkpoint、模型受理状态与外部副作用幂等协议。把“VM 磁盘还在”当作

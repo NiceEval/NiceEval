@@ -739,7 +739,7 @@ parser 不认识的事件不进入 `Turn.events`，也不静默丢弃：每条 A
 
 | 旧名 | 新名 |
 | --- | --- |
-| setup prefix 概念、`SetupPrefixKey` | before cache、`BeforeCacheKey` |
+| `setup prefix` 概念、`SetupPrefixKey` | before cache、`BeforeCacheKey` |
 | `Config.maxSetupPrefixConcurrency`、`--max-setup-prefix-concurrency` | `maxBeforeCacheConcurrency`、`--max-before-cache-concurrency` |
 | `sandboxCache.setup`、`SandboxSetupCache` | `sandboxCache.before`、`SandboxBeforeCache` |
 | summary 的 `setupPrefixes`、debug 的 `setupPrefixPlan` | `beforeCaches`、`beforeCachePlan` |
@@ -801,13 +801,13 @@ slot 在仓库里同时指 Run 的 expected 位置、全局并发名额、Adapte
 | --- | --- | --- |
 | Run 创建时冻结的 expected 位置 | Slot、`slotId`、`expectedSlots`、`originSlotId` | Planned attempt、`plannedAttemptId`、`plannedAttempts`、`originPlannedAttemptId` |
 | `show` 的完整度统计 | `Selected slots` 等三行统计 | Planned / Recorded / Missing attempts |
-| 全局 `maxConcurrency` 名额 | Concurrency slot、`waiting for a slot` | 并发名额、`waiting for capacity` |
+| 全局 `maxConcurrency` 名额 | `Concurrency slot`、`waiting for a slot` | 并发名额、`waiting for capacity` |
 | Adapter 私有会话状态键 | `createSessionSlot`、`SessionSlot` | `createSessionKey`、`SessionKey` |
-| Judge recipe 的材料输入 | recipe slot | recipe input |
+| Judge recipe 的材料输入 | `recipe slot` | recipe input |
 
 Planned attempt 与 Attempt 的关系不变：Attempt 是已发布的执行事实，Planned attempt 是 Run 对它的期望位置，
 通过 Member 以 origin 或 reference 方式绑定，未绑定时以 absence reason 收口。
 
 `query` 协议升级为 `niceeval.query/v2`，字段按上表改名，其余结构不变；`/inspection` 的 decoder 只接受 v2。
 Record 的 slot 列、`RunSlotPublication` 等持久编码与 identity 编码不改，只在 projection 边界映射。
-`docs/concepts.md` 的「执行槽位」条目改为「计划 Attempt / Planned attempt」，所有 Feature 与公开文档同步。
+`docs/concepts.md` 的 `执行槽位` 条目改为「计划 Attempt / Planned attempt」，所有 Feature 与公开文档同步。
