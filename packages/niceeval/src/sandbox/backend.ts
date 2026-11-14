@@ -58,6 +58,12 @@ export type BeforeCacheEligibility =
       readonly baseIdentity: string;
       /** Complete provider-owned identity, decoded before entering core planning. */
       readonly keyScope: BeforeCacheKeyScope;
+      /** Resolved positional replacement identity; does not change content keys. */
+      readonly replacementScope?: {
+        readonly provider: string;
+        readonly executionDomainId: string;
+        readonly baseReference: string;
+      };
     }
   | {
       readonly _tag: "Unsupported";

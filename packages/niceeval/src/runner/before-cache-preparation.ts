@@ -1,3 +1,4 @@
+import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
 import { randomUUID } from "node:crypto";
 import { Deferred, Effect, Result, Option, Semaphore, Scope } from "effect";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
@@ -96,6 +97,7 @@ export type BeforeCachePreparationActivityEvent =
 
 export interface PrepareBeforeCachesOptions {
   readonly runIds: ReadonlyMap<string, string>;
+  readonly onWarning?: (warning: ReturnType<typeof beforeCacheReplacementWarnings>[number]) => void;
   readonly signal?: AbortSignal;
   readonly onActivity?: (event: BeforeCachePreparationActivityEvent) => void;
   readonly maxConcurrency?: number;
@@ -106,6 +108,7 @@ interface PreparationNode {
   readonly key: string;
   readonly parentKey?: string;
   readonly representative: Attempt;
+  readonly recordRunId: string;
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
   readonly preparer: BeforeCachePreparer<void>;
   readonly context: BeforeCachePreparationContext;
@@ -234,7 +237,7 @@ function materializePreparationNode(
       const captured = yield* Effect.scoped(Effect.gen(function* () {
         const signal = yield* Effect.abortSignal;
         const runtimeInput: SandboxRuntimeMaterializeInput = {
-          runId: node.context.runId,
+          runId: node.recordRunId,
           plan: node.plan,
           evalId: node.representative.evalDef.id,
           deadline: { _tag: "Unlimited" },
@@ -327,9 +330,14 @@ export function prepareBeforeCaches(
 ): Effect.Effect<BeforeCachePreparationResult, Error, Scope.Scope> {
   const program = Effect.gen(function* () {
     const artifactPrepare = options.artifactPrepare ?? new ArtifactPrepareCoordinator();
+    // The graph is shared by every Record Run in this Invocation. Its holds,
+    // reservations and disabled-domain state must use that same ownership.
+    const preparationId = randomUUID();
+    const replacementScopes = new Map<LinkedRunPlan, JsonValue>();
     const nodes = new Map<string, PreparationNode>();
     const targets = new Map<string, PreparationTarget>();
     const contextsByPair = new Map<string, BeforeCachePreparationContext>();
+    const dependents = new Map<string, Map<string, { readonly experimentId: string; readonly evalId: string }>>();
     const preparedByPair = new Map<string, PreparedBeforeCacheUse>();
     const failuresByPair = new Map<string, Error>();
     for (const attempt of attempts) {
@@ -348,7 +356,7 @@ export function prepareBeforeCaches(
       const preparation = binding.beforeCache.preparer;
       const runId = options.runIds.get(attempt.run.experimentId);
       if (runId === undefined) return yield* Effect.fail(new Error("Before cache preparation has no Record Run identity."));
-      const context = Object.freeze({ providerId: binding.moduleId, runId, materializeBase: binding.materialize });
+      const context = Object.freeze({ providerId: binding.moduleId, runId: preparationId, materializeBase: binding.materialize });
       contextsByPair.set(pairKey, context);
       const eligible = yield* Effect.result(preparation.eligibility(undefined, context));
       if (Result.isFailure(eligible)) {
@@ -362,6 +370,7 @@ export function prepareBeforeCaches(
         continue;
       }
       if (eligibility._tag !== "Eligible") continue;
+      if (eligibility.replacementScope !== undefined) replacementScopes.set(attempt.plan, { ...eligibility.replacementScope });
       const entries = continuousEligibleActions(attempt.plan, eligibility.coverage);
       const planned = plannedBeforeCacheActions(attempt.plan, entries, eligibility);
       const agent = attempt.run.agent;
@@ -376,6 +385,7 @@ export function prepareBeforeCaches(
           key: candidate.key,
           ...(index === 0 ? {} : { parentKey: candidates[index - 1]!.key }),
           representative: attempt,
+          recordRunId: runId,
           plan: attempt.plan,
           preparer: preparation,
           context,
@@ -384,6 +394,9 @@ export function prepareBeforeCaches(
           laneKey: attempt.plan.providerPlan.scheduling.lane.key,
           laneLimit: attempt.plan.providerPlan.scheduling.lane.limit,
         };
+        let consumers = dependents.get(candidate.key);
+        if (consumers === undefined) { consumers = new Map(); dependents.set(candidate.key, consumers); }
+        consumers.set(pairKey, { experimentId: attempt.run.experimentId, evalId: attempt.evalDef.id });
         const existing = nodes.get(candidate.key);
         if (existing === undefined) {
           nodes.set(candidate.key, incoming);
@@ -407,6 +420,8 @@ export function prepareBeforeCaches(
         if (!existingTarget.pairKeys.includes(pairKey)) existingTarget.pairKeys.push(pairKey);
       }
     }
+
+    for (const warning of beforeCacheReplacementWarnings([...replacementScopes.keys()], replacementScopes)) options.onWarning?.(warning);
 
     // Validate the complete graph before the first provider lookup or materialization.
     for (const node of nodes.values()) {
@@ -452,15 +467,19 @@ export function prepareBeforeCaches(
           experimentId: node.plan.pair.experimentId, evalId: node.plan.pair.evalId,
           attempts: 1, actionCount: node.actionIndex,
         } as const;
+        const activities = [...dependents.get(node.key)!.values()].map((pair) => ({ ...activity, ...pair, id: randomUUID() }));
+        const emit = (event: BeforeCachePreparationActivityEvent) => {
+          for (const consumer of activities) options.onActivity?.({ ...event, ...consumer });
+        };
         const startedAt = Date.now();
         let finished = false;
-        options.onActivity?.({ ...activity, status: "started", phase: "lookup" });
+        emit({ ...activity, status: "started", phase: "lookup" });
         const finish = (result: NodeResult): Effect.Effect<NodeResult> => Effect.gen(function* () {
           if (finished) return result;
           finished = true;
           outcomes.set(node.key, Result.isFailure(result) ? "failed" : result.success.outcome);
           const durationMs = Math.max(0, Date.now() - startedAt);
-          options.onActivity?.(Result.isFailure(result)
+          emit(Result.isFailure(result)
             ? { ...activity, status: "failed", outcome: "failed", durationMs }
             : { ...activity, status: "done", outcome: result.success.outcome, durationMs });
           yield* Deferred.succeed(completion, result);
@@ -483,7 +502,7 @@ export function prepareBeforeCaches(
         if (lookup.success !== undefined) return yield* finish(Result.succeed(lookup.success));
         const result = yield* Effect.result(withGate(
           materializePreparationNode(node, parent, (phase, actionIndex, actionId, detail) =>
-            options.onActivity?.({ ...activity, status: "progress", phase, actionIndex, actionId,
+            emit({ ...activity, status: "progress", phase, actionIndex, actionId,
               ...(detail === undefined ? {} : { detail }) }),
           inherited, (prepared, staging) => Effect.gen(function*() {
             if (!node.preparer.continuesStaging) return;

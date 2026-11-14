@@ -313,20 +313,23 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     });
     if (source._tag === "Base") return yield* base();
     const parsed = yield* Effect.result(Effect.try({ try: () => decodeLocator(source.artifact.locator), catch: () => ledgerError() }));
-    if (Result.isFailure(parsed)) return yield* base("Artifact locator is invalid");
+    if (Result.isFailure(parsed)) return yield* base("artifact-missing");
     const target = yield* Effect.result(resolve(plan, context));
-    if (Result.isFailure(target) || target.success._tag !== "Resolved") return yield* base("Snapshot Base identity cannot be resolved");
+    if (Result.isFailure(target)) return yield* base(target.failure.reason === "ledger-unavailable" ? "ledger-disabled" : "domain-mismatch");
+    if (target.success._tag !== "Resolved") return yield* base("domain-mismatch");
     const stateResult = yield* Effect.result(stateFor(plan, context, target.success));
-    if (Result.isFailure(stateResult)) return yield* base("Snapshot ledger is unavailable");
+    if (Result.isFailure(stateResult)) return yield* base("ledger-disabled");
     const state = stateResult.success, id = parsed.success.artifactId;
     const row = state.entries.get(id), runHoldId = state.holds.get(id);
-    if (state.disabled || state.unavailable.has(id) || row === undefined || row.snapshot_id === null || runHoldId === undefined ||
-      parsed.success.executionDomainId !== target.success.executionDomainId || row.before_cache_key !== source.artifact.beforeCacheKey) {
-      return yield* base("Snapshot artifact is unavailable in this Run");
-    }
+    if (state.disabled) return yield* base("ledger-disabled");
+    if (state.unavailable.has(id)) return yield* base("artifact-unavailable");
+    if (parsed.success.executionDomainId !== target.success.executionDomainId) return yield* base("domain-mismatch");
+    if (row === undefined || row.snapshot_id === null) return yield* base("artifact-missing");
+    if (runHoldId === undefined) return yield* base("hold-missing");
+    if (row.before_cache_key !== source.artifact.beforeCacheKey) return yield* base("key-mismatch");
     const holdId = randomUUID();
     const handoff = yield* Effect.result(timedRequest(state, { operation: "handoff", artifactId: id, holdId, runHoldId, releaseRunHold: false }));
-    if (Result.isFailure(handoff) || handoff.success._tag !== "Updated") return yield* base("Snapshot hold could not be acquired");
+    if (Result.isFailure(handoff) || handoff.success._tag !== "Updated") return yield* base(Result.isFailure(handoff) ? "ledger-disabled" : "hold-missing");
     const child = yield* Scope.make();
     let released = false;
     const release = Effect.fn("remoteSnapshot.releaseSandboxHold")(function*() {
@@ -344,7 +347,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     if (Result.isFailure(created)) {
       state.unavailable.add(id);
       yield* close().pipe(Effect.mapError((cause) => new SandboxRuntimeMaterializationError({ code: "sandbox.materialization-failed", provider: context.providerId, message: "Failed snapshot instance could not be retired", cause: new Error(cause.reason) })));
-      return yield* base("Snapshot instance could not become ready");
+      return yield* base("snapshot-gone");
     }
     sandbox = created.success;
     const bound = yield* Effect.result(timedRequest(state, { operation: "bind-sandbox", holdId, sandboxId: sandbox.group.primary.sandboxId }));
@@ -362,7 +365,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       state.unavailable.add(id);
       if (Result.isSuccess(verified) && !verified.success) yield* timedRequest(state, { operation: "invalidate", artifactId: id }).pipe(Effect.catch(() => Effect.void));
       yield* close().pipe(Effect.mapError((cause) => new SandboxRuntimeMaterializationError({ code: "sandbox.materialization-failed", provider: context.providerId, message: "Invalid snapshot instance could not be retired", cause: new Error(cause.reason) })));
-      return yield* base("Snapshot artifact marker could not be verified");
+      return yield* base(Result.isFailure(bound) ? "ledger-disabled" : bound.success._tag !== "Updated" ? "hold-missing" : "marker-mismatch");
     }
     yield* rememberStaging(plan, context, sandbox);
     const proof = stagingProofs.get(sandbox);
@@ -442,7 +445,8 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       Effect.map((target) => target._tag === "Ineligible"
       ? { _tag: "Unsupported" as const, code: target.code, reason: target.reason }
       : { _tag: "Eligible" as const, persistence: "persistent" as const, dependency: "parent-backed" as const,
-        coverage: "all" as const, baseIdentity: target.baseIdentity, keyScope: target.keyScope }),
+        coverage: "all" as const, baseIdentity: target.baseIdentity, keyScope: target.keyScope,
+        replacementScope: { provider: context.providerId, executionDomainId: target.executionDomainId, baseReference: target.baseReference } }),
       Effect.catch(() => Effect.succeed(degraded("eligibility-failed", "Snapshot Base identity could not be resolved"))),
     ),
     lookup, materializeFrom, capture,

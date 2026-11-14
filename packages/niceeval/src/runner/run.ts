@@ -6,6 +6,7 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
+import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
 import { captureAssertionFeedback } from "./feedback/assertions.ts";
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
 import { adapterIdentity } from "../adapter.ts";
@@ -508,12 +509,20 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // Provider-native before-cache artifacts are a Run-level pre-dispatch gate.
   // At capacity one every unique prefix is completed serially and the live
   // prepare VM is released before any ordinary Attempt can acquire a VM.
+  const replacementWarnings = beforeCacheReplacementWarnings(attempts.filter((attempt) => attempt.run.sandboxBeforeCache !== "bypass").map((attempt) => attempt.plan));
+  for (const warning of replacementWarnings) {
+    reportDiagnostic({ key: warning.key, code: "before-cache-replacement-conflict", severity: "warning", message: warning.message });
+  }
   const beforeCachePreparation = yield* prepareBeforeCaches(
     attempts,
     {
       runIds,
       artifactPrepare,
       signal: opts.signal,
+      onWarning: (warning) => {
+        replacementWarnings.push(warning);
+        reportDiagnostic({ key: warning.key, code: "before-cache-replacement-conflict", severity: "warning", message: warning.message });
+      },
       maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
       onActivity: (event) => {
         reportRunActivity({
@@ -1093,6 +1102,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
+
+  for (const warning of replacementWarnings) {
+    for (const experimentId of warning.experimentIds) recordExperimentDiagnostic({
+      experimentId, code: "before-cache-replacement-conflict", level: "warning", message: warning.message,
+      phase: "sandbox.prepare", dedupeKey: warning.key,
+    });
+  }
 
   const plannedSlotIds = new Map(recordCoordinator.reusePlan.slots.map((slot) => [
     JSON.stringify([slot.experimentId, slot.evalId, slot.attempt]), slot.slotId,
