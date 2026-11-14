@@ -1,4 +1,4 @@
-import type { JudgeUsageAttachment, JudgeUsageCall } from "../record/family/judge-usage/schema.ts";
+import type { JudgeUsageAttachment } from "../record/family/judge-usage/schema.ts";
 import { addCanonicalDecimals, canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
 import { effectiveCostTotals, type EffectiveCallCost } from "./adapter-usage-projection.ts";
 import type {
@@ -11,16 +11,11 @@ import type {
 import { utf8ByteLength } from "../inspection/bytes.ts";
 import { combineCostGaps } from "./cost-gaps.ts";
 
-export const JUDGE_USAGE_PREVIEW_CALL_LIMIT = 128;
-export const JUDGE_USAGE_PREVIEW_BYTE_LIMIT = 128 * 1024;
-
-export function compareJudgeUsageCalls(left: JudgeUsageCall, right: JudgeUsageCall): number {
-  return (
-    left.entryIndex - right.entryIndex ||
-    left.logicalOrdinal - right.logicalOrdinal ||
-    left.transmissionOrdinal - right.transmissionOrdinal
-  );
-}
+import {
+  compareJudgeUsageCalls,
+  JUDGE_USAGE_PREVIEW_BYTE_LIMIT,
+  JUDGE_USAGE_PREVIEW_CALL_LIMIT,
+} from "./usage-contract.ts";
 
 /** The ledger is already validated; independent metrics retain their own coverage. */
 export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {

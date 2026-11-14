@@ -27,7 +27,7 @@ import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from
 import { InspectionSha256, utf8ByteLength, encodeBase64Bytes } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
 import { INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
-import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
+import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-result.ts";
 import { readJudgeMaterial } from "../assertions/judge-material.ts";
 import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
 import type { ScoreMatchAuditImageContent } from "../assertions/score-match-audit.ts";

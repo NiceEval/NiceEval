@@ -20,7 +20,7 @@ import {
   InspectionArtifactsValueSchema,
 } from "./artifact-list.ts";
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
-import { AssertionDetailResultSchema } from "./assertion-projection.ts";
+import { AssertionDetailResultSchema } from "./assertion-result.ts";
 import { InspectionProjectResultSchema } from "./project-result.ts";
 import { InspectionRepricingInputSchema, InspectionRepricingResultSchema } from "./repricing.ts";
 import {

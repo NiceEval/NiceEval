@@ -4,7 +4,7 @@
 import type { AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 import { assertionRoleLabel, assertionRoleCounts, assertionVerdictLine } from "../assertions/display.ts";
 import type { InspectionAttemptResult } from "../inspection/results.ts";
-import type { AssertionDetailResult } from "../inspection/assertion-projection.ts";
+import type { AssertionDetailResult } from "../inspection/assertion-result.ts";
 import type { AssertionFactValue } from "../assertions/record/model.ts";
 import { formatNumericUnit } from "../assertions/quantity.ts";
 import {

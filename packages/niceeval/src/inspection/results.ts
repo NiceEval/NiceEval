@@ -23,13 +23,13 @@ import {
   validateJudgeUsageAttachment,
 } from "../record/family/judge-usage/schema.ts";
 import {
+  compareAdapterModelGroups,
   compareJudgeUsageCalls,
   JUDGE_USAGE_PREVIEW_BYTE_LIMIT,
   JUDGE_USAGE_PREVIEW_CALL_LIMIT,
-} from "../o11y/judge-usage-projection.ts";
+} from "../o11y/usage-contract.ts";
 import { utf8ByteLength } from "./bytes.ts";
 import { CurrencyCodeSchema } from "../record/family/source-receipt/codec.ts";
-import { compareAdapterModelGroups } from "../o11y/adapter-usage-projection.ts";
 
 import {
   ExperimentIdSchema,

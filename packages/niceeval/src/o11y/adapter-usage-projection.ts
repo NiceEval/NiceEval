@@ -7,6 +7,7 @@ import type {
 import { addCanonicalDecimals } from "../record/family/adapter-usage/pricing.ts";
 import type { NumericMaterial } from "../assertions/match.ts";
 import type { ResolvedModelRoles } from "../model-roles.ts";
+import { compareAdapterModelGroups } from "./usage-contract.ts";
 export interface EffectiveCallCost {
   readonly amount: string;
   readonly currency: string;
@@ -155,22 +156,6 @@ export function adapterInspectionTokenTotal(
     value: material.state === "unavailable" ? null : material.value,
     observationCount,
   });
-}
-
-/** Tuple order is stable across hosts, with missing identities before strings. */
-export function compareAdapterModelGroups(
-  left: Pick<EffectiveUsageCall, "modelRole" | "provider" | "model">,
-  right: Pick<EffectiveUsageCall, "modelRole" | "provider" | "model">,
-): number {
-  for (const key of ["modelRole", "provider", "model"] as const) {
-    const a = left[key];
-    const b = right[key];
-    if (a === b) continue;
-    if (a === null) return -1;
-    if (b === null) return 1;
-    return a < b ? -1 : 1;
-  }
-  return 0;
 }
 
 /** Configuration counts and grouped statistics both consume the complete sealed ledger. */
