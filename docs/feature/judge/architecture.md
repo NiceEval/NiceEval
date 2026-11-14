@@ -219,39 +219,30 @@ telemetry.collect 可以继续收口被测应用的迟到数据，但必须按�
 
 ### pi 与受管 Provider
 
-宿主创建真实 pi Agent，prompt 前订阅事件，结束时取消订阅。
-pi 负责对话与工具循环；模型传输经注入的 streamFn 或等价官方接口交给 NiceEval 受管 Provider。
-不能让 pi 默认 provider 注册表选择模型、端点或凭据，也不能由 SDK 自行 retry、定价或建立独立 timeout。
-适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
+Agent Judge 就是一个 pi agent：NiceEval 只提供 system prompt、工具与开场材料，对话循环、模型请求、上下文与压缩都交给 pi，不另写传输或消息副本。
 
-聊天 Provider 的 Agent Judge 请求发送 Chat Completions messages、tools 与 tool_choice，不发送普通评分的封闭 response_format。
-工具定义使用 function schema；保留 assistant tool_calls 的 id、name、arguments 与对应 tool_call_id 的结果消息。
-同一响应的工具按出现顺序执行；每个已执行调用恰有一个结果，未执行调用不得伪造成功。
-工具结果只作为不可信 tool 内容返回，文件、命令输出和模型文字都不能升级成 system 规则。
-
-OpenAI、OpenRouter 与 Vercel 使用各自生效的 endpoint、headers、模型与凭据选择。
-所选模型的工具能力由实际请求验证，不额外发探测请求；HTTP 协议错误沿用现有 errored 分类。
-TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，不制造 Chat Completions 请求或改走普通 score。
+- 宿主创建 pi-agent-core 的 `AgentHarness`，`models` 只含一个由受管 Provider 生效配置构造的 pi-ai 模型：Chat Completions API、生效的 endpoint、headers、模型 ID 与凭据。不使用 pi 默认的 provider 注册表或环境变量选择模型、端点或凭据。
+- 工具是 pi 的 `AgentHarnessTool`：bash、read、write、edit 绑定当前 Attempt 主 Sandbox，submit_evaluation 交评分。参数校验与有限结果由 NiceEval 的工具实现负责。
+- 每道 `chat` 或 `judge` 作为一次 harness prompt 发出，同一会话复用同一个 harness 与 session，因此后面的题能看到前面的历史。
+- NiceEval 在 prompt 前订阅 harness 事件、结束时取消订阅，用 provider 请求与响应事件形成审计和 Judge 用量，用工具事件形成工具记录。用量取 pi 返回的 usage，按受管 Provider 的显式估价计价。
+- 适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
+- 工具结果只作为不可信 tool 内容返回，文件、命令输出和模型文字都不能升级成 system 规则。
+- 所选模型的工具能力由实际请求验证，不额外发探测请求。TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，不创建 harness。
 
 ### 上下文与压缩
 
-会话上下文由 pi 持有。每次模型请求发送 pi 当前给出的 system prompt 与消息，NiceEval 只负责把它们映射成 Chat Completions 并经受管 Provider 发出，不另外维护一份消息副本。
-这样 pi 的压缩直接作用于实际发出的请求，审计记录的也是实际请求。
+会话上下文由 pi 的 session 持有。模型报告上下文溢出时（pi-ai `isContextOverflow` 判定该轮的 assistant 消息），NiceEval 调用 `harness.compact()`，按 pi 的默认设置把较早的历史压成摘要、保留最近部分，然后重发当前这道题，和 pi coding agent 的做法一致。
 
-上下文超出模型窗口时，会话自动压缩后继续，不把溢出当作协议错误：
-
-- 受管 Provider 返回的失败经 pi-ai 的 `isContextOverflow` 判定为上下文溢出时，用 pi-agent-core 的 `prepareCompaction` 与 `compact`（`DEFAULT_COMPACTION_SETTINGS`）把较早的历史压成摘要，保留最近的部分，然后重发同一轮请求。
-- 摘要请求走同一个受管 Provider 与传输路径：计入 Judge 用量（operation `agent`）、会话期限与审计预算，不取得独立 timeout 或 retry。
-- 压缩不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响；当前评分题的提示必须留在保留部分或摘要里。
-- 每次溢出最多压缩一次再重发。压缩失败、无可压缩内容，或压缩后重发仍然溢出时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
-- 只处理 Provider 明确报告的溢出。不报错、静默截断输入的 Provider 无法检测，按它返回的内容继续。
-
-会话轨迹记录每次压缩：触发它的那轮 ordinal、压缩前的估计 token、摘要请求及其 HTTP 尝试、摘要文本与保留起点。`show --assertions --entry <id> --full` 在轨迹里按发生位置显示压缩。
+- 摘要请求同样由 pi 经同一个模型发出，计入 Judge 用量（operation `agent`）、会话期限与审计预算。
+- 压缩不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响。
+- 每次溢出最多压缩一次再重发。压缩失败、无可压缩内容，或压缩后仍然溢出时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
+- 只处理模型明确报告的溢出；静默截断输入的 Provider 无法检测。
+- 会话轨迹按发生位置记录每次压缩：触发它的轮次、压缩前 token、摘要请求与摘要文本。`show --assertions --entry <id> --full` 显示它。
 
 ### 预算与关闭
 
 maxTurns 替代该算法的 maxCalls，不能隐式受普通原语默认 4 次、最多 16 次限制。
-每轮逻辑生成拥有连续 ordinal，最多三次传输尝试；重试复用同一请求，不能重跑已经执行过的工具。
+每轮逻辑生成拥有连续 ordinal；模型请求由 pi 发出，NiceEval 不在 pi 之外另做传输重试，也不能重跑已经执行过的工具。
 材料、发送前预留、Attempt 总账与终态保留空间沿用受管 Judge owner；审计容量默认 4 MiB，定义里写了 `maxAuditBytes` 时以它为准。
 整条评审的期限由定义的 `timeoutMs` 与 Attempt 剩余期限决定，取代 Provider 的整条 Assertion 时限；单次请求时限仍归 Provider。
 实际请求含累积历史，各轮请求都按真实留存字节计账，不能只计算新增消息。
