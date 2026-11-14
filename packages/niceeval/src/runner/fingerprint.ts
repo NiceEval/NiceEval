@@ -198,7 +198,7 @@ function fingerprintPreparedPair(
     const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
-      ...(selectsAgentJudge ? { agentJudge: { algorithm: 1, prompt: 1, tools: 1, scheduling: 1, ...agentJudgeRuntime } } : {}),
+      ...(selectsAgentJudge ? { agentJudge: { algorithm: 2, prompt: 1, tools: 1, scheduling: 1, ...agentJudgeRuntime } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,
         revision: JUDGE_AUTHORING_REVISION,

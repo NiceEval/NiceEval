@@ -26,7 +26,6 @@ function modelServer(mode: string) {
       bodies.push(body);
       ordinal += 1;
       if (mode === "timeout" || mode === "cancel-http") return;
-      if (mode === "response-limit") { response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "x".repeat(4 * 1024 * 1024) }, finish_reason: "stop" }] })); return; }
       if (mode === "http400") { response.writeHead(400); response.end("invalid request"); return; }
       if (mode === "malformed") { response.end('{"choices":[]}'); return; }
       if (mode === "transport") { response.writeHead(503); response.end("unavailable"); return; }
@@ -43,9 +42,10 @@ function modelServer(mode: string) {
             choices: [{ index: 0, finish_reason, message: { role: "assistant", content: text, ...(calls.length > 0 ? { tool_calls: calls } : {}) } }] }));
         }
       };
+      if (mode === "response-limit") { send("x".repeat(4 * 1024 * 1024)); return; }
       if (summary) { send("The reviewer inspected application.txt and wrote review.txt. First question was submitted. Continue with Second question."); return; }
       const lastUser = payload.messages.findLast((message: { role: string }) => message.role === "user");
-      const step = JSON.parse(lastUser.content);
+      const step = JSON.parse(typeof lastUser.content === "string" ? lastUser.content : lastUser.content.filter((part: { type: string }) => part.type === "text").map((part: { text: string }) => part.text).join("\n"));
       const last = payload.messages.at(-1);
       if (mode.startsWith("compact-") && step.message === "Second question" && (!overflowed || mode === "compact-overflow")) {
         overflowed = true;
@@ -140,7 +140,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
       if (mode.startsWith("compact-")) {
         const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[1]!.entryId, "--full"]);
         expect(shown.stdout).toContain("Compaction");
-        expect(shown.stdout).toContain("First question was submitted");
+        expect(shown.stdout).toMatch(/First\s+question was submitted/u);
         expect(bodies.filter((body) => JSON.parse(body).messages[0]?.content?.includes("context summarization assistant"))).toHaveLength(1);
       }
       if (mode === "success") {

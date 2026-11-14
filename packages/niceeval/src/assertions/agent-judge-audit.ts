@@ -31,6 +31,7 @@ const attempt = Schema.Struct({ ordinal, result: Schema.Union([
   Schema.Struct({ state: Schema.Literal("interrupted") }),
 ]) });
 export const AgentJudgeGenerationSchema = Schema.Struct({
+  kind: Schema.Literals(["turn", "compaction"]),
   wireBody: Schema.Struct({ byteLength: bytes, sha256: digest }),
   ordinal, step: ordinal, state: Schema.Literals(["admitted", "rejected"]), request: Schema.NullOr(Schema.String),
   attempts: Schema.Array(attempt), failure: Schema.NullOr(AgentJudgeFailureSchema),
@@ -46,6 +47,8 @@ export const AgentJudgeTraceSchema = Schema.Struct({
     anchors: Schema.NullOr(Schema.Array(Schema.Struct({ measurement: Schema.Finite, description: text }))) })),
   images: Schema.Array(Schema.Struct({ imageId: text, evidenceIndex: bytes, mediaType: Schema.Literals(["image/png", "image/jpeg"]), byteLength: bytes, sha256: digest, paths: Schema.Array(Schema.String) })),
   generations: Schema.Array(AgentJudgeGenerationSchema), tools: Schema.Array(AgentJudgeToolTraceSchema),
+  compactions: Schema.Array(Schema.Struct({ trigger: ordinal, generations: Schema.Array(ordinal), tokensBefore: Schema.NullOr(bytes),
+    summary: Schema.NullOr(text), failure: Schema.NullOr(AgentJudgeFailureSchema) })),
 });
 /** One conversation trajectory shared by all questions in an Agent Judge session. */
 export type AgentJudgeTrace = typeof AgentJudgeTraceSchema.Type;
@@ -106,6 +109,10 @@ export function readAgentJudgeAudit(raw: unknown, name: string, measurement: num
     if (canonical(config) !== trace.definition.config || canonical(config.toolDefinitions) === undefined) throw new Error("Invalid canonical Agent Judge config");
     const ids = new Set<string>();
     const returned = new Map<string, { name: string; arguments: string; generation: number }>();
+    // pi retains structured tool arguments and serializes them again when
+    // replaying. Property order inside the JSON string is not conversation drift.
+    const history = (messages: unknown[]) => JSON.parse(JSON.stringify(messages), (key, value) =>
+      key === "arguments" && typeof value === "string" ? canonical(JSON.parse(value)) : value);
     let previousMessages: unknown[] | undefined;
     for (const [index, generation] of trace.generations.entries()) {
       if (generation.ordinal !== index + 1 || generation.state === "rejected" && (generation.request !== null || generation.attempts.length !== 0 || generation.failure === null)) throw new Error("Invalid generation sequence");
@@ -113,19 +120,30 @@ export function readAgentJudgeAudit(raw: unknown, name: string, measurement: num
       if (generation.request === null || generation.attempts.length === 0 || generation.attempts.length > 3) throw new Error("Missing generation request");
       const request = JSON.parse(generation.request);
       const wire = structuredClone(request);
-      if (trace.images.length > 0) wire.messages[1].content = wire.messages[1].content.map((part: { type: string; image_url?: { url: string } }) => {
-        if (part.type !== "image_url") return part;
-        const image = trace.images.find((image) => part.image_url?.url === `niceeval-image:${image.imageId}`);
+      const restoreImages = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(restoreImages);
+        if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, restoreImages(item)]));
+        if (typeof value !== "string" || !value.startsWith("niceeval-image:")) return value;
+        const image = trace.images.find((image) => value === `niceeval-image:${image.imageId}`);
         if (image === undefined) throw new Error("Unknown Agent Judge image reference");
-        return { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${encodeBase64Bytes(imageContents[image.evidenceIndex]!.bytes)}` } };
-      });
-      const body = canonical(wire);
+        return `data:${image.mediaType};base64,${encodeBase64Bytes(imageContents[image.evidenceIndex]!.bytes)}`;
+      };
+      const restored = restoreImages(wire);
+      const body = canonical(restored);
       if (utf8ByteLength(body) !== generation.wireBody.byteLength || agentJudgeDigest(body) !== generation.wireBody.sha256) throw new Error("Agent Judge wire digest mismatch");
-      if (canonical(request) !== generation.request || !Array.isArray(request.messages) || request.response_format !== undefined || request.tool_choice !== "auto" || canonical(request.tools) !== canonical(config.toolDefinitions) || trace.steps[generation.step - 1] === undefined || index > 0 && generation.step < trace.generations[index - 1]!.step) throw new Error("Invalid Agent Judge request");
-      if (previousMessages !== undefined && canonical(request.messages.slice(0, previousMessages.length)) !== canonical(previousMessages)) throw new Error("Agent Judge history mismatch");
+      if (canonical(request) !== generation.request || !Array.isArray(request.messages) || request.response_format !== undefined || (generation.kind === "turn" && (request.tool_choice !== "auto" || canonical(request.tools) !== canonical(config.toolDefinitions))) || trace.steps[generation.step - 1] === undefined || index > 0 && generation.step < trace.generations[index - 1]!.step) throw new Error("Invalid Agent Judge request");
+      if (generation.kind === "turn") {
+        const compact = trace.compactions.find((item) => item.summary !== null && item.generations.at(-1) === generation.ordinal - 1);
+        if (compact !== undefined) {
+          if (!request.messages.some((message: { role?: string; content?: unknown }) => message.role === "user" && canonical(message.content).includes(JSON.stringify(`<summary>\n${compact.summary}\n</summary>`).slice(1, -1)))) throw new Error("Missing compacted context");
+          previousMessages = undefined;
+        }
+        if (previousMessages !== undefined && canonical(history(request.messages.slice(0, previousMessages.length))) !== canonical(history(previousMessages))) throw new Error("Agent Judge history mismatch");
+      }
       for (const [offset, transmission] of generation.attempts.entries()) if (transmission.ordinal !== offset + 1 || offset < generation.attempts.length - 1 && transmission.result.state !== "failed") throw new Error("Invalid transmission sequence");
       const last = generation.attempts.at(-1)!.result;
       if (last.state !== "returned") { previousMessages = undefined; continue; }
+      if (generation.kind === "compaction") continue;
       if (generation.failure?.state === "errored") { previousMessages = undefined; continue; }
       const response = JSON.parse(last.response);
       const message = response.choices?.[0]?.message;
@@ -140,6 +158,18 @@ export function readAgentJudgeAudit(raw: unknown, name: string, measurement: num
         if (tool.result !== null) previousMessages.push({ role: "tool", tool_call_id: tool.callId, content: tool.result });
       }
     }
+    const summaryGenerations = new Set<number>();
+    for (const compact of trace.compactions) {
+      const trigger = trace.generations[compact.trigger - 1];
+      if (trigger === undefined || trigger.kind !== "turn" || trigger.attempts.at(-1)?.result.state !== "failed" || compact.generations.length === 0 && compact.summary !== null) throw new Error("Invalid compaction trigger");
+      for (const ordinal of compact.generations) {
+        const generation = trace.generations[ordinal - 1];
+        if (summaryGenerations.has(ordinal) || ordinal <= compact.trigger || generation?.kind !== "compaction" || generation.step !== trigger.step) throw new Error("Invalid summary generation");
+        summaryGenerations.add(ordinal);
+      }
+      if (compact.summary !== null && (compact.tokensBefore === null || compact.failure !== null || compact.generations.some((ordinal) => trace.generations[ordinal - 1]?.attempts.at(-1)?.result.state !== "returned"))) throw new Error("Invalid compaction result");
+    }
+    if (trace.generations.some((generation) => generation.kind === "compaction" && !summaryGenerations.has(generation.ordinal))) throw new Error("Unassociated summary generation");
     const executed = new Set<string>();
     for (const [index, tool] of trace.tools.entries()) {
       const call = returned.get(tool.callId);

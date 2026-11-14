@@ -6,8 +6,8 @@ import { findPackageJSON } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Agent as PiAgent, AgentTool, StreamFn } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { AgentHarness as PiAgent } from "@earendil-works/pi-agent-core";
+import type { Model } from "@earendil-works/pi-ai";
 import type { Sandbox } from "../sandbox/types.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import type { JudgeUsageEntry } from "../o11y/judge-usage.ts";
@@ -17,8 +17,10 @@ import type { JudgeAnchor } from "./judge.ts";
 import { AgentJudgeSubmissionSchema, agentJudgeDigest, readAgentJudgeAudit, type AgentJudgeAudit, type AgentJudgeFailure, type AgentJudgeGeneration, type AgentJudgeSubmission, type AgentJudgeToolTrace, type AgentJudgeTrace } from "./agent-judge-audit.ts";
 import { canonicalScoreMatchAuditJson as canonical } from "./score-match-audit.ts";
 import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
-import { chunkUtf8, snapshotJudgeMaterial, projectJudgeMaterial, interruptibleByCaller, requestScoreMatchProvider, isTransientJudgeFailure, isTransportFailure, retryAfterMs, responseByteCap, errorSummary } from "./judge.ts";
+import { chunkUtf8, snapshotJudgeMaterial, projectJudgeMaterial, interruptibleByCaller, isTransportFailure, responseByteCap, errorSummary } from "./judge.ts";
 import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
+import { createManagedPiRuntime, promptPiWithCompaction, type PiRequestPolicy } from "../judge/pi-runtime.ts";
+import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
 import { resolveJudgeCredential } from "../judge/provider.ts";
 
 const utf8 = new TextEncoder();
@@ -104,6 +106,8 @@ export class AgentJudgeSession {
   private readonly submissions = new Map<string, Submitted>();
   private readonly generations: AgentJudgeGeneration[] = [];
   private readonly tools: AgentJudgeToolTrace[] = [];
+  private readonly compactions: AgentJudgeTrace["compactions"][number][] = [];
+  private compacting = false;
   private readonly results = new Map<string, AgentJudgeAudit["result"]>();
   private readonly definition: AgentJudgeTrace["definition"];
   private pi?: ReturnType<typeof resolveAgentJudgePi>;
@@ -124,10 +128,10 @@ export class AgentJudgeSession {
   constructor(readonly judge: NormalizedAgentJudge, material: unknown,
     private readonly sandbox: Sandbox, private readonly profile: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined, private readonly usageForEntry: ((index: number) => JudgeUsageEntry) | undefined) {
-    this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial);
+    this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
     this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }).material;
-    const base = { name: judge.name, version: "1", config: canonical({ ...judge, algorithmRevision: 1, promptRevision: 1, toolRevision: 1, toolDefinitions }),
+    const base = { name: judge.name, version: "1", config: canonical({ ...judge, ...(containsConversationMaterial(this.snapshot.material) ? { conversationMaterialRevision } : {}), algorithmRevision: 2, promptRevision: 1, toolRevision: 1, toolDefinitions }),
       limits: { maxTurns: judge.maxTurns, timeoutMs: judge.timeoutMs, maxMaterialBytes: judge.maxMaterialBytes, maxAuditBytes: judge.maxAuditBytes } };
     this.definition = { ...base, digest: agentJudgeDigest(canonical(base)) };
     if (size(this.captured) > judge.maxMaterialBytes) this.fail("unavailable", "agent-judge-material-budget", "Agent Judge material exceeds its byte budget");
@@ -138,11 +142,11 @@ export class AgentJudgeSession {
   }
 
   private images() { return this.snapshot.images.map(({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths }) => ({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths })); }
-  private trace(): AgentJudgeTrace { return this.sealedTrace ?? { cleanup: this.cleanup, definition: this.definition, input: this.captured, criteria: this.keys as [string, ...string[]], steps: this.steps, images: this.images(), generations: this.generations, tools: this.tools }; }
+  private trace(): AgentJudgeTrace { return this.sealedTrace ?? { cleanup: this.cleanup, definition: this.definition, input: this.captured, criteria: this.keys as [string, ...string[]], steps: this.steps, images: this.images(), generations: this.generations, tools: this.tools, compactions: this.compactions }; }
   private fits(extra: number): boolean { return size(canonical(this.trace())) * 2 + extra + 16 * 1024 <= this.judge.maxAuditBytes; }
   private fail(state: AgentJudgeFailure["state"], code: string, message: string): void {
     this.problem ??= { state, code, message };
-    this.agent?.abort(); this.controller?.abort();
+    this.abortAgent(); this.controller?.abort();
   }
 
   chat(message: string): void {
@@ -201,7 +205,7 @@ export class AgentJudgeSession {
       }
       return Effect.tryPromise({ try: (signal) => {
         this.controller = new AbortController();
-        const stop = () => { this.controller!.abort(); this.agent?.abort(); };
+        const stop = () => { this.controller!.abort(); this.abortAgent(); };
         signal.addEventListener("abort", stop, { once: true });
         this.deadlineAt = Date.now() + this.judge.timeoutMs;
         this.running = this.run(this.controller.signal).finally(() => signal.removeEventListener("abort", stop));
@@ -210,7 +214,7 @@ export class AgentJudgeSession {
         Effect.catch((error) => Effect.sync(() => this.fail("errored", "agent-judge-defect", errorSummary(error)))),
         Effect.timeoutOrElse({ duration: this.judge.timeoutMs, orElse: () => Effect.sync(() => this.fail("unavailable", "agent-judge-timeout", "Agent Judge review timed out")) }),
         Effect.ensuring(Effect.promise(async () => {
-          this.agent?.abort(); this.controller?.abort(); this.usage?.close();
+          this.abortAgent(); this.controller?.abort(); this.usage?.close();
           if (this.running !== undefined) {
             let timer: ReturnType<typeof setTimeout> | undefined;
             const released = await Promise.race([this.running.then(() => true, () => true), new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), 1000); })]);
@@ -258,61 +262,39 @@ export class AgentJudgeSession {
     if (this.snapshot.images.length > 0 && profile.supportsImages !== true) { this.fail("unavailable", "judge-capability-unavailable", "Judge Provider does not support image material"); return; }
     const apiKey = resolveJudgeCredential(profile);
     if (!apiKey) { this.fail("unavailable", "judge-key-unresolved", "Judge Provider credential is unresolved"); return; }
-    const [{ Agent }, pi] = await Promise.all([import(pathToFileURL(this.pi!.core).href) as Promise<typeof import("@earendil-works/pi-agent-core")>,
-      import(pathToFileURL(this.pi!.ai).href) as Promise<typeof import("@earendil-works/pi-ai")>]);
-    if (signal.aborted) return;
-    const messages: unknown[] = [{ role: "system", content: this.systemPrompt() }, { role: "user", content: this.snapshot.images.length === 0 ? this.captured : [
-      { type: "text", text: this.captured }, ...this.snapshot.images.map((image) => ({ type: "image_url", image_url: { url: `niceeval-image:${image.imageId}` } })),
-    ] }];
-    const model: Model<"openai-completions"> = { id: profile.model, name: profile.model, api: "openai-completions", provider: "openai", baseUrl: profile.baseUrl,
-      reasoning: false, input: ["text", "image"], contextWindow: 1_000_000, maxTokens: profile.protocol.maxOutputTokens,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-    const streamFn: StreamFn = () => {
-      const stream = pi.createAssistantMessageEventStream();
-      void (async () => {
-        const message: AssistantMessage = { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() };
-        try {
-          const response = await this.generate(messages, signal, apiKey);
-          if (response !== undefined) {
-            messages.push(response);
-            if (response.content !== null) message.content.push({ type: "text", text: response.content });
-            for (const call of response.tool_calls ?? []) message.content.push({ type: "toolCall", id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments) });
-            message.stopReason = (response.tool_calls?.length ?? 0) > 0 ? "toolUse" : "stop";
-          } else { message.stopReason = "error"; message.errorMessage = this.problem?.message ?? "Review closed"; }
-          stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message }); stream.end(message);
-        } catch (error) {
-          if (!signal.aborted && this.problem === undefined) this.fail("errored", "agent-judge-invalid-response", errorSummary(error));
-          message.stopReason = signal.aborted ? "aborted" : "error"; message.errorMessage = this.problem?.message ?? "Review interrupted";
-          stream.push({ type: "error", reason: message.stopReason, error: message }); stream.end(message);
-        }
-      })();
-      return stream;
-    };
-    const tools: AgentTool[] = Object.keys(toolSchemas).map((name) => ({ name, label: name, description: descriptions[name as ToolName],
-      // Validation belongs to this gateway; pi must not coerce or erase raw arguments.
+    const runtime = await createManagedPiRuntime({ paths: this.pi!, profile, apiKey, signal, deadline: () => this.deadlineAt,
+      request: (model) => this.requestPolicy(model, signal),
+    });
+    const { core, pi, model, models } = runtime;
+    const tools: import("@earendil-works/pi-agent-core").AgentHarnessTool<undefined>[] = Object.keys(toolSchemas).map((name) => ({ name, label: name, description: descriptions[name as ToolName],
+      // Keep the raw pi arguments intact; the gateway owns exact validation.
+      // The declared public schemas are installed in pi's outgoing payload.
       parameters: pi.Type.Object({}, { additionalProperties: true }),
       execute: async (id, args) => this.executeTool(name as ToolName, id, args, signal),
     }));
-    const agent = new Agent({ initialState: { model, systemPrompt: this.systemPrompt(), tools }, streamFn, toolExecution: "sequential", getApiKey: () => undefined });
+    const session = await new core.InMemorySessionRepo().create();
+    await session.appendMessage({ role: "user", content: [{ type: "text", text: this.captured },
+      ...this.snapshot.images.map((image) => ({ type: "image" as const, mimeType: image.mediaType, data: Buffer.from(readJudgeImage(image.image).body).toString("base64") }))], timestamp: Date.now() });
+    const agent = new core.AgentHarness({ session, models, model, tools, systemPrompt: this.systemPrompt(), retry: { enabled: false, maxRetries: 0, baseDelayMs: 0 } });
     this.agent = agent;
-    const onAbort = () => agent.abort(); signal.addEventListener("abort", onAbort, { once: true });
+    const onAbort = () => this.abortAgent(); signal.addEventListener("abort", onAbort, { once: true });
     const unsubscribe = agent.subscribe((event) => {
       if (event.type === "tool_execution_start") {
-        const generation = this.generations.at(-1);
-        const returned = generation?.attempts.at(-1)?.result;
-        const raw = returned?.state === "returned" ? decodeResponse(returned.response).tool_calls?.find((call) => call.id === event.toolCallId) : undefined;
-        if (raw === undefined || this.closed || this.problem !== undefined) return;
-        this.tools.push({ ordinal: this.tools.length + 1, generation: this.ordinal, callId: event.toolCallId, name: event.toolName, arguments: raw.function.arguments,
+        if (this.closed) return;
+        this.tools.push({ ordinal: this.tools.length + 1, generation: this.ordinal, callId: event.toolCallId, name: event.toolName, arguments: canonical(event.args),
           validation: "not-checked", state: "not-started", result: null });
       }
       if (event.type === "tool_execution_end") {
         const index = this.tools.findIndex((item) => item.callId === event.toolCallId);
         if (index < 0 || this.closed) return;
         const content = event.result.content.filter((item: { type: string }) => item.type === "text").map((item: { text: string }) => item.text).join("\n");
-        const current = this.tools[index];
-        this.tools[index] = { ...current, state: signal.aborted ? "interrupted" : event.isError ? "failed" : current.state === "not-started" ? "not-started" : "completed", result: content };
-        if (this.problem === undefined) messages.push({ role: "tool", tool_call_id: event.toolCallId, content });
+        const current = this.tools[index]!;
+        this.tools[index] = { ...current, state: signal.aborted ? "interrupted" : current.state === "not-started" ? "not-started" : event.isError ? "failed" : "completed", result: content };
+      }
+      if (event.type === "session_compact") {
+        const compact = this.compactions.at(-1);
+        if (compact === undefined || this.closed) return;
+        this.compactions[this.compactions.length - 1] = { ...compact, tokensBefore: event.compactionEntry.tokensBefore, summary: event.compactionEntry.summary };
       }
     });
     try {
@@ -324,10 +306,23 @@ export class AgentJudgeSession {
         this.currentTurns = 0;
         this.currentFailure = undefined;
         const prompt = canonical({ kind: step.kind, message: step.message, ...(step.anchors === null ? {} : { anchors: step.anchors }) });
-        messages.push({ role: "user", content: prompt });
-        await agent.prompt(prompt);
-        // pi stops the batch after a valid submission. Close skipped call IDs with
-        // explicit not-started errors before the next user message, never success.
+        await promptPiWithCompaction(agent, prompt, {
+          overflow: pi.isContextOverflow,
+          active: () => !signal.aborted && this.problem === undefined,
+          start: () => {
+            this.compacting = true;
+            this.compactions.push({ trigger: this.ordinal, generations: [], tokensBefore: null, summary: null, failure: null });
+          },
+          failed: (error) => {
+            if (!signal.aborted && this.problem === undefined) this.fail("unavailable", "agent-judge-context-overflow", `Context compaction failed: ${errorSummary(error)}`);
+            const compact = this.compactions.at(-1)!;
+            this.compactions[this.compactions.length - 1] = { ...compact, failure: this.problem ?? { state: "unavailable", code: "agent-judge-context-overflow", message: "Context compaction interrupted" } };
+          },
+          end: () => { this.compacting = false; },
+          stillOverflow: () => this.fail("unavailable", "agent-judge-context-overflow", "Agent Judge context still overflows after compaction"),
+        });
+        // Complete only pi's skipped tool results in its own session. These are
+        // audit facts and explicit failures, never side effects or a second history.
         const generation = this.generations.at(-1);
         const returned = generation?.attempts.at(-1)?.result;
         const calls = returned?.state === "returned" ? decodeResponse(returned.response).tool_calls ?? [] : [];
@@ -335,76 +330,108 @@ export class AgentJudgeSession {
           const content = canonical({ state: "not-started", reason: "question-submitted" });
           this.tools.push({ ordinal: this.tools.length + 1, generation: this.ordinal, callId: call.id, name: call.function.name, arguments: call.function.arguments,
             validation: "not-checked", state: "not-started", result: content });
-          messages.push({ role: "tool", tool_call_id: call.id, content });
+          await agent.appendMessage({ role: "toolResult", toolCallId: call.id, toolName: call.function.name, content: [{ type: "text", text: content }], isError: true, timestamp: Date.now() });
         }
         if (step.key !== null && !this.submissions.has(step.key)) this.results.set(step.key,
           this.problem ?? this.currentFailure ?? { state: "unavailable", code: "agent-judge-no-submission", message: "Review ended without submitting this question" });
       }
-    }
-    finally { signal.removeEventListener("abort", onAbort); unsubscribe(); }
+    } finally { signal.removeEventListener("abort", onAbort); unsubscribe(); }
   }
 
-  private async generate(messages: unknown[], signal: AbortSignal, apiKey: string) {
-    if (signal.aborted || this.closed || this.problem !== undefined || this.currentKey !== undefined && this.submissions.has(this.currentKey) || this.currentFailure !== undefined) return undefined;
+  private abortAgent(): void { void this.agent?.abort().catch(() => undefined); }
+
+  private requestPolicy(model: Model<"openai-completions">, signal: AbortSignal): PiRequestPolicy {
     const profile = this.profile!;
-    if (this.currentKey !== undefined && this.currentTurns >= this.judge.maxTurns) {
-      this.currentFailure = { state: "unavailable", code: "agent-judge-turn-budget", message: "Agent Judge model turn budget exhausted for this question" };
-      this.agent?.abort(); return undefined;
-    }
-    this.currentTurns += 1;
-    this.ordinal += 1;
-    const request = canonical({ model: profile.model, messages, tools: toolDefinitions, tool_choice: "auto", max_tokens: profile.protocol.kind === "chat-completions" ? profile.protocol.maxOutputTokens : 0 });
-    const wire = JSON.parse(request);
-    if (this.snapshot.images.length > 0) wire.messages[1].content = wire.messages[1].content.map((part: { type: string; image_url?: { url: string } }) => {
-      if (part.type !== "image_url") return part;
-      const image = this.snapshot.images.find((image) => part.image_url?.url === `niceeval-image:${image.imageId}`)!;
-      return { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${Buffer.from(readJudgeImage(image.image).body).toString("base64")}` } };
-    });
-    const wireBody = canonical(wire);
-    const generation: AgentJudgeGeneration = { wireBody: { byteLength: size(wireBody), sha256: agentJudgeDigest(wireBody) }, ordinal: this.ordinal, step: this.currentStep, state: "admitted", request, attempts: [], failure: null };
-    const index = this.generations.length;
-    const responseCap = Math.min(profile.maxResponseBytes, profile.protocol.kind === "chat-completions" ? responseByteCap(profile.protocol.maxOutputTokens) : 0,
-      Math.floor((this.judge.maxAuditBytes - size(canonical(this.trace())) * 2 - size(request) * 2 - 32 * 1024) / 24));
-    if (responseCap < 1024) {
-      this.fail("unavailable", "agent-judge-audit-budget", "Audit budget cannot retain the next request and response");
-      this.generations.push({ ...generation, state: "rejected", request: null, failure: this.problem! }); return undefined;
-    }
-    this.generations.push(generation);
-    for (let transmission = 1; transmission <= 3; transmission += 1) {
-      if (signal.aborted || this.closed || this.problem !== undefined) return undefined;
-      const usage = this.usage?.begin({ operation: "agent", logicalOrdinal: this.ordinal, transmissionOrdinal: transmission, requestModel: profile.model, transportProvider: profile.provider });
-      if (this.usage !== undefined && usage === undefined) { this.fail("unavailable", "judge-usage-capacity-exceeded", "Judge usage cannot retain another transmission"); return undefined; }
-      const active = this.generations[index];
-      this.generations[index] = { ...active, attempts: [...active.attempts, { ordinal: transmission, result: { state: "interrupted" } }] };
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const requestAbort = new AbortController();
-      const abort = () => requestAbort.abort(); signal.addEventListener("abort", abort, { once: true });
-      timer = setTimeout(abort, Math.min(profile.timeoutMs, Math.max(0, this.deadlineAt - Date.now())));
-      try {
-        const received = await requestScoreMatchProvider({ baseUrl: profile.baseUrl, endpoint: "chat/completions", apiKey, headers: profile.headers, body: wireBody, maxBytes: responseCap, signal: requestAbort.signal, usage, deadlineAt: this.deadlineAt });
-        if (signal.aborted || this.closed) return undefined;
-        if (received.status < 200 || received.status >= 300) throw Object.assign(new Error(`HTTP ${received.status}`), { status: received.status, headers: received.headers });
-        const current = this.generations[index];
-        this.generations[index] = { ...current, attempts: [...current.attempts.slice(0, -1), { ordinal: transmission, result: { state: "returned", response: received.body } }] };
-        try { return decodeResponse(received.body); }
-        catch (error) { this.fail("errored", "agent-judge-invalid-response", errorSummary(error)); this.generations[index] = { ...this.generations[index], failure: this.problem! }; return undefined; }
-      } catch (error) {
-        if (signal.aborted || this.closed) return undefined;
-        const current = this.generations[index];
-        this.generations[index] = { ...current, attempts: [...current.attempts.slice(0, -1), { ordinal: transmission, result: { state: "failed", code: "judge-call-failed", message: errorSummary(error) } }] };
-        if ((isTransientJudgeFailure(error) || requestAbort.signal.aborted) && transmission < 3) {
-          const delay = retryAfterMs(error instanceof Error && "headers" in error ? error.headers : undefined, Date.now()) ?? 100 * 2 ** (transmission - 1);
-          await new Promise<void>((resolve) => {
-            const finish = () => { clearTimeout(wait); signal.removeEventListener("abort", finish); resolve(); };
-            const wait = setTimeout(finish, Math.min(delay, Math.max(0, this.deadlineAt - Date.now()))); signal.addEventListener("abort", finish, { once: true });
-          });
-          continue;
+    let generationIndex: number | undefined;
+    let usage: ReturnType<JudgeUsageEntry["begin"]>;
+    const responseCap = Math.min(profile.maxResponseBytes, responseByteCap(model.maxTokens));
+    return {
+      start: () => {
+        if (signal.aborted || this.closed || this.problem !== undefined || this.currentFailure !== undefined || this.currentKey !== undefined && this.submissions.has(this.currentKey)) throw new Error("Review closed");
+        if (!this.compacting && this.currentKey !== undefined && this.currentTurns >= this.judge.maxTurns) {
+          this.currentFailure = { state: "unavailable", code: "agent-judge-turn-budget", message: "Agent Judge model turn budget exhausted for this question" };
+          throw new Error(this.currentFailure.message);
         }
-        this.fail(isTransportFailure(error) || requestAbort.signal.aborted || /(?:byte|response).*(?:limit|exceed|large)/iu.test(errorSummary(error)) ? "unavailable" : "errored", "judge-call-failed", errorSummary(error));
-        this.generations[index] = { ...this.generations[index], failure: this.problem! }; return undefined;
-      } finally { if (timer !== undefined) clearTimeout(timer); signal.removeEventListener("abort", abort); }
-    }
-    return undefined;
+      },
+      payload: (payload, requestSignal) => {
+        if (requestSignal.aborted || this.closed || this.problem !== undefined) throw new Error("Review closed before sending");
+            // Match the JSON body pi sends: optional SDK fields may be undefined.
+            const wire = JSON.parse(JSON.stringify(payload)) as { tools?: unknown; tool_choice?: string; messages: unknown[] };
+            if (!this.compacting) { wire.tools = toolDefinitions; wire.tool_choice = "auto"; }
+            const wireBody = canonical(wire);
+            const request = this.auditPayload(wire);
+            this.ordinal += 1;
+            if (this.compacting) { const compact = this.compactions.at(-1)!; this.compactions[this.compactions.length - 1] = { ...compact, generations: [...compact.generations, this.ordinal] }; }
+            const generation: AgentJudgeGeneration = { kind: this.compacting ? "compaction" : "turn", wireBody: { byteLength: size(wireBody), sha256: agentJudgeDigest(wireBody) },
+              ordinal: this.ordinal, step: this.currentStep, state: "admitted", request, attempts: [], failure: null };
+            if (!this.fits(size(request) * 2 + Math.min(responseCap, 16 * 1024) * 24 + 32 * 1024)) {
+              this.fail("unavailable", "agent-judge-audit-budget", "Audit budget cannot retain the next request and response");
+              this.generations.push({ ...generation, state: "rejected", request: null, failure: this.problem! });
+              throw new Error(this.problem!.message);
+            }
+            usage = this.usage?.begin({ operation: "agent", logicalOrdinal: this.ordinal, transmissionOrdinal: 1, requestModel: profile.model, transportProvider: profile.provider });
+            if (this.usage !== undefined && usage === undefined) {
+              this.fail("unavailable", "judge-usage-capacity-exceeded", "Judge usage cannot retain another transmission");
+              this.generations.push({ ...generation, state: "rejected", request: null, failure: this.problem! });
+              throw new Error(this.problem!.message);
+            }
+            if (!this.compacting) this.currentTurns += 1;
+            generationIndex = this.generations.length;
+            this.generations.push({ ...generation, attempts: [{ ordinal: 1, result: { state: "interrupted" } }] });
+            return JSON.parse(wireBody);
+
+      },
+      status: (status) => { usage?.headers(status); },
+      delta: (responseBytes) => {
+        if (responseBytes > responseCap || !this.fits(responseBytes * 24 + 16 * 1024)) {
+          usage?.fail("response-too-large");
+          this.fail("unavailable", "agent-judge-audit-budget", "Agent Judge response exceeds its byte budget");
+          return false;
+        }
+        return this.problem === undefined;
+      },
+      complete: (message, requestSignal, overflow) => {
+        if (generationIndex === undefined && !signal.aborted && this.problem === undefined && this.currentFailure === undefined &&
+          !(this.currentKey !== undefined && this.submissions.has(this.currentKey))) this.fail("errored", "agent-judge-invalid-response", message.errorMessage ?? "Provider did not admit a request");
+        if (generationIndex !== undefined && !this.closed) {
+          const current = this.generations[generationIndex]!;
+          if (message.stopReason === "error" || message.stopReason === "aborted" || this.problem !== undefined) {
+            const error = message.errorMessage ?? "Review interrupted";
+            const status = /^(\d{3})\b/u.exec(error)?.[1];
+            if (status !== undefined) usage?.headers(Number(status));
+            if (signal.aborted) usage?.cancel(); else usage?.fail("response-unavailable");
+            this.generations[generationIndex] = { ...current, attempts: [{ ordinal: 1, result: signal.aborted ? { state: "interrupted" } : { state: "failed", code: "judge-call-failed", message: error } }] };
+            if (!signal.aborted && this.problem === undefined && this.currentFailure === undefined && !overflow) {
+              if (this.compacting) this.fail("unavailable", "agent-judge-context-overflow", error);
+              else this.fail(requestSignal.aborted || /^(?:408|429|5\d\d)\b|connect|fetch|network|socket/iu.test(error) ? "unavailable" : "errored", "judge-call-failed", error);
+            }
+          } else {
+            const calls = message.content.filter((part) => part.type === "toolCall").map((part) => ({ id: part.id, type: "function", function: { name: part.name, arguments: canonical(part.arguments) } }));
+            const body = canonical({ model: message.model, usage: { prompt_tokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite,
+              completion_tokens: message.usage.output, total_tokens: message.usage.totalTokens, prompt_tokens_details: { cached_tokens: message.usage.cacheRead, cache_write_tokens: message.usage.cacheWrite } },
+              choices: [{ message: { role: "assistant", content: message.content.filter((part) => part.type === "text").map((part) => part.text).join("") || null,
+                ...(calls.length === 0 ? {} : { tool_calls: calls }) }, finish_reason: calls.length > 0 ? "tool_calls" : "stop" }] });
+            usage?.body(body);
+            if (!this.fits(size(body) * 2 + 16 * 1024)) this.fail("unavailable", "agent-judge-audit-budget", "Audit budget cannot retain the model response");
+            else this.generations[generationIndex] = { ...current, attempts: [{ ordinal: 1, result: { state: "returned", response: body } }] };
+          }
+        }
+
+        return this.problem === undefined ? message : undefined;
+      },
+      error: (error) => {
+        if (!signal.aborted && this.problem === undefined && this.currentFailure === undefined && generationIndex !== undefined) this.fail("errored", "agent-judge-defect", errorSummary(error));
+        if (signal.aborted) usage?.cancel(); else usage?.fail("response-unavailable");
+      },
+      failure: () => this.problem?.message ?? this.currentFailure?.message ?? "Review closed",
+    };
+  }
+
+  private auditPayload(payload: unknown): string {
+    const references = new Map(this.snapshot.images.map((image) => [
+      `data:${image.mediaType};base64,${Buffer.from(readJudgeImage(image.image).body).toString("base64")}`, `niceeval-image:${image.imageId}`,
+    ]));
+    return JSON.stringify(JSON.parse(canonical(payload)), (_key, value) => typeof value === "string" ? references.get(value) ?? value : value);
   }
 
   private async executeTool(name: ToolName, callId: string, args: unknown, signal: AbortSignal) {
@@ -430,7 +457,7 @@ export class AgentJudgeSession {
         throw new Error("Criterion is not requested or already submitted");
       }
       this.submissions.set(this.currentKey, { generation: this.ordinal, callId, value: submission });
-      this.agent!.abort();
+      this.abortAgent();
       return reply({ accepted: this.currentKey });
     }
     try {
