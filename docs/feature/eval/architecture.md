@@ -216,7 +216,7 @@ Attempt 终止先关闭提交和新请求准入，再取消 harness 与 HTTP 并
 
 模拟用户审计与执行活动绑定源 Session、源 Turn 和新 Turn，内部模型历史与被测 Agent history 分别归各自 owner。
 被测 Agent 只收到最终普通消息或结构化 responses；它的 history 不包含模拟用户的 instructions、内部工具调用或压缩摘要。
-Judge collector 中的调用归属必须能表示非 Assertion 的执行活动，不能把模拟用户活动冒充评分 entry。
+模拟用户的用量随执行活动记录保存，不进入 Judge collector；费用汇总按活动记录聚合出 `simulated-user` 来源，不把模拟用户活动冒充评分 entry。
 
 ## 观测、评分与发布
 

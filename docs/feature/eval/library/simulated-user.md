@@ -90,24 +90,22 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 每次已准入的 `reply` 在执行记录里留一条模拟用户活动：所回答的 Turn、模型实际收到的提问、提交的回答、请求与响应、耗时与失败原因。失败且未发送下一轮时也保留该活动。
 - `show --execution` 在源 Turn 之后、回答驱动的新 Turn 之前显示它。活动使用独立 producer / actor，不把 pi 工具、内部历史、压缩或模型用量归入被测 Agent 的事件、工具断言或 `t.trace`。
 - `--expand <stable-id>` 经 `attempt.trace.detail` 读取封存证据，展开实际请求与响应；分页与容量限制沿用 Inspection，不从宿主现场重建。请求审计不包含凭据或 Authorization headers。
-- 模型用量进入 Judge 用量账本，operation 为 `simulated-user`，不进入 `t.usage`。普通生成与压缩请求都按实际物理传输记账，失败费用保留；不能伪造 Assertion entry 来满足账本关联。调用归属与版本治理由 [Judge 用量 owner](../../judge/architecture.md#judge-物理用量账本) 拥有。
-- instructions 在 Eval 源码里，随源码闭包进入 Eval 指纹。使用模拟用户的 Eval，其 Attempt 身份另外包含生效的 Judge Provider 身份与模拟用户的系统提示 revision：换模型或改提示模板都会让旧结果失效，因为被测 agent 收到的输入变了。
-- 未使用模拟用户的 Eval 不写新的默认配置键，身份不变。
-- 使用事实与提示 revision 必须在 dry/reuse 规划前冻结，不能等执行 `t.simulatedUser` 时才补身份，也不能以该函数名的正则命中证明使用。Judge Provider 沿用既有去凭据身份，不复制 secret 到 manifest。
-- [身份域规则](../../experiments/architecture/cache.md#niceeval-身份域变更) 同样适用。若实现改变既有指纹输入集合或计算配方，必须更换对应 domain、登记具名变更并更新发布快照；仅新增显式选择的可选键且缺省编码完全相同时不要求全局升域。
-- 提示 revision 改变实际回答行为，不能声明为 `encoding-only`。需要升全局 domain 时，未使用模拟用户的旧输入须有纯重建证明，不能靠更新快照掩盖其无故失效。
+- 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的活动记录自带用量：普通生成与压缩请求逐次的 input / output tokens，以及按 Judge Provider 显式估价得到的金额（没有估价时为 unpriced）；失败请求的用量同样保留。
+- Attempt 的费用汇总把模拟用户作为独立来源 `simulated-user` 计入，和 application、judge 并列显示；未使用模拟用户的 Attempt 没有这个来源。
+- 不给每个 Eval 单独增加身份输入。instructions 写在 Eval 源码里，随源码闭包进入 Eval 指纹；生效的 Judge runtime 已经属于既有配置身份，换模型照常让旧结果失效。未使用模拟用户的 Eval 身份不变。
+- 模拟用户的系统提示模板、`reply_to_agent` schema 与回答语义属于 NiceEval 运行时行为。改变它们按 [身份域规则](../../experiments/architecture/cache.md#niceeval-身份域变更) 处理：更换对应 domain 并登记为 `behavior-changing` 的具名变更，不声明为 `encoding-only`。首次引入本功能不改变任何既有输入的编码，不需要升域。
 
 ## 验收
 
 - 本地 OpenAI 兼容 mock 脚本化 `reply_to_agent`：被测 agent 发出两个 `input.requested`（一个带选项、一个文本），`reply` 为两者各提交一条回答并以同一 session 的下一轮发送；带选项的请求收到 option id；返回的 Turn 是新一轮。
 - 被测 agent 没有提问时，`reply` 发送一条消息；同一个 `SimulatedUser` 的第二次 `reply`，请求里含第一次的问答历史。
 - mock 不调用工具或参数一直非法时，Attempt 为 errored，原因 `simulated-user-failed`；TypeSafe 零发送并抛出 `simulated-user-unsupported-provider`。
-- `show --execution` 显示模拟用户活动与回答；Judge 用量含 `simulated-user` 记录。
+- `show --execution` 显示模拟用户活动与回答；活动记录含用量，Attempt 费用汇总含 `simulated-user` 来源。
 - 未使用模拟用户的 Eval 身份不变（identity-domains release 测试保持通过）；改 instructions 或换 Judge 模型让使用它的 Eval 重新规划。
 - mock 只替代外部 HTTP 模型边界，执行安装后候选的公开 API、真实 pi harness 与受管 Models。兼容 Chat Completions 的流式工具调用与 usage，捕获请求体；不 mock 核心 Session、工具校验、缓存规划或账本。
 - 重复、缺失、未知 requestId、错误 option id 与同时出现 text/optionId 均零 Adapter 发送；修正后只发送一次。旧 Turn、跨 Session Turn、并发驱动与关闭后调用均按错误契约拒绝，互不污染历史。
 - 验证首个合法提交后，同批重复工具和迟到响应不会再次驱动；超时、取消和压缩失败不发送回答，取消后没有继续发出的模型请求。
 - 通过脚本化溢出响应触发真实 `compact()`，核对摘要请求、重发与用量记录；四轮上限与同一 reply 的 deadline 不因压缩重置。
-- 包含混合 Eval 的 dry/reuse 场景：同一模块中的使用者与未使用者、条件分支与多个定义；核对冻结 manifest、提示 revision 的失效范围、未使用者零新增身份字段，以及失败账本和审计的离线读回。
+- 未使用模拟用户的 Eval 不新增任何身份字段；失败请求的用量与审计可离线读回。
 
 HTTP mock 证明协议、状态与归属的确定性结果，不证明真实模型会忠实遵守 instructions；事实遵循的质量评估属于独立的模型实验。
