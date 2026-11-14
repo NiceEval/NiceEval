@@ -1,7 +1,7 @@
 ---
 title: "查看运行结果：从总览找到失败原因"
 sidebarTitle: "查看结果"
-description: "跑完评估后，用 niceeval show 在终端从总览逐层找到失败的那次运行，查看对话、耗时、用量和文件改动；在浏览器用 view 翻看；脚本和 CI 用 query 读 JSON。"
+description: "跑完评估后，用 niceeval show 在终端从总览逐层找到失败的那次运行，查看对话、耗时、用量和文件改动；在浏览器用 view 翻看；脚本和 CI 用 show --json 读 JSON。"
 ---
 
 一批评估跑完，终端显示 `FAILED`，12 条里有 3 条没通过。你想知道是哪几条、Agent 在那几次运行里实际说了什么、调用了什么工具、为什么没满足断言。
@@ -12,7 +12,7 @@ NiceEval 给不同读者准备了三个入口，读的是同一份结果：
 |---|---|---|
 | `niceeval show` | 你和 Coding Agent，在终端 | 快速找到失败，逐层查看细节 |
 | `niceeval view` | 人，在浏览器 | 翻看完整对话、耗时瀑布图、对比多个 Run |
-| `niceeval query` | 脚本和 CI，以及需要精确字段的 Agent | 读结构化 JSON |
+| `niceeval show --json` | 脚本和 CI，以及需要精确字段的 Agent | 读结构化 JSON |
 
 每次 Attempt 一结束，结果就能读到，不必等整批跑完。
 
@@ -150,43 +150,29 @@ pnpm exec niceeval view --run <run-id>
 
 ## 看一条断言具体为什么得这个分
 
-`show` 告诉你哪条断言没过。要看 Judge 给出的理由、计分项具体得了几分，用 `query` 读这条断言的详情。先取得这次运行的断言清单：
+`show` 告诉你哪条断言没过。要看 Judge 给出的理由、计分项具体得了几分，用 `show --assertions --entry <entry-id> --json` 读这条断言的详情。先取得这次运行的断言清单：
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v3",
-  "operation": { "kind": "attempt.get", "locator": "@1K1P0VJAPVJ12" }
-}
-JSON
+pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --json
 ```
 
 从返回的 `assertions.entries` 里选一个 `entryId`，再读它的详情：
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v3",
-  "operation": {
-    "kind": "attempt.assertion.detail",
-    "locator": "@1K1P0VJAPVJ12",
-    "entryId": "<entry-id>"
-  }
-}
-JSON
+pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --assertions --entry <entry-id> --json
 ```
 
 详情里的 contribution 是这一项得了多少分，evaluation 是实际测出的结果，Judge 的理由在 explanation 里。某个字段缺失或标为 `unavailable` 时，按返回的 reason 理解，不要从别的字段推测。
 
 ## 让脚本和 CI 读结果
 
-`query` 只输出 JSON，不做终端排版。不要解析 `show` 的文字输出，也不要直接读 `.niceeval/` 下的文件，格式可能随版本变化。
+`show --json` 只输出 JSON，不做终端排版。不要解析 `show` 的文字输出，也不要直接读 `.niceeval/` 下的文件，格式可能随版本变化。
 
 ```sh
-pnpm --silent exec niceeval query discover
+pnpm --silent exec niceeval show --runs --json
 ```
 
-`discover` 列出当前版本支持的全部请求类型，例如列出 Run、读取 Run 摘要、读取 Attempt 详情、trace、diff，以及比较两个 Run。按[CLI 参考](/zh/reference/cli)写好请求后，先用 `query explain --request <file>` 检查，再用 `query run --request <file>` 执行。
+`show --runs --json` 列出 Run；`show --run <run-id> --json` 读取一条 Run。其它参数见 [CLI 参考](/zh/reference/cli)。
 
 ### 本次运行的结果
 
@@ -197,10 +183,7 @@ pnpm --silent exec niceeval exp my-agent --json > exp.ndjson
 
 tail -n 1 exp.ndjson | jq -r '.receipt.createdRunIds[]' |
 while IFS= read -r run_id; do
-  jq -n --arg runId "$run_id" '{
-    protocol: "niceeval.query/v3",
-    operation: { kind: "run.get", runId: $runId }
-  }' | pnpm --silent exec niceeval query run --request -
+  pnpm --silent exec niceeval show --run "$run_id" --json
 done
 ```
 
@@ -211,12 +194,7 @@ done
 需要包含局部重跑后采用的结果时，用实验 ID 读取当前结果：
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v3",
-  "operation": { "kind": "experiment.get", "experimentId": "my-agent" }
-}
-JSON
+pnpm --silent exec niceeval show --experiment my-agent --json
 ```
 
 响应的 `experiment.cells[]` 按评估用例列出结果；各次 Attempt 的判定在 `members[].verdict`，定位符在 `members[].publication.attemptLocator`。例如只重跑一条评估用例时，这里会把它的新结果与其它评估用例已采用的结果放在一起。

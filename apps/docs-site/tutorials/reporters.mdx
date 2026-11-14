@@ -6,7 +6,7 @@ description: "When your team already uses Braintrust or its own dashboard, use a
 
 Your team already looks at experiment results in Braintrust, or has an internal dashboard. You want results to show up there automatically after NiceEval runs, without exporting them by hand.
 
-That is what a Reporter does: during this one run, it sends results to an external system. It only handles reporting for "this run", and the results NiceEval saves do not change because of it. To reread, compare, or share results afterwards, you still use `show`, `view`, and `query`.
+That is what a Reporter does: during this one run, it sends results to an external system. It only handles reporting for "this run", and the results NiceEval saves do not change because of it. To reread, compare, or share results afterwards, you still use `show` and `view`.
 
 One `niceeval exp` produces all of these at once:
 
@@ -39,7 +39,7 @@ A Reporter cannot:
 
 - treat data in the external system as NiceEval results;
 - replace the verdicts, usage, assertions, or diagnostics NiceEval saves;
-- make `query`, `show`, or `view` read data from the external system instead;
+- make `show` or `view` read data from the external system instead;
 - write the external system's results back into `.niceeval/record.sqlite`.
 
 ## Output JUnit in CI
@@ -65,7 +65,7 @@ pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-When a script needs structured results, first run `pnpm --silent exec niceeval query discover` to find the available queries.
+When a script needs structured results, run `pnpm --silent exec niceeval show --run <run-id> --json`.
 
 Do not treat progress or diagnostic lines as a long-term result format. They only describe what is happening in this run.
 
@@ -75,4 +75,4 @@ Do not treat progress or diagnostic lines as a long-term result format. They onl
 2. Credentials go in environment variables and are never written into any output.
 3. CI gates look at the exit status.
 4. Use the receipt's `createdRunIds` to link external workflows with the results NiceEval saves.
-5. When results need review, people open that Run with `show` or `view`, and automated flows use `query`.
+5. When results need review, people open that Run with `show` or `view`, and automated flows use `show --json`.

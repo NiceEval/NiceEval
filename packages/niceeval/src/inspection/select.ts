@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
+import { stoppedAssertion } from "./stop.ts";
 import { projectAssertionMatrix, type MatrixInput } from "./assertion-matrix.ts";
 import { projectPlannedAttempt, projectAttemptCore, projectRunCore, projectMember } from "./planned-attempt.ts";
 import { projectLifecyclePhase } from "./lifecycle.ts";
@@ -44,6 +45,7 @@ import { projectAttemptAssertionDetail, projectAttemptAssertionImage, projectAss
 import { InspectionRepricingResultSchema } from "./repricing.ts";
 import { projectAttemptRepricing } from "./trace.ts";
 import {
+  InspectionUnsupportedFormatError,
   attemptAttachment,
   loadInspectionRunResource,
   loadInspectionRuns,
@@ -65,6 +67,8 @@ import { projectAttemptDiff } from "./diff.ts";
 import {
   combineInspectionUsageTotals,
   projectAttemptTiming,
+  projectAttemptDiagnostics,
+  projectDiagnosticDetail,
   readInspectionAgentTurns,
   readCurrentAttachment,
   projectAttemptTrace,
@@ -119,6 +123,7 @@ import {
 /** Typed browser-neutral failure from one fixed Inspection operation. */
 export class InspectionOperationError extends Data.TaggedError("InspectionOperationError")<{
   readonly code:
+    | "unsupported-format"
     | "inspection-request-invalid"
     | "inspection-selection-missing"
     | "inspection-record-integrity-failure"
@@ -420,6 +425,10 @@ function selectOperation(
           { kind: "item", itemId: operation.selector.eventId as ItemSelector["itemId"] },
         );
       }
+      if (detail === undefined && (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence")) {
+        detail = projectDiagnosticDetail(traceAttachments(resolved).runnerDiagnostics,
+          operation.selector.kind === "execution-event" ? operation.selector.eventId : operation.selector.evidenceId);
+      }
       if (detail === undefined) {
         throw selectionMissing(
           operation.kind,
@@ -474,16 +483,14 @@ function selectOperation(
     }
     case "attempt.diff": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const diff = projectAttemptDiff(attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family),
+        operation.changeId === undefined ? undefined : { source, changeId: operation.changeId });
+      if (operation.changeId !== undefined && (diff.state === "complete" || diff.state === "partial") && diff.detail === undefined) {
+        throw selectionMissing(operation.kind, "Selected file change does not exist");
+      }
       return Object.freeze({
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        diff: decodeRequiredResult(
-          operation.kind,
-          InspectionAttemptDiffResultSchema,
-          projectAttemptDiff(attemptAttachment(
-            resolved,
-            NiceEvalRecordAttachments.fileChanges.family,
-          )),
-        ),
+        diff: decodeRequiredResult(operation.kind, InspectionAttemptDiffResultSchema, diff),
       });
     }
     case "attempt.sources": {
@@ -1024,6 +1031,8 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
           entryCount: 0 as const,
         }),
     notes: readAttemptNotes(resolved),
+    diagnostics: projectAttemptDiagnostics(attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family)),
+    stoppedAt: stoppedAssertion(assertions),
     assertions: assertionIndex(assertions),
     sections: attemptSections(resolved),
     verdict: attemptVerdict(resolved, assertions),
@@ -1727,6 +1736,7 @@ function evaluateInspectionOperation(
     return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof InspectionUnsupportedFormatError) throw new InspectionOperationError({ code: "unsupported-format", operation, reason: cause.message });
     if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
@@ -1750,6 +1760,7 @@ function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
     return narrowed.value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
+    if (cause instanceof InspectionUnsupportedFormatError) throw new InspectionOperationError({ code: "unsupported-format", operation, reason: cause.message });
     if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;

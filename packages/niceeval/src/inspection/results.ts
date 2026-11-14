@@ -160,6 +160,7 @@ const AggregateFields = {
   issues: Schema.Array(OverviewIssueSchema),
 } as const;
 export const PlannedAttemptMetricsSchema = Schema.Struct({
+  stoppedAt: Schema.optional(Schema.Union([Schema.Struct({ state: Schema.Literal("available"), value: Schema.NullOr(Schema.Struct({ entryId: Schema.String, label: Schema.String })) }), Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") })])),
   verdict: Schema.NullOr(Schema.Literals(["passed", "failed", "errored", "skipped"])),
   score: MetricSchema,
   costUSD: CostMetricSchema,
@@ -341,6 +342,8 @@ const AssertionEvidenceSchema = Schema.Union([
 ]);
 export const InspectionAttemptResultSchema = Schema.Struct({
   notes: AttemptNotesSchema,
+  diagnostics: Schema.suspend(() => TraceDiagnosticsSchema),
+  stoppedAt: Schema.Union([Schema.Struct({ state: Schema.Literal("available"), value: Schema.NullOr(Schema.Struct({ entryId: Schema.String, label: Schema.String })) }), Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") })]),
   core: InspectionAttemptCoreSchema,
   locator: Schema.String,
   originRun: InspectionRunCoreSchema,
@@ -498,6 +501,7 @@ const TraceDiagnosticsSchema = Schema.Struct({
   omittedLimitationCount: Schema.Number,
   items: Schema.Array(Schema.Struct({
     diagnosticId: Schema.String,
+    evidenceId: Schema.String,
     sequence: Schema.Number,
     turnId: Schema.NullOr(Schema.String),
     phase: Schema.Literals([
@@ -702,6 +706,7 @@ const CommandStreamSchema = Schema.Struct({
   truncation: Schema.Struct({ state: Schema.Literals(["not-truncated", "truncated"]), omittedSafeUtf8Bytes: Schema.Number }),
 });
 export const InspectionTraceDetailResultSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("diagnostic"), evidenceId: Schema.String, phase: Schema.String, code: Schema.String, summary: Schema.String }),
   Schema.Struct({
     kind: Schema.Literal("execution-event"),
     event: ExecutionTraceEventRecordSchema,
@@ -1135,6 +1140,14 @@ const DiffWindowSchema = Schema.Struct({
     after: FileEndpointSchema,
   })),
 });
+const DiffBodySchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("available"), text: Schema.String, byteLength: Schema.Number, truncated: Schema.Boolean, truncatedAtByte: Schema.NullOr(Schema.Number) }),
+  Schema.Struct({ state: Schema.Literals(["absent", "binary", "oversized-text", "omitted", "unsupported-input", "capture-failed", "capture-interrupted"]) }),
+]);
+const DiffDetailSchema = Schema.Struct({
+  changeId: Schema.String, path: Schema.String, before: DiffBodySchema, after: DiffBodySchema,
+  hunks: Schema.Struct({ state: Schema.Literals(["available", "unavailable"]), text: Schema.String, truncated: Schema.Boolean, truncatedAtByte: Schema.NullOr(Schema.Number) }),
+});
 export const InspectionAttemptDiffResultSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded"), windows: Schema.Tuple([]) }),
   Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.String), windows: Schema.Tuple([]) }),
@@ -1142,6 +1155,7 @@ export const InspectionAttemptDiffResultSchema = Schema.Union([
     state: Schema.Literals(["complete", "partial"]),
     limitations: Schema.Array(FileChangesCollectionLimitationSchema),
     windows: Schema.Array(DiffWindowSchema),
+    detail: Schema.optional(DiffDetailSchema),
   }),
 ]);
 export type InspectionAttemptDiffResult = Schema.Schema.Type<typeof InspectionAttemptDiffResultSchema>;

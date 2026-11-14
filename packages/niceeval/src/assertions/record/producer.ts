@@ -28,6 +28,7 @@ export interface AssertionEntryInput<Content> {
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
+  readonly control: import("./model.ts").AssertionControl;
   readonly contribution: ScoreContribution;
   readonly explanationRetention: ExplanationRetention;
 }

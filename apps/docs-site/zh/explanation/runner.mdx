@@ -25,7 +25,7 @@ pnpm exec niceeval show --run <run-id>
 pnpm exec niceeval view --run <run-id>
 ```
 
-加 `--json` 时，最后一行是这次运行的 receipt，里面的 `createdRunIds` 列出新建的 Run，`publicationCutoff` 标记这次运行结束时已发布到哪里。`publicationCutoff` 不要解析，原样传给后续命令。脚本和 CI 先运行 `niceeval query discover` 找到可用的查询，再发送完整 request。
+加 `--json` 时，最后一行是这次运行的 receipt，里面的 `createdRunIds` 列出新建的 Run，`publicationCutoff` 标记这次运行结束时已发布到哪里。`publicationCutoff` 不要解析，原样传给后续命令。脚本和 CI 先运行 `niceeval show --runs --json` 列出 Run，再用 `show --run <run-id> --json` 读取一条 Run。
 
 ## 浏览器页面不会自己跳到新结果
 

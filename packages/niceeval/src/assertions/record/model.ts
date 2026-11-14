@@ -571,6 +571,10 @@ export type ExplanationRetention =
   | { readonly state: "retained"; readonly value: AssertionFactValue }
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 
+export type AssertionControl =
+  | { readonly state: "available"; readonly value: "none" | "continued" | "stopped" }
+  | { readonly state: "unavailable"; readonly reason: "not-recorded" };
+
 /** The sole current semantic entry. Each fact has exactly one durable owner. */
 export interface AssertionEntry<Content> {
   readonly entryId: AssertionEntryId;
@@ -580,6 +584,7 @@ export interface AssertionEntry<Content> {
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
+  readonly control: AssertionControl;
   readonly contribution: ScoreContribution;
   readonly explanationRetention: ExplanationRetention;
 }
@@ -597,6 +602,7 @@ export interface AssertionEntryOuter<Content> {
   readonly evaluation: AssertionEvaluation;
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
+  readonly control: AssertionControl;
   readonly contribution: ScoreContribution;
   readonly explanationRetention: ExplanationRetention;
 }

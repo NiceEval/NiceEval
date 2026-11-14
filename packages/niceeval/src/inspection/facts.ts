@@ -49,6 +49,10 @@ import type { InspectionFactSource } from "./source.ts";
 import { InspectionSha256 } from "./bytes.ts";
 import type { ReadableRunResource } from "../run/storage/types.ts";
 
+export class InspectionUnsupportedFormatError extends Error {
+  readonly code = "unsupported-format";
+}
+
 export interface DecodedInspectionAttachment {
   readonly physical: SealedAttachmentMetadata;
   readonly value: InspectionJson;
@@ -552,11 +556,7 @@ export function readInspectionAssertions(
     attachment.physical.familyRevision !==
       NiceEvalCurrentRecordAttachments.assertions.revision
   ) {
-    return Object.freeze({
-      state: "unsupported" as const,
-      attachment,
-      issues: Object.freeze([issue("assertions-revision-unsupported", resolved.locator)]),
-    });
+    throw new InspectionUnsupportedFormatError("unsupported-format: This Record was written by an older NiceEval version. Rerun the Experiment with the current version.");
   }
   const decoded = decodeCurrentAssertions(attachment);
   if (decoded === undefined) {

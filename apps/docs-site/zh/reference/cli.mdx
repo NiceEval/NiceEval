@@ -1,10 +1,10 @@
 ---
 title: "CLI"
 sidebarTitle: "CLI"
-description: "用 query、show 和 view 读取运行记录。"
+description: "用 show 和 view 读取运行记录。"
 ---
 
-运行评估用 `niceeval exp`。读取结果有三条路：脚本和 CI 用 `niceeval query` 取 JSON，人和 Coding Agent 在终端用 `niceeval show` 逐层查看，在浏览器里审阅用 `niceeval view`。
+运行评估用 `niceeval exp`。读取结果有三条路：脚本和 CI 用 `niceeval show --json` 取 JSON，人和 Coding Agent 在终端用 `niceeval show` 逐层查看，在浏览器里审阅用 `niceeval view`。
 
 三条路读的是同一份运行记录 `.niceeval/record.sqlite`。每次读取开始时，NiceEval 会固定一个可见边界：此刻已经写入的结果都能看到，之后写入的不会混进这次读取。所属 Run 还在运行时，已经写入的 Attempt 也能读到。
 
@@ -231,7 +231,7 @@ niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
 
 | 目标 | 使用 |
 | --- | --- |
-| 让脚本或 CI 取得稳定的 JSON | `niceeval query discover`，再用 `explain` / `run` |
+| 让脚本或 CI 取得稳定的 JSON | `niceeval show --json` |
 | 人或 Coding Agent 在终端查看总览、Run、Experiment 或 Attempt 的摘要 | `niceeval show` |
 | 在浏览器里审阅总览或某个 Run | `niceeval view` |
 | 在另一台机器上读取同一份结果 | 复制 `.niceeval/record.sqlite`，再用 `--record` 指定它 |
@@ -325,7 +325,14 @@ recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为�
 | `--mode` | `niceeval show` | string | Comparison mode: paired (default), side-by-side, or exact. |
 | `--max-regressions` | `niceeval show` | string | Maximum allowed regressions (non-negative integer; paired or exact). |
 | `--json` | `niceeval show` | boolean | 写出该命令的机器文档或事件流。 |
-| `--output` | `niceeval show` | string | Output format: text (default) or json. |
+| `--format` | `niceeval show` | string | Output format: text (default) or json. |
+| `--output` | `niceeval show` | string | Write an Assertion image to this file. |
+| `--runs` | `niceeval show` | boolean | List Runs, with optional continuation. |
+| `--artifacts` | `niceeval show` | boolean | List saved artifacts for one Attempt. |
+| `--artifact` | `niceeval show` | string | Read one saved artifact; requires --artifacts. |
+| `--image` | `niceeval show` | string | Save one Assertion image; requires --entry and --output. |
+| `--reprice` | `niceeval show` | string | Reprice recorded usage using a JSON pricing file. |
+| `--change` | `niceeval show` | string | Read before/after text and unified hunks for one change. |
 | `--eval` | `niceeval show` | string | Filter Eval ID path prefix; requires --experiment with --assertions. |
 | `--assertions` | `niceeval show` | boolean | Show Assertion roles, Verdict, Score, and reasons. |
 | `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |

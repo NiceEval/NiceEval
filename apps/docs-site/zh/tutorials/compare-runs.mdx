@@ -18,20 +18,10 @@ View 会同时打开两个 Run，你可以逐题对照通过与否、分数、�
 
 ## 让脚本和 CI 读比较结果
 
-自动化流程需要结构化的比较结果时，用 `runs.compare` 请求：
+自动化流程需要结构化的比较结果时，用 `show --compare --json`：
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v3",
-  "operation": {
-    "kind": "runs.compare",
-    "mode": "paired",
-    "leftRunIds": ["<baseline-run-id>"],
-    "rightRunIds": ["<candidate-run-id>"]
-  }
-}
-JSON
+pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --mode paired --json
 ```
 
 `mode` 决定怎样对齐两边：
@@ -44,10 +34,10 @@ JSON
 
 比较结果会如实给出两边各自的分母，以及没配上对的题、被排除的题和缺失的结果。缺失不会被当成零分或失败。条件不满足时，你会得到一个说明原因的具名错误，而不是一个看起来正常的数字。
 
-先用 `query explain` 检查请求是否合法，再正式运行：
+用 `--mode` 指定对齐方式，再加 `--json` 读取比较结果：
 
 ```sh
-pnpm --silent exec niceeval query explain --request compare.json
+pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --json
 ```
 
 ## 比较结果靠得住的前提

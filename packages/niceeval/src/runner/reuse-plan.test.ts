@@ -72,6 +72,7 @@ it("完整执行仍不能沿用含不适用计分证据的不完整 Score", asyn
     outcome: "completed",
   });
   const common = {
+    control: { state: "available", value: "none" },
     display: { groupPath: [] },
     criterion: { state: "unavailable", reason: "not-recorded" },
     materials: { source: { kind: "unavailable", reason: "not-recorded" }, evidence: [], coverage: { state: "complete" }, limitations: [] },

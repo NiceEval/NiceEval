@@ -74,6 +74,7 @@ export interface OverviewView {
             readonly originRunId: string;
             readonly originPlannedAttemptId: string;
             readonly verdict: Verdict | null;
+            readonly stoppedAt?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"];
             readonly score: Metric;
             readonly durationMs: Metric;
             readonly tokens: Metric;
@@ -119,7 +120,8 @@ export interface RunView {
   }[];
 }
 export interface AttemptView {
-  readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["diagnostics"];
+  readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"];
+  readonly stoppedAt?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"];
   readonly notes: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["notes"];
   readonly totalCosts?: InspectionSuccessDocumentFor<"attempt.usage">["usage"]["totalCosts"];
   readonly locator: string;
@@ -241,6 +243,7 @@ const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"]
       ? {
           ...member.publication,
           verdict: member.verdict,
+          stoppedAt: member.stoppedAt,
           score: metric(member.score),
           durationMs: metric(member.durationMs),
           tokens: metric(member.tokens),
@@ -308,12 +311,13 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.get">): R
 }
 // @concord-code
 // @concord-implements docs/feature/inspection/cli.md
-export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">, usage?: InspectionSuccessDocumentFor<"attempt.usage">, trace?: InspectionSuccessDocumentFor<"attempt.trace">): AttemptView {
+export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">, usage?: InspectionSuccessDocumentFor<"attempt.usage">): AttemptView {
   const value = document.attempt;
   return {
     locator: value.locator,
     notes: value.notes,
-    diagnostics: trace?.trace.diagnostics,
+    diagnostics: value.diagnostics,
+    stoppedAt: value.stoppedAt,
     totalCosts: usage?.usage.totalCosts,
     verdict: value.verdict,
     attemptId: value.core.attemptId,

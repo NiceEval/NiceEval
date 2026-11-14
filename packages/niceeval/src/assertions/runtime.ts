@@ -172,6 +172,7 @@ interface AssertionEntry {
   scorePoints: number | undefined;
   configurationClosed: boolean;
   stopConfigured: boolean;
+  control: "none" | "continued" | "stopped";
   stopPromise: Promise<unknown> | undefined;
   settled: EntrySettlement | undefined;
   pending: Deferred.Deferred<EntrySettlement> | undefined;
@@ -1242,12 +1243,14 @@ class AssertionsRuntimeImplementation {
     const occurrence = this.recordSourceOccurrence(entry, "stop");
     return result.then(
       (value) => {
+        entry.control = "continued";
         if (occurrence !== undefined && occurrence.outcome === undefined) {
           occurrence.outcome = "continued";
         }
         return value;
       },
       (error: unknown) => {
+        if (isAssertionStop(error)) entry.control = "stopped";
         if (occurrence !== undefined && occurrence.outcome === undefined) {
           if (isAssertionStop(error)) occurrence.outcome = "stopped";
           else if (isInterruptedAuthoringClosure(error)) occurrence.outcome = "interrupted";
@@ -1411,6 +1414,7 @@ class AssertionsRuntimeImplementation {
       scorePoints: input.directScorePoints,
       configurationClosed: false,
       stopConfigured: false,
+      control: "none",
       stopPromise: undefined,
       settled: undefined,
       pending: undefined,
@@ -1703,6 +1707,7 @@ class AssertionsRuntimeImplementation {
         requirement: this.isRequired(entry) ? "required" as const : "optional" as const,
         condition: this.conditionFor(entry),
       }),
+      control: Object.freeze({ state: "available" as const, value: entry.control }),
       observed: entry.kind === "boolean"
         ? Object.freeze({
             kind: "boolean" as const,

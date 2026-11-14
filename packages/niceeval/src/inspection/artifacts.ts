@@ -270,7 +270,7 @@ function requestInvalid(reason: string): Result.Result<never, InspectionArtifact
   return Result.fail(new InspectionArtifactError({ code: "inspection-request-invalid", reason }));
 }
 
-function readVerifiedRange(source: InspectionFactSource, metadata: PersistedContentMetadata, offset: number, limit: number): Uint8Array {
+export function readVerifiedRange(source: InspectionFactSource, metadata: PersistedContentMetadata, offset: number, limit: number): Uint8Array {
   const output = new Uint8Array(Math.min(limit, metadata.byteLength - offset));
   const digest = new InspectionSha256();
   let byteOffset = 0;

@@ -179,7 +179,7 @@ const attemptBlocks = (
               ? `absent (${member.publication.reason})`
               : "pending",
           member.publication.state === "published"
-            ? member.publication.verdict ?? "not-recorded"
+            ? `${member.publication.verdict ?? "not-recorded"}${(member.publication.stoppedAt?.state !== "available" || member.publication.stoppedAt.value === null) ? "" : " stopped"}`
             : member.publication.state,
           member.publication.state === "published"
             ? duration(member.publication.durationMs)
@@ -740,6 +740,7 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Planned attempt", value: value.plannedAttemptId },
             { key: "Outcome", value: value.outcome },
             { key: "Verdict", value: value.verdict ?? "not-available" },
+            ...((value.stoppedAt?.state !== "available" || value.stoppedAt.value === null) ? [] : [{ key: "Stopped", value: `Stopped at ${value.stoppedAt.value.label}; later steps did not run` }]),
             { key: "Score", value: score(value.score, value.verdict) },
           ],
         },
@@ -750,6 +751,7 @@ export function renderAttempt(value: AttemptView): string {
             entries: [
               { key: "Phase", value: diagnostic.phase },
               { key: "Code", value: diagnostic.code },
+              { key: "Evidence", value: `niceeval show ${value.locator} --execution --expand ${diagnostic.evidenceId}` },
               { key: "Error", value: diagnostic.summary },
               ...(diagnostic.summaryTruncated ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }] : []),
               // Command errors carry only a bounded output tail; the command record keeps the full stdout/stderr.
@@ -1383,6 +1385,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
     meta: `${value.kind} ${value.stableId}`,
     blocks: [],
   };
+  if (body.kind === "diagnostic") return terminal([heading, { kind: "code", text: `${body.phase} · ${body.code}\n${body.summary}` }]);
   if (body.kind === "execution-event") {
     const eventJson = safeEventJson({
       key: body.event.key,
@@ -1994,6 +1997,10 @@ function usageObservationValue(
 }
 
 export function renderDiff(value: DiffView): string {
+  if ((value.state === "complete" || value.state === "partial") && value.detail !== undefined) {
+    const { detail } = value;
+    return `Diff ${detail.path} (${detail.changeId})\nBefore: ${detail.before.state}\nAfter: ${detail.after.state}\n${detail.hunks.state === "available" ? detail.hunks.text : "Unified diff unavailable\n"}${detail.hunks.truncated ? `Truncated at byte ${detail.hunks.truncatedAtByte}; endpoint prefixes may be incomplete.\n` : ""}`;
+  }
   const statusBlocks: TerminalPanelContentBlock[] = [
     {
       kind: "keyValue",
@@ -2059,6 +2066,8 @@ export function renderDiff(value: DiffView): string {
               { key: "Path", value: change.path },
               { key: "Before", value: fileEndpoint(change.before) },
               { key: "After", value: fileEndpoint(change.after) },
+              ...([change.before, change.after].some((endpoint) => endpoint.state === "present" && endpoint.revision.kind === "text" && endpoint.revision.content === "available")
+                ? [{ key: "Next", value: `niceeval show ${value.locator} --diff --change ${change.changeId}` }] : []),
             ],
           },
         ],

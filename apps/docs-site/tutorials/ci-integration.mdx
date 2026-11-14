@@ -72,14 +72,14 @@ Once the run starts, the last NDJSON line is the receipt. Its `receipt.createdRu
 pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-To have a script process the results, first find the available queries, then send a complete request:
+To have a script process the results, add `--json` to the same `show` command:
 
 ```sh
-pnpm --silent exec niceeval query discover
+pnpm --silent exec niceeval show --runs --json
 ```
 
 If the command exits before the run starts because of an argument, configuration, or selection error, there is no receipt, and the terminal prints `error:`. Fix the command, Experiment, or selection directly. Do not guess a Run ID.
 
 ## Keep CI logs readable
 
-CI logs are for watching run progress and diagnostics. To dig into results, a person runs `niceeval show --run <run-id>` or `niceeval view --run <run-id>` locally with the Run ID from the receipt; scripts and AI run `query discover` first. Do not treat progress and diagnostic lines as a long-term result format.
+CI logs are for watching run progress and diagnostics. To dig into results, a person runs `niceeval show --run <run-id>` or `niceeval view --run <run-id>` locally with the Run ID from the receipt; scripts and AI run `show --runs --json` first. Do not treat progress and diagnostic lines as a long-term result format.

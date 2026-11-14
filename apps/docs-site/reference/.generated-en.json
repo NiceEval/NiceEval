@@ -103,7 +103,7 @@
   "cli-flags/show/--right": "Candidate Run ID; repeatable.",
   "cli-flags/show/--mode": "Comparison mode: paired (default), side-by-side, or exact.",
   "cli-flags/show/--max-regressions": "Maximum allowed regressions (non-negative integer; paired or exact).",
-  "cli-flags/show/--output": "Output format: text (default) or json.",
+  "cli-flags/show/--output": "Write an Assertion image to this file.",
   "cli-flags/show/--eval": "Filter Eval ID path prefix; requires --experiment with --assertions.",
   "cli-flags/show/--assertions": "Show Assertion roles, Verdict, Score, and reasons.",
   "cli-flags/show/--entry": "Select one exact Assertion entry ID; requires --assertions.",
@@ -368,5 +368,12 @@
   "cli-flags/run delete,run recover/--yes": "Confirm Run recovery or deletion.",
   "cli-flags/run delete,run export,run import,run list,run recover/--help": "Print Run command help.",
   "test-context/agentJudge": "Register a conversational Sandbox review; chat messages and scoring questions execute after ordinary assertions.",
-  "turn-handle/agentJudge": "Register a conversational Sandbox review; chat messages and scoring questions execute after ordinary assertions."
+  "turn-handle/agentJudge": "Register a conversational Sandbox review; chat messages and scoring questions execute after ordinary assertions.",
+  "cli-flags/show/--format": "Output format: text (default) or json.",
+  "cli-flags/show/--runs": "List Runs, with optional continuation.",
+  "cli-flags/show/--artifacts": "List saved artifacts for one Attempt.",
+  "cli-flags/show/--artifact": "Read one saved artifact; requires --artifacts.",
+  "cli-flags/show/--image": "Save one Assertion image; requires --entry and --output.",
+  "cli-flags/show/--reprice": "Reprice recorded usage using a JSON pricing file.",
+  "cli-flags/show/--change": "Read before/after text and unified hunks for one change."
 }

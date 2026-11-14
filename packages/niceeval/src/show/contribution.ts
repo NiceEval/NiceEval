@@ -1,5 +1,9 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/cli.md
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { InspectionRepricingInputSchema } from "../inspection/repricing.ts";
+import { ArtifactIdSchema } from "../record/codec/identifiers.ts";
 import { decodeAgentJudgeTrace, type AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 import { decodeBase64Bytes, InspectionSha256 } from "../inspection/bytes.ts";
 import { Effect, Result, Schema } from "effect";
@@ -79,7 +83,14 @@ export const SHOW_CLI_OPTIONS = Object.freeze({
   mode: option({ type: "string", help: help("Comparison mode: paired (default), side-by-side, or exact.") }),
   "max-regressions": option({ type: "string", help: help("Maximum allowed regressions (non-negative integer; paired or exact).") }),
   json: option({ type: "boolean", help: help("Print Inspection documents as JSON Lines.") }),
-  output: option({ type: "string", short: "o", help: help("Output format: text (default) or json.") }),
+  format: option({ type: "string", short: "o", help: help("Output format: text (default) or json.") }),
+  output: option({ type: "string", help: help("Write an Assertion image to this file.") }),
+  runs: option({ type: "boolean", help: help("List Runs, with optional continuation.") }),
+  artifacts: option({ type: "boolean", help: help("List saved artifacts for one Attempt.") }),
+  artifact: option({ type: "string", help: help("Read one saved artifact; requires --artifacts.") }),
+  image: option({ type: "string", help: help("Save one Assertion image; requires --entry and --output.") }),
+  reprice: option({ type: "string", help: help("Reprice recorded usage using a JSON pricing file.") }),
+  change: option({ type: "string", help: help("Read before/after text and unified hunks for one change.") }),
   eval: option({ type: "string", help: help("Filter Eval ID path prefix; requires --experiment with --assertions.") }),
   assertions: option({ type: "boolean", help: help("Show Assertion roles, Verdict, Score, and reasons.") }),
   entry: option({ type: "string", help: help("Select one exact Assertion entry ID; requires --assertions.") }),
@@ -147,7 +158,11 @@ Usage:
   niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>]
   niceeval show @<locator> --timing
   niceeval show @<locator> --usage
-  niceeval show @<locator> --diff
+  niceeval show @<locator> --diff [--change <id>]
+  niceeval show --runs [--continuation <token>] [--json]
+  niceeval show @<locator> --artifacts [--artifact <id>] [--json]
+  niceeval show @<locator> --usage --reprice <pricing-file> [--json]
+  niceeval show @<locator> --assertions --entry <id> --image <id> --output <file>
 
 Comparison:
   --compare --left <run-id> --right <run-id>
@@ -192,7 +207,7 @@ const failure = (operation: string, cause: unknown, exitCode = 1) => {
         cause.code === "inspection-record-integrity-failure"
       ? `Record integrity failure${cause.identity === undefined ? "" : ` for sealed Run ${cause.identity.runId}`}.`
       : cause instanceof InspectionOperationError
-        ? cause.code === "inspection-selection-missing" ||
+        ? cause.code === "unsupported-format" || cause.code === "inspection-selection-missing" ||
             cause.code === "inspection-result-invalid"
           ? cause.reason
           : "The Inspection operation could not be completed."
@@ -250,7 +265,7 @@ function runShow(
     if (typeof shortExperimentIds === "string") return yield* usage(shortExperimentIds);
     const experimentIds = [...primaryExperimentIds, ...shortExperimentIds];
     if (typeof experimentIds === "string") return yield* usage(experimentIds);
-    const output = parsed.values.output;
+    const output = parsed.values.format;
     if (output !== undefined && output !== "text" && output !== "json")
       return yield* usage("--output (-o) must be text or json.");
     if (parsed.values.json === true && output === "text")
@@ -272,8 +287,21 @@ function runShow(
     const timing = parsed.values.timing === true;
     const showUsage = parsed.values.usage === true;
     const diff = parsed.values.diff === true;
+    const runs = parsed.values.runs === true;
+    const artifacts = parsed.values.artifacts === true;
+    const artifactId = typeof parsed.values.artifact === "string" ? parsed.values.artifact : undefined;
+    const imageId = typeof parsed.values.image === "string" ? parsed.values.image : undefined;
+    const imageOutput = typeof parsed.values.output === "string" ? parsed.values.output : undefined;
+    const pricingFile = typeof parsed.values.reprice === "string" ? parsed.values.reprice : undefined;
+    const changeId = typeof parsed.values.change === "string" ? parsed.values.change : undefined;
+    if (artifactId !== undefined && !artifacts) return yield* usage("--artifact requires --artifacts.");
+    if (changeId !== undefined && !diff) return yield* usage("--change requires --diff.");
+    if (pricingFile !== undefined && !showUsage) return yield* usage("--reprice requires --usage.");
+    if (imageId !== undefined && (!assertions || entryId === undefined || imageOutput === undefined || json || full || compact))
+      return yield* usage("--image requires --assertions, --entry, and --output; JSON and material flags are not accepted.");
+    if (imageOutput !== undefined && imageId === undefined) return yield* usage("--output requires --image.");
     const all = parsed.values.all === true;
-    const detailModes = [assertions, source, execution, timing, showUsage, diff].filter(
+    const detailModes = [assertions, source, execution, timing, showUsage, diff, artifacts].filter(
       Boolean,
     ).length;
     const expand =
@@ -285,7 +313,7 @@ function runShow(
     const continuation = typeof parsed.values.continuation === "string" ? parsed.values.continuation : undefined;
     const listOptions = [actorId === undefined ? undefined : "--actor", eventType === undefined ? undefined : "--type", continuation === undefined ? undefined : "--continuation"]
       .filter((value) => value !== undefined);
-    if (listOptions.length > 0 && !execution)
+    if ((actorId !== undefined || eventType !== undefined || continuation !== undefined && !runs) && !execution)
       return yield* usage(`${listOptions.join(", ")} require --execution.`);
     if (listOptions.length > 0 && expand !== undefined)
       return yield* usage(`--expand cannot be combined with ${listOptions.join(", ")}.`);
@@ -322,6 +350,8 @@ function runShow(
         "--all applies only to Results, not --experiment, --run, or an Attempt locator.",
       );
     const compare = parsed.values.compare === true;
+    if (runs && (locator !== undefined || runIds.length > 0 || experimentIds.length > 0 || detailModes > 0 || all || reference || compare))
+      return yield* usage("--runs cannot be combined with other selectors.");
     const compareOptions = ["left", "right", "mode", "max-regressions"] as const;
     if (!compare && compareOptions.some((key) => parsed.values[key] !== undefined))
       return yield* usage("--left, --right, --mode, and --max-regressions require --compare.");
@@ -353,7 +383,7 @@ function runShow(
       : operationalInspectionSource(facts.cwd);
     return yield* Effect.scoped(
       Effect.gen(function* () {
-        const current = !compare && decodedLocator === undefined && runIds.length === 0 && experimentIds.length === 0 && typeof parsed.values.record !== "string";
+        const current = !runs && !compare && decodedLocator === undefined && runIds.length === 0 && experimentIds.length === 0 && typeof parsed.values.record !== "string";
         const prepare = current ? Effect.gen(function* () {
           const project = yield* ProjectConfiguration;
           const config = yield* project.load(facts.cwd).pipe(Effect.mapError((cause) => new CurrentTargetUnavailable({ code: "current-target-unavailable", reason: String(cause), cause })));
@@ -369,9 +399,9 @@ function runShow(
           Effect.try({
             try: evaluate,
             catch: (cause) => failure(`execute ${operation}`, cause,
-              json && !(cause instanceof InspectionOperationError && cause.code === "inspection-selection-missing") ? QUERY_FAILURE_EXIT_CODE : 1),
+              json ? QUERY_FAILURE_EXIT_CODE : 1),
           }).pipe(Effect.tapError((error) =>
-            !json || error.cause instanceof InspectionOperationError && error.cause.code === "inspection-selection-missing"
+            !json
               ? Effect.void
               : writeJson(queryFailureDocument(error, operation)),
           ));
@@ -389,6 +419,44 @@ function runShow(
             ? Effect.fail(failure("encode result", encoded.failure))
             : write("stdout", encoded.success);
         };
+        if (runs || artifacts || pricingFile !== undefined || imageId !== undefined) {
+          const selectedLocator = decodedLocator?.locator;
+          if (imageId !== undefined) {
+            const chunks: Uint8Array[] = [];
+            let offset = 0;
+            let expected: { byteLength: number; sha256: string } | undefined;
+            const hash = new InspectionSha256();
+            while (true) {
+              const document = yield* select("attempt.assertion.image", () => selectInspectionOperation(opened, {
+                kind: "attempt.assertion.image", locator: selectedLocator!, entryId: entryId!, imageId, offset,
+              }));
+              const image = document.image;
+              if (image.state !== "available") return yield* usage(`Assertion image is ${image.state}.`);
+              expected ??= image;
+              if (image.offset !== offset || image.byteLength !== expected.byteLength || image.sha256 !== expected.sha256)
+                return yield* usage("Assertion image metadata changed between pages.");
+              const bytes = decodeBase64Bytes(image.base64);
+              chunks.push(bytes); hash.update(bytes); offset += bytes.byteLength;
+              if (image.nextOffset === null) break;
+              if (bytes.byteLength === 0 || image.nextOffset !== offset) return yield* usage("Invalid image continuation.");
+            }
+            if (offset !== expected!.byteLength || hash.digestHex() !== expected!.sha256) return yield* usage("Assertion image digest mismatch.");
+            yield* Effect.tryPromise({ try: () => writeFile(resolve(facts.cwd, imageOutput!), Buffer.concat(chunks)), catch: (cause) => failure("write image", cause) });
+            yield* write("stdout", `Saved image to ${imageOutput}\n`);
+            return 0;
+          }
+          const operation: InspectionOperation = runs ? { kind: "run.list", ...(continuation === undefined ? {} : { continuation }) }
+            : artifacts ? artifactId === undefined ? { kind: "attempt.artifacts", locator: selectedLocator! }
+              : { kind: "attempt.artifact", locator: selectedLocator!, artifactId: yield* Effect.try({ try: () => Schema.decodeUnknownSync(ArtifactIdSchema)(artifactId), catch: (cause) => failure("decode artifact", cause) }) }
+            : { kind: "attempt.reprice", locator: selectedLocator!, pricing: yield* Effect.tryPromise({
+                try: async () => Schema.decodeUnknownSync(InspectionRepricingInputSchema, { onExcessProperty: "error" })(JSON.parse(await readFile(resolve(facts.cwd, pricingFile!), "utf8"))),
+                catch: (cause) => failure("read pricing", cause),
+              }) };
+          const document = yield* select(operation.kind, () => selectInspectionOperation(opened, operation));
+          if (json) yield* writeJson(document);
+          else yield* write("stdout", renderAdditionalProjection(document));
+          return 0;
+        }
         if (matrix) {
           const document = yield* select("experiments.assertions", () => selectInspectionOperation(opened, { kind: "experiments.assertions", experimentIds, ...(evalIdPrefix === undefined ? {} : { evalIdPrefix }) }));
           if (json) yield* writeJson(document);
@@ -403,7 +471,7 @@ function runShow(
           const operations = showOperations({
             current, runIds, experimentIds, locator: selectedLocator,
             slice: assertions ? "assertions" : source ? "source" : execution ? "execution" : timing ? "timing" : showUsage ? "usage" : diff ? "diff" : undefined,
-            entryIds: entries, projection: full ? "full" : "compact", actorId, eventType, continuation,
+            changeId, entryIds: entries, projection: full ? "full" : "compact", actorId, eventType, continuation,
           });
           for (const operation of operations) {
             const document = yield* select(execution && expand !== undefined ? "attempt.trace.detail" : operation.kind, () => execution && expand !== undefined
@@ -633,6 +701,7 @@ function runShow(
             selectInspectionOperation(opened, {
               kind: "attempt.diff",
               locator: selectedLocator,
+              ...(changeId === undefined ? {} : { changeId }),
             }),
           );
           yield* write(
@@ -654,15 +723,10 @@ function runShow(
         const attemptUsage = yield* select("attempt.usage", () =>
           selectInspectionOperation(opened, { kind: "attempt.usage", locator: selectedLocator }),
         );
-        const attemptTrace = document.attempt.core.outcome === "errored"
-          ? yield* select("attempt.trace", () =>
-            selectInspectionOperation(opened, { kind: "attempt.trace", locator: selectedLocator }),
-          )
-          : undefined;
         yield* write(
           "stdout",
           renderAttempt(
-            yield* project("attempt.get", () => projectAttempt(document, attemptUsage, attemptTrace)),
+            yield* project("attempt.get", () => projectAttempt(document, attemptUsage)),
           ),
         );
         return 0;
@@ -765,6 +829,7 @@ export function showOperations(input: {
   readonly actorId?: string;
   readonly eventType?: string;
   readonly continuation?: string;
+  readonly changeId?: string;
 }): readonly InspectionOperation[] {
   if (input.runIds.length > 0) return input.runIds.map((runId) => ({ kind: "run.get", runId }));
   if (input.experimentIds.length > 0 && input.slice === "assertions") return [{ kind: "experiments.assertions", experimentIds: [...new Set(input.experimentIds)].sort(), ...(input.evalIdPrefix === undefined ? {} : { evalIdPrefix: input.evalIdPrefix }) }];
@@ -781,7 +846,19 @@ export function showOperations(input: {
     }];
     case "timing": return [{ kind: "attempt.timing", locator }];
     case "usage": return [{ kind: "attempt.usage", locator }];
-    case "diff": return [{ kind: "attempt.diff", locator }];
+    case "diff": return [{ kind: "attempt.diff", locator, ...(input.changeId === undefined ? {} : { changeId: input.changeId }) }];
     default: return [{ kind: "attempt.get", locator }, { kind: "attempt.usage", locator }];
   }
+}
+
+function renderAdditionalProjection(document: InspectionDocument): string {
+  if (document.outcome !== "success") return "Inspection unavailable\n";
+  if (document.operation === "run.list") return `Runs\n${document.runs.map((run) => `${run.runId}  ${run.state}`).join("\n")}\n${document.continuation === undefined ? "" : `Next: niceeval show --runs --continuation '${document.continuation}'\n`}`;
+  if (document.operation === "attempt.reprice") return `Repriced costs  ${document.repricing.total.amount ?? "unknown"} USD (${document.repricing.total.state})\nApplication  ${document.repricing.application.amount ?? "unknown"}\nJudge  ${document.repricing.judge.amount ?? "unknown"}\n`;
+  if (document.operation === "attempt.artifacts") {
+    const artifacts = document.artifacts;
+    return `Artifacts  ${artifacts.state}\n${artifacts.state !== "available" ? "" : artifacts.value.artifacts.map((artifact) => `${artifact.artifactId}  ${artifact.label}  ${artifact.mediaType}  ${artifact.byteLength} bytes`).join("\n")}\n`;
+  }
+  if (document.operation === "attempt.artifact") return `Artifact  ${document.artifact.state}\n${document.artifact.state !== "available" ? "" : `${document.artifact.mediaType}  ${document.artifact.byteLength} bytes\n${document.artifact.base64}\n`}`;
+  return "";
 }

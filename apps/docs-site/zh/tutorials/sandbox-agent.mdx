@@ -226,9 +226,9 @@ pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
 pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2 --timing
 ```
 
-第一条显示完整错误、diagnostic 和已经完成的阶段。第二条显示每个阶段的耗时，能看出错误或超时发生在哪一步。脚本或 CI 要读取同样的信息时，用 `pnpm --silent exec niceeval query discover` 找到 Attempt trace 请求，再用 `query run` 执行。
+第一条显示完整错误、diagnostic 和已经完成的阶段。第二条显示每个阶段的耗时，能看出错误或超时发生在哪一步。脚本或 CI 要读取同样的信息时，运行 `pnpm --silent exec niceeval show @<locator> --execution --json`。
 
-步骤很多时，阶段树超过 80 个细节节点后只保留失败的、慢的和首尾几项，并提示省略了多少。要逐项核对，用 `query` 读取完整的 trace。Sandbox 创建失败可能发生在 trace 开始采集之前，所以错误信息不依赖 trace，`show @<locator>` 总能看到。
+步骤很多时，阶段树超过 80 个细节节点后只保留失败的、慢的和首尾几项，并提示省略了多少。要逐项核对，用 `show @<locator> --execution --json` 分页读取 trace。Sandbox 创建失败可能发生在 trace 开始采集之前，所以错误信息不依赖 trace，`show @<locator>` 总能看到。
 
 ## 把模型和 flags 传给 CLI
 

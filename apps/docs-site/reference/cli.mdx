@@ -1,10 +1,10 @@
 ---
 title: "CLI"
 sidebarTitle: "CLI"
-description: "Read run records with query, show, and view."
+description: "Read run records with show and view."
 ---
 
-Run evaluations with `niceeval exp`. There are three ways to read results: scripts and CI use `niceeval query` to get JSON, people and coding agents use `niceeval show` to drill down in a terminal, and `niceeval view` is for review in a browser.
+Run evaluations with `niceeval exp`. There are three ways to read results: scripts and CI use `niceeval show --json` to get JSON, people and coding agents use `niceeval show` to drill down in a terminal, and `niceeval view` is for review in a browser.
 
 All three read the same run record, `.niceeval/record.sqlite`. At the start of every read, NiceEval fixes a visibility boundary: results already written at that moment are visible, and anything written afterward does not leak into this read. Attempts already written are readable even while their Run is still running.
 
@@ -229,7 +229,7 @@ All three paths read the same results, but each owns its own layout and presenta
 
 | Goal | Use |
 | --- | --- |
-| Give a script or CI stable JSON | `niceeval query discover`, then `explain` / `run` |
+| Give a script or CI stable JSON | `niceeval show --json` |
 | Let a person or coding agent view a summary of the overview, a Run, an Experiment, or an Attempt in a terminal | `niceeval show` |
 | Review the overview or a Run in a browser | `niceeval view` |
 | Read the same results on another machine | Copy `.niceeval/record.sqlite`, then point to it with `--record` |
@@ -323,7 +323,14 @@ The table below is generated from each command's own option definitions. Flags n
 | `--mode` | `niceeval show` | string | Comparison mode: paired (default), side-by-side, or exact. |
 | `--max-regressions` | `niceeval show` | string | Maximum allowed regressions (non-negative integer; paired or exact). |
 | `--json` | `niceeval show` | boolean | Write this command's machine document or event stream. |
-| `--output` | `niceeval show` | string | Output format: text (default) or json. |
+| `--format` | `niceeval show` | string | Output format: text (default) or json. |
+| `--output` | `niceeval show` | string | Write an Assertion image to this file. |
+| `--runs` | `niceeval show` | boolean | List Runs, with optional continuation. |
+| `--artifacts` | `niceeval show` | boolean | List saved artifacts for one Attempt. |
+| `--artifact` | `niceeval show` | string | Read one saved artifact; requires --artifacts. |
+| `--image` | `niceeval show` | string | Save one Assertion image; requires --entry and --output. |
+| `--reprice` | `niceeval show` | string | Reprice recorded usage using a JSON pricing file. |
+| `--change` | `niceeval show` | string | Read before/after text and unified hunks for one change. |
 | `--eval` | `niceeval show` | string | Filter Eval ID path prefix; requires --experiment with --assertions. |
 | `--assertions` | `niceeval show` | boolean | Show Assertion roles, Verdict, Score, and reasons. |
 | `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |

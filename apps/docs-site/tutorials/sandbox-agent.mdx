@@ -226,9 +226,9 @@ pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
 pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2 --timing
 ```
 
-The first shows the full error, diagnostics, and completed phases. The second shows each phase's duration, so you can see which step errored or timed out. When a script or CI needs the same information, use `pnpm --silent exec niceeval query discover` to find the Attempt trace request, then run it with `query run`.
+The first shows the full error, diagnostics, and completed phases. The second shows each phase's duration, so you can see which step errored or timed out. When a script or CI needs the same information, run `pnpm --silent exec niceeval show @<locator> --execution --json`.
 
-When there are many steps, once the phase tree exceeds 80 detail nodes, only failed, slow, and the first and last few items are kept, with a note on how many were omitted. To check every item, read the full trace with `query`. A Sandbox creation failure can happen before trace collection starts, so the error does not depend on the trace and `show @<locator>` can always show it.
+When there are many steps, once the phase tree exceeds 80 detail nodes, only failed, slow, and the first and last few items are kept, with a note on how many were omitted. To check every item, page through the trace with `show @<locator> --execution --json`. A Sandbox creation failure can happen before trace collection starts, so the error does not depend on the trace and `show @<locator>` can always show it.
 
 ## Pass the model and flags to the CLI
 

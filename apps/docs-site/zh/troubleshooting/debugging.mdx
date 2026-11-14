@@ -6,7 +6,7 @@ description: "评估失败或出错时，从具体的 Run 或 Attempt 出发，�
 
 一批评估跑完，有几条 `failed` 或 `errored`。你要找到原因：是应用答错了、Adapter 映射漏了、环境没起来，还是断言写得太紧。
 
-从一个明确的 Run 或 Attempt 开始查。在终端用 `niceeval show`，在浏览器用 `niceeval view`；脚本和 CI 用 `query` 读 JSON。
+从一个明确的 Run 或 Attempt 开始查。在终端用 `niceeval show`，在浏览器用 `niceeval view`；脚本和 CI 用 `show --json` 读 JSON。
 
 ## 从 Run 找到出问题的 Attempt
 
@@ -52,16 +52,13 @@ pnpm exec niceeval show @<attempt-locator> --execution --expand <stable-id>
 
 ## 查清一条断言为什么得这个分
 
-问题落在某一条断言上时，用 `query` 取结构化详情。它会返回这条断言的各项贡献、测量值和 Judge 给出的理由：
+问题落在某一条断言上时，用 `show --assertions --entry <entry-id> --json` 取结构化详情。它会返回这条断言的各项贡献、测量值和 Judge 给出的理由：
 
-```text
-query discover
-→ attempt.get(locator)
-→ 从 assertions.entries 选择 entryId
-→ attempt.assertion.detail(locator, entryId)
+```sh
+pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --json
 ```
 
-不要从 `show` 的排版文本反推断言字段。完整 request 示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
+不要从 `show` 的排版文本反推断言字段。命令示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
 
 ## 常见开发期问题
 
@@ -86,7 +83,7 @@ query discover
 
 这里的格式版本是结果文件内部的标识，和 NiceEval 的 npm 包版本无关。不要通过修改数据库里的版本字段尝试升级。
 
-`show`、`query`、`run list`、`show --run` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史结果文件。读取时 NiceEval 在私有副本里自动升级，原文件、Run、Attempt 和引用都保持不变，不需要先运行评估。
+`show`、`show --json`、`run list`、`show --run` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史结果文件。读取时 NiceEval 在私有副本里自动升级，原文件、Run、Attempt 和引用都保持不变，不需要先运行评估。
 
 用 `--record` 读取时，文件必须是已经交付的完整单文件，读取期间不能被其它进程修改。文件还带着未合并的 WAL、仍有运行在写，或无法确认写入进程是否已经结束时，命令会拒绝读取。不要删除旁边的文件来绕过检查。
 
@@ -94,9 +91,9 @@ query discover
 
 ## 结果不完整或无法比较
 
-脚本或 CI 先运行 `pnpm --silent exec niceeval query discover` 找到合适的查询，再用 `explain` 检查 request，最后用 `run` 执行。结果会指出缺了哪些结果、有哪些问题、用了什么证据，以及怎样修正。
+脚本或 CI 用 `niceeval show --run <run-id> --json` 读取 Run。结果会指出缺失、问题、证据和修正方式。
 
-`query` 只输出 JSON，不适合人直接阅读。要逐项解释分数时，用 `attempt.get` 和 `attempt.assertion.detail`，不要只看汇总分数。
+`show --json` 只输出 JSON，不适合人直接阅读。要逐项解释分数时，用 `attempt.get` 和 `attempt.assertion.detail`，不要只看汇总分数。
 
 需要浏览器界面时运行 `pnpm exec niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要直接查询 SQLite 里的表。
 

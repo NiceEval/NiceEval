@@ -42,7 +42,7 @@ export type InspectionJson =
   | { readonly [key: string]: InspectionJson };
 
 export type InspectionSourceProvenance = { readonly kind: "project-record" | "external-record"; readonly publicationCutoffIdentity: string };
-export type InspectionFailureCode = "inspection-request-invalid" | "inspection-selection-missing" | "inspection-source-invalid" | "inspection-record-integrity-failure" | "inspection-operation-failed" | "inspection-result-invalid" | "evidence-budget-exceeded" | "restart-required";
+export type InspectionFailureCode = "unsupported-format" | "inspection-request-invalid" | "inspection-selection-missing" | "inspection-source-invalid" | "inspection-record-integrity-failure" | "inspection-operation-failed" | "inspection-result-invalid" | "evidence-budget-exceeded" | "restart-required";
 
 export function closeInspectionJson(value: unknown): InspectionJson | InspectionCodecError {
   const seen = new Set<object>();

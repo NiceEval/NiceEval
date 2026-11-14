@@ -25,7 +25,7 @@ pnpm exec niceeval show --run <run-id>
 pnpm exec niceeval view --run <run-id>
 ```
 
-With `--json`, the last line is this run's receipt. Its `createdRunIds` lists the new Runs, and `publicationCutoff` marks how far publication had reached when this run ended. Do not parse `publicationCutoff`; pass it to later commands as is. Scripts and CI first run `niceeval query discover` to find the available queries, then send a complete request.
+With `--json`, the last line is this run's receipt. Its `createdRunIds` lists the new Runs, and `publicationCutoff` marks how far publication had reached when this run ended. Do not parse `publicationCutoff`; pass it to later commands as is. Scripts and CI first run `niceeval show --runs --json` to list Runs, then use `show --run <run-id> --json` to read one Run.
 
 ## The browser page does not jump to new results by itself
 

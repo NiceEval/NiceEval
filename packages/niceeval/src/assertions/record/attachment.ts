@@ -121,6 +121,7 @@ export interface AssertionsAttachmentEntryInput<E, R> {
   readonly evaluation: AssertionEntryInput<AssertionsProvisionalContent>["evaluation"];
   readonly decision: AssertionEntryInput<AssertionsProvisionalContent>["decision"];
   readonly policy: AssertionEntryInput<AssertionsProvisionalContent>["policy"];
+  readonly control: AssertionEntryInput<AssertionsProvisionalContent>["control"];
   readonly contribution: AssertionEntryInput<AssertionsProvisionalContent>["contribution"];
   readonly explanationRetention: AssertionEntryInput<AssertionsProvisionalContent>["explanationRetention"];
 }
@@ -580,6 +581,7 @@ export function encodeSealedAssertionEntry(
       requirement: Object.freeze({ state: "available" as const, value: entry.policy.requirement }),
       condition: Object.freeze({ state: "available" as const, value: entry.policy.condition }),
     }),
+    control: entry.control,
     contribution: result.score,
     explanationRetention: entry.matcherArtifact !== undefined
       ? Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const })
@@ -665,6 +667,7 @@ function provisionalEntry<E, R>(
     evaluation: entry.evaluation,
     decision: entry.decision,
     policy: entry.policy,
+    control: entry.control,
     contribution: entry.contribution,
     explanationRetention: entry.explanationRetention,
   });
@@ -760,6 +763,7 @@ function materializeDocument<E, R>(
       evaluation: sealed.evaluation,
       decision: sealed.decision,
       policy: sealed.policy,
+      control: sealed.control,
       contribution: sealed.contribution,
       explanationRetention: sealed.explanationRetention,
     }));

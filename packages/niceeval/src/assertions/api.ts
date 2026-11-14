@@ -399,6 +399,7 @@ export interface SealedAssertionEntry {
   readonly limitations: readonly AssertionLimitation[];
   readonly result: AssertionResult;
   readonly policy: AssertionPolicy;
+  readonly control: import("./record/model.ts").AssertionControl;
   readonly observed: AssertionObserved;
   readonly matcherArtifact?: MatcherQueryArtifact;
 }

@@ -6,7 +6,7 @@ description: "When an eval fails or errors, start from a specific Run or Attempt
 
 A batch of evals has finished, and a few are `failed` or `errored`. You need to find the cause: the application answered wrong, the Adapter mapping missed something, the environment did not start, or an assertion is too strict.
 
-Start from a specific Run or Attempt. Use `niceeval show` in the terminal and `niceeval view` in the browser; scripts and CI use `query` to read JSON.
+Start from a specific Run or Attempt. Use `niceeval show` in the terminal and `niceeval view` in the browser; scripts and CI use `show --json` to read JSON.
 
 ## Find the problem Attempt from a Run
 
@@ -52,16 +52,13 @@ pnpm exec niceeval show @<attempt-locator> --execution --expand <stable-id>
 
 ## Find out why an assertion got this score
 
-When the problem comes down to one assertion, use `query` to get structured details. It returns that assertion's contributions, measurements, and the Judge's rationale:
+When the problem comes down to one assertion, use `show --assertions --entry <entry-id> --json` to get structured details. It returns that assertion's contributions, measurements, and the Judge's rationale:
 
-```text
-query discover
-→ attempt.get(locator)
-→ choose entryId from assertions.entries
-→ attempt.assertion.detail(locator, entryId)
+```sh
+pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --json
 ```
 
-Do not work backward from the formatted text of `show` to assertion fields. For a complete request example, see [View run results](/tutorials/viewing-results#see-why-an-assertion-got-its-score).
+Do not work backward from the formatted text of `show` to assertion fields. For command examples, see [View run results](/tutorials/viewing-results#see-why-an-assertion-got-its-score).
 
 ## Cannot open results
 
@@ -78,7 +75,7 @@ Published results cannot be edited by hand. When you need different results, run
 
 The format version here is an internal identifier of the results file and is unrelated to NiceEval's npm package version. Do not try to upgrade by editing the version field in the database.
 
-`show`, `query`, `run list`, `show --run`, and `view` can read historical results files in the 0.15, 0.16, and 0.17 formats directly. When reading, NiceEval upgrades them automatically in a private copy. The original file, Runs, Attempts, and references stay unchanged, and you do not need to run an eval first.
+`show`, `show --json`, `run list`, `show --run`, and `view` can read historical results files in the 0.15, 0.16, and 0.17 formats directly. When reading, NiceEval upgrades them automatically in a private copy. The original file, Runs, Attempts, and references stay unchanged, and you do not need to run an eval first.
 
 When reading with `--record`, the file must be a complete single file that has already been handed over, and no other process can modify it while it is read. The command refuses to read when the file still has unmerged WAL, a run is still writing to it, or NiceEval cannot confirm that the writing process has ended. Do not delete the files next to it to get around the check.
 
@@ -86,9 +83,9 @@ When you run write commands such as `exp` normally in a project, NiceEval first 
 
 ## Results are incomplete or cannot be compared
 
-Scripts or CI first run `pnpm --silent exec niceeval query discover` to find the right query, then use `explain` to check the request, and finally use `run` to execute it. The result shows which results are missing, what issues exist, which evidence was used, and how to fix it.
+Scripts and CI read a Run with `niceeval show --run <run-id> --json`. The result identifies missing results, issues, evidence, and corrections.
 
-`query` only outputs JSON and is not meant for people to read directly. To explain a score item by item, use `attempt.get` and `attempt.assertion.detail` instead of looking only at the summary score.
+`show --json` only outputs JSON and is not meant for people to read directly. To explain a score item by item, use `attempt.get` and `attempt.assertion.detail` instead of looking only at the summary score.
 
 When you need a browser interface, run `pnpm exec niceeval view --run <run-id> --no-open`. Do not parse the View page, and do not query the tables in SQLite directly.
 

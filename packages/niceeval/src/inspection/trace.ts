@@ -1932,6 +1932,7 @@ function projectDiagnostics(
     });
     return Object.freeze({
       diagnosticId: diagnostic.diagnosticId,
+      evidenceId: diagnostic.diagnosticId,
       sequence: diagnostic.sequence,
       turnId: diagnostic.turnId,
       phase: projectLifecyclePhase(diagnostic.phase),
@@ -2049,4 +2050,18 @@ function closeJson(value: unknown): InspectionJson {
 
 function jsonByteLength(value: unknown): number {
   return utf8ByteLength(JSON.stringify(value));
+}
+
+/** Bounded diagnostic projection shared by the Attempt overview and execution outline. */
+export function projectAttemptDiagnostics(attachment?: TraceAttachmentInput): InspectionTraceResult["diagnostics"] {
+  return projectDiagnostics(readRunnerDiagnostics(attachment));
+}
+
+/** Resolve a saved diagnostic by the Evidence ID advertised in attempt.get. */
+export function projectDiagnosticDetail(attachment: TraceAttachmentInput | undefined, evidenceId: string) {
+  const diagnostics = readRunnerDiagnostics(attachment);
+  if (diagnostics.state !== "available") return undefined;
+  const diagnostic = diagnostics.value.segments.find((item) => item.diagnosticId === evidenceId);
+  return diagnostic === undefined ? undefined : { kind: "diagnostic" as const, evidenceId,
+    phase: projectLifecyclePhase(diagnostic.phase), code: diagnostic.code, summary: diagnostic.summary };
 }

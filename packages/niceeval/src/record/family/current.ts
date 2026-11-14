@@ -59,7 +59,7 @@ export const NiceEvalCurrentRecordAttachments = Object.freeze({
   attemptNotes: current(attemptNotesRecordAttachment, 1),
   adapterUsage: current(adapterUsageRecordAttachment, 4),
   judgeUsage: current(judgeUsageRecordAttachment, 1),
-  assertions: current(assertionsRecordAttachment, 4),
+  assertions: current(assertionsRecordAttachment, 5),
   attemptCost: current(attemptCostRecordAttachment, 1),
   agentTurns: current(agentTurnsRecordAttachment, 4),
   turnContexts: current(turnContextsRecordAttachment, 2),

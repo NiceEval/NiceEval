@@ -1186,6 +1186,10 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     evaluation,
     decision,
     policy: Schema.toType(AssertionDecisionPolicySchema),
+    control: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("available"), value: Schema.Literals(["none", "continued", "stopped"]) }),
+      Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
+    ]),
     contribution: Schema.Union([Schema.toType(NoScoreContributionSchema), Schema.toType(EarnedScoreContributionSchema), Schema.toType(UnavailableScoreContributionSchema)]),
     explanationRetention,
   }).check(
@@ -1232,6 +1236,10 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     evaluation,
     decision,
     policy: Schema.toType(AssertionDecisionPolicySchema),
+    control: Schema.Union([
+      Schema.Struct({ state: Schema.Literal("available"), value: Schema.Literals(["none", "continued", "stopped"]) }),
+      Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
+    ]),
     contribution: Schema.Union([Schema.toType(NoScoreContributionSchema), Schema.toType(EarnedScoreContributionSchema), Schema.toType(UnavailableScoreContributionSchema)]),
     explanationRetention,
   });

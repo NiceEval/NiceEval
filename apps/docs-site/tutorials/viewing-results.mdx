@@ -1,7 +1,7 @@
 ---
 title: "View Run Results: Find the Cause of Failure from the Overview"
 sidebarTitle: "View Results"
-description: "After evals run, use niceeval show in the terminal to drill down from the overview to the failed run and see its conversation, durations, usage, and file changes; browse with view in the browser; and have scripts and CI read JSON with query."
+description: "After evals run, use niceeval show in the terminal to drill down from the overview to the failed run and see its conversation, durations, usage, and file changes; browse with view in the browser; and have scripts and CI read JSON with show --json."
 ---
 
 A batch of evals finishes and the terminal shows `FAILED`: 3 of 12 did not pass. You want to know which ones, what the Agent actually said in those runs, which tools it called, and why it did not meet the assertions.
@@ -12,7 +12,7 @@ NiceEval gives different readers three entry points, all reading the same result
 |---|---|---|
 | `niceeval show` | You and Coding Agents, in the terminal | Finding failures quickly and drilling into details |
 | `niceeval view` | People, in the browser | Browsing full conversations, duration waterfalls, and comparing several Runs |
-| `niceeval query` | Scripts and CI, and Agents that need exact fields | Reading structured JSON |
+| `niceeval show --json` | Scripts and CI, and Agents that need exact fields | Reading structured JSON |
 
 Results are readable as soon as each Attempt finishes; you do not have to wait for the whole batch.
 
@@ -149,43 +149,29 @@ When new results are published, the page prompts you to refresh and only switche
 
 ## See why an assertion got its score
 
-`show` tells you which assertion failed. To see the reasons the Judge gave and exactly how many points a scoring item got, read that assertion's detail with `query`. First get this run's list of assertions:
+`show` tells you which assertion failed. To see the reasons the Judge gave and exactly how many points a scoring item got, read that assertion's detail with `show --assertions --entry <entry-id> --json`. First get this run's list of assertions:
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v2",
-  "operation": { "kind": "attempt.get", "locator": "@1K1P0VJAPVJ12" }
-}
-JSON
+pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --json
 ```
 
 Pick an `entryId` from the returned `assertions.entries`, then read its detail:
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v2",
-  "operation": {
-    "kind": "attempt.assertion.detail",
-    "locator": "@1K1P0VJAPVJ12",
-    "entryId": "<entry-id>"
-  }
-}
-JSON
+pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --assertions --entry <entry-id> --json
 ```
 
 In the detail, contribution is how many points this item earned, evaluation is the actual measured result, and the Judge's reasons are in explanation. When a field is missing or marked `unavailable`, interpret it by the returned reason; do not infer it from other fields.
 
 ## Let scripts and CI read results
 
-`query` outputs only JSON and does no terminal formatting. Do not parse the text output of `show`, and do not read files under `.niceeval/` directly; the format may change between versions.
+`show --json` outputs only JSON and does no terminal formatting. Do not parse the text output of `show`, and do not read files under `.niceeval/` directly; the format may change between versions.
 
 ```sh
-pnpm --silent exec niceeval query discover
+pnpm --silent exec niceeval show --runs --json
 ```
 
-`discover` lists every request type the current version supports, such as listing Runs, reading a Run summary, reading Attempt details, traces, diffs, and comparing two Runs. After writing a request following the [CLI reference](/reference/cli), first check it with `query explain --request <file>`, then run it with `query run --request <file>`.
+`show --runs --json` lists Runs; `show --run <run-id> --json` reads one Run. See the [CLI reference](/reference/cli) for other selectors.
 
 In pnpm projects, add `--silent`; otherwise pnpm's own output gets mixed into the JSON.
 

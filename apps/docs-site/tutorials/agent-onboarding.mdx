@@ -105,7 +105,7 @@ pnpm exec niceeval show               # View results in the terminal
 
 When a person wants to compare results in the browser, run `pnpm exec niceeval view`.
 
-Follow the [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) to run, view, change, and rerun. When a machine needs to read the results, first run `pnpm --silent exec niceeval query discover`, then send a complete request. For ways to view results, see [View Run Results](/tutorials/viewing-results).
+Follow the [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) to run, view, change, and rerun. When a machine needs to read the results, use `pnpm --silent exec niceeval show --run <run-id> --json`. For ways to view results, see [View Run Results](/tutorials/viewing-results).
 
 Sort by final status first, then decide whether to change anything:
 

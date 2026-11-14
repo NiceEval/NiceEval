@@ -6,7 +6,7 @@ description: "团队已经在用 Braintrust 或自己的看板时，用 Reporter
 
 你的团队已经在 Braintrust 上看实验结果，或者有一个内部看板。你希望 NiceEval 跑完后，结果自动出现在那里，不用手动导出。
 
-Reporter 做的就是这件事：在这一次运行过程中，把结果发给外部系统。它只负责“这一次”的上报，NiceEval 保存的结果不会因此改变。事后要重新读取、比较或分享结果，仍然用 `show`、`view` 和 `query`。
+Reporter 做的就是这件事：在这一次运行过程中，把结果发给外部系统。它只负责“这一次”的上报，NiceEval 保存的结果不会因此改变。事后要重新读取、比较或分享结果，仍然用 `show` 和 `view`。
 
 一次 `niceeval exp` 会同时产出这几样东西：
 
@@ -39,7 +39,7 @@ Reporter 不能：
 
 - 把外部系统里的数据当作 NiceEval 的结果；
 - 代替 NiceEval 保存的判定、用量、断言或诊断；
-- 让 `query`、`show` 或 `view` 改从外部系统读数据；
+- 让 `show` 或 `view` 改从外部系统读数据；
 - 把外部系统的结果写回 `.niceeval/record.sqlite`。
 
 ## 在 CI 中输出 JUnit
@@ -65,7 +65,7 @@ pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-脚本需要结构化结果时，先运行 `pnpm --silent exec niceeval query discover` 找到可用的查询。
+脚本需要结构化结果时，运行 `pnpm --silent exec niceeval show --run <run-id> --json`。
 
 不要把进度或诊断行当作长期保存的结果格式。它们只描述这一次运行正在发生什么。
 
@@ -75,4 +75,4 @@ pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
 2. 凭据放在环境变量里，不写进任何输出。
 3. CI 门禁看退出状态。
 4. 用 receipt 的 `createdRunIds` 把外部工作流和 NiceEval 保存的结果关联起来。
-5. 需要审阅结果时，人用 `show` 或 `view` 打开那个 Run，自动化流程用 `query`。
+5. 需要审阅结果时，人用 `show` 或 `view` 打开那个 Run，自动化流程用 `show --json`。

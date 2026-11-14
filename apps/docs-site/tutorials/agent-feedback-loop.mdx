@@ -27,7 +27,7 @@ NiceEval ships its Chinese docs in the npm package's `docs-site/zh/` directory a
 The guidance separates two things:
 
 - When writing code, the Agent can of course read project source such as `evals/` and `agents/`.
-- When it needs to prove what happened in a run, it uses `niceeval show` in the terminal, `niceeval query` for stable JSON, and `niceeval view` for browser review. It does not scan raw files under `.niceeval/`, and it does not reconstruct a historical run from current source.
+- When it needs to prove what happened in a run, it uses `niceeval show` in the terminal, `niceeval show --json` for stable JSON, and `niceeval view` for browser review. It does not scan raw files under `.niceeval/`, and it does not reconstruct a historical run from current source.
 
 When these commands cannot show the needed information, have the Agent report "the CLI cannot show this" instead of working around it by reading files.
 
@@ -86,15 +86,14 @@ pnpm exec niceeval show @<attempt-locator> --execution
 
 `show @<attempt-locator>` shows the Attempt's verdict, assertion summary, whether each part is complete, and known limitations. `--source` shows the eval source used in this run and the result of each assertion. `--execution` shows a condensed execution trace; to expand one item, copy the ID next to it and run `--execution --expand <stable-id>`.
 
-When a script, CI, or Agent needs to process results reliably, first find the available queries, then send a complete request:
+When a script, CI, or Agent needs to process results reliably, add `--json` to the same `show` command:
 
 ```sh
-pnpm --silent exec niceeval query discover
-pnpm --silent exec niceeval query explain --request request.json
-pnpm --silent exec niceeval query run --request request.json
+pnpm --silent exec niceeval show --runs --json
+pnpm --silent exec niceeval show --run <run-id> --json
 ```
 
-`query` returns JSON in a fixed format. When a person wants to look in the browser, use `pnpm exec niceeval view --run <run-id>`; `view` does not accept locators.
+`show --json` returns JSON in a fixed format. When a person wants to look in the browser, use `pnpm exec niceeval view --run <run-id>`; `view` does not accept locators.
 
 ## Decide the next step from the status
 

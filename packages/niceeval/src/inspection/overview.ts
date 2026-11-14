@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/inspection/README.md
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
+import { stoppedAssertion } from "./stop.ts";
 import { PlannedAttemptMetricsSchema, type PlannedAttemptMember } from "./results.ts";
 import { attemptVerdict } from "./verdict.ts";
 import type { VerdictState } from "../eval/record/verdict.ts";
@@ -158,6 +159,7 @@ interface AttemptAnalysis {
   readonly assertionsState: InspectionAssertionsRead["state"] | "attempt-missing";
   readonly evaluationKind: "pass" | "points" | null;
   readonly verdict: VerdictState | null;
+  readonly stoppedAt?: ReturnType<typeof stoppedAssertion>;
   readonly score: {
     readonly hasPoints: boolean;
     readonly earned: number;
@@ -405,6 +407,7 @@ function analyzeAttempt(
 
   return Object.freeze({
     assertionsState: "available" as const,
+    stoppedAt: stoppedAssertion(assertions),
     evaluationKind: hasPoints ? "points" as const : "pass" as const,
     verdict: attemptVerdict(resolved, assertions),
     score: Object.freeze({
@@ -645,6 +648,7 @@ const decodeMemberMetrics = Schema.decodeUnknownSync(PlannedAttemptMetricsSchema
 function memberMetrics(selected: AnalyzedMember) {
   return Object.freeze(decodeMemberMetrics({
     verdict: selected.analysis.verdict,
+    stoppedAt: selected.analysis.stoppedAt ?? { state: "unavailable", reason: "not-recorded" },
     score: scoreForMember(selected),
     costUSD: costForAnalyses([selected]),
     durationMs: metricForSlots([selected], "durationMs", "ms", "average"),

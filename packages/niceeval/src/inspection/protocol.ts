@@ -137,7 +137,7 @@ export const inspectionProtocolRegistry = Object.freeze({
   "attempt.timing": spec({ request: operation("attempt.timing", { locator: AttemptLocatorSchema }), result: { timing: InspectionAttemptTimingResultSchema }, factKinds: ["runner-activities"] }),
   "attempt.usage": spec({ request: operation("attempt.usage", { locator: AttemptLocatorSchema }), result: { usage: InspectionAttemptUsageResultSchema }, factKinds: ["agent-turns", "adapter-usage", "judge-usage"] }),
   "attempt.reprice": spec({ request: operation("attempt.reprice", { locator: AttemptLocatorSchema, pricing: InspectionRepricingInputSchema }), result: { repricing: InspectionRepricingResultSchema }, factKinds: ["adapter-usage", "judge-usage"] }),
-  "attempt.diff": spec({ request: operation("attempt.diff", { locator: AttemptLocatorSchema }), result: { diff: InspectionAttemptDiffResultSchema }, factKinds: ["file-changes"] }),
+  "attempt.diff": spec({ request: operation("attempt.diff", { locator: AttemptLocatorSchema, changeId: Schema.optional(Schema.String) }), result: { diff: InspectionAttemptDiffResultSchema }, factKinds: ["file-changes"] }),
   "attempt.sources": spec({ request: operation("attempt.sources", { locator: AttemptLocatorSchema }), result: { sources: InspectionSourcesResultSchema }, factKinds: ["assertions", "sources"] }),
   "attempt.artifacts": spec({ request: operation("attempt.artifacts", { locator: AttemptLocatorSchema, offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactsPageLimitSchema) }), result: { artifacts: ArtifactsResultSchema }, factKinds: ["artifacts"] }),
   "attempt.artifact": spec({ request: operation("attempt.artifact", { locator: AttemptLocatorSchema, artifactId: ArtifactIdSchema, offset: Schema.optional(InspectionArtifactOffsetSchema), limit: Schema.optional(InspectionArtifactLimitSchema) }), result: { artifact: InspectionArtifactResultSchema }, factKinds: ["artifacts"] }),
@@ -197,7 +197,7 @@ export const InspectionFailureDocumentSchema = Schema.Struct({
   protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("failure"),
   operation: Schema.NullOr(InspectionOperationIdSchema),
   failure: Schema.Struct({
-    code: Schema.Literals(["inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid", "evidence-budget-exceeded", "restart-required", "current-target-unavailable"]),
+    code: Schema.Literals(["unsupported-format", "inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid", "evidence-budget-exceeded", "restart-required", "current-target-unavailable"]),
     reason: Schema.String,
     identity: Schema.optional(Schema.Struct({ runId: Schema.String })),
     correction: Schema.Literals(["fix-request", "choose-existing-selection", "fix-record-source", "retry", "upgrade-or-report", "restart"]),

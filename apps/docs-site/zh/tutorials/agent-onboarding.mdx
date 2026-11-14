@@ -115,7 +115,7 @@ pnpm exec niceeval show               # 在终端查看结果
 
 人想在浏览器里对比结果时，运行 `pnpm exec niceeval view`。
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、查看、修改和重跑。需要机器读取时，先执行 `pnpm --silent exec niceeval query discover`，再发送完整 request。查看方式见[查看运行结果](/zh/tutorials/viewing-results)。
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、查看、修改和重跑。需要机器读取时，使用 `pnpm --silent exec niceeval show --run <run-id> --json`。查看方式见[查看运行结果](/zh/tutorials/viewing-results)。
 
 先按终态分流，再决定是否修改：
 
