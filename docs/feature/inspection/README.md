@@ -22,11 +22,11 @@ Run facts at PublicationCutoff → shared fixed Inspection operation
 | 历史 Results 与 Experiment × Eval 结果 | `overview.get` 一次交付历史各 cell 的成员、分母、Verdict tally、pass rate、score、USD cost、coverage 和可下钻 Attempt locator。 |
 | 一个精确 Experiment 的概览 | `experiment.get` 在 Inspection 内按 exact `experimentId` 选择，交付该 Experiment 的 aggregate、Eval cells 与 Attempt locators。 |
 | 一个 Run 的概览 | `run.get` 按 exact `runId` 一次关闭 state、时间、expected/published/missing、pending/absence、Planned attempt binding、Verdict、score、coverage、usage 与 limitations；`run.list` 承接分页发现。 |
-| 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付身份、outcome、Verdict、score、Assertion 摘要、Evidence coverage 与 section 状态。`attempt.sources`、`attempt.trace`、`attempt.timing`、`attempt.usage` 和 `attempt.diff` 交付各固定切片。 |
+| 一个精确 Attempt 的依据与调试事实 | `attempt.get` 交付身份、outcome、Verdict、score、Assertion 摘要、Evidence coverage、section 状态、诊断条目与提前停止的位置。`attempt.sources`、`attempt.trace`、`attempt.timing`、`attempt.usage` 和 `attempt.diff` 交付各固定切片。 |
 | execution 中的一项已发布详情 | `attempt.trace.detail` 按 `itemId`、`toolOccurrenceId`、`commandId` 或通用轨迹的稳定 `eventId` / `evidenceId` 读取一项详情；原始 JSON Evidence 按已登记定位读取并有界续读。`attempt.assertion.detail` 按 `entryId` 交付一项 Assertion 调试依据。 |
 | 收窄查看范围 | 每个 operation 的穷尽 request 只接受其声明的 Experiment、Run、Attempt 或 comparison selection。 |
 | 两组 Run 的质量与成本 | `runs.compare` 以 `side-by-side`、`exact` 或 `paired` 返回成员、分母、missing、Evidence 与可比性。 |
-| 一个请求会读取什么、怎样解释 | `discover` 给出可问的 operation；`explain` 给出 source、selection、comparison mode 与 fact kinds；`run` 给出同一语义下的结果。 |
+| 一个请求会读取什么、怎样解释 | `discover` 给出可问的 operation 与对应的 `show` 命令，`discover <operation>` 给出 request schema 与最小 request；`explain` 给出 source、selection、comparison mode 与 fact kinds；`run` 给出同一语义下的结果。 |
 
 machine protocol 始终保留 selection audit、denominator、limits、issues 与 Evidence。
 Human renderer 只能在这些闭合值上排序、控制宽度和选择文字布局，不得重算业务判断。

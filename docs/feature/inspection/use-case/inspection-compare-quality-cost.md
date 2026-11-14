@@ -126,7 +126,7 @@ niceeval show @1K1P0VJAPVJ12
 niceeval show @<locator> --usage
 ```
 
-机器调用沿用 `query discover` 和 `query explain`，将下面的请求交给 `query run`：
+机器调用用同一条命令加 `--json`；需要直接发协议 request 时，等价的 request 如下：
 
 ```json
 {

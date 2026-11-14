@@ -50,7 +50,7 @@
 
 ## 结果
 
-脚本拿到的数据与终端显示的出自同一组 operation 和同一个 cutoff，不需要另写解码或换算。`show --json` 不新增任何 result shape；`show` 没有投影的 operation（如 `attempt.assertion.image`）仍只经 `query` 读取。
+脚本拿到的数据与终端显示的出自同一组 operation 和同一个 cutoff，不需要另写解码或换算。`show --json` 不新增任何 result shape；每个固定 operation 都有 `show` 投影，`attempt.assertion.image` 把字节写入 `--output` 指定的文件。
 
 | 情形 | 用户看到的结果 |
 | --- | --- |

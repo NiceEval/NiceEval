@@ -3,8 +3,9 @@
 ## 面向资源的检查与协议通道
 
 Inspection 提供面向资源的统一检查入口与底层协议通道。
-`niceeval show` 是面向资源的一等公开检查入口：默认输出人类友好的终端排版，追加 `--json` 原样交付结构化机器数据，终端与自动化脚本共享同一套实体定位符与投影语义。
-`niceeval query` 是底层机器协议信封通道，用于跨进程通信与 `niceeval.query/v3` 规范验证。
+`niceeval show` 是人、coding agent 与脚本唯一需要学的检查入口：默认输出终端排版，追加 `--json` 交付结构化数据，三者共用同一套定位符与投影。
+每个固定 operation 都有对应的 `show` 投影，读者不需要为了某一类事实改学 JSON request。
+`niceeval query` 是底层协议通道，服务 Testkit、跨进程调用与 `niceeval.query/v3` 的校验；随包指引、`init` 写入的项目指引与公开教程都不把它当作读结果的入口。
 
 ```sh
 niceeval query discover
@@ -12,15 +13,13 @@ niceeval query explain (--request <file|-> | --request-json <document>)
 niceeval query run (--request <file|-> | --request-json <document>)
 ```
 
-`query` 仅作为底层 protocol envelope 通道保留，服务不能写 stdin、也不应在工作区写临时文件的沙箱调用。
 `--request` 读取文件或 stdin；`--request-json` 将完整 JSON 字符串作为 argv 传入。
 两条路径得到同一份 request 后执行相同的解码与校验，不设简写或 flag 化的 selector。
-日常检查与自动化脚本优先使用下文的 `niceeval show` 及 `--json` 旗标；浏览器体验仍由
-[Insight](../insight/README.md) 的 `niceeval view` 提供。
+日常检查与自动化脚本使用下文的 `niceeval show` 及 `--json`；浏览器体验由 [Insight](../insight/README.md) 的 `niceeval view` 提供。
 
-`discover` 是静态 catalog，不打开 source。它输出 `outcome: discovery` 的 compact bootstrap，只列出当前版本支持的
-operation ID。request shape 由本契约与公开参考文档定义；调用方可用 `explain` 校验完整 request。discover 不复制
-schema、selector、错误 union 或最小 follow-up request。
+`discover` 是静态 catalog，不打开 source。不带参数时输出 `outcome: discovery`，列出当前版本支持的 operation ID 与各自对应的 `show` 命令形态。
+`discover <operation>` 交付这一个 operation 的 request JSON Schema 与一份可直接运行的最小 request。
+JSON Schema 由 decoder 所用的同一个 Schema 生成，不另写一份；未知 operation 返回 failure，并列出可用 ID。
 
 `explain` 与 `run` 才读取完整 request，由 source adapter 打开 facts。前者先交付将读取的 source、selection、
 comparison mode 与 fact kinds，避免调用方先取重 payload。后者以 `outcome: success` 交付闭合 protocol result。
@@ -351,6 +350,9 @@ partial、not-recorded 或 unavailable 的 score、coverage、usage 不按失败
 success 编码 operation result，并带 `behaviorVersion`、source、`PublicationCutoff`、selection、limits、issues 与 Evidence。
 explanation 交付同一 operation 的读取范围与 fact kinds。failure 交付 code、reason 与 correction。
 
+request 不通过 Schema 解码时，`inspection-request-invalid` 的 failure 附带 `issues`：每项给出 JSON Pointer 形式的 `path`、期望的类型或取值 `expected`，以及实际值的类型 `received`，不回显实际值本身。
+`issues` 按出现顺序最多 20 项，超出时写明省略数量；`operation.kind` 本身无效时，第一项列出可用的 operation ID。
+
 每个 source-bound success/explanation document 的 `source` 固定为
 `{ kind: facts.kind, publicationCutoffIdentity: facts.cutoff().identity }`。
 它不含路径。`PublicationCutoff` 只有 [Run 架构](../run/architecture/README.md#publicationcutoff) 定义的 `storeGeneration` 与 `revision`，不含 Run 计数；
@@ -384,7 +386,11 @@ niceeval show @<locator> --source [--json | -o text|json]
 niceeval show @<locator> --execution [--actor <id>] [--type <event-type>] [--continuation <token>] [--expand <stable-id>] [--json | -o text|json]
 niceeval show @<locator> --timing [--json | -o text|json]
 niceeval show @<locator> --usage [--json | -o text|json]
-niceeval show @<locator> --diff [--json | -o text|json]
+niceeval show @<locator> --diff [--change <change-id>] [--json | -o text|json]
+niceeval show @<locator> --artifacts [--artifact <artifact-id>] [--json | -o text|json]
+niceeval show @<locator> --assertions --entry <id> --image <image-id> --output <file>
+niceeval show @<locator> --usage --reprice <pricing-file> [--json | -o text|json]
+niceeval show --runs [--continuation <token>] [--json | -o text|json]
 ```
 
 人在终端里找到想看的投影后，加 `-o json` 或 `--json` 就得到同一批数据的机器形态，换成 `niceeval view` 就在浏览器打开同一个 selection；三者用同一套 selector，不需要改写成另一种语法。`--json` 是 `-o json` 的等价一等缩写。
@@ -449,6 +455,13 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   指定 `--max-regressions <n>` 时，若退化题数超过门限则以非零退出，用于 CI 对照版本发布门禁（见 [REL-6](../../../user-story.md#周芷宁在发布前选出更合适的-agent-配置)）。
 - `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations。另给出可复制的 assertions、source、execution、timing、usage 和 diff 后续命令。
+
+  `attempt.get` 的 result 直接带 `diagnostics.items`：每项的 phase、code、有界 summary、是否截断与可展开的 Evidence ID。
+  它回答“这个 Attempt 为什么是这个结果”，读者不必再调用 `attempt.trace`；文本视图的 Failure diagnostics 只渲染这个字段，`--json` 因此给出同一批诊断。
+
+  Assertions 里有 stop condition 不满足、让后续步骤没有运行时，`attempt.get` 的 result 带 `stoppedAt`：那条 Assertion 的 entryId 与 label。
+  它从已保存的 Assertions 推出，不改变 Verdict；只停不 gate 的检查失败后 Verdict 仍可能是 `passed`。
+  文本视图在 Verdict 下写 `Stopped at <label>; later steps did not run`，Experiment 与 Results 表在该 Attempt 的 Verdict 后标注 `stopped`。
   errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，诊断下方直接指向 `--execution` 里的命令输出。
   overview 与 `--execution` 的 `cache-degraded` 诊断显示具名降级 reason 与受影响的 Before 节点；若有远端调用错误，给出可展开的稳定 ID。
 - `@<locator> --assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
@@ -467,6 +480,14 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 - `@<locator> --usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> --diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
+  每个正文可读的 text change 后给出 `Next: niceeval show @<locator> --diff --change <change-id>`。
+- `@<locator> --diff --change <change-id>` 调用带 `changeId` 的 `attempt.diff`。result 带这一项的 before / after 正文与 Inspection 按两端正文算出的 unified hunks。
+  正文与 hunks 各有字节上限，超出时写明截断位置；binary、oversized 与采集失败的一端如实标注，不伪造空正文。文本视图按 unified diff 显示。
+- `@<locator> --artifacts` 调用 `attempt.artifacts` 列出已保存的 artifact；加 `--artifact <artifact-id>` 时调用 `attempt.artifact` 读取一项。
+- `@<locator> --assertions --entry <id> --image <image-id> --output <file>` 调用 `attempt.assertion.image`，把图片字节写入 `--output` 指定的文件；
+  `--image` 必须与 `--entry` 和 `--output` 同用，不向终端写二进制。
+- `@<locator> --usage --reprice <pricing-file>` 调用 `attempt.reprice`，`<pricing-file>` 是下文[只读重计价](#只读重计价历史成本)的 `pricing` 对象。
+- `--runs` 调用 `run.list` 分页列出 Run；`--continuation` 读取下一页。
 
 ### 输出格式
 
@@ -486,13 +507,16 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 | `@<locator> --execution` | `attempt.trace`，带 `--actor`、`--type` 与 `--continuation`；有 `--expand` 时为 `attempt.trace.detail` |
 | `@<locator> --timing` | `attempt.timing` |
 | `@<locator> --usage` | `attempt.usage` |
-| `@<locator> --diff` | `attempt.diff` |
+| `@<locator> --diff` | `attempt.diff`；有 `--change` 时带 `changeId` |
+| `@<locator> --artifacts` | `attempt.artifacts`；有 `--artifact` 时为 `attempt.artifact` |
+| `@<locator> --usage --reprice` | `attempt.reprice` |
+| `--runs` | `run.list` |
 
 `-o json` 不输出标题、表格、`See more`、`Next` 或浏览器提示，也不按 `--all` 改变内容：`--all` 只控制文本展开，因此不能与 `-o json` 同用。
 某个 operation 返回 `outcome: failure` 时，该行照常写出，后续 operation 不再调用，进程以与 `query run` 相同的状态退出。
 argv 错误、source 无法打开等无法形成 document 的失败与文本模式一样只写 stderr。
 
-`show` 没有投影的 operation（例如 `attempt.assertion.image`）只经 `query` 读取。`-o` 不接受 `csv`、`table` 或其它取值。
+`attempt.assertion.image` 只把字节写入文件，不接受 `-o json`。`-o` 不接受 `csv`、`table` 或其它取值。
 
 ### 在浏览器打开同一个 selection
 
@@ -945,8 +969,8 @@ JSON 对象、字符串、布尔值与 `null` 不参与这些数值统计。旧 
 
 ## 只读重计价历史成本
 
-用 `query discover` 查看 operation，将下面的请求写入 reprice.json。先用 `query explain --request reprice.json` 核对请求，
-再用 `query run --request reprice.json` 计算 exact locator 对应的只读估算：
+把价格表写入 pricing.json，再用 `niceeval show @<locator> --usage --reprice pricing.json` 计算这个 Attempt 的只读估算。
+等价的协议 request 如下，`pricing` 字段就是 pricing.json 的内容：
 
 ```json
 {

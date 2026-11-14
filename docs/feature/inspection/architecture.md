@@ -111,7 +111,7 @@ token `MetricValue` 优先使用 Adapter 持久化的每次物理调用输入总
 `paired`，并交付 left/right/pair denominator、unmatched、excluded、missing、issues 与 Evidence。
 
 Attempt operation 都使用 canonical locator。`attempt.get` 交付身份、outcome、Verdict、score、Assertion 索引、Evidence
-coverage、limitations 与 section states。sources、trace、timing、usage、diff 和 artifacts 各自关闭一个固定 evidence
+coverage、limitations、section states、诊断条目与 `stoppedAt`。sources、trace、timing、usage、diff 和 artifacts 各自关闭一个固定 evidence
 切片；detail 只接受 outline 暴露的稳定 `entryId`、`itemId`、`toolOccurrenceId` 或 `commandId`。
 
 required shape 缺失是 typed protocol error。只有 operation 声明的 empty、partial、unavailable、invalid、omitted 或

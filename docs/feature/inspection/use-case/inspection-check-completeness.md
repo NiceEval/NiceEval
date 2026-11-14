@@ -1,14 +1,13 @@
 # 核对数据完整度
 
-自动化先发现固定 operation，再在一个 `PublicationCutoff` 下核对 Run 是否完整：
+自动化在一个 `PublicationCutoff` 下核对 Run 是否完整：
 
 ```sh
-niceeval query discover
-niceeval query explain --request operation.json
-niceeval query run --request operation.json
+niceeval show --runs --json
+niceeval show --run <run-id> --json
 ```
 
-选择 `run.get` 与 exact `runId` 后，结果一次交付完整 expected Planned attempts、`expected`／`published`／`missing`、Planned attempt binding、
+`show --run` 调用 `run.get`，按 exact `runId` 读取，结果一次交付完整 expected Planned attempts、`expected`／`published`／`missing`、Planned attempt binding、
 Attempt locator、coverage 与每项指标自己的分母。Run 仍为 `active` 时，missing Planned attempt 显示 `pending`；Run 进入终态后，
 同一 Planned attempt 显示具名 `absenceReason`。两种情况都不会伪造失败 Attempt 或把缺失按零计入指标。
 
