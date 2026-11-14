@@ -329,7 +329,7 @@ type SubmitEvaluationInput = (
 ### 审计、用量与读回
 
 - 每次模型请求按 Judge 用量登记，与其它受管 Judge 共用费用、预算与取消路径。
-- 一次会话的完整轨迹由它的各道评分题共享，每道题的审计引用同一份轨迹并保存自己的提交。轨迹包含评审实际收到的内容：每轮模型输出、工具调用参数、有限工具结果与截断标记、最终提交。截断前的原始文件和命令输出不属于完整轨迹承诺。`niceeval show @<locator> --assertions --entry <id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
+- 一次会话的完整轨迹由它的各道评分题共享，每道题的审计引用同一份轨迹并保存自己的提交。轨迹包含评审实际收到的内容：每轮模型输出、工具调用参数、有限工具结果与截断标记、最终提交。截断前的原始文件和命令输出不属于完整轨迹承诺。`niceeval show @<locator> ae_<id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
 - 理由与证据是模型的自述，不证明引用对象存在、模型实际读到或判断正确。工具轨迹留存实际观察范围，供人复核（[T-12](../../taste.md#t-12)）。
 
 ### 不做什么
@@ -340,8 +340,8 @@ type SubmitEvaluationInput = (
 
 ### 验收
 
-- 安装后的 CLI 运行一条带 Sandbox 的 Eval：评审读取被测 agent 写的文件并提交，Assertion detail 显示 measurement、理由、证据与工具轨迹；Judge 用量出现在 `show --usage`。
-- 评审写入文件后，`show --diff` 仍只显示被测 agent 的改动。
+- 安装后的 CLI 运行一条带 Sandbox 的 Eval：评审读取被测 agent 写的文件并提交，Assertion detail 显示 measurement、理由、证据与工具轨迹；Judge 用量出现在 `show @<locator> usage`。
+- 评审写入文件后，`show @<locator> diff` 仍只显示被测 agent 的改动。
 - 评审不提交、超过轮次或期限、传输失败得到 unavailable；畸形模型协议与 HTTP 400 得到 errored。非法提交可修正；合法提交后同批工具与后续请求均为零。
 - direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
 - 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对登记 Agent Judge：规划阶段报 `judge.agent-shared-sandbox`；Agent Judge 挂 `.stop()` 登记报错；普通断言的 stop 屏障不触发 Agent Judge。

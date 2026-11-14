@@ -14,7 +14,7 @@
 1. 把三个 Experiment 的判据排成矩阵。 {#matrix}
 
    ```sh
-   niceeval show --experiment harness/v0.19.0 --experiment harness/v0.20.0 --experiment harness/canary --assertions
+   niceeval show exp:harness/v0.19.0 exp:harness/v0.20.0 exp:harness/canary assertions
    ```
 
    预期结果：每个 Eval 一张表。第一行是各列的判定与得分，其后每行一条判据；各列不全相同的行带有可见标记。
@@ -27,7 +27,7 @@
 3. 再看带标记的行，并下钻。 {#distinct}
 
    ```sh
-   niceeval show @<locator> --assertions --entry <entry-id> --full
+   niceeval show @<locator> ae_<id> --full
    ```
 
    预期结果：从表头复制丢分那一列的 locator，读到这条判据在那次 Attempt 里的材料与理由，确认差异来自候选而不是偶然。
@@ -35,7 +35,7 @@
 4. 只看一道题。 {#narrow}
 
    ```sh
-   niceeval show --experiment install/v0.20.0 --experiment install/canary --assertions --eval install/db-gpt
+   niceeval show exp:install/v0.20.0 exp:install/canary assertions --eval install/db-gpt
    ```
 
 ## 结果

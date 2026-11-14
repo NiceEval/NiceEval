@@ -9,7 +9,7 @@
 ## 全流程
 
 1. **取证**。
-   用 `niceeval view --run <run-id>` 打开 Run overview，再从页面的 Run/Attempt 导航进入该 Attempt 详情，看结构化错误的
+   用 `niceeval view run:<run-id>` 打开 Run overview，再从页面的 Run/Attempt 导航进入该 Attempt 详情，看结构化错误的
    message 有没有重试摘要后缀，再进入对应分支。
 
 2. **有后缀:重试耗尽的失败**。

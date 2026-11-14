@@ -83,11 +83,11 @@ partial 轨迹仅供诊断，不重新决定它。
 持久化的文件变化由固定 Inspection operation 读取：
 
 ```sh
-# 先由 discover 取得 operation schema，再用完整 request 请求解释或结果。
-niceeval query discover
-niceeval query explain --request attempt-diff.request.json
-niceeval query run --request attempt-diff.request.json
+# 先看这次读取的范围，再取结果；单个文件的 diff 用 fc_ 开头的稳定 ID。
+niceeval show @<locator> diff --explain
+niceeval show @<locator> diff --json
+niceeval show @<locator> fc_<id>
 ```
 
-family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。固定 operation 不给 query 或 View 任何额外特权，
+family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。固定 operation 不给 `show` 或 View 任何额外特权，
 也不承担 schema migration；格式演进只由 Record maintenance 的相邻 migration 处理。

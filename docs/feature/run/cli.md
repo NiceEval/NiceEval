@@ -4,7 +4,7 @@ Run 生命周期命令为：
 
 ```sh
 niceeval run list [--state <state>]... [--experiment <id-prefix>] [--limit <n>] [--invocation <invocation-id>] [--record <file>] [--json]
-niceeval show --run <run-id> [--record <file>] [--json]
+niceeval show run:<run-id> [--record <file>] [--json]
 niceeval run delete <run-id> [--yes] [--json]
 niceeval run recover <run-id> [--yes] [--json]
 niceeval run recover --orphaned [--yes] [--json]
@@ -66,7 +66,7 @@ interface RunListDocument {
 观察附带取证时间，不属于 PublicationCutoff 上的历史事实，也不授予恢复权限。只读 portable Record 不对当前机器取证，显示 `owner unknown`。
 存在 `owner gone` 的 Run 时，Human 输出末尾给出 `Next: niceeval run recover --orphaned`。
 
-`show --run` 消费唯一 canonical Run Inspection operation `run.get`，不拼接多份近义 operation，也不使用 Run Host 自己的投影。结果包含 Run identity、state、
+`show run:<run-id>` 消费唯一 canonical Run Inspection operation `run.get`，不拼接多份近义 operation，也不使用 Run Host 自己的投影。结果包含 Run identity、state、
 expected/published/missing、Planned attempt bindings、Attempt locators、absence、Verdict、score、Evidence、usage 与 limitations。
 
 `run delete` 只接受终态 Run。目标仍为 `active` 时提示先 recover；存在 incoming reference 时零删除，并列出依赖
@@ -106,7 +106,7 @@ interface RunRecoverOrphanedDocument {
 对 active Invocation，`invocation show` 还列出每个已派发、尚未发布的 Planned attempt，让另一个终端里的人或 agent 不必解读运行日志：
 
 - Experiment ID、Eval ID 与从 1 开始的 Attempt 序号；
-- 当前阶段及进入该阶段的时间。阶段取自 Runner 的 lifecycle，与 live 面板和 `show @<locator> --timing` 使用同一组名称；
+- 当前阶段及进入该阶段的时间。阶段取自 Runner 的 lifecycle，与 live 面板和 `show @<locator> timing` 使用同一组名称；
 - Sandbox provider 名与 provider 原生的实例标识（例如 Instabox 的实例名、Docker 的容器名）。实例尚未创建或 Eval 不使用 Sandbox 时写明没有；
 - 最近一条 Attempt detail 及其时间，与非 TTY Human 输出的 detail 行是同一份文本。
 
@@ -126,7 +126,7 @@ canonical Record 固定为项目内 `.niceeval/record.sqlite`。受控退出会�
 只读验证通过后才成功。portable gate 仅由正在收尾的 Invocation 发起，且任何 active work 都会完整拒绝；该文件本身即可直接复制或归档。
 跨机器分片汇合使用 `run import`，离线审计交付选定子集使用 `run export`；无需手工运行 `clean` 或 `migrate` 命令。
 
-`show`、`query`、`run list/show` 与 `view` 可以直接读取支持的历史 portable Record，无需先运行评估。
+`show`、`compare`、`run list` 与 `view` 可以直接读取支持的历史 portable Record，无需先运行评估。
 历史格式只在私有副本中迁移；原件、历史 Run 与引用不被改写，也不创建新 Run。
-`query --record <file>` 的外部输入必须是已交付、无并发修改的单文件 Record。未知格式、非空 WAL、损坏文件或无法证明的 owner 状态明确拒绝。
+`show --record <file>` 的外部输入必须是已交付、无并发修改的单文件 Record。未知格式、非空 WAL、损坏文件或无法证明的 owner 状态明确拒绝。
 项目 operational 读取保留当前格式的实时事实；输入选择、原件保护与失败边界统一见 [自动迁移](architecture/README.md#自动迁移)。

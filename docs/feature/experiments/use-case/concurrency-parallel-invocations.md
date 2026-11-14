@@ -17,7 +17,7 @@ niceeval exp compare --max-concurrency 2
 
 终端 A 和 B 的 Run create 一经提交就可见。已发布 Attempt 也不等 Run 收口就能被读取，并可在当次 policy 复核后 carry 或 accept。`active` Run 未绑定的 expected Planned attempt 显示 `pending`。
 
-每条 Invocation 在 planning 开始时固定 cutoff。该 cutoff 之后发布的 Attempt 留给下一次 planning；`query`、`view` 与 `exp --dry` 也使用同样的固定边界。
+每条 Invocation 在 planning 开始时固定 cutoff。该 cutoff 之后发布的 Attempt 留给下一次 planning；`show`、`view` 与 `exp --dry` 也使用同样的固定边界。
 
 是否让两个 Invocation 派发同一 logical Planned attempt，由 Coordination 的 execution deduplication（执行去重）和
 dispatch claim（派发占用）决定。它们使用唯一 `.niceeval/record.sqlite` 的 case-lock rows，不读取另一个 writer 的目录或 local build。

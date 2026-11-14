@@ -3,7 +3,7 @@
 先按目标选择路径。行为与公开形状由 [CLI](../cli.md)、[Library](../library.md) 和 [Run](../README.md) 拥有。
 叶子用例串联调用与反馈，不另定义契约。
 
-## 查看：`run list`、`show --run`、`--invocation`、`--json`
+## 查看：`run list`、`show run:<run-id>`、`--invocation`、`--json`
 
 - [查看运行](查看运行.md)：从列表找到 exact Run，辨别已发布结果与缺口。
 - [应用中列出运行](应用中列出运行.md)：Node 应用用 `runHost.list` 获取运行列表。

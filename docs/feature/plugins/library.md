@@ -87,4 +87,4 @@ MCP headers 与 env 不进入身份。
 
 Plugin 回调函数体不进入投影。只改 Experiment 模块中的回调可继续 carry；修改 `identity` 或使用 `--rerun all` 请求重跑。
 Eval 模块及其静态 import 仍受 sourceClosure 规则约束。没有 Plugin 的 Experiment 保持既有 config identity。
-`show`、`query` 与 `view` 展示生效条件的 `name`、`key`、`identity`；这些值不会自动进入 flags。
+`show` 与 `view` 展示生效条件的 `name`、`key`、`identity`；这些值不会自动进入 flags。

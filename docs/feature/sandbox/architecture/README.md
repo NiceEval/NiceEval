@@ -135,7 +135,7 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 这样「沙箱起了多久、before 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。
 
-阶段与时间树口径见 [Phase Timings](../../../engineering/benchmark/README.md)。machine query 与 [Insight](../../insight/README.md) 都通过 [Inspection](../../inspection/README.md) 的固定 operation 读取闭合 Observability facts。
+阶段与时间树口径见 [Phase Timings](../../../engineering/benchmark/README.md)。`show --json` 与 [Insight](../../insight/README.md) 都通过 [Inspection](../../inspection/README.md) 的固定 operation 读取闭合 Observability facts。
 
 核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.install 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../../eval/use-case/sandbox-coding.md)。
 
@@ -249,9 +249,9 @@ Record maintenance 安排，Sandbox 不建立 converter、group 或读取侧 fal
 公开读取经过固定 Inspection operation 的闭合 result，而不是 Sandbox 直接暴露存储能力：
 
 ```sh
-# 使用 discover 返回的 schema 形成 `attempt.diff`、`attempt.trace` 等固定 request。
-niceeval query discover
-niceeval query run --request attempt-diff.request.json
+# `diff` 调用 `attempt.diff`，`execution` 调用 `attempt.trace`。
+niceeval show @<locator> diff --json
+niceeval show @<locator> execution --json
 ```
 
 `history` 从 Observability 闭合 Sandbox 的命令、timing 与 diagnostics；`changes` 从 FileChanges 闭合归因文件事实。

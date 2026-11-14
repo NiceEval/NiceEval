@@ -1,6 +1,6 @@
 # State —— CLI
 
-Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`show` 与 `query` 读取 Run 事实。下列输出均为预期输出。
+Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`show` 读取 Run 事实。下列输出均为预期输出。
 
 ## 状态反馈
 
@@ -44,7 +44,7 @@ type StateEvent = StateEventIdentity & (
 );
 ```
 
-saved 事件只在全部 binding 提交后发送，每个 binding 一条。NDJSON 是进度，不是持久回执；进程在 commit 后退出可能尚未输出，query 仍能读到已提交事实。
+saved 事件只在全部 binding 提交后发送，每个 binding 一条。NDJSON 是进度，不是持久回执；进程在 commit 后退出可能尚未输出，`show` 仍能读到已提交事实。
 一项恢复失败时对失败项发 restore-failed，整个集合发 save-skipped；其它项不能输出 saved。
 
 ## `--dry`

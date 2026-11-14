@@ -37,7 +37,7 @@
 4. agent 用公开命令读结果并回答。 {#answer}
 
    ```sh
-   pnpm exec niceeval show --run <run-id>
+   pnpm exec niceeval show run:<run-id>
    ```
 
    预期结果：agent 报告 Run ID、通过与失败的条目，以及与上一次相比的变化，并给出用户可以复核的命令。

@@ -48,7 +48,7 @@ portable gate 仍按 [Run 架构](README.md#portable-gate-与不可信输入) �
 
 ## 按需读取与验证
 
-短生命周期 query/show 直接打开 read-only connection，完成固定查询后关闭，不启动 storage worker。
+短生命周期 `show`/`compare` 直接打开 read-only connection，完成固定查询后关闭，不启动 storage worker。
 持续 Inspection session 也不长期持有 read transaction；固定 cutoff 后只读所需的 immutable facts。
 family 查询使用 owner/family index，只有消费 Content 时才按 ordinal 增量读取 chunk，并在交付后释放临时 buffer。
 整体 bytes/text 读取在分配前执行 admission；拒绝整体读取不能把有效 Content 判为 corruption。

@@ -54,7 +54,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - Turn 必须是本 Attempt、本 Session 实际返回的对象，不能用字段相同的对象冒充。旧 Turn、跨 Session Turn、已关闭实例和同一 Session 的在途驱动均在模型请求与 Adapter 发送前拒绝。
 - 生成期间若另一次驱动改变 Session，提交前重新检查最新 Turn 与待处理请求，拒绝过时回答。全部回答先校验再一次性 `respond`：拒绝重复、缺失或未知 requestId，不按回答数组位置匹配。
 - 请求带非空 options 时只接受该请求的 option id；没有选项时只接受文本。提交按原请求顺序构造结构化 responses 与文本投影，不能仅把文字拼进 `send`。合法提交至多驱动一次下一轮。
-- 发出的内容就是这一轮的用户消息，出现在被测 agent 的 history 与 `show --execution` 里，和作者手写的消息一样计入这轮输入。
+- 发出的内容就是这一轮的用户消息，出现在被测 agent 的 history 与 `show @<locator> execution` 里，和作者手写的消息一样计入这轮输入。
 - 作者需要多轮问答时自己写循环，例如 `while (turn.status === "waiting") turn = await user.reply(turn)`；NiceEval 不内置自动对话轮次。
 
 ## 模拟用户 agent
@@ -102,8 +102,8 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 ## 执行活动、用量与身份
 
 - 每次已准入的 `reply` 持久化一条模拟用户执行活动：所回答的 Turn、模型实际收到的提问、提交的回答、请求与响应、耗时与失败原因。失败且未发送下一轮时也保留该活动。
-- `show --execution` 在源 Turn 之后、回答驱动的新 Turn 之前显示它。活动使用独立 producer / actor，不把 pi 工具、内部历史、压缩或模型用量归入被测 Agent 的事件、工具断言或 `t.trace`。
-- `--expand <stable-id>` 经 `attempt.trace.detail` 读取封存证据，展开模拟用户的 pi 对话（收到的提问、assistant 消息与提交）；分页与容量限制沿用 Inspection，不从宿主现场重建。审计不包含凭据。
+- `show @<locator> execution` 在源 Turn 之后、回答驱动的新 Turn 之前显示它。活动使用独立 producer / actor，不把 pi 工具、内部历史、压缩或模型用量归入被测 Agent 的事件、工具断言或 `t.trace`。
+- `show @<locator> <stable-id>` 经 `attempt.trace.detail` 读取封存证据，展开模拟用户的 pi 对话（收到的提问、assistant 消息与提交）；分页与容量限制沿用 Inspection，不从宿主现场重建。审计不包含凭据。
 - 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的执行活动自带用量：pi 报告的每条 assistant 消息与压缩摘要的 input / output tokens，以及按 Judge Provider 显式估价得到的金额（没有估价时为 unpriced）；失败请求的用量同样保留。
 - Attempt 的费用汇总把模拟用户作为独立费用类别 `simulated-user` 计入，和 application、judge 并列显示；未使用模拟用户的 Attempt 没有这个类别。
 - 不给每个 Eval 单独增加身份输入。instructions 写在 Eval 源码里，随源码闭包进入 Eval 指纹；生效的 Judge runtime 已经属于既有配置身份，换模型照常让旧结果失效。未使用模拟用户的 Eval 身份不变。
@@ -114,7 +114,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 本地 OpenAI 兼容 mock 脚本化 `reply_to_agent`：被测 agent 发出两个 `input.requested`（一个带选项、一个文本），`reply` 为两者各提交一条回答并以同一 session 的下一轮发送；带选项的请求收到 option id；返回的 Turn 是新一轮。
 - 被测 agent 没有提问时，`reply` 发送一条消息；同一个 `SimulatedUser` 的第二次 `reply`，请求里含第一次的问答历史。
 - mock 不调用工具或参数一直非法时，Attempt 为 errored，原因 `simulated-user-failed`；TypeSafe 零发送并抛出 `simulated-user-unsupported-provider`。
-- `show --execution` 显示模拟用户活动与回答；执行活动含用量，Attempt 费用汇总含 `simulated-user` 类别。
+- `show @<locator> execution` 显示模拟用户活动与回答；执行活动含用量，Attempt 费用汇总含 `simulated-user` 类别。
 - 未使用模拟用户的 Eval 身份不变（identity-domains release 测试保持通过）；改 instructions 或换 Judge 模型让使用它的 Eval 重新规划。
 - mock 只替代外部 HTTP 模型边界，执行安装后候选的公开 API 与真实 pi coding agent 会话。兼容 Chat Completions 的流式工具调用与 usage，捕获请求体；不 mock 核心 Session、工具校验、缓存规划或账本。
 - 重复、缺失、未知 requestId、错误 option id 与同时出现 text/optionId 均零 Adapter 发送；修正后只发送一次。旧 Turn、跨 Session Turn、并发驱动与关闭后调用均按错误契约拒绝，互不污染历史。

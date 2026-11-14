@@ -59,7 +59,7 @@
 6. agent 交接。 {#report}
 
    ```sh
-   pnpm exec niceeval show --run <run-id>
+   pnpm exec niceeval show run:<run-id>
    ```
 
    预期结果：agent 列出新增与修改的文件、实际运行的命令、Run ID 与每条结果，并给出上面这条可以由用户自己执行的查看命令。
@@ -83,4 +83,4 @@
 - [Format](../format.md)：`INIT.md` 与项目指引的结构。
 - [Architecture](../architecture.md)：每一跳的归属与版本规则。
 - [Experiments CLI](../../experiments/cli/README.md)：`exp`、`--dry` 与 receipt。
-- [Inspection CLI](../../inspection/cli.md)：`show --run` 的输出。
+- [Inspection CLI](../../inspection/cli.md)：`show run:<run-id>` 的输出。

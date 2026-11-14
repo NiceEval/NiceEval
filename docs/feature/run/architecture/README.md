@@ -120,7 +120,7 @@ generation 都绑定同一 cutoff；无法在当前 generation 继续时返回 r
 | 读取 | 访问路径 | 使用者 |
 |---|---|---|
 | 固定 cutoff | publication clock 单行 | 全部 Inspection 与 reuse planning |
-| exact Run | run resource 主键 | `run.get`、`show --run`、reuse source |
+| exact Run | run resource 主键 | `run.get`、`show run:<run-id>`、reuse source |
 | exact locator | `(attempt_locator, origin_run_id, attempt_id)` | Attempt operation、显式采用 |
 | Experiment 的 Run | Run 行的 `(experiment_id, run_id)` | `experiment.get` |
 | Experiment 的 source 候选 | run resource 的 `(experiment_id, created_revision, run_id)` | reuse source barrier |
@@ -183,7 +183,7 @@ source adapter 只以文件只读方式捕获到私有目录，不让 SQLite 打
 格式识别同时验证版本、完整历史 schema、fingerprint 与数据，不接受仅改版本字符串的文件。
 历史 schema 与转换器由内部 SQLite adapter 固定维护，不把迁移回调作为用户扩展 API。
 
-`show`、`query`、`run list/show` 与 `view` 无需先执行评估即可读取支持的历史 portable Record。
+`show`、`compare`、`run list` 与 `view` 无需先执行评估即可读取支持的历史 portable Record。
 读取不加载评估配置、不创建 Run，也不调用项目 writer。
 项目输入没有 WAL、SHM 或 journal 时，先捕获私有副本，再按精确 schema 分流；没有 sidecar 不等于 portable。
 当前格式不进入可写迁移，沿用项目 operational 读取语义；历史格式仍须证明 portable、idle 与 sealed 才可迁移。

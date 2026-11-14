@@ -5,18 +5,18 @@ Inspection 通过固定 operation 读取并解释已发布 Run 与 Attempt 事�
 
 ```text
 Run facts at PublicationCutoff → shared fixed Inspection operation
-                              ├── Node adapter → niceeval query | niceeval show
+                              ├── Node adapter → niceeval show | niceeval compare
                               └── browser adapter → Insight View
 ```
 
 ## 资源检查与查看结果
 
-`niceeval show` 是固定 Inspection operation 的面向资源统一读面，服务人读审阅与脚本自动化。
-默认输出格式化终端视图，追加 `--json` 原样交付结构化机器数据。
-`niceeval query` 是底层机器协议信封通道，用于跨进程通信与低级协议校验。
-它只格式化已关闭的 result，不建立第二个 selection、聚合或证据语义。
+`niceeval show <对象> [<方面>] [<ID>]` 是固定 Inspection operation 的统一读面，服务人读审阅与脚本自动化。
+默认输出格式化终端视图，追加 `--json` 交付机器 document；每份输出都给出可粘贴的下一步命令，document 以 `links` 交付同一批命令。
+比较两组 Run 使用 `niceeval compare`。
+它们只格式化已关闭的 result，不建立第二个 selection、聚合或证据语义。语法见 [CLI](cli.md#读结果的命令)。
 
-| 用户要查看什么 | 固定 query 怎样承接 |
+| 用户要查看什么 | 固定 operation 怎样承接 |
 | --- | --- |
 | 当前项目还缺哪些结果 | `project.get` 一次交付当前目标分母、covered、gap、旧结果入口及可用成员的质量指标；默认本机 Show 与 View 呈现同一结果。 |
 | 历史 Results 与 Experiment × Eval 结果 | `overview.get` 一次交付历史各 cell 的成员、分母、Verdict tally、pass rate、score、USD cost、coverage 和可下钻 Attempt locator。 |
@@ -26,19 +26,19 @@ Run facts at PublicationCutoff → shared fixed Inspection operation
 | execution 中的一项已发布详情 | `attempt.trace.detail` 按 `itemId`、`toolOccurrenceId`、`commandId` 或通用轨迹的稳定 `eventId` / `evidenceId` 读取一项详情；原始 JSON Evidence 按已登记定位读取并有界续读。`attempt.assertion.detail` 按 `entryId` 交付一项 Assertion 调试依据。 |
 | 收窄查看范围 | 每个 operation 的穷尽 request 只接受其声明的 Experiment、Run、Attempt 或 comparison selection。 |
 | 两组 Run 的质量与成本 | `runs.compare` 以 `side-by-side`、`exact` 或 `paired` 返回成员、分母、missing、Evidence 与可比性。 |
-| 一个请求会读取什么、怎样解释 | `discover` 给出可问的 operation 与对应的 `show` 命令，`discover <operation>` 给出 request schema 与最小 request；`explain` 给出 source、selection、comparison mode 与 fact kinds；`run` 给出同一语义下的结果。 |
+| 一次读取会读什么、怎样解释 | 任一 `show` 命令加 `--explain`，给出 source、selection、comparison mode 与 fact kinds，不读取重 payload。 |
 
 machine protocol 始终保留 selection audit、denominator、limits、issues 与 Evidence。
 Human renderer 只能在这些闭合值上排序、控制宽度和选择文字布局，不得重算业务判断。
 
-## 固定 query 边界
+## 固定 operation 边界
 
 Inspection catalog 只接受具名 operation 与其穷尽 request/result。它涵盖 Results 所用的 `overview.get`，以及 Experiment 和 Run。
 它也涵盖 Attempt、比较、Assertion detail、sources、execution outline/detail、timing、usage、diff、artifacts 和 diagnostics 等已发布事实。
 调用方不能提交 SQL、JSON path、公式或临时统计。
 
 Inspection 是已发布事实与 Delivery 之间的中间结果 owner。`run.get` 之类的闭合 result 在
-pinned facts 与 exact `PublicationCutoff` 上即时形成，不写回 Run、不另建派生表或 query cache。
+pinned facts 与 exact `PublicationCutoff` 上即时形成，不写回 Run、不另建派生表或结果缓存。
 
 固定历史业务入口是 browser-neutral `selectInspectionOperation(facts, operation)`。
 `project.get` 同时消费 Experiment Host 为当前 generation 形成的冻结输入，失败时不降级为历史结果。
@@ -49,7 +49,7 @@ facts reader。每次读取先确定 selection 和 exact `PublicationCutoff`，�
 任何 consumer 都不能重选成员、补配结果，或从标量重新计算业务聚合。
 
 人读浏览器体验、语言与 Preview 由 [Insight](../insight/README.md) 拥有。它在一个 View generation 的
-`PublicationCutoff` 上调用同一固定 query definition；当前 Results 还绑定 target identity。组件不写 SQL，也不从 raw rows 猜算事实。
+`PublicationCutoff` 上调用同一固定 operation definition；当前 Results 还绑定 target identity。组件不写 SQL，也不从 raw rows 猜算事实。
 
 - [Architecture](architecture.md)
 - [CLI](cli.md)

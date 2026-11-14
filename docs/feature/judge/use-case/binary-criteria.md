@@ -45,7 +45,7 @@
 3. 作者运行 Experiment 后查看这次运行的判据：
 
    ```sh
-   niceeval show @1FH9Y2RVQFPWN --assertions
+   niceeval show @1FH9Y2RVQFPWN assertions
    ```
 
    ```text

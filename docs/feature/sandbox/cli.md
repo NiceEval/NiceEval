@@ -112,7 +112,7 @@ NiceEval 不自建私有的变更历史回放命令：
 
 - **现场工作区比对**：在通过原生 CLI 接入现场后，直接在工作区目录执行标准 **`git status`** 与 **`git diff`**，利用 Git 工业级 diff 能力查看代码与文件修改；
 - **排查工作区之外的状态**：直接通过原生 shell 运行标准检查命令（如 `cat ~/.npmrc` 查看全局配置，`npm ls -g --depth=0` 查看全局安装，`ps aux` 查看残留后台进程）；
-- **已发布结构化历史**：利用 NiceEval 已落盘的 Attempt 事实，通过 `niceeval show --run <id>`、`niceeval show attempt.trace` 或 `niceeval view` 查看已被封口的事实闭包。
+- **已发布结构化历史**：利用 NiceEval 已落盘的 Attempt 事实，通过 `niceeval show run:<id>`、`niceeval show @<locator> execution` 或 `niceeval view` 查看已被封口的事实闭包。
 
 ### 3. 沙箱状态查看、批量销毁与孤儿回收（用 Provider 原生管理命令）
 

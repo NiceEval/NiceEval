@@ -40,7 +40,7 @@ export default defineEval({
 运行 `niceeval exp judge-smoke`。静态配置校验不请求 endpoint；实际 Judge Assertion 的 forced-function 请求
 才验证兼容性，不会生成伪造的 Judge 结果。
 
-调用完成后，View 或固定 query 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
+调用完成后，View 或 `show` 显示一条 Judge AssertionResult，其中含 `[0,1]` measurement、threshold、理由和
 裁剪后的材料。网络调用失败为 `unavailable`，无效响应为 evaluator `errored`；二者都不会显示为 `0`。
 
 开发机没有 Provider 或 key 时不会发出网络请求。结果保留 `judge-provider-unresolved` 或

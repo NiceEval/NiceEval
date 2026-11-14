@@ -37,7 +37,7 @@ Run debugger。页面组件不另写 SQL，不重算成员、分母、成本或�
 - 已删除的 Experiment 只出现在 History 区域，不计入当前分母。
 
 当前目标求值失败时，Results 显示错误与固定历史入口，不把历史 Overview 冒充成当前结果。
-`--run` 预选和 Run、Attempt debugger 仍读取固定历史事实，不受当前目标影响。
+`run:` 预选和 Run、Attempt debugger 仍读取固定历史事实，不受当前目标影响。
 
 `active` Run 已发布 Attempt 立即可见，空 Planned attempt 显示 pending。发现更新时页面只提示；用户确认后才在新的
 `PublicationCutoff` 准备结果并原子切换。准备期间仍可切换 Experiment；切换后会废弃为旧选择准备的候选，旧页面继续可读。

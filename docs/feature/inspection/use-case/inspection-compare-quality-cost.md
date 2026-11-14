@@ -31,10 +31,10 @@ Next: niceeval exp harness/canary --dry
 ```
 
 历史三条结果不能被显示成当前 `3/3`，变更前的分数也不能填入缺口。旧 locator 只提供下钻入口。
-默认当前摘要来自 `project.get`，不能换成历史成员集合。`show --experiment` 读取该 Experiment 各计划 Attempt 最新已发布结果，用于审阅费用与 Attempt 明细，不回答当前缺口。
+默认当前摘要来自 `project.get`，不能换成历史成员集合。`show exp:<id>` 读取该 Experiment 各计划 Attempt 最新已发布结果，用于审阅费用与 Attempt 明细，不回答当前缺口。
 
 ```sh
-niceeval show @1K1P0VJAPVJ12 --source
+niceeval show @1K1P0VJAPVJ12 source
 niceeval exp harness/canary --dry
 ```
 
@@ -78,37 +78,22 @@ Score 不显示 passed 或 Pass rate。缺少成本的结果也不按零成本�
 以下历史读取始终不依赖当前定义：
 
 ```sh
-niceeval show --run <source-run-id>
+niceeval show run:<source-run-id>
 niceeval show @1K1P0VJAPVJ12
 ```
 
-机器读取当前结果使用：
+机器读取当前结果使用 `niceeval show --json`，它调用 `project.get`。
 
-```json
-{
-  "protocol": "niceeval.query/v3",
-  "operation": { "kind": "project.get", "experimentIds": ["harness/canary"] }
-}
-```
-
-读取整个 Record 的历史摘要则使用 `overview.get`；精确历史 Experiment 使用 `experiment.get`。
+读取整个 Record 的历史摘要则使用 `show --record <file>`，即 `overview.get`；精确历史 Experiment 使用 `show exp:<id>`，即 `experiment.get`。
 它们不声称旧结果仍适用于当前评估。只有 Record 的 source不能执行 `project.get`，应返回 `current-target-unavailable`，
 不能悄悄改成历史汇总。
 
 ## 比较明确的两次运行
 
-需要判断两组 Run 是否可比时，以两个明确 Run 集构造固定请求：
+需要判断两组 Run 是否可比时，以两个明确 Run 集调用固定的 `runs.compare`：
 
-```json
-{
-  "protocol": "niceeval.query/v3",
-  "operation": {
-    "kind": "runs.compare",
-    "mode": "paired",
-    "leftRunIds": ["<left>"],
-    "rightRunIds": ["<right>"]
-  }
-}
+```sh
+niceeval compare <left-run-id> -- <right-run-id> --mode paired
 ```
 
 `side-by-side` 分别交付两组结果，不产生 delta。`exact` 要求 member domain 与 exact member set 相同。
@@ -123,17 +108,10 @@ niceeval show @1K1P0VJAPVJ12
 一次 Agent 执行包含多轮工具调用和重试。先从固定 Run 取得 Attempt locator，再读取其用量：
 
 ```sh
-niceeval show @<locator> --usage
+niceeval show @<locator> usage
 ```
 
-机器调用用同一条命令加 `--json`；需要直接发协议 request 时，等价的 request 如下：
-
-```json
-{
-  "protocol": "niceeval.query/v3",
-  "operation": { "kind": "attempt.usage", "locator": "@<locator>" }
-}
-```
+机器调用用同一条命令加 `--json`，得到 `attempt.usage` 的 document。
 
 按[模型用途与费用读取](../architecture.md#模型用途与费用读取)检查证据口径：
 

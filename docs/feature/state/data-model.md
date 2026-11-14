@@ -62,7 +62,7 @@ staging 回收只删除已证明无活动 owner、且没有 HEAD 引用的 ready
 
 Run 事实、HEAD 与 checkpoint 都在同一个 canonical 文件；portable gate 不生成过滤副本或第二份 SQLite。
 进入 portable 前须无活动 State execution、未决提交、staging bytes 或未释放租约。已证明无 owner 的 staging 按恢复规则删除，不能绕过 gate。
-完整 checkpoint、HEAD 与终结事实可随文件移动；只读 query 不返回 archive 内容或私有 manifest，也不访问远端 Sandbox。
+完整 checkpoint、HEAD 与终结事实可随文件移动；只读 Inspection 读取不返回 archive 内容或私有 manifest，也不访问远端 Sandbox。
 
 Run hostile reader 的精确 schema allowlist 加入这些表、索引与外键，验证 manifest/JSON 形状和 publication closure。
 按有界 chunk 验证内容，不一次载入全部 archive；不解包、不执行 initialize。外部 `--record` 私有捕获仍是只读事实输入，不变成项目 authority。

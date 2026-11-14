@@ -23,7 +23,7 @@ niceeval exp compare/codex --dry
 niceeval exp compare/codex
 ```
 
-需要给脚本传递完整 Eval 清单时使用 `niceeval exp list --json`。它是一次性 JSON 文档，不是运行期 NDJSON 流；运行中的 live 状态只由当前进程显示，结束后的持久事实用固定 `niceeval query` 查询。
+需要给脚本传递完整 Eval 清单时使用 `niceeval exp list --json`。它是一次性 JSON 文档，不是运行期 NDJSON 流；运行中的 live 状态只由当前进程显示，结束后的持久事实用 `niceeval show --json` 读取。
 
 ```json
 {"format":"niceeval.experiment-list/v1","experiments":[{"id":"compare/codex-gpt-5.6-luna","description":"Codex baseline","agent":"codex","model":"gpt-5.6-luna","attempts":1,"evalIds":["memory/commit0","memory/commit1"],"labels":["baseline"]}]}

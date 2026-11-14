@@ -131,7 +131,7 @@ portable Record 是同一个 canonical 文件，包含 checkpoint 字节；只�
 真实 Docker 的两题 Group 证明累积、再次运行恢复与换 cohort。加入真实逐 Attempt before，确认其保留记忆且禁用缓存恢复。
 路径祖先、不同 State 重叠、symlink、归档越界与布局变更都必须在删除前失败，声明外 marker 不变。
 
-两个 binding 中一项失败不得推进另一项。故障实例和替代实例都能经 query 关联各自 Attempt；零 Attempt 的恢复失败仍可审计。
+两个 binding 中一项失败不得推进另一项。故障实例和替代实例都能经 `show` 关联各自 Attempt；零 Attempt 的恢复失败仍可审计。
 在事务前、commit 后 ack 前终止 writer，再走公开 recovery；HEAD 与 saved 回执必须同成同败。两个同 authority 的 Invocation 验证全取租约与取消等待。
 
 两个多 Experiment Invocation 以交叉顺序请求 x/y key，必须各自推进，不能等待成环。

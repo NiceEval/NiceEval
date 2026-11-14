@@ -19,7 +19,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
    折叠规则见 [Runner · 退出码](../../../runner.md#退出码)。
 4. 归档文件：`--junit` 是整次运行的最终聚合，收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件，要么不存在。
    Run create 后立即可见；每个 Attempt 以独立 transaction 原子发布 closure、publication identity 与 Planned attempt binding。`SIGINT` 保留已发布 Attempt，并以 `interrupted-before-publication` 收口其余 Planned attempt。
-   需要 JSON 汇总时，归档 receipt，再以 `createdRunIds` 与 `publicationCutoff` 构造固定 query request。
+   需要 JSON 汇总时，归档 receipt，再以 `createdRunIds` 执行 `niceeval show run:<run-id> --json`。
 5. JUnit 交给平台做测试注解；完整业务数据以 cutoff 内的 Run 与 Attempt 事实为准。
 
 同一份人读结束反馈让日志读者看到门禁为何结束。正常完成有稳定的结果表和精确下钻：
@@ -37,8 +37,8 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
 ╭─ NEXT ───────────────────────────────────────────────────────────────╮
 │ compare/codex                                                        │
-│   show: niceeval show --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706     │
-│   view: niceeval view --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706     │
+│   show: niceeval show run:8f3d6f62-1d34-4cf3-99c7-84ba3c483706       │
+│   view: niceeval view run:8f3d6f62-1d34-4cf3-99c7-84ba3c483706       │
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -73,7 +73,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 2. 针对预先固定的对照 Run 执行对比检查：
 
    ```sh
-   niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --max-regressions 0
+   niceeval compare <baseline-run-id> -- <candidate-run-id> --max-regressions 0
    ```
 
 3. 检查逐题配对结果。若候选 Run 在对照版本原本通过的题目上出现失败（`regressed`），命令输出退化题目明细并以退出码 `1` 阻断发布；若仅有偶发波动且 `regressed` 数量未超门限，则判定通过。

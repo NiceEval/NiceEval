@@ -290,7 +290,7 @@ complete 的 limitations 必须为空，partial 必须有原因；从未提交�
 
 ### 事件展示块
 
-事件可以带可选的 `display`：一组人读展示块，随事件一起封存。`show --execution` 与 View 按块呈现，读取时不运行 Adapter 代码。
+事件可以带可选的 `display`：一组人读展示块，随事件一起封存。`show @<locator> execution` 与 View 按块呈现，读取时不运行 Adapter 代码。
 没有 `display` 的事件以 envelope、`summary` 与 payload JSON 呈现。
 
 ```ts

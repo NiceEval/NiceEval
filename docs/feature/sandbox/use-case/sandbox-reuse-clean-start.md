@@ -11,7 +11,7 @@ E2B、OpenSandbox 与 Instabox 的其余配对从 Run 准备的 snapshot 创建�
 
 如果 Base 仍能建立，Agent 与 Eval 继续运行；损坏的缓存不能让同批其它 Attempt 在派发前一起失败。
 如果连干净 Base 都无法建立，只有当前 Attempt 形成带 locator 的 `errored` 结果。Human 输出展示安全封口后的真实错误，
-并用所属 Run 的 `niceeval view --run <runId>` 下钻。
+并用所属 Run 的 `niceeval view run:<runId>` 下钻。
 
 ```text
 before cache: degraded · restore failed · replayed from base

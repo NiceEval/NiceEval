@@ -60,7 +60,7 @@ NiceEval 不导出通用 durable definition/session、Record Host、snapshot/exp
 `RunListDocument`、`RunGetDocument`、两者的 Schema 与唯一 `decodeRunDocument(input)` decoder。
 正式 TypeScript document、Run summary/detail/Planned attempt 类型直接由这组 Run Schema 派生。
 
-decoder 严格接受 CLI `run list --json` 的 `operation: "run.list"` 或 `show --run --json` 的
+decoder 严格接受 CLI `run list --json` 的 `operation: "run.list"` 或 `show run:<run-id> --json` 的
 `operation: "run.get"`。错误 protocol、operation、闭合集取值、嵌套多余字段和顶层多余字段都会被拒绝。
 
 该入口不包含 `runHost`、SQLite、writer、delete、recover 或 migration 能力；需要生命周期操作的应用仍显式使用

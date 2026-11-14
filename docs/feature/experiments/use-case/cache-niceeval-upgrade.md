@@ -39,4 +39,4 @@ compare/codex  memory/commit2  Attempt #1  will run — configuration changed: c
 
 后两种不是用户输入变化。重跑虽然能得到当前身份的新结果，但掩盖了上游缺陷，也会让下一次升级重复同一笔花费。
 
-只想查看历史分数时，`show --run <旧 Run ID>` 仍显示当时的结果，不受升级影响。
+只想查看历史分数时，`show run:<旧 Run ID>` 仍显示当时的结果，不受升级影响。

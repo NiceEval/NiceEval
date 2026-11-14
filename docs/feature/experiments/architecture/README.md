@@ -117,7 +117,7 @@ active/recovering 集合必须走显式集合恢复：验证 exact token、原 o
 
 ## 并发 Invocation
 
-多个 Invocation 可并发创建 Run 并发布不同 Planned attempt。`query`、`view` 与 `exp --dry` 固定一个
+多个 Invocation 可并发创建 Run 并发布不同 Planned attempt。`show`、`view` 与 `exp --dry` 固定一个
 `PublicationCutoff`：Run create、Planned attempt binding 和 Run close 按 commit revision 可见，不会拼出从未存在的状态。
 物理 migration、snapshot 与回收只是内部实现，不形成用户 maintenance 命令。
 
@@ -208,7 +208,7 @@ interface InvocationReceipt {
 receipt 不复制 locator、Verdict、Usage、cost 或 Attempt 计数。需要这些结果时，以
 `createdRunIds` 构造固定 Inspection request。
 `publicationCutoff` 是调用结束时 Record 的 opaque publication 位置，只说明这份 receipt 观察到哪里，不是 Inspection request 的输入。
-后续 query 以 `createdRunIds` 选择 Run，读取执行 query 时的当前 generation；其间新发布的 reference 或删除会反映在结果中。
+后续 `show` 以 `createdRunIds` 选择 Run，读取执行 `show` 时的当前 generation；其间新发布的 reference 或删除会反映在结果中。
 
 进程退出码由本次 Runner 已知的 Verdict、执行错误和 Invocation completion 计算。receipt 只描述调用完成情况，不成为另一份结果摘要。
 

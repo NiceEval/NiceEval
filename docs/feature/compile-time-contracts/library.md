@@ -1,6 +1,6 @@
 # Library
 
-本页只定义仍存在的静态作者契约。业务字段以 Eval、Experiment、Sandbox、Adapters 与 Inspection 的功能契约为单源；固定 query 与 View 没有作者可声明的 Page、component、theme、renderer、Report 或通用 Analysis/Sample DSL。
+本页只定义仍存在的静态作者契约。业务字段以 Eval、Experiment、Sandbox、Adapters 与 Inspection 的功能契约为单源；`show` 与 View 没有作者可声明的 Page、component、theme、renderer、Report 或通用 Analysis/Sample DSL。
 
 ## 三级反馈
 

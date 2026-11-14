@@ -51,7 +51,7 @@ Subject: defineConfig.judgeProvider
 
 ## 机器输出
 
-`--json`、NDJSON、JUnit 与固定 query 继续遵守各自的公开 envelope，不在 stdout 混入 Markdown 或 ANSI。
+`--json`、NDJSON、JUnit 与 `show --json` 继续遵守各自的公开 envelope，不在 stdout 混入 Markdown 或 ANSI。
 迁移字段由对应错误 envelope 的 owner 正式声明；不能向严格 schema 临时添加字段。
 人读指南写到 stderr，Library 消费者取得结构化 code、guide ID 与 occurrence；指南读取不改变机器终态。
 

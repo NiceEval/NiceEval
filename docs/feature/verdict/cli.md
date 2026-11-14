@@ -10,4 +10,4 @@ Score 显示 earned score、`complete` / `partial` / `unavailable`、每项 `rec
 和 stop cause。它不把 score 重命名成 Pass / Fail，也不显示 max 或百分比。partial 显示已知下界与
 Issue；unavailable 不伪造 `0`。
 
-终端反馈、固定 View 与 `niceeval query` 共享同一份 `AssertionResult` operation result；它们不提供 export 面。
+终端反馈、固定 View 与 `niceeval show` 共享同一份 `AssertionResult` operation result；它们不提供 export 面。

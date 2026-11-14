@@ -73,7 +73,7 @@ READ https://niceeval.com/INIT.md and install niceeval for this repo.
 
 1. NiceEval 不在训练数据里，写任何配置或评估前先读随包索引，路径按下文[索引路径](#索引路径)写入。
 2. 那份索引与随包中文页面是当前安装版本的权威文档，不去官网或 GitHub 找另一版。
-3. 读结果只用仓库包管理器调用的 `niceeval show`（脚本与 agent 加 `--json`）与 `view`，不读 `.niceeval/` 下的文件。
+3. 读结果只用仓库包管理器调用的 `niceeval show`（脚本与 agent 加 `--json`，顺着输出的 `links` 下钻）与 `view`，不读 `.niceeval/` 下的文件。
 4. 公开命令给不出需要的证据时，报告这是产品缺口，不改读实现源码。
 
 区块不写版本号、API 名称或页面路径；除 `INDEX.md` 外不指向任何具体文件，所以文档重组不需要用户刷新区块。

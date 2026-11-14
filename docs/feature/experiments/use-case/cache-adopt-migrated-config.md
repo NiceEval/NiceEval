@@ -7,7 +7,7 @@
 先让 dry plan 检查[有限采用规则](../architecture/cache.md#显式采用的资格)，再审阅具体结果：
 
 ```sh
-niceeval view --run <source-run-id>
+niceeval view run:<source-run-id>
 niceeval accept @1K1P0VJAPVJ12 --dry
 niceeval accept @1K1P0VJAPVJ12
 niceeval show
@@ -20,7 +20,7 @@ niceeval exp compare/codex --dry
 ```text
 ACCEPTED
 @1K1P0VJAPVJ12  compare/codex · memory/commit0
-details: niceeval show --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
+details: niceeval show run:8f3d6f62-1d34-4cf3-99c7-84ba3c483706
 
 Current results
 Covered 1/1
@@ -66,7 +66,7 @@ Attempt 的 origin Run、Core outcome、Assertions 与 locator 都不变；Verdi
 再按[实验改名契约](../cli/rename.md)采用到当前目标；不必恢复旧文件，也不需要逐个输入 Attempt ID。
 
 ```sh
-niceeval show --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
+niceeval show run:8f3d6f62-1d34-4cf3-99c7-84ba3c483706
 niceeval exp rename compare/new --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706 --dry
 niceeval exp rename compare/new --run 8f3d6f62-1d34-4cf3-99c7-84ba3c483706
 niceeval exp compare/new --dry

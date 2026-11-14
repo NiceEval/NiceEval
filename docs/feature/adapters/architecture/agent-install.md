@@ -198,7 +198,7 @@ Codex CLI 0.167.2 ready
 - `defineSandboxAgent({ ensure })` 继续被接受,语义与 `install` 完全相同;加载时每个 Agent 定义输出一条弃用警告,点名文件与替换写法。同时给出 `ensure` 与 `install` 是定义错误。
 - 类型 `AgentEnsure`、`AgentEnsureError`、`AgentEnsureContext` 保留为新类型的 `@deprecated` 别名。
 - 改名不改变任何 identity digest:进入 config identity 的是声明里的数据,不是字段名;已发布的结果照常沿用,`exp --dry` 不出现新的 gap。
-- 新写入的 Record 只用 `agent.install` 相位、`niceeval.agent-install` channel 与 `agent.install.*` 错误码。读取旧 Record 时,`agent.ensure`、`niceeval.agent-ensure` 与 `agent.ensure.*` 按新名展示,`show`、`query` 与 `view` 的输出里不再出现旧名。
+- 新写入的 Record 只用 `agent.install` 相位、`niceeval.agent-install` channel 与 `agent.install.*` 错误码。读取旧 Record 时,`agent.ensure`、`niceeval.agent-ensure` 与 `agent.ensure.*` 按新名展示,`show` 与 `view` 的输出里不再出现旧名。
 - 旧名在下一个 minor 版本删除;删除前文档、模板与 `niceeval init` 生成的文件只出现新名。
 
 ## Install 契约

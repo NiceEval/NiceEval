@@ -7,12 +7,12 @@
 ```text
 published Run and Attempt facts
   → Inspection fixed operation at PublicationCutoff
-  → show (text/json) / query | browser Worker → Insight SPA
+  → show / compare (text/json) | browser Worker → Insight SPA
 ```
 
 - [Run](../run/README.md) 是持久领域事实的唯一 owner：已发布 Attempt、Planned attempt binding、状态与 absence。
 - Inspection 是 selection、cutoff、member、denominator、coverage、limits、issues、Evidence 与 comparison 的唯一 owner。
-- `show` 统一承担面向资源的检查入口，按需交付终端文本或 `--json` 机器数据。`query` 仅作为底层协议信封通道保留。
+- `show` 以对象、方面与 ID 寻址，是唯一的检查入口，按需交付终端文本或 `--json` 机器 document；`compare` 比较两组 Run。CLI 不接受手写 JSON request。
 - [Insight](../insight/README.md) 只呈现闭合结果，不从 SQLite rows 或逐项结果重算业务语义。
 
 默认 source 是项目内唯一 canonical `.niceeval/record.sqlite`；Run 为 `active` 时它已经包含 Run create 和全部已发布
@@ -23,7 +23,7 @@ Attempt。schema、WAL、staging 和 private generation 都是内部细节；调
 schema、SQLite 完整性和 Run 领域不变量全部成立才进入同一 selector。旧 schema、损坏或部分可读都 fail closed，不迁移或
 降级读取。项目内 source 的信任边界见[读取信任与成本](#读取信任与成本)。
 
-## 固定 query catalog
+## 固定 operation catalog
 
 Inspection catalog 是读取语义与业务聚合的唯一 owner。它的穷尽 operation 包括：
 
@@ -99,7 +99,7 @@ issues 与 locators。
 
 `overview.get` 在 canonical Record 中按 `experimentId + evalId + attemptOrdinal` 选择每个逻辑 Planned attempt
 的最新 sealed occurrence。当前工作树、当前安装的候选与 execution identity 不参与这个 Record selection；
-它们不影响历史读取。Node、machine query 与 browser View 在相同 operation 输入及
+它们不影响历史读取。Node 文本、`show --json` 与 browser View 在相同 operation 输入及
 `PublicationCutoff` 上得到同一个结果；当前 operation 还必须绑定相同 target identity。
 
 每个 member、cell 与 aggregate 都带 USD cost `MetricValue`。它只汇总已发布且有可用成本的 Attempt，并保留 samples、total、
@@ -127,7 +127,7 @@ Results 散点图只把已关闭的 USD cost 作为横轴，并把已关闭的 p
 
 ## Source adapter 与交付边界
 
-Node adapter 为 `niceeval query` 和 `niceeval show` 打开短寿只读连接；本机 Insight Host 拥有 generation-bound
+Node adapter 为 `niceeval show` 和 `niceeval compare` 打开短寿只读连接；本机 Insight Host 拥有 generation-bound
 connection 与 statement lifecycle。固定历史路径调用 `selectInspectionOperation(facts, operation)`。
 `project.get` 另接收 Experiment Host 生成的冻结当前输入；其 owner 规则见[当前结果可用性](../experiments/architecture/cache.md#当前结果可用性与执行选择)。
 浏览器只消费 Host 交付的正式 result，不加载项目模块、不重新计算适用性。仅有 Record 的 Preview 显式显示历史 Results。
@@ -285,10 +285,10 @@ revision 3 仍检查用途引用属于 origin Run 的配置。未声明的新账
 完整空账本贡献精确零；不存在的 Judge 账本仍是缺口。金额不换汇、不外推未知调用。
 
 该 operation 使用与 attempt.usage 相同的 16 MiB 响应预算；超限明确失败，不通过删调用或价格证据伪装完整。
-验收从已安装 query 入口使用两个价格版本读取同一 Attempt，核对新估算与完整性，并比较读取前后的公开历史结果。
+验收从已安装的 `show @<locator> usage --reprice` 入口使用两个价格版本读取同一 Attempt，核对新估算与完整性，并比较读取前后的公开历史结果。
 
 ## State 事实投影
 
 `attempt.get` 成功 document 的 `attempt.sandboxState` 与 `run.get` 的 `run.value.sandboxState` 使用 [State 结果形状](../state/library.md#结果形状)，共享 `niceeval/run` 的严格 Schema。
-query 以同一 PublicationCutoff 读取 Attempt context 与所有 State execution；不能只保留 lineage 最后一代，也不访问 operational checkpoint。
+Inspection 以同一 PublicationCutoff 读取 Attempt context 与所有 State execution；不能只保留 lineage 最后一代，也不访问 operational checkpoint。
 固定 Run 的 portable 读取只依赖封存事实；缺失为 unavailable，不补 fresh、零次写入或成功保存。

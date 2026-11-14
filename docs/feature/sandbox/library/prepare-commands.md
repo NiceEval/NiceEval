@@ -109,7 +109,7 @@ shell({
 
 Human 进度行只写 `label`，省略时写 `id`，不写命令文本。
 `label` 提供时须非空、不含控制字符，最多 256 Unicode code points；它只用于显示，不参与动作或结果身份。
-`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；静态完整命令由 `niceeval debug` 提供，实际执行命令由 `show @<locator> --execution` 提供。`--timing` 只提供阶段归因与耗时。
+`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；静态完整命令由 `niceeval debug` 提供，实际执行命令由 `show @<locator> execution` 提供。`timing` 只提供阶段归因与耗时。
 
 template 预装只是让版本检查首测即成功的一种手段。
 声明照常保留；预装缺失或漂移时命令现场补齐。

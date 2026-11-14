@@ -161,7 +161,7 @@ EvalUsage 在纯报告外提供冻结的 EvalCacheRead，rate(modelRole) 从该�
 configured slots 提供空组身份，实际 provider/model 只来自调用事实；未知用途与未知模型保持 null。
 每个冻结报告仅包含计数、理由与 rate，不保留对可写 collector 的引用；后续 cleanup 不改写已登记 Assertion。
 
-验收从安装后的公开 Adapter、t.usage、query、show 与 View 进入。
+验收从安装后的公开 Adapter、t.usage、show 与 View 进入。
 验证 token 加权、多用途同模型、同用途多模型、输入总量优先、完整桶回退、缺项、零输入、空用途、partial/unsealed、失败重试及超出 128 条调用的全量聚合。
 Query 与 Library 在同一采集截面逐字段一致，View 与 Show 展示同一数值和缺失原因；失败隔离保留已发布附件、usage 与已知 contribution。
 

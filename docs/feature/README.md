@@ -6,7 +6,7 @@
 
 跨 Run、Inspection 与 Delivery 的数据边界由
 [Run → Inspection → Insight](inspection/architecture.md#run-inspection-insight) 统一说明。Inspection 关闭读取语义，再由固定
-query 或 View 交付；它不是作者可扩展的中间层。
+`show` 或 View 交付；它不是作者可扩展的中间层。
 
 已经定稿但尚未被产品采用为当前契约的方向放 [`../roadmap/`](../roadmap/)。
 Feature 身份不声明同一时刻的源码状态；它表示后续实现与评审只能以这里的唯一目标为准。
@@ -61,7 +61,7 @@ Roadmap 与 Design 候选也使用这套正文文件；Feature 与 Roadmap 的�
 - [Eval Groups](eval-groups/README.md)：封闭成员集内的 Sandbox 复用与组间并行。
 - [Experiments](experiments/README.md)：运行配置与 `defineExperiment`。
 - [Insight](insight/README.md)：受保护的本机 SPA、Snapshot 与人读审阅。
-- [Inspection](inspection/README.md)：固定 query、闭合结果与机器查看。
+- [Inspection](inspection/README.md)：固定 operation、闭合结果与 `show` 读取。
 - [Judge](judge/README.md)：裁判模型配置、调用与 unavailable。
 - [Plugins](plugins/README.md)：带稳定身份的生命周期组合语法。
 - [Run](run/README.md)：Run 生命周期、Attempt publication 与精确引用。

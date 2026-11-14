@@ -322,8 +322,8 @@ Attempt 创建前的共享失败另列 `ERRORS`，包括共享任务构建与[�
 有界正文同时保留开头与结尾，中间以省略字节数相连；Provider 错误的真正原因通常在长路径之后，只保留前缀会把它截掉。
 `exp --json` 在同一时刻输出一条带 run configuration 与同一安全正文的 `diagnostic` 事件。
 
-`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show --run <runId>` 与
-`niceeval view --run <runId>` 以用户可理解的 Attempt 和错误说明呈现完整上下文。
+`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show run:<runId>` 与
+`niceeval view run:<runId>` 以用户可理解的 Attempt 和错误说明呈现完整上下文。
 这组事实复用现有 Run-owned `niceeval.runner-diagnostics` source，在其 attachment 中追加可选的
 `affectedSlotIds` 关联，由 Inspection 投影为 `affectedPlannedAttemptIds`。历史 Run 未采集错误或关联时不补造；
 没有错误事实时继续只显示 membership。
@@ -334,8 +334,8 @@ timing node、failureId 或共享机制名称。Attempt 创建前不存在 locat
 
 ```text
 <experimentId>
-  show: niceeval show --run <runId>
-  view: niceeval view --run <runId>
+  show: niceeval show run:<runId>
+  view: niceeval view run:<runId>
 ```
 
 没有创建任何 Run 时，`NEXT` 只显示 `No Runs were created for this invocation.`。

@@ -1,6 +1,6 @@
 # Assertions —— display
 
-`exp` 只给出当前进程反馈；固定 query 与 Insight 呈现同一份闭合 Assertion、Verdict、Score 与诊断值。固定 [Inspection Operations](../../inspection/architecture.md) 从 frozen Record view 取得所需结果，不把 Record 文件、路径或读取 capability 交给 consumer。
+`exp` 只给出当前进程反馈；`show` 与 Insight 呈现同一份闭合 Assertion、Verdict、Score 与诊断值。固定 [Inspection Operations](../../inspection/architecture.md) 从 frozen Record view 取得所需结果，不把 Record 文件、路径或读取 capability 交给 consumer。
 
 ## Attempt 摘要
 
