@@ -486,7 +486,7 @@ function discoverEvalEntry(
   const fileLabel = relative(root, entry.file).split(sep).join("/");
   return Effect.gen(function*() {
     const captured = yield* Effect.tryPromise({
-      try: () => captureLoadedFiles(() => load(entry.file)),
+      try: () => captureLoadedFiles(() => load(entry.file), { entryPath: entry.file }),
       catch: (cause) => issue(
         fileLabel,
         "discovery.import-failed",

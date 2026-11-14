@@ -26,6 +26,8 @@ interface LoaderCapture {
   readonly origins: Map<string, LoaderCaptureBuckets>;
   /** No usable caller frame: discovery conservatively attributes these to all entries. */
   readonly unattributed: LoaderCaptureBuckets;
+  /** The Eval entry whose evaluation this capture wraps, when discovery knows it. */
+  readonly entryPath: string | undefined;
 }
 
 interface LoaderCaptureBuckets {
@@ -82,6 +84,7 @@ function assertLoaderTiming(path: string): void {
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
+  options: { readonly entryPath?: string } = {},
 ): Promise<{
   value: T;
   paths: string[];
@@ -98,6 +101,7 @@ export async function captureLoadedFiles<T>(
     private: new Set<string>(),
     origins: new Map<string, LoaderCaptureBuckets>(),
     unattributed: newBuckets(),
+    entryPath: options.entryPath === undefined ? undefined : resolve(options.entryPath),
   };
   activeCapture = capture;
   try {
@@ -134,11 +138,19 @@ function newBuckets(): LoaderCaptureBuckets {
   };
 }
 
-/** Best-effort source ownership for a public loader call, without exposing it as an API. */
-function loaderCallerPath(): string | undefined {
+/**
+ * Best-effort source frames for a public loader call, innermost first and
+ * without this module. V8 keeps `async` frames, so a helper function called
+ * from an Eval's top level still shows the Eval entry after an await.
+ */
+function loaderCallerFrames(): string[] {
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = Infinity;
   const stack = new Error().stack;
-  if (stack === undefined) return undefined;
+  Error.stackTraceLimit = limit;
+  if (stack === undefined) return [];
   const self = resolve(fileURLToPath(import.meta.url));
+  const frames: string[] = [];
   for (const line of stack.split("\n").slice(1)) {
     const match = line.match(/(?:file:\/\/)?(\/.*?):\d+:\d+/);
     if (match?.[1] === undefined) continue;
@@ -149,16 +161,25 @@ function loaderCallerPath(): string | undefined {
       continue;
     }
     const absolute = resolve(candidate);
-    if (absolute !== self) return absolute;
+    if (absolute !== self) frames.push(absolute);
   }
-  return undefined;
+  return frames;
 }
 
+/**
+ * A read made while the captured Eval entry is on the stack belongs to that
+ * entry alone, even when a shared helper function performs it; the direct
+ * capture already records it. Otherwise the innermost module owns the read
+ * (a helper evaluating its own top level), and discovery copies it to every
+ * entry that imports that module.
+ */
 function registerCapturePath(bucket: LoaderCaptureBucketName, absolute: string): void {
   const capture = activeCapture;
   if (capture === undefined) return;
   capture[bucket].add(absolute);
-  const caller = loaderCallerPath();
+  const frames = loaderCallerFrames();
+  if (capture.entryPath !== undefined && frames.includes(capture.entryPath)) return;
+  const caller = frames[0];
   if (caller === undefined) {
     capture.unattributed[bucket].add(absolute);
     return;

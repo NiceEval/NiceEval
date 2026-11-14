@@ -14,7 +14,7 @@ export interface IdentityDomains {
 
 export const CURRENT_IDENTITY_DOMAINS: IdentityDomains = Object.freeze({
   fingerprintAlgorithm: 5,
-  fingerprintCoverage: 2,
+  fingerprintCoverage: 3,
   inputIdentity: 1,
   configIdentity: 1,
   slotInput: 1,
@@ -93,6 +93,17 @@ export const IDENTITY_DOMAIN_CHANGES: readonly IdentityDomainChange[] = Object.f
   to: 5,
   effect: "behavior-changing",
   summary: "Execute each Sandbox before chain in declaration order, including callbacks and Plugin fragments.",
+}, {
+  kind: "core",
+  name: "loader-helper-call-attribution/2-to-3",
+  revision: "fingerprintCoverage",
+  from: 2,
+  to: 3,
+  effect: "encoding-only",
+  summary: "A loader read made while an Eval entry is on the stack covers only that Eval, even when a shared helper function performs it. " +
+    "Coverage only shrinks, so the payload hashes as before: unaffected Evals rebuild the old digest unchanged, and an Eval that drops another Eval's helper-routed file shows an identity mismatch.",
+  applies: () => true,
+  rebuild: (input: IdentityRebuildInput) => input,
 }]);
 
 export interface IdentityDomainSide {

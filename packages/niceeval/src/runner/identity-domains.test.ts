@@ -154,7 +154,7 @@ describe("identity domain release contract", () => {
   it("keeps the released Eval, configuration and slot digests in their declared domains", async () => {
     const samples = await Promise.all(releaseSnapshot.samples.map((sample) => calculateSample(sample.fixture)));
     assertReleaseSnapshot(releaseSnapshot, samples);
-    const historicalDomains = { ...CURRENT_IDENTITY_DOMAINS, fingerprintAlgorithm: 4 };
+    const historicalDomains = { ...CURRENT_IDENTITY_DOMAINS, fingerprintAlgorithm: 4, fingerprintCoverage: 2 };
     const historicalRegistry = IDENTITY_DOMAIN_CHANGES.filter((entry) => entry.name === "provider-before-cache-capability/3-to-4");
     assertReleaseSnapshot({
       domains: historicalDomains,

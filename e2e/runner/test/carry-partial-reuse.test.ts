@@ -149,3 +149,40 @@ test.concurrent("未声明 sharedState 保持公开 carry；声明或变更 key 
     },
   );
 });
+// @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
+
+test.concurrent("经共享 helper 调用 loader 时，只有调用它的 Eval 依赖读入的文件", async () => {
+  await runnerE2E.case(
+    "carry-helper-loader-attribution",
+    { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
+    async ({ commands: { niceeval }, paths }) => {
+      const fixtures = join(paths.projectRoot, "evals", "helper-loader", "fixtures");
+      const slotStates = (plan: ExpPlanDocument) => Object.fromEntries(
+        plan.matrix.map((row) => [row.evalId, row.slots.map((slot) => slot.state === "gap" ? `gap:${slot.reason}` : slot.state)]),
+      );
+      const baseline = await niceeval.run(["exp", "helper-loader", "--rerun", "all", "--json"]);
+      expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
+
+      // alpha's own fixture, read by a helper function called from alpha's top level.
+      writeFileSync(join(fixtures, "alpha.txt"), "alpha fixture v2\n", "utf8");
+      const alphaChanged = await niceeval.run(["exp", "helper-loader", "--dry", "--json"]);
+      expect(alphaChanged.exitCode, alphaChanged.diagnostic()).toBe(0);
+      expect(slotStates(decodeExpPlanDocument(alphaChanged.json()))).toEqual({
+        "helper-loader/alpha": ["gap:identity-mismatch"],
+        "helper-loader/beta": ["reused"],
+      });
+
+      const rerunAlpha = await niceeval.run(["exp", "helper-loader", "--json"]);
+      expect(rerunAlpha.exitCode, rerunAlpha.diagnostic()).toBe(0);
+
+      // A file the helper reads while its own module evaluates belongs to every importer.
+      writeFileSync(join(fixtures, "shared.txt"), "shared note v2\n", "utf8");
+      const sharedChanged = await niceeval.run(["exp", "helper-loader", "--dry", "--json"]);
+      expect(sharedChanged.exitCode, sharedChanged.diagnostic()).toBe(0);
+      expect(slotStates(decodeExpPlanDocument(sharedChanged.json()))).toEqual({
+        "helper-loader/alpha": ["gap:identity-mismatch"],
+        "helper-loader/beta": ["gap:identity-mismatch"],
+      });
+    },
+  );
+});
