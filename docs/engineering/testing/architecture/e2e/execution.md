@@ -73,6 +73,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 合法 affected 空计划不 pack、不 build；project / metadata 非法时以 `invalid` 红灯退出；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
+- push / PR 的 takeover job 复用计划与 candidate，对实质变化的确定性 owner 文件逐项验收；共享输入变化重验所属 Repo，排除 live Repo，无 owner 时跳过，失败阻断 gate，并上传 takeover-summary 与资源终结收据；
 - prepare 安装并验证 Node、pnpm 与 Concord 后，将可执行文件和 Concord 生产依赖封装为同一次 workflow 的工具 artifact。
   matrix 在安装场景依赖前校验 prepare output 中的 SHA-256、平台和工具版本，并检查 Git 根与 Concord engine 入口；
   校验失败立即停止，不回退到重新下载或其它版本。工具 artifact 不属于测试证据，不能替代 candidate、receipt 或 certificate。

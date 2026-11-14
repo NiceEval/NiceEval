@@ -58,6 +58,8 @@ jobs:
     timeout-minutes: 30
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      takeover-matrix: ${{ steps.takeover.outputs.matrix }}
+      has-takeovers: ${{ steps.takeover.outputs.has-owners }}
       has-jobs: ${{ steps.plan.outputs.has-jobs }}
       plan-mode: ${{ steps.plan.outputs.mode }}
       plan-reason: ${{ steps.plan.outputs.reason }}
@@ -263,6 +265,43 @@ jobs:
             echo "- projects: ${repo_count}"
             echo "- cells: ${count}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check takeover owner selection
+        run: node --test .github/scripts/e2e-takeover.test.mjs
+
+      - name: Select changed deterministic takeover owners
+        id: takeover
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+          MATRIX: ${{ steps.plan.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/e2e-takeover-plan.json"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            head="$(git rev-parse HEAD)"
+            base="$PUSH_BASE"
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              base="$(git merge-base "$PR_BASE" "$head")"
+            fi
+            node .github/scripts/e2e-takeover.mjs --base "$base" --head "$head" \
+              --plan "${RUNNER_TEMP}/e2e-plan.json" > "$output"
+          else
+            echo '{"cells":[]}' > "$output"
+          fi
+          # Retain the existing placement and exact browser image from the Nx plan.
+          matrix="$(jq -c --argjson matrix "$MATRIX" '[.cells[] as $cell | $matrix[] | select(.id == $cell.id)]' "$output")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "has-owners=$(jq '.cells | length > 0' "$output")" >> "$GITHUB_OUTPUT"
+          echo "[e2e] takeover owners: $(jq '[.cells[].owners[]] | length' "$output")"
+
+      - name: Upload takeover selection
+        uses: actions/upload-artifact@v7
+        with:
+          name: niceeval-e2e-takeover-plan
+          path: ${{ runner.temp }}/e2e-takeover-plan.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload machine-readable E2E plan
         if: always()
@@ -626,9 +665,139 @@ jobs:
           fi
           echo 'Model network logged out.'
 
+  takeover:
+    name: takeover (${{ matrix.id }})
+    needs: prepare
+    if: needs.prepare.outputs.has-takeovers == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.takeover-matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download verified E2E tools
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-toolchain
+          path: ${{ runner.temp }}/e2e-toolchain-download
+
+      - name: Verify tools and repository environment
+        id: toolchain
+        env:
+          EXPECTED_TOOLCHAIN_SHA256: ${{ needs.prepare.outputs.toolchain_sha256 }}
+        run: bash .github/scripts/e2e-toolchain.sh restore "${RUNNER_TEMP}/e2e-toolchain-download/e2e-toolchain.tgz"
+
+      - name: Cache dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.toolchain.outputs.store }}
+          key: e2e-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package.json') }}-${{ hashFiles('pnpm-lock.yaml', 'e2e/**/pnpm-lock.yaml') }}
+          restore-keys: |
+            e2e-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package.json') }}-
+
+      - name: Install orchestrator dependencies
+        # prepare 已从同一 checkout 构建并封装 exact candidate；matrix 只需要根 CLI 的
+        # JS 依赖，不能为每个 cell 重跑根 prepare 的 report/index 构建。
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Derive safe artifact id
+        id: safe
+        env:
+          REPO_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          safe="$(printf '%s' "$REPO_ID" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          echo "id=${safe}" >> "$GITHUB_OUTPUT"
+          echo "artifact-root=${RUNNER_TEMP}/niceeval-e2e-artifacts/${safe}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Docker profile host prerequisites
+        if: contains(toJSON(matrix.requires.hostCapabilities), '"linux-loop-project-quota"')
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends quota
+          # Hosted kernels may already include these modules without publishing
+          # a matching linux-modules-extra package (for example Azure kernels).
+          if ! sudo modprobe loop || ! sudo modprobe quota_v2; then
+            sudo apt-get install --yes --no-install-recommends "linux-modules-extra-$(uname -r)"
+          fi
+          sudo modprobe loop
+          sudo modprobe quota_v2
+          sudo losetup --find >/dev/null
+
+      - name: Set up Python
+        if: contains(toJSON(matrix.requires.runtimes), '"python"') || contains(toJSON(matrix.requires.runtimes), '"python>=')
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Download exact NiceEval candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: niceeval-e2e-candidate
+          path: ${{ runner.temp }}/niceeval-e2e-candidate
+
+      - name: Verify NiceEval SHA-256
+        id: candidate
+        env:
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.prepare.outputs.candidate_sha256 }}
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/niceeval-e2e-candidate"
+          candidate="${root}/niceeval-candidate.tgz"
+          for required in "$candidate" "${candidate}.sha256"; do
+            test -s "$required"
+          done
+          candidate_actual="$(sha256sum "$candidate" | awk '{print $1}')"
+          if ! [[ "$EXPECTED_CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::missing or invalid upstream candidate sha256 output: ${EXPECTED_CANDIDATE_SHA256:-<empty>}"
+            exit 1
+          fi
+          if [ "$candidate_actual" != "$EXPECTED_CANDIDATE_SHA256" ] \
+            || [ "$(tr -d '[:space:]' < "${candidate}.sha256")" != "$candidate_actual" ]; then
+            echo "::error::NiceEval sha256 mismatch: expected=${EXPECTED_CANDIDATE_SHA256} actual=${candidate_actual}"
+            exit 1
+          fi
+          echo "candidate=${candidate}" >> "$GITHUB_OUTPUT"
+          echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
+
+      - name: Download takeover selection
+        uses: actions/download-artifact@v8
+        with:
+          name: niceeval-e2e-takeover-plan
+          path: ${{ runner.temp }}/takeover-selection
+
+      - name: Run every changed deterministic owner
+        env:
+          CELL_ID: ${{ matrix.id }}
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
+          ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/e2e-takeover.mjs --run \
+            --plan "${RUNNER_TEMP}/takeover-selection/e2e-takeover-plan.json" \
+            --cell "$CELL_ID" --candidate "$CANDIDATE" --artifact-root "$ARTIFACT_ROOT"
+
+      - name: Upload takeover summaries and resource receipts
+        if: always() && steps.safe.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-takeover-${{ steps.safe.outputs.id }}
+          path: ${{ steps.safe.outputs.artifact-root }}
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
+
   gate:
     name: e2e gate
-    needs: [prepare, e2e]
+    needs: [prepare, e2e, takeover]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -637,6 +806,8 @@ jobs:
           PREPARE_RESULT: ${{ needs.prepare.result }}
           HAS_JOBS: ${{ needs.prepare.outputs.has-jobs }}
           MATRIX_RESULT: ${{ needs.e2e.result }}
+          HAS_TAKEOVERS: ${{ needs.prepare.outputs.has-takeovers }}
+          TAKEOVER_RESULT: ${{ needs.takeover.result }}
         run: |
           set -euo pipefail
           if [ "$PREPARE_RESULT" != "success" ]; then
@@ -649,6 +820,15 @@ jobs:
           fi
           if [ "$HAS_JOBS" != "true" ] && [ "$MATRIX_RESULT" != "skipped" ]; then
             echo "::error::empty e2e plan expected a skipped matrix, got ${MATRIX_RESULT}"
+            exit 1
+          fi
+          if [ "$HAS_TAKEOVERS" = "true" ]; then
+            expected=success
+          else
+            expected=skipped
+          fi
+          if [ "$TAKEOVER_RESULT" != "$expected" ]; then
+            echo "::error::takeover gate expected ${expected}, got ${TAKEOVER_RESULT}"
             exit 1
           fi
           echo "[e2e] gate passed: has-jobs=${HAS_JOBS} matrix=${MATRIX_RESULT}"

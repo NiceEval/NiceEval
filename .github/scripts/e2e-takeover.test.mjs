@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { selectTakeoverOwners } from "./e2e-takeover.mjs";
+
+test("Git diff selection keeps deterministic Concord identities, ignores formatting, and covers shared fixture changes", () => {
+  const root = mkdtempSync(join(tmpdir(), "takeover-selection-"));
+  const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+  const put = (file, value) => { mkdirSync(join(root, file, ".."), { recursive: true }); writeFileSync(join(root, file), value); };
+  const commit = () => { git("add", "."); git("-c", "user.name=CI test", "-c", "user.email=ci@example.invalid", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture"); return git("rev-parse", "HEAD"); };
+  const owner = (file, suffix) => ({ file, id: `neref_${suffix.repeat(32)}`, status: "active" });
+  const a = owner("e2e/demo/test/a.test.ts", "a"), b = owner("e2e/demo/test/b.test.ts", "b"), live = owner("e2e/adapter/live/test/live.test.ts", "c");
+  const plan = { cells: [{ id: "mixed", repoIds: ["demo", "adapter/live"], dirs: ["demo", "adapter/live"] }] };
+  const cases = [a, b, live, { ...a, id: `neref_${"d".repeat(32)}`, status: "retired" }];
+  try {
+    git("init", "-q");
+    put("e2e/demo/project.json", JSON.stringify({ targets: { e2e: { metadata: { niceeval: {} } } } }));
+    put("e2e/adapter/live/project.json", JSON.stringify({ targets: { e2e: { metadata: { niceeval: { requires: { externalNetwork: true } } } } } }));
+    for (const entry of [a, b, live]) put(entry.file, 'test("result", () => expect(1).toBe(1));\n');
+    put("e2e/demo/fixture.txt", "first");
+    let base = commit();
+    const select = () => selectTakeoverOwners({ root, base, head: "HEAD", plan, cases });
+    put(a.file, '// editorial comment\ntest( "result", () => expect(1).toBe(1) );\n');
+    commit();
+    assert.deepEqual(select().cells, [], "formatting and comments do not retake an owner");
+    base = git("rev-parse", "HEAD");
+    put(a.file, 'test("result", () => expect(2).toBe(2));\n');
+    put(live.file, 'test("live", () => expect(2).toBe(2));\n');
+    commit();
+    assert.deepEqual(select().cells[0].owners, [{ repo: "demo", selector: `${a.file}#${a.id}` }]);
+    base = git("rev-parse", "HEAD");
+    put("e2e/demo/fixture.txt", "second");
+    commit();
+    assert.equal(select().cells[0].owners.length, 2, "shared input change retakes both active deterministic owners");
+    assert.deepEqual(selectTakeoverOwners({ root, base, head: "HEAD", plan: { cells: [] }, cases }).cells, []);
+    assert.throws(() => selectTakeoverOwners({ root, base, head: base, plan, cases }), /checkout HEAD/);
+    base = git("rev-parse", "HEAD");
+    const added = owner("e2e/demo/test/new.test.ts", "e");
+    put(added.file, 'test("new result", () => expect(3).toBe(3));\n');
+    cases.push(added);
+    commit();
+    assert.deepEqual(select().cells[0].owners, [{ repo: "demo", selector: `${added.file}#${added.id}` }], "new owner is selected without unchanged siblings");
+    base = "0".repeat(40);
+    assert.equal(select().cells[0].owners.length, 3, "initial push compares against the empty tree");
+    base = git("rev-parse", "HEAD");
+    git("rm", a.file);
+    commit();
+    cases.splice(cases.indexOf(a), 1);
+    assert.deepEqual(select().cells, [], "deleted owners are not passed to takeover");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
