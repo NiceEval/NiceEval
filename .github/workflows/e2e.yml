@@ -533,7 +533,7 @@ jobs:
             -C packages/niceeval \
             --strip-components=1 \
             package/dist
-          test -s packages/niceeval/dist/inspection/public.d.mts
+          test -s packages/niceeval/dist/inspection/public.d.ts
 
       - name: Inject secrets for trusted lane
         if: needs.prepare.outputs.inject-secrets == 'true'

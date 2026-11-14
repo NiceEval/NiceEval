@@ -509,7 +509,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Result } from "effect";
 import { Schema } from "effect";
-import { decodeGenerationCommitRequest, decodeViewInspectionRequest, inspectViewGeneration, ViewGenerationDescriptorSchema } from "./node_modules/niceeval/dist/view/function-runtime.mjs";
+import { decodeGenerationCommitRequest, decodeViewInspectionRequest, inspectViewGeneration, ViewGenerationDescriptorSchema } from "./node_modules/niceeval/dist/view/function-runtime.js";
 
 const PACKAGED_RECORD_PATH = fileURLToPath(new URL("./record.sqlite", import.meta.url));
 const RECORD_PATH = join(mkdtempSync(join(tmpdir(), "niceeval-view-")), "record.sqlite");

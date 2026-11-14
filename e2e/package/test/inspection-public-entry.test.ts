@@ -73,6 +73,14 @@ function forbiddenClosureEntries(metafile: Metafile): string[] {
 // @feature docs/feature/inspection/README.md
 
 test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中只交付纯协议", async () => {
+  const identities = await command([process.execPath]).run(["--input-type=module", "--eval", `
+    import { strictEqual } from "node:assert";
+    import { createRequire } from "node:module";
+    const inspection = await import("niceeval/inspection");
+    const commonjs = createRequire(import.meta.url)("niceeval/inspection");
+    for (const name of Object.keys(inspection)) strictEqual(inspection[name], commonjs[name], name);
+  `], { timeoutMs: 10_000 });
+  expect(identities.exitCode, identities.diagnostic()).toBe(0);
   const inspection = await import("niceeval/inspection");
   const require = createRequire(import.meta.url);
   const commonjsInspection = require("niceeval/inspection") as typeof inspection;

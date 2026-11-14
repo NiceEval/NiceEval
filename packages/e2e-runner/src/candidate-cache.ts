@@ -90,7 +90,7 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function*(repoRoot
     const built = join(cache, "package");
     const tarball = join(cache, "candidate.tgz");
     const complete = yield* io(() => {
-      if (!existsSync(join(cache, "built.json")) || !existsSync(join(built, "dist/index.mjs"))) return false;
+      if (!existsSync(join(cache, "built.json")) || !existsSync(join(built, "dist/index.js"))) return false;
       const record = JSON.parse(readFileSync(join(cache, "built.json"), "utf8")) as { inputDigest: string; outputDigest: string };
       return record.inputDigest === inputDigest && record.outputDigest === snapshotDigest(built);
     });

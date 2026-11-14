@@ -17,201 +17,93 @@
   "exports": {
     ".": {
       "niceeval-source": "./src/index.ts",
-      "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./judge": {
       "niceeval-source": "./src/judge/index.ts",
-      "import": {
-        "types": "./dist/judge/index.d.mts",
-        "default": "./dist/judge/index.mjs"
-      },
-      "require": {
-        "types": "./dist/judge/index.d.cts",
-        "default": "./dist/judge/index.cjs"
-      }
+      "types": "./dist/judge/index.d.ts",
+      "default": "./dist/judge/index.js"
     },
     "./sandbox": {
       "niceeval-source": "./src/sandbox/index.ts",
-      "import": {
-        "types": "./dist/sandbox/index.d.mts",
-        "default": "./dist/sandbox/index.mjs"
-      },
-      "require": {
-        "types": "./dist/sandbox/index.d.cts",
-        "default": "./dist/sandbox/index.cjs"
-      }
+      "types": "./dist/sandbox/index.d.ts",
+      "default": "./dist/sandbox/index.js"
     },
     "./sandbox/e2b-template": {
       "niceeval-source": "./src/sandbox/e2b-agent-template.ts",
-      "import": {
-        "types": "./dist/sandbox/e2b-agent-template.d.mts",
-        "default": "./dist/sandbox/e2b-agent-template.mjs"
-      },
-      "require": {
-        "types": "./dist/sandbox/e2b-agent-template.d.cts",
-        "default": "./dist/sandbox/e2b-agent-template.cjs"
-      }
+      "types": "./dist/sandbox/e2b-agent-template.d.ts",
+      "default": "./dist/sandbox/e2b-agent-template.js"
     },
     "./adapter": {
       "niceeval-source": "./src/agents/index.ts",
-      "import": {
-        "types": "./dist/agents/index.d.mts",
-        "default": "./dist/agents/index.mjs"
-      },
-      "require": {
-        "types": "./dist/agents/index.d.cts",
-        "default": "./dist/agents/index.cjs"
-      }
+      "types": "./dist/agents/index.d.ts",
+      "default": "./dist/agents/index.js"
     },
     "./adapter/otel": {
       "niceeval-source": "./src/agents/ai-sdk-otel.ts",
-      "import": {
-        "types": "./dist/agents/ai-sdk-otel.d.mts",
-        "default": "./dist/agents/ai-sdk-otel.mjs"
-      },
-      "require": {
-        "types": "./dist/agents/ai-sdk-otel.d.cts",
-        "default": "./dist/agents/ai-sdk-otel.cjs"
-      }
+      "types": "./dist/agents/ai-sdk-otel.d.ts",
+      "default": "./dist/agents/ai-sdk-otel.js"
     },
     "./plugin": {
       "niceeval-source": "./src/plugin/index.ts",
-      "import": {
-        "types": "./dist/plugin/index.d.mts",
-        "default": "./dist/plugin/index.mjs"
-      },
-      "require": {
-        "types": "./dist/plugin/index.d.cts",
-        "default": "./dist/plugin/index.cjs"
-      }
+      "types": "./dist/plugin/index.d.ts",
+      "default": "./dist/plugin/index.js"
     },
     "./expect": {
       "niceeval-source": "./src/expect/index.ts",
-      "import": {
-        "types": "./dist/expect/index.d.mts",
-        "default": "./dist/expect/index.mjs"
-      },
-      "require": {
-        "types": "./dist/expect/index.d.cts",
-        "default": "./dist/expect/index.cjs"
-      }
+      "types": "./dist/expect/index.d.ts",
+      "default": "./dist/expect/index.js"
     },
     "./reporters": {
       "niceeval-source": "./src/runner/reporters/index.ts",
-      "import": {
-        "types": "./dist/runner/reporters/index.d.mts",
-        "default": "./dist/runner/reporters/index.mjs"
-      },
-      "require": {
-        "types": "./dist/runner/reporters/index.d.cts",
-        "default": "./dist/runner/reporters/index.cjs"
-      }
+      "types": "./dist/runner/reporters/index.d.ts",
+      "default": "./dist/runner/reporters/index.js"
     },
     "./loaders": {
       "niceeval-source": "./src/loaders/index.ts",
-      "import": {
-        "types": "./dist/loaders/index.d.mts",
-        "default": "./dist/loaders/index.mjs"
-      },
-      "require": {
-        "types": "./dist/loaders/index.d.cts",
-        "default": "./dist/loaders/index.cjs"
-      }
+      "types": "./dist/loaders/index.d.ts",
+      "default": "./dist/loaders/index.js"
     },
     "./eval/host": {
       "niceeval-source": "./src/eval/host/index.ts",
-      "import": {
-        "types": "./dist/eval/host/index.d.mts",
-        "default": "./dist/eval/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/eval/host/index.d.cts",
-        "default": "./dist/eval/host/index.cjs"
-      }
+      "types": "./dist/eval/host/index.d.ts",
+      "default": "./dist/eval/host/index.js"
     },
     "./experiment/host": {
       "niceeval-source": "./src/experiment/host/index.ts",
-      "import": {
-        "types": "./dist/experiment/host/index.d.mts",
-        "default": "./dist/experiment/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/experiment/host/index.d.cts",
-        "default": "./dist/experiment/host/index.cjs"
-      }
+      "types": "./dist/experiment/host/index.d.ts",
+      "default": "./dist/experiment/host/index.js"
     },
     "./coordination/host": {
       "niceeval-source": "./src/coordination/host/index.ts",
-      "import": {
-        "types": "./dist/coordination/host/index.d.mts",
-        "default": "./dist/coordination/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/coordination/host/index.d.cts",
-        "default": "./dist/coordination/host/index.cjs"
-      }
+      "types": "./dist/coordination/host/index.d.ts",
+      "default": "./dist/coordination/host/index.js"
     },
     "./run/host": {
       "niceeval-source": "./src/run/host/index.ts",
-      "import": {
-        "types": "./dist/run/host/index.d.mts",
-        "default": "./dist/run/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/run/host/index.d.cts",
-        "default": "./dist/run/host/index.cjs"
-      }
+      "types": "./dist/run/host/index.d.ts",
+      "default": "./dist/run/host/index.js"
     },
     "./run": {
       "niceeval-source": "./src/run/index.ts",
-      "import": {
-        "types": "./dist/run/index.d.mts",
-        "default": "./dist/run/index.mjs"
-      },
-      "require": {
-        "types": "./dist/run/index.d.cts",
-        "default": "./dist/run/index.cjs"
-      }
+      "types": "./dist/run/index.d.ts",
+      "default": "./dist/run/index.js"
     },
     "./inspection": {
       "niceeval-source": "./src/inspection/public.ts",
-      "import": {
-        "types": "./dist/inspection/public.d.mts",
-        "default": "./dist/inspection/public.mjs"
-      },
-      "require": {
-        "types": "./dist/inspection/public.d.cts",
-        "default": "./dist/inspection/public.cjs"
-      }
+      "types": "./dist/inspection/public.d.ts",
+      "default": "./dist/inspection/public.js"
     },
     "./view": {
       "niceeval-source": "./src/view/index.ts",
-      "import": {
-        "types": "./dist/view/index.d.mts",
-        "default": "./dist/view/index.mjs"
-      },
-      "require": {
-        "types": "./dist/view/index.d.cts",
-        "default": "./dist/view/index.cjs"
-      }
+      "types": "./dist/view/index.d.ts",
+      "default": "./dist/view/index.js"
     },
     "./project/host": {
       "niceeval-source": "./src/project/host/index.ts",
-      "import": {
-        "types": "./dist/project/host/index.d.mts",
-        "default": "./dist/project/host/index.mjs"
-      },
-      "require": {
-        "types": "./dist/project/host/index.d.cts",
-        "default": "./dist/project/host/index.cjs"
-      }
+      "types": "./dist/project/host/index.d.ts",
+      "default": "./dist/project/host/index.js"
     }
   },
   "files": [

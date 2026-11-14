@@ -1,6 +1,6 @@
 // Regression note: memory/tsx-dynamic-import-require-cycle.md
 
-import { createE2EContext } from "@niceeval/testkit";
+import { command, createE2EContext } from "@niceeval/testkit";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -65,6 +65,19 @@ const e2e = createE2EContext({
 // @regression memory/published-package-runtime-dependencies-missing.md
 
 test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey", async () => {
+  // Vite can transform linked candidates into its own module cache. Exercise
+  // import and require together in Node, where consumers share require(esm).
+  const identities = await command([process.execPath]).run(["--input-type=module", "--eval", `
+    import { strictEqual } from "node:assert";
+    import { createRequire } from "node:module";
+    const require = createRequire(import.meta.url);
+    for (const specifier of ["niceeval", "niceeval/expect", "niceeval/eval/host", "niceeval/project/host"]) {
+      const esm = await import(specifier);
+      const commonjs = require(specifier);
+      for (const name of Object.keys(esm)) strictEqual(esm[name], commonjs[name], specifier + ": " + name);
+    }
+  `], { timeoutMs: 10_000 });
+  expect(identities.exitCode, identities.diagnostic()).toBe(0);
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
     const dependencies = packageJson[field];
@@ -85,7 +98,7 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
   for (const name of ["defineJudge", "defineScoreMatch", "defineMaterialMatch", "defineContextMatch",
     "factuality", "faithfulness", "instructionFollowing", "pairwisePreference"] as const) {
     expect(typeof expectEntry[name], name).toBe("function");
-    expect(expectEntry[name], `ESM/CJS matcher identity: ${name}`).toBe(expectCommonjs[name]);
+    expect(typeof expectCommonjs[name], name).toBe("function");
     expect(Object.hasOwn(rootEntry, name), `root alias: ${name}`).toBe(false);
     expect(Object.hasOwn(rootCommonjs, name), `CommonJS root alias: ${name}`).toBe(false);
   }
@@ -159,12 +172,8 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
     "ProjectProcessFacts",
     "projectHost",
   ]);
-  for (const name of Object.keys(evalEsm)) {
-    expect(evalEsm[name], `ESM/CJS eval Host identity: ${name}`).toBe(evalCommonjs[name]);
-  }
-  for (const name of Object.keys(projectEsm)) {
-    expect(projectEsm[name], `ESM/CJS project Host identity: ${name}`).toBe(projectCommonjs[name]);
-  }
+  expect(Object.keys(evalCommonjs).sort()).toEqual(Object.keys(evalEsm).sort());
+  expect(Object.keys(projectCommonjs).sort()).toEqual(Object.keys(projectEsm).sort());
   expect(Object.isFrozen(evalEsm.evalHost)).toBe(true);
   expect(Object.keys(evalEsm.evalHost)).toEqual(["catalog"]);
   expect(Object.isFrozen(projectEsm.projectHost)).toBe(true);
