@@ -611,6 +611,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
     this.attemptBeforeCache = this.profileBeforeCache === undefined
       ? makeDockerBeforeCacheCapability({
+          baseReference: options.image ?? DOCKER_IMAGES[this.runtime]!,
           eligibility: () => this.beforeCacheEligibility(),
           captureExactImage: (labels, knownSensitiveValues, signal) =>
             this.captureBeforeCacheImage(labels, knownSensitiveValues, signal),

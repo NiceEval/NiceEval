@@ -16,6 +16,7 @@ export function beforeCacheReplacementWarnings(plans: readonly LinkedRunPlan[], 
     if (support._tag === "RunPrepared" && resolvedScope === undefined) continue;
     let state: SandboxActionState | undefined;
     const chain: string[] = [];
+    const declarations: JsonValue[] = [];
     for (const entry of plan.pair.before) {
       if (entry.kind !== "action" || entry.owner.kind === "agent") break;
       if (entry.data.steps.some((step) => {
@@ -25,13 +26,12 @@ export function beforeCacheReplacementWarnings(plans: readonly LinkedRunPlan[], 
       state = mergeSandboxActionState(state, entry.data.plan.state);
       if (!sandboxActionStateCovers(support.coverage, state)) break;
       chain.push(entry.id);
-      const scope = digestOf({ provider: plan.providerPlan.provider, base: resolvedScope ?? plan.providerPlan.identity, positions: chain });
+      const owner = `${entry.owner.kind}:${entry.owner.id}`;
+      const scope = digestOf({ provider: plan.providerPlan.provider, base: resolvedScope ?? plan.providerPlan.identity, positions: chain, declaringOwner: owner });
       let variants = positions.get(scope);
       if (variants === undefined) { variants = new Map(); positions.set(scope, variants); }
-      // A changed ancestor is reported at its own position, without repeating
-      // the same conflict at every descendant.
-      const content = digestOf(beforeCacheActionDeclaration(entry, state));
-      const owner = `${entry.owner.kind}:${entry.owner.id}`;
+      declarations.push(beforeCacheActionDeclaration(entry, state));
+      const content = digestOf(declarations);
       variants.set(JSON.stringify([content, owner, plan.pair.experimentId]), { content, owner, experimentId: plan.pair.experimentId, actionId: entry.id });
     }
   }

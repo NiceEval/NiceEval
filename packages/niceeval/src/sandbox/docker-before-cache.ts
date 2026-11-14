@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import Docker from "dockerode";
 import { Effect } from "effect";
+import { beforeCacheReplacementScope } from "./before-cache-replacement.ts";
 import { sandboxActionStateCovers, sandboxState } from "./action.ts";
 import {
   BeforeCacheCaptureError,
@@ -91,14 +92,8 @@ interface ValidatedManifest {
   readonly metadataDigest: string;
 }
 
-function replacementScope(manifest: ValidatedManifest): string {
-  const metadata = manifest.value.declarationMetadata;
-  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
-    throw new TypeError("before-cache declaration metadata must be a record");
-  }
-  const scope = (metadata as { readonly replacementScope?: unknown }).replacementScope;
-  if (scope === undefined) throw new TypeError("before-cache declaration metadata has no replacement scope");
-  return canonicalJson(scope);
+function replacementScope(input: BeforeCacheStep, executionDomainId: string, baseReference: string): string {
+  return beforeCacheReplacementScope({ provider: "docker", executionDomainId, baseReference }, input);
 }
 
 interface HolderIdentity {
@@ -154,6 +149,7 @@ export interface DockerBeforeCacheHoldOwnership {
 
 /** Narrow Docker target. Registry code never reaches into DockerSandbox implementation fields. */
 export interface DockerBeforeCacheTarget {
+  readonly baseReference: string;
   readonly eligibility: () => BeforeCacheEligibility;
   readonly captureExactImage: (
     labels: Readonly<Record<string, string>>,
@@ -866,6 +862,7 @@ async function lookupAndRestore(
 async function reserveEntry(
   input: BeforeCacheStep,
   manifest: ValidatedManifest,
+  baseReference: string,
 ): Promise<
   | { readonly _tag: "Reserved"; readonly lease: BeforeCacheLease }
   | { readonly _tag: "Contended"; readonly beforeCacheKey: string; readonly reason: "active-writer" | "indexed-generation" }
@@ -879,7 +876,7 @@ async function reserveEntry(
     operation: "before-cache-reserve",
     domainId: domain.domainId,
     manifest: repositoryManifest(manifest),
-    replacementScope: replacementScope(manifest),
+    replacementScope: replacementScope(input, domain.domainId, baseReference),
     operationId: input.operationId,
     leaseId,
     holder: repositoryHolder(holder),
@@ -967,7 +964,7 @@ async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: str
       if (inspection === undefined) {
         state = "tombstoned";
       } else if (!await hasContainerReference(imageId, signal)) {
-        await new Docker().getImage(imageId).remove({ abortSignal: signal });
+        await new Docker().getImage(imageId).remove({ noprune: true, abortSignal: signal });
         if (await inspectExactImageOrAbsent(imageId, signal) === undefined) state = "tombstoned";
       }
     } catch {
@@ -1016,7 +1013,7 @@ async function capture(
   let imageId: string | undefined;
   try {
     signal.throwIfAborted();
-    const reserved = await reserveEntry(input, manifest);
+    const reserved = await reserveEntry(input, manifest, target.baseReference);
     if (reserved._tag === "Contended") return reserved;
     reservation = reserved.lease;
     reservedRow = reservation.row;
@@ -1026,7 +1023,7 @@ async function capture(
     const inspection = await inspectExactImage(imageId, signal);
     validateImageLabels(inspection, imageId, labels);
     await publishEntry(reservedRow, imageId, signal);
-    await reclaimSupersededDockerImages(replacementScope(manifest), reservedRow.entry_id);
+    await reclaimSupersededDockerImages(replacementScope(input, reservation.domain.domainId, target.baseReference), reservedRow.entry_id);
     signal.throwIfAborted();
     const lease = await acquireIndexedLease(input, manifest, reservedRow.entry_id);
     if (lease === undefined) throw new Error("captured before-cache generation was not indexed");

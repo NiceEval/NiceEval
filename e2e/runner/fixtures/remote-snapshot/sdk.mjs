@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 const label = `niceeval.snapshot-fixture=${process.env.NICEEVAL_SNAPSHOT_FIXTURE_ID}`;
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 const snapshots = new Map();
-const existingImages = docker('images', '-q', '--filter', `label=${label}`, '--filter', 'label=niceeval.snapshot-id').split(/\s+/u).filter(Boolean);
+const existingImages = docker('images', '-aq', '--filter', `label=${label}`, '--filter', 'label=niceeval.snapshot-id').split(/\s+/u).filter(Boolean);
 for (const image of new Set(existingImages)) {
   const [inspection] = JSON.parse(docker('image', 'inspect', image));
   const labels = inspection.Config.Labels;
@@ -34,7 +34,7 @@ export class Sandbox {
   static async deleteSnapshot(id) {
     const snapshot = snapshots.get(id);
     if (!snapshot) return false;
-    docker('image', 'rm', snapshot.image);
+    docker('image', 'rm', '--no-prune', snapshot.image);
     return snapshots.delete(id);
   }
   static listSnapshots({ name }) {

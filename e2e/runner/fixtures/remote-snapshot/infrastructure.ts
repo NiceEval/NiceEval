@@ -21,7 +21,7 @@ export async function withSnapshotInfrastructure(
       NODE_OPTIONS: `--import=${join(paths.projectRoot, "fixtures/remote-snapshot/preload.mjs")}`,
     } });
   } finally {
-    for (const [kind, list] of [["container", ["ps", "-aq"]], ["image", ["images", "-q"]]] as const) {
+    for (const [kind, list] of [["container", ["ps", "-aq"]], ["image", ["images", "-aq"]]] as const) {
       const resources = await run(["docker", ...list, "--filter", filter]);
       if (resources.exitCode !== 0) throw new Error(resources.diagnostic());
       const ids = [...new Set(resources.stdout.trim().split(/\s+/u).filter(Boolean))];

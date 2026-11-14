@@ -90,6 +90,8 @@ export interface BeforeCacheStep {
   readonly operationId: string;
   readonly declaration: BeforeCacheDeclaration;
   readonly positions: readonly string[];
+  /** Layer declaring this action; excluded from the content-addressed declaration. */
+  readonly declaringOwner: string;
   /** Defense-in-depth only; values are checked before an image is published and are never persisted. */
   readonly knownSensitiveValues?: readonly string[];
 }

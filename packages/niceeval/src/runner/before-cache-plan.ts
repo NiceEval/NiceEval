@@ -65,6 +65,7 @@ export interface PlannedBeforeCacheAction {
   readonly key: string;
   readonly declaration: BeforeCacheDeclaration;
   readonly positions: readonly string[];
+  readonly declaringOwner: string;
   /** Current consumer's declarations, aligned with the prefix's action order. */
   readonly attributions: readonly ReturnType<typeof beforeCacheAttribution>[];
 }
@@ -123,8 +124,8 @@ export function plannedBeforeCacheActions(
         plannerRevision: provider.plannerRevision,
       },
       actionDeclarations: [...actionDeclarations],
-      // Replacement collapses only physical generations of the exact declared
-      // content. Different canonical inputs remain independently addressable.
+      // Preserve the v1 content-key bytes. Actual replacement lineage is
+      // computed separately from the operation context, never from this field.
       replacementScope: Object.freeze({
         protocol: "niceeval.before-cache-replacement/v1",
         baseIdentity,
@@ -152,20 +153,21 @@ export function plannedBeforeCacheActions(
       changeFrequency: entry.metadata.changeFrequency.value,
       declarationMetadata,
     });
-    planned.push(Object.freeze({ entry, key, declaration, positions: Object.freeze([...positions]), attributions: Object.freeze([...attributions]) }));
+    planned.push(Object.freeze({ entry, key, declaration, positions: Object.freeze([...positions]), declaringOwner: `${entry.owner.kind}:${entry.owner.id}`, attributions: Object.freeze([...attributions]) }));
     parentKey = key;
   }
   return Object.freeze(planned);
 }
 
 export function beforeCacheStep(
-  planned: Pick<PlannedBeforeCacheAction, "declaration" | "positions">,
+  planned: Pick<PlannedBeforeCacheAction, "declaration" | "positions" | "declaringOwner">,
   knownSensitiveValues?: readonly string[],
 ): BeforeCacheStep {
   return Object.freeze({
     operationId: `before-cache-${randomUUID()}`,
     declaration: planned.declaration,
     positions: planned.positions,
+    declaringOwner: planned.declaringOwner,
     ...(knownSensitiveValues === undefined || knownSensitiveValues.length === 0
       ? {}
       : { knownSensitiveValues: Object.freeze([...knownSensitiveValues]) }),

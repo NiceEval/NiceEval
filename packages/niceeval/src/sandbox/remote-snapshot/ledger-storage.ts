@@ -44,7 +44,7 @@ function lookupReserve(database: DatabaseSync, request: Extract<BeforeCacheSnaps
   const ready = entry(database, `SELECT * FROM before_cache_snapshots
     WHERE provider = ? AND execution_domain_id = ? AND before_cache_key = ? AND state = 'ready'`, provider, executionDomainId, beforeCacheKey);
   if (ready !== undefined) {
-    if (ready.base_identity === request.baseIdentity && ready.declaration_json === request.declarationJson && ready.replacement_scope === request.replacementScope) {
+    if (ready.base_identity === request.baseIdentity && ready.declaration_json === request.declarationJson) {
       insertRunHold(database, ready, request.holdId, now);
       return { _tag: "Hit", entry: ready, holdId: request.holdId };
     }

@@ -5,7 +5,7 @@ import { Clock, Deferred, Effect, Exit, Result, Schema, Scope } from "effect";
 import { userDatabaseHost, type UserDatabase } from "../../user-database/index.ts";
 import { BeforeCacheLookupError, type BeforeCacheError, type BeforeCacheStep } from "../backend.ts";
 import type { MaterializedSandboxCase } from "../case-types.ts";
-import { digestOf } from "../identity.ts";
+import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import type {
   BeforeCacheArtifact, BeforeCacheCapture, BeforeCacheDegradedReason, BeforeCacheLookup, BeforeCacheMaterialized,
   BeforeCachePreparationContext, BeforeCachePreparer, BeforeCacheSource,
@@ -235,7 +235,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
         operation: "lookup-reserve" as const,
         beforeCacheKey: step.declaration.beforeCacheKey, baseIdentity: target.baseIdentity,
         declarationJson: JSON.stringify(yield* Effect.try({ try: () => decodeDeclaration(step.declaration), catch: () => ledgerError() })),
-        replacementScope: digestOf({ provider: context.providerId, executionDomainId: target.executionDomainId, baseReference: target.baseReference, positions: [...step.positions] }),
+        replacementScope: beforeCacheReplacementScope({ provider: context.providerId, executionDomainId: target.executionDomainId, baseReference: target.baseReference }, step),
       };
       while (true) {
         const token = randomUUID(), holdId = randomUUID();

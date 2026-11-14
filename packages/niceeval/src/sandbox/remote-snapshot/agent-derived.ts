@@ -8,6 +8,7 @@ export interface PlannedAgentDerivedNode {
   readonly key: string;
   readonly declaration: BeforeCacheDeclaration;
   readonly positions: readonly string[];
+  readonly declaringOwner: string;
   readonly installs: readonly AgentInstall[];
   readonly installers: readonly AgentInstaller[];
 }
@@ -47,6 +48,7 @@ export function plannedAgentDerivedNode(
   const key = `agent-derived:${digestOf(declarationMetadata)}`;
   return Object.freeze({
     key,
+    declaringOwner: `agent:${plan.pair.agentName}`,
     positions: Object.freeze([...(parent?.positions ?? []), "niceeval.agent-install"]),
     installs,
     installers,

@@ -43,7 +43,8 @@ test.concurrent("concurrent invocations reserve one writer before any snapshot r
         ...writer, operation: "publish", snapshotId: "snapshot-only-writer", now: 1_001,
       });
       expect(published._tag).toBe("Published");
-      const follower = yield* snapshotLedgerRequest(second, { ...reservation(), now: 1_002 });
+      // Content hits preserve the first publisher's lineage, including v1 rows.
+      const follower = yield* snapshotLedgerRequest(second, { ...reservation("prefix:one", "position:other-owner-v2"), now: 1_002 });
       expect(follower._tag).toBe("Hit");
       if (follower._tag === "Hit") expect(follower.entry.artifact_id).toBe(writer.artifactId);
     })));

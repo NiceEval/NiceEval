@@ -132,7 +132,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
   };
   const declarationMetadata = { action: "prepare" };
   const step: BeforeCacheStep = {
-    operationId: randomUUID(), positions: ["prepare"], declaration: {
+    operationId: randomUUID(), positions: ["prepare"], declaringOwner: "eval:prepare", declaration: {
       baseIdentity: "immutable-base", beforeCacheKey: `prefix:${domain}`, declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
       requiredState: "all", storageSchemaRevision: "1", artifactFormatRevision: "1", changeFrequency: 100, declarationMetadata,
     },
