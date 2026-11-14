@@ -450,6 +450,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 - `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
   摘要、section states 与 limitations。另给出可复制的 assertions、source、execution、timing、usage 和 diff 后续命令。
   errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，诊断下方直接指向 `--execution` 里的命令输出。
+  overview 与 `--execution` 的 `cache-degraded` 诊断显示具名降级 reason 与受影响的 Before 节点；若有远端调用错误，给出可展开的稳定 ID。
 - `@<locator> --assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
   指定 `--entry <id>` 选择单项断言；默认以 compact 紧凑摘要交付，指定 `--full` 包含完整原始材料与上下文行。
 - `--experiment <id>... --assertions` 调用 `experiments.assertions`，按 Eval 把各 Experiment 的断言条目排成判据矩阵，见[跨 Experiment 的判据矩阵](#跨-experiment-的判据矩阵)。

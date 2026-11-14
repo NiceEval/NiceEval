@@ -1219,6 +1219,12 @@ export function renderTrace(value: TraceView): string {
         ]),
         overflow: "wrap",
       },
+      ...value.diagnostics.items.filter((diagnostic) => diagnostic.code === "cache-degraded").map((diagnostic) => ({
+        kind: "keyValue" as const,
+        entries: [
+          { key: "Cache degradation", value: diagnostic.summary },
+        ],
+      })),
     ],
   });
   blocks.push(

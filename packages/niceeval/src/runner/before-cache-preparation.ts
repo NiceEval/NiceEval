@@ -38,7 +38,11 @@ export interface PreparedBeforeCacheUse {
   readonly artifact?: BeforeCacheArtifact;
   readonly satisfiedActionCount: number;
   readonly agentDerived?: true;
-  readonly degraded?: { readonly reason: string; readonly operationId: string };
+  readonly degraded?: {
+    readonly reason: string;
+    readonly operationId: string;
+    readonly nodes?: readonly { readonly key: string; readonly actionId: string; readonly owner: string; readonly reason: string }[];
+  };
 }
 
 export interface BeforeCachePreparationResult {
@@ -512,6 +516,7 @@ export function prepareBeforeCaches(
       }
       let cursor: PreparationNode | undefined = nodes.get(target.finalKey);
       let use: Omit<PreparedBeforeCacheUse, "context"> = { satisfiedActionCount: 0 };
+      const degradedNodes: NonNullable<NonNullable<PreparedBeforeCacheUse["degraded"]>["nodes"]>[number][] = [];
       while (cursor !== undefined) {
         const ancestor = terminal.get(cursor.key)!;
         if (Result.isSuccess(ancestor) && ancestor.success.outcome !== "degraded") {
@@ -519,10 +524,19 @@ export function prepareBeforeCaches(
             ...("installs" in cursor.planned ? { agentDerived: true as const } : {}) };
           break;
         }
+        if (Result.isSuccess(ancestor) && ancestor.success.outcome === "degraded") {
+          const planned = cursor.planned;
+          degradedNodes.push({
+            key: cursor.key,
+            actionId: "entry" in planned ? planned.entry.id : "niceeval.agent-install",
+            owner: "entry" in planned ? `${planned.entry.owner.kind}:${planned.entry.owner.id}` : "agent",
+            reason: ancestor.success.reason,
+          });
+        }
         cursor = cursor.parentKey === undefined ? undefined : nodes.get(cursor.parentKey);
       }
       if (result.success.outcome === "degraded") use = {
-        ...use, degraded: { reason: result.success.reason, operationId: result.success.operationId },
+        ...use, degraded: { reason: result.success.reason, operationId: result.success.operationId, nodes: degradedNodes.reverse() },
       };
       for (const pairKey of target.pairKeys) preparedByPair.set(pairKey, Object.freeze({ ...use, context: contextsByPair.get(pairKey)! }));
     }

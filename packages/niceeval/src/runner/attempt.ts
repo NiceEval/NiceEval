@@ -2862,12 +2862,23 @@ async function runAttemptBody(
         : preparedBeforeCache.degraded;
       const restoredCount = start?._tag === "FellBackToBase" ? 0 : satisfied;
       if (degraded !== undefined) {
-        feedback.diagnostic({
-          code: "cache-degraded",
-          level: "warning",
-          message: "Before cache is unavailable; the remaining before actions will run on the usable sandbox state.",
-          data: { operation: "before-cache.restore", operationId: degraded.operationId, reason: degraded.reason },
-        });
+        const nodes = start?._tag !== "FellBackToBase" && preparedBeforeCache.degraded?.nodes?.length
+          ? preparedBeforeCache.degraded.nodes
+          : linked.before.slice(restoredCount, structurallyEligibleCount).map((entry) => ({
+            actionId: entry.id, owner: `${entry.owner.kind}:${entry.owner.id}`, reason: degraded.reason,
+          }));
+        for (const node of nodes) {
+          // Persist the named reason and node in the existing diagnostic summary:
+          // arbitrary feedback data is intentionally not retained by this family.
+          feedback.diagnostic({
+            code: "cache-degraded",
+            level: "warning",
+            message: `Before cache degraded: ${node.reason}; Before ${node.owner} / ${node.actionId}` +
+              ("key" in node ? `; node ${node.key}` : "") +
+              ". The remaining before actions will run on the usable sandbox state.",
+            data: { operation: "before-cache.restore", operationId: degraded.operationId, reason: node.reason, actionId: node.actionId },
+          });
+        }
       }
       for (let index = 0; index < restoredCount; index++) {
         cacheProgress("hit", linked.before[index]!);

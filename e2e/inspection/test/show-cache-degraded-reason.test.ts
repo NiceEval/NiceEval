@@ -58,7 +58,7 @@ export default defineExperiment({ adapter: deterministicAgent(),
         const shown = await cli.run(["show", attempt.locator, ...slice], { cwd: root, env });
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
         expect(shown.stdout, shown.diagnostic()).toContain("cache-degraded");
-        expect(shown.stdout, shown.diagnostic()).toContain("staging-failed");
+        expect(shown.stdout, shown.diagnostic()).toContain("snapshot-uncertain");
         expect(shown.stdout, shown.diagnostic()).toContain("storage-prefix");
       }
       const provider = JSON.parse(await readFile(state, "utf8"));
