@@ -186,6 +186,23 @@ check 同步验证入口和 Match，然后生成有界 canonical JSON 快照。
 审计保存实际请求、尝试、结构化输出和最终聚合；schema、预算、取消及历史读取由 [Architecture](architecture.md) 定义。
 历史材料不会被重新解释或迁移。审计能证明经框架进行的调用，不能证明作者隐藏闭包、模型判断或外部事实正确。
 
+### Turn 与 Session 作为材料
+
+评价被测 agent 这一轮做了什么时，直接把 Turn 交给 Judge，不必自己挑字段拼对象：
+
+```ts
+const first = await t.send("把 niceeval 接入这个仓库。");
+t.judge(first, binaryJudge({ rubric: "agent 动手前说清了它选用的入口与协议形状，并且读过定义这个入口的源码。" }))
+  .score(2).label("核对接入协议");
+t.judge({ turn: first, verified }, binaryJudge({ rubric: "回复报告的结果与 verified 一致。" })).score(2);
+```
+
+- Turn 与 Session 可以直接作为材料，也可以出现在材料对象的任意位置。NiceEval 把它投影成标准对话记录：用户输入、助手消息、工具调用（名称、输入、状态、输出）、待输入请求与最终回复，按发生顺序排列。Session 是其中各 Turn 的顺序拼接。
+- 适配器标为 partial 的历史照实标注缺了什么，不因此拒收材料。
+- 投影超出 `maxMaterialBytes` 时按固定优先级裁剪，而不是整条 unavailable：用户输入、待输入请求与最终回复完整保留；先把工具输出按头尾保留、中间省略并注明省略字节，从最长的开始；仍超出时再同样裁剪工具输入；最后才裁剪较早的助手消息。保留的部分仍超出预算时才是 unavailable。
+- 裁剪是确定性的，同一个 Turn 与预算得到同样的材料；审计记录每处省略的位置与字节数，模型看到的省略标记与审计一致。
+- 投影格式与裁剪规则有 revision，进入使用它的 Judge entry 身份。
+
 ## Agent Judge —— 在 Sandbox 里自己取证再评分
 
 `defineJudge` 只看调用方交给它的材料。安装、重构、修复这类开放式判据，要看的东西散在被测 Sandbox 里：作者改了哪些文件、项目怎么组织、命令能不能跑。
