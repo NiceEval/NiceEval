@@ -14,13 +14,15 @@ const scenario = createE2EContext({ repoId: "agent-judge", project: {
 function modelServer(mode: string) {
   const bodies: string[] = [];
   let ordinal = 0;
+  let overflowed = false;
   const server = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
     request.on("data", (chunk: string) => { body += chunk; });
     request.on("end", () => {
       const payload = JSON.parse(body);
-      if (!payload.tools) throw new Error("Expected tools protocol");
+      const summary = payload.messages[0]?.content?.includes("context summarization assistant") === true;
+      if (!payload.tools && !summary) throw new Error("Expected tools protocol");
       bodies.push(body);
       ordinal += 1;
       if (mode === "timeout" || mode === "cancel-http") return;
@@ -28,14 +30,34 @@ function modelServer(mode: string) {
       if (mode === "http400") { response.writeHead(400); response.end("invalid request"); return; }
       if (mode === "malformed") { response.end('{"choices":[]}'); return; }
       if (mode === "transport") { response.writeHead(503); response.end("unavailable"); return; }
+      const send = (text: string | null, calls: unknown[] = []) => {
+        const finish_reason = calls.length > 0 ? "tool_calls" : "stop";
+        const usage = { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 };
+        if (payload.stream) {
+          response.setHeader("Content-Type", "text/event-stream");
+          const delta = { role: "assistant", content: text, ...(calls.length > 0 ? { tool_calls: calls.map((call, index) => ({ ...call as object, index })) } : {}) };
+          response.end(`data: ${JSON.stringify({ id: `generation-${ordinal}`, object: "chat.completion.chunk", model: payload.model, choices: [{ index: 0, delta, finish_reason }], usage })}\n\ndata: [DONE]\n\n`);
+        } else {
+          response.setHeader("Content-Type", "application/json");
+          response.end(JSON.stringify({ id: `generation-${ordinal}`, object: "chat.completion", model: payload.model, created: 0, usage,
+            choices: [{ index: 0, finish_reason, message: { role: "assistant", content: text, ...(calls.length > 0 ? { tool_calls: calls } : {}) } }] }));
+        }
+      };
+      if (summary) { send("The reviewer inspected application.txt and wrote review.txt. First question was submitted. Continue with Second question."); return; }
       const lastUser = payload.messages.findLast((message: { role: string }) => message.role === "user");
       const step = JSON.parse(lastUser.content);
       const last = payload.messages.at(-1);
+      if (mode.startsWith("compact-") && step.message === "Second question" && (!overflowed || mode === "compact-overflow")) {
+        overflowed = true;
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "maximum context length exceeded", type: "invalid_request_error", code: "context_length_exceeded" } }));
+        return;
+      }
       const call = (name: string, args: unknown, suffix = "") => ({ id: `call-${ordinal}${suffix}`, type: "function", function: { name, arguments: JSON.stringify(args) } });
       const submit = call("submit_evaluation", { measurement: 1, rationale: "Observed real Sandbox evidence", evidence: [{ kind: "file", ref: "application.txt", note: "Read application evidence" }] });
       let calls: unknown[] = [];
       let text: string | null = null;
-      if (step.kind === "chat") text = "Ready to inspect.";
+      if (step.kind === "chat") text = mode.startsWith("compact-") ? "Earlier evidence. ".repeat(7000) : "Ready to inspect.";
       else if (mode === "cancel") calls = [call("bash", { command: "touch judge-running; sleep 30; touch late-write" })];
       else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question") calls = [call("read", { path: "application.txt" })];
@@ -44,18 +66,14 @@ function modelServer(mode: string) {
       else if (mode === "success" && step.message === "Second question" && last.role === "user") calls = [call("submit_evaluation", { measurement: 2, rationale: "invalid", evidence: [] })];
       else if (mode !== "turns" && step.message.includes("preceding") && last.role === "user") calls = [call("read", { path: "review.txt" })];
       else calls = [submit, call("write", { path: "MUST_NOT_WRITE", content: "forbidden" }, "-skipped")];
-      response.setHeader("Content-Type", "application/json");
-      response.end(JSON.stringify({ id: `generation-${ordinal}`, object: "chat.completion", model: "agent-review-fixture", created: 0,
-        usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
-        choices: [{ index: 0, finish_reason: calls.length > 0 ? "tool_calls" : "stop", message: { role: "assistant", content: text, ...(calls.length > 0 ? { tool_calls: calls } : {}) } }],
-      }));
+      send(text, calls);
     });
   });
   return { server, bodies };
 }
 
 // @feature docs/feature/judge/README.md
-test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "budget", "material", "typesafe", "response-limit", "truncation"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
+test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "budget", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
   const { server, bodies } = modelServer(mode);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -87,9 +105,14 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           }
           expect(audit, JSON.stringify(detail)).toMatchObject({ state: "available" });
           if (audit?.state !== "available") throw new Error("Missing audit");
-          const expected = ["success", "barrier", "truncation"].includes(mode) || mode === "turns" && index > 0 ? "measured" : ["http400", "malformed"].includes(mode) ? "errored" : "unavailable";
+          const expected = ["success", "barrier", "truncation", "compact-continue"].includes(mode) || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : ["http400", "malformed"].includes(mode) ? "errored" : "unavailable";
           expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify(audit.audit.result)}`).toBe(expected);
           expect(audit.trace.steps.filter((step) => step.kind === "judge")).toHaveLength(index === 2 ? 1 : 2);
+          if (mode.startsWith("compact-") && index === 1) {
+            expect(audit.trace.compactions).toHaveLength(1);
+            expect(audit.trace.compactions[0]?.summary).toContain("First question was submitted");
+            if (mode === "compact-overflow") expect(audit.audit.result).toMatchObject({ code: "agent-judge-context-overflow" });
+          }
           if (mode === "truncation" && index === 0) {
             const read = audit.trace.tools.find((tool) => tool.name === "read");
             expect(read?.result).toContain('"truncated":true');
@@ -114,6 +137,12 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
         expect(usage.calls.every((call) => call.operation === "agent")).toBe(true);
         if (["http400", "transport"].includes(mode)) expect(usage.calls.every((call) => call.status === "failed")).toBe(true);
       });
+      if (mode.startsWith("compact-")) {
+        const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[1]!.entryId, "--full"]);
+        expect(shown.stdout).toContain("Compaction");
+        expect(shown.stdout).toContain("First question was submitted");
+        expect(bodies.filter((body) => JSON.parse(body).messages[0]?.content?.includes("context summarization assistant"))).toHaveLength(1);
+      }
       if (mode === "success") {
         const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[0]!.entryId, "--full"]);
         expect(shown.stdout).toContain("Measurement"); expect(shown.stdout).toContain("Observed real Sandbox evidence"); expect(shown.stdout).toContain("application evidence");
