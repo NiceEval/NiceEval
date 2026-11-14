@@ -4,7 +4,7 @@ import { NodeRuntime } from "@effect/platform-node";
 import { Cause, Effect, Schema } from "effect";
 import { repoRootDir } from "./discovery.ts";
 import { CollectionSchema, observeExecutionDetails } from "./adapter-observation.ts";
-import { ADAPTER_BYTES, CAPABILITY_VERSION, ContextSchema, ManifestSchema, PayloadSchemas, PlanSchema, ReportSchema, RequestSchema, SelectionSchema, Text, capabilities, decode, json, nativeId, parse, type Captured, type Context, type NativeResult, type Selection } from "./adapter-wire.ts";
+import { ADAPTER_BYTES, CAPABILITY_VERSION, ContextSchema, ManifestSchema, PayloadSchemas, PlanSchema, ReportSchema, RequestSchema, SelectionSchema, Text, capabilities, decode, json, nativeId, parse, type Captured, type Context, type NativeResult } from "./adapter-wire.ts";
 
 const BindingSchema = Schema.Struct({ nativeId: Text, selection: SelectionSchema });
 const CollectContextSchema = Schema.Struct({ context: ContextSchema, files: Schema.Array(Text), invocationId: Text });

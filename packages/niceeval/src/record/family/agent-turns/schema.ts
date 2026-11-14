@@ -60,7 +60,6 @@ export const AgentTurnUsageObservationSchema = Schema.Union([
   Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("provider-cost"), provider: SafeIdentifierSchema, amount: Schema.String.pipe(Schema.check(Schema.makeFilter((value) => /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value)))), currency: CurrencyCodeSchema }),
 ]);
 
-const AgentTurnCoverageStatusSchema = Schema.Literals(["complete", "partial", "unavailable"]);
 const AgentTurnCoverageReasonSchema = Schema.String.pipe(
   Schema.check(Schema.makeFilter((value) => value.trim().length > 0 &&
     Boolean(isBoundedSafeText(value, MAX_CONVERSATION_TEXT_BYTES)), {

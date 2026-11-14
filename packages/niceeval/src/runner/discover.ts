@@ -7,7 +7,6 @@
 // Discovery is the only boundary where executable modules enter the typed runner.
 // Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
-import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";

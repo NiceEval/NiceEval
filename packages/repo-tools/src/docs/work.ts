@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 
 import type { ChildProcessSpawner } from "effect/process";
 import { Effect } from "effect";
@@ -39,8 +39,6 @@ import {
 import {
   absolutePath,
   atomicWriteJson,
-  decodeUnknown,
-  pathExists,
   readJson,
   REPOSITORY_ROOT,
   runCommand,

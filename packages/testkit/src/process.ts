@@ -408,9 +408,6 @@ function isExpStartEvent(value: unknown): value is ExpStartEvent {
   return Result.isSuccess(Schema.decodeUnknownResult(ExpStartEventSchema)(value));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isReceiptEvent(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) &&

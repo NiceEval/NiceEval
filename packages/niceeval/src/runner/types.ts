@@ -11,7 +11,6 @@ import type { Agent, AgentInstallationManifest } from "../agents/types.ts";
 import type { Adapter, AdapterRuntimeEvalDefinition } from "../adapter.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
-import type { BuildKey } from "../sandbox/identity.ts";
 import type {
   EvaluationFactResult,
   DiffArtifact,
@@ -1292,7 +1291,7 @@ export interface AdapterRun {
 /** @internal Transitional name while Agent-only execution seams are narrowed. */
 export type AgentRun = AdapterRun;
 
-export interface RunOptions<RecordError = never, RecordRequirements = never> {
+export interface RunOptions<_RecordError = never, _RecordRequirements = never> {
   config: Config;
   evals: readonly DiscoveredEval[];
   agentRuns: readonly AgentRun[];

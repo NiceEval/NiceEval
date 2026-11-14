@@ -62,7 +62,6 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private deadlineAt?: number;
   private lifetimeMs?: number;
   private sessionCreatedAt: number;
-  private runtime: string;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
   get nativeInstanceId(): string { return this.sandboxId; }
@@ -80,7 +79,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     vsb: InstanceType<typeof VSandbox>,
     id: string,
     commandTimeoutMs: number | undefined,
-    runtime: string,
+    _runtime: string,
     pathPrepend: readonly string[] = [],
     lifetimeMs?: number,
     deadlineAt?: number,
@@ -90,7 +89,6 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.commandTimeoutMs = commandTimeoutMs;
     this.deadlineAt = deadlineAt;
     this.sessionCreatedAt = Date.now();
-    this.runtime = runtime;
     this.pathPrepend = pathPrepend;
     this.lifetimeMs = lifetimeMs;
   }

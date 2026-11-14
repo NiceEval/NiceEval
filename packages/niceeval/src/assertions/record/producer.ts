@@ -18,7 +18,6 @@ import type {
   ScoreContribution,
   ExplanationRetention,
   AssertionsDocument,
-  WritableCriterionEnvelope,
 } from "./model.ts";
 
 export interface AssertionEntryInput<Content> {

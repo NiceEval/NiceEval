@@ -85,7 +85,7 @@ export interface RecordAttachmentPersistence<
 }
 
 /** Exact-definition reference token. Its wire identity is owner/family only. */
-export interface RecordAttachmentReference<Definition extends AnyDefinition, Value = unknown> {
+export interface RecordAttachmentReference<_Definition extends AnyDefinition, Value = unknown> {
   readonly value: Value;
   readonly [referenceTypeId]: typeof referenceTypeId;
 }

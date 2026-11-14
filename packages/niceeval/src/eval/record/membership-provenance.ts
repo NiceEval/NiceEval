@@ -1,7 +1,6 @@
 import { Result, Schema } from "effect";
 import { AttemptIdSchema, RunIdSchema, SlotIdSchema, UtcMillisSchema } from "../../record/codec/identifiers.ts";
 import { RecordIssueSchema, type RecordIssue } from "../../record/errors/record-errors.ts";
-import type { SlotId } from "../../record/model/identifiers.ts";
 import { isJsonValue } from "../../shared/json-value.ts";
 import { ExactEvaluationParseOptions, FiniteNonNegativeNumberSchema } from "./attachment.ts";
 

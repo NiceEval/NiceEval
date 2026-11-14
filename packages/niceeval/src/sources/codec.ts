@@ -2,22 +2,11 @@ import { Result, Schema } from "effect";
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
 import {
   CANONICAL_SOURCE_PATH__BRAND,
-  type AssertionSourceFileFrame,
-  type AssertionSourceFrame,
   type AssertionSourceOccurrence,
-  type AssertionSourcePackageFrame,
   type AssertionSourceSendOccurrence,
-  type AssertionSourceSendSite,
-  type AssertionSourceSite,
   type AssertionSourceSitesDocument,
-  type AssertionSourceSitesEntry,
-  type AssertionSourceTrace,
   type CanonicalSourcePath,
   type SourceCoordinate,
-  type SourceFileItemRef,
-  type SourceFile,
-  type SourcePackageItemRef,
-  type SourcePackage,
   type SourcesDocument,
 } from "./model.ts";
 import {

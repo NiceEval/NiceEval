@@ -39,7 +39,6 @@ import { writeStderrLine } from "../../tty-line.ts";
 import type {
   AttemptLifecycleEvent,
   DurableFeedbackEvent,
-  FeedbackTickEvent,
   InvocationCompletion,
   InvocationReceipt,
   InvocationSummary,

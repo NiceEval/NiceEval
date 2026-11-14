@@ -290,7 +290,3 @@ function uniqueBy<Value>(
   for (const value of values) output.set(keyOf(value), value);
   return Object.freeze([...output.values()]);
 }
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}

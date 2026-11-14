@@ -1,6 +1,6 @@
 import { Result, Schema } from "effect";
 
-import { InspectionRequestSchema, type InspectionDocument, type InspectionRequest } from "../inspection/protocol.ts";
+import { InspectionRequestSchema, type InspectionDocument } from "../inspection/protocol.ts";
 
 export const VIEW_HTTP_BODY_LIMIT = 64 * 1024;
 

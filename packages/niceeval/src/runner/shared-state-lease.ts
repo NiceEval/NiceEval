@@ -189,13 +189,7 @@ function recordOf(value: unknown): globalThis.Record<string, unknown> | undefine
     : undefined;
 }
 
-function nodeIo<A>(operation: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, unknown> {
-  return Effect.tryPromise({ try: operation, catch: (cause) => cause });
-}
 
-function nodeSync<A>(operation: () => A): Effect.Effect<A, unknown> {
-  return Effect.try({ try: operation, catch: (cause) => cause });
-}
 
 function sharedStateLeaseGenerationDirOf(niceevalRoot: string, key: string): string {
   void key;

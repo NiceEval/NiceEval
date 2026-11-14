@@ -5,7 +5,7 @@
 // @concord-implements docs/feature/assertions/library/score-points.md
 // @concord-implements docs/feature/verdict/README.md
 import { validateMaterialQAInputs, captureContextualMatch, captureUnavailableContextualMatch, materialExistenceRegistration, materialQARegistration, contextBooleanRegistration, contextScoreRegistration } from "./material.ts";
-import { isContextualMatch, contextMatchDefinitionOf, type ContextualMatch, type MaterialMatch } from "./context-match.ts";
+import { isContextualMatch, contextMatchDefinitionOf, type ContextualMatch } from "./context-match.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import { Cause, Deferred, Effect, Schema } from "effect";
 

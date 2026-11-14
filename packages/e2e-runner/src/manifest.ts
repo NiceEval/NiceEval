@@ -17,15 +17,8 @@ import {
   PLATFORMS,
   RepoIdSchema,
   decodeManifestMetadata,
-  type Area,
-  type BatchId,
-  type Browser,
-  type HostCapability,
-  type HarnessAsset,
-  type Lane,
   type Manifest,
   type ManifestMetadata,
-  type Platform,
 } from "./contracts.ts";
 
 export const SCHEMA_VERSION = MANIFEST_SCHEMA_VERSION;

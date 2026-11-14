@@ -2,7 +2,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type * as SchemaIssue from "effect/SchemaIssue";
 import { inspectionProtocolRegistry, INSPECTION_OPERATION_IDS } from "./protocol.ts";
-import { InspectionRequestSchema, type InspectionOperation, type InspectionRequest } from "./protocol.ts";
+import { InspectionRequestSchema, type InspectionRequest } from "./protocol.ts";
 export { INSPECTION_OPERATION_IDS, InspectionOperationIdSchema, InspectionRequestSchema } from "./protocol.ts";
 export type { InspectionFailureDocument, InspectionOperation, InspectionOperationId, InspectionRequest } from "./protocol.ts";
 export type InspectionDocument = import("./protocol.ts").InspectionOperationDocument;

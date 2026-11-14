@@ -14,8 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 
 import { Effect } from "effect";
 

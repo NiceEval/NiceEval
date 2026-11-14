@@ -15,10 +15,6 @@ const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.make
   (value) => Number.isSafeInteger(value) && value >= 0,
   { identifier: "ExecutionTraceNonNegativeSafeInteger" },
 )));
-const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter(
-  (value) => Number.isSafeInteger(value) && value > 0,
-  { identifier: "ExecutionTracePositiveSafeInteger" },
-)));
 const FiniteNumberSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter(
   Number.isFinite,
   { identifier: "ExecutionTraceFiniteNumber" },

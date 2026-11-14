@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { constants, DatabaseSync } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
-import { INCUS_REPOSITORY, isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
+import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import { isBeforeCacheSnapshotRepositoryRequest } from "../sandbox/remote-snapshot/ledger.ts";
 import {
   UserDatabaseInvalid,

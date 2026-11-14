@@ -10,7 +10,7 @@ import { InspectionAttemptUsageResultSchema } from "../../../inspection/results.
 import { projectAttemptUsage } from "../../../inspection/trace.ts";
 import { RecordExactParseOptions } from "../../codec/core.ts";
 import {
-  AdapterUsageAttachmentSchema, AdapterUsageCallSchema,
+  AdapterUsageCallSchema,
   type AdapterUsageCall, type ReadableAdapterUsageAttachment,
 } from "./schema.ts";
 

@@ -80,7 +80,7 @@ export async function extractFileFromTar(tarBuf: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const extract = tar.extract();
     let found = false;
-    extract.on("entry", (header, stream, next) => {
+    extract.on("entry", (_header, stream, next) => {
       if (!found) {
         found = true;
         const chunks: Buffer[] = [];

@@ -1,4 +1,5 @@
 // Type-only consumer contracts, checked by package typecheck.
+// Export these fixtures only from this test module so their bodies are checked without executing them.
 import { expectTypeOf } from "vitest";
 import type { AssertionCheck, BooleanAssertionHandle, MeasurementAssertionHandle } from "./api.ts";
 import type { ContextBooleanMatch, ContextScoreMatch, MaterialMatch } from "./context-match.ts";
@@ -6,7 +7,7 @@ import { equals } from "./match.ts";
 import type { AgentMatchContext, AssertFirstTestContext, AssertFirstSessionHandle, AssertFirstTurnHandle } from "../context/assert-first.ts";
 
 // @feature docs/feature/assertions/README.md
-function contextualCheckTypes(
+export function contextualCheckTypes(
   check: AssertionCheck<"score", { readonly count: number }>,
   boolean: ContextBooleanMatch<{ readonly count: number }, number>,
   material: MaterialMatch<{ readonly count: number }, string>,
@@ -29,7 +30,7 @@ function contextualCheckTypes(
 }
 
 // @feature docs/feature/assertions/README.md
-function agentScopeCheckTypes(
+export function agentScopeCheckTypes(
   t: AssertFirstTestContext<"pass">,
   session: AssertFirstSessionHandle<"pass">,
   turn: AssertFirstTurnHandle<"pass">,

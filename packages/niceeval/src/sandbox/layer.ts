@@ -11,7 +11,7 @@ import type {
   SandboxResourceGroup,
   ServiceController,
 } from "./case-types.ts";
-import type { CustomProviderSandbox, Sandbox, SandboxHook, SandboxRuntime } from "./types.ts";
+import type { CustomProviderSandbox, SandboxHook, SandboxRuntime } from "./types.ts";
 import type {
   SandboxCleanupCommand,
   SandboxCommand,

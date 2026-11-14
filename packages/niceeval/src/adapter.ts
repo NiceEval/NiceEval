@@ -1,4 +1,4 @@
-import { normalizeModelRequirements, type ModelRequirements, type ResolvedModelRole, type ResolvedModelRoles } from "./model-roles.ts";
+import { normalizeModelRequirements, type ModelRequirements, type ResolvedModelRole } from "./model-roles.ts";
 import { resolveAdapterCleanupTimeoutMs } from "./shared/adapter-cleanup.ts";
 import type { AttemptSignal } from "./shared/attempt-lifecycle.ts";
 export type { AttemptCancellation, AttemptSignal } from "./shared/attempt-lifecycle.ts";

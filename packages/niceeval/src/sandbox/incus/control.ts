@@ -400,7 +400,7 @@ export class IncusControl {
     throw unreachable("Incus control plane is unreachable: no incus CLI and no usable control socket.");
   }
 
-  static async connectMutation(env: NodeJS.ProcessEnv = process.env): Promise<IncusControl> {
+  static async connectMutation(_env: NodeJS.ProcessEnv = process.env): Promise<IncusControl> {
     const cli = await probeCli();
     if (cli !== undefined) return new IncusControl(cli);
     throw unreachable("Incus mutations require the incus CLI; Unix-socket mutation and exec are disabled.");

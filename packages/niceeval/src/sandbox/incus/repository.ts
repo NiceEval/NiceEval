@@ -245,16 +245,7 @@ const CreateArtifactHeads = `CREATE TABLE ${ArtifactHeadTable} (replacement_scop
 const CreateArtifactHolds = `CREATE TABLE ${ArtifactHoldTable} (hold_id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation >= 1), owner_host TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_started_at TEXT NOT NULL, acquired_at TEXT NOT NULL) STRICT`;
 const CreateArtifactRelease = `CREATE TABLE ${ArtifactReleaseTable} (artifact_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation >= 1), instance_absent INTEGER NOT NULL CHECK (instance_absent IN (0,1)), custom_storage_volume_absent INTEGER NOT NULL CHECK (custom_storage_volume_absent IN (0,1)), updated_at TEXT NOT NULL) STRICT`;
 
-type IntentRow = { readonly generation: unknown; readonly state: unknown; readonly payload: unknown };
 type SchemaRow = { readonly type: string; readonly name: string; readonly tbl_name: string; readonly sql: string | null };
-type LeaseRow = {
-  readonly lock_id: unknown;
-  readonly fencing_token: unknown;
-  readonly owner_host: unknown;
-  readonly owner_pid: unknown;
-  readonly owner_started_at: unknown;
-  readonly acquired_at: unknown;
-};
 
 function invalid(message: string, cause?: unknown): UserDatabaseInvalid {
   return new UserDatabaseInvalid({ code: "user-database-invalid", message, repository: INCUS_REPOSITORY, cause });

@@ -30,7 +30,6 @@ import type {
   SealedAssertionEntry,
 } from "../api.ts";
 import {
-  AssertionEntryIdSchema,
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
   MAX_ASSERTION_DOCUMENT_BYTES,

@@ -8,7 +8,6 @@ import type {
   MetricValue,
   TableContent,
   TableContentRow,
-  Verdict,
 } from "../../components/cell.tsx";
 import { localizedMessage } from "../../components/locale.ts";
 import {

@@ -582,11 +582,11 @@ export type RunTimingReferences = RunReferenceTarget;
 export type RunDiagnosticsReferences = RunReferenceTarget;
 
 export type AttemptReferencesForFamily<
-  Family extends AttemptObservabilityFamilySchemaId,
+  _Family extends AttemptObservabilityFamilySchemaId,
 > = AttemptReferenceTarget;
 
 export type RunReferencesForFamily<
-  Family extends RunObservabilityFamilySchemaId,
+  _Family extends RunObservabilityFamilySchemaId,
 > = RunReferenceTarget;
 
 function isObject(value: unknown): value is object {

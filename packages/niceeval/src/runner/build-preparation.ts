@@ -4,7 +4,6 @@
 import { Effect, Option } from "effect";
 import type { SandboxBuildProvider, SandboxBuildRef, SandboxBuildWork } from "../sandbox/build-coordinator.ts";
 import { routeBuildProviders } from "../sandbox/dockerfile-build.ts";
-import type { BuildKey } from "../sandbox/identity.ts";
 import {
   collectSandboxRuntimeBuildPreparation,
   SandboxRuntimeMaterializationError,

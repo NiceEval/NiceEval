@@ -32,7 +32,6 @@ import {
 } from "./durable-path.ts";
 import { preflightBrowsers, preflightHostCapabilities } from "./preflight.ts";
 import {
-  hasSuccessfulOwnedProcessResult,
   runOwnedProcess,
   type OwnedProcess,
   type OwnedProcessResult,

@@ -455,7 +455,7 @@ function containsOpaque(step: CommandPlanStep): boolean {
   return step.truth === "opaque" || (step.children?.some(containsOpaque) ?? false);
 }
 
-function stepForLinkedBefore(pair: PreparedRunPair, entry: ScheduledSandboxBefore): CommandPlanStep {
+function stepForLinkedBefore(_pair: PreparedRunPair, entry: ScheduledSandboxBefore): CommandPlanStep {
   const owner: CommandPlanOwner = { kind: entry.owner.kind, id: entry.owner.id };
   if (entry.kind === "action") {
     return {

@@ -1,7 +1,7 @@
 // Checkout-local Testkit snapshots are built once per root scope and injected
 // only into isolated copies.
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Scope } from "effect";
 import { parse } from "yaml";

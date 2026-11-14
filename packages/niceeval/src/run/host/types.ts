@@ -2,7 +2,6 @@ import { Data, type Effect } from "effect";
 import type {
   PublicationCutoff,
   RunDetail,
-  RunSlot,
   RunState,
   RunSummary,
 } from "../protocol.ts";

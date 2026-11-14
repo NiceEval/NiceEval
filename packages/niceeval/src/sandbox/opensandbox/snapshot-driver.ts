@@ -46,7 +46,7 @@ export const openSandboxSnapshotDriver: BeforeCacheSnapshotDriver<OpenSandboxOpt
     Effect.flatMap((module) => module.materializeOpenSandbox(plan, context, snapshotId)),
     Effect.mapError(() => fail("restore")),
   ),
-  createSnapshot: Effect.fn("openSandboxSnapshotDriver.createSnapshot")(function*(plan, source, name) {
+  createSnapshot: Effect.fn("openSandboxSnapshotDriver.createSnapshot")(function*(_plan, source, name) {
     let snapshot = yield* withManager("create", (manager) => manager.createSnapshot(source.group.primary.sandboxId, { name }));
     const started = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
     while (snapshot.status.state !== "Ready") {

@@ -9,7 +9,6 @@ import {
   BeforeCacheCaptureError,
   BeforeCacheCleanupError,
   BeforeCacheLookupError,
-  BeforeCacheRegistryError,
   BeforeCacheRestoreError,
   BeforeCacheValidationError,
   type AttemptBeforeCache,

@@ -34,7 +34,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   private readonly identities = new Map<string, Promise<ExecutionIdentity>>();
 
   private constructor(private remote: RemoteSandbox, private readonly options: OpenSandboxOptions & { readonly lifetimeMs: number },
-    private readonly connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean },
+    _connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean },
     private deadlineAt?: number) {
   }
 

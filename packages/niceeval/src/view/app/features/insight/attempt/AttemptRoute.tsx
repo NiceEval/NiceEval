@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import { AttemptDialog } from "./AttemptDialog.tsx";
 import { AttemptDetails } from "./details/index.tsx";
 import type { Locale } from "../shell/types.ts";
-import type { AttemptPageModel } from "./model/page.ts";
 import { useCurrentGeneration } from "../data/index.ts";
 import { attemptQueryOptions } from "./data/load.ts";
 

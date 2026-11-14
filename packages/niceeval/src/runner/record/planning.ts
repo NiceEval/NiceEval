@@ -202,7 +202,6 @@ export function prepareRunnerRecordReuse(
         const timeout = resolveAttemptTimeout(run, evalDef, input.config);
         const renameFingerprint = input.renameFingerprintsByKey?.get(key);
         const manifest = input.manifestsByKey?.get(key);
-        const pair = input.preparedPairsByKey?.get(key);
         slotsByKey.set(key, Object.freeze({
           ...moduleReuseEligibility(evalDef),
           ...(manifest === undefined ? {} : { identityManifest: identityManifestEntry(evalDef.id, manifest) }),

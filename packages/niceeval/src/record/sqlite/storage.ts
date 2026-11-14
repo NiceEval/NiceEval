@@ -268,9 +268,6 @@ function requireBytesDigest(value: Uint8Array, digest: string, field: string): v
   if (digestBytes(value) !== digest) throw sqliteError("record-content-invalid", "persist-sealed-run", `${field} bytes do not match their digest`);
 }
 
-function requireNonEmpty(value: string, field: string): void {
-  if (value.length === 0) throw sqliteError("record-content-invalid", "persist-sealed-run", `${field} is empty`);
-}
 
 function requireIdentity(value: string, field: string): void {
   try {

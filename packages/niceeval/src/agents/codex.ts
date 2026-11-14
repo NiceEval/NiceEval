@@ -289,7 +289,6 @@ export function codexAgent(config?: CodexConfig): Agent {
   // factory 构造时快照：一份 Agent 配置服务并发 attempt，不能让调用方随后改原对象造成
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
-  const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
   const cliVersion = DEFAULT_CODEX_CLI_VERSION;
   const cliRecipeRevision = String(AGENT_BASELINE_RECIPE_REVISION.codex);
   const cliInstall = createNpmCliInstaller({

@@ -33,7 +33,6 @@ import { recordRootPaths } from "./root.ts";
 import {
   RecordEntropy,
   RecordFileSystem,
-  recordPortablePath,
   type RecordDirectoryEntry,
   type RecordFileSystemService,
   type RecordPortablePath,
@@ -624,78 +623,7 @@ function removeEmptyDirectoryIfPresentAt(
   }).pipe(Effect.andThen(syncDirectoryAt(dirname(path))));
 }
 
-function readBytesIfFileAt(
-  path: string,
-  maximumBytes: number,
-): Effect.Effect<Uint8Array | undefined, RecordFileSystemError> {
-  return Effect.gen(function* () {
-    yield* validateLimit("file-bytes", maximumBytes);
-    const kind = yield* pathKindAt(path);
-    if (kind === "missing") return undefined;
-    if (kind !== "file") {
-      return yield* Effect.fail(new RecordPathTypeInvalid({
-        code: "record-path-type-invalid",
-        path,
-        expected: "file",
-        actual: kind,
-      }));
-    }
-    const chunks = yield* Stream.runFold(
-      readStreamAt(path, maximumBytes, DEFAULT_STREAM_CHUNK_BYTES),
-      () => [] as readonly Uint8Array[],
-      (all, chunk) => [...all, chunk],
-    );
-    return concatChunks(chunks);
-  });
-}
 
-function writeStreamAt<E, R>(input: {
-  readonly path: string;
-  readonly rootPath: string;
-  readonly stream: Stream.Stream<Uint8Array, E, R>;
-  readonly maximumBytes: number;
-  readonly mode: "exclusive" | "replace" | "replace-no-follow";
-}): Effect.Effect<void, RecordFileSystemError | E, R> {
-  return Effect.gen(function* () {
-    yield* validateLimit("file-bytes", input.maximumBytes);
-    const parent = dirname(input.path);
-    yield* ensureDirectoryAt(parent);
-    let written = 0;
-
-    yield* Effect.scoped(
-      Effect.acquireRelease(
-        openForWrite(input.path, input.mode, input.rootPath),
-        (handle) => closeHandle(handle, "write-file", input.path),
-      ).pipe(
-        Effect.flatMap((handle) => {
-          const writeOne = (
-            chunk: Uint8Array,
-          ): Effect.Effect<void, RecordFileSystemError> => {
-            const observedAtLeast = written + chunk.byteLength;
-            if (observedAtLeast > input.maximumBytes) {
-              return Effect.fail(limitExceeded(
-                "file-bytes",
-                input.maximumBytes,
-                observedAtLeast,
-                input.path,
-              ));
-            }
-            return writeChunk(handle, chunk, input.path).pipe(
-              Effect.tap(() => Effect.sync(() => {
-                written = observedAtLeast;
-              })),
-            );
-          };
-
-          return Stream.runForEach(input.stream, writeOne).pipe(
-            Effect.andThen(syncHandle(handle, "sync-file", input.path)),
-          );
-        }),
-      ),
-    );
-    yield* syncDirectoryAt(parent);
-  });
-}
 
 const nodeFileSystem: RecordFileSystemService = {
   pathKind: (path) =>

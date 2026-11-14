@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import * as FileSystem from "effect/FileSystem";
-import { Data, Effect, Result, Schema, SchemaIssue, Ref, Scope } from "effect";
+import { Data, Effect, Result, SchemaIssue, Ref, Scope } from "effect";
 
 import {
   decodeRepoReceipt,

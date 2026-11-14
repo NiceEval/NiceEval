@@ -4,7 +4,7 @@
 // 的纯证据解析:exact touched-path set、noChanges 同源、同一 change entry 的 before/after 候选。
 // 这里只做证据解析与候选分类,不消费 BooleanMatch——matcher 应用留在接线层,避免复制 Match 内核。
 
-import type { DiffArtifact, DiffData, DiffFileSummary, DiffWindow, WindowChange } from "./types.ts";
+import type { DiffArtifact, DiffData, DiffFileSummary, WindowChange } from "./types.ts";
 
 /** 从窗口序列派生 DiffData:files 摘要(net / 触及窗口)+ get(最后触及窗口的终态)。 */
 export function deriveDiffData(windows: DiffArtifact): DiffData {

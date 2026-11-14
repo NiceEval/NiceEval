@@ -47,7 +47,7 @@ describe("ProjectDatabase bootstrap baseline", () => {
 
   it("rejects incomplete databases without repairing their bytes", async () => {
     for (const [label, arrange] of [
-      ["existing empty SQLite", (db: DatabaseSync) => undefined],
+      ["existing empty SQLite", (_db: DatabaseSync) => undefined],
       ["partial schema", (db: DatabaseSync) => db.exec("CREATE TABLE record_metadata(singleton INTEGER PRIMARY KEY)")],
     ] as const) {
       const path = await databasePath();

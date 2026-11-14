@@ -2,10 +2,6 @@
 // Assert-first runtime; no Fact producer or collector surface is exported.
 
 import type { AnswerValue } from "../agents/types.ts";
-import type {
-  BooleanMatch,
-  EventMatch,
-} from "../assertions/match.ts";
 import type { InputRequest } from "../o11y/types.ts";
 import type { JsonMatch } from "../shared/types.ts";
 import type {

@@ -108,14 +108,13 @@ function isAbsent(cause: unknown): boolean {
 }
 
 function readDirectoryIfPresentEffect(path: string, operation: string): RegistryEffect<string[] | undefined> {
-  return nodeIo(operation, (signal) => readdir(path)).pipe(
+  return nodeIo(operation, (_signal) => readdir(path)).pipe(
     Effect.catch((cause) => isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause)),
   );
 }
 
 const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { identifier: "NonNegativeSafeInteger" })));
 
-const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier: "PositiveSafeInteger" })));
 
 const TimestampSchema = Schema.String.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })));
 
@@ -134,27 +133,10 @@ const KeptSandboxEntrySchema = Schema.Struct({
   state: Schema.Literals(["alive", "dormant", "expired", "unknown"]),
 });
 
-const PersistedKeptSandboxLeaseSchema = Schema.Struct({
-  holder: Schema.String,
-  op: Schema.String,
-  acquiredAt: TimestampSchema,
-  ttlMs: PositiveSafeIntegerSchema,
-  token: Schema.optional(Schema.String),
-  generation: Schema.optional(PositiveSafeIntegerSchema),
-  ownerPid: Schema.optional(PositiveSafeIntegerSchema),
-  ownerHost: Schema.optional(Schema.String),
-  ownerProcessIdentity: Schema.optional(Schema.String),
-});
 
 /** 留存条目的全部字段均在持久化边界验证，特别是两个字符串联合与可选时间字段。 */
 function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
   const decoded = Schema.decodeUnknownResult(KeptSandboxEntrySchema)(value);
-  return Result.isSuccess(decoded) ? decoded.success : undefined;
-}
-
-/** lease 同样来自持久 payload；token 是内部互斥凭据，可选但类型必须正确。 */
-function decodeKeptSandboxLease(value: unknown): PersistedKeptSandboxLease | undefined {
-  const decoded = Schema.decodeUnknownResult(PersistedKeptSandboxLeaseSchema)(value);
   return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 

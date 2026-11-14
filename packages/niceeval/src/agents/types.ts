@@ -6,7 +6,6 @@ import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
 // 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
 
 import type { DiagnosticInput, JsonValue, ProgressUpdate } from "../shared/types.ts";
-import type { Effect } from "effect";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";

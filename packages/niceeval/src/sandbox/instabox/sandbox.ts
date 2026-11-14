@@ -1,7 +1,7 @@
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { constants } from "node:os";
 import { StringDecoder } from "node:string_decoder";

@@ -1,7 +1,6 @@
 import type {
   InspectionSuccessDocumentFor,
 } from "@niceeval/inspection/public.ts";
-import { isUtcMillis } from "@niceeval/record/model/identifiers.ts";
 import {
   type AssertionDecisionState,
   type AttemptAssertionDiagnosticNode,
@@ -16,7 +15,6 @@ import {
   type AttemptMatcherTarget,
   type AttemptUsageObservation,
   type ClosedEvidenceSlice,
-  type EvidenceLimitation,
   type UsageTableData,
 } from "../details/index.tsx";
 import type {
@@ -1147,7 +1145,7 @@ function closeSources(
   readonly slice: ClosedEvidenceSlice<SourceContent>;
 } {
   const contexts = arrayField(recordField(trace, "conversation"), "turns");
-  const items = arrayField(sources, "items").flatMap((value, index) => {
+  const items = arrayField(sources, "items").flatMap((value, _index) => {
     const item = optionalRecord(value);
     const content = optionalRecord(item?.content);
     if (
@@ -1373,12 +1371,6 @@ function turnVerdict(value: unknown): ConversationTurn["verdict"] {
   return undefined;
 }
 
-function verdict(value: unknown, outcome: unknown): "passed" | "failed" | "errored" | "skipped" | "unknown" {
-  if (value === "passed" || value === "failed" || value === "errored" || value === "skipped") return value;
-  if (outcome === "errored" || outcome === "interrupted") return "errored";
-  if (outcome === "cancelled") return "skipped";
-  return "unknown";
-}
 
 function recordField(value: object, key: string): JsonRecord {
   return record(Reflect.get(value, key), key);
@@ -1409,13 +1401,6 @@ function stringField(value: JsonRecord, key: string): string {
   return field;
 }
 
-function instantField(value: JsonRecord, key: string): string {
-  const field = value[key];
-  if (typeof field !== "number" || !isUtcMillis(field)) {
-    throw new Error(`${key} must be UTC epoch milliseconds.`);
-  }
-  return new Date(field).toISOString();
-}
 
 function stringArray(value: unknown): readonly string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];

@@ -1,4 +1,4 @@
-import type { AgentContext, ManagedProcess, ManagedProcessStart, Sandbox } from "../types.ts";
+import type { ManagedProcess, ManagedProcessStart, Sandbox } from "../types.ts";
 import { requireManagedProcessCapability } from "../sandbox/backend.ts";
 
 const encoder = new TextEncoder();

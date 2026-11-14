@@ -46,7 +46,7 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
     Effect.flatMap((module) => module.materializeInstabox({ ...plan, snapshotId }, context)),
     Effect.mapError(() => fail("restore")),
   ),
-  createSnapshot: Effect.fn("instaboxSnapshotDriver.createSnapshot")(function*(plan, source, name) {
+  createSnapshot: Effect.fn("instaboxSnapshotDriver.createSnapshot")(function*(_plan, source, name) {
     const client = yield* Effect.try({ try: api, catch: () => fail("create") });
     const created = yield* Effect.tryPromise({
       try: async (signal) => {

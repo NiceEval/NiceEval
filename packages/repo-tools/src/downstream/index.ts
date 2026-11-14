@@ -1,7 +1,6 @@
 import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { Effect, FileSystem, Schema } from "effect";
 

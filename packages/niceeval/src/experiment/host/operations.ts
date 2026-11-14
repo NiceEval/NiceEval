@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 
 import { Clock, Data, Effect, Result } from "effect";
 
-import { recordHost } from "../../record/host/index.ts";
 import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
 import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";

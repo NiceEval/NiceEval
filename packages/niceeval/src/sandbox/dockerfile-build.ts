@@ -18,7 +18,6 @@ import {
   type SandboxBuildProvider,
   type SandboxBuildWork,
 } from "./build-coordinator.ts";
-import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
 import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
 import { dockerTaskBuildAuthorityFingerprintEffect, makeTaskBuildCacheService } from "./docker-task-build-cache.ts";
 import {

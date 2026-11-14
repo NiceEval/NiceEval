@@ -13,7 +13,6 @@ import { Data, Effect, type Scope } from "effect";
 import { parseDocument } from "yaml";
 import type { JsonValue } from "../shared/types.ts";
 import {
-  attachLeakGateHints,
   buildContextIdentityContribution,
   pathContentDigest,
   type BindMountSpec,
@@ -42,9 +41,9 @@ import {
 } from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
-import type { CommandResult, Sandbox } from "./types.ts";
+import type { Sandbox } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
-import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
+import { customSandboxBackend } from "./backend.ts";
 import type { DockerSandbox } from "./docker.ts";
 import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 

@@ -32,10 +32,7 @@ import type {
   DiagnosticRecord,
   EvalResult,
   InvocationShape,
-  InvocationSummary,
   JsonValue,
-  Reporter,
-  ReporterRegistration,
   SandboxBuildRecord,
 } from "../types.ts";
 import type {
@@ -2248,7 +2245,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const suspendUntilCaseFree = (
     st: CaseLockState,
     holder: CaseLockRecord,
-  ) => Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+  ) => Effect.uninterruptibleMask((_restore) => Effect.gen(function* () {
     if (st.suspension) return st.suspension;
     const startedAt = Date.now();
     // 等待期间本 eval / 本实验的止损闸落下 → 这一轮等待到头(对方可能还要跑很久,没必要陪着)。
@@ -3312,7 +3309,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         });
       }
       const receiptCompletedAtMs = Date.now();
-      const publishedRuns = yield* recordCoordinator.publish(
+      yield* recordCoordinator.publish(
         receiptCompletedAtMs,
         interrupted ? "interrupted" : "normal",
       );

@@ -329,11 +329,3 @@ function factCandidate(
     reason: fact.reason,
   };
 }
-
-function compactFactSummary(summary: PrimaryFactSummary): string {
-  const parts = [summary.title];
-  if (summary.matcher !== undefined) parts.push(summary.matcher);
-  if (summary.reason !== undefined) parts.push(`reason ${summary.reason}`);
-  if (summary.additionalFailures > 0) parts.push(`+${summary.additionalFailures} more`);
-  return parts.join(" · ");
-}

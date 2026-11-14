@@ -16,7 +16,7 @@ import {
   type IncusProviderDescriptor,
 } from "./descriptor.ts";
 import { incusError, type IncusProviderError } from "./errors.ts";
-import { parseIncusImageLocator, type IncusImageLocator } from "./image.ts";
+import type { IncusImageLocator } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
 import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 

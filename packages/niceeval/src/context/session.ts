@@ -4,9 +4,9 @@ import type { ExperimentFlags } from "../shared/types.ts";
 
 import { randomBytes } from "node:crypto";
 
-import { Cause, Effect, Exit, Option, Semaphore } from "effect";
+import { Cause, Effect, Exit, Semaphore } from "effect";
 
-import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SessionKey, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
+import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SessionKey, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import { entityIdFromEntropy, type TurnId } from "../record/family/source-receipt/model.ts";
 import {
   ObservedEventIngestionCorrelator,

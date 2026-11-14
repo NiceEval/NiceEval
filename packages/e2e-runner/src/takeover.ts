@@ -7,7 +7,7 @@ import { projectExecutionSources, resolveRepositorySourceIdentity, sameRepositor
 import { lstat as nodeLstat, type Stats } from "node:fs";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect } from "effect";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { readCandidateTarball, type CandidateTarball } from "./injection.ts";

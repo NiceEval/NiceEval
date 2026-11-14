@@ -16,7 +16,6 @@ import {
   composeCollectionIdentity,
   dockerComposeBuildProvider,
   materializeDockerComposeProviderCase,
-  normalizeBuildPlatform,
 } from "./compose.ts";
 import {
   collectDockerfileBuildFromIdentity,
@@ -69,7 +68,6 @@ import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "../runner/cleanup-timeout.t
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
 import type { CustomProviderSandbox } from "./types.ts";
 import type { AgentIdentity, SandboxAgent } from "../agents/types.ts";
-import type { DockerSandbox } from "./docker.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
 import {
   acquireDockerProfileReservation,
@@ -1055,7 +1053,7 @@ function stopInvalidCustomCaseResult(value: unknown): Effect.Effect<void> {
 export function collectDockerComposeProviderBuildPreparation(
   plan: DockerComposeProviderPlan,
   published: SandboxProviderPlan,
-  evalId: string,
+  _evalId: string,
 ): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError> {
   return Effect.gen(function* () {
     const file = plan.file._tag === "Url" ? new URL(plan.file.value) : plan.file.value;

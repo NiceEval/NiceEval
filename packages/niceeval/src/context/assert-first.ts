@@ -76,7 +76,6 @@ import {
   makeAssertionToolEvent,
   toolMatch,
   type BooleanMatch,
-  type BooleanMatchEvaluation,
   type EventMatch,
   type EventOccurrenceMatch,
   type EventOccurrenceView,
@@ -85,9 +84,7 @@ import {
   type ScoreMatch,
   type ToolMatch,
   type ToolOccurrenceMatch,
-  type ToolMatchQuantifier,
 } from "../assertions/match.ts";
-import { numericBooleanRegistration } from "../assertions/numeric.ts";
 import {
 
   factuality,
@@ -111,7 +108,6 @@ import {
 import {
   observedSnapshotForTurn,
   type ObservedEvaluationSegment,
-  type ObservedSourceEvent,
   type ObservedTurnSnapshot,
 } from "../o11y/observed.ts";
 import { UNCLASSIFIED_TOOL_ACTIONS_REASON } from "../o11y/command-projection.ts";
@@ -126,7 +122,6 @@ import type {
   InputFile,
   InputRequest,
   InputRequestFilter,
-  JsonMatch,
   JsonValue,
   PriceOverride,
   ResolvedJudgeConfig,
@@ -135,7 +130,6 @@ import type {
   SandboxTransferOperations,
   StreamEvent,
   Turn,
-  Usage,
 } from "../types.ts";
 import type {
   LogicalToolOccurrence,
@@ -506,31 +500,6 @@ function scopeCriterion(
   });
 }
 
-function occurrenceCriterion(
-  scope: AssertionScope,
-  occurrence: "tool" | "event",
-  matcher: string | undefined,
-  quantifier: ToolMatchQuantifier,
-): AssertionCriterion {
-  return Object.freeze({
-    kind: "occurrence" as const,
-    scope,
-    occurrence,
-    assertion: quantifier.kind === "absent"
-      ? "absent" as const
-      : quantifier.kind === "exact"
-        ? "count" as const
-        : quantifier.kind === "at-least" && quantifier.count === 1
-          ? "present" as const
-          : "count" as const,
-    ...(matcher === undefined ? {} : { matcher }),
-    quantifier: Object.freeze(
-      quantifier.kind === "absent"
-        ? { kind: "absent" as const }
-        : { kind: quantifier.kind, count: quantifier.count },
-    ),
-  });
-}
 
 function scopeCoverageState(
   coverage: ScopeCoverage,
@@ -798,13 +767,6 @@ function notCalledToolHandle<Kind extends RuntimeKind>(input: {
   );
 }
 
-function valueMatchCriterion(): AssertionCriterion {
-  return Object.freeze({
-    kind: "value-match" as const,
-    subject: "explicit-value" as const,
-    matcher: Object.freeze({ state: "unavailable" as const }),
-  });
-}
 
 function matchedVoid(): BooleanAssertionEvaluation<void> {
   return Object.freeze({ state: "matched" as const, value: undefined });
@@ -2107,7 +2069,6 @@ export function createAssertFirstEvalContext(
     );
 
   const attemptEventScope = (): EventScopeSnapshot => {
-    const active = sessions.filter((scope) => scope.started);
     const coverage = attemptCoverage();
     const turns = observedMatcherTurns();
     return projectEventScope({

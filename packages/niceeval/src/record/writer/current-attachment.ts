@@ -3,7 +3,6 @@ import { Effect, Result, Schema, Stream } from "effect";
 import {
   encodeRecordAttachmentCurrent,
   inspectRecordAttachmentOpaqueClosure,
-  isRecordAttachmentDefinition,
   isRecordAttachmentReference,
   mintRecordAttachmentReference,
   recordAttachmentReferenceDefinition,

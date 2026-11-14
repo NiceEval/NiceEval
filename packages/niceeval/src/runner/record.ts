@@ -777,7 +777,7 @@ export function openRunnerRecordCoordinator(input: {
 
     const attachRunFacts = (
       recordRun: RunnerRecordRun,
-      mode: "normal" | "interrupted",
+      _mode: "normal" | "interrupted",
     ): Effect.Effect<void, RunnerRecordWriteError> => Effect.gen(function* () {
       const writeRecord = (
         effect: Effect.Effect<void, RecordWriteError, never>,

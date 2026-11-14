@@ -1,4 +1,3 @@
-import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
@@ -39,22 +38,14 @@ import type {
   AttemptDocument,
   MemberDocument,
   MembershipAction,
-  RecordAttemptRef,
   RecordCore,
   RecordDocument,
-  RecordSlotIdentity,
-  RunCore,
   RunDocument,
 } from "../model/core.ts";
 import {
   MEMBERSHIP_ACTIONS,
 } from "../model/core.ts";
 import { RunContextSchema } from "../model/run-context.ts";
-import { isRecordAttachmentName } from "../model/identifiers.ts";
-import {
-  RecordBlobKeySchema,
-  Sha256DigestSchema,
-} from "./identifiers.ts";
 
 /** Kept as the one exact Schema options object for nearby non-Core codecs. */
 export const RecordExactParseOptions = RecordSchemaParseOptions;

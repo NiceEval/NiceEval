@@ -37,14 +37,11 @@ import type {
   RecordWarning,
 } from "../model/read-state.ts";
 import type {
-  RecordMaintenanceError,
-  RecordMaintenanceOpenError,
   RecordCompletenessError,
   RecordReaderOpenError,
   RecordReaderReadError,
 } from "../reader/errors.ts";
 import type { RecordWriteError } from "../writer/types.ts";
-import type { RecordFileSystemError } from "../platform/errors.ts";
 import type {
   AnyRecordDefinition,
   AttemptRecordAppendCommand,

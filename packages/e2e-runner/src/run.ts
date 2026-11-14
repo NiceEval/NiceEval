@@ -2,7 +2,7 @@
 // launch belong to the future command host; this module accepts typed input.
 import { join, resolve } from "node:path";
 import * as FileSystem from "effect/FileSystem";
-import { Data, Effect, Result, Exit, Option, Scope } from "effect";
+import { Data, Effect, Result, Exit, Scope } from "effect";
 import * as Cause from "effect/Cause";
 import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { prepareCandidate, type CandidateForm } from "./candidate-cache.ts";

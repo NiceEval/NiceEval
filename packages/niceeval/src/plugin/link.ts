@@ -15,7 +15,6 @@ import {
   linkPluginLifecycles,
   pluginInstanceDataOf,
   pluginLifecycleIdentity,
-  pluginLifecycleProjection,
   type LinkedPluginLifecycle,
   type PluginInstance,
   type PluginOwner,

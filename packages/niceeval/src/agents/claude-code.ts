@@ -21,7 +21,7 @@ import {
   runPostSetupHooks,
   runPreTeardownHooks,
 } from "./post-setup.ts";
-import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
+import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentInstallationManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { requireManagedProcessCapability } from "../sandbox/backend.ts";
@@ -131,7 +131,6 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
-  const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
   const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "claude-code",

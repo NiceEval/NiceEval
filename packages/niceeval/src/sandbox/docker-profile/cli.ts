@@ -109,7 +109,7 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
     buildReservation = await acquireDockerProfileReservation(lease, "build", {
       cpus: 0, memoryBytes: 0, pids: 0, containers: 0, ephemeralDiskBytes: 0,
     });
-    const build = await createDockerProfileBuild(lease, buildReservation.reservationId, {
+    await createDockerProfileBuild(lease, buildReservation.reservationId, {
       buildKey: createHash("sha256").update("niceeval-doctor-cold-build-v1").digest("hex"),
       platform: "linux/amd64", dockerfile: "Dockerfile", retention: "ephemeral",
     }, doctorBuildContext());

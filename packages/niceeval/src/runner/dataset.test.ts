@@ -9,7 +9,7 @@ describe("defineDataset & defineScoreDataset", () => {
       tags: ["test", "rag"],
       data: [{ id: "q1", query: "hi" }, { id: "q2", query: "hello" }],
       key: (row) => row.id,
-      test: (t, row) => {
+      test: (_t, row) => {
         expect(row.query).toBeDefined();
       },
     });
@@ -24,7 +24,7 @@ describe("defineDataset & defineScoreDataset", () => {
     const ds = defineScoreDataset({
       description: "score dataset",
       data: async () => [{ prompt: "test" }],
-      test: (t, row) => {
+      test: (_t, row) => {
         expect(row.prompt).toBe("test");
       },
     });
