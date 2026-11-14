@@ -15,10 +15,7 @@ import {
   type SandboxCommandPlanNode,
   type SandboxCommandPlanRedaction,
 } from "../sandbox/commands.ts";
-import {
-  sandboxTemplateCommandPlanLocator,
-  type SandboxTemplateCommandPlanLocator,
-} from "../sandbox/layer.ts";
+import { sandboxTemplateCommandPlanLocator, type SandboxTemplateCommandPlanLocator } from "../sandbox/layer.ts";
 import {
   type LinkedSandboxAfter,
   type LinkedSandboxPluginLifecycle,
@@ -36,10 +33,7 @@ import {
 import { digestOf } from "../sandbox/identity.ts";
 import type { JsonValue } from "../shared/types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
-import {
-  sandboxReusePoolDescriptor,
-  type SandboxReusePoolDescriptor,
-} from "./sandbox-reuse.ts";
+import { sandboxReusePoolDescriptor, type SandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
 import type { LinkedPluginLifecycle } from "../plugin/contracts.ts";
 import { beforeCacheActionDeclaration, beforeCacheAttribution } from "./before-cache-plan.ts";
 import type { SandboxScriptSource } from "../sandbox/script.ts";
@@ -75,10 +69,12 @@ export interface CommandPlanStep {
   readonly redactions?: readonly SandboxCommandPlanRedaction[];
   readonly command?: SandboxCommandPlanCommand;
   readonly children?: readonly CommandPlanStep[];
-  readonly action?: Readonly<SandboxActionPlan & { readonly kind?: "action" | "command" }> | {
-    readonly id: string;
-    readonly kind: "command" | "callback";
-  };
+  readonly action?:
+    | Readonly<SandboxActionPlan & { readonly kind?: "action" | "command" }>
+    | {
+        readonly id: string;
+        readonly kind: "command" | "callback";
+      };
   readonly declarationOrder?: SandboxDeclarationOrder;
   readonly executionOrder?: {
     readonly topologicalOrdinal: number;
@@ -161,9 +157,7 @@ export type CommandPlanLane =
   | (CommandPlanLaneBase & {
       readonly kind: "sandbox-reuse";
       readonly ordering: "independent";
-      readonly scope:
-        | { readonly kind: "shared" }
-        | { readonly kind: "eval"; readonly evalId: string };
+      readonly scope: { readonly kind: "shared" } | { readonly kind: "eval"; readonly evalId: string };
       /** Applied independently to every physical instance; it creates no lane-wide before/after edge. */
       readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate;
     })
@@ -208,10 +202,13 @@ export interface BeforeCachePlan {
 
 /** Deduplicate the selected command plan by the before-cache declaration identity. */
 export function beforeCachePlanOf(commandPlan: CommandPlan): BeforeCachePlan {
-  const nodes = new Map<string, {
-    cache: NonNullable<CommandPlanStep["cache"]>;
-    consumers: Map<string, { readonly experimentId: string; readonly evalId: string }>;
-  }>();
+  const nodes = new Map<
+    string,
+    {
+      cache: NonNullable<CommandPlanStep["cache"]>;
+      consumers: Map<string, { readonly experimentId: string; readonly evalId: string }>;
+    }
+  >();
   const visit = (step: CommandPlanStep, experimentId: string, evalId: string): void => {
     const cache = step.cache;
     if (cache?.prefixIdentity !== undefined) {
@@ -221,16 +218,11 @@ export function beforeCachePlanOf(commandPlan: CommandPlan): BeforeCachePlan {
     }
     for (const child of step.children ?? []) visit(child, experimentId, evalId);
   };
-  const visitForConsumers = (
-    step: CommandPlanStep,
-    experimentId: string,
-    evalIds: readonly string[],
-  ): void => {
+  const visitForConsumers = (step: CommandPlanStep, experimentId: string, evalIds: readonly string[]): void => {
     for (const evalId of evalIds) visit(step, experimentId, evalId);
   };
   for (const experiment of commandPlan.experiments) {
-    const experimentEvalIds = [...new Set(experiment.lanes.flatMap((lane) =>
-      lane.slots.map((slot) => slot.evalId)))];
+    const experimentEvalIds = [...new Set(experiment.lanes.flatMap((lane) => lane.slots.map((slot) => slot.evalId)))];
     for (const step of experiment.beforeLanes) {
       visitForConsumers(step, experiment.experimentId, experimentEvalIds);
     }
@@ -247,16 +239,24 @@ export function beforeCachePlanOf(commandPlan: CommandPlan): BeforeCachePlan {
   }
   return Object.freeze({
     lookup: "not-probed" as const,
-    nodes: Object.freeze([...nodes.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
-      ([prefixIdentity, node]) => Object.freeze({
-        prefixIdentity,
-        lookup: "not-probed" as const,
-        capability: node.cache.capability,
-        eligibility: node.cache.eligibility,
-        consumers: Object.freeze([...node.consumers.values()].sort((left, right) =>
-          left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId))),
-      }),
-    )),
+    nodes: Object.freeze(
+      [...nodes.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([prefixIdentity, node]) =>
+          Object.freeze({
+            prefixIdentity,
+            lookup: "not-probed" as const,
+            capability: node.cache.capability,
+            eligibility: node.cache.eligibility,
+            consumers: Object.freeze(
+              [...node.consumers.values()].sort(
+                (left, right) =>
+                  left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId),
+              ),
+            ),
+          }),
+        ),
+    ),
   });
 }
 
@@ -386,10 +386,7 @@ function sameIdentity(left: AgentIdentity, right: AgentIdentity): boolean {
   return left.agent === right.agent && left.version === right.version && left.revision === right.revision;
 }
 
-function matchingInstaller(
-  installers: readonly AgentInstaller[],
-  identity: AgentIdentity,
-): AgentInstaller | undefined {
+function matchingInstaller(installers: readonly AgentInstaller[], identity: AgentIdentity): AgentInstaller | undefined {
   return installers.find((candidate) => sameIdentity(candidate.identity, identity));
 }
 
@@ -402,45 +399,52 @@ function installStep(pair: PreparedRunPair, index: number): CommandPlanStep {
   const install = agent.install[index];
   if (install === undefined) throw new Error(`Command plan invariant failed: missing Agent install #${index}.`);
   const probe = sandboxCommandPlanOf(install.probe);
-  const probeStep = probe === undefined
-    ? opaque(
-        "agent.install",
-        "agent-probe-callback",
-        "custom Agent install probe; commands are only known when it runs",
-        { owner, label: `probe #${index}` },
-      )
-    : stepFromDeclaration({ ...probe, label: `probe #${index}` }, "agent.install", owner);
-  const installer = matchingInstaller(agent.installers, install.identity);
-  const children: CommandPlanStep[] = [probeStep];
-  if (installer === undefined) {
-    children.push(knownNoCommand(
-      "agent.install",
-      "installer-missing",
-      "probe miss stops with a missing-installer error",
-      { owner, label: `install #${index}`, condition: PROBE_MISS },
-    ));
-  } else if (installer.installMode === "verify-only") {
-    children.push(knownNoCommand(
-      "agent.install",
-      "verify-only",
-      "probe miss stops because this installer is verify-only",
-      { owner, label: `install #${index}`, condition: PROBE_MISS },
-    ));
-  } else {
-    children.push(opaque(
-      "agent.install",
-      "agent-installer-callback",
-      `${installer.installMode} installer callback; commands are only known when it runs`,
-      { owner, label: `install #${index}`, condition: PROBE_MISS },
-    ));
-    children.push(probe === undefined
+  const probeStep =
+    probe === undefined
       ? opaque(
           "agent.install",
           "agent-probe-callback",
-          "custom Agent install recheck; commands are only known when it runs",
-          { owner, label: `recheck #${index}`, condition: PROBE_MISS },
+          "custom Agent install probe; commands are only known when it runs",
+          { owner, label: `probe #${index}` },
         )
-      : stepFromDeclaration({ ...probe, label: `recheck #${index}` }, "agent.install", owner, PROBE_MISS));
+      : stepFromDeclaration({ ...probe, label: `probe #${index}` }, "agent.install", owner);
+  const installer = matchingInstaller(agent.installers, install.identity);
+  const children: CommandPlanStep[] = [probeStep];
+  if (installer === undefined) {
+    children.push(
+      knownNoCommand("agent.install", "installer-missing", "probe miss stops with a missing-installer error", {
+        owner,
+        label: `install #${index}`,
+        condition: PROBE_MISS,
+      }),
+    );
+  } else if (installer.installMode === "verify-only") {
+    children.push(
+      knownNoCommand("agent.install", "verify-only", "probe miss stops because this installer is verify-only", {
+        owner,
+        label: `install #${index}`,
+        condition: PROBE_MISS,
+      }),
+    );
+  } else {
+    children.push(
+      opaque(
+        "agent.install",
+        "agent-installer-callback",
+        `${installer.installMode} installer callback; commands are only known when it runs`,
+        { owner, label: `install #${index}`, condition: PROBE_MISS },
+      ),
+    );
+    children.push(
+      probe === undefined
+        ? opaque(
+            "agent.install",
+            "agent-probe-callback",
+            "custom Agent install recheck; commands are only known when it runs",
+            { owner, label: `recheck #${index}`, condition: PROBE_MISS },
+          )
+        : stepFromDeclaration({ ...probe, label: `recheck #${index}` }, "agent.install", owner, PROBE_MISS),
+    );
   }
   return {
     phase: "agent.install",
@@ -463,7 +467,9 @@ function stepForLinkedBefore(_pair: PreparedRunPair, entry: ScheduledSandboxBefo
       truth: "exact",
       owner,
       label: entry.metadata.label ?? entry.id,
-      ...(sandboxShellScriptSourceOf(entry.data) === undefined ? {} : { scriptSource: sandboxShellScriptSourceOf(entry.data) }),
+      ...(sandboxShellScriptSourceOf(entry.data) === undefined
+        ? {}
+        : { scriptSource: sandboxShellScriptSourceOf(entry.data) }),
       action: Object.freeze({ ...entry.data.plan, kind: "action" as const }),
     };
   }
@@ -490,15 +496,16 @@ function stepForLinkedBefore(_pair: PreparedRunPair, entry: ScheduledSandboxBefo
 export function providerDeclaredBeforeCacheCapability(pair: PreparedRunPair): CommandPlanCacheCapability {
   if (pair.plan._tag !== "Sandbox") return "unsupported";
   switch (pair.plan.providerPlan.capabilities.beforeCache._tag) {
-    case "RunPrepared": return "run-prepared";
-    case "AttemptCaptured": return "attempt-captured";
-    case "Unsupported": return "unsupported";
+    case "RunPrepared":
+      return "run-prepared";
+    case "AttemptCaptured":
+      return "attempt-captured";
+    case "Unsupported":
+      return "unsupported";
   }
 }
 
-function providerDeclaredBeforeCacheCoverage(
-  pair: PreparedRunPair,
-): SandboxActionState | "unsupported" {
+function providerDeclaredBeforeCacheCoverage(pair: PreparedRunPair): SandboxActionState | "unsupported" {
   if (pair.plan._tag !== "Sandbox") return "unsupported";
   const declaration = pair.plan.providerPlan.capabilities.beforeCache;
   return declaration._tag === "AttemptCaptured" || declaration._tag === "RunPrepared"
@@ -564,91 +571,94 @@ function scheduledBeforeSteps(
   let cumulativeState: SandboxActionState | undefined;
   let parentPrefixIdentity = linkedBeforeCacheBaseIdentity(pair);
   const capability = capabilityOf(pair);
-  const providerCoverage = capability !== "unsupported"
-    ? providerDeclaredBeforeCacheCoverage(pair)
-    : "unsupported";
-  const capabilityReason = capability === "unsupported"
-    ? providerDeclaredBeforeCacheReason(pair)
-    : undefined;
-  return Object.freeze(scheduled.map((entry): CommandPlanStep => {
-    const projected = { ...stepForLinkedBefore(pair, entry), ...(entry.pluginSource === undefined ? {} : { label: entry.pluginSource }) };
-    const currentOpaque = containsOpaque(projected);
-    const declaredState = entry.kind === "action" ? entry.data.plan.state : "opaque";
-    if (entry.kind === "action" && !opaqueAncestor) {
-      cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
-    }
-    const projectedCumulativeState = opaqueAncestor || currentOpaque
-      ? "opaque" as const
-      : cumulativeState!;
-    const prefixIdentity = entry.kind === "action" && !opaqueAncestor && !currentOpaque
-      ? linkedBeforeCacheActionIdentity(parentPrefixIdentity, entry, cumulativeState!)
-      : undefined;
-    // Provider capability and linked lineage are independent facts. Preserve the
-    // earliest structural barrier even when this provider cannot cache any prefix;
-    // capability/capabilityReason still report that provider-wide limitation.
-    const barrier = opaqueAncestor
-      ? "opaque-ancestor" as const
-      : currentOpaque
-        ? "opaque-action" as const
-        : capability === "unsupported" || providerCoverage === "unsupported"
-          ? "provider-unsupported" as const
-          : unsupportedStateAncestor
-            ? "unsupported-state-ancestor" as const
-            : sandboxActionStateCovers(providerCoverage, projectedCumulativeState as SandboxActionState)
-              ? "none" as const
-              : "unsupported-state" as const;
-    const barrierActionId = barrier === "opaque-action" || barrier === "unsupported-state"
-      ? entry.id
-      : barrier === "opaque-ancestor"
-        ? opaqueBarrierActionId
-        : barrier === "unsupported-state-ancestor"
-          ? unsupportedStateBarrierActionId
+  const providerCoverage = capability !== "unsupported" ? providerDeclaredBeforeCacheCoverage(pair) : "unsupported";
+  const capabilityReason = capability === "unsupported" ? providerDeclaredBeforeCacheReason(pair) : undefined;
+  return Object.freeze(
+    scheduled.map((entry): CommandPlanStep => {
+      const projected = {
+        ...stepForLinkedBefore(pair, entry),
+        ...(entry.pluginSource === undefined ? {} : { label: entry.pluginSource }),
+      };
+      const currentOpaque = containsOpaque(projected);
+      const declaredState = entry.kind === "action" ? entry.data.plan.state : "opaque";
+      if (entry.kind === "action" && !opaqueAncestor) {
+        cumulativeState = mergeSandboxActionState(cumulativeState, entry.data.plan.state);
+      }
+      const projectedCumulativeState = opaqueAncestor || currentOpaque ? ("opaque" as const) : cumulativeState!;
+      const prefixIdentity =
+        entry.kind === "action" && !opaqueAncestor && !currentOpaque
+          ? linkedBeforeCacheActionIdentity(parentPrefixIdentity, entry, cumulativeState!)
           : undefined;
-    const step: CommandPlanStep = Object.freeze({
-      ...projected,
-      ...beforeCacheAttribution(entry),
-      action: entry.kind === "action"
-        ? projected.action
-        : Object.freeze({
-            id: entry.id,
-            kind: entry.kind === "hook" ? "callback" as const : "command" as const,
+      // Provider capability and linked lineage are independent facts. Preserve the
+      // earliest structural barrier even when this provider cannot cache any prefix;
+      // capability/capabilityReason still report that provider-wide limitation.
+      const barrier = opaqueAncestor
+        ? ("opaque-ancestor" as const)
+        : currentOpaque
+          ? ("opaque-action" as const)
+          : capability === "unsupported" || providerCoverage === "unsupported"
+            ? ("provider-unsupported" as const)
+            : unsupportedStateAncestor
+              ? ("unsupported-state-ancestor" as const)
+              : sandboxActionStateCovers(providerCoverage, projectedCumulativeState as SandboxActionState)
+                ? ("none" as const)
+                : ("unsupported-state" as const);
+      const barrierActionId =
+        barrier === "opaque-action" || barrier === "unsupported-state"
+          ? entry.id
+          : barrier === "opaque-ancestor"
+            ? opaqueBarrierActionId
+            : barrier === "unsupported-state-ancestor"
+              ? unsupportedStateBarrierActionId
+              : undefined;
+      const step: CommandPlanStep = Object.freeze({
+        ...projected,
+        ...beforeCacheAttribution(entry),
+        action:
+          entry.kind === "action"
+            ? projected.action
+            : Object.freeze({
+                id: entry.id,
+                kind: entry.kind === "hook" ? ("callback" as const) : ("command" as const),
+              }),
+        occurrence: Object.freeze({ kind: "attempt" as const }),
+        cache: Object.freeze({
+          lookup: "not-probed" as const,
+          capability,
+          ...(prefixIdentity === undefined ? {} : { prefixIdentity }),
+          ...(capabilityReason === undefined ? {} : { capabilityReason }),
+          runtime: Object.freeze({
+            status: "pending" as const,
+            finalKey: "not-probed" as const,
           }),
-      occurrence: Object.freeze({ kind: "attempt" as const }),
-      cache: Object.freeze({
-        lookup: "not-probed" as const,
-        capability,
-        ...(prefixIdentity === undefined ? {} : { prefixIdentity }),
-        ...(capabilityReason === undefined ? {} : { capabilityReason }),
-        runtime: Object.freeze({
-          status: "pending" as const,
-          finalKey: "not-probed" as const,
+          eligibility:
+            barrier === "none"
+              ? Object.freeze({ status: "eligible" as const })
+              : Object.freeze({
+                  status: "ineligible" as const,
+                  reason: Object.freeze({ code: barrier }),
+                }),
+          state: Object.freeze({
+            declared: declaredState,
+            cumulative: projectedCumulativeState,
+            providerCoverage,
+            barrier,
+            ...(barrierActionId === undefined ? {} : { barrierActionId }),
+          }),
         }),
-        eligibility: barrier === "none"
-          ? Object.freeze({ status: "eligible" as const })
-          : Object.freeze({
-              status: "ineligible" as const,
-              reason: Object.freeze({ code: barrier }),
-            }),
-        state: Object.freeze({
-          declared: declaredState,
-          cumulative: projectedCumulativeState,
-          providerCoverage,
-          barrier,
-          ...(barrierActionId === undefined ? {} : { barrierActionId }),
-        }),
-      }),
-    });
-    if (currentOpaque) {
-      opaqueAncestor = true;
-      opaqueBarrierActionId ??= entry.id;
-    }
-    if (prefixIdentity !== undefined) parentPrefixIdentity = prefixIdentity;
-    if (barrier === "unsupported-state") {
-      unsupportedStateAncestor = true;
-      unsupportedStateBarrierActionId = entry.id;
-    }
-    return step;
-  }));
+      });
+      if (currentOpaque) {
+        opaqueAncestor = true;
+        opaqueBarrierActionId ??= entry.id;
+      }
+      if (prefixIdentity !== undefined) parentPrefixIdentity = prefixIdentity;
+      if (barrier === "unsupported-state") {
+        unsupportedStateAncestor = true;
+        unsupportedStateBarrierActionId = entry.id;
+      }
+      return step;
+    }),
+  );
 }
 
 function stepForAfter(entry: LinkedSandboxAfter): CommandPlanStep {
@@ -697,24 +707,28 @@ function declaredAgentHookStep(
 function agentSetupSteps(pair: PreparedRunPair, owner: CommandPlanOwner): readonly CommandPlanStep[] {
   const agent = pair.run.agent;
   if (agent === undefined) {
-    return [opaque(
-      "adapter.create",
-      "adapter-create-callback",
-      "Adapter context creation is a runtime callback and may acquire cleanup-bound resources",
-      { owner },
-    )];
+    return [
+      opaque(
+        "adapter.create",
+        "adapter-create-callback",
+        "Adapter context creation is a runtime callback and may acquire cleanup-bound resources",
+        { owner },
+      ),
+    ];
   }
   if (agent.before === undefined) {
     return [knownNoCommand("agent.setup", "hook-omitted", "Agent has no before callback", { owner })];
   }
   const hooks = agentLifecycleHookCommandsOf(agent);
   if (hooks === undefined) {
-    return [opaque(
-      "agent.setup",
-      "agent-setup-callback",
-      "Agent before callback may execute commands; its body is not inspected",
-      { owner },
-    )];
+    return [
+      opaque(
+        "agent.setup",
+        "agent-setup-callback",
+        "Agent before callback may execute commands; its body is not inspected",
+        { owner },
+      ),
+    ];
   }
   return [
     opaque(
@@ -723,59 +737,55 @@ function agentSetupSteps(pair: PreparedRunPair, owner: CommandPlanOwner): readon
       "Adapter setup before declared before hooks may execute commands",
       { owner, label: "adapter setup" },
     ),
-    ...hooks.postSetup.map((hook, index) => declaredAgentHookStep(
-      hook,
-      index,
-      "agent.before",
-      owner,
-    )),
+    ...hooks.postSetup.map((hook, index) => declaredAgentHookStep(hook, index, "agent.before", owner)),
   ];
 }
 
 function agentTeardownSteps(pair: PreparedRunPair, owner: CommandPlanOwner): readonly CommandPlanStep[] {
   const agent = pair.run.agent;
   if (agent === undefined) {
-    return [opaque(
-      "adapter.cleanup",
-      "adapter-cleanup-callbacks",
-      "Adapter cleanup callbacks are registered dynamically and run in LIFO order",
-      { owner },
-    )];
+    return [
+      opaque(
+        "adapter.cleanup",
+        "adapter-cleanup-callbacks",
+        "Adapter cleanup callbacks are registered dynamically and run in LIFO order",
+        { owner },
+      ),
+    ];
   }
   if (agent.after === undefined) {
     return [knownNoCommand("agent.teardown", "hook-omitted", "Agent has no after callback", { owner })];
   }
   const hooks = agentLifecycleHookCommandsOf(agent);
   if (hooks === undefined) {
-    return [opaque(
-      "agent.teardown",
-      "agent-teardown-callback",
-      "Agent after callback may execute commands; its body is not inspected",
-      { owner },
-    )];
+    return [
+      opaque(
+        "agent.teardown",
+        "agent-teardown-callback",
+        "Agent after callback may execute commands; its body is not inspected",
+        { owner },
+      ),
+    ];
   }
 
   const preTeardown = hooks.preTeardown
     .map((hook, index) => ({ hook, index }))
     .reverse()
-    .map(({ hook, index }) => declaredAgentHookStep(
-      hook,
-      index,
-      "agent.after",
-      owner,
-      AGENT_POST_SETUP_REACHED,
-    ));
-  const mayRegisterCleanup = [...hooks.postSetup, ...hooks.preTeardown]
-    .some((hook) => sandboxCommandPlanOf(hook) === undefined);
+    .map(({ hook, index }) => declaredAgentHookStep(hook, index, "agent.after", owner, AGENT_POST_SETUP_REACHED));
+  const mayRegisterCleanup = [...hooks.postSetup, ...hooks.preTeardown].some(
+    (hook) => sandboxCommandPlanOf(hook) === undefined,
+  );
   return [
     ...preTeardown,
     ...(mayRegisterCleanup
-      ? [opaque(
-          "agent.after.cleanup",
-          "registered-agent-cleanup-callbacks",
-          "callback-backed Agent hooks may register LIFO cleanup commands",
-          { owner, condition: AGENT_POST_SETUP_REACHED },
-        )]
+      ? [
+          opaque(
+            "agent.after.cleanup",
+            "registered-agent-cleanup-callbacks",
+            "callback-backed Agent hooks may register LIFO cleanup commands",
+            { owner, condition: AGENT_POST_SETUP_REACHED },
+          ),
+        ]
       : []),
     opaque(
       "agent.teardown",
@@ -794,15 +804,17 @@ function sandboxLifecycleHooks(
   if (pair.plan._tag !== "Sandbox") return [];
   const markers = pair.plan.pair.fingerprint.lifecycle?.filter((entry) => entry.phase === phase) ?? [];
   const ordered = phase === "teardown" ? [...markers].reverse() : markers;
-  return ordered.map((entry) => opaque(
-    `sandbox.${phase}`,
-    "sandbox-lifecycle-callback",
-    `${phase} hook callback; commands are only known when it runs`,
-    {
-      owner: { ...entry.owner, index: entry.index },
-      ...(condition === undefined ? {} : { condition }),
-    },
-  ));
+  return ordered.map((entry) =>
+    opaque(
+      `sandbox.${phase}`,
+      "sandbox-lifecycle-callback",
+      `${phase} hook callback; commands are only known when it runs`,
+      {
+        owner: { ...entry.owner, index: entry.index },
+        ...(condition === undefined ? {} : { condition }),
+      },
+    ),
+  );
 }
 
 function pluginLifecycleSteps(
@@ -813,13 +825,17 @@ function pluginLifecycleSteps(
 ): readonly CommandPlanStep[] {
   const ordered = phase === "teardown" ? [...lifecycles].reverse() : lifecycles;
   return ordered
-    .filter((entry) => phase === "setup" ? entry.hasSetup : entry.hasTeardown)
-    .flatMap((entry) => Array.from({ length: phase === "setup" ? entry.beforeCount : entry.afterCount }, (_, index) => opaque(
-      `plugin.lifecycle.${phase}`,
-      `plugin-lifecycle-${phase}-callback`,
-      `Plugin ${entry.name} (${entry.key}) ${phase === "setup" ? "before" : "after"}[${phase === "setup" ? index : entry.afterCount - index - 1}] callback is opaque`,
-      { owner, label: `${entry.name}:${entry.key}`, ...(condition === undefined ? {} : { condition }) },
-    )));
+    .filter((entry) => (phase === "setup" ? entry.hasSetup : entry.hasTeardown))
+    .flatMap((entry) =>
+      Array.from({ length: phase === "setup" ? entry.beforeCount : entry.afterCount }, (_, index) =>
+        opaque(
+          `plugin.lifecycle.${phase}`,
+          `plugin-lifecycle-${phase}-callback`,
+          `Plugin ${entry.name} (${entry.key}) ${phase === "setup" ? "before" : "after"}[${phase === "setup" ? index : entry.afterCount - index - 1}] callback is opaque`,
+          { owner, label: `${entry.name}:${entry.key}`, ...(condition === undefined ? {} : { condition }) },
+        ),
+      ),
+    );
 }
 
 function sandboxPluginLifecycleSteps(
@@ -829,17 +845,21 @@ function sandboxPluginLifecycleSteps(
 ): readonly CommandPlanStep[] {
   const ordered = phase === "teardown" ? [...lifecycles].reverse() : lifecycles;
   return ordered
-    .filter((entry) => phase === "setup" ? entry.lifecycle.hasSetup : entry.lifecycle.hasTeardown)
-    .flatMap(({ lifecycle, owner }) => Array.from({ length: phase === "setup" ? lifecycle.beforeCount : lifecycle.afterCount }, (_, index) => opaque(
-      `plugin.lifecycle.${phase}`,
-      `plugin-lifecycle-${phase}-callback`,
-      `Plugin ${lifecycle.name} (${lifecycle.key}) ${phase === "setup" ? "before" : "after"}[${phase === "setup" ? index : lifecycle.afterCount - index - 1}] callback is opaque`,
-      {
-        owner,
-        label: `${lifecycle.name}:${lifecycle.key}`,
-        ...(condition === undefined ? {} : { condition }),
-      },
-    )));
+    .filter((entry) => (phase === "setup" ? entry.lifecycle.hasSetup : entry.lifecycle.hasTeardown))
+    .flatMap(({ lifecycle, owner }) =>
+      Array.from({ length: phase === "setup" ? lifecycle.beforeCount : lifecycle.afterCount }, (_, index) =>
+        opaque(
+          `plugin.lifecycle.${phase}`,
+          `plugin-lifecycle-${phase}-callback`,
+          `Plugin ${lifecycle.name} (${lifecycle.key}) ${phase === "setup" ? "before" : "after"}[${phase === "setup" ? index : lifecycle.afterCount - index - 1}] callback is opaque`,
+          {
+            owner,
+            label: `${lifecycle.name}:${lifecycle.key}`,
+            ...(condition === undefined ? {} : { condition }),
+          },
+        ),
+      ),
+    );
 }
 
 function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly CommandPlanStep[] {
@@ -847,21 +867,16 @@ function physicalBefore(pair: PreparedRunPair, shared: boolean): readonly Comman
   const provider: CommandPlanOwner = { kind: "provider", id: pair.plan.providerPlan.provider };
   const template = pair.plan.pair.template;
   return [
-    opaque(
-      "sandbox.create",
-      "provider-provisioning",
-      "provider provisioning is an internal runtime boundary",
-      {
-        owner: provider,
-        template: {
-          owner: pair.plan.pair.templateOwner,
-          provider: template.provider,
-          kind: template.kind,
-          locator: sandboxTemplateCommandPlanLocator(template),
-        },
-        ...(shared ? { condition: SHARED_INSTANCE_AVAILABLE } : {}),
+    opaque("sandbox.create", "provider-provisioning", "provider provisioning is an internal runtime boundary", {
+      owner: provider,
+      template: {
+        owner: pair.plan.pair.templateOwner,
+        provider: template.provider,
+        kind: template.kind,
+        locator: sandboxTemplateCommandPlanLocator(template),
       },
-    ),
+      ...(shared ? { condition: SHARED_INSTANCE_AVAILABLE } : {}),
+    }),
     ...sandboxLifecycleHooks(pair, "setup", shared ? SHARED_INSTANCE_AVAILABLE : undefined),
     ...sandboxPluginLifecycleSteps(
       pair.plan.pair.pluginLifecycles,
@@ -902,34 +917,40 @@ function attemptBody(
   capabilityOf: (pair: PreparedRunPair) => CommandPlanCacheCapability,
 ): readonly CommandPlanStep[] {
   const evalOwner: CommandPlanOwner = { kind: "eval", id: pair.evalDef.id };
-  const adapterOwner: CommandPlanOwner = pair.run.adapter === undefined ? evalOwner : {
-    kind: pair.run.adapter.kind === "custom" ? "adapter" : "agent",
-    id: pair.run.adapter.name,
-  };
-  const provider = pair.plan._tag === "Sandbox"
-    ? ({ kind: "provider", id: pair.plan.providerPlan.provider } satisfies CommandPlanOwner)
-    : undefined;
+  const adapterOwner: CommandPlanOwner =
+    pair.run.adapter === undefined
+      ? evalOwner
+      : {
+          kind: pair.run.adapter.kind === "custom" ? "adapter" : "agent",
+          id: pair.run.adapter.name,
+        };
+  const provider =
+    pair.plan._tag === "Sandbox"
+      ? ({ kind: "provider", id: pair.plan.providerPlan.provider } satisfies CommandPlanOwner)
+      : undefined;
   return [
     ...(shared && provider !== undefined
-      ? [opaque(
-          "sandbox.reuse-ready",
-          "provider-reuse-readiness",
-          "the shared instance may be reset, retired, or replaced before this slot",
-          { owner: provider, condition: SHARED_INSTANCE_AVAILABLE },
-        )]
+      ? [
+          opaque(
+            "sandbox.reuse-ready",
+            "provider-reuse-readiness",
+            "the shared instance may be reset, retired, or replaced before this slot",
+            { owner: provider, condition: SHARED_INSTANCE_AVAILABLE },
+          ),
+        ]
       : []),
     ...scheduledBeforeSteps(pair, capabilityOf),
     ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "setup", evalOwner),
-    ...(pair.run.agent?.kind === "sandbox"
-      ? pair.run.agent.install.map((_, index) => installStep(pair, index))
-      : []),
+    ...(pair.run.agent?.kind === "sandbox" ? pair.run.agent.install.map((_, index) => installStep(pair, index)) : []),
     ...(pair.plan._tag === "Sandbox"
-      ? [opaque(
-          "sandbox.baseline",
-          "sandbox-baseline-capture",
-          "the diff baseline is captured from the live Sandbox after preparation",
-          { owner: provider! },
-        )]
+      ? [
+          opaque(
+            "sandbox.baseline",
+            "sandbox-baseline-capture",
+            "the diff baseline is captured from the live Sandbox after preparation",
+            { owner: provider! },
+          ),
+        ]
       : []),
     ...(pair.run.adapter === undefined ? [] : agentSetupSteps(pair, adapterOwner)),
     opaque(
@@ -942,25 +963,31 @@ function attemptBody(
     ...pluginLifecycleSteps(pair.plugin.evalLifecycles, "teardown", evalOwner),
     ...afterSteps(pair),
     ...(pair.plan._tag === "Sandbox"
-      ? [opaque(
-          "sandbox.cleanup",
-          "registered-cleanup-callbacks",
-          "Sandbox command callbacks may register LIFO cleanup commands while running",
-          { owner: evalOwner },
-        )]
-      : [knownNoCommand(
-          "sandbox.cleanup",
-          "direct-agent",
-          "Direct Agent attempts have no Sandbox command cleanup registry",
-          { owner: evalOwner },
-        )]),
+      ? [
+          opaque(
+            "sandbox.cleanup",
+            "registered-cleanup-callbacks",
+            "Sandbox command callbacks may register LIFO cleanup commands while running",
+            { owner: evalOwner },
+          ),
+        ]
+      : [
+          knownNoCommand(
+            "sandbox.cleanup",
+            "direct-agent",
+            "Direct Agent attempts have no Sandbox command cleanup registry",
+            { owner: evalOwner },
+          ),
+        ]),
     ...(shared && provider !== undefined
-      ? [opaque(
-          "sandbox.reset-or-retire",
-          "provider-reset-or-retire",
-          "the provider resets the shared instance or retires it after this slot",
-          { owner: provider, condition: SHARED_INSTANCE_AVAILABLE },
-        )]
+      ? [
+          opaque(
+            "sandbox.reset-or-retire",
+            "provider-reset-or-retire",
+            "the provider resets the shared instance or retires it after this slot",
+            { owner: provider, condition: SHARED_INSTANCE_AVAILABLE },
+          ),
+        ]
       : []),
   ];
 }
@@ -1004,9 +1031,7 @@ type CommandPlanLaneSpec =
       readonly kind: "sandbox-reuse";
       readonly key: string;
       readonly id: string;
-      readonly scope:
-        | { readonly kind: "shared" }
-        | { readonly kind: "eval"; readonly evalId: string };
+      readonly scope: { readonly kind: "shared" } | { readonly kind: "eval"; readonly evalId: string };
     };
 
 function dispatchAttempts(row: CommandPlanRowInput): ReadonlySet<number> {
@@ -1025,10 +1050,7 @@ function reuseDescriptorFor(row: RowWithPair): SandboxReusePoolDescriptor | unde
 function laneSpecFor(row: RowWithPair): CommandPlanLaneSpec {
   const descriptor = reuseDescriptorFor(row);
   if (row.evalGroupId !== undefined) {
-    if (
-      descriptor?.scope.kind !== "eval-group" ||
-      descriptor.scope.evalGroupId !== row.evalGroupId
-    ) {
+    if (descriptor?.scope.kind !== "eval-group" || descriptor.scope.evalGroupId !== row.evalGroupId) {
       throw new Error(
         `Command plan invariant failed: Eval Group ${row.evalGroupId} has no matching reuse-pool descriptor.`,
       );
@@ -1064,9 +1086,7 @@ function laneFor(
 ): CommandPlanLane {
   const first = rows[0]!;
   const shared = spec.kind !== "eval";
-  const sortedRows = spec.kind === "eval-group"
-    ? [...rows].sort((a, b) => a.evalId.localeCompare(b.evalId))
-    : rows;
+  const sortedRows = spec.kind === "eval-group" ? [...rows].sort((a, b) => a.evalId.localeCompare(b.evalId)) : rows;
   const slots: CommandPlanSlot[] = [];
   for (const row of sortedRows) {
     const dispatch = dispatchAttempts(row);
@@ -1100,21 +1120,27 @@ function laneFor(
     id: spec.id,
     ordering: "serial-normalized-eval-id",
     beforeSlots: hasDispatch
-      ? pluginLifecycleSteps(first.pair.plugin.groupLifecycles, "setup", { kind: "eval-group", id: spec.id }, DISPATCH_MAY_NOT_RUN)
+      ? pluginLifecycleSteps(
+          first.pair.plugin.groupLifecycles,
+          "setup",
+          { kind: "eval-group", id: spec.id },
+          DISPATCH_MAY_NOT_RUN,
+        )
       : [],
     afterSlots: hasDispatch
-      ? pluginLifecycleSteps(first.pair.plugin.groupLifecycles, "teardown", { kind: "eval-group", id: spec.id }, DISPATCH_MAY_NOT_RUN)
+      ? pluginLifecycleSteps(
+          first.pair.plugin.groupLifecycles,
+          "teardown",
+          { kind: "eval-group", id: spec.id },
+          DISPATCH_MAY_NOT_RUN,
+        )
       : [],
     ...(hasDispatch ? { physicalLifecycleTemplate: physicalLifecycleTemplate(first.pair) } : {}),
     slots,
   };
 }
 
-function experimentLifecycle(
-  pair: PreparedRunPair,
-  side: "setup" | "teardown",
-  hasDispatch: boolean,
-): CommandPlanStep {
+function experimentLifecycle(pair: PreparedRunPair, side: "setup" | "teardown", hasDispatch: boolean): CommandPlanStep {
   const owner: CommandPlanOwner = { kind: "experiment", id: pair.run.experimentId };
   if (!hasDispatch) {
     return knownNoCommand(
@@ -1183,7 +1209,8 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
       }
     }
     const lanes = [...byLane.values()].map(({ rows: laneRows, spec }) =>
-      laneFor(laneRows, spec, beforeCacheCapability));
+      laneFor(laneRows, spec, beforeCacheCapability),
+    );
     const hasDispatch = lanes.some((lane) => lane.slots.some((slot) => slot.action === "dispatch"));
     const representative = experimentRows[0]!.pair;
     experiments.push({
@@ -1191,11 +1218,25 @@ export function assembleCommandPlan(input: AssembleCommandPlanInput): CommandPla
       activation: hasDispatch ? "conditional" : "inactive",
       beforeLanes: [
         experimentLifecycle(representative, "setup", hasDispatch),
-        ...(hasDispatch ? pluginLifecycleSteps(representative.plugin.experimentLifecycles, "setup", { kind: "experiment", id: experimentId }, DISPATCH_MAY_NOT_RUN) : []),
+        ...(hasDispatch
+          ? pluginLifecycleSteps(
+              representative.plugin.experimentLifecycles,
+              "setup",
+              { kind: "experiment", id: experimentId },
+              DISPATCH_MAY_NOT_RUN,
+            )
+          : []),
       ],
       lanes,
       afterLanes: [
-        ...(hasDispatch ? pluginLifecycleSteps(representative.plugin.experimentLifecycles, "teardown", { kind: "experiment", id: experimentId }, DISPATCH_MAY_NOT_RUN) : []),
+        ...(hasDispatch
+          ? pluginLifecycleSteps(
+              representative.plugin.experimentLifecycles,
+              "teardown",
+              { kind: "experiment", id: experimentId },
+              DISPATCH_MAY_NOT_RUN,
+            )
+          : []),
         experimentLifecycle(representative, "teardown", hasDispatch),
       ],
     });

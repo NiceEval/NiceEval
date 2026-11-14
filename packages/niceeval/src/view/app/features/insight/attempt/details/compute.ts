@@ -1,8 +1,5 @@
 import type { AssertionEvidenceContent } from "../../components/primitives/assertion-evidence.tsx";
-import type {
-  ClosedAssertionFactValue,
-  ClosedJsonValue,
-} from "../../components/primitives/shared.ts";
+import type { ClosedAssertionFactValue, ClosedJsonValue } from "../../components/primitives/shared.ts";
 import type { AdapterIdentity } from "@niceeval/record/model/run-context.ts";
 
 export interface EvidenceLimitation {
@@ -62,12 +59,7 @@ export interface AttemptSummaryData {
   readonly totalScore?: number;
 }
 
-export type AssertionDecisionState =
-  | "matched"
-  | "mismatched"
-  | "unavailable"
-  | "errored"
-  | "not-applicable";
+export type AssertionDecisionState = "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable";
 
 /** Source site exactly as retained by Inspection assertion detail. */
 export interface AttemptInspectionAssertionSourceSite {
@@ -197,9 +189,7 @@ export interface AttemptDiagnosticView {
   readonly summary: string;
   readonly level: "warning" | "error";
   readonly causes: readonly { readonly code: string; readonly summary: string }[];
-  readonly redaction:
-    | { readonly state: "none" }
-    | { readonly state: "applied"; readonly replacements: number };
+  readonly redaction: { readonly state: "none" } | { readonly state: "applied"; readonly replacements: number };
   readonly sourceFrame?: ClosedJsonValue;
 }
 

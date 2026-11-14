@@ -32,16 +32,23 @@ export function readSandboxScript(source: URL): { readonly command: string; read
     path = fileURLToPath(source);
     const root = realpathSync(planningRoot.getStore() ?? process.cwd());
     const physical = realpathSync(path);
-    if (!inside(root, path) || !inside(root, physical)) throw new Error("script realpath must stay inside the project root");
+    if (!inside(root, path) || !inside(root, physical))
+      throw new Error("script realpath must stay inside the project root");
     if (!statSync(physical).isFile()) throw new Error("script must be a regular text file");
     const bytes = readFileSync(physical);
     const command = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     if (command.includes("\0")) throw new Error("script must be UTF-8 text without NUL bytes");
     return Object.freeze({
       command,
-      source: Object.freeze({ path: relative(root, path).split(sep).join("/"), digest: `sha256:${digestBytes(bytes)}`, bytes: bytes.length }),
+      source: Object.freeze({
+        path: relative(root, path).split(sep).join("/"),
+        digest: `sha256:${digestBytes(bytes)}`,
+        bytes: bytes.length,
+      }),
     });
   } catch (cause) {
-    throw new Error(`shell script ${JSON.stringify(path)}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    throw new Error(`shell script ${JSON.stringify(path)}: ${cause instanceof Error ? cause.message : String(cause)}`, {
+      cause,
+    });
   }
 }

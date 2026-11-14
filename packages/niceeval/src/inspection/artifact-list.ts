@@ -13,9 +13,9 @@ import type { DecodedInspectionAttachment } from "./facts.ts";
 
 const { content: _content, ...metadataFields } = ArtifactSchema.fields;
 
-export const InspectionArtifactsPageLimitSchema = NonNegativeSafeIntegerSchema.pipe(Schema.check(Schema.makeFilter(
-  (value) => value > 0 && value <= 128,
-)));
+export const InspectionArtifactsPageLimitSchema = NonNegativeSafeIntegerSchema.pipe(
+  Schema.check(Schema.makeFilter((value) => value > 0 && value <= 128)),
+);
 
 /** Public directory entries contain metadata; bytes are read through attempt.artifact. */
 export const InspectionArtifactMetadataSchema = Schema.Struct(metadataFields);
@@ -26,31 +26,39 @@ export const InspectionArtifactsValueSchema = Schema.Struct({
 export type InspectionArtifactsValue = Schema.Schema.Type<typeof InspectionArtifactsValueSchema>;
 
 const decodeMarker = Schema.decodeUnknownResult(
-  Schema.Struct({ "$niceeval.record.content": Schema.String }), RecordExactParseOptions,
+  Schema.Struct({ "$niceeval.record.content": Schema.String }),
+  RecordExactParseOptions,
 );
 
 /** Decode the current durable fact before projecting its serializable public metadata. */
 export function projectArtifactsListing(
   attachment: DecodedInspectionAttachment,
 ): Result.Result<InspectionArtifactsValue, { readonly reason: string }> {
-  if (attachment.physical.ownerKind !== "attempt" ||
+  if (
+    attachment.physical.ownerKind !== "attempt" ||
     attachment.physical.family !== attemptArtifactsRecordAttachment.family ||
     attachment.physical.familyRevision !== attemptArtifactsRecordAttachmentPersistence.revision ||
-    attachment.physical.references.length !== 0) {
+    attachment.physical.references.length !== 0
+  ) {
     return Result.fail({ reason: "Artifact attachment ownership or revision is invalid." });
   }
   const contents = new Map(attachment.physical.contents.map((entry) => [entry.logicalHandle, entry]));
   const bound = new WeakMap<object, PersistedContentMetadata>();
   const used = new Set<string>();
-  if (contents.size !== attachment.physical.contents.length) return Result.fail({ reason: "Duplicate artifact content handle." });
+  if (contents.size !== attachment.physical.contents.length)
+    return Result.fail({ reason: "Duplicate artifact content handle." });
   const hydrated = hydrateRecordAttachmentCurrent(attemptArtifactsRecordAttachment, attachment.value, {
     content: (token, declaration) => {
       const marker = decodeMarker(token);
       if (Result.isFailure(marker)) return Result.succeed(undefined);
       const logicalHandle = marker.success["$niceeval.record.content"];
       const metadata = contents.get(logicalHandle);
-      if (metadata === undefined || used.has(logicalHandle) || declaration.kind !== "bytes" ||
-        declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes) {
+      if (
+        metadata === undefined ||
+        used.has(logicalHandle) ||
+        declaration.kind !== "bytes" ||
+        (declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes)
+      ) {
         return Result.fail({ code: "current-content-bind-failed" as const });
       }
       const handle = mintRecordContentHandle("bytes");
@@ -69,9 +77,14 @@ export function projectArtifactsListing(
       return Result.fail({ reason: "Artifact descriptor does not match sealed content metadata." });
     }
   }
-  return Result.succeed(Object.freeze({
-    collection: hydrated.success.collection,
-    artifacts: Object.freeze(hydrated.success.artifacts.map(({ artifactId, label, mediaType, byteLength, sha256 }) =>
-      Object.freeze({ artifactId, label, mediaType, byteLength, sha256 }))),
-  }));
+  return Result.succeed(
+    Object.freeze({
+      collection: hydrated.success.collection,
+      artifacts: Object.freeze(
+        hydrated.success.artifacts.map(({ artifactId, label, mediaType, byteLength, sha256 }) =>
+          Object.freeze({ artifactId, label, mediaType, byteLength, sha256 }),
+        ),
+      ),
+    }),
+  );
 }

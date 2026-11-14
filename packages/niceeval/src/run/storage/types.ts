@@ -1,7 +1,4 @@
-import {
-  RUN_ABSENCE_REASONS,
-  type RunAbsenceReason,
-} from "../protocol.ts";
+import { RUN_ABSENCE_REASONS, type RunAbsenceReason } from "../protocol.ts";
 
 export { RUN_ABSENCE_REASONS, type RunAbsenceReason };
 

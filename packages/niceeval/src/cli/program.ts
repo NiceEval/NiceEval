@@ -18,11 +18,7 @@ import {
   renderFeatureCommandIndex,
   type CliCommandContribution,
 } from "./contribution.ts";
-import {
-  ownErrorCode,
-  renderMigrationAssistance,
-  summarizeUnknownError,
-} from "../error-assistance/index.ts";
+import { ownErrorCode, renderMigrationAssistance, summarizeUnknownError } from "../error-assistance/index.ts";
 
 /** A recoverable root-command usage error. */
 export class CliUsageError extends Data.TaggedError("CliUsageError")<{
@@ -63,9 +59,7 @@ function usageError(message: string, exitCode = 1): CliUsageError {
 }
 
 function operationError(operation: string, cause: unknown, exitCode = 1): CliOperationError {
-  return cause instanceof CliOperationError
-    ? cause
-    : new CliOperationError({ operation, cause, exitCode });
+  return cause instanceof CliOperationError ? cause : new CliOperationError({ operation, cause, exitCode });
 }
 
 function parseError(cause: unknown): CliUsageError {
@@ -117,7 +111,8 @@ function packageVersion() {
 }
 
 function rootHelp<R>(commands: readonly CliCommandContribution<R, CliFeatureError>[]): string {
-  return `niceeval — agent-native evals
+  return (
+    `niceeval — agent-native evals
 
 Usage:
   niceeval <command> [options]
@@ -127,77 +122,76 @@ Application options:
   -v, --version    print the installed version
 
 Run \`niceeval <command> --help\` for command-specific usage.
-` + renderFeatureCommandIndex(commands);
+` + renderFeatureCommandIndex(commands)
+  );
 }
 
-function optionBeforeRoot(
-  option: "help" | "version",
-  tokens: Parameters<typeof locateCliRoot>[0],
-): boolean {
+function optionBeforeRoot(option: "help" | "version", tokens: Parameters<typeof locateCliRoot>[0]): boolean {
   const root = locateCliRoot(tokens);
-  return tokens.some((token) => token.kind === "option" && token.name === option &&
-    (root === undefined || token.index < root.index));
+  return tokens.some(
+    (token) => token.kind === "option" && token.name === option && (root === undefined || token.index < root.index),
+  );
 }
 
 /**
  * Route one immutable contribution. The aggregate parse discovers the indexed
  * root token only; the selected command performs its own authoritative parse.
  */
-export const cliProgram = <R>(
-  commands: readonly CliCommandContribution<R, CliFeatureError>[],
-) => Effect.gen(function* () {
-  const facts = yield* invocationFacts();
-  const argumentsService = yield* CliArguments;
-  const parsed = yield* Effect.try({
-    try: () => argumentsService.parse(
-      facts.argv,
-      composeCliOptionSchema(commands, APPLICATION_CLI_OPTIONS),
-    ),
-    catch: parseError,
-  });
-  const route = yield* Effect.try({
-    try: () => matchCliFeatureCommand(facts.argv, parsed, commands),
-    catch: (cause) => operationError("route CLI command", cause),
-  });
+export const cliProgram = <R>(commands: readonly CliCommandContribution<R, CliFeatureError>[]) =>
+  Effect.gen(function* () {
+    const facts = yield* invocationFacts();
+    const argumentsService = yield* CliArguments;
+    const parsed = yield* Effect.try({
+      try: () => argumentsService.parse(facts.argv, composeCliOptionSchema(commands, APPLICATION_CLI_OPTIONS)),
+      catch: parseError,
+    });
+    const route = yield* Effect.try({
+      try: () => matchCliFeatureCommand(facts.argv, parsed, commands),
+      catch: (cause) => operationError("route CLI command", cause),
+    });
 
-  if (route?.kind === "application-option") {
-    if (route.option === "help") {
+    if (route?.kind === "application-option") {
+      if (route.option === "help") {
+        yield* writeStdout(rootHelp(commands));
+        return 0;
+      }
+      yield* writeStdout(`${yield* packageVersion()}\n`);
+      return 0;
+    }
+    if (route?.kind === "command") {
+      return yield* route.command.run(route.argv);
+    }
+
+    const root = locateCliRoot(parsed.tokens);
+    if (optionBeforeRoot("help", parsed.tokens)) {
       yield* writeStdout(rootHelp(commands));
       return 0;
     }
-    yield* writeStdout(`${yield* packageVersion()}\n`);
-    return 0;
-  }
-  if (route?.kind === "command") {
-    return yield* route.command.run(route.argv);
-  }
-
-  const root = locateCliRoot(parsed.tokens);
-  if (optionBeforeRoot("help", parsed.tokens)) {
-    yield* writeStdout(rootHelp(commands));
-    return 0;
-  }
-  if (optionBeforeRoot("version", parsed.tokens)) {
-    yield* writeStdout(`${yield* packageVersion()}\n`);
-    return 0;
-  }
-  if (root?.name === "session") {
-    return yield* Effect.fail(usageError("Command session is no longer supported. Use invocation list/show.\n"));
-  }
-  if (root !== undefined) {
-    return yield* Effect.fail(usageError(`Unknown command "${root.name}".
+    if (optionBeforeRoot("version", parsed.tokens)) {
+      yield* writeStdout(`${yield* packageVersion()}\n`);
+      return 0;
+    }
+    if (root?.name === "session") {
+      return yield* Effect.fail(usageError("Command session is no longer supported. Use invocation list/show.\n"));
+    }
+    if (root !== undefined) {
+      return yield* Effect.fail(
+        usageError(`Unknown command "${root.name}".
 Run \`niceeval --help\` for usage.
-`));
-  }
-  if (facts.argv.length === 0 || parsed.values.help === true) {
-    yield* writeStdout(rootHelp(commands));
-    return 0;
-  }
-  if (parsed.values.version === true) {
-    yield* writeStdout(`${yield* packageVersion()}\n`);
-    return 0;
-  }
-  return yield* Effect.fail(usageError(`No command specified.
+`),
+      );
+    }
+    if (facts.argv.length === 0 || parsed.values.help === true) {
+      yield* writeStdout(rootHelp(commands));
+      return 0;
+    }
+    if (parsed.values.version === true) {
+      yield* writeStdout(`${yield* packageVersion()}\n`);
+      return 0;
+    }
+    return yield* Effect.fail(
+      usageError(`No command specified.
 Run \`niceeval --help\` for usage.
-`));
-});
+`),
+    );
+  });

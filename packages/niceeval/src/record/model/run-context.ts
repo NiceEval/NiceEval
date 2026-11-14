@@ -77,8 +77,8 @@ export interface RunContext {
  * `flags` is intentionally an open v1 JSON object. Keep its recursive exact
  * JSON shape in Schema rather than reducing it to an opaque runtime guard.
  */
-const RunContextJsonValueSchema: Schema.Codec<RunContextJsonValue> = Schema.suspend(
-  () => Schema.Union([
+const RunContextJsonValueSchema: Schema.Codec<RunContextJsonValue> = Schema.suspend(() =>
+  Schema.Union([
     Schema.Null,
     Schema.Boolean,
     Schema.Number,
@@ -95,12 +95,14 @@ const RunContextJsonObjectSchema: Schema.Codec<RunContextJsonObject> = Schema.Re
 
 const NonEmptyStringSchema = Schema.String.pipe(Schema.check(Schema.isMinLength(1)));
 
-export const AdapterIdentitySchema = Schema.NullOr(Schema.Struct({
-  name: NonEmptyStringSchema,
-  contract: NonEmptyStringSchema,
-  behaviorRevision: Schema.NullOr(NonEmptyStringSchema),
-  cleanupTimeoutMs: Schema.optionalKey(AdapterCleanupTimeoutMsSchema),
-}));
+export const AdapterIdentitySchema = Schema.NullOr(
+  Schema.Struct({
+    name: NonEmptyStringSchema,
+    contract: NonEmptyStringSchema,
+    behaviorRevision: Schema.NullOr(NonEmptyStringSchema),
+    cleanupTimeoutMs: Schema.optionalKey(AdapterCleanupTimeoutMsSchema),
+  }),
+);
 
 export const RunPluginIdentitySchema: Schema.Codec<RunPluginIdentity> = Schema.Struct({
   name: NonEmptyStringSchema,
@@ -115,19 +117,23 @@ const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Stru
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),
   flags: RunContextJsonObjectSchema,
-  experimentHooks: Schema.optionalKey(Schema.Struct({
-    version: Schema.Literal(1),
-    setup: Schema.Literals(["absent", "opaque"]),
-    teardown: Schema.Literals(["absent", "opaque"]),
-  })),
-}).check(Schema.makeFilter((value) => value.models === undefined ||
-  (value.model === (value.models.default?.model ?? null) &&
-   value.reasoningEffort === (value.models.default?.reasoningEffort ?? null))));
-
-const RunLabelsSchema: Schema.Codec<Readonly<Record<string, string>>> = Schema.Record(
-  Schema.String,
-  Schema.String,
+  experimentHooks: Schema.optionalKey(
+    Schema.Struct({
+      version: Schema.Literal(1),
+      setup: Schema.Literals(["absent", "opaque"]),
+      teardown: Schema.Literals(["absent", "opaque"]),
+    }),
+  ),
+}).check(
+  Schema.makeFilter(
+    (value) =>
+      value.models === undefined ||
+      (value.model === (value.models.default?.model ?? null) &&
+        value.reasoningEffort === (value.models.default?.reasoningEffort ?? null)),
+  ),
 );
+
+const RunLabelsSchema: Schema.Codec<Readonly<Record<string, string>>> = Schema.Record(Schema.String, Schema.String);
 
 const RunContextCurrentSchema = Schema.Struct({
   experimentId: ExperimentIdSchema,
@@ -144,27 +150,24 @@ const RunContextDefinition = defineRecordCore({
 export const RunContextSchema = RunContextDefinition.schema;
 
 function issuesFromFailure(failure: RecordSchemaFailure): NonEmptyRecordIssues {
-  const issue: RecordIssue = failure.kind === "canonical"
-    ? recordIssue(
-      failure.failure.code === "record-json-limit-exceeded"
-        ? "record-run-context-size-exceeded"
-        : "record-run-context-invalid",
-      failure.failure.path,
-    )
-    : recordIssue("record-run-context-invalid");
+  const issue: RecordIssue =
+    failure.kind === "canonical"
+      ? recordIssue(
+          failure.failure.code === "record-json-limit-exceeded"
+            ? "record-run-context-size-exceeded"
+            : "record-run-context-invalid",
+          failure.failure.path,
+        )
+      : recordIssue("record-run-context-invalid");
   const issues = nonEmptyRecordIssues([issue]);
   if (issues === undefined) throw new Error("Run context failure must contain one issue");
   return issues;
 }
 
 /** Decode, canonicalize, validate exactly, and deep-freeze the current Context. */
-export function canonicalizeRunContext(
-  input: unknown,
-): Result.Result<RunContext, NonEmptyRecordIssues> {
+export function canonicalizeRunContext(input: unknown): Result.Result<RunContext, NonEmptyRecordIssues> {
   const decoded = RunContextDefinition.decode(input);
-  return Result.isFailure(decoded)
-    ? Result.fail(issuesFromFailure(decoded.failure))
-    : Result.succeed(decoded.success);
+  return Result.isFailure(decoded) ? Result.fail(issuesFromFailure(decoded.failure)) : Result.succeed(decoded.success);
 }
 
 export function validateRunContext(input: unknown): readonly RecordIssue[] {

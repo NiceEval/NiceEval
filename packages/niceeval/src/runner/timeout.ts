@@ -25,7 +25,10 @@ export interface RunTimeout {
  * 运行侧的两层:`--timeout` 压过 experiment 字段。**不带 config 兜底**——config 是解析链的
  * 缺省底,由 resolveAttemptTimeout 承接;在这里 `?? config.timeoutMs` 会让 eval 层永久短路。
  */
-export function resolveRunTimeout(flagTimeoutMs: number | undefined, experimentTimeoutMs: number | undefined): RunTimeout {
+export function resolveRunTimeout(
+  flagTimeoutMs: number | undefined,
+  experimentTimeoutMs: number | undefined,
+): RunTimeout {
   if (flagTimeoutMs !== undefined) return { timeoutMs: flagTimeoutMs, timeoutSource: "flag" };
   if (experimentTimeoutMs !== undefined) return { timeoutMs: experimentTimeoutMs, timeoutSource: "experiment" };
   return {};

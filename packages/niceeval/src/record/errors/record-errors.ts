@@ -42,24 +42,15 @@ export const RecordIssueSchema: Schema.Codec<RecordIssue> = Schema.Struct({
   path: Schema.Array(Schema.String),
 });
 
-export type NonEmptyRecordIssues = readonly [
-  RecordIssue,
-  ...RecordIssue[],
-];
+export type NonEmptyRecordIssues = readonly [RecordIssue, ...RecordIssue[]];
 
-export const NonEmptyRecordIssuesSchema: Schema.Codec<NonEmptyRecordIssues> =
-  Schema.NonEmptyArray(RecordIssueSchema);
+export const NonEmptyRecordIssuesSchema: Schema.Codec<NonEmptyRecordIssues> = Schema.NonEmptyArray(RecordIssueSchema);
 
-export function recordIssue(
-  code: RecordIssueCode,
-  path: readonly string[] = [],
-): RecordIssue {
+export function recordIssue(code: RecordIssueCode, path: readonly string[] = []): RecordIssue {
   return Object.freeze({ code, path: Object.freeze([...path]) });
 }
 
-export function nonEmptyRecordIssues(
-  issues: readonly RecordIssue[],
-): NonEmptyRecordIssues | undefined {
+export function nonEmptyRecordIssues(issues: readonly RecordIssue[]): NonEmptyRecordIssues | undefined {
   const [first, ...rest] = issues;
   if (first === undefined) {
     return undefined;
@@ -77,18 +68,11 @@ export const RecordCodecDocumentSchema = Schema.Literals([
   "record-core",
 ]);
 
-export type RecordCodecDocument = Schema.Schema.Type<
-  typeof RecordCodecDocumentSchema
->;
+export type RecordCodecDocument = Schema.Schema.Type<typeof RecordCodecDocumentSchema>;
 
-export const RecordCodecErrorCodeSchema = Schema.Literals([
-  "record-schema-invalid",
-  "record-invariant-invalid",
-]);
+export const RecordCodecErrorCodeSchema = Schema.Literals(["record-schema-invalid", "record-invariant-invalid"]);
 
-export type RecordCodecErrorCode = Schema.Schema.Type<
-  typeof RecordCodecErrorCodeSchema
->;
+export type RecordCodecErrorCode = Schema.Schema.Type<typeof RecordCodecErrorCodeSchema>;
 
 /** Stable failure returned by exact Schema codecs before filesystem access. */
 export class RecordCodecError extends Schema.TaggedError<RecordCodecError>()("RecordCodecError", {
@@ -103,9 +87,7 @@ export interface RecordCodecErrorInput {
   readonly issues: NonEmptyRecordIssues;
 }
 
-export function recordCodecError(
-  input: RecordCodecErrorInput,
-): RecordCodecError {
+export function recordCodecError(input: RecordCodecErrorInput): RecordCodecError {
   return RecordCodecError.make(input);
 }
 
@@ -121,10 +103,13 @@ export class RecordReferenceInvalid extends Schema.TaggedError<RecordReferenceIn
 }) {}
 
 /** Stable typed error used when a writer receives an invalid Attachment envelope. */
-export class RecordAttachmentEnvelopeInvalid extends Schema.TaggedError<RecordAttachmentEnvelopeInvalid>()("RecordAttachmentEnvelopeInvalid", {
-  code: Schema.Literal("record-attachment-envelope-invalid"),
-  issues: NonEmptyRecordIssuesSchema,
-}) {}
+export class RecordAttachmentEnvelopeInvalid extends Schema.TaggedError<RecordAttachmentEnvelopeInvalid>()(
+  "RecordAttachmentEnvelopeInvalid",
+  {
+    code: Schema.Literal("record-attachment-envelope-invalid"),
+    issues: NonEmptyRecordIssuesSchema,
+  },
+) {}
 
 export type RecordPureError =
   | RecordCodecError

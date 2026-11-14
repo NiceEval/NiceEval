@@ -8,7 +8,9 @@ import { evalE2E } from "./context.ts";
 // @feature docs/feature/adapters/README.md
 test.concurrent("Adapter flags 在资源启动前校验并交付一次解析的冻结结果", async () => {
   await evalE2E.case("adapter-parse-flags", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-    await writeFile(join(projectRoot, "flat-flags.mjs"), `
+    await writeFile(
+      join(projectRoot, "flat-flags.mjs"),
+      `
       import assert from 'node:assert/strict';
       import { defineAdapter, defineExperiment } from 'niceeval';
       import { completeEvidenceCoverage, defineAgent } from 'niceeval/adapter';
@@ -52,20 +54,37 @@ test.concurrent("Adapter flags 在资源启动前校验并交付一次解析的�
       output.enabled = false;
       assert.deepEqual(defined.flags, { enabled: true });
       assert.equal(Object.isFrozen(defined.flags), true);
-    `);
+    `,
+    );
     const flat = await command([process.execPath]).run(["flat-flags.mjs"], { cwd: projectRoot });
     expect(flat.exitCode, flat.diagnostic()).toBe(0);
 
     for (const [mode, input] of [
-      ["", '{"strategy":"typo"}'], ["", '{"unknown":true}'],
-      ...["nested", "null", "promise", "thenable", "date", "undefined", "nan", "array", "sparse", "symbol", "getter", "cycle"].map((mode) => [mode, "{}"]),
+      ["", '{"strategy":"typo"}'],
+      ["", '{"unknown":true}'],
+      ...[
+        "nested",
+        "null",
+        "promise",
+        "thenable",
+        "date",
+        "undefined",
+        "nan",
+        "array",
+        "sparse",
+        "symbol",
+        "getter",
+        "cycle",
+      ].map((mode) => [mode, "{}"]),
     ]) {
       const invalid = await niceeval.run(["exp", "parsed-flags", "--json"], {
         env: { NICEEVAL_E2E_FLAGS_MODE: mode, NICEEVAL_E2E_FLAGS_INPUT: input },
       });
       expect(invalid.exitCode, invalid.diagnostic()).not.toBe(0);
       expect(invalid.stdout + invalid.stderr).toContain("flags");
-      await expect(readFile(join(projectRoot, "flags-lifecycle.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(join(projectRoot, "flags-lifecycle.txt"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     }
     const valid = await niceeval.run(["exp", "parsed-flags", "--json"]);
     expect(valid.exitCode, valid.diagnostic()).toBe(0);
@@ -73,7 +92,9 @@ test.concurrent("Adapter flags 在资源启动前校验并交付一次解析的�
     expect(await readFile(join(projectRoot, "flags-lifecycle.txt"), "utf8")).toBe("setup\ncreate\n");
 
     // Keep the public Library process alive through rejection notification.
-    await writeFile(join(projectRoot, "async-parser.mjs"), `
+    await writeFile(
+      join(projectRoot, "async-parser.mjs"),
+      `
       import assert from 'node:assert/strict';
       import { defineAdapter, defineExperiment } from 'niceeval';
       const unhandled = [];
@@ -88,20 +109,24 @@ test.concurrent("Adapter flags 在资源启动前校验并交付一次解析的�
       }
       await new Promise((resolve) => setImmediate(resolve));
       assert.deepEqual(unhandled, []);
-    `);
+    `,
+    );
     const asynchronous = await command([process.execPath]).run(["async-parser.mjs"], { cwd: projectRoot });
     expect(asynchronous.exitCode, asynchronous.diagnostic()).toBe(0);
 
     // An inherited or copied brand must not bypass the Experiment input boundary.
     for (const copied of [false, true]) {
-      await writeFile(join(projectRoot, "experiments", "derived-flags.ts"), `
+      await writeFile(
+        join(projectRoot, "experiments", "derived-flags.ts"),
+        `
         import { defineExperiment } from 'niceeval';
         import { flagsAdapter } from '../fixtures/adapter-parse-flags.ts';
         const base = defineExperiment({ adapter: flagsAdapter, evals: ['parsed-flags'] });
         const descriptors = ${copied ? "Object.getOwnPropertyDescriptors(base)" : "Object.getOwnPropertyDescriptors({ ...base })"};
         descriptors.flags = { value: { nested: { enabled: true } }, enumerable: true };
         export default Object.create(${copied ? "Object.prototype" : "base"}, descriptors);
-      `);
+      `,
+      );
       const derived = await niceeval.run(["exp", "derived-flags", "--dry", "--json"]);
       expect(derived.exitCode, derived.diagnostic()).not.toBe(0);
       expect(derived.stdout + derived.stderr).toContain("defineExperiment");

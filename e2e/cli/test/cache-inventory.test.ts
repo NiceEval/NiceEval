@@ -4,7 +4,11 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { decodeDockerCacheInventoryDocument, decodeDockerCacheGcPreviewDocument, decodeDockerCacheGcOutcomeDocument } from "niceeval/sandbox";
+import {
+  decodeDockerCacheInventoryDocument,
+  decodeDockerCacheGcPreviewDocument,
+  decodeDockerCacheGcOutcomeDocument,
+} from "niceeval/sandbox";
 import { cliE2E } from "./context.ts";
 
 // @feature docs/feature/sandbox/README.md
@@ -46,24 +50,28 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     const document = decodeDockerCacheInventoryDocument(result.json<unknown>());
     expect(document).not.toHaveProperty("format");
     expect(document).not.toHaveProperty("schemaVersion");
-    expect(document.domains).toEqual([{
-      domainId: expect.any(String),
-      providerFamily: "docker",
-      backendKind: "docker-images",
-      state: "verified-managed",
-      entryCount: 0,
-      entryKinds: { taskBuild: 0, sandboxBeforeCache: 0 },
-    }]);
-    expect(document.providerObservations).toEqual([{
-      scope: "provider",
-      providerFamily: "docker",
-      backendKind: "buildkit",
-      state: "unverified",
-      observedAt: expect.any(String),
-      totalBytes: 40_300_000_000,
-      reclaimableEstimateBytes: 21_500_000_000,
-      reason: "shared-builder-unattributed",
-    }]);
+    expect(document.domains).toEqual([
+      {
+        domainId: expect.any(String),
+        providerFamily: "docker",
+        backendKind: "docker-images",
+        state: "verified-managed",
+        entryCount: 0,
+        entryKinds: { taskBuild: 0, sandboxBeforeCache: 0 },
+      },
+    ]);
+    expect(document.providerObservations).toEqual([
+      {
+        scope: "provider",
+        providerFamily: "docker",
+        backendKind: "buildkit",
+        state: "unverified",
+        observedAt: expect.any(String),
+        totalBytes: 40_300_000_000,
+        reclaimableEstimateBytes: 21_500_000_000,
+        reason: "shared-builder-unattributed",
+      },
+    ]);
     expect(result.stdout).not.toContain("evictable");
     expect(result.stdout).not.toContain("planId");
 
@@ -95,9 +103,12 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(Object.keys(previewDocument).sort()).toEqual(["plan", "summary"]);
     expect(previewDocument.plan.candidates).toEqual([]);
 
-    const apply = await niceeval.run(["docker", "cache", "gc", "--domain", domainId, "--apply", previewDocument.plan.planId, "--json"], {
-      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
-    });
+    const apply = await niceeval.run(
+      ["docker", "cache", "gc", "--domain", domainId, "--apply", previewDocument.plan.planId, "--json"],
+      {
+        env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
+      },
+    );
     expect(apply.exitCode, apply.diagnostic()).toBe(0);
     const applied = decodeDockerCacheGcOutcomeDocument(apply.json<unknown>());
     expect(applied).toMatchObject({ outcomes: [] });

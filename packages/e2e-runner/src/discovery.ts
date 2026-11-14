@@ -78,31 +78,44 @@ const parseProjectJson = (text: string): Result.Result<unknown, string> => {
   }
 };
 
-const collectLeafDirs = (root: string, adapter: boolean): Effect.Effect<readonly string[], DiscoveryIoError, FileSystem.FileSystem> =>
-  Effect.flatMap(exists(root), (present) => present
-    ? Effect.gen(function*() {
-      const names = yield* fileSystem("read-directory", root, (service) => service.readDirectory(root));
-      const entries = yield* Effect.forEach(names, (name) => {
-        const path = join(root, name);
-        return fileSystem("stat", path, (service) => service.stat(path)).pipe(
-          Effect.map((info) => ({ path, isDirectory: info.type === "Directory" })),
-        );
-      }, { concurrency: 1 });
-      return entries
-        .filter((entry) => entry.isDirectory)
-        .map((entry) => entry.path)
-        .filter((dir) => adapter || dir !== join(root, ADAPTER_COLLECTION))
-        .sort((left, right) => left.localeCompare(right));
-    })
-    : Effect.succeed([]));
+const collectLeafDirs = (
+  root: string,
+  adapter: boolean,
+): Effect.Effect<readonly string[], DiscoveryIoError, FileSystem.FileSystem> =>
+  Effect.flatMap(exists(root), (present) =>
+    present
+      ? Effect.gen(function* () {
+          const names = yield* fileSystem("read-directory", root, (service) => service.readDirectory(root));
+          const entries = yield* Effect.forEach(
+            names,
+            (name) => {
+              const path = join(root, name);
+              return fileSystem("stat", path, (service) => service.stat(path)).pipe(
+                Effect.map((info) => ({ path, isDirectory: info.type === "Directory" })),
+              );
+            },
+            { concurrency: 1 },
+          );
+          return entries
+            .filter((entry) => entry.isDirectory)
+            .map((entry) => entry.path)
+            .filter((dir) => adapter || dir !== join(root, ADAPTER_COLLECTION))
+            .sort((left, right) => left.localeCompare(right));
+        })
+      : Effect.succeed([]),
+  );
 
-const loadProject = (checkoutRoot: string, dir: string): Effect.Effect<DiscoveryResult, DiscoveryIoError, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
+const loadProject = (
+  checkoutRoot: string,
+  dir: string,
+): Effect.Effect<DiscoveryResult, DiscoveryIoError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
     const packagePath = join(dir, "package.json");
     const projectPath = join(dir, "project.json");
     const source = relative(checkoutRoot, projectPath).replaceAll("\\", "/");
     const [hasPackage, hasProject] = yield* Effect.all([exists(packagePath), exists(projectPath)]);
-    if (hasPackage && !hasProject) return { repos: [], errors: [`${relative(checkoutRoot, dir)}: scenario package.json is missing project.json`] };
+    if (hasPackage && !hasProject)
+      return { repos: [], errors: [`${relative(checkoutRoot, dir)}: scenario package.json is missing project.json`] };
     if (!hasPackage && !hasProject) return { repos: [], errors: [] };
     if (!hasPackage) return { repos: [], errors: [`${source}: E2E project is missing scenario package.json`] };
 
@@ -111,25 +124,34 @@ const loadProject = (checkoutRoot: string, dir: string): Effect.Effect<Discovery
     if (Result.isFailure(parsedJson)) return { repos: [], errors: [`${source}: invalid JSON (${parsedJson.failure})`] };
     const raw = parsedJson.success;
     const project = decodeExternal(ProjectDocumentSchema, "NxProjectConfiguration")(raw);
-    if (Result.isFailure(project)) return { repos: [], errors: [`${source}: ${SchemaIssue.makeFormatterDefault()(project.failure.issue.issue)}`] };
+    if (Result.isFailure(project))
+      return { repos: [], errors: [`${source}: ${SchemaIssue.makeFormatterDefault()(project.failure.issue.issue)}`] };
 
     const expectedRoot = relative(checkoutRoot, dir).replaceAll("\\", "/");
     const id = canonicalRepoId(expectedRoot);
     const expectedName = e2eProjectName(id);
     const errors: string[] = [];
-    if (!isCanonicalRelativePath(id)) errors.push(`${source}: derived E2E id is not a canonical contained path: ${JSON.stringify(id)}`);
+    if (!isCanonicalRelativePath(id))
+      errors.push(`${source}: derived E2E id is not a canonical contained path: ${JSON.stringify(id)}`);
     if (project.success.root !== expectedRoot) errors.push(`${source}: "root" must be ${JSON.stringify(expectedRoot)}`);
     if (project.success.name !== expectedName) errors.push(`${source}: "name" must be ${JSON.stringify(expectedName)}`);
-    if (project.success.tags === undefined || !project.success.tags.includes("kind:e2e") || !project.success.tags.includes(`e2e:${id}`)) {
+    if (
+      project.success.tags === undefined ||
+      !project.success.tags.includes("kind:e2e") ||
+      !project.success.tags.includes(`e2e:${id}`)
+    ) {
       errors.push(`${source}: tags must include "kind:e2e" and ${JSON.stringify(`e2e:${id}`)}`);
     }
     const targetRaw = project.success.targets?.e2e;
     const target = targetRaw === undefined ? undefined : decodeExternal(ProjectTargetSchema, "NxE2ETarget")(targetRaw);
     if (targetRaw === undefined) errors.push(`${source}: targets.e2e is required`);
-    if (target && Result.isFailure(target)) errors.push(`${source}: ${SchemaIssue.makeFormatterDefault()(target.failure.issue.issue)}`);
+    if (target && Result.isFailure(target))
+      errors.push(`${source}: ${SchemaIssue.makeFormatterDefault()(target.failure.issue.issue)}`);
     const configured = target && Result.isSuccess(target) ? target.success : undefined;
-    if (configured?.executor !== "nx:selection-only") errors.push(`${source}: targets.e2e.executor must be the non-resolvable selection guard "nx:selection-only"`);
-    if (configured && (configured.command !== undefined || configured.options !== undefined)) errors.push(`${source}: targets.e2e is selection-only and must not declare command or options`);
+    if (configured?.executor !== "nx:selection-only")
+      errors.push(`${source}: targets.e2e.executor must be the non-resolvable selection guard "nx:selection-only"`);
+    if (configured && (configured.command !== undefined || configured.options !== undefined))
+      errors.push(`${source}: targets.e2e is selection-only and must not declare command or options`);
     if (configured?.cache !== false) errors.push(`${source}: targets.e2e.cache must be false`);
     const metadata = configured?.metadata?.niceeval;
     if (metadata === undefined) errors.push(`${source}: targets.e2e.metadata.niceeval is required`);
@@ -141,8 +163,10 @@ const loadProject = (checkoutRoot: string, dir: string): Effect.Effect<Discovery
   });
 
 /** File discovery is effectful; validation failures are returned as diagnostics. */
-export const discoverAllRepos = (e2eRoot: string): Effect.Effect<DiscoveryResult, DiscoveryIoError, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
+export const discoverAllRepos = (
+  e2eRoot: string,
+): Effect.Effect<DiscoveryResult, DiscoveryIoError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
     const checkoutRoot = resolve(e2eRoot, "..");
     const dirs = [
       ...(yield* collectLeafDirs(e2eRoot, false)),
@@ -159,7 +183,8 @@ export const discoverAllRepos = (e2eRoot: string): Effect.Effect<DiscoveryResult
       names.set(repo.projectName, [...(names.get(repo.projectName) ?? []), repo.manifest.id]);
     }
     for (const [name, repoIds] of names) {
-      if (repoIds.length > 1) errors.push(`duplicate E2E project name ${JSON.stringify(name)} derived by: ${repoIds.join(", ")}`);
+      if (repoIds.length > 1)
+        errors.push(`duplicate E2E project name ${JSON.stringify(name)} derived by: ${repoIds.join(", ")}`);
     }
     if (repos.length === 0) errors.push("E2E discovery found no scenario projects");
     return { repos, errors };

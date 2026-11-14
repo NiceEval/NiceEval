@@ -97,14 +97,12 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
     },
     score: (material, context) =>
-      context.llm
-        .classify({ rubric: binaryJudgeRubric(rubric), choices, material: material as JudgeMaterial })
-        .pipe(
-          Effect.map((result) => ({
-            state: "measured" as const,
-            measurement: result.choice === "satisfied" ? 1 : 0,
-            rationale: result.rationale,
-          })),
-        ),
+      context.llm.classify({ rubric: binaryJudgeRubric(rubric), choices, material: material as JudgeMaterial }).pipe(
+        Effect.map((result) => ({
+          state: "measured" as const,
+          measurement: result.choice === "satisfied" ? 1 : 0,
+          rationale: result.rationale,
+        })),
+      ),
   });
 }

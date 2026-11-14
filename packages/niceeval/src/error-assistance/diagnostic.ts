@@ -65,14 +65,19 @@ export function toFeedbackDiagnostic(input: ErrorDiagnostic): ErrorFeedbackDiagn
 export function readErrorAssistanceData(
   data: Readonly<Record<string, JsonValue>> | undefined,
 ): ErrorAssistanceData | undefined {
-  return data !== undefined && assistanceData.has(data) ? data as unknown as ErrorAssistanceData : undefined;
+  return data !== undefined && assistanceData.has(data) ? (data as unknown as ErrorAssistanceData) : undefined;
 }
 
 function sameSource(left: JsonValue, right: JsonValue): boolean {
   if (typeof left !== "object" || left === null || Array.isArray(left)) return false;
   if (typeof right !== "object" || right === null || Array.isArray(right)) return false;
-  return left.state === right.state && left.file === right.file && left.line === right.line &&
-    left.column === right.column && left.reason === right.reason;
+  return (
+    left.state === right.state &&
+    left.file === right.file &&
+    left.line === right.line &&
+    left.column === right.column &&
+    left.reason === right.reason
+  );
 }
 
 function sameAffected(left: JsonValue, right: JsonValue): boolean {
@@ -86,16 +91,22 @@ export function appendErrorAssistanceAffected(
   const assistance = readErrorAssistanceData(data);
   if (assistance === undefined || identity === undefined) return data;
   const encoded: JsonValue = `${identity.experimentId === undefined ? "" : `${identity.experimentId}/`}${identity.evalId} #${identity.attempt}`;
-  return makeData({
-    code: "affected",
-    owner: assistance.owner,
-    summary: "affected",
-    repairTarget: assistance.repairTarget,
-    nextStep: assistance.nextStep,
-    affectedObject: "affected",
-    ...(assistance.service !== undefined ? { service: assistance.service } : {}),
-    ...(assistance.guideId !== undefined ? { guideId: assistance.guideId } : {}),
-  }, assistance.sources, [encoded], assistance.sourceLocationsOmitted, 0);
+  return makeData(
+    {
+      code: "affected",
+      owner: assistance.owner,
+      summary: "affected",
+      repairTarget: assistance.repairTarget,
+      nextStep: assistance.nextStep,
+      affectedObject: "affected",
+      ...(assistance.service !== undefined ? { service: assistance.service } : {}),
+      ...(assistance.guideId !== undefined ? { guideId: assistance.guideId } : {}),
+    },
+    assistance.sources,
+    [encoded],
+    assistance.sourceLocationsOmitted,
+    0,
+  );
 }
 
 function isLocatedSource(value: JsonValue): boolean {
@@ -128,14 +139,20 @@ export function mergeErrorAssistanceData(
     if (affected.length >= MAX_ERROR_ASSISTANCE_AFFECTED) affectedObjectsOmitted++;
     else affected.push(identity);
   }
-  return makeData({
-    code: "merged",
-    owner: next.owner,
-    summary: "merged",
-    repairTarget: next.repairTarget,
-    nextStep: next.nextStep,
-    affectedObject: "merged",
-    ...(next.service !== undefined ? { service: next.service } : {}),
-    ...(next.guideId !== undefined ? { guideId: next.guideId } : {}),
-  }, sources, affected, sourceLocationsOmitted, affectedObjectsOmitted);
+  return makeData(
+    {
+      code: "merged",
+      owner: next.owner,
+      summary: "merged",
+      repairTarget: next.repairTarget,
+      nextStep: next.nextStep,
+      affectedObject: "merged",
+      ...(next.service !== undefined ? { service: next.service } : {}),
+      ...(next.guideId !== undefined ? { guideId: next.guideId } : {}),
+    },
+    sources,
+    affected,
+    sourceLocationsOmitted,
+    affectedObjectsOmitted,
+  );
 }

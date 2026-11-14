@@ -8,7 +8,8 @@ export const imageApplication = defineAdapter({
   create: () => ({ screenshot: screenshotBytes }),
 });
 
-const quality = defineJudge({ rubric: "Use the supplied screenshot only as supplementary evidence for the described action.",
+const quality = defineJudge({
+  rubric: "Use the supplied screenshot only as supplementary evidence for the described action.",
 });
 
 export default imageApplication.defineScoreEval({

@@ -27,14 +27,20 @@ function doctorBuildContext(): Readable {
   header.write("0000000\0", 108, "ascii");
   header.write("0000000\0", 116, "ascii");
   header.write(content.length.toString(8).padStart(11, "0") + "\0", 124, "ascii");
-  header.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, "0") + "\0", 136, "ascii");
+  header.write(
+    Math.floor(Date.now() / 1000)
+      .toString(8)
+      .padStart(11, "0") + "\0",
+    136,
+    "ascii",
+  );
   header.fill(0x20, 148, 156);
   header[156] = "0".charCodeAt(0);
   header.write("ustar\0", 257, "ascii");
   header.write("00", 263, "ascii");
   const checksum = header.reduce((sum, byte) => sum + byte, 0);
   header.write(checksum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
-  return Readable.from([header, content, Buffer.alloc((512 - content.length % 512) % 512), Buffer.alloc(1024)]);
+  return Readable.from([header, content, Buffer.alloc((512 - (content.length % 512)) % 512), Buffer.alloc(1024)]);
 }
 
 type DoctorStatus = "PASS" | "BLOCKED" | "FAIL";
@@ -48,14 +54,27 @@ interface Check {
 
 interface ControlStatus {
   readonly journal?: { readonly state?: string; readonly durableTransitions?: boolean };
-  readonly assets?: { readonly state?: string; readonly images?: readonly { readonly reference?: string; readonly present?: boolean }[] };
+  readonly assets?: {
+    readonly state?: string;
+    readonly images?: readonly { readonly reference?: string; readonly present?: boolean }[];
+  };
 }
 
 const DOCTOR_CHECK_IDS = [
-  "descriptor", "control", "daemon", "cgroup", "storage", "journal", "assets",
-  "cold-build", "cold-build-cleanup", "container-limits", "nested-docker", "container-cleanup",
+  "descriptor",
+  "control",
+  "daemon",
+  "cgroup",
+  "storage",
+  "journal",
+  "assets",
+  "cold-build",
+  "cold-build-cleanup",
+  "container-limits",
+  "nested-docker",
+  "container-cleanup",
 ] as const;
-type DoctorCheckId = typeof DOCTOR_CHECK_IDS[number];
+type DoctorCheckId = (typeof DOCTOR_CHECK_IDS)[number];
 
 const DOCKER_PROFILE_DOCTOR_DOCKER_DATA_BYTES = 1024 ** 3;
 /** Installed by the profile deployment; doctor must never fetch it. */
@@ -85,15 +104,24 @@ function decodeDockerMultiplexedLogs(raw: Buffer): string {
     if (raw.length - offset < 8) throw new Error("diagnostic logs have a truncated Docker multiplex header");
     const size = raw.readUInt32BE(offset + 4);
     offset += 8;
-    if (size > 64 * 1024 || offset + size > raw.length) throw new Error("diagnostic logs exceed the bounded multiplex framing");
+    if (size > 64 * 1024 || offset + size > raw.length)
+      throw new Error("diagnostic logs exceed the bounded multiplex framing");
     lines.push(raw.subarray(offset, offset + size));
     offset += size;
   }
   return Buffer.concat(lines).toString("utf8");
 }
 
-function failedPrerequisites(after: readonly DoctorCheckId[], code: "PREREQUISITE_FAILED" | "UNSAFE_TO_CONTINUE"): Check[] {
-  return after.map((id) => ({ id, status: "FAIL", code, detail: "the preceding diagnostic stage did not establish a safe precondition" }));
+function failedPrerequisites(
+  after: readonly DoctorCheckId[],
+  code: "PREREQUISITE_FAILED" | "UNSAFE_TO_CONTINUE",
+): Check[] {
+  return after.map((id) => ({
+    id,
+    status: "FAIL",
+    code,
+    detail: "the preceding diagnostic stage did not establish a safe precondition",
+  }));
 }
 
 async function runDynamicChecks(alias: string): Promise<Check[]> {
@@ -107,14 +135,26 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
   let limits = "";
   try {
     buildReservation = await acquireDockerProfileReservation(lease, "build", {
-      cpus: 0, memoryBytes: 0, pids: 0, containers: 0, ephemeralDiskBytes: 0,
+      cpus: 0,
+      memoryBytes: 0,
+      pids: 0,
+      containers: 0,
+      ephemeralDiskBytes: 0,
     });
-    await createDockerProfileBuild(lease, buildReservation.reservationId, {
-      buildKey: createHash("sha256").update("niceeval-doctor-cold-build-v1").digest("hex"),
-      platform: "linux/amd64", dockerfile: "Dockerfile", retention: "ephemeral",
-    }, doctorBuildContext());
+    await createDockerProfileBuild(
+      lease,
+      buildReservation.reservationId,
+      {
+        buildKey: createHash("sha256").update("niceeval-doctor-cold-build-v1").digest("hex"),
+        platform: "linux/amd64",
+        dockerfile: "Dockerfile",
+        retention: "ephemeral",
+      },
+      doctorBuildContext(),
+    );
     const buildRelease = await releaseDockerProfileReservation(lease, buildReservation.reservationId);
-    if (buildRelease.cleanupProven !== true) throw new Error("control could not prove ephemeral cold-build cleanup after release");
+    if (buildRelease.cleanupProven !== true)
+      throw new Error("control could not prove ephemeral cold-build cleanup after release");
     buildReleased = true;
     containerReservation = await acquireDockerProfileReservation(lease, "container", {
       cpus: 2,
@@ -136,7 +176,9 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
     try {
       waited = await Promise.race([
         container.wait(),
-        new Promise<never>((_, reject) => { waitTimer = setTimeout(() => reject(new Error("control-owned diagnostic exceeded 60 seconds")), 60_000); }),
+        new Promise<never>((_, reject) => {
+          waitTimer = setTimeout(() => reject(new Error("control-owned diagnostic exceeded 60 seconds")), 60_000);
+        }),
       ]);
     } finally {
       if (waitTimer !== undefined) clearTimeout(waitTimer);
@@ -145,13 +187,17 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
     if (Buffer.byteLength(logs) > 64 * 1024) throw new Error("control-owned diagnostic logs exceed 64 KiB");
     const results = logs.split(/\r?\n/).flatMap((line) => {
       try {
-        return [JSON.parse(line) as {
-          ok?: boolean;
-          unixOnly?: boolean;
-          nestedDocker?: boolean;
-          limits?: { cpuMax?: string; memoryMax?: string; swapMax?: string; pidsMax?: string };
-        }];
-      } catch { return []; }
+        return [
+          JSON.parse(line) as {
+            ok?: boolean;
+            unixOnly?: boolean;
+            nestedDocker?: boolean;
+            limits?: { cpuMax?: string; memoryMax?: string; swapMax?: string; pidsMax?: string };
+          },
+        ];
+      } catch {
+        return [];
+      }
     });
     if (results.length !== 1) throw new Error("control-owned diagnostic must emit exactly one JSON result");
     const result = results[0];
@@ -162,8 +208,11 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
       pidsMax: "256",
     };
     if (
-      waited.StatusCode !== 0 || result?.ok !== true || result.unixOnly !== true || result.nestedDocker !== true
-      || JSON.stringify(result.limits) !== JSON.stringify(expectedLimits)
+      waited.StatusCode !== 0 ||
+      result?.ok !== true ||
+      result.unixOnly !== true ||
+      result.nestedDocker !== true ||
+      JSON.stringify(result.limits) !== JSON.stringify(expectedLimits)
     ) {
       throw new Error(`control-owned diagnostic failed: ${logs.slice(-4096)}`);
     }
@@ -175,23 +224,28 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
   } finally {
     const cleanupErrors: unknown[] = [];
     if (containerReservation !== undefined && !containerReleased) {
-      await releaseDockerProfileReservation(lease, containerReservation.reservationId, containerReservation).catch((error) => cleanupErrors.push(error));
+      await releaseDockerProfileReservation(lease, containerReservation.reservationId, containerReservation).catch(
+        (error) => cleanupErrors.push(error),
+      );
     }
     if (buildReservation !== undefined && !buildReleased) {
-      await releaseDockerProfileReservation(lease, buildReservation.reservationId).catch((error) => cleanupErrors.push(error));
+      await releaseDockerProfileReservation(lease, buildReservation.reservationId).catch((error) =>
+        cleanupErrors.push(error),
+      );
     }
     await lease.stopHeartbeat().catch((error) => cleanupErrors.push(error));
-    if (primary !== undefined && cleanupErrors.length > 0) throw new AggregateError([primary, ...cleanupErrors], "doctor primary operation and cleanup both failed");
+    if (primary !== undefined && cleanupErrors.length > 0)
+      throw new AggregateError([primary, ...cleanupErrors], "doctor primary operation and cleanup both failed");
     if (primary !== undefined) throw primary;
     if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, "doctor cleanup failed");
   }
   return [
-      { id: "cold-build", status: "PASS", detail: "control-owned offline FROM scratch build completed" },
-      { id: "cold-build-cleanup", status: "PASS", detail: "ephemeral build locator and builder resources are absent" },
-      { id: "container-limits", status: "PASS", detail: limits },
-      { id: "nested-docker", status: "PASS", detail: "offline nested Docker completed with --pull=never" },
-      { id: "container-cleanup", status: "PASS", detail: "control-owned diagnostic reservation released" },
-    ];
+    { id: "cold-build", status: "PASS", detail: "control-owned offline FROM scratch build completed" },
+    { id: "cold-build-cleanup", status: "PASS", detail: "ephemeral build locator and builder resources are absent" },
+    { id: "container-limits", status: "PASS", detail: limits },
+    { id: "nested-docker", status: "PASS", detail: "offline nested Docker completed with --pull=never" },
+    { id: "container-cleanup", status: "PASS", detail: "control-owned diagnostic reservation released" },
+  ];
 }
 
 export async function runDockerProfileCommand(
@@ -199,8 +253,9 @@ export async function runDockerProfileCommand(
   options: DockerProfileCliOptions,
 ): Promise<number> {
   if (positionals[0] !== "profile") {
-    options.err("Usage: niceeval docker profile list [--json]\n" +
-      "       niceeval docker profile doctor <alias> [--json]\n");
+    options.err(
+      "Usage: niceeval docker profile list [--json]\n" + "       niceeval docker profile doctor <alias> [--json]\n",
+    );
     return 1;
   }
   const subcommand = positionals[1];
@@ -215,10 +270,13 @@ export async function runDockerProfileCommand(
         endpointKind: entry.profile.transport.kind,
         health: "descriptor-valid",
       }));
-      if (options.json) options.out(`${JSON.stringify({ format: "niceeval.docker-profiles", schemaVersion: 1, profiles: rows })}\n`);
-      else for (const row of rows) options.out(
-        `${row.alias}\t${row.profileId.slice(0, 12)}\t${row.securityLevel}\tpolicy ${row.semanticPolicyRevision.slice(0, 12)}\t${row.health}\n`,
-      );
+      if (options.json)
+        options.out(`${JSON.stringify({ format: "niceeval.docker-profiles", schemaVersion: 1, profiles: rows })}\n`);
+      else
+        for (const row of rows)
+          options.out(
+            `${row.alias}\t${row.profileId.slice(0, 12)}\t${row.securityLevel}\tpolicy ${row.semanticPolicyRevision.slice(0, 12)}\t${row.health}\n`,
+          );
       return 0;
     } catch (error) {
       options.err(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -248,36 +306,68 @@ export async function runDockerProfileCommand(
         throw new Error("watchdog did not attest the required preloaded diagnostic asset");
       }
       checks.push({ id: "assets", status: "PASS", detail: doctorAsset.reference! });
-      checks.push(...await runDynamicChecks(alias));
+      checks.push(...(await runDynamicChecks(alias)));
     } catch (error) {
-      const errorDetail = error instanceof AggregateError
-        ? error.errors.map((item, index) => {
-          const role = error.message.includes("primary operation") && index === 0 ? "primary" : "cleanup";
-          return `${role}: ${item instanceof Error ? item.message : String(item)}`;
-        }).join(" | ")
-        : error instanceof Error ? error.message : String(error);
+      const errorDetail =
+        error instanceof AggregateError
+          ? error.errors
+              .map((item, index) => {
+                const role = error.message.includes("primary operation") && index === 0 ? "primary" : "cleanup";
+                return `${role}: ${item instanceof Error ? item.message : String(item)}`;
+              })
+              .join(" | ")
+          : error instanceof Error
+            ? error.message
+            : String(error);
       const completed = new Set(checks.map((check) => check.id));
       const next = DOCTOR_CHECK_IDS.find((id) => !completed.has(id)) ?? "container-cleanup";
       if (error instanceof DockerProfileCapacityBlockedError) {
         checks.push({ id: next, status: "BLOCKED", code: error.code, detail: error.message });
-        checks.push(...DOCTOR_CHECK_IDS
-          .filter((id) => !new Set(checks.map((check) => check.id)).has(id))
-          .map((id) => ({ id, status: "BLOCKED" as const, code: error.code, detail: "capacity queue is blocked; dynamic stage was not started" })));
+        checks.push(
+          ...DOCTOR_CHECK_IDS.filter((id) => !new Set(checks.map((check) => check.id)).has(id)).map((id) => ({
+            id,
+            status: "BLOCKED" as const,
+            code: error.code,
+            detail: "capacity queue is blocked; dynamic stage was not started",
+          })),
+        );
       } else {
         checks.push({ id: next, status: "FAIL", code: "UNSAFE_TO_CONTINUE", detail: errorDetail });
-        checks.push(...failedPrerequisites(DOCTOR_CHECK_IDS.filter((id) => !new Set(checks.map((check) => check.id)).has(id)), "PREREQUISITE_FAILED"));
+        checks.push(
+          ...failedPrerequisites(
+            DOCTOR_CHECK_IDS.filter((id) => !new Set(checks.map((check) => check.id)).has(id)),
+            "PREREQUISITE_FAILED",
+          ),
+        );
       }
     }
-    const ordered = DOCTOR_CHECK_IDS.map((id) => checks.find((check) => check.id === id) ?? {
-      id, status: "FAIL" as const, code: "PREREQUISITE_FAILED", detail: "diagnostic produced no result",
-    });
-    const status: DoctorStatus = ordered.some((check) => check.status === "FAIL") ? "FAIL"
-      : ordered.some((check) => check.status === "BLOCKED") ? "BLOCKED" : "PASS";
-    if (options.json) options.out(`${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, status, checks: ordered })}\n`);
-    else for (const check of ordered) options.out(`${check.status}  ${check.id}${check.code === undefined ? "" : ` · ${check.code}`}  ${check.detail}\n`);
+    const ordered = DOCTOR_CHECK_IDS.map(
+      (id) =>
+        checks.find((check) => check.id === id) ?? {
+          id,
+          status: "FAIL" as const,
+          code: "PREREQUISITE_FAILED",
+          detail: "diagnostic produced no result",
+        },
+    );
+    const status: DoctorStatus = ordered.some((check) => check.status === "FAIL")
+      ? "FAIL"
+      : ordered.some((check) => check.status === "BLOCKED")
+        ? "BLOCKED"
+        : "PASS";
+    if (options.json)
+      options.out(
+        `${JSON.stringify({ format: "niceeval.docker-profile-doctor", schemaVersion: 1, alias, status, checks: ordered })}\n`,
+      );
+    else
+      for (const check of ordered)
+        options.out(
+          `${check.status}  ${check.id}${check.code === undefined ? "" : ` · ${check.code}`}  ${check.detail}\n`,
+        );
     return status === "PASS" ? 0 : 1;
   }
-  options.err("Usage: niceeval docker profile list [--json]\n" +
-    "       niceeval docker profile doctor <alias> [--json]\n");
+  options.err(
+    "Usage: niceeval docker profile list [--json]\n" + "       niceeval docker profile doctor <alias> [--json]\n",
+  );
   return 1;
 }

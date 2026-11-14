@@ -1,5 +1,9 @@
 import { Schema } from "effect";
-import { ACTIVITY_OUTCOMES, ATTEMPT_ACTIVITY_PHASES, RUN_ACTIVITY_PHASES } from "../../../record/family/protocol-values.ts";
+import {
+  ACTIVITY_OUTCOMES,
+  ATTEMPT_ACTIVITY_PHASES,
+  RUN_ACTIVITY_PHASES,
+} from "../../../record/family/protocol-values.ts";
 
 import { isCanonicalTurnLabel } from "../../../shared/turn-label.ts";
 import {
@@ -10,16 +14,9 @@ import {
   RunTimingReferencesSchema,
   StableLabelSchema,
 } from "../../../record/family/source-receipt/codec.ts";
-import {
-  MAX_TIMING_ATTACHMENT_BYTES,
-  MAX_TIMING_INTERVALS,
-} from "../../../record/family/source-receipt/limits.ts";
+import { MAX_TIMING_ATTACHMENT_BYTES, MAX_TIMING_INTERVALS } from "../../../record/family/source-receipt/limits.ts";
 import { isStableLabel } from "../../../record/family/source-receipt/model.ts";
-import {
-  isAllowedCollection,
-  isStrictlyOrderedById,
-  payloadFits,
-} from "./common.ts";
+import { isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
 
 export const AttemptTimingPhaseSchema = Schema.Literals(ATTEMPT_ACTIVITY_PHASES);
 
@@ -28,7 +25,9 @@ export const RunTimingPhaseSchema = Schema.Literals(RUN_ACTIVITY_PHASES);
 const TimingOutcomeSchema = Schema.Literals(ACTIVITY_OUTCOMES);
 
 const CanonicalTurnLabelSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter((value): value is string => isCanonicalTurnLabel(value), { identifier: "CanonicalTurnLabel" })),
+  Schema.check(
+    Schema.makeFilter((value): value is string => isCanonicalTurnLabel(value), { identifier: "CanonicalTurnLabel" }),
+  ),
 );
 
 const AttemptTimingIntervalBase = {
@@ -47,10 +46,12 @@ const AttemptTimingIntervalStructuralSchema = Schema.Struct({
 });
 
 export const AttemptTimingIntervalSchema = AttemptTimingIntervalStructuralSchema.pipe(
-  Schema.check(Schema.makeFilter((interval) => interval.phase === "agent.send" || isStableLabel(interval.label), {
+  Schema.check(
+    Schema.makeFilter((interval) => interval.phase === "agent.send" || isStableLabel(interval.label), {
       identifier: "AttemptTimingInterval",
       description: "canonical turn labels are reserved for agent.send intervals",
-    })),
+    }),
+  ),
 );
 
 export const RunTimingIntervalSchema = Schema.Struct({
@@ -64,12 +65,8 @@ export const RunTimingIntervalSchema = Schema.Struct({
   refs: RunTimingReferencesSchema,
 });
 
-export type AttemptTimingInterval = Schema.Schema.Type<
-  typeof AttemptTimingIntervalSchema
->;
-export type RunTimingInterval = Schema.Schema.Type<
-  typeof RunTimingIntervalSchema
->;
+export type AttemptTimingInterval = Schema.Schema.Type<typeof AttemptTimingIntervalSchema>;
+export type RunTimingInterval = Schema.Schema.Type<typeof RunTimingIntervalSchema>;
 
 function timingEnd(start: number, duration: number): number | undefined {
   const end = start + duration;
@@ -126,21 +123,20 @@ function isCanonicalAttemptTimingAttachment(
     payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["timing-interval"]) &&
     isCanonicalTimingTree(value.intervals) &&
-    (!value.intervals.some((interval) => interval.outcome === "unknown") ||
-      value.collection.state === "partial")
+    (!value.intervals.some((interval) => interval.outcome === "unknown") || value.collection.state === "partial")
   );
 }
 
 export const AttemptTimingAttachmentSchema = AttemptTimingAttachmentStructuralSchema.pipe(
-  Schema.check(Schema.makeFilter(isCanonicalAttemptTimingAttachment, {
-    identifier: "ObservabilityAttemptTimingAttachment",
-    description: "a canonical, bounded attempt timing tree",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCanonicalAttemptTimingAttachment, {
+      identifier: "ObservabilityAttemptTimingAttachment",
+      description: "a canonical, bounded attempt timing tree",
+    }),
+  ),
 );
 
-export type AttemptTimingAttachment = Schema.Schema.Type<
-  typeof AttemptTimingAttachmentSchema
->;
+export type AttemptTimingAttachment = Schema.Schema.Type<typeof AttemptTimingAttachmentSchema>;
 
 const RunTimingAttachmentStructuralSchema = Schema.Struct({
   collection: CollectionSchema,
@@ -155,16 +151,17 @@ function isCanonicalRunTimingAttachment(
     payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["timing-interval"]) &&
     isCanonicalTimingTree(value.intervals) &&
-    (!value.intervals.some((interval) => interval.outcome === "unknown") ||
-      value.collection.state === "partial")
+    (!value.intervals.some((interval) => interval.outcome === "unknown") || value.collection.state === "partial")
   );
 }
 
 export const RunTimingAttachmentSchema = RunTimingAttachmentStructuralSchema.pipe(
-  Schema.check(Schema.makeFilter(isCanonicalRunTimingAttachment, {
-    identifier: "ObservabilityRunTimingAttachment",
-    description: "a canonical, bounded run timing tree",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCanonicalRunTimingAttachment, {
+      identifier: "ObservabilityRunTimingAttachment",
+      description: "a canonical, bounded run timing tree",
+    }),
+  ),
 );
 
 export type RunTimingAttachment = Schema.Schema.Type<typeof RunTimingAttachmentSchema>;

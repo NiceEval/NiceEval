@@ -75,10 +75,7 @@ export function dockerfileAgentDerivedLocator(derivedKey: BuildKey): string {
 }
 
 export class DockerfileAgentImageCoordinator {
-  private readonly inflight = new Map<
-    BuildKey,
-    Deferred.Deferred<DockerfileAgentCacheResolution, Error>
-  >();
+  private readonly inflight = new Map<BuildKey, Deferred.Deferred<DockerfileAgentCacheResolution, Error>>();
 
   constructor(private readonly hooks: DockerfileAgentCacheHooks) {}
 
@@ -120,22 +117,27 @@ export class DockerfileAgentImageCoordinator {
           timing,
           "sandbox.build.agent",
           `agent image build ${derivedLocator}`,
-          build({
-            taskLocator: input.taskLocator,
-            derivedLocator,
-            derivedKey,
-            platform: input.platform,
-            installIdentity: input.install.identity,
-            installerIdentity: input.installer.identity,
-            installMode: "staged",
-          }, signal),
+          build(
+            {
+              taskLocator: input.taskLocator,
+              derivedLocator,
+              derivedKey,
+              platform: input.platform,
+              installIdentity: input.install.identity,
+              installerIdentity: input.installer.identity,
+              installMode: "staged",
+            },
+            signal,
+          ),
         );
         return { status: "built" as const, locator: derivedLocator, derivedKey };
       });
       yield* Deferred.complete(flight.deferred, run).pipe(
-        Effect.ensuring(Effect.sync(() => {
-          if (this.inflight.get(derivedKey) === flight.deferred) this.inflight.delete(derivedKey);
-        })),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.inflight.get(derivedKey) === flight.deferred) this.inflight.delete(derivedKey);
+          }),
+        ),
       );
       return yield* Deferred.await(flight.deferred);
     });
@@ -151,14 +153,18 @@ function timedCacheActivity<T>(
   if (timing === undefined) return run;
   return Effect.suspend(() => {
     const startOffsetMs = timing.offsetNow();
-    return run.pipe(Effect.onExit((exit) => Effect.sync(() => {
-      timing.child({
-        key,
-        label,
-        startOffsetMs,
-        durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
-        ...(Exit.isSuccess(exit) ? {} : { failed: true }),
-      });
-    })));
+    return run.pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          timing.child({
+            key,
+            label,
+            startOffsetMs,
+            durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
+            ...(Exit.isSuccess(exit) ? {} : { failed: true }),
+          });
+        }),
+      ),
+    );
   });
 }

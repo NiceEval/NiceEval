@@ -5,7 +5,11 @@ import { evalE2E } from "./context.ts";
 // @feature docs/feature/assertions/README.md
 test.concurrent("数值单位保留运行时身份并拒绝非法数值与混合分位样本", async () => {
   await evalE2E.case("numeric-units", async ({ paths }) => {
-    const result = await command([process.execPath]).run(["--input-type=module", "--eval", `
+    const result = await command([process.execPath]).run(
+      [
+        "--input-type=module",
+        "--eval",
+        `
       import assert from "node:assert/strict";
       import { ms, seconds, tokens, usd, ratio, count, bytes, measured, quantile, between } from "niceeval/expect";
       for (const [make, unit] of [[ms,"ms"],[seconds,"seconds"],[tokens,"tokens"],[usd,"usd"],[ratio,"ratio"],[count,"count"],[bytes,"bytes"]]) {
@@ -28,7 +32,10 @@ test.concurrent("数值单位保留运行时身份并拒绝非法数值与混合
       assert.throws(() => between(ms(1), seconds(2)), TypeError);
       assert.throws(() => between(ms(1), 2), TypeError);
       assert.throws(() => between(ms(2), ms(1)), RangeError);
-    `], { cwd: paths.projectRoot });
+    `,
+      ],
+      { cwd: paths.projectRoot },
+    );
     expect(result.exitCode, result.diagnostic()).toBe(0);
   });
 });
@@ -36,7 +43,20 @@ test.concurrent("数值单位保留运行时身份并拒绝非法数值与混合
 // @feature docs/feature/assertions/README.md
 test.concurrent("安装后 ESM/CJS 类型检查拒绝跨单位与无单位阈值", async () => {
   await evalE2E.case("numeric-unit-types", async ({ commands: { tsc } }) => {
-    const result = await tsc.run(["--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext", "--skipLibCheck", "--allowImportingTsExtensions", "--types", "node", "fixtures/numeric-unit-types.mts", "fixtures/numeric-unit-types.cts"]);
+    const result = await tsc.run([
+      "--noEmit",
+      "--strict",
+      "--target",
+      "ES2022",
+      "--module",
+      "NodeNext",
+      "--skipLibCheck",
+      "--allowImportingTsExtensions",
+      "--types",
+      "node",
+      "fixtures/numeric-unit-types.mts",
+      "fixtures/numeric-unit-types.cts",
+    ]);
     expect(result.exitCode, result.diagnostic()).toBe(0);
   });
 });

@@ -9,9 +9,7 @@ test("Attempt publication 失败保留 cause 与 locator，但不公开未完成
     "attempt-publication-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
-      const run = await niceeval.run([
-        "exp", "attempt-publication-failure", "--rerun", "all", "--json",
-      ]);
+      const run = await niceeval.run(["exp", "attempt-publication-failure", "--rerun", "all", "--json"]);
       expect(run.exitCode, run.diagnostic()).toBe(1);
 
       const terminalOutput = `${run.stdout}\n${run.stderr}`;
@@ -21,9 +19,7 @@ test("Attempt publication 失败保留 cause 与 locator，但不公开未完成
 
       const queried = await niceeval.run(["show", affectedLocator!, "execution", "--json"]);
       expect(queried.exitCode, queried.diagnostic()).not.toBe(0);
-      expect(`${queried.stdout}\n${queried.stderr}`).toMatch(
-        /not found|not-found|inspection-source-invalid/i,
-      );
+      expect(`${queried.stdout}\n${queried.stderr}`).toMatch(/not found|not-found|inspection-source-invalid/i);
       expect(terminalOutput).toMatch(/publication|persistence/i);
     },
   );

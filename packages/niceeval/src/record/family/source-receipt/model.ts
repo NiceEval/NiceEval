@@ -12,36 +12,22 @@ import {
 /** A readonly non-empty sequence used by durable complete/partial states. */
 export type NonEmptyReadonlyArray<Item> = readonly [Item, ...Item[]];
 
-export const NON_NEGATIVE_SAFE_INTEGER__BRAND =
-  "@niceeval/o11y/NonNegativeSafeInteger" as const;
-export const POSITIVE_SAFE_INTEGER__BRAND =
-  "@niceeval/o11y/PositiveSafeInteger" as const;
-export const SAFE_IDENTIFIER__BRAND =
-  "@niceeval/o11y/SafeIdentifier" as const;
-export const SOURCE_NATIVE_TOOL_NAME__BRAND =
-  "@niceeval/o11y/SourceNativeToolName" as const;
-export const STABLE_LABEL__BRAND =
-  "@niceeval/o11y/StableLabel" as const;
+export const NON_NEGATIVE_SAFE_INTEGER__BRAND = "@niceeval/o11y/NonNegativeSafeInteger" as const;
+export const POSITIVE_SAFE_INTEGER__BRAND = "@niceeval/o11y/PositiveSafeInteger" as const;
+export const SAFE_IDENTIFIER__BRAND = "@niceeval/o11y/SafeIdentifier" as const;
+export const SOURCE_NATIVE_TOOL_NAME__BRAND = "@niceeval/o11y/SourceNativeToolName" as const;
+export const STABLE_LABEL__BRAND = "@niceeval/o11y/StableLabel" as const;
 export const SAFE_TEXT__BRAND = "@niceeval/o11y/SafeText" as const;
-export const CANONICAL_DECIMAL__BRAND =
-  "@niceeval/o11y/CanonicalDecimal" as const;
+export const CANONICAL_DECIMAL__BRAND = "@niceeval/o11y/CanonicalDecimal" as const;
 export const CURRENCY_CODE__BRAND = "@niceeval/o11y/CurrencyCode" as const;
 
-export type NonNegativeSafeInteger = number & Brand.Brand<
-  typeof NON_NEGATIVE_SAFE_INTEGER__BRAND
->;
-export type PositiveSafeInteger = number & Brand.Brand<
-  typeof POSITIVE_SAFE_INTEGER__BRAND
->;
+export type NonNegativeSafeInteger = number & Brand.Brand<typeof NON_NEGATIVE_SAFE_INTEGER__BRAND>;
+export type PositiveSafeInteger = number & Brand.Brand<typeof POSITIVE_SAFE_INTEGER__BRAND>;
 export type SafeIdentifier = string & Brand.Brand<typeof SAFE_IDENTIFIER__BRAND>;
-export type SourceNativeToolName = string & Brand.Brand<
-  typeof SOURCE_NATIVE_TOOL_NAME__BRAND
->;
+export type SourceNativeToolName = string & Brand.Brand<typeof SOURCE_NATIVE_TOOL_NAME__BRAND>;
 export type StableLabel = string & Brand.Brand<typeof STABLE_LABEL__BRAND>;
 export type SafeText = string & Brand.Brand<typeof SAFE_TEXT__BRAND>;
-export type CanonicalDecimal = string & Brand.Brand<
-  typeof CANONICAL_DECIMAL__BRAND
->;
+export type CanonicalDecimal = string & Brand.Brand<typeof CANONICAL_DECIMAL__BRAND>;
 export type CurrencyCode = string & Brand.Brand<typeof CURRENCY_CODE__BRAND>;
 
 /** v1 aliases keep field types visibly tied to this durable format. */
@@ -80,30 +66,20 @@ export function isPositiveSafeInteger(value: number): value is PositiveSafeInteg
   return Number.isSafeInteger(value) && value > 0;
 }
 
-export function makeNonNegativeSafeInteger(
-  value: number,
-): NonNegativeSafeInteger | undefined {
+export function makeNonNegativeSafeInteger(value: number): NonNegativeSafeInteger | undefined {
   return isNonNegativeSafeInteger(value) ? (value as NonNegativeSafeInteger) : undefined;
 }
 
-export function makePositiveSafeInteger(
-  value: number,
-): PositiveSafeInteger | undefined {
+export function makePositiveSafeInteger(value: number): PositiveSafeInteger | undefined {
   return isPositiveSafeInteger(value) ? (value as PositiveSafeInteger) : undefined;
 }
 
 export function isSafeIdentifier(value: string): value is SafeIdentifier {
-  return (
-    utf8ByteLength(value) <= MAX_SAFE_IDENTIFIER_BYTES &&
-    SAFE_IDENTIFIER.test(value)
-  );
+  return utf8ByteLength(value) <= MAX_SAFE_IDENTIFIER_BYTES && SAFE_IDENTIFIER.test(value);
 }
 
 export function isStableLabel(value: string): value is StableLabel {
-  return (
-    utf8ByteLength(value) <= MAX_STABLE_LABEL_BYTES &&
-    SAFE_IDENTIFIER.test(value)
-  );
+  return utf8ByteLength(value) <= MAX_STABLE_LABEL_BYTES && SAFE_IDENTIFIER.test(value);
 }
 
 /**
@@ -112,24 +88,15 @@ export function isStableLabel(value: string): value is StableLabel {
  * Unicode. Line breaks remain excluded so a name cannot reshape a Report
  * heading while still passing through unchanged.
  */
-export function isSourceNativeToolName(
-  value: string,
-): value is SourceNativeToolName {
-  return (
-    value.length > 0 &&
-    !value.includes("\n") &&
-    isBoundedSafeText(value, MAX_SOURCE_NATIVE_TOOL_NAME_BYTES)
-  );
+export function isSourceNativeToolName(value: string): value is SourceNativeToolName {
+  return value.length > 0 && !value.includes("\n") && isBoundedSafeText(value, MAX_SOURCE_NATIVE_TOOL_NAME_BYTES);
 }
 
 export function isSafeText(value: string): value is SafeText {
   return isStrictUnicodeText(value) && !UNSAFE_SAFE_TEXT_CONTROL.test(value);
 }
 
-export function isBoundedSafeText(
-  value: string,
-  maximumBytes: number,
-): value is SafeText {
+export function isBoundedSafeText(value: string, maximumBytes: number): value is SafeText {
   return (
     Number.isSafeInteger(maximumBytes) &&
     maximumBytes >= 0 &&
@@ -139,10 +106,7 @@ export function isBoundedSafeText(
 }
 
 export function isCanonicalDecimal(value: string): value is CanonicalDecimal {
-  return (
-    utf8ByteLength(value) <= MAX_CANONICAL_DECIMAL_BYTES &&
-    CANONICAL_DECIMAL.test(value)
-  );
+  return utf8ByteLength(value) <= MAX_CANONICAL_DECIMAL_BYTES && CANONICAL_DECIMAL.test(value);
 }
 
 export function isCurrencyCode(value: string): value is CurrencyCode {
@@ -153,12 +117,8 @@ export function makeSafeIdentifier(value: string): SafeIdentifier | undefined {
   return isSafeIdentifier(value) ? (value as SafeIdentifier) : undefined;
 }
 
-export function makeSourceNativeToolName(
-  value: string,
-): SourceNativeToolName | undefined {
-  return isSourceNativeToolName(value)
-    ? (value as SourceNativeToolName)
-    : undefined;
+export function makeSourceNativeToolName(value: string): SourceNativeToolName | undefined {
+  return isSourceNativeToolName(value) ? (value as SourceNativeToolName) : undefined;
 }
 
 export function makeStableLabel(value: string): StableLabel | undefined {
@@ -169,10 +129,7 @@ export function makeSafeText(value: string): SafeText | undefined {
   return isSafeText(value) ? (value as SafeText) : undefined;
 }
 
-export function makeBoundedSafeText(
-  value: string,
-  maximumBytes: number,
-): SafeText | undefined {
+export function makeBoundedSafeText(value: string, maximumBytes: number): SafeText | undefined {
   return isBoundedSafeText(value, maximumBytes) ? (value as SafeText) : undefined;
 }
 
@@ -201,8 +158,7 @@ export const EVENT_ID__BRAND = "@niceeval/o11y/EventId" as const;
 export const TOOL_OCCURRENCE_ID__BRAND = "@niceeval/o11y/ToolOccurrenceId" as const;
 export const SESSION_SCOPE_ID__BRAND = "@niceeval/o11y/SessionScopeId" as const;
 export const COMMAND_ID__BRAND = "@niceeval/o11y/CommandId" as const;
-export const USAGE_OBSERVATION_ID__BRAND =
-  "@niceeval/o11y/UsageObservationId" as const;
+export const USAGE_OBSERVATION_ID__BRAND = "@niceeval/o11y/UsageObservationId" as const;
 export const INTERVAL_ID__BRAND = "@niceeval/o11y/IntervalId" as const;
 export const DIAGNOSTIC_ID__BRAND = "@niceeval/o11y/DiagnosticId" as const;
 
@@ -213,9 +169,7 @@ export type EventId = string & Brand.Brand<typeof EVENT_ID__BRAND>;
 export type ToolOccurrenceId = string & Brand.Brand<typeof TOOL_OCCURRENCE_ID__BRAND>;
 export type SessionScopeId = string & Brand.Brand<typeof SESSION_SCOPE_ID__BRAND>;
 export type CommandId = string & Brand.Brand<typeof COMMAND_ID__BRAND>;
-export type UsageObservationId = string & Brand.Brand<
-  typeof USAGE_OBSERVATION_ID__BRAND
->;
+export type UsageObservationId = string & Brand.Brand<typeof USAGE_OBSERVATION_ID__BRAND>;
 export type IntervalId = string & Brand.Brand<typeof INTERVAL_ID__BRAND>;
 export type DiagnosticId = string & Brand.Brand<typeof DIAGNOSTIC_ID__BRAND>;
 
@@ -232,8 +186,7 @@ export const OBSERVABILITY_ENTITY_KINDS = Object.freeze([
   "diagnostic",
 ] as const);
 
-export type ObservabilityEntityKind =
-  (typeof OBSERVABILITY_ENTITY_KINDS)[number];
+export type ObservabilityEntityKind = (typeof OBSERVABILITY_ENTITY_KINDS)[number];
 
 export interface ObservabilityEntityIdByKind {
   readonly turn: TurnId;
@@ -248,11 +201,9 @@ export interface ObservabilityEntityIdByKind {
   readonly diagnostic: DiagnosticId;
 }
 
-export type ObservabilityEntityIdForKind<Kind extends ObservabilityEntityKind> =
-  ObservabilityEntityIdByKind[Kind];
+export type ObservabilityEntityIdForKind<Kind extends ObservabilityEntityKind> = ObservabilityEntityIdByKind[Kind];
 
-export type ObservabilityEntityId =
-  ObservabilityEntityIdByKind[ObservabilityEntityKind];
+export type ObservabilityEntityId = ObservabilityEntityIdByKind[ObservabilityEntityKind];
 
 const CROCKFORD_BASE32_LOWER = "0123456789abcdefghjkmnpqrstvwxyz";
 const CROCKFORD_BASE32_CHARACTER = "[0123456789abcdefghjkmnpqrstvwxyz]";
@@ -271,29 +222,19 @@ const OBSERVABILITY_ENTITY_PREFIXES = Object.freeze({
 } as const);
 
 function entityIdPattern(prefix: string): RegExp {
-  return new RegExp(
-    `^${prefix}${CROCKFORD_BASE32_CHARACTER}{${OBSERVABILITY_ENTITY_ID_BASE32_LENGTH}}$`,
-  );
+  return new RegExp(`^${prefix}${CROCKFORD_BASE32_CHARACTER}{${OBSERVABILITY_ENTITY_ID_BASE32_LENGTH}}$`);
 }
 
 const TURN_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.turn);
 const ITEM_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.item);
 const CALL_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.call);
 const EVENT_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.event);
-const TOOL_OCCURRENCE_ID_PATTERN = entityIdPattern(
-  OBSERVABILITY_ENTITY_PREFIXES["tool-occurrence"],
-);
-const SESSION_SCOPE_ID_PATTERN = entityIdPattern(
-  OBSERVABILITY_ENTITY_PREFIXES["session-scope"],
-);
+const TOOL_OCCURRENCE_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES["tool-occurrence"]);
+const SESSION_SCOPE_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES["session-scope"]);
 const COMMAND_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.command);
-const USAGE_OBSERVATION_ID_PATTERN = entityIdPattern(
-  OBSERVABILITY_ENTITY_PREFIXES["usage-observation"],
-);
+const USAGE_OBSERVATION_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES["usage-observation"]);
 const INTERVAL_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.interval);
-const DIAGNOSTIC_ID_PATTERN = entityIdPattern(
-  OBSERVABILITY_ENTITY_PREFIXES.diagnostic,
-);
+const DIAGNOSTIC_ID_PATTERN = entityIdPattern(OBSERVABILITY_ENTITY_PREFIXES.diagnostic);
 
 export function isTurnId(value: string): value is TurnId {
   return TURN_ID_PATTERN.test(value);
@@ -378,9 +319,7 @@ export function makeCommandId(value: string): CommandId | undefined {
   return isCommandId(value) ? (value as CommandId) : undefined;
 }
 
-export function makeUsageObservationId(
-  value: string,
-): UsageObservationId | undefined {
+export function makeUsageObservationId(value: string): UsageObservationId | undefined {
   return isUsageObservationId(value) ? (value as UsageObservationId) : undefined;
 }
 
@@ -392,9 +331,10 @@ export function makeDiagnosticId(value: string): DiagnosticId | undefined {
   return isDiagnosticId(value) ? (value as DiagnosticId) : undefined;
 }
 
-export function isObservabilityEntityIdForKind<
-  Kind extends ObservabilityEntityKind,
->(value: string, kind: Kind): value is ObservabilityEntityIdForKind<Kind> {
+export function isObservabilityEntityIdForKind<Kind extends ObservabilityEntityKind>(
+  value: string,
+  kind: Kind,
+): value is ObservabilityEntityIdForKind<Kind> {
   switch (kind) {
     case "turn":
       return isTurnId(value);
@@ -423,15 +363,11 @@ export function makeObservabilityEntityId<Kind extends ObservabilityEntityKind>(
   value: string,
   kind: Kind,
 ): ObservabilityEntityIdForKind<Kind> | undefined {
-  return isObservabilityEntityIdForKind(value, kind)
-    ? (value as ObservabilityEntityIdForKind<Kind>)
-    : undefined;
+  return isObservabilityEntityIdForKind(value, kind) ? (value as ObservabilityEntityIdForKind<Kind>) : undefined;
 }
 
 /** Encodes exactly 128 bits as the durable lower-case Crockford base-32 suffix. */
-export function encodeObservabilityEntityEntropy(
-  entropy: Uint8Array,
-): string | undefined {
+export function encodeObservabilityEntityEntropy(entropy: Uint8Array): string | undefined {
   if (entropy.byteLength !== MAX_OBSERVABILITY_ENTITY_ID_ENTROPY_BYTES) {
     return undefined;
   }
@@ -449,9 +385,7 @@ export function encodeObservabilityEntityEntropy(
   if (pendingBits > 0) {
     encoded += CROCKFORD_BASE32_LOWER[(pendingValue << (5 - pendingBits)) & 0b1_1111];
   }
-  return encoded.length === OBSERVABILITY_ENTITY_ID_BASE32_LENGTH
-    ? encoded
-    : undefined;
+  return encoded.length === OBSERVABILITY_ENTITY_ID_BASE32_LENGTH ? encoded : undefined;
 }
 
 export function entityIdFromEntropy<Kind extends ObservabilityEntityKind>(
@@ -461,10 +395,7 @@ export function entityIdFromEntropy<Kind extends ObservabilityEntityKind>(
   const suffix = encodeObservabilityEntityEntropy(entropy);
   return suffix === undefined
     ? undefined
-    : makeObservabilityEntityId(
-        `${OBSERVABILITY_ENTITY_PREFIXES[kind]}${suffix}`,
-        kind,
-      );
+    : makeObservabilityEntityId(`${OBSERVABILITY_ENTITY_PREFIXES[kind]}${suffix}`, kind);
 }
 
 export const ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS = Object.freeze([
@@ -479,29 +410,17 @@ export const RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS = Object.freeze([
   "niceeval.runner-diagnostics",
 ] as const);
 
-export type AttemptObservabilityFamilySchemaId =
-  (typeof ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS)[number];
-export type RunObservabilityFamilySchemaId =
-  (typeof RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS)[number];
-export type ObservabilityFamilySchemaId =
-  | AttemptObservabilityFamilySchemaId
-  | RunObservabilityFamilySchemaId;
+export type AttemptObservabilityFamilySchemaId = (typeof ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS)[number];
+export type RunObservabilityFamilySchemaId = (typeof RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS)[number];
+export type ObservabilityFamilySchemaId = AttemptObservabilityFamilySchemaId | RunObservabilityFamilySchemaId;
 export type ObservabilityOwner = "attempt" | "run";
 
-export function isAttemptObservabilityFamilySchemaId(
-  value: string,
-): value is AttemptObservabilityFamilySchemaId {
-  return ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS.includes(
-    value as AttemptObservabilityFamilySchemaId,
-  );
+export function isAttemptObservabilityFamilySchemaId(value: string): value is AttemptObservabilityFamilySchemaId {
+  return ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS.includes(value as AttemptObservabilityFamilySchemaId);
 }
 
-export function isRunObservabilityFamilySchemaId(
-  value: string,
-): value is RunObservabilityFamilySchemaId {
-  return RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS.includes(
-    value as RunObservabilityFamilySchemaId,
-  );
+export function isRunObservabilityFamilySchemaId(value: string): value is RunObservabilityFamilySchemaId {
+  return RUN_OBSERVABILITY_FAMILY_SCHEMA_IDS.includes(value as RunObservabilityFamilySchemaId);
 }
 
 export type ConversationTurnReferenceTarget = {
@@ -568,9 +487,7 @@ export type AttemptReferenceTarget =
   | DiagnosticReferenceTarget;
 
 export type RunReferenceTarget = IntervalReferenceTarget | DiagnosticReferenceTarget;
-export type ObservabilityReferenceTarget =
-  | AttemptReferenceTarget
-  | RunReferenceTarget;
+export type ObservabilityReferenceTarget = AttemptReferenceTarget | RunReferenceTarget;
 
 /** Intermediate capture joins remain local to one Observability payload. */
 export type ConversationReferences = AttemptReferenceTarget;
@@ -581,13 +498,9 @@ export type AttemptDiagnosticsReferences = AttemptReferenceTarget;
 export type RunTimingReferences = RunReferenceTarget;
 export type RunDiagnosticsReferences = RunReferenceTarget;
 
-export type AttemptReferencesForFamily<
-  _Family extends AttemptObservabilityFamilySchemaId,
-> = AttemptReferenceTarget;
+export type AttemptReferencesForFamily<_Family extends AttemptObservabilityFamilySchemaId> = AttemptReferenceTarget;
 
-export type RunReferencesForFamily<
-  _Family extends RunObservabilityFamilySchemaId,
-> = RunReferenceTarget;
+export type RunReferencesForFamily<_Family extends RunObservabilityFamilySchemaId> = RunReferenceTarget;
 
 function isObject(value: unknown): value is object {
   return typeof value === "object" && value !== null;
@@ -608,9 +521,7 @@ function isReferenceFields(
   return typeof family === "string" && typeof kind === "string" && typeof id === "string";
 }
 
-export function isAttemptReferenceTarget(
-  value: unknown,
-): value is AttemptReferenceTarget {
+export function isAttemptReferenceTarget(value: unknown): value is AttemptReferenceTarget {
   if (!isReferenceFields(value)) return false;
   switch (value.kind) {
     case "turn":
@@ -641,12 +552,8 @@ export function isAttemptReferenceTarget(
 export function isRunReferenceTarget(value: unknown): value is RunReferenceTarget {
   if (!isReferenceFields(value)) return false;
   return (
-    (value.family === "niceeval.runner-activities" &&
-      value.kind === "interval" &&
-      isIntervalId(value.id)) ||
-    (value.family === "niceeval.runner-diagnostics" &&
-      value.kind === "diagnostic" &&
-      isDiagnosticId(value.id))
+    (value.family === "niceeval.runner-activities" && value.kind === "interval" && isIntervalId(value.id)) ||
+    (value.family === "niceeval.runner-diagnostics" && value.kind === "diagnostic" && isDiagnosticId(value.id))
   );
 }
 
@@ -725,10 +632,7 @@ export const COLLECTION_STAGES = Object.freeze([
 
 export type CollectionStage = (typeof COLLECTION_STAGES)[number];
 
-function includesLiteral<Literal extends string>(
-  values: readonly Literal[],
-  value: string,
-): value is Literal {
+function includesLiteral<Literal extends string>(values: readonly Literal[], value: string): value is Literal {
   return values.some((candidate) => candidate === value);
 }
 
@@ -818,9 +722,8 @@ export type Collection<Limitation extends ObservabilityLimitation = Observabilit
       readonly limitations: NonEmptyReadonlyArray<Limitation>;
     };
 
-export type ObservabilityCollection<
-  Limitation extends ObservabilityLimitation = ObservabilityLimitation,
-> = Collection<Limitation>;
+export type ObservabilityCollection<Limitation extends ObservabilityLimitation = ObservabilityLimitation> =
+  Collection<Limitation>;
 
 export function limitationTarget(limitation: ObservabilityLimitation): CollectionTarget {
   switch (limitation.code) {
@@ -849,15 +752,11 @@ export function limitationEntityId(limitation: ObservabilityLimitation): string 
 }
 
 function limitationStage(limitation: ObservabilityLimitation): string {
-  return limitation.code === "capture-failed" || limitation.code === "capture-interrupted"
-    ? limitation.stage
-    : "";
+  return limitation.code === "capture-failed" || limitation.code === "capture-interrupted" ? limitation.stage : "";
 }
 
 /** A duplicate aggregation key means collector counts were not coalesced. */
-export function observabilityLimitationAggregationKey(
-  limitation: ObservabilityLimitation,
-): string {
+export function observabilityLimitationAggregationKey(limitation: ObservabilityLimitation): string {
   return [
     limitation.code,
     limitationTarget(limitation),
@@ -866,24 +765,13 @@ export function observabilityLimitationAggregationKey(
   ].join("\u0000");
 }
 
-export function compareObservabilityLimitation(
-  left: ObservabilityLimitation,
-  right: ObservabilityLimitation,
-): number {
+export function compareObservabilityLimitation(left: ObservabilityLimitation, right: ObservabilityLimitation): number {
   const code = compareObservabilityText(left.code, right.code);
   if (code !== 0) return code;
-  const target = compareObservabilityText(
-    limitationTarget(left),
-    limitationTarget(right),
-  );
+  const target = compareObservabilityText(limitationTarget(left), limitationTarget(right));
   if (target !== 0) return target;
-  const entity = compareObservabilityText(
-    limitationEntityId(left),
-    limitationEntityId(right),
-  );
-  return entity !== 0
-    ? entity
-    : compareObservabilityText(limitationStage(left), limitationStage(right));
+  const entity = compareObservabilityText(limitationEntityId(left), limitationEntityId(right));
+  return entity !== 0 ? entity : compareObservabilityText(limitationStage(left), limitationStage(right));
 }
 
 function isCommandStream(value: string): value is "stdout" | "stderr" {
@@ -891,15 +779,11 @@ function isCommandStream(value: string): value is "stdout" | "stderr" {
 }
 
 /** Structural durable validation remains Schema's job; this verifies field semantics. */
-export function isObservabilityLimitation(
-  limitation: ObservabilityLimitation,
-): boolean {
+export function isObservabilityLimitation(limitation: ObservabilityLimitation): boolean {
   switch (limitation.code) {
     case "capture-failed":
     case "capture-interrupted":
-      return (
-        isCollectionStage(limitation.stage) && isCollectionTarget(limitation.target)
-      );
+      return isCollectionStage(limitation.stage) && isCollectionTarget(limitation.target);
     case "collection-cap-reached":
       return (
         isCollectionTarget(limitation.target) &&
@@ -907,19 +791,14 @@ export function isObservabilityLimitation(
         isPositiveSafeInteger(limitation.omittedAtLeast)
       );
     case "unsupported-input":
-      return (
-        isCollectionTarget(limitation.target) &&
-        isPositiveSafeInteger(limitation.omittedAtLeast)
-      );
+      return isCollectionTarget(limitation.target) && isPositiveSafeInteger(limitation.omittedAtLeast);
     case "text-truncated":
       return (
         isNonNegativeSafeInteger(limitation.retainedBytes) &&
         isPositiveSafeInteger(limitation.omittedBytes) &&
         ((limitation.target === "conversation-text" && isItemId(limitation.itemId)) ||
-          (limitation.target === "command-manifest" &&
-            isCommandId(limitation.commandId)) ||
-          (limitation.target === "diagnostic" &&
-            isDiagnosticId(limitation.diagnosticId)))
+          (limitation.target === "command-manifest" && isCommandId(limitation.commandId)) ||
+          (limitation.target === "diagnostic" && isDiagnosticId(limitation.diagnosticId)))
       );
     case "stream-truncated":
       return (
@@ -941,10 +820,7 @@ export function isObservabilityLimitation(
         isPositiveSafeInteger(limitation.strippedCount)
       );
     case "redacted":
-      return (
-        isCollectionTarget(limitation.target) &&
-        isPositiveSafeInteger(limitation.replacementCount)
-      );
+      return isCollectionTarget(limitation.target) && isPositiveSafeInteger(limitation.replacementCount);
   }
 }
 

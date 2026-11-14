@@ -1,8 +1,5 @@
 import type { Effect } from "effect";
-import type {
-  RecordCoordination,
-  RecordCoordinationError,
-} from "../../coordination/record-leases.ts";
+import type { RecordCoordination, RecordCoordinationError } from "../../coordination/record-leases.ts";
 import type { RunId } from "../model/identifiers.ts";
 import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
 import type { RecordRoot } from "../platform/root.ts";
@@ -32,25 +29,13 @@ export type RecordCleanError = RecordCoordinationError | SqliteRecordError;
 
 export type InspectIncompleteRuns = (input: {
   readonly root: RecordRoot;
-}) => Effect.Effect<
-  readonly RecordIncompleteRun[],
-  RecordIncompleteRunScanError,
-  RecordCoordination
->;
+}) => Effect.Effect<readonly RecordIncompleteRun[], RecordIncompleteRunScanError, RecordCoordination>;
 
 export type InspectIncompleteRunWarnings = (input: {
   readonly root: RecordRoot;
-}) => Effect.Effect<
-  readonly RecordIncompleteRunWarning[],
-  RecordIncompleteRunScanError,
-  RecordCoordination
->;
+}) => Effect.Effect<readonly RecordIncompleteRunWarning[], RecordIncompleteRunScanError, RecordCoordination>;
 
 export type CleanIncompleteRuns = (input: {
   readonly root: RecordRoot;
   readonly runIds: readonly RunId[];
-}) => Effect.Effect<
-  RecordCleanReceipt,
-  RecordCleanError,
-  RecordCoordination
->;
+}) => Effect.Effect<RecordCleanReceipt, RecordCleanError, RecordCoordination>;

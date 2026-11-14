@@ -15,20 +15,28 @@ test.concurrent("Adapter flags 规范化等价时复用且 parseFlags 行为版�
 
     const inspected = await niceeval.run(["show", `run:${runId}`, "--json"]);
     expect(inspected.exitCode, inspected.diagnostic()).toBe(0);
-    expect(inspected.inspectionSuccess("run.get").run.value.context?.execution?.flags).toEqual({ strategy: "safe", limit: 2, enabled: true });
+    expect(inspected.inspectionSuccess("run.get").run.value.context?.execution?.flags).toEqual({
+      strategy: "safe",
+      limit: 2,
+      enabled: true,
+    });
 
     const equivalent = await niceeval.run(["exp", "parsed-flags", "--json"], {
       env: { NICEEVAL_E2E_FLAGS_INPUT: '{"strategy":"safe","limit":"2"}' },
     });
     expect(equivalent.exitCode, equivalent.diagnostic()).toBe(0);
-    expect(only(equivalent.expEvents(), (event) => event.event === "start", equivalent.diagnostic())).toMatchObject({ reused: 1 });
+    expect(only(equivalent.expEvents(), (event) => event.event === "start", equivalent.diagnostic())).toMatchObject({
+      reused: 1,
+    });
     expect(await readFile(join(projectRoot, "flags-lifecycle.txt"), "utf8")).toBe("setup\ncreate\n");
 
     const revision = await niceeval.run(["exp", "parsed-flags", "--json"], {
       env: { NICEEVAL_E2E_FLAGS_REVISION: "parser/v2" },
     });
     expect(revision.exitCode, revision.diagnostic()).toBe(0);
-    expect(only(revision.expEvents(), (event) => event.event === "start", revision.diagnostic())).toMatchObject({ reused: 0 });
+    expect(only(revision.expEvents(), (event) => event.event === "start", revision.diagnostic())).toMatchObject({
+      reused: 0,
+    });
     expect(revision.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
     expect(await readFile(join(projectRoot, "flags-lifecycle.txt"), "utf8")).toBe("setup\ncreate\nsetup\ncreate\n");
   });

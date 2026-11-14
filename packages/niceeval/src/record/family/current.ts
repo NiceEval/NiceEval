@@ -4,10 +4,7 @@ import { judgeUsageRecordAttachment } from "./judge-usage/definition.ts";
 import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
 import { adapterUsageRecordAttachment } from "./adapter-usage/definition.ts";
 import { attemptCostRecordAttachment } from "./attempt-cost/definition.ts";
-import {
-  attemptArtifactsRecordAttachment,
-  runArtifactsRecordAttachment,
-} from "./artifacts/definition.ts";
+import { attemptArtifactsRecordAttachment, runArtifactsRecordAttachment } from "./artifacts/definition.ts";
 import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { fileChangesRecordAttachment } from "./file-changes/definition.ts";
 import { executionTracesRecordCollection } from "./execution-traces/definition.ts";
@@ -51,8 +48,7 @@ export const NiceEvalRecordAttachments = Object.freeze({
   }),
 });
 
-const current = <Attachment>(attachment: Attachment) =>
-  Object.freeze({ attachment, revision: undefined });
+const current = <Attachment>(attachment: Attachment) => Object.freeze({ attachment, revision: undefined });
 
 /** Official readers use the enclosing Record format rather than family revisions. */
 export const NiceEvalCurrentRecordAttachments = Object.freeze({

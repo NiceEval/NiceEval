@@ -26,17 +26,18 @@ const zombieOwnerAgent = defineAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic zombie-owner fixture has no token usage" },
   },
-  send: (_input, ctx) => Effect.tryPromise({
-    try: async () => {
-      if (barrierRoot !== undefined) {
-        await mkdir(barrierRoot, { recursive: true });
-        await writeFile(join(barrierRoot, "zombie-owner-agent-started"), "");
-        await waitFor(join(barrierRoot, "release-zombie-owner"), ctx.signal);
-      }
-      return { status: "completed", events: [{ type: "message", role: "assistant", text: "zombie-owner-ok" }] };
-    },
-    catch: (cause) => cause,
-  }),
+  send: (_input, ctx) =>
+    Effect.tryPromise({
+      try: async () => {
+        if (barrierRoot !== undefined) {
+          await mkdir(barrierRoot, { recursive: true });
+          await writeFile(join(barrierRoot, "zombie-owner-agent-started"), "");
+          await waitFor(join(barrierRoot, "release-zombie-owner"), ctx.signal);
+        }
+        return { status: "completed", events: [{ type: "message", role: "assistant", text: "zombie-owner-ok" }] };
+      },
+      catch: (cause) => cause,
+    }),
 });
 
 export default defineExperiment({

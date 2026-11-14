@@ -3,12 +3,7 @@ import { makeSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
-import {
-  appendProjectInstruction,
-  installSkills,
-  installedSkillNames,
-  skillDiscoveryInstruction,
-} from "./skills.ts";
+import { appendProjectInstruction, installSkills, installedSkillNames, skillDiscoveryInstruction } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { shellQuote } from "../sandbox/shell.ts";
@@ -133,153 +128,156 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       }),
     },
 
-    before: (sb, ctx) => Effect.tryPromise({
-      try: async () => {
-        unknownEvents.set(sb.sandboxId, new UnrecognizedAgentEvents());
-        const baseUrl = resolveBaseUrl(config);
-        const provider: globalThis.Record<string, unknown> = {};
-        if (baseUrl) {
-          // OpenAI 兼容网关必须走 openai-compatible npm 包 + 显式 models 表,
-          // 否则 OpenCode 不会把自定义 baseURL 接到请求上。
-          provider[COMPAT_PROVIDER] = {
-            npm: "@ai-sdk/openai-compatible",
-            name: "OpenAI-compatible",
-            options: {
-              apiKey: "{env:OPENCODE_API_KEY}",
-              baseURL: baseUrl,
-            },
-            models: {
-              // 允许任意 experiment.model;具体 id 由 --model compat/<id> 选择。
-              "gpt-5.6-luna": { name: "gpt-5.6-luna" },
-              "gpt-6-luna": { name: "gpt-6-luna" },
-              "gpt-5.4-mini": { name: "gpt-5.4-mini" },
-              "gpt-5.4": { name: "gpt-5.4" },
-              "gpt-4.1-mini": { name: "gpt-4.1-mini" },
-              "gpt-4o-mini": { name: "gpt-4o-mini" },
-            },
-          };
-        }
-        const opencodeConfig = {
-          $schema: "https://opencode.ai/config.json",
-          ...(Object.keys(provider).length ? { provider } : {}),
-          permission: {
-            write: "allow",
-            edit: "allow",
-            bash: "allow",
-            read: "allow",
-          },
-        };
-        await shared.writeFile(sb, "opencode.json", JSON.stringify(opencodeConfig, null, 2));
-
-        const manifest: AgentInstallationManifest = { skills: [] };
-        if (config?.skills?.length) {
-          manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-          await addOpenCodeSkillFrontmatter(sb, installedSkillNames(manifest.skills));
-          await appendProjectInstruction(
-            sb,
-            skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-          );
-        }
-        if (manifest.skills.length) {
-          ctx.reportInstallation(manifest);
-        }
-      },
-      catch: (cause) => cause,
-    }),
-
-    after: (sb, ctx) => Effect.sync(() => {
-      unknownEvents.get(sb.sandboxId)?.report((diagnostic) => ctx.diagnostic(diagnostic));
-      unknownEvents.delete(sb.sandboxId);
-    }),
-
-    send: (input, ctx) => Effect.gen(function* () {
-      const sb = ctx.sandbox;
-      const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
-      return yield* Effect.tryPromise({
-        try: async (signal) => {
+    before: (sb, ctx) =>
+      Effect.tryPromise({
+        try: async () => {
+          unknownEvents.set(sb.sandboxId, new UnrecognizedAgentEvents());
           const baseUrl = resolveBaseUrl(config);
-          const args = ["run", input.text, "--format", "json", "--auto"];
-          const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
-          if (model) args.push("--model", model);
-          if (ctx.session.id) args.push("--session", ctx.session.id);
-
-          const apiKey = resolveApiKey(config);
-          const env: globalThis.Record<string, string> = {
-            OPENCODE_API_KEY: apiKey,
-            OPENAI_API_KEY: apiKey,
-            ANTHROPIC_API_KEY: apiKey,
-            ...ctx.telemetry?.env,
-          };
+          const provider: globalThis.Record<string, unknown> = {};
           if (baseUrl) {
-            env.OPENCODE_BASE_URL = baseUrl;
-            env.OPENAI_BASE_URL = baseUrl;
-          }
-
-          const sensitiveValues = [apiKey];
-          const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
-          let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
-          let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
-          if (sessionId) ctx.session.capture(sessionId);
-
-          let parsed = parseOpenCodeTranscript(raw);
-          let hasUnrecognizedEvents = Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
-          const unknown = unknownEvents.get(sb.sandboxId);
-          unknown?.observe(parsed.unrecognizedEvents);
-          // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
-          // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
-          const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
-          const hasMessages = parsed.events.some((e) => e.type === "message");
-          if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
-            const sid = sessionId ?? ctx.session.id!;
-            const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
-            if (exported.exitCode === 0 && exported.stdout.trim()) {
-              raw = exported.stdout;
-              parsed = parseOpenCodeTranscript(raw);
-              hasUnrecognizedEvents ||= Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
-              unknown?.observe(parsed.unrecognizedEvents, `export:${sid}`);
-              sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionId;
-              if (sessionId) ctx.session.capture(sessionId);
-            }
-          }
-
-          const events: StreamEvent[] = [...parsed.events];
-          const hasErrorEvent = events.some((e) => e.type === "error");
-          let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-          if (!raw?.trim()) {
-            const reason = "OpenCode transcript/export was unavailable; tool trace was not observed.";
-            turnEvidenceCoverage = {
-              events: { status: "unavailable", reason },
-              actions: { status: "unavailable", reason },
-              usage: { status: "unavailable", reason },
+            // OpenAI 兼容网关必须走 openai-compatible npm 包 + 显式 models 表,
+            // 否则 OpenCode 不会把自定义 baseURL 接到请求上。
+            provider[COMPAT_PROVIDER] = {
+              npm: "@ai-sdk/openai-compatible",
+              name: "OpenAI-compatible",
+              options: {
+                apiKey: "{env:OPENCODE_API_KEY}",
+                baseURL: baseUrl,
+              },
+              models: {
+                // 允许任意 experiment.model;具体 id 由 --model compat/<id> 选择。
+                "gpt-5.6-luna": { name: "gpt-5.6-luna" },
+                "gpt-6-luna": { name: "gpt-6-luna" },
+                "gpt-5.4-mini": { name: "gpt-5.4-mini" },
+                "gpt-5.4": { name: "gpt-5.4" },
+                "gpt-4.1-mini": { name: "gpt-4.1-mini" },
+                "gpt-4o-mini": { name: "gpt-4o-mini" },
+              },
             };
-          } else if (!parsed.parseSuccess || hasUnrecognizedEvents) {
-            const reason = "Some OpenCode transcript lines could not be parsed.";
-            turnEvidenceCoverage = {
-              events: { status: "partial", reason },
-              actions: { status: "partial", reason },
-            };
-          } else {
-            turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
           }
-          if (res.exitCode !== 0) {
-            throw makeSendFailure({
-              acceptance: sendAcceptanceFromEvents(events),
-              message: shared.diagnoseFailure(res, parsed.events, raw),
-              events,
-              usage: parsed.usage,
-              process: res,
-            });
-          }
-          return {
-            events,
-            usage: parsed.usage,
-            status: hasErrorEvent ? "failed" as const : "completed" as const,
-            ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+          const opencodeConfig = {
+            $schema: "https://opencode.ai/config.json",
+            ...(Object.keys(provider).length ? { provider } : {}),
+            permission: {
+              write: "allow",
+              edit: "allow",
+              bash: "allow",
+              read: "allow",
+            },
           };
+          await shared.writeFile(sb, "opencode.json", JSON.stringify(opencodeConfig, null, 2));
+
+          const manifest: AgentInstallationManifest = { skills: [] };
+          if (config?.skills?.length) {
+            manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+            await addOpenCodeSkillFrontmatter(sb, installedSkillNames(manifest.skills));
+            await appendProjectInstruction(
+              sb,
+              skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+            );
+          }
+          if (manifest.skills.length) {
+            ctx.reportInstallation(manifest);
+          }
         },
         catch: (cause) => cause,
-      });
-    }),
+      }),
+
+    after: (sb, ctx) =>
+      Effect.sync(() => {
+        unknownEvents.get(sb.sandboxId)?.report((diagnostic) => ctx.diagnostic(diagnostic));
+        unknownEvents.delete(sb.sandboxId);
+      }),
+
+    send: (input, ctx) =>
+      Effect.gen(function* () {
+        const sb = ctx.sandbox;
+        const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
+        return yield* Effect.tryPromise({
+          try: async (signal) => {
+            const baseUrl = resolveBaseUrl(config);
+            const args = ["run", input.text, "--format", "json", "--auto"];
+            const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
+            if (model) args.push("--model", model);
+            if (ctx.session.id) args.push("--session", ctx.session.id);
+
+            const apiKey = resolveApiKey(config);
+            const env: globalThis.Record<string, string> = {
+              OPENCODE_API_KEY: apiKey,
+              OPENAI_API_KEY: apiKey,
+              ANTHROPIC_API_KEY: apiKey,
+              ...ctx.telemetry?.env,
+            };
+            if (baseUrl) {
+              env.OPENCODE_BASE_URL = baseUrl;
+              env.OPENAI_BASE_URL = baseUrl;
+            }
+
+            const sensitiveValues = [apiKey];
+            const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
+            let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
+            let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
+            if (sessionId) ctx.session.capture(sessionId);
+
+            let parsed = parseOpenCodeTranscript(raw);
+            let hasUnrecognizedEvents = Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
+            const unknown = unknownEvents.get(sb.sandboxId);
+            unknown?.observe(parsed.unrecognizedEvents);
+            // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
+            // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
+            const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
+            const hasMessages = parsed.events.some((e) => e.type === "message");
+            if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
+              const sid = sessionId ?? ctx.session.id!;
+              const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
+              if (exported.exitCode === 0 && exported.stdout.trim()) {
+                raw = exported.stdout;
+                parsed = parseOpenCodeTranscript(raw);
+                hasUnrecognizedEvents ||= Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
+                unknown?.observe(parsed.unrecognizedEvents, `export:${sid}`);
+                sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionId;
+                if (sessionId) ctx.session.capture(sessionId);
+              }
+            }
+
+            const events: StreamEvent[] = [...parsed.events];
+            const hasErrorEvent = events.some((e) => e.type === "error");
+            let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+            if (!raw?.trim()) {
+              const reason = "OpenCode transcript/export was unavailable; tool trace was not observed.";
+              turnEvidenceCoverage = {
+                events: { status: "unavailable", reason },
+                actions: { status: "unavailable", reason },
+                usage: { status: "unavailable", reason },
+              };
+            } else if (!parsed.parseSuccess || hasUnrecognizedEvents) {
+              const reason = "Some OpenCode transcript lines could not be parsed.";
+              turnEvidenceCoverage = {
+                events: { status: "partial", reason },
+                actions: { status: "partial", reason },
+              };
+            } else {
+              turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+            }
+            if (res.exitCode !== 0) {
+              throw makeSendFailure({
+                acceptance: sendAcceptanceFromEvents(events),
+                message: shared.diagnoseFailure(res, parsed.events, raw),
+                events,
+                usage: parsed.usage,
+                process: res,
+              });
+            }
+            return {
+              events,
+              usage: parsed.usage,
+              status: hasErrorEvent ? ("failed" as const) : ("completed" as const),
+              ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+            };
+          },
+          catch: (cause) => cause,
+        });
+      }),
   });
 }
 

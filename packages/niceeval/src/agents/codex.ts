@@ -4,12 +4,7 @@ import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
-import {
-  appendProjectInstruction,
-  installSkills,
-  installedSkillNames,
-  skillDiscoveryInstruction,
-} from "./skills.ts";
+import { appendProjectInstruction, installSkills, installedSkillNames, skillDiscoveryInstruction } from "./skills.ts";
 import { verifyMarketplaceName } from "./marketplace.ts";
 import {
   appendNativeConfigFileEffect,
@@ -31,11 +26,7 @@ import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentInstallationManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
-import {
-  sendAcceptanceFromEvents,
-  sendFailureText,
-  type SendFailure,
-} from "../context/send-failures.ts";
+import { sendAcceptanceFromEvents, sendFailureText, type SendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import type { FailureClass } from "../shared/failure-class.ts";
 import { requireManagedProcessCapability } from "../sandbox/backend.ts";
@@ -184,7 +175,9 @@ function codexCapacityCode(raw: string | undefined): string | undefined {
         error && typeof error === "object" ? (error as globalThis.Record<string, unknown>).reason : undefined,
         error && typeof error === "object" ? (error as globalThis.Record<string, unknown>).type : undefined,
       ];
-      const code = candidates.map(normalizedCodexCode).find((candidate) => candidate !== undefined && CODEX_CAPACITY_CODES.has(candidate));
+      const code = candidates
+        .map(normalizedCodexCode)
+        .find((candidate) => candidate !== undefined && CODEX_CAPACITY_CODES.has(candidate));
       if (code !== undefined) return code;
     } catch {
       // Native stderr fallback is handled separately and remains deliberately narrow.
@@ -214,12 +207,13 @@ function codexCapacityMessage(raw: string | undefined): string {
   return messages.join("\n");
 }
 
-const CODEX_CAPACITY_TEXT = /\bmodel(?:[ _-]+is)?[ _-]+at[ _-]+capacity\b|\badmission[ _-]+(?:failed|failure|rejected)\b/i;
+const CODEX_CAPACITY_TEXT =
+  /\bmodel(?:[ _-]+is)?[ _-]+at[ _-]+capacity\b|\badmission[ _-]+(?:failed|failure|rejected)\b/i;
 
 function codexCapacityFromFailure(failure: SendFailure): boolean {
   if (failure.acceptance !== "rejected") return false;
   if (failure.events !== undefined && sendAcceptanceFromEvents(failure.events) === "started") return false;
-  for (let cause = failure.cause; cause !== undefined;) {
+  for (let cause = failure.cause; cause !== undefined; ) {
     if (cause._tag === "Error" || cause._tag === "Object") {
       const code = cause.code._tag === "Present" ? normalizedCodexCode(cause.code.value) : undefined;
       if (code !== undefined && CODEX_CAPACITY_CODES.has(code)) return true;
@@ -242,7 +236,8 @@ function codexAcceptance(
 ): "rejected" | "started" | "unknown" {
   const acceptance = sendAcceptanceFromEvents(events);
   if (acceptance === "started") return "started";
-  return codexCapacityCode(raw) !== undefined || CODEX_CAPACITY_TEXT.test(`${codexCapacityMessage(raw)}\n${nativeErrorText}`)
+  return codexCapacityCode(raw) !== undefined ||
+    CODEX_CAPACITY_TEXT.test(`${codexCapacityMessage(raw)}\n${nativeErrorText}`)
     ? "rejected"
     : acceptance;
 }
@@ -284,7 +279,9 @@ export function codexAgent(config?: CodexConfig): Agent {
   // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
   // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
   if (config?.env && "PATH" in config.env) {
-    throw new TypeError(`codexAgent config.env.PATH is not supported: PATH is a Sandbox-managed variable, so silently dropping or overriding it would break hooks and child processes without any error. Prepend directories to it with the Sandbox factory's pathPrepend option instead (see docs/feature/sandbox/library/README.md).`);
+    throw new TypeError(
+      `codexAgent config.env.PATH is not supported: PATH is a Sandbox-managed variable, so silently dropping or overriding it would break hooks and child processes without any error. Prepend directories to it with the Sandbox factory's pathPrepend option instead (see docs/feature/sandbox/library/README.md).`,
+    );
   }
   // factory 构造时快照：一份 Agent 配置服务并发 attempt，不能让调用方随后改原对象造成
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
@@ -309,259 +306,286 @@ export function codexAgent(config?: CodexConfig): Agent {
 
   const { install, installer } = withCodexPatch(cliInstall.install, cliInstall.installer);
 
-  return attachCodingAgentExtensions(registerAgentLifecycleHookCommands(makeSandboxAgent({
-    name: "codex",
-    // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
-    evidenceCoverage: completeEvidenceCoverage,
-    spanMapper: mapCodexSpans,
-    classifySendFailure: classifyCodexSendFailure,
-    install,
-    installers: [installer],
+  return attachCodingAgentExtensions(
+    registerAgentLifecycleHookCommands(
+      makeSandboxAgent({
+        name: "codex",
+        // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
+        evidenceCoverage: completeEvidenceCoverage,
+        spanMapper: mapCodexSpans,
+        classifySendFailure: classifyCodexSendFailure,
+        install,
+        installers: [installer],
 
-    before: (sb, ctx) => Effect.gen(function* () {
-      yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "codex"), catch: (cause) => cause });
-      // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
-      // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
-      let nativeConfig: LoadedNativeConfig | undefined;
-      if (config?.configFile !== undefined) {
-        nativeConfig = yield* loadNativeConfigFileEffect({ agent: "codex", field: "configFile", path: config.configFile });
-        yield* Effect.try({
-          try: () => assertTomlNativeConfig(nativeConfig!, {
-            agent: "codex",
-            field: "configFile",
-            reservedKeys: RESERVED_CONFIG_KEYS,
-          }),
-          catch: (cause) => cause,
-        });
-      }
+        before: (sb, ctx) =>
+          Effect.gen(function* () {
+            yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "codex"), catch: (cause) => cause });
+            // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
+            // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
+            let nativeConfig: LoadedNativeConfig | undefined;
+            if (config?.configFile !== undefined) {
+              nativeConfig = yield* loadNativeConfigFileEffect({
+                agent: "codex",
+                field: "configFile",
+                path: config.configFile,
+              });
+              yield* Effect.try({
+                try: () =>
+                  assertTomlNativeConfig(nativeConfig!, {
+                    agent: "codex",
+                    field: "configFile",
+                    reservedKeys: RESERVED_CONFIG_KEYS,
+                  }),
+                catch: (cause) => cause,
+              });
+            }
 
-      // Codex 把 Plugin 的声明态写在 config.toml、安装体写在 cache。必须在覆盖用户配置前
-      // 同时摘掉两边：覆盖后 `plugin list` 已看不见旧声明，旧安装体却仍会影响下一次 add
-      // 的版本选择。先完整收敛，再写本 Attempt 的唯一配置层。
-      if (config?.plugins?.length) {
-        const plugins = config.plugins;
-        yield* Effect.tryPromise({
-          try: () => resetPluginState(sb, plugins),
-          catch: (cause) => cause,
-        });
-      }
+            // Codex 把 Plugin 的声明态写在 config.toml、安装体写在 cache。必须在覆盖用户配置前
+            // 同时摘掉两边：覆盖后 `plugin list` 已看不见旧声明，旧安装体却仍会影响下一次 add
+            // 的版本选择。先完整收敛，再写本 Attempt 的唯一配置层。
+            if (config?.plugins?.length) {
+              const plugins = config.plugins;
+              yield* Effect.tryPromise({
+                try: () => resetPluginState(sb, plugins),
+                catch: (cause) => cause,
+              });
+            }
 
-      // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
-      // 不在 adapter 里硬编码一个会过期的模型名。
-      const modelLine = ctx.model ? `model = "${ctx.model}"\n` : "";
-      const effortLine = ctx.reasoningEffort === undefined
-        ? ""
-        : `model_reasoning_effort = "${ctx.reasoningEffort}"\n`;
-      const base = getBaseUrl();
-      // 自定义 endpoint 常从项目的私有环境注入。它仍是 Codex 的真实运行配置，但不能因
-      // Adapter 用 heredoc 写 config.toml 而进入 command/timing/error 证据；一旦在这里登记，
-      // Attempt 最终封口也会清掉随后 hook 或 CLI 错误里回显的同一值。
-      const providerSensitiveValues = base ? [base] : [];
-      if (config?.headers) {
-        for (const v of Object.values(config.headers)) {
-          if (v) providerSensitiveValues.push(v);
-        }
-      }
-      if (process.env.CF_ACCESS_CLIENT_ID) {
-        providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_ID);
-      }
-      if (process.env.CF_ACCESS_CLIENT_SECRET) {
-        providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_SECRET);
-      }
+            // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
+            // 不在 adapter 里硬编码一个会过期的模型名。
+            const modelLine = ctx.model ? `model = "${ctx.model}"\n` : "";
+            const effortLine =
+              ctx.reasoningEffort === undefined ? "" : `model_reasoning_effort = "${ctx.reasoningEffort}"\n`;
+            const base = getBaseUrl();
+            // 自定义 endpoint 常从项目的私有环境注入。它仍是 Codex 的真实运行配置，但不能因
+            // Adapter 用 heredoc 写 config.toml 而进入 command/timing/error 证据；一旦在这里登记，
+            // Attempt 最终封口也会清掉随后 hook 或 CLI 错误里回显的同一值。
+            const providerSensitiveValues = base ? [base] : [];
+            if (config?.headers) {
+              for (const v of Object.values(config.headers)) {
+                if (v) providerSensitiveValues.push(v);
+              }
+            }
+            if (process.env.CF_ACCESS_CLIENT_ID) {
+              providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_ID);
+            }
+            if (process.env.CF_ACCESS_CLIENT_SECRET) {
+              providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_SECRET);
+            }
 
-      const topLevel = base
-        ? modelLine + `model_provider = "s2a"\n` + effortLine
-        : modelLine + effortLine;
-      let providerTable = "";
-      if (base) {
-        const lines: string[] = [
-          `[model_providers.s2a]`,
-          `name = "s2a"`,
-          `base_url = "${base}"`,
-          `env_key = "CODEX_API_KEY"`,
-          `wire_api = "responses"`,
-        ];
-        if (config?.headers && Object.keys(config.headers).length > 0) {
-          lines.push(`[model_providers.s2a.http_headers]`);
-          for (const [k, v] of Object.entries(config.headers)) {
-            lines.push(`"${k}" = "${v}"`);
-          }
-        }
-        const hasCfId = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
-        const hasCfSecret = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
-        if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
-          lines.push(`[model_providers.s2a.env_http_headers]`);
-          lines.push(`"CF-Access-Client-Id" = "CF_ACCESS_CLIENT_ID"`);
-          lines.push(`"CF-Access-Client-Secret" = "CF_ACCESS_CLIENT_SECRET"`);
-        }
-        providerTable = lines.join("\n") + "\n";
-      }
-
-      if (!nativeConfig) {
-        yield* Effect.tryPromise({
-          try: () => shared.writeFile(
-            sb,
-            "~/.codex/config.toml",
-            providerTable ? `${topLevel}\n${providerTable}` : topLevel,
-            { sensitiveValues: providerSensitiveValues },
-          ),
-          catch: (cause) => cause,
-        });
-      } else {
-        // codex 只读一份用户级 config.toml(没有 include / 第二配置层),Adapter 生成层与
-        // 用户文件只能同文件分段共存。TOML 没有「回到根表」的语法,顶层键必须先于任何表头,
-        // 所以布局固定为:Adapter 顶层键 → 用户文件原始字节(逐字节保留,自带表随意)→
-        // Adapter 的表([model_providers.*] 以及后续追加的 [mcp_servers.*]、[otel])。
-        // 保留键校验保证两层键不重叠,用户内容不被解析重写。
-        yield* Effect.tryPromise({
-          try: () => shared.writeFile(sb, "~/.codex/config.toml", topLevel),
-          catch: (cause) => cause,
-        });
-        yield* appendNativeConfigFileEffect(sb, nativeConfig, "~/.codex/config.toml");
-        if (providerTable) {
-          yield* Effect.tryPromise({
-            try: (signal) => sb.runShell(
-              `cat >> ~/.codex/config.toml <<'NICEEVAL_PROVIDER_EOF'\n\n${providerTable}NICEEVAL_PROVIDER_EOF\n`,
-              { signal, sensitiveValues: providerSensitiveValues },
-            ),
-            catch: (cause) => cause,
-          });
-        }
-      }
-
-      yield* Effect.tryPromise({
-        try: async (signal) => {
-          if (config?.mcpServers?.length) {
-            assertMcpServers(config.mcpServers);
-            const sensitiveValues: string[] = [];
-            const mcpToml = config.mcpServers
-              .map((s) => {
-                // 注意是复数 mcp_servers:单数 [mcp_server.x] 会被 codex 静默忽略,
-                // MCP 压根挂不上(实测 codex-cli 0.142.x,`codex mcp list` 可核对)。
-                const lines: string[] = [`[mcp_servers.${s.name}]`];
-                if (isHttpMcp(s)) {
-                  lines.push(`url = "${s.url}"`);
-                  const headers = s.headers;
-                  if (headers && Object.keys(headers).length) {
-                    lines.push(`[mcp_servers.${s.name}.http_headers]`);
-                    for (const [k, v] of Object.entries(headers)) {
-                      sensitiveValues.push(v);
-                      lines.push(`"${k}" = "${v}"`);
-                    }
-                  }
-                } else {
-                  lines.push(`command = "${s.command}"`);
-                  if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
-                  const env = s.env;
-                  if (env && Object.keys(env).length) {
-                    lines.push(`[mcp_servers.${s.name}.env]`);
-                    for (const [k, v] of Object.entries(env)) {
-                      sensitiveValues.push(v);
-                      lines.push(`${k} = "${v}"`);
-                    }
-                  }
+            const topLevel = base ? modelLine + `model_provider = "s2a"\n` + effortLine : modelLine + effortLine;
+            let providerTable = "";
+            if (base) {
+              const lines: string[] = [
+                `[model_providers.s2a]`,
+                `name = "s2a"`,
+                `base_url = "${base}"`,
+                `env_key = "CODEX_API_KEY"`,
+                `wire_api = "responses"`,
+              ];
+              if (config?.headers && Object.keys(config.headers).length > 0) {
+                lines.push(`[model_providers.s2a.http_headers]`);
+                for (const [k, v] of Object.entries(config.headers)) {
+                  lines.push(`"${k}" = "${v}"`);
                 }
-                return lines.join("\n");
-              })
-              .join("\n\n");
-            await sb.runShell(
-              `cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`,
-              { sensitiveValues, signal },
-            );
-          }
+              }
+              const hasCfId =
+                config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
+              const hasCfSecret =
+                config?.headers &&
+                Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
+              if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
+                lines.push(`[model_providers.s2a.env_http_headers]`);
+                lines.push(`"CF-Access-Client-Id" = "CF_ACCESS_CLIENT_ID"`);
+                lines.push(`"CF-Access-Client-Secret" = "CF_ACCESS_CLIENT_SECRET"`);
+              }
+              providerTable = lines.join("\n") + "\n";
+            }
 
-          const manifest: AgentInstallationManifest = { skills: [] };
-          if (config?.skills?.length) {
-            manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-            // 发现指引不是可选装饰:没有它,codex 连一次读 skill 文件的 shell 调用都不会发生。
-            await appendProjectInstruction(
-              sb,
-              skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-            );
-          }
-          if (config?.plugins?.length) {
-            manifest.nativePlugins = await installPluginsFromResetState(sb, config.plugins);
-          }
-          if (config?.mcpServers?.length) {
-            // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
-            manifest.mcpServers = mcpManifestEntries(config.mcpServers);
-          }
-          if (nativeConfig) {
-            // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
-            manifest.nativeConfigFile = { agent: "codex", path: nativeConfig.path, sha256: nativeConfig.sha256 };
-          }
-          if (
-            manifest.skills.length ||
-            manifest.nativePlugins?.length ||
-            manifest.mcpServers?.length ||
-            manifest.nativeConfigFile
-          ) {
-            ctx.reportInstallation(manifest);
-          }
+            if (!nativeConfig) {
+              yield* Effect.tryPromise({
+                try: () =>
+                  shared.writeFile(
+                    sb,
+                    "~/.codex/config.toml",
+                    providerTable ? `${topLevel}\n${providerTable}` : topLevel,
+                    { sensitiveValues: providerSensitiveValues },
+                  ),
+                catch: (cause) => cause,
+              });
+            } else {
+              // codex 只读一份用户级 config.toml(没有 include / 第二配置层),Adapter 生成层与
+              // 用户文件只能同文件分段共存。TOML 没有「回到根表」的语法,顶层键必须先于任何表头,
+              // 所以布局固定为:Adapter 顶层键 → 用户文件原始字节(逐字节保留,自带表随意)→
+              // Adapter 的表([model_providers.*] 以及后续追加的 [mcp_servers.*]、[otel])。
+              // 保留键校验保证两层键不重叠,用户内容不被解析重写。
+              yield* Effect.tryPromise({
+                try: () => shared.writeFile(sb, "~/.codex/config.toml", topLevel),
+                catch: (cause) => cause,
+              });
+              yield* appendNativeConfigFileEffect(sb, nativeConfig, "~/.codex/config.toml");
+              if (providerTable) {
+                yield* Effect.tryPromise({
+                  try: (signal) =>
+                    sb.runShell(
+                      `cat >> ~/.codex/config.toml <<'NICEEVAL_PROVIDER_EOF'\n\n${providerTable}NICEEVAL_PROVIDER_EOF\n`,
+                      { signal, sensitiveValues: providerSensitiveValues },
+                    ),
+                  catch: (cause) => cause,
+                });
+              }
+            }
 
-          // 安装后钩子(before):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
-          // 钩子失败不该丢掉这份证据。
-          await runPostSetupHooks(sb, ctx, "codex", config?.before);
+            yield* Effect.tryPromise({
+              try: async (signal) => {
+                if (config?.mcpServers?.length) {
+                  assertMcpServers(config.mcpServers);
+                  const sensitiveValues: string[] = [];
+                  const mcpToml = config.mcpServers
+                    .map((s) => {
+                      // 注意是复数 mcp_servers:单数 [mcp_server.x] 会被 codex 静默忽略,
+                      // MCP 压根挂不上(实测 codex-cli 0.142.x,`codex mcp list` 可核对)。
+                      const lines: string[] = [`[mcp_servers.${s.name}]`];
+                      if (isHttpMcp(s)) {
+                        lines.push(`url = "${s.url}"`);
+                        const headers = s.headers;
+                        if (headers && Object.keys(headers).length) {
+                          lines.push(`[mcp_servers.${s.name}.http_headers]`);
+                          for (const [k, v] of Object.entries(headers)) {
+                            sensitiveValues.push(v);
+                            lines.push(`"${k}" = "${v}"`);
+                          }
+                        }
+                      } else {
+                        lines.push(`command = "${s.command}"`);
+                        if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
+                        const env = s.env;
+                        if (env && Object.keys(env).length) {
+                          lines.push(`[mcp_servers.${s.name}.env]`);
+                          for (const [k, v] of Object.entries(env)) {
+                            sensitiveValues.push(v);
+                            lines.push(`${k} = "${v}"`);
+                          }
+                        }
+                      }
+                      return lines.join("\n");
+                    })
+                    .join("\n\n");
+                  await sb.runShell(`cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`, {
+                    sensitiveValues,
+                    signal,
+                  });
+                }
+
+                const manifest: AgentInstallationManifest = { skills: [] };
+                if (config?.skills?.length) {
+                  manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+                  // 发现指引不是可选装饰:没有它,codex 连一次读 skill 文件的 shell 调用都不会发生。
+                  await appendProjectInstruction(
+                    sb,
+                    skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+                  );
+                }
+                if (config?.plugins?.length) {
+                  manifest.nativePlugins = await installPluginsFromResetState(sb, config.plugins);
+                }
+                if (config?.mcpServers?.length) {
+                  // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
+                  manifest.mcpServers = mcpManifestEntries(config.mcpServers);
+                }
+                if (nativeConfig) {
+                  // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
+                  manifest.nativeConfigFile = { agent: "codex", path: nativeConfig.path, sha256: nativeConfig.sha256 };
+                }
+                if (
+                  manifest.skills.length ||
+                  manifest.nativePlugins?.length ||
+                  manifest.mcpServers?.length ||
+                  manifest.nativeConfigFile
+                ) {
+                  ctx.reportInstallation(manifest);
+                }
+
+                // 安装后钩子(before):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+                // 钩子失败不该丢掉这份证据。
+                await runPostSetupHooks(sb, ctx, "codex", config?.before);
+              },
+              catch: (cause) => cause,
+            });
+          }),
+
+        after: (sb, ctx) =>
+          Effect.tryPromise({
+            try: async (signal) => {
+              // after 与 before 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
+              // codex 目前没有其它收尾步骤,这段就是整个 teardown。
+              try {
+                await runPreTeardownHooks(sb, { ...ctx, signal }, "codex", config?.after);
+              } finally {
+                await attemptResources(ctx)?.shutdownAll(signal);
+              }
+            },
+            catch: (cause) => cause,
+          }),
+
+        tracing: {
+          protocol: "http/json",
+          async configure(sb, ctx) {
+            const endpoint = ctx.telemetry!.endpoint;
+            const otel =
+              `\n[otel]\n` +
+              `environment = "niceeval"\n` +
+              `exporter = "none"\n` +
+              `metrics_exporter = "none"\n\n` +
+              `[otel.trace_exporter.otlp-http]\n` +
+              `endpoint = "${endpoint}"\n` +
+              `protocol = "json"\n`;
+            await sb.runShell(`cat >> ~/.codex/config.toml <<'EOF'\n${otel}EOF\n`);
+          },
         },
-        catch: (cause) => cause,
-      });
-    }),
 
-    after: (sb, ctx) => Effect.tryPromise({
-      try: async (signal) => {
-        // after 与 before 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
-        // codex 目前没有其它收尾步骤,这段就是整个 teardown。
-        try {
-          await runPreTeardownHooks(sb, { ...ctx, signal }, "codex", config?.after);
-        } finally {
-          await attemptResources(ctx)?.shutdownAll(signal);
-        }
-      },
-      catch: (cause) => cause,
-    }),
-
-    tracing: {
-      protocol: "http/json",
-      async configure(sb, ctx) {
-        const endpoint = ctx.telemetry!.endpoint;
-        const otel =
-          `\n[otel]\n` +
-          `environment = "niceeval"\n` +
-          `exporter = "none"\n` +
-          `metrics_exporter = "none"\n\n` +
-          `[otel.trace_exporter.otlp-http]\n` +
-          `endpoint = "${endpoint}"\n` +
-          `protocol = "json"\n`;
-        await sb.runShell(`cat >> ~/.codex/config.toml <<'EOF'\n${otel}EOF\n`);
-      },
-    },
-
-    send: (input, ctx) => Effect.tryPromise({
-      try: () => {
-        const apiKey = getApiKey();
-        const hasCfId = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
-        const hasCfSecret = config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
-        const cfEnv: Record<string, string> = {};
-        if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
-          cfEnv.CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
-          cfEnv.CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
-        }
-        return sendCodexAppServer(input, ctx, {
-          ...cfEnv,
-          ...agentEnv,
-          CODEX_API_KEY: apiKey,
-          ...ctx.telemetry?.env,
-        }, (raw, events, nativeText) => {
-          const code = codexCapacityCode(raw);
-          return {
-            acceptance: codexAcceptance(raw, events, nativeText),
-            ...(code === undefined ? {} : { cause: normalizeExternalCause({ code }) }),
-          };
-        });
-      },
-      catch: (cause) => cause,
-    }),
-  }), config?.before, config?.after), "codex", config, codexAgent);
+        send: (input, ctx) =>
+          Effect.tryPromise({
+            try: () => {
+              const apiKey = getApiKey();
+              const hasCfId =
+                config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
+              const hasCfSecret =
+                config?.headers &&
+                Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
+              const cfEnv: Record<string, string> = {};
+              if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
+                cfEnv.CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
+                cfEnv.CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
+              }
+              return sendCodexAppServer(
+                input,
+                ctx,
+                {
+                  ...cfEnv,
+                  ...agentEnv,
+                  CODEX_API_KEY: apiKey,
+                  ...ctx.telemetry?.env,
+                },
+                (raw, events, nativeText) => {
+                  const code = codexCapacityCode(raw);
+                  return {
+                    acceptance: codexAcceptance(raw, events, nativeText),
+                    ...(code === undefined ? {} : { cause: normalizeExternalCause({ code }) }),
+                  };
+                },
+              );
+            },
+            catch: (cause) => cause,
+          }),
+      }),
+      config?.before,
+      config?.after,
+    ),
+    "codex",
+    config,
+    codexAgent,
+  );
 }
 
 /**
@@ -586,10 +610,7 @@ export async function installPlugins(
  * 在 config.toml 仍保留上一条 Attempt 的 Plugin 声明时清理声明态与安装体。
  * before 必须先调用它再覆盖 config；直接调用 installPlugins() 时也走同一收敛入口。
  */
-async function resetPluginState(
-  sb: Sandbox,
-  plugins: readonly CodexPluginSpec[],
-): Promise<void> {
+async function resetPluginState(sb: Sandbox, plugins: readonly CodexPluginSpec[]): Promise<void> {
   // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:marketplace 注册一摘,
   // `codex plugin list` 就不再列出挂在它名下的安装(真机核对 codex-cli 0.146.0),
   // 残留的那份从此定位不到。多个插件共用一个 marketplace 时只需摘一次注册。
@@ -618,9 +639,7 @@ async function installPluginsFromResetState(
     if (!connected.has(marketplace.name)) {
       const refFlag = marketplace.ref ? ` --ref ${shared.shellQuote(marketplace.ref)}` : "";
       // --sparse 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
-      const sparseFlags = (marketplace.sparse ?? [])
-        .map((path) => ` --sparse ${shared.shellQuote(path)}`)
-        .join("");
+      const sparseFlags = (marketplace.sparse ?? []).map((path) => ` --sparse ${shared.shellQuote(path)}`).join("");
       const add = await sb.runShell(
         `${shared.agentBin("codex")} plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}${sparseFlags}`,
       );
@@ -750,7 +769,9 @@ async function dropRegisteredMarketplace(sb: Sandbox, name: string): Promise<voi
 
 /** 装完回读版本;取不到不阻断安装(manifest 里 resolvedVersion 省略)。 */
 async function installedVersion(sb: Sandbox, name: string, marketplace: string): Promise<string | undefined> {
-  const res = await sb.runShell(`${shared.agentBin("codex")} plugin list --json --marketplace ${shared.shellQuote(marketplace)}`);
+  const res = await sb.runShell(
+    `${shared.agentBin("codex")} plugin list --json --marketplace ${shared.shellQuote(marketplace)}`,
+  );
   if (res.exitCode !== 0) return undefined;
   const list = codexInstalledPlugins(res.stdout);
   const hit = list?.find(

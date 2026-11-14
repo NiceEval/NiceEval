@@ -22,9 +22,7 @@ function normalizeToolName(name: string): ToolName {
 
 /** Hermes 的 terminal tool 给的是工具 arguments，不是可验证的 native argv。 */
 function commandProjectionForHermesTool(name: string) {
-  return name.toLowerCase() === "terminal"
-    ? opaqueCommandProjection("unsupported-protocol")
-    : notCommandProjection();
+  return name.toLowerCase() === "terminal" ? opaqueCommandProjection("unsupported-protocol") : notCommandProjection();
 }
 
 function get(obj: unknown, key: string): unknown {
@@ -141,8 +139,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
     if (Array.isArray(toolCallsRaw)) {
       for (const call of toolCallsRaw) {
         const fn = get(call, "function") as globalThis.Record<string, unknown> | undefined;
-        const name =
-          str(get(fn, "name")) ?? str(get(call, "name")) ?? str(msg.tool_name) ?? "unknown";
+        const name = str(get(fn, "name")) ?? str(get(call, "name")) ?? str(msg.tool_name) ?? "unknown";
         const callId = str(get(call, "id")) ?? nextSynthId();
         const args = coerceArgs(get(fn, "arguments") ?? get(call, "arguments") ?? get(call, "input"));
         const skill = skillNameFromToolCall(name, args);

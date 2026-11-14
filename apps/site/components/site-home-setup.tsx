@@ -53,15 +53,7 @@ export default function Setup({ t, locale }: { t: Dictionary; locale: Locale }) 
   );
 }
 
-function EvalCard({
-  t,
-  example,
-  locale,
-}: {
-  t: Dictionary;
-  example: EvalExample;
-  locale: Locale;
-}) {
+function EvalCard({ t, example, locale }: { t: Dictionary; example: EvalExample; locale: Locale }) {
   const [openLines, setOpenLines] = useState<Set<number>>(() => new Set());
   const [timingOpen, setTimingOpen] = useState(false);
   const card = example[locale];
@@ -99,7 +91,9 @@ function EvalCard({
                 const noteKey = meta.highlights[lineNo];
                 const isReply = noteKey ? meta.replyKeys.includes(noteKey) : false;
                 const open = openLines.has(lineNo);
-                const lineClassName = noteKey ? `code-line interactive ${isReply ? "reply" : "assertion"}` : "code-line";
+                const lineClassName = noteKey
+                  ? `code-line interactive ${isReply ? "reply" : "assertion"}`
+                  : "code-line";
                 return (
                   <React.Fragment key={lineNo}>
                     <div
@@ -190,7 +184,9 @@ function TraceSummary({ trace, locale }: { trace: EvalExampleTrace; locale: Loca
     <section className="site-trace-summary" aria-label={zh ? "会话轨迹摘要" : "Session trace summary"}>
       <header>
         <span>{zh ? "会话轨迹" : "Session trace"}</span>
-        <span>{trace.duration} · {trace.calls} {zh ? "调用" : "calls"}</span>
+        <span>
+          {trace.duration} · {trace.calls} {zh ? "调用" : "calls"}
+        </span>
       </header>
       <ol>
         {trace.events.map((event, index) => (

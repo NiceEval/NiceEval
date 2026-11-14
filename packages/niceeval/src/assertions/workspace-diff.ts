@@ -1,8 +1,4 @@
-import {
-  assertCanonicalWorkspaceRelativePath,
-  type DiffArtifact,
-  type WindowChange,
-} from "./diff.ts";
+import { assertCanonicalWorkspaceRelativePath, type DiffArtifact, type WindowChange } from "./diff.ts";
 
 /** Records default exclusions and explicit include and ignore patterns for a workspace diff; excluded paths are outside the captured evidence. */
 export interface AgentWorkspaceDiffPolicy {
@@ -102,15 +98,10 @@ function parseAgentSendWindowIdentity(label: string): AgentSendWindowIdentity {
 
 /** The durable window id preserves the send identity independently of its attachment sequence. */
 export function agentSendWindowId(identity: AgentSendWindowIdentity): string {
-  return identity.session === undefined
-    ? `turn${identity.turn}`
-    : `session${identity.session}/turn${identity.turn}`;
+  return identity.session === undefined ? `turn${identity.turn}` : `session${identity.session}/turn${identity.turn}`;
 }
 
-function endpointFor(
-  change: WindowChange,
-  side: "before" | "after",
-): AgentWorkspaceDiffEndpoint {
+function endpointFor(change: WindowChange, side: "before" | "after"): AgentWorkspaceDiffEndpoint {
   if ((side === "before" && change.status === "added") || (side === "after" && change.status === "deleted")) {
     return Object.freeze({ state: "absent" as const });
   }
@@ -158,10 +149,7 @@ function lineDiffOperations(
       if (leftLine === right[column - 1]) {
         lengths[at(row, column)] = lengths[at(row - 1, column - 1)]! + 1;
       } else {
-        lengths[at(row, column)] = Math.max(
-          lengths[at(row - 1, column)]!,
-          lengths[at(row, column - 1)]!,
-        );
+        lengths[at(row, column)] = Math.max(lengths[at(row - 1, column)]!, lengths[at(row, column - 1)]!);
       }
     }
   }
@@ -174,10 +162,7 @@ function lineDiffOperations(
       reversed.push(Object.freeze({ kind: "unchanged" as const }));
       row -= 1;
       column -= 1;
-    } else if (
-      row > 0
-      && (column === 0 || lengths[at(row - 1, column)]! >= lengths[at(row, column - 1)]!)
-    ) {
+    } else if (row > 0 && (column === 0 || lengths[at(row - 1, column)]! >= lengths[at(row, column - 1)]!)) {
       reversed.push(Object.freeze({ kind: "removed" as const, line: left[row - 1]! }));
       row -= 1;
     } else {
@@ -189,10 +174,7 @@ function lineDiffOperations(
   return frozenArray(reversed);
 }
 
-function hunkStrings(
-  operations: readonly LineDiffOperation[],
-  kind: "added" | "removed",
-): readonly string[] {
+function hunkStrings(operations: readonly LineDiffOperation[], kind: "added" | "removed"): readonly string[] {
   const hunks: string[] = [];
   let lines: string[] = [];
   const flush = (): void => {
@@ -210,10 +192,7 @@ function hunkStrings(
   return frozenArray(hunks);
 }
 
-function changedHunks(
-  before: string,
-  after: string,
-): AgentWorkspaceDiffHunks | undefined {
+function changedHunks(before: string, after: string): AgentWorkspaceDiffHunks | undefined {
   const operations = lineDiffOperations(linesForHunks(before), linesForHunks(after));
   if (operations === undefined) return undefined;
   return Object.freeze({
@@ -242,27 +221,25 @@ function sameHunkStrings(left: readonly string[], right: readonly string[]): boo
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-export function agentWorkspaceDiffChangeIsCoherent(
-  change: AgentWorkspaceDiffWindowChange,
-): boolean {
+export function agentWorkspaceDiffChangeIsCoherent(change: AgentWorkspaceDiffWindowChange): boolean {
   const beforePresent = change.before.state === "text" || change.before.state === "elided";
   const afterPresent = change.after.state === "text" || change.after.state === "elided";
   if (
-    (change.status === "added" && (change.before.state !== "absent" || !afterPresent))
-    || (change.status === "deleted" && (!beforePresent || change.after.state !== "absent"))
-    || (change.status === "modified" && (!beforePresent || !afterPresent))
+    (change.status === "added" && (change.before.state !== "absent" || !afterPresent)) ||
+    (change.status === "deleted" && (!beforePresent || change.after.state !== "absent")) ||
+    (change.status === "modified" && (!beforePresent || !afterPresent))
   ) {
     return false;
   }
   const expected = hunksFor(change.before, change.after);
-  return expected !== undefined
-    && sameHunkStrings(expected.added, change.hunks.added)
-    && sameHunkStrings(expected.removed, change.hunks.removed);
+  return (
+    expected !== undefined &&
+    sameHunkStrings(expected.added, change.hunks.added) &&
+    sameHunkStrings(expected.removed, change.hunks.removed)
+  );
 }
 
-function elidedEndpointForBoundedHunks(
-  endpoint: AgentWorkspaceDiffEndpoint,
-): AgentWorkspaceDiffEndpoint {
+function elidedEndpointForBoundedHunks(endpoint: AgentWorkspaceDiffEndpoint): AgentWorkspaceDiffEndpoint {
   if (endpoint.state !== "text") return endpoint;
   return Object.freeze({
     state: "elided" as const,
@@ -317,18 +294,13 @@ export function createAgentWorkspaceDiff(input: {
   });
 }
 
-export function agentWorkspaceDiffPaths(
-  document: AgentWorkspaceDiff,
-): readonly string[] {
+export function agentWorkspaceDiffPaths(document: AgentWorkspaceDiff): readonly string[] {
   return frozenArray(
     [...new Set(document.windows.flatMap((window) => window.changes.map((change) => change.path)))].sort(compareAscii),
   );
 }
 
-export function agentWorkspaceDiffPathsMatch(
-  document: AgentWorkspaceDiff,
-  expected: readonly string[],
-): boolean {
+export function agentWorkspaceDiffPathsMatch(document: AgentWorkspaceDiff, expected: readonly string[]): boolean {
   const actual = agentWorkspaceDiffPaths(document);
   if (actual.length !== expected.length) return false;
   const wanted = new Set(expected);
@@ -340,9 +312,7 @@ export function agentWorkspaceDiffChangesForPath(
   path: string,
 ): readonly AgentWorkspaceDiffWindowChange[] {
   assertCanonicalWorkspaceRelativePath(path, "workspace diff path");
-  return frozenArray(
-    document.windows.flatMap((window) => window.changes.filter((change) => change.path === path)),
-  );
+  return frozenArray(document.windows.flatMap((window) => window.changes.filter((change) => change.path === path)));
 }
 
 function matchesPattern(pattern: RegExp, value: string): boolean {
@@ -350,9 +320,7 @@ function matchesPattern(pattern: RegExp, value: string): boolean {
   return pattern.test(value);
 }
 
-function selectedSides(
-  options: WorkspaceDiffNotInOptions | undefined,
-): readonly ("added" | "removed")[] {
+function selectedSides(options: WorkspaceDiffNotInOptions | undefined): readonly ("added" | "removed")[] {
   const content = options?.content ?? "both";
   return content === "none" ? [] : content === "both" ? ["added", "removed"] : [content];
 }
@@ -376,7 +344,13 @@ export function evaluateWorkspaceDiffIn(
     if (match === null) return undefined;
     // Keep the decisive match in the preview even when it occurs late in a hunk.
     const start = Math.max(0, match.index - 128);
-    return Object.freeze({ state: "matched", path, preview: Array.from(text.slice(start, start + 2048)).slice(0, 1024).join("") });
+    return Object.freeze({
+      state: "matched",
+      path,
+      preview: Array.from(text.slice(start, start + 2048))
+        .slice(0, 1024)
+        .join(""),
+    });
   };
   for (const window of document.windows) {
     for (const change of window.changes) {

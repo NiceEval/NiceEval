@@ -2,11 +2,7 @@ import { runManagedProcess } from "@niceeval/testkit";
 import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type {
-  CommandOptions,
-  CommandResult,
-  CustomProviderSandbox,
-} from "niceeval/sandbox";
+import type { CommandOptions, CommandResult, CustomProviderSandbox } from "niceeval/sandbox";
 
 function pathIn(workdir: string, path: string): string {
   return isAbsolute(path) ? path : resolve(workdir, path);
@@ -83,7 +79,11 @@ export async function createInspectionProcessSandbox(workdir = process.cwd()): P
     writeText: (path, content) => writeBytes(path, Buffer.from(content, "utf8")),
     readBytes,
     writeBytes,
-    pathExists: async (path) => access(privatePath(path)).then(() => true, () => false),
+    pathExists: async (path) =>
+      access(privatePath(path)).then(
+        () => true,
+        () => false,
+      ),
     uploadFile: async (source, targetPath) => writeBytes(targetPath, await readFile(source)),
     uploadDirectory: async (sourceDir, targetDir) => {
       await cp(sourceDir, privatePath(targetDir ?? "."), { recursive: true });

@@ -1,8 +1,5 @@
 import { Context, Effect } from "effect";
-import type {
-  RecordFileSystemError,
-  RecordMaintenanceBusy,
-} from "../record/platform/errors.ts";
+import type { RecordFileSystemError, RecordMaintenanceBusy } from "../record/platform/errors.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 
 export type RecordLeaseKind = "read" | "append" | "maintenance";
@@ -16,9 +13,7 @@ export interface RecordCoordinationWaitRequest {
   readonly signal?: AbortSignal;
 }
 
-const recordLeaseTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordLease",
-);
+const recordLeaseTypeId: unique symbol = Symbol("@niceeval/coordination/RecordLease");
 
 /** A local, Scope-owned proof that one named Record operation remains active. */
 export interface RecordLease {
@@ -26,9 +21,7 @@ export interface RecordLease {
   readonly [recordLeaseTypeId]: typeof recordLeaseTypeId;
 }
 
-const recordWriteBatchAdmissionTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordWriteBatchAdmission",
-);
+const recordWriteBatchAdmissionTypeId: unique symbol = Symbol("@niceeval/coordination/RecordWriteBatchAdmission");
 
 /** Scope-owned permission for exactly one bounded SQLite write transaction. */
 export interface RecordWriteBatchAdmission {
@@ -36,9 +29,7 @@ export interface RecordWriteBatchAdmission {
   readonly [recordWriteBatchAdmissionTypeId]: typeof recordWriteBatchAdmissionTypeId;
 }
 
-const recordWriteFreezeTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordWriteFreeze",
-);
+const recordWriteFreezeTypeId: unique symbol = Symbol("@niceeval/coordination/RecordWriteFreeze");
 
 /** Scope-owned barrier that blocks new writes while a stable read point is captured. */
 export interface RecordWriteFreeze {
@@ -100,21 +91,12 @@ export interface RecordCoordinationService {
   /** FIFO admission for one bounded BEGIN IMMEDIATE transaction or batch. */
   readonly enterRecordWriteBatch: (
     request: RecordCoordinationWaitRequest,
-  ) => Effect.Effect<
-    RecordWriteBatchAdmission,
-    RecordCoordinationError,
-    import("effect").Scope.Scope
-  >;
+  ) => Effect.Effect<RecordWriteBatchAdmission, RecordCoordinationError, import("effect").Scope.Scope>;
 
   /** Blocks new write admission and drains the already admitted transaction. */
   readonly enterRecordWriteFreeze: (
     request: RecordCoordinationWaitRequest,
-  ) => Effect.Effect<
-    RecordWriteFreeze,
-    RecordCoordinationError,
-    import("effect").Scope.Scope
-  >;
-
+  ) => Effect.Effect<RecordWriteFreeze, RecordCoordinationError, import("effect").Scope.Scope>;
 }
 
 export class RecordCoordination extends Context.Service<RecordCoordination, RecordCoordinationService>()(
@@ -166,9 +148,7 @@ export function recordCoordinationTimedOut(
   return Object.freeze({ code: "record-coordination-timed-out", operation, deadlineEpochMs });
 }
 
-export function recordCoordinationCanceled(
-  operation: RecordCoordinationWaitKind,
-): RecordCoordinationCanceled {
+export function recordCoordinationCanceled(operation: RecordCoordinationWaitKind): RecordCoordinationCanceled {
   return Object.freeze({ code: "record-coordination-canceled", operation });
 }
 

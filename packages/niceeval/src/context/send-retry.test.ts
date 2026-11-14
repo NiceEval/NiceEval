@@ -6,19 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
 import { isSendFailure, makeSendFailure, sendFailureText } from "./send-failures.ts";
-import {
-  ATTEMPT_MAX_RETRIES,
-  sendWithTurnRetry,
-  type AttemptRetryBudget,
-  type ConcurrencySlot,
-} from "./send-retry.ts";
+import { ATTEMPT_MAX_RETRIES, sendWithTurnRetry, type AttemptRetryBudget, type ConcurrencySlot } from "./send-retry.ts";
 
 function runTest<A>(effect: Effect.Effect<A, unknown, never>): Promise<A> {
   return runWithTestClock(effect);
 }
 
 function awaitScheduledSleep(deadline: number): Effect.Effect<void> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     while (!Array.from(yield* TestClock.sleeps()).includes(deadline)) {
       yield* Effect.yieldNow;
     }
@@ -39,96 +34,102 @@ describe("send retry virtual time", () => {
       reacquire: Effect.sync(() => events.push("reacquire")),
     };
 
-    await runTest(Effect.gen(function*() {
-      const send = Effect.suspend(() => {
-        calls += 1;
-        events.push(`call:${calls}`);
-        return calls === 1 ? Effect.fail(retryableFailure()) : Effect.succeed("sent");
-      });
-      const fiber = yield* sendWithTurnRetry(send, {
-        budget,
-        classifier: () => ({ retryable: true, reason: "fixture" }),
-        signal: new AbortController().signal,
-        slot,
-      }).pipe(withRandomFixed([1]), Effect.forkChild);
+    await runTest(
+      Effect.gen(function* () {
+        const send = Effect.suspend(() => {
+          calls += 1;
+          events.push(`call:${calls}`);
+          return calls === 1 ? Effect.fail(retryableFailure()) : Effect.succeed("sent");
+        });
+        const fiber = yield* sendWithTurnRetry(send, {
+          budget,
+          classifier: () => ({ retryable: true, reason: "fixture" }),
+          signal: new AbortController().signal,
+          slot,
+        }).pipe(withRandomFixed([1]), Effect.forkChild);
 
-      yield* awaitScheduledSleep(5_000);
-      expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
-      expect(events).toEqual(["call:1", "release"]);
+        yield* awaitScheduledSleep(5_000);
+        expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
+        expect(events).toEqual(["call:1", "release"]);
 
-      yield* TestClock.adjust(4_999);
-      expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
-      expect(calls).toBe(1);
+        yield* TestClock.adjust(4_999);
+        expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
+        expect(calls).toBe(1);
 
-      yield* TestClock.adjust(1);
-      expect(yield* Fiber.join(fiber)).toBe("sent");
-      expect(events).toEqual(["call:1", "release", "reacquire", "call:2"]);
-      expect(budget.remaining).toBe(ATTEMPT_MAX_RETRIES - 1);
-    }));
+        yield* TestClock.adjust(1);
+        expect(yield* Fiber.join(fiber)).toBe("sent");
+        expect(events).toEqual(["call:1", "release", "reacquire", "call:2"]);
+        expect(budget.remaining).toBe(ATTEMPT_MAX_RETRIES - 1);
+      }),
+    );
   });
 
   it("lets AbortSignal win the backoff race and cancels the sleeping side", async () => {
     const controller = new AbortController();
     let calls = 0;
 
-    await runTest(Effect.gen(function*() {
-      const fiber = yield* sendWithTurnRetry(
-        Effect.suspend(() => {
-          calls += 1;
-          return Effect.fail(retryableFailure());
-        }),
-        {
-          budget: { remaining: ATTEMPT_MAX_RETRIES },
-          classifier: () => ({ retryable: true, reason: "fixture" }),
-          signal: controller.signal,
-        },
-      ).pipe(withRandomFixed([1]), Effect.forkChild);
+    await runTest(
+      Effect.gen(function* () {
+        const fiber = yield* sendWithTurnRetry(
+          Effect.suspend(() => {
+            calls += 1;
+            return Effect.fail(retryableFailure());
+          }),
+          {
+            budget: { remaining: ATTEMPT_MAX_RETRIES },
+            classifier: () => ({ retryable: true, reason: "fixture" }),
+            signal: controller.signal,
+          },
+        ).pipe(withRandomFixed([1]), Effect.forkChild);
 
-      yield* awaitScheduledSleep(5_000);
-      controller.abort();
+        yield* awaitScheduledSleep(5_000);
+        controller.abort();
 
-      const exit = yield* Fiber.await(fiber);
-      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
-      yield* TestClock.adjust(5_000);
-      expect(calls).toBe(1);
-    }));
+        const exit = yield* Fiber.await(fiber);
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+        yield* TestClock.adjust(5_000);
+        expect(calls).toBe(1);
+      }),
+    );
   });
 
   it("stops when the attempt retry budget is exhausted", async () => {
     const budget: AttemptRetryBudget = { remaining: 1 };
     let calls = 0;
 
-    await runTest(Effect.gen(function*() {
-      const fiber = yield* sendWithTurnRetry(
-        Effect.suspend(() => {
-          calls += 1;
-          return Effect.fail(retryableFailure());
-        }),
-        {
-          budget,
-          classifier: () => ({ retryable: true, reason: "fixture" }),
-          signal: new AbortController().signal,
-        },
-      ).pipe(withRandomFixed([1]), Effect.forkChild);
+    await runTest(
+      Effect.gen(function* () {
+        const fiber = yield* sendWithTurnRetry(
+          Effect.suspend(() => {
+            calls += 1;
+            return Effect.fail(retryableFailure());
+          }),
+          {
+            budget,
+            classifier: () => ({ retryable: true, reason: "fixture" }),
+            signal: new AbortController().signal,
+          },
+        ).pipe(withRandomFixed([1]), Effect.forkChild);
 
-      yield* awaitScheduledSleep(5_000);
-      expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
-      yield* TestClock.adjust(5_000);
-      const exit = yield* Fiber.await(fiber);
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isSuccess(exit)) return;
+        yield* awaitScheduledSleep(5_000);
+        expect(Array.from(yield* TestClock.sleeps())).toEqual([5_000]);
+        yield* TestClock.adjust(5_000);
+        const exit = yield* Fiber.await(fiber);
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isSuccess(exit)) return;
 
-      const failure = Cause.findErrorOption(exit.cause);
-      expect(Option.isSome(failure)).toBe(true);
-      if (Option.isSome(failure)) {
-        expect(isSendFailure(failure.value)).toBe(true);
-        if (isSendFailure(failure.value)) {
-          expect(sendFailureText(failure.value)).toContain(String(ATTEMPT_MAX_RETRIES));
+        const failure = Cause.findErrorOption(exit.cause);
+        expect(Option.isSome(failure)).toBe(true);
+        if (Option.isSome(failure)) {
+          expect(isSendFailure(failure.value)).toBe(true);
+          if (isSendFailure(failure.value)) {
+            expect(sendFailureText(failure.value)).toContain(String(ATTEMPT_MAX_RETRIES));
+          }
         }
-      }
-      expect(Chunk.isEmpty(yield* TestClock.sleeps())).toBe(true);
-      expect(calls).toBe(2);
-      expect(budget.remaining).toBe(0);
-    }));
+        expect(Chunk.isEmpty(yield* TestClock.sleeps())).toBe(true);
+        expect(calls).toBe(2);
+        expect(budget.remaining).toBe(0);
+      }),
+    );
   });
 });

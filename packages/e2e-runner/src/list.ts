@@ -52,10 +52,11 @@ const toMatrixEntry = (repo: DiscoveredRepo, root: string): MatrixEntry => ({
 
 /** Rendering is pure; the final CLI handler supplies stdout/stderr. */
 export const formatListedRepos = (listed: ListedRepos, json: boolean, root = e2eRootDir()): readonly string[] => {
-  if (listed.errors.length > 0) return [
-    `e2e repo discovery found ${listed.errors.length} problem(s):`,
-    ...listed.errors.map((error) => `  - ${error}`),
-  ];
+  if (listed.errors.length > 0)
+    return [
+      `e2e repo discovery found ${listed.errors.length} problem(s):`,
+      ...listed.errors.map((error) => `  - ${error}`),
+    ];
   if (json) return [JSON.stringify(listed.repos.map((repo) => toMatrixEntry(repo, root)))];
   const lines = [`${listed.repos.length} e2e repo(s) discovered under e2e/:`, ""];
   for (const repo of listed.repos) {

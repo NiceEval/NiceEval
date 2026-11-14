@@ -19,37 +19,44 @@ const runPhaseMessages = {
   "run.after": "run.phase.after",
 } as const;
 
-export function RunPage({ model, locale }: {
-  readonly model: RunPageModel;
-  readonly locale: Locale;
-}): ReactElement {
+export function RunPage({ model, locale }: { readonly model: RunPageModel; readonly locale: Locale }): ReactElement {
   const { t } = useTranslation();
   const rows = model.members.map((member) => {
     const cells: Record<string, Cell> = {
       experiment: { kind: "text", text: model.experimentId },
-      adapter: model.adapter === null
-        ? { kind: "notApplicable" }
-        : {
-            kind: "text",
-            text: model.adapter?.name ?? "—",
-            detail: model.adapter === null ? undefined : `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
-          },
+      adapter:
+        model.adapter === null
+          ? { kind: "notApplicable" }
+          : {
+              kind: "text",
+              text: model.adapter?.name ?? "—",
+              detail:
+                model.adapter === null
+                  ? undefined
+                  : `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
+            },
       eval: { kind: "text", text: member.evalId },
       attempt: { kind: "text", text: String(member.attemptOrdinal + 1) },
       membership: { kind: "text", text: member.state },
       outcome: textOrMissing(member.outcome),
-      verdict: member.verdict === null
-        ? { kind: "notApplicable" }
-        : {
-            kind: "verdict",
-            verdict: member.verdict,
-            ...(member.verdict === "passed" && member.score?.state === "available"
-              ? { label: localizedMessage("verdict.scored") }
-              : {}),
-          },
-      locator: member.locator === null
-        ? { kind: "notApplicable" }
-        : { kind: "locator", locator: member.locator, ...(member.verdict === null ? {} : { verdict: member.verdict }) },
+      verdict:
+        member.verdict === null
+          ? { kind: "notApplicable" }
+          : {
+              kind: "verdict",
+              verdict: member.verdict,
+              ...(member.verdict === "passed" && member.score?.state === "available"
+                ? { label: localizedMessage("verdict.scored") }
+                : {}),
+            },
+      locator:
+        member.locator === null
+          ? { kind: "notApplicable" }
+          : {
+              kind: "locator",
+              locator: member.locator,
+              ...(member.verdict === null ? {} : { verdict: member.verdict }),
+            },
       selectedRun: { kind: "text", text: model.runId },
       slot: { kind: "text", text: member.plannedAttemptId },
     };
@@ -83,14 +90,23 @@ export function RunPage({ model, locale }: {
           <h3>{t("run.errors")}</h3>
           {model.diagnostics.map((diagnostic) => {
             const affected = new Set(diagnostic.affectedPlannedAttemptIds);
-            const evals = [...new Set(model.members.filter((member) => affected.has(member.plannedAttemptId))
-              .map((member) => member.evalId))];
-            return <article key={diagnostic.diagnosticId}>
-              <p>{t(runPhaseMessages[diagnostic.phase])}</p>
-              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{diagnostic.summary}</pre>
-              {affected.size === 0 ? null : <p>{t("run.affectedAttempts", { count: affected.size })}</p>}
-              <ul>{evals.map((evalId) => <li key={evalId}>{evalId}</li>)}</ul>
-            </article>;
+            const evals = [
+              ...new Set(
+                model.members.filter((member) => affected.has(member.plannedAttemptId)).map((member) => member.evalId),
+              ),
+            ];
+            return (
+              <article key={diagnostic.diagnosticId}>
+                <p>{t(runPhaseMessages[diagnostic.phase])}</p>
+                <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{diagnostic.summary}</pre>
+                {affected.size === 0 ? null : <p>{t("run.affectedAttempts", { count: affected.size })}</p>}
+                <ul>
+                  {evals.map((evalId) => (
+                    <li key={evalId}>{evalId}</li>
+                  ))}
+                </ul>
+              </article>
+            );
           })}
         </section>
       )}
@@ -99,7 +115,11 @@ export function RunPage({ model, locale }: {
   );
 }
 
-export function RunRoute({ runId, presentation, onClose }: {
+export function RunRoute({
+  runId,
+  presentation,
+  onClose,
+}: {
   readonly runId: string;
   readonly presentation: "page" | "dialog";
   readonly onClose?: () => void;
@@ -111,11 +131,13 @@ export function RunRoute({ runId, presentation, onClose }: {
   const page = <RunPage model={model} locale={locale} />;
   if (presentation === "page") return page;
   if (onClose === undefined) throw new Error("Run dialog close target is missing.");
-  return <AttemptDialog title={locale === "zh-CN" ? "运行" : "Run"} onClose={onClose}>{page}</AttemptDialog>;
+  return (
+    <AttemptDialog title={locale === "zh-CN" ? "运行" : "Run"} onClose={onClose}>
+      {page}
+    </AttemptDialog>
+  );
 }
 
 function textOrMissing(value: unknown): Cell {
-  return typeof value === "string" && value.length > 0
-    ? { kind: "text", text: value }
-    : { kind: "notApplicable" };
+  return typeof value === "string" && value.length > 0 ? { kind: "text", text: value } : { kind: "notApplicable" };
 }

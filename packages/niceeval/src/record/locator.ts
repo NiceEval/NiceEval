@@ -89,7 +89,10 @@ export type LocatorResolution<T> =
   | { kind: "not-found"; locator: AttemptLocator }
   | { kind: "ambiguous"; locator: AttemptLocator; candidates: readonly LocatorAttempt<T>[] };
 
-export function resolveAttemptLocator<T>(index: ReadonlyMap<AttemptLocator, readonly LocatorAttempt<T>[]>, input: string): LocatorResolution<T> {
+export function resolveAttemptLocator<T>(
+  index: ReadonlyMap<AttemptLocator, readonly LocatorAttempt<T>[]>,
+  input: string,
+): LocatorResolution<T> {
   const decoded = decodeAttemptLocator(input);
   if (!decoded.valid) return { kind: "malformed", input, reason: decoded.reason };
   const locator = input as AttemptLocator;
@@ -128,7 +131,10 @@ export function assertLocatorRegistrationsAvailable<T>(
 ): void {
   const identitiesByLocator = new Map<AttemptLocator, AttemptIdentity[]>();
   for (const [locator, candidates] of existing) {
-    identitiesByLocator.set(locator, candidates.map((candidate) => candidate.identity));
+    identitiesByLocator.set(
+      locator,
+      candidates.map((candidate) => candidate.identity),
+    );
   }
   for (const registration of registrations) {
     const identities = identitiesByLocator.get(registration.locator) ?? [];
@@ -147,7 +153,9 @@ function assertValidIdentity(identity: AttemptIdentity): void {
   if (!identity.runId) throw new Error("encodeAttemptLocator requires a non-empty identity.runId.");
   if (!identity.evalId) throw new Error("encodeAttemptLocator requires a non-empty identity.evalId.");
   if (!Number.isInteger(identity.attempt) || identity.attempt < 0) {
-    throw new Error(`encodeAttemptLocator requires identity.attempt to be a non-negative integer, got ${String(identity.attempt)}.`);
+    throw new Error(
+      `encodeAttemptLocator requires identity.attempt to be a non-negative integer, got ${String(identity.attempt)}.`,
+    );
   }
 }
 

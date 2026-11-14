@@ -1,9 +1,4 @@
-import {
-  commandProjection,
-  completeEvidenceCoverage,
-  defineAgent,
-  notCommandProjection,
-} from "niceeval/adapter";
+import { commandProjection, completeEvidenceCoverage, defineAgent, notCommandProjection } from "niceeval/adapter";
 import type { CommandProjection } from "niceeval/adapter";
 
 type DirectTool = {
@@ -80,7 +75,8 @@ const replies: Readonly<Record<string, DirectReply>> = {
     data: { fixture: "assertion-scope-main", ok: true },
     tools: [
       ...Array.from({ length: 10_000 }, (_, index) =>
-        shellCommand(`scope-filler-${index}`, "node", ["fixture.mjs", `--case=${index}`])),
+        shellCommand(`scope-filler-${index}`, "node", ["fixture.mjs", `--case=${index}`]),
+      ),
       shellCommand("scope-init", "niceeval", ["init"]),
       shellCommand("scope-exp", "niceeval", ["exp", "sample"]),
       shellCommand("scope-query", "niceeval", ["show", "runs", "--json"]),
@@ -133,33 +129,34 @@ export const deterministicAgent = defineAgent({
     ctx.session.capture(`eval-direct-${branch}`);
 
     const tools = [...(reply.tool === undefined ? [] : [reply.tool]), ...(reply.tools ?? [])];
-    const events = tools.length === 0
-      ? [{ type: "message" as const, role: "assistant" as const, text: reply.marker }]
-      : [
-          ...tools.flatMap((tool, index) => {
-            const operationId = `${tool.name}-${input.text}-${index}`;
-            return [
-              {
-                type: "operation.started" as const,
-                operationId,
-                operation: {
-                  kind: "tool" as const,
-                  name: tool.name,
-                  input: tool.input,
-                  ...(tool.command === undefined ? {} : { command: tool.command }),
+    const events =
+      tools.length === 0
+        ? [{ type: "message" as const, role: "assistant" as const, text: reply.marker }]
+        : [
+            ...tools.flatMap((tool, index) => {
+              const operationId = `${tool.name}-${input.text}-${index}`;
+              return [
+                {
+                  type: "operation.started" as const,
+                  operationId,
+                  operation: {
+                    kind: "tool" as const,
+                    name: tool.name,
+                    input: tool.input,
+                    ...(tool.command === undefined ? {} : { command: tool.command }),
+                  },
                 },
-              },
-              {
-                type: "operation.finished" as const,
-                operationId,
-                kind: "tool" as const,
-                output: tool.output,
-                status: "completed" as const,
-              },
-            ];
-          }),
-          { type: "message" as const, role: "assistant" as const, text: reply.marker },
-        ];
+                {
+                  type: "operation.finished" as const,
+                  operationId,
+                  kind: "tool" as const,
+                  output: tool.output,
+                  status: "completed" as const,
+                },
+              ];
+            }),
+            { type: "message" as const, role: "assistant" as const, text: reply.marker },
+          ];
 
     return {
       status: "completed" as const,

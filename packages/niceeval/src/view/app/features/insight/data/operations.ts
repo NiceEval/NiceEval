@@ -1,9 +1,6 @@
 import { Result } from "effect";
 
-import {
-  decodeInspectionOperation,
-  type InspectionOperationFor,
-} from "../../../../../inspection/public.ts";
+import { decodeInspectionOperation, type InspectionOperationFor } from "../../../../../inspection/public.ts";
 
 export class RouteInputError extends Error {
   readonly classification = "route-input" as const;
@@ -39,10 +36,9 @@ export function runOperation(runId: string): InspectionOperationFor<"run.get"> {
   return operation;
 }
 
-export function attemptOperations(locator: string): readonly [
-  InspectionOperationFor<"attempt.get">,
-  InspectionOperationFor<"attempt.trace">,
-] {
+export function attemptOperations(
+  locator: string,
+): readonly [InspectionOperationFor<"attempt.get">, InspectionOperationFor<"attempt.trace">] {
   const attempt = decoded({ kind: "attempt.get", locator });
   const trace = decoded({ kind: "attempt.trace", locator });
   if (attempt.kind !== "attempt.get" || trace.kind !== "attempt.trace") {

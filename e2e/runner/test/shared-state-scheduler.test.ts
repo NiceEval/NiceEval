@@ -26,22 +26,16 @@ test("同 Invocation 的同 key waiter 不占有限 worker，holder 后继 Attem
           { env: { NICEEVAL_SHARED_STATE_SCHEDULER_BARRIER: barrierRoot }, timeoutMs: 90_000 },
         );
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "holder-attempt-1-started"))) || undefined,
-            {
-              timeoutMs: 30_000,
-              intervalMs: 20,
-              label: "holder enters its first Agent attempt before its successor is required",
-            },
-          );
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "holder-attempt-2-started"))) || undefined,
-            {
-              timeoutMs: 30_000,
-              intervalMs: 20,
-              label: "holder successor starts while a same-key Experiment waits",
-            },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "holder-attempt-1-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "holder enters its first Agent attempt before its successor is required",
+          });
+          await pollUntil(async () => (await exists(join(barrierRoot, "holder-attempt-2-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "holder successor starts while a same-key Experiment waits",
+          });
           const result = await invocation.done;
           expect(result.exitCode, result.diagnostic()).toBe(0);
           expect(await exists(join(barrierRoot, "waiter-attempt-3-started"))).toBe(true);

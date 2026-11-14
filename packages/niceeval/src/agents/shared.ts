@@ -5,12 +5,15 @@
 // 抠 JSONL、解析成标准事件流)都收在这里,经 `shared` 暴露给用户写的 adapter。
 
 import type { ParsedTranscript } from "../o11y/parsers/index.ts";
-import {
-  parseCodexTranscript,
-  parseClaudeCodeTranscript,
-  parseBubTranscript,
-} from "../o11y/parsers/index.ts";
-import type { AgentInstallationManifest, AgentInstallationSkill, CommandOptions, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
+import { parseCodexTranscript, parseClaudeCodeTranscript, parseBubTranscript } from "../o11y/parsers/index.ts";
+import type {
+  AgentInstallationManifest,
+  AgentInstallationSkill,
+  CommandOptions,
+  Sandbox,
+  SkillSpec,
+  StreamEvent,
+} from "../types.ts";
 import type { SandboxAgentBeforeContext } from "./types.ts";
 import { firstLine } from "../util.ts";
 import { shellQuote } from "../sandbox/shell.ts";
@@ -100,10 +103,7 @@ async function writeFile(
 ): Promise<void> {
   const delim = `FE_EOF_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`;
   // path 不加引号,以便 bash 展开 ~;dirname 也走 $() 不加引号同理。这些是受信内部路径。
-  await sandbox.runShell(
-    `mkdir -p $(dirname ${path}) && cat > ${path} <<'${delim}'\n${content}\n${delim}\n`,
-    options,
-  );
+  await sandbox.runShell(`mkdir -p $(dirname ${path}) && cat > ${path} <<'${delim}'\n${content}\n${delim}\n`, options);
 }
 
 /**
@@ -160,7 +160,6 @@ function firstJsonField(raw: string | undefined, field: string): string | undefi
   return scanJsonl(raw, (obj) => obj[field] as string | undefined);
 }
 
-
 /**
  * 非零退出的通用诊断:退出码、transcript 有无、事件数、最后一条 error、输出末尾,
  * 拼成一条可读信息。adapter 在 status=failed 时把它塞进 error 事件——
@@ -186,8 +185,10 @@ function diagnoseFailure(
   if (lastErr) parts.push(`last error: ${firstLine(lastErr.message)}`);
   const headline = parts.join(" · ");
   const errTail = outputTail(res.stderr) || outputTail(res.stdout);
-  return errTail ? `${headline}\n${`output tail:
-${errTail}`}` : headline;
+  return errTail
+    ? `${headline}\n${`output tail:
+${errTail}`}`
+    : headline;
 }
 
 function outputTail(s: string, n = 6): string {
@@ -215,7 +216,11 @@ export const shared = {
    * 把 SkillSpec 装进沙箱的 `opts.dir`(本地目录/文件按原字节上传;repo 按 ref clone、按
    * 选择集拷贝),返回 manifest 用的 Skill 记录。装进 workspace 的东西自动排除出 diff。
    */
-  installSkills(sandbox: Sandbox, specs: readonly SkillSpec[], opts: InstallSkillsOptions): Promise<AgentInstallationSkill[]> {
+  installSkills(
+    sandbox: Sandbox,
+    specs: readonly SkillSpec[],
+    opts: InstallSkillsOptions,
+  ): Promise<AgentInstallationSkill[]> {
     return installSkills(sandbox, specs, opts);
   },
   /** manifest 里的 Skill 记录 → 沙箱里实际的目录名。 */

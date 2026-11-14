@@ -7,7 +7,10 @@ describe("defineDataset & defineScoreDataset", () => {
     const ds = defineDataset({
       description: "sync dataset",
       tags: ["test", "rag"],
-      data: [{ id: "q1", query: "hi" }, { id: "q2", query: "hello" }],
+      data: [
+        { id: "q1", query: "hi" },
+        { id: "q2", query: "hello" },
+      ],
       key: (row) => row.id,
       test: (_t, row) => {
         expect(row.query).toBeDefined();

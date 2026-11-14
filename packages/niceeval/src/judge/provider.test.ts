@@ -25,8 +25,11 @@ describe("Judge Provider headers and Cloudflare Access", () => {
   test("context windows are explicit identity inputs and reject invalid or TypeSafe settings", () => {
     const ordinary = resolveJudgeProvider(OpenAIProvider({ model: "gpt-4o", apiKey: "test-key" }));
     expect(ordinary).not.toHaveProperty("contextWindow");
-    expect(resolveJudgeProvider(OpenAIProvider({ model: "gpt-4o", apiKey: "test-key", contextWindow: 32768 })).contextWindow).toBe(32768);
-    for (const contextWindow of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(() => OpenAIProvider({ model: "gpt-4o", contextWindow })).toThrow("contextWindow");
+    expect(
+      resolveJudgeProvider(OpenAIProvider({ model: "gpt-4o", apiKey: "test-key", contextWindow: 32768 })).contextWindow,
+    ).toBe(32768);
+    for (const contextWindow of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])
+      expect(() => OpenAIProvider({ model: "gpt-4o", contextWindow })).toThrow("contextWindow");
     expect(() => TypesafeProvider({ model: "system-one", contextWindow: 32768 } as never)).toThrow("contextWindow");
   });
 

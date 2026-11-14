@@ -2,10 +2,7 @@ import type { Effect } from "effect";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
 import type { ProcessOwnerIdentity } from "../platform/sqlite-coordination.ts";
-import type {
-  CaseLockEffectClaim,
-  CaseLockRecord,
-} from "../../runner/lock.ts";
+import type { CaseLockEffectClaim, CaseLockRecord } from "../../runner/lock.ts";
 import type {
   RecordCoordination,
   RecordCoordinationError,
@@ -43,27 +40,15 @@ export interface CoordinationHostSDK {
 
   readonly enterRecordRead: (
     root: RecordRoot,
-  ) => Effect.Effect<
-    RecordLease,
-    RecordCoordinationError,
-    import("effect").Scope.Scope | RecordCoordination
-  >;
+  ) => Effect.Effect<RecordLease, RecordCoordinationError, import("effect").Scope.Scope | RecordCoordination>;
 
   readonly enterRecordAppend: (
     root: RecordRoot,
-  ) => Effect.Effect<
-    RecordLease,
-    RecordCoordinationError,
-    import("effect").Scope.Scope | RecordCoordination
-  >;
+  ) => Effect.Effect<RecordLease, RecordCoordinationError, import("effect").Scope.Scope | RecordCoordination>;
 
   readonly enterRecordMaintenance: (
     root: RecordRoot,
-  ) => Effect.Effect<
-    RecordLease,
-    RecordCoordinationError,
-    import("effect").Scope.Scope | RecordCoordination
-  >;
+  ) => Effect.Effect<RecordLease, RecordCoordinationError, import("effect").Scope.Scope | RecordCoordination>;
 
   /** One FIFO ticket authorizes one bounded SQLite write transaction or batch. */
   readonly enterRecordWriteBatch: (
@@ -77,9 +62,5 @@ export interface CoordinationHostSDK {
   /** Blocks new writes while a stable SQLite read point is captured. */
   readonly enterRecordWriteFreeze: (
     request: RecordCoordinationWaitRequest,
-  ) => Effect.Effect<
-    RecordWriteFreeze,
-    RecordCoordinationError,
-    import("effect").Scope.Scope | RecordCoordination
-  >;
+  ) => Effect.Effect<RecordWriteFreeze, RecordCoordinationError, import("effect").Scope.Scope | RecordCoordination>;
 }

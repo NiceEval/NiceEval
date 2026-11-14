@@ -10,7 +10,10 @@ test.concurrent("升级 Agent 安装版本产生普通身份 gap，并显示 Age
     const baseline = await niceeval.run(["exp", "agent-install-identity", "--json"]);
     expect(baseline.exitCode, baseline.diagnostic()).toBe(0);
     const source = join(paths.projectRoot, "experiments", "agent-install-identity.ts");
-    await writeFile(source, (await readFile(source, "utf8")).replace('const version = "0.144.1"', 'const version = "0.167.2"'));
+    await writeFile(
+      source,
+      (await readFile(source, "utf8")).replace('const version = "0.144.1"', 'const version = "0.167.2"'),
+    );
     const dry = await niceeval.run(["exp", "agent-install-identity", "--dry", "--json"]);
     expect(dry.exitCode, dry.diagnostic()).toBe(0);
     const plan = decodeExpPlanDocument(dry.json());

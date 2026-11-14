@@ -7,8 +7,6 @@ export default defineScoreEval({
   description: "score:签入确定性计分结果",
   test(t) {
     t.score(7).label("deterministic report score");
-    t.check("actual", equals("expected"))
-      .score(1)
-      .label("deterministic missed score item");
+    t.check("actual", equals("expected")).score(1).label("deterministic missed score item");
   },
 });

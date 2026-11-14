@@ -6,10 +6,7 @@ import {
   recordContent,
   type RecordAttachmentIssue,
 } from "../../attachment/index.ts";
-import {
-  ArtifactIdSchema,
-  Sha256DigestSchema,
-} from "../../codec/identifiers.ts";
+import { ArtifactIdSchema, Sha256DigestSchema } from "../../codec/identifiers.ts";
 import {
   CollectionStateSchema,
   MediaTypeSchema,
@@ -30,9 +27,7 @@ export const ArtifactSchema = Schema.Struct({
   label: Schema.toType(SafeTextSchema),
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordBytesContentSchema.pipe(
-    recordContent.maximumBytes(ArtifactsLimits.maximumContentBytes),
-  ),
+  content: RecordBytesContentSchema.pipe(recordContent.maximumBytes(ArtifactsLimits.maximumContentBytes)),
 });
 
 export type Artifact = Schema.Schema.Type<typeof ArtifactSchema>;
@@ -43,9 +38,7 @@ export const ArtifactsAttachmentSchema = Schema.Struct({
   artifacts: Schema.Array(ArtifactSchema),
 }).pipe(Schema.encodeKeys({ collection: "collection-data", artifacts: "artifacts-data" }));
 
-export type ArtifactsAttachment = Schema.Schema.Type<
-  typeof ArtifactsAttachmentSchema
->;
+export type ArtifactsAttachment = Schema.Schema.Type<typeof ArtifactsAttachmentSchema>;
 
 function invalid(path: readonly string[]): RecordAttachmentIssue {
   return recordAttachmentIssue("record-attachment-schema-invalid", path);
@@ -56,9 +49,7 @@ function invalid(path: readonly string[]): RecordAttachmentIssue {
  * integrity. This logical validator cannot open a sealed content handle;
  * producers must derive byteLength and sha256 from the same source they seal.
  */
-export function validateArtifactsAttachment(
-  value: ArtifactsAttachment,
-): readonly RecordAttachmentIssue[] {
+export function validateArtifactsAttachment(value: ArtifactsAttachment): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
   if (value.artifacts.length > ArtifactsLimits.maximumArtifacts) {
     issues.push(invalid(["artifacts"]));

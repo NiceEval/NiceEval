@@ -1,19 +1,9 @@
 import { Effect } from "effect";
 
-import type {
-  Agent,
-  AgentContext,
-  AgentSendContext,
-  AgentBeforeContext,
-  Turn,
-  TurnInput,
-} from "./types.ts";
+import type { Agent, AgentContext, AgentSendContext, AgentBeforeContext, Turn, TurnInput } from "./types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 
-export type AgentSendEffect = (
-  input: TurnInput,
-  context: AgentSendContext,
-) => Effect.Effect<Turn, unknown, never>;
+export type AgentSendEffect = (input: TurnInput, context: AgentSendContext) => Effect.Effect<Turn, unknown, never>;
 
 export interface AgentEffects {
   readonly send: AgentSendEffect;
@@ -31,10 +21,7 @@ export function effectAgentCallback<Args extends readonly unknown[], Value>(
   return (...args) => Effect.runPromise(effect(...args), { signal: signal(...args) });
 }
 
-export function attachAgentEffects<AgentType extends Agent>(
-  agent: AgentType,
-  value: AgentEffects,
-): AgentType {
+export function attachAgentEffects<AgentType extends Agent>(agent: AgentType, value: AgentEffects): AgentType {
   effects.set(agent, value);
   return agent;
 }

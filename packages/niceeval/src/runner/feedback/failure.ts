@@ -32,9 +32,10 @@ export function failureDetailFromResult(
   }
 
   const terminal = failureSummaryTerminal(result);
-  const fact = terminal === undefined
-    ? undefined
-    : primaryFactSummary(result, terminal) ?? primaryAssertionSummary(result, sealed, terminal);
+  const fact =
+    terminal === undefined
+      ? undefined
+      : (primaryFactSummary(result, terminal) ?? primaryAssertionSummary(result, sealed, terminal));
   // An errored terminal can only fall back to the runner error after every
   // evaluator-originated Fact cause has been considered.
   const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
@@ -46,14 +47,13 @@ export function failureDetailFromResult(
   // 不让人先读 `attempt.get` / `attempt.trace` 或 View detail 才知道自己撞的是哪条线(见 docs/feature/sandbox/architecture/README.md
   // 「时限归属」)。
   const timeout = fallbackError?.timeout;
-  const attribution = timeout
-    ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})`
-    : "";
-  const reason = fallbackError !== undefined
-    ? `${executionErrorReason(fallbackError.message)}${attribution}`
-    : fact !== undefined
-      ? compactAssertionSummary(fact)
-      : summaryText(result.verdict);
+  const attribution = timeout ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})` : "";
+  const reason =
+    fallbackError !== undefined
+      ? `${executionErrorReason(fallbackError.message)}${attribution}`
+      : fact !== undefined
+        ? compactAssertionSummary(fact)
+        : summaryText(result.verdict);
   const origin = fallbackError?.origin;
   const phase = origin?.scope === "attempt" ? origin.phase : undefined;
   // 只在真正的结构化执行错误（没有主 Fact 摘要）上携带 `code`。Fact unavailable/errored
@@ -63,7 +63,7 @@ export function failureDetailFromResult(
   return {
     locator,
     identity: { experimentId: result.experimentId, evalId: result.id, attempt: result.attempt },
-    who: runWho({ agentName: (result.adapter?.name ?? ""), model: result.model, experimentId: result.experimentId }),
+    who: runWho({ agentName: result.adapter?.name ?? "", model: result.model, experimentId: result.experimentId }),
     verdict: result.verdict,
     reason,
     ...(fact !== undefined ? { fact } : {}),
@@ -78,9 +78,7 @@ function executionErrorReason(message: string): string {
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
-  return typeof value === "object" && value !== null
-    ? value as Readonly<Record<string, unknown>>
-    : undefined;
+  return typeof value === "object" && value !== null ? (value as Readonly<Record<string, unknown>>) : undefined;
 }
 
 function criterionTitle(criterion: AssertionCriterion): string {
@@ -102,7 +100,9 @@ function criterionTitle(criterion: AssertionCriterion): string {
     case "sandbox-unchanged-within":
       return "protected paths stayed unchanged";
     case "sandbox-diff-paths":
-      return criterion.operation === "in-diff" ? "pattern appeared in changed paths" : "pattern absent from changed paths";
+      return criterion.operation === "in-diff"
+        ? "pattern appeared in changed paths"
+        : "pattern absent from changed paths";
     case "sandbox-in-diff":
       return "pattern appeared in agent changes";
     case "sandbox-result":
@@ -122,8 +122,7 @@ function diagnosticFields(diagnostic: AssertionSnapshotObject | undefined): {
 } {
   const value = record(diagnostic);
   if (value === undefined) return {};
-  const string = (key: string): string | undefined =>
-    typeof value[key] === "string" ? value[key] : undefined;
+  const string = (key: string): string | undefined => (typeof value[key] === "string" ? value[key] : undefined);
   return {
     ...(string("message") === undefined ? {} : { matcher: string("message") }),
     ...(string("expected") === undefined ? {} : { expected: string("expected") }),
@@ -139,12 +138,13 @@ function assertionCandidate(
   const diagnostic = diagnosticFields(entry.result.diagnostic);
   const subject = entry.subject.kind === "snapshot" ? record(entry.subject.value) : undefined;
   const errorReason = [...(result.events ?? [])].reverse().find((event) => event.type === "error")?.message;
-  const scopeStatus = entry.criterion.kind === "scope-status"
-    ? {
-        expected: entry.criterion.assertion === "succeeded" ? "completed" : undefined,
-        received: typeof subject?.status === "string" ? subject.status : undefined,
-      }
-    : {};
+  const scopeStatus =
+    entry.criterion.kind === "scope-status"
+      ? {
+          expected: entry.criterion.assertion === "succeeded" ? "completed" : undefined,
+          received: typeof subject?.status === "string" ? subject.status : undefined,
+        }
+      : {};
   return {
     title: entry.display.label ?? criterionTitle(entry.criterion),
     ...diagnostic,
@@ -159,9 +159,11 @@ function primaryAssertionSummary(
   terminal: FailureSummaryTerminal,
 ): PrimaryFactSummary | undefined {
   if (sealed === undefined) return undefined;
-  const failures = sealed.entries.filter((entry) => terminal === "failed"
-    ? entry.result.gate === "failed"
-    : entry.result.state === "errored" || entry.result.gate === "unavailable");
+  const failures = sealed.entries.filter((entry) =>
+    terminal === "failed"
+      ? entry.result.gate === "failed"
+      : entry.result.state === "errored" || entry.result.gate === "unavailable",
+  );
   const primary = failures[0];
   if (primary === undefined) return undefined;
   const candidate = assertionCandidate(primary, result);
@@ -184,9 +186,7 @@ export function failureDetailFromCurrentReusedAttempt(
   run: Pick<AgentRun, "adapter" | "model" | "experimentId">,
 ): FailureDetail | undefined {
   if (readback.verdict !== "failed") return undefined;
-  const diagnostic = readback.executionErrors.state === "available"
-    ? readback.executionErrors.value[0]
-    : undefined;
+  const diagnostic = readback.executionErrors.state === "available" ? readback.executionErrors.value[0] : undefined;
   return {
     locator: encodeAttemptLocator(readback.source.attemptId),
     identity: {
@@ -195,14 +195,12 @@ export function failureDetailFromCurrentReusedAttempt(
       attempt: readback.target.attempt,
     },
     who: runWho({
-      agentName: (run.adapter?.name ?? ""),
+      agentName: run.adapter?.name ?? "",
       model: run.model,
       experimentId: run.experimentId,
     }),
     verdict: "failed",
-    reason: diagnostic === undefined
-      ? summaryText(readback.verdict)
-      : executionErrorReason(diagnostic.summary),
+    reason: diagnostic === undefined ? summaryText(readback.verdict) : executionErrorReason(diagnostic.summary),
   };
 }
 
@@ -215,15 +213,10 @@ type FailureSummaryTerminal = "failed" | "errored";
 
 function failureSummaryTerminal(result: EvalResult): FailureSummaryTerminal | undefined {
   const terminal = attemptTerminalOf(result);
-  return terminal === "failed" || terminal === "errored"
-    ? terminal
-    : undefined;
+  return terminal === "failed" || terminal === "errored" ? terminal : undefined;
 }
 
-function primaryFactSummary(
-  result: EvalResult,
-  terminal: FailureSummaryTerminal,
-): PrimaryFactSummary | undefined {
+function primaryFactSummary(result: EvalResult, terminal: FailureSummaryTerminal): PrimaryFactSummary | undefined {
   const facts = new Map<string, EvaluationFactResult>(result.factResults.map((fact) => [fact.factId, fact]));
   const candidates = new Map<string, FactFailureCandidate>();
   for (const use of result.factUses) {
@@ -272,25 +265,19 @@ function useCandidate(
   facts: ReadonlyMap<string, EvaluationFactResult>,
   terminal: FailureSummaryTerminal,
 ): FactFailureCandidate | undefined {
-  const isFailure = terminal === "failed"
-    ? use.useKind === "verdict" && use.outcome === "failed"
-    : use.outcome === "errored" || use.outcome === "unavailable";
+  const isFailure =
+    terminal === "failed"
+      ? use.useKind === "verdict" && use.outcome === "failed"
+      : use.outcome === "errored" || use.outcome === "unavailable";
   if (!isFailure) return undefined;
-  const factId = use.useKind === "verdict"
-    ? use.target.factId
-    : use.input.kind === "fact"
-      ? use.input.factId
-      : undefined;
+  const factId =
+    use.useKind === "verdict" ? use.target.factId : use.input.kind === "fact" ? use.input.factId : undefined;
   if (factId === undefined) return undefined;
   const fact = facts.get(factId);
   const label = use.label;
   const title = label ?? use.key ?? fact?.name ?? factId;
   const matcher = fact?.name === undefined || fact.name === title ? undefined : fact.name;
-  const reason = use.outcome === "unavailable"
-    ? use.reason
-    : use.outcome === "errored"
-      ? use.error.message
-      : undefined;
+  const reason = use.outcome === "unavailable" ? use.reason : use.outcome === "errored" ? use.error.message : undefined;
   return {
     sourceOrder: use.sourceOrder,
     factId,

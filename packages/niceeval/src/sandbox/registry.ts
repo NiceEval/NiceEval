@@ -60,7 +60,8 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
     reportDiagnostic({
       key: "sandbox-stop-failed",
       severity: "warning",
-      message: `  · [sandbox] failed to stop sandbox ${sb.sandboxId} (ignored; it keeps running, and billing, until this provider's own timeout — if it has one — reclaims it): ${msg}
+      message:
+        `  · [sandbox] failed to stop sandbox ${sb.sandboxId} (ignored; it keeps running, and billing, until this provider's own timeout — if it has one — reclaims it): ${msg}
 `.trimEnd(),
       data: { sandboxId: sb.sandboxId, message: msg },
     });

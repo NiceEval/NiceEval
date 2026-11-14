@@ -10,9 +10,7 @@ export interface ProcessResult {
 }
 
 function decode(chunks: ReadonlyArray<Uint8Array>): string {
-  return Buffer.concat(
-    chunks.map((chunk) => Buffer.from(chunk)),
-  ).toString("utf8");
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
 }
 
 export function runProcess(
@@ -30,24 +28,28 @@ export function runProcess(
     ...(options.environment === undefined ? {} : { env: options.environment, extendEnv: true }),
   });
 
-  return Effect.scoped(Effect.gen(function*() {
-    const child = yield* configured;
-    const [stdout, stderr, exitCode] = yield* Effect.all([
-      Stream.runCollect(child.stdout),
-      Stream.runCollect(child.stderr),
-      child.exitCode,
-    ], { concurrency: "unbounded" });
-    return {
-      stdout: decode(stdout),
-      stderr: decode(stderr),
-      exitCode: Number(exitCode),
-    };
-  })).pipe(
-    Effect.mapError((error) => new ExamplesProcessError({
-      command,
-      args: [command, ...args],
-      message: String(error),
-    })),
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* configured;
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [Stream.runCollect(child.stdout), Stream.runCollect(child.stderr), child.exitCode],
+        { concurrency: "unbounded" },
+      );
+      return {
+        stdout: decode(stdout),
+        stderr: decode(stderr),
+        exitCode: Number(exitCode),
+      };
+    }),
+  ).pipe(
+    Effect.mapError(
+      (error) =>
+        new ExamplesProcessError({
+          command,
+          args: [command, ...args],
+          message: String(error),
+        }),
+    ),
   );
 }
 
@@ -66,12 +68,16 @@ export function git(
     ...(options.environment === undefined ? {} : { environment: options.environment }),
   }).pipe(
     Effect.mapError((error) => new ExamplesGitError({ args, message: error.message })),
-    Effect.flatMap((result) => (options.accept ?? [0]).includes(result.exitCode)
-      ? Effect.succeed(result)
-      : Effect.fail(new ExamplesGitError({
-        args,
-        exitCode: result.exitCode,
-        message: result.stderr.trim() || result.stdout.trim() || "git command failed",
-      }))),
+    Effect.flatMap((result) =>
+      (options.accept ?? [0]).includes(result.exitCode)
+        ? Effect.succeed(result)
+        : Effect.fail(
+            new ExamplesGitError({
+              args,
+              exitCode: result.exitCode,
+              message: result.stderr.trim() || result.stdout.trim() || "git command failed",
+            }),
+          ),
+    ),
   );
 }

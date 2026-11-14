@@ -14,19 +14,13 @@ import {
   MAX_COMMAND_SHELL_BYTES,
   MAX_COMMAND_STREAM_BYTES,
 } from "../../record/family/source-receipt/limits.ts";
-import {
-  makeBoundedSafeText,
-  type CommandId,
-  type SafeText,
-} from "../../record/family/source-receipt/model.ts";
+import { makeBoundedSafeText, type CommandId, type SafeText } from "../../record/family/source-receipt/model.ts";
 import type { CommandProjectionRuntime } from "./projection-runtime.ts";
 import { retainSafeText } from "./projection-text.ts";
 import type { CommandManifest, StagedCommandStream } from "./types.ts";
 import { requiredNonNegative } from "./support.ts";
 
-function commandManifestPhase(
-  phase: LifecyclePhase,
-): CommandManifest["phase"] {
+function commandManifestPhase(phase: LifecyclePhase): CommandManifest["phase"] {
   switch (phase) {
     case "attempt.setup":
     case "sandbox.create":
@@ -165,13 +159,15 @@ export function commandManifest(
   });
   const arguments_: SafeText[] = [];
   for (const raw of sourceArguments.slice(0, MAX_COMMAND_ARGUMENTS)) {
-    arguments_.push(commandSafeText({
-      commandId: command.commandId,
-      value: raw,
-      maximumBytes: MAX_COMMAND_ARGUMENT_BYTES,
-      target: "command-manifest",
-      runtime,
-    }));
+    arguments_.push(
+      commandSafeText({
+        commandId: command.commandId,
+        value: raw,
+        maximumBytes: MAX_COMMAND_ARGUMENT_BYTES,
+        target: "command-manifest",
+        runtime,
+      }),
+    );
   }
   return Object.freeze({
     phase,
@@ -189,10 +185,7 @@ function stripUnsafeCommandControls(value: string): { readonly text: string; rea
   let count = 0;
   for (const scalar of value) {
     const code = scalar.codePointAt(0);
-    if (
-      code !== undefined &&
-      ((code >= 0 && code <= 0x1f && code !== 0x0a) || (code >= 0x7f && code <= 0x9f))
-    ) {
+    if (code !== undefined && ((code >= 0 && code <= 0x1f && code !== 0x0a) || (code >= 0x7f && code <= 0x9f))) {
       count += 1;
       continue;
     }
@@ -218,16 +211,12 @@ export function commandStream(input: {
   readonly value: string;
   readonly runtime: CommandProjectionRuntime;
 }): StagedCommandStream {
-  const target = input.stream === "stdout" ? "command-stdout" as const : "command-stderr" as const;
+  const target = input.stream === "stdout" ? ("command-stdout" as const) : ("command-stderr" as const);
   const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
   if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(target);
   const stripped = stripUnsafeCommandControls(redacted);
   if (stripped.count > 0) {
-    input.runtime.commandLimitations.addUnsafeCommandControlStripped(
-      input.commandId,
-      input.stream,
-      stripped.count,
-    );
+    input.runtime.commandLimitations.addUnsafeCommandControlStripped(input.commandId, input.stream, stripped.count);
   }
   const retained = retainSafeText(stripped.text, MAX_COMMAND_STREAM_BYTES);
   if (retained === undefined) {
@@ -242,9 +231,10 @@ export function commandStream(input: {
       retained.omittedBytes,
     );
   }
-  const totalSafeUtf8Bytes = retained.omittedBytes === undefined
-    ? retained.retainedBytes
-    : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
+  const totalSafeUtf8Bytes =
+    retained.omittedBytes === undefined
+      ? retained.retainedBytes
+      : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
   return Object.freeze({
     text: retained.text,
     retainedBytes: retained.retainedBytes,

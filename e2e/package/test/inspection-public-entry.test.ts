@@ -1,28 +1,23 @@
-
 import { command } from "@niceeval/testkit";
 import { build, type Metafile } from "esbuild";
 import { createRequire } from "node:module";
 import { expect, test } from "vitest";
 
 function errorCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error
-    ? String(error.code)
-    : undefined;
+  return typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
 }
 
 async function unavailableHostCode(moduleSystem: "esm" | "commonjs"): Promise<string | undefined> {
-  const load = moduleSystem === "esm"
-    ? 'await import("niceeval/inspection/host")'
-    : 'require("niceeval/inspection/host")';
+  const load =
+    moduleSystem === "esm" ? 'await import("niceeval/inspection/host")' : 'require("niceeval/inspection/host")';
   const script = `
     try { ${load}; process.exitCode = 2 }
     catch (error) { process.stdout.write(JSON.stringify({ code: error?.code })) }
   `;
-  const result = await command([process.execPath]).run([
-    ...(moduleSystem === "esm" ? ["--input-type=module"] : []),
-    "--eval",
-    script,
-  ], { timeoutMs: 10_000 });
+  const result = await command([process.execPath]).run(
+    [...(moduleSystem === "esm" ? ["--input-type=module"] : []), "--eval", script],
+    { timeoutMs: 10_000 },
+  );
   expect(result.exitCode, result.diagnostic()).toBe(0);
   const receipt = result.json<unknown>();
   return errorCode(receipt);
@@ -41,14 +36,19 @@ function niceevalPackagePath(input: string): string | undefined {
 }
 
 function forbiddenClosureEntries(metafile: Metafile): string[] {
-  const forbiddenNiceevalBoundary = /(?:^|\/)(?:cli|source|select|facts|sqlite|[^/]*projection|scope|service|layer)(?:[./-]|\/|$)/i;
+  const forbiddenNiceevalBoundary =
+    /(?:^|\/)(?:cli|source|select|facts|sqlite|[^/]*projection|scope|service|layer)(?:[./-]|\/|$)/i;
   const forbiddenPackage = /(?:^|\/)(?:better-sqlite3|sql\.js|sqlite-wasm)(?:\/|$)/i;
-  const forbiddenEffectRuntime = /\/node_modules\/effect\/dist\/(?:Layer|Scope|ServiceMap|internal\/(?:layer|scope|service-map))\.js$/i;
+  const forbiddenEffectRuntime =
+    /\/node_modules\/effect\/dist\/(?:Layer|Scope|ServiceMap|internal\/(?:layer|scope|service-map))\.js$/i;
   const violations = new Set<string>();
-  const emittedInputs = new Set(Object.values(metafile.outputs).flatMap((output) =>
-    Object.entries(output.inputs)
-      .filter(([, contribution]) => contribution.bytesInOutput > 0)
-      .map(([input]) => input)));
+  const emittedInputs = new Set(
+    Object.values(metafile.outputs).flatMap((output) =>
+      Object.entries(output.inputs)
+        .filter(([, contribution]) => contribution.bytesInOutput > 0)
+        .map(([input]) => input),
+    ),
+  );
 
   for (const input of emittedInputs) {
     const normalized = input.replaceAll("\\", "/");
@@ -73,13 +73,20 @@ function forbiddenClosureEntries(metafile: Metafile): string[] {
 // @feature docs/feature/inspection/README.md
 
 test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中只交付纯协议", async () => {
-  const identities = await command([process.execPath]).run(["--input-type=module", "--eval", `
+  const identities = await command([process.execPath]).run(
+    [
+      "--input-type=module",
+      "--eval",
+      `
     import { strictEqual } from "node:assert";
     import { createRequire } from "node:module";
     const inspection = await import("niceeval/inspection");
     const commonjs = createRequire(import.meta.url)("niceeval/inspection");
     for (const name of Object.keys(inspection)) strictEqual(inspection[name], commonjs[name], name);
-  `], { timeoutMs: 10_000 });
+  `,
+    ],
+    { timeoutMs: 10_000 },
+  );
   expect(identities.exitCode, identities.diagnostic()).toBe(0);
   const inspection = await import("niceeval/inspection");
   const require = createRequire(import.meta.url);
@@ -130,7 +137,9 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
   expect(javascript, "esbuild did not emit a JavaScript browser bundle").toBeDefined();
   if (!javascript) throw new Error("esbuild did not emit a JavaScript browser bundle");
 
-  const executed = await import(`data:text/javascript;base64,${Buffer.from(javascript.contents).toString("base64")}`) as {
+  const executed = (await import(
+    `data:text/javascript;base64,${Buffer.from(javascript.contents).toString("base64")}`
+  )) as {
     probe(): { operations: readonly string[]; invalidDocumentAccepted: boolean };
   };
   expect(executed.probe()).toEqual({

@@ -65,8 +65,12 @@ const text = (value: unknown, key: string): string | undefined =>
 const array = (value: unknown, key: string): readonly unknown[] =>
   Predicate.isObject(value) && Array.isArray(value[key]) ? value[key] : [];
 
-const LocationSchema = Schema.Struct({ line: Schema.Int.check(Schema.isGreaterThan(0)), column: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) });
-const nativeLocation = (value: unknown): { readonly location?: { readonly line: number; readonly column: number } } => value === undefined ? {} : { location: Schema.decodeUnknownSync(LocationSchema)(value) };
+const LocationSchema = Schema.Struct({
+  line: Schema.Int.check(Schema.isGreaterThan(0)),
+  column: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+const nativeLocation = (value: unknown): { readonly location?: { readonly line: number; readonly column: number } } =>
+  value === undefined ? {} : { location: Schema.decodeUnknownSync(LocationSchema)(value) };
 const parseJson = (stdout: string): unknown => JSON.parse(stdout.trim());
 
 const collectVitest = (document: unknown): readonly RawCollectedCase[] => {
@@ -76,7 +80,12 @@ const collectVitest = (document: unknown): readonly RawCollectedCase[] => {
     const name = text(entry, "name") ?? text(entry, "fullName");
     if (file === undefined || name === undefined) throw new Error(`Vitest list entry ${index} is missing file/name`);
     const project = text(entry, "projectName") ?? text(entry, "project");
-    return { file, titlePath: [name], ...(project === undefined ? {} : { project }), ...nativeLocation(Predicate.isObject(entry) ? entry.location : undefined) };
+    return {
+      file,
+      titlePath: [name],
+      ...(project === undefined ? {} : { project }),
+      ...nativeLocation(Predicate.isObject(entry) ? entry.location : undefined),
+    };
   });
 };
 
@@ -93,13 +102,20 @@ const collectPlaywright = (document: unknown): readonly RawCollectedCase[] => {
       const title = text(spec, "title");
       const specFile = text(spec, "file") ?? file;
       if (title === undefined || specFile === undefined) throw new Error("Playwright JSON spec is missing title/file");
-      const location = nativeLocation(spec.line === undefined ? undefined : { line: spec.line, column: spec.column ?? 0 });
+      const location = nativeLocation(
+        spec.line === undefined ? undefined : { line: spec.line, column: spec.column ?? 0 },
+      );
       const tests = array(spec, "tests");
       if (tests.length === 0) output.push({ file: specFile, titlePath: [...titlePath, title], ...location });
       for (const test of tests) {
         const candidateProject = text(test, "projectName");
         const project = candidateProject === undefined || candidateProject.length === 0 ? undefined : candidateProject;
-        output.push({ file: specFile, titlePath: [...titlePath, title], ...(project === undefined ? {} : { project }), ...location });
+        output.push({
+          file: specFile,
+          titlePath: [...titlePath, title],
+          ...(project === undefined ? {} : { project }),
+          ...location,
+        });
       }
     }
     for (const child of array(suite, "suites")) visitSuite(child, titlePath, file);
@@ -133,7 +149,8 @@ const canonicalPath = (cwd: string, file: string): string => {
     }
   };
   visit(cwd);
-  if (matches.length !== 1) throw new Error(`collected file does not resolve to one source path: ${file} (${matches.length} matches)`);
+  if (matches.length !== 1)
+    throw new Error(`collected file does not resolve to one source path: ${file} (${matches.length} matches)`);
   return matches[0]!;
 };
 
@@ -152,14 +169,19 @@ const sourceFiles = (cwd: string): readonly string[] => {
       if (SOURCE_EXCLUDED_BASENAMES.has(entry.name)) continue;
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute);
-      else if (entry.isFile() && /\.(?:[cm]?[jt]sx?)$/u.test(entry.name)) output.push(relative(cwd, absolute).replaceAll("\\", "/"));
+      else if (entry.isFile() && /\.(?:[cm]?[jt]sx?)$/u.test(entry.name))
+        output.push(relative(cwd, absolute).replaceAll("\\", "/"));
     }
   };
   visit(cwd);
   return output.sort();
 };
 
-const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (cwd: string, repo: string, markers: readonly ConcordCase[]) {
+const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (
+  cwd: string,
+  repo: string,
+  markers: readonly ConcordCase[],
+) {
   const declarations: (SourceDeclaration & { readonly caseId?: string })[] = [];
   for (const path of sourceFiles(cwd)) {
     const workspacePath = `e2e/${repo}/${path}`;
@@ -169,22 +191,49 @@ const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (cwd: strin
     const visit = (node: ts.Node, parents: readonly string[] = []): void => {
       let descendants = parents;
       if (ts.isCallExpression(node)) {
-        const expression = ts.isCallExpression(node.expression) ? node.expression.expression : ts.isTaggedTemplateExpression(node.expression) ? node.expression.tag : node.expression;
+        const expression = ts.isCallExpression(node.expression)
+          ? node.expression.expression
+          : ts.isTaggedTemplateExpression(node.expression)
+            ? node.expression.tag
+            : node.expression;
         const name = expression.getText(tree);
         const titleNode = node.arguments[0];
-        const title = titleNode && ts.isStringLiteralLike(titleNode) ? titleNode.text
-          : titleNode && ts.isTemplateExpression(titleNode) ? titleNode.head.text + titleNode.templateSpans.map(span => `%s${span.literal.text}`).join("")
-          : undefined;
-        if (/^(?:test\.)?describe(?:\.(?:concurrent|skip|only|sequential))*$/u.test(name) && title !== undefined) descendants = [...parents, title];
-        if ((!name.endsWith(".each") || ts.isCallExpression(node.expression) || ts.isTaggedTemplateExpression(node.expression)) && /^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential|each))*$/u.test(name) && title !== undefined) {
+        const title =
+          titleNode && ts.isStringLiteralLike(titleNode)
+            ? titleNode.text
+            : titleNode && ts.isTemplateExpression(titleNode)
+              ? titleNode.head.text + titleNode.templateSpans.map((span) => `%s${span.literal.text}`).join("")
+              : undefined;
+        if (/^(?:test\.)?describe(?:\.(?:concurrent|skip|only|sequential))*$/u.test(name) && title !== undefined)
+          descendants = [...parents, title];
+        if (
+          (!name.endsWith(".each") ||
+            ts.isCallExpression(node.expression) ||
+            ts.isTaggedTemplateExpression(node.expression)) &&
+          /^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential|each))*$/u.test(name) &&
+          title !== undefined
+        ) {
           const startLine = tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
           const fullStartLine = tree.getLineAndCharacterOfPosition(node.getFullStart()).line + 1;
-          const related = markers.filter((item: ConcordCase) => item.file === workspacePath && item.status === "active" && item.line >= fullStartLine && (item.markerEndLine ?? item.line) <= startLine);
+          const related = markers.filter(
+            (item: ConcordCase) =>
+              item.file === workspacePath &&
+              item.status === "active" &&
+              item.line >= fullStartLine &&
+              (item.markerEndLine ?? item.line) <= startLine,
+          );
           const marker = related.length === 1 ? related[0] : undefined;
-          declarations.push({ titlePath: [...parents, title], title: [...parents, title].join(" "), testFile, declarationPath: workspacePath, annotated: marker !== undefined, ...(marker ? { caseId: marker.id } : {}) });
+          declarations.push({
+            titlePath: [...parents, title],
+            title: [...parents, title].join(" "),
+            testFile,
+            declarationPath: workspacePath,
+            annotated: marker !== undefined,
+            ...(marker ? { caseId: marker.id } : {}),
+          });
         }
       }
-      ts.forEachChild(node, child => visit(child, descendants));
+      ts.forEachChild(node, (child) => visit(child, descendants));
     };
     visit(tree);
   }
@@ -210,10 +259,18 @@ const validateCases = Effect.fn("validateCases")(function* (
     files.add(path);
     const title = raw.titlePath.at(-1) ?? "";
     const workspacePath = `e2e/${repo}/${path}`;
-    const candidates = declarations.filter((entry) => entry.testFile === workspacePath && (matchesTitlePath(entry.titlePath, raw.titlePath) || executor === "playwright" && matchesTitlePath(entry.titlePath, raw.titlePath.slice(1))));
+    const candidates = declarations.filter(
+      (entry) =>
+        entry.testFile === workspacePath &&
+        (matchesTitlePath(entry.titlePath, raw.titlePath) ||
+          (executor === "playwright" && matchesTitlePath(entry.titlePath, raw.titlePath.slice(1)))),
+    );
     const declaration = candidates[0];
     if (candidates.length !== 1 || declaration === undefined) {
-      if (candidates.length > 1) findings.push(`ParameterizedDeclarationConflict: ${path}: ${JSON.stringify(title)} has ${candidates.length} statically supported declarations`);
+      if (candidates.length > 1)
+        findings.push(
+          `ParameterizedDeclarationConflict: ${path}: ${JSON.stringify(title)} has ${candidates.length} statically supported declarations`,
+        );
       unassignedCases.push({ ...raw, file: path });
       continue;
     }
@@ -228,20 +285,40 @@ const validateCases = Effect.fn("validateCases")(function* (
     const witnessKey = `${caseId}\0${raw.project ?? ""}`;
     const prior = seen.get(witnessKey);
     if (prior !== undefined) {
-      if (!titleTemplate(declaration.titlePath.at(-1)!).parameterized) findings.push(`DuplicateCaseId: ${caseId} is collected by both ${prior} and ${path}`);
+      if (!titleTemplate(declaration.titlePath.at(-1)!).parameterized)
+        findings.push(`DuplicateCaseId: ${caseId} is collected by both ${prior} and ${path}`);
       else {
-        const index = cases.findIndex(entry => entry.caseId === caseId && entry.project === raw.project);
+        const index = cases.findIndex((entry) => entry.caseId === caseId && entry.project === raw.project);
         const entry = cases[index]!;
-        if (entry.members?.some(member => JSON.stringify(member) === JSON.stringify(raw.titlePath))) findings.push(`DuplicateNativeTitle: ${path}: ${JSON.stringify(raw.titlePath)}`);
+        if (entry.members?.some((member) => JSON.stringify(member) === JSON.stringify(raw.titlePath)))
+          findings.push(`DuplicateNativeTitle: ${path}: ${JSON.stringify(raw.titlePath)}`);
         cases[index] = { ...entry, members: [...(entry.members ?? []), raw.titlePath] };
       }
       continue;
     }
     seen.set(witnessKey, path);
-    cases.push({ executor, repo: suiteId, path: declarationPath, ...(path === declarationPath ? {} : { nativePath: path }), ...(raw.project === undefined ? {} : { project: raw.project }), titlePath: executor === "playwright" ? [...raw.titlePath.slice(0, raw.titlePath.length - declaration.titlePath.length), ...declaration.titlePath] : declaration.titlePath, caseId, ...(titleTemplate(declaration.titlePath.at(-1)!).parameterized ? { members: [raw.titlePath] } : {}), ...(raw.location === undefined ? {} : { location: raw.location }) });
+    cases.push({
+      executor,
+      repo: suiteId,
+      path: declarationPath,
+      ...(path === declarationPath ? {} : { nativePath: path }),
+      ...(raw.project === undefined ? {} : { project: raw.project }),
+      titlePath:
+        executor === "playwright"
+          ? [...raw.titlePath.slice(0, raw.titlePath.length - declaration.titlePath.length), ...declaration.titlePath]
+          : declaration.titlePath,
+      caseId,
+      ...(titleTemplate(declaration.titlePath.at(-1)!).parameterized ? { members: [raw.titlePath] } : {}),
+      ...(raw.location === undefined ? {} : { location: raw.location }),
+    });
   }
   return {
-    cases: cases.sort((left, right) => left.path.localeCompare(right.path) || (left.project ?? "").localeCompare(right.project ?? "") || left.titlePath.join("\0").localeCompare(right.titlePath.join("\0"))),
+    cases: cases.sort(
+      (left, right) =>
+        left.path.localeCompare(right.path) ||
+        (left.project ?? "").localeCompare(right.project ?? "") ||
+        left.titlePath.join("\0").localeCompare(right.titlePath.join("\0")),
+    ),
     unassignedCases,
     findings: findings.sort(),
     files: [...files].sort(),
@@ -261,7 +338,9 @@ const resolveExecutorCli = (executor: InventoryExecutor, cwd: string): ResolvedE
   for (const packageName of executorPackages(executor)) {
     try {
       const manifestPath = requireFromCwd.resolve(`${packageName}/package.json`);
-      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { readonly bin?: string | Readonly<Record<string, string>> };
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+        readonly bin?: string | Readonly<Record<string, string>>;
+      };
       const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[executor];
       if (bin === undefined) {
         failures.push(`${packageName} does not declare a ${executor} CLI bin`);
@@ -306,26 +385,48 @@ export const collectNativeCaseInventory = Effect.fn("collectNativeCaseInventory"
   const cwd = resolve(options.cwd);
   const owned = yield* OwnedProcess;
   const { cli } = resolveExecutorCli(options.executor, cwd);
-  const [collection, versionResult] = yield* Effect.all([
-    owned.run(executorCommand(options.executor, cli, options.nativeArgs), { cwd, output: "capture", stream: false }),
-    owned.run(versionCommand(cli), { cwd, output: "capture", stream: false }),
-  ], { concurrency: 2 });
+  const [collection, versionResult] = yield* Effect.all(
+    [
+      owned.run(executorCommand(options.executor, cli, options.nativeArgs), { cwd, output: "capture", stream: false }),
+      owned.run(versionCommand(cli), { cwd, output: "capture", stream: false }),
+    ],
+    { concurrency: 2 },
+  );
   if (!hasSuccessfulOwnedProcessResult(collection) || !hasSuccessfulOwnedProcessResult(versionResult)) {
-    throw new Error(`${options.executor} native collection failed: exit=${collection.exitCode}, signal=${collection.signal}; ${collection.stderr || collection.stdout}; version exit=${versionResult.exitCode}`);
+    throw new Error(
+      `${options.executor} native collection failed: exit=${collection.exitCode}, signal=${collection.signal}; ${collection.stderr || collection.stdout}; version exit=${versionResult.exitCode}`,
+    );
   }
   const version = versionFrom(options.executor, versionResult.stdout);
-  const raw = options.executor === "vitest" ? collectVitest(parseJson(collection.stdout)) : collectPlaywright(parseJson(collection.stdout));
+  const raw =
+    options.executor === "vitest"
+      ? collectVitest(parseJson(collection.stdout))
+      : collectPlaywright(parseJson(collection.stdout));
   const declarations = yield* declarationsInCopy(cwd, options.repo, []);
-  const cases = raw.map(item => {
+  const cases = raw.map((item) => {
     const nativeFile = canonicalPath(cwd, item.file);
-    const candidates = declarations.filter(entry => entry.testFile === `e2e/${options.repo}/${nativeFile}` && (matchesTitlePath(entry.titlePath, item.titlePath) || options.executor === "playwright" && matchesTitlePath(entry.titlePath, item.titlePath.slice(1))));
-    if (candidates.length > 1) throw new Error(`ParameterizedDeclarationConflict: ${nativeFile}: ${item.titlePath.join(" ")}`);
+    const candidates = declarations.filter(
+      (entry) =>
+        entry.testFile === `e2e/${options.repo}/${nativeFile}` &&
+        (matchesTitlePath(entry.titlePath, item.titlePath) ||
+          (options.executor === "playwright" && matchesTitlePath(entry.titlePath, item.titlePath.slice(1)))),
+    );
+    if (candidates.length > 1)
+      throw new Error(`ParameterizedDeclarationConflict: ${nativeFile}: ${item.titlePath.join(" ")}`);
     const file = candidates[0]?.declarationPath.slice(`e2e/${options.repo}/`.length) ?? nativeFile;
     const declaration = candidates[0];
-    const declarationTitlePath = declaration && titleTemplate(declaration.titlePath.at(-1)!).parameterized
-      ? options.executor === "playwright" ? [...item.titlePath.slice(0, item.titlePath.length - declaration.titlePath.length), ...declaration.titlePath] : declaration.titlePath
-      : undefined;
-    return { ...item, file, ...(file === nativeFile ? {} : { nativeFile }), ...(declarationTitlePath === undefined ? {} : { declarationTitlePath }) };
+    const declarationTitlePath =
+      declaration && titleTemplate(declaration.titlePath.at(-1)!).parameterized
+        ? options.executor === "playwright"
+          ? [...item.titlePath.slice(0, item.titlePath.length - declaration.titlePath.length), ...declaration.titlePath]
+          : declaration.titlePath
+        : undefined;
+    return {
+      ...item,
+      file,
+      ...(file === nativeFile ? {} : { nativeFile }),
+      ...(declarationTitlePath === undefined ? {} : { declarationTitlePath }),
+    };
   });
   return { executor: { name: options.executor, version }, cases };
 }, bridgeBoundary);
@@ -339,26 +440,40 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     const unsigned = {
-      executor: { name: options.executor, version: "unknown" }, repo: options.suiteId,
-      argv: [process.execPath, `<unresolved-${options.executor}-cli>`], checkout: options.checkout,
-      files: [], cases: [], unassignedCases: [], bodyExecutions: 0 as const, forbiddenSetupExecutions: 0 as const,
-      findings: [detail], exit: null, signal: null,
+      executor: { name: options.executor, version: "unknown" },
+      repo: options.suiteId,
+      argv: [process.execPath, `<unresolved-${options.executor}-cli>`],
+      checkout: options.checkout,
+      files: [],
+      cases: [],
+      unassignedCases: [],
+      bodyExecutions: 0 as const,
+      forbiddenSetupExecutions: 0 as const,
+      findings: [detail],
+      exit: null,
+      signal: null,
     };
     const receipt: CaseInventoryReceipt = yield* signInventory(unsigned);
     return yield* new InventoryError({ detail, receipt });
   }
   const argv = executorCommand(options.executor, resolved.cli, options.nativeArgs);
-  const [collection, versionResult] = yield* Effect.all([
-    ownedProcess.run(argv, { cwd, output: "capture", stream: false }),
-    ownedProcess.run(versionCommand(resolved.cli), { cwd, output: "capture", stream: false }),
-  ], { concurrency: 2 });
+  const [collection, versionResult] = yield* Effect.all(
+    [
+      ownedProcess.run(argv, { cwd, output: "capture", stream: false }),
+      ownedProcess.run(versionCommand(resolved.cli), { cwd, output: "capture", stream: false }),
+    ],
+    { concurrency: 2 },
+  );
   let version = "unknown";
   const findings: string[] = [];
   let rawCases: readonly RawCollectedCase[] = [];
   if (!hasSuccessfulOwnedProcessResult(versionResult)) findings.push(`${options.executor} version command failed`);
   else {
-    try { version = versionFrom(options.executor, versionResult.stdout); }
-    catch (cause) { findings.push(cause instanceof Error ? cause.message : String(cause)); }
+    try {
+      version = versionFrom(options.executor, versionResult.stdout);
+    } catch (cause) {
+      findings.push(cause instanceof Error ? cause.message : String(cause));
+    }
   }
   if (!hasSuccessfulOwnedProcessResult(collection)) {
     let diagnostic = collection.stderr.trim();
@@ -372,7 +487,9 @@ export const collectCaseInventory = Effect.fn("collectCaseInventory")(function* 
         diagnostic = "";
       }
     }
-    findings.push(`${options.executor} collection failed (exit=${String(collection.exitCode)}, signal=${String(collection.signal)})${diagnostic.length === 0 ? "" : `: ${diagnostic}`}`);
+    findings.push(
+      `${options.executor} collection failed (exit=${String(collection.exitCode)}, signal=${String(collection.signal)})${diagnostic.length === 0 ? "" : `: ${diagnostic}`}`,
+    );
   } else {
     try {
       const document = parseJson(collection.stdout);

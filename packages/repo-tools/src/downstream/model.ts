@@ -6,12 +6,16 @@ const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isM
 export const DownstreamManifestSchema = Schema.Struct({
   name: Schema.optional(Schema.String),
   packageManager: Schema.optional(Schema.String),
-  devEngines: Schema.optional(Schema.Struct({
-    packageManager: Schema.optional(Schema.Struct({
-      name: Schema.String,
-      version: Schema.String,
-    })),
-  })),
+  devEngines: Schema.optional(
+    Schema.Struct({
+      packageManager: Schema.optional(
+        Schema.Struct({
+          name: Schema.String,
+          version: Schema.String,
+        }),
+      ),
+    }),
+  ),
   dependencies: Schema.optional(DependencyMapSchema),
   devDependencies: Schema.optional(DependencyMapSchema),
   optionalDependencies: Schema.optional(DependencyMapSchema),

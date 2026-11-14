@@ -2,8 +2,7 @@ import { defineEval } from "niceeval";
 import { equals, includes } from "niceeval/expect";
 
 export default defineEval({
-  description:
-    "HITL 选项正反对照:原生 request_user_input 暂停后恢复，普通内容轮不会伪造待输入请求",
+  description: "HITL 选项正反对照:原生 request_user_input 暂停后恢复，普通内容轮不会伪造待输入请求",
   async test(t) {
     const requestHitl = t.flags.requestHitl;
     if (requestHitl !== true && requestHitl !== false) {

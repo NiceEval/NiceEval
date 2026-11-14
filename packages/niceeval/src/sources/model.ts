@@ -1,17 +1,11 @@
 import type { Brand } from "effect";
 import type { AssertionEntryId } from "../assertions/identity.ts";
-import type {
-  Sha256Digest,
-  SourceFileItemId,
-  SourcePackageItemId,
-} from "./identity.ts";
+import type { Sha256Digest, SourceFileItemId, SourcePackageItemId } from "./identity.ts";
 
 /** A package-relative portable display path inside a source package. */
-export const CANONICAL_SOURCE_PATH__BRAND =
-  "@niceeval/sources/CanonicalSourcePath" as const;
+export const CANONICAL_SOURCE_PATH__BRAND = "@niceeval/sources/CanonicalSourcePath" as const;
 
-export type CanonicalSourcePath =
-  string & Brand.Brand<typeof CANONICAL_SOURCE_PATH__BRAND>;
+export type CanonicalSourcePath = string & Brand.Brand<typeof CANONICAL_SOURCE_PATH__BRAND>;
 
 export interface SourcePackageItemRef {
   readonly kind: "package";
@@ -59,27 +53,15 @@ export interface AssertionSourceFileFrame {
   readonly coordinate: SourceCoordinate;
 }
 
-export type AssertionSourceFrame =
-  | AssertionSourcePackageFrame
-  | AssertionSourceFileFrame;
+export type AssertionSourceFrame = AssertionSourcePackageFrame | AssertionSourceFileFrame;
 
 export interface AssertionSourceTrace {
   readonly frames:
     | readonly [AssertionSourceFileFrame]
-    | readonly [
-        AssertionSourceFileFrame,
-        ...AssertionSourceFrame[],
-        AssertionSourceFileFrame,
-      ];
+    | readonly [AssertionSourceFileFrame, ...AssertionSourceFrame[], AssertionSourceFileFrame];
 }
 
-export type AssertionSourceRole =
-  | "declaration"
-  | "threshold"
-  | "score"
-  | "gate"
-  | "optional"
-  | "stop";
+export type AssertionSourceRole = "declaration" | "threshold" | "score" | "gate" | "optional" | "stop";
 
 export type AssertionSourceOccurrence =
   | {
@@ -94,10 +76,7 @@ export type AssertionSourceOccurrence =
 
 export interface AssertionSourceSite {
   readonly trace: AssertionSourceTrace;
-  readonly occurrences: readonly [
-    AssertionSourceOccurrence,
-    ...AssertionSourceOccurrence[],
-  ];
+  readonly occurrences: readonly [AssertionSourceOccurrence, ...AssertionSourceOccurrence[]];
 }
 
 export interface AssertionSourceSitesEntry {
@@ -105,10 +84,7 @@ export interface AssertionSourceSitesEntry {
   readonly sites: readonly [AssertionSourceSite, ...AssertionSourceSite[]];
 }
 
-export type AssertionSourceSendStatus =
-  | "completed"
-  | "failed"
-  | "interrupted";
+export type AssertionSourceSendStatus = "completed" | "failed" | "interrupted";
 
 export interface AssertionSourceSendOccurrence {
   readonly sourceOrder: number;
@@ -119,10 +95,7 @@ export interface AssertionSourceSendOccurrence {
 
 export interface AssertionSourceSendSite {
   readonly trace: AssertionSourceTrace;
-  readonly occurrences: readonly [
-    AssertionSourceSendOccurrence,
-    ...AssertionSourceSendOccurrence[],
-  ];
+  readonly occurrences: readonly [AssertionSourceSendOccurrence, ...AssertionSourceSendOccurrence[]];
 }
 
 /** The Attempt-owned semantic join to the exact origin Run Sources snapshot. */

@@ -2,36 +2,45 @@ import * as Schema from "effect/Schema";
 
 import type { TraceJson } from "../../../adapter-execution-trace.ts";
 
-const BoundedIdentifierSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(
-  (value) => new TextEncoder().encode(value).byteLength > 0 &&
-    new TextEncoder().encode(value).byteLength <= 256,
-  { identifier: "ExecutionTraceIdentifier" },
-)));
-const SummarySchema = Schema.String.pipe(Schema.check(Schema.makeFilter(
-  (value) => new TextEncoder().encode(value).byteLength <= 512,
-  { identifier: "ExecutionTraceSummary" },
-)));
-const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter(
-  (value) => Number.isSafeInteger(value) && value >= 0,
-  { identifier: "ExecutionTraceNonNegativeSafeInteger" },
-)));
-const FiniteNumberSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter(
-  Number.isFinite,
-  { identifier: "ExecutionTraceFiniteNumber" },
-)));
-const Sha256Schema = Schema.String.pipe(Schema.check(Schema.makeFilter(
-  (value) => /^[0-9a-f]{64}$/u.test(value),
-  { identifier: "ExecutionTraceSha256" },
-)));
+const BoundedIdentifierSchema = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (value) => new TextEncoder().encode(value).byteLength > 0 && new TextEncoder().encode(value).byteLength <= 256,
+      { identifier: "ExecutionTraceIdentifier" },
+    ),
+  ),
+);
+const SummarySchema = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 512, {
+      identifier: "ExecutionTraceSummary",
+    }),
+  ),
+);
+const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
+      identifier: "ExecutionTraceNonNegativeSafeInteger",
+    }),
+  ),
+);
+const FiniteNumberSchema = Schema.Number.pipe(
+  Schema.check(Schema.makeFilter(Number.isFinite, { identifier: "ExecutionTraceFiniteNumber" })),
+);
+const Sha256Schema = Schema.String.pipe(
+  Schema.check(Schema.makeFilter((value) => /^[0-9a-f]{64}$/u.test(value), { identifier: "ExecutionTraceSha256" })),
+);
 
-export const ExecutionTraceJsonSchema: Schema.Codec<TraceJson> = Schema.suspend(() => Schema.Union([
-  Schema.Null,
-  Schema.Boolean,
-  FiniteNumberSchema,
-  Schema.String,
-  Schema.Array(ExecutionTraceJsonSchema),
-  Schema.Record(Schema.String, ExecutionTraceJsonSchema),
-]));
+export const ExecutionTraceJsonSchema: Schema.Codec<TraceJson> = Schema.suspend(() =>
+  Schema.Union([
+    Schema.Null,
+    Schema.Boolean,
+    FiniteNumberSchema,
+    Schema.String,
+    Schema.Array(ExecutionTraceJsonSchema),
+    Schema.Record(Schema.String, ExecutionTraceJsonSchema),
+  ]),
+);
 
 const CollectionSchema = Schema.Union([
   Schema.Struct({
@@ -40,10 +49,12 @@ const CollectionSchema = Schema.Union([
   }),
   Schema.Struct({
     state: Schema.Literal("partial"),
-    limitations: Schema.NonEmptyArray(Schema.Struct({
-      code: BoundedIdentifierSchema,
-      message: Schema.String,
-    })),
+    limitations: Schema.NonEmptyArray(
+      Schema.Struct({
+        code: BoundedIdentifierSchema,
+        message: Schema.String,
+      }),
+    ),
   }),
 ]);
 
@@ -117,23 +128,31 @@ const InputEventSchema = Schema.Struct({
     eventId: Schema.optional(BoundedIdentifierSchema),
     sequence: Schema.optional(NonNegativeSafeIntegerSchema),
   }),
-  actor: Schema.optional(Schema.Struct({
-    id: BoundedIdentifierSchema,
-    label: Schema.optional(Schema.String),
-  })),
-  time: Schema.optional(Schema.Struct({
-    clockId: BoundedIdentifierSchema,
-    value: FiniteNumberSchema,
-    unit: BoundedIdentifierSchema,
-  })),
+  actor: Schema.optional(
+    Schema.Struct({
+      id: BoundedIdentifierSchema,
+      label: Schema.optional(Schema.String),
+    }),
+  ),
+  time: Schema.optional(
+    Schema.Struct({
+      clockId: BoundedIdentifierSchema,
+      value: FiniteNumberSchema,
+      unit: BoundedIdentifierSchema,
+    }),
+  ),
   summary: SummarySchema,
   payload: Schema.optional(ExecutionTraceJsonSchema),
   links: Schema.optional(Schema.Array(LinkSchema)),
   evidence: Schema.optional(Schema.Array(InputEvidenceSchema)),
-  scopeMemberships: Schema.optional(Schema.Array(Schema.Struct({
-    scopeId: BoundedIdentifierSchema,
-    state: Schema.Literals(["included", "excluded", "unknown"]),
-  }))),
+  scopeMemberships: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        scopeId: BoundedIdentifierSchema,
+        state: Schema.Literals(["included", "excluded", "unknown"]),
+      }),
+    ),
+  ),
   display: Schema.optional(Schema.Array(InputDisplayBlockSchema)),
 });
 
@@ -166,32 +185,40 @@ export const ExecutionTraceEventRecordSchema = Schema.Struct({
     eventId: Schema.optional(BoundedIdentifierSchema),
     sequence: Schema.optional(NonNegativeSafeIntegerSchema),
   }),
-  actor: Schema.optional(Schema.Struct({
-    id: BoundedIdentifierSchema,
-    label: Schema.optional(Schema.String),
-  })),
-  time: Schema.optional(Schema.Struct({
-    clockId: BoundedIdentifierSchema,
-    value: FiniteNumberSchema,
-    unit: BoundedIdentifierSchema,
-  })),
+  actor: Schema.optional(
+    Schema.Struct({
+      id: BoundedIdentifierSchema,
+      label: Schema.optional(Schema.String),
+    }),
+  ),
+  time: Schema.optional(
+    Schema.Struct({
+      clockId: BoundedIdentifierSchema,
+      value: FiniteNumberSchema,
+      unit: BoundedIdentifierSchema,
+    }),
+  ),
   summary: SummarySchema,
   payload: Schema.optional(ExecutionTraceJsonSchema),
   links: Schema.Array(LinkSchema),
-  evidence: Schema.Array(Schema.Struct({
-    key: BoundedIdentifierSchema,
-    label: Schema.String,
-    artifactId: BoundedIdentifierSchema,
-    pointer: Schema.String,
-    evidenceId: BoundedIdentifierSchema,
-    artifactSha256: Sha256Schema,
-    targetSha256: Sha256Schema,
-    targetByteLength: NonNegativeSafeIntegerSchema,
-  })),
-  scopeMemberships: Schema.Array(Schema.Struct({
-    scopeId: BoundedIdentifierSchema,
-    state: Schema.Literals(["included", "excluded", "unknown"]),
-  })),
+  evidence: Schema.Array(
+    Schema.Struct({
+      key: BoundedIdentifierSchema,
+      label: Schema.String,
+      artifactId: BoundedIdentifierSchema,
+      pointer: Schema.String,
+      evidenceId: BoundedIdentifierSchema,
+      artifactSha256: Sha256Schema,
+      targetSha256: Sha256Schema,
+      targetByteLength: NonNegativeSafeIntegerSchema,
+    }),
+  ),
+  scopeMemberships: Schema.Array(
+    Schema.Struct({
+      scopeId: BoundedIdentifierSchema,
+      state: Schema.Literals(["included", "excluded", "unknown"]),
+    }),
+  ),
   // Revision 1 widening: absent on every event written before display blocks.
   display: Schema.optional(Schema.NonEmptyArray(ExecutionDisplayBlockRecordSchema)),
 });
@@ -234,11 +261,15 @@ export const ExecutionTraceRecordLimits = Object.freeze({
 });
 
 export const ExecutionDisplayImageMediaTypes: ReadonlySet<string> = new Set([
-  "image/png", "image/jpeg", "image/webp", "image/gif",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
 ]);
 
 // eslint-disable-next-line no-control-regex
-const DISALLOWED_DISPLAY_CHARACTER = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+const DISALLOWED_DISPLAY_CHARACTER =
+  /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
 
 /** True when a display string contains a control or bidirectional formatting character other than tab and newline. */
 export function displayTextHasForbiddenCharacter(value: string): boolean {

@@ -4,9 +4,20 @@ export default defineEval({
   async test(t) {
     let message = "";
     try {
-      await t.sandbox.runCommand("node", ["-e", "process.stdout.write('transport-fault-ready'); setTimeout(()=>{},120000)"]);
-    } catch (cause) { message = cause instanceof Error ? cause.message : String(cause); }
-    for (const expected of ["fixture-client-disconnect", "reconnectAttempts=", "elapsedMs=", "stdoutBytes=", "stderrBytes="]) {
+      await t.sandbox.runCommand("node", [
+        "-e",
+        "process.stdout.write('transport-fault-ready'); setTimeout(()=>{},120000)",
+      ]);
+    } catch (cause) {
+      message = cause instanceof Error ? cause.message : String(cause);
+    }
+    for (const expected of [
+      "fixture-client-disconnect",
+      "reconnectAttempts=",
+      "elapsedMs=",
+      "stdoutBytes=",
+      "stderrBytes=",
+    ]) {
       if (!message.includes(expected)) throw new Error(`Missing transport diagnostic ${expected}: ${message}`);
     }
     if (message.includes("fixture-secret-token")) throw new Error("SSH diagnostic leaked a token");
@@ -17,9 +28,16 @@ export default defineEval({
       ["exists", () => t.sandbox.pathExists("missing.txt")],
     ] as const) {
       let later = "";
-      try { await operation(); }
-      catch (cause) { later = cause instanceof Error ? cause.message : String(cause); }
-      if (!later.includes("fixture-client-disconnect") || !later.includes("reconnectAttempts=3") || later.includes("HTTP 404")) {
+      try {
+        await operation();
+      } catch (cause) {
+        later = cause instanceof Error ? cause.message : String(cause);
+      }
+      if (
+        !later.includes("fixture-client-disconnect") ||
+        !later.includes("reconnectAttempts=3") ||
+        later.includes("HTTP 404")
+      ) {
         throw new Error(`Retired ${name} lost the transport cause: ${later}`);
       }
     }

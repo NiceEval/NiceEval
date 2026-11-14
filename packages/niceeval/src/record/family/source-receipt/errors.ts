@@ -1,9 +1,4 @@
-import type {
-  CommandId,
-  DiagnosticId,
-  IntervalId,
-  ObservabilityOwner,
-} from "./model.ts";
+import type { CommandId, DiagnosticId, IntervalId, ObservabilityOwner } from "./model.ts";
 
 /**
  * Producer-safe failures. The union intentionally carries only stable codes,
@@ -28,33 +23,25 @@ export type ObservabilityCaptureError =
       readonly field: "text" | "manifest" | "diagnostic";
     };
 
-export function observabilityCaptureSealedError(
-  owner: ObservabilityOwner,
-): ObservabilityCaptureError {
+export function observabilityCaptureSealedError(owner: ObservabilityOwner): ObservabilityCaptureError {
   return Object.freeze({ code: "observability-capture-sealed" as const, owner });
 }
 
-export function observabilityCommandNotRegisteredError(
-  commandId: CommandId,
-): ObservabilityCaptureError {
+export function observabilityCommandNotRegisteredError(commandId: CommandId): ObservabilityCaptureError {
   return Object.freeze({
     code: "observability-command-not-registered" as const,
     commandId,
   });
 }
 
-export function observabilityCommandResultAlreadyRecordedError(
-  commandId: CommandId,
-): ObservabilityCaptureError {
+export function observabilityCommandResultAlreadyRecordedError(commandId: CommandId): ObservabilityCaptureError {
   return Object.freeze({
     code: "observability-command-result-already-recorded" as const,
     commandId,
   });
 }
 
-export function observabilityInputNotSafeError(
-  field: "text" | "manifest" | "diagnostic",
-): ObservabilityCaptureError {
+export function observabilityInputNotSafeError(field: "text" | "manifest" | "diagnostic"): ObservabilityCaptureError {
   return Object.freeze({ code: "observability-input-not-safe" as const, field });
 }
 
@@ -111,10 +98,7 @@ export function observabilityOwnerOrSchemaInvalidError(
   });
 }
 
-export function observabilityIdentityInvalidError(
-  schemaId: string,
-  entity: string,
-): ObservabilityRecordContractError {
+export function observabilityIdentityInvalidError(schemaId: string, entity: string): ObservabilityRecordContractError {
   return Object.freeze({
     code: "observability-identity-invalid" as const,
     schemaId,
@@ -133,18 +117,14 @@ export function observabilityCrossReferenceInvalidError(
   });
 }
 
-export function observabilityTimingTreeInvalidError(
-  intervalId: IntervalId,
-): ObservabilityRecordContractError {
+export function observabilityTimingTreeInvalidError(intervalId: IntervalId): ObservabilityRecordContractError {
   return Object.freeze({
     code: "observability-timing-tree-invalid" as const,
     intervalId,
   });
 }
 
-export function observabilitySourceFrameInvalidError(
-  diagnosticId: DiagnosticId,
-): ObservabilityRecordContractError {
+export function observabilitySourceFrameInvalidError(diagnosticId: DiagnosticId): ObservabilityRecordContractError {
   return Object.freeze({
     code: "observability-source-frame-invalid" as const,
     diagnosticId,

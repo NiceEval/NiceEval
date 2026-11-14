@@ -1,10 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import {
-  EmptyArraySchema,
-  PositiveSafeIntegerSchema,
-  SafeIdentifierSchema,
-} from "../common.ts";
+import { EmptyArraySchema, PositiveSafeIntegerSchema, SafeIdentifierSchema } from "../common.ts";
 
 export const SourceSegmentIdSchema = SafeIdentifierSchema;
 
@@ -45,20 +41,13 @@ export const SourceReceiptLimitationSchema = Schema.Union([
     omittedAtLeast: PositiveSafeIntegerSchema,
   }),
   Schema.Struct({
-    code: Schema.Literals([
-      "text-truncated",
-      "redacted",
-      "invalid-utf8-replaced",
-      "unsafe-control-stripped",
-    ]),
+    code: Schema.Literals(["text-truncated", "redacted", "invalid-utf8-replaced", "unsafe-control-stripped"]),
     target: SourceRetentionTargetSchema,
     replacementOrOmittedCount: PositiveSafeIntegerSchema,
   }),
 ]);
 
-export type SourceReceiptLimitation = Schema.Schema.Type<
-  typeof SourceReceiptLimitationSchema
->;
+export type SourceReceiptLimitation = Schema.Schema.Type<typeof SourceReceiptLimitationSchema>;
 
 export function sourceReceiptLimitationKey(value: SourceReceiptLimitation): string {
   switch (value.code) {
@@ -101,24 +90,17 @@ export const SourceReceiptCollectionSchema = Schema.Union([
   }),
 ]);
 
-export type SourceReceiptCollection = Schema.Schema.Type<
-  typeof SourceReceiptCollectionSchema
->;
+export type SourceReceiptCollection = Schema.Schema.Type<typeof SourceReceiptCollectionSchema>;
 
 export interface SourceReceiptSegment {
   readonly segmentId: string;
   readonly sequence: number;
 }
 
-export function hasCanonicalSourceSegments(
-  segments: readonly SourceReceiptSegment[],
-): boolean {
+export function hasCanonicalSourceSegments(segments: readonly SourceReceiptSegment[]): boolean {
   const ids = new Set<string>();
   for (const [index, segment] of segments.entries()) {
-    if (
-      ids.has(segment.segmentId) ||
-      segment.sequence !== index + 1
-    ) return false;
+    if (ids.has(segment.segmentId) || segment.sequence !== index + 1) return false;
     ids.add(segment.segmentId);
   }
   return true;

@@ -63,7 +63,8 @@ interface ServerResources {
 }
 
 const SESSION_COOKIE_PREFIX = "niceeval_view_session_";
-const CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'self'; connect-src 'self'; style-src-elem 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='; style-src-attr 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
+const CONTENT_SECURITY_POLICY =
+  "default-src 'none'; script-src 'self'; connect-src 'self'; style-src-elem 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='; style-src-attr 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
 const COMMON_HEADERS = Object.freeze({
   "cache-control": "private, no-store",
   pragma: "no-cache",
@@ -71,8 +72,10 @@ const COMMON_HEADERS = Object.freeze({
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
 });
-const BOOTSTRAP_HTML = "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><title>Opening NiceEval view</title><script src=\"/_niceeval/bootstrap.js\" defer></script></head><body><main role=\"status\">Opening NiceEval view…</main></body></html>";
-const BOOTSTRAP_SCRIPT = "(()=>{const credential=location.hash.slice(1);history.replaceState(null,\"\",location.pathname+location.search);fetch(\"/_niceeval/session\",{method:\"POST\",credentials:\"same-origin\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({credential})}).then(response=>{if(!response.ok)throw new Error(\"unauthorized\");location.reload()}).catch(()=>{document.body.textContent=\"NiceEval view authorization failed\"})})()";
+const BOOTSTRAP_HTML =
+  '<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Opening NiceEval view</title><script src="/_niceeval/bootstrap.js" defer></script></head><body><main role="status">Opening NiceEval view…</main></body></html>';
+const BOOTSTRAP_SCRIPT =
+  '(()=>{const credential=location.hash.slice(1);history.replaceState(null,"",location.pathname+location.search);fetch("/_niceeval/session",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({credential})}).then(response=>{if(!response.ok)throw new Error("unauthorized");location.reload()}).catch(()=>{document.body.textContent="NiceEval view authorization failed"})})()';
 const SessionRequestSchema = Schema.Struct({ credential: Schema.String });
 
 /** Scope-owned, loopback-only transport for Vite assets and a validated Record generation. */
@@ -87,7 +90,9 @@ export function openViewServer(input: {
 }): Effect.Effect<ViewServer, ViewServerError, Scope.Scope> {
   return Effect.gen(function* () {
     const resources = yield* Effect.acquireRelease(
-      Effect.sync(() => makeResources(input.runtime, input.initial, input.refreshEnabled === true, input.refreshSource)),
+      Effect.sync(() =>
+        makeResources(input.runtime, input.initial, input.refreshEnabled === true, input.refreshSource),
+      ),
       closeResources,
     );
     const port = yield* listen(resources.server, input.port);
@@ -109,7 +114,12 @@ function viewEntryUrl(origin: string, credential: string, runIds: readonly strin
   return url.href;
 }
 
-function makeResources(runtime: ViewApplicationRuntimeService, initial: ViewGeneration, refreshEnabled: boolean, refreshSource?: RefreshSource): ServerResources {
+function makeResources(
+  runtime: ViewApplicationRuntimeService,
+  initial: ViewGeneration,
+  refreshEnabled: boolean,
+  refreshSource?: RefreshSource,
+): ServerResources {
   const sockets = new Set<Socket>();
   const resources: ServerResources = {
     runtime,
@@ -216,21 +226,30 @@ async function serveGeneration(resources: ServerResources, response: ServerRespo
       const generation = await prepareGeneration(resources);
       sendJson(response, 200, descriptor(resources, generation));
     } else {
-      const identity = resources.refreshSource === undefined
-        ? undefined
-        : await resources.runtime.run(resources.refreshSource.cutoffIdentity());
+      const identity =
+        resources.refreshSource === undefined
+          ? undefined
+          : await resources.runtime.run(resources.refreshSource.cutoffIdentity());
       sendJson(response, 200, {
         ...descriptor(resources, resources.state.current),
-        stale: resources.state.stale || (identity === undefined
-          ? resources.state.candidate !== undefined
-          : identity !== resources.state.current.sourceCutoffIdentity),
+        stale:
+          resources.state.stale ||
+          (identity === undefined
+            ? resources.state.candidate !== undefined
+            : identity !== resources.state.current.sourceCutoffIdentity),
       });
     }
   } catch {
     if (refresh) resources.state.stale = true;
-    sendJson(response, 500, Object.freeze({
-      code: "view-inspection-failed", reason: "The View generation could not be refreshed.", correction: "retry",
-    } satisfies ViewHttpErrorDocument));
+    sendJson(
+      response,
+      500,
+      Object.freeze({
+        code: "view-inspection-failed",
+        reason: "The View generation could not be refreshed.",
+        correction: "retry",
+      } satisfies ViewHttpErrorDocument),
+    );
   }
 }
 
@@ -251,7 +270,11 @@ function prepareGeneration(resources: ServerResources): Promise<ViewGeneration> 
     return generation;
   })();
   resources.preparing = preparing;
-  void preparing.finally(() => { resources.preparing = undefined; }).catch(() => undefined);
+  void preparing
+    .finally(() => {
+      resources.preparing = undefined;
+    })
+    .catch(() => undefined);
   return preparing;
 }
 
@@ -263,18 +286,28 @@ function descriptor(resources: ServerResources, generation: ViewGeneration): Vie
     targetIdentity: generation.target.kind === "current" ? generation.target.identity : null,
     targetFailureReason: generation.target.kind === "unavailable" ? generation.target.reason : null,
     refreshSupported: resources.refreshEnabled,
-    stale: generation.generationId === resources.state.current.generationId && (resources.state.candidate !== undefined || resources.state.stale),
+    stale:
+      generation.generationId === resources.state.current.generationId &&
+      (resources.state.candidate !== undefined || resources.state.stale),
   });
 }
 
-async function serveCommit(resources: ServerResources, request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function serveCommit(
+  resources: ServerResources,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody(request);
   if (!body.ok) return sendJson(response, body.status, body.error);
   const decoded = decodeGenerationCommitRequest(body.value);
   if (Result.isFailure(decoded)) return sendJson(response, 400, requestInvalid(decoded.failure));
   const candidate = resources.state.candidate;
   if (candidate === undefined || candidate.generationId !== decoded.success.generationId) {
-    return sendJson(response, 409, generationError("view-generation-stale", "The requested candidate is no longer available."));
+    return sendJson(
+      response,
+      409,
+      generationError("view-generation-stale", "The requested candidate is no longer available."),
+    );
   }
   const retired = resources.state.current;
   resources.state.current = candidate;
@@ -285,21 +318,36 @@ async function serveCommit(resources: ServerResources, request: IncomingMessage,
   sendJson(response, 200, descriptor(resources, candidate));
 }
 
-async function serveInspection(resources: ServerResources, request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function serveInspection(
+  resources: ServerResources,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody(request);
   if (!body.ok) return sendJson(response, body.status, body.error);
   const decoded = decodeViewInspectionRequest(body.value);
   if (Result.isFailure(decoded)) return sendJson(response, 400, requestInvalid(decoded.failure));
   const generation = findGeneration(resources, decoded.success.generationId);
-  if (generation === undefined) return sendJson(response, 404, generationError("view-generation-not-found", "The requested generation is not available."));
+  if (generation === undefined)
+    return sendJson(
+      response,
+      404,
+      generationError("view-generation-not-found", "The requested generation is not available."),
+    );
   acquireLease(resources, generation);
   try {
     const document = await resources.runtime.run(inspectViewGeneration(generation, decoded.success.request));
     sendJson(response, 200, document);
   } catch {
-    sendJson(response, 500, Object.freeze({
-      code: "view-inspection-failed", reason: "Inspection could not be completed for this generation.", correction: "retry",
-    } satisfies ViewHttpErrorDocument));
+    sendJson(
+      response,
+      500,
+      Object.freeze({
+        code: "view-inspection-failed",
+        reason: "Inspection could not be completed for this generation.",
+        correction: "retry",
+      } satisfies ViewHttpErrorDocument),
+    );
   } finally {
     releaseLease(resources, generation);
   }
@@ -347,7 +395,11 @@ async function assetFile(
 
 function safeRelativePath(pathname: string): string | undefined {
   let decoded: string;
-  try { decoded = decodeURIComponent(pathname); } catch { return undefined; }
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return undefined;
+  }
   if (!decoded.startsWith("/") || decoded.includes("\\") || decoded.includes("\u0000")) return undefined;
   const relative = decoded.slice(1);
   if (relative.split("/").some((segment) => segment === "." || segment === "..")) return undefined;
@@ -363,9 +415,7 @@ async function regularAsset(
   if (!path.startsWith(`${root}${sep}`)) return undefined;
   try {
     const metadata = await lstat(path);
-    return metadata.isFile() && !metadata.isSymbolicLink()
-      ? Object.freeze({ path, size: metadata.size })
-      : undefined;
+    return metadata.isFile() && !metadata.isSymbolicLink() ? Object.freeze({ path, size: metadata.size }) : undefined;
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return undefined;
     throw cause;
@@ -430,7 +480,11 @@ function sameOrigin(resources: ServerResources, request: IncomingMessage, requir
 }
 
 function requestUrl(request: IncomingMessage): URL | undefined {
-  try { return new URL(request.url ?? "/", "http://127.0.0.1"); } catch { return undefined; }
+  try {
+    return new URL(request.url ?? "/", "http://127.0.0.1");
+  } catch {
+    return undefined;
+  }
 }
 
 function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -461,9 +515,11 @@ function listen(server: Server, port: number): Effect.Effect<number, ViewServerE
     const onListening = (): void => {
       cleanup();
       const address = server.address();
-      resume(address === null || typeof address === "string"
-        ? Effect.fail(viewError("listen", "server did not expose a TCP port"))
-        : Effect.succeed(address.port));
+      resume(
+        address === null || typeof address === "string"
+          ? Effect.fail(viewError("listen", "server did not expose a TCP port"))
+          : Effect.succeed(address.port),
+      );
     };
     server.once("error", onError);
     server.once("listening", onListening);
@@ -489,18 +545,26 @@ function closeResources(resources: ServerResources): Effect.Effect<void> {
           retirements.push(retireGeneration(resources, resources.state.candidate));
         }
         if (resources.preparing !== undefined) {
-          retirements.push(resources.preparing.then(() => undefined, () => undefined));
+          retirements.push(
+            resources.preparing.then(
+              () => undefined,
+              () => undefined,
+            ),
+          );
         }
         void Promise.all(retirements).finally(() => {
           for (const socket of resources.sockets) socket.destroy();
           resume(Effect.void);
         });
       };
-      try { resources.server.close(() => {
-        if (resources.activeRequests === 0) finish();
-        else resources.drained.add(finish);
-      }); }
-      catch { finish(); }
+      try {
+        resources.server.close(() => {
+          if (resources.activeRequests === 0) finish();
+          else resources.drained.add(finish);
+        });
+      } catch {
+        finish();
+      }
       resources.server.closeIdleConnections();
       // The browser may keep a polling connection alive while the CLI is
       // shutting down. Stop transport immediately; generation leases still
@@ -528,9 +592,11 @@ function releaseLease(resources: ServerResources, generation: ViewGeneration): v
 }
 
 function retireIfDrained(resources: ServerResources, generation: ViewGeneration): void {
-  if (generation.generationId !== resources.state.current.generationId &&
+  if (
+    generation.generationId !== resources.state.current.generationId &&
     generation.generationId !== resources.state.candidate?.generationId &&
-    resources.state.leases.get(generation.generationId) === 0) {
+    resources.state.leases.get(generation.generationId) === 0
+  ) {
     resources.state.leases.delete(generation.generationId);
     void retireGeneration(resources, generation);
   }
@@ -555,9 +621,13 @@ function exactJson(request: IncomingMessage, response: ServerResponse): boolean 
   return false;
 }
 
-type JsonBody = { readonly ok: true; readonly value: unknown } | {
-  readonly ok: false; readonly status: number; readonly error: ViewHttpErrorDocument;
-};
+type JsonBody =
+  | { readonly ok: true; readonly value: unknown }
+  | {
+      readonly ok: false;
+      readonly status: number;
+      readonly error: ViewHttpErrorDocument;
+    };
 
 function readJsonBody(request: IncomingMessage): Promise<JsonBody> {
   return new Promise((resolveBody) => {
@@ -571,15 +641,21 @@ function readJsonBody(request: IncomingMessage): Promise<JsonBody> {
     };
     request.on("data", (chunk: Buffer) => {
       size += chunk.byteLength;
-      if (size > VIEW_HTTP_BODY_LIMIT) finish({ ok: false, status: 413, error: requestInvalid("JSON body exceeds 64 KiB.") });
+      if (size > VIEW_HTTP_BODY_LIMIT)
+        finish({ ok: false, status: 413, error: requestInvalid("JSON body exceeds 64 KiB.") });
       else chunks.push(chunk);
     });
     request.once("end", () => {
       if (settled) return;
-      try { finish({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown }); }
-      catch { finish({ ok: false, status: 400, error: requestInvalid("Body must be valid JSON.") }); }
+      try {
+        finish({ ok: true, value: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown });
+      } catch {
+        finish({ ok: false, status: 400, error: requestInvalid("Body must be valid JSON.") });
+      }
     });
-    request.once("error", () => finish({ ok: false, status: 400, error: requestInvalid("Request body could not be read.") }));
+    request.once("error", () =>
+      finish({ ok: false, status: 400, error: requestInvalid("Request body could not be read.") }),
+    );
   });
 }
 
@@ -587,7 +663,10 @@ function requestInvalid(reason: string): ViewHttpErrorDocument {
   return Object.freeze({ code: "view-request-invalid", reason: sanitizeReason(reason), correction: "fix-request" });
 }
 
-function generationError(code: "view-generation-not-found" | "view-generation-stale", reason: string): ViewHttpErrorDocument {
+function generationError(
+  code: "view-generation-not-found" | "view-generation-stale",
+  reason: string,
+): ViewHttpErrorDocument {
   return Object.freeze({ code, reason, correction: "refresh-generation" });
 }
 
@@ -631,18 +710,32 @@ function send(
 
 function mediaType(path: string): string {
   switch (extname(path).toLowerCase()) {
-    case ".html": return "text/html; charset=utf-8";
-    case ".css": return "text/css; charset=utf-8";
-    case ".js": case ".mjs": return "text/javascript; charset=utf-8";
-    case ".wasm": return "application/wasm";
-    case ".json": return "application/json; charset=utf-8";
-    case ".svg": return "image/svg+xml";
-    case ".png": return "image/png";
-    case ".jpg": case ".jpeg": return "image/jpeg";
-    case ".webp": return "image/webp";
-    case ".ico": return "image/x-icon";
-    case ".woff2": return "font/woff2";
-    default: return "application/octet-stream";
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+    case ".mjs":
+      return "text/javascript; charset=utf-8";
+    case ".wasm":
+      return "application/wasm";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".ico":
+      return "image/x-icon";
+    case ".woff2":
+      return "font/woff2";
+    default:
+      return "application/octet-stream";
   }
 }
 

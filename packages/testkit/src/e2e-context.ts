@@ -52,19 +52,12 @@ export interface E2EContext<Commands extends Record<string, Argv>> {
     artifactStagingRoot: string;
     formalInvocation: boolean;
   }>;
-  case<T>(
-    caseId: string,
-    options: E2ECaseOptions,
-    body: (context: E2ECaseContext<Commands>) => Promise<T>,
-  ): Promise<T>;
+  case<T>(caseId: string, options: E2ECaseOptions, body: (context: E2ECaseContext<Commands>) => Promise<T>): Promise<T>;
   case<T>(caseId: string, body: (context: E2ECaseContext<Commands>) => Promise<T>): Promise<T>;
 }
 
 function safeSegment(value: string, label: string): string {
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) ||
-    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)
-  ) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)) {
     throw new Error(`${label} must be one safe path segment`);
   }
   return value;
@@ -80,12 +73,7 @@ function relativeCaseTarget(value: string): string {
     throw new Error("artifact target must be a non-empty canonical relative path");
   }
   const canonical = normalize(value);
-  if (
-    canonical !== value ||
-    canonical === "." ||
-    canonical === ".." ||
-    canonical.startsWith(`..${sep}`)
-  ) {
+  if (canonical !== value || canonical === "." || canonical === ".." || canonical.startsWith(`..${sep}`)) {
     throw new Error("artifact target must stay within the case namespace");
   }
   return canonical;
@@ -167,15 +155,16 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
       ...entry,
       target: join(invocation.invocationId, caseId, relativeCaseTarget(entry.target)),
     }));
-    const staging: ProjectCopyStagingOptions | undefined = entries.length === 0
-      ? undefined
-      : {
-          stageArtifacts: {
-            destinationRoot: invocation.stagingRoot,
-            entries,
-            collision: "error",
-          },
-        };
+    const staging: ProjectCopyStagingOptions | undefined =
+      entries.length === 0
+        ? undefined
+        : {
+            stageArtifacts: {
+              destinationRoot: invocation.stagingRoot,
+              entries,
+              collision: "error",
+            },
+          };
 
     try {
       return await withProjectCopy(
@@ -214,11 +203,12 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
           const context: E2ECaseContext<Commands> = {
             paths: Object.freeze({ sourceRoot, projectRoot, artifactRoot }),
             commands,
-            run: (argv, runOptions) => runProcess(argv, {
-              ...runOptions,
-              env: { ...caseEnvironment, ...runOptions?.env },
-              cwd: projectRoot,
-            }),
+            run: (argv, runOptions) =>
+              runProcess(argv, {
+                ...runOptions,
+                env: { ...caseEnvironment, ...runOptions?.env },
+                cwd: projectRoot,
+              }),
             start,
           };
 

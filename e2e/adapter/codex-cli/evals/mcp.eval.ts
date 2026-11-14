@@ -15,12 +15,11 @@ import { defineEval } from "niceeval";
 import { includes, satisfies, toolMatch } from "niceeval/expect";
 
 export default defineEval({
-  description:
-    "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确",
+  description: "MCP 挂载:stdio 与远程 HTTP 两种形态在同一轮里都真实调用且入参正确",
   async test(t) {
     const turn = await t.send(
       "You must complete both MCP calls in this single turn before answering. " +
-        "First, call the tool e2e.get-sum with exactly {\"a\":100,\"b\":23}; " +
+        'First, call the tool e2e.get-sum with exactly {"a":100,"b":23}; ' +
         "do not calculate the sum yourself. " +
         "Second, call the tool deepwiki.read_wiki_structure with exactly " +
         '{\"repoName\":\"openai/codex\"}; do not guess the wiki structure. ' +
@@ -56,10 +55,7 @@ export default defineEval({
               typeof input === "object" &&
               input !== null &&
               !Array.isArray(input) &&
-              Object.is(
-                (input as Record<string, unknown>)["repoName"],
-                "openai/codex",
-              ),
+              Object.is((input as Record<string, unknown>)["repoName"], "openai/codex"),
           ),
           status: "completed",
         }),

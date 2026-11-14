@@ -13,7 +13,12 @@ import type { UserDatabase } from "../client.ts";
 const EntriesTable = "durable_state_entries";
 const CreateEntries = `CREATE TABLE ${EntriesTable} (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT`;
 
-type SchemaRow = { readonly type: string; readonly name: string; readonly tbl_name: string; readonly sql: string | null };
+type SchemaRow = {
+  readonly type: string;
+  readonly name: string;
+  readonly tbl_name: string;
+  readonly sql: string | null;
+};
 
 function exactSql(sql: string): string {
   return sql.trim().replace(/;+$/u, "").replace(/\s+/gu, " ");
@@ -28,20 +33,27 @@ function invalid(message: string): UserDatabaseInvalid {
 }
 
 function decodeEntry(row: unknown): DurableStateEntry {
-  if (typeof row !== "object" || row === null || Array.isArray(row)) throw invalid("durable-state returned a non-object row");
+  if (typeof row !== "object" || row === null || Array.isArray(row))
+    throw invalid("durable-state returned a non-object row");
   const key = Reflect.get(row, "key");
   const value = Reflect.get(row, "value");
-  if (typeof key !== "string" || typeof value !== "string") throw invalid("durable-state row has invalid key/value fields");
+  if (typeof key !== "string" || typeof value !== "string")
+    throw invalid("durable-state row has invalid key/value fields");
   return Object.freeze({ key, value });
 }
 
 function assertCurrentSchema(database: DatabaseSync): void {
-  const rows = database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name = ? OR name = ? ORDER BY type, name",
-  ).all(EntriesTable, EntriesTable) as SchemaRow[];
+  const rows = database
+    .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name = ? OR name = ? ORDER BY type, name")
+    .all(EntriesTable, EntriesTable) as SchemaRow[];
   const table = rows.find((row) => row.type === "table" && row.name === EntriesTable && row.tbl_name === EntriesTable);
   const automaticIndex = rows.find((row) => row.type === "index" && row.tbl_name === EntriesTable && row.sql === null);
-  if (rows.length !== 2 || table === undefined || exactSql(table.sql ?? "") !== exactSql(CreateEntries) || automaticIndex === undefined) {
+  if (
+    rows.length !== 2 ||
+    table === undefined ||
+    exactSql(table.sql ?? "") !== exactSql(CreateEntries) ||
+    automaticIndex === undefined
+  ) {
     throw invalid("durable-state schema does not match the current UserDatabase format");
   }
 }
@@ -55,9 +67,11 @@ function dispatch(database: DatabaseSync, request: DurableStateRequest): Durable
   if (request.operation === "put") {
     database.exec("BEGIN IMMEDIATE");
     try {
-      const receipt = database.prepare(
-        `INSERT INTO ${EntriesTable}(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      ).run(request.key, request.value);
+      const receipt = database
+        .prepare(
+          `INSERT INTO ${EntriesTable}(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(request.key, request.value);
       const changes = Number(receipt.changes);
       if (!Number.isSafeInteger(changes)) throw invalid("durable-state write returned an unsafe change count");
       database.exec("COMMIT");
@@ -79,14 +93,18 @@ function dispatch(database: DatabaseSync, request: DurableStateRequest): Durable
   return Object.freeze({ repository: DURABLE_STATE_REPOSITORY, operation: "list", entries: Object.freeze(entries) });
 }
 
-type DurableStateResult = Extract<UserDatabaseRepositoryResult, { readonly repository: typeof DURABLE_STATE_REPOSITORY }>;
+type DurableStateResult = Extract<
+  UserDatabaseRepositoryResult,
+  { readonly repository: typeof DURABLE_STATE_REPOSITORY }
+>;
 
-export const durableStateRepositoryHandler: UserDatabaseRepositoryHandler<DurableStateRequest, DurableStateResult> = Object.freeze({
-  id: DURABLE_STATE_REPOSITORY,
-  installCurrentSchema,
-  assertCurrentSchema,
-  dispatch,
-});
+export const durableStateRepositoryHandler: UserDatabaseRepositoryHandler<DurableStateRequest, DurableStateResult> =
+  Object.freeze({
+    id: DURABLE_STATE_REPOSITORY,
+    installCurrentSchema,
+    assertCurrentSchema,
+    dispatch,
+  });
 
 function wrongResult(operation: DurableStateRequest["operation"]): UserDatabaseInvalid {
   return invalid(`durable-state worker returned the wrong result for ${operation}`);
@@ -95,21 +113,33 @@ function wrongResult(operation: DurableStateRequest["operation"]): UserDatabaseI
 /** Concrete first-party client facade; it grants no SQL or registration capability. */
 export const durableStateRepository = Object.freeze({
   put: (database: UserDatabase, input: DurableStateEntry): Effect.Effect<void, UserDatabaseFailure> =>
-    database.dispatch({ repository: DURABLE_STATE_REPOSITORY, operation: "put", ...input }).pipe(
-      Effect.flatMap((result) => result.repository === DURABLE_STATE_REPOSITORY && result.operation === "put"
-        ? Effect.void
-        : Effect.fail(wrongResult("put"))),
-    ),
+    database
+      .dispatch({ repository: DURABLE_STATE_REPOSITORY, operation: "put", ...input })
+      .pipe(
+        Effect.flatMap((result) =>
+          result.repository === DURABLE_STATE_REPOSITORY && result.operation === "put"
+            ? Effect.void
+            : Effect.fail(wrongResult("put")),
+        ),
+      ),
   get: (database: UserDatabase, key: string): Effect.Effect<DurableStateEntry | null, UserDatabaseFailure> =>
-    database.dispatch({ repository: DURABLE_STATE_REPOSITORY, operation: "get", key }).pipe(
-      Effect.flatMap((result) => result.repository === DURABLE_STATE_REPOSITORY && result.operation === "get"
-        ? Effect.succeed(result.entry)
-        : Effect.fail(wrongResult("get"))),
-    ),
+    database
+      .dispatch({ repository: DURABLE_STATE_REPOSITORY, operation: "get", key })
+      .pipe(
+        Effect.flatMap((result) =>
+          result.repository === DURABLE_STATE_REPOSITORY && result.operation === "get"
+            ? Effect.succeed(result.entry)
+            : Effect.fail(wrongResult("get")),
+        ),
+      ),
   list: (database: UserDatabase): Effect.Effect<readonly DurableStateEntry[], UserDatabaseFailure> =>
-    database.dispatch({ repository: DURABLE_STATE_REPOSITORY, operation: "list" }).pipe(
-      Effect.flatMap((result) => result.repository === DURABLE_STATE_REPOSITORY && result.operation === "list"
-        ? Effect.succeed(result.entries)
-        : Effect.fail(wrongResult("list"))),
-    ),
+    database
+      .dispatch({ repository: DURABLE_STATE_REPOSITORY, operation: "list" })
+      .pipe(
+        Effect.flatMap((result) =>
+          result.repository === DURABLE_STATE_REPOSITORY && result.operation === "list"
+            ? Effect.succeed(result.entries)
+            : Effect.fail(wrongResult("list")),
+        ),
+      ),
 });

@@ -11,24 +11,27 @@ export default defineScoreEval({
   async test(t) {
     await t.sandbox.runShell("printf 'inspection-command-output\\n'");
     const turn = await t.send("produce deterministic inspection evidence");
-    turn.check(
-      turn.toolCalls,
-      toolMatch("inspection_fixture", { status: "completed" }).exactly(1),
-    ).label("Inspection tool occurrence");
+    turn
+      .check(turn.toolCalls, toolMatch("inspection_fixture", { status: "completed" }).exactly(1))
+      .label("Inspection tool occurrence");
     t.check("inspection-fixture", equals("inspection-fixture"))
       .score(34.111111111111114)
       .label("Compact score contribution");
-    t.check("inspection-fixture", includes("never-present"))
-      .score(5)
-      .label("Mismatched Boolean contributes zero");
-    t.check("inspection-fixture", defineScoreMatch({
-      name: "inspection measurement",
-      score: (value: string) => value === "inspection-fixture" ? 0.75 : 0,
-    })).score(4).gate(0.5).label("Measurement contributes three points");
+    t.check("inspection-fixture", includes("never-present")).score(5).label("Mismatched Boolean contributes zero");
+    t.check(
+      "inspection-fixture",
+      defineScoreMatch({
+        name: "inspection measurement",
+        score: (value: string) => (value === "inspection-fixture" ? 0.75 : 0),
+      }),
+    )
+      .score(4)
+      .gate(0.5)
+      .label("Measurement contributes three points");
     t.check(
       eventGallery,
       satisfies("inspection lifecycle exists", (items: typeof eventGallery) =>
-        items.some((event) => event.type === "subagent.completed")
+        items.some((event) => event.type === "subagent.completed"),
       ),
     ).label("Collection evidence remains bounded");
   },

@@ -93,14 +93,9 @@ export interface SandboxPhysicalPlanningIssue {
   readonly actions: readonly string[];
 }
 
-export type SandboxPhysicalPlanningIssues = readonly [
-  SandboxPhysicalPlanningIssue,
-  ...SandboxPhysicalPlanningIssue[],
-];
+export type SandboxPhysicalPlanningIssues = readonly [SandboxPhysicalPlanningIssue, ...SandboxPhysicalPlanningIssue[]];
 
-export class SandboxPhysicalPlanningError extends Data.TaggedError(
-  "SandboxPhysicalPlanningError",
-)<{
+export class SandboxPhysicalPlanningError extends Data.TaggedError("SandboxPhysicalPlanningError")<{
   readonly code: "sandbox.physical-planning-failed";
   readonly issues: SandboxPhysicalPlanningIssues;
   readonly message: string;
@@ -174,9 +169,10 @@ function capabilityIssues(
   for (const requirement of requirements) {
     if (requirement._tag === "DockerExecution") {
       const provided = plan.capabilities.dockerExecution;
-      const capacitySatisfied = provided?.capacity._tag === "Attested"
-        ? provided.capacity.bytes >= requirement.docker.minimumDataBytes
-        : provided?.capacity.acceptedByExperiment === true;
+      const capacitySatisfied =
+        provided?.capacity._tag === "Attested"
+          ? provided.capacity.bytes >= requirement.docker.minimumDataBytes
+          : provided?.capacity.acceptedByExperiment === true;
       const composeSatisfied = requirement.docker.compose === "not-required" || provided?.compose === "v2";
       if (
         provided === undefined ||
@@ -186,43 +182,49 @@ function capabilityIssues(
         !composeSatisfied ||
         !capacitySatisfied
       ) {
-        issues.push(capabilityIssue(
-          pair,
-          baseDir,
-          "sandbox-capability-unsatisfied",
-          `Provider ${JSON.stringify(plan.provider)} cannot satisfy Docker execution requirement ` +
-            `${JSON.stringify(requirement.docker)}; provided ${JSON.stringify(provided ?? null)}.`,
-          [
-            "Select a Sandbox Provider that proves the requested Docker API, Compose, dedicated kernel, and data capacity.",
-            "For the isolated development Incus domain only, set acceptDevelopmentDomain: true explicitly; this does not attest capacity or make the run reference-comparable.",
-          ],
-        ));
+        issues.push(
+          capabilityIssue(
+            pair,
+            baseDir,
+            "sandbox-capability-unsatisfied",
+            `Provider ${JSON.stringify(plan.provider)} cannot satisfy Docker execution requirement ` +
+              `${JSON.stringify(requirement.docker)}; provided ${JSON.stringify(provided ?? null)}.`,
+            [
+              "Select a Sandbox Provider that proves the requested Docker API, Compose, dedicated kernel, and data capacity.",
+              "For the isolated development Incus domain only, set acceptDevelopmentDomain: true explicitly; this does not attest capacity or make the run reference-comparable.",
+            ],
+          ),
+        );
       }
       continue;
     }
     if (requirement._tag === "Reuse" && plan.capabilities.reuse._tag === "Unsupported") {
       const group = pair.evalGroupId;
-      issues.push(capabilityIssue(
-        pair,
-        baseDir,
-        "sandbox.reuse-unavailable",
-        group === undefined
-          ? `Provider ${JSON.stringify(plan.provider)} cannot satisfy sandboxReuse: ${plan.capabilities.reuse.reason}.`
-          : `Provider ${JSON.stringify(plan.provider)} cannot run Eval Group ${JSON.stringify(group)} because Sandbox reuse is unavailable: ${plan.capabilities.reuse.reason}.`,
-        group === undefined
-          ? ["Select a provider with Sandbox reuse support, or disable sandboxReuse for this Experiment."]
-          : ["Select a provider with Sandbox reuse support, or remove these Evals from the Eval Group."],
-      ));
+      issues.push(
+        capabilityIssue(
+          pair,
+          baseDir,
+          "sandbox.reuse-unavailable",
+          group === undefined
+            ? `Provider ${JSON.stringify(plan.provider)} cannot satisfy sandboxReuse: ${plan.capabilities.reuse.reason}.`
+            : `Provider ${JSON.stringify(plan.provider)} cannot run Eval Group ${JSON.stringify(group)} because Sandbox reuse is unavailable: ${plan.capabilities.reuse.reason}.`,
+          group === undefined
+            ? ["Select a provider with Sandbox reuse support, or disable sandboxReuse for this Experiment."]
+            : ["Select a provider with Sandbox reuse support, or remove these Evals from the Eval Group."],
+        ),
+      );
       continue;
     }
     if (requirement._tag === "Retention" && plan.capabilities.retention._tag === "DestroyOnly") {
-      issues.push(capabilityIssue(
-        pair,
-        baseDir,
-        "sandbox.retention-unavailable",
-        `Provider ${JSON.stringify(plan.provider)} cannot retain this Sandbox Case after the Attempt.`,
-        ["Select a provider with suspendable retention, or remove --keep-sandbox."],
-      ));
+      issues.push(
+        capabilityIssue(
+          pair,
+          baseDir,
+          "sandbox.retention-unavailable",
+          `Provider ${JSON.stringify(plan.provider)} cannot retain this Sandbox Case after the Attempt.`,
+          ["Select a provider with suspendable retention, or remove --keep-sandbox."],
+        ),
+      );
       continue;
     }
     if (
@@ -230,24 +232,26 @@ function capabilityIssues(
       plan.capabilities.sessionLimit._tag === "Bounded" &&
       requirement.milliseconds > plan.capabilities.sessionLimit.milliseconds
     ) {
-      issues.push(capabilityIssue(
-        pair,
-        baseDir,
-        "sandbox.session-limit-exceeded",
-        `Provider ${JSON.stringify(plan.provider)} limits Sandbox sessions to ` +
-          `${plan.capabilities.sessionLimit.milliseconds}ms, below the requested ${requirement.milliseconds}ms.`,
-        ["Lower the resolved Attempt timeout, or select a provider with a sufficient session limit."],
-      ));
+      issues.push(
+        capabilityIssue(
+          pair,
+          baseDir,
+          "sandbox.session-limit-exceeded",
+          `Provider ${JSON.stringify(plan.provider)} limits Sandbox sessions to ` +
+            `${plan.capabilities.sessionLimit.milliseconds}ms, below the requested ${requirement.milliseconds}ms.`,
+          ["Lower the resolved Attempt timeout, or select a provider with a sufficient session limit."],
+        ),
+      );
     }
   }
   return Object.freeze(issues);
 }
 
 function planningError(issues: SandboxPhysicalPlanningIssues): SandboxPhysicalPlanningError {
-  const frozen = Object.freeze([
-    issues[0],
-    ...issues.slice(1),
-  ] as [SandboxPhysicalPlanningIssue, ...SandboxPhysicalPlanningIssue[]]);
+  const frozen = Object.freeze([issues[0], ...issues.slice(1)] as [
+    SandboxPhysicalPlanningIssue,
+    ...SandboxPhysicalPlanningIssue[],
+  ]);
   return new SandboxPhysicalPlanningError({
     code: "sandbox.physical-planning-failed",
     issues: frozen,
@@ -262,18 +266,13 @@ export function formatSandboxPhysicalPlanningError(error: SandboxPhysicalPlannin
   const lines: string[] = [];
   for (const issue of error.issues) {
     lines.push(`${issue.providerCode}: ${issue.summary}`);
-    lines.push(
-      `  pair: ${issue.pair.experimentId} × ${issue.pair.evalId} (${issue.pair.agentName})`,
-    );
-    lines.push(
-      `  template: ${issue.templateOwner.kind} ${JSON.stringify(issue.templateOwner.id)} at ${issue.baseDir}`,
-    );
+    lines.push(`  pair: ${issue.pair.experimentId} × ${issue.pair.evalId} (${issue.pair.agentName})`);
+    lines.push(`  template: ${issue.templateOwner.kind} ${JSON.stringify(issue.templateOwner.id)} at ${issue.baseDir}`);
     for (const action of issue.actions) lines.push(`  fix: ${action}`);
     lines.push("");
   }
   lines.push(
-    `${error.issues.length} unavailable Sandbox plans found. ` +
-      "No provider build or Sandbox creation was started.",
+    `${error.issues.length} unavailable Sandbox plans found. ` + "No provider build or Sandbox creation was started.",
   );
   return lines.join("\n");
 }
@@ -291,10 +290,12 @@ export function planLinkedRuns(
     const issues: SandboxPhysicalPlanningIssue[] = [];
     for (const input of inputs) {
       if (input.pair.kind === "direct") {
-        plans.push(Object.freeze({
-          pair: input.pair,
-          plan: Object.freeze({ _tag: "Direct", pair: input.pair }),
-        }));
+        plans.push(
+          Object.freeze({
+            pair: input.pair,
+            plan: Object.freeze({ _tag: "Direct", pair: input.pair }),
+          }),
+        );
         continue;
       }
       const baseDir = input.authorBaseDirs[input.pair.templateOwner.kind];
@@ -306,10 +307,9 @@ export function planLinkedRuns(
         issues.push(invalidBaseDirIssue(input.pair, baseDir));
         continue;
       }
-      const planned = yield* Effect.result(services.planTemplate(
-        input.pair.template,
-        Object.freeze({ authorBaseDir: baseDir }),
-      ));
+      const planned = yield* Effect.result(
+        services.planTemplate(input.pair.template, Object.freeze({ authorBaseDir: baseDir })),
+      );
       if (planned._tag === "Failure") {
         issues.push(providerIssue(input.pair, baseDir, planned.failure));
         continue;
@@ -319,10 +319,12 @@ export function planLinkedRuns(
         issues.push(...gaps);
         continue;
       }
-      plans.push(Object.freeze({
-        pair: input.pair,
-        plan: Object.freeze({ _tag: "Sandbox", pair: input.pair, providerPlan: planned.success }),
-      }));
+      plans.push(
+        Object.freeze({
+          pair: input.pair,
+          plan: Object.freeze({ _tag: "Sandbox", pair: input.pair, providerPlan: planned.success }),
+        }),
+      );
     }
     if (issues.length > 0) return yield* planningError([issues[0], ...issues.slice(1)]);
     return Object.freeze(plans);
@@ -356,9 +358,7 @@ function commandFingerprintIdentity(command: SandboxCommandFingerprint): JsonVal
       };
 }
 
-function requirementIdentity(
-  entry: LinkedSandboxPair["requirements"][number],
-): JsonValue {
+function requirementIdentity(entry: LinkedSandboxPair["requirements"][number]): JsonValue {
   return {
     owner: { kind: entry.owner.kind, id: entry.owner.id },
     requirement: {
@@ -394,9 +394,7 @@ function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
     templateOwner: { kind: plan.pair.templateOwner.kind, id: plan.pair.templateOwner.id },
     template: sandboxTemplateIdentity(plan.pair.template),
     commands: plan.pair.fingerprint.commands.map(commandFingerprintIdentity),
-    ...(plan.pair.requirements.length === 0
-      ? {}
-      : { requirements: plan.pair.requirements.map(requirementIdentity) }),
+    ...(plan.pair.requirements.length === 0 ? {} : { requirements: plan.pair.requirements.map(requirementIdentity) }),
     ...((plan.pair.fingerprint.after?.length ?? 0) === 0
       ? {}
       : { after: plan.pair.fingerprint.after!.map(commandFingerprintIdentity) }),
@@ -430,18 +428,16 @@ function freezeJsonSnapshot(value: JsonValue): JsonValue {
   if (Array.isArray(value)) {
     return Object.freeze(value.map(freezeJsonSnapshot)) as JsonValue;
   }
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [key, freezeJsonSnapshot(child)]),
-  ));
+  return Object.freeze(
+    Object.fromEntries(Object.entries(value).map(([key, child]) => [key, freezeJsonSnapshot(child)])),
+  );
 }
 
 function freezeOwnerSnapshot(owner: SandboxScheduleOwnerRef): SandboxScheduleOwnerRef {
   return Object.freeze({ kind: owner.kind, id: owner.id });
 }
 
-function freezeCommandFingerprintSnapshot(
-  command: SandboxCommandFingerprint,
-): SandboxCommandFingerprint {
+function freezeCommandFingerprintSnapshot(command: SandboxCommandFingerprint): SandboxCommandFingerprint {
   const owner = freezeOwnerSnapshot(command.owner);
   return command.kind === "opaque"
     ? Object.freeze({ kind: "opaque", owner, index: command.index })
@@ -455,20 +451,14 @@ function freezeCommandFingerprintSnapshot(
       });
 }
 
-function renamedOwnerIdentity(
-  owner: SandboxScheduleOwnerRef,
-  experimentId: string,
-): JsonValue {
+function renamedOwnerIdentity(owner: SandboxScheduleOwnerRef, experimentId: string): JsonValue {
   return {
     kind: owner.kind,
     id: owner.kind === "experiment" ? experimentId : owner.id,
   };
 }
 
-function renamedCommandFingerprintIdentity(
-  command: SandboxCommandFingerprint,
-  experimentId: string,
-): JsonValue {
+function renamedCommandFingerprintIdentity(command: SandboxCommandFingerprint, experimentId: string): JsonValue {
   return command.kind === "stable"
     ? {
         kind: "stable",
@@ -490,8 +480,7 @@ function firstPartySandboxIdentity(plan: Extract<LinkedRunPlan, { readonly _tag:
   // create/materialize callback whose closure cannot be reconstructed. Every
   // other branded template (including first-party Incus `vm`) is constructed
   // by a repository-owned factory and exposes a complete frozen plan identity.
-  return plan.providerPlan.provider === plan.pair.template.provider &&
-    plan.providerPlan.caseKind !== "custom";
+  return plan.providerPlan.provider === plan.pair.template.provider && plan.providerPlan.caseKind !== "custom";
 }
 
 function captureLinkedRunRenameIdentity(plan: LinkedRunPlan): CapturedLinkedRunRenameIdentity {
@@ -503,19 +492,19 @@ function captureLinkedRunRenameIdentity(plan: LinkedRunPlan): CapturedLinkedRunR
       agentName: plan.pair.agentName,
     });
   }
-  const commands = Object.freeze(
-    plan.pair.fingerprint.commands.map(freezeCommandFingerprintSnapshot),
+  const commands = Object.freeze(plan.pair.fingerprint.commands.map(freezeCommandFingerprintSnapshot));
+  const requirements = Object.freeze(
+    plan.pair.requirements.map((entry) =>
+      Object.freeze({
+        owner: freezeOwnerSnapshot(entry.owner),
+        requirement: Object.freeze({
+          _tag: entry.requirement._tag,
+          docker: Object.freeze({ ...entry.requirement.docker }),
+        }),
+      }),
+    ),
   );
-  const requirements = Object.freeze(plan.pair.requirements.map((entry) => Object.freeze({
-    owner: freezeOwnerSnapshot(entry.owner),
-    requirement: Object.freeze({
-      _tag: entry.requirement._tag,
-      docker: Object.freeze({ ...entry.requirement.docker }),
-    }),
-  })));
-  const after = Object.freeze(
-    (plan.pair.fingerprint.after ?? []).map(freezeCommandFingerprintSnapshot),
-  );
+  const after = Object.freeze((plan.pair.fingerprint.after ?? []).map(freezeCommandFingerprintSnapshot));
   const hasOpaqueIdentity =
     commands.some((command) => command.kind === "opaque") ||
     after.some((command) => command.kind === "opaque") ||
@@ -562,26 +551,26 @@ function renamedLinkedRunIdentity(
     },
     templateOwner: renamedOwnerIdentity(captured.templateOwner, experimentId),
     template: captured.template,
-    commands: captured.commands.map((command) =>
-      renamedCommandFingerprintIdentity(command, experimentId)),
+    commands: captured.commands.map((command) => renamedCommandFingerprintIdentity(command, experimentId)),
     ...(captured.requirements.length === 0
       ? {}
-      : { requirements: captured.requirements.map((entry) => ({
-          owner: renamedOwnerIdentity(entry.owner, experimentId),
-          requirement: {
-            _tag: entry.requirement._tag,
-            docker: {
-              api: entry.requirement.docker.api,
-              compose: entry.requirement.docker.compose,
-              isolation: entry.requirement.docker.isolation,
-              minimumDataBytes: entry.requirement.docker.minimumDataBytes,
+      : {
+          requirements: captured.requirements.map((entry) => ({
+            owner: renamedOwnerIdentity(entry.owner, experimentId),
+            requirement: {
+              _tag: entry.requirement._tag,
+              docker: {
+                api: entry.requirement.docker.api,
+                compose: entry.requirement.docker.compose,
+                isolation: entry.requirement.docker.isolation,
+                minimumDataBytes: entry.requirement.docker.minimumDataBytes,
+              },
             },
-          },
-        })) }),
+          })),
+        }),
     ...(captured.after.length === 0
       ? {}
-      : { after: captured.after.map((command) =>
-          renamedCommandFingerprintIdentity(command, experimentId)) }),
+      : { after: captured.after.map((command) => renamedCommandFingerprintIdentity(command, experimentId)) }),
     providerPlan: captured.providerPlan,
   });
 }
@@ -597,9 +586,8 @@ export function captureLinkedRunRenameFingerprintIdentity(
   const captured = captureLinkedRunRenameIdentity(plan);
   const original = freezeJsonSnapshot(linkedRunPublishableIdentity(plan));
   return Object.freeze((experimentId: string): JsonValue | undefined =>
-    experimentId === captured.originalExperimentId
-      ? original
-      : renamedLinkedRunIdentity(captured, experimentId));
+    experimentId === captured.originalExperimentId ? original : renamedLinkedRunIdentity(captured, experimentId),
+  );
 }
 
 /** `sandboxPlansByEval` 的唯一落盘投影；整个返回值可安全 JSON 序列化。 */

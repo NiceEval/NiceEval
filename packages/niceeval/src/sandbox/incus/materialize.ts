@@ -217,180 +217,200 @@ async function createReadySandbox(
     plan.artifactProject,
   );
   try {
-  const lock = await acquireDomainAdmissionLock(repository, plan.executionDomainId);
-  let reserved: AllocationIntent | undefined;
-  try {
-    const { intents, instances } = await reconcileDomain(repository, control, {
-      executionDomainId: plan.executionDomainId,
-      project: plan.project,
-      storagePool: plan.storagePool,
-    });
-    const volumes = await control.listVolumes(plan.project, plan.storagePool);
-    const active = unionActiveAllocationIds(intents, instances, {
-      executionDomainId: plan.executionDomainId,
-      project: plan.project,
-    }, volumes).size;
-    if (active >= plan.maxInstances) {
-      throw incusError(
-        "sandbox-capacity-unavailable",
-        `Incus domain ${JSON.stringify(plan.executionDomainId)} has no free allocation at create time.`,
-        ["Wait for in-flight allocations to destroy."],
-      );
-    }
-    const allocationId = randomUUID();
-    const executionId = executionIdFor(allocationId);
-    const previous = await readAllocationIntent(repository, allocationId);
-    const generation = nextGeneration(previous);
-    const provisionToken = randomUUID();
-    reserved = await reserveAllocationIntent(repository, {
-      allocationId,
-      executionId,
-      provider: "incus",
-      generation,
-      requirementDigest: requirementDigestOf(context),
-      artifactDigest: plan.imageFingerprint,
-      requestedDockerDataBytes: plan.allocatedDockerDataBytes,
-      executionDomainId: plan.executionDomainId,
-      project: plan.project,
-      storagePool: plan.storagePool,
-      provisionToken,
-      owner: currentOwner(),
-      expectedTerminal: "destroyed",
-      state: "reserved",
-    });
-  } finally {
-    await lock.release();
-  }
-
-  if (reserved === undefined) {
-    throw incusError(
-      "sandbox-allocation-lost",
-      "Incus allocation was not reserved before create.",
-      ["Retry materialize; do not create a VM without a durable ledger intent."],
-    );
-  }
-  const name = instanceNameFor(reserved.allocationId);
-  const volumeName = volumeNameFor(reserved.allocationId);
-  const creating = await transitionAllocationIntent(repository, reserved, {
-    ...reserved,
-    state: "creating",
-    providerLocator: name,
-    dockerDataVolume: volumeName,
-  });
-  const cpus = plan.resources.cpus;
-  const memoryBytes = plan.resources.memoryBytes;
-  const creationMetadata = Object.fromEntries(Object.entries({ ...sandboxCreationMetadata(context.runId), ...sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }) }).map(([key, value]) => [`user.${key}`, value]));
-  let createStage: "volume-create" | "instance-create" | "known" = "volume-create";
-  try {
-    if (artifact === undefined) {
-      await control.createVolume({
+    const lock = await acquireDomainAdmissionLock(repository, plan.executionDomainId);
+    let reserved: AllocationIntent | undefined;
+    try {
+      const { intents, instances } = await reconcileDomain(repository, control, {
+        executionDomainId: plan.executionDomainId,
         project: plan.project,
-        pool: plan.storagePool,
-        name: volumeName,
-        contentType: "block",
-        sizeBytes: plan.allocatedDockerDataBytes,
-        config: { ...configFor(creating), ...creationMetadata },
+        storagePool: plan.storagePool,
       });
-    } else {
-      await cloneIncusArtifactConsumer(repository, control, artifact, {
-        project: plan.project, pool: plan.storagePool, network: plan.network,
-        instance: name, volume: volumeName, config: { ...configFor(creating), ...creationMetadata },
+      const volumes = await control.listVolumes(plan.project, plan.storagePool);
+      const active = unionActiveAllocationIds(
+        intents,
+        instances,
+        {
+          executionDomainId: plan.executionDomainId,
+          project: plan.project,
+        },
+        volumes,
+      ).size;
+      if (active >= plan.maxInstances) {
+        throw incusError(
+          "sandbox-capacity-unavailable",
+          `Incus domain ${JSON.stringify(plan.executionDomainId)} has no free allocation at create time.`,
+          ["Wait for in-flight allocations to destroy."],
+        );
+      }
+      const allocationId = randomUUID();
+      const executionId = executionIdFor(allocationId);
+      const previous = await readAllocationIntent(repository, allocationId);
+      const generation = nextGeneration(previous);
+      const provisionToken = randomUUID();
+      reserved = await reserveAllocationIntent(repository, {
+        allocationId,
+        executionId,
+        provider: "incus",
+        generation,
+        requirementDigest: requirementDigestOf(context),
+        artifactDigest: plan.imageFingerprint,
+        requestedDockerDataBytes: plan.allocatedDockerDataBytes,
+        executionDomainId: plan.executionDomainId,
+        project: plan.project,
+        storagePool: plan.storagePool,
+        provisionToken,
+        owner: currentOwner(),
+        expectedTerminal: "destroyed",
+        state: "reserved",
       });
+    } finally {
+      await lock.release();
     }
-    const createdVolume = await control.getVolume(plan.project, plan.storagePool, volumeName);
-    if (
-      createdVolume === undefined
-      || createdVolume.contentType !== "block"
-      || !volumeMetadataMatchesIntent(createdVolume, creating)
-      || parseIncusSizeBytes(createdVolume.config.size) !== plan.allocatedDockerDataBytes
-    ) {
-      throw incusError(
-        "sandbox-artifact-unverified",
-        `Incus Docker data volume ${JSON.stringify(volumeName)} did not round-trip type, size, and allocation metadata.`,
-        ["Destroy the volume and retry; NiceEval will not attach an unverified Docker data disk."],
-      );
+
+    if (reserved === undefined) {
+      throw incusError("sandbox-allocation-lost", "Incus allocation was not reserved before create.", [
+        "Retry materialize; do not create a VM without a durable ledger intent.",
+      ]);
     }
-    createStage = "instance-create";
-    if (artifact === undefined) await control.createInstance({
-      name,
-      project: plan.project,
-      fingerprint: plan.imageFingerprint,
-      storagePool: plan.storagePool,
-      network: plan.network,
-      config: {
-        ...configFor(creating),
-        ...creationMetadata,
-        ...(cpus === undefined ? {} : { "limits.cpu": String(cpus) }),
-        ...(memoryBytes === undefined ? {} : { "limits.memory": `${memoryBytes}` }),
-      },
-      dockerDataVolume: volumeName,
-      dockerDataContentType: "block",
-    });
-    const created = await control.getInstance(plan.project, name);
-    if (created === undefined) {
-      throw incusError(
-        "sandbox-allocation-lost",
-        `Incus instance ${JSON.stringify(name)} was not present after create.`,
-        ["Inspect Incus inventory; do not recreate from a guessed locator."],
-      );
-    }
-    if (!metadataMatchesIntent(created, creating)) {
-      throw incusError(
-        "sandbox-artifact-unverified",
-        `Incus instance ${JSON.stringify(name)} metadata did not round-trip allocation identity.`,
-        ["Destroy the instance and retry; do not adopt an object with mismatched generation."],
-      );
-    }
-    createStage = "known";
-    await control.startInstance(plan.project, name);
-    const located = await transitionAllocationIntent(repository, creating, {
-      ...creating,
+    const name = instanceNameFor(reserved.allocationId);
+    const volumeName = volumeNameFor(reserved.allocationId);
+    const creating = await transitionAllocationIntent(repository, reserved, {
+      ...reserved,
+      state: "creating",
       providerLocator: name,
       dockerDataVolume: volumeName,
-      state: "creating",
     });
-    const readyTimeout = cappedReadinessTimeoutMs(
-      context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
+    const cpus = plan.resources.cpus;
+    const memoryBytes = plan.resources.memoryBytes;
+    const creationMetadata = Object.fromEntries(
+      Object.entries({
+        ...sandboxCreationMetadata(context.runId),
+        ...sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
+      }).map(([key, value]) => [`user.${key}`, value]),
     );
-    await waitForReadiness(control, plan, name, located, readyTimeout, signal);
-    const ready = await transitionAllocationIntent(repository, located, { ...located, state: "ready" });
-    return new IncusSandbox(
-      repository,
-      control,
-      plan,
-      name,
-      ready,
-      context.deadline._tag === "Unlimited" ? undefined : context.deadline.timeoutMs,
-      context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
-    );
-  } catch (cause) {
-    const toDestroy = await readAllocationIntent(repository, creating.allocationId) ?? creating;
-    if (isIncusCliTimeout(cause) || isIncusUnreachable(cause)) {
-      if (createStage !== "known") {
-        await transitionAllocationIntent(repository, toDestroy, {
-          ...toDestroy,
-          state: "destroy-requested",
-          quarantined: true,
-          acceptanceUnknown: createStage,
-          providerLocator: name,
-          dockerDataVolume: volumeName,
-        });
-        throw cause;
-      }
-    }
+    let createStage: "volume-create" | "instance-create" | "known" = "volume-create";
     try {
-      await destroyAllocation(repository, control, toDestroy, plan.project);
-    } catch (destroyCause) {
-      throw destroyCause;
+      if (artifact === undefined) {
+        await control.createVolume({
+          project: plan.project,
+          pool: plan.storagePool,
+          name: volumeName,
+          contentType: "block",
+          sizeBytes: plan.allocatedDockerDataBytes,
+          config: { ...configFor(creating), ...creationMetadata },
+        });
+      } else {
+        await cloneIncusArtifactConsumer(repository, control, artifact, {
+          project: plan.project,
+          pool: plan.storagePool,
+          network: plan.network,
+          instance: name,
+          volume: volumeName,
+          config: { ...configFor(creating), ...creationMetadata },
+        });
+      }
+      const createdVolume = await control.getVolume(plan.project, plan.storagePool, volumeName);
+      if (
+        createdVolume === undefined ||
+        createdVolume.contentType !== "block" ||
+        !volumeMetadataMatchesIntent(createdVolume, creating) ||
+        parseIncusSizeBytes(createdVolume.config.size) !== plan.allocatedDockerDataBytes
+      ) {
+        throw incusError(
+          "sandbox-artifact-unverified",
+          `Incus Docker data volume ${JSON.stringify(volumeName)} did not round-trip type, size, and allocation metadata.`,
+          ["Destroy the volume and retry; NiceEval will not attach an unverified Docker data disk."],
+        );
+      }
+      createStage = "instance-create";
+      if (artifact === undefined)
+        await control.createInstance({
+          name,
+          project: plan.project,
+          fingerprint: plan.imageFingerprint,
+          storagePool: plan.storagePool,
+          network: plan.network,
+          config: {
+            ...configFor(creating),
+            ...creationMetadata,
+            ...(cpus === undefined ? {} : { "limits.cpu": String(cpus) }),
+            ...(memoryBytes === undefined ? {} : { "limits.memory": `${memoryBytes}` }),
+          },
+          dockerDataVolume: volumeName,
+          dockerDataContentType: "block",
+        });
+      const created = await control.getInstance(plan.project, name);
+      if (created === undefined) {
+        throw incusError(
+          "sandbox-allocation-lost",
+          `Incus instance ${JSON.stringify(name)} was not present after create.`,
+          ["Inspect Incus inventory; do not recreate from a guessed locator."],
+        );
+      }
+      if (!metadataMatchesIntent(created, creating)) {
+        throw incusError(
+          "sandbox-artifact-unverified",
+          `Incus instance ${JSON.stringify(name)} metadata did not round-trip allocation identity.`,
+          ["Destroy the instance and retry; do not adopt an object with mismatched generation."],
+        );
+      }
+      createStage = "known";
+      await control.startInstance(plan.project, name);
+      const located = await transitionAllocationIntent(repository, creating, {
+        ...creating,
+        providerLocator: name,
+        dockerDataVolume: volumeName,
+        state: "creating",
+      });
+      const readyTimeout = cappedReadinessTimeoutMs(
+        context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
+      );
+      await waitForReadiness(control, plan, name, located, readyTimeout, signal);
+      const ready = await transitionAllocationIntent(repository, located, { ...located, state: "ready" });
+      return new IncusSandbox(
+        repository,
+        control,
+        plan,
+        name,
+        ready,
+        context.deadline._tag === "Unlimited" ? undefined : context.deadline.timeoutMs,
+        context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
+      );
+    } catch (cause) {
+      const toDestroy = (await readAllocationIntent(repository, creating.allocationId)) ?? creating;
+      if (isIncusCliTimeout(cause) || isIncusUnreachable(cause)) {
+        if (createStage !== "known") {
+          await transitionAllocationIntent(repository, toDestroy, {
+            ...toDestroy,
+            state: "destroy-requested",
+            quarantined: true,
+            acceptanceUnknown: createStage,
+            providerLocator: name,
+            dockerDataVolume: volumeName,
+          });
+          throw cause;
+        }
+      }
+      try {
+        await destroyAllocation(repository, control, toDestroy, plan.project);
+      } catch (destroyCause) {
+        throw destroyCause;
+      }
+      throw cause;
     }
-    throw cause;
-  }
   } finally {
     if (artifact?.consumerHoldId !== undefined) {
-      await releaseIncusArtifactHold(repository, {
-        holdId: artifact.consumerHoldId, artifactId: artifact.artifactId, generation: artifact.generation,
-        owner: currentOwner(), acquiredAt: "",
-      }, control);
+      await releaseIncusArtifactHold(
+        repository,
+        {
+          holdId: artifact.consumerHoldId,
+          artifactId: artifact.artifactId,
+          generation: artifact.generation,
+          owner: currentOwner(),
+          acquiredAt: "",
+        },
+        control,
+      );
     }
   }
 }
@@ -401,9 +421,9 @@ export function materializeIncusProviderPlan(
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   return Effect.gen(function* () {
     if (context.admission._tag === "Bound") yield* context.admission.value.granted;
-    const repository = yield* incusRepositoryHost.open().pipe(
-      Effect.mapError((cause) => runtimeFailure(context, cause)),
-    );
+    const repository = yield* incusRepositoryHost
+      .open()
+      .pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
     const control = yield* connectIncusMutation().pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
     const backend = yield* withProvisionRetry(
       providerBoundaryEffect((signal) => createReadySandbox(repository, control, plan, context, signal)),
@@ -419,29 +439,39 @@ export function materializeIncusProviderPlan(
       }),
     ).pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
     return yield* Effect.try({
-      try: () => wrapBackend(backend, context, Object.freeze({
-        instance: backend.sandboxId,
-        dockerDataVolume: backend.allocation.dockerDataVolume ?? volumeNameFor(backend.allocation.allocationId),
-        project: plan.project,
-        storagePool: plan.storagePool,
-        executionDomainId: plan.executionDomainId,
-        imageFingerprint: plan.imageFingerprint,
-      })),
+      try: () =>
+        wrapBackend(
+          backend,
+          context,
+          Object.freeze({
+            instance: backend.sandboxId,
+            dockerDataVolume: backend.allocation.dockerDataVolume ?? volumeNameFor(backend.allocation.allocationId),
+            project: plan.project,
+            storagePool: plan.storagePool,
+            executionDomainId: plan.executionDomainId,
+            imageFingerprint: plan.imageFingerprint,
+          }),
+        ),
       catch: (cause) => runtimeFailure(context, cause),
-    }).pipe(
-      Effect.tapError(() => providerBoundaryEffect(() => backend.stop()).pipe(Effect.ignore)),
-    );
+    }).pipe(Effect.tapError(() => providerBoundaryEffect(() => backend.stop()).pipe(Effect.ignore)));
   }).pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
 }
 
-const holdRunArtifact = Effect.fn("holdRunIncusBeforeCacheArtifact")(function*(repository: IncusRepository, artifact: BeforeCacheArtifact) {
+const holdRunArtifact = Effect.fn("holdRunIncusBeforeCacheArtifact")(function* (
+  repository: IncusRepository,
+  artifact: BeforeCacheArtifact,
+) {
   const locator = artifact.locator as unknown as IncusArtifactLocator;
   yield* Effect.acquireRelease(
     Effect.tryPromise({
-      try: () => repository.acquireArtifactHold({
-        holdId: randomUUID(), artifactId: locator.artifactId, generation: locator.generation,
-        owner: currentOwner(), acquiredAt: new Date().toISOString(),
-      }),
+      try: () =>
+        repository.acquireArtifactHold({
+          holdId: randomUUID(),
+          artifactId: locator.artifactId,
+          generation: locator.generation,
+          owner: currentOwner(),
+          acquiredAt: new Date().toISOString(),
+        }),
       catch: preparationFailure,
     }),
     (hold) => providerBoundaryEffect(() => releaseIncusArtifactHold(repository, hold)).pipe(Effect.orDie),
@@ -472,107 +502,192 @@ export function incusProviderModule(
       _tag: "RunPrepared" as const,
       coverage: sandboxState.all,
       preparer: {
-      continuesStaging: false,
-      materializeFrom: (plan: IncusRuntimePlan, preparationContext: BeforeCachePreparationContext, purpose: "staging" | "consumer", source: BeforeCacheSource, context: SandboxRuntimeMaterializeContext) =>
-        (source._tag === "Base"
-          ? preparationContext.materializeBase(context).pipe(Effect.map((sandbox) => ({
-              _tag: "Materialized" as const, sandbox, start: { _tag: "Restored" as const },
-            })))
-          : materializeIncusProviderPlan(plan, { ...context, beforeCacheArtifact: source.artifact }).pipe(
-              Effect.map((sandbox) => ({ _tag: "Materialized" as const, sandbox, start: { _tag: "Restored" as const } })),
-              Effect.catch(() => preparationContext.materializeBase({ ...context, beforeCacheArtifact: undefined }).pipe(
-                Effect.map((sandbox) => ({ _tag: "Materialized" as const, sandbox,
-                  start: { _tag: "FellBackToBase" as const, reason: "parent-unavailable" } })),
-              )),
-            )).pipe(
-          Effect.catch((error) => purpose === "consumer" ? Effect.fail(error)
-            : Effect.succeed({ _tag: "Degraded" as const, reason: "staging-failed" as const, detail: "Incus staging is unavailable; reconcile orphan allocations with doctor and gc incus" })),
-        ),
-      eligibility: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext) => Effect.succeed(Object.freeze({
-        _tag: "Eligible" as const,
-        persistence: "persistent" as const,
-        dependency: "parent-backed" as const,
-        coverage: sandboxState.all,
-        baseIdentity: plan.imageFingerprint,
-        keyScope: decodeBeforeCacheKeyScope({
-          cacheFormat: INCUS_CACHE_FORMAT,
-          semanticIdentity: preparationSemanticIdentity(plan),
-        }),
-      })),
-      lookup: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext, operationsDeepestFirst: readonly BeforeCacheStep[]) =>
-        Effect.gen(function* () {
-          const repository = yield* incusRepositoryHost.open().pipe(Effect.mapError(preparationFailure));
-          const lookup = yield* Effect.tryPromise({
-            try: async () => {
-            const found = await lookupCommittedIncusArtifactForPrefixes(
-              repository,
-              plan.executionDomainId,
-              operationsDeepestFirst.map((operation) => ({
-                beforeCacheKey: operation.declaration.beforeCacheKey,
-                manifestDigest: operation.declaration.declarationDigest,
-              })),
-            );
-            return found === undefined
-              ? Object.freeze({ _tag: "Miss" as const })
-              : Object.freeze({
-                  _tag: "Hit" as const,
-                  artifact: Object.freeze({
-                    locator: found as unknown as JsonValue,
-                    beforeCacheKey: found.beforeCacheKey,
-                    declarationDigest: found.manifestDigest,
+        continuesStaging: false,
+        materializeFrom: (
+          plan: IncusRuntimePlan,
+          preparationContext: BeforeCachePreparationContext,
+          purpose: "staging" | "consumer",
+          source: BeforeCacheSource,
+          context: SandboxRuntimeMaterializeContext,
+        ) =>
+          (source._tag === "Base"
+            ? preparationContext.materializeBase(context).pipe(
+                Effect.map((sandbox) => ({
+                  _tag: "Materialized" as const,
+                  sandbox,
+                  start: { _tag: "Restored" as const },
+                })),
+              )
+            : materializeIncusProviderPlan(plan, { ...context, beforeCacheArtifact: source.artifact }).pipe(
+                Effect.map((sandbox) => ({
+                  _tag: "Materialized" as const,
+                  sandbox,
+                  start: { _tag: "Restored" as const },
+                })),
+                Effect.catch(() =>
+                  preparationContext.materializeBase({ ...context, beforeCacheArtifact: undefined }).pipe(
+                    Effect.map((sandbox) => ({
+                      _tag: "Materialized" as const,
+                      sandbox,
+                      start: { _tag: "FellBackToBase" as const, reason: "parent-unavailable" },
+                    })),
+                  ),
+                ),
+              )
+          ).pipe(
+            Effect.catch((error) =>
+              purpose === "consumer"
+                ? Effect.fail(error)
+                : Effect.succeed({
+                    _tag: "Degraded" as const,
+                    reason: "staging-failed" as const,
+                    detail: "Incus staging is unavailable; reconcile orphan allocations with doctor and gc incus",
                   }),
-                });
-            },
-            catch: preparationFailure,
-          });
-          if (lookup._tag === "Hit") yield* holdRunArtifact(repository, lookup.artifact);
-          return lookup;
-        }).pipe(Effect.catch(() => Effect.succeed({ _tag: "Degraded" as const, reason: "ledger-unavailable" as const,
-          detail: "Incus artifact lookup is unavailable; before actions will run normally" }))),
-      capture: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext, owned: MaterializedSandboxCase, operation: BeforeCacheStep) =>
-        Effect.gen(function* () {
-          const opened = yield* Effect.result(incusRepositoryHost.open());
-          if (Result.isFailure(opened)) return { _tag: "Degraded" as const, reason: "ledger-unavailable" as const,
-            detail: "Incus artifact repository is unavailable; before actions will run normally" };
-          const repository = opened.success;
-          const artifact = yield* Effect.tryPromise({
-            try: async () => {
-            if (!(owned.authorBackend instanceof IncusSandbox)) {
-              throw incusError("sandbox-artifact-unverified", "Incus before-cache capture received a foreign sandbox backend.", ["Capture only the provider-owned prepare VM."]);
-            }
-            const dockerDataVolume = owned.authorBackend.allocation.dockerDataVolume;
-            if (dockerDataVolume === undefined) {
-              throw incusError("sandbox-artifact-unverified", "Incus prepare allocation has no Docker data volume locator.", ["Reconcile the prepare allocation before capture."]);
-            }
-            const identity = incusArtifactPreparationIdentity(plan, {
-              beforeCacheKey: operation.declaration.beforeCacheKey,
-              manifestDigest: operation.declaration.declarationDigest,
-              providerRevision: INCUS_PLANNER_REVISION,
-              guestInitRevision: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
-              cacheFormat: INCUS_CACHE_FORMAT,
+            ),
+          ),
+        eligibility: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext) =>
+          Effect.succeed(
+            Object.freeze({
+              _tag: "Eligible" as const,
+              persistence: "persistent" as const,
+              dependency: "parent-backed" as const,
               coverage: sandboxState.all,
-              resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
-              replacementScopeDigest: beforeCacheReplacementScope({ provider: "incus", executionDomainId: plan.executionDomainId, baseReference: plan.imageFingerprint }, operation),
+              baseIdentity: plan.imageFingerprint,
+              keyScope: decodeBeforeCacheKeyScope({
+                cacheFormat: INCUS_CACHE_FORMAT,
+                semanticIdentity: preparationSemanticIdentity(plan),
+              }),
+            }),
+          ),
+        lookup: (
+          plan: IncusRuntimePlan,
+          _context: BeforeCachePreparationContext,
+          operationsDeepestFirst: readonly BeforeCacheStep[],
+        ) =>
+          Effect.gen(function* () {
+            const repository = yield* incusRepositoryHost.open().pipe(Effect.mapError(preparationFailure));
+            const lookup = yield* Effect.tryPromise({
+              try: async () => {
+                const found = await lookupCommittedIncusArtifactForPrefixes(
+                  repository,
+                  plan.executionDomainId,
+                  operationsDeepestFirst.map((operation) => ({
+                    beforeCacheKey: operation.declaration.beforeCacheKey,
+                    manifestDigest: operation.declaration.declarationDigest,
+                  })),
+                );
+                return found === undefined
+                  ? Object.freeze({ _tag: "Miss" as const })
+                  : Object.freeze({
+                      _tag: "Hit" as const,
+                      artifact: Object.freeze({
+                        locator: found as unknown as JsonValue,
+                        beforeCacheKey: found.beforeCacheKey,
+                        declarationDigest: found.manifestDigest,
+                      }),
+                    });
+              },
+              catch: preparationFailure,
             });
-            const control = await IncusControl.connectMutation();
-            const committed = await publishOrReuseIncusArtifact(repository, control, {
-              project: plan.project,
-              instance: owned.sandbox.sandboxId,
-              volume: dockerDataVolume,
-            }, identity);
-            const locator: IncusArtifactLocator = Object.freeze({ artifactId: committed.artifactId, generation: committed.generation, project: committed.project, instance: committed.instance, dockerDataVolume: committed.dockerDataVolume, beforeCacheKey: committed.beforeCacheKey, manifestDigest: committed.manifestDigest });
-            return Object.freeze({
-              locator: locator as unknown as JsonValue,
-              beforeCacheKey: locator.beforeCacheKey,
-              declarationDigest: locator.manifestDigest,
+            if (lookup._tag === "Hit") yield* holdRunArtifact(repository, lookup.artifact);
+            return lookup;
+          }).pipe(
+            Effect.catch(() =>
+              Effect.succeed({
+                _tag: "Degraded" as const,
+                reason: "ledger-unavailable" as const,
+                detail: "Incus artifact lookup is unavailable; before actions will run normally",
+              }),
+            ),
+          ),
+        capture: (
+          plan: IncusRuntimePlan,
+          _context: BeforeCachePreparationContext,
+          owned: MaterializedSandboxCase,
+          operation: BeforeCacheStep,
+        ) =>
+          Effect.gen(function* () {
+            const opened = yield* Effect.result(incusRepositoryHost.open());
+            if (Result.isFailure(opened))
+              return {
+                _tag: "Degraded" as const,
+                reason: "ledger-unavailable" as const,
+                detail: "Incus artifact repository is unavailable; before actions will run normally",
+              };
+            const repository = opened.success;
+            const artifact = yield* Effect.tryPromise({
+              try: async () => {
+                if (!(owned.authorBackend instanceof IncusSandbox)) {
+                  throw incusError(
+                    "sandbox-artifact-unverified",
+                    "Incus before-cache capture received a foreign sandbox backend.",
+                    ["Capture only the provider-owned prepare VM."],
+                  );
+                }
+                const dockerDataVolume = owned.authorBackend.allocation.dockerDataVolume;
+                if (dockerDataVolume === undefined) {
+                  throw incusError(
+                    "sandbox-artifact-unverified",
+                    "Incus prepare allocation has no Docker data volume locator.",
+                    ["Reconcile the prepare allocation before capture."],
+                  );
+                }
+                const identity = incusArtifactPreparationIdentity(plan, {
+                  beforeCacheKey: operation.declaration.beforeCacheKey,
+                  manifestDigest: operation.declaration.declarationDigest,
+                  providerRevision: INCUS_PLANNER_REVISION,
+                  guestInitRevision: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
+                  cacheFormat: INCUS_CACHE_FORMAT,
+                  coverage: sandboxState.all,
+                  resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
+                  replacementScopeDigest: beforeCacheReplacementScope(
+                    {
+                      provider: "incus",
+                      executionDomainId: plan.executionDomainId,
+                      baseReference: plan.imageFingerprint,
+                    },
+                    operation,
+                  ),
+                });
+                const control = await IncusControl.connectMutation();
+                const committed = await publishOrReuseIncusArtifact(
+                  repository,
+                  control,
+                  {
+                    project: plan.project,
+                    instance: owned.sandbox.sandboxId,
+                    volume: dockerDataVolume,
+                  },
+                  identity,
+                );
+                const locator: IncusArtifactLocator = Object.freeze({
+                  artifactId: committed.artifactId,
+                  generation: committed.generation,
+                  project: committed.project,
+                  instance: committed.instance,
+                  dockerDataVolume: committed.dockerDataVolume,
+                  beforeCacheKey: committed.beforeCacheKey,
+                  manifestDigest: committed.manifestDigest,
+                });
+                return Object.freeze({
+                  locator: locator as unknown as JsonValue,
+                  beforeCacheKey: locator.beforeCacheKey,
+                  declarationDigest: locator.manifestDigest,
+                });
+              },
+              catch: preparationFailure,
             });
-            },
-            catch: preparationFailure,
-          });
-          yield* holdRunArtifact(repository, artifact);
-          return Object.freeze({ _tag: "Published" as const, artifact });
-        }).pipe(Effect.catch(() => Effect.succeed({ _tag: "Degraded" as const, reason: "snapshot-uncertain" as const,
-          detail: "Incus artifact publication is unverified; reconcile orphan artifacts with doctor and gc incus" }))),
+            yield* holdRunArtifact(repository, artifact);
+            return Object.freeze({ _tag: "Published" as const, artifact });
+          }).pipe(
+            Effect.catch(() =>
+              Effect.succeed({
+                _tag: "Degraded" as const,
+                reason: "snapshot-uncertain" as const,
+                detail: "Incus artifact publication is unverified; reconcile orphan artifacts with doctor and gc incus",
+              }),
+            ),
+          ),
       },
     },
   });

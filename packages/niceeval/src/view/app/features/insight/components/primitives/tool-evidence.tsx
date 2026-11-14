@@ -35,10 +35,7 @@ function recordOf(value: unknown): globalThis.Record<string, unknown> | undefine
   return isObject(value) ? value : undefined;
 }
 
-function stringField(
-  record: globalThis.Record<string, unknown>,
-  keys: readonly string[],
-): string | undefined {
+function stringField(record: globalThis.Record<string, unknown>, keys: readonly string[]): string | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "string") return value;
@@ -65,7 +62,11 @@ function withoutFields(
 }
 
 function EvidenceCode({ children, tone }: { children: string; tone?: "error" }): ReactElement {
-  return <pre className={cx("niceeval-tool-evidence-code", tone === "error" && "niceeval-tool-evidence-code--error")}>{children}</pre>;
+  return (
+    <pre className={cx("niceeval-tool-evidence-code", tone === "error" && "niceeval-tool-evidence-code--error")}>
+      {children}
+    </pre>
+  );
 }
 
 function EvidenceSection({ label: heading, children }: { label: string; children: ReactNode }): ReactElement {
@@ -77,29 +78,32 @@ function EvidenceSection({ label: heading, children }: { label: string; children
   );
 }
 
-function commandEvidence(
-  record: globalThis.Record<string, unknown>,
-  locale: string,
-): ReactElement | undefined {
+function commandEvidence(record: globalThis.Record<string, unknown>, locale: string): ReactElement | undefined {
   const command = stringField(record, ["command", "cmd", "script"]);
   if (command === undefined) return undefined;
   const cwd = stringField(record, ["cwd", "workdir"]);
   const rest = withoutFields(record, new Set(["command", "cmd", "script", "cwd", "workdir"]));
   return (
     <div className="niceeval-tool-evidence" data-tool-evidence-kind="command">
-      {cwd === undefined ? null : <div className="niceeval-tool-evidence-context"><span>{label(locale, "Working directory", "工作目录")}</span><code>{cwd}</code></div>}
-      <EvidenceSection label={label(locale, "Command", "命令")}><EvidenceCode>{command}</EvidenceCode></EvidenceSection>
+      {cwd === undefined ? null : (
+        <div className="niceeval-tool-evidence-context">
+          <span>{label(locale, "Working directory", "工作目录")}</span>
+          <code>{cwd}</code>
+        </div>
+      )}
+      <EvidenceSection label={label(locale, "Command", "命令")}>
+        <EvidenceCode>{command}</EvidenceCode>
+      </EvidenceSection>
       {Object.keys(rest).length === 0 ? null : (
-        <EvidenceSection label={label(locale, "Additional input", "其他输入")}><EvidenceCode>{JSON.stringify(rest, null, 2)}</EvidenceCode></EvidenceSection>
+        <EvidenceSection label={label(locale, "Additional input", "其他输入")}>
+          <EvidenceCode>{JSON.stringify(rest, null, 2)}</EvidenceCode>
+        </EvidenceSection>
       )}
     </div>
   );
 }
 
-function terminalEvidence(
-  record: globalThis.Record<string, unknown>,
-  locale: string,
-): ReactElement | undefined {
+function terminalEvidence(record: globalThis.Record<string, unknown>, locale: string): ReactElement | undefined {
   const output = stringField(record, ["output", "stdout"]);
   const stderr = stringField(record, ["stderr"]);
   const exitCode = scalarField(record, ["exit_code", "exitCode"]);
@@ -109,37 +113,55 @@ function terminalEvidence(
   return (
     <div className="niceeval-tool-evidence" data-tool-evidence-kind="terminal">
       <div className="niceeval-tool-evidence-context">
-        {exitCode === undefined ? null : <span>{label(locale, "Exit", "退出码")} <strong data-failed={Number(exitCode) !== 0 || undefined}>{String(exitCode)}</strong></span>}
-        {signal === undefined ? null : <span>{label(locale, "Signal", "信号")} <strong>{String(signal)}</strong></span>}
+        {exitCode === undefined ? null : (
+          <span>
+            {label(locale, "Exit", "退出码")}{" "}
+            <strong data-failed={Number(exitCode) !== 0 || undefined}>{String(exitCode)}</strong>
+          </span>
+        )}
+        {signal === undefined ? null : (
+          <span>
+            {label(locale, "Signal", "信号")} <strong>{String(signal)}</strong>
+          </span>
+        )}
       </div>
-      {output === undefined ? null : <EvidenceSection label={label(locale, "Output", "输出")}><EvidenceCode>{output || label(locale, "No output", "无输出")}</EvidenceCode></EvidenceSection>}
-      {stderr === undefined || stderr === "" ? null : <EvidenceSection label="stderr"><EvidenceCode tone="error">{stderr}</EvidenceCode></EvidenceSection>}
+      {output === undefined ? null : (
+        <EvidenceSection label={label(locale, "Output", "输出")}>
+          <EvidenceCode>{output || label(locale, "No output", "无输出")}</EvidenceCode>
+        </EvidenceSection>
+      )}
+      {stderr === undefined || stderr === "" ? null : (
+        <EvidenceSection label="stderr">
+          <EvidenceCode tone="error">{stderr}</EvidenceCode>
+        </EvidenceSection>
+      )}
       {Object.keys(rest).length === 0 ? null : (
-        <EvidenceSection label={label(locale, "Additional result", "其他结果")}><EvidenceCode>{JSON.stringify(rest, null, 2)}</EvidenceCode></EvidenceSection>
+        <EvidenceSection label={label(locale, "Additional result", "其他结果")}>
+          <EvidenceCode>{JSON.stringify(rest, null, 2)}</EvidenceCode>
+        </EvidenceSection>
       )}
     </div>
   );
 }
 
 function structuredEvidence(data: ToolEvidenceContent, locale: string): ReactElement {
-  const raw = data.phase === "finished" ? data.outputSummary ?? "" : data.inputSummary;
+  const raw = data.phase === "finished" ? (data.outputSummary ?? "") : data.inputSummary;
   const parsed = parseJson(raw);
   const record = recordOf(parsed);
-  const specialized = record === undefined
-    ? undefined
-    : data.phase === "started"
-      ? commandEvidence(record, locale)
-      : terminalEvidence(record, locale);
+  const specialized =
+    record === undefined
+      ? undefined
+      : data.phase === "started"
+        ? commandEvidence(record, locale)
+        : terminalEvidence(record, locale);
   if (specialized !== undefined) return specialized;
-  const display = parsed === undefined
-    ? raw
-    : typeof parsed === "string"
-      ? parsed
-      : JSON.stringify(parsed, null, 2);
+  const display = parsed === undefined ? raw : typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
   return (
     <div className="niceeval-tool-evidence" data-tool-evidence-kind={parsed === undefined ? "text" : "json"}>
       <EvidenceSection label={parsed === undefined ? label(locale, "Text", "文本") : "JSON"}>
-        <EvidenceCode tone={data.outcome === "failed" || data.outcome === "rejected" ? "error" : undefined}>{display}</EvidenceCode>
+        <EvidenceCode tone={data.outcome === "failed" || data.outcome === "rejected" ? "error" : undefined}>
+          {display}
+        </EvidenceCode>
       </EvidenceSection>
     </div>
   );
@@ -151,7 +173,7 @@ export interface ToolEvidenceProps {
 }
 
 export function toolEvidenceText(content: ToolEvidenceContent): string {
-  return content.phase === "finished" ? content.outputSummary ?? "" : content.inputSummary;
+  return content.phase === "finished" ? (content.outputSummary ?? "") : content.inputSummary;
 }
 
 export function ToolEvidence({ content, locale }: ToolEvidenceProps): ReactElement {

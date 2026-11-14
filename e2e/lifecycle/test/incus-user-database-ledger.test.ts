@@ -30,7 +30,11 @@ const projectCopy = {
 
 async function journal(path: string): Promise<readonly JournalRecord[]> {
   try {
-    return (await readFile(path, "utf8")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as JournalRecord);
+    return (await readFile(path, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as JournalRecord);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return [];
     throw cause;
@@ -38,10 +42,13 @@ async function journal(path: string): Promise<readonly JournalRecord[]> {
 }
 
 async function waitForBlocked(path: string, after: number): Promise<readonly JournalRecord[]> {
-  return pollUntil(async () => {
-    const records = await journal(path);
-    return records.slice(after).some((record) => record.event === "blocked") ? records : undefined;
-  }, { timeoutMs: 30_000, intervalMs: 50, label: "fake Incus blocking checkpoint" });
+  return pollUntil(
+    async () => {
+      const records = await journal(path);
+      return records.slice(after).some((record) => record.event === "blocked") ? records : undefined;
+    },
+    { timeoutMs: 30_000, intervalMs: 50, label: "fake Incus blocking checkpoint" },
+  );
 }
 
 async function killAtProviderBoundary(
@@ -50,14 +57,11 @@ async function killAtProviderBoundary(
   journalPath: string,
 ): Promise<readonly JournalRecord[]> {
   const before = (await journal(journalPath)).length;
-  const child = startProcess(
-    ["pnpm", "--silent", "exec", "niceeval", "exp", "incus-ledger", "probe", "--rerun=all"],
-    {
-      cwd,
-      env,
-      processGroup: true,
-    },
-  );
+  const child = startProcess(["pnpm", "--silent", "exec", "niceeval", "exp", "incus-ledger", "probe", "--rerun=all"], {
+    cwd,
+    env,
+    processGroup: true,
+  });
   let records: readonly JournalRecord[] | undefined;
   let bodyFailed = false;
   let bodyError: unknown;
@@ -84,19 +88,32 @@ async function killAtProviderBoundary(
 }
 
 function artifactPublishes(records: readonly JournalRecord[]): readonly JournalRecord[] {
-  return records.filter((record) => record.event === "query" && record.detail.method === "POST" &&
-    record.detail.path === "/1.0/instances" && record.detail.project === artifactProject);
+  return records.filter(
+    (record) =>
+      record.event === "query" &&
+      record.detail.method === "POST" &&
+      record.detail.path === "/1.0/instances" &&
+      record.detail.project === artifactProject,
+  );
 }
 
 function artifactConsumers(records: readonly JournalRecord[]): readonly JournalRecord[] {
-  return records.filter((record) => record.event === "query" && record.detail.method === "POST" &&
-    record.detail.path === "/1.0/instances" && record.detail.project === runtimeProject &&
-    record.detail.body?.source?.type === "copy" && record.detail.body.source.project === artifactProject);
+  return records.filter(
+    (record) =>
+      record.event === "query" &&
+      record.detail.method === "POST" &&
+      record.detail.path === "/1.0/instances" &&
+      record.detail.project === runtimeProject &&
+      record.detail.body?.source?.type === "copy" &&
+      record.detail.body.source.project === artifactProject,
+  );
 }
 
 function artifactDeletes(records: readonly JournalRecord[]): readonly JournalRecord[] {
-  return records.filter((record) => record.event === "query" && record.detail.method === "DELETE" &&
-    record.detail.project === artifactProject);
+  return records.filter(
+    (record) =>
+      record.event === "query" && record.detail.method === "DELETE" && record.detail.project === artifactProject,
+  );
 }
 
 // @feature docs/feature/run/README.md
@@ -112,32 +129,44 @@ test("Incus repository fences admission, recovers crashes, and reuses only commi
       const fakeIncus = resolve("fixtures/fake-incus.mjs");
       await mkdir(binDir, { recursive: true });
       const wrapper = join(binDir, "incus");
-      await writeFile(wrapper, `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`, "utf8");
+      await writeFile(
+        wrapper,
+        `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`,
+        "utf8",
+      );
       await chmod(wrapper, 0o755);
-      await writeFile(descriptor, `${JSON.stringify({
-        schemaVersion: "niceeval.incus-provider/v2",
-        domains: [{
-          name: "development",
-          status: "configured",
-          executionDomainId: "e2e-incus-development",
-          project: runtimeProject,
-          storagePool: "niceeval-sandbox-dev",
-          network: "niceeval-dev",
-          storage: "development-dir",
-          quota: "unattested",
-          maxInstances: 4,
-          artifactProject,
-          artifactMaxInstances: 1,
-          artifactStorageReserveBytes: 1024 ** 3,
-          artifactEstimatedBytes: 1024 ** 3,
-          dockerDataBytes: 1024 ** 3,
-          workdir: "/home/sandbox/workspace",
-          user: "node",
-          hostGateway: "10.0.0.1",
-          trustedBaseImages: [`niceeval/docker-execution-v1@sha256:${digest}`],
-        }],
-      })}\n`, "utf8");
-      await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
+      await writeFile(
+        descriptor,
+        `${JSON.stringify({
+          schemaVersion: "niceeval.incus-provider/v2",
+          domains: [
+            {
+              name: "development",
+              status: "configured",
+              executionDomainId: "e2e-incus-development",
+              project: runtimeProject,
+              storagePool: "niceeval-sandbox-dev",
+              network: "niceeval-dev",
+              storage: "development-dir",
+              quota: "unattested",
+              maxInstances: 4,
+              artifactProject,
+              artifactMaxInstances: 1,
+              artifactStorageReserveBytes: 1024 ** 3,
+              artifactEstimatedBytes: 1024 ** 3,
+              dockerDataBytes: 1024 ** 3,
+              workdir: "/home/sandbox/workspace",
+              user: "node",
+              hostGateway: "10.0.0.1",
+              trustedBaseImages: [`niceeval/docker-execution-v1@sha256:${digest}`],
+            },
+          ],
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(projectRoot, "experiments/incus-ledger.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { incusSandbox, shell } from "niceeval/sandbox";
 import { quickAgent } from "../agents/deterministic.ts";
@@ -157,7 +186,9 @@ export default defineExperiment({
   attempts: 1,
   maxConcurrency: 1,
 });
-`, "utf8");
+`,
+        "utf8",
+      );
 
       const baseEnv: NodeJS.ProcessEnv = {
         ...process.env,
@@ -170,14 +201,23 @@ export default defineExperiment({
       };
       const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 
-      const cold = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
+      const cold = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
       expect(cold.exitCode, "the fixture deliberately fails agent.install after provider setup").not.toBe(0);
       const afterCold = await journal(journalPath);
-      expect(artifactPublishes(afterCold), `${cold.diagnostic()}\nprovider journal:\n${JSON.stringify(afterCold, null, 2)}`).toHaveLength(1);
+      expect(
+        artifactPublishes(afterCold),
+        `${cold.diagnostic()}\nprovider journal:\n${JSON.stringify(afterCold, null, 2)}`,
+      ).toHaveLength(1);
       expect(artifactConsumers(afterCold)).toHaveLength(1);
 
       const warmStart = afterCold.length;
-      const warm = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
+      const warm = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
       expect(warm.exitCode, "the fixture deliberately fails agent.install after committed artifact lookup").not.toBe(0);
       const afterWarm = await journal(journalPath);
       const warmRecords = afterWarm.slice(warmStart);
@@ -186,31 +226,63 @@ export default defineExperiment({
 
       const fenceClaim = `${state}.block-claimed`;
       await rm(fenceClaim, { force: true });
-      const fenceCrash = await killAtProviderBoundary(projectRoot, {
-        ...baseEnv,
-        NICEEVAL_E2E_FAKE_INCUS_BLOCK_ONCE: `GET /1.0/instances?project=${runtimeProject}`,
-      }, journalPath);
-      expect(fenceCrash.some((record) => record.event === "blocked" && record.detail.label?.startsWith("GET /1.0/instances"))).toBe(true);
+      const fenceCrash = await killAtProviderBoundary(
+        projectRoot,
+        {
+          ...baseEnv,
+          NICEEVAL_E2E_FAKE_INCUS_BLOCK_ONCE: `GET /1.0/instances?project=${runtimeProject}`,
+        },
+        journalPath,
+      );
+      expect(
+        fenceCrash.some(
+          (record) => record.event === "blocked" && record.detail.label?.startsWith("GET /1.0/instances"),
+        ),
+      ).toBe(true);
       const afterFence = (await journal(journalPath)).length;
-      const fenceRecovery = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
+      const fenceRecovery = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
       expect(fenceRecovery.exitCode).not.toBe(0);
       expect(artifactConsumers((await journal(journalPath)).slice(afterFence))).toHaveLength(1);
 
       await rm(fenceClaim, { force: true });
-      const allocationCrashRecords = await killAtProviderBoundary(projectRoot, {
-        ...baseEnv,
-        NICEEVAL_E2E_FAKE_INCUS_BLOCK_ONCE: `POST /1.0/instances?project=${runtimeProject}`,
-      }, journalPath);
-      const crashedCreate = [...allocationCrashRecords].reverse().find((record) => record.event === "query" &&
-        record.detail.method === "POST" && record.detail.path === "/1.0/instances" && record.detail.project === runtimeProject);
+      const allocationCrashRecords = await killAtProviderBoundary(
+        projectRoot,
+        {
+          ...baseEnv,
+          NICEEVAL_E2E_FAKE_INCUS_BLOCK_ONCE: `POST /1.0/instances?project=${runtimeProject}`,
+        },
+        journalPath,
+      );
+      const crashedCreate = [...allocationCrashRecords]
+        .reverse()
+        .find(
+          (record) =>
+            record.event === "query" &&
+            record.detail.method === "POST" &&
+            record.detail.path === "/1.0/instances" &&
+            record.detail.project === runtimeProject,
+        );
       const crashedName = crashedCreate?.detail.body?.name;
       expect(crashedName).toBeTruthy();
       const recoveryStart = (await journal(journalPath)).length;
-      const allocationRecovery = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], { cwd: projectRoot, env: baseEnv });
+      const allocationRecovery = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
       expect(allocationRecovery.exitCode).not.toBe(0);
       const recoveryRecords = (await journal(journalPath)).slice(recoveryStart);
-      expect(recoveryRecords.some((record) => record.event === "query" && record.detail.method === "DELETE" &&
-        record.detail.path === `/1.0/instances/${crashedName}` && record.detail.project === runtimeProject)).toBe(true);
+      expect(
+        recoveryRecords.some(
+          (record) =>
+            record.event === "query" &&
+            record.detail.method === "DELETE" &&
+            record.detail.path === `/1.0/instances/${crashedName}` &&
+            record.detail.project === runtimeProject,
+        ),
+      ).toBe(true);
       expect(artifactConsumers(recoveryRecords)).toHaveLength(1);
 
       const providerState = JSON.parse(await readFile(state, "utf8")) as {
@@ -231,7 +303,10 @@ export default defineExperiment({
       };
       await writeFile(state, `${JSON.stringify(providerState)}\n`, "utf8");
 
-      const doctor = await niceeval.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: projectRoot, env: baseEnv });
+      const doctor = await niceeval.run(["sandbox", "provider", "doctor", "incus", "--development"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
       expect(doctor.exitCode, doctor.diagnostic()).toBe(1);
       expect(doctor.stdout).toContain("status: FAIL (fail closed)");
       expect(doctor.stdout).toContain("4 free of 4");
@@ -242,32 +317,51 @@ export default defineExperiment({
       delete providerState.instances[artifactProject]![orphanArtifact];
       await writeFile(state, `${JSON.stringify(providerState)}\n`, "utf8");
 
-      await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
+      await writeFile(
+        join(projectRoot, "experiments/incus-ledger.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { incusSandbox, shell } from "niceeval/sandbox";
 import { quickAgent } from "../agents/deterministic.ts";
 const sandbox = incusSandbox({ image: "niceeval/docker-execution-v1@sha256:${digest}", project: "${runtimeProject}", storagePool: "niceeval-sandbox-dev", acceptDevelopmentDomain: true, resources: { dockerDataBytes: ${1024 ** 3} } })
   .before(shell({ id: "incus-ledger-prefix-v2", command: "true", changeFrequency: 10 }));
 export default defineExperiment({ adapter: quickAgent, sandbox, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
-`, "utf8");
+`,
+        "utf8",
+      );
       const evictionStart = (await journal(journalPath)).length;
-      const eviction = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all", "--json"], { cwd: projectRoot, env: baseEnv });
+      const eviction = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all", "--json"], {
+        cwd: projectRoot,
+        env: baseEnv,
+      });
       expect(eviction.exitCode).not.toBe(0);
-      expect(eviction.expTerminal().summary.beforeCaches).toEqual({ total: 1, hit: 0, prepared: 0, degraded: 1, failed: 0 });
-      expect(eviction.expEvalEvents()).toEqual([expect.objectContaining({ evalId: "probe", verdict: "errored", locator: expect.any(String) })]);
+      expect(eviction.expTerminal().summary.beforeCaches).toEqual({
+        total: 1,
+        hit: 0,
+        prepared: 0,
+        degraded: 1,
+        failed: 0,
+      });
+      expect(eviction.expEvalEvents()).toEqual([
+        expect.objectContaining({ evalId: "probe", verdict: "errored", locator: expect.any(String) }),
+      ]);
       const evictionRecords = (await journal(journalPath)).slice(evictionStart);
       expect(artifactDeletes(evictionRecords)).toHaveLength(0);
       expect(artifactPublishes(evictionRecords)).toHaveLength(0);
       expect(artifactConsumers(evictionRecords)).toHaveLength(0);
 
-      await writeFile(join(projectRoot, "experiments/incus-ledger.ts"), `
+      await writeFile(
+        join(projectRoot, "experiments/incus-ledger.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { incusSandbox, shell } from "niceeval/sandbox";
 import { quickAgent } from "../agents/deterministic.ts";
 const sandbox = incusSandbox({ image: "niceeval/docker-execution-v1@sha256:${digest}", project: "${runtimeProject}", storagePool: "niceeval-sandbox-dev", acceptDevelopmentDomain: true, resources: { dockerDataBytes: ${1024 ** 3} } })
   .before(shell({ id: "incus-ledger-prefix", command: "true", changeFrequency: 10 }));
 export default defineExperiment({ adapter: quickAgent, sandbox, sandboxCache: { before: "bypass" }, evals: ["probe"], attempts: 1, maxConcurrency: 1 });
-`, "utf8");
+`,
+        "utf8",
+      );
       await writeFile(`${state}.fail-next`, `POST /1.0/instances?project=${runtimeProject}\n`, "utf8");
       const failedMutation = await niceeval.run(["exp", "incus-ledger", "probe", "--rerun=all"], {
         cwd: projectRoot,

@@ -31,11 +31,13 @@ type ClaudeState = {
 
 const slot = createSessionKey<ClaudeState>("claude-code/stream-json-native");
 function record(value: unknown): RecordValue | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : undefined;
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as RecordValue) : undefined;
 }
 
 async function resolveBin(ctx: SandboxAgentContext): Promise<string> {
-  const result = await ctx.sandbox.runShell('if [ -x "$HOME/.local/bin/claude" ]; then printf %s "$HOME/.local/bin/claude"; else command -v claude; fi');
+  const result = await ctx.sandbox.runShell(
+    'if [ -x "$HOME/.local/bin/claude" ]; then printf %s "$HOME/.local/bin/claude"; else command -v claude; fi',
+  );
   const value = result.stdout.trim();
   if (result.exitCode !== 0 || !value) throw new Error(`Claude Code CLI path resolution failed: ${result.stderr}`);
   return value;
@@ -47,7 +49,10 @@ function eventKey(event: StreamEvent): string | undefined {
     : undefined;
 }
 
-function parseFrames(frames: readonly unknown[], reported: Set<string>): { events: StreamEvent[]; usage: Usage; parseSuccess: boolean } {
+function parseFrames(
+  frames: readonly unknown[],
+  reported: Set<string>,
+): { events: StreamEvent[]; usage: Usage; parseSuccess: boolean } {
   const parsed = shared.parseClaudeCode(frames.map((frame) => JSON.stringify(frame)).join("\n"));
   // The terminal result owns aggregate usage for this send. Some native
   // versions omit usage from assistant messages; adding both would double count.
@@ -57,14 +62,21 @@ function parseFrames(frames: readonly unknown[], reported: Set<string>): { event
     const value = resultUsage?.[name];
     return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   };
-  const usage: Usage = resultUsage === undefined ? parsed.usage : {
-    inputTokens: token("input_tokens"),
-    outputTokens: token("output_tokens"),
-    cacheReadTokens: token("cache_read_input_tokens"),
-    cacheCreationTokens: token("cache_creation_input_tokens"),
-    requests: typeof terminal?.num_turns === "number" && Number.isSafeInteger(terminal.num_turns) && terminal.num_turns >= 0
-      ? terminal.num_turns : parsed.usage.requests,
-  };
+  const usage: Usage =
+    resultUsage === undefined
+      ? parsed.usage
+      : {
+          inputTokens: token("input_tokens"),
+          outputTokens: token("output_tokens"),
+          cacheReadTokens: token("cache_read_input_tokens"),
+          cacheCreationTokens: token("cache_creation_input_tokens"),
+          requests:
+            typeof terminal?.num_turns === "number" &&
+            Number.isSafeInteger(terminal.num_turns) &&
+            terminal.num_turns >= 0
+              ? terminal.num_turns
+              : parsed.usage.requests,
+        };
   return {
     usage,
     parseSuccess: parsed.parseSuccess,
@@ -81,7 +93,11 @@ function parseFrames(frames: readonly unknown[], reported: Set<string>): { event
 function coverage(frames: readonly unknown[], parsed: ReturnType<typeof parseFrames>): TurnEvidenceCoverage {
   if (frames.length === 0) {
     const reason = "Claude Code stream-json output was unavailable; tool trace was not observed.";
-    return { events: { status: "unavailable", reason }, actions: { status: "unavailable", reason }, usage: { status: "unavailable", reason } };
+    return {
+      events: { status: "unavailable", reason },
+      actions: { status: "unavailable", reason },
+      usage: { status: "unavailable", reason },
+    };
   }
   if (!parsed.parseSuccess) {
     const reason = "Some Claude Code stream-json frames could not be parsed.";
@@ -110,11 +126,14 @@ function toolUseProgress(frame: unknown, reported: Set<string>): readonly string
     const block = record(value);
     if (
       block?.type !== "tool_use" ||
-      typeof block.id !== "string" || block.id === "" ||
-      typeof block.name !== "string" || block.name === "" ||
+      typeof block.id !== "string" ||
+      block.id === "" ||
+      typeof block.name !== "string" ||
+      block.name === "" ||
       !Object.prototype.hasOwnProperty.call(block, "input") ||
       reported.has(block.id)
-    ) continue;
+    )
+      continue;
     let input: string | undefined;
     try {
       input = JSON.stringify(block.input);
@@ -139,15 +158,19 @@ function validate(pending: Pending, responses: readonly InputResponse[] | undefi
   const byId = new Map(responses.map((response) => [response.requestId, response]));
   if (byId.size !== responses.length) throw new Error("Claude Code input responses contain duplicate request ids");
   const expected = new Set(pending.questions.map((question) => question.requestId));
-  for (const requestId of byId.keys()) if (!expected.has(requestId)) throw new Error(`Unknown Claude Code input request ${requestId}`);
-  if (byId.size !== expected.size) throw new Error("Claude Code input responses must answer the complete native question batch");
+  for (const requestId of byId.keys())
+    if (!expected.has(requestId)) throw new Error(`Unknown Claude Code input request ${requestId}`);
+  if (byId.size !== expected.size)
+    throw new Error("Claude Code input responses must answer the complete native question batch");
   const answers: Record<string, string> = {};
   for (const question of pending.questions) {
     const response = byId.get(question.requestId)!;
     const answer = "optionId" in response ? response.optionId : response.text;
     if (answer === undefined) throw new Error(`Claude Code input request ${question.requestId} has no answer`);
     if ("optionId" in response && response.optionId !== undefined && !question.options.includes(response.optionId)) {
-      throw new Error(`Option ${response.optionId} is not available for Claude Code input request ${question.requestId}`);
+      throw new Error(
+        `Option ${response.optionId} is not available for Claude Code input request ${question.requestId}`,
+      );
     }
     answers[question.question] = answer;
   }
@@ -162,16 +185,32 @@ async function createState(
   const resources = attemptResources(ctx);
   if (!resources) throw new Error("Claude Code structured transport requires an Attempt resource registry");
   const driver = await ManagedJsonlDriver.start(ctx.sandbox, "claude-code", resources, {
-    argv: [await resolveBin(ctx), "--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--permission-prompt-tool", "stdio", "--permission-mode", "default", ...args],
+    argv: [
+      await resolveBin(ctx),
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--permission-prompt-tool",
+      "stdio",
+      "--permission-mode",
+      "default",
+      ...args,
+    ],
     cwd: ctx.sandbox.workdir,
     env: { ...env, CLAUDE_CODE_ENTRYPOINT: "sdk-ts", CLAUDE_AGENT_SDK_VERSION: "0.3.226" },
   });
   const requestId = "niceeval-initialize";
   await driver.write({ type: "control_request", request_id: requestId, request: { subtype: "initialize" } });
-  const initialized = await driver.waitFor(0, (value) => {
-    const frame = record(value);
-    return frame?.type === "control_response" && record(frame.response)?.request_id === requestId;
-  }, ctx.signal);
+  const initialized = await driver.waitFor(
+    0,
+    (value) => {
+      const frame = record(value);
+      return frame?.type === "control_response" && record(frame.response)?.request_id === requestId;
+    },
+    ctx.signal,
+  );
   const response = record(record(initialized.frame)?.response);
   if (response?.subtype !== "success") {
     throw new Error(`Claude Code initialization failed: ${String(response?.error ?? "invalid control response")}`);
@@ -183,7 +222,8 @@ function pendingFrom(frame: RecordValue, sessionId: string): Pending | undefined
   if (frame.type !== "control_request" || typeof frame.request_id !== "string") return undefined;
   const request = record(frame.request);
   if (request?.subtype !== "can_use_tool" || request.tool_name !== "AskUserQuestion") return undefined;
-  if (typeof request.tool_use_id !== "string") throw new Error("Claude Code AskUserQuestion request has no native tool_use_id");
+  if (typeof request.tool_use_id !== "string")
+    throw new Error("Claude Code AskUserQuestion request has no native tool_use_id");
   const input = record(request.input) ?? {};
   const questions = Array.isArray(input.questions) ? input.questions : [];
   if (questions.length === 0) throw new Error("Claude Code AskUserQuestion request contained no questions");
@@ -209,10 +249,14 @@ function pendingFrom(frame: RecordValue, sessionId: string): Pending | undefined
 async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext): Promise<Turn> {
   for (;;) {
     const scanFrom = state.cursor;
-    const receipt = await state.driver.waitFor(state.cursor, (value) => {
-      const frame = record(value);
-      return frame?.type === "control_request" || frame?.type === "result";
-    }, ctx.signal);
+    const receipt = await state.driver.waitFor(
+      state.cursor,
+      (value) => {
+        const frame = record(value);
+        return frame?.type === "control_request" || frame?.type === "result";
+      },
+      ctx.signal,
+    );
     state.cursor = receipt.cursor;
     const frame = record(receipt.frame)!;
     for (const value of state.driver.framesSince(scanFrom).slice(0, receipt.cursor - scanFrom)) {
@@ -221,7 +265,8 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
     }
     if (frame.type === "control_request") {
       const request = record(frame.request);
-      if (state.sessionId === undefined) throw new Error("Claude Code control request arrived before native session identity");
+      if (state.sessionId === undefined)
+        throw new Error("Claude Code control request arrived before native session identity");
       const pending = pendingFrom(frame, state.sessionId);
       if (pending) {
         state.pending = pending;
@@ -229,23 +274,58 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
         const parsed = parseFrames(frames, state.reported);
         return {
           status: "waiting",
-          events: [...parsed.events, ...pending.questions.map((question): StreamEvent => ({ type: "input.requested", request: { id: question.requestId, action: "AskUserQuestion", prompt: question.question, options: question.options.map((id) => ({ id })) } }))],
+          events: [
+            ...parsed.events,
+            ...pending.questions.map(
+              (question): StreamEvent => ({
+                type: "input.requested",
+                request: {
+                  id: question.requestId,
+                  action: "AskUserQuestion",
+                  prompt: question.question,
+                  options: question.options.map((id) => ({ id })),
+                },
+              }),
+            ),
+          ],
           usage: parsed.usage,
           evidenceCoverage: coverage(frames, parsed),
         };
       }
       if (request?.subtype === "can_use_tool" && typeof frame.request_id === "string") {
-        await state.driver.write({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: { behavior: "allow", updatedInput: record(request.input) ?? {} } } });
+        await state.driver.write({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: frame.request_id,
+            response: { behavior: "allow", updatedInput: record(request.input) ?? {} },
+          },
+        });
       }
       continue;
     }
     const frames = state.driver.framesSince(from).slice(0, receipt.cursor - from);
     const parsed = parseFrames(frames, state.reported);
-    for (const value of frames) { const candidate = record(value); if (candidate) captureSession(state, candidate, ctx); }
-    if (frame.is_error === true) {
-      throw makeSendFailure({ acceptance: sendAcceptanceFromEvents(parsed.events), message: String(frame.result ?? frame.subtype ?? "Claude Code turn failed"), cause: normalizeExternalCause(frame), events: parsed.events, usage: parsed.usage, process: state.driver.processReceipt() });
+    for (const value of frames) {
+      const candidate = record(value);
+      if (candidate) captureSession(state, candidate, ctx);
     }
-    return { status: "completed", events: parsed.events, usage: parsed.usage, evidenceCoverage: coverage(frames, parsed) };
+    if (frame.is_error === true) {
+      throw makeSendFailure({
+        acceptance: sendAcceptanceFromEvents(parsed.events),
+        message: String(frame.result ?? frame.subtype ?? "Claude Code turn failed"),
+        cause: normalizeExternalCause(frame),
+        events: parsed.events,
+        usage: parsed.usage,
+        process: state.driver.processReceipt(),
+      });
+    }
+    return {
+      status: "completed",
+      events: parsed.events,
+      usage: parsed.usage,
+      evidenceCoverage: coverage(frames, parsed),
+    };
   }
 }
 
@@ -256,7 +336,10 @@ export async function sendClaudeCodeNative(
   env: Readonly<Record<string, string>>,
 ): Promise<Turn> {
   let state = ctx.session.get(slot);
-  if (!state) { state = await createState(ctx, args, env); ctx.session.set(slot, state); }
+  if (!state) {
+    state = await createState(ctx, args, env);
+    ctx.session.set(slot, state);
+  }
   const from = state.cursor;
   let progressArmed = false;
   const bufferedProgress: unknown[] = [];
@@ -277,19 +360,35 @@ export async function sendClaudeCodeNative(
       const answers = validate(pending, input.responses);
       await state.driver.write({
         type: "control_response",
-        response: { subtype: "success", request_id: pending.controlRequestId, response: { behavior: "allow", updatedInput: { ...pending.input, answers } } },
+        response: {
+          subtype: "success",
+          request_id: pending.controlRequestId,
+          response: { behavior: "allow", updatedInput: { ...pending.input, answers } },
+        },
       });
       state.pending = undefined;
     } else {
-      if (input.responses?.length) throw new Error("Claude Code received responses while no native request was pending");
-      await state.driver.write({ type: "user", session_id: state.sessionId ?? "", message: { role: "user", content: [{ type: "text", text: input.text }] }, parent_tool_use_id: null });
+      if (input.responses?.length)
+        throw new Error("Claude Code received responses while no native request was pending");
+      await state.driver.write({
+        type: "user",
+        session_id: state.sessionId ?? "",
+        message: { role: "user", content: [{ type: "text", text: input.text }] },
+        parent_tool_use_id: null,
+      });
     }
     progressArmed = true;
     for (const frame of bufferedProgress) reportToolUseProgress(frame, state, ctx);
     return await drive(state, from, ctx);
   } catch (cause) {
-    if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed") throw cause;
-    throw makeSendFailure({ acceptance: state.pending ? "started" : "unknown", message: `Claude Code structured transport failed: ${cause instanceof Error ? cause.message : String(cause)} (frames=${state.driver.frameKinds() || "none"})`, cause: normalizeExternalCause(cause), process: state.driver.processReceipt() });
+    if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed")
+      throw cause;
+    throw makeSendFailure({
+      acceptance: state.pending ? "started" : "unknown",
+      message: `Claude Code structured transport failed: ${cause instanceof Error ? cause.message : String(cause)} (frames=${state.driver.frameKinds() || "none"})`,
+      cause: normalizeExternalCause(cause),
+      process: state.driver.processReceipt(),
+    });
   } finally {
     unsubscribe();
   }

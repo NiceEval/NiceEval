@@ -22,12 +22,23 @@ export function plannedAgentDerivedNode(
   parent?: { readonly key: string; readonly positions: readonly string[] },
 ): PlannedAgentDerivedNode | undefined {
   if (installs.length === 0) return undefined;
-  const matched = installs.map((install) => installers.find((installer) =>
-    installer.identity.agent === install.identity.agent &&
-    installer.identity.version === install.identity.version &&
-    installer.identity.revision === install.identity.revision));
-  if (matched.some((installer) => installer === undefined || installer.installMode !== "staged" ||
-    installer[AGENT_DOCKERFILE_CACHE_SAFE] !== true)) return undefined;
+  const matched = installs.map((install) =>
+    installers.find(
+      (installer) =>
+        installer.identity.agent === install.identity.agent &&
+        installer.identity.version === install.identity.version &&
+        installer.identity.revision === install.identity.revision,
+    ),
+  );
+  if (
+    matched.some(
+      (installer) =>
+        installer === undefined ||
+        installer.installMode !== "staged" ||
+        installer[AGENT_DOCKERFILE_CACHE_SAFE] !== true,
+    )
+  )
+    return undefined;
 
   const declarationMetadata = {
     domain: "niceeval.remote-snapshot-agent-derived",

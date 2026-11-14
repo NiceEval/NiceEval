@@ -1,13 +1,6 @@
 import { writeFile } from "node:fs/promises";
-import {
-  completeEvidenceCoverage,
-  defineAgent,
-  type AgentContext,
-} from "niceeval/adapter";
-import {
-  holdProjectDatabaseWriteLock,
-  rejectAttemptPublication,
-} from "./sqlite-fault-support.ts";
+import { completeEvidenceCoverage, defineAgent, type AgentContext } from "niceeval/adapter";
+import { holdProjectDatabaseWriteLock, rejectAttemptPublication } from "./sqlite-fault-support.ts";
 
 const evidenceCoverage = {
   ...completeEvidenceCoverage,

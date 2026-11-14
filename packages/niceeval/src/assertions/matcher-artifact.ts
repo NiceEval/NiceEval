@@ -11,11 +11,7 @@ import type {
   MatcherSourceSnapshot,
   OrderStepReceipt,
 } from "./api.ts";
-import type {
-  BooleanMatchEvaluation,
-  MatchDiagnostic,
-  ToolMatchQuantifier,
-} from "./match.ts";
+import type { BooleanMatchEvaluation, MatchDiagnostic, ToolMatchQuantifier } from "./match.ts";
 import { captureAssertionSnapshot } from "./runtime.ts";
 
 const MAX_QUERY_STEPS = 64;
@@ -30,18 +26,14 @@ export interface MatcherSourceRow<Candidate> {
 
 export interface MatcherQuery<Candidate> {
   readonly summary: AssertionSnapshotValue;
-  readonly evaluate: (
-    candidate: Candidate,
-  ) => Promise<BooleanMatchEvaluation<unknown>>;
+  readonly evaluate: (candidate: Candidate) => Promise<BooleanMatchEvaluation<unknown>>;
 }
 
 function retainedText(value: string, codePoints: number): string {
   return Array.from(value).slice(0, codePoints).join("");
 }
 
-function isSnapshotObject(
-  value: AssertionSnapshotValue,
-): value is AssertionSnapshotObject {
+function isSnapshotObject(value: AssertionSnapshotValue): value is AssertionSnapshotObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -65,9 +57,7 @@ function diagnosticSnapshot(diagnostic: MatchDiagnostic): AssertionSnapshotObjec
 }
 
 function locatorKey(locator: MatcherSourceLocator): string {
-  return locator.kind === "tool-occurrence"
-    ? `tool:${locator.toolOccurrenceId}`
-    : `event:${locator.eventId}`;
+  return locator.kind === "tool-occurrence" ? `tool:${locator.toolOccurrenceId}` : `event:${locator.eventId}`;
 }
 
 function comparisonDifference(
@@ -82,9 +72,7 @@ function comparisonDifference(
     query: summary,
     state: evaluation.state,
     ...(evaluation.state === "unavailable" ? { reason: evaluation.reason } : {}),
-    ...(evaluation.diagnostic === undefined
-      ? {}
-      : { evidence: diagnosticSnapshot(evaluation.diagnostic) }),
+    ...(evaluation.diagnostic === undefined ? {} : { evidence: diagnosticSnapshot(evaluation.diagnostic) }),
   });
 }
 
@@ -92,9 +80,7 @@ function overlayResult(
   locator: MatcherSourceLocator,
   evaluation: BooleanMatchEvaluation<unknown>,
 ): "matched" | "mismatched" | "unavailable" {
-  return evaluation.state === "matched" && locator.relation.state !== "exact"
-    ? "unavailable"
-    : evaluation.state;
+  return evaluation.state === "matched" && locator.relation.state !== "exact" ? "unavailable" : evaluation.state;
 }
 
 function retainRepresentative(
@@ -109,9 +95,7 @@ function retainRepresentative(
     result,
     difference,
   });
-  const existing = representatives.findIndex(
-    (candidate) => locatorKey(candidate.locator) === locatorKey(row.locator),
-  );
+  const existing = representatives.findIndex((candidate) => locatorKey(candidate.locator) === locatorKey(row.locator));
   if (existing >= 0) {
     if (result === "unavailable" || decisive) representatives[existing] = retained;
     return;
@@ -214,11 +198,7 @@ export async function evaluateMatcherCollection<Candidate>(input: {
 
   const sourceComplete = input.sourceSnapshot.collectionAtCut === "complete";
   const exhaustive = examined === input.rows.length;
-  const state = collectionResult(
-    input.quantifier,
-    { matched, unavailable },
-    sourceComplete && exhaustive,
-  );
+  const state = collectionResult(input.quantifier, { matched, unavailable }, sourceComplete && exhaustive);
   const decisive = state !== "unavailable";
   const receipt = collectionReceipt({
     examined,
@@ -290,22 +270,21 @@ function prefixLength(frontier: readonly (PathLink | undefined)[]): number {
   return 0;
 }
 
-function orderStepReceipts(
-  receipts: readonly MutableStepReceipt[],
-): readonly OrderStepReceipt[] {
-  return Object.freeze(receipts.map((receipt, index) => Object.freeze({
-    step: index + 1,
-    comparisons: receipt.comparisons,
-    matched: receipt.matched,
-    mismatched: receipt.mismatched,
-    unavailable: receipt.unavailable,
-  })));
+function orderStepReceipts(receipts: readonly MutableStepReceipt[]): readonly OrderStepReceipt[] {
+  return Object.freeze(
+    receipts.map((receipt, index) =>
+      Object.freeze({
+        step: index + 1,
+        comparisons: receipt.comparisons,
+        matched: receipt.matched,
+        mismatched: receipt.mismatched,
+        unavailable: receipt.unavailable,
+      }),
+    ),
+  );
 }
 
-function suffixReceipt(
-  receipt: MutableStepReceipt,
-  complete: boolean,
-): AssertionCollectionReceipt {
+function suffixReceipt(receipt: MutableStepReceipt, complete: boolean): AssertionCollectionReceipt {
   return Object.freeze({
     examined: receipt.comparisons,
     matched: receipt.matched,
@@ -319,10 +298,7 @@ function suffixReceipt(
 }
 
 export async function evaluateMatcherOrder<Candidate>(input: {
-  readonly sourceSnapshot: Extract<
-    MatcherSourceSnapshot,
-    { readonly scope: "turn" | "session" }
-  >;
+  readonly sourceSnapshot: Extract<MatcherSourceSnapshot, { readonly scope: "turn" | "session" }>;
   readonly rows: readonly MatcherSourceRow<Candidate>[];
   readonly queries: readonly MatcherQuery<Candidate>[];
 }): Promise<BooleanAssertionEvaluation<void>> {
@@ -353,9 +329,7 @@ export async function evaluateMatcherOrder<Candidate>(input: {
       row.sessionSequence > input.sourceSnapshot.throughSessionSequence ||
       row.sessionSequence <= previousSessionSequence
     ) {
-      throw new Error(
-        "Ordered matcher rows must be strictly increasing inside the immutable source cut",
-      );
+      throw new Error("Ordered matcher rows must be strictly increasing inside the immutable source cut");
     }
     previousSessionSequence = row.sessionSequence;
     processedRows += 1;
@@ -374,18 +348,9 @@ export async function evaluateMatcherOrder<Candidate>(input: {
         suffix[state] += 1;
       }
 
-      retainRepresentative(
-        representatives,
-        row,
-        state,
-        comparisonDifference(index + 1, query.summary, evaluation),
-      );
+      retainRepresentative(representatives, row, state, comparisonDifference(index + 1, query.summary, evaluation));
 
-      if (
-        definite[index] === undefined &&
-        state === "matched" &&
-        (index === 0 || definite[index - 1] !== undefined)
-      ) {
+      if (definite[index] === undefined && state === "matched" && (index === 0 || definite[index - 1] !== undefined)) {
         definite[index] = Object.freeze({
           previous: index === 0 ? undefined : definite[index - 1],
           node: Object.freeze({
@@ -397,11 +362,7 @@ export async function evaluateMatcherOrder<Candidate>(input: {
           }),
         });
       }
-      if (
-        possible[index] === undefined &&
-        state !== "mismatched" &&
-        predecessorPossible
-      ) {
+      if (possible[index] === undefined && state !== "mismatched" && predecessorPossible) {
         possible[index] = Object.freeze({
           previous: index === 0 ? undefined : possible[index - 1],
           node: Object.freeze({
@@ -409,7 +370,7 @@ export async function evaluateMatcherOrder<Candidate>(input: {
             locator: row.locator,
             sessionId: row.sessionId,
             sessionSequence: row.sessionSequence,
-            result: state === "matched" ? "matched" as const : "unavailable" as const,
+            result: state === "matched" ? ("matched" as const) : ("unavailable" as const),
           }),
         });
       }
@@ -422,17 +383,13 @@ export async function evaluateMatcherOrder<Candidate>(input: {
   const sourceComplete = input.sourceSnapshot.collectionAtCut === "complete";
   const exhaustive = processedRows === input.rows.length;
   const matched = definitePrefixLength === input.queries.length;
-  const failed = !matched && possiblePrefixLength < input.queries.length &&
-    sourceComplete && exhaustive;
+  const failed = !matched && possiblePrefixLength < input.queries.length && sourceComplete && exhaustive;
   const decisive = matched || failed;
   const immutableStepReceipts = orderStepReceipts(stepReceipts);
   const receipt = Object.freeze({
     sourceRows: input.rows.length,
     comparisons: immutableStepReceipts.reduce((sum, step) => sum + step.comparisons, 0),
-    unavailableComparisons: immutableStepReceipts.reduce(
-      (sum, step) => sum + step.unavailable,
-      0,
-    ),
+    unavailableComparisons: immutableStepReceipts.reduce((sum, step) => sum + step.unavailable, 0),
     definitePrefixLength,
     possiblePrefixLength,
     stepReceipts: immutableStepReceipts,
@@ -440,9 +397,7 @@ export async function evaluateMatcherOrder<Candidate>(input: {
     exhaustive,
     decisive,
   });
-  const querySteps = Object.freeze(input.queries.map((query, index) =>
-    queryStep(index + 1, query.summary)
-  ));
+  const querySteps = Object.freeze(input.queries.map((query, index) => queryStep(index + 1, query.summary)));
   const retainedRows = Object.freeze(representatives);
   const artifact: MatcherQueryArtifact = matched
     ? Object.freeze({
@@ -457,43 +412,41 @@ export async function evaluateMatcherOrder<Candidate>(input: {
         retainedRows,
       })
     : failed
-    ? Object.freeze({
-        kind: "ordered-sequence" as const,
-        sourceSnapshot: input.sourceSnapshot,
-        querySteps,
-        receipt,
-        result: Object.freeze({
-          state: "mismatched" as const,
-          failureFrontier: Object.freeze({
-            longestDefinitePrefix: pathFrom(
-              definitePrefixLength === 0 ? undefined : definite[definitePrefixLength - 1],
-            ),
-            longestPossiblePrefix: pathFrom(
-              possiblePrefixLength === 0 ? undefined : possible[possiblePrefixLength - 1],
-            ),
-            firstBlockingStep: possiblePrefixLength + 1,
-            suffixChecked: suffixReceipt(
-              suffixReceipts[possiblePrefixLength]!,
-              true,
-            ),
-            representatives: retainedRows,
+      ? Object.freeze({
+          kind: "ordered-sequence" as const,
+          sourceSnapshot: input.sourceSnapshot,
+          querySteps,
+          receipt,
+          result: Object.freeze({
+            state: "mismatched" as const,
+            failureFrontier: Object.freeze({
+              longestDefinitePrefix: pathFrom(
+                definitePrefixLength === 0 ? undefined : definite[definitePrefixLength - 1],
+              ),
+              longestPossiblePrefix: pathFrom(
+                possiblePrefixLength === 0 ? undefined : possible[possiblePrefixLength - 1],
+              ),
+              firstBlockingStep: possiblePrefixLength + 1,
+              suffixChecked: suffixReceipt(suffixReceipts[possiblePrefixLength]!, true),
+              representatives: retainedRows,
+            }),
           }),
-        }),
-        retainedRows,
-      })
-    : Object.freeze({
-        kind: "ordered-sequence" as const,
-        sourceSnapshot: input.sourceSnapshot,
-        querySteps,
-        receipt,
-        result: Object.freeze({
-          state: "unavailable" as const,
-          reason: possiblePrefixLength === input.queries.length
-            ? "possible-witness-not-definite"
-            : `source-${input.sourceSnapshot.collectionAtCut}`,
-        }),
-        retainedRows,
-      });
+          retainedRows,
+        })
+      : Object.freeze({
+          kind: "ordered-sequence" as const,
+          sourceSnapshot: input.sourceSnapshot,
+          querySteps,
+          receipt,
+          result: Object.freeze({
+            state: "unavailable" as const,
+            reason:
+              possiblePrefixLength === input.queries.length
+                ? "possible-witness-not-definite"
+                : `source-${input.sourceSnapshot.collectionAtCut}`,
+          }),
+          retainedRows,
+        });
   return matched
     ? Object.freeze({
         state: "matched" as const,
@@ -501,12 +454,12 @@ export async function evaluateMatcherOrder<Candidate>(input: {
         matcherArtifact: artifact,
       })
     : failed
-    ? Object.freeze({ state: "mismatched" as const, matcherArtifact: artifact })
-    : Object.freeze({
-        state: "unavailable" as const,
-        reason: "evidence-unavailable" as const,
-        matcherArtifact: artifact,
-      });
+      ? Object.freeze({ state: "mismatched" as const, matcherArtifact: artifact })
+      : Object.freeze({
+          state: "unavailable" as const,
+          reason: "evidence-unavailable" as const,
+          matcherArtifact: artifact,
+        });
 }
 
 export function interruptedMatcherArtifact(input: {
@@ -542,22 +495,24 @@ export function interruptedMatcherArtifact(input: {
   return Object.freeze({
     kind: "ordered-sequence" as const,
     sourceSnapshot: input.sourceSnapshot,
-    querySteps: Object.freeze(input.queries.map((summary, index) =>
-      queryStep(index + 1, summary)
-    )),
+    querySteps: Object.freeze(input.queries.map((summary, index) => queryStep(index + 1, summary))),
     receipt: Object.freeze({
       sourceRows: input.sourceRows,
       comparisons: 0,
       unavailableComparisons: 0,
       definitePrefixLength: 0,
       possiblePrefixLength: 0,
-      stepReceipts: Object.freeze(input.queries.map((_, index) => Object.freeze({
-        step: index + 1,
-        comparisons: 0,
-        matched: 0,
-        mismatched: 0,
-        unavailable: 0,
-      }))),
+      stepReceipts: Object.freeze(
+        input.queries.map((_, index) =>
+          Object.freeze({
+            step: index + 1,
+            comparisons: 0,
+            matched: 0,
+            mismatched: 0,
+            unavailable: 0,
+          }),
+        ),
+      ),
       complete: input.sourceSnapshot.collectionAtCut === "complete",
       exhaustive: false,
       decisive: false,

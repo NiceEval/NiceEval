@@ -51,10 +51,8 @@ export interface ShellActionOptions extends SandboxExecOptions, SandboxBeforeAct
 }
 
 /** 内联 command 与模块相对 file: URL 二选一；脚本内容在 planning 冻结。 */
-export type ShellActionInput = ShellActionOptions & (
-  | { readonly command: string; readonly script?: never }
-  | { readonly script: URL; readonly command?: never }
-);
+export type ShellActionInput = ShellActionOptions &
+  ({ readonly command: string; readonly script?: never } | { readonly script: URL; readonly command?: never });
 
 /** Declares an unconditional shell cleanup action with explicit immutable inputs; script text must not embed secrets. */
 export interface ShellAfterActionInput extends SandboxExecOptions {
@@ -65,16 +63,8 @@ export interface ShellAfterActionInput extends SandboxExecOptions {
 
 /** Declares argv-based lifecycle work as an action or stable command; arguments are literal and shell syntax requires shell instead. */
 export interface CommandActionFactory {
-  (
-    executable: string,
-    args: readonly string[],
-    options: CommandActionOptions,
-  ): SandboxAction;
-  (
-    executable: string,
-    args?: readonly string[],
-    options?: SandboxCommandOptions,
-  ): StableSandboxCommand;
+  (executable: string, args: readonly string[], options: CommandActionOptions): SandboxAction;
+  (executable: string, args?: readonly string[], options?: SandboxCommandOptions): StableSandboxCommand;
   readonly after: (
     executable: string,
     args: readonly string[],
@@ -141,10 +131,7 @@ export interface SandboxCommandContext {
 
 /** Runs opaque lifecycle work against the current Sandbox; acquired resources must be registered with context.onCleanup before the callback settles. */
 export interface SandboxCommand {
-  (
-    sandbox: SandboxCommandTarget,
-    context: SandboxCommandContext,
-  ): MaybePromise<void>;
+  (sandbox: SandboxCommandTarget, context: SandboxCommandContext): MaybePromise<void>;
 }
 
 /** Allows declared JSON data and registered immutable content in command identity; do not include live handles or secrets. */
@@ -193,12 +180,7 @@ export interface StableSandboxCommand extends SandboxCommand {
  * `niceeval debug` 能证明的声明式命令。这里只保存执行闭包已经消费的同一份规范化数据；
  * 普通 `defineSandboxCommand(identity, run)` 不会因为 identity 看起来像内建 id 就获得计划。
  */
-export type SandboxCommandPlanRedaction =
-  | "env-values"
-  | "header-values"
-  | "stdin"
-  | "sensitive-values"
-  | "command";
+export type SandboxCommandPlanRedaction = "env-values" | "header-values" | "stdin" | "sensitive-values" | "command";
 
 export type SandboxCommandPlanCommand =
   | {
@@ -316,11 +298,7 @@ function normalizeCommandOptions(value: unknown, path: string): Readonly<Sandbox
   return Object.freeze(normalized);
 }
 
-function cloneIdentityValue(
-  value: unknown,
-  path: string,
-  ancestors: WeakSet<object>,
-): SandboxCommandIdentityValue {
+function cloneIdentityValue(value: unknown, path: string, ancestors: WeakSet<object>): SandboxCommandIdentityValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new TypeError(`${path} must not contain a non-finite number`);
@@ -367,23 +345,23 @@ function normalizeIdentity(value: unknown, allowScheduling: boolean): Readonly<S
 }
 
 function normalizeCommandMetadata(value: SandboxCommandDefinition): NormalizedSandboxBeforeMetadata {
-  return normalizeSandboxBeforeMetadata({
-    id: value.id,
-    ...(value.changeFrequency === undefined ? {} : { changeFrequency: value.changeFrequency }),
-    ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn }),
-    ...(value.requires === undefined ? {} : { requires: value.requires }),
-    ...(value.provides === undefined ? {} : { provides: value.provides }),
-  }, "defineSandboxCommand identity");
+  return normalizeSandboxBeforeMetadata(
+    {
+      id: value.id,
+      ...(value.changeFrequency === undefined ? {} : { changeFrequency: value.changeFrequency }),
+      ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn }),
+      ...(value.requires === undefined ? {} : { requires: value.requires }),
+      ...(value.provides === undefined ? {} : { provides: value.provides }),
+    },
+    "defineSandboxCommand identity",
+  );
 }
 
 // @concord-code
 // @concord-implements docs/feature/sandbox/library/operations.md
 // @concord-implements docs/feature/sandbox/library/prepare-commands.md
 /** Binds an explicit identity and schedule to an opaque callback. It always runs and remains a cache barrier even when identity is stable. */
-export function defineSandboxCommand(
-  identity: SandboxCommandDefinition,
-  run: SandboxCommand,
-): StableSandboxCommand {
+export function defineSandboxCommand(identity: SandboxCommandDefinition, run: SandboxCommand): StableSandboxCommand {
   return defineStableSandboxCommand(identity, run, true);
 }
 
@@ -422,16 +400,17 @@ function freezePlanNode(node: SandboxCommandPlanNode): SandboxCommandPlanNode {
   const condition = node.condition === undefined ? {} : { condition: Object.freeze({ ...node.condition }) };
   const label = node.label === undefined ? {} : { label: node.label };
   if (node.truth === "exact") {
-    const command = node.command.kind === "argv"
-      ? Object.freeze({
-          ...node.command,
-          args: Object.freeze([...node.command.args]),
-          ...(node.command.envKeys === undefined ? {} : { envKeys: Object.freeze([...node.command.envKeys]) }),
-        })
-      : Object.freeze({
-          ...node.command,
-          ...(node.command.envKeys === undefined ? {} : { envKeys: Object.freeze([...node.command.envKeys]) }),
-        });
+    const command =
+      node.command.kind === "argv"
+        ? Object.freeze({
+            ...node.command,
+            args: Object.freeze([...node.command.args]),
+            ...(node.command.envKeys === undefined ? {} : { envKeys: Object.freeze([...node.command.envKeys]) }),
+          })
+        : Object.freeze({
+            ...node.command,
+            ...(node.command.envKeys === undefined ? {} : { envKeys: Object.freeze([...node.command.envKeys]) }),
+          });
     return Object.freeze({
       truth: "exact" as const,
       ...label,
@@ -537,9 +516,8 @@ const execActionCanonicalInputSchema = Schema.Struct({
  * public/debug projection used by defineSandboxAction. Automatic identity still includes the
  * private step payload, so redacting this projection cannot create a false cache hit.
  */
-const execActionInputSchema = execActionCanonicalInputSchema.pipe(Schema.decodeTo(
-  execActionPayloadSchema,
-  {
+const execActionInputSchema = execActionCanonicalInputSchema.pipe(
+  Schema.decodeTo(execActionPayloadSchema, {
     decode: SchemaGetter.transform((input) => ({
       executable: input.executable,
       argsJson: input.argsJson,
@@ -555,9 +533,8 @@ const execActionInputSchema = execActionCanonicalInputSchema.pipe(Schema.decodeT
       declaredInputsJson: input.declaredInputsJson,
     })),
     encode: SchemaGetter.transform((payload) => {
-      const env = payload.envJson === ""
-        ? undefined
-        : JSON.parse(payload.envJson) as globalThis.Record<string, string>;
+      const env =
+        payload.envJson === "" ? undefined : (JSON.parse(payload.envJson) as globalThis.Record<string, string>);
       return {
         executable: payload.executable,
         argsJson: payload.argsJson,
@@ -576,8 +553,8 @@ const execActionInputSchema = execActionCanonicalInputSchema.pipe(Schema.decodeT
         declaredInputsJson: payload.declaredInputsJson,
       };
     }),
-  },
-));
+  }),
+);
 
 function execOptionsFromPayload(input: ExecActionPayload): SandboxCommandOptions {
   return Object.freeze({
@@ -592,24 +569,41 @@ function execOptionsFromPayload(input: ExecActionPayload): SandboxCommandOptions
 const commandActionFamily = defineSandboxAction({
   id: "niceeval.sandbox.command",
   input: execActionInputSchema,
-  steps: (input) => [sandboxStep.exec({
-    executable: input.executable,
-    args: JSON.parse(input.argsJson) as string[],
-    ...execOptionsFromPayload(input),
-  })] as const,
+  steps: (input) =>
+    [
+      sandboxStep.exec({
+        executable: input.executable,
+        args: JSON.parse(input.argsJson) as string[],
+        ...execOptionsFromPayload(input),
+      }),
+    ] as const,
 });
 
 const shellActionFamily = defineSandboxAction({
   id: "niceeval.sandbox.shell",
   input: execActionInputSchema,
-  steps: (input) => [sandboxShellStep({
-    executable: "/bin/sh",
-    args: ["-lc", input.executable],
-    ...execOptionsFromPayload(input),
-  }, input.executable)] as const,
+  steps: (input) =>
+    [
+      sandboxShellStep(
+        {
+          executable: "/bin/sh",
+          args: ["-lc", input.executable],
+          ...execOptionsFromPayload(input),
+        },
+        input.executable,
+      ),
+    ] as const,
 });
 
-const INLINE_SCHEDULING_KEYS = ["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"] as const;
+const INLINE_SCHEDULING_KEYS = [
+  "id",
+  "label",
+  "changeFrequency",
+  "dependsOn",
+  "requires",
+  "provides",
+  "cache",
+] as const;
 const INLINE_EXEC_KEYS = ["cwd", "env", "user", "timeoutMs", "stdin"] as const;
 
 function pickExecOptions(value: globalThis.Record<string, unknown>): SandboxCommandOptions {
@@ -635,23 +629,28 @@ function normalizeInlineOptions(
   assertRecord(value, path);
   assertOnlyKeys(
     value,
-    new Set(after
-      ? ["id", ...INLINE_EXEC_KEYS, ...payloadKeys]
-      : [...INLINE_SCHEDULING_KEYS, ...INLINE_EXEC_KEYS, ...payloadKeys]),
+    new Set(
+      after
+        ? ["id", ...INLINE_EXEC_KEYS, ...payloadKeys]
+        : [...INLINE_SCHEDULING_KEYS, ...INLINE_EXEC_KEYS, ...payloadKeys],
+    ),
     path,
   );
   const id = nonEmptyString(value.id, `${path}.id`);
   const exec = normalizeCommandOptions(pickExecOptions(value), `${path} execution options`);
   if (after) return Object.freeze({ id, exec });
-  normalizeSandboxBeforeMetadata({
-    id,
-    ...(value.label === undefined ? {} : { label: value.label }),
-    ...(value.changeFrequency === undefined ? {} : { changeFrequency: value.changeFrequency }),
-    ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn }),
-    ...(value.requires === undefined ? {} : { requires: value.requires }),
-    ...(value.provides === undefined ? {} : { provides: value.provides }),
-    ...(value.cache === undefined ? {} : { cache: value.cache }),
-  }, path);
+  normalizeSandboxBeforeMetadata(
+    {
+      id,
+      ...(value.label === undefined ? {} : { label: value.label }),
+      ...(value.changeFrequency === undefined ? {} : { changeFrequency: value.changeFrequency }),
+      ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn }),
+      ...(value.requires === undefined ? {} : { requires: value.requires }),
+      ...(value.provides === undefined ? {} : { provides: value.provides }),
+      ...(value.cache === undefined ? {} : { cache: value.cache }),
+    },
+    path,
+  );
   const scheduling: SandboxActionInstanceOptions = Object.freeze({
     id,
     ...(value.label === undefined ? {} : { label: value.label as string }),
@@ -659,9 +658,7 @@ function normalizeInlineOptions(
     ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn as readonly SandboxActionRef[] }),
     ...(value.requires === undefined ? {} : { requires: value.requires as readonly SandboxCapability[] }),
     ...(value.provides === undefined ? {} : { provides: value.provides as readonly SandboxCapability[] }),
-    ...(value.cache === undefined
-      ? {}
-      : { cache: value.cache as SandboxActionInstanceOptions["cache"] }),
+    ...(value.cache === undefined ? {} : { cache: value.cache as SandboxActionInstanceOptions["cache"] }),
   });
   return Object.freeze({ id, exec, scheduling });
 }
@@ -672,10 +669,14 @@ function execPayload(
   options: Readonly<SandboxCommandOptions>,
   declaredInputs: readonly RegisteredSandboxContent[] = [],
 ): ExecActionPayload {
-  const env = options.env === undefined
-    ? ""
-    : JSON.stringify(Object.fromEntries(Object.entries(options.env).sort(([left], [right]) =>
-        left < right ? -1 : left > right ? 1 : 0)));
+  const env =
+    options.env === undefined
+      ? ""
+      : JSON.stringify(
+          Object.fromEntries(
+            Object.entries(options.env).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+          ),
+        );
   return Object.freeze({
     executable,
     argsJson: JSON.stringify(args),
@@ -688,10 +689,14 @@ function execPayload(
     hasTimeout: options.timeoutMs !== undefined,
     stdin: options.stdin ?? "",
     hasStdin: options.stdin !== undefined,
-    declaredInputsJson: JSON.stringify(declaredInputs.map((content) => ({
-      kind: content.kind,
-      digest: content.digest,
-    })).sort((left, right) => left.digest < right.digest ? -1 : left.digest > right.digest ? 1 : 0)),
+    declaredInputsJson: JSON.stringify(
+      declaredInputs
+        .map((content) => ({
+          kind: content.kind,
+          digest: content.digest,
+        }))
+        .sort((left, right) => (left.digest < right.digest ? -1 : left.digest > right.digest ? 1 : 0)),
+    ),
   });
 }
 
@@ -772,16 +777,12 @@ function legacyShell(script: string, options?: SandboxCommandOptions): StableSan
   );
 }
 
-const commandImpl = (function (
+const commandImpl = function (
   executable: string,
   args: readonly string[] = [],
   options?: SandboxCommandOptions | CommandActionOptions,
 ): StableSandboxCommand | SandboxAction {
-  if (
-    options !== undefined &&
-    typeof options === "object" &&
-    Object.prototype.hasOwnProperty.call(options, "id")
-  ) {
+  if (options !== undefined && typeof options === "object" && Object.prototype.hasOwnProperty.call(options, "id")) {
     const normalizedExecutable = nonEmptyString(executable, "command executable");
     if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
       throw new TypeError("command args must be an array of strings");
@@ -793,28 +794,23 @@ const commandImpl = (function (
     );
   }
   return legacyCommand(executable, args, options);
-}) as CommandActionFactory;
+} as CommandActionFactory;
 Object.defineProperty(commandImpl, "after", {
-  value: (
-    executable: string,
-    args: readonly string[],
-    options: CommandAfterActionOptions,
-  ): SandboxAfterAction => {
+  value: (executable: string, args: readonly string[], options: CommandAfterActionOptions): SandboxAfterAction => {
     const normalizedExecutable = nonEmptyString(executable, "command.after executable");
     if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
       throw new TypeError("command.after args must be an array of strings");
     }
     const normalized = normalizeInlineOptions(options, "command.after options", [], true);
-    return commandActionFamily.after(
-      execPayload(normalizedExecutable, Object.freeze([...args]), normalized.exec),
-      { id: normalized.id },
-    );
+    return commandActionFamily.after(execPayload(normalizedExecutable, Object.freeze([...args]), normalized.exec), {
+      id: normalized.id,
+    });
   },
 });
 /** Declares executable-and-argv lifecycle work. Arguments are not shell-expanded; use shell when pipelines or expansions are intended. */
 export const command = Object.freeze(commandImpl);
 
-const shellImpl = (function (
+const shellImpl = function (
   input: string | ShellActionInput,
   legacyOptions?: SandboxCommandOptions,
 ): StableSandboxCommand | SandboxAction {
@@ -827,22 +823,27 @@ const shellImpl = (function (
   const script = file?.command ?? nonEmptyString(input.command, "shell input.command");
   const inputs = declaredShellInputs(input.inputs, "shell input.inputs");
   const payload = execPayload(script, [], normalized.exec, inputs);
-  const action = shellActionFamily(file === undefined ? payload : {
-    ...payload,
-    declaredInputsJson: JSON.stringify([...JSON.parse(payload.declaredInputsJson), { kind: "script", digest: file.source.digest }]),
-  }, normalized.scheduling);
+  const action = shellActionFamily(
+    file === undefined
+      ? payload
+      : {
+          ...payload,
+          declaredInputsJson: JSON.stringify([
+            ...JSON.parse(payload.declaredInputsJson),
+            { kind: "script", digest: file.source.digest },
+          ]),
+        },
+    normalized.scheduling,
+  );
   if (file !== undefined) SHELL_SCRIPT_SOURCES.set(sandboxActionDataOf(action), file.source);
   return action;
-}) as ShellActionFactory;
+} as ShellActionFactory;
 Object.defineProperty(shellImpl, "after", {
   value: (input: ShellAfterActionInput): SandboxAfterAction => {
     const normalized = normalizeInlineOptions(input, "shell.after input", ["command", "inputs"], true);
     const script = nonEmptyString(input.command, "shell.after input.command");
     const inputs = declaredShellInputs(input.inputs, "shell.after input.inputs");
-    return shellActionFamily.after(
-      execPayload(script, [], normalized.exec, inputs),
-      { id: normalized.id },
-    );
+    return shellActionFamily.after(execPayload(script, [], normalized.exec, inputs), { id: normalized.id });
   },
 });
 /** Declares shell-interpreted lifecycle work from inline text or a script file. Choose exactly one source, and never embed secrets in script text. */
@@ -894,9 +895,7 @@ export function sandboxCommandIdentityJson(value: SandboxCommandIdentityValue): 
   if (isRegisteredSandboxContent(value)) return { kind: value.kind, digest: value.digest };
   if (Array.isArray(value)) return value.map((child) => sandboxCommandIdentityJson(child));
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [key, sandboxCommandIdentityJson(child)]),
-    );
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, sandboxCommandIdentityJson(child)]));
   }
   return value;
 }

@@ -8,20 +8,12 @@ import {
   FiniteNonNegativeNumberSchema,
   type FiniteNonNegativeNumber,
 } from "./attachment.ts";
-import {
-  EvaluationAttemptFactsSchema,
-  recordedAttemptFacts,
-  type EvaluationAttemptFacts,
-} from "./sealed-assertion.ts";
+import { EvaluationAttemptFactsSchema, recordedAttemptFacts, type EvaluationAttemptFacts } from "./sealed-assertion.ts";
 import type { AssertionsAttachment } from "../../record/family/assertions/definition.ts";
 import type { AttemptOutcome } from "../../record/model/core.ts";
 
 /** Score is an Analysis calculation, not an independently persisted family. */
-export const ScoreStateSchema = Schema.Literals([
-  "complete",
-  "partial",
-  "unavailable",
-]);
+export const ScoreStateSchema = Schema.Literals(["complete", "partial", "unavailable"]);
 export type ScoreState = Schema.toType<typeof ScoreStateSchema>["Type"];
 
 export const ScoreIncompleteReasonSchema = Schema.Literals([
@@ -31,9 +23,7 @@ export const ScoreIncompleteReasonSchema = Schema.Literals([
   "not-applicable",
 ]);
 export type ScoreIncompleteReason = Schema.toType<typeof ScoreIncompleteReasonSchema>["Type"];
-export const ScoreIncompleteReasonsSchema = Schema.NonEmptyArray(
-  ScoreIncompleteReasonSchema,
-);
+export const ScoreIncompleteReasonsSchema = Schema.NonEmptyArray(ScoreIncompleteReasonSchema);
 export type ScoreIncompleteReasons = Schema.toType<typeof ScoreIncompleteReasonsSchema>["Type"];
 
 export const EarnedScoreSchema = FiniteNonNegativeNumberSchema;
@@ -53,9 +43,7 @@ const ScorePayloadStructuralSchema = Schema.Union([
 ]);
 
 export type ScorePayload = Schema.toType<typeof ScorePayloadStructuralSchema>["Type"];
-export type ScorePayloadEncoded = Schema.Codec.Encoded<
-  typeof ScorePayloadStructuralSchema
->;
+export type ScorePayloadEncoded = Schema.Codec.Encoded<typeof ScorePayloadStructuralSchema>;
 
 export type ScorePayloadIssue =
   | { readonly code: "score-incomplete-reason-duplicate"; readonly reason: ScoreIncompleteReason }
@@ -67,10 +55,14 @@ export type ScorePayloadIssue =
 
 function scoreIncompleteReasonRank(reason: ScoreIncompleteReason): number {
   switch (reason) {
-    case "execution-errored": return 0;
-    case "source-unavailable": return 1;
-    case "evaluation-errored": return 2;
-    case "not-applicable": return 3;
+    case "execution-errored":
+      return 0;
+    case "source-unavailable":
+      return 1;
+    case "evaluation-errored":
+      return 2;
+    case "not-applicable":
+      return 3;
   }
 }
 
@@ -78,9 +70,7 @@ function incompleteReasonsOf(payload: ScorePayload): readonly ScoreIncompleteRea
   return payload.state === "complete" ? [] : payload.reasons;
 }
 
-export function validateScorePayload(
-  payload: ScorePayload,
-): readonly ScorePayloadIssue[] {
+export function validateScorePayload(payload: ScorePayload): readonly ScorePayloadIssue[] {
   const issues: ScorePayloadIssue[] = [];
   const seen = new Set<ScoreIncompleteReason>();
   let previousRank: number | undefined;
@@ -113,29 +103,20 @@ export type ScorePayloadBuildError =
   | { readonly code: "score-fold-input-invalid" }
   | { readonly code: "score-earned-overflow" };
 
-function canonicalIncompleteReasons(
-  reasons: readonly ScoreIncompleteReason[],
-): readonly ScoreIncompleteReason[] {
-  return Object.freeze([...new Set(reasons)].sort(
-    (left, right) => scoreIncompleteReasonRank(left) - scoreIncompleteReasonRank(right),
-  ));
+function canonicalIncompleteReasons(reasons: readonly ScoreIncompleteReason[]): readonly ScoreIncompleteReason[] {
+  return Object.freeze(
+    [...new Set(reasons)].sort((left, right) => scoreIncompleteReasonRank(left) - scoreIncompleteReasonRank(right)),
+  );
 }
 
-function asNonEmptyReasons(
-  reasons: readonly ScoreIncompleteReason[],
-): ScoreIncompleteReasons | undefined {
+function asNonEmptyReasons(reasons: readonly ScoreIncompleteReason[]): ScoreIncompleteReasons | undefined {
   const [first, ...rest] = reasons;
   return first === undefined ? undefined : Object.freeze([first, ...rest]);
 }
 
 /** Folds sealed Assertion facts without producing a durable Record write. */
-export function buildScorePayload(
-  input: ScoreFoldInput,
-): Result.Result<ScorePayload, ScorePayloadBuildError> {
-  const decoded = Schema.decodeUnknownResult(
-    Schema.toType(ScoreFoldInputSchema),
-    ExactEvaluationParseOptions,
-  )(input);
+export function buildScorePayload(input: ScoreFoldInput): Result.Result<ScorePayload, ScorePayloadBuildError> {
+  const decoded = Schema.decodeUnknownResult(Schema.toType(ScoreFoldInputSchema), ExactEvaluationParseOptions)(input);
   if (Result.isFailure(decoded)) {
     return Result.fail(Object.freeze({ code: "score-fold-input-invalid" as const }));
   }
@@ -145,7 +126,8 @@ export function buildScorePayload(
   const incompleteReasons: ScoreIncompleteReason[] = [];
   for (const assertion of decoded.success.assertions) {
     switch (assertion.result.score.state) {
-      case "not-scored": break;
+      case "not-scored":
+        break;
       case "earned":
         hasAuditableContribution = true;
         earned += assertion.result.score.earned;
@@ -190,7 +172,8 @@ function sameReasons(left: readonly ScoreIncompleteReason[], right: readonly Sco
 function sameScorePayload(left: ScorePayload, right: ScorePayload): boolean {
   if (left.state !== right.state) return false;
   if (left.state === "complete") return right.state === "complete" && left.earned === right.earned;
-  if (left.state === "partial") return right.state === "partial" && left.earned === right.earned && sameReasons(left.reasons, right.reasons);
+  if (left.state === "partial")
+    return right.state === "partial" && left.earned === right.earned && sameReasons(left.reasons, right.reasons);
   return right.state === "unavailable" && sameReasons(left.reasons, right.reasons);
 }
 
@@ -209,7 +192,12 @@ export function validateScoreCoherence(input: {
 
 export type Score =
   | { readonly state: "complete"; readonly earned: number; readonly comparable: true }
-  | { readonly state: "partial"; readonly earned: number; readonly reasons: ScoreIncompleteReasons; readonly comparable: false }
+  | {
+      readonly state: "partial";
+      readonly earned: number;
+      readonly reasons: ScoreIncompleteReasons;
+      readonly comparable: false;
+    }
   | { readonly state: "unavailable"; readonly reasons: ScoreIncompleteReasons; readonly comparable: false };
 export type ScoreProjection = Score;
 
@@ -221,8 +209,20 @@ function scoreIncompleteReasons(reasons: readonly ScoreIncompleteReason[]): Scor
 
 export function projectScorePayload(payload: ScorePayload): Score {
   switch (payload.state) {
-    case "complete": return Object.freeze({ state: "complete" as const, earned: payload.earned, comparable: true as const });
-    case "partial": return Object.freeze({ state: "partial" as const, earned: payload.earned, reasons: scoreIncompleteReasons(payload.reasons), comparable: false as const });
-    case "unavailable": return Object.freeze({ state: "unavailable" as const, reasons: scoreIncompleteReasons(payload.reasons), comparable: false as const });
+    case "complete":
+      return Object.freeze({ state: "complete" as const, earned: payload.earned, comparable: true as const });
+    case "partial":
+      return Object.freeze({
+        state: "partial" as const,
+        earned: payload.earned,
+        reasons: scoreIncompleteReasons(payload.reasons),
+        comparable: false as const,
+      });
+    case "unavailable":
+      return Object.freeze({
+        state: "unavailable" as const,
+        reasons: scoreIncompleteReasons(payload.reasons),
+        comparable: false as const,
+      });
   }
 }

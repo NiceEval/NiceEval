@@ -119,9 +119,12 @@ export interface CliOutputService {
 export class CliOutput extends Context.Service<CliOutput, CliOutputService>()("niceeval/cli/CliOutput") {}
 
 /** Request one terminal confirmation; noninteractive input declines without reading stdin. */
-export class CliConfirmation extends Context.Service<CliConfirmation, {
-  readonly confirm: (message: string) => Effect.Effect<boolean, CliInvocationError>;
-}>()("niceeval/cli/CliConfirmation") {}
+export class CliConfirmation extends Context.Service<
+  CliConfirmation,
+  {
+    readonly confirm: (message: string) => Effect.Effect<boolean, CliInvocationError>;
+  }
+>()("niceeval/cli/CliConfirmation") {}
 
 export interface PackageMetadataService {
   readonly version: Effect.Effect<string, CliInvocationError>;

@@ -9,14 +9,22 @@ export const ExecutionComparisonSchema = Schema.Struct({
   result: Schema.Literals(["match", "mismatch", "ineligible", "not-comparable"]),
   reason: Schema.String,
   explanation: Schema.optionalKey(IdentityExplanationSchema),
-}).check(Schema.makeFilter((comparison) => comparison.recordedClaim !== "execution-identity" || comparison.result !== "mismatch" || comparison.explanation !== undefined));
+}).check(
+  Schema.makeFilter(
+    (comparison) =>
+      comparison.recordedClaim !== "execution-identity" ||
+      comparison.result !== "mismatch" ||
+      comparison.explanation !== undefined,
+  ),
+);
 
-const attachmentRead = <S extends Schema.ConstraintDecoder<unknown>>(value: S) => Schema.Union([
-  Schema.Struct({ state: Schema.Literal("available"), value }),
-  Schema.Struct({ state: Schema.Literal("not-recorded") }),
-  Schema.Struct({ state: Schema.Literal("unsupported"), family: Schema.String, revision: Schema.Number }),
-  Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.Unknown) }),
-]);
+const attachmentRead = <S extends Schema.ConstraintDecoder<unknown>>(value: S) =>
+  Schema.Union([
+    Schema.Struct({ state: Schema.Literal("available"), value }),
+    Schema.Struct({ state: Schema.Literal("not-recorded") }),
+    Schema.Struct({ state: Schema.Literal("unsupported"), family: Schema.String, revision: Schema.Number }),
+    Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.Unknown) }),
+  ]);
 
 const TargetSchema = Schema.Struct({
   runId: Schema.String,
@@ -37,14 +45,30 @@ const ScoreSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-applicable") }),
   Schema.Struct({ state: Schema.Literal("applicable"), attachment: attachmentRead(Schema.Unknown) }),
 ]);
-const ExecutionErrorsSchema = attachmentRead(Schema.Array(Schema.Struct({
-  kind: Schema.Literal("execution-error"), code: Schema.String, phase: Schema.String, summary: Schema.String,
-  causes: Schema.Array(Schema.Struct({ code: Schema.String, summary: Schema.String })),
-})));
+const ExecutionErrorsSchema = attachmentRead(
+  Schema.Array(
+    Schema.Struct({
+      kind: Schema.Literal("execution-error"),
+      code: Schema.String,
+      phase: Schema.String,
+      summary: Schema.String,
+      causes: Schema.Array(Schema.Struct({ code: Schema.String, summary: Schema.String })),
+    }),
+  ),
+);
 const ReadbackSchema = Schema.Union([
-  Schema.Struct({ state: Schema.Literal("reused"), target: TargetSchema, source: SourceSchema, verdict: Schema.Literals(["passed", "failed"]), score: ScoreSchema, executionErrors: ExecutionErrorsSchema }),
   Schema.Struct({
-    state: Schema.Literal("prior"), target: TargetSchema, source: SourceSchema,
+    state: Schema.Literal("reused"),
+    target: TargetSchema,
+    source: SourceSchema,
+    verdict: Schema.Literals(["passed", "failed"]),
+    score: ScoreSchema,
+    executionErrors: ExecutionErrorsSchema,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("prior"),
+    target: TargetSchema,
+    source: SourceSchema,
     verdict: attachmentRead(Schema.Literals(["passed", "failed", "errored", "skipped"])),
     score: ScoreSchema,
     executionErrors: ExecutionErrorsSchema,
@@ -64,35 +88,43 @@ export const ExpPlanDocumentSchema = Schema.Struct({
   configs: Schema.Number,
   attempts: Schema.Number,
   reused: Schema.Number,
-  matrix: Schema.Array(Schema.Struct({
-    experimentId: Schema.String,
-    evalId: Schema.String,
-    evalGroupId: Schema.optional(Schema.String),
-    evalGroupIndex: Schema.optional(Schema.Number),
-    slots: Schema.Array(Schema.Struct({
-      runId: Schema.String,
-      slotId: Schema.String,
+  matrix: Schema.Array(
+    Schema.Struct({
       experimentId: Schema.String,
       evalId: Schema.String,
-      executionIdentityDigest: Schema.String,
-      attempt: Schema.Number,
       evalGroupId: Schema.optional(Schema.String),
       evalGroupIndex: Schema.optional(Schema.Number),
-      state: Schema.Literals(["reused", "gap"]),
-      comparisons: Schema.Array(ExecutionComparisonSchema),
-      issues: Schema.optional(Schema.Array(Schema.Struct({
-        code: Schema.Literal("dynamic-module-unresolved"),
-        path: Schema.Array(Schema.String),
-        file: Schema.String,
-        line: Schema.Number,
-        column: Schema.Number,
-      }))),
-      reason: Schema.optional(Schema.String),
-      scope: Schema.optional(Schema.String),
-    })),
-    readbacks: Schema.Array(ReadbackSchema),
-    locked: Schema.optional(Schema.Literal(true)),
-  })),
+      slots: Schema.Array(
+        Schema.Struct({
+          runId: Schema.String,
+          slotId: Schema.String,
+          experimentId: Schema.String,
+          evalId: Schema.String,
+          executionIdentityDigest: Schema.String,
+          attempt: Schema.Number,
+          evalGroupId: Schema.optional(Schema.String),
+          evalGroupIndex: Schema.optional(Schema.Number),
+          state: Schema.Literals(["reused", "gap"]),
+          comparisons: Schema.Array(ExecutionComparisonSchema),
+          issues: Schema.optional(
+            Schema.Array(
+              Schema.Struct({
+                code: Schema.Literal("dynamic-module-unresolved"),
+                path: Schema.Array(Schema.String),
+                file: Schema.String,
+                line: Schema.Number,
+                column: Schema.Number,
+              }),
+            ),
+          ),
+          reason: Schema.optional(Schema.String),
+          scope: Schema.optional(Schema.String),
+        }),
+      ),
+      readbacks: Schema.Array(ReadbackSchema),
+      locked: Schema.optional(Schema.Literal(true)),
+    }),
+  ),
   plugins: Schema.Array(Schema.Unknown),
 });
 
@@ -106,5 +138,8 @@ export function decodeExpPlanDocument(input: unknown): ExpPlanDocument {
 
 /** Strict decoder for comparisons printed by accept preflight diagnostics. */
 export function decodeExecutionComparisons(input: unknown) {
-  return Schema.decodeUnknownSync(Schema.Array(ExecutionComparisonSchema), { errors: "all", onExcessProperty: "error" })(input);
+  return Schema.decodeUnknownSync(Schema.Array(ExecutionComparisonSchema), {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
 }

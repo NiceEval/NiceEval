@@ -18,10 +18,7 @@ import {
 } from "../source-receipt/codec.ts";
 import { MAX_CONVERSATION_TEXT_BYTES } from "../source-receipt/limits.ts";
 import { isBoundedSafeText } from "../source-receipt/model.ts";
-import {
-  recordAttachmentIssue,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
+import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import {
   SourceReceiptCollectionSchema,
   SourceSegmentIdSchema,
@@ -45,27 +42,88 @@ const ToolOccurrenceRelationSchema = Schema.Union([
 ]);
 
 export const CurrentAgentTurnItemSchema = Schema.Union([
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("tool-start"), toolOccurrenceId: ToolOccurrenceIdSchema, tool: SourceNativeToolNameSchema, inputSummary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("tool-finish"), occurrence: ToolOccurrenceRelationSchema, outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), outputSummary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: SafeIdentifierSchema, summary: SafeTextSchema }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), promptSummary: SafeTextSchema, responseSummary: Schema.NullOr(SafeTextSchema) }),
-  Schema.Struct({ ...CurrentAgentTurnItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: SafeIdentifierSchema, summary: SafeTextSchema }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literal("message"),
+    role: Schema.Literals(["user", "assistant"]),
+    text: SafeTextSchema,
+  }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literal("tool-start"),
+    toolOccurrenceId: ToolOccurrenceIdSchema,
+    tool: SourceNativeToolNameSchema,
+    inputSummary: SafeTextSchema,
+  }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literal("tool-finish"),
+    occurrence: ToolOccurrenceRelationSchema,
+    outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]),
+    outputSummary: SafeTextSchema,
+  }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]),
+    summary: SafeTextSchema,
+  }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literal("subagent"),
+    state: Schema.Literals(["started", "completed", "failed"]),
+    label: SafeIdentifierSchema,
+    summary: SafeTextSchema,
+  }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literal("input-request"),
+    state: Schema.Literals(["requested", "answered", "cancelled"]),
+    promptSummary: SafeTextSchema,
+    responseSummary: Schema.NullOr(SafeTextSchema),
+  }),
+  Schema.Struct({
+    ...CurrentAgentTurnItemBase,
+    kind: Schema.Literals(["skill-load", "conversation-error"]),
+    code: SafeIdentifierSchema,
+    summary: SafeTextSchema,
+  }),
 ]);
 
 export const AgentTurnUsageObservationSchema = Schema.Union([
-  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("token-bucket"), provider: SafeIdentifierSchema, bucket: Schema.Literals(["input", "output", "cache-read", "cache-write", "reasoning", "other"]), tokens: NonNegativeSafeIntegerSchema }),
-  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("request"), provider: SafeIdentifierSchema, requestKind: Schema.Literals(["model", "tool"]) }),
-  Schema.Struct({ usageObservationId: UsageObservationIdSchema, kind: Schema.Literal("provider-cost"), provider: SafeIdentifierSchema, amount: Schema.String.pipe(Schema.check(Schema.makeFilter((value) => /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value)))), currency: CurrencyCodeSchema }),
+  Schema.Struct({
+    usageObservationId: UsageObservationIdSchema,
+    kind: Schema.Literal("token-bucket"),
+    provider: SafeIdentifierSchema,
+    bucket: Schema.Literals(["input", "output", "cache-read", "cache-write", "reasoning", "other"]),
+    tokens: NonNegativeSafeIntegerSchema,
+  }),
+  Schema.Struct({
+    usageObservationId: UsageObservationIdSchema,
+    kind: Schema.Literal("request"),
+    provider: SafeIdentifierSchema,
+    requestKind: Schema.Literals(["model", "tool"]),
+  }),
+  Schema.Struct({
+    usageObservationId: UsageObservationIdSchema,
+    kind: Schema.Literal("provider-cost"),
+    provider: SafeIdentifierSchema,
+    amount: Schema.String.pipe(
+      Schema.check(Schema.makeFilter((value) => /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value))),
+    ),
+    currency: CurrencyCodeSchema,
+  }),
 ]);
 
 const AgentTurnCoverageReasonSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter((value) => value.trim().length > 0 &&
-    Boolean(isBoundedSafeText(value, MAX_CONVERSATION_TEXT_BYTES)), {
-    identifier: "AgentTurnEvidenceCoverageReason",
-    description: "non-empty durable coverage reason within the conversation text limit",
-  })),
+  Schema.check(
+    Schema.makeFilter(
+      (value) => value.trim().length > 0 && Boolean(isBoundedSafeText(value, MAX_CONVERSATION_TEXT_BYTES)),
+      {
+        identifier: "AgentTurnEvidenceCoverageReason",
+        description: "non-empty durable coverage reason within the conversation text limit",
+      },
+    ),
+  ),
 );
 
 const AgentTurnEvidenceCoverageEntrySchema = Schema.Union([
@@ -127,15 +185,14 @@ function invalid(path: readonly string[]): RecordAttachmentIssue {
   return recordAttachmentIssue("record-attachment-schema-invalid", path);
 }
 
-function permittedLimitations(
-  collection: SourceReceiptCollection,
-): boolean {
-  return collection.limitations.every((limitation) =>
-    (limitation.code !== "capture-failed" && limitation.code !== "capture-interrupted" ||
-      limitation.stage === "adapter" ||
-      limitation.stage === "attempt-finalizer" ||
-      limitation.stage === "session-manager") &&
-    ["turn", "turn-item", "usage-observation", "value-byte"].includes(limitation.target)
+function permittedLimitations(collection: SourceReceiptCollection): boolean {
+  return collection.limitations.every(
+    (limitation) =>
+      ((limitation.code !== "capture-failed" && limitation.code !== "capture-interrupted") ||
+        limitation.stage === "adapter" ||
+        limitation.stage === "attempt-finalizer" ||
+        limitation.stage === "session-manager") &&
+      ["turn", "turn-item", "usage-observation", "value-byte"].includes(limitation.target),
   );
 }
 
@@ -161,13 +218,7 @@ function validateReceiptEnvelope(input: {
     turnIds.add(segment.turnId);
     for (const [usageIndex, usage] of segment.usage.entries()) {
       if (usageIds.has(usage.usageObservationId)) {
-        issues.push(invalid([
-          "segments",
-          String(segmentIndex),
-          "usage",
-          String(usageIndex),
-          "usageObservationId",
-        ]));
+        issues.push(invalid(["segments", String(segmentIndex), "usage", String(usageIndex), "usageObservationId"]));
       }
       usageIds.add(usage.usageObservationId);
     }
@@ -175,9 +226,7 @@ function validateReceiptEnvelope(input: {
   return issues;
 }
 
-export function validateAgentTurnsAttachment(
-  value: AgentTurnsAttachment,
-): readonly RecordAttachmentIssue[] {
+export function validateAgentTurnsAttachment(value: AgentTurnsAttachment): readonly RecordAttachmentIssue[] {
   const issues = [...validateReceiptEnvelope(value)];
   if (projectObservedSourceEvents(value.segments).state !== "available") {
     issues.push(invalid(["segments"]));

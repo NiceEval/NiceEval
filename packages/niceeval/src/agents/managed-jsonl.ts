@@ -5,10 +5,19 @@ const encoder = new TextEncoder();
 
 function timeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`managed process did not exit within ${milliseconds}ms`)), milliseconds);
+    const timer = setTimeout(
+      () => reject(new Error(`managed process did not exit within ${milliseconds}ms`)),
+      milliseconds,
+    );
     promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
     );
   });
 }
@@ -68,8 +77,12 @@ export class ManagedJsonlDriver {
     );
   }
 
-  cursor(): number { return this.frames.length; }
-  stderr(): string { return this.stderrText; }
+  cursor(): number {
+    return this.frames.length;
+  }
+  stderr(): string {
+    return this.stderrText;
+  }
   processReceipt(): { readonly exitCode?: number; readonly signal?: string; readonly stderr: string } {
     return {
       ...(this.observedExit?.exitCode == null ? {} : { exitCode: this.observedExit.exitCode }),
@@ -103,12 +116,16 @@ export class ManagedJsonlDriver {
         this.exit.then((receipt) => ({ exited: true as const, receipt })),
       ]);
       if (outcome.exited && next >= this.frames.length) {
-        throw new Error(`managed process exited before the expected protocol frame (exitCode=${outcome.receipt.exitCode ?? "null"}, signal=${outcome.receipt.signal ?? "none"})${this.stderrText ? `: ${this.stderrText.slice(-1000)}` : ""}`);
+        throw new Error(
+          `managed process exited before the expected protocol frame (exitCode=${outcome.receipt.exitCode ?? "null"}, signal=${outcome.receipt.signal ?? "none"})${this.stderrText ? `: ${this.stderrText.slice(-1000)}` : ""}`,
+        );
       }
     }
   }
 
-  framesSince(cursor: number): readonly unknown[] { return this.frames.slice(cursor); }
+  framesSince(cursor: number): readonly unknown[] {
+    return this.frames.slice(cursor);
+  }
   /** Observe only future frames. The owning physical send must always unsubscribe. */
   subscribeFrames(subscriber: (frame: unknown) => void): () => void {
     this.frameSubscribers.add(subscriber);
@@ -120,15 +137,20 @@ export class ManagedJsonlDriver {
     };
   }
   frameKinds(): string {
-    return this.frames.slice(-12).map((value) => {
-      if (value === null || typeof value !== "object" || Array.isArray(value)) return typeof value;
-      const frame = value as Record<string, unknown>;
-      return String(frame.type ?? frame.method ?? (frame.id === undefined ? "object" : `response:${String(frame.id)}`));
-    }).join(",");
+    return this.frames
+      .slice(-12)
+      .map((value) => {
+        if (value === null || typeof value !== "object" || Array.isArray(value)) return typeof value;
+        const frame = value as Record<string, unknown>;
+        return String(
+          frame.type ?? frame.method ?? (frame.id === undefined ? "object" : `response:${String(frame.id)}`),
+        );
+      })
+      .join(",");
   }
 
   shutdown(): Promise<void> {
-    return this.shutdownReceipt ??= (async () => {
+    return (this.shutdownReceipt ??= (async () => {
       if (this.state !== "open") return;
       this.state = "closing";
       await this.writes;
@@ -136,18 +158,19 @@ export class ManagedJsonlDriver {
       if (frame !== undefined) await this.writeRaw(frame).catch(() => undefined);
       await this.process.closeStdin().catch(() => undefined);
       this.state = "closed";
-    })();
+    })());
   }
 
   release(): Promise<void> {
-    return this.releaseReceipt ??= (async () => {
+    return (this.releaseReceipt ??= (async () => {
       await this.shutdown();
-      try { await timeout(this.exit, 2_000); }
-      catch {
+      try {
+        await timeout(this.exit, 2_000);
+      } catch {
         await this.process.terminate();
         await timeout(this.exit, 2_000);
       }
-    })();
+    })());
   }
 
   private async consume(): Promise<void> {
@@ -196,7 +219,10 @@ export class ManagedJsonlDriver {
     if (signal.aborted) return Promise.reject(signal.reason);
     return new Promise((resolve, reject) => {
       let settled = false;
-      const cleanup = (): void => { signal.removeEventListener("abort", aborted); this.waiters.delete(done); };
+      const cleanup = (): void => {
+        signal.removeEventListener("abort", aborted);
+        this.waiters.delete(done);
+      };
       const done = (): void => {
         if (settled) return;
         settled = true;

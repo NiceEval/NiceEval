@@ -9,7 +9,12 @@ import {
 const utf8 = new TextEncoder();
 
 function modelSelection(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "" || utf8.encode(value).byteLength > 8 * 1024 || /\p{Cc}/u.test(value)) {
+  if (
+    typeof value !== "string" ||
+    value.trim() === "" ||
+    utf8.encode(value).byteLength > 8 * 1024 ||
+    /\p{Cc}/u.test(value)
+  ) {
     throw new TypeError(`${label} must be a non-empty, control-free model ID of at most 8192 UTF-8 bytes`);
   }
   return value;

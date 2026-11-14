@@ -9,10 +9,7 @@ import { pathToFileURL } from "node:url";
 import { Cause, Effect, Exit } from "effect";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Sandbox } from "../sandbox/types.ts";
-import {
-  defaultArtifactCacheDir,
-  platformKey,
-} from "./provisioner.ts";
+import { defaultArtifactCacheDir, platformKey } from "./provisioner.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { registerSandboxContent } from "../sandbox/content.ts";
 import { SandboxCommandExitError } from "../sandbox/operations.ts";
@@ -77,9 +74,7 @@ interface HostProcess {
 }
 
 /** Node / provider Promise 边界统一进入 Effect,让运行时 signal 能传到支持取消的调用。 */
-function promiseEffect<Value>(
-  run: (signal: AbortSignal) => Promise<Value>,
-): Effect.Effect<Value, unknown> {
+function promiseEffect<Value>(run: (signal: AbortSignal) => Promise<Value>): Effect.Effect<Value, unknown> {
   return Effect.tryPromise({ try: run, catch: (cause) => cause });
 }
 
@@ -130,11 +125,7 @@ function releaseHostProcess(host: HostProcess): Effect.Effect<void> {
     if (host.closed || child.pid === undefined) return Effect.void;
     const ignoreError = () => {};
     return Effect.sync(() => child.on("error", ignoreError)).pipe(
-      Effect.andThen(
-        processExited(child)
-          ? Effect.void
-          : Effect.sync(() => signalHostProcess(child, "SIGTERM")),
-      ),
+      Effect.andThen(processExited(child) ? Effect.void : Effect.sync(() => signalHostProcess(child, "SIGTERM"))),
       Effect.andThen(
         processExited(child)
           ? awaitHostProcessClose(host)
@@ -242,15 +233,9 @@ ${(pack.stdout + pack.stderr).trim().split("\n").slice(-12).join("\n")}`,
     }
     const packedName = pack.stdout.trim().split("\n").at(-1)?.trim();
     const files = yield* promiseEffect(() => readdir(dest));
-    if (
-      packedName === undefined ||
-      !/^[^/\\]+\.tgz$/.test(packedName) ||
-      !files.includes(packedName)
-    ) {
+    if (packedName === undefined || !/^[^/\\]+\.tgz$/.test(packedName) || !files.includes(packedName)) {
       return yield* Effect.fail(
-        new Error(
-          `Host npm pack ${opts.packageName}@${opts.version} produced no .tgz (dir ${dest}).`,
-        ),
+        new Error(`Host npm pack ${opts.packageName}@${opts.version} produced no .tgz (dir ${dest}).`),
       );
     }
     const localPath = join(dest, packedName);
@@ -335,14 +320,16 @@ function installSelfContainedEffect(
       `rm -f ${shellQuote(opts.tarball)}`,
     ].join("\n"),
   ).pipe(
-    Effect.flatMap((extract) => extract.exitCode === 0
-      ? Effect.void
-      : Effect.fail(
-          new Error(
-            `Unpacking the ${opts.agent} self-contained package inside the sandbox failed (needs tar + gzip):
+    Effect.flatMap((extract) =>
+      extract.exitCode === 0
+        ? Effect.void
+        : Effect.fail(
+            new Error(
+              `Unpacking the ${opts.agent} self-contained package inside the sandbox failed (needs tar + gzip):
 ${(extract.stdout + extract.stderr).trim().split("\n").slice(-12).join("\n")}`,
+            ),
           ),
-        )),
+    ),
   );
 }
 
@@ -370,7 +357,11 @@ function installFromStagedEffect(
       const hasNpm = yield* sandboxShellEffect(sandbox, "command -v npm >/dev/null 2>&1");
       if (hasNpm.exitCode !== 0) {
         // 任务镜像是题给的,不能假设它带 Node 工具链;点名缺什么,不猜一个近似命令继续跑。
-        return yield* Effect.fail(new Error(`The sandbox has no npm, and ${identity.agent} only publishes a Node-dependent npm package for this platform. When the task image ships no Node toolchain, publish a self-contained native package for that platform or supply a custom provisioner.`));
+        return yield* Effect.fail(
+          new Error(
+            `The sandbox has no npm, and ${identity.agent} only publishes a Node-dependent npm package for this platform. When the task image ships no Node toolchain, publish a self-contained native package for that platform or supply a custom provisioner.`,
+          ),
+        );
       }
       const install = yield* sandboxShellEffect(
         sandbox,
@@ -418,7 +409,12 @@ function expandSandboxHomePathEffect(
     Effect.flatMap((result) => {
       const home = result.stdout.trim();
       return home
-        ? Effect.succeed(pathWithHome.replace(/\$HOME/g, home).replace(/^~\//, `${home}/`).replace(/^~$/, home))
+        ? Effect.succeed(
+            pathWithHome
+              .replace(/\$HOME/g, home)
+              .replace(/^~\//, `${home}/`)
+              .replace(/^~$/, home),
+          )
         : Effect.fail(new Error(`Could not detect sandbox $HOME; staged install needs to expand the user prefix.`));
     }),
   );
@@ -440,63 +436,66 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
       revision: opts.identity.revision,
       inputs: { agent: opts.identity.agent, version: opts.identity.version, bin: opts.bin },
     },
-    (sandbox, context) => Effect.runPromiseExit(
-      checkNpmCliEffect(sandbox, {
-        bin: opts.bin,
-        expectedVersion: opts.identity.version,
-        parseVersion,
-      }).pipe(
-        Effect.flatMap((result) => result.ok
-          ? Effect.void
-          : Effect.fail(
-              new SandboxCommandExitError({
-                stdout: result.actualVersion ?? "",
-                stderr: result.detail ?? `missing ${opts.bin}`,
-                exitCode: 1,
-                command: `${opts.bin} --version`,
-              }),
-            )),
-      ),
-      { signal: context.signal },
-    ).then((exit) => {
-      if (Exit.isSuccess(exit)) return;
-      // `runPromise` wraps a typed Effect failure in FiberFailure. The Install
-      // loop must see the original command-exit value so a version miss takes
-      // the install path instead of being misclassified as a broken probe.
-      throw Cause.squash(exit.cause);
-    }),
+    (sandbox, context) =>
+      Effect.runPromiseExit(
+        checkNpmCliEffect(sandbox, {
+          bin: opts.bin,
+          expectedVersion: opts.identity.version,
+          parseVersion,
+        }).pipe(
+          Effect.flatMap((result) =>
+            result.ok
+              ? Effect.void
+              : Effect.fail(
+                  new SandboxCommandExitError({
+                    stdout: result.actualVersion ?? "",
+                    stderr: result.detail ?? `missing ${opts.bin}`,
+                    exitCode: 1,
+                    command: `${opts.bin} --version`,
+                  }),
+                ),
+          ),
+        ),
+        { signal: context.signal },
+      ).then((exit) => {
+        if (Exit.isSuccess(exit)) return;
+        // `runPromise` wraps a typed Effect failure in FiberFailure. The Install
+        // loop must see the original command-exit value so a version miss takes
+        // the install path instead of being misclassified as a broken probe.
+        throw Cause.squash(exit.cause);
+      }),
   );
   const installer: Extract<AgentInstaller, { installMode: "staged" }> & DockerfileAgentCacheSafeInstaller = {
     [AGENT_DOCKERFILE_CACHE_SAFE]: true,
     identity: opts.identity,
     installMode: "staged",
-    ...(opts.progress?.installing !== undefined
-      ? { progress: { installing: opts.progress.installing } }
-      : {}),
-    prepareArtifact: ({ targetPlatform, signal }) => Effect.runPromise(
-      opts.prepare !== undefined
-        ? promiseEffect(() => opts.prepare!(targetPlatform))
-        : Effect.suspend(() => {
-            // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
-            const native = opts.platformPackage?.(targetPlatform);
-            return npmPackToCacheEffect({
-              packageName: opts.packageName,
-              version: opts.identity.version,
-              cacheDir,
-              platform: targetPlatform,
-              identity: opts.identity,
-              ...(native !== undefined ? { spec: native.spec } : {}),
-              install: native !== undefined
-                ? { kind: "self-contained" as const, binPath: native.binPath }
-                : { kind: "npm-tarball" as const },
-            });
-          }),
-      { signal },
-    ),
-    install: (sandbox, context) => Effect.runPromise(
-      installFromStagedEffect(sandbox, context.artifact, opts.identity, opts.bin),
-      { signal: context.signal },
-    ),
+    ...(opts.progress?.installing !== undefined ? { progress: { installing: opts.progress.installing } } : {}),
+    prepareArtifact: ({ targetPlatform, signal }) =>
+      Effect.runPromise(
+        opts.prepare !== undefined
+          ? promiseEffect(() => opts.prepare!(targetPlatform))
+          : Effect.suspend(() => {
+              // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
+              const native = opts.platformPackage?.(targetPlatform);
+              return npmPackToCacheEffect({
+                packageName: opts.packageName,
+                version: opts.identity.version,
+                cacheDir,
+                platform: targetPlatform,
+                identity: opts.identity,
+                ...(native !== undefined ? { spec: native.spec } : {}),
+                install:
+                  native !== undefined
+                    ? { kind: "self-contained" as const, binPath: native.binPath }
+                    : { kind: "npm-tarball" as const },
+              });
+            }),
+        { signal },
+      ),
+    install: (sandbox, context) =>
+      Effect.runPromise(installFromStagedEffect(sandbox, context.artifact, opts.identity, opts.bin), {
+        signal: context.signal,
+      }),
   };
   return {
     install: {
@@ -533,11 +532,7 @@ export function resolveAgentBinEffect(sandbox: Sandbox, bin: string): Effect.Eff
       const path = res.stdout.trim();
       return res.exitCode === 0 && path
         ? Effect.succeed(path)
-        : Effect.fail(
-            new Error(
-              `Command ${bin} not found. ${(res.stdout + res.stderr).trim().slice(0, 200)}`,
-            ),
-          );
+        : Effect.fail(new Error(`Command ${bin} not found. ${(res.stdout + res.stderr).trim().slice(0, 200)}`));
     }),
   );
 }

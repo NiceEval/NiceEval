@@ -12,10 +12,7 @@ import {
   type ReportLocale,
   type ValueProps,
 } from "./shared.ts";
-import {
-  AssertionEvidence,
-  type AssertionEvidenceContent,
-} from "./assertion-evidence.tsx";
+import { AssertionEvidence, type AssertionEvidenceContent } from "./assertion-evidence.tsx";
 import { TurnTrace } from "./turn-trace.tsx";
 import type { ConversationContent } from "./conversation.tsx";
 
@@ -70,10 +67,7 @@ export interface SourceContent {
   locator?: string;
 }
 
-export type SourceViewProps = ValueProps<
-  SourceContent | null,
-  { locale: ReportLocale; className?: string }
->;
+export type SourceViewProps = ValueProps<SourceContent | null, { locale: ReportLocale; className?: string }>;
 
 // Keep the lightweight v0.12 source presentation. Source snapshots are display
 // text, so highlighting remains a pure renderer concern and never reparses the
@@ -262,7 +256,11 @@ function CallTree({
   return (
     <div className="niceeval-source-calls">
       {calls.map((call, i) => (
-        <details key={i} className={cx("niceeval-source-call", call.tone && `niceeval-source-call--${call.tone}`)} open={call.open}>
+        <details
+          key={i}
+          className={cx("niceeval-source-call", call.tone && `niceeval-source-call--${call.tone}`)}
+          open={call.open}
+        >
           <summary>{resolveLocalizedText(call.summary, locale)}</summary>
           {call.target.kind === "opaque" ? (
             <div className="niceeval-source-opaque">
@@ -347,8 +345,9 @@ export function sourceViewText(data: SourceContent, locale: ReportLocale): strin
     for (const line of block.lines) {
       if (!line.interaction && !line.tone && !line.aborted) continue;
       const pill = line.pill !== undefined ? ` ${resolveLocalizedText(line.pill, locale)}` : "";
-      const states = [line.interaction, line.tone, line.aborted ? "aborted" : undefined]
-        .filter((state): state is string => state !== undefined);
+      const states = [line.interaction, line.tone, line.aborted ? "aborted" : undefined].filter(
+        (state): state is string => state !== undefined,
+      );
       lines.push(`${block.path}:${line.number} [${states.join("+")}]${pill}`);
     }
   };

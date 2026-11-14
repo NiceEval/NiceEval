@@ -27,44 +27,51 @@ describe("beforeCachePlanOf", () => {
       completeness: "complete",
       opaqueCount: 0,
       redactedCount: 0,
-      experiments: [{
-        experimentId: "experiment",
-        activation: "conditional",
-        beforeLanes: [cachedStep("prefix:shared")],
-        afterLanes: [],
-        lanes: [{
-          id: "lane",
-          kind: "eval",
-          ordering: "independent",
-          slots: [
-            { evalId: "eval/a", attempt: 0, action: "dispatch", steps: [cachedStep("prefix:a")] },
-            { evalId: "eval/b", attempt: 0, action: "dispatch", steps: [cachedStep("prefix:a")] },
+      experiments: [
+        {
+          experimentId: "experiment",
+          activation: "conditional",
+          beforeLanes: [cachedStep("prefix:shared")],
+          afterLanes: [],
+          lanes: [
+            {
+              id: "lane",
+              kind: "eval",
+              ordering: "independent",
+              slots: [
+                { evalId: "eval/a", attempt: 0, action: "dispatch", steps: [cachedStep("prefix:a")] },
+                { evalId: "eval/b", attempt: 0, action: "dispatch", steps: [cachedStep("prefix:a")] },
+              ],
+            },
           ],
-        }],
-      }],
+        },
+      ],
     };
 
     expect(beforeCachePlanOf(commandPlan)).toEqual({
       lookup: "not-probed",
-      nodes: [{
-        prefixIdentity: "prefix:a",
-        lookup: "not-probed",
-        capability: "attempt-captured",
-        eligibility: { status: "eligible" },
-        consumers: [
-          { experimentId: "experiment", evalId: "eval/a" },
-          { experimentId: "experiment", evalId: "eval/b" },
-        ],
-      }, {
-        prefixIdentity: "prefix:shared",
-        lookup: "not-probed",
-        capability: "attempt-captured",
-        eligibility: { status: "eligible" },
-        consumers: [
-          { experimentId: "experiment", evalId: "eval/a" },
-          { experimentId: "experiment", evalId: "eval/b" },
-        ],
-      }],
+      nodes: [
+        {
+          prefixIdentity: "prefix:a",
+          lookup: "not-probed",
+          capability: "attempt-captured",
+          eligibility: { status: "eligible" },
+          consumers: [
+            { experimentId: "experiment", evalId: "eval/a" },
+            { experimentId: "experiment", evalId: "eval/b" },
+          ],
+        },
+        {
+          prefixIdentity: "prefix:shared",
+          lookup: "not-probed",
+          capability: "attempt-captured",
+          eligibility: { status: "eligible" },
+          consumers: [
+            { experimentId: "experiment", evalId: "eval/a" },
+            { experimentId: "experiment", evalId: "eval/b" },
+          ],
+        },
+      ],
     });
   });
 });

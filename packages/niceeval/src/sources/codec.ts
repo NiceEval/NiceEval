@@ -76,43 +76,54 @@ function isCanonicalSourcesDocument<Content>(document: SourcesDocument<Content>)
   return true;
 }
 
-export const SourcePackageItemIdSchema: Schema.Codec<SourcePackageItemId, string> =
-  Schema.String.check(Schema.makeFilter((value) => PACKAGE_ITEM_ID.test(value), {
-      identifier: "SourcePackageItemId",
-      description: "an opaque sp_ source package item identity",
-    })).pipe(Schema.brand(SOURCE_PACKAGE_ITEM_ID_BRAND));
+export const SourcePackageItemIdSchema: Schema.Codec<SourcePackageItemId, string> = Schema.String.check(
+  Schema.makeFilter((value) => PACKAGE_ITEM_ID.test(value), {
+    identifier: "SourcePackageItemId",
+    description: "an opaque sp_ source package item identity",
+  }),
+).pipe(Schema.brand(SOURCE_PACKAGE_ITEM_ID_BRAND));
 
-export const SourceFileItemIdSchema: Schema.Codec<SourceFileItemId, string> =
-  Schema.String.check(Schema.makeFilter((value) => FILE_ITEM_ID.test(value), {
-      identifier: "SourceFileItemId",
-      description: "an opaque sf_ source file item identity",
-    })).pipe(Schema.brand(SOURCE_FILE_ITEM_ID_BRAND));
+export const SourceFileItemIdSchema: Schema.Codec<SourceFileItemId, string> = Schema.String.check(
+  Schema.makeFilter((value) => FILE_ITEM_ID.test(value), {
+    identifier: "SourceFileItemId",
+    description: "an opaque sf_ source file item identity",
+  }),
+).pipe(Schema.brand(SOURCE_FILE_ITEM_ID_BRAND));
 
-export const Sha256DigestSchema: Schema.Codec<Sha256Digest, string> = Schema.String.check(Schema.makeFilter((value) => SHA256.test(value), {
+export const Sha256DigestSchema: Schema.Codec<Sha256Digest, string> = Schema.String.check(
+  Schema.makeFilter((value) => SHA256.test(value), {
     identifier: "Sha256Digest",
     description: "a lower-case 64-character SHA-256 hex digest",
-  })).pipe(Schema.brand(SHA256_DIGEST_BRAND));
+  }),
+).pipe(Schema.brand(SHA256_DIGEST_BRAND));
 
-export const CanonicalSourcePathSchema: Schema.Codec<CanonicalSourcePath, string> =
-  Schema.String.check(Schema.makeFilter(isCanonicalSourcePath, {
-      identifier: "CanonicalSourcePath",
-      description: "a non-empty package-relative path with canonical slash segments",
-    })).pipe(Schema.brand(CANONICAL_SOURCE_PATH__BRAND));
+export const CanonicalSourcePathSchema: Schema.Codec<CanonicalSourcePath, string> = Schema.String.check(
+  Schema.makeFilter(isCanonicalSourcePath, {
+    identifier: "CanonicalSourcePath",
+    description: "a non-empty package-relative path with canonical slash segments",
+  }),
+).pipe(Schema.brand(CANONICAL_SOURCE_PATH__BRAND));
 
-const SourceDisplayLabelSchema = Schema.String.check(Schema.makeFilter(isSourceDisplayLabel, {
+const SourceDisplayLabelSchema = Schema.String.check(
+  Schema.makeFilter(isSourceDisplayLabel, {
     identifier: "SourceDisplayLabel",
     description: "display text without control characters and at most 256 Unicode scalar values",
-  }));
+  }),
+);
 
-const PositiveSafeIntegerSchema = Schema.Number.check(Schema.makeFilter(isPositiveSafeInteger, {
+const PositiveSafeIntegerSchema = Schema.Number.check(
+  Schema.makeFilter(isPositiveSafeInteger, {
     identifier: "PositiveSafeInteger",
     description: "a positive JSON-safe integer",
-  }));
+  }),
+);
 
-const NonNegativeFiniteSchema = Schema.Number.check(Schema.makeFilter(isNonNegativeFinite, {
+const NonNegativeFiniteSchema = Schema.Number.check(
+  Schema.makeFilter(isNonNegativeFinite, {
     identifier: "NonNegativeFinite",
     description: "a finite non-negative JSON number",
-  }));
+  }),
+);
 
 export const SourcePackageItemRefSchema = Schema.Struct({
   kind: Schema.Literals(["package"]),
@@ -148,25 +159,24 @@ export const AssertionSourceFrameSchema = Schema.Union([
 export const AssertionSourceTraceSchema = Schema.Struct({
   frames: Schema.Union([
     Schema.Tuple([AssertionSourceFileFrameSchema]),
-    Schema.TupleWithRest(
-      Schema.Tuple([AssertionSourceFileFrameSchema]),
-      [AssertionSourceFrameSchema, AssertionSourceFileFrameSchema],
-    ),
+    Schema.TupleWithRest(Schema.Tuple([AssertionSourceFileFrameSchema]), [
+      AssertionSourceFrameSchema,
+      AssertionSourceFileFrameSchema,
+    ]),
   ]),
 });
 
-export const AssertionSourceOccurrenceSchema: Schema.Schema<AssertionSourceOccurrence> =
-  Schema.Union([
-    Schema.Struct({
-      sourceOrder: PositiveSafeIntegerSchema,
-      role: Schema.Literals(["declaration", "threshold", "score", "gate", "optional"]),
-    }),
-    Schema.Struct({
-      sourceOrder: PositiveSafeIntegerSchema,
-      role: Schema.Literals(["stop"]),
-      outcome: Schema.Literals(["continued", "stopped", "interrupted"]),
-    }),
-  ]);
+export const AssertionSourceOccurrenceSchema: Schema.Schema<AssertionSourceOccurrence> = Schema.Union([
+  Schema.Struct({
+    sourceOrder: PositiveSafeIntegerSchema,
+    role: Schema.Literals(["declaration", "threshold", "score", "gate", "optional"]),
+  }),
+  Schema.Struct({
+    sourceOrder: PositiveSafeIntegerSchema,
+    role: Schema.Literals(["stop"]),
+    outcome: Schema.Literals(["continued", "stopped", "interrupted"]),
+  }),
+]);
 
 export const AssertionSourceSiteSchema = Schema.Struct({
   trace: AssertionSourceTraceSchema,
@@ -178,13 +188,12 @@ export const AssertionSourceSitesEntrySchema = Schema.Struct({
   sites: Schema.NonEmptyArray(AssertionSourceSiteSchema),
 });
 
-export const AssertionSourceSendOccurrenceSchema: Schema.Schema<AssertionSourceSendOccurrence> =
-  Schema.Struct({
-    sourceOrder: PositiveSafeIntegerSchema,
-    label: SourceDisplayLabelSchema,
-    status: Schema.Literals(["completed", "failed", "interrupted"]),
-    durationMs: NonNegativeFiniteSchema,
-  });
+export const AssertionSourceSendOccurrenceSchema: Schema.Schema<AssertionSourceSendOccurrence> = Schema.Struct({
+  sourceOrder: PositiveSafeIntegerSchema,
+  label: SourceDisplayLabelSchema,
+  status: Schema.Literals(["completed", "failed", "interrupted"]),
+  durationMs: NonNegativeFiniteSchema,
+});
 
 export const AssertionSourceSendSiteSchema = Schema.Struct({
   trace: AssertionSourceTraceSchema,
@@ -218,10 +227,12 @@ export function createSourcesDocumentSchemas<Content, ContentEncoded>(
   });
   const document = Schema.Struct({
     packages: Schema.Array(sourcePackage),
-  }).check(Schema.makeFilter(isCanonicalSourcesDocument, {
+  }).check(
+    Schema.makeFilter(isCanonicalSourcesDocument, {
       identifier: "SourcesCanonicalManifest",
       description: "a canonically sorted Sources manifest with unique package, file, and path identities",
-    }));
+    }),
+  );
 
   return Object.freeze({ file, sourcePackage, document });
 }
@@ -243,9 +254,7 @@ export function decodeSourcesDocument<Content, Encoded>(
   input: unknown,
 ): Result.Result<SourcesDocument<Content>, SourcesCodecError> {
   const decoded = Schema.decodeUnknownResult(schema, SourcesExactParseOptions)(input);
-  return Result.isFailure(decoded)
-    ? Result.fail(sourcesDocumentInvalid)
-    : Result.succeed(decoded.success);
+  return Result.isFailure(decoded) ? Result.fail(sourcesDocumentInvalid) : Result.succeed(decoded.success);
 }
 
 export function decodeAssertionSourceSitesDocument(
@@ -255,9 +264,7 @@ export function decodeAssertionSourceSitesDocument(
     Schema.toType(AssertionSourceSitesDocumentSchema),
     SourcesExactParseOptions,
   )(input);
-  return Result.isFailure(decoded)
-    ? Result.fail(assertionSourceSitesDocumentInvalid)
-    : Result.succeed(decoded.success);
+  return Result.isFailure(decoded) ? Result.fail(assertionSourceSitesDocumentInvalid) : Result.succeed(decoded.success);
 }
 
 /** The producer canonicalizes CRLF and CR; durable source text is always LF-only. */

@@ -37,10 +37,7 @@ function sleepWithReleasedSlot(
   wait: Effect.Effect<void, unknown>,
 ): Effect.Effect<void, unknown> {
   if (slot === undefined) return wait;
-  return Effect.uninterruptible(slot.release).pipe(
-    Effect.andThen(wait),
-    Effect.andThen(slot.reacquire),
-  );
+  return Effect.uninterruptible(slot.release).pipe(Effect.andThen(wait), Effect.andThen(slot.reacquire));
 }
 
 export function withProvisionRetry<T>(
@@ -61,48 +58,56 @@ export function withProvisionRetry<T>(
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {
       return yield* create.pipe(
-        Effect.catch((error) => Effect.gen(function* () {
-          const kind = classify(error);
-          if (!isRetryableProvisionError(kind) || attempt >= MAX_ATTEMPTS - 1) return yield* Effect.fail(error);
-          // 歧义类:远端可能已有实例,没有对账通道就不能重试,第一次抛出。
-          if (!isRejectedProvisionError(kind) && !reconcile) return yield* Effect.fail(error);
-          const jitter = yield* Random.next;
-          const delayMs = delayFor(attempt, jitter);
-          // 「activity」而非「diagnostic」—— 这是正常的退避进度,不是需要去重/永久留痕的
-          // warning(与 docker.ts 的镜像拉取进度、vercel.ts 的 session rotate 通知同一个理由,
-          // 见 sink.ts 的 reportActivity 说明)。让 human dashboard 的 active slot 在整个退避
-          // 窗口里有可见更新,而不是冻结到重试成功或耗尽为止。
-          const message = `  · [sandbox] provisioning rate-limited, retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            const kind = classify(error);
+            if (!isRetryableProvisionError(kind) || attempt >= MAX_ATTEMPTS - 1) return yield* Effect.fail(error);
+            // 歧义类:远端可能已有实例,没有对账通道就不能重试,第一次抛出。
+            if (!isRejectedProvisionError(kind) && !reconcile) return yield* Effect.fail(error);
+            const jitter = yield* Random.next;
+            const delayMs = delayFor(attempt, jitter);
+            // 「activity」而非「diagnostic」—— 这是正常的退避进度,不是需要去重/永久留痕的
+            // warning(与 docker.ts 的镜像拉取进度、vercel.ts 的 session rotate 通知同一个理由,
+            // 见 sink.ts 的 reportActivity 说明)。让 human dashboard 的 active slot 在整个退避
+            // 窗口里有可见更新,而不是冻结到重试成功或耗尽为止。
+            const message =
+              `  · [sandbox] provisioning rate-limited, retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...
 `.trimEnd();
-          // 严格顺序:release → 反馈 → sleep → reacquire → reconcile。
-          yield* sleepWithReleasedSlot(slot, Effect.andThen(
-            Effect.sync(() => {
-              if (feedback) feedback.progress({ message });
-              else reportActivity(message);
-            }),
-            Effect.sleep(delayMs),
-          ));
-          if (reconcile) {
-            const outcome = yield* reconcile.pipe(Effect.result);
-            if (outcome._tag === "Failure") {
-              // 对账是重试的硬前置:查不到账就重试与盲重试无异。放弃重试,留 diagnostic,
-              // 抛回原始 create 错误(对账失败不掩盖它)。
-              const reconcileError = outcome.failure;
-              const diagnostic = {
-                code: "sandbox-provision-reconcile-failed",
-                level: "warning" as const,
-                message: `  · [sandbox] provision reconcile failed, aborting retry (a possibly-created instance could not be verified/killed): ${String(reconcileError)}
+            // 严格顺序:release → 反馈 → sleep → reacquire → reconcile。
+            yield* sleepWithReleasedSlot(
+              slot,
+              Effect.andThen(
+                Effect.sync(() => {
+                  if (feedback) feedback.progress({ message });
+                  else reportActivity(message);
+                }),
+                Effect.sleep(delayMs),
+              ),
+            );
+            if (reconcile) {
+              const outcome = yield* reconcile.pipe(Effect.result);
+              if (outcome._tag === "Failure") {
+                // 对账是重试的硬前置:查不到账就重试与盲重试无异。放弃重试,留 diagnostic,
+                // 抛回原始 create 错误(对账失败不掩盖它)。
+                const reconcileError = outcome.failure;
+                const diagnostic = {
+                  code: "sandbox-provision-reconcile-failed",
+                  level: "warning" as const,
+                  message:
+                    `  · [sandbox] provision reconcile failed, aborting retry (a possibly-created instance could not be verified/killed): ${String(reconcileError)}
 `.trimEnd(),
-              };
-              yield* Effect.sync(() => {
-                if (feedback) feedback.diagnostic(diagnostic);
-                else reportDiagnostic({ key: diagnostic.code, severity: diagnostic.level, message: diagnostic.message });
-              });
-              return yield* Effect.fail(error);
+                };
+                yield* Effect.sync(() => {
+                  if (feedback) feedback.diagnostic(diagnostic);
+                  else
+                    reportDiagnostic({ key: diagnostic.code, severity: diagnostic.level, message: diagnostic.message });
+                });
+                return yield* Effect.fail(error);
+              }
             }
-          }
-          return yield* retry(attempt + 1);
-        })),
+            return yield* retry(attempt + 1);
+          }),
+        ),
       );
     });
 

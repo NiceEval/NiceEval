@@ -6,54 +6,54 @@ import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 
-
-const EXPECTED = [{
-  experimentId: "timeout",
-  evalId: "timeout",
-  verdict: "errored",
-  attempts: 1,
-  passed: 0,
-}] as const;
+const EXPECTED = [
+  {
+    experimentId: "timeout",
+    evalId: "timeout",
+    verdict: "errored",
+    attempts: 1,
+    passed: 0,
+  },
+] as const;
 // @feature docs/feature/adapters/README.md
 
 test("uiMessageStreamAgent 的挂起响应在 attempt deadline 后公开为 errored", async () => {
-  await localProtocolE2E.case(
-    "timeout",
-    localProtocolRecordArtifacts,
-    async ({ commands: { niceeval }, paths }) => {
-      await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest, waitForHangClosed }) => {
-        const run = await niceeval.run(
-          ["exp", "timeout", "--rerun", "all", "--json"],
-          { env: { [FIXTURE_BASE_URL_ENV]: baseUrl }, timeoutMs: 30_000 },
-        );
-        const events = run.expEvalEvents();
-        const receipt = run.expReceipt();
-
-        expect(run.exitCode, run.diagnostic()).not.toBe(0);
-        expect(receipt.completion, run.diagnostic()).toBe("completed");
-        expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
-        assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
-
-        const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
-        const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
-        expect(queried.exitCode, queried.diagnostic()).toBe(0);
-        const document = queried.attemptTrace();
-        expect(document).toMatchObject({ operation: "attempt.trace" });
-        const diagnostics = document.trace.diagnostics;
-        expect(diagnostics, queried.diagnostic()).toMatchObject({
-          state: "complete",
-          limitations: [],
-        });
-        expect(diagnostics.items.filter((item) => item.code === "timeout"), queried.diagnostic()).toEqual([
-          expect.objectContaining({
-            code: "timeout",
-            phase: "agent.send",
-            summary: "attempt timed out (4000ms, from experiment)",
-          }),
-        ]);
-        await waitForRequest("hang");
-        await waitForHangClosed();
+  await localProtocolE2E.case("timeout", localProtocolRecordArtifacts, async ({ commands: { niceeval }, paths }) => {
+    await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest, waitForHangClosed }) => {
+      const run = await niceeval.run(["exp", "timeout", "--rerun", "all", "--json"], {
+        env: { [FIXTURE_BASE_URL_ENV]: baseUrl },
+        timeoutMs: 30_000,
       });
-    },
-  );
+      const events = run.expEvalEvents();
+      const receipt = run.expReceipt();
+
+      expect(run.exitCode, run.diagnostic()).not.toBe(0);
+      expect(receipt.completion, run.diagnostic()).toBe("completed");
+      expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
+      assertExpEvalOutcomes(events, EXPECTED, () => run.diagnostic());
+
+      const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
+      const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
+      expect(queried.exitCode, queried.diagnostic()).toBe(0);
+      const document = queried.attemptTrace();
+      expect(document).toMatchObject({ operation: "attempt.trace" });
+      const diagnostics = document.trace.diagnostics;
+      expect(diagnostics, queried.diagnostic()).toMatchObject({
+        state: "complete",
+        limitations: [],
+      });
+      expect(
+        diagnostics.items.filter((item) => item.code === "timeout"),
+        queried.diagnostic(),
+      ).toEqual([
+        expect.objectContaining({
+          code: "timeout",
+          phase: "agent.send",
+          summary: "attempt timed out (4000ms, from experiment)",
+        }),
+      ]);
+      await waitForRequest("hang");
+      await waitForHangClosed();
+    });
+  });
 });

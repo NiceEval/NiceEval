@@ -12,7 +12,11 @@ export const boundaryAgent = defineAgent({
     switch (input.text) {
       case "boundary/cross-a":
         events.push(
-          { type: "operation.started", operationId: "cross-operation", operation: { kind: "tool", name: "boundary_cross", input: { marker: "CROSS_A_INPUT" } } },
+          {
+            type: "operation.started",
+            operationId: "cross-operation",
+            operation: { kind: "tool", name: "boundary_cross", input: { marker: "CROSS_A_INPUT" } },
+          },
           { type: "context.injected", text: "CROSS_A_INJECTED", source: "fixture-hook" },
           { type: "thinking", text: "CROSS_A_THINKING" },
           { type: "skill.loaded", skill: "cross-a-skill" },
@@ -22,7 +26,13 @@ export const boundaryAgent = defineAgent({
         break;
       case "boundary/cross-b":
         events.push(
-          { type: "operation.finished", operationId: "cross-operation", kind: "tool", status: "completed", output: { marker: "CROSS_B_OUTPUT" } },
+          {
+            type: "operation.finished",
+            operationId: "cross-operation",
+            kind: "tool",
+            status: "completed",
+            output: { marker: "CROSS_B_OUTPUT" },
+          },
           { type: "message", role: "assistant", text: "CROSS_B_ASSISTANT" },
         );
         break;
@@ -31,23 +41,53 @@ export const boundaryAgent = defineAgent({
           acceptance: "started",
           message: "BOUNDARY_SEND_FAILURE",
           events: [
-            { type: "operation.started", operationId: "failure-operation", operation: { kind: "tool", name: "boundary_failure", input: { marker: "FAILURE_INPUT" } } },
-            { type: "operation.finished", operationId: "failure-operation", kind: "tool", status: "failed", output: { marker: "FAILURE_OUTPUT" } },
+            {
+              type: "operation.started",
+              operationId: "failure-operation",
+              operation: { kind: "tool", name: "boundary_failure", input: { marker: "FAILURE_INPUT" } },
+            },
+            {
+              type: "operation.finished",
+              operationId: "failure-operation",
+              kind: "tool",
+              status: "failed",
+              output: { marker: "FAILURE_OUTPUT" },
+            },
             { type: "error", message: "FAILURE_ERROR_EVENT" },
             { type: "message", role: "assistant", text: "FAILURE_ASSISTANT" },
           ],
         });
       case "boundary/orphan":
         events.push(
-          { type: "operation.finished", operationId: "orphan-operation", kind: "tool", status: "completed", output: { summary: "ORPHAN_OUTPUT_SUMMARY" } },
+          {
+            type: "operation.finished",
+            operationId: "orphan-operation",
+            kind: "tool",
+            status: "completed",
+            output: { summary: "ORPHAN_OUTPUT_SUMMARY" },
+          },
           { type: "message", role: "assistant", text: "ORPHAN_ASSISTANT" },
         );
         break;
       case "boundary/ambiguous":
         events.push(
-          { type: "operation.started", operationId: "ambiguous-operation", operation: { kind: "tool", name: "boundary_ambiguous", input: { marker: "AMBIGUOUS_FIRST_INPUT" } } },
-          { type: "operation.started", operationId: "ambiguous-operation", operation: { kind: "tool", name: "boundary_ambiguous", input: { marker: "AMBIGUOUS_SECOND_INPUT" } } },
-          { type: "operation.finished", operationId: "ambiguous-operation", kind: "tool", status: "completed", output: { summary: "AMBIGUOUS_OUTPUT_SUMMARY" } },
+          {
+            type: "operation.started",
+            operationId: "ambiguous-operation",
+            operation: { kind: "tool", name: "boundary_ambiguous", input: { marker: "AMBIGUOUS_FIRST_INPUT" } },
+          },
+          {
+            type: "operation.started",
+            operationId: "ambiguous-operation",
+            operation: { kind: "tool", name: "boundary_ambiguous", input: { marker: "AMBIGUOUS_SECOND_INPUT" } },
+          },
+          {
+            type: "operation.finished",
+            operationId: "ambiguous-operation",
+            kind: "tool",
+            status: "completed",
+            output: { summary: "AMBIGUOUS_OUTPUT_SUMMARY" },
+          },
           { type: "message", role: "assistant", text: "AMBIGUOUS_ASSISTANT" },
         );
         break;
@@ -55,8 +95,19 @@ export const boundaryAgent = defineAgent({
         // The returned observation supplies a summary and a formal truncation
         // receipt, with no full output for the candidate to reconstruct.
         events.push(
-          { type: "operation.started", operationId: "truncated-operation", operation: { kind: "tool", name: "boundary_truncated", input: { marker: "TRUNCATED_INPUT" } } },
-          { type: "operation.finished", operationId: "truncated-operation", kind: "tool", status: "completed", output: { summary: "TRUNCATED_OUTPUT_SUMMARY" }, truncated: [{ path: "output", originalBytes: 10000 }] },
+          {
+            type: "operation.started",
+            operationId: "truncated-operation",
+            operation: { kind: "tool", name: "boundary_truncated", input: { marker: "TRUNCATED_INPUT" } },
+          },
+          {
+            type: "operation.finished",
+            operationId: "truncated-operation",
+            kind: "tool",
+            status: "completed",
+            output: { summary: "TRUNCATED_OUTPUT_SUMMARY" },
+            truncated: [{ path: "output", originalBytes: 10000 }],
+          },
           { type: "message", role: "assistant", text: "TRUNCATED_ASSISTANT" },
         );
         break;
@@ -73,13 +124,20 @@ export const boundaryAgent = defineAgent({
     return {
       status: "completed" as const,
       events,
-      ...(input.text === "boundary/events" ? { evidenceCoverage: { events: { status: "partial" as const, reason: "BOUNDARY_EVENTS_PARTIAL" } } }
-        : input.text === "boundary/messages" ? { evidenceCoverage: { messages: { status: "partial" as const, reason: "BOUNDARY_MESSAGES_PARTIAL" } } }
-        : input.text === "boundary/actions" ? { evidenceCoverage: { actions: { status: "partial" as const, reason: "BOUNDARY_ACTIONS_PARTIAL" } } }
-        : input.text === "boundary/metrics" ? { evidenceCoverage: {
-          usage: { status: "partial" as const, reason: "BOUNDARY_USAGE_PARTIAL" },
-          data: { status: "partial" as const, reason: "BOUNDARY_DATA_PARTIAL" },
-        } } : {}),
+      ...(input.text === "boundary/events"
+        ? { evidenceCoverage: { events: { status: "partial" as const, reason: "BOUNDARY_EVENTS_PARTIAL" } } }
+        : input.text === "boundary/messages"
+          ? { evidenceCoverage: { messages: { status: "partial" as const, reason: "BOUNDARY_MESSAGES_PARTIAL" } } }
+          : input.text === "boundary/actions"
+            ? { evidenceCoverage: { actions: { status: "partial" as const, reason: "BOUNDARY_ACTIONS_PARTIAL" } } }
+            : input.text === "boundary/metrics"
+              ? {
+                  evidenceCoverage: {
+                    usage: { status: "partial" as const, reason: "BOUNDARY_USAGE_PARTIAL" },
+                    data: { status: "partial" as const, reason: "BOUNDARY_DATA_PARTIAL" },
+                  },
+                }
+              : {}),
     };
   },
 });
@@ -145,7 +203,8 @@ const failure = defineScoreEval({
     try {
       await session.send("boundary/failure");
     } catch (error) {
-      if (typeof error !== "object" || error === null || !("type" in error) || error.type !== "agent-send-failed") throw error;
+      if (typeof error !== "object" || error === null || !("type" in error) || error.type !== "agent-send-failed")
+        throw error;
       rejected = error as SendFailure;
     }
     t.check(rejected?.message, equals("BOUNDARY_SEND_FAILURE")).gate().label("Boundary SendFailure caught");

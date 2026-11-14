@@ -1,19 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import {
-  command,
-  defined,
-  only,
-  pollUntil,
-  withProcess,
-  withProjectCopy,
-} from "@niceeval/testkit";
+import { command, defined, only, pollUntil, withProcess, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { siblingCompleteMarker } from "../experiments/interrupts/complete.ts";
 import { inspectAttempt, inspectRuns } from "./inspection.ts";
 
-interface BackendInfo { pid: number; port: number }
-interface ProcessReceipt { diagnostic(): string }
+interface BackendInfo {
+  pid: number;
+  port: number;
+}
+interface ProcessReceipt {
+  diagnostic(): string;
+}
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
 const docker = command(["docker"]);
@@ -44,11 +42,7 @@ async function fileExists(path: string): Promise<true | undefined> {
   }
 }
 
-async function whileRunning<T>(
-  action: Promise<T>,
-  exited: Promise<ProcessReceipt>,
-  label: string,
-): Promise<T> {
+async function whileRunning<T>(action: Promise<T>, exited: Promise<ProcessReceipt>, label: string): Promise<T> {
   return await Promise.race([
     action,
     exited.then((receipt) => {
@@ -75,23 +69,24 @@ async function waitForHealth(port: number, exited: Promise<ProcessReceipt>): Pro
 }
 
 function outputLines(stdout: string): string[] {
-  return stdout.split("\n").map((line) => line.trim()).filter((line) => line !== "");
+  return stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
 }
 
 async function containersOwnedBy(pid: number, cwd: string): Promise<string[]> {
-  const listed = await docker.run(
-    ["ps", "-aq", "--filter", `label=niceeval.pid=${pid}`],
-    { cwd },
-  );
+  const listed = await docker.run(["ps", "-aq", "--filter", `label=niceeval.pid=${pid}`], { cwd });
   if (listed.exitCode !== 0) throw new Error(listed.diagnostic());
   return outputLines(listed.stdout);
 }
 
 async function waitForOwnedContainersGone(pid: number, cwd: string): Promise<void> {
-  await pollUntil(
-    async () => (await containersOwnedBy(pid, cwd)).length === 0 ? true : undefined,
-    { timeoutMs: 15_000, intervalMs: 100, label: `Docker sandboxes owned by invocation ${pid} to be removed` },
-  );
+  await pollUntil(async () => ((await containersOwnedBy(pid, cwd)).length === 0 ? true : undefined), {
+    timeoutMs: 15_000,
+    intervalMs: 100,
+    label: `Docker sandboxes owned by invocation ${pid} to be removed`,
+  });
 }
 
 async function waitForSecondReuseAttempt(pid: number, cwd: string): Promise<void> {
@@ -185,7 +180,12 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
             (event) => event.event === "eval" && event.experimentId === completeSiblingExperimentId,
             interrupted.diagnostic(),
           ),
-        ).toMatchObject({ event: "eval", experimentId: completeSiblingExperimentId, evalId: "probe", verdict: "passed" });
+        ).toMatchObject({
+          event: "eval",
+          experimentId: completeSiblingExperimentId,
+          evalId: "probe",
+          verdict: "passed",
+        });
         expect(
           only(
             events,
@@ -199,7 +199,11 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         ).toMatchObject({ status: "done" });
 
         const completedAttempt = await inspectAttempt(
-          niceeval, root, completedBeforeInterrupt.locator!, "attempt.get", { cwd: root },
+          niceeval,
+          root,
+          completedBeforeInterrupt.locator!,
+          "attempt.get",
+          { cwd: root },
         );
         expect(completedAttempt.receipt.exitCode, completedAttempt.receipt.diagnostic()).toBe(0);
         expect(completedAttempt.document).toMatchObject({
@@ -233,11 +237,7 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
     const nextEvents = next.expEvalEvents();
     expect(next.expReceipt(), next.diagnostic()).toMatchObject({ completion: "completed" });
     expect(
-      only(
-        nextEvents,
-        (event) => event.event === "eval" && event.experimentId === "probe",
-        next.diagnostic(),
-      ),
+      only(nextEvents, (event) => event.event === "eval" && event.experimentId === "probe", next.diagnostic()),
     ).toMatchObject({ event: "eval", experimentId: "probe", evalId: "probe", verdict: "passed" });
   });
 });
@@ -252,8 +252,10 @@ test("安装后候选的 Docker provider 保持 managed process 双工 bytes、�
     });
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.expReceipt(), result.diagnostic()).toMatchObject({ completion: "completed" });
-    expect(
-      only(result.expEvalEvents(), () => true, result.diagnostic()),
-    ).toMatchObject({ experimentId: "managed-docker", evalId: "managed-process", verdict: "passed" });
+    expect(only(result.expEvalEvents(), () => true, result.diagnostic())).toMatchObject({
+      experimentId: "managed-docker",
+      evalId: "managed-process",
+      verdict: "passed",
+    });
   });
 });

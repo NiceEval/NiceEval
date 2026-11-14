@@ -35,7 +35,7 @@ export function parseTrustedImageLocator(value: string, path: string): IncusImag
     return parseIncusImageLocator(value, path);
   } catch (cause) {
     return cause instanceof Error && "code" in cause
-      ? cause as IncusProviderError
+      ? (cause as IncusProviderError)
       : incusError(
           "sandbox-artifact-unverified",
           `${path} ${JSON.stringify(value)} is not a digest-pinned locator.`,

@@ -61,16 +61,21 @@ function readIncomplete(path: string): readonly RecordIncompleteRun[] {
   const connection = openRecordMaintenance(path);
   try {
     validateExactSchema(connection);
-    const rows = connection.db.prepare(
-      "SELECT run_id FROM ne19_runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?",
-    ).all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1) as unknown as readonly Record<string, SQLOutputValue>[];
+    const rows = connection.db
+      .prepare("SELECT run_id FROM ne19_runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?")
+      .all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1) as unknown as readonly Record<string, SQLOutputValue>[];
     if (rows.length > RECORD_MAINTENANCE_MAXIMUM_RUNS) {
-      throw new SqliteRecordError("record-resource-limit-exceeded", "inspect-incomplete", "incomplete Run discovery exceeded its bounded limit");
+      throw new SqliteRecordError(
+        "record-resource-limit-exceeded",
+        "inspect-incomplete",
+        "incomplete Run discovery exceeded its bounded limit",
+      );
     }
     const result: RecordIncompleteRun[] = [];
     for (const row of rows) {
       const decoded = Schema.decodeUnknownResult(RunIdSchema)(row.run_id);
-      if (Result.isFailure(decoded)) throw new SqliteRecordError("record-database-invalid", "inspect-incomplete", "runs.run_id is invalid");
+      if (Result.isFailure(decoded))
+        throw new SqliteRecordError("record-database-invalid", "inspect-incomplete", "runs.run_id is invalid");
       result.push(incompleteRun(decoded.success));
     }
     return Object.freeze(result);
@@ -94,7 +99,8 @@ function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
       for (const runId of canonicalRunIds(runIds)) {
         reopenSealing.run(runId);
         const receipt = statement.run(runId);
-        if (receipt.changes === 1n) deleted.push(runId); else skipped.push(runId);
+        if (receipt.changes === 1n) deleted.push(runId);
+        else skipped.push(runId);
       }
       connection.db.exec("COMMIT");
     } catch (cause) {
@@ -111,35 +117,46 @@ function incompleteRunWarning(runId: RunId): RecordIncompleteRunWarning {
   return Object.freeze({ code: "incomplete-run", runId, cleanupCommand: "niceeval clean" });
 }
 
-export function incompleteRunWarnings(incompleteRuns: readonly RecordIncompleteRun[]): readonly RecordIncompleteRunWarning[] {
+export function incompleteRunWarnings(
+  incompleteRuns: readonly RecordIncompleteRun[],
+): readonly RecordIncompleteRunWarning[] {
   return Object.freeze(canonicalRunIds(incompleteRuns.map(({ runId }) => runId)).map(incompleteRunWarning));
 }
 
 export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
-  Effect.scoped(Effect.gen(function* () {
-    const path = yield* Effect.try({
-      try: () => maintenancePath(root),
-      catch: (cause) => sqliteFailure("inspect-incomplete", cause),
-    });
-    if (path === undefined) return Object.freeze([]);
-    const coordination = yield* RecordCoordination;
-    yield* coordination.enterRecordMaintenance(root);
-    return yield* Effect.try({ try: () => readIncomplete(path), catch: (cause) => sqliteFailure("inspect-incomplete", cause) });
-  }));
+  Effect.scoped(
+    Effect.gen(function* () {
+      const path = yield* Effect.try({
+        try: () => maintenancePath(root),
+        catch: (cause) => sqliteFailure("inspect-incomplete", cause),
+      });
+      if (path === undefined) return Object.freeze([]);
+      const coordination = yield* RecordCoordination;
+      yield* coordination.enterRecordMaintenance(root);
+      return yield* Effect.try({
+        try: () => readIncomplete(path),
+        catch: (cause) => sqliteFailure("inspect-incomplete", cause),
+      });
+    }),
+  );
 
 export const inspectIncompleteRunWarnings: InspectIncompleteRunWarnings = (input) =>
   Effect.map(inspectIncompleteRuns(input), incompleteRunWarnings);
 
 export const cleanIncompleteRuns: CleanIncompleteRuns = ({ root, runIds }) =>
-  Effect.scoped(Effect.gen(function* () {
-    const path = yield* Effect.try({
-      try: () => maintenancePath(root),
-      catch: (cause) => sqliteFailure("clean-incomplete", cause),
-    });
-    if (path === undefined) {
-      return Object.freeze({ deleted: Object.freeze([]), skipped: canonicalRunIds(runIds) });
-    }
-    const coordination = yield* RecordCoordination;
-    yield* coordination.enterRecordMaintenance(root);
-    return yield* Effect.uninterruptible(Effect.try({ try: () => cleanRows(path, runIds), catch: (cause) => sqliteFailure("clean-incomplete", cause) }));
-  }));
+  Effect.scoped(
+    Effect.gen(function* () {
+      const path = yield* Effect.try({
+        try: () => maintenancePath(root),
+        catch: (cause) => sqliteFailure("clean-incomplete", cause),
+      });
+      if (path === undefined) {
+        return Object.freeze({ deleted: Object.freeze([]), skipped: canonicalRunIds(runIds) });
+      }
+      const coordination = yield* RecordCoordination;
+      yield* coordination.enterRecordMaintenance(root);
+      return yield* Effect.uninterruptible(
+        Effect.try({ try: () => cleanRows(path, runIds), catch: (cause) => sqliteFailure("clean-incomplete", cause) }),
+      );
+    }),
+  );

@@ -30,7 +30,18 @@ import { makeDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import type { Agent, AgentContext, AgentTracing, CommandProjection, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
+import type {
+  Agent,
+  AgentContext,
+  AgentTracing,
+  CommandProjection,
+  EvidenceCoverage,
+  InputResponse,
+  JsonValue,
+  SpanMapper,
+  StreamEvent,
+  TurnInput,
+} from "../types.ts";
 import { createSessionKey } from "./session-key.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
@@ -108,9 +119,11 @@ function loadAiEffect(): Effect.Effect<{ readUIMessageStream: ReadUIMessageStrea
     },
     catch: () => missingAiModule(),
   }).pipe(
-    Effect.tapError(() => Effect.sync(() => {
-      aiModule = undefined;
-    })),
+    Effect.tapError(() =>
+      Effect.sync(() => {
+        aiModule = undefined;
+      }),
+    ),
   );
 }
 
@@ -156,16 +169,18 @@ function toChunkStream(
 ): ReadableStream<UIMessageChunkLike> {
   const decoder = new TextDecoder();
   let buffer = "";
-  return body.pipeThrough(new TransformStream<Uint8Array, UIMessageChunkLike>({
-    transform(value, controller) {
-      buffer += decoder.decode(value, { stream: true });
-      buffer = drainSseEvents(buffer, controller, onChunk, onDone);
-    },
-    flush(controller) {
-      // Keep the original protocol rule: only a completed `\n\n` record is observable.
-      buffer = drainSseEvents(buffer, controller, onChunk, onDone);
-    },
-  }));
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, UIMessageChunkLike>({
+      transform(value, controller) {
+        buffer += decoder.decode(value, { stream: true });
+        buffer = drainSseEvents(buffer, controller, onChunk, onDone);
+      },
+      flush(controller) {
+        // Keep the original protocol rule: only a completed `\n\n` record is observable.
+        buffer = drainSseEvents(buffer, controller, onChunk, onDone);
+      },
+    }),
+  );
 }
 
 // ───────────────────────── parts → 事件 ─────────────────────────
@@ -192,7 +207,9 @@ function isApproved(text: string): boolean {
 function approvalDecision(responses: readonly InputResponse[] | undefined, requestId: string | undefined): boolean {
   const matched = responses?.find((r) => r.requestId === requestId);
   if (!matched) {
-    throw new Error(`No response for pending approval "${requestId ?? "unknown"}". Answer approval requests with t.respond(...).`);
+    throw new Error(
+      `No response for pending approval "${requestId ?? "unknown"}". Answer approval requests with t.respond(...).`,
+    );
   }
   if (matched.optionId !== undefined) return matched.optionId === "approve";
   return isApproved(matched.text ?? "");
@@ -221,10 +238,12 @@ function reportLiveToolProgress(message: UIMessageLike, reported: ReportedState,
     if (
       !isToolPart(part) ||
       !COMPLETE_TOOL_INPUT_STATES.has(part.state ?? "") ||
-      typeof part.toolCallId !== "string" || part.toolCallId === "" ||
+      typeof part.toolCallId !== "string" ||
+      part.toolCallId === "" ||
       !Object.prototype.hasOwnProperty.call(part, "input") ||
       reported.liveProgressCalls.has(part.toolCallId)
-    ) continue;
+    )
+      continue;
     const name = toolNameOf(part);
     if (name === "") continue;
     let input: string | undefined;
@@ -278,11 +297,23 @@ function deriveTurnEvents(
     };
     if (part.state === "output-available") {
       start();
-      events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.output as JsonValue, status: "completed" });
+      events.push({
+        type: "operation.finished",
+        operationId: callId,
+        kind: "tool",
+        output: part.output as JsonValue,
+        status: "completed",
+      });
       reported.finishedCalls.add(callId);
     } else if (part.state === "output-error") {
       start();
-      events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.errorText, status: "failed" });
+      events.push({
+        type: "operation.finished",
+        operationId: callId,
+        kind: "tool",
+        output: part.errorText,
+        status: "failed",
+      });
       reported.finishedCalls.add(callId);
     } else if (
       part.state === "output-denied" ||
@@ -341,20 +372,13 @@ interface PreparedUiMessageStreamSend {
 }
 
 /** External SDK / transport Promise boundary. */
-function promiseEffect<Value>(
-  run: (signal: AbortSignal) => PromiseLike<Value>,
-): Effect.Effect<Value, unknown> {
+function promiseEffect<Value>(run: (signal: AbortSignal) => PromiseLike<Value>): Effect.Effect<Value, unknown> {
   return Effect.tryPromise({ try: run, catch: (cause) => cause });
 }
 
-function resolveUrlEffect(
-  options: UiMessageStreamAgentOptions,
-  ctx: AgentContext,
-): Effect.Effect<string, unknown> {
+function resolveUrlEffect(options: UiMessageStreamAgentOptions, ctx: AgentContext): Effect.Effect<string, unknown> {
   const url = options.url;
-  return typeof url === "function"
-    ? promiseEffect(() => Promise.resolve(url(ctx)))
-    : Effect.succeed(url);
+  return typeof url === "function" ? promiseEffect(() => Promise.resolve(url(ctx))) : Effect.succeed(url);
 }
 
 function resolveHeadersEffect(
@@ -362,7 +386,7 @@ function resolveHeadersEffect(
   ctx: AgentContext,
 ): Effect.Effect<globalThis.Record<string, string>, unknown> {
   return Effect.try({
-    try: () => typeof options.headers === "function" ? options.headers(ctx) : (options.headers ?? {}),
+    try: () => (typeof options.headers === "function" ? options.headers(ctx) : (options.headers ?? {})),
     catch: (cause) => cause,
   });
 }
@@ -399,8 +423,7 @@ function prepareMessages(
   }
 
   const lastMessage = priorMessages.at(-1);
-  const pendingPart =
-    lastMessage?.role === "assistant" ? lastMessage.parts.find(isApprovalRequested) : undefined;
+  const pendingPart = lastMessage?.role === "assistant" ? lastMessage.parts.find(isApprovalRequested) : undefined;
 
   if (pendingPart && lastMessage) {
     // HITL 续跑:不追加新 user 消息 —— 把停在 approval-requested 的 part 原地改成
@@ -481,18 +504,18 @@ function uiMessageStreamSendEffect(
       const extraHeaders = yield* resolveHeadersEffect(options, ctx);
       const transport = yield* transportController();
       const res = yield* Effect.tryPromise({
-        try: (signal) => fetch(url, {
-          method: "POST",
-          // traceparent 随请求带过去:应用埋点支持 context 传播时,span 归属精确到本轮。
-          headers: { "content-type": "application/json", ...extraHeaders, ...ctx.telemetry?.headers },
-          body: JSON.stringify({ ...options.body?.(ctx), messages: prepared.messagesToSend }),
-          signal: AbortSignal.any([ctx.signal, signal, transport.signal]),
-        }),
+        try: (signal) =>
+          fetch(url, {
+            method: "POST",
+            // traceparent 随请求带过去:应用埋点支持 context 传播时,span 归属精确到本轮。
+            headers: { "content-type": "application/json", ...extraHeaders, ...ctx.telemetry?.headers },
+            body: JSON.stringify({ ...options.body?.(ctx), messages: prepared.messagesToSend }),
+            signal: AbortSignal.any([ctx.signal, signal, transport.signal]),
+          }),
         catch: (err) => {
           if (ctx.signal.aborted) return err;
-          const cause = err instanceof Error
-            ? (err.cause instanceof Error ? err.cause.message : err.message)
-            : String(err);
+          const cause =
+            err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
           return makeSendFailure({
             acceptance: "unknown",
             message: `Could not connect to ${url} (${cause}). Is the app under test running? Start it yourself first, or point url at a deployed instance via config.`,
@@ -502,9 +525,7 @@ function uiMessageStreamSendEffect(
       });
       const responseBody = res.body;
       if (!res.ok || !responseBody) {
-        const responseText = yield* promiseEffect(() => res.text()).pipe(
-          Effect.catch(() => Effect.succeed("")),
-        );
+        const responseText = yield* promiseEffect(() => res.text()).pipe(Effect.catch(() => Effect.succeed("")));
         return yield* Effect.fail(
           makeSendFailure({
             acceptance: "unknown",
@@ -518,18 +539,22 @@ function uiMessageStreamSendEffect(
         sawDone: false,
         sawError: undefined,
       };
-      const chunkStream = toChunkStream(responseBody, (chunk) => {
-        if (chunk.type === "error") streamState.sawError = chunk.errorText;
-      }, () => {
-        streamState.sawDone = true;
-      });
+      const chunkStream = toChunkStream(
+        responseBody,
+        (chunk) => {
+          if (chunk.type === "error") streamState.sawError = chunk.errorText;
+        },
+        () => {
+          streamState.sawDone = true;
+        },
+      );
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => transport.abort()).pipe(
-          Effect.andThen(cancelReadableStreamEffect(chunkStream)),
-        ));
-      const reported: ReportedState = prepared.resumeFrom && prepared.bookkeeping.reported
-        ? prepared.bookkeeping.reported
-        : { startedCalls: new Set(), finishedCalls: new Set(), liveProgressCalls: new Set(), textLen: 0 };
+        Effect.sync(() => transport.abort()).pipe(Effect.andThen(cancelReadableStreamEffect(chunkStream))),
+      );
+      const reported: ReportedState =
+        prepared.resumeFrom && prepared.bookkeeping.reported
+          ? prepared.bookkeeping.reported
+          : { startedCalls: new Set(), finishedCalls: new Set(), liveProgressCalls: new Set(), textLen: 0 };
       prepared.bookkeeping.reported = reported;
       const finalMessage = yield* reduceUiMessageStreamEffect(
         readUIMessageStream,
@@ -550,9 +575,10 @@ function uiMessageStreamSendEffect(
         return yield* Effect.fail(
           makeSendFailure({
             acceptance: "unknown",
-            message: streamState.sawError !== undefined && streamState.sawError.trim() !== ""
-              ? streamState.sawError
-              : `POST ${url} ended without producing an assistant message. Confirm the endpoint speaks the complete UI Message Stream protocol.`,
+            message:
+              streamState.sawError !== undefined && streamState.sawError.trim() !== ""
+                ? streamState.sawError
+                : `POST ${url} ended without producing an assistant message. Confirm the endpoint speaks the complete UI Message Stream protocol.`,
           }),
         );
       }

@@ -42,7 +42,6 @@ export interface AttemptFailureInfo {
   readonly cause: ExternalCause;
 }
 
-
 /** 携带分类的错误对象的判别字段值;识别只看这个数据字段,不看类身份。 */
 const FAILURE_CLASS_TAG = "NiceevalClassifiedError";
 
@@ -155,10 +154,10 @@ export function errorChainText(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
   for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
-    const candidate = typeof current === "object" && current !== null
-      ? (current as { message?: unknown }).message
-      : undefined;
-    const message = typeof candidate === "string" ? candidate : current instanceof Error ? current.message : String(current);
+    const candidate =
+      typeof current === "object" && current !== null ? (current as { message?: unknown }).message : undefined;
+    const message =
+      typeof candidate === "string" ? candidate : current instanceof Error ? current.message : String(current);
     if (message) parts.push(message);
     current = causeOf(current);
   }
@@ -184,9 +183,7 @@ export function callClassifier<T>(classifier: ((failure: T) => FailureClass | un
  * per-attempt teardown)没有重试执行体,链上不挂产时间轴的兜底正则——时间轴即使给出也无人
  * 消费(见 architecture.md「分类链」)。
  */
-export function resolveAttemptFailureClass(
-  info: AttemptFailureInfo,
-): FailureClass {
+export function resolveAttemptFailureClass(info: AttemptFailureInfo): FailureClass {
   const declared = failureClassOf(info.cause);
   if (declared) return declared;
   return { retryable: false };

@@ -11,8 +11,12 @@ export const roles = defineAdapter({
         if (selection?.model == null) throw new Error(`Missing model for ${slot}`);
         return selection.model;
       },
-      record(usage: AdapterUsageInput) { ctx.recordUsage(usage); },
-      finishUsage() { ctx.sealUsage({ state: "complete" }); },
+      record(usage: AdapterUsageInput) {
+        ctx.recordUsage(usage);
+      },
+      finishUsage() {
+        ctx.sealUsage({ state: "complete" });
+      },
     };
   },
 });

@@ -6,7 +6,12 @@ import { expect, test } from "vitest";
 
 const context = createE2EContext({
   repoId: "runner",
-  project: { from: process.cwd(), prefix: "niceeval-labels-", omitTopLevel: ["node_modules", "test", ".niceeval", ".e2e-artifacts"], links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }] },
+  project: {
+    from: process.cwd(),
+    prefix: "niceeval-labels-",
+    omitTopLevel: ["node_modules", "test", ".niceeval", ".e2e-artifacts"],
+    links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
+  },
   commands: { niceeval: [resolve("node_modules/.bin/niceeval")] },
 });
 
@@ -16,7 +21,8 @@ test.concurrent("Docker instances identify their first Attempt and Eval unless t
     const digests: string[] = [];
     for (const mode of ["default", "run-only"]) {
       const result = await niceeval.run(["exp", "creation-labels", "--rerun", "all", "--json"], {
-        env: { NICEEVAL_LABEL_MODE: mode }, timeoutMs: 120_000,
+        env: { NICEEVAL_LABEL_MODE: mode },
+        timeoutMs: 120_000,
       });
       expect(result.exitCode, result.diagnostic()).toBe(0);
       expect(result.expEvalEvents(), result.diagnostic()).toEqual([
@@ -37,8 +43,12 @@ test.concurrent("remote Provider creation metadata identifies its first Attempt 
     for (const mode of ["default", "run-only"]) {
       const receipt = join(paths.projectRoot, `labels-${mode}.json`);
       const result = await niceeval.run(["exp", "creation-labels", "--rerun", "all", "--json"], {
-        env: { NICEEVAL_LABEL_PROVIDER: "e2b", NICEEVAL_LABEL_MODE: mode, NICEEVAL_LABEL_RECEIPT: receipt,
-          NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/labels-e2b-preload.mjs")).href}` },
+        env: {
+          NICEEVAL_LABEL_PROVIDER: "e2b",
+          NICEEVAL_LABEL_MODE: mode,
+          NICEEVAL_LABEL_RECEIPT: receipt,
+          NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/labels-e2b-preload.mjs")).href}`,
+        },
       });
       expect(result.expEvalEvents(), result.diagnostic()).toEqual([expect.objectContaining({ verdict: "errored" })]);
       const labels = JSON.parse(await readFile(receipt, "utf8"));

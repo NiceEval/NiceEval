@@ -24,9 +24,13 @@ describe("defineScoreMatch", () => {
   });
 
   it("rejects ambiguous, accessor, and out-of-range managed options", () => {
-    expect(() => defineScoreMatch({ name: "x", version: "1", config: {}, llm: { maxCalls: 17 }, score: () => Effect.succeed(1) })).toThrow("at most 16");
+    expect(() =>
+      defineScoreMatch({ name: "x", version: "1", config: {}, llm: { maxCalls: 17 }, score: () => Effect.succeed(1) }),
+    ).toThrow("at most 16");
     expect(() => defineScoreMatch({ name: "x", score: () => 1, extra: true } as never)).toThrow("unknown option");
     const config = Object.defineProperty({}, "value", { enumerable: true, get: () => 1 });
-    expect(() => defineScoreMatch({ name: "x", version: "1", config, llm: {}, score: () => Effect.succeed(1) })).toThrow("data property");
+    expect(() =>
+      defineScoreMatch({ name: "x", version: "1", config, llm: {}, score: () => Effect.succeed(1) }),
+    ).toThrow("data property");
   });
 });

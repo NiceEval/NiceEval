@@ -1,6 +1,5 @@
 // 小工具。
 
-
 /** 读必需的环境变量,缺了就清晰报错(agent 鉴权用)。 */
 export function requireEnv(name: string): string {
   const v = process.env[name];
@@ -77,24 +76,25 @@ function formatNonErrorThrown(value: unknown): string {
   };
   const code = readString("code");
   const message = readString("message");
-  const summary = code === undefined
-    ? message
-    : message === undefined || message === code
-      ? code
-      : `${code}: ${message}`;
+  const summary =
+    code === undefined ? message : message === undefined || message === code ? code : `${code}: ${message}`;
 
   let serialized: string | undefined;
   try {
     const seen = new WeakSet<object>();
-    serialized = JSON.stringify(value, (_key, nested: unknown) => {
-      if (typeof nested === "bigint") return `${nested}n`;
-      if (typeof nested === "function" || typeof nested === "symbol") return String(nested);
-      if (typeof nested === "object" && nested !== null) {
-        if (seen.has(nested)) return "[Circular]";
-        seen.add(nested);
-      }
-      return nested;
-    }, 2);
+    serialized = JSON.stringify(
+      value,
+      (_key, nested: unknown) => {
+        if (typeof nested === "bigint") return `${nested}n`;
+        if (typeof nested === "function" || typeof nested === "symbol") return String(nested);
+        if (typeof nested === "object" && nested !== null) {
+          if (seen.has(nested)) return "[Circular]";
+          seen.add(nested);
+        }
+        return nested;
+      },
+      2,
+    );
   } catch {
     // Hostile getters and proxies still fall back to their ordinary string form.
   }

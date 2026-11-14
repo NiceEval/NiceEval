@@ -174,9 +174,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
             ? event.estimatedCostUSD
             : state.estimatedCostUSD + event.estimatedCostUSD;
       const newTokenCount =
-        event.tokenCount === undefined
-          ? state.newTokenCount
-          : (state.newTokenCount ?? 0) + event.tokenCount;
+        event.tokenCount === undefined ? state.newTokenCount : (state.newTokenCount ?? 0) + event.tokenCount;
       // 落项完全由事件携带的 verdict 决定 —— reducer 不自己判断成败(那是断言求值的事),
       // 也不留一个「已完成但未归类」的兜底项:Verdict 是四值闭集,穷尽覆盖。
       return {
@@ -464,17 +462,24 @@ function upsertDiagnostic(
       if (groupCount >= MAX_ERROR_ASSISTANCE_GROUPS) {
         const overflowIndex = diagnostics.findIndex((diagnostic) => diagnostic.key === ERROR_ASSISTANCE_OVERFLOW_KEY);
         if (overflowIndex === -1) {
-          return [...diagnostics, {
-            at: normalizedInput.at,
-            key: ERROR_ASSISTANCE_OVERFLOW_KEY,
-            code: "error-assistance-overflow",
-            severity: "warning",
-            message: "Additional error groups were omitted after the diagnostic limit was reached.",
-            count: 1,
-          }];
+          return [
+            ...diagnostics,
+            {
+              at: normalizedInput.at,
+              key: ERROR_ASSISTANCE_OVERFLOW_KEY,
+              code: "error-assistance-overflow",
+              severity: "warning",
+              message: "Additional error groups were omitted after the diagnostic limit was reached.",
+              count: 1,
+            },
+          ];
         }
         const overflow = diagnostics.slice();
-        overflow[overflowIndex] = { ...overflow[overflowIndex]!, at: normalizedInput.at, count: overflow[overflowIndex]!.count + 1 };
+        overflow[overflowIndex] = {
+          ...overflow[overflowIndex]!,
+          at: normalizedInput.at,
+          count: overflow[overflowIndex]!.count + 1,
+        };
         return overflow;
       }
     }

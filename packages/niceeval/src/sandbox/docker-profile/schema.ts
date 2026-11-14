@@ -7,31 +7,32 @@ import { dockerProfileError, type DockerProfileError } from "./errors.ts";
 
 export const DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION: 1 = 1;
 export const DOCKER_PROFILE_NETWORK_POLICY_VERSION: 1 = 1;
-export const DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY =
-  "niceeval-docker-profile-state/docker-data-snapshot/v1" as const;
-export const DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL =
-  DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY;
+export const DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY = "niceeval-docker-profile-state/docker-data-snapshot/v1" as const;
+export const DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL = DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY;
 export const DOCKER_PROFILE_NETWORK_DENY_CIDRS: readonly [string, ...string[]] = Object.freeze([
-  "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
-  "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
-  "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4",
-  "240.0.0.0/4", "::/0",
+  "0.0.0.0/8",
+  "10.0.0.0/8",
+  "100.64.0.0/10",
+  "127.0.0.0/8",
+  "169.254.0.0/16",
+  "172.16.0.0/12",
+  "192.0.0.0/24",
+  "192.0.2.0/24",
+  "192.168.0.0/16",
+  "198.18.0.0/15",
+  "198.51.100.0/24",
+  "203.0.113.0/24",
+  "224.0.0.0/4",
+  "240.0.0.0/4",
+  "::/0",
 ]);
 const NETWORK_ALLOWED_PROTOCOLS: readonly ["dns", "https"] = Object.freeze(["dns", "https"]);
-const PROFILE_CONTROLLERS: readonly ["cpu", "memory", "pids"] = Object.freeze([
-  "cpu", "memory", "pids",
-]);
-const BEFORE_CACHE_FILESYSTEM_FEATURES: readonly [
-  "ext4",
-  "fixed-size",
-  "fully-allocated",
-  "independent-image",
-] = Object.freeze(["ext4", "fixed-size", "fully-allocated", "independent-image"]);
+const PROFILE_CONTROLLERS: readonly ["cpu", "memory", "pids"] = Object.freeze(["cpu", "memory", "pids"]);
+const BEFORE_CACHE_FILESYSTEM_FEATURES: readonly ["ext4", "fixed-size", "fully-allocated", "independent-image"] =
+  Object.freeze(["ext4", "fixed-size", "fully-allocated", "independent-image"]);
 
 /** Distinguishes managed-rootless and raw DinD storage profiles; neither establishes the dedicated kernel required for supported nested Docker. */
-export type DockerExecutionProfileSecurityLevel =
-  | "managed-rootless/v1"
-  | "raw-dind-storage/v1";
+export type DockerExecutionProfileSecurityLevel = "managed-rootless/v1" | "raw-dind-storage/v1";
 
 /** Names a Unix socket and expected peer UID; a path alone does not establish the peer's identity. */
 export interface DockerProfileUnixEndpoint {
@@ -99,12 +100,7 @@ export interface DockerProfileBeforeCacheFullCopyCapabilityV1 {
   readonly providerIdentity: string;
   readonly executionDomain: string;
   readonly filesystemSizeBytes: number;
-  readonly filesystemFeatures: readonly [
-    "ext4",
-    "fixed-size",
-    "fully-allocated",
-    "independent-image",
-  ];
+  readonly filesystemFeatures: readonly ["ext4", "fixed-size", "fully-allocated", "independent-image"];
   readonly seedLimitBytes: number;
   readonly filesystemIdentity: string;
 }
@@ -135,9 +131,7 @@ export interface DockerExecutionProfileV1 {
       readonly dockerDataPool: {
         readonly count: number;
         readonly bytesPerAllocation: number;
-        readonly attestation:
-          | "linux-project-quota/v1"
-          | "independent-fixed-filesystem/v1";
+        readonly attestation: "linux-project-quota/v1" | "independent-fixed-filesystem/v1";
       };
       /** Presence is the descriptor's explicit, default-off full-copy capability. */
       readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1;
@@ -167,8 +161,7 @@ export interface DockerExecutionProfileV1 {
 }
 
 /** Supplies profile fields before the semantic policy revision is derived; use defineDockerExecutionProfile to compute and validate the completed descriptor. */
-export type DockerExecutionProfileV1Draft =
-  Omit<DockerExecutionProfileV1, "semanticPolicyRevision">;
+export type DockerExecutionProfileV1Draft = Omit<DockerExecutionProfileV1, "semanticPolicyRevision">;
 
 /** A deliberately narrow view: never exposes host endpoints, paths, owners, or policy. */
 export interface DockerProfilePublicSummary {
@@ -179,10 +172,7 @@ export interface DockerProfilePublicSummary {
   readonly capacity: DockerExecutionProfileV1["capacity"];
 }
 
-type DockerExecutionProfileSemanticInput = Pick<
-  DockerExecutionProfileV1,
-  "securityLevel" | "backend" | "policy"
->;
+type DockerExecutionProfileSemanticInput = Pick<DockerExecutionProfileV1, "securityLevel" | "backend" | "policy">;
 
 const ParseOptions = Object.freeze({
   errors: "all" as const,
@@ -208,22 +198,59 @@ const plainStruct = <Fields extends Schema.Struct.Fields>(fields: Fields) =>
   PlainObjectSchema.pipe(Schema.decodeTo(Schema.Struct(fields)));
 
 const nonEmptyString = (identifier: string) =>
-  Schema.String.pipe(Schema.check(Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), { identifier, description: "a non-empty string without NUL" })));
+  Schema.String.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), {
+        identifier,
+        description: "a non-empty string without NUL",
+      }),
+    ),
+  );
 
 const sha256Identity = (identifier: string) =>
-  nonEmptyString(identifier).pipe(Schema.check(Schema.makeFilter((value) => /^sha256:[a-f0-9]{64}$/u.test(value), { identifier, description: "an exact lowercase sha256 identity" })));
+  nonEmptyString(identifier).pipe(
+    Schema.check(
+      Schema.makeFilter((value) => /^sha256:[a-f0-9]{64}$/u.test(value), {
+        identifier,
+        description: "an exact lowercase sha256 identity",
+      }),
+    ),
+  );
 
 const absolutePath = (identifier: string) =>
-  nonEmptyString(identifier).pipe(Schema.check(Schema.makeFilter(isAbsolute, { identifier, description: "an absolute path" })));
+  nonEmptyString(identifier).pipe(
+    Schema.check(Schema.makeFilter(isAbsolute, { identifier, description: "an absolute path" })),
+  );
 
 const nonNegativeSafeInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { identifier, description: "a non-negative safe integer" })));
+  Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
+        identifier,
+        description: "a non-negative safe integer",
+      }),
+    ),
+  );
 
 const positiveSafeInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier, description: "a positive safe integer" })));
+  Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
+        identifier,
+        description: "a positive safe integer",
+      }),
+    ),
+  );
 
 const positiveFinite = (identifier: string) =>
-  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(value) && value > 0, { identifier, description: "a positive finite number" })));
+  Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isFinite(value) && value > 0, {
+        identifier,
+        description: "a positive finite number",
+      }),
+    ),
+  );
 
 function isPublicDnsServer(value: string): boolean {
   const kind = isIP(value);
@@ -245,20 +272,39 @@ function isPublicDnsServer(value: string): boolean {
   if (normalized.startsWith("::ffff:")) {
     return isPublicDnsServer(normalized.slice("::ffff:".length));
   }
-  return normalized !== "::" && normalized !== "::1" &&
-    !normalized.startsWith("fc") && !normalized.startsWith("fd") &&
-    !normalized.startsWith("fe8") && !normalized.startsWith("fe9") &&
-    !normalized.startsWith("fea") && !normalized.startsWith("feb") &&
-    !normalized.startsWith("ff") && !normalized.startsWith("2001:db8:");
+  return (
+    normalized !== "::" &&
+    normalized !== "::1" &&
+    !normalized.startsWith("fc") &&
+    !normalized.startsWith("fd") &&
+    !normalized.startsWith("fe8") &&
+    !normalized.startsWith("fe9") &&
+    !normalized.startsWith("fea") &&
+    !normalized.startsWith("feb") &&
+    !normalized.startsWith("ff") &&
+    !normalized.startsWith("2001:db8:")
+  );
 }
 
-const DnsServerSchema = nonEmptyString("DockerProfilePublicDnsServer").pipe(Schema.check(Schema.makeFilter(isPublicDnsServer, {
-    identifier: "DockerProfilePublicDnsServer",
-    description: "a public IP address, not a private or synthetic endpoint",
-  })));
+const DnsServerSchema = nonEmptyString("DockerProfilePublicDnsServer").pipe(
+  Schema.check(
+    Schema.makeFilter(isPublicDnsServer, {
+      identifier: "DockerProfilePublicDnsServer",
+      description: "a public IP address, not a private or synthetic endpoint",
+    }),
+  ),
+);
 
-const CidrsSchema = Schema.NonEmptyArray(Schema.String).pipe(Schema.check(Schema.makeFilter((value) => value.length === DOCKER_PROFILE_NETWORK_DENY_CIDRS.length &&
-    value.every((cidr, index) => cidr === DOCKER_PROFILE_NETWORK_DENY_CIDRS[index]), { identifier: "DockerProfileDenyCidrs", description: "the v1 fail-closed CIDR set" })));
+const CidrsSchema = Schema.NonEmptyArray(Schema.String).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        value.length === DOCKER_PROFILE_NETWORK_DENY_CIDRS.length &&
+        value.every((cidr, index) => cidr === DOCKER_PROFILE_NETWORK_DENY_CIDRS[index]),
+      { identifier: "DockerProfileDenyCidrs", description: "the v1 fail-closed CIDR set" },
+    ),
+  ),
+);
 
 const EndpointSchema = plainStruct({
   path: absolutePath("DockerProfileSocketPath"),
@@ -300,12 +346,20 @@ const CapacitySchema = plainStruct({
     memorySwapBytes: Schema.Literal(0),
     pids: positiveSafeInteger("DockerProfileAggregatePids"),
   }),
-}).pipe(Schema.check(Schema.makeFilter((value) => value.aggregate.cpus >= value.cpus &&
-    value.aggregate.memoryBytes >= value.memoryBytes &&
-    value.aggregate.pids >= value.pids, {
-    identifier: "DockerProfileCapacity",
-    description: "aggregate capacity at least as large as allocatable CPU, memory and PID capacity",
-  })));
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        value.aggregate.cpus >= value.cpus &&
+        value.aggregate.memoryBytes >= value.memoryBytes &&
+        value.aggregate.pids >= value.pids,
+      {
+        identifier: "DockerProfileCapacity",
+        description: "aggregate capacity at least as large as allocatable CPU, memory and PID capacity",
+      },
+    ),
+  ),
+);
 
 const BeforeCacheFullCopyCapabilitySchema = plainStruct({
   protocol: Schema.Literal(DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL),
@@ -323,16 +377,18 @@ const BeforeCacheFullCopyCapabilitySchema = plainStruct({
   providerIdentity: sha256Identity("DockerProfileBeforeCacheProviderIdentity"),
   executionDomain: sha256Identity("DockerProfileBeforeCacheExecutionDomain"),
   filesystemSizeBytes: positiveSafeInteger("DockerProfileBeforeCacheFilesystemSizeBytes"),
-  filesystemFeatures: Schema.Tuple([Schema.Literal("ext4"), Schema.Literal("fixed-size"), Schema.Literal("fully-allocated"), Schema.Literal("independent-image")]),
+  filesystemFeatures: Schema.Tuple([
+    Schema.Literal("ext4"),
+    Schema.Literal("fixed-size"),
+    Schema.Literal("fully-allocated"),
+    Schema.Literal("independent-image"),
+  ]),
   seedLimitBytes: positiveSafeInteger("DockerProfileBeforeCacheSeedLimitBytes"),
   filesystemIdentity: nonEmptyString("DockerProfileBeforeCacheFilesystemIdentity"),
 });
 
 /** Wire structure only; semantic revision and frozen canonical values are checked after decode. */
-export const DockerExecutionProfileV1Schema: Schema.Codec<
-  DockerExecutionProfileV1,
-  PlainObject
-> = plainStruct({
+export const DockerExecutionProfileV1Schema: Schema.Codec<DockerExecutionProfileV1, PlainObject> = plainStruct({
   schemaVersion: Schema.Literal(1),
   profileId: nonEmptyString("DockerProfileId"),
   securityLevel: Schema.Literals(["managed-rootless/v1", "raw-dind-storage/v1"]),
@@ -373,20 +429,23 @@ export const DockerExecutionProfileV1Schema: Schema.Codec<
     }),
   }),
   capacity: CapacitySchema,
-  policy: Schema.Union([plainStruct({
-    level: Schema.Literal("raw-dind-storage/v1"),
-    privilegedTranslation: Schema.Literal("host-daemon"),
-    dockerData: Schema.Literal("private-project-quota-allocation/v1"),
-  }), plainStruct({
-    level: Schema.Literal("managed-rootless/v1"),
-    hostLoopback: Schema.Literal(false),
-    tcpDockerEndpoint: Schema.Literal(false),
-    outerSocketInjection: Schema.Literal(false),
-    privilegedTranslation: Schema.Literal("rootless-userns"),
-    writableRoot: Schema.Literal("declared-tmpfs-only"),
-    dockerData: Schema.Literal("private-project-quota-allocation/v1"),
-    network: NetworkSchema,
-  })]),
+  policy: Schema.Union([
+    plainStruct({
+      level: Schema.Literal("raw-dind-storage/v1"),
+      privilegedTranslation: Schema.Literal("host-daemon"),
+      dockerData: Schema.Literal("private-project-quota-allocation/v1"),
+    }),
+    plainStruct({
+      level: Schema.Literal("managed-rootless/v1"),
+      hostLoopback: Schema.Literal(false),
+      tcpDockerEndpoint: Schema.Literal(false),
+      outerSocketInjection: Schema.Literal(false),
+      privilegedTranslation: Schema.Literal("rootless-userns"),
+      writableRoot: Schema.Literal("declared-tmpfs-only"),
+      dockerData: Schema.Literal("private-project-quota-allocation/v1"),
+      network: NetworkSchema,
+    }),
+  ]),
 });
 
 export const DockerExecutionProfileSchema = DockerExecutionProfileV1Schema;
@@ -428,23 +487,24 @@ function freezeProfile(profile: DockerExecutionProfileV1): DockerExecutionProfil
       memorySwapBytes: 0,
       aggregate: Object.freeze({ ...profile.capacity.aggregate, memorySwapBytes: 0 }),
     }),
-    policy: profile.policy.level === "raw-dind-storage/v1"
-      ? Object.freeze({ ...profile.policy })
-      : Object.freeze({
-          ...profile.policy,
-          network: Object.freeze({
-            ...profile.policy.network,
-            dns: Object.freeze({
-              ...profile.policy.network.dns,
-              servers: frozenNonEmptyStrings(profile.policy.network.dns.servers),
-            }),
-            egress: Object.freeze({
-              ...profile.policy.network.egress,
-              allowedProtocols: NETWORK_ALLOWED_PROTOCOLS,
-              denyCidrs: DOCKER_PROFILE_NETWORK_DENY_CIDRS,
+    policy:
+      profile.policy.level === "raw-dind-storage/v1"
+        ? Object.freeze({ ...profile.policy })
+        : Object.freeze({
+            ...profile.policy,
+            network: Object.freeze({
+              ...profile.policy.network,
+              dns: Object.freeze({
+                ...profile.policy.network.dns,
+                servers: frozenNonEmptyStrings(profile.policy.network.dns.servers),
+              }),
+              egress: Object.freeze({
+                ...profile.policy.network.egress,
+                allowedProtocols: NETWORK_ALLOWED_PROTOCOLS,
+                denyCidrs: DOCKER_PROFILE_NETWORK_DENY_CIDRS,
+              }),
             }),
           }),
-        }),
   });
 }
 
@@ -459,69 +519,66 @@ function semanticPolicyJson(input: DockerExecutionProfileSemanticInput): JsonVal
         controllers: [...input.backend.cgroup.controllers],
       },
     },
-    policy: input.policy.level === "raw-dind-storage/v1" ? {
-      level: input.policy.level,
-      privilegedTranslation: input.policy.privilegedTranslation,
-      dockerData: input.policy.dockerData,
-    } : {
-      level: input.policy.level,
-      hostLoopback: input.policy.hostLoopback,
-      tcpDockerEndpoint: input.policy.tcpDockerEndpoint,
-      outerSocketInjection: input.policy.outerSocketInjection,
-      privilegedTranslation: input.policy.privilegedTranslation,
-      writableRoot: input.policy.writableRoot,
-      dockerData: input.policy.dockerData,
-      network: {
-        version: input.policy.network.version,
-        dns: { mode: input.policy.network.dns.mode, servers: [...input.policy.network.dns.servers] },
-        egress: {
-          mode: input.policy.network.egress.mode,
-          allowedProtocols: [...input.policy.network.egress.allowedProtocols],
-          denyPrivateNetworks: input.policy.network.egress.denyPrivateNetworks,
-          denySiblingSyntheticEndpoints: input.policy.network.egress.denySiblingSyntheticEndpoints,
-          denyCidrs: [...input.policy.network.egress.denyCidrs],
-          ipv6: input.policy.network.egress.ipv6,
-          disableHostLoopback: input.policy.network.egress.disableHostLoopback,
-          portDriver: input.policy.network.egress.portDriver,
-          daemonBridge: input.policy.network.egress.daemonBridge,
-          exclusiveNetwork: input.policy.network.egress.exclusiveNetwork,
-          icc: input.policy.network.egress.icc,
-        },
-      },
-    },
+    policy:
+      input.policy.level === "raw-dind-storage/v1"
+        ? {
+            level: input.policy.level,
+            privilegedTranslation: input.policy.privilegedTranslation,
+            dockerData: input.policy.dockerData,
+          }
+        : {
+            level: input.policy.level,
+            hostLoopback: input.policy.hostLoopback,
+            tcpDockerEndpoint: input.policy.tcpDockerEndpoint,
+            outerSocketInjection: input.policy.outerSocketInjection,
+            privilegedTranslation: input.policy.privilegedTranslation,
+            writableRoot: input.policy.writableRoot,
+            dockerData: input.policy.dockerData,
+            network: {
+              version: input.policy.network.version,
+              dns: { mode: input.policy.network.dns.mode, servers: [...input.policy.network.dns.servers] },
+              egress: {
+                mode: input.policy.network.egress.mode,
+                allowedProtocols: [...input.policy.network.egress.allowedProtocols],
+                denyPrivateNetworks: input.policy.network.egress.denyPrivateNetworks,
+                denySiblingSyntheticEndpoints: input.policy.network.egress.denySiblingSyntheticEndpoints,
+                denyCidrs: [...input.policy.network.egress.denyCidrs],
+                ipv6: input.policy.network.egress.ipv6,
+                disableHostLoopback: input.policy.network.egress.disableHostLoopback,
+                portDriver: input.policy.network.egress.portDriver,
+                daemonBridge: input.policy.network.egress.daemonBridge,
+                exclusiveNetwork: input.policy.network.egress.exclusiveNetwork,
+                icc: input.policy.network.egress.icc,
+              },
+            },
+          },
   };
 }
 
 /** Derives a short revision from the profile's semantic policy fields. It is not the digest of the complete descriptor. */
-export function dockerExecutionProfileSemanticPolicyRevisionOf(
-  input: DockerExecutionProfileSemanticInput,
-): string {
+export function dockerExecutionProfileSemanticPolicyRevisionOf(input: DockerExecutionProfileSemanticInput): string {
   return digestOf(semanticPolicyJson(input)).slice(0, 8);
 }
 
 /** Computes the short semantic-policy revision. Unlike dockerProfileDigestOf, it does not hash the entire descriptor. */
-export const dockerProfileSemanticPolicyRevisionOf =
-  dockerExecutionProfileSemanticPolicyRevisionOf;
+export const dockerProfileSemanticPolicyRevisionOf = dockerExecutionProfileSemanticPolicyRevisionOf;
 
 function formatSchemaPath(path: readonly (PropertyKey | StandardSchema.StandardSchemaV1.PathSegment)[]): string {
-  return path.reduce<string>(
-    (result, rawSegment) => {
-      const segment = typeof rawSegment === "object" ? rawSegment.key : rawSegment;
-      return typeof segment === "number" ||
-          (typeof segment === "string" && /^\\d+$/.test(segment))
-        ? `${result}[${String(segment)}]`
-        : `${result}.${String(segment)}`;
-    },
-    "profile",
-  );
+  return path.reduce<string>((result, rawSegment) => {
+    const segment = typeof rawSegment === "object" ? rawSegment.key : rawSegment;
+    return typeof segment === "number" || (typeof segment === "string" && /^\\d+$/.test(segment))
+      ? `${result}[${String(segment)}]`
+      : `${result}.${String(segment)}`;
+  }, "profile");
 }
 
 function schemaError(value: unknown, error: SchemaIssue.Issue): DockerProfileError {
   const issue = SchemaIssue.makeFormatterStandardSchemaV1()(error).issues[0];
   const path = issue === undefined ? "profile" : formatSchemaPath(issue.path ?? []);
-  const root = typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
+  const root =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
   if (path === "profile.schemaVersion") {
     if (root?.schemaVersion === undefined) {
       return dockerProfileError({
@@ -544,13 +601,10 @@ function schemaError(value: unknown, error: SchemaIssue.Issue): DockerProfileErr
     });
   }
   return dockerProfileError({
-    code: path === "profile.capacity"
-      ? "sandbox.docker-profile-capacity-invalid"
-      : "sandbox.docker-profile-schema-invalid",
+    code:
+      path === "profile.capacity" ? "sandbox.docker-profile-capacity-invalid" : "sandbox.docker-profile-schema-invalid",
     path,
-    message: issue === undefined
-      ? "profile is not a valid Docker execution profile v1"
-      : `${path} ${issue.message}`,
+    message: issue === undefined ? "profile is not a valid Docker execution profile v1" : `${path} ${issue.message}`,
   });
 }
 
@@ -561,8 +615,8 @@ export function decodeDockerExecutionProfile(value: unknown): DockerExecutionPro
   const profile = freezeProfile(decoded.success);
   if (
     profile.backend.filesystem.dockerDataPool.count < profile.capacity.maxContainers ||
-    profile.backend.filesystem.dockerDataPool.count *
-      profile.backend.filesystem.dockerDataPool.bytesPerAllocation < profile.capacity.ephemeralDiskBytes
+    profile.backend.filesystem.dockerDataPool.count * profile.backend.filesystem.dockerDataPool.bytesPerAllocation <
+      profile.capacity.ephemeralDiskBytes
   ) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-capacity-invalid",
@@ -573,14 +627,10 @@ export function decodeDockerExecutionProfile(value: unknown): DockerExecutionPro
   const beforeCache = profile.backend.filesystem.beforeCache;
   if (
     beforeCache !== undefined &&
-    (
-      beforeCache.filesystemSizeBytes !==
-        profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
+    (beforeCache.filesystemSizeBytes !== profile.backend.filesystem.dockerDataPool.bytesPerAllocation ||
       beforeCache.seedLimitBytes < beforeCache.filesystemSizeBytes ||
       beforeCache.seedLimitBytes % beforeCache.filesystemSizeBytes !== 0 ||
-      beforeCache.slotAttestation !==
-        profile.backend.filesystem.dockerDataPool.attestation
-    )
+      beforeCache.slotAttestation !== profile.backend.filesystem.dockerDataPool.attestation)
   ) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-schema-invalid",
@@ -614,17 +664,13 @@ export function decodeDockerExecutionProfile(value: unknown): DockerExecutionPro
   return profile;
 }
 
-
 /** Derives the semantic policy revision and validates a Docker profile draft. Descriptor construction does not activate or attest its host resources. */
-export function defineDockerExecutionProfile(
-  input: DockerExecutionProfileV1Draft,
-): DockerExecutionProfileV1 {
+export function defineDockerExecutionProfile(input: DockerExecutionProfileV1Draft): DockerExecutionProfileV1 {
   return decodeDockerExecutionProfile({
     ...input,
     semanticPolicyRevision: dockerExecutionProfileSemanticPolicyRevisionOf(input),
   });
 }
-
 
 /** Checks whether a value passes Docker profile decoding and consistency validation. A true result does not establish host readiness or dedicated-kernel isolation. */
 export function isDockerExecutionProfileV1(value: unknown): value is DockerExecutionProfileV1 {
@@ -690,28 +736,31 @@ function canonicalJson(profile: DockerExecutionProfileV1): JsonValue {
       ...profile.capacity,
       aggregate: { ...profile.capacity.aggregate },
     },
-    policy: profile.policy.level === "raw-dind-storage/v1" ? {
-      level: profile.policy.level,
-      privilegedTranslation: profile.policy.privilegedTranslation,
-      dockerData: profile.policy.dockerData,
-    } : {
-      level: profile.policy.level,
-      hostLoopback: profile.policy.hostLoopback,
-      tcpDockerEndpoint: profile.policy.tcpDockerEndpoint,
-      outerSocketInjection: profile.policy.outerSocketInjection,
-      privilegedTranslation: profile.policy.privilegedTranslation,
-      writableRoot: profile.policy.writableRoot,
-      dockerData: profile.policy.dockerData,
-      network: {
-        version: profile.policy.network.version,
-        dns: { mode: profile.policy.network.dns.mode, servers: [...profile.policy.network.dns.servers] },
-        egress: {
-          ...profile.policy.network.egress,
-          allowedProtocols: [...profile.policy.network.egress.allowedProtocols],
-          denyCidrs: [...profile.policy.network.egress.denyCidrs],
-        },
-      },
-    },
+    policy:
+      profile.policy.level === "raw-dind-storage/v1"
+        ? {
+            level: profile.policy.level,
+            privilegedTranslation: profile.policy.privilegedTranslation,
+            dockerData: profile.policy.dockerData,
+          }
+        : {
+            level: profile.policy.level,
+            hostLoopback: profile.policy.hostLoopback,
+            tcpDockerEndpoint: profile.policy.tcpDockerEndpoint,
+            outerSocketInjection: profile.policy.outerSocketInjection,
+            privilegedTranslation: profile.policy.privilegedTranslation,
+            writableRoot: profile.policy.writableRoot,
+            dockerData: profile.policy.dockerData,
+            network: {
+              version: profile.policy.network.version,
+              dns: { mode: profile.policy.network.dns.mode, servers: [...profile.policy.network.dns.servers] },
+              egress: {
+                ...profile.policy.network.egress,
+                allowedProtocols: [...profile.policy.network.egress.allowedProtocols],
+                denyCidrs: [...profile.policy.network.egress.denyCidrs],
+              },
+            },
+          },
   };
 }
 
@@ -724,9 +773,7 @@ export function dockerExecutionProfileV1Digest(profile: DockerExecutionProfileV1
 export const dockerProfileDigestOf = dockerExecutionProfileV1Digest;
 
 /** Validates a descriptor and returns its bounded identity and capacity summary. The summary is not the complete descriptor or a runtime attestation. */
-export function dockerProfilePublicSummaryOf(
-  profile: DockerExecutionProfileV1,
-): DockerProfilePublicSummary {
+export function dockerProfilePublicSummaryOf(profile: DockerExecutionProfileV1): DockerProfilePublicSummary {
   const normalized = decodeDockerExecutionProfile(profile);
   return Object.freeze({
     schemaVersion: 1,

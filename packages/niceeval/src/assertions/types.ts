@@ -88,13 +88,12 @@ export type ScoreFactUseResult = FactUseBase & {
       }
     | ({
         readonly input: { readonly kind: "fact"; readonly factId: string; readonly max: number };
-      } &
-        (
-          | { readonly outcome: "scored"; readonly earned: number }
-          | { readonly outcome: "unavailable"; readonly reason: string }
-          | { readonly outcome: "errored"; readonly error: EvaluationFactError }
-          | { readonly outcome: "notReachedByControl" | "notReachedByError"; readonly reason: string }
-        ))
+      } & (
+        | { readonly outcome: "scored"; readonly earned: number }
+        | { readonly outcome: "unavailable"; readonly reason: string }
+        | { readonly outcome: "errored"; readonly error: EvaluationFactError }
+        | { readonly outcome: "notReachedByControl" | "notReachedByError"; readonly reason: string }
+      ))
   );
 
 export interface UnavailableAttemptIssue {
@@ -150,7 +149,6 @@ export type {
   ResolvedEvidenceCoverageStatus,
 } from "./coverage.ts";
 
-
 /** A structured one-line projection of the primary causal Fact/use. */
 export interface PrimaryFactSummary {
   /** Fact use label, falling back to its Fact name or stable id. */
@@ -164,7 +162,6 @@ export interface PrimaryFactSummary {
   /** Further causal Fact/use rows after this primary entry. */
   additionalFailures: number;
 }
-
 
 /** Reports script success and captured output for an assertion; nonempty output alone does not establish success. */
 export interface ScriptResult {

@@ -1,6 +1,4 @@
-export {
-  createRunnerAttemptObservabilityRuntime,
-} from "./runtime/state.ts";
+export { createRunnerAttemptObservabilityRuntime } from "./runtime/state.ts";
 export type {
   RunnerAttemptObservabilityRuntime,
   RunnerCommandCaptureHandle,

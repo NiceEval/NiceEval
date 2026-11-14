@@ -40,7 +40,10 @@ function linuxProcessStart(pid: number): string | undefined {
   }
   const closing = raw.lastIndexOf(")");
   if (closing < 0 || raw[closing + 1] !== " ") throw new Error("Linux process identity is malformed");
-  const fields = raw.slice(closing + 2).trim().split(/\s+/u);
+  const fields = raw
+    .slice(closing + 2)
+    .trim()
+    .split(/\s+/u);
   const state = fields[0];
   if (state === "Z" || state === "X" || state === "x") return undefined;
   if (state === undefined || !/^[A-Za-z]$/u.test(state)) throw new Error("Linux process state is malformed");
@@ -93,16 +96,21 @@ function darwinProcessStart(pid: number): string | undefined {
     }
     throw cause;
   }
-  if (!/^[A-Z][a-z]{2} [A-Z][a-z]{2} +\d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/u.test(value) ||
-      !Number.isFinite(Date.parse(`${value} UTC`))) {
+  if (
+    !/^[A-Z][a-z]{2} [A-Z][a-z]{2} +\d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/u.test(value) ||
+    !Number.isFinite(Date.parse(`${value} UTC`))
+  ) {
     throw new Error("Darwin process start identity is malformed");
   }
   return value;
 }
 
 function verifiedPrefix(): string | undefined {
-  return process.platform === "linux" ? VERIFIED_WRITER_PREFIX
-    : process.platform === "darwin" ? DARWIN_WRITER_PREFIX : undefined;
+  return process.platform === "linux"
+    ? VERIFIED_WRITER_PREFIX
+    : process.platform === "darwin"
+      ? DARWIN_WRITER_PREFIX
+      : undefined;
 }
 
 function encodeVerified(identity: VerifiedWriterIdentity): string {
@@ -117,13 +125,14 @@ function decodeVerified(value: string): VerifiedWriterIdentity | undefined {
     const decoded: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     const identity = Schema.decodeUnknownSync(VerifiedWriterIdentitySchema)(decoded);
     if (
-      identity.machineId.length === 0
-      || identity.bootId.length === 0
-      || identity.pidNamespace.length === 0
-      || identity.pid < 1
-      || identity.processStart.length === 0
-      || identity.generation.length === 0
-    ) return undefined;
+      identity.machineId.length === 0 ||
+      identity.bootId.length === 0 ||
+      identity.pidNamespace.length === 0 ||
+      identity.pid < 1 ||
+      identity.processStart.length === 0 ||
+      identity.generation.length === 0
+    )
+      return undefined;
     return identity;
   } catch {
     return undefined;
@@ -155,7 +164,8 @@ export function observeRunWriterTermination(writerGeneration: string): WriterTer
   const identity = decodeVerified(writerGeneration);
   if (identity === undefined) return { state: "unproven", reason: "identity-not-recorded" };
   const localPrefix = verifiedPrefix();
-  if (localPrefix === undefined || !writerGeneration.startsWith(localPrefix)) return { state: "unproven", reason: "other-host" };
+  if (localPrefix === undefined || !writerGeneration.startsWith(localPrefix))
+    return { state: "unproven", reason: "other-host" };
   try {
     const darwin = process.platform === "darwin";
     const machineId = darwin ? darwinMachineId() : nonEmptyFile("/etc/machine-id");
@@ -164,7 +174,8 @@ export function observeRunWriterTermination(writerGeneration: string): WriterTer
     if (pidNamespace !== identity.pidNamespace) return { state: "unproven", reason: "other-host" };
     const currentBootId = darwin ? darwinBootId() : nonEmptyFile("/proc/sys/kernel/random/boot_id");
     const terminated = (): WriterTerminationObservation => ({
-      state: "terminated", evidenceIdentity: writerGeneration,
+      state: "terminated",
+      evidenceIdentity: writerGeneration,
       evidenceKind: darwin ? "local-darwin-process-terminated-v1" : "local-linux-process-terminated-v1",
     });
     if (currentBootId !== identity.bootId) {

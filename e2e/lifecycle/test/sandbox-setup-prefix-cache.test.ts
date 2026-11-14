@@ -5,7 +5,15 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ProcessReceipt, InspectionSuccessDocumentFor } from "@niceeval/testkit";
-import { command, only, pollUntil, waitForPathOrProcessExit, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
+import {
+  command,
+  only,
+  pollUntil,
+  waitForPathOrProcessExit,
+  withProcess,
+  withProjectCopy,
+  withTempDir,
+} from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectAttempt } from "./inspection.ts";
 
@@ -58,7 +66,7 @@ const projectCopy = {
 } as const;
 
 function decodeEvidence(trace: InspectionSuccessDocumentFor<"attempt.trace">["trace"]): BeforeCacheEvidence {
-  const messages = trace.conversation.items.flatMap((item) => item.kind === "message" ? [item] : []);
+  const messages = trace.conversation.items.flatMap((item) => (item.kind === "message" ? [item] : []));
   const evidenceMessages = messages.filter((item) => item.text.includes("before-cache-evidence:"));
   expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
   expect(evidenceMessages[0]!.textTruncated, "public Agent evidence must fit the stable trace projection").toBe(false);
@@ -98,11 +106,14 @@ async function waitForSandboxGone(sandboxId: string, cwd: string): Promise<void>
 }
 
 async function containersForInvocation(pid: number, cwd: string): Promise<readonly string[]> {
-  const result = await docker.run([
-    "ps", "-a", "--filter", `label=niceeval.pid=${pid}`, "--format", "{{.ID}}",
-  ], { cwd });
+  const result = await docker.run(["ps", "-a", "--filter", `label=niceeval.pid=${pid}`, "--format", "{{.ID}}"], {
+    cwd,
+  });
   expect(result.exitCode, result.diagnostic()).toBe(0);
-  return result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  return result.stdout
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 type BeforeCacheResumeLayer = 1 | 2 | 3;
@@ -113,22 +124,15 @@ const layerTokenPaths = [
   ".before-cache/env-token",
 ] as const;
 
-async function waitForResumeGate(
-  pid: number,
-  root: string,
-  afterLayer: BeforeCacheResumeLayer,
-): Promise<string> {
+async function waitForResumeGate(pid: number, root: string, afterLayer: BeforeCacheResumeLayer): Promise<string> {
   const gate = `.before-cache/resume-after-${afterLayer}`;
   return pollUntil(
     async () => {
       for (const id of await containersForInvocation(pid, root)) {
-        const reached = await docker.run([
-          "exec",
-          id,
-          "sh",
-          "-lc",
-          `test -f ${gate}/entered && test -p ${gate}/release.fifo`,
-        ], { cwd: root });
+        const reached = await docker.run(
+          ["exec", id, "sh", "-lc", `test -f ${gate}/entered && test -p ${gate}/release.fifo`],
+          { cwd: root },
+        );
         if (reached.exitCode === 0) return id;
       }
       return undefined;
@@ -143,13 +147,10 @@ async function readPublishedLayerTokens(
   completedLayers: BeforeCacheResumeLayer,
 ): Promise<readonly string[]> {
   const paths = layerTokenPaths.slice(0, completedLayers);
-  const result = await docker.run([
-    "exec",
-    containerId,
-    "sh",
-    "-lc",
-    paths.map((path) => `cat ${path}; printf '\\n'`).join("; "),
-  ], { cwd: root });
+  const result = await docker.run(
+    ["exec", containerId, "sh", "-lc", paths.map((path) => `cat ${path}; printf '\\n'`).join("; ")],
+    { cwd: root },
+  );
   expect(result.exitCode, result.diagnostic()).toBe(0);
   const tokens = result.stdout.trim().split(/\r?\n/u);
   expect(tokens, result.diagnostic()).toHaveLength(completedLayers);
@@ -157,19 +158,12 @@ async function readPublishedLayerTokens(
   return tokens;
 }
 
-async function releaseResumeGate(
-  containerId: string,
-  root: string,
-  afterLayer: BeforeCacheResumeLayer,
-): Promise<void> {
+async function releaseResumeGate(containerId: string, root: string, afterLayer: BeforeCacheResumeLayer): Promise<void> {
   const gate = `.before-cache/resume-after-${afterLayer}`;
-  const released = await docker.run([
-    "exec",
-    containerId,
-    "sh",
-    "-lc",
-    `printf 'release\\n' > ${gate}/release.fifo`,
-  ], { cwd: root, timeoutMs: 15_000 });
+  const released = await docker.run(["exec", containerId, "sh", "-lc", `printf 'release\\n' > ${gate}/release.fifo`], {
+    cwd: root,
+    timeoutMs: 15_000,
+  });
   expect(released.exitCode, released.diagnostic()).toBe(0);
 }
 
@@ -179,7 +173,10 @@ function evidenceLayerTokens(evidence: BeforeCacheEvidence): readonly string[] {
 
 async function readIncusJournal(path: string): Promise<readonly IncusJournalRecord[]> {
   try {
-    return (await readFile(path, "utf8")).trim().split("\n").filter(Boolean)
+    return (await readFile(path, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
       .map((line) => JSON.parse(line) as IncusJournalRecord);
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return [];
@@ -222,9 +219,7 @@ function invocationEnvironment(
     ...(options.canonicalVariant === undefined
       ? {}
       : { NICEEVAL_E2E_BEFORE_CACHE_CANONICAL_VARIANT: options.canonicalVariant }),
-    ...(options.middleVersion === undefined
-      ? {}
-      : { NICEEVAL_E2E_BEFORE_CACHE_MIDDLE_VERSION: options.middleVersion }),
+    ...(options.middleVersion === undefined ? {} : { NICEEVAL_E2E_BEFORE_CACHE_MIDDLE_VERSION: options.middleVersion }),
     ...(options.cancelAfter === undefined
       ? {}
       : { NICEEVAL_E2E_BEFORE_CACHE_CANCEL_AFTER: String(options.cancelAfter) }),
@@ -265,15 +260,24 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
   const inventory = await niceeval.run(["docker", "cache", "inventory", "--json"], { cwd: root, env });
   expect(inventory.exitCode, inventory.diagnostic()).toBe(0);
   const document = JSON.parse(inventory.stdout) as {
-    readonly domains: readonly { readonly domainId: string; readonly entryKinds: { readonly sandboxBeforeCache: number } }[];
+    readonly domains: readonly {
+      readonly domainId: string;
+      readonly entryKinds: { readonly sandboxBeforeCache: number };
+    }[];
   };
-  const domain = only(document.domains, (candidate) => candidate.entryKinds.sandboxBeforeCache > 0, inventory.diagnostic());
-  const detail = await niceeval.run([
-    "docker", "cache", "inventory", "--domain", domain.domainId, "--json",
-  ], { cwd: root, env });
+  const domain = only(
+    document.domains,
+    (candidate) => candidate.entryKinds.sandboxBeforeCache > 0,
+    inventory.diagnostic(),
+  );
+  const detail = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId, "--json"], {
+    cwd: root,
+    env,
+  });
   expect(detail.exitCode, detail.diagnostic()).toBe(0);
-  const entries = (JSON.parse(detail.stdout) as { readonly entries: readonly Record<string, unknown>[] }).entries
-    .filter((entry) => entry.kind === "sandbox-before-cache");
+  const entries = (
+    JSON.parse(detail.stdout) as { readonly entries: readonly Record<string, unknown>[] }
+  ).entries.filter((entry) => entry.kind === "sandbox-before-cache");
   expect(entries.length, detail.diagnostic()).toBeGreaterThan(0);
   for (const entry of entries) {
     expect(entry).toMatchObject({
@@ -293,8 +297,18 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
       unverifiedHoldCount: 0,
     });
     expect(Object.keys(entry).sort()).toEqual([
-      "createdAt", "holdCount", "identity", "kind", "lastSuccessfulUseAt", "leaseCount", "liveHoldCount",
-      "liveLeaseCount", "protectedUntil", "state", "unverifiedHoldCount", "unverifiedLeaseCount",
+      "createdAt",
+      "holdCount",
+      "identity",
+      "kind",
+      "lastSuccessfulUseAt",
+      "leaseCount",
+      "liveHoldCount",
+      "liveLeaseCount",
+      "protectedUntil",
+      "state",
+      "unverifiedHoldCount",
+      "unverifiedLeaseCount",
     ]);
   }
   expect(detail.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
@@ -305,15 +319,21 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
   expect(human.stdout).toContain("0 leases (0 live, 0 unverified) · 0 holds (0 live, 0 unverified)");
   expect(human.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
 
-  const preview = await niceeval.run([
-    "docker", "cache", "gc", "--domain", domain.domainId, "--json",
-  ], { cwd: root, env });
+  const preview = await niceeval.run(["docker", "cache", "gc", "--domain", domain.domainId, "--json"], {
+    cwd: root,
+    env,
+  });
   expect(preview.exitCode, preview.diagnostic()).toBe(0);
-  const plan = (JSON.parse(preview.stdout) as { readonly plan: { readonly planId: string; readonly candidates: readonly unknown[] } }).plan;
+  const plan = (
+    JSON.parse(preview.stdout) as {
+      readonly plan: { readonly planId: string; readonly candidates: readonly unknown[] };
+    }
+  ).plan;
   expect(plan.candidates).toEqual([]);
-  const apply = await niceeval.run([
-    "docker", "cache", "gc", "--domain", domain.domainId, "--apply", plan.planId, "--json",
-  ], { cwd: root, env });
+  const apply = await niceeval.run(
+    ["docker", "cache", "gc", "--domain", domain.domainId, "--apply", plan.planId, "--json"],
+    { cwd: root, env },
+  );
   expect(apply.exitCode, apply.diagnostic()).toBe(0);
   expect(JSON.parse(apply.stdout)).toMatchObject({ format: "niceeval.cache-gc-outcome", outcomes: [] });
 }
@@ -333,14 +353,9 @@ async function inspectCompletedInvocation(
   const mode = options.mode ?? "default";
   expect(run.exitCode, run.diagnostic()).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
-  expect(run.expReceipt(), "InvocationReceipt must remain a lightweight hand-off")
-    .not.toHaveProperty("beforeCaches");
+  expect(run.expReceipt(), "InvocationReceipt must remain a lightweight hand-off").not.toHaveProperty("beforeCaches");
   const beforeCaches = beforeCacheSummary(run);
-  const evaluation = only(
-    run.expEvalEvents(),
-    (event) => event.evalId === "before-cache",
-    run.diagnostic(),
-  );
+  const evaluation = only(run.expEvalEvents(), (event) => event.evalId === "before-cache", run.diagnostic());
   expect(evaluation, run.diagnostic()).toMatchObject({
     experimentId: options.experimentId ?? "before-cache",
     verdict: "passed",
@@ -348,9 +363,10 @@ async function inspectCompletedInvocation(
     passed: 1,
   });
 
-  const inspected = await inspectAttempt(
-    niceeval, root, evaluation.locator, "attempt.trace", { cwd: root, env: invocationEnv },
-  );
+  const inspected = await inspectAttempt(niceeval, root, evaluation.locator, "attempt.trace", {
+    cwd: root,
+    env: invocationEnv,
+  });
   expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
   const traceDocument = inspected.receipt.attemptTrace();
   expect(traceDocument).toMatchObject({
@@ -398,7 +414,7 @@ async function interruptAfterPublishedLayer(
     },
   );
   await pollUntil(
-    async () => (await containersForInvocation(interrupted.pid, root)).length === 0 ? true : undefined,
+    async () => ((await containersForInvocation(interrupted.pid, root)).length === 0 ? true : undefined),
     { timeoutMs: 15_000, intervalMs: 100, label: `cancelled layer-${afterLayer} staging cleanup` },
   );
   return { tokens: interrupted.tokens, diagnostic: interrupted.diagnostic };
@@ -427,14 +443,7 @@ async function retryAndReleaseLayerGate(
       return controlled.done;
     },
   );
-  return inspectCompletedInvocation(
-    root,
-    "v1",
-    "PUBLIC_MODE=alpha\n",
-    options,
-    invocationEnv,
-    receipt,
-  );
+  return inspectCompletedInvocation(root, "v1", "PUBLIC_MODE=alpha\n", options, invocationEnv, receipt);
 }
 
 // Every case owns a private project copy, NiceEval home, image identity, and
@@ -447,21 +456,20 @@ async function retryAndReleaseLayerGate(
 test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀，并为每个 Attempt 提供私有 writable clone", async () => {
   const startedAt = performance.now();
   const checkpoint = (stage: string, summary?: BeforeCacheSummary) => {
-    console.info("before-cache suffix journey", JSON.stringify({
-      stage,
-      elapsedMs: Math.round(performance.now() - startedAt),
-      ...(summary === undefined ? {} : { beforeCaches: summary }),
-    }));
+    console.info(
+      "before-cache suffix journey",
+      JSON.stringify({
+        stage,
+        elapsedMs: Math.round(performance.now() - startedAt),
+        ...(summary === undefined ? {} : { beforeCaches: summary }),
+      }),
+    );
   };
   await withTempDir("niceeval-e2e-before-cache-owner-home-", async (niceevalHome) =>
     withProjectCopy(projectCopy, async ({ root }) => {
       // A unique context byte makes the first invocation a true cold BuildKey even
       // when a reliability repetition reuses the same host Docker daemon.
-      await writeFile(
-        join(root, "fixtures/before-cache/image/build-seed.txt"),
-        `${randomUUID()}\n`,
-        "utf8",
-      );
+      await writeFile(join(root, "fixtures/before-cache/image/build-seed.txt"), `${randomUUID()}\n`, "utf8");
 
       checkpoint("cold invocation started");
       const coldRun = await invokeDetailed(root, "v1", "PUBLIC_MODE=alpha\n", { niceevalHome });
@@ -541,12 +549,14 @@ test.concurrent("独立 Invocation 只重新执行变化的 Sandbox setup 后缀
       expect(human.stdout).toContain(humanBeforeCacheLine(changedDemandRun.beforeCaches));
       checkpoint("human cache-hit invocation completed");
 
-      expect(new Set([
-        cold.sandboxId,
-        changedDemand.sandboxId,
-        changedMiddle.evidence.sandboxId,
-        changedEnv.evidence.sandboxId,
-      ]).size).toBe(4);
+      expect(
+        new Set([
+          cold.sandboxId,
+          changedDemand.sandboxId,
+          changedMiddle.evidence.sandboxId,
+          changedEnv.evidence.sandboxId,
+        ]).size,
+      ).toBe(4);
     }),
   );
 });
@@ -558,15 +568,17 @@ test.concurrent("浮动 Docker tag 改指后从新的 exact Base 建立准备前
     const image = `niceeval-e2e/before-cache-floating:${randomUUID()}`;
     const context = join(root, "fixtures/before-cache/image");
     try {
-      const firstBuild = await docker.run([
-        "build", "--build-arg", "SETUP_BASE_VERSION=v1", "--tag", image, context,
-      ], { cwd: root, timeoutMs: 180_000 });
+      const firstBuild = await docker.run(["build", "--build-arg", "SETUP_BASE_VERSION=v1", "--tag", image, context], {
+        cwd: root,
+        timeoutMs: 180_000,
+      });
       expect(firstBuild.exitCode, firstBuild.diagnostic()).toBe(0);
       const first = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", { image, baseVersion: "v1" });
 
-      const secondBuild = await docker.run([
-        "build", "--build-arg", "SETUP_BASE_VERSION=v2", "--tag", image, context,
-      ], { cwd: root, timeoutMs: 180_000 });
+      const secondBuild = await docker.run(["build", "--build-arg", "SETUP_BASE_VERSION=v2", "--tag", image, context], {
+        cwd: root,
+        timeoutMs: 180_000,
+      });
       expect(secondBuild.exitCode, secondBuild.diagnostic()).toBe(0);
       const second = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", { image, baseVersion: "v2" });
 
@@ -614,9 +626,10 @@ test.concurrent("动态安装 runner tools 的实例永久 Unsupported 并真实
     const image = `niceeval-e2e/before-cache-dynamic-tools:${randomUUID()}`;
     const context = join(root, "fixtures/before-cache/image");
     try {
-      const built = await docker.run([
-        "build", "--file", join(context, "Dockerfile.dynamic-tools"), "--tag", image, context,
-      ], { cwd: root, timeoutMs: 180_000 });
+      const built = await docker.run(
+        ["build", "--file", join(context, "Dockerfile.dynamic-tools"), "--tag", image, context],
+        { cwd: root, timeoutMs: 180_000 },
+      );
       expect(built.exitCode, built.diagnostic()).toBe(0);
       const first = await invoke(root, "v1", "PUBLIC_MODE=alpha\n", {
         image,
@@ -681,8 +694,7 @@ test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 stag
           expect(first.evidence.fixtureToken).not.toBe(second.evidence.fixtureToken);
           const competingDiagnostics = [first.diagnostic, second.diagnostic];
           expect(
-            competingDiagnostics.some((value) =>
-              value.includes("before-cache cache=replay reason=contended")),
+            competingDiagnostics.some((value) => value.includes("before-cache cache=replay reason=contended")),
             competingDiagnostics.join("\n\n--- competing invocation ---\n\n"),
           ).toBe(true);
 
@@ -691,10 +703,8 @@ test.concurrent("两个 Invocation 竞争同一前缀时 loser 保留私有 stag
             mode: "contention",
             niceevalHome,
           });
-          expect([first.evidence.fixtureToken, second.evidence.fixtureToken])
-            .toContain(follower.evidence.fixtureToken);
-          expect([first.evidence.envToken, second.evidence.envToken])
-            .toContain(follower.evidence.envToken);
+          expect([first.evidence.fixtureToken, second.evidence.fixtureToken]).toContain(follower.evidence.fixtureToken);
+          expect([first.evidence.envToken, second.evidence.envToken]).toContain(follower.evidence.envToken);
         } finally {
           await docker.run(["image", "rm", image], { cwd: firstRoot });
         }
@@ -750,7 +760,7 @@ test.concurrent("SIGINT 在真实 Docker capture 中取消后不得 publish、ad
         );
         expect(interrupted.receipt.exitCode).toBe(130);
         await pollUntil(
-          async () => (await containersForInvocation(interrupted.pid, root)).length === 0 ? true : undefined,
+          async () => ((await containersForInvocation(interrupted.pid, root)).length === 0 ? true : undefined),
           { timeoutMs: 15_000, intervalMs: 100, label: "cancelled before-cache staging and clone cleanup" },
         );
 
@@ -816,32 +826,44 @@ test.concurrent("共享准备前缀只发布一次，并在全局派发屏障前
       await mkdir(binDir, { recursive: true });
       await mkdir(gateRoot, { recursive: true });
       const wrapper = join(binDir, "incus");
-      await writeFile(wrapper, `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`, "utf8");
+      await writeFile(
+        wrapper,
+        `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`,
+        "utf8",
+      );
       await chmod(wrapper, 0o755);
-      await writeFile(descriptor, `${JSON.stringify({
-        schemaVersion: "niceeval.incus-provider/v2",
-        domains: [{
-          name: "development",
-          status: "configured",
-          executionDomainId: "e2e-incus-prefix-dag",
-          project: "niceeval-eval-dev",
-          storagePool: "niceeval-sandbox-dev",
-          network: "niceeval-dev",
-          storage: "development-dir",
-          quota: "unattested",
-          maxInstances: 8,
-          artifactProject: "niceeval-artifacts-dev",
-          artifactMaxInstances: 8,
-          artifactStorageReserveBytes: 1024 ** 3,
-          artifactEstimatedBytes: 1024 ** 3,
-          dockerDataBytes: 1024 ** 3,
-          workdir: "/home/sandbox/workspace",
-          user: "node",
-          hostGateway: "10.0.0.1",
-          trustedBaseImages: [`niceeval/docker-execution-v1@sha256:${digest}`],
-        }],
-      })}\n`, "utf8");
-      await writeFile(join(root, "experiments/incus-prefix-dag.ts"), `
+      await writeFile(
+        descriptor,
+        `${JSON.stringify({
+          schemaVersion: "niceeval.incus-provider/v2",
+          domains: [
+            {
+              name: "development",
+              status: "configured",
+              executionDomainId: "e2e-incus-prefix-dag",
+              project: "niceeval-eval-dev",
+              storagePool: "niceeval-sandbox-dev",
+              network: "niceeval-dev",
+              storage: "development-dir",
+              quota: "unattested",
+              maxInstances: 8,
+              artifactProject: "niceeval-artifacts-dev",
+              artifactMaxInstances: 8,
+              artifactStorageReserveBytes: 1024 ** 3,
+              artifactEstimatedBytes: 1024 ** 3,
+              dockerDataBytes: 1024 ** 3,
+              workdir: "/home/sandbox/workspace",
+              user: "node",
+              hostGateway: "10.0.0.1",
+              trustedBaseImages: [`niceeval/docker-execution-v1@sha256:${digest}`],
+            },
+          ],
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(root, "experiments/incus-prefix-dag.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { actionRef, incusSandbox, shell } from "niceeval/sandbox";
 import { quickAgent } from "../agents/deterministic.ts";
@@ -859,23 +881,33 @@ export default defineExperiment({
   evals: ["prefix-branch-three", "prefix-branch-four"],
   attempts: 1,
 });
-`, "utf8");
-      await writeFile(join(root, "evals/prefix-branch-three.eval.ts"), `
+`,
+        "utf8",
+      );
+      await writeFile(
+        join(root, "evals/prefix-branch-three.eval.ts"),
+        `
 import { defineEval } from "niceeval";
 import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
 export default defineEval({
   sandbox: sandboxLayer().before(shell({ id: "prefix-three", command: "true # niceeval-e2e-prefix-branch-three", changeFrequency: 30, dependsOn: [actionRef("prefix-two")] })),
   async test(t) { await (await t.send("three")).succeeded().orStop(); },
 });
-`, "utf8");
-      await writeFile(join(root, "evals/prefix-branch-four.eval.ts"), `
+`,
+        "utf8",
+      );
+      await writeFile(
+        join(root, "evals/prefix-branch-four.eval.ts"),
+        `
 import { defineEval } from "niceeval";
 import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
 export default defineEval({
   sandbox: sandboxLayer().before(shell({ id: "prefix-four", command: "true # niceeval-e2e-prefix-branch-four", changeFrequency: 40, dependsOn: [actionRef("prefix-two")] })),
   async test(t) { await (await t.send("four")).succeeded().orStop(); },
 });
-`, "utf8");
+`,
+        "utf8",
+      );
 
       const baseEnv: NodeJS.ProcessEnv = {
         ...process.env,
@@ -893,58 +925,99 @@ export default defineEval({
         async (controlled) => {
           try {
             try {
-              await waitForPathOrProcessExit(join(gateRoot, "children-ready"), controlled.done, "Incus child rendezvous");
+              await waitForPathOrProcessExit(
+                join(gateRoot, "children-ready"),
+                controlled.done,
+                "Incus child rendezvous",
+              );
             } catch (cause) {
               const events = await readIncusJournal(journalPath);
-              const started = events.filter((event) => event.event === "prefix-child-started")
+              const started = events
+                .filter((event) => event.event === "prefix-child-started")
                 .map((event) => event.detail.branch);
               const ready = events.some((event) => event.event === "prefix-children-ready");
-              const recentQueries = events.filter((event) => event.event === "query").slice(-12)
+              const recentQueries = events
+                .filter((event) => event.event === "query")
+                .slice(-12)
                 .map(({ detail }) => `${detail.method} ${detail.path}?project=${detail.project}`);
-              throw new Error(`Incus rendezvous: children=${JSON.stringify(started)}, ready=${ready}, recentQueries=${JSON.stringify(recentQueries)}`, { cause });
+              throw new Error(
+                `Incus rendezvous: children=${JSON.stringify(started)}, ready=${ready}, recentQueries=${JSON.stringify(recentQueries)}`,
+                { cause },
+              );
             }
             const atChildrenBarrier = await readIncusJournal(journalPath);
 
-            expect(atChildrenBarrier.filter((event) => event.event === "clone-volume-inventory").length,
-              "parallel admission must observe the cloned disk before its allocation metadata PATCH").toBeGreaterThanOrEqual(2);
+            expect(
+              atChildrenBarrier.filter((event) => event.event === "clone-volume-inventory").length,
+              "parallel admission must observe the cloned disk before its allocation metadata PATCH",
+            ).toBeGreaterThanOrEqual(2);
 
             expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-one")).toBe(1);
             expect(incusExecCount(atChildrenBarrier, "niceeval-e2e-prefix-two")).toBe(1);
-            expect(incusExecCount(atChildrenBarrier, "node --version"), "Attempt dispatch must wait for every final prefix").toBe(0);
-            const commonPublishIndexes = atChildrenBarrier.flatMap((record, index) => record.event === "query" &&
-              record.detail.method === "POST" && record.detail.path === "/1.0/instances" &&
-              record.detail.project === "niceeval-artifacts-dev" ? [index] : []);
+            expect(
+              incusExecCount(atChildrenBarrier, "node --version"),
+              "Attempt dispatch must wait for every final prefix",
+            ).toBe(0);
+            const commonPublishIndexes = atChildrenBarrier.flatMap((record, index) =>
+              record.event === "query" &&
+              record.detail.method === "POST" &&
+              record.detail.path === "/1.0/instances" &&
+              record.detail.project === "niceeval-artifacts-dev"
+                ? [index]
+                : [],
+            );
             expect(commonPublishIndexes, "both shared ancestors must be committed exactly once").toHaveLength(2);
-            const parentCleanupIndexes = atChildrenBarrier.flatMap((record, index) => record.event === "query" &&
-              record.detail.method === "DELETE" && record.detail.project === "niceeval-eval-dev" ? [index] : []);
-            expect(parentCleanupIndexes.length, "both shared-prefix prepare scopes must be released")
-              .toBeGreaterThanOrEqual(2);
+            const parentCleanupIndexes = atChildrenBarrier.flatMap((record, index) =>
+              record.event === "query" &&
+              record.detail.method === "DELETE" &&
+              record.detail.project === "niceeval-eval-dev"
+                ? [index]
+                : [],
+            );
+            expect(
+              parentCleanupIndexes.length,
+              "both shared-prefix prepare scopes must be released",
+            ).toBeGreaterThanOrEqual(2);
             const childStartIndexes = atChildrenBarrier.flatMap((record, index) =>
-              record.event === "prefix-child-started" ? [index] : []);
-            expect(childStartIndexes, "both independent suffixes must start before the fixture releases either one")
-              .toHaveLength(2);
+              record.event === "prefix-child-started" ? [index] : [],
+            );
+            expect(
+              childStartIndexes,
+              "both independent suffixes must start before the fixture releases either one",
+            ).toHaveLength(2);
             const barrierReadyIndex = atChildrenBarrier.findIndex((record) => record.event === "prefix-children-ready");
-            expect(Math.max(...childStartIndexes), "the rendezvous becomes ready only after both children start")
-              .toBeLessThan(barrierReadyIndex);
-            expect(Math.max(...commonPublishIndexes, ...parentCleanupIndexes),
-              "shared parent publication and scope cleanup must precede both children")
-              .toBeLessThan(Math.min(...childStartIndexes));
-            expect(atChildrenBarrier.some((record) => record.event === "prefix-child-released"),
-              "neither child may pass the rendezvous before explicit release").toBe(false);
+            expect(
+              Math.max(...childStartIndexes),
+              "the rendezvous becomes ready only after both children start",
+            ).toBeLessThan(barrierReadyIndex);
+            expect(
+              Math.max(...commonPublishIndexes, ...parentCleanupIndexes),
+              "shared parent publication and scope cleanup must precede both children",
+            ).toBeLessThan(Math.min(...childStartIndexes));
+            expect(
+              atChildrenBarrier.some((record) => record.event === "prefix-child-released"),
+              "neither child may pass the rendezvous before explicit release",
+            ).toBe(false);
           } finally {
             await writeFile(join(gateRoot, "release-children"), "release\n", "utf8");
           }
           return controlled.done;
         },
       );
-      expect(receipt.exitCode, "the fake provider deliberately fails agent.install after pre-dispatch preparation").not.toBe(0);
+      expect(
+        receipt.exitCode,
+        "the fake provider deliberately fails agent.install after pre-dispatch preparation",
+      ).not.toBe(0);
       const completedJournal = await readIncusJournal(journalPath);
       const barrierReadyIndex = completedJournal.findIndex((record) => record.event === "prefix-children-ready");
       const childReleaseIndexes = completedJournal.flatMap((record, index) =>
-        record.event === "prefix-child-released" ? [index] : []);
+        record.event === "prefix-child-released" ? [index] : [],
+      );
       expect(childReleaseIndexes, "explicit release must unblock both prepared suffixes").toHaveLength(2);
-      expect(Math.min(...childReleaseIndexes), "children can leave the rendezvous only after it becomes ready")
-        .toBeGreaterThan(barrierReadyIndex);
+      expect(
+        Math.min(...childReleaseIndexes),
+        "children can leave the rendezvous only after it becomes ready",
+      ).toBeGreaterThan(barrierReadyIndex);
     });
   });
 }, 360_000);

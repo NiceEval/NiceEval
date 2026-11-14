@@ -11,10 +11,7 @@ export interface RecordPortablePath {
   readonly segments: readonly string[];
 }
 
-export function recordPortablePath(
-  root: RecordRoot,
-  ...segments: readonly string[]
-): RecordPortablePath {
+export function recordPortablePath(root: RecordRoot, ...segments: readonly string[]): RecordPortablePath {
   return Object.freeze({ root, segments: Object.freeze([...segments]) });
 }
 
@@ -58,46 +55,25 @@ export interface RecordWriteFileStreamInput<E, R> {
  * state are intentionally owned by the separate lease services below.
  */
 export interface RecordFileSystemService {
-  readonly pathKind: (
-    path: RecordPortablePath,
-  ) => Effect.Effect<RecordPathKind, RecordFileSystemError>;
-  readonly ensureDirectory: (
-    directory: RecordPortablePath,
-  ) => Effect.Effect<void, RecordFileSystemError>;
-  readonly createDirectory: (
-    directory: RecordPortablePath,
-  ) => Effect.Effect<void, RecordFileSystemError>;
+  readonly pathKind: (path: RecordPortablePath) => Effect.Effect<RecordPathKind, RecordFileSystemError>;
+  readonly ensureDirectory: (directory: RecordPortablePath) => Effect.Effect<void, RecordFileSystemError>;
+  readonly createDirectory: (directory: RecordPortablePath) => Effect.Effect<void, RecordFileSystemError>;
   readonly listDirectory: (
     input: RecordListDirectoryInput,
   ) => Effect.Effect<readonly RecordDirectoryEntry[], RecordFileSystemError>;
-  readonly readFile: (
-    input: RecordReadFileInput,
-  ) => Effect.Effect<Uint8Array | undefined, RecordFileSystemError>;
-  readonly readFileStream: (
-    input: RecordReadFileStreamInput,
-  ) => Stream.Stream<Uint8Array, RecordFileSystemError>;
-  readonly writeFile: (
-    input: RecordWriteFileInput,
-  ) => Effect.Effect<void, RecordFileSystemError>;
+  readonly readFile: (input: RecordReadFileInput) => Effect.Effect<Uint8Array | undefined, RecordFileSystemError>;
+  readonly readFileStream: (input: RecordReadFileStreamInput) => Stream.Stream<Uint8Array, RecordFileSystemError>;
+  readonly writeFile: (input: RecordWriteFileInput) => Effect.Effect<void, RecordFileSystemError>;
   /** Same-directory fsync + rename commit for an existing portable file. */
-  readonly replaceFileAtomic: (
-    input: Omit<RecordWriteFileInput, "mode">,
-  ) => Effect.Effect<void, RecordFileSystemError>;
+  readonly replaceFileAtomic: (input: Omit<RecordWriteFileInput, "mode">) => Effect.Effect<void, RecordFileSystemError>;
   readonly writeFileStream: <E, R>(
     input: RecordWriteFileStreamInput<E, R>,
   ) => Effect.Effect<void, RecordFileSystemError | E, R>;
-  readonly syncDirectory: (
-    directory: RecordPortablePath,
-  ) => Effect.Effect<void, RecordFileSystemError>;
+  readonly syncDirectory: (directory: RecordPortablePath) => Effect.Effect<void, RecordFileSystemError>;
   /** Maintenance-only exact portable file removal; missing is idempotent success. */
-  readonly removeFile: (
-    file: RecordPortablePath,
-  ) => Effect.Effect<void, RecordFileSystemError>;
+  readonly removeFile: (file: RecordPortablePath) => Effect.Effect<void, RecordFileSystemError>;
   /** Maintenance-only empty directory removal; missing is idempotent success. */
-  readonly removeEmptyDirectory: (
-    directory: RecordPortablePath,
-  ) => Effect.Effect<void, RecordFileSystemError>;
-
+  readonly removeEmptyDirectory: (directory: RecordPortablePath) => Effect.Effect<void, RecordFileSystemError>;
 }
 
 export class RecordFileSystem extends Context.Service<RecordFileSystem, RecordFileSystemService>()(

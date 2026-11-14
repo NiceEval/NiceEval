@@ -1,10 +1,6 @@
 import { Result, Schema } from "effect";
 
-import {
-  canonicalizeRecordJson,
-  canonicalRecordJsonText,
-  type RecordJson,
-} from "../record/definition/canonical.ts";
+import { canonicalizeRecordJson, canonicalRecordJsonText, type RecordJson } from "../record/definition/canonical.ts";
 import type { AttemptRecordCollectionLimitation } from "../record/authoring.ts";
 import { executionTracesRecordCollection } from "../record/family/execution-traces/definition.ts";
 import {
@@ -30,7 +26,6 @@ import {
   utf8ByteLength,
 } from "./bytes.ts";
 import type { InspectionFactSource } from "./source.ts";
-
 
 const PAGE_ROWS = 64;
 const IDENTITY_INDEX_LIMIT = 256;
@@ -192,7 +187,11 @@ export interface ExecutionEvidenceRange extends Omit<ExecutionEvidencePreview, "
 }
 
 export class InspectionExecutionTraceError extends Error {
-  readonly code: "inspection-request-invalid" | "inspection-record-integrity-failure" | "evidence-budget-exceeded" | "restart-required";
+  readonly code:
+    | "inspection-request-invalid"
+    | "inspection-record-integrity-failure"
+    | "evidence-budget-exceeded"
+    | "restart-required";
   constructor(code: InspectionExecutionTraceError["code"], message: string) {
     super(message);
     this.name = "InspectionExecutionTraceError";
@@ -303,9 +302,18 @@ function resolvePointer(root: unknown, pointer: string): unknown | undefined {
     if (Array.isArray(current)) {
       if (!/^(?:0|[1-9][0-9]*)$/u.test(segment)) return undefined;
       const index = Number(segment);
-      if (!Number.isSafeInteger(index) || index >= current.length || !Object.prototype.hasOwnProperty.call(current, segment)) return undefined;
+      if (
+        !Number.isSafeInteger(index) ||
+        index >= current.length ||
+        !Object.prototype.hasOwnProperty.call(current, segment)
+      )
+        return undefined;
       current = current[index];
-    } else if (typeof current === "object" && current !== null && Object.prototype.hasOwnProperty.call(current, segment)) {
+    } else if (
+      typeof current === "object" &&
+      current !== null &&
+      Object.prototype.hasOwnProperty.call(current, segment)
+    ) {
       const descriptor = Object.getOwnPropertyDescriptor(current, segment);
       if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) return undefined;
       current = descriptor.value;
@@ -315,10 +323,12 @@ function resolvePointer(root: unknown, pointer: string): unknown | undefined {
 }
 
 function collectionAttachment(resolved: ResolvedInspectionAttempt): DecodedInspectionAttachment | undefined {
-  const matches = resolved.origin.attachments.filter(({ physical }) =>
-    physical.ownerKind === "attempt" &&
-    physical.ownerAttemptId === resolved.attempt.attemptId &&
-    physical.family === executionTracesRecordCollection.family);
+  const matches = resolved.origin.attachments.filter(
+    ({ physical }) =>
+      physical.ownerKind === "attempt" &&
+      physical.ownerAttemptId === resolved.attempt.attemptId &&
+      physical.family === executionTracesRecordCollection.family,
+  );
   if (matches.length > 1) throw integrity("Execution trace owner has duplicate collection attachments.");
   return matches[0];
 }
@@ -326,30 +336,47 @@ function collectionAttachment(resolved: ResolvedInspectionAttempt): DecodedInspe
 function validateAttachment(
   resolved: ResolvedInspectionAttempt,
   attachment: DecodedInspectionAttachment,
-): { readonly collection: {
-  readonly state: "complete" | "partial";
-  readonly limitations: readonly AttemptRecordCollectionLimitation[];
-}; readonly expectedDigest: string } {
+): {
+  readonly collection: {
+    readonly state: "complete" | "partial";
+    readonly limitations: readonly AttemptRecordCollectionLimitation[];
+  };
+  readonly expectedDigest: string;
+} {
   const physical = attachment.physical;
-  if (physical.ownerKind !== "attempt" || physical.ownerAttemptId !== resolved.attempt.attemptId ||
-    physical.ownerRunId !== resolved.attempt.originRunId || physical.family !== executionTracesRecordCollection.family ||
-    physical.familyRevision !== undefined || physical.references.length !== 0 || physical.contents.length !== 0 ||
-    digest(physical.canonicalBytes) !== physical.canonicalDigest || digest(physical.logicalInventoryBytes) !== physical.inventoryDigest ||
-    physical.logicalIdentity !== inspectionTupleDigest("niceeval.record.attachment-logical-identity", [
-      physical.attachmentId,
-      physical.canonicalDigest,
-      physical.inventoryDigest,
-    ])) {
+  if (
+    physical.ownerKind !== "attempt" ||
+    physical.ownerAttemptId !== resolved.attempt.attemptId ||
+    physical.ownerRunId !== resolved.attempt.originRunId ||
+    physical.family !== executionTracesRecordCollection.family ||
+    physical.familyRevision !== undefined ||
+    physical.references.length !== 0 ||
+    physical.contents.length !== 0 ||
+    digest(physical.canonicalBytes) !== physical.canonicalDigest ||
+    digest(physical.logicalInventoryBytes) !== physical.inventoryDigest ||
+    physical.logicalIdentity !==
+      inspectionTupleDigest("niceeval.record.attachment-logical-identity", [
+        physical.attachmentId,
+        physical.canonicalDigest,
+        physical.inventoryDigest,
+      ])
+  ) {
     throw integrity("Execution trace collection attachment closure is invalid.");
   }
-  const shell = Schema.decodeUnknownResult(executionTracesRecordCollection.schema, { onExcessProperty: "error" })(attachment.value);
-  if (Result.isFailure(shell) || shell.success.items.length !== 0) throw integrity("Execution trace collection shell is invalid.");
+  const shell = Schema.decodeUnknownResult(executionTracesRecordCollection.schema, { onExcessProperty: "error" })(
+    attachment.value,
+  );
+  if (Result.isFailure(shell) || shell.success.items.length !== 0)
+    throw integrity("Execution trace collection shell is invalid.");
   const inventory = parseJson(physical.logicalInventoryBytes, "Execution trace collection inventory") as {
     readonly collection?: { readonly count?: unknown; readonly byteLength?: unknown; readonly digest?: unknown };
   };
-  if (inventory.collection?.count !== physical.collectionItemCount ||
+  if (
+    inventory.collection?.count !== physical.collectionItemCount ||
     inventory.collection.byteLength !== physical.collectionItemByteLength ||
-    typeof inventory.collection.digest !== "string") throw integrity("Execution trace collection inventory is invalid.");
+    typeof inventory.collection.digest !== "string"
+  )
+    throw integrity("Execution trace collection inventory is invalid.");
   return Object.freeze({
     collection: shell.success.collection,
     expectedDigest: inventory.collection.digest,
@@ -358,10 +385,24 @@ function validateAttachment(
 
 function newScanState(): ScanState {
   return {
-    headers: new Map(), sourceTraceIds: new Set(), eventCounts: new Map(), eventKeys: new Map(),
-    scopeIds: new Map(), clockUnits: new Map(), resolvedLinks: [], causeEdges: new Map(),
-    eventIds: new Set(), evidenceIds: new Set(), traceIdsForIndex: [], eventIdsForIndex: [], evidenceIdsForIndex: [],
-    sourceBytes: 0, targetBytes: 0, artifacts: new Map(), parsedArtifacts: new Map(), targets: new Map(),
+    headers: new Map(),
+    sourceTraceIds: new Set(),
+    eventCounts: new Map(),
+    eventKeys: new Map(),
+    scopeIds: new Map(),
+    clockUnits: new Map(),
+    resolvedLinks: [],
+    causeEdges: new Map(),
+    eventIds: new Set(),
+    evidenceIds: new Set(),
+    traceIdsForIndex: [],
+    eventIdsForIndex: [],
+    evidenceIdsForIndex: [],
+    sourceBytes: 0,
+    targetBytes: 0,
+    artifacts: new Map(),
+    parsedArtifacts: new Map(),
+    targets: new Map(),
     descriptors: undefined,
   };
 }
@@ -373,14 +414,16 @@ function readArtifact(
 ): InspectionArtifactBytes {
   const cached = state.artifacts.get(artifactId);
   if (cached !== undefined) return cached;
-  const read = readInspectionArtifactBytes(resolved, artifactId, Math.min(
-    64 * 1024 * 1024,
-    ExecutionTraceRecordLimits.maximumEvidenceSourceBytes - state.sourceBytes,
-  ));
+  const read = readInspectionArtifactBytes(
+    resolved,
+    artifactId,
+    Math.min(64 * 1024 * 1024, ExecutionTraceRecordLimits.maximumEvidenceSourceBytes - state.sourceBytes),
+  );
   if (Result.isFailure(read) && read.failure.code === "inspection-request-invalid") {
     throw new InspectionExecutionTraceError("evidence-budget-exceeded", "Execution evidence source budget exceeded.");
   }
-  if (Result.isFailure(read) || read.success === undefined) throw integrity(`Execution evidence artifact ${artifactId} is unavailable.`);
+  if (Result.isFailure(read) || read.success === undefined)
+    throw integrity(`Execution evidence artifact ${artifactId} is unavailable.`);
   state.sourceBytes += read.success.byteLength;
   if (state.sourceBytes > ExecutionTraceRecordLimits.maximumEvidenceSourceBytes) {
     throw new InspectionExecutionTraceError("evidence-budget-exceeded", "Execution evidence source budget exceeded.");
@@ -430,11 +473,18 @@ function verifyEvidence(
 
 function displayStrings(block: ExecutionDisplayBlockRecord): readonly string[] {
   switch (block.kind) {
-    case "text": return [block.text];
-    case "message": return block.speaker === undefined ? [block.text] : [block.text, block.speaker];
-    case "fields": return block.fields.flatMap((field) => typeof field.value === "string" ? [field.label, field.value] : [field.label]);
-    case "code": return block.language === undefined ? [block.text] : [block.text, block.language];
-    case "image": return [block.alt];
+    case "text":
+      return [block.text];
+    case "message":
+      return block.speaker === undefined ? [block.text] : [block.text, block.speaker];
+    case "fields":
+      return block.fields.flatMap((field) =>
+        typeof field.value === "string" ? [field.label, field.value] : [field.label],
+      );
+    case "code":
+      return block.language === undefined ? [block.text] : [block.text, block.language];
+    case "image":
+      return [block.alt];
   }
 }
 
@@ -459,10 +509,20 @@ function verifyDisplay(
     if (block.kind === "fields" && block.fields.length > limits.maximumDisplayFields) {
       throw integrity("Execution display fields exceed their fixed limit.");
     }
-    const singleLine = block.kind === "fields" ? block.fields.map((field) => field.label)
-      : block.kind === "message" ? block.speaker === undefined ? [] : [block.speaker]
-      : block.kind === "code" ? block.language === undefined ? [] : [block.language]
-      : block.kind === "image" ? [block.alt] : [];
+    const singleLine =
+      block.kind === "fields"
+        ? block.fields.map((field) => field.label)
+        : block.kind === "message"
+          ? block.speaker === undefined
+            ? []
+            : [block.speaker]
+          : block.kind === "code"
+            ? block.language === undefined
+              ? []
+              : [block.language]
+            : block.kind === "image"
+              ? [block.alt]
+              : [];
     const maximumBytes = block.kind === "image" ? limits.maximumDisplayAltBytes : limits.maximumDisplayLabelBytes;
     if (singleLine.some((text) => text.includes("\n") || utf8ByteLength(text) > maximumBytes)) {
       throw integrity("Execution display label exceeds its single-line or byte limit.");
@@ -474,8 +534,12 @@ function verifyDisplay(
       state.descriptors = read.success;
     }
     const descriptor = state.descriptors.get(block.artifactId);
-    if (descriptor === undefined || descriptor.sha256 !== block.sha256 ||
-      descriptor.byteLength !== block.byteLength || descriptor.mediaType !== block.mediaType) {
+    if (
+      descriptor === undefined ||
+      descriptor.sha256 !== block.sha256 ||
+      descriptor.byteLength !== block.byteLength ||
+      descriptor.mediaType !== block.mediaType
+    ) {
       throw integrity("Execution display image artifact closure is invalid.");
     }
   }
@@ -496,7 +560,10 @@ function observeRecord(
     state.eventKeys.set(record.traceId, new Set());
     const scopeIds = new Set<string>();
     for (const scope of record.scopes) {
-      if (scopeIds.has(scope.scopeId) || Result.isFailure(canonicalizeRecordJson(scope.boundary, SCOPE_BOUNDARY_LIMITS))) {
+      if (
+        scopeIds.has(scope.scopeId) ||
+        Result.isFailure(canonicalizeRecordJson(scope.boundary, SCOPE_BOUNDARY_LIMITS))
+      ) {
         throw integrity("Execution trace scope identity or boundary is invalid.");
       }
       scopeIds.add(scope.scopeId);
@@ -510,21 +577,31 @@ function observeRecord(
   const header = state.headers.get(record.traceId);
   const keys = state.eventKeys.get(record.traceId);
   const expectedOrdinal = state.eventCounts.get(record.traceId);
-  if (header === undefined || keys === undefined || expectedOrdinal === undefined || record.ordinal !== expectedOrdinal ||
-    keys.has(record.key) || state.eventIds.has(record.eventId)) throw integrity("Execution trace event sequence or identity is invalid.");
+  if (
+    header === undefined ||
+    keys === undefined ||
+    expectedOrdinal === undefined ||
+    record.ordinal !== expectedOrdinal ||
+    keys.has(record.key) ||
+    state.eventIds.has(record.eventId)
+  )
+    throw integrity("Execution trace event sequence or identity is invalid.");
   keys.add(record.key);
   state.eventIds.add(record.eventId);
   state.eventCounts.set(record.traceId, expectedOrdinal + 1);
   if (state.eventIdsForIndex.length < IDENTITY_INDEX_LIMIT) state.eventIdsForIndex.push(record.eventId);
-  if (record.links.length > ExecutionTraceRecordLimits.maximumLinksPerEvent ||
+  if (
+    record.links.length > ExecutionTraceRecordLimits.maximumLinksPerEvent ||
     record.evidence.length > ExecutionTraceRecordLimits.maximumEvidencePerEvent ||
     record.scopeMemberships.length > ExecutionTraceRecordLimits.maximumScopesPerEvent ||
-    record.payload !== undefined && Result.isFailure(canonicalizeRecordJson(record.payload, PAYLOAD_LIMITS))) {
+    (record.payload !== undefined && Result.isFailure(canonicalizeRecordJson(record.payload, PAYLOAD_LIMITS)))
+  ) {
     throw integrity("Execution trace event exceeds its fixed semantic limits.");
   }
   const evidenceKeys = new Set<string>();
   for (const evidence of record.evidence) {
-    if (evidenceKeys.has(evidence.key) || state.evidenceIds.has(evidence.evidenceId)) throw integrity("Execution evidence identity is duplicated.");
+    if (evidenceKeys.has(evidence.key) || state.evidenceIds.has(evidence.evidenceId))
+      throw integrity("Execution evidence identity is duplicated.");
     evidenceKeys.add(evidence.key);
     state.evidenceIds.add(evidence.evidenceId);
     if (state.evidenceIdsForIndex.length < IDENTITY_INDEX_LIMIT) state.evidenceIdsForIndex.push(evidence.evidenceId);
@@ -585,8 +662,10 @@ function hasDirectedCycle(keys: ReadonlySet<string>, edges: ReadonlyMap<string, 
 }
 
 function validateScanSemantics(state: ScanState): void {
-  if (state.headers.size > ExecutionTraceRecordLimits.maximumTraces ||
-    state.eventIds.size > ExecutionTraceRecordLimits.maximumEvents) {
+  if (
+    state.headers.size > ExecutionTraceRecordLimits.maximumTraces ||
+    state.eventIds.size > ExecutionTraceRecordLimits.maximumEvents
+  ) {
     throw integrity("Execution trace collection exceeds its fixed trace or event limit.");
   }
   for (const link of state.resolvedLinks) {
@@ -604,11 +683,20 @@ function validateScanSemantics(state: ScanState): void {
 
 function scanCollection(
   resolved: ResolvedInspectionAttempt,
-  visit: (record: Schema.Schema.Type<typeof ExecutionTraceRecordSchema>, collectionOrdinal: number, state: ScanState) => void,
-): { readonly state: ScanState; readonly collection: {
-  readonly state: "complete" | "partial";
-  readonly limitations: readonly AttemptRecordCollectionLimitation[];
-} } | undefined {
+  visit: (
+    record: Schema.Schema.Type<typeof ExecutionTraceRecordSchema>,
+    collectionOrdinal: number,
+    state: ScanState,
+  ) => void,
+):
+  | {
+      readonly state: ScanState;
+      readonly collection: {
+        readonly state: "complete" | "partial";
+        readonly limitations: readonly AttemptRecordCollectionLimitation[];
+      };
+    }
+  | undefined {
   const attachment = collectionAttachment(resolved);
   if (attachment === undefined) return undefined;
   const validated = validateAttachment(resolved, attachment);
@@ -619,12 +707,21 @@ function scanCollection(
   let byteLength = 0;
   for (;;) {
     const page = resolved.origin.source.readCollectionPage(attachment.physical.attachmentId, after, PAGE_ROWS);
-    if (page.attachmentId !== attachment.physical.attachmentId || page.afterOrdinal !== after || page.items.length > PAGE_ROWS ||
-      page.items.length === 0 && page.nextOrdinal !== null) throw integrity("Execution trace collection page is invalid.");
+    if (
+      page.attachmentId !== attachment.physical.attachmentId ||
+      page.afterOrdinal !== after ||
+      page.items.length > PAGE_ROWS ||
+      (page.items.length === 0 && page.nextOrdinal !== null)
+    )
+      throw integrity("Execution trace collection page is invalid.");
     for (const item of page.items) {
       const itemDigest = digest(item.canonicalBytes);
-      if (item.ordinal !== ordinal || item.canonicalDigest !== itemDigest ||
-        item.logicalIdentity !== executionCollectionItemLogicalIdentity(ordinal, itemDigest)) throw integrity("Execution trace collection item closure is invalid.");
+      if (
+        item.ordinal !== ordinal ||
+        item.canonicalDigest !== itemDigest ||
+        item.logicalIdentity !== executionCollectionItemLogicalIdentity(ordinal, itemDigest)
+      )
+        throw integrity("Execution trace collection item closure is invalid.");
       const decoded = Schema.decodeUnknownResult(ExecutionTraceRecordSchema, { onExcessProperty: "error" })(
         parseJson(item.canonicalBytes, "Execution trace collection item"),
       );
@@ -636,20 +733,27 @@ function scanCollection(
       ordinal += 1;
     }
     if (page.nextOrdinal === null) break;
-    if (page.items.length === 0 || page.nextOrdinal !== ordinal - 1) throw integrity("Execution trace collection continuation is invalid.");
+    if (page.items.length === 0 || page.nextOrdinal !== ordinal - 1)
+      throw integrity("Execution trace collection continuation is invalid.");
     after = page.nextOrdinal;
   }
-  if (ordinal !== attachment.physical.collectionItemCount || byteLength !== attachment.physical.collectionItemByteLength ||
-    hash.digestHex() !== validated.expectedDigest) throw integrity("Execution trace collection aggregate closure is invalid.");
+  if (
+    ordinal !== attachment.physical.collectionItemCount ||
+    byteLength !== attachment.physical.collectionItemByteLength ||
+    hash.digestHex() !== validated.expectedDigest
+  )
+    throw integrity("Execution trace collection aggregate closure is invalid.");
   validateScanSemantics(state);
   return Object.freeze({ state, collection: validated.collection });
 }
 
 function matches(event: ExecutionTraceEventRecord, filters: ExecutionTraceFilters): boolean {
-  return (filters.traceId === undefined || event.traceId === filters.traceId) &&
+  return (
+    (filters.traceId === undefined || event.traceId === filters.traceId) &&
     (filters.sourceId === undefined || event.source.id === filters.sourceId) &&
     (filters.actorId === undefined || event.actor?.id === filters.actorId) &&
-    (filters.eventType === undefined || event.type === filters.eventType);
+    (filters.eventType === undefined || event.type === filters.eventType)
+  );
 }
 
 export const EXECUTION_TRACE_CONTINUATION_FAMILIES = Object.freeze({
@@ -664,7 +768,12 @@ interface ContinuationBinding {
   readonly originAttempt: string;
   readonly sourceFamily: string;
   readonly familyRevision: number | undefined;
-  readonly filters: { readonly traceId: string | null; readonly sourceId: string | null; readonly actorId: string | null; readonly eventType: string | null };
+  readonly filters: {
+    readonly traceId: string | null;
+    readonly sourceId: string | null;
+    readonly actorId: string | null;
+    readonly eventType: string | null;
+  };
   readonly lastOrdinal: number;
 }
 
@@ -676,10 +785,7 @@ export interface ExecutionTraceContinuationContext {
   readonly filters: ExecutionTraceFilters;
 }
 
-function continuationBinding(
-  context: ExecutionTraceContinuationContext,
-  lastOrdinal: number,
-): ContinuationBinding {
+function continuationBinding(context: ExecutionTraceContinuationContext, lastOrdinal: number): ContinuationBinding {
   return Object.freeze({
     operation: "attempt.trace",
     sourceIdentity: context.source.kind,
@@ -717,24 +823,31 @@ export function encodeExecutionTraceContinuation(
   lastOrdinal: number,
 ): string {
   if (!Number.isSafeInteger(lastOrdinal) || lastOrdinal < 0) {
-    throw new InspectionExecutionTraceError("restart-required", "Execution trace continuation binding changed; restart from the first page.");
+    throw new InspectionExecutionTraceError(
+      "restart-required",
+      "Execution trace continuation binding changed; restart from the first page.",
+    );
   }
   return encodeBase64UrlUtf8(JSON.stringify(continuationBinding(context, lastOrdinal)));
 }
 
-export function decodeExecutionTraceContinuation(
-  token: string,
-  context: ExecutionTraceContinuationContext,
-): number {
+export function decodeExecutionTraceContinuation(token: string, context: ExecutionTraceContinuationContext): number {
   try {
     const parsed = JSON.parse(decodeBase64UrlUtf8(token)) as ContinuationBinding;
     const expected = continuationBinding(context, parsed.lastOrdinal);
-    if (!Number.isSafeInteger(parsed.lastOrdinal) || parsed.lastOrdinal < 0 || JSON.stringify(parsed) !== JSON.stringify(expected)) {
+    if (
+      !Number.isSafeInteger(parsed.lastOrdinal) ||
+      parsed.lastOrdinal < 0 ||
+      JSON.stringify(parsed) !== JSON.stringify(expected)
+    ) {
       throw new Error("binding changed");
     }
     return parsed.lastOrdinal;
   } catch {
-    throw new InspectionExecutionTraceError("restart-required", "Execution trace continuation binding changed; restart from the first page.");
+    throw new InspectionExecutionTraceError(
+      "restart-required",
+      "Execution trace continuation binding changed; restart from the first page.",
+    );
   }
 }
 
@@ -764,25 +877,35 @@ function previewText(value: string, limit: number): ExecutionDisplayPreviewText 
 
 function previewBlock(block: ExecutionDisplayBlockRecord, limit: number): ExecutionDisplayBlockPreview {
   switch (block.kind) {
-    case "text": return Object.freeze({ kind: "text", text: previewText(block.text, limit) });
-    case "message": return Object.freeze({
-      kind: "message", role: block.role,
-      ...(block.speaker === undefined ? {} : { speaker: block.speaker }),
-      text: previewText(block.text, limit),
-    });
-    case "fields": return Object.freeze({
-      kind: "fields",
-      fields: Object.freeze(block.fields.map((field) => Object.freeze({
-        label: field.label,
-        value: typeof field.value === "string" ? previewText(field.value, limit) : field.value,
-      }))),
-    });
-    case "code": return Object.freeze({
-      kind: "code",
-      ...(block.language === undefined ? {} : { language: block.language }),
-      text: previewText(block.text, limit),
-    });
-    case "image": return Object.freeze({ ...block });
+    case "text":
+      return Object.freeze({ kind: "text", text: previewText(block.text, limit) });
+    case "message":
+      return Object.freeze({
+        kind: "message",
+        role: block.role,
+        ...(block.speaker === undefined ? {} : { speaker: block.speaker }),
+        text: previewText(block.text, limit),
+      });
+    case "fields":
+      return Object.freeze({
+        kind: "fields",
+        fields: Object.freeze(
+          block.fields.map((field) =>
+            Object.freeze({
+              label: field.label,
+              value: typeof field.value === "string" ? previewText(field.value, limit) : field.value,
+            }),
+          ),
+        ),
+      });
+    case "code":
+      return Object.freeze({
+        kind: "code",
+        ...(block.language === undefined ? {} : { language: block.language }),
+        text: previewText(block.text, limit),
+      });
+    case "image":
+      return Object.freeze({ ...block });
   }
 }
 
@@ -804,13 +927,19 @@ function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutl
     ...(event.time === undefined ? {} : { time: event.time }),
     summary: event.summary,
     links: event.links,
-    evidence: Object.freeze(event.evidence.map(({ evidenceId, key, label }) => Object.freeze({ evidenceId, key, label }))),
+    evidence: Object.freeze(
+      event.evidence.map(({ evidenceId, key, label }) => Object.freeze({ evidenceId, key, label })),
+    ),
     scopeMemberships: event.scopeMemberships,
   };
   let limit: number = ExecutionTraceRecordLimits.maximumDisplayPreviewBytes;
   while (true) {
     const projected = Object.freeze({ ...envelope, display: previewDisplay(event.display, limit) });
-    if (event.display === undefined || utf8ByteLength(JSON.stringify(projected)) <= ExecutionTraceRecordLimits.maximumOutlineEventBytes) return projected;
+    if (
+      event.display === undefined ||
+      utf8ByteLength(JSON.stringify(projected)) <= ExecutionTraceRecordLimits.maximumOutlineEventBytes
+    )
+      return projected;
     // Existing envelope fields have no preview shape; retain them under the page budget.
     if (limit === 0) return projected;
     limit = Math.floor(limit / 2);
@@ -829,18 +958,33 @@ export function projectExecutionTraceOutline(
     ...(request.eventType === undefined ? {} : { eventType: request.eventType }),
   });
   const nativeAttachment = collectionAttachment(resolved);
-  if (request.continuation !== undefined && nativeAttachment === undefined &&
-    continuationSourceFamily(request.continuation) === EXECUTION_TRACE_CONTINUATION_FAMILIES.agentTurns) {
+  if (
+    request.continuation !== undefined &&
+    nativeAttachment === undefined &&
+    continuationSourceFamily(request.continuation) === EXECUTION_TRACE_CONTINUATION_FAMILIES.agentTurns
+  ) {
     return Object.freeze({
-      state: "not-recorded", limitations: Object.freeze([]), traces: Object.freeze([]), events: Object.freeze([]),
-      identityIndex: Object.freeze({ traceIds: Object.freeze([]), omittedTraceIdCount: 0, eventIds: Object.freeze([]), omittedEventIdCount: 0, evidenceIds: Object.freeze([]), omittedEvidenceIdCount: 0 }),
-      hasMore: false, omittedEventCount: 0,
+      state: "not-recorded",
+      limitations: Object.freeze([]),
+      traces: Object.freeze([]),
+      events: Object.freeze([]),
+      identityIndex: Object.freeze({
+        traceIds: Object.freeze([]),
+        omittedTraceIdCount: 0,
+        eventIds: Object.freeze([]),
+        omittedEventIdCount: 0,
+        evidenceIds: Object.freeze([]),
+        omittedEvidenceIdCount: 0,
+      }),
+      hasMore: false,
+      omittedEventCount: 0,
     });
   }
   const continuationContext = nativeContinuationContext(source, resolved, filters);
-  const resumeAfter = request.continuation === undefined
-    ? -1
-    : decodeExecutionTraceContinuation(request.continuation, continuationContext);
+  const resumeAfter =
+    request.continuation === undefined
+      ? -1
+      : decodeExecutionTraceContinuation(request.continuation, continuationContext);
   const retained: Array<{ readonly event: ExecutionTraceEventOutline; readonly collectionOrdinal: number }> = [];
   let matched = 0;
   let priorMatches = 0;
@@ -865,20 +1009,34 @@ export function projectExecutionTraceOutline(
     }
     retained.push(candidate);
   });
-  if (scanned === undefined) return Object.freeze({
-    state: "not-recorded", limitations: Object.freeze([]), traces: Object.freeze([]), events: Object.freeze([]),
-    identityIndex: Object.freeze({ traceIds: Object.freeze([]), omittedTraceIdCount: 0, eventIds: Object.freeze([]), omittedEventIdCount: 0, evidenceIds: Object.freeze([]), omittedEvidenceIdCount: 0 }),
-    hasMore: false, omittedEventCount: 0,
-  });
+  if (scanned === undefined)
+    return Object.freeze({
+      state: "not-recorded",
+      limitations: Object.freeze([]),
+      traces: Object.freeze([]),
+      events: Object.freeze([]),
+      identityIndex: Object.freeze({
+        traceIds: Object.freeze([]),
+        omittedTraceIdCount: 0,
+        eventIds: Object.freeze([]),
+        omittedEventIdCount: 0,
+        evidenceIds: Object.freeze([]),
+        omittedEvidenceIdCount: 0,
+      }),
+      hasMore: false,
+      omittedEventCount: 0,
+    });
   const remaining = Math.max(0, matched - priorMatches - retained.length);
   const lastOrdinal = retained.at(-1)?.collectionOrdinal;
   const traceHeaders = [...scanned.state.headers.values()]
     // An empty filtered page does not prove the producer captured all events.
     .filter((header) => filters.traceId === undefined || header.traceId === filters.traceId)
-    .map((header) => Object.freeze({
-      ...header,
-      eventCount: scanned.state.eventCounts.get(header.traceId) ?? 0,
-    }));
+    .map((header) =>
+      Object.freeze({
+        ...header,
+        eventCount: scanned.state.eventCounts.get(header.traceId) ?? 0,
+      }),
+    );
   return Object.freeze({
     state: scanned.collection.state,
     limitations: scanned.collection.limitations,
@@ -907,9 +1065,18 @@ function range(
   offset: number,
   limit: number,
 ): ExecutionEvidenceRange {
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > target.bytes.byteLength ||
-    !Number.isSafeInteger(limit) || limit < 1 || limit > 256 * 1024) {
-    throw new InspectionExecutionTraceError("inspection-request-invalid", "Execution evidence offset or limit is invalid.");
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset > target.bytes.byteLength ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > 256 * 1024
+  ) {
+    throw new InspectionExecutionTraceError(
+      "inspection-request-invalid",
+      "Execution evidence offset or limit is invalid.",
+    );
   }
   const bytes = target.bytes.subarray(offset, Math.min(target.bytes.byteLength, offset + limit));
   return Object.freeze({
@@ -957,7 +1124,9 @@ export function projectExecutionTraceDetail(
     });
   }
   const previews = selectedEvent.evidence.map((evidence) => {
-    const target = scanned.state.targets.get(`${evidence.artifactId}\u0000${evidence.artifactSha256}\u0000${evidence.pointer}`);
+    const target = scanned.state.targets.get(
+      `${evidence.artifactId}\u0000${evidence.artifactSha256}\u0000${evidence.pointer}`,
+    );
     if (target === undefined) throw integrity("Execution evidence cache is unavailable.");
     const value = range(selectedEvent!, evidence, target, 0, ExecutionTraceRecordLimits.maximumDetailPreviewBytes);
     return Object.freeze({
@@ -974,7 +1143,11 @@ export function projectExecutionTraceDetail(
       truncated: value.nextOffset !== null,
     });
   });
-  const result: ExecutionTraceDetailResult = Object.freeze({ kind: "execution-event", event: selectedEvent, evidence: Object.freeze(previews) });
+  const result: ExecutionTraceDetailResult = Object.freeze({
+    kind: "execution-event",
+    event: selectedEvent,
+    evidence: Object.freeze(previews),
+  });
   if (utf8ByteLength(JSON.stringify(result)) > ExecutionTraceRecordLimits.maximumDetailBytes) {
     throw integrity("Execution event detail exceeds its fixed response budget.");
   }

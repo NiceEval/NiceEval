@@ -11,21 +11,26 @@ export type AdapterFlagsOutput<Parser extends AdapterFlagsParser> = Parser exten
   ? ReadonlyFlags<Flags>
   : Readonly<Record<string, FlagValue>>;
 
-type InvalidFlagsRecord<Value> = unknown extends Value ? never
-  : Value extends readonly unknown[] | ((...args: never[]) => unknown) | PromiseLike<unknown> ? Value
-  : Value extends object ? {
-    [Key in keyof Value]-?: Key extends string | number
-      ? Exclude<Value[Key], FlagValue | ({} extends Pick<Value, Key> ? undefined : never)>
-      : Value[Key]
-  }[keyof Value]
-  : Value;
+type InvalidFlagsRecord<Value> = unknown extends Value
+  ? never
+  : Value extends readonly unknown[] | ((...args: never[]) => unknown) | PromiseLike<unknown>
+    ? Value
+    : Value extends object
+      ? {
+          [Key in keyof Value]-?: Key extends string | number
+            ? Exclude<Value[Key], FlagValue | ({} extends Pick<Value, Key> ? undefined : never)>
+            : Value[Key];
+        }[keyof Value]
+      : Value;
 type InvalidParser<Parser extends AdapterFlagsParser> = Parser extends (input: unknown) => infer Flags
   ? InvalidFlagsRecord<Flags>
   : never;
 export type AdapterFlagsParserValidation<Parser extends AdapterFlagsParser> = [InvalidParser<Parser>] extends [never]
   ? unknown
   : { readonly invalidAdapterFlags: InvalidParser<Parser> };
-export type AdapterFlagsParserValidationArgs<Parser extends AdapterFlagsParser> = [InvalidParser<Parser>] extends [never]
+export type AdapterFlagsParserValidationArgs<Parser extends AdapterFlagsParser> = [InvalidParser<Parser>] extends [
+  never,
+]
   ? []
   : [error: { readonly invalidAdapterFlags: InvalidParser<Parser> }];
 
@@ -34,7 +39,10 @@ export function assertAdapterFlagsParser(value: unknown): asserts value is Exclu
 }
 
 /** The author parser runs exactly once, at the synchronous Experiment definition boundary. */
-export function parseAdapterFlags(parseFlags: Exclude<AdapterFlagsParser, undefined>, input: ExperimentFlags): ExperimentFlags {
+export function parseAdapterFlags(
+  parseFlags: Exclude<AdapterFlagsParser, undefined>,
+  input: ExperimentFlags,
+): ExperimentFlags {
   const value = parseFlags(input);
   if (Predicate.isObjectKeyword(value)) {
     const then = Object.getOwnPropertyDescriptor(value, "then");

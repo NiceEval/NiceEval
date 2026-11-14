@@ -99,9 +99,19 @@ function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefin
     spanId: span.spanId,
     parentSpanId: typeof span.parentSpanId === "string" && span.parentSpanId ? span.parentSpanId : undefined,
     name: typeof span.name === "string" ? span.name : "span",
-    startMs: nanoToMs(typeof span.startTimeUnixNano === "string" || typeof span.startTimeUnixNano === "number" ? span.startTimeUnixNano : undefined),
-    endMs: nanoToMs(typeof span.endTimeUnixNano === "string" || typeof span.endTimeUnixNano === "number" ? span.endTimeUnixNano : undefined),
-    status: statusFromCode(typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined),
+    startMs: nanoToMs(
+      typeof span.startTimeUnixNano === "string" || typeof span.startTimeUnixNano === "number"
+        ? span.startTimeUnixNano
+        : undefined,
+    ),
+    endMs: nanoToMs(
+      typeof span.endTimeUnixNano === "string" || typeof span.endTimeUnixNano === "number"
+        ? span.endTimeUnixNano
+        : undefined,
+    ),
+    status: statusFromCode(
+      typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined,
+    ),
     attributes: Object.keys(attributes).length ? attributes : undefined,
   };
 }

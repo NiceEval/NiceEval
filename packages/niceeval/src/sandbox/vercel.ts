@@ -6,12 +6,7 @@ import { Sandbox as VSandbox, APIError } from "@vercel/sandbox";
 import { Effect } from "effect";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type {
-  CommandResult,
-  CommandOptions,
-  SandboxReuseCapability,
-  SuccessfulCommandResult,
-} from "../types.ts";
+import type { CommandResult, CommandOptions, SandboxReuseCapability, SuccessfulCommandResult } from "../types.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
@@ -20,7 +15,12 @@ import { commandLimit } from "./deadline.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { successfulCommandResult } from "./operations.ts";
-import { supportedBackendCapability, unsupportedBackendCapability, unsupportedBackendCapabilityBecause, type SandboxProviderBackend } from "./backend.ts";
+import {
+  supportedBackendCapability,
+  unsupportedBackendCapability,
+  unsupportedBackendCapabilityBecause,
+  type SandboxProviderBackend,
+} from "./backend.ts";
 
 /**
  * vercel SDK 对单次 fetch 的 429 已有内部重试(见 @vercel/sandbox 的 with-retry.js,
@@ -64,7 +64,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private sessionCreatedAt: number;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
-  get nativeInstanceId(): string { return this.sandboxId; }
+  get nativeInstanceId(): string {
+    return this.sandboxId;
+  }
   readonly sandboxId: string;
   readonly capabilities = {
     rootCommands: supportedBackendCapability(true as const),
@@ -72,7 +74,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
-    managedProcess: unsupportedBackendCapabilityBecause("@vercel/sandbox 2.2.1 does not expose bidirectional stdin or raw output chunks"),
+    managedProcess: unsupportedBackendCapabilityBecause(
+      "@vercel/sandbox 2.2.1 does not expose bidirectional stdin or raw output chunks",
+    ),
   };
 
   private constructor(
@@ -203,7 +207,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * 上限时直接抛 HTTP 400(本仓库真实跑分里恒抛,rotateIfNeeded 那条快照轮换路径就是为它写的)。
    * 请求值当答案会把「平台不给续」伪装成「续上了」,而症状要到实例中途消失才出现。
    */
-  async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
+  async ensureLifetime(
+    minRemainingMs: number,
+  ): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
     const remainingMs = (): number => {
       const session = this.vsb.currentSession();
       return session.createdAt.getTime() + session.timeout - Date.now();
@@ -245,9 +251,8 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
     // env 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
     // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
-    const scriptWithPath = this.pathPrepend.length > 0
-      ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}`
-      : script;
+    const scriptWithPath =
+      this.pathPrepend.length > 0 ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}` : script;
     return this.execDirect("bash", ["-c", scriptWithPath], opts);
   }
 
@@ -256,7 +261,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // Vercel 命令级只认 `user: "root"`(映射 `sudo: true`);其它显式值报错,省略 = `sudo: false`
     // (见 docs/feature/sandbox/library/README.md「执行身份」)。
     if (opts.user !== undefined && opts.user !== "root") {
-      throw new Error(`the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "${opts.user}" }. Use a container provider (docker / e2b) for other identities.`);
+      throw new Error(
+        `the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "${opts.user}" }. Use a container provider (docker / e2b) for other identities.`,
+      );
     }
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
@@ -335,10 +342,12 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   async writeBytes(path: string, content: Uint8Array): Promise<void> {
-    await this.vsb.writeFiles([{
-      path: resolveSandboxPath(this.workdir, path),
-      content: Buffer.from(content),
-    }]);
+    await this.vsb.writeFiles([
+      {
+        path: resolveSandboxPath(this.workdir, path),
+        content: Buffer.from(content),
+      },
+    ]);
   }
 
   async uploadFile(source: string | URL, targetPath: string): Promise<void> {
@@ -391,5 +400,4 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   async suspend(): Promise<void> {
     await this.vsb.stop();
   }
-
 }

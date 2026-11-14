@@ -1,5 +1,6 @@
 const MAX_SUMMARY_LENGTH = 512;
-const SECRET_ASSIGNMENT = /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z0-9_]*)\s*[=:]\s*([^\s,;]+)/giu;
+const SECRET_ASSIGNMENT =
+  /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z0-9_]*)\s*[=:]\s*([^\s,;]+)/giu;
 const BEARER = /\bBearer\s+[^\s,;]+/giu;
 const URL_USERINFO = /(https?:\/\/)[^\s/@:]+:[^\s/@]+@/giu;
 
@@ -39,9 +40,7 @@ export function summarizeUnknownError(value: unknown): string {
   const code = ownDataString(value, "code");
   const message = ownDataString(value, "message");
   if (message !== undefined && message.trim() !== "") {
-    const summary = code === undefined || code.trim() === "" || code === message
-      ? message
-      : `${code}: ${message}`;
+    const summary = code === undefined || code.trim() === "" || code === message ? message : `${code}: ${message}`;
     const safe = sanitizeErrorText(summary);
     return safe === "" ? "An unexpected error occurred." : safe;
   }

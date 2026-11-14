@@ -13,16 +13,34 @@ test.concurrent("Judge 模型不变时沿用，修改 Eval 模型后重新评价
     const input = JSON.parse(body);
     models.push(input.model);
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({
-      id: "reuse-response", object: "chat.completion", created: 0, model: input.model,
-      choices: [{ index: 0, finish_reason: "tool_calls", message: {
-        role: "assistant", content: null,
-        tool_calls: [{ id: "reuse-call", type: "function", function: {
-          name: input.tool_choice.function.name,
-          arguments: JSON.stringify({ measurement: 1, rationale: "The fixture value is 42." }),
-        } }],
-      } }],
-    }));
+    response.end(
+      JSON.stringify({
+        id: "reuse-response",
+        object: "chat.completion",
+        created: 0,
+        model: input.model,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "reuse-call",
+                  type: "function",
+                  function: {
+                    name: input.tool_choice.function.name,
+                    arguments: JSON.stringify({ measurement: 1, rationale: "The fixture value is 42." }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -45,7 +63,9 @@ test.concurrent("Judge 模型不变时沿用，修改 Eval 模型后重新评价
       expect(decodeExpPlanDocument(stable.json<unknown>())).toMatchObject({ total: 1, reused: 1 });
       const carried = await niceeval.run(["exp", "judge-reuse", "--json"], { env });
       expect(carried.exitCode, carried.diagnostic()).toBe(0);
-      expect(only(carried.expEvents(), (event) => event.event === "start", carried.diagnostic())).toMatchObject({ reused: 1 });
+      expect(only(carried.expEvents(), (event) => event.event === "start", carried.diagnostic())).toMatchObject({
+        reused: 1,
+      });
       expect(models).toEqual(["first-model"]);
       const changedEnv = { ...env, NICEEVAL_E2E_REUSE_JUDGE_MODEL: "second-model" };
       const changed = await niceeval.run(["exp", "judge-reuse", "--dry", "--json"], { env: changedEnv });
@@ -60,6 +80,6 @@ test.concurrent("Judge 模型不变时沿用，修改 Eval 模型后重新评价
     });
   } finally {
     server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });

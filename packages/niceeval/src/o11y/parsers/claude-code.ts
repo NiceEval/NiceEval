@@ -266,9 +266,10 @@ export function parseClaudeCodeTranscript(raw: string | undefined): ParsedTransc
                 input,
                 tool: normalizeToolName(name),
                 // Claude transcript only carries Bash source text, never direct argv.
-                command: name.toLowerCase() === "bash"
-                  ? opaqueCommandProjection("unsupported-protocol")
-                  : notCommandProjection(),
+                command:
+                  name.toLowerCase() === "bash"
+                    ? opaqueCommandProjection("unsupported-protocol")
+                    : notCommandProjection(),
               },
             });
           }

@@ -26,10 +26,7 @@ export interface RecordAttachmentIssue {
   readonly path: readonly string[];
 }
 
-export type NonEmptyRecordAttachmentIssues = readonly [
-  RecordAttachmentIssue,
-  ...RecordAttachmentIssue[],
-];
+export type NonEmptyRecordAttachmentIssues = readonly [RecordAttachmentIssue, ...RecordAttachmentIssue[]];
 
 export function recordAttachmentIssue(
   code: RecordAttachmentIssueCode,
@@ -112,14 +109,10 @@ export type RecordAttachmentSpiFailure =
 /** Synchronous declaration factories fail before a catalog can gain authority. */
 export class RecordAttachmentSpiDefinitionError extends Error {
   constructor(
-    readonly code: "invalid-family-definition" =
-      "invalid-family-definition",
+    readonly code: "invalid-family-definition" = "invalid-family-definition",
     readonly cause?: unknown,
   ) {
-    super(
-      "Invalid Record Attachment family definition",
-      { cause },
-    );
+    super("Invalid Record Attachment family definition", { cause });
     this.name = "RecordAttachmentSpiDefinitionError";
   }
 }

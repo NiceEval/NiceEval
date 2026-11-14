@@ -21,17 +21,14 @@ export interface ExactHandleRegistry<Handle extends object, Contents, Error> {
   readonly resolve: (handle: Handle) => Result.Result<Contents, Error>;
 }
 
-export function makeReaderLifecycle<Error>(input: {
-  readonly closed: () => Error;
-}): ReaderLifecycle<Error> {
+export function makeReaderLifecycle<Error>(input: { readonly closed: () => Error }): ReaderLifecycle<Error> {
   let closed = false;
   const lifecycle: ReaderLifecycle<Error> = {
     close: (): void => {
       closed = true;
     },
     isClosed: (): boolean => closed,
-    assertLive: (): Result.Result<void, Error> =>
-      closed ? Result.fail(input.closed()) : Result.succeed(undefined),
+    assertLive: (): Result.Result<void, Error> => (closed ? Result.fail(input.closed()) : Result.succeed(undefined)),
   };
 
   return Object.freeze(lifecycle);
@@ -42,11 +39,7 @@ export function makeReaderLifecycle<Error>(input: {
  * exact object registered by this reader can resolve, and the registry itself
  * does not retain a leaked handle after its consumer drops it.
  */
-export function makeExactHandleRegistry<
-  Handle extends object,
-  Contents,
-  Error,
->(
+export function makeExactHandleRegistry<Handle extends object, Contents, Error>(
   lifecycle: ReaderLifecycle<Error>,
   input: { readonly invalid: () => Error },
 ): ExactHandleRegistry<Handle, Contents, Error> {
@@ -65,13 +58,8 @@ export function makeExactHandleRegistry<
       if (Result.isFailure(live)) {
         return Result.fail(live.failure);
       }
-      const entry =
-        typeof handle === "object" && handle !== null
-          ? contentsByHandle.get(handle)
-          : undefined;
-      return entry === undefined
-        ? Result.fail(input.invalid())
-        : Result.succeed(entry.value);
+      const entry = typeof handle === "object" && handle !== null ? contentsByHandle.get(handle) : undefined;
+      return entry === undefined ? Result.fail(input.invalid()) : Result.succeed(entry.value);
     },
   };
 

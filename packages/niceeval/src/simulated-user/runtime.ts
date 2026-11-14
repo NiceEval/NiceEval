@@ -42,15 +42,25 @@ export function createSimulatedUserConversation(
   const failPi = (error: PiFailure): SimulatedUserError => {
     const diagnostic = safePiFailureMessage(error, profile);
     switch (error.kind) {
-      case "dependency": return fail("pi-unavailable", error.cause ?? error, diagnostic);
+      case "dependency":
+        return fail("pi-unavailable", error.cause ?? error, diagnostic);
       case "provider":
-      case "credential": return fail("provider-unconfigured", error.cause ?? error, diagnostic);
-      case "session-init": return fail("session-failed", error.cause ?? error, diagnostic);
-      case "model-request": return fail("transport", error.cause ?? error, diagnostic);
-      case "context-overflow": return fail("context-overflow", error.cause ?? error, diagnostic);
-      case "cancelled": return fail("timeout", error.cause ?? error, diagnostic);
-      case "defect": return fail("defect", error.cause ?? error, diagnostic);
-      default: { const exhaustive: never = error.kind; return exhaustive; }
+      case "credential":
+        return fail("provider-unconfigured", error.cause ?? error, diagnostic);
+      case "session-init":
+        return fail("session-failed", error.cause ?? error, diagnostic);
+      case "model-request":
+        return fail("transport", error.cause ?? error, diagnostic);
+      case "context-overflow":
+        return fail("context-overflow", error.cause ?? error, diagnostic);
+      case "cancelled":
+        return fail("timeout", error.cause ?? error, diagnostic);
+      case "defect":
+        return fail("defect", error.cause ?? error, diagnostic);
+      default: {
+        const exhaustive: never = error.kind;
+        return exhaustive;
+      }
     }
   };
   const active = () => !closed && !submitted && !current?.signal.aborted && failure === undefined;
@@ -62,7 +72,11 @@ export function createSimulatedUserConversation(
     if (current === undefined) return;
     if (usage !== undefined) {
       const invalidUsage = piUsageFailure(usage);
-      if (invalidUsage !== undefined) { failPi(invalidUsage); abort(); return; }
+      if (invalidUsage !== undefined) {
+        failPi(invalidUsage);
+        abort();
+        return;
+      }
     }
     const estimate =
       usage === undefined
@@ -121,10 +135,15 @@ export function createSimulatedUserConversation(
       let paths: ReturnType<typeof resolvePiCodingAgent>;
       try {
         paths = resolvePiCodingAgent();
-      } catch (cause) { throw failPi(piDefect(cause)); }
+      } catch (cause) {
+        throw failPi(piDefect(cause));
+      }
       let apiKey: string;
-      try { apiKey = managedPiCredential(profile); }
-      catch (cause) { throw failPi(piDefect(cause)); }
+      try {
+        apiKey = managedPiCredential(profile);
+      } catch (cause) {
+        throw failPi(piDefect(cause));
+      }
       try {
         const managed = await createManagedPiSession({
           paths,
@@ -137,7 +156,9 @@ export function createSimulatedUserConversation(
         session = managed.session;
         sessionManager = managed.sessionManager;
         prompt = managed.prompt;
-      } catch (cause) { throw failPi(piDefect(cause)); }
+      } catch (cause) {
+        throw failPi(piDefect(cause));
+      }
       input.signal.throwIfAborted();
       const originalPayload = session.agent.onPayload;
       session.agent.onPayload = async (payload, model) => {

@@ -237,8 +237,7 @@ export type StreamEvent = {
    * magic string.
    */
   redacted?: readonly string[];
-} & (
-  /** assistant 回复；它不是 eval 源码上的作者事实，不参与 sourceOrder 序列。 */
+} /** assistant 回复；它不是 eval 源码上的作者事实，不参与 sourceOrder 序列。 */ & (
   | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
   /**
    * eval 作者发出的用户输入；`loc` 把消息叠回源码，`sourceOrder` 与断言、直接给分共用同一条

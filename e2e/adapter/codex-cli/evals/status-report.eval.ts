@@ -14,8 +14,7 @@ const OTHER_SKILLS = ["niceeval-release-note", "niceeval-decoy"] as const;
 const MARKER = "STATUS-REPORT-FORMAT-NICEEVAL-E2E-914";
 const relPath = "status.txt";
 export default defineEval({
-  description:
-    "Skill 正调:装了 niceeval-status-report 之后确实被读取并落进产出内容",
+  description: "Skill 正调:装了 niceeval-status-report 之后确实被读取并落进产出内容",
   async test(t) {
     // 安装痕迹从沙箱里真实存在的文件读:清单本身只在宿主侧(attempt artifact agent-setup.json),
     // eval 够不着它,也不该够得着——沙箱里没有任何框架文件。
@@ -31,14 +30,8 @@ export default defineEval({
     await turn.succeeded().orStop();
     t.check(
       t.events,
-      satisfies<typeof t.events>(
-        "no failed tool or subagent actions",
-        (events) =>
-          events.every(
-            (event) =>
-              event.type !== "operation.finished" ||
-              event.status !== "failed",
-          ),
+      satisfies<typeof t.events>("no failed tool or subagent actions", (events) =>
+        events.every((event) => event.type !== "operation.finished" || event.status !== "failed"),
       ),
     );
     await t.group("行为痕迹:真的用 shell 读过这个 skill 的文件", () => {
@@ -51,12 +44,8 @@ export default defineEval({
               input !== null &&
               !Array.isArray(input) &&
               (typeof (input as Record<string, unknown>)["command"] === "string"
-                ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
-                    (input as Record<string, unknown>)["command"] as string,
-                  )
-                : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
-                    JSON.stringify(input) ?? "",
-                  )),
+                ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test((input as Record<string, unknown>)["command"] as string)
+                : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(JSON.stringify(input) ?? "")),
           ),
           status: "completed",
         }),
@@ -71,12 +60,8 @@ export default defineEval({
                 input !== null &&
                 !Array.isArray(input) &&
                 (typeof (input as Record<string, unknown>)["command"] === "string"
-                  ? new RegExp(`${SKILL_DIR}/${other}`).test(
-                      (input as Record<string, unknown>)["command"] as string,
-                    )
-                  : new RegExp(`${SKILL_DIR}/${other}`).test(
-                      JSON.stringify(input) ?? "",
-                    )),
+                  ? new RegExp(`${SKILL_DIR}/${other}`).test((input as Record<string, unknown>)["command"] as string)
+                  : new RegExp(`${SKILL_DIR}/${other}`).test(JSON.stringify(input) ?? "")),
             ),
           }),
         );

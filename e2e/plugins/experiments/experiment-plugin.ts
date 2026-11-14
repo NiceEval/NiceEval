@@ -9,12 +9,14 @@ export default defineExperiment({
   evals: ["experiment-plugin"],
   maxConcurrency: 1,
   plugins: [lifecycle({ marker: "experiment-a" }), lifecycle({ marker: "experiment-b" })],
-  before: (context) => appendPluginLifecycleEvent({
-    kind: "experiment.author.setup",
-    experimentId: context.experimentId,
-  }),
-  after: (context) => appendPluginLifecycleEvent({
-    kind: "experiment.author.teardown",
-    experimentId: context.experimentId,
-  }),
+  before: (context) =>
+    appendPluginLifecycleEvent({
+      kind: "experiment.author.setup",
+      experimentId: context.experimentId,
+    }),
+  after: (context) =>
+    appendPluginLifecycleEvent({
+      kind: "experiment.author.teardown",
+      experimentId: context.experimentId,
+    }),
 });

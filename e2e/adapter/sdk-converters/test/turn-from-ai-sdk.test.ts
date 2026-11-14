@@ -6,13 +6,15 @@ import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 
 import { expectAttemptSource } from "./sources.ts";
 
-const EXPECTED = [{
-  experimentId: "turn-from-ai-sdk",
-  evalId: "turn-from-ai-sdk",
-  verdict: "passed",
-  attempts: 1,
-  passed: 1,
-}] as const;
+const EXPECTED = [
+  {
+    experimentId: "turn-from-ai-sdk",
+    evalId: "turn-from-ai-sdk",
+    verdict: "passed",
+    attempts: 1,
+    passed: 1,
+  },
+] as const;
 // @feature docs/feature/adapters/README.md
 
 test("turnFromAiSdk 的锁定 AI SDK 输入经 Experiment 和公开 CLI 确定性读回", async () => {

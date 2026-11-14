@@ -1,4 +1,10 @@
-import { QueryClientProvider, queryOptions, skipToken, useQuery, type QueryObserverResult } from "@tanstack/react-query";
+import {
+  QueryClientProvider,
+  queryOptions,
+  skipToken,
+  useQuery,
+  type QueryObserverResult,
+} from "@tanstack/react-query";
 import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
 import { Result } from "effect";
 import { canonicalJsonValue } from "../../../../../inspection/canonical.ts";
@@ -13,9 +19,13 @@ import type { ViewGenerationBinding, ViewGenerationIdentity } from "./generation
 
 export type InspectionQueryKey = readonly ["inspection", ViewGenerationIdentity, string];
 
-export function inspectionQueryKey(identity: ViewGenerationIdentity, operation: { readonly kind: string }): InspectionQueryKey {
+export function inspectionQueryKey(
+  identity: ViewGenerationIdentity,
+  operation: { readonly kind: string },
+): InspectionQueryKey {
   const encoded = canonicalJsonValue(operation);
-  if (Result.isFailure(encoded)) throw new Error(`Inspection operation query key is invalid: ${encoded.failure.reason}`);
+  if (Result.isFailure(encoded))
+    throw new Error(`Inspection operation query key is invalid: ${encoded.failure.reason}`);
   return ["inspection", identity, `${operation.kind}:${encoded.success}`] as const;
 }
 
@@ -31,7 +41,10 @@ export function inspectionQueryOptions<Kind extends InspectionOperationId>(
 
 const GenerationContext = createContext<ViewGenerationBinding<unknown> | null>(null);
 
-export function InspectionRuntimeProvider<Snapshot>({ runtime, children }: {
+export function InspectionRuntimeProvider<Snapshot>({
+  runtime,
+  children,
+}: {
   readonly runtime: ViewRuntime<Snapshot>;
   readonly children: ReactNode;
 }) {
@@ -41,9 +54,11 @@ export function InspectionRuntimeProvider<Snapshot>({ runtime, children }: {
     () => runtime.current,
   );
   if (generation === undefined) throw new Error("No View generation has been committed.");
-  return <GenerationContext.Provider value={generation.binding as ViewGenerationBinding<unknown>}>
-    <QueryClientProvider client={runtime.queryClient}>{children}</QueryClientProvider>
-  </GenerationContext.Provider>;
+  return (
+    <GenerationContext.Provider value={generation.binding as ViewGenerationBinding<unknown>}>
+      <QueryClientProvider client={runtime.queryClient}>{children}</QueryClientProvider>
+    </GenerationContext.Provider>
+  );
 }
 
 export function useGenerationSnapshot<Snapshot>(): Snapshot {

@@ -1,11 +1,5 @@
 /** Finite plain JSON accepted by the generic execution-trace boundary. */
-export type TraceJson =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly TraceJson[]
-  | { readonly [key: string]: TraceJson };
+export type TraceJson = null | boolean | number | string | readonly TraceJson[] | { readonly [key: string]: TraceJson };
 
 /** Explains a known execution-trace coverage gap; absence of an event must not be interpreted as proof when coverage is limited. */
 export interface ExecutionTraceLimitation {
@@ -88,10 +82,7 @@ export type ExecutionDisplayBlock =
  * One Adapter-owned domain event. `Type` and `Payload` preserve a caller's
  * discriminated union without requiring NiceEval to execute its domain parser.
  */
-export interface ExecutionTraceEvent<
-  out Type extends string = string,
-  out Payload extends TraceJson = TraceJson,
-> {
+export interface ExecutionTraceEvent<out Type extends string = string, out Payload extends TraceJson = TraceJson> {
   readonly key: string;
   readonly type: Type;
   readonly source: ExecutionTraceSource;
@@ -107,9 +98,7 @@ export interface ExecutionTraceEvent<
 }
 
 /** Submits application-owned events, scopes and completeness evidence; a partial collection must retain its limitations. */
-export interface ExecutionTraceInput<
-  out Event extends ExecutionTraceEvent = ExecutionTraceEvent,
-> {
+export interface ExecutionTraceInput<out Event extends ExecutionTraceEvent = ExecutionTraceEvent> {
   readonly traceId: string;
   readonly schema: { readonly id: string };
   readonly collection: {

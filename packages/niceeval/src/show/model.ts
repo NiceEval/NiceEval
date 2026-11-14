@@ -7,7 +7,10 @@ import type {
   InspectionSuccessDocumentFor,
   InspectionTraceDetailResult,
 } from "../inspection/index.ts";
-import type { AttemptOutcome as RecordAttemptOutcome, MembershipAction as RecordMembershipAction } from "../record/model/core.ts";
+import type {
+  AttemptOutcome as RecordAttemptOutcome,
+  MembershipAction as RecordMembershipAction,
+} from "../record/model/core.ts";
 import type { AdapterIdentity } from "../record/model/run-context.ts";
 import type { Verdict as PublicVerdict } from "../shared/types.ts";
 import type { AgentTurnOutcome as ReceiptAgentTurnOutcome } from "../record/family/protocol-values.ts";
@@ -23,12 +26,18 @@ export type SourceState = "available" | "not-recorded" | "invalid";
 export type ScoredValue = InspectionScoredValue;
 export type SourceContent =
   | { readonly state: "available"; readonly text: string }
-  | { readonly state: "omitted"; readonly reason: "inspection-result-byte-limit"; readonly byteLength: number; readonly byteLimit: number };
+  | {
+      readonly state: "omitted";
+      readonly reason: "inspection-result-byte-limit";
+      readonly byteLength: number;
+      readonly byteLimit: number;
+    };
 export type AssertionSource =
   | { readonly state: "mapped"; readonly sourceItemId: string; readonly sha256: string }
   | { readonly state: "unmapped"; readonly reason: "source-snapshot-not-recorded" | "position-unrepresentable" };
 export type CommandPhase = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["phase"];
-export type CommandOutcome = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["outcome"];
+export type CommandOutcome =
+  InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["outcome"];
 export type Metric = { readonly state: MetricState; readonly value: number | null };
 export type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
@@ -156,7 +165,12 @@ export interface AttemptView {
 export interface SourcesView {
   readonly locator: string;
   readonly state: SourceState;
-  readonly items: readonly { readonly path: string; readonly sourceItemId: string; readonly byteLength: number; readonly content: SourceContent }[];
+  readonly items: readonly {
+    readonly path: string;
+    readonly sourceItemId: string;
+    readonly byteLength: number;
+    readonly content: SourceContent;
+  }[];
   readonly assertions: {
     readonly state: SourceState;
     readonly sites: readonly {
@@ -173,7 +187,9 @@ export interface SourcesView {
   readonly omittedItemCount: number;
 }
 type WithoutTurnId<Value> = Value extends unknown ? Omit<Value, "turnId"> : never;
-export type TraceItem = WithoutTurnId<InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["items"][number]>;
+export type TraceItem = WithoutTurnId<
+  InspectionSuccessDocumentFor<"attempt.trace">["trace"]["conversation"]["items"][number]
+>;
 export interface TraceView {
   readonly locator: string;
   readonly execution: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["execution"];
@@ -187,7 +203,12 @@ export interface TraceView {
     readonly itemCount: number;
     readonly itemsTruncated: boolean;
     readonly omittedItemCount: number;
-    readonly turns: readonly { readonly turnId: string; readonly sequence: number; readonly outcome: AgentTurnOutcome; readonly items: readonly TraceItem[] }[];
+    readonly turns: readonly {
+      readonly turnId: string;
+      readonly sequence: number;
+      readonly outcome: AgentTurnOutcome;
+      readonly items: readonly TraceItem[];
+    }[];
   };
   readonly commands: {
     readonly state: ProjectionState;
@@ -196,7 +217,11 @@ export interface TraceView {
     readonly omittedLimitationCount: number;
     readonly hasMore: boolean;
     readonly omittedCommandCount: number;
-    readonly items: readonly { readonly commandId: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["commandId"]; readonly phase: CommandPhase; readonly outcome: CommandOutcome }[];
+    readonly items: readonly {
+      readonly commandId: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["commandId"];
+      readonly phase: CommandPhase;
+      readonly outcome: CommandOutcome;
+    }[];
   };
   readonly diagnostics: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["diagnostics"];
   readonly identities: {
@@ -214,13 +239,21 @@ export interface TraceDetailView {
   readonly stableId: string;
   readonly body: InspectionTraceDetailResult;
 }
-export type ExecutionDisplayPreviewBlock = Extract<TraceView["execution"]["events"][number]["display"], { state: "present" }>["blocks"][number];
-export type ExecutionDisplayDetailBlock = NonNullable<Extract<TraceDetailView["body"], { kind: "execution-event" }>["event"]["display"]>[number];
+export type ExecutionDisplayPreviewBlock = Extract<
+  TraceView["execution"]["events"][number]["display"],
+  { state: "present" }
+>["blocks"][number];
+export type ExecutionDisplayDetailBlock = NonNullable<
+  Extract<TraceDetailView["body"], { kind: "execution-event" }>["event"]["display"]
+>[number];
 export type TimingView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.timing">["timing"];
 export type UsageView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.usage">["usage"];
 export type DiffView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.diff">["diff"];
 
-const metric = (value: { readonly state: MetricState; readonly value: number | null }): Metric => ({ state: value.state, value: value.value });
+const metric = (value: { readonly state: MetricState; readonly value: number | null }): Metric => ({
+  state: value.state,
+  value: value.value,
+});
 const aggregate = (value: InspectionOverviewResult["totals"]): Aggregate => ({
   evaluationKind: value.evaluationKind,
   expected: value.denominator.expected,
@@ -234,23 +267,25 @@ const aggregate = (value: InspectionOverviewResult["totals"]): Aggregate => ({
   durationMs: metric(value.durationMs),
   tokens: metric(value.tokens),
 });
-const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"] => values.map((cell) => ({
-  experimentId: cell.experimentId,
-  evalId: cell.evalId,
-  aggregate: aggregate(cell),
-  members: cell.members.map((member) => ({
-    publication: member.publication.state === "published"
-      ? {
-          ...member.publication,
-          verdict: member.verdict,
-          stoppedAt: member.stoppedAt,
-          score: metric(member.score),
-          durationMs: metric(member.durationMs),
-          tokens: metric(member.tokens),
-        }
-      : member.publication,
-  })),
-}));
+const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"] =>
+  values.map((cell) => ({
+    experimentId: cell.experimentId,
+    evalId: cell.evalId,
+    aggregate: aggregate(cell),
+    members: cell.members.map((member) => ({
+      publication:
+        member.publication.state === "published"
+          ? {
+              ...member.publication,
+              verdict: member.verdict,
+              stoppedAt: member.stoppedAt,
+              score: metric(member.score),
+              durationMs: metric(member.durationMs),
+              tokens: metric(member.tokens),
+            }
+          : member.publication,
+    })),
+  }));
 
 export function projectOverview(document: InspectionSuccessDocumentFor<"overview.get">): OverviewView {
   return {
@@ -311,7 +346,10 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.get">): R
 }
 // @concord-code
 // @concord-implements docs/feature/inspection/cli.md
-export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.get">, usage?: InspectionSuccessDocumentFor<"attempt.usage">): AttemptView {
+export function projectAttempt(
+  document: InspectionSuccessDocumentFor<"attempt.get">,
+  usage?: InspectionSuccessDocumentFor<"attempt.usage">,
+): AttemptView {
   const value = document.attempt;
   return {
     locator: value.locator,
@@ -344,12 +382,20 @@ export function projectAttempt(document: InspectionSuccessDocumentFor<"attempt.g
     limitations: value.limitations.map((entry) => JSON.stringify(entry)),
   };
 }
-export function projectSources(document: InspectionSuccessDocumentFor<"attempt.sources">, locator: string): SourcesView {
+export function projectSources(
+  document: InspectionSuccessDocumentFor<"attempt.sources">,
+  locator: string,
+): SourcesView {
   const value = document.sources;
   return {
     locator,
     state: value.state,
-    items: value.items.map((item) => ({ path: item.path, sourceItemId: item.sourceItemId, byteLength: item.byteLength, content: item.content })),
+    items: value.items.map((item) => ({
+      path: item.path,
+      sourceItemId: item.sourceItemId,
+      byteLength: item.byteLength,
+      content: item.content,
+    })),
     assertions: {
       state: value.assertions.state,
       sites: value.assertions.sourceSites.map((site) => ({
@@ -383,7 +429,9 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
       omittedItemCount: value.conversation.omittedItemCount,
       turns: value.conversation.turns.map((turn) => ({
         ...turn,
-        items: value.conversation.items.filter((item) => item.turnId === turn.turnId).map(({ turnId: _turnId, ...item }) => item),
+        items: value.conversation.items
+          .filter((item) => item.turnId === turn.turnId)
+          .map(({ turnId: _turnId, ...item }) => item),
       })),
     },
     commands: {
@@ -393,7 +441,11 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
       omittedLimitationCount: value.commands.omittedLimitationCount,
       hasMore: value.commands.hasMore,
       omittedCommandCount: value.commands.omittedCommandCount,
-      items: value.commands.items.map((command) => ({ commandId: command.commandId, phase: command.phase, outcome: command.outcome })),
+      items: value.commands.items.map((command) => ({
+        commandId: command.commandId,
+        phase: command.phase,
+        outcome: command.outcome,
+      })),
     },
     diagnostics: value.diagnostics,
     identities: {
@@ -406,20 +458,26 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
     },
   };
 }
-export function projectTraceDetail(document: InspectionSuccessDocumentFor<"attempt.trace.detail">, locator: string): TraceDetailView {
+export function projectTraceDetail(
+  document: InspectionSuccessDocumentFor<"attempt.trace.detail">,
+  locator: string,
+): TraceDetailView {
   const body = document.detail;
   return {
     locator,
     kind: body.kind,
-    stableId: body.kind === "turn" ? body.turnId : body.kind === "item"
-      ? body.itemId
-      : body.kind === "tool-occurrence"
-      ? body.toolOccurrenceId
-      : body.kind === "command"
-      ? body.commandId
-      : body.kind === "execution-event"
-      ? body.event.eventId
-      : body.evidenceId,
+    stableId:
+      body.kind === "turn"
+        ? body.turnId
+        : body.kind === "item"
+          ? body.itemId
+          : body.kind === "tool-occurrence"
+            ? body.toolOccurrenceId
+            : body.kind === "command"
+              ? body.commandId
+              : body.kind === "execution-event"
+                ? body.event.eventId
+                : body.evidenceId,
     body,
   };
 }

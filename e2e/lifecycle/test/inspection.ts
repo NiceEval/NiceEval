@@ -1,5 +1,3 @@
-
-
 import type { ProcessReceipt, InspectionSuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
 
 type NiceEvalCommand = {
@@ -15,8 +13,17 @@ export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
   operation: Kind,
   options: RunProcessOptions = {},
 ): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<Kind> }> {
-
-  const receipt = await niceeval.run(["show", locator, ...({ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.diff": ["diff"] }[operation]), "--json"], options);
+  const receipt = await niceeval.run(
+    [
+      "show",
+      locator,
+      ...{ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.diff": ["diff"] }[
+        operation
+      ],
+      "--json",
+    ],
+    options,
+  );
   return { receipt, document: receipt.inspectionSuccess(operation) };
 }
 
@@ -25,7 +32,6 @@ export async function inspectRuns(
   projectRoot: string,
   options: RunProcessOptions = {},
 ): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"run.list"> }> {
-
   const receipt = await niceeval.run(["show", "runs", "--json"], options);
   return { receipt, document: receipt.runsList() };
 }

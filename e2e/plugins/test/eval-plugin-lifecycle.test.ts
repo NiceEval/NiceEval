@@ -1,4 +1,3 @@
-
 import { pollUntil, type ExpEvalEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
@@ -11,9 +10,9 @@ test.concurrent("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物�
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-    const evalEvents = run.expEvents().filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-    );
+    const evalEvents = run
+      .expEvents()
+      .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
     expect(evalEvents, run.diagnostic()).toHaveLength(1);
     expect(evalEvents[0]).toMatchObject({ verdict: "passed", attempts: 2, passed: 2 });
 
@@ -42,21 +41,41 @@ test.concurrent("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物�
       "sandbox.plugin.after",
       "sandbox.plugin.after",
     ]);
-    expect(events.filter((event) => event.kind === "eval.plugin.setup").map((event) => [event.attempt, event.marker])).toEqual([
-      [0, "default"], [0, "owner-a"], [0, "owner-b"],
-      [1, "default"], [1, "owner-a"], [1, "owner-b"],
+    expect(
+      events.filter((event) => event.kind === "eval.plugin.setup").map((event) => [event.attempt, event.marker]),
+    ).toEqual([
+      [0, "default"],
+      [0, "owner-a"],
+      [0, "owner-b"],
+      [1, "default"],
+      [1, "owner-a"],
+      [1, "owner-b"],
     ]);
-    expect(events.filter((event) => event.kind === "eval.plugin.teardown").map((event) => [event.attempt, event.marker])).toEqual([
-      [0, "owner-b"], [0, "owner-a"], [0, "default"],
-      [1, "owner-b"], [1, "owner-a"], [1, "default"],
+    expect(
+      events.filter((event) => event.kind === "eval.plugin.teardown").map((event) => [event.attempt, event.marker]),
+    ).toEqual([
+      [0, "owner-b"],
+      [0, "owner-a"],
+      [0, "default"],
+      [1, "owner-b"],
+      [1, "owner-a"],
+      [1, "default"],
     ]);
-    expect(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => [event.marker, event.declaredMarker])).toEqual([
+    expect(
+      events
+        .filter((event) => event.kind === "sandbox.plugin.before")
+        .map((event) => [event.marker, event.declaredMarker]),
+    ).toEqual([
       ["owner-a", "owner-a"],
       ["owner-b", "owner-b"],
       ["owner-a", "owner-a"],
       ["owner-b", "owner-b"],
     ]);
-    expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => [event.marker, event.ownerKind, event.ownerId])).toEqual([
+    expect(
+      events
+        .filter((event) => event.kind === "sandbox.plugin.after")
+        .map((event) => [event.marker, event.ownerKind, event.ownerId]),
+    ).toEqual([
       ["owner-b", "eval", "eval-plugin/owner"],
       ["owner-a", "eval", "eval-plugin/owner"],
       ["owner-b", "eval", "eval-plugin/owner"],
@@ -65,7 +84,9 @@ test.concurrent("多个 Eval Plugin 与 Sandbox Plugin 按 fresh Attempt 和物�
     expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => event.physicalId)).toEqual(
       events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId),
     );
-    expect(new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size).toBe(2);
+    expect(
+      new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size,
+    ).toBe(2);
   });
 });
 // @feature docs/feature/plugins/README.md
@@ -93,7 +114,9 @@ test.concurrent("SIGINT 后已激活 Eval Plugin teardown 使用独立 signal �
     expect(typeof setup.resourcePid).toBe("number");
     expect(() => process.kill(setup.resourcePid as number, 0)).not.toThrow();
     await pollUntil(
-      async () => lifecycleEvents(paths.projectRoot).some((event) => event.kind === "eval.plugin.interrupt.test.started") || undefined,
+      async () =>
+        lifecycleEvents(paths.projectRoot).some((event) => event.kind === "eval.plugin.interrupt.test.started") ||
+        undefined,
       { timeoutMs: 10_000, intervalMs: 25, label: "Eval Plugin author test to remain active" },
     );
 

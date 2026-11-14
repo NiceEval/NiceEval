@@ -9,15 +9,15 @@ import { projectExecutionSources } from "./repository-evidence.ts";
 import { repoRootDir, type DiscoveredRepo } from "./discovery.ts";
 import { collectCaseInventory, type InventoryExecutor } from "./inventory.ts";
 import { formatCause } from "./format-cause.ts";
-import { observeNativeTestResult, VITEST_JSON_REPORTER_PATH, VITEST_JSON_REPORTER_SOURCE } from "./native-observation.ts";
+import {
+  observeNativeTestResult,
+  VITEST_JSON_REPORTER_PATH,
+  VITEST_JSON_REPORTER_SOURCE,
+} from "./native-observation.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
 import { verifyInjection } from "./injection.ts";
-import {
-  collectArtifacts,
-  repoArtifactDir,
-  repoReceiptPath,
-} from "./artifacts.ts";
+import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
 import {
   assertContainedRegularFile,
   assertContainedRealDirectory,
@@ -31,17 +31,8 @@ import {
   writeContainedUtf8File,
 } from "./durable-path.ts";
 import { preflightBrowsers, preflightHostCapabilities } from "./preflight.ts";
-import {
-  runOwnedProcess,
-  type OwnedProcess,
-  type OwnedProcessResult,
-} from "./owned-process.ts";
-import {
-  buildChildEnv,
-  redactSecretCapture,
-  redactSecretStrings,
-  sensitiveEnvValues,
-} from "./secrets.ts";
+import { runOwnedProcess, type OwnedProcess, type OwnedProcessResult } from "./owned-process.ts";
+import { buildChildEnv, redactSecretCapture, redactSecretStrings, sensitiveEnvValues } from "./secrets.ts";
 import {
   checkTestkitSourceClean,
   injectTestkitDirectory,
@@ -78,19 +69,12 @@ export class RepoRunError extends Data.TaggedError("RepoRunError")<{
   readonly operation: "candidate" | "command" | "run";
   readonly detail: string;
 }> {}
-const problem = (
-  repoId: string,
-  operation: RepoRunError["operation"],
-  cause: unknown,
-) =>
+const problem = (repoId: string, operation: RepoRunError["operation"], cause: unknown) =>
   new RepoRunError({
     repoId,
     operation,
     detail:
-      typeof cause === "object" &&
-      cause !== null &&
-      "detail" in cause &&
-      typeof cause.detail === "string"
+      typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string"
         ? cause.detail
         : cause instanceof Error
           ? cause.message
@@ -100,18 +84,13 @@ const fs = <A>(
   repoId: string,
   operation: RepoRunError["operation"],
   use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>,
-) =>
-  Effect.flatMap(FileSystem.FileSystem, use).pipe(
-    Effect.mapError((cause) => problem(repoId, operation, cause)),
-  );
-const durable = <A>(
-  repoId: string,
-  effect: Effect.Effect<A, { readonly detail: string }, FileSystem.FileSystem>,
-) => effect.pipe(Effect.mapError((cause) => problem(repoId, "run", cause)));
-export const appendNativeArgs = (
-  command: readonly string[],
-  nativeArgs: readonly string[],
-): readonly string[] => [...command, ...nativeArgs];
+) => Effect.flatMap(FileSystem.FileSystem, use).pipe(Effect.mapError((cause) => problem(repoId, operation, cause)));
+const durable = <A>(repoId: string, effect: Effect.Effect<A, { readonly detail: string }, FileSystem.FileSystem>) =>
+  effect.pipe(Effect.mapError((cause) => problem(repoId, "run", cause)));
+export const appendNativeArgs = (command: readonly string[], nativeArgs: readonly string[]): readonly string[] => [
+  ...command,
+  ...nativeArgs,
+];
 export const E2E_COPY_EXCLUDED_BASENAMES = new Set([
   "node_modules",
   ".niceeval",
@@ -128,59 +107,25 @@ export const materializeCandidateArtifact = (
   Effect.gen(function* () {
     const targetDir = yield* durable(
       "<candidate>",
-      ensureContainedRealDirectory(
-        artifactRoot,
-        join(artifactRoot, "candidate"),
-        "durable candidate directory",
-      ),
+      ensureContainedRealDirectory(artifactRoot, join(artifactRoot, "candidate"), "durable candidate directory"),
     );
-    const target = join(
-      targetDir,
-      `niceeval-candidate-${candidate.sha256}.tgz`,
-    );
+    const target = join(targetDir, `niceeval-candidate-${candidate.sha256}.tgz`);
     const prepared = yield* durable(
       "<candidate>",
-      prepareContainedRegularFile(
-        artifactRoot,
-        target,
-        "durable candidate artifact",
-      ),
+      prepareContainedRegularFile(artifactRoot, target, "durable candidate artifact"),
     );
     const present = yield* durable("<candidate>", lstatOptional(prepared));
-    const digest = (bytes: Uint8Array): string =>
-      createHash("sha256").update(bytes).digest("hex");
+    const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
     if (
       present === undefined ||
-      digest(
-        yield* fs("<candidate>", "candidate", (service) =>
-          service.readFile(prepared),
-        ),
-      ) !== candidate.sha256
+      digest(yield* fs("<candidate>", "candidate", (service) => service.readFile(prepared))) !== candidate.sha256
     )
       yield* durable(
         "<candidate>",
-        copyIntoContainedFile(
-          artifactRoot,
-          candidate.path,
-          prepared,
-          "durable candidate artifact",
-        ),
+        copyIntoContainedFile(artifactRoot, candidate.path, prepared, "durable candidate artifact"),
       );
-    yield* durable(
-      "<candidate>",
-      assertContainedRegularFile(
-        artifactRoot,
-        prepared,
-        "durable candidate artifact",
-      ),
-    );
-    if (
-      digest(
-        yield* fs("<candidate>", "candidate", (service) =>
-          service.readFile(prepared),
-        ),
-      ) !== candidate.sha256
-    )
+    yield* durable("<candidate>", assertContainedRegularFile(artifactRoot, prepared, "durable candidate artifact"));
+    if (digest(yield* fs("<candidate>", "candidate", (service) => service.readFile(prepared))) !== candidate.sha256)
       return yield* Effect.fail(
         problem(
           "<candidate>",
@@ -196,44 +141,22 @@ const copyIsolatedEntry = (
   destination: string,
 ): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const stat = yield* lstatPath(source).pipe(
-      Effect.mapError((cause) => problem("<copy>", "run", cause)),
-    );
+    const stat = yield* lstatPath(source).pipe(Effect.mapError((cause) => problem("<copy>", "run", cause)));
 
     if (stat.isSymbolicLink()) {
-      return yield* Effect.fail(
-        problem(
-          "<copy>",
-          "run",
-          `isolated source symlink is not allowed: ${source}`,
-        ),
-      );
+      return yield* Effect.fail(problem("<copy>", "run", `isolated source symlink is not allowed: ${source}`));
     }
     if (stat.isFile()) {
-      yield* fs("<copy>", "run", (service) =>
-        service.copyFile(source, destination),
-      );
+      yield* fs("<copy>", "run", (service) => service.copyFile(source, destination));
       return;
     }
     if (!stat.isDirectory()) {
-      return yield* Effect.fail(
-        problem(
-          "<copy>",
-          "run",
-          `isolated source special file is not allowed: ${source}`,
-        ),
-      );
+      return yield* Effect.fail(problem("<copy>", "run", `isolated source special file is not allowed: ${source}`));
     }
 
-    yield* fs("<copy>", "run", (service) =>
-      service.makeDirectory(destination, { recursive: true }),
-    );
-    const entries = yield* fs("<copy>", "run", (service) =>
-      service.readDirectory(source),
-    );
-    for (const entry of entries.sort((left, right) =>
-      left.localeCompare(right),
-    )) {
+    yield* fs("<copy>", "run", (service) => service.makeDirectory(destination, { recursive: true }));
+    const entries = yield* fs("<copy>", "run", (service) => service.readDirectory(source));
+    for (const entry of entries.sort((left, right) => left.localeCompare(right))) {
       if (E2E_COPY_EXCLUDED_BASENAMES.has(basename(entry))) continue;
       yield* copyIsolatedEntry(join(source, entry), join(destination, entry));
     }
@@ -243,8 +166,7 @@ const copyIsolatedEntry = (
 export const copyRepoIsolated = (
   source: string,
   destination: string,
-): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> =>
-  copyIsolatedEntry(source, destination);
+): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> => copyIsolatedEntry(source, destination);
 export const pointAtCandidateTarball = (
   copyDir: string,
   tarball: string,
@@ -254,35 +176,24 @@ export const pointAtCandidateTarball = (
     const path = join(copyDir, "package.json");
     let value: Record<string, unknown>;
     try {
-      value = JSON.parse(
-        yield* fs("<copy>", "run", (service) => service.readFileString(path)),
-      ) as Record<string, unknown>;
+      value = JSON.parse(yield* fs("<copy>", "run", (service) => service.readFileString(path))) as Record<
+        string,
+        unknown
+      >;
     } catch (cause) {
       return yield* Effect.fail(problem("<copy>", "run", cause));
     }
     let found = false;
     for (const field of ["dependencies", "devDependencies"]) {
       const deps = value[field];
-      if (
-        deps !== null &&
-        typeof deps === "object" &&
-        Object.hasOwn(deps as object, "niceeval")
-      ) {
+      if (deps !== null && typeof deps === "object" && Object.hasOwn(deps as object, "niceeval")) {
         (deps as Record<string, string>).niceeval = `${form}:${tarball}`;
         found = true;
       }
     }
     if (!found)
-      return yield* Effect.fail(
-        problem(
-          "<copy>",
-          "run",
-          `${copyDir}/package.json declares no niceeval dependency`,
-        ),
-      );
-    yield* fs("<copy>", "run", (service) =>
-      service.writeFileString(path, `${JSON.stringify(value, null, 2)}\n`),
-    );
+      return yield* Effect.fail(problem("<copy>", "run", `${copyDir}/package.json declares no niceeval dependency`));
+    yield* fs("<copy>", "run", (service) => service.writeFileString(path, `${JSON.stringify(value, null, 2)}\n`));
   });
 export const captureOwnedProcess = (result: OwnedProcessResult): CommandCapture => ({
   exitCode: result.exitCode,
@@ -350,9 +261,21 @@ const verifyExecutionProjection = (
   expectedDigest: string,
   phase: string,
   prefix: string,
-): Effect.Effect<void, RepoRunError, OwnedProcess | Scope.Scope> => projectExecutionSources(directory, prefix).pipe(Effect.mapError((cause) => problem(repoId, "run", `SourceSnapshotProjectionInvalid (${phase}): ${cause.detail}`)), Effect.flatMap((projection) => projection.digest === expectedDigest
-  ? Effect.void
-  : Effect.fail(problem(repoId, "run", `SourceSnapshotDrift (${phase}): expected ${expectedDigest}, got ${projection.digest}`))));
+): Effect.Effect<void, RepoRunError, OwnedProcess | Scope.Scope> =>
+  projectExecutionSources(directory, prefix).pipe(
+    Effect.mapError((cause) => problem(repoId, "run", `SourceSnapshotProjectionInvalid (${phase}): ${cause.detail}`)),
+    Effect.flatMap((projection) =>
+      projection.digest === expectedDigest
+        ? Effect.void
+        : Effect.fail(
+            problem(
+              repoId,
+              "run",
+              `SourceSnapshotDrift (${phase}): expected ${expectedDigest}, got ${projection.digest}`,
+            ),
+          ),
+    ),
+  );
 const stage = (stages: StageReceipt[], value: StageReceipt): void => {
   stages.push(value);
 };
@@ -413,30 +336,33 @@ export const runRepoEffect = (
   nativeArgs: readonly string[],
   testkit?: TestkitPackage,
   options: RunRepoOptions = {},
-): Effect.Effect<
-  RepoRunResult,
-  RepoRunError,
-  FileSystem.FileSystem | OwnedProcess | Scope.Scope
-> =>
+): Effect.Effect<RepoRunResult, RepoRunError, FileSystem.FileSystem | OwnedProcess | Scope.Scope> =>
   Effect.gen(function* () {
     const id = repo.manifest.id;
-    const scratchRoot = yield* assertRealDirectory(declaredScratchRoot, "isolated scratch root").pipe(Effect.mapError((cause) => problem(id, "run", cause)));
+    const scratchRoot = yield* assertRealDirectory(declaredScratchRoot, "isolated scratch root").pipe(
+      Effect.mapError((cause) => problem(id, "run", cause)),
+    );
     const copy = join(scratchRoot, "runs", options.workdirKey ?? id);
     const stages: StageReceipt[] = [];
     const invocationIds: [string, ...string[]] = [randomUUID()];
     const secretValues = sensitiveEnvValues(process.env);
     const runs = options.testRuns ?? 1;
-    if ((options.sourceDir === undefined) !== (options.sourceSnapshotDigest === undefined) || (options.sourceDir !== undefined && options.sourceProjectionPrefix === undefined)) return yield* Effect.fail(problem(id, "run", "SourceSnapshotModeInvalid: sourceDir, sourceSnapshotDigest, and sourceProjectionPrefix must be supplied together"));
+    if (
+      (options.sourceDir === undefined) !== (options.sourceSnapshotDigest === undefined) ||
+      (options.sourceDir !== undefined && options.sourceProjectionPrefix === undefined)
+    )
+      return yield* Effect.fail(
+        problem(
+          id,
+          "run",
+          "SourceSnapshotModeInvalid: sourceDir, sourceSnapshotDigest, and sourceProjectionPrefix must be supplied together",
+        ),
+      );
     const sourceSnapshotDigest = options.sourceSnapshotDigest;
     const consumesTestkit = repo.manifest.harness?.testkit === true;
     if (!Number.isSafeInteger(runs) || runs < 1)
-      return yield* Effect.fail(
-        problem(id, "run", "testRuns must be a positive integer"),
-      );
-    const durableRoot = yield* durable(
-      id,
-      ensureRealDirectory(artifactRoot, "repo durable artifact root"),
-    );
+      return yield* Effect.fail(problem(id, "run", "testRuns must be a positive integer"));
+    const durableRoot = yield* durable(id, ensureRealDirectory(artifactRoot, "repo durable artifact root"));
     const scopedRoot =
       options.runLabel === undefined
         ? durableRoot
@@ -450,47 +376,42 @@ export const runRepoEffect = (
           );
     const artifactDir = repoArtifactDir(scopedRoot, id);
     const receiptPath = repoReceiptPath(scopedRoot, id);
-    yield* durable(
-      id,
-      ensureContainedRealDirectory(
-        scopedRoot,
-        artifactDir,
-        "repo durable artifact directory",
-      ),
-    );
+    yield* durable(id, ensureContainedRealDirectory(scopedRoot, artifactDir, "repo durable artifact directory"));
     const linked = candidate.form === "source" || candidate.form === "built";
-    const tarball = linked ? candidate.path : yield* durable(
-      id,
-      assertContainedRegularFile(
-        durableRoot,
-        candidate.path,
-        "durable candidate artifact",
-      ),
-    );
-    const sourceOptions = candidate.form === "source" ? yield* fs(id, "run", service => service.readFileString(join(candidate.path, "package.json"))).pipe(Effect.flatMap(text => Effect.try({
-      try: () => {
-        const pkg = JSON.parse(text) as { exports: Record<string, { "niceeval-source": string }> };
-        const aliases = Object.fromEntries(Object.entries(pkg.exports).map(([name, entry]) => [name === "." ? "niceeval" : `niceeval/${name.slice(2)}`, resolve(candidate.path, entry["niceeval-source"])]));
-        return {
-          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --conditions=niceeval-source --import ${createRequire(import.meta.url).resolve("tsx")}`.trim(),
-          // Jiti's resolver does not consume Node's custom export conditions.
-          // Resolve the same public entries to source for project discovery.
-          JITI_ALIAS: JSON.stringify({ ...JSON.parse(process.env.JITI_ALIAS ?? "{}"), ...aliases }),
-        };
-      },
-      catch: cause => problem(id, "run", cause),
-    }))) : {};
-    const baseEnv = { ...buildChildEnv(
-      process.env,
-      allSecretNames,
-      repo.manifest.secrets,
-      id,
-    ), ...sourceOptions };
+    const tarball = linked
+      ? candidate.path
+      : yield* durable(id, assertContainedRegularFile(durableRoot, candidate.path, "durable candidate artifact"));
+    const sourceOptions =
+      candidate.form === "source"
+        ? yield* fs(id, "run", (service) => service.readFileString(join(candidate.path, "package.json"))).pipe(
+            Effect.flatMap((text) =>
+              Effect.try({
+                try: () => {
+                  const pkg = JSON.parse(text) as { exports: Record<string, { "niceeval-source": string }> };
+                  const aliases = Object.fromEntries(
+                    Object.entries(pkg.exports).map(([name, entry]) => [
+                      name === "." ? "niceeval" : `niceeval/${name.slice(2)}`,
+                      resolve(candidate.path, entry["niceeval-source"]),
+                    ]),
+                  );
+                  return {
+                    NODE_OPTIONS:
+                      `${process.env.NODE_OPTIONS ?? ""} --conditions=niceeval-source --import ${createRequire(import.meta.url).resolve("tsx")}`.trim(),
+                    // Jiti's resolver does not consume Node's custom export conditions.
+                    // Resolve the same public entries to source for project discovery.
+                    JITI_ALIAS: JSON.stringify({ ...JSON.parse(process.env.JITI_ALIAS ?? "{}"), ...aliases }),
+                  };
+                },
+                catch: (cause) => problem(id, "run", cause),
+              }),
+            ),
+          )
+        : {};
+    const baseEnv = { ...buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, id), ...sourceOptions };
     const setup = invocationIds[0]!;
-    const preflight = yield* preflightHostCapabilities(
-      repo.manifest,
-      withInvocation(baseEnv, setup, copy),
-    ).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
+    const preflight = yield* preflightHostCapabilities(repo.manifest, withInvocation(baseEnv, setup, copy)).pipe(
+      Effect.mapError((cause) => problem(id, "run", cause)),
+    );
     stage(stages, {
       stage: "preflight",
       ok: preflight.ok,
@@ -498,16 +419,10 @@ export const runRepoEffect = (
       ...(preflight.cancelled ? { cancelled: true } : {}),
       checks: preflight.checks.map((check) => ({
         ...check,
-        ...(check.command === undefined
-          ? {}
-          : { command: redactSecretStrings(check.command, secretValues) }),
-        ...(check.capture === undefined
-          ? {}
-          : { capture: redactSecretCapture(check.capture, secretValues) }),
+        ...(check.command === undefined ? {} : { command: redactSecretStrings(check.command, secretValues) }),
+        ...(check.capture === undefined ? {} : { capture: redactSecretCapture(check.capture, secretValues) }),
       })),
-      ...(preflight.failureCategory === undefined
-        ? {}
-        : { failureCategory: preflight.failureCategory }),
+      ...(preflight.failureCategory === undefined ? {} : { failureCategory: preflight.failureCategory }),
       detail: preflight.cancelled
         ? "cancelled during capability preflight"
         : preflight.ok
@@ -518,36 +433,47 @@ export const runRepoEffect = (
     let testkitResolvedPath: string | undefined;
     if (preflight.ok) {
       const sourceProjectionPrefix = options.sourceProjectionPrefix ?? "unavailable";
-      if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, options.sourceDir, sourceSnapshotDigest, "frozen-source-before-copy", sourceProjectionPrefix);
+      if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined)
+        yield* verifyExecutionProjection(
+          id,
+          options.sourceDir,
+          sourceSnapshotDigest,
+          "frozen-source-before-copy",
+          sourceProjectionPrefix,
+        );
       yield* copyRepoIsolated(options.sourceDir ?? repo.dir, copy);
       if (options.sourceDir !== undefined && sourceSnapshotDigest !== undefined) {
-        yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, "execution-copy-after-copy", sourceProjectionPrefix);
-        yield* verifyExecutionProjection(id, options.sourceDir, sourceSnapshotDigest, "frozen-source-after-copy", sourceProjectionPrefix);
+        yield* verifyExecutionProjection(
+          id,
+          copy,
+          sourceSnapshotDigest,
+          "execution-copy-after-copy",
+          sourceProjectionPrefix,
+        );
+        yield* verifyExecutionProjection(
+          id,
+          options.sourceDir,
+          sourceSnapshotDigest,
+          "frozen-source-after-copy",
+          sourceProjectionPrefix,
+        );
       }
       const declaredAssets = repo.manifest.harness?.assets ?? [];
-      const harnessResult = yield* Effect.result(
-        materializeHarnessAssets(repoRootDir(), copy, declaredAssets),
-      );
+      const harnessResult = yield* Effect.result(materializeHarnessAssets(repoRootDir(), copy, declaredAssets));
       const harness = Result.isSuccess(harnessResult)
         ? harnessResult.success
         : { assets: [] as const, environment: {} };
       const harnessViolation = Result.isFailure(harnessResult)
         ? `harness asset ${harnessResult.failure.asset} ${harnessResult.failure.operation} failed: ${harnessResult.failure.detail}`
         : undefined;
-      const clean = yield* checkTestkitSourceClean(copy).pipe(
-        Effect.mapError((cause) => problem(id, "run", cause)),
-      );
+      const clean = yield* checkTestkitSourceClean(copy).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
       const imports = consumesTestkit
         ? []
-        : yield* scanForTestkitImports(copy).pipe(
-            Effect.mapError((cause) => problem(id, "run", cause)),
-          );
+        : yield* scanForTestkitImports(copy).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
       const violations = [
         ...(harnessViolation === undefined ? [] : [harnessViolation]),
         ...clean,
-        ...(consumesTestkit && testkit === undefined
-          ? ["harness.testkit declared but no snapshot was supplied"]
-          : []),
+        ...(consumesTestkit && testkit === undefined ? ["harness.testkit declared but no snapshot was supplied"] : []),
         ...imports,
       ];
       stage(stages, {
@@ -564,26 +490,14 @@ export const runRepoEffect = (
       if (violations.length === 0) {
         yield* pointAtCandidateTarball(copy, tarball, linked ? "link" : "file");
         if (testkit !== undefined && consumesTestkit) {
-          yield* verifyTestkitSnapshot(testkit).pipe(
-            Effect.mapError((cause) => problem(id, "run", cause)),
-          );
-          yield* injectTestkitDirectory(copy, testkit).pipe(
-            Effect.mapError((cause) => problem(id, "run", cause)),
-          );
+          yield* verifyTestkitSnapshot(testkit).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
+          yield* injectTestkitDirectory(copy, testkit).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
         }
-        const installCommand = ["pnpm", "install", "--no-frozen-lockfile", "--prefer-offline"] as [
-          string,
-          ...string[],
-        ];
+        const installCommand = ["pnpm", "install", "--no-frozen-lockfile", "--prefer-offline"] as [string, ...string[]];
         const install = yield* runCommand(
           installCommand,
           copy,
-          withInvocation(
-            buildChildEnv(process.env, allSecretNames, []),
-            setup,
-            copy,
-            harness.environment,
-          ),
+          withInvocation(buildChildEnv(process.env, allSecretNames, []), setup, copy, harness.environment),
           30 * 60_000,
           options.logPrefix,
         );
@@ -594,10 +508,7 @@ export const runRepoEffect = (
           invocationId: setup,
           ...(install.cancelled ? { cancelled: true } : {}),
           command: installCommand,
-          capture: retainCapture(
-            redactSecretCapture(install, secretValues),
-            installOk,
-          ),
+          capture: retainCapture(redactSecretCapture(install, secretValues), installOk),
           detail: install.cancelled
             ? "cancelled during pnpm install"
             : installOk
@@ -605,61 +516,79 @@ export const runRepoEffect = (
               : "pnpm install failed",
         });
         if (installOk) {
-          if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, "execution-copy-after-install", sourceProjectionPrefix);
+          if (sourceSnapshotDigest !== undefined)
+            yield* verifyExecutionProjection(
+              id,
+              copy,
+              sourceSnapshotDigest,
+              "execution-copy-after-install",
+              sourceProjectionPrefix,
+            );
           const injection = yield* Effect.exit(
             Effect.gen(function* () {
-              const lockText = yield* fs(id, "run", (service) =>
-                service.readFileString(join(copy, "pnpm-lock.yaml")),
+              const lockText = yield* fs(id, "run", (service) => service.readFileString(join(copy, "pnpm-lock.yaml")));
+              const installedRoot = yield* fs(id, "run", (service) =>
+                service.realPath(join(copy, "node_modules/niceeval")),
               );
-              const installedRoot = yield* fs(id, "run", (service) => service.realPath(join(copy, "node_modules/niceeval")));
-              if (linked && installedRoot !== candidate.path) return { ok: false as const, detail: `linked candidate resolved to ${installedRoot}, expected ${candidate.path}` };
-              const candidateVerdict = linked ? { ok: true as const } : verifyInjection(
-                lockText,
-                candidate.integrity,
-              );
-              if (!candidateVerdict.ok)
-                return { ok: false as const, detail: candidateVerdict.reason };
+              if (linked && installedRoot !== candidate.path)
+                return {
+                  ok: false as const,
+                  detail: `linked candidate resolved to ${installedRoot}, expected ${candidate.path}`,
+                };
+              const candidateVerdict = linked ? { ok: true as const } : verifyInjection(lockText, candidate.integrity);
+              if (!candidateVerdict.ok) return { ok: false as const, detail: candidateVerdict.reason };
 
-              const effectPackagePath = join(copy, "node_modules", "niceeval", "node_modules", "effect", "package.json");
+              const effectPackagePath = join(
+                copy,
+                "node_modules",
+                "niceeval",
+                "node_modules",
+                "effect",
+                "package.json",
+              );
               const [effectPackage, effectRealPath] = yield* Effect.all([
                 fs(id, "run", (service) => service.readFileString(effectPackagePath)),
                 fs(id, "run", (service) => service.realPath(effectPackagePath)),
               ]);
               // Compare physical paths on every host, while rejecting symlinks below the copy root.
-              const virtualStore = yield* assertContainedRealDirectory(copy, join(copy, "node_modules", ".pnpm"), "isolated pnpm virtual store");
+              const virtualStore = yield* assertContainedRealDirectory(
+                copy,
+                join(copy, "node_modules", ".pnpm"),
+                "isolated pnpm virtual store",
+              );
               if (!linked && !effectRealPath.startsWith(`${virtualStore}/`))
-                return { ok: false as const, detail: `Effect resolution escapes the isolated pnpm virtual store: ${effectRealPath}` };
+                return {
+                  ok: false as const,
+                  detail: `Effect resolution escapes the isolated pnpm virtual store: ${effectRealPath}`,
+                };
               if (!/"version"\s*:\s*"4\.1\.3"/.test(effectPackage))
                 return { ok: false as const, detail: `Effect resolution is not effect@4.1.3: ${effectRealPath}` };
               if (/(?:^|\n)\s*(?:effect|@effect\/[^:]+)@(?!4\.1\.3(?:[\x27:(]|$))/m.test(lockText))
-                return { ok: false as const, detail: "installed dependency graph contains an Effect v3 or mismatched Effect v4 resolution" };
+                return {
+                  ok: false as const,
+                  detail: "installed dependency graph contains an Effect v3 or mismatched Effect v4 resolution",
+                };
 
               if (!consumesTestkit || testkit === undefined) {
                 return { ok: true as const };
               }
-              const lockVerdict = verifyTestkitDirectoryResolution(
-                lockText,
-                testkit.path,
-                copy,
+              const lockVerdict = verifyTestkitDirectoryResolution(lockText, testkit.path, copy);
+              if (!lockVerdict.ok) return { ok: false as const, detail: lockVerdict.reason };
+              const installed = yield* verifyInstalledTestkit(copy, testkit).pipe(
+                Effect.mapError((cause) => problem(id, "run", cause)),
               );
-              if (!lockVerdict.ok)
-                return { ok: false as const, detail: lockVerdict.reason };
-              const installed = yield* verifyInstalledTestkit(
-                copy,
-                testkit,
-              ).pipe(Effect.mapError((cause) => problem(id, "run", cause)));
-              if (!installed.ok)
-                return { ok: false as const, detail: installed.reason };
+              if (!installed.ok) return { ok: false as const, detail: installed.reason };
               testkitResolvedPath = relative(copy, installed.installedPath);
               return { ok: true as const };
             }),
           );
-          const injectionOk =
-            injection._tag === "Success" && injection.value.ok;
+          const injectionOk = injection._tag === "Success" && injection.value.ok;
           const injectionDetail =
             injection._tag === "Success"
               ? injection.value.ok
-                ? linked ? "candidate link realpath verified" : "candidate integrity matches lockfile"
+                ? linked
+                  ? "candidate link realpath verified"
+                  : "candidate integrity matches lockfile"
                 : `injection verification failed: ${injection.value.detail}`
               : `injection verification failed: ${formatCause(injection.cause)}`;
           stage(stages, {
@@ -680,9 +609,7 @@ export const runRepoEffect = (
                 ok: browser.ok,
                 invocationId: setup,
                 ...(browser.cancelled ? { cancelled: true } : {}),
-                ...(browser.failureCategory === undefined
-                  ? {}
-                  : { failureCategory: browser.failureCategory }),
+                ...(browser.failureCategory === undefined ? {} : { failureCategory: browser.failureCategory }),
                 checks: browser.checks,
                 detail: browser.cancelled
                   ? "cancelled during browser preflight"
@@ -697,49 +624,94 @@ export const runRepoEffect = (
               attempt > runs || !browser.ok
                 ? Effect.void
                 : Effect.gen(function* () {
-                    if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-before-test-${attempt}`, sourceProjectionPrefix);
+                    if (sourceSnapshotDigest !== undefined)
+                      yield* verifyExecutionProjection(
+                        id,
+                        copy,
+                        sourceSnapshotDigest,
+                        `execution-copy-before-test-${attempt}`,
+                        sourceProjectionPrefix,
+                      );
                     if (options.caseSelection !== undefined) {
                       const expected = options.caseSelection;
-                      const inventory = yield* collectCaseInventory({ executor: expected.executor, repo: id, suiteId: expected.suiteId, cwd: copy, checkout: expected.checkout, nativeArgs: options.caseCollectionNativeArgs ?? nativeArgs }).pipe(
-                        Effect.mapError((cause) => problem(id, "run", `CaseSelectionInvalid: ${cause.detail}`)),
-                      );
-                      if (inventory.cases.filter((entry) => entry.caseId === expected.caseId).length !== 1 || (expected.only && inventory.cases.length !== 1) || inventory.unassignedCases.length > 0) {
-                        return yield* Effect.fail(problem(id, "run", `CaseSelectionMismatch: expected ${expected.only ? "only " : ""}${expected.caseId}, collected ${inventory.cases.length} cases`));
+                      const inventory = yield* collectCaseInventory({
+                        executor: expected.executor,
+                        repo: id,
+                        suiteId: expected.suiteId,
+                        cwd: copy,
+                        checkout: expected.checkout,
+                        nativeArgs: options.caseCollectionNativeArgs ?? nativeArgs,
+                      }).pipe(Effect.mapError((cause) => problem(id, "run", `CaseSelectionInvalid: ${cause.detail}`)));
+                      if (
+                        inventory.cases.filter((entry) => entry.caseId === expected.caseId).length !== 1 ||
+                        (expected.only && inventory.cases.length !== 1) ||
+                        inventory.unassignedCases.length > 0
+                      ) {
+                        return yield* Effect.fail(
+                          problem(
+                            id,
+                            "run",
+                            `CaseSelectionMismatch: expected ${expected.only ? "only " : ""}${expected.caseId}, collected ${inventory.cases.length} cases`,
+                          ),
+                        );
                       }
-                      if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-collection-${attempt}`, sourceProjectionPrefix);
+                      if (sourceSnapshotDigest !== undefined)
+                        yield* verifyExecutionProjection(
+                          id,
+                          copy,
+                          sourceSnapshotDigest,
+                          `execution-copy-after-collection-${attempt}`,
+                          sourceProjectionPrefix,
+                        );
                     }
                     const invocation = randomUUID();
                     invocationIds.push(invocation);
                     if (nativeArgs.includes(`--reporter=./${VITEST_JSON_REPORTER_PATH}`)) {
-                      yield* durable(id, ensureContainedRealDirectory(copy, join(copy, ".e2e-artifacts"), "native reporter directory"));
-                      yield* durable(id, writeContainedUtf8File(copy, join(copy, VITEST_JSON_REPORTER_PATH), VITEST_JSON_REPORTER_SOURCE, "native JSON reporter"));
+                      yield* durable(
+                        id,
+                        ensureContainedRealDirectory(copy, join(copy, ".e2e-artifacts"), "native reporter directory"),
+                      );
+                      yield* durable(
+                        id,
+                        writeContainedUtf8File(
+                          copy,
+                          join(copy, VITEST_JSON_REPORTER_PATH),
+                          VITEST_JSON_REPORTER_SOURCE,
+                          "native JSON reporter",
+                        ),
+                      );
                     }
-                    const command = [
-                      ...repo.manifest.command,
-                      ...nativeArgs,
-                    ] as [string, ...string[]];
+                    const command = [...repo.manifest.command, ...nativeArgs] as [string, ...string[]];
                     const result = yield* runCommand(
                       command,
                       copy,
-                      withInvocation(
-                        baseEnv,
-                        invocation,
-                        copy,
-                        harness.environment,
-                      ),
+                      withInvocation(baseEnv, invocation, copy, harness.environment),
                       repo.manifest.timeoutMinutes * 60_000,
                       options.logPrefix,
                       options.retainNativeReport ? 8 * 1024 * 1024 : undefined,
                     );
-                    if (sourceSnapshotDigest !== undefined) yield* verifyExecutionProjection(id, copy, sourceSnapshotDigest, `execution-copy-after-test-${attempt}`, sourceProjectionPrefix);
+                    if (sourceSnapshotDigest !== undefined)
+                      yield* verifyExecutionProjection(
+                        id,
+                        copy,
+                        sourceSnapshotDigest,
+                        `execution-copy-after-test-${attempt}`,
+                        sourceProjectionPrefix,
+                      );
                     exitCode = result.exitCode;
                     const ok = commandCaptureOk(result);
-                    const native = options.caseSelection === undefined
-                      ? undefined
-                      : Result.try({
-                          try: () => observeNativeTestResult(options.caseSelection!.executor, result.stdout, options.caseSelection!),
-                          catch: (cause) => cause instanceof Error ? cause.message : String(cause),
-                        });
+                    const native =
+                      options.caseSelection === undefined
+                        ? undefined
+                        : Result.try({
+                            try: () =>
+                              observeNativeTestResult(
+                                options.caseSelection!.executor,
+                                result.stdout,
+                                options.caseSelection!,
+                              ),
+                            catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
+                          });
                     stage(stages, {
                       stage: "test",
                       attempt,
@@ -765,31 +737,14 @@ export const runRepoEffect = (
                   });
             yield* runTests(1);
           }
-          yield* collectStage(
-            copy,
-            artifactDir,
-            repo.manifest.artifacts,
-            stages,
-          );
+          yield* collectStage(copy, artifactDir, repo.manifest.artifacts, stages);
         }
       }
     }
-    const cancelled = stages.some(
-      (entry) => entry.cancelled === true || entry.capture?.cancelled === true,
-    );
+    const cancelled = stages.some((entry) => entry.cancelled === true || entry.capture?.cancelled === true);
     const copied = yield* fs(id, "run", (service) => service.exists(copy));
-    if (
-      cancelled &&
-      copied &&
-      !stages.some((entry) => entry.stage === "collect")
-    ) {
-      yield* collectStage(
-        copy,
-        artifactDir,
-        repo.manifest.artifacts,
-        stages,
-        "after cancellation: ",
-      );
+    if (cancelled && copied && !stages.some((entry) => entry.stage === "collect")) {
+      yield* collectStage(copy, artifactDir, repo.manifest.artifacts, stages, "after cancellation: ");
     }
 
     let cleanupDetail = !copied
@@ -800,9 +755,7 @@ export const runRepoEffect = (
     let cleanupOk = true;
     if (options.keepWorkdir !== true && copied) {
       const outcome = yield* Effect.exit(
-        fs(id, "run", (service) =>
-          service.remove(copy, { recursive: true, force: true }),
-        ),
+        fs(id, "run", (service) => service.remove(copy, { recursive: true, force: true })),
       );
       if (outcome._tag === "Failure") {
         cleanupOk = false;
@@ -825,9 +778,7 @@ export const runRepoEffect = (
     const classified = classifyFromReceipt({ stages, detail: "" });
     const retained = (yield* durable(id, lstatOptional(tarball))) !== undefined;
     const testkitReceipt: TestkitReceipt | undefined =
-      consumesTestkit &&
-      testkit !== undefined &&
-      testkitResolvedPath !== undefined
+      consumesTestkit && testkit !== undefined && testkitResolvedPath !== undefined
         ? {
             version: testkit.version,
             sourcePath: testkit.sourcePath,
@@ -837,16 +788,12 @@ export const runRepoEffect = (
         : undefined;
     const receipt: RepoReceipt = {
       repoId: id,
-      ...(options.selection === undefined
-        ? {}
-        : { selection: options.selection }),
+      ...(options.selection === undefined ? {} : { selection: options.selection }),
       invocationIds,
       testInvocations: stages.filter((value) => value.stage === "test").length,
       ...(options.copyId === undefined ? {} : { copyId: options.copyId }),
       ...(options.runLabel === undefined ? {} : { runLabel: options.runLabel }),
-      ...(options.sourceSnapshotDigest === undefined
-        ? {}
-        : { sourceSnapshotDigest: options.sourceSnapshotDigest }),
+      ...(options.sourceSnapshotDigest === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigest }),
       artifactDir,
       receiptPath,
       stages,
@@ -859,27 +806,16 @@ export const runRepoEffect = (
         sha256: candidate.sha256,
         integrity: candidate.integrity,
         ...(!linked && retained ? { artifactPath: relative(durableRoot, tarball) } : {}),
-        reproduce: linked ? ["pnpm", "e2e", "test", "--candidate", candidate.form, "--repo", id].join(" ") : [
-          "pnpm",
-          "e2e",
-          "run",
-          "--candidate",
-          tarball,
-          "--repo",
-          id,
-        ].join(" "),
+        reproduce: linked
+          ? ["pnpm", "e2e", "test", "--candidate", candidate.form, "--repo", id].join(" ")
+          : ["pnpm", "e2e", "run", "--candidate", tarball, "--repo", id].join(" "),
         exactReplay: !linked && retained,
       },
       ...(testkitReceipt === undefined ? {} : { testkit: testkitReceipt }),
     };
     yield* durable(
       id,
-      writeContainedUtf8File(
-        scopedRoot,
-        receiptPath,
-        `${JSON.stringify(receipt, null, 2)}\n`,
-        "repo receipt",
-      ),
+      writeContainedUtf8File(scopedRoot, receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, "repo receipt"),
     );
     return {
       id,

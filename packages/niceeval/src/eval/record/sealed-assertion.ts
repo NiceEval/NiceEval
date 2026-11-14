@@ -20,9 +20,7 @@ import type { AttemptOutcome } from "../../record/model/core.ts";
  * They deliberately do not re-own the Assertions Attachment or its blob
  * closure; `required` below is Eval producer policy only.
  */
-export {
-  AssertionsSealedAssertionResultSchema as SealedAssertionResultSchema,
-};
+export { AssertionsSealedAssertionResultSchema as SealedAssertionResultSchema };
 
 export type {
   EarnedScoreContribution,
@@ -60,28 +58,24 @@ export function recordedAttemptFacts(input: {
   readonly assertions: AssertionsAttachment;
 }): EvaluationAttemptFacts {
   return Object.freeze({
-    execution: input.outcome === "errored" || input.outcome === "interrupted"
-      ? "errored" as const
-      : "completed" as const,
+    execution:
+      input.outcome === "errored" || input.outcome === "interrupted" ? ("errored" as const) : ("completed" as const),
     explicitlySkipped: input.outcome === "cancelled",
-    assertions: Object.freeze(input.assertions.entries.map((entry) => Object.freeze({
-      required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
-      result: sealedAssertionResult(entry),
-    }))),
+    assertions: Object.freeze(
+      input.assertions.entries.map((entry) =>
+        Object.freeze({
+          required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
+          result: sealedAssertionResult(entry),
+        }),
+      ),
+    ),
   });
 }
 
-export function isRequiredAssertionUnavailableOrErrored(
-  assertion: SealedAssertionForEvaluation,
-): boolean {
-  return assertion.required && (
-    assertion.result.state === "unavailable"
-    || assertion.result.state === "errored"
-  );
+export function isRequiredAssertionUnavailableOrErrored(assertion: SealedAssertionForEvaluation): boolean {
+  return assertion.required && (assertion.result.state === "unavailable" || assertion.result.state === "errored");
 }
 
-export function isGateFailed(
-  assertion: SealedAssertionForEvaluation,
-): boolean {
+export function isGateFailed(assertion: SealedAssertionForEvaluation): boolean {
   return assertion.result.gate === "failed";
 }

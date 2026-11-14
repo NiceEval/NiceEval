@@ -1,18 +1,35 @@
 import { Effect } from "effect";
 import { CliArguments, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
-import { DockerCacheAdministration, type DockerCacheDomainInventory, type DockerCacheInventoryEntry } from "../cache-administration.ts";
+import {
+  DockerCacheAdministration,
+  type DockerCacheDomainInventory,
+  type DockerCacheInventoryEntry,
+} from "../cache-administration.ts";
 import { runDockerProfileCommand } from "../../sandbox/docker-profile/cli.ts";
 
 export const DOCKER_OPTIONS = Object.freeze({
   /** Render Docker administration results as JSON. */
-  json: Object.freeze({ type: "boolean", help: Object.freeze({ summary: "Render Docker administration results as JSON.", visibility: "public" }) }),
+  json: Object.freeze({
+    type: "boolean",
+    help: Object.freeze({ summary: "Render Docker administration results as JSON.", visibility: "public" }),
+  }),
   /** Select one NiceEval-owned Docker cache domain. */
-  domain: Object.freeze({ type: "string", help: Object.freeze({ summary: "Select one NiceEval-owned Docker cache domain.", visibility: "public" }) }),
+  domain: Object.freeze({
+    type: "string",
+    help: Object.freeze({ summary: "Select one NiceEval-owned Docker cache domain.", visibility: "public" }),
+  }),
   /** Apply a previously issued Docker cache GC plan. */
-  apply: Object.freeze({ type: "string", help: Object.freeze({ summary: "Apply a previously issued Docker cache GC plan.", visibility: "public" }) }),
+  apply: Object.freeze({
+    type: "string",
+    help: Object.freeze({ summary: "Apply a previously issued Docker cache GC plan.", visibility: "public" }),
+  }),
   /** Print Docker command help. */
-  help: Object.freeze({ type: "boolean", short: "h", help: Object.freeze({ summary: "Print Docker command help.", visibility: "public" }) }),
+  help: Object.freeze({
+    type: "boolean",
+    short: "h",
+    help: Object.freeze({ summary: "Print Docker command help.", visibility: "public" }),
+  }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 export type DockerCliError = CliFeatureError;
@@ -59,11 +76,8 @@ function dockerCommandKey(positionals: readonly string[]): keyof typeof DOCKER_C
   return "root";
 }
 
-function output(
-  channel: "stdout" | "stderr",
-  text: string,
-): Effect.Effect<void, DockerCliError, CliOutput> {
-  return Effect.flatMap(CliOutput, (io) => channel === "stdout" ? io.writeStdout(text) : io.writeStderr(text)).pipe(
+function output(channel: "stdout" | "stderr", text: string): Effect.Effect<void, DockerCliError, CliOutput> {
+  return Effect.flatMap(CliOutput, (io) => (channel === "stdout" ? io.writeStdout(text) : io.writeStderr(text))).pipe(
     Effect.mapError((cause) => dockerFailure(`write ${channel}`, cause)),
   );
 }
@@ -83,13 +97,16 @@ function humanSize(value: number | null): string {
 type CacheInventory = DockerCacheDomainInventory;
 
 function humanInventoryEntry(entry: DockerCacheInventoryEntry): string {
-  const identity = entry.kind === "task-build"
-    ? `${entry.identity.buildKey.slice(0, 12)} · ${entry.identity.tag} · ${entry.identity.imageId}`
-    : `${entry.identity.entryId} · ${entry.identity.beforeCacheKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
-  return `  ${entry.kind} · ${entry.state} · ${identity}\n` +
+  const identity =
+    entry.kind === "task-build"
+      ? `${entry.identity.buildKey.slice(0, 12)} · ${entry.identity.tag} · ${entry.identity.imageId}`
+      : `${entry.identity.entryId} · ${entry.identity.beforeCacheKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
+  return (
+    `  ${entry.kind} · ${entry.state} · ${identity}\n` +
     `    ${entry.leaseCount} leases (${entry.liveLeaseCount} live, ${entry.unverifiedLeaseCount} unverified) · ` +
     `${entry.holdCount} holds (${entry.liveHoldCount} live, ${entry.unverifiedHoldCount} unverified) · ` +
-    `created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`;
+    `created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`
+  );
 }
 
 interface GcPlan {
@@ -124,96 +141,123 @@ function cacheCommand(
     }
 
     const administration = yield* DockerCacheAdministration;
-    const descriptors = yield* administration.listDomains().pipe(
-      Effect.mapError((cause) => dockerFailure("list Docker cache domains", cause)),
-    );
-    const selected = options.domain === undefined
-      ? undefined
-      : descriptors.find((item) => item.domainId === options.domain);
+    const descriptors = yield* administration
+      .listDomains()
+      .pipe(Effect.mapError((cause) => dockerFailure("list Docker cache domains", cause)));
+    const selected =
+      options.domain === undefined ? undefined : descriptors.find((item) => item.domainId === options.domain);
     if (options.domain !== undefined && selected === undefined) {
       yield* output("stderr", `unknown Docker cache domain ${options.domain}\n`);
       return 2;
     }
     if (selected?.state === "unavailable" || selected?.state === "unverified") {
-      yield* output("stderr", `Docker cache domain ${selected.domainId} is ${selected.state}; ownership is not available\n`);
+      yield* output(
+        "stderr",
+        `Docker cache domain ${selected.domainId} is ${selected.state}; ownership is not available\n`,
+      );
       return 4;
     }
 
     if (command === "gc") {
-      const domain = yield* administration.openDomain(selected!).pipe(
-        Effect.mapError((cause) => dockerFailure("open Docker cache domain", cause)),
-      );
+      const domain = yield* administration
+        .openDomain(selected!)
+        .pipe(Effect.mapError((cause) => dockerFailure("open Docker cache domain", cause)));
       if (options.apply !== undefined) {
         const startedAt = new Date().toISOString();
-        const result = (yield* domain.applyGc(options.apply).pipe(
-          Effect.mapError((cause) => dockerFailure("apply Docker cache GC plan", cause)),
-        )) as GcOutcome;
+        const result = (yield* domain
+          .applyGc(options.apply)
+          .pipe(Effect.mapError((cause) => dockerFailure("apply Docker cache GC plan", cause)))) as GcOutcome;
         const document = {
           ...result,
           startedAt,
           finishedAt: new Date().toISOString(),
         };
-        yield* output("stdout", options.json
-          ? `${JSON.stringify(document, null, 2)}\n`
-          : `GC plan ${result.planId}\n${result.outcomes.map((item) => `  ${item.status} ${item.buildKey} · ${item.reason}\n`).join("")}`);
+        yield* output(
+          "stdout",
+          options.json
+            ? `${JSON.stringify(document, null, 2)}\n`
+            : `GC plan ${result.planId}\n${result.outcomes.map((item) => `  ${item.status} ${item.buildKey} · ${item.reason}\n`).join("")}`,
+        );
         return result.outcomes.some((item) => item.status !== "deleted" && item.status !== "already-absent") ? 1 : 0;
       }
-      const plan = (yield* domain.planGc().pipe(
-        Effect.mapError((cause) => dockerFailure("plan Docker cache GC", cause)),
-      )) as GcPlan;
+      const plan = (yield* domain
+        .planGc()
+        .pipe(Effect.mapError((cause) => dockerFailure("plan Docker cache GC", cause)))) as GcPlan;
       const document = {
         plan,
         summary: { candidateCount: plan.candidates.length, exactReclaimBytes: null },
       };
-      yield* output("stdout", options.json
-        ? `${JSON.stringify(document, null, 2)}\n`
-        : `GC preview ${plan.planId} · ${plan.candidates.length} candidates · expires ${plan.expiresAt}\n`);
+      yield* output(
+        "stdout",
+        options.json
+          ? `${JSON.stringify(document, null, 2)}\n`
+          : `GC preview ${plan.planId} · ${plan.candidates.length} candidates · expires ${plan.expiresAt}\n`,
+      );
       return 0;
     }
 
     const available = descriptors.filter(({ state }) => state === "verified-managed" || state === "verified-read-only");
-    const inventories = (yield* Effect.forEach(available, (descriptor) => administration.openDomain(descriptor).pipe(
-      Effect.flatMap((domain) => domain.inventory()),
-      Effect.mapError((cause) => dockerFailure("read Docker cache inventory", cause)),
-    ), { concurrency: "unbounded" })) as readonly CacheInventory[];
-    const observations = options.domain === undefined
-      ? yield* administration.observeBuildKitCapacity().pipe(
-        Effect.mapError((cause) => dockerFailure("observe Docker BuildKit capacity", cause)),
-      )
-      : [];
-    const detailed = selected === undefined
-      ? undefined
-      : inventories.find((item) => item.domainId === selected.domainId)?.entries;
+    const inventories = (yield* Effect.forEach(
+      available,
+      (descriptor) =>
+        administration.openDomain(descriptor).pipe(
+          Effect.flatMap((domain) => domain.inventory()),
+          Effect.mapError((cause) => dockerFailure("read Docker cache inventory", cause)),
+        ),
+      { concurrency: "unbounded" },
+    )) as readonly CacheInventory[];
+    const observations =
+      options.domain === undefined
+        ? yield* administration
+            .observeBuildKitCapacity()
+            .pipe(Effect.mapError((cause) => dockerFailure("observe Docker BuildKit capacity", cause)))
+        : [];
+    const detailed =
+      selected === undefined ? undefined : inventories.find((item) => item.domainId === selected.domainId)?.entries;
     if (options.json) {
-      yield* output("stdout", `${JSON.stringify({
-        scope: selected === undefined ? { kind: "domains" } : { kind: "domain", domainId: selected.domainId },
-        domains: [
-          ...inventories.map(({ entries, ...domain }) => ({
-            ...domain,
-            entryCount: entries.length,
-            entryKinds: {
-              taskBuild: entries.filter(({ kind }) => kind === "task-build").length,
-              sandboxBeforeCache: entries.filter(({ kind }) => kind === "sandbox-before-cache").length,
-            },
-          })),
-          ...descriptors.filter(({ state }) => state === "unavailable" || state === "unverified")
-            .map((descriptor) => ({ ...descriptor, entryCount: null })),
-        ],
-        providerObservations: observations,
-        ...(detailed === undefined ? {} : { entries: detailed }),
-      }, null, 2)}\n`);
+      yield* output(
+        "stdout",
+        `${JSON.stringify(
+          {
+            scope: selected === undefined ? { kind: "domains" } : { kind: "domain", domainId: selected.domainId },
+            domains: [
+              ...inventories.map(({ entries, ...domain }) => ({
+                ...domain,
+                entryCount: entries.length,
+                entryKinds: {
+                  taskBuild: entries.filter(({ kind }) => kind === "task-build").length,
+                  sandboxBeforeCache: entries.filter(({ kind }) => kind === "sandbox-before-cache").length,
+                },
+              })),
+              ...descriptors
+                .filter(({ state }) => state === "unavailable" || state === "unverified")
+                .map((descriptor) => ({ ...descriptor, entryCount: null })),
+            ],
+            providerObservations: observations,
+            ...(detailed === undefined ? {} : { entries: detailed }),
+          },
+          null,
+          2,
+        )}\n`,
+      );
       return 0;
     }
     const taskDomain = inventories[0];
     const observation = observations[0];
-    const text = taskDomain === undefined
-      ? "No managed Docker image cache domains.\n"
-      : `Docker images · managed · ${taskDomain.domainId} · ${taskDomain.entries.length} entries\n${taskDomain.entries.map(humanInventoryEntry).join("")}`;
-    yield* output("stdout", observation === undefined ? text : text +
-      `BuildKit · unverified shared-builder capacity\n` +
-      `  total ${humanSize(observation.totalBytes)} · provider reclaimable estimate ${humanSize(observation.reclaimableEstimateBytes)}\n` +
-      `  NiceEval ownership unknown · not eligible for NiceEval GC\n` +
-      `  Provider prune may affect other projects, builder sessions, and builds currently in progress.\n`);
+    const text =
+      taskDomain === undefined
+        ? "No managed Docker image cache domains.\n"
+        : `Docker images · managed · ${taskDomain.domainId} · ${taskDomain.entries.length} entries\n${taskDomain.entries.map(humanInventoryEntry).join("")}`;
+    yield* output(
+      "stdout",
+      observation === undefined
+        ? text
+        : text +
+            `BuildKit · unverified shared-builder capacity\n` +
+            `  total ${humanSize(observation.totalBytes)} · provider reclaimable estimate ${humanSize(observation.reclaimableEstimateBytes)}\n` +
+            `  NiceEval ownership unknown · not eligible for NiceEval GC\n` +
+            `  Provider prune may affect other projects, builder sessions, and builds currently in progress.\n`,
+    );
     return 0;
   });
 }
@@ -225,56 +269,51 @@ export const dockerCliCommand: CliCommandContribution<
   name: "docker",
   summary: "inspect Docker profiles, image cache, and BuildKit capacity",
   options: DOCKER_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const parser = yield* CliArguments;
-    const parsed = yield* Effect.try({
-      try: () => parser.parse(argv, DOCKER_OPTIONS),
-      catch: (cause) => dockerFailure("parse Docker command", cause, 2),
-    });
-    const positionals = parsed.positionals;
-    const providedOptions = parsed.tokens
-      .filter((token) => token.kind === "option")
-      .map((token) => token.name);
-    const commandKey = dockerCommandKey(positionals);
-    const unsupportedOption = providedOptions.find(
-      (name) => !DOCKER_COMMAND_OPTIONS[commandKey].includes(name),
-    );
-    if (unsupportedOption !== undefined) {
-      const commandLabel = positionals.length === 0 ? "" : ` ${positionals.join(" ")}`;
-      yield* output(
-        "stderr",
-        `niceeval docker${commandLabel} does not accept --${unsupportedOption}.\n`,
-      );
-      return 2;
-    }
-    const json = parsed.values.json === true;
-    const help = parsed.values.help === true;
-    const root = positionals[0];
-    if (help && root === "cache") return yield* cacheCommand(positionals.slice(1), { json, help: true });
-    if (help || root === undefined) {
-      yield* output("stdout", DOCKER_HELP);
-      return 0;
-    }
-    if (root === "cache") {
-      return yield* cacheCommand(positionals.slice(1), {
-        json,
-        help: false,
-        ...(typeof parsed.values.domain === "string" ? { domain: parsed.values.domain } : {}),
-        ...(typeof parsed.values.apply === "string" ? { apply: parsed.values.apply } : {}),
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      const parser = yield* CliArguments;
+      const parsed = yield* Effect.try({
+        try: () => parser.parse(argv, DOCKER_OPTIONS),
+        catch: (cause) => dockerFailure("parse Docker command", cause, 2),
       });
-    }
-    if (root === "profile") {
-      const io = yield* CliOutput;
-      return yield* Effect.tryPromise({
-        try: () => runDockerProfileCommand(positionals, {
+      const positionals = parsed.positionals;
+      const providedOptions = parsed.tokens.filter((token) => token.kind === "option").map((token) => token.name);
+      const commandKey = dockerCommandKey(positionals);
+      const unsupportedOption = providedOptions.find((name) => !DOCKER_COMMAND_OPTIONS[commandKey].includes(name));
+      if (unsupportedOption !== undefined) {
+        const commandLabel = positionals.length === 0 ? "" : ` ${positionals.join(" ")}`;
+        yield* output("stderr", `niceeval docker${commandLabel} does not accept --${unsupportedOption}.\n`);
+        return 2;
+      }
+      const json = parsed.values.json === true;
+      const help = parsed.values.help === true;
+      const root = positionals[0];
+      if (help && root === "cache") return yield* cacheCommand(positionals.slice(1), { json, help: true });
+      if (help || root === undefined) {
+        yield* output("stdout", DOCKER_HELP);
+        return 0;
+      }
+      if (root === "cache") {
+        return yield* cacheCommand(positionals.slice(1), {
           json,
-          out: io.writeStdoutSync,
-          err: io.writeStderrSync,
-        }),
-        catch: (cause) => dockerFailure("run Docker profile command", cause),
-      });
-    }
-    yield* output("stderr", `Unknown Docker command "${root}".\n${DOCKER_HELP}`);
-    return 2;
-  }),
+          help: false,
+          ...(typeof parsed.values.domain === "string" ? { domain: parsed.values.domain } : {}),
+          ...(typeof parsed.values.apply === "string" ? { apply: parsed.values.apply } : {}),
+        });
+      }
+      if (root === "profile") {
+        const io = yield* CliOutput;
+        return yield* Effect.tryPromise({
+          try: () =>
+            runDockerProfileCommand(positionals, {
+              json,
+              out: io.writeStdoutSync,
+              err: io.writeStderrSync,
+            }),
+          catch: (cause) => dockerFailure("run Docker profile command", cause),
+        });
+      }
+      yield* output("stderr", `Unknown Docker command "${root}".\n${DOCKER_HELP}`);
+      return 2;
+    }),
 });

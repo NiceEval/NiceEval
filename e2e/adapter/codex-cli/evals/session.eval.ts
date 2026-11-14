@@ -4,8 +4,7 @@ import { defineEval } from "niceeval";
 import { isDefined, includes } from "niceeval/expect";
 
 export default defineEval({
-  description:
-    "会话续接:首轮 thread ID 被捕获,第二轮在同一 thread 续接并引用首轮事实",
+  description: "会话续接:首轮 thread ID 被捕获,第二轮在同一 thread 续接并引用首轮事实",
   async test(t) {
     const suffix = "这轮不用跑命令也不用建文件。";
     const first = await t.send(`我叫 niceeval-e2e-tester,帮我记住这个名字。${suffix}`);
@@ -14,9 +13,7 @@ export default defineEval({
     // 首轮结束后,ctx.session.capture() 应该已经把 thread.started 回传的 id 记下来了。
     t.check(
       t.sessionId,
-      isDefined<string | undefined>(
-        "thread.started 的 thread_id 应该已经被 ctx.session.capture() 记下",
-      ),
+      isDefined<string | undefined>("thread.started 的 thread_id 应该已经被 ctx.session.capture() 记下"),
     );
 
     const recall = await t.send(`我刚才说我叫什么名字?${suffix}`);

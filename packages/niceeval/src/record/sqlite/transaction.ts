@@ -15,7 +15,8 @@ export function withImmediateTransaction<A>(
   try {
     connection.db.exec("BEGIN IMMEDIATE");
   } catch (cause) {
-    if (isSqliteBusy(cause)) throw sqliteError("record-write-busy", operation, "database remained busy until the operation deadline", cause);
+    if (isSqliteBusy(cause))
+      throw sqliteError("record-write-busy", operation, "database remained busy until the operation deadline", cause);
     throw sqliteError("record-sqlite-error", operation, "BEGIN IMMEDIATE failed", cause);
   }
   try {

@@ -25,19 +25,21 @@ export class PiFailure extends Data.TaggedError("PiFailure")<{
 export function piDefect(cause: unknown): PiFailure {
   return cause instanceof PiFailure
     ? cause
-    : new PiFailure({ kind: "defect", message: cause instanceof Error ? cause.message : "Unexpected pi failure", cause });
+    : new PiFailure({
+        kind: "defect",
+        message: cause instanceof Error ? cause.message : "Unexpected pi failure",
+        cause,
+      });
 }
 
 export function managedPiCredential(profile: ResolvedJudgeConfig | undefined): string {
-  if (profile === undefined)
-    throw new PiFailure({ kind: "provider", message: "Judge Provider is not configured" });
+  if (profile === undefined) throw new PiFailure({ kind: "provider", message: "Judge Provider is not configured" });
   const credential = resolveJudgeCredential(profile);
-  if (!credential)
-    throw new PiFailure({ kind: "credential", message: "Judge Provider credential is unresolved" });
+  if (!credential) throw new PiFailure({ kind: "credential", message: "Judge Provider credential is unresolved" });
   return credential;
 }
 
-const tokenCount = Schema.Number.check(Schema.makeFilter(value => Number.isSafeInteger(value) && value >= 0));
+const tokenCount = Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0));
 const UsageSchema = Schema.Struct({
   input: tokenCount,
   output: tokenCount,
@@ -61,12 +63,19 @@ export function safePiFailureMessage(error: PiFailure, profile?: ResolvedJudgeCo
   let text = error.message;
   const secrets = [profile?.baseUrl, ...Object.values(profile?.headers ?? {})];
   if (profile !== undefined) {
-    try { secrets.push(resolveJudgeCredential(profile)); } catch { /* No credential is available. */ }
+    try {
+      secrets.push(resolveJudgeCredential(profile));
+    } catch {
+      /* No credential is available. */
+    }
   }
-  for (const secret of secrets)
-    if (secret) text = text.split(secret).join("[redacted]");
+  for (const secret of secrets) if (secret) text = text.split(secret).join("[redacted]");
   // SDK/provider messages may contain a request URL or an echoed header block.
-  text = text.replace(/https?:\/\/[^\s"'<>]+/giu, "[redacted endpoint]")
-    .replace(/\b(?:authorization|proxy-authorization|api[-_]?key|x-api-key|cookie|set-cookie)\s*[=:]\s*[^\r\n]*/giu, "[redacted header]");
+  text = text
+    .replace(/https?:\/\/[^\s"'<>]+/giu, "[redacted endpoint]")
+    .replace(
+      /\b(?:authorization|proxy-authorization|api[-_]?key|x-api-key|cookie|set-cookie)\s*[=:]\s*[^\r\n]*/giu,
+      "[redacted header]",
+    );
   return Array.from(text).slice(0, 1024).join("");
 }

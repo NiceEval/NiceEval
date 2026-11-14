@@ -2,11 +2,7 @@
 
 import type { ReactNode } from "react";
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "./shared.ts";
-import {
-  dataShapeError,
-  isLocalizedText,
-  isObject,
-} from "./shared.ts";
+import { dataShapeError, isLocalizedText, isObject } from "./shared.ts";
 import { CopyButton } from "../CopyButton.tsx";
 
 export interface CopyBlockContent {
@@ -14,19 +10,21 @@ export interface CopyBlockContent {
   title: LocalizedText;
 }
 
-export type CopyBlockProps = {
-  title: LocalizedText;
-  text: string;
-  locale: ReportLocale;
-  className?: string;
-} | {
-  /** 无可复制文本时传 null，两面零输出。 */
-  content: CopyBlockContent | null;
-  title?: never;
-  text?: never;
-  locale: ReportLocale;
-  className?: string;
-};
+export type CopyBlockProps =
+  | {
+      title: LocalizedText;
+      text: string;
+      locale: ReportLocale;
+      className?: string;
+    }
+  | {
+      /** 无可复制文本时传 null，两面零输出。 */
+      content: CopyBlockContent | null;
+      title?: never;
+      text?: never;
+      locale: ReportLocale;
+      className?: string;
+    };
 
 function cx(...parts: (string | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -55,11 +53,7 @@ function resolveCopyBlock(props: CopyBlockProps): CopyBlockContent | null {
   return { title: props.title, text: props.text };
 }
 
-function copyBlockWeb(
-  data: CopyBlockContent,
-  locale: ReportLocale,
-  className?: string,
-): ReactNode {
+function copyBlockWeb(data: CopyBlockContent, locale: ReportLocale, className?: string): ReactNode {
   return (
     <details className={cx("niceeval-report", "niceeval-copy-block", className)}>
       <summary className="niceeval-copy-block-summary">{resolveLocalizedText(data.title, locale)}</summary>

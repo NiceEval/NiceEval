@@ -87,7 +87,9 @@ export async function inspectDetached(provider: string, sandboxId: string): Prom
         const paginator = E2BSdkSandbox.list({ apiKey: process.env.E2B_API_KEY });
         let hit: { sandboxId: string; state?: string } | undefined;
         while (paginator.hasNext && !hit) {
-          hit = (await paginator.nextItems()).find((s) => s.sandboxId === sandboxId || s.sandboxId.startsWith(sandboxId));
+          hit = (await paginator.nextItems()).find(
+            (s) => s.sandboxId === sandboxId || s.sandboxId.startsWith(sandboxId),
+          );
         }
         if (!hit) return "expired";
         return hit.state === "running" ? "alive" : "dormant";
@@ -138,9 +140,11 @@ export async function destroyDetached(provider: string, sandboxId: string): Prom
     }
     case "e2b": {
       const { Sandbox: E2BSdkSandbox } = await import("e2b");
-      const kill = (E2BSdkSandbox as unknown as {
-        kill?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<boolean>;
-      }).kill;
+      const kill = (
+        E2BSdkSandbox as unknown as {
+          kill?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<boolean>;
+        }
+      ).kill;
       if (typeof kill !== "function") throw new Error("this e2b SDK version has no detached kill capability");
       const killed = await kill(sandboxId, { apiKey: process.env.E2B_API_KEY });
       return killed ? "stopped" : "already-gone";
@@ -160,7 +164,10 @@ export async function destroyDetached(provider: string, sandboxId: string): Prom
       try {
         found = await get({ name: sandboxId, resume: false });
       } catch (error) {
-        if ((error as { statusCode?: number; status?: number }).statusCode === 404 || (error as { status?: number }).status === 404) {
+        if (
+          (error as { statusCode?: number; status?: number }).statusCode === 404 ||
+          (error as { status?: number }).status === 404
+        ) {
           return "already-gone";
         }
         throw error;
@@ -190,10 +197,10 @@ export async function wakeDetached(provider: string, sandboxId: string): Promise
     }
     case "e2b": {
       const { Sandbox: E2BSdkSandbox } = await import("e2b");
-      const resume = (E2BSdkSandbox as unknown as {
+      const resume = E2BSdkSandbox as unknown as {
         resume?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<unknown>;
         connect?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<unknown>;
-      });
+      };
       if (typeof resume.resume === "function") {
         await resume.resume(sandboxId, { apiKey: process.env.E2B_API_KEY });
         return;
@@ -209,9 +216,7 @@ export async function wakeDetached(provider: string, sandboxId: string): Promise
       // get() 在会话已停止时自动从最近快照恢复文件系统并起新会话——不需要另一个专门的
       // "resume" API(vercel.com/docs/sandbox/sdk-reference)。
       const { Sandbox: VSandbox } = await import("@vercel/sandbox");
-      const get = (
-        VSandbox as unknown as { get?: (opts: globalThis.Record<string, unknown>) => Promise<unknown> }
-      ).get;
+      const get = (VSandbox as unknown as { get?: (opts: globalThis.Record<string, unknown>) => Promise<unknown> }).get;
       if (typeof get !== "function") throw new Error("this vercel SDK version has no get capability");
       await get({ name: sandboxId, resume: true });
       return;
@@ -291,19 +296,21 @@ function dockerInfoProbe(
   user: string,
   timeoutMs: number,
 ): Effect.Effect<DockerInfoProbeOutcome, never> {
-  const startProbe: Effect.Effect<{ readonly execution: DockerInfoExecution; readonly stream: NodeJS.ReadableStream }, unknown> =
-    Effect.tryPromise({
-      try: () =>
-        container
-          .exec({
-            Cmd: ["docker", "info"],
-            User: user,
-            AttachStdout: true,
-            AttachStderr: true,
-          })
-          .then((execution) => execution.start({}).then((stream) => ({ execution, stream }))),
-      catch: (cause) => cause,
-    });
+  const startProbe: Effect.Effect<
+    { readonly execution: DockerInfoExecution; readonly stream: NodeJS.ReadableStream },
+    unknown
+  > = Effect.tryPromise({
+    try: () =>
+      container
+        .exec({
+          Cmd: ["docker", "info"],
+          User: user,
+          AttachStdout: true,
+          AttachStderr: true,
+        })
+        .then((execution) => execution.start({}).then((stream) => ({ execution, stream }))),
+    catch: (cause) => cause,
+  });
 
   const probeOne = (
     execution: DockerInfoExecution,
@@ -356,9 +363,11 @@ export async function suspendDetached(provider: string, sandboxId: string): Prom
     }
     case "e2b": {
       const { Sandbox: E2BSdkSandbox } = await import("e2b");
-      const pause = (E2BSdkSandbox as unknown as {
-        pause?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<unknown>;
-      }).pause;
+      const pause = (
+        E2BSdkSandbox as unknown as {
+          pause?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<unknown>;
+        }
+      ).pause;
       if (typeof pause === "function") {
         await pause(sandboxId, { apiKey: process.env.E2B_API_KEY });
         return;
@@ -431,7 +440,12 @@ async function spawnAndWait(cmd: string, args: string[]): Promise<number> {
  * dockerode exec(多路复用流需要按帧解析);e2b / vercel 走各自 SDK 拿到一个可 runCommand 的
  * 实例句柄——`wakeDetached` 已经确保现场醒着,这里只负责拿句柄、跑命令、取回 stdout。
  */
-export async function execInDetached(provider: string, sandboxId: string, workdir: string, script: string): Promise<string> {
+export async function execInDetached(
+  provider: string,
+  sandboxId: string,
+  workdir: string,
+  script: string,
+): Promise<string> {
   switch (provider) {
     case "docker":
       return execInDockerLedger(sandboxId, workdir, script);

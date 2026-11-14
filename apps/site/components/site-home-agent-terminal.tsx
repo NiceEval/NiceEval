@@ -110,10 +110,7 @@ const STEPS: Step[] = [
   {
     kind: "text",
     at: 15800,
-    lines: [
-      "Fixed — checkout/apply-coupon now passes on both configs. To review the results:",
-      "niceeval show",
-    ],
+    lines: ["Fixed — checkout/apply-coupon now passes on both configs. To review the results:", "niceeval show"],
   },
 ];
 
@@ -146,13 +143,7 @@ export default function AgentTerminalDemo({ ariaLabel, replayLabel }: { ariaLabe
   const { now, play } = useTimeline(T.end, animated);
 
   return (
-    <TerminalWindow
-      label="claude"
-      animated={animated}
-      onReplay={play}
-      replayLabel={replayLabel}
-      ariaLabel={ariaLabel}
-    >
+    <TerminalWindow label="claude" animated={animated} onReplay={play} replayLabel={replayLabel} ariaLabel={ariaLabel}>
       <Line className="cc-banner">{" ▐▛███▜▌   Claude Code v2.1.220"}</Line>
       <Line className="cc-banner">{"▝▜█████▛▘  Opus 5 (1M context) with high effort · Claude Max"}</Line>
       <Line className="cc-banner">{"  ▘▘ ▝▝    ~/Code/acme-checkout"}</Line>

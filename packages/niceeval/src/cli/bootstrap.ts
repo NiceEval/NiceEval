@@ -9,10 +9,7 @@ import { dockerCliCommand } from "../docker/cli/contribution.ts";
 import { sandboxCliCommand } from "../sandbox/cli/contribution.ts";
 import { evalCatalogCliCommand } from "../eval/cli/contribution.ts";
 import { experimentCliContributions } from "../experiment/host/cli/contribution.ts";
-import {
-  ExperimentCliTerminal,
-  NodeExperimentCliTerminalLive,
-} from "../experiment/host/cli/terminal.ts";
+import { ExperimentCliTerminal, NodeExperimentCliTerminalLive } from "../experiment/host/cli/terminal.ts";
 import { showCliCommand, compareCliCommand } from "../show/contribution.ts";
 import { viewCliCommand } from "../view/cli/contribution.ts";
 import { runCliCommand } from "../run/cli/contribution.ts";
@@ -26,7 +23,12 @@ import {
   type CliInterruptionService,
 } from "./application.ts";
 import { ignoreBrokenOutputPipe, NodeCliPlatformLive } from "./node-application.ts";
-import { ConfigModuleLoaderLive, ProjectConfiguration, ProjectConfigurationLayer, ProjectCredentialsLive } from "./project-configuration.ts";
+import {
+  ConfigModuleLoaderLive,
+  ProjectConfiguration,
+  ProjectConfigurationLayer,
+  ProjectCredentialsLive,
+} from "./project-configuration.ts";
 import { NodeRecordLive } from "../record/index.ts";
 import { RecordCoordination } from "../coordination/record-leases.ts";
 import { RecordEntropy, RecordFileSystem } from "../record/platform/services.ts";
@@ -50,11 +52,7 @@ import { summarizeUnknownError } from "../error-assistance/index.ts";
 // Graceful ownership is deliberately one-way. Returning it after `runEvals`
 // would create a second boundary where a first signal could miss both the
 // durable closure and root interruption.
-type SignalOwnership =
-  | "root"
-  | "root-interrupted"
-  | "graceful-dispatch"
-  | "graceful-aborted";
+type SignalOwnership = "root" | "root-interrupted" | "graceful-dispatch" | "graceful-aborted";
 
 let signalOwnership: SignalOwnership = "root";
 let interruptedByClosedOutput = false;
@@ -146,26 +144,26 @@ type CliFeatureRequirements =
   | ViewApplicationRuntime
   | Scope.Scope;
 
-const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureError>(
-  [
-    ...experimentCliContributions,
-    evalCatalogCliCommand,
-    compareCliCommand,
-    showCliCommand,
-    runCliCommand,
-    viewCliCommand,
-    sandboxCliCommand,
-    dockerCliCommand,
-    projectInitCliCommand,
-  ],
-);
+const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureError>([
+  ...experimentCliContributions,
+  evalCatalogCliCommand,
+  compareCliCommand,
+  showCliCommand,
+  runCliCommand,
+  viewCliCommand,
+  sandboxCliCommand,
+  dockerCliCommand,
+  projectInitCliCommand,
+]);
 
-const application = Effect.scoped(Effect.gen(function* () {
-  // Capture this application's services once. HTTP callbacks share its runtime;
-  // the root Scope interrupts and drains every remaining callback fiber.
-  const run = yield* FiberSet.makeRuntimePromise();
-  return yield* cliProgram(featureCommands).pipe(Effect.provideService(ViewApplicationRuntime, { run }));
-})).pipe(
+const application = Effect.scoped(
+  Effect.gen(function* () {
+    // Capture this application's services once. HTTP callbacks share its runtime;
+    // the root Scope interrupts and drains every remaining callback fiber.
+    const run = yield* FiberSet.makeRuntimePromise();
+    return yield* cliProgram(featureCommands).pipe(Effect.provideService(ViewApplicationRuntime, { run }));
+  }),
+).pipe(
   // Application bootstrap is the sole provider of concrete Node services.
   // Command and library modules retain their real requirements for callers.
   Effect.provide(NodeRecordLive),
@@ -179,23 +177,27 @@ const application = Effect.scoped(Effect.gen(function* () {
   Effect.provide(NodeCliPlatformLive),
   // Typed CLI failures are expected, user-actionable outcomes. They become an
   // ordinary process status after their message has been written once.
-  Effect.catch((failure) => Effect.sync(() => {
-    process.stderr.write(renderCliFailure(failure));
-    return failure.exitCode;
-  })),
+  Effect.catch((failure) =>
+    Effect.sync(() => {
+      process.stderr.write(renderCliFailure(failure));
+      return failure.exitCode;
+    }),
+  ),
   // A normal nonzero command result must flush through Node naturally; do not
   // use process.exit and skip Scope finalizers or piped stdout.
-  Effect.tap((exitCode) => Effect.sync(() => {
-    process.exitCode = interruptedByClosedOutput ? 0 : exitCode;
-  })),
+  Effect.tap((exitCode) =>
+    Effect.sync(() => {
+      process.exitCode = interruptedByClosedOutput ? 0 : exitCode;
+    }),
+  ),
   Effect.asVoid,
   // Defects remain defects and interruption remains interruption. Suppress
   // platform's generic logger so the CLI keeps its existing user-facing form.
-  Effect.tapCause((cause) => Cause.hasInterruptsOnly(cause)
-    ? Effect.void
-    : Effect.sync(() => process.stderr.write(
-      `niceeval error:\n${summarizeUnknownError(Cause.squash(cause))}\n`,
-    ))),
+  Effect.tapCause((cause) =>
+    Cause.hasInterruptsOnly(cause)
+      ? Effect.void
+      : Effect.sync(() => process.stderr.write(`niceeval error:\n${summarizeUnknownError(Cause.squash(cause))}\n`)),
+  ),
 );
 
 // Effect v4 keeps Node alive while live fibers await callbacks, so this
@@ -216,8 +218,6 @@ fiber.addObserver((exit) => {
     // CLI failures already became a successful numeric result above; only a
     // signal interruption receives 130; a closed output consumer is normal
     // termination, and defects remain exit 2.
-    process.exitCode = Cause.hasInterruptsOnly(exit.cause)
-      ? interruptedByClosedOutput ? 0 : 130
-      : 2;
+    process.exitCode = Cause.hasInterruptsOnly(exit.cause) ? (interruptedByClosedOutput ? 0 : 130) : 2;
   }
 });

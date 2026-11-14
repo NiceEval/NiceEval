@@ -6,25 +6,13 @@ import {
   CliPath,
   type CliOptionDefinition,
 } from "../../../cli/application.ts";
-import {
-  CliFeatureError,
-  type CliCommandContribution,
-} from "../../../cli/contribution.ts";
+import { CliFeatureError, type CliCommandContribution } from "../../../cli/contribution.ts";
 import { RecordCoordination } from "../../../coordination/record-leases.ts";
-import {
-  makeRecordRoot,
-  type RecordRoot,
-  type RecordRootConstructionError,
-} from "../../platform/root.ts";
+import { makeRecordRoot, type RecordRoot, type RecordRootConstructionError } from "../../platform/root.ts";
 import { RecordFileSystem } from "../../platform/services.ts";
 import { recordHost } from "../runtime.ts";
-import type {
-  RecordCleanOperationPlan,
-  RecordMaintenanceOperationFailure,
-} from "../types.ts";
-import {
-  renderRecordMaintenanceFailure,
-} from "./presentation.ts";
+import type { RecordCleanOperationPlan, RecordMaintenanceOperationFailure } from "../types.ts";
+import { renderRecordMaintenanceFailure } from "./presentation.ts";
 
 export const RECORD_MAINTENANCE_CLI_OPTIONS = Object.freeze({
   record: Object.freeze({
@@ -62,11 +50,7 @@ Options:
   -h, --help       print this help
 `;
 
-type RecordCliBaseRequirement =
-  | CliArguments
-  | CliInvocationFacts
-  | CliOutput
-  | CliPath;
+type RecordCliBaseRequirement = CliArguments | CliInvocationFacts | CliOutput | CliPath;
 
 type RecordCliError = CliFeatureError;
 
@@ -74,11 +58,7 @@ function assertNever(value: never): never {
   throw new Error(`Unreachable Record CLI contribution value: ${String(value)}`);
 }
 
-function recordCliFailure(
-  command: "clean",
-  operation: string,
-  cause: unknown,
-): RecordCliError {
+function recordCliFailure(command: "clean", operation: string, cause: unknown): RecordCliError {
   return new CliFeatureError({
     feature: `record ${command}`,
     operation,
@@ -93,7 +73,7 @@ function write(
   text: string,
 ): Effect.Effect<void, RecordCliError, CliOutput> {
   return Effect.flatMap(CliOutput, (output) =>
-    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text)
+    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text),
   ).pipe(Effect.mapError((cause) => recordCliFailure(command, `write ${channel}`, cause)));
 }
 
@@ -116,7 +96,11 @@ interface ParsedRecordCommand {
 function parseRecordCommand(
   command: "clean",
   argv: readonly string[],
-): Effect.Effect<ParsedRecordCommand | number, RecordCliError, CliArguments | CliInvocationFacts | CliOutput | CliPath> {
+): Effect.Effect<
+  ParsedRecordCommand | number,
+  RecordCliError,
+  CliArguments | CliInvocationFacts | CliOutput | CliPath
+> {
   return Effect.gen(function* () {
     const parser = yield* CliArguments;
     const parsed = yield* Effect.try({
@@ -179,10 +163,12 @@ function runClean(
           );
           return 1;
         }
-        const applied = yield* Effect.result(recordHost.maintenance.applyClean({
-          root: input.root,
-          plan,
-        }));
+        const applied = yield* Effect.result(
+          recordHost.maintenance.applyClean({
+            root: input.root,
+            plan,
+          }),
+        );
         if (Result.isFailure(applied)) return yield* emitMaintenanceFailure("clean", applied.failure, input.rootPath);
         const lines = ["Cleaned incomplete Runs:"];
         if (applied.success.deleted.length === 0) lines.push("  deleted: none");
@@ -206,16 +192,13 @@ function makeRecordCliCommand<R>(
     name: command,
     summary,
     options: RECORD_MAINTENANCE_CLI_OPTIONS,
-    run: (argv: readonly string[]) => Effect.gen(function* () {
-      const parsed = yield* parseRecordCommand(command, argv);
-      if (typeof parsed === "number") return parsed;
-      return yield* execute(parsed);
-    }),
+    run: (argv: readonly string[]) =>
+      Effect.gen(function* () {
+        const parsed = yield* parseRecordCommand(command, argv);
+        if (typeof parsed === "number") return parsed;
+        return yield* execute(parsed);
+      }),
   });
 }
 
-export const cleanCliCommand = makeRecordCliCommand(
-  "clean",
-  "delete incomplete Record Runs",
-  runClean,
-);
+export const cleanCliCommand = makeRecordCliCommand("clean", "delete incomplete Record Runs", runClean);

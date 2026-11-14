@@ -1,9 +1,5 @@
 import OpenAI from "openai";
-import {
-  chatCompletionEvidenceCoverage,
-  defineAgent,
-  turnFromChatCompletion,
-} from "niceeval/adapter";
+import { chatCompletionEvidenceCoverage, defineAgent, turnFromChatCompletion } from "niceeval/adapter";
 import { defineExperiment } from "niceeval";
 
 const TOOL_NAME = "lookup_live_chat_fixture";

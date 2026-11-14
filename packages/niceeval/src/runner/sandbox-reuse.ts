@@ -30,10 +30,7 @@ export interface SandboxReusePoolIdentity {
   readonly scope: SandboxReusePoolScope;
 }
 
-export type SandboxReusePoolIdentityFacet =
-  | "provider plan"
-  | "agent install"
-  | "physical lifecycle";
+export type SandboxReusePoolIdentityFacet = "provider plan" | "agent install" | "physical lifecycle";
 
 export interface SandboxReusePoolDescriptorInput {
   readonly run: AgentRun;
@@ -52,19 +49,14 @@ export interface SandboxReusePoolDescriptorInput {
 export function sandboxReusePoolDescriptor(
   input: SandboxReusePoolDescriptorInput,
 ): SandboxReusePoolDescriptor | undefined {
-  if (
-    input.run.adapter?.kind !== "sandbox" ||
-    input.run.agent?.kind !== "sandbox" ||
-    input.plan._tag !== "Sandbox"
-  ) return undefined;
+  if (input.run.adapter?.kind !== "sandbox" || input.run.agent?.kind !== "sandbox" || input.plan._tag !== "Sandbox")
+    return undefined;
   let scope: SandboxReusePoolScope;
   if (input.evalGroupId !== undefined) {
     scope = { kind: "eval-group", evalGroupId: input.evalGroupId };
   } else {
     if (input.run.sandboxReuse !== true) return undefined;
-    scope = input.plan.pair.hasEvalPhysicalLifecycle
-      ? { kind: "eval", evalId: input.evalId }
-      : { kind: "shared" };
+    scope = input.plan.pair.hasEvalPhysicalLifecycle ? { kind: "eval", evalId: input.evalId } : { kind: "shared" };
   }
   const identity = Object.freeze({
     version: 2 as const,

@@ -12,45 +12,34 @@ export const RecordPlatformOperationSchema = Schema.Literals([
   "release-record-lease",
 ]);
 
-export type RecordPlatformOperation = Schema.Schema.Type<
-  typeof RecordPlatformOperationSchema
->;
+export type RecordPlatformOperation = Schema.Schema.Type<typeof RecordPlatformOperationSchema>;
 
-export const RecordPathKindSchema = Schema.Literals([
-  "missing",
-  "file",
-  "directory",
-  "other",
-]);
+export const RecordPathKindSchema = Schema.Literals(["missing", "file", "directory", "other"]);
 
 export type RecordPathKind = Schema.Schema.Type<typeof RecordPathKindSchema>;
 
-export const RecordPlatformResourceSchema = Schema.Literals([
-  "directory-entries",
-  "file-bytes",
-]);
+export const RecordPlatformResourceSchema = Schema.Literals(["directory-entries", "file-bytes"]);
 
-export type RecordPlatformResource = Schema.Schema.Type<
-  typeof RecordPlatformResourceSchema
->;
+export type RecordPlatformResource = Schema.Schema.Type<typeof RecordPlatformResourceSchema>;
 
 const FiniteNonNegativeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) =>
-      Number.isFinite(value) && Number.isInteger(value) && value >= 0,
-    {
+  Schema.check(
+    Schema.makeFilter((value) => Number.isFinite(value) && Number.isInteger(value) && value >= 0, {
       identifier: "FiniteNonNegativeInteger",
       description: "a finite non-negative integer",
-    },
-  )),
+    }),
+  ),
 );
 
 /** A caller supplied an invalid bound before any filesystem work began. */
-export class RecordResourceLimitInvalid extends Schema.TaggedError<RecordResourceLimitInvalid>()("RecordResourceLimitInvalid", {
-  code: Schema.Literal("record-resource-limit-invalid"),
-  resource: RecordPlatformResourceSchema,
-  maximum: Schema.Number,
-}) {}
+export class RecordResourceLimitInvalid extends Schema.TaggedError<RecordResourceLimitInvalid>()(
+  "RecordResourceLimitInvalid",
+  {
+    code: Schema.Literal("record-resource-limit-invalid"),
+    resource: RecordPlatformResourceSchema,
+    maximum: Schema.Number,
+  },
+) {}
 
 /** A forged or malformed host-local root never reaches Node filesystem calls. */
 export class RecordRootInvalid extends Schema.TaggedError<RecordRootInvalid>()("RecordRootInvalid", {
@@ -79,14 +68,17 @@ export class RecordPathAlreadyExists extends Schema.TaggedError<RecordPathAlread
 }) {}
 
 /** A bounded platform operation would exceed its declared resource limit. */
-export class RecordResourceLimitExceeded extends Schema.TaggedError<RecordResourceLimitExceeded>()("RecordResourceLimitExceeded", {
-  code: Schema.Literal("record-resource-limit-exceeded"),
-  resource: RecordPlatformResourceSchema,
-  maximum: FiniteNonNegativeIntegerSchema,
-  /** May be the first value beyond the cap; callers need not scan to an exact total. */
-  observedAtLeast: FiniteNonNegativeIntegerSchema,
-  path: Schema.String,
-}) {}
+export class RecordResourceLimitExceeded extends Schema.TaggedError<RecordResourceLimitExceeded>()(
+  "RecordResourceLimitExceeded",
+  {
+    code: Schema.Literal("record-resource-limit-exceeded"),
+    resource: RecordPlatformResourceSchema,
+    maximum: FiniteNonNegativeIntegerSchema,
+    /** May be the first value beyond the cap; callers need not scan to an exact total. */
+    observedAtLeast: FiniteNonNegativeIntegerSchema,
+    path: Schema.String,
+  },
+) {}
 
 /** Node I/O outside permission failures, with the native cause retained only for diagnostics. */
 export class RecordIoError extends Schema.TaggedError<RecordIoError>()("RecordIoError", {

@@ -23,7 +23,12 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
         // 一个文件不会因为某一窗口恰好小于阈值就变回可内联的文本。
         if (reason !== undefined && (entry.elided === undefined || reason === "binary")) entry.elided = reason;
       } else {
-        touched.set(path, { first: change, last: change, windows: [window.window], ...(reason ? { elided: reason } : {}) });
+        touched.set(path, {
+          first: change,
+          last: change,
+          windows: [window.window],
+          ...(reason ? { elided: reason } : {}),
+        });
       }
     }
   }
@@ -134,24 +139,19 @@ export function emptyDiffData(): DiffData {
 /** Canonical Sandbox workdir-relative path shared by registration and storage. */
 export function isCanonicalWorkspaceRelativePath(value: unknown): value is string {
   if (
-    typeof value !== "string"
-    || value.length === 0
-    || value.includes("\u0000")
-    || value.includes("\\")
-    || value.startsWith("/")
-    || /^[A-Za-z]:\//.test(value)
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.includes("\u0000") ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[A-Za-z]:\//.test(value)
   ) {
     return false;
   }
-  return value.split("/").every((segment) =>
-    segment.length > 0 && segment !== "." && segment !== ".."
-  );
+  return value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
-export function assertCanonicalWorkspaceRelativePath(
-  value: unknown,
-  owner: string,
-): asserts value is string {
+export function assertCanonicalWorkspaceRelativePath(value: unknown, owner: string): asserts value is string {
   if (!isCanonicalWorkspaceRelativePath(value)) {
     throw new TypeError(
       `${owner} must be a canonical portable workspace-relative path without absolute, ., .., empty, NUL, or backslash segments`,
@@ -228,10 +228,7 @@ export function evaluateTouchedPaths(
 }
 
 /** `noChanges()` 的纯求值:expected 固定为空集,与 changedPaths([]) 同一能力。 */
-export function evaluateNoChanges(
-  diff: DiffData,
-  complete = true,
-): TouchedPathsOutcome {
+export function evaluateNoChanges(diff: DiffData, complete = true): TouchedPathsOutcome {
   return evaluateTouchedPaths(diff, [], complete);
 }
 

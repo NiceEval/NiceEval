@@ -2,5 +2,7 @@ import { equals } from "niceeval/expect";
 import { nativeReuse } from "../../applications/native-reuse.ts";
 
 export default nativeReuse.defineEval({
-  test(t) { t.check(t.value(), equals(-1)); },
+  test(t) {
+    t.check(t.value(), equals(-1));
+  },
 });

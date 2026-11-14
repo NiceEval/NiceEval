@@ -8,7 +8,12 @@ const weatherBank: Record<string, { tempC: number; condition: string }> = {
   广州: { tempC: 32, condition: "雷阵雨" },
 };
 
-export function getWeather(input: { city: string }): { city: string; tempC: number; condition: string; summary: string } {
+export function getWeather(input: { city: string }): {
+  city: string;
+  tempC: number;
+  condition: string;
+  summary: string;
+} {
   const weather = weatherBank[input.city] ?? { tempC: 24, condition: "晴" };
   return {
     city: input.city,

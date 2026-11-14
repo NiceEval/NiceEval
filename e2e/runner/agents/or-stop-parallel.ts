@@ -1,11 +1,7 @@
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
-const READY_EVALS = new Set([
-  "group-stop-alpha/next",
-  "group-stop-beta/next",
-  "group-stop-gamma/hold",
-]);
+const READY_EVALS = new Set(["group-stop-alpha/next", "group-stop-beta/next", "group-stop-gamma/hold"]);
 const arrivals = new Set<string>();
 let releaseArrivals: () => void = () => undefined;
 const allArrived = new Promise<void>((resolve) => {

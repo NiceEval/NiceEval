@@ -35,12 +35,15 @@ export class RecordIntegrityFailure extends Schema.TaggedError<RecordIntegrityFa
 }) {}
 
 /** The session catalog did not contribute the exact definition needed now. */
-export class FamilyDefinitionRequired extends Schema.TaggedError<FamilyDefinitionRequired>()("FamilyDefinitionRequired", {
-  code: Schema.Literal("family-definition-required"),
-  owner: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
-  family: Schema.String,
-  revision: Schema.optional(Schema.Number),
-}) {}
+export class FamilyDefinitionRequired extends Schema.TaggedError<FamilyDefinitionRequired>()(
+  "FamilyDefinitionRequired",
+  {
+    code: Schema.Literal("family-definition-required"),
+    owner: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
+    family: Schema.String,
+    revision: Schema.optional(Schema.Number),
+  },
+) {}
 
 /** A frozen selection cannot be certified as a complete current Seal. */
 export class RecordSealIncomplete extends Schema.TaggedError<RecordSealIncomplete>()("RecordSealIncomplete", {
@@ -61,14 +64,9 @@ export type RecordReaderOpenError =
   | RecordBootstrapInvalid
   | RecordFormatUnsupported;
 
-export type RecordMaintenanceOpenError =
-  | RecordReaderOpenError
-  | RecordWriteError;
+export type RecordMaintenanceOpenError = RecordReaderOpenError | RecordWriteError;
 
-export type RecordMaintenanceError =
-  | RecordMaintenanceOpenError
-  | RecordFileSystemError
-  | FamilyDefinitionRequired;
+export type RecordMaintenanceError = RecordMaintenanceOpenError | RecordFileSystemError | FamilyDefinitionRequired;
 
 export type RecordReaderReadError =
   | RecordFileSystemError
@@ -78,6 +76,4 @@ export type RecordReaderReadError =
   | RecordIntegrityFailure
   | FamilyDefinitionRequired;
 
-export type RecordCompletenessError =
-  | RecordReaderReadError
-  | RecordSealIncomplete;
+export type RecordCompletenessError = RecordReaderReadError | RecordSealIncomplete;

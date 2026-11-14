@@ -29,17 +29,20 @@ export const sandboxActionDebugAgent = defineSandboxAgent({
     },
     probe: sandboxActionDebugAgentProbe,
   },
-  before: () => Effect.sync(() => {
-    recordSandboxActionDebugSideEffect("agent-setup");
-  }),
-  send: () => Effect.sync(() => {
-    recordSandboxActionDebugSideEffect("agent-send");
-    return {
-      status: "completed",
-      events: [{ type: "message", role: "assistant", text: "debug fixture must not run" }],
-    };
-  }),
-  after: () => Effect.sync(() => {
-    recordSandboxActionDebugSideEffect("agent-teardown");
-  }),
+  before: () =>
+    Effect.sync(() => {
+      recordSandboxActionDebugSideEffect("agent-setup");
+    }),
+  send: () =>
+    Effect.sync(() => {
+      recordSandboxActionDebugSideEffect("agent-send");
+      return {
+        status: "completed",
+        events: [{ type: "message", role: "assistant", text: "debug fixture must not run" }],
+      };
+    }),
+  after: () =>
+    Effect.sync(() => {
+      recordSandboxActionDebugSideEffect("agent-teardown");
+    }),
 });

@@ -12,9 +12,7 @@ const CAPACITY_EVAL_PREFIX = "provider-capacity-capacity/";
 const GROUP_CAPACITY_EVAL_PREFIX = "provider-capacity-group-";
 
 function aborted(signal: AbortSignal): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new Error("provider-capacity fixture aborted");
+  return signal.reason instanceof Error ? signal.reason : new Error("provider-capacity fixture aborted");
 }
 
 async function waitForFile(path: string, signal: AbortSignal): Promise<void> {

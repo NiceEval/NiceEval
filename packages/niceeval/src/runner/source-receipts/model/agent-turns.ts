@@ -25,12 +25,7 @@ import {
   MAX_USAGE_OBSERVATIONS,
 } from "../../../record/family/source-receipt/limits.ts";
 import { compareObservabilityText } from "../../../record/family/source-receipt/model.ts";
-import {
-  freezeArray,
-  isAllowedCollection,
-  isStrictlyOrderedById,
-  payloadFits,
-} from "./common.ts";
+import { freezeArray, isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
 
 const ConversationItemBaseFields = {
   itemId: ItemIdSchema,
@@ -84,9 +79,7 @@ export const ConversationItemSchema = Schema.Union([
     kind: Schema.Literal("input-request"),
     state: Schema.Literals(["requested", "answered", "cancelled"]),
     promptSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
-    responseSummary: Schema.NullOr(
-      boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
-    ),
+    responseSummary: Schema.NullOr(boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES)),
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
@@ -105,7 +98,8 @@ export const ConversationItemSchema = Schema.Union([
     kind: Schema.Literal("compaction"),
     summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
     compactedItemCount: NonNegativeSafeIntegerSchema,
-  }), Schema.Struct({
+  }),
+  Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("conversation-error"),
     code: SafeIdentifierSchema,
@@ -133,9 +127,7 @@ function conversationTextLengths(item: ConversationItem): readonly number[] {
     case "input-request":
       return freezeArray([
         new TextEncoder().encode(item.promptSummary).byteLength,
-        ...(item.responseSummary === null
-          ? []
-          : [new TextEncoder().encode(item.responseSummary).byteLength]),
+        ...(item.responseSummary === null ? [] : [new TextEncoder().encode(item.responseSummary).byteLength]),
       ]);
     case "skill-load":
       return freezeArray([]);
@@ -168,18 +160,13 @@ function isCanonicalConversationAttachment(
   const resultCallIds = new Set<string>();
   let previous: ConversationItem | undefined;
   for (const item of value.items) {
-    if (
-      itemIds.has(item.itemId) ||
-      itemSequences.has(item.sequence) ||
-      !turnIds.has(item.turnId)
-    ) {
+    if (itemIds.has(item.itemId) || itemSequences.has(item.sequence) || !turnIds.has(item.turnId)) {
       return false;
     }
     if (
       previous !== undefined &&
       (previous.sequence > item.sequence ||
-        (previous.sequence === item.sequence &&
-          compareObservabilityText(previous.itemId, item.itemId) >= 0))
+        (previous.sequence === item.sequence && compareObservabilityText(previous.itemId, item.itemId) >= 0))
     ) {
       return false;
     }
@@ -195,10 +182,7 @@ function isCanonicalConversationAttachment(
     }
     previous = item;
   }
-  if (
-    value.collection.state === "complete" &&
-    [...callIds].some((callId) => !resultCallIds.has(callId))
-  ) {
+  if (value.collection.state === "complete" && [...callIds].some((callId) => !resultCallIds.has(callId))) {
     return false;
   }
   return value.collection.limitations.every((limitation) => {
@@ -206,9 +190,7 @@ function isCanonicalConversationAttachment(
       return true;
     }
     const item = value.items.find((candidate) => candidate.itemId === limitation.itemId);
-    return item !== undefined && conversationTextLengths(item).some(
-      (length) => length === limitation.retainedBytes,
-    );
+    return item !== undefined && conversationTextLengths(item).some((length) => length === limitation.retainedBytes);
   });
 }
 
@@ -219,15 +201,15 @@ const ConversationAttachmentStructuralSchema = Schema.Struct({
 });
 
 export const ConversationAttachmentSchema = ConversationAttachmentStructuralSchema.pipe(
-  Schema.check(Schema.makeFilter(isCanonicalConversationAttachment, {
-    identifier: "ObservabilityConversationAttachment",
-    description: "a canonical, bounded conversation attachment",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCanonicalConversationAttachment, {
+      identifier: "ObservabilityConversationAttachment",
+      description: "a canonical, bounded conversation attachment",
+    }),
+  ),
 );
 
-export type ConversationAttachment = Schema.Schema.Type<
-  typeof ConversationAttachmentSchema
->;
+export type ConversationAttachment = Schema.Schema.Type<typeof ConversationAttachmentSchema>;
 
 export const UsageObservationSchema = Schema.Union([
   Schema.Struct({
@@ -251,12 +233,16 @@ export const UsageObservationSchema = Schema.Union([
     refs: UsageReferencesSchema,
     kind: Schema.Literal("provider-cost"),
     amount: Schema.String.pipe(
-      Schema.check(Schema.makeFilter((value) =>
-          /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value) &&
-          new TextEncoder().encode(value).byteLength <= 64, {
-          identifier: "ObservabilityCanonicalDecimal",
-          description: "a non-negative canonical decimal string",
-        })),
+      Schema.check(
+        Schema.makeFilter(
+          (value) =>
+            /^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$/u.test(value) && new TextEncoder().encode(value).byteLength <= 64,
+          {
+            identifier: "ObservabilityCanonicalDecimal",
+            description: "a non-negative canonical decimal string",
+          },
+        ),
+      ),
     ),
     currency: CurrencyCodeSchema,
   }),
@@ -269,9 +255,7 @@ const UsageAttachmentStructuralSchema = Schema.Struct({
 
 export type UsageObservation = Schema.Schema.Type<typeof UsageObservationSchema>;
 
-function isCanonicalUsageAttachment(
-  value: Schema.Schema.Type<typeof UsageAttachmentStructuralSchema>,
-): boolean {
+function isCanonicalUsageAttachment(value: Schema.Schema.Type<typeof UsageAttachmentStructuralSchema>): boolean {
   return (
     value.observations.length <= MAX_USAGE_OBSERVATIONS &&
     payloadFits(value, MAX_USAGE_ATTACHMENT_BYTES) &&
@@ -281,10 +265,12 @@ function isCanonicalUsageAttachment(
 }
 
 export const UsageAttachmentSchema = UsageAttachmentStructuralSchema.pipe(
-  Schema.check(Schema.makeFilter(isCanonicalUsageAttachment, {
-    identifier: "ObservabilityUsageAttachment",
-    description: "a canonical, bounded usage attachment",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCanonicalUsageAttachment, {
+      identifier: "ObservabilityUsageAttachment",
+      description: "a canonical, bounded usage attachment",
+    }),
+  ),
 );
 
 export type UsageAttachment = Schema.Schema.Type<typeof UsageAttachmentSchema>;

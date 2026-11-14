@@ -1,8 +1,5 @@
 import { Result, Schema } from "effect";
-import {
-  ExactEvaluationParseOptions,
-  FiniteNonNegativeNumberSchema,
-} from "./attachment.ts";
+import { ExactEvaluationParseOptions, FiniteNonNegativeNumberSchema } from "./attachment.ts";
 
 /**
  * Eligibility is a current reuse-policy calculation. Record persists neither
@@ -18,13 +15,19 @@ function isBoundedNonEmptyText(value: string, maximumLength: number): boolean {
 }
 
 export const EqualityTokenSchema = Schema.Struct({
-  domain: Schema.String.pipe(Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH))),
-  value: Schema.String.pipe(Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_VALUE_MAXIMUM_LENGTH))),
+  domain: Schema.String.pipe(
+    Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH)),
+  ),
+  value: Schema.String.pipe(
+    Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_VALUE_MAXIMUM_LENGTH)),
+  ),
 });
 export type EqualityToken = Schema.toType<typeof EqualityTokenSchema>["Type"];
 
 export const DurationLimitSchema = Schema.Struct({
-  domain: Schema.String.pipe(Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH))),
+  domain: Schema.String.pipe(
+    Schema.refine((value): value is string => isBoundedNonEmptyText(value, EQUALITY_TOKEN_DOMAIN_MAXIMUM_LENGTH)),
+  ),
   milliseconds: FiniteNonNegativeNumberSchema,
 });
 export type DurationLimit = Schema.toType<typeof DurationLimitSchema>["Type"];
@@ -41,10 +44,7 @@ export type AttemptExecutionDurationRead =
   | { readonly state: "available"; readonly duration: DurationLimit }
   | {
       readonly state: "unavailable";
-      readonly reason:
-        | "timing-partial"
-        | "timing-empty"
-        | "timing-window-incomplete";
+      readonly reason: "timing-partial" | "timing-empty" | "timing-window-incomplete";
     };
 
 /** The narrow Runner Activity receipt surface needed for execution-time policy. */
@@ -64,9 +64,7 @@ export interface AttemptExecutionTimingFacts {
  * a trustworthy execution-duration fact and therefore must not be treated as
  * zero.
  */
-export function readAttemptExecutionDuration(
-  activities: AttemptExecutionTimingFacts,
-): AttemptExecutionDurationRead {
+export function readAttemptExecutionDuration(activities: AttemptExecutionTimingFacts): AttemptExecutionDurationRead {
   if (activities.collection.state !== "complete") {
     return Object.freeze({ state: "unavailable" as const, reason: "timing-partial" as const });
   }
@@ -79,12 +77,12 @@ export function readAttemptExecutionDuration(
   for (const activity of sortedRoots) {
     const end = activity.startOffsetMs + activity.durationMs;
     if (
-      !Number.isSafeInteger(activity.startOffsetMs)
-      || activity.startOffsetMs < 0
-      || !Number.isSafeInteger(activity.durationMs)
-      || activity.durationMs < 0
-      || !Number.isSafeInteger(end)
-      || activity.startOffsetMs > coveredEnd
+      !Number.isSafeInteger(activity.startOffsetMs) ||
+      activity.startOffsetMs < 0 ||
+      !Number.isSafeInteger(activity.durationMs) ||
+      activity.durationMs < 0 ||
+      !Number.isSafeInteger(end) ||
+      activity.startOffsetMs > coveredEnd
     ) {
       return Object.freeze({
         state: "unavailable" as const,

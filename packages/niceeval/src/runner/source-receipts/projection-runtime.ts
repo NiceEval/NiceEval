@@ -21,9 +21,7 @@ export interface EventProjectionRuntime extends CommandProjectionRuntime {
   readonly providerName: string;
   readonly conversationTurns: readonly ProjectedConversationTurn[];
   readonly conversationLimitations: RunnerCollectionLimitations;
-  readonly mintEntity: <Kind extends "call" | "item">(
-    kind: Kind,
-  ) => ObservabilityEntityIdForKind<Kind> | undefined;
+  readonly mintEntity: <Kind extends "call" | "item">(kind: Kind) => ObservabilityEntityIdForKind<Kind> | undefined;
 }
 
 export type OpenConversationTools = Map<string, CallId>;

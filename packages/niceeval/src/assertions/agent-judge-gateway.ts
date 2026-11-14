@@ -2,9 +2,7 @@
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/architecture.md
 import { agentJudgeIdentity } from "../runner/judge-identity.ts";
-import {
-  AGENT_JUDGE_ALGORITHM_REVISION,
-} from "./agent-judge-revisions.ts";
+import { AGENT_JUDGE_ALGORITHM_REVISION } from "./agent-judge-revisions.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
 import { agentJudgeSystemPrompt, AGENT_JUDGE_TOOL_DESCRIPTION } from "./agent-judge.prompt.ts";
 import { Effect, Schema } from "effect";
@@ -234,8 +232,6 @@ export class AgentJudgeSession {
   private envelope(key: string) {
     const trace = this.sealedTrace ?? this.trace();
     const payload: AgentJudgeAudit = {
-
-
       trace: { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
       criterion: key,
       prompt: this.steps.find((step) => step.key === key)!.message,
@@ -246,8 +242,6 @@ export class AgentJudgeSession {
     const content = chunkUtf8(body);
     return {
       manifest: {
-
-
         byteLength: size(body),
         digest: agentJudgeDigest(body),
         chunkByteLengths: content.map(size),
@@ -391,7 +385,11 @@ export class AgentJudgeSession {
       (this.steps[this.currentStep - 1]?.kind === "judge"
         ? binaryParameters
         : gradeParameters) as import("@earendil-works/pi-coding-agent").ToolDefinition["parameters"];
-    const { session: agent, sessionManager, prompt } = await createManagedPiSession({
+    const {
+      session: agent,
+      sessionManager,
+      prompt,
+    } = await createManagedPiSession({
       paths: this.pi!,
       profile,
       apiKey,
@@ -583,10 +581,14 @@ export class AgentJudgeSession {
             };
             if (event.result.usage !== undefined) this.recordUsage(event.result.usage, "succeeded");
           } else if (!event.willRetry) {
-            this.compactions[index] = { ...compact, failure: {
-              state: "unavailable", code: "agent-judge-context-overflow",
-              message: event.errorMessage ?? "pi could not compact the context",
-            } };
+            this.compactions[index] = {
+              ...compact,
+              failure: {
+                state: "unavailable",
+                code: "agent-judge-context-overflow",
+                message: event.errorMessage ?? "pi could not compact the context",
+              },
+            };
           }
           captureSession();
         }
@@ -653,7 +655,10 @@ export class AgentJudgeSession {
   private recordUsage(usage: Usage, status: "succeeded" | "failed"): void {
     if (this.closed) return;
     const invalid = piUsageFailure(usage);
-    if (invalid !== undefined) { this.failPi(invalid); return; }
+    if (invalid !== undefined) {
+      this.failPi(invalid);
+      return;
+    }
     const profile = this.profile!;
     const ordinal = ++this.usageOrdinal;
     const call = this.usage?.begin({

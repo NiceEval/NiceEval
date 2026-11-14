@@ -250,7 +250,7 @@ export default function TerminalDemo({ ariaLabel, replayLabel }: { ariaLabel: st
       {now >= T.summary ? (
         <Appear>
           <Panel title="FAILED" titleTone="fail" meta={fmtSec(RUN_SECONDS)}>
-            <PanelRow>7 passed · 1 failed · 0 errored  (2 reused)</PanelRow>
+            <PanelRow>{"7 passed · 1 failed · 0 errored  (2 reused)"}</PanelRow>
             <PanelRow className="soft">330.5k new tok · $0.51</PanelRow>
           </Panel>
         </Appear>

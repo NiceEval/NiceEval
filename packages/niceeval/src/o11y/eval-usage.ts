@@ -30,10 +30,13 @@ function authorCacheRead(report: CacheReadReport, models?: ResolvedModelRoles): 
     rate: (role?: string): NumericMaterial<"ratio"> => {
       if (role === undefined) return Object.freeze({ ...report.total.rate, unit: "ratio" });
       if (!declared.has(role)) {
-        throw new TypeError(`Undeclared model role ${JSON.stringify(role)}; declared roles: ${[...declared].join(", ") || "(none)"}.`);
+        throw new TypeError(
+          `Undeclared model role ${JSON.stringify(role)}; declared roles: ${[...declared].join(", ") || "(none)"}.`,
+        );
       }
       const rate = rates.get(role);
-      if (rate !== undefined && !(rate.state === "unavailable" && rate.reason === "no-calls")) return Object.freeze({ ...rate, unit: "ratio" });
+      if (rate !== undefined && !(rate.state === "unavailable" && rate.reason === "no-calls"))
+        return Object.freeze({ ...rate, unit: "ratio" });
       return Object.freeze({ state: "unavailable", reason: "role-has-no-calls", unit: "ratio" });
     },
   });
@@ -77,8 +80,13 @@ export interface AgentUsageContribution {
   readonly coverage: ResolvedEvidenceCoverage["usage"];
 }
 
-type TokenMetric = "inputTokens" | "inputTotalTokens" | "outputTokens" |
-  "cacheReadTokens" | "cacheWriteTokens" | "totalTokens";
+type TokenMetric =
+  | "inputTokens"
+  | "inputTotalTokens"
+  | "outputTokens"
+  | "cacheReadTokens"
+  | "cacheWriteTokens"
+  | "totalTokens";
 
 function contributionCosts(
   calls: readonly { readonly effectiveCost: EffectiveCallCost | null }[],
@@ -87,14 +95,18 @@ function contributionCosts(
   const totals = effectiveCostTotals(calls, complete ? "complete" : "partial");
   return Object.freeze({
     state: totals.state,
-    values: Object.freeze(totals.values.map((value) => Object.freeze({
-      currency: value.currency,
-      value: value.value,
-      source: value.source,
-      coveredContributions: value.coveredCalls,
-      reportedContributions: value.reportedCalls,
-      estimatedContributions: value.estimatedCalls,
-    }))),
+    values: Object.freeze(
+      totals.values.map((value) =>
+        Object.freeze({
+          currency: value.currency,
+          value: value.value,
+          source: value.source,
+          coveredContributions: value.coveredCalls,
+          reportedContributions: value.reportedCalls,
+          estimatedContributions: value.estimatedCalls,
+        }),
+      ),
+    ),
     totalContributions: totals.totalCalls,
   });
 }
@@ -120,14 +132,19 @@ function tokenBuckets(contribution: AgentUsageContribution, metric: TokenMetric)
   // Some producers have an independent total. Missing totals retain the mutually exclusive bucket fallback.
   const usage: (Readonly<Usage> & { readonly inputTotalTokens?: number }) | null = contribution.usage;
   if (contribution.state === "pending" || usage === null) return [undefined];
-  const input = usage.inputTotalTokens !== undefined
-    ? [usage.inputTotalTokens]
-    : [usage.inputTokens, usage.cacheReadTokens, usage.cacheCreationTokens];
+  const input =
+    usage.inputTotalTokens !== undefined
+      ? [usage.inputTotalTokens]
+      : [usage.inputTokens, usage.cacheReadTokens, usage.cacheCreationTokens];
   switch (metric) {
-    case "inputTotalTokens": return input;
-    case "totalTokens": return [...input, usage.outputTokens];
-    case "cacheWriteTokens": return [usage.cacheCreationTokens];
-    default: return [usage[metric]];
+    case "inputTotalTokens":
+      return input;
+    case "totalTokens":
+      return [...input, usage.outputTokens];
+    case "cacheWriteTokens":
+      return [usage.cacheCreationTokens];
+    default:
+      return [usage[metric]];
   }
 }
 
@@ -157,9 +174,11 @@ function agentTokenMaterial(
       }
     }
   }
-  return Object.freeze(!observed
-    ? { state: "unavailable", reason: "usage-not-reported", provenance }
-    : { state: complete ? "exact" : "lower-bound", value, provenance });
+  return Object.freeze(
+    !observed
+      ? { state: "unavailable", reason: "usage-not-reported", provenance }
+      : { state: complete ? "exact" : "lower-bound", value, provenance },
+  );
 }
 
 function agentCost(
@@ -171,18 +190,29 @@ function agentCost(
   const coverageComplete = contribution.coverage.status === "complete";
   if (usage.costUSD !== undefined) {
     const amount = canonicalDecimalFromNumber(usage.costUSD);
-    return amount === undefined ? null : Object.freeze({
-      amount, currency: "USD", source: Object.freeze({ kind: "reported", id: "agent-send" }),
-      state: coverageComplete ? "complete" : "partial",
-    });
+    return amount === undefined
+      ? null
+      : Object.freeze({
+          amount,
+          currency: "USD",
+          source: Object.freeze({ kind: "reported", id: "agent-send" }),
+          state: coverageComplete ? "complete" : "partial",
+        });
   }
   const model = contribution.model;
   if (model === null || pricing === undefined) return null;
   const wildcard = model.includes("/") ? `${model.slice(0, model.indexOf("/"))}/*` : undefined;
-  const profile = Object.hasOwn(pricing, model) ? pricing[model]
-    : wildcard !== undefined && Object.hasOwn(pricing, wildcard) ? pricing[wildcard] : undefined;
-  if (profile === undefined || profile.currency !== undefined && profile.currency !== "USD" ||
-    profile.basis !== undefined && profile.basis !== "catalog-reference") return null;
+  const profile = Object.hasOwn(pricing, model)
+    ? pricing[model]
+    : wildcard !== undefined && Object.hasOwn(pricing, wildcard)
+      ? pricing[wildcard]
+      : undefined;
+  if (
+    profile === undefined ||
+    (profile.currency !== undefined && profile.currency !== "USD") ||
+    (profile.basis !== undefined && profile.basis !== "catalog-reference")
+  )
+    return null;
   const buckets = [
     [usage.inputTokens, profile.inputPerMTok],
     [usage.outputTokens, profile.outputPerMTok],
@@ -207,12 +237,14 @@ function agentCost(
     }
     charges.push(multiplyCanonicalDecimalPerMillion(rate, tokens));
   }
-  return charges.length === 0 ? null : Object.freeze({
-    amount: addCanonicalDecimals(charges),
-    currency: "USD",
-    source: Object.freeze({ kind: "estimated", id: profile.source?.id ?? "niceeval.config.pricing" }),
-    state: complete ? "complete" : "partial",
-  });
+  return charges.length === 0
+    ? null
+    : Object.freeze({
+        amount: addCanonicalDecimals(charges),
+        currency: "USD",
+        source: Object.freeze({ kind: "estimated", id: profile.source?.id ?? "niceeval.config.pricing" }),
+        state: complete ? "complete" : "partial",
+      });
 }
 
 /** The receiver selects scope membership before calling this pure projection. */
@@ -233,8 +265,13 @@ export function projectAgentEvalUsage(input: {
     cacheReadTokens: agentTokenMaterial(input.contributions, "cacheReadTokens", input.scope),
     cacheWriteTokens: agentTokenMaterial(input.contributions, "cacheWriteTokens", input.scope),
     totalTokens: agentTokenMaterial(input.contributions, "totalTokens", input.scope),
-    costs: contributionCosts(input.contributions.map((contribution) => ({
-      effectiveCost: agentCost(contribution, input.pricing),
-    })), input.contributions.every((contribution) => contribution.state === "terminal" && contribution.coverage.status === "complete")),
+    costs: contributionCosts(
+      input.contributions.map((contribution) => ({
+        effectiveCost: agentCost(contribution, input.pricing),
+      })),
+      input.contributions.every(
+        (contribution) => contribution.state === "terminal" && contribution.coverage.status === "complete",
+      ),
+    ),
   });
 }

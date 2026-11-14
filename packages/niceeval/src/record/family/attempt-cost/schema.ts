@@ -3,10 +3,14 @@ import { Schema } from "effect";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { NonNegativeSafeIntegerSchema, SafeTextSchema } from "../common.ts";
 
-const USD = Schema.Number.pipe(Schema.check(Schema.makeFilter(
-  (value) => Number.isFinite(value) && value >= 0,
-  { identifier: "AttemptCostUSD", description: "a finite non-negative USD amount" },
-)));
+const USD = Schema.Number.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => Number.isFinite(value) && value >= 0, {
+      identifier: "AttemptCostUSD",
+      description: "a finite non-negative USD amount",
+    }),
+  ),
+);
 
 const ObservedCostFactSchema = Schema.Struct({
   kind: Schema.Literal("observed"),
@@ -33,21 +37,21 @@ const EstimatedCostFactSchema = Schema.Struct({
 
 /** Raw Attempt-owned cost facts; comparison selection is intentionally absent. */
 export const AttemptCostAttachmentSchema = Schema.Struct({
-  simulatedUser: Schema.optional(Schema.Struct({
-    source: Schema.Literal("simulated-user"),
-    state: Schema.Literals(["complete", "partial", "unpriced"]),
-    amountUSD: Schema.NullOr(USD),
-    calls: NonNegativeSafeIntegerSchema,
-  })),
+  simulatedUser: Schema.optional(
+    Schema.Struct({
+      source: Schema.Literal("simulated-user"),
+      state: Schema.Literals(["complete", "partial", "unpriced"]),
+      amountUSD: Schema.NullOr(USD),
+      calls: NonNegativeSafeIntegerSchema,
+    }),
+  ),
   observed: Schema.optional(ObservedCostFactSchema),
   estimated: Schema.optional(EstimatedCostFactSchema),
 });
 
 export type AttemptCostAttachment = Schema.Schema.Type<typeof AttemptCostAttachmentSchema>;
 
-export function validateAttemptCostAttachment(
-  value: AttemptCostAttachment,
-): readonly RecordAttachmentIssue[] {
+export function validateAttemptCostAttachment(value: AttemptCostAttachment): readonly RecordAttachmentIssue[] {
   return value.estimated === undefined || value.estimated.charges.length > 0
     ? Object.freeze([])
     : Object.freeze([recordAttachmentIssue("record-attachment-schema-invalid", ["estimated", "charges"])]);

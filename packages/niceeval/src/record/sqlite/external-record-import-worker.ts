@@ -4,11 +4,7 @@ import { backup } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { closeRecordDatabase, openRecordReader, validateExactSchema, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
-import {
-  captureSingleFileRecord,
-  projectRecordReadMode,
-  validatePortableRecordDatabase,
-} from "./portable-capture.ts";
+import { captureSingleFileRecord, projectRecordReadMode, validatePortableRecordDatabase } from "./portable-capture.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
 import type { RecordImportSourceKind } from "./external-record-import.ts";
 
@@ -20,13 +16,18 @@ interface ExternalRecordImportInput {
 }
 
 function decodeInput(value: unknown): ExternalRecordImportInput {
-  if (typeof value !== "object" || value === null ||
-    typeof Reflect.get(value, "sourcePath") !== "string" || Reflect.get(value, "sourcePath") === "" ||
-    typeof Reflect.get(value, "generationPath") !== "string" || Reflect.get(value, "generationPath") === "" ||
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof Reflect.get(value, "sourcePath") !== "string" ||
+    Reflect.get(value, "sourcePath") === "" ||
+    typeof Reflect.get(value, "generationPath") !== "string" ||
+    Reflect.get(value, "generationPath") === "" ||
     !Number.isSafeInteger(Reflect.get(value, "deadlineEpochMs")) ||
     (Reflect.get(value, "sourceKind") !== "external-record" &&
       Reflect.get(value, "sourceKind") !== "project-record" &&
-      Reflect.get(value, "sourceKind") !== "captured-project-record")) {
+      Reflect.get(value, "sourceKind") !== "captured-project-record")
+  ) {
     throw sqliteError("record-database-invalid", "import-record", "Record import worker input is invalid");
   }
   return Object.freeze({
@@ -39,7 +40,11 @@ function decodeInput(value: unknown): ExternalRecordImportInput {
 
 function deadline(input: ExternalRecordImportInput, phase: string): void {
   if (Date.now() >= input.deadlineEpochMs) {
-    throw sqliteError("record-resource-limit-exceeded", "import-record", `Record import ${phase} exceeded its deadline`);
+    throw sqliteError(
+      "record-resource-limit-exceeded",
+      "import-record",
+      `Record import ${phase} exceeded its deadline`,
+    );
   }
 }
 
@@ -123,14 +128,22 @@ if (!isMainThread && parentPort !== null) {
     (sealedRunCount) => port.postMessage(Object.freeze({ state: "success", sealedRunCount })),
     (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      port.postMessage(Object.freeze({
-        state: "failure",
-        error: Object.freeze({
-          code: typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error",
-          operation: typeof Reflect.get(error, "operation") === "string" ? String(Reflect.get(error, "operation")) : "import-record",
-          message: error.message,
+      port.postMessage(
+        Object.freeze({
+          state: "failure",
+          error: Object.freeze({
+            code:
+              typeof Reflect.get(error, "code") === "string"
+                ? String(Reflect.get(error, "code"))
+                : "record-sqlite-error",
+            operation:
+              typeof Reflect.get(error, "operation") === "string"
+                ? String(Reflect.get(error, "operation"))
+                : "import-record",
+            message: error.message,
+          }),
         }),
-      }));
+      );
     },
   );
 }

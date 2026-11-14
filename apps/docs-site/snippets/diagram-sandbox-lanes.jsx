@@ -62,16 +62,26 @@ export const SandboxLanes = ({ locale = "zh" }) => (
       </div>
       <div className="ne-sbx-item">
         <span className="ne-sbx-key" />
-        {locale === "en" ? "Once per Attempt: Sandbox" : "每条 Attempt 一次：Sandbox"} <code>before</code> / <code>after</code>{locale === "en" ? ", Agent and eval lifecycle, " : "、Agent 与评估用例生命周期、"}<code>test(t)</code>
+        {locale === "en" ? "Once per Attempt: Sandbox" : "每条 Attempt 一次：Sandbox"} <code>before</code> /{" "}
+        <code>after</code>
+        {locale === "en" ? ", Agent and eval lifecycle, " : "、Agent 与评估用例生命周期、"}
+        <code>test(t)</code>
       </div>
       <div className="ne-sbx-item">
         <span className="ne-sbx-key ne-sbx-reset" />
-        {locale === "en" ? "Between evals: " : "题间重置："}<code>git reset --hard</code> + <code>git clean</code>{locale === "en" ? ", rolling back only the working directory" : "，只回滚工作目录"}
+        {locale === "en" ? "Between evals: " : "题间重置："}
+        <code>git reset --hard</code> + <code>git clean</code>
+        {locale === "en" ? ", rolling back only the working directory" : "，只回滚工作目录"}
       </div>
     </div>
 
     <div className="ne-ft">
-      <code>$HOME</code>{locale === "en" ? ", " : "、"}<code>/tmp</code>{locale === "en" ? ", global installations, and background processes survive reset. Setup must be repeatable; otherwise use concurrency without reuse." : "、全局安装和后台进程活过重置点，所以准备代码要能重放；做不到就别开复用，用并发。"}
+      <code>$HOME</code>
+      {locale === "en" ? ", " : "、"}
+      <code>/tmp</code>
+      {locale === "en"
+        ? ", global installations, and background processes survive reset. Setup must be repeatable; otherwise use concurrency without reuse."
+        : "、全局安装和后台进程活过重置点，所以准备代码要能重放；做不到就别开复用，用并发。"}
     </div>
   </div>
 );

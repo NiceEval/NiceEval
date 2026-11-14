@@ -1,11 +1,13 @@
 /** Plain, browser-only values shared by the mechanically ported legacy primitives. */
 export type ReportLocale = "en" | "zh-CN";
 
-export type LocalizedText = string | Readonly<{
-  en?: string;
-  "zh-CN"?: string;
-  [locale: string]: string | undefined;
-}>;
+export type LocalizedText =
+  | string
+  | Readonly<{
+      en?: string;
+      "zh-CN"?: string;
+      [locale: string]: string | undefined;
+    }>;
 
 export type ClosedAssertionFactValue =
   | { readonly kind: "text"; readonly text: string }
@@ -30,7 +32,9 @@ export type ClosedJsonValue =
 
 export function resolveLocalizedText(value: LocalizedText, locale: ReportLocale): string {
   if (typeof value === "string") return value;
-  return value[locale] ?? value.en ?? Object.values(value).find((entry): entry is string => typeof entry === "string") ?? "";
+  return (
+    value[locale] ?? value.en ?? Object.values(value).find((entry): entry is string => typeof entry === "string") ?? ""
+  );
 }
 
 export function cx(...parts: (string | undefined | false)[]): string {

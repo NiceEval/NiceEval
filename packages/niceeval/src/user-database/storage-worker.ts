@@ -7,11 +7,7 @@ import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
 import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import { isBeforeCacheSnapshotRepositoryRequest } from "../sandbox/remote-snapshot/ledger.ts";
-import {
-  UserDatabaseInvalid,
-  UserDatabaseLegacyFound,
-  UserDatabaseUnsupported,
-} from "./errors.ts";
+import { UserDatabaseInvalid, UserDatabaseLegacyFound, UserDatabaseUnsupported } from "./errors.ts";
 import {
   DURABLE_STATE_REPOSITORY,
   type DurableStateRequest,
@@ -27,7 +23,11 @@ import {
   userDatabaseRepositoryCatalog,
 } from "./repositories/catalog.ts";
 
-import { BEFORE_CACHE_SNAPSHOT_SCHEMA_SQL, BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS, assertBeforeCacheSnapshotSchema } from "./before-cache-schema.ts";
+import {
+  BEFORE_CACHE_SNAPSHOT_SCHEMA_SQL,
+  BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS,
+  assertBeforeCacheSnapshotSchema,
+} from "./before-cache-schema.ts";
 
 const HostFormatTable = "__niceeval_user_database_format";
 const HostFormatIdentity = "niceeval-user-database/current";
@@ -38,66 +38,73 @@ function schemaObjectKey([type, name, table]: readonly string[]): string {
 }
 
 /** UserDatabase is one static application format with one complete final schema. */
-const AllowedSchemaObjects = new Set<string>([
-  ...BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS,
-  ["table", HostFormatTable, HostFormatTable],
-  ["table", "durable_state_entries", "durable_state_entries"],
-  ["table", "docker_cache_domains", "docker_cache_domains"],
-  ["table", "docker_cache_metadata", "docker_cache_metadata"],
-  ["table", "docker_task_build_entries", "docker_task_build_entries"],
-  ["table", "docker_task_build_leases", "docker_task_build_leases"],
-  ["table", "docker_task_build_roots", "docker_task_build_roots"],
-  ["table", "docker_cache_gc_plans", "docker_cache_gc_plans"],
-  ["table", "docker_image_gc_locks", "docker_image_gc_locks"],
-  ["table", "docker_before_cache_entries", "docker_before_cache_entries"],
-  ["table", "docker_before_cache_index", "docker_before_cache_index"],
-  ["table", "docker_before_cache_generation_fences", "docker_before_cache_generation_fences"],
-  ["table", "docker_before_cache_replacement_scopes", "docker_before_cache_replacement_scopes"],
-  ["table", "docker_before_cache_replacement_heads", "docker_before_cache_replacement_heads"],
-  ["table", "docker_before_cache_leases", "docker_before_cache_leases"],
-  ["table", "docker_before_cache_holds", "docker_before_cache_holds"],
-  ["table", "incus_allocation_intents", "incus_allocation_intents"],
-  ["table", "incus_artifact_intents", "incus_artifact_intents"],
-  ["table", "incus_admission_leases", "incus_admission_leases"],
-  ["table", "incus_artifact_replacement_heads", "incus_artifact_replacement_heads"],
-  ["table", "incus_artifact_consumer_holds", "incus_artifact_consumer_holds"],
-  ["table", "incus_artifact_destroy_receipts", "incus_artifact_destroy_receipts"],
-  ["table", "incus_artifact_release_receipts", "incus_artifact_release_receipts"],
-  ["table", "incus_artifact_gc_plans", "incus_artifact_gc_plans"],
-  ["index", "docker_before_cache_generation", "docker_before_cache_entries"],
-  ["index", "docker_before_cache_writer", "docker_before_cache_entries"],
-  ["index", "docker_before_cache_replacement_scope", "docker_before_cache_replacement_scopes"],
-  ["trigger", "docker_before_cache_exact_base_insert", "docker_before_cache_entries"],
-  ["trigger", "docker_before_cache_exact_base_update", "docker_before_cache_entries"],
-  ["index", "sqlite_autoindex___niceeval_user_database_format_1", HostFormatTable],
-  ["index", "sqlite_autoindex_durable_state_entries_1", "durable_state_entries"],
-  ["index", "sqlite_autoindex_docker_cache_domains_1", "docker_cache_domains"],
-  ["index", "sqlite_autoindex_docker_cache_gc_plans_1", "docker_cache_gc_plans"],
-  ["index", "sqlite_autoindex_docker_cache_metadata_1", "docker_cache_metadata"],
-  ["index", "sqlite_autoindex_docker_image_gc_locks_1", "docker_image_gc_locks"],
-  ["index", "sqlite_autoindex_docker_before_cache_entries_1", "docker_before_cache_entries"],
-  ["index", "sqlite_autoindex_docker_before_cache_entries_2", "docker_before_cache_entries"],
-  ["index", "sqlite_autoindex_docker_before_cache_generation_fences_1", "docker_before_cache_generation_fences"],
-  ["index", "sqlite_autoindex_docker_before_cache_index_1", "docker_before_cache_index"],
-  ["index", "sqlite_autoindex_docker_before_cache_index_2", "docker_before_cache_index"],
-  ["index", "sqlite_autoindex_docker_before_cache_leases_1", "docker_before_cache_leases"],
-  ["index", "sqlite_autoindex_docker_before_cache_replacement_heads_1", "docker_before_cache_replacement_heads"],
-  ["index", "sqlite_autoindex_docker_before_cache_replacement_scopes_1", "docker_before_cache_replacement_scopes"],
-  ["index", "sqlite_autoindex_docker_before_cache_holds_1", "docker_before_cache_holds"],
-  ["index", "sqlite_autoindex_docker_task_build_entries_1", "docker_task_build_entries"],
-  ["index", "sqlite_autoindex_docker_task_build_leases_1", "docker_task_build_leases"],
-  ["index", "sqlite_autoindex_docker_task_build_roots_1", "docker_task_build_roots"],
-  ["index", "sqlite_autoindex_incus_admission_leases_1", "incus_admission_leases"],
-  ["index", "sqlite_autoindex_incus_allocation_intents_1", "incus_allocation_intents"],
-  ["index", "sqlite_autoindex_incus_artifact_intents_1", "incus_artifact_intents"],
-  ["index", "sqlite_autoindex_incus_artifact_replacement_heads_1", "incus_artifact_replacement_heads"],
-  ["index", "sqlite_autoindex_incus_artifact_consumer_holds_1", "incus_artifact_consumer_holds"],
-  ["index", "sqlite_autoindex_incus_artifact_destroy_receipts_1", "incus_artifact_destroy_receipts"],
-  ["index", "sqlite_autoindex_incus_artifact_release_receipts_1", "incus_artifact_release_receipts"],
-  ["index", "sqlite_autoindex_incus_artifact_gc_plans_1", "incus_artifact_gc_plans"],
-].map(schemaObjectKey));
+const AllowedSchemaObjects = new Set<string>(
+  [
+    ...BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS,
+    ["table", HostFormatTable, HostFormatTable],
+    ["table", "durable_state_entries", "durable_state_entries"],
+    ["table", "docker_cache_domains", "docker_cache_domains"],
+    ["table", "docker_cache_metadata", "docker_cache_metadata"],
+    ["table", "docker_task_build_entries", "docker_task_build_entries"],
+    ["table", "docker_task_build_leases", "docker_task_build_leases"],
+    ["table", "docker_task_build_roots", "docker_task_build_roots"],
+    ["table", "docker_cache_gc_plans", "docker_cache_gc_plans"],
+    ["table", "docker_image_gc_locks", "docker_image_gc_locks"],
+    ["table", "docker_before_cache_entries", "docker_before_cache_entries"],
+    ["table", "docker_before_cache_index", "docker_before_cache_index"],
+    ["table", "docker_before_cache_generation_fences", "docker_before_cache_generation_fences"],
+    ["table", "docker_before_cache_replacement_scopes", "docker_before_cache_replacement_scopes"],
+    ["table", "docker_before_cache_replacement_heads", "docker_before_cache_replacement_heads"],
+    ["table", "docker_before_cache_leases", "docker_before_cache_leases"],
+    ["table", "docker_before_cache_holds", "docker_before_cache_holds"],
+    ["table", "incus_allocation_intents", "incus_allocation_intents"],
+    ["table", "incus_artifact_intents", "incus_artifact_intents"],
+    ["table", "incus_admission_leases", "incus_admission_leases"],
+    ["table", "incus_artifact_replacement_heads", "incus_artifact_replacement_heads"],
+    ["table", "incus_artifact_consumer_holds", "incus_artifact_consumer_holds"],
+    ["table", "incus_artifact_destroy_receipts", "incus_artifact_destroy_receipts"],
+    ["table", "incus_artifact_release_receipts", "incus_artifact_release_receipts"],
+    ["table", "incus_artifact_gc_plans", "incus_artifact_gc_plans"],
+    ["index", "docker_before_cache_generation", "docker_before_cache_entries"],
+    ["index", "docker_before_cache_writer", "docker_before_cache_entries"],
+    ["index", "docker_before_cache_replacement_scope", "docker_before_cache_replacement_scopes"],
+    ["trigger", "docker_before_cache_exact_base_insert", "docker_before_cache_entries"],
+    ["trigger", "docker_before_cache_exact_base_update", "docker_before_cache_entries"],
+    ["index", "sqlite_autoindex___niceeval_user_database_format_1", HostFormatTable],
+    ["index", "sqlite_autoindex_durable_state_entries_1", "durable_state_entries"],
+    ["index", "sqlite_autoindex_docker_cache_domains_1", "docker_cache_domains"],
+    ["index", "sqlite_autoindex_docker_cache_gc_plans_1", "docker_cache_gc_plans"],
+    ["index", "sqlite_autoindex_docker_cache_metadata_1", "docker_cache_metadata"],
+    ["index", "sqlite_autoindex_docker_image_gc_locks_1", "docker_image_gc_locks"],
+    ["index", "sqlite_autoindex_docker_before_cache_entries_1", "docker_before_cache_entries"],
+    ["index", "sqlite_autoindex_docker_before_cache_entries_2", "docker_before_cache_entries"],
+    ["index", "sqlite_autoindex_docker_before_cache_generation_fences_1", "docker_before_cache_generation_fences"],
+    ["index", "sqlite_autoindex_docker_before_cache_index_1", "docker_before_cache_index"],
+    ["index", "sqlite_autoindex_docker_before_cache_index_2", "docker_before_cache_index"],
+    ["index", "sqlite_autoindex_docker_before_cache_leases_1", "docker_before_cache_leases"],
+    ["index", "sqlite_autoindex_docker_before_cache_replacement_heads_1", "docker_before_cache_replacement_heads"],
+    ["index", "sqlite_autoindex_docker_before_cache_replacement_scopes_1", "docker_before_cache_replacement_scopes"],
+    ["index", "sqlite_autoindex_docker_before_cache_holds_1", "docker_before_cache_holds"],
+    ["index", "sqlite_autoindex_docker_task_build_entries_1", "docker_task_build_entries"],
+    ["index", "sqlite_autoindex_docker_task_build_leases_1", "docker_task_build_leases"],
+    ["index", "sqlite_autoindex_docker_task_build_roots_1", "docker_task_build_roots"],
+    ["index", "sqlite_autoindex_incus_admission_leases_1", "incus_admission_leases"],
+    ["index", "sqlite_autoindex_incus_allocation_intents_1", "incus_allocation_intents"],
+    ["index", "sqlite_autoindex_incus_artifact_intents_1", "incus_artifact_intents"],
+    ["index", "sqlite_autoindex_incus_artifact_replacement_heads_1", "incus_artifact_replacement_heads"],
+    ["index", "sqlite_autoindex_incus_artifact_consumer_holds_1", "incus_artifact_consumer_holds"],
+    ["index", "sqlite_autoindex_incus_artifact_destroy_receipts_1", "incus_artifact_destroy_receipts"],
+    ["index", "sqlite_autoindex_incus_artifact_release_receipts_1", "incus_artifact_release_receipts"],
+    ["index", "sqlite_autoindex_incus_artifact_gc_plans_1", "incus_artifact_gc_plans"],
+  ].map(schemaObjectKey),
+);
 
-type SchemaRow = { readonly type: string; readonly name: string; readonly tbl_name: string; readonly sql: string | null };
+type SchemaRow = {
+  readonly type: string;
+  readonly name: string;
+  readonly tbl_name: string;
+  readonly sql: string | null;
+};
 type FormatRow = { readonly format_id: unknown };
 
 function exactSql(sql: string): string {
@@ -119,21 +126,33 @@ async function exists(path: string): Promise<boolean> {
 }
 
 function schemaFor(database: DatabaseSync, object: string): readonly SchemaRow[] {
-  return database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name = ? OR name = ? ORDER BY type, name",
-  ).all(object, object) as SchemaRow[];
+  return database
+    .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name = ? OR name = ? ORDER BY type, name")
+    .all(object, object) as SchemaRow[];
 }
 
 function hasExactTableAndPrimaryKeyIndex(database: DatabaseSync, tableName: string, createSql: string): boolean {
   const rows = schemaFor(database, tableName);
   const table = rows.find((row) => row.type === "table" && row.name === tableName && row.tbl_name === tableName);
-  const automaticIndex = rows.find((row) =>
-    row.type === "index" && row.name === `sqlite_autoindex_${tableName}_1` && row.tbl_name === tableName && row.sql === null);
-  return rows.length === 2 && table !== undefined && automaticIndex !== undefined && exactSql(table.sql ?? "") === exactSql(createSql);
+  const automaticIndex = rows.find(
+    (row) =>
+      row.type === "index" &&
+      row.name === `sqlite_autoindex_${tableName}_1` &&
+      row.tbl_name === tableName &&
+      row.sql === null,
+  );
+  return (
+    rows.length === 2 &&
+    table !== undefined &&
+    automaticIndex !== undefined &&
+    exactSql(table.sql ?? "") === exactSql(createSql)
+  );
 }
 
 function schemaObjects(database: DatabaseSync): readonly SchemaRow[] {
-  return database.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name").all() as SchemaRow[];
+  return database
+    .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name")
+    .all() as SchemaRow[];
 }
 
 function isKnownSchemaObject(row: SchemaRow): boolean {
@@ -142,7 +161,8 @@ function isKnownSchemaObject(row: SchemaRow): boolean {
 
 function assertStaticSchemaObjectAllowlist(database: DatabaseSync): void {
   for (const row of schemaObjects(database)) {
-    if (!isKnownSchemaObject(row)) throw invalid(`UserDatabase has an unsupported schema object ${row.type} ${row.name}`);
+    if (!isKnownSchemaObject(row))
+      throw invalid(`UserDatabase has an unsupported schema object ${row.type} ${row.name}`);
   }
 }
 
@@ -256,20 +276,31 @@ function decodeWorkerData(value: unknown): UserDatabaseWorkerData {
   const databasePath = Reflect.get(value, "databasePath");
   const legacyPath = Reflect.get(value, "legacyPath");
   const busyTimeoutMs = Reflect.get(value, "busyTimeoutMs");
-  if (typeof databasePath !== "string" || typeof legacyPath !== "string" ||
-    !Number.isSafeInteger(busyTimeoutMs) || Number(busyTimeoutMs) < 1 || Number(busyTimeoutMs) > 120_000) {
+  if (
+    typeof databasePath !== "string" ||
+    typeof legacyPath !== "string" ||
+    !Number.isSafeInteger(busyTimeoutMs) ||
+    Number(busyTimeoutMs) < 1 ||
+    Number(busyTimeoutMs) > 120_000
+  ) {
     throw invalid("UserDatabase worker data is invalid");
   }
   return Object.freeze({ databasePath, legacyPath, busyTimeoutMs: Number(busyTimeoutMs) });
 }
 
 function isDurableStateRequest(value: unknown): value is DurableStateRequest {
-  if (typeof value !== "object" || value === null || Reflect.get(value, "repository") !== DURABLE_STATE_REPOSITORY) return false;
+  if (typeof value !== "object" || value === null || Reflect.get(value, "repository") !== DURABLE_STATE_REPOSITORY)
+    return false;
   const operation = Reflect.get(value, "operation");
   if (operation === "list") return true;
   const key = Reflect.get(value, "key");
-  if ((operation !== "get" && operation !== "put") || typeof key !== "string" || Buffer.byteLength(key) > 64 * 1024) return false;
-  return operation === "get" || (typeof Reflect.get(value, "value") === "string" && Buffer.byteLength(String(Reflect.get(value, "value"))) <= 1024 * 1024);
+  if ((operation !== "get" && operation !== "put") || typeof key !== "string" || Buffer.byteLength(key) > 64 * 1024)
+    return false;
+  return (
+    operation === "get" ||
+    (typeof Reflect.get(value, "value") === "string" &&
+      Buffer.byteLength(String(Reflect.get(value, "value"))) <= 1024 * 1024)
+  );
 }
 
 function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
@@ -278,12 +309,11 @@ function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
   const kind = Reflect.get(value, "kind");
   if (kind === "close") return Object.freeze({ id, kind });
   const request = Reflect.get(value, "request");
-  return kind === "repository" && (
-    isDurableStateRequest(request) ||
-    isDockerCacheRepositoryRequest(request) ||
-    isIncusRepositoryRequest(request) ||
-    isBeforeCacheSnapshotRepositoryRequest(request)
-  )
+  return kind === "repository" &&
+    (isDurableStateRequest(request) ||
+      isDockerCacheRepositoryRequest(request) ||
+      isIncusRepositoryRequest(request) ||
+      isBeforeCacheSnapshotRepositoryRequest(request))
     ? Object.freeze({ id, kind, request })
     : undefined;
 }
@@ -327,13 +357,14 @@ class UserDatabaseStorage {
   private installAuthorizer(): void {
     this.database.setAuthorizer((actionCode, _arg1, arg2, databaseName) => {
       if (databaseName !== null && databaseName !== "main") return constants.SQLITE_DENY;
-      if (actionCode === constants.SQLITE_ATTACH || actionCode === constants.SQLITE_DETACH) return constants.SQLITE_DENY;
-      if (actionCode === constants.SQLITE_FUNCTION && arg2?.toLowerCase() === "load_extension") return constants.SQLITE_DENY;
+      if (actionCode === constants.SQLITE_ATTACH || actionCode === constants.SQLITE_DETACH)
+        return constants.SQLITE_DENY;
+      if (actionCode === constants.SQLITE_FUNCTION && arg2?.toLowerCase() === "load_extension")
+        return constants.SQLITE_DENY;
       if (actionCode === constants.SQLITE_PRAGMA) return constants.SQLITE_DENY;
       return constants.SQLITE_OK;
     });
   }
-
 }
 
 function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {
@@ -341,7 +372,10 @@ function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {
   const rawMessage = cause instanceof Error ? cause.message : String(cause);
   const message = rawMessage.length === 0 ? "UserDatabase operation failed" : rawMessage;
   const code = object === undefined ? undefined : Reflect.get(object, "code");
-  const repository = typeof Reflect.get(object ?? {}, "repository") === "string" ? String(Reflect.get(object!, "repository")) : undefined;
+  const repository =
+    typeof Reflect.get(object ?? {}, "repository") === "string"
+      ? String(Reflect.get(object!, "repository"))
+      : undefined;
   if (code === "user-database-legacy-found") {
     return Object.freeze({
       code,
@@ -373,29 +407,33 @@ if (!isMainThread && parentPort !== null) {
     parentPort.close();
   }
   if (data !== undefined) {
-    void UserDatabaseStorage.open(data).then((storage) => {
-      parentPort!.postMessage(Object.freeze({ state: "ready" }));
-      let queue = Promise.resolve();
-      parentPort!.on("message", (incoming: unknown) => {
-        const request = decodeRequest(incoming);
-        if (request === undefined) return;
-        queue = queue.then(() => {
-          let response: UserDatabaseWorkerResponse;
-          try {
-            const result = request.kind === "repository"
-              ? storage.dispatch(request.request)
-              : (storage.close(), Object.freeze({ kind: "void" as const }));
-            response = Object.freeze({ id: request.id, state: "success", result });
-          } catch (cause) {
-            response = Object.freeze({ id: request.id, state: "failure", error: serializeFailure(cause) });
-          }
-          parentPort!.postMessage(response);
-          if (request.kind === "close") parentPort!.close();
+    void UserDatabaseStorage.open(data).then(
+      (storage) => {
+        parentPort!.postMessage(Object.freeze({ state: "ready" }));
+        let queue = Promise.resolve();
+        parentPort!.on("message", (incoming: unknown) => {
+          const request = decodeRequest(incoming);
+          if (request === undefined) return;
+          queue = queue.then(() => {
+            let response: UserDatabaseWorkerResponse;
+            try {
+              const result =
+                request.kind === "repository"
+                  ? storage.dispatch(request.request)
+                  : (storage.close(), Object.freeze({ kind: "void" as const }));
+              response = Object.freeze({ id: request.id, state: "success", result });
+            } catch (cause) {
+              response = Object.freeze({ id: request.id, state: "failure", error: serializeFailure(cause) });
+            }
+            parentPort!.postMessage(response);
+            if (request.kind === "close") parentPort!.close();
+          });
         });
-      });
-    }, (cause) => {
-      parentPort!.postMessage(Object.freeze({ state: "startup-failure", error: serializeFailure(cause) }));
-      parentPort!.close();
-    });
+      },
+      (cause) => {
+        parentPort!.postMessage(Object.freeze({ state: "startup-failure", error: serializeFailure(cause) }));
+        parentPort!.close();
+      },
+    );
   }
 }

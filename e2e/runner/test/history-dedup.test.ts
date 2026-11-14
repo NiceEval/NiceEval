@@ -14,79 +14,84 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
       const root = paths.projectRoot;
-    const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
-    expect(first.exitCode, first.diagnostic()).toBe(0);
-    const firstEval = only(first.expEvalEvents(), () => true, first.diagnostic());
-    expect(firstEval).toMatchObject({
-      event: "eval",
-      evalId: "suite/stable",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    });
-    const firstLocator = firstEval.locator!;
-    expect(firstLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
+      const first = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
+      expect(first.exitCode, first.diagnostic()).toBe(0);
+      const firstEval = only(first.expEvalEvents(), () => true, first.diagnostic());
+      expect(firstEval).toMatchObject({
+        event: "eval",
+        evalId: "suite/stable",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      });
+      const firstLocator = firstEval.locator!;
+      expect(firstLocator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
 
-    const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
-    expect(forced.exitCode, forced.diagnostic()).toBe(0);
-    const forcedEval = only(forced.expEvalEvents(), () => true, forced.diagnostic());
-    expect(forcedEval).toMatchObject({
-      event: "eval",
-      evalId: "suite/stable",
-      verdict: "passed",
-      attempts: 1,
-      passed: 1,
-    });
-    const forcedLocator = forcedEval.locator!;
-    expect(forcedLocator).not.toBe(firstLocator);
+      const forced = await niceeval.run(["exp", "history", "--rerun", "all", "--json"]);
+      expect(forced.exitCode, forced.diagnostic()).toBe(0);
+      const forcedEval = only(forced.expEvalEvents(), () => true, forced.diagnostic());
+      expect(forcedEval).toMatchObject({
+        event: "eval",
+        evalId: "suite/stable",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      });
+      const forcedLocator = forcedEval.locator!;
+      expect(forcedLocator).not.toBe(firstLocator);
 
-    const currentDry = await niceeval.run(["exp", "history", "--dry", "--json"]);
-    expect(currentDry.exitCode, currentDry.diagnostic()).toBe(0);
-    const currentPlan = decodeExpPlanDocument(currentDry.json());
-    expect(currentPlan).toMatchObject({ total: 1, reused: 1 });
-    const currentTarget = currentPlan.matrix.find((row) => row.evalId === "suite/stable");
-    expect(currentTarget).toBeDefined();
-    expect(currentTarget!.slots.map((slot) => slot.state)).toEqual(["reused"]);
-    expect(currentTarget!.readbacks).toHaveLength(1);
-    expect(currentTarget!.readbacks[0]!.source.locator).toBe(forcedLocator);
-    expect(currentTarget!.readbacks[0]!.verdict).toBe("passed");
+      const currentDry = await niceeval.run(["exp", "history", "--dry", "--json"]);
+      expect(currentDry.exitCode, currentDry.diagnostic()).toBe(0);
+      const currentPlan = decodeExpPlanDocument(currentDry.json());
+      expect(currentPlan).toMatchObject({ total: 1, reused: 1 });
+      const currentTarget = currentPlan.matrix.find((row) => row.evalId === "suite/stable");
+      expect(currentTarget).toBeDefined();
+      expect(currentTarget!.slots.map((slot) => slot.state)).toEqual(["reused"]);
+      expect(currentTarget!.readbacks).toHaveLength(1);
+      expect(currentTarget!.readbacks[0]!.source.locator).toBe(forcedLocator);
+      expect(currentTarget!.readbacks[0]!.verdict).toBe("passed");
 
-    const carried = await niceeval.run(["exp", "history", "--json"]);
-    expect(carried.exitCode, carried.diagnostic()).toBe(0);
-    const carriedEvents = carried.expEvents();
-    const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
-    expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
-    const carriedReceipt = carried.expReceipt();
-    expect(carriedReceipt).toMatchObject({ completion: "completed" });
-    expect(carriedReceipt.createdRunIds).toHaveLength(1);
+      const carried = await niceeval.run(["exp", "history", "--json"]);
+      expect(carried.exitCode, carried.diagnostic()).toBe(0);
+      const carriedEvents = carried.expEvents();
+      const carriedStart = only(carriedEvents, (event) => event.event === "start", carried.diagnostic());
+      expect(carriedStart).toMatchObject({ event: "start", total: 1, reused: 1 });
+      const carriedReceipt = carried.expReceipt();
+      expect(carriedReceipt).toMatchObject({ completion: "completed" });
+      expect(carriedReceipt.createdRunIds).toHaveLength(1);
 
+      const listed = await niceeval.run(["show", "runs", "--json"]);
+      expect(listed.exitCode, listed.diagnostic()).toBe(0);
+      const listDocument = listed.runsList();
+      expect(listDocument.operation).toBe("run.list");
+      const listedRuns = JSON.stringify(listDocument.runs);
+      expect(listedRuns).toContain(first.expReceipt().createdRunIds[0]!);
+      expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
+      expect(listedRuns).toContain(carriedReceipt.createdRunIds[0]!);
 
-    const listed = await niceeval.run(["show", "runs", "--json"]);
-    expect(listed.exitCode, listed.diagnostic()).toBe(0);
-    const listDocument = listed.runsList();
-    expect(listDocument.operation).toBe("run.list");
-    const listedRuns = JSON.stringify(listDocument.runs);
-    expect(listedRuns).toContain(first.expReceipt().createdRunIds[0]!);
-    expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
-    expect(listedRuns).toContain(carriedReceipt.createdRunIds[0]!);
+      const trace = await niceeval.run(["show", forcedLocator, "execution", "--json"]);
+      expect(trace.exitCode, trace.diagnostic()).toBe(0);
+      const traceDocument = trace.attemptTrace();
+      expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
+      const traceFacts = JSON.stringify(traceDocument.trace);
+      expect(traceFacts).toContain("runner-fixture-ok");
 
-
-    const trace = await niceeval.run(["show", forcedLocator, "execution", "--json"]);
-    expect(trace.exitCode, trace.diagnostic()).toBe(0);
-    const traceDocument = trace.attemptTrace();
-    expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
-    const traceFacts = JSON.stringify(traceDocument.trace);
-    expect(traceFacts).toContain("runner-fixture-ok");
-
-
-    const timing = await niceeval.run(["show", forcedLocator, "timing", "--json"]);
-    expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    const timingDocument = timing.attemptTiming();
-    expect(timingDocument).toMatchObject({ operation: "attempt.timing", issues: [], timing: { state: "complete" } });
-    const evalRun = only(timingDocument.timing.activities, (activity) => activity.phase === "eval.run", timing.diagnostic());
-    const agentSend = only(timingDocument.timing.activities, (activity) => activity.phase === "agent.send", timing.diagnostic());
-    expect(evalRun).toMatchObject({ parentActivityId: null, outcome: "completed" });
-    expect(agentSend).toMatchObject({ parentActivityId: evalRun.activityId, outcome: "completed" });
+      const timing = await niceeval.run(["show", forcedLocator, "timing", "--json"]);
+      expect(timing.exitCode, timing.diagnostic()).toBe(0);
+      const timingDocument = timing.attemptTiming();
+      expect(timingDocument).toMatchObject({ operation: "attempt.timing", issues: [], timing: { state: "complete" } });
+      const evalRun = only(
+        timingDocument.timing.activities,
+        (activity) => activity.phase === "eval.run",
+        timing.diagnostic(),
+      );
+      const agentSend = only(
+        timingDocument.timing.activities,
+        (activity) => activity.phase === "agent.send",
+        timing.diagnostic(),
+      );
+      expect(evalRun).toMatchObject({ parentActivityId: null, outcome: "completed" });
+      expect(agentSend).toMatchObject({ parentActivityId: evalRun.activityId, outcome: "completed" });
     },
   );
 });
@@ -148,7 +153,10 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         expect(document).toMatchObject({ operation: "run.get", issues: [] });
         expect(document.run.value).toMatchObject({ runId: secondRunId });
         expect(document.run.plannedAttempts).toEqual([
-          expect.objectContaining({ publication: expect.objectContaining({ state: "published", attemptLocator: firstLocator }), state: "carried" }),
+          expect.objectContaining({
+            publication: expect.objectContaining({ state: "published", attemptLocator: firstLocator }),
+            state: "carried",
+          }),
         ]);
       });
     },

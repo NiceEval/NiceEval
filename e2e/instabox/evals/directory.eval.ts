@@ -6,7 +6,8 @@ import { join } from "node:path";
 export default defineEval({
   description: "A directory arrives in one archive with its captured permission bits",
   async test(t) {
-    if ((await t.sandbox.readText("action-target/data.txt")).trim() !== "directory action payload") throw new Error("Directory action lost its payload");
+    if ((await t.sandbox.readText("action-target/data.txt")).trim() !== "directory action payload")
+      throw new Error("Directory action lost its payload");
     const directory = sandboxContent.directory(new URL("../fixtures/tree/", import.meta.url));
     await t.sandbox.runCommandOrThrow("true", ["directory-upload-start"]);
     const startedAt = performance.now();
@@ -20,15 +21,29 @@ export default defineEval({
     const downloaded = await mkdtemp(join(tmpdir(), "niceeval-directory-download-"));
     try {
       await t.sandbox.downloadDirectory("archive-target", downloaded, { ignore: ["file-18.bin"] });
-      if ((await readFile(join(downloaded, "nested/file-19.bin"))).toString("hex") !== "00ff130a") throw new Error("Downloaded directory bytes changed");
-      if (((await stat(join(downloaded, "nested/run.sh"))).mode & 0o777) !== 0o751) throw new Error("Downloaded executable mode changed");
-      const ignored = await stat(join(downloaded, "nested/file-18.bin")).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+      if ((await readFile(join(downloaded, "nested/file-19.bin"))).toString("hex") !== "00ff130a")
+        throw new Error("Downloaded directory bytes changed");
+      if (((await stat(join(downloaded, "nested/run.sh"))).mode & 0o777) !== 0o751)
+        throw new Error("Downloaded executable mode changed");
+      const ignored = await stat(join(downloaded, "nested/file-18.bin")).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
       if (ignored) throw new Error("Directory download did not ignore the requested basename");
-    } finally { await rm(downloaded, { recursive: true, force: true }); }
+    } finally {
+      await rm(downloaded, { recursive: true, force: true });
+    }
     await t.sandbox.writeText("broken-target/sentinel", "original");
     let rejected = false;
-    try { await t.sandbox.upload(directory, "broken-target"); } catch { rejected = true; }
+    try {
+      await t.sandbox.upload(directory, "broken-target");
+    } catch {
+      rejected = true;
+    }
     if (!rejected) throw new Error("A truncated archive was reported successful");
-    if ((await t.sandbox.readText("broken-target/sentinel")) !== "original" || await t.sandbox.pathExists("broken-target/nested/file-0.bin")) throw new Error("Failed expansion installed a partial directory");
+    if (
+      (await t.sandbox.readText("broken-target/sentinel")) !== "original" ||
+      (await t.sandbox.pathExists("broken-target/nested/file-0.bin"))
+    )
+      throw new Error("Failed expansion installed a partial directory");
   },
 });

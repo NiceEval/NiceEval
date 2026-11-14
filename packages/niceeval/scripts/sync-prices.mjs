@@ -43,7 +43,8 @@ for (const model of PRICE_KEYS) {
 // models.dev is primary; the explicit LiteLLM price overlays also own their
 // context limits. Other LiteLLM entries only fill missing model keys.
 const contextWindows = {};
-const contextLimit = value => typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+const contextLimit = (value) =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 for (const [model, source] of Object.entries(upstream)) {
   const limit = contextLimit(source?.max_input_tokens);
   if (limit !== undefined) contextWindows[model] = limit;
@@ -64,9 +65,12 @@ for (const model of PRICE_KEYS) {
   const limit = contextLimit(upstream[model]?.max_input_tokens);
   if (limit !== undefined) contextWindows[model] = limit;
 }
-catalog.contextWindows = Object.fromEntries(Object.entries(contextWindows).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
+catalog.contextWindows = Object.fromEntries(
+  Object.entries(contextWindows).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+);
 catalog.$contextSources = { modelsDev: MODELS_DEV_URL, LiteLLM: LITELLM_PRICES_URL };
-catalog.$note = "per-1M-token USD prices; vendored snapshot from models.dev with explicit LiteLLM price overlays. contextWindows: positive safe-integer token limits from models.dev limit.context, falling back to LiteLLM max_input_tokens (never max_tokens); explicit LiteLLM price overlays also take precedence for context limits.";
+catalog.$note =
+  "per-1M-token USD prices; vendored snapshot from models.dev with explicit LiteLLM price overlays. contextWindows: positive safe-integer token limits from models.dev limit.context, falling back to LiteLLM max_input_tokens (never max_tokens); explicit LiteLLM price overlays also take precedence for context limits.";
 
 catalog.$priceOverlays = {
   LiteLLM: {

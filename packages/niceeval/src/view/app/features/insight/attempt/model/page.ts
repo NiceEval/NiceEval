@@ -1,9 +1,5 @@
 import type { InspectionSuccessDocumentFor } from "@niceeval/inspection/public.ts";
-import {
-  availableValue,
-  type AttemptSummaryData,
-  unavailableValue,
-} from "../details/compute.ts";
+import { availableValue, type AttemptSummaryData, unavailableValue } from "../details/compute.ts";
 
 export interface AttemptPageModel {
   readonly locator: string;
@@ -21,8 +17,9 @@ export function closeAttemptPage(
   attempt: InspectionSuccessDocumentFor<"attempt.get">,
   trace: InspectionSuccessDocumentFor<"attempt.trace">,
 ): AttemptPageModel {
-  const slot = attempt.attempt.originRun.plannedAttempts.find(({ plannedAttemptId }) =>
-    plannedAttemptId === attempt.attempt.core.plannedAttemptId);
+  const slot = attempt.attempt.originRun.plannedAttempts.find(
+    ({ plannedAttemptId }) => plannedAttemptId === attempt.attempt.core.plannedAttemptId,
+  );
   const score = attempt.attempt.score;
   const totalScore = score.state === "complete" ? score.earned : undefined;
   return Object.freeze({
@@ -36,9 +33,7 @@ export function closeAttemptPage(
       identity: Object.freeze({
         runId: attempt.attempt.originRun.runId,
         evalId: attempt.attempt.core.evalId,
-        attempt: slot === undefined
-          ? unavailableValue<number>()
-          : availableValue(slot.attemptOrdinal),
+        attempt: slot === undefined ? unavailableValue<number>() : availableValue(slot.attemptOrdinal),
       }),
       verdict: attempt.attempt.verdict ?? "unknown",
       startedAt: new Date(attempt.attempt.originRun.startedAt).toISOString(),

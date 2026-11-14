@@ -1,15 +1,15 @@
 import { Effect } from "effect";
-import { assembleCommandPlan, beforeCachePlanOf, type CommandPlan, type BeforeCachePlan } from "../../runner/command-plan.ts";
+import {
+  assembleCommandPlan,
+  beforeCachePlanOf,
+  type CommandPlan,
+  type BeforeCachePlan,
+} from "../../runner/command-plan.ts";
 import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
 import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
 import { resolveRunTimeout } from "../../runner/timeout.ts";
-import type {
-  AgentRun,
-  Config,
-  DiscoveredEval,
-  DiscoveredExperiment,
-} from "../../runner/types.ts";
+import type { AgentRun, Config, DiscoveredEval, DiscoveredExperiment } from "../../runner/types.ts";
 import { resolveSandboxBeforeCache } from "../../runner/types.ts";
 import { matchExperimentSelector } from "../../shared/aggregate.ts";
 import {
@@ -56,15 +56,15 @@ function discoverSelection(input: {
 }): Effect.Effect<ExperimentHostListResult, unknown> {
   return Effect.gen(function* () {
     const discoveredEvals = yield* discoverEvals(input.cwd);
-    const evals = input.tag === undefined
-      ? discoveredEvals
-      : discoveredEvals.filter((evalDefinition) => evalDefinition.tags?.includes(input.tag!));
+    const evals =
+      input.tag === undefined
+        ? discoveredEvals
+        : discoveredEvals.filter((evalDefinition) => evalDefinition.tags?.includes(input.tag!));
     const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
       select: input.selector === undefined ? undefined : (ids) => matchExperimentSelector(ids, input.selector!),
     });
-    const selectedIds = input.selector === undefined
-      ? undefined
-      : new Set(matchExperimentSelector(experimentIds, input.selector));
+    const selectedIds =
+      input.selector === undefined ? undefined : new Set(matchExperimentSelector(experimentIds, input.selector));
     const selections = experiments
       .filter((experiment) => selectedIds === undefined || selectedIds.has(experiment.id))
       .map((experiment): ExperimentHostSelection => {
@@ -144,16 +144,10 @@ function uniqueExactOrPrefix<T>(
   id: (candidate: T) => string,
 ): readonly T[] {
   const exact = candidates.find((candidate) => id(candidate) === selector);
-  return exact === undefined
-    ? candidates.filter((candidate) => id(candidate).startsWith(selector))
-    : [exact];
+  return exact === undefined ? candidates.filter((candidate) => id(candidate).startsWith(selector)) : [exact];
 }
 
-function debugAgentRun(
-  experiment: DiscoveredExperiment,
-  evalId: string,
-  config: Config,
-): AgentRun {
+function debugAgentRun(experiment: DiscoveredExperiment, evalId: string, config: Config): AgentRun {
   return {
     adapter: experiment.adapter,
     ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
@@ -164,11 +158,7 @@ function debugAgentRun(
     plugins: experiment.plugins,
     attempts: experiment.attempts ?? 1,
     earlyExit: experiment.earlyExit ?? false,
-    sandboxBeforeCache: resolveSandboxBeforeCache(
-      undefined,
-      experiment.sandboxCache,
-      config.sandboxCache,
-    ),
+    sandboxBeforeCache: resolveSandboxBeforeCache(undefined, experiment.sandboxCache, config.sandboxCache),
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
     ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
@@ -202,7 +192,9 @@ function debug(
       listed.selections,
       input.experimentSelector,
       ({ experiment }) => experiment.id,
-    ).slice().sort((left, right) => left.experiment.id.localeCompare(right.experiment.id));
+    )
+      .slice()
+      .sort((left, right) => left.experiment.id.localeCompare(right.experiment.id));
     if (selectedExperiments.length === 0) {
       return Object.freeze({
         status: "experiment-no-match" as const,
@@ -222,10 +214,13 @@ function debug(
     const experiment = selection.experiment;
     const selectorEvalIds = new Set(selection.selectorEvalIds);
     const selectorEvals = listed.evals.filter((evalDef) => selectorEvalIds.has(evalDef.id));
-    const selectedEvals = (input.evalSelector === undefined
-      ? selectorEvals
-      : uniqueExactOrPrefix(selectorEvals, input.evalSelector, (evalDef) => evalDef.id))
-      .slice().sort((left, right) => left.id.localeCompare(right.id));
+    const selectedEvals = (
+      input.evalSelector === undefined
+        ? selectorEvals
+        : uniqueExactOrPrefix(selectorEvals, input.evalSelector, (evalDef) => evalDef.id)
+    )
+      .slice()
+      .sort((left, right) => left.id.localeCompare(right.id));
     if (selectedEvals.length === 0) {
       return Object.freeze({
         status: "eval-no-match" as const,
@@ -244,21 +239,18 @@ function debug(
     }
 
     const runs = selectedEvals.map((evalDef) => debugAgentRun(experiment, evalDef.id, input.config));
-    const target = yield* planProjectTarget(
-      listed.evals,
-      runs,
-      input.config.timeoutMs,
-      { configJudge: input.config.judgeProvider },
-    );
+    const target = yield* planProjectTarget(listed.evals, runs, input.config.timeoutMs, {
+      configJudge: input.config.judgeProvider,
+    });
     const commandPlan = assembleCommandPlan({
       rows: selectedEvals.map((evalDef) => {
         const run = runs.find((candidate) => candidate.selectedEvalIds.includes(evalDef.id))!;
         return {
-        experimentId: experiment.id,
-        evalId: evalDef.id,
-        ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
-        attempts: run.attempts,
-        dispatch: [{ attempts: Array.from({ length: run.attempts }, (_, attempt) => attempt) }],
+          experimentId: experiment.id,
+          evalId: evalDef.id,
+          ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
+          attempts: run.attempts,
+          dispatch: [{ attempts: Array.from({ length: run.attempts }, (_, attempt) => attempt) }],
         };
       }),
       preparedPairsByKey: target.preparedPairsByKey,
@@ -271,14 +263,20 @@ function debug(
       commandPlan,
       beforeCachePlan: beforeCachePlanOf(commandPlan),
     });
-  }).pipe(Effect.mapError((cause) => new ExperimentHostError({
-    operation: "debug",
-    code: typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-      ? String(Reflect.get(cause, "code"))
-      : "experiment-host-operation-failed",
-    message: cause instanceof Error ? cause.message : String(cause),
-    cause,
-  })));
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new ExperimentHostError({
+          operation: "debug",
+          code:
+            typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
+              ? String(Reflect.get(cause, "code"))
+              : "experiment-host-operation-failed",
+          message: cause instanceof Error ? cause.message : String(cause),
+          cause,
+        }),
+    ),
+  );
 }
 
 /** Internal operations retain their service requirements for the CLI composition. */

@@ -19,11 +19,7 @@ export function finiteUnit(value: unknown, label: string): number {
 }
 
 /** Validates a JSON object's exact fields, preserving gateway error boundaries. */
-export function exactProtocolObject(
-  value: unknown,
-  keys: readonly string[],
-  label: string,
-): Record<string, unknown> {
+export function exactProtocolObject(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
   if (!Predicate.isObject(value)) throw new TypeError("Expected an object");
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
@@ -47,10 +43,7 @@ export function typeSafeScoreProjection(
   labels: readonly string[],
   distribution: Readonly<Record<string, number>>,
 ): { readonly measurement: number; readonly rationale: string } {
-  const measurement = labels.reduce(
-    (sum, label, index) => sum + anchors[index]!.measurement * distribution[label]!,
-    0,
-  );
+  const measurement = labels.reduce((sum, label, index) => sum + anchors[index]!.measurement * distribution[label]!, 0);
   return {
     measurement,
     rationale: `${typesafeRationalePrefix} probability-weighted ${labels.length}-level measurement ${measurement}.`,

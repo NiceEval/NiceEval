@@ -5,10 +5,7 @@ import {
   type SandboxCaptureInput,
   type SandboxCaptureInputError,
 } from "../sandbox/record/attachment.ts";
-import {
-  compareCanonicalIdentity,
-  type SlotId,
-} from "../record/model/identifiers.ts";
+import { compareCanonicalIdentity, type SlotId } from "../record/model/identifiers.ts";
 import type { FileChangesCapture } from "../assertions/record/diff.ts";
 import type { EvalResult } from "./types.ts";
 
@@ -19,17 +16,12 @@ import type { EvalResult } from "./types.ts";
  */
 const fileChangesCaptureByResult = new WeakMap<object, FileChangesCapture>();
 
-export function retainRunnerAttemptFileChangesCapture(
-  result: EvalResult,
-  capture: FileChangesCapture,
-): EvalResult {
+export function retainRunnerAttemptFileChangesCapture(result: EvalResult, capture: FileChangesCapture): EvalResult {
   fileChangesCaptureByResult.set(result, capture);
   return result;
 }
 
-export function runnerAttemptFileChangesCaptureForResult(
-  result: EvalResult,
-): FileChangesCapture | undefined {
+export function runnerAttemptFileChangesCaptureForResult(result: EvalResult): FileChangesCapture | undefined {
   return fileChangesCaptureByResult.get(result);
 }
 
@@ -55,9 +47,7 @@ export interface RunnerSandboxAttachmentWriteInvalid {
   readonly issue: SandboxCaptureInputError;
 }
 
-export type RunnerSandboxRecordProducerError =
-  | RunnerSandboxRecordProducerInvalid
-  | RunnerSandboxAttachmentWriteInvalid;
+export type RunnerSandboxRecordProducerError = RunnerSandboxRecordProducerInvalid | RunnerSandboxAttachmentWriteInvalid;
 
 export interface RunnerSandboxWritePlan {
   readonly validatedSlots: readonly SlotId[];
@@ -99,10 +89,7 @@ function producerInvalid(
   });
 }
 
-function attachmentWriteInvalid(
-  slotId: SlotId,
-  issue: SandboxCaptureInputError,
-): RunnerSandboxAttachmentWriteInvalid {
+function attachmentWriteInvalid(slotId: SlotId, issue: SandboxCaptureInputError): RunnerSandboxAttachmentWriteInvalid {
   return Object.freeze({
     code: "runner-sandbox-attachment-write-invalid" as const,
     slotId,
@@ -123,35 +110,32 @@ function planOrigin(
   }
 
   if (sandbox.reused === true) {
-    if (
-      !positiveSafeInteger(sandbox.reuseSandbox)
-      || !positiveSafeInteger(sandbox.reuseOrdinal)
-    ) {
+    if (!positiveSafeInteger(sandbox.reuseSandbox) || !positiveSafeInteger(sandbox.reuseOrdinal)) {
       return Result.fail(producerInvalid(input.slotId, "sandbox-reuse-shape-invalid"));
     }
-    return Result.succeed(Object.freeze({
-      kind: "pooled" as const,
-      slotId: input.slotId,
-      provider: sandbox.provider,
-      sandboxId: sandbox.sandboxId,
-      ordinal: sandbox.reuseOrdinal,
-    }));
+    return Result.succeed(
+      Object.freeze({
+        kind: "pooled" as const,
+        slotId: input.slotId,
+        provider: sandbox.provider,
+        sandboxId: sandbox.sandboxId,
+        ordinal: sandbox.reuseOrdinal,
+      }),
+    );
   }
 
-  if (
-    sandbox.reused !== undefined
-    || sandbox.reuseSandbox !== undefined
-    || sandbox.reuseOrdinal !== undefined
-  ) {
+  if (sandbox.reused !== undefined || sandbox.reuseSandbox !== undefined || sandbox.reuseOrdinal !== undefined) {
     return Result.fail(producerInvalid(input.slotId, "sandbox-reuse-shape-invalid"));
   }
 
-  return Result.succeed(Object.freeze({
-    kind: "fresh" as const,
-    slotId: input.slotId,
-    provider: sandbox.provider,
-    sandboxId: sandbox.sandboxId,
-  }));
+  return Result.succeed(
+    Object.freeze({
+      kind: "fresh" as const,
+      slotId: input.slotId,
+      provider: sandbox.provider,
+      sandboxId: sandbox.sandboxId,
+    }),
+  );
 }
 
 function identityKey(provider: string, sandboxId: string): string {
@@ -160,9 +144,7 @@ function identityKey(provider: string, sandboxId: string): string {
 
 function comparePooledIdentity(left: PooledIdentity, right: PooledIdentity): number {
   const provider = compareCanonicalIdentity(left.provider, right.provider);
-  return provider === 0
-    ? compareCanonicalIdentity(left.sandboxId, right.sandboxId)
-    : provider;
+  return provider === 0 ? compareCanonicalIdentity(left.sandboxId, right.sandboxId) : provider;
 }
 
 function sandboxAttachmentInput(
@@ -173,27 +155,31 @@ function sandboxAttachmentInput(
     case "not-used":
       return Result.succeed(Object.freeze({ state: "not-used" as const }));
     case "fresh":
-      return Result.succeed(Object.freeze({
-        state: "assigned" as const,
-        provider: origin.provider,
-        sandboxId: origin.sandboxId,
-        reuse: Object.freeze({ kind: "fresh" as const }),
-      }));
+      return Result.succeed(
+        Object.freeze({
+          state: "assigned" as const,
+          provider: origin.provider,
+          sandboxId: origin.sandboxId,
+          reuse: Object.freeze({ kind: "fresh" as const }),
+        }),
+      );
     case "pooled": {
       const sandbox = pooledNumbers.get(identityKey(origin.provider, origin.sandboxId));
       if (sandbox === undefined) {
         return Result.fail(producerInvalid(origin.slotId, "pooled-identity-missing"));
       }
-      return Result.succeed(Object.freeze({
-        state: "assigned" as const,
-        provider: origin.provider,
-        sandboxId: origin.sandboxId,
-        reuse: Object.freeze({
-          kind: "pooled" as const,
-          sandbox,
-          ordinal: origin.ordinal,
+      return Result.succeed(
+        Object.freeze({
+          state: "assigned" as const,
+          provider: origin.provider,
+          sandboxId: origin.sandboxId,
+          reuse: Object.freeze({
+            kind: "pooled" as const,
+            sandbox,
+            ordinal: origin.ordinal,
+          }),
         }),
-      }));
+      );
     }
   }
 }

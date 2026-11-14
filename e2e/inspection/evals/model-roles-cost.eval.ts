@@ -6,13 +6,23 @@ export default roles.defineEval({
     for (let index = 0; index < 375; index += 1) {
       const modelRole = index < 356 ? "planner" : "reviewer";
       t.record({
-        callId: `cost-${String(index).padStart(3, "0")}`, modelRole,
-        provider: "fixture-provider", model: t.selectedModel(modelRole), status: "succeeded",
-        inputTokens: 1, inputTotalTokens: 1, outputTokens: 1,
-        ...(index < 356 ? { cost: {
-          amount: index === 0 ? "0.071083152" : "0", currency: "USD",
-          source: { kind: "reported" as const, id: "offline.response" },
-        } } : {}),
+        callId: `cost-${String(index).padStart(3, "0")}`,
+        modelRole,
+        provider: "fixture-provider",
+        model: t.selectedModel(modelRole),
+        status: "succeeded",
+        inputTokens: 1,
+        inputTotalTokens: 1,
+        outputTokens: 1,
+        ...(index < 356
+          ? {
+              cost: {
+                amount: index === 0 ? "0.071083152" : "0",
+                currency: "USD",
+                source: { kind: "reported" as const, id: "offline.response" },
+              },
+            }
+          : {}),
       });
     }
     t.finishUsage();

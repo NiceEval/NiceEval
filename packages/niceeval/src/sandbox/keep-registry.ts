@@ -16,16 +16,28 @@ import { hashEntryId } from "../shared/entry-file-store.ts";
 import { processIdentityForPidEffect } from "../runner/shared-state-lease.ts";
 import type { Verdict } from "../types.ts";
 
-function registryEffect<A>(root: string, operation: (facets: ProjectStateFacets) => Promise<A>): Effect.Effect<A, unknown, ProjectStateDatabase> {
-  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(database.bind(root), (facets) =>
-    Effect.tryPromise({ try: () => operation(facets), catch: (cause) => cause })));
+function registryEffect<A>(
+  root: string,
+  operation: (facets: ProjectStateFacets) => Promise<A>,
+): Effect.Effect<A, unknown, ProjectStateDatabase> {
+  return Effect.flatMap(ProjectStateDatabase, (database) =>
+    Effect.flatMap(database.bind(root), (facets) =>
+      Effect.tryPromise({ try: () => operation(facets), catch: (cause) => cause }),
+    ),
+  );
 }
-function getKeptSandboxLease(root: string, id: string) { return registryEffect<KeptSandboxLeaseRow | undefined>(root, (facets) => facets.keep.getLease(id)); }
-function acquireKeptSandboxLease(input: Omit<Parameters<KeepFacet["acquireLease"]>[0], "_tag"> & { readonly root: string }) {
+function getKeptSandboxLease(root: string, id: string) {
+  return registryEffect<KeptSandboxLeaseRow | undefined>(root, (facets) => facets.keep.getLease(id));
+}
+function acquireKeptSandboxLease(
+  input: Omit<Parameters<KeepFacet["acquireLease"]>[0], "_tag"> & { readonly root: string },
+) {
   const { root, ...command } = input;
   return registryEffect(root, (facets) => facets.keep.acquireLease({ _tag: "keep-lease-acquire", ...command }));
 }
-function releaseKeptSandboxLease(input: Omit<Parameters<KeepFacet["releaseLease"]>[0], "_tag"> & { readonly root: string }) {
+function releaseKeptSandboxLease(
+  input: Omit<Parameters<KeepFacet["releaseLease"]>[0], "_tag"> & { readonly root: string },
+) {
   const { root, ...command } = input;
   return registryEffect(root, (facets) => facets.keep.releaseLease({ _tag: "keep-lease-release", ...command }));
 }
@@ -33,10 +45,18 @@ function putKeptSandbox(input: Omit<Parameters<KeepFacet["put"]>[0], "_tag"> & {
   const { root, ...command } = input;
   return registryEffect(root, (facets) => facets.keep.put({ _tag: "keep-put", ...command }));
 }
-function listKeptSandboxes(root: string) { return registryEffect<readonly KeptSandboxRow[]>(root, (facets) => facets.keep.list()); }
-function getKeptSandbox(root: string, id: string) { return registryEffect<KeptSandboxRow | undefined>(root, (facets) => facets.keep.get(id)); }
-function updateKeptSandbox(root: string, id: string, payload: Uint8Array) { return registryEffect<boolean>(root, (facets) => facets.keep.update(id, payload)); }
-function deleteKeptSandbox(root: string, id: string) { return registryEffect<void>(root, (facets) => facets.keep.delete(id)); }
+function listKeptSandboxes(root: string) {
+  return registryEffect<readonly KeptSandboxRow[]>(root, (facets) => facets.keep.list());
+}
+function getKeptSandbox(root: string, id: string) {
+  return registryEffect<KeptSandboxRow | undefined>(root, (facets) => facets.keep.get(id));
+}
+function updateKeptSandbox(root: string, id: string, payload: Uint8Array) {
+  return registryEffect<boolean>(root, (facets) => facets.keep.update(id, payload));
+}
+function deleteKeptSandbox(root: string, id: string) {
+  return registryEffect<void>(root, (facets) => facets.keep.delete(id));
+}
 type ProjectDatabaseRequirement = ProjectStateDatabase;
 
 /** 一条留存登记项的持久 payload 形状。 */
@@ -109,14 +129,19 @@ function isAbsent(cause: unknown): boolean {
 
 function readDirectoryIfPresentEffect(path: string, operation: string): RegistryEffect<string[] | undefined> {
   return nodeIo(operation, (_signal) => readdir(path)).pipe(
-    Effect.catch((cause) => isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause)),
+    Effect.catch((cause) => (isAbsent(cause) ? Effect.succeed(undefined) : Effect.fail(cause))),
   );
 }
 
-const NonNegativeSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { identifier: "NonNegativeSafeInteger" })));
+const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { identifier: "NonNegativeSafeInteger" }),
+  ),
+);
 
-
-const TimestampSchema = Schema.String.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })));
+const TimestampSchema = Schema.String.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })),
+);
 
 const KeptSandboxEntrySchema = Schema.Struct({
   sandboxId: Schema.String,
@@ -132,7 +157,6 @@ const KeptSandboxEntrySchema = Schema.Struct({
   expiresAt: Schema.optional(TimestampSchema),
   state: Schema.Literals(["alive", "dormant", "expired", "unknown"]),
 });
-
 
 /** 留存条目的全部字段均在持久化边界验证，特别是两个字符串联合与可选时间字段。 */
 function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
@@ -151,31 +175,37 @@ function readPersistedKeptLeaseEffect(
   id: string,
 ): RegistryEffect<PersistedKeptSandboxLease | undefined> {
   return getKeptSandboxLease(niceevalRoot, id).pipe(
-    Effect.map((lease): PersistedKeptSandboxLease | undefined => lease === undefined ? undefined : ({
-      holder: lease.holder,
-      op: lease.operation,
-      acquiredAt: lease.acquiredAt,
-      ttlMs: lease.ttlMs,
-      token: lease.token,
-      generation: lease.generation,
-      ownerPid: lease.ownerPid,
-      ownerHost: lease.ownerHost,
-      ownerProcessIdentity: lease.ownerProcessIdentity,
-    })),
+    Effect.map((lease): PersistedKeptSandboxLease | undefined =>
+      lease === undefined
+        ? undefined
+        : {
+            holder: lease.holder,
+            op: lease.operation,
+            acquiredAt: lease.acquiredAt,
+            ttlMs: lease.ttlMs,
+            token: lease.token,
+            generation: lease.generation,
+            ownerPid: lease.ownerPid,
+            ownerHost: lease.ownerHost,
+            ownerProcessIdentity: lease.ownerProcessIdentity,
+          },
+    ),
     Effect.mapError((cause) => registryError("read kept sandbox lease", cause)),
   );
 }
 
 export function readKeptLeaseEffect(niceevalRoot: string, id: string): RegistryEffect<KeptSandboxLease | undefined> {
   return readPersistedKeptLeaseEffect(niceevalRoot, id).pipe(
-    Effect.map((lease) => lease === undefined
-      ? undefined
-      : {
-          holder: lease.holder,
-          op: lease.op,
-          acquiredAt: lease.acquiredAt,
-          ttlMs: lease.ttlMs,
-        }),
+    Effect.map((lease) =>
+      lease === undefined
+        ? undefined
+        : {
+            holder: lease.holder,
+            op: lease.op,
+            acquiredAt: lease.acquiredAt,
+            ttlMs: lease.ttlMs,
+          },
+    ),
   );
 }
 
@@ -191,9 +221,16 @@ export function acquireKeptLeaseEffect(
   return Effect.gen(function* () {
     const processIdentity = yield* processIdentityForPidEffect(process.pid).pipe(
       Effect.mapError((cause) => registryError("establish kept sandbox lease owner identity", cause)),
-      Effect.flatMap((identity) => identity === undefined
-        ? Effect.fail(registryError("establish kept sandbox lease owner identity", new Error("current process identity is unavailable")))
-        : Effect.succeed(identity)),
+      Effect.flatMap((identity) =>
+        identity === undefined
+          ? Effect.fail(
+              registryError(
+                "establish kept sandbox lease owner identity",
+                new Error("current process identity is unavailable"),
+              ),
+            )
+          : Effect.succeed(identity),
+      ),
     );
     const ownerHost = hostname();
     const secret = crypto.randomUUID();
@@ -220,26 +257,36 @@ export function acquireKeptLeaseEffect(
         },
       };
     }
-    const token = Buffer.from(JSON.stringify({
-      secret,
-      generation: acquired.generation,
-      ownerPid: process.pid,
-      ownerHost,
-      ownerProcessIdentity: processIdentity,
-    }), "utf8").toString("base64url");
+    const token = Buffer.from(
+      JSON.stringify({
+        secret,
+        generation: acquired.generation,
+        ownerPid: process.pid,
+        ownerHost,
+        ownerProcessIdentity: processIdentity,
+      }),
+      "utf8",
+    ).toString("base64url");
     return { acquired: true as const, token };
   });
 }
 
 export function releaseKeptLeaseEffect(niceevalRoot: string, id: string, token: string): RegistryEffect<void> {
   return Effect.try({
-    try: () => JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
-      secret: string; generation: number; ownerPid: number; ownerHost: string; ownerProcessIdentity: string;
-    },
+    try: () =>
+      JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
+        secret: string;
+        generation: number;
+        ownerPid: number;
+        ownerHost: string;
+        ownerProcessIdentity: string;
+      },
     catch: (cause) => registryError("decode kept sandbox lease token", cause),
   }).pipe(
     Effect.flatMap((owner) => releaseKeptSandboxLease({ root: niceevalRoot, id, token: owner.secret, ...owner })),
-    Effect.mapError((cause) => cause instanceof KeptSandboxRegistryError ? cause : registryError("release kept sandbox lease", cause)),
+    Effect.mapError((cause) =>
+      cause instanceof KeptSandboxRegistryError ? cause : registryError("release kept sandbox lease", cause),
+    ),
     Effect.asVoid,
   );
 }
@@ -272,9 +319,7 @@ export function writeKeptEntryEffect(niceevalRoot: string, entry: KeptSandboxEnt
     sandboxId: entry.sandboxId,
     keptAt: entry.keptAt,
     payload: Buffer.from(JSON.stringify(entry), "utf8"),
-  }).pipe(
-    Effect.mapError((cause) => registryError("write kept sandbox entry", cause)),
-  );
+  }).pipe(Effect.mapError((cause) => registryError("write kept sandbox entry", cause)));
 }
 
 /**
@@ -286,20 +331,20 @@ export function readKeptEntriesEffect(
   return listKeptSandboxes(niceevalRoot).pipe(
     Effect.mapError((cause) => registryError("read kept sandbox registry", cause)),
     Effect.map((rows) => {
-    const entries: { id: string; entry: KeptSandboxEntry }[] = [];
-    const malformed: string[] = [];
-    for (const row of rows) {
-      let entry: KeptSandboxEntry | undefined;
-      try {
-        entry = decodeKeptSandboxEntry(JSON.parse(Buffer.from(row.payload).toString("utf8")));
-      } catch {
-        entry = undefined;
+      const entries: { id: string; entry: KeptSandboxEntry }[] = [];
+      const malformed: string[] = [];
+      for (const row of rows) {
+        let entry: KeptSandboxEntry | undefined;
+        try {
+          entry = decodeKeptSandboxEntry(JSON.parse(Buffer.from(row.payload).toString("utf8")));
+        } catch {
+          entry = undefined;
+        }
+        if (entry === undefined) malformed.push(row.id);
+        else entries.push({ id: row.id, entry });
       }
-      if (entry === undefined) malformed.push(row.id);
-      else entries.push({ id: row.id, entry });
-    }
-    entries.sort((a, b) => a.entry.keptAt.localeCompare(b.entry.keptAt));
-    return { entries, malformed };
+      entries.sort((a, b) => a.entry.keptAt.localeCompare(b.entry.keptAt));
+      return { entries, malformed };
     }),
   );
 }
@@ -320,7 +365,10 @@ export function updateKeptEntryEffect(
       } catch {
         entry = undefined;
       }
-      if (entry === undefined) return Effect.fail(registryError("decode kept sandbox entry for update", new Error("malformed kept sandbox metadata")));
+      if (entry === undefined)
+        return Effect.fail(
+          registryError("decode kept sandbox entry for update", new Error("malformed kept sandbox metadata")),
+        );
       const next = typeof patch === "function" ? patch(entry) : { ...entry, ...patch };
       return updateKeptSandbox(niceevalRoot, id, Buffer.from(JSON.stringify(next), "utf8")).pipe(
         Effect.mapError((cause) => registryError("update kept sandbox entry", cause)),

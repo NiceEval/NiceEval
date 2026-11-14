@@ -1,17 +1,11 @@
 import { Effect } from "effect";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type { RecordRoot } from "../../record/platform/root.ts";
-import {
-  acquireCaseLockEffect,
-} from "../../runner/lock.ts";
+import { acquireCaseLockEffect } from "../../runner/lock.ts";
 import { currentProcessOwnerIdentity } from "../../runner/node-process-identity.ts";
 import { RecordCoordination } from "../record-leases.ts";
 import type { RecordCoordinationWaitRequest } from "../record-leases.ts";
-import type {
-  ClaimExecutionRequest,
-  CoordinationHostSDK,
-  ExecutionClaim,
-} from "./types.ts";
+import type { ClaimExecutionRequest, CoordinationHostSDK, ExecutionClaim } from "./types.ts";
 
 /**
  * Compose the existing case-lock primitive into one named Coordination operation.
@@ -22,21 +16,25 @@ export function claimExecution(
   request: ClaimExecutionRequest,
 ): Effect.Effect<ExecutionClaim, unknown, ProjectStateDatabase> {
   return Effect.uninterruptibleMask((restore) =>
-    restore(acquireCaseLockEffect(
-      request.projectDatabaseRoot,
-      request.experimentId,
-      request.evalId,
-      request.identity ?? currentProcessOwnerIdentity(),
-      {
-        ...(request.signal === undefined ? {} : { signal: request.signal }),
-        ...(request.onCaseWait === undefined ? {} : { onWaitStart: request.onCaseWait }),
-      },
-    )).pipe(
-      Effect.map((caseResult) => Object.freeze({
-        caseClaim: caseResult.claim,
-        caseTakenOver: caseResult.takenOver,
-        release: caseResult.claim.release,
-      })),
+    restore(
+      acquireCaseLockEffect(
+        request.projectDatabaseRoot,
+        request.experimentId,
+        request.evalId,
+        request.identity ?? currentProcessOwnerIdentity(),
+        {
+          ...(request.signal === undefined ? {} : { signal: request.signal }),
+          ...(request.onCaseWait === undefined ? {} : { onWaitStart: request.onCaseWait }),
+        },
+      ),
+    ).pipe(
+      Effect.map((caseResult) =>
+        Object.freeze({
+          caseClaim: caseResult.claim,
+          caseTakenOver: caseResult.takenOver,
+          release: caseResult.claim.release,
+        }),
+      ),
     ),
   );
 }
@@ -48,23 +46,13 @@ export function claimExecution(
 export const coordinationHost: CoordinationHostSDK = Object.freeze({
   claimExecution,
   enterRecordRead: (root: RecordRoot) =>
-    Effect.flatMap(RecordCoordination, (coordination) =>
-      coordination.enterRecordRead(root),
-    ),
+    Effect.flatMap(RecordCoordination, (coordination) => coordination.enterRecordRead(root)),
   enterRecordAppend: (root: RecordRoot) =>
-    Effect.flatMap(RecordCoordination, (coordination) =>
-      coordination.enterRecordAppend(root),
-    ),
+    Effect.flatMap(RecordCoordination, (coordination) => coordination.enterRecordAppend(root)),
   enterRecordMaintenance: (root: RecordRoot) =>
-    Effect.flatMap(RecordCoordination, (coordination) =>
-      coordination.enterRecordMaintenance(root),
-    ),
+    Effect.flatMap(RecordCoordination, (coordination) => coordination.enterRecordMaintenance(root)),
   enterRecordWriteBatch: (request: RecordCoordinationWaitRequest) =>
-    Effect.flatMap(RecordCoordination, (coordination) =>
-      coordination.enterRecordWriteBatch(request),
-    ),
+    Effect.flatMap(RecordCoordination, (coordination) => coordination.enterRecordWriteBatch(request)),
   enterRecordWriteFreeze: (request: RecordCoordinationWaitRequest) =>
-    Effect.flatMap(RecordCoordination, (coordination) =>
-      coordination.enterRecordWriteFreeze(request),
-    ),
+    Effect.flatMap(RecordCoordination, (coordination) => coordination.enterRecordWriteFreeze(request)),
 });

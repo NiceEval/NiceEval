@@ -17,7 +17,11 @@ type JournalEntry = Readonly<{
 
 async function journalEntries(projectRoot: string): Promise<readonly JournalEntry[]> {
   const text = await readFile(join(projectRoot, customLifecycleJournal), "utf8");
-  return text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as JournalEntry);
+  return text
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as JournalEntry);
 }
 
 // @use-case docs/feature/eval/use-case/eval-native-operations.md
@@ -25,9 +29,13 @@ async function journalEntries(projectRoot: string): Promise<readonly JournalEntr
 
 test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且拒绝迟到 Assertion", async () => {
   for (const cleanupTimeoutMs of [0, -1, 0.5, 300_001, NaN, Infinity]) {
-    expect(() => defineAdapter({
-      name: "invalid-cleanup-budget", cleanupTimeoutMs, create: () => ({}),
-    })).toThrow(TypeError);
+    expect(() =>
+      defineAdapter({
+        name: "invalid-cleanup-budget",
+        cleanupTimeoutMs,
+        create: () => ({}),
+      }),
+    ).toThrow(TypeError);
   }
   await evalE2E.case(
     "custom-application-lifecycle",
@@ -35,7 +43,9 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
     async ({ paths: { projectRoot }, commands: { niceeval, tsc } }) => {
       // This is an ordinary installed SDK consumer process. Effect is run only
       // at its application boundary, with no private services or caller signal.
-      await writeFile(join(projectRoot, "custom-host-consumer.ts"), `
+      await writeFile(
+        join(projectRoot, "custom-host-consumer.ts"),
+        `
         import assert from "node:assert/strict";
         import { readFile } from "node:fs/promises";
         import { connect } from "node:net";
@@ -129,10 +139,12 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
         }
         // Natural process exit proves these completed operations leave no live
         // listener or database worker. The parent owns the bounded process wait.
-      `);
+      `,
+      );
       for (const mode of ["success", "interruption", "success"]) {
         const host = await command([process.execPath]).run(["custom-host-consumer.ts", mode], {
-          cwd: projectRoot, timeoutMs: 30_000,
+          cwd: projectRoot,
+          timeoutMs: 30_000,
         });
         expect(host.timedOut, host.diagnostic()).toBe(false);
         expect(host.exitCode, host.diagnostic()).toBe(0);
@@ -157,20 +169,25 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
         { scenario: "host-interruption", event: "released", attempt: 0 },
       ]);
       const hostTypes = await tsc.run([
-        "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext",
-        "--skipLibCheck", "--types", "node", "custom-host-consumer.ts",
+        "--noEmit",
+        "--strict",
+        "--target",
+        "ES2022",
+        "--module",
+        "NodeNext",
+        "--skipLibCheck",
+        "--types",
+        "node",
+        "custom-host-consumer.ts",
       ]);
       expect(hostTypes.exitCode, hostTypes.diagnostic()).toBe(0);
 
-      const createFailure = await niceeval.run([
-        "exp", "custom-create-failure", "--rerun", "all", "--json",
-      ]);
+      const createFailure = await niceeval.run(["exp", "custom-create-failure", "--rerun", "all", "--json"]);
       expect(createFailure.exitCode, createFailure.diagnostic()).toBe(1);
       expect(createFailure.expReceipt(), createFailure.diagnostic()).toMatchObject({ completion: "completed" });
       const failedCreate = only(
         createFailure.expEvalEvents(),
-        (event) => event.experimentId === "custom-create-failure" &&
-          event.evalId === "custom-create-failure",
+        (event) => event.experimentId === "custom-create-failure" && event.evalId === "custom-create-failure",
         createFailure.diagnostic(),
       );
       expect(failedCreate).toMatchObject({
@@ -193,15 +210,12 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
         { scenario: "late-create", event: "create-settled", attempt: 0 },
       ]);
 
-      const cancelled = await niceeval.run([
-        "exp", "custom-timeout-cancel", "--rerun", "all", "--json",
-      ]);
+      const cancelled = await niceeval.run(["exp", "custom-timeout-cancel", "--rerun", "all", "--json"]);
       expect(cancelled.exitCode, cancelled.diagnostic()).toBe(1);
       expect(cancelled.expReceipt(), cancelled.diagnostic()).toMatchObject({ completion: "completed" });
       const cancelledEvaluation = only(
         cancelled.expEvalEvents(),
-        (event) => event.experimentId === "custom-timeout-cancel" &&
-          event.evalId === "custom-timeout-cancel",
+        (event) => event.experimentId === "custom-timeout-cancel" && event.evalId === "custom-timeout-cancel",
         cancelled.diagnostic(),
       );
       expect(cancelledEvaluation).toMatchObject({
@@ -224,15 +238,12 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
       const timeoutTrace = await inspectAttempt(niceeval, projectRoot, locator, "attempt.trace");
       expect(timeoutTrace.receipt.exitCode, timeoutTrace.receipt.diagnostic()).toBe(0);
       const timeoutDiagnostics = timeoutTrace.document.trace.diagnostics.items;
-      expect(timeoutDiagnostics.map(({ code }) => code)).toEqual(expect.arrayContaining([
-        "timeout",
-        "adapter-cleanup-timeout",
-      ]));
-      expect(only(
-        timeoutDiagnostics,
-        ({ code }) => code === "timeout",
-        timeoutTrace.receipt.diagnostic(),
-      ).summary).toContain("attempt timed out (500ms, from experiment)");
+      expect(timeoutDiagnostics.map(({ code }) => code)).toEqual(
+        expect.arrayContaining(["timeout", "adapter-cleanup-timeout"]),
+      );
+      expect(
+        only(timeoutDiagnostics, ({ code }) => code === "timeout", timeoutTrace.receipt.diagnostic()).summary,
+      ).toContain("attempt timed out (500ms, from experiment)");
       expect(timeoutDiagnostics.map(({ code }) => code)).not.toContain("unexpected-error");
 
       const afterCancellation = await journalEntries(projectRoot);
@@ -250,22 +261,29 @@ test.concurrent("Adapter 创建部分失败与 Attempt 取消均清理资源且�
         { scenario: "timeout", event: "closed-registration-rejected", attempt: 0 },
       ]);
 
-      const succeeded = await niceeval.run([
-        "exp", "custom-success-cleanup", "--rerun", "all", "--json",
-      ]);
+      const succeeded = await niceeval.run(["exp", "custom-success-cleanup", "--rerun", "all", "--json"]);
       expect(succeeded.exitCode, succeeded.diagnostic()).toBe(0);
-      const successfulEvaluation = only(succeeded.expEvalEvents(), (event) => event.evalId === "custom-success-cleanup", succeeded.diagnostic());
+      const successfulEvaluation = only(
+        succeeded.expEvalEvents(),
+        (event) => event.evalId === "custom-success-cleanup",
+        succeeded.diagnostic(),
+      );
       expect(successfulEvaluation).toMatchObject({ verdict: "passed", attempts: 1, passed: 1 });
       expect((await journalEntries(projectRoot)).filter(({ scenario }) => scenario === "success")).toEqual([
         { scenario: "success", event: "cleanup-live-frozen", attempt: 0 },
         { scenario: "success", event: "cleanup-finished", attempt: 0 },
       ]);
       if (successfulEvaluation.locator === undefined) throw new Error("successful Adapter did not expose its locator");
-      const successfulTrace = await inspectAttempt(niceeval, projectRoot, successfulEvaluation.locator, "attempt.trace");
+      const successfulTrace = await inspectAttempt(
+        niceeval,
+        projectRoot,
+        successfulEvaluation.locator,
+        "attempt.trace",
+      );
       expect(successfulTrace.receipt.exitCode, successfulTrace.receipt.diagnostic()).toBe(0);
-      expect(successfulTrace.document.trace.diagnostics.items).toEqual(expect.arrayContaining([
-        expect.objectContaining({ code: "adapter-cleanup-failed" }),
-      ]));
+      expect(successfulTrace.document.trace.diagnostics.items).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: "adapter-cleanup-failed" })]),
+      );
     },
   );
 });

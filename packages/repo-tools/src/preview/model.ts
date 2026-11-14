@@ -2,7 +2,9 @@ import { Data, Schema } from "effect";
 
 const ComparisonOid = Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u));
 export const ConcordComparisonSchema = Schema.Struct({
-  base: ComparisonOid, head: ComparisonOid, mergeBase: ComparisonOid,
+  base: ComparisonOid,
+  head: ComparisonOid,
+  mergeBase: ComparisonOid,
   baseLabel: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
 });
 export type ConcordComparison = typeof ConcordComparisonSchema.Type;
@@ -19,15 +21,27 @@ export const NICEEVAL_REPOSITORY_URL = "https://github.com/NiceEval/NiceEval";
 
 const Sha256Schema = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
 const GitCommitSchema = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u));
-const NetlifyDeployUrlSchema = Schema.String.check(Schema.isPattern(/^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app\/?$/u));
+const NetlifyDeployUrlSchema = Schema.String.check(
+  Schema.isPattern(/^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app\/?$/u),
+);
 const NetlifyPrimeUrlSchema = Schema.String.check(Schema.isPattern(/^https:\/\/[a-z0-9-]+\.netlify\.app\/?$/u));
 const PositiveByteLengthSchema = Schema.Natural;
 const TrimmedNonEmptyString = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1));
-const StaticPathSchema = Schema.String.check(Schema.makeFilter((path) => {
-  const segments = path.split("/");
-  return path.length > 0 && !path.startsWith("/") && !path.includes("\\") && !path.includes("\0") &&
-    segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
-}, { identifier: "StaticPath", description: "must be a safe relative static-file path" }));
+const StaticPathSchema = Schema.String.check(
+  Schema.makeFilter(
+    (path) => {
+      const segments = path.split("/");
+      return (
+        path.length > 0 &&
+        !path.startsWith("/") &&
+        !path.includes("\\") &&
+        !path.includes("\0") &&
+        segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
+      );
+    },
+    { identifier: "StaticPath", description: "must be a safe relative static-file path" },
+  ),
+);
 
 export const PreviewFileSchema = Schema.Struct({
   path: StaticPathSchema,
@@ -39,9 +53,12 @@ export const PreviewFunctionSchema = Schema.Struct({
   name: Schema.Literal("niceeval-inspection"),
   runtime: Schema.Literal("nodejs24.x"),
   entry: Schema.Literal("niceeval-inspection.mjs"),
-  files: Schema.Array(PreviewFileSchema).check(Schema.makeFilter((files) =>
-    files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
-  { identifier: "SortedFunctionFiles", description: "Function manifest paths must be strictly sorted and unique" })),
+  files: Schema.Array(PreviewFileSchema).check(
+    Schema.makeFilter(
+      (files) => files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
+      { identifier: "SortedFunctionFiles", description: "Function manifest paths must be strictly sorted and unique" },
+    ),
+  ),
   closureSha256: Sha256Schema,
   record: PreviewFileSchema,
 });
@@ -87,9 +104,12 @@ export const PreviewBuildReceiptSchema = Schema.Struct({
     repository: Schema.Literal(PREVIEW_REPOSITORY),
     commit: GitCommitSchema,
   }),
-  files: Schema.Array(PreviewFileSchema).check(Schema.makeFilter((files) =>
-    files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
-  { identifier: "SortedPreviewFiles", description: "manifest paths must be strictly sorted and unique" })),
+  files: Schema.Array(PreviewFileSchema).check(
+    Schema.makeFilter(
+      (files) => files.every((file, index) => index === 0 || (files[index - 1]?.path ?? "") < file.path),
+      { identifier: "SortedPreviewFiles", description: "manifest paths must be strictly sorted and unique" },
+    ),
+  ),
   closureSha256: Sha256Schema,
   function: PreviewFunctionSchema,
 });
@@ -193,11 +213,17 @@ export type PreviewError =
 
 export function renderPreviewError(error: PreviewError): string {
   switch (error._tag) {
-    case "PreviewInputError": return `${error._tag}: ${error.message}`;
-    case "PreviewEnvironmentError": return `${error._tag} (${error.field}): ${error.message}`;
-    case "PreviewIoError": return `${error._tag} (${error.operation} ${error.path}): ${error.message}`;
-    case "PreviewCommandError": return `${error._tag} (${error.command} ${error.args.join(" ")} in ${error.cwd}): ${error.message}`;
-    case "PreviewVerificationError": return `${error._tag} (${error.subject}): ${error.message}`;
-    case "PreviewHttpError": return `${error._tag} (${error.url}): ${error.message}`;
+    case "PreviewInputError":
+      return `${error._tag}: ${error.message}`;
+    case "PreviewEnvironmentError":
+      return `${error._tag} (${error.field}): ${error.message}`;
+    case "PreviewIoError":
+      return `${error._tag} (${error.operation} ${error.path}): ${error.message}`;
+    case "PreviewCommandError":
+      return `${error._tag} (${error.command} ${error.args.join(" ")} in ${error.cwd}): ${error.message}`;
+    case "PreviewVerificationError":
+      return `${error._tag} (${error.subject}): ${error.message}`;
+    case "PreviewHttpError":
+      return `${error._tag} (${error.url}): ${error.message}`;
   }
 }

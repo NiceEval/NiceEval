@@ -77,13 +77,15 @@ export const ExpProgressEventSchema = Schema.Struct({
   failed: NonNegativeIntegerSchema,
   errored: NonNegativeIntegerSchema,
   skipped: NonNegativeIntegerSchema,
-  active: Schema.Array(Schema.Struct({
-    experimentId: Schema.optional(Schema.String),
-    evalId: Schema.String,
-    attempt: NonNegativeIntegerSchema,
-    phase: Schema.String,
-    elapsedMs: NonNegativeNumberSchema,
-  })).check(Schema.makeFilter((value) => value.length <= 64)),
+  active: Schema.Array(
+    Schema.Struct({
+      experimentId: Schema.optional(Schema.String),
+      evalId: Schema.String,
+      attempt: NonNegativeIntegerSchema,
+      phase: Schema.String,
+      elapsedMs: NonNegativeNumberSchema,
+    }),
+  ).check(Schema.makeFilter((value) => value.length <= 64)),
   activeOmitted: NonNegativeIntegerSchema,
 });
 /** An exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */

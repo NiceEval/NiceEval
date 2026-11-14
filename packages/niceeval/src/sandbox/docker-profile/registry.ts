@@ -1,7 +1,4 @@
-import {
-  dockerProfileError,
-  DockerProfileError,
-} from "./errors.ts";
+import { dockerProfileError, DockerProfileError } from "./errors.ts";
 import {
   dockerExecutionProfileV1Digest,
   decodeDockerExecutionProfile,
@@ -151,9 +148,11 @@ function sourceFacts(value: unknown, path: string): DockerProfileRegistryFileFac
     });
   }
   const parentModes = value.parentModes;
-  if (parentModes !== undefined && (!Array.isArray(parentModes) || parentModes.some(
-    (mode) => typeof mode !== "number" || !Number.isInteger(mode) || mode < 0 || mode > 0o7777,
-  ))) {
+  if (
+    parentModes !== undefined &&
+    (!Array.isArray(parentModes) ||
+      parentModes.some((mode) => typeof mode !== "number" || !Number.isInteger(mode) || mode < 0 || mode > 0o7777))
+  ) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-registry-entry-invalid",
       path: `${path}.parentModes`,
@@ -357,14 +356,18 @@ export function indexDockerProfiles(
   return Object.freeze({ entries: Object.freeze(entries) });
 }
 
-
 function isRegistryIndex(value: unknown): value is DockerProfileRegistryIndex {
-  return isRecord(value) && Array.isArray(value.entries) && value.entries.every((entry) =>
-    isRecord(entry) &&
-    typeof entry.alias === "string" &&
-    isRecord(entry.profile) &&
-    typeof entry.profileId === "string" &&
-    typeof entry.descriptorDigest === "string",
+  return (
+    isRecord(value) &&
+    Array.isArray(value.entries) &&
+    value.entries.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.alias === "string" &&
+        isRecord(entry.profile) &&
+        typeof entry.profileId === "string" &&
+        typeof entry.descriptorDigest === "string",
+    )
   );
 }
 
@@ -391,7 +394,9 @@ function indexOf(input: DockerProfileRegistryIndex | DockerProfileRegistryInput 
         return Object.freeze({
           alias,
           profile,
-          ...(entry.source === undefined ? {} : { source: requiredSource(entry.source, `registry.entries[${index}].source`) }),
+          ...(entry.source === undefined
+            ? {}
+            : { source: requiredSource(entry.source, `registry.entries[${index}].source`) }),
         });
       } catch (error) {
         if (error instanceof DockerProfileError) throw withAlias(error, alias);
@@ -426,8 +431,8 @@ export function resolveDockerProfileSelector(
 ): ResolvedDockerProfileEntry {
   const normalizedSelector = requiredSelector(selector, "profile selector");
   const index = indexOf(registry);
-  const matches = index.entries.filter((entry) =>
-    entry.alias === normalizedSelector || entry.profileId === normalizedSelector,
+  const matches = index.entries.filter(
+    (entry) => entry.alias === normalizedSelector || entry.profileId === normalizedSelector,
   );
   const first = matches[0];
   if (first === undefined) {

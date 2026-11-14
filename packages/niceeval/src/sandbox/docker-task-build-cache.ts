@@ -53,7 +53,9 @@ async function assertNoLegacyDockerCache(): Promise<void> {
     if (await pathExists(location)) found.push(location);
   }
   if (found.length !== 0) {
-    throw new Error(`Legacy Docker cache bytes found at ${found.join(", ")}; remove them through authorized maintenance before using Docker cache`);
+    throw new Error(
+      `Legacy Docker cache bytes found at ${found.join(", ")}; remove them through authorized maintenance before using Docker cache`,
+    );
   }
 }
 
@@ -62,8 +64,19 @@ export type TaskBuildDomainInventory = DockerCacheDomainInventory;
 
 export interface TaskBuildCacheService {
   lookup(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<boolean>;
-  publish(buildKey: string, tag: string, manifestDigest: string, operationId: string, dockerSocketPath?: string): Promise<void>;
-  acquireUse(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<{ release(): Promise<void> }>;
+  publish(
+    buildKey: string,
+    tag: string,
+    manifestDigest: string,
+    operationId: string,
+    dockerSocketPath?: string,
+  ): Promise<void>;
+  acquireUse(
+    buildKey: string,
+    tag: string,
+    manifestDigest: string,
+    dockerSocketPath?: string,
+  ): Promise<{ release(): Promise<void> }>;
 }
 
 export interface TaskBuildCacheAdminService {
@@ -115,7 +128,8 @@ export interface TaskBuildGcOutcome {
 function domainIdFor(ownerId: string, daemonId: string, storageDriver: string, sentinelId: string): string {
   return createHash("sha256")
     .update(`docker-images\0${ownerId}\0${daemonId}\0${storageDriver}\0${sentinelId}`)
-    .digest("hex").slice(0, 24);
+    .digest("hex")
+    .slice(0, 24);
 }
 
 /** @internal Pure projection used to keep read-only inventory from treating stale owners as active. */
@@ -127,11 +141,16 @@ export function taskBuildInventoryState(
 ): TaskBuildInventoryEntry["state"] {
   return actual !== expected || unverifiedOwners > 0
     ? "unverified"
-    : liveLeases > 0 ? "active-leased" : "cold-reusable";
+    : liveLeases > 0
+      ? "active-leased"
+      : "cold-reusable";
 }
 
 /** @internal Counts retain every protection claim while separating verified-live owners from unverifiable ones. */
-export function inventoryOwnerCounts<A>(owners: readonly A[], isLive: (owner: A) => boolean): {
+export function inventoryOwnerCounts<A>(
+  owners: readonly A[],
+  isLive: (owner: A) => boolean,
+): {
   readonly total: number;
   readonly live: number;
   readonly unverified: number;
@@ -180,8 +199,10 @@ function dockerConfirmedImageAbsent(cause: unknown): boolean {
     (cause as { readonly stderr?: unknown })?.stderr,
     (cause as { readonly stdout?: unknown })?.stdout,
     cause instanceof Error ? cause.message : undefined,
-  ].filter((value): value is string | Buffer => typeof value === "string" || Buffer.isBuffer(value))
-    .map((value) => value.toString()).join("\n");
+  ]
+    .filter((value): value is string | Buffer => typeof value === "string" || Buffer.isBuffer(value))
+    .map((value) => value.toString())
+    .join("\n");
   return /no such (?:image|object|container)|(?:image|container) .* not found/iu.test(detail);
 }
 
@@ -221,8 +242,10 @@ function holderIsVerifiablyLive(holder: {
   readonly holderProcessStart: string;
   readonly holderHostId?: string;
 }): boolean {
-  return (holder.holderHostId === undefined || holder.holderHostId === "local" || holder.holderHostId === hostname()) &&
-    processIdentityIsLive(holder.holderPid, holder.holderBootId, holder.holderProcessStart);
+  return (
+    (holder.holderHostId === undefined || holder.holderHostId === "local" || holder.holderHostId === hostname()) &&
+    processIdentityIsLive(holder.holderPid, holder.holderBootId, holder.holderProcessStart)
+  );
 }
 
 async function containerIsVerifiablyLive(containerId: string, dockerSocketPath?: string): Promise<boolean> {
@@ -243,10 +266,18 @@ function taskBuildKeyFromLock(lock: DockerImageGcLockRow): string | undefined {
 function isTaskBuildGcPlan(value: unknown): value is TaskBuildGcPlan {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const plan = value as Partial<TaskBuildGcPlan>;
-  return plan.schemaVersion === 1 && plan.policyVersion === 1 && typeof plan.planId === "string" &&
-    typeof plan.domainId === "string" && typeof plan.ownerId === "string" && typeof plan.backendIdentity === "string" &&
-    typeof plan.authorityEpoch === "string" && typeof plan.planDigest === "string" && typeof plan.expiresAt === "string" &&
-    Array.isArray(plan.candidates);
+  return (
+    plan.schemaVersion === 1 &&
+    plan.policyVersion === 1 &&
+    typeof plan.planId === "string" &&
+    typeof plan.domainId === "string" &&
+    typeof plan.ownerId === "string" &&
+    typeof plan.backendIdentity === "string" &&
+    typeof plan.authorityEpoch === "string" &&
+    typeof plan.planDigest === "string" &&
+    typeof plan.expiresAt === "string" &&
+    Array.isArray(plan.candidates)
+  );
 }
 
 async function taskBuildDeleteLockMatchesPlan(
@@ -255,7 +286,10 @@ async function taskBuildDeleteLockMatchesPlan(
   row: DockerTaskBuildEntryRow,
 ): Promise<boolean> {
   const saved = await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "task-get-plan", domainId: domain.domainId, planId: lock.planId,
+    repository: "docker-cache",
+    operation: "task-get-plan",
+    domainId: domain.domainId,
+    planId: lock.planId,
   });
   if (saved.plan === null || saved.plan.outcome !== null) return false;
   try {
@@ -263,12 +297,26 @@ async function taskBuildDeleteLockMatchesPlan(
     if (!isTaskBuildGcPlan(value)) return false;
     const plan = value;
     const { planDigest, ...unsigned } = plan;
-    if (saved.plan.digest !== planDigest || digestPlan(unsigned) !== planDigest || plan.domainId !== domain.domainId ||
-      plan.ownerId !== domain.ownerId || plan.backendIdentity !== domain.backendIdentity ||
-      plan.authorityEpoch !== domain.authorityEpoch || plan.policyVersion !== 1) return false;
-    const candidate = plan.candidates.find((item) => item.buildKey === row.buildKey && item.imageId === lock.imageId && item.generation === lock.entryGeneration);
-    return candidate !== undefined && candidate.tag === row.tag && candidate.manifestDigest === row.manifestDigest &&
-      candidate.evidenceDigest === canonicalDigest(entryEvidence(row));
+    if (
+      saved.plan.digest !== planDigest ||
+      digestPlan(unsigned) !== planDigest ||
+      plan.domainId !== domain.domainId ||
+      plan.ownerId !== domain.ownerId ||
+      plan.backendIdentity !== domain.backendIdentity ||
+      plan.authorityEpoch !== domain.authorityEpoch ||
+      plan.policyVersion !== 1
+    )
+      return false;
+    const candidate = plan.candidates.find(
+      (item) =>
+        item.buildKey === row.buildKey && item.imageId === lock.imageId && item.generation === lock.entryGeneration,
+    );
+    return (
+      candidate !== undefined &&
+      candidate.tag === row.tag &&
+      candidate.manifestDigest === row.manifestDigest &&
+      candidate.evidenceDigest === canonicalDigest(entryEvidence(row))
+    );
   } catch {
     return false;
   }
@@ -276,43 +324,81 @@ async function taskBuildDeleteLockMatchesPlan(
 
 async function pruneTaskOwners(domainId: string, buildKey?: string): Promise<number> {
   const owners = await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "task-list-owners", domainId,
+    repository: "docker-cache",
+    operation: "task-list-owners",
+    domainId,
     ...(buildKey === undefined ? {} : { buildKey }),
   });
-  const leaseIds = owners.leases.filter((row) =>
-    !processIdentityIsLive(row.holderPid, row.holderBootId, row.holderProcessStart)).map((row) => row.leaseId);
-  const rootIds = owners.roots.filter((row) =>
-    !processIdentityIsLive(row.holderPid, row.holderBootId, row.holderProcessStart)).map((row) => row.rootId);
+  const leaseIds = owners.leases
+    .filter((row) => !processIdentityIsLive(row.holderPid, row.holderBootId, row.holderProcessStart))
+    .map((row) => row.leaseId);
+  const rootIds = owners.roots
+    .filter((row) => !processIdentityIsLive(row.holderPid, row.holderBootId, row.holderProcessStart))
+    .map((row) => row.rootId);
   if (leaseIds.length > 0 || rootIds.length > 0) {
-    await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-prune-owners", domainId, leaseIds, rootIds });
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "task-prune-owners",
+      domainId,
+      leaseIds,
+      rootIds,
+    });
   }
   return owners.leases.length + owners.roots.length - leaseIds.length - rootIds.length;
 }
 
 async function beforeCacheClaimsImage(domainId: string, exactImageId: string): Promise<boolean> {
   const claims = await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "before-cache-image-claims", domainId, imageId: exactImageId, exceptEntryId: "",
+    repository: "docker-cache",
+    operation: "before-cache-image-claims",
+    domainId,
+    imageId: exactImageId,
+    exceptEntryId: "",
   });
   return claims.siblingBeforeCacheClaim;
 }
 
 const domainStartupReconciliations = new Map<string, Promise<void>>();
 
-async function reconcileCrashedTaskBuildDeletes(domain: DockerCacheDomainHandle, dockerSocketPath?: string): Promise<void> {
-  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-delete-locks", domainId: domain.domainId });
-  const allEntries = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-entries", domainId: domain.domainId, includeTombstoned: true });
+async function reconcileCrashedTaskBuildDeletes(
+  domain: DockerCacheDomainHandle,
+  dockerSocketPath?: string,
+): Promise<void> {
+  const listed = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "task-list-delete-locks",
+    domainId: domain.domainId,
+  });
+  const allEntries = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "task-list-entries",
+    domainId: domain.domainId,
+    includeTombstoned: true,
+  });
   for (const lock of listed.locks) {
     if (processIdentityIsLive(lock.holderPid, lock.holderBootId, lock.holderProcessStart)) continue;
     const buildKey = taskBuildKeyFromLock(lock);
-    const row = buildKey === undefined ? undefined : allEntries.entries.find((entry) =>
-      entry.buildKey === buildKey && entry.generation === lock.entryGeneration && entry.imageId === lock.imageId && entry.state === "deleting");
+    const row =
+      buildKey === undefined
+        ? undefined
+        : allEntries.entries.find(
+            (entry) =>
+              entry.buildKey === buildKey &&
+              entry.generation === lock.entryGeneration &&
+              entry.imageId === lock.imageId &&
+              entry.state === "deleting",
+          );
     const settle = async (state: "tombstoned" | "unverified"): Promise<void> => {
       await dockerCacheRepository.request({
-        repository: "docker-cache", operation: "task-recover-delete", domainId: domain.domainId,
-        lock, buildKey: buildKey ?? "", state,
+        repository: "docker-cache",
+        operation: "task-recover-delete",
+        domainId: domain.domainId,
+        lock,
+        buildKey: buildKey ?? "",
+        state,
       });
     };
-    if (row === undefined || !await taskBuildDeleteLockMatchesPlan(domain, lock, row)) {
+    if (row === undefined || !(await taskBuildDeleteLockMatchesPlan(domain, lock, row))) {
       await settle("unverified");
       continue;
     }
@@ -323,8 +409,10 @@ async function reconcileCrashedTaskBuildDeletes(domain: DockerCacheDomainHandle,
         continue;
       }
       const locator = await imageId(row.tag, dockerSocketPath);
-      const protectedByReference = await pruneTaskOwners(domain.domainId, row.buildKey) > 0 ||
-        await beforeCacheClaimsImage(domain.domainId, lock.imageId) || await hasContainerReference(lock.imageId, dockerSocketPath);
+      const protectedByReference =
+        (await pruneTaskOwners(domain.domainId, row.buildKey)) > 0 ||
+        (await beforeCacheClaimsImage(domain.domainId, lock.imageId)) ||
+        (await hasContainerReference(lock.imageId, dockerSocketPath));
       if (exact !== lock.imageId || locator !== lock.imageId || protectedByReference) {
         await settle("unverified");
         continue;
@@ -334,7 +422,7 @@ async function reconcileCrashedTaskBuildDeletes(domain: DockerCacheDomainHandle,
       } catch (cause) {
         if (!dockerConfirmedImageAbsent(cause)) throw cause;
       }
-      await settle(await imageId(lock.imageId, dockerSocketPath) === undefined ? "tombstoned" : "unverified");
+      await settle((await imageId(lock.imageId, dockerSocketPath)) === undefined ? "tombstoned" : "unverified");
     } catch {
       await settle("unverified");
     }
@@ -345,19 +433,34 @@ async function openDomain(dockerSocketPath?: string): Promise<DockerCacheDomainH
   if (dockerSocketPath !== undefined) throw new Error("managed Docker cache requires the default local Unix socket");
   await assertNoLegacyDockerCache();
   const owner = await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "ensure-owner", candidateOwnerId: dockerCacheRepository.newOwnerCandidate(),
+    repository: "docker-cache",
+    operation: "ensure-owner",
+    candidateOwnerId: dockerCacheRepository.newOwnerCandidate(),
   });
   const sentinelName = `niceeval-cache-${createHash("sha256").update(owner.ownerId).digest("hex").slice(0, 16)}`;
   const sentinelLabel = "io.niceeval.cache-domain";
   let sentinelId: string;
   try {
-    sentinelId = await docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName]);
+    sentinelId = await docker([
+      "volume",
+      "inspect",
+      "--format",
+      `{{index .Labels \"${sentinelLabel}\"}}`,
+      sentinelName,
+    ]);
   } catch {
     const candidate = randomUUID();
     await docker(["volume", "create", "--label", `${sentinelLabel}=${candidate}`, sentinelName]);
-    sentinelId = await docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName]);
+    sentinelId = await docker([
+      "volume",
+      "inspect",
+      "--format",
+      `{{index .Labels \"${sentinelLabel}\"}}`,
+      sentinelName,
+    ]);
   }
-  if (sentinelId.length === 0 || sentinelId === "<no value>") throw new Error(`Docker cache sentinel ${sentinelName} has no managed identity`);
+  if (sentinelId.length === 0 || sentinelId === "<no value>")
+    throw new Error(`Docker cache sentinel ${sentinelName} has no managed identity`);
   const daemonId = await docker(["info", "--format", "{{.ID}}"]);
   const storageDriver = await docker(["info", "--format", "{{.Driver}}"]);
   const domainId = domainIdFor(owner.ownerId, daemonId, storageDriver, sentinelId);
@@ -366,8 +469,14 @@ async function openDomain(dockerSocketPath?: string): Promise<DockerCacheDomainH
     repository: "docker-cache",
     operation: "verify-domain",
     domain: {
-      domainId, ownerId: owner.ownerId, daemonId, storageDriver, sentinelId, backendIdentity,
-      providerFamily: "docker", backendKind: "docker-images",
+      domainId,
+      ownerId: owner.ownerId,
+      daemonId,
+      storageDriver,
+      sentinelId,
+      backendIdentity,
+      providerFamily: "docker",
+      backendKind: "docker-images",
     },
     candidateAuthorityEpoch: randomUUID(),
     verifiedAt: new Date().toISOString(),
@@ -391,77 +500,91 @@ export function openDockerCacheDomain(dockerSocketPath?: string): Promise<Docker
 }
 
 /** Effect-native entry for callers that already own a runtime. */
-export const openDockerCacheDomainEffect = Effect.fn("openDockerCacheDomainEffect")(
-  function* (dockerSocketPath?: string) {
-    if (dockerSocketPath !== undefined) {
-      return yield* Effect.fail(new Error("managed Docker cache requires the default local Unix socket"));
-    }
-    yield* promiseEffect(() => assertNoLegacyDockerCache());
-    const owner = yield* dockerCacheRepository.requestEffect({
-      repository: "docker-cache", operation: "ensure-owner", candidateOwnerId: dockerCacheRepository.newOwnerCandidate(),
-    });
-    const sentinelName = `niceeval-cache-${createHash("sha256").update(owner.ownerId).digest("hex").slice(0, 16)}`;
-    const sentinelLabel = "io.niceeval.cache-domain";
-    const sentinelId = yield* promiseEffect(() =>
-      docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName])
-    ).pipe(Effect.catch(() => {
+export const openDockerCacheDomainEffect = Effect.fn("openDockerCacheDomainEffect")(function* (
+  dockerSocketPath?: string,
+) {
+  if (dockerSocketPath !== undefined) {
+    return yield* Effect.fail(new Error("managed Docker cache requires the default local Unix socket"));
+  }
+  yield* promiseEffect(() => assertNoLegacyDockerCache());
+  const owner = yield* dockerCacheRepository.requestEffect({
+    repository: "docker-cache",
+    operation: "ensure-owner",
+    candidateOwnerId: dockerCacheRepository.newOwnerCandidate(),
+  });
+  const sentinelName = `niceeval-cache-${createHash("sha256").update(owner.ownerId).digest("hex").slice(0, 16)}`;
+  const sentinelLabel = "io.niceeval.cache-domain";
+  const sentinelId = yield* promiseEffect(() =>
+    docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName]),
+  ).pipe(
+    Effect.catch(() => {
       const candidate = randomUUID();
       return promiseEffect(() =>
-        docker(["volume", "create", "--label", `${sentinelLabel}=${candidate}`, sentinelName])
-      ).pipe(Effect.flatMap(() => promiseEffect(() =>
-        docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName])
-      )));
-    }));
-    if (sentinelId.length === 0 || sentinelId === "<no value>") {
-      return yield* Effect.fail(new Error(`Docker cache sentinel ${sentinelName} has no managed identity`));
-    }
-    const daemonId = yield* promiseEffect(() => docker(["info", "--format", "{{.ID}}"]));
-    const storageDriver = yield* promiseEffect(() => docker(["info", "--format", "{{.Driver}}"]));
-    const domainId = domainIdFor(owner.ownerId, daemonId, storageDriver, sentinelId);
-    const backendIdentity = createHash("sha256").update(`${daemonId}\0${storageDriver}\0${sentinelId}`).digest("hex");
-    const verified = yield* dockerCacheRepository.requestEffect({
-      repository: "docker-cache",
-      operation: "verify-domain",
-      domain: {
-        domainId, ownerId: owner.ownerId, daemonId, storageDriver, sentinelId, backendIdentity,
-        providerFamily: "docker", backendKind: "docker-images",
-      },
-      candidateAuthorityEpoch: randomUUID(),
-      verifiedAt: new Date().toISOString(),
+        docker(["volume", "create", "--label", `${sentinelLabel}=${candidate}`, sentinelName]),
+      ).pipe(
+        Effect.flatMap(() =>
+          promiseEffect(() =>
+            docker(["volume", "inspect", "--format", `{{index .Labels \"${sentinelLabel}\"}}`, sentinelName]),
+          ),
+        ),
+      );
+    }),
+  );
+  if (sentinelId.length === 0 || sentinelId === "<no value>") {
+    return yield* Effect.fail(new Error(`Docker cache sentinel ${sentinelName} has no managed identity`));
+  }
+  const daemonId = yield* promiseEffect(() => docker(["info", "--format", "{{.ID}}"]));
+  const storageDriver = yield* promiseEffect(() => docker(["info", "--format", "{{.Driver}}"]));
+  const domainId = domainIdFor(owner.ownerId, daemonId, storageDriver, sentinelId);
+  const backendIdentity = createHash("sha256").update(`${daemonId}\0${storageDriver}\0${sentinelId}`).digest("hex");
+  const verified = yield* dockerCacheRepository.requestEffect({
+    repository: "docker-cache",
+    operation: "verify-domain",
+    domain: {
+      domainId,
+      ownerId: owner.ownerId,
+      daemonId,
+      storageDriver,
+      sentinelId,
+      backendIdentity,
+      providerFamily: "docker",
+      backendKind: "docker-images",
+    },
+    candidateAuthorityEpoch: randomUUID(),
+    verifiedAt: new Date().toISOString(),
+  });
+  const handle = { domainId, ownerId: owner.ownerId, authorityEpoch: verified.domain.authorityEpoch, backendIdentity };
+  let reconciliation = domainStartupReconciliations.get(domainId);
+  if (reconciliation === undefined) {
+    reconciliation = reconcileCrashedTaskBuildDeletes(handle, dockerSocketPath).catch((cause) => {
+      domainStartupReconciliations.delete(domainId);
+      throw cause;
     });
-    const handle = { domainId, ownerId: owner.ownerId, authorityEpoch: verified.domain.authorityEpoch, backendIdentity };
-    let reconciliation = domainStartupReconciliations.get(domainId);
-    if (reconciliation === undefined) {
-      reconciliation = reconcileCrashedTaskBuildDeletes(handle, dockerSocketPath).catch((cause) => {
-        domainStartupReconciliations.delete(domainId);
-        throw cause;
-      });
-      domainStartupReconciliations.set(domainId, reconciliation);
-    }
-    yield* promiseEffect(() => reconciliation);
-    return handle;
-  },
-);
+    domainStartupReconciliations.set(domainId, reconciliation);
+  }
+  yield* promiseEffect(() => reconciliation);
+  return handle;
+});
 
-export const listDockerCacheDomainsEffect = Effect.fn("listDockerCacheDomainsEffect")(
-  function* () {
-    const current = yield* openDockerCacheDomainEffect();
-    const listed = yield* dockerCacheRepository.requestEffect({ repository: "docker-cache", operation: "list-domains" });
-    return listed.domains.map((row) => ({
-      providerFamily: "docker" as const,
-      domainId: row.domainId,
-      backendKind: row.backendKind,
-      state: row.domainId === current.domainId ? "verified-managed" as const : "unavailable" as const,
-    }));
-  },
-);
+export const listDockerCacheDomainsEffect = Effect.fn("listDockerCacheDomainsEffect")(function* () {
+  const current = yield* openDockerCacheDomainEffect();
+  const listed = yield* dockerCacheRepository.requestEffect({ repository: "docker-cache", operation: "list-domains" });
+  return listed.domains.map((row) => ({
+    providerFamily: "docker" as const,
+    domainId: row.domainId,
+    backendKind: row.backendKind,
+    state: row.domainId === current.domainId ? ("verified-managed" as const) : ("unavailable" as const),
+  }));
+});
 
 export async function listDockerCacheDomains(): Promise<readonly CacheDomainDescriptor[]> {
   const current = await openDomain();
   const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "list-domains" });
   return listed.domains.map((row) => ({
-    providerFamily: "docker", domainId: row.domainId,
-    backendKind: row.backendKind, state: row.domainId === current.domainId ? "verified-managed" : "unavailable",
+    providerFamily: "docker",
+    domainId: row.domainId,
+    backendKind: row.backendKind,
+    state: row.domainId === current.domainId ? "verified-managed" : "unavailable",
   }));
 }
 
@@ -484,13 +607,21 @@ function decimalBytes(value: unknown): number | null {
 export async function observeDockerBuildKitCapacity(): Promise<ProviderCapacityObservation> {
   await assertNoLegacyDockerCache();
   const output = await docker(["system", "df", "--format", "json"]);
-  const rows = output.split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+  const rows = output
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
   const build = rows.find((row) => row.Type === "Build Cache");
   const reclaimable = typeof build?.Reclaimable === "string" ? build.Reclaimable.trim().split(/\s+/u)[0] : undefined;
   return Object.freeze({
-    scope: "provider", providerFamily: "docker", backendKind: "buildkit", state: "unverified",
-    observedAt: new Date().toISOString(), totalBytes: decimalBytes(build?.Size),
-    reclaimableEstimateBytes: decimalBytes(reclaimable), reason: "shared-builder-unattributed",
+    scope: "provider",
+    providerFamily: "docker",
+    backendKind: "buildkit",
+    state: "unverified",
+    observedAt: new Date().toISOString(),
+    totalBytes: decimalBytes(build?.Size),
+    reclaimableEstimateBytes: decimalBytes(reclaimable),
+    reason: "shared-builder-unattributed",
   });
 }
 
@@ -501,54 +632,113 @@ export const observeDockerBuildKitCapacityEffect: Effect.Effect<ProviderCapacity
 class LiveTaskBuildCacheSession implements TaskBuildCacheService {
   async lookup(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<boolean> {
     const domain = await openDomain(dockerSocketPath);
-    const found = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-get-indexed", domainId: domain.domainId, buildKey });
+    const found = await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "task-get-indexed",
+      domainId: domain.domainId,
+      buildKey,
+    });
     const row = found.entry;
     if (row === null || row.tag !== tag || row.manifestDigest !== manifestDigest) return false;
     const actual = await imageId(tag, dockerSocketPath);
     if (actual === undefined || actual !== row.imageId) {
-      await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-mark-unverified", domainId: domain.domainId, buildKey, generation: row.generation });
+      await dockerCacheRepository.request({
+        repository: "docker-cache",
+        operation: "task-mark-unverified",
+        domainId: domain.domainId,
+        buildKey,
+        generation: row.generation,
+      });
       return false;
     }
     return true;
   }
 
-  async publish(buildKey: string, tag: string, manifestDigest: string, operationId: string, dockerSocketPath?: string): Promise<void> {
+  async publish(
+    buildKey: string,
+    tag: string,
+    manifestDigest: string,
+    operationId: string,
+    dockerSocketPath?: string,
+  ): Promise<void> {
     await assertNoLegacyDockerCache();
     const actual = await imageId(tag, dockerSocketPath);
     if (actual === undefined) throw new Error(`built image ${tag} is absent after build`);
     const domain = await openDomain(dockerSocketPath);
     const now = new Date();
     await dockerCacheRepository.request({
-      repository: "docker-cache", operation: "task-publish", domainId: domain.domainId, buildKey, tag,
-      imageId: actual, manifestDigest, operationId, now: now.toISOString(),
+      repository: "docker-cache",
+      operation: "task-publish",
+      domainId: domain.domainId,
+      buildKey,
+      tag,
+      imageId: actual,
+      manifestDigest,
+      operationId,
+      now: now.toISOString(),
       protectedUntil: new Date(now.getTime() + MINIMUM_AGE_MS).toISOString(),
     });
   }
 
-  async acquireUse(buildKey: string, tag: string, manifestDigest: string, dockerSocketPath?: string): Promise<{ release(): Promise<void> }> {
+  async acquireUse(
+    buildKey: string,
+    tag: string,
+    manifestDigest: string,
+    dockerSocketPath?: string,
+  ): Promise<{ release(): Promise<void> }> {
     const domain = await openDomain(dockerSocketPath);
-    const found = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-get-indexed", domainId: domain.domainId, buildKey });
+    const found = await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "task-get-indexed",
+      domainId: domain.domainId,
+      buildKey,
+    });
     const row = found.entry;
-    if (row === null || row.tag !== tag || row.manifestDigest !== manifestDigest || await imageId(tag, dockerSocketPath) !== row.imageId) {
+    if (
+      row === null ||
+      row.tag !== tag ||
+      row.manifestDigest !== manifestDigest ||
+      (await imageId(tag, dockerSocketPath)) !== row.imageId
+    ) {
       throw new Error(`Docker task-build artifact ${buildKey.slice(0, 12)} is no longer available`);
     }
     const leaseId = randomUUID();
     const rootId = randomUUID();
     const reserved = await dockerCacheRepository.request({
-      repository: "docker-cache", operation: "task-acquire-use", domainId: domain.domainId, buildKey, tag,
-      imageId: row.imageId, manifestDigest, leaseId, rootId, holder: holderIdentity(), now: new Date().toISOString(),
+      repository: "docker-cache",
+      operation: "task-acquire-use",
+      domainId: domain.domainId,
+      buildKey,
+      tag,
+      imageId: row.imageId,
+      manifestDigest,
+      leaseId,
+      rootId,
+      holder: holderIdentity(),
+      now: new Date().toISOString(),
     });
     if (!reserved.reserved) throw new Error(`Docker task-build artifact ${buildKey.slice(0, 12)} changed before use`);
     let released = false;
     let heartbeatFailure: unknown;
     const heartbeat = setInterval(() => {
       if (released || heartbeatFailure !== undefined) return;
-      void dockerCacheRepository.request({
-        repository: "docker-cache", operation: "task-heartbeat", domainId: domain.domainId,
-        leaseId, heartbeatAt: new Date().toISOString(),
-      }).then((receipt) => {
-        if (receipt.changes !== 1) heartbeatFailure = new Error("the durable task-build lease disappeared during use");
-      }, (cause) => { heartbeatFailure = cause; });
+      void dockerCacheRepository
+        .request({
+          repository: "docker-cache",
+          operation: "task-heartbeat",
+          domainId: domain.domainId,
+          leaseId,
+          heartbeatAt: new Date().toISOString(),
+        })
+        .then(
+          (receipt) => {
+            if (receipt.changes !== 1)
+              heartbeatFailure = new Error("the durable task-build lease disappeared during use");
+          },
+          (cause) => {
+            heartbeatFailure = cause;
+          },
+        );
     }, 30_000);
     heartbeat.unref();
     return {
@@ -556,7 +746,13 @@ class LiveTaskBuildCacheSession implements TaskBuildCacheService {
         if (released) return;
         released = true;
         clearInterval(heartbeat);
-        await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-release-use", domainId: domain.domainId, leaseId, rootId });
+        await dockerCacheRepository.request({
+          repository: "docker-cache",
+          operation: "task-release-use",
+          domainId: domain.domainId,
+          leaseId,
+          rootId,
+        });
         if (heartbeatFailure !== undefined) throw heartbeatFailure;
       },
     };
@@ -569,7 +765,11 @@ export function makeTaskBuildCacheService(): TaskBuildCacheService {
 
 export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promise<TaskBuildDomainInventory> {
   const domain = await openDomain(dockerSocketPath);
-  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "list-inventory", domainId: domain.domainId });
+  const listed = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "list-inventory",
+    domainId: domain.domainId,
+  });
   const entries: DockerCacheInventoryEntry[] = [];
   for (const row of listed.taskEntries) {
     const leases = listed.taskLeases.filter((lease) => lease.buildKey === row.buildKey);
@@ -578,12 +778,17 @@ export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promi
     const holdCounts = inventoryOwnerCounts(roots, holderIsVerifiablyLive);
     const actual = await imageId(row.tag, dockerSocketPath);
     entries.push({
-      kind: "task-build", identity: { buildKey: row.buildKey, tag: row.tag, imageId: row.imageId },
-      leaseCount: leaseCounts.total, holdCount: holdCounts.total,
-      liveLeaseCount: leaseCounts.live, unverifiedLeaseCount: leaseCounts.unverified,
-      liveHoldCount: holdCounts.live, unverifiedHoldCount: holdCounts.unverified,
+      kind: "task-build",
+      identity: { buildKey: row.buildKey, tag: row.tag, imageId: row.imageId },
+      leaseCount: leaseCounts.total,
+      holdCount: holdCounts.total,
+      liveLeaseCount: leaseCounts.live,
+      unverifiedLeaseCount: leaseCounts.unverified,
+      liveHoldCount: holdCounts.live,
+      unverifiedHoldCount: holdCounts.unverified,
       createdAt: row.createdAt,
-      lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
+      lastSuccessfulUseAt: row.lastSuccessfulUseAt,
+      protectedUntil: row.protectedUntil,
       state: taskBuildInventoryState(
         actual,
         row.imageId,
@@ -599,22 +804,41 @@ export async function inventoryTaskBuildDomain(dockerSocketPath?: string): Promi
       leases,
       (lease) => lease.state === "active" && holderIsVerifiablyLive(lease),
     );
-    const liveHolds = await Promise.all(holds.map((hold) => containerIsVerifiablyLive(hold.sandboxId, dockerSocketPath)));
+    const liveHolds = await Promise.all(
+      holds.map((hold) => containerIsVerifiablyLive(hold.sandboxId, dockerSocketPath)),
+    );
     const holdCounts = inventoryOwnerCounts(liveHolds, Boolean);
-    const providerVerified = row.imageId === null
-      ? row.state === "reserved" || row.state === "building"
-      : await imageId(row.imageId, dockerSocketPath) === row.imageId;
+    const providerVerified =
+      row.imageId === null
+        ? row.state === "reserved" || row.state === "building"
+        : (await imageId(row.imageId, dockerSocketPath)) === row.imageId;
     entries.push({
       kind: "sandbox-before-cache",
       state: !providerVerified || leaseCounts.unverified > 0 || holdCounts.unverified > 0 ? "unverified" : row.state,
-      identity: { entryId: row.entryId, beforeCacheKey: row.beforeCacheKey, imageId: row.imageId, baseIdentity: row.baseIdentity },
-      leaseCount: leaseCounts.total, holdCount: holdCounts.total,
-      liveLeaseCount: leaseCounts.live, unverifiedLeaseCount: leaseCounts.unverified,
-      liveHoldCount: holdCounts.live, unverifiedHoldCount: holdCounts.unverified,
-      createdAt: row.createdAt, lastSuccessfulUseAt: row.lastSuccessfulUseAt, protectedUntil: row.protectedUntil,
+      identity: {
+        entryId: row.entryId,
+        beforeCacheKey: row.beforeCacheKey,
+        imageId: row.imageId,
+        baseIdentity: row.baseIdentity,
+      },
+      leaseCount: leaseCounts.total,
+      holdCount: holdCounts.total,
+      liveLeaseCount: leaseCounts.live,
+      unverifiedLeaseCount: leaseCounts.unverified,
+      liveHoldCount: holdCounts.live,
+      unverifiedHoldCount: holdCounts.unverified,
+      createdAt: row.createdAt,
+      lastSuccessfulUseAt: row.lastSuccessfulUseAt,
+      protectedUntil: row.protectedUntil,
     });
   }
-  return { domainId: domain.domainId, providerFamily: "docker", backendKind: "docker-images", state: "verified-managed", entries };
+  return {
+    domainId: domain.domainId,
+    providerFamily: "docker",
+    backendKind: "docker-images",
+    state: "verified-managed",
+    entries,
+  };
 }
 
 export async function planTaskBuildGc(domainId: string): Promise<TaskBuildGcPlan> {
@@ -622,26 +846,56 @@ export async function planTaskBuildGc(domainId: string): Promise<TaskBuildGcPlan
   if (domain.domainId !== domainId) throw new Error(`unknown Docker image cache domain ${domainId}`);
   const now = new Date();
   const candidates: TaskBuildGcPlan["candidates"][number][] = [];
-  const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-entries", domainId });
+  const listed = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "task-list-entries",
+    domainId,
+  });
   for (const row of listed.entries) {
     if (row.state !== "indexed" || !passesGcAgePolicy(row, now.getTime())) continue;
-    if (await pruneTaskOwners(domainId, row.buildKey) > 0 || await beforeCacheClaimsImage(domainId, row.imageId)) continue;
-    if (await imageId(row.tag) !== row.imageId || await hasContainerReference(row.imageId)) continue;
+    if ((await pruneTaskOwners(domainId, row.buildKey)) > 0 || (await beforeCacheClaimsImage(domainId, row.imageId)))
+      continue;
+    if ((await imageId(row.tag)) !== row.imageId || (await hasContainerReference(row.imageId))) continue;
     candidates.push({
-      buildKey: row.buildKey, tag: row.tag, imageId: row.imageId, manifestDigest: row.manifestDigest,
-      generation: row.generation, evidenceDigest: canonicalDigest(entryEvidence(row)), ruleId: "max-age/task-build",
+      buildKey: row.buildKey,
+      tag: row.tag,
+      imageId: row.imageId,
+      manifestDigest: row.manifestDigest,
+      generation: row.generation,
+      evidenceDigest: canonicalDigest(entryEvidence(row)),
+      ruleId: "max-age/task-build",
     });
   }
-  const revision = (await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-read-safety-revision", domainId })).revision;
+  const revision = (
+    await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "task-read-safety-revision",
+      domainId,
+    })
+  ).revision;
   const unsigned: Omit<TaskBuildGcPlan, "planDigest"> = {
-    schemaVersion: 1, planId: randomUUID(), domainId, ownerId: domain.ownerId,
-    backendIdentity: domain.backendIdentity, authorityEpoch: domain.authorityEpoch, policyVersion: 1,
-    registrySafetyRevision: revision, observedAt: now.toISOString(), expiresAt: new Date(now.getTime() + PLAN_TTL_MS).toISOString(), candidates,
+    schemaVersion: 1,
+    planId: randomUUID(),
+    domainId,
+    ownerId: domain.ownerId,
+    backendIdentity: domain.backendIdentity,
+    authorityEpoch: domain.authorityEpoch,
+    policyVersion: 1,
+    registrySafetyRevision: revision,
+    observedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + PLAN_TTL_MS).toISOString(),
+    candidates,
   };
   const plan: TaskBuildGcPlan = { ...unsigned, planDigest: digestPlan(unsigned) };
   await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "task-save-plan", domainId, planId: plan.planId,
-    createdAt: plan.observedAt, expiresAt: plan.expiresAt, payload: JSON.stringify(plan), digest: plan.planDigest,
+    repository: "docker-cache",
+    operation: "task-save-plan",
+    domainId,
+    planId: plan.planId,
+    createdAt: plan.observedAt,
+    expiresAt: plan.expiresAt,
+    payload: JSON.stringify(plan),
+    digest: plan.planDigest,
   });
   return plan;
 }
@@ -649,7 +903,12 @@ export async function planTaskBuildGc(domainId: string): Promise<TaskBuildGcPlan
 export async function applyTaskBuildGc(domainId: string, planId: string): Promise<TaskBuildGcOutcome> {
   const domain = await openDomain();
   if (domain.domainId !== domainId) throw new Error(`unknown Docker image cache domain ${domainId}`);
-  const saved = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-get-plan", domainId, planId });
+  const saved = await dockerCacheRepository.request({
+    repository: "docker-cache",
+    operation: "task-get-plan",
+    domainId,
+    planId,
+  });
   if (saved.plan === null) throw new Error(`unknown GC plan ${planId}`);
   if (saved.plan.outcome !== null) return JSON.parse(saved.plan.outcome) as TaskBuildGcOutcome;
   if (Date.parse(saved.plan.expiresAt) < Date.now()) throw new Error(`GC plan ${planId} expired`);
@@ -657,33 +916,66 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
   if (!isTaskBuildGcPlan(value)) throw new Error(`GC plan ${planId} is invalid`);
   const plan = value;
   const { planDigest, ...unsigned } = plan;
-  if (saved.plan.digest !== planDigest || digestPlan(unsigned) !== planDigest) throw new Error(`GC plan ${planId} is corrupt`);
-  if (plan.domainId !== domain.domainId || plan.ownerId !== domain.ownerId || plan.backendIdentity !== domain.backendIdentity ||
-    plan.authorityEpoch !== domain.authorityEpoch || plan.policyVersion !== 1) throw new Error(`GC plan ${planId} authority changed`);
+  if (saved.plan.digest !== planDigest || digestPlan(unsigned) !== planDigest)
+    throw new Error(`GC plan ${planId} is corrupt`);
+  if (
+    plan.domainId !== domain.domainId ||
+    plan.ownerId !== domain.ownerId ||
+    plan.backendIdentity !== domain.backendIdentity ||
+    plan.authorityEpoch !== domain.authorityEpoch ||
+    plan.policyVersion !== 1
+  )
+    throw new Error(`GC plan ${planId} authority changed`);
   const outcomes: TaskBuildGcOutcome["outcomes"][number][] = [];
   const deleteHolder = holderIdentity();
   for (const candidate of plan.candidates) {
-    const listed = await dockerCacheRepository.request({ repository: "docker-cache", operation: "task-list-entries", domainId, includeTombstoned: true });
+    const listed = await dockerCacheRepository.request({
+      repository: "docker-cache",
+      operation: "task-list-entries",
+      domainId,
+      includeTombstoned: true,
+    });
     const row = listed.entries.find((entry) => entry.buildKey === candidate.buildKey);
-    if (row === undefined || row.state !== "indexed" || row.imageId !== candidate.imageId ||
-      row.manifestDigest !== candidate.manifestDigest || row.generation !== candidate.generation ||
-      canonicalDigest(entryEvidence(row)) !== candidate.evidenceDigest) {
+    if (
+      row === undefined ||
+      row.state !== "indexed" ||
+      row.imageId !== candidate.imageId ||
+      row.manifestDigest !== candidate.manifestDigest ||
+      row.generation !== candidate.generation ||
+      canonicalDigest(entryEvidence(row)) !== candidate.evidenceDigest
+    ) {
       outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "entry-or-generation-changed" });
       continue;
     }
     await pruneTaskOwners(domainId, candidate.buildKey);
     const reserved = await dockerCacheRepository.request({
-      repository: "docker-cache", operation: "task-reserve-delete", domainId, planId, entry: row,
-      evidenceDigest: candidate.evidenceDigest, holder: deleteHolder, createdAt: new Date().toISOString(),
+      repository: "docker-cache",
+      operation: "task-reserve-delete",
+      domainId,
+      planId,
+      entry: row,
+      evidenceDigest: candidate.evidenceDigest,
+      holder: deleteHolder,
+      createdAt: new Date().toISOString(),
     });
     if (!reserved.reserved) {
-      outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: reserved.reason ?? "delete-not-reserved" });
+      outcomes.push({
+        buildKey: candidate.buildKey,
+        status: "skipped",
+        reason: reserved.reason ?? "delete-not-reserved",
+      });
       continue;
     }
     const settle = async (state: "indexed" | "tombstoned" | "unverified"): Promise<void> => {
       await dockerCacheRepository.request({
-        repository: "docker-cache", operation: "task-settle-delete", domainId, planId,
-        buildKey: candidate.buildKey, imageId: candidate.imageId, generation: candidate.generation, state,
+        repository: "docker-cache",
+        operation: "task-settle-delete",
+        domainId,
+        planId,
+        buildKey: candidate.buildKey,
+        imageId: candidate.imageId,
+        generation: candidate.generation,
+        state,
       });
     };
     let actual: string | undefined;
@@ -691,7 +983,11 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
       actual = await imageId(row.tag);
     } catch (cause) {
       await settle("unverified");
-      outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+      outcomes.push({
+        buildKey: candidate.buildKey,
+        status: "failed",
+        reason: cause instanceof Error ? cause.message : String(cause),
+      });
       continue;
     }
     if (actual === undefined) {
@@ -699,25 +995,41 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
         const exact = await imageId(candidate.imageId);
         if (exact === undefined) {
           await settle("tombstoned");
-          outcomes.push({ buildKey: candidate.buildKey, status: "already-absent", reason: "provider-confirmed-absent" });
+          outcomes.push({
+            buildKey: candidate.buildKey,
+            status: "already-absent",
+            reason: "provider-confirmed-absent",
+          });
         } else {
           await settle("unverified");
-          outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "locator-no-longer-verifies-exact-image" });
+          outcomes.push({
+            buildKey: candidate.buildKey,
+            status: "skipped",
+            reason: "locator-no-longer-verifies-exact-image",
+          });
         }
       } catch (cause) {
         await settle("unverified");
-        outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+        outcomes.push({
+          buildKey: candidate.buildKey,
+          status: "failed",
+          reason: cause instanceof Error ? cause.message : String(cause),
+        });
       }
       continue;
     }
-    if (actual !== candidate.imageId || await beforeCacheClaimsImage(domainId, candidate.imageId) || await hasContainerReference(candidate.imageId)) {
+    if (
+      actual !== candidate.imageId ||
+      (await beforeCacheClaimsImage(domainId, candidate.imageId)) ||
+      (await hasContainerReference(candidate.imageId))
+    ) {
       await settle("unverified");
       outcomes.push({ buildKey: candidate.buildKey, status: "skipped", reason: "resource-or-reference-changed" });
       continue;
     }
     try {
       await docker(["image", "rm", candidate.imageId]);
-      if (await imageId(candidate.imageId) !== undefined || await hasContainerReference(candidate.imageId)) {
+      if ((await imageId(candidate.imageId)) !== undefined || (await hasContainerReference(candidate.imageId))) {
         await settle("unverified");
         outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: "image-still-present" });
         continue;
@@ -726,12 +1038,20 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
       outcomes.push({ buildKey: candidate.buildKey, status: "deleted", reason: "max-age/task-build" });
     } catch (cause) {
       await settle("unverified");
-      outcomes.push({ buildKey: candidate.buildKey, status: "failed", reason: cause instanceof Error ? cause.message : String(cause) });
+      outcomes.push({
+        buildKey: candidate.buildKey,
+        status: "failed",
+        reason: cause instanceof Error ? cause.message : String(cause),
+      });
     }
   }
   const outcome: TaskBuildGcOutcome = { planId, domainId, outcomes };
   await dockerCacheRepository.request({
-    repository: "docker-cache", operation: "task-save-plan-outcome", domainId, planId, outcome: JSON.stringify(outcome),
+    repository: "docker-cache",
+    operation: "task-save-plan-outcome",
+    domainId,
+    planId,
+    outcome: JSON.stringify(outcome),
   });
   return outcome;
 }

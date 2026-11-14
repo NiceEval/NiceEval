@@ -1,18 +1,6 @@
 import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
-import {
-  cp,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
 
@@ -30,13 +18,32 @@ import {
   PreviewVerificationError,
 } from "./model.js";
 import { requirePreviewSuccess, runPreviewProcess } from "./process.js";
-import { assertConcordComparison, exportConcordChanges, preparePullRequestHistory, readPullRequestComparison, validateConcordChanges, type ConcordComparison } from "./concord.js";
+import {
+  assertConcordComparison,
+  exportConcordChanges,
+  preparePullRequestHistory,
+  readPullRequestComparison,
+  validateConcordChanges,
+  type ConcordComparison,
+} from "./concord.js";
 
 const ROOT = repositoryRoot();
 const PACKAGE_ROOT = join(ROOT, "packages/niceeval");
 const ALLOWED_EXTENSIONS = new Set([
-  ".css", ".gif", ".html", ".ico", ".jpeg", ".jpg", ".js", ".json", ".mjs",
-  ".png", ".svg", ".webp", ".woff", ".woff2",
+  ".css",
+  ".gif",
+  ".html",
+  ".ico",
+  ".jpeg",
+  ".jpg",
+  ".js",
+  ".json",
+  ".mjs",
+  ".png",
+  ".svg",
+  ".webp",
+  ".woff",
+  ".woff2",
 ]);
 const PROHIBITED_PATH = /(?:^|\/)(?:\.niceeval|\.env(?:\.|$)|[^/]*\.(?:db|sqlite3|pem|key))(?:\/|$)/iu;
 const MAXIMUM_FILES = 256;
@@ -61,7 +68,8 @@ export interface PreviewBuildOptions {
 function io<A>(operation: string, path: string, thunk: () => Promise<A>) {
   return Effect.tryPromise({
     try: thunk,
-    catch: (error) => new PreviewIoError({ operation, path, message: error instanceof Error ? error.message : String(error) }),
+    catch: (error) =>
+      new PreviewIoError({ operation, path, message: error instanceof Error ? error.message : String(error) }),
   });
 }
 
@@ -106,20 +114,67 @@ function decodeNetlifyPlatform(
   environment: NodeJS.ProcessEnv,
   gitHead: string,
 ): Effect.Effect<PreviewPlatform, PreviewEnvironmentError> {
-  return Effect.gen(function*() {
-    yield* requireEnvironment(environment, "SITE_ID", (value) => value === NETLIFY_SITE_ID, `must equal ${NETLIFY_SITE_ID}`);
-    yield* requireEnvironment(environment, "REPOSITORY_URL", (value) => value === NICEEVAL_REPOSITORY_URL, `must equal ${NICEEVAL_REPOSITORY_URL}`);
-    const context = yield* requireEnvironment(environment, "CONTEXT", (value) => value === "production" || value === "deploy-preview", "must be production or deploy-preview");
-    const commitRef = yield* requireEnvironment(environment, "COMMIT_REF", (value) => value === gitHead, "must equal the current checkout git HEAD");
-    const deployId = yield* requireEnvironment(environment, "DEPLOY_ID", (value) => /^[0-9a-f]{24}$/u.test(value), "must be a 24-character lowercase Netlify deploy ID");
-    const deployUrl = yield* requireEnvironment(environment, "DEPLOY_URL", (value) => /^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app\/?$/u.test(value), "must be an immutable Netlify deploy URL");
-    const deployPrimeUrl = yield* requireEnvironment(environment, "DEPLOY_PRIME_URL", (value) => /^https:\/\/[a-z0-9-]+\.netlify\.app\/?$/u.test(value), "must be a Netlify prime URL");
-    const branch = yield* requireEnvironment(environment, "BRANCH", (value) => value.trim().length > 0, "must be non-empty");
-    const pullRequest = yield* requireEnvironment(environment, "PULL_REQUEST", (value) => value === "true" || value === "false", "must be true or false");
+  return Effect.gen(function* () {
+    yield* requireEnvironment(
+      environment,
+      "SITE_ID",
+      (value) => value === NETLIFY_SITE_ID,
+      `must equal ${NETLIFY_SITE_ID}`,
+    );
+    yield* requireEnvironment(
+      environment,
+      "REPOSITORY_URL",
+      (value) => value === NICEEVAL_REPOSITORY_URL,
+      `must equal ${NICEEVAL_REPOSITORY_URL}`,
+    );
+    const context = yield* requireEnvironment(
+      environment,
+      "CONTEXT",
+      (value) => value === "production" || value === "deploy-preview",
+      "must be production or deploy-preview",
+    );
+    const commitRef = yield* requireEnvironment(
+      environment,
+      "COMMIT_REF",
+      (value) => value === gitHead,
+      "must equal the current checkout git HEAD",
+    );
+    const deployId = yield* requireEnvironment(
+      environment,
+      "DEPLOY_ID",
+      (value) => /^[0-9a-f]{24}$/u.test(value),
+      "must be a 24-character lowercase Netlify deploy ID",
+    );
+    const deployUrl = yield* requireEnvironment(
+      environment,
+      "DEPLOY_URL",
+      (value) => /^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app\/?$/u.test(value),
+      "must be an immutable Netlify deploy URL",
+    );
+    const deployPrimeUrl = yield* requireEnvironment(
+      environment,
+      "DEPLOY_PRIME_URL",
+      (value) => /^https:\/\/[a-z0-9-]+\.netlify\.app\/?$/u.test(value),
+      "must be a Netlify prime URL",
+    );
+    const branch = yield* requireEnvironment(
+      environment,
+      "BRANCH",
+      (value) => value.trim().length > 0,
+      "must be non-empty",
+    );
+    const pullRequest = yield* requireEnvironment(
+      environment,
+      "PULL_REQUEST",
+      (value) => value === "true" || value === "false",
+      "must be true or false",
+    );
 
     if (context === "production") {
-      if (pullRequest !== "false") return yield* new PreviewEnvironmentError({ field: "PULL_REQUEST", message: "must be false for production" });
-      if (branch !== "main") return yield* new PreviewEnvironmentError({ field: "BRANCH", message: "must be main for production" });
+      if (pullRequest !== "false")
+        return yield* new PreviewEnvironmentError({ field: "PULL_REQUEST", message: "must be false for production" });
+      if (branch !== "main")
+        return yield* new PreviewEnvironmentError({ field: "BRANCH", message: "must be main for production" });
       yield* absentEnvironment(environment, "REVIEW_ID");
       return {
         mode: "netlify",
@@ -135,8 +190,14 @@ function decodeNetlifyPlatform(
       };
     }
 
-    if (pullRequest !== "true") return yield* new PreviewEnvironmentError({ field: "PULL_REQUEST", message: "must be true for deploy-preview" });
-    const reviewId = yield* requireEnvironment(environment, "REVIEW_ID", (value) => /^[1-9][0-9]*$/u.test(value), "must be a positive pull request number");
+    if (pullRequest !== "true")
+      return yield* new PreviewEnvironmentError({ field: "PULL_REQUEST", message: "must be true for deploy-preview" });
+    const reviewId = yield* requireEnvironment(
+      environment,
+      "REVIEW_ID",
+      (value) => /^[1-9][0-9]*$/u.test(value),
+      "must be a positive pull request number",
+    );
     return {
       mode: "netlify",
       kind: "pull-request",
@@ -165,40 +226,68 @@ function gitOutput(args: readonly string[], cwd: string) {
 }
 
 function validateOrchestrator(repositoryRoot: string, commit: string) {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const remote = yield* gitOutput(["remote", "get-url", "origin"], repositoryRoot);
     if (remote !== PREVIEW_REPOSITORY) {
-      return yield* new PreviewVerificationError({ subject: "orchestrator remote", message: `expected ${PREVIEW_REPOSITORY}, received ${remote}` });
+      return yield* new PreviewVerificationError({
+        subject: "orchestrator remote",
+        message: `expected ${PREVIEW_REPOSITORY}, received ${remote}`,
+      });
     }
     const head = yield* gitOutput(["rev-parse", "HEAD"], repositoryRoot);
     if (head !== commit) {
-      return yield* new PreviewVerificationError({ subject: "orchestrator HEAD", message: `expected ${commit}, received ${head}` });
+      return yield* new PreviewVerificationError({
+        subject: "orchestrator HEAD",
+        message: `expected ${commit}, received ${head}`,
+      });
     }
     const symbolic = yield* runPreviewProcess("git", ["symbolic-ref", "-q", "HEAD"], repositoryRoot);
     if (symbolic.exitCode === 0) {
-      return yield* new PreviewVerificationError({ subject: "orchestrator checkout", message: "HEAD must be detached" });
+      return yield* new PreviewVerificationError({
+        subject: "orchestrator checkout",
+        message: "HEAD must be detached",
+      });
     }
     if (symbolic.exitCode !== 1) {
-      return yield* new PreviewVerificationError({ subject: "orchestrator checkout", message: symbolic.stderr.trim() || "could not verify detached HEAD" });
+      return yield* new PreviewVerificationError({
+        subject: "orchestrator checkout",
+        message: symbolic.stderr.trim() || "could not verify detached HEAD",
+      });
     }
     const statusOutput = yield* gitOutput(["status", "--porcelain=v1", "--untracked-files=all"], repositoryRoot);
     if (statusOutput !== "") {
-      return yield* new PreviewVerificationError({ subject: "orchestrator checkout", message: "checkout is not clean" });
+      return yield* new PreviewVerificationError({
+        subject: "orchestrator checkout",
+        message: "checkout is not clean",
+      });
     }
     yield* requirePreviewSuccess("git", ["merge-base", "--is-ancestor", commit, "origin/main"], repositoryRoot).pipe(
-      Effect.mapError(() => new PreviewVerificationError({ subject: "orchestrator ancestry", message: `${commit} is not an ancestor of origin/main` })),
+      Effect.mapError(
+        () =>
+          new PreviewVerificationError({
+            subject: "orchestrator ancestry",
+            message: `${commit} is not an ancestor of origin/main`,
+          }),
+      ),
     );
   });
 }
 
 function cloneOrchestrator(temporaryRoot: string) {
   const repositoryRoot = join(temporaryRoot, "preview");
-  return Effect.gen(function*() {
-    yield* requirePreviewSuccess("git", ["clone", "--filter=blob:none", "--no-checkout", PREVIEW_REPOSITORY, repositoryRoot], temporaryRoot);
+  return Effect.gen(function* () {
+    yield* requirePreviewSuccess(
+      "git",
+      ["clone", "--filter=blob:none", "--no-checkout", PREVIEW_REPOSITORY, repositoryRoot],
+      temporaryRoot,
+    );
     yield* requirePreviewSuccess("git", ["fetch", "origin", "main"], repositoryRoot);
     const commit = yield* gitOutput(["rev-parse", "origin/main"], repositoryRoot);
     if (!/^[0-9a-f]{40}$/u.test(commit)) {
-      return yield* new PreviewVerificationError({ subject: "orchestrator commit", message: "origin/main did not resolve to a lowercase 40-character commit" });
+      return yield* new PreviewVerificationError({
+        subject: "orchestrator commit",
+        message: "origin/main did not resolve to a lowercase 40-character commit",
+      });
     }
     yield* requirePreviewSuccess("git", ["checkout", "--detach", commit], repositoryRoot);
     yield* validateOrchestrator(repositoryRoot, commit);
@@ -207,28 +296,43 @@ function cloneOrchestrator(temporaryRoot: string) {
 }
 
 function packCandidate(temporaryRoot: string) {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     yield* requirePreviewSuccess("pnpm", ["run", "build:package"], ROOT);
     yield* requirePreviewSuccess("pnpm", ["run", "build:index"], ROOT);
     const packRoot = join(temporaryRoot, "candidate");
-    yield* io("make-pack-directory", packRoot, async () => { await import("node:fs/promises").then((fs) => fs.mkdir(packRoot, { recursive: true })); });
-    yield* requirePreviewSuccess("pnpm", ["--config.ignore-scripts=true", "--config.node-linker=hoisted", "pack", "--pack-destination", packRoot], PACKAGE_ROOT);
+    yield* io("make-pack-directory", packRoot, async () => {
+      await import("node:fs/promises").then((fs) => fs.mkdir(packRoot, { recursive: true }));
+    });
+    yield* requirePreviewSuccess(
+      "pnpm",
+      ["--config.ignore-scripts=true", "--config.node-linker=hoisted", "pack", "--pack-destination", packRoot],
+      PACKAGE_ROOT,
+    );
     const entries = yield* io("read-pack-directory", packRoot, () => readdir(packRoot));
     const tarballs = entries.filter((entry) => entry.endsWith(".tgz"));
     if (tarballs.length !== 1) {
-      return yield* new PreviewVerificationError({ subject: "candidate pack", message: `expected one tarball, received ${tarballs.length}` });
+      return yield* new PreviewVerificationError({
+        subject: "candidate pack",
+        message: `expected one tarball, received ${tarballs.length}`,
+      });
     }
     const path = join(packRoot, tarballs[0] ?? "");
     const bytes = yield* io("read-candidate-tarball", path, () => readFile(path));
     const manifestPath = join(PACKAGE_ROOT, "package.json");
-    const manifest = yield* io("read-candidate-manifest", manifestPath, async () =>
-      JSON.parse(await readFile(manifestPath, "utf8")) as unknown
+    const manifest = yield* io(
+      "read-candidate-manifest",
+      manifestPath,
+      async () => JSON.parse(await readFile(manifestPath, "utf8")) as unknown,
     );
-    const effectVersion = typeof manifest === "object" && manifest !== null &&
-        "dependencies" in manifest && typeof manifest.dependencies === "object" &&
-        manifest.dependencies !== null && "effect" in manifest.dependencies
-      ? manifest.dependencies.effect
-      : undefined;
+    const effectVersion =
+      typeof manifest === "object" &&
+      manifest !== null &&
+      "dependencies" in manifest &&
+      typeof manifest.dependencies === "object" &&
+      manifest.dependencies !== null &&
+      "effect" in manifest.dependencies
+        ? manifest.dependencies.effect
+        : undefined;
     if (typeof effectVersion !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(effectVersion)) {
       return yield* new PreviewVerificationError({
         subject: "candidate Effect dependency",
@@ -273,9 +377,9 @@ const NON_RUNTIME_PACKAGE_FILE = /(?:\.d\.(?:c|m)?ts|\.(?:c|m)?ts|\.map)$/u;
 async function findRuntimePackageFiles(packageRoot: string): Promise<readonly string[]> {
   return (await findPackageFiles(packageRoot)).filter((file) => {
     const [topLevel] = relative(packageRoot, file).split(sep);
-    return topLevel !== undefined &&
-      !NON_RUNTIME_PACKAGE_DIRECTORIES.has(topLevel) &&
-      !NON_RUNTIME_PACKAGE_FILE.test(file);
+    return (
+      topLevel !== undefined && !NON_RUNTIME_PACKAGE_DIRECTORIES.has(topLevel) && !NON_RUNTIME_PACKAGE_FILE.test(file)
+    );
   });
 }
 
@@ -306,9 +410,7 @@ async function runtimePackageRoots(installedNiceeval: string): Promise<ReadonlyM
       ...Object.keys(manifest.optionalDependencies ?? {}),
       ...Object.keys(manifest.peerDependencies ?? {}),
     ]);
-    const packageNodeModules = manifest.name.startsWith("@")
-      ? dirname(dirname(packageRoot))
-      : dirname(packageRoot);
+    const packageNodeModules = manifest.name.startsWith("@") ? dirname(dirname(packageRoot)) : dirname(packageRoot);
     for (const dependency of dependencies) {
       const candidates = [join(packageNodeModules, dependency), join(rootNodeModules, dependency)];
       try {
@@ -334,7 +436,11 @@ async function installedRuntimeClosure(installedNiceeval: string): Promise<strin
   for (const [identity, packageRoot] of await runtimePackageRoots(installedNiceeval)) {
     for (const file of await findPackageFiles(packageRoot)) {
       const bytes = await readFile(file);
-      files.push({ path: `${identity}/${relative(packageRoot, file).split(sep).join("/")}`, byteLength: bytes.byteLength, sha256: sha256(bytes) });
+      files.push({
+        path: `${identity}/${relative(packageRoot, file).split(sep).join("/")}`,
+        byteLength: bytes.byteLength,
+        sha256: sha256(bytes),
+      });
     }
   }
   files.sort((left, right) => left.path.localeCompare(right.path));
@@ -342,54 +448,71 @@ async function installedRuntimeClosure(installedNiceeval: string): Promise<strin
 }
 
 function installCandidate(repositoryRoot: string, tarball: string, effectVersion: string) {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     yield* requirePreviewSuccess("pnpm", ["install", "--frozen-lockfile"], repositoryRoot);
-    yield* requirePreviewSuccess("pnpm", [
-      "add",
-      "--ignore-scripts",
-      "--save-exact",
-      tarball,
-      `effect@${effectVersion}`,
-    ], repositoryRoot);
+    yield* requirePreviewSuccess(
+      "pnpm",
+      ["add", "--ignore-scripts", "--save-exact", tarball, `effect@${effectVersion}`],
+      repositoryRoot,
+    );
     const installed = join(repositoryRoot, "node_modules/niceeval");
     const [installedRoot, sourceRoot] = yield* Effect.all([
       io("resolve-installed-candidate", installed, () => realpath(installed)),
       io("resolve-source-candidate", PACKAGE_ROOT, () => realpath(PACKAGE_ROOT)),
     ]);
     if (installedRoot === sourceRoot || installedRoot.startsWith(`${sourceRoot}${sep}`)) {
-      return yield* new PreviewVerificationError({ subject: "installed candidate", message: "node_modules/niceeval resolves to the source checkout" });
+      return yield* new PreviewVerificationError({
+        subject: "installed candidate",
+        message: "node_modules/niceeval resolves to the source checkout",
+      });
     }
     const details = yield* io("inspect-installed-candidate", installed, () => lstat(installed));
     if (details.isSymbolicLink() && installedRoot === sourceRoot) {
-      return yield* new PreviewVerificationError({ subject: "installed candidate", message: "node_modules/niceeval is a source checkout symlink" });
+      return yield* new PreviewVerificationError({
+        subject: "installed candidate",
+        message: "node_modules/niceeval is a source checkout symlink",
+      });
     }
     return yield* io("digest-installed-runtime-closure", installed, () => installedRuntimeClosure(installed));
   });
 }
 
 function installCandidateViewAssets(repositoryRoot: string) {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const candidateApp = join(repositoryRoot, "node_modules", "niceeval", "dist", "view", "app-dist");
     const publishedApp = join(repositoryRoot, ".preview-site");
     yield* io("make-preview-site", publishedApp, () => mkdir(publishedApp, { recursive: true }));
-    yield* io("copy-installed-view-index", join(candidateApp, "index.html"), () => cp(join(candidateApp, "index.html"), join(publishedApp, "index.html"), { force: true }));
-    yield* io("write-preview-not-found", join(publishedApp, "404.html"), () => writeFile(join(publishedApp, "404.html"), "<!doctype html><title>Not found</title>\n", "utf8"));
+    yield* io("copy-installed-view-index", join(candidateApp, "index.html"), () =>
+      cp(join(candidateApp, "index.html"), join(publishedApp, "index.html"), { force: true }),
+    );
+    yield* io("write-preview-not-found", join(publishedApp, "404.html"), () =>
+      writeFile(join(publishedApp, "404.html"), "<!doctype html><title>Not found</title>\n", "utf8"),
+    );
     const source = join(candidateApp, "assets");
     const destination = join(publishedApp, "assets");
     yield* io("copy-installed-view-assets", source, () => cp(source, destination, { recursive: true, force: true }));
   });
 }
 
-const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function*(root: string, comparison?: ConcordComparison) {
+const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function* (
+  root: string,
+  comparison?: ConcordComparison,
+) {
   const files: PreviewFile[] = [];
   let siteBytes = 0;
   const fail = (message: string) => Effect.fail(new PreviewVerificationError({ subject: "published site", message }));
-  const visit = Effect.fn("preview.collectSiteManifest.visit")(function*(directory: string): Effect.fn.Return<void, import("./model.js").PreviewError, BuildServices> {
+  const visit = Effect.fn("preview.collectSiteManifest.visit")(function* (
+    directory: string,
+  ): Effect.fn.Return<void, import("./model.js").PreviewError, BuildServices> {
     const entries = yield* io("read-published-directory", directory, () => readdir(directory, { withFileTypes: true }));
     for (const entry of entries) {
       const target = join(directory, entry.name);
       const path = relative(root, target).split(sep).join("/");
-      if (path === "" || path.startsWith("../") || path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+      if (
+        path === "" ||
+        path.startsWith("../") ||
+        path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+      ) {
         return yield* fail(`unsafe published path: ${path}`);
       }
       if (entry.isDirectory()) {
@@ -399,10 +522,14 @@ const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function*(r
       if (!entry.isFile()) return yield* fail(`published site contains unsupported entry: ${path}`);
       if (PROHIBITED_PATH.test(path)) return yield* fail(`published site contains prohibited path: ${path}`);
       const extension = extname(path).toLowerCase();
-      if (!ALLOWED_EXTENSIONS.has(extension)) return yield* fail(`published site contains non-allowlisted file: ${path}`);
-      if (path.startsWith("assets/") && !HASHED_ASSET_PATH.test(path)) return yield* fail(`published site contains a non-hashed asset: ${path}`);
-      if (path.startsWith("concord/assets/") && !HASHED_ASSET_PATH.test(path.slice("concord/".length))) return yield* fail(`published Concord asset is not hashed: ${path}`);
-      if ((yield* io("stat-published-file", target, () => stat(target))).size > MAXIMUM_STATIC_ASSET_BYTES) return yield* fail(`published static asset exceeds ${MAXIMUM_STATIC_ASSET_BYTES} bytes: ${path}`);
+      if (!ALLOWED_EXTENSIONS.has(extension))
+        return yield* fail(`published site contains non-allowlisted file: ${path}`);
+      if (path.startsWith("assets/") && !HASHED_ASSET_PATH.test(path))
+        return yield* fail(`published site contains a non-hashed asset: ${path}`);
+      if (path.startsWith("concord/assets/") && !HASHED_ASSET_PATH.test(path.slice("concord/".length)))
+        return yield* fail(`published Concord asset is not hashed: ${path}`);
+      if ((yield* io("stat-published-file", target, () => stat(target))).size > MAXIMUM_STATIC_ASSET_BYTES)
+        return yield* fail(`published static asset exceeds ${MAXIMUM_STATIC_ASSET_BYTES} bytes: ${path}`);
       const bytes = yield* io("read-published-file", target, () => readFile(target));
       if (bytes.byteLength > MAXIMUM_STATIC_ASSET_BYTES) {
         return yield* fail(`published static asset exceeds ${MAXIMUM_STATIC_ASSET_BYTES} bytes: ${path}`);
@@ -411,18 +538,35 @@ const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function*(r
       if (siteBytes > MAXIMUM_SITE_BYTES) return yield* fail(`published site exceeds ${MAXIMUM_SITE_BYTES} bytes`);
       const sqlite = bytes.subarray(0, 16).equals(Buffer.from("SQLite format 3\0"));
       if (sqlite) return yield* fail(`published site contains SQLite data: ${path}`);
-      if (containsPrivateKeyMaterial(bytes)) return yield* fail(`published site contains private-key material: ${path}`);
+      if (containsPrivateKeyMaterial(bytes))
+        return yield* fail(`published site contains private-key material: ${path}`);
       if (extension === ".json") {
         if (path === "concord/changes.json") {
-          if (comparison === undefined) return yield* fail("Concord changes are present without an admitted PR comparison");
+          if (comparison === undefined)
+            return yield* fail("Concord changes are present without an admitted PR comparison");
           const validated = yield* validateConcordChanges(ROOT, dirname(target), bytes);
-          yield* Effect.try({ try: () => assertConcordComparison(validated, comparison), catch: error => new PreviewVerificationError({ subject: path, message: String(error) }) });
+          yield* Effect.try({
+            try: () => assertConcordComparison(validated, comparison),
+            catch: (error) => new PreviewVerificationError({ subject: path, message: String(error) }),
+          });
           const current = yield* io("recheck-concord-bytes", target, () => readFile(target));
           if (!bytes.equals(current)) return yield* fail("Concord changes changed during CLI verification");
         } else {
-          const parsed = yield* Effect.try({ try: () => JSON.parse(bytes.toString("utf8")) as unknown, catch: error => new PreviewIoError({ operation: "parse-published-json", path, message: String(error) }) });
-          const record = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-          if (record === undefined || Object.keys(record).sort().join("\0") !== ["en", "format", "zh-CN"].join("\0") || record.format !== "niceeval.view-page/v1" || typeof record.en !== "string" || typeof record["zh-CN"] !== "string") {
+          const parsed = yield* Effect.try({
+            try: () => JSON.parse(bytes.toString("utf8")) as unknown,
+            catch: (error) => new PreviewIoError({ operation: "parse-published-json", path, message: String(error) }),
+          });
+          const record =
+            typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+              ? (parsed as Record<string, unknown>)
+              : undefined;
+          if (
+            record === undefined ||
+            Object.keys(record).sort().join("\0") !== ["en", "format", "zh-CN"].join("\0") ||
+            record.format !== "niceeval.view-page/v1" ||
+            typeof record.en !== "string" ||
+            typeof record["zh-CN"] !== "string"
+          ) {
             return yield* fail(`published site contains Inspection or unknown JSON: ${path}`);
           }
         }
@@ -432,9 +576,14 @@ const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function*(r
     }
   });
   yield* visit(root);
-  files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  files.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   if (!files.some((file) => file.path === "index.html")) return yield* fail("published site is missing index.html");
-  if (comparison !== undefined && (!files.some(file => file.path === "concord/index.html") || !files.some(file => file.path === "concord/changes.json"))) return yield* fail("published site is missing the admitted Concord review");
+  if (
+    comparison !== undefined &&
+    (!files.some((file) => file.path === "concord/index.html") ||
+      !files.some((file) => file.path === "concord/changes.json"))
+  )
+    return yield* fail("published site is missing the admitted Concord review");
   return files;
 });
 
@@ -449,7 +598,11 @@ async function collectPrivateFunctionManifest(root: string): Promise<readonly Pr
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const target = join(directory, entry.name);
       const path = relative(root, target).split(sep).join("/");
-      if (path === "" || path.startsWith("../") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
+      if (
+        path === "" ||
+        path.startsWith("../") ||
+        path.split("/").some((part) => part === "" || part === "." || part === "..")
+      ) {
         throw new Error(`unsafe Function path: ${path}`);
       }
       if (entry.isDirectory()) {
@@ -465,7 +618,7 @@ async function collectPrivateFunctionManifest(root: string): Promise<readonly Pr
     }
   }
   await visit(root);
-  files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  files.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   return files;
 }
 
@@ -476,26 +629,32 @@ function prepareCanonicalRecord(repositoryRoot: string) {
     'import { startExternalRecordImport } from "./node_modules/niceeval/dist/record/sqlite/external-record-import.js";',
     'import { openHostOwnedRecordReadSession } from "./node_modules/niceeval/dist/record/sqlite/index.js";',
     'const importer = startExternalRecordImport(new URL("./.niceeval/record.sqlite", import.meta.url).pathname, Date.now() + 30_000);',
-    'try {',
-    '  const generation = await importer.result;',
-    '  const session = openHostOwnedRecordReadSession(generation.path);',
-    '  let cutoff;',
+    "try {",
+    "  const generation = await importer.result;",
+    "  const session = openHostOwnedRecordReadSession(generation.path);",
+    "  let cutoff;",
     '  try { cutoff = session.readSealedRunSummaryPage("", 1).cutoff; } finally { session.close(); }',
     `  const destination = ${JSON.stringify(recordPath)};`,
     '  const file = await open(destination, "wx", 0o600);',
-    '  await file.close();',
-    '  await copyFile(generation.path, destination);',
-    '  process.stdout.write(JSON.stringify(cutoff));',
-    '} finally { await importer.close(); }',
+    "  await file.close();",
+    "  await copyFile(generation.path, destination);",
+    "  process.stdout.write(JSON.stringify(cutoff));",
+    "} finally { await importer.close(); }",
   ].join("\n");
   return requirePreviewSuccess("node", ["--input-type=module", "--eval", program], repositoryRoot).pipe(
     Effect.flatMap((result) => {
       try {
         const value = JSON.parse(result.stdout) as { readonly identity?: unknown; readonly runCount?: unknown };
-        if (typeof value.identity !== "string" || value.identity.length === 0 || !Number.isSafeInteger(value.runCount)) throw new Error("invalid cutoff");
+        if (typeof value.identity !== "string" || value.identity.length === 0 || !Number.isSafeInteger(value.runCount))
+          throw new Error("invalid cutoff");
         return Effect.succeed({ recordPath, sourceCutoffIdentity: value.identity });
       } catch (error) {
-        return Effect.fail(new PreviewVerificationError({ subject: "canonical Record cutoff", message: error instanceof Error ? error.message : String(error) }));
+        return Effect.fail(
+          new PreviewVerificationError({
+            subject: "canonical Record cutoff",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
       }
     }),
   );
@@ -566,8 +725,13 @@ export default async (request) => {
 `;
 }
 
-function stageFunction(repositoryRoot: string, recordSource: string, generationId: string, sourceCutoffIdentity: string) {
-  return Effect.gen(function*() {
+function stageFunction(
+  repositoryRoot: string,
+  recordSource: string,
+  generationId: string,
+  sourceCutoffIdentity: string,
+) {
+  return Effect.gen(function* () {
     yield* io("replace-function-directory", PREVIEW_FUNCTION_PATH, async () => {
       await rm(PREVIEW_FUNCTION_PATH, { recursive: true, force: true });
       await mkdir(join(PREVIEW_FUNCTION_PATH, "node_modules"), { recursive: true });
@@ -575,8 +739,16 @@ function stageFunction(repositoryRoot: string, recordSource: string, generationI
     const installed = join(repositoryRoot, "node_modules", "niceeval");
     const roots = yield* io("resolve-function-runtime-closure", installed, () => runtimePackageRoots(installed));
     for (const packageRoot of roots.values()) {
-      const manifest = JSON.parse(yield* io("read-function-package", join(packageRoot, "package.json"), () => readFile(join(packageRoot, "package.json"), "utf8"))) as { readonly name?: unknown };
-      if (typeof manifest.name !== "string") return yield* new PreviewVerificationError({ subject: "Function package", message: "runtime package name is invalid" });
+      const manifest = JSON.parse(
+        yield* io("read-function-package", join(packageRoot, "package.json"), () =>
+          readFile(join(packageRoot, "package.json"), "utf8"),
+        ),
+      ) as { readonly name?: unknown };
+      if (typeof manifest.name !== "string")
+        return yield* new PreviewVerificationError({
+          subject: "Function package",
+          message: "runtime package name is invalid",
+        });
       const packageName = manifest.name;
       const destination = join(PREVIEW_FUNCTION_PATH, "node_modules", ...packageName.split("/"));
       yield* io("copy-function-package", packageRoot, async () => {
@@ -588,22 +760,48 @@ function stageFunction(repositoryRoot: string, recordSource: string, generationI
       });
     }
     const details = yield* io("inspect-tracked-record", recordSource, () => lstat(recordSource));
-    if (!details.isFile() || details.isSymbolicLink()) return yield* new PreviewVerificationError({ subject: "tracked Record", message: `${RECORD_PATH} must be a regular file` });
-    yield* io("copy-private-record", recordSource, () => cp(recordSource, join(PREVIEW_FUNCTION_PATH, "record.sqlite"), { force: false }));
-    yield* io("write-function-entry", PREVIEW_FUNCTION_PATH, () => writeFile(join(PREVIEW_FUNCTION_PATH, `${PREVIEW_FUNCTION_NAME}.mjs`), functionSource(generationId, sourceCutoffIdentity), "utf8"));
-    const files = yield* io("verify-function-closure", PREVIEW_FUNCTION_PATH, () => collectPrivateFunctionManifest(PREVIEW_FUNCTION_PATH));
+    if (!details.isFile() || details.isSymbolicLink())
+      return yield* new PreviewVerificationError({
+        subject: "tracked Record",
+        message: `${RECORD_PATH} must be a regular file`,
+      });
+    yield* io("copy-private-record", recordSource, () =>
+      cp(recordSource, join(PREVIEW_FUNCTION_PATH, "record.sqlite"), { force: false }),
+    );
+    yield* io("write-function-entry", PREVIEW_FUNCTION_PATH, () =>
+      writeFile(
+        join(PREVIEW_FUNCTION_PATH, `${PREVIEW_FUNCTION_NAME}.mjs`),
+        functionSource(generationId, sourceCutoffIdentity),
+        "utf8",
+      ),
+    );
+    const files = yield* io("verify-function-closure", PREVIEW_FUNCTION_PATH, () =>
+      collectPrivateFunctionManifest(PREVIEW_FUNCTION_PATH),
+    );
     const record = files.find((file) => file.path === "record.sqlite");
-    if (record === undefined) return yield* new PreviewVerificationError({ subject: "Function Record", message: "private Record is missing" });
-    return { name: PREVIEW_FUNCTION_NAME as "niceeval-inspection", runtime: PREVIEW_FUNCTION_RUNTIME, entry: `${PREVIEW_FUNCTION_NAME}.mjs` as const, files, closureSha256: closureDigest(files), record };
+    if (record === undefined)
+      return yield* new PreviewVerificationError({ subject: "Function Record", message: "private Record is missing" });
+    return {
+      name: PREVIEW_FUNCTION_NAME as "niceeval-inspection",
+      runtime: PREVIEW_FUNCTION_RUNTIME,
+      entry: `${PREVIEW_FUNCTION_NAME}.mjs` as const,
+      files,
+      closureSha256: closureDigest(files),
+      record,
+    };
   });
 }
 
 function publishSite(source: string, publish: string, comparison?: ConcordComparison) {
   const parent = dirname(publish);
-  return Effect.gen(function*() {
-    const staging = yield* io("make-publish-staging", parent, () => mkdtemp(join(parent, `.${basename(publish)}.staging-`)));
-    const cleanup = io("remove-publish-staging", staging, () => rm(staging, { recursive: true, force: true })).pipe(Effect.orDie);
-    return yield* Effect.gen(function*() {
+  return Effect.gen(function* () {
+    const staging = yield* io("make-publish-staging", parent, () =>
+      mkdtemp(join(parent, `.${basename(publish)}.staging-`)),
+    );
+    const cleanup = io("remove-publish-staging", staging, () => rm(staging, { recursive: true, force: true })).pipe(
+      Effect.orDie,
+    );
+    return yield* Effect.gen(function* () {
       yield* io("copy-publish-staging", staging, () => cp(source, staging, { recursive: true }));
       const files = yield* collectSiteManifest(staging, comparison);
       const digest = closureDigest(files);
@@ -621,71 +819,112 @@ function writeReceipt(path: string, receipt: PreviewBuildReceipt) {
   });
 }
 
-export function buildPreview(options: PreviewBuildOptions): Effect.Effect<PreviewBuildReceipt, import("./model.js").PreviewError, BuildServices> {
-  return Effect.scoped(Effect.gen(function*() {
-    const run = Effect.gen(function*() {
-      const gitHead = yield* gitOutput(["rev-parse", "HEAD"], ROOT);
-      if (!/^[0-9a-f]{40}$/u.test(gitHead)) return yield* new PreviewVerificationError({ subject: "candidate HEAD", message: "git HEAD is not a lowercase 40-character commit" });
-      const platform: PreviewPlatform = options.local
-        ? { mode: "local" }
-        : yield* decodeNetlifyPlatform(options.environment ?? process.env, gitHead);
-      if (!options.local && options.comparison) return yield* new PreviewVerificationError({ subject: "PR identity", message: "explicit comparison is only available with --local; Netlify builds read actual PR metadata" });
-      const pullRequest = platform.mode === "netlify" && platform.kind === "pull-request"
-        ? yield* readPullRequestComparison(platform)
-        : undefined;
-      if (pullRequest) yield* preparePullRequestHistory(ROOT, pullRequest);
-      const concordInput = pullRequest ?? options.comparison;
-      const temporaryRoot = yield* scopedTemporaryDirectory("niceeval-preview-build-");
-      const orchestrator = yield* cloneOrchestrator(temporaryRoot);
-      const orchestratorRoot = orchestrator.repositoryRoot;
-      const candidate = yield* packCandidate(temporaryRoot);
-      const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectVersion);
-      yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
-      yield* installCandidateViewAssets(orchestratorRoot);
-      yield* verifyPreviewClosure(join(orchestratorRoot, ".preview-site"));
-      const { recordPath, sourceCutoffIdentity } = yield* prepareCanonicalRecord(orchestratorRoot);
-      const recordBytes = yield* io("read-private-record", recordPath, () => readFile(recordPath));
-      const generationId = `netlify-${sha256(recordBytes).slice(0, 32)}`;
-      const previewFunction = yield* stageFunction(orchestratorRoot, recordPath, generationId, sourceCutoffIdentity);
-      if (previewFunction.record.sha256 !== sha256(recordBytes)) {
-        return yield* new PreviewVerificationError({ subject: "Function Record", message: "staged Record differs from the admitted generation" });
-      }
-      const runtimeDigestAfter = yield* io("digest-installed-runtime-closure", join(orchestratorRoot, "node_modules/niceeval"), () => installedRuntimeClosure(join(orchestratorRoot, "node_modules/niceeval")));
-      if (runtimeDigestAfter !== runtimeDigestBefore) {
-        return yield* new PreviewVerificationError({ subject: "installed runtime closure", message: "runtime closure changed while building the preview" });
-      }
-      let comparison: ConcordComparison | undefined;
-      if (concordInput) {
-        const review = yield* exportConcordChanges({ root: ROOT, ...concordInput, out: join(orchestratorRoot, ".preview-site/concord") });
-        comparison = review.comparison;
-        const index = join(orchestratorRoot, ".preview-site/index.html");
-        yield* io("link-concord-review", index, async () => {
-          const html = await readFile(index, "utf8");
-          if (!html.includes("</body>")) throw new Error("Preview index is missing its body terminator");
-          await writeFile(index, html.replace("</body>", '<a href="./concord/" aria-label="PR 变更" style="position:fixed;right:16px;bottom:16px;z-index:1000;padding:10px 16px;background:#183540;color:white;border-radius:6px;text-decoration:none">PR 变更</a></body>'));
-        });
-        if (pullRequest && platform.mode === "netlify" && platform.kind === "pull-request") {
-          const current = yield* readPullRequestComparison(platform);
-          if (current.base !== pullRequest.base || current.head !== pullRequest.head || current.baseLabel !== pullRequest.baseLabel) return yield* new PreviewVerificationError({ subject: "PR identity", message: "PR target or head changed during the build" });
+export function buildPreview(
+  options: PreviewBuildOptions,
+): Effect.Effect<PreviewBuildReceipt, import("./model.js").PreviewError, BuildServices> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const run = Effect.gen(function* () {
+        const gitHead = yield* gitOutput(["rev-parse", "HEAD"], ROOT);
+        if (!/^[0-9a-f]{40}$/u.test(gitHead))
+          return yield* new PreviewVerificationError({
+            subject: "candidate HEAD",
+            message: "git HEAD is not a lowercase 40-character commit",
+          });
+        const platform: PreviewPlatform = options.local
+          ? { mode: "local" }
+          : yield* decodeNetlifyPlatform(options.environment ?? process.env, gitHead);
+        if (!options.local && options.comparison)
+          return yield* new PreviewVerificationError({
+            subject: "PR identity",
+            message: "explicit comparison is only available with --local; Netlify builds read actual PR metadata",
+          });
+        const pullRequest =
+          platform.mode === "netlify" && platform.kind === "pull-request"
+            ? yield* readPullRequestComparison(platform)
+            : undefined;
+        if (pullRequest) yield* preparePullRequestHistory(ROOT, pullRequest);
+        const concordInput = pullRequest ?? options.comparison;
+        const temporaryRoot = yield* scopedTemporaryDirectory("niceeval-preview-build-");
+        const orchestrator = yield* cloneOrchestrator(temporaryRoot);
+        const orchestratorRoot = orchestrator.repositoryRoot;
+        const candidate = yield* packCandidate(temporaryRoot);
+        const runtimeDigestBefore = yield* installCandidate(orchestratorRoot, candidate.path, candidate.effectVersion);
+        yield* requirePreviewSuccess("pnpm", ["typecheck"], orchestratorRoot);
+        yield* installCandidateViewAssets(orchestratorRoot);
+        yield* verifyPreviewClosure(join(orchestratorRoot, ".preview-site"));
+        const { recordPath, sourceCutoffIdentity } = yield* prepareCanonicalRecord(orchestratorRoot);
+        const recordBytes = yield* io("read-private-record", recordPath, () => readFile(recordPath));
+        const generationId = `netlify-${sha256(recordBytes).slice(0, 32)}`;
+        const previewFunction = yield* stageFunction(orchestratorRoot, recordPath, generationId, sourceCutoffIdentity);
+        if (previewFunction.record.sha256 !== sha256(recordBytes)) {
+          return yield* new PreviewVerificationError({
+            subject: "Function Record",
+            message: "staged Record differs from the admitted generation",
+          });
         }
-      }
-      const published = yield* publishSite(join(orchestratorRoot, ".preview-site"), PREVIEW_PUBLISH_PATH, comparison);
-      const buildReceipt: PreviewBuildReceipt = {
-        format: "niceeval.preview-build/v1",
-        platform,
-        candidate: {
-          gitCommit: gitHead,
-          packedArtifactSha256: candidate.digest,
-          installedRuntimeClosureSha256: runtimeDigestBefore,
-        },
-        orchestrator: { repository: PREVIEW_REPOSITORY, commit: orchestrator.commit },
-        files: published.files,
-        closureSha256: published.digest,
-        function: previewFunction,
-      };
-      yield* writeReceipt(PREVIEW_BUILD_RECEIPT_PATH, buildReceipt);
-      return buildReceipt;
-    });
-    return yield* run;
-  }));
+        const runtimeDigestAfter = yield* io(
+          "digest-installed-runtime-closure",
+          join(orchestratorRoot, "node_modules/niceeval"),
+          () => installedRuntimeClosure(join(orchestratorRoot, "node_modules/niceeval")),
+        );
+        if (runtimeDigestAfter !== runtimeDigestBefore) {
+          return yield* new PreviewVerificationError({
+            subject: "installed runtime closure",
+            message: "runtime closure changed while building the preview",
+          });
+        }
+        let comparison: ConcordComparison | undefined;
+        if (concordInput) {
+          const review = yield* exportConcordChanges({
+            root: ROOT,
+            ...concordInput,
+            out: join(orchestratorRoot, ".preview-site/concord"),
+          });
+          comparison = review.comparison;
+          const index = join(orchestratorRoot, ".preview-site/index.html");
+          yield* io("link-concord-review", index, async () => {
+            const html = await readFile(index, "utf8");
+            if (!html.includes("</body>")) throw new Error("Preview index is missing its body terminator");
+            await writeFile(
+              index,
+              html.replace(
+                "</body>",
+                '<a href="./concord/" aria-label="PR 变更" style="position:fixed;right:16px;bottom:16px;z-index:1000;padding:10px 16px;background:#183540;color:white;border-radius:6px;text-decoration:none">PR 变更</a></body>',
+              ),
+            );
+          });
+          if (pullRequest && platform.mode === "netlify" && platform.kind === "pull-request") {
+            const current = yield* readPullRequestComparison(platform);
+            if (
+              current.base !== pullRequest.base ||
+              current.head !== pullRequest.head ||
+              current.baseLabel !== pullRequest.baseLabel
+            )
+              return yield* new PreviewVerificationError({
+                subject: "PR identity",
+                message: "PR target or head changed during the build",
+              });
+          }
+        }
+        const published = yield* publishSite(join(orchestratorRoot, ".preview-site"), PREVIEW_PUBLISH_PATH, comparison);
+        const buildReceipt: PreviewBuildReceipt = {
+          format: "niceeval.preview-build/v1",
+          platform,
+          candidate: {
+            gitCommit: gitHead,
+            packedArtifactSha256: candidate.digest,
+            installedRuntimeClosureSha256: runtimeDigestBefore,
+          },
+          orchestrator: { repository: PREVIEW_REPOSITORY, commit: orchestrator.commit },
+          files: published.files,
+          closureSha256: published.digest,
+          function: previewFunction,
+        };
+        yield* writeReceipt(PREVIEW_BUILD_RECEIPT_PATH, buildReceipt);
+        return buildReceipt;
+      });
+      return yield* run;
+    }),
+  );
 }

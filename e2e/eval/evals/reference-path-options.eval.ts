@@ -6,7 +6,10 @@ export default defineEval({
     const sensitive = referencesAnyPath(["NiceEval/NiceEval"]);
     t.check(sensitive.name, equals(referencesAnyPath(["NiceEval/NiceEval"], { ignoreCase: false }).name));
     t.check("https://github.com/niceeval/niceeval/docs", not(sensitive));
-    t.check({ nested: ["https://github.com/niceeval/niceeval/docs"] }, referencesAnyPath(["NiceEval/NiceEval"], { ignoreCase: true }));
+    t.check(
+      { nested: ["https://github.com/niceeval/niceeval/docs"] },
+      referencesAnyPath(["NiceEval/NiceEval"], { ignoreCase: true }),
+    );
     t.check("SECRETS/api.key", referencesAnyPath(["secrets"], { ignoreCase: true }));
     t.check("ſecrets/api.key", referencesAnyPath(["secrets"], { ignoreCase: true }));
     t.check("ς/file", referencesAnyPath(["σ"], { ignoreCase: true }));

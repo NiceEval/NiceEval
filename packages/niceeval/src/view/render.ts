@@ -51,8 +51,12 @@ function regularFile(
   return Effect.tryPromise({
     try: async () => {
       const metadata = await lstat(path);
-      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size <= 0 ||
-        !Number.isSafeInteger(metadata.size)) {
+      if (
+        !metadata.isFile() ||
+        metadata.isSymbolicLink() ||
+        metadata.size <= 0 ||
+        !Number.isSafeInteger(metadata.size)
+      ) {
         throw new Error(`${path} is not a non-empty regular file`);
       }
       return Object.freeze({ size: metadata.size });
@@ -65,12 +69,22 @@ function hashFile(path: string, signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
     const stream = createReadStream(path);
-    const abort = (): void => { stream.destroy(new Error("Record hashing was interrupted")); };
+    const abort = (): void => {
+      stream.destroy(new Error("Record hashing was interrupted"));
+    };
     const cleanup = (): void => signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", abort, { once: true });
-    stream.once("error", (cause) => { cleanup(); reject(cause); });
-    stream.on("data", (chunk) => { hash.update(chunk); });
-    stream.once("end", () => { cleanup(); resolve(hash.digest("hex")); });
+    stream.once("error", (cause) => {
+      cleanup();
+      reject(cause);
+    });
+    stream.on("data", (chunk) => {
+      hash.update(chunk);
+    });
+    stream.once("end", () => {
+      cleanup();
+      resolve(hash.digest("hex"));
+    });
     if (signal.aborted) abort();
   });
 }

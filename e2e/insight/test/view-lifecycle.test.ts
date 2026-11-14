@@ -24,21 +24,10 @@ test.concurrent("view 接受对象地址，帮助显示统一选择语法且 pla
 
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      const attempt = only(
-        produced.expEvalEvents(),
-        (event) => event.evalId === "inspection",
-        produced.diagnostic(),
-      );
+      const attempt = only(produced.expEvalEvents(), (event) => event.evalId === "inspection", produced.diagnostic());
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
 
-      const view = niceeval.start([
-        "view",
-        locator,
-        "--no-open",
-        "--port",
-        "0",
-        "--json",
-      ], { timeoutMs: 90_000 });
+      const view = niceeval.start(["view", locator, "--no-open", "--port", "0", "--json"], { timeoutMs: 90_000 });
       try {
         const ready = await waitForViewReady(view);
         expect(await fetch(expectLoopbackReadyUrl(ready.url).origin)).toMatchObject({ status: 200 });
@@ -65,7 +54,14 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
       const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
       const occupied = await occupyLoopbackPort();
       try {
-        const failed = await niceeval.run(["view", `run:${runId}`, "--no-open", "--port", String(occupied.port), "--json"]);
+        const failed = await niceeval.run([
+          "view",
+          `run:${runId}`,
+          "--no-open",
+          "--port",
+          String(occupied.port),
+          "--json",
+        ]);
         expect(failed.exitCode, failed.diagnostic()).not.toBe(0);
         expect(failed.stderr.trim()).not.toBe("");
         expect(decodeViewLifecycle(failed.stdout).some((event) => event.event === "ready")).toBe(false);
@@ -89,36 +85,38 @@ test.concurrent("SIGTERM 受控停止交付 closed，并回收 reader、server�
 
 async function verifyControlledStop(signal: "SIGINT" | "SIGTERM"): Promise<void> {
   await insightE2E.case(
-      `view-${signal.toLowerCase()}-cleanup`,
-      { artifacts: insightCaseArtifacts() },
-      async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-        const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
-        expect(produced.exitCode, produced.diagnostic()).toBe(0);
-        const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
-        const view = niceeval.start(["view", `run:${runId}`, "--no-open", "--port", "0", "--json"], { timeoutMs: 90_000 });
+    `view-${signal.toLowerCase()}-cleanup`,
+    { artifacts: insightCaseArtifacts() },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(produced.exitCode, produced.diagnostic()).toBe(0);
+      const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
+      const view = niceeval.start(["view", `run:${runId}`, "--no-open", "--port", "0", "--json"], {
+        timeoutMs: 90_000,
+      });
 
-        const ready = await waitForViewReady(view);
-        const readyUrl = expectLoopbackReadyUrl(ready.url);
-        const health = await fetch(readyUrl.origin);
-        expect(health.status).toBeLessThan(500);
+      const ready = await waitForViewReady(view);
+      const readyUrl = expectLoopbackReadyUrl(ready.url);
+      const health = await fetch(readyUrl.origin);
+      expect(health.status).toBeLessThan(500);
 
-        expect(view.signal(signal)).toBe(true);
-        const closed = await view.done;
-        expect(closed.timedOut, closed.diagnostic()).toBe(false);
-        const lifecycle = decodeViewLifecycle(closed.stdout);
-        expect(lifecycle.filter((event) => event.event === "ready")).toHaveLength(1);
-        expect(lifecycle.filter((event) => event.event === "closed")).toHaveLength(1);
-        expect(lifecycle.at(-1)?.event).toBe("closed");
-        await view.dispose();
+      expect(view.signal(signal)).toBe(true);
+      const closed = await view.done;
+      expect(closed.timedOut, closed.diagnostic()).toBe(false);
+      const lifecycle = decodeViewLifecycle(closed.stdout);
+      expect(lifecycle.filter((event) => event.event === "ready")).toHaveLength(1);
+      expect(lifecycle.filter((event) => event.event === "closed")).toHaveLength(1);
+      expect(lifecycle.at(-1)?.event).toBe("closed");
+      await view.dispose();
 
-        await expect(fetch(readyUrl.origin)).rejects.toThrow();
-        await assertPortReusable(Number(readyUrl.port));
+      await expect(fetch(readyUrl.origin)).rejects.toThrow();
+      await assertPortReusable(Number(readyUrl.port));
 
-        // A successful public read after process exit proves the long-lived
-        // viewer no longer retains its Run reader/watcher.
-        const runs = await niceeval.run(["run", "list", "--json"]);
-        expect(runs.exitCode, runs.diagnostic()).toBe(0);
-      },
+      // A successful public read after process exit proves the long-lived
+      // viewer no longer retains its Run reader/watcher.
+      const runs = await niceeval.run(["run", "list", "--json"]);
+      expect(runs.exitCode, runs.diagnostic()).toBe(0);
+    },
   );
 }
 
@@ -138,6 +136,6 @@ async function occupyLoopbackPort(): Promise<{ readonly server: Server; readonly
 
 async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((done, reject) => {
-    server.close((error) => error === undefined ? done() : reject(error));
+    server.close((error) => (error === undefined ? done() : reject(error)));
   });
 }

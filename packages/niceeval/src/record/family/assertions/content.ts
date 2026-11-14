@@ -1,8 +1,6 @@
 import { Schema } from "effect";
 
-import {
-  RecordBytesContentSchema,
-} from "../../attachment/index.ts";
+import { RecordBytesContentSchema } from "../../attachment/index.ts";
 import type { AssertionMaterial } from "../../../assertions/record/model.ts";
 import { NonNegativeSafeIntegerSchema } from "../common.ts";
 
@@ -16,9 +14,7 @@ const AssertionMaterialPreviewSchema = Schema.String.pipe(
 );
 
 /** Current material has one storage-neutral content branch. */
-export const AssertionMaterialSchema: Schema.Codec<
-  AssertionMaterial<AssertionsMaterialContent>
-> = Schema.Union([
+export const AssertionMaterialSchema: Schema.Codec<AssertionMaterial<AssertionsMaterialContent>> = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
     reason: Schema.Literal("not-recorded"),

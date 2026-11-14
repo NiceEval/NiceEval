@@ -9,9 +9,19 @@ const unreadableSandbox = defineSandbox({
   name: "diff-read-failure",
   targetPlatform: hostSandboxTargetPlatform(),
   exclusive: true,
-  create: () => Effect.promise(async () => {
-    const sandbox = await createReadLimitedSandbox();
-    return { ...sandbox, readBytes: async () => { throw new Error("Fixture: Sandbox download unavailable"); } };
-  }),
+  create: () =>
+    Effect.promise(async () => {
+      const sandbox = await createReadLimitedSandbox();
+      return {
+        ...sandbox,
+        readBytes: async () => {
+          throw new Error("Fixture: Sandbox download unavailable");
+        },
+      };
+    }),
 });
-export default defineExperiment({ adapter: changeScopeAgent, sandbox: unreadableSandbox, evals: ["unchanged-within-empty"] });
+export default defineExperiment({
+  adapter: changeScopeAgent,
+  sandbox: unreadableSandbox,
+  evals: ["unchanged-within-empty"],
+});

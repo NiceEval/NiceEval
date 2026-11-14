@@ -73,7 +73,11 @@ beforeAll(async () => {
       runReceipt.exitCode,
       `${runReceipt.diagnostic()}\n${traceReceipt?.diagnostic() ?? "No attempt trace was published."}`,
     ).toBe(0);
-    only(runReceipt.expEvalEvents(), (event) => event.evalId === EVAL_ID, () => runReceipt.diagnostic());
+    only(
+      runReceipt.expEvalEvents(),
+      (event) => event.evalId === EVAL_ID,
+      () => runReceipt.diagnostic(),
+    );
   });
 }, 14 * 60_000);
 // @feature docs/feature/adapters/README.md

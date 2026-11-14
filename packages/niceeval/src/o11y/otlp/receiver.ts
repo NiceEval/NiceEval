@@ -110,10 +110,7 @@ interface ReceiverResources {
  * 里 yield* 即可。
  */
 export function createTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error, import("effect/Scope").Scope> {
-  return Effect.acquireRelease(
-    makeTraceReceiver(port),
-    (receiver) => receiver.close,
-  );
+  return Effect.acquireRelease(makeTraceReceiver(port), (receiver) => receiver.close);
 }
 
 /**
@@ -129,8 +126,7 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
     ).pipe(Effect.catch(() => Effect.void));
     const processor = yield* Effect.forkDetach(Effect.scoped(drain));
     const close = closeResources(resources, processor);
-    const settle = (quietMs: number, maxMs: number): Effect.Effect<void> =>
-      settleReceiver(resources, quietMs, maxMs);
+    const settle = (quietMs: number, maxMs: number): Effect.Effect<void> => settleReceiver(resources, quietMs, maxMs);
 
     return Object.freeze({
       endpoint: (host: string) => `http://${host}:${boundPort}/v1/traces`,
@@ -180,10 +176,17 @@ function listen(server: Server, port: number): Effect.Effect<number, Error> {
       resume(Effect.fail(error));
     };
     const onError = (error: Error): void => {
-      const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-        ? error.code
-        : undefined;
-      fail(port !== 0 && code === "EADDRINUSE" ? new Error(`OTLP receiver port ${port} is already in use (another process is bound to it). Pick a free port in defineConfig({ telemetry: { port } }), or stop whatever is using ${port} and retry.`) : error);
+      const code =
+        typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+          ? error.code
+          : undefined;
+      fail(
+        port !== 0 && code === "EADDRINUSE"
+          ? new Error(
+              `OTLP receiver port ${port} is already in use (another process is bound to it). Pick a free port in defineConfig({ telemetry: { port } }), or stop whatever is using ${port} and retry.`,
+            )
+          : error,
+      );
     };
     const onListening = (): void => {
       if (settled) return;
@@ -222,32 +225,31 @@ function handleTraceRequest(resources: ReceiverResources, request: HttpRequest):
   return readRequestBody(request.request).pipe(
     Effect.matchEffect({
       onFailure: () => Effect.sync(() => respond(request.response, 400)),
-      onSuccess: (raw) => Effect.sync(() => {
-        resources.receivedBytes += raw.byteLength;
-        const contentType = request.request.headers["content-type"] ?? "";
-        try {
-          let body = raw;
-          // OTLP 导出端可能 gzip(OTEL_EXPORTER_OTLP_COMPRESSION 或默认开)。按 header 或 gzip 魔数解压。
-          const contentEncoding = String(request.request.headers["content-encoding"] ?? "");
-          if (contentEncoding.includes("gzip") || (body[0] === 0x1f && body[1] === 0x8b)) {
-            try {
-              body = gunzipSync(body);
-            } catch {
-              // 不是合法 gzip 就按原样试。
+      onSuccess: (raw) =>
+        Effect.sync(() => {
+          resources.receivedBytes += raw.byteLength;
+          const contentType = request.request.headers["content-type"] ?? "";
+          try {
+            let body = raw;
+            // OTLP 导出端可能 gzip(OTEL_EXPORTER_OTLP_COMPRESSION 或默认开)。按 header 或 gzip 魔数解压。
+            const contentEncoding = String(request.request.headers["content-encoding"] ?? "");
+            if (contentEncoding.includes("gzip") || (body[0] === 0x1f && body[1] === 0x8b)) {
+              try {
+                body = gunzipSync(body);
+              } catch {
+                // 不是合法 gzip 就按原样试。
+              }
             }
+            const parsed = parseOtlpTraces(body, contentType);
+            if (parsed.length > 0) {
+              resources.spans.push(...parsed);
+              resources.lastAt = Date.now();
+              resources.arrivalGeneration += 1;
+            }
+          } catch {
+            // 解析失败不回 5xx,免得导出端重试刷屏。
           }
-          const parsed = parseOtlpTraces(body, contentType);
-          if (parsed.length > 0) {
-            resources.spans.push(...parsed);
-            resources.lastAt = Date.now();
-            resources.arrivalGeneration += 1;
-          }
-        } catch {
-          // 解析失败不回 5xx,免得导出端重试刷屏。
-        }
-      }).pipe(
-        Effect.andThen(Effect.sync(() => respondOtlp(request.response, request.request))),
-      ),
+        }).pipe(Effect.andThen(Effect.sync(() => respondOtlp(request.response, request.request)))),
     }),
   );
 }
@@ -312,33 +314,24 @@ function settleReceiver(resources: ReceiverResources, quietMs: number, maxMs: nu
   // 只以本次调用开始后的 arrival 为 quiet 基线；上一批的 lastAt 不能让本次
   // settle 提前返回，否则 BatchSpanProcessor 的迟到 batch 会被 sweep 漏掉。
   const baselineGeneration = resources.arrivalGeneration;
-  const waitForQuiet = (): Effect.Effect<void> => Effect.suspend(() => {
-    if (
-      resources.arrivalGeneration > baselineGeneration &&
-      Date.now() - resources.lastAt >= Math.max(0, quietMs)
-    ) {
-      return Effect.void;
-    }
-    return Effect.sleep(SETTLE_POLL_MS).pipe(Effect.andThen(waitForQuiet()));
-  });
+  const waitForQuiet = (): Effect.Effect<void> =>
+    Effect.suspend(() => {
+      if (resources.arrivalGeneration > baselineGeneration && Date.now() - resources.lastAt >= Math.max(0, quietMs)) {
+        return Effect.void;
+      }
+      return Effect.sleep(SETTLE_POLL_MS).pipe(Effect.andThen(waitForQuiet()));
+    });
   return waitForQuiet().pipe(Effect.timeoutOption(Math.max(0, maxMs)), Effect.asVoid);
 }
 
-function closeResources(
-  resources: ReceiverResources,
-  processor: Fiber.Fiber<void, never>,
-): Effect.Effect<void> {
+function closeResources(resources: ReceiverResources, processor: Fiber.Fiber<void, never>): Effect.Effect<void> {
   return Effect.suspend(() => {
     if (resources.closed) return Effect.void;
     resources.closed = true;
     return Effect.sync(() => resources.requests.close()).pipe(
       Effect.andThen(Fiber.interrupt(processor)),
       Effect.andThen(
-        Effect.forEach(
-          [...resources.sockets],
-          (socket) => Effect.sync(() => socket.destroy()),
-          { discard: true },
-        ),
+        Effect.forEach([...resources.sockets], (socket) => Effect.sync(() => socket.destroy()), { discard: true }),
       ),
       Effect.andThen(closeServer(resources.server).pipe(Effect.timeoutOption(SERVER_CLOSE_TIMEOUT_MS), Effect.asVoid)),
     );

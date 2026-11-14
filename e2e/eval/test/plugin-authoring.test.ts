@@ -7,7 +7,9 @@ import { evalE2E } from "./context.ts";
 // @feature docs/feature/plugins/README.md
 test.concurrent("Plugin 实例与工厂按挂载范围校验条件声明", async () => {
   await evalE2E.case("plugin-authoring", async ({ paths }) => {
-    await writeFile(join(paths.projectRoot, "plugin-authoring.mjs"), `
+    await writeFile(
+      join(paths.projectRoot, "plugin-authoring.mjs"),
+      `
       import assert from "node:assert/strict";
       import { definePlugin } from "niceeval/plugin";
       import { defineEval, defineExperiment } from "niceeval";
@@ -36,7 +38,8 @@ test.concurrent("Plugin 实例与工厂按挂载范围校验条件声明", async
         assert.throws(() => definePlugin({ name: "invalid", identity, attempt: { before() {} } }), /identity/);
       }
       assert.throws(() => definePlugin({ name: "empty", identity: {} }), /behavior/);
-    `);
+    `,
+    );
     const result = await command([process.execPath]).run(["plugin-authoring.mjs"], { cwd: paths.projectRoot });
     expect(result.exitCode, result.diagnostic()).toBe(0);
   });

@@ -127,7 +127,6 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
         controller.abort();
         try {
           await deps.capture({
-
             id: `su_${randomUUID()}`,
             sessionId: source.sessionId,
             sourceTurnId: source.turnId,

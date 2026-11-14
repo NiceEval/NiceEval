@@ -6,7 +6,23 @@ import { randomBytes } from "node:crypto";
 
 import { Cause, Effect, Exit, Semaphore } from "effect";
 
-import type { Agent, AgentContext, AgentSendContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SessionKey, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
+import type {
+  Agent,
+  AgentContext,
+  AgentSendContext,
+  AgentSession,
+  InputFile,
+  InputRequest,
+  InputResponse,
+  Sandbox,
+  SessionKey,
+  StreamEvent,
+  Telemetry,
+  TraceSpan,
+  Turn,
+  TurnInput,
+  Usage,
+} from "../types.ts";
 import { entityIdFromEntropy, type TurnId } from "../record/family/source-receipt/model.ts";
 import {
   ObservedEventIngestionCorrelator,
@@ -279,11 +295,15 @@ export class SessionManager {
 
   /** A frozen call-time copy; terminal replacement never changes an earlier pending cut. */
   usageContributionsSnapshot(): readonly AgentUsageContribution[] {
-    return Object.freeze(this.usageContributions.map((contribution) => Object.freeze({
-      ...contribution,
-      usage: contribution.usage === null ? null : Object.freeze({ ...contribution.usage }),
-      coverage: Object.freeze({ ...contribution.coverage }),
-    })));
+    return Object.freeze(
+      this.usageContributions.map((contribution) =>
+        Object.freeze({
+          ...contribution,
+          usage: contribution.usage === null ? null : Object.freeze({ ...contribution.usage }),
+          coverage: Object.freeze({ ...contribution.coverage }),
+        }),
+      ),
+    );
   }
 
   /** 归属到本 attempt 的 span(逐轮攒;attempt 末尾连同 sweep 的迟到 span 一起挂 trace)。 */
@@ -323,9 +343,7 @@ export class SessionManager {
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
     this.observedIngestion = new ObservedEventIngestionCorrelator({
-      ...(deps.onTurn?.normalizeObservedText === undefined
-        ? {}
-        : { normalizeText: deps.onTurn.normalizeObservedText }),
+      ...(deps.onTurn?.normalizeObservedText === undefined ? {} : { normalizeText: deps.onTurn.normalizeObservedText }),
     });
     this.primary = this.newSession();
   }
@@ -346,9 +364,7 @@ export class SessionManager {
 
   /** Absorbed retry events have no sealed observed identities to include in default history. */
   observedHistoryIncompleteReason(): string | undefined {
-    return this.retryAttempts.some((attempt) => attempt.events.length > 0)
-      ? "agent-retry-history-unsealed"
-      : undefined;
+    return this.retryAttempts.some((attempt) => attempt.events.length > 0) ? "agent-retry-history-unsealed" : undefined;
   }
 
   observedEvaluationSegment(snapshot: ObservedTurnSnapshot): ObservedEvaluationSegment | undefined {
@@ -365,17 +381,20 @@ export class SessionManager {
     outcome: ObservedTurnState["outcome"],
     coverage: ResolvedEvidenceCoverage,
   ): void {
-    this.observedTurnStates.set(snapshot, Object.freeze({
-      outcome,
-      coverage: Object.freeze({
-        events: Object.freeze({ ...coverage.events }),
-        messages: Object.freeze({ ...coverage.messages }),
-        actions: Object.freeze({ ...coverage.actions }),
-        status: Object.freeze({ ...coverage.status }),
-        usage: Object.freeze({ ...coverage.usage }),
-        data: Object.freeze({ ...coverage.data }),
+    this.observedTurnStates.set(
+      snapshot,
+      Object.freeze({
+        outcome,
+        coverage: Object.freeze({
+          events: Object.freeze({ ...coverage.events }),
+          messages: Object.freeze({ ...coverage.messages }),
+          actions: Object.freeze({ ...coverage.actions }),
+          status: Object.freeze({ ...coverage.status }),
+          usage: Object.freeze({ ...coverage.usage }),
+          data: Object.freeze({ ...coverage.data }),
+        }),
       }),
-    }));
+    );
   }
 
   private mintPhysicalTurnId(): TurnId {
@@ -436,9 +455,7 @@ export class SessionManager {
     );
     // Sandbox sends share one workdir, so their attribution windows cannot
     // overlap. Direct Agent sends retain their existing unconstrained behavior.
-    return this.deps.ledgerHooks === undefined
-      ? send
-      : this.sendSemaphore.withPermits(1)(send);
+    return this.deps.ledgerHooks === undefined ? send : this.sendSemaphore.withPermits(1)(send);
   }
 
   private sendSerializedEffect(
@@ -450,13 +467,9 @@ export class SessionManager {
   ): Effect.Effect<Turn, unknown> {
     return Effect.suspend(() => {
       const n = ++this.turnCount;
-      const turnLabel = session.index === 1
-        ? `turn ${n}`
-        : `session ${session.index} · turn ${n}`;
+      const turnLabel = session.index === 1 ? `turn ${n}` : `session ${session.index} · turn ${n}`;
       const attach = files?.length ? ` 📎${files.length}` : "";
-      const userDetail = text.trim().length > 0
-        ? text
-        : files?.[0]?.filename ?? `[file]`;
+      const userDetail = text.trim().length > 0 ? text : (files?.[0]?.filename ?? `[file]`);
       const timingNow = this.deps.timingNow ?? (() => performance.now());
       const startOffsetMs = timingNow();
 
@@ -490,49 +503,58 @@ export class SessionManager {
         ...(loc === undefined ? {} : { loc }),
         ...(sourceOrder === undefined ? {} : { sourceOrder }),
       });
-      const ctx: AgentSendContext = bindAttemptResources({
-        sandbox: this.deps.sandbox,
-        turnId,
-        signal: this.deps.signal,
-        evalId: this.deps.evalId,
-        attempt: this.deps.attempt,
-        evalGroup: this.deps.evalGroup,
-        model: this.deps.model,
-        reasoningEffort: this.deps.reasoningEffort,
-        flags: this.deps.flags,
-        experimentId: this.deps.experimentId,
-        session,
-        telemetry: this.deps.telemetry,
-        // Progress is intentionally transient. A direct SessionManager without
-        // an ACTIVE feedback sink drops it instead of turning it into a durable
-        // timeout breadcrumb through `log`.
-        progress: (u) => this.deps.feedback?.progress(u),
-        diagnostic: (d) => this.deps.feedback?.diagnostic(d),
-        log: this.deps.log,
-      }, this.deps.resources);
-      const beforeSend = this.deps.ledgerHooks === undefined
-        ? Effect.void
-        : Effect.tryPromise({
-            try: () => this.deps.ledgerHooks!.beforeSend(windowLabel),
-            catch: (error) => error,
-          });
-      const afterSend = this.deps.ledgerHooks === undefined
-        ? Effect.void
-        : Effect.tryPromise({
-            try: () => this.deps.ledgerHooks!.afterSend(windowLabel),
-            catch: (error) => error,
-          }).pipe(Effect.catch((error) => Effect.sync(() => {
-            // The agent turn itself did complete. Preserve that success for
-            // the author, but retain the failed checkpoint so freeze cannot
-            // turn an incomplete capture into a convincing empty document.
-            if (this.ledgerCaptureFailureValue === undefined) {
-              this.ledgerCaptureFailureValue = Object.freeze({
-                state: "capture-failed" as const,
-                label: windowLabel,
-                error,
-              });
-            }
-          })));
+      const ctx: AgentSendContext = bindAttemptResources(
+        {
+          sandbox: this.deps.sandbox,
+          turnId,
+          signal: this.deps.signal,
+          evalId: this.deps.evalId,
+          attempt: this.deps.attempt,
+          evalGroup: this.deps.evalGroup,
+          model: this.deps.model,
+          reasoningEffort: this.deps.reasoningEffort,
+          flags: this.deps.flags,
+          experimentId: this.deps.experimentId,
+          session,
+          telemetry: this.deps.telemetry,
+          // Progress is intentionally transient. A direct SessionManager without
+          // an ACTIVE feedback sink drops it instead of turning it into a durable
+          // timeout breadcrumb through `log`.
+          progress: (u) => this.deps.feedback?.progress(u),
+          diagnostic: (d) => this.deps.feedback?.diagnostic(d),
+          log: this.deps.log,
+        },
+        this.deps.resources,
+      );
+      const beforeSend =
+        this.deps.ledgerHooks === undefined
+          ? Effect.void
+          : Effect.tryPromise({
+              try: () => this.deps.ledgerHooks!.beforeSend(windowLabel),
+              catch: (error) => error,
+            });
+      const afterSend =
+        this.deps.ledgerHooks === undefined
+          ? Effect.void
+          : Effect.tryPromise({
+              try: () => this.deps.ledgerHooks!.afterSend(windowLabel),
+              catch: (error) => error,
+            }).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  // The agent turn itself did complete. Preserve that success for
+                  // the author, but retain the failed checkpoint so freeze cannot
+                  // turn an incomplete capture into a convincing empty document.
+                  if (this.ledgerCaptureFailureValue === undefined) {
+                    this.ledgerCaptureFailureValue = Object.freeze({
+                      state: "capture-failed" as const,
+                      label: windowLabel,
+                      error,
+                    });
+                  }
+                }),
+              ),
+            );
 
       // turn 级重试只包这一次物理 agent send。SDK Promise 在这两个
       // Effect.tryPromise 边界适配；retry 本身不再包含手写 Promise / timeout。
@@ -545,9 +567,7 @@ export class SessionManager {
         }));
       const sendOnce: Effect.Effect<PhysicalSendResult, unknown> = this.deps.otel
         ? this.sendWithOtelEffect(this.deps.otel, { text, files, responses }, ctx, observeUsage)
-        : this.sendAgentEffect({ text, files, responses }, ctx, observeUsage).pipe(
-            Effect.map((turn) => ({ turn })),
-          );
+        : this.sendAgentEffect({ text, files, responses }, ctx, observeUsage).pipe(Effect.map((turn) => ({ turn })));
       const retryDeps: SendRetryDeps = {
         classifier: this.deps.agent.classifySendFailure,
         onRetryAttempt: ({ sendAttempt, startedAt, durationMs, failure, classification }) => {
@@ -563,7 +583,12 @@ export class SessionManager {
               acceptance: "rejected",
               message: sendFailureText(failure),
               ...(process?.exitCode !== undefined || process?.signal !== undefined
-                ? { process: { ...(process.exitCode !== undefined ? { exitCode: process.exitCode } : {}), ...(process.signal !== undefined ? { signal: process.signal } : {}) } }
+                ? {
+                    process: {
+                      ...(process.exitCode !== undefined ? { exitCode: process.exitCode } : {}),
+                      ...(process.signal !== undefined ? { signal: process.signal } : {}),
+                    },
+                  }
                 : {}),
             },
             classification: {
@@ -585,9 +610,8 @@ export class SessionManager {
         signal: ctx.signal,
       };
       const send = Effect.uninterruptibleMask((restore) =>
-        Effect.flatMap(
-          Effect.exit(restore(sendWithTurnRetry(sendOnce, retryDeps))),
-          (exit) => Effect.flatMap(
+        Effect.flatMap(Effect.exit(restore(sendWithTurnRetry(sendOnce, retryDeps))), (exit) =>
+          Effect.flatMap(
             Effect.sync(() => {
               const durationMs = Math.max(0, timingNow() - startOffsetMs);
               if (Exit.isSuccess(exit)) {
@@ -640,10 +664,7 @@ export class SessionManager {
                 actions: incomplete,
                 status: incomplete,
               });
-              const observed = this.observedIngestion.finishTurn(
-                observedDraft,
-                sendFailure?.events ?? [],
-              );
+              const observed = this.observedIngestion.finishTurn(observedDraft, sendFailure?.events ?? []);
               session.appendObservedTurn(observed);
               this.recordObservedTurnState(observed, "failed", turnEvidenceCoverage);
               this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
@@ -673,41 +694,43 @@ export class SessionManager {
                 ...(sendFailure?.usage !== undefined ? { usage: sendFailure.usage } : {}),
               });
             }),
-            () => Exit.isSuccess(exit)
-              ? Effect.succeed(exit.value)
-              : Effect.failCause(exit.cause),
+            () => (Exit.isSuccess(exit) ? Effect.succeed(exit.value) : Effect.failCause(exit.cause)),
           ),
         ),
       ).pipe(
-        Effect.flatMap(({ turn }) => Effect.sync(() => {
-          this.allEvents.push(...turn.events);
-          session.events.push(...turn.events);
-          session.pendingInputRequests.push(
-            ...turn.events
-              .filter((e): e is Extract<StreamEvent, { type: "input.requested" }> => e.type === "input.requested")
-              .map((e) => e.request),
-          );
-          if (turn.usage) {
-            accumulateUsage(this.usage, turn.usage);
-            accumulateUsage(session.usage, turn.usage);
-          }
-          // 证据覆盖:attempt / session 级聚合取各轮最差值(见 assertions/coverage.ts)。
-          const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
-          this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
-          session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
-          session.lastStatus = turn.status;
-          this.lastStatus = turn.status;
-          const reply = lastAssistantText(turn.events);
-          if (reply !== undefined) session.lastMessage = reply;
+        Effect.flatMap(({ turn }) =>
+          Effect.sync(() => {
+            this.allEvents.push(...turn.events);
+            session.events.push(...turn.events);
+            session.pendingInputRequests.push(
+              ...turn.events
+                .filter((e): e is Extract<StreamEvent, { type: "input.requested" }> => e.type === "input.requested")
+                .map((e) => e.request),
+            );
+            if (turn.usage) {
+              accumulateUsage(this.usage, turn.usage);
+              accumulateUsage(session.usage, turn.usage);
+            }
+            // 证据覆盖:attempt / session 级聚合取各轮最差值(见 assertions/coverage.ts)。
+            const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
+            this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
+            session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
+            session.lastStatus = turn.status;
+            this.lastStatus = turn.status;
+            const reply = lastAssistantText(turn.events);
+            if (reply !== undefined) session.lastMessage = reply;
 
-          const tok = (turn.usage?.inputTokens ?? 0) + (turn.usage?.outputTokens ?? 0);
-          const tools = turn.events.filter((event) => event.type === "operation.started" && event.operation.kind === "tool").length;
-          const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
-          this.deps.log(
-            `${turnLabel} ← ${turn.status} · ${`${tools} tools`} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
-          );
-          return turn;
-        })),
+            const tok = (turn.usage?.inputTokens ?? 0) + (turn.usage?.outputTokens ?? 0);
+            const tools = turn.events.filter(
+              (event) => event.type === "operation.started" && event.operation.kind === "tool",
+            ).length;
+            const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
+            this.deps.log(
+              `${turnLabel} ← ${turn.status} · ${`${tools} tools`} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
+            );
+            return turn;
+          }),
+        ),
       );
       return beforeSend.pipe(
         Effect.andThen(
@@ -735,17 +758,19 @@ export class SessionManager {
     const nativeContext = ctx;
     const native = agentSendEffect(this.deps.agent, input, nativeContext);
     if (native !== undefined) {
-      return withAgentCallbackContext(nativeContext, (callbackContext) => observeUsage(
-        Effect.suspend(() => agentSendEffect(this.deps.agent, input, callbackContext)!).pipe(
-          Effect.mapError(normalizeSendFailure),
+      return withAgentCallbackContext(nativeContext, (callbackContext) =>
+        observeUsage(
+          Effect.suspend(() => agentSendEffect(this.deps.agent, input, callbackContext)!).pipe(
+            Effect.mapError(normalizeSendFailure),
+          ),
         ),
-      ));
+      );
     }
-    return withAgentCallbackContext(ctx, (callbackContext) => observeUsage(
-      authorCallbackEffect(() => this.sendAgent(input, callbackContext)).pipe(
-        Effect.mapError(normalizeSendFailure),
+    return withAgentCallbackContext(ctx, (callbackContext) =>
+      observeUsage(
+        authorCallbackEffect(() => this.sendAgent(input, callbackContext)).pipe(Effect.mapError(normalizeSendFailure)),
       ),
-    ));
+    );
   }
 
   /** Runs at the Agent invoke boundary, after ledger and OTLP preparation, once per retry. */
@@ -753,41 +778,56 @@ export class SessionManager {
     callOnce: Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>>,
     identity: () => Pick<AgentUsageContribution, "sessionScopeId" | "turnId" | "sendAttempt">,
   ): Effect.Effect<Turn, ReturnType<typeof normalizeSendFailure>> {
-    return Effect.uninterruptibleMask((restore) => Effect.suspend(() => {
-      const index = this.usageContributions.length;
-      const pending: AgentUsageContribution = Object.freeze({
-        ...identity(),
-        state: "pending",
-        outcome: null,
-        model: this.deps.model ?? null,
-        usage: null,
-        coverage: Object.freeze({ status: "unavailable", reason: "agent-send-pending" }),
-      });
-      this.usageContributions.push(pending);
-      return restore(callOnce).pipe(Effect.onExit((exit) => Effect.sync(() => {
-        const failure = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined;
-        const usage = Exit.isSuccess(exit) ? exit.value.usage
-          : failure !== undefined && isSendFailure(failure) ? failure.usage : undefined;
-        let coverage: AgentUsageContribution["coverage"] = usage === undefined
-          ? { status: "unavailable", reason: "agent-send-usage-not-reported" }
-          : this.agentEvidenceCoverage.usage;
-        try {
-          if (Exit.isSuccess(exit)) {
-            coverage = { status: "unavailable", reason: "agent-send-invalid-coverage" };
-            coverage = this.resolveTurnEvidenceCoverage(exit.value).usage;
-          }
-        } finally {
-          this.usageContributions[index] = Object.freeze({
-            ...pending,
-            state: "terminal",
-            outcome: Exit.isSuccess(exit) ? exit.value.status === "failed" ? "failed" : "completed"
-              : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed",
-            usage: usage === undefined ? null : Object.freeze({ ...usage }),
-            coverage: Object.freeze({ ...coverage }),
-          });
-        }
-      })));
-    }));
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.suspend(() => {
+        const index = this.usageContributions.length;
+        const pending: AgentUsageContribution = Object.freeze({
+          ...identity(),
+          state: "pending",
+          outcome: null,
+          model: this.deps.model ?? null,
+          usage: null,
+          coverage: Object.freeze({ status: "unavailable", reason: "agent-send-pending" }),
+        });
+        this.usageContributions.push(pending);
+        return restore(callOnce).pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => {
+              const failure = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined;
+              const usage = Exit.isSuccess(exit)
+                ? exit.value.usage
+                : failure !== undefined && isSendFailure(failure)
+                  ? failure.usage
+                  : undefined;
+              let coverage: AgentUsageContribution["coverage"] =
+                usage === undefined
+                  ? { status: "unavailable", reason: "agent-send-usage-not-reported" }
+                  : this.agentEvidenceCoverage.usage;
+              try {
+                if (Exit.isSuccess(exit)) {
+                  coverage = { status: "unavailable", reason: "agent-send-invalid-coverage" };
+                  coverage = this.resolveTurnEvidenceCoverage(exit.value).usage;
+                }
+              } finally {
+                this.usageContributions[index] = Object.freeze({
+                  ...pending,
+                  state: "terminal",
+                  outcome: Exit.isSuccess(exit)
+                    ? exit.value.status === "failed"
+                      ? "failed"
+                      : "completed"
+                    : Cause.hasInterruptsOnly(exit.cause)
+                      ? "interrupted"
+                      : "failed",
+                  usage: usage === undefined ? null : Object.freeze({ ...usage }),
+                  coverage: Object.freeze({ ...coverage }),
+                });
+              }
+            }),
+          ),
+        );
+      }),
+    );
   }
 
   /**
@@ -801,32 +841,36 @@ export class SessionManager {
     ctx: AgentSendContext,
     observeUsage: ObserveSendUsage,
   ): Effect.Effect<PhysicalSendResult, ReturnType<typeof normalizeSendFailure>> {
-    return otel.runTurnEffect((headers) => {
-      const turnCtx: AgentSendContext = ctx.telemetry
-        ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
-        : ctx;
-      return this.sendAgentEffect(input, turnCtx, observeUsage);
-    }).pipe(
-      Effect.map((result) => {
-        this.otelSpans.push(...result.spans);
-        if (result.spans.length > 0) this.otelTraceIds.add(result.traceId);
+    return otel
+      .runTurnEffect((headers) => {
+        const turnCtx: AgentSendContext = ctx.telemetry ? { ...ctx, telemetry: { ...ctx.telemetry, headers } } : ctx;
+        return this.sendAgentEffect(input, turnCtx, observeUsage);
+      })
+      .pipe(
+        Effect.map((result) => {
+          this.otelSpans.push(...result.spans);
+          if (result.spans.length > 0) this.otelTraceIds.add(result.traceId);
 
-        if (result.attribution === "window" && result.spans.length > 0 && !this.warnedWindowAttribution) {
-          this.warnedWindowAttribution = true;
-          this.deps.log(`otel: spans missing our traceparent, attributing by time window (turns for this agent serialized; concurrency resumes once W3C propagation is confirmed)`);
-        }
-        if (result.spans.length === 0 && !this.warnedNoSpans) {
-          this.warnedNoSpans = true;
-          this.deps.log(`otel: 0 spans this turn — endpoint not wired? (env not injected / service not restarted / no flush)`);
-        }
-        return {
-          turn: result.result,
-          traceId: result.traceId,
-          attribution: result.spans.length === 0 ? "none" : result.attribution,
-          window: result.window,
-        };
-      }),
-    );
+          if (result.attribution === "window" && result.spans.length > 0 && !this.warnedWindowAttribution) {
+            this.warnedWindowAttribution = true;
+            this.deps.log(
+              `otel: spans missing our traceparent, attributing by time window (turns for this agent serialized; concurrency resumes once W3C propagation is confirmed)`,
+            );
+          }
+          if (result.spans.length === 0 && !this.warnedNoSpans) {
+            this.warnedNoSpans = true;
+            this.deps.log(
+              `otel: 0 spans this turn — endpoint not wired? (env not injected / service not restarted / no flush)`,
+            );
+          }
+          return {
+            turn: result.result,
+            traceId: result.traceId,
+            attribution: result.spans.length === 0 ? "none" : result.attribution,
+            window: result.window,
+          };
+        }),
+      );
   }
 
   /** telemetry.collect 收到 BatchSpanProcessor 迟到导出后，回写尚无 span 的 turn。 */
@@ -920,7 +964,8 @@ function accumulateUsage(acc: Usage, add: Usage): void {
   if (add.inputTokens !== undefined) acc.inputTokens = (acc.inputTokens ?? 0) + add.inputTokens;
   if (add.outputTokens !== undefined) acc.outputTokens = (acc.outputTokens ?? 0) + add.outputTokens;
   if (add.cacheReadTokens !== undefined) acc.cacheReadTokens = (acc.cacheReadTokens ?? 0) + add.cacheReadTokens;
-  if (add.cacheCreationTokens !== undefined) acc.cacheCreationTokens = (acc.cacheCreationTokens ?? 0) + add.cacheCreationTokens;
+  if (add.cacheCreationTokens !== undefined)
+    acc.cacheCreationTokens = (acc.cacheCreationTokens ?? 0) + add.cacheCreationTokens;
   if (add.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + add.reasoningTokens;
   if (add.requests !== undefined) acc.requests = (acc.requests ?? 0) + add.requests;
   if (add.costUSD !== undefined) {

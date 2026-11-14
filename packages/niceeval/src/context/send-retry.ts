@@ -67,7 +67,7 @@ function retrySleep(signal: AbortSignal, delayMs: number): Effect.Effect<void> {
   return Effect.raceFirst(
     Effect.sleep(delayMs).pipe(Effect.as("delay" as const)),
     awaitAbort(signal).pipe(Effect.as("aborted" as const)),
-  ).pipe(Effect.flatMap((winner) => winner === "aborted" ? Effect.interrupt : Effect.void));
+  ).pipe(Effect.flatMap((winner) => (winner === "aborted" ? Effect.interrupt : Effect.void)));
 }
 
 /**
@@ -101,41 +101,40 @@ export function sendWithTurnRetry<T>(
       const monotonicStartedAt = yield* Clock.currentTimeNanos;
       return yield* callOnce.pipe(
         Effect.mapError(normalizeSendFailure),
-        Effect.catch((failure) => Effect.gen(function* () {
-          const monotonicEndedAt = yield* Clock.currentTimeNanos;
-          const durationMs = Math.max(
-            0,
-            Number(monotonicEndedAt - monotonicStartedAt) / 1_000_000,
-          );
-          const cls = resolveSendFailureClass(failure, {
-            adapter: deps.classifier,
-          });
-          if (!cls.retryable) return yield* Effect.fail(attachFailureClass(failure, cls));
-          if (sendAttempt + 1 >= SEND_MAX_ATTEMPTS) {
-            return yield* Effect.fail(finalizeExhausted(failure, cls, "send"));
-          }
-          if (deps.budget.remaining <= 0) {
-            return yield* Effect.fail(finalizeExhausted(failure, cls, "attempt"));
-          }
-
-          const jitter = yield* Random.next;
-          const delayMs = BASE_DELAY_MS * 2 ** sendAttempt * jitter;
-          yield* Effect.sync(() => {
-            deps.onRetryAttempt?.({
-              sendAttempt,
-              startedAt: new Date(startedAtMs).toISOString(),
-              durationMs,
-              failure,
-              classification: cls,
+        Effect.catch((failure) =>
+          Effect.gen(function* () {
+            const monotonicEndedAt = yield* Clock.currentTimeNanos;
+            const durationMs = Math.max(0, Number(monotonicEndedAt - monotonicStartedAt) / 1_000_000);
+            const cls = resolveSendFailureClass(failure, {
+              adapter: deps.classifier,
             });
-            deps.budget.remaining -= 1;
-            deps.reportRetry?.(
-              `turn retry ${sendAttempt + 2}/${SEND_MAX_ATTEMPTS} (${cls.reason}) — waiting ${Math.round(delayMs / 1000)}s`,
-            );
-          });
-          yield* sleepWithReleasedSlot(deps.slot, retrySleep(deps.signal, delayMs));
-          return yield* retry(sendAttempt + 1);
-        })),
+            if (!cls.retryable) return yield* Effect.fail(attachFailureClass(failure, cls));
+            if (sendAttempt + 1 >= SEND_MAX_ATTEMPTS) {
+              return yield* Effect.fail(finalizeExhausted(failure, cls, "send"));
+            }
+            if (deps.budget.remaining <= 0) {
+              return yield* Effect.fail(finalizeExhausted(failure, cls, "attempt"));
+            }
+
+            const jitter = yield* Random.next;
+            const delayMs = BASE_DELAY_MS * 2 ** sendAttempt * jitter;
+            yield* Effect.sync(() => {
+              deps.onRetryAttempt?.({
+                sendAttempt,
+                startedAt: new Date(startedAtMs).toISOString(),
+                durationMs,
+                failure,
+                classification: cls,
+              });
+              deps.budget.remaining -= 1;
+              deps.reportRetry?.(
+                `turn retry ${sendAttempt + 2}/${SEND_MAX_ATTEMPTS} (${cls.reason}) — waiting ${Math.round(delayMs / 1000)}s`,
+              );
+            });
+            yield* sleepWithReleasedSlot(deps.slot, retrySleep(deps.signal, delayMs));
+            return yield* retry(sendAttempt + 1);
+          }),
+        ),
       );
     });
 

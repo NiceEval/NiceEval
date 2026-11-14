@@ -8,21 +8,9 @@ import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
 import { prepareCandidate, type CandidateForm } from "./candidate-cache.ts";
 import { readCandidateTarball } from "./injection.ts";
 import { selectRepos } from "./plan.ts";
-import {
-  buildTestkitPackage,
-  verifyTestkitSnapshot,
-  type TestkitPackage,
-} from "./testkit-snapshot.ts";
-import {
-  materializeCandidateArtifact,
-  runRepoEffect,
-  type RepoRunResult,
-} from "./run-repo.ts";
-import {
-  ensureContainedRealDirectory,
-  ensureRealDirectory,
-  writeContainedUtf8File,
-} from "./durable-path.ts";
+import { buildTestkitPackage, verifyTestkitSnapshot, type TestkitPackage } from "./testkit-snapshot.ts";
+import { materializeCandidateArtifact, runRepoEffect, type RepoRunResult } from "./run-repo.ts";
+import { ensureContainedRealDirectory, ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
 import type { Category, RepoReceipt, SelectionReceipt } from "./receipt.ts";
 import type { OwnedProcess } from "./owned-process.ts";
 import { formatCause } from "./format-cause.ts";
@@ -106,14 +94,9 @@ const rootError = (cause: unknown): E2ERunError =>
   new E2ERunError({
     detail: errorDetail(cause),
   });
-const fs = <A>(
-  use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>,
-) =>
+const fs = <A>(use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>) =>
   Effect.flatMap(FileSystem.FileSystem, use).pipe(Effect.mapError(rootError));
-const category = (
-  results: readonly RepoRunResult[],
-  runner: RunnerTerminalSummary,
-): Category =>
+const category = (results: readonly RepoRunResult[], runner: RunnerTerminalSummary): Category =>
   results.some((result) => result.category === "cancelled")
     ? "cancelled"
     : results.some((result) => result.category === "regression")
@@ -136,14 +119,10 @@ const failedRepo = (
     const id = repo.manifest.id;
     const artifactDir = join(artifactRoot, id);
     const receiptPath = join(artifactDir, "receipt.json");
-    const detail = Cause.isCause(cause)
-      ? formatCause(cause)
-      : errorDetail(cause);
-    yield* ensureContainedRealDirectory(
-      artifactRoot,
-      artifactDir,
-      "failed repo durable artifact directory",
-    ).pipe(Effect.mapError(rootError));
+    const detail = Cause.isCause(cause) ? formatCause(cause) : errorDetail(cause);
+    yield* ensureContainedRealDirectory(artifactRoot, artifactDir, "failed repo durable artifact directory").pipe(
+      Effect.mapError(rootError),
+    );
     const receipt: RepoReceipt = {
       repoId: id,
       ...(selection === undefined ? {} : { selection }),
@@ -162,8 +141,7 @@ const failedRepo = (
           stage: "cleanup",
           ok: false,
           path: join("<unavailable>", id),
-          detail:
-            "repo workdir disposition unavailable after operational failure",
+          detail: "repo workdir disposition unavailable after operational failure",
         },
       ],
       exitCode: null,
@@ -174,15 +152,7 @@ const failedRepo = (
         ...(candidate.inputDigest === undefined ? {} : { inputDigest: candidate.inputDigest }),
         sha256: candidate.sha256,
         integrity: candidate.integrity,
-        reproduce: [
-          "pnpm",
-          "e2e",
-          "run",
-          "--candidate",
-          candidate.path,
-          "--repo",
-          id,
-        ].join(" "),
+        reproduce: ["pnpm", "e2e", "run", "--candidate", candidate.path, "--repo", id].join(" "),
         exactReplay: false,
       },
     };
@@ -223,18 +193,13 @@ export const buildSummary = (
       receiptPath: result.receiptPath,
     })),
     passed: results.filter((result) => result.category === "pass").length,
-    regression: results.filter((result) => result.category === "regression")
-      .length,
+    regression: results.filter((result) => result.category === "regression").length,
     infra: results.filter((result) => result.category === "infra").length,
-    configuration: results.filter(
-      (result) => result.category === "configuration",
-    ).length,
-    cancelled: results.filter((result) => result.category === "cancelled")
-      .length,
+    configuration: results.filter((result) => result.category === "configuration").length,
+    cancelled: results.filter((result) => result.category === "cancelled").length,
     total: results.length,
     category: overall,
-    detail:
-      primary?.detail ?? (overall === "infra" ? runner.detail : "clean pass"),
+    detail: primary?.detail ?? (overall === "infra" ? runner.detail : "clean pass"),
     runner,
     ...(selection === undefined ? {} : { selection }),
   };
@@ -242,16 +207,9 @@ export const buildSummary = (
 
 export const runEffect = (
   options: RunOptions,
-): Effect.Effect<
-  RunSummary,
-  E2ERunError,
-  FileSystem.FileSystem | OwnedProcess | Scope.Scope
-> =>
+): Effect.Effect<RunSummary, E2ERunError, FileSystem.FileSystem | OwnedProcess | Scope.Scope> =>
   Effect.gen(function* () {
-    if (
-      !Number.isSafeInteger(options.repoConcurrency) ||
-      options.repoConcurrency < 1
-    )
+    if (!Number.isSafeInteger(options.repoConcurrency) || options.repoConcurrency < 1)
       return yield* Effect.fail(
         new E2ERunError({
           detail: "repoConcurrency must be a positive integer",
@@ -263,103 +221,84 @@ export const runEffect = (
           detail: "keepWorkdir is local-only and rejected in CI",
         }),
       );
-    const discovered = yield* discoverAllRepos(e2eRootDir()).pipe(
-      Effect.mapError(rootError),
-    );
+    const discovered = yield* discoverAllRepos(e2eRootDir()).pipe(Effect.mapError(rootError));
     if (discovered.errors.length > 0)
-      return yield* Effect.fail(
-        new E2ERunError({ detail: discovered.errors.join("; ") }),
-      );
-    const selected = yield* Result.match(
-      selectRepos(discovered.repos, options),
-      {
-        onFailure: (error) =>
-          Effect.fail(new E2ERunError({ detail: error.detail })),
-        onSuccess: Effect.succeed,
-      },
-    );
-    const fixed = options.candidatePath === undefined ? undefined : yield* readCandidateTarball(resolve(options.candidatePath)).pipe(Effect.mapError(rootError));
+      return yield* Effect.fail(new E2ERunError({ detail: discovered.errors.join("; ") }));
+    const selected = yield* Result.match(selectRepos(discovered.repos, options), {
+      onFailure: (error) => Effect.fail(new E2ERunError({ detail: error.detail })),
+      onSuccess: Effect.succeed,
+    });
+    const fixed =
+      options.candidatePath === undefined
+        ? undefined
+        : yield* readCandidateTarball(resolve(options.candidatePath)).pipe(Effect.mapError(rootError));
     const candidates = new Map<CandidateForm, import("./injection.ts").CandidateTarball>();
-    const formFor = (repo: import("./discovery.ts").DiscoveredRepo): CandidateForm => fixed !== undefined ? "tarball" : options.candidateForm ?? repo.manifest.candidate ?? "source";
+    const formFor = (repo: import("./discovery.ts").DiscoveredRepo): CandidateForm =>
+      fixed !== undefined ? "tarball" : (options.candidateForm ?? repo.manifest.candidate ?? "source");
     for (const repo of selected) {
       const form = formFor(repo);
-      if (!candidates.has(form)) candidates.set(form, fixed ?? (yield* prepareCandidate(repoRootDir(), form).pipe(Effect.mapError(rootError))));
+      if (!candidates.has(form))
+        candidates.set(form, fixed ?? (yield* prepareCandidate(repoRootDir(), form).pipe(Effect.mapError(rootError))));
     }
     const candidateFor = (repo: import("./discovery.ts").DiscoveredRepo) => candidates.get(formFor(repo))!;
-    const scratch = yield* fs((service) =>
-      service.makeTempDirectory({ prefix: "niceeval-e2e-scratch-" }),
-    );
+    const scratch = yield* fs((service) => service.makeTempDirectory({ prefix: "niceeval-e2e-scratch-" }));
     const artifactRoot =
       options.artifactRoot === undefined
-        ? yield* fs((service) =>
-            service.makeTempDirectory({ prefix: "niceeval-e2e-artifacts-" }),
-          )
+        ? yield* fs((service) => service.makeTempDirectory({ prefix: "niceeval-e2e-artifacts-" }))
         : resolve(options.artifactRoot);
-    const durableRoot = yield* ensureRealDirectory(artifactRoot, "run durable artifact root").pipe(Effect.mapError(rootError));
+    const durableRoot = yield* ensureRealDirectory(artifactRoot, "run durable artifact root").pipe(
+      Effect.mapError(rootError),
+    );
     let scratchSettled = false;
     yield* Effect.addFinalizer(() =>
       scratchSettled || options.keepWorkdir
         ? Effect.void
-        : fs((service) =>
-            service.remove(scratch, { recursive: true, force: true }),
-          ).pipe(
+        : fs((service) => service.remove(scratch, { recursive: true, force: true })).pipe(
             Effect.asVoid,
             Effect.catch(() => Effect.void),
           ),
     );
     for (const [form, candidate] of candidates) {
-      if (form === "tarball") candidates.set(form, { ...candidate, path: yield* materializeCandidateArtifact(durableRoot, candidate) });
+      if (form === "tarball")
+        candidates.set(form, { ...candidate, path: yield* materializeCandidateArtifact(durableRoot, candidate) });
     }
-    const sharedTestkit: TestkitPackage | undefined = selected.some(
-      (repo) => repo.manifest.harness?.testkit === true,
-    )
+    const sharedTestkit: TestkitPackage | undefined = selected.some((repo) => repo.manifest.harness?.testkit === true)
       ? yield* buildTestkitPackage(repoRootDir(), scratch, { sourceCandidate: candidates.has("source") })
       : undefined;
-    if (sharedTestkit !== undefined)
-      yield* verifyTestkitSnapshot(sharedTestkit).pipe(
-        Effect.mapError(rootError),
-      );
+    if (sharedTestkit !== undefined) yield* verifyTestkitSnapshot(sharedTestkit).pipe(Effect.mapError(rootError));
     const secretNames = new Set<string>();
-    for (const repo of discovered.repos)
-      for (const name of repo.manifest.secrets) secretNames.add(name);
+    for (const repo of discovered.repos) for (const name of repo.manifest.secrets) secretNames.add(name);
     const exits = yield* Effect.forEach(
       selected,
       (repo) =>
-        runRepoEffect(
-          repo,
-          candidateFor(repo),
-          scratch,
-          durableRoot,
-          secretNames,
-          options.nativeArgs,
-          sharedTestkit,
-          {
-            ...(options.sourceDirs?.[repo.manifest.id] === undefined ? {} : { sourceDir: options.sourceDirs[repo.manifest.id] }),
-            ...(options.sourceSnapshotDigests?.[repo.manifest.id] === undefined ? {} : { sourceSnapshotDigest: options.sourceSnapshotDigests[repo.manifest.id] }),
-            ...(options.sourceProjectionPrefixes?.[repo.manifest.id] === undefined ? {} : { sourceProjectionPrefix: options.sourceProjectionPrefixes[repo.manifest.id] }),
-            ...(options.caseSelections?.[repo.manifest.id] === undefined ? {} : { caseSelection: options.caseSelections[repo.manifest.id] }),
-            ...(options.caseCollectionNativeArgs?.[repo.manifest.id] === undefined ? {} : { caseCollectionNativeArgs: options.caseCollectionNativeArgs[repo.manifest.id] }),
-            ...(options.copyIds?.[repo.manifest.id] === undefined ? {} : { copyId: options.copyIds[repo.manifest.id] }),
-            keepWorkdir: options.keepWorkdir,
-            ...(options.retainNativeReport === undefined ? {} : { retainNativeReport: options.retainNativeReport }),
-            ...(options.selection === undefined
-              ? {}
-              : { selection: options.selection }),
-            logPrefix: `[e2e:${repo.manifest.id}] `,
-          },
-        ).pipe(Effect.exit),
+        runRepoEffect(repo, candidateFor(repo), scratch, durableRoot, secretNames, options.nativeArgs, sharedTestkit, {
+          ...(options.sourceDirs?.[repo.manifest.id] === undefined
+            ? {}
+            : { sourceDir: options.sourceDirs[repo.manifest.id] }),
+          ...(options.sourceSnapshotDigests?.[repo.manifest.id] === undefined
+            ? {}
+            : { sourceSnapshotDigest: options.sourceSnapshotDigests[repo.manifest.id] }),
+          ...(options.sourceProjectionPrefixes?.[repo.manifest.id] === undefined
+            ? {}
+            : { sourceProjectionPrefix: options.sourceProjectionPrefixes[repo.manifest.id] }),
+          ...(options.caseSelections?.[repo.manifest.id] === undefined
+            ? {}
+            : { caseSelection: options.caseSelections[repo.manifest.id] }),
+          ...(options.caseCollectionNativeArgs?.[repo.manifest.id] === undefined
+            ? {}
+            : { caseCollectionNativeArgs: options.caseCollectionNativeArgs[repo.manifest.id] }),
+          ...(options.copyIds?.[repo.manifest.id] === undefined ? {} : { copyId: options.copyIds[repo.manifest.id] }),
+          keepWorkdir: options.keepWorkdir,
+          ...(options.retainNativeReport === undefined ? {} : { retainNativeReport: options.retainNativeReport }),
+          ...(options.selection === undefined ? {} : { selection: options.selection }),
+          logPrefix: `[e2e:${repo.manifest.id}] `,
+        }).pipe(Effect.exit),
       { concurrency: options.repoConcurrency },
     );
     const results = yield* Effect.forEach(exits, (exit, index) =>
       Exit.isSuccess(exit)
         ? Effect.succeed(exit.value)
-        : failedRepo(
-            selected[index]!,
-            candidateFor(selected[index]!),
-            durableRoot,
-            exit.cause,
-            options.selection,
-          ),
+        : failedRepo(selected[index]!, candidateFor(selected[index]!), durableRoot, exit.cause, options.selection),
     );
     const disposition: ScratchDisposition = options.keepWorkdir
       ? {
@@ -368,9 +307,7 @@ export const runEffect = (
           path: scratch,
           detail: `retained ${scratch} because keepWorkdir was requested`,
         }
-      : yield* fs((service) =>
-          service.remove(scratch, { recursive: true, force: true }),
-        ).pipe(
+      : yield* fs((service) => service.remove(scratch, { recursive: true, force: true })).pipe(
           Effect.as({
             kind: "removed" as const,
             ok: true as const,
@@ -392,17 +329,7 @@ export const runEffect = (
       detail: disposition.detail,
       scratchDisposition: disposition,
     };
-    const summary = buildSummary(
-      durableRoot,
-      results,
-      runner,
-      options.selection,
-    );
-    yield* fs((service) =>
-      service.writeFileString(
-        summary.summaryPath,
-        `${JSON.stringify(summary, null, 2)}\n`,
-      ),
-    );
+    const summary = buildSummary(durableRoot, results, runner, options.selection);
+    yield* fs((service) => service.writeFileString(summary.summaryPath, `${JSON.stringify(summary, null, 2)}\n`));
     return summary;
   }).pipe(Effect.mapError(rootError));

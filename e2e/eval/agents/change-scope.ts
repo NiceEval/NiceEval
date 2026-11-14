@@ -12,6 +12,9 @@ export const changeScopeAgent = defineSandboxAgent({
       await ctx.sandbox.writeText("agents-old/outside.ts", "outside\n");
       await ctx.sandbox.writeText("ignored.txt", "ignored\n");
     }
-    return { status: "completed" as const, events: [{ type: "message" as const, role: "assistant" as const, text: "done" }] };
+    return {
+      status: "completed" as const,
+      events: [{ type: "message" as const, role: "assistant" as const, text: "done" }],
+    };
   },
 });

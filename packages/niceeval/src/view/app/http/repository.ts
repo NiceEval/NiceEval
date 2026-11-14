@@ -4,7 +4,6 @@ import {
   decodeInspectionDocument,
   decodeInspectionOperation,
   narrowInspectionSuccess,
-
   type InspectionOperationFor,
   type InspectionOperationId,
   type InspectionQuery,
@@ -129,7 +128,9 @@ async function responseBody(response: Response): Promise<unknown> {
   try {
     return await response.json();
   } catch (cause) {
-    throw new ViewHttpError(response.status, "view-response-invalid", "retry", "View HTTP response is not JSON.", { cause });
+    throw new ViewHttpError(response.status, "view-response-invalid", "retry", "View HTTP response is not JSON.", {
+      cause,
+    });
   }
 }
 

@@ -1,7 +1,4 @@
-import type {
-  NonEmptyRecordAttachmentIssues,
-  RecordAttachmentPayloadInvalid,
-} from "../attachment/errors.ts";
+import type { NonEmptyRecordAttachmentIssues, RecordAttachmentPayloadInvalid } from "../attachment/errors.ts";
 
 /** A scoped write session or a draft escaped after its owning Scope closed. */
 export interface RecordWriterClosed {
@@ -23,17 +20,9 @@ export interface RecordDraftHandleInvalid {
   readonly code: "record-draft-handle-invalid";
 }
 
-export type RecordDraftOperation =
-  | "record"
-  | "create-attempt"
-  | "reference"
-  | "publish";
+export type RecordDraftOperation = "record" | "create-attempt" | "reference" | "publish";
 
-export type RecordDraftLifecycleState =
-  | "open"
-  | "publishing"
-  | "published"
-  | "failed";
+export type RecordDraftLifecycleState = "open" | "publishing" | "published" | "failed";
 
 /** A draft was consumed, is publishing, or a concurrent write already failed. */
 export interface RecordDraftStateError {
@@ -160,10 +149,14 @@ export function recordAttachmentEncodeError(
     code: "record-attachment-encode-error",
     family,
     issues: source.issues,
-    schemaIssues: Object.freeze(schemaIssues.map((issue) => Object.freeze({
-      path: Object.freeze([...issue.path]),
-      message: issue.message,
-    }))),
+    schemaIssues: Object.freeze(
+      schemaIssues.map((issue) =>
+        Object.freeze({
+          path: Object.freeze([...issue.path]),
+          message: issue.message,
+        }),
+      ),
+    ),
   });
 }
 

@@ -8,8 +8,7 @@ const OTHER_SKILLS = ["niceeval-status-report", "niceeval-decoy"] as const;
 const MARKER = "RELEASE-NOTE-FORMAT-NICEEVAL-E2E-731";
 const relPath = "release-note.txt";
 export default defineEval({
-  description:
-    "Skill 正调:release note 只读取对应 Skill，不误读 status / decoy",
+  description: "Skill 正调:release note 只读取对应 Skill，不误读 status / decoy",
   async test(t) {
     const turn = await t.send(
       `Use shell commands to read ${SKILL_DIR}/${SKILL_NAME}/SKILL.md. ` +
@@ -19,14 +18,8 @@ export default defineEval({
     await turn.succeeded().orStop();
     t.check(
       turn.events,
-      satisfies<typeof turn.events>(
-        "no failed tool or subagent actions",
-        (events) =>
-          events.every(
-            (event) =>
-              event.type !== "operation.finished" ||
-              event.status !== "failed",
-          ),
+      satisfies<typeof turn.events>("no failed tool or subagent actions", (events) =>
+        events.every((event) => event.type !== "operation.finished" || event.status !== "failed"),
       ),
     );
     turn.calledTool(
@@ -38,12 +31,8 @@ export default defineEval({
             input !== null &&
             !Array.isArray(input) &&
             (typeof (input as Record<string, unknown>)["command"] === "string"
-              ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
-                  (input as Record<string, unknown>)["command"] as string,
-                )
-              : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(
-                  JSON.stringify(input) ?? "",
-                )),
+              ? new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test((input as Record<string, unknown>)["command"] as string)
+              : new RegExp(`${SKILL_DIR}/${SKILL_NAME}`).test(JSON.stringify(input) ?? "")),
         ),
         status: "completed",
       }),
@@ -58,12 +47,8 @@ export default defineEval({
               input !== null &&
               !Array.isArray(input) &&
               (typeof (input as Record<string, unknown>)["command"] === "string"
-                ? new RegExp(`${SKILL_DIR}/${other}`).test(
-                    (input as Record<string, unknown>)["command"] as string,
-                  )
-                : new RegExp(`${SKILL_DIR}/${other}`).test(
-                    JSON.stringify(input) ?? "",
-                  )),
+                ? new RegExp(`${SKILL_DIR}/${other}`).test((input as Record<string, unknown>)["command"] as string)
+                : new RegExp(`${SKILL_DIR}/${other}`).test(JSON.stringify(input) ?? "")),
           ),
         }),
       );

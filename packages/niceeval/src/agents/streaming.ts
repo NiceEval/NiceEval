@@ -109,7 +109,12 @@ export type DeltaOp =
   /** 该调用的参数已经拼完,落地成 `operation.started`(此时通常还没有结果——纯补全式流
    *  一般由调用方在流外真正执行工具;流内也执行的后端随后再喂一条 "tool-result"）。 */
   | { readonly kind: "tool-call-end"; readonly operationId: string }
-  | { readonly kind: "tool-result"; readonly operationId: string; readonly output?: JsonValue; readonly status?: "completed" | "failed" | "rejected" }
+  | {
+      readonly kind: "tool-result";
+      readonly operationId: string;
+      readonly output?: JsonValue;
+      readonly status?: "completed" | "failed" | "rejected";
+    }
   | { readonly kind: "usage"; readonly usage: Usage }
   | { readonly kind: "error"; readonly message: string };
 

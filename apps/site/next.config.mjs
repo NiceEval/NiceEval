@@ -3,9 +3,7 @@ import { networkInterfaces } from "node:os";
 const localDevOrigins = [
   "127.0.0.1",
   ...Object.values(networkInterfaces()).flatMap((addresses) =>
-    (addresses ?? [])
-      .filter(({ family, internal }) => family === "IPv4" && !internal)
-      .map(({ address }) => address),
+    (addresses ?? []).filter(({ family, internal }) => family === "IPv4" && !internal).map(({ address }) => address),
   ),
 ];
 

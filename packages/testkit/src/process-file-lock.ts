@@ -10,10 +10,7 @@ export interface ProcessFileLockOptions {
 }
 
 function errorCode(error: unknown): string | undefined {
-  return typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
     ? error.code
     : undefined;
 }
@@ -35,11 +32,7 @@ interface ProcessLockState {
 
 const PROCESS_LOCKS = new Map<string, Promise<ProcessLockState>>();
 
-async function moveExactLockAside(
-  lockPath: string,
-  expected: string,
-  suffix: string,
-): Promise<void> {
+async function moveExactLockAside(lockPath: string, expected: string, suffix: string): Promise<void> {
   const current = await readFile(lockPath, "utf8").catch(() => undefined);
   if (current !== expected) return;
   const quarantine = `${lockPath}.${suffix}`;
@@ -75,20 +68,20 @@ async function acquirePhysicalFileLock(
         await handle.close();
       }
       let release: Promise<void> | undefined;
-      return () => release ??= moveExactLockAside(
-        lockPath,
-        token,
-        `released-${randomUUID()}`,
-      );
+      return () => (release ??= moveExactLockAside(lockPath, token, `released-${randomUUID()}`));
     } catch (error) {
       if (errorCode(error) !== "EEXIST") throw error;
     }
 
     const current = await readFile(lockPath, "utf8").catch(() => undefined);
     const ownerPid = current?.match(/^(\d+):/u)?.[1];
-    const malformedAgeMs = ownerPid === undefined
-      ? await stat(lockPath).then(({ mtimeMs }) => Date.now() - mtimeMs, () => 0)
-      : 0;
+    const malformedAgeMs =
+      ownerPid === undefined
+        ? await stat(lockPath).then(
+            ({ mtimeMs }) => Date.now() - mtimeMs,
+            () => 0,
+          )
+        : 0;
     if (
       (ownerPid !== undefined && !processIsAlive(Number(ownerPid))) ||
       (ownerPid === undefined && malformedAgeMs > malformedStaleAfterMs)

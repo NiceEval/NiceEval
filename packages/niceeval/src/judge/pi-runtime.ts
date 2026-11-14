@@ -22,8 +22,8 @@ export async function createManagedPiSession(input: {
   let sdk: CodingSdk;
   let ai: typeof import("@earendil-works/pi-ai");
   try {
-    sdk = await import(pathToFileURL(input.paths.coding).href) as CodingSdk;
-    ai = await import(pathToFileURL(input.paths.ai).href) as typeof ai;
+    sdk = (await import(pathToFileURL(input.paths.coding).href)) as CodingSdk;
+    ai = (await import(pathToFileURL(input.paths.ai).href)) as typeof ai;
   } catch (cause) {
     throw new PiFailure({ kind: "dependency", message: "pi dependency could not be loaded", cause });
   }
@@ -95,10 +95,15 @@ export async function createManagedPiSession(input: {
     return {
       session,
       sessionManager,
-      prompt: (text: string, signal: AbortSignal) => promptPiSession(session, text, signal, contextWindow, ai.isContextOverflow),
+      prompt: (text: string, signal: AbortSignal) =>
+        promptPiSession(session, text, signal, contextWindow, ai.isContextOverflow),
     };
   } catch (cause) {
-    throw new PiFailure({ kind: "session-init", message: cause instanceof Error ? cause.message : "pi session initialization failed", cause });
+    throw new PiFailure({
+      kind: "session-init",
+      message: cause instanceof Error ? cause.message : "pi session initialization failed",
+      cause,
+    });
   }
 }
 
@@ -115,7 +120,9 @@ async function promptPiSession(
   let last: AssistantMessage | undefined;
   let failure: PiFailure | undefined;
   let settle!: () => void;
-  const settled = new Promise<void>((resolve) => { settle = resolve; });
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
   try {
     unsubscribe = session.subscribe((event) => {
       if (event.type === "message_end" && event.message.role === "assistant") {
@@ -123,22 +130,37 @@ async function promptPiSession(
         failure ??= piUsageFailure(last.usage);
       }
       if (event.type === "compaction_end" && event.result === undefined && !event.willRetry && !signal.aborted)
-        failure ??= new PiFailure({ kind: "context-overflow", message: event.errorMessage ?? "pi could not compact the context", cause: event });
+        failure ??= new PiFailure({
+          kind: "context-overflow",
+          message: event.errorMessage ?? "pi could not compact the context",
+          cause: event,
+        });
       if (event.type === "agent_settled") settle();
     });
-    if (signal.aborted) throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason });
+    if (signal.aborted)
+      throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason });
     await session.prompt(text);
     await settled;
-    if (signal.aborted) throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason });
+    if (signal.aborted)
+      throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason });
     if (failure !== undefined) throw failure;
     if (last !== undefined) {
       if (isContextOverflow(last, contextWindow))
-        throw new PiFailure({ kind: "context-overflow", message: last.errorMessage ?? "pi context window exceeded", cause: last });
+        throw new PiFailure({
+          kind: "context-overflow",
+          message: last.errorMessage ?? "pi context window exceeded",
+          cause: last,
+        });
       if (last.stopReason === "error" || last.stopReason === "aborted")
-        throw new PiFailure({ kind: "model-request", message: last.errorMessage ?? "pi model request failed", cause: last });
+        throw new PiFailure({
+          kind: "model-request",
+          message: last.errorMessage ?? "pi model request failed",
+          cause: last,
+        });
     }
   } catch (cause) {
-    if (signal.aborted) throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason ?? cause });
+    if (signal.aborted)
+      throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason ?? cause });
     throw piDefect(cause);
   } finally {
     unsubscribe();

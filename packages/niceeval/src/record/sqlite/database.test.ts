@@ -15,7 +15,11 @@ import {
   reopenProjectDatabase,
 } from "./database.ts";
 import { beginRun, findSourceBarrierCandidate } from "./storage.ts";
-import { createRunResourceOnConnection, currentPublicationCutoffOnConnection, readRunResourceOnConnection } from "../../run/storage/sqlite.ts";
+import {
+  createRunResourceOnConnection,
+  currentPublicationCutoffOnConnection,
+  readRunResourceOnConnection,
+} from "../../run/storage/sqlite.ts";
 import { currentProcessOwnerIdentity } from "../../coordination/platform/node-process-identity.ts";
 
 const roots: string[] = [];
@@ -86,24 +90,34 @@ describe("ProjectDatabase source barriers", () => {
     const writer = openRecordWriter(await databasePath());
     try {
       const seedLegacy = (runId: string, expected: Uint8Array) => {
-        writer.db.prepare(`INSERT INTO ne19_runs(run_id,experiment_id,status,writer_generation,started_at,core_payload,core_digest,
+        writer.db
+          .prepare(`INSERT INTO ne19_runs(run_id,experiment_id,status,writer_generation,started_at,core_payload,core_digest,
           mutation_sequence,candidate_seal_identity,candidate_seal_entry_count,candidate_seal_staged_count,logical_seal_identity)
           VALUES (?,'legacy','open','legacy-writer','2026-01-01T00:00:00.000Z',NULL,NULL,0,NULL,NULL,0,NULL)`)
           .run(runId);
-        writer.db.prepare("INSERT INTO ne19_slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,'slot',0,?,?)")
+        writer.db
+          .prepare("INSERT INTO ne19_slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,'slot',0,?,?)")
           .run(runId, expected, "c".repeat(64));
-        writer.db.prepare(`UPDATE ne19_runs SET status='sealed',core_payload=?,core_digest=?,candidate_seal_identity=?,
+        writer.db
+          .prepare(`UPDATE ne19_runs SET status='sealed',core_payload=?,core_digest=?,candidate_seal_identity=?,
           candidate_seal_entry_count=0,logical_seal_identity=? WHERE run_id=?`)
           .run(Buffer.from("{}"), "a".repeat(64), "b".repeat(64), "b".repeat(64), runId);
       };
-      const expected = Buffer.from(JSON.stringify({ slotId: "slot", evalId: "eval", attemptOrdinal: 0, executionIdentityDigest: "a".repeat(64) }));
+      const expected = Buffer.from(
+        JSON.stringify({ slotId: "slot", evalId: "eval", attemptOrdinal: 0, executionIdentityDigest: "a".repeat(64) }),
+      );
       seedLegacy("legacy-a", expected);
       seedLegacy("legacy-z", expected);
-      expect(findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0 }, 0))
-        .toEqual({ runId: "legacy-z", createdRevision: 0 });
+      expect(
+        findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0 }, 0),
+      ).toEqual({ runId: "legacy-z", createdRevision: 0 });
       seedLegacy("legacy-zz", Buffer.from("{"));
-      expect(findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0 }, 0)?.runId).toBe("legacy-zz");
-      expect(findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "other", attemptOrdinal: 1 }, 0)?.runId).toBe("legacy-zz");
+      expect(
+        findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0 }, 0)?.runId,
+      ).toBe("legacy-zz");
+      expect(
+        findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "other", attemptOrdinal: 1 }, 0)?.runId,
+      ).toBe("legacy-zz");
     } finally {
       closeRecordDatabase(writer);
     }
@@ -114,31 +128,79 @@ describe("ProjectDatabase source barriers", () => {
     const writer = openRecordWriter(path);
     try {
       createRunResourceOnConnection(writer, {
-        runId: "run-z", experimentId: "experiment", invocationId: "invocation-old", writerGeneration: "writer-z",
+        runId: "run-z",
+        experimentId: "experiment",
+        invocationId: "invocation-old",
+        writerGeneration: "writer-z",
         startedAt: "2030-01-01T00:00:00.000Z",
-        expectedSlots: [0, 1].map((attemptOrdinal) => ({ slotId: `old-${attemptOrdinal}`, evalId: "eval", attemptOrdinal, executionIdentityDigest: "a".repeat(64) })),
+        expectedSlots: [0, 1].map((attemptOrdinal) => ({
+          slotId: `old-${attemptOrdinal}`,
+          evalId: "eval",
+          attemptOrdinal,
+          executionIdentityDigest: "a".repeat(64),
+        })),
         deadlineEpochMs: Date.now() + 5_000,
       });
       const before = currentPublicationCutoffOnConnection(writer);
       createRunResourceOnConnection(writer, {
-        runId: "run-a", experimentId: "experiment", invocationId: "invocation-new", writerGeneration: "writer-a",
+        runId: "run-a",
+        experimentId: "experiment",
+        invocationId: "invocation-new",
+        writerGeneration: "writer-a",
         startedAt: "2020-01-01T00:00:00.000Z",
-        expectedSlots: [{ slotId: "new-0", evalId: "eval", attemptOrdinal: 0, executionIdentityDigest: "a".repeat(64) }],
+        expectedSlots: [
+          { slotId: "new-0", evalId: "eval", attemptOrdinal: 0, executionIdentityDigest: "a".repeat(64) },
+        ],
         deadlineEpochMs: Date.now() + 5_000,
       });
       createRunResourceOnConnection(writer, {
-        runId: "run-unrelated", experimentId: "unrelated", invocationId: "invocation-other", writerGeneration: "writer-other",
+        runId: "run-unrelated",
+        experimentId: "unrelated",
+        invocationId: "invocation-other",
+        writerGeneration: "writer-other",
         startedAt: "2040-01-01T00:00:00.000Z",
-        expectedSlots: [{ slotId: "other-0", evalId: "eval", attemptOrdinal: 0, executionIdentityDigest: "a".repeat(64) }],
+        expectedSlots: [
+          { slotId: "other-0", evalId: "eval", attemptOrdinal: 0, executionIdentityDigest: "a".repeat(64) },
+        ],
         deadlineEpochMs: Date.now() + 5_000,
       });
       const now = currentPublicationCutoffOnConnection(writer);
       expect(readRunResourceOnConnection(writer, "run-a", now)).toMatchObject({ state: "active", published: 0 });
-      expect(findSourceBarrierCandidate(writer, { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0 }, before.revision)?.runId).toBe("run-z");
-      expect(findSourceBarrierCandidate(writer, { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0 }, now.revision)?.runId).toBe("run-a");
-      expect(findSourceBarrierCandidate(writer, { experimentId: "experiment", evalId: "eval", attemptOrdinal: 1 }, now.revision)?.runId).toBe("run-z");
-      expect(findSourceBarrierCandidate(writer, { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0, excludeRunId: "run-a" }, now.revision)?.runId).toBe("run-z");
-      expect(findSourceBarrierCandidate(writer, { experimentId: "experiment", evalId: "missing", attemptOrdinal: 0 }, now.revision)).toBeUndefined();
+      expect(
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0 },
+          before.revision,
+        )?.runId,
+      ).toBe("run-z");
+      expect(
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0 },
+          now.revision,
+        )?.runId,
+      ).toBe("run-a");
+      expect(
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 1 },
+          now.revision,
+        )?.runId,
+      ).toBe("run-z");
+      expect(
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0, excludeRunId: "run-a" },
+          now.revision,
+        )?.runId,
+      ).toBe("run-z");
+      expect(
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "experiment", evalId: "missing", attemptOrdinal: 0 },
+          now.revision,
+        ),
+      ).toBeUndefined();
     } finally {
       closeRecordDatabase(writer);
     }
@@ -146,13 +208,22 @@ describe("ProjectDatabase source barriers", () => {
 });
 
 describe("ProjectDatabase portable gate", () => {
-  function seedDrainingOwner(path: string, owner: { host: string; pid: number; bootId: string; processStart: string }): void {
+  function seedDrainingOwner(
+    path: string,
+    owner: { host: string; pid: number; bootId: string; processStart: string },
+  ): void {
     const writer = openRecordWriter(path);
-    writer.db.prepare("UPDATE ne19_record_metadata SET barrier_state='draining',portable_gate_id='abandoned-gate' WHERE singleton=1").run();
-    writer.db.prepare(`UPDATE ne19_coordination_state SET barrier_id='abandoned-gate',barrier_nonce='abandoned-nonce',
+    writer.db
+      .prepare(
+        "UPDATE ne19_record_metadata SET barrier_state='draining',portable_gate_id='abandoned-gate' WHERE singleton=1",
+      )
+      .run();
+    writer.db
+      .prepare(`UPDATE ne19_coordination_state SET barrier_id='abandoned-gate',barrier_nonce='abandoned-nonce',
       barrier_host=?,barrier_pid=?,barrier_boot_id=?,barrier_process_start=?,barrier_deadline=1,
       barrier_requested_at=1,barrier_lease_expires_at=1,barrier_status='active',barrier_active_at=1
-      WHERE singleton=1`).run(owner.host, owner.pid, owner.bootId, owner.processStart);
+      WHERE singleton=1`)
+      .run(owner.host, owner.pid, owner.bootId, owner.processStart);
     closeRecordDatabase(writer);
   }
 
@@ -164,8 +235,9 @@ describe("ProjectDatabase portable gate", () => {
 
     expect(makeProjectDatabasePortable(path)).toBe(true);
     const reader = openRecordReader(path);
-    expect(reader.db.prepare("SELECT barrier_state FROM ne19_record_metadata WHERE singleton=1").get())
-      .toMatchObject({ barrier_state: "portable" });
+    expect(reader.db.prepare("SELECT barrier_state FROM ne19_record_metadata WHERE singleton=1").get()).toMatchObject({
+      barrier_state: "portable",
+    });
     closeRecordDatabase(reader);
   });
 
@@ -176,8 +248,9 @@ describe("ProjectDatabase portable gate", () => {
 
     expect(() => makeProjectDatabasePortable(path)).toThrow(/not proven dead/u);
     const reader = openRecordReader(path);
-    expect(reader.db.prepare("SELECT barrier_state,portable_gate_id FROM ne19_record_metadata WHERE singleton=1").get())
-      .toMatchObject({ barrier_state: "draining", portable_gate_id: "abandoned-gate" });
+    expect(
+      reader.db.prepare("SELECT barrier_state,portable_gate_id FROM ne19_record_metadata WHERE singleton=1").get(),
+    ).toMatchObject({ barrier_state: "draining", portable_gate_id: "abandoned-gate" });
     closeRecordDatabase(reader);
   });
 
@@ -193,7 +266,8 @@ describe("ProjectDatabase portable gate", () => {
   it("fences the old generation and only a new Run reopens a portable database", async () => {
     const path = await databasePath();
     const writer = openRecordWriter(path);
-    beginRun(writer, { experimentId: "test",
+    beginRun(writer, {
+      experimentId: "test",
       runId: "run-old",
       writerGeneration: "generation-old",
       startedAt: "2026-01-01T00:00:00.000Z",
@@ -204,24 +278,31 @@ describe("ProjectDatabase portable gate", () => {
 
     expect(makeProjectDatabasePortable(path)).toBe(true);
     const portable = openRecordReader(path);
-    expect(portable.db.prepare("SELECT barrier_state FROM ne19_record_metadata WHERE singleton=1").get())
-      .toMatchObject({ barrier_state: "portable" });
+    expect(portable.db.prepare("SELECT barrier_state FROM ne19_record_metadata WHERE singleton=1").get()).toMatchObject(
+      { barrier_state: "portable" },
+    );
     closeRecordDatabase(portable);
 
     reopenProjectDatabase(path);
     const reopened = openRecordWriter(path);
-    expect(() => beginRun(reopened, { experimentId: "test",
-      runId: "run-new",
-      writerGeneration: "generation-new",
-      startedAt: "2026-01-02T00:00:00.000Z",
-      deadlineEpochMs: Date.now() + 5_000,
-    })).not.toThrow();
-    expect(() => beginRun(reopened, { experimentId: "test",
-      runId: "run-new",
-      writerGeneration: "generation-old",
-      startedAt: "2026-01-02T00:00:00.000Z",
-      deadlineEpochMs: Date.now() + 5_000,
-    })).toThrow();
+    expect(() =>
+      beginRun(reopened, {
+        experimentId: "test",
+        runId: "run-new",
+        writerGeneration: "generation-new",
+        startedAt: "2026-01-02T00:00:00.000Z",
+        deadlineEpochMs: Date.now() + 5_000,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      beginRun(reopened, {
+        experimentId: "test",
+        runId: "run-new",
+        writerGeneration: "generation-old",
+        startedAt: "2026-01-02T00:00:00.000Z",
+        deadlineEpochMs: Date.now() + 5_000,
+      }),
+    ).toThrow();
     closeRecordDatabase(reopened);
   });
 
@@ -238,18 +319,16 @@ describe("ProjectDatabase portable gate", () => {
       blobMarker.copy(canary, offset);
     }
     const writer = openRecordWriter(path);
-    writer.db.prepare(`INSERT INTO ne19_runs(run_id,experiment_id,status,writer_generation,started_at,core_payload,core_digest,
+    writer.db
+      .prepare(`INSERT INTO ne19_runs(run_id,experiment_id,status,writer_generation,started_at,core_payload,core_digest,
       mutation_sequence,candidate_seal_identity,candidate_seal_entry_count,candidate_seal_staged_count,logical_seal_identity)
-      VALUES (?,'test','open','scrub-generation','2026-01-01T00:00:00.000Z',NULL,NULL,0,NULL,NULL,0,NULL)`).run(rowCanary);
-    writer.db.prepare(`INSERT INTO ne19_attachments(attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
+      VALUES (?,'test','open','scrub-generation','2026-01-01T00:00:00.000Z',NULL,NULL,0,NULL,NULL,0,NULL)`)
+      .run(rowCanary);
+    writer.db
+      .prepare(`INSERT INTO ne19_attachments(attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
       logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest)
-      VALUES ('scrub-attachment','run',?,NULL,'canary',1,'canary',?,?,?,?)`).run(
-      rowCanary,
-      canary,
-      "a".repeat(64),
-      Buffer.from("{}"),
-      "b".repeat(64),
-    );
+      VALUES ('scrub-attachment','run',?,NULL,'canary',1,'canary',?,?,?,?)`)
+      .run(rowCanary, canary, "a".repeat(64), Buffer.from("{}"), "b".repeat(64));
     closeRecordDatabase(writer);
     expect(existsSync(`${path}-wal`)).toBe(true);
     pinnedReader.db.exec("ROLLBACK");

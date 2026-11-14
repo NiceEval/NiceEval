@@ -8,80 +8,118 @@ import { evalE2E as adapterCaptureE2E } from "./context.ts";
 
 // @feature docs/feature/run/README.md
 test.concurrent("SIGINT 排空共享 finish 的尾部采集并在 Run 终态前发布 errored Attempt", async () => {
-  await adapterCaptureE2E.case("adapter-capture-interrupt", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-    const process = niceeval.start(["exp", "adapter-capture/interrupt", "--rerun", "all", "--json"], { timeoutMs: 90_000 });
-    const waitFor = (file: string, content: string) => Promise.race([
-      pollUntil(async () => {
-        const text = await readFile(join(projectRoot, file), "utf8").catch(() => "");
-        return text === content ? true : undefined;
-      }, { timeoutMs: 20_000, intervalMs: 20, label: file }),
-      process.done.then((receipt) => { throw new Error(`exited before ${file}\n${receipt.diagnostic()}`); }),
-    ]);
-    await waitFor("capture-ready.txt", "ready");
-    expect(process.signal("SIGINT")).toBe(true);
-    await waitFor("capture-finish.txt", "start\n");
-    expect(await readFile(join(projectRoot, "capture-reason.txt"), "utf8")).toBe("cancelled");
-    await pollUntil(async () => {
-      const text = await readFile(join(projectRoot, "capture-deadline.txt"), "utf8").catch(() => "");
-      return text || undefined;
-    }, { timeoutMs: 10_000, intervalMs: 20, label: "cleanup deadline" });
-    expect(await readFile(join(projectRoot, "capture-deadline.txt"), "utf8")).toBe("valid");
-    // An external operation actually remains in flight beyond the former fixed budget.
-    await setTimeout(31_000);
-    expect(await readFile(join(projectRoot, "capture-finish.txt"), "utf8")).toBe("start\n");
-    await writeFile(join(projectRoot, "capture-release.txt"), "release");
-    const interrupted = await process.done;
-    expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
-    expect(interrupted.expReceipt().completion).toBe("interrupted");
-    expect(await readFile(join(projectRoot, "capture-created.txt"), "utf8")).toBe("0\n");
-    expect(await readFile(join(projectRoot, "capture-finish.txt"), "utf8")).toBe("start\ndone\n");
+  await adapterCaptureE2E.case(
+    "adapter-capture-interrupt",
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const process = niceeval.start(["exp", "adapter-capture/interrupt", "--rerun", "all", "--json"], {
+        timeoutMs: 90_000,
+      });
+      const waitFor = (file: string, content: string) =>
+        Promise.race([
+          pollUntil(
+            async () => {
+              const text = await readFile(join(projectRoot, file), "utf8").catch(() => "");
+              return text === content ? true : undefined;
+            },
+            { timeoutMs: 20_000, intervalMs: 20, label: file },
+          ),
+          process.done.then((receipt) => {
+            throw new Error(`exited before ${file}\n${receipt.diagnostic()}`);
+          }),
+        ]);
+      await waitFor("capture-ready.txt", "ready");
+      expect(process.signal("SIGINT")).toBe(true);
+      await waitFor("capture-finish.txt", "start\n");
+      expect(await readFile(join(projectRoot, "capture-reason.txt"), "utf8")).toBe("cancelled");
+      await pollUntil(
+        async () => {
+          const text = await readFile(join(projectRoot, "capture-deadline.txt"), "utf8").catch(() => "");
+          return text || undefined;
+        },
+        { timeoutMs: 10_000, intervalMs: 20, label: "cleanup deadline" },
+      );
+      expect(await readFile(join(projectRoot, "capture-deadline.txt"), "utf8")).toBe("valid");
+      // An external operation actually remains in flight beyond the former fixed budget.
+      await setTimeout(31_000);
+      expect(await readFile(join(projectRoot, "capture-finish.txt"), "utf8")).toBe("start\n");
+      await writeFile(join(projectRoot, "capture-release.txt"), "release");
+      const interrupted = await process.done;
+      expect(interrupted.exitCode, interrupted.diagnostic()).toBe(130);
+      expect(interrupted.expReceipt().completion).toBe("interrupted");
+      expect(await readFile(join(projectRoot, "capture-created.txt"), "utf8")).toBe("0\n");
+      expect(await readFile(join(projectRoot, "capture-finish.txt"), "utf8")).toBe("start\ndone\n");
 
-    const runId = only(interrupted.expReceipt().createdRunIds, () => true, interrupted.diagnostic());
+      const runId = only(interrupted.expReceipt().createdRunIds, () => true, interrupted.diagnostic());
 
-    const run = await niceeval.run(["show", `run:${runId}`, "--json"]);
-    expect(run.exitCode, run.diagnostic()).toBe(0);
-    const overview = run.inspectionSuccess("run.get").run;
-    expect(overview.value.state).toBe("interrupted");
-    expect(overview.denominator).toEqual({ expected: 2, published: 1, missing: 1 });
-    const member = only(overview.plannedAttempts, (entry) => entry.publication.state === "published", run.diagnostic());
-    expect(member).toMatchObject({ state: "executed", verdict: "errored", outcome: "errored", score: { value: 7 } });
-    const locator = defined(member.publication.state === "published" ? member.publication.attemptLocator : null, "cancelled Attempt must be published");
+      const run = await niceeval.run(["show", `run:${runId}`, "--json"]);
+      expect(run.exitCode, run.diagnostic()).toBe(0);
+      const overview = run.inspectionSuccess("run.get").run;
+      expect(overview.value.state).toBe("interrupted");
+      expect(overview.denominator).toEqual({ expected: 2, published: 1, missing: 1 });
+      const member = only(
+        overview.plannedAttempts,
+        (entry) => entry.publication.state === "published",
+        run.diagnostic(),
+      );
+      expect(member).toMatchObject({ state: "executed", verdict: "errored", outcome: "errored", score: { value: 7 } });
+      const locator = defined(
+        member.publication.state === "published" ? member.publication.attemptLocator : null,
+        "cancelled Attempt must be published",
+      );
 
-    const attempt = await niceeval.run(["show", locator, "--json"]);
-    const inspectedAttempt = attempt.inspectionSuccess("attempt.get").attempt;
-    expect(inspectedAttempt).toMatchObject({
-      core: { outcome: "errored" }, verdict: "errored", assertions: { state: "available" }, score: { earned: 7 },
-    });
-    expect(inspectedAttempt.assertions.entries).toHaveLength(1);
-    expect(inspectedAttempt.assertions.entries[0]?.display.label).toBe("earned before cancellation");
+      const attempt = await niceeval.run(["show", locator, "--json"]);
+      const inspectedAttempt = attempt.inspectionSuccess("attempt.get").attempt;
+      expect(inspectedAttempt).toMatchObject({
+        core: { outcome: "errored" },
+        verdict: "errored",
+        assertions: { state: "available" },
+        score: { earned: 7 },
+      });
+      expect(inspectedAttempt.assertions.entries).toHaveLength(1);
+      expect(inspectedAttempt.assertions.entries[0]?.display.label).toBe("earned before cancellation");
 
-    const usage = await niceeval.run(["show", locator, "usage", "--json"]);
-    expect(usage.inspectionSuccess("attempt.usage").usage.calls).toEqual([
-      expect.objectContaining({ callId: "cancelled-request", status: "cancelled", inputTokens: 13, outputTokens: 5 }),
-    ]);
+      const usage = await niceeval.run(["show", locator, "usage", "--json"]);
+      expect(usage.inspectionSuccess("attempt.usage").usage.calls).toEqual([
+        expect.objectContaining({ callId: "cancelled-request", status: "cancelled", inputTokens: 13, outputTokens: 5 }),
+      ]);
 
-    const trace = await niceeval.run(["show", locator, "execution", "--json"]);
-    expect(trace.exitCode, trace.diagnostic()).toBe(0);
-    const execution = trace.inspectionSuccess("attempt.trace").trace.execution;
-    expect(execution.traces).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceTraceId: "cancelled-complete", collection: { state: "complete", limitations: [] }, scopes: [] }),
-      expect.objectContaining({ sourceTraceId: "missing-checkpoint", collection: { state: "partial", limitations: [expect.objectContaining({ code: "checkpoint-missing" })] }, scopes: [] }),
-    ]));
-    expect(execution.events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ summary: "Cancellation observed; capture complete" }),
-      expect.objectContaining({ summary: "Verified cancellation tail" }),
-    ]));
+      const trace = await niceeval.run(["show", locator, "execution", "--json"]);
+      expect(trace.exitCode, trace.diagnostic()).toBe(0);
+      const execution = trace.inspectionSuccess("attempt.trace").trace.execution;
+      expect(execution.traces).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourceTraceId: "cancelled-complete",
+            collection: { state: "complete", limitations: [] },
+            scopes: [],
+          }),
+          expect.objectContaining({
+            sourceTraceId: "missing-checkpoint",
+            collection: { state: "partial", limitations: [expect.objectContaining({ code: "checkpoint-missing" })] },
+            scopes: [],
+          }),
+        ]),
+      );
+      expect(execution.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ summary: "Cancellation observed; capture complete" }),
+          expect.objectContaining({ summary: "Verified cancellation tail" }),
+        ]),
+      );
 
-    const artifacts = await niceeval.run(["show", locator, "artifacts", "--json"]);
-    const collection = artifacts.inspectionSuccess("attempt.artifacts").artifacts;
-    expect(collection.state).toBe("available");
-    if (collection.state !== "available") throw new Error(artifacts.diagnostic());
-    const artifact = only(collection.value.artifacts, () => true, artifacts.diagnostic());
-    expect(artifact.label).toBe("tail.txt");
+      const artifacts = await niceeval.run(["show", locator, "artifacts", "--json"]);
+      const collection = artifacts.inspectionSuccess("attempt.artifacts").artifacts;
+      expect(collection.state).toBe("available");
+      if (collection.state !== "available") throw new Error(artifacts.diagnostic());
+      const artifact = only(collection.value.artifacts, () => true, artifacts.diagnostic());
+      expect(artifact.label).toBe("tail.txt");
 
-    const bytes = await niceeval.run(["show", locator, "artifacts", artifact.artifactId, "--json"]);
-    expect(bytes.inspectionSuccess("attempt.artifact").artifact).toMatchObject({
-      state: "available", base64: Buffer.from("cancelled-tail").toString("base64"), nextOffset: null,
-    });
-  });
+      const bytes = await niceeval.run(["show", locator, "artifacts", artifact.artifactId, "--json"]);
+      expect(bytes.inspectionSuccess("attempt.artifact").artifact).toMatchObject({
+        state: "available",
+        base64: Buffer.from("cancelled-tail").toString("base64"),
+        nextOffset: null,
+      });
+    },
+  );
 });

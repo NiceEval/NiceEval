@@ -22,29 +22,35 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       const root = paths.projectRoot;
       mkdirSync(join(root, "junit"), { recursive: true });
 
-      const failed = await niceeval.run(
-        ["exp", "deliberate-fail", "--rerun", "all", "--json", "--junit", "junit/failed.xml"],
-      );
+      const failed = await niceeval.run([
+        "exp",
+        "deliberate-fail",
+        "--rerun",
+        "all",
+        "--json",
+        "--junit",
+        "junit/failed.xml",
+      ]);
       expect(failed.exitCode, failed.diagnostic()).toBe(1);
       expect(failed.stderr).toBe("");
       expect(failed.stdout).not.toMatch(/[\x1b\x08]/);
       const failedEvents = failed.expEvalEvents();
-      expect(failedEvents).toContainEqual(expect.objectContaining({
-        event: "eval",
-        evalId: "deliberate-fail/broken",
-        verdict: "failed",
-        attempts: 1,
-        passed: 0,
-      }));
-      expect(failedEvents).not.toContainEqual(expect.objectContaining({
-        event: "eval",
-        verdict: "errored",
-      }));
-      const failedEval = only(
-        failedEvents,
-        (event) => event.evalId === "deliberate-fail/broken",
-        failed.diagnostic(),
+      expect(failedEvents).toContainEqual(
+        expect.objectContaining({
+          event: "eval",
+          evalId: "deliberate-fail/broken",
+          verdict: "failed",
+          attempts: 1,
+          passed: 0,
+        }),
       );
+      expect(failedEvents).not.toContainEqual(
+        expect.objectContaining({
+          event: "eval",
+          verdict: "errored",
+        }),
+      );
+      const failedEval = only(failedEvents, (event) => event.evalId === "deliberate-fail/broken", failed.diagnostic());
       const failedReceipt = failed.expReceipt();
       expect(failedReceipt).toMatchObject({ completion: "completed" });
       const failedJunit = readFileSync(join(root, "junit", "failed.xml"), "utf8");
@@ -56,18 +62,15 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       const failedDocument = failedSummary.run();
       expect(failedDocument).toMatchObject({ operation: "run.get", issues: [] });
       expect(failedDocument.run.denominator).toEqual({ expected: 1, published: 1, missing: 0 });
-      expect(failedDocument.run.plannedAttempts).toEqual([expect.objectContaining({
-        publication: expect.objectContaining({ state: "published", attemptLocator: failedEval.locator }),
-        state: "executed",
-        verdict: "failed",
-      })]);
-
-      const failedHuman = await niceeval.run([
-        "exp",
-        "deliberate-fail",
-        "--rerun",
-        "all",
+      expect(failedDocument.run.plannedAttempts).toEqual([
+        expect.objectContaining({
+          publication: expect.objectContaining({ state: "published", attemptLocator: failedEval.locator }),
+          state: "executed",
+          verdict: "failed",
+        }),
       ]);
+
+      const failedHuman = await niceeval.run(["exp", "deliberate-fail", "--rerun", "all"]);
       expect(failedHuman.exitCode, failedHuman.diagnostic()).toBe(1);
       expect(failedHuman.stderr).toBe("");
       expect(failedHuman.stdout).toContain("turn succeeded · expected completed · received failed");
@@ -84,33 +87,46 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
 
       const failedHumanSummary = await niceeval.run(["show", `run:${failedHumanRunId!}`, "--json"]);
       expect(failedHumanSummary.exitCode, failedHumanSummary.diagnostic()).toBe(0);
-      expect(failedHumanSummary.run().run.plannedAttempts).toEqual([expect.objectContaining({
-        publication: expect.objectContaining({ state: "published", attemptLocator: failedHumanLocator }), verdict: "failed",
-      })]);
+      expect(failedHumanSummary.run().run.plannedAttempts).toEqual([
+        expect.objectContaining({
+          publication: expect.objectContaining({ state: "published", attemptLocator: failedHumanLocator }),
+          verdict: "failed",
+        }),
+      ]);
 
       const sessions = await niceeval.run(["invocation", "list", "--all"]);
       expect(sessions.exitCode, sessions.diagnostic()).toBe(0);
       expect(sessions.stdout).toContain(`deliberate-fail  niceeval show run:${failedHumanRunId}`);
 
-      const errored = await niceeval.run(
-        ["exp", "deliberate-error", "--rerun", "all", "--json", "--junit", "junit/errored.xml"],
-      );
+      const errored = await niceeval.run([
+        "exp",
+        "deliberate-error",
+        "--rerun",
+        "all",
+        "--json",
+        "--junit",
+        "junit/errored.xml",
+      ]);
       expect(errored.exitCode, errored.diagnostic()).toBe(1);
       expect(errored.stderr).toBe("");
       expect(errored.stdout).not.toMatch(/[\x1b\x08]/);
       expect(errored.stdout).not.toContain("[object Object]");
       const erroredEvents = errored.expEvalEvents();
-      expect(erroredEvents).toContainEqual(expect.objectContaining({
-        event: "eval",
-        evalId: "deliberate-error/crash",
-        verdict: "errored",
-        attempts: 1,
-        passed: 0,
-      }));
-      expect(erroredEvents).not.toContainEqual(expect.objectContaining({
-        event: "eval",
-        verdict: "failed",
-      }));
+      expect(erroredEvents).toContainEqual(
+        expect.objectContaining({
+          event: "eval",
+          evalId: "deliberate-error/crash",
+          verdict: "errored",
+          attempts: 1,
+          passed: 0,
+        }),
+      );
+      expect(erroredEvents).not.toContainEqual(
+        expect.objectContaining({
+          event: "eval",
+          verdict: "failed",
+        }),
+      );
       const erroredEval = only(
         erroredEvents,
         (event) => event.evalId === "deliberate-error/crash",
@@ -124,18 +140,18 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       expect(erroredJunit).toContain("<error");
       expect(erroredJunit).not.toContain("<failure");
 
-
       const erroredSummary = await niceeval.run(["show", `run:${erroredReceipt.createdRunIds[0]!}`, "--json"]);
       expect(erroredSummary.exitCode, erroredSummary.diagnostic()).toBe(0);
       const erroredDocument = erroredSummary.run();
       expect(erroredDocument).toMatchObject({ operation: "run.get", issues: [] });
       expect(erroredDocument.run.denominator).toEqual({ expected: 1, published: 1, missing: 0 });
-      expect(erroredDocument.run.plannedAttempts).toEqual([expect.objectContaining({
-        publication: expect.objectContaining({ state: "published", attemptLocator: erroredEval.locator }),
-        state: "executed",
-        verdict: "errored",
-      })]);
-
+      expect(erroredDocument.run.plannedAttempts).toEqual([
+        expect.objectContaining({
+          publication: expect.objectContaining({ state: "published", attemptLocator: erroredEval.locator }),
+          state: "executed",
+          verdict: "errored",
+        }),
+      ]);
 
       const erroredAttempt = await niceeval.run(["show", erroredEval.locator!, "--json"]);
       expect(erroredAttempt.exitCode, erroredAttempt.diagnostic()).toBe(0);
@@ -150,12 +166,10 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
         },
       });
 
-
       const erroredTrace = await niceeval.run(["show", erroredEval.locator!, "execution", "--json"]);
       expect(erroredTrace.exitCode, erroredTrace.diagnostic()).toBe(0);
       const traceDocument = erroredTrace.attemptTrace();
-      expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [],
-      });
+      expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
       const prepareCommand = only(
         traceDocument.trace.commands.items,
         (item) => item.phase === "sandbox.prepare",
@@ -187,15 +201,19 @@ test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt", async
     "judge-precheck-error",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
-      const result = await niceeval.run(
-        ["exp", "judge-precheck-error", "--rerun", "all", "--json"],
-        { env: { CLI_JUDGE_TEST_KEY: "fixture-key" } },
-      );
+      const result = await niceeval.run(["exp", "judge-precheck-error", "--rerun", "all", "--json"], {
+        env: { CLI_JUDGE_TEST_KEY: "fixture-key" },
+      });
 
       expect(result.exitCode, result.diagnostic()).toBe(1);
-      expect(result.expEvalEvents()).toEqual([expect.objectContaining({
-        evalId: "judge-precheck/unreachable", verdict: "errored", attempts: 2, passed: 0,
-      })]);
+      expect(result.expEvalEvents()).toEqual([
+        expect.objectContaining({
+          evalId: "judge-precheck/unreachable",
+          verdict: "errored",
+          attempts: 2,
+          passed: 0,
+        }),
+      ]);
       const receipt = result.expReceipt();
       expect(receipt).toMatchObject({ completion: "completed" });
 
@@ -203,8 +221,17 @@ test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt", async
       expect(query.exitCode, query.diagnostic()).toBe(0);
       const members = query.run().run.plannedAttempts;
       expect(members).toHaveLength(2);
-      for (const member of members) expect(member).toMatchObject({ state: "executed", verdict: "errored", publication: { state: "published", attemptLocator: expect.any(String) } });
-      expect(new Set(members.flatMap(({ publication }) => publication.state === "published" ? [publication.attemptLocator] : [])).size).toBe(2);
+      for (const member of members)
+        expect(member).toMatchObject({
+          state: "executed",
+          verdict: "errored",
+          publication: { state: "published", attemptLocator: expect.any(String) },
+        });
+      expect(
+        new Set(
+          members.flatMap(({ publication }) => (publication.state === "published" ? [publication.attemptLocator] : [])),
+        ).size,
+      ).toBe(2);
     },
   );
 });
@@ -217,12 +244,7 @@ test.concurrent("Assertions document 无法发布时使用统一 error 前缀", 
     "assertions-document-error",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
-      const result = await niceeval.run([
-        "exp",
-        "assertions-document-error",
-        "--rerun",
-        "all",
-      ]);
+      const result = await niceeval.run(["exp", "assertions-document-error", "--rerun", "all"]);
 
       expect(result.exitCode, result.diagnostic()).toBe(1);
       expect(result.stderr).toMatch(/^error: Assertions could not be saved/u);
@@ -298,11 +320,13 @@ test.concurrent("计分制与通过制 Human 结束摘要显示各自主读数",
 
       const carriedSummary = await niceeval.run(["show", `run:${carried.expReceipt().createdRunIds[0]!}`, "--json"]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
-      expect(carriedSummary.run().run.plannedAttempts).toEqual([expect.objectContaining({
-        publication: expect.objectContaining({ state: "published", attemptLocator: freshForCarryEval.locator }),
-        state: "carried",
-        verdict: "passed",
-      })]);
+      expect(carriedSummary.run().run.plannedAttempts).toEqual([
+        expect.objectContaining({
+          publication: expect.objectContaining({ state: "published", attemptLocator: freshForCarryEval.locator }),
+          state: "carried",
+          verdict: "passed",
+        }),
+      ]);
     },
   );
 });

@@ -44,7 +44,11 @@ export function detectReuseFailureClusters(results: readonly EvalResult[]): Reus
     const key = `${result.experimentId ?? ""}#${sandbox.reuseSandbox}`;
     let group = byInstance.get(key);
     if (!group) {
-      group = { ...(result.experimentId !== undefined ? { experimentId: result.experimentId } : {}), reuseSandbox: sandbox.reuseSandbox, attempts: [] };
+      group = {
+        ...(result.experimentId !== undefined ? { experimentId: result.experimentId } : {}),
+        reuseSandbox: sandbox.reuseSandbox,
+        attempts: [],
+      };
       byInstance.set(key, group);
     }
     group.attempts.push(result);

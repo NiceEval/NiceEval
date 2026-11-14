@@ -14,11 +14,7 @@ test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完
       'throw new Error("sandbox config must stay unloaded");\nexport default {};\n',
       "utf8",
     );
-    await writeFile(
-      join(paths.projectRoot, ".env"),
-      "NICEEVAL_E2E_SANDBOX_CREDENTIAL=delivered\n",
-      "utf8",
-    );
+    await writeFile(join(paths.projectRoot, ".env"), "NICEEVAL_E2E_SANDBOX_CREDENTIAL=delivered\n", "utf8");
 
     const descriptor = join(paths.projectRoot, "missing-incus-provider.json");
     const receipt = await niceeval.run(["sandbox", "provider", "doctor", "incus"], {

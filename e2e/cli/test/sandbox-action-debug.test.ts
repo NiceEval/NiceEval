@@ -3,10 +3,7 @@
 import { access, copyFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  decodeDebugPlanDocument,
-  type DebugPlanDocument,
-} from "niceeval/experiment/host";
+import { decodeDebugPlanDocument, type DebugPlanDocument } from "niceeval/experiment/host";
 import { cliE2E } from "./context.ts";
 
 const PRIVATE_ENV_KEY = "NICEEVAL_DEBUG_PRIVATE_TOKEN";
@@ -88,10 +85,12 @@ function expectScheduledAction(node: CommandPlanStep, id: string, frequency: num
   const executionOrder = node.executionOrder!;
   expect(executionOrder.topologicalOrdinal).toEqual(expect.any(Number));
   expect(executionOrder.occurrencePath).toEqual(expect.any(Array));
-  expect(node.changeFrequency).toEqual(expect.objectContaining({
-    value: frequency,
-    source: "explicit",
-  }));
+  expect(node.changeFrequency).toEqual(
+    expect.objectContaining({
+      value: frequency,
+      source: "explicit",
+    }),
+  );
   expect(typeof node.schedulingReason).toBe("string");
   expectPlannedCache(node, id);
 }
@@ -103,31 +102,25 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
   await cliE2E.case("sandbox-action-debug", async ({ commands: { niceeval }, paths }) => {
     // Discovery imports all Experiment modules. This plan owner needs only its
     // own declaration so unrelated CLI fixtures cannot affect this plan.
-    await rename(
-      join(paths.projectRoot, "experiments"),
-      join(paths.projectRoot, "fixtures", "debug-experiments"),
-    );
+    await rename(join(paths.projectRoot, "experiments"), join(paths.projectRoot, "fixtures", "debug-experiments"));
     await mkdir(join(paths.projectRoot, "experiments"));
     await copyFile(
       join(paths.projectRoot, "fixtures", "debug-experiments", "sandbox-action-debug.ts"),
       join(paths.projectRoot, "experiments", "sandbox-action-debug.ts"),
     );
     const sideEffects = join(paths.projectRoot, "sandbox-action-debug-side-effects.ndjson");
-    const receipt = await niceeval.run([
-      "debug",
-      "sandbox-action-debug",
-      "sandbox-action-debug/plan",
-      "--json",
-    ]);
+    const receipt = await niceeval.run(["debug", "sandbox-action-debug", "sandbox-action-debug/plan", "--json"]);
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     expect(receipt.stderr).toBe("");
     const document = decodeDebugPlanDocument(receipt.json<unknown>());
-    expect(document).toEqual(expect.objectContaining({
-      experimentId: "sandbox-action-debug",
-      evalId: "sandbox-action-debug/plan",
-      evalIds: ["sandbox-action-debug/plan"],
-    }));
+    expect(document).toEqual(
+      expect.objectContaining({
+        experimentId: "sandbox-action-debug",
+        evalId: "sandbox-action-debug/plan",
+        evalIds: ["sandbox-action-debug/plan"],
+      }),
+    );
     expect(document).not.toHaveProperty("format");
     expect(document).not.toHaveProperty("schemaVersion");
     expect(document.beforeCachePlan.lookup).toBe("not-probed");
@@ -135,26 +128,28 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
 
     const nodes = actionNodes(document.commandPlan);
     const byId = new Map(nodes.map((node) => [actionId(node), node]));
-    expect([...byId.keys()]).toEqual(expect.arrayContaining([
-      "frequency-low",
-      "frequency-high",
-      "dependency-root",
-      "dag-fast-dependent",
-      "fingerprint-prototype-alpha",
-      "fingerprint-prototype-beta",
-      "fingerprint-constructor-beta",
-      "builtin-fingerprint-alpha",
-      "builtin-fingerprint-beta",
-      "tie-experiment-first",
-      "tie-experiment-second",
-      "tie-eval-group",
-      "tie-eval",
-      "tie-agent",
-      "agent-frequency-first",
-      "sensitive-command",
-      "opaque-barrier",
-      "opaque-suffix",
-    ]));
+    expect([...byId.keys()]).toEqual(
+      expect.arrayContaining([
+        "frequency-low",
+        "frequency-high",
+        "dependency-root",
+        "dag-fast-dependent",
+        "fingerprint-prototype-alpha",
+        "fingerprint-prototype-beta",
+        "fingerprint-constructor-beta",
+        "builtin-fingerprint-alpha",
+        "builtin-fingerprint-beta",
+        "tie-experiment-first",
+        "tie-experiment-second",
+        "tie-eval-group",
+        "tie-eval",
+        "tie-agent",
+        "agent-frequency-first",
+        "sensitive-command",
+        "opaque-barrier",
+        "opaque-suffix",
+      ]),
+    );
 
     expectOwner(requireAction(nodes, "tie-experiment-first"), "experiment", "sandbox-action-debug");
     expectOwner(requireAction(nodes, "tie-eval-group"), "eval-group", "sandbox-action-debug");
@@ -185,19 +180,28 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     const dependent = requireAction(nodes, "dag-fast-dependent");
     expect(dependent.dependencies, "dag-fast-dependent dependencies").toBeDefined();
     const dependencies = dependent.dependencies!;
-    expect(dependencies).toEqual(expect.arrayContaining([
-      { id: "dependency-root", source: "explicit" },
-      { id: "frequency-low", source: "same-layer" },
-    ]));
+    expect(dependencies).toEqual(
+      expect.arrayContaining([
+        { id: "dependency-root", source: "explicit" },
+        { id: "frequency-low", source: "same-layer" },
+      ]),
+    );
     expect(dependent.schedulingReason).toContain("same-layer");
 
     const orderedIds = nodes.map((node) => actionId(node));
     expect(nodes.filter((node) => node.owner?.kind === "experiment").map(actionId)).toEqual([
-      "frequency-high", "dependency-root", "fingerprint-prototype-alpha",
-      "fingerprint-prototype-beta", "fingerprint-constructor-beta",
-      "builtin-fingerprint-alpha", "builtin-fingerprint-beta",
-      "tie-experiment-first", "tie-experiment-second", "sensitive-command",
-      "opaque-barrier", "opaque-suffix",
+      "frequency-high",
+      "dependency-root",
+      "fingerprint-prototype-alpha",
+      "fingerprint-prototype-beta",
+      "fingerprint-constructor-beta",
+      "builtin-fingerprint-alpha",
+      "builtin-fingerprint-beta",
+      "tie-experiment-first",
+      "tie-experiment-second",
+      "sensitive-command",
+      "opaque-barrier",
+      "opaque-suffix",
     ]);
     const index = (id: string): number => orderedIds.indexOf(id);
     expect(index("frequency-low")).toBeLessThan(index("frequency-high"));
@@ -209,13 +213,17 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
       index("tie-eval-group"),
       index("tie-eval"),
       index("tie-agent"),
-    ]).toEqual([...[
-      index("tie-experiment-first"),
-      index("tie-experiment-second"),
-      index("tie-eval-group"),
-      index("tie-eval"),
-      index("tie-agent"),
-    ]].sort((left, right) => left - right));
+    ]).toEqual(
+      [
+        ...[
+          index("tie-experiment-first"),
+          index("tie-experiment-second"),
+          index("tie-eval-group"),
+          index("tie-eval"),
+          index("tie-agent"),
+        ],
+      ].sort((left, right) => left - right),
+    );
 
     const exact = requireAction(nodes, "tie-experiment-first");
     expect(exact.truth).toBe("exact");
@@ -228,12 +236,14 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
       executable: "printf",
       args: ["%s", "tie-experiment-first"],
     });
-    expect(steps[1]).toEqual(expect.objectContaining({
-      kind: "putText",
-      path: ".debug-plan/tie-experiment-first.txt",
-      digest: expect.stringMatching(/^sha256:/),
-      bytes: "tie-experiment-first".length,
-    }));
+    expect(steps[1]).toEqual(
+      expect.objectContaining({
+        kind: "putText",
+        path: ".debug-plan/tie-experiment-first.txt",
+        digest: expect.stringMatching(/^sha256:/),
+        bytes: "tie-experiment-first".length,
+      }),
+    );
     expect(exactAction.fingerprint.automatic).toEqual(expect.stringMatching(/^sha256:[0-9a-f]{64}$/u));
     expect(exactAction.fingerprint.supplemental).not.toBe("none");
 
@@ -244,21 +254,17 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
       alphaFingerprint.automatic,
       prototypeBetaFingerprint.automatic,
       constructorBetaFingerprint.automatic,
-    ]).toEqual([
-      alphaFingerprint.automatic,
-      alphaFingerprint.automatic,
-      alphaFingerprint.automatic,
-    ]);
-    expect(new Set([
-      alphaFingerprint.supplemental,
-      prototypeBetaFingerprint.supplemental,
-      constructorBetaFingerprint.supplemental,
-    ]).size).toBe(3);
-    expect(new Set([
-      alphaFingerprint.combined,
-      prototypeBetaFingerprint.combined,
-      constructorBetaFingerprint.combined,
-    ]).size).toBe(3);
+    ]).toEqual([alphaFingerprint.automatic, alphaFingerprint.automatic, alphaFingerprint.automatic]);
+    expect(
+      new Set([
+        alphaFingerprint.supplemental,
+        prototypeBetaFingerprint.supplemental,
+        constructorBetaFingerprint.supplemental,
+      ]).size,
+    ).toBe(3);
+    expect(
+      new Set([alphaFingerprint.combined, prototypeBetaFingerprint.combined, constructorBetaFingerprint.combined]).size,
+    ).toBe(3);
 
     const builtinAlpha = actionPlan(requireAction(nodes, "builtin-fingerprint-alpha")).fingerprint;
     const builtinBeta = actionPlan(requireAction(nodes, "builtin-fingerprint-beta")).fingerprint;
@@ -269,12 +275,14 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
 
     const sensitive = actionPlan(requireAction(nodes, "sensitive-command"));
     expect(sensitive.family).toBe("niceeval.sandbox.command");
-    expect(sensitive.input).toEqual(expect.objectContaining({
-      envKeysJson: JSON.stringify([PRIVATE_ENV_KEY]),
-      envDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
-      stdinDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
-      stdinBytes: Buffer.byteLength(PRIVATE_STDIN),
-    }));
+    expect(sensitive.input).toEqual(
+      expect.objectContaining({
+        envKeysJson: JSON.stringify([PRIVATE_ENV_KEY]),
+        envDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+        stdinDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+        stdinBytes: Buffer.byteLength(PRIVATE_STDIN),
+      }),
+    );
     const sensitiveSteps = sensitive.steps;
     expect(sensitiveSteps).toEqual([
       expect.objectContaining({
@@ -298,35 +306,37 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     const installNodes = stepsInPlan(document.commandPlan).filter((node) => node.phase === "agent.install");
     const installParents = installNodes.filter((node) => node.truth === "conditional");
     expect(installParents).toHaveLength(1);
-    expect(installParents[0]).toEqual(expect.objectContaining({
-      truth: "conditional",
-      owner: { kind: "agent", id: "cli-sandbox-action-debug" },
-    }));
+    expect(installParents[0]).toEqual(
+      expect.objectContaining({
+        truth: "conditional",
+        owner: { kind: "agent", id: "cli-sandbox-action-debug" },
+      }),
+    );
     expect(installParents[0]!.action).toBeUndefined();
     expect(installParents[0]!.children, "agent.install children").toBeDefined();
     const installChildren = installParents[0]!.children!;
     expect(installChildren).toHaveLength(2);
-    expect(installChildren[0]).toEqual(expect.objectContaining({
-      phase: "agent.install",
-      truth: "opaque",
-      label: "probe #0",
-      owner: { kind: "agent", id: "cli-sandbox-action-debug" },
-    }));
-    expect(installChildren[1]).toEqual(expect.objectContaining({
-      phase: "agent.install",
-      truth: "known-no-command",
-      label: "install #0",
-      owner: { kind: "agent", id: "cli-sandbox-action-debug" },
-      condition: expect.objectContaining({ code: "probe-miss" }),
-    }));
+    expect(installChildren[0]).toEqual(
+      expect.objectContaining({
+        phase: "agent.install",
+        truth: "opaque",
+        label: "probe #0",
+        owner: { kind: "agent", id: "cli-sandbox-action-debug" },
+      }),
+    );
+    expect(installChildren[1]).toEqual(
+      expect.objectContaining({
+        phase: "agent.install",
+        truth: "known-no-command",
+        label: "install #0",
+        owner: { kind: "agent", id: "cli-sandbox-action-debug" },
+        condition: expect.objectContaining({ code: "probe-miss" }),
+      }),
+    );
     expect(installNodes).toHaveLength(1 + installChildren.length);
     expect(nodes.some((node) => actionId(node) === "debug-agent-probe")).toBe(false);
 
-    const human = await niceeval.run([
-      "debug",
-      "sandbox-action-debug",
-      "sandbox-action-debug/plan",
-    ]);
+    const human = await niceeval.run(["debug", "sandbox-action-debug", "sandbox-action-debug/plan"]);
     expect(human.exitCode, human.diagnostic()).toBe(0);
     expect(human.stderr).toBe("");
     expect(human.stdout).toContain("COMMAND PLAN");
@@ -342,25 +352,30 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     );
     expect(human.stdout).not.toContain(" · eligible");
     expect(human.stdout).not.toContain(" · ineligible:");
-    expect(human.stdout.indexOf("action: frequency-low"))
-      .toBeLessThan(human.stdout.indexOf("action: frequency-high"));
-    expect(human.stdout.indexOf("action: agent-frequency-first"))
-      .toBeLessThan(human.stdout.indexOf("action: frequency-low"));
-    expect(human.stdout.indexOf("action: dependency-root"))
-      .toBeLessThan(human.stdout.indexOf("action: dag-fast-dependent"));
+    expect(human.stdout.indexOf("action: frequency-low")).toBeLessThan(human.stdout.indexOf("action: frequency-high"));
+    expect(human.stdout.indexOf("action: agent-frequency-first")).toBeLessThan(
+      human.stdout.indexOf("action: frequency-low"),
+    );
+    expect(human.stdout.indexOf("action: dependency-root")).toBeLessThan(
+      human.stdout.indexOf("action: dag-fast-dependent"),
+    );
     expect([
       human.stdout.indexOf("action: tie-experiment-first"),
       human.stdout.indexOf("action: tie-experiment-second"),
       human.stdout.indexOf("action: tie-eval-group"),
       human.stdout.indexOf("action: tie-eval"),
       human.stdout.indexOf("action: tie-agent"),
-    ]).toEqual([...[
-      human.stdout.indexOf("action: tie-experiment-first"),
-      human.stdout.indexOf("action: tie-experiment-second"),
-      human.stdout.indexOf("action: tie-eval-group"),
-      human.stdout.indexOf("action: tie-eval"),
-      human.stdout.indexOf("action: tie-agent"),
-    ]].sort((left, right) => left - right));
+    ]).toEqual(
+      [
+        ...[
+          human.stdout.indexOf("action: tie-experiment-first"),
+          human.stdout.indexOf("action: tie-experiment-second"),
+          human.stdout.indexOf("action: tie-eval-group"),
+          human.stdout.indexOf("action: tie-eval"),
+          human.stdout.indexOf("action: tie-agent"),
+        ],
+      ].sort((left, right) => left - right),
+    );
     expect(human.stdout).toContain("step #0: argv");
     expect(human.stdout).toContain("step #1: putText");
     expect(human.stdout).toContain(`environment keys: [${JSON.stringify(PRIVATE_ENV_KEY)}`);
@@ -372,15 +387,14 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
       join(paths.projectRoot, "experiments", "sandbox-action-debug.ts"),
       join(paths.projectRoot, "experiments", "sandbox-action-shared.ts"),
     );
-    const shared = await niceeval.run([
-      "debug", "sandbox-action-shared", "sandbox-action-debug/plan", "--json",
-    ]);
+    const shared = await niceeval.run(["debug", "sandbox-action-shared", "sandbox-action-debug/plan", "--json"]);
     expect(shared.exitCode, shared.diagnostic()).toBe(0);
     const sharedPlan = decodeDebugPlanDocument(shared.json<unknown>());
     const sharedNodes = actionNodes(sharedPlan.commandPlan);
     expectOwner(requireAction(sharedNodes, "tie-experiment-first"), "experiment", "sandbox-action-shared");
-    expect(sharedPlan.beforeCachePlan.nodes.map((node) => node.prefixIdentity))
-      .toEqual(document.beforeCachePlan.nodes.map((node) => node.prefixIdentity));
+    expect(sharedPlan.beforeCachePlan.nodes.map((node) => node.prefixIdentity)).toEqual(
+      document.beforeCachePlan.nodes.map((node) => node.prefixIdentity),
+    );
 
     await copyFile(
       join(paths.projectRoot, "fixtures", "sandbox-action-debug-invalid.ts"),
@@ -403,20 +417,21 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     const wholeExperiment = await niceeval.run(["debug", "sandbox-action-debug", "--json"]);
     expect(wholeExperiment.exitCode, wholeExperiment.diagnostic()).toBe(0);
     const wholeDocument = decodeDebugPlanDocument(wholeExperiment.json<unknown>());
-    expect(wholeDocument).toEqual(expect.objectContaining({
-      experimentId: "sandbox-action-debug",
-      evalIds: ["sandbox-action-debug/plan", "sandbox-action-debug/secondary"],
-      beforeCachePlan: expect.objectContaining({ lookup: "not-probed" }),
-    }));
+    expect(wholeDocument).toEqual(
+      expect.objectContaining({
+        experimentId: "sandbox-action-debug",
+        evalIds: ["sandbox-action-debug/plan", "sandbox-action-debug/secondary"],
+        beforeCachePlan: expect.objectContaining({ lookup: "not-probed" }),
+      }),
+    );
     expect(wholeDocument).not.toHaveProperty("evalId");
-    expect(new Set(wholeDocument.beforeCachePlan.nodes.map((node) => node.prefixIdentity)).size)
-      .toBe(wholeDocument.beforeCachePlan.nodes.length);
-    const consumerEvalIds = new Set(wholeDocument.beforeCachePlan.nodes.flatMap((node) =>
-      node.consumers.map((consumer) => consumer.evalId)));
-    expect(consumerEvalIds).toEqual(new Set([
-      "sandbox-action-debug/plan",
-      "sandbox-action-debug/secondary",
-    ]));
+    expect(new Set(wholeDocument.beforeCachePlan.nodes.map((node) => node.prefixIdentity)).size).toBe(
+      wholeDocument.beforeCachePlan.nodes.length,
+    );
+    const consumerEvalIds = new Set(
+      wholeDocument.beforeCachePlan.nodes.flatMap((node) => node.consumers.map((consumer) => consumer.evalId)),
+    );
+    expect(consumerEvalIds).toEqual(new Set(["sandbox-action-debug/plan", "sandbox-action-debug/secondary"]));
     expect(consumerEvalIds).not.toContain("*");
 
     await expect(access(sideEffects)).rejects.toMatchObject({ code: "ENOENT" });

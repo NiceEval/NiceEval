@@ -54,11 +54,15 @@ export class MigrationRequiredError extends Error {
 
   constructor(input: { readonly occurrences: readonly MigrationOccurrence[] }) {
     super("This configuration requires migration.");
-    this.occurrences = Object.freeze(input.occurrences.map((occurrence) => Object.freeze({
-      guideId: occurrence.guideId,
-      subject: occurrence.subject,
-      source: freezeSource(occurrence.source),
-    })));
+    this.occurrences = Object.freeze(
+      input.occurrences.map((occurrence) =>
+        Object.freeze({
+          guideId: occurrence.guideId,
+          subject: occurrence.subject,
+          source: freezeSource(occurrence.source),
+        }),
+      ),
+    );
   }
 }
 
@@ -110,7 +114,8 @@ export function collectMigrationRequiredErrors(value: unknown): readonly Migrati
   let remainingNodes = 128;
 
   const visit = (candidate: unknown, depth: number): void => {
-    if (remainingNodes === 0 || depth > MAX_WRAPPER_DEPTH || typeof candidate !== "object" || candidate === null) return;
+    if (remainingNodes === 0 || depth > MAX_WRAPPER_DEPTH || typeof candidate !== "object" || candidate === null)
+      return;
     if (seen.has(candidate)) return;
     remainingNodes--;
     seen.add(candidate);
@@ -135,9 +140,10 @@ export function collectMigrationOccurrences(value: unknown): readonly MigrationO
   const seen = new Set<string>();
   for (const error of collectMigrationRequiredErrors(value)) {
     for (const occurrence of error.occurrences) {
-      const sourceKey = occurrence.source.state === "located"
-        ? `${occurrence.source.file}:${occurrence.source.line}:${occurrence.source.column}`
-        : `unavailable:${occurrence.source.reason}`;
+      const sourceKey =
+        occurrence.source.state === "located"
+          ? `${occurrence.source.file}:${occurrence.source.line}:${occurrence.source.column}`
+          : `unavailable:${occurrence.source.reason}`;
       const key = JSON.stringify([occurrence.guideId, occurrence.subject, sourceKey]);
       if (seen.has(key)) continue;
       seen.add(key);

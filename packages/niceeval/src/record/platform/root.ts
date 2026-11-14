@@ -59,9 +59,7 @@ function normalizeAbsolutePath(input: string): string | undefined {
  * In particular it intentionally does not call realpath or claim hostile
  * symlink protection.
  */
-export function makeRecordRoot(
-  input: RecordRootInput,
-): Result.Result<RecordRoot, RecordRootConstructionError> {
+export function makeRecordRoot(input: RecordRootInput): Result.Result<RecordRoot, RecordRootConstructionError> {
   if (input instanceof URL) {
     if (input.protocol !== "file:") {
       return Result.fail({
@@ -89,9 +87,7 @@ export function makeRecordRoot(
   }
 
   const path = normalizeAbsolutePath(input);
-  return path === undefined
-    ? Result.fail({ code: "record-root-relative" })
-    : Result.succeed(makeRoot(path));
+  return path === undefined ? Result.fail({ code: "record-root-relative" }) : Result.succeed(makeRoot(path));
 }
 
 /** Internal Node-platform access; callers cannot manufacture an issued root. */

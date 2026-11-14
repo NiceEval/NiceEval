@@ -17,7 +17,13 @@ test("ACTIVE detail 移除 C0/C1 后再次脱敏，且只在运行期显示", as
   expect(Buffer.byteLength(EXPECTED_DETAIL, "utf8")).toBe(256);
   await evalE2E.case("active-progress-redaction", async ({ paths }) => {
     await withPty(
-      [join(paths.projectRoot, "node_modules", ".bin", "niceeval"), "exp", "active-progress-redaction", "--rerun", "all"],
+      [
+        join(paths.projectRoot, "node_modules", ".bin", "niceeval"),
+        "exp",
+        "active-progress-redaction",
+        "--rerun",
+        "all",
+      ],
       { cwd: paths.projectRoot, columns: 512, rows: 40, timeoutMs: 30_000 },
       async (pty) => {
         const active = await pty.waitForText(EXPECTED_DETAIL, {

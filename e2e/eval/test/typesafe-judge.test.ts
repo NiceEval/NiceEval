@@ -18,11 +18,28 @@ test.concurrent("TypeSafe 概率映射与批量分类可复核且提取能力明
     const answers: Record<string, unknown> = {};
     for (const [index, [id, question]] of Object.entries(payload.questions).entries()) {
       const q = question as { type: string; criteria: string[] | Record<string, unknown> };
-      answers[id] = q.type === "score"
-        ? { type: "score", score: 1.5, legend: { "0": "Incorrect", "1": "Partial", "2": "Complete" }, probabilities: { "0": 0.1, "1": 0.3, "2": malformed ? 0.1 : 0.6 }, confidence: 0.4 }
-        : Object.hasOwn(q.criteria, "consistent")
-          ? { type: "choice", choice: "incomplete", probabilities: { consistent: 0.2, incomplete: 0.7, contradictory: 0.1 }, confidence: 0.5 }
-          : { type: "choice", choice: index === 0 ? "followed" : "not-followed", probabilities: { followed: index === 0 ? 0.8 : 0.1, "not-followed": index === 0 ? 0.2 : 0.9 }, confidence: 0.6 };
+      answers[id] =
+        q.type === "score"
+          ? {
+              type: "score",
+              score: 1.5,
+              legend: { "0": "Incorrect", "1": "Partial", "2": "Complete" },
+              probabilities: { "0": 0.1, "1": 0.3, "2": malformed ? 0.1 : 0.6 },
+              confidence: 0.4,
+            }
+          : Object.hasOwn(q.criteria, "consistent")
+            ? {
+                type: "choice",
+                choice: "incomplete",
+                probabilities: { consistent: 0.2, incomplete: 0.7, contradictory: 0.1 },
+                confidence: 0.5,
+              }
+            : {
+                type: "choice",
+                choice: index === 0 ? "followed" : "not-followed",
+                probabilities: { followed: index === 0 ? 0.8 : 0.1, "not-followed": index === 0 ? 0.2 : 0.9 },
+                confidence: 0.6,
+              };
     }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ model: "jev-fixture", answers, usage: { input_tokens: 20, output_tokens: 10 } }));
@@ -33,7 +50,11 @@ test.concurrent("TypeSafe 概率映射与批量分类可复核且提取能力明
   try {
     await evalE2E.case("typesafe-judge", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "typesafe-judge", "--rerun", "all", "--json"], {
-        env: { ...process.env, NICEEVAL_E2E_TYPESAFE_URL: `http://127.0.0.1:${address.port}/v1`, TYPESAFE_API_KEY: "typesafe-fixture-key" },
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_TYPESAFE_URL: `http://127.0.0.1:${address.port}/v1`,
+          TYPESAFE_API_KEY: "typesafe-fixture-key",
+        },
       });
       expect(run.exitCode, run.diagnostic()).toBe(1);
       const result = only(run.expEvalEvents(), (item) => item.evalId === "typesafe-judge", run.diagnostic());
@@ -41,7 +62,13 @@ test.concurrent("TypeSafe 概率映射与批量分类可复核且提取能力明
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       const entries = inspected.document.attempt.assertions.entries;
       expect(entries).toHaveLength(5);
-      for (const [label, value] of [["Nonuniform score", 0.66], ["Classification", 0.5], ["Batch", 0.5], ["Unsupported extraction", null], ["Unsupported anchors", null]] as const) {
+      for (const [label, value] of [
+        ["Nonuniform score", 0.66],
+        ["Classification", 0.5],
+        ["Batch", 0.5],
+        ["Unsupported extraction", null],
+        ["Unsupported anchors", null],
+      ] as const) {
         const entry = only(entries, (item) => item.display.label === label, inspected.receipt.diagnostic());
         const detail = await inspectAssertion(niceeval, projectRoot, result.locator!, entry.entryId);
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
@@ -72,32 +99,59 @@ test.concurrent("TypeSafe 概率映射与批量分类可复核且提取能力明
         totalTokens: { state: "available", value: 90 },
         costs: { state: "unavailable", totalCalls: 3 },
       });
-      expect(ledger.calls.every((call) => call.transportProvider === "typesafe" && call.inputTotalTokens === 20 && call.outputTokens === 10)).toBe(true);
+      expect(
+        ledger.calls.every(
+          (call) => call.transportProvider === "typesafe" && call.inputTotalTokens === 20 && call.outputTokens === 10,
+        ),
+      ).toBe(true);
       expect(ledger.calls.every((call) => entries.some((entry) => entry.entryId === call.entryId))).toBe(true);
       expect(requests).toHaveLength(3);
-      expect(requests.every((request) => request.url === "/v1/systemone" && request.authorization === "Bearer typesafe-fixture-key")).toBe(true);
+      expect(
+        requests.every(
+          (request) => request.url === "/v1/systemone" && request.authorization === "Bearer typesafe-fixture-key",
+        ),
+      ).toBe(true);
       expect(requests.map(({ body }) => Object.keys(JSON.parse(body).questions).length).sort()).toEqual([1, 1, 2]);
       malformed = true;
       const invalid = await niceeval.run(["exp", "typesafe-judge", "--rerun", "all", "--json"], {
-        env: { ...process.env, NICEEVAL_E2E_TYPESAFE_URL: `http://127.0.0.1:${address.port}/v1`, TYPESAFE_API_KEY: "typesafe-fixture-key" },
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_TYPESAFE_URL: `http://127.0.0.1:${address.port}/v1`,
+          TYPESAFE_API_KEY: "typesafe-fixture-key",
+        },
       });
       expect(invalid.exitCode, invalid.diagnostic()).toBe(1);
-      const invalidEval = only(invalid.expEvalEvents(), (item) => item.evalId === "typesafe-judge", invalid.diagnostic());
+      const invalidEval = only(
+        invalid.expEvalEvents(),
+        (item) => item.evalId === "typesafe-judge",
+        invalid.diagnostic(),
+      );
       const invalidAttempt = await inspectAttempt(niceeval, projectRoot, invalidEval.locator!, "attempt.get");
-      const invalidScore = only(invalidAttempt.document.attempt.assertions.entries, (entry) => entry.display.label === "Nonuniform score", invalidAttempt.receipt.diagnostic());
+      const invalidScore = only(
+        invalidAttempt.document.attempt.assertions.entries,
+        (entry) => entry.display.label === "Nonuniform score",
+        invalidAttempt.receipt.diagnostic(),
+      );
       const invalidDetail = await inspectAssertion(niceeval, projectRoot, invalidEval.locator!, invalidScore.entryId);
       expect(assertionEntry(invalidDetail.document, invalidDetail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
-        state: "available", audit: { result: { state: "errored" } },
+        state: "available",
+        audit: { result: { state: "errored" } },
       });
       const invalidUsage = await inspectAttempt(niceeval, projectRoot, invalidEval.locator!, "attempt.usage");
       expect(invalidUsage.receipt.exitCode, invalidUsage.receipt.diagnostic()).toBe(0);
-      expect(invalidUsage.document.usage.judgeUsage).toMatchObject({ state: "complete", totals: {
-        requests: { value: 3 }, inputTotalTokens: { value: 60 }, outputTokens: { value: 30 }, totalTokens: { value: 90 },
-      } });
+      expect(invalidUsage.document.usage.judgeUsage).toMatchObject({
+        state: "complete",
+        totals: {
+          requests: { value: 3 },
+          inputTotalTokens: { value: 60 },
+          outputTokens: { value: 30 },
+          totalTokens: { value: 90 },
+        },
+      });
       expect(requests).toHaveLength(6);
     });
   } finally {
     server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });

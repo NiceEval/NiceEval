@@ -1,9 +1,5 @@
 import type { SlotId } from "../../record/model/identifiers.ts";
-import {
-  projectEvaluationsPayload,
-  type EvaluationKind,
-  type EvaluationsPayload,
-} from "./evaluation.ts";
+import { projectEvaluationsPayload, type EvaluationKind, type EvaluationsPayload } from "./evaluation.ts";
 
 /** A transient lookup over the Eval plan; Core owns published Slot identities. */
 export interface EvaluationPlanCoordinate {
@@ -17,9 +13,7 @@ export interface EvaluationPlanView {
   readonly coordinateForSlot: (slotId: SlotId) => EvaluationPlanCoordinate | undefined;
 }
 
-export function projectEvaluationPlan(
-  payload: EvaluationsPayload,
-): EvaluationPlanView {
+export function projectEvaluationPlan(payload: EvaluationsPayload): EvaluationPlanView {
   const projection = projectEvaluationsPayload(payload);
   return Object.freeze({
     coordinateForSlot: (slotId: SlotId) => {

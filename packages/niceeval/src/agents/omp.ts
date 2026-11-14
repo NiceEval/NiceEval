@@ -8,11 +8,7 @@ import { createPiAgentEventStream, type PiAgentEventLike } from "./sdk-streams.t
 import { normalizeToolName } from "../o11y/tool-names.ts";
 import { notCommandProjection, opaqueCommandProjection } from "../o11y/command-projection.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
-import {
-  AGENT_BASELINE_RECIPE_REVISION,
-  DEFAULT_BUN_VERSION,
-  DEFAULT_OMP_CLI_VERSION,
-} from "./coding-cli-versions.ts";
+import { AGENT_BASELINE_RECIPE_REVISION, DEFAULT_BUN_VERSION, DEFAULT_OMP_CLI_VERSION } from "./coding-cli-versions.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
 
 const COMPAT_PROVIDER = "niceeval-compat";
@@ -65,18 +61,21 @@ function bunPlatformPackage(
 }
 
 function parseJsonl(raw: string): PiAgentEventLike[] {
-  return raw.split(/\r?\n/).filter((line) => line.trim()).map((line, index) => {
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch (cause) {
-      throw new Error(`OMP emitted invalid JSONL at line ${index + 1}`, { cause });
-    }
-    if (typeof value !== "object" || value === null || typeof (value as { type?: unknown }).type !== "string") {
-      throw new Error(`OMP emitted an invalid event at line ${index + 1}`);
-    }
-    return value as PiAgentEventLike;
-  });
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line, index) => {
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch (cause) {
+        throw new Error(`OMP emitted invalid JSONL at line ${index + 1}`, { cause });
+      }
+      if (typeof value !== "object" || value === null || typeof (value as { type?: unknown }).type !== "string") {
+        throw new Error(`OMP emitted an invalid event at line ${index + 1}`);
+      }
+      return value as PiAgentEventLike;
+    });
 }
 
 function enrichOmpEvent(event: StreamEvent): StreamEvent {
@@ -87,9 +86,7 @@ function enrichOmpEvent(event: StreamEvent): StreamEvent {
     operation: {
       ...event.operation,
       tool,
-      command: tool === "shell"
-        ? opaqueCommandProjection("unsupported-protocol")
-        : notCommandProjection(),
+      command: tool === "shell" ? opaqueCommandProjection("unsupported-protocol") : notCommandProjection(),
     },
   };
 }
@@ -120,98 +117,105 @@ export function ompAgent(config?: OmpConfig): Agent {
     install: [bunInstall.install, ompInstall.install],
     installers: [bunInstall.installer, ompInstall.installer],
 
-    before: (sb, ctx) => Effect.tryPromise({
-      try: async () => {
-        const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
-        const home = homeResult.stdout.trim();
-        if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
-          throw new Error("OMP setup requires an absolute sandbox HOME directory");
-        }
-        const dir = `${home}/.niceeval-omp`;
-        configDirs.set(sb.sandboxId, dir);
-        const baseUrl = resolveBaseUrl(config);
-        const model = ctx.model ?? "deepseek-v4-flash";
-        const models = {
-          providers: {
-            [COMPAT_PROVIDER]: {
-              ...(baseUrl ? { baseUrl } : {}),
-              api: "openai-completions",
-              apiKey: API_KEY_ENV,
-              models: [{ id: model, name: model, contextWindow: 1_000_000, maxTokens: 64_000 }],
-            },
-          },
-        };
-        await shared.writeFile(sb, `${dir}/models.yml`, JSON.stringify(models, null, 2));
-      },
-      catch: (cause) => cause,
-    }),
-
-    send: (input, ctx) => Effect.gen(function* () {
-      const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp");
-      return yield* Effect.tryPromise({
-        try: async (signal) => {
-          const apiKey = resolveApiKey(config);
-          const dir = configDirs.get(ctx.sandbox.sandboxId);
-          if (!dir) throw new Error("OMP setup state is unavailable");
+    before: (sb, ctx) =>
+      Effect.tryPromise({
+        try: async () => {
+          const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
+          const home = homeResult.stdout.trim();
+          if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
+            throw new Error("OMP setup requires an absolute sandbox HOME directory");
+          }
+          const dir = `${home}/.niceeval-omp`;
+          configDirs.set(sb.sandboxId, dir);
+          const baseUrl = resolveBaseUrl(config);
           const model = ctx.model ?? "deepseek-v4-flash";
-          const env: globalThis.Record<string, string> = {
-            [API_KEY_ENV]: apiKey,
-            PI_CODING_AGENT_DIR: dir,
-            ...ctx.telemetry?.env,
+          const models = {
+            providers: {
+              [COMPAT_PROVIDER]: {
+                ...(baseUrl ? { baseUrl } : {}),
+                api: "openai-completions",
+                apiKey: API_KEY_ENV,
+                models: [{ id: model, name: model, contextWindow: 1_000_000, maxTokens: 64_000 }],
+              },
+            },
           };
-          const args = [
-            "--print",
-            "--mode", "json",
-            "--model", `${COMPAT_PROVIDER}/${model}`,
-            "--approval-mode", "yolo",
-            "--no-pty",
-            "--no-title",
-            input.text,
-          ];
-          const res = await ctx.sandbox.runCommand(ompBin, args, {
-            env,
-            sensitiveValues: [apiKey],
-            stream: true,
-            signal,
-          });
-
-          let nativeEvents: PiAgentEventLike[];
-          try {
-            nativeEvents = parseJsonl(res.stdout);
-          } catch (cause) {
-            throw makeSendFailure({
-              acceptance: "unknown",
-              message: cause instanceof Error ? cause.message : "OMP transcript could not be parsed",
-              process: res,
-            });
-          }
-          const stream = createPiAgentEventStream();
-          const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event)).map(enrichOmpEvent);
-          const terminal = nativeEvents.filter((event) =>
-            event.type === "agent_end" &&
-            (event as { isTerminal?: unknown }).isTerminal !== false &&
-            Array.isArray((event as { messages?: unknown }).messages)
-          );
-          if (res.exitCode !== 0 || terminal.length !== 1) {
-            throw makeSendFailure({
-              acceptance: sendAcceptanceFromEvents(events),
-              message: res.exitCode !== 0
-                ? shared.diagnoseFailure(res, events, res.stdout)
-                : `OMP produced ${terminal.length} valid terminal agent_end events; expected exactly one.`,
-              events,
-              usage: stream.usage,
-              process: res,
-            });
-          }
-          return {
-            events,
-            usage: stream.usage,
-            status: stream.failed ? "failed" as const : "completed" as const,
-          };
+          await shared.writeFile(sb, `${dir}/models.yml`, JSON.stringify(models, null, 2));
         },
         catch: (cause) => cause,
-      });
-    }),
+      }),
+
+    send: (input, ctx) =>
+      Effect.gen(function* () {
+        const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp");
+        return yield* Effect.tryPromise({
+          try: async (signal) => {
+            const apiKey = resolveApiKey(config);
+            const dir = configDirs.get(ctx.sandbox.sandboxId);
+            if (!dir) throw new Error("OMP setup state is unavailable");
+            const model = ctx.model ?? "deepseek-v4-flash";
+            const env: globalThis.Record<string, string> = {
+              [API_KEY_ENV]: apiKey,
+              PI_CODING_AGENT_DIR: dir,
+              ...ctx.telemetry?.env,
+            };
+            const args = [
+              "--print",
+              "--mode",
+              "json",
+              "--model",
+              `${COMPAT_PROVIDER}/${model}`,
+              "--approval-mode",
+              "yolo",
+              "--no-pty",
+              "--no-title",
+              input.text,
+            ];
+            const res = await ctx.sandbox.runCommand(ompBin, args, {
+              env,
+              sensitiveValues: [apiKey],
+              stream: true,
+              signal,
+            });
+
+            let nativeEvents: PiAgentEventLike[];
+            try {
+              nativeEvents = parseJsonl(res.stdout);
+            } catch (cause) {
+              throw makeSendFailure({
+                acceptance: "unknown",
+                message: cause instanceof Error ? cause.message : "OMP transcript could not be parsed",
+                process: res,
+              });
+            }
+            const stream = createPiAgentEventStream();
+            const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event)).map(enrichOmpEvent);
+            const terminal = nativeEvents.filter(
+              (event) =>
+                event.type === "agent_end" &&
+                (event as { isTerminal?: unknown }).isTerminal !== false &&
+                Array.isArray((event as { messages?: unknown }).messages),
+            );
+            if (res.exitCode !== 0 || terminal.length !== 1) {
+              throw makeSendFailure({
+                acceptance: sendAcceptanceFromEvents(events),
+                message:
+                  res.exitCode !== 0
+                    ? shared.diagnoseFailure(res, events, res.stdout)
+                    : `OMP produced ${terminal.length} valid terminal agent_end events; expected exactly one.`,
+                events,
+                usage: stream.usage,
+                process: res,
+              });
+            }
+            return {
+              events,
+              usage: stream.usage,
+              status: stream.failed ? ("failed" as const) : ("completed" as const),
+            };
+          },
+          catch: (cause) => cause,
+        });
+      }),
   });
 }
 

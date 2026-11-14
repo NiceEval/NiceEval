@@ -6,17 +6,9 @@ import {
   type EvaluationsPayload,
   validateEvaluationsPayload,
 } from "./evaluation.ts";
-import {
-  type ScoreCoherenceIssue,
-  type ScorePayload,
-  validateScoreCoherence,
-} from "./score.ts";
+import { type ScoreCoherenceIssue, type ScorePayload, validateScoreCoherence } from "./score.ts";
 import type { EvaluationAttemptFacts } from "./sealed-assertion.ts";
-import {
-  type VerdictCoherenceIssue,
-  type VerdictPayload,
-  validateVerdictCoherence,
-} from "./verdict.ts";
+import { type VerdictCoherenceIssue, type VerdictPayload, validateVerdictCoherence } from "./verdict.ts";
 
 /** One origin Attempt's facts before Record's generic writer owns the writes. */
 export interface EvaluationRecordAttempt {
@@ -80,9 +72,7 @@ export type EvaluationRecordCoherenceIssue =
       readonly issue: ScoreCoherenceIssue;
     };
 
-function evaluationBySlot(
-  evaluations: EvaluationsPayload,
-): ReadonlyMap<string, EvaluationSlotProjection> {
+function evaluationBySlot(evaluations: EvaluationsPayload): ReadonlyMap<string, EvaluationSlotProjection> {
   const projection = projectEvaluationsPayload(evaluations);
   const bySlot = new Map<string, EvaluationSlotProjection>();
   for (const definition of evaluations.evaluations) {

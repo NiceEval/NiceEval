@@ -20,9 +20,15 @@ import { notCommandProjection, opaqueCommandProjection } from "../command-projec
 /** Bub 特有别名(fs.* / web.* 命名空间与裸 read/write/edit)+ 裸动词;通用别名走基表。 */
 export const BUB_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
-  "fs.read": "file_read", fs_read: "file_read", read: "file_read",
-  "fs.write": "file_write", fs_write: "file_write", write: "file_write",
-  "fs.edit": "file_edit", fs_edit: "file_edit", edit: "file_edit",
+  "fs.read": "file_read",
+  fs_read: "file_read",
+  read: "file_read",
+  "fs.write": "file_write",
+  fs_write: "file_write",
+  write: "file_write",
+  "fs.edit": "file_edit",
+  fs_edit: "file_edit",
+  edit: "file_edit",
   "web.fetch": "web_fetch",
   "web.search": "web_search",
   update_todos: "agent_task",
@@ -34,9 +40,7 @@ function normalizeToolName(name: string): ToolName {
 
 /** Bub tape 的 `bash` 是原生 shell action；tape 只保留 source，不能证明 argv。 */
 function commandProjectionForBubTool(name: string) {
-  return name.toLowerCase() === "bash"
-    ? opaqueCommandProjection("unsupported-protocol")
-    : notCommandProjection();
+  return name.toLowerCase() === "bash" ? opaqueCommandProjection("unsupported-protocol") : notCommandProjection();
 }
 
 function get(obj: unknown, key: string): unknown {
@@ -216,7 +220,10 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
           });
         } else if (kind === "event") {
           const name = get(payload, "name");
-          if (typeof name !== "string" || !["run", "handoff", "loop.start", "loop.step.start", "loop.step"].includes(name)) {
+          if (
+            typeof name !== "string" ||
+            !["run", "handoff", "loop.start", "loop.step.start", "loop.step"].includes(name)
+          ) {
             unrecognized(`event:${String(name ?? "<missing-name>")}`);
             continue;
           }
@@ -230,7 +237,11 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
             (errVal != null && errVal !== false && errVal !== "") ||
             (typeof status === "string" && /^(error|failed|aborted|cancell?ed|timeout)$/i.test(status));
           if (failed) {
-            events.push({ type: "error", message: typeof errVal === "string" && errVal ? errVal : `${String(get(payload, "name"))}: ${String(status)}` });
+            events.push({
+              type: "error",
+              message:
+                typeof errVal === "string" && errVal ? errVal : `${String(get(payload, "name"))}: ${String(status)}`,
+            });
           }
         } else if (kind === "anchor") {
           // 非 bootstrap 的 anchor = tape.handoff = 一次压缩检查点(供 t.transcript.compactions() 守卫)。

@@ -22,10 +22,24 @@ const ParseOptions = Object.freeze({
 });
 
 const nonEmptyString = (identifier: string) =>
-  Schema.String.pipe(Schema.check(Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), { identifier, description: "a non-empty string without NUL" })));
+  Schema.String.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), {
+        identifier,
+        description: "a non-empty string without NUL",
+      }),
+    ),
+  );
 
 const positiveSafeInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier, description: "a positive safe integer" })));
+  Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
+        identifier,
+        description: "a positive safe integer",
+      }),
+    ),
+  );
 
 const DomainSchema = Schema.Struct({
   name: Schema.Literals(["reference", "development"]),
@@ -40,7 +54,13 @@ const DomainSchema = Schema.Struct({
   maxInstances: positiveSafeInteger("IncusMaxInstances"),
   artifactProject: nonEmptyString("IncusArtifactProject"),
   artifactMaxInstances: positiveSafeInteger("IncusArtifactMaxInstances"),
-  artifactStorageReserveBytes: Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { description: "a non-negative safe integer" }))),
+  artifactStorageReserveBytes: Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
+        description: "a non-negative safe integer",
+      }),
+    ),
+  ),
   artifactEstimatedBytes: Schema.optional(positiveSafeInteger("IncusArtifactEstimatedBytes")),
   dockerDataBytes: Schema.optional(positiveSafeInteger("IncusDockerDataBytes")),
   workdir: Schema.Literal(INCUS_WORKDIR),
@@ -218,11 +238,9 @@ function decodeDescriptor(value: unknown, path: string): IncusProviderDescriptor
     domains.push(frozen);
   }
   if (domains.length === 0) {
-    throw incusError(
-      "incus-descriptor-invalid",
-      `Incus descriptor ${JSON.stringify(path)} has no domains.`,
-      ["Declare a reference domain and optionally a development domain."],
-    );
+    throw incusError("incus-descriptor-invalid", `Incus descriptor ${JSON.stringify(path)} has no domains.`, [
+      "Declare a reference domain and optionally a development domain.",
+    ]);
   }
   return Object.freeze({
     schemaVersion: INCUS_DESCRIPTOR_SCHEMA_VERSION,
@@ -242,9 +260,10 @@ export async function loadIncusDescriptor(env: NodeJS.ProcessEnv = process.env):
   try {
     text = await readFile(path, "utf8");
   } catch (cause) {
-    const code = cause !== null && typeof cause === "object" && "code" in cause
-      ? String((cause as { readonly code?: unknown }).code)
-      : "";
+    const code =
+      cause !== null && typeof cause === "object" && "code" in cause
+        ? String((cause as { readonly code?: unknown }).code)
+        : "";
     if (code === "ENOENT") {
       throw incusError(
         "incus-undeployed",

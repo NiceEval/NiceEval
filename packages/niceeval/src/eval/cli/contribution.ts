@@ -1,12 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/eval/README.md
 import { Effect } from "effect";
-import {
-  CliArguments,
-  CliInvocationFacts,
-  CliOutput,
-  type CliOptionDefinition,
-} from "../../cli/application.ts";
+import { CliArguments, CliInvocationFacts, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
 import { ProjectConfiguration } from "../../cli/project-configuration.ts";
 import { evalHost } from "../host/index.ts";
@@ -45,39 +40,39 @@ export const evalCatalogCliCommand: CliCommandContribution<
   name: "list",
   summary: "list discovered evals",
   options: EVAL_CATALOG_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const parser = yield* CliArguments;
-    const parsed = yield* Effect.try({
-      try: () => parser.parse(argv, EVAL_CATALOG_OPTIONS),
-      catch: (cause) => failure("parse eval catalog command", cause),
-    });
-    if (parsed.positionals.length > 0) {
-      return yield* Effect.fail(failure(
-        "parse eval catalog command",
-        new Error("niceeval list accepts no positional arguments."),
-      ));
-    }
-    if (parsed.values.help === true) {
-      yield* write(EVAL_CATALOG_HELP);
-      return 0;
-    }
-    const invocation = yield* CliInvocationFacts;
-    const facts = yield* invocation.facts.pipe(
-      Effect.mapError((cause) => failure("read invocation facts", cause)),
-    );
-    const configuration = yield* ProjectConfiguration;
-    yield* configuration.load(facts.cwd).pipe(
-      Effect.mapError((cause) => failure("load project configuration", cause)),
-    );
-    const catalog = yield* evalHost.catalog({
-      cwd: facts.cwd,
-      ...(typeof parsed.values.tag === "string" ? { tag: parsed.values.tag } : {}),
-    }).pipe(Effect.mapError((cause) => failure("discover eval catalog", cause)));
-    yield* write(`Discovered ${catalog.entries.length} evals:
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      const parser = yield* CliArguments;
+      const parsed = yield* Effect.try({
+        try: () => parser.parse(argv, EVAL_CATALOG_OPTIONS),
+        catch: (cause) => failure("parse eval catalog command", cause),
+      });
+      if (parsed.positionals.length > 0) {
+        return yield* Effect.fail(
+          failure("parse eval catalog command", new Error("niceeval list accepts no positional arguments.")),
+        );
+      }
+      if (parsed.values.help === true) {
+        yield* write(EVAL_CATALOG_HELP);
+        return 0;
+      }
+      const invocation = yield* CliInvocationFacts;
+      const facts = yield* invocation.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
+      const configuration = yield* ProjectConfiguration;
+      yield* configuration
+        .load(facts.cwd)
+        .pipe(Effect.mapError((cause) => failure("load project configuration", cause)));
+      const catalog = yield* evalHost
+        .catalog({
+          cwd: facts.cwd,
+          ...(typeof parsed.values.tag === "string" ? { tag: parsed.values.tag } : {}),
+        })
+        .pipe(Effect.mapError((cause) => failure("discover eval catalog", cause)));
+      yield* write(`Discovered ${catalog.entries.length} evals:
 `);
-    for (const entry of catalog.entries) {
-      yield* write(`  ${entry.id}${entry.description ? `  — ${entry.description}` : ""}\n`);
-    }
-    return 0;
-  }),
+      for (const entry of catalog.entries) {
+        yield* write(`  ${entry.id}${entry.description ? `  — ${entry.description}` : ""}\n`);
+      }
+      return 0;
+    }),
 });

@@ -19,20 +19,12 @@ import { combineTotalUsageCosts, summarizeJudgeUsage, takeJudgeUsagePreview } fr
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { attemptVerdict } from "./verdict.ts";
-import type {
-  AssertionCoverage,
-  AssertionLimitation,
-} from "../assertions/record/model.ts";
-import {
-  NiceEvalCurrentRecordAttachments,
-  NiceEvalRecordAttachments,
-} from "../record/family/current.ts";
+import type { AssertionCoverage, AssertionLimitation } from "../assertions/record/model.ts";
+import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
 import type { RunResourcePage } from "../run/storage/types.ts";
 import type { RunSummary } from "../run/index.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
-
-
   closeInspectionJson,
   isInspectionCodecError,
   type InspectionDocument,
@@ -41,8 +33,17 @@ import {
   type InspectionOperationId,
   type InspectionSourceProvenance,
 } from "./codec.ts";
-import { INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT, INSPECTION_RESULT_BYTE_LIMIT, INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT, INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
-import { projectAttemptAssertionDetail, projectAttemptAssertionImage, projectAssertionContentDetail } from "./assertions.ts";
+import {
+  INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT,
+  INSPECTION_RESULT_BYTE_LIMIT,
+  INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT,
+  INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT,
+} from "./limits.ts";
+import {
+  projectAttemptAssertionDetail,
+  projectAttemptAssertionImage,
+  projectAssertionContentDetail,
+} from "./assertions.ts";
 import { InspectionRepricingResultSchema } from "./repricing.ts";
 import { projectAttemptRepricing } from "./trace.ts";
 import {
@@ -135,9 +136,7 @@ const ATTACHMENT_CONTENT_METADATA_LIMIT = 64;
 const RUN_SELECTION_LIMIT = 64;
 
 /** Pure fixed-operation selector shared by Node CLI and browser View adapters. */
-export function selectInspectionOperation<
-  Kind extends InspectionOperationId,
->(
+export function selectInspectionOperation<Kind extends InspectionOperationId>(
   facts: InspectionFactSource,
   operation: InspectionOperationFor<Kind>,
 ): InspectionSuccessDocumentFor<Kind>;
@@ -149,13 +148,10 @@ export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
 ): InspectionSuccessDocument {
-  return evaluateInspectionSuccess(
-    operation.kind,
-    () => {
-      const document = selectOperation(facts, operation);
-      return Object.assign({}, document, { links: inspectionLinks(operation, document) });
-    },
-  );
+  return evaluateInspectionSuccess(operation.kind, () => {
+    const document = selectOperation(facts, operation);
+    return Object.assign({}, document, { links: inspectionLinks(operation, document) });
+  });
 }
 
 /** Internal CLI explanation over the same selected facts and cutoff. */
@@ -181,40 +177,42 @@ export function explainInspectionOperation(
     }
     const loaded = loadForOperation(facts, operation);
     return Object.freeze({
-      ...baseDocument(
-        facts,
-        operation.kind,
-        loaded.selected,
-        loaded.requestedRunIds,
-        loaded.missingRunIds,
-        [],
-      ),
+      ...baseDocument(facts, operation.kind, loaded.selected, loaded.requestedRunIds, loaded.missingRunIds, []),
       outcome: "explanation" as const,
       factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
     });
   });
 }
 
-function selectOperation(
-  source: InspectionFactSource,
-  operation: InspectionOperation,
-): unknown {
+function selectOperation(source: InspectionFactSource, operation: InspectionOperation): unknown {
   switch (operation.kind) {
     case "project.get": {
       const input = requireCurrentProject(source, operation.experimentIds);
       return Object.freeze({
         ...resultMetadata(source, operation.kind, input.runs, [], [], locators(input.runs)),
-        project: decodeRequiredResult(operation.kind, InspectionProjectResultSchema, selectInspectionProject(input, operation.experimentIds)),
+        project: decodeRequiredResult(
+          operation.kind,
+          InspectionProjectResultSchema,
+          selectInspectionProject(input, operation.experimentIds),
+        ),
       });
     }
     case "overview.get": {
       const requested = operation.runIds ?? [];
-      const selection = requested.length === 0
-        ? { selected: loadInspectionRuns(source), missing: [] as readonly string[] }
-        : selectRuns(loadRuns(source, requested), requested);
+      const selection =
+        requested.length === 0
+          ? { selected: loadInspectionRuns(source), missing: [] as readonly string[] }
+          : selectRuns(loadRuns(source, requested), requested);
       const supporting = loadReferencedOrigins(source, selection.selected);
       return Object.freeze({
-        ...resultMetadata(source, operation.kind, selection.selected, requested, selection.missing, locators(supporting)),
+        ...resultMetadata(
+          source,
+          operation.kind,
+          selection.selected,
+          requested,
+          selection.missing,
+          locators(supporting),
+        ),
         overview: decodeRequiredResult(
           operation.kind,
           InspectionOverviewResultSchema,
@@ -225,103 +223,178 @@ function selectOperation(
     case "experiments.assertions": {
       const experimentIds = [...new Set(operation.experimentIds)].sort();
       const input: MatrixInput[] = [];
-      const matching = loadSelectedInspectionRuns(source, [...new Set(experimentIds.flatMap((id) => source.findExperimentRunIds(id)))]);
+      const matching = loadSelectedInspectionRuns(source, [
+        ...new Set(experimentIds.flatMap((id) => source.findExperimentRunIds(id))),
+      ]);
       const selected = loadReferencedOrigins(source, matching);
       const overview = selectInspectionOverview(matching, selected);
       for (const experimentId of experimentIds) {
-        if (!overview.experiments.some((item) => item.experimentId === experimentId)) throw selectionMissing(operation.kind, `Experiment ${experimentId} was not found`);
-        for (const cell of overview.cells.filter((item) => item.experimentId === experimentId && (operation.evalIdPrefix === undefined || item.evalId === operation.evalIdPrefix || item.evalId.startsWith(operation.evalIdPrefix.replace(/\/$/u, "") + "/")))) {
+        if (!overview.experiments.some((item) => item.experimentId === experimentId))
+          throw selectionMissing(operation.kind, `Experiment ${experimentId} was not found`);
+        for (const cell of overview.cells.filter(
+          (item) =>
+            item.experimentId === experimentId &&
+            (operation.evalIdPrefix === undefined ||
+              item.evalId === operation.evalIdPrefix ||
+              item.evalId.startsWith(operation.evalIdPrefix.replace(/\/$/u, "") + "/")),
+        )) {
           for (const member of cell.members) {
             const locator = member.publication.state === "published" ? member.publication.attemptLocator : null;
-            const assertions = locator === null ? undefined : readInspectionAssertions(requireAttemptFromSource(source, operation.kind, locator));
-            input.push({ evalId: cell.evalId, column: { experimentId, attemptOrdinal: member.attemptOrdinal, locator, publication: member.publication, verdict: member.verdict, score: member.score },
-              assertions: assertions?.state === "available" ? { state: "available", entries: assertions.value.entries } : { state: assertions?.state ?? "not-recorded" } });
+            const assertions =
+              locator === null
+                ? undefined
+                : readInspectionAssertions(requireAttemptFromSource(source, operation.kind, locator));
+            input.push({
+              evalId: cell.evalId,
+              column: {
+                experimentId,
+                attemptOrdinal: member.attemptOrdinal,
+                locator,
+                publication: member.publication,
+                verdict: member.verdict,
+                score: member.score,
+              },
+              assertions:
+                assertions?.state === "available"
+                  ? { state: "available", entries: assertions.value.entries }
+                  : { state: assertions?.state ?? "not-recorded" },
+            });
           }
         }
       }
-      return { ...resultMetadata(source, operation.kind, selected, [], [], locators(selected)), matrix: projectAssertionMatrix(experimentIds, input) };
+      return {
+        ...resultMetadata(source, operation.kind, selected, [], [], locators(selected)),
+        matrix: projectAssertionMatrix(experimentIds, input),
+      };
     }
     case "experiment.get": {
       const matching = loadSelectedInspectionRuns(source, source.findExperimentRunIds(operation.experimentId));
       const selected = loadReferencedOrigins(source, matching);
       const overview = selectInspectionOverview(matching, selected);
-      const experiment = overview.experiments.find(({ experimentId }) =>
-        experimentId === operation.experimentId);
+      const experiment = overview.experiments.find(({ experimentId }) => experimentId === operation.experimentId);
       if (experiment === undefined) {
-        throw selectionMissing(
-          operation.kind,
-          `Experiment ${operation.experimentId} was not found`,
-        );
+        throw selectionMissing(operation.kind, `Experiment ${operation.experimentId} was not found`);
       }
-      const experimentCells = Object.freeze(overview.cells.filter(({ experimentId }) => experimentId === operation.experimentId));
+      const experimentCells = Object.freeze(
+        overview.cells.filter(({ experimentId }) => experimentId === operation.experimentId),
+      );
       const usageAttempts = new Map<string, ResolvedInspectionAttempt>();
       let unresolvedAttemptCount = 0;
       let plannedAttemptCount = 0;
       let recordedAttemptCount = 0;
-      const origins = new Map<string, { readonly origin: LoadedInspectionRun; readonly attempts: ReadonlyMap<string, LoadedInspectionRun["attempts"][number]> }>(selected.map((origin) => [origin.run.runId, {
-        origin, attempts: new Map(origin.attempts.map((attempt) => [attempt.attemptId, attempt])),
-      }]));
+      const origins = new Map<
+        string,
+        {
+          readonly origin: LoadedInspectionRun;
+          readonly attempts: ReadonlyMap<string, LoadedInspectionRun["attempts"][number]>;
+        }
+      >(
+        selected.map((origin) => [
+          origin.run.runId,
+          {
+            origin,
+            attempts: new Map(origin.attempts.map((attempt) => [attempt.attemptId, attempt])),
+          },
+        ]),
+      );
       for (const cell of experimentCells) {
         for (const member of cell.members) {
           plannedAttemptCount++;
-          if (member.publication.state !== "published") { unresolvedAttemptCount++; continue; }
+          if (member.publication.state !== "published") {
+            unresolvedAttemptCount++;
+            continue;
+          }
           const identity = member.publication;
           const indexed = origins.get(identity.originRunId);
           const origin = indexed?.origin;
           const attempt = indexed?.attempts.get(identity.attemptId);
-          if (origin === undefined || attempt === undefined) { unresolvedAttemptCount++; continue; }
-          const resolved: ResolvedInspectionAttempt = Object.freeze({ origin, attempt,
-            locator: encodeAttemptLocator(attempt.attemptId), targets: Object.freeze([]) });
+          if (origin === undefined || attempt === undefined) {
+            unresolvedAttemptCount++;
+            continue;
+          }
+          const resolved: ResolvedInspectionAttempt = Object.freeze({
+            origin,
+            attempt,
+            locator: encodeAttemptLocator(attempt.attemptId),
+            targets: Object.freeze([]),
+          });
           recordedAttemptCount++;
           usageAttempts.set(`${resolved.attempt.originRunId}\u0000${resolved.attempt.attemptId}`, resolved);
         }
       }
-      const orderedUsageAttempts = [...usageAttempts.values()].sort((left, right) =>
-        left.attempt.originRunId.localeCompare(right.attempt.originRunId) || left.locator.localeCompare(right.locator));
+      const orderedUsageAttempts = [...usageAttempts.values()].sort(
+        (left, right) =>
+          left.attempt.originRunId.localeCompare(right.attempt.originRunId) ||
+          left.locator.localeCompare(right.locator),
+      );
       const metadata = resultMetadata(source, operation.kind, selected, [], [], locators(selected));
-      const allAttempts = Object.freeze(orderedUsageAttempts.map((resolved) => {
-        const { state, configuredModels, modelGroups, judgeUsage, totalCosts, totals } = projectAttemptUsage(traceAttachments(resolved));
-        return Object.freeze({
-          locator: resolved.locator,
-          originRunId: resolved.attempt.originRunId,
-          usage: Object.freeze({ state, configuredModels, modelGroups, judgeUsage: summarizeJudgeUsage(judgeUsage), totalCosts, totals }),
-        });
-      }));
+      const allAttempts = Object.freeze(
+        orderedUsageAttempts.map((resolved) => {
+          const { state, configuredModels, modelGroups, judgeUsage, totalCosts, totals } = projectAttemptUsage(
+            traceAttachments(resolved),
+          );
+          return Object.freeze({
+            locator: resolved.locator,
+            originRunId: resolved.attempt.originRunId,
+            usage: Object.freeze({
+              state,
+              configuredModels,
+              modelGroups,
+              judgeUsage: summarizeJudgeUsage(judgeUsage),
+              totalCosts,
+              totals,
+            }),
+          });
+        }),
+      );
       const costSummary = Object.freeze({
         scope: "latest-recorded-attempts" as const,
-        totalCosts: combineTotalUsageCosts(allAttempts.map(({ usage }) => usage.totalCosts), unresolvedAttemptCount > 0),
-        coverage: Object.freeze({ plannedAttemptCount, recordedAttemptCount,
+        totalCosts: combineTotalUsageCosts(
+          allAttempts.map(({ usage }) => usage.totalCosts),
+          unresolvedAttemptCount > 0,
+        ),
+        coverage: Object.freeze({
+          plannedAttemptCount,
+          recordedAttemptCount,
           originAttemptCount: allAttempts.length,
           completeAttemptCount: allAttempts.filter(({ usage }) => usage.totalCosts.state === "complete").length,
           partialAttemptCount: allAttempts.filter(({ usage }) => usage.totalCosts.state === "partial").length,
           unavailableAttemptCount: allAttempts.filter(({ usage }) => usage.totalCosts.state === "unavailable").length,
-          missingAttemptCount: unresolvedAttemptCount }),
+          missingAttemptCount: unresolvedAttemptCount,
+        }),
       });
       let attempts = Object.freeze(allAttempts.slice(0, 64));
       const notes = aggregateAttemptNotes(orderedUsageAttempts);
-      const experimentResult = () => Object.freeze({
-        experiment, cells: experimentCells, costSummary,
-        notes,
-        modelUsage: Object.freeze({
-          attempts, totalAttemptCount: orderedUsageAttempts.length,
-          omittedAttemptCount: orderedUsageAttempts.length - attempts.length,
-          unresolvedAttemptCount,
-        }),
-      });
-      while (utf8ByteLength(JSON.stringify({ ...metadata, experiment: experimentResult() })) > INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT &&
-        attempts.length > 0) {
+      const experimentResult = () =>
+        Object.freeze({
+          experiment,
+          cells: experimentCells,
+          costSummary,
+          notes,
+          modelUsage: Object.freeze({
+            attempts,
+            totalAttemptCount: orderedUsageAttempts.length,
+            omittedAttemptCount: orderedUsageAttempts.length - attempts.length,
+            unresolvedAttemptCount,
+          }),
+        });
+      while (
+        utf8ByteLength(JSON.stringify({ ...metadata, experiment: experimentResult() })) >
+          INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT &&
+        attempts.length > 0
+      ) {
         attempts = Object.freeze(attempts.slice(0, -1));
       }
-      return requireInspectionResultBudget(operation.kind, Object.freeze({
-        ...metadata,
-        experiment: decodeRequiredResult(
-          operation.kind,
-          InspectionExperimentResultSchema,
-          experimentResult(),
-        ),
-      }));
+      return requireInspectionResultBudget(
+        operation.kind,
+        Object.freeze({
+          ...metadata,
+          experiment: decodeRequiredResult(operation.kind, InspectionExperimentResultSchema, experimentResult()),
+        }),
+      );
     }
-    case "run.list": return runsListDocument(source, operation);
+    case "run.list":
+      return runsListDocument(source, operation);
     case "run.get": {
       const run = requireRunResource(source, operation.kind, operation.runId);
       const supporting = supportingRunFacts(source, run);
@@ -334,11 +407,7 @@ function selectOperation(
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       return Object.freeze({
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        attempt: decodeRequiredResult(
-          operation.kind,
-          InspectionAttemptResultSchema,
-          attemptDetail(resolved),
-        ),
+        attempt: decodeRequiredResult(operation.kind, InspectionAttemptResultSchema, attemptDetail(resolved)),
       });
     }
     case "attempt.assertion.detail": {
@@ -352,10 +421,7 @@ function selectOperation(
         operation.projection,
       );
       if (assertion === undefined) {
-        throw selectionMissing(
-          operation.kind,
-          `Assertion ${operation.entryId} was not found`,
-        );
+        throw selectionMissing(operation.kind, `Assertion ${operation.entryId} was not found`);
       }
       return Object.freeze({
         ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
@@ -364,10 +430,19 @@ function selectOperation(
     }
     case "attempt.assertion.image": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const image = projectAttemptAssertionImage(source, readInspectionAssertions(resolved), operation.entryId, operation.imageId,
-        operation.offset ?? 0, operation.limit ?? 256 * 1024);
+      const image = projectAttemptAssertionImage(
+        source,
+        readInspectionAssertions(resolved),
+        operation.entryId,
+        operation.imageId,
+        operation.offset ?? 0,
+        operation.limit ?? 256 * 1024,
+      );
       if (image === undefined) throw selectionMissing(operation.kind, `Assertion ${operation.entryId} was not found`);
-      return Object.freeze({ ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]), image });
+      return Object.freeze({
+        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        image,
+      });
     }
     case "attempt.trace": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
@@ -399,44 +474,47 @@ function selectOperation(
     }
     case "attempt.trace.detail": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const assertionContent = operation.selector.kind === "execution-evidence"
-        ? projectAssertionContentDetail(resolved.origin.source, readInspectionAssertions(resolved), operation.selector) : undefined;
-      let detail = assertionContent ?? (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
-        ? projectExecutionTraceDetail(resolved, operation.selector)
-        : projectAttemptTraceDetail(
-            resolved.origin.source,
-            traceAttachments(resolved),
-            operation.selector,
-          ));
-      if (detail === undefined && operation.selector.kind === "execution-event" && operation.selector.eventId.startsWith("turn_")) detail = projectTraceTurnDetail(traceAttachments(resolved).agentTurns, operation.selector.eventId);
+      const assertionContent =
+        operation.selector.kind === "execution-evidence"
+          ? projectAssertionContentDetail(
+              resolved.origin.source,
+              readInspectionAssertions(resolved),
+              operation.selector,
+            )
+          : undefined;
+      let detail =
+        assertionContent ??
+        (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
+          ? projectExecutionTraceDetail(resolved, operation.selector)
+          : projectAttemptTraceDetail(resolved.origin.source, traceAttachments(resolved), operation.selector));
+      if (
+        detail === undefined &&
+        operation.selector.kind === "execution-event" &&
+        operation.selector.eventId.startsWith("turn_")
+      )
+        detail = projectTraceTurnDetail(traceAttachments(resolved).agentTurns, operation.selector.eventId);
       if (detail === undefined && operation.selector.kind === "execution-event") {
-        type ItemSelector = Extract<
-          Parameters<typeof projectAttemptTraceDetail>[2],
-          { readonly kind: "item" }
-        >;
-        detail = projectAttemptTraceDetail(
-          resolved.origin.source,
-          traceAttachments(resolved),
-          { kind: "item", itemId: operation.selector.eventId as ItemSelector["itemId"] },
-        );
+        type ItemSelector = Extract<Parameters<typeof projectAttemptTraceDetail>[2], { readonly kind: "item" }>;
+        detail = projectAttemptTraceDetail(resolved.origin.source, traceAttachments(resolved), {
+          kind: "item",
+          itemId: operation.selector.eventId as ItemSelector["itemId"],
+        });
       }
-      if (detail === undefined && (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence")) {
-        detail = projectDiagnosticDetail(traceAttachments(resolved).runnerDiagnostics,
-          operation.selector.kind === "execution-event" ? operation.selector.eventId : operation.selector.evidenceId);
+      if (
+        detail === undefined &&
+        (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence")
+      ) {
+        detail = projectDiagnosticDetail(
+          traceAttachments(resolved).runnerDiagnostics,
+          operation.selector.kind === "execution-event" ? operation.selector.eventId : operation.selector.evidenceId,
+        );
       }
       if (detail === undefined) {
-        throw selectionMissing(
-          operation.kind,
-          "Trace detail identity was not found",
-        );
+        throw selectionMissing(operation.kind, "Trace detail identity was not found");
       }
       return Object.freeze({
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        detail: decodeRequiredResult(
-          operation.kind,
-          InspectionTraceDetailResultSchema,
-          detail,
-        ),
+        detail: decodeRequiredResult(operation.kind, InspectionTraceDetailResultSchema, detail),
       });
     }
     case "attempt.timing": {
@@ -452,35 +530,51 @@ function selectOperation(
     }
     case "attempt.reprice": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      return requireInspectionResultBudget(operation.kind, Object.freeze({
-        ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        repricing: decodeRequiredResult(operation.kind, InspectionRepricingResultSchema,
-          projectAttemptRepricing(traceAttachments(resolved), operation.pricing)),
-      }));
+      return requireInspectionResultBudget(
+        operation.kind,
+        Object.freeze({
+          ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+          repricing: decodeRequiredResult(
+            operation.kind,
+            InspectionRepricingResultSchema,
+            projectAttemptRepricing(traceAttachments(resolved), operation.pricing),
+          ),
+        }),
+      );
     }
     case "attempt.usage": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       const metadata = resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]);
       let usage = projectAttemptUsage(traceAttachments(resolved));
-      while (utf8ByteLength(JSON.stringify({ ...metadata, usage })) > INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT &&
-        (usage.judgeUsage.state === "complete" || usage.judgeUsage.state === "partial") && usage.judgeUsage.calls.length > 0) {
-        usage = Object.freeze({ ...usage,
-          judgeUsage: takeJudgeUsagePreview(usage.judgeUsage, usage.judgeUsage.calls.length - 1) });
+      while (
+        utf8ByteLength(JSON.stringify({ ...metadata, usage })) > INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT &&
+        (usage.judgeUsage.state === "complete" || usage.judgeUsage.state === "partial") &&
+        usage.judgeUsage.calls.length > 0
+      ) {
+        usage = Object.freeze({
+          ...usage,
+          judgeUsage: takeJudgeUsagePreview(usage.judgeUsage, usage.judgeUsage.calls.length - 1),
+        });
       }
-      return requireInspectionResultBudget(operation.kind, Object.freeze({
-        ...metadata,
-        usage: decodeRequiredResult(
-          operation.kind,
-          InspectionAttemptUsageResultSchema,
-          usage,
-        ),
-      }));
+      return requireInspectionResultBudget(
+        operation.kind,
+        Object.freeze({
+          ...metadata,
+          usage: decodeRequiredResult(operation.kind, InspectionAttemptUsageResultSchema, usage),
+        }),
+      );
     }
     case "attempt.diff": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const diff = projectAttemptDiff(attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family),
-        operation.changeId === undefined ? undefined : { source, changeId: operation.changeId });
-      if (operation.changeId !== undefined && (diff.state === "complete" || diff.state === "partial") && diff.detail === undefined) {
+      const diff = projectAttemptDiff(
+        attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family),
+        operation.changeId === undefined ? undefined : { source, changeId: operation.changeId },
+      );
+      if (
+        operation.changeId !== undefined &&
+        (diff.state === "complete" || diff.state === "partial") &&
+        diff.detail === undefined
+      ) {
         throw selectionMissing(operation.kind, "Selected file change does not exist");
       }
       return Object.freeze({
@@ -510,9 +604,12 @@ function selectOperation(
         ...(operation.offset === undefined ? {} : { offset: operation.offset }),
         ...(operation.limit === undefined ? {} : { limit: operation.limit }),
       });
-      if (Result.isFailure(projected)) throw new InspectionOperationError({
-        code: projected.failure.code, operation: operation.kind, reason: projected.failure.reason,
-      });
+      if (Result.isFailure(projected))
+        throw new InspectionOperationError({
+          code: projected.failure.code,
+          operation: operation.kind,
+          reason: projected.failure.reason,
+        });
       return Object.freeze({
         ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
         artifact: boundedJson(projected.success),
@@ -522,50 +619,69 @@ function selectOperation(
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
       const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.artifacts.attempt.family);
       const projected = attachment === undefined ? undefined : projectArtifactsListing(attachment);
-      if (projected !== undefined && Result.isFailure(projected)) throw new InspectionOperationError({
-        code: "inspection-record-integrity-failure", operation: operation.kind,
-        reason: projected.failure.reason, identity: { runId: resolved.attempt.originRunId },
-      });
+      if (projected !== undefined && Result.isFailure(projected))
+        throw new InspectionOperationError({
+          code: "inspection-record-integrity-failure",
+          operation: operation.kind,
+          reason: projected.failure.reason,
+          identity: { runId: resolved.attempt.originRunId },
+        });
       const value = projected?.success;
       const offset = operation.offset ?? 0;
       const limit = operation.limit ?? 128;
       const total = value?.artifacts.length ?? 0;
-      if (!Number.isSafeInteger(offset) || offset < 0 || offset > total ||
-        !Number.isSafeInteger(limit) || limit < 1 || limit > 128) throw new InspectionOperationError({
-        code: "inspection-request-invalid", operation: operation.kind,
-        reason: "Artifact listing requires an offset within the collection and a limit from 1 to 128.",
-      });
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        offset > total ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 128
+      )
+        throw new InspectionOperationError({
+          code: "inspection-request-invalid",
+          operation: operation.kind,
+          reason: "Artifact listing requires an offset within the collection and a limit from 1 to 128.",
+        });
       const metadata = baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]);
-      if (attachment === undefined || value === undefined) return Object.freeze({
-        ...metadata, artifacts: Object.freeze({ state: "not-recorded" as const }),
-      });
+      if (attachment === undefined || value === undefined)
+        return Object.freeze({
+          ...metadata,
+          artifacts: Object.freeze({ state: "not-recorded" as const }),
+        });
       let items = value.artifacts.slice(offset, offset + limit);
-      const page = () => Object.freeze({
-        state: "available" as const,
-        value: Object.freeze({ collection: value.collection, artifacts: items }),
-        collection: Object.freeze({
-          state: offset + items.length < total ? "bounded-page" as const : "complete-page" as const,
-          items,
-          hasMore: offset + items.length < total,
-          nextOffset: offset + items.length < total ? offset + items.length : null,
-          total,
-        }),
-        contents: attachment.physical.contents
-          .slice(0, ATTACHMENT_CONTENT_METADATA_LIMIT)
-          .map(({ logicalHandle, byteLength, digest }) => Object.freeze({ logicalHandle, byteLength, digest })),
-        contentsTruncated: attachment.physical.contents.length > ATTACHMENT_CONTENT_METADATA_LIMIT,
-      });
+      const page = () =>
+        Object.freeze({
+          state: "available" as const,
+          value: Object.freeze({ collection: value.collection, artifacts: items }),
+          collection: Object.freeze({
+            state: offset + items.length < total ? ("bounded-page" as const) : ("complete-page" as const),
+            items,
+            hasMore: offset + items.length < total,
+            nextOffset: offset + items.length < total ? offset + items.length : null,
+            total,
+          }),
+          contents: attachment.physical.contents
+            .slice(0, ATTACHMENT_CONTENT_METADATA_LIMIT)
+            .map(({ logicalHandle, byteLength, digest }) => Object.freeze({ logicalHandle, byteLength, digest })),
+          contentsTruncated: attachment.physical.contents.length > ATTACHMENT_CONTENT_METADATA_LIMIT,
+        });
       let artifacts = page();
       // Both public arrays share the page; long labels also consume the fixed JSON budget twice.
-      while (items.length > 0 && (utf8ByteLength(JSON.stringify(items)) > 128 * 1024 ||
-        utf8ByteLength(JSON.stringify(artifacts)) > INSPECTION_RESULT_BYTE_LIMIT)) {
+      while (
+        items.length > 0 &&
+        (utf8ByteLength(JSON.stringify(items)) > 128 * 1024 ||
+          utf8ByteLength(JSON.stringify(artifacts)) > INSPECTION_RESULT_BYTE_LIMIT)
+      ) {
         items = items.slice(0, -1);
         artifacts = page();
       }
-      if (items.length === 0 && offset < total) throw new InspectionOperationError({
-        code: "inspection-result-invalid", operation: operation.kind,
-        reason: "Artifact metadata cannot fit in the Inspection result byte limit.",
-      });
+      if (items.length === 0 && offset < total)
+        throw new InspectionOperationError({
+          code: "inspection-result-invalid",
+          operation: operation.kind,
+          reason: "Artifact metadata cannot fit in the Inspection result byte limit.",
+        });
       return Object.freeze({ ...metadata, artifacts: boundedJson(artifacts) });
     }
     case "runs.compare": {
@@ -605,11 +721,9 @@ function runSummaryPage(source: InspectionFactSource, continuation: string | und
   const cutoff = source.cutoff();
   let page: RunResourcePage;
   try {
-    if (binding !== undefined && binding.cutoffIdentity !== cutoff.identity) throw new Error("Publication cutoff changed");
-    page = source.readRunResourcePage(
-      binding?.afterRunId ?? "",
-      RUN_LIST_PAGE_SIZE,
-    );
+    if (binding !== undefined && binding.cutoffIdentity !== cutoff.identity)
+      throw new Error("Publication cutoff changed");
+    page = source.readRunResourcePage(binding?.afterRunId ?? "", RUN_LIST_PAGE_SIZE);
   } catch (cause) {
     throw operationFailure(
       "run.list",
@@ -619,19 +733,22 @@ function runSummaryPage(source: InspectionFactSource, continuation: string | und
   }
   return Object.freeze({
     cutoff,
-    items: Object.freeze(page.runs.map((run): RunSummary => Object.freeze({
-      runId: run.runId,
-      invocationId: run.invocationId,
-      experimentId: run.experimentId,
-      state: run.state,
-      startedAt: run.startedAt,
-      ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
-      coverage: Object.freeze({ expected: run.expected, published: run.published, missing: run.missing }),
-    }))),
+    items: Object.freeze(
+      page.runs.map(
+        (run): RunSummary =>
+          Object.freeze({
+            runId: run.runId,
+            invocationId: run.invocationId,
+            experimentId: run.experimentId,
+            state: run.state,
+            startedAt: run.startedAt,
+            ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
+            coverage: Object.freeze({ expected: run.expected, published: run.published, missing: run.missing }),
+          }),
+      ),
+    ),
     truncated: page.nextAfterRunId !== null,
-    continuation: page.nextAfterRunId === null
-      ? undefined
-      : encodeContinuation(page.nextAfterRunId, cutoff.identity),
+    continuation: page.nextAfterRunId === null ? undefined : encodeContinuation(page.nextAfterRunId, cutoff.identity),
   });
 }
 
@@ -642,7 +759,6 @@ function runsListBase(
   truncated: boolean,
 ) {
   return Object.freeze({
-
     outcome: "success" as const,
     operation: "run.list" as const,
     source: sourceProvenance(source, cutoff),
@@ -663,11 +779,7 @@ function runsListBase(
 }
 
 function encodeContinuation(afterRunId: string, cutoffIdentity: string): string {
-  return encodeBase64UrlUtf8(JSON.stringify([
-    "run.list",
-    cutoffIdentity,
-    afterRunId,
-  ]));
+  return encodeBase64UrlUtf8(JSON.stringify(["run.list", cutoffIdentity, afterRunId]));
 }
 
 function decodeContinuation(token: string): {
@@ -676,26 +788,35 @@ function decodeContinuation(token: string): {
 } {
   try {
     const decoded = JSON.parse(decodeBase64UrlUtf8(token)) as unknown;
-    if (!Array.isArray(decoded) || decoded.length !== 3 || decoded[0] !== "run.list" ||
-      typeof decoded[1] !== "string" || typeof decoded[2] !== "string") {
+    if (
+      !Array.isArray(decoded) ||
+      decoded.length !== 3 ||
+      decoded[0] !== "run.list" ||
+      typeof decoded[1] !== "string" ||
+      typeof decoded[2] !== "string"
+    ) {
       throw new Error("continuation binding changed");
     }
     return Object.freeze({ cutoffIdentity: decoded[1], afterRunId: decoded[2] });
   } catch (cause) {
-    throw operationFailure(
-      "run.list",
-      "Continuation is invalid or its sealed cutoff changed; restart run.list",
-      cause,
-    );
+    throw operationFailure("run.list", "Continuation is invalid or its sealed cutoff changed; restart run.list", cause);
   }
 }
 
-function loadForOperation(source: InspectionFactSource, operation: InspectionOperation): {
+function loadForOperation(
+  source: InspectionFactSource,
+  operation: InspectionOperation,
+): {
   readonly selected: readonly LoadedInspectionRun[];
   readonly requestedRunIds: readonly string[];
   readonly missingRunIds: readonly string[];
 } {
-  if (operation.kind === "project.get") return { selected: requireCurrentProject(source, operation.experimentIds).runs, requestedRunIds: [], missingRunIds: [] };
+  if (operation.kind === "project.get")
+    return {
+      selected: requireCurrentProject(source, operation.experimentIds).runs,
+      requestedRunIds: [],
+      missingRunIds: [],
+    };
   if (operation.kind === "overview.get") {
     const requested = operation.runIds ?? [];
     if (requested.length === 0) return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
@@ -708,12 +829,27 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
   }
   if (operation.kind === "experiments.assertions") {
     const ids = [...new Set(operation.experimentIds)].sort();
-    for (const id of ids) if (source.findExperimentRunIds(id).length === 0) throw selectionMissing(operation.kind, `Experiment ${id} was not found`);
-    return { selected: loadReferencedOrigins(source, loadSelectedInspectionRuns(source, [...new Set(ids.flatMap((id) => source.findExperimentRunIds(id)))])), requestedRunIds: [], missingRunIds: [] };
+    for (const id of ids)
+      if (source.findExperimentRunIds(id).length === 0)
+        throw selectionMissing(operation.kind, `Experiment ${id} was not found`);
+    return {
+      selected: loadReferencedOrigins(
+        source,
+        loadSelectedInspectionRuns(source, [...new Set(ids.flatMap((id) => source.findExperimentRunIds(id)))]),
+      ),
+      requestedRunIds: [],
+      missingRunIds: [],
+    };
   }
   if (operation.kind === "experiment.get") {
-    return { selected: loadReferencedOrigins(source, loadSelectedInspectionRuns(source,
-      source.findExperimentRunIds(operation.experimentId))), requestedRunIds: [], missingRunIds: [] };
+    return {
+      selected: loadReferencedOrigins(
+        source,
+        loadSelectedInspectionRuns(source, source.findExperimentRunIds(operation.experimentId)),
+      ),
+      requestedRunIds: [],
+      missingRunIds: [],
+    };
   }
   if (operation.kind === "run.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
   if (operation.kind === "runs.compare") {
@@ -744,18 +880,20 @@ function loadForOperation(source: InspectionFactSource, operation: InspectionOpe
 
 function requireCurrentProject(source: InspectionFactSource, experimentIds?: readonly string[]): FrozenProjectInput {
   const input = projectInput(source);
-  if (source.kind !== "project-record" || input === undefined || input.cutoffIdentity !== source.cutoff().identity) throw new InspectionOperationError({
-    code: "current-target-unavailable", operation: "project.get",
-    reason: "Current project declarations are unavailable. Use overview.get or an exact run.get to read recorded results.",
-  });
-  for (const id of experimentIds ?? []) if (!input.target.experiments.some((experiment) => experiment.experimentId === id)) throw selectionMissing("project.get", `Current Experiment ${JSON.stringify(id)} was not found.`);
+  if (source.kind !== "project-record" || input === undefined || input.cutoffIdentity !== source.cutoff().identity)
+    throw new InspectionOperationError({
+      code: "current-target-unavailable",
+      operation: "project.get",
+      reason:
+        "Current project declarations are unavailable. Use overview.get or an exact run.get to read recorded results.",
+    });
+  for (const id of experimentIds ?? [])
+    if (!input.target.experiments.some((experiment) => experiment.experimentId === id))
+      throw selectionMissing("project.get", `Current Experiment ${JSON.stringify(id)} was not found.`);
   return input;
 }
 
-function loadRuns(
-  source: InspectionFactSource,
-  runIds: readonly string[],
-): readonly LoadedInspectionRun[] {
+function loadRuns(source: InspectionFactSource, runIds: readonly string[]): readonly LoadedInspectionRun[] {
   const uniqueRunIds = [...new Set(runIds)];
   if (uniqueRunIds.length > RUN_SELECTION_LIMIT) {
     throw new Error(`Inspection selection exceeds the fixed ${RUN_SELECTION_LIMIT}-Run limit`);
@@ -775,24 +913,29 @@ function requireRunResource(
 
 function inspectionRunValue(run: LoadedInspectionRunResource): InspectionRunValue {
   const { resource, published } = run;
-  return decodeRequiredResult("run.get", InspectionRunValueSchema, Object.freeze({
-    runId: resource.runId,
-    experimentId: resource.experimentId,
-    state: resource.state,
-    ...(resource.published > 0 && published !== undefined
-      ? { context: published.run.context }
-      : {}),
-    startedAt: Date.parse(resource.startedAt),
-    ...(resource.completedAt === undefined
-      ? {}
-      : { completedAt: Date.parse(resource.completedAt) }),
-    plannedAttempts: (published?.run.expectedSlots ?? resource.slots.map((slot) => Object.freeze({
-      slotId: slot.slotId,
-      evalId: slot.evalId,
-      attemptOrdinal: slot.attemptOrdinal,
-      executionIdentityDigest: slot.executionIdentityDigest,
-    }))).map(projectPlannedAttempt),
-  }));
+  return decodeRequiredResult(
+    "run.get",
+    InspectionRunValueSchema,
+    Object.freeze({
+      runId: resource.runId,
+      experimentId: resource.experimentId,
+      state: resource.state,
+      ...(resource.published > 0 && published !== undefined ? { context: published.run.context } : {}),
+      startedAt: Date.parse(resource.startedAt),
+      ...(resource.completedAt === undefined ? {} : { completedAt: Date.parse(resource.completedAt) }),
+      plannedAttempts: (
+        published?.run.expectedSlots ??
+        resource.slots.map((slot) =>
+          Object.freeze({
+            slotId: slot.slotId,
+            evalId: slot.evalId,
+            attemptOrdinal: slot.attemptOrdinal,
+            executionIdentityDigest: slot.executionIdentityDigest,
+          }),
+        )
+      ).map(projectPlannedAttempt),
+    }),
+  );
 }
 
 function supportingRunFacts(
@@ -808,14 +951,7 @@ function runResourceMetadata<Kind extends InspectionOperationId>(
   run: LoadedInspectionRunResource,
   supporting: readonly LoadedInspectionRun[],
 ): InspectionResultMetadata<Kind> {
-  const metadata = resultMetadata(
-    source,
-    operation,
-    supporting,
-    [run.resource.runId],
-    [],
-    locators(supporting),
-  );
+  const metadata = resultMetadata(source, operation, supporting, [run.resource.runId], [], locators(supporting));
   return Object.freeze({
     ...metadata,
     selection: Object.freeze({
@@ -831,14 +967,7 @@ function runResourceBaseDocument(
   run: LoadedInspectionRunResource,
   supporting: readonly LoadedInspectionRun[],
 ) {
-  const document = baseDocument(
-    source,
-    operation,
-    supporting,
-    [run.resource.runId],
-    [],
-    locators(supporting),
-  );
+  const document = baseDocument(source, operation, supporting, [run.resource.runId], [], locators(supporting));
   return Object.freeze({
     ...document,
     selection: Object.freeze({
@@ -853,32 +982,32 @@ function loadReferencedOrigins(
   targets: readonly LoadedInspectionRun[],
 ): readonly LoadedInspectionRun[] {
   const targetIds = new Set(targets.map(({ run }) => run.runId));
-  const originIds = [...new Set(targets.flatMap(({ members }) => members.flatMap(({ attempt }) =>
-    attempt === null || targetIds.has(attempt.originRunId) ? [] : [attempt.originRunId])))];
+  const originIds = [
+    ...new Set(
+      targets.flatMap(({ members }) =>
+        members.flatMap(({ attempt }) =>
+          attempt === null || targetIds.has(attempt.originRunId) ? [] : [attempt.originRunId],
+        ),
+      ),
+    ),
+  ];
   return uniqueRuns([...targets, ...loadRuns(source, originIds)]);
 }
 
-function loadSummaryFacts(
-  source: InspectionFactSource,
-  target: LoadedInspectionRun,
-): readonly LoadedInspectionRun[] {
+function loadSummaryFacts(source: InspectionFactSource, target: LoadedInspectionRun): readonly LoadedInspectionRun[] {
   return loadReferencedOrigins(source, [target]);
 }
 
-
-function selectRuns(
-  all: readonly LoadedInspectionRun[],
-  runIds: readonly string[],
-) {
-  const byId = new Map<string, LoadedInspectionRun>(
-    all.map((run) => [run.run.runId, run]),
-  );
+function selectRuns(all: readonly LoadedInspectionRun[], runIds: readonly string[]) {
+  const byId = new Map<string, LoadedInspectionRun>(all.map((run) => [run.run.runId, run]));
   const requested = [...new Set(runIds)];
   return Object.freeze({
-    selected: Object.freeze(requested.flatMap((runId) => {
-      const run = byId.get(runId);
-      return run === undefined ? [] : [run];
-    })),
+    selected: Object.freeze(
+      requested.flatMap((runId) => {
+        const run = byId.get(runId);
+        return run === undefined ? [] : [run];
+      }),
+    ),
     missing: Object.freeze(requested.filter((runId) => !byId.has(runId))),
   });
 }
@@ -902,23 +1031,16 @@ function requireAttemptFromSource(
 ): ResolvedInspectionAttempt {
   const resolved = resolveInspectionAttempt(source, locator);
   if (resolved === undefined) {
-    throw selectionMissing(
-      operation,
-      `Attempt ${locator} was not found or is ambiguous`,
-    );
+    throw selectionMissing(operation, `Attempt ${locator} was not found or is ambiguous`);
   }
   return resolved;
 }
 
-function attemptRuns(
-  resolved: ResolvedInspectionAttempt,
-): readonly LoadedInspectionRun[] {
+function attemptRuns(resolved: ResolvedInspectionAttempt): readonly LoadedInspectionRun[] {
   return uniqueRuns([resolved.origin, ...resolved.targets.map(({ run }) => run)]);
 }
 
-function traceAttachments(
-  resolved: ResolvedInspectionAttempt,
-): AttemptTraceAttachments {
+function traceAttachments(resolved: ResolvedInspectionAttempt): AttemptTraceAttachments {
   return Object.freeze({
     attemptCost: attemptAttachment(resolved, NiceEvalRecordAttachments.attemptCost.family),
     models: resolved.origin.run.context.execution.models,
@@ -927,19 +1049,10 @@ function traceAttachments(
     agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
     turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
     sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
-    runnerActivities: attemptAttachment(
-      resolved,
-      NiceEvalRecordAttachments.runnerActivities.attempt.family,
-    ),
-    runnerDiagnostics: attemptAttachment(
-      resolved,
-      NiceEvalRecordAttachments.runnerDiagnostics.attempt.family,
-    ),
+    runnerActivities: attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family),
+    runnerDiagnostics: attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
   });
 }
-
-
-
 
 function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptResult {
   const assertions = readInspectionAssertions(resolved);
@@ -947,31 +1060,31 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
     core: projectAttemptCore(resolved.attempt),
     locator: resolved.locator,
     originRun: projectRunCore(resolved.origin.run),
-    targets: resolved.targets.map(({ run, member }) => Object.freeze({ runId: run.run.runId, member: projectMember(member) })),
-    evidence: assertions.state === "available"
-      ? Object.freeze({
-          state: "available" as const,
-          entryCount: assertions.value.entries.length,
-          sourceSiteCount: assertions.value.sourceSites.length,
-        })
-      : Object.freeze({
-          state: assertions.state,
-          entryCount: 0 as const,
-        }),
+    targets: resolved.targets.map(({ run, member }) =>
+      Object.freeze({ runId: run.run.runId, member: projectMember(member) }),
+    ),
+    evidence:
+      assertions.state === "available"
+        ? Object.freeze({
+            state: "available" as const,
+            entryCount: assertions.value.entries.length,
+            sourceSiteCount: assertions.value.sourceSites.length,
+          })
+        : Object.freeze({
+            state: assertions.state,
+            entryCount: 0 as const,
+          }),
     notes: readAttemptNotes(resolved),
-    diagnostics: projectAttemptDiagnostics(attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family)),
+    diagnostics: projectAttemptDiagnostics(
+      attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
+    ),
     stoppedAt: stoppedAssertion(assertions),
     assertions: assertionIndex(assertions),
     sections: attemptSections(resolved),
     verdict: attemptVerdict(resolved, assertions),
-    score: assertionScore(
-      assertions.state === "available" ? assertions.value.entries : [],
-    ),
+    score: assertionScore(assertions.state === "available" ? assertions.value.entries : []),
     evidenceCoverage: attemptEvidenceCoverage(resolved),
-    limitations: attemptLimitations(
-      resolved,
-      assertions.state === "available" ? assertions.value.entries : [],
-    ),
+    limitations: attemptLimitations(resolved, assertions.state === "available" ? assertions.value.entries : []),
   });
 }
 
@@ -986,21 +1099,23 @@ function assertionIndex(
   }
   return Object.freeze({
     state: "available",
-    entries: Object.freeze(assertions.value.entries.map((entry) => Object.freeze({
-      entryId: entry.entryId,
-      display: Object.freeze({
-        ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
-        groupPath: Object.freeze([...entry.display.groupPath]),
-      }),
-    }))),
+    entries: Object.freeze(
+      assertions.value.entries.map((entry) =>
+        Object.freeze({
+          entryId: entry.entryId,
+          display: Object.freeze({
+            ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
+            groupPath: Object.freeze([...entry.display.groupPath]),
+          }),
+        }),
+      ),
+    ),
   });
 }
 
 type AttemptSectionState = "available" | "not-recorded" | "partial" | "unavailable";
 
-function attemptSections(
-  resolved: ResolvedInspectionAttempt,
-): InspectionAttemptResult["sections"] {
+function attemptSections(resolved: ResolvedInspectionAttempt): InspectionAttemptResult["sections"] {
   const assertions = attachmentSectionState(
     attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family),
     NiceEvalCurrentRecordAttachments.assertions.revision,
@@ -1039,17 +1154,22 @@ function attemptSections(
   );
   return Object.freeze({
     assertions: Object.freeze({ state: assertions }),
-    trace: Object.freeze({ state: combineSectionStates([executionTraces, conversation, commands, timing, diagnostics]) }),
+    trace: Object.freeze({
+      state: combineSectionStates([executionTraces, conversation, commands, timing, diagnostics]),
+    }),
     sources: Object.freeze({ state: sources }),
     diff: Object.freeze({ state: diff }),
     artifacts: Object.freeze({ state: artifacts }),
     timing: Object.freeze({ state: timing }),
-    usage: Object.freeze({ state: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family) === undefined
-      ? conversation
-      : attachmentSectionState(
-          attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
-          NiceEvalCurrentRecordAttachments.adapterUsage.revision,
-        ) }),
+    usage: Object.freeze({
+      state:
+        attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family) === undefined
+          ? conversation
+          : attachmentSectionState(
+              attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
+              NiceEvalCurrentRecordAttachments.adapterUsage.revision,
+            ),
+    }),
     conversation: Object.freeze({ state: conversation }),
     commands: Object.freeze({ state: commands }),
     diagnostics: Object.freeze({ state: diagnostics }),
@@ -1088,7 +1208,9 @@ function runDetail(
   const selected = selectedResource.published;
   const diagnosticRead = readCurrentAttachment(
     NiceEvalCurrentRecordAttachments.runnerDiagnostics.run,
-    selected === undefined ? undefined : runAttachment(selected, NiceEvalRecordAttachments.runnerDiagnostics.run.family),
+    selected === undefined
+      ? undefined
+      : runAttachment(selected, NiceEvalRecordAttachments.runnerDiagnostics.run.family),
   );
   if (diagnosticRead.state === "invalid") {
     throw new InspectionOperationError({
@@ -1097,184 +1219,208 @@ function runDetail(
       reason: diagnosticRead.issues.join(", "),
     });
   }
-  const diagnostics = diagnosticRead.state === "available"
-    ? diagnosticRead.value.segments.map((diagnostic) => Object.freeze({
-        diagnosticId: diagnostic.diagnosticId,
-        code: diagnostic.code,
-        phase: projectLifecyclePhase(diagnostic.phase),
-        summary: diagnostic.summary,
-        affectedPlannedAttemptIds: diagnostic.affectedSlotIds ?? Object.freeze([]),
-      }))
-    : Object.freeze([]);
+  const diagnostics =
+    diagnosticRead.state === "available"
+      ? diagnosticRead.value.segments.map((diagnostic) =>
+          Object.freeze({
+            diagnosticId: diagnostic.diagnosticId,
+            code: diagnostic.code,
+            phase: projectLifecyclePhase(diagnostic.phase),
+            summary: diagnostic.summary,
+            affectedPlannedAttemptIds: diagnostic.affectedSlotIds ?? Object.freeze([]),
+          }),
+        )
+      : Object.freeze([]);
   const value = inspectionRunValue(selectedResource);
   const publications = new Map(selectedResource.resource.slots.map((slot) => [slot.slotId, slot.publication]));
   const bindings = new Map(selectedResource.members.map((member) => [member.slotId, member]));
-  const unavailableUsage = (): Member["usage"] => Object.freeze({
-    state: "unavailable",
-    summary: null,
-    totals: unavailableInspectionUsageTotals(),
-    limitations: Object.freeze([]),
-    limitationsTruncated: false,
-    omittedLimitationCount: 0,
-  });
-  const unavailableCoverage = (): Member["coverage"] => Object.freeze({
-    state: "unavailable",
-    facts: Object.freeze([]),
-    limitations: Object.freeze([]),
-  });
-  const projected = value.plannedAttempts.map((slot): {
-    readonly member: Member;
-    readonly usage?: Usage;
-  } => {
-    const binding = publications.get(slot.plannedAttemptId);
-    if (binding === undefined) throw new Error(`Run ${value.runId} has no Planned attempt ${slot.plannedAttemptId}`);
-    const publication: Member["publication"] = binding.state === "published"
-      ? Object.freeze({
-          state: "published", action: binding.action, attemptId: binding.attemptId,
-          attemptLocator: binding.attemptLocator, originRunId: binding.originRunId, originPlannedAttemptId: binding.originSlotId,
-        })
-      : binding.state === "absent"
-        ? Object.freeze({ state: "absent", reason: binding.reason })
-        : Object.freeze({ state: "pending" });
-    const targetMember = bindings.get(slot.plannedAttemptId);
-    const resolved = targetMember?.attempt == null
-      ? undefined
-      : resolveInspectionResourceMemberAttempt(selectedResource, targetMember);
-    const metrics = projectPlannedAttemptMetrics(
-      value.runId,
-      { ...slot, slotId: slot.plannedAttemptId },
-      targetMember,
-      resolved,
-    );
-    if (targetMember === undefined) {
-      if (publication.state !== "pending" && publication.state !== "absent") {
-        throw new Error(`Terminal Run ${value.runId} has no binding or absence for Planned attempt ${slot.plannedAttemptId}`);
-      }
-      const limitation = Object.freeze({
-        kind: "member-not-observed" as const,
-        state: publication.state === "absent"
-          ? publication.reason === "interrupted-before-publication" ? "interrupted" as const : "not-dispatched" as const
-          : "pending" as const,
-      });
-      return Object.freeze({
-        member: Object.freeze({
-          ...slot,
-          publication,
-          ...metrics,
-          state: limitation.state,
-          relation: null,
-          outcome: null,
-          coverage: unavailableCoverage(),
-          usage: unavailableUsage(),
-          limitations: Object.freeze([limitation]),
-        }),
-      });
-    }
-    if (targetMember.attempt === null) {
-      const limitation = Object.freeze({
-        kind: "member-not-observed" as const,
-        state: targetMember.action,
-      });
-      return Object.freeze({
-        member: Object.freeze({
-          ...slot,
-          publication,
-          ...metrics,
-          state: targetMember.action,
-          relation: null,
-          outcome: null,
-          coverage: unavailableCoverage(),
-          usage: unavailableUsage(),
-          limitations: Object.freeze([limitation]),
-        }),
-      });
-    }
-    if (resolved === undefined) {
-      const limitation = Object.freeze({
-        kind: "attempt-unresolved" as const,
-        originRunId: targetMember.attempt.originRunId,
-        attemptId: targetMember.attempt.attemptId,
-      });
-      return Object.freeze({
-        member: Object.freeze({
-          ...slot,
-          publication,
-          ...metrics,
-          state: targetMember.action,
-          relation: null,
-          outcome: null,
-          coverage: unavailableCoverage(),
-          usage: unavailableUsage(),
-          limitations: Object.freeze([limitation]),
-        }),
-      });
-    }
-    const assertions = readInspectionAssertions(resolved);
-    const coverageFacts = attemptEvidenceCoverage(resolved);
-    const coverageLimitations = attemptLimitations(
-      resolved,
-      assertions.state === "available" ? assertions.value.entries : [],
-    );
-    const coverageState: Member["coverage"]["state"] = assertions.state === "available"
-      ? coverageLimitations.length === 0 && coverageFacts.every(({ status }) => status === "complete")
-        ? "complete"
-        : "partial"
-      : coverageFacts.length > 0
-        ? "partial"
-        : assertions.state === "not-recorded"
-          ? "not-recorded"
-          : "invalid";
-    const usage = projectAttemptUsage(traceAttachments(resolved));
-    const memberLimitations: Member["limitations"] = Object.freeze([
-      ...coverageLimitations.map((detail) => Object.freeze({ kind: "coverage" as const, detail })),
-      ...usage.limitations.map((detail) => Object.freeze({ kind: "usage" as const, detail })),
-    ]);
-    return Object.freeze({
-      usage,
-      member: Object.freeze({
-        ...slot,
-        publication,
-        ...metrics,
-        state: targetMember.action,
-        relation: resolved.attempt.originRunId === value.runId ? "origin" : "reference",
-        outcome: resolved.attempt.outcome,
-        coverage: Object.freeze({
-          state: coverageState,
-          facts: coverageFacts,
-          limitations: coverageLimitations,
-        }),
-        usage: Object.freeze({
-          state: usage.state,
-          summary: usage.state === "complete" || usage.state === "partial"
-            ? Object.freeze({
-                turnCount: usage.turns.length + usage.omittedTurnCount,
-                observationCount: usage.observations.length + usage.omittedObservationCount,
-              })
-            : null,
-          totals: usage.totals,
-          limitations: usage.limitations,
-          limitationsTruncated: usage.limitationsTruncated,
-          omittedLimitationCount: usage.omittedLimitationCount,
-        }),
-        limitations: memberLimitations,
-      }),
+  const unavailableUsage = (): Member["usage"] =>
+    Object.freeze({
+      state: "unavailable",
+      summary: null,
+      totals: unavailableInspectionUsageTotals(),
+      limitations: Object.freeze([]),
+      limitationsTruncated: false,
+      omittedLimitationCount: 0,
     });
-  });
+  const unavailableCoverage = (): Member["coverage"] =>
+    Object.freeze({
+      state: "unavailable",
+      facts: Object.freeze([]),
+      limitations: Object.freeze([]),
+    });
+  const projected = value.plannedAttempts.map(
+    (
+      slot,
+    ): {
+      readonly member: Member;
+      readonly usage?: Usage;
+    } => {
+      const binding = publications.get(slot.plannedAttemptId);
+      if (binding === undefined) throw new Error(`Run ${value.runId} has no Planned attempt ${slot.plannedAttemptId}`);
+      const publication: Member["publication"] =
+        binding.state === "published"
+          ? Object.freeze({
+              state: "published",
+              action: binding.action,
+              attemptId: binding.attemptId,
+              attemptLocator: binding.attemptLocator,
+              originRunId: binding.originRunId,
+              originPlannedAttemptId: binding.originSlotId,
+            })
+          : binding.state === "absent"
+            ? Object.freeze({ state: "absent", reason: binding.reason })
+            : Object.freeze({ state: "pending" });
+      const targetMember = bindings.get(slot.plannedAttemptId);
+      const resolved =
+        targetMember?.attempt == null
+          ? undefined
+          : resolveInspectionResourceMemberAttempt(selectedResource, targetMember);
+      const metrics = projectPlannedAttemptMetrics(
+        value.runId,
+        { ...slot, slotId: slot.plannedAttemptId },
+        targetMember,
+        resolved,
+      );
+      if (targetMember === undefined) {
+        if (publication.state !== "pending" && publication.state !== "absent") {
+          throw new Error(
+            `Terminal Run ${value.runId} has no binding or absence for Planned attempt ${slot.plannedAttemptId}`,
+          );
+        }
+        const limitation = Object.freeze({
+          kind: "member-not-observed" as const,
+          state:
+            publication.state === "absent"
+              ? publication.reason === "interrupted-before-publication"
+                ? ("interrupted" as const)
+                : ("not-dispatched" as const)
+              : ("pending" as const),
+        });
+        return Object.freeze({
+          member: Object.freeze({
+            ...slot,
+            publication,
+            ...metrics,
+            state: limitation.state,
+            relation: null,
+            outcome: null,
+            coverage: unavailableCoverage(),
+            usage: unavailableUsage(),
+            limitations: Object.freeze([limitation]),
+          }),
+        });
+      }
+      if (targetMember.attempt === null) {
+        const limitation = Object.freeze({
+          kind: "member-not-observed" as const,
+          state: targetMember.action,
+        });
+        return Object.freeze({
+          member: Object.freeze({
+            ...slot,
+            publication,
+            ...metrics,
+            state: targetMember.action,
+            relation: null,
+            outcome: null,
+            coverage: unavailableCoverage(),
+            usage: unavailableUsage(),
+            limitations: Object.freeze([limitation]),
+          }),
+        });
+      }
+      if (resolved === undefined) {
+        const limitation = Object.freeze({
+          kind: "attempt-unresolved" as const,
+          originRunId: targetMember.attempt.originRunId,
+          attemptId: targetMember.attempt.attemptId,
+        });
+        return Object.freeze({
+          member: Object.freeze({
+            ...slot,
+            publication,
+            ...metrics,
+            state: targetMember.action,
+            relation: null,
+            outcome: null,
+            coverage: unavailableCoverage(),
+            usage: unavailableUsage(),
+            limitations: Object.freeze([limitation]),
+          }),
+        });
+      }
+      const assertions = readInspectionAssertions(resolved);
+      const coverageFacts = attemptEvidenceCoverage(resolved);
+      const coverageLimitations = attemptLimitations(
+        resolved,
+        assertions.state === "available" ? assertions.value.entries : [],
+      );
+      const coverageState: Member["coverage"]["state"] =
+        assertions.state === "available"
+          ? coverageLimitations.length === 0 && coverageFacts.every(({ status }) => status === "complete")
+            ? "complete"
+            : "partial"
+          : coverageFacts.length > 0
+            ? "partial"
+            : assertions.state === "not-recorded"
+              ? "not-recorded"
+              : "invalid";
+      const usage = projectAttemptUsage(traceAttachments(resolved));
+      const memberLimitations: Member["limitations"] = Object.freeze([
+        ...coverageLimitations.map((detail) => Object.freeze({ kind: "coverage" as const, detail })),
+        ...usage.limitations.map((detail) => Object.freeze({ kind: "usage" as const, detail })),
+      ]);
+      return Object.freeze({
+        usage,
+        member: Object.freeze({
+          ...slot,
+          publication,
+          ...metrics,
+          state: targetMember.action,
+          relation: resolved.attempt.originRunId === value.runId ? "origin" : "reference",
+          outcome: resolved.attempt.outcome,
+          coverage: Object.freeze({
+            state: coverageState,
+            facts: coverageFacts,
+            limitations: coverageLimitations,
+          }),
+          usage: Object.freeze({
+            state: usage.state,
+            summary:
+              usage.state === "complete" || usage.state === "partial"
+                ? Object.freeze({
+                    turnCount: usage.turns.length + usage.omittedTurnCount,
+                    observationCount: usage.observations.length + usage.omittedObservationCount,
+                  })
+                : null,
+            totals: usage.totals,
+            limitations: usage.limitations,
+            limitationsTruncated: usage.limitationsTruncated,
+            omittedLimitationCount: usage.omittedLimitationCount,
+          }),
+          limitations: memberLimitations,
+        }),
+      });
+    },
+  );
   const members = Object.freeze(projected.map(({ member }) => member));
-  const locatedLimitations = Object.freeze(members.flatMap((member) =>
-    member.limitations.map((limitation) => Object.freeze({
-      plannedAttemptId: member.plannedAttemptId,
-      locator: member.publication.state === "published" ? member.publication.attemptLocator : null,
-      limitation,
-    }))));
-  const usageResults = projected.flatMap(({ usage }) => usage === undefined ? [] : [usage]);
+  const locatedLimitations = Object.freeze(
+    members.flatMap((member) =>
+      member.limitations.map((limitation) =>
+        Object.freeze({
+          plannedAttemptId: member.plannedAttemptId,
+          locator: member.publication.state === "published" ? member.publication.attemptLocator : null,
+          limitation,
+        }),
+      ),
+    ),
+  );
+  const usageResults = projected.flatMap(({ usage }) => (usage === undefined ? [] : [usage]));
   const observed = members.filter(({ relation }) => relation !== null).length;
-  const incompleteUsage = observed !== members.length ||
-    usageResults.some(({ state }) => state !== "complete");
-  const coverageLimitations = Object.freeze(locatedLimitations.filter(({ limitation }) =>
-    limitation.kind !== "usage"));
-  const usageLimitations = Object.freeze(locatedLimitations.filter(({ limitation }) =>
-    limitation.kind !== "coverage"));
+  const incompleteUsage = observed !== members.length || usageResults.some(({ state }) => state !== "complete");
+  const coverageLimitations = Object.freeze(locatedLimitations.filter(({ limitation }) => limitation.kind !== "usage"));
+  const usageLimitations = Object.freeze(locatedLimitations.filter(({ limitation }) => limitation.kind !== "coverage"));
   return Object.freeze({
     value,
     members: selectedResource.members.map(projectMember),
@@ -1298,8 +1444,7 @@ function runDetail(
       state: aggregateRunOverviewState(members.map(({ usage }) => usage.state)),
       expectedMemberCount: members.length,
       observedMemberCount: observed,
-      recordedAttemptCount: usageResults.filter(({ state }) =>
-        state === "complete" || state === "partial").length,
+      recordedAttemptCount: usageResults.filter(({ state }) => state === "complete" || state === "partial").length,
       totals: combineInspectionUsageTotals(usageResults, incompleteUsage),
       limitations: usageLimitations,
     }),
@@ -1317,15 +1462,21 @@ function aggregateRunOverviewState(
   return "partial";
 }
 
-function assertionScore(entries: readonly {
-  readonly contribution: { readonly state: string; readonly points?: number; readonly earned?: number };
-}[]): InspectionAttemptResult["score"] {
+function assertionScore(
+  entries: readonly {
+    readonly contribution: { readonly state: string; readonly points?: number; readonly earned?: number };
+  }[],
+): InspectionAttemptResult["score"] {
   let possible = 0;
   let earned = 0;
   let scored = 0;
   let unavailable = 0;
   for (const { contribution } of entries) {
-    if (contribution.state === "earned" && typeof contribution.points === "number" && typeof contribution.earned === "number") {
+    if (
+      contribution.state === "earned" &&
+      typeof contribution.points === "number" &&
+      typeof contribution.earned === "number"
+    ) {
       possible += contribution.points;
       earned += contribution.earned;
       scored += 1;
@@ -1341,13 +1492,8 @@ function assertionScore(entries: readonly {
       : Object.freeze({ state: "complete" as const, earned, possible });
 }
 
-function attemptEvidenceCoverage(
-  resolved: ResolvedInspectionAttempt,
-): InspectionAttemptResult["evidenceCoverage"] {
-  const entries = new Map<
-    string,
-    InspectionAttemptResult["evidenceCoverage"][number]
-  >();
+function attemptEvidenceCoverage(resolved: ResolvedInspectionAttempt): InspectionAttemptResult["evidenceCoverage"] {
+  const entries = new Map<string, InspectionAttemptResult["evidenceCoverage"][number]>();
   const visit = (value: InspectionJson): void => {
     if (Array.isArray(value)) {
       value.forEach(visit);
@@ -1359,16 +1505,18 @@ function attemptEvidenceCoverage(
     if (typeof coverage === "object" && coverage !== null && !Array.isArray(coverage)) {
       for (const [channel, raw] of Object.entries(coverage)) {
         if (!isAttemptCoverageChannel(channel)) continue;
-        const detail = typeof raw === "object" && raw !== null && !Array.isArray(raw)
-          ? raw as Readonly<Record<string, InspectionJson>>
-          : undefined;
-        const status = typeof raw === "string"
-          ? raw
-          : typeof detail?.status === "string"
-            ? detail.status
-            : typeof detail?.state === "string"
-              ? detail.state
-              : undefined;
+        const detail =
+          typeof raw === "object" && raw !== null && !Array.isArray(raw)
+            ? (raw as Readonly<Record<string, InspectionJson>>)
+            : undefined;
+        const status =
+          typeof raw === "string"
+            ? raw
+            : typeof detail?.status === "string"
+              ? detail.status
+              : typeof detail?.state === "string"
+                ? detail.state
+                : undefined;
         if (status === undefined) continue;
         if (status !== "complete" && status !== "partial" && status !== "unavailable") continue;
         const reason = typeof detail?.reason === "string" ? detail.reason : undefined;
@@ -1383,7 +1531,11 @@ function attemptEvidenceCoverage(
     Object.values(record).forEach(visit);
   };
   for (const attachment of resolved.origin.attachments) {
-    if (attachment.physical.ownerKind !== "attempt" || attachment.physical.ownerAttemptId !== resolved.attempt.attemptId) continue;
+    if (
+      attachment.physical.ownerKind !== "attempt" ||
+      attachment.physical.ownerAttemptId !== resolved.attempt.attemptId
+    )
+      continue;
     visit(attachment.value);
   }
   return Object.freeze([...entries.values()]);
@@ -1402,30 +1554,37 @@ function attemptLimitations(
   for (const entry of entries) {
     const coverage = entry.materials.coverage;
     switch (coverage.state) {
-      case "complete": break;
+      case "complete":
+        break;
       case "partial":
-        limitations.push(Object.freeze({
-          owner: "assertion-material",
-          state: coverage.state,
-          reason: coverage.reason,
-          limitations: entry.materials.limitations,
-        }));
+        limitations.push(
+          Object.freeze({
+            owner: "assertion-material",
+            state: coverage.state,
+            reason: coverage.reason,
+            limitations: entry.materials.limitations,
+          }),
+        );
         break;
       case "unavailable":
-        limitations.push(Object.freeze({
-          owner: "assertion-material",
-          state: coverage.state,
-          reason: coverage.reason,
-          limitations: entry.materials.limitations,
-        }));
+        limitations.push(
+          Object.freeze({
+            owner: "assertion-material",
+            state: coverage.state,
+            reason: coverage.reason,
+            limitations: entry.materials.limitations,
+          }),
+        );
         break;
       case "not-applicable":
-        limitations.push(Object.freeze({
-          owner: "assertion-material",
-          state: coverage.state,
-          reason: coverage.reason,
-          limitations: entry.materials.limitations,
-        }));
+        limitations.push(
+          Object.freeze({
+            owner: "assertion-material",
+            state: coverage.state,
+            reason: coverage.reason,
+            limitations: entry.materials.limitations,
+          }),
+        );
         break;
     }
   }
@@ -1442,8 +1601,14 @@ function attemptLimitations(
 function isAttemptCoverageChannel(
   value: string,
 ): value is InspectionAttemptResult["evidenceCoverage"][number]["channel"] {
-  return value === "events" || value === "actions" || value === "messages" ||
-    value === "usage" || value === "status" || value === "data";
+  return (
+    value === "events" ||
+    value === "actions" ||
+    value === "messages" ||
+    value === "usage" ||
+    value === "status" ||
+    value === "data"
+  );
 }
 
 function comparisonDocument(
@@ -1469,34 +1634,46 @@ function comparisonDocument(
     ...(operation.mode === "exact" && !exact ? [closeJson({ code: "comparison-member-set-mismatch" })] : []),
   ];
   return Object.freeze({
-    ...baseDocument(source, operation.kind, [...left.selected, ...right.selected], [...operation.leftRunIds, ...operation.rightRunIds], [...left.missing, ...right.missing], [
-      ...leftMembers.map(({ locator }) => locator), ...rightMembers.map(({ locator }) => locator),
-    ], issues),
-    comparison: boundedJson(Object.freeze({
-      mode: operation.mode,
-      left: Object.freeze({ runs: left.selected.map(({ run }) => projectRunCore(run)), members: leftMembers }),
-      right: Object.freeze({ runs: right.selected.map(({ run }) => projectRunCore(run)), members: rightMembers }),
-      exactMemberSet: exact,
-      pairs: operation.mode === "side-by-side" ? Object.freeze([]) : Object.freeze(pairs),
-    })),
+    ...baseDocument(
+      source,
+      operation.kind,
+      [...left.selected, ...right.selected],
+      [...operation.leftRunIds, ...operation.rightRunIds],
+      [...left.missing, ...right.missing],
+      [...leftMembers.map(({ locator }) => locator), ...rightMembers.map(({ locator }) => locator)],
+      issues,
+    ),
+    comparison: boundedJson(
+      Object.freeze({
+        mode: operation.mode,
+        left: Object.freeze({ runs: left.selected.map(({ run }) => projectRunCore(run)), members: leftMembers }),
+        right: Object.freeze({ runs: right.selected.map(({ run }) => projectRunCore(run)), members: rightMembers }),
+        exactMemberSet: exact,
+        pairs: operation.mode === "side-by-side" ? Object.freeze([]) : Object.freeze(pairs),
+      }),
+    ),
   });
 }
 
-function comparisonMembers(
-  all: readonly LoadedInspectionRun[],
-  runs: readonly LoadedInspectionRun[],
-) {
-  return runs.flatMap((run) => run.members.flatMap((member) => {
-    if (member.attempt === null) return [];
-    const slot = run.run.expectedSlots.find(({ slotId }) => slotId === member.slotId);
-    const resolved = resolveInspectionMemberAttempt(all, run, member);
-    if (slot === undefined || resolved === undefined) return [];
-    return [Object.freeze({
-      key: `${run.run.experimentId}\u0000${slot.evalId}\u0000${slot.attemptOrdinal}`,
-      runId: run.run.runId, plannedAttemptId: slot.slotId, evalId: slot.evalId, attemptOrdinal: slot.attemptOrdinal,
-      locator: resolved.locator,
-    })];
-  }));
+function comparisonMembers(all: readonly LoadedInspectionRun[], runs: readonly LoadedInspectionRun[]) {
+  return runs.flatMap((run) =>
+    run.members.flatMap((member) => {
+      if (member.attempt === null) return [];
+      const slot = run.run.expectedSlots.find(({ slotId }) => slotId === member.slotId);
+      const resolved = resolveInspectionMemberAttempt(all, run, member);
+      if (slot === undefined || resolved === undefined) return [];
+      return [
+        Object.freeze({
+          key: `${run.run.experimentId}\u0000${slot.evalId}\u0000${slot.attemptOrdinal}`,
+          runId: run.run.runId,
+          plannedAttemptId: slot.slotId,
+          evalId: slot.evalId,
+          attemptOrdinal: slot.attemptOrdinal,
+          locator: resolved.locator,
+        }),
+      ];
+    }),
+  );
 }
 
 function baseDocument(
@@ -1511,7 +1688,6 @@ function baseDocument(
   const selected = uniqueRuns(selectedInput);
   const cutoff = source.cutoff();
   return Object.freeze({
-
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1540,7 +1716,6 @@ function resultMetadata<Kind extends InspectionOperationId>(
   const selected = uniqueRuns(selectedInput);
   const cutoff = source.cutoff();
   return Object.freeze({
-
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1579,21 +1754,29 @@ function decodeRequiredResult<S extends Schema.ConstraintDecoder<unknown>>(
 }
 
 function requireInspectionResultBudget<Value>(operation: InspectionOperationId, value: Value): Value {
-  const byteLimit = operation === "experiment.get" ? INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT : operation === "attempt.usage" || operation === "attempt.reprice" ? INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT : INSPECTION_RESULT_BYTE_LIMIT;
+  const byteLimit =
+    operation === "experiment.get"
+      ? INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT
+      : operation === "attempt.usage" || operation === "attempt.reprice"
+        ? INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT
+        : INSPECTION_RESULT_BYTE_LIMIT;
   if (utf8ByteLength(JSON.stringify(value)) > byteLimit) {
-    throw new InspectionOperationError({ code: "evidence-budget-exceeded", operation,
-      reason: "Inspection result cannot fit in the result byte limit." });
+    throw new InspectionOperationError({
+      code: "evidence-budget-exceeded",
+      operation,
+      reason: "Inspection result cannot fit in the result byte limit.",
+    });
   }
   return value;
 }
 
 function locators(runs: readonly LoadedInspectionRun[]): readonly string[] {
-  return Object.freeze(runs.flatMap(({ attempts }) => attempts.map(({ attemptId }) => encodeAttemptLocator(attemptId))));
+  return Object.freeze(
+    runs.flatMap(({ attempts }) => attempts.map(({ attemptId }) => encodeAttemptLocator(attemptId))),
+  );
 }
 
-function uniqueRuns(
-  runs: readonly LoadedInspectionRun[],
-): readonly LoadedInspectionRun[] {
+function uniqueRuns(runs: readonly LoadedInspectionRun[]): readonly LoadedInspectionRun[] {
   return Object.freeze([...new Map(runs.map((run) => [run.run.runId, run] as const)).values()]);
 }
 
@@ -1607,11 +1790,13 @@ function boundedJson(value: unknown, byteLimit = INSPECTION_RESULT_BYTE_LIMIT): 
   const closed = closeJson(value);
   const byteLength = utf8ByteLength(JSON.stringify(closed));
   if (byteLength <= byteLimit) return closed;
-  return closeJson(Object.freeze({
-    state: "omitted",
-    reason: "inspection-result-byte-limit",
-    byteLimit,
-  }));
+  return closeJson(
+    Object.freeze({
+      state: "omitted",
+      reason: "inspection-result-byte-limit",
+      byteLimit,
+    }),
+  );
 }
 
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -1639,12 +1824,17 @@ function evaluateInspectionOperation(
     }
     const value = decoded.value;
     if (value.outcome === "failure" || value.operation !== operation) {
-      throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: "expected matching operation document" });
+      throw new InspectionOperationError({
+        code: "inspection-result-invalid",
+        operation,
+        reason: "expected matching operation document",
+      });
     }
     return value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
-    if (cause instanceof InspectionUnsupportedFormatError) throw new InspectionOperationError({ code: "unsupported-format", operation, reason: cause.message });
+    if (cause instanceof InspectionUnsupportedFormatError)
+      throw new InspectionOperationError({ code: "unsupported-format", operation, reason: cause.message });
     if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
@@ -1668,7 +1858,8 @@ function evaluateInspectionSuccess<Kind extends InspectionOperationId>(
     return narrowed.value;
   } catch (cause) {
     if (cause instanceof InspectionOperationError) throw cause;
-    if (cause instanceof InspectionUnsupportedFormatError) throw new InspectionOperationError({ code: "unsupported-format", operation, reason: cause.message });
+    if (cause instanceof InspectionUnsupportedFormatError)
+      throw new InspectionOperationError({ code: "unsupported-format", operation, reason: cause.message });
     if (cause instanceof InspectionExecutionTraceError) throw executionTraceFailure(operation, cause);
     if (cause instanceof RecordIntegrityFailure) throw integrityFailure(operation, cause);
     if (isInspectionResultError(cause)) throw cause;
@@ -1691,16 +1882,15 @@ function executionTraceFailure(
 function isInspectionResultError(
   value: unknown,
 ): value is { readonly code: "inspection-result-invalid"; readonly reason: string } {
-  return typeof value === "object" && value !== null &&
+  return (
+    typeof value === "object" &&
+    value !== null &&
     Reflect.get(value, "code") === "inspection-result-invalid" &&
-    typeof Reflect.get(value, "reason") === "string";
+    typeof Reflect.get(value, "reason") === "string"
+  );
 }
 
-function selectionMissing(
-  operation: InspectionOperationId,
-  reason: string,
-  cause?: unknown,
-): InspectionOperationError {
+function selectionMissing(operation: InspectionOperationId, reason: string, cause?: unknown): InspectionOperationError {
   return new InspectionOperationError({
     code: "inspection-selection-missing",
     operation,
@@ -1709,11 +1899,7 @@ function selectionMissing(
   });
 }
 
-function operationFailure(
-  operation: InspectionOperationId,
-  reason: string,
-  cause?: unknown,
-): InspectionOperationError {
+function operationFailure(operation: InspectionOperationId, reason: string, cause?: unknown): InspectionOperationError {
   return new InspectionOperationError({
     code: "inspection-operation-failed",
     operation,
@@ -1722,10 +1908,7 @@ function operationFailure(
   });
 }
 
-function integrityFailure(
-  operation: InspectionOperationId,
-  cause: RecordIntegrityFailure,
-): InspectionOperationError {
+function integrityFailure(operation: InspectionOperationId, cause: RecordIntegrityFailure): InspectionOperationError {
   return new InspectionOperationError({
     code: "inspection-record-integrity-failure",
     operation,

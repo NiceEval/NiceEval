@@ -28,8 +28,13 @@ function checkDeadline(deadlineEpochMs: number, phase: string): void {
 }
 
 function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
-    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
 }
 
 async function sidecarStat(path: string): Promise<BigIntStats | undefined> {
@@ -108,7 +113,9 @@ export async function captureSingleFileRecord(
   const watcher = watch(dirname(sourcePath), { persistent: false }, (_event, filename) => {
     if (filename !== null && watchedNames.has(filename.toString())) sidecarChanged = true;
   });
-  watcher.on("error", (cause) => { watchFailure = cause; });
+  watcher.on("error", (cause) => {
+    watchFailure = cause;
+  });
 
   let source: Awaited<ReturnType<typeof open>> | undefined;
   let generation: Awaited<ReturnType<typeof open>> | undefined;
@@ -191,31 +198,48 @@ function text(value: SQLOutputValue | undefined, field: string): string {
 /** Exact portable/idle admission applied only to the private current copy. */
 export function validatePortableRecordDatabase(connection: RecordDatabase, deadlineEpochMs: number): number {
   checkDeadline(deadlineEpochMs, "portable validation");
-  const state = connection.db.prepare(`SELECT barrier_state,portable_generation,portable_revision,storage_generation
-    FROM ne19_record_metadata WHERE singleton=1`).get() as Record<string, SQLOutputValue> | undefined;
-  const active = connection.db.prepare(`SELECT
+  const state = connection.db
+    .prepare(`SELECT barrier_state,portable_generation,portable_revision,storage_generation
+    FROM ne19_record_metadata WHERE singleton=1`)
+    .get() as Record<string, SQLOutputValue> | undefined;
+  const active = connection.db
+    .prepare(`SELECT
     (SELECT count(*) FROM ne19_run_resources WHERE terminal_state IS NULL)+
     (SELECT count(*) FROM ne19_runs WHERE status!='sealed')+
     (SELECT count(*) FROM ne19_attempts WHERE publication_state!='published')+
-    (SELECT count(*) FROM ne19_coordination_tickets) AS count`).get() as Record<string, SQLOutputValue>;
-  const invocationWork = connection.db.prepare(`SELECT
+    (SELECT count(*) FROM ne19_coordination_tickets) AS count`)
+    .get() as Record<string, SQLOutputValue>;
+  const invocationWork = connection.db
+    .prepare(`SELECT
     (SELECT count(*) FROM ne19_invocation_sessions WHERE state IN ('active','recovering'))+
     (SELECT count(*) FROM ne19_invocation_session_queued_attempts)+
-    (SELECT count(*) FROM ne19_case_locks) AS count`).get() as Record<string, SQLOutputValue>;
-  const registryWork = connection.db.prepare(`SELECT
+    (SELECT count(*) FROM ne19_case_locks) AS count`)
+    .get() as Record<string, SQLOutputValue>;
+  const registryWork = connection.db
+    .prepare(`SELECT
     (SELECT count(*) FROM ne19_teardown_obligations)+
     (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key))+
-    (SELECT count(*) FROM ne19_kept_sandbox_operation_leases) AS count`).get() as Record<string, SQLOutputValue>;
-  const coordination = connection.db.prepare("SELECT writer_ticket_id,barrier_id FROM ne19_coordination_state WHERE singleton=1")
+    (SELECT count(*) FROM ne19_kept_sandbox_operation_leases) AS count`)
+    .get() as Record<string, SQLOutputValue>;
+  const coordination = connection.db
+    .prepare("SELECT writer_ticket_id,barrier_id FROM ne19_coordination_state WHERE singleton=1")
     .get() as Record<string, SQLOutputValue> | undefined;
-  const clock = connection.db.prepare("SELECT revision FROM ne19_run_publication_clock WHERE singleton=1")
-    .get() as Record<string, SQLOutputValue> | undefined;
-  if (state === undefined || text(state.barrier_state, "barrier_state") !== "portable" ||
+  const clock = connection.db.prepare("SELECT revision FROM ne19_run_publication_clock WHERE singleton=1").get() as
+    | Record<string, SQLOutputValue>
+    | undefined;
+  if (
+    state === undefined ||
+    text(state.barrier_state, "barrier_state") !== "portable" ||
     text(state.portable_generation, "portable_generation") !== text(state.storage_generation, "storage_generation") ||
-    clock === undefined || integer(state.portable_revision, "portable_revision") !== integer(clock.revision, "publication_revision") ||
-    integer(active.count, "portable_work") !== 0 || integer(invocationWork.count, "portable_invocation_work") !== 0 ||
-    integer(registryWork.count, "portable_registry_work") !== 0 || coordination === undefined ||
-    coordination.writer_ticket_id !== null || coordination.barrier_id !== null) {
+    clock === undefined ||
+    integer(state.portable_revision, "portable_revision") !== integer(clock.revision, "publication_revision") ||
+    integer(active.count, "portable_work") !== 0 ||
+    integer(invocationWork.count, "portable_invocation_work") !== 0 ||
+    integer(registryWork.count, "portable_registry_work") !== 0 ||
+    coordination === undefined ||
+    coordination.writer_ticket_id !== null ||
+    coordination.barrier_id !== null
+  ) {
     fail("Private generation does not prove a portable idle ProjectDatabase");
   }
   return verifyAllSealedRuns(connection, true, deadlineEpochMs);

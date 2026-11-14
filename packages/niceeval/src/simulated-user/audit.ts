@@ -13,7 +13,6 @@ export const SimulatedUserGenerationSchema = Schema.Struct({
 });
 export type SimulatedUserGeneration = Schema.Schema.Type<typeof SimulatedUserGenerationSchema>;
 export const SimulatedUserActivitySchema = Schema.Struct({
-
   id: Schema.String,
   sessionId: Schema.String,
   sourceTurnId: Schema.String,

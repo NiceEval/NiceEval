@@ -76,60 +76,71 @@ function compactEntries<Content>(
       case "value":
         return value;
       case "text":
-        return value.text.length <= 512
-          ? value
-          : Object.freeze({ kind: "text", text: `${value.text.slice(0, 511)}…` });
+        return value.text.length <= 512 ? value : Object.freeze({ kind: "text", text: `${value.text.slice(0, 511)}…` });
       case "list":
-        return Object.freeze({ kind: "list", items: Object.freeze(value.items.map((item) => compactFact(item, decision))) });
+        return Object.freeze({
+          kind: "list",
+          items: Object.freeze(value.items.map((item) => compactFact(item, decision))),
+        });
       case "fields":
         return Object.freeze({
           kind: "fields",
-          fields: Object.freeze(value.fields.flatMap((field) => {
-            if (
-              (mode === "root" || mode === "minimal") &&
-              (field.label === "message" || field.label === "expected" || field.label === "received")
-            ) return [];
-            if (field.label === "children" && field.value.kind === "list") {
-              const decisiveState = decision.result === "matched"
-                ? "matched"
-                : decision.result === "unavailable"
-                  ? "unavailable"
-                  : decision.result === "mismatched"
+          fields: Object.freeze(
+            value.fields.flatMap((field) => {
+              if (
+                (mode === "root" || mode === "minimal") &&
+                (field.label === "message" || field.label === "expected" || field.label === "received")
+              )
+                return [];
+              if (field.label === "children" && field.value.kind === "list") {
+                const decisiveState =
+                  decision.result === "matched"
                     ? "matched"
-                    : undefined;
-              const decisive: AssertionFactValue[] = [];
-              if (decisiveState !== undefined) {
-                for (const item of field.value.items) {
-                  if (childState(item) !== decisiveState) continue;
-                  if (decisive.length === 0) decisive.push(item);
-                  else if (decisive.length === 1) decisive.push(item);
-                  else decisive[1] = item;
+                    : decision.result === "unavailable"
+                      ? "unavailable"
+                      : decision.result === "mismatched"
+                        ? "matched"
+                        : undefined;
+                const decisive: AssertionFactValue[] = [];
+                if (decisiveState !== undefined) {
+                  for (const item of field.value.items) {
+                    if (childState(item) !== decisiveState) continue;
+                    if (decisive.length === 0) decisive.push(item);
+                    else if (decisive.length === 1) decisive.push(item);
+                    else decisive[1] = item;
+                  }
                 }
+                const representative = mode === "root" ? field.value.items.slice(0, 2) : [];
+                const retained = [...new Set([...representative, ...decisive])];
+                return [
+                  Object.freeze({
+                    label: field.label,
+                    value: Object.freeze({
+                      kind: "list" as const,
+                      items: Object.freeze(retained.map((item) => compactFact(item, decision))),
+                    }),
+                  }),
+                ];
               }
-              const representative = mode === "root" ? field.value.items.slice(0, 2) : [];
-              const retained = [...new Set([...representative, ...decisive])];
-              return [Object.freeze({
-                label: field.label,
-                value: Object.freeze({
-                  kind: "list" as const,
-                  items: Object.freeze(retained.map((item) => compactFact(item, decision))),
-                }),
-              })];
-            }
-            return [Object.freeze({ label: field.label, value: compactFact(field.value, decision) })];
-          })),
+              return [Object.freeze({ label: field.label, value: compactFact(field.value, decision) })];
+            }),
+          ),
         });
     }
   };
-  return Object.freeze(entries.map((entry) => entry.explanationRetention.state === "retained"
-    ? Object.freeze({
-        ...entry,
-        explanationRetention: Object.freeze({
-          state: "retained" as const,
-          value: compactFact(entry.explanationRetention.value, entry.decision),
-        }),
-      })
-    : entry));
+  return Object.freeze(
+    entries.map((entry) =>
+      entry.explanationRetention.state === "retained"
+        ? Object.freeze({
+            ...entry,
+            explanationRetention: Object.freeze({
+              state: "retained" as const,
+              value: compactFact(entry.explanationRetention.value, entry.decision),
+            }),
+          })
+        : entry,
+    ),
+  );
 }
 
 function invalidDocument(message: string): AssertionsProducerError {
@@ -140,13 +151,9 @@ function firstSchemaIssue(error: Schema.SchemaError): string | undefined {
   try {
     const issue = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues[0];
     if (issue === undefined) return undefined;
-    const path = issue.path === undefined || issue.path.length === 0
-      ? "document"
-      : issue.path.map(String).join(".");
+    const path = issue.path === undefined || issue.path.length === 0 ? "document" : issue.path.map(String).join(".");
     const expected = issue.message.split(", actual ", 1)[0] ?? issue.message;
-    const message = expected.length <= 512
-      ? expected
-      : `${expected.slice(0, 511)}…`;
+    const message = expected.length <= 512 ? expected : `${expected.slice(0, 511)}…`;
     return `${path}: ${message}`;
   } catch {
     return undefined;
@@ -155,18 +162,15 @@ function firstSchemaIssue(error: Schema.SchemaError): string | undefined {
 
 export interface AssertionsDocumentBuilder<Content> {
   /** Appends exactly one completed Assertion in declaration/display order. */
-  readonly append: (
-    entry: AssertionEntryInput<Content>,
-  ) => Result.Result<AssertionEntryId, AssertionsProducerError>;
+  readonly append: (entry: AssertionEntryInput<Content>) => Result.Result<AssertionEntryId, AssertionsProducerError>;
   /**
    * Checks the writer-only exact document schema once and prevents subsequent
    * appends. Repeated calls return the same sealed document without running
    * an evaluator or minting another entry ID.
    */
-  readonly seal: (input?: { readonly maximumBytes?: number }) => Result.Result<
-    AssertionsDocument<Content>,
-    AssertionsProducerError
-  >;
+  readonly seal: (input?: {
+    readonly maximumBytes?: number;
+  }) => Result.Result<AssertionsDocument<Content>, AssertionsProducerError>;
 }
 
 /**
@@ -184,17 +188,12 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
   let sealed: AssertionsDocument<Content> | undefined;
 
   const builder: AssertionsDocumentBuilder<Content> = {
-    append(
-      entry: AssertionEntryInput<Content>,
-    ): Result.Result<AssertionEntryId, AssertionsProducerError> {
+    append(entry: AssertionEntryInput<Content>): Result.Result<AssertionEntryId, AssertionsProducerError> {
       if (sealed !== undefined) {
         return Result.fail({ code: "assertions-document-sealed" });
       }
       const entryIdText = input.entryIds.next();
-      const entryId = Schema.decodeUnknownResult(
-        AssertionEntryIdSchema,
-        AssertionsExactParseOptions,
-      )(entryIdText);
+      const entryId = Schema.decodeUnknownResult(AssertionEntryIdSchema, AssertionsExactParseOptions)(entryIdText);
       if (Result.isFailure(entryId)) {
         return Result.fail({
           code: "assertion-entry-id-invalid",
@@ -219,19 +218,23 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
       }
       const maximumBytes = sealInput.maximumBytes ?? MAX_ASSERTION_DOCUMENT_BYTES;
       if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || maximumBytes > MAX_ASSERTION_DOCUMENT_BYTES) {
-        return Result.fail(invalidDocument(
-          `Assertions framing has no positive entry budget within the ${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. ` +
-          "Reduce assertion source sites or assertion count and retry.",
-        ));
+        return Result.fail(
+          invalidDocument(
+            `Assertions framing has no positive entry budget within the ${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. ` +
+              "Reduce assertion source sites or assertion count and retry.",
+          ),
+        );
       }
       let document: AssertionsDocument<Content> = Object.freeze({
         entries: Object.freeze([...entries]),
       });
       if (!isAssertionsRawDataGraph(document)) {
-        return Result.fail(invalidDocument(
-          "Assertions could not be saved because an entry contains a cyclic or non-JSON value. " +
-          "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
-        ));
+        return Result.fail(
+          invalidDocument(
+            "Assertions could not be saved because an entry contains a cyclic or non-JSON value. " +
+              "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
+          ),
+        );
       }
       let documentBytes = encodedBytes(document);
       if (documentBytes > maximumBytes) {
@@ -243,23 +246,24 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
         documentBytes = encodedBytes(document);
       }
       if (documentBytes > maximumBytes) {
-        return Result.fail(invalidDocument(
-          `Assertions could not be saved after diagnostic compaction because entry framing is ` +
-          `${documentBytes} bytes; ${maximumBytes} bytes remain after source sites within the ` +
-          `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Source and evidence material is already ` +
-          "stored as sealed content; reduce assertion count or matcher/display identity and retry.",
-        ));
+        return Result.fail(
+          invalidDocument(
+            `Assertions could not be saved after diagnostic compaction because entry framing is ` +
+              `${documentBytes} bytes; ${maximumBytes} bytes remain after source sites within the ` +
+              `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Source and evidence material is already ` +
+              "stored as sealed content; reduce assertion count or matcher/display identity and retry.",
+          ),
+        );
       }
-      const encoded = Schema.encodeUnknownResult(
-        input.documentSchema,
-        AssertionsExactParseOptions,
-      )(document);
+      const encoded = Schema.encodeUnknownResult(input.documentSchema, AssertionsExactParseOptions)(document);
       if (Result.isFailure(encoded)) {
         const issue = firstSchemaIssue(encoded.failure);
-        return Result.fail(invalidDocument(
-          `Assertions could not be saved${issue === undefined ? "" : ` because ${issue}`}. ` +
-          "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
-        ));
+        return Result.fail(
+          invalidDocument(
+            `Assertions could not be saved${issue === undefined ? "" : ` because ${issue}`}. ` +
+              "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
+          ),
+        );
       }
       sealed = document;
       return Result.succeed(document);

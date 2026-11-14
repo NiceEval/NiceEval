@@ -15,9 +15,13 @@ function linuxProcessStartOf(pid: number): string {
   const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
   const commandEnd = stat.lastIndexOf(")");
   if (commandEnd < 0) throw new Error(`Could not decode /proc/${pid}/stat.`);
-  const fieldsAfterCommand = stat.slice(commandEnd + 2).trim().split(/\s+/u);
+  const fieldsAfterCommand = stat
+    .slice(commandEnd + 2)
+    .trim()
+    .split(/\s+/u);
   const processStart = fieldsAfterCommand[19];
-  if (processStart === undefined || !/^\d+$/u.test(processStart)) throw new Error(`Could not decode process start for pid ${pid}.`);
+  if (processStart === undefined || !/^\d+$/u.test(processStart))
+    throw new Error(`Could not decode process start for pid ${pid}.`);
   return processStart;
 }
 
@@ -28,16 +32,12 @@ function linuxBootId(): string {
 }
 
 function darwinBootSessionUuid(): string {
-  return execFileSync(
-    "/usr/sbin/sysctl",
-    ["-n", "kern.bootsessionuuid"],
-    {
-      encoding: "utf8",
-      env: { LANG: "C", LC_ALL: "C", TZ: "UTC" },
-      maxBuffer: 4_096,
-      timeout: 1_000,
-    },
-  );
+  return execFileSync("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], {
+    encoding: "utf8",
+    env: { LANG: "C", LC_ALL: "C", TZ: "UTC" },
+    maxBuffer: 4_096,
+    timeout: 1_000,
+  });
 }
 
 function validatedDarwinBootId(readBootSessionUuid: () => string): string {
@@ -71,12 +71,10 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
     if (runtime.platform !== "linux" && runtime.platform !== "darwin") {
       throw new Error(`Process identity is unsupported on ${runtime.platform}.`);
     }
-    const bootId = runtime.platform === "linux"
-      ? runtime.linuxBootId()
-      : validatedDarwinBootId(runtime.darwinBootSessionUuid);
-    const processStart = runtime.platform === "linux"
-      ? runtime.linuxProcessStartOf(runtime.pid)
-      : runtime.processSessionId;
+    const bootId =
+      runtime.platform === "linux" ? runtime.linuxBootId() : validatedDarwinBootId(runtime.darwinBootSessionUuid);
+    const processStart =
+      runtime.platform === "linux" ? runtime.linuxProcessStartOf(runtime.pid) : runtime.processSessionId;
     return Object.freeze({ ownerId, host: runtime.host(), pid: runtime.pid, bootId, processStart });
   };
 

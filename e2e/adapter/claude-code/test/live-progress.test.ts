@@ -7,13 +7,9 @@ import { expect, test } from "vitest";
 const FIRST_USER_SENTINEL = "claude-live-user-one-sentinel";
 const SECOND_USER_SENTINEL = "claude-live-user-two-sentinel";
 
-function liveToolAfterUser(
-  userSentinel: string,
-  nextUserSentinel?: string,
-): RegExp {
-  const beforeNextTurn = nextUserSentinel === undefined
-    ? "[\\s\\S]*?"
-    : `(?:(?!user: [^\\n]*${nextUserSentinel})[\\s\\S])*?`;
+function liveToolAfterUser(userSentinel: string, nextUserSentinel?: string): RegExp {
+  const beforeNextTurn =
+    nextUserSentinel === undefined ? "[\\s\\S]*?" : `(?:(?!user: [^\\n]*${nextUserSentinel})[\\s\\S])*?`;
   return new RegExp(`user: [^\\n]*${userSentinel}${beforeNextTurn}tool: [^\\n]+`);
 }
 
@@ -34,40 +30,41 @@ test("Claude Code 续轮期间按同一原生 session 投影两轮 user 与原�
   await claudeE2E.case(
     "live-progress",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
-    async ({ paths }) => await withPty(
-      [
-        join(paths.projectRoot, "node_modules", ".bin", "niceeval"),
-        "exp",
-        "coding",
-        "session-resume",
-        "--rerun",
-        "all",
-      ],
-      {
-        cwd: paths.projectRoot,
-        env: { ...process.env, NICEEVAL_HOME: join(paths.projectRoot, ".niceeval-user") },
-        columns: 160,
-        rows: 40,
-        timeoutMs: 5 * 60_000,
-      },
-      async (pty) => {
-        for (const [userSentinel, nextUserSentinel, turn] of [
-          [FIRST_USER_SENTINEL, SECOND_USER_SENTINEL, "first"],
-          [SECOND_USER_SENTINEL, undefined, "second"],
-        ] as const) {
-          const progress = await pty.waitForText(liveToolAfterUser(userSentinel, nextUserSentinel), {
-            timeoutMs: 2 * 60_000,
-            whileRunning: true,
-            label: `the ${turn} Claude user followed by native tool input in the active TTY frame`,
-          });
-          expect(progress).toContain(userSentinel);
-          expect(progress).toMatch(/tool: [^\n]+/u);
-        }
+    async ({ paths }) =>
+      await withPty(
+        [
+          join(paths.projectRoot, "node_modules", ".bin", "niceeval"),
+          "exp",
+          "coding",
+          "session-resume",
+          "--rerun",
+          "all",
+        ],
+        {
+          cwd: paths.projectRoot,
+          env: { ...process.env, NICEEVAL_HOME: join(paths.projectRoot, ".niceeval-user") },
+          columns: 160,
+          rows: 40,
+          timeoutMs: 5 * 60_000,
+        },
+        async (pty) => {
+          for (const [userSentinel, nextUserSentinel, turn] of [
+            [FIRST_USER_SENTINEL, SECOND_USER_SENTINEL, "first"],
+            [SECOND_USER_SENTINEL, undefined, "second"],
+          ] as const) {
+            const progress = await pty.waitForText(liveToolAfterUser(userSentinel, nextUserSentinel), {
+              timeoutMs: 2 * 60_000,
+              whileRunning: true,
+              label: `the ${turn} Claude user followed by native tool input in the active TTY frame`,
+            });
+            expect(progress).toContain(userSentinel);
+            expect(progress).toMatch(/tool: [^\n]+/u);
+          }
 
-        const receipt = await pty.wait();
-        expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
-        expect(receipt.signal, receipt.diagnostic()).toBeNull();
-      },
-    ),
+          const receipt = await pty.wait();
+          expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+          expect(receipt.signal, receipt.diagnostic()).toBeNull();
+        },
+      ),
   );
 });

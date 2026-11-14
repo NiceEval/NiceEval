@@ -51,15 +51,12 @@ export async function runOpenAiLiveEvidence(options: {
   await e2e.case(
     options.caseName,
     {
-      artifacts: [
-        { source: ".niceeval", target: ".niceeval", optional: true },
-      ],
+      artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }],
     },
     async ({ commands: { niceeval }, paths }) => {
-      const run = await niceeval.run(
-        ["exp", options.experimentId, "--rerun", "all", "--json"],
-        { timeoutMs: 4 * 60_000 },
-      );
+      const run = await niceeval.run(["exp", options.experimentId, "--rerun", "all", "--json"], {
+        timeoutMs: 4 * 60_000,
+      });
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const evalEvents = run.expEvalEvents();
       const evalEvent = only(
@@ -84,5 +81,7 @@ export async function runOpenAiLiveEvidence(options: {
 }
 
 export async function queryOpenAiLiveEvidence(evidence: OpenAiLiveEvidence): Promise<ProcessReceipt> {
-  return await niceevalQuery.run(["show", evidence.evalEvent.locator, "execution", "--json"], { cwd: evidence.recordRoot });
+  return await niceevalQuery.run(["show", evidence.evalEvent.locator, "execution", "--json"], {
+    cwd: evidence.recordRoot,
+  });
 }

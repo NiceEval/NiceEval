@@ -90,7 +90,8 @@ export function heuristicTag(span: TraceSpan): SpanTag {
   }
 
   // 模型调用。
-  if (keys.some((k) => k.startsWith("gen_ai.request") || k.startsWith("gen_ai.response"))) return { op: OP_CHAT, kind: "model" };
+  if (keys.some((k) => k.startsWith("gen_ai.request") || k.startsWith("gen_ai.response")))
+    return { op: OP_CHAT, kind: "model" };
   if ("http.method" in a && "api.path" in a) return { op: OP_CHAT, kind: "model" };
   if (/(^|[._])(model_client|chat|completion)(\b|_|$)/.test(ln)) {
     return { op: OP_CHAT, kind: "model" };

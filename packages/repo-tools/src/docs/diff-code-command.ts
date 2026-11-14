@@ -24,17 +24,20 @@ function renderDiffCodeReceipt(receipt: CommandReceipt, json: boolean): string {
 }
 
 function makeDiffCodeCommand(deliver: TerminalDeliverySink) {
-  return Command.make("diff-code", {
-    dryRun: dryRunOption,
-    json: jsonOption,
-  }, ({ dryRun, json }) => deliverDomainResult(
-    generateDiffCode(dryRun),
-    json,
-    { success: renderDiffCodeReceipt, failure: renderDocsDomainFailure },
-    deliver,
-  )).pipe(Command.withDescription(
-    "Generate code-diff assets in a scoped staging directory, then replace atomically.",
-  ));
+  return Command.make(
+    "diff-code",
+    {
+      dryRun: dryRunOption,
+      json: jsonOption,
+    },
+    ({ dryRun, json }) =>
+      deliverDomainResult(
+        generateDiffCode(dryRun),
+        json,
+        { success: renderDiffCodeReceipt, failure: renderDocsDomainFailure },
+        deliver,
+      ),
+  ).pipe(Command.withDescription("Generate code-diff assets in a scoped staging directory, then replace atomically."));
 }
 
 export const diffCodeCommandContribution = defineDocsCommandContribution({

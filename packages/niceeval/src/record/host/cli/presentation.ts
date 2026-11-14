@@ -1,6 +1,4 @@
-import type {
-  RecordMaintenanceOperationFailure,
-} from "../types.ts";
+import type { RecordMaintenanceOperationFailure } from "../types.ts";
 
 function assertNever(value: never): never {
   throw new Error(`Unreachable Record CLI presentation value: ${String(value)}`);

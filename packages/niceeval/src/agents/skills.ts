@@ -59,12 +59,17 @@ async function installLocalSkill(
   const root = opts.projectRoot ?? process.cwd();
   const abs = resolve(root, spec.path);
   const info = await stat(abs).catch(() => undefined);
-  if (!info) throw new Error(`Local skill path "${spec.path}" does not exist (resolved to ${abs}). Paths are resolved from the project root you run niceeval in.`);
+  if (!info)
+    throw new Error(
+      `Local skill path "${spec.path}" does not exist (resolved to ${abs}). Paths are resolved from the project root you run niceeval in.`,
+    );
 
   if (info.isDirectory()) {
     const files = await readDirFiles(abs);
     if (!files.some((f) => f.path === "SKILL.md")) {
-      throw new Error(`Local skill directory "${spec.path}" has no SKILL.md. A directory-shaped skill must contain SKILL.md at its root.`);
+      throw new Error(
+        `Local skill directory "${spec.path}" has no SKILL.md. A directory-shaped skill must contain SKILL.md at its root.`,
+      );
     }
     const name = spec.name ?? basename(abs);
     const sha256 = hashFiles(files);
@@ -73,7 +78,9 @@ async function installLocalSkill(
   }
 
   if (!info.isFile() || extname(abs).toLowerCase() !== ".md") {
-    throw new Error(`Local skill path "${spec.path}" has an unsupported shape. Accepted: a directory containing SKILL.md, or a single .md file.`);
+    throw new Error(
+      `Local skill path "${spec.path}" has an unsupported shape. Accepted: a directory containing SKILL.md, or a single .md file.`,
+    );
   }
   const content = await readFile(abs, "utf-8");
   const name = spec.name ?? localFileSkillName(abs);
@@ -128,9 +135,7 @@ async function installRepoSkill(
     for (const name of selected) {
       const src = available.find((s) => s.name === name)!.dir;
       const dest = posix.join(opts.dir, name);
-      const res = await sandbox.runShell(
-        `mkdir -p ${q(opts.dir)} && rm -rf ${q(dest)} && cp -R ${q(src)} ${q(dest)}`,
-      );
+      const res = await sandbox.runShell(`mkdir -p ${q(opts.dir)} && rm -rf ${q(dest)} && cp -R ${q(src)} ${q(dest)}`);
       if (res.exitCode !== 0) {
         throw new Error(`Could not install skill "${name}" into ${dest}:
 ${tail(res.stdout + res.stderr)}`);
@@ -159,7 +164,11 @@ export interface DiscoveredSkill {
  */
 async function discoverSkills(sandbox: Sandbox, cloneDir: string, source: string): Promise<DiscoveredSkill[]> {
   const res = await sandbox.runShell(`find ${q(cloneDir)} -name SKILL.md -not -path '*/.git/*'`);
-  const paths = res.stdout.split("\n").map((l) => l.trim()).filter(Boolean).sort();
+  const paths = res.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .sort();
   if (paths.length === 0) throw new Error(`Repo skill ${source} contains no SKILL.md.`);
 
   const rootFile = `${cloneDir}/SKILL.md`;
@@ -183,7 +192,9 @@ export function selectRepoSkills(
   const names = available.map((s) => s.name);
   if (!spec.skills?.length) {
     if (available.length === 1) return [names[0]!];
-    throw new Error(`Repo skill ${spec.source} contains multiple skills; select which ones to enable with \`skills: [...]\`. Available: ${names.join(", ")}.`);
+    throw new Error(
+      `Repo skill ${spec.source} contains multiple skills; select which ones to enable with \`skills: [...]\`. Available: ${names.join(", ")}.`,
+    );
   }
   for (const want of spec.skills) {
     if (!names.includes(want)) {

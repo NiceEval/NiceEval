@@ -61,7 +61,10 @@ export function fitCompactAssertionSummary(summary: CompactAssertionSummary, max
   full = compactAssertionSummary(fitted);
   if (full.length <= budget) return full;
   if (fitted.matcher !== undefined) {
-    fitted = { ...fitted, matcher: shrinkTo(fitted.matcher, Math.max(16, fitted.matcher.length - (full.length - budget))) };
+    fitted = {
+      ...fitted,
+      matcher: shrinkTo(fitted.matcher, Math.max(16, fitted.matcher.length - (full.length - budget))),
+    };
     full = compactAssertionSummary(fitted);
     if (full.length <= budget) return full;
   }
@@ -102,32 +105,61 @@ export interface AssertionRoleInput {
 }
 
 const gateWords = { satisfied: "pass", failed: "fail", unavailable: "unavailable", "not-applicable": "n/a" } as const;
-const noteWords = { matched: "met", mismatched: "unmet", unavailable: "unavailable", errored: "errored", "not-applicable": "n/a" } as const;
+const noteWords = {
+  matched: "met",
+  mismatched: "unmet",
+  unavailable: "unavailable",
+  errored: "errored",
+  "not-applicable": "n/a",
+} as const;
 const numberText = (value: number): string => String(Number(value.toFixed(2)));
 
 export function assertionRoleLabel(entry: AssertionRoleInput): string {
   const roles: string[] = [];
   if (entry.gate !== "not-gate") roles.push(`GATE ${gateWords[entry.gate]}`);
   const score = entry.contribution;
-  if (score.state !== "not-scored") roles.push(`SCORE ${score.state === "earned" ? numberText(score.earned) : "?"}/${numberText(score.points)}`);
+  if (score.state !== "not-scored")
+    roles.push(`SCORE ${score.state === "earned" ? numberText(score.earned) : "?"}/${numberText(score.points)}`);
   if (roles.length === 0) roles.push(`NOTE ${noteWords[entry.result]}`);
   return roles.join("  ");
 }
 
 export function assertionRoleCounts(entries: readonly AssertionRoleInput[]): string {
-  const gates = entries.filter(entry => entry.gate !== "not-gate");
-  const notes = entries.filter(entry => entry.gate === "not-gate" && entry.contribution.state === "not-scored");
-  const scored = entries.filter(entry => entry.contribution.state !== "not-scored").length;
-  const counts = <Word extends string>(words: readonly Word[], values: readonly Word[]): string => words
-    .map(word => ({ word, count: values.filter(value => value === word).length }))
-    .filter(({ count }) => count > 0).map(({ word, count }) => `${count} ${word}`).join(", ");
+  const gates = entries.filter((entry) => entry.gate !== "not-gate");
+  const notes = entries.filter((entry) => entry.gate === "not-gate" && entry.contribution.state === "not-scored");
+  const scored = entries.filter((entry) => entry.contribution.state !== "not-scored").length;
+  const counts = <Word extends string>(words: readonly Word[], values: readonly Word[]): string =>
+    words
+      .map((word) => ({ word, count: values.filter((value) => value === word).length }))
+      .filter(({ count }) => count > 0)
+      .map(({ word, count }) => `${count} ${word}`)
+      .join(", ");
   return [
-    ...(gates.length === 0 ? [] : [`Gates ${counts(["pass", "fail", "unavailable", "n/a"], gates.map(entry => gateWords[entry.gate as keyof typeof gateWords]))}`]),
+    ...(gates.length === 0
+      ? []
+      : [
+          `Gates ${counts(
+            ["pass", "fail", "unavailable", "n/a"],
+            gates.map((entry) => gateWords[entry.gate as keyof typeof gateWords]),
+          )}`,
+        ]),
     ...(scored === 0 ? [] : [`Scored ${scored}`]),
-    ...(notes.length === 0 ? [] : [`Notes ${counts(["met", "unmet", "unavailable", "errored", "n/a"], notes.map(entry => noteWords[entry.result]))}`]),
+    ...(notes.length === 0
+      ? []
+      : [
+          `Notes ${counts(
+            ["met", "unmet", "unavailable", "errored", "n/a"],
+            notes.map((entry) => noteWords[entry.result]),
+          )}`,
+        ]),
   ].join(" · ");
 }
 
-export function assertionVerdictLine(verdict: string, score?: { readonly state: "not-scored" } | { readonly state: string; readonly earned: number; readonly possible: number }): string {
+export function assertionVerdictLine(
+  verdict: string,
+  score?:
+    | { readonly state: "not-scored" }
+    | { readonly state: string; readonly earned: number; readonly possible: number },
+): string {
   return `Verdict ${verdict}${score === undefined || !("earned" in score) ? "" : ` · Score ${score.state === "unavailable" ? "?" : numberText(score.earned)}/${numberText(score.possible)}`}`;
 }

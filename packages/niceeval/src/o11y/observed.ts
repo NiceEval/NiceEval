@@ -110,9 +110,7 @@ interface SessionCorrelationState {
   readonly finishedOperationIds: Set<string>;
 }
 
-const observedTurnDraftTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/ObservedTurnDraft",
-);
+const observedTurnDraftTypeId: unique symbol = Symbol("@niceeval/o11y/ObservedTurnDraft");
 
 export interface ObservedTurnDraft {
   readonly [observedTurnDraftTypeId]: () => void;
@@ -150,10 +148,7 @@ export function observedSnapshotForTurn(turn: object): ObservedTurnSnapshot | un
 }
 
 /** @internal SessionManager binds the returned Turn only after the cut is sealed. */
-export function bindObservedSnapshotToTurn(
-  turn: object,
-  snapshot: ObservedTurnSnapshot,
-): void {
+export function bindObservedSnapshotToTurn(turn: object, snapshot: ObservedTurnSnapshot): void {
   returnedTurnSnapshots.set(turn, snapshot);
 }
 
@@ -204,10 +199,7 @@ export class ObservedEventIngestionCorrelator {
     return draft;
   }
 
-  finishTurn(
-    draft: ObservedTurnDraft,
-    adapterEvents: readonly StreamEvent[],
-  ): ObservedTurnSnapshot {
+  finishTurn(draft: ObservedTurnDraft, adapterEvents: readonly StreamEvent[]): ObservedTurnSnapshot {
     const state = this.drafts.get(draft as object);
     if (state === undefined || state.finalized) {
       throw new Error("Observed event ingestion draft is unavailable or already sealed");
@@ -220,19 +212,20 @@ export class ObservedEventIngestionCorrelator {
       sessionId: state.sessionId,
       turnId: state.turnId,
       throughSessionSequence,
-      collectionAtCut: state.limitations.length > 0
-        ? "partial" as const
-        : "complete" as const,
+      collectionAtCut: state.limitations.length > 0 ? ("partial" as const) : ("complete" as const),
       items: Object.freeze([...state.items]),
       limitations: Object.freeze([...state.limitations]),
     });
-    this.evaluationBySnapshot.set(snapshot, Object.freeze({
-      sessionId: state.sessionId,
-      turnId: state.turnId,
-      items: Object.freeze([...state.evaluationItems]),
-      events: Object.freeze([...state.evaluationEvents]),
-      collectionAtCut: "complete" as const,
-    }));
+    this.evaluationBySnapshot.set(
+      snapshot,
+      Object.freeze({
+        sessionId: state.sessionId,
+        turnId: state.turnId,
+        items: Object.freeze([...state.evaluationItems]),
+        events: Object.freeze([...state.evaluationEvents]),
+        collectionAtCut: "complete" as const,
+      }),
+    );
     this.drafts.delete(draft as object);
     return snapshot;
   }
@@ -257,12 +250,16 @@ export class ObservedEventIngestionCorrelator {
 
   attemptCut(): ObservedAttemptCut {
     return Object.freeze({
-      sessions: Object.freeze([...this.sessions.entries()]
-        .map(([sessionId, state]) => Object.freeze({
-          sessionId,
-          throughSessionSequence: state.sequence,
-        }))
-        .sort((left, right) => compareText(left.sessionId, right.sessionId))),
+      sessions: Object.freeze(
+        [...this.sessions.entries()]
+          .map(([sessionId, state]) =>
+            Object.freeze({
+              sessionId,
+              throughSessionSequence: state.sequence,
+            }),
+          )
+          .sort((left, right) => compareText(left.sessionId, right.sessionId)),
+      ),
     });
   }
 
@@ -284,8 +281,7 @@ export class ObservedEventIngestionCorrelator {
     const session = this.session(draft.sessionId);
     session.sequence += 1;
     const sessionSequence = positive(session.sequence);
-    const retainInRecord = this.startedTurns <= MAX_CONVERSATION_TURNS &&
-      this.retainedItems < MAX_CONVERSATION_ITEMS;
+    const retainInRecord = this.startedTurns <= MAX_CONVERSATION_TURNS && this.retainedItems < MAX_CONVERSATION_ITEMS;
     const limitationStart = draft.limitations.length;
     const base = Object.freeze({
       itemId: mintEntity("item"),
@@ -302,21 +298,14 @@ export class ObservedEventIngestionCorrelator {
       });
     }
     if (hasTruncation) {
-      const omitted = event.truncated!.reduce(
-        (count, entry) => count + Math.max(1, entry.originalBytes),
-        0,
-      );
+      const omitted = event.truncated!.reduce((count, entry) => count + Math.max(1, entry.originalBytes), 0);
       this.limit(draft, {
         code: "text-truncated",
         target: "turn-item",
         replacementOrOmittedCount: positive(omitted),
       });
     }
-    const unavailableText = hasRedaction
-      ? "<redacted>"
-      : hasTruncation
-      ? "<truncated>"
-      : undefined;
+    const unavailableText = hasRedaction ? "<redacted>" : hasTruncation ? "<truncated>" : undefined;
 
     let observed: ObservedSourceEvent;
     switch (event.type) {
@@ -347,9 +336,10 @@ export class ObservedEventIngestionCorrelator {
             kind: "tool-start" as const,
             toolOccurrenceId,
             tool: this.toolName(event.operation.name, draft),
-            inputSummary: unavailableText === undefined
-              ? this.json(event.operation.input, draft)
-              : this.text(unavailableText, draft),
+            inputSummary:
+              unavailableText === undefined
+                ? this.json(event.operation.input, draft)
+                : this.text(unavailableText, draft),
           });
         } else {
           const label = this.identifier(event.operation.name, draft);
@@ -366,13 +356,13 @@ export class ObservedEventIngestionCorrelator {
       case "operation.finished":
         if (event.kind === "tool") {
           const open = session.openByOperationId.get(event.operationId);
-          const ambiguous = session.ambiguousOperationIds.has(event.operationId) ||
-            session.finishedOperationIds.has(event.operationId);
+          const ambiguous =
+            session.ambiguousOperationIds.has(event.operationId) || session.finishedOperationIds.has(event.operationId);
           const occurrence: ToolOccurrenceRelation = ambiguous
             ? Object.freeze({ state: "unavailable" as const, reason: "ambiguous-operation" as const })
             : open === undefined
-            ? Object.freeze({ state: "unavailable" as const, reason: "orphan-finish" as const })
-            : Object.freeze({ state: "exact" as const, toolOccurrenceId: open });
+              ? Object.freeze({ state: "unavailable" as const, reason: "orphan-finish" as const })
+              : Object.freeze({ state: "exact" as const, toolOccurrenceId: open });
           if (open !== undefined && !ambiguous) {
             session.openByOperationId.delete(event.operationId);
             session.finishedOperationIds.add(event.operationId);
@@ -382,26 +372,27 @@ export class ObservedEventIngestionCorrelator {
             kind: "tool-finish" as const,
             occurrence,
             outcome: event.status,
-            outputSummary: unavailableText !== undefined
-              ? this.text(unavailableText, draft)
-              : event.output === undefined
-              ? this.text("Output unavailable.", draft)
-              : this.json(event.output, draft),
+            outputSummary:
+              unavailableText !== undefined
+                ? this.text(unavailableText, draft)
+                : event.output === undefined
+                  ? this.text("Output unavailable.", draft)
+                  : this.json(event.output, draft),
           });
         } else {
-          const label = session.openSubagentLabels.get(event.operationId) ??
-            this.identifier(event.operationId, draft);
+          const label = session.openSubagentLabels.get(event.operationId) ?? this.identifier(event.operationId, draft);
           session.openSubagentLabels.delete(event.operationId);
           observed = Object.freeze({
             ...base,
             kind: "subagent" as const,
             state: event.status,
             label,
-            summary: unavailableText !== undefined
-              ? this.text(unavailableText, draft)
-              : event.output === undefined
-              ? this.text(`Subagent ${event.status}.`, draft)
-              : this.json(event.output, draft),
+            summary:
+              unavailableText !== undefined
+                ? this.text(unavailableText, draft)
+                : event.output === undefined
+                  ? this.text(`Subagent ${event.status}.`, draft)
+                  : this.json(event.output, draft),
           });
         }
         break;
@@ -440,13 +431,14 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "input-request" as const,
           state: "requested" as const,
-          promptSummary: unavailableText !== undefined
-            ? this.text(unavailableText, draft)
-            : summary !== undefined
-            ? this.text(summary, draft)
-            : event.request.input === undefined
-            ? this.text("Input requested.", draft)
-            : this.json(event.request.input, draft),
+          promptSummary:
+            unavailableText !== undefined
+              ? this.text(unavailableText, draft)
+              : summary !== undefined
+                ? this.text(summary, draft)
+                : event.request.input === undefined
+                  ? this.text("Input requested.", draft)
+                  : this.json(event.request.input, draft),
           responseSummary: null,
         });
         break;
@@ -556,8 +548,7 @@ export class ObservedEventIngestionCorrelator {
 
   private toolName(value: string, draft: TurnDraftState): SourceNativeToolName {
     const normalized = this.options.normalizeText?.(value) ?? value;
-    const controls = stripUnsafeControls(replaceInvalidSurrogates(normalized).value)
-      .value.replaceAll("\n", " ");
+    const controls = stripUnsafeControls(replaceInvalidSurrogates(normalized).value).value.replaceAll("\n", " ");
     const retained = retainUtf8Prefix(controls, MAX_SOURCE_NATIVE_TOOL_NAME_BYTES);
     const exact = makeSourceNativeToolName(retained.value);
     if (exact !== undefined) {
@@ -589,8 +580,8 @@ export class ObservedEventIngestionCorrelator {
 
   private limit(draft: TurnDraftState, limitation: SourceReceiptLimitation): void {
     if (limitation.code === "collection-cap-reached") {
-      const index = draft.limitations.findIndex((current) =>
-        current.code === limitation.code && current.target === limitation.target
+      const index = draft.limitations.findIndex(
+        (current) => current.code === limitation.code && current.target === limitation.target,
       );
       if (index >= 0) {
         const current = draft.limitations[index]!;
@@ -681,10 +672,7 @@ function compareText(left: string, right: string): number {
   return left === right ? 0 : left < right ? -1 : 1;
 }
 
-function normalizeMatcherValue(
-  value: unknown,
-  normalizeText: ((value: string) => string) | undefined,
-): unknown {
+function normalizeMatcherValue(value: unknown, normalizeText: ((value: string) => string) | undefined): unknown {
   if (typeof value === "string") return normalizeText?.(value) ?? value;
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) {

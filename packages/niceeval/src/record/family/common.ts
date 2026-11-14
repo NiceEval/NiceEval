@@ -16,70 +16,70 @@ export const FixedAttachmentValueLimits = Object.freeze({
 export type FixedRecordAttachmentOwner = import("../model/core.ts").RecordAttachmentOwner;
 
 export const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => Number.isSafeInteger(value) && value >= 0,
-    {
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
       identifier: "RecordNonNegativeSafeInteger",
       description: "a non-negative JSON-safe integer",
-    },
-  )),
+    }),
+  ),
 );
 
 export const PositiveSafeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => Number.isSafeInteger(value) && value > 0,
-    {
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
       identifier: "RecordPositiveSafeInteger",
       description: "a positive JSON-safe integer",
-    },
-  )),
+    }),
+  ),
 );
 
 export const FiniteNonNegativeNumberSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => Number.isFinite(value) && value >= 0,
-    {
+  Schema.check(
+    Schema.makeFilter((value) => Number.isFinite(value) && value >= 0, {
       identifier: "RecordFiniteNonNegativeNumber",
       description: "a finite non-negative JSON number",
-    },
-  )),
+    }),
+  ),
 );
 
 export const SafeTextSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) =>
-      new TextEncoder().encode(value).byteLength <= 16_384 &&
-      !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value),
-    {
-      identifier: "RecordSafeText",
-      description: "bounded text without NUL or unsafe control characters",
-    },
-  )),
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        new TextEncoder().encode(value).byteLength <= 16_384 &&
+        !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value),
+      {
+        identifier: "RecordSafeText",
+        description: "bounded text without NUL or unsafe control characters",
+      },
+    ),
+  ),
 );
 
 export const SafeIdentifierSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value),
-    {
+  Schema.check(
+    Schema.makeFilter((value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value), {
       identifier: "RecordSafeIdentifier",
       description: "a bounded ASCII identifier",
-    },
-  )),
+    }),
+  ),
 );
 
 export const MediaTypeSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) =>
-      value.length > 0 &&
-      value.length <= 255 &&
-      /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:;[!#$%&'*+.^_`|~0-9A-Za-z-]+=[!#$%&'*+.^_`|~0-9A-Za-z-]+)*$/.test(
-        value,
-      ),
-    {
-      identifier: "RecordMediaType",
-      description: "a bounded MIME media type without free-form parameters",
-    },
-  )),
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        value.length > 0 &&
+        value.length <= 255 &&
+        /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:;[!#$%&'*+.^_`|~0-9A-Za-z-]+=[!#$%&'*+.^_`|~0-9A-Za-z-]+)*$/.test(
+          value,
+        ),
+      {
+        identifier: "RecordMediaType",
+        description: "a bounded MIME media type without free-form parameters",
+      },
+    ),
+  ),
 );
 
 export const CollectionLimitationSchema = Schema.Union([
@@ -94,13 +94,12 @@ export const CollectionLimitationSchema = Schema.Union([
 ]);
 
 export const EmptyArraySchema = Schema.Tuple([]).pipe(
-  Schema.check(Schema.makeFilter(
-    (values): values is readonly [] => values.length === 0,
-    {
+  Schema.check(
+    Schema.makeFilter((values): values is readonly [] => values.length === 0, {
       identifier: "RecordEmptyArray",
       description: "an exact empty array",
-    },
-  )),
+    }),
+  ),
 );
 
 export const CollectionStateSchema = Schema.Union([
@@ -116,9 +115,7 @@ export const CollectionStateSchema = Schema.Union([
 
 export type CollectionState = Schema.Schema.Type<typeof CollectionStateSchema>;
 
-export function isCanonicalIdentitySequence(
-  values: readonly string[],
-): boolean {
+export function isCanonicalIdentitySequence(values: readonly string[]): boolean {
   let previous: string | undefined;
   const seen = new Set<string>();
   for (const value of values) {

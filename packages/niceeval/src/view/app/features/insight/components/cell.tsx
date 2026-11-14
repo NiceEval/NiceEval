@@ -4,13 +4,7 @@
 
 import type { MetricFormat } from "./format.ts";
 import type { Verdict as PublicVerdict } from "../../../../../shared/types.ts";
-import {
-  formatMetricScalar,
-  formatPlainNumber,
-  metricStateText,
-  missingText,
-  verdictMark,
-} from "./format.ts";
+import { formatMetricScalar, formatPlainNumber, metricStateText, missingText, verdictMark } from "./format.ts";
 import {
   countText,
   DEFAULT_REPORT_LOCALE,
@@ -166,14 +160,16 @@ export function costProjectionOf(metric: MetricValue): CostProjectionLike | unde
     projection.state !== "partial" &&
     projection.state !== "unavailable" &&
     projection.state !== "migration-required"
-  ) return undefined;
+  )
+    return undefined;
   if (projection.combined === null) {
     return { state: projection.state, combined: null };
   }
   if (
     typeof projection.combined !== "object" ||
     typeof (projection.combined as { readonly amount?: unknown }).amount !== "string"
-  ) return undefined;
+  )
+    return undefined;
   return {
     state: projection.state,
     combined: { amount: (projection.combined as { readonly amount: string }).amount },
@@ -187,11 +183,12 @@ function formatMetricCellText(
   coverageDetail = false,
 ): string {
   const projection = costProjectionOf(cell.metric);
-  const display = projection?.combined !== null && projection?.combined !== undefined
-    ? `$${projection.combined.amount}`
-    : cell.metric.value === null
-    ? metricStateText(cell.metric.state, locale)
-    : `${cell.metric.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.metric.value, cell.metric.unit, cell.metric.format, locale)}`;
+  const display =
+    projection?.combined !== null && projection?.combined !== undefined
+      ? `$${projection.combined.amount}`
+      : cell.metric.value === null
+        ? metricStateText(cell.metric.state, locale)
+        : `${cell.metric.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.metric.value, cell.metric.unit, cell.metric.format, locale)}`;
   if (cell.showCoverage === false) return display;
   if (coverageDetail && cell.metric.value !== null && cell.metric.samples < cell.metric.total) {
     return `${display}\n  ${localeText(locale, "cell.coverageDetail", {
@@ -211,7 +208,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
         .map((entry, index) =>
           index === 0 && entry.kind === "metric"
             ? formatMetricCellText(entry, loc, true)
-            : formatCellText(entry, locale)
+            : formatCellText(entry, locale),
         )
         .filter((entry) => entry !== "—");
       if (entries.length === 0) return "—";
@@ -222,9 +219,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
         if (head) primary.push(head);
         details.push(...tail.map((line) => line.trimStart()).filter(Boolean));
       }
-      const detail = details.length > 0
-        ? `\n${details.map((line) => `  ${line}`).join("\n")}`
-        : "";
+      const detail = details.length > 0 ? `\n${details.map((line) => `  ${line}`).join("\n")}` : "";
       return `${primary.join(" · ")}${detail}`;
     }
     case "notApplicable":
@@ -246,9 +241,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
     }
     case "score": {
       const earned = formatPlainNumber(cell.earned);
-      const score = cell.possible !== undefined
-        ? `${earned} / ${formatPlainNumber(cell.possible)}`
-        : earned;
+      const score = cell.possible !== undefined ? `${earned} / ${formatPlainNumber(cell.possible)}` : earned;
       if (cell.missedScoreItems === undefined) return score;
       const loc = locale ?? DEFAULT_REPORT_LOCALE;
       return `${score} · ${countText(loc, "experimentList.missedScoreItems", cell.missedScoreItems)}`;

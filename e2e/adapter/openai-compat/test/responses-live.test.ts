@@ -1,11 +1,6 @@
-
 import { beforeAll, expect, test } from "vitest";
 import { assertExpEvalOutcomes } from "@niceeval/testkit";
-import {
-  runOpenAiLiveEvidence,
-  queryOpenAiLiveEvidence,
-  type OpenAiLiveEvidence,
-} from "./support.ts";
+import { runOpenAiLiveEvidence, queryOpenAiLiveEvidence, type OpenAiLiveEvidence } from "./support.ts";
 
 let evidence!: OpenAiLiveEvidence;
 

@@ -16,10 +16,13 @@ export type ResolvedModelRoles = Readonly<Record<string, ResolvedModelRole>>;
 
 const modelText = Schema.String.check(Schema.isPattern(/\S/u));
 const roleKey = Schema.String.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$(?![\s\S])/u));
-const selections = Schema.Record(roleKey, Schema.Struct({
-  model: modelText,
-  reasoningEffort: Schema.optionalKey(modelText),
-})).check(Schema.makeFilter((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 64));
+const selections = Schema.Record(
+  roleKey,
+  Schema.Struct({
+    model: modelText,
+    reasoningEffort: Schema.optionalKey(modelText),
+  }),
+).check(Schema.makeFilter((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 64));
 
 export interface ModelRequirements<Keys extends string = string> {
   readonly models: Readonly<Record<Keys, ModelRoleSelection>>;
@@ -30,9 +33,13 @@ export function defineModelRoles<const Keys extends string>(
   input: Readonly<Record<Keys, ModelRoleSelection>>,
 ): Readonly<Record<Keys, ModelRoleSelection>> {
   const decoded = Schema.decodeUnknownSync(selections, { onExcessProperty: "error" })(input);
-  return Object.freeze(Object.fromEntries(Object.keys(decoded).sort().map((key) =>
-    [key, Object.freeze({ ...decoded[key]! })],
-  ))) as Readonly<Record<Keys, ModelRoleSelection>>;
+  return Object.freeze(
+    Object.fromEntries(
+      Object.keys(decoded)
+        .sort()
+        .map((key) => [key, Object.freeze({ ...decoded[key]! })]),
+    ),
+  ) as Readonly<Record<Keys, ModelRoleSelection>>;
 }
 
 export function normalizeModelRequirements(value: unknown): readonly string[] | undefined {
@@ -50,10 +57,13 @@ export function assertRequiredModelRoles(
   if (missing.length > 0) throw new TypeError(`${subject} requires undeclared model roles: ${missing.join(", ")}.`);
 }
 
-export const ResolvedModelRolesSchema: Schema.Codec<ResolvedModelRoles> = Schema.Record(roleKey, Schema.Struct({
-  model: Schema.NullOr(modelText),
-  reasoningEffort: Schema.NullOr(modelText),
-})).check(Schema.makeFilter((value) => Object.keys(value).length <= 64));
+export const ResolvedModelRolesSchema: Schema.Codec<ResolvedModelRoles> = Schema.Record(
+  roleKey,
+  Schema.Struct({
+    model: Schema.NullOr(modelText),
+    reasoningEffort: Schema.NullOr(modelText),
+  }),
+).check(Schema.makeFilter((value) => Object.keys(value).length <= 64));
 
 /** Only the definition boundary interprets author syntax. Downstream owners pass this value through. */
 export function normalizeModelRoles(input: {
@@ -66,14 +76,23 @@ export function normalizeModelRoles(input: {
       throw new TypeError("Experiment models cannot be combined with model or reasoningEffort.");
     }
     const decoded = Schema.decodeUnknownSync(selections, { onExcessProperty: "error" })(input.models);
-    return Object.freeze(Object.fromEntries(Object.keys(decoded).sort().map((key) => {
-      const value = decoded[key]!;
-      return [key, Object.freeze({ model: value.model, reasoningEffort: value.reasoningEffort ?? null })];
-    })));
+    return Object.freeze(
+      Object.fromEntries(
+        Object.keys(decoded)
+          .sort()
+          .map((key) => {
+            const value = decoded[key]!;
+            return [key, Object.freeze({ model: value.model, reasoningEffort: value.reasoningEffort ?? null })];
+          }),
+      ),
+    );
   }
   if (input.model === undefined && input.reasoningEffort === undefined) return Object.freeze({});
-  return Object.freeze({ default: Object.freeze({
-    model: input.model === undefined ? null : Schema.decodeUnknownSync(modelText)(input.model),
-    reasoningEffort: input.reasoningEffort === undefined ? null : Schema.decodeUnknownSync(modelText)(input.reasoningEffort),
-  }) });
+  return Object.freeze({
+    default: Object.freeze({
+      model: input.model === undefined ? null : Schema.decodeUnknownSync(modelText)(input.model),
+      reasoningEffort:
+        input.reasoningEffort === undefined ? null : Schema.decodeUnknownSync(modelText)(input.reasoningEffort),
+    }),
+  });
 }

@@ -27,10 +27,13 @@ function runProcess(
     let stderr = "";
     let callbacks = Promise.resolve();
     let termination: "timeout" | "abort" | undefined;
-    const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => {
-      termination = "timeout";
-      child.kill("SIGKILL");
-    }, options.timeoutMs);
+    const timer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            termination = "timeout";
+            child.kill("SIGKILL");
+          }, options.timeoutMs);
     const abort = (): void => {
       termination = "abort";
       child.kill("SIGKILL");
@@ -99,7 +102,8 @@ export async function createReadLimitedSandbox(workdir = process.cwd()): Promise
     runProcess(workdir, controlledEnv, "bash", ["-c", script], options);
   const orThrow = async (result: Promise<CommandResult>): Promise<SuccessfulCommandResult> => {
     const settled = await result;
-    if (settled.exitCode !== 0) throw new Error(settled.stderr || settled.stdout || `command exited ${settled.exitCode}`);
+    if (settled.exitCode !== 0)
+      throw new Error(settled.stderr || settled.stdout || `command exited ${settled.exitCode}`);
     return { ...settled, exitCode: 0 };
   };
   const readBytes = async (path: string): Promise<Uint8Array> => {
@@ -126,7 +130,11 @@ export async function createReadLimitedSandbox(workdir = process.cwd()): Promise
     writeText: (path, content) => writeBytes(path, Buffer.from(content, "utf8")),
     readBytes,
     writeBytes,
-    pathExists: async (path) => access(pathIn(workdir, path)).then(() => true, () => false),
+    pathExists: async (path) =>
+      access(pathIn(workdir, path)).then(
+        () => true,
+        () => false,
+      ),
     uploadFile: async (source, targetPath) => writeBytes(targetPath, await readFile(source)),
     uploadDirectory: async (sourceDir, targetDir) => {
       await cp(sourceDir, pathIn(workdir, targetDir ?? "."), { recursive: true });

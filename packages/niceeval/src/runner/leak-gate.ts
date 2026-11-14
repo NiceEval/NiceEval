@@ -30,11 +30,7 @@ function causeMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function fileError(
-  operation: LeakGateFileError["operation"],
-  path: string,
-  cause: unknown,
-): LeakGateFileError {
+function fileError(operation: LeakGateFileError["operation"], path: string, cause: unknown): LeakGateFileError {
   return new LeakGateFileError({ operation, path, message: causeMessage(cause) });
 }
 
@@ -214,14 +210,13 @@ export function assertNoHiddenInputLeaks(input: {
   return Effect.flatMap(findHiddenInputLeaks(input), (findings) => {
     if (findings.length === 0) return Effect.void;
     const where = input.evalId ? `eval ${input.evalId}` : "eval";
-    const body = findings
-      .map((f, i) => `  ${i + 1}. [${f.kind} via ${f.via}] ${f.path}\n     ${f.detail}`)
-      .join("\n");
-    return Effect.fail(new HiddenInputLeakError({
-      findings: Object.freeze([...findings]),
-      message:
-        `Hidden input leak gate failed for ${where}: ${findings.length} path(s) would reach the Agent environment.\n${body}`,
-    }));
+    const body = findings.map((f, i) => `  ${i + 1}. [${f.kind} via ${f.via}] ${f.path}\n     ${f.detail}`).join("\n");
+    return Effect.fail(
+      new HiddenInputLeakError({
+        findings: Object.freeze([...findings]),
+        message: `Hidden input leak gate failed for ${where}: ${findings.length} path(s) would reach the Agent environment.\n${body}`,
+      }),
+    );
   });
 }
 
@@ -234,24 +229,25 @@ export function listFilteredBuildContextFiles(spec: BuildContextSpec): Effect.Ef
     const rules = yield* filterRulesForBuildKey(spec);
     const root = resolve(spec.contextDir);
     const out: string[] = [];
-    const walk = (dir: string): Effect.Effect<void> => Effect.gen(function* () {
-      const entries = yield* Effect.tryPromise({
-        try: () => readdir(dir, { withFileTypes: true }),
-        // This scan intentionally treats an unreadable subtree as absent.
-        catch: (cause) => fileError("read-directory", dir, cause),
-      }).pipe(Effect.catch(() => Effect.succeed(undefined)));
-      if (entries === undefined) return;
-      for (const entry of entries) {
-        const abs = join(dir, entry.name);
-        const rel = relative(root, abs).split(sep).join("/");
-        if (isIgnoredByDockerignore(rel, rules)) continue;
-        if (entry.isDirectory()) {
-          yield* walk(abs);
-          continue;
+    const walk = (dir: string): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const entries = yield* Effect.tryPromise({
+          try: () => readdir(dir, { withFileTypes: true }),
+          // This scan intentionally treats an unreadable subtree as absent.
+          catch: (cause) => fileError("read-directory", dir, cause),
+        }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+        if (entries === undefined) return;
+        for (const entry of entries) {
+          const abs = join(dir, entry.name);
+          const rel = relative(root, abs).split(sep).join("/");
+          if (isIgnoredByDockerignore(rel, rules)) continue;
+          if (entry.isDirectory()) {
+            yield* walk(abs);
+            continue;
+          }
+          if (entry.isFile()) out.push(rel);
         }
-        if (entry.isFile()) out.push(rel);
-      }
-    });
+      });
     yield* walk(root);
     return out.sort();
   });
@@ -272,10 +268,13 @@ export function serializeContextFilterRules(rules: readonly string[]): string {
  *
  * 调用方把它填进 `computeBuildKey({ contextDigest, contextFilterRules, ... })`。
  */
-export function buildContextIdentityContribution(spec: BuildContextSpec): Effect.Effect<{
-  contextFilterRules: string;
-  contextDigest: string;
-}, LeakGateFileError> {
+export function buildContextIdentityContribution(spec: BuildContextSpec): Effect.Effect<
+  {
+    contextFilterRules: string;
+    contextDigest: string;
+  },
+  LeakGateFileError
+> {
   return Effect.gen(function* () {
     const rules = yield* filterRulesForBuildKey(spec);
     const files = yield* listFilteredBuildContextFiles(spec);
@@ -302,34 +301,39 @@ export function pathContentDigest(path: string): Effect.Effect<string, LeakGateF
       catch: (cause) => fileError("read-file", root, cause),
     }).pipe(Effect.catch(() => Effect.succeed(undefined)));
     if (info === undefined) {
-      return yield* Effect.fail(new LeakGatePathError({
-        path: root,
-        message: `Compose identity path not found at ${root}`,
-      }));
+      return yield* Effect.fail(
+        new LeakGatePathError({
+          path: root,
+          message: `Compose identity path not found at ${root}`,
+        }),
+      );
     }
     if (info.isFile()) return yield* streamFileDigestEffect(root);
     if (!info.isDirectory()) {
-      return yield* Effect.fail(new LeakGatePathError({
-        path: root,
-        message: `Compose identity path is not a file or directory: ${root}`,
-      }));
+      return yield* Effect.fail(
+        new LeakGatePathError({
+          path: root,
+          message: `Compose identity path is not a file or directory: ${root}`,
+        }),
+      );
     }
     const entries: Array<[string, string]> = [];
-    const walk = (dir: string): Effect.Effect<void, LeakGateFileError> => Effect.gen(function* () {
-      const children = yield* Effect.tryPromise({
-        try: () => readdir(dir, { withFileTypes: true }),
-        catch: (cause) => fileError("read-directory", dir, cause),
-      });
-      for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
-        const absolute = join(dir, child.name);
-        if (child.isDirectory()) {
-          yield* walk(absolute);
-        } else if (child.isFile()) {
-          const digest = yield* streamFileDigestEffect(absolute);
-          entries.push([relative(root, absolute).split(sep).join("/"), digest]);
+    const walk = (dir: string): Effect.Effect<void, LeakGateFileError> =>
+      Effect.gen(function* () {
+        const children = yield* Effect.tryPromise({
+          try: () => readdir(dir, { withFileTypes: true }),
+          catch: (cause) => fileError("read-directory", dir, cause),
+        });
+        for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+          const absolute = join(dir, child.name);
+          if (child.isDirectory()) {
+            yield* walk(absolute);
+          } else if (child.isFile()) {
+            const digest = yield* streamFileDigestEffect(absolute);
+            entries.push([relative(root, absolute).split(sep).join("/"), digest]);
+          }
         }
-      }
-    });
+      });
     yield* walk(root);
     return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
   });
@@ -342,29 +346,32 @@ function streamFileDigestEffect(path: string): Effect.Effect<string, LeakGateFil
         try: () => createReadStream(path),
         catch: (cause) => fileError("hash", path, cause),
       }),
-      (stream) => Effect.sync(() => {
-        if (!stream.destroyed) stream.destroy();
-      }),
+      (stream) =>
+        Effect.sync(() => {
+          if (!stream.destroyed) stream.destroy();
+        }),
     ).pipe(
-      Effect.flatMap((stream) => Effect.tryPromise({
-        try: async (signal) => {
-          const abort = (): void => {
-            if (!stream.destroyed) {
-              stream.destroy(signal.reason instanceof Error ? signal.reason : undefined);
+      Effect.flatMap((stream) =>
+        Effect.tryPromise({
+          try: async (signal) => {
+            const abort = (): void => {
+              if (!stream.destroyed) {
+                stream.destroy(signal.reason instanceof Error ? signal.reason : undefined);
+              }
+            };
+            if (signal.aborted) abort();
+            signal.addEventListener("abort", abort, { once: true });
+            try {
+              const hasher = createHash("sha256");
+              for await (const chunk of stream) hasher.update(chunk as Buffer);
+              return hasher.digest("hex");
+            } finally {
+              signal.removeEventListener("abort", abort);
             }
-          };
-          if (signal.aborted) abort();
-          signal.addEventListener("abort", abort, { once: true });
-          try {
-            const hasher = createHash("sha256");
-            for await (const chunk of stream) hasher.update(chunk as Buffer);
-            return hasher.digest("hex");
-          } finally {
-            signal.removeEventListener("abort", abort);
-          }
-        },
-        catch: (cause) => fileError("hash", path, cause),
-      })),
+          },
+          catch: (cause) => fileError("hash", path, cause),
+        }),
+      ),
     ),
   );
 }
@@ -462,7 +469,9 @@ export function pathKind(path: string): Effect.Effect<"file" | "directory" | "mi
     try: () => stat(path),
     catch: (cause) => fileError("read-file", path, cause),
   }).pipe(
-    Effect.map((info) => info.isDirectory() ? "directory" as const : info.isFile() ? "file" as const : "missing" as const),
+    Effect.map((info) =>
+      info.isDirectory() ? ("directory" as const) : info.isFile() ? ("file" as const) : ("missing" as const),
+    ),
     Effect.catch(() => Effect.succeed("missing" as const)),
   );
 }

@@ -23,10 +23,12 @@ function unwrapDefault(imported: unknown): { default?: unknown } {
   const module = imported as { default?: unknown; __esModule?: unknown };
   const wrapped = module.default;
   if (
-    typeof wrapped === "object" && wrapped !== null &&
+    typeof wrapped === "object" &&
+    wrapped !== null &&
     Object.hasOwn(wrapped, "default") &&
     (wrapped as { __esModule?: unknown }).__esModule === true
-  ) return wrapped as { default?: unknown };
+  )
+    return wrapped as { default?: unknown };
   return module;
 }
 
@@ -43,8 +45,11 @@ function clearProjectModules(loader: Jiti, projectRoot: string): void {
   const root = resolve(projectRoot);
   const prefix = `${root}${sep}`;
   for (const filename of Object.keys(loader.cache)) {
-    if (isAbsolute(filename) && !filename.includes(`${sep}node_modules${sep}`) &&
-      (filename === root || filename.startsWith(prefix))) {
+    if (
+      isAbsolute(filename) &&
+      !filename.includes(`${sep}node_modules${sep}`) &&
+      (filename === root || filename.startsWith(prefix))
+    ) {
       delete loader.cache[filename];
     }
   }
@@ -64,7 +69,7 @@ export interface FreshImportGeneration {
 export function acquireFreshImportGeneration(
   projectRoot = process.cwd(),
 ): Effect.Effect<FreshImportGeneration, never, Scope.Scope> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     // Register this finalizer before constructing the loader: Jiti setup or cache eviction
     // may throw, but neither may strand the generation permit.
     yield* Effect.acquireRelease(generationGate.take(1), () => generationGate.release(1));
@@ -83,16 +88,29 @@ export function acquireFreshImportGeneration(
       const fact = modules.module(absPath);
       const source = fact.source;
       modules.capture(absPath);
-      if (/\.cjs$/u.test(absPath) || /\.js$/u.test(absPath) && fact.sourceType === "commonjs") return importWith(loader, absPath);
+      if (/\.cjs$/u.test(absPath) || (/\.js$/u.test(absPath) && fact.sourceType === "commonjs"))
+        return importWith(loader, absPath);
       const visiting = new Set([...ancestors, absPath]);
       // Native ESM imports bypass Jiti's evictable cache, even with tryNative:false.
       // Evaluate the static project closure through Jiti before importing its parent.
       // Package dependencies retain their canonical runtime and are never re-evaluated.
-      const transformed = loader.transform({ filename: absPath, source, async: true, ts: /\.[cm]?tsx?$/.test(absPath) });
+      const transformed = loader.transform({
+        filename: absPath,
+        source,
+        async: true,
+        ts: /\.[cm]?tsx?$/.test(absPath),
+      });
       const runtimeImports = transformedImportSpecifiers(absPath, transformed);
       for (const edge of fact.edges) {
         const dependency = edge.path;
-        if (edge.timing !== "static" || !runtimeImports.has(edge.specifier) || dependency === undefined || !isCodeSource(dependency) || visiting.has(dependency)) continue;
+        if (
+          edge.timing !== "static" ||
+          !runtimeImports.has(edge.specifier) ||
+          dependency === undefined ||
+          !isCodeSource(dependency) ||
+          visiting.has(dependency)
+        )
+          continue;
         let pending = evaluated.get(dependency);
         if (pending === undefined) {
           pending = evaluate(dependency, visiting);

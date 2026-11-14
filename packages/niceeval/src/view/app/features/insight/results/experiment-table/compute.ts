@@ -2,11 +2,7 @@
 // 旧源中的 Sample / Analysis 读取、aggregate、证据折叠和 detail target wrappers 已删除；
 // 当前文件只接受 integrator 已经闭合的 old-shape ExperimentListItem[]。
 
-import type {
-  AttemptLocator,
-  MetricValue,
-  Verdict,
-} from "../../components/cell.tsx";
+import type { AttemptLocator, MetricValue, Verdict } from "../../components/cell.tsx";
 import type { AdapterIdentity } from "@niceeval/record/model/run-context.ts";
 
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
@@ -20,13 +16,7 @@ export type AdapterValue =
   | { readonly state: "available"; readonly value: AdapterIdentity }
   | { readonly state: "mixed" };
 
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 /** 一个层级共用的四枚闭合读数。 */
 export interface ExperimentMetrics {
@@ -73,7 +63,11 @@ export interface ExperimentListEvalRow {
 
 /** 一个 experiment 的闭合行。 */
 export interface ExperimentListItem {
-  readonly plugins?: readonly { readonly name: string; readonly key: string; readonly identity: Readonly<globalThis.Record<string, JsonValue>> }[];
+  readonly plugins?: readonly {
+    readonly name: string;
+    readonly key: string;
+    readonly identity: Readonly<globalThis.Record<string, JsonValue>>;
+  }[];
   readonly experimentId: string;
   readonly adapter: AdapterValue;
   readonly model: ExecutionValue;
@@ -176,13 +170,13 @@ export function experimentListEvaluationKindComposition(
  * 旧列表初始排序：纯通过制按 endToEndPassRate；含分数制时按 Inspection score 降序。
  * 缺数据沉底，同值按 experimentId 字典序收口。输入数组不原地修改。
  */
-export function sortExperimentListItems(
-  items: readonly ExperimentListItem[],
-): readonly ExperimentListItem[] {
+export function sortExperimentListItems(items: readonly ExperimentListItem[]): readonly ExperimentListItem[] {
   const composition = experimentListEvaluationKindComposition(items);
-  return [...items].sort(byMetricDescThenId((item) =>
-    composition !== "pass" ? item.score?.value ?? null : item.endToEndPassRate?.value ?? null
-  ));
+  return [...items].sort(
+    byMetricDescThenId((item) =>
+      composition !== "pass" ? (item.score?.value ?? null) : (item.endToEndPassRate?.value ?? null),
+    ),
+  );
 }
 
 function byMetricDescThenId(

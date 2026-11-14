@@ -47,14 +47,47 @@ export interface SessionExperimentRecord {
   activeAttempts?: SessionActiveAttemptRecord[];
 }
 
-const LifecyclePhaseSchema = Schema.Literals(["judge.precheck", "experiment.before", "experiment.after", "attempt.before", "attempt.after", "sandbox.queue", "sandbox.create", "sandbox.prepare", "sandbox.prepare.eval", "sandbox.prepare.group", "sandbox.prepare.experiment", "agent.install", "workspace.baseline", "agent.before", "telemetry.configure", "eval.run", "agent.run", "workspace.diff", "assertions.evaluate", "telemetry.collect", "agent.after", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
+const LifecyclePhaseSchema = Schema.Literals([
+  "judge.precheck",
+  "experiment.before",
+  "experiment.after",
+  "attempt.before",
+  "attempt.after",
+  "sandbox.queue",
+  "sandbox.create",
+  "sandbox.prepare",
+  "sandbox.prepare.eval",
+  "sandbox.prepare.group",
+  "sandbox.prepare.experiment",
+  "agent.install",
+  "workspace.baseline",
+  "agent.before",
+  "telemetry.configure",
+  "eval.run",
+  "agent.run",
+  "workspace.diff",
+  "assertions.evaluate",
+  "telemetry.collect",
+  "agent.after",
+  "sandbox.cleanup",
+  "sandbox.suspend",
+  "sandbox.stop",
+] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
 
-export const SessionActiveAttemptsSchema = Schema.mutable(Schema.Array(Schema.Struct({
-  evalId: Schema.String, attemptOrdinal: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-  phase: LifecyclePhaseSchema, phaseEnteredAt: Schema.String,
-  sandbox: Schema.NullOr(Schema.Struct({ provider: Schema.String, nativeInstanceId: Schema.NullOr(Schema.String) })),
-  detail: Schema.NullOr(Schema.Struct({ text: Schema.String, at: Schema.String })),
-})));
+export const SessionActiveAttemptsSchema = Schema.mutable(
+  Schema.Array(
+    Schema.Struct({
+      evalId: Schema.String,
+      attemptOrdinal: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+      phase: LifecyclePhaseSchema,
+      phaseEnteredAt: Schema.String,
+      sandbox: Schema.NullOr(
+        Schema.Struct({ provider: Schema.String, nativeInstanceId: Schema.NullOr(Schema.String) }),
+      ),
+      detail: Schema.NullOr(Schema.Struct({ text: Schema.String, at: Schema.String })),
+    }),
+  ),
+);
 
 export interface SessionActiveAttemptRecord {
   evalId: string;
@@ -154,7 +187,7 @@ export type SessionInvocationEvent =
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
@@ -184,42 +217,51 @@ function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
   const running = raw.running;
   const queued = raw.queued;
   const elsewhere = raw.elsewhere;
-  const attempts = raw.attempts === undefined
-    ? undefined
-    : Array.isArray(raw.attempts)
-      ? raw.attempts.map((value): SessionQueuedAttemptRecord | undefined => {
-        const attempt = asRecord(value);
-        if (
-          attempt === undefined ||
-          typeof attempt.evalId !== "string" ||
-          !isNonNegativeInteger(attempt.attempt) ||
-          attempt.state !== "queued" ||
-          attempt.reason !== "provider-capacity"
-        ) return undefined;
-        return {
-          evalId: attempt.evalId,
-          attempt: attempt.attempt,
-          state: "queued",
-          reason: attempt.reason,
-        };
-      })
-      : undefined;
+  const attempts =
+    raw.attempts === undefined
+      ? undefined
+      : Array.isArray(raw.attempts)
+        ? raw.attempts.map((value): SessionQueuedAttemptRecord | undefined => {
+            const attempt = asRecord(value);
+            if (
+              attempt === undefined ||
+              typeof attempt.evalId !== "string" ||
+              !isNonNegativeInteger(attempt.attempt) ||
+              attempt.state !== "queued" ||
+              attempt.reason !== "provider-capacity"
+            )
+              return undefined;
+            return {
+              evalId: attempt.evalId,
+              attempt: attempt.attempt,
+              state: "queued",
+              reason: attempt.reason,
+            };
+          })
+        : undefined;
   if (raw.attempts !== undefined && (attempts === undefined || attempts.some((item) => item === undefined))) {
     return undefined;
   }
-  const normalizedActive = Array.isArray(raw.activeAttempts) ? raw.activeAttempts.map((value) => {
-    const active = asRecord(value);
-    if (active?.phase !== "agent.ensure") return value;
-    const detail = asRecord(active.detail);
-    return {
-      ...active,
-      phase: projectLifecyclePhase(active.phase),
-      ...(typeof detail?.text !== "string" ? {} : {
-        detail: { ...detail, text: detail.text.replace(/\bagent\.ensure\b/g, "agent.install") },
-      }),
-    };
-  }) : raw.activeAttempts;
-  const activeRead = normalizedActive === undefined ? undefined : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(normalizedActive);
+  const normalizedActive = Array.isArray(raw.activeAttempts)
+    ? raw.activeAttempts.map((value) => {
+        const active = asRecord(value);
+        if (active?.phase !== "agent.ensure") return value;
+        const detail = asRecord(active.detail);
+        return {
+          ...active,
+          phase: projectLifecyclePhase(active.phase),
+          ...(typeof detail?.text !== "string"
+            ? {}
+            : {
+                detail: { ...detail, text: detail.text.replace(/\bagent\.ensure\b/g, "agent.install") },
+              }),
+        };
+      })
+    : raw.activeAttempts;
+  const activeRead =
+    normalizedActive === undefined
+      ? undefined
+      : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(normalizedActive);
   if (activeRead?._tag === "Failure") return undefined;
   const activeAttempts = activeRead?.success;
   return {
@@ -243,9 +285,13 @@ export function decodeSession(value: unknown): SessionRecord | undefined {
     typeof raw.sessionId !== "string" ||
     !isPositiveInteger(raw.pid) ||
     !isTimestamp(raw.startedAt) ||
-    (raw.status !== "active" && raw.status !== "completed" && raw.status !== "incomplete" && raw.status !== "interrupted") ||
+    (raw.status !== "active" &&
+      raw.status !== "completed" &&
+      raw.status !== "incomplete" &&
+      raw.status !== "interrupted") ||
     !Array.isArray(raw.experiments)
-  ) return undefined;
+  )
+    return undefined;
   if (raw.heartbeatAt !== undefined && !isTimestamp(raw.heartbeatAt)) return undefined;
   if (raw.completedAt !== undefined && !isTimestamp(raw.completedAt)) return undefined;
   const experiments = raw.experiments.map(decodeExperiment);
@@ -282,12 +328,22 @@ function cloneRecord(record: SessionRecord): SessionRecord {
     ...record,
     experiments: record.experiments.map((experiment) => ({
       ...experiment,
-      ...(experiment.activeAttempts === undefined ? {} : { activeAttempts: experiment.activeAttempts.map((item) => ({ ...item, sandbox: item.sandbox === null ? null : { ...item.sandbox }, detail: item.detail === null ? null : { ...item.detail } })) }),
+      ...(experiment.activeAttempts === undefined
+        ? {}
+        : {
+            activeAttempts: experiment.activeAttempts.map((item) => ({
+              ...item,
+              sandbox: item.sandbox === null ? null : { ...item.sandbox },
+              detail: item.detail === null ? null : { ...item.detail },
+            })),
+          }),
       ...(experiment.attempts === undefined
         ? {}
         : { attempts: experiment.attempts.map((attempt) => ({ ...attempt })) }),
     })),
-    ...(record.completion ? { completion: { ...record.completion, reporterErrors: [...record.completion.reporterErrors] } } : {}),
+    ...(record.completion
+      ? { completion: { ...record.completion, reporterErrors: [...record.completion.reporterErrors] } }
+      : {}),
   };
 }
 
@@ -296,7 +352,11 @@ function encodeSession(record: SessionRecord): Uint8Array {
 }
 
 function decodeSessionBytes(bytes: Uint8Array): SessionRecord | undefined {
-  try { return decodeSession(JSON.parse(new TextDecoder().decode(bytes))); } catch { return undefined; }
+  try {
+    return decodeSession(JSON.parse(new TextDecoder().decode(bytes)));
+  } catch {
+    return undefined;
+  }
 }
 
 type SessionObservationWrite = { readonly _tag: "observe"; snapshot: SessionRecord };
@@ -304,15 +364,15 @@ type SessionObservationWrite = { readonly _tag: "observe"; snapshot: SessionReco
 type SessionPersistenceRequest =
   | SessionObservationWrite
   | {
-    readonly _tag: "write";
-    readonly snapshot: SessionRecord;
-    /** 缺席时是反馈索引的尽力写；失败不影响 attempt 判定。 */
-    readonly completion?: Deferred.Deferred<void, unknown>;
-  }
+      readonly _tag: "write";
+      readonly snapshot: SessionRecord;
+      /** 缺席时是反馈索引的尽力写；失败不影响 attempt 判定。 */
+      readonly completion?: Deferred.Deferred<void, unknown>;
+    }
   | {
-    readonly _tag: "barrier";
-    readonly completion: Deferred.Deferred<void, unknown>;
-  };
+      readonly _tag: "barrier";
+      readonly completion: Deferred.Deferred<void, unknown>;
+    };
 
 /**
  * Session 的 Effect 资源组刻意不绑定 `start()` 调用点的 Scope：`runEvals()` 自己会
@@ -363,10 +423,12 @@ export class SessionTracker {
   private invocationEffect<A extends import("../record/sqlite/worker-protocol.ts").StorageWorkerResult>(
     command: import("../record/sqlite/worker-protocol.ts").InvocationCommand,
   ): Effect.Effect<A, unknown> {
-    return Effect.flatMap(this.database.bind(this.niceevalRoot), (facets) => Effect.tryPromise({
-      try: () => facets.invocation.execute<A>(command),
-      catch: (cause) => cause,
-    }));
+    return Effect.flatMap(this.database.bind(this.niceevalRoot), (facets) =>
+      Effect.tryPromise({
+        try: () => facets.invocation.execute<A>(command),
+        catch: (cause) => cause,
+      }),
+    );
   }
 
   get current(): SessionRecord | undefined {
@@ -420,13 +482,16 @@ export class SessionTracker {
         experiments,
       };
       const owner = currentProcessOwnerIdentity(this.sessionId);
-      this.owner = (yield* this.invocationEffect<InvocationSessionRecord>({ _tag: "invocation-create", input: {
-        invocationId: this.sessionId,
-        owner,
-        startedAt,
-        runs: input.invocationRuns,
-        deadlineEpochMs: Date.now() + 30_000,
-      } })).owner;
+      this.owner = (yield* this.invocationEffect<InvocationSessionRecord>({
+        _tag: "invocation-create",
+        input: {
+          invocationId: this.sessionId,
+          owner,
+          startedAt,
+          runs: input.invocationRuns,
+          deadlineEpochMs: Date.now() + 30_000,
+        },
+      })).owner;
       // Unlike feedback snapshots, the initial entry is a durable boundary:
       // dispatch must not start until it has either reached disk or failed.
       yield* this.flush();
@@ -435,9 +500,11 @@ export class SessionTracker {
     }).pipe(
       // A failed first write must not leave the manually held Scope (or its
       // queue worker) alive. Preserve the original failure after cleanup.
-      Effect.onError((cause) => persistence === undefined
-        ? Effect.void
-        : this.stopPersistenceEffect(persistence, Exit.failCause(cause)).pipe(Effect.ignore)),
+      Effect.onError((cause) =>
+        persistence === undefined
+          ? Effect.void
+          : this.stopPersistenceEffect(persistence, Exit.failCause(cause)).pipe(Effect.ignore),
+      ),
     );
   }
 
@@ -459,12 +526,18 @@ export class SessionTracker {
   }
 
   /** Applies the frozen carry decision before dispatch without inventing lifecycle events. */
-  applyCarriedAttempts(agentRuns: readonly AgentRun[], carried: ReadonlyMap<string, ReadonlySet<number>>): Effect.Effect<void, unknown> {
+  applyCarriedAttempts(
+    agentRuns: readonly AgentRun[],
+    carried: ReadonlyMap<string, ReadonlySet<number>>,
+  ): Effect.Effect<void, unknown> {
     if (this.record === undefined || this.record.status !== "active") return Effect.void;
     for (const experiment of this.record.experiments) {
       const run = agentRuns.find((candidate) => candidate.experimentId === experiment.experimentId);
-      const count = run?.selectedEvalIds.reduce((total, evalId) =>
-        total + (carried.get(keyOf(experiment.experimentId, evalId))?.size ?? 0), 0) ?? 0;
+      const count =
+        run?.selectedEvalIds.reduce(
+          (total, evalId) => total + (carried.get(keyOf(experiment.experimentId, evalId))?.size ?? 0),
+          0,
+        ) ?? 0;
       experiment.queued = Math.max(0, (experiment.queued ?? 0) - count);
       this.refreshState(experiment);
     }
@@ -475,20 +548,17 @@ export class SessionTracker {
   onInvocationEvent(event: SessionInvocationEvent): void {
     if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return;
     const identity = "identity" in event && event.identity !== undefined ? event.identity : undefined;
-    const experimentId = identity
-      ? identity.experimentId
-      : "experimentId" in event
-        ? event.experimentId
-        : undefined;
-    const experiment = experimentId === undefined
-      ? undefined
-      : this.record.experiments.find((item) => item.experimentId === experimentId);
+    const experimentId = identity ? identity.experimentId : "experimentId" in event ? event.experimentId : undefined;
+    const experiment =
+      experimentId === undefined
+        ? undefined
+        : this.record.experiments.find((item) => item.experimentId === experimentId);
     let changed = false;
     const removeQueuedAttempt = (): boolean => {
       if (experiment === undefined || identity?.evalId === undefined || identity.attempt === undefined) return false;
       const attempts = experiment.attempts ?? [];
-      const index = attempts.findIndex((attempt) =>
-        attempt.evalId === identity.evalId && attempt.attempt === identity.attempt
+      const index = attempts.findIndex(
+        (attempt) => attempt.evalId === identity.evalId && attempt.attempt === identity.attempt,
       );
       if (index < 0) return false;
       attempts.splice(index, 1);
@@ -496,7 +566,9 @@ export class SessionTracker {
       else experiment.attempts = attempts;
       return true;
     };
-    const active = experiment?.activeAttempts?.find((item) => item.evalId === identity?.evalId && item.attemptOrdinal === (identity?.attempt ?? -2) + 1);
+    const active = experiment?.activeAttempts?.find(
+      (item) => item.evalId === identity?.evalId && item.attemptOrdinal === (identity?.attempt ?? -2) + 1,
+    );
     if (event.type === "attempt:phase" && active) {
       active.phase = projectLifecyclePhase(event.phase);
       active.phaseEnteredAt = new Date(event.at).toISOString();
@@ -520,7 +592,18 @@ export class SessionTracker {
       experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
       experiment.running = (experiment.running ?? 0) + 1;
       experiment.state = "running";
-      if (identity !== undefined) experiment.activeAttempts = [...(experiment.activeAttempts ?? []), { evalId: identity.evalId, attemptOrdinal: identity.attempt + 1, phase: projectLifecyclePhase(event.phase ?? "sandbox.create"), phaseEnteredAt: new Date(event.at ?? Date.now()).toISOString(), sandbox: null, detail: null }];
+      if (identity !== undefined)
+        experiment.activeAttempts = [
+          ...(experiment.activeAttempts ?? []),
+          {
+            evalId: identity.evalId,
+            attemptOrdinal: identity.attempt + 1,
+            phase: projectLifecyclePhase(event.phase ?? "sandbox.create"),
+            phaseEnteredAt: new Date(event.at ?? Date.now()).toISOString(),
+            sandbox: null,
+            detail: null,
+          },
+        ];
       changed = true;
     } else if (event.type === "attempt:complete" && experiment) {
       experiment.activeAttempts = experiment.activeAttempts?.filter((item) => item !== active);
@@ -569,7 +652,8 @@ export class SessionTracker {
   /** 一次可观察的 heartbeat；显式调用者会收到本次 flush 的真实 I/O failure。 */
   heartbeat(): Effect.Effect<void, unknown> {
     return Effect.suspend(() => {
-      if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return Effect.void;
+      if (!this.started || this.closed || this.record === undefined || this.record.status !== "active")
+        return Effect.void;
       this.record.heartbeatAt = new Date().toISOString();
       return this.flush();
     });
@@ -580,34 +664,34 @@ export class SessionTracker {
    * 区域不可中断，避免 interruption 留下 active 条目或后台 Fiber。
    */
   close(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, unknown> {
-    return Effect.uninterruptible(Effect.suspend(() => {
-      if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
-      this.closed = true;
-      const now = new Date().toISOString();
-      this.record.status = sessionStatusOf(input.status);
-      this.record.completedAt = input.completedAt ?? now;
-      delete this.record.heartbeatAt;
-      if (input.completion !== undefined) this.record.completion = input.completion;
-      const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
-      for (const experiment of this.record.experiments) {
-        if (publishedRunIds.has(experiment.runId)) experiment.published = true;
-        else delete experiment.published;
-        delete experiment.state;
-        delete experiment.running;
-        delete experiment.queued;
-        delete experiment.elsewhere;
-        delete experiment.attempts;
-        delete experiment.activeAttempts;
-      }
-      const snapshot = cloneRecord(this.record);
-      const persistence = this.persistence;
-      const persist = (persistence === undefined
-        ? Effect.void
-        : this.stopPersistenceEffect(persistence, Exit.void)).pipe(
-          Effect.andThen(this.persistTerminal(snapshot)),
-        );
-      return persist.pipe(Effect.as(this.current));
-    }));
+    return Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
+        this.closed = true;
+        const now = new Date().toISOString();
+        this.record.status = sessionStatusOf(input.status);
+        this.record.completedAt = input.completedAt ?? now;
+        delete this.record.heartbeatAt;
+        if (input.completion !== undefined) this.record.completion = input.completion;
+        const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
+        for (const experiment of this.record.experiments) {
+          if (publishedRunIds.has(experiment.runId)) experiment.published = true;
+          else delete experiment.published;
+          delete experiment.state;
+          delete experiment.running;
+          delete experiment.queued;
+          delete experiment.elsewhere;
+          delete experiment.attempts;
+          delete experiment.activeAttempts;
+        }
+        const snapshot = cloneRecord(this.record);
+        const persistence = this.persistence;
+        const persist = (
+          persistence === undefined ? Effect.void : this.stopPersistenceEffect(persistence, Exit.void)
+        ).pipe(Effect.andThen(this.persistTerminal(snapshot)));
+        return persist.pipe(Effect.as(this.current));
+      }),
+    );
   }
 
   /** 按入队顺序强制写出当前 snapshot；worker 已关闭后退化为同一条 *Effect 原语的直接写。 */
@@ -624,12 +708,7 @@ export class SessionTracker {
 
   private enqueuePersist(): void {
     const persistence = this.persistence;
-    if (
-      this.record === undefined ||
-      persistence === undefined ||
-      !persistence.accepting ||
-      persistence.stopped
-    ) return;
+    if (this.record === undefined || persistence === undefined || !persistence.accepting || persistence.stopped) return;
     const snapshot = cloneRecord(this.record);
     // 反馈 API 受 coordinator 的同步 callback 契约限制，不能在这里启动 runtime。Queue 是
     // Effect worker 的同步入口；false 只会发生在 close 已关闭队列的竞态，此时最终 flush
@@ -643,9 +722,7 @@ export class SessionTracker {
     if (!Queue.offerUnsafe(persistence.requests, request)) this.pendingObservation = undefined;
   }
 
-  private persistenceWorkerEffect(
-    requests: Queue.Queue<SessionPersistenceRequest>,
-  ): Effect.Effect<void> {
+  private persistenceWorkerEffect(requests: Queue.Queue<SessionPersistenceRequest>): Effect.Effect<void> {
     const handle = (request: SessionPersistenceRequest): Effect.Effect<void> => {
       if (request._tag === "barrier") {
         return Deferred.succeed(request.completion, undefined).pipe(Effect.asVoid);
@@ -659,15 +736,15 @@ export class SessionTracker {
       // worker; a later state change is still allowed to retry the index write.
       return this.persistActive(request.snapshot).pipe(
         Effect.exit,
-        Effect.flatMap((exit) => request.completion === undefined
-          ? Effect.void
-          : Deferred.done(request.completion, exit).pipe(Effect.asVoid)),
+        Effect.flatMap((exit) =>
+          request.completion === undefined ? Effect.void : Deferred.done(request.completion, exit).pipe(Effect.asVoid),
+        ),
       );
     };
     return Effect.forever(Queue.take(requests).pipe(Effect.flatMap(handle))).pipe(
       // Queue shutdown interrupts its pending take. A different cause is a
       // broken worker invariant and stays a defect instead of being erased.
-      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.die(cause)),
+      Effect.catchCause((cause) => (Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.die(cause))),
     );
   }
 
@@ -675,16 +752,30 @@ export class SessionTracker {
     const owner = this.owner;
     if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
     const at = snapshot.heartbeatAt ?? new Date().toISOString();
-    return this.invocationEffect<undefined>({ _tag: "invocation-update-projection",
-      invocationId: this.sessionId, owner, at, projection: encodeSession(snapshot), deadlineEpochMs: Date.now() + 30_000 });
+    return this.invocationEffect<undefined>({
+      _tag: "invocation-update-projection",
+      invocationId: this.sessionId,
+      owner,
+      at,
+      projection: encodeSession(snapshot),
+      deadlineEpochMs: Date.now() + 30_000,
+    });
   }
 
   private persistTerminal(snapshot: SessionRecord): Effect.Effect<void, unknown> {
     const owner = this.owner;
     if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
-    const state = snapshot.status === "completed" ? "completed" : snapshot.status === "interrupted" ? "interrupted" : "failed";
-    return this.invocationEffect<undefined>({ _tag: "invocation-close", invocationId: this.sessionId,
-      owner, state, at: snapshot.completedAt ?? new Date().toISOString(), projection: encodeSession(snapshot), deadlineEpochMs: Date.now() + 30_000 });
+    const state =
+      snapshot.status === "completed" ? "completed" : snapshot.status === "interrupted" ? "interrupted" : "failed";
+    return this.invocationEffect<undefined>({
+      _tag: "invocation-close",
+      invocationId: this.sessionId,
+      owner,
+      state,
+      at: snapshot.completedAt ?? new Date().toISOString(),
+      projection: encodeSession(snapshot),
+      deadlineEpochMs: Date.now() + 30_000,
+    });
   }
 
   private heartbeatLoopEffect(): Effect.Effect<never> {
@@ -697,17 +788,13 @@ export class SessionTracker {
     );
   }
 
-  private offerWriteEffect(
-    persistence: SessionPersistence,
-    snapshot: SessionRecord,
-  ): Effect.Effect<void, unknown> {
+  private offerWriteEffect(persistence: SessionPersistence, snapshot: SessionRecord): Effect.Effect<void, unknown> {
     this.pendingObservation = undefined;
     return Effect.gen(function* () {
       const completion = yield* Deferred.make<void, unknown>();
-      const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
-        persistence.requests,
-        { _tag: "write", snapshot, completion },
-      ));
+      const accepted = yield* Effect.sync(() =>
+        Queue.offerUnsafe(persistence.requests, { _tag: "write", snapshot, completion }),
+      );
       if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before flush."));
       yield* Deferred.await(completion);
     });
@@ -717,10 +804,9 @@ export class SessionTracker {
     this.pendingObservation = undefined;
     return Effect.gen(function* () {
       const completion = yield* Deferred.make<void, unknown>();
-      const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
-        persistence.requests,
-        { _tag: "barrier", completion },
-      ));
+      const accepted = yield* Effect.sync(() =>
+        Queue.offerUnsafe(persistence.requests, { _tag: "barrier", completion }),
+      );
       if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before drain."));
       yield* Deferred.await(completion);
     });
@@ -735,36 +821,39 @@ export class SessionTracker {
     exit: Exit.Exit<unknown, unknown>,
     finalSnapshot?: SessionRecord,
   ): Effect.Effect<void, unknown> {
-    return Effect.uninterruptible(Effect.suspend(() => {
-      if (persistence.stopped) return Effect.void;
-      persistence.accepting = false;
-      const stopHeartbeat = persistence.heartbeat === undefined
-        ? Effect.void
-        : Fiber.interrupt(persistence.heartbeat).pipe(Effect.asVoid);
-      const drain = finalSnapshot === undefined
-        ? this.barrierEffect(persistence)
-        : this.offerWriteEffect(persistence, finalSnapshot);
-      return stopHeartbeat.pipe(
-        Effect.andThen(drain),
-        Effect.ensuring(this.releasePersistenceEffect(persistence, exit)),
-      );
-    }));
+    return Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (persistence.stopped) return Effect.void;
+        persistence.accepting = false;
+        const stopHeartbeat =
+          persistence.heartbeat === undefined
+            ? Effect.void
+            : Fiber.interrupt(persistence.heartbeat).pipe(Effect.asVoid);
+        const drain =
+          finalSnapshot === undefined
+            ? this.barrierEffect(persistence)
+            : this.offerWriteEffect(persistence, finalSnapshot);
+        return stopHeartbeat.pipe(
+          Effect.andThen(drain),
+          Effect.ensuring(this.releasePersistenceEffect(persistence, exit)),
+        );
+      }),
+    );
   }
 
   private releasePersistenceEffect(
     persistence: SessionPersistence,
     exit: Exit.Exit<unknown, unknown>,
   ): Effect.Effect<void> {
-    return Effect.uninterruptible(Effect.suspend(() => {
-      if (persistence.stopped) return Effect.void;
-      persistence.stopped = true;
-      if (this.persistence === persistence) this.persistence = undefined;
-      return Queue.shutdown(persistence.requests).pipe(
-        Effect.andThen(Scope.close(persistence.scope, exit)),
-      );
-    }));
+    return Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (persistence.stopped) return Effect.void;
+        persistence.stopped = true;
+        if (this.persistence === persistence) this.persistence = undefined;
+        return Queue.shutdown(persistence.requests).pipe(Effect.andThen(Scope.close(persistence.scope, exit)));
+      }),
+    );
   }
-
 }
 
 export function isSessionExpired(record: SessionRecord, nowMs = Date.now()): boolean {
@@ -784,15 +873,25 @@ function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
 
 /** 完整读取边界跳过无法解码的 durable projections，不拖垮整个 ProjectDatabase 查询。 */
 export function readSessions(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown, ProjectStateDatabase> {
-  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(database.bind(niceevalRoot), (facets) => Effect.tryPromise({
-    try: () => facets.invocation.execute<readonly InvocationSessionRecord[]>({ _tag: "invocation-list" }),
-    catch: (cause) => cause,
-  }))).pipe(Effect.map((sessions) => sessions.flatMap((session) => {
-    const bytes = session.terminalProjection ?? session.activeProjection;
-    if (bytes === undefined) return [];
-    const decoded = decodeSessionBytes(bytes);
-    return decoded === undefined ? [] : [decoded];
-  }).sort((a, b) => a.startedAt.localeCompare(b.startedAt))));
+  return Effect.flatMap(ProjectStateDatabase, (database) =>
+    Effect.flatMap(database.bind(niceevalRoot), (facets) =>
+      Effect.tryPromise({
+        try: () => facets.invocation.execute<readonly InvocationSessionRecord[]>({ _tag: "invocation-list" }),
+        catch: (cause) => cause,
+      }),
+    ),
+  ).pipe(
+    Effect.map((sessions) =>
+      sessions
+        .flatMap((session) => {
+          const bytes = session.terminalProjection ?? session.activeProjection;
+          if (bytes === undefined) return [];
+          const decoded = decodeSessionBytes(bytes);
+          return decoded === undefined ? [] : [decoded];
+        })
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+    ),
+  );
 }
 
 export function sessionListDocument(
@@ -800,9 +899,8 @@ export function sessionListDocument(
   options: { all?: boolean; selector?: string; nowMs?: number } = {},
 ): SessionListDocument {
   const selector = options.selector;
-  const matches = (record: SessionRecord): boolean => selector === undefined || record.experiments.some(
-    (experiment) => experiment.experimentId.startsWith(selector),
-  );
+  const matches = (record: SessionRecord): boolean =>
+    selector === undefined || record.experiments.some((experiment) => experiment.experimentId.startsWith(selector));
   const sessions: SessionRecord[] = [];
   const expired: ExpiredSessionRecord[] = [];
   for (const record of records) {
@@ -827,7 +925,9 @@ export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: 
   const matches = records.filter((record) => record.sessionId === prefix || record.sessionId.startsWith(prefix));
   if (matches.length === 0) throw new Error(`No session matched: ${prefix}`);
   if (matches.length > 1) {
-    throw new Error(`Ambiguous session prefix ${prefix}. Candidates: ${matches.map((record) => record.sessionId).join(", ")}`);
+    throw new Error(
+      `Ambiguous session prefix ${prefix}. Candidates: ${matches.map((record) => record.sessionId).join(", ")}`,
+    );
   }
   return cloneRecord(matches[0]!);
 }
@@ -880,11 +980,15 @@ function publishedForSession(experiment: SessionExperimentRecord, status: Sessio
 }
 
 export function renderSessionListText(document: SessionListDocument, nowMs = Date.now(), all = false): string {
-  const lines: string[] = [`ACTIVE SESSIONS (${document.sessions.filter((session) => session.status === "active").length})`];
+  const lines: string[] = [
+    `ACTIVE SESSIONS (${document.sessions.filter((session) => session.status === "active").length})`,
+  ];
   const active = document.sessions.filter((session) => session.status === "active");
   if (active.length === 0) lines.push("(none)");
   for (const session of active) {
-    lines.push(`${session.sessionId} · pid ${session.pid} · ${ageLabel(session.startedAt, nowMs)} · heartbeat ${ageLabel(session.heartbeatAt ?? session.startedAt, nowMs)}`);
+    lines.push(
+      `${session.sessionId} · pid ${session.pid} · ${ageLabel(session.startedAt, nowMs)} · heartbeat ${ageLabel(session.heartbeatAt ?? session.startedAt, nowMs)}`,
+    );
     lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment, false)));
   }
   if (all) {
@@ -892,15 +996,21 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
     lines.push(`COMPLETED SESSIONS (${completed.length})`);
     if (completed.length === 0) lines.push("(none)");
     for (const session of completed) {
-      lines.push(`${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`);
-      lines.push(...session.experiments.map((experiment) =>
-        renderExperimentLine(experiment, publishedForSession(experiment, session.status))
-      ));
+      lines.push(
+        `${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`,
+      );
+      lines.push(
+        ...session.experiments.map((experiment) =>
+          renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
+        ),
+      );
     }
     if (document.expired.length > 0) {
       lines.push(`EXPIRED SESSIONS (${document.expired.length})`);
       for (const expired of document.expired) {
-        lines.push(`${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · ${`rerun the original command`}`);
+        lines.push(
+          `${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · ${`rerun the original command`}`,
+        );
       }
     }
   }
@@ -909,13 +1019,24 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
 
 export function renderSessionShowText(document: SessionShowDocument): string {
   const session = document.session;
-  const lines = [`SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`, `pid ${session.pid} · started ${session.startedAt}`];
-  if ("status" in session) lines.push(`status ${session.status}${session.completedAt ? ` · completed ${session.completedAt}` : ""}`);
+  const lines = [
+    `SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`,
+    `pid ${session.pid} · started ${session.startedAt}`,
+  ];
+  if ("status" in session)
+    lines.push(`status ${session.status}${session.completedAt ? ` · completed ${session.completedAt}` : ""}`);
   if ("experiments" in session) {
-    lines.push(...session.experiments.flatMap((experiment) => [
-      renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
-      ...(session.status === "active" ? (experiment.activeAttempts ?? []).map((attempt) => `    ${attempt.evalId} #${attempt.attemptOrdinal} · ${projectLifecyclePhase(attempt.phase)} since ${attempt.phaseEnteredAt} · ${attempt.sandbox === null ? "no Sandbox" : `${attempt.sandbox.provider} ${attempt.sandbox.nativeInstanceId ?? "no native instance identifier"}`}\n      ${attempt.detail === null ? "no detail" : `${attempt.detail.at} ${attempt.detail.text}`}`) : []),
-    ]));
+    lines.push(
+      ...session.experiments.flatMap((experiment) => [
+        renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
+        ...(session.status === "active"
+          ? (experiment.activeAttempts ?? []).map(
+              (attempt) =>
+                `    ${attempt.evalId} #${attempt.attemptOrdinal} · ${projectLifecyclePhase(attempt.phase)} since ${attempt.phaseEnteredAt} · ${attempt.sandbox === null ? "no Sandbox" : `${attempt.sandbox.provider} ${attempt.sandbox.nativeInstanceId ?? "no native instance identifier"}`}\n      ${attempt.detail === null ? "no detail" : `${attempt.detail.at} ${attempt.detail.text}`}`,
+            )
+          : []),
+      ]),
+    );
   }
   if (document.expired) lines.push(`NEXT rerun the original command`);
   return `${lines.join("\n")}\n`;

@@ -35,13 +35,14 @@ function findInstalledNiceeval(): InstalledPackage {
   }
 }
 
-function rejectedLoads(
-  labels: readonly string[],
-  results: readonly PromiseSettledResult<unknown>[],
-): string {
-  return results.flatMap((result, index) => result.status === "rejected"
-    ? [`${labels[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
-    : []).join("\n");
+function rejectedLoads(labels: readonly string[], results: readonly PromiseSettledResult<unknown>[]): string {
+  return results
+    .flatMap((result, index) =>
+      result.status === "rejected"
+        ? [`${labels[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
+        : [],
+    )
+    .join("\n");
 }
 
 // 特例：case 项目源是签入的 CommonJS 消费者 fixture；sourceRoot 才是承载
@@ -67,7 +68,11 @@ const e2e = createE2EContext({
 test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 CLI Journey", async () => {
   // Vite can transform linked candidates into its own module cache. Exercise
   // import and require together in Node, where consumers share require(esm).
-  const identities = await command([process.execPath]).run(["--input-type=module", "--eval", `
+  const identities = await command([process.execPath]).run(
+    [
+      "--input-type=module",
+      "--eval",
+      `
     import { strictEqual } from "node:assert";
     import { createRequire } from "node:module";
     const require = createRequire(import.meta.url);
@@ -76,7 +81,10 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
       const commonjs = require(specifier);
       for (const name of Object.keys(esm)) strictEqual(esm[name], commonjs[name], specifier + ": " + name);
     }
-  `], { timeoutMs: 10_000 });
+  `,
+    ],
+    { timeoutMs: 10_000 },
+  );
   expect(identities.exitCode, identities.diagnostic()).toBe(0);
   const { root: installedRoot, packageJson } = findInstalledNiceeval();
   for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
@@ -95,8 +103,16 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
   const publicRequire = createRequire(import.meta.url);
   const rootCommonjs = publicRequire("niceeval");
   const expectCommonjs = publicRequire("niceeval/expect");
-  for (const name of ["defineJudge", "defineScoreMatch", "defineMaterialMatch", "defineContextMatch",
-    "factuality", "faithfulness", "instructionFollowing", "pairwisePreference"] as const) {
+  for (const name of [
+    "defineJudge",
+    "defineScoreMatch",
+    "defineMaterialMatch",
+    "defineContextMatch",
+    "factuality",
+    "faithfulness",
+    "instructionFollowing",
+    "pairwisePreference",
+  ] as const) {
     expect(typeof expectEntry[name], name).toBe("function");
     expect(typeof expectCommonjs[name], name).toBe("function");
     expect(Object.hasOwn(rootEntry, name), `root alias: ${name}`).toBe(false);
@@ -115,20 +131,47 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
   expect(inspectionEntry.readScoreMatchAudit({})).toEqual({ state: "invalid" });
   expect(typeof sandboxEntry.resolveDockerProfile).toBe("function");
   expect(Object.hasOwn(sandboxEntry, "resolveDockerProfileAlias")).toBe(false);
-  for (const name of ["computeBuildKey", "computeCaseKey", "credentialIdentityContribution",
-    "assertPureDataIdentity", "looksLikeDigestRef", "COMPOSE_MATERIALIZER_REVISION",
-    "collectComposeBuilds", "leakGateHintsFromComposeFile", "assertComposeBlacklist",
-    "findComposeBlacklistViolations", "buildComposeOverlay", "materializeDockerComposeProviderCase",
-    "SANDBOX_BUILD_ACTIVITY", "prepareSandboxBuilds", "startSandboxBuilds", "buildFailureOrigin",
-    "materializationScopeId", "sandboxBuildRef", "normalizeSandboxCapture",
-    "parseDockerExecutionProfile", "parseDockerExecutionProfileV1", "decodeDockerExecutionProfileV1",
-    "makeDockerExecutionProfileV1", "createDockerExecutionProfileV1", "createDockerProfileRegistry",
-    "parseDockerProfileRegistry", "resolveDockerExecutionProfile", "DOCKER_PROFILE_SCHEMA_VERSION",
-    "DOCKER_PROFILE_NETWORK_POLICY_VERSION", "DOCKER_PROFILE_NETWORK_DENY_CIDRS"]) {
+  for (const name of [
+    "computeBuildKey",
+    "computeCaseKey",
+    "credentialIdentityContribution",
+    "assertPureDataIdentity",
+    "looksLikeDigestRef",
+    "COMPOSE_MATERIALIZER_REVISION",
+    "collectComposeBuilds",
+    "leakGateHintsFromComposeFile",
+    "assertComposeBlacklist",
+    "findComposeBlacklistViolations",
+    "buildComposeOverlay",
+    "materializeDockerComposeProviderCase",
+    "SANDBOX_BUILD_ACTIVITY",
+    "prepareSandboxBuilds",
+    "startSandboxBuilds",
+    "buildFailureOrigin",
+    "materializationScopeId",
+    "sandboxBuildRef",
+    "normalizeSandboxCapture",
+    "parseDockerExecutionProfile",
+    "parseDockerExecutionProfileV1",
+    "decodeDockerExecutionProfileV1",
+    "makeDockerExecutionProfileV1",
+    "createDockerExecutionProfileV1",
+    "createDockerProfileRegistry",
+    "parseDockerProfileRegistry",
+    "resolveDockerExecutionProfile",
+    "DOCKER_PROFILE_SCHEMA_VERSION",
+    "DOCKER_PROFILE_NETWORK_POLICY_VERSION",
+    "DOCKER_PROFILE_NETWORK_DENY_CIDRS",
+  ]) {
     expect(Object.hasOwn(sandboxEntry, name), `internal sandbox export: ${name}`).toBe(false);
     expect(Object.hasOwn(publicRequire("niceeval/sandbox"), name), `CommonJS sandbox export: ${name}`).toBe(false);
   }
-  for (const name of ["decodeDockerExecutionProfile", "defineDockerExecutionProfile", "indexDockerProfiles", "resolveDockerProfile"]) {
+  for (const name of [
+    "decodeDockerExecutionProfile",
+    "defineDockerExecutionProfile",
+    "indexDockerProfiles",
+    "resolveDockerProfile",
+  ]) {
     expect(Reflect.get(sandboxEntry, name), name).toBeTypeOf("function");
   }
   for (const name of ["canonicalInspectionJson", "canonicalJsonValue", "closeInspectionJson"]) {
@@ -149,15 +192,15 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
     ...labels.map((specifier) => `ESM ${specifier}`),
     ...labels.map((specifier) => `CommonJS ${specifier}`),
   ];
-  expect(loads.map(({ status }) => status), rejectedLoads(loadLabels, loads)).toEqual([
-    "fulfilled",
-    "fulfilled",
-    "fulfilled",
-    "fulfilled",
-  ]);
+  expect(
+    loads.map(({ status }) => status),
+    rejectedLoads(loadLabels, loads),
+  ).toEqual(["fulfilled", "fulfilled", "fulfilled", "fulfilled"]);
   if (
-    esm[0].status !== "fulfilled" || esm[1].status !== "fulfilled" ||
-    commonjs[0].status !== "fulfilled" || commonjs[1].status !== "fulfilled"
+    esm[0].status !== "fulfilled" ||
+    esm[1].status !== "fulfilled" ||
+    commonjs[0].status !== "fulfilled" ||
+    commonjs[1].status !== "fulfilled"
   ) {
     throw new Error("public Host SDK entries did not load");
   }
@@ -190,16 +233,28 @@ test("pnpm 11 默认 CommonJS 项目无需补运行依赖即可完成安装后 C
 
   await e2e.case("commonjs-init-list", async ({ commands: { niceeval, tsc }, paths }) => {
     for (const extension of ["mts", "cts"]) {
-      writeFileSync(join(paths.projectRoot, `public-surface.${extension}`), `
+      writeFileSync(
+        join(paths.projectRoot, `public-surface.${extension}`),
+        `
         import { defineScoreEval, type ScoreMatch } from "niceeval";
         import { defineScoreMatch, defineJudge, defineMaterialMatch, defineContextMatch } from "niceeval/expect";
         import { readScoreMatchAudit } from "niceeval/inspection";
         const score: ScoreMatch<number> = defineScoreMatch({ name: "fraction", score: (value: number) => value });
         void [defineScoreEval, defineJudge, defineMaterialMatch, defineContextMatch, readScoreMatchAudit, score];
-      `);
+      `,
+      );
     }
-    const declarations = await tsc.run(["--noEmit", "--strict", "--skipLibCheck", "--target", "ES2022",
-      "--module", "NodeNext", "public-surface.mts", "public-surface.cts"]);
+    const declarations = await tsc.run([
+      "--noEmit",
+      "--strict",
+      "--skipLibCheck",
+      "--target",
+      "ES2022",
+      "--module",
+      "NodeNext",
+      "public-surface.mts",
+      "public-surface.cts",
+    ]);
     expect(declarations.exitCode, declarations.diagnostic()).toBe(0);
     const version = await niceeval.run(["--version"]);
     expect(version.exitCode, version.diagnostic()).toBe(0);

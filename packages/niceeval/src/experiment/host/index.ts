@@ -5,10 +5,12 @@ import { rawExperimentHost } from "./runtime.ts";
 import type { ExperimentHostHighLevelSDK } from "./types.ts";
 import type { ExperimentHostRequirements } from "./requirements.ts";
 
-const withNode = <Input, Output, Error>(
-  operation: (input: Input) => Effect.Effect<Output, Error, ExperimentHostRequirements>,
-): ((input: Input) => Effect.Effect<Output, Error>) => (input) =>
-  Effect.suspend(() => operation(input)).pipe(Effect.provide(NodeRecordLive, { local: true }));
+const withNode =
+  <Input, Output, Error>(
+    operation: (input: Input) => Effect.Effect<Output, Error, ExperimentHostRequirements>,
+  ): ((input: Input) => Effect.Effect<Output, Error>) =>
+  (input) =>
+    Effect.suspend(() => operation(input)).pipe(Effect.provide(NodeRecordLive, { local: true }));
 
 /** Composes supported Experiment operations plus debug planning; use the Host operations rather than assembling internal Runner state. */
 export interface ExperimentHostSDK extends ExperimentHostHighLevelSDK {
@@ -19,15 +21,34 @@ export interface ExperimentHostSDK extends ExperimentHostHighLevelSDK {
 export const experimentHost: ExperimentHostSDK = Object.freeze({
   catalog: withNode(rawExperimentHost.catalog),
   check: withNode(rawExperimentHost.check),
-  invocation: Object.freeze({ plan: withNode(rawExperimentHost.invocation.plan), run: withNode(rawExperimentHost.invocation.run) }),
-  invocationStatus: Object.freeze({ list: withNode(rawExperimentHost.invocationStatus.list), show: withNode(rawExperimentHost.invocationStatus.show) }),
-  rename: Object.freeze({ plan: withNode(rawExperimentHost.rename.plan), apply: withNode(rawExperimentHost.rename.apply) }),
-  after: Object.freeze({ inspect: withNode(rawExperimentHost.after.inspect), run: withNode(rawExperimentHost.after.run) }),
+  invocation: Object.freeze({
+    plan: withNode(rawExperimentHost.invocation.plan),
+    run: withNode(rawExperimentHost.invocation.run),
+  }),
+  invocationStatus: Object.freeze({
+    list: withNode(rawExperimentHost.invocationStatus.list),
+    show: withNode(rawExperimentHost.invocationStatus.show),
+  }),
+  rename: Object.freeze({
+    plan: withNode(rawExperimentHost.rename.plan),
+    apply: withNode(rawExperimentHost.rename.apply),
+  }),
+  after: Object.freeze({
+    inspect: withNode(rawExperimentHost.after.inspect),
+    run: withNode(rawExperimentHost.after.run),
+  }),
   debug: rawExperimentHost.debug,
   accept: withNode(rawExperimentHost.accept),
-  acceptRun: Object.freeze({ plan: withNode(rawExperimentHost.acceptRun.plan), apply: withNode(rawExperimentHost.acceptRun.apply) }),
+  acceptRun: Object.freeze({
+    plan: withNode(rawExperimentHost.acceptRun.plan),
+    apply: withNode(rawExperimentHost.acceptRun.apply),
+  }),
 });
-export type { ExperimentHostDebugPlanRequest, ExperimentHostDebugPlan, ExperimentHostDebugPlanResult } from "./runtime.ts";
+export type {
+  ExperimentHostDebugPlanRequest,
+  ExperimentHostDebugPlan,
+  ExperimentHostDebugPlanResult,
+} from "./runtime.ts";
 export * from "./types.ts";
 export {
   decodeDebugPlanDocument,
@@ -40,7 +61,12 @@ export {
   SessionListDocumentSchema,
   SessionShowDocumentSchema,
 } from "./cli/session-protocol.ts";
-export { decodeExecutionComparisons, decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./cli/plan-protocol.ts";
+export {
+  decodeExecutionComparisons,
+  decodeExpPlanDocument,
+  ExpPlanDocumentSchema,
+  type ExpPlanDocument,
+} from "./cli/plan-protocol.ts";
 export {
   decodeExpStartEvent,
   ExpStartEventSchema,

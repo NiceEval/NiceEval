@@ -1,7 +1,5 @@
 /** Producer declaration after all obtainable final request snapshots have been recorded. */
-export type AdapterUsageSeal =
-  | { readonly state: "complete" }
-  | { readonly state: "partial"; readonly reason: string };
+export type AdapterUsageSeal = { readonly state: "complete" } | { readonly state: "partial"; readonly reason: string };
 
 /** Final observation of one physical external request, scoped to an Adapter Attempt. */
 export interface AdapterUsageInput {

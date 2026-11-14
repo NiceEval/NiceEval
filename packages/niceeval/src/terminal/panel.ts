@@ -96,7 +96,12 @@ function fitTitleMeta(title: string | undefined, meta: string | undefined, inner
   return { title: title === undefined ? undefined : ellipsizeMiddle(title, Math.max(1, inner - 3)) };
 }
 
-function border(corners: readonly [string, string], title: string | undefined, meta: string | undefined, width: number): string {
+function border(
+  corners: readonly [string, string],
+  title: string | undefined,
+  meta: string | undefined,
+  width: number,
+): string {
   const fit = fitTitleMeta(title, meta, width - 2);
   const left = fit.title === undefined ? "" : `─ ${fit.title} `;
   const right = fit.meta === undefined ? "" : ` ${fit.meta} ─`;

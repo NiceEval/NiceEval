@@ -113,7 +113,10 @@ function parseLinuxStat(pid: number, stat: string): ProcessGroupMember {
   if (commandEnd < 0 || stat[commandEnd + 1] !== " ") {
     throw new Error(`cannot parse /proc/${pid}/stat`);
   }
-  const fields = stat.slice(commandEnd + 2).trim().split(/\s+/);
+  const fields = stat
+    .slice(commandEnd + 2)
+    .trim()
+    .split(/\s+/);
   const state = fields[0];
   const processGroup = Number(fields[2]);
   if (state === undefined || !Number.isSafeInteger(processGroup)) {
@@ -177,10 +180,7 @@ async function terminateProcessGroup(groupId: number): Promise<void> {
   }
 }
 
-async function stopPaddingSupervisor(
-  supervisorPid: number,
-  workerPids: readonly number[],
-): Promise<void> {
+async function stopPaddingSupervisor(supervisorPid: number, workerPids: readonly number[]): Promise<void> {
   await terminateProcessGroup(supervisorPid);
   await pollUntil(
     async () => {
@@ -197,10 +197,11 @@ async function stopPaddingSupervisor(
 
 async function stopRaceReaper(reaperPid: number): Promise<void> {
   await terminateProcessGroup(reaperPid);
-  await pollUntil(
-    async () => await processGone(reaperPid) ? true : undefined,
-    { timeoutMs: 5_000, intervalMs: 25, label: `procfs scan race reaper ${reaperPid} to exit` },
-  );
+  await pollUntil(async () => ((await processGone(reaperPid)) ? true : undefined), {
+    timeoutMs: 5_000,
+    intervalMs: 25,
+    label: `procfs scan race reaper ${reaperPid} to exit`,
+  });
 }
 
 const syncWaitCell = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
@@ -220,10 +221,7 @@ function waitForFileSync(path: string, label: string, timeoutMs: number): string
   }
 }
 
-async function collectCleanupError(
-  errors: unknown[],
-  operation: () => Promise<void>,
-): Promise<void> {
+async function collectCleanupError(errors: unknown[], operation: () => Promise<void>): Promise<void> {
   try {
     await operation();
   } catch (error) {
@@ -237,10 +235,11 @@ async function stopFixtureHelper(pid: number): Promise<void> {
   } catch (error) {
     if (errorCode(error) !== "ESRCH") throw error;
   }
-  await pollUntil(
-    async () => await processGone(pid) ? true : undefined,
-    { timeoutMs: 5_000, intervalMs: 25, label: `zombie fixture helper ${pid} to exit` },
-  );
+  await pollUntil(async () => ((await processGone(pid)) ? true : undefined), {
+    timeoutMs: 5_000,
+    intervalMs: 25,
+    label: `zombie fixture helper ${pid} to exit`,
+  });
 }
 
 // This controls the exact lost-wakeup boundary: the legacy SIGCHLD + pause
@@ -310,10 +309,12 @@ test("Lifecycle subreaper returns a child exit observed at its blocking wait bou
 // @test-file e2e/lifecycle/test/process-group-zombie-cleanup.test.ts
 // @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22lifecycle%22%2C%22file%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Flifecycle%2Ftest%2Fprocess-group-zombie-cleanup.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22ProcessHandle%20cleanup%20completes%20when%20an%20owned%20Linux%20process%20group%20contains%20only%20terminal%20zombies%22%5D%7D
 test("ProcessHandle cleanup completes when an owned Linux process group contains only terminal zombies", async () => {
-  const handle = startProcess(
-    ["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")],
-    { cwd: process.cwd(), processGroup: true, graceMs: 100, timeoutMs: 10_000 },
-  );
+  const handle = startProcess(["python3", join(process.cwd(), "fixtures", "zombie-only-process-group.py")], {
+    cwd: process.cwd(),
+    processGroup: true,
+    graceMs: 100,
+    timeoutMs: 10_000,
+  });
   let groupId: number | undefined;
   let helperPid: number | undefined;
   let disposeAttempted = false;
@@ -351,10 +352,11 @@ test("ProcessHandle cleanup completes when an owned Linux process group contains
     if (!disposeAttempted) await handle.dispose().catch(() => {});
     if (helperPid !== undefined) await stopFixtureHelper(helperPid);
     if (groupId !== undefined) {
-      await pollUntil(
-        async () => (await processGroupMembers(groupId!)).length === 0 ? true : undefined,
-        { timeoutMs: 5_000, intervalMs: 25, label: `owned process group ${groupId} to be physically reaped` },
-      );
+      await pollUntil(async () => ((await processGroupMembers(groupId!)).length === 0 ? true : undefined), {
+        timeoutMs: 5_000,
+        intervalMs: 25,
+        label: `owned process group ${groupId} to be physically reaped`,
+      });
     }
   }
 });
@@ -370,12 +372,7 @@ test("ProcessHandle repeats its post-TERM procfs scan before accepting a termina
     let childFromSnapshot: ProcfsScanRaceChild | undefined;
     let snapshotHookRan = false;
     const handle = startProcess(
-      [
-        "python3",
-        join(process.cwd(), "fixtures", "process-group-procfs-scan-race.py"),
-        snapshotPath,
-        childStatusPath,
-      ],
+      ["python3", join(process.cwd(), "fixtures", "process-group-procfs-scan-race.py"), snapshotPath, childStatusPath],
       {
         cwd: process.cwd(),
         processGroup: true,
@@ -390,11 +387,9 @@ test("ProcessHandle repeats its post-TERM procfs scan before accepting a termina
           // child is provably absent from that snapshot rather than merely
           // late due to signal/PID timing.
           writeFileSync(snapshotPath, "", { flag: "wx" });
-          childFromSnapshot = parseProcfsScanRaceChild(waitForFileSync(
-            childStatusPath,
-            "post-snapshot descendant",
-            5_000,
-          ));
+          childFromSnapshot = parseProcfsScanRaceChild(
+            waitForFileSync(childStatusPath, "post-snapshot descendant", 5_000),
+          );
         },
       },
     );
@@ -438,22 +433,16 @@ test("ProcessHandle repeats its post-TERM procfs scan before accepting a termina
       childPid = child.childPid;
       expect(child.groupId).toBe(groupId);
 
-      await pollUntil(
-        async () => await processGone(childPid!) ? true : undefined,
-        {
-          timeoutMs: 1_000,
-          intervalMs: 10,
-          label: `procfs scan race descendant ${childPid} to be terminated`,
-        },
-      );
-      await pollUntil(
-        async () => await processGroupGone(groupId!) ? true : undefined,
-        {
-          timeoutMs: 1_000,
-          intervalMs: 10,
-          label: `procfs scan race group ${groupId} to disappear`,
-        },
-      );
+      await pollUntil(async () => ((await processGone(childPid!)) ? true : undefined), {
+        timeoutMs: 1_000,
+        intervalMs: 10,
+        label: `procfs scan race descendant ${childPid} to be terminated`,
+      });
+      await pollUntil(async () => ((await processGroupGone(groupId!)) ? true : undefined), {
+        timeoutMs: 1_000,
+        intervalMs: 10,
+        label: `procfs scan race group ${groupId} to disappear`,
+      });
     } catch (error) {
       bodyError = error;
     } finally {
@@ -463,31 +452,29 @@ test("ProcessHandle repeats its post-TERM procfs scan before accepting a termina
       if (groupId !== undefined) {
         await collectCleanupError(cleanupErrors, async () => await killProcessGroup(groupId!));
         await collectCleanupError(cleanupErrors, async () => {
-          await pollUntil(
-            async () => await processGroupGone(groupId!) ? true : undefined,
-            { timeoutMs: 5_000, intervalMs: 25, label: `procfs scan race group ${groupId} cleanup` },
-          );
+          await pollUntil(async () => ((await processGroupGone(groupId!)) ? true : undefined), {
+            timeoutMs: 5_000,
+            intervalMs: 25,
+            label: `procfs scan race group ${groupId} cleanup`,
+          });
         });
       }
       if (raceReaperPid !== undefined) {
         await collectCleanupError(cleanupErrors, async () => await stopRaceReaper(raceReaperPid!));
       }
       if (paddingSupervisorPid !== undefined) {
-        await collectCleanupError(cleanupErrors, async () => await stopPaddingSupervisor(
-          paddingSupervisorPid!,
-          paddingWorkerPids,
-        ));
+        await collectCleanupError(
+          cleanupErrors,
+          async () => await stopPaddingSupervisor(paddingSupervisorPid!, paddingWorkerPids),
+        );
       }
       if (childPid !== undefined) {
         await collectCleanupError(cleanupErrors, async () => {
-          await pollUntil(
-            async () => await processGone(childPid!) ? true : undefined,
-            {
-              timeoutMs: 5_000,
-              intervalMs: 25,
-              label: `procfs scan race descendant ${childPid} cleanup`,
-            },
-          );
+          await pollUntil(async () => ((await processGone(childPid!)) ? true : undefined), {
+            timeoutMs: 5_000,
+            intervalMs: 25,
+            label: `procfs scan race descendant ${childPid} cleanup`,
+          });
         });
       }
     }

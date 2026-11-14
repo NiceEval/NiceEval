@@ -1,8 +1,7 @@
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const projectDatabasePath = (): string =>
-  join(process.cwd(), ".niceeval", "record.sqlite");
+const projectDatabasePath = (): string => join(process.cwd(), ".niceeval", "record.sqlite");
 
 /**
  * Runner-only fault seam for failures that must occur below the public CLI.
@@ -46,12 +45,8 @@ export function rejectAttemptPublication(): void {
       BEGIN SELECT RAISE(ABORT, '${rejectionMessage}'); END`);
 
     const trigger = database
-      .prepare(
-        "SELECT name, tbl_name AS tableName FROM sqlite_schema WHERE type = 'trigger' AND name = ?",
-      )
-      .get(triggerName) as
-      | { readonly name?: unknown; readonly tableName?: unknown }
-      | undefined;
+      .prepare("SELECT name, tbl_name AS tableName FROM sqlite_schema WHERE type = 'trigger' AND name = ?")
+      .get(triggerName) as { readonly name?: unknown; readonly tableName?: unknown } | undefined;
     if (trigger?.name !== triggerName || trigger.tableName !== publicationTable) {
       throw new Error(`runner SQLite fault seam did not install ${triggerName}`);
     }

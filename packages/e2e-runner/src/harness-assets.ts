@@ -27,9 +27,7 @@ export interface MaterializedHarnessAssets {
   readonly environment: Readonly<Record<string, string>>;
 }
 
-export class HarnessAssetMaterializationError extends Data.TaggedError(
-  "HarnessAssetMaterializationError",
-)<{
+export class HarnessAssetMaterializationError extends Data.TaggedError("HarnessAssetMaterializationError")<{
   readonly asset: HarnessAsset;
   readonly operation: "check-destination" | "create-destination" | "copy" | "verify";
   readonly source: string;
@@ -50,10 +48,7 @@ const failure = (
     source,
     destination,
     detail:
-      typeof cause === "object" &&
-      cause !== null &&
-      "detail" in cause &&
-      typeof cause.detail === "string"
+      typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string"
         ? cause.detail
         : cause instanceof Error
           ? cause.message
@@ -76,9 +71,9 @@ const copyAssetEntry = (
       );
     }
     if (stat.isFile()) {
-      yield* fileSystem.copyFile(source, destination).pipe(
-        Effect.mapError((cause) => failure(asset, "copy", source, destination, cause)),
-      );
+      yield* fileSystem
+        .copyFile(source, destination)
+        .pipe(Effect.mapError((cause) => failure(asset, "copy", source, destination, cause)));
       return;
     }
     if (!stat.isDirectory()) {
@@ -86,12 +81,12 @@ const copyAssetEntry = (
         failure(asset, "copy", source, destination, `harness asset source special file is not allowed: ${source}`),
       );
     }
-    yield* fileSystem.makeDirectory(destination, { recursive: true }).pipe(
-      Effect.mapError((cause) => failure(asset, "copy", source, destination, cause)),
-    );
-    const entries = yield* fileSystem.readDirectory(source).pipe(
-      Effect.mapError((cause) => failure(asset, "copy", source, destination, cause)),
-    );
+    yield* fileSystem
+      .makeDirectory(destination, { recursive: true })
+      .pipe(Effect.mapError((cause) => failure(asset, "copy", source, destination, cause)));
+    const entries = yield* fileSystem
+      .readDirectory(source)
+      .pipe(Effect.mapError((cause) => failure(asset, "copy", source, destination, cause)));
     for (const entry of entries.sort((left, right) => left.localeCompare(right))) {
       yield* copyAssetEntry(fileSystem, asset, join(source, entry), join(destination, entry));
     }
@@ -101,57 +96,32 @@ const materializeOne = (
   checkoutRoot: string,
   isolatedRepo: string,
   asset: HarnessAsset,
-): Effect.Effect<
-  Readonly<Record<string, string>>,
-  HarnessAssetMaterializationError,
-  FileSystem.FileSystem
-> =>
+): Effect.Effect<Readonly<Record<string, string>>, HarnessAssetMaterializationError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const definition = HARNESS_ASSETS[asset];
     const source = join(checkoutRoot, ...definition.source);
     const destination = join(isolatedRepo, ...definition.destination);
     const fileSystem = yield* FileSystem.FileSystem;
-    const destinationExists = yield* fileSystem.exists(destination).pipe(
-      Effect.mapError((cause) =>
-        failure(asset, "check-destination", source, destination, cause),
-      ),
-    );
+    const destinationExists = yield* fileSystem
+      .exists(destination)
+      .pipe(Effect.mapError((cause) => failure(asset, "check-destination", source, destination, cause)));
     if (destinationExists) {
       return yield* Effect.fail(
-        failure(
-          asset,
-          "check-destination",
-          source,
-          destination,
-          "isolated harness asset destination already exists",
-        ),
+        failure(asset, "check-destination", source, destination, "isolated harness asset destination already exists"),
       );
     }
 
     yield* fileSystem
       .makeDirectory(dirname(destination), { recursive: true })
-      .pipe(
-        Effect.mapError((cause) =>
-          failure(asset, "create-destination", source, destination, cause),
-        ),
-      );
+      .pipe(Effect.mapError((cause) => failure(asset, "create-destination", source, destination, cause)));
     yield* copyAssetEntry(fileSystem, asset, source, destination);
 
     const [realRepo, realDestination] = yield* Effect.all(
       [fileSystem.realPath(isolatedRepo), fileSystem.realPath(destination)],
       { concurrency: 2 },
-    ).pipe(
-      Effect.mapError((cause) =>
-        failure(asset, "verify", source, destination, cause),
-      ),
-    );
+    ).pipe(Effect.mapError((cause) => failure(asset, "verify", source, destination, cause)));
     const contained = relative(realRepo, realDestination);
-    if (
-      contained === "" ||
-      contained === ".." ||
-      contained.startsWith(`..${sep}`) ||
-      isAbsolute(contained)
-    ) {
+    if (contained === "" || contained === ".." || contained.startsWith(`..${sep}`) || isAbsolute(contained)) {
       return yield* Effect.fail(
         failure(
           asset,
@@ -176,17 +146,11 @@ export const materializeHarnessAssets = (
   checkoutRoot: string,
   isolatedRepo: string,
   assets: readonly HarnessAsset[],
-): Effect.Effect<
-  MaterializedHarnessAssets,
-  HarnessAssetMaterializationError,
-  FileSystem.FileSystem
-> =>
+): Effect.Effect<MaterializedHarnessAssets, HarnessAssetMaterializationError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const environments = yield* Effect.forEach(
-      assets,
-      (asset) => materializeOne(checkoutRoot, isolatedRepo, asset),
-      { concurrency: 1 },
-    );
+    const environments = yield* Effect.forEach(assets, (asset) => materializeOne(checkoutRoot, isolatedRepo, asset), {
+      concurrency: 1,
+    });
     return {
       assets,
       environment: Object.assign({}, ...environments),
@@ -197,39 +161,21 @@ export const materializeHarnessAssets = (
 export const inspectMaterializedHarnessAssets = (
   isolatedRepo: string,
   assets: readonly HarnessAsset[],
-): Effect.Effect<
-  MaterializedHarnessAssets,
-  HarnessAssetMaterializationError,
-  FileSystem.FileSystem
-> =>
+): Effect.Effect<MaterializedHarnessAssets, HarnessAssetMaterializationError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const environments = yield* Effect.forEach(
       assets,
       (asset) => {
         const definition = HARNESS_ASSETS[asset];
         const destination = join(isolatedRepo, ...definition.destination);
-        return assertContainedRealDirectory(
-          isolatedRepo,
-          destination,
-          `retained harness asset ${asset}`,
-        ).pipe(
-          Effect.mapError((cause) =>
-            failure(
-              asset,
-              "verify",
-              destination,
-              destination,
-              cause,
-            ),
-          ),
+        return assertContainedRealDirectory(isolatedRepo, destination, `retained harness asset ${asset}`).pipe(
+          Effect.mapError((cause) => failure(asset, "verify", destination, destination, cause)),
           Effect.map((realDestination) =>
             Object.fromEntries(
-              Object.entries(definition.environment).map(
-                ([name, assetRelativePath]) => [
-                  name,
-                  join(realDestination, assetRelativePath),
-                ],
-              ),
+              Object.entries(definition.environment).map(([name, assetRelativePath]) => [
+                name,
+                join(realDestination, assetRelativePath),
+              ]),
             ),
           ),
         );

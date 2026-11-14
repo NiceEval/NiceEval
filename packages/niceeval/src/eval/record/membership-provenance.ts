@@ -10,9 +10,9 @@ import { ExactEvaluationParseOptions, FiniteNonNegativeNumberSchema } from "./at
  * Record family.
  */
 export const MEMBERSHIP_POLICY_NAME_MAXIMUM_LENGTH = 255 as const;
-const PolicyName = Schema.String.pipe(Schema.refine(
-  (value): value is string => value.length > 0 && value.length <= MEMBERSHIP_POLICY_NAME_MAXIMUM_LENGTH,
-));
+const PolicyName = Schema.String.pipe(
+  Schema.refine((value): value is string => value.length > 0 && value.length <= MEMBERSHIP_POLICY_NAME_MAXIMUM_LENGTH),
+);
 export const MembershipPolicyIdentitySchema = Schema.Struct({
   name: PolicyName,
   version: FiniteNonNegativeNumberSchema.check(Schema.isInt(), Schema.isGreaterThan(0)),
@@ -24,11 +24,7 @@ export type MembershipSourceBarrier = Schema.toType<typeof MembershipSourceBarri
 export const MembershipAttemptOriginSchema = Schema.Struct({ runId: RunIdSchema, slotId: SlotIdSchema });
 export type MembershipAttemptOrigin = Schema.toType<typeof MembershipAttemptOriginSchema>["Type"];
 
-export const COMPARISON_ATTACHMENTS = [
-  "core",
-  "niceeval.assertions",
-  "niceeval.runner-activities",
-] as const;
+export const COMPARISON_ATTACHMENTS = ["core", "niceeval.assertions", "niceeval.runner-activities"] as const;
 export const ComparisonAttachmentSchema = Schema.Literals(COMPARISON_ATTACHMENTS);
 export type ComparisonAttachment = Schema.toType<typeof ComparisonAttachmentSchema>["Type"];
 export const RECORDED_ATTEMPT_CLAIMS = [
@@ -67,49 +63,101 @@ export const MembershipGapSchema = Schema.Struct({
 export type MembershipGap = Schema.toType<typeof MembershipGapSchema>["Type"];
 
 const Carried = Schema.Struct({
-  action: Schema.Literal("carried"), slotId: SlotIdSchema, attemptId: AttemptIdSchema,
-  origin: MembershipAttemptOriginSchema, sourceBarrier: MembershipSourceBarrierSchema,
+  action: Schema.Literal("carried"),
+  slotId: SlotIdSchema,
+  attemptId: AttemptIdSchema,
+  origin: MembershipAttemptOriginSchema,
+  sourceBarrier: MembershipSourceBarrierSchema,
   comparisons: Schema.Array(ComparisonProvenanceSchema),
 });
 const Accepted = Schema.Struct({
-  action: Schema.Literal("accepted"), slotId: SlotIdSchema, attemptId: AttemptIdSchema,
-  origin: MembershipAttemptOriginSchema, comparisons: Schema.Array(ComparisonProvenanceSchema),
-  sourceBarrier: Schema.optional(MembershipSourceBarrierSchema), locator: Schema.optional(Schema.String), operatorReason: Schema.optional(Schema.String),
+  action: Schema.Literal("accepted"),
+  slotId: SlotIdSchema,
+  attemptId: AttemptIdSchema,
+  origin: MembershipAttemptOriginSchema,
+  comparisons: Schema.Array(ComparisonProvenanceSchema),
+  sourceBarrier: Schema.optional(MembershipSourceBarrierSchema),
+  locator: Schema.optional(Schema.String),
+  operatorReason: Schema.optional(Schema.String),
 });
-const Executed = Schema.Struct({ action: Schema.Literal("executed"), slotId: SlotIdSchema, attemptId: AttemptIdSchema, gap: MembershipGapSchema, comparisons: Schema.Array(ComparisonProvenanceSchema) });
-const NotDispatched = Schema.Struct({ action: Schema.Literal("not-dispatched"), slotId: SlotIdSchema, gap: MembershipGapSchema, comparisons: Schema.Array(ComparisonProvenanceSchema) });
-const Interrupted = Schema.Struct({ action: Schema.Literal("interrupted"), slotId: SlotIdSchema, gap: MembershipGapSchema, comparisons: Schema.Array(ComparisonProvenanceSchema) });
+const Executed = Schema.Struct({
+  action: Schema.Literal("executed"),
+  slotId: SlotIdSchema,
+  attemptId: AttemptIdSchema,
+  gap: MembershipGapSchema,
+  comparisons: Schema.Array(ComparisonProvenanceSchema),
+});
+const NotDispatched = Schema.Struct({
+  action: Schema.Literal("not-dispatched"),
+  slotId: SlotIdSchema,
+  gap: MembershipGapSchema,
+  comparisons: Schema.Array(ComparisonProvenanceSchema),
+});
+const Interrupted = Schema.Struct({
+  action: Schema.Literal("interrupted"),
+  slotId: SlotIdSchema,
+  gap: MembershipGapSchema,
+  comparisons: Schema.Array(ComparisonProvenanceSchema),
+});
 export const MembershipActionSchema = Schema.Union([Carried, Accepted, Executed, NotDispatched, Interrupted]);
 export type MembershipAction = Schema.toType<typeof MembershipActionSchema>["Type"];
 
-export type MembershipEffectiveOptions = null | boolean | number | string | readonly MembershipEffectiveOptions[] | { readonly [key: string]: MembershipEffectiveOptions };
-export const MembershipEffectiveOptionsSchema = Schema.declare<MembershipEffectiveOptions>(isJsonValue).pipe(Schema.toType);
+export type MembershipEffectiveOptions =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly MembershipEffectiveOptions[]
+  | { readonly [key: string]: MembershipEffectiveOptions };
+export const MembershipEffectiveOptionsSchema = Schema.declare<MembershipEffectiveOptions>(isJsonValue).pipe(
+  Schema.toType,
+);
 
 /** A non-durable action explanation passed between policy and Core writer. */
 export const MembershipProvenancePayloadSchema = Schema.Struct({
   policy: MembershipPolicyIdentitySchema,
   effectiveOptions: MembershipEffectiveOptionsSchema,
   actions: Schema.Array(MembershipActionSchema),
-}).pipe(Schema.refine((payload): payload is typeof payload => new Set(payload.actions.map((action) => action.slotId)).size === payload.actions.length));
+}).pipe(
+  Schema.refine(
+    (payload): payload is typeof payload =>
+      new Set(payload.actions.map((action) => action.slotId)).size === payload.actions.length,
+  ),
+);
 export type MembershipProvenancePayload = Schema.toType<typeof MembershipProvenancePayloadSchema>["Type"];
-export type MembershipProvenancePayloadIssue = { readonly code: "membership-provenance-slot-duplicate"; readonly slotId: string };
+export type MembershipProvenancePayloadIssue = {
+  readonly code: "membership-provenance-slot-duplicate";
+  readonly slotId: string;
+};
 export type MembershipProvenancePayloadBuildError =
   | { readonly code: "membership-provenance-payload-schema-invalid" }
-  | { readonly code: "membership-provenance-payload-coherence-invalid"; readonly issues: readonly MembershipProvenancePayloadIssue[] };
+  | {
+      readonly code: "membership-provenance-payload-coherence-invalid";
+      readonly issues: readonly MembershipProvenancePayloadIssue[];
+    };
 
-export function validateMembershipProvenancePayload(payload: MembershipProvenancePayload): readonly MembershipProvenancePayloadIssue[] {
+export function validateMembershipProvenancePayload(
+  payload: MembershipProvenancePayload,
+): readonly MembershipProvenancePayloadIssue[] {
   const seen = new Set<string>();
   const issues: MembershipProvenancePayloadIssue[] = [];
   for (const action of payload.actions) {
-    if (seen.has(action.slotId)) issues.push(Object.freeze({ code: "membership-provenance-slot-duplicate" as const, slotId: action.slotId }));
+    if (seen.has(action.slotId))
+      issues.push(Object.freeze({ code: "membership-provenance-slot-duplicate" as const, slotId: action.slotId }));
     seen.add(action.slotId);
   }
   return Object.freeze(issues);
 }
 
-export function buildMembershipProvenancePayload(input: MembershipProvenancePayload): Result.Result<MembershipProvenancePayload, MembershipProvenancePayloadBuildError> {
-  const decoded = Schema.decodeUnknownResult(Schema.toType(MembershipProvenancePayloadSchema), ExactEvaluationParseOptions)(input);
-  if (Result.isFailure(decoded)) return Result.fail(Object.freeze({ code: "membership-provenance-payload-schema-invalid" as const }));
+export function buildMembershipProvenancePayload(
+  input: MembershipProvenancePayload,
+): Result.Result<MembershipProvenancePayload, MembershipProvenancePayloadBuildError> {
+  const decoded = Schema.decodeUnknownResult(
+    Schema.toType(MembershipProvenancePayloadSchema),
+    ExactEvaluationParseOptions,
+  )(input);
+  if (Result.isFailure(decoded))
+    return Result.fail(Object.freeze({ code: "membership-provenance-payload-schema-invalid" as const }));
   return Result.succeed(decoded.success);
 }
 

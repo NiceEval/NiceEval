@@ -11,18 +11,40 @@ function provider() {
     let body = "";
     for await (const chunk of request) body += chunk;
     const input = JSON.parse(body);
-    requests.push({ model: input.model, tokens: input.max_completion_tokens, authorization: request.headers.authorization });
+    requests.push({
+      model: input.model,
+      tokens: input.max_completion_tokens,
+      authorization: request.headers.authorization,
+    });
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({
-      id: "configuration-response", object: "chat.completion", created: 0, model: input.model,
-      choices: [{ index: 0, finish_reason: "tool_calls", message: {
-        role: "assistant", content: null,
-        tool_calls: [{ id: "configuration-call", type: "function", function: {
-          name: input.tool_choice.function.name,
-          arguments: JSON.stringify({ measurement: 1, rationale: "The fixture answer is Paris." }),
-        } }],
-      } }],
-    }));
+    response.end(
+      JSON.stringify({
+        id: "configuration-response",
+        object: "chat.completion",
+        created: 0,
+        model: input.model,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "configuration-call",
+                  type: "function",
+                  function: {
+                    name: input.tool_choice.function.name,
+                    arguments: JSON.stringify({ measurement: 1, rationale: "The fixture answer is Paris." }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
   });
   return { server, requests };
 }
@@ -35,7 +57,7 @@ async function listen(server: ReturnType<typeof createServer>) {
 }
 async function close(server: ReturnType<typeof createServer>) {
   server.closeAllConnections();
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 }
 
 // @feature docs/feature/judge/README.md
@@ -44,10 +66,19 @@ test.concurrent("Judge Provider 整体替换并支持 Eval 与 Experiment 模型
   const baseUrl = await listen(server);
   try {
     await evalE2E.case("judge-configuration", async ({ commands: { niceeval }, paths: { projectRoot } }) => {
-      const env = { ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl, NICEEVAL_E2E_JUDGE_KEY: "configuration-fixture-key" };
+      const env = {
+        ...process.env,
+        NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl,
+        NICEEVAL_E2E_JUDGE_KEY: "configuration-fixture-key",
+      };
       const inherited = await niceeval.run(["exp", "judge-configuration", "--rerun", "all", "--json"], { env });
       expect(inherited.exitCode, inherited.diagnostic()).toBe(0);
-      expect(inherited.expEvalEvents().map(({ evalId, verdict }) => ({ evalId, verdict })).sort((a, b) => a.evalId.localeCompare(b.evalId))).toEqual([
+      expect(
+        inherited
+          .expEvalEvents()
+          .map(({ evalId, verdict }) => ({ evalId, verdict }))
+          .sort((a, b) => a.evalId.localeCompare(b.evalId)),
+      ).toEqual([
         { evalId: "judge-configuration/inherited", verdict: "passed" },
         { evalId: "judge-configuration/overridden", verdict: "passed" },
       ]);
@@ -55,7 +86,9 @@ test.concurrent("Judge Provider 整体替换并支持 Eval 与 Experiment 模型
         { model: "eval-specific-model", tokens: 256, authorization: "Bearer configuration-fixture-key" },
         { model: "judge-e2e", tokens: 128, authorization: "Bearer configuration-fixture-key" },
       ]);
-      const overridden = await niceeval.run(["exp", "judge-configuration-experiment", "--rerun", "all", "--json"], { env });
+      const overridden = await niceeval.run(["exp", "judge-configuration-experiment", "--rerun", "all", "--json"], {
+        env,
+      });
       expect(overridden.exitCode, overridden.diagnostic()).toBe(0);
       expect(overridden.expEvalEvents().map(({ verdict }) => verdict)).toEqual(["passed", "passed"]);
       expect(requests.sort((a, b) => a.tokens - b.tokens)).toEqual([
@@ -64,7 +97,9 @@ test.concurrent("Judge Provider 整体替换并支持 Eval 与 Experiment 模型
       ]);
       requests.length = 0;
       await writeFile(join(projectRoot, ".env"), "OPENROUTER_API_KEY=dotenv-router-key\n");
-      await writeFile(join(projectRoot, "experiments", "judge-configuration-experiment.ts"), `
+      await writeFile(
+        join(projectRoot, "experiments", "judge-configuration-experiment.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { OpenRouterProvider } from "niceeval/judge";
 import { configurationApplication } from "../evals/judge-configuration.eval.ts";
@@ -73,15 +108,20 @@ export default defineExperiment({
   judge: OpenRouterProvider({ model: "router-model", baseUrl: process.env.NICEEVAL_E2E_JUDGE_BASE_URL }),
   evals: ["judge-configuration/inherited", "judge-configuration/overridden"],
 });
-`);
-      const replaced = await niceeval.run(["exp", "judge-configuration-experiment", "--rerun", "all", "--json"], { env });
+`,
+      );
+      const replaced = await niceeval.run(["exp", "judge-configuration-experiment", "--rerun", "all", "--json"], {
+        env,
+      });
       expect(replaced.exitCode, replaced.diagnostic()).toBe(0);
       expect(requests).toEqual([
         { model: "router-model", tokens: 1024, authorization: "Bearer dotenv-router-key" },
         { model: "router-model", tokens: 1024, authorization: "Bearer dotenv-router-key" },
       ]);
     });
-  } finally { await close(server); }
+  } finally {
+    await close(server);
+  }
 });
 
 // @feature docs/feature/judge/README.md
@@ -91,13 +131,19 @@ test.concurrent("仅普通断言的 Eval 不探测已配置的 Judge", async () 
   try {
     await evalE2E.case("judge-no-probe", async ({ commands: { niceeval } }) => {
       const result = await niceeval.run(["exp", "judge-configuration-pure", "--rerun", "all", "--json"], {
-        env: { ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl, NICEEVAL_E2E_JUDGE_KEY: "configuration-fixture-key" },
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl,
+          NICEEVAL_E2E_JUDGE_KEY: "configuration-fixture-key",
+        },
       });
       expect(result.exitCode, result.diagnostic()).toBe(0);
       expect(result.expEvalEvents().map(({ verdict }) => verdict)).toEqual(["passed"]);
       expect(requests).toEqual([]);
     });
-  } finally { await close(server); }
+  } finally {
+    await close(server);
+  }
 });
 
 // @feature docs/feature/judge/README.md
@@ -107,7 +153,12 @@ test.concurrent("已配置模型缺少 Judge 凭据时不发送请求", async ()
   try {
     await evalE2E.case("judge-no-key", async ({ commands: { niceeval }, paths: { projectRoot } }) => {
       const result = await niceeval.run(["exp", "judge-configuration", "--rerun", "all", "--json"], {
-        env: { ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl, NICEEVAL_E2E_JUDGE_KEY: "", OPENAI_API_KEY: "must-not-borrow-adapter-key" },
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: baseUrl,
+          NICEEVAL_E2E_JUDGE_KEY: "",
+          OPENAI_API_KEY: "must-not-borrow-adapter-key",
+        },
       });
       expect(result.exitCode, result.diagnostic()).toBe(1);
       const attempts = result.expEvalEvents();
@@ -120,7 +171,10 @@ test.concurrent("已配置模型缺少 Judge 凭据时不发送请求", async ()
         const detail = await inspectAssertion(niceeval, projectRoot, locator!, entries[0]!.entryId);
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         const entry = assertionEntry(detail.document, detail.receipt.diagnostic());
-        expect(entry.scoreMatchAudit).toMatchObject({ state: "available", audit: { result: { state: "unavailable", code: "judge-key-unresolved" } } });
+        expect(entry.scoreMatchAudit).toMatchObject({
+          state: "available",
+          audit: { result: { state: "unavailable", code: "judge-key-unresolved" } },
+        });
       }
       expect(requests).toEqual([]);
       const human = await niceeval.run(["exp", "judge-configuration", "--rerun", "all"], {
@@ -133,5 +187,7 @@ test.concurrent("已配置模型缺少 Judge 凭据时不发送请求", async ()
       expect(output).toMatch(/judge-key-unresolved\s*[×x(]\s*2/u);
       expect(requests).toEqual([]);
     });
-  } finally { await close(server); }
+  } finally {
+    await close(server);
+  }
 });

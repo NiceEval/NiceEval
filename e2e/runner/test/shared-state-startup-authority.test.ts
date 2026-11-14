@@ -29,10 +29,10 @@ test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-startup-authority-", async (barrierRoot) => {
         const env = { NICEEVAL_SHARED_STATE_STARTUP_AUTHORITY_BARRIER: barrierRoot };
-        const holder = niceeval.start(
-          ["exp", "shared-state-startup-authority", "--rerun", "all", "--json"],
-          { env, timeoutMs: 60_000 },
-        );
+        const holder = niceeval.start(["exp", "shared-state-startup-authority", "--rerun", "all", "--json"], {
+          env,
+          timeoutMs: 60_000,
+        });
         let restarting: ReturnType<typeof niceeval.start> | undefined;
         let ownerToken: string | undefined;
         let recovered = false;
@@ -53,30 +53,30 @@ test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等
           await holder.done;
 
           const inspectionArgs = [
-            "exp", "shared-state-startup-authority", "--after",
-            "--recover-shared-state", "runner/shared-state-startup-authority",
+            "exp",
+            "shared-state-startup-authority",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-startup-authority",
           ];
           const inspection = await niceeval.run(inspectionArgs, { env });
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           ownerToken = ownerTokenFromInspection(inspection.stderr);
 
-          restarting = niceeval.start(
-            ["exp", "shared-state-startup-authority", "--rerun", "all", "--json"],
-            { env, timeoutMs: 60_000 },
-          );
-          await waitForOutput(
-            restarting,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "restarting invocation waits for sharedState startup authority" },
-          );
+          restarting = niceeval.start(["exp", "shared-state-startup-authority", "--rerun", "all", "--json"], {
+            env,
+            timeoutMs: 60_000,
+          });
+          await waitForOutput(restarting, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "restarting invocation waits for sharedState startup authority",
+          });
           expect(await exists(join(barrierRoot, "startup-authority-recovery-teardown-started"))).toBe(false);
 
-          const recoveredResult = await niceeval.run([
-            ...inspectionArgs,
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env, timeoutMs: 60_000 });
+          const recoveredResult = await niceeval.run(
+            [...inspectionArgs, "--owner-token", ownerToken, "--confirm-owner-terminated", "--confirm-remote-quiesced"],
+            { env, timeoutMs: 60_000 },
+          );
           recovered = true;
           expect(recoveredResult.exitCode, recoveredResult.diagnostic()).toBe(0);
 
@@ -94,12 +94,22 @@ test.concurrent("启动期遗留 teardown 先取得同 key authority，健康等
         } finally {
           await writeFile(join(barrierRoot, "release-startup-authority-agent"), "").catch(() => undefined);
           if (!recovered && ownerToken !== undefined) {
-            await niceeval.run([
-              "exp", "shared-state-startup-authority", "--after",
-              "--recover-shared-state", "runner/shared-state-startup-authority",
-              "--owner-token", ownerToken,
-              "--confirm-owner-terminated", "--confirm-remote-quiesced",
-            ], { env, timeoutMs: 60_000 }).catch(() => undefined);
+            await niceeval
+              .run(
+                [
+                  "exp",
+                  "shared-state-startup-authority",
+                  "--after",
+                  "--recover-shared-state",
+                  "runner/shared-state-startup-authority",
+                  "--owner-token",
+                  ownerToken,
+                  "--confirm-owner-terminated",
+                  "--confirm-remote-quiesced",
+                ],
+                { env, timeoutMs: 60_000 },
+              )
+              .catch(() => undefined);
           }
           await holder.dispose().catch(() => undefined);
           await restarting?.dispose().catch(() => undefined);
@@ -130,30 +140,39 @@ test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后�
         const agentStartedPath = join(barrierRoot, "startup-authority-agent-started");
         const recoveryStartedPath = join(barrierRoot, "startup-authority-recovery-teardown-started");
         const cleanupRoundMarkers = async (): Promise<void> => {
-          await Promise.all([
-            releasePath,
-            agentStartedPath,
-            recoveryStartedPath,
-            join(barrierRoot, "startup-authority-recovery-teardown-complete"),
-            join(barrierRoot, "startup-authority-setup-attempted"),
-            join(barrierRoot, "startup-authority-setup-complete"),
-            join(barrierRoot, "startup-authority-external-state"),
-          ].map((path) => rm(path, { force: true })));
+          await Promise.all(
+            [
+              releasePath,
+              agentStartedPath,
+              recoveryStartedPath,
+              join(barrierRoot, "startup-authority-recovery-teardown-complete"),
+              join(barrierRoot, "startup-authority-setup-attempted"),
+              join(barrierRoot, "startup-authority-setup-complete"),
+              join(barrierRoot, "startup-authority-external-state"),
+            ].map((path) => rm(path, { force: true })),
+          );
         };
         await writeFile(releasePath, "");
-        const seed = await niceeval.run(["exp", experiment, "shared-state/alpha", "--rerun", "all", "--json"], { env, timeoutMs: 60_000 });
+        const seed = await niceeval.run(["exp", experiment, "shared-state/alpha", "--rerun", "all", "--json"], {
+          env,
+          timeoutMs: 60_000,
+        });
         expect(seed.exitCode, seed.diagnostic()).toBe(0);
         await cleanupRoundMarkers();
 
-        const holder = niceeval.start(["exp", experiment, "shared-state/beta", "--rerun", "all", "--json"], { env, timeoutMs: 60_000 });
+        const holder = niceeval.start(["exp", experiment, "shared-state/beta", "--rerun", "all", "--json"], {
+          env,
+          timeoutMs: 60_000,
+        });
         let carrying: ReturnType<typeof niceeval.start> | undefined;
         let ownerToken: string | undefined;
         let recovered = false;
         try {
-          await pollUntil(
-            async () => (await exists(agentStartedPath)) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "rerun owner reaches its Agent before it is killed" },
-          );
+          await pollUntil(async () => (await exists(agentStartedPath)) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "rerun owner reaches its Agent before it is killed",
+          });
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;
           await rm(agentStartedPath, { force: true });
@@ -164,19 +183,16 @@ test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后�
           ownerToken = ownerTokenFromInspection(inspection.stderr);
 
           carrying = niceeval.start(["exp", experiment, "shared-state/alpha", "--json"], { env, timeoutMs: 60_000 });
-          await waitForOutput(
-            carrying,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "full-carry invocation waits for sharedState startup authority" },
-          );
+          await waitForOutput(carrying, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "full-carry invocation waits for sharedState startup authority",
+          });
           expect(await exists(recoveryStartedPath)).toBe(false);
 
-          const recoveredResult = await niceeval.run([
-            ...inspectionArgs,
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env, timeoutMs: 60_000 });
+          const recoveredResult = await niceeval.run(
+            [...inspectionArgs, "--owner-token", ownerToken, "--confirm-owner-terminated", "--confirm-remote-quiesced"],
+            { env, timeoutMs: 60_000 },
+          );
           recovered = true;
           expect(recoveredResult.exitCode, recoveredResult.diagnostic()).toBe(0);
 
@@ -184,10 +200,12 @@ test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后�
           expect(carryingResult.exitCode, carryingResult.diagnostic()).toBe(0);
           expect(await exists(join(barrierRoot, "startup-authority-recovery-teardown-complete"))).toBe(true);
           const carryingEvents = carryingResult.expEvents();
-          expect(carryingEvents).toEqual(expect.arrayContaining([
-            expect.objectContaining({ event: "start", reused: 1 }),
-            expect.objectContaining({ event: "notice", code: "state-lease-waiting" }),
-          ]));
+          expect(carryingEvents).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ event: "start", reused: 1 }),
+              expect.objectContaining({ event: "notice", code: "state-lease-waiting" }),
+            ]),
+          );
           expect(carryingEvents.some((event) => event.event === "experiment_setup")).toBe(false);
           const stream = JSON.stringify(carryingEvents);
           expect(stream).toContain("state-lease-waiting");
@@ -195,11 +213,22 @@ test.concurrent("full-carry 的 selected Experiment 也在同 key authority 后�
           expect(await exists(agentStartedPath)).toBe(false);
         } finally {
           if (!recovered && ownerToken !== undefined) {
-            await niceeval.run([
-              "exp", experiment, "--after", "--recover-shared-state", key,
-              "--owner-token", ownerToken,
-              "--confirm-owner-terminated", "--confirm-remote-quiesced",
-            ], { env, timeoutMs: 60_000 }).catch(() => undefined);
+            await niceeval
+              .run(
+                [
+                  "exp",
+                  experiment,
+                  "--after",
+                  "--recover-shared-state",
+                  key,
+                  "--owner-token",
+                  ownerToken,
+                  "--confirm-owner-terminated",
+                  "--confirm-remote-quiesced",
+                ],
+                { env, timeoutMs: 60_000 },
+              )
+              .catch(() => undefined);
           }
           await holder.dispose().catch(() => undefined);
           await carrying?.dispose().catch(() => undefined);

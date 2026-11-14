@@ -31,11 +31,7 @@ import {
   resolveExactAdoptionSourceRun,
   withAdoptionReader,
 } from "./adoption.ts";
-import type {
-  Config,
-  DiscoveredEval,
-  DiscoveredExperiment,
-} from "./types.ts";
+import type { Config, DiscoveredEval, DiscoveredExperiment } from "./types.ts";
 
 export type AcceptFailureCode =
   | "malformed-locator"
@@ -108,8 +104,7 @@ export interface AcceptPreflight {
 }
 
 /** All native Record v1 failures before/while the formal publication runs. */
-export type AcceptNativeError =
-  | ExplicitAdoptionOpenError;
+export type AcceptNativeError = ExplicitAdoptionOpenError;
 
 interface AcceptPreflightGroup {
   readonly target: CurrentAdoptionTarget;
@@ -139,16 +134,11 @@ function selectedAcceptTarget(
   });
 }
 
-function explicitError(
-  code: ExplicitAdoptionError["code"],
-  message: string,
-): ExplicitAdoptionError {
+function explicitError(code: ExplicitAdoptionError["code"], message: string): ExplicitAdoptionError {
   return new ExplicitAdoptionError(code, message);
 }
 
-function assertUniqueLocators(
-  locators: readonly string[],
-): Effect.Effect<void, ExplicitAdoptionError> {
+function assertUniqueLocators(locators: readonly string[]): Effect.Effect<void, ExplicitAdoptionError> {
   return Effect.sync(() => {
     const seen = new Set<string>();
     for (const locator of locators) {
@@ -159,22 +149,22 @@ function assertUniqueLocators(
     }
     return locators.length > 0;
   }).pipe(
-    Effect.flatMap((valid) => valid
-      ? Effect.void
-      : Effect.fail(explicitError(
-          locators.length === 0
-            ? "adoption-target-invalid"
-            : "adoption-batch-locator-duplicate",
-          locators.length === 0
-            ? "Explicit adoption requires at least one complete Attempt locator."
-            : "One explicit adoption locator was supplied more than once.",
-        ))),
+    Effect.flatMap((valid) =>
+      valid
+        ? Effect.void
+        : Effect.fail(
+            explicitError(
+              locators.length === 0 ? "adoption-target-invalid" : "adoption-batch-locator-duplicate",
+              locators.length === 0
+                ? "Explicit adoption requires at least one complete Attempt locator."
+                : "One explicit adoption locator was supplied more than once.",
+            ),
+          ),
+    ),
   );
 }
 
-function groupAcceptSources(
-  sources: readonly ResolvedAdoptionAttempt[],
-): readonly AcceptSourceGroup[] {
+function groupAcceptSources(sources: readonly ResolvedAdoptionAttempt[]): readonly AcceptSourceGroup[] {
   const grouped = new Map<string, ResolvedAdoptionAttempt[]>();
   for (const source of sources) {
     const group = grouped.get(source.originExperimentId);
@@ -184,10 +174,14 @@ function groupAcceptSources(
       group.push(source);
     }
   }
-  return Object.freeze([...grouped.entries()].map(([experimentId, group]) => Object.freeze({
-    experimentId,
-    sources: Object.freeze(group),
-  })));
+  return Object.freeze(
+    [...grouped.entries()].map(([experimentId, group]) =>
+      Object.freeze({
+        experimentId,
+        sources: Object.freeze(group),
+      }),
+    ),
+  );
 }
 
 /**
@@ -211,38 +205,38 @@ function prepareAcceptPreflight(input: {
     );
     const groups = yield* Effect.forEach(
       groupAcceptSources(sources),
-      (sourceGroup) => Effect.gen(function* () {
-        const target = yield* prepareCurrentAdoptionTarget({
-          project: input.project,
-          experimentId: sourceGroup.experimentId,
-          startedAt: input.startedAt,
-        });
-        const members = yield* Effect.forEach(
-          sourceGroup.sources,
-          (source) => prepareExplicitAdoptionMember({
-            reader: input.reader,
-            target,
-            source,
-            evalId: source.originEvalId,
-            attempt: source.originAttempt,
-            ...(input.operatorReason === undefined
-              ? {}
-              : { operatorReason: input.operatorReason }),
-          }),
-          { concurrency: 1 },
-        );
-        const selectedTarget = selectedAcceptTarget(target, members);
-        const plan = yield* buildExplicitAdoptionRunPlan({
-          intent: "accept",
-          target: selectedTarget,
-          members,
-        });
-        return Object.freeze({
-          target: selectedTarget,
-          members: Object.freeze(members),
-          plan,
-        });
-      }),
+      (sourceGroup) =>
+        Effect.gen(function* () {
+          const target = yield* prepareCurrentAdoptionTarget({
+            project: input.project,
+            experimentId: sourceGroup.experimentId,
+            startedAt: input.startedAt,
+          });
+          const members = yield* Effect.forEach(
+            sourceGroup.sources,
+            (source) =>
+              prepareExplicitAdoptionMember({
+                reader: input.reader,
+                target,
+                source,
+                evalId: source.originEvalId,
+                attempt: source.originAttempt,
+                ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+              }),
+            { concurrency: 1 },
+          );
+          const selectedTarget = selectedAcceptTarget(target, members);
+          const plan = yield* buildExplicitAdoptionRunPlan({
+            intent: "accept",
+            target: selectedTarget,
+            members,
+          });
+          return Object.freeze({
+            target: selectedTarget,
+            members: Object.freeze(members),
+            plan,
+          });
+        }),
       // Physical planning can be costly; retain one complete target at a time.
       { concurrency: 1 },
     );
@@ -250,19 +244,22 @@ function prepareAcceptPreflight(input: {
   });
 }
 
-function projectAcceptPreview(
-  preflight: AcceptPreflight,
-): readonly AcceptedAttemptPreview[] {
-  return Object.freeze(preflight.groups.flatMap((group) =>
-    group.members.map((member) => Object.freeze({
-      locator: member.locator,
-      sourceLocator: member.locator,
-      experimentId: group.target.experimentId,
-      evalId: member.target.evalId,
-      attempt: member.target.attempt,
-      fingerprint: member.target.inputIdentity.value,
-      comparisons: member.comparisons,
-    }))));
+function projectAcceptPreview(preflight: AcceptPreflight): readonly AcceptedAttemptPreview[] {
+  return Object.freeze(
+    preflight.groups.flatMap((group) =>
+      group.members.map((member) =>
+        Object.freeze({
+          locator: member.locator,
+          sourceLocator: member.locator,
+          experimentId: group.target.experimentId,
+          evalId: member.target.evalId,
+          attempt: member.target.attempt,
+          fingerprint: member.target.inputIdentity.value,
+          comparisons: member.comparisons,
+        }),
+      ),
+    ),
+  );
 }
 
 function receiptsForAccept(input: {
@@ -273,18 +270,22 @@ function receiptsForAccept(input: {
 }): Effect.Effect<readonly AcceptedAttempt[], ExplicitAdoptionError> {
   return Effect.gen(function* () {
     if (input.receipts.length !== input.preflight.groups.length) {
-      return yield* Effect.fail(explicitError(
-        "adoption-provenance-invalid",
-        "Explicit adoption publication returned a receipt for an unexpected target Run set.",
-      ));
+      return yield* Effect.fail(
+        explicitError(
+          "adoption-provenance-invalid",
+          "Explicit adoption publication returned a receipt for an unexpected target Run set.",
+        ),
+      );
     }
     const receiptsByExperiment = new Map<string, ExplicitAdoptionRunReceipt>();
     for (const receipt of input.receipts) {
       if (receiptsByExperiment.has(receipt.experimentId)) {
-        return yield* Effect.fail(explicitError(
-          "adoption-provenance-invalid",
-          "Explicit adoption publication returned duplicate target-Experiment receipts.",
-        ));
+        return yield* Effect.fail(
+          explicitError(
+            "adoption-provenance-invalid",
+            "Explicit adoption publication returned duplicate target-Experiment receipts.",
+          ),
+        );
       }
       receiptsByExperiment.set(receipt.experimentId, receipt);
     }
@@ -292,18 +293,22 @@ function receiptsForAccept(input: {
     for (const group of input.preflight.groups) {
       const receipt = receiptsByExperiment.get(group.target.experimentId);
       if (receipt === undefined || receipt.members.length !== group.members.length) {
-        return yield* Effect.fail(explicitError(
-          "adoption-provenance-invalid",
-          "Explicit adoption publication returned incomplete Member receipts.",
-        ));
+        return yield* Effect.fail(
+          explicitError(
+            "adoption-provenance-invalid",
+            "Explicit adoption publication returned incomplete Member receipts.",
+          ),
+        );
       }
       const membersByLocator = new Map<string, ExplicitAdoptionRunReceipt["members"][number]>();
       for (const memberReceipt of receipt.members) {
         if (membersByLocator.has(memberReceipt.locator)) {
-          return yield* Effect.fail(explicitError(
-            "adoption-provenance-invalid",
-            "Explicit adoption publication returned duplicate Member receipt locators.",
-          ));
+          return yield* Effect.fail(
+            explicitError(
+              "adoption-provenance-invalid",
+              "Explicit adoption publication returned duplicate Member receipt locators.",
+            ),
+          );
         }
         membersByLocator.set(memberReceipt.locator, memberReceipt);
       }
@@ -316,41 +321,52 @@ function receiptsForAccept(input: {
           memberReceipt.sourceRunId !== member.source.origin.runId ||
           memberReceipt.attemptId !== member.source.attempt.attemptId
         ) {
-          return yield* Effect.fail(explicitError(
-            "adoption-provenance-invalid",
-            "Explicit adoption publication returned a Member receipt with mismatched identity provenance.",
-          ));
+          return yield* Effect.fail(
+            explicitError(
+              "adoption-provenance-invalid",
+              "Explicit adoption publication returned a Member receipt with mismatched identity provenance.",
+            ),
+          );
         }
         if (byLocator.has(member.locator)) {
-          return yield* Effect.fail(explicitError(
-            "adoption-provenance-invalid",
-            "Explicit adoption publication reused one locator across target Members.",
-          ));
+          return yield* Effect.fail(
+            explicitError(
+              "adoption-provenance-invalid",
+              "Explicit adoption publication reused one locator across target Members.",
+            ),
+          );
         }
-        byLocator.set(member.locator, Object.freeze({
-          invocationId: input.invocationId,
-          runId: receipt.runId,
-          slotId: memberReceipt.slotId,
-          locator: member.locator,
-          sourceLocator: member.locator,
-          fingerprint: member.target.inputIdentity.value,
-        }));
+        byLocator.set(
+          member.locator,
+          Object.freeze({
+            invocationId: input.invocationId,
+            runId: receipt.runId,
+            slotId: memberReceipt.slotId,
+            locator: member.locator,
+            sourceLocator: member.locator,
+            fingerprint: member.target.inputIdentity.value,
+          }),
+        );
       }
       if (membersByLocator.size !== group.members.length) {
-        return yield* Effect.fail(explicitError(
-          "adoption-provenance-invalid",
-          "Explicit adoption publication returned an unexpected Member receipt.",
-        ));
+        return yield* Effect.fail(
+          explicitError(
+            "adoption-provenance-invalid",
+            "Explicit adoption publication returned an unexpected Member receipt.",
+          ),
+        );
       }
     }
     const ordered: AcceptedAttempt[] = [];
     for (const locator of input.locators) {
       const receipt = byLocator.get(locator);
       if (receipt === undefined) {
-        return yield* Effect.fail(explicitError(
-          "adoption-provenance-invalid",
-          `Explicit adoption did not publish a receipt for locator "${locator}".`,
-        ));
+        return yield* Effect.fail(
+          explicitError(
+            "adoption-provenance-invalid",
+            `Explicit adoption did not publish a receipt for locator "${locator}".`,
+          ),
+        );
       }
       ordered.push(receipt);
     }
@@ -364,9 +380,7 @@ function projectInput(input: AcceptLocatorsOptions): AdoptionProjectInput {
     ...(input.config === undefined ? {} : { config: input.config }),
     ...(input.evals === undefined ? {} : { evals: input.evals }),
     ...(input.experiments === undefined ? {} : { experiments: input.experiments }),
-    ...(input.planningServices === undefined
-      ? {}
-      : { planningServices: input.planningServices }),
+    ...(input.planningServices === undefined ? {} : { planningServices: input.planningServices }),
   };
 }
 
@@ -381,9 +395,11 @@ function prepareAcceptRunPreflight(input: {
     const sourceRun = yield* resolveExactAdoptionSourceRun({
       reader: input.reader,
       sourceRunId: input.runId,
-    }).pipe(Effect.mapError((cause) => cause.code === "adoption-source-run-not-found"
-      ? explicitError("run-not-found", cause.message)
-      : cause));
+    }).pipe(
+      Effect.mapError((cause) =>
+        cause.code === "adoption-source-run-not-found" ? explicitError("run-not-found", cause.message) : cause,
+      ),
+    );
     const target = yield* prepareCurrentAdoptionTarget({
       project: input.project,
       experimentId: sourceRun.experimentId,
@@ -413,7 +429,14 @@ export function planAcceptRun(input: AcceptRunOptions) {
     const project = yield* loadAdoptionProject(acceptRunProjectInput(input));
     const preflight = yield* withAdoptionReader({
       root,
-      use: (reader) => prepareAcceptRunPreflight({ reader, project, runId: input.runId, startedAt, ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }) }),
+      use: (reader) =>
+        prepareAcceptRunPreflight({
+          reader,
+          project,
+          runId: input.runId,
+          startedAt,
+          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+        }),
     });
     return Object.freeze({ sourceRunId: input.runId, members: projectAcceptPreview(preflight) });
   });
@@ -425,9 +448,23 @@ export function acceptRun(input: AcceptRunOptions) {
     const startedAt = yield* adoptionStartedAt(input.now);
     const resolvedProjectInput = acceptRunProjectInput(input);
     const project = yield* loadAdoptionProject(resolvedProjectInput);
-    const preflight = yield* withAdoptionReader({ root, use: (reader) => prepareAcceptRunPreflight({ reader, project, runId: input.runId, startedAt, ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }) }) });
+    const preflight = yield* withAdoptionReader({
+      root,
+      use: (reader) =>
+        prepareAcceptRunPreflight({
+          reader,
+          project,
+          runId: input.runId,
+          startedAt,
+          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+        }),
+    });
     const invocationId = yield* createExplicitAdoptionInvocationId();
-    const receipts = yield* commitExplicitAdoptionRunPlans(root, invocationId, preflight.groups.map((group) => group.plan));
+    const receipts = yield* commitExplicitAdoptionRunPlans(
+      root,
+      invocationId,
+      preflight.groups.map((group) => group.plan),
+    );
     const locators = projectAcceptPreview(preflight).map((member) => member.locator);
     return yield* receiptsForAccept({ invocationId, locators, preflight, receipts });
   });
@@ -437,24 +474,21 @@ export function acceptRun(input: AcceptRunOptions) {
  * Effect-native, reader-only acceptance planning. It opens only the shared
  * reader lease and creates neither a writer lock nor a Run.
  */
-export function planAcceptLocators(
-  input: AcceptLocatorsOptions,
-) {
+export function planAcceptLocators(input: AcceptLocatorsOptions) {
   return Effect.gen(function* () {
     const root = yield* adoptionRecordRoot(input);
     const startedAt = yield* adoptionStartedAt(input.now);
     const project = yield* loadAdoptionProject(projectInput(input));
     const preflight = yield* withAdoptionReader({
       root,
-      use: (reader) => prepareAcceptPreflight({
-        reader,
-        project,
-        locators: input.locators,
-        startedAt,
-        ...(input.operatorReason === undefined
-          ? {}
-          : { operatorReason: input.operatorReason }),
-      }),
+      use: (reader) =>
+        prepareAcceptPreflight({
+          reader,
+          project,
+          locators: input.locators,
+          startedAt,
+          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+        }),
     });
     return projectAcceptPreview(preflight);
   });
@@ -464,9 +498,7 @@ export function planAcceptLocators(
  * Freeze the complete preflight in one read transaction, then publish detached
  * references after the reader closes.
  */
-export function acceptLocators(
-  input: AcceptLocatorsOptions,
-) {
+export function acceptLocators(input: AcceptLocatorsOptions) {
   return Effect.gen(function* () {
     const root = yield* adoptionRecordRoot(input);
     const startedAt = yield* adoptionStartedAt(input.now);
@@ -474,19 +506,22 @@ export function acceptLocators(
     const project = yield* loadAdoptionProject(resolvedProjectInput);
     const preflight = yield* withAdoptionReader({
       root,
-      use: (reader) => prepareAcceptPreflight({
-        reader,
-        project,
-        locators: input.locators,
-        startedAt,
-        ...(input.operatorReason === undefined
-          ? {}
-          : { operatorReason: input.operatorReason }),
-      }),
+      use: (reader) =>
+        prepareAcceptPreflight({
+          reader,
+          project,
+          locators: input.locators,
+          startedAt,
+          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+        }),
     });
 
     const invocationId = yield* createExplicitAdoptionInvocationId();
-    const receipts = yield* commitExplicitAdoptionRunPlans(root, invocationId, preflight.groups.map((group) => group.plan));
+    const receipts = yield* commitExplicitAdoptionRunPlans(
+      root,
+      invocationId,
+      preflight.groups.map((group) => group.plan),
+    );
     return yield* receiptsForAccept({ invocationId, locators: input.locators, preflight, receipts });
   });
 }
@@ -497,10 +532,12 @@ export function acceptLocator(input: AcceptLocatorOptions) {
     Effect.flatMap((receipts) => {
       const [receipt] = receipts;
       return receipt === undefined
-        ? Effect.fail(explicitError(
-            "adoption-provenance-invalid",
-            "Explicit adoption published no receipt for its requested locator.",
-          ))
+        ? Effect.fail(
+            explicitError(
+              "adoption-provenance-invalid",
+              "Explicit adoption published no receipt for its requested locator.",
+            ),
+          )
         : Effect.succeed(receipt);
     }),
   );

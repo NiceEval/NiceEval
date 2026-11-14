@@ -4,12 +4,7 @@ import { only } from "@niceeval/testkit";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type APIResponse, type Page, type Route } from "@playwright/test";
-import {
-  expectLoopbackReadyUrl,
-  insightCaseArtifacts,
-  insightE2E,
-  waitForViewReady,
-} from "./support.ts";
+import { expectLoopbackReadyUrl, insightCaseArtifacts, insightE2E, waitForViewReady } from "./support.ts";
 // @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 // @regression memory/view-refresh-candidate-replaced-by-polling.md
 // @regression memory/view-refresh-commit-races-with-navigation.md
@@ -21,23 +16,14 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
     async ({ commands: { niceeval } }) => {
       const first = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(first.exitCode, first.diagnostic()).toBe(0);
-      const firstAttempt = only(
-        first.expEvalEvents(),
-        (event) => event.evalId === "inspection",
-        first.diagnostic(),
-      );
+      const firstAttempt = only(first.expEvalEvents(), (event) => event.evalId === "inspection", first.diagnostic());
       const firstLocator = withAt(firstAttempt.locator);
       const alternate = await niceeval.run(["exp", "alternate", "--rerun", "all", "--json"]);
       expect(alternate.exitCode, alternate.diagnostic()).toBe(0);
       const baseline = await niceeval.run(["exp", "classic/baseline", "--rerun", "all", "--json"]);
       expect(baseline.expReceipt(), baseline.diagnostic()).toMatchObject({ completion: "completed" });
 
-      const view = niceeval.start([
-        "view",
-        "--no-open",
-        "--port",
-        "0",
-      ], { timeoutMs: 90_000 });
+      const view = niceeval.start(["view", "--no-open", "--port", "0"], { timeoutMs: 90_000 });
 
       let stopped = false;
       try {
@@ -82,19 +68,25 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
         try {
           await page.getByRole("button", { name: /refresh/i }).click();
           expect((await commit.reached()).ok()).toBe(true);
-          await page.evaluate(() => new Promise<void>((resolve) => {
-            window.addEventListener("popstate", () => resolve(), { once: true });
-            window.history.back();
-          }));
+          await page.evaluate(
+            () =>
+              new Promise<void>((resolve) => {
+                window.addEventListener("popstate", () => resolve(), { once: true });
+                window.history.back();
+              }),
+          );
           await expect(selector).toBeDisabled();
           await expect(selector).toHaveValue(alternateSelection);
           await expect(page).toHaveURL(alternateUrl);
           await expect(page.getByRole("button", { name: /refreshing/i })).toBeVisible();
           // A second Back targets the initial classic entry; the last intent wins.
-          await page.evaluate(() => new Promise<void>((resolve) => {
-            window.addEventListener("popstate", () => resolve(), { once: true });
-            window.history.go(-2);
-          }));
+          await page.evaluate(
+            () =>
+              new Promise<void>((resolve) => {
+                window.addEventListener("popstate", () => resolve(), { once: true });
+                window.history.go(-2);
+              }),
+          );
           await expect(selector).toHaveValue(alternateSelection);
           await expect(page).toHaveURL(alternateUrl);
         } finally {
@@ -118,11 +110,9 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
         // Navigation during preparation remains available and discards that candidate.
         const third = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(third.exitCode, third.diagnostic()).toBe(0);
-        const thirdLocator = withAt(only(
-          third.expEvalEvents(),
-          (event) => event.evalId === "inspection",
-          third.diagnostic(),
-        ).locator);
+        const thirdLocator = withAt(
+          only(third.expEvalEvents(), (event) => event.evalId === "inspection", third.diagnostic()).locator,
+        );
         await expect(page.getByRole("status")).toContainText(/update|new run|refresh/i, { timeout: 15_000 });
         const preparation = await holdNextResponse(page, "**/_niceeval/inspection");
         try {
@@ -151,11 +141,9 @@ test("project view 在确认刷新前保留 last-good hierarchy，确认后原�
 
         const fourth = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(fourth.exitCode, fourth.diagnostic()).toBe(0);
-        const fourthLocator = withAt(only(
-          fourth.expEvalEvents(),
-          (event) => event.evalId === "inspection",
-          fourth.diagnostic(),
-        ).locator);
+        const fourthLocator = withAt(
+          only(fourth.expEvalEvents(), (event) => event.evalId === "inspection", fourth.diagnostic()).locator,
+        );
         await expect(page.getByRole("status")).toContainText(/update|new run|refresh/i, { timeout: 15_000 });
 
         // Lose the real Host commit response and its recovery readback.
@@ -224,12 +212,17 @@ test("当前 Results 在仅修改评估用例后刷新为缺口，并链接上�
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      const locator = withAt(only(produced.expEvalEvents(), (event) => event.evalId === "inspection", produced.diagnostic()).locator);
+      const locator = withAt(
+        only(produced.expEvalEvents(), (event) => event.evalId === "inspection", produced.diagnostic()).locator,
+      );
       const view = niceeval.start(["view", "--no-open", "--port", "0"], { timeoutMs: 90_000 });
       try {
         const ready = await waitForViewReady(view);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
-        await page.getByRole("banner").getByRole("combobox", { name: "Experiments" }).selectOption({ label: "singleton/main" });
+        await page
+          .getByRole("banner")
+          .getByRole("combobox", { name: "Experiments" })
+          .selectOption({ label: "singleton/main" });
         const summary = page.getByRole("region", { name: "Summary" });
         await expect(summary.getByText("Covered")).toBeVisible();
         await expect(summary.getByText("1/1")).toBeVisible();
@@ -240,12 +233,17 @@ test("当前 Results 在仅修改评估用例后刷新为缺口，并链接上�
         const evalPath = join(projectRoot, "evals", "inspection.eval.ts");
         const before = await readFile(evalPath, "utf8");
         expect(before).toContain("defineScoreEval");
-        expect(before).toContain("description: \"inspection: 生成稳定的 Verdict、Score、coverage 与 Evidence\"");
+        expect(before).toContain('description: "inspection: 生成稳定的 Verdict、Score、coverage 与 Evidence"');
         expect(before).toContain(".score(34.111111111111114)");
-        await writeFile(evalPath, before
-          .replace("description: \"inspection: 生成稳定的 Verdict、Score、coverage 与 Evidence\"",
-            "description: \"inspection: refreshed score Eval\"")
-          .replace(".score(34.111111111111114)", ".score(35.111111111111114)"));
+        await writeFile(
+          evalPath,
+          before
+            .replace(
+              'description: "inspection: 生成稳定的 Verdict、Score、coverage 与 Evidence"',
+              'description: "inspection: refreshed score Eval"',
+            )
+            .replace(".score(34.111111111111114)", ".score(35.111111111111114)"),
+        );
         expect(view.settledExit).toBeFalsy();
         await page.getByRole("button", { name: "Refresh", exact: true }).click();
         expect(view.settledExit).toBeFalsy();
@@ -291,7 +289,7 @@ test("只有导入的 Record 时 Results 明确显示历史模式", async ({ pag
 async function openMainHierarchy(page: Page): Promise<void> {
   const experimentSummary = page.getByRole("region", { name: "main" }).locator("details > summary");
   await expect(experimentSummary).toHaveCount(1);
-  if (await experimentSummary.locator("xpath=..").getAttribute("open") === null) {
+  if ((await experimentSummary.locator("xpath=..").getAttribute("open")) === null) {
     await experimentSummary.click();
   }
   await expect(experimentSummary.locator("xpath=..")).toHaveAttribute("open", "");
@@ -304,10 +302,15 @@ function withAt(locator: string): string {
 // Delay a real transport response; product actions and assertions remain in the Journey.
 async function holdNextResponse(page: Page, pattern: string) {
   let resume!: () => void;
-  const gate = new Promise<void>((resolve) => { resume = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
   let arrived!: (response: APIResponse) => void;
   let failed!: (cause: unknown) => void;
-  const arrival = new Promise<APIResponse>((resolve, reject) => { arrived = resolve; failed = reject; });
+  const arrival = new Promise<APIResponse>((resolve, reject) => {
+    arrived = resolve;
+    failed = reject;
+  });
   void arrival.catch(() => {});
   let completion = Promise.resolve();
   const handler = (route: Route) => {

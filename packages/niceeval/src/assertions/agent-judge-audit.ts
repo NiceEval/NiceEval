@@ -97,8 +97,6 @@ export const AgentJudgeTraceSchema = Schema.Struct({
 /** One conversation trajectory shared by all questions in an Agent Judge session. */
 export type AgentJudgeTrace = typeof AgentJudgeTraceSchema.Type;
 export const AgentJudgeAuditSchema = Schema.Struct({
-
-
   trace: Schema.Struct({ state: Schema.Literal("reference"), entryIndex: bytes, digest }),
   criterion: text,
   prompt: text,
@@ -109,8 +107,6 @@ export const AgentJudgeAuditSchema = Schema.Struct({
 export type AgentJudgeAudit = typeof AgentJudgeAuditSchema.Type;
 const envelope = Schema.Struct({
   manifest: Schema.Struct({
-
-
     byteLength: bytes,
     digest,
     chunkByteLengths: Schema.Array(bytes),

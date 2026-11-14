@@ -10,12 +10,7 @@ import {
   type Request,
   type Response,
 } from "@playwright/test";
-import {
-  expectLoopbackReadyUrl,
-  insightCaseArtifacts,
-  insightE2E,
-  waitForViewReady,
-} from "./support.ts";
+import { expectLoopbackReadyUrl, insightCaseArtifacts, insightE2E, waitForViewReady } from "./support.ts";
 // @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 // @regression memory/view-deep-link-bootstrap-misses-router-initialization.md
 // @regression memory/view-hard-refresh-duplicates-attempt-overlay.md
@@ -28,19 +23,10 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
     async ({ commands: { niceeval } }) => {
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
       expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      const attempt = only(
-        produced.expEvalEvents(),
-        (event) => event.evalId === "inspection",
-        produced.diagnostic(),
-      );
+      const attempt = only(produced.expEvalEvents(), (event) => event.evalId === "inspection", produced.diagnostic());
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
 
-      const view = niceeval.start([
-        "view",
-        "--no-open",
-        "--port",
-        "0",
-      ], { timeoutMs: 90_000 });
+      const view = niceeval.start(["view", "--no-open", "--port", "0"], { timeoutMs: 90_000 });
 
       const context = await browser.newContext();
       const page = await context.newPage();
@@ -149,12 +135,7 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
           await replayContext.close();
         }
 
-        const secondView = niceeval.start([
-          "view",
-          "--no-open",
-          "--port",
-          "0",
-        ], { timeoutMs: 90_000 });
+        const secondView = niceeval.start(["view", "--no-open", "--port", "0"], { timeoutMs: 90_000 });
         try {
           const secondReady = await waitForViewReady(secondView);
           const secondReadyUrl = expectLoopbackReadyUrl(secondReady.url);
@@ -164,7 +145,10 @@ test("loopback view 只向一次性 fragment 换取的同源 session 交付 fact
           const secondPage = await context.newPage();
           await secondPage.goto(secondReadyUrl.href);
           await expect(secondPage.getByRole("heading", { name: "NiceEval Insight", exact: true })).toBeVisible();
-          await secondPage.getByRole("banner").getByRole("combobox", { name: "Experiments" }).selectOption({ label: "singleton/main" });
+          await secondPage
+            .getByRole("banner")
+            .getByRole("combobox", { name: "Experiments" })
+            .selectOption({ label: "singleton/main" });
           await expect(secondPage).toHaveURL(/#\/group\/singleton\/main$/u);
 
           const secondExperimentSummary = secondPage.getByRole("region", { name: "main" }).locator("details > summary");

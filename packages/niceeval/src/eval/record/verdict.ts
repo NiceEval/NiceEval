@@ -27,9 +27,7 @@ export const VerdictPayloadSchema = Schema.Struct({
 });
 
 export type VerdictPayload = Schema.toType<typeof VerdictPayloadSchema>["Type"];
-export type VerdictPayloadEncoded = Schema.Codec.Encoded<
-  typeof VerdictPayloadSchema
->;
+export type VerdictPayloadEncoded = Schema.Codec.Encoded<typeof VerdictPayloadSchema>;
 
 export type VerdictFoldInput = EvaluationAttemptFacts;
 export const VerdictFoldInputSchema = EvaluationAttemptFactsSchema;
@@ -38,10 +36,7 @@ export const VerdictFoldInputSchema = EvaluationAttemptFactsSchema;
 // @concord-implements docs/feature/verdict/architecture.md
 // @concord-implements docs/feature/verdict/use-case/strict-quality-gate.md
 export function foldVerdict(input: VerdictFoldInput): VerdictState {
-  if (
-    input.execution === "errored"
-    || input.assertions.some(isRequiredAssertionUnavailableOrErrored)
-  ) {
+  if (input.execution === "errored" || input.assertions.some(isRequiredAssertionUnavailableOrErrored)) {
     return "errored";
   }
   if (input.assertions.some(isGateFailed)) return "failed";
@@ -60,9 +55,7 @@ export function foldRecordedAttemptVerdict(input: {
   return foldVerdict(recordedAttemptFacts(input));
 }
 
-export function buildVerdictPayload(
-  input: VerdictFoldInput,
-): VerdictPayload {
+export function buildVerdictPayload(input: VerdictFoldInput): VerdictPayload {
   return Object.freeze({ state: foldVerdict(input) });
 }
 

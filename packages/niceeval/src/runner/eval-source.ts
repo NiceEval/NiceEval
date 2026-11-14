@@ -49,7 +49,11 @@ export async function captureEvalSource(filePath: string, opts?: { root?: string
  * 非扇出时它就是 eval id；扇出条目（数组 / keyed record）在它后面追加扇出后缀。
  */
 export function folderEntryBaseId(evalsRelativeDir: string): string {
-  const id = evalsRelativeDir.split(sep).join("/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+  const id = evalsRelativeDir
+    .split(sep)
+    .join("/")
+    .replace(/^\.\/+/, "")
+    .replace(/\/+$/, "");
   if (!id || id === ".") {
     throw new Error(
       `Folder eval entry under evals/ itself is not allowed: put eval.ts inside a named directory ` +

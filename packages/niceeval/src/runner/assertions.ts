@@ -23,13 +23,15 @@ export function sealAttemptAssertions<Kind extends "pass" | "score">(
     Effect.flatMap((sealed) => {
       const score = runtime.evaluationKind === "score" ? buildScorePayload(sealed.evaluation) : undefined;
       if (score !== undefined && Result.isFailure(score)) return Effect.fail(score.failure);
-      return Effect.succeed(Object.freeze({
-        entries: sealed.entries,
-        evaluation: sealed.evaluation,
-        ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
-        verdict: Object.freeze({ state: foldVerdict(sealed.evaluation) }),
-        ...(score === undefined ? {} : { score: score.success }),
-      }));
+      return Effect.succeed(
+        Object.freeze({
+          entries: sealed.entries,
+          evaluation: sealed.evaluation,
+          ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
+          verdict: Object.freeze({ state: foldVerdict(sealed.evaluation) }),
+          ...(score === undefined ? {} : { score: score.success }),
+        }),
+      );
     }),
   );
 }

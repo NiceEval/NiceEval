@@ -8,7 +8,9 @@ import { cliE2E } from "./context.ts";
 
 test("运行与 check 在执行前拒绝混合 Pass Eval 与 Score Eval 的 Experiment 和 Eval Group", async () => {
   await cliE2E.case("mixed-experiment-kinds", async ({ paths, commands: { niceeval } }) => {
-    await writeFile(join(paths.projectRoot, "experiments", "mixed-evaluation-kinds.ts"), `
+    await writeFile(
+      join(paths.projectRoot, "experiments", "mixed-evaluation-kinds.ts"),
+      `
 import { defineExperiment } from "niceeval";
 import { deterministicAgent } from "../agents/deterministic.ts";
 
@@ -16,7 +18,8 @@ export default defineExperiment({
   adapter: deterministicAgent("mixed-evaluation-kinds"),
   evals: ["greet", "deliberate-score"],
 });
-`);
+`,
+    );
 
     const receipt = await niceeval.run(["exp", "mixed-evaluation-kinds", "--json"]);
 
@@ -32,7 +35,9 @@ export default defineExperiment({
   await cliE2E.case("mixed-group-kinds", async ({ paths, commands: { niceeval } }) => {
     const groupDir = join(paths.projectRoot, "evals", "mixed-evaluation-kinds");
     await mkdir(groupDir, { recursive: true });
-    await writeFile(join(groupDir, "eval-group.ts"), `
+    await writeFile(
+      join(groupDir, "eval-group.ts"),
+      `
 import { defineEvalGroup } from "niceeval";
 import passEval from "../greet/hello.eval.ts";
 import scoreEval from "../deliberate-score/scored.eval.ts";
@@ -41,7 +46,8 @@ export default defineEvalGroup({
   evals: [passEval, scoreEval],
   onUnavailable: "stop-group",
 });
-`);
+`,
+    );
 
     const receipt = await niceeval.run(["check", "normal"]);
 

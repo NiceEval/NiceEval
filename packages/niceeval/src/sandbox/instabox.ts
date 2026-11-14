@@ -53,7 +53,13 @@ const Options = Schema.Struct({
   snapshotId: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^sn_[A-Za-z0-9_-]+$/))),
   templateId: Schema.optionalKey(Schema.String),
   template: Schema.optionalKey(Schema.String),
-  lifetimeMs: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }), Schema.isMultipleOf(1000))),
+  lifetimeMs: Schema.optionalKey(
+    Schema.Number.check(
+      Schema.isInt(),
+      Schema.isBetween({ minimum: 60_000, maximum: 86_400_000 }),
+      Schema.isMultipleOf(1000),
+    ),
+  ),
   resources: Schema.optionalKey(Schema.Struct({ vcpus: positiveInteger, memMiB: positiveInteger })),
   spec: Schema.optionalKey(Schema.Literals(Object.keys(INSTABOX_MACHINE_SPECS) as InstaboxMachineSpec[])),
   pathPrepend: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isPattern(/^\/[^\0:\r\n]*$/)))),
@@ -69,37 +75,84 @@ const providerModule: SandboxProviderModule<InstaboxSandboxOptions> = {
     sessionLimit: { _tag: "ProviderValidated", reason: "Instabox validates the declared deletion deadline." },
   },
   collectBuildPreparation: () => Effect.succeed(Option.none()),
-  materialize: (plan, context) => Effect.flatMap(
-    providerBoundaryEffect(() => import("./instabox/materialize.ts")),
-    (module) => module.materializeInstabox(plan, context),
-  ).pipe(Effect.mapError((cause) => cause instanceof SandboxRuntimeMaterializationError ? cause : new SandboxRuntimeMaterializationError({
-    code: "sandbox.materialization-failed", provider: "instabox", message: cause.message, cause,
-  }))),
+  materialize: (plan, context) =>
+    Effect.flatMap(
+      providerBoundaryEffect(() => import("./instabox/materialize.ts")),
+      (module) => module.materializeInstabox(plan, context),
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof SandboxRuntimeMaterializationError
+          ? cause
+          : new SandboxRuntimeMaterializationError({
+              code: "sandbox.materialization-failed",
+              provider: "instabox",
+              message: cause.message,
+              cause,
+            }),
+      ),
+    ),
 };
 
 /** Start an independent Instabox machine from a snapshot or template (default: universal). */
 export function instaboxSandbox(options: InstaboxSandboxOptions): SandboxLayer<"template-bearing"> {
   const parsed = decodeOptions(options);
   const plan = Object.freeze({
-    ...(parsed.snapshotId !== undefined ? { snapshotId: parsed.snapshotId } : { templateId: parsed.templateId ?? parsed.template ?? "universal" }),
+    ...(parsed.snapshotId !== undefined
+      ? { snapshotId: parsed.snapshotId }
+      : { templateId: parsed.templateId ?? parsed.template ?? "universal" }),
     ...(parsed.lifetimeMs === undefined ? {} : { lifetimeMs: parsed.lifetimeMs }),
     resources: Object.freeze({ ...(parsed.resources ?? INSTABOX_MACHINE_SPECS[parsed.spec ?? "instabox-medium"]) }),
     ...(parsed.spec !== undefined ? { spec: parsed.spec } : {}),
     pathPrepend: Object.freeze([...(parsed.pathPrepend ?? [])]),
   });
-  const identity: JsonValue = { provider: "instabox", origin: "https://api.instabox.sh", revision, ...plan, pathPrepend: [...plan.pathPrepend] };
+  const identity: JsonValue = {
+    provider: "instabox",
+    origin: "https://api.instabox.sh",
+    revision,
+    ...plan,
+    pathPrepend: [...plan.pathPrepend],
+  };
   return defineSandboxTemplate({
-    provider: "instabox", kind: "snapshot", publishableIdentity: identity, privateFingerprintIdentity: identity,
-    commandPlanLocator: { _tag: "Exact", fields: ["snapshotId" in plan
-      ? { name: "snapshotId", value: plan.snapshotId }
-      : { name: "templateId", value: plan.templateId }] }, leakGate: { _tag: "None" },
-    plan: () => Effect.succeed(sandboxProviderPlan({
-      provider: "instabox", plannerRevision: revision, caseKind: "prebuilt",
-      target: { platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" }, source: "provider-defined" },
-      scheduling: { recommendedConcurrency: 10, lane: { key: "instabox", limit: 10 }, admission: { _tag: "Shared" } },
-      module: providerModule, runtimePlan: plan,
-      build: { _tag: "None", caseKey: computeCaseKey({ caseKind: "prebuilt", materializerRevision: revision, buildKeys: [], caseParams: identity }), buildKeys: [] },
-      publishableIdentity: identity, privateFingerprintIdentity: identity,
-    })),
+    provider: "instabox",
+    kind: "snapshot",
+    publishableIdentity: identity,
+    privateFingerprintIdentity: identity,
+    commandPlanLocator: {
+      _tag: "Exact",
+      fields: [
+        "snapshotId" in plan
+          ? { name: "snapshotId", value: plan.snapshotId }
+          : { name: "templateId", value: plan.templateId },
+      ],
+    },
+    leakGate: { _tag: "None" },
+    plan: () =>
+      Effect.succeed(
+        sandboxProviderPlan({
+          provider: "instabox",
+          plannerRevision: revision,
+          caseKind: "prebuilt",
+          target: { platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" }, source: "provider-defined" },
+          scheduling: {
+            recommendedConcurrency: 10,
+            lane: { key: "instabox", limit: 10 },
+            admission: { _tag: "Shared" },
+          },
+          module: providerModule,
+          runtimePlan: plan,
+          build: {
+            _tag: "None",
+            caseKey: computeCaseKey({
+              caseKind: "prebuilt",
+              materializerRevision: revision,
+              buildKeys: [],
+              caseParams: identity,
+            }),
+            buildKeys: [],
+          },
+          publishableIdentity: identity,
+          privateFingerprintIdentity: identity,
+        }),
+      ),
   });
 }

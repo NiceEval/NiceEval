@@ -60,7 +60,8 @@ async function createControlledExclusiveSandbox(workdir = process.cwd()): Promis
   };
   const runCommand = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
     execute(workdir, controlledEnv, command, args, options);
-  const runShell = (script: string, options: CommandOptions = {}) => execute(workdir, controlledEnv, "bash", ["-c", script], options);
+  const runShell = (script: string, options: CommandOptions = {}) =>
+    execute(workdir, controlledEnv, "bash", ["-c", script], options);
   const writeBytes = async (path: string, bytes: Uint8Array): Promise<void> => {
     const target = pathIn(workdir, path);
     await mkdir(dirname(target), { recursive: true });
@@ -76,13 +77,15 @@ async function createControlledExclusiveSandbox(workdir = process.cwd()): Promis
     writeText: (path, content) => writeBytes(path, Buffer.from(content, "utf8")),
     readBytes: (path) => readFile(pathIn(workdir, path)),
     writeBytes,
-    pathExists: (path) => access(pathIn(workdir, path)).then(() => true, () => false),
+    pathExists: (path) =>
+      access(pathIn(workdir, path)).then(
+        () => true,
+        () => false,
+      ),
     uploadFile: async (source, target) => writeBytes(target, await readFile(source)),
     uploadDirectory: async (source, target = ".") => cp(source, pathIn(workdir, target), { recursive: true }),
-    downloadFile: async (source, target) => writeBytes(
-      target instanceof URL ? target.pathname : target,
-      await readFile(pathIn(workdir, source)),
-    ),
+    downloadFile: async (source, target) =>
+      writeBytes(target instanceof URL ? target.pathname : target, await readFile(pathIn(workdir, source))),
     downloadDirectory: async (source, target) => cp(pathIn(workdir, source), target, { recursive: true }),
     stop: releaseHostLedgerLock,
   };

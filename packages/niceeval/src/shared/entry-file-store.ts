@@ -33,7 +33,7 @@ function errnoCode(cause: unknown): string | undefined {
 
 function removeFileIfPresent(path: string): EntryFileStoreEffect<void> {
   return nodeIo(() => unlink(path)).pipe(
-    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.void : Effect.fail(cause)),
+    Effect.catch((cause) => (errnoCode(cause) === "ENOENT" ? Effect.void : Effect.fail(cause))),
   );
 }
 
@@ -73,10 +73,8 @@ export function writeEntryFileEffect(dir: string, id: string, data: unknown): En
   const tmpPath = join(dir, `.${id}.${process.pid}.tmp`);
   const finalPath = join(dir, `${id}.json`);
   let renamed = false;
-  const writeTmp = withOpenFile(
-    tmpPath,
-    "w",
-    (handle) => nodeIo(() => handle.writeFile(JSON.stringify(data, null, 2), "utf-8")).pipe(
+  const writeTmp = withOpenFile(tmpPath, "w", (handle) =>
+    nodeIo(() => handle.writeFile(JSON.stringify(data, null, 2), "utf-8")).pipe(
       Effect.andThen(nodeIo(() => handle.sync())),
     ),
   );
@@ -86,15 +84,19 @@ export function writeEntryFileEffect(dir: string, id: string, data: unknown): En
       writeTmp.pipe(
         Effect.andThen(
           nodeIo(() => rename(tmpPath, finalPath)).pipe(
-            Effect.tap(() => Effect.sync(() => {
-              renamed = true;
-            })),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                renamed = true;
+              }),
+            ),
           ),
         ),
         Effect.andThen(fsyncDirEffect(dir)),
         // rename 前的失败或 interruption 不能留下会被后续扫描跳过的临时残骸；rename 后
         // tmp 已不存在，清理只会成为 no-op，不触碰已发布的最终路径。
-        Effect.ensuring(Effect.suspend(() => renamed ? Effect.void : removeFileIfPresent(tmpPath)).pipe(Effect.orDie)),
+        Effect.ensuring(
+          Effect.suspend(() => (renamed ? Effect.void : removeFileIfPresent(tmpPath))).pipe(Effect.orDie),
+        ),
       ),
     ),
   );
@@ -137,13 +139,15 @@ export function readAllEntryFilesEffect<T extends {}>(
 ): EntryFileStoreEffect<{ id: string; entry: T }[]> {
   return nodeIo(() => readdir(dir)).pipe(
     Effect.catch(() => Effect.succeed([] as string[])),
-    Effect.flatMap((files) => Effect.forEach(files, (file) => {
-      if (!file.endsWith(".json") || file.startsWith(".")) return Effect.succeed(undefined);
-      const id = file.slice(0, -".json".length);
-      return readEntryFileEffect(dir, id, decode).pipe(
-        Effect.map((entry) => entry === undefined ? undefined : { id, entry }),
-      );
-    })),
+    Effect.flatMap((files) =>
+      Effect.forEach(files, (file) => {
+        if (!file.endsWith(".json") || file.startsWith(".")) return Effect.succeed(undefined);
+        const id = file.slice(0, -".json".length);
+        return readEntryFileEffect(dir, id, decode).pipe(
+          Effect.map((entry) => (entry === undefined ? undefined : { id, entry })),
+        );
+      }),
+    ),
     Effect.map((entries) => entries.filter((entry): entry is { id: string; entry: T } => entry !== undefined)),
   );
 }
@@ -169,16 +173,16 @@ export function claimEntryFileEffect(dir: string, id: string): EntryFileStoreEff
   const claimedPath = join(dir, `.${id}.${process.pid}.${randomUUID()}.claimed`);
   return nodeIo(() => rename(path, claimedPath)).pipe(
     Effect.as(true),
-    Effect.catch((cause) => errnoCode(cause) === "ENOENT" ? Effect.succeed(false) : Effect.fail(cause)),
-    Effect.flatMap((claimed) => claimed
-      ? removeFileIfPresent(claimedPath).pipe(Effect.andThen(fsyncDirEffect(dir)), Effect.as(true))
-      : Effect.succeed(false)),
+    Effect.catch((cause) => (errnoCode(cause) === "ENOENT" ? Effect.succeed(false) : Effect.fail(cause))),
+    Effect.flatMap((claimed) =>
+      claimed
+        ? removeFileIfPresent(claimedPath).pipe(Effect.andThen(fsyncDirEffect(dir)), Effect.as(true))
+        : Effect.succeed(false),
+    ),
   );
 }
 
 /** 目录 fsync,尽力而为——部分平台/文件系统不支持目录 fsync(如 Windows),静默降级。 */
 export function fsyncDirEffect(dir: string): EntryFileStoreEffect<void> {
-  return withOpenFile(dir, "r", (handle) => nodeIo(() => handle.sync())).pipe(
-    Effect.catch(() => Effect.void),
-  );
+  return withOpenFile(dir, "r", (handle) => nodeIo(() => handle.sync())).pipe(Effect.catch(() => Effect.void));
 }

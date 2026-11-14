@@ -87,7 +87,7 @@ export function attachmentId(input: {
   return hashCanonicalTuple("niceeval.record.attachment-id", [
     input.runId,
     input.owner,
-    input.owner === "attempt" ? input.attemptId ?? null : null,
+    input.owner === "attempt" ? (input.attemptId ?? null) : null,
     input.family,
   ]);
 }
@@ -96,8 +96,16 @@ export function contentId(attachment: string, logicalHandle: string): string {
   return hashCanonicalTuple("niceeval.record.content-id", [attachment, logicalHandle]);
 }
 
-export function attachmentLogicalIdentity(attachment: string, canonicalDigest: string, inventoryDigest: string): string {
-  return hashCanonicalTuple("niceeval.record.attachment-logical-identity", [attachment, canonicalDigest, inventoryDigest]);
+export function attachmentLogicalIdentity(
+  attachment: string,
+  canonicalDigest: string,
+  inventoryDigest: string,
+): string {
+  return hashCanonicalTuple("niceeval.record.attachment-logical-identity", [
+    attachment,
+    canonicalDigest,
+    inventoryDigest,
+  ]);
 }
 
 export function collectionItemLogicalIdentity(ordinal: number, canonicalDigest: string): string {
@@ -112,8 +120,7 @@ function entry(kind: SealEntry["kind"], identity: readonly TuplePart[], closure:
   });
 }
 
-export const recordSealEntry = (recordDigest: string): SealEntry =>
-  entry("record", ["record"], [recordDigest]);
+export const recordSealEntry = (recordDigest: string): SealEntry => entry("record", ["record"], [recordDigest]);
 
 export const runSealEntry = (input: {
   readonly runId: string;
@@ -122,14 +129,27 @@ export const runSealEntry = (input: {
   readonly coreDigest: string;
 }): SealEntry => entry("run", [input.runId], [input.writerGeneration, input.startedAt, input.coreDigest]);
 
-export const slotSealEntry = (runId: string, slot: Pick<PersistedSlot, "slotId" | "ordinal" | "coreDigest">): SealEntry =>
-  entry("slot", [runId, slot.slotId], [slot.ordinal, slot.coreDigest]);
+export const slotSealEntry = (
+  runId: string,
+  slot: Pick<PersistedSlot, "slotId" | "ordinal" | "coreDigest">,
+): SealEntry => entry("slot", [runId, slot.slotId], [slot.ordinal, slot.coreDigest]);
 
-export const attemptSealEntry = (runId: string, attemptId: string, attemptLocator: string, coreDigest: string): SealEntry =>
-  entry("attempt", [runId, attemptId], [attemptLocator, coreDigest]);
+export const attemptSealEntry = (
+  runId: string,
+  attemptId: string,
+  attemptLocator: string,
+  coreDigest: string,
+): SealEntry => entry("attempt", [runId, attemptId], [attemptLocator, coreDigest]);
 
-export const memberSealEntry = (runId: string, member: Pick<PersistedMember, "slotId" | "originRunId" | "attemptId" | "action" | "coreDigest">): SealEntry =>
-  entry("member", [runId, member.slotId], [member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreDigest]);
+export const memberSealEntry = (
+  runId: string,
+  member: Pick<PersistedMember, "slotId" | "originRunId" | "attemptId" | "action" | "coreDigest">,
+): SealEntry =>
+  entry(
+    "member",
+    [runId, member.slotId],
+    [member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreDigest],
+  );
 
 export const attachmentSealEntry = (input: {
   readonly attachmentId: string;
@@ -141,50 +161,54 @@ export const attachmentSealEntry = (input: {
   readonly logicalIdentity: string;
   readonly canonicalDigest: string;
   readonly inventoryDigest: string;
-}): SealEntry => entry("attachment", [input.attachmentId], [
-  input.ownerKind,
-  input.ownerRunId,
-  input.ownerAttemptId ?? null,
-  input.family,
-  input.familyRevision ?? null,
-  input.logicalIdentity,
-  input.canonicalDigest,
-  input.inventoryDigest,
-]);
+}): SealEntry =>
+  entry(
+    "attachment",
+    [input.attachmentId],
+    [
+      input.ownerKind,
+      input.ownerRunId,
+      input.ownerAttemptId ?? null,
+      input.family,
+      input.familyRevision ?? null,
+      input.logicalIdentity,
+      input.canonicalDigest,
+      input.inventoryDigest,
+    ],
+  );
 
 export const referenceSealEntry = (
   attachmentId: string,
   reference: Pick<PersistedAttachmentReference, "ordinal" | "owner" | "family" | "referenceDigest">,
-): SealEntry => entry("attachment-reference", [attachmentId, reference.ordinal], [
-  reference.owner,
-  reference.family,
-  reference.referenceDigest,
-]);
+): SealEntry =>
+  entry(
+    "attachment-reference",
+    [attachmentId, reference.ordinal],
+    [reference.owner, reference.family, reference.referenceDigest],
+  );
 
 export const collectionItemSealEntry = (
   attachmentId: string,
   item: Pick<PersistedCollectionItem, "ordinal" | "logicalIdentity" | "canonicalDigest">,
 ): SealEntry => entry("collection-item", [attachmentId, item.ordinal], [item.logicalIdentity, item.canonicalDigest]);
 
-export const contentSealEntry = (
-  attachmentId: string,
-  content: PersistedContentMetadata,
-): SealEntry => entry("content", [content.contentId], [
-  attachmentId,
-  content.logicalHandle,
-  content.byteLength,
-  content.digest,
-  content.chunkCount,
-]);
+export const contentSealEntry = (attachmentId: string, content: PersistedContentMetadata): SealEntry =>
+  entry(
+    "content",
+    [content.contentId],
+    [attachmentId, content.logicalHandle, content.byteLength, content.digest, content.chunkCount],
+  );
 
 export const contentChunkSealEntry = (contentId: string, ordinal: number, chunkDigest: string): SealEntry =>
   entry("content-chunk", [contentId, ordinal], [chunkDigest]);
 
 export function orderSealEntries(entries: readonly SealEntry[]): readonly SealEntry[] {
-  return [...entries].sort((left, right) =>
-    compareCanonicalCodeUnits(left.kind, right.kind) ||
-    compareCanonicalCodeUnits(left.logicalIdentity, right.logicalIdentity) ||
-    compareCanonicalCodeUnits(left.digest, right.digest));
+  return [...entries].sort(
+    (left, right) =>
+      compareCanonicalCodeUnits(left.kind, right.kind) ||
+      compareCanonicalCodeUnits(left.logicalIdentity, right.logicalIdentity) ||
+      compareCanonicalCodeUnits(left.digest, right.digest),
+  );
 }
 
 export function exactLogicalSealIdentity(entries: readonly SealEntry[]): string {

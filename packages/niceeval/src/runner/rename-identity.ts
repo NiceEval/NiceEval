@@ -22,12 +22,17 @@ export interface RenameIdentityTarget {
 /** First-party experiment-rename/v1 proof, shared by explicit adoption and later reuse. */
 export function executionDigestForExperiment(target: RenameIdentityTarget, experimentId: string): string | undefined {
   if (experimentId === target.experimentId) return target.executionIdentityDigest;
-  if (target.inputIdentity.domain !== "niceeval.input/fingerprint" ||
-      target.configIdentity.domain !== "niceeval.config/identity") return undefined;
+  if (
+    target.inputIdentity.domain !== "niceeval.input/fingerprint" ||
+    target.configIdentity.domain !== "niceeval.config/identity"
+  )
+    return undefined;
   const fingerprint = target.renameFingerprint?.(experimentId);
   if (fingerprint === undefined) return undefined;
   return slotExecutionIdentityDigestHex({
-    experimentId, evalId: target.evalId, attempt: target.attempt,
+    experimentId,
+    evalId: target.evalId,
+    attempt: target.attempt,
     input: { domain: target.inputIdentity.domain, value: fingerprint },
     config: target.configIdentity,
     timeout: target.timeout ?? null,

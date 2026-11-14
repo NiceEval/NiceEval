@@ -30,7 +30,8 @@ const OPTION_NAME = /^[a-z][a-z0-9-]*$/u;
 function sameOptionShape(left: CliOptionDefinition, right: CliOptionDefinition): boolean {
   const leftOptional = left.optionalValue;
   const rightOptional = right.optionalValue;
-  return left.type === right.type &&
+  return (
+    left.type === right.type &&
     left.multiple === right.multiple &&
     left.short === right.short &&
     (leftOptional === undefined
@@ -42,7 +43,8 @@ function sameOptionShape(left: CliOptionDefinition, right: CliOptionDefinition):
           ? rightOptional.values === undefined
           : rightOptional.values !== undefined &&
             leftOptional.values.length === rightOptional.values.length &&
-            leftOptional.values.every((value, index) => value === rightOptional.values![index])));
+            leftOptional.values.every((value, index) => value === rightOptional.values![index])))
+  );
 }
 
 function validateOptionSchema(name: string, options: Readonly<Record<string, CliOptionDefinition>>): void {
@@ -57,12 +59,20 @@ function validateOptionSchema(name: string, options: Readonly<Record<string, Cli
     if (!Object.isFrozen(option) || option.help === undefined || !Object.isFrozen(option.help)) {
       throw new CliCommandCompositionError(`CLI option --${optionName} for ${name} must be immutable`);
     }
-    if ((option.type !== "string" && option.type !== "boolean") || (option.multiple !== undefined && option.multiple !== true)) {
+    if (
+      (option.type !== "string" && option.type !== "boolean") ||
+      (option.multiple !== undefined && option.multiple !== true)
+    ) {
       throw new CliCommandCompositionError(`Invalid parser shape for CLI option --${optionName} on ${name}`);
     }
     if (option.optionalValue !== undefined) {
       const optional = option.optionalValue;
-      if (option.type !== "boolean" || option.multiple !== undefined || option.short !== undefined || !Object.isFrozen(optional)) {
+      if (
+        option.type !== "boolean" ||
+        option.multiple !== undefined ||
+        option.short !== undefined ||
+        !Object.isFrozen(optional)
+      ) {
         throw new CliCommandCompositionError(
           `CLI option --${optionName} on ${name} has an invalid optional-value shape`,
         );
@@ -73,10 +83,13 @@ function validateOptionSchema(name: string, options: Readonly<Record<string, Cli
         );
       }
       if (optional.values !== undefined) {
-        if (!Object.isFrozen(optional.values) || optional.values.length === 0 ||
+        if (
+          !Object.isFrozen(optional.values) ||
+          optional.values.length === 0 ||
           optional.values.some((value) => value.length === 0) ||
           new Set(optional.values).size !== optional.values.length ||
-          (typeof optional.default === "string" && !optional.values.includes(optional.default))) {
+          (typeof optional.default === "string" && !optional.values.includes(optional.default))
+        ) {
           throw new CliCommandCompositionError(
             `CLI option --${optionName} on ${name} requires a frozen, unique optional-value vocabulary containing its default`,
           );
@@ -85,11 +98,16 @@ function validateOptionSchema(name: string, options: Readonly<Record<string, Cli
     }
     if (option.short !== undefined) {
       if (!/^[A-Za-z0-9]$/u.test(option.short) || shortNames.has(option.short)) {
-        throw new CliCommandCompositionError(`Invalid or duplicate short option ${JSON.stringify(option.short)} on ${name}`);
+        throw new CliCommandCompositionError(
+          `Invalid or duplicate short option ${JSON.stringify(option.short)} on ${name}`,
+        );
       }
       shortNames.add(option.short);
     }
-    if (option.help.summary.trim() === "" || (option.help.visibility !== "public" && option.help.visibility !== "hidden")) {
+    if (
+      option.help.summary.trim() === "" ||
+      (option.help.visibility !== "public" && option.help.visibility !== "hidden")
+    ) {
       throw new CliCommandCompositionError(`CLI option --${optionName} on ${name} requires valid help metadata`);
     }
   }
@@ -179,10 +197,7 @@ export function locateCliRoot(tokens: readonly CliParsedToken[]): CliRootToken |
 }
 
 /** Delete exactly the command token: flags before/after it and `--` retain byte order. */
-export function projectCliArgvWithoutRoot(
-  argv: readonly string[],
-  root: CliRootToken,
-): readonly string[] {
+export function projectCliArgvWithoutRoot(argv: readonly string[], root: CliRootToken): readonly string[] {
   if (root.index < 0 || root.index >= argv.length || argv[root.index] !== root.name) {
     throw new CliCommandCompositionError(`CLI root token ${JSON.stringify(root.name)} has an invalid argv index`);
   }
@@ -190,8 +205,10 @@ export function projectCliArgvWithoutRoot(
 }
 
 function precedingGlobalHelpOrVersion(tokens: readonly CliParsedToken[], root: CliRootToken): boolean {
-  return tokens.some((token) => token.kind === "option" && token.index < root.index &&
-    (token.name === "help" || token.name === "version"));
+  return tokens.some(
+    (token) =>
+      token.kind === "option" && token.index < root.index && (token.name === "help" || token.name === "version"),
+  );
 }
 
 export type CliFeatureRoute<R, E> =
@@ -218,11 +235,19 @@ export function matchCliFeatureCommand<R, E>(
   const command = contributions.find((candidate) => candidate.name === root.name);
   if (command === undefined) return undefined;
 
-  const applicationHelp = parsed.tokens.some((token) => token.kind === "option" && token.name === "help" &&
-    (token.index < root.index || !Object.hasOwn(command.options, "help")));
+  const applicationHelp = parsed.tokens.some(
+    (token) =>
+      token.kind === "option" &&
+      token.name === "help" &&
+      (token.index < root.index || !Object.hasOwn(command.options, "help")),
+  );
   if (applicationHelp) return Object.freeze({ kind: "application-option", option: "help", root });
-  const applicationVersion = parsed.tokens.some((token) => token.kind === "option" && token.name === "version" &&
-    (token.index < root.index || !Object.hasOwn(command.options, "version")));
+  const applicationVersion = parsed.tokens.some(
+    (token) =>
+      token.kind === "option" &&
+      token.name === "version" &&
+      (token.index < root.index || !Object.hasOwn(command.options, "version")),
+  );
   if (applicationVersion) return Object.freeze({ kind: "application-option", option: "version", root });
   if (precedingGlobalHelpOrVersion(parsed.tokens, root)) {
     throw new CliCommandCompositionError("Application help/version routing lost its owner");
@@ -230,9 +255,7 @@ export function matchCliFeatureCommand<R, E>(
   return Object.freeze({ kind: "command", command, argv: projectCliArgvWithoutRoot(argv, root), root });
 }
 
-export function renderFeatureCommandIndex<R, E>(
-  contributions: readonly CliCommandContribution<R, E>[],
-): string {
+export function renderFeatureCommandIndex<R, E>(contributions: readonly CliCommandContribution<R, E>[]): string {
   if (contributions.length === 0) return "";
   return `\nFeature commands:\n${contributions.map(({ name, summary }) => `  niceeval ${name.padEnd(12)} ${summary}`).join("\n")}\n`;
 }

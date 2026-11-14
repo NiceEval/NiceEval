@@ -12,7 +12,9 @@ function providerFixture(fail: boolean) {
   const server = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (part: string) => { body += part; });
+    request.on("data", (part: string) => {
+      body += part;
+    });
     request.on("end", () => {
       const payload = JSON.parse(body);
       const precheck = payload.messages.some((message: { content: string }) => message.content === "Precheck.");
@@ -27,35 +29,69 @@ function providerFixture(fail: boolean) {
       }
       let decision: unknown;
       if (operation === "score") decision = { measurement: precheck ? 1 : 0.75, rationale: "Fixture clarity judgment" };
-      else if (operation === "extract") decision = {
-        items: ["Paris is the capital of France.", "Paris has museums.", "Paris is on Mars."],
-        complete: true,
-        rationale: "Three distinct claims",
-      };
+      else if (operation === "extract")
+        decision = {
+          items: ["Paris is the capital of France.", "Paris has museums.", "Paris is on Mars."],
+          complete: true,
+          rationale: "Three distinct claims",
+        };
       else if (operation === "classify") {
         const question = user.material.question ?? "";
         const choice = system.choices.includes("satisfied")
-          ? question.startsWith("ACCEPT:") ? "satisfied" : question.startsWith("REJECT:") ? "not-satisfied" : "insufficient-evidence"
-          : system.choices.includes("consistent") ? "incomplete" : system.choices.includes("candidate") ? "tie" : "accepted";
-        decision = { choice, rationale: "Fixture classification", ...(system.evidenceIds === undefined ? {} : { citations: [system.evidenceIds[0]] }) };
+          ? question.startsWith("ACCEPT:")
+            ? "satisfied"
+            : question.startsWith("REJECT:")
+              ? "not-satisfied"
+              : "insufficient-evidence"
+          : system.choices.includes("consistent")
+            ? "incomplete"
+            : system.choices.includes("candidate")
+              ? "tie"
+              : "accepted";
+        decision = {
+          choice,
+          rationale: "Fixture classification",
+          ...(system.evidenceIds === undefined ? {} : { citations: [system.evidenceIds[0]] }),
+        };
       } else if (operation === "batchClassify") {
         const supported = system.choices.includes("supported");
-        decision = { items: user.items.map((item: { id: string }, index: number) => ({
-          id: item.id,
-          choice: supported ? (index < 2 ? "supported" : "unsupported") : (index === 0 ? "followed" : "not-followed"),
-          rationale: "Fixture per-item judgment",
-        })) };
+        decision = {
+          items: user.items.map((item: { id: string }, index: number) => ({
+            id: item.id,
+            choice: supported ? (index < 2 ? "supported" : "unsupported") : index === 0 ? "followed" : "not-followed",
+            rationale: "Fixture per-item judgment",
+          })),
+        };
       } else throw new Error(`Unexpected primitive ${operation}`);
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        id: "fixture-response", object: "chat.completion", created: 0, model: "judge-fixture",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: {
-          role: "assistant", content: null,
-          tool_calls: [{ id: "fixture-call", type: "function", function: {
-            name: payload.tool_choice.function.name, arguments: JSON.stringify(decision),
-          } }],
-        } }],
-      }));
+      response.end(
+        JSON.stringify({
+          id: "fixture-response",
+          object: "chat.completion",
+          created: 0,
+          model: "judge-fixture",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "fixture-call",
+                    type: "function",
+                    function: {
+                      name: payload.tool_choice.function.name,
+                      arguments: JSON.stringify(decision),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
     });
   });
   return { server, requests };
@@ -69,7 +105,7 @@ async function listen(server: ReturnType<typeof createServer>) {
 }
 async function close(server: ReturnType<typeof createServer>) {
   server.closeAllConnections();
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 }
 
 function environment(baseUrl: string) {
@@ -86,19 +122,32 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
   const baseUrl = await listen(server);
   try {
     await evalE2E.case("judge-presets", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "assertion-judge-presets", "--rerun", "all", "--json"], { env: environment(baseUrl) });
+      const run = await niceeval.run(["exp", "assertion-judge-presets", "--rerun", "all", "--json"], {
+        env: environment(baseUrl),
+      });
       expect(run.exitCode, run.diagnostic()).toBe(1);
       expect(run.expReceipt().completion).toBe("completed");
-      const evaluation = only(run.expEvalEvents(), (item) => item.evalId === "assertion-judge-presets", run.diagnostic());
+      const evaluation = only(
+        run.expEvalEvents(),
+        (item) => item.evalId === "assertion-judge-presets",
+        run.diagnostic(),
+      );
       const attempt = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
       expect(evaluation.verdict, JSON.stringify(attempt.document)).toBe("failed");
       const entries = attempt.document.attempt.assertions.entries;
       expect(entries).toHaveLength(22);
       const expected = [
-        ["Factuality", 0.5, 1], ["Faithfulness", 2 / 3, 2], ["Instructions", 0.5, 1],
-        ["Preference", 0.5, 1], ["Quality", 0.75, 1], ["Custom", 0.8, 1],
-        ["Material QA accepted", 1, 1], ["Material QA rejected", 0, 1], ["Whole operations", 1, 1], ["Whole dialogue", 1, 1],
+        ["Factuality", 0.5, 1],
+        ["Faithfulness", 2 / 3, 2],
+        ["Instructions", 0.5, 1],
+        ["Preference", 0.5, 1],
+        ["Quality", 0.75, 1],
+        ["Custom", 0.8, 1],
+        ["Material QA accepted", 1, 1],
+        ["Material QA rejected", 0, 1],
+        ["Whole operations", 1, 1],
+        ["Whole dialogue", 1, 1],
       ] as const;
       for (const [label, measurement, calls] of expected) {
         const entry = only(entries, (item) => item.display.label === label, attempt.receipt.diagnostic());
@@ -107,7 +156,10 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         const detailEntry = assertionEntry(detail.document, detail.receipt.diagnostic());
         expect(detail.document.assertion.sourceSites.filter(({ role }) => role === "declaration")).toHaveLength(1);
         const audit = detailEntry.scoreMatchAudit;
-        expect(audit).toMatchObject({ state: "available", audit: { result: { state: "measured", value: measurement } } });
+        expect(audit).toMatchObject({
+          state: "available",
+          audit: { result: { state: "measured", value: measurement } },
+        });
         const serialized = JSON.stringify(audit);
         expect(serialized).not.toContain("fixture-only-key");
         expect(serialized).not.toContain("MUTATED_AFTER_CHECK");
@@ -115,16 +167,37 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       }
       expect(requests).toHaveLength(12);
       expect(requests.every(({ body }) => JSON.parse(body).model === "judge-eval-override")).toBe(true);
-      expect(requests.map((item) => item.operation).sort()).toEqual(["batchClassify", "batchClassify", "classify", "classify", "classify", "classify", "classify", "classify", "classify", "classify", "extract", "score"]);
+      expect(requests.map((item) => item.operation).sort()).toEqual([
+        "batchClassify",
+        "batchClassify",
+        "classify",
+        "classify",
+        "classify",
+        "classify",
+        "classify",
+        "classify",
+        "classify",
+        "classify",
+        "extract",
+        "score",
+      ]);
       expect(requests.find((item) => item.body.includes("ORIGINAL_CUSTOM_MARKER"))).toBeDefined();
       for (const label of ["Material QA unknown"]) {
         const entry = only(entries, (item) => item.display.label === label, attempt.receipt.diagnostic());
         const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
-        expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit)
-          .toMatchObject({ state: "available", audit: { result: { state: "unavailable" } } });
+        expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
+          state: "available",
+          audit: { result: { state: "unavailable" } },
+        });
       }
 
-      for (const label of ["Material QA empty", "Material QA partial", "Material QA over capacity", "Material QA predicate unknown", "Material QA non JSON"]) {
+      for (const label of [
+        "Material QA empty",
+        "Material QA partial",
+        "Material QA over capacity",
+        "Material QA predicate unknown",
+        "Material QA non JSON",
+      ]) {
         const entry = only(entries, (item) => item.display.label === label);
         const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
@@ -135,35 +208,51 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       const accepted = requests.find(({ body }) => body.includes("ACCEPT: do all"))!;
       const acceptedMaterial = JSON.parse(JSON.parse(accepted.body).messages[1].content).material;
       expect(acceptedMaterial.items.map((item: { id: string }) => item.id)).toEqual(["event-1", "event-3", "event-4"]);
-      expect(acceptedMaterial.items.map((item: { value: { text: string } }) => item.value.text))
-        .toEqual(["FIRST_ORIGINAL", "DISCARDED_ORIGINAL", "LAST_ORIGINAL"]);
+      expect(acceptedMaterial.items.map((item: { value: { text: string } }) => item.value.text)).toEqual([
+        "FIRST_ORIGINAL",
+        "DISCARDED_ORIGINAL",
+        "LAST_ORIGINAL",
+      ]);
       expect(acceptedMaterial.items[1].value.adopted).toBe(false);
       expect(JSON.stringify(requests)).not.toContain("MUTATED_HISTORY");
       const rejected = requests.find(({ body }) => body.includes("REJECT: is every"))!;
       const speechMaterial = JSON.parse(JSON.parse(rejected.body).messages[1].content).material;
       expect(speechMaterial.items.map((item: { id: string }) => item.id)).toEqual(["event-1", "event-4"]);
-      const acceptedEntry = only(entries, (item) => item.display.label === "Material QA accepted", attempt.receipt.diagnostic());
+      const acceptedEntry = only(
+        entries,
+        (item) => item.display.label === "Material QA accepted",
+        attempt.receipt.diagnostic(),
+      );
       const acceptedDetail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, acceptedEntry.entryId);
       expect(JSON.stringify(acceptedDetail.document)).toContain("event-1");
 
-      for (const [label, marker, count] of [["Whole operations", "ORIGINAL_OPERATION_", 1000], ["Whole dialogue", "ORIGINAL_DIALOGUE_", 360]] as const) {
+      for (const [label, marker, count] of [
+        ["Whole operations", "ORIGINAL_OPERATION_", 1000],
+        ["Whole dialogue", "ORIGINAL_DIALOGUE_", 360],
+      ] as const) {
         const request = only(requests, ({ body }) => body.includes(marker + "0:"));
         const material = JSON.parse(JSON.parse(request.body).messages[1].content).material;
         expect(material.items).toHaveLength(count);
-        expect(material.items.map((item: { value: { sequence: number } }) => item.value.sequence)).toEqual(Array.from({ length: count }, (_, index) => index));
+        expect(material.items.map((item: { value: { sequence: number } }) => item.value.sequence)).toEqual(
+          Array.from({ length: count }, (_, index) => index),
+        );
         const entry = only(entries, (item) => item.display.label === label);
         const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         const text = JSON.stringify(detail.document);
         expect(text).toContain(marker + String(count - 1));
         expect(text).not.toContain("inspection-result-byte-limit");
-        expect(assertionEntry(detail.document, detail.receipt.diagnostic()).materials.coverage).toEqual({ state: "complete" });
+        expect(assertionEntry(detail.document, detail.receipt.diagnostic()).materials.coverage).toEqual({
+          state: "complete",
+        });
       }
       const witness = only(entries, (item) => item.display.label === "Capacity known witness");
       const absence = only(entries, (item) => item.display.label === "Capacity unknown absence");
       const witnessDetail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, witness.entryId);
       const absenceDetail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, absence.entryId);
-      expect(assertionEntry(witnessDetail.document, witnessDetail.receipt.diagnostic()).decision.result).toBe("matched");
+      expect(assertionEntry(witnessDetail.document, witnessDetail.receipt.diagnostic()).decision.result).toBe(
+        "matched",
+      );
       expect(JSON.stringify(absenceDetail.document)).toContain("source-item-limit");
       expect(JSON.stringify(absenceDetail.document)).toContain("capacity-limited");
       const scalar = only(entries, (item) => item.display.label === "Context fact score");
@@ -171,10 +260,19 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(JSON.stringify(scalarDetail.document)).not.toContain("ORIGINAL_OPERATION_");
       expect(JSON.stringify(scalarDetail.document)).toContain("0.6");
       const unknownScalar = only(entries, (item) => item.display.label === "Context unknown score");
-      const unknownScalarDetail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, unknownScalar.entryId);
+      const unknownScalarDetail = await inspectAssertion(
+        niceeval,
+        projectRoot,
+        evaluation.locator!,
+        unknownScalar.entryId,
+      );
       expect(JSON.stringify(unknownScalarDetail.document)).toContain("business-boundary-missing");
       const exists = only(entries, (item) => item.display.label === "Material existence", attempt.receipt.diagnostic());
-      const split = only(entries, (item) => item.display.label === "Same event conjunction", attempt.receipt.diagnostic());
+      const split = only(
+        entries,
+        (item) => item.display.label === "Same event conjunction",
+        attempt.receipt.diagnostic(),
+      );
       const existsDetail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, exists.entryId);
       const splitDetail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, split.entryId);
       expect(assertionEntry(existsDetail.document, existsDetail.receipt.diagnostic()).decision.result).toBe("matched");
@@ -182,11 +280,22 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
 
       // Preserve the Adapter's twelve requests; Agent QA owns a separate slice.
       const adapterRequests = requests.slice();
-      const agentRun = await niceeval.run(["exp", "assertion-agent-qa", "--rerun", "all", "--json"], { env: environment(baseUrl) });
+      const agentRun = await niceeval.run(["exp", "assertion-agent-qa", "--rerun", "all", "--json"], {
+        env: environment(baseUrl),
+      });
       expect(agentRun.exitCode, agentRun.diagnostic()).toBe(0);
       expect(agentRun.expReceipt().completion).toBe("completed");
-      const agentEvaluation = only(agentRun.expEvalEvents(), (item) => item.evalId === "assertion-agent-qa", agentRun.diagnostic());
-      expect(agentEvaluation).toMatchObject({ experimentId: "assertion-agent-qa", verdict: "passed", attempts: 1, passed: 1 });
+      const agentEvaluation = only(
+        agentRun.expEvalEvents(),
+        (item) => item.evalId === "assertion-agent-qa",
+        agentRun.diagnostic(),
+      );
+      expect(agentEvaluation).toMatchObject({
+        experimentId: "assertion-agent-qa",
+        verdict: "passed",
+        attempts: 1,
+        passed: 1,
+      });
       const agentAttempt = await inspectAttempt(niceeval, projectRoot, agentEvaluation.locator!, "attempt.get");
       expect(agentAttempt.receipt.exitCode, agentAttempt.receipt.diagnostic()).toBe(0);
       const agentEntries = agentAttempt.document.attempt.assertions.entries;
@@ -206,7 +315,9 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         "Agent QA turn rejects usedNoTools Match",
       ] as const;
       expect(agentEntries.map((item) => item.display.label)).toEqual([
-        "Agent QA empty", ...qaExpectations.map(([label]) => label), ...localLabels,
+        "Agent QA empty",
+        ...qaExpectations.map(([label]) => label),
+        ...localLabels,
       ]);
       expect(new Set(agentEntries.map((item) => item.entryId)).size).toBe(12);
       const agentRequests = requests.slice(adapterRequests.length);
@@ -220,10 +331,18 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       if (agentLedger.state !== "complete") throw new Error("Missing Agent Judge physical ledger");
       expect(agentLedger.calls).toHaveLength(7);
       expect(agentLedger.totals.requests).toMatchObject({ state: "available", value: 7 });
-      expect(agentLedger.calls.every((call) => call.status === "succeeded" && call.operation === "classify")).toBe(true);
-      expect(agentLedger.calls.map((call) => only(agentEntries, (entry) => entry.entryId === call.entryId).display.label)).toEqual(qaExpectations.map(([label]) => label));
+      expect(agentLedger.calls.every((call) => call.status === "succeeded" && call.operation === "classify")).toBe(
+        true,
+      );
+      expect(
+        agentLedger.calls.map((call) => only(agentEntries, (entry) => entry.entryId === call.entryId).display.label),
+      ).toEqual(qaExpectations.map(([label]) => label));
 
-      expect(agentRequests.every(({ operation, body }) => operation === "classify" && JSON.parse(body).model === "judge-eval-override")).toBe(true);
+      expect(
+        agentRequests.every(
+          ({ operation, body }) => operation === "classify" && JSON.parse(body).model === "judge-eval-override",
+        ),
+      ).toBe(true);
 
       for (const [label, question] of qaExpectations) {
         const entry = only(agentEntries, (item) => item.display.label === label, agentAttempt.receipt.diagnostic());
@@ -238,10 +357,14 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         expect(retained.audit.calls).toHaveLength(1);
         const call = retained.audit.calls[0]!;
         expect(call).toMatchObject({ operation: "classify", state: "admitted", result: { state: "completed" } });
-        if (call.state !== "admitted" || call.result.state !== "completed") throw new Error(`Missing completed QA call: ${label}`);
+        if (call.state !== "admitted" || call.result.state !== "completed")
+          throw new Error(`Missing completed QA call: ${label}`);
         expect(call.attempts).toHaveLength(1);
         expect(call.attempts[0]).toMatchObject({ ordinal: 1, transport: "attempted", result: { state: "returned" } });
-        const request = only(agentRequests, ({ body }) => JSON.parse(JSON.parse(body).messages[1].content).material.question === question);
+        const request = only(
+          agentRequests,
+          ({ body }) => JSON.parse(JSON.parse(body).messages[1].content).material.question === question,
+        );
         const payload = JSON.parse(request.body);
         const selected = JSON.parse(payload.messages[1].content).material;
         const recordedPayload = JSON.parse("request" in call ? call.request : call.requestTemplate);
@@ -255,7 +378,11 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         expect(ids.length).toBeGreaterThan(0);
         expect(new Set(ids).size).toBe(ids.length);
         expect(JSON.parse(payload.messages[0].content).evidenceIds).toEqual(ids);
-        expect(JSON.parse(call.result.output)).toEqual({ choice: "satisfied", rationale: "Fixture classification", citations: [ids[0]] });
+        expect(JSON.parse(call.result.output)).toEqual({
+          choice: "satisfied",
+          rationale: "Fixture classification",
+          citations: [ids[0]],
+        });
         const auditText = JSON.stringify(retained.audit);
         for (const id of ids) expect(auditText).toContain(id);
         expect(auditText).not.toContain("fixture-only-key");
@@ -290,7 +417,8 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
           if (label === "Agent QA assistant events") {
             expect(selected.items).toHaveLength(4);
             const markers = ["context-main-first", "context-main-second", "context-branch-only", "context-branch-only"];
-            for (let index = 0; index < markers.length; index++) expect(JSON.stringify(selected.items[index].value)).toContain(markers[index]);
+            for (let index = 0; index < markers.length; index++)
+              expect(JSON.stringify(selected.items[index].value)).toContain(markers[index]);
             for (const item of selected.items) expect(JSON.stringify(item.value)).toContain('"role":"assistant"');
             expect(materialText).not.toContain('"role":"user"');
             expect(materialText).not.toContain("context/main-first");
@@ -354,12 +482,19 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(requests).toHaveLength(19);
 
       const previousRequests = requests.slice();
-      const boundaryRun = await niceeval.run(["exp", "assertion-agent-history-boundaries", "--rerun", "all", "--json"], { env: environment(baseUrl) });
+      const boundaryRun = await niceeval.run(
+        ["exp", "assertion-agent-history-boundaries", "--rerun", "all", "--json"],
+        { env: environment(baseUrl) },
+      );
       let boundaryDiagnostic = boundaryRun.diagnostic();
       if (boundaryRun.exitCode !== 0) {
-        for (const evaluation of boundaryRun.expEvalEvents().filter(event => event.verdict === "errored" && event.locator !== undefined)) {
+        for (const evaluation of boundaryRun
+          .expEvalEvents()
+          .filter((event) => event.verdict === "errored" && event.locator !== undefined)) {
           const failed = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
-          for (const entry of failed.document.attempt.assertions.entries.filter(item => item.display.label === "Boundary cross A")) {
+          for (const entry of failed.document.attempt.assertions.entries.filter(
+            (item) => item.display.label === "Boundary cross A",
+          )) {
             const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
             boundaryDiagnostic += `\n${JSON.stringify(detail.document)}`;
           }
@@ -369,33 +504,54 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(boundaryRun.expReceipt().completion).toBe("completed");
       const boundaryEvaluations = boundaryRun.expEvalEvents();
       expect(boundaryEvaluations.map((item) => item.evalId).sort()).toEqual([
-        "assertion-agent-history-boundaries/actions", "assertion-agent-history-boundaries/ambiguous",
-        "assertion-agent-history-boundaries/crossTurn", "assertion-agent-history-boundaries/events",
-        "assertion-agent-history-boundaries/failure", "assertion-agent-history-boundaries/messages",
-        "assertion-agent-history-boundaries/metrics", "assertion-agent-history-boundaries/orphan",
+        "assertion-agent-history-boundaries/actions",
+        "assertion-agent-history-boundaries/ambiguous",
+        "assertion-agent-history-boundaries/crossTurn",
+        "assertion-agent-history-boundaries/events",
+        "assertion-agent-history-boundaries/failure",
+        "assertion-agent-history-boundaries/messages",
+        "assertion-agent-history-boundaries/metrics",
+        "assertion-agent-history-boundaries/orphan",
         "assertion-agent-history-boundaries/truncated",
       ]);
       const boundaryRequests = requests.slice(previousRequests.length);
       expect(requests.slice(0, previousRequests.length)).toEqual(previousRequests);
       expect(boundaryRequests).toHaveLength(6);
-      expect(boundaryRequests.every(({ operation, body }) => operation === "classify" && JSON.parse(body).model === "judge-eval-override")).toBe(true);
+      expect(
+        boundaryRequests.every(
+          ({ operation, body }) => operation === "classify" && JSON.parse(body).model === "judge-eval-override",
+        ),
+      ).toBe(true);
       const boundaryQuestions = [
-        "ACCEPT: partial metrics turn history", "ACCEPT: partial metrics session history", "ACCEPT: partial metrics root history",
-        "ACCEPT: cross A cut after B", "ACCEPT: cross B joined input and output", "ACCEPT: cross whole session history",
+        "ACCEPT: partial metrics turn history",
+        "ACCEPT: partial metrics session history",
+        "ACCEPT: partial metrics root history",
+        "ACCEPT: cross A cut after B",
+        "ACCEPT: cross B joined input and output",
+        "ACCEPT: cross whole session history",
       ];
-      expect(boundaryRequests.map(({ body }) => JSON.parse(JSON.parse(body).messages[1].content).material.question).sort())
-        .toEqual(boundaryQuestions.slice().sort());
+      expect(
+        boundaryRequests.map(({ body }) => JSON.parse(JSON.parse(body).messages[1].content).material.question).sort(),
+      ).toEqual(boundaryQuestions.slice().sort());
       let boundaryEntryCount = 0;
       let boundaryCallCount = 0;
       for (const evaluation of boundaryEvaluations) {
-        expect(evaluation).toMatchObject({ experimentId: "assertion-agent-history-boundaries", verdict: "passed", attempts: 1, passed: 1 });
+        expect(evaluation).toMatchObject({
+          experimentId: "assertion-agent-history-boundaries",
+          verdict: "passed",
+          attempts: 1,
+          passed: 1,
+        });
         const inspected = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
         expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
         const entries = inspected.document.attempt.assertions.entries;
         const scenario = evaluation.evalId.slice("assertion-agent-history-boundaries/".length);
-        const labels = scenario === "crossTurn" ? ["Boundary cross A", "Boundary cross B", "Boundary cross session"]
-          : scenario === "failure" ? ["Boundary SendFailure caught", "Boundary failure session", "Boundary failure root"]
-          : [`Boundary ${scenario} turn`, `Boundary ${scenario} session`, `Boundary ${scenario} root`];
+        const labels =
+          scenario === "crossTurn"
+            ? ["Boundary cross A", "Boundary cross B", "Boundary cross session"]
+            : scenario === "failure"
+              ? ["Boundary SendFailure caught", "Boundary failure session", "Boundary failure root"]
+              : [`Boundary ${scenario} turn`, `Boundary ${scenario} session`, `Boundary ${scenario} root`];
         expect(entries.map((item) => item.display.label)).toEqual(labels);
         expect(new Set(entries.map((item) => item.entryId)).size).toBe(3);
         boundaryEntryCount += entries.length;
@@ -416,7 +572,8 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
           // file or a locally reconstructed product protocol.
           const source = recorded.materials.source;
           expect(source).toMatchObject({ kind: "content", encoding: "json", content: { state: "available" } });
-          if (source.kind !== "content" || !("base64" in source.content)) throw new Error(`Missing full boundary source: ${label}`);
+          if (source.kind !== "content" || !("base64" in source.content))
+            throw new Error(`Missing full boundary source: ${label}`);
           const sourceText = Buffer.from(source.content.base64, "base64").toString("utf8");
           retainedSources.set(label, sourceText);
           expect(sourceText).not.toContain("fixture-only-key");
@@ -432,19 +589,27 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
             boundaryCallCount += audit.audit.calls.length;
             const call = audit.audit.calls[0]!;
             expect(call).toMatchObject({ state: "admitted", operation: "classify", result: { state: "completed" } });
-            if (call.state !== "admitted" || call.result.state !== "completed") throw new Error(`Incomplete boundary model audit: ${label}`);
+            if (call.state !== "admitted" || call.result.state !== "completed")
+              throw new Error(`Incomplete boundary model audit: ${label}`);
             expect(call.attempts).toHaveLength(1);
             expect(call.attempts[0]).toMatchObject({ transport: "attempted", result: { state: "returned" } });
             const wireBody = JSON.parse("request" in call ? call.request : call.requestTemplate);
             const material = JSON.parse(wireBody.messages[1].content).material;
             const materialText = JSON.stringify(material.items);
-            const request = only(boundaryRequests, ({ body }) => JSON.parse(JSON.parse(body).messages[1].content).material.question === material.question);
+            const request = only(
+              boundaryRequests,
+              ({ body }) => JSON.parse(JSON.parse(body).messages[1].content).material.question === material.question,
+            );
             expect(JSON.parse(JSON.parse(request.body).messages[1].content).material).toEqual(material);
             const ids: string[] = [];
             for (const item of material.items) ids.push(item.id);
             expect(new Set(ids).size).toBe(ids.length);
             expect(JSON.parse(wireBody.messages[0].content).evidenceIds).toEqual(ids);
-            expect(JSON.parse(call.result.output)).toEqual({ choice: "satisfied", rationale: "Fixture classification", citations: [ids[0]] });
+            expect(JSON.parse(call.result.output)).toEqual({
+              choice: "satisfied",
+              rationale: "Fixture classification",
+              citations: [ids[0]],
+            });
             for (const id of ids) expect(sourceText).toContain(id);
             expect(JSON.stringify(audit.audit)).not.toContain("fixture-only-key");
             if (scenario === "metrics") {
@@ -453,7 +618,9 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
               expect(materialText).toContain("COVERAGE_ASSISTANT:boundary/metrics");
               expect(sourceText).not.toContain("CROSS_A_INPUT");
             } else {
-              expect(material.items).toHaveLength(label === "Boundary cross A" ? 7 : label === "Boundary cross B" ? 3 : 10);
+              expect(material.items).toHaveLength(
+                label === "Boundary cross A" ? 7 : label === "Boundary cross B" ? 3 : 10,
+              );
               expect(sourceText).toContain("CROSS_A_INPUT");
               expect(materialText).toContain("CROSS_A_INPUT");
               if (label === "Boundary cross A") {
@@ -468,7 +635,13 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
                 expect(sourceText).toContain('"status":"completed"');
               }
               if (label !== "Boundary cross B") {
-                for (const marker of ["CROSS_A_INJECTED", "CROSS_A_THINKING", "cross-a-skill", "CROSS_A_SUMMARY_REASON", "CROSS_A_ASSISTANT"]) {
+                for (const marker of [
+                  "CROSS_A_INJECTED",
+                  "CROSS_A_THINKING",
+                  "cross-a-skill",
+                  "CROSS_A_SUMMARY_REASON",
+                  "CROSS_A_ASSISTANT",
+                ]) {
                   expect(sourceText).toContain(marker);
                   expect(materialText).toContain(marker);
                 }
@@ -494,7 +667,14 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
               expect(sourceText).toContain(`COVERAGE_ASSISTANT:boundary/${scenario}`);
               expect(JSON.stringify(recorded)).toContain(`BOUNDARY_${scenario.toUpperCase()}_PARTIAL`);
             } else if (scenario === "failure") {
-              for (const marker of ["FAILURE_INPUT", "FAILURE_OUTPUT", "FAILURE_ERROR_EVENT", "FAILURE_ASSISTANT", "COVERAGE_ASSISTANT:boundary/baseline"]) expect(sourceText).toContain(marker);
+              for (const marker of [
+                "FAILURE_INPUT",
+                "FAILURE_OUTPUT",
+                "FAILURE_ERROR_EVENT",
+                "FAILURE_ASSISTANT",
+                "COVERAGE_ASSISTANT:boundary/baseline",
+              ])
+                expect(sourceText).toContain(marker);
               expect(sourceText).toContain("operation.started");
               expect(sourceText).toContain("operation.finished");
               expect(sourceText).toContain('"status":"failed"');
@@ -505,10 +685,20 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
               expect(sourceText).toContain('"summary":"ORPHAN_OUTPUT_SUMMARY"');
               expect(sourceText).not.toContain("operation.started");
             } else if (scenario === "ambiguous") {
-              for (const marker of ["AMBIGUOUS_FIRST_INPUT", "AMBIGUOUS_SECOND_INPUT", "AMBIGUOUS_OUTPUT_SUMMARY", "AMBIGUOUS_ASSISTANT"]) expect(sourceText).toContain(marker);
+              for (const marker of [
+                "AMBIGUOUS_FIRST_INPUT",
+                "AMBIGUOUS_SECOND_INPUT",
+                "AMBIGUOUS_OUTPUT_SUMMARY",
+                "AMBIGUOUS_ASSISTANT",
+              ])
+                expect(sourceText).toContain(marker);
               expect(sourceText).toContain('"summary":"AMBIGUOUS_OUTPUT_SUMMARY"');
-              expect(sourceText.indexOf("AMBIGUOUS_FIRST_INPUT")).toBeLessThan(sourceText.indexOf("AMBIGUOUS_SECOND_INPUT"));
-              expect(sourceText.indexOf("AMBIGUOUS_SECOND_INPUT")).toBeLessThan(sourceText.indexOf("AMBIGUOUS_OUTPUT_SUMMARY"));
+              expect(sourceText.indexOf("AMBIGUOUS_FIRST_INPUT")).toBeLessThan(
+                sourceText.indexOf("AMBIGUOUS_SECOND_INPUT"),
+              );
+              expect(sourceText.indexOf("AMBIGUOUS_SECOND_INPUT")).toBeLessThan(
+                sourceText.indexOf("AMBIGUOUS_OUTPUT_SUMMARY"),
+              );
             } else if (scenario === "truncated") {
               expect(sourceText).toContain("TRUNCATED_INPUT");
               expect(sourceText).toContain('"summary":"TRUNCATED_OUTPUT_SUMMARY"');
@@ -519,8 +709,12 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         }
         if (scenario === "crossTurn") {
           const aRequest = only(boundaryRequests, ({ body }) => body.includes("ACCEPT: cross A cut after B"));
-          const bRequest = only(boundaryRequests, ({ body }) => body.includes("ACCEPT: cross B joined input and output"));
-          const sessionRequest = only(boundaryRequests, ({ body }) => body.includes("ACCEPT: cross whole session history"));
+          const bRequest = only(boundaryRequests, ({ body }) =>
+            body.includes("ACCEPT: cross B joined input and output"),
+          );
+          const sessionRequest = only(boundaryRequests, ({ body }) =>
+            body.includes("ACCEPT: cross whole session history"),
+          );
           const aItems = JSON.parse(JSON.parse(aRequest.body).messages[1].content).material.items;
           const bItems = JSON.parse(JSON.parse(bRequest.body).messages[1].content).material.items;
           const sessionItems = JSON.parse(JSON.parse(sessionRequest.body).messages[1].content).material.items;
@@ -535,7 +729,8 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
           // retain the same event identities, including unknown source rows.
           const sources = [...retainedSources.values()];
           const ids = sources.map((source) => [...source.matchAll(/"eventId":"([^"]+)"/g)].map((match) => match[1]));
-          const expectedRows = scenario === "ambiguous" ? 5 : scenario === "orphan" ? 3 : scenario === "truncated" ? 4 : 2;
+          const expectedRows =
+            scenario === "ambiguous" ? 5 : scenario === "orphan" ? 3 : scenario === "truncated" ? 4 : 2;
           expect(new Set(ids[0]).size).toBe(expectedRows);
           expect(ids[1]).toEqual(ids[0]);
           expect(ids[2]).toEqual(ids[0]);
@@ -552,7 +747,9 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(boundaryCallCount).toBe(6);
       expect(requests).toHaveLength(25);
     });
-  } finally { await close(server); }
+  } finally {
+    await close(server);
+  }
 });
 
 // @use-case docs/feature/judge/use-case/inspect-judge-score.md
@@ -561,17 +758,26 @@ test.concurrent("自定义 Match 捕获必要模型调用失败不能伪造正�
   const baseUrl = await listen(server);
   try {
     await evalE2E.case("managed-match-failure", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "assertion-managed-failure", "--rerun", "all", "--json"], { env: environment(baseUrl) });
+      const run = await niceeval.run(["exp", "assertion-managed-failure", "--rerun", "all", "--json"], {
+        env: environment(baseUrl),
+      });
       expect(run.exitCode, run.diagnostic()).toBe(1);
-      const evaluation = only(run.expEvalEvents(), (item) => item.evalId === "assertion-managed-failure", run.diagnostic());
+      const evaluation = only(
+        run.expEvalEvents(),
+        (item) => item.evalId === "assertion-managed-failure",
+        run.diagnostic(),
+      );
       expect(evaluation.verdict).toBe("errored");
       const attempt = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       const entry = only(attempt.document.attempt.assertions.entries, () => true, attempt.receipt.diagnostic());
       const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
       expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
-        state: "available", audit: { result: { state: "errored", code: "judge-call-failed" } },
+        state: "available",
+        audit: { result: { state: "errored", code: "judge-call-failed" } },
       });
       expect(requests).toHaveLength(1);
     });
-  } finally { await close(server); }
+  } finally {
+    await close(server);
+  }
 });

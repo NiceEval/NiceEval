@@ -165,9 +165,7 @@ export function toBraintrustEvent(
   result: EvalResult,
   assessment: BraintrustAssessment = NOT_PROJECTED_ASSESSMENT,
 ): BraintrustLogEvent {
-  const projectedVerdict = assessment.state === "projected"
-    ? availableProjectionValue(assessment.verdict)
-    : undefined;
+  const projectedVerdict = assessment.state === "projected" ? availableProjectionValue(assessment.verdict) : undefined;
   const verdict = projectedVerdict ?? result.verdict;
 
   const metrics: globalThis.Record<string, number> = {};
@@ -204,14 +202,10 @@ export function toBraintrustEvent(
   };
   const scores: globalThis.Record<string, number> = {};
   if (assessment.state === "projected") {
-    metadata.assertions = projectionMetadata(
-      assessment.assertions,
-      (assertions) => ({ entries: assertionMetadata(assertions.entries) }),
-    );
-    metadata.verdictProjection = projectionMetadata(
-      assessment.verdict,
-      (value) => ({ value }),
-    );
+    metadata.assertions = projectionMetadata(assessment.assertions, (assertions) => ({
+      entries: assertionMetadata(assertions.entries),
+    }));
+    metadata.verdictProjection = projectionMetadata(assessment.verdict, (value) => ({ value }));
     if (assessment.score !== undefined) {
       metadata.score = projectionMetadata(assessment.score, scoreMetadata);
       const score = availableProjectionValue(assessment.score);
@@ -246,9 +240,7 @@ export function toBraintrustEvent(
   };
 }
 
-function availableProjectionValue<Value>(
-  entry: AttemptSlotProjectedEntry<Value>,
-): Value | undefined {
+function availableProjectionValue<Value>(entry: AttemptSlotProjectedEntry<Value>): Value | undefined {
   return entry.state === "attachment-result" && entry.attachment.state === "available"
     ? entry.attachment.value
     : undefined;
@@ -306,17 +298,13 @@ function assertionReason(entry: AssertionEntryRead<unknown>): string | undefined
   }
 }
 
-function coverageMetadata(
-  coverage: AssertionCoverage,
-): globalThis.Record<string, JsonValue> {
+function coverageMetadata(coverage: AssertionCoverage): globalThis.Record<string, JsonValue> {
   const metadata: globalThis.Record<string, JsonValue> = { state: coverage.state };
   if (coverage.state !== "complete") metadata.reason = coverage.reason;
   return metadata;
 }
 
-function limitationMetadata(
-  limitation: AssertionLimitation,
-): globalThis.Record<string, JsonValue> {
+function limitationMetadata(limitation: AssertionLimitation): globalThis.Record<string, JsonValue> {
   switch (limitation.kind) {
     case "redacted":
       return { kind: limitation.kind, fieldCount: limitation.fieldCount };
@@ -335,9 +323,7 @@ function limitationMetadata(
   }
 }
 
-function scoreContributionMetadata(
-  contribution: ScoreContribution,
-): globalThis.Record<string, JsonValue> {
+function scoreContributionMetadata(contribution: ScoreContribution): globalThis.Record<string, JsonValue> {
   switch (contribution.state) {
     case "not-scored":
       return { state: contribution.state };

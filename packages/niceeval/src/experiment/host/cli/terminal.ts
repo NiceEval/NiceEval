@@ -16,9 +16,8 @@ export class ExperimentCliTerminal extends Context.Service<ExperimentCliTerminal
 ) {}
 
 /** Node composition layer; constructing it does not read input or start timers. */
-export const NodeExperimentCliTerminalLive = Layer.sync(
-  ExperimentCliTerminal,
-  () => Object.freeze({
+export const NodeExperimentCliTerminalLive = Layer.sync(ExperimentCliTerminal, () =>
+  Object.freeze({
     feedback: createNodeFeedbackIO(),
     stdin: createNodeInputGuardStdin(),
   }),

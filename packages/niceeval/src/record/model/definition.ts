@@ -1,8 +1,5 @@
 import * as Schema from "effect/Schema";
-import {
-  defineRecordCore,
-  type RecordSchemaLimits,
-} from "../definition/index.ts";
+import { defineRecordCore, type RecordSchemaLimits } from "../definition/index.ts";
 import {
   AttemptIdSchema,
   EvalIdSchema,
@@ -13,11 +10,7 @@ import {
   SlotIdSchema,
   UtcMillisSchema,
 } from "../codec/identifiers.ts";
-import {
-  ATTEMPT_OUTCOMES,
-  MEMBERSHIP_ACTIONS_WITH_ATTEMPT,
-  MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT,
-} from "./core.ts";
+import { ATTEMPT_OUTCOMES, MEMBERSHIP_ACTIONS_WITH_ATTEMPT, MEMBERSHIP_ACTIONS_WITHOUT_ATTEMPT } from "./core.ts";
 import { RunAbsenceReasonSchema } from "../../run/protocol.ts";
 import { RunContextSchema } from "./run-context.ts";
 import {
@@ -47,28 +40,25 @@ export const RecordCoreAggregateLimits: RecordSchemaLimits = Object.freeze({
   maximumArrayItems: 4_096,
 });
 
-function schemaFilterIssues(
-  issues: readonly RecordIssue[],
-): readonly Schema.FilterIssue[] | undefined {
+function schemaFilterIssues(issues: readonly RecordIssue[]): readonly Schema.FilterIssue[] | undefined {
   return issues.length === 0
     ? undefined
     : issues.map((issue) => ({
-      path: issue.path,
-      issue: issue.code,
-    }));
+        path: issue.path,
+        issue: issue.code,
+      }));
 }
 
 export const AttemptOutcomeSchema = Schema.Literals(ATTEMPT_OUTCOMES);
 
 /** Durable Slot ordinals are zero-based JSON-safe integers, not array indexes. */
 const AttemptOrdinalSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => Number.isSafeInteger(value) && value >= 0,
-    {
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
       identifier: "RecordAttemptOrdinal",
       description: "a zero-based non-negative JSON-safe attempt ordinal",
-    },
-  )),
+    }),
+  ),
 );
 
 const RecordAttemptRefCurrentSchema = Schema.Struct({
@@ -117,13 +107,12 @@ const RunDocumentCurrentSchema = Schema.Struct({
   completedAt: UtcMillisSchema,
   expectedSlots: Schema.Array(RecordSlotIdentitySchema),
 }).pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => schemaFilterIssues(validateRunDocument(value)),
-    {
+  Schema.check(
+    Schema.makeFilter((value) => schemaFilterIssues(validateRunDocument(value)), {
       identifier: "RecordRunDocumentInvariant",
       description: "a Run document with valid chronology, context, and expected Slots",
-    },
-  )),
+    }),
+  ),
 );
 
 /** Current sealed `run.json`; its contextual and ordering axioms live in this Schema. */
@@ -147,13 +136,12 @@ const MemberDocumentCurrentSchema = Schema.Union([
     absenceReason: RunAbsenceReasonSchema,
   }),
 ]).pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => schemaFilterIssues(validateMemberDocument(value)),
-    {
+  Schema.check(
+    Schema.makeFilter((value) => schemaFilterIssues(validateMemberDocument(value)), {
       identifier: "RecordMemberDocumentInvariant",
       description: "a Member action paired with its required Attempt reference",
-    },
-  )),
+    }),
+  ),
 );
 
 /** Current `members/<SlotId>.json`; action/reference coupling lives in this Schema. */
@@ -172,13 +160,12 @@ const AttemptDocumentCurrentSchema = Schema.Struct({
   executionIdentityDigest: ExecutionIdentityDigestSchema,
   outcome: AttemptOutcomeSchema,
 }).pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => schemaFilterIssues(validateAttemptDocument(value)),
-    {
+  Schema.check(
+    Schema.makeFilter((value) => schemaFilterIssues(validateAttemptDocument(value)), {
       identifier: "RecordAttemptDocumentInvariant",
       description: "an Attempt document satisfying its local invariant",
-    },
-  )),
+    }),
+  ),
 );
 
 /** Current immutable `attempt.json`; aggregate ownership is checked by Record Core. */
@@ -206,13 +193,12 @@ const RecordCoreCurrentSchema = Schema.Struct({
   record: RecordDocumentSchema,
   runs: Schema.Array(RunCoreSchema),
 }).pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => schemaFilterIssues(validateRecordCore(value)),
-    {
+  Schema.check(
+    Schema.makeFilter((value) => schemaFilterIssues(validateRecordCore(value)), {
       identifier: "RecordCoreInvariant",
       description: "a complete Record Core with consistent Run, Member, and Attempt documents",
-    },
-  )),
+    }),
+  ),
 );
 
 /** Cross-document Run/Member/Attempt axioms are owned by this Schema. */

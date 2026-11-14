@@ -29,23 +29,21 @@ import { adapterTokenMaterial } from "../o11y/adapter-usage-projection.ts";
  * `EvalResult.error` 那样的落盘字段能保留完整栈,所以「一层可行动摘要」就是这条诊断的全部内容,
  * 不是从更详细的记录里摘出来的简化版——排查真正需要栈时,重跑该 reporter 单独复现更可靠。
  */
-export function runReporter(
-  reg: ReporterRegistration,
-  stage: string,
-  fn: () => unknown,
-): Effect.Effect<void> {
+export function runReporter(reg: ReporterRegistration, stage: string, fn: () => unknown): Effect.Effect<void> {
   return Effect.tryPromise({
     // Public Reporter callbacks are the one Promise boundary for this module.
     try: () => Promise.resolve().then(fn),
     catch: (cause) => cause,
   }).pipe(
-    Effect.catch((cause) => Effect.sync(() => {
-      reportReporterError({
-        reporter: reg.name,
-        required: reg.required,
-        message: `${stage}: ${firstLine(formatThrown(cause))}`,
-      });
-    })),
+    Effect.catch((cause) =>
+      Effect.sync(() => {
+        reportReporterError({
+          reporter: reg.name,
+          required: reg.required,
+          message: `${stage}: ${firstLine(formatThrown(cause))}`,
+        });
+      }),
+    ),
   );
 }
 
@@ -87,7 +85,10 @@ export function scopeReporter(r: Reporter, ids: ReadonlySet<string>, shape?: Inv
   const scoped: Reporter = {};
   if (r.onInvocationStart) {
     scoped.onInvocationStart = (evals, fullShape) =>
-      r.onInvocationStart!(evals.filter((e) => ids.has(e.id)), shape ?? fullShape);
+      r.onInvocationStart!(
+        evals.filter((e) => ids.has(e.id)),
+        shape ?? fullShape,
+      );
   }
   if (r.onEvalComplete) {
     scoped.onEvalComplete = (result) => (ids.has(result.id) ? r.onEvalComplete!(result) : undefined);
@@ -146,7 +147,13 @@ export function summarize(
   startedAt: string,
   durationMs: number,
   name?: LocalizedText,
-  beforeCaches: InvocationSummary["beforeCaches"] = Object.freeze({ total: 0, hit: 0, prepared: 0, degraded: 0, failed: 0 }),
+  beforeCaches: InvocationSummary["beforeCaches"] = Object.freeze({
+    total: 0,
+    hit: 0,
+    prepared: 0,
+    degraded: 0,
+    failed: 0,
+  }),
 ): InvocationSummary {
   const counts = { passed: 0, failed: 0, skipped: 0, errored: 0 };
   let inTok: number | undefined = 0;

@@ -6,10 +6,13 @@ import type { MaterializedSandboxCase } from "../case-types.ts";
 import type { SandboxRuntimeMaterializeContext } from "../runtime.ts";
 
 /** Provider failures carry no raw response text or credential values. */
-export class BeforeCacheSnapshotError extends Schema.TaggedError<BeforeCacheSnapshotError>()("BeforeCacheSnapshotError", {
-  operation: Schema.String,
-  reason: Schema.String,
-}) {}
+export class BeforeCacheSnapshotError extends Schema.TaggedError<BeforeCacheSnapshotError>()(
+  "BeforeCacheSnapshotError",
+  {
+    operation: Schema.String,
+    reason: Schema.String,
+  },
+) {}
 
 export interface BeforeCacheSnapshotTarget {
   readonly _tag: "Resolved";
@@ -42,13 +45,25 @@ export interface BeforeCacheSnapshotDriver<Plan> {
   };
   readonly sourceUsableAfterSnapshot: boolean;
   readonly snapshotSettleMs: number;
-  readonly resolveBase: (plan: Plan) => Effect.Effect<BeforeCacheSnapshotTarget | BeforeCacheIneligible, BeforeCacheSnapshotError>;
+  readonly resolveBase: (
+    plan: Plan,
+  ) => Effect.Effect<BeforeCacheSnapshotTarget | BeforeCacheIneligible, BeforeCacheSnapshotError>;
   readonly createFromSnapshot: (
-    plan: Plan, snapshotId: string, context: SandboxRuntimeMaterializeContext,
+    plan: Plan,
+    snapshotId: string,
+    context: SandboxRuntimeMaterializeContext,
   ) => Effect.Effect<MaterializedSandboxCase, BeforeCacheSnapshotError, Scope.Scope>;
   readonly createSnapshot: (
-    plan: Plan, source: MaterializedSandboxCase, name: string,
+    plan: Plan,
+    source: MaterializedSandboxCase,
+    name: string,
   ) => Effect.Effect<BeforeCacheSnapshotCreated, BeforeCacheSnapshotError>;
-  readonly findSnapshot: (plan: Plan, name: string) => Effect.Effect<BeforeCacheSnapshotFound, BeforeCacheSnapshotError>;
-  readonly deleteSnapshot: (plan: Plan, snapshotId: string) => Effect.Effect<"deleted" | "absent", BeforeCacheSnapshotError>;
+  readonly findSnapshot: (
+    plan: Plan,
+    name: string,
+  ) => Effect.Effect<BeforeCacheSnapshotFound, BeforeCacheSnapshotError>;
+  readonly deleteSnapshot: (
+    plan: Plan,
+    snapshotId: string,
+  ) => Effect.Effect<"deleted" | "absent", BeforeCacheSnapshotError>;
 }

@@ -1,7 +1,8 @@
 import { defineAdapter } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const judging = defineJudge({ rubric: "Measure whether the reply satisfies the marker criterion.",
+const judging = defineJudge({
+  rubric: "Measure whether the reply satisfies the marker criterion.",
   anchors: [
     { measurement: 0, description: "does not contain the marker" },
     { measurement: 0.5, description: "contains only part of the marker" },
@@ -24,14 +25,8 @@ export default markerApplication.defineScoreEval({
   description: "应用对象由 Judge 判分，登记时的完整材料与理由可以公开读回",
   async test(t) {
     const post = t.post();
-    t.check({ task: "Check the complete marker", post }, judging)
-      .gate(0.7)
-      .score(20)
-      .label("Judge marker");
-    t.judge({ task: "Check the complete marker", post }, judging)
-      .score(20)
-      .gate(0.8)
-      .label("Judge sugar");
+    t.check({ task: "Check the complete marker", post }, judging).gate(0.7).score(20).label("Judge marker");
+    t.judge({ task: "Check the complete marker", post }, judging).score(20).gate(0.8).label("Judge sugar");
     // Mutation after registration must not change the bytes sent to the Judge.
     post.content = "MUTATED_AFTER_REGISTRATION";
   },

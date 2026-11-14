@@ -54,7 +54,10 @@ function resolveNativeConfigPath(opts: LoadNativeConfigOptions): {
   abs: string;
 } {
   const { agent, field, path } = opts;
-  const rejectPath = () => new Error(`${agent} ${field} only accepts relative paths inside the project root, got "${path}". Absolute paths, \`..\` segments and \`~\` paths are rejected; copy configs from outside the project into it first.`);
+  const rejectPath = () =>
+    new Error(
+      `${agent} ${field} only accepts relative paths inside the project root, got "${path}". Absolute paths, \`..\` segments and \`~\` paths are rejected; copy configs from outside the project into it first.`,
+    );
   if (!path || path.startsWith("~") || isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) throw rejectPath();
   if (path.split(/[\\/]/).includes("..")) throw rejectPath();
 
@@ -66,9 +69,7 @@ function resolveNativeConfigPath(opts: LoadNativeConfigOptions): {
  * Effect main chain: validation is a synchronous boundary, while stat, realpath, and the raw
  * byte read are all named Node Promise boundaries. Agent setup composes this effect into its outer runtime.
  */
-export function loadNativeConfigFileEffect(
-  opts: LoadNativeConfigOptions,
-): Effect.Effect<LoadedNativeConfig, unknown> {
+export function loadNativeConfigFileEffect(opts: LoadNativeConfigOptions): Effect.Effect<LoadedNativeConfig, unknown> {
   return Effect.scoped(
     Effect.gen(function* () {
       const resolved = yield* Effect.try({
@@ -81,12 +82,16 @@ export function loadNativeConfigFileEffect(
       );
       if (!info) {
         return yield* Effect.fail(
-          new Error(`${resolved.agent} ${resolved.field} points to a missing file: "${resolved.path}" (resolved to ${resolved.abs}). Paths resolve from the project root you run niceeval in (the directory containing niceeval.config.ts), not from eval / experiment source files.`),
+          new Error(
+            `${resolved.agent} ${resolved.field} points to a missing file: "${resolved.path}" (resolved to ${resolved.abs}). Paths resolve from the project root you run niceeval in (the directory containing niceeval.config.ts), not from eval / experiment source files.`,
+          ),
         );
       }
       if (!info.isFile()) {
         return yield* Effect.fail(
-          new Error(`${resolved.agent} ${resolved.field} "${resolved.path}" is not a regular file. Point it at a complete official config file.`),
+          new Error(
+            `${resolved.agent} ${resolved.field} "${resolved.path}" is not a regular file. Point it at a complete official config file.`,
+          ),
         );
       }
 
@@ -95,7 +100,9 @@ export function loadNativeConfigFileEffect(
       const realRoot = yield* nodeIo(() => realpath(resolved.root));
       if (!realFile.startsWith(realRoot + sep)) {
         return yield* Effect.fail(
-          new Error(`${resolved.agent} ${resolved.field} "${resolved.path}" resolves through a symlink to outside the project root (${realFile}). The config file must physically live inside the project root.`),
+          new Error(
+            `${resolved.agent} ${resolved.field} "${resolved.path}" resolves through a symlink to outside the project root (${realFile}). The config file must physically live inside the project root.`,
+          ),
         );
       }
 
@@ -155,9 +162,7 @@ function invalidSyntax(
   format: string,
   detail: string,
 ): Error {
-  return new Error(
-    `${opts.agent} ${opts.field} "${cfg.path}" is not valid ${format}: ${detail}`,
-  );
+  return new Error(`${opts.agent} ${opts.field} "${cfg.path}" is not valid ${format}: ${detail}`);
 }
 
 function reservedKeys(cfg: LoadedNativeConfig, opts: NativeConfigValidationOptions, keys: string[]): Error {
@@ -285,10 +290,7 @@ function withTemporaryUpload<Value>(
   use: (tmp: string) => Effect.Effect<Value, unknown>,
 ): Effect.Effect<Value, unknown> {
   return Effect.scoped(
-    Effect.acquireRelease(
-      Effect.sync(tmpUploadPath),
-      (tmp) => cleanupTemporaryUpload(sb, tmp),
-    ).pipe(
+    Effect.acquireRelease(Effect.sync(tmpUploadPath), (tmp) => cleanupTemporaryUpload(sb, tmp)).pipe(
       Effect.tap((tmp) => sandboxIo(() => sb.writeBytes(tmp, cfg.bytes))),
       Effect.flatMap(use),
     ),
@@ -307,13 +309,16 @@ export function uploadNativeConfigFileEffect(
 ): Effect.Effect<void, unknown> {
   return withTemporaryUpload(sb, cfg, (tmp) =>
     sandboxIo((signal) => sb.runShell(`mkdir -p $(dirname ${destPath}) && mv ${tmp} ${destPath}`, { signal })).pipe(
-      Effect.flatMap((res) => res.exitCode === 0
-        ? Effect.void
-        : Effect.fail(
-            new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
+      Effect.flatMap((res) =>
+        res.exitCode === 0
+          ? Effect.void
+          : Effect.fail(
+              new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
 ${outputTail(res)}`),
-          )),
-    ));
+            ),
+      ),
+    ),
+  );
 }
 
 /**
@@ -328,18 +333,20 @@ export function appendNativeConfigFileEffect(
 ): Effect.Effect<void, unknown> {
   return withTemporaryUpload(sb, cfg, (tmp) =>
     sandboxIo((signal) =>
-      sb.runShell(
-        `printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath}`,
-        { signal },
-      )
+      sb.runShell(`printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath}`, {
+        signal,
+      }),
     ).pipe(
-      Effect.flatMap((res) => res.exitCode === 0
-        ? Effect.void
-        : Effect.fail(
-            new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
+      Effect.flatMap((res) =>
+        res.exitCode === 0
+          ? Effect.void
+          : Effect.fail(
+              new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
 ${outputTail(res)}`),
-          )),
-    ));
+            ),
+      ),
+    ),
+  );
 }
 
 /**

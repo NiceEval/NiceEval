@@ -25,10 +25,17 @@ function resolveInstalledPi(): {
     }
   }
   if (manifest === undefined)
-    throw new PiFailure({ kind: "dependency", message: "judge.agent-dependency-missing: install the review runtime with pnpm add @earendil-works/pi-coding-agent@1.5.2" });
+    throw new PiFailure({
+      kind: "dependency",
+      message:
+        "judge.agent-dependency-missing: install the review runtime with pnpm add @earendil-works/pi-coding-agent@1.5.2",
+    });
   const ai = findPackageJSON("@earendil-works/pi-ai", pathToFileURL(manifest));
   if (ai === undefined)
-    throw new PiFailure({ kind: "dependency", message: "judge.agent-dependency-missing: reinstall @earendil-works/pi-coding-agent@1.5.2 and its dependencies" });
+    throw new PiFailure({
+      kind: "dependency",
+      message: "judge.agent-dependency-missing: reinstall @earendil-works/pi-coding-agent@1.5.2 and its dependencies",
+    });
   return {
     coding: join(dirname(manifest), "dist/index.js"),
     ai: join(dirname(ai), "dist/index.js"),
@@ -38,8 +45,9 @@ function resolveInstalledPi(): {
 }
 
 export function resolvePiCodingAgent(): ReturnType<typeof resolveInstalledPi> {
-  try { return resolveInstalledPi(); }
-  catch (cause) {
+  try {
+    return resolveInstalledPi();
+  } catch (cause) {
     if (cause instanceof PiFailure) throw cause;
     throw new PiFailure({ kind: "dependency", message: "pi dependency could not be resolved", cause });
   }

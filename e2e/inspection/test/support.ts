@@ -1,7 +1,4 @@
-import {
-  createE2EContext,
-  type ArtifactStageEntry,
-} from "@niceeval/testkit";
+import { createE2EContext, type ArtifactStageEntry } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 
 /**
@@ -30,7 +27,5 @@ export const inspectionE2E = createE2EContext({
  * 失败时只收集本 case 由公开 `exp` 产生的 opaque Record。
  */
 export function inspectionCaseArtifacts(): readonly ArtifactStageEntry[] {
-  return [
-    { source: ".niceeval", target: ".niceeval", optional: true },
-  ];
+  return [{ source: ".niceeval", target: ".niceeval", optional: true }];
 }

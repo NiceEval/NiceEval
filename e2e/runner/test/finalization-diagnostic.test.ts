@@ -10,7 +10,9 @@ test.concurrent("存储传输失败时保留原因、Run 与恢复命令", async
     const preload = join(paths.projectRoot, "storage-transport-fault.mjs");
     // Fault only the external worker transport. The real installed CLI, Runner,
     // Record writer, worker, and SQLite database execute without implementation mocks.
-    await writeFile(preload, `import { Worker } from 'node:worker_threads';
+    await writeFile(
+      preload,
+      `import { Worker } from 'node:worker_threads';
 const original = Worker.prototype.postMessage;
 let failed = false;
 Worker.prototype.postMessage = function(message, ...rest) {
@@ -21,7 +23,8 @@ Worker.prototype.postMessage = function(message, ...rest) {
     throw cause;
   }
   return Reflect.apply(original, this, [message, ...rest]);
-};\n`);
+};\n`,
+    );
     const result = await niceeval.run(["exp", "carry", "--rerun", "all", "--json"], {
       env: { NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` },
     });

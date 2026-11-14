@@ -4,12 +4,7 @@ import { only, type ProcessHandle } from "@niceeval/testkit";
 import { expect, test } from "@playwright/test";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  expectLoopbackReadyUrl,
-  insightCaseArtifacts,
-  insightE2E,
-  waitForViewReady,
-} from "./support.ts";
+import { expectLoopbackReadyUrl, insightCaseArtifacts, insightE2E, waitForViewReady } from "./support.ts";
 // @use-case docs/feature/insight/use-case/insight-review-run-adoption.md
 // @regression memory/insight-aggregate-hides-partial-state.md
 // @regression memory/inspection-complete-failed-scores.md
@@ -20,7 +15,9 @@ import {
 // @regression memory/view-renderer-flattens-debug-evidence.md
 // @regression memory/view-run-selection-is-ignored.md
 
-test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({ page }, testInfo) => {
+test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证据，并始终读取同一 sealed cutoff", async ({
+  page,
+}, testInfo) => {
   test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -65,8 +62,10 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         ["verdict-scores/failed", 61, 100],
         ["verdict-scores/zero", 0, 200],
       ] as const) {
-        expect(only(scoreMembers, (member) => member.evalId === evalId, scoreSummary.diagnostic()))
-          .toMatchObject({ verdict: "failed", score: { state: "available", value: earned, bounds: { min: 0, max: possible } } });
+        expect(only(scoreMembers, (member) => member.evalId === evalId, scoreSummary.diagnostic())).toMatchObject({
+          verdict: "failed",
+          score: { state: "available", value: earned, bounds: { min: 0, max: possible } },
+        });
       }
 
       const scoreOverview = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
@@ -76,10 +75,18 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         ["verdict-scores/failed", 61, 100],
         ["verdict-scores/zero", 0, 200],
       ] as const) {
-        const cell = only(scoreOverviewDocument.overview.cells, (item) => item.evalId === evalId, scoreOverview.diagnostic());
+        const cell = only(
+          scoreOverviewDocument.overview.cells,
+          (item) => item.evalId === evalId,
+          scoreOverview.diagnostic(),
+        );
         expect(cell.verdict.tally).toEqual({ passed: 0, failed: 1, errored: 0, skipped: 0 });
         expect(cell.score).toMatchObject({
-          state: "available", value: earned, samples: 1, total: 1, basis: "planned-attempt",
+          state: "available",
+          value: earned,
+          samples: 1,
+          total: 1,
+          basis: "planned-attempt",
           bounds: { min: 0, max: possible },
         });
         expect(only(cell.members, () => true, scoreOverview.diagnostic())).toMatchObject({
@@ -91,18 +98,32 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         ["verdict-scores/partial", "partial", 9],
         ["verdict-scores/unavailable", "unavailable", null],
       ] as const) {
-        const cell = only(scoreOverviewDocument.overview.cells, (item) => item.evalId === evalId, scoreOverview.diagnostic());
+        const cell = only(
+          scoreOverviewDocument.overview.cells,
+          (item) => item.evalId === evalId,
+          scoreOverview.diagnostic(),
+        );
         expect(cell.score).toMatchObject({ state: "unavailable", value: null, samples: 0, total: 1 });
         expect(only(cell.members, () => true, scoreOverview.diagnostic())).toMatchObject({
-          publication: { state: "published" }, score: { state: memberState, value: memberValue, samples: 0, total: 1 },
+          publication: { state: "published" },
+          score: { state: memberState, value: memberValue, samples: 0, total: 1 },
         });
       }
       const completeSubtotal = {
-        state: "partial", value: 61, samples: 2, total: 4, basis: "eval",
+        state: "partial",
+        value: 61,
+        samples: 2,
+        total: 4,
+        basis: "eval",
         bounds: { min: 0, max: 300 },
       };
-      expect(only(scoreOverviewDocument.overview.experiments, (item) => item.experimentId === "verdict-scores", scoreOverview.diagnostic()).score)
-        .toMatchObject(completeSubtotal);
+      expect(
+        only(
+          scoreOverviewDocument.overview.experiments,
+          (item) => item.experimentId === "verdict-scores",
+          scoreOverview.diagnostic(),
+        ).score,
+      ).toMatchObject(completeSubtotal);
       expect(scoreOverviewDocument.overview.totals.score).toMatchObject(completeSubtotal);
 
       const inspection = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
@@ -131,7 +152,10 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
       const executionTrace = await niceeval.run(["exp", "execution-trace", "--rerun", "all", "--json"]);
       expect(executionTrace.exitCode, executionTrace.diagnostic()).toBe(0);
-      const executionLocator = withAt(only(executionTrace.expEvalEvents(), (event) => event.evalId === "execution-trace", executionTrace.diagnostic()).locator);
+      const executionLocator = withAt(
+        only(executionTrace.expEvalEvents(), (event) => event.evalId === "execution-trace", executionTrace.diagnostic())
+          .locator,
+      );
 
       const partialUsage = await niceeval.run(["exp", "partial-usage", "--rerun", "all", "--json"]);
       expect(partialUsage.expReceipt(), partialUsage.diagnostic()).toMatchObject({ completion: "completed" });
@@ -144,16 +168,13 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         expect(result.expReceipt(), result.diagnostic()).toMatchObject({ completion: "completed" });
         if (experimentId === "classic/memory-a") {
           selectedRunId = only(result.expReceipt().createdRunIds, () => true, result.diagnostic());
-          recallLocator = withAt(only(
-            result.expEvalEvents(),
-            (event) => event.evalId === "classic/recall-name",
-            result.diagnostic(),
-          ).locator);
-          toolLocator = withAt(only(
-            result.expEvalEvents(),
-            (event) => event.evalId === "classic/tool-note",
-            result.diagnostic(),
-          ).locator);
+          recallLocator = withAt(
+            only(result.expEvalEvents(), (event) => event.evalId === "classic/recall-name", result.diagnostic())
+              .locator,
+          );
+          toolLocator = withAt(
+            only(result.expEvalEvents(), (event) => event.evalId === "classic/tool-note", result.diagnostic()).locator,
+          );
         }
       }
       expect(recallLocator).toMatch(/^@[0-9A-Z]+$/u);
@@ -166,7 +187,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       const configSource = await readFile(configPath, "utf8");
       await rm(configPath);
 
-      const selectedView = niceeval.start(["view", `run:${selectedRunId}`, "--no-open", "--port", "0"], { timeoutMs: 90_000 });
+      const selectedView = niceeval.start(["view", `run:${selectedRunId}`, "--no-open", "--port", "0"], {
+        timeoutMs: 90_000,
+      });
       try {
         const ready = await waitForViewReady(selectedView);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);
@@ -176,23 +199,22 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         });
         await expect(selectedSummary).toHaveCount(1);
         await expect(selectedSummary).toBeVisible();
-        await expect(page.locator("summary.niceeval-table-hierarchy-summary").filter({
-          hasText: /^classic\/baseline /u,
-        })).toHaveCount(0);
-        await expect(page.locator("summary.niceeval-table-hierarchy-summary").filter({
-          hasText: /^classic\/incompatible /u,
-        })).toHaveCount(0);
+        await expect(
+          page.locator("summary.niceeval-table-hierarchy-summary").filter({
+            hasText: /^classic\/baseline /u,
+          }),
+        ).toHaveCount(0);
+        await expect(
+          page.locator("summary.niceeval-table-hierarchy-summary").filter({
+            hasText: /^classic\/incompatible /u,
+          }),
+        ).toHaveCount(0);
       } finally {
         await page.goto("about:blank");
         await stopView(selectedView);
       }
 
-      const view = niceeval.start([
-        "view",
-        "--no-open",
-        "--port",
-        "0",
-      ], { timeoutMs: 90_000 });
+      const view = niceeval.start(["view", "--no-open", "--port", "0"], { timeoutMs: 90_000 });
 
       try {
         const ready = await waitForViewReady(view);
@@ -240,14 +262,29 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const partialUsageEval = partialUsageDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^usage-cost/u,
         });
-        await expect(partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(4).locator(".niceeval-value")).toHaveText("12 tokens");
-        await expect(partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-value")).toHaveText("$0.000001");
-        await expect(partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage")).toHaveText("partial");
+        await expect(
+          partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(4).locator(".niceeval-value"),
+        ).toHaveText("12 tokens");
+        await expect(
+          partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-value"),
+        ).toHaveText("$0.000001");
+        await expect(
+          partialUsageEval.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage"),
+        ).toHaveText("partial");
         await partialUsageEval.click();
-        const partialUsageAttempt = partialUsageEval.locator("xpath=..").locator(".niceeval-table-hierarchy-row").first();
-        await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(4).locator(".niceeval-value")).toHaveText("12 tokens");
-        await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-value")).toHaveText("$0.000001");
-        await expect(partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage")).toHaveText("partial");
+        const partialUsageAttempt = partialUsageEval
+          .locator("xpath=..")
+          .locator(".niceeval-table-hierarchy-row")
+          .first();
+        await expect(
+          partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(4).locator(".niceeval-value"),
+        ).toHaveText("12 tokens");
+        await expect(
+          partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-value"),
+        ).toHaveText("$0.000001");
+        await expect(
+          partialUsageAttempt.locator(".niceeval-table-hierarchy-cell").nth(5).locator(".niceeval-coverage"),
+        ).toHaveText("partial");
         await partialUsageAttempt.getByRole("link", { name: /^@/u }).click();
         const externalUsage = page.getByRole("region", { name: "External call usage", exact: true });
         await expect(externalUsage.getByRole("heading", { name: "Attempt known subtotal", exact: true })).toBeVisible();
@@ -259,9 +296,22 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const cache = externalUsage.getByRole("region", { name: "Cache read rate", exact: true });
         const cacheTable = cache.getByRole("table", { name: "Cache read rate", exact: true });
         await expect(cacheTable.getByRole("row")).toHaveCount(5);
-        await expect(cacheTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Role: primary", exact: true }) }).getByRole("cell")).toHaveText(["0.00%", "1/1", "Collection complete", "—"]);
-        await expect(cacheTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Role: secondary", exact: true }) })).toContainText("cache-read-missing, input-total-missing");
-        await expect(cacheTable.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "Role: unused", exact: true }) })).toContainText("no-calls");
+        await expect(
+          cacheTable
+            .getByRole("row")
+            .filter({ has: page.getByRole("rowheader", { name: "Role: primary", exact: true }) })
+            .getByRole("cell"),
+        ).toHaveText(["0.00%", "1/1", "Collection complete", "—"]);
+        await expect(
+          cacheTable
+            .getByRole("row")
+            .filter({ has: page.getByRole("rowheader", { name: "Role: secondary", exact: true }) }),
+        ).toContainText("cache-read-missing, input-total-missing");
+        await expect(
+          cacheTable
+            .getByRole("row")
+            .filter({ has: page.getByRole("rowheader", { name: "Role: unused", exact: true }) }),
+        ).toContainText("no-calls");
         const configuredModels = externalUsage.getByRole("table", { name: "Configured model roles", exact: true });
         await expect(configuredModels.getByRole("row")).toHaveCount(4);
         for (const [slot, model, calls] of [
@@ -312,12 +362,15 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           const evalSummary = scoreDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
             hasText: new RegExp(`^verdict-scores/${name}\\b`, "u"),
           });
-          await expect(evalSummary.locator(".niceeval-table-hierarchy-cell").last().locator(".niceeval-value"))
-            .toHaveText(expectedScore);
+          await expect(
+            evalSummary.locator(".niceeval-table-hierarchy-cell").last().locator(".niceeval-value"),
+          ).toHaveText(expectedScore);
           await expect(evalSummary).toContainText("failed");
           await evalSummary.click();
           const attemptRow = evalSummary.locator("xpath=..").locator(".niceeval-table-hierarchy-row");
-          await attemptRow.getByRole("link", { name: scoreLocators.get(`verdict-scores/${name}`)!, exact: true }).click();
+          await attemptRow
+            .getByRole("link", { name: scoreLocators.get(`verdict-scores/${name}`)!, exact: true })
+            .click();
           const scoreDialog = page.getByRole("dialog");
           await expect(scoreDialog.locator(".niceeval-verdict-pill").first()).toHaveText("failed");
           const scoreKpi = scoreDialog.locator(".niceeval-kpi").filter({
@@ -332,14 +385,20 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           });
           await expect(evalSummary.locator(".niceeval-table-hierarchy-cell").last()).toContainText("unavailable");
           await evalSummary.click();
-          await evalSummary.locator("xpath=..").getByRole("link", {
-            name: scoreLocators.get(`verdict-scores/${name}`)!, exact: true,
-          }).click();
+          await evalSummary
+            .locator("xpath=..")
+            .getByRole("link", {
+              name: scoreLocators.get(`verdict-scores/${name}`)!,
+              exact: true,
+            })
+            .click();
           const scoreDialog = page.getByRole("dialog");
           await expect(scoreDialog.locator(".niceeval-verdict-pill").first()).toHaveText("errored");
-          await expect(scoreDialog.locator(".niceeval-kpi").filter({
-            has: page.getByText("Score", { exact: true }),
-          })).toHaveCount(0);
+          await expect(
+            scoreDialog.locator(".niceeval-kpi").filter({
+              has: page.getByText("Score", { exact: true }),
+            }),
+          ).toHaveCount(0);
           await scoreDialog.getByRole("button", { name: "Close", exact: true }).click();
         }
         await experimentSelector.selectOption("/group/named/classic");
@@ -390,12 +449,8 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const missingScore = experimentDetails.locator(".niceeval-row-placeholder").filter({
           hasText: /^score/u,
         });
-        await expect(missingScore.locator(".niceeval-missing-reason")).toHaveText(
-          "no result for current config",
-        );
-        await expect(missingScore.locator(".niceeval-cell-detail")).toHaveText(
-          "niceeval exp classic/memory-a",
-        );
+        await expect(missingScore.locator(".niceeval-missing-reason")).toHaveText("no result for current config");
+        await expect(missingScore.locator(".niceeval-cell-detail")).toHaveText("niceeval exp classic/memory-a");
         await expect(page.locator(".niceeval-value").filter({ hasText: /^0$/u })).toHaveCount(0);
 
         await testInfo.attach("snapshot-overview", {
@@ -499,15 +554,21 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const toolExperiment = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,
         });
-        if (await toolExperiment.locator("xpath=..").getAttribute("open") === null) await toolExperiment.click();
-        const toolGroup = toolExperiment.locator("xpath=..").locator("summary.niceeval-table-hierarchy-summary").filter({
-          hasText: /^classic \(8 evals\)/u,
-        });
-        if (await toolGroup.locator("xpath=..").getAttribute("open") === null) await toolGroup.click();
-        const toolEval = toolExperiment.locator("xpath=..").locator("summary.niceeval-table-hierarchy-summary").filter({
-          hasText: /^tool-note/u,
-        });
-        if (await toolEval.locator("xpath=..").getAttribute("open") === null) await toolEval.click();
+        if ((await toolExperiment.locator("xpath=..").getAttribute("open")) === null) await toolExperiment.click();
+        const toolGroup = toolExperiment
+          .locator("xpath=..")
+          .locator("summary.niceeval-table-hierarchy-summary")
+          .filter({
+            hasText: /^classic \(8 evals\)/u,
+          });
+        if ((await toolGroup.locator("xpath=..").getAttribute("open")) === null) await toolGroup.click();
+        const toolEval = toolExperiment
+          .locator("xpath=..")
+          .locator("summary.niceeval-table-hierarchy-summary")
+          .filter({
+            hasText: /^tool-note/u,
+          });
+        if ((await toolEval.locator("xpath=..").getAttribute("open")) === null) await toolEval.click();
         const toolAttempt = toolExperiment.locator("xpath=..").getByRole("link", { name: toolLocator, exact: true });
         const toolHref = await toolAttempt.getAttribute("href");
         expect(toolHref).toMatch(/^#\/attempt\//u);
@@ -517,10 +578,12 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const usageGrid = dialog.locator(".niceeval-usage-table");
         const usageCells = usageGrid.locator(":scope > .niceeval-grid-cell");
         await expect(usageCells).toHaveCount(5);
-        const firstUsageRow = await usageCells.evaluateAll((cells) => cells.slice(0, 2).map((cell) => {
-          const { x, y } = cell.getBoundingClientRect();
-          return { x, y };
-        }));
+        const firstUsageRow = await usageCells.evaluateAll((cells) =>
+          cells.slice(0, 2).map((cell) => {
+            const { x, y } = cell.getBoundingClientRect();
+            return { x, y };
+          }),
+        );
         expect(firstUsageRow[1]!.x).toBeGreaterThan(firstUsageRow[0]!.x);
         expect(Math.abs(firstUsageRow[1]!.y - firstUsageRow[0]!.y)).toBeLessThan(1);
 
@@ -537,9 +600,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         });
         await absenceAssertion.click();
         const absenceDetail = absenceAssertion.locator("xpath=..").locator(":scope > .niceeval-source-line-detail");
-        const absenceMatch = absenceDetail.getByLabel(
-          'notCalledTool(toolMatch("forbidden_state_tool")): matched',
-        );
+        const absenceMatch = absenceDetail.getByLabel('notCalledTool(toolMatch("forbidden_state_tool")): matched');
         await absenceMatch.click();
         const structuredObserved = absenceDetail
           .getByRole("heading", { name: "Observed", exact: true })
@@ -554,7 +615,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           hasText: 'toolMatch("write_note").exactly(1)',
         });
         const toolAssertionDetails = toolAssertion.locator("xpath=..");
-        if (await toolAssertionDetails.getAttribute("open") === null) await toolAssertion.click();
+        if ((await toolAssertionDetails.getAttribute("open")) === null) await toolAssertion.click();
         const toolDetail = toolAssertionDetails.locator(":scope > .niceeval-source-line-detail");
         await expect(toolDetail).toBeVisible();
         const toolMatcher = toolDetail.getByLabel('toolMatch("write_note").exactly(1): mismatched');
@@ -570,7 +631,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           hasText: 'turn.check(turn.eventOccurrences, eventMatch("message"',
         });
         const eventAssertionDetails = eventAssertion.locator("xpath=..");
-        if (await eventAssertionDetails.getAttribute("open") === null) await eventAssertion.click();
+        if ((await eventAssertionDetails.getAttribute("open")) === null) await eventAssertion.click();
         const eventDetail = eventAssertionDetails.locator(":scope > .niceeval-source-line-detail");
         await expect(eventDetail).toBeVisible();
         await eventDetail.getByLabel("Assistant message event: matched").click();
@@ -578,9 +639,11 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           "exactly 1 × eventMatch(message)",
         );
 
-        const commandAssertion = dialog.locator("details.niceeval-source-line > summary").filter({ hasText: "t.check({" });
+        const commandAssertion = dialog
+          .locator("details.niceeval-source-line > summary")
+          .filter({ hasText: "t.check({" });
         const commandAssertionDetails = commandAssertion.locator("xpath=..");
-        if (await commandAssertionDetails.getAttribute("open") === null) await commandAssertion.click();
+        if ((await commandAssertionDetails.getAttribute("open")) === null) await commandAssertion.click();
         const commandDetail = commandAssertionDetails.locator(":scope > .niceeval-source-line-detail");
         await expect(commandDetail).toBeVisible();
         await commandDetail.getByLabel("commandSucceeded(): matched").click();
@@ -618,10 +681,11 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const callouts = calloutSummary.locator("xpath=..");
         await calloutSummary.click();
         await expect(callouts).toHaveAttribute("open", "");
-        await expect(callouts.getByText(
-          "file-changes-not-recorded: File changes collection was not recorded for this Attempt.",
-          { exact: true },
-        )).toBeVisible();
+        await expect(
+          callouts.getByText("file-changes-not-recorded: File changes collection was not recorded for this Attempt.", {
+            exact: true,
+          }),
+        ).toBeVisible();
 
         await testInfo.attach("snapshot-attempt", {
           body: await page.screenshot({ fullPage: true }),
@@ -630,15 +694,23 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
         await dialog.getByRole("button", { name: "Close" }).click();
         await experimentSelector.selectOption("/group/singleton/execution-trace");
-        const executionSummary = page.locator("summary.niceeval-table-hierarchy-summary").filter({ hasText: /^execution-trace \(1\/1\)/u });
+        const executionSummary = page
+          .locator("summary.niceeval-table-hierarchy-summary")
+          .filter({ hasText: /^execution-trace \(1\/1\)/u });
         await executionSummary.click();
         const executionDetails = executionSummary.locator("xpath=..");
-        await executionDetails.locator("summary.niceeval-table-hierarchy-summary").filter({ hasText: /^execution-trace/u }).nth(1).click();
+        await executionDetails
+          .locator("summary.niceeval-table-hierarchy-summary")
+          .filter({ hasText: /^execution-trace/u })
+          .nth(1)
+          .click();
         await executionDetails.getByRole("link", { name: executionLocator, exact: true }).click();
         const executionRegion = page.getByRole("dialog").getByRole("region", { name: "Execution events", exact: true });
         await expect(executionRegion).toBeVisible();
         await expect(executionRegion).not.toContainText("sealed-evidence-browser-sentinel");
-        await executionRegion.getByRole("button", { name: "Courier reached the observed destination", exact: true }).click();
+        await executionRegion
+          .getByRole("button", { name: "Courier reached the observed destination", exact: true })
+          .click();
         await expect(executionRegion).toContainText("sealed-evidence-browser-sentinel");
         await expect(executionRegion).toContainText("/event");
         await executionRegion.getByRole("button", { name: "Open evidence", exact: true }).last().click();
@@ -683,7 +755,6 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       } finally {
         await stopView(view);
       }
-
     },
   );
 });

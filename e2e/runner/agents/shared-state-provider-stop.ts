@@ -93,7 +93,11 @@ async function createProviderStopSandbox(workdir = process.cwd()): Promise<Custo
     writeText: (path, content) => writeBytes(path, Buffer.from(content, "utf8")),
     readBytes,
     writeBytes,
-    pathExists: async (path) => access(pathIn(workdir, path)).then(() => true, () => false),
+    pathExists: async (path) =>
+      access(pathIn(workdir, path)).then(
+        () => true,
+        () => false,
+      ),
     uploadFile: async (source, targetPath) => writeBytes(targetPath, await readFile(source)),
     uploadDirectory: async (sourceDir, targetDir) => {
       await cp(sourceDir, pathIn(workdir, targetDir ?? "."), { recursive: true });

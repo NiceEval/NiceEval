@@ -78,7 +78,6 @@ export interface AttemptDocument {
   readonly outcome: AttemptOutcome;
 }
 
-
 export interface RecordAttachmentBytePointer {
   readonly sha256: Sha256Digest;
   readonly byteLength: number;

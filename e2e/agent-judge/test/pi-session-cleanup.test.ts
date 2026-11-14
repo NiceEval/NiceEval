@@ -139,7 +139,8 @@ export default defineEval({ async test(t) {
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
       const evaluation = only(run.expEvalEvents(), (event) => event.evalId === "cleanup", run.diagnostic());
       const locator = defined(evaluation.locator);
-      const attempt = await (async () => (await niceeval.run(["show", locator, "--json"])).inspectionSuccess("attempt.get"))();
+      const attempt = await (async () =>
+        (await niceeval.run(["show", locator, "--json"])).inspectionSuccess("attempt.get"))();
       expect(attempt.attempt.verdict).toBe("errored");
       const evidence = JSON.parse(await readFile(join(projectRoot, "sdk-cleanup.json"), "utf8"));
       expect(evidence.lateCalls).toEqual([]);

@@ -48,104 +48,110 @@ import {
   type UtcMillis,
 } from "../model/identifiers.ts";
 
-const PortableSegmentTextSchema = Schema.String.check(Schema.makeFilter(isPortableSegment, {
+const PortableSegmentTextSchema = Schema.String.check(
+  Schema.makeFilter(isPortableSegment, {
     identifier: "RecordPortableSegment",
-    description:
-      "an ASCII portable file-name segment without path separators or reserved device names",
-  }));
+    description: "an ASCII portable file-name segment without path separators or reserved device names",
+  }),
+);
 
-export const RecordIdSchema: Schema.Codec<RecordId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(RECORD_ID_BRAND));
+export const RecordIdSchema: Schema.Codec<RecordId, string> = PortableSegmentTextSchema.pipe(
+  Schema.brand(RECORD_ID_BRAND),
+);
 
-export const RunIdSchema: Schema.Codec<RunId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(RUN_ID_BRAND));
+export const RunIdSchema: Schema.Codec<RunId, string> = PortableSegmentTextSchema.pipe(Schema.brand(RUN_ID_BRAND));
 
-export const SlotIdSchema: Schema.Codec<SlotId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(SLOT_ID_BRAND));
+export const SlotIdSchema: Schema.Codec<SlotId, string> = PortableSegmentTextSchema.pipe(Schema.brand(SLOT_ID_BRAND));
 
-export const AttemptIdSchema: Schema.Codec<AttemptId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(ATTEMPT_ID_BRAND));
+export const AttemptIdSchema: Schema.Codec<AttemptId, string> = PortableSegmentTextSchema.pipe(
+  Schema.brand(ATTEMPT_ID_BRAND),
+);
 
-const RecordDomainIdentitySchema = Schema.String.check(Schema.makeFilter(isRecordDomainIdentity, {
+const RecordDomainIdentitySchema = Schema.String.check(
+  Schema.makeFilter(isRecordDomainIdentity, {
     identifier: "RecordDomainIdentity",
     description: "a bounded durable identity without control characters",
-  }));
+  }),
+);
 
-export const ExperimentIdSchema: Schema.Codec<ExperimentId, string> =
-  RecordDomainIdentitySchema.pipe(Schema.brand(EXPERIMENT_ID_BRAND));
+export const ExperimentIdSchema: Schema.Codec<ExperimentId, string> = RecordDomainIdentitySchema.pipe(
+  Schema.brand(EXPERIMENT_ID_BRAND),
+);
 
-export const EvalIdSchema: Schema.Codec<EvalId, string> =
-  RecordDomainIdentitySchema.pipe(Schema.brand(EVAL_ID_BRAND));
+export const EvalIdSchema: Schema.Codec<EvalId, string> = RecordDomainIdentitySchema.pipe(Schema.brand(EVAL_ID_BRAND));
 
-export const ExecutionIdentityDigestSchema: Schema.Codec<
-  ExecutionIdentityDigest,
-  string
-> = Schema.String.check(Schema.makeFilter(isSha256Digest, {
+export const ExecutionIdentityDigestSchema: Schema.Codec<ExecutionIdentityDigest, string> = Schema.String.check(
+  Schema.makeFilter(isSha256Digest, {
     identifier: "ExecutionIdentityDigest",
     description: "a lowercase hexadecimal SHA-256 execution identity digest",
-  })).pipe(Schema.brand(EXECUTION_IDENTITY_DIGEST_BRAND));
+  }),
+).pipe(Schema.brand(EXECUTION_IDENTITY_DIGEST_BRAND));
 
-export const Sha256DigestSchema: Schema.Codec<Sha256Digest, string> =
-  Schema.String.check(Schema.makeFilter(isSha256Digest, {
-      identifier: "Sha256Digest",
-      description: "a lowercase hexadecimal SHA-256 digest",
-    })).pipe(Schema.brand(SHA256_DIGEST_BRAND));
+export const Sha256DigestSchema: Schema.Codec<Sha256Digest, string> = Schema.String.check(
+  Schema.makeFilter(isSha256Digest, {
+    identifier: "Sha256Digest",
+    description: "a lowercase hexadecimal SHA-256 digest",
+  }),
+).pipe(Schema.brand(SHA256_DIGEST_BRAND));
 
-export const SourceItemIdSchema: Schema.Codec<SourceItemId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(SOURCE_ITEM_ID_BRAND));
+export const SourceItemIdSchema: Schema.Codec<SourceItemId, string> = PortableSegmentTextSchema.pipe(
+  Schema.brand(SOURCE_ITEM_ID_BRAND),
+);
 
-export const FileChangeIdSchema: Schema.Codec<FileChangeId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(FILE_CHANGE_ID_BRAND));
+export const FileChangeIdSchema: Schema.Codec<FileChangeId, string> = PortableSegmentTextSchema.pipe(
+  Schema.brand(FILE_CHANGE_ID_BRAND),
+);
 
-export const ArtifactIdSchema: Schema.Codec<ArtifactId, string> =
-  PortableSegmentTextSchema.pipe(Schema.brand(ARTIFACT_ID_BRAND));
+export const ArtifactIdSchema: Schema.Codec<ArtifactId, string> = PortableSegmentTextSchema.pipe(
+  Schema.brand(ARTIFACT_ID_BRAND),
+);
 
-export const RecordBlobKeySchema: Schema.Codec<RecordBlobKey, string> =
-  Schema.String.check(Schema.makeFilter(isRecordBlobKey, {
-      identifier: "RecordBlobKey",
-      description: "an opaque portable Attachment blob key",
-    })).pipe(Schema.brand(RECORD_BLOB_KEY_BRAND));
+export const RecordBlobKeySchema: Schema.Codec<RecordBlobKey, string> = Schema.String.check(
+  Schema.makeFilter(isRecordBlobKey, {
+    identifier: "RecordBlobKey",
+    description: "an opaque portable Attachment blob key",
+  }),
+).pipe(Schema.brand(RECORD_BLOB_KEY_BRAND));
 
-export const SourceSegmentIdSchema: Schema.Codec<SourceSegmentId, string> =
-  Schema.String.check(Schema.makeFilter(isSourceSegmentId, {
-      identifier: "SourceSegmentId",
-      description: "a bounded opaque source receipt segment identity",
-    })).pipe(Schema.brand(SOURCE_SEGMENT_ID_BRAND));
+export const SourceSegmentIdSchema: Schema.Codec<SourceSegmentId, string> = Schema.String.check(
+  Schema.makeFilter(isSourceSegmentId, {
+    identifier: "SourceSegmentId",
+    description: "a bounded opaque source receipt segment identity",
+  }),
+).pipe(Schema.brand(SOURCE_SEGMENT_ID_BRAND));
 
-export const CanonicalRunRelativePathSchema: Schema.Codec<
-  CanonicalRunRelativePath,
-  string
-> = Schema.String.check(Schema.makeFilter(isCanonicalRunRelativePath, {
+export const CanonicalRunRelativePathSchema: Schema.Codec<CanonicalRunRelativePath, string> = Schema.String.check(
+  Schema.makeFilter(isCanonicalRunRelativePath, {
     identifier: "CanonicalRunRelativePath",
     description: "a slash-separated portable path inside one sealed Run",
-  })).pipe(Schema.brand(CANONICAL_RUN_RELATIVE_PATH_BRAND));
+  }),
+).pipe(Schema.brand(CANONICAL_RUN_RELATIVE_PATH_BRAND));
 
-export const CanonicalProjectRelativePathSchema: Schema.Codec<
-  CanonicalProjectRelativePath,
-  string
-> = Schema.String.check(Schema.makeFilter(isCanonicalProjectRelativePath, {
-    identifier: "CanonicalProjectRelativePath",
-    description: "a slash-separated project-relative path without dot segments",
-  })).pipe(Schema.brand(CANONICAL_PROJECT_RELATIVE_PATH_BRAND));
+export const CanonicalProjectRelativePathSchema: Schema.Codec<CanonicalProjectRelativePath, string> =
+  Schema.String.check(
+    Schema.makeFilter(isCanonicalProjectRelativePath, {
+      identifier: "CanonicalProjectRelativePath",
+      description: "a slash-separated project-relative path without dot segments",
+    }),
+  ).pipe(Schema.brand(CANONICAL_PROJECT_RELATIVE_PATH_BRAND));
 
-export const UtcMillisSchema: Schema.Codec<UtcMillis, number> =
-  Schema.Number.check(Schema.makeFilter(isUtcMillis, {
-      identifier: "UtcMillis",
-      description: "a non-negative JSON-safe Unix-epoch millisecond value",
-    })).pipe(Schema.brand(UTC_MILLIS_BRAND));
+export const UtcMillisSchema: Schema.Codec<UtcMillis, number> = Schema.Number.check(
+  Schema.makeFilter(isUtcMillis, {
+    identifier: "UtcMillis",
+    description: "a non-negative JSON-safe Unix-epoch millisecond value",
+  }),
+).pipe(Schema.brand(UTC_MILLIS_BRAND));
 
-export const RecordAttachmentNameSchema: Schema.Codec<
-  RecordAttachmentName,
-  string
-> = Schema.String.check(Schema.makeFilter(isRecordAttachmentName, {
+export const RecordAttachmentNameSchema: Schema.Codec<RecordAttachmentName, string> = Schema.String.check(
+  Schema.makeFilter(isRecordAttachmentName, {
     identifier: "RecordAttachmentName",
     description: "a lowercase reverse-domain portable Attachment name",
-  })).pipe(Schema.brand(RECORD_ATTACHMENT_NAME_BRAND));
+  }),
+).pipe(Schema.brand(RECORD_ATTACHMENT_NAME_BRAND));
 
-export const RecordAttachmentSchemaIdSchema: Schema.Codec<
-  RecordAttachmentSchemaId,
-  string
-> = Schema.String.check(Schema.makeFilter(isRecordAttachmentSchemaId, {
+export const RecordAttachmentSchemaIdSchema: Schema.Codec<RecordAttachmentSchemaId, string> = Schema.String.check(
+  Schema.makeFilter(isRecordAttachmentSchemaId, {
     identifier: "RecordAttachmentSchemaId",
     description: "a RecordAttachment name followed by /vN",
-  })).pipe(Schema.brand(RECORD_ATTACHMENT_SCHEMA_ID_BRAND));
+  }),
+).pipe(Schema.brand(RECORD_ATTACHMENT_SCHEMA_ID_BRAND));

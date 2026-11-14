@@ -1,5 +1,3 @@
-
-
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
@@ -19,11 +17,14 @@ test.concurrent("捕获未配置用途引用仍使 Attempt errored 并保留已�
     expect(read.inspectionSuccess("attempt.usage").usage).toMatchObject({
       state: "partial",
       calls: [{ callId: "accepted", modelRole: "planner", provider: null, model: "fixture/actual" }],
-      configuredModels: { state: "available", bindings: [
-        { modelRole: "planner", model: "fixture/shared", reasoningEffort: "high", recordedCalls: 1 },
-        { modelRole: "reviewer", model: "fixture/shared", reasoningEffort: null, recordedCalls: 0 },
-        { modelRole: "unused", model: "fixture/unused", reasoningEffort: null, recordedCalls: 0 },
-      ] },
+      configuredModels: {
+        state: "available",
+        bindings: [
+          { modelRole: "planner", model: "fixture/shared", reasoningEffort: "high", recordedCalls: 1 },
+          { modelRole: "reviewer", model: "fixture/shared", reasoningEffort: null, recordedCalls: 0 },
+          { modelRole: "unused", model: "fixture/unused", reasoningEffort: null, recordedCalls: 0 },
+        ],
+      },
     });
   });
 });

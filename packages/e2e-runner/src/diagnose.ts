@@ -25,19 +25,8 @@ import {
 import { inspectMaterializedHarnessAssets } from "./harness-assets.ts";
 import { readCandidateTarball, verifyInjection } from "./injection.ts";
 import type { OwnedProcess } from "./owned-process.ts";
-import {
-  appendNativeArgs,
-  commandCaptureOk,
-  copyRepoIsolated,
-  runCommand,
-  withInvocation,
-} from "./run-repo.ts";
-import {
-  buildChildEnv,
-  redactSecretCapture,
-  redactSecretStrings,
-  sensitiveEnvValues,
-} from "./secrets.ts";
+import { appendNativeArgs, commandCaptureOk, copyRepoIsolated, runCommand, withInvocation } from "./run-repo.ts";
+import { buildChildEnv, redactSecretCapture, redactSecretStrings, sensitiveEnvValues } from "./secrets.ts";
 import {
   verifyInstalledTestkit,
   verifyTestkitDirectoryResolution,
@@ -101,9 +90,7 @@ const detail = (cause: unknown): string =>
       : String(cause);
 const failure = (message: string): E2EDiagnosticError => new E2EDiagnosticError({ detail: message });
 const fs = <A>(use: (service: FileSystem.FileSystem) => Effect.Effect<A, unknown>) =>
-  Effect.flatMap(FileSystem.FileSystem, use).pipe(
-    Effect.mapError((cause) => failure(detail(cause))),
-  );
+  Effect.flatMap(FileSystem.FileSystem, use).pipe(Effect.mapError((cause) => failure(detail(cause))));
 const secure = <A>(effect: Effect.Effect<A, { readonly detail: string }, FileSystem.FileSystem>) =>
   effect.pipe(Effect.mapError((cause) => failure(cause.detail)));
 const decodeError = (label: string, error: import("./contracts.ts").ContractDecodeError): E2EDiagnosticError =>
@@ -213,15 +200,15 @@ const loadTrustedRun = (
     const scratch = yield* secure(assertRealDirectory(declaredScratch, "retained scratch root"));
     const matches = summary.results.filter((result) => result.id === options.repoId);
     if (matches.length !== 1)
-      return yield* Effect.fail(failure(`summary must contain exactly one result for repo ${JSON.stringify(options.repoId)}`));
+      return yield* Effect.fail(
+        failure(`summary must contain exactly one result for repo ${JSON.stringify(options.repoId)}`),
+      );
     const result = matches[0]!;
     yield* secure(assertContainedRealDirectory(artifactRoot, result.artifactDir, "repo artifact directory"));
     if (!contained(artifactRoot, result.artifactDir))
       return yield* Effect.fail(failure("repo artifact directory must be below the run artifact root"));
     const declaredReceiptPath = resolve(result.receiptPath);
-    const receiptPath = yield* secure(
-      assertContainedRegularFile(artifactRoot, result.receiptPath, "repo receipt"),
-    );
+    const receiptPath = yield* secure(assertContainedRegularFile(artifactRoot, result.receiptPath, "repo receipt"));
     if (dirname(declaredReceiptPath) !== resolve(result.artifactDir))
       return yield* Effect.fail(failure("summary receiptPath is not inside its matching artifactDir"));
     const receipt = yield* readReceipt(receiptPath);
@@ -233,7 +220,8 @@ const loadTrustedRun = (
       receipt.exitCode !== result.exitCode ||
       receipt.detail !== result.detail ||
       JSON.stringify(receipt.selection) !== JSON.stringify(summary.selection)
-    ) return yield* Effect.fail(failure("repo result and receipt do not describe the same formal run"));
+    )
+      return yield* Effect.fail(failure("repo result and receipt do not describe the same formal run"));
 
     const cleanup = receipt.stages.filter((stage) => stage.stage === "cleanup");
     if (cleanup.length !== 1 || cleanup[0]!.ok !== true || cleanup[0]!.path === undefined)
@@ -259,11 +247,8 @@ const loadTrustedRun = (
     if (candidate.sha256 !== receipt.candidate.sha256 || candidate.integrity !== receipt.candidate.integrity)
       return yield* Effect.fail(failure("retained candidate bytes do not match the repo receipt"));
 
-    const discovery = yield* discoverAllRepos(e2eRootDir()).pipe(
-      Effect.mapError((cause) => failure(detail(cause))),
-    );
-    if (discovery.errors.length > 0)
-      return yield* Effect.fail(failure(discovery.errors.join("; ")));
+    const discovery = yield* discoverAllRepos(e2eRootDir()).pipe(Effect.mapError((cause) => failure(detail(cause))));
+    if (discovery.errors.length > 0) return yield* Effect.fail(failure(discovery.errors.join("; ")));
     const repos = discovery.repos.filter((repo) => repo.manifest.id === options.repoId);
     if (repos.length !== 1)
       return yield* Effect.fail(failure(`current checkout has no unique repo ${JSON.stringify(options.repoId)}`));
@@ -271,21 +256,22 @@ const loadTrustedRun = (
     const testStages = receipt.stages.filter((stage) => stage.stage === "test");
     if (
       testStages.length === 0 ||
-      testStages.some((stage) =>
-        stage.command === undefined ||
-        stage.command.length < repo.manifest.command.length ||
-        repo.manifest.command.some((part, index) => stage.command![index] !== part)
+      testStages.some(
+        (stage) =>
+          stage.command === undefined ||
+          stage.command.length < repo.manifest.command.length ||
+          repo.manifest.command.some((part, index) => stage.command![index] !== part),
       )
-    ) return yield* Effect.fail(failure("current repo manifest command does not match the formal receipt test command prefix"));
+    )
+      return yield* Effect.fail(
+        failure("current repo manifest command does not match the formal receipt test command prefix"),
+      );
     const prepareStages = receipt.stages.filter((stage) => stage.stage === "prepare");
     const declaredAssets = repo.manifest.harness?.assets ?? [];
-    if (
-      prepareStages.length !== 1 ||
-      JSON.stringify(prepareStages[0]!.assets ?? []) !== JSON.stringify(declaredAssets)
-    ) return yield* Effect.fail(failure("current repo harness assets do not match the formal receipt prepare stage"));
+    if (prepareStages.length !== 1 || JSON.stringify(prepareStages[0]!.assets ?? []) !== JSON.stringify(declaredAssets))
+      return yield* Effect.fail(failure("current repo harness assets do not match the formal receipt prepare stage"));
     const allSecretNames = new Set<string>();
-    for (const repo of discovery.repos)
-      for (const name of repo.manifest.secrets) allSecretNames.add(name);
+    for (const repo of discovery.repos) for (const name of repo.manifest.secrets) allSecretNames.add(name);
     const trusted = { summary, receipt, repo, scratch, copy, artifactRoot, allSecretNames };
     yield* verifyIdentity(trusted, trusted.copy);
     return trusted;
@@ -301,7 +287,12 @@ const cleanupFreshCopy = (
         state,
         exit._tag === "Success"
           ? { kind: "removed", ok: true, path: copy, detail: `removed short-lived diagnostic copy ${copy}` }
-          : { kind: "remove-failed", ok: false, path: copy, detail: `could not remove short-lived diagnostic copy ${copy}: ${detail(exit.cause)}` },
+          : {
+              kind: "remove-failed",
+              ok: false,
+              path: copy,
+              detail: `could not remove short-lived diagnostic copy ${copy}: ${detail(exit.cause)}`,
+            },
       ),
     ),
   );
@@ -322,10 +313,9 @@ const executeAt = (
   invocationId: string,
 ): Effect.Effect<ExecutionResult, E2EDiagnosticError, FileSystem.FileSystem | OwnedProcess | Scope.Scope> =>
   Effect.gen(function* () {
-    const harness = yield* inspectMaterializedHarnessAssets(
-      copy,
-      trusted.repo.manifest.harness?.assets ?? [],
-    ).pipe(Effect.mapError((cause) => failure(cause.detail)));
+    const harness = yield* inspectMaterializedHarnessAssets(copy, trusted.repo.manifest.harness?.assets ?? []).pipe(
+      Effect.mapError((cause) => failure(cause.detail)),
+    );
     yield* verifyIdentity(trusted, trusted.copy);
     const baseEnv = buildChildEnv(
       process.env,
@@ -334,9 +324,8 @@ const executeAt = (
       trusted.repo.manifest.id,
     );
     const artifactNamespace = join(copy, ".e2e-diagnostics", invocationId);
-    const command = options.mode === "test"
-      ? appendNativeArgs(trusted.repo.manifest.command, options.argv)
-      : options.argv;
+    const command =
+      options.mode === "test" ? appendNativeArgs(trusted.repo.manifest.command, options.argv) : options.argv;
     const secretValues = sensitiveEnvValues(process.env);
     const capture = yield* runCommand(
       command,
@@ -352,7 +341,9 @@ const executeAt = (
       command: redactSecretStrings(command, secretValues),
       capture: redactSecretCapture(capture, secretValues),
       identityAfter: Result.isSuccess(after) ? "verified" : "failed",
-      identityDetail: Result.isSuccess(after) ? "candidate and Testkit identity remained verified" : after.failure.detail,
+      identityDetail: Result.isSuccess(after)
+        ? "candidate and Testkit identity remained verified"
+        : after.failure.detail,
     };
   });
 
@@ -360,8 +351,7 @@ export const runDiagnostic = (
   options: DiagnoseOptions,
 ): Effect.Effect<DiagnosticSummary, E2EDiagnosticError, FileSystem.FileSystem | OwnedProcess | Scope.Scope> =>
   Effect.gen(function* () {
-    if (process.env.CI !== undefined)
-      return yield* Effect.fail(failure("diagnose is local-only and rejected in CI"));
+    if (process.env.CI !== undefined) return yield* Effect.fail(failure("diagnose is local-only and rejected in CI"));
     if (!Number.isSafeInteger(options.timeoutSeconds) || options.timeoutSeconds <= 0)
       return yield* Effect.fail(failure("--timeout-seconds must be a positive integer"));
     if (options.argv.length === 0)
@@ -384,36 +374,35 @@ export const runDiagnostic = (
         detail: "short-lived diagnostic copy cleanup did not run",
       });
       const fresh = join(dirname(trusted.copy), `.diagnostic-${basename(trusted.copy)}-${invocationId}`);
-      execution = yield* Effect.scoped(Effect.gen(function* () {
-        if (!contained(trusted.scratch, fresh))
-          return yield* Effect.fail(failure("diagnostic copy path escapes retained scratch"));
-        if ((yield* secure(lstatOptional(fresh))) !== undefined)
-          return yield* Effect.fail(failure(`diagnostic copy already exists: ${fresh}`));
-        yield* Effect.acquireRelease(
-          Effect.succeed(fresh),
-          (path) => cleanupFreshCopy(path, cleanupState),
-        );
-        yield* copyRepoIsolated(trusted.copy, fresh).pipe(
-          Effect.mapError((cause) => failure(cause.detail)),
-        );
-        yield* secure(assertContainedRealDirectory(trusted.scratch, fresh, "short-lived diagnostic copy"));
-        const retainedNodeModules = yield* secure(
-          assertContainedRealDirectory(
-            trusted.copy,
-            join(trusted.copy, "node_modules"),
-            "retained installed node_modules",
-          ),
-        );
-        const freshNodeModules = join(fresh, "node_modules");
-        yield* fs((service) => service.symlink(retainedNodeModules, freshNodeModules));
-        const nodeModulesLink = yield* secure(lstatPath(freshNodeModules));
-        if (!nodeModulesLink.isSymbolicLink())
-          return yield* Effect.fail(failure("fresh node_modules is not a symlink to the retained installation"));
-        const reusedNodeModules = yield* fs((service) => service.realPath(freshNodeModules));
-        if (resolve(reusedNodeModules) !== resolve(retainedNodeModules))
-          return yield* Effect.fail(failure("fresh node_modules symlink does not resolve to the retained installation"));
-        return yield* executeAt(options, trusted, fresh, invocationId);
-      }));
+      execution = yield* Effect.scoped(
+        Effect.gen(function* () {
+          if (!contained(trusted.scratch, fresh))
+            return yield* Effect.fail(failure("diagnostic copy path escapes retained scratch"));
+          if ((yield* secure(lstatOptional(fresh))) !== undefined)
+            return yield* Effect.fail(failure(`diagnostic copy already exists: ${fresh}`));
+          yield* Effect.acquireRelease(Effect.succeed(fresh), (path) => cleanupFreshCopy(path, cleanupState));
+          yield* copyRepoIsolated(trusted.copy, fresh).pipe(Effect.mapError((cause) => failure(cause.detail)));
+          yield* secure(assertContainedRealDirectory(trusted.scratch, fresh, "short-lived diagnostic copy"));
+          const retainedNodeModules = yield* secure(
+            assertContainedRealDirectory(
+              trusted.copy,
+              join(trusted.copy, "node_modules"),
+              "retained installed node_modules",
+            ),
+          );
+          const freshNodeModules = join(fresh, "node_modules");
+          yield* fs((service) => service.symlink(retainedNodeModules, freshNodeModules));
+          const nodeModulesLink = yield* secure(lstatPath(freshNodeModules));
+          if (!nodeModulesLink.isSymbolicLink())
+            return yield* Effect.fail(failure("fresh node_modules is not a symlink to the retained installation"));
+          const reusedNodeModules = yield* fs((service) => service.realPath(freshNodeModules));
+          if (resolve(reusedNodeModules) !== resolve(retainedNodeModules))
+            return yield* Effect.fail(
+              failure("fresh node_modules symlink does not resolve to the retained installation"),
+            );
+          return yield* executeAt(options, trusted, fresh, invocationId);
+        }),
+      );
       cleanup = yield* Ref.get(cleanupState);
     }
 
@@ -427,18 +416,9 @@ export const runDiagnostic = (
         : !cleanup.ok
           ? cleanup.detail
           : "diagnostic command completed successfully";
-    const diagnosticPath = join(
-      trusted.artifactRoot,
-      "diagnostics",
-      trusted.repo.manifest.id,
-      `${invocationId}.json`,
-    );
+    const diagnosticPath = join(trusted.artifactRoot, "diagnostics", trusted.repo.manifest.id, `${invocationId}.json`);
     yield* secure(
-      ensureContainedRealDirectory(
-        trusted.artifactRoot,
-        dirname(diagnosticPath),
-        "diagnostic artifact directory",
-      ),
+      ensureContainedRealDirectory(trusted.artifactRoot, dirname(diagnosticPath), "diagnostic artifact directory"),
     );
     const summary: DiagnosticSummary = {
       diagnostic: true,

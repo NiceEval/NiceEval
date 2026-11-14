@@ -5,10 +5,7 @@ import {
   recordAttachmentIssue,
   type RecordAttachmentIssue,
 } from "../../attachment/index.ts";
-import {
-  Sha256DigestSchema,
-  SourceItemIdSchema,
-} from "../../codec/identifiers.ts";
+import { Sha256DigestSchema, SourceItemIdSchema } from "../../codec/identifiers.ts";
 import { sourcesRecordAttachment } from "../sources/definition.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
 import { PositiveSafeIntegerSchema } from "../common.ts";
@@ -32,17 +29,10 @@ export const MappedTurnContextSourceSchema = Schema.Struct({
 });
 
 export const TurnContextSourceSchema = Schema.Union([
-  RecordAttachmentReference.to(
-    sourcesRecordAttachment,
-    MappedTurnContextSourceSchema,
-  ),
+  RecordAttachmentReference.to(sourcesRecordAttachment, MappedTurnContextSourceSchema),
   Schema.Struct({
     state: Schema.Literal("unmapped"),
-    reason: Schema.Literals([
-      "location-not-captured",
-      "source-snapshot-not-recorded",
-      "position-unrepresentable",
-    ]),
+    reason: Schema.Literals(["location-not-captured", "source-snapshot-not-recorded", "position-unrepresentable"]),
   }),
 ]);
 
@@ -61,13 +51,9 @@ export const TurnContextsAttachmentSchema = Schema.Struct({
   segments: Schema.Array(TurnContextReceiptSchema),
 }).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
-export type TurnContextsAttachment = Schema.Schema.Type<
-  typeof TurnContextsAttachmentSchema
->;
+export type TurnContextsAttachment = Schema.Schema.Type<typeof TurnContextsAttachmentSchema>;
 
-export function validateTurnContextsAttachment(
-  value: TurnContextsAttachment,
-): readonly RecordAttachmentIssue[] {
+export function validateTurnContextsAttachment(value: TurnContextsAttachment): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
   if (!hasCanonicalSourceSegments(value.segments)) {
     issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments"]));
@@ -78,59 +64,49 @@ export function validateTurnContextsAttachment(
   let priorTurnIndex = 0;
   for (const [index, segment] of value.segments.entries()) {
     if (turnIds.has(segment.turnId)) {
-      issues.push(recordAttachmentIssue(
-        "record-attachment-schema-invalid",
-        ["segments", String(index), "turnId"],
-      ));
+      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "turnId"]));
     }
     turnIds.add(segment.turnId);
     if (
       segment.sessionIndex < priorSessionIndex ||
-      segment.sessionIndex === priorSessionIndex && segment.turnIndex <= priorTurnIndex
+      (segment.sessionIndex === priorSessionIndex && segment.turnIndex <= priorTurnIndex)
     ) {
-      issues.push(recordAttachmentIssue(
-        "record-attachment-schema-invalid",
-        ["segments", String(index), "sessionIndex"],
-      ));
+      issues.push(
+        recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "sessionIndex"]),
+      );
     }
     priorSessionIndex = segment.sessionIndex;
     priorTurnIndex = segment.turnIndex;
     if (!("state" in segment.source)) {
       if (segment.sourceOrder === null) {
-        issues.push(recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["segments", String(index), "sourceOrder"],
-        ));
+        issues.push(
+          recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "sourceOrder"]),
+        );
       }
       const { start, end } = segment.source.value;
-      if (start.line > end.line || start.line === end.line && start.column > end.column) {
-        issues.push(recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["segments", String(index), "source"],
-        ));
+      if (start.line > end.line || (start.line === end.line && start.column > end.column)) {
+        issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "source"]));
       }
     }
     if (segment.sourceOrder !== null) {
       if (sourceOrders.has(segment.sourceOrder)) {
-        issues.push(recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["segments", String(index), "sourceOrder"],
-        ));
+        issues.push(
+          recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "sourceOrder"]),
+        );
       }
       sourceOrders.add(segment.sourceOrder);
     }
   }
   value.collection.limitations.forEach((limitation, index) => {
     if (
-      (limitation.code === "capture-failed" || limitation.code === "capture-interrupted") &&
-      limitation.stage !== "session-manager" &&
-      limitation.stage !== "attempt-finalizer" ||
+      ((limitation.code === "capture-failed" || limitation.code === "capture-interrupted") &&
+        limitation.stage !== "session-manager" &&
+        limitation.stage !== "attempt-finalizer") ||
       !["turn-context", "value-byte"].includes(limitation.target)
     ) {
-      issues.push(recordAttachmentIssue(
-        "record-attachment-schema-invalid",
-        ["collection", "limitations", String(index)],
-      ));
+      issues.push(
+        recordAttachmentIssue("record-attachment-schema-invalid", ["collection", "limitations", String(index)]),
+      );
     }
   });
   return Object.freeze(issues);

@@ -22,21 +22,24 @@ export class EvalCatalogError extends Data.TaggedError("EvalCatalogError")<{
   readonly cause: unknown;
 }> {}
 
-function catalog(input: {
-  readonly cwd: string;
-  readonly tag?: string;
-}): Effect.Effect<EvalCatalog, EvalCatalogError> {
+function catalog(input: { readonly cwd: string; readonly tag?: string }): Effect.Effect<EvalCatalog, EvalCatalogError> {
   return discoverEvals(input.cwd).pipe(
-    Effect.map((discovered) => Object.freeze({
-      entries: Object.freeze(discovered
-        .filter((definition) => input.tag === undefined || definition.tags?.includes(input.tag))
-        .map((definition) => Object.freeze({
-          id: definition.id,
-          ...(definition.description === undefined ? {} : { description: definition.description }),
-          tags: Object.freeze([...(definition.tags ?? [])]),
-          evaluationKind: definition.evaluationKind,
-        }))),
-    })),
+    Effect.map((discovered) =>
+      Object.freeze({
+        entries: Object.freeze(
+          discovered
+            .filter((definition) => input.tag === undefined || definition.tags?.includes(input.tag))
+            .map((definition) =>
+              Object.freeze({
+                id: definition.id,
+                ...(definition.description === undefined ? {} : { description: definition.description }),
+                tags: Object.freeze([...(definition.tags ?? [])]),
+                evaluationKind: definition.evaluationKind,
+              }),
+            ),
+        ),
+      }),
+    ),
     Effect.mapError((cause) => new EvalCatalogError({ operation: "catalog", cause })),
   );
 }

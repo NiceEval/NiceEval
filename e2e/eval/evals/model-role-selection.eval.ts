@@ -14,8 +14,23 @@ export default roles.defineEval({
     t.check(t.model ?? null, equals(first.model)).gate();
     t.check(t.reasoningEffort ?? null, equals(first.reasoningEffort)).gate();
     // An unattributed observation makes the ledger available without inventing a default reference.
-    t.record({ callId: "unattributed", provider: null, model: null, status: "succeeded", inputTokens: 0, outputTokens: 0 });
-    t.record({ callId: "explicit-null", modelRole: null, provider: null, model: null, status: "succeeded", inputTokens: 0, outputTokens: 0 });
+    t.record({
+      callId: "unattributed",
+      provider: null,
+      model: null,
+      status: "succeeded",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    t.record({
+      callId: "explicit-null",
+      modelRole: null,
+      provider: null,
+      model: null,
+      status: "succeeded",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
     t.finishUsage();
   },
 });

@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { CommandOptions, Sandbox } from "../types.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
 import { enrichTransferErrors, withTransferErrors } from "./transfer-errors.ts";
-import { directoryContentTransfer, putSandboxContent, successfulCommandResult, type DirectoryContentTransfer } from "./operations.ts";
+import {
+  directoryContentTransfer,
+  putSandboxContent,
+  successfulCommandResult,
+  type DirectoryContentTransfer,
+} from "./operations.ts";
 import {
   providerBoundaryEffect,
   providerCompatibilityPromise,
@@ -48,7 +53,9 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     get workdir() {
       return sandbox.workdir;
     },
-    get nativeInstanceId() { return sandbox.nativeInstanceId; },
+    get nativeInstanceId() {
+      return sandbox.nativeInstanceId;
+    },
     get sandboxId() {
       return sandbox.sandboxId;
     },
@@ -61,44 +68,41 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       providerCompatibilityPromise(() => sandbox.runShell(script, resolveCommandOptions(sandbox.workdir, opts))),
     runCommandOrThrow: (cmd, args, opts) => {
       const resolved = resolveCommandOptions(sandbox.workdir, opts);
-      return providerCompatibilityPromise(async () => successfulCommandResult(
-        await sandbox.runCommand(cmd, args, resolved),
-        resolved?.sensitiveValues,
-      ));
+      return providerCompatibilityPromise(async () =>
+        successfulCommandResult(await sandbox.runCommand(cmd, args, resolved), resolved?.sensitiveValues),
+      );
     },
     runShellOrThrow: (script, opts) => {
       const resolved = resolveCommandOptions(sandbox.workdir, opts);
-      return providerCompatibilityPromise(async () => successfulCommandResult(
-        await sandbox.runShell(script, resolved),
-        resolved?.sensitiveValues,
-      ));
+      return providerCompatibilityPromise(async () =>
+        successfulCommandResult(await sandbox.runShell(script, resolved), resolved?.sensitiveValues),
+      );
     },
-    readText: (path) => providerCompatibilityPromise(() =>
-      sandbox.readText(resolveSandboxPath(sandbox.workdir, path)),
-    ),
+    readText: (path) => providerCompatibilityPromise(() => sandbox.readText(resolveSandboxPath(sandbox.workdir, path))),
     writeText: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return providerCompatibilityPromise(() => withTransferErrors(
-        { provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) },
-        () => sandbox.writeText(abs, content),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors({ provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) }, () =>
+          sandbox.writeText(abs, content),
+        ),
+      );
     },
     readBytes: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return providerCompatibilityPromise(() => withTransferErrors({ provider, operation: "readBytes", path: abs }, () =>
-        sandbox.readBytes(abs),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors({ provider, operation: "readBytes", path: abs }, () => sandbox.readBytes(abs)),
+      );
     },
     writeBytes: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return providerCompatibilityPromise(() => withTransferErrors(
-        { provider, operation: "writeBytes", path: abs, bytes: content.byteLength },
-        () => sandbox.writeBytes(abs, content),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors({ provider, operation: "writeBytes", path: abs, bytes: content.byteLength }, () =>
+          sandbox.writeBytes(abs, content),
+        ),
+      );
     },
-    pathExists: (path) => providerCompatibilityPromise(() =>
-      sandbox.pathExists(resolveSandboxPath(sandbox.workdir, path)),
-    ),
+    pathExists: (path) =>
+      providerCompatibilityPromise(() => sandbox.pathExists(resolveSandboxPath(sandbox.workdir, path))),
     ...directoryContentTransfer(sandbox as SandboxProviderBackend & DirectoryContentTransfer),
     get upload(): Sandbox["upload"] {
       const transfer = sandbox as SandboxProviderBackend & DirectoryContentTransfer;
@@ -107,30 +111,39 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     },
     uploadFile: (source, targetPath) => {
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
-      return providerCompatibilityPromise(() => withTransferErrors(
-        { provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) },
-        () => sandbox.uploadFile(source, abs),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors(
+          { provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) },
+          () => sandbox.uploadFile(source, abs),
+        ),
+      );
     },
     uploadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, targetDir);
-      return providerCompatibilityPromise(() => withTransferErrors(
-        { provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) },
-        () => sandbox.uploadDirectory(sourceDir, base, opts),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors(
+          { provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) },
+          () => sandbox.uploadDirectory(sourceDir, base, opts),
+        ),
+      );
     },
     downloadFile: (sourcePath, target) => {
       const abs = resolveSandboxPath(sandbox.workdir, sourcePath);
-      return providerCompatibilityPromise(() => withTransferErrors({ provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) }, () =>
-        sandbox.downloadFile(abs, target),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors(
+          { provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) },
+          () => sandbox.downloadFile(abs, target),
+        ),
+      );
     },
     downloadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, sourceDir);
-      return providerCompatibilityPromise(() => withTransferErrors(
-        { provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) },
-        () => sandbox.downloadDirectory(base, targetDir, opts),
-      ));
+      return providerCompatibilityPromise(() =>
+        withTransferErrors(
+          { provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) },
+          () => sandbox.downloadDirectory(base, targetDir, opts),
+        ),
+      );
     },
     stop: () => providerCompatibilityPromise(() => sandbox.stop()),
     ...(appendLog._tag === "Supported"
@@ -163,7 +176,9 @@ export function makeSandboxAuthorFacade(
     get workdir() {
       return sandbox.workdir;
     },
-    get nativeInstanceId() { return sandbox.nativeInstanceId; },
+    get nativeInstanceId() {
+      return sandbox.nativeInstanceId;
+    },
     get sandboxId() {
       return sandbox.sandboxId;
     },
@@ -180,17 +195,19 @@ export function makeSandboxAuthorFacade(
     },
     runCommandOrThrow: (cmd, args, opts) => {
       const resolved = resolveCommandOptions(sandbox.workdir, opts);
-      return executor.run(providerBoundaryEffect(async () => successfulCommandResult(
-        await sandbox.runCommand(cmd, args, resolved),
-        resolved?.sensitiveValues,
-      )));
+      return executor.run(
+        providerBoundaryEffect(async () =>
+          successfulCommandResult(await sandbox.runCommand(cmd, args, resolved), resolved?.sensitiveValues),
+        ),
+      );
     },
     runShellOrThrow: (script, opts) => {
       const resolved = resolveCommandOptions(sandbox.workdir, opts);
-      return executor.run(providerBoundaryEffect(async () => successfulCommandResult(
-        await sandbox.runShell(script, resolved),
-        resolved?.sensitiveValues,
-      )));
+      return executor.run(
+        providerBoundaryEffect(async () =>
+          successfulCommandResult(await sandbox.runShell(script, resolved), resolved?.sensitiveValues),
+        ),
+      );
     },
     readText: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
@@ -198,21 +215,27 @@ export function makeSandboxAuthorFacade(
     },
     writeText: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeText(abs, content))).pipe(
-        enrichTransferErrors({ provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeText(abs, content))).pipe(
+          enrichTransferErrors({ provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) }),
+        ),
+      );
     },
     readBytes: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.readBytes(abs))).pipe(
-        enrichTransferErrors({ provider, operation: "readBytes", path: abs }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.readBytes(abs))).pipe(
+          enrichTransferErrors({ provider, operation: "readBytes", path: abs }),
+        ),
+      );
     },
     writeBytes: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeBytes(abs, content))).pipe(
-        enrichTransferErrors({ provider, operation: "writeBytes", path: abs, bytes: content.byteLength }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeBytes(abs, content))).pipe(
+          enrichTransferErrors({ provider, operation: "writeBytes", path: abs, bytes: content.byteLength }),
+        ),
+      );
     },
     pathExists: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
@@ -226,27 +249,55 @@ export function makeSandboxAuthorFacade(
     },
     uploadFile: (source, targetPath) => {
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadFile(source, abs))).pipe(
-        enrichTransferErrors({ provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadFile(source, abs))).pipe(
+          enrichTransferErrors({
+            provider,
+            operation: "uploadFile",
+            path: abs,
+            localPath: resolveLocalPath(undefined, source),
+          }),
+        ),
+      );
     },
     uploadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, targetDir);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadDirectory(sourceDir, base, opts))).pipe(
-        enrichTransferErrors({ provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadDirectory(sourceDir, base, opts))).pipe(
+          enrichTransferErrors({
+            provider,
+            operation: "uploadDirectory",
+            path: base,
+            localPath: resolveLocalPath(undefined, sourceDir),
+          }),
+        ),
+      );
     },
     downloadFile: (sourcePath, target) => {
       const abs = resolveSandboxPath(sandbox.workdir, sourcePath);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.downloadFile(abs, target))).pipe(
-        enrichTransferErrors({ provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.downloadFile(abs, target))).pipe(
+          enrichTransferErrors({
+            provider,
+            operation: "downloadFile",
+            path: abs,
+            localPath: resolveLocalPath(undefined, target),
+          }),
+        ),
+      );
     },
     downloadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, sourceDir);
-      return executor.run(withSandboxIoRetry(providerBoundaryEffect(() => sandbox.downloadDirectory(base, targetDir, opts))).pipe(
-        enrichTransferErrors({ provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) }),
-      ));
+      return executor.run(
+        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.downloadDirectory(base, targetDir, opts))).pipe(
+          enrichTransferErrors({
+            provider,
+            operation: "downloadDirectory",
+            path: base,
+            localPath: resolveLocalPath(undefined, targetDir),
+          }),
+        ),
+      );
     },
     stop: () => executor.run(providerBoundaryEffect(() => sandbox.stop())),
     ...(appendLog._tag === "Supported"

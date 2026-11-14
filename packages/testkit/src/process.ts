@@ -11,11 +11,7 @@ import {
   type InspectionOperationId,
   type InspectionSuccessDocumentFor,
 } from "./inspection-protocol.js";
-import {
-  decodeRunDocument,
-  type RunDocument,
-  type RunListDocument,
-} from "./run-protocol.js";
+import { decodeRunDocument, type RunDocument, type RunListDocument } from "./run-protocol.js";
 import {
   decodeExpStartEvent,
   type ExpStartEvent,
@@ -41,44 +37,57 @@ export interface DiagnosticTruncation {
 }
 
 const NonNegativeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => Number.isInteger(value) && value >= 0,
-  )),
+  Schema.check(Schema.makeFilter((value) => Number.isInteger(value) && value >= 0)),
 );
 
 // Decode with the product's runtime, as for terminal receipts. The installed
 // candidate may own a separate Effect instance; do not compose its filter AST
 // into the harness's Schema runtime.
-export const ExpStartEventSchema = Schema.declare<ExpStartEvent>((input): input is ExpStartEvent => {
-  try {
-    decodeExpStartEvent(input);
-    return true;
-  } catch {
-    return false;
-  }
-}, { title: "exp start event" });
+export const ExpStartEventSchema = Schema.declare<ExpStartEvent>(
+  (input): input is ExpStartEvent => {
+    try {
+      decodeExpStartEvent(input);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { title: "exp start event" },
+);
 
 export type { ExpStartEvent } from "./exp-protocol.js";
 
-const ExpProgressEventSchema = Schema.declare<ExpProgressEvent>((input): input is ExpProgressEvent => {
-  try {
-    decodeExpProgressEvent(input);
-    return true;
-  } catch {
-    return false;
-  }
-}, { title: "niceeval.exp progress event" });
+const ExpProgressEventSchema = Schema.declare<ExpProgressEvent>(
+  (input): input is ExpProgressEvent => {
+    try {
+      decodeExpProgressEvent(input);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { title: "niceeval.exp progress event" },
+);
 
 const ExpFailureEventSchema = Schema.Struct({
-  event: Schema.Literal("failure"), locator: Schema.String, evalId: Schema.String,
-  experimentId: Schema.String, verdict: Schema.Literals(["failed", "errored"]),
-  fact: Schema.String, matcher: Schema.optional(Schema.String),
-  expected: Schema.optional(Schema.Unknown), received: Schema.optional(Schema.Unknown),
+  event: Schema.Literal("failure"),
+  locator: Schema.String,
+  evalId: Schema.String,
+  experimentId: Schema.String,
+  verdict: Schema.Literals(["failed", "errored"]),
+  fact: Schema.String,
+  matcher: Schema.optional(Schema.String),
+  expected: Schema.optional(Schema.Unknown),
+  received: Schema.optional(Schema.Unknown),
 });
 
 export const ExpErrorEventSchema = Schema.Struct({
-  event: Schema.Literal("error"), locator: Schema.String, evalId: Schema.String,
-  experimentId: Schema.String, phase: Schema.String, reason: Schema.String,
+  event: Schema.Literal("error"),
+  locator: Schema.String,
+  evalId: Schema.String,
+  experimentId: Schema.String,
+  phase: Schema.String,
+  reason: Schema.String,
 });
 export type ExpErrorEvent = Schema.Schema.Type<typeof ExpErrorEventSchema>;
 
@@ -92,40 +101,110 @@ const ExpEvalBaseSchema = Schema.Struct({
 });
 
 export const ExpEvalEventSchema = Schema.Union([
-  ExpEvalBaseSchema.pipe(Schema.fieldsAssign({
-    passed: NonNegativeIntegerSchema,
-    planned: Schema.optional(Schema.Never),
-    unstarted: Schema.optional(Schema.Never),
-    reason: Schema.optional(Schema.Never),
-  })),
-  ExpEvalBaseSchema.pipe(Schema.fieldsAssign({
-    passed: Schema.optional(Schema.Never),
-    planned: NonNegativeIntegerSchema,
-    unstarted: NonNegativeIntegerSchema,
-    reason: Schema.Literal("early_exit"),
-  })),
+  ExpEvalBaseSchema.pipe(
+    Schema.fieldsAssign({
+      passed: NonNegativeIntegerSchema,
+      planned: Schema.optional(Schema.Never),
+      unstarted: Schema.optional(Schema.Never),
+      reason: Schema.optional(Schema.Never),
+    }),
+  ),
+  ExpEvalBaseSchema.pipe(
+    Schema.fieldsAssign({
+      passed: Schema.optional(Schema.Never),
+      planned: NonNegativeIntegerSchema,
+      unstarted: NonNegativeIntegerSchema,
+      reason: Schema.Literal("early_exit"),
+    }),
+  ),
 ]);
 
 export type ExpEvalEvent = Schema.Schema.Type<typeof ExpEvalEventSchema>;
 
-const ExpKeptEventSchema = Schema.Struct({ event: Schema.Literal("kept"), locator: Schema.String, evalId: Schema.String, attempt: NonNegativeIntegerSchema, verdict: Schema.Literals(["passed", "failed", "errored"]), provider: Schema.String, sandboxId: Schema.String, enter: Schema.String });
-const ExpNoticeEventSchema = Schema.Struct({ event: Schema.Literal("notice"), code: Schema.String, level: Schema.Literal("info"), message: Schema.String, phase: Schema.optional(Schema.String), experimentId: Schema.optional(Schema.String), evalId: Schema.optional(Schema.String), resource: Schema.optional(Schema.Literal("case-lock")), previousPid: Schema.optional(NonNegativeIntegerSchema), previousHost: Schema.optional(Schema.String) });
-const ExpWarningEventSchema = Schema.Struct({ event: Schema.Literal("warning"), code: Schema.String, level: Schema.Literals(["warning", "error"]), message: Schema.String, phase: Schema.optional(Schema.String), experimentId: Schema.optional(Schema.String), evalId: Schema.optional(Schema.String), planned: Schema.optional(NonNegativeIntegerSchema), errored: Schema.optional(NonNegativeIntegerSchema) });
-const ExpBudgetExhaustedEventSchema = Schema.Struct({ event: Schema.Literal("budget_exhausted"), experimentId: Schema.String, spent: NonNegativeIntegerSchema, unstarted: NonNegativeIntegerSchema });
-const ExpReporterErrorEventSchema = Schema.Struct({ event: Schema.Literal("reporter_error"), reporter: Schema.String, required: Schema.Boolean, message: Schema.String });
+const ExpKeptEventSchema = Schema.Struct({
+  event: Schema.Literal("kept"),
+  locator: Schema.String,
+  evalId: Schema.String,
+  attempt: NonNegativeIntegerSchema,
+  verdict: Schema.Literals(["passed", "failed", "errored"]),
+  provider: Schema.String,
+  sandboxId: Schema.String,
+  enter: Schema.String,
+});
+const ExpNoticeEventSchema = Schema.Struct({
+  event: Schema.Literal("notice"),
+  code: Schema.String,
+  level: Schema.Literal("info"),
+  message: Schema.String,
+  phase: Schema.optional(Schema.String),
+  experimentId: Schema.optional(Schema.String),
+  evalId: Schema.optional(Schema.String),
+  resource: Schema.optional(Schema.Literal("case-lock")),
+  previousPid: Schema.optional(NonNegativeIntegerSchema),
+  previousHost: Schema.optional(Schema.String),
+});
+const ExpWarningEventSchema = Schema.Struct({
+  event: Schema.Literal("warning"),
+  code: Schema.String,
+  level: Schema.Literals(["warning", "error"]),
+  message: Schema.String,
+  phase: Schema.optional(Schema.String),
+  experimentId: Schema.optional(Schema.String),
+  evalId: Schema.optional(Schema.String),
+  planned: Schema.optional(NonNegativeIntegerSchema),
+  errored: Schema.optional(NonNegativeIntegerSchema),
+});
+const ExpBudgetExhaustedEventSchema = Schema.Struct({
+  event: Schema.Literal("budget_exhausted"),
+  experimentId: Schema.String,
+  spent: NonNegativeIntegerSchema,
+  unstarted: NonNegativeIntegerSchema,
+});
+const ExpReporterErrorEventSchema = Schema.Struct({
+  event: Schema.Literal("reporter_error"),
+  reporter: Schema.String,
+  required: Schema.Boolean,
+  message: Schema.String,
+});
 const ExpInterruptedEventSchema = Schema.Struct({ event: Schema.Literal("interrupted") });
-const ExpJudgePrecheckEventSchema = Schema.Struct({ event: Schema.Literal("judge_precheck"), status: Schema.Literals(["started", "done", "failed"]), durationMs: Schema.optional(NonNegativeIntegerSchema) });
-const ExpExperimentHookEventSchema = Schema.Struct({ event: Schema.Literals(["experiment_setup", "experiment_teardown"]), experimentId: Schema.String, status: Schema.Literals(["started", "done", "failed"]), durationMs: Schema.optional(NonNegativeIntegerSchema) });
-const ExpLockWaitEventSchema = Schema.Struct({ event: Schema.Literal("lock_wait"), experimentId: Schema.String, evalId: Schema.String, status: Schema.Literals(["started", "resolved"]), holderPid: Schema.optional(NonNegativeIntegerSchema), holderHost: Schema.optional(Schema.String), resolution: Schema.optional(Schema.Literals(["carried", "dispatched"])), waitedMs: Schema.optional(NonNegativeIntegerSchema) });
+const ExpJudgePrecheckEventSchema = Schema.Struct({
+  event: Schema.Literal("judge_precheck"),
+  status: Schema.Literals(["started", "done", "failed"]),
+  durationMs: Schema.optional(NonNegativeIntegerSchema),
+});
+const ExpExperimentHookEventSchema = Schema.Struct({
+  event: Schema.Literals(["experiment_setup", "experiment_teardown"]),
+  experimentId: Schema.String,
+  status: Schema.Literals(["started", "done", "failed"]),
+  durationMs: Schema.optional(NonNegativeIntegerSchema),
+});
+const ExpLockWaitEventSchema = Schema.Struct({
+  event: Schema.Literal("lock_wait"),
+  experimentId: Schema.String,
+  evalId: Schema.String,
+  status: Schema.Literals(["started", "resolved"]),
+  holderPid: Schema.optional(NonNegativeIntegerSchema),
+  holderHost: Schema.optional(Schema.String),
+  resolution: Schema.optional(Schema.Literals(["carried", "dispatched"])),
+  waitedMs: Schema.optional(NonNegativeIntegerSchema),
+});
 
 /** `niceeval exp --json` 的公开原始事件联合；Testkit 不改变字段或判定。 */
 export const ExpEventSchema = Schema.Union([
-  ExpStartEventSchema, ExpProgressEventSchema, ExpFailureEventSchema,
-  ExpErrorEventSchema, ExpEvalEventSchema, ExpKeptEventSchema,
-  ExpNoticeEventSchema, ExpWarningEventSchema, ExpBudgetExhaustedEventSchema,
+  ExpStartEventSchema,
+  ExpProgressEventSchema,
+  ExpFailureEventSchema,
+  ExpErrorEventSchema,
+  ExpEvalEventSchema,
+  ExpKeptEventSchema,
+  ExpNoticeEventSchema,
+  ExpWarningEventSchema,
+  ExpBudgetExhaustedEventSchema,
   ExpDiagnosticEventSchema,
-  ExpReporterErrorEventSchema, ExpInterruptedEventSchema,
-  ExpJudgePrecheckEventSchema, ExpExperimentHookEventSchema,
+  ExpReporterErrorEventSchema,
+  ExpInterruptedEventSchema,
+  ExpJudgePrecheckEventSchema,
+  ExpExperimentHookEventSchema,
   ExpLockWaitEventSchema,
 ]);
 export type ExpEvent = Schema.Schema.Type<typeof ExpEventSchema>;
@@ -141,10 +220,7 @@ export class ProcessStartError extends Error {
 
   constructor(argv: Argv, cwd: string, cause: unknown) {
     const reason = cause instanceof Error ? cause.message : String(cause);
-    super(
-      `Failed to start process ${JSON.stringify([...argv])} in ${cwd}: ${reason}`,
-      { cause },
-    );
+    super(`Failed to start process ${JSON.stringify([...argv])} in ${cwd}: ${reason}`, { cause });
     this.name = "ProcessStartError";
     this.argv = argv;
     this.cwd = cwd;
@@ -233,10 +309,9 @@ export class ProcessReceipt {
       try {
         out.push(JSON.parse(line) as T);
       } catch (cause) {
-        throw new Error(
-          `ndjson(): malformed JSON at line ${lineNo}: ${reasonOf(cause)}\n\n${this.diagnostic()}`,
-          { cause },
-        );
+        throw new Error(`ndjson(): malformed JSON at line ${lineNo}: ${reasonOf(cause)}\n\n${this.diagnostic()}`, {
+          cause,
+        });
       }
     }
     return out;
@@ -260,13 +335,8 @@ export class ProcessReceipt {
       );
     }
 
-    const receiptIndexes = events.flatMap((event, index) =>
-      isReceiptEvent(event) ? [index] : [],
-    );
-    if (
-      receiptIndexes.length !== 1 ||
-      receiptIndexes[0] !== events.length - 1
-    ) {
+    const receiptIndexes = events.flatMap((event, index) => (isReceiptEvent(event) ? [index] : []));
+    if (receiptIndexes.length !== 1 || receiptIndexes[0] !== events.length - 1) {
       throw new Error(
         `expTerminal(): stdout must contain exactly one receipt event as its final line\n\n${this.diagnostic()}`,
       );
@@ -285,16 +355,12 @@ export class ProcessReceipt {
 
   /** Strictly decode the public Eval conclusion events from `niceeval exp --json`. */
   expEvalEvents(): ExpEvalEvent[] {
-    return this.expEvents().filter((event): event is ExpEvalEvent =>
-      "event" in event && event.event === "eval"
-    );
+    return this.expEvents().filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
   }
 
   /** Strictly decode public execution-error events from `niceeval exp --json`. */
   expErrorEvents(): ExpErrorEvent[] {
-    return this.expEvents().filter((event): event is ExpErrorEvent =>
-      "event" in event && event.event === "error"
-    );
+    return this.expEvents().filter((event): event is ExpErrorEvent => "event" in event && event.event === "error");
   }
 
   /** Strictly decode every public event in `niceeval exp --json`. */
@@ -328,31 +394,62 @@ export class ProcessReceipt {
   }
 
   inspectionExplanation<Kind extends InspectionOperationId>(operation: Kind): InspectionExplanationDocumentFor<Kind> {
-    const narrowed = narrowInspectionExplanation(this.inspectionDocument("inspectionExplanation", operation), operation);
+    const narrowed = narrowInspectionExplanation(
+      this.inspectionDocument("inspectionExplanation", operation),
+      operation,
+    );
     if (!narrowed.success) throw new Error(`inspectionExplanation(): ${narrowed.reason}\n\n${this.diagnostic()}`);
     return narrowed.value;
   }
 
-  overview(): InspectionSuccessDocumentFor<"overview.get"> { return this.inspectionSuccess("overview.get"); }
-  experiment(): InspectionSuccessDocumentFor<"experiment.get"> { return this.inspectionSuccess("experiment.get"); }
-  runsList(): InspectionSuccessDocumentFor<"run.list"> { return this.inspectionSuccess("run.list"); }
-  run(): InspectionSuccessDocumentFor<"run.get"> { return this.inspectionSuccess("run.get"); }
-  attempt(): InspectionSuccessDocumentFor<"attempt.get"> { return this.inspectionSuccess("attempt.get"); }
-  attemptAssertionDetail(): InspectionSuccessDocumentFor<"attempt.assertion.detail"> { return this.inspectionSuccess("attempt.assertion.detail"); }
-  attemptSources(): InspectionSuccessDocumentFor<"attempt.sources"> { return this.inspectionSuccess("attempt.sources"); }
+  overview(): InspectionSuccessDocumentFor<"overview.get"> {
+    return this.inspectionSuccess("overview.get");
+  }
+  experiment(): InspectionSuccessDocumentFor<"experiment.get"> {
+    return this.inspectionSuccess("experiment.get");
+  }
+  runsList(): InspectionSuccessDocumentFor<"run.list"> {
+    return this.inspectionSuccess("run.list");
+  }
+  run(): InspectionSuccessDocumentFor<"run.get"> {
+    return this.inspectionSuccess("run.get");
+  }
+  attempt(): InspectionSuccessDocumentFor<"attempt.get"> {
+    return this.inspectionSuccess("attempt.get");
+  }
+  attemptAssertionDetail(): InspectionSuccessDocumentFor<"attempt.assertion.detail"> {
+    return this.inspectionSuccess("attempt.assertion.detail");
+  }
+  attemptSources(): InspectionSuccessDocumentFor<"attempt.sources"> {
+    return this.inspectionSuccess("attempt.sources");
+  }
 
   /** Strictly decode a successful `niceeval show --json` attempt.trace document. */
-  attemptTrace(): InspectionSuccessDocumentFor<"attempt.trace"> { return this.inspectionSuccess("attempt.trace"); }
+  attemptTrace(): InspectionSuccessDocumentFor<"attempt.trace"> {
+    return this.inspectionSuccess("attempt.trace");
+  }
 
-  attemptTraceDetail(): InspectionSuccessDocumentFor<"attempt.trace.detail"> { return this.inspectionSuccess("attempt.trace.detail"); }
+  attemptTraceDetail(): InspectionSuccessDocumentFor<"attempt.trace.detail"> {
+    return this.inspectionSuccess("attempt.trace.detail");
+  }
 
   /** Strictly decode a successful `niceeval show --json` attempt.timing document. */
-  attemptTiming(): InspectionSuccessDocumentFor<"attempt.timing"> { return this.inspectionSuccess("attempt.timing"); }
+  attemptTiming(): InspectionSuccessDocumentFor<"attempt.timing"> {
+    return this.inspectionSuccess("attempt.timing");
+  }
 
-  attemptUsage(): InspectionSuccessDocumentFor<"attempt.usage"> { return this.inspectionSuccess("attempt.usage"); }
-  attemptDiff(): InspectionSuccessDocumentFor<"attempt.diff"> { return this.inspectionSuccess("attempt.diff"); }
-  attemptArtifacts(): InspectionSuccessDocumentFor<"attempt.artifacts"> { return this.inspectionSuccess("attempt.artifacts"); }
-  runsCompare(): InspectionSuccessDocumentFor<"runs.compare"> { return this.inspectionSuccess("runs.compare"); }
+  attemptUsage(): InspectionSuccessDocumentFor<"attempt.usage"> {
+    return this.inspectionSuccess("attempt.usage");
+  }
+  attemptDiff(): InspectionSuccessDocumentFor<"attempt.diff"> {
+    return this.inspectionSuccess("attempt.diff");
+  }
+  attemptArtifacts(): InspectionSuccessDocumentFor<"attempt.artifacts"> {
+    return this.inspectionSuccess("attempt.artifacts");
+  }
+  runsCompare(): InspectionSuccessDocumentFor<"runs.compare"> {
+    return this.inspectionSuccess("runs.compare");
+  }
 
   /** Strictly decode `niceeval run list --json`; distinct from Inspection `runsList()`. */
   runListDocument(): RunListDocument {
@@ -371,11 +468,18 @@ export class ProcessReceipt {
   private inspectionDocument(api: string, operation?: InspectionOperationId): InspectionDocument {
     const documents = this.ndjson<unknown>().map((input) => {
       const decoded = decodeInspectionDocument(input);
-      if (!decoded.success) throw new Error(`${api}(): stdout is not a valid Inspection document: ${decoded.reason}\n\n${this.diagnostic()}`);
+      if (!decoded.success)
+        throw new Error(
+          `${api}(): stdout is not a valid Inspection document: ${decoded.reason}\n\n${this.diagnostic()}`,
+        );
       return decoded.value;
     });
-    const selected = operation === undefined ? documents : documents.filter(document => document.operation === operation);
-    if (selected.length !== 1) throw new Error(`${api}(): expected one matching Inspection document, received ${selected.length}\n\n${this.diagnostic()}`);
+    const selected =
+      operation === undefined ? documents : documents.filter((document) => document.operation === operation);
+    if (selected.length !== 1)
+      throw new Error(
+        `${api}(): expected one matching Inspection document, received ${selected.length}\n\n${this.diagnostic()}`,
+      );
     return selected[0]!;
   }
 
@@ -386,7 +490,9 @@ export class ProcessReceipt {
   private runDocument(api: string): RunDocument {
     const decoded = decodeRunDocument(this.json<unknown>());
     if (!decoded.success) {
-      throw new Error(`${api}(): stdout is not a valid Run machine document: ${decoded.reason}\n\n${this.diagnostic()}`);
+      throw new Error(
+        `${api}(): stdout is not a valid Run machine document: ${decoded.reason}\n\n${this.diagnostic()}`,
+      );
     }
     return decoded.value;
   }
@@ -408,10 +514,13 @@ function isExpStartEvent(value: unknown): value is ExpStartEvent {
   return Result.isSuccess(Schema.decodeUnknownResult(ExpStartEventSchema)(value));
 }
 
-
 function isReceiptEvent(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    (value as { type?: unknown }).type === "receipt";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "receipt"
+  );
 }
 
 function truncateForDisplay(text: string, stream: "stdout" | "stderr"): string {
@@ -452,10 +561,7 @@ function killWithEscalation(child: ChildProcess, graceMs: number): void {
   escalation.unref();
 }
 
-export async function runProcess(
-  argv: Argv,
-  options: RunProcessOptions = {},
-): Promise<ProcessReceipt> {
+export async function runProcess(argv: Argv, options: RunProcessOptions = {}): Promise<ProcessReceipt> {
   const cwd = options.cwd ?? process.cwd();
   const timeoutMs = options.timeoutMs;
   const startedAt = Date.now();
@@ -525,10 +631,7 @@ export async function runProcess(
 
 export function command(prefix: Argv) {
   return {
-    run(
-      args: readonly string[],
-      options?: RunProcessOptions,
-    ): Promise<ProcessReceipt> {
+    run(args: readonly string[], options?: RunProcessOptions): Promise<ProcessReceipt> {
       const argv = [...prefix, ...args] as Argv;
       return runProcess(argv, options);
     },

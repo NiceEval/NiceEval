@@ -14,9 +14,7 @@ export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
     ...(evalDef.description !== undefined ? { description: evalDef.description } : {}),
     tags: Object.freeze([...(evalDef.tags ?? [])]),
     evaluationKind: evalDef.evaluationKind ?? "pass",
-    ...(Object.keys(evalDef.metadata ?? {}).length > 0
-      ? { metadata: Object.freeze({ ...evalDef.metadata }) }
-      : {}),
+    ...(Object.keys(evalDef.metadata ?? {}).length > 0 ? { metadata: Object.freeze({ ...evalDef.metadata }) } : {}),
   });
 }
 
@@ -100,14 +98,17 @@ export function resolveExperimentEvals(input: ResolveExperimentEvalsInput): Reso
   if (input.validateModelRequirements !== false) {
     const errors = selectorEvals.flatMap((evalDef) => {
       const missing = evalDef.requiredModelRoles?.filter((key) => !Object.hasOwn(input.models ?? {}, key)) ?? [];
-      return missing.length === 0 ? [] : [`Eval "${evalDef.id}" requires undeclared model roles: ${missing.join(", ")}`];
+      return missing.length === 0
+        ? []
+        : [`Eval "${evalDef.id}" requires undeclared model roles: ${missing.join(", ")}`];
     });
     if (errors.length > 0) throw new TypeError(`Experiment "${experimentId}": ${errors.join("; ")}.`);
   }
   return {
     selectedEvals,
     selectedEvalIds: selectedEvals.map((e) => e.id),
-    selectorEvals: input.tag === undefined ? selectorEvals : selectorEvals.filter((evalDef) => evalDef.tags.includes(input.tag!)),
+    selectorEvals:
+      input.tag === undefined ? selectorEvals : selectorEvals.filter((evalDef) => evalDef.tags.includes(input.tag!)),
   };
 }
 

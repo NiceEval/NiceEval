@@ -12,13 +12,24 @@ const quality = defineJudge({ rubric: "The answer names Paris." });
 
 export default {
   inherited: configurationApplication.defineEval({
-    test(t) { t.check(t.answer(), quality).gate(1); },
+    test(t) {
+      t.check(t.answer(), quality).gate(1);
+    },
   }),
   overridden: configurationApplication.defineEval({
-    judge: OpenAIProvider({ model: "eval-specific-model", baseUrl: process.env.NICEEVAL_E2E_JUDGE_BASE_URL, apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY", maxOutputTokens: 256 }),
-    test(t) { t.judge(t.answer(), quality).gate(1); },
+    judge: OpenAIProvider({
+      model: "eval-specific-model",
+      baseUrl: process.env.NICEEVAL_E2E_JUDGE_BASE_URL,
+      apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY",
+      maxOutputTokens: 256,
+    }),
+    test(t) {
+      t.judge(t.answer(), quality).gate(1);
+    },
   }),
   pure: configurationApplication.defineEval({
-    test(t) { t.check(t.answer(), equals("Paris")).gate(); },
+    test(t) {
+      t.check(t.answer(), equals("Paris")).gate();
+    },
   }),
 };

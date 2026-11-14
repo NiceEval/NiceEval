@@ -6,7 +6,6 @@ import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
-
 // @feature docs/feature/assertions/README.md
 test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () => {
   await evalE2E.case(
@@ -41,12 +40,7 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () =>
         (entry) => entry.display.label === "Judge marker",
         inspected.receipt.diagnostic(),
       );
-      const assertion = await inspectAssertion(
-        niceeval,
-        projectRoot,
-        evaluation.locator!,
-        judge.entryId,
-      );
+      const assertion = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, judge.entryId);
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
       expect(assertion.document).toMatchObject({
         operation: "attempt.assertion.detail",
@@ -58,9 +52,7 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () =>
       for (const field of ["rationale", "evidence", "detail", "citations"]) {
         expect(detail).toContain(`\"label\":\"${field}\"`);
       }
-      expect(detail).toContain(
-        '"label":"reason","value":{"kind":"value","value":"not-recorded"}',
-      );
+      expect(detail).toContain('"label":"reason","value":{"kind":"value","value":"not-recorded"}');
     },
   );
 });
@@ -74,42 +66,55 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
     expect(request.method).toBe("POST");
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (chunk: string) => { body += chunk; });
+    request.on("data", (chunk: string) => {
+      body += chunk;
+    });
     request.on("end", () => {
-      const payload = JSON.parse(body) as { messages?: Array<{ content?: string }>; tools?: unknown; tool_choice: { function: { name: string } } };
+      const payload = JSON.parse(body) as {
+        messages?: Array<{ content?: string }>;
+        tools?: unknown;
+        tool_choice: { function: { name: string } };
+      };
       const isPrecheck = payload.messages?.some((message) => message.content === "Precheck.") ?? false;
       if (Array.isArray(payload.tools) && !isPrecheck) {
         measurementCalls += 1;
         deliveredRequests.push(body);
       }
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        id: "judge-e2e-completion",
-        object: "chat.completion",
-        created: 0,
-        model: "judge-e2e",
-        choices: [{
-          index: 0,
-          finish_reason: "tool_calls",
-          message: {
-            role: "assistant",
-            content: null,
-            tool_calls: [{
-              id: "judge-e2e-call",
-              type: "function",
-              function: {
-                name: payload.tool_choice.function.name,
-                arguments: JSON.stringify({ measurement: 0.75, rationale: "fixture accepts marker" }),
+      response.end(
+        JSON.stringify({
+          id: "judge-e2e-completion",
+          object: "chat.completion",
+          created: 0,
+          model: "judge-e2e",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "judge-e2e-call",
+                    type: "function",
+                    function: {
+                      name: payload.tool_choice.function.name,
+                      arguments: JSON.stringify({ measurement: 0.75, rationale: "fixture accepts marker" }),
+                    },
+                  },
+                ],
               },
             },
-            ],
-          },
-        }],
-      }));
+          ],
+        }),
+      );
     });
   });
   try {
-    await new Promise<void>((resolve, reject) => provider.listen(0, "127.0.0.1", (error?: Error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) =>
+      provider.listen(0, "127.0.0.1", (error?: Error) => (error ? reject(error) : resolve())),
+    );
     const address = provider.address();
     if (address === null || typeof address === "string") throw new Error("fake Judge did not bind a TCP port");
     await evalE2E.case("judge-measurement", {}, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
@@ -136,12 +141,7 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
         (entry) => entry.display.label === "Judge marker",
         inspected.receipt.diagnostic(),
       );
-      const assertion = await inspectAssertion(
-        niceeval,
-        projectRoot,
-        evaluation.locator!,
-        judge.entryId,
-      );
+      const assertion = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, judge.entryId);
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
       expect(assertion.document.assertion.entryId).toBe(judge.entryId);
       expect(JSON.stringify(assertion.document.assertion)).toContain("llm-measurement/v1");
@@ -171,7 +171,11 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
         contribution: { state: "earned", points: 20, earned: 15 },
       });
       expect(inspected.document.attempt.assertions.entries).toHaveLength(2);
-      const sugar = only(inspected.document.attempt.assertions.entries, (entry) => entry.display.label === "Judge sugar", inspected.receipt.diagnostic());
+      const sugar = only(
+        inspected.document.attempt.assertions.entries,
+        (entry) => entry.display.label === "Judge sugar",
+        inspected.receipt.diagnostic(),
+      );
       const sugared = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, sugar.entryId);
       expect(sugared.receipt.exitCode, sugared.receipt.diagnostic()).toBe(0);
       const sugarEntry = assertionEntry(sugared.document, sugared.receipt.diagnostic());
@@ -183,7 +187,9 @@ test.concurrent("Judge 与 check 共用质量门、连续计分及完整请求�
     });
   } finally {
     if (provider.listening) {
-      await new Promise<void>((resolve, reject) => provider.close((error) => error === undefined ? resolve() : reject(error)));
+      await new Promise<void>((resolve, reject) =>
+        provider.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
     }
   }
 });

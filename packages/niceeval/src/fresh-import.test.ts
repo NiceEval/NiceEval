@@ -20,13 +20,16 @@ describe("fresh project imports", () => {
       writeFileSync(join(dependency, "package.json"), JSON.stringify({ name: "stable-dependency", main: "index.js" }));
       writeFileSync(join(dependency, "index.js"), "module.exports = { identity: {} };\n");
       const source = join(root, "source.ts");
-      const writeSource = (revision: string) => writeFileSync(source,
-        `const dependency = require("stable-dependency");\nexport const instance = dependency;\nexport const revision = "${revision}";\n`);
+      const writeSource = (revision: string) =>
+        writeFileSync(
+          source,
+          `const dependency = require("stable-dependency");\nexport const instance = dependency;\nexport const revision = "${revision}";\n`,
+        );
 
       writeSource("first");
-      const first = await freshImportModule(source) as { readonly instance: object; readonly revision: string };
+      const first = (await freshImportModule(source)) as { readonly instance: object; readonly revision: string };
       writeSource("second");
-      const second = await freshImportModule(source) as { readonly instance: object; readonly revision: string };
+      const second = (await freshImportModule(source)) as { readonly instance: object; readonly revision: string };
 
       expect(first.revision).toBe("first");
       expect(second.revision).toBe("second");
@@ -44,17 +47,23 @@ describe("fresh project imports", () => {
       mkdirSync(join(root, "adapters"));
       mkdirSync(join(root, "evals"));
       mkdirSync(join(root, "experiments"));
-      writeFileSync(join(root, "adapters", "shared.ts"),
+      writeFileSync(
+        join(root, "adapters", "shared.ts"),
         `const { defineAdapter, defineExperiment } = globalThis[${JSON.stringify(factoriesKey)}];\n` +
-        `export { defineExperiment };\n` +
-        `export const shared = defineAdapter({ name: "shared", behaviorRevision: "1", create() { return {}; } });\n`);
-      writeFileSync(join(root, "evals", "shared.eval.ts"),
+          `export { defineExperiment };\n` +
+          `export const shared = defineAdapter({ name: "shared", behaviorRevision: "1", create() { return {}; } });\n`,
+      );
+      writeFileSync(
+        join(root, "evals", "shared.eval.ts"),
         `import { shared } from "../adapters/shared.ts";\n` +
-        `const test = async () => {};\nObject.assign(test, { helper: shared });\n` +
-        `export default shared.defineEval({ test });\n`);
-      writeFileSync(join(root, "experiments", "shared.ts"),
+          `const test = async () => {};\nObject.assign(test, { helper: shared });\n` +
+          `export default shared.defineEval({ test });\n`,
+      );
+      writeFileSync(
+        join(root, "experiments", "shared.ts"),
         `import { defineExperiment, shared } from "../adapters/shared.ts";\n` +
-        `export default defineExperiment({ adapter: shared, evals: ["shared"] });\n`);
+          `export default defineExperiment({ adapter: shared, evals: ["shared"] });\n`,
+      );
 
       const prepared = await Effect.runPromise(prepareRuns({ cwd: root, config: {} }, { freshImport: true }));
       expect(prepared.status).toBe("ready");

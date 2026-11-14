@@ -4,10 +4,19 @@ import { attemptResources } from "../context/attempt-resources.ts";
 
 function bounded<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`managed process cleanup exceeded ${milliseconds}ms`)), milliseconds);
+    const timer = setTimeout(
+      () => reject(new Error(`managed process cleanup exceeded ${milliseconds}ms`)),
+      milliseconds,
+    );
     promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
     );
   });
 }
@@ -22,10 +31,13 @@ export async function acquireManagedProcess(
   if (!resources) throw new Error(`${agent} managed process requires an Attempt resource registry`);
   const start = requireManagedProcessCapability(ctx.sandbox, agent);
   return resources.acquire(() => start(input), {
-    shutdown: async (process) => { await process.closeStdin(); },
+    shutdown: async (process) => {
+      await process.closeStdin();
+    },
     release: async (process) => {
-      try { await bounded(process.wait(), 2_000); }
-      catch {
+      try {
+        await bounded(process.wait(), 2_000);
+      } catch {
         await process.terminate();
         await bounded(process.wait(), 2_000);
       }

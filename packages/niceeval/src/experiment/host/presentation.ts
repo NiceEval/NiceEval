@@ -29,27 +29,25 @@ export function assembleInvocationCompletion(state: RunFeedbackState): Invocatio
       unstarted += diagnostic.count;
       failFastSkipped += diagnostic.count;
     } else if (code === "dispatch-halted") {
-      const halted = typeof diagnostic.data?.unstarted === "number"
-        ? diagnostic.data.unstarted
-        : 0;
+      const halted = typeof diagnostic.data?.unstarted === "number" ? diagnostic.data.unstarted : 0;
       unstarted += halted;
       haltedSkipped += halted;
     } else if (code === "reporter-error" && diagnostic.data?.required === true) {
-      reporterErrors.push(Object.freeze({
-        reporter: typeof diagnostic.data.reporter === "string"
-          ? diagnostic.data.reporter
-          : diagnostic.key.slice("reporter-error:".length),
-        required: true,
-        message: diagnostic.message,
-      }));
+      reporterErrors.push(
+        Object.freeze({
+          reporter:
+            typeof diagnostic.data.reporter === "string"
+              ? diagnostic.data.reporter
+              : diagnostic.key.slice("reporter-error:".length),
+          required: true,
+          message: diagnostic.message,
+        }),
+      );
     }
   }
 
   if (interrupted) unstarted += state.queued;
-  const earlyExitUnstarted = Math.max(
-    0,
-    state.earlyExitSkipped - failFastSkipped - haltedSkipped,
-  );
+  const earlyExitUnstarted = Math.max(0, state.earlyExitSkipped - failFastSkipped - haltedSkipped);
   const status: CompletionStatus = interrupted
     ? "interrupted"
     : unstarted > 0 || reporterErrors.length > 0
@@ -64,24 +62,27 @@ export function assembleInvocationCompletion(state: RunFeedbackState): Invocatio
 }
 
 /** Fresh results and current Record readbacks share one Eval-level exit fold. */
-export function foldInvocationEvalStats(
-  summary: Pick<InvocationSummary, "results" | "reusedAttempts">,
-) {
+export function foldInvocationEvalStats(summary: Pick<InvocationSummary, "results" | "reusedAttempts">) {
   const terminals = [
-    ...summary.results.map((result) => Object.freeze({
-      identity: `${result.experimentId ?? ""}|${result.id}`,
-      verdict: result.verdict,
-    })),
-    ...summary.reusedAttempts.map((readback) => Object.freeze({
-      identity: `${readback.target.experimentId}|${readback.target.evalId}`,
-      verdict: readback.source.evaluationKind !== "score"
-        ? readback.verdict
-        : readback.score.state === "applicable" &&
-            readback.score.attachment.state === "available" &&
-            readback.score.attachment.value.state === "complete"
-          ? "passed" as const
-          : "errored" as const,
-    })),
+    ...summary.results.map((result) =>
+      Object.freeze({
+        identity: `${result.experimentId ?? ""}|${result.id}`,
+        verdict: result.verdict,
+      }),
+    ),
+    ...summary.reusedAttempts.map((readback) =>
+      Object.freeze({
+        identity: `${readback.target.experimentId}|${readback.target.evalId}`,
+        verdict:
+          readback.source.evaluationKind !== "score"
+            ? readback.verdict
+            : readback.score.state === "applicable" &&
+                readback.score.attachment.state === "available" &&
+                readback.score.attachment.value.state === "complete"
+              ? ("passed" as const)
+              : ("errored" as const),
+      }),
+    ),
   ];
   return evalLevelStats(terminals, (terminal) => terminal.identity);
 }

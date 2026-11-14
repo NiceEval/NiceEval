@@ -7,17 +7,16 @@ import { inspectionE2E } from "./support.ts";
 // @regression memory/show-experiment-heading-detached-from-table.md
 
 test.concurrent("Show 把 Experiment 标题和自己的内容排在同一段", async () => {
-  await inspectionE2E.case(
-    "show-experiment-spacing",
-    async ({ commands: { niceeval } }) => {
-      for (const experimentId of ["harness/alternate", "harness/canary"]) {
-        const produced = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
-        expect(produced.exitCode, produced.diagnostic()).toBe(0);
-      }
+  await inspectionE2E.case("show-experiment-spacing", async ({ commands: { niceeval } }) => {
+    for (const experimentId of ["harness/alternate", "harness/canary"]) {
+      const produced = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+      expect(produced.exitCode, produced.diagnostic()).toBe(0);
+    }
 
-      const overview = await niceeval.run(["show"]);
-      expect(overview.exitCode, overview.diagnostic()).toBe(0);
-      expect(overview.stdout).toContain([
+    const overview = await niceeval.run(["show"]);
+    expect(overview.exitCode, overview.diagnostic()).toBe(0);
+    expect(overview.stdout).toContain(
+      [
         "Attempts · harness",
         "  Experiment harness/alternate",
         "  1 scored Attempts hidden",
@@ -26,7 +25,7 @@ test.concurrent("Show 把 Experiment 标题和自己的内容排在同一段", a
         "  Experiment harness/canary",
         "  1 scored Attempts hidden",
         "  See more  niceeval show exp:harness/canary",
-      ].join("\n"));
-    },
-  );
+      ].join("\n"),
+    );
+  });
 });

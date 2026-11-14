@@ -121,8 +121,13 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
     case "invocation":
       return request.command._tag !== "invocation-list";
     case "run":
-      return request.command._tag !== "run-cutoff" && request.command._tag !== "run-read" &&
-        request.command._tag !== "run-export" && request.command._tag !== "run-list" && request.command._tag !== "run-read-attempt";
+      return (
+        request.command._tag !== "run-cutoff" &&
+        request.command._tag !== "run-read" &&
+        request.command._tag !== "run-export" &&
+        request.command._tag !== "run-list" &&
+        request.command._tag !== "run-read-attempt"
+      );
     case "persist-sealed-run":
     case "begin-run":
     case "admit-attempt":
@@ -146,67 +151,129 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
 
 function assertMutationAuthority(connection: RecordDatabase, request: StorageWorkerRequest): void {
   if (!isWorkerMutation(request)) return;
-  const state = recordStatement(connection, `SELECT m.barrier_state,c.barrier_status
+  const state = recordStatement(
+    connection,
+    `SELECT m.barrier_state,c.barrier_status
     FROM ne19_record_metadata m JOIN ne19_coordination_state c ON c.singleton=m.singleton
-    WHERE m.singleton=1`).get() as { barrier_state: string; barrier_status: string | null } | undefined;
+    WHERE m.singleton=1`,
+  ).get() as { barrier_state: string; barrier_status: string | null } | undefined;
   // Run deletion owns the transactional portable-to-open transition. Keep
   // rejecting draining databases and active write freezes before dispatch.
-  const reopensPortable = request.operation === "run" && (request.command._tag === "run-delete" || request.command._tag === "run-import");
-  if (state === undefined || (state.barrier_state !== "open" && !(reopensPortable && state.barrier_state === "portable"))) {
-    throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the portable barrier");
+  const reopensPortable =
+    request.operation === "run" && (request.command._tag === "run-delete" || request.command._tag === "run-import");
+  if (
+    state === undefined ||
+    (state.barrier_state !== "open" && !(reopensPortable && state.barrier_state === "portable"))
+  ) {
+    throw sqliteError(
+      "record-command-conflict",
+      request.operation,
+      "ProjectDatabase mutation is blocked by the portable barrier",
+    );
   }
   if (state.barrier_status === "active") {
-    throw sqliteError("record-command-conflict", request.operation, "ProjectDatabase mutation is blocked by the active write freeze");
+    throw sqliteError(
+      "record-command-conflict",
+      request.operation,
+      "ProjectDatabase mutation is blocked by the active write freeze",
+    );
   }
 }
 
 function executeRegistry(connection: RecordDatabase, command: RegistryCommand): StorageWorkerResult {
   switch (command._tag) {
-    case "teardown-put": putTeardownObligation({ connection, ...command }); return undefined;
-    case "teardown-get": return getTeardownObligation(connection, command.id);
-    case "teardown-list": return listTeardownObligations(connection);
-    case "teardown-claim": return claimTeardownObligation(connection, command.id);
-    case "shared-list": return listSharedStateGenerations(connection, command.key);
-    case "shared-append": return appendSharedStateGeneration({ connection, ...command });
-    case "shared-heartbeat": return updateSharedStateHeartbeat({ connection, ...command });
-    case "keep-put": putKeptSandbox({ connection, ...command }); return undefined;
-    case "keep-get": return getKeptSandbox(connection, command.id);
-    case "keep-list": return listKeptSandboxes(connection);
-    case "keep-update": return updateKeptSandbox(connection, command.id, command.payload);
-    case "keep-delete": deleteKeptSandbox(connection, command.id); return undefined;
-    case "keep-lease-get": return getKeptSandboxLease(connection, command.id);
-    case "keep-lease-acquire": return acquireKeptSandboxLease({ connection, ...command });
-    case "keep-lease-release": return releaseKeptSandboxLease({ connection, ...command });
+    case "teardown-put":
+      putTeardownObligation({ connection, ...command });
+      return undefined;
+    case "teardown-get":
+      return getTeardownObligation(connection, command.id);
+    case "teardown-list":
+      return listTeardownObligations(connection);
+    case "teardown-claim":
+      return claimTeardownObligation(connection, command.id);
+    case "shared-list":
+      return listSharedStateGenerations(connection, command.key);
+    case "shared-append":
+      return appendSharedStateGeneration({ connection, ...command });
+    case "shared-heartbeat":
+      return updateSharedStateHeartbeat({ connection, ...command });
+    case "keep-put":
+      putKeptSandbox({ connection, ...command });
+      return undefined;
+    case "keep-get":
+      return getKeptSandbox(connection, command.id);
+    case "keep-list":
+      return listKeptSandboxes(connection);
+    case "keep-update":
+      return updateKeptSandbox(connection, command.id, command.payload);
+    case "keep-delete":
+      deleteKeptSandbox(connection, command.id);
+      return undefined;
+    case "keep-lease-get":
+      return getKeptSandboxLease(connection, command.id);
+    case "keep-lease-acquire":
+      return acquireKeptSandboxLease({ connection, ...command });
+    case "keep-lease-release":
+      return releaseKeptSandboxLease({ connection, ...command });
   }
 }
 
 function executeInvocation(connection: RecordDatabase, command: InvocationCommand): StorageWorkerResult {
   switch (command._tag) {
-    case "invocation-create": return createInvocationOnConnection(connection, command.input);
-    case "invocation-list": return listInvocationsOnConnection(connection);
+    case "invocation-create":
+      return createInvocationOnConnection(connection, command.input);
+    case "invocation-list":
+      return listInvocationsOnConnection(connection);
     case "invocation-update-projection":
-      updateInvocationActiveProjectionOnConnection(connection, command.invocationId, command.owner, command.at, command.projection, command.deadlineEpochMs);
+      updateInvocationActiveProjectionOnConnection(
+        connection,
+        command.invocationId,
+        command.owner,
+        command.at,
+        command.projection,
+        command.deadlineEpochMs,
+      );
       return undefined;
     case "invocation-close":
-      closeInvocationOnConnection(connection, command.invocationId, command.owner, command.state, command.at, command.projection, command.deadlineEpochMs);
+      closeInvocationOnConnection(
+        connection,
+        command.invocationId,
+        command.owner,
+        command.state,
+        command.at,
+        command.projection,
+        command.deadlineEpochMs,
+      );
       return undefined;
   }
 }
 
 function executeRun(connection: RecordDatabase, command: RunCommand): StorageWorkerResult {
   switch (command._tag) {
-    case "run-import": return importRunsOnConnection(connection, command.path, command.deadlineEpochMs);
-    case "run-export": return exportRunsOnConnection(connection, command.runIds, command.path, command.deadlineEpochMs);
-    case "run-cutoff": return currentPublicationCutoffOnConnection(connection);
-    case "run-create": return createRunResourceOnConnection(connection, command.input);
-    case "run-publish-attempt": return publishOriginAttemptOnConnection(connection, command.input);
-    case "run-bind-reference": return bindAttemptReferenceOnConnection(connection, command.input);
-    case "run-close": return closeRunResourceOnConnection(connection, command.input);
-    case "run-recover": return recoverRunResourceOnConnection(connection, command.input);
-    case "run-delete": return deleteRunResourceOnConnection(connection, command.input);
-    case "run-read": return readRunResourceOnConnection(connection, command.runId, command.cutoff);
-    case "run-list": return listRunResourcesOnConnection(connection, command.input);
-    case "run-read-attempt": return readPublishedAttemptOnConnection(connection, command.attemptId, command.cutoff);
+    case "run-import":
+      return importRunsOnConnection(connection, command.path, command.deadlineEpochMs);
+    case "run-export":
+      return exportRunsOnConnection(connection, command.runIds, command.path, command.deadlineEpochMs);
+    case "run-cutoff":
+      return currentPublicationCutoffOnConnection(connection);
+    case "run-create":
+      return createRunResourceOnConnection(connection, command.input);
+    case "run-publish-attempt":
+      return publishOriginAttemptOnConnection(connection, command.input);
+    case "run-bind-reference":
+      return bindAttemptReferenceOnConnection(connection, command.input);
+    case "run-close":
+      return closeRunResourceOnConnection(connection, command.input);
+    case "run-recover":
+      return recoverRunResourceOnConnection(connection, command.input);
+    case "run-delete":
+      return deleteRunResourceOnConnection(connection, command.input);
+    case "run-read":
+      return readRunResourceOnConnection(connection, command.runId, command.cutoff);
+    case "run-list":
+      return listRunResourcesOnConnection(connection, command.input);
+    case "run-read-attempt":
+      return readPublishedAttemptOnConnection(connection, command.attemptId, command.cutoff);
   }
 }
 
@@ -302,7 +369,12 @@ if (!isMainThread && parentPort !== null) {
       case "list-sealed-run-summaries":
         return listSealedRunSummaries(requireConnection(), request.afterRunId, request.pageSize);
       case "read-collection-item-page":
-        return readCollectionItemPage(requireConnection(), request.attachmentId, request.afterOrdinal, request.pageSize);
+        return readCollectionItemPage(
+          requireConnection(),
+          request.attachmentId,
+          request.afterOrdinal,
+          request.pageSize,
+        );
       case "read-sealed-run-document":
         return readSealedRunDocument(requireConnection(), request.runId);
       case "read-sealed-run-core":
@@ -315,11 +387,8 @@ if (!isMainThread && parentPort !== null) {
         validateExactSchema(requireConnection());
         return verifyAllSealedRuns(requireConnection());
       case "registry":
-        return withImmediateTransaction(
-          requireConnection(),
-          request.deadlineEpochMs,
-          request.command._tag,
-          () => executeRegistry(requireConnection(), request.command),
+        return withImmediateTransaction(requireConnection(), request.deadlineEpochMs, request.command._tag, () =>
+          executeRegistry(requireConnection(), request.command),
         );
       case "case-coordination":
         return executeCaseCommand(requireConnection(), request.command);
@@ -343,13 +412,24 @@ if (!isMainThread && parentPort !== null) {
         response = { id: request.id, state: "success", result: await execute(request) };
       } catch (cause) {
         const error = cause instanceof Error ? cause : new Error(String(cause));
-        const code = typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error";
-        const operation = typeof Reflect.get(error, "operation") === "string" ? String(Reflect.get(error, "operation")) : request.operation;
+        const code =
+          typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error";
+        const operation =
+          typeof Reflect.get(error, "operation") === "string"
+            ? String(Reflect.get(error, "operation"))
+            : request.operation;
         const details = Reflect.get(error, "dependencies");
-        response = { id: request.id, state: "failure", error: {
-          code, operation, message: error.message, stack: error.stack,
-          ...(Array.isArray(details) ? { details } : {}),
-        } };
+        response = {
+          id: request.id,
+          state: "failure",
+          error: {
+            code,
+            operation,
+            message: error.message,
+            stack: error.stack,
+            ...(Array.isArray(details) ? { details } : {}),
+          },
+        };
       }
       // Successful read buffers are handed to main rather than cloned. The
       // worker must not retain or reuse them after this response.

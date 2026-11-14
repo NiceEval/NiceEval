@@ -36,7 +36,9 @@ export function isTransferTimeout(error: unknown): boolean {
     const code = record && typeof record.code === "string" ? record.code : "";
     const message = current instanceof Error ? current.message : String(current);
     if (/TimeoutError|HeadersTimeoutError|BodyTimeoutError|ConnectTimeoutError/i.test(name)) return true;
-    if (/^(ETIMEDOUT|ESOCKETTIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT)$/i.test(code)) {
+    if (
+      /^(ETIMEDOUT|ESOCKETTIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT)$/i.test(code)
+    ) {
       return true;
     }
     if (/aborted due to timeout|timed? ?out|timeout exceeded|deadline exceeded/i.test(message)) return true;
@@ -91,12 +93,14 @@ export function enrichTransferErrors<A, E>(
   target: TransferTarget,
 ): (self: Effect.Effect<A, E>) => Effect.Effect<A, E | Error> {
   return (self) =>
-    Effect.catch(self, (error): Effect.Effect<never, E | Error> =>
-      isTransferTimeout(error)
-        ? Effect.flatMap(measureTransferBytes(target), (bytes) =>
-          Effect.fail(transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error)),
-        )
-        : Effect.fail<E>(error),
+    Effect.catch(
+      self,
+      (error): Effect.Effect<never, E | Error> =>
+        isTransferTimeout(error)
+          ? Effect.flatMap(measureTransferBytes(target), (bytes) =>
+              Effect.fail(transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error)),
+            )
+          : Effect.fail<E>(error),
     );
 }
 

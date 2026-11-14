@@ -1,6 +1,5 @@
 export {
   INSPECTION_OPERATION_IDS,
-
   decodeInspectionRequest,
   type InspectionCodecError,
   type InspectionFailureCode,
@@ -28,13 +27,11 @@ export {
 } from "./query.ts";
 export {
   InspectionDocumentSchema,
-
   InspectionExplanationDocumentSchema,
   InspectionFailureDocumentSchema,
   InspectionSuccessDocumentSchema,
   decodeInspectionDocument,
   inspectionProtocolRegistry,
-
   type InspectionDocument,
   type InspectionExplanationDocument,
   type InspectionExplanationDocumentFor,
@@ -101,5 +98,12 @@ export {
   type InspectionTraceResult,
 } from "./results.ts";
 
-export { readAgentJudgeAudit, decodeAgentJudgeEnvelope, AgentJudgeAuditReadResultSchema, type AgentJudgeAudit, type AgentJudgeAuditReadResult, type AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
+export {
+  readAgentJudgeAudit,
+  decodeAgentJudgeEnvelope,
+  AgentJudgeAuditReadResultSchema,
+  type AgentJudgeAudit,
+  type AgentJudgeAuditReadResult,
+  type AgentJudgeTrace,
+} from "../assertions/agent-judge-audit.ts";
 export { decodeSimulatedUserActivity, type SimulatedUserActivity } from "../simulated-user/audit.ts";

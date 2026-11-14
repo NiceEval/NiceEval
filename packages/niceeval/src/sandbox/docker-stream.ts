@@ -88,14 +88,19 @@ export async function extractFileFromTar(tarBuf: Buffer): Promise<Buffer> {
           if (Buffer.isBuffer(chunk)) chunks.push(chunk);
           else reject(new TypeError("tar entry emitted a non-buffer chunk"));
         });
-        stream.on("end", () => { resolve(Buffer.concat(chunks)); next(); });
+        stream.on("end", () => {
+          resolve(Buffer.concat(chunks));
+          next();
+        });
         stream.on("error", reject);
       } else {
         stream.resume();
         next();
       }
     });
-    extract.on("finish", () => { if (!found) reject(new Error("tar: no entries found")); });
+    extract.on("finish", () => {
+      if (!found) reject(new Error("tar: no entries found"));
+    });
     extract.on("error", reject);
     extract.end(tarBuf);
   });

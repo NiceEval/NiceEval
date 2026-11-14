@@ -7,13 +7,7 @@ const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
 );
 
-export const RunStateSchema = Schema.Literals([
-  "active",
-  "recovering",
-  "completed",
-  "interrupted",
-  "failed",
-]);
+export const RunStateSchema = Schema.Literals(["active", "recovering", "completed", "interrupted", "failed"]);
 
 export const RUN_ABSENCE_REASONS = [
   "early-exit-satisfied",
@@ -27,17 +21,17 @@ export const RunAbsenceReasonSchema = Schema.Literals(RUN_ABSENCE_REASONS);
 
 export const RunPendingPublicationSchema = Schema.Struct({ state: Schema.Literal("pending") });
 export const RunPublishedPublicationSchema = Schema.Struct({
-    state: Schema.Literal("published"),
-    action: Schema.Literals(["executed", "carried", "accepted"]),
-    attemptId: Schema.String,
-    attemptLocator: Schema.String,
-    originRunId: Schema.String,
-    originSlotId: Schema.String,
-  });
+  state: Schema.Literal("published"),
+  action: Schema.Literals(["executed", "carried", "accepted"]),
+  attemptId: Schema.String,
+  attemptLocator: Schema.String,
+  originRunId: Schema.String,
+  originSlotId: Schema.String,
+});
 export const RunAbsentPublicationSchema = Schema.Struct({
-    state: Schema.Literal("absent"),
-    reason: RunAbsenceReasonSchema,
-  });
+  state: Schema.Literal("absent"),
+  reason: RunAbsenceReasonSchema,
+});
 
 export const RunSlotPublicationSchema = Schema.Union([
   RunPendingPublicationSchema,
@@ -81,9 +75,11 @@ export const RunSummarySchema = Schema.Struct({
   owner: Schema.optional(RunOwnerObservationSchema),
 });
 
-export const RunDetailSchema = RunSummarySchema.pipe(Schema.fieldsAssign({
-  slots: Schema.Array(RunSlotSchema),
-}));
+export const RunDetailSchema = RunSummarySchema.pipe(
+  Schema.fieldsAssign({
+    slots: Schema.Array(RunSlotSchema),
+  }),
+);
 
 export const PublicationCutoffSchema = Schema.Struct({
   identity: Schema.String,
@@ -118,11 +114,13 @@ export const RunExportDocumentSchema = Schema.Struct({
 /** Decode the independent outcomes returned by `run recover --orphaned --yes --json`. */
 export const RunRecoverOrphanedDocumentSchema = Schema.Struct({
   operation: Schema.Literal("run.recover-orphaned"),
-  items: Schema.Array(Schema.Struct({
-    runId: Schema.String,
-    outcome: Schema.Literals(["recovered", "skipped", "failed"]),
-    reason: Schema.optional(Schema.String),
-  })),
+  items: Schema.Array(
+    Schema.Struct({
+      runId: Schema.String,
+      outcome: Schema.Literals(["recovered", "skipped", "failed"]),
+      reason: Schema.optional(Schema.String),
+    }),
+  ),
 });
 
 export const RunDocumentSchema = Schema.Union([

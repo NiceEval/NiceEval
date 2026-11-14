@@ -26,10 +26,7 @@ export interface ViewManifest extends InsightManifest {
   readonly groups: readonly ViewExperimentGroup[];
 }
 
-export function viewManifest(
-  catalog: ViewCatalogSelection,
-  initialRunIds: readonly string[] = [],
-): ViewManifest {
+export function viewManifest(catalog: ViewCatalogSelection, initialRunIds: readonly string[] = []): ViewManifest {
   const byKey = new Map<string, { readonly identity: ExperimentGroupIdentityValue; readonly members: string[] }>();
   for (const experimentId of [...new Set(catalog.experiments)].sort(compareCodeUnits)) {
     const identity = experimentGroupOf(experimentId);
@@ -37,69 +34,86 @@ export function viewManifest(
     current.members.push(experimentId);
     byKey.set(identity.key, current);
   }
-  const groups = Object.freeze([...byKey.values()]
-    .sort((left, right) => compareCodeUnits(left.identity.key, right.identity.key))
-    .map(({ identity, members }) => Object.freeze({
-      identity,
-      members: Object.freeze(members),
-      route: groupRoute(identity),
-      label: identity.key,
-    })));
+  const groups = Object.freeze(
+    [...byKey.values()]
+      .sort((left, right) => compareCodeUnits(left.identity.key, right.identity.key))
+      .map(({ identity, members }) =>
+        Object.freeze({
+          identity,
+          members: Object.freeze(members),
+          route: groupRoute(identity),
+          label: identity.key,
+        }),
+      ),
+  );
   const initialExperimentId = initialRunIds
     .map((runId) => catalog.runExperiments.find((candidate) => candidate.runId === runId)?.experimentId)
     .find((experimentId): experimentId is string => experimentId !== undefined);
-  const defaultGroup = initialExperimentId === undefined
-    ? groups[0]
-    : groups.find(({ members }) => members.includes(initialExperimentId)) ?? groups[0];
+  const defaultGroup =
+    initialExperimentId === undefined
+      ? groups[0]
+      : (groups.find(({ members }) => members.includes(initialExperimentId)) ?? groups[0]);
   const defaultRoute = defaultGroup?.route ?? "/";
 
-  const pages: InsightPage[] = groups.map((group) => page({
-    pageId: `group:${group.identity.key}`,
-    route: group.route,
-    title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
-    navigation: false,
-    target: group.identity.kind === "named"
-      ? { kind: "group", groupKind: "named", key: group.identity.groupId }
-      : { kind: "group", groupKind: "singleton", key: group.identity.experimentId },
-  }));
-  for (const { experimentId } of catalog.experiments.map((experimentId) => ({ experimentId }))) {
-    pages.push(page({
-      pageId: `experiment:${experimentId}`,
-      route: `/experiment/${encodeURIComponent(experimentId)}`,
-      title: { en: "Experiment", "zh-CN": "实验" },
+  const pages: InsightPage[] = groups.map((group) =>
+    page({
+      pageId: `group:${group.identity.key}`,
+      route: group.route,
+      title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
       navigation: false,
-      target: { kind: "experiment", experimentId },
-    }));
+      target:
+        group.identity.kind === "named"
+          ? { kind: "group", groupKind: "named", key: group.identity.groupId }
+          : { kind: "group", groupKind: "singleton", key: group.identity.experimentId },
+    }),
+  );
+  for (const { experimentId } of catalog.experiments.map((experimentId) => ({ experimentId }))) {
+    pages.push(
+      page({
+        pageId: `experiment:${experimentId}`,
+        route: `/experiment/${encodeURIComponent(experimentId)}`,
+        title: { en: "Experiment", "zh-CN": "实验" },
+        navigation: false,
+        target: { kind: "experiment", experimentId },
+      }),
+    );
   }
   for (const { runId } of uniqueBy(catalog.runExperiments, ({ runId }) => runId)) {
-    pages.push(page({
-      pageId: `run:${runId}`,
-      route: `/run/${encodeURIComponent(runId)}`,
-      title: { en: "Run", "zh-CN": "运行" },
-      navigation: false,
-      target: { kind: "run", runId },
-    }));
+    pages.push(
+      page({
+        pageId: `run:${runId}`,
+        route: `/run/${encodeURIComponent(runId)}`,
+        title: { en: "Run", "zh-CN": "运行" },
+        navigation: false,
+        target: { kind: "run", runId },
+      }),
+    );
   }
   for (const { locator } of uniqueBy(catalog.attemptExperiments, ({ locator }) => locator)) {
-    pages.push(page({
-      pageId: `attempt:${locator}`,
-      route: `/attempt/${attemptRouteKey(locator)}`,
-      title: { en: "Attempt", "zh-CN": "尝试" },
-      navigation: false,
-      target: { kind: "attempt", locator },
-    }));
+    pages.push(
+      page({
+        pageId: `attempt:${locator}`,
+        route: `/attempt/${attemptRouteKey(locator)}`,
+        title: { en: "Attempt", "zh-CN": "尝试" },
+        navigation: false,
+        target: { kind: "attempt", locator },
+      }),
+    );
   }
-  pages.unshift(page({
-    pageId: "overview",
-    route: "/",
-    title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
-    navigation: true,
-    target: defaultGroup === undefined
-      ? { kind: "group", groupKind: "singleton", key: "" }
-      : defaultGroup.identity.kind === "named"
-        ? { kind: "group", groupKind: "named", key: defaultGroup.identity.groupId }
-        : { kind: "group", groupKind: "singleton", key: defaultGroup.identity.experimentId },
-  }));
+  pages.unshift(
+    page({
+      pageId: "overview",
+      route: "/",
+      title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
+      navigation: true,
+      target:
+        defaultGroup === undefined
+          ? { kind: "group", groupKind: "singleton", key: "" }
+          : defaultGroup.identity.kind === "named"
+            ? { kind: "group", groupKind: "named", key: defaultGroup.identity.groupId }
+            : { kind: "group", groupKind: "singleton", key: defaultGroup.identity.experimentId },
+    }),
+  );
 
   return Object.freeze({
     title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
@@ -157,9 +171,8 @@ export function resolveSurfacePlan(
   if (target.kind === "group" || target.kind === "experiment") return { background: current };
 
   const routeState = insightRouteState(location.state);
-  const background = routeState?.background === undefined
-    ? undefined
-    : pageSurfaceForRoute(manifest, routeState.background);
+  const background =
+    routeState?.background === undefined ? undefined : pageSurfaceForRoute(manifest, routeState.background);
   if (target.kind === "run" && background === undefined) return { background: current };
   if (background !== undefined) {
     return {
@@ -196,7 +209,10 @@ function surface(
   presentation: InsightSurface["presentation"],
 ): InsightSurface {
   return Object.freeze({
-    location: Object.freeze({ pathname: location.pathname, ...(location.search === undefined ? {} : { search: location.search }) }),
+    location: Object.freeze({
+      pathname: location.pathname,
+      ...(location.search === undefined ? {} : { search: location.search }),
+    }),
     target,
     presentation,
   });
@@ -205,7 +221,12 @@ function surface(
 function insightRouteState(value: unknown): InsightRouteState | undefined {
   if (value === null || typeof value !== "object" || !("background" in value)) return undefined;
   const background = value.background;
-  if (background === null || typeof background !== "object" || !("pathname" in background) || typeof background.pathname !== "string") {
+  if (
+    background === null ||
+    typeof background !== "object" ||
+    !("pathname" in background) ||
+    typeof background.pathname !== "string"
+  ) {
     return undefined;
   }
   const search = "search" in background && typeof background.search === "string" ? background.search : undefined;

@@ -144,8 +144,7 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
       // 会话条目可能带 { type: "message", message: {...} } 包装,也可能就是消息本体。
       const wrappedMessage = get(entry, "message");
       const entryType = get(entry, "type");
-      const msg =
-        wrappedMessage && typeof wrappedMessage === "object" ? wrappedMessage : entry;
+      const msg = wrappedMessage && typeof wrappedMessage === "object" ? wrappedMessage : entry;
       const role = get(msg, "role");
 
       if (entryType === "compaction" || entryType === "compact" || get(entry, "kind") === "compaction") {
@@ -174,9 +173,15 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
           } else if (partType === "thinking" || partType === "reasoning") {
             const text = str(get(part, "thinking")) ?? str(get(part, "reasoning")) ?? str(get(part, "text"));
             if (text) events.push({ type: "thinking", text });
-          } else if (partType === "toolCall" || partType === "tool_call" || partType === "tool-call" || partType === "toolUse") {
+          } else if (
+            partType === "toolCall" ||
+            partType === "tool_call" ||
+            partType === "tool-call" ||
+            partType === "toolUse"
+          ) {
             const name = String(get(part, "name") ?? get(part, "toolName") ?? "unknown");
-            const callId = str(get(part, "id")) ?? str(get(part, "toolCallId")) ?? str(get(part, "tool_call_id")) ?? nextSynthId();
+            const callId =
+              str(get(part, "id")) ?? str(get(part, "toolCallId")) ?? str(get(part, "tool_call_id")) ?? nextSynthId();
             events.push({
               type: "operation.started",
               operationId: callId,
@@ -208,7 +213,7 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
           type: "operation.finished",
           operationId: callId,
           kind: "tool",
-          output: (typeof output === "string" ? output : (extractText(output) || output)) as JsonValue,
+          output: (typeof output === "string" ? output : extractText(output) || output) as JsonValue,
           status: isError ? "failed" : "completed",
         });
         continue;
@@ -287,9 +292,7 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
     str(get(agentMeta, "session_id"));
 
   const sessionFile =
-    str(get(agentMeta, "sessionFile")) ??
-    str(get(doc, "sessionFile")) ??
-    str(get(result, "sessionFile"));
+    str(get(agentMeta, "sessionFile")) ?? str(get(doc, "sessionFile")) ?? str(get(result, "sessionFile"));
 
   const rawUsage =
     get(doc, "usage") ??

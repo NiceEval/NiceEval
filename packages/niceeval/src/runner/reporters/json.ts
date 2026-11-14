@@ -41,7 +41,19 @@ export function Json(path: string): Reporter {
       // Include the current evaluation fields even when the Runner keeps them non-enumerable.
       await atomicWriteFile(
         path,
-        JSON.stringify({ ...summary, results: summary.results.map((result) => ({ ...result, factResults: result.factResults, factUses: result.factUses, scoreResult: result.scoreResult })) }, null, 2),
+        JSON.stringify(
+          {
+            ...summary,
+            results: summary.results.map((result) => ({
+              ...result,
+              factResults: result.factResults,
+              factUses: result.factUses,
+              scoreResult: result.scoreResult,
+            })),
+          },
+          null,
+          2,
+        ),
       );
     },
   };
@@ -52,31 +64,31 @@ export function JUnit(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {
       const mapped = summary.results.map((r) => {
-          const name = xmlAttr(`${r.id} [${(r.adapter?.name ?? "")}${r.model ? "/" + r.model : ""}]`);
-          const time = (r.durationMs / 1000).toFixed(3);
-          const terminal = attemptTerminalOf(r);
-          const verdict = verdictForTerminal(r);
-          if (terminal === "unavailable" || terminal === "errored" || verdict === "errored") {
-            return {
-              verdict: "errored" as const,
-              xml: `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(errorMessage(r, terminal))}"/></testcase>`,
-            };
-          }
-          if (terminal === "invalid" || verdict === "failed") {
-            return {
-              verdict: "failed" as const,
-              xml: `    <testcase name="${name}" time="${time}"><failure message="${xmlAttr(failureMessage(r, terminal))}"/></testcase>`,
-            };
-          }
-          if (terminal === "skipped") {
-            const score = scoreOutcomeOf(r);
-            return {
-              verdict: "skipped" as const,
-              xml: `    <testcase name="${name}" time="${time}"><skipped message="${xmlAttr(r.skipReason ?? (score?.status === "skipped" ? score.reason : ""))}"/></testcase>`,
-            };
-          }
-          return { verdict: "passed" as const, xml: `    <testcase name="${name}" time="${time}"/>` };
-        });
+        const name = xmlAttr(`${r.id} [${r.adapter?.name ?? ""}${r.model ? "/" + r.model : ""}]`);
+        const time = (r.durationMs / 1000).toFixed(3);
+        const terminal = attemptTerminalOf(r);
+        const verdict = verdictForTerminal(r);
+        if (terminal === "unavailable" || terminal === "errored" || verdict === "errored") {
+          return {
+            verdict: "errored" as const,
+            xml: `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(errorMessage(r, terminal))}"/></testcase>`,
+          };
+        }
+        if (terminal === "invalid" || verdict === "failed") {
+          return {
+            verdict: "failed" as const,
+            xml: `    <testcase name="${name}" time="${time}"><failure message="${xmlAttr(failureMessage(r, terminal))}"/></testcase>`,
+          };
+        }
+        if (terminal === "skipped") {
+          const score = scoreOutcomeOf(r);
+          return {
+            verdict: "skipped" as const,
+            xml: `    <testcase name="${name}" time="${time}"><skipped message="${xmlAttr(r.skipReason ?? (score?.status === "skipped" ? score.reason : ""))}"/></testcase>`,
+          };
+        }
+        return { verdict: "passed" as const, xml: `    <testcase name="${name}" time="${time}"/>` };
+      });
       const cases = mapped.map((item) => item.xml).join("\n");
       const failures = mapped.filter((item) => item.verdict === "failed").length;
       const errors = mapped.filter((item) => item.verdict === "errored").length;
@@ -90,19 +102,26 @@ export function JUnit(path: string): Reporter {
   };
 }
 
-function failureMessage(result: InvocationSummary["results"][number], terminal: ReturnType<typeof attemptTerminalOf>): string {
+function failureMessage(
+  result: InvocationSummary["results"][number],
+  terminal: ReturnType<typeof attemptTerminalOf>,
+): string {
   const outcome = scoreOutcomeOf(result);
   if (terminal === "invalid" && outcome?.status === "invalid") {
     return `invalid · earned ${outcome.earnedScore} · credited ${outcome.creditedScore}`;
   }
-  const failures = result.factUses.flatMap((use) =>
-    use.useKind === "verdict" && use.outcome === "failed" ? [use.label ?? use.key ?? use.method] : [],
-  ) ?? [];
+  const failures =
+    result.factUses.flatMap((use) =>
+      use.useKind === "verdict" && use.outcome === "failed" ? [use.label ?? use.key ?? use.method] : [],
+    ) ?? [];
   if (failures.length > 0) return failures.join("; ");
   return result.error?.message ?? "assertion failure";
 }
 
-function errorMessage(result: InvocationSummary["results"][number], terminal: ReturnType<typeof attemptTerminalOf>): string {
+function errorMessage(
+  result: InvocationSummary["results"][number],
+  terminal: ReturnType<typeof attemptTerminalOf>,
+): string {
   const outcome = scoreOutcomeOf(result);
   if (terminal === "unavailable" && outcome?.status === "unavailable") {
     return `unavailable · ${outcome.issues.map((issue) => issue.reason).join("; ")}`;
@@ -114,9 +133,5 @@ function errorMessage(result: InvocationSummary["results"][number], terminal: Re
 }
 
 function xmlAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

@@ -3,13 +3,7 @@
 // src/types.ts 是聚合 facade —— 模块代码统一从那里 import,不必记住每个类型的家。
 
 /** JSON 可表达的任意值(递归定义),用于事件流 / 工具输入输出等跨进程/跨语言传递的数据。 */
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /** One Experiment condition; numeric values must be finite at runtime. */
 export type FlagValue = string | number | boolean;

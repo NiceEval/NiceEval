@@ -12,10 +12,11 @@ export const sandboxStepActivityAgent = defineSandboxAgent({
     identity: { agent: "cli-sandbox-step-activity", version: "1", revision: "1" },
     probe: shell("true"),
   },
-  send: () => Effect.sync(() => {
-    return {
-      status: "completed" as const,
-      events: [{ type: "message" as const, role: "assistant" as const, text: "sandbox steps completed" }],
-    };
-  }),
+  send: () =>
+    Effect.sync(() => {
+      return {
+        status: "completed" as const,
+        events: [{ type: "message" as const, role: "assistant" as const, text: "sandbox steps completed" }],
+      };
+    }),
 });

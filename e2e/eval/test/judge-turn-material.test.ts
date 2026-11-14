@@ -15,28 +15,60 @@ test.concurrent("Turn 和 Session 材料保留 partial 与回复，确定性裁�
   const server = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (chunk: string) => { body += chunk; });
+    request.on("data", (chunk: string) => {
+      body += chunk;
+    });
     request.on("end", () => {
       const payload = JSON.parse(body);
-      if (!payload.messages.some((message: { content: string }) => message.content === "Precheck.")) materials.push(payload.messages[1].content);
+      if (!payload.messages.some((message: { content: string }) => message.content === "Precheck."))
+        materials.push(payload.messages[1].content);
       models.push(payload.model);
       if (payload.model === "unknown-overflow-model") {
         response.writeHead(400, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({ error: { code: "context_length_exceeded", message: "Maximum context length exceeded" } }));
+        response.end(
+          JSON.stringify({ error: { code: "context_length_exceeded", message: "Maximum context length exceeded" } }),
+        );
         return;
       }
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ id: "turn-material", object: "chat.completion", created: 0, model: "judge-fixture", choices: [{ index: 0, finish_reason: "tool_calls", message: {
-        role: "assistant", content: null, tool_calls: [{ id: "decision", type: "function", function: { name: payload.tool_choice.function.name, arguments: JSON.stringify({ measurement: 1, rationale: "Observed retained final reply" }) } }],
-      } }] }));
+      response.end(
+        JSON.stringify({
+          id: "turn-material",
+          object: "chat.completion",
+          created: 0,
+          model: "judge-fixture",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "decision",
+                    type: "function",
+                    function: {
+                      name: payload.tool_choice.function.name,
+                      arguments: JSON.stringify({ measurement: 1, rationale: "Observed retained final reply" }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
     });
   });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing fixture address");
   try {
     await evalE2E.case("judge-turn-material", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      await writeFile(join(projectRoot, "evals/turn-material.eval.ts"), `
+      await writeFile(
+        join(projectRoot, "evals/turn-material.eval.ts"),
+        `
 import { defineScoreEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 import { OpenAIProvider } from "niceeval/judge";
@@ -49,8 +81,11 @@ export default defineScoreEval({ judge: OpenAIProvider({ model: "explicit-contex
   await session.send("SECOND_INPUT");
   t.judge(session, rule).score(1).label("Session");
 } });
-`);
-      await writeFile(join(projectRoot, "experiments/turn-material.ts"), `
+`,
+      );
+      await writeFile(
+        join(projectRoot, "experiments/turn-material.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { defineAgent, completeEvidenceCoverage } from "niceeval/adapter";
 export default defineExperiment({ evals: ["turn-material"], adapter: defineAgent({ name: "conversation-fixture", evidenceCoverage: completeEvidenceCoverage, send: async (input) => ({
@@ -61,12 +96,17 @@ export default defineExperiment({ evals: ["turn-material"], adapter: defineAgent
     { type: "message", role: "assistant", text: "FINAL_" + input.text },
   ]
 }) }) });
-`);
-      const run = await niceeval.run(["exp", "turn-material", "--json"], { env: {
-        ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_JUDGE_KEY: "local-fixture",
-      } });
+`,
+      );
+      const run = await niceeval.run(["exp", "turn-material", "--json"], {
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          NICEEVAL_E2E_JUDGE_KEY: "local-fixture",
+        },
+      });
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-      const event = only(run.expEvalEvents(), item => item.evalId === "turn-material", run.diagnostic());
+      const event = only(run.expEvalEvents(), (item) => item.evalId === "turn-material", run.diagnostic());
       const attempt = await inspectAttempt(niceeval, projectRoot, event.locator, "attempt.get");
       expect(attempt.document.attempt.assertions.entries).toHaveLength(3);
       for (const entry of attempt.document.attempt.assertions.entries) {
@@ -91,7 +131,9 @@ export default defineExperiment({ evals: ["turn-material"], adapter: defineAgent
       expect(materials[2]).toContain("FINAL_SECOND_INPUT");
       for (const material of materials) expect(Buffer.byteLength(material)).toBeLessThan(5400);
 
-      await writeFile(join(projectRoot, "evals/context-budget.eval.ts"), `
+      await writeFile(
+        join(projectRoot, "evals/context-budget.eval.ts"),
+        `
 import { Effect } from "effect";
 import { defineScoreEval } from "niceeval";
 import { defineJudge, defineScoreMatch } from "niceeval/expect";
@@ -117,15 +159,23 @@ const unknown = defineScoreEval({ judge: provider("unknown-overflow-model"), tes
 } });
 const catalog = defineScoreEval({ judge: provider("gpt-4o"), test(t) { t.judge("CATALOG_HEAD" + "x".repeat(40000) + "CATALOG_TAIL", rule).score(1).label("Catalog"); } });
 export default { fits, exceeds, authorLimit, unknown, catalog };
-`);
-      await writeFile(join(projectRoot, "experiments/context-budget.ts"), `
+`,
+      );
+      await writeFile(
+        join(projectRoot, "experiments/context-budget.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { deterministicAgent } from "../agents/deterministic.ts";
 export default defineExperiment({ evals: ["context-budget"], adapter: deterministicAgent });
-`);
-      const budgetRun = await niceeval.run(["exp", "context-budget", "--json"], { env: {
-        ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_JUDGE_KEY: "local-fixture",
-      } });
+`,
+      );
+      const budgetRun = await niceeval.run(["exp", "context-budget", "--json"], {
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          NICEEVAL_E2E_JUDGE_KEY: "local-fixture",
+        },
+      });
       expect(budgetRun.expReceipt().completion, budgetRun.diagnostic()).toBe("completed");
       const observed = new Set<string>();
       for (const event of budgetRun.expEvalEvents()) {
@@ -140,7 +190,9 @@ export default defineExperiment({ evals: ["context-budget"], adapter: determinis
           if (audit?.state !== "available") throw new Error("Missing complete context budget audit");
           if (label === "Fits" || label === "Large audit" || label === "Catalog") {
             expect(audit.audit.result).toEqual({ state: "measured", value: 1 });
-            expect(audit.audit.input).toContain(label === "Fits" ? "LARGE_TAIL" : label === "Catalog" ? "CATALOG_TAIL" : "AUDIT_TAIL");
+            expect(audit.audit.input).toContain(
+              label === "Fits" ? "LARGE_TAIL" : label === "Catalog" ? "CATALOG_TAIL" : "AUDIT_TAIL",
+            );
             if (label === "Catalog") expect(audit.audit.definition.limits.contextWindow).toBe(128000);
             if (label === "Large audit") {
               expect(Buffer.byteLength(JSON.stringify(audit.audit))).toBeGreaterThan(8 * 1024 * 1024);
@@ -152,18 +204,26 @@ export default defineExperiment({ evals: ["context-budget"], adapter: determinis
               }
             }
           } else {
-            expect(audit.audit.result).toMatchObject({ state: "unavailable", code: label === "Exceeds" ? "judge-material-exceeds-context" : label === "Overflow" ? "judge-context-overflow" : "score-match-material-budget" });
+            expect(audit.audit.result).toMatchObject({
+              state: "unavailable",
+              code:
+                label === "Exceeds"
+                  ? "judge-material-exceeds-context"
+                  : label === "Overflow"
+                    ? "judge-context-overflow"
+                    : "score-match-material-budget",
+            });
             if (label === "Exceeds") expect(JSON.stringify(audit.audit.result)).toContain("1000");
           }
         }
       }
       expect([...observed].sort()).toEqual(["Author limit", "Catalog", "Exceeds", "Fits", "Large audit", "Overflow"]);
       expect(models).not.toContain("tiny-context-model");
-      expect(models.filter(model => model === "unknown-overflow-model")).toHaveLength(1);
-      expect(materials.some(material => material.includes("LARGE_TAIL"))).toBe(true);
+      expect(models.filter((model) => model === "unknown-overflow-model")).toHaveLength(1);
+      expect(materials.some((material) => material.includes("LARGE_TAIL"))).toBe(true);
     });
   } finally {
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });
 
@@ -172,21 +232,50 @@ test.concurrent("普通 Judge 的大审计返回稳定引用并可公开分页�
   const server = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (chunk: string) => { body += chunk; });
+    request.on("data", (chunk: string) => {
+      body += chunk;
+    });
     request.on("end", () => {
       const payload = JSON.parse(body);
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ id: "paged-audit", object: "chat.completion", created: 0, model: "fixture", choices: [{ index: 0, finish_reason: "tool_calls", message: {
-        role: "assistant", content: null, tool_calls: [{ id: "decision", type: "function", function: { name: payload.tool_choice.function.name, arguments: JSON.stringify({ measurement: 1, rationale: "Complete" }) } }],
-      } }] }));
+      response.end(
+        JSON.stringify({
+          id: "paged-audit",
+          object: "chat.completion",
+          created: 0,
+          model: "fixture",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "decision",
+                    type: "function",
+                    function: {
+                      name: payload.tool_choice.function.name,
+                      arguments: JSON.stringify({ measurement: 1, rationale: "Complete" }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
     });
   });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing fixture address");
   try {
     await evalE2E.case("judge-paged-audit", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      await writeFile(join(projectRoot, "evals/paged-audit.eval.ts"), `
+      await writeFile(
+        join(projectRoot, "evals/paged-audit.eval.ts"),
+        `
 import { Effect } from "effect";
 import { defineScoreEval } from "niceeval";
 import { defineScoreMatch } from "niceeval/expect";
@@ -198,19 +287,33 @@ const audit = defineScoreMatch<string>({ name: "paged-audit", version: "1", conf
 export default defineScoreEval({ judge: OpenAIProvider({ model: "large-fixture", contextWindow: 4000000, maxOutputTokens: 128, baseUrl: process.env.NICEEVAL_E2E_JUDGE_BASE_URL, apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY" }), test(t) {
   t.check("PAGED_HEAD" + "x".repeat(7000000) + "PAGED_TAIL", audit).score(1);
 } });
-`);
-      await writeFile(join(projectRoot, "experiments/paged-audit.ts"), `
+`,
+      );
+      await writeFile(
+        join(projectRoot, "experiments/paged-audit.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { deterministicAgent } from "../agents/deterministic.ts";
 export default defineExperiment({ evals: ["paged-audit"], adapter: deterministicAgent });
-`);
-      const run = await niceeval.run(["exp", "paged-audit", "--json"], { timeoutMs: 120000, env: {
-        ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_JUDGE_KEY: "fixture",
-      } });
+`,
+      );
+      const run = await niceeval.run(["exp", "paged-audit", "--json"], {
+        timeoutMs: 120000,
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          NICEEVAL_E2E_JUDGE_KEY: "fixture",
+        },
+      });
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-      const event = only(run.expEvalEvents(), item => item.evalId === "paged-audit", run.diagnostic());
+      const event = only(run.expEvalEvents(), (item) => item.evalId === "paged-audit", run.diagnostic());
       const attempt = await inspectAttempt(niceeval, projectRoot, event.locator, "attempt.get");
-      const detail = await inspectAssertion(niceeval, projectRoot, event.locator, only(attempt.document.attempt.assertions.entries, () => true).entryId);
+      const detail = await inspectAssertion(
+        niceeval,
+        projectRoot,
+        event.locator,
+        only(attempt.document.attempt.assertions.entries, () => true).entryId,
+      );
       const audit = assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit;
       expect(audit?.state, detail.receipt.diagnostic()).toBe("paged");
       if (audit?.state !== "paged") throw new Error("Missing paged audit");
@@ -221,7 +324,6 @@ export default defineExperiment({ evals: ["paged-audit"], adapter: deterministic
 
       let offset = 0;
       while (true) {
-
         const read = await niceeval.run(["show", event.locator, reference.id, "--json"]);
         const page = read.inspectionSuccess("attempt.trace.detail").detail;
         if (page.kind !== "execution-evidence") throw new Error("Missing Assertion Content page");
@@ -248,6 +350,6 @@ export default defineExperiment({ evals: ["paged-audit"], adapter: deterministic
       }
     });
   } finally {
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });

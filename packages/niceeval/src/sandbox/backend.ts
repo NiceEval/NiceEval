@@ -39,10 +39,9 @@ const BeforeCacheKeyScopeSchema = Schema.Struct({
 export type BeforeCacheKeyScope = Schema.Schema.Type<typeof BeforeCacheKeyScopeSchema>;
 
 /** Provider boundary: a completed cache plan never relies on core defaults. */
-export const decodeBeforeCacheKeyScope = Schema.decodeUnknownSync(
-  BeforeCacheKeyScopeSchema,
-  { onExcessProperty: "error" },
-);
+export const decodeBeforeCacheKeyScope = Schema.decodeUnknownSync(BeforeCacheKeyScopeSchema, {
+  onExcessProperty: "error",
+});
 
 export type BeforeCacheEligibility =
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string }
@@ -101,44 +100,34 @@ interface BeforeCacheErrorFields {
   readonly cause?: unknown;
 }
 
-export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<
-  BeforeCacheErrorFields
+export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheLookupError extends Data.TaggedError("BeforeCacheLookupError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheCaptureError extends Data.TaggedError("BeforeCacheCaptureError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheRestoreError extends Data.TaggedError("BeforeCacheRestoreError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheValidationError extends Data.TaggedError(
+  "BeforeCacheValidationError",
+)<BeforeCacheErrorFields> {}
+
+export class BeforeCacheCleanupError extends Data.TaggedError("BeforeCacheCleanupError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheAmbiguityError extends Data.TaggedError("BeforeCacheAmbiguityError")<
+  BeforeCacheErrorFields & {
+    readonly operationId: string;
+    readonly terminal: "unresolved";
+    readonly diagnosticCommand: string;
+  }
 > {}
 
-export class BeforeCacheLookupError extends Data.TaggedError("BeforeCacheLookupError")<
-  BeforeCacheErrorFields
+export class BeforeCacheCancellationError extends Data.TaggedError("BeforeCacheCancellationError")<
+  BeforeCacheErrorFields & {
+    readonly operationId: string;
+    readonly terminal: "cancel-fenced";
+  }
 > {}
-
-export class BeforeCacheCaptureError extends Data.TaggedError("BeforeCacheCaptureError")<
-  BeforeCacheErrorFields
-> {}
-
-export class BeforeCacheRestoreError extends Data.TaggedError("BeforeCacheRestoreError")<
-  BeforeCacheErrorFields
-> {}
-
-export class BeforeCacheValidationError extends Data.TaggedError("BeforeCacheValidationError")<
-  BeforeCacheErrorFields
-> {}
-
-export class BeforeCacheCleanupError extends Data.TaggedError("BeforeCacheCleanupError")<
-  BeforeCacheErrorFields
-> {}
-
-export class BeforeCacheAmbiguityError extends Data.TaggedError(
-  "BeforeCacheAmbiguityError",
-)<BeforeCacheErrorFields & {
-  readonly operationId: string;
-  readonly terminal: "unresolved";
-  readonly diagnosticCommand: string;
-}> {}
-
-export class BeforeCacheCancellationError extends Data.TaggedError(
-  "BeforeCacheCancellationError",
-)<BeforeCacheErrorFields & {
-  readonly operationId: string;
-  readonly terminal: "cancel-fenced";
-}> {}
 
 export type BeforeCacheError =
   | BeforeCacheRegistryError
@@ -210,12 +199,8 @@ export type AttemptBeforeCacheFallback =
 
 export interface AttemptBeforeCache {
   eligibility(): BeforeCacheEligibility;
-  lookupAndRestore(
-    input: BeforeCacheStep,
-  ): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
-  capture(
-    input: BeforeCacheStep,
-  ): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
+  lookupAndRestore(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
+  capture(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
   /**
    * One-shot degraded-path seam, only valid before any Action has succeeded in
    * the current Attempt. The provider DestroyOnly-retires a failed lookup
@@ -281,9 +266,7 @@ function providerBoundaryError(cause: unknown): Error {
 }
 
 /** Promise provider SDK 在这一处 lift 成 typed-error Effect；Error 实例原样保留给现有归因逻辑。 */
-export function providerBoundaryEffect<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-): Effect.Effect<T, Error> {
+export function providerBoundaryEffect<T>(operation: (signal: AbortSignal) => Promise<T>): Effect.Effect<T, Error> {
   return Effect.tryPromise({
     // 保留 Effect 运行时的取消信号，供真正支持 AbortSignal 的 SDK adapter 接入；不把中断
     // 编码成 Error，也不在这里启动嵌套 runtime。
@@ -313,13 +296,17 @@ export function customSandboxBackend(sandbox: CustomProviderSandbox): SandboxPro
   // 作者直接返回的普通 Sandbox 没有登记项，仍严格退回 Unsupported，不能靠鸭子类型猜能力。
   const registered = SANDBOX_CAPABILITIES.get(sandbox) ?? {
     ...noSandboxBackendCapabilities,
-    managedProcess: unsupportedBackendCapabilityBecause("custom Sandbox facades do not declare the internal managed-process capability"),
+    managedProcess: unsupportedBackendCapabilityBecause(
+      "custom Sandbox facades do not declare the internal managed-process capability",
+    ),
   };
   return {
     get workdir() {
       return sandbox.workdir;
     },
-    get nativeInstanceId() { return sandbox.nativeInstanceId; },
+    get nativeInstanceId() {
+      return sandbox.nativeInstanceId;
+    },
     get sandboxId() {
       return sandbox.sandboxId;
     },
@@ -328,9 +315,10 @@ export function customSandboxBackend(sandbox: CustomProviderSandbox): SandboxPro
     },
     capabilities: {
       ...registered,
-      appendLog: appendLog === undefined
-        ? unsupportedBackendCapability
-        : supportedBackendCapability((line) => appendLog.call(sandbox, line)),
+      appendLog:
+        appendLog === undefined
+          ? unsupportedBackendCapability
+          : supportedBackendCapability((line) => appendLog.call(sandbox, line)),
     },
     runCommand: (command, args, options) => sandbox.runCommand(command, args, options),
     runShell: (script, options) => sandbox.runShell(script, options),
@@ -374,8 +362,14 @@ export function sandboxSupportsRootCommands(sandbox: Sandbox): boolean {
 
 export class SandboxManagedProcessCapabilityError extends Error {
   readonly name = "SandboxManagedProcessCapabilityError";
-  constructor(readonly agent: string, readonly sandboxId: string, readonly reason: string) {
-    super(`Agent ${agent} requires the sandbox managed-process capability, but sandbox ${sandboxId} does not support it: ${reason}`);
+  constructor(
+    readonly agent: string,
+    readonly sandboxId: string,
+    readonly reason: string,
+  ) {
+    super(
+      `Agent ${agent} requires the sandbox managed-process capability, but sandbox ${sandboxId} does not support it: ${reason}`,
+    );
   }
 }
 

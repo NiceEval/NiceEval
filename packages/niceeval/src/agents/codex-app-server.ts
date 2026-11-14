@@ -30,7 +30,7 @@ type CodexState = {
 const stateSlot = createSessionKey<CodexState>("codex/app-server-native");
 
 function record(value: unknown): RecordValue | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : undefined;
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as RecordValue) : undefined;
 }
 
 function progressPreview(value: unknown): string | undefined {
@@ -83,10 +83,12 @@ function appServerProgressDetail(value: unknown): string | undefined {
   }
   if (type === "fileChange" || type === "file_change") {
     const paths = Array.isArray(data.changes)
-      ? data.changes.flatMap((change) => {
-          const path = record(change)?.path;
-          return typeof path === "string" ? [path] : [];
-        }).join(", ")
+      ? data.changes
+          .flatMap((change) => {
+            const path = record(change)?.path;
+            return typeof path === "string" ? [path] : [];
+          })
+          .join(", ")
       : undefined;
     const detail = progressPreview(paths) ?? progressPreview(data.path);
     return completedTool(`file change${detail ? `: ${detail}` : ""}`, completed);
@@ -105,7 +107,8 @@ function appServerProgressDetail(value: unknown): string | undefined {
 }
 
 function eventKey(event: StreamEvent): string | undefined {
-  if (event.type === "operation.started" || event.type === "operation.finished") return `${event.type}:${event.operationId}`;
+  if (event.type === "operation.started" || event.type === "operation.finished")
+    return `${event.type}:${event.operationId}`;
   if (event.type === "skill.loaded" && event.operationId) return `${event.type}:${event.operationId}`;
   return undefined;
 }
@@ -113,13 +116,16 @@ function eventKey(event: StreamEvent): string | undefined {
 function normalizeItem(value: unknown): unknown {
   const item = record(value);
   if (!item || typeof item.type !== "string") return value;
-  const type = ({
-    agentMessage: "agent_message",
-    commandExecution: "command_execution",
-    mcpToolCall: "mcp_tool_call",
-    fileChange: "file_change",
-    webSearch: "web_search",
-  } as Record<string, string>)[item.type] ?? item.type;
+  const type =
+    (
+      {
+        agentMessage: "agent_message",
+        commandExecution: "command_execution",
+        mcpToolCall: "mcp_tool_call",
+        fileChange: "file_change",
+        webSearch: "web_search",
+      } as Record<string, string>
+    )[item.type] ?? item.type;
   return { ...item, type };
 }
 
@@ -128,11 +134,8 @@ function nativeTurnIdentity(value: unknown): { readonly threadId: string; readon
   if (!params || typeof params.threadId !== "string") return undefined;
   const directTurnId = params.turnId;
   const nestedTurnId = record(params.turn)?.id;
-  const turnId = typeof directTurnId === "string"
-    ? directTurnId
-    : typeof nestedTurnId === "string"
-      ? nestedTurnId
-      : undefined;
+  const turnId =
+    typeof directTurnId === "string" ? directTurnId : typeof nestedTurnId === "string" ? nestedTurnId : undefined;
   return turnId === undefined ? undefined : { threadId: params.threadId, turnId };
 }
 
@@ -212,10 +215,18 @@ function protocolEvents(frames: readonly unknown[], reported: Set<string>): { ev
   return { events, ...(usage === undefined ? {} : { usage }) };
 }
 
-function evidence(frames: readonly unknown[], parseSuccess: boolean, events: readonly StreamEvent[]): TurnEvidenceCoverage {
+function evidence(
+  frames: readonly unknown[],
+  parseSuccess: boolean,
+  events: readonly StreamEvent[],
+): TurnEvidenceCoverage {
   if (frames.length === 0) {
     const reason = "Codex app-server protocol output was unavailable; tool trace was not observed.";
-    return { events: { status: "unavailable", reason }, actions: { status: "unavailable", reason }, usage: { status: "unavailable", reason } };
+    return {
+      events: { status: "unavailable", reason },
+      actions: { status: "unavailable", reason },
+      usage: { status: "unavailable", reason },
+    };
   }
   if (!parseSuccess) {
     const reason = "Some Codex app-server protocol frames could not be parsed.";
@@ -225,7 +236,9 @@ function evidence(frames: readonly unknown[], parseSuccess: boolean, events: rea
 }
 
 async function resolveBin(sandbox: SandboxAgentContext["sandbox"]): Promise<string> {
-  const result = await sandbox.runShell('if [ -x "$HOME/.local/bin/codex" ]; then printf %s "$HOME/.local/bin/codex"; else command -v codex; fi');
+  const result = await sandbox.runShell(
+    'if [ -x "$HOME/.local/bin/codex" ]; then printf %s "$HOME/.local/bin/codex"; else command -v codex; fi',
+  );
   const value = result.stdout.trim();
   if (result.exitCode !== 0 || !value) throw new Error(`Codex CLI path resolution failed: ${result.stderr}`);
   return value;
@@ -258,9 +271,12 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
         await resolveBin(ctx.sandbox),
         "app-server",
         "--stdio",
-        "--enable", "default_mode_request_user_input",
-        "-c", 'sandbox_mode="danger-full-access"',
-        "-c", 'approval_policy="never"',
+        "--enable",
+        "default_mode_request_user_input",
+        "-c",
+        'sandbox_mode="danger-full-access"',
+        "-c",
+        'approval_policy="never"',
       ],
       cwd: ctx.sandbox.workdir,
       env,
@@ -268,35 +284,54 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
     () => ({ id: 9_999_999, method: "shutdown", params: {} }),
   );
   let cursor = 0;
-  const initialized = await rpc(driver, cursor, 1, "initialize", {
-    clientInfo: { name: "niceeval", title: "NiceEval", version: "1" },
-  }, ctx.signal);
+  const initialized = await rpc(
+    driver,
+    cursor,
+    1,
+    "initialize",
+    {
+      clientInfo: { name: "niceeval", title: "NiceEval", version: "1" },
+    },
+    ctx.signal,
+  );
   cursor = initialized.cursor;
   await driver.write({ method: "initialized" });
-  const started = await rpc(driver, cursor, 2, "thread/start", {
-    cwd: ctx.sandbox.workdir,
-    ...(ctx.model === undefined ? {} : { model: ctx.model }),
-    approvalPolicy: "never",
-    sandbox: "danger-full-access",
-    // app-server 没有 `codex exec --dangerously-bypass-hook-trust` 的顶层 flag，
-    // 但 thread/start.config 会把这个 runtime-only override 交给同一 ConfigBuilder。
-    // Eval Sandbox 中的 hook 出处由 agent 配置显式声明，因此非交互运行统一 bypass。
-    config: { bypass_hook_trust: true },
-  }, ctx.signal);
+  const started = await rpc(
+    driver,
+    cursor,
+    2,
+    "thread/start",
+    {
+      cwd: ctx.sandbox.workdir,
+      ...(ctx.model === undefined ? {} : { model: ctx.model }),
+      approvalPolicy: "never",
+      sandbox: "danger-full-access",
+      // app-server 没有 `codex exec --dangerously-bypass-hook-trust` 的顶层 flag，
+      // 但 thread/start.config 会把这个 runtime-only override 交给同一 ConfigBuilder。
+      // Eval Sandbox 中的 hook 出处由 agent 配置显式声明，因此非交互运行统一 bypass。
+      config: { bypass_hook_trust: true },
+    },
+    ctx.signal,
+  );
   cursor = started.cursor;
   const threadId = record(started.result.thread)?.id;
-  if (typeof threadId !== "string" || !threadId) throw new Error("Codex app-server thread/start returned no native thread id");
+  if (typeof threadId !== "string" || !threadId)
+    throw new Error("Codex app-server thread/start returned no native thread id");
   ctx.session.capture(threadId);
   return { driver, cursor, threadId, reported: new Set() };
 }
 
-function validateResponses(pending: PendingBatch, responses: readonly InputResponse[] | undefined): Record<string, { answers: string[] }> {
+function validateResponses(
+  pending: PendingBatch,
+  responses: readonly InputResponse[] | undefined,
+): Record<string, { answers: string[] }> {
   if (!responses) throw new Error("Codex app-server is waiting for structured input responses");
   const byId = new Map(responses.map((response) => [response.requestId, response]));
   if (byId.size !== responses.length) throw new Error("Codex input responses contain duplicate request ids");
   const expected = new Set(pending.questions.map((question) => question.requestId));
   for (const id of byId.keys()) if (!expected.has(id)) throw new Error(`Unknown Codex input request ${id}`);
-  if (byId.size !== expected.size) throw new Error("Codex input responses must answer the complete native question batch");
+  if (byId.size !== expected.size)
+    throw new Error("Codex input responses must answer the complete native question batch");
   const answers: Record<string, { answers: string[] }> = {};
   for (const question of pending.questions) {
     const response = byId.get(question.requestId)!;
@@ -329,7 +364,8 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
   });
   if (questions.length === 0) throw new Error("Codex app-server request_user_input contained no questions");
   const rpcId = frame.id;
-  if (typeof rpcId !== "string" && typeof rpcId !== "number") throw new Error("Codex app-server request_user_input had no JSON-RPC id");
+  if (typeof rpcId !== "string" && typeof rpcId !== "number")
+    throw new Error("Codex app-server request_user_input had no JSON-RPC id");
   state.pending = { rpcId, turnId, questions };
   const frames = turnFrames(state.driver.framesSince(from).slice(0, cursor - from), state.threadId, turnId);
   const parsed = protocolEvents(frames, state.reported);
@@ -337,15 +373,17 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
     status: "waiting",
     events: [
       ...parsed.events,
-      ...questions.map((question): StreamEvent => ({
-        type: "input.requested",
-        request: {
-          id: question.requestId,
-          action: "request_user_input",
-          prompt: question.prompt,
-          options: question.options.map((id) => ({ id })),
-        },
-      })),
+      ...questions.map(
+        (question): StreamEvent => ({
+          type: "input.requested",
+          request: {
+            id: question.requestId,
+            action: "request_user_input",
+            prompt: question.prompt,
+            options: question.options.map((id) => ({ id })),
+          },
+        }),
+      ),
     ],
     ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
     evidenceCoverage: evidence(frames, true, parsed.events),
@@ -353,17 +391,21 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
 }
 
 async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, turnId: string): Promise<Turn> {
-  const receipt = await state.driver.waitFor(state.cursor, (value) => {
-    const frame = record(value);
-    if (!belongsToTurn(value, state.threadId, turnId)) return false;
-    if (frame?.method === "error") {
-      // app-server emits transient stream errors before its own reconnect
-      // attempts. They remain part of this turn's evidence, but only an error
-      // with no promised retry is terminal for the adapter.
-      return record(frame.params)?.willRetry !== true;
-    }
-    return frame?.method === "item/tool/requestUserInput" || frame?.method === "turn/completed";
-  }, ctx.signal);
+  const receipt = await state.driver.waitFor(
+    state.cursor,
+    (value) => {
+      const frame = record(value);
+      if (!belongsToTurn(value, state.threadId, turnId)) return false;
+      if (frame?.method === "error") {
+        // app-server emits transient stream errors before its own reconnect
+        // attempts. They remain part of this turn's evidence, but only an error
+        // with no promised retry is terminal for the adapter.
+        return record(frame.params)?.willRetry !== true;
+      }
+      return frame?.method === "item/tool/requestUserInput" || frame?.method === "turn/completed";
+    },
+    ctx.signal,
+  );
   state.cursor = receipt.cursor;
   const frame = record(receipt.frame)!;
   if (frame.method === "item/tool/requestUserInput") return waitingTurn(state, frame, from, receipt.cursor, turnId);
@@ -382,7 +424,8 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
     });
   }
   return {
-    status: status === "failed" ? "failed" : "completed", events: parsed.events,
+    status: status === "failed" ? "failed" : "completed",
+    events: parsed.events,
     ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
     evidenceCoverage: evidence(frames, true, parsed.events),
   };
@@ -392,7 +435,11 @@ export async function sendCodexAppServer(
   input: { readonly text: string; readonly responses?: readonly InputResponse[] },
   ctx: SandboxAgentContext,
   env: Readonly<Record<string, string>>,
-  failureFacts?: (raw: string, events: readonly StreamEvent[], nativeText: string) => {
+  failureFacts?: (
+    raw: string,
+    events: readonly StreamEvent[],
+    nativeText: string,
+  ) => {
     readonly acceptance: "rejected" | "started" | "unknown";
     readonly cause?: ExternalCause;
   },
@@ -418,7 +465,9 @@ export async function sendCodexAppServer(
       const pending = state.pending;
       const answers = validateResponses(pending, input.responses);
       if (state.driver.framesSince(state.cursor).length !== 0) {
-        throw new Error("Codex app-server produced activity after entering waiting state; refusing an ambiguous answer");
+        throw new Error(
+          "Codex app-server produced activity after entering waiting state; refusing an ambiguous answer",
+        );
       }
       try {
         await state.driver.write({ id: pending.rpcId, result: { answers } });
@@ -434,15 +483,23 @@ export async function sendCodexAppServer(
       // validation and transport failure; commit only after the write receipt succeeds.
       state.pending = undefined;
     } else {
-      if (input.responses?.length) throw new Error("Codex app-server received responses while no input request was pending");
-      const started = await rpc(state.driver, state.cursor, 10_000 + state.cursor, "turn/start", {
-        threadId: state.threadId,
-        input: [{ type: "text", text: input.text }],
-        approvalPolicy: "never",
-        sandboxPolicy: { type: "dangerFullAccess" },
-        ...(ctx.model === undefined ? {} : { model: ctx.model }),
-        ...(ctx.reasoningEffort === undefined ? {} : { effort: ctx.reasoningEffort }),
-      }, ctx.signal);
+      if (input.responses?.length)
+        throw new Error("Codex app-server received responses while no input request was pending");
+      const started = await rpc(
+        state.driver,
+        state.cursor,
+        10_000 + state.cursor,
+        "turn/start",
+        {
+          threadId: state.threadId,
+          input: [{ type: "text", text: input.text }],
+          approvalPolicy: "never",
+          sandboxPolicy: { type: "dangerFullAccess" },
+          ...(ctx.model === undefined ? {} : { model: ctx.model }),
+          ...(ctx.reasoningEffort === undefined ? {} : { effort: ctx.reasoningEffort }),
+        },
+        ctx.signal,
+      );
       state.cursor = started.cursor;
       const startedTurnId = record(started.result.turn)?.id;
       if (typeof startedTurnId !== "string" || startedTurnId === "") {
@@ -454,10 +511,9 @@ export async function sendCodexAppServer(
     if (turnId === undefined) throw new Error("Codex app-server send has no native turn id");
     return await drive(state, ctx, from, turnId);
   } catch (cause) {
-    if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed") throw cause;
-    const frames = turnId === undefined
-      ? []
-      : turnFrames(state.driver.framesSince(from), state.threadId, turnId);
+    if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed")
+      throw cause;
+    const frames = turnId === undefined ? [] : turnFrames(state.driver.framesSince(from), state.threadId, turnId);
     const raw = frames.map((value) => JSON.stringify(value)).join("\n");
     const message = cause instanceof Error ? cause.message : String(cause);
     const facts = failureFacts?.(raw, protocolEvents(frames, new Set()).events, message);

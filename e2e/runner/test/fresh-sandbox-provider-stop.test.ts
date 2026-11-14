@@ -28,27 +28,38 @@ test.concurrent("fresh custom Provider group.stop 失败保留 sharedState，普
     "shared-state-provider-stop-failure",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths, run }) => {
-      const types = await run([
-        join(paths.projectRoot, "node_modules", ".bin", "tsc"),
-        "--project", "fixtures/tsconfig.custom-provider.json", "--pretty", "false",
-      ], { timeoutMs: 30_000 });
+      const types = await run(
+        [
+          join(paths.projectRoot, "node_modules", ".bin", "tsc"),
+          "--project",
+          "fixtures/tsconfig.custom-provider.json",
+          "--pretty",
+          "false",
+        ],
+        { timeoutMs: 30_000 },
+      );
       expect(types.exitCode, types.diagnostic()).toBe(0);
       await withTempDir("niceeval-runner-shared-state-provider-stop-", async (barrierRoot) => {
         const failedEnv = {
           NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot,
           NICEEVAL_SHARED_STATE_PROVIDER_STOP_FAIL: "1",
         };
-        const failed = await niceeval.run(
-          ["exp", "shared-state-provider-stop-fails", "--rerun", "all", "--json"],
-          { env: failedEnv, timeoutMs: 60_000 },
-        );
+        const failed = await niceeval.run(["exp", "shared-state-provider-stop-fails", "--rerun", "all", "--json"], {
+          env: failedEnv,
+          timeoutMs: 60_000,
+        });
         expect(await exists(join(barrierRoot, "provider-group-stop-started")), failed.diagnostic()).toBe(true);
 
         const inspectionArgs = [
-          "exp", "shared-state-provider-stop-fails", "--after",
-          "--recover-shared-state", "runner/shared-state-provider-stop",
+          "exp",
+          "shared-state-provider-stop-fails",
+          "--after",
+          "--recover-shared-state",
+          "runner/shared-state-provider-stop",
         ];
-        const inspection = await niceeval.run(inspectionArgs, { env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot } });
+        const inspection = await niceeval.run(inspectionArgs, {
+          env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
+        });
         expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
         const ownerToken = ownerTokenFromInspection(inspection.stderr);
         expect(`${failed.stdout}\n${failed.stderr}`).not.toContain(ownerToken);
@@ -65,24 +76,21 @@ test.concurrent("fresh custom Provider group.stop 失败保留 sharedState，普
         });
         expect(queried.stdout).not.toContain(ownerToken);
 
-        const waiter = niceeval.start(
-          ["exp", "shared-state-provider-stop-waiter", "--rerun", "all", "--json"],
-          { env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot }, timeoutMs: 60_000 },
-        );
+        const waiter = niceeval.start(["exp", "shared-state-provider-stop-waiter", "--rerun", "all", "--json"], {
+          env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
+          timeoutMs: 60_000,
+        });
         try {
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "waiter reaches lease retained by failed Provider group.stop" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "waiter reaches lease retained by failed Provider group.stop",
+          });
           expect(await exists(join(barrierRoot, "provider-stop-waiter-setup-attempted"))).toBe(false);
 
-          const recovered = await niceeval.run([
-            ...inspectionArgs,
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot }, timeoutMs: 60_000 });
+          const recovered = await niceeval.run(
+            [...inspectionArgs, "--owner-token", ownerToken, "--confirm-owner-terminated", "--confirm-remote-quiesced"],
+            { env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot }, timeoutMs: 60_000 },
+          );
           expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
 
           const waiterResult = await waiter.done;

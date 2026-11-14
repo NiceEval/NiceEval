@@ -10,12 +10,13 @@ export function projectSandboxCapture(value: SandboxAttachmentPayload): SandboxV
         state: "assigned" as const,
         provider: value.provider,
         sandboxId: value.sandboxId,
-        reuse: value.reuse.kind === "fresh"
-          ? Object.freeze({ kind: "fresh" as const })
-          : Object.freeze({
-              kind: "pooled" as const,
-              sandbox: value.reuse.sandbox,
-              ordinal: value.reuse.ordinal,
-            }),
+        reuse:
+          value.reuse.kind === "fresh"
+            ? Object.freeze({ kind: "fresh" as const })
+            : Object.freeze({
+                kind: "pooled" as const,
+                sandbox: value.reuse.sandbox,
+                ordinal: value.reuse.ordinal,
+              }),
       });
 }

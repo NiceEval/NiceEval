@@ -77,7 +77,9 @@ export const RecordShape = () => (
             写入中的 Run 目录
           </div>
           <code>runs/&lt;RunId&gt;/</code>
-          <strong>没有 <code>complete</code></strong>
+          <strong>
+            没有 <code>complete</code>
+          </strong>
           <p className="ne-why">
             它可能留在磁盘上，但还不是 Record 事实。reader 忽略它并给出
             <code>incomplete-run</code> warning。
@@ -90,9 +92,7 @@ export const RecordShape = () => (
           </div>
           <code>.niceeval-local/</code>
           <span>session · maintenance / writer lock · cache</span>
-          <p className="ne-why">
-            它在 portable Record 外。复制或分享 Record 时不带上这些状态。
-          </p>
+          <p className="ne-why">它在 portable Record 外。复制或分享 Record 时不带上这些状态。</p>
         </section>
       </aside>
     </div>

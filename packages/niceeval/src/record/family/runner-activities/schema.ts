@@ -1,16 +1,9 @@
 import { Schema } from "effect";
 
-import {
-  recordAttachmentIssue,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
+import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
 import { isCanonicalTurnLabel } from "../../../shared/turn-label.ts";
-import {
-  NonNegativeSafeIntegerSchema,
-  PositiveSafeIntegerSchema,
-  SafeIdentifierSchema,
-} from "../common.ts";
+import { NonNegativeSafeIntegerSchema, PositiveSafeIntegerSchema, SafeIdentifierSchema } from "../common.ts";
 import {
   SourceReceiptCollectionSchema,
   SourceSegmentIdSchema,
@@ -20,9 +13,7 @@ import { ACTIVITY_OUTCOMES, ATTEMPT_NON_AGENT_ACTIVITY_PHASES, RUN_ACTIVITY_PHAS
 
 const ActivityOutcomeSchema = Schema.Literals(ACTIVITY_OUTCOMES);
 
-const CanonicalTurnLabelSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isCanonicalTurnLabel)),
-);
+const CanonicalTurnLabelSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isCanonicalTurnLabel)));
 
 const ActivityBase = {
   segmentId: SourceSegmentIdSchema,
@@ -80,44 +71,31 @@ function validateRunnerActivities(input: {
   const turnIds = new Set<string>();
   for (const [index, activity] of input.segments.entries()) {
     if (byId.has(activity.activityId)) {
-      issues.push(recordAttachmentIssue(
-        "record-attachment-schema-invalid",
-        ["segments", String(index), "activityId"],
-      ));
+      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "activityId"]));
     }
     if (activity.phase === "agent.send") {
       if (activity.turnId === null || turnIds.has(activity.turnId)) {
-        issues.push(recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["segments", String(index), "turnId"],
-        ));
+        issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "turnId"]));
       }
       if (activity.turnId !== null) turnIds.add(activity.turnId);
     } else if (activity.turnId !== null) {
-      issues.push(recordAttachmentIssue(
-        "record-attachment-schema-invalid",
-        ["segments", String(index), "turnId"],
-      ));
+      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "turnId"]));
     }
     byId.set(activity.activityId, activity);
   }
   for (const [index, activity] of input.segments.entries()) {
     const end = activity.startOffsetMs + activity.durationMs;
     if (!Number.isSafeInteger(end)) {
-      issues.push(recordAttachmentIssue(
-        "record-attachment-schema-invalid",
-        ["segments", String(index), "durationMs"],
-      ));
+      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "durationMs"]));
     }
     const seen = new Set<string>([activity.activityId]);
     let child = activity;
     while (child.parentActivityId !== null) {
       const parent = byId.get(child.parentActivityId);
       if (parent === undefined || seen.has(parent.activityId)) {
-        issues.push(recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["segments", String(index), "parentActivityId"],
-        ));
+        issues.push(
+          recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "parentActivityId"]),
+        );
         break;
       }
       const parentEnd = parent.startOffsetMs + parent.durationMs;
@@ -126,42 +104,41 @@ function validateRunnerActivities(input: {
         parent.startOffsetMs > child.startOffsetMs ||
         child.startOffsetMs + child.durationMs > parentEnd
       ) {
-        issues.push(recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["segments", String(index), "parentActivityId"],
-        ));
+        issues.push(
+          recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "parentActivityId"]),
+        );
         break;
       }
       seen.add(parent.activityId);
       child = parent;
     }
   }
-  if (
-    input.collection.state === "complete" &&
-    input.segments.some((activity) => activity.outcome === "unknown")
-  ) {
+  if (input.collection.state === "complete" && input.segments.some((activity) => activity.outcome === "unknown")) {
     issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["collection"]));
   }
   return Object.freeze(issues);
 }
 
 function validateSourceLimitations(value: {
-  readonly collection: { readonly limitations: readonly {
-    readonly code: string;
-    readonly stage?: string;
-    readonly target: string;
-  }[] };
+  readonly collection: {
+    readonly limitations: readonly {
+      readonly code: string;
+      readonly stage?: string;
+      readonly target: string;
+    }[];
+  };
 }): readonly RecordAttachmentIssue[] {
-  return Object.freeze(value.collection.limitations.flatMap((limitation, index) =>
-    (limitation.stage === undefined || limitation.stage === "runner-clock" ||
-        limitation.stage === "attempt-finalizer" || limitation.stage === "run-teardown") &&
+  return Object.freeze(
+    value.collection.limitations.flatMap((limitation, index) =>
+      (limitation.stage === undefined ||
+        limitation.stage === "runner-clock" ||
+        limitation.stage === "attempt-finalizer" ||
+        limitation.stage === "run-teardown") &&
       (limitation.target === "activity" || limitation.target === "value-byte")
-      ? []
-      : [recordAttachmentIssue(
-          "record-attachment-schema-invalid",
-          ["collection", "limitations", String(index)],
-        )]
-  ));
+        ? []
+        : [recordAttachmentIssue("record-attachment-schema-invalid", ["collection", "limitations", String(index)])],
+    ),
+  );
 }
 
 export const AttemptRunnerActivitiesAttachmentSchema = Schema.Struct({
@@ -174,27 +151,17 @@ export const RunRunnerActivitiesAttachmentSchema = Schema.Struct({
   segments: Schema.Array(RunRunnerActivityReceiptSchema),
 }).pipe(Schema.encodeKeys({ collection: "collection-data", segments: "segments-data" }));
 
-export type AttemptRunnerActivitiesAttachment = Schema.Schema.Type<
-  typeof AttemptRunnerActivitiesAttachmentSchema
->;
-export type RunRunnerActivitiesAttachment = Schema.Schema.Type<
-  typeof RunRunnerActivitiesAttachmentSchema
->;
+export type AttemptRunnerActivitiesAttachment = Schema.Schema.Type<typeof AttemptRunnerActivitiesAttachmentSchema>;
+export type RunRunnerActivitiesAttachment = Schema.Schema.Type<typeof RunRunnerActivitiesAttachmentSchema>;
 
 export function validateAttemptRunnerActivitiesAttachment(
   value: AttemptRunnerActivitiesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  return Object.freeze([
-    ...validateRunnerActivities(value),
-    ...validateSourceLimitations(value),
-  ]);
+  return Object.freeze([...validateRunnerActivities(value), ...validateSourceLimitations(value)]);
 }
 
 export function validateRunRunnerActivitiesAttachment(
   value: RunRunnerActivitiesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  return Object.freeze([
-    ...validateRunnerActivities(value),
-    ...validateSourceLimitations(value),
-  ]);
+  return Object.freeze([...validateRunnerActivities(value), ...validateSourceLimitations(value)]);
 }

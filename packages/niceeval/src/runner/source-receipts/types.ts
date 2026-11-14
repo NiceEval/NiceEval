@@ -24,10 +24,7 @@ export interface StagedCommandStream {
 
 type DurableSandboxCommandReceipt = SandboxCommandsAttachment["segments"][number];
 
-export type CommandManifest = Pick<
-  DurableSandboxCommandReceipt,
-  "phase" | "invocation" | "workingDirectory"
->;
+export type CommandManifest = Pick<DurableSandboxCommandReceipt, "phase" | "invocation" | "workingDirectory">;
 
 export interface StagedSandboxCommandReceipt {
   readonly segmentId: DurableSandboxCommandReceipt["segmentId"];

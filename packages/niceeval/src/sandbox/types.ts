@@ -41,10 +41,7 @@ export interface SandboxHookContext extends ScopedFeedback {
 }
 
 /** @internal 旧物理生命周期执行面；公开 SandboxLayer callback 使用 SandboxCommand。 */
-export type SandboxHook = (
-  sandbox: Sandbox,
-  ctx: SandboxHookContext,
-) => void | Promise<void>;
+export type SandboxHook = (sandbox: Sandbox, ctx: SandboxHookContext) => void | Promise<void>;
 
 /** Controls one running Sandbox command; timeoutMs uses milliseconds, relative cwd uses workdir, and cancellation must terminate the command tree. */
 export interface CommandOptions {
@@ -153,11 +150,7 @@ export interface SandboxOperations {
    * 有界、已清理和脱敏的 stderr 尾部；stderr 为空时回退 stdout。完整输出保留在异常的
    * `result` 字段中。成功结果的 `exitCode` 在类型上固定为 `0`。
    */
-  runCommandOrThrow(
-    cmd: string,
-    args?: readonly string[],
-    opts?: CommandOptions,
-  ): Promise<SuccessfulCommandResult>;
+  runCommandOrThrow(cmd: string, args?: readonly string[], opts?: CommandOptions): Promise<SuccessfulCommandResult>;
   /**
    * 像 `runShell` 一样执行 shell 脚本，但非零退出时抛出 `SandboxCommandExitError`。错误摘要、
    * 完整输出和成功结果的语义与 `runCommandOrThrow` 相同。
@@ -215,7 +208,6 @@ export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
    * Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker provider 实现,其它可省略。
    */
   appendLog?(line: string): Promise<void>;
-
 }
 
 /** Primitive provider I/O; NiceEval adds the derived author-facing operations. */
@@ -223,8 +215,7 @@ export type CustomProviderSandbox = Omit<Sandbox, "upload" | "runCommandOrThrow"
 
 /** 复用调度需要的中立寿命确认能力。 */
 export interface SandboxReuseCapability {
-  ensureLifetime(minRemainingMs: number): Promise<
-    | { ready: true; expiresAt?: string }
-    | { ready: false; reason: string }
-  >;
+  ensureLifetime(
+    minRemainingMs: number,
+  ): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }>;
 }

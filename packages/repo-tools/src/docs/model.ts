@@ -82,9 +82,4 @@ export const DocsFinalizeReceiptSchema = Schema.Struct({
 });
 export type DocsFinalizeReceipt = typeof DocsFinalizeReceiptSchema.Type;
 
-export type DocsReceipt =
-  | CommandReceipt
-  | DocsWorkRun
-  | DocsWorkShowReceipt
-  | DocsWorkReceipt
-  | DocsFinalizeReceipt;
+export type DocsReceipt = CommandReceipt | DocsWorkRun | DocsWorkShowReceipt | DocsWorkReceipt | DocsFinalizeReceipt;

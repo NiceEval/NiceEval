@@ -42,7 +42,10 @@ export async function downloadDirectoryByList(opts: {
     throw new Error(`downloadDirectory listing failed: ${result.stderr.trim() || result.stdout.trim()}`);
   }
 
-  const listed = result.stdout.split("\0").map((entry) => entry.replace(/^\.\//, "")).filter(Boolean);
+  const listed = result.stdout
+    .split("\0")
+    .map((entry) => entry.replace(/^\.\//, ""))
+    .filter(Boolean);
   await Promise.all(
     listed.map(async (rawPath) => {
       const relPath = assertSafeRelativePath(rawPath);
@@ -56,9 +59,10 @@ export async function downloadDirectoryByList(opts: {
           throw new Error(`downloadDirectory refuses existing symlink ${JSON.stringify(dest)}`);
         }
       } catch (cause) {
-        const code = cause !== null && typeof cause === "object" && "code" in cause
-          ? String((cause as { readonly code?: unknown }).code)
-          : "";
+        const code =
+          cause !== null && typeof cause === "object" && "code" in cause
+            ? String((cause as { readonly code?: unknown }).code)
+            : "";
         if (code !== "ENOENT") throw cause;
       }
       const parentReal = await realpath(parent);

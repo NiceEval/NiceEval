@@ -52,15 +52,17 @@ export class AgentOtelChannel {
     return Effect.suspend(() => {
       const traceId = randomBytes(16).toString("hex");
       const headers = { traceparent: `00-${traceId}-${randomBytes(8).toString("hex")}-01` };
-      const execute = Effect.gen(function* (this: AgentOtelChannel) {
-        const turnStartMs = Date.now();
-        const result = yield* fn(headers);
-        const turnEndMs = Date.now();
-        // 给本轮最后一批导出留落地时间(SimpleSpanProcessor 即发;Batch 的 5s 定时兜不住,
-        // 迟到的由 attempt 末尾 sweep 按 traceId 捞回)。
-        yield* this.receiver.settle(200, 1200);
-        return yield* Effect.sync(() => this.attributeTurn(result, traceId, turnStartMs, turnEndMs));
-      }.bind(this));
+      const execute = Effect.gen(
+        function* (this: AgentOtelChannel) {
+          const turnStartMs = Date.now();
+          const result = yield* fn(headers);
+          const turnEndMs = Date.now();
+          // 给本轮最后一批导出留落地时间(SimpleSpanProcessor 即发;Batch 的 5s 定时兜不住,
+          // 迟到的由 attempt 末尾 sweep 按 traceId 捞回)。
+          yield* this.receiver.settle(200, 1200);
+          return yield* Effect.sync(() => this.attributeTurn(result, traceId, turnStartMs, turnEndMs));
+        }.bind(this),
+      );
 
       // Semaphore 的 permit 在 success、failure 与 interruption 下都会归还；确认前已排队的轮
       // 仍按旧链顺序完成，确认后的新轮才允许真正并行。
@@ -79,22 +81,23 @@ export class AgentOtelChannel {
       return Effect.succeed([]);
     }
     return this.receiver.settle(200, 1000).pipe(
-      Effect.andThen(Effect.sync(() => {
-        const late = this.receiver
-          .collect()
-          .filter((span) => {
+      Effect.andThen(
+        Effect.sync(() => {
+          const late = this.receiver.collect().filter((span) => {
             if (this.consumed.has(span.spanId)) return false;
             // Exact traceparent attribution remains authoritative even when remote
             // clocks skew outside host time; discrete turn windows only add deferred
             // candidates, so another concurrent attempt's gap is never a window.
-            return traceIds.has(span.traceId) ||
-              (attemptWindows !== undefined && attemptWindows.some(
-                (window) => span.endMs >= window.startMs && span.startMs <= window.endMs,
-              ));
+            return (
+              traceIds.has(span.traceId) ||
+              (attemptWindows !== undefined &&
+                attemptWindows.some((window) => span.endMs >= window.startMs && span.startMs <= window.endMs))
+            );
           });
-        for (const span of late) this.consumed.add(span.spanId);
-        return late;
-      })),
+          for (const span of late) this.consumed.add(span.spanId);
+          return late;
+        }),
+      ),
     );
   }
 
@@ -121,9 +124,7 @@ export class AgentOtelChannel {
       // request's start boundary or start during the request (including settle).
       // Remote clock skew can make this conservative: prefer missing data over
       // mixing a late span from the previous turn into the current one.
-      const windowed = fresh.filter(
-        (span) => span.endMs >= turnStartMs && span.startMs <= turnEndMs,
-      );
+      const windowed = fresh.filter((span) => span.endMs >= turnStartMs && span.startMs <= turnEndMs);
       const spansByTrace = new Map<string, TraceSpan[]>();
       for (const span of windowed) {
         const traceSpans = spansByTrace.get(span.traceId);
@@ -133,9 +134,7 @@ export class AgentOtelChannel {
       const candidates = [...spansByTrace.entries()]
         .map(([candidateTraceId, candidateSpans]) => {
           const latestEndMs = Math.max(...candidateSpans.map((span) => span.endMs));
-          const coversTurnEnd = candidateSpans.some(
-            (span) => span.startMs <= turnEndMs && span.endMs >= turnEndMs,
-          );
+          const coversTurnEnd = candidateSpans.some((span) => span.startMs <= turnEndMs && span.endMs >= turnEndMs);
           return { candidateTraceId, candidateSpans, latestEndMs, coversTurnEnd };
         })
         .sort(
@@ -177,33 +176,35 @@ export class OtelReceiverPool {
 
   channel(agentName: string): Effect.Effect<AgentOtelChannel, Error> {
     const key = this.fixedPort !== undefined ? "*fixed-port*" : agentName;
-    return this.mutex.withPermits(1)(Effect.suspend(() => {
-      if (this.closed) return Effect.fail(new Error("OTLP receiver pool is closed"));
-      const existing = this.channels.get(key);
-      if (existing !== undefined) return Effect.succeed(existing);
-      return makeTraceReceiver(this.fixedPort ?? 0).pipe(
-        Effect.map((receiver) => {
-          const channel = new AgentOtelChannel(receiver);
-          this.channels.set(key, channel);
-          return channel;
-        }),
-      );
-    }));
+    return this.mutex.withPermits(1)(
+      Effect.suspend(() => {
+        if (this.closed) return Effect.fail(new Error("OTLP receiver pool is closed"));
+        const existing = this.channels.get(key);
+        if (existing !== undefined) return Effect.succeed(existing);
+        return makeTraceReceiver(this.fixedPort ?? 0).pipe(
+          Effect.map((receiver) => {
+            const channel = new AgentOtelChannel(receiver);
+            this.channels.set(key, channel);
+            return channel;
+          }),
+        );
+      }),
+    );
   }
 
   /** Invocation owners compose this release directly in their scoped finalizer. */
   closeEffect(): Effect.Effect<void> {
-    return this.mutex.withPermits(1)(Effect.suspend(() => {
-      if (this.closed) return Effect.void;
-      this.closed = true;
-      const channels = [...this.channels.values()];
-      this.channels.clear();
-      return Effect.forEach(
-        channels,
-        (channel) => channel.receiver.close,
-        { concurrency: "unbounded", discard: true },
-      );
-    }));
+    return this.mutex.withPermits(1)(
+      Effect.suspend(() => {
+        if (this.closed) return Effect.void;
+        this.closed = true;
+        const channels = [...this.channels.values()];
+        this.channels.clear();
+        return Effect.forEach(channels, (channel) => channel.receiver.close, {
+          concurrency: "unbounded",
+          discard: true,
+        });
+      }),
+    );
   }
-
 }

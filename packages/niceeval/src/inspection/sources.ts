@@ -3,21 +3,10 @@
 // @concord-implements docs/feature/inspection/architecture.md
 import { Result } from "effect";
 
-import {
-  hydrateRecordAttachmentCurrent,
-} from "../record/attachment/protocol.ts";
-import {
-  mintRecordContentHandle,
-  type RecordContentHandle,
-} from "../record/attachment/content.ts";
-import {
-  NiceEvalCurrentRecordAttachments,
-  NiceEvalRecordAttachments,
-} from "../record/family/current.ts";
-import type {
-  PersistedContentMetadata,
-  SealedAttachmentMetadata,
-} from "../record/sqlite/index.ts";
+import { hydrateRecordAttachmentCurrent } from "../record/attachment/protocol.ts";
+import { mintRecordContentHandle, type RecordContentHandle } from "../record/attachment/content.ts";
+import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
+import type { PersistedContentMetadata, SealedAttachmentMetadata } from "../record/sqlite/index.ts";
 import type { InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
@@ -51,10 +40,7 @@ type AttachmentReadState = "available" | "not-recorded" | "invalid";
 
 interface AvailableAssertions {
   readonly state: "available";
-  readonly sourceSites: Extract<
-    InspectionAssertionsRead,
-    { readonly state: "available" }
-  >["value"]["sourceSites"];
+  readonly sourceSites: Extract<InspectionAssertionsRead, { readonly state: "available" }>["value"]["sourceSites"];
 }
 
 interface UnavailableAssertions {
@@ -91,35 +77,41 @@ export function projectAttemptSources(
   const items: InspectionSourcesResult["items"][number][] = [];
   const requestedPositions = assertionSourcePositions(assertionsRead);
   const verifiedSourcePositions = new Map<string, ReadonlySet<string>>();
-  let projectedBytes = jsonByteLength(Object.freeze({
-    state,
-    items: Object.freeze([]),
-    hasMore: decoded.length > 0,
-    omittedItemCount: decoded.length,
-  }));
+  let projectedBytes = jsonByteLength(
+    Object.freeze({
+      state,
+      items: Object.freeze([]),
+      hasMore: decoded.length > 0,
+      omittedItemCount: decoded.length,
+    }),
+  );
   let acceptProjectedItems = true;
 
   try {
     for (const entry of state === "available" ? decoded : []) {
       const omitted = projectedSourceItem(entry, omittedContent(entry.content.byteLength));
       const omittedBytes = jsonByteLength(omitted) + (items.length === 0 ? 0 : 1);
-      const includeItem = acceptProjectedItems &&
-        projectedBytes + omittedBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM;
+      const includeItem =
+        acceptProjectedItems && projectedBytes + omittedBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM;
       if (!includeItem) acceptProjectedItems = false;
 
       let projected = omitted;
       const positions = requestedPositions.get(entry.item.sourceItemId) ?? Object.freeze([]);
-      const verified = positions.length > 0 || includeItem && entry.content.byteLength <= SOURCE_TEXT_BYTE_LIMIT
-        ? readVerifiedSource(source, entry.content, positions)
-        : undefined;
+      const verified =
+        positions.length > 0 || (includeItem && entry.content.byteLength <= SOURCE_TEXT_BYTE_LIMIT)
+          ? readVerifiedSource(source, entry.content, positions)
+          : undefined;
       if (verified !== undefined) {
         verifiedSourcePositions.set(entry.item.sourceItemId, verified.displayablePositions);
       }
       if (verified?.text !== undefined) {
-        const available = projectedSourceItem(entry, Object.freeze({
-          state: "available" as const,
-          text: verified.text,
-        }));
+        const available = projectedSourceItem(
+          entry,
+          Object.freeze({
+            state: "available" as const,
+            text: verified.text,
+          }),
+        );
         const availableBytes = jsonByteLength(available) + (items.length === 0 ? 0 : 1);
         if (projectedBytes + availableBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM) {
           projected = available;
@@ -139,14 +131,12 @@ export function projectAttemptSources(
   }
 
   const sourceItems = new Map(decoded.map((entry) => [entry.item.sourceItemId, entry] as const));
-  const sites = assertionsRead.state === "available"
-    ? assertionsRead.sourceSites.map((site) => projectAssertionSourceSite(
-        site,
-        state,
-        sourceItems,
-        verifiedSourcePositions,
-      ))
-    : [];
+  const sites =
+    assertionsRead.state === "available"
+      ? assertionsRead.sourceSites.map((site) =>
+          projectAssertionSourceSite(site, state, sourceItems, verifiedSourcePositions),
+        )
+      : [];
 
   let projectedSiteCount = sites.length;
   let result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
@@ -156,12 +146,7 @@ export function projectAttemptSources(
   }
   while (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT && projectedSiteCount > 0) {
     projectedSiteCount -= 1;
-    result = sourceResult(
-      state,
-      items,
-      decoded.length,
-      assertionResult(assertionsRead, sites, projectedSiteCount),
-    );
+    result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
   }
   if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
     throw new Error("Sources projection cannot fit its fixed result byte limit");
@@ -169,9 +154,7 @@ export function projectAttemptSources(
   return result;
 }
 
-function assertionSourcePositions(
-  assertions: AssertionsRead,
-): ReadonlyMap<string, readonly SourcePosition[]> {
+function assertionSourcePositions(assertions: AssertionsRead): ReadonlyMap<string, readonly SourcePosition[]> {
   const output = new Map<string, SourcePosition[]>();
   if (assertions.state !== "available") return output;
   for (const site of assertions.sourceSites) {
@@ -180,10 +163,7 @@ function assertionSourcePositions(
     positions.push(site.start, site.end);
     output.set(sourceItemId, positions);
   }
-  return new Map([...output].map(([sourceItemId, positions]) => [
-    sourceItemId,
-    Object.freeze(positions),
-  ] as const));
+  return new Map([...output].map(([sourceItemId, positions]) => [sourceItemId, Object.freeze(positions)] as const));
 }
 
 function readAssertionSites(input: InspectionAssertionsRead): AssertionsRead {
@@ -194,7 +174,7 @@ function readAssertionSites(input: InspectionAssertionsRead): AssertionsRead {
     });
   }
   return Object.freeze({
-    state: input.state === "not-recorded" ? "not-recorded" as const : "invalid" as const,
+    state: input.state === "not-recorded" ? ("not-recorded" as const) : ("invalid" as const),
   });
 }
 
@@ -203,25 +183,19 @@ function projectAssertionSourceSite(
   sourceState: AttachmentReadState,
   sourceItems: ReadonlyMap<string, BoundSourceItem>,
   verifiedSourcePositions: ReadonlyMap<string, ReadonlySet<string>>,
-): Extract<
-  InspectionSourcesResult["assertions"],
-  { readonly state: "available" }
->["sourceSites"][number] {
+): Extract<InspectionSourcesResult["assertions"], { readonly state: "available" }>["sourceSites"][number] {
   const anchor = site.source.value;
   const item = sourceState === "available" ? sourceItems.get(anchor.sourceItemId) : undefined;
-  const source = item === undefined || item.item.sha256 !== anchor.sha256
-    ? unmappedSource("source-snapshot-not-recorded")
-    : !positionsAreDisplayable(
-        verifiedSourcePositions.get(anchor.sourceItemId),
-        site.start,
-        site.end,
-      )
-      ? unmappedSource("position-unrepresentable")
-      : Object.freeze({
-          state: "mapped" as const,
-          sourceItemId: anchor.sourceItemId,
-          sha256: anchor.sha256,
-        });
+  const source =
+    item === undefined || item.item.sha256 !== anchor.sha256
+      ? unmappedSource("source-snapshot-not-recorded")
+      : !positionsAreDisplayable(verifiedSourcePositions.get(anchor.sourceItemId), site.start, site.end)
+        ? unmappedSource("position-unrepresentable")
+        : Object.freeze({
+            state: "mapped" as const,
+            sourceItemId: anchor.sourceItemId,
+            sha256: anchor.sha256,
+          });
   return Object.freeze({
     entryId: site.entryId,
     sourceOrder: site.sourceOrder,
@@ -259,10 +233,7 @@ function assertionResult(
 function unmappedSource(
   reason: "source-snapshot-not-recorded" | "position-unrepresentable",
 ): Extract<
-  Extract<
-    InspectionSourcesResult["assertions"],
-    { readonly state: "available" }
-  >["sourceSites"][number]["source"],
+  Extract<InspectionSourcesResult["assertions"], { readonly state: "available" }>["sourceSites"][number]["source"],
   { readonly state: "unmapped" }
 > {
   return Object.freeze({ state: "unmapped" as const, reason });
@@ -293,31 +264,28 @@ function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundS
   );
   const byHydratedHandle = new WeakMap<object, PersistedContentMetadata>();
   const usedLogicalHandles = new Set<string>();
-  const hydrated = hydrateRecordAttachmentCurrent(
-    NiceEvalRecordAttachments.sources,
-    attachment.value,
-    {
-      content: (token, declaration) => {
-        const logicalHandle = exactMarker(token, "$niceeval.record.content");
-        if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
-          return Result.succeed(undefined);
-        }
-        const metadata = typeof logicalHandle === "string"
-          ? byLogicalHandle.get(logicalHandle)
-          : undefined;
-        if (metadata === undefined || declaration.kind !== "text" ||
-          declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes ||
-          usedLogicalHandles.has(logicalHandle as string)) {
-          return Result.fail({ code: "current-content-bind-failed" as const });
-        }
-        const handle = mintRecordContentHandle("text");
-        byHydratedHandle.set(handle, metadata);
-        usedLogicalHandles.add(logicalHandle as string);
-        return Result.succeed(handle);
-      },
-      reference: () => Result.succeed(undefined),
+  const hydrated = hydrateRecordAttachmentCurrent(NiceEvalRecordAttachments.sources, attachment.value, {
+    content: (token, declaration) => {
+      const logicalHandle = exactMarker(token, "$niceeval.record.content");
+      if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
+        return Result.succeed(undefined);
+      }
+      const metadata = typeof logicalHandle === "string" ? byLogicalHandle.get(logicalHandle) : undefined;
+      if (
+        metadata === undefined ||
+        declaration.kind !== "text" ||
+        (declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes) ||
+        usedLogicalHandles.has(logicalHandle as string)
+      ) {
+        return Result.fail({ code: "current-content-bind-failed" as const });
+      }
+      const handle = mintRecordContentHandle("text");
+      byHydratedHandle.set(handle, metadata);
+      usedLogicalHandles.add(logicalHandle as string);
+      return Result.succeed(handle);
     },
-  );
+    reference: () => Result.succeed(undefined),
+  });
   if (Result.isFailure(hydrated) || usedLogicalHandles.size !== attachment.physical.contents.length) {
     throw new Error("Sources Attachment content closure is invalid");
   }
@@ -369,8 +337,11 @@ function readVerifiedSource(
 
   while (true) {
     const page = source.readContentPage(metadata.contentId, afterOrdinal, CONTENT_PAGE_SIZE);
-    if (page.contentId !== metadata.contentId || page.afterOrdinal !== afterOrdinal ||
-      page.chunks.length === 0 && page.nextOrdinal !== null) {
+    if (
+      page.contentId !== metadata.contentId ||
+      page.afterOrdinal !== afterOrdinal ||
+      (page.chunks.length === 0 && page.nextOrdinal !== null)
+    ) {
       throw new Error("Sources Content page is invalid");
     }
     for (const chunk of page.chunks) {
@@ -404,8 +375,11 @@ function readVerifiedSource(
   if (retainText) text.push(finalText);
   markPosition(undefined);
 
-  if (offset !== metadata.byteLength || observedChunks !== metadata.chunkCount ||
-    digest.digestHex() !== metadata.digest) {
+  if (
+    offset !== metadata.byteLength ||
+    observedChunks !== metadata.chunkCount ||
+    digest.digestHex() !== metadata.digest
+  ) {
     throw new Error("Sources Content does not match its sealed metadata");
   }
   return Object.freeze({
@@ -427,9 +401,7 @@ function projectedSourceItem(
   });
 }
 
-function omittedContent(
-  byteLength: number,
-): InspectionSourcesResult["items"][number]["content"] {
+function omittedContent(byteLength: number): InspectionSourcesResult["items"][number]["content"] {
   return Object.freeze({
     state: "omitted" as const,
     reason: "inspection-result-byte-limit" as const,
@@ -458,16 +430,17 @@ function exactMarker(value: unknown, key: string): unknown | undefined {
   const keys = Reflect.ownKeys(value);
   if (keys.length !== 1 || keys[0] !== key) return undefined;
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor !== undefined && descriptor.enumerable && "value" in descriptor
-    ? descriptor.value
-    : undefined;
+  return descriptor !== undefined && descriptor.enumerable && "value" in descriptor ? descriptor.value : undefined;
 }
 
 function hasOwnMarker(value: unknown, key: string): boolean {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    Object.prototype.hasOwnProperty.call(value, key);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.hasOwnProperty.call(value, key)
+  );
 }
-
 
 function jsonByteLength(value: unknown): number {
   return utf8ByteLength(JSON.stringify(value));

@@ -6,13 +6,15 @@ import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 
 import { expectAttemptSource } from "./sources.ts";
 
-const EXPECTED = [{
-  experimentId: "langgraph-hitl",
-  evalId: "langgraph-hitl",
-  verdict: "passed",
-  attempts: 1,
-  passed: 1,
-}] as const;
+const EXPECTED = [
+  {
+    experimentId: "langgraph-hitl",
+    evalId: "langgraph-hitl",
+    verdict: "passed",
+    attempts: 1,
+    passed: 1,
+  },
+] as const;
 // @feature docs/feature/adapters/README.md
 
 test("createLangGraphEventStream 的 interrupt/resume 经 Experiment 和公开 CLI 确定性读回", async () => {

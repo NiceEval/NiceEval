@@ -19,17 +19,13 @@ export default defineEval({
     t.check(turn.reply, includes(MAGIC_WORD));
     t.check(
       t.events,
-      satisfies<typeof t.events>(
-        "某次工具调用的入参中出现了挂载的 skill 文件路径/文件名",
-        (events) =>
-          events.some(
-            (event) =>
-              event.type === "operation.started" &&
-              event.operation.kind === "tool" &&
-              JSON.stringify(event.operation.input)
-                .toLowerCase()
-                .includes("skill"),
-          ),
+      satisfies<typeof t.events>("某次工具调用的入参中出现了挂载的 skill 文件路径/文件名", (events) =>
+        events.some(
+          (event) =>
+            event.type === "operation.started" &&
+            event.operation.kind === "tool" &&
+            JSON.stringify(event.operation.input).toLowerCase().includes("skill"),
+        ),
       ),
     );
   },

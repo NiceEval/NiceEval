@@ -24,9 +24,10 @@ export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
 
 /** 从 apply_patch 的 patchText 抠 path,并把 Add File 升成 file_write。 */
 function enrichApplyPatchInput(input: JsonValue): { input: JsonValue; tool: ToolName } {
-  const obj = input && typeof input === "object" && !Array.isArray(input)
-    ? { ...(input as globalThis.Record<string, unknown>) }
-    : ({ patchText: input } as globalThis.Record<string, unknown>);
+  const obj =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? { ...(input as globalThis.Record<string, unknown>) }
+      : ({ patchText: input } as globalThis.Record<string, unknown>);
   const patchText = typeof obj.patchText === "string" ? obj.patchText : "";
   const add = patchText.match(/\*\*\*\s*Add File:\s*(.+)/);
   const update = patchText.match(/\*\*\*\s*(?:Update|Delete) File:\s*(.+)/);
@@ -93,9 +94,16 @@ function transcriptEntries(raw: string): unknown[] {
   try {
     return [JSON.parse(raw)];
   } catch {
-    return (extractOpenCodeJsonl(raw) ?? raw).split("\n").filter((line) => line.trim()).map((line) => {
-      try { return JSON.parse(line) as unknown; } catch { return undefined; }
-    });
+    return (extractOpenCodeJsonl(raw) ?? raw)
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => {
+        try {
+          return JSON.parse(line) as unknown;
+        } catch {
+          return undefined;
+        }
+      });
   }
 }
 
@@ -103,8 +111,9 @@ function transcriptEntries(raw: string): unknown[] {
 export function sessionIdFromOpenCodeTranscript(raw: string | undefined): string | undefined {
   if (!raw?.trim()) return undefined;
   for (const entry of transcriptEntries(raw)) {
-    const id = str(get(entry, "sessionID"))
-      ?? (Array.isArray(get(entry, "messages")) ? str(get(get(entry, "info"), "id")) : undefined);
+    const id =
+      str(get(entry, "sessionID")) ??
+      (Array.isArray(get(entry, "messages")) ? str(get(get(entry, "info"), "id")) : undefined);
     if (id) return id;
   }
   return undefined;
@@ -154,13 +163,21 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
       events.push({ type: "skill.loaded", skill, operationId: callId });
       return;
     }
-    events.push({ type: "operation.started", operationId: callId,
-      operation: { kind: "tool", name, input, tool, command: commandProjectionForOpenCodeTool(name) } });
+    events.push({
+      type: "operation.started",
+      operationId: callId,
+      operation: { kind: "tool", name, input, tool, command: commandProjectionForOpenCodeTool(name) },
+    });
     if (status === "completed" || status === "error") {
       const exit = get(get(state, "metadata"), "exit");
-      events.push({ type: "operation.finished", operationId: callId, kind: "tool",
+      events.push({
+        type: "operation.finished",
+        operationId: callId,
+        kind: "tool",
         output: normalizeJsonValue(get(state, status === "error" ? "error" : "output"), null),
-        status: status === "error" || (name === "bash" && typeof exit === "number" && exit !== 0) ? "failed" : "completed" });
+        status:
+          status === "error" || (name === "bash" && typeof exit === "number" && exit !== 0) ? "failed" : "completed",
+      });
     }
   };
   const partEvent = (type: string, part: unknown, role: string): void => {
@@ -175,20 +192,32 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         if (text && role === "assistant") events.push({ type: "thinking", text });
         break;
       }
-      case "tool": toolPart(part); break;
-      case "step-start": break;
-      case "step-finish": addUsage(get(part, "tokens")); break;
-      default: unrecognized(`part:${type}`);
+      case "tool":
+        toolPart(part);
+        break;
+      case "step-start":
+        break;
+      case "step-finish":
+        addUsage(get(part, "tokens"));
+        break;
+      default:
+        unrecognized(`part:${type}`);
     }
   };
   for (const entry of transcriptEntries(raw ?? "")) {
-    if (entry === undefined) { parseSuccess = false; continue; }
+    if (entry === undefined) {
+      parseSuccess = false;
+      continue;
+    }
     const messages = get(entry, "messages");
     if (Array.isArray(messages) && get(entry, "info")) {
       for (const message of messages) {
         const role = str(get(get(message, "info"), "role"));
         const parts = get(message, "parts");
-        if (!role || !Array.isArray(parts)) { parseSuccess = false; continue; }
+        if (!role || !Array.isArray(parts)) {
+          parseSuccess = false;
+          continue;
+        }
         for (const part of parts) partEvent(str(get(part, "type")) ?? "<missing-type>", part, role);
       }
       continue;
@@ -196,11 +225,18 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
     const type = str(get(entry, "type"));
     const part = get(entry, "part");
     switch (type) {
-      case "text": case "reasoning":
-        partEvent(type, part, "assistant"); break;
-      case "tool_use": toolPart(part); break;
-      case "step_start": break;
-      case "step_finish": addUsage(get(part, "tokens")); break;
+      case "text":
+      case "reasoning":
+        partEvent(type, part, "assistant");
+        break;
+      case "tool_use":
+        toolPart(part);
+        break;
+      case "step_start":
+        break;
+      case "step_finish":
+        addUsage(get(part, "tokens"));
+        break;
       case "error": {
         // NamedError is the fixed protocol: some variants only carry a name.
         const error = get(entry, "error");
@@ -209,7 +245,8 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         else parseSuccess = false;
         break;
       }
-      default: unrecognized(type ?? "<missing-type>");
+      default:
+        unrecognized(type ?? "<missing-type>");
     }
   }
   const usage: Usage = requests > 0 ? { inputTokens, outputTokens, requests } : {};

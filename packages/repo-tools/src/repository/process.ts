@@ -20,29 +20,37 @@ export function runProcess(
   accept: readonly number[] = [0],
 ): Effect.Effect<ProcessResult, RepositoryCommandError, ChildProcessSpawner.ChildProcessSpawner> {
   const configured = ChildProcess.make(command, args, { cwd });
-  return Effect.scoped(Effect.gen(function*() {
-    const child = yield* configured;
-    const [stdout, stderr, exitCode] = yield* Effect.all([
-      Stream.runCollect(child.stdout),
-      Stream.runCollect(child.stderr),
-      child.exitCode,
-    ], { concurrency: "unbounded" });
-    return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
-  })).pipe(
-    Effect.mapError((error) => new RepositoryCommandError({
-      command,
-      args,
-      cwd,
-      message: String(error),
-    })),
-    Effect.flatMap((result) => accept.includes(result.exitCode)
-      ? Effect.succeed(result)
-      : Effect.fail(new RepositoryCommandError({
-        command,
-        args,
-        cwd,
-        exitCode: result.exitCode,
-        message: result.stderr.trim() || result.stdout.trim() || "command failed",
-      }))),
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* configured;
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [Stream.runCollect(child.stdout), Stream.runCollect(child.stderr), child.exitCode],
+        { concurrency: "unbounded" },
+      );
+      return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
+    }),
+  ).pipe(
+    Effect.mapError(
+      (error) =>
+        new RepositoryCommandError({
+          command,
+          args,
+          cwd,
+          message: String(error),
+        }),
+    ),
+    Effect.flatMap((result) =>
+      accept.includes(result.exitCode)
+        ? Effect.succeed(result)
+        : Effect.fail(
+            new RepositoryCommandError({
+              command,
+              args,
+              cwd,
+              exitCode: result.exitCode,
+              message: result.stderr.trim() || result.stdout.trim() || "command failed",
+            }),
+          ),
+    ),
   );
 }

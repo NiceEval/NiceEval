@@ -4,7 +4,12 @@ import { readFile } from "node:fs/promises";
 import { expect } from "vitest";
 export const context = createE2EContext({
   repoId: "instabox",
-  project: { from: process.cwd(), prefix: "niceeval-instabox-", omitTopLevel: ["node_modules", "test", ".niceeval", ".e2e-artifacts"], links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }] },
+  project: {
+    from: process.cwd(),
+    prefix: "niceeval-instabox-",
+    omitTopLevel: ["node_modules", "test", ".niceeval", ".e2e-artifacts"],
+    links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
+  },
   commands: { niceeval: [resolve("node_modules/.bin/niceeval")] },
 });
 // Real Provider boundary only: prove cleanup without consulting product storage.

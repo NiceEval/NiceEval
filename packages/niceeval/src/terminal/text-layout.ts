@@ -13,7 +13,8 @@ export function charDisplayWidth(codePoint: number): number {
     (codePoint >= 0xff00 && codePoint <= 0xff60) ||
     (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
     (codePoint >= 0x20000 && codePoint <= 0x3fffd)
-  ) return 2;
+  )
+    return 2;
   return 1;
 }
 

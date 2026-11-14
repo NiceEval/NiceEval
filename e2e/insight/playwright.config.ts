@@ -10,9 +10,7 @@ export default defineConfig({
   reporter: "list",
   use: {
     trace: "retain-on-failure",
-    ...(chromiumExecutablePath === undefined
-      ? {}
-      : { launchOptions: { executablePath: chromiumExecutablePath } }),
+    ...(chromiumExecutablePath === undefined ? {} : { launchOptions: { executablePath: chromiumExecutablePath } }),
   },
   projects: [
     {

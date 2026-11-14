@@ -7,10 +7,7 @@ import { join } from "node:path";
  * The directory is always removed after success or body failure.
  * Body + cleanup failure becomes AggregateError([body, cleanup]) with body as cause.
  */
-export async function withTempDir<T>(
-  prefix: string,
-  body: (root: string) => Promise<T>,
-): Promise<T> {
+export async function withTempDir<T>(prefix: string, body: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), prefix));
   let bodyError: unknown;
   let result!: T;

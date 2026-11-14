@@ -1,12 +1,27 @@
 // niceeval 公开导出(import { … } from "niceeval")。
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
-export { defineEval, defineScoreEval, defineDataset, defineScoreDataset, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
+export {
+  defineEval,
+  defineScoreEval,
+  defineDataset,
+  defineScoreDataset,
+  defineEvalGroup,
+  defineConfig,
+  defineExperiment,
+} from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
 export { defineSimulatedUser } from "./simulated-user/definition.ts";
 export type { SimulatedUser, SimulatedUserDefinition } from "./simulated-user/definition.ts";
 export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";
-export type { ManagedScoreMatchOptions, ScoreMatch, ScoreMatchAnchor, ScoreMatchContext, ScoreMatchLlmFailure, ScoreMatchResult } from "./assertions/match.ts";
+export type {
+  ManagedScoreMatchOptions,
+  ScoreMatch,
+  ScoreMatchAnchor,
+  ScoreMatchContext,
+  ScoreMatchLlmFailure,
+  ScoreMatchResult,
+} from "./assertions/match.ts";
 export type { AssertionEntryId } from "./assertions/identity.ts";
 export {
   type ScoreMatchAudit,
@@ -32,7 +47,6 @@ export type {
   PolymorphicMeasurementAssertionHandle,
   PostRunBooleanAssertionHandle,
 } from "./assertions/api.ts";
-
 
 // 执行失败分类:抛出点糖衣类(声明死因波及多远)+ 结构守卫。判据、分类链与止损语义见
 // docs/feature/error-classification/README.md;`niceeval/adapter` 复导出同一份词表类型。
@@ -133,7 +147,13 @@ export type {
 } from "./adapter.ts";
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";
 
-export type { JudgePresetOptions, FactualityMaterial, FaithfulnessMaterial, InstructionFollowingMaterial, PairwisePreferenceMaterial } from "./assertions/judge-presets.ts";
+export type {
+  JudgePresetOptions,
+  FactualityMaterial,
+  FaithfulnessMaterial,
+  InstructionFollowingMaterial,
+  PairwisePreferenceMaterial,
+} from "./assertions/judge-presets.ts";
 export type { JudgeProvider, JudgeSelection } from "./judge/index.ts";
 export { MigrationRequiredError, type MigrationOccurrence, type ErrorSource } from "./error-assistance/index.ts";
 export type { AdapterUsageInput, AdapterUsageSeal } from "./adapter-usage.ts";
@@ -154,7 +174,18 @@ export type {
   TraceJson,
 } from "./adapter-execution-trace.ts";
 
-export type { MaterialMatch, ContextBooleanMatch, ContextScoreMatch, MatchContext, ReadonlyMaterial, MatchFact, MaterialCollection, MaterialItem, MaterialCaptureBudget, FactCaptureBudget } from "./assertions/context-match.ts";
+export type {
+  MaterialMatch,
+  ContextBooleanMatch,
+  ContextScoreMatch,
+  MatchContext,
+  ReadonlyMaterial,
+  MatchFact,
+  MaterialCollection,
+  MaterialItem,
+  MaterialCaptureBudget,
+  FactCaptureBudget,
+} from "./assertions/context-match.ts";
 
 export type { AttemptUsageSnapshot, AdapterAttemptUsageSnapshot } from "./o11y/adapter-usage-projection.ts";
 

@@ -59,21 +59,10 @@ export interface InspectionFactSource {
     pageSize?: number,
     expectedCutoffIdentity?: string,
   ) => SealedRunSummaryPage;
-  readonly findAttemptLocatorCandidates: (
-    locator: string,
-    maximumCandidateRuns: number,
-  ) => AttemptLocatorCandidates;
+  readonly findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) => AttemptLocatorCandidates;
   readonly readSealedRunCore: (runId: string) => SealedRunCore | undefined;
-  readonly readContentPage: (
-    contentId: string,
-    afterOrdinal: number,
-    pageSize: number,
-  ) => ContentChunkPage;
-  readonly readCollectionPage: (
-    attachmentId: string,
-    afterOrdinal: number,
-    pageSize: number,
-  ) => CollectionItemPage;
+  readonly readContentPage: (contentId: string, afterOrdinal: number, pageSize: number) => ContentChunkPage;
+  readonly readCollectionPage: (attachmentId: string, afterOrdinal: number, pageSize: number) => CollectionItemPage;
 }
 
 /** Pure source selection; opening and validation happen only inside a Scope. */
@@ -159,11 +148,12 @@ function emptyOperationalFacts(): InspectionFactSource {
     cutoff: () => EMPTY_OPERATIONAL_CUTOFF,
     findExperimentRunIds: () => Object.freeze([]),
     readRunResource: () => undefined,
-    readRunResourcePage: () => Object.freeze({
-      cutoff: Object.freeze({ storeGeneration: EMPTY_PUBLICATION_CUTOFF_IDENTITY, revision: 0 }),
-      runs: Object.freeze([]),
-      nextAfterRunId: null,
-    }),
+    readRunResourcePage: () =>
+      Object.freeze({
+        cutoff: Object.freeze({ storeGeneration: EMPTY_PUBLICATION_CUTOFF_IDENTITY, revision: 0 }),
+        runs: Object.freeze([]),
+        nextAfterRunId: null,
+      }),
     readSealedRunSummaryPage: (afterRunId = "", _pageSize = 100, expectedCutoffIdentity?: string) => {
       if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== EMPTY_OPERATIONAL_CUTOFF.identity) {
         throw new InspectionSourceError({
@@ -178,40 +168,35 @@ function emptyOperationalFacts(): InspectionFactSource {
         nextAfterRunId: null,
       });
     },
-    findAttemptLocatorCandidates: (locator: string) => Object.freeze({
-      locator,
-      ambiguous: false,
-      candidates: Object.freeze([]),
-    }),
+    findAttemptLocatorCandidates: (locator: string) =>
+      Object.freeze({
+        locator,
+        ambiguous: false,
+        candidates: Object.freeze([]),
+      }),
     readSealedRunCore: () => undefined,
-    readContentPage: (contentId: string, afterOrdinal: number) => Object.freeze({
-      contentId,
-      afterOrdinal,
-      chunks: Object.freeze([]),
-      nextOrdinal: null,
-    }),
-    readCollectionPage: (attachmentId: string, afterOrdinal: number) => Object.freeze({
-      attachmentId,
-      afterOrdinal,
-      items: Object.freeze([]),
-      nextOrdinal: null,
-    }),
+    readContentPage: (contentId: string, afterOrdinal: number) =>
+      Object.freeze({
+        contentId,
+        afterOrdinal,
+        chunks: Object.freeze([]),
+        nextOrdinal: null,
+      }),
+    readCollectionPage: (attachmentId: string, afterOrdinal: number) =>
+      Object.freeze({
+        attachmentId,
+        afterOrdinal,
+        items: Object.freeze([]),
+        nextOrdinal: null,
+      }),
   });
 }
 
-function sessionFacts(
-  session: PinnedRecordReadSession,
-  kind: InspectionSource["kind"],
-): InspectionFactSource {
+function sessionFacts(session: PinnedRecordReadSession, kind: InspectionSource["kind"]): InspectionFactSource {
   const publication = session.publicationCutoff();
   const cutoff = Object.freeze({ ...publication, identity: publicationCutoffIdentity(publication) });
-  const readPage = (
-    afterRunId = "",
-    pageSize = 100,
-    expectedCutoffIdentity?: string,
-  ): SealedRunSummaryPage => session.readSealedRunSummaryPage(
-    afterRunId, pageSize, expectedCutoffIdentity ?? cutoff.identity,
-  );
+  const readPage = (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string): SealedRunSummaryPage =>
+    session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity ?? cutoff.identity);
   return Object.freeze({
     kind,
     cutoff: () => cutoff,

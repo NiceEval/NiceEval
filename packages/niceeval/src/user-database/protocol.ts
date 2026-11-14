@@ -8,7 +8,10 @@ import type {
   IncusRepositoryResult,
   IncusRepositoryResultFor,
 } from "../sandbox/incus/repository.ts";
-import type { BeforeCacheSnapshotRepositoryRequest, BeforeCacheSnapshotRepositoryResult } from "../sandbox/remote-snapshot/ledger.ts";
+import type {
+  BeforeCacheSnapshotRepositoryRequest,
+  BeforeCacheSnapshotRepositoryResult,
+} from "../sandbox/remote-snapshot/ledger.ts";
 
 export const DURABLE_STATE_REPOSITORY = "durable-state" as const;
 
@@ -18,7 +21,12 @@ export interface DurableStateEntry {
 }
 
 export type DurableStateRequest =
-  | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "put"; readonly key: string; readonly value: string }
+  | {
+      readonly repository: typeof DURABLE_STATE_REPOSITORY;
+      readonly operation: "put";
+      readonly key: string;
+      readonly value: string;
+    }
   | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "get"; readonly key: string }
   | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "list" };
 
@@ -35,30 +43,44 @@ export type UserDatabaseRepositoryRequest =
 
 export type UserDatabaseRepositoryResult =
   | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "put"; readonly changes: number }
-  | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "get"; readonly entry: DurableStateEntry | null }
-  | { readonly repository: typeof DURABLE_STATE_REPOSITORY; readonly operation: "list"; readonly entries: readonly DurableStateEntry[] }
+  | {
+      readonly repository: typeof DURABLE_STATE_REPOSITORY;
+      readonly operation: "get";
+      readonly entry: DurableStateEntry | null;
+    }
+  | {
+      readonly repository: typeof DURABLE_STATE_REPOSITORY;
+      readonly operation: "list";
+      readonly entries: readonly DurableStateEntry[];
+    }
   | DockerCacheRepositoryResult
   | IncusRepositoryResult
   | BeforeCacheSnapshotRepositoryResult;
 
-export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest> =
-  Request extends DurableStateRequest
-    ? Extract<UserDatabaseRepositoryResult, {
+export type UserDatabaseResultFor<Request extends UserDatabaseRepositoryRequest> = Request extends DurableStateRequest
+  ? Extract<
+      UserDatabaseRepositoryResult,
+      {
         readonly repository: typeof DURABLE_STATE_REPOSITORY;
         readonly operation: Request["operation"];
-      }>
-    : Request extends DockerCacheRepositoryRequest
-      ? DockerCacheResultFor<Request>
-      : Request extends IncusRepositoryRequest
-        ? IncusRepositoryResultFor<Request>
-        : Request extends BeforeCacheSnapshotRepositoryRequest ? BeforeCacheSnapshotRepositoryResult : never;
+      }
+    >
+  : Request extends DockerCacheRepositoryRequest
+    ? DockerCacheResultFor<Request>
+    : Request extends IncusRepositoryRequest
+      ? IncusRepositoryResultFor<Request>
+      : Request extends BeforeCacheSnapshotRepositoryRequest
+        ? BeforeCacheSnapshotRepositoryResult
+        : never;
 
 export type UserDatabaseWorkerRequest =
   | { readonly id: number; readonly kind: "repository"; readonly request: UserDatabaseRepositoryRequest }
   | { readonly id: number; readonly kind: "close" };
 
 export type UserDatabaseWorkerRequestWithoutId = UserDatabaseWorkerRequest extends infer Request
-  ? Request extends UserDatabaseWorkerRequest ? Omit<Request, "id"> : never
+  ? Request extends UserDatabaseWorkerRequest
+    ? Omit<Request, "id">
+    : never
   : never;
 
 export interface UserDatabaseWorkerData {
@@ -68,7 +90,11 @@ export interface UserDatabaseWorkerData {
 }
 
 export interface UserDatabaseWorkerFailure {
-  readonly code: "user-database-invalid" | "user-database-busy" | "user-database-unsupported" | "user-database-legacy-found";
+  readonly code:
+    | "user-database-invalid"
+    | "user-database-busy"
+    | "user-database-unsupported"
+    | "user-database-legacy-found";
   readonly message: string;
   readonly repository?: string;
   readonly legacyPath?: string;
@@ -80,5 +106,9 @@ export type UserDatabaseWorkerStartup =
   | { readonly state: "startup-failure"; readonly error: UserDatabaseWorkerFailure };
 
 export type UserDatabaseWorkerResponse =
-  | { readonly id: number; readonly state: "success"; readonly result: UserDatabaseRepositoryResult | { readonly kind: "void" } }
+  | {
+      readonly id: number;
+      readonly state: "success";
+      readonly result: UserDatabaseRepositoryResult | { readonly kind: "void" };
+    }
   | { readonly id: number; readonly state: "failure"; readonly error: UserDatabaseWorkerFailure };

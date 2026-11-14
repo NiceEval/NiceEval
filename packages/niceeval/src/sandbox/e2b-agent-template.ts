@@ -62,12 +62,9 @@ const PUBLISHED_E2B_BASELINE_TAG: globalThis.Record<E2BCodingAgent, string> = {
  * NiceEval 官方公共 E2B baseline：每个值已经是完整、版本钉死、跨 Team 的 template ref。
  * 直接交给 `e2bSandbox({ template })`，或交给 E2B `Template().fromTemplate(...)` 继续派生。
  */
-export const NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE =
-  `${NICEEVAL_E2B_TEMPLATE_NAME["claude-code"]}:${PUBLISHED_E2B_BASELINE_TAG["claude-code"]}`;
-export const NICEEVAL_CODEX_E2B_TEMPLATE =
-  `${NICEEVAL_E2B_TEMPLATE_NAME.codex}:${PUBLISHED_E2B_BASELINE_TAG.codex}`;
-export const NICEEVAL_BUB_E2B_TEMPLATE =
-  `${NICEEVAL_E2B_TEMPLATE_NAME.bub}:${PUBLISHED_E2B_BASELINE_TAG.bub}`;
+export const NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE = `${NICEEVAL_E2B_TEMPLATE_NAME["claude-code"]}:${PUBLISHED_E2B_BASELINE_TAG["claude-code"]}`;
+export const NICEEVAL_CODEX_E2B_TEMPLATE = `${NICEEVAL_E2B_TEMPLATE_NAME.codex}:${PUBLISHED_E2B_BASELINE_TAG.codex}`;
+export const NICEEVAL_BUB_E2B_TEMPLATE = `${NICEEVAL_E2B_TEMPLATE_NAME.bub}:${PUBLISHED_E2B_BASELINE_TAG.bub}`;
 
 /**
  * Build tag for the next official E2B baseline of this agent: `<agent version>-r<recipe revision>`.
@@ -113,10 +110,9 @@ function withNodeToolContract(template: TemplateBuilder): TemplateBuilder {
       { user: "root" },
     )
     .runCmd(`npm config set prefix ${E2B_NODE_TOOL_PREFIX}`, { user: E2B_RUN_USER })
-    .runCmd(
-      `for bin in yarn yarnpkg; do path=$(command -v "$bin" 2>/dev/null) && rm -f "$path"; done; true`,
-      { user: "root" },
-    )
+    .runCmd(`for bin in yarn yarnpkg; do path=$(command -v "$bin" 2>/dev/null) && rm -f "$path"; done; true`, {
+      user: "root",
+    })
     .runCmd(
       `command -v python3 >/dev/null 2>&1 || { echo "python3 missing from official coding-agent baseline" >&2; exit 1; }`,
       { user: E2B_RUN_USER },
@@ -169,12 +165,12 @@ export function e2bCodingAgentTemplate(
     if (agent === "claude-code") {
       // E2B's official template puts a native Claude binary first in the user PATH; installing
       // npm as root would leave that older binary shadowing /usr/local/bin/claude.
-      return template.runCmd(
-        `curl -fsSL https://claude.ai/install.sh | bash -s ${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
-        { user: E2B_RUN_USER },
-      );
+      return template.runCmd(`curl -fsSL https://claude.ai/install.sh | bash -s ${DEFAULT_CLAUDE_CODE_CLI_VERSION}`, {
+        user: E2B_RUN_USER,
+      });
     }
-    return template.runCmd(`npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`, { user: "root" })
+    return template
+      .runCmd(`npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`, { user: "root" })
       .runCmd(CODEX_NPM_PATCH_SETUP, { user: "root" });
   }
 
@@ -188,9 +184,7 @@ export function e2bCodingAgentTemplate(
   const withPackages = packages.map((value) => ` --with ${shellQuote(value)}`).join("");
   const marker = `/home/user/${BUB_INSTALL_MARKER}`;
   const overrideFile = "/tmp/bub-override.txt";
-  const overrides = [DEFAULT_BUB_REQUIREMENT, ...DEFAULT_BUB_DEPENDENCY_OVERRIDES]
-    .map(shellQuote)
-    .join(" ");
+  const overrides = [DEFAULT_BUB_REQUIREMENT, ...DEFAULT_BUB_DEPENDENCY_OVERRIDES].map(shellQuote).join(" ");
   return withNodeToolContract(Template().fromBaseImage())
     .runCmd("curl -LsSf https://astral.sh/uv/install.sh | sh", { user: E2B_RUN_USER })
     .runCmd(

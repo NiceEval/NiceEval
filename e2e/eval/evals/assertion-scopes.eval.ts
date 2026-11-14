@@ -36,10 +36,7 @@ export default defineEval({
     const branchTurn = await branch.send("assertion/scopes-branch");
     await branchTurn.succeeded().orStop();
     const idle = t.newSession();
-    const branchOrder = [
-      toolMatch("scope_branch_tool"),
-      toolMatch("scope_branch_tool"),
-    ] as const;
+    const branchOrder = [toolMatch("scope_branch_tool"), toolMatch("scope_branch_tool")] as const;
     await t.group("turn scope", () => {
       mainTurn.check(
         mainTurn.toolCalls,
@@ -53,31 +50,101 @@ export default defineEval({
       const mainUsage = mainTurn.usage;
       const branchUsage = branch.usage;
       const aggregateUsage = t.usage;
-      t.check(firstUsage, defineValueMatch({ name: "first-usage-isolated", evaluate: (value: typeof firstUsage) => value.scope === "attempt" && value.costs.totalContributions === 1 && Object.isFrozen(value.costs) })).gate().label("usage snapshot isolated");
-      mainTurn.check(mainUsage, defineValueMatch({ name: "turn-usage-owner", evaluate: (value: typeof mainUsage) => value.scope === "turn" && value.basis === "reported-sends" && value.costs.totalContributions === 1 })).gate().label("turn usage owner");
-      branch.check(branchUsage, defineValueMatch({ name: "session-usage-owner", evaluate: (value: typeof branchUsage) => value.scope === "session" && value.costs.totalContributions === 1 })).gate().label("session usage owner");
-      t.check(aggregateUsage, defineValueMatch({ name: "attempt-usage-owner", evaluate: (value: typeof aggregateUsage) => value.scope === "attempt" && value.costs.totalContributions === 2 })).gate().label("attempt usage owner");
+      t.check(
+        firstUsage,
+        defineValueMatch({
+          name: "first-usage-isolated",
+          evaluate: (value: typeof firstUsage) =>
+            value.scope === "attempt" && value.costs.totalContributions === 1 && Object.isFrozen(value.costs),
+        }),
+      )
+        .gate()
+        .label("usage snapshot isolated");
+      mainTurn
+        .check(
+          mainUsage,
+          defineValueMatch({
+            name: "turn-usage-owner",
+            evaluate: (value: typeof mainUsage) =>
+              value.scope === "turn" && value.basis === "reported-sends" && value.costs.totalContributions === 1,
+          }),
+        )
+        .gate()
+        .label("turn usage owner");
+      branch
+        .check(
+          branchUsage,
+          defineValueMatch({
+            name: "session-usage-owner",
+            evaluate: (value: typeof branchUsage) => value.scope === "session" && value.costs.totalContributions === 1,
+          }),
+        )
+        .gate()
+        .label("session usage owner");
+      t.check(
+        aggregateUsage,
+        defineValueMatch({
+          name: "attempt-usage-owner",
+          evaluate: (value: typeof aggregateUsage) => value.scope === "attempt" && value.costs.totalContributions === 2,
+        }),
+      )
+        .gate()
+        .label("attempt usage owner");
       t.check(t.elapsedMs, atLeast(0)).gate().label("attempt runtime elapsed");
-      t.check(defineMaterialMatch<AgentMatchContext<"attempt">>({ name: "attempt-tools", capture: { maxBytes: 4 * 1024 * 1024, maxItems: 16384, maxNodes: 1048576, maxDepth: 64 }, read: (ctx) => ctx.toolCalls, match: toolMatch("shell") })).gate().label("attempt context selection");
-      branch.check(defineMaterialMatch<AgentMatchContext<"session">>({ name: "session-tools", capture: { maxBytes: 4 * 1024 * 1024, maxItems: 16384, maxNodes: 1048576, maxDepth: 64 }, read: (ctx) => ctx.toolCalls, match: toolMatch("scope_branch_tool") })).gate().label("session context selection");
+      t.check(
+        defineMaterialMatch<AgentMatchContext<"attempt">>({
+          name: "attempt-tools",
+          capture: { maxBytes: 4 * 1024 * 1024, maxItems: 16384, maxNodes: 1048576, maxDepth: 64 },
+          read: (ctx) => ctx.toolCalls,
+          match: toolMatch("shell"),
+        }),
+      )
+        .gate()
+        .label("attempt context selection");
+      branch
+        .check(
+          defineMaterialMatch<AgentMatchContext<"session">>({
+            name: "session-tools",
+            capture: { maxBytes: 4 * 1024 * 1024, maxItems: 16384, maxNodes: 1048576, maxDepth: 64 },
+            read: (ctx) => ctx.toolCalls,
+            match: toolMatch("scope_branch_tool"),
+          }),
+        )
+        .gate()
+        .label("session context selection");
 
       mainTurn.calledTool("scope_main_tool").label("turn calledTool bare");
       mainTurn.noFailedActions();
-      branchTurn.check(defineMaterialMatch<AgentMatchContext<"turn">>({ name: "branch-tools", read: (ctx) => ctx.toolCalls, match: toolMatch("scope_branch_tool") })).gate().label("managed tool selection");
-      branchTurn.check(defineMaterialMatch<AgentMatchContext<"turn">>({ name: "branch-events", read: (ctx) => ctx.eventOccurrences, match: eventMatch("message", { role: "assistant" }) })).gate().label("managed event selection");
+      branchTurn
+        .check(
+          defineMaterialMatch<AgentMatchContext<"turn">>({
+            name: "branch-tools",
+            read: (ctx) => ctx.toolCalls,
+            match: toolMatch("scope_branch_tool"),
+          }),
+        )
+        .gate()
+        .label("managed tool selection");
+      branchTurn
+        .check(
+          defineMaterialMatch<AgentMatchContext<"turn">>({
+            name: "branch-events",
+            read: (ctx) => ctx.eventOccurrences,
+            match: eventMatch("message", { role: "assistant" }),
+          }),
+        )
+        .gate()
+        .label("managed event selection");
       mainTurn.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
       mainTurn.maxToolCalls(20_000).label("turn maxToolCalls");
       mainTurn.check(mainTurn.toolCalls, atMost(20_000)).label("turn explicit cardinality");
       t.check(mainTurn.toolCalls, atMost(20_000)).label("cut from subject");
-      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool"))
-        .label("turn bare toolMatch");
-      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").exactly(1))
-        .label("turn occurrence exactly");
-      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").atMost(1))
-        .label("turn occurrence atMost");
-      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").lessThan(2))
-        .label("turn occurrence lessThan");
-      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").greaterThan(0))
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool")).label("turn bare toolMatch");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").exactly(1)).label("turn occurrence exactly");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").atMost(1)).label("turn occurrence atMost");
+      mainTurn.check(mainTurn.toolCalls, toolMatch("scope_main_tool").lessThan(2)).label("turn occurrence lessThan");
+      mainTurn
+        .check(mainTurn.toolCalls, toolMatch("scope_main_tool").greaterThan(0))
         .label("turn occurrence greaterThan");
     });
     await t.group("session scope", () => {
@@ -88,33 +155,27 @@ export default defineEval({
           status: "completed",
         }),
       );
-      branch.check(branch.toolCalls, toolMatch("scope_branch_tool").atLeast(1))
+      branch
+        .check(branch.toolCalls, toolMatch("scope_branch_tool").atLeast(1))
         .label("partial source lower bound can match");
-      branch.notCalledTool("scope_main_tool")
-        .optional()
-        .label("partial source absence remains unavailable");
-      branch.check(branch.toolCalls, toolMatch("scope_branch_tool").exactly(1))
+      branch.notCalledTool("scope_main_tool").optional().label("partial source absence remains unavailable");
+      branch
+        .check(branch.toolCalls, toolMatch("scope_branch_tool").exactly(1))
         .optional()
         .label("partial source exact count remains unavailable");
-      branchTurn.check(branchTurn.toolCalls, toolMatch("scope_branch_tool").atLeast(1))
-        .label("turn calledTool");
-      branchTurn.check(
-        branchTurn.toolCalls,
-        toolMatch("scope_branch_tool").atLeast(1),
-      ).label("turn explicit occurrence");
+      branchTurn.check(branchTurn.toolCalls, toolMatch("scope_branch_tool").atLeast(1)).label("turn calledTool");
+      branchTurn
+        .check(branchTurn.toolCalls, toolMatch("scope_branch_tool").atLeast(1))
+        .label("turn explicit occurrence");
       branch.noFailedActions().optional();
       branch.notEvent(eventMatch("message", { text: includes("never-event-marker") }));
-      branch.check(branch.toolCalls, atMost(100))
-        .optional()
-        .label("partial source cardinality remains unavailable");
-      branch.check(branch.toolCalls, toolMatch("scope_branch_tool").atMost(1))
+      branch.check(branch.toolCalls, atMost(100)).optional().label("partial source cardinality remains unavailable");
+      branch
+        .check(branch.toolCalls, toolMatch("scope_branch_tool").atMost(1))
         .optional()
         .label("partial source occurrence upper bound remains unavailable");
       idle.usedNoTools().label("unused session usedNoTools");
-      idle.check(
-        idle.toolCalls,
-        toolMatch({}).exactly(0),
-      ).label("unused session explicit occurrence zero");
+      idle.check(idle.toolCalls, toolMatch({}).exactly(0)).label("unused session explicit occurrence zero");
     });
     await t.group("attempt scope", () => {
       t.check(t.toolCalls, toolMatch("scope_main_tool", { status: "completed" }).exactly(1)).optional();
@@ -132,22 +193,21 @@ export default defineEval({
         toolMatch("shell", { input: referencesAnyPath(["node_modules/niceeval/INDEX.md"]) }),
       );
       t.calledTool(initCommand).label("attempt calledTool composite");
-      t.check(t.toolCalls, initCommand.atLeast(1))
-        .label("attempt explicit composite occurrence");
-      t.calledTool(or(
-        commandMatch("niceeval", { argsStart: ["exp"], excludes: ["--dry", "--help"] }),
-        toolMatch("shell", { input: referencesAnyPath(["niceeval.config.ts", "experiments"]) }),
-      ));
-      t.calledTool(or(
-        commandMatch("niceeval", { argsStart: ["show"] }),
-        toolMatch("shell", { input: referencesAnyPath([".niceeval", "run.json"]) }),
-      ));
-      t.maxToolCalls(20_000)
-        .optional()
-        .label("attempt maxToolCalls");
-      t.check(t.toolCalls, atMost(20_000))
-        .optional()
-        .label("attempt explicit cardinality");
+      t.check(t.toolCalls, initCommand.atLeast(1)).label("attempt explicit composite occurrence");
+      t.calledTool(
+        or(
+          commandMatch("niceeval", { argsStart: ["exp"], excludes: ["--dry", "--help"] }),
+          toolMatch("shell", { input: referencesAnyPath(["niceeval.config.ts", "experiments"]) }),
+        ),
+      );
+      t.calledTool(
+        or(
+          commandMatch("niceeval", { argsStart: ["show"] }),
+          toolMatch("shell", { input: referencesAnyPath([".niceeval", "run.json"]) }),
+        ),
+      );
+      t.maxToolCalls(20_000).optional().label("attempt maxToolCalls");
+      t.check(t.toolCalls, atMost(20_000)).optional().label("attempt explicit cardinality");
       t.check([1, 2, 3], atMost(3)).label("author array cardinality");
       t.check([...mainTurn.toolCalls], atMost(20_000)).label("spread cardinality still works");
       t.check(
@@ -170,10 +230,7 @@ export default defineEval({
       ).label("root inOrder rejected");
       t.check(
         authoringRejected(() => {
-          inOrder([
-            toolMatch("scope_main_tool").exactly(1) as never,
-            toolMatch("scope_main_tool"),
-          ]);
+          inOrder([toolMatch("scope_main_tool").exactly(1) as never, toolMatch("scope_main_tool")]);
         }),
         isTrue(),
       ).label("quantified inOrder step rejected");

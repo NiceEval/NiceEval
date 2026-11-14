@@ -33,10 +33,7 @@ export default defineEval({
     await turn.succeeded().orStop();
     t.check(
       turn.toolCalls,
-      satisfies(
-        "no failed actions",
-        (calls) => calls.every((call) => call.status !== "failed"),
-      ),
+      satisfies("no failed actions", (calls) => calls.every((call) => call.status !== "failed")),
     );
     await t.group("选择痕迹:读取目标 Skill 的稳定路径，未读取 decoy", () => {
       turn.calledTool(
@@ -55,25 +52,19 @@ export default defineEval({
             !calls.some(
               (call) =>
                 call.name === "shell" &&
-                new RegExp(`${SKILL_DIR}/${DECOY_NAME}/SKILL\\.md`).test(
-                  JSON.stringify(call.input) ?? "",
-                ),
+                new RegExp(`${SKILL_DIR}/${DECOY_NAME}/SKILL\\.md`).test(JSON.stringify(call.input) ?? ""),
             ),
         ),
       );
       t.check(
         turn.events,
-        satisfies<typeof turn.events>(
-          "任何工具的 input 均未引用 decoy Skill 文件",
-          (events) =>
-            events.every(
-              (event) =>
-                event.type !== "operation.started" ||
-                event.operation.kind !== "tool" ||
-                !JSON.stringify(event.operation.input).includes(
-                  `${SKILL_DIR}/${DECOY_NAME}/SKILL.md`,
-                ),
-            ),
+        satisfies<typeof turn.events>("任何工具的 input 均未引用 decoy Skill 文件", (events) =>
+          events.every(
+            (event) =>
+              event.type !== "operation.started" ||
+              event.operation.kind !== "tool" ||
+              !JSON.stringify(event.operation.input).includes(`${SKILL_DIR}/${DECOY_NAME}/SKILL.md`),
+          ),
         ),
       );
       t.check(

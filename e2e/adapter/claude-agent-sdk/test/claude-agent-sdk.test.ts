@@ -5,7 +5,16 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { assertExpEvalOutcomes, command, only, retryFailedExpEvalsOnce, type ExpEvalEvent, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
+import {
+  assertExpEvalOutcomes,
+  command,
+  only,
+  retryFailedExpEvalsOnce,
+  type ExpEvalEvent,
+  type ProcessReceipt,
+  withProcess,
+  withTempDir,
+} from "@niceeval/testkit";
 import { beforeAll, expect, it } from "vitest";
 
 const EVAL_ID = "bash-session";
@@ -46,16 +55,16 @@ beforeAll(async () => {
       withProcess(
         [niceevalBin, "exp", ...args],
         {
-        processGroup: true,
-        timeoutMs: 13 * 60_000,
-        env: {
-          HOME: privateHome,
-          CLAUDE_CONFIG_DIR: join(privateHome, ".claude"),
-          NICEEVAL_CLAUDE_AGENT_SDK_HOME: privateHome,
-          NICEEVAL_CLAUDE_AGENT_SDK_WORKSPACE: workspace,
-          NICEEVAL_CLAUDE_AGENT_SDK_MARKER: marker,
-          NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL: sentinel,
-        },
+          processGroup: true,
+          timeoutMs: 13 * 60_000,
+          env: {
+            HOME: privateHome,
+            CLAUDE_CONFIG_DIR: join(privateHome, ".claude"),
+            NICEEVAL_CLAUDE_AGENT_SDK_HOME: privateHome,
+            NICEEVAL_CLAUDE_AGENT_SDK_WORKSPACE: workspace,
+            NICEEVAL_CLAUDE_AGENT_SDK_MARKER: marker,
+            NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL: sentinel,
+          },
         },
         async (handle) => await handle.done,
       );
@@ -64,9 +73,7 @@ beforeAll(async () => {
     const firstEvents = runReceipt.expEvalEvents();
     const failed = firstEvents.filter((event) => event.verdict === "failed");
     expect(
-      firstEvents.filter(
-        (event) => event.verdict === "errored" || event.verdict === "skipped",
-      ),
+      firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
       runReceipt.diagnostic(),
     ).toHaveLength(0);
     expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
@@ -74,8 +81,7 @@ beforeAll(async () => {
     const retried = await retryFailedExpEvalsOnce({
       events: firstEvents,
       targets: failed,
-      runRetry: (event) =>
-        runExp(["ci", event.evalId, "--rerun", "all", "--json"]),
+      runRetry: (event) => runExp(["ci", event.evalId, "--rerun", "all", "--json"]),
     });
     if (retried.retries.length > 0) {
       process.stderr.write(

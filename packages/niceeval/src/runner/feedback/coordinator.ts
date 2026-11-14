@@ -186,11 +186,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     }
   }
 
-  async function deliverDurable(
-    event: DurableFeedbackEvent,
-    run: RunFeedbackState,
-    bracket: boolean,
-  ): Promise<void> {
+  async function deliverDurable(event: DurableFeedbackEvent, run: RunFeedbackState, bracket: boolean): Promise<void> {
     try {
       if (bracket) await renderer.clearDynamic?.();
       await renderer.appendDurable(event, run);

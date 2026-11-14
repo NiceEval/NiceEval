@@ -16,18 +16,10 @@ import {
 const attemptObservabilityCaptureIdentityTypeId: unique symbol = Symbol(
   "@niceeval/o11y/AttemptObservabilityCaptureIdentity",
 );
-const runObservabilityCaptureIdentityTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunObservabilityCaptureIdentity",
-);
-const attemptObservabilityEntityRefTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/AttemptObservabilityEntityRef",
-);
-const runObservabilityEntityRefTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunObservabilityEntityRef",
-);
-const registeredCommandCaptureTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RegisteredCommandCapture",
-);
+const runObservabilityCaptureIdentityTypeId: unique symbol = Symbol("@niceeval/o11y/RunObservabilityCaptureIdentity");
+const attemptObservabilityEntityRefTypeId: unique symbol = Symbol("@niceeval/o11y/AttemptObservabilityEntityRef");
+const runObservabilityEntityRefTypeId: unique symbol = Symbol("@niceeval/o11y/RunObservabilityEntityRef");
+const registeredCommandCaptureTypeId: unique symbol = Symbol("@niceeval/o11y/RegisteredCommandCapture");
 
 /**
  * Internal capture authority. The opaque identity is deliberately separate
@@ -57,17 +49,13 @@ export interface RegisteredCommandCapture extends AttemptObservabilityEntityRef 
   readonly [registeredCommandCaptureTypeId]: () => void;
 }
 
-export interface AttemptCapturedObservabilityEntity<
-  Target extends AttemptReferenceTarget = AttemptReferenceTarget,
-> {
+export interface AttemptCapturedObservabilityEntity<Target extends AttemptReferenceTarget = AttemptReferenceTarget> {
   readonly ref: AttemptObservabilityEntityRef;
   /** @internal The collector uses this immutable durable triple while sealing. */
   readonly target: Target;
 }
 
-export interface RunCapturedObservabilityEntity<
-  Target extends RunReferenceTarget = RunReferenceTarget,
-> {
+export interface RunCapturedObservabilityEntity<Target extends RunReferenceTarget = RunReferenceTarget> {
   readonly ref: RunObservabilityEntityRef;
   /** @internal The collector uses this immutable durable triple while sealing. */
   readonly target: Target;
@@ -147,24 +135,18 @@ export function makeRunObservabilityCaptureIdentity(): RunObservabilityCaptureId
   return frozen;
 }
 
-export function isAttemptObservabilityCaptureOpen(
-  capture: AttemptObservabilityCaptureIdentity,
-): boolean {
+export function isAttemptObservabilityCaptureOpen(capture: AttemptObservabilityCaptureIdentity): boolean {
   const runtime = captureRuntime(capture);
   return runtime !== undefined && runtime.owner === "attempt" && !runtime.sealed;
 }
 
-export function isRunObservabilityCaptureOpen(
-  capture: RunObservabilityCaptureIdentity,
-): boolean {
+export function isRunObservabilityCaptureOpen(capture: RunObservabilityCaptureIdentity): boolean {
   const runtime = captureRuntime(capture);
   return runtime !== undefined && runtime.owner === "run" && !runtime.sealed;
 }
 
 /** Once closed, a capture cannot mint entities, accept refs, or register a result. */
-export function sealAttemptObservabilityCaptureIdentity(
-  capture: AttemptObservabilityCaptureIdentity,
-): boolean {
+export function sealAttemptObservabilityCaptureIdentity(capture: AttemptObservabilityCaptureIdentity): boolean {
   const runtime = captureRuntime(capture);
   if (runtime === undefined || runtime.owner !== "attempt" || runtime.sealed) return false;
   runtime.sealed = true;
@@ -172,9 +154,7 @@ export function sealAttemptObservabilityCaptureIdentity(
 }
 
 /** Once closed, a capture cannot mint entities or accept direct refs. */
-export function sealRunObservabilityCaptureIdentity(
-  capture: RunObservabilityCaptureIdentity,
-): boolean {
+export function sealRunObservabilityCaptureIdentity(capture: RunObservabilityCaptureIdentity): boolean {
   const runtime = captureRuntime(capture);
   if (runtime === undefined || runtime.owner !== "run" || runtime.sealed) return false;
   runtime.sealed = true;
@@ -186,12 +166,7 @@ export function mintAttemptObservabilityEntity<Target extends AttemptReferenceTa
   target: Target,
 ): AttemptCapturedObservabilityEntity<Target> | undefined {
   const runtime = captureRuntime(capture);
-  if (
-    runtime === undefined ||
-    runtime.owner !== "attempt" ||
-    runtime.sealed ||
-    !isAttemptReferenceTarget(target)
-  ) {
+  if (runtime === undefined || runtime.owner !== "attempt" || runtime.sealed || !isAttemptReferenceTarget(target)) {
     return undefined;
   }
   const frozenTarget = freezeTarget(target);
@@ -203,10 +178,7 @@ export function mintAttemptObservabilityEntity<Target extends AttemptReferenceTa
   } as AttemptObservabilityEntityRef;
   const frozenRef = Object.freeze(ref);
   runtime.targets.set(key, frozenTarget);
-  attemptEntityRefs.set(
-    frozenRef,
-    Object.freeze({ capture: runtime, target: frozenTarget }),
-  );
+  attemptEntityRefs.set(frozenRef, Object.freeze({ capture: runtime, target: frozenTarget }));
   return Object.freeze({ ref: frozenRef, target: frozenTarget });
 }
 
@@ -215,12 +187,7 @@ export function mintRunObservabilityEntity<Target extends RunReferenceTarget>(
   target: Target,
 ): RunCapturedObservabilityEntity<Target> | undefined {
   const runtime = captureRuntime(capture);
-  if (
-    runtime === undefined ||
-    runtime.owner !== "run" ||
-    runtime.sealed ||
-    !isRunReferenceTarget(target)
-  ) {
+  if (runtime === undefined || runtime.owner !== "run" || runtime.sealed || !isRunReferenceTarget(target)) {
     return undefined;
   }
   const frozenTarget = freezeTarget(target);
@@ -241,9 +208,7 @@ export function mintRunObservabilityEntity<Target extends RunReferenceTarget>(
  * different capture, copied object, closed capture, same-family target, or
  * forged type assertion is rejected as `undefined` before payload assembly.
  */
-export function resolveAttemptDirectReference<
-  SourceFamily extends AttemptObservabilityFamilySchemaId,
->(
+export function resolveAttemptDirectReference<SourceFamily extends AttemptObservabilityFamilySchemaId>(
   capture: AttemptObservabilityCaptureIdentity,
   sourceFamily: SourceFamily,
   ref: AttemptObservabilityEntityRef,
@@ -264,9 +229,7 @@ export function resolveAttemptDirectReference<
 }
 
 /** Same owner/capture validation for the two Run-owned families. */
-export function resolveRunDirectReference<
-  SourceFamily extends RunObservabilityFamilySchemaId,
->(
+export function resolveRunDirectReference<SourceFamily extends RunObservabilityFamilySchemaId>(
   capture: RunObservabilityCaptureIdentity,
   sourceFamily: SourceFamily,
   ref: RunObservabilityEntityRef,
@@ -365,9 +328,7 @@ export function recordRegisteredCommandResult(
 }
 
 /** @internal Lets commands map a valid registered handle to its durable ID. */
-export function registeredCommandId(
-  command: RegisteredCommandCapture,
-): CommandId | undefined {
+export function registeredCommandId(command: RegisteredCommandCapture): CommandId | undefined {
   const runtime = isObject(command) ? registeredCommands.get(command) : undefined;
   return runtime?.target.id;
 }

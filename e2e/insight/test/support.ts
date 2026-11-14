@@ -1,9 +1,4 @@
-import {
-  createE2EContext,
-  waitForOutput,
-  type ArtifactStageEntry,
-  type ProcessHandle,
-} from "@niceeval/testkit";
+import { createE2EContext, waitForOutput, type ArtifactStageEntry, type ProcessHandle } from "@niceeval/testkit";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
@@ -33,9 +28,7 @@ export const insightE2E = createE2EContext({
  * 失败时只收集本 case 由公开 `exp` 产生的 opaque Record。
  */
 export function insightCaseArtifacts(): readonly ArtifactStageEntry[] {
-  return [
-    { source: ".niceeval", target: ".niceeval", optional: true },
-  ];
+  return [{ source: ".niceeval", target: ".niceeval", optional: true }];
 }
 
 export async function waitForViewReady(view: ProcessHandle): Promise<{ readonly url: string }> {
@@ -66,7 +59,7 @@ export async function assertPortReusable(port: number): Promise<void> {
     const probe = createServer();
     probe.once("error", reject);
     probe.listen(port, "127.0.0.1", () => {
-      probe.close((error) => error === undefined ? done() : reject(error));
+      probe.close((error) => (error === undefined ? done() : reject(error)));
     });
   });
 }

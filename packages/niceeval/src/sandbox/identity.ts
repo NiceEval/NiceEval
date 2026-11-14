@@ -7,12 +7,7 @@ import { createHash } from "node:crypto";
 import type { JsonValue } from "../shared/types.ts";
 
 /** 五类完整 case;与 case-types 同源字面量。 */
-export type SandboxCaseKind =
-  | "prebuilt"
-  | "on-demand-build"
-  | "compose"
-  | "cloud-compose"
-  | "custom";
+export type SandboxCaseKind = "prebuilt" | "on-demand-build" | "compose" | "cloud-compose" | "custom";
 
 /** 构建产物身份:同 key 应得同一构建结果。 */
 export type BuildKey = string;

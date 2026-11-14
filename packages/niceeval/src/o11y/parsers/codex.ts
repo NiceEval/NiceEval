@@ -84,12 +84,7 @@ function readUsage(u: unknown): { input: number; output: number; cacheRead: numb
     return 0;
   };
   const rawInput = num("input_tokens", "prompt_tokens", "inputTokens", "promptTokens");
-  const cacheRead = num(
-    "cached_input_tokens",
-    "cache_read_input_tokens",
-    "cache_read_tokens",
-    "cacheReadTokens",
-  );
+  const cacheRead = num("cached_input_tokens", "cache_read_input_tokens", "cache_read_tokens", "cacheReadTokens");
   // codex-rs TokenUsage 的 cached_input_tokens 是 input_tokens 的子集,落互斥桶前扣掉
   // (docs/feature/adapters/library/sdk/codex-cli/cost.md)
   const input = Math.max(0, rawInput - cacheRead);
@@ -171,7 +166,11 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
     command: CommandProjection,
   ): void => {
     startedCallIds.add(callId);
-    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool, command } });
+    events.push({
+      type: "operation.started",
+      operationId: callId,
+      operation: { kind: "tool", name, input, tool, command },
+    });
   };
 
   const emitResult = (
@@ -213,38 +212,45 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         const callId = baseId || nextSynthId("cmd");
         const command = get(item, "command") ?? get(get(item, "action"), "command");
         if (!isCompleted) {
-          emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
+          emitCall(
+            callId,
+            "command_execution",
+            { command } as JsonValue,
+            "shell",
+            opaqueCommandProjection("unsupported-protocol"),
+          );
           return;
         }
         if (!startedCallIds.has(callId)) {
-          emitCall(callId, "command_execution", { command } as JsonValue, "shell", opaqueCommandProjection("unsupported-protocol"));
+          emitCall(
+            callId,
+            "command_execution",
+            { command } as JsonValue,
+            "shell",
+            opaqueCommandProjection("unsupported-protocol"),
+          );
         }
         // `codex exec --json` uses snake_case while app-server v2 keeps the
         // protocol's camelCase fields after normalizeItem() rewrites only the
         // tagged-union type.  Both are public Codex transports and must close
         // to the same provider-neutral result.
         const exit = get(item, "exit_code") ?? get(item, "exitCode");
-        const output =
-          get(item, "aggregated_output") ??
-          get(item, "aggregatedOutput") ??
-          get(item, "output");
+        const output = get(item, "aggregated_output") ?? get(item, "aggregatedOutput") ?? get(item, "output");
         const statusStr = get(item, "status");
-        const status = statusStr === "declined" || statusStr === "rejected"
-          ? "rejected" as const
-          : exit === 0 || (exit == null && statusStr !== "failed" && statusStr !== "error")
-            ? "completed" as const
-            : "failed" as const;
-        const result = output === undefined && exit === undefined
-          ? undefined
-          : {
-              output: (output ?? null) as JsonValue,
-              exit_code: (exit ?? null) as JsonValue,
-            };
-        emitResult(
-          callId,
-          result,
-          status,
-        );
+        const status =
+          statusStr === "declined" || statusStr === "rejected"
+            ? ("rejected" as const)
+            : exit === 0 || (exit == null && statusStr !== "failed" && statusStr !== "error")
+              ? ("completed" as const)
+              : ("failed" as const);
+        const result =
+          output === undefined && exit === undefined
+            ? undefined
+            : {
+                output: (output ?? null) as JsonValue,
+                exit_code: (exit ?? null) as JsonValue,
+              };
+        emitResult(callId, result, status);
         return;
       }
 
@@ -252,8 +258,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         const callId = baseId || nextSynthId("mcp");
         const server = get(item, "server");
         const toolRaw = get(item, "tool") ?? get(item, "name") ?? "unknown";
-        const originalName =
-          typeof server === "string" ? `${server}.${String(toolRaw)}` : String(toolRaw);
+        const originalName = typeof server === "string" ? `${server}.${String(toolRaw)}` : String(toolRaw);
         const input = coerceArgs(get(item, "arguments") ?? get(item, "input"));
         if (!isCompleted) {
           emitCall(callId, originalName, input, normalizeToolName(String(toolRaw)), notCommandProjection());
@@ -400,11 +405,18 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
           const isShell = eventType === "local_shell_call";
           const nameRaw = isShell
             ? "shell"
-            : (get(data, "name") ?? get(get(data, "function"), "name") ?? get(data, "tool") ?? get(data, "action") ?? "unknown");
+            : (get(data, "name") ??
+              get(get(data, "function"), "name") ??
+              get(data, "tool") ??
+              get(data, "action") ??
+              "unknown");
           const name = String(nameRaw);
           const rawArgs = isShell
             ? (get(data, "action") ?? get(data, "input"))
-            : (get(get(data, "function"), "arguments") ?? get(data, "arguments") ?? get(data, "input") ?? get(data, "params"));
+            : (get(get(data, "function"), "arguments") ??
+              get(data, "arguments") ??
+              get(data, "input") ??
+              get(data, "params"));
           const input = coerceArgs(rawArgs);
           const explicit = get(data, "call_id") ?? get(data, "id") ?? get(data, "tool_call_id");
           const callId = explicit != null ? String(explicit) : nextSynthId("call");
@@ -425,8 +437,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         case "action_result":
         case "local_shell_call_output": {
           const explicit = get(data, "call_id") ?? get(data, "tool_call_id") ?? get(data, "id");
-          const callId =
-            explicit != null ? String(explicit) : pendingCallIds.shift() ?? nextSynthId("result");
+          const callId = explicit != null ? String(explicit) : (pendingCallIds.shift() ?? nextSynthId("result"));
           const rawOut = get(data, "output") ?? get(data, "result") ?? get(data, "content");
           const { output, status } = interpretOutput(rawOut, data);
           emitResult(callId, output, status);
@@ -503,8 +514,7 @@ function interpretOutput(
       parsed = rawOut;
     }
   }
-  const exit =
-    get(parsed, "exit_code") ?? get(parsed, "exitCode") ?? get(get(parsed, "metadata"), "exit_code");
+  const exit = get(parsed, "exit_code") ?? get(parsed, "exitCode") ?? get(get(parsed, "metadata"), "exit_code");
   if (typeof exit === "number") {
     return { output: (parsed ?? null) as JsonValue, status: exit === 0 ? "completed" : "failed" };
   }

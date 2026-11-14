@@ -2,18 +2,8 @@ import { Effect, Schema } from "effect";
 import { parse as parseYaml } from "yaml";
 
 import { PrDraftInvalid, PrGitHubFailure, PrInputInvalid } from "./errors.js";
-import type {
-  DraftMetadata,
-  GitHubPullRequest,
-  PrBodyEditorState,
-  PrBodyInput,
-  TestDirective,
-} from "./model.js";
-import {
-  PR_BODY_CASE_DIRECTIONS,
-  PR_BODY_CASE_SECTIONS,
-  PR_BODY_TERMINOLOGY_DIRECTIONS,
-} from "./model.js";
+import type { DraftMetadata, GitHubPullRequest, PrBodyEditorState, PrBodyInput, TestDirective } from "./model.js";
+import { PR_BODY_CASE_DIRECTIONS, PR_BODY_CASE_SECTIONS, PR_BODY_TERMINOLOGY_DIRECTIONS } from "./model.js";
 
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0));
 
@@ -90,22 +80,26 @@ const FragmentSpecSchema = Schema.Struct({
 
 const TestDirectiveFields = {
   path: Schema.NonEmptyString,
-  cases: Schema.NonEmptyArray(Schema.Struct({
-    selector: Schema.NonEmptyString,
-    behavior: Schema.NonEmptyString,
-    entry: Schema.NonEmptyString,
-    assertion: Schema.NonEmptyString,
-    escape: Schema.NonEmptyString,
-    issue: Schema.optional(Schema.NonEmptyString),
-  })),
-  source: Schema.optional(Schema.Union([
-    Schema.Literal("full"),
-    Schema.Literal("link"),
+  cases: Schema.NonEmptyArray(
     Schema.Struct({
-      fragments: Schema.NonEmptyArray(FragmentSpecSchema),
-      reason: Schema.NonEmptyString,
+      selector: Schema.NonEmptyString,
+      behavior: Schema.NonEmptyString,
+      entry: Schema.NonEmptyString,
+      assertion: Schema.NonEmptyString,
+      escape: Schema.NonEmptyString,
+      issue: Schema.optional(Schema.NonEmptyString),
     }),
-  ])),
+  ),
+  source: Schema.optional(
+    Schema.Union([
+      Schema.Literal("full"),
+      Schema.Literal("link"),
+      Schema.Struct({
+        fragments: Schema.NonEmptyArray(FragmentSpecSchema),
+        reason: Schema.NonEmptyString,
+      }),
+    ]),
+  ),
 };
 const TestDirectiveSchema = Schema.Struct(TestDirectiveFields);
 
@@ -191,8 +185,19 @@ const UseCaseFields = {
   explanation: Schema.NonEmptyString,
   language: Schema.optional(Schema.NonEmptyString),
 };
-const EditUseCaseSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("use-case-set"), ...EditorLocationFields, ...UseCaseFields });
-const EditUseCaseRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("use-case-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS), name: Schema.NonEmptyString });
+const EditUseCaseSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("use-case-set"),
+  ...EditorLocationFields,
+  ...UseCaseFields,
+});
+const EditUseCaseRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("use-case-remove"),
+  ...EditorLocationFields,
+  direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS),
+  name: Schema.NonEmptyString,
+});
 
 const RecordActionResultFields = {
   action: Schema.NonEmptyString,
@@ -234,18 +239,77 @@ const TerminologyFields = {
   canonical: Schema.NonEmptyString,
 };
 
-const EditRecordNewWriteSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-new-write-set"), ...EditorLocationFields, ...RecordActionResultFields });
-const EditRecordNewWriteRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-new-write-remove"), ...EditorLocationFields });
-const EditRecordExistingReadSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-existing-read-set"), ...EditorLocationFields, ...RecordActionResultFields });
-const EditRecordExistingReadRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-existing-read-remove"), ...EditorLocationFields });
-const EditRecordUpgradeSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-upgrade-set"), ...EditorLocationFields, ...RecordUpgradeFields });
-const EditRecordUpgradeRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-upgrade-remove"), ...EditorLocationFields });
-const EditRecordPrivateSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-private-set"), ...EditorLocationFields, ...PrivatePersistedFields });
-const EditRecordPrivateRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("record-private-remove"), ...EditorLocationFields, name: Schema.NonEmptyString });
-const EditEnvironmentSetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("environment-set"), ...EditorLocationFields, ...EnvironmentFields });
-const EditEnvironmentRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("environment-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS), name: Schema.NonEmptyString });
-const EditTerminologySetInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("terminology-set"), ...EditorLocationFields, ...TerminologyFields });
-const EditTerminologyRemoveInputSchema = Schema.Struct({ command: Schema.Literal("edit"), operation: Schema.Literal("terminology-remove"), ...EditorLocationFields, direction: Schema.Literals(PR_BODY_TERMINOLOGY_DIRECTIONS), name: Schema.NonEmptyString });
+const EditRecordNewWriteSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-new-write-set"),
+  ...EditorLocationFields,
+  ...RecordActionResultFields,
+});
+const EditRecordNewWriteRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-new-write-remove"),
+  ...EditorLocationFields,
+});
+const EditRecordExistingReadSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-existing-read-set"),
+  ...EditorLocationFields,
+  ...RecordActionResultFields,
+});
+const EditRecordExistingReadRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-existing-read-remove"),
+  ...EditorLocationFields,
+});
+const EditRecordUpgradeSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-upgrade-set"),
+  ...EditorLocationFields,
+  ...RecordUpgradeFields,
+});
+const EditRecordUpgradeRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-upgrade-remove"),
+  ...EditorLocationFields,
+});
+const EditRecordPrivateSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-private-set"),
+  ...EditorLocationFields,
+  ...PrivatePersistedFields,
+});
+const EditRecordPrivateRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("record-private-remove"),
+  ...EditorLocationFields,
+  name: Schema.NonEmptyString,
+});
+const EditEnvironmentSetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("environment-set"),
+  ...EditorLocationFields,
+  ...EnvironmentFields,
+});
+const EditEnvironmentRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("environment-remove"),
+  ...EditorLocationFields,
+  direction: Schema.Literals(PR_BODY_CASE_DIRECTIONS),
+  name: Schema.NonEmptyString,
+});
+const EditTerminologySetInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("terminology-set"),
+  ...EditorLocationFields,
+  ...TerminologyFields,
+});
+const EditTerminologyRemoveInputSchema = Schema.Struct({
+  command: Schema.Literal("edit"),
+  operation: Schema.Literal("terminology-remove"),
+  ...EditorLocationFields,
+  direction: Schema.Literals(PR_BODY_TERMINOLOGY_DIRECTIONS),
+  name: Schema.NonEmptyString,
+});
 
 export const PrBodyInputSchema = Schema.Union([
   InitInputSchema,
@@ -286,12 +350,14 @@ const PrBodyEditorStateSchema = Schema.Struct({
   closingIssues: Schema.optional(Schema.Array(PositiveInteger)),
   cases: Schema.Array(Schema.Struct(CaseFields)),
   useCases: Schema.Array(Schema.Struct(UseCaseFields)),
-  record: Schema.optional(Schema.Struct({
-    newWrite: Schema.optional(Schema.Struct(RecordActionResultFields)),
-    existingRead: Schema.optional(Schema.Struct(RecordActionResultFields)),
-    upgrade: Schema.optional(Schema.Struct(RecordUpgradeFields)),
-    privatePersisted: Schema.optional(Schema.Array(Schema.Struct(PrivatePersistedFields))),
-  })),
+  record: Schema.optional(
+    Schema.Struct({
+      newWrite: Schema.optional(Schema.Struct(RecordActionResultFields)),
+      existingRead: Schema.optional(Schema.Struct(RecordActionResultFields)),
+      upgrade: Schema.optional(Schema.Struct(RecordUpgradeFields)),
+      privatePersisted: Schema.optional(Schema.Array(Schema.Struct(PrivatePersistedFields))),
+    }),
+  ),
   environment: Schema.optional(Schema.Array(Schema.Struct(EnvironmentFields))),
   terminology: Schema.optional(Schema.Array(Schema.Struct(TerminologyFields))),
   tests: Schema.Array(TestDirectiveSchema),
@@ -316,41 +382,42 @@ function parseYamlUnknown(source: string, document: string): Effect.Effect<unkno
 
 export function decodePrBodyInput(input: unknown): Effect.Effect<PrBodyInput, PrInputInvalid> {
   return Schema.decodeUnknownEffect(PrBodyInputSchema, { errors: "all" })(input).pipe(
-    Effect.mapError((cause) => new PrInputInvalid({
-      message: String(cause),
-    })),
+    Effect.mapError(
+      (cause) =>
+        new PrInputInvalid({
+          message: String(cause),
+        }),
+    ),
   );
 }
 
-export function decodeDraftMetadata(
-  source: string,
-  document: string,
-): Effect.Effect<DraftMetadata, PrDraftInvalid> {
+export function decodeDraftMetadata(source: string, document: string): Effect.Effect<DraftMetadata, PrDraftInvalid> {
   return parseYamlUnknown(source, document).pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(DraftMetadataSchema, { errors: "all" })),
-    Effect.mapError((cause) => cause instanceof PrDraftInvalid
-      ? cause
-      : new PrDraftInvalid({
-          source,
-          message: `invalid niceeval:pr-body metadata: ${String(cause)}`,
-          cause,
-        })),
+    Effect.mapError((cause) =>
+      cause instanceof PrDraftInvalid
+        ? cause
+        : new PrDraftInvalid({
+            source,
+            message: `invalid niceeval:pr-body metadata: ${String(cause)}`,
+            cause,
+          }),
+    ),
   );
 }
 
-export function decodeTestDirective(
-  source: string,
-  document: string,
-): Effect.Effect<TestDirective, PrDraftInvalid> {
+export function decodeTestDirective(source: string, document: string): Effect.Effect<TestDirective, PrDraftInvalid> {
   return parseYamlUnknown(source, document).pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(TestDirectiveSchema, { errors: "all" })),
-    Effect.mapError((cause) => cause instanceof PrDraftInvalid
-      ? cause
-      : new PrDraftInvalid({
-          source,
-          message: `invalid niceeval:test directive: ${String(cause)}`,
-          cause,
-        })),
+    Effect.mapError((cause) =>
+      cause instanceof PrDraftInvalid
+        ? cause
+        : new PrDraftInvalid({
+            source,
+            message: `invalid niceeval:test directive: ${String(cause)}`,
+            cause,
+          }),
+    ),
   );
 }
 
@@ -360,29 +427,30 @@ export function decodePrBodyEditorState(
 ): Effect.Effect<PrBodyEditorState, PrDraftInvalid> {
   return parseYamlUnknown(source, document).pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(PrBodyEditorStateSchema, { errors: "all" })),
-    Effect.mapError((cause) => cause instanceof PrDraftInvalid
-      ? cause
-      : new PrDraftInvalid({
-          source,
-          message: `invalid niceeval:pr-editor state: ${String(cause)}`,
-          cause,
-        })),
+    Effect.mapError((cause) =>
+      cause instanceof PrDraftInvalid
+        ? cause
+        : new PrDraftInvalid({
+            source,
+            message: `invalid niceeval:pr-editor state: ${String(cause)}`,
+            cause,
+          }),
+    ),
   );
 }
 
-export function decodeGitHubPullRequest(
-  pr: number,
-  input: unknown,
-): Effect.Effect<GitHubPullRequest, PrGitHubFailure> {
+export function decodeGitHubPullRequest(pr: number, input: unknown): Effect.Effect<GitHubPullRequest, PrGitHubFailure> {
   return Schema.decodeUnknownEffect(GitHubPullRequestSchema, { errors: "all" })(input).pipe(
-    Effect.flatMap((value) => Effect.try({
-      try: () => {
-        const match = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(value.url);
-        if (match === null) throw new Error(`GitHub PR url has no repository identity: ${value.url}`);
-        return { ...value, headRepository: value.headRepository.nameWithOwner, baseRepository: match[1]! };
-      },
-      catch: (cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause }),
-    })),
+    Effect.flatMap((value) =>
+      Effect.try({
+        try: () => {
+          const match = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/.exec(value.url);
+          if (match === null) throw new Error(`GitHub PR url has no repository identity: ${value.url}`);
+          return { ...value, headRepository: value.headRepository.nameWithOwner, baseRepository: match[1]! };
+        },
+        catch: (cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause }),
+      }),
+    ),
     Effect.mapError((cause) => new PrGitHubFailure({ operation: "decode-view", pr, cause })),
   );
 }

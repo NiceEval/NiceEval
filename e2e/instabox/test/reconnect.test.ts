@@ -8,11 +8,13 @@ test.concurrent("commands and open stdin resume together after client disconnect
   await context.case("transport-reconnect", {}, async ({ commands: { niceeval }, paths }) => {
     const machines = join(paths.projectRoot, "machines.txt");
     const connections = join(paths.projectRoot, "connections.txt");
-    const result = await niceeval.run(["exp", "reconnect", "--rerun", "all", "--json"], { env: {
-      NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/machines.mjs")).href} --import=${pathToFileURL(join(paths.projectRoot, "fixtures/reconnect.mjs")).href}`,
-      NICEEVAL_TRANSPORT_MACHINES: machines,
-      NICEEVAL_TRANSPORT_CONNECTIONS: connections,
-    } });
+    const result = await niceeval.run(["exp", "reconnect", "--rerun", "all", "--json"], {
+      env: {
+        NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/machines.mjs")).href} --import=${pathToFileURL(join(paths.projectRoot, "fixtures/reconnect.mjs")).href}`,
+        NICEEVAL_TRANSPORT_MACHINES: machines,
+        NICEEVAL_TRANSPORT_CONNECTIONS: connections,
+      },
+    });
     await verifyMachinesAbsent(machines);
     const log = await readFile(connections, "utf8");
     console.info("Instabox command timing (single ms, total20 ms):", log.match(/^timing (.+)$/m)?.[1]);

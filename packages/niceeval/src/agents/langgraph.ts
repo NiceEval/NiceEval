@@ -130,12 +130,7 @@ export function createLangGraphEventStream(): LangGraphStream {
     };
   };
 
-  const emitStarted = (
-    events: StreamEvent[],
-    callId: string,
-    name: string,
-    input: unknown,
-  ): void => {
+  const emitStarted = (events: StreamEvent[], callId: string, name: string, input: unknown): void => {
     if (startedCallIds.has(callId)) return;
     startedCallIds.add(callId);
     events.push({
@@ -167,11 +162,7 @@ export function createLangGraphEventStream(): LangGraphStream {
     });
   };
 
-  const emitInputRequested = (
-    events: StreamEvent[],
-    interruptId: string,
-    payload: unknown,
-  ): void => {
+  const emitInputRequested = (events: StreamEvent[], interruptId: string, payload: unknown): void => {
     if (requestedInputIds.has(interruptId)) return;
     requestedInputIds.add(interruptId);
     const request: {
@@ -234,11 +225,7 @@ export function createLangGraphEventStream(): LangGraphStream {
     }
   };
 
-  const closeNamespace = (
-    events: StreamEvent[],
-    path: string,
-    terminalStatus: "completed" | "failed",
-  ): void => {
+  const closeNamespace = (events: StreamEvent[], path: string, terminalStatus: "completed" | "failed"): void => {
     if (!openNamespaces.has(path)) return;
     const descendants = [...openNamespaces]
       .filter((candidate) => candidate.startsWith(`${path}/`))
@@ -264,9 +251,7 @@ export function createLangGraphEventStream(): LangGraphStream {
   };
 
   const closeAllNamespaces = (events: StreamEvent[], terminalStatus: "completed" | "failed"): void => {
-    for (const path of [...openNamespaces].sort(
-      (left, right) => right.split("/").length - left.split("/").length,
-    )) {
+    for (const path of [...openNamespaces].sort((left, right) => right.split("/").length - left.split("/").length)) {
       if (openNamespaces.has(path)) closeNamespace(events, path, terminalStatus);
     }
   };
@@ -298,11 +283,7 @@ export function createLangGraphEventStream(): LangGraphStream {
     }
   };
 
-  const handleMessages = (
-    events: StreamEvent[],
-    event: LangGraphEventLike,
-    namespace: readonly string[],
-  ): void => {
+  const handleMessages = (events: StreamEvent[], event: LangGraphEventLike, namespace: readonly string[]): void => {
     const data = dataOf(event);
     const kind = str(data.event);
     const key = messageKey(event, namespace);
@@ -391,12 +372,7 @@ export function createLangGraphEventStream(): LangGraphStream {
       case "tool-error": {
         toolOutputDeltas.delete(callId);
         const rejected = rejectedCallIds.has(callId);
-        emitFinished(
-          events,
-          callId,
-          rejected ? undefined : str(data.message),
-          rejected ? "rejected" : "failed",
-        );
+        emitFinished(events, callId, rejected ? undefined : str(data.message), rejected ? "rejected" : "failed");
         break;
       }
       default:
@@ -404,11 +380,7 @@ export function createLangGraphEventStream(): LangGraphStream {
     }
   };
 
-  const handleLifecycle = (
-    events: StreamEvent[],
-    event: LangGraphEventLike,
-    namespace: readonly string[],
-  ): void => {
+  const handleLifecycle = (events: StreamEvent[], event: LangGraphEventLike, namespace: readonly string[]): void => {
     const data = dataOf(event);
     const lifecycle = str(data.event);
     if (namespace.length > 0) {

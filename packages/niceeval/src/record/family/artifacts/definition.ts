@@ -1,11 +1,5 @@
-import {
-  defineRecordAttachment,
-  RecordOwner,
-} from "../../attachment/index.ts";
-import {
-  ArtifactsAttachmentSchema,
-  validateArtifactsAttachment,
-} from "./schema.ts";
+import { defineRecordAttachment, RecordOwner } from "../../attachment/index.ts";
+import { ArtifactsAttachmentSchema, validateArtifactsAttachment } from "./schema.ts";
 
 /** Current Attempt-owned Artifacts fact; durable history is separate. */
 export const attemptArtifactsRecordAttachment = defineRecordAttachment({

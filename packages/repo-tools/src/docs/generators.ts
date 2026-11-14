@@ -41,8 +41,11 @@ function writeChangedOutputs(
 ): Effect.Effect<readonly string[], DocsFileError> {
   const changed = generated.filter(({ content, original }) => content !== original);
   if (dryRun) return Effect.succeed(changed.map(({ path }) => path));
-  return Effect.forEach(changed, ({ content, original, path }) =>
-    atomicWriteText(path, content, original).pipe(Effect.as(path)), { concurrency: 1 });
+  return Effect.forEach(
+    changed,
+    ({ content, original, path }) => atomicWriteText(path, content, original).pipe(Effect.as(path)),
+    { concurrency: 1 },
+  );
 }
 
 export function loadReferenceSources(): SourceMap {
@@ -89,11 +92,12 @@ export function loadBundledPages(): readonly ZhPage[] {
 export function generateReference(dryRun = false): Effect.Effect<CommandReceipt, DocsDomainError> {
   return Effect.try({
     try: compileReferenceOutputs,
-    catch: (error) => new DocsFileError({
-      operation: "compile public reference",
-      path: REFERENCE_OUTPUTS.join(","),
-      message: errorMessage(error),
-    }),
+    catch: (error) =>
+      new DocsFileError({
+        operation: "compile public reference",
+        path: REFERENCE_OUTPUTS.join(","),
+        message: errorMessage(error),
+      }),
   }).pipe(
     Effect.flatMap((generated) => writeChangedOutputs(generated, dryRun)),
     Effect.map((changedPaths) => ({
@@ -121,11 +125,12 @@ export function generateBundledIndex(dryRun = false): Effect.Effect<CommandRecei
         content: regenerateBundledIndex(template, [...loadBundledPages()]),
       };
     },
-    catch: (error) => new DocsFileError({
-      operation: "compile bundled docs index",
-      path: BUNDLED_INDEX_OUTPUT,
-      message: errorMessage(error),
-    }),
+    catch: (error) =>
+      new DocsFileError({
+        operation: "compile bundled docs index",
+        path: BUNDLED_INDEX_OUTPUT,
+        message: errorMessage(error),
+      }),
   }).pipe(
     Effect.flatMap((generated) => writeChangedOutputs([generated], dryRun)),
     Effect.map((changedPaths) => ({
@@ -143,24 +148,29 @@ export function generateBundledIndex(dryRun = false): Effect.Effect<CommandRecei
 export function generateDiffCode(dryRun = false): Effect.Effect<CommandReceipt, DocsDomainError> {
   return Effect.tryPromise({
     try: () => compileDiffCode(REPOSITORY_ROOT),
-    catch: (error) => new DocsFileError({
-      operation: "compile code diff",
-      path: "apps/docs-site",
-      message: errorMessage(error),
-    }),
-  }).pipe(
-    Effect.flatMap((outputs) => Effect.try({
-      try: () => outputs.map(({ content, path }) => ({
-        path,
-        content,
-        original: readFileSync(absolutePath(path), "utf8"),
-      })),
-      catch: (error) => new DocsFileError({
-        operation: "read code diff output",
+    catch: (error) =>
+      new DocsFileError({
+        operation: "compile code diff",
         path: "apps/docs-site",
         message: errorMessage(error),
       }),
-    })),
+  }).pipe(
+    Effect.flatMap((outputs) =>
+      Effect.try({
+        try: () =>
+          outputs.map(({ content, path }) => ({
+            path,
+            content,
+            original: readFileSync(absolutePath(path), "utf8"),
+          })),
+        catch: (error) =>
+          new DocsFileError({
+            operation: "read code diff output",
+            path: "apps/docs-site",
+            message: errorMessage(error),
+          }),
+      }),
+    ),
     Effect.flatMap((generated) => writeChangedOutputs(generated, dryRun)),
     Effect.map((changedPaths) => ({
       format: "niceeval.docs-command-receipt/v1" as const,
@@ -179,16 +189,15 @@ interface DocsSitePreparation {
   readonly summary: string;
 }
 
-const findDocsNodeBin = Effect.fn("findDocsNodeBin")(function*() {
+const findDocsNodeBin = Effect.fn("findDocsNodeBin")(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const executable = process.platform === "win32" ? "node.exe" : "node";
-  const output = (command: string, args: readonly string[]) => spawner.string(
-    ChildProcess.make(command, args),
-  ).pipe(
-    Effect.timeout("3 seconds"),
-    Effect.catch(() => Effect.succeed("")),
-    Effect.map((value) => value.trim()),
-  );
+  const output = (command: string, args: readonly string[]) =>
+    spawner.string(ChildProcess.make(command, args)).pipe(
+      Effect.timeout("3 seconds"),
+      Effect.catch(() => Effect.succeed("")),
+      Effect.map((value) => value.trim()),
+    );
   const candidates = new Set([
     process.env.NICEEVAL_DOCS_NODE_BIN,
     "/opt/homebrew/opt/node@24/bin",
@@ -210,8 +219,10 @@ const findDocsNodeBin = Effect.fn("findDocsNodeBin")(function*() {
   return undefined;
 });
 
-const prepareDocsSite = Effect.fn("prepareDocsSite")(function*(): Effect.fn.Return<
-  DocsSitePreparation, DocsFileError, ChildProcessSpawner.ChildProcessSpawner
+const prepareDocsSite = Effect.fn("prepareDocsSite")(function* (): Effect.fn.Return<
+  DocsSitePreparation,
+  DocsFileError,
+  ChildProcessSpawner.ChildProcessSpawner
 > {
   const cacheSummary = yield* Effect.try({
     try: () => {
@@ -226,11 +237,12 @@ const prepareDocsSite = Effect.fn("prepareDocsSite")(function*(): Effect.fn.Retu
 
       return cacheSummary;
     },
-    catch: (error) => new DocsFileError({
-      operation: "prepare docs site",
-      path: join(homedir(), ".mintlify", "mint"),
-      message: errorMessage(error),
-    }),
+    catch: (error) =>
+      new DocsFileError({
+        operation: "prepare docs site",
+        path: join(homedir(), ".mintlify", "mint"),
+        message: errorMessage(error),
+      }),
   });
   if (Number(process.versions.node.split(".")[0]) === 24) {
     return { path: undefined, summary: cacheSummary };
@@ -240,7 +252,8 @@ const prepareDocsSite = Effect.fn("prepareDocsSite")(function*(): Effect.fn.Retu
     return yield* new DocsFileError({
       operation: "prepare docs site",
       path: join(homedir(), ".mintlify", "mint"),
-      message: `NiceEval docs require Node 24; current version is ${process.versions.node}. ` +
+      message:
+        `NiceEval docs require Node 24; current version is ${process.versions.node}. ` +
         "Install Node 24 or set NICEEVAL_DOCS_NODE_BIN to its bin directory.",
     });
   }
@@ -252,10 +265,7 @@ const prepareDocsSite = Effect.fn("prepareDocsSite")(function*(): Effect.fn.Retu
 
 export type DocsSiteOperation = "prepare" | "dev" | "validate" | "links";
 
-const siteArgs = (
-  operation: DocsSiteOperation,
-  forwardedArgs: readonly string[],
-): readonly string[] => {
+const siteArgs = (operation: DocsSiteOperation, forwardedArgs: readonly string[]): readonly string[] => {
   switch (operation) {
     case "prepare":
       return ["--version"];
@@ -272,7 +282,7 @@ export function runDocsSite(
   operation: DocsSiteOperation,
   forwardedArgs: readonly string[] = [],
 ): Effect.Effect<CommandReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const preparation = yield* prepareDocsSite();
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     const args = siteArgs(operation, forwardedArgs);
@@ -283,14 +293,19 @@ export function runDocsSite(
       stderr: "inherit",
       ...(preparation.path === undefined ? {} : { env: { PATH: preparation.path }, extendEnv: true }),
     });
-    const exitCode = yield* Effect.scoped(command.pipe(
-      Effect.flatMap((child) => child.exitCode),
-      Effect.map(Number),
-      Effect.mapError((error) => new DocsProcessError({
-        command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,
-        message: error instanceof Error ? error.message : String(error),
-      })),
-    ));
+    const exitCode = yield* Effect.scoped(
+      command.pipe(
+        Effect.flatMap((child) => child.exitCode),
+        Effect.map(Number),
+        Effect.mapError(
+          (error) =>
+            new DocsProcessError({
+              command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+        ),
+      ),
+    );
     if (exitCode !== 0) {
       return yield* new DocsProcessError({
         command: `npx --yes mint@${MINT_VERSION} ${args.join(" ")}`,

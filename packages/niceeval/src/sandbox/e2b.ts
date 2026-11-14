@@ -11,17 +11,8 @@ import { sandboxCreationMetadata } from "./cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type {
-  CommandResult,
-  CommandOptions,
-  SandboxReuseCapability,
-  SuccessfulCommandResult,
-} from "../types.ts";
-import {
-  classifyProvisionErrorFallback,
-  isRetryableProvisionError,
-  type SandboxProvisionErrorKind,
-} from "./errors.ts";
+import type { CommandResult, CommandOptions, SandboxReuseCapability, SuccessfulCommandResult } from "../types.ts";
+import { classifyProvisionErrorFallback, isRetryableProvisionError, type SandboxProvisionErrorKind } from "./errors.ts";
 import { classifySandboxIoError } from "./errors.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
@@ -30,8 +21,12 @@ import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
-import { supportedBackendCapability, unsupportedBackendCapability, unsupportedBackendCapabilityBecause, type SandboxProviderBackend } from "./backend.ts";
-
+import {
+  supportedBackendCapability,
+  unsupportedBackendCapability,
+  unsupportedBackendCapabilityBecause,
+  type SandboxProviderBackend,
+} from "./backend.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
@@ -66,9 +61,7 @@ function raceCommandOutcomes<const Outcomes extends readonly [Promise<unknown>, 
  * 可被 parser 当成一整帧的 prefix/suffix；实际字节仍由同一个 bash supervisor 生成。
  */
 function shellByteEscapes(value: string): string {
-  return [...Buffer.from(value, "utf8")]
-    .map((byte) => `\\x${byte.toString(16).padStart(2, "0")}`)
-    .join("");
+  return [...Buffer.from(value, "utf8")].map((byte) => `\\x${byte.toString(16).padStart(2, "0")}`).join("");
 }
 
 /** 当前内容仍可能是 `digits + suffix` 的跨 chunk 前缀。 */
@@ -98,7 +91,9 @@ class E2BCommandCompletion {
     stdout: { pending: "", output: "", markerStarted: false, complete: false },
     stderr: { pending: "", output: "", markerStarted: false, complete: false },
   };
-  private readonly callbacks: Partial<globalThis.Record<E2BCommandOutputChannel, (chunk: string) => void | Promise<void>>>;
+  private readonly callbacks: Partial<
+    globalThis.Record<E2BCommandOutputChannel, (chunk: string) => void | Promise<void>>
+  >;
   private readonly resolveCompletion: (exitCode: number) => void;
   private readonly rejectCompletion: (error: Error) => void;
 
@@ -129,7 +124,7 @@ class E2BCommandCompletion {
       script,
       ") &",
       "__niceeval_e2b_command_pid=$!",
-      "if wait \"$__niceeval_e2b_command_pid\"; then",
+      'if wait "$__niceeval_e2b_command_pid"; then',
       "  __niceeval_e2b_command_exit=0",
       "else",
       "  __niceeval_e2b_command_exit=$?",
@@ -138,7 +133,7 @@ class E2BCommandCompletion {
       `__niceeval_e2b_command_suffix=$(printf '%b' ${encodedSuffix})`,
       `printf '%s%s%s' \"$__niceeval_e2b_command_prefix\" \"$__niceeval_e2b_command_exit\" \"$__niceeval_e2b_command_suffix\"`,
       `printf '%s%s%s' \"$__niceeval_e2b_command_prefix\" \"$__niceeval_e2b_command_exit\" \"$__niceeval_e2b_command_suffix\" >&2`,
-      "exit \"$__niceeval_e2b_command_exit\"",
+      'exit "$__niceeval_e2b_command_exit"',
     ].join("\n");
   }
 
@@ -269,7 +264,9 @@ class E2BCommandCompletion {
     const stdoutExit = this.states.stdout.exitCode;
     const stderrExit = this.states.stderr.exitCode;
     if (stdoutExit === undefined || stderrExit === undefined || stdoutExit === stderrExit) return undefined;
-    return new Error(`e2b command completion markers disagreed on exit code: stdout=${stdoutExit}, stderr=${stderrExit}`);
+    return new Error(
+      `e2b command completion markers disagreed on exit code: stdout=${stdoutExit}, stderr=${stderrExit}`,
+    );
   }
 }
 
@@ -346,9 +343,7 @@ type E2BReconcileListPage = Awaited<ReturnType<E2BReconcilePaginator["nextItems"
  * 等待用 `Effect.sleep`(Clock)、SDK Promise 在 `tryPromise` 边界适配一次,
  * 原始错误对象原样留在失败通道,耗尽重试时抛回的是同一个对象。
  */
-function fetchNextItemsWithRetryEffect(
-  paginator: E2BReconcilePaginator,
-): Effect.Effect<E2BReconcileListPage, unknown> {
+function fetchNextItemsWithRetryEffect(paginator: E2BReconcilePaginator): Effect.Effect<E2BReconcileListPage, unknown> {
   const attempt = (n: number): Effect.Effect<E2BReconcileListPage, unknown> =>
     Effect.tryPromise({
       try: () => paginator.nextItems(),
@@ -356,7 +351,11 @@ function fetchNextItemsWithRetryEffect(
     }).pipe(
       Effect.flatMap((items) => {
         if (Array.isArray(items)) return Effect.succeed(items);
-        return Effect.fail(new Error(`e2b Sandbox.list() paginator nextItems() returned a non-array (${typeof items}), not the SandboxInfo[] promised by the SDK type contract`));
+        return Effect.fail(
+          new Error(
+            `e2b Sandbox.list() paginator nextItems() returned a non-array (${typeof items}), not the SandboxInfo[] promised by the SDK type contract`,
+          ),
+        );
       }),
       Effect.catch((error) => {
         const kind = classifyProvisionErrorFallback(error);
@@ -392,7 +391,9 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   private readonly userOverride?: string;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
-  get nativeInstanceId(): string { return this.sandboxId; }
+  get nativeInstanceId(): string {
+    return this.sandboxId;
+  }
   sandboxId: string;
 
   private deadlineAt?: number;
@@ -405,9 +406,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     managedProcess: unsupportedBackendCapabilityBecause(
       "E2B managed processes are not enabled until the provider boundary has a public installed-candidate E2E owner",
     ),
-
   };
-
 
   private constructor(
     sbx: E2BSdkSandbox,
@@ -440,7 +439,9 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
    * 伪装成「作者声明生效了」,而症状要到 attempt 跑到一半、实例被回收时才出现,那时只剩一句
    * 无归属的 sandbox 消失。宁可在这里如实报 `ready: false` 让 runner 轮换实例。
    */
-  async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
+  async ensureLifetime(
+    minRemainingMs: number,
+  ): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
     try {
       const remainingMs = async () => (await this.sbx.getInfo()).endAt.getTime() - Date.now();
       const before = await remainingMs();
@@ -540,9 +541,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
     // envs 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
     // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
-    const scriptWithPath = this.pathPrepend.length > 0
-      ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}`
-      : script;
+    const scriptWithPath =
+      this.pathPrepend.length > 0 ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}` : script;
     const completion = new E2BCommandCompletion(scriptWithPath, opts);
     // Attach a rejection handler before starting the SDK command. A malformed marker can reject while
     // commands.run() is still delivering its initial events; keeping this outcome fulfilled avoids an
@@ -558,37 +558,39 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     let commandHandle: E2BCommandHandle | undefined;
     let handleCancellation: Promise<void> | undefined;
     let resolveAbort: ((outcome: { readonly _tag: "Aborted"; readonly reason: unknown }) => void) | undefined;
-    const abortOutcome = signal === undefined
-      ? undefined
-      : new Promise<{ readonly _tag: "Aborted"; readonly reason: unknown }>((resolve) => {
-          resolveAbort = resolve;
-        });
-    const onAbort = signal === undefined
-      ? undefined
-      : () => {
-          if (aborted) return;
-          // This flag must change synchronously. Marker delivery can finish while kill() is still in
-          // flight; every success path checks it before settling and awaits the same retirement.
-          aborted = true;
-          cancellationReason = signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
-          // E2B cannot cancel commands.run() before it yields a handle. Once a handle is
-          // available, kill is the provider operation that terminates the real command;
-          // disconnect only releases its event transport. A handle that arrives after this
-          // branch is handled by commandStartOutcome below.
-          if (commandHandle !== undefined) {
-            handleCancellation ??= this.cancelCommandHandle(commandHandle);
-          }
-          abortRetirement ??= Promise.all([
-            handleCancellation?.catch(() => undefined),
-            this.retire().catch(() => undefined),
-          ]).then(() => undefined);
-          // Cancellation waits for retirement to settle, but a kill transport failure must not
-          // replace the caller's AbortSignal reason. A later stop() may retry a failed kill.
-          void abortRetirement.then(
-            () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
-            () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
-          );
-        };
+    const abortOutcome =
+      signal === undefined
+        ? undefined
+        : new Promise<{ readonly _tag: "Aborted"; readonly reason: unknown }>((resolve) => {
+            resolveAbort = resolve;
+          });
+    const onAbort =
+      signal === undefined
+        ? undefined
+        : () => {
+            if (aborted) return;
+            // This flag must change synchronously. Marker delivery can finish while kill() is still in
+            // flight; every success path checks it before settling and awaits the same retirement.
+            aborted = true;
+            cancellationReason = signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
+            // E2B cannot cancel commands.run() before it yields a handle. Once a handle is
+            // available, kill is the provider operation that terminates the real command;
+            // disconnect only releases its event transport. A handle that arrives after this
+            // branch is handled by commandStartOutcome below.
+            if (commandHandle !== undefined) {
+              handleCancellation ??= this.cancelCommandHandle(commandHandle);
+            }
+            abortRetirement ??= Promise.all([
+              handleCancellation?.catch(() => undefined),
+              this.retire().catch(() => undefined),
+            ]).then(() => undefined);
+            // Cancellation waits for retirement to settle, but a kill transport failure must not
+            // replace the caller's AbortSignal reason. A later stop() may retry a failed kill.
+            void abortRetirement.then(
+              () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
+              () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
+            );
+          };
     const throwIfAborted = async (): Promise<void> => {
       if (!aborted) return;
       await abortRetirement?.catch(() => undefined);
@@ -628,10 +630,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         },
         (error: unknown) => ({ _tag: "HandleFailed" as const, error }),
       );
-      const startOutcome = await raceCommandOutcomes([
-        commandStartOutcome,
-        ...(abortOutcome ? [abortOutcome] : []),
-      ]);
+      const startOutcome = await raceCommandOutcomes([commandStartOutcome, ...(abortOutcome ? [abortOutcome] : [])]);
       await throwIfAborted();
       if (startOutcome._tag === "Aborted") throw startOutcome.reason;
       if (startOutcome._tag === "HandleFailed") throw startOutcome.error;
@@ -705,9 +704,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   }
 
   /** Best-effort leaf cancellation after E2B has returned a command handle. */
-  private async cancelCommandHandle(
-    handle: E2BCommandHandle,
-  ): Promise<void> {
+  private async cancelCommandHandle(handle: E2BCommandHandle): Promise<void> {
     await handle.kill().catch(() => undefined);
     await handle.disconnect().catch(() => undefined);
     await this.retire().catch(() => undefined);
@@ -832,7 +829,6 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   async suspend(): Promise<void> {
     await this.sbx.pause();
   }
-
 }
 
 /** Uint8Array → ArrayBuffer(e2b files.write 接受 string | ArrayBuffer | Blob | ReadableStream)。 */

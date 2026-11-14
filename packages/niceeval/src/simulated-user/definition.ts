@@ -55,7 +55,10 @@ export class SimulatedUserError extends Error {
     cause?: unknown,
     diagnostic?: string,
   ) {
-    super(`${code}: ${reason}${diagnostic === undefined ? "" : `: ${diagnostic}`}`, cause === undefined ? undefined : { cause });
+    super(
+      `${code}: ${reason}${diagnostic === undefined ? "" : `: ${diagnostic}`}`,
+      cause === undefined ? undefined : { cause },
+    );
     this.name = "SimulatedUserError";
   }
 }

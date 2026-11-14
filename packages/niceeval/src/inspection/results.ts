@@ -4,7 +4,13 @@ import { RUN_ACTIVITY_PHASES } from "../record/family/protocol-values.ts";
 import { AttemptNotesSchema, AttemptNoteSchema } from "../record/family/attempt-note/schema.ts";
 import { CacheReadReportSchema } from "../o11y/cache-read.ts";
 import * as Schema from "effect/Schema";
-import { PlannedAttemptSchema, InspectionAttemptCoreSchema, InspectionRunCoreSchema, InspectionMemberSchema, PlannedAttemptPublicationSchema } from "./planned-attempt.ts";
+import {
+  PlannedAttemptSchema,
+  InspectionAttemptCoreSchema,
+  InspectionRunCoreSchema,
+  InspectionMemberSchema,
+  PlannedAttemptPublicationSchema,
+} from "./planned-attempt.ts";
 import {
   AdapterCallPriceReceiptSchema,
   AdapterUsageCallSchema,
@@ -12,10 +18,14 @@ import {
 } from "../record/family/adapter-usage/schema.ts";
 import { CollectionStateSchema, NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
 import {
-  JudgeUsageCallSchema, JudgePriceReceiptSchema, validateJudgeUsageAttachment,
+  JudgeUsageCallSchema,
+  JudgePriceReceiptSchema,
+  validateJudgeUsageAttachment,
 } from "../record/family/judge-usage/schema.ts";
 import {
-  compareJudgeUsageCalls, JUDGE_USAGE_PREVIEW_BYTE_LIMIT, JUDGE_USAGE_PREVIEW_CALL_LIMIT,
+  compareJudgeUsageCalls,
+  JUDGE_USAGE_PREVIEW_BYTE_LIMIT,
+  JUDGE_USAGE_PREVIEW_CALL_LIMIT,
 } from "../o11y/judge-usage-projection.ts";
 import { utf8ByteLength } from "./bytes.ts";
 import { CurrencyCodeSchema } from "../record/family/source-receipt/codec.ts";
@@ -28,16 +38,12 @@ import {
   SourceItemIdSchema,
   UtcMillisSchema,
 } from "../record/codec/identifiers.ts";
-import {
-  AgentTurnUsageObservationSchema,
-} from "../record/family/agent-turns/schema.ts";
+import { AgentTurnUsageObservationSchema } from "../record/family/agent-turns/schema.ts";
 import {
   ExecutionTraceEventRecordSchema,
   ExecutionTraceHeaderRecordSchema,
 } from "../record/family/execution-traces/schema.ts";
-import {
-  FileChangesCollectionLimitationSchema,
-} from "../record/family/file-changes/schema.ts";
+import { FileChangesCollectionLimitationSchema } from "../record/family/file-changes/schema.ts";
 import { SourceReceiptLimitationSchema } from "../record/family/source-receipt/index.ts";
 import {
   ACTIVITY_OUTCOMES,
@@ -46,41 +52,31 @@ import {
   COMMAND_TERMINATION_REASONS,
   SANDBOX_COMMAND_PHASES,
 } from "../record/family/protocol-values.ts";
-import {
-  SessionScopeIdSchema,
-  TurnIdSchema,
-} from "../record/family/source-receipt/codec.ts";
-import {
-  isCommandId,
-  isItemId,
-  isToolOccurrenceId,
-} from "../record/family/source-receipt/model.ts";
-import {
-  RunStateSchema,
-  RunSummarySchema,
-} from "../run/index.ts";
-import {
-  AdapterIdentitySchema,
-  RunContextSchema,
-} from "../record/model/run-context.ts";
-import type {
-  InspectionOperationId,
-  InspectionSuccessDocument,
-  InspectionSuccessDocumentFor,
-} from "./protocol.ts";
+import { SessionScopeIdSchema, TurnIdSchema } from "../record/family/source-receipt/codec.ts";
+import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
+import { RunStateSchema, RunSummarySchema } from "../run/index.ts";
+import { AdapterIdentitySchema, RunContextSchema } from "../record/model/run-context.ts";
+import type { InspectionOperationId, InspectionSuccessDocument, InspectionSuccessDocumentFor } from "./protocol.ts";
 
-const MetricStateSchema = Schema.Literals([
-  "available", "partial", "unavailable", "empty", "unsupported", "failed",
-]);
+const MetricStateSchema = Schema.Literals(["available", "partial", "unavailable", "empty", "unsupported", "failed"]);
 const ItemIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isItemId)));
 const ToolOccurrenceIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isToolOccurrenceId)));
 const CommandIdSchema = Schema.String.pipe(Schema.check(Schema.makeFilter(isCommandId)));
 const AssertionLimitationSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("redacted"), fieldCount: Schema.Number }),
-  Schema.Struct({ kind: Schema.Literal("sampled"), captured: Schema.Number, knownTotal: Schema.optional(Schema.Number) }),
+  Schema.Struct({
+    kind: Schema.Literal("sampled"),
+    captured: Schema.Number,
+    knownTotal: Schema.optional(Schema.Number),
+  }),
   Schema.Struct({ kind: Schema.Literal("truncated"), omittedBytes: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("provider-limited") }),
-  Schema.Struct({ kind: Schema.Literal("capacity-limited"), capturedItems: Schema.Number, knownTotalItems: Schema.Number, omittedBytes: Schema.NullOr(Schema.Number) }),
+  Schema.Struct({
+    kind: Schema.Literal("capacity-limited"),
+    capturedItems: Schema.Number,
+    knownTotalItems: Schema.Number,
+    omittedBytes: Schema.NullOr(Schema.Number),
+  }),
 ]);
 const OverviewIssueSchema = Schema.Union([
   Schema.Struct({
@@ -130,7 +126,20 @@ const OverviewCoverageSchema = Schema.Union([
     entryId: Schema.String,
     groupPath: Schema.Array(Schema.String),
     state: Schema.Literals(["complete", "partial", "unavailable", "not-applicable"]),
-    reason: Schema.optional(Schema.Literals(["sampled", "truncated", "redacted", "provider-limited", "capacity-limited", "not-collected", "source-unavailable", "producer-failed", "optional-material", "unsupported-subject"])),
+    reason: Schema.optional(
+      Schema.Literals([
+        "sampled",
+        "truncated",
+        "redacted",
+        "provider-limited",
+        "capacity-limited",
+        "not-collected",
+        "source-unavailable",
+        "producer-failed",
+        "optional-material",
+        "unsupported-subject",
+      ]),
+    ),
     limitations: Schema.Array(AssertionLimitationSchema),
   }),
 ]);
@@ -159,7 +168,15 @@ const AggregateFields = {
   issues: Schema.Array(OverviewIssueSchema),
 } as const;
 export const PlannedAttemptMetricsSchema = Schema.Struct({
-  stoppedAt: Schema.optional(Schema.Union([Schema.Struct({ state: Schema.Literal("available"), value: Schema.NullOr(Schema.Struct({ entryId: Schema.String, label: Schema.String })) }), Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") })])),
+  stoppedAt: Schema.optional(
+    Schema.Union([
+      Schema.Struct({
+        state: Schema.Literal("available"),
+        value: Schema.NullOr(Schema.Struct({ entryId: Schema.String, label: Schema.String })),
+      }),
+      Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
+    ]),
+  ),
   verdict: Schema.NullOr(Schema.Literals(["passed", "failed", "errored", "skipped"])),
   score: MetricSchema,
   costUSD: CostMetricSchema,
@@ -180,10 +197,7 @@ const InspectionExecutionValueSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("mixed") }),
   Schema.Struct({ state: Schema.Literal("unavailable") }),
 ]);
-const InspectionLabelsSchema = Schema.Record(
-  Schema.String,
-  InspectionExecutionValueSchema,
-);
+const InspectionLabelsSchema = Schema.Record(Schema.String, InspectionExecutionValueSchema);
 const OverviewMemberSchema = Schema.Struct({
   ...PlannedAttemptMemberSchema.fields,
   runId: Schema.String,
@@ -220,30 +234,52 @@ export const InspectionOverviewResultSchema = Schema.Struct({
 export type InspectionOverviewResult = Schema.Schema.Type<typeof InspectionOverviewResultSchema>;
 
 export const InspectionExperimentResultSchema = Schema.Struct({
-  notes: Schema.Array(Schema.Struct({ label: Schema.String, unit: AttemptNoteSchema.fields.unit,
-    count: NonNegativeSafeIntegerSchema, min: Schema.Finite, median: Schema.Finite, p90: Schema.Finite, max: Schema.Finite })),
+  notes: Schema.Array(
+    Schema.Struct({
+      label: Schema.String,
+      unit: AttemptNoteSchema.fields.unit,
+      count: NonNegativeSafeIntegerSchema,
+      min: Schema.Finite,
+      median: Schema.Finite,
+      p90: Schema.Finite,
+      max: Schema.Finite,
+    }),
+  ),
   costSummary: Schema.suspend(() => ExperimentCostSummarySchema),
   modelUsage: Schema.Struct({
-    attempts: Schema.Array(Schema.Struct({
-      locator: Schema.String,
-      originRunId: Schema.String,
-      usage: Schema.suspend(() => Schema.Struct({
-        state: InspectionAttemptUsageResultSchema.fields.state,
-        configuredModels: InspectionAttemptUsageResultSchema.fields.configuredModels,
-        modelGroups: InspectionAttemptUsageResultSchema.fields.modelGroups,
-        judgeUsage: JudgeUsageSummarySchema,
-        totalCosts: InspectionAttemptUsageResultSchema.fields.totalCosts,
-        totals: InspectionAttemptUsageResultSchema.fields.totals,
-      })),
-    })),
+    attempts: Schema.Array(
+      Schema.Struct({
+        locator: Schema.String,
+        originRunId: Schema.String,
+        usage: Schema.suspend(() =>
+          Schema.Struct({
+            state: InspectionAttemptUsageResultSchema.fields.state,
+            configuredModels: InspectionAttemptUsageResultSchema.fields.configuredModels,
+            modelGroups: InspectionAttemptUsageResultSchema.fields.modelGroups,
+            judgeUsage: JudgeUsageSummarySchema,
+            totalCosts: InspectionAttemptUsageResultSchema.fields.totalCosts,
+            totals: InspectionAttemptUsageResultSchema.fields.totals,
+          }),
+        ),
+      }),
+    ),
     totalAttemptCount: NonNegativeSafeIntegerSchema,
     omittedAttemptCount: NonNegativeSafeIntegerSchema,
     unresolvedAttemptCount: NonNegativeSafeIntegerSchema,
-  }).check(Schema.makeFilter((usage) => usage.attempts.length <= 64 &&
-    usage.totalAttemptCount === usage.attempts.length + usage.omittedAttemptCount &&
-    usage.attempts.every((entry, index) => index === 0 ||
-      usage.attempts[index - 1]!.originRunId < entry.originRunId ||
-      usage.attempts[index - 1]!.originRunId === entry.originRunId && usage.attempts[index - 1]!.locator < entry.locator))),
+  }).check(
+    Schema.makeFilter(
+      (usage) =>
+        usage.attempts.length <= 64 &&
+        usage.totalAttemptCount === usage.attempts.length + usage.omittedAttemptCount &&
+        usage.attempts.every(
+          (entry, index) =>
+            index === 0 ||
+            usage.attempts[index - 1]!.originRunId < entry.originRunId ||
+            (usage.attempts[index - 1]!.originRunId === entry.originRunId &&
+              usage.attempts[index - 1]!.locator < entry.locator),
+        ),
+    ),
+  ),
   experiment: OverviewExperimentSchema,
   cells: Schema.Array(OverviewCellSchema),
 });
@@ -319,13 +355,15 @@ const SectionsSchema = Schema.Struct({
 });
 const AssertionIndexSchema = Schema.Struct({
   state: Schema.Literals(["available", "not-recorded", "invalid"]),
-  entries: Schema.Array(Schema.Struct({
-    entryId: Schema.String,
-    display: Schema.Struct({
-      label: Schema.optional(Schema.String),
-      groupPath: Schema.Array(Schema.String),
+  entries: Schema.Array(
+    Schema.Struct({
+      entryId: Schema.String,
+      display: Schema.Struct({
+        label: Schema.optional(Schema.String),
+        groupPath: Schema.Array(Schema.String),
+      }),
     }),
-  })),
+  ),
 });
 const AssertionEvidenceSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded"), entryCount: Schema.Literal(0) }),
@@ -342,7 +380,13 @@ const AssertionEvidenceSchema = Schema.Union([
 export const InspectionAttemptResultSchema = Schema.Struct({
   notes: AttemptNotesSchema,
   diagnostics: Schema.suspend(() => TraceDiagnosticsSchema),
-  stoppedAt: Schema.Union([Schema.Struct({ state: Schema.Literal("available"), value: Schema.NullOr(Schema.Struct({ entryId: Schema.String, label: Schema.String })) }), Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") })]),
+  stoppedAt: Schema.Union([
+    Schema.Struct({
+      state: Schema.Literal("available"),
+      value: Schema.NullOr(Schema.Struct({ entryId: Schema.String, label: Schema.String })),
+    }),
+    Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
+  ]),
   core: InspectionAttemptCoreSchema,
   locator: Schema.String,
   originRun: InspectionRunCoreSchema,
@@ -397,13 +441,15 @@ const SourcesAssertionsSchema = Schema.Union([
 ]);
 export const InspectionSourcesResultSchema = Schema.Struct({
   state: Schema.Literals(["available", "not-recorded", "invalid"]),
-  items: Schema.Array(Schema.Struct({
-    sourceItemId: Schema.String,
-    path: Schema.String,
-    byteLength: Schema.Number,
-    sha256: Schema.String,
-    content: SourceContentSchema,
-  })),
+  items: Schema.Array(
+    Schema.Struct({
+      sourceItemId: Schema.String,
+      path: Schema.String,
+      byteLength: Schema.Number,
+      sha256: Schema.String,
+      content: SourceContentSchema,
+    }),
+  ),
   hasMore: Schema.Boolean,
   omittedItemCount: Schema.Number,
   assertions: SourcesAssertionsSchema,
@@ -424,10 +470,7 @@ const TraceProjectionLimitationSchema = Schema.Union([
   Schema.Struct({
     source: Schema.Literal("turn-contexts"),
     state: Schema.Literals(["partial", "not-recorded", "invalid"]),
-    limitations: Schema.Array(Schema.Union([
-      SourceReceiptLimitationSchema,
-      Schema.Struct({ issue: Schema.String }),
-    ])),
+    limitations: Schema.Array(Schema.Union([SourceReceiptLimitationSchema, Schema.Struct({ issue: Schema.String })])),
   }),
 ]);
 const TurnOutcomeSchema = Schema.Literals(AGENT_TURN_OUTCOMES);
@@ -435,11 +478,7 @@ const TraceTurnContextSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded") }),
   Schema.Struct({
     state: Schema.Literal("unmapped"),
-    reason: Schema.Literals([
-      "location-not-captured",
-      "source-snapshot-not-recorded",
-      "position-unrepresentable",
-    ]),
+    reason: Schema.Literals(["location-not-captured", "source-snapshot-not-recorded", "position-unrepresentable"]),
     sessionIndex: Schema.Number,
     turnIndex: Schema.Number,
     sourceOrder: Schema.NullOr(Schema.Number),
@@ -498,39 +537,43 @@ const TraceDiagnosticsSchema = Schema.Struct({
   limitations: Schema.Array(TraceDiagnosticsLimitationSchema),
   limitationsTruncated: Schema.Boolean,
   omittedLimitationCount: Schema.Number,
-  items: Schema.Array(Schema.Struct({
-    diagnosticId: Schema.String,
-    evidenceId: Schema.String,
-    sequence: Schema.Number,
-    turnId: Schema.NullOr(Schema.String),
-    phase: Schema.Literals([
-      "attempt.before",
-      "sandbox.prepare",
-      "agent.install",
-      "eval.run",
-      "agent.send",
-      "sandbox.command",
-      "assertion.evaluate",
-      "verdict.fold",
-      "attempt.after",
-    ]),
-    kind: Schema.Literals(["advisory", "execution-error"]),
-    code: Schema.String,
-    summary: Schema.String,
-    summaryTruncated: Schema.Boolean,
-    causes: Schema.Array(Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      diagnosticId: Schema.String,
+      evidenceId: Schema.String,
+      sequence: Schema.Number,
+      turnId: Schema.NullOr(Schema.String),
+      phase: Schema.Literals([
+        "attempt.before",
+        "sandbox.prepare",
+        "agent.install",
+        "eval.run",
+        "agent.send",
+        "sandbox.command",
+        "assertion.evaluate",
+        "verdict.fold",
+        "attempt.after",
+      ]),
+      kind: Schema.Literals(["advisory", "execution-error"]),
       code: Schema.String,
       summary: Schema.String,
       summaryTruncated: Schema.Boolean,
-    })),
-    causesTruncated: Schema.Boolean,
-    omittedCauseCount: Schema.Number,
-    redaction: Schema.Union([
-      Schema.Struct({ state: Schema.Literal("none") }),
-      Schema.Struct({ state: Schema.Literal("applied"), replacements: Schema.Number }),
-    ]),
-    sourceFrame: Schema.NullOr(TraceDiagnosticSourceFrameSchema),
-  })),
+      causes: Schema.Array(
+        Schema.Struct({
+          code: Schema.String,
+          summary: Schema.String,
+          summaryTruncated: Schema.Boolean,
+        }),
+      ),
+      causesTruncated: Schema.Boolean,
+      omittedCauseCount: Schema.Number,
+      redaction: Schema.Union([
+        Schema.Struct({ state: Schema.Literal("none") }),
+        Schema.Struct({ state: Schema.Literal("applied"), replacements: Schema.Number }),
+      ]),
+      sourceFrame: Schema.NullOr(TraceDiagnosticSourceFrameSchema),
+    }),
+  ),
   hasMore: Schema.Boolean,
   omittedDiagnosticCount: Schema.Number,
 });
@@ -540,42 +583,96 @@ export const ExecutionDisplayPreviewSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("absent") }),
   Schema.Struct({
     state: Schema.Literal("present"),
-    blocks: Schema.Array(Schema.Union([
-      Schema.Struct({ kind: Schema.Literal("text"), text: ExecutionDisplayPreviewTextSchema }),
-      Schema.Struct({
-        kind: Schema.Literal("message"),
-        role: ExecutionDisplayRoleSchema,
-        speaker: Schema.optional(Schema.String),
-        text: ExecutionDisplayPreviewTextSchema,
-      }),
-      Schema.Struct({
-        kind: Schema.Literal("fields"),
-        fields: Schema.Array(Schema.Struct({
-          label: Schema.String,
-          value: Schema.Union([ExecutionDisplayPreviewTextSchema, Schema.Number, Schema.Boolean, Schema.Null]),
-        })),
-      }),
-      Schema.Struct({ kind: Schema.Literal("code"), language: Schema.optional(Schema.String), text: ExecutionDisplayPreviewTextSchema }),
-      Schema.Struct({
-        kind: Schema.Literal("image"),
-        artifactId: Schema.String,
-        alt: Schema.String,
-        mediaType: Schema.String,
-        byteLength: Schema.Number,
-        sha256: Schema.String,
-      }),
-    ])),
+    blocks: Schema.Array(
+      Schema.Union([
+        Schema.Struct({ kind: Schema.Literal("text"), text: ExecutionDisplayPreviewTextSchema }),
+        Schema.Struct({
+          kind: Schema.Literal("message"),
+          role: ExecutionDisplayRoleSchema,
+          speaker: Schema.optional(Schema.String),
+          text: ExecutionDisplayPreviewTextSchema,
+        }),
+        Schema.Struct({
+          kind: Schema.Literal("fields"),
+          fields: Schema.Array(
+            Schema.Struct({
+              label: Schema.String,
+              value: Schema.Union([ExecutionDisplayPreviewTextSchema, Schema.Number, Schema.Boolean, Schema.Null]),
+            }),
+          ),
+        }),
+        Schema.Struct({
+          kind: Schema.Literal("code"),
+          language: Schema.optional(Schema.String),
+          text: ExecutionDisplayPreviewTextSchema,
+        }),
+        Schema.Struct({
+          kind: Schema.Literal("image"),
+          artifactId: Schema.String,
+          alt: Schema.String,
+          mediaType: Schema.String,
+          byteLength: Schema.Number,
+          sha256: Schema.String,
+        }),
+      ]),
+    ),
   }),
 ]);
 const TraceItemBase = { itemId: ItemIdSchema, turnId: Schema.String, sequence: Schema.Number } as const;
 export const InspectionTraceItemSchema = Schema.Union([
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: Schema.String, textTruncated: Schema.Boolean }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("tool-call"), tool: Schema.String, input: Schema.String, inputTruncated: Schema.Boolean, toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema) }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("tool-result"), outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), output: Schema.String, outputTruncated: Schema.Boolean, toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema) }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: Schema.String, summaryTruncated: Schema.Boolean }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: Schema.String, summary: Schema.String, summaryTruncated: Schema.Boolean }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), prompt: Schema.String, promptTruncated: Schema.Boolean, response: Schema.NullOr(Schema.String), responseTruncated: Schema.Boolean }),
-  Schema.Struct({ ...TraceItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: Schema.String, summary: Schema.String, summaryTruncated: Schema.Boolean }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literal("message"),
+    role: Schema.Literals(["user", "assistant"]),
+    text: Schema.String,
+    textTruncated: Schema.Boolean,
+  }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literal("tool-call"),
+    tool: Schema.String,
+    input: Schema.String,
+    inputTruncated: Schema.Boolean,
+    toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
+  }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literal("tool-result"),
+    outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]),
+    output: Schema.String,
+    outputTruncated: Schema.Boolean,
+    toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
+  }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]),
+    summary: Schema.String,
+    summaryTruncated: Schema.Boolean,
+  }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literal("subagent"),
+    state: Schema.Literals(["started", "completed", "failed"]),
+    label: Schema.String,
+    summary: Schema.String,
+    summaryTruncated: Schema.Boolean,
+  }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literal("input-request"),
+    state: Schema.Literals(["requested", "answered", "cancelled"]),
+    prompt: Schema.String,
+    promptTruncated: Schema.Boolean,
+    response: Schema.NullOr(Schema.String),
+    responseTruncated: Schema.Boolean,
+  }),
+  Schema.Struct({
+    ...TraceItemBase,
+    kind: Schema.Literals(["skill-load", "conversation-error"]),
+    code: Schema.String,
+    summary: Schema.String,
+    summaryTruncated: Schema.Boolean,
+  }),
 ]);
 const CommandOutcomeSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("exited"), exitCode: Schema.Number }),
@@ -585,35 +682,39 @@ const CommandOutcomeSchema = Schema.Union([
 export const InspectionTraceResultSchema = Schema.Struct({
   execution: Schema.Struct({
     state: ProjectionStateSchema,
-    limitations: Schema.Array(Schema.Union([
-      Schema.Struct({ code: Schema.Literal("capture-failed"), stage: Schema.Literal("adapter") }),
-      Schema.Struct({ code: Schema.Literal("capture-interrupted"), stage: Schema.Literal("attempt-finalizer") }),
-      Schema.Struct({ code: Schema.Literal("collection-cap-reached"), omittedAtLeast: Schema.Number }),
-      Schema.Struct({
-        code: Schema.Literal("legacy-source-state"),
-        state: Schema.Literals(["partial", "invalid"]),
-        message: Schema.String,
-      }),
-    ])),
-    traces: Schema.Array(ExecutionTraceHeaderRecordSchema.pipe(Schema.fieldsAssign({ eventCount: Schema.Number }))),
-    events: Schema.Array(Schema.Struct({
-      traceId: Schema.String,
-      eventId: Schema.String,
-      origin: Schema.Union([
-        Schema.Struct({ kind: Schema.Literal("execution-event"), eventId: Schema.String }),
-        Schema.Struct({ kind: Schema.Literal("agent-item"), itemId: ItemIdSchema }),
+    limitations: Schema.Array(
+      Schema.Union([
+        Schema.Struct({ code: Schema.Literal("capture-failed"), stage: Schema.Literal("adapter") }),
+        Schema.Struct({ code: Schema.Literal("capture-interrupted"), stage: Schema.Literal("attempt-finalizer") }),
+        Schema.Struct({ code: Schema.Literal("collection-cap-reached"), omittedAtLeast: Schema.Number }),
+        Schema.Struct({
+          code: Schema.Literal("legacy-source-state"),
+          state: Schema.Literals(["partial", "invalid"]),
+          message: Schema.String,
+        }),
       ]),
-      ordinal: Schema.Number,
-      type: Schema.String,
-      source: ExecutionTraceEventRecordSchema.fields.source,
-      actor: ExecutionTraceEventRecordSchema.fields.actor,
-      time: ExecutionTraceEventRecordSchema.fields.time,
-      summary: Schema.String,
-      links: ExecutionTraceEventRecordSchema.fields.links,
-      evidence: Schema.Array(Schema.Struct({ evidenceId: Schema.String, key: Schema.String, label: Schema.String })),
-      scopeMemberships: ExecutionTraceEventRecordSchema.fields.scopeMemberships,
-      display: ExecutionDisplayPreviewSchema,
-    })),
+    ),
+    traces: Schema.Array(ExecutionTraceHeaderRecordSchema.pipe(Schema.fieldsAssign({ eventCount: Schema.Number }))),
+    events: Schema.Array(
+      Schema.Struct({
+        traceId: Schema.String,
+        eventId: Schema.String,
+        origin: Schema.Union([
+          Schema.Struct({ kind: Schema.Literal("execution-event"), eventId: Schema.String }),
+          Schema.Struct({ kind: Schema.Literal("agent-item"), itemId: ItemIdSchema }),
+        ]),
+        ordinal: Schema.Number,
+        type: Schema.String,
+        source: ExecutionTraceEventRecordSchema.fields.source,
+        actor: ExecutionTraceEventRecordSchema.fields.actor,
+        time: ExecutionTraceEventRecordSchema.fields.time,
+        summary: Schema.String,
+        links: ExecutionTraceEventRecordSchema.fields.links,
+        evidence: Schema.Array(Schema.Struct({ evidenceId: Schema.String, key: Schema.String, label: Schema.String })),
+        scopeMemberships: ExecutionTraceEventRecordSchema.fields.scopeMemberships,
+        display: ExecutionDisplayPreviewSchema,
+      }),
+    ),
     identityIndex: Schema.Struct({
       traceIds: Schema.Array(Schema.String),
       omittedTraceIdCount: Schema.Number,
@@ -631,14 +732,16 @@ export const InspectionTraceResultSchema = Schema.Struct({
     limitations: Schema.Array(TraceProjectionLimitationSchema),
     limitationsTruncated: Schema.Boolean,
     omittedLimitationCount: Schema.Number,
-    turns: Schema.Array(Schema.Struct({
-      turnId: Schema.String,
-      sequence: Schema.Number,
-      sessionId: Schema.optional(SessionScopeIdSchema),
-      outcome: TurnOutcomeSchema,
-      terminal: TraceTurnTerminalSchema,
-      context: TraceTurnContextSchema,
-    })),
+    turns: Schema.Array(
+      Schema.Struct({
+        turnId: Schema.String,
+        sequence: Schema.Number,
+        sessionId: Schema.optional(SessionScopeIdSchema),
+        outcome: TurnOutcomeSchema,
+        terminal: TraceTurnTerminalSchema,
+        context: TraceTurnContextSchema,
+      }),
+    ),
     turnsTruncated: Schema.Boolean,
     omittedTurnCount: Schema.Number,
     items: Schema.Array(InspectionTraceItemSchema),
@@ -650,11 +753,13 @@ export const InspectionTraceResultSchema = Schema.Struct({
     limitations: Schema.Array(TraceProjectionLimitationSchema),
     limitationsTruncated: Schema.Boolean,
     omittedLimitationCount: Schema.Number,
-    items: Schema.Array(Schema.Struct({
-      commandId: CommandIdSchema,
-      phase: Schema.Literals(SANDBOX_COMMAND_PHASES.map(projectLifecyclePhase)),
-      outcome: CommandOutcomeSchema,
-    })),
+    items: Schema.Array(
+      Schema.Struct({
+        commandId: CommandIdSchema,
+        phase: Schema.Literals(SANDBOX_COMMAND_PHASES.map(projectLifecyclePhase)),
+        outcome: CommandOutcomeSchema,
+      }),
+    ),
     hasMore: Schema.Boolean,
     omittedCommandCount: Schema.Number,
   }),
@@ -679,15 +784,57 @@ const FullTraceItemBase = {
   sequence: Schema.optional(Schema.Number),
 } as const;
 export const InspectionTraceDetailItemSchema = Schema.Union([
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literal("message"), role: Schema.Literals(["user", "assistant"]), text: Schema.String }),
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literal("tool-call"), toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema), tool: Schema.String, input: Schema.String }),
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literal("tool-result"), toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema), outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]), output: Schema.String }),
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]), summary: Schema.String }),
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literal("subagent"), state: Schema.Literals(["started", "completed", "failed"]), label: Schema.String, summary: Schema.String }),
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literal("input-request"), state: Schema.Literals(["requested", "answered", "cancelled"]), prompt: Schema.String, response: Schema.NullOr(Schema.String) }),
-  Schema.Struct({ ...FullTraceItemBase, kind: Schema.Literals(["skill-load", "conversation-error"]), code: Schema.String, summary: Schema.String }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literal("message"),
+    role: Schema.Literals(["user", "assistant"]),
+    text: Schema.String,
+  }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literal("tool-call"),
+    toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
+    tool: Schema.String,
+    input: Schema.String,
+  }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literal("tool-result"),
+    toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
+    outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]),
+    output: Schema.String,
+  }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]),
+    summary: Schema.String,
+  }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literal("subagent"),
+    state: Schema.Literals(["started", "completed", "failed"]),
+    label: Schema.String,
+    summary: Schema.String,
+  }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literal("input-request"),
+    state: Schema.Literals(["requested", "answered", "cancelled"]),
+    prompt: Schema.String,
+    response: Schema.NullOr(Schema.String),
+  }),
+  Schema.Struct({
+    ...FullTraceItemBase,
+    kind: Schema.Literals(["skill-load", "conversation-error"]),
+    code: Schema.String,
+    summary: Schema.String,
+  }),
 ]);
-const TraceTurnIdentitySchema = Schema.Struct({ turnId: Schema.String, sequence: Schema.Number, outcome: TurnOutcomeSchema });
+const TraceTurnIdentitySchema = Schema.Struct({
+  turnId: Schema.String,
+  sequence: Schema.Number,
+  outcome: TurnOutcomeSchema,
+});
 const CommandInvocationSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("shell"), command: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("argv"), executable: Schema.String, arguments: Schema.Array(Schema.String) }),
@@ -702,27 +849,43 @@ const CommandStreamSchema = Schema.Struct({
   retainedBytes: Schema.Number,
   totalSafeUtf8Bytes: Schema.Number,
   sha256: Schema.String,
-  truncation: Schema.Struct({ state: Schema.Literals(["not-truncated", "truncated"]), omittedSafeUtf8Bytes: Schema.Number }),
+  truncation: Schema.Struct({
+    state: Schema.Literals(["not-truncated", "truncated"]),
+    omittedSafeUtf8Bytes: Schema.Number,
+  }),
 });
 export const InspectionTraceDetailResultSchema = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("turn"), turnId: Schema.String, turn: TraceTurnIdentitySchema, items: Schema.Array(InspectionTraceDetailItemSchema) }),
-  Schema.Struct({ kind: Schema.Literal("diagnostic"), evidenceId: Schema.String, phase: Schema.String, code: Schema.String, summary: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("turn"),
+    turnId: Schema.String,
+    turn: TraceTurnIdentitySchema,
+    items: Schema.Array(InspectionTraceDetailItemSchema),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("diagnostic"),
+    evidenceId: Schema.String,
+    phase: Schema.String,
+    code: Schema.String,
+    summary: Schema.String,
+  }),
   Schema.Struct({
     kind: Schema.Literal("execution-event"),
     event: ExecutionTraceEventRecordSchema,
-    evidence: Schema.Array(Schema.Struct({
-      evidenceId: Schema.String,
-      key: Schema.String,
-      label: Schema.String,
-      artifactId: Schema.String,
-      pointer: Schema.String,
-      targetSha256: Schema.String,
-      targetByteLength: Schema.Number,
-      offset: Schema.Literal(0),
-      base64: Schema.String,
-      nextOffset: Schema.NullOr(Schema.Number),
-      truncated: Schema.Boolean,
-    })),
+    evidence: Schema.Array(
+      Schema.Struct({
+        evidenceId: Schema.String,
+        key: Schema.String,
+        label: Schema.String,
+        artifactId: Schema.String,
+        pointer: Schema.String,
+        targetSha256: Schema.String,
+        targetByteLength: Schema.Number,
+        offset: Schema.Literal(0),
+        base64: Schema.String,
+        nextOffset: Schema.NullOr(Schema.Number),
+        truncated: Schema.Boolean,
+      }),
+    ),
   }),
   Schema.Struct({
     kind: Schema.Literal("execution-evidence"),
@@ -746,7 +909,10 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
     toolOccurrenceId: ToolOccurrenceIdSchema,
     call: Schema.NullOr(InspectionTraceDetailItemSchema),
     result: Schema.NullOr(InspectionTraceDetailItemSchema),
-    turn: Schema.Struct({ call: Schema.NullOr(TraceTurnIdentitySchema), result: Schema.NullOr(TraceTurnIdentitySchema) }),
+    turn: Schema.Struct({
+      call: Schema.NullOr(TraceTurnIdentitySchema),
+      result: Schema.NullOr(TraceTurnIdentitySchema),
+    }),
   }),
   Schema.Struct({
     kind: Schema.Literal("command"),
@@ -755,7 +921,14 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
     workingDirectory: WorkingDirectorySchema,
     outcome: CommandOutcomeSchema,
     turnId: Schema.NullOr(Schema.String),
-    phase: Schema.Literals(["attempt.before", "sandbox.prepare", "agent.install", "eval.run", "sandbox.command", "attempt.after"]),
+    phase: Schema.Literals([
+      "attempt.before",
+      "sandbox.prepare",
+      "agent.install",
+      "eval.run",
+      "sandbox.command",
+      "attempt.after",
+    ]),
     sequence: Schema.Number,
     stdout: CommandStreamSchema,
     stderr: CommandStreamSchema,
@@ -819,14 +992,16 @@ const AdapterUsageInspectionCallSchema = Schema.Struct({
 const EffectiveCostTotalSchema = Schema.Struct({
   state: Schema.Literals(["complete", "partial", "unavailable"]),
   source: Schema.NullOr(Schema.Literals(["reported", "estimated", "mixed"])),
-  values: Schema.Array(Schema.Struct({
-    currency: UsageCurrencySchema,
-    value: UsageDecimalSchema,
-    source: Schema.Literals(["reported", "estimated", "mixed"]),
-    coveredCalls: NonNegativeSafeIntegerSchema,
-    reportedCalls: NonNegativeSafeIntegerSchema,
-    estimatedCalls: NonNegativeSafeIntegerSchema,
-  })),
+  values: Schema.Array(
+    Schema.Struct({
+      currency: UsageCurrencySchema,
+      value: UsageDecimalSchema,
+      source: Schema.Literals(["reported", "estimated", "mixed"]),
+      coveredCalls: NonNegativeSafeIntegerSchema,
+      reportedCalls: NonNegativeSafeIntegerSchema,
+      estimatedCalls: NonNegativeSafeIntegerSchema,
+    }),
+  ),
   totalCalls: NonNegativeSafeIntegerSchema,
 });
 const RecordedCallCountSchema = NonNegativeSafeIntegerSchema.check(Schema.isLessThanOrEqualTo(4_000));
@@ -839,13 +1014,20 @@ const ConfiguredModelsSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded") }),
   Schema.Struct({
     state: Schema.Literal("available"),
-    bindings: Schema.Array(Schema.Struct({
-      modelRole: AdapterUsageModelSlotSchema,
-      model: Schema.NullOr(Schema.String.check(Schema.isPattern(/\S/u))),
-      reasoningEffort: Schema.NullOr(Schema.String.check(Schema.isPattern(/\S/u))),
-      recordedCalls: Schema.NullOr(RecordedCallCountSchema),
-    })).check(Schema.makeFilter((bindings) => bindings.length <= 64 &&
-      bindings.every((entry, index) => index === 0 || bindings[index - 1]!.modelRole < entry.modelRole))),
+    bindings: Schema.Array(
+      Schema.Struct({
+        modelRole: AdapterUsageModelSlotSchema,
+        model: Schema.NullOr(Schema.String.check(Schema.isPattern(/\S/u))),
+        reasoningEffort: Schema.NullOr(Schema.String.check(Schema.isPattern(/\S/u))),
+        recordedCalls: Schema.NullOr(RecordedCallCountSchema),
+      }),
+    ).check(
+      Schema.makeFilter(
+        (bindings) =>
+          bindings.length <= 64 &&
+          bindings.every((entry, index) => index === 0 || bindings[index - 1]!.modelRole < entry.modelRole),
+      ),
+    ),
   }),
 ]);
 const ModelGroupSchema = Schema.Struct({
@@ -859,20 +1041,35 @@ const ModelGroupSchema = Schema.Struct({
     totalTokens: ModelGroupTokenTotalSchema,
   }),
   costs: EffectiveCostTotalSchema,
-}).check(Schema.makeFilter((group) => group.costs.totalCalls === group.recordedCalls &&
-  Object.values(group.tokens).every((total) => total.observationCount <= group.recordedCalls)));
+}).check(
+  Schema.makeFilter(
+    (group) =>
+      group.costs.totalCalls === group.recordedCalls &&
+      Object.values(group.tokens).every((total) => total.observationCount <= group.recordedCalls),
+  ),
+);
 const ModelGroupsSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("available"),
     basis: Schema.Literal("recorded-calls"),
-    groups: Schema.Array(ModelGroupSchema).check(Schema.makeFilter((groups) => groups.length <= 64 &&
-      groups.every((entry, index) => index === 0 || compareAdapterModelGroups(groups[index - 1]!, entry) < 0))),
+    groups: Schema.Array(ModelGroupSchema).check(
+      Schema.makeFilter(
+        (groups) =>
+          groups.length <= 64 &&
+          groups.every((entry, index) => index === 0 || compareAdapterModelGroups(groups[index - 1]!, entry) < 0),
+      ),
+    ),
     totalGroupCount: RecordedCallCountSchema,
     groupsTruncated: Schema.Boolean,
     omittedGroupCount: RecordedCallCountSchema,
-  }).check(Schema.makeFilter((value) => value.totalGroupCount === value.groups.length + value.omittedGroupCount &&
-    value.groups.length === Math.min(value.totalGroupCount, 64) &&
-    value.groupsTruncated === (value.omittedGroupCount > 0))),
+  }).check(
+    Schema.makeFilter(
+      (value) =>
+        value.totalGroupCount === value.groups.length + value.omittedGroupCount &&
+        value.groups.length === Math.min(value.totalGroupCount, 64) &&
+        value.groupsTruncated === value.omittedGroupCount > 0,
+    ),
+  ),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
     basis: Schema.Literals(["recorded-calls", "reported-sends", "unavailable"]),
@@ -884,38 +1081,77 @@ const ModelGroupsSchema = Schema.Union([
   }),
 ]);
 export const CostGapSources = ["application", "judge", "simulated-user"] as const;
-export const CostGapReasons = ["no-pricing-profile", "provider-cost-not-reported", "token-buckets-incomplete", "usage-not-recorded"] as const;
+export const CostGapReasons = [
+  "no-pricing-profile",
+  "provider-cost-not-reported",
+  "token-buckets-incomplete",
+  "usage-not-recorded",
+] as const;
 const CostGapSchema = Schema.Struct({
   source: Schema.Literals(CostGapSources),
   reason: Schema.Literals(CostGapReasons),
-  models: Schema.Array(Schema.String.check(Schema.makeFilter((model) => model.trim().length > 0 &&
-    utf8ByteLength(model) <= 8_192 && !/[\u0000-\u001f\u007f]/u.test(model)))),
-}).check(Schema.makeFilter((gap) => (gap.reason === "no-pricing-profile" ? gap.models.length > 0 : gap.models.length === 0) &&
-  gap.models.every((model, index) => index === 0 || gap.models[index - 1]! < model)));
+  models: Schema.Array(
+    Schema.String.check(
+      Schema.makeFilter(
+        (model) => model.trim().length > 0 && utf8ByteLength(model) <= 8_192 && !/[\u0000-\u001f\u007f]/u.test(model),
+      ),
+    ),
+  ),
+}).check(
+  Schema.makeFilter(
+    (gap) =>
+      (gap.reason === "no-pricing-profile" ? gap.models.length > 0 : gap.models.length === 0) &&
+      gap.models.every((model, index) => index === 0 || gap.models[index - 1]! < model),
+  ),
+);
 export type CostGap = Schema.Schema.Type<typeof CostGapSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
-  simulatedUser: Schema.optional(Schema.Struct({
-    source: Schema.Literal("simulated-user"),
-    state: Schema.Literals(["complete", "partial", "unpriced"]),
-    amountUSD: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
-    calls: NonNegativeSafeIntegerSchema,
-  })),
+  simulatedUser: Schema.optional(
+    Schema.Struct({
+      source: Schema.Literal("simulated-user"),
+      state: Schema.Literals(["complete", "partial", "unpriced"]),
+      amountUSD: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+      calls: NonNegativeSafeIntegerSchema,
+    }),
+  ),
   state: Schema.Literals(["complete", "partial", "unavailable"]),
-  values: Schema.Array(Schema.Struct({
-    currency: UsageCurrencySchema,
-    value: UsageDecimalSchema,
-    source: Schema.Literals(["reported", "estimated", "mixed"]),
-  })),
-  missingSources: Schema.Array(Schema.Literals(["application", "judge", "simulated-user"])).check(Schema.makeFilter((sources) =>
-    sources.length <= 3 && sources.every((source, index) => index === 0 || ["application", "judge", "simulated-user"].indexOf(sources[index - 1]!) < ["application", "judge", "simulated-user"].indexOf(source)))),
+  values: Schema.Array(
+    Schema.Struct({
+      currency: UsageCurrencySchema,
+      value: UsageDecimalSchema,
+      source: Schema.Literals(["reported", "estimated", "mixed"]),
+    }),
+  ),
+  missingSources: Schema.Array(Schema.Literals(["application", "judge", "simulated-user"])).check(
+    Schema.makeFilter(
+      (sources) =>
+        sources.length <= 3 &&
+        sources.every(
+          (source, index) =>
+            index === 0 ||
+            ["application", "judge", "simulated-user"].indexOf(sources[index - 1]!) <
+              ["application", "judge", "simulated-user"].indexOf(source),
+        ),
+    ),
+  ),
   gaps: Schema.Array(CostGapSchema),
-}).check(Schema.makeFilter((value) => value.state === (value.missingSources.length === 0
-    ? "complete" : value.values.length === 0 ? "unavailable" : "partial") &&
-  value.missingSources.every((source) => value.gaps.some((gap) => gap.source === source)) &&
-  value.gaps.every((gap, index) => value.missingSources.includes(gap.source) && (index === 0 ||
-    CostGapSources.indexOf(value.gaps[index - 1]!.source) < CostGapSources.indexOf(gap.source) ||
-    value.gaps[index - 1]!.source === gap.source && CostGapReasons.indexOf(value.gaps[index - 1]!.reason) < CostGapReasons.indexOf(gap.reason))) &&
-  value.values.every((entry, index) => index === 0 || value.values[index - 1]!.currency < entry.currency)));
+}).check(
+  Schema.makeFilter(
+    (value) =>
+      value.state ===
+        (value.missingSources.length === 0 ? "complete" : value.values.length === 0 ? "unavailable" : "partial") &&
+      value.missingSources.every((source) => value.gaps.some((gap) => gap.source === source)) &&
+      value.gaps.every(
+        (gap, index) =>
+          value.missingSources.includes(gap.source) &&
+          (index === 0 ||
+            CostGapSources.indexOf(value.gaps[index - 1]!.source) < CostGapSources.indexOf(gap.source) ||
+            (value.gaps[index - 1]!.source === gap.source &&
+              CostGapReasons.indexOf(value.gaps[index - 1]!.reason) < CostGapReasons.indexOf(gap.reason))),
+      ) &&
+      value.values.every((entry, index) => index === 0 || value.values[index - 1]!.currency < entry.currency),
+  ),
+);
 export type TotalUsageCosts = Schema.Schema.Type<typeof TotalUsageCostsSchema>;
 
 const ExperimentCostSummarySchema = Schema.Struct({
@@ -929,22 +1165,37 @@ const ExperimentCostSummarySchema = Schema.Struct({
     partialAttemptCount: NonNegativeSafeIntegerSchema,
     unavailableAttemptCount: NonNegativeSafeIntegerSchema,
     missingAttemptCount: NonNegativeSafeIntegerSchema,
-  }).check(Schema.makeFilter((value) =>
-    value.plannedAttemptCount === value.recordedAttemptCount + value.missingAttemptCount &&
-    value.originAttemptCount <= value.recordedAttemptCount &&
-    value.originAttemptCount === value.completeAttemptCount + value.partialAttemptCount + value.unavailableAttemptCount)),
+  }).check(
+    Schema.makeFilter(
+      (value) =>
+        value.plannedAttemptCount === value.recordedAttemptCount + value.missingAttemptCount &&
+        value.originAttemptCount <= value.recordedAttemptCount &&
+        value.originAttemptCount ===
+          value.completeAttemptCount + value.partialAttemptCount + value.unavailableAttemptCount,
+    ),
+  ),
 });
 
-const JudgeCostTotalsSchema = EffectiveCostTotalSchema.check(Schema.makeFilter((costs) =>
-  costs.totalCalls <= 4_000 &&
-  (costs.source === null) === (costs.values.length === 0) &&
-  costs.values.every((entry, index) => entry.coveredCalls <= entry.reportedCalls + entry.estimatedCalls &&
-    entry.reportedCalls + entry.estimatedCalls <= costs.totalCalls &&
-    entry.source === (entry.reportedCalls === 0 ? "estimated" : entry.estimatedCalls === 0 ? "reported" : "mixed") &&
-    (index === 0 || costs.values[index - 1]!.currency < entry.currency)) &&
-  costs.values.reduce((count, entry) => count + entry.reportedCalls + entry.estimatedCalls, 0) <= costs.totalCalls &&
-  (costs.state !== "unavailable" || costs.values.length === 0) &&
-  (costs.state !== "complete" || costs.values.reduce((count, entry) => count + entry.coveredCalls, 0) === costs.totalCalls)));
+const JudgeCostTotalsSchema = EffectiveCostTotalSchema.check(
+  Schema.makeFilter(
+    (costs) =>
+      costs.totalCalls <= 4_000 &&
+      (costs.source === null) === (costs.values.length === 0) &&
+      costs.values.every(
+        (entry, index) =>
+          entry.coveredCalls <= entry.reportedCalls + entry.estimatedCalls &&
+          entry.reportedCalls + entry.estimatedCalls <= costs.totalCalls &&
+          entry.source ===
+            (entry.reportedCalls === 0 ? "estimated" : entry.estimatedCalls === 0 ? "reported" : "mixed") &&
+          (index === 0 || costs.values[index - 1]!.currency < entry.currency),
+      ) &&
+      costs.values.reduce((count, entry) => count + entry.reportedCalls + entry.estimatedCalls, 0) <=
+        costs.totalCalls &&
+      (costs.state !== "unavailable" || costs.values.length === 0) &&
+      (costs.state !== "complete" ||
+        costs.values.reduce((count, entry) => count + entry.coveredCalls, 0) === costs.totalCalls),
+  ),
+);
 const JudgeUsageUnavailableSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("judge-usage-not-recorded") }),
   Schema.Struct({ state: Schema.Literal("invalid"), reason: Schema.Literal("judge-usage-source-invalid") }),
@@ -961,19 +1212,30 @@ const JudgeUsageSummaryFields = {
     costs: JudgeCostTotalsSchema,
   }),
 };
-const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).check(Schema.makeFilter((usage) => {
-  const requests = usage.totals.requests;
-  return usage.state === usage.collection.state && requests.value === requests.observationCount &&
-    requests.state === (usage.state === "complete" ? "available" : "partial") &&
-    usage.totals.costs.totalCalls === requests.value &&
-    (usage.state === "complete" || usage.totals.costs.state !== "complete") &&
-    [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every((total) =>
-      total.observationCount <= requests.observationCount && (total.state !== "available" ||
-        usage.state === "complete" && total.observationCount === requests.observationCount)) &&
-    (requests.value !== 0 || usage.state !== "complete" ||
-      [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every((total) =>
-        total.state === "available" && total.value === 0) && usage.totals.costs.state === "complete");
-}));
+const JudgeUsageAvailableSummarySchema = Schema.Struct(JudgeUsageSummaryFields).check(
+  Schema.makeFilter((usage) => {
+    const requests = usage.totals.requests;
+    return (
+      usage.state === usage.collection.state &&
+      requests.value === requests.observationCount &&
+      requests.state === (usage.state === "complete" ? "available" : "partial") &&
+      usage.totals.costs.totalCalls === requests.value &&
+      (usage.state === "complete" || usage.totals.costs.state !== "complete") &&
+      [usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every(
+        (total) =>
+          total.observationCount <= requests.observationCount &&
+          (total.state !== "available" ||
+            (usage.state === "complete" && total.observationCount === requests.observationCount)),
+      ) &&
+      (requests.value !== 0 ||
+        usage.state !== "complete" ||
+        ([usage.totals.inputTotalTokens, usage.totals.outputTokens, usage.totals.totalTokens].every(
+          (total) => total.state === "available" && total.value === 0,
+        ) &&
+          usage.totals.costs.state === "complete"))
+    );
+  }),
+);
 const JudgeUsageSummarySchema = Schema.Union([JudgeUsageUnavailableSchema, JudgeUsageAvailableSummarySchema]);
 export type JudgeUsageSummary = Schema.Schema.Type<typeof JudgeUsageSummarySchema>;
 const JudgeUsageSchema = Schema.Union([
@@ -984,14 +1246,28 @@ const JudgeUsageSchema = Schema.Union([
     callsTruncated: Schema.Boolean,
     omittedCallCount: RecordedCallCountSchema,
     priceReceipts: Schema.Array(JudgePriceReceiptSchema),
-  }).check(Schema.makeFilter((usage) => Schema.is(JudgeUsageAvailableSummarySchema)({
-      state: usage.state, coverage: usage.coverage, collection: usage.collection, totals: usage.totals,
-    }) && usage.calls.length <= JUDGE_USAGE_PREVIEW_CALL_LIMIT &&
-    usage.calls.length + usage.omittedCallCount === usage.totals.requests.value &&
-    usage.callsTruncated === (usage.omittedCallCount > 0) &&
-    usage.calls.every((call, index) => index === 0 || compareJudgeUsageCalls(usage.calls[index - 1]!, call) < 0) &&
-    utf8ByteLength(JSON.stringify({ calls: usage.calls, priceReceipts: usage.priceReceipts })) <= JUDGE_USAGE_PREVIEW_BYTE_LIMIT &&
-    validateJudgeUsageAttachment({ collection: usage.collection, calls: usage.calls, priceReceipts: usage.priceReceipts }).length === 0)),
+  }).check(
+    Schema.makeFilter(
+      (usage) =>
+        Schema.is(JudgeUsageAvailableSummarySchema)({
+          state: usage.state,
+          coverage: usage.coverage,
+          collection: usage.collection,
+          totals: usage.totals,
+        }) &&
+        usage.calls.length <= JUDGE_USAGE_PREVIEW_CALL_LIMIT &&
+        usage.calls.length + usage.omittedCallCount === usage.totals.requests.value &&
+        usage.callsTruncated === usage.omittedCallCount > 0 &&
+        usage.calls.every((call, index) => index === 0 || compareJudgeUsageCalls(usage.calls[index - 1]!, call) < 0) &&
+        utf8ByteLength(JSON.stringify({ calls: usage.calls, priceReceipts: usage.priceReceipts })) <=
+          JUDGE_USAGE_PREVIEW_BYTE_LIMIT &&
+        validateJudgeUsageAttachment({
+          collection: usage.collection,
+          calls: usage.calls,
+          priceReceipts: usage.priceReceipts,
+        }).length === 0,
+    ),
+  ),
 ]);
 export type JudgeUsage = Schema.Schema.Type<typeof JudgeUsageSchema>;
 const UsageTotalsSchema = Schema.Struct({
@@ -999,11 +1275,13 @@ const UsageTotalsSchema = Schema.Struct({
   inputTokens: UsageNumericTotalSchema,
   outputTokens: UsageNumericTotalSchema,
   requests: UsageNumericTotalSchema,
-  providerCosts: Schema.optional(Schema.Struct({
-    state: Schema.Literals(["available", "partial", "unavailable"]),
-    values: Schema.Array(UsageCostTotalSchema),
-    observationCount: Schema.Number,
-  })),
+  providerCosts: Schema.optional(
+    Schema.Struct({
+      state: Schema.Literals(["available", "partial", "unavailable"]),
+      values: Schema.Array(UsageCostTotalSchema),
+      observationCount: Schema.Number,
+    }),
+  ),
   costs: Schema.optional(EffectiveCostTotalSchema),
 });
 export const InspectionAttemptUsageResultSchema = Schema.Struct({
@@ -1032,9 +1310,7 @@ export const InspectionAttemptUsageResultSchema = Schema.Struct({
 });
 export type InspectionAttemptUsageResult = Schema.Schema.Type<typeof InspectionAttemptUsageResultSchema>;
 
-const RunOverviewStateSchema = Schema.Literals([
-  "complete", "partial", "not-recorded", "invalid", "unavailable",
-]);
+const RunOverviewStateSchema = Schema.Literals(["complete", "partial", "not-recorded", "invalid", "unavailable"]);
 const RunOverviewCoverageSchema = Schema.Struct({
   state: RunOverviewStateSchema,
   facts: Schema.Array(AttemptCoverageFactSchema),
@@ -1042,10 +1318,12 @@ const RunOverviewCoverageSchema = Schema.Struct({
 });
 const RunOverviewUsageSchema = Schema.Struct({
   state: RunOverviewStateSchema,
-  summary: Schema.NullOr(Schema.Struct({
-    turnCount: Schema.Number,
-    observationCount: Schema.Number,
-  })),
+  summary: Schema.NullOr(
+    Schema.Struct({
+      turnCount: Schema.Number,
+      observationCount: Schema.Number,
+    }),
+  ),
   totals: UsageTotalsSchema,
   limitations: Schema.Array(UsageLimitationSchema),
   limitationsTruncated: Schema.Boolean,
@@ -1067,9 +1345,7 @@ const RunOverviewMemberLimitationSchema = Schema.Union([
 const RunOverviewMemberSchema = Schema.Struct({
   ...PlannedAttemptSchema.fields,
   ...PlannedAttemptMemberSchema.fields,
-  state: Schema.Literals([
-    "executed", "carried", "accepted", "not-dispatched", "interrupted", "pending",
-  ]),
+  state: Schema.Literals(["executed", "carried", "accepted", "not-dispatched", "interrupted", "pending"]),
   relation: Schema.NullOr(Schema.Literals(["origin", "reference"])),
   outcome: Schema.NullOr(Schema.Literals(["completed", "errored", "cancelled", "interrupted"])),
   coverage: RunOverviewCoverageSchema,
@@ -1083,13 +1359,15 @@ const RunOverviewLocatedLimitationSchema = Schema.Struct({
 });
 export const InspectionRunResultSchema = Schema.Struct({
   value: InspectionRunValueSchema,
-  diagnostics: Schema.Array(Schema.Struct({
-    diagnosticId: Schema.String,
-    code: Schema.String,
-    phase: Schema.Literals(RUN_ACTIVITY_PHASES.map(projectLifecyclePhase)),
-    summary: Schema.String,
-    affectedPlannedAttemptIds: Schema.Array(Schema.String),
-  })),
+  diagnostics: Schema.Array(
+    Schema.Struct({
+      diagnosticId: Schema.String,
+      code: Schema.String,
+      phase: Schema.Literals(RUN_ACTIVITY_PHASES.map(projectLifecyclePhase)),
+      summary: Schema.String,
+      affectedPlannedAttemptIds: Schema.Array(Schema.String),
+    }),
+  ),
   members: Schema.Array(InspectionMemberSchema),
   attempts: Schema.Array(InspectionAttemptCoreSchema),
   denominator: Schema.Struct({ expected: Schema.Number, published: Schema.Number, missing: Schema.Number }),
@@ -1119,26 +1397,40 @@ export const InspectionAttemptTimingResultSchema = Schema.Struct({
   limitations: Schema.Array(ProjectionLimitationSchema),
   limitationsTruncated: Schema.Boolean,
   omittedLimitationCount: Schema.Number,
-  activities: Schema.Array(Schema.Struct({
-    activityId: Schema.String,
-    sequence: Schema.Number,
-    parentActivityId: Schema.NullOr(Schema.String),
-    turnId: Schema.NullOr(Schema.String),
-    phase: Schema.String,
-    label: Schema.String,
-    startOffsetMs: Schema.Number,
-    durationMs: Schema.Number,
-    outcome: Schema.Literals(ACTIVITY_OUTCOMES),
-  })),
+  activities: Schema.Array(
+    Schema.Struct({
+      activityId: Schema.String,
+      sequence: Schema.Number,
+      parentActivityId: Schema.NullOr(Schema.String),
+      turnId: Schema.NullOr(Schema.String),
+      phase: Schema.String,
+      label: Schema.String,
+      startOffsetMs: Schema.Number,
+      durationMs: Schema.Number,
+      outcome: Schema.Literals(ACTIVITY_OUTCOMES),
+    }),
+  ),
   hasMore: Schema.Boolean,
   omittedActivityCount: Schema.Number,
 });
 export type InspectionAttemptTimingResult = Schema.Schema.Type<typeof InspectionAttemptTimingResultSchema>;
 
 const FileRevisionSchema = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("text"), sha256: Schema.String, byteLength: Schema.Number, content: Schema.Literals(["available", "omitted"]) }),
-  Schema.Struct({ kind: Schema.Literal("elided"), reason: Schema.Literals(["binary", "oversized-text"]), byteLength: Schema.Number }),
-  Schema.Struct({ kind: Schema.Literal("unavailable"), reason: Schema.Literals(["unsupported-input", "capture-failed", "capture-interrupted"]) }),
+  Schema.Struct({
+    kind: Schema.Literal("text"),
+    sha256: Schema.String,
+    byteLength: Schema.Number,
+    content: Schema.Literals(["available", "omitted"]),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("elided"),
+    reason: Schema.Literals(["binary", "oversized-text"]),
+    byteLength: Schema.Number,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("unavailable"),
+    reason: Schema.Literals(["unsupported-input", "capture-failed", "capture-interrupted"]),
+  }),
 ]);
 const FileEndpointSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("absent") }),
@@ -1147,21 +1439,47 @@ const FileEndpointSchema = Schema.Union([
 const DiffWindowSchema = Schema.Struct({
   windowId: Schema.String,
   sequence: Schema.Number,
-  changes: Schema.Array(Schema.Struct({
-    changeId: Schema.String,
-    path: Schema.String,
-    kind: Schema.Literals(["created", "modified", "deleted"]),
-    before: FileEndpointSchema,
-    after: FileEndpointSchema,
-  })),
+  changes: Schema.Array(
+    Schema.Struct({
+      changeId: Schema.String,
+      path: Schema.String,
+      kind: Schema.Literals(["created", "modified", "deleted"]),
+      before: FileEndpointSchema,
+      after: FileEndpointSchema,
+    }),
+  ),
 });
 const DiffBodySchema = Schema.Union([
-  Schema.Struct({ state: Schema.Literal("available"), text: Schema.String, byteLength: Schema.Number, truncated: Schema.Boolean, truncatedAtByte: Schema.NullOr(Schema.Number) }),
-  Schema.Struct({ state: Schema.Literals(["absent", "binary", "oversized-text", "omitted", "unsupported-input", "capture-failed", "capture-interrupted"]) }),
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    text: Schema.String,
+    byteLength: Schema.Number,
+    truncated: Schema.Boolean,
+    truncatedAtByte: Schema.NullOr(Schema.Number),
+  }),
+  Schema.Struct({
+    state: Schema.Literals([
+      "absent",
+      "binary",
+      "oversized-text",
+      "omitted",
+      "unsupported-input",
+      "capture-failed",
+      "capture-interrupted",
+    ]),
+  }),
 ]);
 const DiffDetailSchema = Schema.Struct({
-  changeId: Schema.String, path: Schema.String, before: DiffBodySchema, after: DiffBodySchema,
-  hunks: Schema.Struct({ state: Schema.Literals(["available", "unavailable"]), text: Schema.String, truncated: Schema.Boolean, truncatedAtByte: Schema.NullOr(Schema.Number) }),
+  changeId: Schema.String,
+  path: Schema.String,
+  before: DiffBodySchema,
+  after: DiffBodySchema,
+  hunks: Schema.Struct({
+    state: Schema.Literals(["available", "unavailable"]),
+    text: Schema.String,
+    truncated: Schema.Boolean,
+    truncatedAtByte: Schema.NullOr(Schema.Number),
+  }),
 });
 export const InspectionAttemptDiffResultSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("not-recorded"), windows: Schema.Tuple([]) }),
@@ -1218,9 +1536,7 @@ type InspectionResultField<Kind extends InspectionOperationId> = Exclude<
   keyof InspectionResultMetadata<Kind>
 >;
 export type InspectionResultByOperation = {
-  readonly [Kind in InspectionOperationId]: InspectionSuccessDocumentFor<Kind>[
-    InspectionResultField<Kind>
-  ];
+  readonly [Kind in InspectionOperationId]: InspectionSuccessDocumentFor<Kind>[InspectionResultField<Kind>];
 };
 
 export type ShowInspectionDocument = InspectionSuccessDocument;

@@ -15,30 +15,60 @@ test.concurrent("compact assertions keep decisions and rationales without readin
   const entryId = "ae_00000000000000000001";
   const unavailable = { state: "unavailable", reason: "not-recorded" };
   const input = {
-    state: "available", issues: [],
-    value: { entries: [{
-      entryId, display: { label: "Answer matches", groupPath: [] }, criterion: unavailable,
-      materials: { source: { kind: "content", content: handle, encoding: "utf-8", byteLength: bytes.length, preview: "large material" }, evidence: [], coverage: { state: "complete" }, limitations: [] },
-      evaluation: { kind: "ordinary", observed: { kind: "fields", fields: [{ label: "rationale", value: { kind: "value", value: "Expected answer was absent." } }] } },
-      decision: { result: "mismatched", reason: "condition-not-met", gate: "failed" },
-      control: { state: "available", value: "none" },
-      contribution: { state: "earned", earned: 0, points: 1 },
-      policy: { requirement: { state: "available", value: "required" }, condition: unavailable },
-      explanationRetention: unavailable,
-    }], sourceSites: [] },
+    state: "available",
+    issues: [],
+    value: {
+      entries: [
+        {
+          entryId,
+          display: { label: "Answer matches", groupPath: [] },
+          criterion: unavailable,
+          materials: {
+            source: {
+              kind: "content",
+              content: handle,
+              encoding: "utf-8",
+              byteLength: bytes.length,
+              preview: "large material",
+            },
+            evidence: [],
+            coverage: { state: "complete" },
+            limitations: [],
+          },
+          evaluation: {
+            kind: "ordinary",
+            observed: {
+              kind: "fields",
+              fields: [{ label: "rationale", value: { kind: "value", value: "Expected answer was absent." } }],
+            },
+          },
+          decision: { result: "mismatched", reason: "condition-not-met", gate: "failed" },
+          control: { state: "available", value: "none" },
+          contribution: { state: "earned", earned: 0, points: 1 },
+          policy: { requirement: { state: "available", value: "required" }, condition: unavailable },
+          explanationRetention: unavailable,
+        },
+      ],
+      sourceSites: [],
+    },
     contents: new WeakMap([[handle, { contentId: "material", byteLength: bytes.length, digest, chunkCount: 1 }]]),
   } as unknown as InspectionAssertionsRead;
   let reads = 0;
-  const source = { readContentPage: () => {
-    reads++;
-    return { contentId: "material", afterOrdinal: -1, chunks: [{ ordinal: 0, bytes }], nextOrdinal: null };
-  } } as unknown as InspectionFactSource;
+  const source = {
+    readContentPage: () => {
+      reads++;
+      return { contentId: "material", afterOrdinal: -1, chunks: [{ ordinal: 0, bytes }], nextOrdinal: null };
+    },
+  } as unknown as InspectionFactSource;
   const turns = { state: "not-recorded" } as const;
   const compact = projectAttemptAssertionDetail(source, input, turns, entryId, "compact")!;
   expect(reads).toBe(0);
   expect(JSON.stringify(compact).length).toBeLessThan(10_000);
   expect(JSON.stringify(compact)).not.toContain("base64");
-  expect(compact).toMatchObject({ entry: { contribution: { earned: 0, points: 1 } }, check: { state: "mismatched", reason: "condition-not-met" } });
+  expect(compact).toMatchObject({
+    entry: { contribution: { earned: 0, points: 1 } },
+    check: { state: "mismatched", reason: "condition-not-met" },
+  });
   const text = renderAssertions("@1000000000000", [compact]);
   expect(text).toContain("Gates 1 fail · Scored 1");
   expect(text).toContain("GATE fail  SCORE 0/1");

@@ -34,35 +34,52 @@ export function putTeardownObligation(input: {
   readonly payload: Uint8Array;
 }) {
   return withConnection(input.connection, (connection) => {
-    recordStatement(connection, `INSERT INTO ne19_teardown_obligations(
+    recordStatement(
+      connection,
+      `INSERT INTO ne19_teardown_obligations(
       obligation_id,experiment_id,owner_pid,owner_host,generation,payload) VALUES(?,?,?,?,1,?)
       ON CONFLICT(obligation_id) DO UPDATE SET owner_host=excluded.owner_host,
-        generation=ne19_teardown_obligations.generation+1,payload=excluded.payload`)
-      .run(input.id, input.experimentId, input.ownerPid, input.ownerHost, input.payload);
+        generation=ne19_teardown_obligations.generation+1,payload=excluded.payload`,
+    ).run(input.id, input.experimentId, input.ownerPid, input.ownerHost, input.payload);
   });
 }
 
 export function getTeardownObligation(connection: RecordDatabase, id: string) {
   return withConnection(connection, (connection) => {
-    const row = recordStatement(connection, `SELECT obligation_id,generation,payload
-      FROM ne19_teardown_obligations WHERE obligation_id=?`).get(id) as Row | undefined;
+    const row = recordStatement(
+      connection,
+      `SELECT obligation_id,generation,payload
+      FROM ne19_teardown_obligations WHERE obligation_id=?`,
+    ).get(id) as Row | undefined;
     return row === undefined ? undefined : teardownRow(row, `teardown obligation ${id}`);
   });
 }
 
 export function listTeardownObligations(connection: RecordDatabase) {
-  return withConnection(connection, (connection) => (recordStatement(connection, `SELECT obligation_id,generation,payload
-    FROM ne19_teardown_obligations ORDER BY experiment_id,owner_pid`).all() as Row[])
-    .map((row) => teardownRow(row, "teardown obligation")));
+  return withConnection(connection, (connection) =>
+    (
+      recordStatement(
+        connection,
+        `SELECT obligation_id,generation,payload
+    FROM ne19_teardown_obligations ORDER BY experiment_id,owner_pid`,
+      ).all() as Row[]
+    ).map((row) => teardownRow(row, "teardown obligation")),
+  );
 }
 
 export function claimTeardownObligation(connection: RecordDatabase, id: string) {
   return withConnection(connection, (connection) => {
-    const row = recordStatement(connection, `SELECT generation FROM ne19_teardown_obligations
-      WHERE obligation_id=?`).get(id) as Row | undefined;
+    const row = recordStatement(
+      connection,
+      `SELECT generation FROM ne19_teardown_obligations
+      WHERE obligation_id=?`,
+    ).get(id) as Row | undefined;
     if (row === undefined) return false;
-    const removed = recordStatement(connection, `DELETE FROM ne19_teardown_obligations
-      WHERE obligation_id=? AND generation=?`).run(id, Number(row.generation));
+    const removed = recordStatement(
+      connection,
+      `DELETE FROM ne19_teardown_obligations
+      WHERE obligation_id=? AND generation=?`,
+    ).run(id, Number(row.generation));
     return Number(removed.changes) === 1;
   });
 }
@@ -79,13 +96,24 @@ function sharedStateRow(row: Row, key: string): SharedStateGenerationRow {
   if (kind !== "active" && kind !== "recovering" && kind !== "free") {
     throw new Error(`sharedState ${JSON.stringify(key)} has an invalid generation kind`);
   }
-  return { generation: Number(row.generation), kind, payload: payload(row.payload, "sharedState generation"), heartbeatAt: String(row.heartbeat_at) };
+  return {
+    generation: Number(row.generation),
+    kind,
+    payload: payload(row.payload, "sharedState generation"),
+    heartbeatAt: String(row.heartbeat_at),
+  };
 }
 
 export function listSharedStateGenerations(connection: RecordDatabase, key: string) {
-  return withConnection(connection, (connection) => (recordStatement(connection, `SELECT generation,state_kind,payload,heartbeat_at
-    FROM ne19_shared_state_generations WHERE state_key=? ORDER BY generation`).all(key) as Row[])
-    .map((row) => sharedStateRow(row, key)));
+  return withConnection(connection, (connection) =>
+    (
+      recordStatement(
+        connection,
+        `SELECT generation,state_kind,payload,heartbeat_at
+    FROM ne19_shared_state_generations WHERE state_key=? ORDER BY generation`,
+      ).all(key) as Row[]
+    ).map((row) => sharedStateRow(row, key)),
+  );
 }
 
 export function appendSharedStateGeneration(input: {
@@ -103,14 +131,29 @@ export function appendSharedStateGeneration(input: {
   readonly payload: Uint8Array;
 }) {
   return withConnection(input.connection, (connection) => {
-    const head = recordStatement(connection, `SELECT coalesce(max(generation),0) AS generation
-      FROM ne19_shared_state_generations WHERE state_key=?`).get(input.key) as Row;
+    const head = recordStatement(
+      connection,
+      `SELECT coalesce(max(generation),0) AS generation
+      FROM ne19_shared_state_generations WHERE state_key=?`,
+    ).get(input.key) as Row;
     if (Number(head.generation) !== input.expectedGeneration) return false;
-    const inserted = recordStatement(connection, `INSERT INTO ne19_shared_state_generations(
+    const inserted = recordStatement(
+      connection,
+      `INSERT INTO ne19_shared_state_generations(
       state_key,generation,parent_generation,state_kind,owner_token,owner_pid,owner_host,
-      owner_process_identity,heartbeat_at,payload) VALUES(?,?,?,?,?,?,?,?,?,?)`)
-      .run(input.key, input.generation, input.parentGeneration, input.kind, input.ownerToken,
-        input.ownerPid, input.ownerHost, input.ownerProcessIdentity, input.heartbeatAt, input.payload);
+      owner_process_identity,heartbeat_at,payload) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      input.key,
+      input.generation,
+      input.parentGeneration,
+      input.kind,
+      input.ownerToken,
+      input.ownerPid,
+      input.ownerHost,
+      input.ownerProcessIdentity,
+      input.heartbeatAt,
+      input.payload,
+    );
     return Number(inserted.changes) === 1;
   });
 }
@@ -123,11 +166,13 @@ export function updateSharedStateHeartbeat(input: {
   readonly heartbeatAt: string;
 }) {
   return withConnection(input.connection, (connection) => {
-    const changed = recordStatement(connection, `UPDATE ne19_shared_state_generations
+    const changed = recordStatement(
+      connection,
+      `UPDATE ne19_shared_state_generations
       SET heartbeat_at=? WHERE state_key=? AND generation=? AND owner_token=?
       AND state_kind IN ('active','recovering')
-      AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=?)`)
-      .run(input.heartbeatAt, input.key, input.generation, input.ownerToken, input.key);
+      AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=?)`,
+    ).run(input.heartbeatAt, input.key, input.generation, input.ownerToken, input.key);
     return Number(changed.changes) === 1;
   });
 }
@@ -146,30 +191,48 @@ export function putKeptSandbox(input: {
   readonly payload: Uint8Array;
 }) {
   return withConnection(input.connection, (connection) => {
-    recordStatement(connection, `INSERT INTO ne19_kept_sandboxes(entry_id,provider,sandbox_id,kept_at,payload)
-      VALUES(?,?,?,?,?) ON CONFLICT(entry_id) DO UPDATE SET kept_at=excluded.kept_at,payload=excluded.payload`)
-      .run(input.id, input.provider, input.sandboxId, input.keptAt, input.payload);
+    recordStatement(
+      connection,
+      `INSERT INTO ne19_kept_sandboxes(entry_id,provider,sandbox_id,kept_at,payload)
+      VALUES(?,?,?,?,?) ON CONFLICT(entry_id) DO UPDATE SET kept_at=excluded.kept_at,payload=excluded.payload`,
+    ).run(input.id, input.provider, input.sandboxId, input.keptAt, input.payload);
   });
 }
 
 export function getKeptSandbox(connection: RecordDatabase, id: string) {
   return withConnection(connection, (connection) => {
-    const row = recordStatement(connection, "SELECT entry_id,payload FROM ne19_kept_sandboxes WHERE entry_id=?")
-      .get(id) as Row | undefined;
-    return row === undefined ? undefined : { id: String(row.entry_id), payload: payload(row.payload, `kept sandbox ${id}`) };
+    const row = recordStatement(connection, "SELECT entry_id,payload FROM ne19_kept_sandboxes WHERE entry_id=?").get(
+      id,
+    ) as Row | undefined;
+    return row === undefined
+      ? undefined
+      : { id: String(row.entry_id), payload: payload(row.payload, `kept sandbox ${id}`) };
   });
 }
 
 export function listKeptSandboxes(connection: RecordDatabase) {
-  return withConnection(connection, (connection) => (recordStatement(connection, `SELECT entry_id,payload
-    FROM ne19_kept_sandboxes ORDER BY kept_at,entry_id`).all() as Row[]).map((row) => ({
-    id: String(row.entry_id), payload: payload(row.payload, "kept sandbox"),
-  })));
+  return withConnection(connection, (connection) =>
+    (
+      recordStatement(
+        connection,
+        `SELECT entry_id,payload
+    FROM ne19_kept_sandboxes ORDER BY kept_at,entry_id`,
+      ).all() as Row[]
+    ).map((row) => ({
+      id: String(row.entry_id),
+      payload: payload(row.payload, "kept sandbox"),
+    })),
+  );
 }
 
 export function updateKeptSandbox(connection: RecordDatabase, id: string, value: Uint8Array) {
-  return withConnection(connection, (connection) => Number(recordStatement(connection,
-    "UPDATE ne19_kept_sandboxes SET payload=? WHERE entry_id=?").run(value, id).changes) === 1);
+  return withConnection(
+    connection,
+    (connection) =>
+      Number(
+        recordStatement(connection, "UPDATE ne19_kept_sandboxes SET payload=? WHERE entry_id=?").run(value, id).changes,
+      ) === 1,
+  );
 }
 
 export function deleteKeptSandbox(connection: RecordDatabase, id: string) {
@@ -192,17 +255,25 @@ export interface KeptSandboxLeaseRow {
 
 function keptLeaseRow(row: Row): KeptSandboxLeaseRow {
   return {
-    generation: Number(row.generation), token: String(row.token), holder: String(row.holder),
-    operation: String(row.operation), acquiredAt: String(row.acquired_at), ttlMs: Number(row.ttl_ms),
-    ownerPid: Number(row.owner_pid), ownerHost: String(row.owner_host),
+    generation: Number(row.generation),
+    token: String(row.token),
+    holder: String(row.holder),
+    operation: String(row.operation),
+    acquiredAt: String(row.acquired_at),
+    ttlMs: Number(row.ttl_ms),
+    ownerPid: Number(row.owner_pid),
+    ownerHost: String(row.owner_host),
     ownerProcessIdentity: String(row.owner_process_identity),
   };
 }
 
 export function getKeptSandboxLease(connection: RecordDatabase, id: string) {
   return withConnection(connection, (connection) => {
-    const row = recordStatement(connection, `SELECT * FROM ne19_kept_sandbox_operation_leases
-      WHERE entry_id=?`).get(id) as Row | undefined;
+    const row = recordStatement(
+      connection,
+      `SELECT * FROM ne19_kept_sandbox_operation_leases
+      WHERE entry_id=?`,
+    ).get(id) as Row | undefined;
     return row === undefined ? undefined : keptLeaseRow(row);
   });
 }
@@ -220,19 +291,39 @@ export function acquireKeptSandboxLease(input: {
   readonly ownerProcessIdentity: string;
 }) {
   return withConnection(input.connection, (connection) => {
-    const current = recordStatement(connection, `SELECT * FROM ne19_kept_sandbox_operation_leases
-      WHERE entry_id=?`).get(input.id) as Row | undefined;
+    const current = recordStatement(
+      connection,
+      `SELECT * FROM ne19_kept_sandbox_operation_leases
+      WHERE entry_id=?`,
+    ).get(input.id) as Row | undefined;
     if (current !== undefined) return { acquired: false as const, lease: keptLeaseRow(current) };
-    const advanced = recordStatement(connection, `UPDATE ne19_kept_sandboxes SET operation_generation=operation_generation+1
-      WHERE entry_id=?`).run(input.id);
+    const advanced = recordStatement(
+      connection,
+      `UPDATE ne19_kept_sandboxes SET operation_generation=operation_generation+1
+      WHERE entry_id=?`,
+    ).run(input.id);
     if (Number(advanced.changes) !== 1) throw new Error(`kept sandbox ${input.id} is missing`);
-    const row = recordStatement(connection, "SELECT operation_generation FROM ne19_kept_sandboxes WHERE entry_id=?")
-      .get(input.id) as Row;
+    const row = recordStatement(
+      connection,
+      "SELECT operation_generation FROM ne19_kept_sandboxes WHERE entry_id=?",
+    ).get(input.id) as Row;
     const generation = Number(row.operation_generation);
-    recordStatement(connection, `INSERT INTO ne19_kept_sandbox_operation_leases(entry_id,generation,token,holder,
-      owner_pid,owner_host,owner_process_identity,operation,acquired_at,ttl_ms) VALUES(?,?,?,?,?,?,?,?,?,?)`)
-      .run(input.id, generation, input.token, input.holder, input.ownerPid, input.ownerHost,
-        input.ownerProcessIdentity, input.operation, input.acquiredAt, input.ttlMs);
+    recordStatement(
+      connection,
+      `INSERT INTO ne19_kept_sandbox_operation_leases(entry_id,generation,token,holder,
+      owner_pid,owner_host,owner_process_identity,operation,acquired_at,ttl_ms) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      input.id,
+      generation,
+      input.token,
+      input.holder,
+      input.ownerPid,
+      input.ownerHost,
+      input.ownerProcessIdentity,
+      input.operation,
+      input.acquiredAt,
+      input.ttlMs,
+    );
     return { acquired: true as const, generation };
   });
 }
@@ -246,8 +337,16 @@ export function releaseKeptSandboxLease(input: {
   readonly ownerHost: string;
   readonly ownerProcessIdentity: string;
 }) {
-  return withConnection(input.connection, (connection) => Number(recordStatement(connection,
-    `DELETE FROM ne19_kept_sandbox_operation_leases WHERE entry_id=? AND generation=? AND token=?
-      AND owner_pid=? AND owner_host=? AND owner_process_identity=?`)
-    .run(input.id, input.generation, input.token, input.ownerPid, input.ownerHost, input.ownerProcessIdentity).changes) === 1);
+  return withConnection(
+    input.connection,
+    (connection) =>
+      Number(
+        recordStatement(
+          connection,
+          `DELETE FROM ne19_kept_sandbox_operation_leases WHERE entry_id=? AND generation=? AND token=?
+      AND owner_pid=? AND owner_host=? AND owner_process_identity=?`,
+        ).run(input.id, input.generation, input.token, input.ownerPid, input.ownerHost, input.ownerProcessIdentity)
+          .changes,
+      ) === 1,
+  );
 }

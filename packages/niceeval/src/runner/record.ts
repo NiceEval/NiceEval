@@ -10,25 +10,19 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import { recordHost } from "../record/host/runtime.ts";
-import { discardAttemptWriteSession, stagePlanningReference, writerGenerationForRunSession } from "../record/host/sqlite-host.ts";
-import type {
-  AttemptWriteSession,
-  RecordSealReceipt,
-  RunWriteSession,
-} from "../record/host/types.ts";
-import type {
-  RunId,
-  SlotId,
-} from "../record/model/identifiers.ts";
+import {
+  discardAttemptWriteSession,
+  stagePlanningReference,
+  writerGenerationForRunSession,
+} from "../record/host/sqlite-host.ts";
+import type { AttemptWriteSession, RecordSealReceipt, RunWriteSession } from "../record/host/types.ts";
+import type { RunId, SlotId } from "../record/model/identifiers.ts";
 import { recordRootPaths, type RecordRoot } from "../record/platform/root.ts";
 import { attemptPublicationClosure } from "../record/codec/core.ts";
 import { RecordRootInvalid } from "../record/platform/errors.ts";
 import { recordSqlitePath } from "../record/sqlite/index.ts";
 import type { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
-import type {
-  RecordReaderOpenError,
-  RecordReaderReadError,
-} from "../record/reader/errors.ts";
+import type { RecordReaderOpenError, RecordReaderReadError } from "../record/reader/errors.ts";
 import type { RecordWriteError } from "../record/writer/types.ts";
 import {
   bindAttemptReference,
@@ -72,10 +66,7 @@ import {
 } from "./record/attachments.ts";
 import { adapterUsageForResult } from "./adapter-usage.ts";
 import { adapterAttachmentsForResult, releaseAdapterAttachments } from "./adapter-attachments.ts";
-import {
-  adapterExecutionTracesForResult,
-  validateExecutionTracePublication,
-} from "./adapter-execution-trace.ts";
+import { adapterExecutionTracesForResult, validateExecutionTracePublication } from "./adapter-execution-trace.ts";
 import { executionTracesRecordCollection } from "../record/family/execution-traces/definition.ts";
 import {
   planRunnerRecordRun,
@@ -88,12 +79,7 @@ import {
   type RunnerRecordTargetIdentityInvalid,
   type RunnerRecordTargetInputMissing,
 } from "./record/planning.ts";
-import type {
-  AgentRun,
-  Attempt,
-  DiscoveredEval,
-  EvalResult,
-} from "./types.ts";
+import type { AgentRun, Attempt, DiscoveredEval, EvalResult } from "./types.ts";
 import type { AttemptCostAttachment } from "../record/family/attempt-cost/definition.ts";
 import { simulatedUserActivitiesForResult } from "../simulated-user/audit.ts";
 import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
@@ -140,29 +126,47 @@ export type RecordAttemptLocator = AttemptLocator;
 function createAttemptCostAttachment(result: EvalResult): AttemptCostAttachment {
   const receipt = getPricingEstimateReceipt(result);
   const activities = simulatedUserActivitiesForResult(result);
-  const calls = activities.flatMap(activity => activity.generations);
-  const priced = calls.filter(call => call.costUSD !== null);
+  const calls = activities.flatMap((activity) => activity.generations);
+  const priced = calls.filter((call) => call.costUSD !== null);
   return Object.freeze({
-    ...(activities.length === 0 ? {} : { simulatedUser: {
-      source: "simulated-user" as const,
-      state: calls.length === 0 || priced.length === calls.length ? "complete" as const : priced.length > 0 ? "partial" as const : "unpriced" as const,
-      amountUSD: calls.length === 0 ? 0 : priced.length === 0 ? null : priced.reduce((sum, call) => sum + call.costUSD!, 0), calls: calls.length,
-    } }),
-    ...(result.usage?.costUSD === undefined ? {} : {
-      observed: Object.freeze({ kind: "observed" as const, amountUSD: result.usage.costUSD }),
-    }),
-    ...(receipt === undefined ? {} : {
-      estimated: Object.freeze({
-        kind: "estimated" as const,
-        amountUSD: receipt.amountUSD,
-        model: receipt.model,
-        priceSource: receipt.priceSource,
-        charges: receipt.charges,
-      }),
-    }),
+    ...(activities.length === 0
+      ? {}
+      : {
+          simulatedUser: {
+            source: "simulated-user" as const,
+            state:
+              calls.length === 0 || priced.length === calls.length
+                ? ("complete" as const)
+                : priced.length > 0
+                  ? ("partial" as const)
+                  : ("unpriced" as const),
+            amountUSD:
+              calls.length === 0
+                ? 0
+                : priced.length === 0
+                  ? null
+                  : priced.reduce((sum, call) => sum + call.costUSD!, 0),
+            calls: calls.length,
+          },
+        }),
+    ...(result.usage?.costUSD === undefined
+      ? {}
+      : {
+          observed: Object.freeze({ kind: "observed" as const, amountUSD: result.usage.costUSD }),
+        }),
+    ...(receipt === undefined
+      ? {}
+      : {
+          estimated: Object.freeze({
+            kind: "estimated" as const,
+            amountUSD: receipt.amountUSD,
+            model: receipt.model,
+            priceSource: receipt.priceSource,
+            charges: receipt.charges,
+          }),
+        }),
   });
 }
-
 
 export interface RunnerRecordAttemptInvalid {
   readonly code: "runner-record-attempt-invalid";
@@ -255,9 +259,7 @@ export interface RunnerRecordCoordinator {
   ) => Effect.Effect<
     boolean,
     RecordReaderOpenError | RecordReaderReadError | ProjectTargetReusePlanInvalid | RunnerRecordWriteError,
-    import("effect").Scope.Scope
-      | import("../coordination/record-leases.ts").RecordCoordination
-      | ProjectStateDatabase
+    import("effect").Scope.Scope | import("../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase
   >;
   readonly reserveAttempt: (
     attempt: Attempt,
@@ -291,48 +293,66 @@ export function withRunnerCurrentReusePreview<A, E, R>(input: {
       RecordReaderReadError | CurrentReuseReadbackPlanInvalid
     >;
   }) => Effect.Effect<A, E, R>;
-}): Effect.Effect<A, E | RunnerRecordOpenError, R | import("effect").Scope.Scope | import("../coordination/record-leases.ts").RecordCoordination | ProjectStateDatabase> {
-  return Effect.scoped(Effect.gen(function* () {
-    const startedAt = runnerRecordUtcMillis(input.startedAt);
-    if (Result.isFailure(startedAt)) return yield* Effect.fail(startedAt.failure);
-    const planned = yield* Effect.forEach(input.runs, (run) => planRunnerRecordRun({
-      run,
-      evals: input.evals,
-      reuse: input.reuse,
-    }), { concurrency: 1 });
-    const previewRuns: TargetRun[] = [];
-    for (const plan of planned) {
-      const runId = previewRunnerRunId(plan.run);
-      if (Result.isFailure(runId)) return yield* Effect.fail(runId.failure);
-      previewRuns.push(targetForRunnerRecordRun({ planned: plan, runId: runId.success, startedAt: startedAt.success }));
-    }
-    const target = Object.freeze({
-      invocationId: `preview-${createHash("sha256").update(String(input.startedAt), "utf8").digest("hex")}`,
-      runs: Object.freeze(previewRuns),
-    });
-    const rootPath = recordRootPaths(input.recordRoot)?.portableRoot;
-    if (rootPath === undefined) return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
-    const recordDatabase = recordSqlitePath(rootPath);
-    if (!existsSync(recordDatabase)) {
-      const reusePlan = yield* planProjectTargetReuseWithoutSources({ target, policy: input.reuse.policy });
+}): Effect.Effect<
+  A,
+  E | RunnerRecordOpenError,
+  | R
+  | import("effect").Scope.Scope
+  | import("../coordination/record-leases.ts").RecordCoordination
+  | ProjectStateDatabase
+> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const startedAt = runnerRecordUtcMillis(input.startedAt);
+      if (Result.isFailure(startedAt)) return yield* Effect.fail(startedAt.failure);
+      const planned = yield* Effect.forEach(
+        input.runs,
+        (run) =>
+          planRunnerRecordRun({
+            run,
+            evals: input.evals,
+            reuse: input.reuse,
+          }),
+        { concurrency: 1 },
+      );
+      const previewRuns: TargetRun[] = [];
+      for (const plan of planned) {
+        const runId = previewRunnerRunId(plan.run);
+        if (Result.isFailure(runId)) return yield* Effect.fail(runId.failure);
+        previewRuns.push(
+          targetForRunnerRecordRun({ planned: plan, runId: runId.success, startedAt: startedAt.success }),
+        );
+      }
+      const target = Object.freeze({
+        invocationId: `preview-${createHash("sha256").update(String(input.startedAt), "utf8").digest("hex")}`,
+        runs: Object.freeze(previewRuns),
+      });
+      const rootPath = recordRootPaths(input.recordRoot)?.portableRoot;
+      if (rootPath === undefined) return yield* Effect.fail(new RecordRootInvalid({ code: "record-root-invalid" }));
+      const recordDatabase = recordSqlitePath(rootPath);
+      if (!existsSync(recordDatabase)) {
+        const reusePlan = yield* planProjectTargetReuseWithoutSources({ target, policy: input.reuse.policy });
+        return yield* input.use({
+          reusePlan,
+          readReadbacks: () => Effect.succeed(Object.freeze([])),
+        });
+      }
+      const { reusePlan, readbacks } = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const reader = yield* recordHost.openRead({ root: input.recordRoot });
+          const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
+          const readbacks = yield* readCurrentExecutionReusePlanReadbacks({ reader, plan: reusePlan }).pipe(
+            Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
+          );
+          return { reusePlan, readbacks };
+        }),
+      );
       return yield* input.use({
         reusePlan,
-        readReadbacks: () => Effect.succeed(Object.freeze([])),
+        readReadbacks: () => Effect.succeed(readbacks),
       });
-    }
-    const { reusePlan, readbacks } = yield* Effect.scoped(Effect.gen(function* () {
-      const reader = yield* recordHost.openRead({ root: input.recordRoot });
-      const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
-      const readbacks = yield* readCurrentExecutionReusePlanReadbacks({ reader, plan: reusePlan }).pipe(
-        Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
-      );
-      return { reusePlan, readbacks };
-    }));
-    return yield* input.use({
-      reusePlan,
-      readReadbacks: () => Effect.succeed(readbacks),
-    });
-  }));
+    }),
+  );
 }
 
 function attemptInvalid(): RunnerRecordAttemptInvalid {
@@ -347,17 +367,15 @@ function membershipStateInvalid(slotId: SlotId): RunnerRecordMembershipStateInva
   return Object.freeze({ code: "runner-record-membership-state-invalid" as const, slotId });
 }
 
-function attemptPublicationFailed(
-  locator: AttemptLocator,
-  cause: unknown,
-): RunnerRecordAttemptPublicationFailed {
-  const detail = cause instanceof Error
-    ? cause.message
-    : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
-      ? String(Reflect.get(cause, "message"))
-      : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-        ? String(Reflect.get(cause, "code"))
-      : String(cause);
+function attemptPublicationFailed(locator: AttemptLocator, cause: unknown): RunnerRecordAttemptPublicationFailed {
+  const detail =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
+        ? String(Reflect.get(cause, "message"))
+        : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
+          ? String(Reflect.get(cause, "code"))
+          : String(cause);
   return Object.freeze({
     code: "runner-record-attempt-publication-failed" as const,
     locator,
@@ -385,10 +403,10 @@ export function openRunnerRecordCoordinator(input: {
 }): Effect.Effect<
   RunnerRecordCoordinator,
   RunnerRecordOpenError,
-  import("effect").Scope.Scope
-    | import("../record/platform/services.ts").RecordEntropy
-    | import("../coordination/record-leases.ts").RecordCoordination
-    | ProjectStateDatabase
+  | import("effect").Scope.Scope
+  | import("../record/platform/services.ts").RecordEntropy
+  | import("../coordination/record-leases.ts").RecordCoordination
+  | ProjectStateDatabase
 > {
   return Effect.gen(function* () {
     const rootPath = recordRootPaths(input.recordRoot)?.portableRoot;
@@ -406,43 +424,63 @@ export function openRunnerRecordCoordinator(input: {
     }
     const startedAt = runnerRecordUtcMillis(input.startedAt);
     if (Result.isFailure(startedAt)) return yield* Effect.fail(startedAt.failure);
-    const planned = yield* Effect.forEach(input.runs, (run) => planRunnerRecordRun({
-      run,
-      evals: input.evals,
-      reuse: input.reuse,
-    }), { concurrency: 1 });
-    const invocationId = input.session?.sessionId ?? createHash("sha256")
-      .update(`${input.startedAt}\u0000${planned.map((entry) => entry.run.experimentId).join("\u0000")}`, "utf8")
-      .digest("hex");
-    const openedRuns = yield* Effect.forEach(planned, (plan) => recordHost.createRun({
-      root: input.recordRoot,
-      experimentId: plan.experimentId,
-      context: plan.context,
-      startedAt: startedAt.success,
-      expectedSlots: plan.expectedSlots,
-      writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.experimentId}`),
-    }).pipe(Effect.map((session) => {
-      const writerGeneration = writerGenerationForRunSession(session);
-      if (writerGeneration === undefined) throw new Error("Run writer generation is unavailable");
-      return Object.freeze({ plan, session, writerGeneration });
-    })), { concurrency: 1 });
+    const planned = yield* Effect.forEach(
+      input.runs,
+      (run) =>
+        planRunnerRecordRun({
+          run,
+          evals: input.evals,
+          reuse: input.reuse,
+        }),
+      { concurrency: 1 },
+    );
+    const invocationId =
+      input.session?.sessionId ??
+      createHash("sha256")
+        .update(`${input.startedAt}\u0000${planned.map((entry) => entry.run.experimentId).join("\u0000")}`, "utf8")
+        .digest("hex");
+    const openedRuns = yield* Effect.forEach(
+      planned,
+      (plan) =>
+        recordHost
+          .createRun({
+            root: input.recordRoot,
+            experimentId: plan.experimentId,
+            context: plan.context,
+            startedAt: startedAt.success,
+            expectedSlots: plan.expectedSlots,
+            writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.experimentId}`),
+          })
+          .pipe(
+            Effect.map((session) => {
+              const writerGeneration = writerGenerationForRunSession(session);
+              if (writerGeneration === undefined) throw new Error("Run writer generation is unavailable");
+              return Object.freeze({ plan, session, writerGeneration });
+            }),
+          ),
+      { concurrency: 1 },
+    );
     if (input.session !== undefined) {
       const startedAtIso = new Date(input.startedAt).toISOString();
-      yield* input.session.start({
-        runIds: new Map(openedRuns.map(({ plan, session }) => [plan.experimentId, String(session.runId)])),
-        agentRuns: input.runs,
-        startedAt: startedAtIso,
-        invocationRuns: openedRuns.map(({ plan, session, writerGeneration }) => ({
-          runId: String(session.runId),
-          experimentId: plan.experimentId,
-          writerGeneration,
+      yield* input.session
+        .start({
+          runIds: new Map(openedRuns.map(({ plan, session }) => [plan.experimentId, String(session.runId)])),
+          agentRuns: input.runs,
           startedAt: startedAtIso,
-          expectedSlots: plan.expectedSlots.map((slot) => ({
-            slotId: String(slot.slotId), evalId: String(slot.evalId), attemptOrdinal: slot.attemptOrdinal,
-            executionIdentityDigest: String(slot.executionIdentityDigest),
+          invocationRuns: openedRuns.map(({ plan, session, writerGeneration }) => ({
+            runId: String(session.runId),
+            experimentId: plan.experimentId,
+            writerGeneration,
+            startedAt: startedAtIso,
+            expectedSlots: plan.expectedSlots.map((slot) => ({
+              slotId: String(slot.slotId),
+              evalId: String(slot.evalId),
+              attemptOrdinal: slot.attemptOrdinal,
+              executionIdentityDigest: String(slot.executionIdentityDigest),
+            })),
           })),
-        })),
-      }).pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
+        })
+        .pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
     }
     const byRun = new Map<AgentRun, RunnerRecordRun>();
     const byRecordRunId = new Map<RunId, RunnerRecordRun>();
@@ -450,8 +488,15 @@ export function openRunnerRecordCoordinator(input: {
     const targetRuns: TargetRun[] = [];
     for (const { plan, session, writerGeneration } of openedRuns) {
       yield* session.attach(NiceEvalRecordAttachments.identityManifests, {
-        entries: [...new Map(plan.slotEntries.flatMap((entry) => entry.reuse.identityManifest === undefined ? [] : [[entry.evalDef.id, entry.reuse.identityManifest] as const])).values()]
-          .sort((a, b) => a.evalId < b.evalId ? -1 : a.evalId > b.evalId ? 1 : 0),
+        entries: [
+          ...new Map(
+            plan.slotEntries.flatMap((entry) =>
+              entry.reuse.identityManifest === undefined
+                ? []
+                : [[entry.evalDef.id, entry.reuse.identityManifest] as const],
+            ),
+          ).values(),
+        ].sort((a, b) => (a.evalId < b.evalId ? -1 : a.evalId > b.evalId ? 1 : 0)),
       });
       const target = targetForRunnerRecordRun({
         planned: plan,
@@ -477,14 +522,16 @@ export function openRunnerRecordCoordinator(input: {
       invocationId,
       runs: Object.freeze(targetRuns),
     });
-    const { reusePlan, carriedResults } = yield* Effect.scoped(Effect.gen(function* () {
-      const reader = yield* recordHost.openRead({ root: input.recordRoot });
-      const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
-      const carriedResults = yield* readCurrentExecutionReusePlanResults({ reader, plan: reusePlan }).pipe(
-        Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
-      );
-      return { reusePlan, carriedResults };
-    }));
+    const { reusePlan, carriedResults } = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const reader = yield* recordHost.openRead({ root: input.recordRoot });
+        const reusePlan = yield* planProjectTargetReuse({ reader, target, policy: input.reuse.policy });
+        const carriedResults = yield* readCurrentExecutionReusePlanResults({ reader, plan: reusePlan }).pipe(
+          Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
+        );
+        return { reusePlan, carriedResults };
+      }),
+    );
     const carriedAttemptsByKey = new Map<string, Set<number>>();
     for (const slot of reusePlan.slots) {
       const recordRun = byRecordRunId.get(slot.runId);
@@ -497,13 +544,13 @@ export function openRunnerRecordCoordinator(input: {
           reference: slot.source.reference,
         });
         yield* bindAttemptReference(rootPath, {
-            runId: String(recordRun.session.runId),
-            writerGeneration: recordRun.writerGeneration,
-            slotId: String(slot.slotId),
-            action: "carried",
-            publicationIdentity: slot.source.reference.publicationIdentity,
-            deadlineEpochMs: Date.now() + 30_000,
-          }).pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
+          runId: String(recordRun.session.runId),
+          writerGeneration: recordRun.writerGeneration,
+          slotId: String(slot.slotId),
+          action: "carried",
+          publicationIdentity: slot.source.reference.publicationIdentity,
+          deadlineEpochMs: Date.now() + 30_000,
+        }).pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
         const entry = recordRun.slots.get(runnerRecordSlotKey(slot.evalId, slot.attempt));
         if (entry === undefined) return yield* Effect.fail(membershipStateInvalid(slot.slotId));
         const key = cacheKey(recordRun.run, entry.evalDef.id);
@@ -515,9 +562,9 @@ export function openRunnerRecordCoordinator(input: {
       }
     }
     if (input.session !== undefined) {
-      yield* input.session.applyCarriedAttempts(input.runs, carriedAttemptsByKey).pipe(
-        Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })),
-      );
+      yield* input.session
+        .applyCarriedAttempts(input.runs, carriedAttemptsByKey)
+        .pipe(Effect.mapError((cause): RunnerSessionOpenFailed => ({ code: "runner-session-open-failed", cause })));
     }
 
     let invocationWriteFailure: RunnerRecordWriteError | undefined;
@@ -531,228 +578,251 @@ export function openRunnerRecordCoordinator(input: {
     };
     const lock = yield* Semaphore.make(1);
     const runForAttempt = (attempt: Attempt): RunnerRecordRun | undefined => byRun.get(attempt.run);
-    const targetForAttempt = (attempt: Attempt): {
-      readonly recordRun: RunnerRecordRun;
-      readonly slotId: SlotId;
-      readonly plan: ExecutionReusePlanSlot;
-    } | undefined => {
+    const targetForAttempt = (
+      attempt: Attempt,
+    ):
+      | {
+          readonly recordRun: RunnerRecordRun;
+          readonly slotId: SlotId;
+          readonly plan: ExecutionReusePlanSlot;
+        }
+      | undefined => {
       const recordRun = runForAttempt(attempt);
       if (recordRun === undefined) return undefined;
-      const entry = recordRun.slots.get(
-        runnerRecordSlotKey(attempt.evalDef.id, attempt.attempt),
-      );
+      const entry = recordRun.slots.get(runnerRecordSlotKey(attempt.evalDef.id, attempt.attempt));
       if (entry === undefined) return undefined;
       const plan = recordRun.planSlots.get(entry.slot.slotId);
       return plan === undefined ? undefined : { recordRun, slotId: entry.slot.slotId, plan };
     };
 
-    const adoptLatePublishedAttempt = (attempt: Attempt) => lock.withPermits(1)(Effect.gen(function* () {
-      const current = targetForAttempt(attempt);
-      if (
-        current === undefined
-        || current.plan.state !== "gap"
-        || current.recordRun.gapActions.get(current.slotId) !== "pending"
-      ) return false;
-      const refreshed = yield* Effect.scoped(Effect.gen(function* () {
-        const freshReader = yield* recordHost.openRead({ root: input.recordRoot });
-        return yield* planProjectTargetReuse({ reader: freshReader, target, policy: input.reuse.policy });
-      }));
-      const replacement = refreshed.slots.find((slot) =>
-        slot.runId === current.recordRun.target.runId && slot.slotId === current.slotId);
-      if (replacement?.state !== "reuse") return false;
-      yield* stagePlanningReference(current.recordRun.session, {
-        slotId: current.slotId,
-        action: "carried",
-        reference: replacement.source.reference,
-      });
-      yield* bindAttemptReference(rootPath, {
-          runId: String(current.recordRun.session.runId),
-          writerGeneration: current.recordRun.writerGeneration,
-          slotId: String(current.slotId),
-          action: "carried",
-          publicationIdentity: replacement.source.reference.publicationIdentity,
-          deadlineEpochMs: Date.now() + 30_000,
-        }).pipe(Effect.mapError(() => publishStateInvalid(current.recordRun.session.runId)));
-      current.recordRun.planSlots.set(current.slotId, replacement);
-      current.recordRun.gapActions.delete(current.slotId);
-      return true;
-    }));
+    const adoptLatePublishedAttempt = (attempt: Attempt) =>
+      lock.withPermits(1)(
+        Effect.gen(function* () {
+          const current = targetForAttempt(attempt);
+          if (
+            current === undefined ||
+            current.plan.state !== "gap" ||
+            current.recordRun.gapActions.get(current.slotId) !== "pending"
+          )
+            return false;
+          const refreshed = yield* Effect.scoped(
+            Effect.gen(function* () {
+              const freshReader = yield* recordHost.openRead({ root: input.recordRoot });
+              return yield* planProjectTargetReuse({ reader: freshReader, target, policy: input.reuse.policy });
+            }),
+          );
+          const replacement = refreshed.slots.find(
+            (slot) => slot.runId === current.recordRun.target.runId && slot.slotId === current.slotId,
+          );
+          if (replacement?.state !== "reuse") return false;
+          yield* stagePlanningReference(current.recordRun.session, {
+            slotId: current.slotId,
+            action: "carried",
+            reference: replacement.source.reference,
+          });
+          yield* bindAttemptReference(rootPath, {
+            runId: String(current.recordRun.session.runId),
+            writerGeneration: current.recordRun.writerGeneration,
+            slotId: String(current.slotId),
+            action: "carried",
+            publicationIdentity: replacement.source.reference.publicationIdentity,
+            deadlineEpochMs: Date.now() + 30_000,
+          }).pipe(Effect.mapError(() => publishStateInvalid(current.recordRun.session.runId)));
+          current.recordRun.planSlots.set(current.slotId, replacement);
+          current.recordRun.gapActions.delete(current.slotId);
+          return true;
+        }),
+      );
 
-    const reserveAttempt = (attempt: Attempt): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> => {
+    const reserveAttempt = (
+      attempt: Attempt,
+    ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> => {
       const targetSlot = targetForAttempt(attempt);
-      return lock.withPermits(1)(Effect.gen(function* () {
-        if (
-          targetSlot === undefined
-          || targetSlot.plan.state !== "gap"
-          || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "pending"
-        ) {
-          return yield* Effect.fail(attemptInvalid());
-        }
-        const session = yield* targetSlot.recordRun.session.createAttempt({ slotId: targetSlot.slotId });
-        const publicAttempt = Object.freeze({
-          slotId: targetSlot.slotId,
-          attemptId: session.attemptId,
-          locator: encodeAttemptLocator(session.attemptId),
-        });
-        targetSlot.recordRun.attempts.set(targetSlot.slotId, {
-          attempt,
-          session,
-          public: publicAttempt,
-          completed: false,
-        });
-        targetSlot.recordRun.gapActions.set(targetSlot.slotId, "reserved");
-        return publicAttempt;
-      })).pipe(Effect.tapError((error) =>
-        Effect.sync(() => noteFailure(error, targetSlot?.recordRun ?? runForAttempt(attempt))),
-      ));
+      return lock
+        .withPermits(1)(
+          Effect.gen(function* () {
+            if (
+              targetSlot === undefined ||
+              targetSlot.plan.state !== "gap" ||
+              targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "pending"
+            ) {
+              return yield* Effect.fail(attemptInvalid());
+            }
+            const session = yield* targetSlot.recordRun.session.createAttempt({ slotId: targetSlot.slotId });
+            const publicAttempt = Object.freeze({
+              slotId: targetSlot.slotId,
+              attemptId: session.attemptId,
+              locator: encodeAttemptLocator(session.attemptId),
+            });
+            targetSlot.recordRun.attempts.set(targetSlot.slotId, {
+              attempt,
+              session,
+              public: publicAttempt,
+              completed: false,
+            });
+            targetSlot.recordRun.gapActions.set(targetSlot.slotId, "reserved");
+            return publicAttempt;
+          }),
+        )
+        .pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() => noteFailure(error, targetSlot?.recordRun ?? runForAttempt(attempt))),
+          ),
+        );
     };
 
     const noteSealedOrMarkIncomplete = (
       attempt: Attempt,
       sealed: SealedAttemptAssertions,
-    ): Effect.Effect<void, never> => Effect.sync(() => {
-      const targetSlot = targetForAttempt(attempt);
-      const active = targetSlot === undefined
-        ? undefined
-        : targetSlot.recordRun.attempts.get(targetSlot.slotId);
-      if (
-        targetSlot === undefined
-        || targetSlot.plan.state !== "gap"
-        || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "reserved"
-        || active === undefined
-        || active.attempt !== attempt
-        || active.sealed !== undefined
-      ) {
-        noteFailure(attemptInvalid(), targetSlot?.recordRun ?? runForAttempt(attempt));
-        return;
-      }
-      active.sealed = sealed;
-    });
+    ): Effect.Effect<void, never> =>
+      Effect.sync(() => {
+        const targetSlot = targetForAttempt(attempt);
+        const active = targetSlot === undefined ? undefined : targetSlot.recordRun.attempts.get(targetSlot.slotId);
+        if (
+          targetSlot === undefined ||
+          targetSlot.plan.state !== "gap" ||
+          targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "reserved" ||
+          active === undefined ||
+          active.attempt !== attempt ||
+          active.sealed !== undefined
+        ) {
+          noteFailure(attemptInvalid(), targetSlot?.recordRun ?? runForAttempt(attempt));
+          return;
+        }
+        active.sealed = sealed;
+      });
 
     const completeAttempt = (
       attempt: Attempt,
       result: EvalResult,
-    ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> => Effect.suspend<
-      RunnerRecordAttempt,
-      RunnerRecordWriteError,
-      ProjectStateDatabase
-    >(() => {
-      const targetSlot = targetForAttempt(attempt);
-      const active = targetSlot === undefined
-        ? undefined
-        : targetSlot.recordRun.attempts.get(targetSlot.slotId);
-      if (
-        targetSlot === undefined
-        || targetSlot.plan.state !== "gap"
-        || targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "reserved"
-        || active === undefined
-        || active.attempt !== attempt
-        || active.completed
-      ) {
-        return Effect.fail(attemptInvalid());
-      }
-      const assertions = active.sealed === undefined
-        ? undefined
-        : createRunnerAssertionsAttachment(active.sealed);
-      if (assertions !== undefined && Result.isFailure(assertions)) return Effect.fail(assertions.failure);
-      if (active.sealed === undefined || assertions === undefined || Result.isFailure(assertions)) {
-        return Effect.fail(membershipStateInvalid(targetSlot.slotId));
-      }
-      return Effect.gen(function* () {
-        const sourcePlan = createRunnerSourceWritePlan([Object.freeze({
-          slotId: targetSlot.slotId,
-          result,
-          assertionEntryIds: assertions.success.entryIds,
-        })]);
-        if (Result.isFailure(sourcePlan)) {
-          return yield* Effect.fail(Object.freeze({
-            code: "runner-record-sources-invalid" as const,
-            issue: sourcePlan.failure,
-          }));
+    ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> =>
+      Effect.suspend<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase>(() => {
+        const targetSlot = targetForAttempt(attempt);
+        const active = targetSlot === undefined ? undefined : targetSlot.recordRun.attempts.get(targetSlot.slotId);
+        if (
+          targetSlot === undefined ||
+          targetSlot.plan.state !== "gap" ||
+          targetSlot.recordRun.gapActions.get(targetSlot.slotId) !== "reserved" ||
+          active === undefined ||
+          active.attempt !== attempt ||
+          active.completed
+        ) {
+          return Effect.fail(attemptInvalid());
         }
-        const closedAssertions = createRunnerAssertionsAttachment(active.sealed!, {
-          entryIds: assertions.success.entryIds,
-          sourceSites: sourcePlan.success.sourceSitesBySlot.get(targetSlot.slotId),
-        });
-        if (Result.isFailure(closedAssertions)) return yield* Effect.fail(closedAssertions.failure);
-        yield* active.session.records.write(
-          NiceEvalRecordAttachments.assertions,
-          closedAssertions.success.attachment,
-        );
-        yield* active.session.records.write(
-          NiceEvalRecordAttachments.attemptCost,
-          createAttemptCostAttachment(result),
-        );
-        const sourceReceipts = yield* createAttemptObservabilityAttachments({ result, sealed: active.sealed! });
-        if (sourceReceipts.agentTurns !== undefined) {
-          yield* active.session.records.write(NiceEvalRecordAttachments.agentTurns, sourceReceipts.agentTurns);
+        const assertions = active.sealed === undefined ? undefined : createRunnerAssertionsAttachment(active.sealed);
+        if (assertions !== undefined && Result.isFailure(assertions)) return Effect.fail(assertions.failure);
+        if (active.sealed === undefined || assertions === undefined || Result.isFailure(assertions)) {
+          return Effect.fail(membershipStateInvalid(targetSlot.slotId));
         }
-        if (sourceReceipts.sandboxCommands !== undefined) {
-          yield* active.session.records.write(NiceEvalRecordAttachments.sandboxCommands, sourceReceipts.sandboxCommands);
-        }
-        yield* active.session.records.write(
-          NiceEvalRecordAttachments.runnerActivities.attempt,
-          sourceReceipts.runnerActivities,
-        );
-        yield* active.session.records.write(
-          NiceEvalRecordAttachments.runnerDiagnostics.attempt,
-          sourceReceipts.runnerDiagnostics,
-        );
-        const turnContexts = createRunnerTurnContextsAttachment({ result, sourcePlan: sourcePlan.success });
-        if (Result.isFailure(turnContexts)) {
-          return yield* Effect.fail(Object.freeze({
-            code: "runner-record-sources-invalid" as const,
-            issue: turnContexts.failure,
-          }));
-        }
-        if (turnContexts.success !== undefined) {
-          yield* active.session.records.write(NiceEvalRecordAttachments.turnContexts, turnContexts.success);
-        }
-        const fileChanges = createAttemptFileChangesAttachment(result);
-        if (fileChanges !== undefined) {
-          yield* active.session.records.write(NiceEvalRecordAttachments.fileChanges, fileChanges);
-        }
-        const attachmentSnapshot = adapterAttachmentsForResult(result);
-        const artifacts = createAttemptArtifactsAttachment(result, attachmentSnapshot);
-        const judgeUsage = judgeUsageForResult(result, closedAssertions.success.entryIds);
-        if (judgeUsage !== undefined) yield* active.session.records.write(NiceEvalRecordAttachments.judgeUsage, judgeUsage);
-        yield* active.session.records.write(NiceEvalRecordAttachments.attemptNotes, attemptNotesForResult(result));
-        const adapterUsage = adapterUsageForResult(result);
-        const executionTraces = adapterExecutionTracesForResult(result);
-        if (adapterUsage !== undefined) {
-          yield* active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage);
-        }
-        if (artifacts !== undefined) {
-          yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
-        }
-        if (executionTraces !== undefined && executionTraces.traces.length > 0) {
-          validateExecutionTracePublication(executionTraces, attachmentSnapshot?.artifacts ?? []);
-          yield* active.session.records.appendAll(
-            executionTracesRecordCollection,
-            Stream.fromIterable(executionTraces.traces.flatMap((trace) => trace.records)),
+        return Effect.gen(function* () {
+          const sourcePlan = createRunnerSourceWritePlan([
+            Object.freeze({
+              slotId: targetSlot.slotId,
+              result,
+              assertionEntryIds: assertions.success.entryIds,
+            }),
+          ]);
+          if (Result.isFailure(sourcePlan)) {
+            return yield* Effect.fail(
+              Object.freeze({
+                code: "runner-record-sources-invalid" as const,
+                issue: sourcePlan.failure,
+              }),
+            );
+          }
+          const closedAssertions = createRunnerAssertionsAttachment(active.sealed!, {
+            entryIds: assertions.success.entryIds,
+            sourceSites: sourcePlan.success.sourceSitesBySlot.get(targetSlot.slotId),
+          });
+          if (Result.isFailure(closedAssertions)) return yield* Effect.fail(closedAssertions.failure);
+          yield* active.session.records.write(
+            NiceEvalRecordAttachments.assertions,
+            closedAssertions.success.attachment,
           );
-          yield* active.session.records.close(
-            executionTracesRecordCollection,
-            executionTraces.failure === undefined
-              ? { state: "complete" }
-              : {
-                  state: "partial",
-                  limitations: [{ code: "capture-failed", stage: "adapter" }],
-                },
+          yield* active.session.records.write(
+            NiceEvalRecordAttachments.attemptCost,
+            createAttemptCostAttachment(result),
           );
-        }
-        yield* active.session.complete(recordAttemptOutcome(result));
-        const closureBytes = new TextEncoder().encode(JSON.stringify(attemptPublicationClosure(
-          Object.freeze({
-            runId: String(targetSlot.recordRun.session.runId),
-            experimentId: targetSlot.recordRun.experimentId,
-            context: targetSlot.recordRun.context,
-            startedAt: targetSlot.recordRun.target.startedAt,
-            completedAt: Date.now(),
-            expectedSlots: targetSlot.recordRun.expectedSlots,
-          }),
-        )));
-        yield* publishOriginAttempt(rootPath, {
+          const sourceReceipts = yield* createAttemptObservabilityAttachments({ result, sealed: active.sealed! });
+          if (sourceReceipts.agentTurns !== undefined) {
+            yield* active.session.records.write(NiceEvalRecordAttachments.agentTurns, sourceReceipts.agentTurns);
+          }
+          if (sourceReceipts.sandboxCommands !== undefined) {
+            yield* active.session.records.write(
+              NiceEvalRecordAttachments.sandboxCommands,
+              sourceReceipts.sandboxCommands,
+            );
+          }
+          yield* active.session.records.write(
+            NiceEvalRecordAttachments.runnerActivities.attempt,
+            sourceReceipts.runnerActivities,
+          );
+          yield* active.session.records.write(
+            NiceEvalRecordAttachments.runnerDiagnostics.attempt,
+            sourceReceipts.runnerDiagnostics,
+          );
+          const turnContexts = createRunnerTurnContextsAttachment({ result, sourcePlan: sourcePlan.success });
+          if (Result.isFailure(turnContexts)) {
+            return yield* Effect.fail(
+              Object.freeze({
+                code: "runner-record-sources-invalid" as const,
+                issue: turnContexts.failure,
+              }),
+            );
+          }
+          if (turnContexts.success !== undefined) {
+            yield* active.session.records.write(NiceEvalRecordAttachments.turnContexts, turnContexts.success);
+          }
+          const fileChanges = createAttemptFileChangesAttachment(result);
+          if (fileChanges !== undefined) {
+            yield* active.session.records.write(NiceEvalRecordAttachments.fileChanges, fileChanges);
+          }
+          const attachmentSnapshot = adapterAttachmentsForResult(result);
+          const artifacts = createAttemptArtifactsAttachment(result, attachmentSnapshot);
+          const judgeUsage = judgeUsageForResult(result, closedAssertions.success.entryIds);
+          if (judgeUsage !== undefined)
+            yield* active.session.records.write(NiceEvalRecordAttachments.judgeUsage, judgeUsage);
+          yield* active.session.records.write(NiceEvalRecordAttachments.attemptNotes, attemptNotesForResult(result));
+          const adapterUsage = adapterUsageForResult(result);
+          const executionTraces = adapterExecutionTracesForResult(result);
+          if (adapterUsage !== undefined) {
+            yield* active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage);
+          }
+          if (artifacts !== undefined) {
+            yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
+          }
+          if (executionTraces !== undefined && executionTraces.traces.length > 0) {
+            validateExecutionTracePublication(executionTraces, attachmentSnapshot?.artifacts ?? []);
+            yield* active.session.records.appendAll(
+              executionTracesRecordCollection,
+              Stream.fromIterable(executionTraces.traces.flatMap((trace) => trace.records)),
+            );
+            yield* active.session.records.close(
+              executionTracesRecordCollection,
+              executionTraces.failure === undefined
+                ? { state: "complete" }
+                : {
+                    state: "partial",
+                    limitations: [{ code: "capture-failed", stage: "adapter" }],
+                  },
+            );
+          }
+          yield* active.session.complete(recordAttemptOutcome(result));
+          const closureBytes = new TextEncoder().encode(
+            JSON.stringify(
+              attemptPublicationClosure(
+                Object.freeze({
+                  runId: String(targetSlot.recordRun.session.runId),
+                  experimentId: targetSlot.recordRun.experimentId,
+                  context: targetSlot.recordRun.context,
+                  startedAt: targetSlot.recordRun.target.startedAt,
+                  completedAt: Date.now(),
+                  expectedSlots: targetSlot.recordRun.expectedSlots,
+                }),
+              ),
+            ),
+          );
+          yield* publishOriginAttempt(rootPath, {
             runId: String(targetSlot.recordRun.session.runId),
             writerGeneration: targetSlot.recordRun.writerGeneration,
             slotId: String(targetSlot.slotId),
@@ -762,69 +832,79 @@ export function openRunnerRecordCoordinator(input: {
             closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
             deadlineEpochMs: Date.now() + 30_000,
           }).pipe(Effect.mapError((cause) => attemptPublicationFailed(active.public.locator, cause)));
-        targetSlot.recordRun.sourceOrigins.set(targetSlot.slotId, Object.freeze({
-          slotId: targetSlot.slotId,
-          result: Object.freeze({ sources: result.sources?.map((source) => ({ ...source })) }),
-          assertionEntryIds: Object.freeze([]),
-        }));
-        delete active.sealed;
-        active.completed = true;
-        targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
-        targetSlot.recordRun.attempts.delete(targetSlot.slotId);
-        return active.public;
+          targetSlot.recordRun.sourceOrigins.set(
+            targetSlot.slotId,
+            Object.freeze({
+              slotId: targetSlot.slotId,
+              result: Object.freeze({ sources: result.sources?.map((source) => ({ ...source })) }),
+              assertionEntryIds: Object.freeze([]),
+            }),
+          );
+          delete active.sealed;
+          active.completed = true;
+          targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
+          targetSlot.recordRun.attempts.delete(targetSlot.slotId);
+          return active.public;
+        });
       });
-    });
 
     const attachRunFacts = (
       recordRun: RunnerRecordRun,
       _mode: "normal" | "interrupted",
-    ): Effect.Effect<void, RunnerRecordWriteError> => Effect.gen(function* () {
-      const writeRecord = (
-        effect: Effect.Effect<void, RecordWriteError, never>,
-      ): Effect.Effect<void, RecordWriteError, never> => effect;
-      const origins: RunnerSourceOriginInput[] = [];
-      for (const [slotId, state] of recordRun.gapActions) {
-        if (state !== "executed") continue;
-        const origin = recordRun.sourceOrigins.get(slotId);
-        if (origin === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
-        origins.push(origin);
-      }
+    ): Effect.Effect<void, RunnerRecordWriteError> =>
+      Effect.gen(function* () {
+        const writeRecord = (
+          effect: Effect.Effect<void, RecordWriteError, never>,
+        ): Effect.Effect<void, RecordWriteError, never> => effect;
+        const origins: RunnerSourceOriginInput[] = [];
+        for (const [slotId, state] of recordRun.gapActions) {
+          if (state !== "executed") continue;
+          const origin = recordRun.sourceOrigins.get(slotId);
+          if (origin === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
+          origins.push(origin);
+        }
 
-      const sources = createRunnerSourceWritePlan(origins.map(({ slotId, result, assertionEntryIds }) => Object.freeze({
-        slotId,
-        result,
-        assertionEntryIds,
-      })));
-      if (Result.isFailure(sources)) {
-        return yield* Effect.fail(Object.freeze({
-          code: "runner-record-sources-invalid" as const,
-          issue: sources.failure,
-        }));
-      }
-      yield* writeRecord(recordRun.session.records.write(
-        NiceEvalRecordAttachments.sources,
-        sources.success.sources,
-      ));
-      recordRun.sourceOrigins.clear();
+        const sources = createRunnerSourceWritePlan(
+          origins.map(({ slotId, result, assertionEntryIds }) =>
+            Object.freeze({
+              slotId,
+              result,
+              assertionEntryIds,
+            }),
+          ),
+        );
+        if (Result.isFailure(sources)) {
+          return yield* Effect.fail(
+            Object.freeze({
+              code: "runner-record-sources-invalid" as const,
+              issue: sources.failure,
+            }),
+          );
+        }
+        yield* writeRecord(recordRun.session.records.write(NiceEvalRecordAttachments.sources, sources.success.sources));
+        recordRun.sourceOrigins.clear();
 
-      const sourceReceipts = yield* createRunObservabilityAttachments(recordRun.run);
-      if (sourceReceipts.runnerActivities !== undefined) {
-        yield* writeRecord(recordRun.session.records.write(
-          NiceEvalRecordAttachments.runnerActivities.run,
-          sourceReceipts.runnerActivities,
-        ));
-      }
-      if (sourceReceipts.runnerDiagnostics !== undefined) {
-        yield* writeRecord(recordRun.session.records.write(
-          NiceEvalRecordAttachments.runnerDiagnostics.run,
-          sourceReceipts.runnerDiagnostics,
-        ));
-      }
-      yield* writeRecord(recordRun.session.records.write(
-        NiceEvalRecordAttachments.artifacts.run,
-        createRunArtifactsAttachment(),
-      ));
-    });
+        const sourceReceipts = yield* createRunObservabilityAttachments(recordRun.run);
+        if (sourceReceipts.runnerActivities !== undefined) {
+          yield* writeRecord(
+            recordRun.session.records.write(
+              NiceEvalRecordAttachments.runnerActivities.run,
+              sourceReceipts.runnerActivities,
+            ),
+          );
+        }
+        if (sourceReceipts.runnerDiagnostics !== undefined) {
+          yield* writeRecord(
+            recordRun.session.records.write(
+              NiceEvalRecordAttachments.runnerDiagnostics.run,
+              sourceReceipts.runnerDiagnostics,
+            ),
+          );
+        }
+        yield* writeRecord(
+          recordRun.session.records.write(NiceEvalRecordAttachments.artifacts.run, createRunArtifactsAttachment()),
+        );
+      });
 
     const pendingGap = (recordRun: RunnerRecordRun): SlotId | undefined => {
       for (const [slotId, state] of recordRun.gapActions) {
@@ -838,154 +918,159 @@ export function openRunnerRecordCoordinator(input: {
       readCarriedResults: () => Effect.succeed(carriedResults),
       runIdsByExperiment: new Map(runIdsByExperiment),
       publicationCutoff: () => currentPublicationCutoff(rootPath),
-      carriedAttemptsByKey: new Map([...carriedAttemptsByKey].map(([key, attempts]) =>
-        [key, new Set(attempts)] as const,
-      )),
+      carriedAttemptsByKey: new Map(
+        [...carriedAttemptsByKey].map(([key, attempts]) => [key, new Set(attempts)] as const),
+      ),
       adoptLatePublishedAttempt,
       reserveAttempt,
       noteSealedOrMarkIncomplete,
-      completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) => completeAttempt(attempt, result).pipe(
-        Effect.catch((error) => Effect.sync(() => {
-          const target = targetForAttempt(attempt);
-          const active = target === undefined ? undefined : target.recordRun.attempts.get(target.slotId);
-          noteFailure(
-            error.code === "runner-record-assertions-invalid" ||
-              error.code === "runner-record-attempt-publication-failed" ||
-              active === undefined
-              ? error
-              : attemptPublicationFailed(active.public.locator, error),
-            target?.recordRun ?? runForAttempt(attempt),
-          );
-          return undefined;
-        })),
-        Effect.ensuring(Effect.promise(() => releaseAdapterAttachments(result))),
-      ),
+      completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) =>
+        completeAttempt(attempt, result).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              const target = targetForAttempt(attempt);
+              const active = target === undefined ? undefined : target.recordRun.attempts.get(target.slotId);
+              noteFailure(
+                error.code === "runner-record-assertions-invalid" ||
+                  error.code === "runner-record-attempt-publication-failed" ||
+                  active === undefined
+                  ? error
+                  : attemptPublicationFailed(active.public.locator, error),
+                target?.recordRun ?? runForAttempt(attempt),
+              );
+              return undefined;
+            }),
+          ),
+          Effect.ensuring(Effect.promise(() => releaseAdapterAttachments(result))),
+        ),
       markNotDispatched: (attempt: Attempt) => {
         const targetSlot = targetForAttempt(attempt);
         if (
-          targetSlot !== undefined
-          && targetSlot.plan.state === "gap"
-          && targetSlot.recordRun.gapActions.get(targetSlot.slotId) === "pending"
+          targetSlot !== undefined &&
+          targetSlot.plan.state === "gap" &&
+          targetSlot.recordRun.gapActions.get(targetSlot.slotId) === "pending"
         ) {
           targetSlot.recordRun.gapActions.set(targetSlot.slotId, "not-dispatched");
         }
       },
-      publish: (completedAt: number, mode: "normal" | "interrupted") => Effect.gen(function* () {
-        const recordRuns = [...byRun.values()];
-        if (invocationWriteFailure !== undefined) return yield* Effect.fail(invocationWriteFailure);
-        if (mode === "normal") {
-          // A normal finish remains invocation-strict: a failure which can be
-          // attributed to one Run still fails the call rather than allowing a
-          // partial receipt to disguise it as ordinary completion.
-          for (const recordRun of recordRuns) {
-            const failure = writeFailuresByRun.get(recordRun);
-            if (failure !== undefined) return yield* Effect.fail(failure);
+      publish: (completedAt: number, mode: "normal" | "interrupted") =>
+        Effect.gen(function* () {
+          const recordRuns = [...byRun.values()];
+          if (invocationWriteFailure !== undefined) return yield* Effect.fail(invocationWriteFailure);
+          if (mode === "normal") {
+            // A normal finish remains invocation-strict: a failure which can be
+            // attributed to one Run still fails the call rather than allowing a
+            // partial receipt to disguise it as ordinary completion.
+            for (const recordRun of recordRuns) {
+              const failure = writeFailuresByRun.get(recordRun);
+              if (failure !== undefined) return yield* Effect.fail(failure);
+            }
           }
-        }
-        const completion = runnerRecordUtcMillis(completedAt);
-        if (Result.isFailure(completion)) return yield* Effect.fail(completion.failure);
+          const completion = runnerRecordUtcMillis(completedAt);
+          if (Result.isFailure(completion)) return yield* Effect.fail(completion.failure);
 
-        // A controlled interruption closes every reserved Attempt as
-        // `interrupted` and every never-started gap as an interrupted terminal
-        // Member. Only a Run-local writer failure remains non-publishable.
-        // Abrupt process loss still has no opportunity to create `complete`.
-        const incompleteRuns = mode === "interrupted"
-          ? new Set(recordRuns.filter((recordRun) => writeFailuresByRun.has(recordRun)))
-          : new Set<RunnerRecordRun>();
+          // A controlled interruption closes every reserved Attempt as
+          // `interrupted` and every never-started gap as an interrupted terminal
+          // Member. Only a Run-local writer failure remains non-publishable.
+          // Abrupt process loss still has no opportunity to create `complete`.
+          const incompleteRuns =
+            mode === "interrupted"
+              ? new Set(recordRuns.filter((recordRun) => writeFailuresByRun.has(recordRun)))
+              : new Set<RunnerRecordRun>();
 
-        if (mode === "normal") {
-          // Normal completion is deliberately invocation-strict. A pending
-          // gap means the scheduler failed to account for a Slot; a reserved
-          // or otherwise unsettled Attempt is likewise not publishable.
-          for (const recordRun of recordRuns) {
-            const unsettledSlot = [...recordRun.gapActions.keys()].find((slotId) => {
-              const active = recordRun.attempts.get(slotId);
-              return recordRun.gapActions.get(slotId) === "reserved"
-                || (active !== undefined && !active.completed);
-            });
-            if (unsettledSlot !== undefined) return yield* Effect.fail(unsealedAttempt(unsettledSlot));
-            const unaccountedSlot = pendingGap(recordRun);
-            if (unaccountedSlot !== undefined) return yield* Effect.fail(unsealedAttempt(unaccountedSlot));
-          }
-        } else {
-          for (const recordRun of recordRuns) {
-            if (incompleteRuns.has(recordRun)) continue;
-            for (const [slotId, state] of recordRun.gapActions) {
-              if (state === "pending") recordRun.gapActions.set(slotId, "interrupted");
-              if (state === "reserved") {
+          if (mode === "normal") {
+            // Normal completion is deliberately invocation-strict. A pending
+            // gap means the scheduler failed to account for a Slot; a reserved
+            // or otherwise unsettled Attempt is likewise not publishable.
+            for (const recordRun of recordRuns) {
+              const unsettledSlot = [...recordRun.gapActions.keys()].find((slotId) => {
                 const active = recordRun.attempts.get(slotId);
-                if (active === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
-                yield* discardAttemptWriteSession(active.session);
-                recordRun.attempts.delete(slotId);
-                recordRun.gapActions.set(slotId, "interrupted");
+                return recordRun.gapActions.get(slotId) === "reserved" || (active !== undefined && !active.completed);
+              });
+              if (unsettledSlot !== undefined) return yield* Effect.fail(unsealedAttempt(unsettledSlot));
+              const unaccountedSlot = pendingGap(recordRun);
+              if (unaccountedSlot !== undefined) return yield* Effect.fail(unsealedAttempt(unaccountedSlot));
+            }
+          } else {
+            for (const recordRun of recordRuns) {
+              if (incompleteRuns.has(recordRun)) continue;
+              for (const [slotId, state] of recordRun.gapActions) {
+                if (state === "pending") recordRun.gapActions.set(slotId, "interrupted");
+                if (state === "reserved") {
+                  const active = recordRun.attempts.get(slotId);
+                  if (active === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
+                  yield* discardAttemptWriteSession(active.session);
+                  recordRun.attempts.delete(slotId);
+                  recordRun.gapActions.set(slotId, "interrupted");
+                }
               }
             }
           }
-        }
 
-        const publishableRuns = recordRuns.filter((recordRun) => !incompleteRuns.has(recordRun));
-        const publishOne = (recordRun: RunnerRecordRun): Effect.Effect<
-          RecordSealReceipt,
-          RunnerRecordWriteError,
-          ProjectStateDatabase
-        > => Effect.gen(function* () {
-          yield* attachRunFacts(recordRun, mode);
-          for (const [slotId, state] of recordRun.gapActions) {
-            if (state === "not-dispatched" || state === "interrupted") {
-              const absenceReason: RunAbsenceReason = mode === "interrupted"
-                ? "interrupted-before-publication"
-                : state === "not-dispatched"
-                  ? "early-exit-satisfied"
-                  : "dispatch-failed";
-              yield* recordRun.session.recordTerminalMember({ slotId, action: state, absenceReason });
-            }
+          const publishableRuns = recordRuns.filter((recordRun) => !incompleteRuns.has(recordRun));
+          const publishOne = (
+            recordRun: RunnerRecordRun,
+          ): Effect.Effect<RecordSealReceipt, RunnerRecordWriteError, ProjectStateDatabase> =>
+            Effect.gen(function* () {
+              yield* attachRunFacts(recordRun, mode);
+              for (const [slotId, state] of recordRun.gapActions) {
+                if (state === "not-dispatched" || state === "interrupted") {
+                  const absenceReason: RunAbsenceReason =
+                    mode === "interrupted"
+                      ? "interrupted-before-publication"
+                      : state === "not-dispatched"
+                        ? "early-exit-satisfied"
+                        : "dispatch-failed";
+                  yield* recordRun.session.recordTerminalMember({ slotId, action: state, absenceReason });
+                }
+              }
+              const sealed = yield* recordRun.session.seal({ completedAt: completion.success });
+              const absences = [...recordRun.gapActions].flatMap(([slotId, state]) => {
+                if (state === "executed") return [];
+                const reason: RunAbsenceReason =
+                  mode === "interrupted"
+                    ? "interrupted-before-publication"
+                    : state === "not-dispatched"
+                      ? "early-exit-satisfied"
+                      : "dispatch-failed";
+                return [{ slotId: String(slotId), reason }];
+              });
+              yield* closeRunResource(rootPath, {
+                runId: String(recordRun.session.runId),
+                writerGeneration: recordRun.writerGeneration,
+                state: mode === "interrupted" ? "interrupted" : "completed",
+                completedAt: new Date(completedAt).toISOString(),
+                absences,
+                deadlineEpochMs: Date.now() + 30_000,
+              }).pipe(Effect.mapError(() => publishStateInvalid(recordRun.session.runId)));
+              return sealed;
+            });
+
+          if (mode === "normal") {
+            // Normal completion remains typed and strict: the first Run failure
+            // is an invocation failure, never a partial success receipt.
+            return yield* Effect.forEach(publishableRuns, publishOne, { concurrency: 1 });
           }
-          const sealed = yield* recordRun.session.seal({ completedAt: completion.success });
-          const absences = [...recordRun.gapActions].flatMap(([slotId, state]) => {
-            if (state === "executed") return [];
-            const reason: RunAbsenceReason = mode === "interrupted"
-              ? "interrupted-before-publication"
-              : state === "not-dispatched"
-                ? "early-exit-satisfied"
-                : "dispatch-failed";
-            return [{ slotId: String(slotId), reason }];
-          });
-          yield* closeRunResource(rootPath, {
-            runId: String(recordRun.session.runId),
-            writerGeneration: recordRun.writerGeneration,
-            state: mode === "interrupted" ? "interrupted" : "completed",
-            completedAt: new Date(completedAt).toISOString(),
-            absences,
-            deadlineEpochMs: Date.now() + 30_000,
-          }).pipe(Effect.mapError(() => publishStateInvalid(recordRun.session.runId)));
-          return sealed;
-        });
 
-        if (mode === "normal") {
-          // Normal completion remains typed and strict: the first Run failure
-          // is an invocation failure, never a partial success receipt.
-          return yield* Effect.forEach(publishableRuns, publishOne, { concurrency: 1 });
-        }
-
-        // SIGINT is different: each clean sibling receives its own complete
-        // attempt. We deliberately observe an Exit per Run so one Attachment
-        // or seal error cannot short-circuit subsequent safe siblings.
-        const receipts: RecordSealReceipt[] = [];
-        for (const recordRun of publishableRuns) {
-          const exit = yield* Effect.exit(publishOne(recordRun));
-          if (Exit.isSuccess(exit)) {
-            receipts.push(exit.value);
-          } else {
-            const failure = Cause.findErrorOption(exit.cause);
-            if (Option.isSome(failure)) {
-              noteFailure(failure.value, recordRun);
+          // SIGINT is different: each clean sibling receives its own complete
+          // attempt. We deliberately observe an Exit per Run so one Attachment
+          // or seal error cannot short-circuit subsequent safe siblings.
+          const receipts: RecordSealReceipt[] = [];
+          for (const recordRun of publishableRuns) {
+            const exit = yield* Effect.exit(publishOne(recordRun));
+            if (Exit.isSuccess(exit)) {
+              receipts.push(exit.value);
             } else {
-              noteFailure(publishStateInvalid(recordRun.session.runId), recordRun);
+              const failure = Cause.findErrorOption(exit.cause);
+              if (Option.isSome(failure)) {
+                noteFailure(failure.value, recordRun);
+              } else {
+                noteFailure(publishStateInvalid(recordRun.session.runId), recordRun);
+              }
             }
           }
-        }
-        return Object.freeze(receipts);
-      }),
+          return Object.freeze(receipts);
+        }),
     });
   });
 }

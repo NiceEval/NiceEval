@@ -14,10 +14,7 @@ import {
 } from "./conversation.tsx";
 import { resolveLocalizedText, type ReportLocale, type ValueProps } from "./shared.ts";
 
-export type TurnTraceProps = ValueProps<
-  ConversationContent | null,
-  { locale: ReportLocale; className?: string }
->;
+export type TurnTraceProps = ValueProps<ConversationContent | null, { locale: ReportLocale; className?: string }>;
 
 type TraceLane = "input" | "model" | "tools";
 
@@ -75,9 +72,7 @@ function durationLabel(durationMs: number | undefined): string {
 }
 
 function turnDuration(turn: ConversationTurn): number | undefined {
-  return turn.durationMs !== undefined && Number.isFinite(turn.durationMs)
-    ? Math.max(0, turn.durationMs)
-    : undefined;
+  return turn.durationMs !== undefined && Number.isFinite(turn.durationMs) ? Math.max(0, turn.durationMs) : undefined;
 }
 
 function laneFor(kind: string): TraceLane {
@@ -174,22 +169,24 @@ function lifecycleEntriesOf(
 }
 
 function traceEventsOf(content: ConversationContent, locale: ReportLocale): readonly TraceEvent[] {
-  return content.turns.flatMap((turn, turnIndex) => lifecycleEntriesOf(turn).map(({ entry, entryIndex }) => {
-    const raw = entry.raw ?? resolveLocalizedText(entry.preview, locale);
-    return {
-      // Identity is supplied by the closed trace projection. Never derive it
-      // from preview text, tool names, or an array position.
-      id: entry.id,
-      turn,
-      turnIndex,
-      entry,
-      entryIndex,
-      lane: laneFor(entry.kind),
-      summary: sanitizeConversationPreview(entry.preview, locale, 180),
-      raw,
-      toolLike: isToolLike(entry.kind),
-    };
-  }));
+  return content.turns.flatMap((turn, turnIndex) =>
+    lifecycleEntriesOf(turn).map(({ entry, entryIndex }) => {
+      const raw = entry.raw ?? resolveLocalizedText(entry.preview, locale);
+      return {
+        // Identity is supplied by the closed trace projection. Never derive it
+        // from preview text, tool names, or an array position.
+        id: entry.id,
+        turn,
+        turnIndex,
+        entry,
+        entryIndex,
+        lane: laneFor(entry.kind),
+        summary: sanitizeConversationPreview(entry.preview, locale, 180),
+        raw,
+        toolLike: isToolLike(entry.kind),
+      };
+    }),
+  );
 }
 
 function completeTurnTiming(turns: readonly ConversationTurn[]): boolean {
@@ -210,9 +207,7 @@ function timelinePositions(
     const entries = events.filter((event) => event.turn.key === turn.key);
     if (entries.length === 0) continue;
     const duration = turnDuration(turn);
-    const unit = completeTiming && duration !== undefined
-      ? Math.max(1, duration) / entries.length
-      : sequenceUnit;
+    const unit = completeTiming && duration !== undefined ? Math.max(1, duration) / entries.length : sequenceUnit;
     for (const event of entries) durationUnits.set(event.id, unit);
   }
 
@@ -223,10 +218,10 @@ function timelinePositions(
   for (const event of events) {
     const durationUnit = durationUnits.get(event.id) ?? sequenceUnit;
     positions.set(event.id, {
-      sequenceLeft: sequenceOffset / sequenceTotal * 100,
-      sequenceWidth: sequenceUnit / sequenceTotal * 100,
-      durationLeft: durationOffset / durationTotal * 100,
-      durationWidth: durationUnit / durationTotal * 100,
+      sequenceLeft: (sequenceOffset / sequenceTotal) * 100,
+      sequenceWidth: (sequenceUnit / sequenceTotal) * 100,
+      durationLeft: (durationOffset / durationTotal) * 100,
+      durationWidth: (durationUnit / durationTotal) * 100,
     });
     sequenceOffset += sequenceUnit;
     durationOffset += durationUnit;
@@ -241,9 +236,10 @@ function timelineLaneY(lane: TraceLane): number {
 function timelineEventLabel(event: TraceEvent, locale: ReportLocale): string {
   const turnLabel = resolveLocalizedText(event.turn.label, locale);
   const duration = turnDuration(event.turn);
-  const timing = duration === undefined
-    ? text(locale, "timing not recorded", "未记录时长")
-    : `${durationLabel(duration)} ${text(locale, "turn duration", "轮次时长")}`;
+  const timing =
+    duration === undefined
+      ? text(locale, "timing not recorded", "未记录时长")
+      : `${durationLabel(duration)} ${text(locale, "turn duration", "轮次时长")}`;
   return `${event.entry.kind} · ${turnLabel} · ${timing}`;
 }
 
@@ -260,15 +256,20 @@ function TraceToolbar({
     const duration = turnDuration(turn);
     return duration === undefined ? [] : [duration];
   });
-  const totalDuration = durations.length === 0
-    ? text(locale, "—", "—")
-    : durationLabel(durations.reduce((total, duration) => total + duration, 0));
+  const totalDuration =
+    durations.length === 0
+      ? text(locale, "—", "—")
+      : durationLabel(durations.reduce((total, duration) => total + duration, 0));
   const calls = callCount(events);
   const timingAvailable = completeTurnTiming(content.turns) && events.length > 0;
   const interaction = useTraceInteraction();
 
   return (
-    <header className="niceeval-trace-toolbar" role="toolbar" aria-label={text(locale, "Trajectory controls", "轨迹控制")}>
+    <header
+      className="niceeval-trace-toolbar"
+      role="toolbar"
+      aria-label={text(locale, "Trajectory controls", "轨迹控制")}
+    >
       <div className="niceeval-trace-toolbar-main">
         <span className="niceeval-trace-toolbar-title">{text(locale, "Session log", "会话日志")}</span>
         <div className="niceeval-trace-toolbar-actions">
@@ -278,11 +279,16 @@ function TraceToolbar({
             onClick={() => interaction.setDuration(!interaction.duration)}
             aria-pressed={interaction.duration}
             disabled={!timingAvailable}
-            title={timingAvailable
-              ? text(locale, "Use turn-duration projection", "按轮次时长投影")
-              : text(locale, "Turn timing is incomplete; sequence stays equal-width", "轮次时长不完整；保持等宽顺序")}
+            title={
+              timingAvailable
+                ? text(locale, "Use turn-duration projection", "按轮次时长投影")
+                : text(locale, "Turn timing is incomplete; sequence stays equal-width", "轮次时长不完整；保持等宽顺序")
+            }
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.25" /><path d="M8 4.75V8l2.25 1.5" /></svg>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="5.25" />
+              <path d="M8 4.75V8l2.25 1.5" />
+            </svg>
             <span>{text(locale, "Duration", "时长")}</span>
             <b>{totalDuration}</b>
           </button>
@@ -293,7 +299,9 @@ function TraceToolbar({
             aria-pressed={interaction.turnsCollapsed}
             title={text(locale, "Collapse turns", "折叠轮次")}
           >
-            <span className="niceeval-trace-toolbar-glyph" aria-hidden="true">⊟</span>
+            <span className="niceeval-trace-toolbar-glyph" aria-hidden="true">
+              ⊟
+            </span>
             <span>{text(locale, "Turns", "轮次")}</span>
             <b>{content.turns.length}</b>
           </button>
@@ -305,14 +313,19 @@ function TraceToolbar({
             title={text(locale, "Collapse tool calls", "折叠工具调用")}
             disabled={calls === 0}
           >
-            <span className="niceeval-trace-toolbar-glyph" aria-hidden="true">⊟</span>
+            <span className="niceeval-trace-toolbar-glyph" aria-hidden="true">
+              ⊟
+            </span>
             <span>{text(locale, "Calls", "调用")}</span>
             <b>{calls}</b>
           </button>
         </div>
       </div>
       <label className="niceeval-trace-search">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" /></svg>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.25" />
+          <path d="m10.25 10.25 3 3" />
+        </svg>
         <span className="niceeval-trace-visually-hidden">{text(locale, "Search trajectory", "搜索轨迹")}</span>
         <input
           type="search"
@@ -339,12 +352,8 @@ function TraceTimeline({
   const completeTiming = completeTurnTiming(content.turns);
   const interaction = useTraceInteraction();
   const boundaries = events.filter((event, index) => index === 0 || events[index - 1]?.turn.key !== event.turn.key);
-  const projection = (
-    kind: "sequence" | "duration",
-  ): ReactElement => (
-    <g
-      className={`niceeval-trace-timeline-projection niceeval-trace-timeline-projection--${kind}`}
-    >
+  const projection = (kind: "sequence" | "duration"): ReactElement => (
+    <g className={`niceeval-trace-timeline-projection niceeval-trace-timeline-projection--${kind}`}>
       {boundaries.map((event) => {
         const position = positions.get(event.id);
         if (position === undefined) return null;
@@ -367,9 +376,7 @@ function TraceTimeline({
         const x = kind === "sequence" ? position.sequenceLeft : position.durationLeft;
         const width = kind === "sequence" ? position.sequenceWidth : position.durationWidth;
         const label = timelineEventLabel(event, locale);
-        const accessibleLabel = event.entry.kind === "assistant"
-          ? `assistant: ${event.summary} · ${label}`
-          : label;
+        const accessibleLabel = event.entry.kind === "assistant" ? `assistant: ${event.summary} · ${label}` : label;
         return (
           <g
             key={`${kind}-event-${event.id}`}
@@ -378,7 +385,8 @@ function TraceTimeline({
             tabIndex={0}
             onClick={() => interaction.setSelected(interaction.selected === event.id ? null : event.id)}
             onKeyDown={(keyboardEvent) => {
-              if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") interaction.setSelected(interaction.selected === event.id ? null : event.id);
+              if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ")
+                interaction.setSelected(interaction.selected === event.id ? null : event.id);
             }}
             data-lane={event.lane}
             data-failed={event.entry.failed ? "true" : undefined}
@@ -428,15 +436,15 @@ function TraceTimeline({
       <p className="niceeval-trace-timeline-note">
         {completeTiming
           ? text(
-            locale,
-            "Duration projects captured turn durations; without per-event timestamps, events remain evenly sequenced within each turn.",
-            "时长模式投影已捕获的轮次时长；没有逐事件时间戳时，事件在轮次内保持等宽顺序。",
-          )
+              locale,
+              "Duration projects captured turn durations; without per-event timestamps, events remain evenly sequenced within each turn.",
+              "时长模式投影已捕获的轮次时长；没有逐事件时间戳时，事件在轮次内保持等宽顺序。",
+            )
           : text(
-            locale,
-            "Per-event timing was not captured, so the timeline uses equal-width sequence spans.",
-            "未捕获逐事件时长，因此时间线使用等宽顺序跨度。",
-          )}
+              locale,
+              "Per-event timing was not captured, so the timeline uses equal-width sequence spans.",
+              "未捕获逐事件时长，因此时间线使用等宽顺序跨度。",
+            )}
       </p>
     </section>
   );
@@ -452,39 +460,95 @@ function TraceEvidence({ event, locale }: { event: TraceEvent; locale: ReportLoc
       <summary>{text(locale, "Evidence", "证据")}</summary>
       <div className="niceeval-trace-evidence-body">
         <dl className="niceeval-trace-evidence-meta">
-          <div><dt>{text(locale, "Source", "来源")}</dt><dd>{resolveLocalizedText(event.turn.label, locale)}</dd></div>
-          <div><dt>{text(locale, "Status", "状态")}</dt><dd>{statusFor(event.entry, locale)}</dd></div>
-          <div><dt>{text(locale, "Total duration", "总时长")}</dt><dd>{duration === undefined ? text(locale, "Not recorded", "未记录") : durationLabel(duration)}</dd></div>
+          <div>
+            <dt>{text(locale, "Source", "来源")}</dt>
+            <dd>{resolveLocalizedText(event.turn.label, locale)}</dd>
+          </div>
+          <div>
+            <dt>{text(locale, "Status", "状态")}</dt>
+            <dd>{statusFor(event.entry, locale)}</dd>
+          </div>
+          <div>
+            <dt>{text(locale, "Total duration", "总时长")}</dt>
+            <dd>{duration === undefined ? text(locale, "Not recorded", "未记录") : durationLabel(duration)}</dd>
+          </div>
           {event.entry.callPhase === undefined ? null : (
-            <div><dt>{text(locale, "Call phase", "调用阶段")}</dt><dd>{event.entry.callPhase}</dd></div>
+            <div>
+              <dt>{text(locale, "Call phase", "调用阶段")}</dt>
+              <dd>{event.entry.callPhase}</dd>
+            </div>
           )}
           {event.entry.callId === undefined ? null : (
-            <div><dt>{text(locale, "Call ID", "调用 ID")}</dt><dd>{event.entry.callId}</dd></div>
+            <div>
+              <dt>{text(locale, "Call ID", "调用 ID")}</dt>
+              <dd>{event.entry.callId}</dd>
+            </div>
           )}
           {event.entry.toolOccurrence?.state === "unavailable" ? (
-            <div><dt>{text(locale, "Tool occurrence", "工具调用身份")}</dt><dd>{text(locale, "Unavailable", "不可用")} · {event.entry.toolOccurrence.reason}</dd></div>
+            <div>
+              <dt>{text(locale, "Tool occurrence", "工具调用身份")}</dt>
+              <dd>
+                {text(locale, "Unavailable", "不可用")} · {event.entry.toolOccurrence.reason}
+              </dd>
+            </div>
           ) : null}
           {event.entry.commandMatch === undefined ? null : event.entry.commandMatch.state === "matched" ? (
-            <div><dt>{text(locale, "Command", "命令")}</dt><dd>{event.entry.commandMatch.commandId}</dd></div>
+            <div>
+              <dt>{text(locale, "Command", "命令")}</dt>
+              <dd>{event.entry.commandMatch.commandId}</dd>
+            </div>
           ) : (
-            <div><dt>{text(locale, "Command", "命令")}</dt><dd>{text(locale, "Unavailable", "不可用")} · {event.entry.commandMatch.reason}</dd></div>
+            <div>
+              <dt>{text(locale, "Command", "命令")}</dt>
+              <dd>
+                {text(locale, "Unavailable", "不可用")} · {event.entry.commandMatch.reason}
+              </dd>
+            </div>
           )}
         </dl>
-        <div className="niceeval-trace-evidence-tabs" role="tablist" aria-label={text(locale, "Record detail tabs", "记录详情标签")}>
-          <button type="button" role="tab" onClick={() => setTab("preview")} onKeyDown={focusAdjacentTab} aria-selected={tab === "preview"}>
+        <div
+          className="niceeval-trace-evidence-tabs"
+          role="tablist"
+          aria-label={text(locale, "Record detail tabs", "记录详情标签")}
+        >
+          <button
+            type="button"
+            role="tab"
+            onClick={() => setTab("preview")}
+            onKeyDown={focusAdjacentTab}
+            aria-selected={tab === "preview"}
+          >
             {text(locale, "Preview", "预览")}
           </button>
-          <button type="button" role="tab" onClick={() => setTab("raw")} onKeyDown={focusAdjacentTab} aria-selected={tab === "raw"}>
+          <button
+            type="button"
+            role="tab"
+            onClick={() => setTab("raw")}
+            onKeyDown={focusAdjacentTab}
+            aria-selected={tab === "raw"}
+          >
             {text(locale, "Raw", "原始")}
           </button>
         </div>
-        <section className="niceeval-trace-evidence-panel" hidden={tab !== "preview"} role="tabpanel" aria-label={text(locale, "Preview", "预览")}>
+        <section
+          className="niceeval-trace-evidence-panel"
+          hidden={tab !== "preview"}
+          role="tabpanel"
+          aria-label={text(locale, "Preview", "预览")}
+        >
           <h4>{text(locale, "Preview", "预览")}</h4>
-          {detail === null
-            ? <pre className="niceeval-trace-evidence-raw">{event.raw}</pre>
-            : <div className="niceeval-trace-evidence-detail">{detail}</div>}
+          {detail === null ? (
+            <pre className="niceeval-trace-evidence-raw">{event.raw}</pre>
+          ) : (
+            <div className="niceeval-trace-evidence-detail">{detail}</div>
+          )}
         </section>
-        <section className="niceeval-trace-evidence-panel" hidden={tab !== "raw"} role="tabpanel" aria-label={text(locale, "Raw", "原始")}>
+        <section
+          className="niceeval-trace-evidence-panel"
+          hidden={tab !== "raw"}
+          role="tabpanel"
+          aria-label={text(locale, "Raw", "原始")}
+        >
           <h4>{text(locale, "Raw", "原始")}</h4>
           <pre className="niceeval-trace-evidence-raw">{event.raw}</pre>
         </section>
@@ -498,7 +562,12 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
   const duration = turnDuration(event.turn);
   const status = statusFor(event.entry, locale);
   const interaction = useTraceInteraction();
-  const hidden = (interaction.callsCollapsed && event.toolLike) || (interaction.query !== "" && !`${event.entry.kind} ${event.summary} ${event.raw}`.toLocaleLowerCase().includes(interaction.query.toLocaleLowerCase()));
+  const hidden =
+    (interaction.callsCollapsed && event.toolLike) ||
+    (interaction.query !== "" &&
+      !`${event.entry.kind} ${event.summary} ${event.raw}`
+        .toLocaleLowerCase()
+        .includes(interaction.query.toLocaleLowerCase()));
   return (
     <article
       hidden={hidden}
@@ -520,15 +589,23 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
         aria-expanded={interaction.selected === event.id}
         aria-label={`${event.entry.kind}: ${event.summary || text(locale, "captured event", "已捕获事件")}`}
       >
-        <span className="niceeval-trace-event-kind" data-lane={event.lane}>{event.entry.kind}</span>
+        <span className="niceeval-trace-event-kind" data-lane={event.lane}>
+          {event.entry.kind}
+        </span>
         <span className="niceeval-trace-event-summary">{event.summary || "—"}</span>
-        <span className="niceeval-trace-event-meta" title={duration === undefined
-          ? text(locale, "Turn timing not recorded", "未记录轮次时长")
-          : `${turnLabel} · ${durationLabel(duration)}`}
+        <span
+          className="niceeval-trace-event-meta"
+          title={
+            duration === undefined
+              ? text(locale, "Turn timing not recorded", "未记录轮次时长")
+              : `${turnLabel} · ${durationLabel(duration)}`
+          }
         >
           {duration === undefined ? "—" : durationLabel(duration)}
         </span>
-        <span className="niceeval-trace-event-status" data-call-outcome={event.entry.callOutcome}>{status}</span>
+        <span className="niceeval-trace-event-status" data-call-outcome={event.entry.callOutcome}>
+          {status}
+        </span>
       </button>
       <TraceEvidence event={event} locale={locale} />
     </article>
@@ -567,20 +644,32 @@ function TraceTurn({
           aria-expanded={!isCollapsed}
           title={text(locale, "Collapse turn", "折叠轮次")}
         >
-          <span className="niceeval-trace-turn-chevron" aria-hidden="true">⌄</span>
+          <span className="niceeval-trace-turn-chevron" aria-hidden="true">
+            ⌄
+          </span>
           <span className="niceeval-trace-turn-label">{resolveLocalizedText(turn.label, locale)}</span>
           <span className="niceeval-trace-turn-facts">
             {duration === undefined ? text(locale, "timing unavailable", "时长不可用") : durationLabel(duration)}
-            <span>{events.length} {text(locale, "events", "事件")}</span>
-            {calls > 0 ? <span>{calls} {text(locale, "calls", "调用")}</span> : null}
+            <span>
+              {events.length} {text(locale, "events", "事件")}
+            </span>
+            {calls > 0 ? (
+              <span>
+                {calls} {text(locale, "calls", "调用")}
+              </span>
+            ) : null}
           </span>
           {turn.verdict ? <span className="niceeval-trace-turn-verdict">{turn.verdict}</span> : null}
         </button>
       </header>
       <div className="niceeval-trace-turn-events" hidden={isCollapsed}>
         {events.length === 0 ? (
-          <p className="niceeval-trace-empty-turn">{text(locale, "No events captured for this turn.", "此轮没有已捕获事件。")}</p>
-        ) : events.map((event) => <TraceEventRow key={event.id} event={event} locale={locale} />)}
+          <p className="niceeval-trace-empty-turn">
+            {text(locale, "No events captured for this turn.", "此轮没有已捕获事件。")}
+          </p>
+        ) : (
+          events.map((event) => <TraceEventRow key={event.id} event={event} locale={locale} />)
+        )}
       </div>
     </section>
   );
@@ -598,29 +687,40 @@ export function TurnTrace({ data, locale, className }: TurnTraceProps): ReactEle
   const [selected, setSelected] = useState<string | null>(null);
   if (data === null || data.turns.length === 0) return null;
   const events = traceEventsOf(data, locale);
-  const interaction = { duration, setDuration, turnsCollapsed, setTurnsCollapsed, callsCollapsed, setCallsCollapsed, query, setQuery, selected, setSelected };
+  const interaction = {
+    duration,
+    setDuration,
+    turnsCollapsed,
+    setTurnsCollapsed,
+    callsCollapsed,
+    setCallsCollapsed,
+    query,
+    setQuery,
+    selected,
+    setSelected,
+  };
   return (
     <TraceInteractionContext.Provider value={interaction}>
-    <section
-      className={cx("niceeval-report", "niceeval-turn-trace", className)}
-      data-duration-mode={duration ? "duration" : "sequence"}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") setSelected(null);
-      }}
-    >
-      <TraceToolbar content={data} events={events} locale={locale} />
-      <TraceTimeline content={data} events={events} locale={locale} />
-      <div className="niceeval-trace-ledger">
-        {data.turns.map((turn, turnIndex) => (
-          <TraceTurn
-            key={turn.key}
-            turn={turn}
-            events={events.filter((event) => event.turnIndex === turnIndex)}
-            locale={locale}
-          />
-        ))}
-      </div>
-    </section>
+      <section
+        className={cx("niceeval-report", "niceeval-turn-trace", className)}
+        data-duration-mode={duration ? "duration" : "sequence"}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setSelected(null);
+        }}
+      >
+        <TraceToolbar content={data} events={events} locale={locale} />
+        <TraceTimeline content={data} events={events} locale={locale} />
+        <div className="niceeval-trace-ledger">
+          {data.turns.map((turn, turnIndex) => (
+            <TraceTurn
+              key={turn.key}
+              turn={turn}
+              events={events.filter((event) => event.turnIndex === turnIndex)}
+              locale={locale}
+            />
+          ))}
+        </div>
+      </section>
     </TraceInteractionContext.Provider>
   );
 }

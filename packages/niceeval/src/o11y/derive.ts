@@ -32,10 +32,7 @@ import type {
   ToolOccurrenceId,
   TurnId,
 } from "../record/family/source-receipt/model.ts";
-import type {
-  ObservedSourceEvent,
-  ToolOccurrenceRelation,
-} from "./observed.ts";
+import type { ObservedSourceEvent, ToolOccurrenceRelation } from "./observed.ts";
 
 export interface ObservedSourceProjectionSegment {
   readonly sessionId: SessionScopeId;
@@ -128,21 +125,23 @@ export function projectObservedSourceEvents(
       itemIds.add(event.itemId);
       sessionSequences.add(event.sessionSequence);
       previousSequence = event.sessionSequence;
-      events.push(Object.freeze({
-        eventId: event.eventId,
-        itemId: event.itemId,
-        sessionId: segment.sessionId,
-        turnId: segment.turnId,
-        sessionSequence: event.sessionSequence,
-        event,
-      }));
+      events.push(
+        Object.freeze({
+          eventId: event.eventId,
+          itemId: event.itemId,
+          sessionId: segment.sessionId,
+          turnId: segment.turnId,
+          sessionSequence: event.sessionSequence,
+          event,
+        }),
+      );
     }
   }
 
-  const orderedEvents = [...events].sort((left, right) =>
-    (sessionOrder.get(left.sessionId) ?? Number.MAX_SAFE_INTEGER) -
-      (sessionOrder.get(right.sessionId) ?? Number.MAX_SAFE_INTEGER) ||
-    left.sessionSequence - right.sessionSequence
+  const orderedEvents = [...events].sort(
+    (left, right) =>
+      (sessionOrder.get(left.sessionId) ?? Number.MAX_SAFE_INTEGER) -
+        (sessionOrder.get(right.sessionId) ?? Number.MAX_SAFE_INTEGER) || left.sessionSequence - right.sessionSequence,
   );
   const occurrences = new Map<ToolOccurrenceId, MutableObservedToolOccurrence>();
   for (const row of orderedEvents) {
@@ -171,8 +170,7 @@ export function projectObservedSourceEvents(
   return Object.freeze({
     state: "available" as const,
     events: Object.freeze(orderedEvents),
-    toolOccurrences: Object.freeze([...occurrences.values()]
-      .map((occurrence) => Object.freeze({ ...occurrence }))),
+    toolOccurrences: Object.freeze([...occurrences.values()].map((occurrence) => Object.freeze({ ...occurrence }))),
   });
 }
 
@@ -408,9 +406,10 @@ export function deriveLogicalToolOccurrences(
           id: logicalOccurrenceId(options, position),
           session: options.session,
           turn: options.turn,
-          name: event.operation.tool === undefined
-            ? { original: event.operation.name }
-            : { original: event.operation.name, canonical: event.operation.tool },
+          name:
+            event.operation.tool === undefined
+              ? { original: event.operation.name }
+              : { original: event.operation.name, canonical: event.operation.tool },
           input: evidenceForEventValue(event, "input", event.operation.input),
           output: { state: "unavailable", reason: "tool-output-not-finished" },
           ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
@@ -439,9 +438,10 @@ export function deriveLogicalToolOccurrences(
       const finished: ToolOperationFinish = {
         status: event.status,
         position,
-        output: event.output === undefined
-          ? { state: "unavailable", reason: "tool-output-absent" }
-          : evidenceForEventValue(event, "output", event.output),
+        output:
+          event.output === undefined
+            ? { state: "unavailable", reason: "tool-output-absent" }
+            : evidenceForEventValue(event, "output", event.output),
       };
       const started = openByOperationId.get(event.operationId);
       if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
@@ -469,11 +469,7 @@ export function deriveLogicalToolOccurrences(
   };
 }
 
-function evidenceForEventValue(
-  event: StreamEvent,
-  field: string,
-  value: JsonValue,
-): LogicalToolOccurrence["input"] {
+function evidenceForEventValue(event: StreamEvent, field: string, value: JsonValue): LogicalToolOccurrence["input"] {
   const redacted = opaquePointersFor(event.redacted, field);
   if (redacted.length > 0) {
     return Object.freeze({
@@ -483,7 +479,10 @@ function evidenceForEventValue(
       reason: "redacted" as const,
     });
   }
-  const truncated = opaquePointersFor(event.truncated?.map((entry) => entry.path), field);
+  const truncated = opaquePointersFor(
+    event.truncated?.map((entry) => entry.path),
+    field,
+  );
   if (truncated.length > 0) {
     return Object.freeze({
       state: "partial" as const,
@@ -515,7 +514,11 @@ function fieldRelativePointer(path: string, field: string): string | undefined {
   const dotPath = path.startsWith("operation.") ? path.slice("operation.".length) : path;
   if (dotPath === field) return "/";
   if (dotPath.startsWith(`${field}.`)) {
-    return `/${dotPath.slice(field.length + 1).split(".").map(escapeJsonPointer).join("/")}`;
+    return `/${dotPath
+      .slice(field.length + 1)
+      .split(".")
+      .map(escapeJsonPointer)
+      .join("/")}`;
   }
   if (!path.startsWith("/")) return undefined;
   const segments = path.slice(1).split("/");
@@ -578,12 +581,15 @@ function eventPosition(turnOrdinal: number, eventOrdinal: number): EventPosition
   return { turnOrdinal, eventOrdinal };
 }
 
-function logicalOccurrenceId(
-  options: LogicalToolOccurrenceDeriveOptions,
-  start: EventPosition,
-): string {
+function logicalOccurrenceId(options: LogicalToolOccurrenceDeriveOptions, start: EventPosition): string {
   // JSON array encoding avoids delimiter collision when adapter-provided session / turn IDs contain punctuation.
-  return JSON.stringify(["niceeval.logical-tool-occurrence/1", options.session, options.turn, start.turnOrdinal, start.eventOrdinal]);
+  return JSON.stringify([
+    "niceeval.logical-tool-occurrence/1",
+    options.session,
+    options.turn,
+    start.turnOrdinal,
+    start.eventOrdinal,
+  ]);
 }
 
 /**
@@ -623,9 +629,10 @@ export function deriveScopedLogicalToolOccurrences(
               id: logicalOccurrenceId(turn, position),
               session: turn.session,
               turn: turn.turn,
-              name: event.operation.tool === undefined
-                ? { original: event.operation.name }
-                : { original: event.operation.name, canonical: event.operation.tool },
+              name:
+                event.operation.tool === undefined
+                  ? { original: event.operation.name }
+                  : { original: event.operation.name, canonical: event.operation.tool },
               input: evidenceForEventValue(event, "input", event.operation.input),
               output: { state: "unavailable", reason: "tool-output-not-finished" },
               ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
@@ -651,9 +658,10 @@ export function deriveScopedLogicalToolOccurrences(
           const finished: ToolOperationFinish = {
             status: event.status,
             position,
-            output: event.output === undefined
-              ? { state: "unavailable", reason: "tool-output-absent" }
-              : evidenceForEventValue(event, "output", event.output),
+            output:
+              event.output === undefined
+                ? { state: "unavailable", reason: "tool-output-absent" }
+                : evidenceForEventValue(event, "output", event.output),
           };
           const started = openByOperationId.get(event.operationId);
           if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
@@ -674,11 +682,13 @@ export function deriveScopedLogicalToolOccurrences(
     }
 
     for (const item of pending) {
-      occurrences.push(Object.freeze({
-        ...item.occurrence,
-        output: outputFor(item, item.lastOutcome),
-        lifecycle: lifecycleFor(item, item.lastOutcome),
-      }));
+      occurrences.push(
+        Object.freeze({
+          ...item.occurrence,
+          output: outputFor(item, item.lastOutcome),
+          lifecycle: lifecycleFor(item, item.lastOutcome),
+        }),
+      );
     }
   }
   return Object.freeze({

@@ -17,8 +17,5 @@ export default defineExperiment({
   flags: { webResearch: true, expectedWebSearch: true },
   sandbox,
   attempts: 1,
-  evals: (e) =>
-    e.id === "coding-task" ||
-    e.id === "session-resume" ||
-    e.id === "websearch-denied",
+  evals: (e) => e.id === "coding-task" || e.id === "session-resume" || e.id === "websearch-denied",
 });

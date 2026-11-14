@@ -11,9 +11,10 @@ export const executionTraceAdapter = defineAdapter({
           ...(index === 10_001 ? {} : { eventId: `source-${index}` }),
           origin: index % 2 === 0 ? "server" : "client",
           type: index === 0 ? "model.request" : index === 10_002 ? "operation.completed" : "position.observed",
-          data: index === 0
-            ? { context: "request-evidence-sentinel", input: "large input ".repeat(14_000) }
-            : { x: index, result: index === 10_002 ? "actual-movement-sentinel" : "observed" },
+          data:
+            index === 0
+              ? { context: "request-evidence-sentinel", input: "large input ".repeat(14_000) }
+              : { x: index, result: index === 10_002 ? "actual-movement-sentinel" : "observed" },
         }));
         const artifact = await ctx.attach({
           name: "sealed-events.json",
@@ -25,12 +26,16 @@ export const executionTraceAdapter = defineAdapter({
           schema: {
             id: "example.simulation",
             // Only for creating historical Records with an old installed candidate.
-            ...(process.env.NICEEVAL_E2E_LEGACY_TRACE_REVISION === undefined ? {} : {
-              revision: Number(process.env.NICEEVAL_E2E_LEGACY_TRACE_REVISION),
-            }),
+            ...(process.env.NICEEVAL_E2E_LEGACY_TRACE_REVISION === undefined
+              ? {}
+              : {
+                  revision: Number(process.env.NICEEVAL_E2E_LEGACY_TRACE_REVISION),
+                }),
           },
           collection: { state: "complete", limitations: [] },
-          scopes: [{ scopeId: "measurement", label: "Measured interval", boundary: { throughSequence: 10_000, gameTime: 20 } }],
+          scopes: [
+            { scopeId: "measurement", label: "Measured interval", boundary: { throughSequence: 10_000, gameTime: 20 } },
+          ],
           events: originals.map((event, index) => ({
             key: String(index),
             type: event.type,
@@ -43,22 +48,50 @@ export const executionTraceAdapter = defineAdapter({
             time: { clockId: "simulation", value: index / 100, unit: "seconds" },
             summary: index === 10_002 ? "Movement completed after measurement" : `Observed event ${index}`,
             // Legal domain keys must never be confused with an internal codec error.
-            payload: index === 10_001 ? { code: "inspection-result-invalid", reason: "domain-value", ["__proto__"]: { domain: "preserved" } } : { x: index },
+            payload:
+              index === 10_001
+                ? { code: "inspection-result-invalid", reason: "domain-value", ["__proto__"]: { domain: "preserved" } }
+                : { x: index },
             links: index === 10_002 ? [{ relation: "model-request", targetKey: "0" }] : [],
             evidence: [
-              { key: "original", label: "Original event", artifactId: artifact.artifactId, pointer: `/events/${index}` },
-              ...(index === 10_002 ? [{ key: "request", label: "Referenced request", artifactId: artifact.artifactId, pointer: "/events/0" }] : []),
+              {
+                key: "original",
+                label: "Original event",
+                artifactId: artifact.artifactId,
+                pointer: `/events/${index}`,
+              },
+              ...(index === 10_002
+                ? [
+                    {
+                      key: "request",
+                      label: "Referenced request",
+                      artifactId: artifact.artifactId,
+                      pointer: "/events/0",
+                    },
+                  ]
+                : []),
             ],
-            scopeMemberships: [{ scopeId: "measurement", state: index > 10_000 ? "excluded" : event.origin === "server" ? "unknown" : "included" }],
+            scopeMemberships: [
+              {
+                scopeId: "measurement",
+                state: index > 10_000 ? "excluded" : event.origin === "server" ? "unknown" : "included",
+              },
+            ],
           })),
         };
         const receipt = await ctx.recordTrace(snapshot);
         const again = await ctx.recordTrace(snapshot);
-        if (JSON.stringify(receipt) !== JSON.stringify(again)) throw new Error("Duplicate archive changed stable identities");
+        if (JSON.stringify(receipt) !== JSON.stringify(again))
+          throw new Error("Duplicate archive changed stable identities");
         const last = receipt.events.find((event) => event.key === "10002")!;
         const missingNative = receipt.events.find((event) => event.key === "10001")!;
         // These selectors come from the public acceptance receipt, not private Record bytes.
-        await writeFile("execution-selectors.txt", [last.eventId, last.evidence.find((item) => item.key === "request")!.evidenceId, missingNative.eventId].join("\n"));
+        await writeFile(
+          "execution-selectors.txt",
+          [last.eventId, last.evidence.find((item) => item.key === "request")!.evidenceId, missingNative.eventId].join(
+            "\n",
+          ),
+        );
         return true;
       },
     };

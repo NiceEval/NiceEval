@@ -80,7 +80,12 @@ export interface ClaudeSdkMessageLike {
   is_error?: boolean;
   num_turns?: number;
   total_cost_usd?: number;
-  usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  };
   message?: { content?: unknown };
   [key: string]: unknown;
 }
@@ -122,7 +127,9 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       return content
-        .filter((b): b is { type: "text"; text: string } => isRecord(b) && b.type === "text" && typeof b.text === "string")
+        .filter(
+          (b): b is { type: "text"; text: string } => isRecord(b) && b.type === "text" && typeof b.text === "string",
+        )
         .map((b) => b.text)
         .join("");
     }
@@ -151,7 +158,12 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
           } else if (frame.subtype === "permission_denied" && typeof frame.tool_use_id === "string") {
             if (!resolvedCallIds.has(frame.tool_use_id)) {
               resolvedCallIds.add(frame.tool_use_id);
-              events.push({ type: "operation.finished", operationId: frame.tool_use_id, kind: "tool", status: "rejected" });
+              events.push({
+                type: "operation.finished",
+                operationId: frame.tool_use_id,
+                kind: "tool",
+                status: "rejected",
+              });
             }
           }
           break;
@@ -325,7 +337,10 @@ export function createPiAgentEventStream(): PiAgentStream {
             const stopReason = event.message.stopReason;
             if (stopReason === "error" || stopReason === "aborted") {
               failed = true;
-              events.push({ type: "error", message: event.message.errorMessage ?? `pi agent stopReason=${stopReason}` });
+              events.push({
+                type: "error",
+                message: event.message.errorMessage ?? `pi agent stopReason=${stopReason}`,
+              });
             }
           }
           const u = event.message?.role === "assistant" ? event.message.usage : undefined;
@@ -355,7 +370,13 @@ export function createPiAgentEventStream(): PiAgentStream {
         case "tool_execution_end": {
           if (typeof event.toolCallId === "string") {
             const status = event.isError ? (rejected.has(event.toolCallId) ? "rejected" : "failed") : "completed";
-            events.push({ type: "operation.finished", operationId: event.toolCallId, kind: "tool", output: event.result as JsonValue, status });
+            events.push({
+              type: "operation.finished",
+              operationId: event.toolCallId,
+              kind: "tool",
+              output: event.result as JsonValue,
+              status,
+            });
           }
           break;
         }
@@ -420,17 +441,21 @@ export function createCodexThreadEventStream(): CodexThreadStream {
   // 跨 agent 规范名断言在 SDK 流路径上会静默失配(2026-07-09 CI 实红)。
   const handleToolItem = (item: globalThis.Record<string, unknown>, isCompleted: boolean): StreamEvent[] => {
     const events: StreamEvent[] = [];
-  const emitCall = (
-    callId: string,
-    name: string,
-    input: JsonValue,
-    tool: ToolName,
-    command: CommandProjection,
-  ): void => {
-    if (startedCallIds.has(callId)) return;
-    startedCallIds.add(callId);
-    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool, command } });
-  };
+    const emitCall = (
+      callId: string,
+      name: string,
+      input: JsonValue,
+      tool: ToolName,
+      command: CommandProjection,
+    ): void => {
+      if (startedCallIds.has(callId)) return;
+      startedCallIds.add(callId);
+      events.push({
+        type: "operation.started",
+        operationId: callId,
+        operation: { kind: "tool", name, input, tool, command },
+      });
+    };
 
     switch (item.type) {
       case "command_execution": {
@@ -445,11 +470,12 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         if (isCompleted) {
           const exit = item.exit_code ?? item.exitCode;
           const output = item.aggregated_output ?? item.aggregatedOutput ?? item.output;
-          const status = item.status === "declined" || item.status === "rejected"
-            ? "rejected" as const
-            : exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error")
-              ? "completed" as const
-              : "failed" as const;
+          const status =
+            item.status === "declined" || item.status === "rejected"
+              ? ("rejected" as const)
+              : exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error")
+                ? ("completed" as const)
+                : ("failed" as const);
           events.push({
             type: "operation.finished",
             operationId: callId,
@@ -487,9 +513,21 @@ export function createCodexThreadEventStream(): CodexThreadStream {
       }
       case "web_search": {
         const callId = callIdOf(item, "web");
-        emitCall(callId, "web_search", { query: item.query ?? null } as JsonValue, "web_search", notCommandProjection());
+        emitCall(
+          callId,
+          "web_search",
+          { query: item.query ?? null } as JsonValue,
+          "web_search",
+          notCommandProjection(),
+        );
         if (isCompleted) {
-          events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: null, status: "completed" });
+          events.push({
+            type: "operation.finished",
+            operationId: callId,
+            kind: "tool",
+            output: null,
+            status: "completed",
+          });
         }
         return events;
       }
@@ -512,7 +550,13 @@ export function createCodexThreadEventStream(): CodexThreadStream {
               command: notCommandProjection(),
             },
           });
-          events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: change as JsonValue, status: "completed" });
+          events.push({
+            type: "operation.finished",
+            operationId: callId,
+            kind: "tool",
+            output: change as JsonValue,
+            status: "completed",
+          });
         });
         return events;
       }

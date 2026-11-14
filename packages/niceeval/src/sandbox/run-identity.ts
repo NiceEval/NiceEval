@@ -97,7 +97,10 @@ export type OrphanState = "orphan" | "unverified";
 export function pidStartedAt(pid: number): string | undefined {
   try {
     // macOS 与常见 Linux 均支持 lstart；避免 /proc 专有格式和时钟 tick 换算。
-    const raw = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const raw = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
     const timestamp = Date.parse(raw);
     return Number.isNaN(timestamp) ? undefined : new Date(timestamp).toISOString();
   } catch {

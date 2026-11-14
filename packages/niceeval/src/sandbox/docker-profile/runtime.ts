@@ -52,9 +52,11 @@ export interface DockerProfileReservation {
 export class DockerProfileCapacityBlockedError extends Error {
   readonly code: "CAPACITY_BLOCKED" | "CAPACITY_QUEUE_TIMEOUT";
   constructor(policy: "blocked" | "doctor-timeout" = "blocked") {
-    super(policy === "doctor-timeout"
-      ? "Docker profile capacity queue timed out after 30 seconds"
-      : "Docker profile capacity is blocked");
+    super(
+      policy === "doctor-timeout"
+        ? "Docker profile capacity queue timed out after 30 seconds"
+        : "Docker profile capacity is blocked",
+    );
     this.code = policy === "doctor-timeout" ? "CAPACITY_QUEUE_TIMEOUT" : "CAPACITY_BLOCKED";
   }
 }
@@ -185,7 +187,10 @@ export class DockerProfileControlAmbiguityError extends Error {
 }
 
 export class DockerProfileControlCancellationError extends Error {
-  constructor(readonly operationId: string, message: string) {
+  constructor(
+    readonly operationId: string,
+    message: string,
+  ) {
     super(message);
     this.name = "DockerProfileControlCancellationError";
   }
@@ -252,10 +257,7 @@ function validateReleaseReceipt(value: unknown): DockerProfileReleaseReceipt {
   if (
     receipt.released !== true ||
     (receipt.cleanupProven !== undefined && receipt.cleanupProven !== true) ||
-    (
-      fields.length !== 1 &&
-      !(fields.length === 2 && fields[0] === "cleanupProven" && fields[1] === "released")
-    ) ||
+    (fields.length !== 1 && !(fields.length === 2 && fields[0] === "cleanupProven" && fields[1] === "released")) ||
     (fields.length === 1 && fields[0] !== "released")
   ) {
     throw new Error("Docker profile reservation release receipt is not exact or does not prove release");
@@ -268,8 +270,11 @@ function validateReleaseReceipt(value: unknown): DockerProfileReleaseReceipt {
 
 function validateCancelReceipt(value: unknown): DockerProfileCancelReceipt {
   if (
-    typeof value !== "object" || value === null || Array.isArray(value) ||
-    Object.keys(value).length !== 1 || (value as Readonly<Record<string, unknown>>).cancelled !== true
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    (value as Readonly<Record<string, unknown>>).cancelled !== true
   ) {
     throw new Error("Docker profile reservation cancel receipt is not exact or does not prove cancellation");
   }
@@ -294,32 +299,48 @@ function validateCleanupStatusReceipt(value: unknown): DockerProfileCleanupStatu
   }
   const leases = receipt.leases.map((item) => {
     if (
-      typeof item !== "object" || item === null || Array.isArray(item) ||
-      typeof item.invocationId !== "string" || typeof item.daemonGeneration !== "string"
-    ) throw new Error("Docker profile cleanup status lease identity is invalid");
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item) ||
+      typeof item.invocationId !== "string" ||
+      typeof item.daemonGeneration !== "string"
+    )
+      throw new Error("Docker profile cleanup status lease identity is invalid");
     return { invocationId: item.invocationId, daemonGeneration: item.daemonGeneration };
   });
   const reservations = receipt.reservations.map((item) => {
     if (
-      typeof item !== "object" || item === null || Array.isArray(item) ||
-      typeof item.reservationId !== "string" || typeof item.invocationId !== "string"
-    ) throw new Error("Docker profile cleanup status reservation identity is invalid");
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item) ||
+      typeof item.reservationId !== "string" ||
+      typeof item.invocationId !== "string"
+    )
+      throw new Error("Docker profile cleanup status reservation identity is invalid");
     return { reservationId: item.reservationId, invocationId: item.invocationId };
   });
   const queue = receipt.queue.map((item) => {
     if (
-      typeof item !== "object" || item === null || Array.isArray(item) ||
-      typeof item.reservationId !== "string" || typeof item.invocationId !== "string"
-    ) throw new Error("Docker profile cleanup status queue ownership is invalid");
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item) ||
+      typeof item.reservationId !== "string" ||
+      typeof item.invocationId !== "string"
+    )
+      throw new Error("Docker profile cleanup status queue ownership is invalid");
     return { reservationId: item.reservationId, invocationId: item.invocationId };
   });
   const slots = receipt.slots.map((item) => {
     if (
-      typeof item !== "object" || item === null || Array.isArray(item) ||
-      typeof item.slotId !== "string" || typeof item.state !== "string" ||
+      typeof item !== "object" ||
+      item === null ||
+      Array.isArray(item) ||
+      typeof item.slotId !== "string" ||
+      typeof item.state !== "string" ||
       (item.invocationId !== undefined && typeof item.invocationId !== "string") ||
       (item.reservationId !== undefined && typeof item.reservationId !== "string")
-    ) throw new Error("Docker profile cleanup status slot ownership is invalid");
+    )
+      throw new Error("Docker profile cleanup status slot ownership is invalid");
     return {
       slotId: item.slotId,
       state: item.state,
@@ -346,12 +367,14 @@ function leaseCleanupProven(
   binding: DockerProfileRuntimeBinding,
   invocationId: string,
 ): boolean {
-  return receipt.profileId === binding.profile.profileId &&
+  return (
+    receipt.profileId === binding.profile.profileId &&
     receipt.generation === binding.daemonGeneration &&
     !receipt.leases.some((item) => item.invocationId === invocationId) &&
     !receipt.reservations.some((item) => item.invocationId === invocationId) &&
     !receipt.queue.some((item) => item.invocationId === invocationId) &&
-    !receipt.slots.some((item) => item.invocationId === invocationId);
+    !receipt.slots.some((item) => item.invocationId === invocationId)
+  );
 }
 
 export async function lookupDockerProfileBuild(
@@ -386,27 +409,32 @@ async function parentModes(path: string): Promise<number[]> {
 export async function loadDockerProfileRegistryAt(
   registryDir: string,
 ): Promise<ReturnType<typeof indexDockerProfiles>> {
-  const names = (await readdir(registryDir)).filter((name) =>
-    name.endsWith(".json")
-    && !name.endsWith(".host.json")
-    && !name.endsWith(".daemon.json")
-    && !/^assets-v[1-9]\d*\.json$/.test(name)
-  ).sort();
-  const entries = await Promise.all(names.map(async (name) => {
-    const source = join(registryDir, name);
-    const facts = await lstat(source);
-    return {
-      alias: name.slice(0, -".json".length),
-      profile: JSON.parse(await readFile(source, "utf8")) as unknown,
-      source,
-      fileFacts: {
-        isSymlink: facts.isSymbolicLink(),
-        ownerUid: facts.uid,
-        mode: modeOf(facts.mode),
-        parentModes: await parentModes(source),
-      },
-    };
-  }));
+  const names = (await readdir(registryDir))
+    .filter(
+      (name) =>
+        name.endsWith(".json") &&
+        !name.endsWith(".host.json") &&
+        !name.endsWith(".daemon.json") &&
+        !/^assets-v[1-9]\d*\.json$/.test(name),
+    )
+    .sort();
+  const entries = await Promise.all(
+    names.map(async (name) => {
+      const source = join(registryDir, name);
+      const facts = await lstat(source);
+      return {
+        alias: name.slice(0, -".json".length),
+        profile: JSON.parse(await readFile(source, "utf8")) as unknown,
+        source,
+        fileFacts: {
+          isSymlink: facts.isSymbolicLink(),
+          ownerUid: facts.uid,
+          mode: modeOf(facts.mode),
+          parentModes: await parentModes(source),
+        },
+      };
+    }),
+  );
   return indexDockerProfiles(entries, { expectedOwnerUid: 0 });
 }
 
@@ -431,16 +459,19 @@ export function dockerProfileControlRequest<T>(
       if ("value" in outcome) resolve(outcome.value);
       else reject(outcome.error);
     };
-    const abort = () => socket.destroy(
-      signal?.reason instanceof Error
-        ? signal.reason
-        : new DOMException("Docker profile control request aborted", "AbortError"),
-    );
+    const abort = () =>
+      socket.destroy(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Docker profile control request aborted", "AbortError"),
+      );
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
     socket.setTimeout(timeoutMs);
     socket.on("connect", () => socket.end(`${JSON.stringify(request)}\n`));
-    socket.on("data", (chunk: Buffer) => { response += chunk.toString(); });
+    socket.on("data", (chunk: Buffer) => {
+      response += chunk.toString();
+    });
     socket.on("timeout", () => socket.destroy(new Error(`Docker profile control timeout: ${path}`)));
     socket.on("error", (error) => settle({ error }));
     socket.on("close", () => {
@@ -467,9 +498,7 @@ export function dockerProfileControlRequest<T>(
   });
 }
 
-function beforeCacheCapability(
-  lease: DockerProfileLease,
-): DockerProfileBeforeCacheFullCopyCapabilityV1 {
+function beforeCacheCapability(lease: DockerProfileLease): DockerProfileBeforeCacheFullCopyCapabilityV1 {
   const capability = lease.binding.profile.backend.filesystem.beforeCache;
   if (capability === undefined) {
     throw new Error("Docker profile descriptor does not declare before-cache full-copy capability");
@@ -478,14 +507,10 @@ function beforeCacheCapability(
     capability.protocol !== DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL ||
     capability.coverage !== sandboxState.dockerData ||
     capability.requiredState !== sandboxState.dockerData ||
-    lease.binding.profile.backend.filesystem.dockerDataPool.attestation !==
-      capability.slotAttestation ||
-    lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation !==
-      capability.filesystemSizeBytes
+    lease.binding.profile.backend.filesystem.dockerDataPool.attestation !== capability.slotAttestation ||
+    lease.binding.profile.backend.filesystem.dockerDataPool.bytesPerAllocation !== capability.filesystemSizeBytes
   ) {
-    throw new Error(
-      "Docker profile before-cache capability is not backed by independent fixed-filesystem slots",
-    );
+    throw new Error("Docker profile before-cache capability is not backed by independent fixed-filesystem slots");
   }
   return capability;
 }
@@ -536,7 +561,11 @@ function beforeCacheControlFrame(
   ) {
     throw new Error("Docker profile before-cache key is not bound to its complete canonical manifest identity");
   }
-  if (input.operationId.length === 0 || input.operationId.length > 512 || /[\u0000-\u001f\u007f]/u.test(input.operationId)) {
+  if (
+    input.operationId.length === 0 ||
+    input.operationId.length > 512 ||
+    /[\u0000-\u001f\u007f]/u.test(input.operationId)
+  ) {
     throw new Error("Docker profile before-cache operationId is invalid");
   }
   return Object.freeze({
@@ -563,13 +592,10 @@ function validateExactBeforeCacheFields(
 ): void {
   const actual = Object.keys(value).sort();
   const expected = [...expectedFields].sort();
-  if (
-    actual.length !== expected.length ||
-    actual.some((field, index) => field !== expected[index])
-  ) {
+  if (actual.length !== expected.length || actual.some((field, index) => field !== expected[index])) {
     throw new Error(
       `Docker profile before-cache ${label} fields changed: ` +
-      `expected ${expected.join(", ")}; received ${actual.join(", ")}`,
+        `expected ${expected.join(", ")}; received ${actual.join(", ")}`,
     );
   }
 }
@@ -609,10 +635,7 @@ function validateBeforeCacheArtifactIdentity(
   if ((artifact.sizeBytes as number) > capability.seedLimitBytes) {
     throw new Error("Docker profile before-cache artifact exceeds descriptor seedLimitBytes");
   }
-  if (
-    capability.copyProtocol === "raw-image/v1" &&
-    artifact.sizeBytes !== capability.filesystemSizeBytes
-  ) {
+  if (capability.copyProtocol === "raw-image/v1" && artifact.sizeBytes !== capability.filesystemSizeBytes) {
     throw new Error("Docker profile raw-image artifact does not cover the complete fixed Docker data filesystem");
   }
   const identity = Object.freeze({
@@ -624,13 +647,11 @@ function validateBeforeCacheArtifactIdentity(
   });
   if (
     expected !== undefined &&
-    (
-      identity.copyProtocol !== expected.copyProtocol ||
+    (identity.copyProtocol !== expected.copyProtocol ||
       identity.copyRevision !== expected.copyRevision ||
       identity.requiredState !== expected.requiredState ||
       identity.artifactId !== expected.artifactId ||
-      identity.sizeBytes !== expected.sizeBytes
-    )
+      identity.sizeBytes !== expected.sizeBytes)
   ) {
     throw new Error("Docker profile before-cache restored artifact identity changed after capture");
   }
@@ -639,8 +660,11 @@ function validateBeforeCacheArtifactIdentity(
 
 function wireValueMatches(actual: unknown, expected: unknown): boolean {
   if (Array.isArray(expected)) {
-    return Array.isArray(actual) && actual.length === expected.length &&
-      expected.every((value, index) => actual[index] === value);
+    return (
+      Array.isArray(actual) &&
+      actual.length === expected.length &&
+      expected.every((value, index) => actual[index] === value)
+    );
   }
   return actual === expected;
 }
@@ -699,19 +723,17 @@ function validateBeforeCacheControlError(
     const details = beforeCacheWireRecord(cause.details);
     validateExactBeforeCacheFields(
       details,
-      [
-        "code",
-        "message",
-        ...Object.keys(beforeCacheExpectedWire(lease, reservation, input)),
-        "artifact",
-        "status",
-      ],
+      ["code", "message", ...Object.keys(beforeCacheExpectedWire(lease, reservation, input)), "artifact", "status"],
       "failure receipt",
     );
     validateBeforeCacheWireBinding(details, lease, reservation, input, "failure receipt");
     if (
-      typeof details.code !== "string" || details.code.length === 0 || details.code !== cause.code ||
-      typeof details.message !== "string" || details.message.length === 0 || details.message.length > 65_536
+      typeof details.code !== "string" ||
+      details.code.length === 0 ||
+      details.code !== cause.code ||
+      typeof details.message !== "string" ||
+      details.message.length === 0 ||
+      details.message.length > 65_536
     ) {
       throw new Error("Docker profile before-cache failure code or message identity is invalid");
     }
@@ -761,10 +783,7 @@ export async function captureDockerProfileBeforeCache(
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const reconcileController = new AbortController();
-      const reconcileTimeoutMs = Math.max(
-        1,
-        Math.min(10_000, publishReconciliationDeadline - Date.now()),
-      );
+      const reconcileTimeoutMs = Math.max(1, Math.min(10_000, publishReconciliationDeadline - Date.now()));
       const reconcileTimer = setTimeout(() => reconcileController.abort(), reconcileTimeoutMs);
       try {
         rawResponse = await dockerProfileControlRequest<unknown>(
@@ -781,17 +800,25 @@ export async function captureDockerProfileBeforeCache(
         clearTimeout(reconcileTimer);
         validateBeforeCacheControlError(cause, lease, reservation, input);
         lastError = cause;
-        if (cause instanceof DockerProfileControlError &&
-            (cause.code === "before-cache-operation-cancelled" || cause.code === "before-cache-operation-cancel-fenced")) {
-          throw new DockerProfileControlCancellationError(input.operationId, "before-cache capture was fenced and scrubbed");
+        if (
+          cause instanceof DockerProfileControlError &&
+          (cause.code === "before-cache-operation-cancelled" || cause.code === "before-cache-operation-cancel-fenced")
+        ) {
+          throw new DockerProfileControlCancellationError(
+            input.operationId,
+            "before-cache capture was fenced and scrubbed",
+          );
         }
         if (attempt === 2) break;
         await new Promise<void>((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
       }
     }
     if (lastError !== undefined) {
-      throw new DockerProfileControlAmbiguityError(input.operationId, "unresolved",
-        "before-cache publish outcome is ambiguous; retry/reconcile is exhausted");
+      throw new DockerProfileControlAmbiguityError(
+        input.operationId,
+        "unresolved",
+        "before-cache publish outcome is ambiguous; retry/reconcile is exhausted",
+      );
     }
     state = response.status.state;
   }
@@ -849,7 +876,8 @@ export async function restoreDockerProfileBeforeCache(
 async function socketFact(path: string, expectedUid: number): Promise<void> {
   const value = await lstat(path);
   if (!value.isSocket()) throw new Error(`Docker profile endpoint is not a Unix socket: ${path}`);
-  if (value.uid !== expectedUid) throw new Error(`Docker profile endpoint ${path} owner is ${value.uid}, expected ${expectedUid}`);
+  if (value.uid !== expectedUid)
+    throw new Error(`Docker profile endpoint ${path} owner is ${value.uid}, expected ${expectedUid}`);
   if ((modeOf(value.mode) & 0o002) !== 0) throw new Error(`Docker profile endpoint is world-writable: ${path}`);
 }
 
@@ -873,10 +901,14 @@ async function attestEntry(entry: ResolvedDockerProfileEntry): Promise<DockerPro
     readonly daemonGeneration: string;
     readonly clientNonce: string;
   }>(profile.transport.controlSocket.path, { kind: "challenge", clientNonce: nonce });
-  if (challenge.protocol !== profile.transport.controlSocket.protocol || challenge.profileId !== profile.profileId ||
-      challenge.descriptorDigest !== entry.descriptorDigest || challenge.clientNonce !== nonce ||
-      challenge.hostMachineIdentity !== profile.transport.hostMachineIdentity ||
-      challenge.backendMachineIdentity !== profile.backend.machineIdentity) {
+  if (
+    challenge.protocol !== profile.transport.controlSocket.protocol ||
+    challenge.profileId !== profile.profileId ||
+    challenge.descriptorDigest !== entry.descriptorDigest ||
+    challenge.clientNonce !== nonce ||
+    challenge.hostMachineIdentity !== profile.transport.hostMachineIdentity ||
+    challenge.backendMachineIdentity !== profile.backend.machineIdentity
+  ) {
     throw new Error(`Docker profile ${entry.alias} control attestation does not match its descriptor`);
   }
   // dockerode 是 optional peer；只有用户实际使用 Docker profile 时才加载。
@@ -895,7 +927,8 @@ async function attestEntry(entry: ResolvedDockerProfileEntry): Promise<DockerPro
   }
   const os = info.OSType || "linux";
   const arch = info.Architecture || "amd64";
-  if (typeof info.ID !== "string" || info.ID === "") throw new Error(`Docker profile ${entry.alias} daemon ID is missing`);
+  if (typeof info.ID !== "string" || info.ID === "")
+    throw new Error(`Docker profile ${entry.alias} daemon ID is missing`);
   return Object.freeze({
     alias: entry.alias,
     profile,
@@ -927,10 +960,14 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
   const heartbeat = async () => {
     if (!heartbeatEnabled) return;
     await dockerProfileControlRequest(binding.controlSocketPath, {
-      kind: "lease.heartbeat", invocationId, leaseToken: created.leaseToken,
+      kind: "lease.heartbeat",
+      invocationId,
+      leaseToken: created.leaseToken,
     });
   };
-  timer = setInterval(() => { void heartbeat().catch(() => {}); }, 5_000);
+  timer = setInterval(() => {
+    void heartbeat().catch(() => {});
+  }, 5_000);
   timer.unref();
   return {
     binding,
@@ -951,7 +988,9 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
           try {
             validateLeaseDrainReceipt(
               await dockerProfileControlRequest<unknown>(binding.controlSocketPath, {
-                kind: "lease.drain", invocationId, leaseToken: created.leaseToken,
+                kind: "lease.drain",
+                invocationId,
+                leaseToken: created.leaseToken,
               }),
             );
           } catch (error) {
@@ -968,16 +1007,14 @@ export async function createDockerProfileLease(binding: DockerProfileRuntimeBind
               stopped = true;
               return;
             }
-            lastError = new Error(
-              `Docker profile lease ${invocationId} remains visible after drain reconciliation`,
-            );
+            lastError = new Error(`Docker profile lease ${invocationId} remains visible after drain reconciliation`);
           } catch (error) {
             lastError = error;
           }
           if (Date.now() >= deadline) {
             throw new Error(
               `Docker profile lease ${invocationId} did not reach recovered state within ` +
-              `${DOCKER_PROFILE_DRAIN_RECONCILE_TIMEOUT_MS}ms`,
+                `${DOCKER_PROFILE_DRAIN_RECONCILE_TIMEOUT_MS}ms`,
               lastError === undefined ? undefined : { cause: lastError },
             );
           }
@@ -1013,10 +1050,18 @@ export async function acquireDockerProfileReservation(
   const doctorDeadline = signal === undefined ? Date.now() + 30_000 : undefined;
   let reservation: DockerProfileReservation | undefined;
   try {
-    reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
-      kind: "reservation.acquire", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
-      reservationId, reservationKind, resources,
-    }, signal);
+    reservation = await dockerProfileControlRequest<DockerProfileReservation>(
+      lease.binding.controlSocketPath,
+      {
+        kind: "reservation.acquire",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+        reservationKind,
+        resources,
+      },
+      signal,
+    );
     while (reservation.state === "queued") {
       if (doctorDeadline !== undefined && Date.now() >= doctorDeadline) {
         throw new DockerProfileCapacityBlockedError("doctor-timeout");
@@ -1036,9 +1081,16 @@ export async function acquireDockerProfileReservation(
         };
         signal.addEventListener("abort", abort, { once: true });
       });
-      reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
-        kind: "reservation.get", invocationId: lease.invocationId, leaseToken: lease.leaseToken, reservationId,
-      }, signal);
+      reservation = await dockerProfileControlRequest<DockerProfileReservation>(
+        lease.binding.controlSocketPath,
+        {
+          kind: "reservation.get",
+          invocationId: lease.invocationId,
+          leaseToken: lease.leaseToken,
+          reservationId,
+        },
+        signal,
+      );
       if (signal?.aborted) throw signal.reason ?? new DOMException("Docker profile reservation aborted", "AbortError");
     }
     if (reservation.state !== "granted") {
@@ -1069,12 +1121,13 @@ function profileControlEffect<T>(
   signal?: AbortSignal,
 ): Effect.Effect<T, Error> {
   return Effect.tryPromise({
-    try: (runtimeSignal) => dockerProfileControlRequest<T>(
-      lease.binding.controlSocketPath,
-      request,
-      signal === undefined ? runtimeSignal : AbortSignal.any([signal, runtimeSignal]),
-    ),
-    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+    try: (runtimeSignal) =>
+      dockerProfileControlRequest<T>(
+        lease.binding.controlSocketPath,
+        request,
+        signal === undefined ? runtimeSignal : AbortSignal.any([signal, runtimeSignal]),
+      ),
+    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
   });
 }
 
@@ -1090,15 +1143,17 @@ function profileQueueDelay(milliseconds: number, signal?: AbortSignal): Effect.E
         const abort = () => {
           clearTimeout(timer);
           combined.removeEventListener("abort", abort);
-          reject(combined.reason instanceof Error
-            ? combined.reason
-            : new DOMException("Docker profile reservation aborted", "AbortError"));
+          reject(
+            combined.reason instanceof Error
+              ? combined.reason
+              : new DOMException("Docker profile reservation aborted", "AbortError"),
+          );
         };
         if (combined.aborted) abort();
         else combined.addEventListener("abort", abort, { once: true });
       });
     },
-    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
   });
 }
 
@@ -1111,8 +1166,12 @@ function makeDockerProfileReservationOwner(
   let released = false;
   let releaseInFlight: Promise<void> | undefined;
   return {
-    get reservation() { return current; },
-    update(next) { current = next; },
+    get reservation() {
+      return current;
+    },
+    update(next) {
+      current = next;
+    },
     async release() {
       if (released) return;
       if (releaseInFlight !== undefined) return await releaseInFlight;
@@ -1129,12 +1188,10 @@ function makeDockerProfileReservationOwner(
   };
 }
 
-function releaseReservationOwner(
-  owner: DockerProfileReservationOwner,
-): Effect.Effect<void> {
+function releaseReservationOwner(owner: DockerProfileReservationOwner): Effect.Effect<void> {
   return Effect.tryPromise({
     try: () => owner.release(),
-    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
   }).pipe(Effect.orDie);
 }
 
@@ -1177,12 +1234,14 @@ export function acquireDockerProfileReservationEffect(
       const awaitGrant = Effect.gen(function* () {
         while (owner.reservation.state === "queued") {
           yield* profileQueueDelay(100, signal);
-          owner.update(yield* request<DockerProfileReservation>({
-            kind: "reservation.get",
-            invocationId: lease.invocationId,
-            leaseToken: lease.leaseToken,
-            reservationId,
-          }));
+          owner.update(
+            yield* request<DockerProfileReservation>({
+              kind: "reservation.get",
+              invocationId: lease.invocationId,
+              leaseToken: lease.leaseToken,
+              reservationId,
+            }),
+          );
         }
         return owner;
       });
@@ -1235,11 +1294,12 @@ function controlBuildRequest<T>(
         reject(outcome.error);
       }
     };
-    const abort = () => socket.destroy(
-      signal?.reason instanceof Error
-        ? signal.reason
-        : new DOMException("Docker profile build aborted", "AbortError"),
-    );
+    const abort = () =>
+      socket.destroy(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Docker profile build aborted", "AbortError"),
+      );
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
     socket.setTimeout(15 * 60_000);
@@ -1258,15 +1318,25 @@ function controlBuildRequest<T>(
         socket.end(end);
       })().catch((error: unknown) => socket.destroy(error instanceof Error ? error : new Error(String(error))));
     });
-    socket.on("data", (chunk: Buffer) => { response += chunk.toString(); });
+    socket.on("data", (chunk: Buffer) => {
+      response += chunk.toString();
+    });
     socket.on("timeout", () => socket.destroy(new Error(`Docker profile build control timeout: ${path}`)));
     socket.on("error", (error) => settle({ error }));
     socket.on("close", () => {
       if (settled) return;
       try {
-        const parsed = JSON.parse(response) as { ok?: boolean; result?: T; error?: { code?: string; message?: string } };
+        const parsed = JSON.parse(response) as {
+          ok?: boolean;
+          result?: T;
+          error?: { code?: string; message?: string };
+        };
         if (parsed.ok !== true || parsed.result === undefined) {
-          settle({ error: new Error(`${parsed.error?.code ?? "control-error"}: ${parsed.error?.message ?? "invalid control reply"}`) });
+          settle({
+            error: new Error(
+              `${parsed.error?.code ?? "control-error"}: ${parsed.error?.message ?? "invalid control reply"}`,
+            ),
+          });
         } else settle({ value: parsed.result });
       } catch (error) {
         settle({ error });
@@ -1283,22 +1353,30 @@ export async function createDockerProfileContainer(
 ): Promise<DockerProfileContainerCreateResult> {
   const create = "intent" in request ? request : { intent: "workload" as const, create: request };
   try {
-    return await dockerProfileControlRequest<DockerProfileContainerCreateResult>(lease.binding.controlSocketPath, {
-      kind: "container.create",
-      invocationId: lease.invocationId,
-      leaseToken: lease.leaseToken,
-      reservationId,
-      create,
-    }, signal);
+    return await dockerProfileControlRequest<DockerProfileContainerCreateResult>(
+      lease.binding.controlSocketPath,
+      {
+        kind: "container.create",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+        create,
+      },
+      signal,
+    );
   } catch (error) {
     // A lost reply can leave the journal committed. Recover the control-owned IDs instead of
     // issuing a second create or asking DockerSandbox's legacy reconciler to remove them.
-    const reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
-      kind: "reservation.get",
-      invocationId: lease.invocationId,
-      leaseToken: lease.leaseToken,
-      reservationId,
-    }, signal).catch(() => undefined);
+    const reservation = await dockerProfileControlRequest<DockerProfileReservation>(
+      lease.binding.controlSocketPath,
+      {
+        kind: "reservation.get",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+      },
+      signal,
+    ).catch(() => undefined);
     if (
       reservation?.state === "committed" &&
       reservation.containerId !== undefined &&
@@ -1326,14 +1404,19 @@ export async function createDockerProfileBuild(
     }).catch(() => undefined);
   };
   try {
-    return await controlBuildRequest<DockerProfileBuildCreateResult>(lease.binding.controlSocketPath, {
-      kind: "build.create",
-      invocationId: lease.invocationId,
-      leaseToken: lease.leaseToken,
-      reservationId,
-      build,
-      contextEncoding: "tar-chunked/v1",
-    }, context, signal);
+    return await controlBuildRequest<DockerProfileBuildCreateResult>(
+      lease.binding.controlSocketPath,
+      {
+        kind: "build.create",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+        build,
+        contextEncoding: "tar-chunked/v1",
+      },
+      context,
+      signal,
+    );
   } catch (error) {
     // The operation survives a client-side reply loss. Its durable reservation is
     // the recovery handle; never retry a build under a second provision token.
@@ -1346,12 +1429,16 @@ export async function createDockerProfileBuild(
         await cancelBuild();
         throw error;
       }
-      const reservation = await dockerProfileControlRequest<DockerProfileReservation>(lease.binding.controlSocketPath, {
-        kind: "reservation.get",
-        invocationId: lease.invocationId,
-        leaseToken: lease.leaseToken,
-        reservationId,
-      }, signal).catch(() => undefined);
+      const reservation = await dockerProfileControlRequest<DockerProfileReservation>(
+        lease.binding.controlSocketPath,
+        {
+          kind: "reservation.get",
+          invocationId: lease.invocationId,
+          leaseToken: lease.leaseToken,
+          reservationId,
+        },
+        signal,
+      ).catch(() => undefined);
       if (signal?.aborted) {
         await cancelBuild();
         throw error;
@@ -1374,12 +1461,15 @@ export async function releaseDockerProfileReservation(
   reservationId: string,
   proof?: Pick<DockerProfileReservation, "slotId">,
 ): Promise<DockerProfileReleaseReceipt> {
-  const release = async (): Promise<DockerProfileReleaseReceipt> => validateReleaseReceipt(
-    await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, {
-      kind: "reservation.release", invocationId: lease.invocationId, leaseToken: lease.leaseToken,
-      reservationId,
-    }),
-  );
+  const release = async (): Promise<DockerProfileReleaseReceipt> =>
+    validateReleaseReceipt(
+      await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, {
+        kind: "reservation.release",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+      }),
+    );
   try {
     return await release();
   } catch (primary) {
@@ -1393,18 +1483,23 @@ export async function releaseDockerProfileReservation(
       // it publishes/rolls back, then perform the same verified scrub release.
       const retried = await release().catch(() => undefined);
       if (retried !== undefined) return retried;
-      const status = await dockerProfileControlRequest<unknown>(
-        lease.binding.controlSocketPath,
-        { kind: "status" },
-      ).then(validateCleanupStatusReceipt).catch(() => undefined);
-      if (status?.profileId === lease.binding.profile.profileId && status.generation === lease.binding.daemonGeneration) {
+      const status = await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, { kind: "status" })
+        .then(validateCleanupStatusReceipt)
+        .catch(() => undefined);
+      if (
+        status?.profileId === lease.binding.profile.profileId &&
+        status.generation === lease.binding.daemonGeneration
+      ) {
         const reservationAbsent = !status.reservations.some((item) => item.reservationId === reservationId);
         const queueAbsent = !status.queue.some((item) => item.reservationId === reservationId);
-        const leaseIdentitySafe = !status.leases.some((item) => item.invocationId === lease.invocationId) ||
-          status.leases.some((item) =>
-            item.invocationId === lease.invocationId && item.daemonGeneration === lease.binding.daemonGeneration
+        const leaseIdentitySafe =
+          !status.leases.some((item) => item.invocationId === lease.invocationId) ||
+          status.leases.some(
+            (item) =>
+              item.invocationId === lease.invocationId && item.daemonGeneration === lease.binding.daemonGeneration,
           );
-        const slot = proof?.slotId === undefined ? undefined : status.slots.find((item) => item.slotId === proof.slotId);
+        const slot =
+          proof?.slotId === undefined ? undefined : status.slots.find((item) => item.slotId === proof.slotId);
         const slotFree = proof?.slotId === undefined || (slot?.state === "free" && slot.reservationId === undefined);
         const uncertain = status.degraded.some((item) => item.includes(reservationId));
         if (reservationAbsent && queueAbsent && leaseIdentitySafe && slotFree && !uncertain) {
@@ -1417,25 +1512,24 @@ export async function releaseDockerProfileReservation(
   }
 }
 
-async function cancelDockerProfileReservation(
-  lease: DockerProfileLease,
-  reservationId: string,
-): Promise<void> {
+async function cancelDockerProfileReservation(lease: DockerProfileLease, reservationId: string): Promise<void> {
   try {
-    validateCancelReceipt(await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, {
-      kind: "reservation.cancel",
-      invocationId: lease.invocationId,
-      leaseToken: lease.leaseToken,
-      reservationId,
-    }));
+    validateCancelReceipt(
+      await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, {
+        kind: "reservation.cancel",
+        invocationId: lease.invocationId,
+        leaseToken: lease.leaseToken,
+        reservationId,
+      }),
+    );
   } catch (primary) {
     // A successful cancellation can outlive a lost client reply. Accept that
     // only when the attested generation proves every reservation handle gone.
-    const status = await dockerProfileControlRequest<unknown>(
-      lease.binding.controlSocketPath,
-      { kind: "status" },
-    ).then(validateCleanupStatusReceipt).catch(() => undefined);
-    const absent = status?.profileId === lease.binding.profile.profileId &&
+    const status = await dockerProfileControlRequest<unknown>(lease.binding.controlSocketPath, { kind: "status" })
+      .then(validateCleanupStatusReceipt)
+      .catch(() => undefined);
+    const absent =
+      status?.profileId === lease.binding.profile.profileId &&
       status.generation === lease.binding.daemonGeneration &&
       !status.reservations.some((item) => item.reservationId === reservationId) &&
       !status.queue.some((item) => item.reservationId === reservationId) &&

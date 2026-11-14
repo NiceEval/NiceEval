@@ -1,9 +1,6 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import {
-  type RecordJson,
-  type RecordJsonObject,
-} from "../definition/canonical.ts";
+import { type RecordJson, type RecordJsonObject } from "../definition/canonical.ts";
 import {
   RecordSchemaParseOptions,
   type RecordSchemaCodec,
@@ -42,9 +39,7 @@ import type {
   RecordDocument,
   RunDocument,
 } from "../model/core.ts";
-import {
-  MEMBERSHIP_ACTIONS,
-} from "../model/core.ts";
+import { MEMBERSHIP_ACTIONS } from "../model/core.ts";
 import { RunContextSchema } from "../model/run-context.ts";
 
 /** Kept as the one exact Schema options object for nearby non-Core codecs. */
@@ -103,10 +98,7 @@ function schemaFailure(document: RecordCodecDocument): RecordCodecError {
   });
 }
 
-function invariantFailure(
-  document: RecordCodecDocument,
-  issues: readonly RecordIssue[],
-): RecordCodecError {
+function invariantFailure(document: RecordCodecDocument, issues: readonly RecordIssue[]): RecordCodecError {
   const nonEmpty = nonEmptyRecordIssues(issues);
   if (nonEmpty === undefined) {
     throw new Error("Record codec invariant failure requires at least one issue");
@@ -118,10 +110,7 @@ function invariantFailure(
   });
 }
 
-function failureFromSchemaCodec(
-  document: RecordCodecDocument,
-  failure: RecordSchemaFailure,
-): RecordCodecError {
+function failureFromSchemaCodec(document: RecordCodecDocument, failure: RecordSchemaFailure): RecordCodecError {
   if (failure.kind === "schema") {
     const isIssueCode = Schema.is(RecordIssueCodeSchema);
     const issues = failure.issues.flatMap((issue): readonly RecordIssue[] => {
@@ -161,9 +150,7 @@ function encodeDefinition<Value>(
 ): Result.Result<RecordJsonObject, RecordCodecError> {
   const encoded = definition.encode(value);
   if (Result.isFailure(encoded)) return Result.fail(failureFromSchemaCodec(document, encoded.failure));
-  return isRecordJsonObject(encoded.success)
-    ? Result.succeed(encoded.success)
-    : Result.fail(schemaFailure(document));
+  return isRecordJsonObject(encoded.success) ? Result.succeed(encoded.success) : Result.fail(schemaFailure(document));
 }
 
 /** Current Core codecs are thin adapters over the current definition declarations. */
@@ -171,9 +158,7 @@ export function decodeRecordDocument(input: unknown): Result.Result<RecordDocume
   return decodeDefinition("record", RecordDocumentDefinition, input);
 }
 
-export function encodeRecordDocument(
-  value: RecordDocument,
-): Result.Result<RecordDocumentEncoded, RecordCodecError> {
+export function encodeRecordDocument(value: RecordDocument): Result.Result<RecordDocumentEncoded, RecordCodecError> {
   return encodeDefinition("record", RecordDocumentDefinition, value);
 }
 
@@ -181,22 +166,15 @@ export function decodeRunDocument(input: unknown): Result.Result<RunDocument, Re
   return decodeDefinition("run", RunDocumentDefinition, input);
 }
 
-export function encodeRunDocument(
-  value: RunDocument,
-): Result.Result<RunDocumentEncoded, RecordCodecError> {
+export function encodeRunDocument(value: RunDocument): Result.Result<RunDocumentEncoded, RecordCodecError> {
   return encodeDefinition("run", RunDocumentDefinition, value);
 }
 
 export function decodeMemberDocument(input: unknown): Result.Result<MemberDocument, RecordCodecError> {
-  return Result.map(
-    decodeDefinition("member", MemberDocumentDefinition, input),
-    (value) => value as MemberDocument,
-  );
+  return Result.map(decodeDefinition("member", MemberDocumentDefinition, input), (value) => value as MemberDocument);
 }
 
-export function encodeMemberDocument(
-  value: MemberDocument,
-): Result.Result<MemberDocumentEncoded, RecordCodecError> {
+export function encodeMemberDocument(value: MemberDocument): Result.Result<MemberDocumentEncoded, RecordCodecError> {
   return encodeDefinition("member", MemberDocumentDefinition, value);
 }
 
@@ -204,9 +182,7 @@ export function decodeAttemptDocument(input: unknown): Result.Result<AttemptDocu
   return decodeDefinition("attempt", AttemptDocumentDefinition, input);
 }
 
-export function encodeAttemptDocument(
-  value: AttemptDocument,
-): Result.Result<AttemptDocumentEncoded, RecordCodecError> {
+export function encodeAttemptDocument(value: AttemptDocument): Result.Result<AttemptDocumentEncoded, RecordCodecError> {
   return encodeDefinition("attempt", AttemptDocumentDefinition, value);
 }
 

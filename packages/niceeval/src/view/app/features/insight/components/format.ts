@@ -4,11 +4,7 @@
 // 这里只格式化显示字节,不重新统计、不把 null 猜成零。
 
 import type { MetricState, MetricValue, Verdict } from "./cell.tsx";
-import {
-  DEFAULT_REPORT_LOCALE,
-  localeText,
-  type ReportLocale,
-} from "./locale.ts";
+import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "./locale.ts";
 
 /** 旧表使用的 MeasureFormat 显示覆盖词表。 */
 export type MetricFormat =
@@ -60,11 +56,7 @@ function formatNumberWithUnit(value: number, unit?: string): string {
 
 /** 当前 MeasureFormat kind 词表 → unit 开关。未知 kind 回落声明 unit。 */
 function resolveFormatUnit(format: MetricFormat | undefined, unit?: string): string | undefined {
-  const kind = typeof format === "string"
-    ? format
-    : format && "kind" in format
-    ? format.kind
-    : undefined;
+  const kind = typeof format === "string" ? format : format && "kind" in format ? format.kind : undefined;
   switch (kind) {
     case "percent":
     case "ratio":
@@ -110,10 +102,7 @@ export function formatMetricScalar(
  * available / partial 保留数值；空值与失败态显示其闭合状态，避免把 unavailable、
  * failed 与 unsupported 都悄悄压成同一个零或空字符串。
  */
-export function metricStateText(
-  state: MetricState,
-  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
-): string {
+export function metricStateText(state: MetricState, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   switch (state) {
     case "available":
     case "partial":
@@ -131,13 +120,11 @@ export function metricStateText(
 }
 
 /** Formats one complete closed MetricValue without discarding state or coverage. */
-export function formatMetricValue(
-  metric: MetricValue,
-  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
-): string {
-  const display = metric.value === null
-    ? metricStateText(metric.state, locale)
-    : `${metric.source === "estimated" ? "~" : ""}${formatMetricScalar(metric.value, metric.unit, metric.format, locale)}`;
+export function formatMetricValue(metric: MetricValue, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
+  const display =
+    metric.value === null
+      ? metricStateText(metric.state, locale)
+      : `${metric.source === "estimated" ? "~" : ""}${formatMetricScalar(metric.value, metric.unit, metric.format, locale)}`;
   return `${display} · ${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`;
 }
 

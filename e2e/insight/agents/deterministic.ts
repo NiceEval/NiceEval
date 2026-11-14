@@ -9,17 +9,18 @@ export const deterministicSandbox = defineSandbox({
   // This fixture executes real processes on the host, without a Linux VM.
   targetPlatform: hostSandboxTargetPlatform(),
   exclusive: true,
-  create: () => Effect.tryPromise({
-    try: () => createInspectionProcessSandbox(),
-    catch: (cause) => {
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      return new CustomSandboxMaterializationError({
-        code: "inspection-process-sandbox-create-failed",
-        message: error.message,
-        cause: error,
-      });
-    },
-  }),
+  create: () =>
+    Effect.tryPromise({
+      try: () => createInspectionProcessSandbox(),
+      catch: (cause) => {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        return new CustomSandboxMaterializationError({
+          code: "inspection-process-sandbox-create-failed",
+          message: error.message,
+          cause: error,
+        });
+      },
+    }),
 });
 
 /** Deterministic first-party Inspection fixture; it never contacts a provider. */

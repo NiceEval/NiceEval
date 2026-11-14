@@ -54,8 +54,14 @@ export function parseRunManifests(raw: unknown): RunManifests {
       ...(typeof entry.plugins === "object" && entry.plugins !== null && !Array.isArray(entry.plugins)
         ? { plugins: entry.plugins as globalThis.Record<string, JsonValue> }
         : {}),
-      source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<string, string>,
-      data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<string, string>,
+      source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<
+        string,
+        string
+      >,
+      data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<
+        string,
+        string
+      >,
     };
   }
   return out;

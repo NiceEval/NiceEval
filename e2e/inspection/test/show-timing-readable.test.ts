@@ -11,7 +11,9 @@ test.concurrent("管道时间线保留完整标识并单列失败活动", async 
     const event = only(run.expEvalEvents(), (item) => item.evalId === "inspection", run.diagnostic());
     const read = await niceeval.run(["show", event.locator, "timing", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    expect(read.inspectionSuccess("attempt.timing").timing.activities).toEqual(expect.arrayContaining([expect.objectContaining({ outcome: "failed" })]));
+    expect(read.inspectionSuccess("attempt.timing").timing.activities).toEqual(
+      expect.arrayContaining([expect.objectContaining({ outcome: "failed" })]),
+    );
     const shown = await niceeval.run(["show", event.locator, "timing"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout, shown.diagnostic()).not.toContain("…");

@@ -7,7 +7,8 @@ import { expect, test } from "vitest";
 const e2e = createE2EContext({
   repoId: "record",
   project: {
-    from: process.cwd(), prefix: "niceeval-e2e-export-",
+    from: process.cwd(),
+    prefix: "niceeval-e2e-export-",
     omitTopLevel: [".e2e-artifacts", ".niceeval", "node_modules", "test"],
     links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
   },
@@ -30,7 +31,9 @@ test.concurrent("子集导出独立保留引用的 Attempt 与证据，并排除
     const before = await niceeval.run(["show", `run:${selected}`, "--json"]);
     expect(before.exitCode, before.diagnostic()).toBe(0);
     const expected = before.inspectionSuccess("run.get");
-    expect(expected.run.members).toEqual([expect.objectContaining({ action: "carried", attempt: expect.objectContaining({ originRunId: origin }) })]);
+    expect(expected.run.members).toEqual([
+      expect.objectContaining({ action: "carried", attempt: expect.objectContaining({ originRunId: origin }) }),
+    ]);
     const publication = expected.run.plannedAttempts[0]!.publication;
     if (publication.state !== "published") throw new Error("Expected a carried publication");
 
@@ -38,7 +41,17 @@ test.concurrent("子集导出独立保留引用的 Attempt 与证据，并排除
     expect(traceBefore.exitCode, traceBefore.diagnostic()).toBe(0);
     const expectedTrace = traceBefore.inspectionSuccess("attempt.trace").trace;
     const file = join(paths.projectRoot, "subset.sqlite");
-    const exported = await niceeval.run(["run", "export", "--run", selected, "--run", selected, "--out", file, "--json"]);
+    const exported = await niceeval.run([
+      "run",
+      "export",
+      "--run",
+      selected,
+      "--run",
+      selected,
+      "--out",
+      file,
+      "--json",
+    ]);
     expect(exported.exitCode, exported.diagnostic()).toBe(0);
     const decoded = decodeRunDocument(exported.json<unknown>());
     expect(decoded.success, decoded.success ? "" : decoded.reason).toBe(true);
@@ -49,7 +62,14 @@ test.concurrent("子集导出独立保留引用的 Attempt 与证据，并排除
     const offline = await niceeval.run(["show", `run:${selected}`, "--record", file, "--json"]);
     expect(offline.exitCode, offline.diagnostic()).toBe(0);
     expect(offline.inspectionSuccess("run.get").run).toEqual(expected.run);
-    const traceOffline = await niceeval.run(["show", publication.attemptLocator, "execution", "--record", file, "--json"]);
+    const traceOffline = await niceeval.run([
+      "show",
+      publication.attemptLocator,
+      "execution",
+      "--record",
+      file,
+      "--json",
+    ]);
     expect(traceOffline.exitCode, traceOffline.diagnostic()).toBe(0);
     expect(traceOffline.inspectionSuccess("attempt.trace").trace).toEqual(expectedTrace);
 

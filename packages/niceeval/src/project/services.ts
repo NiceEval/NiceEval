@@ -56,9 +56,7 @@ export class ProjectFileSystem extends Context.Service<ProjectFileSystem, Projec
 
 /** Read the package module kind used by initialization feedback. */
 export interface ProjectManifestFactsService {
-  readonly moduleKind: (
-    projectRoot: string,
-  ) => Effect.Effect<"esm" | "commonjs-or-unspecified", ProjectPlatformError>;
+  readonly moduleKind: (projectRoot: string) => Effect.Effect<"esm" | "commonjs-or-unspecified", ProjectPlatformError>;
 }
 
 /** Provide package manifest facts to init without evaluating project configuration. */
@@ -69,11 +67,14 @@ export class ProjectManifestFacts extends Context.Service<ProjectManifestFacts, 
 /** Resolve the invocation directory and repository-relative installed documentation entry. */
 export interface ProjectProcessFactsService {
   readonly cwd: Effect.Effect<string, ProjectPlatformError>;
-  readonly guidance: (cwd: string) => Effect.Effect<{
-    readonly repositoryRoot: string;
-    readonly indexPath: string;
-    readonly command: string;
-  }, ProjectPlatformError>;
+  readonly guidance: (cwd: string) => Effect.Effect<
+    {
+      readonly repositoryRoot: string;
+      readonly indexPath: string;
+      readonly command: string;
+    },
+    ProjectPlatformError
+  >;
 }
 
 /** Provide process and repository facts for initialization. */

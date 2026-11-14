@@ -7,11 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Data, Effect } from "effect";
 import { buildContextIdentityContribution } from "../runner/leak-gate.ts";
 import type { JsonValue } from "../shared/types.ts";
-import {
-  computeBuildKey,
-  unresolvedProviderFingerprintMarker,
-  type BuildKey,
-} from "./identity.ts";
+import { computeBuildKey, unresolvedProviderFingerprintMarker, type BuildKey } from "./identity.ts";
 
 export const DOCKERFILE_MATERIALIZER_REVISION = "dockerfile-2";
 
@@ -40,10 +36,7 @@ export class DockerfileBuildIdentityError extends Data.TaggedError("DockerfileBu
   readonly message: string;
 }> {}
 
-function identityError(
-  stage: DockerfileBuildIdentityError["stage"],
-  cause: unknown,
-): DockerfileBuildIdentityError {
+function identityError(stage: DockerfileBuildIdentityError["stage"], cause: unknown): DockerfileBuildIdentityError {
   return new DockerfileBuildIdentityError({
     stage,
     message: cause instanceof Error ? cause.message : String(cause),
@@ -55,16 +48,15 @@ export function resolveDockerfileBuildIdentity(
 ): Effect.Effect<DockerfileBuildIdentity, DockerfileBuildIdentityError> {
   return Effect.gen(function* () {
     const rawContext = input.context instanceof URL ? fileURLToPath(input.context) : input.context;
-    const contextDir = isAbsolute(rawContext)
-      ? rawContext
-      : resolvePath(input.baseDir ?? process.cwd(), rawContext);
+    const contextDir = isAbsolute(rawContext) ? rawContext : resolvePath(input.baseDir ?? process.cwd(), rawContext);
     const dockerfilePath = resolvePath(contextDir, input.dockerfile ?? "Dockerfile");
     const dockerfile = yield* Effect.tryPromise({
       try: () => readFile(dockerfilePath, "utf8"),
-      catch: () => new DockerfileBuildIdentityError({
-        stage: "dockerfile",
-        message: `Dockerfile not found at ${dockerfilePath}`,
-      }),
+      catch: () =>
+        new DockerfileBuildIdentityError({
+          stage: "dockerfile",
+          message: `Dockerfile not found at ${dockerfilePath}`,
+        }),
     });
     const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
       contextDir,
@@ -110,9 +102,10 @@ export function dockerfileBaseIdentity(
       stages.push({ ref: match[1], ...(match[2] !== undefined ? { name: match[2] } : {}) });
     }
   }
-  const targetIndex = target === undefined
-    ? stages.length - 1
-    : stages.findIndex(({ name }) => name?.toLowerCase() === target.toLowerCase());
+  const targetIndex =
+    target === undefined
+      ? stages.length - 1
+      : stages.findIndex(({ name }) => name?.toLowerCase() === target.toLowerCase());
   const included = stages.slice(0, targetIndex >= 0 ? targetIndex + 1 : stages.length);
   const aliases = new Set<string>();
   const bases: string[] = [];

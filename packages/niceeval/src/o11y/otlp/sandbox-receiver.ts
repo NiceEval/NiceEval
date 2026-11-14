@@ -70,10 +70,7 @@ const START_ATTEMPTS = 2;
 export function createInSandboxTraceReceiver(
   sandbox: Sandbox,
 ): Effect.Effect<TraceReceiver, unknown, import("effect/Scope").Scope> {
-  return Effect.acquireRelease(
-    makeInSandboxReceiver(sandbox),
-    (receiver) => receiver.close,
-  );
+  return Effect.acquireRelease(makeInSandboxReceiver(sandbox), (receiver) => receiver.close);
 }
 
 interface StartedCollector {
@@ -93,71 +90,89 @@ function sandboxPromise<Value>(operation: (signal: AbortSignal) => Promise<Value
  * 文件,不会污染新一轮。
  */
 function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unknown> {
-  const attempt = (number: number, lastLog: string): Effect.Effect<StartedCollector, unknown> => Effect.suspend(() => {
-    const tag = randomUUID().slice(0, 8);
-    const collectorPath = `/tmp/.niceeval-otlp-collector-${tag}.cjs`;
-    const spansPath = `/tmp/.niceeval-otlp-spans-${tag}.jsonl`;
-    const portPath = `/tmp/.niceeval-otlp-port-${tag}`;
-    const logPath = `/tmp/.niceeval-otlp-collector-${tag}.log`;
-    const writeCollector = sandboxPromise(() => sandbox.writeText(collectorPath, collectorScript(spansPath, portPath))).pipe(
-      Effect.catch((error) => isWriteDeniedError(error)
-        ? Effect.fail(new Error(`the in-sandbox OTLP collector cannot write ${collectorPath}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. fix: make /tmp writable for the run user (\`chmod 1777 /tmp\` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.`, { cause: error }))
-        : Effect.fail(error)),
-    );
-
-    return Effect.gen(function* () {
-      // 采集器脚本落在系统临时目录(workdir 之外的私有路径,契约见
-      // docs/feature/sandbox/architecture/README.md「provider 的可写保证不止 workdir」)。/tmp 对运行
-      // 用户不可写时,e2b 一类 provider 只抛一个 500 原始串,读到它的人无从下手:这里翻译成
-      // 「点名路径 + 这是镜像环境缺陷 + 怎么修」,原始错误留在 cause 里做证据,不进消息。
-      yield* writeCollector;
-
-      // 后台启动 + 等端口文件,折进一次 shell 往返(远程沙箱一次 exec 要 100-500ms,
-      // host 侧逐次轮询会把几秒的启动等待放大成 N 个 API round-trip)。循环两条退出边:
-      //   · `kill -0` 失败 → collector 已经死了,别再空等满预算,立刻回 host 重试;
-      //   · 到 deadline → 真的太慢。
-      // 预算按 `date +%s` 的墙钟算而不是数 tick:`sleep` 的小数秒支持因镜像而异,数 tick 会让
-      // 不支持小数的镜像瞬间跑完循环、伪装成「等了 20s」。
-      // 输出两行:PID、端口(等不到则空)。
-      const startResult = yield* sandboxPromise(() => sandbox.runShell(
-        `node ${collectorPath} >${logPath} 2>&1 & pid=$!; echo $pid; ` +
-          `end=$(( $(date +%s) + ${Math.ceil(PORT_WAIT_MS / 1000)} )); ` +
-          `while [ ! -s ${portPath} ]; do ` +
-          `kill -0 $pid 2>/dev/null || break; ` +
-          `[ "$(date +%s)" -lt "$end" ] || break; ` +
-          `sleep 0.1 2>/dev/null || sleep 1; ` +
-          `done; ` +
-          `cat ${portPath} 2>/dev/null || true`,
-      ));
-      const [pidLine, portLine] = startResult.stdout.trim().split("\n");
-      const pid = parseInt((pidLine ?? "").trim(), 10);
-      const port = parseInt((portLine ?? "").trim(), 10) || 0;
-      if (port) return { pid, port, spansPath };
-
-      const log = yield* sandboxPromise(() => sandbox.runShell(`cat ${logPath} 2>/dev/null || true`)).pipe(
-        Effect.orElseSucceed(() => undefined),
+  const attempt = (number: number, lastLog: string): Effect.Effect<StartedCollector, unknown> =>
+    Effect.suspend(() => {
+      const tag = randomUUID().slice(0, 8);
+      const collectorPath = `/tmp/.niceeval-otlp-collector-${tag}.cjs`;
+      const spansPath = `/tmp/.niceeval-otlp-spans-${tag}.jsonl`;
+      const portPath = `/tmp/.niceeval-otlp-port-${tag}`;
+      const logPath = `/tmp/.niceeval-otlp-collector-${tag}.log`;
+      const writeCollector = sandboxPromise(() =>
+        sandbox.writeText(collectorPath, collectorScript(spansPath, portPath)),
+      ).pipe(
+        Effect.catch((error) =>
+          isWriteDeniedError(error)
+            ? Effect.fail(
+                new Error(
+                  `the in-sandbox OTLP collector cannot write ${collectorPath}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. fix: make /tmp writable for the run user (\`chmod 1777 /tmp\` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.`,
+                  { cause: error },
+                ),
+              )
+            : Effect.fail(error),
+        ),
       );
-      const nextLastLog = log?.stdout.trim() ?? lastLog;
-      // 这一轮可能只是慢、进程还活着:重试前先杀掉,不留孤儿 collector 占内存
-      //(沙箱复用 / --keep-sandbox 下它会一直在)。
-      if (Number.isFinite(pid) && pid > 0) {
-        yield* sandboxPromise(() => sandbox.runShell(`kill ${pid} 2>/dev/null || true`)).pipe(Effect.ignore);
-      }
-      if (number >= START_ATTEMPTS) {
-        // 等不到端口的两种常见死因分开报:镜像里没有 node(采集器日志会说),或系统临时目录对
-        // 运行用户不可写——后者采集器自己的写入被静默吞掉,日志是空的,只报「等了 20s」等于让人
-        // 对着空日志猜。探一次写权限,是环境缺陷就按环境缺陷报(点名路径 + 修法)。
-        if (yield* tempDirWriteDenied(sandbox, portPath)) {
-          return yield* Effect.fail(new Error(`the in-sandbox OTLP collector cannot write ${portPath}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. fix: make /tmp writable for the run user (\`chmod 1777 /tmp\` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.`));
+
+      return Effect.gen(function* () {
+        // 采集器脚本落在系统临时目录(workdir 之外的私有路径,契约见
+        // docs/feature/sandbox/architecture/README.md「provider 的可写保证不止 workdir」)。/tmp 对运行
+        // 用户不可写时,e2b 一类 provider 只抛一个 500 原始串,读到它的人无从下手:这里翻译成
+        // 「点名路径 + 这是镜像环境缺陷 + 怎么修」,原始错误留在 cause 里做证据,不进消息。
+        yield* writeCollector;
+
+        // 后台启动 + 等端口文件,折进一次 shell 往返(远程沙箱一次 exec 要 100-500ms,
+        // host 侧逐次轮询会把几秒的启动等待放大成 N 个 API round-trip)。循环两条退出边:
+        //   · `kill -0` 失败 → collector 已经死了,别再空等满预算,立刻回 host 重试;
+        //   · 到 deadline → 真的太慢。
+        // 预算按 `date +%s` 的墙钟算而不是数 tick:`sleep` 的小数秒支持因镜像而异,数 tick 会让
+        // 不支持小数的镜像瞬间跑完循环、伪装成「等了 20s」。
+        // 输出两行:PID、端口(等不到则空)。
+        const startResult = yield* sandboxPromise(() =>
+          sandbox.runShell(
+            `node ${collectorPath} >${logPath} 2>&1 & pid=$!; echo $pid; ` +
+              `end=$(( $(date +%s) + ${Math.ceil(PORT_WAIT_MS / 1000)} )); ` +
+              `while [ ! -s ${portPath} ]; do ` +
+              `kill -0 $pid 2>/dev/null || break; ` +
+              `[ "$(date +%s)" -lt "$end" ] || break; ` +
+              `sleep 0.1 2>/dev/null || sleep 1; ` +
+              `done; ` +
+              `cat ${portPath} 2>/dev/null || true`,
+          ),
+        );
+        const [pidLine, portLine] = startResult.stdout.trim().split("\n");
+        const pid = parseInt((pidLine ?? "").trim(), 10);
+        const port = parseInt((portLine ?? "").trim(), 10) || 0;
+        if (port) return { pid, port, spansPath };
+
+        const log = yield* sandboxPromise(() => sandbox.runShell(`cat ${logPath} 2>/dev/null || true`)).pipe(
+          Effect.orElseSucceed(() => undefined),
+        );
+        const nextLastLog = log?.stdout.trim() ?? lastLog;
+        // 这一轮可能只是慢、进程还活着:重试前先杀掉,不留孤儿 collector 占内存
+        //(沙箱复用 / --keep-sandbox 下它会一直在)。
+        if (Number.isFinite(pid) && pid > 0) {
+          yield* sandboxPromise(() => sandbox.runShell(`kill ${pid} 2>/dev/null || true`)).pipe(Effect.ignore);
         }
-        return yield* Effect.fail(new Error(
-          `in-sandbox OTLP collector failed to report its port within ${Math.round(PORT_WAIT_MS / 1000)}s ` +
-            `(${number} attempts). Collector log:\n${nextLastLog || "(empty)"}`,
-        ));
-      }
-      return yield* attempt(number + 1, nextLastLog);
+        if (number >= START_ATTEMPTS) {
+          // 等不到端口的两种常见死因分开报:镜像里没有 node(采集器日志会说),或系统临时目录对
+          // 运行用户不可写——后者采集器自己的写入被静默吞掉,日志是空的,只报「等了 20s」等于让人
+          // 对着空日志猜。探一次写权限,是环境缺陷就按环境缺陷报(点名路径 + 修法)。
+          if (yield* tempDirWriteDenied(sandbox, portPath)) {
+            return yield* Effect.fail(
+              new Error(
+                `the in-sandbox OTLP collector cannot write ${portPath}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. fix: make /tmp writable for the run user (\`chmod 1777 /tmp\` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.`,
+              ),
+            );
+          }
+          return yield* Effect.fail(
+            new Error(
+              `in-sandbox OTLP collector failed to report its port within ${Math.round(PORT_WAIT_MS / 1000)}s ` +
+                `(${number} attempts). Collector log:\n${nextLastLog || "(empty)"}`,
+            ),
+          );
+        }
+        return yield* attempt(number + 1, nextLastLog);
+      });
     });
-  });
   return attempt(1, "");
 }
 
@@ -168,11 +183,13 @@ function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unkno
 function isWriteDeniedError(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current != null; depth += 1) {
-    const record = typeof current === "object" ? current as globalThis.Record<string, unknown> : undefined;
+    const record = typeof current === "object" ? (current as globalThis.Record<string, unknown>) : undefined;
     const code = record && typeof record.code === "string" ? record.code : "";
     const message = current instanceof Error ? current.message : String(current);
     if (/^(EACCES|EPERM|EROFS)$/i.test(code)) return true;
-    if (/EACCES|EPERM|EROFS|permission denied|operation not permitted|read-only file system|not writable/i.test(message)) {
+    if (
+      /EACCES|EPERM|EROFS|permission denied|operation not permitted|read-only file system|not writable/i.test(message)
+    ) {
       return true;
     }
     current = record?.cause;
@@ -188,73 +205,103 @@ function isWriteDeniedError(error: unknown): boolean {
 function tempDirWriteDenied(sandbox: Sandbox, probeBasePath: string): Effect.Effect<boolean> {
   const dir = probeBasePath.slice(0, probeBasePath.lastIndexOf("/")) || "/tmp";
   const probe = `${dir}/.niceeval-write-probe-${randomUUID().slice(0, 8)}`;
-  return sandboxPromise(() => sandbox.runShell(
-    `if touch ${probe} 2>/dev/null; then rm -f ${probe}; echo writable; else echo denied; fi`,
-  )).pipe(
+  return sandboxPromise(() =>
+    sandbox.runShell(`if touch ${probe} 2>/dev/null; then rm -f ${probe}; echo writable; else echo denied; fi`),
+  ).pipe(
     Effect.map((result) => result.stdout.trim() === "denied"),
     Effect.orElseSucceed(() => false),
   );
 }
 
 function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, unknown> {
-  return startCollector(sandbox).pipe(Effect.map(({ pid, port, spansPath }) => {
-    let cached: TraceSpan[] = [];
-    const settle = (quietMs: number, maxMs: number): Effect.Effect<void> => {
-      const quietTicks = Math.max(1, Math.round(quietMs / 100));
-      const maxTicks = Math.max(quietTicks, Math.round(maxMs / 100));
-      // agent 结束后调:等 spans 文件大小连续 quietMs 无增长(exporter flush 完)再下载。
-      // 等待循环整个跑在沙箱内(一次 shell 往返),不从 host 逐次轮询。
-      return sandboxPromise((signal) => sandbox.runShell(
-        `prev=$(wc -c < ${spansPath} 2>/dev/null || echo 0); stable=0; i=0; ` +
-          `while [ $i -lt ${maxTicks} ]; do ` +
-          `s=$(wc -c < ${spansPath} 2>/dev/null || echo 0); ` +
-          `if [ "$s" = "$prev" ]; then stable=$((stable+1)); [ $stable -ge ${quietTicks} ] && break; ` +
-          `else stable=0; prev=$s; fi; ` +
-          `sleep 0.1; i=$((i+1)); done`,
-        { signal },
-      )).pipe(Effect.ignore);
-    };
-    const drain = (activity: TraceCollectionActivity): Effect.Effect<void, unknown> => Effect.gen(function* () {
-      const chunkBytes = 256 * 1024;
-      let offset = 0;
-      let pending = Buffer.alloc(0);
-      for (;;) {
-        const bytes = yield* activity("telemetry.read", Effect.tryPromise({ try: async (signal) => {
-          const result = await sandbox.runShell(
-            `if [ -f ${spansPath} ]; then dd if=${spansPath} bs=${chunkBytes} skip=${offset / chunkBytes} count=1 2>/dev/null | base64; fi`,
+  return startCollector(sandbox).pipe(
+    Effect.map(({ pid, port, spansPath }) => {
+      let cached: TraceSpan[] = [];
+      const settle = (quietMs: number, maxMs: number): Effect.Effect<void> => {
+        const quietTicks = Math.max(1, Math.round(quietMs / 100));
+        const maxTicks = Math.max(quietTicks, Math.round(maxMs / 100));
+        // agent 结束后调:等 spans 文件大小连续 quietMs 无增长(exporter flush 完)再下载。
+        // 等待循环整个跑在沙箱内(一次 shell 往返),不从 host 逐次轮询。
+        return sandboxPromise((signal) =>
+          sandbox.runShell(
+            `prev=$(wc -c < ${spansPath} 2>/dev/null || echo 0); stable=0; i=0; ` +
+              `while [ $i -lt ${maxTicks} ]; do ` +
+              `s=$(wc -c < ${spansPath} 2>/dev/null || echo 0); ` +
+              `if [ "$s" = "$prev" ]; then stable=$((stable+1)); [ $stable -ge ${quietTicks} ] && break; ` +
+              `else stable=0; prev=$s; fi; ` +
+              `sleep 0.1; i=$((i+1)); done`,
             { signal },
-          );
-          if (result.exitCode !== 0) throw new Error(`Telemetry read failed: exit ${result.exitCode}`);
-          return Buffer.from(result.stdout.replace(/\s/g, ""), "base64");
-        }, catch: (cause) => cause }), (bytes: Buffer) => bytes.length);
-        offset += bytes.length;
-        pending = Buffer.concat([pending, bytes]);
-        const end = pending.lastIndexOf(10);
-        const consumed = end < 0 ? (bytes.length < chunkBytes ? pending.length : 0) : end + 1;
-        if (consumed > 0) {
-          yield* activity("telemetry.decode", decodeSpanEnvelopes(pending.subarray(0, consumed)).pipe(
-            Effect.tap((decoded) => Effect.sync(() => { for (const span of decoded) cached.push(span); })),
-          ), (decoded) => decoded.length);
-          pending = pending.subarray(consumed);
-        }
-        if (bytes.length < chunkBytes) {
-          if (pending.length > 0) yield* activity("telemetry.decode", decodeSpanEnvelopes(pending).pipe(
-            Effect.tap((decoded) => Effect.sync(() => { for (const span of decoded) cached.push(span); })),
-          ), (decoded) => decoded.length);
-          break;
-        }
-        yield* Effect.yieldNow;
-      }
-    });
-    const close = Number.isFinite(pid) && pid > 0
-      ? sandboxPromise(() => sandbox.runShell(`kill ${pid} 2>/dev/null || true`)).pipe(Effect.ignore)
-      : Effect.void;
-    return Object.freeze({
-      endpoint: (_host: string) => `http://127.0.0.1:${port}/v1/traces`,
-      collect: () => cached.slice(),
-      settle,
-      drain,
-      close,
-    });
-  }));
+          ),
+        ).pipe(Effect.ignore);
+      };
+      const drain = (activity: TraceCollectionActivity): Effect.Effect<void, unknown> =>
+        Effect.gen(function* () {
+          const chunkBytes = 256 * 1024;
+          let offset = 0;
+          let pending = Buffer.alloc(0);
+          for (;;) {
+            const bytes = yield* activity(
+              "telemetry.read",
+              Effect.tryPromise({
+                try: async (signal) => {
+                  const result = await sandbox.runShell(
+                    `if [ -f ${spansPath} ]; then dd if=${spansPath} bs=${chunkBytes} skip=${offset / chunkBytes} count=1 2>/dev/null | base64; fi`,
+                    { signal },
+                  );
+                  if (result.exitCode !== 0) throw new Error(`Telemetry read failed: exit ${result.exitCode}`);
+                  return Buffer.from(result.stdout.replace(/\s/g, ""), "base64");
+                },
+                catch: (cause) => cause,
+              }),
+              (bytes: Buffer) => bytes.length,
+            );
+            offset += bytes.length;
+            pending = Buffer.concat([pending, bytes]);
+            const end = pending.lastIndexOf(10);
+            const consumed = end < 0 ? (bytes.length < chunkBytes ? pending.length : 0) : end + 1;
+            if (consumed > 0) {
+              yield* activity(
+                "telemetry.decode",
+                decodeSpanEnvelopes(pending.subarray(0, consumed)).pipe(
+                  Effect.tap((decoded) =>
+                    Effect.sync(() => {
+                      for (const span of decoded) cached.push(span);
+                    }),
+                  ),
+                ),
+                (decoded) => decoded.length,
+              );
+              pending = pending.subarray(consumed);
+            }
+            if (bytes.length < chunkBytes) {
+              if (pending.length > 0)
+                yield* activity(
+                  "telemetry.decode",
+                  decodeSpanEnvelopes(pending).pipe(
+                    Effect.tap((decoded) =>
+                      Effect.sync(() => {
+                        for (const span of decoded) cached.push(span);
+                      }),
+                    ),
+                  ),
+                  (decoded) => decoded.length,
+                );
+              break;
+            }
+            yield* Effect.yieldNow;
+          }
+        });
+      const close =
+        Number.isFinite(pid) && pid > 0
+          ? sandboxPromise(() => sandbox.runShell(`kill ${pid} 2>/dev/null || true`)).pipe(Effect.ignore)
+          : Effect.void;
+      return Object.freeze({
+        endpoint: (_host: string) => `http://127.0.0.1:${port}/v1/traces`,
+        collect: () => cached.slice(),
+        settle,
+        drain,
+        close,
+      });
+    }),
+  );
 }

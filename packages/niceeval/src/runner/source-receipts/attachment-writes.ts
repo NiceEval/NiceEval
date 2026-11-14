@@ -3,10 +3,7 @@ import { createHash } from "node:crypto";
 import { Result, Schema } from "effect";
 
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
-import {
-  AgentTurnsAttachmentSchema,
-  type AgentTurnsAttachment,
-} from "../../record/family/agent-turns/definition.ts";
+import { AgentTurnsAttachmentSchema, type AgentTurnsAttachment } from "../../record/family/agent-turns/definition.ts";
 import {
   AttemptRunnerActivitiesAttachmentSchema,
   RunRunnerActivitiesAttachmentSchema,
@@ -35,16 +32,10 @@ import type {
 
 export type SourceReceiptAttachmentBuildError = {
   readonly code: "source-receipt-attachment-input-invalid";
-  readonly family:
-    | "agent-turns"
-    | "sandbox-commands"
-    | "runner-activities"
-    | "runner-diagnostics";
+  readonly family: "agent-turns" | "sandbox-commands" | "runner-activities" | "runner-diagnostics";
 };
 
-function invalid(
-  family: SourceReceiptAttachmentBuildError["family"],
-): SourceReceiptAttachmentBuildError {
+function invalid(family: SourceReceiptAttachmentBuildError["family"]): SourceReceiptAttachmentBuildError {
   return Object.freeze({
     code: "source-receipt-attachment-input-invalid" as const,
     family,
@@ -63,14 +54,14 @@ function decode<Value>(
 function commandStreamIsValid(stream: StagedCommandStream): boolean {
   const bytes = new TextEncoder().encode(stream.text);
   const retainedBytes = bytes.byteLength;
-  return retainedBytes === stream.retainedBytes &&
+  return (
+    retainedBytes === stream.retainedBytes &&
     createHash("sha256").update(bytes).digest("hex") === stream.sha256 &&
-    stream.totalSafeUtf8Bytes >= retainedBytes;
+    stream.totalSafeUtf8Bytes >= retainedBytes
+  );
 }
 
-export type SandboxCommandsAttachmentBuild = (
-  build: RecordAttachmentSessionBuilder,
-) => SandboxCommandsAttachment;
+export type SandboxCommandsAttachmentBuild = (build: RecordAttachmentSessionBuilder) => SandboxCommandsAttachment;
 
 export type AttemptRunnerDiagnosticsAttachmentBuild = (
   build: RecordAttachmentSessionBuilder,
@@ -90,9 +81,9 @@ const StagedSandboxCommandsSchema = Schema.Struct({
 function sandboxCommandsAttachment(
   input: NonNullable<RunnerAttemptSourceReceiptsCapture["sandboxCommands"]>,
 ): Result.Result<SandboxCommandsAttachmentBuild, SourceReceiptAttachmentBuildError> {
-  if (input.segments.some((segment) =>
-    !commandStreamIsValid(segment.stdout) || !commandStreamIsValid(segment.stderr)
-  )) {
+  if (
+    input.segments.some((segment) => !commandStreamIsValid(segment.stdout) || !commandStreamIsValid(segment.stderr))
+  ) {
     return Result.fail(invalid("sandbox-commands"));
   }
 
@@ -117,21 +108,25 @@ function sandboxCommandsAttachment(
   return Result.succeed((build) => {
     const candidate = Object.freeze({
       collection: metadata.success.collection,
-      segments: Object.freeze(metadata.success.segments.map((segment, index) => Object.freeze({
-        ...segment,
-        stdout: Object.freeze({
-          content: build.content.text(input.segments[index]!.stdout.text),
-          retainedBytes: input.segments[index]!.stdout.retainedBytes,
-          totalSafeUtf8Bytes: input.segments[index]!.stdout.totalSafeUtf8Bytes,
-          sha256: input.segments[index]!.stdout.sha256,
-        }),
-        stderr: Object.freeze({
-          content: build.content.text(input.segments[index]!.stderr.text),
-          retainedBytes: input.segments[index]!.stderr.retainedBytes,
-          totalSafeUtf8Bytes: input.segments[index]!.stderr.totalSafeUtf8Bytes,
-          sha256: input.segments[index]!.stderr.sha256,
-        }),
-      }))),
+      segments: Object.freeze(
+        metadata.success.segments.map((segment, index) =>
+          Object.freeze({
+            ...segment,
+            stdout: Object.freeze({
+              content: build.content.text(input.segments[index]!.stdout.text),
+              retainedBytes: input.segments[index]!.stdout.retainedBytes,
+              totalSafeUtf8Bytes: input.segments[index]!.stdout.totalSafeUtf8Bytes,
+              sha256: input.segments[index]!.stdout.sha256,
+            }),
+            stderr: Object.freeze({
+              content: build.content.text(input.segments[index]!.stderr.text),
+              retainedBytes: input.segments[index]!.stderr.retainedBytes,
+              totalSafeUtf8Bytes: input.segments[index]!.stderr.totalSafeUtf8Bytes,
+              sha256: input.segments[index]!.stderr.sha256,
+            }),
+          }),
+        ),
+      ),
     });
     const decoded = Schema.decodeUnknownResult(
       Schema.toType(SandboxCommandsAttachmentSchema),
@@ -150,12 +145,17 @@ function attemptRunnerDiagnosticsAttachment(
   return (build) => {
     const candidate = Object.freeze({
       collection: input.collection,
-      segments: Object.freeze(input.segments.map((segment) => Object.freeze({
-        ...segment,
-        sourceFrame: segment.sourceFrame === null
-          ? null
-          : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
-      }))),
+      segments: Object.freeze(
+        input.segments.map((segment) =>
+          Object.freeze({
+            ...segment,
+            sourceFrame:
+              segment.sourceFrame === null
+                ? null
+                : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
+          }),
+        ),
+      ),
     });
     const decoded = Schema.decodeResult(
       Schema.toType(AttemptRunnerDiagnosticsAttachmentSchema),
@@ -168,18 +168,21 @@ function attemptRunnerDiagnosticsAttachment(
   };
 }
 
-function runRunnerDiagnosticsAttachment(
-  input: RunRunnerDiagnosticsAttachment,
-): RunRunnerDiagnosticsAttachmentBuild {
+function runRunnerDiagnosticsAttachment(input: RunRunnerDiagnosticsAttachment): RunRunnerDiagnosticsAttachmentBuild {
   return (build) => {
     const candidate = Object.freeze({
       collection: input.collection,
-      segments: Object.freeze(input.segments.map((segment) => Object.freeze({
-        ...segment,
-        sourceFrame: segment.sourceFrame === null
-          ? null
-          : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
-      }))),
+      segments: Object.freeze(
+        input.segments.map((segment) =>
+          Object.freeze({
+            ...segment,
+            sourceFrame:
+              segment.sourceFrame === null
+                ? null
+                : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
+          }),
+        ),
+      ),
     });
     const decoded = Schema.decodeResult(
       Schema.toType(RunRunnerDiagnosticsAttachmentSchema),
@@ -207,54 +210,52 @@ export interface RunSourceReceiptAttachments {
 export function createAttemptSourceReceiptAttachments(
   input: RunnerAttemptSourceReceiptsCapture,
 ): Result.Result<AttemptSourceReceiptAttachments, SourceReceiptAttachmentBuildError> {
-  const agentTurns = input.agentTurns === undefined
-    ? undefined
-    : decode(AgentTurnsAttachmentSchema, input.agentTurns, "agent-turns");
+  const agentTurns =
+    input.agentTurns === undefined ? undefined : decode(AgentTurnsAttachmentSchema, input.agentTurns, "agent-turns");
   if (agentTurns !== undefined && Result.isFailure(agentTurns)) return Result.fail(agentTurns.failure);
 
-  const activities = decode(
-    AttemptRunnerActivitiesAttachmentSchema,
-    input.runnerActivities,
-    "runner-activities",
-  );
+  const activities = decode(AttemptRunnerActivitiesAttachmentSchema, input.runnerActivities, "runner-activities");
   if (Result.isFailure(activities)) return Result.fail(activities.failure);
-  const diagnostics = decode(
-    AttemptRunnerDiagnosticsAttachmentSchema,
-    input.runnerDiagnostics,
-    "runner-diagnostics",
-  );
+  const diagnostics = decode(AttemptRunnerDiagnosticsAttachmentSchema, input.runnerDiagnostics, "runner-diagnostics");
   if (Result.isFailure(diagnostics)) return Result.fail(diagnostics.failure);
-  const sandboxCommands = input.sandboxCommands === undefined
-    ? undefined
-    : sandboxCommandsAttachment(input.sandboxCommands);
+  const sandboxCommands =
+    input.sandboxCommands === undefined ? undefined : sandboxCommandsAttachment(input.sandboxCommands);
   if (sandboxCommands !== undefined && Result.isFailure(sandboxCommands)) {
     return Result.fail(sandboxCommands.failure);
   }
 
-  return Result.succeed(Object.freeze({
-    ...(agentTurns === undefined ? {} : { agentTurns: agentTurns.success }),
-    ...(sandboxCommands === undefined ? {} : { sandboxCommands: sandboxCommands.success }),
-    runnerActivities: activities.success,
-    runnerDiagnostics: attemptRunnerDiagnosticsAttachment(diagnostics.success),
-  }));
+  return Result.succeed(
+    Object.freeze({
+      ...(agentTurns === undefined ? {} : { agentTurns: agentTurns.success }),
+      ...(sandboxCommands === undefined ? {} : { sandboxCommands: sandboxCommands.success }),
+      runnerActivities: activities.success,
+      runnerDiagnostics: attemptRunnerDiagnosticsAttachment(diagnostics.success),
+    }),
+  );
 }
 
 export function createRunSourceReceiptAttachments(
   input: RunnerRunSourceReceiptsCapture,
 ): Result.Result<RunSourceReceiptAttachments, SourceReceiptAttachmentBuildError> {
-  const activities = input.runnerActivities === undefined
-    ? undefined
-    : decode(RunRunnerActivitiesAttachmentSchema, input.runnerActivities, "runner-activities");
+  const activities =
+    input.runnerActivities === undefined
+      ? undefined
+      : decode(RunRunnerActivitiesAttachmentSchema, input.runnerActivities, "runner-activities");
   if (activities !== undefined && Result.isFailure(activities)) return Result.fail(activities.failure);
-  const diagnostics = input.runnerDiagnostics === undefined
-    ? undefined
-    : decode(RunRunnerDiagnosticsAttachmentSchema, input.runnerDiagnostics, "runner-diagnostics");
+  const diagnostics =
+    input.runnerDiagnostics === undefined
+      ? undefined
+      : decode(RunRunnerDiagnosticsAttachmentSchema, input.runnerDiagnostics, "runner-diagnostics");
   if (diagnostics !== undefined && Result.isFailure(diagnostics)) return Result.fail(diagnostics.failure);
 
-  return Result.succeed(Object.freeze({
-    ...(activities === undefined ? {} : { runnerActivities: activities.success }),
-    ...(diagnostics === undefined ? {} : {
-      runnerDiagnostics: runRunnerDiagnosticsAttachment(diagnostics.success),
+  return Result.succeed(
+    Object.freeze({
+      ...(activities === undefined ? {} : { runnerActivities: activities.success }),
+      ...(diagnostics === undefined
+        ? {}
+        : {
+            runnerDiagnostics: runRunnerDiagnosticsAttachment(diagnostics.success),
+          }),
     }),
-  }));
+  );
 }

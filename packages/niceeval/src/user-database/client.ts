@@ -23,7 +23,12 @@ import {
   type UserDatabaseWorkerStartup,
 } from "./protocol.ts";
 
-const WorkerLimits = Object.freeze({ maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 32, codeRangeSizeMb: 32, stackSizeMb: 4 });
+const WorkerLimits = Object.freeze({
+  maxOldGenerationSizeMb: 256,
+  maxYoungGenerationSizeMb: 32,
+  codeRangeSizeMb: 32,
+  stackSizeMb: 4,
+});
 const StartupMaximumMs = 120_000;
 
 function workerExecArgv(): string[] {
@@ -44,8 +49,13 @@ function workerExecArgv(): string[] {
 }
 
 function localFailure(cause: unknown): UserDatabaseFailure {
-  if (cause instanceof UserDatabaseInvalid || cause instanceof UserDatabaseBusy ||
-    cause instanceof UserDatabaseUnsupported || cause instanceof UserDatabaseLegacyFound) return cause;
+  if (
+    cause instanceof UserDatabaseInvalid ||
+    cause instanceof UserDatabaseBusy ||
+    cause instanceof UserDatabaseUnsupported ||
+    cause instanceof UserDatabaseLegacyFound
+  )
+    return cause;
   const message = cause instanceof Error ? cause.message : String(cause);
   return /SQLITE_BUSY|database is locked/iu.test(message)
     ? new UserDatabaseBusy({ code: "user-database-busy", message, cause })
@@ -70,43 +80,78 @@ function workerFailure(failure: UserDatabaseWorkerFailure): UserDatabaseFailure 
     });
   }
   if (failure.code === "user-database-busy") {
-    return new UserDatabaseBusy({ code: failure.code, message: failure.message, repository: failure.repository, cause: new Error(failure.message) });
+    return new UserDatabaseBusy({
+      code: failure.code,
+      message: failure.message,
+      repository: failure.repository,
+      cause: new Error(failure.message),
+    });
   }
-  return new UserDatabaseInvalid({ code: failure.code, message: failure.message, repository: failure.repository, cause: new Error(failure.message) });
+  return new UserDatabaseInvalid({
+    code: failure.code,
+    message: failure.message,
+    repository: failure.repository,
+    cause: new Error(failure.message),
+  });
 }
 
 function isFailure(value: unknown): value is UserDatabaseWorkerFailure {
   if (typeof value !== "object" || value === null || typeof Reflect.get(value, "message") !== "string") return false;
-  return ["user-database-invalid", "user-database-busy", "user-database-unsupported", "user-database-legacy-found"].includes(String(Reflect.get(value, "code")));
+  return [
+    "user-database-invalid",
+    "user-database-busy",
+    "user-database-unsupported",
+    "user-database-legacy-found",
+  ].includes(String(Reflect.get(value, "code")));
 }
 
 function isEntry(value: unknown): value is DurableStateEntry {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    typeof Reflect.get(value, "key") === "string" && typeof Reflect.get(value, "value") === "string";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof Reflect.get(value, "key") === "string" &&
+    typeof Reflect.get(value, "value") === "string"
+  );
 }
 
 function isResult(value: unknown): value is UserDatabaseRepositoryResult | { readonly kind: "void" } {
   if (typeof value !== "object" || value === null) return false;
   if (Reflect.get(value, "kind") === "void") return true;
   if (Reflect.get(value, "repository") !== DURABLE_STATE_REPOSITORY) {
-    return isDockerCacheRepositoryResult(value) || isIncusRepositoryResult(value) || isBeforeCacheSnapshotRepositoryResult(value);
+    return (
+      isDockerCacheRepositoryResult(value) ||
+      isIncusRepositoryResult(value) ||
+      isBeforeCacheSnapshotRepositoryResult(value)
+    );
   }
   const operation = Reflect.get(value, "operation");
   if (operation === "put") return Number.isSafeInteger(Reflect.get(value, "changes"));
   if (operation === "get") return Reflect.get(value, "entry") === null || isEntry(Reflect.get(value, "entry"));
-  return operation === "list" && Array.isArray(Reflect.get(value, "entries")) && (Reflect.get(value, "entries") as unknown[]).every(isEntry);
+  return (
+    operation === "list" &&
+    Array.isArray(Reflect.get(value, "entries")) &&
+    (Reflect.get(value, "entries") as unknown[]).every(isEntry)
+  );
 }
 
 function isStartup(value: unknown): value is UserDatabaseWorkerStartup {
-  return typeof value === "object" && value !== null &&
+  return (
+    typeof value === "object" &&
+    value !== null &&
     (Reflect.get(value, "state") === "ready" ||
-      (Reflect.get(value, "state") === "startup-failure" && isFailure(Reflect.get(value, "error"))));
+      (Reflect.get(value, "state") === "startup-failure" && isFailure(Reflect.get(value, "error"))))
+  );
 }
 
 function isResponse(value: unknown): value is UserDatabaseWorkerResponse {
-  return typeof value === "object" && value !== null && Number.isSafeInteger(Reflect.get(value, "id")) &&
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Number.isSafeInteger(Reflect.get(value, "id")) &&
     ((Reflect.get(value, "state") === "success" && isResult(Reflect.get(value, "result"))) ||
-      (Reflect.get(value, "state") === "failure" && isFailure(Reflect.get(value, "error"))));
+      (Reflect.get(value, "state") === "failure" && isFailure(Reflect.get(value, "error"))))
+  );
 }
 
 type WorkerResult = UserDatabaseRepositoryResult | { readonly kind: "void" };
@@ -132,11 +177,16 @@ class UserDatabaseWorkerClient {
     });
     worker.on("error", (cause) => this.rejectAll(localFailure(cause)));
     worker.on("exit", (code) => {
-      if (!this.#closing) this.rejectAll(localFailure(new Error(`UserDatabase storage worker exited unexpectedly with code ${code}`)));
+      if (!this.#closing)
+        this.rejectAll(localFailure(new Error(`UserDatabase storage worker exited unexpectedly with code ${code}`)));
     });
   }
 
-  static open(input: { readonly databasePath: string; readonly legacyPath: string; readonly busyTimeoutMs: number }): Promise<UserDatabaseWorkerClient> {
+  static open(input: {
+    readonly databasePath: string;
+    readonly legacyPath: string;
+    readonly busyTimeoutMs: number;
+  }): Promise<UserDatabaseWorkerClient> {
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
     const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
       workerData: input,
@@ -156,14 +206,30 @@ class UserDatabaseWorkerClient {
         work();
         if (terminate) void worker.terminate();
       };
-      const timer = setTimeout(() => finish(() => reject(localFailure(new Error(`UserDatabase storage worker did not become ready within ${startupTimeoutMs}ms`))), true), startupTimeoutMs);
+      const timer = setTimeout(
+        () =>
+          finish(
+            () =>
+              reject(
+                localFailure(
+                  new Error(`UserDatabase storage worker did not become ready within ${startupTimeoutMs}ms`),
+                ),
+              ),
+            true,
+          ),
+        startupTimeoutMs,
+      );
       const onMessage = (value: unknown): void => {
         if (!isStartup(value)) return;
         if (value.state === "ready") finish(() => resolve(new UserDatabaseWorkerClient(worker)));
         else finish(() => reject(workerFailure(value.error)), true);
       };
       const onError = (cause: unknown): void => finish(() => reject(localFailure(cause)), true);
-      const onExit = (code: number): void => finish(() => reject(localFailure(new Error(`UserDatabase storage worker exited during startup with code ${code}`))), true);
+      const onExit = (code: number): void =>
+        finish(
+          () => reject(localFailure(new Error(`UserDatabase storage worker exited during startup with code ${code}`))),
+          true,
+        );
       worker.on("message", onMessage);
       worker.once("error", onError);
       worker.once("exit", onExit);
@@ -177,10 +243,15 @@ class UserDatabaseWorkerClient {
   close(): Promise<void> {
     if (this.#closePromise !== undefined) return this.#closePromise;
     this.#closing = true;
-    this.#closePromise = this.send({ kind: "close" }).then(() => undefined, () => undefined).finally(async () => {
-      this.rejectAll(localFailure(new Error("UserDatabase is closed")));
-      await this.worker.terminate();
-    });
+    this.#closePromise = this.send({ kind: "close" })
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(async () => {
+        this.rejectAll(localFailure(new Error("UserDatabase is closed")));
+        await this.worker.terminate();
+      });
     return this.#closePromise;
   }
 
@@ -216,14 +287,19 @@ export interface UserDatabaseOpenOptions {
 }
 
 class UserDatabaseRuntime implements UserDatabase {
-  constructor(readonly path: string, private readonly worker: UserDatabaseWorkerClient) {}
+  constructor(
+    readonly path: string,
+    private readonly worker: UserDatabaseWorkerClient,
+  ) {}
 
   readonly dispatch = <Request extends UserDatabaseRepositoryRequest>(
     request: Request,
-  ): Effect.Effect<UserDatabaseResultFor<Request>, UserDatabaseFailure> => Effect.tryPromise({
+  ): Effect.Effect<UserDatabaseResultFor<Request>, UserDatabaseFailure> =>
+    Effect.tryPromise({
       try: async () => {
         const result = await this.worker.request({ kind: "repository", request });
-        if ("kind" in result) throw new Error("UserDatabase worker returned a maintenance result for a repository request");
+        if ("kind" in result)
+          throw new Error("UserDatabase worker returned a maintenance result for a repository request");
         return result as UserDatabaseResultFor<Request>;
       },
       catch: localFailure,
@@ -238,15 +314,25 @@ export const userDatabaseHost = Object.freeze({
   open: (options: UserDatabaseOpenOptions = {}): Effect.Effect<UserDatabase, UserDatabaseFailure, Scope.Scope> => {
     const timeout = options.busyTimeoutMs ?? 5_000;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 120_000) {
-      return Effect.fail(new UserDatabaseInvalid({ code: "user-database-invalid", message: "UserDatabase busy timeout must be an integer from 1 to 120000ms" }));
+      return Effect.fail(
+        new UserDatabaseInvalid({
+          code: "user-database-invalid",
+          message: "UserDatabase busy timeout must be an integer from 1 to 120000ms",
+        }),
+      );
     }
     const paths = userDatabasePaths({ home: options.home });
     return Effect.acquireRelease(
       Effect.tryPromise({
-        try: async () => new UserDatabaseRuntime(
-          paths.database,
-          await UserDatabaseWorkerClient.open({ databasePath: paths.database, legacyPath: paths.legacy, busyTimeoutMs: timeout }),
-        ),
+        try: async () =>
+          new UserDatabaseRuntime(
+            paths.database,
+            await UserDatabaseWorkerClient.open({
+              databasePath: paths.database,
+              legacyPath: paths.legacy,
+              busyTimeoutMs: timeout,
+            }),
+          ),
         catch: localFailure,
       }),
       (database) => Effect.orDie(Effect.promise(() => database.close())),

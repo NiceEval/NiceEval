@@ -39,34 +39,42 @@ test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可
       await withTempDir("niceeval-runner-shared-state-pause-", async (barrierRoot) => {
         // The scenario deliberately pauses the Attempt beyond the old 30s
         // takeover window; its product deadline must sit outside that probe.
-        const holder = niceeval.start([
-          "exp", "shared-state-pause-holder", "--rerun", "all", "--timeout", "90000", "--json",
-        ], {
-          env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-          timeoutMs: 120_000,
-        });
+        const holder = niceeval.start(
+          ["exp", "shared-state-pause-holder", "--rerun", "all", "--timeout", "90000", "--json"],
+          {
+            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+            timeoutMs: 120_000,
+          },
+        );
         let waiter: ReturnType<typeof niceeval.start> | undefined;
         let next: ReturnType<typeof niceeval.start> | undefined;
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "pause-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "paused holder reaches its Attempt" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "pause-holder-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "paused holder reaches its Attempt",
+          });
 
           // Inspection is the public CLI-only observation surface. The
           // immutable generation remains the authority, but its diagnostic
           // sidecar must advance while the holder is actively running.
           const initialInspection = await niceeval.run([
-            "exp", "shared-state-pause-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-pause",
+            "exp",
+            "shared-state-pause-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-pause",
           ]);
           expect(initialInspection.exitCode, initialInspection.diagnostic()).toBe(1);
           const initialHeartbeat = heartbeatFromPublicRecoveryInspection(initialInspection.stderr);
           const advancedHeartbeat = await pollUntil(
             async () => {
               const inspection = await niceeval.run([
-                "exp", "shared-state-pause-holder", "--after",
-                "--recover-shared-state", "runner/shared-state-pause",
+                "exp",
+                "shared-state-pause-holder",
+                "--after",
+                "--recover-shared-state",
+                "runner/shared-state-pause",
               ]);
               if (inspection.exitCode !== 1) return undefined;
               const heartbeatAt = heartbeatFromPublicRecoveryInspection(inspection.stderr);
@@ -81,8 +89,11 @@ test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可
           // The last running sample can advance before SIGSTOP takes effect.
           // Establish the frozen baseline through the same public inspection.
           const pausedBaselineInspection = await niceeval.run([
-            "exp", "shared-state-pause-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-pause",
+            "exp",
+            "shared-state-pause-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-pause",
           ]);
           expect(pausedBaselineInspection.exitCode, pausedBaselineInspection.diagnostic()).toBe(1);
           const pausedHeartbeat = heartbeatFromPublicRecoveryInspection(pausedBaselineInspection.stderr);
@@ -92,23 +103,25 @@ test.concurrent("暂停的 owner 不会因 heartbeat 年龄失权，等待者可
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 75_000,
           });
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "paused-owner waiter reaches the sharedState lease seam" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "paused-owner waiter reaches the sharedState lease seam",
+          });
           // The former automatic-takeover cutoff was three 10s heartbeats.
           // Wait for that age as a positive clock condition after observing the
           // public wait event; marker absence alone is not the rendezvous.
-          await pollUntil(
-            async () => Date.now() - Date.parse(pausedHeartbeat) >= 35_000 ? true : undefined,
-            { timeoutMs: 40_000, intervalMs: 50, label: "paused owner exceeds the former heartbeat expiry" },
-          );
+          await pollUntil(async () => (Date.now() - Date.parse(pausedHeartbeat) >= 35_000 ? true : undefined), {
+            timeoutMs: 40_000,
+            intervalMs: 50,
+            label: "paused owner exceeds the former heartbeat expiry",
+          });
           expect(await exists(join(barrierRoot, "pause-waiter-setup-attempted"))).toBe(false);
           const pausedInspection = await niceeval.run([
-            "exp", "shared-state-pause-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-pause",
+            "exp",
+            "shared-state-pause-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-pause",
           ]);
           expect(pausedInspection.exitCode, pausedInspection.diagnostic()).toBe(1);
           // SIGSTOP prevents the holder from writing another sidecar update;
@@ -168,10 +181,11 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
         let resumedRecovery: ReturnType<typeof niceeval.start> | undefined;
         let competingRecovery: ReturnType<typeof niceeval.start> | undefined;
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "crash holder reaches its Attempt" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "crash holder reaches its Attempt",
+          });
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;
 
@@ -184,19 +198,20 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
             // the configured 60s Attempt deadline.
             timeoutMs: 180_000,
           });
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "crash waiter reaches the retained sharedState lease" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "crash waiter reaches the retained sharedState lease",
+          });
           expect(await exists(join(barrierRoot, "crash-waiter-setup-attempted"))).toBe(false);
 
           // The no-confirmation form is inspection only. It is the public way
           // to obtain exact owner evidence without private-file access.
           const inspection = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           expect(inspection.stderr).toContain("key: runner/shared-state-crash");
@@ -208,25 +223,38 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
           const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
 
           const wrongToken = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", "not-the-owner-token",
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
+            "--owner-token",
+            "not-the-owner-token",
+            "--confirm-owner-terminated",
+            "--confirm-remote-quiesced",
           ]);
           expect(wrongToken.exitCode, wrongToken.diagnostic()).toBe(1);
           expect(await exists(join(barrierRoot, "crash-waiter-setup-attempted"))).toBe(false);
           const afterWrongToken = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(afterWrongToken.exitCode, afterWrongToken.diagnostic()).toBe(1);
           expect(ownerTokenFromPublicRecoveryInspection(afterWrongToken.stderr)).toBe(ownerToken);
 
           const recoveryArgs = [
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
+            "--owner-token",
+            ownerToken,
+            "--confirm-owner-terminated",
+            "--confirm-remote-quiesced",
           ];
           recovery = niceeval.start(recoveryArgs, {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
@@ -261,10 +289,11 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
           expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
           expect(recovered.stderr).toContain("explicitly recovered sharedState key runner/shared-state-crash");
 
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-waiter-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "new holder starts only after explicit recovery" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "crash-waiter-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "new holder starts only after explicit recovery",
+          });
 
           // Establish the third Invocation behind the new holder before the
           // stale-token attempt. It must remain fenced throughout that public
@@ -274,24 +303,30 @@ test.concurrent("崩溃的 recovery 可由新 actor 显式续接，旧 token 不
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 60_000,
           });
-          await waitForOutput(
-            third,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "third waiter reaches the new holder's sharedState lease" },
-          );
+          await waitForOutput(third, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "third waiter reaches the new holder's sharedState lease",
+          });
           expect(await exists(join(barrierRoot, "crash-third-setup-attempted"))).toBe(false);
 
           const staleToken = await niceeval.run([
-            "exp", "shared-state-crash-waiter", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+            "exp",
+            "shared-state-crash-waiter",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
+            "--owner-token",
+            ownerToken,
+            "--confirm-owner-terminated",
+            "--confirm-remote-quiesced",
           ]);
           expect(staleToken.exitCode, staleToken.diagnostic()).toBe(1);
           const afterStaleToken = await niceeval.run([
-            "exp", "shared-state-crash-waiter", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-waiter",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(afterStaleToken.exitCode, afterStaleToken.diagnostic()).toBe(1);
           expect(ownerTokenFromPublicRecoveryInspection(afterStaleToken.stderr)).not.toBe(ownerToken);
@@ -328,10 +363,10 @@ test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-cleanup-failure-", async (barrierRoot) => {
-        const failedCleanup = await niceeval.run(
-          ["exp", "shared-state-cleanup-fails", "--rerun", "all", "--json"],
-          { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot }, timeoutMs: 45_000 },
-        );
+        const failedCleanup = await niceeval.run(["exp", "shared-state-cleanup-fails", "--rerun", "all", "--json"], {
+          env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+          timeoutMs: 45_000,
+        });
         expect(failedCleanup.exitCode, failedCleanup.diagnostic()).toBe(0);
         expect(await exists(join(barrierRoot, "cleanup-failure-teardown-started"))).toBe(true);
 
@@ -340,16 +375,17 @@ test.concurrent("实际 Experiment teardown 失败会保留 lease，等待者只
           timeoutMs: 45_000,
         });
         try {
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "waiter reaches the lease retained by failed cleanup" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "waiter reaches the lease retained by failed cleanup",
+          });
           expect(await exists(join(barrierRoot, "cleanup-waiter-setup-attempted"))).toBe(false);
           const inspection = await niceeval.run([
-            "exp", "shared-state-cleanup-fails", "--after",
-            "--recover-shared-state", "runner/shared-state-cleanup-failure",
+            "exp",
+            "shared-state-cleanup-fails",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-cleanup-failure",
           ]);
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           expect(inspection.stderr).toContain("owner token:");
@@ -373,9 +409,7 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation"
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-missing-teardown-", async (barrierRoot) => {
-        const holder = niceeval.start([
-          "exp", "shared-state-recovery-without-teardown", "--rerun", "all", "--json",
-        ], {
+        const holder = niceeval.start(["exp", "shared-state-recovery-without-teardown", "--rerun", "all", "--json"], {
           env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
           timeoutMs: 60_000,
         });
@@ -389,8 +423,11 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation"
           await holder.done;
 
           const inspectionArgs = [
-            "exp", "shared-state-recovery-without-teardown", "--after",
-            "--recover-shared-state", "runner/shared-state-recovery-without-teardown",
+            "exp",
+            "shared-state-recovery-without-teardown",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-recovery-without-teardown",
           ];
           const before = await niceeval.run(inspectionArgs);
           expect(before.exitCode, before.diagnostic()).toBe(1);
@@ -398,8 +435,10 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation"
 
           const rejected = await niceeval.run([
             ...inspectionArgs,
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+            "--owner-token",
+            ownerToken,
+            "--confirm-owner-terminated",
+            "--confirm-remote-quiesced",
           ]);
           expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
           expect(rejected.stderr).toContain("to declare after");
@@ -408,18 +447,17 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation"
           expect(after.exitCode, after.diagnostic()).toBe(1);
           expect(ownerTokenFromPublicRecoveryInspection(after.stderr)).toBe(ownerToken);
 
-          waiter = niceeval.start([
-            "exp", "shared-state-recovery-without-teardown-waiter", "--rerun", "all", "--json",
-          ], {
-            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 45_000,
-          });
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "waiter reaches active generation after rejected recovery" },
+          waiter = niceeval.start(
+            ["exp", "shared-state-recovery-without-teardown-waiter", "--rerun", "all", "--json"],
+            {
+              env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+              timeoutMs: 45_000,
+            },
           );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "waiter reaches active generation after rejected recovery",
+          });
           expect(await exists(join(barrierRoot, "recovery-without-teardown-waiter-setup-attempted"))).toBe(false);
           expect(waiter.signal("SIGINT")).toBe(true);
           const cancelled = await waiter.done;
@@ -437,38 +475,40 @@ test.concurrent("缺少 teardown 的显式 recovery 不改变 active generation"
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
 // @native niceeval:%7B%22executor%22%3A%22vitest%22%2C%22repo%22%3A%22runner%22%2C%22file%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.scenarios.ts%22%2C%22nativeFile%22%3A%22e2e%2Frunner%2Ftest%2Fshared-state-recovery.test.ts%22%2C%22project%22%3A%22default%22%2C%22titlePath%22%3A%5B%22%E6%98%BE%E5%BC%8F%20recovery%20%E6%8B%92%E7%BB%9D%20JSON%EF%BC%8C%E5%B9%B6%E5%9C%A8%E4%B8%A4%E7%A7%8D%E5%B8%AE%E5%8A%A9%E5%85%A5%E5%8F%A3%E5%85%AC%E5%BC%80%E5%85%A8%E9%83%A8%E5%8F%82%E6%95%B0%22%5D%7D
 test.concurrent("显式 recovery 拒绝 JSON，并在两种帮助入口公开全部参数", async () => {
-  await runnerE2E.case(
-    "shared-state-recovery-human-only-interface",
-    async ({ commands: { niceeval } }) => {
-      const jsonRecovery = await niceeval.run([
-        "exp", "shared-state-recovery-without-teardown", "--after",
-        "--recover-shared-state", "runner/shared-state-recovery-without-teardown",
-        "--owner-token", "fixture-owner-token",
-        "--confirm-owner-terminated", "--confirm-remote-quiesced", "--json",
-      ]);
-      expect(jsonRecovery.exitCode, jsonRecovery.diagnostic()).toBe(1);
-      expect(jsonRecovery.stderr).toContain("does not support --json");
-      expect(jsonRecovery.stdout).toBe("");
+  await runnerE2E.case("shared-state-recovery-human-only-interface", async ({ commands: { niceeval } }) => {
+    const jsonRecovery = await niceeval.run([
+      "exp",
+      "shared-state-recovery-without-teardown",
+      "--after",
+      "--recover-shared-state",
+      "runner/shared-state-recovery-without-teardown",
+      "--owner-token",
+      "fixture-owner-token",
+      "--confirm-owner-terminated",
+      "--confirm-remote-quiesced",
+      "--json",
+    ]);
+    expect(jsonRecovery.exitCode, jsonRecovery.diagnostic()).toBe(1);
+    expect(jsonRecovery.stderr).toContain("does not support --json");
+    expect(jsonRecovery.stdout).toBe("");
 
-      const [rootHelp, expHelp] = await Promise.all([
-        niceeval.run(["--help"]),
-        niceeval.run(["exp", "help"]),
-      ]);
-      const recoveryFlags = [
-        "--recover-shared-state <key>",
-        "--owner-token <token>",
-        "--confirm-owner-terminated",
-        "--confirm-remote-quiesced",
-      ];
-      expect([rootHelp, expHelp].map(({ exitCode, stdout }) => ({
+    const [rootHelp, expHelp] = await Promise.all([niceeval.run(["--help"]), niceeval.run(["exp", "help"])]);
+    const recoveryFlags = [
+      "--recover-shared-state <key>",
+      "--owner-token <token>",
+      "--confirm-owner-terminated",
+      "--confirm-remote-quiesced",
+    ];
+    expect(
+      [rootHelp, expHelp].map(({ exitCode, stdout }) => ({
         exitCode,
         hasFullRecoveryUsage: recoveryFlags.every((flag) => stdout.includes(flag)),
-      }))).toEqual([
-        { exitCode: 0, hasFullRecoveryUsage: true },
-        { exitCode: 0, hasFullRecoveryUsage: true },
-      ]);
-    },
-  );
+      })),
+    ).toEqual([
+      { exitCode: 0, hasFullRecoveryUsage: true },
+      { exitCode: 0, hasFullRecoveryUsage: true },
+    ]);
+  });
 });
 // @use-case docs/feature/experiments/use-case/concurrency-resume-interrupted-run.md
 // @test-file e2e/runner/test/shared-state-recovery.test.ts
@@ -488,15 +528,19 @@ test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待�
         let waiter: ReturnType<typeof niceeval.start> | undefined;
         try {
           await waitForPathOrProcessExit(
-            join(barrierRoot, "crash-holder-agent-started"), holder.done,
+            join(barrierRoot, "crash-holder-agent-started"),
+            holder.done,
             "registration owner reaches its Attempt",
           );
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;
 
           const inspection = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
@@ -504,7 +548,9 @@ test.concurrent("SQLite recovery 原子清理 teardown 登记后才开放等待�
           // Teardown registration and shared-state authority now share the
           // canonical SQLite transaction boundary. The public waiter may
           // enter only after recovery clears that exact durable generation.
-          await writeFile(experimentPath, `
+          await writeFile(
+            experimentPath,
+            `
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineExperiment } from "niceeval";
@@ -521,13 +567,19 @@ export default defineExperiment({
     await writeFile(join(barrierRoot, "registration-removal-teardown-complete"), "");
   },
 });
-`.trimStart());
+`.trimStart(),
+          );
 
           const recoveryArgs = [
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
+            "--owner-token",
+            ownerToken,
+            "--confirm-owner-terminated",
+            "--confirm-remote-quiesced",
           ];
           const recovered = await niceeval.run(recoveryArgs, {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
@@ -539,10 +591,11 @@ export default defineExperiment({
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 45_000,
           });
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-waiter-setup-attempted"))) || undefined,
-            { timeoutMs: 15_000, intervalMs: 20, label: "waiter setup after durable teardown registration is cleared" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "crash-waiter-setup-attempted"))) || undefined, {
+            timeoutMs: 15_000,
+            intervalMs: 20,
+            label: "waiter setup after durable teardown registration is cleared",
+          });
           const completed = await waiter.done;
           expect(completed.timedOut, completed.diagnostic()).toBe(false);
         } finally {
@@ -570,21 +623,27 @@ test.concurrent("作者改掉 sharedState key 后，旧 key 仍以 immutable evi
           timeoutMs: 60_000,
         });
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "original sharedState owner reaches its Attempt" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "original sharedState owner reaches its Attempt",
+          });
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;
 
           const originalInspection = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(originalInspection.exitCode, originalInspection.diagnostic()).toBe(1);
           const originalOwnerToken = ownerTokenFromPublicRecoveryInspection(originalInspection.stderr);
 
-          await writeFile(experimentPath, `
+          await writeFile(
+            experimentPath,
+            `
 import { defineExperiment } from "niceeval";
 import { sharedStateAgent, sharedStateHooks } from "../agents/shared-state.ts";
 
@@ -595,24 +654,33 @@ export default defineExperiment({
   sharedState: { key: "runner/shared-state-changed-key" },
   ...sharedStateHooks("recovery-changed-key"),
 });
-`.trimStart());
+`.trimStart(),
+          );
 
           // The input key selects immutable evidence before the current
           // declaration is checked. The inspection must remain available even
           // though this Experiment now declares a different key.
           const afterChangeInspection = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(afterChangeInspection.exitCode, afterChangeInspection.diagnostic()).toBe(1);
           expect(afterChangeInspection.stderr).toContain("key: runner/shared-state-crash");
           expect(ownerTokenFromPublicRecoveryInspection(afterChangeInspection.stderr)).toBe(originalOwnerToken);
 
           const recoveryArgs = [
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", originalOwnerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
+            "--owner-token",
+            originalOwnerToken,
+            "--confirm-owner-terminated",
+            "--confirm-remote-quiesced",
           ];
           const recovered = await niceeval.run(recoveryArgs, {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
@@ -651,21 +719,27 @@ test.concurrent("作者删除 sharedState 声明后仍可按遗留 key 执行一
           timeoutMs: 60_000,
         });
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "removed-key owner reaches its Attempt" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "removed-key owner reaches its Attempt",
+          });
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;
 
           const beforeRemoval = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(beforeRemoval.exitCode, beforeRemoval.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromPublicRecoveryInspection(beforeRemoval.stderr);
 
-          await writeFile(experimentPath, `
+          await writeFile(
+            experimentPath,
+            `
 import { defineExperiment } from "niceeval";
 import { sharedStateAgent, sharedStateHooks } from "../agents/shared-state.ts";
 
@@ -675,22 +749,34 @@ export default defineExperiment({
   evals: ["shared-state/"],
   ...sharedStateHooks("recovery-removed-key"),
 });
-`.trimStart());
+`.trimStart(),
+          );
 
           const afterRemovalInspection = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(afterRemovalInspection.exitCode, afterRemovalInspection.diagnostic()).toBe(1);
           expect(afterRemovalInspection.stderr).toContain("key: runner/shared-state-crash");
           expect(ownerTokenFromPublicRecoveryInspection(afterRemovalInspection.stderr)).toBe(ownerToken);
 
-          const recovered = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot } });
+          const recovered = await niceeval.run(
+            [
+              "exp",
+              "shared-state-crash-holder",
+              "--after",
+              "--recover-shared-state",
+              "runner/shared-state-crash",
+              "--owner-token",
+              ownerToken,
+              "--confirm-owner-terminated",
+              "--confirm-remote-quiesced",
+            ],
+            { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot } },
+          );
           expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
           expect(await exists(join(barrierRoot, "recovery-removed-key-teardown-complete"))).toBe(true);
         } finally {
@@ -718,21 +804,27 @@ test.concurrent("非函数 teardown 被公开 CLI 拒绝，遗留 owner 不会�
         });
         let waiter: ReturnType<typeof niceeval.start> | undefined;
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "invalid-teardown owner reaches its Attempt" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "crash-holder-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "invalid-teardown owner reaches its Attempt",
+          });
           expect(holder.signal("SIGKILL")).toBe(true);
           await holder.done;
 
           const inspection = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
+            "exp",
+            "shared-state-crash-holder",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-crash",
           ]);
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
 
-          await writeFile(experimentPath, `
+          await writeFile(
+            experimentPath,
+            `
 import { defineExperiment } from "niceeval";
 import { sharedStateAgent } from "../agents/shared-state.ts";
 
@@ -743,14 +835,23 @@ export default defineExperiment({
   sharedState: { key: "runner/shared-state-crash" },
   after: null as unknown as () => void,
 });
-`.trimStart());
+`.trimStart(),
+          );
 
-          const rejected = await niceeval.run([
-            "exp", "shared-state-crash-holder", "--after",
-            "--recover-shared-state", "runner/shared-state-crash",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot } });
+          const rejected = await niceeval.run(
+            [
+              "exp",
+              "shared-state-crash-holder",
+              "--after",
+              "--recover-shared-state",
+              "runner/shared-state-crash",
+              "--owner-token",
+              ownerToken,
+              "--confirm-owner-terminated",
+              "--confirm-remote-quiesced",
+            ],
+            { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot } },
+          );
           expect(rejected.exitCode, rejected.diagnostic()).toBe(1);
           expect(rejected.stderr).toContain("Experiment after must be a function");
 
@@ -759,12 +860,10 @@ export default defineExperiment({
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 45_000,
           });
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "waiter reaches retained lease after invalid recovery declaration" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "waiter reaches retained lease after invalid recovery declaration",
+          });
           expect(await exists(join(barrierRoot, "crash-waiter-setup-attempted"))).toBe(false);
           expect(waiter.signal("SIGINT")).toBe(true);
           const cancelled = await waiter.done;

@@ -8,7 +8,8 @@ const lifecycleRole = process.env.NICEEVAL_SHARED_STATE_ROLE;
 
 async function waitFor(path: string, signal: AbortSignal): Promise<void> {
   for (;;) {
-    if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("shared state fixture aborted");
+    if (signal.aborted)
+      throw signal.reason instanceof Error ? signal.reason : new Error("shared state fixture aborted");
     try {
       await access(path);
       return;
@@ -30,26 +31,41 @@ function roleOf(flags: Readonly<Record<string, unknown>>): string {
 
 function releaseMarkerFor(role: string): string | undefined {
   switch (role) {
-    case "first": return "release-first-agent";
-    case "lease-holder": return "release-lease-holder";
-    case "pause-holder": return "release-pause-holder";
-    case "crash-holder": return "release-crash-holder";
-    case "crash-waiter": return "release-crash-waiter";
-    case "recovery-without-teardown": return "release-recovery-without-teardown";
-    default: return undefined;
+    case "first":
+      return "release-first-agent";
+    case "lease-holder":
+      return "release-lease-holder";
+    case "pause-holder":
+      return "release-pause-holder";
+    case "crash-holder":
+      return "release-crash-holder";
+    case "crash-waiter":
+      return "release-crash-waiter";
+    case "recovery-without-teardown":
+      return "release-recovery-without-teardown";
+    default:
+      return undefined;
   }
 }
 
 function priorTeardownMarkerFor(role: string): string | undefined {
   switch (role) {
-    case "second": return "first-teardown-complete";
-    case "pool-second": return "pool-first-teardown-complete";
-    case "pool-retire-waiter": return "pool-retire-fails-teardown-complete";
-    case "fresh-cleanup-waiter": return "fresh-cleanup-fails-teardown-complete";
-    case "pause-waiter": return "pause-holder-teardown-complete";
-    case "crash-third": return "crash-waiter-teardown-complete";
-    case "lane-waiter": return "lease-holder-teardown-complete";
-    default: return undefined;
+    case "second":
+      return "first-teardown-complete";
+    case "pool-second":
+      return "pool-first-teardown-complete";
+    case "pool-retire-waiter":
+      return "pool-retire-fails-teardown-complete";
+    case "fresh-cleanup-waiter":
+      return "fresh-cleanup-fails-teardown-complete";
+    case "pause-waiter":
+      return "pause-holder-teardown-complete";
+    case "crash-third":
+      return "crash-waiter-teardown-complete";
+    case "lane-waiter":
+      return "lease-holder-teardown-complete";
+    default:
+      return undefined;
   }
 }
 

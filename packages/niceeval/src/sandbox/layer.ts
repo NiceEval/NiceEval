@@ -12,11 +12,7 @@ import type {
   ServiceController,
 } from "./case-types.ts";
 import type { CustomProviderSandbox, SandboxHook, SandboxRuntime } from "./types.ts";
-import type {
-  SandboxCleanupCommand,
-  SandboxCommand,
-  SandboxCommandDeclaration,
-} from "./commands.ts";
+import type { SandboxCleanupCommand, SandboxCommand, SandboxCommandDeclaration } from "./commands.ts";
 import { sandboxCommandDeclarationOf } from "./commands.ts";
 import {
   isSandboxAction,
@@ -48,12 +44,7 @@ import {
   type DockerfileBuildIdentity,
 } from "./dockerfile-identity.ts";
 import type { BuildKey, SandboxCaseKind } from "./identity.ts";
-import type {
-  AttemptBeforeCache,
-  BeforeCacheError,
-  BeforeCacheEligibility,
-  BeforeCacheStep,
-} from "./backend.ts";
+import type { AttemptBeforeCache, BeforeCacheError, BeforeCacheEligibility, BeforeCacheStep } from "./backend.ts";
 import type {
   SandboxRuntimeBuildPreparation,
   SandboxRuntimeMaterializationError,
@@ -102,8 +93,7 @@ export interface SandboxRequirementsOptions {
 }
 
 /** Declares a required runtime capability without selecting a provider; the chosen template must satisfy it during linking. */
-export type SandboxRequirement =
-  | { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
+export type SandboxRequirement = { readonly _tag: "DockerExecution"; readonly docker: DockerExecutionRequirement };
 
 /** Selects a Compose workspace service as the Sandbox template; extend PATH through pathPrepend and keep credential values in credentialEnv. */
 export interface DockerComposeSandboxOptions {
@@ -114,9 +104,7 @@ export interface DockerComposeSandboxOptions {
   readonly user?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
   /** Compose 插值所需凭据；value 只进私有 runtime binding，identity 只认变量名与 revision。 */
-  readonly credentialEnv?: Readonly<
-    globalThis.Record<string, { readonly value: string; readonly revision?: string }>
-  >;
+  readonly credentialEnv?: Readonly<globalThis.Record<string, { readonly value: string; readonly revision?: string }>>;
   readonly lifetimeMs?: number;
   /**
    * 按序前置到受管 `PATH` 的目录;作用于本 Sandbox 内全部受管命令(agent 进程、两层 prepare、
@@ -302,9 +290,7 @@ export interface CustomProviderSandboxOptions {
 }
 
 /** Reports a custom provider's materialization failure with its cause; this is distinct from a failed command inside an already usable Sandbox. */
-export class CustomSandboxMaterializationError extends Data.TaggedError(
-  "CustomSandboxMaterializationError",
-)<{
+export class CustomSandboxMaterializationError extends Data.TaggedError("CustomSandboxMaterializationError")<{
   readonly code: string;
   readonly message: string;
   readonly cause: Error;
@@ -317,9 +303,7 @@ export interface CustomProviderMaterializeContext {
 }
 
 /** Declares whether a custom case supports services; this capability declaration is separate from its materialized service controller. */
-export type CustomCaseServices =
-  | { readonly _tag: "Supported" }
-  | { readonly _tag: "Unsupported" };
+export type CustomCaseServices = { readonly _tag: "Supported" } | { readonly _tag: "Unsupported" };
 
 /** States whether the materialized case exposes a service controller; absence is explicit rather than an empty fabricated controller. */
 export type CustomCaseMaterializedServices =
@@ -423,9 +407,7 @@ export interface SandboxPlannedTarget {
   readonly source: SandboxPlanningSource;
 }
 
-export type SandboxAdmission =
-  | { readonly _tag: "Shared" }
-  | { readonly _tag: "Exclusive" };
+export type SandboxAdmission = { readonly _tag: "Shared" } | { readonly _tag: "Exclusive" };
 
 export interface SandboxProviderScheduling {
   readonly recommendedConcurrency: number;
@@ -436,9 +418,7 @@ export interface SandboxProviderScheduling {
   readonly admission: SandboxAdmission;
 }
 
-export type SandboxRuntimeRetention =
-  | { readonly _tag: "DestroyOnly" }
-  | { readonly _tag: "Suspendable" };
+export type SandboxRuntimeRetention = { readonly _tag: "DestroyOnly" } | { readonly _tag: "Suspendable" };
 
 export type SandboxRuntimeReuse =
   | { readonly _tag: "Supported" }
@@ -493,7 +473,11 @@ export interface DockerExecutionCapability {
  * core 只看见已消去泛型的 `SandboxProviderBinding`，从不接触 `unknown` 或 JSON runtime input。
  */
 export type SandboxBeforeCacheSupport<Plan> =
-  | { readonly _tag: "RunPrepared"; readonly coverage: SandboxActionState; readonly preparer: BeforeCachePreparer<Plan> }
+  | {
+      readonly _tag: "RunPrepared";
+      readonly coverage: SandboxActionState;
+      readonly preparer: BeforeCachePreparer<Plan>;
+    }
   | { readonly _tag: "AttemptCaptured"; readonly coverage: SandboxActionState }
   | { readonly _tag: "Unsupported"; readonly reason: string };
 
@@ -508,9 +492,16 @@ export interface BeforeCacheArtifact {
 }
 
 export type BeforeCacheDegradedReason =
-  | "eligibility-failed" | "ledger-unavailable" | "staging-failed" | "parent-unavailable"
-  | "base-image-unverified" | "mounted-state" | "sensitive-state"
-  | "snapshot-rejected" | "snapshot-uncertain" | "lease-lost";
+  | "eligibility-failed"
+  | "ledger-unavailable"
+  | "staging-failed"
+  | "parent-unavailable"
+  | "base-image-unverified"
+  | "mounted-state"
+  | "sensitive-state"
+  | "snapshot-rejected"
+  | "snapshot-uncertain"
+  | "lease-lost";
 
 export type BeforeCacheLookup =
   | { readonly _tag: "Miss" }
@@ -532,48 +523,64 @@ export type BeforeCacheSource =
 export interface BeforeCachePreparationContext {
   readonly providerId: string;
   readonly runId: string;
-  readonly materializeBase: (materialize: SandboxRuntimeMaterializeContext) => Effect.Effect<
-    MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope
-  >;
+  readonly materializeBase: (
+    materialize: SandboxRuntimeMaterializeContext,
+  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
 }
 
 export interface BeforeCachePreparer<Plan> {
   readonly continuesStaging: boolean;
   /** Internal runtime capability; never serialized into a physical plan identity. */
   readonly supportsAgentDerived?: true;
-  readonly eligibility: (plan: Plan, context: BeforeCachePreparationContext) => Effect.Effect<BeforeCacheEligibility, BeforeCacheError>;
+  readonly eligibility: (
+    plan: Plan,
+    context: BeforeCachePreparationContext,
+  ) => Effect.Effect<BeforeCacheEligibility, BeforeCacheError>;
   readonly lookup: (
-    plan: Plan, context: BeforeCachePreparationContext, stepsDeepestFirst: readonly BeforeCacheStep[],
+    plan: Plan,
+    context: BeforeCachePreparationContext,
+    stepsDeepestFirst: readonly BeforeCacheStep[],
   ) => Effect.Effect<BeforeCacheLookup, BeforeCacheError, Scope.Scope>;
   readonly materializeFrom: (
-    plan: Plan, context: BeforeCachePreparationContext, purpose: "staging" | "consumer", source: BeforeCacheSource, materialize: SandboxRuntimeMaterializeContext,
-  ) => Effect.Effect<
-    BeforeCacheMaterialized,
-    SandboxRuntimeMaterializationError, Scope.Scope
-  >;
+    plan: Plan,
+    context: BeforeCachePreparationContext,
+    purpose: "staging" | "consumer",
+    source: BeforeCacheSource,
+    materialize: SandboxRuntimeMaterializeContext,
+  ) => Effect.Effect<BeforeCacheMaterialized, SandboxRuntimeMaterializationError, Scope.Scope>;
   readonly capture: (
-    plan: Plan, context: BeforeCachePreparationContext, staging: MaterializedSandboxCase, step: BeforeCacheStep,
+    plan: Plan,
+    context: BeforeCachePreparationContext,
+    staging: MaterializedSandboxCase,
+    step: BeforeCacheStep,
   ) => Effect.Effect<BeforeCacheCapture, BeforeCacheError, Scope.Scope>;
 }
 
 type ModuleBeforeCache<Plan, Args extends readonly unknown[]> =
   | {
       readonly beforeCache: Extract<SandboxBeforeCacheSupport<Plan>, { readonly _tag: "AttemptCaptured" }>;
-      readonly materialize: (...args: Args) => Effect.Effect<
+      readonly materialize: (
+        ...args: Args
+      ) => Effect.Effect<
         MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache },
-        SandboxRuntimeMaterializationError, Scope.Scope
+        SandboxRuntimeMaterializationError,
+        Scope.Scope
       >;
     }
   | {
       readonly beforeCache: Exclude<SandboxBeforeCacheSupport<Plan>, { readonly _tag: "AttemptCaptured" }>;
-      readonly materialize: (...args: Args) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
+      readonly materialize: (
+        ...args: Args
+      ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope>;
     };
 
 export type SandboxProviderModule<Plan> = {
   readonly id: string;
   readonly capabilities: Omit<SandboxProviderCapabilities, "beforeCache">;
   readonly collectBuildPreparation: (
-    plan: Plan, published: SandboxProviderPlan, evalId: string,
+    plan: Plan,
+    published: SandboxProviderPlan,
+    evalId: string,
   ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
 } & ModuleBeforeCache<Plan, readonly [plan: Plan, context: SandboxRuntimeMaterializeContext]>;
 
@@ -630,9 +637,7 @@ export interface SandboxProviderPlanInput<Plan> {
   readonly privateFingerprintIdentity: JsonValue;
 }
 
-export class SandboxProviderPlanningError extends Data.TaggedError(
-  "SandboxProviderPlanningError",
-)<{
+export class SandboxProviderPlanningError extends Data.TaggedError("SandboxProviderPlanningError")<{
   readonly code: string;
   readonly provider: string;
   readonly summary: string;
@@ -674,15 +679,9 @@ export interface BuiltinSandboxPlannerServices {
 }
 
 export interface BuiltinSandboxFactories {
-  readonly dockerComposeSandbox: (
-    options: DockerComposeSandboxOptions,
-  ) => SandboxLayer<"template-bearing">;
-  readonly dockerfileSourceLayer: (
-    options: DockerfileSourceOptions,
-  ) => SandboxLayer<"template-bearing">;
-  readonly dockerImageSourceLayer: (
-    options: DockerImageSourceOptions,
-  ) => SandboxLayer<"template-bearing">;
+  readonly dockerComposeSandbox: (options: DockerComposeSandboxOptions) => SandboxLayer<"template-bearing">;
+  readonly dockerfileSourceLayer: (options: DockerfileSourceOptions) => SandboxLayer<"template-bearing">;
+  readonly dockerImageSourceLayer: (options: DockerImageSourceOptions) => SandboxLayer<"template-bearing">;
   readonly e2bSandbox: (options: E2BSandboxOptions) => SandboxLayer<"template-bearing">;
   readonly vercelSandbox: (options: VercelSandboxOptions) => SandboxLayer<"template-bearing">;
 }
@@ -708,8 +707,9 @@ export interface TemplateBearingSandboxLayerState {
   readonly teardownHooks: readonly SandboxHook[];
 }
 
-export type SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerKind> =
-  Kind extends "command-only" ? CommandOnlySandboxLayerState : TemplateBearingSandboxLayerState;
+export type SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerKind> = Kind extends "command-only"
+  ? CommandOnlySandboxLayerState
+  : TemplateBearingSandboxLayerState;
 
 export type SandboxBeforeDeclaration =
   | { readonly kind: "action"; readonly action: SandboxAction }
@@ -729,9 +729,7 @@ function freezeJson(value: JsonValue): JsonValue {
     Object.freeze(children);
     return children;
   }
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [key, freezeJson(child)]),
-  ));
+  return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, child]) => [key, freezeJson(child)])));
 }
 
 function freezePlatform(platform: SandboxTargetPlatform): SandboxTargetPlatform {
@@ -763,9 +761,7 @@ const LOCATOR_FIELD_NAMES = new Set<SandboxTemplateLocatorFieldName>([
   "dir",
 ]);
 
-function freezeCommandPlanLocator(
-  locator: SandboxTemplateCommandPlanLocator,
-): SandboxTemplateCommandPlanLocator {
+function freezeCommandPlanLocator(locator: SandboxTemplateCommandPlanLocator): SandboxTemplateCommandPlanLocator {
   if (locator._tag === "Opaque") {
     return Object.freeze({
       _tag: "Opaque",
@@ -797,7 +793,9 @@ function freezeCommandPlanLocator(
   const redactedFields = new Set<SandboxTemplateLocatorFieldName>();
   const redactions = locator.redactions.map((redaction) => {
     if (!names.has(redaction.field)) {
-      throw new TypeError(`sandbox template locator redaction references missing field ${JSON.stringify(redaction.field)}`);
+      throw new TypeError(
+        `sandbox template locator redaction references missing field ${JSON.stringify(redaction.field)}`,
+      );
     }
     if (redactedFields.has(redaction.field)) {
       throw new TypeError(`sandbox template locator redaction for ${JSON.stringify(redaction.field)} is duplicated`);
@@ -817,9 +815,9 @@ function configuredLocator(
   fields: readonly [SandboxTemplateLocatorField, ...SandboxTemplateLocatorField[]],
   redactions: readonly SandboxTemplateLocatorRedaction[] = [],
 ): SandboxTemplateCommandPlanLocator {
-  return freezeCommandPlanLocator(redactions.length === 0
-    ? { _tag: "Exact", fields }
-    : { _tag: "Redacted", fields, redactions });
+  return freezeCommandPlanLocator(
+    redactions.length === 0 ? { _tag: "Exact", fields } : { _tag: "Redacted", fields, redactions },
+  );
 }
 
 function opaqueConfiguredLocator(code: string, summary: string): SandboxTemplateCommandPlanLocator {
@@ -833,9 +831,10 @@ function configuredDockerImageLocator(image: string): SandboxTemplateCommandPlan
   const digestSeparator = image.lastIndexOf("@");
   const reference = digestSeparator === -1 ? image : image.slice(0, digestSeparator);
   const digest = digestSeparator === -1 ? undefined : image.slice(digestSeparator + 1);
-  const credentialSafeReference = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(reference)
-    && !reference.includes("://")
-    && (digest === undefined || /^sha256:[a-f0-9]{64}$/iu.test(digest));
+  const credentialSafeReference =
+    /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(reference) &&
+    !reference.includes("://") &&
+    (digest === undefined || /^sha256:[a-f0-9]{64}$/iu.test(digest));
   if (credentialSafeReference) {
     return configuredLocator([{ name: "image", value: image }]);
   }
@@ -926,19 +925,21 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
   const support = input.module.beforeCache;
   const capabilities = freezeProviderCapabilities({
     ...input.module.capabilities,
-    beforeCache: support._tag === "Unsupported"
-      ? { _tag: support._tag, reason: support.reason }
-      : { _tag: support._tag, coverage: support.coverage },
+    beforeCache:
+      support._tag === "Unsupported"
+        ? { _tag: support._tag, reason: support.reason }
+        : { _tag: support._tag, coverage: support.coverage },
   });
   const publishableIdentity = freezeJson(input.publishableIdentity);
   const privateIdentityDigest = digestOf(input.privateFingerprintIdentity);
-  const build: SandboxProviderBuildPlan = input.build._tag === "None"
-    ? Object.freeze({ _tag: "None", caseKey: input.build.caseKey, buildKeys: [] as const })
-    : Object.freeze({
-        _tag: "Required",
-        caseKey: input.build.caseKey,
-        buildKeys: freezeSortedNonEmptyBuildKeys(input.build.buildKeys, "sandbox provider plan.build.buildKeys"),
-      });
+  const build: SandboxProviderBuildPlan =
+    input.build._tag === "None"
+      ? Object.freeze({ _tag: "None", caseKey: input.build.caseKey, buildKeys: [] as const })
+      : Object.freeze({
+          _tag: "Required",
+          caseKey: input.build.caseKey,
+          buildKeys: freezeSortedNonEmptyBuildKeys(input.build.buildKeys, "sandbox provider plan.build.buildKeys"),
+        });
   const identity = freezeJson({
     version: 3,
     provider,
@@ -965,16 +966,17 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
               daemon: capabilities.dockerExecution.daemon,
               executionDomain: capabilities.dockerExecution.executionDomain,
               executionDomainId: capabilities.dockerExecution.executionDomainId,
-              capacity: capabilities.dockerExecution.capacity._tag === "Attested"
-                ? {
-                    _tag: "Attested",
-                    bytes: capabilities.dockerExecution.capacity.bytes,
-                  }
-                : {
-                    _tag: "Unattested",
-                    acceptedByExperiment: capabilities.dockerExecution.capacity.acceptedByExperiment,
-                    reason: capabilities.dockerExecution.capacity.reason,
-                  },
+              capacity:
+                capabilities.dockerExecution.capacity._tag === "Attested"
+                  ? {
+                      _tag: "Attested",
+                      bytes: capabilities.dockerExecution.capacity.bytes,
+                    }
+                  : {
+                      _tag: "Unattested",
+                      acceptedByExperiment: capabilities.dockerExecution.capacity.acceptedByExperiment,
+                      reason: capabilities.dockerExecution.capacity.reason,
+                    },
             },
           }),
     },
@@ -1006,28 +1008,35 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
   const module = input.module;
   if (module.beforeCache._tag === "AttemptCaptured") {
     // The module's discriminated contract requires an instance implementation.
-    const captured = module as Extract<SandboxProviderModule<Plan>, { readonly beforeCache: { readonly _tag: "AttemptCaptured" } }>;
+    const captured = module as Extract<
+      SandboxProviderModule<Plan>,
+      { readonly beforeCache: { readonly _tag: "AttemptCaptured" } }
+    >;
     binding = Object.freeze({
       ...common,
       beforeCache: captured.beforeCache,
       materialize: (context: SandboxRuntimeMaterializeContext) => captured.materialize(input.runtimePlan, context),
     });
   } else {
-    const beforeCache: Exclude<SandboxBeforeCacheSupport<void>, { readonly _tag: "AttemptCaptured" }> = support._tag === "RunPrepared"
+    const beforeCache: Exclude<SandboxBeforeCacheSupport<void>, { readonly _tag: "AttemptCaptured" }> = support._tag ===
+    "RunPrepared"
       ? {
-          _tag: "RunPrepared", coverage: support.coverage,
+          _tag: "RunPrepared",
+          coverage: support.coverage,
           preparer: {
             continuesStaging: support.preparer.continuesStaging,
             ...(support.preparer.supportsAgentDerived === true ? { supportsAgentDerived: true as const } : {}),
             eligibility: (_, context) => support.preparer.eligibility(input.runtimePlan, context),
             lookup: (_, context, steps) => support.preparer.lookup(input.runtimePlan, context, steps),
-            materializeFrom: (_, context, purpose, source, materialize) => support.preparer.materializeFrom(input.runtimePlan, context, purpose, source, materialize),
+            materializeFrom: (_, context, purpose, source, materialize) =>
+              support.preparer.materializeFrom(input.runtimePlan, context, purpose, source, materialize),
             capture: (_, context, staging, step) => support.preparer.capture(input.runtimePlan, context, staging, step),
           },
         }
       : { _tag: "Unsupported", reason: (support as Extract<typeof support, { _tag: "Unsupported" }>).reason };
     binding = Object.freeze({
-      ...common, beforeCache,
+      ...common,
+      beforeCache,
       materialize: (context: SandboxRuntimeMaterializeContext) => module.materialize(input.runtimePlan, context),
     });
   }
@@ -1063,38 +1072,38 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
   }
   return Object.freeze({
     retention: Object.freeze({ _tag: capabilities.retention._tag }),
-    reuse: capabilities.reuse._tag === "Supported"
-      ? Object.freeze({ _tag: "Supported" as const })
-      : Object.freeze({
-          _tag: "Unsupported" as const,
-          reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
-        }),
-    beforeCache: capabilities.beforeCache._tag === "AttemptCaptured" || capabilities.beforeCache._tag === "RunPrepared"
-      ? Object.freeze({
-          _tag: capabilities.beforeCache._tag,
-          coverage: capabilities.beforeCache.coverage,
-        })
-      : Object.freeze({
+    reuse:
+      capabilities.reuse._tag === "Supported"
+        ? Object.freeze({ _tag: "Supported" as const })
+        : Object.freeze({
             _tag: "Unsupported" as const,
-            reason: nonEmptyString(
-              capabilities.beforeCache.reason,
-              "sandbox provider capabilities.beforeCache.reason",
-            ),
+            reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
           }),
-    sessionLimit: capabilities.sessionLimit._tag === "Unlimited"
-      ? Object.freeze({ _tag: "Unlimited" as const })
-      : capabilities.sessionLimit._tag === "Bounded"
+    beforeCache:
+      capabilities.beforeCache._tag === "AttemptCaptured" || capabilities.beforeCache._tag === "RunPrepared"
         ? Object.freeze({
-            _tag: "Bounded" as const,
-            milliseconds: capabilities.sessionLimit.milliseconds,
+            _tag: capabilities.beforeCache._tag,
+            coverage: capabilities.beforeCache.coverage,
           })
         : Object.freeze({
-            _tag: "ProviderValidated" as const,
-            reason: nonEmptyString(
-              capabilities.sessionLimit.reason,
-              "sandbox provider capabilities.sessionLimit.reason",
-            ),
+            _tag: "Unsupported" as const,
+            reason: nonEmptyString(capabilities.beforeCache.reason, "sandbox provider capabilities.beforeCache.reason"),
           }),
+    sessionLimit:
+      capabilities.sessionLimit._tag === "Unlimited"
+        ? Object.freeze({ _tag: "Unlimited" as const })
+        : capabilities.sessionLimit._tag === "Bounded"
+          ? Object.freeze({
+              _tag: "Bounded" as const,
+              milliseconds: capabilities.sessionLimit.milliseconds,
+            })
+          : Object.freeze({
+              _tag: "ProviderValidated" as const,
+              reason: nonEmptyString(
+                capabilities.sessionLimit.reason,
+                "sandbox provider capabilities.sessionLimit.reason",
+              ),
+            }),
     ...(dockerExecution === undefined
       ? {}
       : {
@@ -1108,19 +1117,20 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
               dockerExecution.executionDomainId,
               "sandbox provider Docker executionDomainId",
             ),
-            capacity: dockerExecution.capacity._tag === "Attested"
-              ? Object.freeze({
-                  _tag: "Attested" as const,
-                  bytes: dockerExecution.capacity.bytes,
-                })
-              : Object.freeze({
-                  _tag: "Unattested" as const,
-                  acceptedByExperiment: dockerExecution.capacity.acceptedByExperiment,
-                  reason: nonEmptyString(
-                    dockerExecution.capacity.reason,
-                    "sandbox provider Docker execution unattested reason",
-                  ),
-                }),
+            capacity:
+              dockerExecution.capacity._tag === "Attested"
+                ? Object.freeze({
+                    _tag: "Attested" as const,
+                    bytes: dockerExecution.capacity.bytes,
+                  })
+                : Object.freeze({
+                    _tag: "Unattested" as const,
+                    acceptedByExperiment: dockerExecution.capacity.acceptedByExperiment,
+                    reason: nonEmptyString(
+                      dockerExecution.capacity.reason,
+                      "sandbox provider Docker execution unattested reason",
+                    ),
+                  }),
           }),
         }),
   });
@@ -1130,9 +1140,10 @@ function targetIdentity(target: SandboxPlannedTarget): JsonValue {
   const platform = target.platform;
   return {
     source: target.source,
-    platform: platform._tag === "Linux"
-      ? { _tag: "Linux", os: "linux", arch: platform.arch, libc: platform.libc }
-      : { _tag: platform._tag, os: platform.os, arch: platform.arch },
+    platform:
+      platform._tag === "Linux"
+        ? { _tag: "Linux", os: "linux", arch: platform.arch, libc: platform.libc }
+        : { _tag: platform._tag, os: platform.os, arch: platform.arch },
   };
 }
 
@@ -1282,9 +1293,8 @@ function dockerReadiness(value: unknown, path: string): Readonly<DockerSandboxRe
   const command: readonly [string, ...string[]] = Object.freeze([first, ...commandValues.slice(1)]);
   const user = value.user === undefined ? undefined : nonEmptyString(value.user, `${path}.user`);
   const timeoutMs = positiveFinite(value.timeoutMs, `${path}.timeoutMs`);
-  const intervalMs = value.intervalMs === undefined
-    ? undefined
-    : positiveFinite(value.intervalMs, `${path}.intervalMs`);
+  const intervalMs =
+    value.intervalMs === undefined ? undefined : positiveFinite(value.intervalMs, `${path}.intervalMs`);
   return Object.freeze({
     command,
     ...(user === undefined ? {} : { user }),
@@ -1299,9 +1309,7 @@ function dockerReadinessForAccess(
   path: string,
 ): Readonly<DockerSandboxReadiness> | undefined {
   return dockerReadiness(
-    value === undefined && access !== undefined
-      ? { command: ["docker", "info"], timeoutMs: 30_000 }
-      : value,
+    value === undefined && access !== undefined ? { command: ["docker", "info"], timeoutMs: 30_000 } : value,
     path,
   );
 }
@@ -1311,7 +1319,8 @@ function managedDockerResources(value: unknown, path: string): ManagedDockerReso
     throw dockerProfileError({
       code: "sandbox.docker-profile-resources-required",
       path,
-      message: "managed Docker sandbox requires explicit CPU, memory, PID, dockerDataBytes and readOnlyRootfs resources",
+      message:
+        "managed Docker sandbox requires explicit CPU, memory, PID, dockerDataBytes and readOnlyRootfs resources",
     });
   }
   const resources = dockerResources(value, path);
@@ -1325,7 +1334,8 @@ function managedDockerResources(value: unknown, path: string): ManagedDockerReso
     throw dockerProfileError({
       code: "sandbox.docker-profile-resources-required",
       path,
-      message: "managed Docker sandbox requires explicit CPU, memory, PID, dockerDataBytes and readOnlyRootfs: true resources",
+      message:
+        "managed Docker sandbox requires explicit CPU, memory, PID, dockerDataBytes and readOnlyRootfs: true resources",
     });
   }
   return Object.freeze({
@@ -1439,8 +1449,10 @@ function dockerResources(value: unknown, path: string): Readonly<DockerSandboxRe
       if (entry.executable !== undefined && typeof entry.executable !== "boolean") {
         throw new TypeError(`${path}.tmpfs.${mountPath}.executable must be a boolean`);
       }
-      const uid = entry.uid === undefined ? undefined : nonNegativeSafeInteger(entry.uid, `${path}.tmpfs.${mountPath}.uid`);
-      const gid = entry.gid === undefined ? undefined : nonNegativeSafeInteger(entry.gid, `${path}.tmpfs.${mountPath}.gid`);
+      const uid =
+        entry.uid === undefined ? undefined : nonNegativeSafeInteger(entry.uid, `${path}.tmpfs.${mountPath}.uid`);
+      const gid =
+        entry.gid === undefined ? undefined : nonNegativeSafeInteger(entry.gid, `${path}.tmpfs.${mountPath}.gid`);
       tmpfs[mountPath] = Object.freeze({
         sizeBytes,
         ...(entry.mode === undefined ? {} : { mode: entry.mode }),
@@ -1455,9 +1467,7 @@ function dockerResources(value: unknown, path: string): Readonly<DockerSandboxRe
     ...(value.memoryBytes === undefined
       ? {}
       : { memoryBytes: positiveSafeInteger(value.memoryBytes, `${path}.memoryBytes`) }),
-    ...(value.pidsLimit === undefined
-      ? {}
-      : { pidsLimit: positiveSafeInteger(value.pidsLimit, `${path}.pidsLimit`) }),
+    ...(value.pidsLimit === undefined ? {} : { pidsLimit: positiveSafeInteger(value.pidsLimit, `${path}.pidsLimit`) }),
     ...(value.dockerDataBytes === undefined
       ? {}
       : { dockerDataBytes: positiveSafeInteger(value.dockerDataBytes, `${path}.dockerDataBytes`) }),
@@ -1473,15 +1483,18 @@ function dockerRuntimeIdentity(
 ): globalThis.Record<string, JsonValue> {
   return {
     ...(access === undefined
-      ? (privileged === "disabled" ? {} : { privileged })
+      ? privileged === "disabled"
+        ? {}
+        : { privileged }
       : {
-          dockerAccess: access.mode === "socket"
-            ? { mode: "socket" }
-            : {
-                mode: "dind",
-                isolation: access.isolation,
-                supervisorRevision: dindSupervisorRevision(),
-              },
+          dockerAccess:
+            access.mode === "socket"
+              ? { mode: "socket" }
+              : {
+                  mode: "dind",
+                  isolation: access.isolation,
+                  supervisorRevision: dindSupervisorRevision(),
+                },
         }),
     ...(Object.keys(resources).length === 0 ? {} : { resources: resources as JsonValue }),
   };
@@ -1516,9 +1529,7 @@ function credentialEnvRecord(
     assertOnlyKeys(child, ["value", "revision"], `${path}.${key}`);
     const credential = {
       value: nonEmptyString(child.value, `${path}.${key}.value`),
-      ...(child.revision === undefined
-        ? {}
-        : { revision: nonEmptyString(child.revision, `${path}.${key}.revision`) }),
+      ...(child.revision === undefined ? {} : { revision: nonEmptyString(child.revision, `${path}.${key}.revision`) }),
     };
     result[key] = Object.freeze(credential);
   }
@@ -1526,36 +1537,39 @@ function credentialEnvRecord(
 }
 
 function normalizeArch(arch: string): string {
-  return arch === "amd64" || arch === "x86_64" || arch === "x64"
-    ? "x64"
-    : arch === "aarch64" ? "arm64" : arch;
+  return arch === "amd64" || arch === "x86_64" || arch === "x64" ? "x64" : arch === "aarch64" ? "arm64" : arch;
 }
 
 function targetFromDocker(value: string): Effect.Effect<SandboxPlannedTarget, SandboxProviderPlanningError> {
   const normalized = normalizeBuildPlatform(value);
   const [os, arch, extra] = normalized.split("/");
   if (os === undefined || arch === undefined || extra !== undefined || os === "" || arch === "") {
-    return Effect.fail(providerPlanningError(
-      "sandbox.target-platform-invalid",
-      "docker",
-      `Docker returned an invalid target platform ${JSON.stringify(value)}.`,
-      ["Configure DOCKER_DEFAULT_PLATFORM as os/arch or repair the Docker daemon response."],
-    ));
+    return Effect.fail(
+      providerPlanningError(
+        "sandbox.target-platform-invalid",
+        "docker",
+        `Docker returned an invalid target platform ${JSON.stringify(value)}.`,
+        ["Configure DOCKER_DEFAULT_PLATFORM as os/arch or repair the Docker daemon response."],
+      ),
+    );
   }
-  const platform: SandboxTargetPlatform = os === "linux"
-    ? { _tag: "Linux", os: "linux", arch: normalizeArch(arch), libc: "gnu" }
-    : os === "darwin"
-      ? { _tag: "Darwin", os: "darwin", arch: normalizeArch(arch) }
-      : os === "windows"
-        ? { _tag: "Windows", os: "windows", arch: normalizeArch(arch) }
-        : { _tag: "Linux", os: "linux", arch: normalizeArch(arch), libc: "gnu" };
+  const platform: SandboxTargetPlatform =
+    os === "linux"
+      ? { _tag: "Linux", os: "linux", arch: normalizeArch(arch), libc: "gnu" }
+      : os === "darwin"
+        ? { _tag: "Darwin", os: "darwin", arch: normalizeArch(arch) }
+        : os === "windows"
+          ? { _tag: "Windows", os: "windows", arch: normalizeArch(arch) }
+          : { _tag: "Linux", os: "linux", arch: normalizeArch(arch), libc: "gnu" };
   if (os !== "linux" && os !== "darwin" && os !== "windows") {
-    return Effect.fail(providerPlanningError(
-      "sandbox.target-platform-unsupported",
-      "docker",
-      `Docker target operating system ${JSON.stringify(os)} is not supported.`,
-      ["Use a Linux, Darwin, or Windows Docker target platform."],
-    ));
+    return Effect.fail(
+      providerPlanningError(
+        "sandbox.target-platform-unsupported",
+        "docker",
+        `Docker target operating system ${JSON.stringify(os)} is not supported.`,
+        ["Use a Linux, Darwin, or Windows Docker target platform."],
+      ),
+    );
   }
   return Effect.succeed(Object.freeze({ platform: freezePlatform(platform), source: "docker-daemon" }));
 }
@@ -1589,54 +1603,54 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
   const frozenAfter = Object.freeze([...state.after]);
   const setupHooks = Object.freeze([...state.setupHooks]);
   const teardownHooks = Object.freeze([...state.teardownHooks]);
-  const frozenState = state.kind === "command-only"
-    ? Object.freeze({
-        kind: "command-only" as const,
-        requirements,
-        commands: frozenCommands,
-        before: frozenBefore,
-        after: frozenAfter,
-        setupHooks,
-        teardownHooks,
-      })
-    : Object.freeze({
-        kind: "template-bearing" as const,
-        template: state.template,
-        requirements,
-        commands: frozenCommands,
-        before: frozenBefore,
-        after: frozenAfter,
-        setupHooks,
-        teardownHooks,
-      });
+  const frozenState =
+    state.kind === "command-only"
+      ? Object.freeze({
+          kind: "command-only" as const,
+          requirements,
+          commands: frozenCommands,
+          before: frozenBefore,
+          after: frozenAfter,
+          setupHooks,
+          teardownHooks,
+        })
+      : Object.freeze({
+          kind: "template-bearing" as const,
+          template: state.template,
+          requirements,
+          commands: frozenCommands,
+          before: frozenBefore,
+          after: frozenAfter,
+          setupHooks,
+          teardownHooks,
+        });
 
-  const recreate = (
-    next: {
-      readonly commands?: readonly SandboxCommandDeclaration[];
-      readonly before?: readonly SandboxBeforeDeclaration[];
-      readonly after?: readonly SandboxAfterDeclaration[];
-      readonly requirements?: readonly SandboxRequirement[];
-    },
-  ): SandboxLayer => frozenState.kind === "command-only"
-    ? createLayer({
-        kind: "command-only",
-        requirements: next.requirements ?? requirements,
-        commands: next.commands ?? frozenCommands,
-        before: next.before ?? frozenBefore,
-        after: next.after ?? frozenAfter,
-        setupHooks,
-        teardownHooks,
-      })
-    : createLayer({
-        kind: "template-bearing",
-        template: frozenState.template,
-        requirements: next.requirements ?? requirements,
-        commands: next.commands ?? frozenCommands,
-        before: next.before ?? frozenBefore,
-        after: next.after ?? frozenAfter,
-        setupHooks,
-        teardownHooks,
-      });
+  const recreate = (next: {
+    readonly commands?: readonly SandboxCommandDeclaration[];
+    readonly before?: readonly SandboxBeforeDeclaration[];
+    readonly after?: readonly SandboxAfterDeclaration[];
+    readonly requirements?: readonly SandboxRequirement[];
+  }): SandboxLayer =>
+    frozenState.kind === "command-only"
+      ? createLayer({
+          kind: "command-only",
+          requirements: next.requirements ?? requirements,
+          commands: next.commands ?? frozenCommands,
+          before: next.before ?? frozenBefore,
+          after: next.after ?? frozenAfter,
+          setupHooks,
+          teardownHooks,
+        })
+      : createLayer({
+          kind: "template-bearing",
+          template: frozenState.template,
+          requirements: next.requirements ?? requirements,
+          commands: next.commands ?? frozenCommands,
+          before: next.before ?? frozenBefore,
+          after: next.after ?? frozenAfter,
+          setupHooks,
+          teardownHooks,
+        });
 
   const layer = {
     before(action: SandboxAction | SandboxCommand): SandboxLayer {
@@ -1691,9 +1705,7 @@ export function appendCommandOnlySandboxLayer(
   base: undefined,
   addition: SandboxLayer<"command-only">,
 ): SandboxLayer<"command-only">;
-export function appendCommandOnlySandboxLayer<
-  Kind extends SandboxLayerKind,
->(
+export function appendCommandOnlySandboxLayer<Kind extends SandboxLayerKind>(
   base: SandboxLayer<Kind>,
   addition: SandboxLayer<"command-only">,
 ): SandboxLayer<Kind>;
@@ -1727,9 +1739,7 @@ export function appendCommandOnlySandboxLayer(
 }
 
 /** @internal Provider factory 用它一次性绑定纯数据声明与 Effect planner。 */
-export function defineSandboxTemplate(
-  definition: SandboxTemplateDefinition,
-): SandboxLayer<"template-bearing"> {
+export function defineSandboxTemplate(definition: SandboxTemplateDefinition): SandboxLayer<"template-bearing"> {
   const provider = nonEmptyString(definition.provider, "sandbox template.provider");
   const kind = nonEmptyString(definition.kind, "sandbox template.kind");
   const declaration = Object.freeze({
@@ -1745,10 +1755,7 @@ export function defineSandboxTemplate(
     leakGate: freezeLeakGate(definition.leakGate),
   });
   SANDBOX_TEMPLATE_PLANNERS.set(declaration, definition.plan);
-  SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS.set(
-    declaration,
-    freezeCommandPlanLocator(definition.commandPlanLocator),
-  );
+  SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS.set(declaration, freezeCommandPlanLocator(definition.commandPlanLocator));
   return createLayer({
     kind: "template-bearing",
     template: declaration,
@@ -1766,20 +1773,14 @@ export function defineSandboxTemplate(
 // @concord-implements docs/feature/sandbox-nested-docker/README.md
 // @concord-implements docs/feature/sandbox-nested-docker/library.md
 // @concord-implements docs/feature/sandbox-nested-docker/use-case/nested-docker-capability.md
-export function sandboxRequirements(
-  options: SandboxRequirementsOptions,
-): SandboxLayer<"command-only"> {
+export function sandboxRequirements(options: SandboxRequirementsOptions): SandboxLayer<"command-only"> {
   assertRecord(options, "sandboxRequirements options");
   assertOnlyKeys(options, ["docker"], "sandboxRequirements options");
   const requirements: SandboxRequirement[] = [];
   if (options.docker !== undefined) {
     const docker: unknown = options.docker;
     assertRecord(docker, "sandboxRequirements docker");
-    assertOnlyKeys(
-      docker,
-      ["api", "compose", "isolation", "minimumDataBytes"],
-      "sandboxRequirements docker",
-    );
+    assertOnlyKeys(docker, ["api", "compose", "isolation", "minimumDataBytes"], "sandboxRequirements docker");
     if (docker.api !== "docker/v1") {
       throw new TypeError("sandboxRequirements docker.api must be docker/v1");
     }
@@ -1796,15 +1797,17 @@ export function sandboxRequirements(
     ) {
       throw new TypeError("sandboxRequirements docker.minimumDataBytes must be a positive safe integer");
     }
-    requirements.push(Object.freeze({
-      _tag: "DockerExecution" as const,
-      docker: Object.freeze({
-        api: docker.api,
-        compose: docker.compose,
-        isolation: docker.isolation,
-        minimumDataBytes: docker.minimumDataBytes,
+    requirements.push(
+      Object.freeze({
+        _tag: "DockerExecution" as const,
+        docker: Object.freeze({
+          api: docker.api,
+          compose: docker.compose,
+          isolation: docker.isolation,
+          minimumDataBytes: docker.minimumDataBytes,
+        }),
       }),
-    }));
+    );
   }
   return createLayer({
     kind: "command-only",
@@ -1840,9 +1843,7 @@ function standardLinuxTarget(): SandboxPlannedTarget {
   });
 }
 
-function providerBuildPlan(
-  input: Parameters<typeof computeCaseKey>[0],
-): SandboxProviderBuildPlan {
+function providerBuildPlan(input: Parameters<typeof computeCaseKey>[0]): SandboxProviderBuildPlan {
   const buildKeys = [...input.buildKeys].sort();
   const caseKey = computeCaseKey(input);
   return buildKeys.length === 0
@@ -1864,10 +1865,7 @@ function freezeSortedNonEmptyBuildKeys(
   return Object.freeze(nonEmptyBuildKeys(first, rest));
 }
 
-function nonEmptyBuildKeys(
-  first: BuildKey,
-  rest: readonly BuildKey[],
-): [BuildKey, ...BuildKey[]] {
+function nonEmptyBuildKeys(first: BuildKey, rest: readonly BuildKey[]): [BuildKey, ...BuildKey[]] {
   return [first, ...rest];
 }
 
@@ -1951,16 +1949,16 @@ function loadProviderRuntime() {
 const noBuildPreparation = (): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>> =>
   Effect.succeed(Option.none());
 
-function profileHasDockerDataBeforeCacheCoverage(
-  binding: DockerProfileRuntimeBinding | undefined,
-): boolean {
+function profileHasDockerDataBeforeCacheCoverage(binding: DockerProfileRuntimeBinding | undefined): boolean {
   if (binding === undefined) return false;
   const filesystem = binding.profile.backend.filesystem;
-  return filesystem.beforeCache?.coverage === sandboxState.dockerData &&
+  return (
+    filesystem.beforeCache?.coverage === sandboxState.dockerData &&
     filesystem.beforeCache.requiredState === sandboxState.dockerData &&
     filesystem.beforeCache.slotAttestation === "independent-fixed-filesystem/v1" &&
     filesystem.beforeCache.filesystemSizeBytes === filesystem.dockerDataPool.bytesPerAllocation &&
-    filesystem.dockerDataPool.attestation === "independent-fixed-filesystem/v1";
+    filesystem.dockerDataPool.attestation === "independent-fixed-filesystem/v1"
+  );
 }
 
 const dockerComposeProviderModule = Object.freeze({
@@ -1974,14 +1972,12 @@ const dockerComposeProviderModule = Object.freeze({
     reuse: Object.freeze({ _tag: "Supported" }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
-  materialize: (plan, context) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.materializeDockerComposeProviderPlan(plan, context),
-  ),
-  collectBuildPreparation: (plan, published, evalId) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.collectDockerComposeProviderBuildPreparation(plan, published, evalId),
-  ),
+  materialize: (plan, context) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) => runtime.materializeDockerComposeProviderPlan(plan, context)),
+  collectBuildPreparation: (plan, published, evalId) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) =>
+      runtime.collectDockerComposeProviderBuildPreparation(plan, published, evalId),
+    ),
 } satisfies SandboxProviderModule<DockerComposeProviderPlan>);
 
 const dockerfileProviderModule = Object.freeze({
@@ -1992,14 +1988,12 @@ const dockerfileProviderModule = Object.freeze({
     reuse: Object.freeze({ _tag: "Supported" }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
-  materialize: (plan, context) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.materializeDockerfileProviderPlan(plan, context),
-  ),
-  collectBuildPreparation: (plan, published, evalId) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.collectDockerfileProviderBuildPreparation(plan, published, evalId),
-  ),
+  materialize: (plan, context) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) => runtime.materializeDockerfileProviderPlan(plan, context)),
+  collectBuildPreparation: (plan, published, evalId) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) =>
+      runtime.collectDockerfileProviderBuildPreparation(plan, published, evalId),
+    ),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
 const dockerEphemeralBeforeCacheUnsupported = Object.freeze({
@@ -2039,10 +2033,8 @@ const dockerImageProviderModule = Object.freeze({
     reuse: Object.freeze({ _tag: "Supported" }),
     sessionLimit: Object.freeze({ _tag: "Unlimited" }),
   }),
-  materialize: (plan, context) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.materializeDockerImageProviderPlan(plan, context),
-  ),
+  materialize: (plan, context) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) => runtime.materializeDockerImageProviderPlan(plan, context)),
   collectBuildPreparation: noBuildPreparation,
 } satisfies SandboxProviderModule<DockerImageProviderPlan>);
 
@@ -2070,7 +2062,11 @@ const dockerImageProfileBeforeCacheProviderModule = Object.freeze({
 
 const e2bProviderModule = Object.freeze({
   id: "niceeval/e2b-template",
-  beforeCache: Object.freeze({ _tag: "RunPrepared", coverage: "all", preparer: remoteSnapshotPreparer(e2bSnapshotDriver) }),
+  beforeCache: Object.freeze({
+    _tag: "RunPrepared",
+    coverage: "all",
+    preparer: remoteSnapshotPreparer(e2bSnapshotDriver),
+  }),
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
@@ -2079,10 +2075,8 @@ const e2bProviderModule = Object.freeze({
       reason: "E2B validates lifetimeMs against the active account tier when the sandbox is created or renewed.",
     }),
   }),
-  materialize: (plan, context) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.materializeE2BProviderPlan(plan, context),
-  ),
+  materialize: (plan, context) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) => runtime.materializeE2BProviderPlan(plan, context)),
   collectBuildPreparation: noBuildPreparation,
 } satisfies SandboxProviderModule<E2BProviderPlan>);
 
@@ -2097,13 +2091,12 @@ const vercelProviderModule = Object.freeze({
     reuse: Object.freeze({ _tag: "Supported" }),
     sessionLimit: Object.freeze({
       _tag: "ProviderValidated",
-      reason: "Vercel validates lifetimeMs against the active project plan when the sandbox session is created or extended.",
+      reason:
+        "Vercel validates lifetimeMs against the active project plan when the sandbox session is created or extended.",
     }),
   }),
-  materialize: (plan, context) => Effect.flatMap(
-    loadProviderRuntime(),
-    (runtime) => runtime.materializeVercelProviderPlan(plan, context),
-  ),
+  materialize: (plan, context) =>
+    Effect.flatMap(loadProviderRuntime(), (runtime) => runtime.materializeVercelProviderPlan(plan, context)),
   collectBuildPreparation: noBuildPreparation,
 } satisfies SandboxProviderModule<VercelProviderPlan>);
 
@@ -2122,10 +2115,8 @@ function customProviderModule(
       reuse: Object.freeze({ _tag: "Unsupported", reason: "custom provider has no reset contract" }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" }),
     }),
-    materialize: (plan, context) => Effect.flatMap(
-      loadProviderRuntime(),
-      (runtime) => runtime.materializeCustomProviderPlan(plan, context, create),
-    ),
+    materialize: (plan, context) =>
+      Effect.flatMap(loadProviderRuntime(), (runtime) => runtime.materializeCustomProviderPlan(plan, context, create)),
     collectBuildPreparation: noBuildPreparation,
   } satisfies SandboxProviderModule<CustomProviderPlan>);
 }
@@ -2144,68 +2135,75 @@ function customCaseProviderModule(
       reuse: Object.freeze({ _tag: "Unsupported", reason: "custom case has no reset contract" }),
       sessionLimit: Object.freeze({ _tag: "Unlimited" }),
     }),
-    materialize: (plan, context) => Effect.flatMap(
-      loadProviderRuntime(),
-      (runtime) => runtime.materializeCustomCaseProviderPlan(plan, context, materialize),
-    ),
+    materialize: (plan, context) =>
+      Effect.flatMap(loadProviderRuntime(), (runtime) =>
+        runtime.materializeCustomCaseProviderPlan(plan, context, materialize),
+      ),
     collectBuildPreparation: noBuildPreparation,
   } satisfies SandboxProviderModule<CustomCaseProviderPlan>);
 }
 
 /** Built-in factory 集合只属于 provider 侧；测试通过 services 注入，不改全局状态。 */
-export function createBuiltinSandboxFactories(
-  services: BuiltinSandboxPlannerServices,
-): BuiltinSandboxFactories {
+export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerServices): BuiltinSandboxFactories {
   const dockerTarget = (): Effect.Effect<SandboxPlannedTarget, SandboxProviderPlanningError> =>
     Effect.flatMap(services.dockerBuildPlatform, targetFromDocker);
   const dockerTargetForProfile = (
     profile: string | undefined,
     privileged: "disabled" | "raw" | "rootless",
     resources: Readonly<DockerSandboxResources>,
-  ): Effect.Effect<{
-    readonly target: SandboxPlannedTarget;
-    readonly profileBinding?: DockerProfileRuntimeBinding;
-  }, SandboxProviderPlanningError> => profile === undefined
-    ? Effect.map(dockerTarget(), (target) => ({ target }))
-    : Effect.flatMap(
-        Effect.tryPromise({
-          try: async () => (await import("./docker-profile/runtime.ts")).attestDockerProfile(profile),
-          catch: (cause) => providerPlanningError(
-            "sandbox.docker-profile-attestation-failed",
-            "docker",
-            cause instanceof Error ? cause.message : String(cause),
-            [`Run niceeval docker profile doctor ${profile}.`],
-          ),
-        }),
-        (profileBinding) => {
-          const rawStorage = profileBinding.profile.securityLevel === "raw-dind-storage/v1";
-          if ((privileged === "raw") !== rawStorage) {
-            return Effect.fail(providerPlanningError(
-              "sandbox.docker-profile-attestation-failed",
-              "docker",
-              privileged === "raw"
-                ? `Docker storage profile ${profile} must declare raw-dind-storage/v1`
-                : `Managed Docker profile ${profile} must declare a managed rootless security level`,
-              [`Run niceeval docker profile doctor ${profile}.`],
-            ));
-          }
-          const capacity = profileBinding.profile.capacity;
-          if (
-            (resources.cpus ?? 0) > capacity.cpus ||
-            (resources.memoryBytes ?? 0) > capacity.memoryBytes ||
-            (resources.pidsLimit ?? 0) > capacity.pids ||
-            (resources.dockerDataBytes ?? 0) > capacity.ephemeralDiskBytes
-          ) {
-            return Effect.fail(providerPlanningError(
-              "sandbox.docker-profile-attestation-failed",
-              "docker",
-              `Docker profile ${profile} does not have capacity for the declared container resource vector`,
-              [`Reduce resources or select another Docker profile.`],
-            ));
-          }
-          return Effect.map(targetFromDocker(profileBinding.platform), (target) => ({ target, profileBinding }));
-        },
-      );
+  ): Effect.Effect<
+    {
+      readonly target: SandboxPlannedTarget;
+      readonly profileBinding?: DockerProfileRuntimeBinding;
+    },
+    SandboxProviderPlanningError
+  > =>
+    profile === undefined
+      ? Effect.map(dockerTarget(), (target) => ({ target }))
+      : Effect.flatMap(
+          Effect.tryPromise({
+            try: async () => (await import("./docker-profile/runtime.ts")).attestDockerProfile(profile),
+            catch: (cause) =>
+              providerPlanningError(
+                "sandbox.docker-profile-attestation-failed",
+                "docker",
+                cause instanceof Error ? cause.message : String(cause),
+                [`Run niceeval docker profile doctor ${profile}.`],
+              ),
+          }),
+          (profileBinding) => {
+            const rawStorage = profileBinding.profile.securityLevel === "raw-dind-storage/v1";
+            if ((privileged === "raw") !== rawStorage) {
+              return Effect.fail(
+                providerPlanningError(
+                  "sandbox.docker-profile-attestation-failed",
+                  "docker",
+                  privileged === "raw"
+                    ? `Docker storage profile ${profile} must declare raw-dind-storage/v1`
+                    : `Managed Docker profile ${profile} must declare a managed rootless security level`,
+                  [`Run niceeval docker profile doctor ${profile}.`],
+                ),
+              );
+            }
+            const capacity = profileBinding.profile.capacity;
+            if (
+              (resources.cpus ?? 0) > capacity.cpus ||
+              (resources.memoryBytes ?? 0) > capacity.memoryBytes ||
+              (resources.pidsLimit ?? 0) > capacity.pids ||
+              (resources.dockerDataBytes ?? 0) > capacity.ephemeralDiskBytes
+            ) {
+              return Effect.fail(
+                providerPlanningError(
+                  "sandbox.docker-profile-attestation-failed",
+                  "docker",
+                  `Docker profile ${profile} does not have capacity for the declared container resource vector`,
+                  [`Reduce resources or select another Docker profile.`],
+                ),
+              );
+            }
+            return Effect.map(targetFromDocker(profileBinding.platform), (target) => ({ target, profileBinding }));
+          },
+        );
 
   return Object.freeze({
     dockerComposeSandbox(options: DockerComposeSandboxOptions) {
@@ -2220,15 +2218,20 @@ export function createBuiltinSandboxFactories(
       }
       const file = location(options.file, "dockerComposeSandbox options.file");
       const fileLocator = configuredLocationField("file", file);
-      const workspaceService = nonEmptyString(options.workspaceService, "dockerComposeSandbox options.workspaceService");
+      const workspaceService = nonEmptyString(
+        options.workspaceService,
+        "dockerComposeSandbox options.workspaceService",
+      );
       const build = options.build === undefined ? "on-demand" : options.build;
-      const user: SandboxExecutionUser = options.user === undefined
-        ? { _tag: "EnvironmentDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerComposeSandbox options.user") };
+      const user: SandboxExecutionUser =
+        options.user === undefined
+          ? { _tag: "EnvironmentDefault" }
+          : { _tag: "Configured", value: nonEmptyString(options.user, "dockerComposeSandbox options.user") };
       const env = stringRecord(options.env, "dockerComposeSandbox options.env");
       const credentialEnv = credentialEnvRecord(options.credentialEnv, "dockerComposeSandbox options.credentialEnv");
       for (const key of Object.keys(credentialEnv)) {
-        if (key in env) throw new TypeError(`dockerComposeSandbox env and credentialEnv both define ${JSON.stringify(key)}`);
+        if (key in env)
+          throw new TypeError(`dockerComposeSandbox env and credentialEnv both define ${JSON.stringify(key)}`);
       }
       const credentialIdentity: globalThis.Record<string, JsonValue> = Object.fromEntries(
         Object.entries(credentialEnv).map(([name, credential]): readonly [string, JsonValue] => [
@@ -2267,91 +2270,97 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: fileLocator === undefined
-          ? configuredPathLocator()
-          : configuredLocator(
-              [fileLocator.field, { name: "workspaceService", value: workspaceService }],
-              fileLocator.redaction === undefined ? [] : [fileLocator.redaction],
-            ),
+        commandPlanLocator:
+          fileLocator === undefined
+            ? configuredPathLocator()
+            : configuredLocator(
+                [fileLocator.field, { name: "workspaceService", value: workspaceService }],
+                fileLocator.redaction === undefined ? [] : [fileLocator.redaction],
+              ),
         leakGate: { _tag: "Compose", file, workspaceService },
-        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.gen(function* () {
-          const plannedFile = yield* Effect.try({
-            try: () => plannedLocation(file, authorBaseDir),
-            catch: (cause) => providerPlanningError(
-              "sandbox.case-identity-unavailable",
-              "docker",
-              cause instanceof Error ? cause.message : String(cause),
-              ["Make the Compose file and every filtered build context readable during physical planning."],
-            ),
-          });
-          const collection = yield* collectComposeBuilds({
-            file: plannedFile._tag === "Url" ? new URL(plannedFile.value) : plannedFile.value,
-            mainService: workspaceService,
-            platform: plannedTargetPlatform(target),
-            env: runtimeEnv,
-          }).pipe(Effect.mapError((cause) => providerPlanningError(
-            "sandbox.case-identity-unavailable",
-            "docker",
-            cause.message,
-            ["Make the Compose file and every filtered build context readable during physical planning."],
-          )));
-          const caseIdentity = composeCollectionIdentity(collection);
-          const identityInput: JsonValue = {
-            file: plannedFile,
-            workspaceService,
-            build,
-            user,
-            env: { ...env },
-            credentialEnv: credentialIdentity,
-            lifetime: plannedLifetime,
-            ...pathPrependIdentityField(pathPrepend),
-            plannedBuildKeys: [...collection.buildKeys].sort(),
-            plannedCaseIdentityDigest: digestOf(caseIdentity),
-          };
-          return sandboxProviderPlan({
-            provider: "docker",
-            plannerRevision: COMPOSE_MATERIALIZER_REVISION,
-            caseKind: "compose",
-            target,
-            scheduling: sharedScheduling("docker", 10),
-            module: dockerComposeProviderModule,
-            build: providerBuildPlan({
-              caseKind: "compose",
-              materializerRevision: COMPOSE_MATERIALIZER_REVISION,
-              composeBytes: collection.composeBytes,
-              buildKeys: collection.buildKeys,
-              serviceImageRefs: collection.imageRefs,
-              bindMountDigests: collection.bindMountDigests,
-              configContents: collection.configContents,
-              caseParams: identityInput,
+        plan: ({ authorBaseDir }) =>
+          Effect.flatMap(dockerTarget(), (target) =>
+            Effect.gen(function* () {
+              const plannedFile = yield* Effect.try({
+                try: () => plannedLocation(file, authorBaseDir),
+                catch: (cause) =>
+                  providerPlanningError(
+                    "sandbox.case-identity-unavailable",
+                    "docker",
+                    cause instanceof Error ? cause.message : String(cause),
+                    ["Make the Compose file and every filtered build context readable during physical planning."],
+                  ),
+              });
+              const collection = yield* collectComposeBuilds({
+                file: plannedFile._tag === "Url" ? new URL(plannedFile.value) : plannedFile.value,
+                mainService: workspaceService,
+                platform: plannedTargetPlatform(target),
+                env: runtimeEnv,
+              }).pipe(
+                Effect.mapError((cause) =>
+                  providerPlanningError("sandbox.case-identity-unavailable", "docker", cause.message, [
+                    "Make the Compose file and every filtered build context readable during physical planning.",
+                  ]),
+                ),
+              );
+              const caseIdentity = composeCollectionIdentity(collection);
+              const identityInput: JsonValue = {
+                file: plannedFile,
+                workspaceService,
+                build,
+                user,
+                env: { ...env },
+                credentialEnv: credentialIdentity,
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+                plannedBuildKeys: [...collection.buildKeys].sort(),
+                plannedCaseIdentityDigest: digestOf(caseIdentity),
+              };
+              return sandboxProviderPlan({
+                provider: "docker",
+                plannerRevision: COMPOSE_MATERIALIZER_REVISION,
+                caseKind: "compose",
+                target,
+                scheduling: sharedScheduling("docker", 10),
+                module: dockerComposeProviderModule,
+                build: providerBuildPlan({
+                  caseKind: "compose",
+                  materializerRevision: COMPOSE_MATERIALIZER_REVISION,
+                  composeBytes: collection.composeBytes,
+                  buildKeys: collection.buildKeys,
+                  serviceImageRefs: collection.imageRefs,
+                  bindMountDigests: collection.bindMountDigests,
+                  configContents: collection.configContents,
+                  caseParams: identityInput,
+                }),
+                runtimePlan: Object.freeze({
+                  file: plannedFile,
+                  workspaceService,
+                  build,
+                  user: Object.freeze({ ...user }),
+                  env: Object.freeze({ ...runtimeEnv }),
+                  collection,
+                  lifetime: plannedLifetime,
+                  pathPrepend,
+                }),
+                publishableIdentity: {
+                  workspaceService,
+                  build,
+                  user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
+                  envKeys: Object.keys(env).sort(),
+                  credentialEnv: credentialIdentity,
+                  lifetime: plannedLifetime,
+                  ...pathPrependIdentityField(pathPrepend),
+                  ...(caseIdentity as Record<string, JsonValue>),
+                },
+                privateFingerprintIdentity: {
+                  identityInput,
+                  caseIdentity,
+                },
+                identityMarker: collection.providerIdentityMarker,
+              });
             }),
-            runtimePlan: Object.freeze({
-              file: plannedFile,
-              workspaceService,
-              build,
-              user: Object.freeze({ ...user }),
-              env: Object.freeze({ ...runtimeEnv }),
-              collection,
-              lifetime: plannedLifetime,
-              pathPrepend,
-            }),
-            publishableIdentity: {
-              workspaceService,
-              build,
-              user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
-              envKeys: Object.keys(env).sort(),
-              credentialEnv: credentialIdentity,
-              lifetime: plannedLifetime,
-              ...pathPrependIdentityField(pathPrepend),
-              ...(caseIdentity as Record<string, JsonValue>),
-            },
-            privateFingerprintIdentity: {
-              identityInput,
-              caseIdentity,
-            },
-            identityMarker: collection.providerIdentityMarker,
-          });
-        })),
+          ),
       });
     },
 
@@ -2359,14 +2368,28 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerSandbox options");
       assertOnlyKeys(
         options,
-        ["context", "dockerfile", "buildArgs", "profile", "target", "user", "privileged", "dockerAccess", "resources", "readiness", "lifetimeMs", "pathPrepend"],
+        [
+          "context",
+          "dockerfile",
+          "buildArgs",
+          "profile",
+          "target",
+          "user",
+          "privileged",
+          "dockerAccess",
+          "resources",
+          "readiness",
+          "lifetimeMs",
+          "pathPrepend",
+        ],
         "dockerSandbox options",
       );
       const context = location(options.context, "dockerSandbox options.source.context");
       const contextLocator = configuredLocationField("context", context);
-      const dockerfile = options.dockerfile === undefined
-        ? "Dockerfile"
-        : nonEmptyString(options.dockerfile, "dockerSandbox options.source.file");
+      const dockerfile =
+        options.dockerfile === undefined
+          ? "Dockerfile"
+          : nonEmptyString(options.dockerfile, "dockerSandbox options.source.file");
       const buildArgs = stringRecord(options.buildArgs, "dockerSandbox options.source.buildArgs");
       const accessConfig = dockerAccessConfiguration(
         options.dockerAccess,
@@ -2375,13 +2398,20 @@ export function createBuiltinSandboxFactories(
         "dockerSandbox options.dockerAccess",
       );
       const { access, profile, privileged } = accessConfig;
-      const targetStage = options.target === undefined
-        ? undefined
-        : nonEmptyString(options.target, "dockerSandbox options.source.target");
-      const user: SandboxExecutionUser = options.user === undefined
-        ? { _tag: "EnvironmentDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerSandbox options.user") };
-      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerSandbox options.resources");
+      const targetStage =
+        options.target === undefined
+          ? undefined
+          : nonEmptyString(options.target, "dockerSandbox options.source.target");
+      const user: SandboxExecutionUser =
+        options.user === undefined
+          ? { _tag: "EnvironmentDefault" }
+          : { _tag: "Configured", value: nonEmptyString(options.user, "dockerSandbox options.user") };
+      const resources = dockerResourcesForProfile(
+        profile,
+        privileged,
+        options.resources,
+        "dockerSandbox options.resources",
+      );
       const readiness = dockerReadinessForAccess(access, options.readiness, "dockerSandbox options.readiness");
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "dockerSandbox options.pathPrepend");
@@ -2411,136 +2441,149 @@ export function createBuiltinSandboxFactories(
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
-        commandPlanLocator: contextLocator === undefined || options.dockerfile !== undefined
-          ? configuredPathLocator()
-          : configuredLocator(
-              [
-                contextLocator.field,
-                { name: "file", value: dockerfile },
-                ...(targetStage === undefined ? [] : [{ name: "target" as const, value: targetStage }]),
-              ],
-              contextLocator.redaction === undefined ? [] : [contextLocator.redaction],
-            ),
+        commandPlanLocator:
+          contextLocator === undefined || options.dockerfile !== undefined
+            ? configuredPathLocator()
+            : configuredLocator(
+                [
+                  contextLocator.field,
+                  { name: "file", value: dockerfile },
+                  ...(targetStage === undefined ? [] : [{ name: "target" as const, value: targetStage }]),
+                ],
+                contextLocator.redaction === undefined ? [] : [contextLocator.redaction],
+              ),
         leakGate: { _tag: "Dockerfile", context, dockerfile },
-        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile, privileged, resources), ({ target, profileBinding }) => Effect.gen(function* () {
-          const plannedContext = yield* Effect.try({
-            try: () => plannedLocation(context, authorBaseDir),
-            catch: (cause) => providerPlanningError(
-              "sandbox.build-identity-unavailable",
-              "docker",
-              cause instanceof Error ? cause.message : String(cause),
-              ["Make the Dockerfile and its filtered build context readable during physical planning."],
-            ),
-          });
-          const build = yield* resolveDockerfileBuildIdentity({
-            provider: "docker",
-            context: plannedContext._tag === "Url" ? new URL(plannedContext.value) : plannedContext.value,
-            dockerfile,
-            buildArgs,
-            ...(targetStage === undefined ? {} : { target: targetStage }),
-            platform: plannedTargetPlatform(target),
-            label: "Dockerfile sandbox",
-          }).pipe(Effect.mapError((cause) => providerPlanningError(
-            "sandbox.build-identity-unavailable",
-            "docker",
-            cause.message,
-            ["Make the Dockerfile and its filtered build context readable during physical planning."],
-          )));
-          const runtimeIdentity: JsonValue = {
-            context: plannedContext,
-            dockerfile,
-            buildArgs: { ...buildArgs },
-            user,
-            ...dockerRuntimeIdentity(privileged, resources, access),
-            ...(targetStage === undefined ? {} : { target: targetStage }),
-            readiness: readinessIdentity(readiness),
-            plannedBuildKey: build.buildKey,
-            lifetime: plannedLifetime,
-            ...pathPrependIdentityField(pathPrepend),
-          };
-          return sandboxProviderPlan({
-            provider: "docker",
-            plannerRevision: DOCKERFILE_PROVIDER_PLANNER_REVISION,
-            caseKind: "on-demand-build",
-            target,
-            scheduling: sharedScheduling("docker", 10),
-            module: profileBinding !== undefined
-              ? profileHasDockerDataBeforeCacheCoverage(profileBinding)
-                ? dockerfileProfileBeforeCacheProviderModule
-                : dockerfileEphemeralProviderModule
-              : dockerRequiresDestroyOnly(resources)
-                ? dockerfileEphemeralProviderModule
-                : dockerfileProviderModule,
-            build: providerBuildPlan({
-              caseKind: "on-demand-build",
-              materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
-              buildKeys: [build.buildKey],
-              caseParams: {
+        plan: ({ authorBaseDir }) =>
+          Effect.flatMap(dockerTargetForProfile(profile, privileged, resources), ({ target, profileBinding }) =>
+            Effect.gen(function* () {
+              const plannedContext = yield* Effect.try({
+                try: () => plannedLocation(context, authorBaseDir),
+                catch: (cause) =>
+                  providerPlanningError(
+                    "sandbox.build-identity-unavailable",
+                    "docker",
+                    cause instanceof Error ? cause.message : String(cause),
+                    ["Make the Dockerfile and its filtered build context readable during physical planning."],
+                  ),
+              });
+              const build = yield* resolveDockerfileBuildIdentity({
                 provider: "docker",
-                buildKey: build.buildKey,
-                ...(profileBinding === undefined ? {} : {
-                  dockerProfilePolicy: {
-                    securityLevel: profileBinding.profile.securityLevel,
-                    semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
-                  },
-                }),
+                context: plannedContext._tag === "Url" ? new URL(plannedContext.value) : plannedContext.value,
+                dockerfile,
+                buildArgs,
                 ...(targetStage === undefined ? {} : { target: targetStage }),
+                platform: plannedTargetPlatform(target),
+                label: "Dockerfile sandbox",
+              }).pipe(
+                Effect.mapError((cause) =>
+                  providerPlanningError("sandbox.build-identity-unavailable", "docker", cause.message, [
+                    "Make the Dockerfile and its filtered build context readable during physical planning.",
+                  ]),
+                ),
+              );
+              const runtimeIdentity: JsonValue = {
+                context: plannedContext,
+                dockerfile,
+                buildArgs: { ...buildArgs },
+                user,
                 ...dockerRuntimeIdentity(privileged, resources, access),
+                ...(targetStage === undefined ? {} : { target: targetStage }),
                 readiness: readinessIdentity(readiness),
+                plannedBuildKey: build.buildKey,
                 lifetime: plannedLifetime,
                 ...pathPrependIdentityField(pathPrepend),
-              },
-            }),
-            runtimePlan: Object.freeze({
-              context: plannedContext,
-              dockerfile,
-              buildArgs,
-              ...(profile === undefined ? {} : { profile }),
-              ...(profileBinding === undefined ? {} : { profileBinding }),
-              ...(targetStage === undefined ? {} : { target: targetStage }),
-              ...(readiness === undefined ? {} : { readiness }),
-              user: Object.freeze({ ...user }),
-              privileged,
-              ...(access === undefined ? {} : { dockerAccess: access }),
-              resources,
-              build,
-              buildKey: build.buildKey,
-              platform: plannedTargetPlatform(target),
-              lifetime: plannedLifetime,
-              pathPrepend,
-            }),
-            ...(profileBinding === undefined ? {} : { interruptibleAcquisition: true }),
-            publishableIdentity: {
-              buildArgKeys: Object.keys(buildArgs).sort(),
-              user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
-              ...dockerRuntimeIdentity(privileged, resources, access),
-              buildKey: build.buildKey,
-              ...(profileBinding === undefined ? {} : {
-                dockerProfile: {
-                  securityLevel: profileBinding.profile.securityLevel,
-                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+              };
+              return sandboxProviderPlan({
+                provider: "docker",
+                plannerRevision: DOCKERFILE_PROVIDER_PLANNER_REVISION,
+                caseKind: "on-demand-build",
+                target,
+                scheduling: sharedScheduling("docker", 10),
+                module:
+                  profileBinding !== undefined
+                    ? profileHasDockerDataBeforeCacheCoverage(profileBinding)
+                      ? dockerfileProfileBeforeCacheProviderModule
+                      : dockerfileEphemeralProviderModule
+                    : dockerRequiresDestroyOnly(resources)
+                      ? dockerfileEphemeralProviderModule
+                      : dockerfileProviderModule,
+                build: providerBuildPlan({
+                  caseKind: "on-demand-build",
+                  materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
+                  buildKeys: [build.buildKey],
+                  caseParams: {
+                    provider: "docker",
+                    buildKey: build.buildKey,
+                    ...(profileBinding === undefined
+                      ? {}
+                      : {
+                          dockerProfilePolicy: {
+                            securityLevel: profileBinding.profile.securityLevel,
+                            semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                          },
+                        }),
+                    ...(targetStage === undefined ? {} : { target: targetStage }),
+                    ...dockerRuntimeIdentity(privileged, resources, access),
+                    readiness: readinessIdentity(readiness),
+                    lifetime: plannedLifetime,
+                    ...pathPrependIdentityField(pathPrepend),
+                  },
+                }),
+                runtimePlan: Object.freeze({
+                  context: plannedContext,
+                  dockerfile,
+                  buildArgs,
+                  ...(profile === undefined ? {} : { profile }),
+                  ...(profileBinding === undefined ? {} : { profileBinding }),
+                  ...(targetStage === undefined ? {} : { target: targetStage }),
+                  ...(readiness === undefined ? {} : { readiness }),
+                  user: Object.freeze({ ...user }),
+                  privileged,
+                  ...(access === undefined ? {} : { dockerAccess: access }),
+                  resources,
+                  build,
+                  buildKey: build.buildKey,
+                  platform: plannedTargetPlatform(target),
+                  lifetime: plannedLifetime,
+                  pathPrepend,
+                }),
+                ...(profileBinding === undefined ? {} : { interruptibleAcquisition: true }),
+                publishableIdentity: {
+                  buildArgKeys: Object.keys(buildArgs).sort(),
+                  user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
+                  ...dockerRuntimeIdentity(privileged, resources, access),
+                  buildKey: build.buildKey,
+                  ...(profileBinding === undefined
+                    ? {}
+                    : {
+                        dockerProfile: {
+                          securityLevel: profileBinding.profile.securityLevel,
+                          semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                        },
+                      }),
+                  lifetime: plannedLifetime,
+                  ...pathPrependIdentityField(pathPrepend),
                 },
-              }),
-              lifetime: plannedLifetime,
-              ...pathPrependIdentityField(pathPrepend),
-            },
-            privateFingerprintIdentity: {
-              runtimeIdentity,
-              buildKey: build.buildKey,
-              ...dockerRuntimeIdentity(privileged, resources, access),
-              ...(targetStage === undefined ? {} : { target: targetStage }),
-              readiness: readinessIdentity(readiness),
-              ...(profileBinding === undefined ? {} : {
-                dockerProfilePolicy: {
-                  securityLevel: profileBinding.profile.securityLevel,
-                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                privateFingerprintIdentity: {
+                  runtimeIdentity,
+                  buildKey: build.buildKey,
+                  ...dockerRuntimeIdentity(privileged, resources, access),
+                  ...(targetStage === undefined ? {} : { target: targetStage }),
+                  readiness: readinessIdentity(readiness),
+                  ...(profileBinding === undefined
+                    ? {}
+                    : {
+                        dockerProfilePolicy: {
+                          securityLevel: profileBinding.profile.securityLevel,
+                          semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                        },
+                      }),
+                  lifetime: plannedLifetime,
                 },
-              }),
-              lifetime: plannedLifetime,
-            },
-            identityMarker: build.providerIdentityMarker,
-          });
-        })),
+                identityMarker: build.providerIdentityMarker,
+              });
+            }),
+          ),
       });
     },
 
@@ -2548,7 +2591,17 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerSandbox options");
       assertOnlyKeys(
         options,
-        ["image", "profile", "user", "privileged", "dockerAccess", "resources", "readiness", "lifetimeMs", "pathPrepend"],
+        [
+          "image",
+          "profile",
+          "user",
+          "privileged",
+          "dockerAccess",
+          "resources",
+          "readiness",
+          "lifetimeMs",
+          "pathPrepend",
+        ],
         "dockerSandbox options",
       );
       const image = nonEmptyString(options.image, "dockerSandbox options.source.image");
@@ -2559,10 +2612,16 @@ export function createBuiltinSandboxFactories(
         "dockerSandbox options.dockerAccess",
       );
       const { access, profile, privileged } = accessConfig;
-      const user: SandboxExecutionUser = options.user === undefined
-        ? { _tag: "EnvironmentDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerSandbox options.user") };
-      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerSandbox options.resources");
+      const user: SandboxExecutionUser =
+        options.user === undefined
+          ? { _tag: "EnvironmentDefault" }
+          : { _tag: "Configured", value: nonEmptyString(options.user, "dockerSandbox options.user") };
+      const resources = dockerResourcesForProfile(
+        profile,
+        privileged,
+        options.resources,
+        "dockerSandbox options.resources",
+      );
       const readiness = dockerReadinessForAccess(access, options.readiness, "dockerSandbox options.readiness");
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "dockerSandbox options.pathPrepend");
@@ -2576,7 +2635,9 @@ export function createBuiltinSandboxFactories(
         lifetime: plannedLifetime,
         ...pathPrependIdentityField(pathPrepend),
       };
-      const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
+      const publishedUser = {
+        _tag: options.user === undefined ? ("EnvironmentDefault" as const) : ("Configured" as const),
+      };
       return defineSandboxTemplate({
         provider: "docker",
         kind: "image",
@@ -2591,88 +2652,96 @@ export function createBuiltinSandboxFactories(
         privateFingerprintIdentity: identity,
         commandPlanLocator: configuredDockerImageLocator(image),
         leakGate: { _tag: "None" },
-        plan: () => Effect.map(dockerTargetForProfile(profile, privileged, resources), ({ target, profileBinding }) => {
-          return sandboxProviderPlan({
-            provider: "docker",
-            plannerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
-            caseKind: "prebuilt",
-            target,
-            scheduling: sharedScheduling("docker", 10),
-            module: profileBinding !== undefined
-              ? profileHasDockerDataBeforeCacheCoverage(profileBinding)
-                ? dockerImageProfileBeforeCacheProviderModule
-                : dockerImageEphemeralProviderModule
-              : dockerRequiresDestroyOnly(resources)
-                ? dockerImageEphemeralProviderModule
-                : dockerImageProviderModule,
-            build: providerBuildPlan({
+        plan: () =>
+          Effect.map(dockerTargetForProfile(profile, privileged, resources), ({ target, profileBinding }) => {
+            return sandboxProviderPlan({
+              provider: "docker",
+              plannerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
               caseKind: "prebuilt",
-              materializerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
-              buildKeys: [],
-              caseParams: {
+              target,
+              scheduling: sharedScheduling("docker", 10),
+              module:
+                profileBinding !== undefined
+                  ? profileHasDockerDataBeforeCacheCoverage(profileBinding)
+                    ? dockerImageProfileBeforeCacheProviderModule
+                    : dockerImageEphemeralProviderModule
+                  : dockerRequiresDestroyOnly(resources)
+                    ? dockerImageEphemeralProviderModule
+                    : dockerImageProviderModule,
+              build: providerBuildPlan({
+                caseKind: "prebuilt",
+                materializerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
+                buildKeys: [],
+                caseParams: {
+                  image,
+                  user,
+                  ...(profileBinding === undefined
+                    ? {}
+                    : {
+                        dockerProfilePolicy: {
+                          securityLevel: profileBinding.profile.securityLevel,
+                          semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                        },
+                      }),
+                  ...dockerRuntimeIdentity(privileged, resources, access),
+                  readiness: readinessIdentity(readiness),
+                  lifetime: plannedLifetime,
+                  ...pathPrependIdentityField(pathPrepend),
+                },
+              }),
+              runtimePlan: Object.freeze({
                 image,
-                user,
-                ...(profileBinding === undefined ? {} : {
-                  dockerProfilePolicy: {
-                    securityLevel: profileBinding.profile.securityLevel,
-                    semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
-                  },
-                }),
+                ...(profile === undefined ? {} : { profile }),
+                ...(profileBinding === undefined ? {} : { profileBinding }),
+                ...(readiness === undefined ? {} : { readiness }),
+                user: Object.freeze({ ...user }),
+                privileged,
+                ...(access === undefined ? {} : { dockerAccess: access }),
+                resources,
+                lifetime: plannedLifetime,
+                pathPrepend,
+              }),
+              ...(profileBinding === undefined ? {} : { interruptibleAcquisition: true }),
+              publishableIdentity: {
+                source: "configured-image",
+                user: publishedUser,
                 ...dockerRuntimeIdentity(privileged, resources, access),
                 readiness: readinessIdentity(readiness),
+                ...(profileBinding === undefined
+                  ? {}
+                  : {
+                      dockerProfilePolicy: {
+                        securityLevel: profileBinding.profile.securityLevel,
+                        semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                      },
+                    }),
                 lifetime: plannedLifetime,
                 ...pathPrependIdentityField(pathPrepend),
               },
-            }),
-            runtimePlan: Object.freeze({
-              image,
-              ...(profile === undefined ? {} : { profile }),
-              ...(profileBinding === undefined ? {} : { profileBinding }),
-              ...(readiness === undefined ? {} : { readiness }),
-              user: Object.freeze({ ...user }),
-              privileged,
-              ...(access === undefined ? {} : { dockerAccess: access }),
-              resources,
-              lifetime: plannedLifetime,
-              pathPrepend,
-            }),
-            ...(profileBinding === undefined ? {} : { interruptibleAcquisition: true }),
-            publishableIdentity: {
-              source: "configured-image",
-              user: publishedUser,
-              ...dockerRuntimeIdentity(privileged, resources, access),
-              readiness: readinessIdentity(readiness),
-              ...(profileBinding === undefined ? {} : {
-                dockerProfilePolicy: {
-                  securityLevel: profileBinding.profile.securityLevel,
-                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
-                },
-              }),
-              lifetime: plannedLifetime,
-              ...pathPrependIdentityField(pathPrepend),
-            },
-            privateFingerprintIdentity: {
-              image,
-              user,
-              ...dockerRuntimeIdentity(privileged, resources, access),
-              readiness: readinessIdentity(readiness),
-              ...(profileBinding === undefined ? {} : {
-                dockerProfilePolicy: {
-                  securityLevel: profileBinding.profile.securityLevel,
-                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
-                },
-              }),
-              lifetime: plannedLifetime,
-              ...pathPrependIdentityField(pathPrepend),
-            },
-            identityMarker: looksLikeDigestRef(image)
-              ? undefined
-              : unresolvedProviderFingerprintMarker(
-                  "sandbox.image-unresolved",
-                  "Docker image is not pinned to a sha256 digest.",
-                ),
-          });
-        }),
+              privateFingerprintIdentity: {
+                image,
+                user,
+                ...dockerRuntimeIdentity(privileged, resources, access),
+                readiness: readinessIdentity(readiness),
+                ...(profileBinding === undefined
+                  ? {}
+                  : {
+                      dockerProfilePolicy: {
+                        securityLevel: profileBinding.profile.securityLevel,
+                        semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                      },
+                    }),
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+              },
+              identityMarker: looksLikeDigestRef(image)
+                ? undefined
+                : unresolvedProviderFingerprintMarker(
+                    "sandbox.image-unresolved",
+                    "Docker image is not pinned to a sha256 digest.",
+                  ),
+            });
+          }),
       });
     },
 
@@ -2680,17 +2749,31 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "e2bSandbox options");
       assertOnlyKeys(options, ["template", "user", "lifetimeMs", "pathPrepend"], "e2bSandbox options");
       const template = nonEmptyString(options.template, "e2bSandbox options.template");
-      const user: SandboxExecutionUser = options.user === undefined
-        ? { _tag: "EnvironmentDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.user, "e2bSandbox options.user") };
-      const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
+      const user: SandboxExecutionUser =
+        options.user === undefined
+          ? { _tag: "EnvironmentDefault" }
+          : { _tag: "Configured", value: nonEmptyString(options.user, "e2bSandbox options.user") };
+      const publishedUser = {
+        _tag: options.user === undefined ? ("EnvironmentDefault" as const) : ("Configured" as const),
+      };
       const plannedLifetime = lifetime(options.lifetimeMs, "e2bSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "e2bSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "e2b", kind: "template", template, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) };
+      const identity: JsonValue = {
+        provider: "e2b",
+        kind: "template",
+        template,
+        user,
+        lifetime: plannedLifetime,
+        ...pathPrependIdentityField(pathPrepend),
+      };
       return defineSandboxTemplate({
         provider: "e2b",
         kind: "template",
-        publishableIdentity: { user: publishedUser, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+        publishableIdentity: {
+          user: publishedUser,
+          lifetime: plannedLifetime,
+          ...pathPrependIdentityField(pathPrepend),
+        },
         privateFingerprintIdentity: identity,
         commandPlanLocator: opaqueConfiguredLocator(
           "e2b-template-locator-unsafe-to-display",
@@ -2698,23 +2781,39 @@ export function createBuiltinSandboxFactories(
         ),
         leakGate: { _tag: "None" },
         plan: () => {
-          return Effect.succeed(sandboxProviderPlan({
-            provider: "e2b",
-            plannerRevision: "e2b-template-1",
-            caseKind: "prebuilt",
-            target: standardLinuxTarget(),
-            scheduling: sharedScheduling("e2b", 20),
-            module: e2bProviderModule,
-            build: providerBuildPlan({
+          return Effect.succeed(
+            sandboxProviderPlan({
+              provider: "e2b",
+              plannerRevision: "e2b-template-1",
               caseKind: "prebuilt",
-              materializerRevision: "e2b-template-1",
-              buildKeys: [],
-              caseParams: { template, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              target: standardLinuxTarget(),
+              scheduling: sharedScheduling("e2b", 20),
+              module: e2bProviderModule,
+              build: providerBuildPlan({
+                caseKind: "prebuilt",
+                materializerRevision: "e2b-template-1",
+                buildKeys: [],
+                caseParams: { template, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              }),
+              runtimePlan: Object.freeze({
+                template,
+                user: Object.freeze({ ...user }),
+                lifetime: plannedLifetime,
+                pathPrepend,
+              }),
+              publishableIdentity: {
+                user: publishedUser,
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+              },
+              privateFingerprintIdentity: {
+                template,
+                user,
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+              },
             }),
-            runtimePlan: Object.freeze({ template, user: Object.freeze({ ...user }), lifetime: plannedLifetime, pathPrepend }),
-            publishableIdentity: { user: publishedUser, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
-            privateFingerprintIdentity: { template, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
-          }));
+          );
         },
       });
     },
@@ -2725,7 +2824,13 @@ export function createBuiltinSandboxFactories(
       const snapshotId = nonEmptyString(options.snapshotId, "vercelSandbox options.snapshotId");
       const plannedLifetime = lifetime(options.lifetimeMs, "vercelSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "vercelSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "vercel", kind: "snapshot", snapshotId, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) };
+      const identity: JsonValue = {
+        provider: "vercel",
+        kind: "snapshot",
+        snapshotId,
+        lifetime: plannedLifetime,
+        ...pathPrependIdentityField(pathPrepend),
+      };
       return defineSandboxTemplate({
         provider: "vercel",
         kind: "snapshot",
@@ -2737,39 +2842,45 @@ export function createBuiltinSandboxFactories(
         ),
         leakGate: { _tag: "None" },
         plan: () => {
-          return Effect.succeed(sandboxProviderPlan({
-            provider: "vercel",
-            plannerRevision: "vercel-snapshot-1",
-            caseKind: "prebuilt",
-            target: standardLinuxTarget(),
-            scheduling: sharedScheduling("vercel", 1),
-            module: vercelProviderModule,
-            build: providerBuildPlan({
+          return Effect.succeed(
+            sandboxProviderPlan({
+              provider: "vercel",
+              plannerRevision: "vercel-snapshot-1",
               caseKind: "prebuilt",
-              materializerRevision: "vercel-snapshot-1",
-              buildKeys: [],
-              caseParams: { snapshotId, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              target: standardLinuxTarget(),
+              scheduling: sharedScheduling("vercel", 1),
+              module: vercelProviderModule,
+              build: providerBuildPlan({
+                caseKind: "prebuilt",
+                materializerRevision: "vercel-snapshot-1",
+                buildKeys: [],
+                caseParams: { snapshotId, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              }),
+              runtimePlan: Object.freeze({ snapshotId, lifetime: plannedLifetime, pathPrepend }),
+              publishableIdentity: { lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              privateFingerprintIdentity: {
+                snapshotId,
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+              },
             }),
-            runtimePlan: Object.freeze({ snapshotId, lifetime: plannedLifetime, pathPrepend }),
-            publishableIdentity: { lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
-            privateFingerprintIdentity: { snapshotId, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
-          }));
+          );
         },
       });
     },
-
   });
 }
 
 const LIVE_FACTORIES = createBuiltinSandboxFactories({
   dockerBuildPlatform: Effect.tryPromise({
     try: () => detectDockerBuildPlatform(),
-    catch: (cause) => providerPlanningError(
-      "sandbox.target-platform-unavailable",
-      "docker",
-      cause instanceof Error ? cause.message : String(cause),
-      ["Make the Docker control plane available or set DOCKER_DEFAULT_PLATFORM."],
-    ),
+    catch: (cause) =>
+      providerPlanningError(
+        "sandbox.target-platform-unavailable",
+        "docker",
+        cause instanceof Error ? cause.message : String(cause),
+        ["Make the Docker control plane available or set DOCKER_DEFAULT_PLATFORM."],
+      ),
   }),
 });
 
@@ -2801,9 +2912,10 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
   if (source.type === "image") {
     assertOnlyKeys(source, ["type", "image"], "dockerSandbox options.source");
     const access = dockerAccess(options.dockerAccess, "dockerSandbox options.dockerAccess");
-    const resources = access?.mode === "dind" && access.isolation === "managed-rootless"
-      ? managedDockerResources(options.resources, "dockerSandbox options.resources")
-      : options.resources;
+    const resources =
+      access?.mode === "dind" && access.isolation === "managed-rootless"
+        ? managedDockerResources(options.resources, "dockerSandbox options.resources")
+        : options.resources;
     return dockerImageSourceLayer({
       image: nonEmptyString(source.image, "dockerSandbox options.source.image"),
       ...(options.user === undefined ? {} : { user: options.user }),
@@ -2817,9 +2929,10 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
   if (source.type === "dockerfile") {
     assertOnlyKeys(source, ["type", "context", "file", "buildArgs", "target"], "dockerSandbox options.source");
     const access = dockerAccess(options.dockerAccess, "dockerSandbox options.dockerAccess");
-    const resources = access?.mode === "dind" && access.isolation === "managed-rootless"
-      ? managedDockerResources(options.resources, "dockerSandbox options.resources")
-      : options.resources;
+    const resources =
+      access?.mode === "dind" && access.isolation === "managed-rootless"
+        ? managedDockerResources(options.resources, "dockerSandbox options.resources")
+        : options.resources;
     return dockerfileSourceLayer({
       context: source.context,
       ...(source.file === undefined ? {} : { dockerfile: source.file }),
@@ -2840,9 +2953,7 @@ export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"temp
   });
 }
 
-export function customProviderSandbox(
-  options: CustomProviderSandboxOptions,
-): SandboxLayer<"template-bearing"> {
+export function customProviderSandbox(options: CustomProviderSandboxOptions): SandboxLayer<"template-bearing"> {
   assertRecord(options, "defineSandbox options");
   assertOnlyKeys(
     options,
@@ -2853,9 +2964,8 @@ export function customProviderSandbox(
   const name = nonEmptyString(options.name, "defineSandbox options.name");
   const targetPlatform = freezePlatform(options.targetPlatform);
   const recommendedConcurrency = options.recommendedConcurrency ?? 5;
-  const scheduling = options.exclusive === true
-    ? exclusiveScheduling(name)
-    : sharedScheduling(name, recommendedConcurrency);
+  const scheduling =
+    options.exclusive === true ? exclusiveScheduling(name) : sharedScheduling(name, recommendedConcurrency);
   const module = customProviderModule(name, options.create);
   const identity: JsonValue = {
     provider: name,
@@ -2883,34 +2993,35 @@ export function customProviderSandbox(
       },
     },
     leakGate: { _tag: "None" },
-    plan: () => Effect.succeed(sandboxProviderPlan({
-      provider: name,
-      plannerRevision: "custom-provider-1",
-      caseKind: "custom",
-      target: { platform: targetPlatform, source: "provider-defined" },
-      scheduling,
-      module,
-      build: providerBuildPlan({
-        caseKind: "custom",
-        materializerRevision: "custom-provider-1",
-        buildKeys: [],
-        caseParams: identity,
-      }),
-      runtimePlan: Object.freeze({ name }),
-      publishableIdentity: {},
-      privateFingerprintIdentity: identity,
-      identityMarker: unresolvedProviderFingerprintMarker(
-        "sandbox.custom-provider-opaque",
-        `custom provider ${JSON.stringify(name)} owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry.`,
+    plan: () =>
+      Effect.succeed(
+        sandboxProviderPlan({
+          provider: name,
+          plannerRevision: "custom-provider-1",
+          caseKind: "custom",
+          target: { platform: targetPlatform, source: "provider-defined" },
+          scheduling,
+          module,
+          build: providerBuildPlan({
+            caseKind: "custom",
+            materializerRevision: "custom-provider-1",
+            buildKeys: [],
+            caseParams: identity,
+          }),
+          runtimePlan: Object.freeze({ name }),
+          publishableIdentity: {},
+          privateFingerprintIdentity: identity,
+          identityMarker: unresolvedProviderFingerprintMarker(
+            "sandbox.custom-provider-opaque",
+            `custom provider ${JSON.stringify(name)} owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry.`,
+          ),
+        }),
       ),
-    })),
   });
 }
 
 /** Declares a custom case with explicit platform, identity and service capability. Its materializer must return the owning resource group and cannot offer detached retention. */
-export function defineSandboxCase(
-  options: CustomCaseSandboxOptions,
-): SandboxLayer<"template-bearing"> {
+export function defineSandboxCase(options: CustomCaseSandboxOptions): SandboxLayer<"template-bearing"> {
   assertRecord(options, "defineSandboxCase options");
   assertOnlyKeys(options, ["identity", "targetPlatform", "services", "materialize"], "defineSandboxCase options");
   if (typeof options.materialize !== "function") {
@@ -2952,23 +3063,26 @@ export function defineSandboxCase(
       },
     },
     leakGate: { _tag: "None" },
-    plan: () => Effect.succeed(sandboxProviderPlan({
-      provider: "custom-case",
-      plannerRevision: "custom-case-1",
-      caseKind: "custom",
-      target: { platform: targetPlatform, source: "provider-defined" },
-      scheduling: sharedScheduling("custom-case", 5),
-      module,
-      build: providerBuildPlan({
-        caseKind: "custom",
-        materializerRevision: "custom-case-1",
-        buildKeys: [],
-        caseParams: declarationIdentity,
-      }),
-      runtimePlan: Object.freeze({ identity, services }),
-      publishableIdentity: {},
-      privateFingerprintIdentity: declarationIdentity,
-    })),
+    plan: () =>
+      Effect.succeed(
+        sandboxProviderPlan({
+          provider: "custom-case",
+          plannerRevision: "custom-case-1",
+          caseKind: "custom",
+          target: { platform: targetPlatform, source: "provider-defined" },
+          scheduling: sharedScheduling("custom-case", 5),
+          module,
+          build: providerBuildPlan({
+            caseKind: "custom",
+            materializerRevision: "custom-case-1",
+            buildKeys: [],
+            caseParams: declarationIdentity,
+          }),
+          runtimePlan: Object.freeze({ identity, services }),
+          publishableIdentity: {},
+          privateFingerprintIdentity: declarationIdentity,
+        }),
+      ),
   });
 }
 
@@ -2980,13 +3094,16 @@ export function sandboxTemplateIdentity(template: SandboxTemplateDeclaration): J
 export function sandboxTemplateCommandPlanLocator(
   template: SandboxTemplateDeclaration,
 ): SandboxTemplateCommandPlanLocator {
-  return SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS.get(template) ?? Object.freeze({
-    _tag: "Opaque",
-    reason: Object.freeze({
-      code: "sandbox-template-locator-missing",
-      summary: "Sandbox template was not constructed with command-plan locator evidence",
-    }),
-  });
+  return (
+    SANDBOX_TEMPLATE_COMMAND_PLAN_LOCATORS.get(template) ??
+    Object.freeze({
+      _tag: "Opaque",
+      reason: Object.freeze({
+        code: "sandbox-template-locator-missing",
+        summary: "Sandbox template was not constructed with command-plan locator evidence",
+      }),
+    })
+  );
 }
 
 /** physical planner 的唯一 callback 入口；link 不调用本函数。 */
@@ -2995,21 +3112,25 @@ export function planSandboxTemplate(
   input: SandboxTemplatePlanningInput,
 ): Effect.Effect<SandboxProviderPlan, SandboxProviderPlanningError> {
   if (!isAbsolute(input.authorBaseDir)) {
-    return Effect.fail(providerPlanningError(
-      "sandbox.author-base-dir-invalid",
-      template.provider,
-      `Sandbox template author baseDir must be absolute, got ${JSON.stringify(input.authorBaseDir)}.`,
-      ["Complete discovery before physical planning."],
-    ));
+    return Effect.fail(
+      providerPlanningError(
+        "sandbox.author-base-dir-invalid",
+        template.provider,
+        `Sandbox template author baseDir must be absolute, got ${JSON.stringify(input.authorBaseDir)}.`,
+        ["Complete discovery before physical planning."],
+      ),
+    );
   }
   const planner = SANDBOX_TEMPLATE_PLANNERS.get(template);
   return planner === undefined
-    ? Effect.fail(providerPlanningError(
-        "sandbox.template-planner-missing",
-        template.provider,
-        `Sandbox template ${template.provider}:${template.kind} has no bound planner.`,
-        ["Construct templates through their provider factory."],
-      ))
+    ? Effect.fail(
+        providerPlanningError(
+          "sandbox.template-planner-missing",
+          template.provider,
+          `Sandbox template ${template.provider}:${template.kind} has no bound planner.`,
+          ["Construct templates through their provider factory."],
+        ),
+      )
     : planner(input);
 }
 

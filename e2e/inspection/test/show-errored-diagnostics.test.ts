@@ -12,12 +12,24 @@ test.concurrent("错误 Attempt 概览直接显示已保存的阶段与错误并
     expect(event.verdict).toBe("errored");
     const read = await niceeval.run(["show", event.locator, "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    expect(read.inspectionSuccess("attempt.get").attempt.diagnostics.items).toEqual(expect.arrayContaining([expect.objectContaining({ summary: expect.stringContaining("JOURNAL_NOT_SEALED") })]));
-    const diagnostic = only(read.inspectionSuccess("attempt.get").attempt.diagnostics.items, item => item.summary.includes("JOURNAL_NOT_SEALED"));
-    expect(diagnostic).toMatchObject({ evidenceId: expect.any(String), summaryTruncated: expect.any(Boolean), phase: "eval.run" });
+    expect(read.inspectionSuccess("attempt.get").attempt.diagnostics.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ summary: expect.stringContaining("JOURNAL_NOT_SEALED") })]),
+    );
+    const diagnostic = only(read.inspectionSuccess("attempt.get").attempt.diagnostics.items, (item) =>
+      item.summary.includes("JOURNAL_NOT_SEALED"),
+    );
+    expect(diagnostic).toMatchObject({
+      evidenceId: expect.any(String),
+      summaryTruncated: expect.any(Boolean),
+      phase: "eval.run",
+    });
     const expanded = await niceeval.run(["show", event.locator, "--json", diagnostic.evidenceId]);
     expect(expanded.exitCode, expanded.diagnostic()).toBe(0);
-    expect(expanded.inspectionSuccess("attempt.trace.detail").detail).toMatchObject({ kind: "diagnostic", evidenceId: diagnostic.evidenceId, summary: expect.stringContaining("JOURNAL_NOT_SEALED") });
+    expect(expanded.inspectionSuccess("attempt.trace.detail").detail).toMatchObject({
+      kind: "diagnostic",
+      evidenceId: diagnostic.evidenceId,
+      summary: expect.stringContaining("JOURNAL_NOT_SEALED"),
+    });
     const shown = await niceeval.run(["show", event.locator]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout, shown.diagnostic()).toContain("JOURNAL_NOT_SEALED");

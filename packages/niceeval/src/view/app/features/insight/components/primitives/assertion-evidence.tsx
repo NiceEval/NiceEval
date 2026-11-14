@@ -76,9 +76,7 @@ function valueText(value: ClosedAssertionFactValue): string {
     case "text":
       return compactString(value.text);
     case "value":
-      return typeof value.value === "string"
-        ? compactScalarText(value.value)
-        : scalarText(value.value);
+      return typeof value.value === "string" ? compactScalarText(value.value) : scalarText(value.value);
     case "unavailable":
       return value.reason;
     case "fields":
@@ -89,9 +87,7 @@ function valueText(value: ClosedAssertionFactValue): string {
 }
 
 function field(value: ClosedAssertionFactValue | undefined, name: string): ClosedAssertionFactValue | undefined {
-  return value?.kind === "fields"
-    ? value.fields.find((entry) => entry.label === name)?.value
-    : undefined;
+  return value?.kind === "fields" ? value.fields.find((entry) => entry.label === name)?.value : undefined;
 }
 
 function stringValue(value: ClosedAssertionFactValue | undefined): string | undefined {
@@ -121,24 +117,22 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
       if (comparator === "between" && upperThreshold !== undefined) {
         return `between(${formattedThreshold}, ${formatNumericUnit(upperThreshold, unit)})`;
       }
-      const name = comparator === "less-than"
-        ? "lessThan"
-        : comparator === "at-most"
-        ? "atMost"
-        : comparator === "greater-than"
-        ? "greaterThan"
-        : comparator === "at-least"
-        ? "atLeast"
-        : undefined;
+      const name =
+        comparator === "less-than"
+          ? "lessThan"
+          : comparator === "at-most"
+            ? "atMost"
+            : comparator === "greater-than"
+              ? "greaterThan"
+              : comparator === "at-least"
+                ? "atLeast"
+                : undefined;
       if (name !== undefined) return `${name}(${formattedThreshold})`;
     }
   }
   const valueMatcher = stringValue(field(field(data, "matcher"), "name"));
   if (valueMatcher !== undefined) return valueMatcher;
-  if (
-    criterionId(check) !== "occurrence" ||
-    stringValue(field(data, "occurrence")) !== "tool"
-  ) {
+  if (criterionId(check) !== "occurrence" || stringValue(field(data, "occurrence")) !== "tool") {
     return undefined;
   }
   const toolMatcher = stringValue(field(data, "matcher"));
@@ -150,17 +144,18 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
   const count = numberValue(field(quantifier, "count"));
   if (assertion === "absent" || quantifierKind === "absent") return `notCalledTool(${toolMatcher})`;
   if (quantifierKind === "at-least" && count === 1) return `calledTool(${toolMatcher})`;
-  const method = quantifierKind === "at-least"
-    ? "atLeast"
-    : quantifierKind === "less-than"
-    ? "lessThan"
-    : quantifierKind === "at-most"
-    ? "atMost"
-    : quantifierKind === "greater-than"
-    ? "greaterThan"
-    : quantifierKind === "exact"
-    ? "exactly"
-    : undefined;
+  const method =
+    quantifierKind === "at-least"
+      ? "atLeast"
+      : quantifierKind === "less-than"
+        ? "lessThan"
+        : quantifierKind === "at-most"
+          ? "atMost"
+          : quantifierKind === "greater-than"
+            ? "greaterThan"
+            : quantifierKind === "exact"
+              ? "exactly"
+              : undefined;
   return method !== undefined && count !== undefined
     ? `${toolMatcher}.${method}(${count})`
     : `calledTool(${toolMatcher})`;
@@ -174,18 +169,21 @@ function matchState(value: ClosedAssertionFactValue | undefined): MatchState | u
 function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagnosticView | null {
   if (value?.kind !== "fields") return null;
   const childrenValue = field(value, "children");
-  const children = childrenValue?.kind === "list"
-    ? childrenValue.items.flatMap((item, index): MatchChildView[] => {
-        const state = matchState(field(item, "state"));
-        if (state === undefined) return [];
-        return [{
-          index: numberValue(field(item, "index")) ?? index,
-          label: stringValue(field(item, "label")) ?? `matcher ${index + 1}`,
-          state,
-          diagnostic: diagnosticView(field(item, "diagnostic")),
-        }];
-      })
-    : [];
+  const children =
+    childrenValue?.kind === "list"
+      ? childrenValue.items.flatMap((item, index): MatchChildView[] => {
+          const state = matchState(field(item, "state"));
+          if (state === undefined) return [];
+          return [
+            {
+              index: numberValue(field(item, "index")) ?? index,
+              label: stringValue(field(item, "label")) ?? `matcher ${index + 1}`,
+              state,
+              diagnostic: diagnosticView(field(item, "diagnostic")),
+            },
+          ];
+        })
+      : [];
   return {
     code: stringValue(field(value, "code")),
     expected: field(value, "expected"),
@@ -201,8 +199,7 @@ function criterionId(check: ClosedAssertionFactValue): string | undefined {
 }
 
 function isToolCriterion(check: ClosedAssertionFactValue): boolean {
-  return criterionId(check) === "occurrence" &&
-    stringValue(field(field(check, "data"), "occurrence")) === "tool";
+  return criterionId(check) === "occurrence" && stringValue(field(field(check, "data"), "occurrence")) === "tool";
 }
 
 type NumericComparator = "less-than" | "at-most" | "greater-than" | "at-least" | "between";
@@ -244,7 +241,11 @@ interface PricingReceiptView {
 }
 
 function numericComparator(value: string | undefined): NumericComparator | undefined {
-  return value === "less-than" || value === "at-most" || value === "greater-than" || value === "at-least" || value === "between"
+  return value === "less-than" ||
+    value === "at-most" ||
+    value === "greater-than" ||
+    value === "at-least" ||
+    value === "between"
     ? value
     : undefined;
 }
@@ -266,9 +267,12 @@ function numericComparisonView(
   const input = field(source, "input");
   const materialState = numericMaterialState(stringValue(field(input, "state")));
   if (
-    comparator === undefined || threshold === undefined || materialState === undefined ||
+    comparator === undefined ||
+    threshold === undefined ||
+    materialState === undefined ||
     (subjectKind !== "explicit-value" && subjectKind !== "scope-metric" && subjectKind !== "collection-cardinality")
-  ) return undefined;
+  )
+    return undefined;
   const metric = stringValue(field(subjectValue, "metric"));
   const scope = stringValue(field(subjectValue, "scope"));
   const unit = stringValue(field(subjectValue, "unit"));
@@ -286,12 +290,8 @@ function numericComparisonView(
     material: {
       state: materialState,
       unit: stringValue(field(input, "unit")),
-      ...(numberValue(field(input, "value")) === undefined
-        ? {}
-        : { value: numberValue(field(input, "value"))! }),
-      ...(stringValue(field(input, "reason")) === undefined
-        ? {}
-        : { reason: stringValue(field(input, "reason"))! }),
+      ...(numberValue(field(input, "value")) === undefined ? {} : { value: numberValue(field(input, "value"))! }),
+      ...(stringValue(field(input, "reason")) === undefined ? {} : { reason: stringValue(field(input, "reason"))! }),
       ...(field(input, "derivation") === undefined ? {} : { derivation: field(input, "derivation")! }),
     },
   };
@@ -306,10 +306,13 @@ function pricingReceiptView(derivation: ClosedAssertionFactValue | undefined): P
   const amountUSD = numberValue(field(derivation, "amountUSD"));
   const chargesValue = field(derivation, "charges");
   if (
-    model === undefined || sourceSelector === undefined || amountUSD === undefined ||
+    model === undefined ||
+    sourceSelector === undefined ||
+    amountUSD === undefined ||
     (sourceKind !== "configured-override" && sourceKind !== "builtin") ||
     chargesValue?.kind !== "list"
-  ) return undefined;
+  )
+    return undefined;
   const charges = chargesValue.items.flatMap((item): PricingChargeView[] => {
     const bucket = stringValue(field(item, "bucket"));
     const tokens = numberValue(field(item, "tokens"));
@@ -317,8 +320,11 @@ function pricingReceiptView(derivation: ClosedAssertionFactValue | undefined): P
     const amount = numberValue(field(item, "amountUSD"));
     if (
       (bucket !== "input" && bucket !== "output" && bucket !== "cache-read" && bucket !== "cache-write") ||
-      tokens === undefined || rateUSDPerMTok === undefined || amount === undefined
-    ) return [];
+      tokens === undefined ||
+      rateUSDPerMTok === undefined ||
+      amount === undefined
+    )
+      return [];
     return [{ bucket, tokens, rateUSDPerMTok, amountUSD: amount }];
   });
   return { model, sourceKind, sourceSelector, charges, amountUSD };
@@ -337,7 +343,11 @@ function semanticObserved(observed: ClosedAssertionFactValue): ClosedAssertionFa
   return field(observed, "value") ?? observed;
 }
 
-function LongString({ value, locale, quoted }: {
+function LongString({
+  value,
+  locale,
+  quoted,
+}: {
   readonly value: string;
   readonly locale: string;
   readonly quoted: boolean;
@@ -350,15 +360,14 @@ function LongString({ value, locale, quoted }: {
   );
 }
 
-function Value({ value, locale }: {
-  readonly value: ClosedAssertionFactValue;
-  readonly locale: string;
-}): ReactElement {
+function Value({ value, locale }: { readonly value: ClosedAssertionFactValue; readonly locale: string }): ReactElement {
   switch (value.kind) {
     case "text":
-      return characters(value.text).length > INLINE_STRING_CHARACTER_LIMIT
-        ? <LongString value={value.text} locale={locale} quoted={false} />
-        : <p>{value.text}</p>;
+      return characters(value.text).length > INLINE_STRING_CHARACTER_LIMIT ? (
+        <LongString value={value.text} locale={locale} quoted={false} />
+      ) : (
+        <p>{value.text}</p>
+      );
     case "value":
       if (typeof value.value === "string" && characters(value.value).length > INLINE_STRING_CHARACTER_LIMIT) {
         return <LongString value={value.value} locale={locale} quoted />;
@@ -377,7 +386,9 @@ function Value({ value, locale }: {
           {value.fields.map((field, index) => (
             <div key={`${field.label}:${index}`}>
               <dt>{field.label}</dt>
-              <dd><Value value={field.value} locale={locale} /></dd>
+              <dd>
+                <Value value={field.value} locale={locale} />
+              </dd>
             </div>
           ))}
         </dl>
@@ -385,16 +396,26 @@ function Value({ value, locale }: {
     case "list":
       return (
         <details className="niceeval-assertion-evidence-collection">
-          <summary><code>{`Array(${value.items.length})`}</code></summary>
+          <summary>
+            <code>{`Array(${value.items.length})`}</code>
+          </summary>
           <ol className="niceeval-assertion-evidence-list">
-            {value.items.map((item, index) => <li key={index}><Value value={item} locale={locale} /></li>)}
+            {value.items.map((item, index) => (
+              <li key={index}>
+                <Value value={item} locale={locale} />
+              </li>
+            ))}
           </ol>
         </details>
       );
   }
 }
 
-function Section({ heading, value, locale }: {
+function Section({
+  heading,
+  value,
+  locale,
+}: {
   readonly heading: string;
   readonly value: ClosedAssertionFactValue;
   readonly locale: string;
@@ -407,7 +428,9 @@ function Section({ heading, value, locale }: {
   );
 }
 
-function SemanticFacts({ rows }: {
+function SemanticFacts({
+  rows,
+}: {
   readonly rows: readonly { readonly label: string; readonly value: string }[];
 }): ReactElement {
   return (
@@ -422,27 +445,46 @@ function SemanticFacts({ rows }: {
   );
 }
 
-function DiagnosticFacts({ diagnostic, locale }: {
+function DiagnosticFacts({
+  diagnostic,
+  locale,
+}: {
   readonly diagnostic: MatchDiagnosticView;
   readonly locale: string;
 }): ReactElement | null {
   const rows = [
-    ...(diagnostic.expected === undefined ? [] : [{
-      label: label(locale, "Expected", "预期"),
-      value: diagnostic.expected,
-    }]),
-    ...(diagnostic.received === undefined ? [] : [{
-      label: label(locale, "Observed", "实际"),
-      value: diagnostic.received,
-    }]),
-    ...(diagnostic.locator === undefined ? [] : [{
-      label: label(locale, "Call", "调用"),
-      value: diagnostic.locator,
-    }]),
-    ...(diagnostic.reason === undefined ? [] : [{
-      label: label(locale, "Reason", "原因"),
-      value: diagnostic.reason,
-    }]),
+    ...(diagnostic.expected === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Expected", "预期"),
+            value: diagnostic.expected,
+          },
+        ]),
+    ...(diagnostic.received === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Observed", "实际"),
+            value: diagnostic.received,
+          },
+        ]),
+    ...(diagnostic.locator === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Call", "调用"),
+            value: diagnostic.locator,
+          },
+        ]),
+    ...(diagnostic.reason === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Reason", "原因"),
+            value: diagnostic.reason,
+          },
+        ]),
   ];
   return rows.length === 0 ? null : (
     <dl className="niceeval-match-facts">
@@ -456,7 +498,11 @@ function DiagnosticFacts({ diagnostic, locale }: {
   );
 }
 
-function CommandEvidence({ input, diagnostic, locale }: {
+function CommandEvidence({
+  input,
+  diagnostic,
+  locale,
+}: {
   readonly input: ClosedAssertionFactValue;
   readonly diagnostic: MatchDiagnosticView | null;
   readonly locale: string;
@@ -466,14 +512,22 @@ function CommandEvidence({ input, diagnostic, locale }: {
   const expected = inlineValue(diagnostic?.expected);
   const rows = [
     ...(command === undefined ? [] : [{ label: label(locale, "Command", "命令"), value: command }]),
-    ...(exitCode === undefined ? [] : [{
-      label: label(locale, "Result", "结果"),
-      value: label(locale, `Exit code ${exitCode}`, `退出码 ${exitCode}`),
-    }]),
-    ...(expected === undefined ? [] : [{
-      label: label(locale, "Expected", "预期"),
-      value: expected,
-    }]),
+    ...(exitCode === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Result", "结果"),
+            value: label(locale, `Exit code ${exitCode}`, `退出码 ${exitCode}`),
+          },
+        ]),
+    ...(expected === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Expected", "预期"),
+            value: expected,
+          },
+        ]),
   ];
   return (
     <section className="niceeval-assertion-evidence-section">
@@ -483,7 +537,11 @@ function CommandEvidence({ input, diagnostic, locale }: {
   );
 }
 
-function ToolEvidence({ observed, diagnostic, locale }: {
+function ToolEvidence({
+  observed,
+  diagnostic,
+  locale,
+}: {
   readonly observed: ClosedAssertionFactValue;
   readonly diagnostic: MatchDiagnosticView | null;
   readonly locale: string;
@@ -501,10 +559,14 @@ function ToolEvidence({ observed, diagnostic, locale }: {
       {examined === undefined ? null : (
         <section className="niceeval-assertion-evidence-section">
           <h5>{label(locale, "Tool calls", "工具调用")}</h5>
-          <SemanticFacts rows={[{
-            label: label(locale, "Examined", "已检查"),
-            value: label(locale, `${examined} tool call${examined === 1 ? "" : "s"}`, `${examined} 次工具调用`),
-          }]} />
+          <SemanticFacts
+            rows={[
+              {
+                label: label(locale, "Examined", "已检查"),
+                value: label(locale, `${examined} tool call${examined === 1 ? "" : "s"}`, `${examined} 次工具调用`),
+              },
+            ]}
+          />
         </section>
       )}
     </div>
@@ -521,9 +583,8 @@ function formatNumber(value: number, locale: string): string {
 function formatUSD(value: number): string {
   const absolute = Math.abs(value);
   if (absolute !== 0 && absolute < 0.000000001) return `$${value.toExponential(4)}`;
-  const fractionDigits = absolute === 0 || absolute >= 1
-    ? 6
-    : Math.min(12, Math.max(2, Math.ceil(-Math.log10(absolute)) + 5));
+  const fractionDigits =
+    absolute === 0 || absolute >= 1 ? 6 : Math.min(12, Math.max(2, Math.ceil(-Math.log10(absolute)) + 5));
   const formatted = value.toFixed(fractionDigits).replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/, "$1");
   return `$${formatted}`;
 }
@@ -586,9 +647,17 @@ function thresholdText(view: NumericComparisonView, locale: string): string {
 function unavailableReason(reason: string | undefined, locale: string): string {
   switch (reason) {
     case "model-not-recorded":
-      return label(locale, "The model was not recorded, so its price cannot be selected.", "没有记录模型，无法选择对应价格。");
+      return label(
+        locale,
+        "The model was not recorded, so its price cannot be selected.",
+        "没有记录模型，无法选择对应价格。",
+      );
     case "price-source-not-found":
-      return label(locale, "No configured or built-in price was found for this model.", "没有找到该模型的配置价格或内置价格。");
+      return label(
+        locale,
+        "No configured or built-in price was found for this model.",
+        "没有找到该模型的配置价格或内置价格。",
+      );
     case "pricing-input-invalid":
       return label(locale, "The recorded pricing input is invalid.", "记录的计价输入无效。");
     case "usage-not-recorded":
@@ -603,50 +672,51 @@ function unavailableReason(reason: string | undefined, locale: string): string {
   }
 }
 
-function numericConclusion(
-  view: NumericComparisonView,
-  state: MatchState,
-  locale: string,
-): string {
+function numericConclusion(view: NumericComparisonView, state: MatchState, locale: string): string {
   const value = view.material.value;
   if (view.material.state === "unavailable" || value === undefined) {
     return unavailableReason(view.material.reason, locale);
   }
   if (view.material.unit !== view.unit) {
-    return label(locale, "The observation and threshold use different units; they cannot be compared.", "观测值与阈值的单位不同，无法比较。");
+    return label(
+      locale,
+      "The observation and threshold use different units; they cannot be compared.",
+      "观测值与阈值的单位不同，无法比较。",
+    );
   }
   const actual = numericValueText({ ...view, unit: view.material.unit }, value, locale);
   const expected = thresholdText(view, locale);
   if (view.material.state === "lower-bound" && state === "unavailable") {
     return view.subject.kind === "collection-cardinality"
       ? label(
-        locale,
-        `At least ${actual} tool calls were recorded, but the collection is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
-        `目前至少已有 ${actual} 次工具调用，但集合不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
-      )
+          locale,
+          `At least ${actual} tool calls were recorded, but the collection is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
+          `目前至少已有 ${actual} 次工具调用，但集合不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
+        )
       : label(
-        locale,
-        `At least ${actual} was recorded, but usage is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
-        `目前至少记录了 ${actual}，但用量记录不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
-      );
+          locale,
+          `At least ${actual} was recorded, but usage is incomplete, so NiceEval cannot determine whether it is ${comparatorSymbol(view.comparator)} ${expected}.`,
+          `目前至少记录了 ${actual}，但用量记录不完整，无法判断是否 ${comparatorSymbol(view.comparator)} ${expected}。`,
+        );
   }
-  const relation = state === "mismatched"
-    ? oppositeComparatorSymbol(view.comparator)
-    : comparatorSymbol(view.comparator);
-  const knownPrefix = view.material.state === "lower-bound"
-    ? label(locale, "Known minimum", "已知至少")
-    : view.subject.kind === "collection-cardinality"
-    ? label(locale, "Tool calls", "工具调用")
-    : view.subject.metric === "cost"
-    ? label(locale, "Estimated", "估算")
-    : view.subject.metric === "tokens"
-    ? label(locale, "Used", "已用")
-    : label(locale, "Observed", "实际");
-  const outcome = state === "matched"
-    ? label(locale, "so it passes.", "所以通过。")
-    : state === "mismatched"
-    ? label(locale, "so it does not pass.", "所以未通过。")
-    : label(locale, "so the result is unavailable.", "所以无法判断。");
+  const relation =
+    state === "mismatched" ? oppositeComparatorSymbol(view.comparator) : comparatorSymbol(view.comparator);
+  const knownPrefix =
+    view.material.state === "lower-bound"
+      ? label(locale, "Known minimum", "已知至少")
+      : view.subject.kind === "collection-cardinality"
+        ? label(locale, "Tool calls", "工具调用")
+        : view.subject.metric === "cost"
+          ? label(locale, "Estimated", "估算")
+          : view.subject.metric === "tokens"
+            ? label(locale, "Used", "已用")
+            : label(locale, "Observed", "实际");
+  const outcome =
+    state === "matched"
+      ? label(locale, "so it passes.", "所以通过。")
+      : state === "mismatched"
+        ? label(locale, "so it does not pass.", "所以未通过。")
+        : label(locale, "so the result is unavailable.", "所以无法判断。");
   const separator = locale === "zh-CN" ? "，" : ", ";
   return `${knownPrefix} ${actual} ${relation} ${expected}${separator}${outcome}`;
 }
@@ -658,19 +728,25 @@ function chargeLabel(bucket: PricingChargeView["bucket"], locale: string): strin
   return label(locale, "Cache write", "缓存写入");
 }
 
-function PricingReceipt({ receipt, locale }: {
+function PricingReceipt({
+  receipt,
+  locale,
+}: {
   readonly receipt: PricingReceiptView;
   readonly locale: string;
 }): ReactElement {
-  const source = receipt.sourceKind === "builtin"
-    ? label(locale, "Built-in price", "内置价格")
-    : label(locale, "Configured override", "配置覆盖价格");
+  const source =
+    receipt.sourceKind === "builtin"
+      ? label(locale, "Built-in price", "内置价格")
+      : label(locale, "Configured override", "配置覆盖价格");
   return (
     <details className="niceeval-numeric-pricing">
       <summary>
         <span>{label(locale, "View estimate basis", "查看估算依据")}</span>
         <code>{receipt.model}</code>
-        <small>{source} · {receipt.sourceSelector}</small>
+        <small>
+          {source} · {receipt.sourceSelector}
+        </small>
       </summary>
       <dl>
         {receipt.charges.map((charge) => (
@@ -687,25 +763,28 @@ function PricingReceipt({ receipt, locale }: {
         ))}
         <div className="niceeval-numeric-pricing-total">
           <dt>{label(locale, "Estimated total", "估算合计")}</dt>
-          <dd><strong>{formatUSD(receipt.amountUSD)}</strong></dd>
+          <dd>
+            <strong>{formatUSD(receipt.amountUSD)}</strong>
+          </dd>
         </div>
       </dl>
     </details>
   );
 }
 
-function NumericEvidence({ view, state, locale }: {
+function NumericEvidence({
+  view,
+  state,
+  locale,
+}: {
   readonly view: NumericComparisonView;
   readonly state: MatchState;
   readonly locale: string;
 }): ReactElement {
   const value = view.material.value;
-  const formulaRelation = state === "mismatched"
-    ? oppositeComparatorSymbol(view.comparator)
-    : comparatorSymbol(view.comparator);
-  const receipt = view.subject.metric === "cost"
-    ? pricingReceiptView(view.material.derivation)
-    : undefined;
+  const formulaRelation =
+    state === "mismatched" ? oppositeComparatorSymbol(view.comparator) : comparatorSymbol(view.comparator);
+  const receipt = view.subject.metric === "cost" ? pricingReceiptView(view.material.derivation) : undefined;
   return (
     <section className="niceeval-numeric-evidence" data-state={state}>
       <span className="niceeval-numeric-evidence-label">{numericSubjectLabel(view, locale)}</span>
@@ -722,34 +801,31 @@ function NumericEvidence({ view, state, locale }: {
         </p>
       ) : (
         <p className="niceeval-numeric-evidence-formula">
-          {view.material.state === "lower-bound" ? (
-            <small>{label(locale, "Known minimum", "已知至少")}</small>
-          ) : null}
+          {view.material.state === "lower-bound" ? <small>{label(locale, "Known minimum", "已知至少")}</small> : null}
           <strong>{numericValueText({ ...view, unit: view.material.unit }, value, locale)}</strong>
           <span className="niceeval-numeric-evidence-operator">{formulaRelation}</span>
           <strong>{thresholdText(view, locale)}</strong>
         </p>
       )}
-      <p className="niceeval-numeric-evidence-conclusion">
-        {numericConclusion(view, state, locale)}
-      </p>
+      <p className="niceeval-numeric-evidence-conclusion">{numericConclusion(view, state, locale)}</p>
       {receipt === undefined ? null : <PricingReceipt receipt={receipt} locale={locale} />}
     </section>
   );
 }
 
-function GenericEvidence({ content, input, diagnostic, locale }: {
+function GenericEvidence({
+  content,
+  input,
+  diagnostic,
+  locale,
+}: {
   readonly content: AssertionEvidenceContent;
   readonly input: ClosedAssertionFactValue;
   readonly diagnostic: MatchDiagnosticView | null;
   readonly locale: string;
 }): ReactElement {
-  const expected = diagnostic?.expected === undefined
-    ? semanticExpected(content.expected)
-    : diagnostic.expected;
-  const received = diagnostic?.received === undefined
-    ? semanticObserved(content.observed)
-    : diagnostic.received;
+  const expected = diagnostic?.expected === undefined ? semanticExpected(content.expected) : diagnostic.expected;
+  const received = diagnostic?.received === undefined ? semanticObserved(content.observed) : diagnostic.received;
   return (
     <div className="niceeval-match-evidence-grid">
       <Section heading={label(locale, "Input", "输入")} value={input} locale={locale} />
@@ -763,7 +839,10 @@ function GenericEvidence({ content, input, diagnostic, locale }: {
   );
 }
 
-function CoverageNotice({ source, locale }: {
+function CoverageNotice({
+  source,
+  locale,
+}: {
   readonly source: ClosedAssertionFactValue;
   readonly locale: string;
 }): ReactElement | null {
@@ -772,15 +851,16 @@ function CoverageNotice({ source, locale }: {
   if (state === undefined || state === "complete") return null;
   const reason = stringValue(field(coverage, "reason"));
   const limitations = field(source, "limitations");
-  const omitted = limitations?.kind === "list"
-    ? limitations.items.map((item) => numberValue(field(item, "omittedBytes"))).find((value) => value !== undefined)
-    : undefined;
+  const omitted =
+    limitations?.kind === "list"
+      ? limitations.items.map((item) => numberValue(field(item, "omittedBytes"))).find((value) => value !== undefined)
+      : undefined;
   const detail = [
     reason,
-    omitted === undefined
-      ? undefined
-      : label(locale, `${omitted} bytes omitted`, `省略 ${omitted} 字节`),
-  ].filter((part): part is string => part !== undefined).join(" · ");
+    omitted === undefined ? undefined : label(locale, `${omitted} bytes omitted`, `省略 ${omitted} 字节`),
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
   return (
     <p className="niceeval-match-coverage">
       {label(locale, `Input evidence ${state}`, `输入证据${state === "partial" ? "不完整" : "不可用"}`)}
@@ -799,13 +879,15 @@ function stateLabel(state: MatchState, locale: string): string {
 }
 
 function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boolean {
-  return diagnostic?.code === "tool-count-match" ||
+  return (
+    diagnostic?.code === "tool-count-match" ||
     diagnostic?.code === "tool-count-mismatch" ||
     diagnostic?.code === "tool-count-exceeded" ||
     diagnostic?.code === "tool-count-unavailable" ||
     diagnostic?.code === "tool-absence-match" ||
     diagnostic?.code === "tool-absence-mismatch" ||
-    diagnostic?.code === "tool-absence-unavailable";
+    diagnostic?.code === "tool-absence-unavailable"
+  );
 }
 
 function candidateSubject(diagnostic: MatchDiagnosticView | null): string | undefined {
@@ -821,11 +903,12 @@ function candidateLabel(
   diagnostic: MatchDiagnosticView | null,
   locale: string,
 ): string {
-  const kind = nodeLabel === "command-candidate"
-    ? label(locale, "Command", "命令")
-    : nodeLabel === "tool-candidate"
-      ? label(locale, "Tool call", "工具调用")
-      : label(locale, "Candidate", "候选");
+  const kind =
+    nodeLabel === "command-candidate"
+      ? label(locale, "Command", "命令")
+      : nodeLabel === "tool-candidate"
+        ? label(locale, "Tool call", "工具调用")
+        : label(locale, "Candidate", "候选");
   const subject = candidateSubject(diagnostic);
   const unavailable = label(locale, "invocation details not recorded", "调用详情未记录");
   return `${kind} ${index + 1} · ${subject ?? unavailable}`;
@@ -841,7 +924,10 @@ function toolFieldLabel(value: string, locale: string): string {
   return value;
 }
 
-function summaryFacts(diagnostic: MatchDiagnosticView | null, locale: string): readonly {
+function summaryFacts(
+  diagnostic: MatchDiagnosticView | null,
+  locale: string,
+): readonly {
   readonly label: string;
   readonly value: string;
 }[] {
@@ -849,18 +935,30 @@ function summaryFacts(diagnostic: MatchDiagnosticView | null, locale: string): r
   const expected = inlineValue(diagnostic.expected);
   const received = inlineValue(diagnostic.received);
   return [
-    ...(expected === undefined ? [] : [{
-      label: label(locale, "Expected", "预期"),
-      value: expected,
-    }]),
-    ...(received === undefined ? [] : [{
-      label: label(locale, "Observed", "实际"),
-      value: received,
-    }]),
-    ...(diagnostic.reason === undefined ? [] : [{
-      label: label(locale, "Reason", "原因"),
-      value: diagnostic.reason,
-    }]),
+    ...(expected === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Expected", "预期"),
+            value: expected,
+          },
+        ]),
+    ...(received === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Observed", "实际"),
+            value: received,
+          },
+        ]),
+    ...(diagnostic.reason === undefined
+      ? []
+      : [
+          {
+            label: label(locale, "Reason", "原因"),
+            value: diagnostic.reason,
+          },
+        ]),
   ];
 }
 
@@ -883,9 +981,12 @@ function MatchNode({
   readonly toolField?: boolean;
   readonly children?: ReactElement;
 }): ReactElement {
-  const displayLabel = toolCandidateIndex === undefined
-    ? toolField ? toolFieldLabel(nodeLabel, locale) : nodeLabel
-    : candidateLabel(toolCandidateIndex, nodeLabel, diagnostic, locale);
+  const displayLabel =
+    toolCandidateIndex === undefined
+      ? toolField
+        ? toolFieldLabel(nodeLabel, locale)
+        : nodeLabel
+      : candidateLabel(toolCandidateIndex, nodeLabel, diagnostic, locale);
   const visibleState = stateLabel(state, locale);
   const accessibleLabel = `${displayLabel}: ${visibleState}`;
   const facts = summaryFacts(diagnostic, locale);
@@ -910,32 +1011,36 @@ function MatchNode({
   const nested = diagnostic?.children ?? [];
   const childrenAreToolCandidates = isToolCollectionDiagnostic(diagnostic);
   const hasDiagnosticBody = nested.length > 0 || diagnostic?.locator !== undefined;
-  const body = hasDiagnosticBody || children !== undefined
-    ? (
-        <div className="niceeval-match-detail">
-          {nested.length > 0 ? (
-            <div className="niceeval-match-children">
-              {nested.map((child, index) => (
-                <MatchNode
-                  key={`${child.label}:${index}`}
-                  label={child.label}
-                  state={child.state}
-                  diagnostic={child.diagnostic}
-                  locale={locale}
-                  {...(childrenAreToolCandidates ? { toolCandidateIndex: child.index } : {})}
-                  {...(toolCandidateIndex === undefined ? {} : { toolField: true })}
-                />
-              ))}
-            </div>
-          ) : null}
-          {root || diagnostic === null || diagnostic.locator === undefined
-            ? null
-            : <DiagnosticFacts diagnostic={diagnostic} locale={locale} />}
-          {children}
-        </div>
-      )
-    : null;
-  if (body === null) return <div className="niceeval-match-node" aria-label={accessibleLabel}>{summary}</div>;
+  const body =
+    hasDiagnosticBody || children !== undefined ? (
+      <div className="niceeval-match-detail">
+        {nested.length > 0 ? (
+          <div className="niceeval-match-children">
+            {nested.map((child, index) => (
+              <MatchNode
+                key={`${child.label}:${index}`}
+                label={child.label}
+                state={child.state}
+                diagnostic={child.diagnostic}
+                locale={locale}
+                {...(childrenAreToolCandidates ? { toolCandidateIndex: child.index } : {})}
+                {...(toolCandidateIndex === undefined ? {} : { toolField: true })}
+              />
+            ))}
+          </div>
+        ) : null}
+        {root || diagnostic === null || diagnostic.locator === undefined ? null : (
+          <DiagnosticFacts diagnostic={diagnostic} locale={locale} />
+        )}
+        {children}
+      </div>
+    ) : null;
+  if (body === null)
+    return (
+      <div className="niceeval-match-node" aria-label={accessibleLabel}>
+        {summary}
+      </div>
+    );
   return (
     <details className={`niceeval-match-node${root ? " niceeval-match-node--root" : ""}`}>
       <summary aria-label={accessibleLabel}>{summary}</summary>
@@ -955,26 +1060,29 @@ function web(
   const input = field(content.source, "input") ?? content.source;
   const code = diagnostic?.code;
   const numeric = numericComparisonView(content.check, content.source);
-  const primary = numeric !== undefined
-    ? <NumericEvidence view={numeric} state={state} locale={locale} />
-    : code === "command-succeeded" || code === "command-failed"
-    ? <CommandEvidence input={input} diagnostic={diagnostic} locale={locale} />
-    : isToolCriterion(content.check)
-      ? <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />
-      : <GenericEvidence content={content} input={input} diagnostic={diagnostic} locale={locale} />;
+  const primary =
+    numeric !== undefined ? (
+      <NumericEvidence view={numeric} state={state} locale={locale} />
+    ) : code === "command-succeeded" || code === "command-failed" ? (
+      <CommandEvidence input={input} diagnostic={diagnostic} locale={locale} />
+    ) : isToolCriterion(content.check) ? (
+      <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />
+    ) : (
+      <GenericEvidence content={content} input={input} diagnostic={diagnostic} locale={locale} />
+    );
   const rootDiagnostic = numeric === undefined ? diagnostic : null;
   return (
     <div className="niceeval-assertion-evidence">
       <MatchNode label={name} state={state} diagnostic={rootDiagnostic} locale={locale} root>
         <div className="niceeval-match-body">
-          {content.matcherDebugger === undefined
-            ? primary
-            : (
-                <>
-                  {primary}
-                  <MatcherFilterDebugger content={content.matcherDebugger} locale={locale} />
-                </>
-              )}
+          {content.matcherDebugger === undefined ? (
+            primary
+          ) : (
+            <>
+              {primary}
+              <MatcherFilterDebugger content={content.matcherDebugger} locale={locale} />
+            </>
+          )}
           <CoverageNotice source={content.source} locale={locale} />
           <details className="niceeval-match-raw">
             <summary>{label(locale, "Raw assertion data", "原始断言数据")}</summary>

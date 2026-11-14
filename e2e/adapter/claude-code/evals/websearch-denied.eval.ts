@@ -6,8 +6,7 @@ import { toolMatch } from "niceeval/expect";
 const QUERY = "niceeval e2e mcp test";
 
 export default defineEval({
-  description:
-    "相同请求在 WebSearch 可用时调用、被 permissions.deny 移除时零调用",
+  description: "相同请求在 WebSearch 可用时调用、被 permissions.deny 移除时零调用",
   // 正反两边都只需要一次短回答。provider/CLI 如果无响应，两分钟后报错；
   // live owner 不重试 timeout，避免后续绿色覆盖基础设施故障。
   timeoutMs: 120_000,

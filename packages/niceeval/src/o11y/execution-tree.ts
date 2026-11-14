@@ -218,7 +218,10 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
   const nodes: ExecutionNode[] = [];
   const openActionById = new Map<string, ExecutionActionNode>();
   const openSubagentById = new Map<string, ExecutionSubagentNode>();
-  const correlatableByOperationId = new Map<string, (ExecutionActionNode | ExecutionSubagentNode | ExecutionSkillNode)[]>();
+  const correlatableByOperationId = new Map<
+    string,
+    (ExecutionActionNode | ExecutionSubagentNode | ExecutionSkillNode)[]
+  >();
   const operationIdCounts = new Map<string, number>();
   let seq = 0;
   const nextId = (prefix: string): string => `${prefix}-${seq++}`;
@@ -252,7 +255,12 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         break;
 
       case "skill.loaded": {
-        const node: ExecutionSkillNode = { id: nextId("skill"), kind: "skill.loaded", skill: ev.skill, operationId: ev.operationId };
+        const node: ExecutionSkillNode = {
+          id: nextId("skill"),
+          kind: "skill.loaded",
+          skill: ev.skill,
+          operationId: ev.operationId,
+        };
         if (ev.operationId) addCorrelatable(ev.operationId, node);
         nodes.push(node);
         break;

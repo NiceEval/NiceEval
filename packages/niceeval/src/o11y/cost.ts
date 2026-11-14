@@ -85,7 +85,7 @@ function pricingEstimateCharge(
   rateUSDPerMTok: number,
 ): PricingEstimateCharge | undefined {
   if (tokens === undefined) return undefined;
-  const amountUSD = tokens * rateUSDPerMTok / 1e6;
+  const amountUSD = (tokens * rateUSDPerMTok) / 1e6;
   return Object.freeze({ bucket, tokens, rateUSDPerMTok, amountUSD });
 }
 
@@ -112,10 +112,13 @@ export function pricingEstimate(
     ["cache-read", usage.cacheReadTokens, p.cacheRead ?? p.in],
     ["cache-write", usage.cacheCreationTokens, p.cacheWrite ?? p.in],
   ] as const;
-  if (buckets.some(([, tokens, rate]) =>
-    (tokens !== undefined && (!Number.isFinite(tokens) || tokens < 0)) ||
-    !Number.isFinite(rate) || rate < 0
-  )) return Object.freeze({ state: "unavailable", reason: "pricing-input-invalid" });
+  if (
+    buckets.some(
+      ([, tokens, rate]) =>
+        (tokens !== undefined && (!Number.isFinite(tokens) || tokens < 0)) || !Number.isFinite(rate) || rate < 0,
+    )
+  )
+    return Object.freeze({ state: "unavailable", reason: "pricing-input-invalid" });
   const charges = buckets
     .map(([bucket, tokens, rate]) => pricingEstimateCharge(bucket, tokens, rate))
     .filter((charge): charge is PricingEstimateCharge => charge !== undefined);
@@ -131,9 +134,11 @@ export function pricingEstimate(
     receipt: Object.freeze({
       kind: "pricing-estimate" as const,
       model,
-      priceSource: Object.freeze(override === undefined
-        ? { kind: "builtin" as const, selector: selected.selector }
-        : { kind: "configured-override" as const, selector: selected.selector }),
+      priceSource: Object.freeze(
+        override === undefined
+          ? { kind: "builtin" as const, selector: selected.selector }
+          : { kind: "configured-override" as const, selector: selected.selector },
+      ),
       charges: Object.freeze(charges),
       amountUSD,
     }),

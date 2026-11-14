@@ -505,12 +505,8 @@ export type ExperimentHostAfterResult =
 
 /** Provides supported catalog, planning, execution, adoption and recovery operations; effects must be run by the integrating host. */
 export interface ExperimentHostHighLevelSDK {
-  readonly catalog: (
-    input: ExperimentHostSelectionInput,
-  ) => Effect.Effect<ExperimentHostCatalog, ExperimentHostError>;
-  readonly check: (
-    input: ExperimentHostCheckRequest,
-  ) => Effect.Effect<ExperimentHostCheckResult, ExperimentHostError>;
+  readonly catalog: (input: ExperimentHostSelectionInput) => Effect.Effect<ExperimentHostCatalog, ExperimentHostError>;
+  readonly check: (input: ExperimentHostCheckRequest) => Effect.Effect<ExperimentHostCheckResult, ExperimentHostError>;
   readonly invocation: {
     readonly plan: (
       input: ExperimentHostInvocationPlanRequest,
@@ -528,9 +524,7 @@ export interface ExperimentHostHighLevelSDK {
     ) => Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError>;
   };
   readonly rename: {
-    readonly plan: (
-      input: ExperimentHostRenameRequest,
-    ) => Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError>;
+    readonly plan: (input: ExperimentHostRenameRequest) => Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError>;
     readonly apply: (
       input: ExperimentHostRenameRequest,
     ) => Effect.Effect<ExperimentHostRenameResult, ExperimentHostError>;
@@ -539,15 +533,17 @@ export interface ExperimentHostHighLevelSDK {
     readonly inspect: (
       input: ExperimentHostAfterInspectRequest,
     ) => Effect.Effect<ExperimentHostAfterInspection, ExperimentHostError>;
-    readonly run: (
-      input: ExperimentHostAfterRequest,
-    ) => Effect.Effect<ExperimentHostAfterResult, ExperimentHostError>;
+    readonly run: (input: ExperimentHostAfterRequest) => Effect.Effect<ExperimentHostAfterResult, ExperimentHostError>;
   };
   readonly accept: (
     input: ExperimentHostAcceptRequest,
   ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
   readonly acceptRun: {
-    readonly plan: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError>;
-    readonly apply: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
+    readonly plan: (
+      input: ExperimentHostAcceptRunRequest,
+    ) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError>;
+    readonly apply: (
+      input: ExperimentHostAcceptRunRequest,
+    ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
   };
 }

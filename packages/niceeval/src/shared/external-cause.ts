@@ -35,7 +35,16 @@ export type ExternalCause =
   | ({ readonly _tag: "Object" } & ExternalObjectFacts)
   | {
       readonly _tag: "ThrownValue";
-      readonly valueType: "null" | "undefined" | "string" | "number" | "boolean" | "bigint" | "symbol" | "function" | "object";
+      readonly valueType:
+        | "null"
+        | "undefined"
+        | "string"
+        | "number"
+        | "boolean"
+        | "bigint"
+        | "symbol"
+        | "function"
+        | "object";
       readonly message: string;
       readonly cause: { readonly _tag: "Absent" };
     };
@@ -98,9 +107,7 @@ function numberFact(value: unknown): ExternalCauseFact<number> {
 }
 
 function stringFact(value: unknown): ExternalCauseFact<string> {
-  return typeof value === "string" && value !== ""
-    ? Object.freeze({ _tag: "Present" as const, value })
-    : ABSENT;
+  return typeof value === "string" && value !== "" ? Object.freeze({ _tag: "Present" as const, value }) : ABSENT;
 }
 
 function failureClassFact(value: object): ExternalCauseFact<FailureClass> {
@@ -155,10 +162,12 @@ function isFailureClassSnapshot(value: unknown): value is FailureClass {
   const retryable = field(value, "retryable");
   const reason = field(value, "reason");
   const scope = field(value, "scope");
-  return typeof retryable === "boolean" &&
+  return (
+    typeof retryable === "boolean" &&
     (!retryable || typeof reason === "string") &&
     (reason === undefined || typeof reason === "string") &&
-    (scope === undefined || scope === "attempt" || scope === "eval" || scope === "experiment");
+    (scope === undefined || scope === "attempt" || scope === "eval" || scope === "experiment")
+  );
 }
 
 function snapshotFailureClass(value: unknown): ExternalCauseFact<FailureClass> | undefined {
@@ -174,19 +183,13 @@ function snapshotFailureClass(value: unknown): ExternalCauseFact<FailureClass> |
   });
 }
 
-function snapshotLink(
-  value: unknown,
-  depth: number,
-  ancestors: ReadonlySet<object>,
-): ExternalCauseLink | undefined {
+function snapshotLink(value: unknown, depth: number, ancestors: ReadonlySet<object>): ExternalCauseLink | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const tag = field(value, "_tag");
   if (tag === "Absent") return ABSENT;
   if (tag === "Truncated") {
     const reason = field(value, "reason");
-    return reason === "cycle" || reason === "depth"
-      ? Object.freeze({ _tag: "Truncated" as const, reason })
-      : undefined;
+    return reason === "cycle" || reason === "depth" ? Object.freeze({ _tag: "Truncated" as const, reason }) : undefined;
   }
   if (tag !== "Cause" || depth + 1 >= MAX_CAUSE_DEPTH) return undefined;
   const nested = field(value, "value");
@@ -194,17 +197,11 @@ function snapshotLink(
   const nextAncestors = new Set(ancestors);
   nextAncestors.add(value);
   const normalized = snapshotCause(nested, depth + 1, nextAncestors);
-  return normalized === undefined
-    ? undefined
-    : Object.freeze({ _tag: "Cause" as const, value: normalized });
+  return normalized === undefined ? undefined : Object.freeze({ _tag: "Cause" as const, value: normalized });
 }
 
 /** 对已归一化快照做完整结构解码、复制和冻结；undefined 表示走普通 throwable 归一。 */
-function snapshotCause(
-  value: object,
-  depth: number,
-  ancestors: ReadonlySet<object>,
-): ExternalCause | undefined {
+function snapshotCause(value: object, depth: number, ancestors: ReadonlySet<object>): ExternalCause | undefined {
   const tag = field(value, "_tag");
   if (tag === "ThrownValue") {
     const valueType = field(value, "valueType");
@@ -224,9 +221,16 @@ function snapshotCause(
   const failureClass = snapshotFailureClass(field(value, "failureClass"));
   const cause = snapshotLink(field(value, "cause"), depth, ancestors);
   if (
-    typeof name !== "string" || name === "" || typeof message !== "string" ||
-    code === undefined || status === undefined || stack === undefined || failureClass === undefined || cause === undefined
-  ) return undefined;
+    typeof name !== "string" ||
+    name === "" ||
+    typeof message !== "string" ||
+    code === undefined ||
+    status === undefined ||
+    stack === undefined ||
+    failureClass === undefined ||
+    cause === undefined
+  )
+    return undefined;
   return Object.freeze({ _tag: tag, name, message, code, status, stack, failureClass, cause });
 }
 
@@ -240,9 +244,7 @@ function isError(value: object): boolean {
 
 function normalizeObject(value: object, depth: number, ancestors: ReadonlySet<object>): ExternalCause {
   const nameValue = field(value, "name");
-  const name = typeof nameValue === "string" && nameValue !== ""
-    ? nameValue
-    : constructorName(value) ?? "Object";
+  const name = typeof nameValue === "string" && nameValue !== "" ? nameValue : (constructorName(value) ?? "Object");
   const messageValue = field(value, "message");
   const message = typeof messageValue === "string" && messageValue !== "" ? messageValue : safeString(value);
   const rawCause = field(value, "cause");
@@ -259,7 +261,7 @@ function normalizeObject(value: object, depth: number, ancestors: ReadonlySet<ob
     }
   }
   return Object.freeze({
-    _tag: isError(value) ? "Error" as const : "Object" as const,
+    _tag: isError(value) ? ("Error" as const) : ("Object" as const),
     name,
     message,
     code: scalarFact(field(value, "code") ?? field(value, "errorCode")),
@@ -277,7 +279,7 @@ function normalizeCause(value: unknown, depth: number, ancestors: ReadonlySet<ob
   }
   return Object.freeze({
     _tag: "ThrownValue" as const,
-    valueType: value === null ? "null" as const : typeof value,
+    valueType: value === null ? ("null" as const) : typeof value,
     message: safeString(value),
     cause: ABSENT,
   });

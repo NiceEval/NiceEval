@@ -16,15 +16,9 @@ import {
   type SourceNativeToolName,
 } from "../../record/family/source-receipt/model.ts";
 import type { ConversationItem } from "./model.ts";
-import type {
-  EventProjectionRuntime,
-  ProjectedConversationTurn,
-} from "./projection-runtime.ts";
+import type { EventProjectionRuntime, ProjectedConversationTurn } from "./projection-runtime.ts";
 import { retainSafeText, type RetainedText } from "./projection-text.ts";
-import {
-  RunnerCollectionLimitations,
-  requiredPositive,
-} from "./support.ts";
+import { RunnerCollectionLimitations, requiredPositive } from "./support.ts";
 
 function retainConversationText(
   value: string,
@@ -48,9 +42,7 @@ function jsonConversationSummary(
   } catch {
     return undefined;
   }
-  return summary === undefined
-    ? undefined
-    : retainConversationText(summary, runtime, limitations);
+  return summary === undefined ? undefined : retainConversationText(summary, runtime, limitations);
 }
 
 function safeIdentifier(value: string): SafeIdentifier | undefined {
@@ -98,11 +90,7 @@ function appendConversationTextLimitation(
   limitations: RunnerCollectionLimitations,
 ): void {
   if (item !== undefined && text.omittedBytes !== undefined) {
-    limitations.addConversationTextTruncated(
-      item.itemId,
-      text.retainedBytes,
-      text.omittedBytes,
-    );
+    limitations.addConversationTextTruncated(item.itemId, text.retainedBytes, text.omittedBytes);
   }
 }
 
@@ -126,11 +114,13 @@ export function normalizeConversationTurn(
     if (!hasConversationCapacity({ itemCount, hasTurn: true, limitations })) return undefined;
     const itemId = runtime.mintEntity("item");
     if (itemId === undefined) return undefined;
-    const item = create(Object.freeze({
-      itemId,
-      turnId: turn.turnId,
-      sequence: requiredPositive(itemCount + 1),
-    }));
+    const item = create(
+      Object.freeze({
+        itemId,
+        turnId: turn.turnId,
+        sequence: requiredPositive(itemCount + 1),
+      }),
+    );
     turn.items.push(item);
     return item;
   };
@@ -144,13 +134,15 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => Object.freeze({
-          ...ids,
-          kind: "message" as const,
-          role: event.role,
-          text: text.text,
-          refs: Object.freeze([]),
-        }));
+        const item = append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "message" as const,
+            role: event.role,
+            text: text.text,
+            refs: Object.freeze([]),
+          }),
+        );
         appendConversationTextLimitation(item, text, limitations);
         break;
       }
@@ -163,14 +155,16 @@ export function normalizeConversationTurn(
             limitations.addUnsupported("conversation-item");
             break;
           }
-          const item = append((ids) => Object.freeze({
-            ...ids,
-            kind: "tool-call" as const,
-            callId,
-            tool,
-            inputSummary: summary.text,
-            refs: Object.freeze([]),
-          }));
+          const item = append((ids) =>
+            Object.freeze({
+              ...ids,
+              kind: "tool-call" as const,
+              callId,
+              tool,
+              inputSummary: summary.text,
+              refs: Object.freeze([]),
+            }),
+          );
           if (item !== undefined) openTools.set(event.operationId, callId);
           appendConversationTextLimitation(item, summary, limitations);
           break;
@@ -180,35 +174,38 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => Object.freeze({
-          ...ids,
-          kind: "subagent" as const,
-          state: "started" as const,
-          label,
-          summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
-          refs: Object.freeze([]),
-        }));
+        const item = append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "subagent" as const,
+            state: "started" as const,
+            label,
+            summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
+            refs: Object.freeze([]),
+          }),
+        );
         if (item !== undefined) openSubagents.set(event.operationId, label);
         break;
       }
       case "operation.finished": {
         if (event.kind === "tool") {
           const callId = openTools.get(event.operationId);
-          const summary = event.output === undefined
-            ? undefined
-            : jsonConversationSummary(event.output, runtime, limitations);
+          const summary =
+            event.output === undefined ? undefined : jsonConversationSummary(event.output, runtime, limitations);
           if (callId === undefined || summary === undefined) {
             limitations.addUnsupported("conversation-item");
             break;
           }
-          const item = append((ids) => Object.freeze({
-            ...ids,
-            kind: "tool-result" as const,
-            callId,
-            outcome: event.status,
-            outputSummary: summary.text,
-            refs: Object.freeze([]),
-          }));
+          const item = append((ids) =>
+            Object.freeze({
+              ...ids,
+              kind: "tool-result" as const,
+              callId,
+              outcome: event.status,
+              outputSummary: summary.text,
+              refs: Object.freeze([]),
+            }),
+          );
           if (item !== undefined) openTools.delete(event.operationId);
           appendConversationTextLimitation(item, summary, limitations);
           break;
@@ -218,17 +215,19 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => Object.freeze({
-          ...ids,
-          kind: "subagent" as const,
-          state: event.status,
-          label,
-          summary: makeBoundedSafeText(
-            event.status === "completed" ? "Subagent completed." : "Subagent failed.",
-            MAX_CONVERSATION_TEXT_BYTES,
-          )!,
-          refs: Object.freeze([]),
-        }));
+        const item = append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "subagent" as const,
+            state: event.status,
+            label,
+            summary: makeBoundedSafeText(
+              event.status === "completed" ? "Subagent completed." : "Subagent failed.",
+              MAX_CONVERSATION_TEXT_BYTES,
+            )!,
+            refs: Object.freeze([]),
+          }),
+        );
         if (item !== undefined) openSubagents.delete(event.operationId);
         break;
       }
@@ -238,34 +237,39 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        append((ids) => Object.freeze({
-          ...ids,
-          kind: "skill-load" as const,
-          skill,
-          outcome: "loaded" as const,
-          refs: Object.freeze([]),
-        }));
+        append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "skill-load" as const,
+            skill,
+            outcome: "loaded" as const,
+            refs: Object.freeze([]),
+          }),
+        );
         break;
       }
       case "input.requested": {
         const source = event.request.prompt ?? event.request.display;
-        const summary = source === undefined
-          ? (event.request.input === undefined
-            ? undefined
-            : jsonConversationSummary(event.request.input, runtime, limitations))
-          : retainConversationText(source, runtime, limitations);
+        const summary =
+          source === undefined
+            ? event.request.input === undefined
+              ? undefined
+              : jsonConversationSummary(event.request.input, runtime, limitations)
+            : retainConversationText(source, runtime, limitations);
         if (summary === undefined) {
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => Object.freeze({
-          ...ids,
-          kind: "input-request" as const,
-          state: "requested" as const,
-          promptSummary: summary.text,
-          responseSummary: null,
-          refs: Object.freeze([]),
-        }));
+        const item = append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "input-request" as const,
+            state: "requested" as const,
+            promptSummary: summary.text,
+            responseSummary: null,
+            refs: Object.freeze([]),
+          }),
+        );
         appendConversationTextLimitation(item, summary, limitations);
         limitations.addCaptureFailed("adapter", "conversation-item");
         break;
@@ -280,13 +284,15 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => Object.freeze({
-          ...ids,
-          kind: "context-injection" as const,
-          source,
-          summary: summary.text,
-          refs: Object.freeze([]),
-        }));
+        const item = append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "context-injection" as const,
+            source,
+            summary: summary.text,
+            refs: Object.freeze([]),
+          }),
+        );
         appendConversationTextLimitation(item, summary, limitations);
         break;
       }
@@ -296,13 +302,15 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => Object.freeze({
-          ...ids,
-          kind: "conversation-error" as const,
-          code: makeSafeIdentifier("stream-error")!,
-          summary: summary.text,
-          refs: Object.freeze([]),
-        }));
+        const item = append((ids) =>
+          Object.freeze({
+            ...ids,
+            kind: "conversation-error" as const,
+            code: makeSafeIdentifier("stream-error")!,
+            summary: summary.text,
+            refs: Object.freeze([]),
+          }),
+        );
         appendConversationTextLimitation(item, summary, limitations);
         break;
       }

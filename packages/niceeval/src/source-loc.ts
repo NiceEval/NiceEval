@@ -90,7 +90,12 @@ export function captureLoc(options: { root?: string; registry?: SourceRegistry }
     const lineNo = Number(m[2]);
     const column = Number(m[3]);
     if (inside(root, absolute)) {
-      const project = { kind: "project" as const, file: relative(root, absolute).split(sep).join("/"), line: lineNo, column };
+      const project = {
+        kind: "project" as const,
+        file: relative(root, absolute).split(sep).join("/"),
+        line: lineNo,
+        column,
+      };
       registry?.capture(project.file);
       if (!declaration) declaration = project;
       else frames.push(project);

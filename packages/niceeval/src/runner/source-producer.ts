@@ -2,21 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { Result, Schema } from "effect";
 
-import {
-  CanonicalProjectRelativePathSchema,
-  SourceItemIdSchema,
-} from "../record/codec/identifiers.ts";
+import { CanonicalProjectRelativePathSchema, SourceItemIdSchema } from "../record/codec/identifiers.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
-import type {
-  CanonicalProjectRelativePath,
-  Sha256Digest,
-  SlotId,
-  SourceItemId,
-} from "../record/model/identifiers.ts";
-import {
-  AssertionSourceSiteSchema,
-  type AssertionSourceSite,
-} from "../record/family/assertions/definition.ts";
+import type { CanonicalProjectRelativePath, Sha256Digest, SlotId, SourceItemId } from "../record/model/identifiers.ts";
+import { AssertionSourceSiteSchema, type AssertionSourceSite } from "../record/family/assertions/definition.ts";
 import { sourcesRecordAttachment } from "../record/family/sources/definition.ts";
 import {
   TurnContextsAttachmentSchema,
@@ -42,10 +31,7 @@ import {
   type SourcesAttachmentBuild,
   type SourcesAttachmentPlan,
 } from "../sources/attachment.ts";
-import {
-  canonicalizeSourceText,
-  isStrictUnicodeText,
-} from "../sources/codec.ts";
+import { canonicalizeSourceText, isStrictUnicodeText } from "../sources/codec.ts";
 import type { EvalResult } from "./types.ts";
 
 interface CapturedSend {
@@ -93,9 +79,7 @@ export function retainRunnerAttemptSourceCapture(
   return result;
 }
 
-function sourceCaptureForResult(
-  result: object,
-): RunnerAttemptSourceCaptureSnapshot | undefined {
+function sourceCaptureForResult(result: object): RunnerAttemptSourceCaptureSnapshot | undefined {
   return sourceCaptureByResult.get(result);
 }
 
@@ -132,9 +116,7 @@ function sourceCaptureFrom(
  * registration/modifier facts; SessionManager owns user-event locations and
  * turn terminals. No author-facing Context value is wrapped or replaced.
  */
-export function createRunnerAttemptSourceCapture(
-  registry: SourceRegistry,
-): RunnerAttemptSourceCapture {
+export function createRunnerAttemptSourceCapture(registry: SourceRegistry): RunnerAttemptSourceCapture {
   let sourceOrder = 0;
   const sends: CapturedSend[] = [];
   let captureFailed = false;
@@ -148,10 +130,7 @@ export function createRunnerAttemptSourceCapture(
         throw new Error("Runner source capture cannot observe two Assertions runtimes");
       }
       if (assertionsRuntime === runtime) return;
-      attachAssertionsRuntimeSourceCapture(
-        runtime,
-        () => sourceCaptureFrom(registry, nextSourceOrder),
-      );
+      attachAssertionsRuntimeSourceCapture(runtime, () => sourceCaptureFrom(registry, nextSourceOrder));
       assertionsRuntime = runtime;
     },
     onTurnStart(input: {
@@ -171,14 +150,16 @@ export function createRunnerAttemptSourceCapture(
         captureFailed = true;
         return;
       }
-      sends.push(Object.freeze({
-        segmentId,
-        turnId: input.turnId,
-        sessionIndex: input.sessionIndex,
-        turnIndex: input.turnIndex,
-        sourceOrder: input.sourceOrder ?? null,
-        location: input.loc === undefined ? undefined : cloneLocation(input.loc),
-      }));
+      sends.push(
+        Object.freeze({
+          segmentId,
+          turnId: input.turnId,
+          sessionIndex: input.sessionIndex,
+          turnIndex: input.turnIndex,
+          sourceOrder: input.sourceOrder ?? null,
+          location: input.loc === undefined ? undefined : cloneLocation(input.loc),
+        }),
+      );
     },
     markInterrupted() {
       if (assertionsRuntime !== undefined) {
@@ -186,9 +167,8 @@ export function createRunnerAttemptSourceCapture(
       }
     },
     snapshot() {
-      const assertions = assertionsRuntime === undefined
-        ? undefined
-        : assertionsRuntimeSourceCaptureSnapshot(assertionsRuntime);
+      const assertions =
+        assertionsRuntime === undefined ? undefined : assertionsRuntimeSourceCaptureSnapshot(assertionsRuntime);
       return Object.freeze({
         entries: assertions?.entries ?? Object.freeze([]),
         sends: Object.freeze(sends.map((send) => Object.freeze({ ...send }))),
@@ -211,13 +191,9 @@ export interface RunnerSourceWritePlan {
   readonly sourceSitesBySlot: ReadonlyMap<SlotId, RunnerAssertionSourceSitesBuild>;
 }
 
-export type RunnerAssertionSourceSitesBuild = (
-  build: RecordAttachmentSessionBuilder,
-) => readonly AssertionSourceSite[];
+export type RunnerAssertionSourceSitesBuild = (build: RecordAttachmentSessionBuilder) => readonly AssertionSourceSite[];
 
-export type RunnerTurnContextsAttachmentBuild = (
-  build: RecordAttachmentSessionBuilder,
-) => TurnContextsAttachment;
+export type RunnerTurnContextsAttachmentBuild = (build: RecordAttachmentSessionBuilder) => TurnContextsAttachment;
 
 export interface RunnerSourceProducerInvalid {
   readonly code: "runner-source-producer-invalid";
@@ -229,17 +205,12 @@ export interface RunnerSourceProducerInvalid {
     | "turn-contexts-invalid";
 }
 
-function invalid(
-  reason: RunnerSourceProducerInvalid["reason"],
-): RunnerSourceProducerInvalid {
+function invalid(reason: RunnerSourceProducerInvalid["reason"]): RunnerSourceProducerInvalid {
   return Object.freeze({ code: "runner-source-producer-invalid" as const, reason });
 }
 
 function canonicalPath(path: string): CanonicalProjectRelativePath | undefined {
-  const decoded = Schema.decodeUnknownResult(
-    CanonicalProjectRelativePathSchema,
-    RecordExactParseOptions,
-  )(path);
+  const decoded = Schema.decodeUnknownResult(CanonicalProjectRelativePathSchema, RecordExactParseOptions)(path);
   return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
@@ -260,10 +231,7 @@ function sourceItemId(path: CanonicalProjectRelativePath, text: string): SourceI
   // for the same immutable source, independent of plan membership or ordering.
   const digest = createHash("sha256").update(path, "utf8").update("\0", "utf8").update(text, "utf8").digest("hex");
   const candidate = `src_${digest}`;
-  const decoded = Schema.decodeUnknownResult(
-    SourceItemIdSchema,
-    RecordExactParseOptions,
-  )(candidate);
+  const decoded = Schema.decodeUnknownResult(SourceItemIdSchema, RecordExactParseOptions)(candidate);
   if (Result.isFailure(decoded)) {
     throw new Error("Runner generated an invalid Sources item identity");
   }
@@ -348,10 +316,7 @@ function sourceSite(
   });
 }
 
-function sourceSiteOrder(
-  left: PendingAssertionSourceSite,
-  right: PendingAssertionSourceSite,
-): number {
+function sourceSiteOrder(left: PendingAssertionSourceSite, right: PendingAssertionSourceSite): number {
   const byEntry = left.entryId.localeCompare(right.entryId);
   return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
 }
@@ -377,12 +342,16 @@ function sourceSitesForOrigin(
         return Result.fail(invalid("source-sites-invalid"));
       }
       orders.add(occurrence.site.sourceOrder);
-      const site = sourceSite({
-        entryId,
-        sourceOrder: occurrence.site.sourceOrder,
-        role: occurrence.role,
-        location: occurrence.site.location,
-      }, localFiles, lookup);
+      const site = sourceSite(
+        {
+          entryId,
+          sourceOrder: occurrence.site.sourceOrder,
+          role: occurrence.role,
+          location: occurrence.site.location,
+        },
+        localFiles,
+        lookup,
+      );
       if (site !== undefined) sourceSites.push(site);
     }
   }
@@ -433,17 +402,21 @@ export function createRunnerSourceWritePlan(
     const sites = sourceSitesForOrigin(origin, local, lookup);
     if (Result.isFailure(sites)) return Result.fail(sites.failure);
     sourceSitesBySlot.set(origin.slotId, (build) => {
-      const candidate = Object.freeze(sites.success.map((site) => Object.freeze({
-        entryId: site.entryId,
-        sourceOrder: site.sourceOrder,
-        role: site.role,
-        source: build.reference.to(sourcesRecordAttachment, {
-          sourceItemId: site.sourceItemId,
-          sha256: site.sha256,
-        }),
-        start: site.start,
-        end: site.end,
-      })));
+      const candidate = Object.freeze(
+        sites.success.map((site) =>
+          Object.freeze({
+            entryId: site.entryId,
+            sourceOrder: site.sourceOrder,
+            role: site.role,
+            source: build.reference.to(sourcesRecordAttachment, {
+              sourceItemId: site.sourceItemId,
+              sha256: site.sha256,
+            }),
+            start: site.start,
+            end: site.end,
+          }),
+        ),
+      );
       const decoded = Schema.decodeResult(
         Schema.toType(Schema.Array(AssertionSourceSiteSchema)),
         RecordExactParseOptions,
@@ -475,10 +448,7 @@ function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelat
 type PendingTurnContextSource =
   | {
       readonly state: "unmapped";
-      readonly reason:
-        | "location-not-captured"
-        | "source-snapshot-not-recorded"
-        | "position-unrepresentable";
+      readonly reason: "location-not-captured" | "source-snapshot-not-recorded" | "position-unrepresentable";
     }
   | {
       readonly state: "mapped";
@@ -538,17 +508,19 @@ export function createRunnerTurnContextsAttachment(input: {
   const local = localSourceTexts(input.result);
   // The family is ordered by session and physical turn, while sourceOrder
   // retains author invocation order when sends interleave across sessions.
-  const segments = capture.sends.toSorted((left, right) =>
-    left.sessionIndex - right.sessionIndex || left.turnIndex - right.turnIndex,
-  ).map((captured, index) => Object.freeze({
-    segmentId: captured.segmentId,
-    sequence: index + 1,
-    turnId: captured.turnId,
-    sessionIndex: captured.sessionIndex,
-    turnIndex: captured.turnIndex,
-    sourceOrder: captured.sourceOrder,
-    source: turnContextSource({ capture: captured, local, sources }),
-  }));
+  const segments = capture.sends
+    .toSorted((left, right) => left.sessionIndex - right.sessionIndex || left.turnIndex - right.turnIndex)
+    .map((captured, index) =>
+      Object.freeze({
+        segmentId: captured.segmentId,
+        sequence: index + 1,
+        turnId: captured.turnId,
+        sessionIndex: captured.sessionIndex,
+        turnIndex: captured.turnIndex,
+        sourceOrder: captured.sourceOrder,
+        source: turnContextSource({ capture: captured, local, sources }),
+      }),
+    );
   const collection = capture.captureFailed
     ? (() => {
         const first: SourceReceiptLimitation = Object.freeze({
@@ -563,12 +535,17 @@ export function createRunnerTurnContextsAttachment(input: {
   return Result.succeed((build) => {
     const candidate = Object.freeze({
       collection,
-      segments: Object.freeze(segments.map((segment) => Object.freeze({
-        ...segment,
-        source: segment.source.state === "unmapped"
-          ? segment.source
-          : build.reference.to(sourcesRecordAttachment, segment.source),
-      }))),
+      segments: Object.freeze(
+        segments.map((segment) =>
+          Object.freeze({
+            ...segment,
+            source:
+              segment.source.state === "unmapped"
+                ? segment.source
+                : build.reference.to(sourcesRecordAttachment, segment.source),
+          }),
+        ),
+      ),
     });
     const decoded = Schema.decodeResult(
       Schema.toType(TurnContextsAttachmentSchema),

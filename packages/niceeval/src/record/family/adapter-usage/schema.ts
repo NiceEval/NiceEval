@@ -9,9 +9,16 @@ import {
   multiplyCanonicalDecimalPerMillion,
 } from "./pricing.ts";
 
-const Identity = Schema.String.pipe(Schema.check(Schema.makeFilter(
-  (value) => value.trim().length > 0 && new TextEncoder().encode(value).byteLength <= 256 && !/[\u0000-\u001f\u007f]/u.test(value),
-)));
+const Identity = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        value.trim().length > 0 &&
+        new TextEncoder().encode(value).byteLength <= 256 &&
+        !/[\u0000-\u001f\u007f]/u.test(value),
+    ),
+  ),
+);
 const Tokens = Schema.NullOr(NonNegativeSafeIntegerSchema);
 const AdapterUsageRouteSchema = Schema.Struct({
   transportProvider: Schema.NullOr(Identity),
@@ -22,9 +29,7 @@ const AdapterUsageReportedCostSchema = Schema.Struct({
   currency: CurrencyCodeSchema,
   source: Schema.Struct({ kind: Schema.Literal("reported"), id: Identity }),
 });
-const Digest = Schema.String.pipe(Schema.check(Schema.makeFilter(
-  (value) => /^sha256:[0-9a-f]{64}$/u.test(value),
-)));
+const Digest = Schema.String.pipe(Schema.check(Schema.makeFilter((value) => /^sha256:[0-9a-f]{64}$/u.test(value))));
 const NullableRateSchema = Schema.NullOr(CanonicalDecimalSchema);
 const AdapterCallPriceRatesSchema = Schema.Struct({
   input: NullableRateSchema,
@@ -69,9 +74,10 @@ export const AdapterCallPriceReceiptSchema = Schema.Struct({
   missing: Schema.Array(AdapterCallPriceMissingSchema),
 });
 export type AdapterCallPriceReceipt = Schema.Schema.Type<typeof AdapterCallPriceReceiptSchema>;
-export const AdapterUsageModelSlotSchema = Schema.String.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$(?![\s\S])/u));
+export const AdapterUsageModelSlotSchema = Schema.String.check(
+  Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$(?![\s\S])/u),
+);
 export const AdapterUsageCallSchema = Schema.Struct({
-
   callId: Identity,
   retryOf: Schema.NullOr(Identity),
   provider: Schema.NullOr(Identity),
@@ -112,10 +118,14 @@ function pricingDigestInput(pricing: AdapterCallPriceReceipt["pricing"]): object
 
 function callTokens(call: AdapterUsageCall, bucket: (typeof AdapterCallPriceBuckets)[number]): number | null {
   switch (bucket) {
-    case "input": return call.inputTokens;
-    case "output": return call.outputTokens;
-    case "cache-read": return call.cacheReadTokens;
-    case "cache-write": return call.cacheWriteTokens;
+    case "input":
+      return call.inputTokens;
+    case "output":
+      return call.outputTokens;
+    case "cache-read":
+      return call.cacheReadTokens;
+    case "cache-write":
+      return call.cacheWriteTokens;
   }
 }
 
@@ -124,23 +134,34 @@ function bucketRate(
   bucket: (typeof AdapterCallPriceBuckets)[number],
 ): string | null {
   switch (bucket) {
-    case "input": return rates.input;
-    case "output": return rates.output;
-    case "cache-read": return rates.cacheRead;
-    case "cache-write": return rates.cacheWrite;
+    case "input":
+      return rates.input;
+    case "output":
+      return rates.output;
+    case "cache-read":
+      return rates.cacheRead;
+    case "cache-write":
+      return rates.cacheWrite;
   }
 }
 
 function receiptIssue(call: AdapterUsageCall, receipt: AdapterCallPriceReceipt): RecordAttachmentIssue | undefined {
-  if (receipt.callId !== call.callId || call.cost !== null || receipt.pricing.requestModel !== call.model ||
+  if (
+    receipt.callId !== call.callId ||
+    call.cost !== null ||
+    receipt.pricing.requestModel !== call.model ||
     receipt.source.id !== receipt.pricing.source.id ||
-    adapterCallPricingProfileDigest(pricingDigestInput(receipt.pricing)) !== receipt.pricing.source.profileDigest) {
+    adapterCallPricingProfileDigest(pricingDigestInput(receipt.pricing)) !== receipt.pricing.source.profileDigest
+  ) {
     return recordAttachmentIssue("record-attachment-schema-invalid", ["priceReceipts", "pricing"]);
   }
   const charges = new Map(receipt.charges.map((charge) => [charge.bucket, charge]));
   const missing = new Map(receipt.missing.map((entry) => [entry.bucket, entry]));
-  if (charges.size !== receipt.charges.length || missing.size !== receipt.missing.length ||
-    AdapterCallPriceBuckets.some((bucket) => Number(charges.has(bucket)) + Number(missing.has(bucket)) !== 1)) {
+  if (
+    charges.size !== receipt.charges.length ||
+    missing.size !== receipt.missing.length ||
+    AdapterCallPriceBuckets.some((bucket) => Number(charges.has(bucket)) + Number(missing.has(bucket)) !== 1)
+  ) {
     return recordAttachmentIssue("record-attachment-schema-invalid", ["priceReceipts", "charges"]);
   }
   for (const bucket of AdapterCallPriceBuckets) {
@@ -149,14 +170,20 @@ function receiptIssue(call: AdapterUsageCall, receipt: AdapterCallPriceReceipt):
     const charge = charges.get(bucket);
     const absent = missing.get(bucket);
     if (charge !== undefined) {
-      if (tokens === null || charge.tokens !== tokens || charge.ratePerMTok !== expectedRate ||
+      if (
+        tokens === null ||
+        charge.tokens !== tokens ||
+        charge.ratePerMTok !== expectedRate ||
         (tokens > 0 && expectedRate === null) ||
-        charge.amount !== (expectedRate === null ? "0" : multiplyCanonicalDecimalPerMillion(expectedRate, tokens))) {
+        charge.amount !== (expectedRate === null ? "0" : multiplyCanonicalDecimalPerMillion(expectedRate, tokens))
+      ) {
         return recordAttachmentIssue("record-attachment-schema-invalid", ["priceReceipts", "charges"]);
       }
-    } else if (tokens === null
-      ? absent?.reason !== "tokens-unknown"
-      : tokens === 0 || expectedRate !== null || absent?.reason !== "rate-unknown") {
+    } else if (
+      tokens === null
+        ? absent?.reason !== "tokens-unknown"
+        : tokens === 0 || expectedRate !== null || absent?.reason !== "rate-unknown"
+    ) {
       return recordAttachmentIssue("record-attachment-schema-invalid", ["priceReceipts", "missing"]);
     }
   }
@@ -174,8 +201,11 @@ export function validateAdapterUsageCalls(calls: readonly AdapterUsageCall[]): r
     const buckets = [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens];
     const known = buckets.filter((value): value is number => value !== null);
     const sum = known.reduce((total, value) => total + value, 0);
-    if (!Number.isSafeInteger(sum) || (call.inputTotalTokens !== null &&
-      (sum > call.inputTotalTokens || (known.length === 3 && sum !== call.inputTotalTokens)))) {
+    if (
+      !Number.isSafeInteger(sum) ||
+      (call.inputTotalTokens !== null &&
+        (sum > call.inputTotalTokens || (known.length === 3 && sum !== call.inputTotalTokens)))
+    ) {
       return [recordAttachmentIssue("record-attachment-schema-invalid", ["calls", "inputTotalTokens"])];
     }
     if (seen.has(call.callId) || (call.retryOf !== null && !seen.has(call.retryOf))) {
@@ -188,7 +218,9 @@ export function validateAdapterUsageCalls(calls: readonly AdapterUsageCall[]): r
     : [];
 }
 
-export function validateAdapterUsageAttachment(value: ReadableAdapterUsageAttachment): readonly RecordAttachmentIssue[] {
+export function validateAdapterUsageAttachment(
+  value: ReadableAdapterUsageAttachment,
+): readonly RecordAttachmentIssue[] {
   const callIssues = validateAdapterUsageCalls(value.calls);
   if (callIssues.length > 0 || value.priceReceipts === null) return callIssues;
   const calls = new Map(value.calls.map((call) => [call.callId, call]));

@@ -10,8 +10,7 @@ const MARKER_A = "niceeval-e2e-marker-alpha-926";
 const MARKER_B = "niceeval-e2e-marker-beta-926";
 
 export default defineEval({
-  description:
-    "coding-task 工具轨:file_write + file_edit + shell 事件,调用与结果通过 completed 状态配对成立",
+  description: "coding-task 工具轨:file_write + file_edit + shell 事件,调用与结果通过 completed 状态配对成立",
   async test(t) {
     const turn = await t.send(
       "在当前目录下按顺序完成以下三步；这是工具协议兼容性检查，必须使用我指定的 Claude Code 原生工具:" +

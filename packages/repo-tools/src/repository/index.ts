@@ -30,36 +30,46 @@ type RepositoryServices = FileSystem.FileSystem | import("effect/process").Child
 
 function decodeInput(input: unknown) {
   return Schema.decodeUnknownEffect(RepositoryCommandInputSchema, { errors: "all" })(input).pipe(
-    Effect.mapError((error) => new RepositoryInputError({
-      message: String(error),
-    })),
+    Effect.mapError(
+      (error) =>
+        new RepositoryInputError({
+          message: String(error),
+        }),
+    ),
   );
 }
 
 function loadManifest() {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const source = yield* fs.readFileString(MANIFEST_PATH).pipe(
-      Effect.mapError((error) => new RepositoryManifestError({
-        operation: "read",
-        path: MANIFEST_PATH,
-        message: String(error),
-      })),
+      Effect.mapError(
+        (error) =>
+          new RepositoryManifestError({
+            operation: "read",
+            path: MANIFEST_PATH,
+            message: String(error),
+          }),
+      ),
     );
     const input = yield* Effect.try({
       try: () => JSON.parse(source) as unknown,
-      catch: (error) => new RepositoryManifestError({
-        operation: "parse",
-        path: MANIFEST_PATH,
-        message: error instanceof Error ? error.message : String(error),
-      }),
+      catch: (error) =>
+        new RepositoryManifestError({
+          operation: "parse",
+          path: MANIFEST_PATH,
+          message: error instanceof Error ? error.message : String(error),
+        }),
     });
     return yield* Schema.decodeUnknownEffect(RootManifestSchema, { errors: "all" })(input).pipe(
-      Effect.mapError((error) => new RepositoryManifestError({
-        operation: "decode",
-        path: MANIFEST_PATH,
-        message: String(error),
-      })),
+      Effect.mapError(
+        (error) =>
+          new RepositoryManifestError({
+            operation: "decode",
+            path: MANIFEST_PATH,
+            message: String(error),
+          }),
+      ),
     );
   });
 }
@@ -85,13 +95,13 @@ function inspectRepository(
   operation: "check" | "setup",
   dryRun: boolean,
 ): Effect.Effect<RepositoryReceipt, RepositoryError, RepositoryServices> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const manifest = yield* loadManifest();
     const gitMarker = join(ROOT, ".git");
-    const hasGitMarker = yield* fs.exists(gitMarker).pipe(
-      Effect.mapError((error) => new RepositoryFileError({ path: gitMarker, message: String(error) })),
-    );
+    const hasGitMarker = yield* fs
+      .exists(gitMarker)
+      .pipe(Effect.mapError((error) => new RepositoryFileError({ path: gitMarker, message: String(error) })));
     if (!hasGitMarker) {
       return {
         domain: "repository" as const,
@@ -106,23 +116,22 @@ function inspectRepository(
         problems: [],
       } satisfies RepositoryReceipt;
     }
-    const checkout = yield* runProcess(
-      "git",
-      ["rev-parse", "--show-toplevel"],
-      ROOT,
-      [0, 128],
-    );
-    const checkoutRoot = checkout.exitCode === 0
-      ? yield* fs.realPath(checkout.stdout.trim()).pipe(
-        Effect.mapError((error) => new RepositoryFileError({
-          path: checkout.stdout.trim(),
-          message: String(error),
-        })),
-      )
-      : undefined;
-    const packageRoot = yield* fs.realPath(ROOT).pipe(
-      Effect.mapError((error) => new RepositoryFileError({ path: ROOT, message: String(error) })),
-    );
+    const checkout = yield* runProcess("git", ["rev-parse", "--show-toplevel"], ROOT, [0, 128]);
+    const checkoutRoot =
+      checkout.exitCode === 0
+        ? yield* fs.realPath(checkout.stdout.trim()).pipe(
+            Effect.mapError(
+              (error) =>
+                new RepositoryFileError({
+                  path: checkout.stdout.trim(),
+                  message: String(error),
+                }),
+            ),
+          )
+        : undefined;
+    const packageRoot = yield* fs
+      .realPath(ROOT)
+      .pipe(Effect.mapError((error) => new RepositoryFileError({ path: ROOT, message: String(error) })));
     if (checkoutRoot === undefined || checkoutRoot !== packageRoot) {
       return {
         domain: "repository" as const,
@@ -145,18 +154,20 @@ function inspectRepository(
     const repositoryRoot = dirname(commonGitDirectory);
     const expectedHooks = join(repositoryRoot, ".husky", "_");
     const hookResult = yield* runProcess("git", ["config", "--local", "--get", "core.hooksPath"], ROOT, [0, 1]);
-    const currentHooks = hookResult.exitCode === 0 && hookResult.stdout.trim().length > 0
-      ? hookResult.stdout.trim()
-      : undefined;
-    const hooksExist = yield* fs.exists(expectedHooks).pipe(
-      Effect.mapError((error) => new RepositoryFileError({ path: expectedHooks, message: String(error) })),
-    );
+    const currentHooks =
+      hookResult.exitCode === 0 && hookResult.stdout.trim().length > 0 ? hookResult.stdout.trim() : undefined;
+    const hooksExist = yield* fs
+      .exists(expectedHooks)
+      .pipe(Effect.mapError((error) => new RepositoryFileError({ path: expectedHooks, message: String(error) })));
 
-    const [node, pnpm, gitVersion] = yield* Effect.all([
-      runProcess("node", ["--version"], ROOT),
-      runProcess("pnpm", ["--version"], ROOT),
-      runProcess("git", ["--version"], ROOT),
-    ], { concurrency: 3 });
+    const [node, pnpm, gitVersion] = yield* Effect.all(
+      [
+        runProcess("node", ["--version"], ROOT),
+        runProcess("pnpm", ["--version"], ROOT),
+        runProcess("git", ["--version"], ROOT),
+      ],
+      { concurrency: 3 },
+    );
     const requiredPnpm = manifest.packageManager.startsWith("pnpm@")
       ? manifest.packageManager.slice("pnpm@".length)
       : manifest.packageManager;
@@ -185,7 +196,9 @@ function inspectRepository(
     const problems = [
       ...(hooksExist ? [] : [`repository-owned hooks directory is missing: ${expectedHooks}`]),
       ...(hooksConfigured ? [] : [`core.hooksPath is ${currentHooks ?? "unset"}; expected ${expectedHooks}`]),
-      ...host.filter((entry) => !entry.ok).map((entry) => `${entry.tool} ${entry.actual || "unavailable"} does not satisfy ${entry.expected}`),
+      ...host
+        .filter((entry) => !entry.ok)
+        .map((entry) => `${entry.tool} ${entry.actual || "unavailable"} does not satisfy ${entry.expected}`),
     ];
     return {
       domain: "repository",
@@ -202,23 +215,23 @@ function inspectRepository(
         configured: hooksConfigured,
       },
       host,
-      actions: operation === "setup"
-        ? [
-          ...(hooksExist ? [] : ["install repository-owned Git hook shims"]),
-          ...((hooksConfigured && hooksExist) ? [] : [`set repository-local core.hooksPath to ${expectedHooks}`]),
-        ]
-        : [],
+      actions:
+        operation === "setup"
+          ? [
+              ...(hooksExist ? [] : ["install repository-owned Git hook shims"]),
+              ...(hooksConfigured && hooksExist ? [] : [`set repository-local core.hooksPath to ${expectedHooks}`]),
+            ]
+          : [],
       problems,
     };
   });
 }
 
 function setupRepository(): Effect.Effect<RepositoryReceipt, RepositoryError, RepositoryServices> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const before = yield* inspectRepository("setup", false);
     if (before.status === "skipped") return before;
-    const hostProblems = before.host.some((entry) => !entry.ok)
-      || before.hooks.status === "skipped";
+    const hostProblems = before.host.some((entry) => !entry.ok) || before.hooks.status === "skipped";
     if (hostProblems) return yield* new RepositoryPrerequisiteError({ receipt: before });
     if (before.hooks.status === "checked" && !before.hooks.directoryExists) {
       yield* runProcess("pnpm", ["exec", "husky"], ROOT);
@@ -236,20 +249,23 @@ export function runRepositoryCommand(
   input: unknown,
 ): Effect.Effect<RepositoryReceipt, RepositoryError, RepositoryServices> {
   return decodeInput(input).pipe(
-    Effect.flatMap((decoded) => decoded.operation === "check"
-      ? inspectRepository("check", false)
-      : decoded.dryRun
-      ? inspectRepository("setup", true)
-      : setupRepository()),
+    Effect.flatMap((decoded) =>
+      decoded.operation === "check"
+        ? inspectRepository("check", false)
+        : decoded.dryRun
+          ? inspectRepository("setup", true)
+          : setupRepository(),
+    ),
   );
 }
 
 export const checkRepository = () => runRepositoryCommand({ operation: "check" });
 
-export const setupRepositoryEnvironment = (dryRun: boolean) => runRepositoryCommand({
-  operation: "setup",
-  dryRun,
-});
+export const setupRepositoryEnvironment = (dryRun: boolean) =>
+  runRepositoryCommand({
+    operation: "setup",
+    dryRun,
+  });
 
 export const repositoryCommandContribution = Object.freeze({
   name: "repository",

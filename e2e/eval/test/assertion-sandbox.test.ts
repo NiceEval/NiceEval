@@ -17,22 +17,14 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluations = run.expEvalEvents();
-      const evaluation = only(
-        evaluations,
-        (event) => event.evalId === "assertion-sandbox",
-        run.diagnostic(),
-      );
+      const evaluation = only(evaluations, (event) => event.evalId === "assertion-sandbox", run.diagnostic());
       expect(evaluation).toMatchObject({
         event: "eval",
         evalId: "assertion-sandbox",
         verdict: "passed",
       });
       expect(`${run.stdout}\n${run.stderr}`).not.toContain("workspace-diff-unavailable");
-      const bulkEvaluation = only(
-        evaluations,
-        (event) => event.evalId === "workspace-diff-cap",
-        run.diagnostic(),
-      );
+      const bulkEvaluation = only(evaluations, (event) => event.evalId === "workspace-diff-cap", run.diagnostic());
       expect(bulkEvaluation).toMatchObject({ verdict: "passed" });
       const diff = await inspectAttempt(niceeval, projectRoot, bulkEvaluation.locator, "attempt.diff");
       expect(diff.receipt.exitCode, diff.receipt.diagnostic()).toBe(0);

@@ -2,8 +2,7 @@
 import { defineEval } from "niceeval";
 import { atLeast, atMost, includes, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
-  description:
-    "openai@6.49 ChatCompletion raw response 保留 function/custom tool 与互斥 usage",
+  description: "openai@6.49 ChatCompletion raw response 保留 function/custom tool 与互斥 usage",
   async test(t) {
     const turn = await t.send("openai chat completion fixture");
     await turn.succeeded().orStop();

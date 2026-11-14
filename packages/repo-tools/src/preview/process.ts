@@ -23,20 +23,26 @@ export function runPreviewProcess(
     cwd,
     ...(environment === undefined ? {} : { env: environment }),
   });
-  return Effect.scoped(Effect.gen(function*() {
-    const child = yield* configured;
-    const [stdout, stderr, exitCode] = yield* Effect.all([
-      Stream.runCollect(child.stdout),
-      Stream.runCollect(child.stderr),
-      child.exitCode,
-    ], { concurrency: "unbounded" });
-    return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
-  })).pipe(Effect.mapError((error) => new PreviewCommandError({
-    command,
-    args,
-    cwd,
-    message: String(error),
-  })));
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* configured;
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [Stream.runCollect(child.stdout), Stream.runCollect(child.stderr), child.exitCode],
+        { concurrency: "unbounded" },
+      );
+      return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
+    }),
+  ).pipe(
+    Effect.mapError(
+      (error) =>
+        new PreviewCommandError({
+          command,
+          args,
+          cwd,
+          message: String(error),
+        }),
+    ),
+  );
 }
 
 export function requirePreviewSuccess(
@@ -46,14 +52,18 @@ export function requirePreviewSuccess(
   environment?: Readonly<Record<string, string | undefined>>,
 ) {
   return runPreviewProcess(command, args, cwd, environment).pipe(
-    Effect.flatMap((result) => result.exitCode === 0
-      ? Effect.succeed(result)
-      : Effect.fail(new PreviewCommandError({
-        command,
-        args,
-        cwd,
-        exitCode: result.exitCode,
-        message: [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n") || "command failed",
-      }))),
+    Effect.flatMap((result) =>
+      result.exitCode === 0
+        ? Effect.succeed(result)
+        : Effect.fail(
+            new PreviewCommandError({
+              command,
+              args,
+              cwd,
+              exitCode: result.exitCode,
+              message: [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n") || "command failed",
+            }),
+          ),
+    ),
   );
 }

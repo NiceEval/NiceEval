@@ -22,35 +22,48 @@ export function attemptVerdict(
 
 function containsFailedDecision(value: InspectionJson): boolean {
   const entries = assertionWireEntries(value);
-  return entries?.some((entry) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
-    const decision = (entry as Readonly<Record<string, InspectionJson>>).decision;
-    if (typeof decision !== "object" || decision === null || Array.isArray(decision)) return false;
-    const record = decision as Readonly<Record<string, InspectionJson>>;
-    return record.result === "mismatched" && record.gate === "failed";
-  }) ?? false;
+  return (
+    entries?.some((entry) => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+      const decision = (entry as Readonly<Record<string, InspectionJson>>).decision;
+      if (typeof decision !== "object" || decision === null || Array.isArray(decision)) return false;
+      const record = decision as Readonly<Record<string, InspectionJson>>;
+      return record.result === "mismatched" && record.gate === "failed";
+    }) ?? false
+  );
 }
 
 function containsRequiredAssertionError(value: InspectionJson): boolean {
   const entries = assertionWireEntries(value);
-  return entries?.some((entry) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
-    const record = entry as Readonly<Record<string, InspectionJson>>;
-    const decision = record.decision;
-    const policy = record.policy;
-    const requirement = typeof policy === "object" && policy !== null && !Array.isArray(policy)
-      ? (policy as Readonly<Record<string, InspectionJson>>).requirement
-      : undefined;
-    if (
-      typeof decision !== "object" || decision === null || Array.isArray(decision) ||
-      typeof requirement !== "object" || requirement === null || Array.isArray(requirement)
-    ) return false;
-    const decisionRecord = decision as Readonly<Record<string, InspectionJson>>;
-    const requirementRecord = requirement as Readonly<Record<string, InspectionJson>>;
-    return (decisionRecord.result === "unavailable" || decisionRecord.result === "errored") &&
-      decisionRecord.gate === "unavailable" &&
-      requirementRecord.state === "available" && requirementRecord.value === "required";
-  }) ?? false;
+  return (
+    entries?.some((entry) => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+      const record = entry as Readonly<Record<string, InspectionJson>>;
+      const decision = record.decision;
+      const policy = record.policy;
+      const requirement =
+        typeof policy === "object" && policy !== null && !Array.isArray(policy)
+          ? (policy as Readonly<Record<string, InspectionJson>>).requirement
+          : undefined;
+      if (
+        typeof decision !== "object" ||
+        decision === null ||
+        Array.isArray(decision) ||
+        typeof requirement !== "object" ||
+        requirement === null ||
+        Array.isArray(requirement)
+      )
+        return false;
+      const decisionRecord = decision as Readonly<Record<string, InspectionJson>>;
+      const requirementRecord = requirement as Readonly<Record<string, InspectionJson>>;
+      return (
+        (decisionRecord.result === "unavailable" || decisionRecord.result === "errored") &&
+        decisionRecord.gate === "unavailable" &&
+        requirementRecord.state === "available" &&
+        requirementRecord.value === "required"
+      );
+    }) ?? false
+  );
 }
 
 function assertionWireEntries(value: InspectionJson): readonly InspectionJson[] | undefined {

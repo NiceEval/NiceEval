@@ -25,7 +25,11 @@ export const ViewInspectionHttpRequestSchema = Schema.Struct({
 export type ViewInspectionHttpRequest = Schema.Schema.Type<typeof ViewInspectionHttpRequestSchema>;
 
 export interface ViewHttpErrorDocument {
-  readonly code: "view-request-invalid" | "view-generation-not-found" | "view-generation-stale" | "view-inspection-failed";
+  readonly code:
+    | "view-request-invalid"
+    | "view-generation-not-found"
+    | "view-generation-stale"
+    | "view-inspection-failed";
   readonly reason: string;
   readonly correction: "fix-request" | "refresh-generation" | "retry";
 }

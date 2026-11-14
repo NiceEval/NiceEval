@@ -31,31 +31,46 @@ export const RUNNER_PHASE = Object.freeze({
   collection: "collection" as const,
 });
 export const ATTEMPT_ACTIVITY_PHASES = [
-  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentInstall, "agent.ensure",
-  RUNNER_PHASE.evalRun, RUNNER_PHASE.agentSend, RUNNER_PHASE.sandboxCommand,
-  RUNNER_PHASE.assertionEvaluate, RUNNER_PHASE.verdictFold, RUNNER_PHASE.attemptTeardown,
+  RUNNER_PHASE.attemptSetup,
+  RUNNER_PHASE.sandboxPrepare,
+  RUNNER_PHASE.agentInstall,
+  "agent.ensure",
+  RUNNER_PHASE.evalRun,
+  RUNNER_PHASE.agentSend,
+  RUNNER_PHASE.sandboxCommand,
+  RUNNER_PHASE.assertionEvaluate,
+  RUNNER_PHASE.verdictFold,
+  RUNNER_PHASE.attemptTeardown,
 ] as const;
 export const ATTEMPT_NON_AGENT_ACTIVITY_PHASES = [
-  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentInstall, "agent.ensure",
-  RUNNER_PHASE.evalRun, RUNNER_PHASE.sandboxCommand, RUNNER_PHASE.assertionEvaluate,
-  RUNNER_PHASE.verdictFold, RUNNER_PHASE.attemptTeardown,
+  RUNNER_PHASE.attemptSetup,
+  RUNNER_PHASE.sandboxPrepare,
+  RUNNER_PHASE.agentInstall,
+  "agent.ensure",
+  RUNNER_PHASE.evalRun,
+  RUNNER_PHASE.sandboxCommand,
+  RUNNER_PHASE.assertionEvaluate,
+  RUNNER_PHASE.verdictFold,
+  RUNNER_PHASE.attemptTeardown,
 ] as const;
 export const RUN_ACTIVITY_PHASES = [
-  RUNNER_PHASE.runSetup, RUNNER_PHASE.runDiscovery, RUNNER_PHASE.runPlan,
-  RUNNER_PHASE.runDispatch, RUNNER_PHASE.runTeardown,
+  RUNNER_PHASE.runSetup,
+  RUNNER_PHASE.runDiscovery,
+  RUNNER_PHASE.runPlan,
+  RUNNER_PHASE.runDispatch,
+  RUNNER_PHASE.runTeardown,
 ] as const;
 export const DIAGNOSTIC_PROJECTION_PHASES = [RUNNER_PHASE.collection] as const;
-export const ATTEMPT_DIAGNOSTIC_PHASES = [
-  ...ATTEMPT_ACTIVITY_PHASES,
-  ...DIAGNOSTIC_PROJECTION_PHASES,
-] as const;
-export const RUN_DIAGNOSTIC_PHASES = [
-  ...RUN_ACTIVITY_PHASES,
-  ...DIAGNOSTIC_PROJECTION_PHASES,
-] as const;
+export const ATTEMPT_DIAGNOSTIC_PHASES = [...ATTEMPT_ACTIVITY_PHASES, ...DIAGNOSTIC_PROJECTION_PHASES] as const;
+export const RUN_DIAGNOSTIC_PHASES = [...RUN_ACTIVITY_PHASES, ...DIAGNOSTIC_PROJECTION_PHASES] as const;
 export const SANDBOX_COMMAND_PHASES = [
-  RUNNER_PHASE.attemptSetup, RUNNER_PHASE.sandboxPrepare, RUNNER_PHASE.agentInstall, "agent.ensure",
-  RUNNER_PHASE.evalRun, RUNNER_PHASE.sandboxCommand, RUNNER_PHASE.attemptTeardown,
+  RUNNER_PHASE.attemptSetup,
+  RUNNER_PHASE.sandboxPrepare,
+  RUNNER_PHASE.agentInstall,
+  "agent.ensure",
+  RUNNER_PHASE.evalRun,
+  RUNNER_PHASE.sandboxCommand,
+  RUNNER_PHASE.attemptTeardown,
 ] as const;
 
 export const ACTIVITY_OUTCOME = Object.freeze({

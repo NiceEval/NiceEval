@@ -103,24 +103,24 @@ function buildExportScript(exportDir: string): string {
     "set -eu",
     `D=${shellQuote(exportDir)}`,
     'rm -rf "$D" && mkdir -p "$D"',
-    'OUT=$D/export.bin',
+    "OUT=$D/export.bin",
     ': > "$OUT"',
     'fail() { printf "%s\\n" "$1" >&2; exit 2; }',
     // 帧格式:`section <name> <bytes>` 头一行,后跟原始字节;长度前缀让内容里的任意字节都安全。
     'emit() { printf "section %s %s\\n" "$1" "$(($(wc -c < "$2")))" >> "$OUT"; cat "$2" >> "$OUT"; }',
     'git log --reverse --format="%H %s" > "$D/log.txt"',
     "while IFS= read -r line; do",
-    '  hash=${line%% *}',
-    '  subject=${line#* }',
+    "  hash=${line%% *}",
+    "  subject=${line#* }",
     '  case $subject in "agent "*) ;; *) continue ;; esac',
-    '  label=${subject#agent }',
+    "  label=${subject#agent }",
     // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
     '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
     '  n=$(($(wc -l < "$D/dt.txt")))',
     `  [ "$n" -le ${MAX_EXPORTED_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; export scan limit is ${MAX_EXPORTED_WINDOW_PATHS}; narrow defineEval({ diff }) include/ignore rules"`,
     '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
     // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
-    "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
+    '  awk \'$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }\' "$D/dt.txt" > "$D/occ.txt"',
     '  git cat-file --batch-check < "$D/occ.txt" > "$D/sizes.txt"',
     '  if grep -q " missing$" "$D/sizes.txt"; then fail "niceeval ledger export: blob object missing"; fi',
     // 逐条目分类:numstat 第 1 列为 "-" 的行是二进制,按行号对齐标 B,其余标 T,后跟前后 blob sha。
@@ -145,19 +145,19 @@ function buildExportScript(exportDir: string): string {
     `  [ "$total" -le ${MAX_EXPORT_BYTES} ] || fail "niceeval ledger export contains $total bytes; attempt export limit is ${MAX_EXPORT_BYTES}"`,
     `parts=$(( (total + ${EXPORT_PART_BYTES} - 1) / ${EXPORT_PART_BYTES} ))`,
     `  [ "$parts" -le ${MAX_EXPORT_PARTS} ] || fail "niceeval ledger export needs $parts parts; attempt part limit is ${MAX_EXPORT_PARTS}"`,
-    'MANIFEST_TMP=$D/manifest.tmp',
-    'MANIFEST=$D/manifest.txt',
+    "MANIFEST_TMP=$D/manifest.tmp",
+    "MANIFEST=$D/manifest.txt",
     `printf "%s\\ntotal %s\\nparts %s\\n" "${EXPORT_MANIFEST_HEADER}" "$total" "$parts" > "$MANIFEST_TMP"`,
-    'i=0',
+    "i=0",
     'while [ "$i" -lt "$parts" ]; do',
     '  suffix=$(printf "%06d" "$i")',
-    '  part=$D/export.part.$suffix',
+    "  part=$D/export.part.$suffix",
     `  dd if="$OUT" of="$part" bs=${EXPORT_PART_BYTES} skip="$i" count=1 2>/dev/null`,
     '  size=$(($(wc -c < "$part")))',
     '  oid=$(git hash-object --no-filters "$part")',
     '  printf "part %s %s %s\\n" "$suffix" "$size" "$oid" >> "$MANIFEST_TMP"',
-    '  i=$((i + 1))',
-    'done',
+    "  i=$((i + 1))",
+    "done",
     'mv "$MANIFEST_TMP" "$MANIFEST"',
     'rm -f "$OUT"',
     // root ledger commands may create private exports with a restrictive umask. These artifacts are
@@ -256,7 +256,7 @@ function restoreBaselineMetadataScript(): string {
     'META="$GIT_DIR/niceeval-baseline-metadata"',
     "export META",
     'if [ -d "$META/files" ]; then',
-    "  find \"$META/files\" -type f -print0 | xargs -0 -n 100 sh -c '",
+    '  find "$META/files" -type f -print0 | xargs -0 -n 100 sh -c \'',
     "    for ref do",
     '      p=${ref#"$META/files/"}',
     '      target="$GIT_WORK_TREE/$p"',
@@ -270,9 +270,9 @@ function restoreBaselineMetadataScript(): string {
     "fi",
     // Apply directory metadata last so restrictive parent modes cannot interfere with child repair.
     'if [ -d "$META/dirs" ]; then',
-    "  find \"$META/dirs\" -type f -name .ref -print0 | xargs -0 -n 100 sh -c '",
+    '  find "$META/dirs" -type f -name .ref -print0 | xargs -0 -n 100 sh -c \'',
     "    for ref do",
-    '      d=${ref%/.ref}',
+    "      d=${ref%/.ref}",
     '      p=${d#"$META/dirs/"}',
     '      target="$GIT_WORK_TREE/$p"',
     '      if [ -d "$target" ]; then',
@@ -328,13 +328,21 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 
   // add -A -f:绕过项目自己的 .gitignore(项目 ignore 的文件照常记录);排除靠 pathspec
   // (runner 私有清单,agent / fixture 写 .gitignore 影响不了它);include 用第二次 add 打洞加回。
-  const excludeSpecs = excludes.flatMap((pattern) => gitignorePathspecs(pattern, true)).map(shellQuote).join(" ");
+  const excludeSpecs = excludes
+    .flatMap((pattern) => gitignorePathspecs(pattern, true))
+    .map(shellQuote)
+    .join(" ");
   // include 打洞:路径此刻可能还不存在(如 agent 之后才写),unmatched pathspec 不算错。
-  const includeSpecs = includes.flatMap((pattern) => gitignorePathspecs(pattern, false)).map(shellQuote).join(" ");
+  const includeSpecs = includes
+    .flatMap((pattern) => gitignorePathspecs(pattern, false))
+    .map(shellQuote)
+    .join(" ");
   const includeAdd =
-    includeSpecs.length > 0 ? ` && { git -c advice.addEmbeddedRepo=false add -A -f -- ${includeSpecs} 2>/dev/null || true; }` : "";
+    includeSpecs.length > 0
+      ? ` && { git -c advice.addEmbeddedRepo=false add -A -f -- ${includeSpecs} 2>/dev/null || true; }`
+      : "";
   const rejectGitlinks =
-    " && nested=$(git ls-files --stage | awk '$1 == \"160000\" { sub(/^[^\\t]*\\t/, \"\"); print; exit }')" +
+    ' && nested=$(git ls-files --stage | awk \'$1 == "160000" { sub(/^[^\\t]*\\t/, ""); print; exit }\')' +
     ' && if [ -n "$nested" ]; then printf \'%s\\n\' "niceeval ledger cannot track nested Git repository $nested as file-level evidence; move the checkout to sandbox.workdir root, or add the whole path to defineEval({ diff: { ignore: [...] } }) when it is intentionally out of scope" >&2; exit 2; fi';
   const addAll = `git -c advice.addEmbeddedRepo=false add -A -f -- . ${excludeSpecs}${includeAdd}${rejectGitlinks}`;
 
@@ -354,20 +362,28 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   return {
     rootExecutionIdentity: ordinaryUid === "0",
     attribution: Object.freeze({
-      defaultPolicy: createHash("sha256").update(JSON.stringify([...DEFAULT_EXCLUDES].sort())).digest("hex"),
+      defaultPolicy: createHash("sha256")
+        .update(JSON.stringify([...DEFAULT_EXCLUDES].sort()))
+        .digest("hex"),
       include: includes,
       ignore: ignored,
     }),
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
-      const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})${lockPrivateLedger}`, {
-        ...commandOptions,
-      });
+      const result = await sandbox.runShell(
+        `${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})${lockPrivateLedger}`,
+        {
+          ...commandOptions,
+        },
+      );
       ensureCommandSucceeded(result, `commit eval window ${label}`, rootCommands);
     },
     async commitAgentWindow(label: string): Promise<void> {
       // 窗口内没有变化时也落一条(--allow-empty),diff.json 里该窗口 changes 为空对象。
-      const result = await sandbox.runShell(`${addAll} && git commit -q --allow-empty -m ${shellQuote(`agent ${label}`)}${lockPrivateLedger}`, commandOptions);
+      const result = await sandbox.runShell(
+        `${addAll} && git commit -q --allow-empty -m ${shellQuote(`agent ${label}`)}${lockPrivateLedger}`,
+        commandOptions,
+      );
       ensureCommandSucceeded(result, `commit agent window ${label}`, rootCommands);
     },
     async exportWindows(): Promise<DiffArtifact> {
@@ -412,10 +428,7 @@ async function exportAgentWindows(
         );
       }
       const algorithm = part.oid.length === 40 ? "sha1" : "sha256";
-      const actual = createHash(algorithm)
-        .update(`blob ${bytes.byteLength}\0`, "utf8")
-        .update(bytes)
-        .digest("hex");
+      const actual = createHash(algorithm).update(`blob ${bytes.byteLength}\0`, "utf8").update(bytes).digest("hex");
       if (actual !== part.oid) {
         throw new Error(`niceeval ledger export: checksum mismatch for part ${part.suffix}`);
       }
@@ -501,9 +514,11 @@ function ensureCommandSucceeded(
   const lines = result.stderr.trim().split("\n").filter(Boolean);
   const permission = lines.find((line) => /permission denied|operation not permitted/i.test(line));
   if (permission !== undefined) {
-    const guidance = permissionGuidance ?? (rootCommands
-      ? "the provider declared root command support, but root ledger execution still could not read the workspace; check its root command mapping"
-      : "this sandbox provider does not support root ledger commands; use a root-capable provider for tasks that intentionally start with unreadable files instead of chmod/chowning away the task condition");
+    const guidance =
+      permissionGuidance ??
+      (rootCommands
+        ? "the provider declared root command support, but root ledger execution still could not read the workspace; check its root command mapping"
+        : "this sandbox provider does not support root ledger commands; use a root-capable provider for tasks that intentionally start with unreadable files instead of chmod/chowning away the task condition");
     throw new Error(`${operation} failed (exit ${result.exitCode}): ${permission}; ${guidance}`);
   }
   // git 可能先输出 advisory warning，再输出 niceeval 的可操作诊断；最后一行最接近失败根因。
@@ -542,7 +557,8 @@ function parseExportPayload(payload: Buffer): DiffArtifact {
 
   while (offset < payload.length) {
     const header = readLine();
-    if (!header.startsWith("window ")) throw new Error(`niceeval ledger export: expected window header, got ${JSON.stringify(header)}`);
+    if (!header.startsWith("window "))
+      throw new Error(`niceeval ledger export: expected window header, got ${JSON.stringify(header)}`);
     const rest = header.slice("window ".length);
     const space = rest.indexOf(" ");
     const label = space === -1 ? "" : rest.slice(space + 1);
@@ -556,8 +572,10 @@ function parseExportPayload(payload: Buffer): DiffArtifact {
       const change: WindowChange = { status: entry.status };
       // 沙箱侧决定「哪些文本 blob 进 --batch」的两条判据在宿主侧同样成立(binary 段 + sizes 段
       // 都在导出文件里),所以这里独立重算,不需要沙箱再输出一份省略清单。
-      const beforeBytes = entry.status === "added" ? undefined : requireSize(sizeBySha, entry.beforeSha, label, entry.path);
-      const afterBytes = entry.status === "deleted" ? undefined : requireSize(sizeBySha, entry.afterSha, label, entry.path);
+      const beforeBytes =
+        entry.status === "added" ? undefined : requireSize(sizeBySha, entry.beforeSha, label, entry.path);
+      const afterBytes =
+        entry.status === "deleted" ? undefined : requireSize(sizeBySha, entry.afterSha, label, entry.path);
       const binary = binaryPaths.has(entry.path);
       const oversized = (beforeBytes ?? 0) > MAX_FILE_TEXT_BYTES || (afterBytes ?? 0) > MAX_FILE_TEXT_BYTES;
       if (binary || oversized) {
@@ -656,13 +674,15 @@ function parseBlobBatch(section: Buffer, label: string): Map<string, string> {
 
 function requireSize(sizes: Map<string, number>, sha: string, label: string, path: string): number {
   const size = sizes.get(sha);
-  if (size === undefined || ZERO_SHA.test(sha)) throw new Error(`export window ${label}: missing blob size for ${JSON.stringify(path)}`);
+  if (size === undefined || ZERO_SHA.test(sha))
+    throw new Error(`export window ${label}: missing blob size for ${JSON.stringify(path)}`);
   return size;
 }
 
 function requireContent(contents: Map<string, string>, sha: string, label: string, path: string): string {
   const content = contents.get(sha);
-  if (content === undefined || ZERO_SHA.test(sha)) throw new Error(`export window ${label}: missing blob content for ${JSON.stringify(path)}`);
+  if (content === undefined || ZERO_SHA.test(sha))
+    throw new Error(`export window ${label}: missing blob content for ${JSON.stringify(path)}`);
   return content;
 }
 

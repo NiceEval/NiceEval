@@ -46,7 +46,7 @@ async function assertPortReusable(port: number): Promise<void> {
         const probe = createServer();
         probe.once("error", rejectListen);
         probe.listen(port, "127.0.0.1", () => {
-          probe.close((error) => error === undefined ? resolveListen() : rejectListen(error));
+          probe.close((error) => (error === undefined ? resolveListen() : rejectListen(error)));
         });
       });
       return;
@@ -67,10 +67,7 @@ export async function withLocalProtocolFixture<T>(
 ): Promise<T> {
   const fixtureArgv = ["pnpm", "exec", "tsx", join("src", "fixture", "server.ts")];
   if (options.errorText !== undefined) fixtureArgv.push("--error-text", options.errorText);
-  const server = startProcess(
-    fixtureArgv,
-    { cwd, processGroup: true, timeoutMs: 90_000 },
-  );
+  const server = startProcess(fixtureArgv, { cwd, processGroup: true, timeoutMs: 90_000 });
   let ready: FixtureReady | undefined;
   let bodyError: unknown;
   try {
@@ -86,20 +83,16 @@ export async function withLocalProtocolFixture<T>(
     return await body({
       ...ready,
       waitForRequest: async (mode) => {
-        await waitForOutput(
-          server,
-          "stdout",
-          new RegExp(`NICEEVAL_E2E_REQUEST \\{[^\\n]*"mode":"${mode}"[^\\n]*\\}`),
-          { timeoutMs: 5_000, label: `local-protocol ${mode} request` },
-        );
+        await waitForOutput(server, "stdout", new RegExp(`NICEEVAL_E2E_REQUEST \\{[^\\n]*"mode":"${mode}"[^\\n]*\\}`), {
+          timeoutMs: 5_000,
+          label: `local-protocol ${mode} request`,
+        });
       },
       waitForHangClosed: async () => {
-        await waitForOutput(
-          server,
-          "stdout",
-          /NICEEVAL_E2E_HANG_CLOSED/,
-          { timeoutMs: 5_000, label: "local-protocol hanging response to close" },
-        );
+        await waitForOutput(server, "stdout", /NICEEVAL_E2E_HANG_CLOSED/, {
+          timeoutMs: 5_000,
+          label: "local-protocol hanging response to close",
+        });
       },
     });
   } catch (error) {

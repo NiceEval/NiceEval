@@ -6,11 +6,7 @@ import { relative, sep } from "node:path";
 import { Data, Effect, Option, Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
-import type {
-  MaterializedSandboxCase,
-  SandboxResourceGroup,
-  ServiceController,
-} from "./case-types.ts";
+import type { MaterializedSandboxCase, SandboxResourceGroup, ServiceController } from "./case-types.ts";
 import {
   collectComposeBuilds,
   composeCollectionIdentity,
@@ -116,9 +112,7 @@ export interface SandboxRuntimeMaterializeInput {
   /** Committed provider-native setup artifact selected by the Run-level coordinator. */
   readonly beforeCacheArtifact?: BeforeCacheArtifact;
   readonly beforeCachePreparationContext?: BeforeCachePreparationContext;
-  readonly provisionSlot:
-    | { readonly _tag: "Detached" }
-    | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
+  readonly provisionSlot: { readonly _tag: "Detached" } | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
   /** Runner projection of provider admission. Detached physical owners remain valid. */
   readonly admission:
     | { readonly _tag: "Detached" }
@@ -162,9 +156,7 @@ export interface SandboxRuntimeBuildPreparation {
   readonly provider: SandboxBuildProvider;
 }
 
-export class SandboxRuntimeMaterializationError extends Data.TaggedError(
-  "SandboxRuntimeMaterializationError",
-)<{
+export class SandboxRuntimeMaterializationError extends Data.TaggedError("SandboxRuntimeMaterializationError")<{
   readonly code:
     | "sandbox.provider-binding-missing"
     | "sandbox.build-input-drift"
@@ -208,12 +200,15 @@ function providerBinding(
 ): Effect.Effect<SandboxProviderBinding, SandboxRuntimeMaterializationError> {
   const binding = sandboxProviderBindingOf(plan.providerPlan);
   return Option.match(binding, {
-    onNone: () => Effect.fail(new SandboxRuntimeMaterializationError({
-      code: "sandbox.provider-binding-missing",
-      provider: plan.providerPlan.provider,
-      message: `Sandbox provider plan ${JSON.stringify(plan.providerPlan.provider)} was not created by its bound ProviderModule.`,
-      cause: new Error("provider module binding missing"),
-    })),
+    onNone: () =>
+      Effect.fail(
+        new SandboxRuntimeMaterializationError({
+          code: "sandbox.provider-binding-missing",
+          provider: plan.providerPlan.provider,
+          message: `Sandbox provider plan ${JSON.stringify(plan.providerPlan.provider)} was not created by its bound ProviderModule.`,
+          cause: new Error("provider module binding missing"),
+        }),
+      ),
     onSome: Effect.succeed,
   });
 }
@@ -222,14 +217,10 @@ function deadlineOptions(deadline: SandboxRuntimeDeadline): {
   readonly timeout?: number;
   readonly deadlineAt?: number;
 } {
-  return deadline._tag === "Unlimited"
-    ? {}
-    : { timeout: deadline.timeoutMs, deadlineAt: deadline.deadlineAt };
+  return deadline._tag === "Unlimited" ? {} : { timeout: deadline.timeoutMs, deadlineAt: deadline.deadlineAt };
 }
 
-function configuredLifetime(
-  value: SandboxProviderLifetime,
-): number | undefined {
+function configuredLifetime(value: SandboxProviderLifetime): number | undefined {
   return value._tag === "Configured" ? value.milliseconds : undefined;
 }
 
@@ -237,16 +228,17 @@ function managedContainerSession(
   binding: DockerProfileRuntimeBinding,
   resources: Readonly<import("./layer.ts").DockerSandboxResources>,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<{
-  readonly lease: DockerProfileLease;
-  readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
-  readonly labels: Readonly<Record<string, string>>;
-  readonly replaceReservation: Effect.Effect<
-    import("./docker-profile/runtime.ts").DockerProfileReservation,
-    Error
-  >;
-  readonly finish: () => Promise<void>;
-}, Error, Scope.Scope> {
+): Effect.Effect<
+  {
+    readonly lease: DockerProfileLease;
+    readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
+    readonly labels: Readonly<Record<string, string>>;
+    readonly replaceReservation: Effect.Effect<import("./docker-profile/runtime.ts").DockerProfileReservation, Error>;
+    readonly finish: () => Promise<void>;
+  },
+  Error,
+  Scope.Scope
+> {
   return Effect.gen(function* () {
     const scope = yield* Effect.scope;
     const lease = yield* Effect.acquireRelease(
@@ -268,24 +260,26 @@ function managedContainerSession(
       admission,
       context.signal,
     );
-    const replaceReservation = Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
-      // The host must scrub/retire the current slot before another private slot can
-      // be granted. Release is uninterruptible; the new scoped acquisition remains
-      // interruptible while queued and owns its finalizer before it can be observed.
-      yield* providerBoundaryEffect(() => owner.release());
-      const replacement = yield* restore(acquireDockerProfileReservationEffect(
-        lease,
-        "container",
-        requestedResources,
-        admission,
-        context.signal,
-      ).pipe(Effect.provideService(Scope.Scope, scope)));
-      owner = replacement;
-      return replacement.reservation;
-    }));
+    const replaceReservation = Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        // The host must scrub/retire the current slot before another private slot can
+        // be granted. Release is uninterruptible; the new scoped acquisition remains
+        // interruptible while queued and owns its finalizer before it can be observed.
+        yield* providerBoundaryEffect(() => owner.release());
+        const replacement = yield* restore(
+          acquireDockerProfileReservationEffect(lease, "container", requestedResources, admission, context.signal).pipe(
+            Effect.provideService(Scope.Scope, scope),
+          ),
+        );
+        owner = replacement;
+        return replacement.reservation;
+      }),
+    );
     return {
       lease,
-      get reservation() { return owner.reservation; },
+      get reservation() {
+        return owner.reservation;
+      },
       get labels() {
         return Object.freeze({
           "niceeval.profile-id": binding.profile.profileId,
@@ -332,7 +326,11 @@ export function e2bLifetimeRequest(
     }
     return { _tag: "Requested", milliseconds: declared, source: "explicit" };
   }
-  return { _tag: "Requested", milliseconds: cloudLifetimeMs(undefined, deadline.timeoutMs), source: "attempt-deadline" };
+  return {
+    _tag: "Requested",
+    milliseconds: cloudLifetimeMs(undefined, deadline.timeoutMs),
+    source: "attempt-deadline",
+  };
 }
 
 function boundProvisionSlot(context: SandboxRuntimeMaterializeContext): ProvisionSlot | undefined {
@@ -421,10 +419,7 @@ function normalizeMaterialized(
   materialized: Omit<MaterializedSandboxCase, "sandbox"> & { readonly sandbox: CustomProviderSandbox },
   context: SandboxRuntimeMaterializeContext,
 ): MaterializedSandboxCase {
-  const sandbox = normalizeSandboxPaths(
-    customSandboxBackend(materialized.sandbox),
-    context.plan.providerPlan.provider,
-  );
+  const sandbox = normalizeSandboxPaths(customSandboxBackend(materialized.sandbox), context.plan.providerPlan.provider);
   registerSandbox(sandbox);
   let stopped = false;
   let stopping: Promise<void> | undefined;
@@ -463,132 +458,166 @@ function materializationEffect<A extends MaterializedSandboxCase, R>(
   context: SandboxRuntimeMaterializeContext,
   acquire: Effect.Effect<A, unknown, R>,
 ): Effect.Effect<A, SandboxRuntimeMaterializationError, R> {
-  return acquire.pipe(
-    Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-  );
+  return acquire.pipe(Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)));
 }
 
 export function materializeDockerComposeProviderPlan(
   plan: DockerComposeProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
-  const materialize = context.services._tag === "Live"
-    ? materializeDockerComposeProviderCase
-    : context.services.materializeCompose;
-  return materializationEffect(context, Effect.andThen(admitImmediately(context), materialize({
-    evalId: context.evalId,
-    profile: context.evalId,
-    mainService: plan.workspaceService,
-    ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-    env: plan.env,
-    pathPrepend: plan.pathPrepend,
-    collection: plan.collection,
-    caseKey: context.plan.providerPlan.build.caseKey,
-    identity: context.plan.providerPlan.identity,
-  }, {
-    ctx: {
-      evalId: context.evalId,
-      profile: context.evalId,
-      signal: context.signal,
-      buildLocators: context.buildLocators,
-    },
-    ...deadlineOptions(context.deadline),
-    feedback: context.feedback,
-    provisionSlot: boundProvisionSlot(context),
-    runId: context.runId,
-    creationLabels: sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
-    lifetimeMs: configuredLifetime(plan.lifetime),
-  }).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context)))));
+  const materialize =
+    context.services._tag === "Live" ? materializeDockerComposeProviderCase : context.services.materializeCompose;
+  return materializationEffect(
+    context,
+    Effect.andThen(
+      admitImmediately(context),
+      materialize(
+        {
+          evalId: context.evalId,
+          profile: context.evalId,
+          mainService: plan.workspaceService,
+          ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+          env: plan.env,
+          pathPrepend: plan.pathPrepend,
+          collection: plan.collection,
+          caseKey: context.plan.providerPlan.build.caseKey,
+          identity: context.plan.providerPlan.identity,
+        },
+        {
+          ctx: {
+            evalId: context.evalId,
+            profile: context.evalId,
+            signal: context.signal,
+            buildLocators: context.buildLocators,
+          },
+          ...deadlineOptions(context.deadline),
+          feedback: context.feedback,
+          provisionSlot: boundProvisionSlot(context),
+          runId: context.runId,
+          creationLabels: sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
+          lifetimeMs: configuredLifetime(plan.lifetime),
+        },
+      ).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context))),
+    ),
+  );
 }
 
 export function materializeDockerfileProviderPlan(
   plan: DockerfileProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache }, SandboxRuntimeMaterializationError, Scope.Scope> {
+): Effect.Effect<
+  MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache },
+  SandboxRuntimeMaterializationError,
+  Scope.Scope
+> {
   return Option.match(Option.fromNullishOr(context.buildLocators.get(plan.buildKey)), {
-    onNone: () => Effect.fail(runtimeFailure(
-      context,
-      "sandbox.build-locator-missing",
-      new Error(`Dockerfile build ${plan.buildKey} has no prepared locator.`),
-    )),
-    onSome: (locator) => typeof locator !== "string"
-      ? Effect.fail(runtimeFailure(
+    onNone: () =>
+      Effect.fail(
+        runtimeFailure(
           context,
-          "sandbox.materialization-failed",
-          new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
-        ))
-      : Effect.andThen(
-        plan.profileBinding === undefined ? admitImmediately(context) : Effect.void,
-        Effect.flatMap(
-          resolveDockerfileAgentImage(plan, context, locator).pipe(
-            Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-          ),
-          (resolved) => materializationEffect(context, Effect.gen(function* () {
-            const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
-              () => import("./docker.ts"),
-            );
-            const managed = plan.profileBinding === undefined
-              ? undefined
-              : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
-            const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-            return yield* Effect.gen(function* () {
-              const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
-                  ...deadlineOptions(context.deadline),
-                  runtime: "node24",
-                  image: resolved.locator,
-                  ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-                  privileged: plan.privileged,
-                  ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
-                  resources: plan.resources,
-                  ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-                  lifetimeMs: configuredLifetime(plan.lifetime),
-                  pathPrepend: plan.pathPrepend,
-                  feedback: context.feedback,
-                  provisionToken,
-                  runIdentity: currentRunIdentity(context.runId, sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId })),
-                  ...(plan.profileBinding === undefined ? {} : {
-                    dockerSocketPath: plan.profileBinding.dockerSocketPath,
-                    ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
-                      ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
-                      : {}),
-                    managedLabels: managed?.labels,
-                    rootlessAttestation: {
-                      daemonId: plan.profileBinding.daemonId,
-                      dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
-                    },
-                    profileBeforeCache: {
-                      lease: managed!.lease,
-                      currentReservation: () => managed!.reservation,
-                      replaceReservation: managed!.replaceReservation,
-                    },
-                    afterStop: managed?.finish,
-                  }),
-                };
-              const backend = yield* withProvisionRetry(
-                managed === undefined
-                  ? DockerSandbox.createEffect(createOptions)
-                  : providerBoundaryEffect(() => DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
-                      managed.lease,
-                      managed.reservation.reservationId,
-                      { ...create, attemptId: context.evalId },
-                      signal,
-                    ))),
-                classifyProvisionError,
-                boundProvisionSlot(context),
-                context.feedback,
-                managed === undefined
-                  ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
-                  : Effect.void,
-              );
-              return wrapAttemptCapturedSandbox(backend, context, { image: resolved.locator });
-            }).pipe(
-              Effect.onError(() => managed === undefined
-                ? Effect.void
-                : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore)),
-            );
-          })),
+          "sandbox.build-locator-missing",
+          new Error(`Dockerfile build ${plan.buildKey} has no prepared locator.`),
         ),
       ),
+    onSome: (locator) =>
+      typeof locator !== "string"
+        ? Effect.fail(
+            runtimeFailure(
+              context,
+              "sandbox.materialization-failed",
+              new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
+            ),
+          )
+        : Effect.andThen(
+            plan.profileBinding === undefined ? admitImmediately(context) : Effect.void,
+            Effect.flatMap(
+              resolveDockerfileAgentImage(plan, context, locator).pipe(
+                Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+              ),
+              (resolved) =>
+                materializationEffect(
+                  context,
+                  Effect.gen(function* () {
+                    const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
+                      () => import("./docker.ts"),
+                    );
+                    const managed =
+                      plan.profileBinding === undefined
+                        ? undefined
+                        : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
+                    const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
+                    return yield* Effect.gen(function* () {
+                      const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
+                        ...deadlineOptions(context.deadline),
+                        runtime: "node24",
+                        image: resolved.locator,
+                        ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+                        privileged: plan.privileged,
+                        ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
+                        resources: plan.resources,
+                        ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
+                        lifetimeMs: configuredLifetime(plan.lifetime),
+                        pathPrepend: plan.pathPrepend,
+                        feedback: context.feedback,
+                        provisionToken,
+                        runIdentity: currentRunIdentity(
+                          context.runId,
+                          sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
+                        ),
+                        ...(plan.profileBinding === undefined
+                          ? {}
+                          : {
+                              dockerSocketPath: plan.profileBinding.dockerSocketPath,
+                              ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
+                                ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
+                                : {}),
+                              managedLabels: managed?.labels,
+                              rootlessAttestation: {
+                                daemonId: plan.profileBinding.daemonId,
+                                dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
+                              },
+                              profileBeforeCache: {
+                                lease: managed!.lease,
+                                currentReservation: () => managed!.reservation,
+                                replaceReservation: managed!.replaceReservation,
+                              },
+                              afterStop: managed?.finish,
+                            }),
+                      };
+                      const backend = yield* withProvisionRetry(
+                        managed === undefined
+                          ? DockerSandbox.createEffect(createOptions)
+                          : providerBoundaryEffect(() =>
+                              DockerSandbox.createControlled(createOptions, (create, signal) =>
+                                createDockerProfileContainer(
+                                  managed.lease,
+                                  managed.reservation.reservationId,
+                                  { ...create, attemptId: context.evalId },
+                                  signal,
+                                ),
+                              ),
+                            ),
+                        classifyProvisionError,
+                        boundProvisionSlot(context),
+                        context.feedback,
+                        managed === undefined
+                          ? providerBoundaryEffect(() =>
+                              reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
+                            )
+                          : Effect.void,
+                      );
+                      return wrapAttemptCapturedSandbox(backend, context, { image: resolved.locator });
+                    }).pipe(
+                      Effect.onError(() =>
+                        managed === undefined
+                          ? Effect.void
+                          : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore),
+                      ),
+                    );
+                  }),
+                ),
+            ),
+          ),
   });
 }
 
@@ -622,12 +651,7 @@ function resolveDockerfileAgentImage(
   return dockerfileAgentImageCoordinator.resolve(
     request,
     context.signal,
-    (input, signal) => buildDockerfileAgentImage(
-      input,
-      request,
-      context.plan.providerPlan.target.platform,
-      signal,
-    ),
+    (input, signal) => buildDockerfileAgentImage(input, request, context.plan.providerPlan.target.platform, signal),
     context.runTiming,
   );
 }
@@ -641,10 +665,11 @@ function dockerfileAgentCacheRequest(
   if (agent === undefined || agent.install.length !== 1) return undefined;
   const install = agent.install[0];
   if (install === undefined) return undefined;
-  const installer = agent.installers.find((candidate) =>
-    candidate.installMode === "staged" &&
-    isDockerfileAgentCacheSafeInstaller(candidate) &&
-    sameAgentIdentity(candidate.identity, install.identity)
+  const installer = agent.installers.find(
+    (candidate) =>
+      candidate.installMode === "staged" &&
+      isDockerfileAgentCacheSafeInstaller(candidate) &&
+      sameAgentIdentity(candidate.identity, install.identity),
   );
   if (installer === undefined) return undefined;
   return {
@@ -680,16 +705,18 @@ export interface DockerfileAgentImageProvisionServices {
 }
 
 const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionServices = Object.freeze({
-  create: (taskLocator: string) => providerBoundaryEffect(async () => {
-    const { DockerSandbox } = await import("./docker.ts");
-    const sandbox = await DockerSandbox.create({ image: taskLocator, runtime: "node24" });
-    return { operations: sandbox, sandboxId: sandbox.sandboxId, stop: () => sandbox.stop() };
-  }),
-  commit: (sandboxId: string, derivedLocator: string) => providerBoundaryEffect(async () => {
-    // dockerode 是 optional peer；commit 派生镜像时才加载（与 keep/orphans 同模式）。
-    const { default: Docker } = await import("dockerode");
-    await new Docker().getContainer(sandboxId).commit(dockerCommitReference(derivedLocator));
-  }),
+  create: (taskLocator: string) =>
+    providerBoundaryEffect(async () => {
+      const { DockerSandbox } = await import("./docker.ts");
+      const sandbox = await DockerSandbox.create({ image: taskLocator, runtime: "node24" });
+      return { operations: sandbox, sandboxId: sandbox.sandboxId, stop: () => sandbox.stop() };
+    }),
+  commit: (sandboxId: string, derivedLocator: string) =>
+    providerBoundaryEffect(async () => {
+      // dockerode 是 optional peer；commit 派生镜像时才加载（与 keep/orphans 同模式）。
+      const { default: Docker } = await import("dockerode");
+      await new Docker().getContainer(sandboxId).commit(dockerCommitReference(derivedLocator));
+    }),
 });
 
 /** Dockerode 的 commit 参数把仓库与 tag 分开；不能把 `repo:tag` 整串塞进 repo。 */
@@ -709,158 +736,183 @@ export function buildDockerfileAgentImageWithServices(
   signal: AbortSignal,
   services: DockerfileAgentImageProvisionServices = liveDockerfileAgentImageProvisionServices,
 ): Effect.Effect<void, Error> {
-  return Effect.scoped(Effect.gen(function* () {
-    // AbortSignal 属于外层 invocation 的中断语义；绝不伪造为一个 typed provisioning error。
-    if (signal.aborted) return yield* Effect.interrupt;
-    const provisioned = yield* Effect.acquireRelease(
-      services.create(input.taskLocator),
-      // acquireRelease finalizer 必须是 never-fail。这里仍尝试真实 stop；它失败时保留原有
-      // build cause，而不是在 cleanup 路径把 interruption/defect 改写成 typed failure。
-      (sandbox) => providerBoundaryEffect(() => sandbox.stop()).pipe(Effect.catch(() => Effect.void)),
-    );
-    yield* runAgentInstall(
-      [request.install],
-      [request.installer],
-      provisioned.operations,
-      {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      // AbortSignal 属于外层 invocation 的中断语义；绝不伪造为一个 typed provisioning error。
+      if (signal.aborted) return yield* Effect.interrupt;
+      const provisioned = yield* Effect.acquireRelease(
+        services.create(input.taskLocator),
+        // acquireRelease finalizer 必须是 never-fail。这里仍尝试真实 stop；它失败时保留原有
+        // build cause，而不是在 cleanup 路径把 interruption/defect 改写成 typed failure。
+        (sandbox) => providerBoundaryEffect(() => sandbox.stop()).pipe(Effect.catch(() => Effect.void)),
+      );
+      yield* runAgentInstall([request.install], [request.installer], provisioned.operations, {
         coordinator: Option.some(new ArtifactPrepareCoordinator()),
         targetPlatform,
         signal,
         progress: () => {},
-      },
-    );
-    yield* services.commit(provisioned.sandboxId, input.derivedLocator);
-  }));
+      });
+      yield* services.commit(provisioned.sandboxId, input.derivedLocator);
+    }),
+  );
 }
 
 export function materializeDockerImageProviderPlan(
   plan: DockerImageProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache }, SandboxRuntimeMaterializationError, Scope.Scope> {
-  return materializationEffect(context, Effect.gen(function* () {
-    if (plan.profileBinding === undefined) yield* admitImmediately(context);
-    const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
-      () => import("./docker.ts"),
-    );
-    const managed = plan.profileBinding === undefined
-      ? undefined
-      : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
-    const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
-    return yield* Effect.gen(function* () {
-      const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
-        ...deadlineOptions(context.deadline),
-        runtime: "node24",
-        image: plan.image,
-        ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-        privileged: plan.privileged,
-        ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
-        resources: plan.resources,
-        ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-        lifetimeMs: configuredLifetime(plan.lifetime),
-        pathPrepend: plan.pathPrepend,
-        feedback: context.feedback,
-        provisionToken,
-        runIdentity: currentRunIdentity(context.runId, sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId })),
-        ...(plan.profileBinding === undefined ? {} : {
-          dockerSocketPath: plan.profileBinding.dockerSocketPath,
-          ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
-            ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
-            : {}),
-          managedLabels: managed?.labels,
-          rootlessAttestation: {
-            daemonId: plan.profileBinding.daemonId,
-            dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
-          },
-          profileBeforeCache: {
-            lease: managed!.lease,
-            currentReservation: () => managed!.reservation,
-            replaceReservation: managed!.replaceReservation,
-          },
-          afterStop: managed?.finish,
-        }),
-      };
-      const backend = yield* withProvisionRetry(
-        managed === undefined
-          ? DockerSandbox.createEffect(createOptions)
-          : providerBoundaryEffect(() => DockerSandbox.createControlled(createOptions, (create, signal) => createDockerProfileContainer(
-              managed.lease,
-              managed.reservation.reservationId,
-              { ...create, attemptId: context.evalId },
-              signal,
-            ))),
-      classifyProvisionError,
-      boundProvisionSlot(context),
-      context.feedback,
-        managed === undefined
-          ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
-          : Effect.void,
+): Effect.Effect<
+  MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache },
+  SandboxRuntimeMaterializationError,
+  Scope.Scope
+> {
+  return materializationEffect(
+    context,
+    Effect.gen(function* () {
+      if (plan.profileBinding === undefined) yield* admitImmediately(context);
+      const { DockerSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
+        () => import("./docker.ts"),
       );
-      return wrapAttemptCapturedSandbox(backend, context, { image: plan.image });
-    }).pipe(
-      Effect.onError(() => managed === undefined
-        ? Effect.void
-        : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore)),
-    );
-  }));
+      const managed =
+        plan.profileBinding === undefined
+          ? undefined
+          : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
+      const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
+      return yield* Effect.gen(function* () {
+        const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
+          ...deadlineOptions(context.deadline),
+          runtime: "node24",
+          image: plan.image,
+          ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+          privileged: plan.privileged,
+          ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
+          resources: plan.resources,
+          ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
+          lifetimeMs: configuredLifetime(plan.lifetime),
+          pathPrepend: plan.pathPrepend,
+          feedback: context.feedback,
+          provisionToken,
+          runIdentity: currentRunIdentity(
+            context.runId,
+            sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
+          ),
+          ...(plan.profileBinding === undefined
+            ? {}
+            : {
+                dockerSocketPath: plan.profileBinding.dockerSocketPath,
+                ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
+                  ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
+                  : {}),
+                managedLabels: managed?.labels,
+                rootlessAttestation: {
+                  daemonId: plan.profileBinding.daemonId,
+                  dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
+                },
+                profileBeforeCache: {
+                  lease: managed!.lease,
+                  currentReservation: () => managed!.reservation,
+                  replaceReservation: managed!.replaceReservation,
+                },
+                afterStop: managed?.finish,
+              }),
+        };
+        const backend = yield* withProvisionRetry(
+          managed === undefined
+            ? DockerSandbox.createEffect(createOptions)
+            : providerBoundaryEffect(() =>
+                DockerSandbox.createControlled(createOptions, (create, signal) =>
+                  createDockerProfileContainer(
+                    managed.lease,
+                    managed.reservation.reservationId,
+                    { ...create, attemptId: context.evalId },
+                    signal,
+                  ),
+                ),
+              ),
+          classifyProvisionError,
+          boundProvisionSlot(context),
+          context.feedback,
+          managed === undefined
+            ? providerBoundaryEffect(() => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath))
+            : Effect.void,
+        );
+        return wrapAttemptCapturedSandbox(backend, context, { image: plan.image });
+      }).pipe(
+        Effect.onError(() =>
+          managed === undefined ? Effect.void : providerBoundaryEffect(() => managed.finish()).pipe(Effect.ignore),
+        ),
+      );
+    }),
+  );
 }
 
 export function materializeE2BProviderPlan(
   plan: E2BProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, Effect.gen(function* () {
-    yield* admitImmediately(context);
-    const lifetime = e2bLifetimeRequest(plan.lifetime, context.deadline);
-    const { E2BSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
-      () => import("./e2b.ts"),
-    );
-    const provisionToken = randomUUID();
-    const runIdentity = currentRunIdentity(context.runId, sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }));
-    const backend = yield* withProvisionRetry(
-      providerBoundaryEffect(() => E2BSandbox.create({
-        ...deadlineOptions(context.deadline),
-        runtime: "node24",
-        template: plan.template,
-        ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-        lifetime,
-        pathPrepend: plan.pathPrepend,
-        provisionToken,
-        runId: context.runId,
-        runIdentity,
-      })),
-      classifyProvisionError,
-      boundProvisionSlot(context),
-      context.feedback,
-      providerBoundaryEffect(() => reconcileProvision(provisionToken)),
-    );
-    return wrapSingleSandbox(backend, context, { template: plan.template });
-  }));
+  return materializationEffect(
+    context,
+    Effect.gen(function* () {
+      yield* admitImmediately(context);
+      const lifetime = e2bLifetimeRequest(plan.lifetime, context.deadline);
+      const { E2BSandbox, classifyProvisionError, reconcileProvision } = yield* providerBoundaryEffect(
+        () => import("./e2b.ts"),
+      );
+      const provisionToken = randomUUID();
+      const runIdentity = currentRunIdentity(
+        context.runId,
+        sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
+      );
+      const backend = yield* withProvisionRetry(
+        providerBoundaryEffect(() =>
+          E2BSandbox.create({
+            ...deadlineOptions(context.deadline),
+            runtime: "node24",
+            template: plan.template,
+            ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+            lifetime,
+            pathPrepend: plan.pathPrepend,
+            provisionToken,
+            runId: context.runId,
+            runIdentity,
+          }),
+        ),
+        classifyProvisionError,
+        boundProvisionSlot(context),
+        context.feedback,
+        providerBoundaryEffect(() => reconcileProvision(provisionToken)),
+      );
+      return wrapSingleSandbox(backend, context, { template: plan.template });
+    }),
+  );
 }
 
 export function materializeVercelProviderPlan(
   plan: VercelProviderPlan,
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializationEffect(context, Effect.gen(function* () {
-    yield* admitImmediately(context);
-    const { VercelSandbox, classifyProvisionError } = yield* providerBoundaryEffect(
-      () => import("./vercel.ts"),
-    );
-    const backend = yield* withProvisionRetry(
-      providerBoundaryEffect(() => VercelSandbox.create({
-        ...deadlineOptions(context.deadline),
-        runtime: "node24",
-        snapshotId: plan.snapshotId,
-        lifetimeMs: configuredLifetime(plan.lifetime),
-        pathPrepend: plan.pathPrepend,
-        feedback: context.feedback,
-      })),
-      classifyProvisionError,
-      boundProvisionSlot(context),
-      context.feedback,
-    );
-    return wrapSingleSandbox(backend, context, { snapshotId: plan.snapshotId });
-  }));
+  return materializationEffect(
+    context,
+    Effect.gen(function* () {
+      yield* admitImmediately(context);
+      const { VercelSandbox, classifyProvisionError } = yield* providerBoundaryEffect(() => import("./vercel.ts"));
+      const backend = yield* withProvisionRetry(
+        providerBoundaryEffect(() =>
+          VercelSandbox.create({
+            ...deadlineOptions(context.deadline),
+            runtime: "node24",
+            snapshotId: plan.snapshotId,
+            lifetimeMs: configuredLifetime(plan.lifetime),
+            pathPrepend: plan.pathPrepend,
+            feedback: context.feedback,
+          }),
+        ),
+        classifyProvisionError,
+        boundProvisionSlot(context),
+        context.feedback,
+      );
+      return wrapSingleSandbox(backend, context, { snapshotId: plan.snapshotId });
+    }),
+  );
 }
 
 export function materializeCustomProviderPlan(
@@ -869,20 +921,24 @@ export function materializeCustomProviderPlan(
   create: CustomProviderSandboxOptions["create"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return Effect.flatMap(
-    Effect.andThen(admitImmediately(context), create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback })).pipe(
-      Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-    ),
-    (sandbox) => Effect.try({
-      try: () => wrapSingleSandbox(customSandboxBackend(sandbox), context, { provider: plan.name }),
-      catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
-    }).pipe(
-      // create 已经交出真实资源，但 acquireRelease 只有在本 Effect 成功后才会登记 finalizer。
-      // facade 归一化若在这个窄窗口失败，必须原地 stop，不能让裸资源逃出 Scope。
-      Effect.tapError(() => Effect.tryPromise({
-        try: () => sandbox.stop(),
-        catch: () => undefined,
-      }).pipe(Effect.ignore)),
-    ),
+    Effect.andThen(
+      admitImmediately(context),
+      create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback }),
+    ).pipe(Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause))),
+    (sandbox) =>
+      Effect.try({
+        try: () => wrapSingleSandbox(customSandboxBackend(sandbox), context, { provider: plan.name }),
+        catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
+      }).pipe(
+        // create 已经交出真实资源，但 acquireRelease 只有在本 Effect 成功后才会登记 finalizer。
+        // facade 归一化若在这个窄窗口失败，必须原地 stop，不能让裸资源逃出 Scope。
+        Effect.tapError(() =>
+          Effect.tryPromise({
+            try: () => sandbox.stop(),
+            catch: () => undefined,
+          }).pipe(Effect.ignore),
+        ),
+      ),
   );
 }
 
@@ -891,37 +947,40 @@ export function materializeCustomCaseProviderPlan(
   context: SandboxRuntimeMaterializeContext,
   materialize: CustomCaseSandboxOptions["materialize"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return Effect.flatMap(Effect.andThen(admitImmediately(context), materialize({
-    evalId: context.evalId,
-    profile: context.evalId,
-    signal: context.signal,
-    buildLocators: context.buildLocators,
-  })).pipe(
-    Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-  ), (rawResult) => Effect.try({
-    try: () => {
-      const result = validateCustomCaseMaterializeResult(rawResult, plan.services);
-      return normalizeMaterialized({
-        sandbox: result.sandbox,
-        // 自定义 case 的显式适配点:author 返回的公共 Sandbox 在这里降成 provider backend,
-        // 供 attempt-scope author facade 使用;resource facade 仍由 normalizeMaterialized 归一。
-        authorBackend: customSandboxBackend(result.sandbox),
-        ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
-        group: result.group,
-        caseKind: "custom",
-        caseKey: context.plan.providerPlan.build.caseKey,
-        buildKeys: context.plan.providerPlan.build.buildKeys,
-        identity: context.plan.providerPlan.identity,
-        facts: result.facts,
-      }, context);
-    },
-    catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
-  }).pipe(
-    Effect.catch((failure) => Effect.andThen(
-      stopInvalidCustomCaseResult(rawResult),
-      Effect.fail(failure),
-    )),
-  ));
+  return Effect.flatMap(
+    Effect.andThen(
+      admitImmediately(context),
+      materialize({
+        evalId: context.evalId,
+        profile: context.evalId,
+        signal: context.signal,
+        buildLocators: context.buildLocators,
+      }),
+    ).pipe(Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause))),
+    (rawResult) =>
+      Effect.try({
+        try: () => {
+          const result = validateCustomCaseMaterializeResult(rawResult, plan.services);
+          return normalizeMaterialized(
+            {
+              sandbox: result.sandbox,
+              // 自定义 case 的显式适配点:author 返回的公共 Sandbox 在这里降成 provider backend,
+              // 供 attempt-scope author facade 使用;resource facade 仍由 normalizeMaterialized 归一。
+              authorBackend: customSandboxBackend(result.sandbox),
+              ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
+              group: result.group,
+              caseKind: "custom",
+              caseKey: context.plan.providerPlan.build.caseKey,
+              buildKeys: context.plan.providerPlan.build.buildKeys,
+              identity: context.plan.providerPlan.identity,
+              facts: result.facts,
+            },
+            context,
+          );
+        },
+        catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
+      }).pipe(Effect.catch((failure) => Effect.andThen(stopInvalidCustomCaseResult(rawResult), Effect.fail(failure)))),
+  );
 }
 
 function validateCustomCaseMaterializeResult(
@@ -936,9 +995,7 @@ function validateCustomCaseMaterializeResult(
     (key) => key !== "sandbox" && key !== "group" && key !== "services" && key !== "facts",
   );
   if (extra.length > 0) {
-    throw new TypeError(
-      `defineSandboxCase materialize() returned unsupported field(s): ${extra.join(", ")}`,
-    );
+    throw new TypeError(`defineSandboxCase materialize() returned unsupported field(s): ${extra.join(", ")}`);
   }
   if (result.sandbox === null || typeof result.sandbox !== "object") {
     throw new TypeError("defineSandboxCase materialize() must return sandbox");
@@ -961,13 +1018,9 @@ function validateCustomCaseResourceGroup(value: unknown): SandboxResourceGroup {
     throw new TypeError("defineSandboxCase materialize() must return group");
   }
   const group = value as globalThis.Record<string, unknown>;
-  const extra = Object.keys(group).filter(
-    (key) => key !== "primary" && key !== "resources" && key !== "stop",
-  );
+  const extra = Object.keys(group).filter((key) => key !== "primary" && key !== "resources" && key !== "stop");
   if (extra.length > 0) {
-    throw new TypeError(
-      `defineSandboxCase materialize() group returned unsupported field(s): ${extra.join(", ")}`,
-    );
+    throw new TypeError(`defineSandboxCase materialize() group returned unsupported field(s): ${extra.join(", ")}`);
   }
   if (group.primary === null || typeof group.primary !== "object" || Array.isArray(group.primary)) {
     throw new TypeError("defineSandboxCase materialize() group.primary must be a SandboxLocator");
@@ -1001,9 +1054,7 @@ function validateCustomCaseServices(
       throw new TypeError('defineSandboxCase materialize() services "None" cannot contain a value');
     }
     if (declared._tag === "Supported") {
-      throw new TypeError(
-        'defineSandboxCase declared services "Supported" but materialize() returned "None"',
-      );
+      throw new TypeError('defineSandboxCase declared services "Supported" but materialize() returned "None"');
     }
     return { _tag: "None" };
   }
@@ -1016,9 +1067,7 @@ function validateCustomCaseServices(
     throw new TypeError('defineSandboxCase materialize() services "Available" has unsupported fields');
   }
   if (declared._tag === "Unsupported") {
-    throw new TypeError(
-      'defineSandboxCase declared services "Unsupported" but materialize() returned "Available"',
-    );
+    throw new TypeError('defineSandboxCase declared services "Unsupported" but materialize() returned "Available"');
   }
   if (services.value === null || typeof services.value !== "object") {
     throw new TypeError('defineSandboxCase materialize() services "Available" needs a ServiceController');
@@ -1065,14 +1114,16 @@ export function collectDockerComposeProviderBuildPreparation(
     }).pipe(Effect.mapError((cause) => buildFailure(published, "sandbox.build-input-drift", cause)));
     return yield* Effect.try({
       try: () => {
-      assertSameBuildKeys(plan.collection.buildKeys, collection.buildKeys, "Compose");
-      if (digestOf(composeCollectionIdentity(plan.collection)) !== digestOf(composeCollectionIdentity(collection))) {
-        throw new Error("Compose case inputs changed after physical planning. Restart the Run to plan the new inputs.");
-      }
-      return Option.some({
-        works: collection.works,
-        provider: dockerComposeBuildProvider({ env: plan.env }),
-      });
+        assertSameBuildKeys(plan.collection.buildKeys, collection.buildKeys, "Compose");
+        if (digestOf(composeCollectionIdentity(plan.collection)) !== digestOf(composeCollectionIdentity(collection))) {
+          throw new Error(
+            "Compose case inputs changed after physical planning. Restart the Run to plan the new inputs.",
+          );
+        }
+        return Option.some({
+          works: collection.works,
+          provider: dockerComposeBuildProvider({ env: plan.env }),
+        });
       },
       catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
     });
@@ -1098,54 +1149,77 @@ export function collectDockerfileProviderBuildPreparation(
     }).pipe(Effect.mapError((cause) => buildFailure(published, "sandbox.build-input-drift", cause)));
     return yield* Effect.try({
       try: () => {
-      if (collection.buildKey !== plan.buildKey) {
-        throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
-      }
-      const provider = dockerfileBuildProvider([collection]);
-      const managedSource = (locator: string, source: "cache" | "build") => ({
-        locator,
-        source,
-        acquireUse: async () => ({ locator, release() {} }),
-        release() {},
-      });
-      const managedProvider: SandboxBuildProvider = plan.profileBinding === undefined ? provider : {
-        async lookup(work) {
-          const result = await lookupDockerProfileBuild(plan.profileBinding!, work.buildKey);
-          return result.hit
-            ? { _tag: "Hit", source: managedSource(result.locator, "cache") }
-            : { _tag: "Miss" };
-        },
-        async build(work, buildContext) {
-          const lease = await createDockerProfileLease(plan.profileBinding!);
-          let reservation: import("./docker-profile/runtime.ts").DockerProfileReservation | undefined;
-          try {
-            reservation = await acquireDockerProfileReservation(lease, "build", {
-              cpus: 0, memoryBytes: 0, pids: 0, containers: 0, ephemeralDiskBytes: 0,
-            }, buildContext.signal);
-            const dockerfile = relative(collection.details.contextDir, collection.details.dockerfilePath)
-              .split(sep).join("/");
-            const result = await createDockerProfileBuild(lease, reservation.reservationId, {
-              buildKey: work.buildKey,
-              platform: collection.details.platform,
-              dockerfile,
-              ...(collection.details.buildArgs === undefined ? {} : { buildArgs: collection.details.buildArgs }),
-              ...(collection.details.target === undefined ? {} : { target: collection.details.target }),
-            }, packDockerfileBuildContext(collection.details), buildContext.signal);
-            await releaseDockerProfileReservation(lease, reservation.reservationId);
-            reservation = undefined;
-            return managedSource(result.locator, "build");
-          } finally {
-            if (reservation !== undefined) {
-              await releaseDockerProfileReservation(lease, reservation.reservationId).catch(() => undefined);
-            }
-            await lease.stopHeartbeat().catch(() => undefined);
-          }
-        },
-      };
-      return Option.some({
-        works: [collection.work],
-        provider: managedProvider,
-      });
+        if (collection.buildKey !== plan.buildKey) {
+          throw new Error(
+            "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
+          );
+        }
+        const provider = dockerfileBuildProvider([collection]);
+        const managedSource = (locator: string, source: "cache" | "build") => ({
+          locator,
+          source,
+          acquireUse: async () => ({ locator, release() {} }),
+          release() {},
+        });
+        const managedProvider: SandboxBuildProvider =
+          plan.profileBinding === undefined
+            ? provider
+            : {
+                async lookup(work) {
+                  const result = await lookupDockerProfileBuild(plan.profileBinding!, work.buildKey);
+                  return result.hit
+                    ? { _tag: "Hit", source: managedSource(result.locator, "cache") }
+                    : { _tag: "Miss" };
+                },
+                async build(work, buildContext) {
+                  const lease = await createDockerProfileLease(plan.profileBinding!);
+                  let reservation: import("./docker-profile/runtime.ts").DockerProfileReservation | undefined;
+                  try {
+                    reservation = await acquireDockerProfileReservation(
+                      lease,
+                      "build",
+                      {
+                        cpus: 0,
+                        memoryBytes: 0,
+                        pids: 0,
+                        containers: 0,
+                        ephemeralDiskBytes: 0,
+                      },
+                      buildContext.signal,
+                    );
+                    const dockerfile = relative(collection.details.contextDir, collection.details.dockerfilePath)
+                      .split(sep)
+                      .join("/");
+                    const result = await createDockerProfileBuild(
+                      lease,
+                      reservation.reservationId,
+                      {
+                        buildKey: work.buildKey,
+                        platform: collection.details.platform,
+                        dockerfile,
+                        ...(collection.details.buildArgs === undefined
+                          ? {}
+                          : { buildArgs: collection.details.buildArgs }),
+                        ...(collection.details.target === undefined ? {} : { target: collection.details.target }),
+                      },
+                      packDockerfileBuildContext(collection.details),
+                      buildContext.signal,
+                    );
+                    await releaseDockerProfileReservation(lease, reservation.reservationId);
+                    reservation = undefined;
+                    return managedSource(result.locator, "build");
+                  } finally {
+                    if (reservation !== undefined) {
+                      await releaseDockerProfileReservation(lease, reservation.reservationId).catch(() => undefined);
+                    }
+                    await lease.stopHeartbeat().catch(() => undefined);
+                  }
+                },
+              };
+        return Option.some({
+          works: [collection.work],
+          provider: managedProvider,
+        });
       },
       catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
     });
@@ -1170,10 +1244,11 @@ function runSetupHooks(
 ): Effect.Effect<void, unknown> {
   return Effect.forEach(
     hooks,
-    (hook) => Effect.tryPromise({
-      try: () => Promise.resolve(hook(sandbox, context)),
-      catch: (cause) => cause,
-    }),
+    (hook) =>
+      Effect.tryPromise({
+        try: () => Promise.resolve(hook(sandbox, context)),
+        catch: (cause) => cause,
+      }),
     { discard: true },
   );
 }
@@ -1190,13 +1265,17 @@ function runTeardownHooks(
       return cleanupCallback((signal) => {
         applyCommandDeadline(sandbox, Date.now() + CLEANUP_TIMEOUT_MS);
         return hook(sandbox, { ...context, signal });
-      }).pipe(Effect.catch((cause) => Effect.sync(() => {
-        context.diagnostic({
-          code: "sandbox-teardown-failed",
-          level: "warning",
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
-      })));
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            context.diagnostic({
+              code: "sandbox-teardown-failed",
+              level: "warning",
+              message: cause instanceof Error ? cause.message : String(cause),
+            });
+          }),
+        ),
+      );
     },
     { discard: true },
   );
@@ -1215,7 +1294,13 @@ function runSandboxPluginSetups(
       const setup = entry.lifecycle.setup;
       if (setup === undefined) return Effect.void;
       return Effect.tryPromise({
-        try: () => Promise.resolve((setup as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, input.hookContext)),
+        try: () =>
+          Promise.resolve(
+            (setup as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(
+              owned.sandbox,
+              input.hookContext,
+            ),
+          ),
         catch: (cause) => cause,
       });
     },
@@ -1235,15 +1320,20 @@ function runSandboxPluginTeardowns(
       if (teardown === undefined) return Effect.void;
       return cleanupCallback((signal) => {
         applyCommandDeadline(owned.sandbox, Date.now() + CLEANUP_TIMEOUT_MS);
-        return (teardown as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(
-          owned.sandbox, { ...input.hookContext, signal },
-        );
+        return (teardown as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, {
+          ...input.hookContext,
+          signal,
+        });
       }).pipe(
-        Effect.catch((cause) => Effect.sync(() => input.feedback.diagnostic({
-          code: "plugin-lifecycle-teardown-failed",
-          level: "warning",
-          message: cause instanceof Error ? cause.message : String(cause),
-        }))),
+        Effect.catch((cause) =>
+          Effect.sync(() =>
+            input.feedback.diagnostic({
+              code: "plugin-lifecycle-teardown-failed",
+              level: "warning",
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+          ),
+        ),
       );
     },
     { discard: true },
@@ -1258,9 +1348,11 @@ function reportReleaseFailure(
   return Effect.sync(() => {
     const resources = owned.group.resources;
     const projectName =
-      resources !== null && typeof resources === "object" && !Array.isArray(resources) &&
-        typeof (resources as globalThis.Record<string, JsonValue>).projectName === "string"
-        ? (resources as globalThis.Record<string, JsonValue>).projectName as string
+      resources !== null &&
+      typeof resources === "object" &&
+      !Array.isArray(resources) &&
+      typeof (resources as globalThis.Record<string, JsonValue>).projectName === "string"
+        ? ((resources as globalThis.Record<string, JsonValue>).projectName as string)
         : undefined;
     input.feedback.diagnostic({
       code: "sandbox-stop-failed",
@@ -1275,22 +1367,20 @@ function reportReleaseFailure(
         sandboxId: owned.sandbox.sandboxId,
         ...(projectName !== undefined ? { projectName } : {}),
       },
-      dedupeKey: projectName === undefined
-        ? `sandbox-stop-failed:${owned.sandbox.sandboxId}`
-        : `sandbox-stop-failed:${projectName}`,
+      dedupeKey:
+        projectName === undefined
+          ? `sandbox-stop-failed:${owned.sandbox.sandboxId}`
+          : `sandbox-stop-failed:${projectName}`,
     });
   });
 }
 
 function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: MaterializedSandboxCase): Effect.Effect<void> {
-  const release = input.release._tag === "Stop"
-    ? providerBoundaryEffect(() => owned.group.stop())
-    : input.release.run(owned);
+  const release =
+    input.release._tag === "Stop" ? providerBoundaryEffect(() => owned.group.stop()) : input.release.run(owned);
   // catchAll only handles the provider's typed failure. Defects and interruption remain in their
   // original Cause, while ensuring guarantees the resource group release even if a hook defects.
-  const releaseWithDiagnostic = release.pipe(
-    Effect.catch((cause) => reportReleaseFailure(input, owned, cause)),
-  );
+  const releaseWithDiagnostic = release.pipe(Effect.catch((cause) => reportReleaseFailure(input, owned, cause)));
   return runSandboxPluginTeardowns(input, owned).pipe(
     Effect.andThen(runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext)),
     Effect.ensuring(releaseWithDiagnostic),
@@ -1309,18 +1399,22 @@ function verifyBuildLocators(
   const provided = sortedBuildKeys(context.buildLocators.keys());
   const missing = planned.filter((key) => !context.buildLocators.has(key));
   if (missing.length > 0) {
-    return Effect.fail(runtimeFailure(
-      context,
-      "sandbox.build-locator-missing",
-      new Error(`Missing build locators for planned BuildKey(s): ${missing.join(", ")}`),
-    ));
+    return Effect.fail(
+      runtimeFailure(
+        context,
+        "sandbox.build-locator-missing",
+        new Error(`Missing build locators for planned BuildKey(s): ${missing.join(", ")}`),
+      ),
+    );
   }
   if (planned.length !== provided.length || planned.some((key, index) => key !== provided[index])) {
-    return Effect.fail(runtimeFailure(
-      context,
-      "sandbox.build-input-drift",
-      new Error("Runtime build locator keys differ from the physical plan."),
-    ));
+    return Effect.fail(
+      runtimeFailure(
+        context,
+        "sandbox.build-input-drift",
+        new Error("Runtime build locator keys differ from the physical plan."),
+      ),
+    );
   }
   return Effect.void;
 }
@@ -1338,11 +1432,13 @@ function verifyMaterializedIdentity(
     actualKeys.length !== plannedKeys.length ||
     plannedKeys.some((key, index) => key !== actualKeys[index])
   ) {
-    return Effect.fail(runtimeFailure(
-      context,
-      "sandbox.build-input-drift",
-      new Error("Materialized CaseKey or BuildKey set differs from the physical plan."),
-    ));
+    return Effect.fail(
+      runtimeFailure(
+        context,
+        "sandbox.build-input-drift",
+        new Error("Materialized CaseKey or BuildKey set differs from the physical plan."),
+      ),
+    );
   }
   return Effect.void;
 }
@@ -1364,7 +1460,9 @@ export function acquireSandboxRunPlan(
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
     ...(input.beforeCacheArtifact === undefined ? {} : { beforeCacheArtifact: input.beforeCacheArtifact }),
-    ...(input.beforeCachePreparationContext === undefined ? {} : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
+    ...(input.beforeCachePreparationContext === undefined
+      ? {}
+      : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
@@ -1376,16 +1474,34 @@ export function acquireSandboxRunPlan(
     Effect.flatMap(providerBinding(input.plan), (binding) => {
       const support = binding.beforeCache;
       if (input.beforeCacheArtifact !== undefined && input.beforeCachePreparationContext === undefined) {
-        return Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error("Before cache materialization requires its Record Run context.")));
+        return Effect.fail(
+          runtimeFailure(
+            context,
+            "sandbox.materialization-failed",
+            new Error("Before cache materialization requires its Record Run context."),
+          ),
+        );
       }
-      const acquire = input.beforeCachePreparationContext !== undefined && support._tag === "RunPrepared"
-        ? support.preparer.materializeFrom(undefined, input.beforeCachePreparationContext, "consumer",
-            input.beforeCacheArtifact === undefined ? { _tag: "Base" } : { _tag: "Artifact", artifact: input.beforeCacheArtifact }, context).pipe(
-            Effect.flatMap((result) => result._tag === "Degraded"
-              ? Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error(result.detail)))
-              : Effect.succeed(Object.freeze({ ...result.sandbox, beforeCacheStart: result.start }))),
-          )
-        : binding.materialize(context);
+      const acquire =
+        input.beforeCachePreparationContext !== undefined && support._tag === "RunPrepared"
+          ? support.preparer
+              .materializeFrom(
+                undefined,
+                input.beforeCachePreparationContext,
+                "consumer",
+                input.beforeCacheArtifact === undefined
+                  ? { _tag: "Base" }
+                  : { _tag: "Artifact", artifact: input.beforeCacheArtifact },
+                context,
+              )
+              .pipe(
+                Effect.flatMap((result) =>
+                  result._tag === "Degraded"
+                    ? Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error(result.detail)))
+                    : Effect.succeed(Object.freeze({ ...result.sandbox, beforeCacheStart: result.start })),
+                ),
+              )
+          : binding.materialize(context);
       const release = (owned: MaterializedSandboxCase) => releaseOwned(input, owned);
       // Profile admission registers its reservation owner before queueing. Its
       // queue/reacquire segment must remain interruptible so an Attempt deadline
@@ -1394,8 +1510,14 @@ export function acquireSandboxRunPlan(
       let acquired: MaterializedSandboxCase | undefined;
       const owned = binding.interruptibleAcquisition
         ? Effect.acquireRelease(
-            acquire.pipe(Effect.tap((value) => Effect.sync(() => { acquired = value; }))),
-            () => acquired === undefined ? Effect.void : release(acquired),
+            acquire.pipe(
+              Effect.tap((value) =>
+                Effect.sync(() => {
+                  acquired = value;
+                }),
+              ),
+            ),
+            () => (acquired === undefined ? Effect.void : release(acquired)),
           )
         : Effect.acquireRelease(acquire, release);
       return owned.pipe(Effect.tap((value) => verifyMaterializedIdentity(context, value)));
@@ -1421,7 +1543,9 @@ export function prepareMaterializedSandboxRunPlan(
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
     ...(input.beforeCacheArtifact === undefined ? {} : { beforeCacheArtifact: input.beforeCacheArtifact }),
-    ...(input.beforeCachePreparationContext === undefined ? {} : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
+    ...(input.beforeCachePreparationContext === undefined
+      ? {}
+      : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
@@ -1438,9 +1562,7 @@ export function prepareMaterializedSandboxRunPlan(
 export function materializeSandboxRunPlan(
   input: SandboxRuntimeMaterializeInput,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
-  return acquireSandboxRunPlan(input).pipe(
-    Effect.tap((owned) => prepareMaterializedSandboxRunPlan(input, owned)),
-  );
+  return acquireSandboxRunPlan(input).pipe(Effect.tap((owned) => prepareMaterializedSandboxRunPlan(input, owned)));
 }
 
 /** Build preparation 同样只调用 private binding，不按 provider/module id 分支。 */

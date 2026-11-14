@@ -4,7 +4,9 @@ import { equals } from "niceeval/expect";
 export default {
   zero: defineScoreEval({
     description: "完整零分也是有效评分，不表示目标达成",
-    test(t) { t.score(0).label("zero earned"); },
+    test(t) {
+      t.score(0).label("zero earned");
+    },
   }),
   gated: defineScoreEval({
     description: "完整评分遇到 failed gate 仍为失败",

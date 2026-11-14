@@ -1,5 +1,3 @@
-
-
 import type { E2ECommand, ProcessReceipt, InspectionSuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
 
 export type AttemptInspectionOperation =
@@ -9,7 +7,8 @@ export type AttemptInspectionOperation =
   | "attempt.usage"
   | "attempt.diff";
 
-export type AssertionIndexEntry = InspectionSuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
+export type AssertionIndexEntry =
+  InspectionSuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
 
 /** Optional mechanical checkpoints; callers retain ownership of logs and deadlines. */
 export type AssertionInspectionCheckpoint = (
@@ -17,10 +16,7 @@ export type AssertionInspectionCheckpoint = (
   entryId: string,
 ) => void | Promise<void>;
 
-export function assertionEntry(
-  document: InspectionSuccessDocumentFor<"attempt.assertion.detail">,
-  diagnostic: string,
-) {
+export function assertionEntry(document: InspectionSuccessDocumentFor<"attempt.assertion.detail">, diagnostic: string) {
   if (!("entry" in document.assertion)) {
     throw new Error(`Expected a recorded Assertion detail\n\n${diagnostic}`);
   }
@@ -34,7 +30,10 @@ export async function inspectAssertion(
   entryId: string,
   options: RunProcessOptions = {},
   checkpoint?: AssertionInspectionCheckpoint,
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"attempt.assertion.detail"> }> {
+): Promise<{
+  readonly receipt: ProcessReceipt;
+  readonly document: InspectionSuccessDocumentFor<"attempt.assertion.detail">;
+}> {
   if (checkpoint !== undefined) await checkpoint("prepare", entryId);
 
   if (checkpoint !== undefined) await checkpoint("invoke", entryId);
@@ -58,14 +57,26 @@ export async function inspectAssertionEntries(
   entries: readonly AssertionIndexEntry[],
   options: RunProcessOptions = {},
   checkpoint?: AssertionInspectionCheckpoint,
-): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"attempt.assertion.detail"> }[]> {
-  const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: InspectionSuccessDocumentFor<"attempt.assertion.detail"> }[] = [];
+): Promise<
+  readonly {
+    readonly entry: AssertionIndexEntry;
+    readonly receipt: ProcessReceipt;
+    readonly document: InspectionSuccessDocumentFor<"attempt.assertion.detail">;
+  }[]
+> {
+  const details: {
+    entry: AssertionIndexEntry;
+    receipt: ProcessReceipt;
+    document: InspectionSuccessDocumentFor<"attempt.assertion.detail">;
+  }[] = [];
   for (let offset = 0; offset < entries.length; offset += ASSERTION_DETAIL_QUERY_CONCURRENCY) {
     const batch = entries.slice(offset, offset + ASSERTION_DETAIL_QUERY_CONCURRENCY);
-    const batchDetails = await Promise.all(batch.map(async (entry) => {
-      const detail = await inspectAssertion(niceeval, projectRoot, locator, entry.entryId, options, checkpoint);
-      return { entry, ...detail };
-    }));
+    const batchDetails = await Promise.all(
+      batch.map(async (entry) => {
+        const detail = await inspectAssertion(niceeval, projectRoot, locator, entry.entryId, options, checkpoint);
+        return { entry, ...detail };
+      }),
+    );
     details.push(...batchDetails);
   }
   return details;
@@ -79,8 +90,21 @@ export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
   operation: Kind,
   options: RunProcessOptions = {},
 ): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<Kind> }> {
-
-  const receipt = await niceeval.run(["show", locator, ...({ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.usage": ["usage"], "attempt.diff": ["diff"] }[operation]), "--json"], options);
+  const receipt = await niceeval.run(
+    [
+      "show",
+      locator,
+      ...{
+        "attempt.get": [],
+        "attempt.trace": ["execution"],
+        "attempt.timing": ["timing"],
+        "attempt.usage": ["usage"],
+        "attempt.diff": ["diff"],
+      }[operation],
+      "--json",
+    ],
+    options,
+  );
   return { receipt, document: receipt.inspectionSuccess(operation) };
 }
 
@@ -90,7 +114,6 @@ export async function inspectRunSummary(
   runId: string,
   options: RunProcessOptions = {},
 ): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"run.get"> }> {
-
   const receipt = await niceeval.run(["show", `run:${runId}`, "--json"], options);
   return { receipt, document: receipt.run() };
 }

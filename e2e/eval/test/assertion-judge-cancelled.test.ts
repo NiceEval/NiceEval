@@ -12,23 +12,47 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", 
   const provider = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (chunk: string) => { body += chunk; });
+    request.on("data", (chunk: string) => {
+      body += chunk;
+    });
     request.on("end", () => {
       const payload = JSON.parse(body) as { messages: Array<{ content: string }> };
       if (!payload.messages.some((message) => message.content === "Precheck.")) {
         measurementCalls += 1;
-        response.on("close", () => { measurementConnectionClosed = true; });
+        response.on("close", () => {
+          measurementConnectionClosed = true;
+        });
         return; // The real HTTP boundary stays pending until NiceEval cancels it.
       }
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        id: "probe", object: "chat.completion", created: 0, model: "judge-e2e",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: {
-          role: "assistant", content: null, tool_calls: [{ id: "decision", type: "function",
-            function: { name: "record_judge_decision", arguments: JSON.stringify({ measurement: 1, rationale: "probe accepted" }) },
-          }],
-        } }],
-      }));
+      response.end(
+        JSON.stringify({
+          id: "probe",
+          object: "chat.completion",
+          created: 0,
+          model: "judge-e2e",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "decision",
+                    type: "function",
+                    function: {
+                      name: "record_judge_decision",
+                      arguments: JSON.stringify({ measurement: 1, rationale: "probe accepted" }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
     });
   });
   try {
@@ -40,20 +64,35 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", 
     if (address === null || typeof address === "string") throw new Error("Judge provider did not bind");
     await evalE2E.case("judge-cancelled", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
       const run = await niceeval.run(["exp", "assertion-judge-cancelled", "--rerun", "all", "--json"], {
-        env: { ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_JUDGE_KEY: "controlled-key" },
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          NICEEVAL_E2E_JUDGE_KEY: "controlled-key",
+        },
       });
       expect(run.exitCode, run.diagnostic()).toBe(1);
-      const evaluation = only(run.expEvalEvents(), (event) => event.evalId === "assertion-judge-cancelled", run.diagnostic());
+      const evaluation = only(
+        run.expEvalEvents(),
+        (event) => event.evalId === "assertion-judge-cancelled",
+        run.diagnostic(),
+      );
       expect(evaluation.verdict).toBe("errored");
       const attempt = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
-      const entry = only(attempt.document.attempt.assertions.entries, (item) => item.display.label === "Pending Judge", attempt.receipt.diagnostic());
+      const entry = only(
+        attempt.document.attempt.assertions.entries,
+        (item) => item.display.label === "Pending Judge",
+        attempt.receipt.diagnostic(),
+      );
       const detail = await inspectAssertion(niceeval, projectRoot, evaluation.locator!, entry.entryId);
       expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
       expect(JSON.stringify(detail.document.assertion)).toContain("attempted");
       expect(JSON.stringify(detail.document.assertion)).toContain("pending-marker");
       expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
-        state: "available", audit: { kind: "images", result: { state: "interrupted" },
+        state: "available",
+        audit: {
+          kind: "images",
+          result: { state: "interrupted" },
           images: [{ mediaType: "image/png" }],
           calls: [{ state: "admitted", attempts: [{ transport: "attempted", result: { state: "interrupted" } }] }],
         },
@@ -64,8 +103,14 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", 
       expect(ledger.state).toBe("complete");
       if (ledger.state !== "complete") throw new Error("Missing interrupted Judge physical usage");
       expect(ledger.calls).toHaveLength(1);
-      expect(ledger.calls[0]).toMatchObject({ entryId: entry.entryId, status: "cancelled", cost: null,
-        inputTotalTokens: null, outputTokens: null, receipt: { state: "unavailable", reason: "cancelled" } });
+      expect(ledger.calls[0]).toMatchObject({
+        entryId: entry.entryId,
+        status: "cancelled",
+        cost: null,
+        inputTotalTokens: null,
+        outputTokens: null,
+        receipt: { state: "unavailable", reason: "cancelled" },
+      });
       expect(ledger.totals.requests).toMatchObject({ state: "available", value: 1 });
       expect(ledger.totals.costs).toMatchObject({ state: "unavailable", totalCalls: 1 });
       expect(usage.document.usage.totalCosts.missingSources).toContain("judge");
@@ -74,6 +119,6 @@ test.concurrent("Attempt 取消终止 Judge 请求并保留尝试发送事实", 
     });
   } finally {
     provider.closeAllConnections();
-    await new Promise<void>((resolve, reject) => provider.close((error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => provider.close((error) => (error ? reject(error) : resolve())));
   }
 });

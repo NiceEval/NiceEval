@@ -382,10 +382,7 @@ function decodeChatOutput<K extends Operation>(
     const result =
       options.evidenceIds === undefined
         ? Schema.decodeUnknownSync(classifySchema, parse)(raw)
-        : Schema.decodeUnknownSync(
-            citedClassifySchema,
-            parse,
-          )(raw);
+        : Schema.decodeUnknownSync(citedClassifySchema, parse)(raw);
     if (options.evidenceIds !== undefined) {
       const citations = (result as unknown as { citations: readonly string[] }).citations;
       validateEvidenceIds(citations, true);
@@ -512,8 +509,9 @@ export function prepareManagedScoreMatch(input: {
   };
   const definition = { ...definitionBase, digest: scoreMatchDefinitionDigest(definitionBase) };
   const typesafe = input.judge?.protocol.kind === "typesafe-system-one";
-  const calls: Array<ScoreMatchAuditCall | TypeSafeAuditCall | import("./score-match-audit.ts").ImageScoreMatchAuditCall> =
-    [];
+  const calls: Array<
+    ScoreMatchAuditCall | TypeSafeAuditCall | import("./score-match-audit.ts").ImageScoreMatchAuditCall
+  > = [];
   let result: ScoreMatchAudit["result"] = { state: "interrupted" };
   let latched: ScoreMatchAuditFailure | undefined;
   let closed = false;
@@ -561,7 +559,6 @@ export function prepareManagedScoreMatch(input: {
     const chunks = chunkUtf8(encoded);
     return {
       manifest: {
-
         byteLength: bytes(encoded),
         digest: createHash("sha256").update(encoded).digest("hex"),
         chunkByteLengths: chunks.map(bytes),

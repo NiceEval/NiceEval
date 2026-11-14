@@ -40,7 +40,8 @@ const agent = defineAgent({
       tool_choice: { type: "function", name: TOOL_NAME },
       max_output_tokens: 256,
     });
-    if (requestCount !== 1) throw new Error(`OpenAI Responses live owner expected one request, observed ${requestCount}`);
+    if (requestCount !== 1)
+      throw new Error(`OpenAI Responses live owner expected one request, observed ${requestCount}`);
     return turnFromResponses(response);
   },
 });

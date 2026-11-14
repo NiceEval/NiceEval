@@ -13,11 +13,13 @@ test.concurrent("directory upload records one expansion and preserves bytes and 
     await chmod(join(tree, "run.sh"), 0o751);
     const machines = join(paths.projectRoot, "machines.txt");
     const transfers = join(paths.projectRoot, "transfers.txt");
-    const result = await niceeval.run(["exp", "directory", "--rerun", "all", "--json"], { env: {
-      NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/machines.mjs")).href} --import=${pathToFileURL(join(paths.projectRoot, "fixtures/archive.mjs")).href}`,
-      NICEEVAL_TRANSPORT_MACHINES: machines,
-      NICEEVAL_ARCHIVE_RECEIPT: transfers,
-    } });
+    const result = await niceeval.run(["exp", "directory", "--rerun", "all", "--json"], {
+      env: {
+        NODE_OPTIONS: `--import=${pathToFileURL(join(paths.projectRoot, "fixtures/machines.mjs")).href} --import=${pathToFileURL(join(paths.projectRoot, "fixtures/archive.mjs")).href}`,
+        NICEEVAL_TRANSPORT_MACHINES: machines,
+        NICEEVAL_ARCHIVE_RECEIPT: transfers,
+      },
+    });
     await verifyMachinesAbsent(machines);
     expect(result.exitCode, result.diagnostic()).toBe(0);
     const transferLog = await readFile(transfers, "utf8");
@@ -30,21 +32,23 @@ test.concurrent("directory upload records one expansion and preserves bytes and 
     expect(commands.exitCode, commands.diagnostic()).toBe(0);
     const items = [];
     for (const commandId of commands.inspectionSuccess("attempt.trace").trace.identityIndex.commandIds) {
-
       const detail = await niceeval.run(["show", locator, commandId, "--json"]);
       expect(detail.exitCode, detail.diagnostic()).toBe(0);
       items.push(detail.inspectionSuccess("attempt.trace.detail").detail);
     }
-    const start = items.findIndex(item => JSON.stringify(item).includes("directory-upload-start"));
-    const end = items.findIndex(item => JSON.stringify(item).includes("directory-upload-end"));
+    const start = items.findIndex((item) => JSON.stringify(item).includes("directory-upload-start"));
+    const end = items.findIndex((item) => JSON.stringify(item).includes("directory-upload-end"));
     expect(start, commands.diagnostic()).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     console.info("Directory upload timing:", JSON.stringify(items[end]));
     expect(items.slice(start + 1, end), commands.diagnostic()).toHaveLength(1);
-    const actionStart = items.findIndex(item => JSON.stringify(item).includes("directory-action-start"));
-    const actionEnd = items.findIndex(item => JSON.stringify(item).includes("directory-action-end"));
+    const actionStart = items.findIndex((item) => JSON.stringify(item).includes("directory-action-start"));
+    const actionEnd = items.findIndex((item) => JSON.stringify(item).includes("directory-action-end"));
     expect(actionStart).toBeGreaterThanOrEqual(0);
     expect(actionEnd).toBeGreaterThan(actionStart);
-    expect(items.slice(actionStart + 1, actionEnd), "A declaration-time directory action must also use one expansion").toHaveLength(1);
+    expect(
+      items.slice(actionStart + 1, actionEnd),
+      "A declaration-time directory action must also use one expansion",
+    ).toHaveLength(1);
   });
 });

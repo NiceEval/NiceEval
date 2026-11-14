@@ -33,33 +33,76 @@ const Domain = { provider: Schema.String, executionDomainId: Schema.String };
 const Request = { repository: Schema.Literal(BEFORE_CACHE_SNAPSHOTS_REPOSITORY), ...Domain, now: Integer };
 const Ownership = { artifactId: Schema.String, token: Schema.String };
 const Reserve = Schema.Struct({
-  ...Request, operation: Schema.Literal("lookup-reserve"),
-  beforeCacheKey: Schema.String, baseIdentity: Schema.String,
-  declarationJson: Schema.String, replacementScope: Schema.String,
-  artifactId: Schema.String, token: Schema.String, holdId: Schema.String,
+  ...Request,
+  operation: Schema.Literal("lookup-reserve"),
+  beforeCacheKey: Schema.String,
+  baseIdentity: Schema.String,
+  declarationJson: Schema.String,
+  replacementScope: Schema.String,
+  artifactId: Schema.String,
+  token: Schema.String,
+  holdId: Schema.String,
 });
 const Renew = Schema.Struct({ ...Request, operation: Schema.Literal("renew"), ...Ownership });
 const Requested = Schema.Struct({ ...Request, operation: Schema.Literal("request-snapshot"), ...Ownership });
-const Publish = Schema.Struct({ ...Request, operation: Schema.Literal("publish"), ...Ownership, snapshotId: Schema.String, holdId: Schema.String });
+const Publish = Schema.Struct({
+  ...Request,
+  operation: Schema.Literal("publish"),
+  ...Ownership,
+  snapshotId: Schema.String,
+  holdId: Schema.String,
+});
 const Uncertain = Schema.Struct({ ...Request, operation: Schema.Literal("uncertain"), ...Ownership });
 const Handoff = Schema.Struct({
-  ...Request, operation: Schema.Literal("handoff"), artifactId: Schema.String,
-  holdId: Schema.String, runHoldId: Schema.String, releaseRunHold: Schema.Boolean,
+  ...Request,
+  operation: Schema.Literal("handoff"),
+  artifactId: Schema.String,
+  holdId: Schema.String,
+  runHoldId: Schema.String,
+  releaseRunHold: Schema.Boolean,
 });
-const BindSandbox = Schema.Struct({ ...Request, operation: Schema.Literal("bind-sandbox"), holdId: Schema.String, sandboxId: Schema.String });
-const ReleaseSandbox = Schema.Struct({ ...Request, operation: Schema.Literal("release-sandbox"), holdId: Schema.String });
+const BindSandbox = Schema.Struct({
+  ...Request,
+  operation: Schema.Literal("bind-sandbox"),
+  holdId: Schema.String,
+  sandboxId: Schema.String,
+});
+const ReleaseSandbox = Schema.Struct({
+  ...Request,
+  operation: Schema.Literal("release-sandbox"),
+  holdId: Schema.String,
+});
 const RunHolds = Schema.Struct({
-  ...Request, operation: Schema.Literals(["renew-run-holds", "release-run-holds"]), holdIds: Schema.Array(Schema.String),
+  ...Request,
+  operation: Schema.Literals(["renew-run-holds", "release-run-holds"]),
+  holdIds: Schema.Array(Schema.String),
 });
 const Invalidate = Schema.Struct({ ...Request, operation: Schema.Literal("invalidate"), artifactId: Schema.String });
-const Claim = Schema.Struct({ ...Request, operation: Schema.Literal("claim-delete"), token: Schema.String,
+const Claim = Schema.Struct({
+  ...Request,
+  operation: Schema.Literal("claim-delete"),
+  token: Schema.String,
   excludeArtifactIds: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 const Settle = Schema.Struct({
-  ...Request, operation: Schema.Literal("settle-delete"), ...Ownership, deleted: Schema.Boolean,
+  ...Request,
+  operation: Schema.Literal("settle-delete"),
+  ...Ownership,
+  deleted: Schema.Boolean,
 });
 export const SnapshotRepositoryRequest = Schema.Union([
-  Reserve, Renew, Requested, Publish, Uncertain, Handoff, BindSandbox, ReleaseSandbox, RunHolds, Invalidate, Claim, Settle,
+  Reserve,
+  Renew,
+  Requested,
+  Publish,
+  Uncertain,
+  Handoff,
+  BindSandbox,
+  ReleaseSandbox,
+  RunHolds,
+  Invalidate,
+  Claim,
+  Settle,
 ]);
 export type BeforeCacheSnapshotRepositoryRequest = typeof SnapshotRepositoryRequest.Type;
 export const isBeforeCacheSnapshotRepositoryRequest = Schema.is(SnapshotRepositoryRequest);
@@ -71,23 +114,30 @@ const ResultValue = Schema.Union([
   Schema.Struct({ _tag: Schema.Literals(["Updated", "LeaseLost", "Superseded", "Unavailable", "Empty"]) }),
 ]);
 export const SnapshotRepositoryResult = Schema.Struct({
-  repository: Schema.Literal(BEFORE_CACHE_SNAPSHOTS_REPOSITORY), value: ResultValue,
+  repository: Schema.Literal(BEFORE_CACHE_SNAPSHOTS_REPOSITORY),
+  value: ResultValue,
 });
 export type BeforeCacheSnapshotRepositoryResult = typeof SnapshotRepositoryResult.Type;
 export const isBeforeCacheSnapshotRepositoryResult = Schema.is(SnapshotRepositoryResult);
 export type SnapshotLedgerResult = BeforeCacheSnapshotRepositoryResult["value"];
 export type SnapshotLedgerDomain = { readonly provider: string; readonly executionDomainId: string };
 export type SnapshotLedgerRequest = BeforeCacheSnapshotRepositoryRequest extends infer R
-  ? R extends BeforeCacheSnapshotRepositoryRequest ? Omit<R, "repository"> : never : never;
+  ? R extends BeforeCacheSnapshotRepositoryRequest
+    ? Omit<R, "repository">
+    : never
+  : never;
 
 /** All persistence crosses the existing UserDatabase worker transport. */
-export const snapshotLedgerRequest = Effect.fn("snapshotLedgerRequest")(function*(
-  database: UserDatabase, input: SnapshotLedgerRequest,
+export const snapshotLedgerRequest = Effect.fn("snapshotLedgerRequest")(function* (
+  database: UserDatabase,
+  input: SnapshotLedgerRequest,
 ): Effect.fn.Return<SnapshotLedgerResult, UserDatabaseFailure> {
   const result = yield* database.dispatch({ repository: BEFORE_CACHE_SNAPSHOTS_REPOSITORY, ...input });
-  if (!isBeforeCacheSnapshotRepositoryResult(result)) return yield* new UserDatabaseInvalid({
-    code: "user-database-invalid", repository: BEFORE_CACHE_SNAPSHOTS_REPOSITORY,
-    message: "Before cache snapshot worker returned an invalid result",
-  });
+  if (!isBeforeCacheSnapshotRepositoryResult(result))
+    return yield* new UserDatabaseInvalid({
+      code: "user-database-invalid",
+      repository: BEFORE_CACHE_SNAPSHOTS_REPOSITORY,
+      message: "Before cache snapshot worker returned an invalid result",
+    });
   return result.value;
 });

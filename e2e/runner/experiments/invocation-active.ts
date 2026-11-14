@@ -6,7 +6,8 @@ import { dockerSandbox, shell } from "niceeval/sandbox";
 
 export default defineExperiment({
   adapter: defineSandboxAgent({
-    name: "invocation-active-fixture", evidenceCoverage: completeEvidenceCoverage,
+    name: "invocation-active-fixture",
+    evidenceCoverage: completeEvidenceCoverage,
     install: { identity: { agent: "invocation-active-fixture", version: "1", revision: "1" }, probe: shell("true") },
     async send(_input, ctx) {
       for (let index = 0; index < 100; index++) ctx.progress({ message: `Activity ${index}` });
@@ -19,6 +20,11 @@ export default defineExperiment({
       return { status: "completed", events: [] };
     },
   }),
-  sandbox: dockerSandbox({ source: { type: "image", image: "niceeval/codex@sha256:e0b8c9b08058a30843537ca9cef7e3508e880edc0f5aba704e29636a2e7d5cd5" } }),
+  sandbox: dockerSandbox({
+    source: {
+      type: "image",
+      image: "niceeval/codex@sha256:e0b8c9b08058a30843537ca9cef7e3508e880edc0f5aba704e29636a2e7d5cd5",
+    },
+  }),
   evals: ["invocation-active"],
 });

@@ -15,7 +15,6 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-
 const EXPECTED_OUTCOMES = [
   // Skill status：只读取目标 status-report Skill、不误用 decoy，并采用目标约定；期望 passed/1。
   { experimentId: "ci", evalId: "skills/status-report", verdict: "passed", attempts: 1, passed: 1 },
@@ -72,19 +71,12 @@ it("真实 OpenClaw adapter 的 Eval 通过数正确且没有未通过项", () =
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
-  assertExpEvalOutcomes(
-    evalEvents,
-    EXPECTED_OUTCOMES,
-    () => run.diagnostic(),
-  );
+  assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
 // @feature docs/feature/adapters/README.md
 
 it("attempt.trace 读回 OpenClaw 的代表性工具证据", async () => {
-  const event = only(
-    evalEvents,
-    (candidate) => candidate.evalId === "skills/status-report",
-  );
+  const event = only(evalEvents, (candidate) => candidate.evalId === "skills/status-report");
   const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();

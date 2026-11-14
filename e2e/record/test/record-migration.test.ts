@@ -25,7 +25,10 @@ test.concurrent("旧 Record 明确拒绝且保留原件", async () => {
     const record = join(root, "record.sqlite");
     await copyFile(fixture, record);
     const original = await readFile(record);
-    for (const argv of [["show", "runs", "--json"], ["exp", "migration-agent", "--dry", "--json"]]) {
+    for (const argv of [
+      ["show", "runs", "--json"],
+      ["exp", "migration-agent", "--dry", "--json"],
+    ]) {
       const result = await niceeval.run(argv);
       expect(result.exitCode, result.diagnostic()).not.toBe(0);
       expect(result.stdout + result.stderr, result.diagnostic()).toMatch(/old(er)? version|previous version/i);

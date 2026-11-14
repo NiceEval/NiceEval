@@ -21,7 +21,9 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
       return decodeDebugPlanDocument(receipt.json<unknown>());
     };
     const action = (plan: DebugPlanDocument) => {
-      const steps = plan.commandPlan.experiments.flatMap((experiment) => experiment.lanes.flatMap((lane) => lane.slots.flatMap((slot) => slot.steps)));
+      const steps = plan.commandPlan.experiments.flatMap((experiment) =>
+        experiment.lanes.flatMap((lane) => lane.slots.flatMap((slot) => slot.steps)),
+      );
       const step = steps.find((step) => step.action?.id === "activity-shell");
       expect(step?.action).toBeDefined();
       if (!step?.action || !("fingerprint" in step.action)) throw new Error("Missing public script action plan");
@@ -37,7 +39,10 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
     const scriptPath = join(paths.projectRoot, "fixtures/sandbox-step-activity/prepare.sh");
     const renamedPath = join(paths.projectRoot, "fixtures/sandbox-step-activity/renamed.sh");
     await rename(scriptPath, renamedPath);
-    await writeFile(evalPath, originalEval.replace("prepare.sh", "renamed.sh").replace("Prepare runtime marker", "Renamed display label"));
+    await writeFile(
+      evalPath,
+      originalEval.replace("prepare.sh", "renamed.sh").replace("Prepare runtime marker", "Renamed display label"),
+    );
     expect(action(await debug()).fingerprint).toEqual(initial.fingerprint);
     await writeFile(renamedPath, `${SHELL_COMMAND}\n# changed byte\n`);
     expect(action(await debug()).fingerprint).not.toEqual(initial.fingerprint);
@@ -46,10 +51,14 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
     await writeFile(evalPath, originalEval);
     const experimentPath = join(paths.projectRoot, "experiments/sandbox-step-activity.ts");
     const experiment = await readFile(experimentPath, "utf8");
-    await writeFile(experimentPath, 'import { writeFileSync } from "node:fs";\n' + experiment.replace(
-      '  description:',
-      '  before() { writeFileSync(new URL("../fixtures/sandbox-step-activity/prepare.sh", import.meta.url), "exit 91\\n"); },\n  description:',
-    ));
+    await writeFile(
+      experimentPath,
+      'import { writeFileSync } from "node:fs";\n' +
+        experiment.replace(
+          "  description:",
+          '  before() { writeFileSync(new URL("../fixtures/sandbox-step-activity/prepare.sh", import.meta.url), "exit 91\\n"); },\n  description:',
+        ),
+    );
     let attemptLocator: string | undefined;
     await withPty(
       [...cliBinary, "exp", "sandbox-step-activity", "--rerun", "all"],
@@ -69,7 +78,7 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
         expect(receipt.signal, receipt.diagnostic()).toBeNull();
         expect(receipt.raw).toContain(String.fromCharCode(27));
         expect(receipt.raw).toContain("activity-exec");
-        expect(receipt.raw).not.toContain('activity-arg');
+        expect(receipt.raw).not.toContain("activity-arg");
         expect(receipt.raw).not.toContain("activity-env-private-value");
         expect(receipt.raw).not.toContain("sandbox-write-private-body");
         expect(receipt.raw).not.toContain("fixtures/sandbox-step-activity/upload.txt");
@@ -103,41 +112,61 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
 });
 
 // @use-case docs/feature/sandbox/use-case/sandbox-ordered-preparation.md
-test.concurrent.each(["both", "neither", "missing", "query", "fragment", "utf8", "nul", "symlink", "label-empty", "label-control", "label-long"] as const)(
-  "脚本准备在创建 Sandbox 前拒绝无效声明：%s", async (invalid) => {
-    await cliE2E.case(`sandbox-script-invalid-${invalid}`, async ({ paths, commands: { niceeval } }) => {
-      const evalPath = join(paths.projectRoot, "evals/sandbox-step-activity/display.eval.ts");
-      let source = await readFile(evalPath, "utf8");
-      const scriptPath = join(paths.projectRoot, "fixtures/sandbox-step-activity/prepare.sh");
-      const outside = await mkdtemp(join(tmpdir(), "niceeval-script-outside-"));
-      try {
-        if (invalid === "both") source = source.replace('      script:', '      command: "true",\n      script:');
-        if (invalid === "neither") source = source.replace(/      script:.*\n/u, "");
-        if (invalid === "missing") source = source.replace("prepare.sh", "missing.sh");
-        if (invalid === "query") source = source.replace("prepare.sh", "prepare.sh?version=1");
-        if (invalid === "fragment") source = source.replace("prepare.sh", "prepare.sh#version");
-        if (invalid === "utf8") await writeFile(scriptPath, Buffer.from([0xff, 0xfe]));
-        if (invalid === "nul") await writeFile(scriptPath, Buffer.from([0]));
-        if (invalid === "symlink") {
-          const target = join(outside, "outside.sh");
-          await writeFile(target, "true\n");
-          await rm(scriptPath);
-          await symlink(target, scriptPath);
-        }
-        if (invalid.startsWith("label-")) source = source.replace('"Prepare runtime marker"', JSON.stringify(
-          invalid === "label-empty" ? "" : invalid === "label-control" ? "bad\nlabel" : "😀".repeat(257),
-        ));
-        await writeFile(evalPath, source);
-        const receipt = await niceeval.run(["debug", "sandbox-step-activity", "sandbox-step-activity/display", "--json"]);
-        expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
-        expect(receipt.stdout).toBe("");
-        expect(receipt.stderr).toContain(invalid.startsWith("label-") ? ".label" : invalid === "both" || invalid === "neither" ? "exactly one" : "shell script");
-      } finally {
-        await rm(outside, { recursive: true, force: true });
+test.concurrent.each([
+  "both",
+  "neither",
+  "missing",
+  "query",
+  "fragment",
+  "utf8",
+  "nul",
+  "symlink",
+  "label-empty",
+  "label-control",
+  "label-long",
+] as const)("脚本准备在创建 Sandbox 前拒绝无效声明：%s", async (invalid) => {
+  await cliE2E.case(`sandbox-script-invalid-${invalid}`, async ({ paths, commands: { niceeval } }) => {
+    const evalPath = join(paths.projectRoot, "evals/sandbox-step-activity/display.eval.ts");
+    let source = await readFile(evalPath, "utf8");
+    const scriptPath = join(paths.projectRoot, "fixtures/sandbox-step-activity/prepare.sh");
+    const outside = await mkdtemp(join(tmpdir(), "niceeval-script-outside-"));
+    try {
+      if (invalid === "both") source = source.replace("      script:", '      command: "true",\n      script:');
+      if (invalid === "neither") source = source.replace(/      script:.*\n/u, "");
+      if (invalid === "missing") source = source.replace("prepare.sh", "missing.sh");
+      if (invalid === "query") source = source.replace("prepare.sh", "prepare.sh?version=1");
+      if (invalid === "fragment") source = source.replace("prepare.sh", "prepare.sh#version");
+      if (invalid === "utf8") await writeFile(scriptPath, Buffer.from([0xff, 0xfe]));
+      if (invalid === "nul") await writeFile(scriptPath, Buffer.from([0]));
+      if (invalid === "symlink") {
+        const target = join(outside, "outside.sh");
+        await writeFile(target, "true\n");
+        await rm(scriptPath);
+        await symlink(target, scriptPath);
       }
-    });
-  },
-);
+      if (invalid.startsWith("label-"))
+        source = source.replace(
+          '"Prepare runtime marker"',
+          JSON.stringify(
+            invalid === "label-empty" ? "" : invalid === "label-control" ? "bad\nlabel" : "😀".repeat(257),
+          ),
+        );
+      await writeFile(evalPath, source);
+      const receipt = await niceeval.run(["debug", "sandbox-step-activity", "sandbox-step-activity/display", "--json"]);
+      expect(receipt.exitCode, receipt.diagnostic()).not.toBe(0);
+      expect(receipt.stdout).toBe("");
+      expect(receipt.stderr).toContain(
+        invalid.startsWith("label-")
+          ? ".label"
+          : invalid === "both" || invalid === "neither"
+            ? "exactly one"
+            : "shell script",
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+});
 
 // @use-case docs/feature/sandbox/use-case/sandbox-ordered-preparation.md
 test.concurrent("准备命令失败时，概览与执行页指向该命令完整保留的输出", async () => {

@@ -2,12 +2,7 @@
 // SourceView 展开区与兜底区复用 ConversationEntries。
 
 import { Fragment, type ReactElement, type ReactNode } from "react";
-import {
-  dataShapeError,
-  isLocalizedText,
-  isObject,
-  type ValueProps,
-} from "./shared.ts";
+import { dataShapeError, isLocalizedText, isObject, type ValueProps } from "./shared.ts";
 import {
   resolveLocalizedText,
   stripControl,
@@ -159,8 +154,8 @@ function validateTurn(value: unknown, path: string): string | null {
   if (typeof value.key !== "string") return `"${path}.key" must be a string`;
   if (!isLocalizedText(value.label)) return `"${path}.label" must be a LocalizedText`;
   if (
-    value.durationMs !== undefined
-    && (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs) || value.durationMs < 0)
+    value.durationMs !== undefined &&
+    (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs) || value.durationMs < 0)
   ) {
     return `"${path}.durationMs" must be a non-negative number`;
   }
@@ -222,7 +217,9 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
         id={`conversation-${entry.anchor}`}
         role="button"
         tabIndex={0}
-      >{head}</div>
+      >
+        {head}
+      </div>
     );
   }
   return (
@@ -259,7 +256,9 @@ export function ConversationEntries({
 
 function TurnCard({ turn, locale }: { turn: ConversationTurn; locale: ReportLocale }): ReactElement {
   return (
-    <article className={cx("niceeval-conversation-turn", turn.verdict && `niceeval-conversation-turn--${turn.verdict}`)}>
+    <article
+      className={cx("niceeval-conversation-turn", turn.verdict && `niceeval-conversation-turn--${turn.verdict}`)}
+    >
       <header className="niceeval-conversation-turn-head">
         <span className="niceeval-conversation-turn-label">{resolveLocalizedText(turn.label, locale)}</span>
         {turn.durationMs !== undefined ? (
@@ -289,23 +288,31 @@ function SessionSummary({
   title?: LocalizedText;
   locale: ReportLocale;
 }): ReactElement {
-  const durations = content.turns.flatMap((turn) => turn.durationMs === undefined ? [] : [turn.durationMs]);
+  const durations = content.turns.flatMap((turn) => (turn.durationMs === undefined ? [] : [turn.durationMs]));
   const calls = content.turns.reduce(
     (count, turn) => count + turn.entries.filter((entry) => entry.callPhase === "started").length,
     0,
   );
-  const duration = durations.length === 0
-    ? "—"
-    : formatSessionDuration(durations.reduce((total, value) => total + value, 0));
+  const duration =
+    durations.length === 0 ? "—" : formatSessionDuration(durations.reduce((total, value) => total + value, 0));
   return (
     <header className="niceeval-conversation-session-head">
       <span className="niceeval-conversation-session-title">
         {title === undefined ? "Session log" : resolveLocalizedText(title, locale)}
       </span>
       <dl className="niceeval-conversation-session-stats">
-        <div><dt>Duration</dt><dd>{duration}</dd></div>
-        <div><dt>Turns</dt><dd>{content.turns.length}</dd></div>
-        <div><dt>Calls</dt><dd>{calls}</dd></div>
+        <div>
+          <dt>Duration</dt>
+          <dd>{duration}</dd>
+        </div>
+        <div>
+          <dt>Turns</dt>
+          <dd>{content.turns.length}</dd>
+        </div>
+        <div>
+          <dt>Calls</dt>
+          <dd>{calls}</dd>
+        </div>
       </dl>
     </header>
   );
@@ -313,12 +320,17 @@ function SessionSummary({
 
 function commandEvidenceTitle(command: CommandEvidenceItem): string {
   const title =
-    command.classification === "succeeded" ? "COMMAND"
-    : command.classification === "failed" ? "FAILED COMMAND"
-    : "NON-ZERO COMMAND · observed";
-  const result = command.exitCode === undefined
-    ? typeof command.outcome === "string" ? command.outcome : JSON.stringify(command.outcome)
-    : `exit ${command.exitCode}`;
+    command.classification === "succeeded"
+      ? "COMMAND"
+      : command.classification === "failed"
+        ? "FAILED COMMAND"
+        : "NON-ZERO COMMAND · observed";
+  const result =
+    command.exitCode === undefined
+      ? typeof command.outcome === "string"
+        ? command.outcome
+        : JSON.stringify(command.outcome)
+      : `exit ${command.exitCode}`;
   return `${title} · ${command.phase} · ${result}${command.durationMs === undefined ? "" : ` · ${command.durationMs}ms`}`;
 }
 
@@ -326,9 +338,7 @@ function CommandEvidenceCard({ command }: { command: CommandEvidenceItem }): Rea
   return (
     <article className={cx("niceeval-command-evidence-card", `niceeval-command-evidence--${command.classification}`)}>
       <header className="niceeval-conversation-turn-head">
-        <span className="niceeval-conversation-turn-label">
-          {commandEvidenceTitle(command)}
-        </span>
+        <span className="niceeval-conversation-turn-label">{commandEvidenceTitle(command)}</span>
       </header>
       <div className="niceeval-command-evidence-display">{command.display}</div>
       {command.stdout ? (
@@ -347,11 +357,7 @@ function CommandEvidenceCard({ command }: { command: CommandEvidenceItem }): Rea
   );
 }
 
-export function conversationText(
-  data: ConversationContent,
-  locale: ReportLocale,
-  drillDown?: string,
-): string {
+export function conversationText(data: ConversationContent, locale: ReportLocale, drillDown?: string): string {
   const head = [`conversation: ${data.turns.length} round${data.turns.length === 1 ? "" : "s"}`];
   const command = drillDown;
   if (command) head.push(command);
@@ -367,21 +373,89 @@ export function conversationText(
 function assertCommandEvidenceContent(data: unknown): CommandEvidenceContent | null {
   if (data === null || data === undefined) return null;
   if (!isObject(data) || !Array.isArray(data.commands)) {
-    throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", '"data.commands" must be an array');
+    throw dataShapeError(
+      "CommandEvidence",
+      "commandEvidenceData",
+      "CommandEvidenceContent",
+      '"data.commands" must be an array',
+    );
   }
   for (const [index, command] of data.commands.entries()) {
-    if (!isObject(command)) throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}]" must be an object`);
-    if (typeof command.commandId !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].commandId" must be a string`);
-    if (typeof command.phase !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].phase" must be a string`);
-    if (typeof command.display !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].display" must be a string`);
-    if (command.exitCode !== undefined && typeof command.exitCode !== "number") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].exitCode" must be a number`);
-    if (command.outcome === undefined) throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].outcome" must be present`);
-    if (command.classification !== "succeeded" && command.classification !== "observed" && command.classification !== "failed") {
-      throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].classification" must be succeeded | observed | failed`);
+    if (!isObject(command))
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}]" must be an object`,
+      );
+    if (typeof command.commandId !== "string")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].commandId" must be a string`,
+      );
+    if (typeof command.phase !== "string")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].phase" must be a string`,
+      );
+    if (typeof command.display !== "string")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].display" must be a string`,
+      );
+    if (command.exitCode !== undefined && typeof command.exitCode !== "number")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].exitCode" must be a number`,
+      );
+    if (command.outcome === undefined)
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].outcome" must be present`,
+      );
+    if (
+      command.classification !== "succeeded" &&
+      command.classification !== "observed" &&
+      command.classification !== "failed"
+    ) {
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].classification" must be succeeded | observed | failed`,
+      );
     }
-    if (command.durationMs !== undefined && typeof command.durationMs !== "number") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].durationMs" must be a number`);
-    if (command.stdout !== undefined && typeof command.stdout !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].stdout" must be a string`);
-    if (command.stderr !== undefined && typeof command.stderr !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].stderr" must be a string`);
+    if (command.durationMs !== undefined && typeof command.durationMs !== "number")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].durationMs" must be a number`,
+      );
+    if (command.stdout !== undefined && typeof command.stdout !== "string")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].stdout" must be a string`,
+      );
+    if (command.stderr !== undefined && typeof command.stderr !== "string")
+      throw dataShapeError(
+        "CommandEvidence",
+        "commandEvidenceData",
+        "CommandEvidenceContent",
+        `"data.commands[${index}].stderr" must be a string`,
+      );
   }
   return data as unknown as CommandEvidenceContent;
 }
@@ -417,7 +491,9 @@ export function CommandEvidence({ data, className, locale }: CommandEvidenceProp
           )}
         </summary>
         <div className="niceeval-command-evidence-cards">
-          {content.commands.map((command) => <CommandEvidenceCard key={command.commandId} command={command} />)}
+          {content.commands.map((command) => (
+            <CommandEvidenceCard key={command.commandId} command={command} />
+          ))}
         </div>
       </details>
     </section>

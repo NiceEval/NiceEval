@@ -17,7 +17,6 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-
 const EXPECTED_OUTCOMES = [
   // coding-task：文件写入、编辑与 shell 调用都须完成；单次基线 Attempt 全部断言成立才是 passed/1。
   { experimentId: "coding", evalId: "coding-task", verdict: "passed", attempts: 1, passed: 1 },
@@ -58,14 +57,9 @@ function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: E
   // families. Eval selectors intentionally use bare prefixes, so only the
   // Eval selector needs a preflight ambiguity check before spending a retry.
   const evals = events
-    .filter(
-      (event) =>
-        event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId),
-    )
+    .filter((event) => event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId))
     .map((event) => event.evalId);
-  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([
-    failed.evalId,
-  ]);
+  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([failed.evalId]);
 }
 
 function representativeAttempt(): ExpEvalEvent {
@@ -79,10 +73,7 @@ function representativeAttempt(): ExpEvalEvent {
 beforeAll(async () => {
   rmSync(".niceeval", { recursive: true, force: true });
 
-  run = await niceeval.run(
-    ["exp", "--rerun", "all", "--json"],
-    { timeoutMs: 50 * 60_000 },
-  );
+  run = await niceeval.run(["exp", "--rerun", "all", "--json"], { timeoutMs: 50 * 60_000 });
   const inv = run.expReceipt();
   const firstEvents = run.expEvalEvents();
   // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不能用二次运行替换它的首次并发结果。
@@ -95,14 +86,10 @@ beforeAll(async () => {
       !(event.experimentId === "hitl-content" && event.evalId === "hitl-options"),
   );
   expect(
-    firstEvents.filter(
-      (event) => event.verdict === "errored" || event.verdict === "skipped",
-    ),
+    firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
     run.diagnostic(),
   ).toHaveLength(0);
-  expect(run.exitCode, run.diagnostic()).toBe(
-    firstEvents.some((event) => event.verdict === "failed") ? 1 : 0,
-  );
+  expect(run.exitCode, run.diagnostic()).toBe(firstEvents.some((event) => event.verdict === "failed") ? 1 : 0);
   expect(inv.completion, run.diagnostic()).toBe("completed");
   for (const event of retryableFailed) assertExactRetryEvalSelector(firstEvents, event);
 
@@ -112,10 +99,7 @@ beforeAll(async () => {
     events: firstEvents,
     targets: retryableFailed,
     runRetry: (event) =>
-      niceeval.run(
-        ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
-        { timeoutMs: 50 * 60_000 },
-      ),
+      niceeval.run(["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"], { timeoutMs: 50 * 60_000 }),
   });
   if (retried.retries.length > 0) {
     process.stderr.write(

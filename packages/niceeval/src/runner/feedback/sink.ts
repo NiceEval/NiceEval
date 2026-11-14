@@ -15,7 +15,13 @@
 // 同一条消息。
 
 import { writeStderrLine } from "../../tty-line.ts";
-import type { AttemptLifecycleEvent, AttemptRef, DiagnosticSeverity, ExperimentHookName, FailureDetail } from "../types.ts";
+import type {
+  AttemptLifecycleEvent,
+  AttemptRef,
+  DiagnosticSeverity,
+  ExperimentHookName,
+  FailureDetail,
+} from "../types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import type { AttemptLocator } from "../../attempt-locator.ts";
@@ -238,7 +244,9 @@ export function reportKept(input: KeptInput): void {
     sink.kept(input);
     return;
   }
-  writeStderrLine(`kept sandbox ${input.sandboxId} (${input.provider}) — ${input.identity.evalId} #${input.identity.attempt} ${input.verdict}\n`);
+  writeStderrLine(
+    `kept sandbox ${input.sandboxId} (${input.provider}) — ${input.identity.evalId} #${input.identity.attempt} ${input.verdict}\n`,
+  );
 }
 
 /** 实验级钩子的起止(见 `ExperimentHookInput`)。没有活跃 coordinator 时退回一行 stderr ——
@@ -268,11 +276,8 @@ export function reportPrecheck(input: PrecheckInput): void {
     return;
   }
   const duration = input.durationMs !== undefined ? ` (${Math.round(input.durationMs / 1000)}s)` : "";
-  const word =
-    input.status === "done" ? `judge config ok` : `judge precheck failed`;
-  writeStderrLine(
-    input.status === "started" ? `${`prechecking judge config`}\n` : `${word}${duration}\n`,
-  );
+  const word = input.status === "done" ? `judge config ok` : `judge precheck failed`;
+  writeStderrLine(input.status === "started" ? `${`prechecking judge config`}\n` : `${word}${duration}\n`);
 }
 
 /** 用例锁等待的起止(见 `LockWaitInput`)。没有活跃 coordinator 时退回一行 stderr ——

@@ -6,13 +6,15 @@ import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 
 import { expectAttemptSource } from "./sources.ts";
 
-const EXPECTED = [{
-  experimentId: "langgraph-core",
-  evalId: "langgraph-core",
-  verdict: "passed",
-  attempts: 1,
-  passed: 1,
-}] as const;
+const EXPECTED = [
+  {
+    experimentId: "langgraph-core",
+    evalId: "langgraph-core",
+    verdict: "passed",
+    attempts: 1,
+    passed: 1,
+  },
+] as const;
 // @feature docs/feature/adapters/README.md
 
 test("createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 CLI 确定性读回", async () => {
@@ -53,11 +55,19 @@ test("createLangGraphEventStream 的真实 v3 runtime 经 Experiment 和公开 C
     expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
     const { usage } = usageReceipt.attemptUsage();
     expect(usage).toMatchObject({ hasMore: false, omittedObservationCount: 0 });
-    const usageTurn = only(usage.turns, () => true, () => usageReceipt.diagnostic());
-    const reasoning = only(usage.observations, (observation) =>
-      observation.turnId === usageTurn.turnId &&
-      observation.kind === "token-bucket" && observation.bucket === "reasoning",
-      () => usageReceipt.diagnostic());
+    const usageTurn = only(
+      usage.turns,
+      () => true,
+      () => usageReceipt.diagnostic(),
+    );
+    const reasoning = only(
+      usage.observations,
+      (observation) =>
+        observation.turnId === usageTurn.turnId &&
+        observation.kind === "token-bucket" &&
+        observation.bucket === "reasoning",
+      () => usageReceipt.diagnostic(),
+    );
     expect(reasoning).toMatchObject({
       turnId: usageTurn.turnId,
       kind: "token-bucket",

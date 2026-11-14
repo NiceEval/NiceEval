@@ -29,17 +29,16 @@ export function renderMigrationRequiredError(
   loadGuide: (guideId: string) => MigrationGuideLoadResult = loadMigrationGuide,
 ): string {
   const guideIds = [...new Set(error.occurrences.map((occurrence) => occurrence.guideId))];
-  const lines = [
-    "error: This Judge configuration requires migration.",
-    "Code: migration-required",
-  ];
+  const lines = ["error: This Judge configuration requires migration.", "Code: migration-required"];
   for (const guideId of guideIds) lines.push(`Guide: ${guideId}`);
   lines.push(...migrationOccurrenceLines(error));
   for (const guideId of guideIds) {
     const loaded = loadGuide(guideId);
-    lines.push(loaded.state === "available"
-      ? loaded.guide.content.trimEnd()
-      : `Migration guide asset unavailable: ${guideId} (niceeval ${loadInstalledPackageVersion()})`);
+    lines.push(
+      loaded.state === "available"
+        ? loaded.guide.content.trimEnd()
+        : `Migration guide asset unavailable: ${guideId} (niceeval ${loadInstalledPackageVersion()})`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
@@ -61,8 +60,12 @@ export function renderAssistedDiagnosticDetails(data: ErrorAssistanceData): read
   const lines = [`Owner: ${data.owner}`];
   for (const source of data.sources) {
     if (typeof source !== "object" || source === null || Array.isArray(source)) continue;
-    if (source.state === "located" && typeof source.file === "string" &&
-      typeof source.line === "number" && typeof source.column === "number") {
+    if (
+      source.state === "located" &&
+      typeof source.file === "string" &&
+      typeof source.line === "number" &&
+      typeof source.column === "number"
+    ) {
       lines.push(`Source: ${source.file}:${source.line}:${source.column}`);
       continue;
     }

@@ -21,24 +21,26 @@ export interface RunMemberModel {
   readonly score?: InspectionSuccessDocumentFor<"run.get">["run"]["plannedAttempts"][number]["score"];
 }
 
-export function closeRun(
-  run: InspectionSuccessDocumentFor<"run.get">,
-): RunPageModel {
+export function closeRun(run: InspectionSuccessDocumentFor<"run.get">): RunPageModel {
   return Object.freeze({
     runId: run.run.value.runId,
     experimentId: run.run.value.experimentId,
     adapter: run.run.value.context?.execution.adapter ?? null,
     diagnostics: run.run.diagnostics,
-    members: Object.freeze(run.run.plannedAttempts.map((member, index) => Object.freeze({
-      key: `${member.plannedAttemptId}:${index}`,
-      plannedAttemptId: member.plannedAttemptId,
-      evalId: member.evalId,
-      attemptOrdinal: member.attemptOrdinal,
-      state: member.state,
-      locator: member.publication.state === "published" ? member.publication.attemptLocator : null,
-      outcome: member.outcome,
-      verdict: member.verdict,
-      score: member.score,
-    }))),
+    members: Object.freeze(
+      run.run.plannedAttempts.map((member, index) =>
+        Object.freeze({
+          key: `${member.plannedAttemptId}:${index}`,
+          plannedAttemptId: member.plannedAttemptId,
+          evalId: member.evalId,
+          attemptOrdinal: member.attemptOrdinal,
+          state: member.state,
+          locator: member.publication.state === "published" ? member.publication.attemptLocator : null,
+          outcome: member.outcome,
+          verdict: member.verdict,
+          score: member.score,
+        }),
+      ),
+    ),
   });
 }

@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { defineExperiment } from "niceeval";
 import { hangingAgent, lifecycleSandbox } from "../../agents/deterministic.ts";
 
-interface BackendInfo { pid: number; port: number }
+interface BackendInfo {
+  pid: number;
+  port: number;
+}
 
 let backend: BackendInfo | undefined;
 let backendProcess: ChildProcess | undefined;
@@ -28,8 +31,14 @@ async function waitForInfo(path: string): Promise<BackendInfo> {
 async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) return true;
   return await new Promise<boolean>((resolve) => {
-    const onClose = () => { clearTimeout(timer); resolve(true); };
-    const timer = setTimeout(() => { child.off("close", onClose); resolve(false); }, timeoutMs);
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off("close", onClose);
+      resolve(false);
+    }, timeoutMs);
     child.once("close", onClose);
   });
 }

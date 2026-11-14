@@ -44,7 +44,7 @@ function looksLikeSectionLabel(text: string): boolean {
   return !/[。!!??.]$/.test(t);
 }
 
-/** 去掉 `/** */`/`//` 标记和每行前缀,返回干净的多行文本;纯分组标签返回 undefined。 */
+/** 去掉 `/** */ `/`; //` 标记和每行前缀,返回干净的多行文本;纯分组标签返回 undefined。 */
 function cleanCommentBlock(raw: string): string | undefined {
   const lines = raw.split("\n").map((line) => {
     let l = line.trim();
@@ -66,7 +66,7 @@ function isDividerComment(raw: string): boolean {
   return /^\s*\/\/\s*[─=—-]{5,}/.test(raw);
 }
 
-/** 提取紧贴 node 前面的注释块(JSDoc `/** */` 或连续的 `//` 行),隔着空行的注释视为不相关。 */
+/** 提取紧贴 node 前面的注释块(JSDoc `/** */ ` 或连续的 `; //` 行),隔着空行的注释视为不相关。 */
 function extractDoc(sourceFile: ts.SourceFile, node: ts.Node): string | undefined {
   const fullStart = node.getFullStart();
   const ranges = ts.getLeadingCommentRanges(sourceFile.text, fullStart);
@@ -334,13 +334,21 @@ function resolveIdentifierInitializer(sourceFile: ts.SourceFile, name: string): 
   return found;
 }
 
-function unwrapObjectLiteral(expression: ts.Expression, sourceFile?: ts.SourceFile): ts.ObjectLiteralExpression | undefined {
+function unwrapObjectLiteral(
+  expression: ts.Expression,
+  sourceFile?: ts.SourceFile,
+): ts.ObjectLiteralExpression | undefined {
   if (ts.isObjectLiteralExpression(expression)) return expression;
-  if (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression)) {
+  if (
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isParenthesizedExpression(expression)
+  ) {
     return unwrapObjectLiteral(expression.expression, sourceFile);
   }
   if (
-    ts.isCallExpression(expression) && expression.expression.getText() === "Object.freeze" &&
+    ts.isCallExpression(expression) &&
+    expression.expression.getText() === "Object.freeze" &&
     expression.arguments.length === 1
   ) {
     return unwrapObjectLiteral(expression.arguments[0]!, sourceFile);
@@ -367,21 +375,27 @@ function findOptionSchema(sourceFile: ts.SourceFile, schemaName: string): ts.Obj
 }
 
 function propertyValue(objectLiteral: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
-  const property = objectLiteral.properties.find((candidate) =>
-    ts.isPropertyAssignment(candidate) && candidate.name.getText() === name,
+  const property = objectLiteral.properties.find(
+    (candidate) => ts.isPropertyAssignment(candidate) && candidate.name.getText() === name,
   );
   return property !== undefined && ts.isPropertyAssignment(property) ? property.initializer : undefined;
 }
 
 function stringLiteral(expression: ts.Expression | undefined): string | undefined {
-  if (expression !== undefined && (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression))) {
+  if (
+    expression !== undefined &&
+    (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression))
+  ) {
     return stringLiteral(expression.expression);
   }
   return expression !== undefined && ts.isStringLiteral(expression) ? expression.text : undefined;
 }
 
 function booleanLiteral(expression: ts.Expression | undefined): boolean | undefined {
-  if (expression !== undefined && (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression))) {
+  if (
+    expression !== undefined &&
+    (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression))
+  ) {
     return booleanLiteral(expression.expression);
   }
   if (expression?.kind === ts.SyntaxKind.TrueKeyword) return true;
@@ -389,20 +403,34 @@ function booleanLiteral(expression: ts.Expression | undefined): boolean | undefi
   return undefined;
 }
 
-function arrayStringLiterals(expression: ts.Expression | undefined, sourceFile: ts.SourceFile): readonly string[] | undefined {
+function arrayStringLiterals(
+  expression: ts.Expression | undefined,
+  sourceFile: ts.SourceFile,
+): readonly string[] | undefined {
   if (expression === undefined) return undefined;
   const array = unwrapArrayLiteral(expression, sourceFile);
   if (array === undefined) return undefined;
-  const values = array.elements.map((element) => ts.isStringLiteral(element) ? element.text : undefined);
+  const values = array.elements.map((element) => (ts.isStringLiteral(element) ? element.text : undefined));
   return values.every((value): value is string => value !== undefined) ? Object.freeze(values) : undefined;
 }
 
-function unwrapArrayLiteral(expression: ts.Expression, sourceFile?: ts.SourceFile): ts.ArrayLiteralExpression | undefined {
+function unwrapArrayLiteral(
+  expression: ts.Expression,
+  sourceFile?: ts.SourceFile,
+): ts.ArrayLiteralExpression | undefined {
   if (ts.isArrayLiteralExpression(expression)) return expression;
-  if (ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression) || ts.isParenthesizedExpression(expression)) {
+  if (
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isParenthesizedExpression(expression)
+  ) {
     return unwrapArrayLiteral(expression.expression, sourceFile);
   }
-  if (ts.isCallExpression(expression) && expression.expression.getText() === "Object.freeze" && expression.arguments.length === 1) {
+  if (
+    ts.isCallExpression(expression) &&
+    expression.expression.getText() === "Object.freeze" &&
+    expression.arguments.length === 1
+  ) {
     return unwrapArrayLiteral(expression.arguments[0]!, sourceFile);
   }
   if (ts.isIdentifier(expression) && sourceFile !== undefined) {
@@ -518,9 +546,12 @@ function extractFlagOptions(sourceText: string, fileName: string, schemaName: st
     if (!ts.isPropertyAssignment(prop)) continue;
     const key = ts.isStringLiteral(prop.name) ? prop.name.text : prop.name.getText();
     const value = unwrapObjectLiteral(prop.initializer, sourceFile);
-    const entry = value === undefined
-      ? ts.isCallExpression(prop.initializer) ? flagFromHelperCall(prop.initializer, key, sourceFile) : undefined
-      : flagFromOptionObject(value, key, sourceFile);
+    const entry =
+      value === undefined
+        ? ts.isCallExpression(prop.initializer)
+          ? flagFromHelperCall(prop.initializer, key, sourceFile)
+          : undefined
+        : flagFromOptionObject(value, key, sourceFile);
     if (entry !== undefined) entries.push({ ...entry, doc: entry.doc ?? extractDoc(sourceFile, prop) });
   }
   return entries;
@@ -596,8 +627,10 @@ const CHINESE_CLI_REFERENCE_SUMMARIES: Readonly<Record<string, string>> = Object
   "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#all": "销毁全部留存 Sandbox。",
   "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#json": "以 JSON 输出 Incus artifact 库存或回收结果。",
   "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#apply": "按计划 ID 执行已预览的 Incus artifact 回收。",
-  "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#unused-for": "预览超过指定时长未使用的 Incus artifact，例如 30d。",
-  "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#run": "选择要采用到目标 Experiment 的一个精确 Run；重复传入会被拒绝。",
+  "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS#unused-for":
+    "预览超过指定时长未使用的 Incus artifact，例如 30d。",
+  "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#run":
+    "选择要采用到目标 Experiment 的一个精确 Run；重复传入会被拒绝。",
   "src/experiment/host/cli/contribution.ts#EXP_RENAME_CLI_OPTIONS#dry": "预览显式 Experiment 重命名。",
   "src/experiment/host/cli/contribution.ts#ACCEPT_CLI_OPTIONS#run": "采用一个已发布的精确 Run；重复传入会被拒绝。",
   "src/experiment/host/cli/contribution.ts#ACCEPT_CLI_OPTIONS#dry": "完成整 Run 采用预检，但不发布新 Run。",
@@ -647,7 +680,11 @@ const CLI_OPTION_SCHEMA_SOURCES = [
   { source: "src/experiment/host/cli/contribution.ts", schema: "DEBUG_CLI_OPTIONS", commands: ["debug"] },
   { source: "src/experiment/host/cli/contribution.ts", schema: "ACCEPT_CLI_OPTIONS", commands: ["accept"] },
   { source: "src/experiment/host/cli/contribution.ts", schema: "INVOCATION_CLI_OPTIONS", commands: ["invocation"] },
-  { source: "src/run/cli/contribution.ts", schema: "RUN_CLI_OPTIONS", commands: ["run list", "run recover", "run delete", "run import", "run export"] },
+  {
+    source: "src/run/cli/contribution.ts",
+    schema: "RUN_CLI_OPTIONS",
+    commands: ["run list", "run recover", "run delete", "run import", "run export"],
+  },
   { source: "src/show/contribution.ts", schema: "SHOW_CLI_OPTIONS", commands: ["show"] },
   { source: "src/show/contribution.ts", schema: "COMPARE_CLI_OPTIONS", commands: ["compare"] },
   { source: "src/view/cli/contribution.ts", schema: "VIEW_CLI_OPTIONS", commands: ["view"] },
@@ -661,33 +698,46 @@ const CLI_OPTION_SCHEMA_SOURCES = [
  * Parser schemas remain the only source of parser shapes and summaries. These
  * descriptors only record command-family routing already enforced by owners.
  */
-const CLI_OPTION_COMMAND_OWNERSHIP: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = Object.freeze({
-  "src/run/cli/contribution.ts#RUN_CLI_OPTIONS": Object.freeze({
-    invocation: Object.freeze(["run list"]),
-    state: Object.freeze(["run list"]),
-    experiment: Object.freeze(["run list"]),
-    limit: Object.freeze(["run list"]),
-    record: Object.freeze(["run list"]),
-    orphaned: Object.freeze(["run recover"]),
-    run: Object.freeze(["run export"]),
-    out: Object.freeze(["run export"]),
-    yes: Object.freeze(["run recover", "run delete"]),
-  }),
-  "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS": Object.freeze({
-    all: Object.freeze(["sandbox stop"]),
-    window: Object.freeze(["sandbox diff"]),
-    path: Object.freeze(["sandbox diff"]),
-    "leave-running": Object.freeze(["sandbox enter"]),
-    "record-root": Object.freeze(["sandbox list", "sandbox enter", "sandbox history", "sandbox diff", "sandbox stop", "sandbox prune"]),
-    orphans: Object.freeze(["sandbox list"]),
-    force: Object.freeze(["sandbox prune"]),
-  }),
-  "src/docker/cli/contribution.ts#DOCKER_OPTIONS": Object.freeze({
-    json: Object.freeze(["docker profile list", "docker profile doctor", "docker cache inventory", "docker cache gc"]),
-    domain: Object.freeze(["docker cache inventory", "docker cache gc"]),
-    apply: Object.freeze(["docker cache gc"]),
-  }),
-});
+const CLI_OPTION_COMMAND_OWNERSHIP: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> =
+  Object.freeze({
+    "src/run/cli/contribution.ts#RUN_CLI_OPTIONS": Object.freeze({
+      invocation: Object.freeze(["run list"]),
+      state: Object.freeze(["run list"]),
+      experiment: Object.freeze(["run list"]),
+      limit: Object.freeze(["run list"]),
+      record: Object.freeze(["run list"]),
+      orphaned: Object.freeze(["run recover"]),
+      run: Object.freeze(["run export"]),
+      out: Object.freeze(["run export"]),
+      yes: Object.freeze(["run recover", "run delete"]),
+    }),
+    "src/sandbox/cli/contribution.ts#SANDBOX_CLI_OPTIONS": Object.freeze({
+      all: Object.freeze(["sandbox stop"]),
+      window: Object.freeze(["sandbox diff"]),
+      path: Object.freeze(["sandbox diff"]),
+      "leave-running": Object.freeze(["sandbox enter"]),
+      "record-root": Object.freeze([
+        "sandbox list",
+        "sandbox enter",
+        "sandbox history",
+        "sandbox diff",
+        "sandbox stop",
+        "sandbox prune",
+      ]),
+      orphans: Object.freeze(["sandbox list"]),
+      force: Object.freeze(["sandbox prune"]),
+    }),
+    "src/docker/cli/contribution.ts#DOCKER_OPTIONS": Object.freeze({
+      json: Object.freeze([
+        "docker profile list",
+        "docker profile doctor",
+        "docker cache inventory",
+        "docker cache gc",
+      ]),
+      domain: Object.freeze(["docker cache inventory", "docker cache gc"]),
+      apply: Object.freeze(["docker cache gc"]),
+    }),
+  });
 
 function commandsForSchemaOption(
   source: CliOptionSchemaSource["source"],
@@ -732,18 +782,23 @@ function renderedFlagSyntax(entry: CollectedCliFlag, english = false): string {
   const optional = entry.optionalValue;
   if (optional === undefined) return `\`${flag}\``;
   const value = optional.values === undefined ? "<value>" : optional.values.join("|");
-  const bare = optional.default === true ? `\`${flag}\`` : english
-    ? `\`${flag}\` (alone means \`${optional.default}\`)`
-    : `\`${flag}\`（单独使用为 \`${optional.default}\`）`;
+  const bare =
+    optional.default === true
+      ? `\`${flag}\``
+      : english
+        ? `\`${flag}\` (alone means \`${optional.default}\`)`
+        : `\`${flag}\`（单独使用为 \`${optional.default}\`）`;
   const inline = `\`${flag}=${value}\``;
   const separated = `\`${flag} ${value}\``;
   return optional.separated ? `${bare} / ${inline} / ${separated}` : `${bare} / ${inline}`;
 }
 
 function referenceSummary(entry: CollectedCliFlag): string {
-  return CHINESE_CLI_REFERENCE_SUMMARIES[`${entry.source}#${entry.schema}#${entry.key}`]
-    ?? CHINESE_CLI_REFERENCE_SUMMARIES[entry.key]
-    ?? entry.summary;
+  return (
+    CHINESE_CLI_REFERENCE_SUMMARIES[`${entry.source}#${entry.schema}#${entry.key}`] ??
+    CHINESE_CLI_REFERENCE_SUMMARIES[entry.key] ??
+    entry.summary
+  );
 }
 
 function buildCliFlagRows(sources: SourceMap, translate?: ReferenceTranslation): CliFlagRow[] {
@@ -792,17 +847,26 @@ function buildCliFlagRows(sources: SourceMap, translate?: ReferenceTranslation):
   const rows: CliFlagRow[] = [];
   for (const e of seen.values()) {
     const positiveKey = negatedOf.get(e.key);
-    const hasPositivePair = positiveKey !== undefined && entries.some((candidate) =>
-      candidate.key === positiveKey && candidate.commands.some((command) => e.commands.includes(command))
-    );
+    const hasPositivePair =
+      positiveKey !== undefined &&
+      entries.some(
+        (candidate) =>
+          candidate.key === positiveKey && candidate.commands.some((command) => e.commands.includes(command)),
+      );
     if (hasPositivePair) continue; // 只在同一命令确有正向 flag 时合并；独立 --no-* 仍需出现在参考表。
     if (!e.visible) continue;
     const flags = [renderedFlagSyntax(e, translate !== undefined)];
     const negKey = `no-${e.key}`;
-    if (entries.some((x) => x.key === negKey && x.commands.some((command) => e.commands.includes(command)))) flags.push(`\`--${negKey}\``);
+    if (entries.some((x) => x.key === negKey && x.commands.some((command) => e.commands.includes(command))))
+      flags.push(`\`--${negKey}\``);
     const key = `cli-flags/${[...e.commands].sort().join(",")}/--${e.key}`;
     const description = referenceSummary(e);
-    rows.push({ flags, type: renderedOptionType(e), description: translate?.(key, description) ?? description, commands: [...e.commands] });
+    rows.push({
+      flags,
+      type: renderedOptionType(e),
+      description: translate?.(key, description) ?? description,
+      commands: [...e.commands],
+    });
   }
   return rows;
 }
@@ -825,8 +889,7 @@ function protectBareUrls(text: string): string {
 function escapeMdxProse(text: string): string {
   const segments = protectBareUrls(text).split("`");
   for (let i = 0; i < segments.length; i += 2) {
-    segments[i] = segments[i]!
-      .replace(/</g, "&lt;")
+    segments[i] = segments[i]!.replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/\{/g, "&#123;")
       .replace(/\}/g, "&#125;");
@@ -865,7 +928,9 @@ function renderCliFlagsTable(rows: CliFlagRow[], english = false): string {
   const header = `${english ? "| Flag | Command | Type | Description |" : "| Flag | 命令 | 类型 | 说明 |"}\n|---|---|---|---|`;
   const lines = rows.map((r) => {
     const flagCell = r.flags.join(" / ").replace(/\|/g, "\\|");
-    const commandCell = r.commands.map((command) => `\`niceeval${command === "" ? "" : ` ${command}`}\``).join(english ? ", " : "、");
+    const commandCell = r.commands
+      .map((command) => `\`niceeval${command === "" ? "" : ` ${command}`}\``)
+      .join(english ? ", " : "、");
     return `| ${flagCell} | ${commandCell} | ${r.type.replace(/\|/g, "\\|")} | ${escapeMdxProse(r.description).replace(/\|/g, "\\|")} |`;
   });
   return [header, ...lines].join("\n");
@@ -1009,27 +1074,42 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
     doc: translate?.([regionId, group, member.name].filter(Boolean).join("/"), member.doc ?? "") ?? member.doc,
   });
   const renderList = (members: Member[]) => renderMemberList(members.map((member) => localize(member)));
-  const renderGroups = (groups: MemberGroup[]) => renderMemberGroups(groups.map((group) => ({
-    ...group,
-    members: group.members.map((member) => localize(member, group.heading)),
-  })));
+  const renderGroups = (groups: MemberGroup[]) =>
+    renderMemberGroups(
+      groups.map((group) => ({
+        ...group,
+        members: group.members.map((member) => localize(member, group.heading)),
+      })),
+    );
   switch (regionId) {
     case "judge-image":
       return renderGroups([
-        { members: extractExportedFunctions(sources["src/judge/image.ts"], "src/judge/image.ts").filter((member) => member.name === "judgeImage") },
-        { heading: "JudgeImageInput", members: extractInterfaceMembers(sources["src/judge/image.ts"], "src/judge/image.ts", "JudgeImageInput") },
+        {
+          members: extractExportedFunctions(sources["src/judge/image.ts"], "src/judge/image.ts").filter(
+            (member) => member.name === "judgeImage",
+          ),
+        },
+        {
+          heading: "JudgeImageInput",
+          members: extractInterfaceMembers(sources["src/judge/image.ts"], "src/judge/image.ts", "JudgeImageInput"),
+        },
       ]);
     case "expect-matchers":
       return renderList(
-        [...extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts"), ...extractExportedFunctions(sources["src/assertions/context-match.ts"], "src/assertions/context-match.ts")]
-          .filter((member) => EXPECT_FACTORY_NAMES.has(member.name)),
+        [
+          ...extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts"),
+          ...extractExportedFunctions(sources["src/assertions/context-match.ts"], "src/assertions/context-match.ts"),
+        ].filter((member) => EXPECT_FACTORY_NAMES.has(member.name)),
       );
     case "value-assertion":
       return renderGroups([
         {
           heading: "Match",
-          members: extractInterfaceMembers(sources["src/assertions/match.ts"], "src/assertions/match.ts", "Match")
-            .filter((member) => !member.name.startsWith("[")),
+          members: extractInterfaceMembers(
+            sources["src/assertions/match.ts"],
+            "src/assertions/match.ts",
+            "Match",
+          ).filter((member) => !member.name.startsWith("[")),
         },
         {
           heading: "BooleanMatch",
@@ -1041,28 +1121,16 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         },
         {
           heading: "ScoreMatch",
-          members: extractInterfaceMembers(
-            sources["src/assertions/match.ts"],
-            "src/assertions/match.ts",
-            "ScoreMatch",
-          ),
+          members: extractInterfaceMembers(sources["src/assertions/match.ts"], "src/assertions/match.ts", "ScoreMatch"),
         },
       ]);
     case "defineeval-options":
-      return renderList(
-        [
-          ...extractInterfaceMembers(
-            sources["src/runner/types.ts"],
-            "src/runner/types.ts",
-            "EvalAuthorFields",
-          ),
-          ...extractTypeLiteralMembers(
-            sources["src/runner/types.ts"],
-            "src/runner/types.ts",
-            "EvalInput",
-          ).filter((member) => member.name === "test"),
-        ],
-      );
+      return renderList([
+        ...extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "EvalAuthorFields"),
+        ...extractTypeLiteralMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "EvalInput").filter(
+          (member) => member.name === "test",
+        ),
+      ]);
     case "test-context":
       return renderList(
         authorFacingMembers(
@@ -1070,10 +1138,15 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
             sources[ASSERT_FIRST_REFERENCE.source],
             ASSERT_FIRST_REFERENCE.source,
             ASSERT_FIRST_REFERENCE.testContext,
-          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)).concat(
-            extractInterfaceMembers(sources[ASSERT_FIRST_REFERENCE.source], ASSERT_FIRST_REFERENCE.source, "AgentJudgePresetMethods")
-              .filter(member => member.name === "closeQA"),
-          ),
+          )
+            .filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name))
+            .concat(
+              extractInterfaceMembers(
+                sources[ASSERT_FIRST_REFERENCE.source],
+                ASSERT_FIRST_REFERENCE.source,
+                "AgentJudgePresetMethods",
+              ).filter((member) => member.name === "closeQA"),
+            ),
         ),
       );
     case "turn-handle":
@@ -1083,10 +1156,15 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
             sources[ASSERT_FIRST_REFERENCE.source],
             ASSERT_FIRST_REFERENCE.source,
             ASSERT_FIRST_REFERENCE.turnHandle,
-          ).filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name)).concat(
-            extractInterfaceMembers(sources[ASSERT_FIRST_REFERENCE.source], ASSERT_FIRST_REFERENCE.source, "AgentJudgePresetMethods")
-              .filter(member => member.name === "closeQA"),
-          ),
+          )
+            .filter((member) => !ASSERTION_SCOPE_METHODS.has(member.name))
+            .concat(
+              extractInterfaceMembers(
+                sources[ASSERT_FIRST_REFERENCE.source],
+                ASSERT_FIRST_REFERENCE.source,
+                "AgentJudgePresetMethods",
+              ).filter((member) => member.name === "closeQA"),
+            ),
         ),
       );
     case "experiment-fields":
@@ -1094,9 +1172,7 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "ExperimentAuthorFields"),
       );
     case "config-fields":
-      return renderList(
-        extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"),
-      );
+      return renderList(extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"));
     case "agent-def":
       const agentContextMembers = extractInterfaceMembers(
         sources["src/agents/types.ts"],
@@ -1122,19 +1198,11 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         },
         {
           heading: "AdapterCleanupContext",
-          members: extractInterfaceMembers(
-            sources["src/adapter.ts"],
-            "src/adapter.ts",
-            "AdapterCleanupContext",
-          ),
+          members: extractInterfaceMembers(sources["src/adapter.ts"], "src/adapter.ts", "AdapterCleanupContext"),
         },
         {
           heading: "AdapterCreateContext",
-          members: extractInterfaceMembers(
-            sources["src/adapter.ts"],
-            "src/adapter.ts",
-            "AdapterCreateContext",
-          ),
+          members: extractInterfaceMembers(sources["src/adapter.ts"], "src/adapter.ts", "AdapterCreateContext"),
         },
         {
           heading: "DirectAgentDef",
@@ -1143,7 +1211,11 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         {
           heading: "SandboxAgentDef",
           // The public input adds a deprecated alias branch; document its canonical declaration.
-          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "SandboxAgentDefinition"),
+          members: extractInterfaceMembers(
+            sources["src/agents/types.ts"],
+            "src/agents/types.ts",
+            "SandboxAgentDefinition",
+          ),
         },
         {
           heading: "AgentContext",
@@ -1152,24 +1224,14 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
       ]);
     case "sandbox-methods":
       return renderGroups([
-        ...extractInterfaceMemberGroups(
-          sources["src/sandbox/types.ts"],
-          "src/sandbox/types.ts",
-          "Sandbox",
-        ),
+        ...extractInterfaceMemberGroups(sources["src/sandbox/types.ts"], "src/sandbox/types.ts", "Sandbox"),
         {
           heading: "CommandOptions",
-          members: extractInterfaceMembers(
-            sources["src/sandbox/types.ts"],
-            "src/sandbox/types.ts",
-            "CommandOptions",
-          ),
+          members: extractInterfaceMembers(sources["src/sandbox/types.ts"], "src/sandbox/types.ts", "CommandOptions"),
         },
       ]);
     case "stream-events":
-      return renderList(
-        extractUnionVariants(sources["src/o11y/types.ts"], "src/o11y/types.ts", "StreamEvent"),
-      );
+      return renderList(extractUnionVariants(sources["src/o11y/types.ts"], "src/o11y/types.ts", "StreamEvent"));
     case "usage-fields":
       return renderList(extractInterfaceMembers(sources["src/o11y/types.ts"], "src/o11y/types.ts", "Usage"));
     case "cli-flags":
@@ -1258,18 +1320,24 @@ export function compileEnglishReferenceRegions(
     if (sourceDescription.trim() && !description.trim()) empty.add(key);
     return description;
   };
-  const regions = new Map(REFERENCE_FILES.flatMap(({ regions }) => regions.map((regionId) =>
-    [regionId, computeRegionBody(regionId, sources, translate)] as const,
-  )));
+  const regions = new Map(
+    REFERENCE_FILES.flatMap(({ regions }) =>
+      regions.map((regionId) => [regionId, computeRegionBody(regionId, sources, translate)] as const),
+    ),
+  );
   const stale = Object.keys(translations).filter((key) => !used.has(key));
   if (missing.size || empty.size || stale.length) {
-    throw new Error([
-      `Invalid English reference translations in ${ENGLISH_REFERENCE_TRANSLATIONS_PATH}.`,
-      missing.size ? `Missing keys: ${[...missing].join(", ")}.` : "",
-      empty.size ? `Empty descriptions: ${[...empty].join(", ")}.` : "",
-      stale.length ? `Stale keys: ${stale.join(", ")}.` : "",
-      "Add missing English descriptions or remove stale keys, then rerun pnpm run repo docs reference.",
-    ].filter(Boolean).join("\n"));
+    throw new Error(
+      [
+        `Invalid English reference translations in ${ENGLISH_REFERENCE_TRANSLATIONS_PATH}.`,
+        missing.size ? `Missing keys: ${[...missing].join(", ")}.` : "",
+        empty.size ? `Empty descriptions: ${[...empty].join(", ")}.` : "",
+        stale.length ? `Stale keys: ${stale.join(", ")}.` : "",
+        "Add missing English descriptions or remove stale keys, then rerun pnpm run repo docs reference.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
   }
   return regions;
 }
@@ -1324,7 +1392,9 @@ function frontmatterField(page: ZhPage, field: "title" | "description"): string 
   const line = fm?.[1]?.match(new RegExp(`^${field}:\\s*(.+)$`, "m"))?.[1]?.trim();
   const value = line?.replace(/^(["'])(.*)\1$/, "$2").trim();
   if (!value) {
-    throw new Error(`${page.path} 缺少 frontmatter ${field};补上一句任务视角的自述后重跑 pnpm run repo docs reference。`);
+    throw new Error(
+      `${page.path} 缺少 frontmatter ${field};补上一句任务视角的自述后重跑 pnpm run repo docs reference。`,
+    );
   }
   return value;
 }

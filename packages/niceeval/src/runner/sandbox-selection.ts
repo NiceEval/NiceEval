@@ -2,10 +2,7 @@
 // 本模块不修改 AgentRun；check 消费 link 结果，dry/run 消费同一批 immutable prepared pairs。
 
 import { Data, Effect } from "effect";
-import {
-  adapterAcceptsEval,
-  adapterContractRequiredByEval,
-} from "../adapter.ts";
+import { adapterAcceptsEval, adapterContractRequiredByEval } from "../adapter.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
@@ -64,13 +61,8 @@ export interface PreparedRunPair {
   readonly plugin: PluginPairLink;
 }
 
-export class SandboxRunPlanningInvariantError extends Data.TaggedError(
-  "SandboxRunPlanningInvariantError",
-)<{
-  readonly code:
-    | "sandbox.run-planning-invariant"
-    | "eval-group-sandbox-reuse-conflict"
-    | "eval-group-incompatible";
+export class SandboxRunPlanningInvariantError extends Data.TaggedError("SandboxRunPlanningInvariantError")<{
+  readonly code: "sandbox.run-planning-invariant" | "eval-group-sandbox-reuse-conflict" | "eval-group-incompatible";
   readonly message: string;
 }> {}
 
@@ -81,9 +73,7 @@ export interface DuplicateSandboxRunPair {
   readonly occurrences: number;
 }
 
-export class SandboxRunPairDuplicateError extends Data.TaggedError(
-  "SandboxRunPairDuplicateError",
-)<{
+export class SandboxRunPairDuplicateError extends Data.TaggedError("SandboxRunPairDuplicateError")<{
   readonly code: "sandbox.duplicate-run-pair";
   readonly duplicates: readonly DuplicateSandboxRunPair[];
   readonly message: string;
@@ -141,22 +131,28 @@ export function linkRunSandboxes(
   runs: readonly AgentRun[],
 ): Effect.Effect<
   readonly LinkedRunPair[],
-  SandboxLayerLinkError | SandboxBeforePlanningError | SandboxRunPlanningInvariantError | SandboxRunPairDuplicateError | PluginLinkError
+  | SandboxLayerLinkError
+  | SandboxBeforePlanningError
+  | SandboxRunPlanningInvariantError
+  | SandboxRunPairDuplicateError
+  | PluginLinkError
 > {
-  const records: Array<Readonly<{
-    input: SandboxLayerPairInput;
-    ownerKey: string;
-    key: string;
-    sourceRun: AgentRun;
-    run: AgentRun;
-    evalDef: DiscoveredEval;
-    plugin: PluginPairLink;
-    authorBaseDirs: {
-      readonly eval: string;
-      readonly "eval-group"?: string;
-      readonly experiment: string;
-    };
-  }>> = [];
+  const records: Array<
+    Readonly<{
+      input: SandboxLayerPairInput;
+      ownerKey: string;
+      key: string;
+      sourceRun: AgentRun;
+      run: AgentRun;
+      evalDef: DiscoveredEval;
+      plugin: PluginPairLink;
+      authorBaseDirs: {
+        readonly eval: string;
+        readonly "eval-group"?: string;
+        readonly experiment: string;
+      };
+    }>
+  > = [];
 
   const pluginRuns = new Map<AgentRun, ReturnType<typeof preparePluginRun>>();
   const pluginIssues: import("../plugin/link.ts").PluginLinkIssue[] = [];
@@ -173,36 +169,45 @@ export function linkRunSandboxes(
   for (const sourceRun of runs) {
     const pluginRun = pluginRuns.get(sourceRun);
     if (pluginRun === undefined) {
-      return Effect.fail(new SandboxRunPlanningInvariantError({
-        code: "sandbox.run-planning-invariant",
-        message: "Plugin run preparation omitted a discovered AgentRun.",
-      }));
+      return Effect.fail(
+        new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: "Plugin run preparation omitted a discovered AgentRun.",
+        }),
+      );
     }
     const run = pluginRun.run;
     const { experimentId, experimentBaseDir, experimentSourcePath } = run;
     if (experimentId === undefined || experimentBaseDir === undefined || experimentSourcePath === undefined) {
-      return Effect.fail(new SandboxRunPlanningInvariantError({
-        code: "sandbox.run-planning-invariant",
-        message: "Sandbox planning requires completed Experiment discovery facts: id, baseDir, and sourcePath.",
-      }));
+      return Effect.fail(
+        new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: "Sandbox planning requires completed Experiment discovery facts: id, baseDir, and sourcePath.",
+        }),
+      );
     }
     for (const evalDef of selectedEvalsForRun(evals, sourceRun)) {
       const requiredContract = adapterContractRequiredByEval(evalDef);
       if (!adapterAcceptsEval(run.adapter, evalDef)) {
-        return Effect.fail(new SandboxRunPlanningInvariantError({
-          code: "sandbox.run-planning-invariant",
-          message: run.adapter === undefined
-            ? `Eval ${JSON.stringify(evalDef.id)} requires Adapter contract ${JSON.stringify(requiredContract)}; select an Adapter.`
-            : run.adapter.kind === "custom"
-            ? `Adapter ${JSON.stringify(run.adapter.name)} does not implement the runtime contract required by Eval ${JSON.stringify(evalDef.id)} (${JSON.stringify(requiredContract)}).`
-            : `Agent adapter ${JSON.stringify(run.adapter.name)} cannot execute Adapter Eval ${JSON.stringify(evalDef.id)}.`,
-        }));
+        return Effect.fail(
+          new SandboxRunPlanningInvariantError({
+            code: "sandbox.run-planning-invariant",
+            message:
+              run.adapter === undefined
+                ? `Eval ${JSON.stringify(evalDef.id)} requires Adapter contract ${JSON.stringify(requiredContract)}; select an Adapter.`
+                : run.adapter.kind === "custom"
+                  ? `Adapter ${JSON.stringify(run.adapter.name)} does not implement the runtime contract required by Eval ${JSON.stringify(evalDef.id)} (${JSON.stringify(requiredContract)}).`
+                  : `Agent adapter ${JSON.stringify(run.adapter.name)} cannot execute Adapter Eval ${JSON.stringify(evalDef.id)}.`,
+          }),
+        );
       }
       if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
-        return Effect.fail(new SandboxRunPlanningInvariantError({
-          code: "eval-group-sandbox-reuse-conflict",
-          message: `Experiment ${JSON.stringify(experimentId)} selects Eval Group ${JSON.stringify(evalDef.evalGroup.id)} while declaring sandboxReuse: true. Eval Groups own reuse; remove sandboxReuse.`,
-        }));
+        return Effect.fail(
+          new SandboxRunPlanningInvariantError({
+            code: "eval-group-sandbox-reuse-conflict",
+            message: `Experiment ${JSON.stringify(experimentId)} selects Eval Group ${JSON.stringify(evalDef.evalGroup.id)} while declaring sandboxReuse: true. Eval Groups own reuse; remove sandboxReuse.`,
+          }),
+        );
       }
       let plugin: PluginPairLink;
       try {
@@ -222,14 +227,17 @@ export function linkRunSandboxes(
       } else {
         const agent = run.agent;
         if (agent === undefined) {
-          return Effect.fail(new SandboxRunPlanningInvariantError({
-            code: "sandbox.run-planning-invariant",
-            message: `Agent AdapterRun ${JSON.stringify(run.adapter.name)} omitted its execution implementation.`,
-          }));
+          return Effect.fail(
+            new SandboxRunPlanningInvariantError({
+              code: "sandbox.run-planning-invariant",
+              message: `Agent AdapterRun ${JSON.stringify(run.adapter.name)} omitted its execution implementation.`,
+            }),
+          );
         }
-        linkedAdapter = agent.kind === "sandbox"
-          ? { kind: agent.kind, name: agent.name, sandbox: agent.sandbox }
-          : { kind: agent.kind, name: agent.name };
+        linkedAdapter =
+          agent.kind === "sandbox"
+            ? { kind: agent.kind, name: agent.name, sandbox: agent.sandbox }
+            : { kind: agent.kind, name: agent.name };
       }
       const input: SandboxLayerPairInput = {
         eval: {
@@ -237,11 +245,15 @@ export function linkRunSandboxes(
           layer: plugin.evalLayer,
           declaredAt: { file: evalDef.sourcePath },
         },
-        ...(evalDef.evalGroup === undefined ? {} : { group: {
-          id: evalDef.evalGroup.id,
-          layer: plugin.groupLayer,
-          declaredAt: { file: evalDef.evalGroup.sourcePath },
-        } }),
+        ...(evalDef.evalGroup === undefined
+          ? {}
+          : {
+              group: {
+                id: evalDef.evalGroup.id,
+                layer: plugin.groupLayer,
+                declaredAt: { file: evalDef.evalGroup.sourcePath },
+              },
+            }),
         experiment: {
           id: experimentId,
           layer: plugin.experimentLayer,
@@ -249,20 +261,22 @@ export function linkRunSandboxes(
         },
         agent: linkedAdapter,
       };
-      records.push(Object.freeze({
-        input,
-        ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent?.name ?? ""]),
-        key: runPairKey(experimentId, evalDef.id),
-        sourceRun,
-        run,
-        evalDef,
-        plugin,
-        authorBaseDirs: Object.freeze({
-          eval: evalDef.baseDir,
-          ...(evalDef.evalGroup === undefined ? {} : { "eval-group": evalDef.evalGroup.baseDir }),
-          experiment: experimentBaseDir,
+      records.push(
+        Object.freeze({
+          input,
+          ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent?.name ?? ""]),
+          key: runPairKey(experimentId, evalDef.id),
+          sourceRun,
+          run,
+          evalDef,
+          plugin,
+          authorBaseDirs: Object.freeze({
+            eval: evalDef.baseDir,
+            ...(evalDef.evalGroup === undefined ? {} : { "eval-group": evalDef.evalGroup.baseDir }),
+            experiment: experimentBaseDir,
+          }),
         }),
-      }));
+      );
     }
   }
 
@@ -279,19 +293,22 @@ export function linkRunSandboxes(
   }
   const duplicates = [...occurrences.entries()]
     .filter(([, entry]) => entry.count > 1)
-    .map(([key, entry]) => Object.freeze({
-      key,
-      experimentId: entry.experimentId,
-      evalId: entry.evalId,
-      occurrences: entry.count,
-    }));
+    .map(([key, entry]) =>
+      Object.freeze({
+        key,
+        experimentId: entry.experimentId,
+        evalId: entry.evalId,
+        occurrences: entry.count,
+      }),
+    );
   if (duplicates.length > 0) {
-    return Effect.fail(new SandboxRunPairDuplicateError({
-      code: "sandbox.duplicate-run-pair",
-      duplicates: Object.freeze(duplicates),
-      message:
-        `Sandbox planning received ${duplicates.length} duplicate (Experiment, Eval) pairs. Every discovered pair must have one owner.`,
-    }));
+    return Effect.fail(
+      new SandboxRunPairDuplicateError({
+        code: "sandbox.duplicate-run-pair",
+        duplicates: Object.freeze(duplicates),
+        message: `Sandbox planning received ${duplicates.length} duplicate (Experiment, Eval) pairs. Every discovered pair must have one owner.`,
+      }),
+    );
   }
 
   return Effect.flatMap(linkSandboxLayers(records.map(({ input }) => input)), (pairs) => {
@@ -305,17 +322,21 @@ export function linkRunSandboxes(
       const ownerKey = linkedOwnerKey(pair);
       const queue = ownersByKey.get(ownerKey);
       if (queue === undefined || queue.length === 0) {
-        return Effect.fail(new SandboxRunPlanningInvariantError({
-          code: "sandbox.run-planning-invariant",
-          message: `Sandbox linker returned an unowned pair ${ownerKey}.`,
-        }));
+        return Effect.fail(
+          new SandboxRunPlanningInvariantError({
+            code: "sandbox.run-planning-invariant",
+            message: `Sandbox linker returned an unowned pair ${ownerKey}.`,
+          }),
+        );
       }
       const [owner, ...remaining] = queue;
       if (owner === undefined) {
-        return Effect.fail(new SandboxRunPlanningInvariantError({
-          code: "sandbox.run-planning-invariant",
-          message: `Sandbox owner queue was empty for ${ownerKey}.`,
-        }));
+        return Effect.fail(
+          new SandboxRunPlanningInvariantError({
+            code: "sandbox.run-planning-invariant",
+            message: `Sandbox owner queue was empty for ${ownerKey}.`,
+          }),
+        );
       }
       ownersByKey.set(ownerKey, remaining);
       const pairWithPlugins = attachSandboxPluginLifecycles(pair, {
@@ -323,22 +344,26 @@ export function linkRunSandboxes(
         "eval-group": owner.plugin.sandboxLifecycles.group,
         eval: owner.plugin.sandboxLifecycles.eval,
       });
-      linked.push(Object.freeze({
-        key: owner.key,
-        sourceRun: owner.sourceRun,
-        run: owner.run,
-        evalDef: owner.evalDef,
-        pair: pairWithPlugins,
-        plugin: owner.plugin,
-        authorBaseDirs: owner.authorBaseDirs,
-      }));
+      linked.push(
+        Object.freeze({
+          key: owner.key,
+          sourceRun: owner.sourceRun,
+          run: owner.run,
+          evalDef: owner.evalDef,
+          pair: pairWithPlugins,
+          plugin: owner.plugin,
+          authorBaseDirs: owner.authorBaseDirs,
+        }),
+      );
     }
     const remaining = [...ownersByKey.values()].reduce((count, queue) => count + queue.length, 0);
     if (remaining !== 0) {
-      return Effect.fail(new SandboxRunPlanningInvariantError({
-        code: "sandbox.run-planning-invariant",
-        message: `Sandbox linker omitted ${remaining} owned pairs.`,
-      }));
+      return Effect.fail(
+        new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: `Sandbox linker omitted ${remaining} owned pairs.`,
+        }),
+      );
     }
     return Effect.succeed(Object.freeze(linked));
   });
@@ -355,67 +380,83 @@ export function prepareRunSandboxes(
   options: SandboxRunPlanningOptions = {},
 ): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> {
   if (options.keepSandbox !== undefined) {
-    const conflicts = runs.flatMap((run) => selectedEvalsForRun(evals, run)
-      .filter((evalDef) => evalDef.evalGroup !== undefined)
-      .map((evalDef) => ({
-        experimentId: run.experimentId,
-        evalGroupId: evalDef.evalGroup!.id,
-      })));
-    const unique = [...new Map(conflicts.map((entry) => [
-      JSON.stringify([entry.experimentId, entry.evalGroupId]),
-      entry,
-    ])).values()];
+    const conflicts = runs.flatMap((run) =>
+      selectedEvalsForRun(evals, run)
+        .filter((evalDef) => evalDef.evalGroup !== undefined)
+        .map((evalDef) => ({
+          experimentId: run.experimentId,
+          evalGroupId: evalDef.evalGroup!.id,
+        })),
+    );
+    const unique = [
+      ...new Map(conflicts.map((entry) => [JSON.stringify([entry.experimentId, entry.evalGroupId]), entry])).values(),
+    ];
     if (unique.length > 0) {
-      return Effect.fail(new SandboxRunPlanningInvariantError({
-        code: "sandbox.run-planning-invariant",
-        message:
-          `--keep-sandbox cannot be combined with Eval Group reuse ` +
-          `(${unique.map(({ experimentId, evalGroupId }) =>
-            `${JSON.stringify(experimentId)} / ${JSON.stringify(evalGroupId)}`).join(", ")}). ` +
-          "Drop --keep-sandbox or select only ungrouped Evals.",
-      }));
+      return Effect.fail(
+        new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message:
+            `--keep-sandbox cannot be combined with Eval Group reuse ` +
+            `(${unique
+              .map(
+                ({ experimentId, evalGroupId }) => `${JSON.stringify(experimentId)} / ${JSON.stringify(evalGroupId)}`,
+              )
+              .join(", ")}). ` +
+            "Drop --keep-sandbox or select only ungrouped Evals.",
+        }),
+      );
     }
   }
   return Effect.flatMap(linkRunSandboxes(evals, runs), (linkedPairs) =>
     Effect.flatMap(
-      planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
-        pair,
-        authorBaseDirs,
-        requirements: Object.freeze([
-          ...physicalCapabilityRequirements(run, evalDef, options),
-          ...(pair.kind === "sandbox"
-            ? pair.requirements.map(({ requirement }) => requirement)
-            : []),
-        ]),
-      })), services),
+      planLinkedRuns(
+        linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
+          pair,
+          authorBaseDirs,
+          requirements: Object.freeze([
+            ...physicalCapabilityRequirements(run, evalDef, options),
+            ...(pair.kind === "sandbox" ? pair.requirements.map(({ requirement }) => requirement) : []),
+          ]),
+        })),
+        services,
+      ),
       (planned): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> => {
         const linkedByPair = new Map(linkedPairs.map((linked) => [linkedOwnerKey(linked.pair), linked]));
         const prepared: PreparedRunPair[] = [];
         for (const { pair, plan } of planned) {
           const linked = linkedByPair.get(linkedOwnerKey(pair));
           if (linked === undefined) {
-            return Effect.fail(new SandboxRunPlanningInvariantError({
-              code: "sandbox.run-planning-invariant",
-              message: `Physical planner returned an unowned pair ${linkedOwnerKey(pair)}.`,
-            }));
+            return Effect.fail(
+              new SandboxRunPlanningInvariantError({
+                code: "sandbox.run-planning-invariant",
+                message: `Physical planner returned an unowned pair ${linkedOwnerKey(pair)}.`,
+              }),
+            );
           }
-          prepared.push(Object.freeze({
-            key: linked.key,
-            sourceRun: linked.sourceRun,
-            run: linked.run,
-            evalDef: linked.evalDef,
-            plan,
-            identity: linkedRunRecordIdentity(plan),
-            plugin: linked.plugin,
-          }));
+          prepared.push(
+            Object.freeze({
+              key: linked.key,
+              sourceRun: linked.sourceRun,
+              run: linked.run,
+              evalDef: linked.evalDef,
+              plan,
+              identity: linkedRunRecordIdentity(plan),
+              plugin: linked.plugin,
+            }),
+          );
         }
         if (prepared.length !== linkedPairs.length) {
-          return Effect.fail(new SandboxRunPlanningInvariantError({
-            code: "sandbox.run-planning-invariant",
-            message: `Physical planner returned ${prepared.length} of ${linkedPairs.length} linked pairs.`,
-          }));
+          return Effect.fail(
+            new SandboxRunPlanningInvariantError({
+              code: "sandbox.run-planning-invariant",
+              message: `Physical planner returned ${prepared.length} of ${linkedPairs.length} linked pairs.`,
+            }),
+          );
         }
-        const groupPlans = new Map<string, { readonly evalId: string; readonly descriptor: SandboxReusePoolDescriptor }>();
+        const groupPlans = new Map<
+          string,
+          { readonly evalId: string; readonly descriptor: SandboxReusePoolDescriptor }
+        >();
         for (const entry of prepared) {
           const group = entry.evalDef.evalGroup;
           if (group === undefined || entry.plan._tag !== "Sandbox") continue;
@@ -427,25 +468,26 @@ export function prepareRunSandboxes(
             plan: entry.plan,
           });
           if (descriptor === undefined) {
-            return Effect.fail(new SandboxRunPlanningInvariantError({
-              code: "sandbox.run-planning-invariant",
-              message: `Eval Group ${JSON.stringify(group.id)} has no physical Sandbox cohort descriptor.`,
-            }));
+            return Effect.fail(
+              new SandboxRunPlanningInvariantError({
+                code: "sandbox.run-planning-invariant",
+                message: `Eval Group ${JSON.stringify(group.id)} has no physical Sandbox cohort descriptor.`,
+              }),
+            );
           }
           const previous = groupPlans.get(key);
           if (previous !== undefined && previous.descriptor.key !== descriptor.key) {
-            const differences = sandboxReusePoolIdentityDifferences(
-              previous.descriptor.identity,
-              descriptor.identity,
+            const differences = sandboxReusePoolIdentityDifferences(previous.descriptor.identity, descriptor.identity);
+            return Effect.fail(
+              new SandboxRunPlanningInvariantError({
+                code: "eval-group-incompatible",
+                message:
+                  `Eval Group ${JSON.stringify(group.id)} has incompatible physical Sandbox cohorts between ` +
+                  `Eval ${JSON.stringify(previous.evalId)} and Eval ${JSON.stringify(entry.evalDef.id)} in Experiment ` +
+                  `${JSON.stringify(entry.run.experimentId)} (different ${differences.join(", ") || "pool identity"}). ` +
+                  "Split the group by compatible provider, Agent install, and physical lifecycle identity. No Sandbox was created.",
+              }),
             );
-            return Effect.fail(new SandboxRunPlanningInvariantError({
-              code: "eval-group-incompatible",
-              message:
-                `Eval Group ${JSON.stringify(group.id)} has incompatible physical Sandbox cohorts between ` +
-                `Eval ${JSON.stringify(previous.evalId)} and Eval ${JSON.stringify(entry.evalDef.id)} in Experiment ` +
-                `${JSON.stringify(entry.run.experimentId)} (different ${differences.join(", ") || "pool identity"}). ` +
-                "Split the group by compatible provider, Agent install, and physical lifecycle identity. No Sandbox was created.",
-            }));
           }
           groupPlans.set(key, { evalId: entry.evalDef.id, descriptor });
         }
@@ -455,13 +497,13 @@ export function prepareRunSandboxes(
   );
 }
 
-export function preparedPairsByKey(
-  pairs: readonly PreparedRunPair[],
-): ReadonlyMap<string, PreparedRunPair> {
+export function preparedPairsByKey(pairs: readonly PreparedRunPair[]): ReadonlyMap<string, PreparedRunPair> {
   const snapshot = new Map(pairs.map((pair) => [pair.key, pair]));
   let view: ReadonlyMap<string, PreparedRunPair>;
   view = {
-    get size() { return snapshot.size; },
+    get size() {
+      return snapshot.size;
+    },
     get: (key: string) => snapshot.get(key),
     has: (key: string) => snapshot.has(key),
     forEach: (
@@ -477,9 +519,7 @@ export function preparedPairsByKey(
 }
 
 /** 结果记录只投影当前 pair 的实际计划，不虚构 Experiment 级默认 Sandbox。 */
-export function sandboxRunInfoForPlan(
-  plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
-): SandboxRunInfo {
+export function sandboxRunInfoForPlan(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>): SandboxRunInfo {
   const identity = providerPlanRecordIdentity(plan.providerPlan);
   return Object.freeze({
     provider: plan.providerPlan.provider,
@@ -499,9 +539,7 @@ export interface PreparedSandboxScheduling {
 }
 
 /** 调度器只消费 provider planner 给出的中性 lane/admission 元数据。 */
-export function schedulingForPreparedPairs(
-  pairs: readonly PreparedRunPair[],
-): PreparedSandboxScheduling {
+export function schedulingForPreparedPairs(pairs: readonly PreparedRunPair[]): PreparedSandboxScheduling {
   const lanes = new Map<string, { key: string; limit: number; admission: "Shared" | "Exclusive" }>();
   for (const { plan } of pairs) {
     if (plan._tag === "Direct") continue;

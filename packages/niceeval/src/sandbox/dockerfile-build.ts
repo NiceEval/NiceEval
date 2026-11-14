@@ -80,19 +80,25 @@ export function collectDockerfileBuildFromIdentity(input: {
       label: `sandbox profile ${input.profile}`,
     }).pipe(Effect.mapError((cause) => new DockerfileBuildCollectionError({ message: cause.message })));
     if (identity.buildKey !== input.expected.buildKey) {
-      return yield* Effect.fail(new DockerfileBuildCollectionError({
-        message: "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
-      }));
+      return yield* Effect.fail(
+        new DockerfileBuildCollectionError({
+          message: "Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.",
+        }),
+      );
     }
     const contextFiles = yield* listFilteredBuildContextFiles({
       contextDir: identity.contextDir,
       label: `sandbox profile ${input.profile}`,
     });
-    const authorityFingerprint = input.provider === "docker" && input.dockerSocketPath === undefined
-      ? yield* dockerTaskBuildAuthorityFingerprintEffect.pipe(
-          Effect.mapError((cause) => new DockerfileBuildCollectionError({ message: cause instanceof Error ? cause.message : String(cause) })),
-        )
-      : JSON.stringify(identity.providerIdentityMarker ?? [input.provider, input.dockerSocketPath ?? "default"]);
+    const authorityFingerprint =
+      input.provider === "docker" && input.dockerSocketPath === undefined
+        ? yield* dockerTaskBuildAuthorityFingerprintEffect.pipe(
+            Effect.mapError(
+              (cause) =>
+                new DockerfileBuildCollectionError({ message: cause instanceof Error ? cause.message : String(cause) }),
+            ),
+          )
+        : JSON.stringify(identity.providerIdentityMarker ?? [input.provider, input.dockerSocketPath ?? "default"]);
     return yield* Effect.try({
       try: () => {
         const caseKey = computeCaseKey({
@@ -121,7 +127,9 @@ export function collectDockerfileBuildFromIdentity(input: {
           buildKey: identity.buildKey,
           caseKey,
           details,
-          ...(identity.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: identity.providerIdentityMarker }),
+          ...(identity.providerIdentityMarker === undefined
+            ? {}
+            : { providerIdentityMarker: identity.providerIdentityMarker }),
           work: Object.freeze({
             ref: sandboxBuildRef(scopeId, identity.buildKey),
             scopeId,
@@ -140,9 +148,10 @@ export function collectDockerfileBuildFromIdentity(input: {
           }),
         });
       },
-      catch: (cause) => new DockerfileBuildCollectionError({
-        message: cause instanceof Error ? cause.message : String(cause),
-      }),
+      catch: (cause) =>
+        new DockerfileBuildCollectionError({
+          message: cause instanceof Error ? cause.message : String(cause),
+        }),
     });
   });
 }
@@ -172,10 +181,12 @@ export function dockerfileBuildProvider(
   const runDockerBuild = hooks.runDockerBuild ?? defaultRunDockerBuild;
   const templateExists = hooks.e2bTemplateExists ?? defaultE2BTemplateExists;
   const buildE2BTemplate = hooks.buildE2BTemplate ?? defaultBuildE2BTemplate;
-  const managedDockerCache = hooks.dockerImageExists === undefined && hooks.runDockerBuild === undefined &&
+  const managedDockerCache =
+    hooks.dockerImageExists === undefined &&
+    hooks.runDockerBuild === undefined &&
     collections.every((collection) => collection.details.dockerSocketPath === undefined)
-    ? makeTaskBuildCacheService()
-    : undefined;
+      ? makeTaskBuildCacheService()
+      : undefined;
 
   const source = (
     work: SandboxBuildWork,
@@ -186,9 +197,15 @@ export function dockerfileBuildProvider(
     locator,
     source: origin,
     acquireUse: async () => {
-      const lease = detail.provider === "docker" && managedDockerCache !== undefined
-        ? await managedDockerCache.acquireUse(work.buildKey, locator, buildManifestDigest(work), detail.dockerSocketPath)
-        : { release() {} };
+      const lease =
+        detail.provider === "docker" && managedDockerCache !== undefined
+          ? await managedDockerCache.acquireUse(
+              work.buildKey,
+              locator,
+              buildManifestDigest(work),
+              detail.dockerSocketPath,
+            )
+          : { release() {} };
       return { locator, release: () => lease.release() };
     },
     release() {},
@@ -208,7 +225,12 @@ export function dockerfileBuildProvider(
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
         if (managedDockerCache !== undefined) {
-          return await managedDockerCache.lookup(work.buildKey, tag, buildManifestDigest(work), detail.dockerSocketPath)
+          return (await managedDockerCache.lookup(
+            work.buildKey,
+            tag,
+            buildManifestDigest(work),
+            detail.dockerSocketPath,
+          ))
             ? { _tag: "Hit", source: source(work, tag, "cache", detail) }
             : { _tag: "Miss" };
         }
@@ -226,7 +248,13 @@ export function dockerfileBuildProvider(
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
         await runDockerBuild(detail, tag, ctx);
-        await managedDockerCache?.publish(work.buildKey, tag, buildManifestDigest(work), ctx.operationId, detail.dockerSocketPath);
+        await managedDockerCache?.publish(
+          work.buildKey,
+          tag,
+          buildManifestDigest(work),
+          ctx.operationId,
+          detail.dockerSocketPath,
+        );
         return source(work, tag, "build", detail);
       }
       const name = e2bBuildName(work.buildKey);
@@ -237,13 +265,17 @@ export function dockerfileBuildProvider(
 }
 
 function buildManifestDigest(work: SandboxBuildWork): string {
-  return createHash("sha256").update(JSON.stringify({
-    schemaVersion: 1,
-    scopeId: work.scopeId,
-    buildKey: work.buildKey,
-    provider: work.provider,
-    inputs: work.inputs,
-  })).digest("hex");
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: 1,
+        scopeId: work.scopeId,
+        buildKey: work.buildKey,
+        provider: work.provider,
+        inputs: work.inputs,
+      }),
+    )
+    .digest("hex");
 }
 
 export function routeBuildProviders(
@@ -251,7 +283,8 @@ export function routeBuildProviders(
 ): SandboxBuildProvider {
   const providerFor = (work: SandboxBuildWork): SandboxBuildProvider => {
     const provider = routes.get(work.ref);
-    if (provider === undefined) throw new Error(`no sandbox build provider for BuildKey ${work.buildKey.slice(0, 12)}…`);
+    if (provider === undefined)
+      throw new Error(`no sandbox build provider for BuildKey ${work.buildKey.slice(0, 12)}…`);
     return provider;
   };
   return {
@@ -282,13 +315,16 @@ export function packDockerfileBuildContext(details: DockerfileBuildDetails): Rea
       if (!facts.isFile()) throw new Error(`build context entry is no longer a regular file: ${name}`);
       await new Promise<void>((resolve, reject) => {
         const input = createReadStream(path);
-        const entry = pack.entry({
-          name,
-          type: "file",
-          size: facts.size,
-          mode: facts.mode & 0o777,
-          mtime: new Date(0),
-        }, (error) => error ? reject(error) : resolve());
+        const entry = pack.entry(
+          {
+            name,
+            type: "file",
+            size: facts.size,
+            mode: facts.mode & 0o777,
+            mtime: new Date(0),
+          },
+          (error) => (error ? reject(error) : resolve()),
+        );
         input.on("error", reject);
         entry.on("error", reject);
         input.pipe(entry);
@@ -306,7 +342,9 @@ function e2bBuildName(buildKey: BuildKey): string {
 async function defaultDockerImageExists(tag: string, dockerSocketPath?: string): Promise<boolean> {
   return await commandSucceeded("docker", [
     ...(dockerSocketPath === undefined ? [] : ["--host", `unix://${dockerSocketPath}`]),
-    "image", "inspect", tag,
+    "image",
+    "inspect",
+    tag,
   ]);
 }
 
@@ -336,26 +374,33 @@ async function defaultRunDockerBuild(
   // `docker build --network`，所以为 reservation 建短生命周期 docker-container builder，
   // 把 builder 自身绑定到 watchdog 所有的独占网络，并将结果显式 load 回 profile daemon。
   const builderName = `niceeval-${details.dockerNetworkMode.slice(0, 24)}`;
-  await runBuildCommand("docker", [
-    ...connection,
-    "buildx", "create",
-    "--driver", "docker-container",
-    "--driver-opt", `network=${details.dockerNetworkMode}`,
-    "--name", builderName,
-  ], ctx.signal);
+  await runBuildCommand(
+    "docker",
+    [
+      ...connection,
+      "buildx",
+      "create",
+      "--driver",
+      "docker-container",
+      "--driver-opt",
+      `network=${details.dockerNetworkMode}`,
+      "--name",
+      builderName,
+    ],
+    ctx.signal,
+  );
   try {
-    await runBuildCommand("docker", [
-      ...connection,
-      "buildx", "build",
-      "--builder", builderName,
-      "--load",
-      ...buildArgs,
-    ], ctx.signal);
+    await runBuildCommand(
+      "docker",
+      [...connection, "buildx", "build", "--builder", builderName, "--load", ...buildArgs],
+      ctx.signal,
+    );
   } finally {
-    await runBuildCommand("docker", [
-      ...connection,
-      "buildx", "rm", "--force", builderName,
-    ], new AbortController().signal).catch(() => undefined);
+    await runBuildCommand(
+      "docker",
+      [...connection, "buildx", "rm", "--force", builderName],
+      new AbortController().signal,
+    ).catch(() => undefined);
   }
 }
 

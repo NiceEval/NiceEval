@@ -3,7 +3,9 @@ import { Client } from "ssh2";
 import type { SSHToken } from "./api.ts";
 
 export class InstaboxReconnectExhausted extends Error {
-  constructor(cause: unknown) { super(cause instanceof Error ? cause.message : String(cause), { cause }); }
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  }
 }
 
 /** One lazily authenticated connection owned by the Machine, never a process. */
@@ -14,7 +16,9 @@ export class InstaboxConnection {
   private attempts = 0;
   constructor(private readonly token: SSHToken) {}
 
-  get reconnectAttempts(): number { return this.attempts; }
+  get reconnectAttempts(): number {
+    return this.attempts;
+  }
 
   /** All channels join the same bounded connection recovery, including backoff. */
   reconnect(failed: Client, deadline: number, budget: number): Promise<Client> {
@@ -26,23 +30,35 @@ export class InstaboxConnection {
       for (let attempt = 0; attempt < budget && performance.now() < deadline; attempt++) {
         if (this.stopped) throw new Error("Instabox SSH connection is closed");
         const delay = Math.min(250 * 2 ** attempt, Math.max(0, deadline - performance.now()));
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
         if (this.stopped || performance.now() >= deadline) break;
         this.attempts++;
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          return await Promise.race([this.open(), new Promise<never>((_resolve, reject) => {
-            timer = setTimeout(() => reject(new Error("Instabox SSH reconnect timed out")), Math.max(1, deadline - performance.now()));
-          })]);
+          return await Promise.race([
+            this.open(),
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(
+                () => reject(new Error("Instabox SSH reconnect timed out")),
+                Math.max(1, deadline - performance.now()),
+              );
+            }),
+          ]);
         } catch (cause) {
           last = cause;
           if (this.current) this.invalidate(this.current.client);
-        } finally { clearTimeout(timer); }
+        } finally {
+          clearTimeout(timer);
+        }
       }
       throw new InstaboxReconnectExhausted(last);
     });
     this.recovery = recovering;
-    void recovering.finally(() => { if (this.recovery === recovering) this.recovery = undefined; }).catch(() => undefined);
+    void recovering
+      .finally(() => {
+        if (this.recovery === recovering) this.recovery = undefined;
+      })
+      .catch(() => undefined);
     return recovering;
   }
 
@@ -56,18 +72,34 @@ export class InstaboxConnection {
     const client = new Client();
     const ready = new Promise<Client>((resolve, reject) => {
       client.once("ready", () => resolve(client));
-      client.on("error", (error: Error) => { this.invalidate(client); reject(error); });
-      client.once("close", () => { this.invalidate(client); reject(new Error("SSH connection closed by peer")); });
+      client.on("error", (error: Error) => {
+        this.invalidate(client);
+        reject(error);
+      });
+      client.once("close", () => {
+        this.invalidate(client);
+        reject(new Error("SSH connection closed by peer"));
+      });
     });
     this.current = { client, ready };
     void ready.catch(() => undefined);
     try {
       client.connect({
-        host: this.token.host, port: this.token.port, username: this.token.token,
-        authHandler: ["none"], readyTimeout: 30_000, keepaliveInterval: 10_000, keepaliveCountMax: 3,
-        hostVerifier: (key: Buffer) => `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}` === this.token.hostKeyFingerprint.replace(/=+$/, ""),
+        host: this.token.host,
+        port: this.token.port,
+        username: this.token.token,
+        authHandler: ["none"],
+        readyTimeout: 30_000,
+        keepaliveInterval: 10_000,
+        keepaliveCountMax: 3,
+        hostVerifier: (key: Buffer) =>
+          `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}` ===
+          this.token.hostKeyFingerprint.replace(/=+$/, ""),
       });
-    } catch (error) { this.invalidate(client); return Promise.reject(error); }
+    } catch (error) {
+      this.invalidate(client);
+      return Promise.reject(error);
+    }
     return ready;
   }
 

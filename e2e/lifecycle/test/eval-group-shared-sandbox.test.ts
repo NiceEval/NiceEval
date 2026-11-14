@@ -45,16 +45,14 @@ test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Dock
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
-    const evalEvents = run.expEvents().filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-    );
+    const evalEvents = run
+      .expEvents()
+      .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
     expect(evalEvents, run.diagnostic()).toHaveLength(4);
-    expect(evalEvents.map((event) => event.verdict), run.diagnostic()).toEqual([
-      "passed",
-      "passed",
-      "passed",
-      "passed",
-    ]);
+    expect(
+      evalEvents.map((event) => event.verdict),
+      run.diagnostic(),
+    ).toEqual(["passed", "passed", "passed", "passed"]);
 
     const entries = lifecycleEntries(root);
     expect(entries).toHaveLength(4);
@@ -73,9 +71,6 @@ test("两个 Eval Group 并行、各自组内串行复用并重置同一台 Dock
     expect(groupBFirst.groupId).toBe("group-b");
     expect(groupBSecond.groupId).toBe("group-b");
 
-    await Promise.all([
-      waitForContainerGone(groupASandbox, root),
-      waitForContainerGone(groupBSandbox, root),
-    ]);
+    await Promise.all([waitForContainerGone(groupASandbox, root), waitForContainerGone(groupBSandbox, root)]);
   });
 });

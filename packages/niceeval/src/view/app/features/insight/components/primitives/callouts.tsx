@@ -1,11 +1,7 @@
 // Callouts:分级提示区,按上层给定的分组渲染 Notice(docs/feature/reports/library.md)。
 
 import type { ReactElement, ReactNode } from "react";
-import {
-  dataShapeError,
-  isLocalizedText,
-  isObject,
-} from "./shared.ts";
+import { dataShapeError, isLocalizedText, isObject } from "./shared.ts";
 import {
   calloutDetailsLabel,
   calloutsSummary,
@@ -67,7 +63,9 @@ function assertCalloutsItems(data: unknown): readonly CalloutGroup[] {
 
 function CommandBlock({ command }: { command: string }): ReactElement {
   return (
-    <CopyButton className="niceeval-callout-command" text={command}><code>{command}</code></CopyButton>
+    <CopyButton className="niceeval-callout-command" text={command}>
+      <code>{command}</code>
+    </CopyButton>
   );
 }
 

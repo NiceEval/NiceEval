@@ -13,7 +13,15 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
     "score",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-      const run = await niceeval.run(["exp", "assertion-score", "--rerun", "all", "--json", "--junit", "junit/score.xml"]);
+      const run = await niceeval.run([
+        "exp",
+        "assertion-score",
+        "--rerun",
+        "all",
+        "--json",
+        "--junit",
+        "junit/score.xml",
+      ]);
       expect(run.exitCode, run.diagnostic()).toBe(1);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluations = run.expEvalEvents();
@@ -33,12 +41,16 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
         ["assertion-score/skipped", skippedEvents, "skipped"],
       ] as const) {
         expect(events, `${evalId} must publish the first decisive Attempt under early exit`).toHaveLength(1);
-        expect(events).toEqual(events.map((event) => expect.objectContaining({
-          event: "eval",
-          evalId,
-          verdict,
-          locator: expect.any(String),
-        })));
+        expect(events).toEqual(
+          events.map((event) =>
+            expect.objectContaining({
+              event: "eval",
+              evalId,
+              verdict,
+              locator: expect.any(String),
+            }),
+          ),
+        );
       }
       expect(evaluations.filter((event) => event.verdict === "failed")).toHaveLength(1);
       const junit = await readFile(join(projectRoot, "junit/score.xml"), "utf8");
@@ -60,9 +72,11 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
         ["assertion-score/stopped", "passed"],
         ["assertion-score/skipped", "skipped"],
       ] as const) {
-        expect(summary.document.run.plannedAttempts.filter((member) =>
-          member.evalId === evalId && member.verdict === verdict
-        )).toHaveLength(2);
+        expect(
+          summary.document.run.plannedAttempts.filter(
+            (member) => member.evalId === evalId && member.verdict === verdict,
+          ),
+        ).toHaveLength(2);
       }
 
       const entriesByEval = new Map<string, (readonly ReturnType<typeof assertionEntry>[])[]>();
@@ -96,26 +110,38 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
         "assertion-score/stopped",
         "assertion-score/skipped",
       ]) {
-        expect(entriesByEval.get(evalId), `${evalId} must expose both published Attempt assertion sets`).toHaveLength(2);
+        expect(entriesByEval.get(evalId), `${evalId} must expose both published Attempt assertion sets`).toHaveLength(
+          2,
+        );
       }
       for (const entries of entriesByEval.get("assertion-score/scored") ?? []) {
         expect(entries).toHaveLength(10);
-        expect(entries.map(({ contribution }) => contribution)).toEqual(expect.arrayContaining([
-          { state: "earned", points: 1, earned: 1 },
-          { state: "earned", points: 2, earned: 2 },
-          { state: "earned", points: 3, earned: 3 },
-          { state: "earned", points: 5, earned: 0 },
-          { state: "earned", points: 4, earned: 4 },
-          { state: "earned", points: 50, earned: 25 },
-          { state: "earned", points: 10, earned: 0 },
-          { state: "earned", points: 0, earned: 0 },
-        ]));
-        expect(only(entries, (entry) => entry.display.label === "weighted author formula", "weighted formula")).toMatchObject({
-          evaluation: { kind: "ordinary", observed: { kind: "fields", fields: [
-            { label: "kind", value: { kind: "value", value: "measurement" } },
-            { label: "state", value: { kind: "value", value: "available" } },
-            { label: "value", value: { kind: "value", value: .5 } },
-          ] } },
+        expect(entries.map(({ contribution }) => contribution)).toEqual(
+          expect.arrayContaining([
+            { state: "earned", points: 1, earned: 1 },
+            { state: "earned", points: 2, earned: 2 },
+            { state: "earned", points: 3, earned: 3 },
+            { state: "earned", points: 5, earned: 0 },
+            { state: "earned", points: 4, earned: 4 },
+            { state: "earned", points: 50, earned: 25 },
+            { state: "earned", points: 10, earned: 0 },
+            { state: "earned", points: 0, earned: 0 },
+          ]),
+        );
+        expect(
+          only(entries, (entry) => entry.display.label === "weighted author formula", "weighted formula"),
+        ).toMatchObject({
+          evaluation: {
+            kind: "ordinary",
+            observed: {
+              kind: "fields",
+              fields: [
+                { label: "kind", value: { kind: "value", value: "measurement" } },
+                { label: "state", value: { kind: "value", value: "available" } },
+                { label: "value", value: { kind: "value", value: 0.5 } },
+              ],
+            },
+          },
         });
         for (const label of ["unavailable measurement is only recorded", "unavailable condition is only recorded"]) {
           expect(only(entries, (entry) => entry.display.label === label, label)).toMatchObject({
@@ -155,9 +181,7 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
         });
       }
       for (const entries of entriesByEval.get("assertion-score/skipped") ?? []) {
-        expect(entries.map(({ contribution }) => contribution)).toEqual([
-          { state: "earned", points: 9, earned: 9 },
-        ]);
+        expect(entries.map(({ contribution }) => contribution)).toEqual([{ state: "earned", points: 9, earned: 9 }]);
       }
       const human = await niceeval.run(["exp", "assertion-score", "assertion-score/gated", "--rerun", "all"]);
       expect(human.exitCode, human.diagnostic()).toBe(1);
@@ -171,11 +195,15 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
       const overview = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
       const cells = overview.inspectionSuccess("overview.get").overview.cells;
-      expect(only(cells, (cell) => cell.evalId === "assertion-score/gated", overview.diagnostic()).score)
-        .toMatchObject({
-          state: "available", value: 30, samples: 2, total: 2,
+      expect(only(cells, (cell) => cell.evalId === "assertion-score/gated", overview.diagnostic()).score).toMatchObject(
+        {
+          state: "available",
+          value: 30,
+          samples: 2,
+          total: 2,
           bounds: { min: 0, max: 43 },
-        });
+        },
+      );
     },
   );
 });

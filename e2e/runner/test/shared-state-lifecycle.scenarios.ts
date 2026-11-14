@@ -39,22 +39,21 @@ test.concurrent("相同 sharedState.key 在前一 Experiment teardown 后才允�
         let second: ReturnType<typeof niceeval.start> | undefined;
 
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "first-agent-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 10, label: "first Experiment reaches its agent" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "first-agent-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 10,
+            label: "first Experiment reaches its agent",
+          });
 
           second = niceeval.start(["exp", "shared-state-second", "--json"], {
             env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
             timeoutMs: 60_000,
           });
 
-          await waitForOutput(
-            second,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "second Experiment reaches the sharedState lease seam" },
-          );
+          await waitForOutput(second, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "second Experiment reaches the sharedState lease seam",
+          });
           expect(await exists(join(barrierRoot, "second-setup-attempted"))).toBe(false);
         } finally {
           await writeFile(join(barrierRoot, "release-first-agent"), "");
@@ -104,12 +103,10 @@ test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 
             },
             timeoutMs: 90_000,
           });
-          await waitForOutput(
-            second,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "second Experiment reaches the sharedState lease seam" },
-          );
+          await waitForOutput(second, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "second Experiment reaches the sharedState lease seam",
+          });
           expect(await exists(join(barrierRoot, "pool-second-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-sandbox-after-attempt-1"), "");
@@ -130,10 +127,11 @@ test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 
           expect(await exists(join(barrierRoot, "pool-second-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-sandbox-after-attempt-2"), "");
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "experiment-teardown-started"))) || undefined,
-            { timeoutMs: 30_000, intervalMs: 20, label: "Experiment teardown starts after all Attempt after callbacks" },
-          );
+          await pollUntil(async () => (await exists(join(barrierRoot, "experiment-teardown-started"))) || undefined, {
+            timeoutMs: 30_000,
+            intervalMs: 20,
+            label: "Experiment teardown starts after all Attempt after callbacks",
+          });
           expect(await exists(join(barrierRoot, "pool-second-setup-attempted"))).toBe(false);
 
           await writeFile(join(barrierRoot, "release-experiment-teardown"), "");
@@ -163,16 +161,13 @@ test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-pool-retire-", async (barrierRoot) => {
-        const failed = await niceeval.run(
-          ["exp", "shared-state-pool-retire-fails", "--rerun", "all", "--json"],
-          {
-            env: {
-              NICEEVAL_SHARED_STATE_BARRIER: barrierRoot,
-              NICEEVAL_SHARED_STATE_ROLE: "pool-retire-fails",
-            },
-            timeoutMs: 90_000,
+        const failed = await niceeval.run(["exp", "shared-state-pool-retire-fails", "--rerun", "all", "--json"], {
+          env: {
+            NICEEVAL_SHARED_STATE_BARRIER: barrierRoot,
+            NICEEVAL_SHARED_STATE_ROLE: "pool-retire-fails",
           },
-        );
+          timeoutMs: 90_000,
+        });
         // The author after fails before the reusable Case is retired. This
         // marker keeps the failure distinct from the later Experiment hook.
         expect(await exists(join(barrierRoot, "pool-retire-after-started")), failed.diagnostic()).toBe(true);
@@ -182,35 +177,46 @@ test.concurrent("复用 Sandbox 的 Attempt after 失败也会保留 sharedState
           timeoutMs: 60_000,
         });
         try {
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "waiter reaches retained reusable Sandbox sharedState lease" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "waiter reaches retained reusable Sandbox sharedState lease",
+          });
           expect(await exists(join(barrierRoot, "pool-retire-waiter-setup-attempted"))).toBe(false);
 
           // Recovery inspection obtains the immutable owner token only through
           // the public CLI; this test never reads coordination files.
           const inspection = await niceeval.run([
-            "exp", "shared-state-pool-retire-fails", "--after",
-            "--recover-shared-state", "runner/shared-state-pool-retire",
+            "exp",
+            "shared-state-pool-retire-fails",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-pool-retire",
           ]);
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
 
-          const recovered = await niceeval.run([
-            "exp", "shared-state-pool-retire-fails", "--after",
-            "--recover-shared-state", "runner/shared-state-pool-retire",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot }, timeoutMs: 60_000 });
+          const recovered = await niceeval.run(
+            [
+              "exp",
+              "shared-state-pool-retire-fails",
+              "--after",
+              "--recover-shared-state",
+              "runner/shared-state-pool-retire",
+              "--owner-token",
+              ownerToken,
+              "--confirm-owner-terminated",
+              "--confirm-remote-quiesced",
+            ],
+            { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot }, timeoutMs: 60_000 },
+          );
           expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
           expect(recovered.stderr).toContain("explicitly recovered sharedState key runner/shared-state-pool-retire");
 
           const waiterResult = await waiter.done;
           expect(waiterResult.exitCode, waiterResult.diagnostic()).toBe(0);
-          expect(await exists(join(barrierRoot, "pool-retire-waiter-observed-pool-retire-fails-teardown-complete"))).toBe(true);
+          expect(
+            await exists(join(barrierRoot, "pool-retire-waiter-observed-pool-retire-fails-teardown-complete")),
+          ).toBe(true);
           expect(await exists(join(barrierRoot, "pool-retire-waiter-agent-started"))).toBe(true);
         } finally {
           await waiter.dispose().catch(() => undefined);
@@ -228,16 +234,13 @@ test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，�
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-shared-state-fresh-cleanup-", async (barrierRoot) => {
-        const failed = await niceeval.run(
-          ["exp", "shared-state-fresh-cleanup-fails", "--rerun", "all", "--json"],
-          {
-            env: {
-              NICEEVAL_SHARED_STATE_BARRIER: barrierRoot,
-              NICEEVAL_SHARED_STATE_ROLE: "fresh-cleanup-fails",
-            },
-            timeoutMs: 90_000,
+        const failed = await niceeval.run(["exp", "shared-state-fresh-cleanup-fails", "--rerun", "all", "--json"], {
+          env: {
+            NICEEVAL_SHARED_STATE_BARRIER: barrierRoot,
+            NICEEVAL_SHARED_STATE_ROLE: "fresh-cleanup-fails",
           },
-        );
+          timeoutMs: 90_000,
+        });
         expect(await exists(join(barrierRoot, "fresh-sandbox-after-started")), failed.diagnostic()).toBe(true);
 
         const waiter = niceeval.start(["exp", "shared-state-fresh-cleanup-waiter", "--rerun", "all", "--json"], {
@@ -245,33 +248,44 @@ test.concurrent("fresh Sandbox 的 Attempt after 失败也保留 sharedState，�
           timeoutMs: 60_000,
         });
         try {
-          await waitForOutput(
-            waiter,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "waiter reaches retained fresh Sandbox sharedState lease" },
-          );
+          await waitForOutput(waiter, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "waiter reaches retained fresh Sandbox sharedState lease",
+          });
           expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-setup-attempted"))).toBe(false);
 
           const inspection = await niceeval.run([
-            "exp", "shared-state-fresh-cleanup-fails", "--after",
-            "--recover-shared-state", "runner/shared-state-fresh-cleanup",
+            "exp",
+            "shared-state-fresh-cleanup-fails",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-fresh-cleanup",
           ]);
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromPublicRecoveryInspection(inspection.stderr);
 
-          const recovered = await niceeval.run([
-            "exp", "shared-state-fresh-cleanup-fails", "--after",
-            "--recover-shared-state", "runner/shared-state-fresh-cleanup",
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot }, timeoutMs: 60_000 });
+          const recovered = await niceeval.run(
+            [
+              "exp",
+              "shared-state-fresh-cleanup-fails",
+              "--after",
+              "--recover-shared-state",
+              "runner/shared-state-fresh-cleanup",
+              "--owner-token",
+              ownerToken,
+              "--confirm-owner-terminated",
+              "--confirm-remote-quiesced",
+            ],
+            { env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot }, timeoutMs: 60_000 },
+          );
           expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
           expect(recovered.stderr).toContain("explicitly recovered sharedState key runner/shared-state-fresh-cleanup");
 
           const waiterResult = await waiter.done;
           expect(waiterResult.exitCode, waiterResult.diagnostic()).toBe(0);
-          expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-observed-fresh-cleanup-fails-teardown-complete"))).toBe(true);
+          expect(
+            await exists(join(barrierRoot, "fresh-cleanup-waiter-observed-fresh-cleanup-fails-teardown-complete")),
+          ).toBe(true);
           expect(await exists(join(barrierRoot, "fresh-cleanup-waiter-agent-started"))).toBe(true);
         } finally {
           await waiter.dispose().catch(() => undefined);

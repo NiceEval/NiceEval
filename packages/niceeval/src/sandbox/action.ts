@@ -37,7 +37,7 @@ export const sandboxState = Object.freeze({
 } as const);
 
 /** Selects which Sandbox state an action declares for caching; this declaration does not prove arbitrary callback determinism. */
-export type SandboxState = typeof sandboxState[keyof typeof sandboxState];
+export type SandboxState = (typeof sandboxState)[keyof typeof sandboxState];
 /** @internal Provider/runtime spelling for the same public V1 state values. */
 /** Selects the captured state domain of an action; it is a cache declaration rather than the action's execution status. */
 export type SandboxActionState = SandboxState;
@@ -47,16 +47,11 @@ export function mergeSandboxActionState(
   ancestor: SandboxActionState | undefined,
   declared: SandboxActionState,
 ): SandboxActionState {
-  return ancestor === sandboxState.all || declared === sandboxState.all
-    ? sandboxState.all
-    : sandboxState.dockerData;
+  return ancestor === sandboxState.all || declared === sandboxState.all ? sandboxState.all : sandboxState.dockerData;
 }
 
 /** @internal A complete `all` provider covers either V1 state promise. */
-export function sandboxActionStateCovers(
-  coverage: SandboxActionState,
-  required: SandboxActionState,
-): boolean {
+export function sandboxActionStateCovers(coverage: SandboxActionState, required: SandboxActionState): boolean {
   return coverage === sandboxState.all || required === sandboxState.dockerData;
 }
 
@@ -174,13 +169,7 @@ export interface CheckoutGitSandboxStepInput {
 /** An opaque supported primitive in a declarative action; third parties compose these primitives rather than registering new step kinds. */
 export interface SandboxStep {
   readonly [SANDBOX_STEP]: true;
-  readonly kind:
-    | "exec"
-    | "putText"
-    | "putBytes"
-    | "transferFile"
-    | "transferDirectory"
-    | "checkoutGit";
+  readonly kind: "exec" | "putText" | "putBytes" | "transferFile" | "transferDirectory" | "checkoutGit";
 }
 
 /** Describes the executable primitive plan with bounded content identities; environment values and stdin contents are not exposed in its public projection. */
@@ -350,11 +339,7 @@ function assertRecord(value: unknown, path: string): asserts value is globalThis
   }
 }
 
-function assertOnlyKeys(
-  value: globalThis.Record<string, unknown>,
-  allowed: ReadonlySet<string>,
-  path: string,
-): void {
+function assertOnlyKeys(value: globalThis.Record<string, unknown>, allowed: ReadonlySet<string>, path: string): void {
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw actionError("definition", `${path}.${key} is not supported`, `${path}.${key}`);
   }
@@ -381,11 +366,8 @@ function presetFor(value: number): keyof typeof changeFrequency | undefined {
   return undefined;
 }
 
-export function normalizeSandboxChangeFrequency(
-  value: unknown,
-  path = "changeFrequency",
-): SandboxChangeFrequency {
-  const source = value === undefined ? "defaulted" as const : "explicit" as const;
+export function normalizeSandboxChangeFrequency(value: unknown, path = "changeFrequency"): SandboxChangeFrequency {
+  const source = value === undefined ? ("defaulted" as const) : ("explicit" as const);
   const selected = value === undefined ? changeFrequency.normal : value;
   if (typeof selected !== "number" || !Number.isFinite(selected) || selected < 0) {
     throw actionError("metadata", `${path} must be a finite non-negative number`, path);
@@ -426,12 +408,23 @@ export function normalizeSandboxBeforeMetadata(
   path = "Sandbox before options",
 ): NormalizedSandboxBeforeMetadata {
   assertRecord(value, path);
-  assertOnlyKeys(value, new Set(["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"]), path);
-  if (value.label !== undefined && (
-    typeof value.label !== "string" || value.label.trim() === "" ||
-    /\p{Cc}/u.test(value.label) || [...value.label].length > 256
-  )) {
-    throw actionError("metadata", `${path}.label must be non-empty, contain no control characters, and have at most 256 Unicode code points`, `${path}.label`);
+  assertOnlyKeys(
+    value,
+    new Set(["id", "label", "changeFrequency", "dependsOn", "requires", "provides", "cache"]),
+    path,
+  );
+  if (
+    value.label !== undefined &&
+    (typeof value.label !== "string" ||
+      value.label.trim() === "" ||
+      /\p{Cc}/u.test(value.label) ||
+      [...value.label].length > 256)
+  ) {
+    throw actionError(
+      "metadata",
+      `${path}.label must be non-empty, contain no control characters, and have at most 256 Unicode code points`,
+      `${path}.label`,
+    );
   }
   normalizeSandboxActionCache(value.cache, `${path}.cache`);
   const dependsOn = value.dependsOn === undefined ? [] : value.dependsOn;
@@ -487,10 +480,7 @@ function cloneJson(value: unknown, path: string, ancestors = new WeakSet<object>
   }
 }
 
-function normalizeSandboxActionCache(
-  value: unknown,
-  path: string,
-): Readonly<SandboxActionCacheOptions> | undefined {
+function normalizeSandboxActionCache(value: unknown, path: string): Readonly<SandboxActionCacheOptions> | undefined {
   if (value === undefined) return undefined;
   assertRecord(value, path);
   assertOnlyKeys(value, new Set(["state", "fingerprint"]), path);
@@ -505,11 +495,7 @@ function normalizeSandboxActionCache(
 function normalizeSandboxActionState(value: unknown, path: string): SandboxActionState {
   if (value === undefined) return sandboxState.all;
   if (value === sandboxState.all || value === sandboxState.dockerData) return value;
-  throw actionError(
-    "cache-state",
-    `${path} must be sandboxState.all or sandboxState.dockerData`,
-    path,
-  );
+  throw actionError("cache-state", `${path} must be sandboxState.all or sandboxState.dockerData`, path);
 }
 
 function envRecord(value: unknown, path: string): Readonly<globalThis.Record<string, string>> | undefined {
@@ -517,7 +503,7 @@ function envRecord(value: unknown, path: string): Readonly<globalThis.Record<str
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw actionError("steps", `${path} must be an object of string values`, path);
   }
-    const env = Object.create(null) as globalThis.Record<string, string>;
+  const env = Object.create(null) as globalThis.Record<string, string>;
   for (const key of Object.keys(value as globalThis.Record<string, unknown>).sort()) {
     const child = (value as globalThis.Record<string, unknown>)[key];
     if (key === "" || typeof child !== "string") {
@@ -559,9 +545,10 @@ function execPresentation(
 ): Extract<SandboxStepPresentation, { readonly kind: "exec" }> {
   return Object.freeze({
     kind: "exec" as const,
-    command: command.kind === "argv"
-      ? Object.freeze({ ...command, args: Object.freeze([...command.args]) })
-      : Object.freeze({ ...command }),
+    command:
+      command.kind === "argv"
+        ? Object.freeze({ ...command, args: Object.freeze([...command.args]) })
+        : Object.freeze({ ...command }),
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     ...(options.user === undefined ? {} : { user: options.user }),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
@@ -580,11 +567,7 @@ function normalizeTransferSource(
   readonly plan: Extract<SandboxStepPlan, { readonly kind: "transferFile" | "transferDirectory" }>["source"];
 } {
   if (!isRegisteredSandboxContent(source) || source.kind !== expectedKind) {
-    throw actionError(
-      "steps",
-      `${path} must be a ${expectedKind} handle returned by registerSandboxContent()`,
-      path,
-    );
+    throw actionError("steps", `${path} must be a ${expectedKind} handle returned by registerSandboxContent()`, path);
   }
   return Object.freeze({
     identity: Object.freeze({ kind: "content", contentKind: source.kind, digest: source.digest }),
@@ -595,8 +578,10 @@ function normalizeTransferSource(
 function registeredContentBytes(source: RegisteredSandboxContent): number {
   const snapshot = registeredSandboxContentSnapshotOf(source);
   if (snapshot.kind === "file") return Buffer.from(snapshot.contentBase64, "base64").byteLength;
-  return snapshot.entries.reduce((total, entry) =>
-    entry.kind === "file" ? total + Buffer.from(entry.contentBase64, "base64").byteLength : total, 0);
+  return snapshot.entries.reduce(
+    (total, entry) => (entry.kind === "file" ? total + Buffer.from(entry.contentBase64, "base64").byteLength : total),
+    0,
+  );
 }
 
 export const sandboxStep = Object.freeze({
@@ -674,7 +659,8 @@ export const sandboxStep = Object.freeze({
     assertRecord(input, "sandboxStep.putText input");
     assertOnlyKeys(input, new Set(["path", "text"]), "sandboxStep.putText input");
     const path = nonEmptyString(input.path, "sandboxStep.putText input.path");
-    if (typeof input.text !== "string") throw actionError("steps", "sandboxStep.putText input.text must be a string", "text");
+    if (typeof input.text !== "string")
+      throw actionError("steps", "sandboxStep.putText input.text must be a string", "text");
     const digest = `sha256:${digestBytes(input.text)}`;
     const bytes = Buffer.byteLength(input.text);
     return makeStep("putText", {
@@ -761,12 +747,14 @@ export const sandboxStep = Object.freeze({
       assertRecord(input.sparse, "sandboxStep.checkoutGit input.sparse");
       assertOnlyKeys(input.sparse, new Set(["include", "exclude"]), "sandboxStep.checkoutGit input.sparse");
       sparse = Object.freeze({
-        include: input.sparse.include === undefined
-          ? Object.freeze([])
-          : stringArray(input.sparse.include, "sandboxStep.checkoutGit input.sparse.include"),
-        exclude: input.sparse.exclude === undefined
-          ? Object.freeze([])
-          : stringArray(input.sparse.exclude, "sandboxStep.checkoutGit input.sparse.exclude"),
+        include:
+          input.sparse.include === undefined
+            ? Object.freeze([])
+            : stringArray(input.sparse.include, "sandboxStep.checkoutGit input.sparse.include"),
+        exclude:
+          input.sparse.exclude === undefined
+            ? Object.freeze([])
+            : stringArray(input.sparse.exclude, "sandboxStep.checkoutGit input.sparse.exclude"),
       });
     }
     const projection = Object.freeze({
@@ -861,9 +849,10 @@ export function formatSandboxStepActivity(presentation: SandboxStepPresentation)
   const show = (value: string): string => visibleActivityText(value);
   switch (presentation.kind) {
     case "exec": {
-      const command = presentation.command.kind === "shell"
-        ? `shell ${show(presentation.command.command)}`
-        : `exec ${[presentation.command.executable, ...presentation.command.args].map((part) => JSON.stringify(show(part))).join(" ")}`;
+      const command =
+        presentation.command.kind === "shell"
+          ? `shell ${show(presentation.command.command)}`
+          : `exec ${[presentation.command.executable, ...presentation.command.args].map((part) => JSON.stringify(show(part))).join(" ")}`;
       const details = [
         presentation.cwd === undefined ? undefined : `cwd=${JSON.stringify(show(presentation.cwd))}`,
         presentation.user === undefined ? undefined : `user=${JSON.stringify(show(presentation.user))}`,
@@ -928,15 +917,9 @@ export function defineSandboxAction<A, I extends JsonValue>(
     assertRecord(definition.cache, "defineSandboxAction definition.cache");
     assertOnlyKeys(definition.cache, new Set(["state", "fingerprint"]), "defineSandboxAction definition.cache");
     if (definition.cache.state !== undefined) {
-      normalizeSandboxActionState(
-        definition.cache.state,
-        "defineSandboxAction definition.cache.state",
-      );
+      normalizeSandboxActionState(definition.cache.state, "defineSandboxAction definition.cache.state");
     }
-    if (
-      definition.cache.fingerprint !== undefined &&
-      typeof definition.cache.fingerprint !== "function"
-    ) {
+    if (definition.cache.fingerprint !== undefined && typeof definition.cache.fingerprint !== "function") {
       cloneJson(definition.cache.fingerprint, "defineSandboxAction definition.cache.fingerprint");
     }
   }
@@ -961,13 +944,23 @@ export function defineSandboxAction<A, I extends JsonValue>(
     try {
       validated = Schema.decodeSync(Schema.toType(definition.input))(input);
     } catch (cause) {
-      throw actionError("input", `Sandbox action ${JSON.stringify(familyId)} input failed Schema validation`, "input", cause);
+      throw actionError(
+        "input",
+        `Sandbox action ${JSON.stringify(familyId)} input failed Schema validation`,
+        "input",
+        cause,
+      );
     }
     let encoded: I;
     try {
       encoded = Schema.encodeSync(definition.input)(validated);
     } catch (cause) {
-      throw actionError("schema", `Sandbox action ${JSON.stringify(familyId)} input could not be encoded synchronously`, "input", cause);
+      throw actionError(
+        "schema",
+        `Sandbox action ${JSON.stringify(familyId)} input could not be encoded synchronously`,
+        "input",
+        cause,
+      );
     }
     const canonicalInput = cloneJson(encoded, `Sandbox action ${JSON.stringify(familyId)} canonical input`);
     let steps: NonEmptySandboxSteps;
@@ -1056,14 +1049,16 @@ export function defineSandboxAction<A, I extends JsonValue>(
       "Sandbox action instance options",
     );
     const cache = normalizeSandboxActionCache(selected.cache, "Sandbox action instance options.cache");
-    return makeAction(instantiate(
-      input,
-      normalizeSandboxBeforeMetadata({
-        ...selected,
-        id: selected.id ?? familyId,
-      }),
-      cache,
-    ));
+    return makeAction(
+      instantiate(
+        input,
+        normalizeSandboxBeforeMetadata({
+          ...selected,
+          id: selected.id ?? familyId,
+        }),
+        cache,
+      ),
+    );
   }) as SandboxActionFamily<A>;
   Object.defineProperty(family, "after", {
     value: (input: A, options?: SandboxAfterActionOptions): SandboxAfterAction => {
@@ -1227,11 +1222,7 @@ function assertInlineInput(
   after: boolean,
 ): asserts input is globalThis.Record<string, unknown> {
   assertRecord(input, path);
-  assertOnlyKeys(
-    input,
-    new Set(after ? ["id", ...payloadKeys] : [...INLINE_BEFORE_KEYS, ...payloadKeys]),
-    path,
-  );
+  assertOnlyKeys(input, new Set(after ? ["id", ...payloadKeys] : [...INLINE_BEFORE_KEYS, ...payloadKeys]), path);
   nonEmptyString(input.id, `${path}.id`);
 }
 
@@ -1255,10 +1246,13 @@ const writeTextFamily = defineSandboxAction({
 const writeBytesFamily = defineSandboxAction({
   id: "niceeval.sandbox.write-bytes",
   input: Schema.Struct({ path: Schema.String, bytesBase64: Schema.String }),
-  steps: ({ path, bytesBase64 }) => [sandboxStep.putBytes({
-    path,
-    bytes: Uint8Array.from(Buffer.from(bytesBase64, "base64")),
-  })] as const,
+  steps: ({ path, bytesBase64 }) =>
+    [
+      sandboxStep.putBytes({
+        path,
+        bytes: Uint8Array.from(Buffer.from(bytesBase64, "base64")),
+      }),
+    ] as const,
 });
 
 interface TransferActionPayload {
@@ -1302,14 +1296,15 @@ const gitCheckoutInputSchema = Schema.Struct({
 const gitCheckoutFamily = defineSandboxAction({
   id: "niceeval.sandbox.git-checkout",
   input: gitCheckoutInputSchema,
-  steps: ({ repository, commit, to, include, exclude }) => [sandboxStep.checkoutGit({
-    repository,
-    ref: commit,
-    to,
-    ...(include.length === 0 && exclude.length === 0
-      ? {}
-      : { sparse: { include, exclude } }),
-  })] as const,
+  steps: ({ repository, commit, to, include, exclude }) =>
+    [
+      sandboxStep.checkoutGit({
+        repository,
+        ref: commit,
+        to,
+        ...(include.length === 0 && exclude.length === 0 ? {} : { sparse: { include, exclude } }),
+      }),
+    ] as const,
 });
 
 function normalizeGitCheckout(input: GitCheckoutActionInput | GitCheckoutAfterActionInput): GitCheckoutPayload {
@@ -1345,12 +1340,14 @@ function normalizeGitCheckout(input: GitCheckoutActionInput | GitCheckoutAfterAc
   if (input.sparse !== undefined) {
     assertRecord(input.sparse, "gitCheckout input.sparse");
     assertOnlyKeys(input.sparse, new Set(["include", "exclude"]), "gitCheckout input.sparse");
-    include = input.sparse.include === undefined
-      ? Object.freeze([])
-      : stringArray(input.sparse.include, "gitCheckout input.sparse.include");
-    exclude = input.sparse.exclude === undefined
-      ? Object.freeze([])
-      : stringArray(input.sparse.exclude, "gitCheckout input.sparse.exclude");
+    include =
+      input.sparse.include === undefined
+        ? Object.freeze([])
+        : stringArray(input.sparse.include, "gitCheckout input.sparse.include");
+    exclude =
+      input.sparse.exclude === undefined
+        ? Object.freeze([])
+        : stringArray(input.sparse.exclude, "gitCheckout input.sparse.exclude");
   }
   return Object.freeze({
     repository: repository.href,
@@ -1363,10 +1360,7 @@ function normalizeGitCheckout(input: GitCheckoutActionInput | GitCheckoutAfterAc
 
 const writeTextImpl = ((input: WriteTextActionInput): SandboxAction => {
   assertInlineInput(input, ["path", "text"], "writeText input", false);
-  return writeTextFamily(
-    { path: input.path, text: input.text },
-    inlineBeforeOptions(input),
-  );
+  return writeTextFamily({ path: input.path, text: input.text }, inlineBeforeOptions(input));
 }) as WriteTextActionFactory;
 Object.defineProperty(writeTextImpl, "after", {
   value: (input: WriteTextAfterActionInput): SandboxAfterAction => {
@@ -1379,7 +1373,8 @@ export const writeText = Object.freeze(writeTextImpl);
 
 const writeBytesImpl = ((input: WriteBytesActionInput): SandboxAction => {
   assertInlineInput(input, ["path", "bytes"], "writeBytes input", false);
-  if (!(input.bytes instanceof Uint8Array)) throw actionError("input", "writeBytes input.bytes must be Uint8Array", "bytes");
+  if (!(input.bytes instanceof Uint8Array))
+    throw actionError("input", "writeBytes input.bytes must be Uint8Array", "bytes");
   return writeBytesFamily(
     { path: input.path, bytesBase64: Buffer.from(input.bytes).toString("base64") },
     inlineBeforeOptions(input),
@@ -1388,7 +1383,8 @@ const writeBytesImpl = ((input: WriteBytesActionInput): SandboxAction => {
 Object.defineProperty(writeBytesImpl, "after", {
   value: (input: WriteBytesAfterActionInput): SandboxAfterAction => {
     assertInlineInput(input, ["path", "bytes"], "writeBytes.after input", true);
-    if (!(input.bytes instanceof Uint8Array)) throw actionError("input", "writeBytes.after input.bytes must be Uint8Array", "bytes");
+    if (!(input.bytes instanceof Uint8Array))
+      throw actionError("input", "writeBytes.after input.bytes must be Uint8Array", "bytes");
     return writeBytesFamily.after(
       { path: input.path, bytesBase64: Buffer.from(input.bytes).toString("base64") },
       { id: input.id },

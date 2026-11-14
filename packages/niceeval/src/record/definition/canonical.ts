@@ -5,13 +5,7 @@ export interface RecordJsonObject {
   readonly [key: string]: RecordJson;
 }
 
-export type RecordJson =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly RecordJson[]
-  | RecordJsonObject;
+export type RecordJson = null | boolean | number | string | readonly RecordJson[] | RecordJsonObject;
 
 /** The Attachment-only durable shape: JSON plus package-owned opaque blob references. */
 export interface RecordJsonWithBlobRefsObject<Blob extends object> {
@@ -118,10 +112,7 @@ function isPlainRecord(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function enumerableDataProperty(
-  value: object,
-  key: string | symbol,
-): DataProperty | undefined {
+function enumerableDataProperty(value: object, key: string | symbol): DataProperty | undefined {
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
   if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {
     return undefined;
@@ -221,10 +212,7 @@ function canonicalArray<Blob extends object>(
   const expected = new Set<string>(["length"]);
   for (let index = 0; index < value.length; index += 1) expected.add(String(index));
   const keys = Reflect.ownKeys(value);
-  if (
-    keys.length !== expected.size ||
-    keys.some((key) => typeof key !== "string" || !expected.has(key))
-  ) {
+  if (keys.length !== expected.size || keys.some((key) => typeof key !== "string" || !expected.has(key))) {
     return failure(state, "record-json-invalid", path);
   }
   const length = dataProperty(value, "length");
@@ -278,9 +266,7 @@ function canonicalizeValue<Blob extends object>(
   if (!enter(input, depth, path, limits, state)) return undefined;
   if (input === null || typeof input === "boolean" || typeof input === "string") return input;
   if (typeof input === "number") {
-    return Number.isFinite(input) && !Object.is(input, -0)
-      ? input
-      : failure(state, "record-json-invalid", path);
+    return Number.isFinite(input) && !Object.is(input, -0) ? input : failure(state, "record-json-invalid", path);
   }
   if (typeof input !== "object") return failure(state, "record-json-invalid", path);
 
@@ -358,9 +344,7 @@ export function canonicalizeRecordValue<Blob extends object = never>(
   const projected = projectBlobRefsForBudget(value, options);
   const bytes = projected === undefined ? undefined : jsonBytes(projected);
   if (bytes === undefined || bytes > limits.maximumJsonBytes) {
-    return Result.fail(
-      Object.freeze({ code: "record-json-limit-exceeded" as const, path: Object.freeze([]) }),
-    );
+    return Result.fail(Object.freeze({ code: "record-json-limit-exceeded" as const, path: Object.freeze([]) }));
   }
   return Result.succeed(value);
 }
@@ -370,9 +354,7 @@ export function canonicalizeRecordJson(
   limits: RecordSchemaLimits,
 ): Result.Result<RecordJson, RecordCanonicalizationFailure> {
   const result = canonicalizeRecordValue(input, limits);
-  return Result.isFailure(result)
-    ? Result.fail(result.failure)
-    : Result.succeed(result.success as RecordJson);
+  return Result.isFailure(result) ? Result.fail(result.failure) : Result.succeed(result.success as RecordJson);
 }
 
 export function canonicalRecordJsonText(value: RecordJson): string {

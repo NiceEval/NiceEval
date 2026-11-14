@@ -10,7 +10,10 @@ import type { EvidenceCoverage, JsonValue, StreamEvent, Turn, Usage } from "../t
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 const COMPLETE = Object.freeze({ status: "complete" as const });
-const NO_DATA = Object.freeze({ status: "unavailable" as const, reason: "OpenAI response conversion does not populate Turn.data." });
+const NO_DATA = Object.freeze({
+  status: "unavailable" as const,
+  reason: "OpenAI response conversion does not populate Turn.data.",
+});
 
 export const chatCompletionEvidenceCoverage: EvidenceCoverage = Object.freeze({
   events: Object.freeze({
@@ -115,7 +118,8 @@ function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage 
     outputTokens: usage.completion_tokens ?? 0,
   };
   if (cached) u.cacheReadTokens = cached;
-  if (usage.completion_tokens_details?.reasoning_tokens) u.reasoningTokens = usage.completion_tokens_details.reasoning_tokens;
+  if (usage.completion_tokens_details?.reasoning_tokens)
+    u.reasoningTokens = usage.completion_tokens_details.reasoning_tokens;
   return u;
 }
 

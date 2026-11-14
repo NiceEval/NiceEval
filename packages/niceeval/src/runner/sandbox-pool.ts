@@ -15,7 +15,14 @@ import {
   type SandboxRuntimeDeadline,
   type SandboxRuntimeServices,
 } from "../sandbox/runtime.ts";
-import type { JsonValue, Sandbox, SandboxAgent, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
+import type {
+  JsonValue,
+  Sandbox,
+  SandboxAgent,
+  SandboxHookContext,
+  SandboxReuseCapability,
+  ScopedFeedback,
+} from "../types.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { firstLine, formatThrown } from "../util.ts";
@@ -33,9 +40,7 @@ export interface ReusableSandboxLease {
   commit(disposition: ReusableLeaseRelease): Effect.Effect<void>;
 }
 
-export type ReusableLeaseRelease =
-  | { readonly _tag: "Reset" }
-  | { readonly _tag: "Retire" };
+export type ReusableLeaseRelease = { readonly _tag: "Reset" } | { readonly _tag: "Retire" };
 
 /** A post-attempt physical lifecycle failure observed after its result sealed. */
 export interface ReusableSandboxPoolRuntimeFailure {
@@ -61,10 +66,7 @@ interface ReusableSandboxPoolCleanupFailure {
   readonly error: Error;
 }
 
-type EntryLifecycle =
-  | { readonly _tag: "Idle" }
-  | { readonly _tag: "Leased" }
-  | { readonly _tag: "Retired" };
+type EntryLifecycle = { readonly _tag: "Idle" } | { readonly _tag: "Leased" } | { readonly _tag: "Retired" };
 
 interface Entry {
   readonly materializedCase: MaterializedSandboxCase;
@@ -172,21 +174,21 @@ export class ReusableSandboxPool {
   > {
     return Effect.gen({ self: this }, function* () {
       const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_TIMEOUT_MS;
-    /**
-     * 借出期内单条命令的上限从这条线派生(`undefined` = 四层都没声明上限,照旧不发明一条线)。
-     * 实例活得比 attempt 长,所以这条线必须**每次借出重设**——只在 create 时给一次的话,
-     * 第二条 attempt 起就落回 provider SDK 的默认值(e2b 是 60 秒),实验声明的 timeoutMs
-     * 完全不生效(见 sandbox/deadline.ts 的 `SandboxCommandDeadline`)。
-     * 用 minRemainingMs 而不是 attemptDeadlineMs:归还时的分类账复位跑在同一条线下,
-     * 不至于一还回来就撞一条已经过期的线。
-     */
+      /**
+       * 借出期内单条命令的上限从这条线派生(`undefined` = 四层都没声明上限,照旧不发明一条线)。
+       * 实例活得比 attempt 长,所以这条线必须**每次借出重设**——只在 create 时给一次的话,
+       * 第二条 attempt 起就落回 provider SDK 的默认值(e2b 是 60 秒),实验声明的 timeoutMs
+       * 完全不生效(见 sandbox/deadline.ts 的 `SandboxCommandDeadline`)。
+       * 用 minRemainingMs 而不是 attemptDeadlineMs:归还时的分类账复位跑在同一条线下,
+       * 不至于一还回来就撞一条已经过期的线。
+       */
       const leaseDeadlineAt = attemptDeadlineMs === undefined ? undefined : () => Date.now() + minRemainingMs;
       for (;;) {
         if (this.stopped) return yield* Effect.fail(new Error("sandbox reuse pool has been stopped"));
         const ready = this.entries.find((entry) => entry.lifecycle._tag === "Idle");
         if (ready) {
-        // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
-        // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
+          // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
+          // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
           const lifetime = yield* externalPromise(() => ready.lifetime.ensureLifetime(minRemainingMs));
           // lifetime 检查是异步 provider I/O；其间 stop() 或另一条 release 可能已经退休这台。
           // 只有仍是 Idle 的实例才能真正借出，stop 后让下一轮在入口处统一失败。
@@ -200,7 +202,13 @@ export class ReusableSandboxPool {
         if (this.entries.length + this.creating < this.capacity) {
           this.creating += 1;
           return yield* Effect.gen({ self: this }, function* () {
-            const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators, admission, provenance);
+            const created = yield* this.create(
+              minRemainingMs,
+              leaseDeadlineAt?.(),
+              buildLocators,
+              admission,
+              provenance,
+            );
             this.entries.push(created);
             // stop 可能在物化期间开始。把刚创建的 entry 先纳入池，再由唯一 retire 路径关闭
             // 它自己的 Scope；绝不能把它借给已停止的池，也不能让 stop 在 creating=0 时漏掉它。
@@ -210,10 +218,12 @@ export class ReusableSandboxPool {
             }
             return yield* this.lease(created, leaseDeadlineAt?.());
           }).pipe(
-            Effect.ensuring(Effect.sync(() => {
-              this.creating -= 1;
-              this.wake();
-            })),
+            Effect.ensuring(
+              Effect.sync(() => {
+                this.creating -= 1;
+                this.wake();
+              }),
+            ),
           );
         }
         yield* this.awaitWakeWithReleasedSlot(admission);
@@ -222,26 +232,28 @@ export class ReusableSandboxPool {
   }
 
   stop(): Effect.Effect<void, unknown> {
-    return Effect.uninterruptibleMask((restore) => Effect.gen({ self: this }, function* () {
-      const created = yield* Deferred.make<void, unknown>();
-      const completion = yield* Effect.sync(() => {
-        if (this.stopCompletion !== undefined) return this.stopCompletion;
-        this.stopCompletion = created;
-        this.stopped = true;
-        this.wake();
-        return created;
-      });
-      // A caller joining an already-started stop remains cancelable. The one
-      // caller that starts it cannot be interrupted between publishing the
-      // Deferred and recording its terminal Exit.
-      if (completion !== created) return yield* restore(Deferred.await(completion));
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.gen({ self: this }, function* () {
+        const created = yield* Deferred.make<void, unknown>();
+        const completion = yield* Effect.sync(() => {
+          if (this.stopCompletion !== undefined) return this.stopCompletion;
+          this.stopCompletion = created;
+          this.stopped = true;
+          this.wake();
+          return created;
+        });
+        // A caller joining an already-started stop remains cancelable. The one
+        // caller that starts it cannot be interrupted between publishing the
+        // Deferred and recording its terminal Exit.
+        if (completion !== created) return yield* restore(Deferred.await(completion));
 
-      // Stop must finish every physical cleanup even if the initiating
-      // Invocation is interrupted. Its recorded Exit is replayed to joiners.
-      const exit = yield* Effect.exit(this.stopAll());
-      yield* Deferred.done(created, exit);
-      if (Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause);
-    }));
+        // Stop must finish every physical cleanup even if the initiating
+        // Invocation is interrupted. Its recorded Exit is replayed to joiners.
+        const exit = yield* Effect.exit(this.stopAll());
+        yield* Deferred.done(created, exit);
+        if (Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause);
+      }),
+    );
   }
 
   private stopAll(): Effect.Effect<void, unknown> {
@@ -260,14 +272,17 @@ export class ReusableSandboxPool {
       if (this.groupPluginContext !== undefined) {
         const groupTeardowns = yield* Effect.forEach(
           this.groupPlugins.slice(0, this.activatedGroupPlugins).reverse(),
-          (entry) => entry.teardown === undefined
-            ? Effect.succeed(Exit.void)
-            : Effect.exit(cleanupCallback((signal) =>
-                (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
-                  ...this.groupPluginContext!,
-                  signal,
-                }),
-              )),
+          (entry) =>
+            entry.teardown === undefined
+              ? Effect.succeed(Exit.void)
+              : Effect.exit(
+                  cleanupCallback((signal) =>
+                    (entry.teardown as (context: GroupPluginContext) => void | Promise<void>)({
+                      ...this.groupPluginContext!,
+                      signal,
+                    }),
+                  ),
+                ),
           { concurrency: 1 },
         );
         for (const exit of groupTeardowns) {
@@ -311,12 +326,22 @@ export class ReusableSandboxPool {
       if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError as Error);
       if (!this.groupPluginSetupStarted && this.groupPluginContext !== undefined) {
         this.groupPluginSetupStarted = true;
-        const setup = yield* Effect.exit(Effect.forEach(this.groupPlugins, (entry, index) => {
-          this.activatedGroupPlugins = index + 1;
-          return entry.setup === undefined
-            ? Effect.void
-            : externalPromise(() => Promise.resolve((entry.setup as (context: GroupPluginContext) => void | Promise<void>)(this.groupPluginContext!)));
-        }, { discard: true }));
+        const setup = yield* Effect.exit(
+          Effect.forEach(
+            this.groupPlugins,
+            (entry, index) => {
+              this.activatedGroupPlugins = index + 1;
+              return entry.setup === undefined
+                ? Effect.void
+                : externalPromise(() =>
+                    Promise.resolve(
+                      (entry.setup as (context: GroupPluginContext) => void | Promise<void>)(this.groupPluginContext!),
+                    ),
+                  );
+            },
+            { discard: true },
+          ),
+        );
         if (Exit.isFailure(setup)) {
           this.groupPluginSetupError = Cause.squash(setup.cause);
           return yield* Effect.fail(this.groupPluginSetupError as Error);
@@ -324,13 +349,16 @@ export class ReusableSandboxPool {
       }
       const capabilities = sandboxRuntimeCapabilities(this.plan);
       if (capabilities.reuse._tag === "Unsupported") {
-        return yield* Effect.fail(new Error(
-          `sandboxReuse is unsupported by provider ${JSON.stringify(capabilities.provider)}: ${capabilities.reuse.reason}`,
-        ));
+        return yield* Effect.fail(
+          new Error(
+            `sandboxReuse is unsupported by provider ${JSON.stringify(capabilities.provider)}: ${capabilities.reuse.reason}`,
+          ),
+        );
       }
-      const deadline: SandboxRuntimeDeadline = deadlineAt === undefined
-        ? { _tag: "Unlimited" }
-        : { _tag: "Bounded", timeoutMs: Math.max(1, minRemainingMs - CLEANUP_TIMEOUT_MS), deadlineAt };
+      const deadline: SandboxRuntimeDeadline =
+        deadlineAt === undefined
+          ? { _tag: "Unlimited" }
+          : { _tag: "Bounded", timeoutMs: Math.max(1, minRemainingMs - CLEANUP_TIMEOUT_MS), deadlineAt };
       const entryScope = yield* Scope.make();
       // One wrapper per physical materialization. Both provider feedback and
       // SandboxLayer hook context must use this exact instance: runtime sends
@@ -342,112 +370,114 @@ export class ReusableSandboxPool {
         progress: lifecycleFeedback.progress,
         diagnostic: lifecycleFeedback.diagnostic,
       };
-      const materialized = yield* Scope.provide(materializeSandboxRunPlan({
-        runId: this.runId,
-        ...provenance,
-        evalId: this.materializationOwnerId,
-        creationEvalId: provenance?.evalId,
-        plan: this.plan,
-        deadline,
-        // Runtime intentionally reports SandboxLayer/provider finalizer errors
-        // as diagnostics so it can continue the remaining finalizers. The pool
-        // must nevertheless retain those physical cleanup failures until its
-        // terminal stop; otherwise an early retire can disappear from
-        // `entries` and incorrectly permit sharedState release.
-        feedback: lifecycleFeedback,
-        signal: this.setupContext.signal,
-        hookContext: lifecycleHookContext,
-        buildLocators,
-        ...(this.preparedBeforeCache === undefined ? {} : {
-          beforeCachePreparationContext: this.preparedBeforeCache.context,
-          ...(this.preparedBeforeCache.artifact === undefined ? {} : { beforeCacheArtifact: this.preparedBeforeCache.artifact }),
+      const materialized = yield* Scope.provide(
+        materializeSandboxRunPlan({
+          runId: this.runId,
+          ...provenance,
+          evalId: this.materializationOwnerId,
+          creationEvalId: provenance?.evalId,
+          plan: this.plan,
+          deadline,
+          // Runtime intentionally reports SandboxLayer/provider finalizer errors
+          // as diagnostics so it can continue the remaining finalizers. The pool
+          // must nevertheless retain those physical cleanup failures until its
+          // terminal stop; otherwise an early retire can disappear from
+          // `entries` and incorrectly permit sharedState release.
+          feedback: lifecycleFeedback,
+          signal: this.setupContext.signal,
+          hookContext: lifecycleHookContext,
+          buildLocators,
+          ...(this.preparedBeforeCache === undefined
+            ? {}
+            : {
+                beforeCachePreparationContext: this.preparedBeforeCache.context,
+                ...(this.preparedBeforeCache.artifact === undefined
+                  ? {}
+                  : { beforeCacheArtifact: this.preparedBeforeCache.artifact }),
+              }),
+          ...(this.agent !== undefined ? { agent: this.agent } : {}),
+          ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
+          provisionSlot: { _tag: "Detached" },
+          admission: admission === undefined ? { _tag: "Detached" } : { _tag: "Bound", value: admission },
+          services: this.runtimeServices,
+          release: { _tag: "Stop" },
         }),
-        ...(this.agent !== undefined ? { agent: this.agent } : {}),
-        ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
-        provisionSlot: { _tag: "Detached" },
-        admission: admission === undefined
-          ? { _tag: "Detached" }
-          : { _tag: "Bound", value: admission },
-        services: this.runtimeServices,
-        release: { _tag: "Stop" },
-      }), entryScope).pipe(
-        Effect.onError((cause) => this.closeFailedCreateScope(
-          entryScope,
-          Exit.failCause(cause),
-          "sandbox.materialize-cleanup",
-        )),
+        entryScope,
+      ).pipe(
+        Effect.onError((cause) =>
+          this.closeFailedCreateScope(entryScope, Exit.failCause(cause), "sandbox.materialize-cleanup"),
+        ),
       );
       const sandbox = materialized.sandbox;
-    // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
-    // docs/feature/sandbox/library/reuse.md「派发前确认」)。
-    const lifetime = sandboxReuseCapability(sandbox);
-    if (!lifetime) {
-      yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
-      return yield* Effect.fail(new Error(
-        `sandboxReuse needs the "${capabilities.provider}" provider to confirm sandbox lifetime, but it does not implement ` +
-          "ensureLifetime(minRemainingMs). Only a provider can prove the lifetime is set on its own backend; the runner " +
-          "will not keep local books for it. Use a provider that implements it (docker / e2b / vercel), or drop sandboxReuse.",
-      ));
-    }
-    const confirmed = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs)).pipe(
-      Effect.onError((cause) => this.closeFailedCreateScope(
-        entryScope,
-        Exit.failCause(cause),
-        "sandbox.ensure-lifetime-cleanup",
-      )),
-    );
-    if (!confirmed.ready) {
-      yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
-      return yield* Effect.fail(
-        new Error(`sandboxReuse cannot prepare the "${capabilities.provider}" sandbox: ${confirmed.reason}`),
+      // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
+      // docs/feature/sandbox/library/reuse.md「派发前确认」)。
+      const lifetime = sandboxReuseCapability(sandbox);
+      if (!lifetime) {
+        yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
+        return yield* Effect.fail(
+          new Error(
+            `sandboxReuse needs the "${capabilities.provider}" provider to confirm sandbox lifetime, but it does not implement ` +
+              "ensureLifetime(minRemainingMs). Only a provider can prove the lifetime is set on its own backend; the runner " +
+              "will not keep local books for it. Use a provider that implements it (docker / e2b / vercel), or drop sandboxReuse.",
+          ),
+        );
+      }
+      const confirmed = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs)).pipe(
+        Effect.onError((cause) =>
+          this.closeFailedCreateScope(entryScope, Exit.failCause(cause), "sandbox.ensure-lifetime-cleanup"),
+        ),
       );
-    }
-    const prepared = yield* Effect.gen({ self: this }, function* () {
-      const ledger = yield* externalPromise(() => createChangeLedger(sandbox));
-      // root 执行身份下题间 reset 永不安全(Agent 能读上一条 Attempt 留下的私有分类账对象);
-      // 在实例进池、第一条 Attempt 派发前就拒绝,而不是等到归还时才在 resetToAnchor() 里
-      // 暴露(那样首条 Attempt 已经跑完,失败还可能被静默退休吞掉)。
-      if (ledger.rootExecutionIdentity) {
-        return yield* Effect.fail(new Error(
-          `sandboxReuse cannot reuse the "${capabilities.provider}" sandbox: the Agent's execution identity is root and could read private ledger objects left by earlier attempts; ` +
-            "use a non-root execution user (declare USER in the image) or disable sandboxReuse",
-        ));
+      if (!confirmed.ready) {
+        yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
+        return yield* Effect.fail(
+          new Error(`sandboxReuse cannot prepare the "${capabilities.provider}" sandbox: ${confirmed.reason}`),
+        );
       }
-      // 建分类账会烧掉寿命:备好之后再确认一次。这次不够就报错收场——
-      // 反复创建同样的替代实例只会反复烧同样的时间(见 reuse.md「派发前确认」)。
-      const afterSetup = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs));
-      if (!afterSetup.ready) {
-        return yield* Effect.fail(new Error(
-          `sandboxReuse cannot use the "${capabilities.provider}" sandbox after baseline setup: ${afterSetup.reason}`,
-        ));
-      }
-      const reuseSandbox = this.nextReuseSandboxNumber === undefined
-        ? ++this.created
-        : this.nextReuseSandboxNumber();
-      return {
-        sandbox,
-        materializedCase: materialized,
-        authorBackend: materialized.authorBackend,
-        scope: entryScope,
-        lifetime,
-        ledger,
-        reuseSandbox,
-        ordinal: 0,
-        lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
-      };
-    }).pipe(Effect.onError((cause) => this.closeFailedCreateScope(
-      entryScope,
-      Exit.failCause(cause),
-      "sandbox.prepare-cleanup",
-    )));
-    return prepared;
+      const prepared = yield* Effect.gen({ self: this }, function* () {
+        const ledger = yield* externalPromise(() => createChangeLedger(sandbox));
+        // root 执行身份下题间 reset 永不安全(Agent 能读上一条 Attempt 留下的私有分类账对象);
+        // 在实例进池、第一条 Attempt 派发前就拒绝,而不是等到归还时才在 resetToAnchor() 里
+        // 暴露(那样首条 Attempt 已经跑完,失败还可能被静默退休吞掉)。
+        if (ledger.rootExecutionIdentity) {
+          return yield* Effect.fail(
+            new Error(
+              `sandboxReuse cannot reuse the "${capabilities.provider}" sandbox: the Agent's execution identity is root and could read private ledger objects left by earlier attempts; ` +
+                "use a non-root execution user (declare USER in the image) or disable sandboxReuse",
+            ),
+          );
+        }
+        // 建分类账会烧掉寿命:备好之后再确认一次。这次不够就报错收场——
+        // 反复创建同样的替代实例只会反复烧同样的时间(见 reuse.md「派发前确认」)。
+        const afterSetup = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs));
+        if (!afterSetup.ready) {
+          return yield* Effect.fail(
+            new Error(
+              `sandboxReuse cannot use the "${capabilities.provider}" sandbox after baseline setup: ${afterSetup.reason}`,
+            ),
+          );
+        }
+        const reuseSandbox = this.nextReuseSandboxNumber === undefined ? ++this.created : this.nextReuseSandboxNumber();
+        return {
+          sandbox,
+          materializedCase: materialized,
+          authorBackend: materialized.authorBackend,
+          scope: entryScope,
+          lifetime,
+          ledger,
+          reuseSandbox,
+          ordinal: 0,
+          lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
+        };
+      }).pipe(
+        Effect.onError((cause) =>
+          this.closeFailedCreateScope(entryScope, Exit.failCause(cause), "sandbox.prepare-cleanup"),
+        ),
+      );
+      return prepared;
     });
   }
 
-  private lease(
-    entry: Entry,
-    deadlineAt: number | undefined,
-  ): Effect.Effect<ReusableSandboxLease, never, Scope.Scope> {
+  private lease(entry: Entry, deadlineAt: number | undefined): Effect.Effect<ReusableSandboxLease, never, Scope.Scope> {
     return Effect.gen({ self: this }, function* () {
       entry.lifecycle = { _tag: "Leased" };
       entry.ordinal += 1;
@@ -459,53 +489,51 @@ export class ReusableSandboxPool {
       // 先登记 release/reset finalizer:executor/facade 的封闭 finalizer 在其后登记,Scope
       // 关闭时按 LIFO 先中断在飞请求、封闭旧 facade,再对资源面执行 reset/retire——reset
       // 期间不会再有旧 facade 的请求借道写入 ledger/workdir。
-      yield* Effect.addFinalizer(() => Effect.gen({ self: this }, function* () {
-        if (lifecycle._tag === "Finalized") return;
-        const settled = lifecycle;
-        lifecycle = { _tag: "Finalized" };
-        const release: ReusableLeaseRelease = settled.release._tag === "Committed"
-          ? settled.release.release
-          : { _tag: "Retire" };
-        if (release._tag === "Retire") {
-          // The Attempt has already sealed. Do not turn its return finalizer
-          // into a defect; `retire` persists the physical failure and terminal
-          // `stop()` replays it to Experiment cleanup/lease release.
-          yield* this.retire(entry).pipe(Effect.catch(() => Effect.void));
-        } else if (entry.lifecycle._tag !== "Retired") {
-          const reset = yield* Effect.result(externalPromise(() => entry.ledger.resetToAnchor()));
-          if (Result.isFailure(reset)) {
-            this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.failure }));
-            this.recordCleanupFailure("sandbox.reset", reset.failure);
-            this.feedback.diagnostic({
-              code: "sandbox-reset-failed",
-              level: "warning",
-              message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.failure))}`,
-            });
+      yield* Effect.addFinalizer(() =>
+        Effect.gen({ self: this }, function* () {
+          if (lifecycle._tag === "Finalized") return;
+          const settled = lifecycle;
+          lifecycle = { _tag: "Finalized" };
+          const release: ReusableLeaseRelease =
+            settled.release._tag === "Committed" ? settled.release.release : { _tag: "Retire" };
+          if (release._tag === "Retire") {
+            // The Attempt has already sealed. Do not turn its return finalizer
+            // into a defect; `retire` persists the physical failure and terminal
+            // `stop()` replays it to Experiment cleanup/lease release.
             yield* this.retire(entry).pipe(Effect.catch(() => Effect.void));
-          } else {
-            entry.lifecycle = { _tag: "Idle" };
+          } else if (entry.lifecycle._tag !== "Retired") {
+            const reset = yield* Effect.result(externalPromise(() => entry.ledger.resetToAnchor()));
+            if (Result.isFailure(reset)) {
+              this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.failure }));
+              this.recordCleanupFailure("sandbox.reset", reset.failure);
+              this.feedback.diagnostic({
+                code: "sandbox-reset-failed",
+                level: "warning",
+                message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.failure))}`,
+              });
+              yield* this.retire(entry).pipe(Effect.catch(() => Effect.void));
+            } else {
+              entry.lifecycle = { _tag: "Idle" };
+            }
           }
-        }
-        this.wake();
-      }));
+          this.wake();
+        }),
+      );
       // 每次租借在当前 Attempt Scope 新建 executor 与 author facade:上一轮 facade/executor
       // 不跨租借复用,不把旧 Runtime 带进新 Attempt。
       const executor = yield* makeSandboxRequestExecutor();
-      const authorSandbox = makeSandboxAuthorFacade(
-        entry.authorBackend,
-        executor,
-        this.plan.providerPlan.provider,
-      );
+      const authorSandbox = makeSandboxAuthorFacade(entry.authorBackend, executor, this.plan.providerPlan.provider);
       return {
         resourceSandbox: entry.sandbox,
         sandbox: authorSandbox,
         reuseSandbox: entry.reuseSandbox,
         reuseOrdinal: entry.ordinal,
         materializedCase: entry.materializedCase,
-        commit: (release) => Effect.sync(() => {
-          if (lifecycle._tag !== "Open") return;
-          lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
-        }),
+        commit: (release) =>
+          Effect.sync(() => {
+            if (lifecycle._tag !== "Open") return;
+            lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
+          }),
       };
     });
   }
@@ -566,27 +594,28 @@ export class ReusableSandboxPool {
   private closeFailedCreateScope(
     scope: Scope.Closeable,
     exit: Exit.Exit<unknown, unknown>,
-    stage: Extract<ReusableSandboxPoolCleanupFailure["stage"],
-      "sandbox.materialize-cleanup" | "sandbox.ensure-lifetime-cleanup" | "sandbox.prepare-cleanup">,
+    stage: Extract<
+      ReusableSandboxPoolCleanupFailure["stage"],
+      "sandbox.materialize-cleanup" | "sandbox.ensure-lifetime-cleanup" | "sandbox.prepare-cleanup"
+    >,
   ): Effect.Effect<void> {
     return Effect.exit(Scope.close(scope, exit)).pipe(
-      Effect.flatMap((close) => Exit.isFailure(close)
-        ? Effect.sync(() => {
-            const error = this.recordCleanupFailure(stage, Cause.squash(close.cause));
-            this.feedback.diagnostic({
-              code: "sandbox-stop-failed",
-              level: "warning",
-              message: `Sandbox reuse setup cleanup failed: ${String(error)}`,
-            });
-          })
-        : Effect.void),
+      Effect.flatMap((close) =>
+        Exit.isFailure(close)
+          ? Effect.sync(() => {
+              const error = this.recordCleanupFailure(stage, Cause.squash(close.cause));
+              this.feedback.diagnostic({
+                code: "sandbox-stop-failed",
+                level: "warning",
+                message: `Sandbox reuse setup cleanup failed: ${String(error)}`,
+              });
+            })
+          : Effect.void,
+      ),
     );
   }
 
-  private recordCleanupFailure(
-    stage: ReusableSandboxPoolCleanupFailure["stage"],
-    cause: unknown,
-  ): Error {
+  private recordCleanupFailure(stage: ReusableSandboxPoolCleanupFailure["stage"], cause: unknown): Error {
     const error = cause instanceof Error ? cause : new Error(String(cause));
     this.cleanupFailures.push(Object.freeze({ stage, error }));
     return error;
@@ -618,6 +647,6 @@ export class ReusableSandboxPool {
 function externalPromise<Value>(run: () => Promise<Value>): Effect.Effect<Value, Error> {
   return Effect.tryPromise({
     try: run,
-    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
   });
 }

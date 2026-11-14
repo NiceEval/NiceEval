@@ -13,30 +13,16 @@ import { discoverEvals, discoverExperimentSelection } from "../../runner/discove
 import { acquireFreshImportGeneration, type FreshImportGeneration } from "../../fresh-import.ts";
 import { resolveExperimentEvals, splitByEvaluationKind } from "../../runner/eval-selection.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
-import {
-  prepareRunnerRecordReuse,
-  withRunnerCurrentReusePreview,
-} from "../../runner/record.ts";
+import { prepareRunnerRecordReuse, withRunnerCurrentReusePreview } from "../../runner/record.ts";
 import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
 import { readCaseLockEffect } from "../../runner/lock.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
-import {
-  listSessions,
-  showSession,
-  SessionTracker,
-} from "../../runner/session.ts";
-import {
-  linkRunSandboxes,
-  recommendedConcurrencyForPreparedPairs,
-} from "../../runner/sandbox-selection.ts";
+import { listSessions, showSession, SessionTracker } from "../../runner/session.ts";
+import { linkRunSandboxes, recommendedConcurrencyForPreparedPairs } from "../../runner/sandbox-selection.ts";
 import { resolveRunTimeout } from "../../runner/timeout.ts";
-import {
-  ExperimentRenameError,
-  planExperimentRename,
-  renameExperiment,
-} from "../../runner/rename-experiment.ts";
+import { ExperimentRenameError, planExperimentRename, renameExperiment } from "../../runner/rename-experiment.ts";
 import {
   resolveSandboxBeforeCache,
   type AgentRun,
@@ -83,20 +69,20 @@ import type {
   ExperimentHostSelectionProblem,
 } from "./types.ts";
 
-function operationError(
-  operation: ExperimentHostOperation,
-  cause: unknown,
-): ExperimentHostError {
+function operationError(operation: ExperimentHostOperation, cause: unknown): ExperimentHostError {
   if (cause instanceof ExperimentHostError) return cause;
-  const code = typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-    ? String(Reflect.get(cause, "code"))
-    : "experiment-host-operation-failed";
+  const code =
+    typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
+      ? String(Reflect.get(cause, "code"))
+      : "experiment-host-operation-failed";
   return new ExperimentHostError({
     operation,
     code,
     message: closedFailureMessage(cause),
     cause,
-    ...(cause instanceof Error && "comparisons" in cause && Array.isArray(cause.comparisons) ? { comparisons: cause.comparisons } : {}),
+    ...(cause instanceof Error && "comparisons" in cause && Array.isArray(cause.comparisons)
+      ? { comparisons: cause.comparisons }
+      : {}),
   });
 }
 
@@ -143,32 +129,38 @@ function closedRecordDiagnostic(cause: unknown): unknown | undefined {
 }
 
 function closedDiagnosticMessage(cause: unknown): Readonly<{ message: string }> | undefined {
-  const message = cause instanceof Error
-    ? cause.message
-    : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
-      ? String(Reflect.get(cause, "message"))
-      : undefined;
-  return message === undefined || message.length === 0
-    ? undefined
-    : Object.freeze({ message });
+  const message =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
+        ? String(Reflect.get(cause, "message"))
+        : undefined;
+  return message === undefined || message.length === 0 ? undefined : Object.freeze({ message });
 }
 
 function closedDiagnosticIssues(value: unknown, includeMessage: boolean): readonly unknown[] {
   if (!Array.isArray(value)) return Object.freeze([]);
-  return Object.freeze(value.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null) return [];
-    const path = Reflect.get(entry, "path");
-    const code = Reflect.get(entry, "code");
-    const message = Reflect.get(entry, "message");
-    return [Object.freeze({
-      ...(typeof code === "string" ? { code } : {}),
-      path: Array.isArray(path)
-        ? Object.freeze(path.filter((segment): segment is string | number =>
-          typeof segment === "string" || typeof segment === "number"))
-        : Object.freeze([]),
-      ...(includeMessage && typeof message === "string" ? { message } : {}),
-    })];
-  }));
+  return Object.freeze(
+    value.flatMap((entry) => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const path = Reflect.get(entry, "path");
+      const code = Reflect.get(entry, "code");
+      const message = Reflect.get(entry, "message");
+      return [
+        Object.freeze({
+          ...(typeof code === "string" ? { code } : {}),
+          path: Array.isArray(path)
+            ? Object.freeze(
+                path.filter(
+                  (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
+                ),
+              )
+            : Object.freeze([]),
+          ...(includeMessage && typeof message === "string" ? { message } : {}),
+        }),
+      ];
+    }),
+  );
 }
 
 function closeOperation<A, E, R>(
@@ -269,50 +261,57 @@ function selectionProblem(
 }
 
 function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<ClosedSelection, unknown> {
-  const selectWith = (generation?: FreshImportGeneration) => Effect.gen(function* () {
-    if (input.experimentIds !== undefined && (input.experimentIds.length === 0 || input.experimentSelector !== undefined)) {
-      return yield* Effect.fail(new TypeError("experimentIds must be non-empty and cannot be combined with experimentSelector"));
-    }
-    const discovered = yield* discoverEvals(input.cwd, { generation });
-    const evals = input.tag === undefined
-      ? discovered
-      : discovered.filter((definition) => definition.tags?.includes(input.tag!));
-    const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-      generation,
-      select: input.experimentIds !== undefined
-        ? () => input.experimentIds!
-        : input.experimentSelector === undefined
-          ? undefined
-          : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
-    });
-    const selectedIds = input.experimentIds !== undefined
-      ? new Set(input.experimentIds)
-      : input.experimentSelector === undefined
-        ? undefined
-        : new Set(matchExperimentSelector(experimentIds, input.experimentSelector));
-    const selections = experiments
-      .filter((experiment) => selectedIds === undefined || selectedIds.has(experiment.id))
-      .map((experiment) => {
-        const selection = resolveExperimentEvals({
-          experimentId: experiment.id,
-          models: experiment.models,
-          tag: input.tag,
-          selector: experiment.evals,
-          cliPatterns: input.evalSelectors ?? [],
-          evals: discovered,
-        });
-        return Object.freeze({
-          experiment,
-          selectedEvalIds: freezeArray(selection.selectedEvalIds),
-          selectorEvalIds: freezeArray(selection.selectorEvals.map((definition) => definition.id)),
-        });
+  const selectWith = (generation?: FreshImportGeneration) =>
+    Effect.gen(function* () {
+      if (
+        input.experimentIds !== undefined &&
+        (input.experimentIds.length === 0 || input.experimentSelector !== undefined)
+      ) {
+        return yield* Effect.fail(
+          new TypeError("experimentIds must be non-empty and cannot be combined with experimentSelector"),
+        );
+      }
+      const discovered = yield* discoverEvals(input.cwd, { generation });
+      const evals =
+        input.tag === undefined ? discovered : discovered.filter((definition) => definition.tags?.includes(input.tag!));
+      const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
+        generation,
+        select:
+          input.experimentIds !== undefined
+            ? () => input.experimentIds!
+            : input.experimentSelector === undefined
+              ? undefined
+              : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
       });
-    return Object.freeze({
-      evals: freezeArray(evals),
-      experimentIds,
-      selections: freezeArray(selections),
+      const selectedIds =
+        input.experimentIds !== undefined
+          ? new Set(input.experimentIds)
+          : input.experimentSelector === undefined
+            ? undefined
+            : new Set(matchExperimentSelector(experimentIds, input.experimentSelector));
+      const selections = experiments
+        .filter((experiment) => selectedIds === undefined || selectedIds.has(experiment.id))
+        .map((experiment) => {
+          const selection = resolveExperimentEvals({
+            experimentId: experiment.id,
+            models: experiment.models,
+            tag: input.tag,
+            selector: experiment.evals,
+            cliPatterns: input.evalSelectors ?? [],
+            evals: discovered,
+          });
+          return Object.freeze({
+            experiment,
+            selectedEvalIds: freezeArray(selection.selectedEvalIds),
+            selectorEvalIds: freezeArray(selection.selectorEvals.map((definition) => definition.id)),
+          });
+        });
+      return Object.freeze({
+        evals: freezeArray(evals),
+        experimentIds,
+        selections: freezeArray(selections),
+      });
     });
-  });
   return Effect.scoped(acquireFreshImportGeneration(input.cwd).pipe(Effect.flatMap(selectWith)));
 }
 
@@ -338,18 +337,32 @@ function summaryOfExperiment(
 export function catalog(
   input: ExperimentHostSelectionInput,
 ): Effect.Effect<ExperimentHostCatalog, ExperimentHostError> {
-  return closeOperation("catalog", closeSelection(input).pipe(Effect.map((selected) => Object.freeze({
-    status: "listed" as const,
-    evals: freezeArray(selected.evals.map((definition) => Object.freeze({
-      id: definition.id,
-      ...(definition.description === undefined ? {} : { description: definition.description }),
-      tags: freezeArray(definition.tags ?? []),
-      evaluationKind: definition.evaluationKind,
-    }))),
-    experimentIds: selected.experimentIds,
-    experiments: freezeArray(selected.selections.map(({ experiment, selectedEvalIds }) =>
-      summaryOfExperiment(experiment, selectedEvalIds))),
-  }))));
+  return closeOperation(
+    "catalog",
+    closeSelection(input).pipe(
+      Effect.map((selected) =>
+        Object.freeze({
+          status: "listed" as const,
+          evals: freezeArray(
+            selected.evals.map((definition) =>
+              Object.freeze({
+                id: definition.id,
+                ...(definition.description === undefined ? {} : { description: definition.description }),
+                tags: freezeArray(definition.tags ?? []),
+                evaluationKind: definition.evaluationKind,
+              }),
+            ),
+          ),
+          experimentIds: selected.experimentIds,
+          experiments: freezeArray(
+            selected.selections.map(({ experiment, selectedEvalIds }) =>
+              summaryOfExperiment(experiment, selectedEvalIds),
+            ),
+          ),
+        }),
+      ),
+    ),
+  );
 }
 
 function agentRunFromExperiment(
@@ -393,102 +406,114 @@ function agentRunFromExperiment(
   });
 }
 
-function sandboxBeforeCacheOverrideOf(
-  overrides: ExperimentHostRunOverrides,
-): SandboxBeforeCache | undefined {
+function sandboxBeforeCacheOverrideOf(overrides: ExperimentHostRunOverrides): SandboxBeforeCache | undefined {
   const value: unknown = Reflect.get(overrides, "sandboxBeforeCache");
   if (value === undefined || value === "use" || value === "bypass") return value;
-  throw new TypeError("sandboxBeforeCache override must be \"use\" or \"bypass\".");
+  throw new TypeError('sandboxBeforeCache override must be "use" or "bypass".');
 }
 
-export function prepareRuns(input: ExperimentHostSelectionInput & {
-  readonly config: ExperimentHostInvocationPlanRequest["config"];
-  readonly overrides?: ExperimentHostRunOverrides;
-}, options: { readonly allowEmptySelection?: boolean; readonly freshImport?: boolean } = {}): Effect.Effect<PreparedRuns, unknown> {
-  return closeSelection(input).pipe(Effect.flatMap((selected): Effect.Effect<
-    PreparedRuns,
-    ExperimentEvaluationKindAdmissionError
-  > => {
-    const problem = selectionProblem(input, selected);
-    if (problem !== undefined && !(options.allowEmptySelection === true && problem.status === "empty-selection")) {
-      return Effect.succeed({ status: "problem", selected, problem } as const);
-    }
-    const evalsById = new Map(selected.evals.map((definition) => [definition.id, definition]));
-    const issues = selected.selections.flatMap(({ experiment, selectedEvalIds }) => {
-      const evaluationKinds = splitByEvaluationKind(selectedEvalIds.flatMap((id) => {
-        const definition = evalsById.get(id);
-        return definition === undefined ? [] : [definition];
-      }));
-      return evaluationKinds.pass.length === 0 || evaluationKinds.score.length === 0
-        ? []
-        : [{
-            experimentId: experiment.id,
-            passEvalIds: Object.freeze([...evaluationKinds.pass]),
-            scoreEvalIds: Object.freeze([...evaluationKinds.score]),
-          }];
-    });
-    if (issues.length > 0) {
-      return Effect.fail(new ExperimentEvaluationKindAdmissionError({
-        code: "experiment-evaluation-kind-mixed",
-        message: issues.map((issue) =>
-          `Experiment ${JSON.stringify(issue.experimentId)} selects both pass and score Evals. ` +
-          `pass (${issue.passEvalIds.length}): ${issue.passEvalIds.join(", ")}; ` +
-          `score (${issue.scoreEvalIds.length}): ${issue.scoreEvalIds.join(", ")}. ` +
-          "Split the Experiment into one pass Experiment and one score Experiment, or narrow its Eval selection."
-        ).join("\n"),
-        issues: Object.freeze(issues.map((issue) => Object.freeze(issue))),
-      }));
-    }
-    const overrides = input.overrides ?? {};
-    const sandboxBeforeCacheOverride = sandboxBeforeCacheOverrideOf(overrides);
-    return Effect.succeed({
-      status: "ready",
-      selected,
-      runs: freezeArray(selected.selections.map(({ experiment, selectedEvalIds }) =>
-        agentRunFromExperiment(
-          experiment,
-          selectedEvalIds,
-          input.config,
-          overrides,
-          sandboxBeforeCacheOverride,
-        ))),
-    } as const);
-  }));
+export function prepareRuns(
+  input: ExperimentHostSelectionInput & {
+    readonly config: ExperimentHostInvocationPlanRequest["config"];
+    readonly overrides?: ExperimentHostRunOverrides;
+  },
+  options: { readonly allowEmptySelection?: boolean; readonly freshImport?: boolean } = {},
+): Effect.Effect<PreparedRuns, unknown> {
+  return closeSelection(input).pipe(
+    Effect.flatMap((selected): Effect.Effect<PreparedRuns, ExperimentEvaluationKindAdmissionError> => {
+      const problem = selectionProblem(input, selected);
+      if (problem !== undefined && !(options.allowEmptySelection === true && problem.status === "empty-selection")) {
+        return Effect.succeed({ status: "problem", selected, problem } as const);
+      }
+      const evalsById = new Map(selected.evals.map((definition) => [definition.id, definition]));
+      const issues = selected.selections.flatMap(({ experiment, selectedEvalIds }) => {
+        const evaluationKinds = splitByEvaluationKind(
+          selectedEvalIds.flatMap((id) => {
+            const definition = evalsById.get(id);
+            return definition === undefined ? [] : [definition];
+          }),
+        );
+        return evaluationKinds.pass.length === 0 || evaluationKinds.score.length === 0
+          ? []
+          : [
+              {
+                experimentId: experiment.id,
+                passEvalIds: Object.freeze([...evaluationKinds.pass]),
+                scoreEvalIds: Object.freeze([...evaluationKinds.score]),
+              },
+            ];
+      });
+      if (issues.length > 0) {
+        return Effect.fail(
+          new ExperimentEvaluationKindAdmissionError({
+            code: "experiment-evaluation-kind-mixed",
+            message: issues
+              .map(
+                (issue) =>
+                  `Experiment ${JSON.stringify(issue.experimentId)} selects both pass and score Evals. ` +
+                  `pass (${issue.passEvalIds.length}): ${issue.passEvalIds.join(", ")}; ` +
+                  `score (${issue.scoreEvalIds.length}): ${issue.scoreEvalIds.join(", ")}. ` +
+                  "Split the Experiment into one pass Experiment and one score Experiment, or narrow its Eval selection.",
+              )
+              .join("\n"),
+            issues: Object.freeze(issues.map((issue) => Object.freeze(issue))),
+          }),
+        );
+      }
+      const overrides = input.overrides ?? {};
+      const sandboxBeforeCacheOverride = sandboxBeforeCacheOverrideOf(overrides);
+      return Effect.succeed({
+        status: "ready",
+        selected,
+        runs: freezeArray(
+          selected.selections.map(({ experiment, selectedEvalIds }) =>
+            agentRunFromExperiment(experiment, selectedEvalIds, input.config, overrides, sandboxBeforeCacheOverride),
+          ),
+        ),
+      } as const);
+    }),
+  );
 }
 
 export function check(
   input: ExperimentHostCheckRequest,
 ): Effect.Effect<ExperimentHostCheckResult, ExperimentHostError> {
-  return closeOperation("check", Effect.gen(function* () {
-    const prepared = yield* prepareRuns(input);
-    if (prepared.status === "problem") return prepared.problem;
-    const pairs = yield* linkRunSandboxes(prepared.selected.evals, prepared.runs);
-    return Object.freeze({
-      status: "linked" as const,
-      experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
-      evalIds: freezeArray(new Set(prepared.runs.flatMap((run) => run.selectedEvalIds))),
-      pairCount: pairs.length,
-    });
-  }));
+  return closeOperation(
+    "check",
+    Effect.gen(function* () {
+      const prepared = yield* prepareRuns(input);
+      if (prepared.status === "problem") return prepared.problem;
+      const pairs = yield* linkRunSandboxes(prepared.selected.evals, prepared.runs);
+      return Object.freeze({
+        status: "linked" as const,
+        experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
+        evalIds: freezeArray(new Set(prepared.runs.flatMap((run) => run.selectedEvalIds))),
+        pairCount: pairs.length,
+      });
+    }),
+  );
 }
 
 /** Session data is intentionally presented as a closed, transient document. */
 export function listInvocationStatus(
   input: ExperimentHostInvocationStatusListRequest,
 ): Effect.Effect<ExperimentHostInvocationStatusList, ExperimentHostError, ProjectStateDatabase> {
-  return closeOperation("invocation-status-list", listSessions(resolve(input.cwd, ".niceeval"), {
-    ...(input.all === true ? { all: true } : {}),
-    ...(input.experimentSelector === undefined ? {} : { selector: input.experimentSelector }),
-  }));
+  return closeOperation(
+    "invocation-status-list",
+    listSessions(resolve(input.cwd, ".niceeval"), {
+      ...(input.all === true ? { all: true } : {}),
+      ...(input.experimentSelector === undefined ? {} : { selector: input.experimentSelector }),
+    }),
+  );
 }
 
 export function showInvocationStatus(
   input: ExperimentHostInvocationStatusShowRequest,
 ): Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError, ProjectStateDatabase> {
-  return closeOperation("invocation-status-show", showSession(
-    resolve(input.cwd, ".niceeval"),
-    input.invocationSelector,
-  ));
+  return closeOperation(
+    "invocation-status-show",
+    showSession(resolve(input.cwd, ".niceeval"), input.invocationSelector),
+  );
 }
 
 function recordRoot(input: ExperimentHostInvocationPlanRequest) {
@@ -513,9 +538,7 @@ function jsonSnapshot(value: unknown): ExperimentHostJsonValue | undefined {
 function freezeJson(value: ExperimentHostJsonValue): ExperimentHostJsonValue {
   if (Array.isArray(value)) return Object.freeze(value.map(freezeJson));
   if (typeof value === "object" && value !== null) {
-    return Object.freeze(Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)]),
-    ));
+    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)])));
   }
   return value;
 }
@@ -570,143 +593,162 @@ function dryPlan(
 export function planInvocation(
   input: ExperimentHostInvocationPlanRequest,
 ): Effect.Effect<ExperimentHostInvocationPlanResult, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("invocation-plan", Effect.gen(function* () {
-    const prepared = yield* prepareRuns(input);
-    if (prepared.status === "problem") {
-      return Object.freeze({ ...prepared.problem });
-    }
-    const root = recordRoot(input);
-    if (Result.isFailure(root)) return yield* Effect.fail(root.failure);
-    const config = Object.freeze({
-      ...input.config,
-      ...(input.config.reporters === undefined
-        ? {}
-        : { reporters: [...input.config.reporters] }),
-    });
-    const overrides = Object.freeze({ ...(input.overrides ?? {}) });
-    const target = yield* planProjectTarget(
-      prepared.selected.evals,
-      prepared.runs,
-      config.timeoutMs,
-      {
+  return closeOperation(
+    "invocation-plan",
+    Effect.gen(function* () {
+      const prepared = yield* prepareRuns(input);
+      if (prepared.status === "problem") {
+        return Object.freeze({ ...prepared.problem });
+      }
+      const root = recordRoot(input);
+      if (Result.isFailure(root)) return yield* Effect.fail(root.failure);
+      const config = Object.freeze({
+        ...input.config,
+        ...(input.config.reporters === undefined ? {} : { reporters: [...input.config.reporters] }),
+      });
+      const overrides = Object.freeze({ ...(input.overrides ?? {}) });
+      const target = yield* planProjectTarget(prepared.selected.evals, prepared.runs, config.timeoutMs, {
         configJudge: config.judgeProvider,
         ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
-      },
-    );
-    const maxConcurrency = overrides.maxConcurrency
-      ?? config.maxConcurrency
-      ?? recommendedConcurrencyForPreparedPairs([...target.preparedPairsByKey.values()]);
-    const maxBuildConcurrency = overrides.maxBuildConcurrency
-      ?? config.maxBuildConcurrency
-      ?? 2;
-    const maxBeforeCacheConcurrency = overrides.maxBeforeCacheConcurrency
-      ?? config.maxBeforeCacheConcurrency
-      ?? 2;
-    if (!Number.isInteger(maxConcurrency) || maxConcurrency <= 0) {
-      return yield* Effect.fail(new Error(`maxConcurrency must be a positive integer, got ${maxConcurrency}.`));
-    }
-    if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
-      return yield* Effect.fail(new Error(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.`));
-    }
-    if (!Number.isInteger(maxBeforeCacheConcurrency) || maxBeforeCacheConcurrency <= 0) {
-      return yield* Effect.fail(new Error(`maxBeforeCacheConcurrency must be a positive integer, got ${maxBeforeCacheConcurrency}.`));
-    }
-    const uniqueEvalIds = new Set(prepared.runs.flatMap((run) => run.selectedEvalIds));
-    const totalAttempts = prepared.runs.reduce(
-      (sum, run) => sum + run.selectedEvalIds.length * run.attempts,
-      0,
-    );
-    const experimentConcurrency = Object.freeze(Object.fromEntries(prepared.runs.flatMap((run) =>
-      run.experimentId !== undefined && run.maxConcurrency !== undefined
-        ? [[run.experimentId, run.maxConcurrency] as const]
-        : [])));
-    const shape: ExperimentHostInvocationShape = Object.freeze({
-      experiments: prepared.runs.length,
-      evals: uniqueEvalIds.size,
-      configurations: prepared.runs.length,
-      totalAttempts,
-      attempts: Math.max(1, ...prepared.runs.map((run) => run.attempts)),
-      maxConcurrency,
-      maxBuildConcurrency,
-      maxBeforeCacheConcurrency,
-      experimentConcurrency,
-    });
-    const reuse = yield* prepareRunnerRecordReuse({
-      manifestsByKey: target.manifestsByKey,
-      preparedPairsByKey: target.preparedPairsByKey,
-      evals: prepared.selected.evals,
-      runs: prepared.runs,
-      config: { timeoutMs: config.timeoutMs },
-      plannedFingerprints: target.plannedFingerprints,
-      renameFingerprintsByKey: target.renameFingerprintsByKey,
-      plannedConfigHashes: target.plannedConfigHashes,
-      ...(overrides.rerun === undefined ? {} : { rerun: overrides.rerun }),
-      ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
-    });
-    const previewStartedAt = input.preview === true ? yield* Clock.currentTimeMillis : undefined;
-    const preview = previewStartedAt !== undefined
-      ? yield* Effect.scoped(withRunnerCurrentReusePreview({
-          recordRoot: root.success,
-          startedAt: previewStartedAt,
-          evals: prepared.selected.evals,
-          runs: prepared.runs,
-          reuse,
-          use: ({ reusePlan, readReadbacks }) => Effect.gen(function* () {
-            const readbacks = yield* readReadbacks();
-            const pairs = new Map(reusePlan.slots.map((slot) => [
-              JSON.stringify([slot.experimentId, slot.evalId]),
-              [slot.experimentId, slot.evalId] as const,
-            ]));
-            const projectDatabaseRoot = recordRootPaths(root.success)?.portableRoot;
-            if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
-            const locked = yield* Effect.all([...pairs].map(([key, [experimentId, evalId]]) =>
-              readCaseLockEffect(projectDatabaseRoot, experimentId, evalId).pipe(
-                Effect.catch(() => Effect.succeed(undefined)),
-                Effect.map((record) => record !== undefined ? key : undefined),
-              )), { concurrency: "unbounded" });
-            return dryPlan(
-              reusePlan.slots,
-              readbacks.map(projectCurrentReuseReadback),
-              locked.filter((key): key is string => key !== undefined),
-              new Map(prepared.selected.evals.flatMap((definition) => definition.evalGroup === undefined
-                ? []
-                : [[definition.id, {
-                    id: definition.evalGroup.id,
-                    index: definition.evalGroup.evalIds.indexOf(definition.id),
-                  }] as const])),
-            );
-          }),
-        }))
-      : undefined;
-
-    const plan = Object.freeze({}) as ExperimentHostInvocationPlan;
-    invocationPlans.set(plan, {
-      evals: prepared.selected.evals,
-      runs: prepared.runs,
-      config,
-      recordRoot: root.success,
-      coordinationRoot: resolve(input.cwd, input.coordinationRoot ?? ".niceeval"),
-      overrides,
-      shape,
-      consumed: false,
-    });
-    const occurrenceAudits = new Map<string, ExperimentHostJsonValue>();
-    for (const pair of target.preparedPairsByKey.values()) {
-      for (const occurrence of pair.plugin.occurrences) {
-        const audit = jsonSnapshot(occurrence.audit);
-        if (audit !== undefined) occurrenceAudits.set(JSON.stringify(audit), audit);
+      });
+      const maxConcurrency =
+        overrides.maxConcurrency ??
+        config.maxConcurrency ??
+        recommendedConcurrencyForPreparedPairs([...target.preparedPairsByKey.values()]);
+      const maxBuildConcurrency = overrides.maxBuildConcurrency ?? config.maxBuildConcurrency ?? 2;
+      const maxBeforeCacheConcurrency = overrides.maxBeforeCacheConcurrency ?? config.maxBeforeCacheConcurrency ?? 2;
+      if (!Number.isInteger(maxConcurrency) || maxConcurrency <= 0) {
+        return yield* Effect.fail(new Error(`maxConcurrency must be a positive integer, got ${maxConcurrency}.`));
       }
-    }
-    return Object.freeze({
-      status: "ready" as const,
-      plan,
-      shape,
-      experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
-      evalIds: freezeArray(uniqueEvalIds),
-      pluginAudit: Object.freeze({ occurrences: freezeArray(occurrenceAudits.values()) }),
-      ...(preview === undefined ? {} : { dry: preview }),
-    });
-  }));
+      if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
+        return yield* Effect.fail(
+          new Error(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.`),
+        );
+      }
+      if (!Number.isInteger(maxBeforeCacheConcurrency) || maxBeforeCacheConcurrency <= 0) {
+        return yield* Effect.fail(
+          new Error(`maxBeforeCacheConcurrency must be a positive integer, got ${maxBeforeCacheConcurrency}.`),
+        );
+      }
+      const uniqueEvalIds = new Set(prepared.runs.flatMap((run) => run.selectedEvalIds));
+      const totalAttempts = prepared.runs.reduce((sum, run) => sum + run.selectedEvalIds.length * run.attempts, 0);
+      const experimentConcurrency = Object.freeze(
+        Object.fromEntries(
+          prepared.runs.flatMap((run) =>
+            run.experimentId !== undefined && run.maxConcurrency !== undefined
+              ? [[run.experimentId, run.maxConcurrency] as const]
+              : [],
+          ),
+        ),
+      );
+      const shape: ExperimentHostInvocationShape = Object.freeze({
+        experiments: prepared.runs.length,
+        evals: uniqueEvalIds.size,
+        configurations: prepared.runs.length,
+        totalAttempts,
+        attempts: Math.max(1, ...prepared.runs.map((run) => run.attempts)),
+        maxConcurrency,
+        maxBuildConcurrency,
+        maxBeforeCacheConcurrency,
+        experimentConcurrency,
+      });
+      const reuse = yield* prepareRunnerRecordReuse({
+        manifestsByKey: target.manifestsByKey,
+        preparedPairsByKey: target.preparedPairsByKey,
+        evals: prepared.selected.evals,
+        runs: prepared.runs,
+        config: { timeoutMs: config.timeoutMs },
+        plannedFingerprints: target.plannedFingerprints,
+        renameFingerprintsByKey: target.renameFingerprintsByKey,
+        plannedConfigHashes: target.plannedConfigHashes,
+        ...(overrides.rerun === undefined ? {} : { rerun: overrides.rerun }),
+        ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
+      });
+      const previewStartedAt = input.preview === true ? yield* Clock.currentTimeMillis : undefined;
+      const preview =
+        previewStartedAt !== undefined
+          ? yield* Effect.scoped(
+              withRunnerCurrentReusePreview({
+                recordRoot: root.success,
+                startedAt: previewStartedAt,
+                evals: prepared.selected.evals,
+                runs: prepared.runs,
+                reuse,
+                use: ({ reusePlan, readReadbacks }) =>
+                  Effect.gen(function* () {
+                    const readbacks = yield* readReadbacks();
+                    const pairs = new Map(
+                      reusePlan.slots.map((slot) => [
+                        JSON.stringify([slot.experimentId, slot.evalId]),
+                        [slot.experimentId, slot.evalId] as const,
+                      ]),
+                    );
+                    const projectDatabaseRoot = recordRootPaths(root.success)?.portableRoot;
+                    if (projectDatabaseRoot === undefined)
+                      return yield* Effect.fail(new Error("Record root is unavailable."));
+                    const locked = yield* Effect.all(
+                      [...pairs].map(([key, [experimentId, evalId]]) =>
+                        readCaseLockEffect(projectDatabaseRoot, experimentId, evalId).pipe(
+                          Effect.catch(() => Effect.succeed(undefined)),
+                          Effect.map((record) => (record !== undefined ? key : undefined)),
+                        ),
+                      ),
+                      { concurrency: "unbounded" },
+                    );
+                    return dryPlan(
+                      reusePlan.slots,
+                      readbacks.map(projectCurrentReuseReadback),
+                      locked.filter((key): key is string => key !== undefined),
+                      new Map(
+                        prepared.selected.evals.flatMap((definition) =>
+                          definition.evalGroup === undefined
+                            ? []
+                            : [
+                                [
+                                  definition.id,
+                                  {
+                                    id: definition.evalGroup.id,
+                                    index: definition.evalGroup.evalIds.indexOf(definition.id),
+                                  },
+                                ] as const,
+                              ],
+                        ),
+                      ),
+                    );
+                  }),
+              }),
+            )
+          : undefined;
+
+      const plan = Object.freeze({}) as ExperimentHostInvocationPlan;
+      invocationPlans.set(plan, {
+        evals: prepared.selected.evals,
+        runs: prepared.runs,
+        config,
+        recordRoot: root.success,
+        coordinationRoot: resolve(input.cwd, input.coordinationRoot ?? ".niceeval"),
+        overrides,
+        shape,
+        consumed: false,
+      });
+      const occurrenceAudits = new Map<string, ExperimentHostJsonValue>();
+      for (const pair of target.preparedPairsByKey.values()) {
+        for (const occurrence of pair.plugin.occurrences) {
+          const audit = jsonSnapshot(occurrence.audit);
+          if (audit !== undefined) occurrenceAudits.set(JSON.stringify(audit), audit);
+        }
+      }
+      return Object.freeze({
+        status: "ready" as const,
+        plan,
+        shape,
+        experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
+        evalIds: freezeArray(uniqueEvalIds),
+        pluginAudit: Object.freeze({ occurrences: freezeArray(occurrenceAudits.values()) }),
+        ...(preview === undefined ? {} : { dry: preview }),
+      });
+    }),
+  );
 }
 
 function multiplexFeedbackSink(
@@ -777,157 +819,188 @@ export function runInvocation(
   input: ExperimentHostInvocationRunRequest,
 ): Effect.Effect<ExperimentHostInvocationResult, ExperimentHostError, ExperimentHostRequirements> {
   const invocationRuns = new Set<string>();
-  return Effect.scoped(closeOperation("invocation-run", Effect.gen(function* () {
-    const state = invocationPlans.get(input.plan as object);
-    if (state === undefined || state.consumed) {
-      return yield* Effect.fail(new Error("Experiment Host invocation plan is forged, copied, or already consumed."));
-    }
-    state.consumed = true;
-    let completedSummary: InvocationSummary | undefined;
-    const reporters = [
-      ...(input.junitPath === undefined ? [] : [{
-        reporter: JUnit(input.junitPath),
-        name: "junit",
-        required: true,
-        target: input.junitPath,
-      }]),
-      ...(state.config.reporters ?? []).map((reporter, index) => ({
-        reporter,
-        name: `config-reporter-${index}`,
-        required: false,
-      })),
-      {
-        name: "experiment-host-summary",
-        required: false,
-        reporter: { onInvocationComplete(summary: InvocationSummary) { completedSummary = summary; } },
-      },
-    ];
-    // Session indexing is a Host-owned, project-local observation.  Runner only
-    // receives the private tracker mechanism; this enclosing Scope closes its
-    // heartbeat worker on success, typed failure, or interruption.
-    const projectDatabaseRoot = recordRootPaths(state.recordRoot)?.portableRoot;
-    if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
-    const projectStateDatabase = yield* ProjectStateDatabase;
-    const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
-    let sessionClosed = false;
-    let feedbackStarted = false;
-    let feedbackFinished = false;
-    // Registered first so LIFO Scope closure runs every business finalizer
-    // (including the session heartbeat stop and fenced terminal write) before
-    // shutting down the sole operational worker and entering the one portable gate.
-    // Portability is best-effort during Scope release: an already-corrupt or
-    // unavailable database must not replace the Invocation's primary outcome.
-    // The explicit service operation remains typed for callers that need to
-    // diagnose a gate failure directly.
-    yield* Effect.addFinalizer(() => projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.ignore));
-    yield* Effect.addFinalizer(() => sessionClosed
-      ? Effect.void
-      : session.close({ status: "incomplete" }).pipe(Effect.ignore));
-    yield* Effect.addFinalizer(() => !feedbackStarted || feedbackFinished || input.feedback === undefined
-      ? Effect.void
-      : Effect.tryPromise({
-          try: () => input.feedback!.coordinator.stopDynamic(),
-          catch: () => undefined,
-        }).pipe(Effect.ignore));
-    const feedback = input.feedback?.coordinator;
-    const sink = multiplexFeedbackSink(feedback, session, () => feedbackStarted);
-    const receipt = yield* Effect.acquireUseRelease(
-      Effect.sync(() => activateFeedbackSink(sink)),
-      () => runEvals({
-        config: state.config,
-        evals: state.evals,
-        agentRuns: state.runs,
-        reporters,
-        maxConcurrency: state.shape.maxConcurrency,
-        maxBuildConcurrency: state.shape.maxBuildConcurrency,
-        maxBeforeCacheConcurrency: state.shape.maxBeforeCacheConcurrency,
-        coordinationRoot: state.coordinationRoot,
-        recordRoot: state.recordRoot,
-        ...(state.overrides.keepSandbox === undefined ? {} : { keepSandbox: state.overrides.keepSandbox }),
-        ...(state.overrides.pauseOnFailure === undefined ? {} : { pauseOnFailure: state.overrides.pauseOnFailure }),
-        ...(state.overrides.rerun === undefined ? {} : { rerun: state.overrides.rerun }),
-        session,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-        onCurrentRecordReusePlan: (current) => Effect.sync(() => {
-          for (const runId of current.runIds.values()) invocationRuns.add(runId);
-          if (feedback === undefined) return;
-          feedback.start({
-            shape: Object.freeze({
-              evals: state.shape.evals,
-              configs: state.shape.configurations,
-              totalAttempts: state.shape.totalAttempts,
+  return Effect.scoped(
+    closeOperation(
+      "invocation-run",
+      Effect.gen(function* () {
+        const state = invocationPlans.get(input.plan as object);
+        if (state === undefined || state.consumed) {
+          return yield* Effect.fail(
+            new Error("Experiment Host invocation plan is forged, copied, or already consumed."),
+          );
+        }
+        state.consumed = true;
+        let completedSummary: InvocationSummary | undefined;
+        const reporters = [
+          ...(input.junitPath === undefined
+            ? []
+            : [
+                {
+                  reporter: JUnit(input.junitPath),
+                  name: "junit",
+                  required: true,
+                  target: input.junitPath,
+                },
+              ]),
+          ...(state.config.reporters ?? []).map((reporter, index) => ({
+            reporter,
+            name: `config-reporter-${index}`,
+            required: false,
+          })),
+          {
+            name: "experiment-host-summary",
+            required: false,
+            reporter: {
+              onInvocationComplete(summary: InvocationSummary) {
+                completedSummary = summary;
+              },
+            },
+          },
+        ];
+        // Session indexing is a Host-owned, project-local observation.  Runner only
+        // receives the private tracker mechanism; this enclosing Scope closes its
+        // heartbeat worker on success, typed failure, or interruption.
+        const projectDatabaseRoot = recordRootPaths(state.recordRoot)?.portableRoot;
+        if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
+        const projectStateDatabase = yield* ProjectStateDatabase;
+        const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
+        let sessionClosed = false;
+        let feedbackStarted = false;
+        let feedbackFinished = false;
+        // Registered first so LIFO Scope closure runs every business finalizer
+        // (including the session heartbeat stop and fenced terminal write) before
+        // shutting down the sole operational worker and entering the one portable gate.
+        // Portability is best-effort during Scope release: an already-corrupt or
+        // unavailable database must not replace the Invocation's primary outcome.
+        // The explicit service operation remains typed for callers that need to
+        // diagnose a gate failure directly.
+        yield* Effect.addFinalizer(() =>
+          projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.ignore),
+        );
+        yield* Effect.addFinalizer(() =>
+          sessionClosed ? Effect.void : session.close({ status: "incomplete" }).pipe(Effect.ignore),
+        );
+        yield* Effect.addFinalizer(() =>
+          !feedbackStarted || feedbackFinished || input.feedback === undefined
+            ? Effect.void
+            : Effect.tryPromise({
+                try: () => input.feedback!.coordinator.stopDynamic(),
+                catch: () => undefined,
+              }).pipe(Effect.ignore),
+        );
+        const feedback = input.feedback?.coordinator;
+        const sink = multiplexFeedbackSink(feedback, session, () => feedbackStarted);
+        const receipt = yield* Effect.acquireUseRelease(
+          Effect.sync(() => activateFeedbackSink(sink)),
+          () =>
+            runEvals({
+              config: state.config,
+              evals: state.evals,
+              agentRuns: state.runs,
+              reporters,
               maxConcurrency: state.shape.maxConcurrency,
-              runIds: current.runIds,
+              maxBuildConcurrency: state.shape.maxBuildConcurrency,
+              maxBeforeCacheConcurrency: state.shape.maxBeforeCacheConcurrency,
+              coordinationRoot: state.coordinationRoot,
+              recordRoot: state.recordRoot,
+              ...(state.overrides.keepSandbox === undefined ? {} : { keepSandbox: state.overrides.keepSandbox }),
+              ...(state.overrides.pauseOnFailure === undefined
+                ? {}
+                : { pauseOnFailure: state.overrides.pauseOnFailure }),
+              ...(state.overrides.rerun === undefined ? {} : { rerun: state.overrides.rerun }),
+              session,
+              ...(input.signal === undefined ? {} : { signal: input.signal }),
+              onCurrentRecordReusePlan: (current) =>
+                Effect.sync(() => {
+                  for (const runId of current.runIds.values()) invocationRuns.add(runId);
+                  if (feedback === undefined) return;
+                  feedback.start({
+                    shape: Object.freeze({
+                      evals: state.shape.evals,
+                      configs: state.shape.configurations,
+                      totalAttempts: state.shape.totalAttempts,
+                      maxConcurrency: state.shape.maxConcurrency,
+                      runIds: current.runIds,
+                    }),
+                    ...(Object.keys(state.shape.experimentConcurrency).length === 0
+                      ? {}
+                      : { experimentConcurrency: state.shape.experimentConcurrency }),
+                    reused: current.reused,
+                    ...(current.reusedFailures.length === 0 ? {} : { reusedFailures: current.reusedFailures }),
+                  });
+                  feedbackStarted = true;
+                }),
             }),
-            ...(Object.keys(state.shape.experimentConcurrency).length === 0
-              ? {}
-              : { experimentConcurrency: state.shape.experimentConcurrency }),
-            reused: current.reused,
-            ...(current.reusedFailures.length === 0
-              ? {}
-              : { reusedFailures: current.reusedFailures }),
+          (deactivate) => Effect.sync(deactivate),
+        );
+        const summary = completedSummary;
+        if (summary === undefined) {
+          return yield* Effect.fail(new Error("Runner completed without an invocation summary."));
+        }
+        if (feedback !== undefined && !feedbackStarted) {
+          return yield* Effect.fail(new Error("Runner completed without starting Experiment feedback."));
+        }
+        const completion = feedback === undefined ? undefined : assembleInvocationCompletion(feedback.state);
+        yield* session.close({
+          status:
+            completion?.status ??
+            (receipt.completion === "completed"
+              ? "complete"
+              : receipt.completion === "interrupted"
+                ? "interrupted"
+                : "incomplete"),
+          ...(completion === undefined ? {} : { completion }),
+          receipt,
+          ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
+        });
+        sessionClosed = true;
+        if (feedback !== undefined && completion !== undefined) {
+          yield* Effect.tryPromise({
+            try: () => feedback.finish({ summary, completion, receipt }),
+            catch: (cause) => cause,
           });
-          feedbackStarted = true;
+          feedbackFinished = true;
+        }
+        const foldedStats = completion === undefined ? undefined : foldInvocationEvalStats(summary);
+        return Object.freeze({
+          status: "finished" as const,
+          receipt: Object.freeze({
+            invocationId: receipt.invocationId,
+            createdRunIds: freezeArray(receipt.createdRunIds),
+            publicationCutoff: receipt.publicationCutoff,
+            startedAt: receipt.startedAt,
+            ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
+            completion: receipt.completion,
+          }),
+          summary: summaryOf(summary),
+          ...(completion === undefined
+            ? {}
+            : {
+                completion,
+                exitCode: computeExitCode(
+                  {
+                    ...summary,
+                    failed: foldedStats!.failed,
+                    errored: foldedStats!.errored,
+                  },
+                  completion,
+                ),
+              }),
+        });
+      }).pipe(
+        Effect.mapError((cause) => {
+          if (!(cause instanceof SqliteRecordError) || invocationRuns.size === 0) return cause;
+          const runs = [...invocationRuns];
+          return new SqliteRecordError(
+            cause.code,
+            cause.operation,
+            `${cause.message} (operation: ${cause.operation}). Invocation Runs: ${runs.join(", ")}. After the owner exits, inspect saved coverage and recover unfinished Runs: ${runs.map((runId) => `niceeval run recover ${runId} --yes`).join("; ")}`,
+            { cause },
+          );
         }),
-      }),
-      (deactivate) => Effect.sync(deactivate),
-    );
-    const summary = completedSummary;
-    if (summary === undefined) {
-      return yield* Effect.fail(new Error("Runner completed without an invocation summary."));
-    }
-    if (feedback !== undefined && !feedbackStarted) {
-      return yield* Effect.fail(new Error("Runner completed without starting Experiment feedback."));
-    }
-    const completion = feedback === undefined
-      ? undefined
-      : assembleInvocationCompletion(feedback.state);
-    yield* session.close({
-      status: completion?.status ?? (receipt.completion === "completed"
-        ? "complete"
-        : receipt.completion === "interrupted"
-          ? "interrupted"
-          : "incomplete"),
-      ...(completion === undefined ? {} : { completion }),
-      receipt,
-      ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
-    });
-    sessionClosed = true;
-    if (feedback !== undefined && completion !== undefined) {
-      yield* Effect.tryPromise({
-        try: () => feedback.finish({ summary, completion, receipt }),
-        catch: (cause) => cause,
-      });
-      feedbackFinished = true;
-    }
-    const foldedStats = completion === undefined ? undefined : foldInvocationEvalStats(summary);
-    return Object.freeze({
-      status: "finished" as const,
-      receipt: Object.freeze({
-        invocationId: receipt.invocationId,
-        createdRunIds: freezeArray(receipt.createdRunIds),
-        publicationCutoff: receipt.publicationCutoff,
-        startedAt: receipt.startedAt,
-        ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
-        completion: receipt.completion,
-      }),
-      summary: summaryOf(summary),
-      ...(completion === undefined ? {} : {
-        completion,
-        exitCode: computeExitCode({
-          ...summary,
-          failed: foldedStats!.failed,
-          errored: foldedStats!.errored,
-        }, completion),
-      }),
-    });
-  }).pipe(Effect.mapError((cause) => {
-    if (!(cause instanceof SqliteRecordError) || invocationRuns.size === 0) return cause;
-    const runs = [...invocationRuns];
-    return new SqliteRecordError(cause.code, cause.operation,
-      `${cause.message} (operation: ${cause.operation}). Invocation Runs: ${runs.join(", ")}. After the owner exits, inspect saved coverage and recover unfinished Runs: ${runs.map((runId) => `niceeval run recover ${runId} --yes`).join("; ")}`,
-      { cause });
-  }))));
+      ),
+    ),
+  );
 }
 
 export function planRename(
@@ -939,68 +1012,109 @@ export function planRename(
 export function applyRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenameResult, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("rename-apply", Effect.gen(function* () {
-    const outcome = yield* Effect.result(renameExperiment(input));
-    if (Result.isFailure(outcome)) {
-      if (!(outcome.failure instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.failure);
-      const plan = outcome.failure.plan;
-      return Object.freeze({ status: "rejected" as const, sourceRunId: plan.sourceRunId,
-        oldId: plan.oldId, newId: plan.newId, reason: plan.blocked!.reason, detail: plan.blocked!.detail });
-    }
-    const done = outcome.success;
-    return Object.freeze({ status: "done" as const, invocationId: done.invocationId,
-      runId: done.runId, sourceRunId: done.sourceRunId, oldId: done.oldId, newId: done.newId,
-      migrated: freezeArray(done.migrated.map(({ renamedFrom: _, ...entry }) => Object.freeze(entry))),
-    });
-  }));
+  return closeOperation(
+    "rename-apply",
+    Effect.gen(function* () {
+      const outcome = yield* Effect.result(renameExperiment(input));
+      if (Result.isFailure(outcome)) {
+        if (!(outcome.failure instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.failure);
+        const plan = outcome.failure.plan;
+        return Object.freeze({
+          status: "rejected" as const,
+          sourceRunId: plan.sourceRunId,
+          oldId: plan.oldId,
+          newId: plan.newId,
+          reason: plan.blocked!.reason,
+          detail: plan.blocked!.detail,
+        });
+      }
+      const done = outcome.success;
+      return Object.freeze({
+        status: "done" as const,
+        invocationId: done.invocationId,
+        runId: done.runId,
+        sourceRunId: done.sourceRunId,
+        oldId: done.oldId,
+        newId: done.newId,
+        migrated: freezeArray(done.migrated.map(({ renamedFrom: _, ...entry }) => Object.freeze(entry))),
+      });
+    }),
+  );
 }
 
 export function accept(
   input: ExperimentHostAcceptRequest,
 ): Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("accept", acceptLocators(input).pipe(
-    Effect.map((receipts) => freezeArray(receipts.map((receipt) => Object.freeze({
-    invocationId: receipt.invocationId,
-    runId: receipt.runId,
-    slotId: receipt.slotId,
-    locator: receipt.locator,
-    sourceLocator: receipt.sourceLocator,
-    fingerprint: receipt.fingerprint,
-  })))),
-  ));
+  return closeOperation(
+    "accept",
+    acceptLocators(input).pipe(
+      Effect.map((receipts) =>
+        freezeArray(
+          receipts.map((receipt) =>
+            Object.freeze({
+              invocationId: receipt.invocationId,
+              runId: receipt.runId,
+              slotId: receipt.slotId,
+              locator: receipt.locator,
+              sourceLocator: receipt.sourceLocator,
+              fingerprint: receipt.fingerprint,
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 export function planRunAccept(
   input: ExperimentHostAcceptRunRequest,
 ): Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("accept", planAcceptRun(input).pipe(
-    Effect.map((plan) => Object.freeze({
-      sourceRunId: plan.sourceRunId,
-      members: freezeArray(plan.members.map((member) => Object.freeze({
-        locator: member.locator,
-        experimentId: member.experimentId,
-        evalId: member.evalId,
-        attempt: member.attempt,
-        fingerprint: member.fingerprint,
-        comparisons: member.comparisons,
-      }))),
-    })),
-  ));
+  return closeOperation(
+    "accept",
+    planAcceptRun(input).pipe(
+      Effect.map((plan) =>
+        Object.freeze({
+          sourceRunId: plan.sourceRunId,
+          members: freezeArray(
+            plan.members.map((member) =>
+              Object.freeze({
+                locator: member.locator,
+                experimentId: member.experimentId,
+                evalId: member.evalId,
+                attempt: member.attempt,
+                fingerprint: member.fingerprint,
+                comparisons: member.comparisons,
+              }),
+            ),
+          ),
+        }),
+      ),
+    ),
+  );
 }
 
 export function applyRunAccept(
   input: ExperimentHostAcceptRunRequest,
 ): Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("accept", acceptRun(input).pipe(
-    Effect.map((receipts) => freezeArray(receipts.map((receipt) => Object.freeze({
-      invocationId: receipt.invocationId,
-      runId: receipt.runId,
-      slotId: receipt.slotId,
-      locator: receipt.locator,
-      sourceLocator: receipt.sourceLocator,
-      fingerprint: receipt.fingerprint,
-    })))),
-  ));
+  return closeOperation(
+    "accept",
+    acceptRun(input).pipe(
+      Effect.map((receipts) =>
+        freezeArray(
+          receipts.map((receipt) =>
+            Object.freeze({
+              invocationId: receipt.invocationId,
+              runId: receipt.runId,
+              slotId: receipt.slotId,
+              locator: receipt.locator,
+              sourceLocator: receipt.sourceLocator,
+              fingerprint: receipt.fingerprint,
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /** Locator preview shares the exact frozen-reader preflight with formal acceptance. */

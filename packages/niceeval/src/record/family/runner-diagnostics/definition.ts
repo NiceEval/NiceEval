@@ -1,7 +1,4 @@
-import {
-  defineRecordAttachment,
-  RecordOwner,
-} from "../../attachment/index.ts";
+import { defineRecordAttachment, RecordOwner } from "../../attachment/index.ts";
 import {
   AttemptRunnerDiagnosticsAttachmentSchema,
   RunRunnerDiagnosticsAttachmentSchema,

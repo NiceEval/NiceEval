@@ -6,13 +6,15 @@ import { sdkConverterE2E, sdkConverterRecordArtifacts } from "./support.ts";
 
 import { expectAttemptSource } from "./sources.ts";
 
-const EXPECTED = [{
-  experimentId: "pi-agent-subscribe",
-  evalId: "pi-agent-subscribe",
-  verdict: "passed",
-  attempts: 1,
-  passed: 1,
-}] as const;
+const EXPECTED = [
+  {
+    experimentId: "pi-agent-subscribe",
+    evalId: "pi-agent-subscribe",
+    verdict: "passed",
+    attempts: 1,
+    passed: 1,
+  },
+] as const;
 // @feature docs/feature/adapters/README.md
 
 test("createPiAgentEventStream 的 subscribe 回调经 Experiment 和公开 CLI 确定性读回", async () => {

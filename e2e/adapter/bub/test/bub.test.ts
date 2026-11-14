@@ -15,7 +15,6 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
 
-
 const EXPECTED_OUTCOMES = [
   // coding task：agent 须写文件，再用 shell 串行读回并满足 usage/cost 约束；期望 passed/1。
   { experimentId: "ci", evalId: "coding-task/write-and-verify", verdict: "passed", attempts: 1, passed: 1 },
@@ -64,13 +63,9 @@ beforeAll(async () => {
   rmSync(".niceeval", { recursive: true, force: true });
 
   // invoke：先只跑 ci，保留这批 adapter compatibility evidence 的单一 Run 身份。
-  run = await niceeval.run(
-    ["exp", "ci", "--rerun", "all", "--json"],
-    { timeoutMs: 32 * 60_000 },
-  );
+  run = await niceeval.run(["exp", "ci", "--rerun", "all", "--json"], { timeoutMs: 32 * 60_000 });
   expect(run.exitCode, run.diagnostic()).toBe(0);
   evalEvents = run.expEvalEvents();
-
 }, 36 * 60_000);
 // @feature docs/feature/adapters/README.md
 
@@ -81,20 +76,12 @@ it("真实 Bub adapter 的 Eval 通过数正确且没有未通过项", () => {
   const inv = run.expReceipt();
   expect(inv.completion, run.diagnostic()).toBe("completed");
   expect(inv.createdRunIds, run.diagnostic()).toHaveLength(1);
-  assertExpEvalOutcomes(
-    evalEvents,
-    EXPECTED_OUTCOMES,
-    () => run.diagnostic(),
-  );
-
+  assertExpEvalOutcomes(evalEvents, EXPECTED_OUTCOMES, () => run.diagnostic());
 });
 // @feature docs/feature/adapters/README.md
 
 it("attempt.trace 读回 Bub 的代表性工具证据", async () => {
-  const event = only(
-    evalEvents,
-    (candidate) => candidate.evalId === "coding-task/write-and-verify",
-  );
+  const event = only(evalEvents, (candidate) => candidate.evalId === "coding-task/write-and-verify");
   const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();

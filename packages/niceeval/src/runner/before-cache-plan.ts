@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../shared/types.ts";
-import {
-  type BeforeCacheEligibility,
-  type BeforeCacheDeclaration,
-  type BeforeCacheStep,
-} from "../sandbox/backend.ts";
+import { type BeforeCacheEligibility, type BeforeCacheDeclaration, type BeforeCacheStep } from "../sandbox/backend.ts";
 import { mergeSandboxActionState, type SandboxActionState } from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import type { ScheduledSandboxBefore } from "../sandbox/link.ts";
@@ -47,9 +43,14 @@ export function beforeCacheActionDeclaration(
         }
         if (step.kind === "checkoutGit") {
           const { sparse, ...fields } = step;
-          return { ...fields, ...(sparse === undefined ? {} : {
-            sparse: { include: [...sparse.include], exclude: [...sparse.exclude] },
-          }) };
+          return {
+            ...fields,
+            ...(sparse === undefined
+              ? {}
+              : {
+                  sparse: { include: [...sparse.include], exclude: [...sparse.exclude] },
+                }),
+          };
         }
         return { ...step };
       }),
@@ -132,7 +133,16 @@ export function plannedBeforeCacheActions(
       changeFrequency: entry.metadata.changeFrequency.value,
       declarationMetadata,
     });
-    planned.push(Object.freeze({ entry, key, declaration, positions: Object.freeze([...positions]), declaringOwner: `${entry.owner.kind}:${entry.owner.id}`, attributions: Object.freeze([...attributions]) }));
+    planned.push(
+      Object.freeze({
+        entry,
+        key,
+        declaration,
+        positions: Object.freeze([...positions]),
+        declaringOwner: `${entry.owner.kind}:${entry.owner.id}`,
+        attributions: Object.freeze([...attributions]),
+      }),
+    );
     parentKey = key;
   }
   return Object.freeze(planned);

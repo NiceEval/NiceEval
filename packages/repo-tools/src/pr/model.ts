@@ -4,10 +4,10 @@ export const GITHUB_BODY_LIMIT = 65_536;
 export type PrBodyCommand = "init" | "status" | "discard" | "edit" | "render" | "check" | "apply" | "create";
 
 export const PR_BODY_MUTATION_ACTIONS = ["apply", "create"] as const;
-export type PrBodyMutationAction = typeof PR_BODY_MUTATION_ACTIONS[number];
+export type PrBodyMutationAction = (typeof PR_BODY_MUTATION_ACTIONS)[number];
 
 export const PR_BODY_DRAFT_STATES = ["missing", "managed", "unmanaged"] as const;
-export type PrBodyDraftState = typeof PR_BODY_DRAFT_STATES[number];
+export type PrBodyDraftState = (typeof PR_BODY_DRAFT_STATES)[number];
 
 export const PR_BODY_CASE_SECTIONS = [
   "public-api",
@@ -16,13 +16,13 @@ export const PR_BODY_CASE_SECTIONS = [
   "observable-behavior",
   "package-scripts",
 ] as const;
-export type PrBodyCaseSection = typeof PR_BODY_CASE_SECTIONS[number];
+export type PrBodyCaseSection = (typeof PR_BODY_CASE_SECTIONS)[number];
 
 export const PR_BODY_CASE_DIRECTIONS = ["removed", "added", "changed"] as const;
-export type PrBodyCaseDirection = typeof PR_BODY_CASE_DIRECTIONS[number];
+export type PrBodyCaseDirection = (typeof PR_BODY_CASE_DIRECTIONS)[number];
 
 export const PR_BODY_TERMINOLOGY_DIRECTIONS = ["added", "removed"] as const;
-export type PrBodyTerminologyDirection = typeof PR_BODY_TERMINOLOGY_DIRECTIONS[number];
+export type PrBodyTerminologyDirection = (typeof PR_BODY_TERMINOLOGY_DIRECTIONS)[number];
 
 const DOTTED_NUMERIC_VERSION = /^\d+(?:\.\d+)*$/;
 const TERMINOLOGY_CANONICAL_PREFIX = "docs/concepts.md#";
@@ -30,11 +30,13 @@ const UNICODE_MARKDOWN_ANCHOR = /^[\p{L}\p{M}\p{N}_-]+$/u;
 
 export function isPrBodyRecordVersion(value: string): boolean {
   const [before, after, extra] = value.split(" -> ");
-  return extra === undefined
-    && before !== undefined
-    && after !== undefined
-    && DOTTED_NUMERIC_VERSION.test(before)
-    && DOTTED_NUMERIC_VERSION.test(after);
+  return (
+    extra === undefined &&
+    before !== undefined &&
+    after !== undefined &&
+    DOTTED_NUMERIC_VERSION.test(before) &&
+    DOTTED_NUMERIC_VERSION.test(after)
+  );
 }
 
 export function isPrBodyTerminologyCanonical(value: string): boolean {
@@ -302,10 +304,14 @@ export interface FragmentSpec {
 export interface TestDirective {
   readonly path: string;
   readonly cases: readonly PrBodyTestCase[];
-  readonly source?: "full" | "link" | {
-    readonly fragments: readonly FragmentSpec[];
-    readonly reason: string;
-  } | undefined;
+  readonly source?:
+    | "full"
+    | "link"
+    | {
+        readonly fragments: readonly FragmentSpec[];
+        readonly reason: string;
+      }
+    | undefined;
 }
 
 export interface PrBodyTestCase {

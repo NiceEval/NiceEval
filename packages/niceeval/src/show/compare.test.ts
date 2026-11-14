@@ -17,18 +17,38 @@ test.concurrent("comparison distinguishes regressions and applies an inclusive a
 
 // @feature docs/feature/inspection/README.md
 test.concurrent("comparison renders paired quality and exact decimal cost deltas", () => {
-  const member = (locator: string) => ({ key: "key", runId: locator, plannedAttemptId: "slot", evalId: "task", attemptOrdinal: 0, locator });
+  const member = (locator: string) => ({
+    key: "key",
+    runId: locator,
+    plannedAttemptId: "slot",
+    evalId: "task",
+    attemptOrdinal: 0,
+    locator,
+  });
   const left = member("@LEFT");
   const right = member("@RIGHT");
   const comparison: InspectionSuccessDocumentFor<"runs.compare">["comparison"] = {
-    mode: "paired", left: { runs: [], members: [left] }, right: { runs: [], members: [right] },
-    exactMemberSet: true, pairs: [{ key: "key", left, right }],
+    mode: "paired",
+    left: { runs: [], members: [left] },
+    right: { runs: [], members: [right] },
+    exactMemberSet: true,
+    pairs: [{ key: "key", left, right }],
   };
-  const attempt = (verdict: AttemptView["verdict"], earned: number, cost: string) => ({
-    verdict, score: { state: "complete", earned, possible: 1 },
-    totalCosts: { state: "complete", values: [{ currency: "USD", value: cost, source: "reported" }], missingSources: [], gaps: [] },
-  }) satisfies ComparisonAttempt;
-  const attempts = new Map([[left.locator, attempt("passed", 1, "0.10")], [right.locator, attempt("failed", 0, "0.30")]]);
+  const attempt = (verdict: AttemptView["verdict"], earned: number, cost: string) =>
+    ({
+      verdict,
+      score: { state: "complete", earned, possible: 1 },
+      totalCosts: {
+        state: "complete",
+        values: [{ currency: "USD", value: cost, source: "reported" }],
+        missingSources: [],
+        gaps: [],
+      },
+    }) satisfies ComparisonAttempt;
+  const attempts = new Map([
+    [left.locator, attempt("passed", 1, "0.10")],
+    [right.locator, attempt("failed", 0, "0.30")],
+  ]);
   const rendered = renderComparison(comparison, attempts);
   expect(rendered).toContain("regressed");
   expect(rendered).toContain("-1");

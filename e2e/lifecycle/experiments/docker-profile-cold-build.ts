@@ -18,17 +18,17 @@ const agent = defineSandboxAgent({
     probe: shell("docker info >/dev/null"),
   },
   send: async (_input, ctx) => {
-      if (profile === undefined) {
-        throw new Error("NICEEVAL_E2E_DOCKER_PROFILE_ALIAS is required by the Docker profile E2E");
-      }
-      await ctx.sandbox.runShellOrThrow(
-        'test "$(id -u)" = 1000 && docker info >/dev/null && printf "%s" profile-cold-build-ok',
-        { signal: ctx.signal },
-      );
-      return {
-        status: "completed",
-        events: [{ type: "message", role: "assistant", text: "profile-cold-build-ok" }],
-      };
+    if (profile === undefined) {
+      throw new Error("NICEEVAL_E2E_DOCKER_PROFILE_ALIAS is required by the Docker profile E2E");
+    }
+    await ctx.sandbox.runShellOrThrow(
+      'test "$(id -u)" = 1000 && docker info >/dev/null && printf "%s" profile-cold-build-ok',
+      { signal: ctx.signal },
+    );
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: "profile-cold-build-ok" }],
+    };
   },
 });
 
@@ -42,13 +42,15 @@ export default defineExperiment({
       type: "dockerfile",
       context: new URL("../fixtures/profile-cold-build/", import.meta.url),
     },
-    ...(profile === undefined ? {} : {
-      dockerAccess: {
-        mode: "dind" as const,
-        isolation: "raw-privileged" as const,
-        storageProfile: profile,
-      },
-    }),
+    ...(profile === undefined
+      ? {}
+      : {
+          dockerAccess: {
+            mode: "dind" as const,
+            isolation: "raw-privileged" as const,
+            storageProfile: profile,
+          },
+        }),
     user: "node",
     resources: {
       cpus: 1,

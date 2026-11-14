@@ -27,12 +27,17 @@ test("context and pricing lookups normalize known models and preserve unknown mo
   ] as const) {
     for (const name of [model, `gateway/${model}`, `gateway/${model}-20990101`, `gateway/${model}-2099-01-01`]) {
       expect(builtinContextWindow(name)).toBe(limit);
-      expect(pricingEstimate(name, { inputTokens: 1_000_000, outputTokens: 1_000_000 }))
-        .toMatchObject({ state: "available", receipt: { amountUSD, priceSource: { kind: "builtin", selector: model } } });
+      expect(pricingEstimate(name, { inputTokens: 1_000_000, outputTokens: 1_000_000 })).toMatchObject({
+        state: "available",
+        receipt: { amountUSD, priceSource: { kind: "builtin", selector: model } },
+      });
     }
   }
   for (const model of ["unknown-model", "gateway/unknown-model-20990101", "toString", "__proto__"]) {
     expect(builtinContextWindow(model)).toBeUndefined();
-    expect(pricingEstimate(model, { inputTokens: 1 })).toEqual({ state: "unavailable", reason: "price-source-not-found" });
+    expect(pricingEstimate(model, { inputTokens: 1 })).toEqual({
+      state: "unavailable",
+      reason: "price-source-not-found",
+    });
   }
 });

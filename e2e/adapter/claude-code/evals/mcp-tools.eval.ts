@@ -4,8 +4,7 @@ import { defineEval } from "niceeval";
 import { includes, jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
-  description:
-    "MCP:stdio 与 Streamable HTTP 两种 server 形态都能被真实调用且入参正确",
+  description: "MCP:stdio 与 Streamable HTTP 两种 server 形态都能被真实调用且入参正确",
   async test(t) {
     const turn = await t.send(
       "调用名字严格为 mcp__e2e-stdio__get-sum 的 MCP 工具,参数 a=100、b=23。" +
@@ -18,21 +17,18 @@ export default defineEval({
     );
     await turn.succeeded().orStop();
 
-    await t.group(
-      "两个已挂载的 MCP server 都以精确入参被调用",
-      () => {
-        t.calledTool(
-          toolMatch("mcp__e2e-stdio__get-sum", {
-            input: jsonMatch({ a: 100, b: 23 }),
-          }),
-        ).label('"mcp__e2e-stdio__get-sum" input');
-        t.calledTool(
-          toolMatch("mcp__e2e-http__get-sum", {
-            input: jsonMatch({ a: 6, b: 36 }),
-          }),
-        ).label('"mcp__e2e-http__get-sum" input');
-      },
-    );
+    await t.group("两个已挂载的 MCP server 都以精确入参被调用", () => {
+      t.calledTool(
+        toolMatch("mcp__e2e-stdio__get-sum", {
+          input: jsonMatch({ a: 100, b: 23 }),
+        }),
+      ).label('"mcp__e2e-stdio__get-sum" input');
+      t.calledTool(
+        toolMatch("mcp__e2e-http__get-sum", {
+          input: jsonMatch({ a: 6, b: 36 }),
+        }),
+      ).label('"mcp__e2e-http__get-sum" input');
+    });
 
     t.check(turn.reply, includes("123"));
     t.check(turn.reply, includes("42"));

@@ -3,10 +3,7 @@ import { attemptNotesRecordAttachmentPersistence } from "./attempt-note/persiste
 import { judgeUsageRecordAttachmentPersistence } from "./judge-usage/persistence.ts";
 import { Result, Schema } from "effect";
 
-import {
-  makeRecordAttachmentCatalog,
-  type RecordAttachmentCatalog,
-} from "../attachment/index.ts";
+import { makeRecordAttachmentCatalog, type RecordAttachmentCatalog } from "../attachment/index.ts";
 import { agentTurnsRecordAttachmentPersistence } from "./agent-turns/persistence.ts";
 import { adapterUsageRecordAttachmentPersistence } from "./adapter-usage/persistence.ts";
 import { attemptCostRecordAttachmentPersistence } from "./attempt-cost/persistence.ts";
@@ -54,9 +51,7 @@ export const NiceEvalRecordAttachmentPersistences = Object.freeze([
   runArtifactsRecordAttachmentPersistence,
 ] as const);
 
-function requireCatalog(
-  result: Result.Result<RecordAttachmentCatalog, unknown>,
-): RecordAttachmentCatalog {
+function requireCatalog(result: Result.Result<RecordAttachmentCatalog, unknown>): RecordAttachmentCatalog {
   if (Result.isFailure(result)) {
     throw new Error("NiceEval official Record Attachment catalog is invalid");
   }
@@ -99,6 +94,4 @@ export const NICE_EVAL_OBSERVABILITY_SOURCE_FAMILIES = Object.freeze([
 
 export type NiceEvalFamily = (typeof NICE_EVAL_FAMILIES)[number];
 
-export const NiceEvalFamilySchema: Schema.Codec<NiceEvalFamily> = Schema.Literals([
-  ...NICE_EVAL_FAMILIES,
-]);
+export const NiceEvalFamilySchema: Schema.Codec<NiceEvalFamily> = Schema.Literals([...NICE_EVAL_FAMILIES]);

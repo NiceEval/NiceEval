@@ -19,12 +19,18 @@ import {
 const failure = (operation: string, cause: unknown) => new CliInvocationError({ operation, cause });
 
 export const NodeInvocationFactsLive = Layer.succeed(CliInvocationFacts, {
-  facts: Effect.sync(() => Object.freeze({
-    cwd: process.cwd(), argv: Object.freeze(process.argv.slice(2)), hostname: hostname(), pid: process.pid, platform: process.platform,
-    noColor: process.env.NO_COLOR,
-    stdout: Object.freeze({ isTTY: process.stdout.isTTY === true, columns: process.stdout.columns }),
-    stderr: Object.freeze({ isTTY: process.stderr.isTTY === true, columns: process.stderr.columns }),
-  })),
+  facts: Effect.sync(() =>
+    Object.freeze({
+      cwd: process.cwd(),
+      argv: Object.freeze(process.argv.slice(2)),
+      hostname: hostname(),
+      pid: process.pid,
+      platform: process.platform,
+      noColor: process.env.NO_COLOR,
+      stdout: Object.freeze({ isTTY: process.stdout.isTTY === true, columns: process.stdout.columns }),
+      stderr: Object.freeze({ isTTY: process.stderr.isTTY === true, columns: process.stderr.columns }),
+    }),
+  ),
 });
 
 export function ignoreBrokenOutputPipe(cause: unknown): void {
@@ -47,21 +53,28 @@ function writeNodeOutput(stream: NodeJS.WritableStream, text: string): void {
 }
 
 export const NodeCliOutputLive = Layer.succeed(CliOutput, {
-  writeStdout: (text) => Effect.try({ try: () => writeNodeOutput(process.stdout, text), catch: (cause) => failure("write-stdout", cause) }),
-  writeStderr: (text) => Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
+  writeStdout: (text) =>
+    Effect.try({ try: () => writeNodeOutput(process.stdout, text), catch: (cause) => failure("write-stdout", cause) }),
+  writeStderr: (text) =>
+    Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
   writeStdoutSync: (text) => writeNodeOutput(process.stdout, text),
   writeStderrSync: (text) => writeNodeOutput(process.stderr, text),
 });
 
 const NodeCliConfirmationLive = Layer.succeed(CliConfirmation, {
-  confirm: (message) => Effect.suspend(() => {
-    if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) return Effect.succeed(false);
-    return Effect.acquireUseRelease(
-      Effect.sync(() => createInterface({ input: process.stdin, output: process.stderr })),
-      (terminal) => Effect.tryPromise({ try: (signal) => terminal.question(`${message} [y/N] `, { signal }), catch: (cause) => failure("confirm", cause) }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
-      (terminal) => Effect.sync(() => terminal.close()),
-    );
-  }),
+  confirm: (message) =>
+    Effect.suspend(() => {
+      if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) return Effect.succeed(false);
+      return Effect.acquireUseRelease(
+        Effect.sync(() => createInterface({ input: process.stdin, output: process.stderr })),
+        (terminal) =>
+          Effect.tryPromise({
+            try: (signal) => terminal.question(`${message} [y/N] `, { signal }),
+            catch: (cause) => failure("confirm", cause),
+          }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
+        (terminal) => Effect.sync(() => terminal.close()),
+      );
+    }),
 });
 
 interface OptionalValueOccurrence {
@@ -77,7 +90,8 @@ interface NormalizedCliArgv {
 }
 
 function invalidOptionalValue(name: string, value: string, values: readonly string[] | undefined): TypeError {
-  const expected = values === undefined ? "a non-empty value" : values.map((candidate) => JSON.stringify(candidate)).join(" or ");
+  const expected =
+    values === undefined ? "a non-empty value" : values.map((candidate) => JSON.stringify(candidate)).join(" or ");
   const error = new TypeError(`Option '--${name}' received ${JSON.stringify(value)}; expected ${expected}`);
   Object.defineProperty(error, "code", {
     configurable: true,
@@ -87,11 +101,7 @@ function invalidOptionalValue(name: string, value: string, values: readonly stri
   return error;
 }
 
-function explicitOptionalValue(
-  name: string,
-  value: string,
-  values: readonly string[] | undefined,
-): string {
+function explicitOptionalValue(name: string, value: string, values: readonly string[] | undefined): string {
   if (value.length === 0 || (values !== undefined && !values.includes(value))) {
     throw invalidOptionalValue(name, value, values);
   }
@@ -140,7 +150,9 @@ function normalizeCliArgv(
       inlineValue = true;
     } else if (optional.separated === true) {
       const next = argv[originalIndex + 1];
-      const consumesNext = next !== undefined && !next.startsWith("-") &&
+      const consumesNext =
+        next !== undefined &&
+        !next.startsWith("-") &&
         (optional.values === undefined || optional.values.includes(next));
       if (consumesNext) {
         value = explicitOptionalValue(name, next!, optional.values);
@@ -151,11 +163,14 @@ function normalizeCliArgv(
 
     normalized.push(`--${name}`);
     originalIndexes.push(optionOriginalIndex);
-    optionalValues.set(normalizedIndex, Object.freeze({
-      name,
-      value,
-      ...(inlineValue === undefined ? {} : { inlineValue }),
-    }));
+    optionalValues.set(
+      normalizedIndex,
+      Object.freeze({
+        name,
+        value,
+        ...(inlineValue === undefined ? {} : { inlineValue }),
+      }),
+    );
   }
 
   return Object.freeze({
@@ -168,11 +183,16 @@ function normalizeCliArgv(
 export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
   parse: (argv, options) => {
     const normalized = normalizeCliArgv(argv, options);
-    const parserOptions = Object.fromEntries(Object.entries(options).map(([name, option]) => [name, {
-      type: option.type,
-      ...(option.multiple === undefined ? {} : { multiple: option.multiple }),
-      ...(option.short === undefined ? {} : { short: option.short }),
-    }]));
+    const parserOptions = Object.fromEntries(
+      Object.entries(options).map(([name, option]) => [
+        name,
+        {
+          type: option.type,
+          ...(option.multiple === undefined ? {} : { multiple: option.multiple }),
+          ...(option.short === undefined ? {} : { short: option.short }),
+        },
+      ]),
+    );
     const parsed = parseArgs({
       args: [...normalized.argv],
       options: parserOptions,
@@ -188,16 +208,18 @@ export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
       if (token.kind !== "option") return Object.freeze({ ...token, index }) as CliParsedToken;
       const occurrence = normalized.optionalValues.get(token.index);
       return occurrence === undefined
-        ? Object.freeze({ ...token, index }) as CliParsedToken
+        ? (Object.freeze({ ...token, index }) as CliParsedToken)
         : Object.freeze({
             kind: "option" as const,
             index,
             name: token.name,
             rawName: token.rawName,
-            ...(typeof occurrence.value === "string" ? {
-              value: occurrence.value,
-              inlineValue: occurrence.inlineValue,
-            } : {}),
+            ...(typeof occurrence.value === "string"
+              ? {
+                  value: occurrence.value,
+                  inlineValue: occurrence.inlineValue,
+                }
+              : {}),
           });
     });
     return Object.freeze({
@@ -212,7 +234,8 @@ export const NodeCliPathLive = Layer.succeed(CliPath, { resolve, isAbsolute });
 
 export const NodePackageMetadataLive = Layer.succeed(PackageMetadata, {
   version: Effect.tryPromise({
-    try: async () => JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version as string,
+    try: async () =>
+      JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version as string,
     catch: (cause) => failure("read-package-metadata", cause),
   }),
 });

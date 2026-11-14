@@ -5,7 +5,15 @@ import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
 import type { Effect } from "effect";
-import type { ExperimentFlags, FlagValue, JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
+import type {
+  ExperimentFlags,
+  FlagValue,
+  JsonValue,
+  LocalizedText,
+  ScopedFeedback,
+  SourceArtifact,
+  Verdict,
+} from "../shared/types.ts";
 import type { ObservabilitySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentInstallationManifest } from "../agents/types.ts";
 import type { Adapter, AdapterRuntimeEvalDefinition } from "../adapter.ts";
@@ -475,7 +483,7 @@ export interface EvalResult {
    * 仅经 `--accept` 授权跨过指纹差异携入时留下的审计痕迹:跨过的每条差异各一项。
    * 它让「这条是在哪个口径下被采信的」跟着结果走,不随 Run 翻篇丢失——授权是把风险显式交给
    * 人,报告因此会在新配置身份下混入旧配置跑出的结果,这个字段是事后追认这笔账的唯一线索。
-  */
+   */
   carriedAccepting?: CarriedAcceptance[];
   /** 当前确定性指纹替换已知旧 opaque carryEpoch 指纹时保留的来源。 */
   /**
@@ -586,7 +594,14 @@ export interface ReporterRegistration {
 /** Describes one live reporting event; progress and summary notifications are separate from durable Attempt evidence. */
 export type ReporterEvent =
   | { type: "invocation:start"; evals: { id: string }[]; shape: InvocationShape }
-  | { type: "eval:start"; eval: { id: string }; adapter: import("../record/model/run-context.ts").AdapterIdentity; model?: string; attempt: number; experimentId?: string }
+  | {
+      type: "eval:start";
+      eval: { id: string };
+      adapter: import("../record/model/run-context.ts").AdapterIdentity;
+      model?: string;
+      attempt: number;
+      experimentId?: string;
+    }
   | { type: "eval:complete"; result: EvalResult }
   | { type: "invocation:earlyExit"; evalId: string; experimentId?: string }
   | { type: "invocation:budgetExceeded"; budget: number; spent: number }
@@ -682,9 +697,10 @@ export interface EvalAuthorFields {
 type EvalTestReturn = void | Promise<void> | Effect.Effect<void, unknown, never>;
 
 /** 作者输入：id 归 discovery、evaluationKind 归 factory、configHash 归 planning，作者都不能填写。 */
-export type EvalInput<
-  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
-> = Omit<EvalAuthorFields, "sandbox"> & {
+export type EvalInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> = Omit<
+  EvalAuthorFields,
+  "sandbox"
+> & {
   sandbox?: Sandbox;
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
@@ -693,9 +709,10 @@ export type EvalInput<
 };
 
 /** 计分制作者输入，只有 test 的上下文不同。 */
-export type ScoreEvalInput<
-  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
-> = Omit<EvalAuthorFields, "sandbox"> & {
+export type ScoreEvalInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> = Omit<
+  EvalAuthorFields,
+  "sandbox"
+> & {
   sandbox?: Sandbox;
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
@@ -704,9 +721,7 @@ export type ScoreEvalInput<
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
-export interface EvalDefinitionFields<
-  Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined,
-> {
+export interface EvalDefinitionFields<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
   readonly requiredModelRoles?: readonly string[];
   readonly description?: string;
   readonly tags: readonly string[];
@@ -768,8 +783,11 @@ export function brandEvalGroupDefinition(value: EvalGroupInput): EvalGroupDefini
   return Object.freeze(value) as EvalGroupDefinition;
 }
 export function isEvalGroupDefinition(value: unknown): value is EvalGroupDefinition {
-  return typeof value === "object" && value !== null &&
-    (value as { readonly [EVAL_GROUP_DEFINITION]?: unknown })[EVAL_GROUP_DEFINITION] === true;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { readonly [EVAL_GROUP_DEFINITION]?: unknown })[EVAL_GROUP_DEFINITION] === true
+  );
 }
 
 const DATASET_DEFINITION: unique symbol = Symbol("niceeval.datasetDefinition");
@@ -786,7 +804,8 @@ export interface DatasetInput<TRow = unknown, Kind extends EvaluationKind = "pas
 }
 
 /** A dataset declaration created by defineDataset; use stable row keys to preserve identity when dataset order changes. */
-export interface DatasetDefinition<TRow = unknown, Kind extends EvaluationKind = "pass"> extends DatasetInput<TRow, Kind> {
+export interface DatasetDefinition<TRow = unknown, Kind extends EvaluationKind = "pass">
+  extends DatasetInput<TRow, Kind> {
   readonly [DATASET_DEFINITION]: true;
 }
 
@@ -798,16 +817,15 @@ export function brandDatasetDefinition<TRow, Kind extends EvaluationKind>(
 }
 
 export function isDatasetDefinition(value: unknown): value is DatasetDefinition {
-  return typeof value === "object" && value !== null &&
-    (value as { readonly [DATASET_DEFINITION]?: unknown })[DATASET_DEFINITION] === true;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { readonly [DATASET_DEFINITION]?: unknown })[DATASET_DEFINITION] === true
+  );
 }
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
-export function brandEvalDefinition<
-  Kind extends EvaluationKind,
-  Context,
-  Sandbox extends SandboxLayer | undefined,
->(
+export function brandEvalDefinition<Kind extends EvaluationKind, Context, Sandbox extends SandboxLayer | undefined>(
   value: EvalDefinitionFields<Sandbox> & { evaluationKind: Kind; test: (...args: never[]) => EvalTestReturn },
 ): EvalDefinition<Kind, Context, Sandbox> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
@@ -1035,15 +1053,25 @@ type ExperimentFlagsFields<A extends Adapter> = {
 type ExperimentAdapterSelection<A extends Adapter> = { readonly adapter?: A };
 
 type ExperimentModelFields<A extends Adapter> = A extends { readonly kind: "custom" }
-  ? ({ readonly models: Readonly<Record<string, ModelRoleSelection>>; readonly model?: never; readonly reasoningEffort?: never }
-    | { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string })
+  ?
+      | {
+          readonly models: Readonly<Record<string, ModelRoleSelection>>;
+          readonly model?: never;
+          readonly reasoningEffort?: never;
+        }
+      | { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string }
   : { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string };
 
 /** Defines execution conditions for selected Evals; the Experiment ID comes from its file path rather than an authored id field. */
-export type ExperimentInput<A extends Adapter = Adapter> = Omit<ExperimentAuthorFields, "adapter" | "flags" | "models" | "model" | "reasoningEffort"> & ExperimentModelFields<A> &
-  ExperimentAdapterSelection<A> & ExperimentFlagsFields<NoInfer<A>> & {
-  id?: ExperimentIdComesFromFilePath;
-};
+export type ExperimentInput<A extends Adapter = Adapter> = Omit<
+  ExperimentAuthorFields,
+  "adapter" | "flags" | "models" | "model" | "reasoningEffort"
+> &
+  ExperimentModelFields<A> &
+  ExperimentAdapterSelection<A> &
+  ExperimentFlagsFields<NoInfer<A>> & {
+    id?: ExperimentIdComesFromFilePath;
+  };
 
 /** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
 export interface ExperimentDefinition<A extends Adapter = Adapter> {
@@ -1086,11 +1114,7 @@ export function brandExperimentDefinition(
 
 /** @internal discovery 只接受 defineExperiment 的原始产物，不做结构性兼容。 */
 export function isExperimentDefinition(value: unknown): value is ExperimentDefinition {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    experimentDefinitions.has(value)
-  );
+  return typeof value === "object" && value !== null && experimentDefinitions.has(value);
 }
 
 /** @internal discovery 构造阶段三的不可变投影；不向 Definition 回写路径事实。 */
@@ -1358,7 +1382,9 @@ export interface RunOptions<_RecordError = never, _RecordRequirements = never> {
     readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
     readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
     /** `${experimentId}|${evalId}` → 该 pair 的 fresh attempt 依赖的 BuildKey。 */
-    readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly import("../sandbox/build-coordinator.ts").SandboxBuildRef[]>>;
+    readonly pairBuildKeys: Readonly<
+      globalThis.Record<string, readonly import("../sandbox/build-coordinator.ts").SandboxBuildRef[]>
+    >;
     readonly maxConcurrency?: number;
     readonly buildTimeoutMs?: number;
     readonly prepareBudgetMs?: number;
@@ -1901,4 +1927,8 @@ export type DurableFeedbackEvent =
  * profile renderer 只消费这里的具名字段,不解析 `ReporterEvent` 里的 i18n 文案或表格列宽
  *(见 docs/feature/experiments/cli/README.md「输出流和落盘节奏」)。
  */
-export type RunFeedbackEvent = AttemptLifecycleEvent | ExperimentProgressEvent | FeedbackTickEvent | DurableFeedbackEvent;
+export type RunFeedbackEvent =
+  | AttemptLifecycleEvent
+  | ExperimentProgressEvent
+  | FeedbackTickEvent
+  | DurableFeedbackEvent;

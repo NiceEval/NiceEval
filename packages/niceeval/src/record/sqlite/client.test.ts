@@ -7,7 +7,8 @@ const workerHarness = vi.hoisted(() => ({
     terminated: number;
     emit: (event: string, value: unknown) => void;
   }>,
-  respond: (_message: Record<string, unknown>, _worker: { emit: (event: string, value: unknown) => void }): void => undefined,
+  respond: (_message: Record<string, unknown>, _worker: { emit: (event: string, value: unknown) => void }): void =>
+    undefined,
 }));
 
 vi.mock("node:worker_threads", () => ({
@@ -75,8 +76,21 @@ describe("Record storage worker protocol", () => {
       { id: 2, state: "success", result: { value: true } },
       { id: 3, state: "success", result: [{ value: true }] },
       { id: 4, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
-      { id: 5, state: "failure", error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" } },
-      { id: 6, state: "failure", error: { code: "run-delete-reference-conflict", operation: "run", message: "referenced", details: [{ attemptLocator: "@1" }] } },
+      {
+        id: 5,
+        state: "failure",
+        error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" },
+      },
+      {
+        id: 6,
+        state: "failure",
+        error: {
+          code: "run-delete-reference-conflict",
+          operation: "run",
+          message: "referenced",
+          details: [{ attemptLocator: "@1" }],
+        },
+      },
     ]) {
       expect(isStorageWorkerResponse(response), JSON.stringify(response)).toBe(true);
     }
@@ -85,11 +99,12 @@ describe("Record storage worker protocol", () => {
 
 describe("Record storage worker client failure lifecycle", () => {
   it("terminates every worker whose initialization fails without accumulating live workers", async () => {
-    workerHarness.respond = (message, worker) => worker.emit("message", {
-      id: message.id,
-      state: "failure",
-      error: { code: "record-database-invalid", operation: "initialize", message: "invalid", stack: "remote stack" },
-    });
+    workerHarness.respond = (message, worker) =>
+      worker.emit("message", {
+        id: message.id,
+        state: "failure",
+        error: { code: "record-database-invalid", operation: "initialize", message: "invalid", stack: "remote stack" },
+      });
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const failure = await makeStorageWorkerClient("unused").catch((cause: unknown) => cause);

@@ -2,7 +2,15 @@
 // speaking the AI SDK UI Message Stream protocol (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol).
 // OTel is on by default (see ./otel.ts) — this is the repo's remote-agent telemetry proof.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { convertToModelMessages, pipeUIMessageStreamToResponse, stepCountIs, streamText, toUIMessageStream, type UIMessage, type UIMessageChunk } from "ai";
+import {
+  convertToModelMessages,
+  pipeUIMessageStreamToResponse,
+  stepCountIs,
+  streamText,
+  toUIMessageStream,
+  type UIMessage,
+  type UIMessageChunk,
+} from "ai";
 import { buildTools, SYSTEM_PROMPT } from "./tool-defs.ts";
 import { DEFAULT_MODEL, resolveModel } from "./models.ts";
 import { setupOtel } from "./otel.ts";
@@ -73,9 +81,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
             // This callback runs inside the SDK's detached response pump. An
             // uncaught export rejection truncates SSE and terminates Node.
             const errors = Array.isArray(error) ? error : [error];
-            process.stderr.write(`AI SDK telemetry export failed: ${errors.map((cause: unknown) =>
-              cause instanceof Error ? cause.message : String(cause)
-            ).join("; ")}\n`);
+            process.stderr.write(
+              `AI SDK telemetry export failed: ${errors
+                .map((cause: unknown) => (cause instanceof Error ? cause.message : String(cause)))
+                .join("; ")}\n`,
+            );
             controller.enqueue({ type: "error", errorText: "AI SDK telemetry export failed." });
           }
         },

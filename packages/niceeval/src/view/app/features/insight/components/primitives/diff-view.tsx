@@ -206,7 +206,9 @@ function FileRow({
           <FileSummary file={file} />
         </div>
         <p className="niceeval-diff-patch-omitted">
-          {elided ? `${diffElidedLabel(elided.reason)} file · content elided from the diff export` : "patch over inline budget"}
+          {elided
+            ? `${diffElidedLabel(elided.reason)} file · content elided from the diff export`
+            : "patch over inline budget"}
           {elided === undefined && drillCommand !== undefined ? (
             <>
               {" · "}
@@ -256,12 +258,7 @@ function TreeList({
         </li>
       ))}
       {node.files.map((file) => (
-        <FileRow
-          key={file.path}
-          file={file}
-          inlined={inlined.has(file.path)}
-          drillCommand={drillCommand}
-        />
+        <FileRow key={file.path} file={file} inlined={inlined.has(file.path)} drillCommand={drillCommand} />
       ))}
     </ul>
   );
@@ -270,10 +267,7 @@ function TreeList({
 // PageContext 不携带 input；下钻只来自显式 locator prop
 // （diffViewText 的 ctx.command 分支）。
 
-export function diffViewText(
-  files: DiffContent,
-  drillDown?: string,
-): string {
+export function diffViewText(files: DiffContent, drillDown?: string): string {
   return diffSummaryText(files, { drillDown });
 }
 

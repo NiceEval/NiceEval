@@ -3,13 +3,7 @@
 // TraceWaterfall、AttemptTrace、AttemptTimeline 抽出;专用件在 1.7 前保留。
 
 import type { ReactElement, ReactNode } from "react";
-import {
-  cx,
-  formatDurationMs,
-  resolveLocalizedText,
-  type LocalizedText,
-  type ReportLocale,
-} from "./shared.ts";
+import { cx, formatDurationMs, resolveLocalizedText, type LocalizedText, type ReportLocale } from "./shared.ts";
 
 /** `null` / 测不了的时长统一显示符;不折成 0。 */
 const MISSING_MARK = "—";
@@ -266,14 +260,14 @@ function WaterfallNodeRow({
     </>
   );
   if (kids.length === 0) {
-    return (
-      <li className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</li>
-    );
+    return <li className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</li>;
   }
   return (
     <li>
       <details open={Boolean(node.failed) || Boolean(node.open)}>
-        <summary className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</summary>
+        <summary className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>
+          {body}
+        </summary>
         <WaterfallNodeList
           nodes={kids}
           locale={locale}
@@ -307,24 +301,22 @@ function renderWaterfallWeb(
           return (
             <li key={row.key} className="niceeval-waterfall-row">
               <div className="niceeval-waterfall-head">
-                {row.locator !== undefined ? (
-                  (() => {
-                    return row.href !== undefined ? (
-                      <a className="niceeval-locator" href={row.href}>
-                        {row.locator}
-                      </a>
-                    ) : (
-                      <span className="niceeval-locator">{row.locator}</span>
-                    );
-                  })()
-                ) : null}
+                {row.locator !== undefined
+                  ? (() => {
+                      return row.href !== undefined ? (
+                        <a className="niceeval-locator" href={row.href}>
+                          {row.locator}
+                        </a>
+                      ) : (
+                        <span className="niceeval-locator">{row.locator}</span>
+                      );
+                    })()
+                  : null}
                 {labelRepeatsLocator ? null : <span className="niceeval-waterfall-label">{label}</span>}
                 <span className="niceeval-waterfall-duration">{formatDurationOrMissing(row.durationMs)}</span>
                 <span className="niceeval-waterfall-count">{countText(locale, "nodes", totalNodes)}</span>
                 {failedNodes > 0 ? (
-                  <span className="niceeval-waterfall-failed">
-                    ✗ {countText(locale, "failed", failedNodes)}
-                  </span>
+                  <span className="niceeval-waterfall-failed">✗ {countText(locale, "failed", failedNodes)}</span>
                 ) : null}
               </div>
               {row.durationMs !== null && leaves.some((node) => node.durationMs !== null) ? (
@@ -335,11 +327,7 @@ function renderWaterfallWeb(
                 >
                   {leaves.map((node) => {
                     if (node.durationMs === null) return null;
-                    const geometry = waterfallBarGeometry(
-                      node.startOffsetMs,
-                      node.durationMs,
-                      row.durationMs!,
-                    );
+                    const geometry = waterfallBarGeometry(node.startOffsetMs, node.durationMs, row.durationMs!);
                     return (
                       <rect
                         key={node.key}

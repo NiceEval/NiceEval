@@ -1,16 +1,7 @@
 import { Schema } from "effect";
-import {
-  Sha256DigestSchema,
-  SourceItemIdSchema,
-} from "../codec/identifiers.ts";
-import {
-  IntervalIdSchema,
-  TurnIdSchema,
-} from "../family/source-receipt/codec.ts";
-import {
-  EmptyArraySchema,
-  PositiveSafeIntegerSchema,
-} from "../family/common.ts";
+import { Sha256DigestSchema, SourceItemIdSchema } from "../codec/identifiers.ts";
+import { IntervalIdSchema, TurnIdSchema } from "../family/source-receipt/codec.ts";
+import { EmptyArraySchema, PositiveSafeIntegerSchema } from "../family/common.ts";
 
 /** One Attempt can retain at most this many physical-send relation rows. */
 export const SourceNavigationRelationLimits = Object.freeze({ maximumRows: 256 });
@@ -30,17 +21,11 @@ export const SourceNavigationSourceFrameSchema = Schema.Union([
   }),
   Schema.Struct({
     state: Schema.Literal("unmapped"),
-    reason: Schema.Literals([
-      "location-not-captured",
-      "source-snapshot-not-recorded",
-      "position-unrepresentable",
-    ]),
+    reason: Schema.Literals(["location-not-captured", "source-snapshot-not-recorded", "position-unrepresentable"]),
   }),
 ]);
 
-export type SourceNavigationSourceFrame = Schema.Schema.Type<
-  typeof SourceNavigationSourceFrameSchema
->;
+export type SourceNavigationSourceFrame = Schema.Schema.Type<typeof SourceNavigationSourceFrameSchema>;
 
 export const SourceNavigationTimingSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("linked"), intervalId: IntervalIdSchema }),
@@ -59,9 +44,7 @@ export const SourceNavigationRelationRowSchema = Schema.Struct({
   timing: SourceNavigationTimingSchema,
 });
 
-export type SourceNavigationRelationRow = Schema.Schema.Type<
-  typeof SourceNavigationRelationRowSchema
->;
+export type SourceNavigationRelationRow = Schema.Schema.Type<typeof SourceNavigationRelationRowSchema>;
 
 export const SourceNavigationRelationLimitationSchema = Schema.Union([
   Schema.Struct({
@@ -76,17 +59,13 @@ export const SourceNavigationRelationLimitationSchema = Schema.Union([
   }),
 ]);
 
-export type SourceNavigationRelationLimitation = Schema.Schema.Type<
-  typeof SourceNavigationRelationLimitationSchema
->;
+export type SourceNavigationRelationLimitation = Schema.Schema.Type<typeof SourceNavigationRelationLimitationSchema>;
 
 function limitationKey(value: SourceNavigationRelationLimitation): string {
   return `${value.code}\u0000${value.target}\u0000${value.omittedAtLeast}`;
 }
 
-function hasCanonicalLimitations(
-  values: readonly SourceNavigationRelationLimitation[],
-): boolean {
+function hasCanonicalLimitations(values: readonly SourceNavigationRelationLimitation[]): boolean {
   let previous: string | undefined;
   const seen = new Set<string>();
   for (const value of values) {
@@ -106,21 +85,24 @@ export const SourceNavigationRelationCollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(SourceNavigationRelationLimitationSchema).pipe(
-      Schema.check(Schema.makeFilter(hasCanonicalLimitations, {
-        identifier: "SourceNavigationRelationPartialLimitations",
-        description: "a deterministic deduplicated source navigation limitation sequence",
-      })),
+      Schema.check(
+        Schema.makeFilter(hasCanonicalLimitations, {
+          identifier: "SourceNavigationRelationPartialLimitations",
+          description: "a deterministic deduplicated source navigation limitation sequence",
+        }),
+      ),
     ),
   }),
 ]);
 
-export type SourceNavigationRelationCollection = Schema.Schema.Type<
-  typeof SourceNavigationRelationCollectionSchema
->;
+export type SourceNavigationRelationCollection = Schema.Schema.Type<typeof SourceNavigationRelationCollectionSchema>;
 
 function sourceFrameIsOrdered(frame: SourceNavigationSourceFrame): boolean {
-  return frame.state !== "mapped" || frame.start.line < frame.end.line ||
-    (frame.start.line === frame.end.line && frame.start.column <= frame.end.column);
+  return (
+    frame.state !== "mapped" ||
+    frame.start.line < frame.end.line ||
+    (frame.start.line === frame.end.line && frame.start.column <= frame.end.column)
+  );
 }
 
 function hasCanonicalRows(payload: {
@@ -153,12 +135,12 @@ export const SourceNavigationRelationSchema = Schema.Struct({
   collection: SourceNavigationRelationCollectionSchema,
   rows: Schema.Array(SourceNavigationRelationRowSchema),
 }).pipe(
-  Schema.check(Schema.makeFilter(hasCanonicalRows, {
-    identifier: "SourceNavigationRelation",
-    description: "a bounded canonical physical-send reader relation",
-  })),
+  Schema.check(
+    Schema.makeFilter(hasCanonicalRows, {
+      identifier: "SourceNavigationRelation",
+      description: "a bounded canonical physical-send reader relation",
+    }),
+  ),
 );
 
-export type SourceNavigationRelation = Schema.Schema.Type<
-  typeof SourceNavigationRelationSchema
->;
+export type SourceNavigationRelation = Schema.Schema.Type<typeof SourceNavigationRelationSchema>;

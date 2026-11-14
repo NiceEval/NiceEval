@@ -69,10 +69,7 @@ import {
   type UsageObservationId,
   type UsageReferences,
 } from "./model.ts";
-import {
-  MAX_DIRECT_CROSS_FAMILY_REFS,
-  MAX_SOURCE_NATIVE_TOOL_NAME_BYTES,
-} from "./limits.ts";
+import { MAX_DIRECT_CROSS_FAMILY_REFS, MAX_SOURCE_NATIVE_TOOL_NAME_BYTES } from "./limits.ts";
 
 /** All official Observability schemas aggregate failures and reject extra fields. */
 export const ObservabilityExactParseOptions = Object.freeze({
@@ -80,177 +77,198 @@ export const ObservabilityExactParseOptions = Object.freeze({
   onExcessProperty: "error" as const,
 });
 
-
-export const NonNegativeSafeIntegerSchema: Schema.Codec<
-  NonNegativeSafeInteger,
-  number
-> = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(isNonNegativeSafeInteger, {
-    identifier: "ObservabilityNonNegativeSafeInteger",
-    description: "a JSON-safe non-negative integer",
-  })),
+export const NonNegativeSafeIntegerSchema: Schema.Codec<NonNegativeSafeInteger, number> = Schema.Number.pipe(
+  Schema.check(
+    Schema.makeFilter(isNonNegativeSafeInteger, {
+      identifier: "ObservabilityNonNegativeSafeInteger",
+      description: "a JSON-safe non-negative integer",
+    }),
+  ),
   Schema.brand(NON_NEGATIVE_SAFE_INTEGER__BRAND),
 );
 
-export const PositiveSafeIntegerSchema: Schema.Codec<PositiveSafeInteger, number> =
-  Schema.Number.pipe(
-    Schema.check(Schema.makeFilter(isPositiveSafeInteger, {
+export const PositiveSafeIntegerSchema: Schema.Codec<PositiveSafeInteger, number> = Schema.Number.pipe(
+  Schema.check(
+    Schema.makeFilter(isPositiveSafeInteger, {
       identifier: "ObservabilityPositiveSafeInteger",
       description: "a positive JSON-safe integer",
-    })),
-    Schema.brand(POSITIVE_SAFE_INTEGER__BRAND),
-  );
+    }),
+  ),
+  Schema.brand(POSITIVE_SAFE_INTEGER__BRAND),
+);
 
-export const SafeIdentifierSchema: Schema.Codec<SafeIdentifier, string> =
-  Schema.String.pipe(
-    Schema.check(Schema.makeFilter(isSafeIdentifier, {
+export const SafeIdentifierSchema: Schema.Codec<SafeIdentifier, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isSafeIdentifier, {
       identifier: "ObservabilitySafeIdentifier",
       description: "a lowercase ASCII identifier no longer than 64 bytes",
-    })),
-    Schema.brand(SAFE_IDENTIFIER__BRAND),
-  );
+    }),
+  ),
+  Schema.brand(SAFE_IDENTIFIER__BRAND),
+);
 
 export const StableLabelSchema: Schema.Codec<StableLabel, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isStableLabel, {
-    identifier: "ObservabilityStableLabel",
-    description: "a provider-neutral lowercase ASCII label no longer than 64 bytes",
-  })),
+  Schema.check(
+    Schema.makeFilter(isStableLabel, {
+      identifier: "ObservabilityStableLabel",
+      description: "a provider-neutral lowercase ASCII label no longer than 64 bytes",
+    }),
+  ),
   Schema.brand(STABLE_LABEL__BRAND),
 );
 
 export const SafeTextSchema: Schema.Codec<SafeText, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isSafeText, {
-    identifier: "ObservabilitySafeText",
-    description: "strict UTF-8 text without NUL or C0 controls other than LF",
-  })),
+  Schema.check(
+    Schema.makeFilter(isSafeText, {
+      identifier: "ObservabilitySafeText",
+      description: "strict UTF-8 text without NUL or C0 controls other than LF",
+    }),
+  ),
   Schema.brand(SAFE_TEXT__BRAND),
 );
 
-export const SourceNativeToolNameSchema: Schema.Codec<
-  SourceNativeToolName,
-  string
-> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isSourceNativeToolName, {
-    identifier: "ObservabilitySourceNativeToolName",
-    description:
-      `a non-empty source-native tool name no longer than ${MAX_SOURCE_NATIVE_TOOL_NAME_BYTES} UTF-8 bytes`,
-  })),
+export const SourceNativeToolNameSchema: Schema.Codec<SourceNativeToolName, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isSourceNativeToolName, {
+      identifier: "ObservabilitySourceNativeToolName",
+      description: `a non-empty source-native tool name no longer than ${MAX_SOURCE_NATIVE_TOOL_NAME_BYTES} UTF-8 bytes`,
+    }),
+  ),
   Schema.brand(SOURCE_NATIVE_TOOL_NAME__BRAND),
 );
 
 /** A SafeText field whose maximum is part of its owning family contract. */
 export function boundedSafeTextSchema(maximumBytes: number) {
   return Schema.String.pipe(
-    Schema.check(Schema.makeFilter((value): value is SafeText => isBoundedSafeText(value, maximumBytes), {
-      identifier: "ObservabilityBoundedSafeText",
-      description: `strict UTF-8 SafeText no longer than ${maximumBytes} bytes`,
-    })),
+    Schema.check(
+      Schema.makeFilter((value): value is SafeText => isBoundedSafeText(value, maximumBytes), {
+        identifier: "ObservabilityBoundedSafeText",
+        description: `strict UTF-8 SafeText no longer than ${maximumBytes} bytes`,
+      }),
+    ),
     Schema.brand(SAFE_TEXT__BRAND),
   );
 }
 
-export const CanonicalDecimalSchema: Schema.Codec<CanonicalDecimal, string> =
-  Schema.String.pipe(
-    Schema.check(Schema.makeFilter(isCanonicalDecimal, {
+export const CanonicalDecimalSchema: Schema.Codec<CanonicalDecimal, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isCanonicalDecimal, {
       identifier: "ObservabilityCanonicalDecimal",
       description: "a non-negative canonical decimal string no longer than 64 bytes",
-    })),
-    Schema.brand(CANONICAL_DECIMAL__BRAND),
-  );
+    }),
+  ),
+  Schema.brand(CANONICAL_DECIMAL__BRAND),
+);
 
 export const CurrencyCodeSchema: Schema.Codec<CurrencyCode, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isCurrencyCode, {
-    identifier: "ObservabilityCurrencyCode",
-    description: "an uppercase three-letter currency code",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCurrencyCode, {
+      identifier: "ObservabilityCurrencyCode",
+      description: "an uppercase three-letter currency code",
+    }),
+  ),
   Schema.brand(CURRENCY_CODE__BRAND),
 );
 
 export const TurnIdSchema: Schema.Codec<TurnId, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isTurnId, {
-    identifier: "ObservabilityTurnId",
-    description: "a turn_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+  Schema.check(
+    Schema.makeFilter(isTurnId, {
+      identifier: "ObservabilityTurnId",
+      description: "a turn_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(TURN_ID__BRAND),
 );
 
 export const ItemIdSchema: Schema.Codec<ItemId, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isItemId, {
-    identifier: "ObservabilityItemId",
-    description: "an item_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+  Schema.check(
+    Schema.makeFilter(isItemId, {
+      identifier: "ObservabilityItemId",
+      description: "an item_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(ITEM_ID__BRAND),
 );
 
 export const CallIdSchema: Schema.Codec<CallId, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isCallId, {
-    identifier: "ObservabilityCallId",
-    description: "a call_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCallId, {
+      identifier: "ObservabilityCallId",
+      description: "a call_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(CALL_ID__BRAND),
 );
 
 export const EventIdSchema: Schema.Codec<EventId, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isEventId, {
-    identifier: "ObservabilityEventId",
-    description: "an event_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+  Schema.check(
+    Schema.makeFilter(isEventId, {
+      identifier: "ObservabilityEventId",
+      description: "an event_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(EVENT_ID__BRAND),
 );
 
-export const ToolOccurrenceIdSchema: Schema.Codec<ToolOccurrenceId, string> =
-  Schema.String.pipe(
-    Schema.check(Schema.makeFilter(isToolOccurrenceId, {
+export const ToolOccurrenceIdSchema: Schema.Codec<ToolOccurrenceId, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isToolOccurrenceId, {
       identifier: "ObservabilityToolOccurrenceId",
       description: "a tool_ identifier with 26 lowercase Crockford base-32 characters",
-    })),
-    Schema.brand(TOOL_OCCURRENCE_ID__BRAND),
-  );
+    }),
+  ),
+  Schema.brand(TOOL_OCCURRENCE_ID__BRAND),
+);
 
-export const SessionScopeIdSchema: Schema.Codec<SessionScopeId, string> =
-  Schema.String.pipe(
-    Schema.check(Schema.makeFilter(isSessionScopeId, {
+export const SessionScopeIdSchema: Schema.Codec<SessionScopeId, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isSessionScopeId, {
       identifier: "ObservabilitySessionScopeId",
       description: "a session_ identifier with 26 lowercase Crockford base-32 characters",
-    })),
-    Schema.brand(SESSION_SCOPE_ID__BRAND),
-  );
+    }),
+  ),
+  Schema.brand(SESSION_SCOPE_ID__BRAND),
+);
 
 export const CommandIdSchema: Schema.Codec<CommandId, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isCommandId, {
-    identifier: "ObservabilityCommandId",
-    description: "a command_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCommandId, {
+      identifier: "ObservabilityCommandId",
+      description: "a command_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(COMMAND_ID__BRAND),
 );
 
-export const UsageObservationIdSchema: Schema.Codec<
-  UsageObservationId,
-  string
-> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isUsageObservationId, {
-    identifier: "ObservabilityUsageObservationId",
-    description: "a usage_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+export const UsageObservationIdSchema: Schema.Codec<UsageObservationId, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isUsageObservationId, {
+      identifier: "ObservabilityUsageObservationId",
+      description: "a usage_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(USAGE_OBSERVATION_ID__BRAND),
 );
 
 export const IntervalIdSchema: Schema.Codec<IntervalId, string> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isIntervalId, {
-    identifier: "ObservabilityIntervalId",
-    description: "an interval_ identifier with 26 lowercase Crockford base-32 characters",
-  })),
+  Schema.check(
+    Schema.makeFilter(isIntervalId, {
+      identifier: "ObservabilityIntervalId",
+      description: "an interval_ identifier with 26 lowercase Crockford base-32 characters",
+    }),
+  ),
   Schema.brand(INTERVAL_ID__BRAND),
 );
 
-export const DiagnosticIdSchema: Schema.Codec<DiagnosticId, string> =
-  Schema.String.pipe(
-    Schema.check(Schema.makeFilter(isDiagnosticId, {
+export const DiagnosticIdSchema: Schema.Codec<DiagnosticId, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isDiagnosticId, {
       identifier: "ObservabilityDiagnosticId",
       description: "a diagnostic_ identifier with 26 lowercase Crockford base-32 characters",
-    })),
-    Schema.brand(DIAGNOSTIC_ID__BRAND),
-  );
+    }),
+  ),
+  Schema.brand(DIAGNOSTIC_ID__BRAND),
+);
 
 export const CollectionTargetSchema = Schema.Literals([
   "conversation-item",
@@ -262,10 +280,12 @@ export const CollectionTargetSchema = Schema.Literals([
   "timing-interval",
   "diagnostic",
 ]).pipe(
-  Schema.check(Schema.makeFilter(isCollectionTarget, {
-    identifier: "ObservabilityCollectionTarget",
-    description: "a closed Observability collection target",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCollectionTarget, {
+      identifier: "ObservabilityCollectionTarget",
+      description: "a closed Observability collection target",
+    }),
+  ),
 );
 
 export const CollectionStageSchema = Schema.Literals([
@@ -277,10 +297,12 @@ export const CollectionStageSchema = Schema.Literals([
   "attempt-finalizer",
   "run-teardown",
 ]).pipe(
-  Schema.check(Schema.makeFilter(isCollectionStage, {
-    identifier: "ObservabilityCollectionStage",
-    description: "a closed Observability capture stage",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCollectionStage, {
+      identifier: "ObservabilityCollectionStage",
+      description: "a closed Observability capture stage",
+    }),
+  ),
 );
 
 const CaptureFailedLimitationSchema = Schema.Struct({
@@ -361,23 +383,25 @@ const RedactedLimitationSchema = Schema.Struct({
 });
 
 export const ObservabilityLimitationSchema = Schema.Union([
-    CaptureFailedLimitationSchema,
-    CaptureInterruptedLimitationSchema,
-    CollectionCapReachedLimitationSchema,
-    UnsupportedInputLimitationSchema,
-    ConversationTextTruncatedLimitationSchema,
-    CommandManifestTextTruncatedLimitationSchema,
-    DiagnosticTextTruncatedLimitationSchema,
-    CommandStreamTruncatedLimitationSchema,
-    InvalidUtf8ReplacedLimitationSchema,
-    UnsafeControlStrippedLimitationSchema,
-    RedactedLimitationSchema,
-  ]).pipe(
-    Schema.check(Schema.makeFilter(isObservabilityLimitation, {
+  CaptureFailedLimitationSchema,
+  CaptureInterruptedLimitationSchema,
+  CollectionCapReachedLimitationSchema,
+  UnsupportedInputLimitationSchema,
+  ConversationTextTruncatedLimitationSchema,
+  CommandManifestTextTruncatedLimitationSchema,
+  DiagnosticTextTruncatedLimitationSchema,
+  CommandStreamTruncatedLimitationSchema,
+  InvalidUtf8ReplacedLimitationSchema,
+  UnsafeControlStrippedLimitationSchema,
+  RedactedLimitationSchema,
+]).pipe(
+  Schema.check(
+    Schema.makeFilter(isObservabilityLimitation, {
       identifier: "ObservabilityLimitation",
       description: "a semantically valid closed Observability limitation",
-    })),
-  );
+    }),
+  ),
+);
 
 const CompleteCollectionSchema = Schema.Struct({
   state: Schema.Literal("complete"),
@@ -389,14 +413,13 @@ const PartialCollectionSchema = Schema.Struct({
   limitations: Schema.NonEmptyArray(ObservabilityLimitationSchema),
 });
 
-export const CollectionSchema = Schema.Union([
-  CompleteCollectionSchema,
-  PartialCollectionSchema,
-]).pipe(
-  Schema.check(Schema.makeFilter((collection) => validateObservabilityCollection(collection).length === 0, {
-    identifier: "ObservabilityCollection",
-    description: "a complete empty or partial canonically ordered limitation collection",
-  })),
+export const CollectionSchema = Schema.Union([CompleteCollectionSchema, PartialCollectionSchema]).pipe(
+  Schema.check(
+    Schema.makeFilter((collection) => validateObservabilityCollection(collection).length === 0, {
+      identifier: "ObservabilityCollection",
+      description: "a complete empty or partial canonically ordered limitation collection",
+    }),
+  ),
 );
 
 const ConversationTurnReferenceTargetSchema = Schema.Struct({
@@ -460,76 +483,79 @@ const DiagnosticReferenceTargetSchema = Schema.Struct({
 });
 
 export const AttemptReferenceTargetSchema = Schema.Union([
-    ConversationTurnReferenceTargetSchema,
-    ConversationItemReferenceTargetSchema,
-    ConversationCallReferenceTargetSchema,
-    ConversationEventReferenceTargetSchema,
-    ConversationToolOccurrenceReferenceTargetSchema,
-    ConversationSessionScopeReferenceTargetSchema,
-    CommandReferenceTargetSchema,
-    UsageObservationReferenceTargetSchema,
-    IntervalReferenceTargetSchema,
-    DiagnosticReferenceTargetSchema,
-  ]);
-
-export const RunReferenceTargetSchema = Schema.Union([
+  ConversationTurnReferenceTargetSchema,
+  ConversationItemReferenceTargetSchema,
+  ConversationCallReferenceTargetSchema,
+  ConversationEventReferenceTargetSchema,
+  ConversationToolOccurrenceReferenceTargetSchema,
+  ConversationSessionScopeReferenceTargetSchema,
+  CommandReferenceTargetSchema,
+  UsageObservationReferenceTargetSchema,
   IntervalReferenceTargetSchema,
   DiagnosticReferenceTargetSchema,
 ]);
 
-export const ConversationReferencesSchema = Schema.Array(
-  AttemptReferenceTargetSchema,
-).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly ConversationReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.agent-turns"),
-  )),
+export const RunReferenceTargetSchema = Schema.Union([IntervalReferenceTargetSchema, DiagnosticReferenceTargetSchema]);
+
+export const ConversationReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly ConversationReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalAttemptReferences(refs, "niceeval.agent-turns"),
+    ),
+  ),
 );
 
 export const CommandsReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly CommandsReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.sandbox-commands"),
-  )),
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly CommandsReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalAttemptReferences(refs, "niceeval.sandbox-commands"),
+    ),
+  ),
 );
 
 export const UsageReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly UsageReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.agent-turns"),
-  )),
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly UsageReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalAttemptReferences(refs, "niceeval.agent-turns"),
+    ),
+  ),
 );
 
-export const AttemptTimingReferencesSchema = Schema.Array(
-  AttemptReferenceTargetSchema,
-).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly AttemptTimingReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.runner-activities"),
-  )),
+export const AttemptTimingReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly AttemptTimingReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalAttemptReferences(refs, "niceeval.runner-activities"),
+    ),
+  ),
 );
 
-export const AttemptDiagnosticsReferencesSchema = Schema.Array(
-  AttemptReferenceTargetSchema,
-).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly AttemptDiagnosticsReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalAttemptReferences(refs, "niceeval.runner-diagnostics"),
-  )),
+export const AttemptDiagnosticsReferencesSchema = Schema.Array(AttemptReferenceTargetSchema).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly AttemptDiagnosticsReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalAttemptReferences(refs, "niceeval.runner-diagnostics"),
+    ),
+  ),
 );
 
 export const RunTimingReferencesSchema = Schema.Array(RunReferenceTargetSchema).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly RunTimingReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalRunReferences(refs, "niceeval.runner-activities"),
-  )),
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly RunTimingReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalRunReferences(refs, "niceeval.runner-activities"),
+    ),
+  ),
 );
 
-export const RunDiagnosticsReferencesSchema = Schema.Array(
-  RunReferenceTargetSchema,
-).pipe(
-  Schema.check(Schema.makeFilter((refs): refs is readonly RunDiagnosticsReferences[] =>
-    refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS &&
-    canonicalRunReferences(refs, "niceeval.runner-diagnostics"),
-  )),
+export const RunDiagnosticsReferencesSchema = Schema.Array(RunReferenceTargetSchema).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (refs): refs is readonly RunDiagnosticsReferences[] =>
+        refs.length <= MAX_DIRECT_CROSS_FAMILY_REFS && canonicalRunReferences(refs, "niceeval.runner-diagnostics"),
+    ),
+  ),
 );

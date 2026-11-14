@@ -1,16 +1,5 @@
-import {
-  effectivePanelMode,
-  panelContentWidth,
-  renderPanel,
-  type PanelMode,
-  type PanelRow,
-} from "./panel.ts";
-import {
-  charDisplayWidth,
-  padDisplay,
-  stringWidth,
-  wrapDisplay,
-} from "./text-layout.ts";
+import { effectivePanelMode, panelContentWidth, renderPanel, type PanelMode, type PanelRow } from "./panel.ts";
+import { charDisplayWidth, padDisplay, stringWidth, wrapDisplay } from "./text-layout.ts";
 
 export interface TerminalRenderOptions {
   readonly width: number;
@@ -79,10 +68,7 @@ export type TerminalContentBlock =
   | TerminalCodeBlock
   | TerminalCommandBlock;
 
-export type TerminalPanelContentBlock = Exclude<
-  TerminalContentBlock,
-  TerminalRawBlock | TerminalCodeBlock
->;
+export type TerminalPanelContentBlock = Exclude<TerminalContentBlock, TerminalRawBlock | TerminalCodeBlock>;
 
 export interface TerminalPanelBlock {
   readonly kind: "panel";
@@ -126,10 +112,7 @@ function tableWidths(block: TerminalTableBlock, width: number): number[] {
     );
     return Math.max(1, Math.min(column.maxWidth ?? DEFAULT_MAX_COLUMN_WIDTH, observed));
   });
-  const available = Math.max(
-    widths.length,
-    Math.floor(width) - Math.max(0, widths.length - 1) * COLUMN_GAP,
-  );
+  const available = Math.max(widths.length, Math.floor(width) - Math.max(0, widths.length - 1) * COLUMN_GAP);
   while (widths.reduce((sum, value) => sum + value, 0) > available) {
     const widest = Math.max(...widths);
     const index = widths.findIndex((value) => value === widest);
@@ -159,7 +142,10 @@ function renderTable(block: TerminalTableBlock, width: number, mode: PanelMode):
     );
   };
   return [
-    ...renderRow(block.columns.map((column) => column.header), false),
+    ...renderRow(
+      block.columns.map((column) => column.header),
+      false,
+    ),
     widths.map((columnWidth) => separator.repeat(columnWidth)).join(" ".repeat(COLUMN_GAP)),
     ...block.rows.flatMap((row) => renderRow(row, block.overflow === "wrap")),
   ];
@@ -230,10 +216,7 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
     const previous = block.blocks[index - 1];
     if (index > 0) {
       const attachedToPrevious = previous?.kind === "divider" && previous.attachNext === true;
-      if (
-        !attachedToPrevious &&
-        (child.kind !== "divider" || child.attachNext === true)
-      ) {
+      if (!attachedToPrevious && (child.kind !== "divider" || child.attachNext === true)) {
         rows.push({ kind: "line", text: "" });
       }
     }
@@ -259,26 +242,18 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
   });
 }
 
-export function renderBlocks(
-  blocks: readonly TerminalBlock[],
-  options: TerminalRenderOptions,
-): string[] {
+export function renderBlocks(blocks: readonly TerminalBlock[], options: TerminalRenderOptions): string[] {
   const effectiveOptions = {
     ...options,
     mode: effectivePanelMode(options.mode, options.width),
   };
   return blocks.flatMap((block, index) => [
     ...(index === 0 ? [] : [""]),
-    ...(block.kind === "panel"
-      ? renderPanelBlock(block, effectiveOptions)
-      : renderContent(block, effectiveOptions)),
+    ...(block.kind === "panel" ? renderPanelBlock(block, effectiveOptions) : renderContent(block, effectiveOptions)),
   ]);
 }
 
-export function renderTerminal(
-  blocks: readonly TerminalBlock[],
-  options: TerminalRenderOptions,
-): string {
+export function renderTerminal(blocks: readonly TerminalBlock[], options: TerminalRenderOptions): string {
   const lines = renderBlocks(blocks, options);
   if (lines.length === 0) return "";
   const output = lines.join("\n");

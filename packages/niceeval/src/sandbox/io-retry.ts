@@ -3,11 +3,7 @@
 
 import { Effect, Random } from "effect";
 
-import {
-  classifySandboxIoError,
-  isRetryableSandboxIoError,
-  type SandboxIoErrorKind,
-} from "./errors.ts";
+import { classifySandboxIoError, isRetryableSandboxIoError, type SandboxIoErrorKind } from "./errors.ts";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
@@ -36,15 +32,17 @@ export function withSandboxIoRetry<T>(
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {
       return yield* operation.pipe(
-        Effect.catch((error) => Effect.gen(function* () {
-          const kind = classify(error);
-          if (!isRetryableSandboxIoError(kind) || attempt >= maxAttempts) return yield* Effect.fail(error);
-          const jitter = yield* Random.next;
-          const delayMs = baseDelayMs * 2 ** (attempt - 1) * (0.5 + jitter);
-          yield* Effect.sync(() => options.onRetry?.({ attempt, delayMs, kind, error }));
-          yield* Effect.sleep(delayMs);
-          return yield* retry(attempt + 1);
-        })),
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            const kind = classify(error);
+            if (!isRetryableSandboxIoError(kind) || attempt >= maxAttempts) return yield* Effect.fail(error);
+            const jitter = yield* Random.next;
+            const delayMs = baseDelayMs * 2 ** (attempt - 1) * (0.5 + jitter);
+            yield* Effect.sync(() => options.onRetry?.({ attempt, delayMs, kind, error }));
+            yield* Effect.sleep(delayMs);
+            return yield* retry(attempt + 1);
+          }),
+        ),
       );
     });
 

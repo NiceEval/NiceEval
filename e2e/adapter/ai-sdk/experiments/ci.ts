@@ -7,9 +7,7 @@ const agent = uiMessageStreamAgent({
   name: "ai-sdk-ui-message-stream",
   url: `${AI_SDK_BASE_URL}/api/chat`,
   projectToolCommand: ({ name }) =>
-    name === "get_weather" || name === "calculate"
-      ? notCommandProjection()
-      : undefined,
+    name === "get_weather" || name === "calculate" ? notCommandProjection() : undefined,
 });
 
 // 单一实验:仓库全部三条 Eval 共用同一个 uiMessageStreamAgent。

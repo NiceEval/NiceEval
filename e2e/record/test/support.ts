@@ -12,14 +12,22 @@ export interface LoopbackBackend {
 
 function deferred() {
   let resolve!: () => void;
-  const promise = new Promise<void>((done) => { resolve = done; });
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
 export async function createLoopbackBackend(): Promise<LoopbackBackend> {
-  const attemptArrivalCounts = new Map([[0, 0], [1, 0]]);
+  const attemptArrivalCounts = new Map([
+    [0, 0],
+    [1, 0],
+  ]);
   const attemptArrivalWaiters = new Map<string, ReturnType<typeof deferred>>();
-  const assertionArrivals = new Map([[0, deferred()], [1, deferred()]]);
+  const assertionArrivals = new Map([
+    [0, deferred()],
+    [1, deferred()],
+  ]);
   const responses = new Map<number, ServerResponse>();
   const assertionResponses = new Map<number, ServerResponse>();
   const sockets = new Set<Socket>();
@@ -30,7 +38,9 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
       const index = Number(assertionMatch[1]);
       request.resume();
       assertionResponses.set(index, response);
-      response.once("close", () => { if (assertionResponses.get(index) === response) assertionResponses.delete(index); });
+      response.once("close", () => {
+        if (assertionResponses.get(index) === response) assertionResponses.delete(index);
+      });
       assertionArrivals.get(index)!.resolve();
       return;
     }
@@ -39,7 +49,9 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
     const index = Number(match[1]);
     if (responses.has(index)) return void response.writeHead(409).end();
     responses.set(index, response);
-    response.once("close", () => { if (responses.get(index) === response) responses.delete(index); });
+    response.once("close", () => {
+      if (responses.get(index) === response) responses.delete(index);
+    });
     const occurrence = (attemptArrivalCounts.get(index) ?? 0) + 1;
     attemptArrivalCounts.set(index, occurrence);
     attemptArrivalWaiters.get(`${index}:${occurrence}`)?.resolve();
@@ -70,10 +82,12 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
       const response = responses.get(index);
       if (response === undefined) throw new Error(`Attempt ${index} has not reached the backend`);
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({
-        status: "completed",
-        events: [{ type: "message", role: "assistant", text: message }],
-      }));
+      response.end(
+        JSON.stringify({
+          status: "completed",
+          events: [{ type: "message", role: "assistant", text: message }],
+        }),
+      );
     },
     async waitForAssertion(index) {
       const arrival = assertionArrivals.get(index);
@@ -85,7 +99,7 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
       for (const response of assertionResponses.values()) response.destroy();
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolveClose, rejectClose) => {
-        server.close((error) => error === undefined ? resolveClose() : rejectClose(error));
+        server.close((error) => (error === undefined ? resolveClose() : rejectClose(error)));
       });
     },
   };
@@ -94,6 +108,8 @@ export async function createLoopbackBackend(): Promise<LoopbackBackend> {
 export async function whileRunning<T>(action: Promise<T>, process: ProcessHandle, label: string): Promise<T> {
   return await Promise.race([
     action,
-    process.done.then((receipt) => { throw new Error(`niceeval exp exited before ${label}\n${receipt.diagnostic()}`); }),
+    process.done.then((receipt) => {
+      throw new Error(`niceeval exp exited before ${label}\n${receipt.diagnostic()}`);
+    }),
   ]);
 }

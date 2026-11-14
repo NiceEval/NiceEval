@@ -17,6 +17,8 @@ export function boundedErrorText(value: string, maximumBytes: number): string {
     return result;
   };
   const head = take(characters, Math.ceil(available / 2)).join("");
-  const tail = take(characters.reverse(), Math.floor(available / 2)).reverse().join("");
+  const tail = take(characters.reverse(), Math.floor(available / 2))
+    .reverse()
+    .join("");
   return `${head} … [${total - bytes(head) - bytes(tail)} bytes omitted] … ${tail}`;
 }

@@ -7,11 +7,7 @@ import type {
   TurnId,
 } from "../../../record/family/source-receipt/model.ts";
 import type { ConversationTurn } from "../model.ts";
-import {
-  producerCaptureSealInvalid,
-  producerEntityIdInvalid,
-  requiredPositive,
-} from "../support.ts";
+import { producerCaptureSealInvalid, producerEntityIdInvalid, requiredPositive } from "../support.ts";
 import { sourceSegmentId } from "./receipt-helpers.ts";
 import {
   markRuntimeFailure,
@@ -71,10 +67,7 @@ export function beginRunnerPhysicalConversationTurn(
   const runtime = runtimeState(runtimeHandle);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return false;
   if (runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) {
-    runtime.conversationLimitations.addCap(
-      "conversation-item",
-      runtime.conversationTurns.length,
-    );
+    runtime.conversationLimitations.addCap("conversation-item", runtime.conversationTurns.length);
     return false;
   }
   if (!registerRuntimeEntity(runtime, "turn", turnId)) return false;
@@ -97,10 +90,7 @@ export function beginRunnerPhysicalConversationTurn(
   return true;
 }
 
-function registerObservedTurn(
-  runtime: RunnerAttemptObservabilityRuntimeState,
-  observed: ObservedTurnSnapshot,
-): void {
+function registerObservedTurn(runtime: RunnerAttemptObservabilityRuntimeState, observed: ObservedTurnSnapshot): void {
   const register = <Kind extends "item" | "event" | "tool-occurrence" | "session-scope">(
     kind: Kind,
     id: ObservabilityEntityIdForKind<Kind>,

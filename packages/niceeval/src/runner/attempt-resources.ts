@@ -85,12 +85,14 @@ export class AdapterAttemptResources {
 
   trackHandoff<Value>(promise: Promise<Value>): Promise<Value> {
     let settled!: Promise<void>;
-    settled = promise.then(
-      () => undefined,
-      () => undefined,
-    ).finally(() => {
-      this.handoffs.delete(settled);
-    });
+    settled = promise
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        this.handoffs.delete(settled);
+      });
     this.handoffs.add(settled);
     return promise;
   }
@@ -111,7 +113,7 @@ export class AdapterAttemptResources {
   }
 
   cleanup(context: AdapterCleanupContext): Promise<AdapterCleanupResult> {
-    return this.cleanupReceipt ??= this.drain(context);
+    return (this.cleanupReceipt ??= this.drain(context));
   }
 
   private async drain(context: AdapterCleanupContext): Promise<AdapterCleanupResult> {
@@ -137,10 +139,12 @@ export class AdapterAttemptResources {
         while (this.cleanups.length > 0 && !timedOut) {
           const cleanup = this.cleanups.pop()!;
           const outcome = await Promise.race([
-            Promise.resolve().then(() => cleanup(context)).then(
-              () => ({ _tag: "settled" as const }),
-              (error: unknown) => ({ _tag: "failed" as const, error }),
-            ),
+            Promise.resolve()
+              .then(() => cleanup(context))
+              .then(
+                () => ({ _tag: "settled" as const }),
+                (error: unknown) => ({ _tag: "failed" as const, error }),
+              ),
             aborted.then(() => ({ _tag: "aborted" as const })),
           ]);
           if (outcome._tag === "aborted") {
@@ -151,12 +155,12 @@ export class AdapterAttemptResources {
         }
         if (timedOut || this.cleanups.length > 0) continue;
         if (this.handoffs.size === 0) break;
-        const changed = new Promise<void>((resolve) => { this.wakeCleanup = resolve; });
-        const outcome = await Promise.race([
-          changed,
-          ...this.handoffs,
-          aborted,
-        ]).then(() => signal.aborted ? "aborted" as const : "settled" as const);
+        const changed = new Promise<void>((resolve) => {
+          this.wakeCleanup = resolve;
+        });
+        const outcome = await Promise.race([changed, ...this.handoffs, aborted]).then(() =>
+          signal.aborted ? ("aborted" as const) : ("settled" as const),
+        );
         this.wakeCleanup = undefined;
         if (outcome === "aborted") timedOut = true;
       }
@@ -208,20 +212,28 @@ export class ManagedAttemptResources implements AttemptResourceRegistry {
     const failures: unknown[] = [];
     for (const entry of this.entries.slice().reverse()) {
       entry.shutdownReceipt ??= entry.shutdown(signal);
-      try { await entry.shutdownReceipt; } catch (error) { failures.push(error); }
+      try {
+        await entry.shutdownReceipt;
+      } catch (error) {
+        failures.push(error);
+      }
     }
     if (failures.length > 0) throw new AggregateError(failures, "Attempt managed resource shutdown failed");
   }
 
   async releaseAll(signal: AbortSignal): Promise<void> {
-    return this.releaseReceipt ??= this.releaseEntries(signal);
+    return (this.releaseReceipt ??= this.releaseEntries(signal));
   }
 
   private async releaseEntries(signal: AbortSignal): Promise<void> {
     this.closing = true;
     const failures: unknown[] = [];
     for (const entry of this.entries.splice(0).reverse()) {
-      try { await entry.release(signal); } catch (error) { failures.push(error); }
+      try {
+        await entry.release(signal);
+      } catch (error) {
+        failures.push(error);
+      }
     }
     if (failures.length > 0) throw new AggregateError(failures, "Attempt managed resource cleanup failed");
   }

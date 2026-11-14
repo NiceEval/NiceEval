@@ -21,5 +21,9 @@ export interface FrozenProjectInput {
 
 // Only the Host preparation edge can bind one frozen assessment to its reader.
 const preparedInputs = new WeakMap<InspectionFactSource, FrozenProjectInput>();
-export function bindProjectInput(source: InspectionFactSource, input: FrozenProjectInput): void { preparedInputs.set(source, Object.freeze(input)); }
-export function projectInput(source: InspectionFactSource): FrozenProjectInput | undefined { return preparedInputs.get(source); }
+export function bindProjectInput(source: InspectionFactSource, input: FrozenProjectInput): void {
+  preparedInputs.set(source, Object.freeze(input));
+}
+export function projectInput(source: InspectionFactSource): FrozenProjectInput | undefined {
+  return preparedInputs.get(source);
+}

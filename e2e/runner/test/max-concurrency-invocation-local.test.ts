@@ -27,16 +27,13 @@ test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并�
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       await withTempDir("niceeval-runner-max-concurrency-", async (barrierRoot) => {
-        const holders = niceeval.start(
-          ["exp", "max-concurrency", "max-concurrency/hold", "--rerun", "all", "--json"],
-          {
-            env: {
-              NICEEVAL_MAX_CONCURRENCY_BARRIER: barrierRoot,
-              NICEEVAL_MAX_CONCURRENCY_LIMIT: "3",
-            },
-            timeoutMs: 60_000,
+        const holders = niceeval.start(["exp", "max-concurrency", "max-concurrency/hold", "--rerun", "all", "--json"], {
+          env: {
+            NICEEVAL_MAX_CONCURRENCY_BARRIER: barrierRoot,
+            NICEEVAL_MAX_CONCURRENCY_LIMIT: "3",
           },
-        );
+          timeoutMs: 60_000,
+        });
         let probe: ReturnType<typeof niceeval.start> | undefined;
         let blockedBeforeRelease: unknown;
         let probeEnteredBeforeRelease = false;
@@ -44,24 +41,21 @@ test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并�
         try {
           await pollUntil(
             async () => {
-              const entered = await Promise.all(HOLDING_EVAL_IDS.map((evalId) =>
-                exists(join(barrierRoot, `${evalId.replaceAll("/", "-")}-entered`)),
-              ));
+              const entered = await Promise.all(
+                HOLDING_EVAL_IDS.map((evalId) => exists(join(barrierRoot, `${evalId.replaceAll("/", "-")}-entered`))),
+              );
               return entered.every(Boolean) ? true : undefined;
             },
             { timeoutMs: 30_000, intervalMs: 10, label: "larger Invocation fills its Experiment concurrency" },
           );
 
-          probe = niceeval.start(
-            ["exp", "max-concurrency", "max-concurrency/probe", "--rerun", "all", "--json"],
-            {
-              env: {
-                NICEEVAL_MAX_CONCURRENCY_BARRIER: barrierRoot,
-                NICEEVAL_MAX_CONCURRENCY_LIMIT: "1",
-              },
-              timeoutMs: 60_000,
+          probe = niceeval.start(["exp", "max-concurrency", "max-concurrency/probe", "--rerun", "all", "--json"], {
+            env: {
+              NICEEVAL_MAX_CONCURRENCY_BARRIER: barrierRoot,
+              NICEEVAL_MAX_CONCURRENCY_LIMIT: "1",
             },
-          );
+            timeoutMs: 60_000,
+          });
           probeEnteredBeforeRelease = await pollUntil(
             async () => (await exists(join(barrierRoot, "probe-agent-entered"))) || undefined,
             {
@@ -71,10 +65,12 @@ test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并�
               intervalMs: 10,
               label: "smaller Invocation enters its independent Agent before holders release",
             },
-          ).then(() => true).catch((error: unknown) => {
-            blockedBeforeRelease = error;
-            return false;
-          });
+          )
+            .then(() => true)
+            .catch((error: unknown) => {
+              blockedBeforeRelease = error;
+              return false;
+            });
         } finally {
           await writeFile(join(barrierRoot, "release-holders"), "");
         }
@@ -89,9 +85,11 @@ test("并行运行同一 Experiment 时，每次 Invocation 保有自己的并�
         expect(probeResult!.exitCode, probeResult!.diagnostic()).toBe(0);
 
         const holderEvents = holderResult.expEvalEvents();
-        expect(holderEvents).toEqual(expect.arrayContaining(
-          HOLDING_EVAL_IDS.map((evalId) => expect.objectContaining({ evalId, verdict: "passed" })),
-        ));
+        expect(holderEvents).toEqual(
+          expect.arrayContaining(
+            HOLDING_EVAL_IDS.map((evalId) => expect.objectContaining({ evalId, verdict: "passed" })),
+          ),
+        );
         const probeEvents = probeResult!.expEvents();
         expect(probeEvents.some((event) => event.event === "lock_wait")).toBe(false);
         expect(

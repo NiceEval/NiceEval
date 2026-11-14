@@ -30,7 +30,10 @@ export interface InsightRuntimeSnapshot {
   readonly presentation?: PreparedInsightPresentation;
 }
 
-export function InsightApp({ checkForUpdate, refresh }: {
+export function InsightApp({
+  checkForUpdate,
+  refresh,
+}: {
   readonly refresh: (acquireLock: AcquireRefreshNavigationLock) => Promise<RefreshResult>;
   readonly checkForUpdate: () => Promise<"stale" | "available" | "none">;
 }) {
@@ -38,23 +41,36 @@ export function InsightApp({ checkForUpdate, refresh }: {
   const { manifest, presentation } = generation.snapshot as InsightRuntimeSnapshot;
   const { acquire, interactionLocked, recoveryRequired } = useRefreshNavigationLock();
   const { t } = useTranslation();
-  if (recoveryRequired) return <main className="niceeval-view-main" role="alert">
-    <h1>{t("refresh.reloadRequired")}</h1>
-    <p>{t("refresh.reloadRequiredDetail")}</p>
-    <button type="button" onClick={() => window.location.reload()}>{t("refresh.reload")}</button>
-  </main>;
-  return <RefreshInteractionProvider locked={interactionLocked}>
-    <InsightShell
-      manifest={manifest}
-      presentation={presentation}
-      refresh={() => refresh(acquire)}
-      checkForUpdate={checkForUpdate}
-      interactionLocked={interactionLocked}
-    />
-  </RefreshInteractionProvider>;
+  if (recoveryRequired)
+    return (
+      <main className="niceeval-view-main" role="alert">
+        <h1>{t("refresh.reloadRequired")}</h1>
+        <p>{t("refresh.reloadRequiredDetail")}</p>
+        <button type="button" onClick={() => window.location.reload()}>
+          {t("refresh.reload")}
+        </button>
+      </main>
+    );
+  return (
+    <RefreshInteractionProvider locked={interactionLocked}>
+      <InsightShell
+        manifest={manifest}
+        presentation={presentation}
+        refresh={() => refresh(acquire)}
+        checkForUpdate={checkForUpdate}
+        interactionLocked={interactionLocked}
+      />
+    </RefreshInteractionProvider>
+  );
 }
 
-function InsightShell({ checkForUpdate, interactionLocked, manifest, presentation, refresh }: {
+function InsightShell({
+  checkForUpdate,
+  interactionLocked,
+  manifest,
+  presentation,
+  refresh,
+}: {
   readonly manifest: ViewManifest;
   readonly presentation?: PreparedInsightPresentation;
   readonly refresh: () => Promise<RefreshResult>;
@@ -75,11 +91,14 @@ function InsightShell({ checkForUpdate, interactionLocked, manifest, presentatio
     staleTime: 0,
     retry: false,
   });
-  const presentationState = useRef<{
-    readonly generationIdentity: string;
-    readonly originLocationKey: string;
-    consumed: boolean;
-  } | undefined>(undefined);
+  const presentationState = useRef<
+    | {
+        readonly generationIdentity: string;
+        readonly originLocationKey: string;
+        consumed: boolean;
+      }
+    | undefined
+  >(undefined);
   if (presentation === undefined) {
     presentationState.current = undefined;
   } else if (
@@ -95,39 +114,62 @@ function InsightShell({ checkForUpdate, interactionLocked, manifest, presentatio
   if (presentationState.current !== undefined && location.key !== presentationState.current.originLocationKey) {
     presentationState.current.consumed = true;
   }
-  const surfaces = presentation !== undefined && presentationState.current?.consumed === false
-    ? presentation.plan
-    : resolveSurfacePlan(manifest, location);
+  const surfaces =
+    presentation !== undefined && presentationState.current?.consumed === false
+      ? presentation.plan
+      : resolveSurfacePlan(manifest, location);
   const locale = i18n.resolvedLanguage ?? "en";
-  useEffect(() => { document.title = t("insight.title"); }, [t]);
+  useEffect(() => {
+    document.title = t("insight.title");
+  }, [t]);
   const options = manifest.experimentSelection?.options ?? [];
   const selected = options.find(({ route }) => location.pathname === route) ?? options[0];
-  const interceptInsightLink = useCallback((event: MouseEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-    if (anchor === null || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download")) return;
-    const url = new URL(anchor.href, document.baseURI);
-    if (url.origin !== window.location.origin || !url.hash.startsWith("#/")) return;
-    const route = url.hash.slice(1);
-    const target = targetForRoute(manifest, route);
-    if (target === undefined) return;
-    event.preventDefault();
-    if (target.kind === "run" || target.kind === "attempt") {
-      navigate(route, { state: { background: surfaces.background.location } });
-    } else {
-      navigate(route, { state: null });
-    }
-  }, [manifest, navigate, surfaces.background.location]);
-  const close = useCallback((target: InsightCloseTarget) => {
-    if (target.kind === "history") navigate(-1);
-    else navigate(target.route, { replace: true, state: null });
-  }, [navigate]);
+  const interceptInsightLink = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (anchor === null || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download")) return;
+      const url = new URL(anchor.href, document.baseURI);
+      if (url.origin !== window.location.origin || !url.hash.startsWith("#/")) return;
+      const route = url.hash.slice(1);
+      const target = targetForRoute(manifest, route);
+      if (target === undefined) return;
+      event.preventDefault();
+      if (target.kind === "run" || target.kind === "attempt") {
+        navigate(route, { state: { background: surfaces.background.location } });
+      } else {
+        navigate(route, { state: null });
+      }
+    },
+    [manifest, navigate, surfaces.background.location],
+  );
+  const close = useCallback(
+    (target: InsightCloseTarget) => {
+      if (target.kind === "history") navigate(-1);
+      else navigate(target.route, { replace: true, state: null });
+    },
+    [navigate],
+  );
   const foreground = surfaces.foreground;
   return (
     <div onClickCapture={interceptInsightLink}>
       <header className="niceeval-view-shell">
-        <a className="niceeval-view-brand" href="https://niceeval.com/?utm_source=insight&utm_medium=brand" target="_blank" rel="noopener">
-          <span className="niceeval-view-mark" aria-hidden="true" /><span>NiceEval</span>
+        <a
+          className="niceeval-view-brand"
+          href="https://niceeval.com/?utm_source=insight&utm_medium=brand"
+          target="_blank"
+          rel="noopener"
+        >
+          <span className="niceeval-view-mark" aria-hidden="true" />
+          <span>NiceEval</span>
         </a>
         <nav className="niceeval-view-nav" aria-label={t("nav.pages")}>
           <a
@@ -139,25 +181,50 @@ function InsightShell({ checkForUpdate, interactionLocked, manifest, presentatio
           </a>
         </nav>
         <div className="niceeval-view-controls">
-          {selected !== undefined ? <label className="niceeval-view-experiment">
-            <span>{t("nav.experiments")}</span>
-            <select disabled={interactionLocked} value={selected.route} onChange={(event) => navigate(event.target.value)}>
-              {options.map((option) => <option key={option.route} value={option.route}>{option.label}</option>)}
-            </select>
-          </label> : null}
+          {selected !== undefined ? (
+            <label className="niceeval-view-experiment">
+              <span>{t("nav.experiments")}</span>
+              <select
+                disabled={interactionLocked}
+                value={selected.route}
+                onChange={(event) => navigate(event.target.value)}
+              >
+                {options.map((option) => (
+                  <option key={option.route} value={option.route}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="niceeval-view-language">
-            <select disabled={interactionLocked} aria-label={t("nav.language")} value={locale} onChange={(event) => void i18n.changeLanguage(event.target.value)}>
-              <option value="en">EN</option><option value="zh-CN">中文</option>
+            <select
+              disabled={interactionLocked}
+              aria-label={t("nav.language")}
+              value={locale}
+              onChange={(event) => void i18n.changeLanguage(event.target.value)}
+            >
+              <option value="en">EN</option>
+              <option value="zh-CN">中文</option>
             </select>
           </label>
-          <button type="button" disabled={refreshing || interactionLocked} onClick={() => {
-            setRefreshing(true);
-            setRefreshFailed(false);
-            setRefreshNotice(undefined);
-            void refresh().then((result) => {
-              setRefreshNotice(result.noticeKey);
-            }).catch(() => setRefreshFailed(true)).finally(() => setRefreshing(false));
-          }}>{t(refreshing ? "refresh.working" : "refresh.action")}</button>
+          <button
+            type="button"
+            disabled={refreshing || interactionLocked}
+            onClick={() => {
+              setRefreshing(true);
+              setRefreshFailed(false);
+              setRefreshNotice(undefined);
+              void refresh()
+                .then((result) => {
+                  setRefreshNotice(result.noticeKey);
+                })
+                .catch(() => setRefreshFailed(true))
+                .finally(() => setRefreshing(false));
+            }}
+          >
+            {t(refreshing ? "refresh.working" : "refresh.action")}
+          </button>
           {update.data === "available" && !refreshing ? <span role="status">{t("refresh.available")}</span> : null}
           {update.data === "stale" && !refreshing ? <span role="status">{t("refresh.lastGoodStale")}</span> : null}
           {refreshNotice === undefined ? null : <span role="status">{t(refreshNotice)}</span>}
@@ -166,19 +233,22 @@ function InsightShell({ checkForUpdate, interactionLocked, manifest, presentatio
       </header>
       <main className="niceeval-view-main" inert={interactionLocked ? true : undefined}>
         <SurfaceView key={`background:${surfaceKey(surfaces.background)}`} surface={surfaces.background} />
-        {foreground === undefined
-          ? null
-          : <SurfaceView
-              key={`foreground:${surfaceKey(foreground)}`}
-              surface={foreground}
-              onClose={() => close(foreground.close)}
-            />}
+        {foreground === undefined ? null : (
+          <SurfaceView
+            key={`foreground:${surfaceKey(foreground)}`}
+            surface={foreground}
+            onClose={() => close(foreground.close)}
+          />
+        )}
       </main>
     </div>
   );
 }
 
-function SurfaceView({ surface, onClose }: {
+function SurfaceView({
+  surface,
+  onClose,
+}: {
   readonly surface: InsightSurface;
   readonly onClose?: () => void;
 }): ReactElement {

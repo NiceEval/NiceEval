@@ -18,7 +18,6 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
-
 const EXPECTED_OUTCOMES = [
   // tool-call：天气请求须以裸名调用 get_weather，并按 call ID 配对输出；单次请求期望 passed/1。
   { experimentId: "ci", evalId: "tool-call", verdict: "passed", attempts: 1, passed: 1 },
@@ -93,11 +92,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       const backend = await server.done;
       const diagnostic = () => `${run.diagnostic()}\n${backend.diagnostic()}`;
       expect(run.exitCode, diagnostic()).toBe(0);
-      const evalEvents = assertExpEvalOutcomes(
-        run.expEvalEvents(),
-        EXPECTED_OUTCOMES,
-        diagnostic,
-      );
+      const evalEvents = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED_OUTCOMES, diagnostic);
       // receipt 只承载 Invocation 级完成事实（docs/feature/experiments/cli/README.md）：
       // completion、createdRunIds 与 publicationCutoff；每个 Eval 的 identity/verdict/attempts 由中间 eval
       // 事件逐一断言，live provider 故障不会冒充通过。
@@ -120,7 +115,6 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       const trace = JSON.stringify(document.trace);
       expect(trace).toContain("get_weather");
       expect(trace).toMatch(/北京/);
-
     },
   );
 });

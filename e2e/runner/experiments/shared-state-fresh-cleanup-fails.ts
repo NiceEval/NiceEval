@@ -1,9 +1,5 @@
 import { defineExperiment } from "niceeval";
-import {
-  sharedStateHooks,
-  sharedStateReuseAgent,
-  sharedStateReuseSandbox,
-} from "../agents/shared-state.ts";
+import { sharedStateHooks, sharedStateReuseAgent, sharedStateReuseSandbox } from "../agents/shared-state.ts";
 
 export default defineExperiment({
   adapter: sharedStateReuseAgent,

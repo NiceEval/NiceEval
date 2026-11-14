@@ -25,13 +25,9 @@ function usageNonNegativeInteger(value: unknown): NonNegativeSafeInteger | undef
 function canonicalDecimalFromNumber(value: unknown): string | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
   const source = String(value);
-  const plain = source.includes("e") || source.includes("E")
-    ? expandExponentialDecimal(source)
-    : source;
+  const plain = source.includes("e") || source.includes("E") ? expandExponentialDecimal(source) : source;
   if (plain === undefined) return undefined;
-  const normalized = plain.includes(".")
-    ? plain.replace(/0+$/u, "").replace(/\.$/u, "")
-    : plain;
+  const normalized = plain.includes(".") ? plain.replace(/0+$/u, "").replace(/\.$/u, "") : plain;
   return makeCanonicalDecimal(normalized);
 }
 
@@ -95,10 +91,10 @@ export function captureRunnerTurnUsage(
     runtime.usageLimitations.addCap("usage-observation", usageCount);
     return;
   }
-  const tokenBuckets: readonly [keyof Pick<
-    Usage,
-    "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens" | "reasoningTokens"
-  >, Extract<UsageObservation, { readonly kind: "token-bucket" }>["bucket"]][] = [
+  const tokenBuckets: readonly [
+    keyof Pick<Usage, "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens" | "reasoningTokens">,
+    Extract<UsageObservation, { readonly kind: "token-bucket" }>["bucket"],
+  ][] = [
     ["inputTokens", "input"],
     ["outputTokens", "output"],
     ["cacheReadTokens", "cache-read"],
@@ -113,14 +109,16 @@ export function captureRunnerTurnUsage(
       runtime.usageLimitations.addUnsupported("usage-observation");
       continue;
     }
-    appendUsageObservation(runtime, turnId, (usageObservationId, provider) => Object.freeze({
-      usageObservationId,
-      provider,
-      kind: "token-bucket" as const,
-      bucket,
-      tokens,
-      refs: Object.freeze([]),
-    }));
+    appendUsageObservation(runtime, turnId, (usageObservationId, provider) =>
+      Object.freeze({
+        usageObservationId,
+        provider,
+        kind: "token-bucket" as const,
+        bucket,
+        tokens,
+        refs: Object.freeze([]),
+      }),
+    );
   }
   if (usage.requests !== undefined) {
     const requests = usageNonNegativeInteger(usage.requests);
@@ -128,13 +126,15 @@ export function captureRunnerTurnUsage(
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else {
       for (let request = 0; request < requests; request += 1) {
-        appendUsageObservation(runtime, turnId, (usageObservationId, provider) => Object.freeze({
-          usageObservationId,
-          provider,
-          kind: "request" as const,
-          requestKind: "model" as const,
-          refs: Object.freeze([]),
-        }));
+        appendUsageObservation(runtime, turnId, (usageObservationId, provider) =>
+          Object.freeze({
+            usageObservationId,
+            provider,
+            kind: "request" as const,
+            requestKind: "model" as const,
+            refs: Object.freeze([]),
+          }),
+        );
         const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
         if (usageCount >= MAX_USAGE_OBSERVATIONS) break;
       }
@@ -147,14 +147,16 @@ export function captureRunnerTurnUsage(
     } else {
       const currency = makeCurrencyCode("USD");
       if (currency === undefined) throw new Error("USD must be a CurrencyCode");
-      appendUsageObservation(runtime, turnId, (usageObservationId, provider) => Object.freeze({
-        usageObservationId,
-        provider,
-        kind: "provider-cost" as const,
-        amount,
-        currency,
-        refs: Object.freeze([]),
-      }));
+      appendUsageObservation(runtime, turnId, (usageObservationId, provider) =>
+        Object.freeze({
+          usageObservationId,
+          provider,
+          kind: "provider-cost" as const,
+          amount,
+          currency,
+          refs: Object.freeze([]),
+        }),
+      );
     }
   }
 }

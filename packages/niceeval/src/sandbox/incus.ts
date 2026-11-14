@@ -89,9 +89,8 @@ export function normalizeIncusSandboxOptions(options: IncusSandboxOptions): Norm
     ["image", "project", "storagePool", "resources", "acceptDevelopmentDomain"],
     "incusSandbox options",
   );
-  const acceptDevelopmentDomain = options.acceptDevelopmentDomain === undefined
-    ? false
-    : options.acceptDevelopmentDomain === true;
+  const acceptDevelopmentDomain =
+    options.acceptDevelopmentDomain === undefined ? false : options.acceptDevelopmentDomain === true;
   if (options.acceptDevelopmentDomain !== undefined && typeof options.acceptDevelopmentDomain !== "boolean") {
     throw new TypeError("incusSandbox options.acceptDevelopmentDomain must be a boolean");
   }
@@ -161,60 +160,68 @@ export function incusSandbox(options: IncusSandboxOptions): SandboxLayer<"templa
       fields: [{ name: "image", value: normalized.image.locator }],
     },
     leakGate: { _tag: "None" },
-    plan: () => planIncusSandboxEffect(normalized).pipe(
-      Effect.map((planned) => sandboxProviderPlan({
-        provider: "incus",
-        plannerRevision: INCUS_PLANNER_REVISION,
-        caseKind: "prebuilt",
-        target: Object.freeze({
-          platform: Object.freeze({ _tag: "Linux" as const, os: "linux" as const, arch: "x64", libc: "gnu" as const }),
-          source: "provider-standard" as const,
-        }),
-        scheduling: Object.freeze({
-          recommendedConcurrency: planned.domain.maxInstances,
-          lane: Object.freeze({
-            key: `incus:${planned.domain.project}:${planned.domain.storagePool}`,
-            limit: planned.domain.maxInstances,
-          }),
-          admission: Object.freeze({ _tag: "Shared" as const }),
-        }),
-        module: incusProviderModule(planned.dockerExecution),
-        runtimePlan: planned.runtime,
-        build: Object.freeze({
-          _tag: "None" as const,
-          caseKey: computeCaseKey({
+    plan: () =>
+      planIncusSandboxEffect(normalized).pipe(
+        Effect.map((planned) =>
+          sandboxProviderPlan({
+            provider: "incus",
+            plannerRevision: INCUS_PLANNER_REVISION,
             caseKind: "prebuilt",
-            materializerRevision: INCUS_PLANNER_REVISION,
-            buildKeys: [],
-            caseParams: privateIdentity,
+            target: Object.freeze({
+              platform: Object.freeze({
+                _tag: "Linux" as const,
+                os: "linux" as const,
+                arch: "x64",
+                libc: "gnu" as const,
+              }),
+              source: "provider-standard" as const,
+            }),
+            scheduling: Object.freeze({
+              recommendedConcurrency: planned.domain.maxInstances,
+              lane: Object.freeze({
+                key: `incus:${planned.domain.project}:${planned.domain.storagePool}`,
+                limit: planned.domain.maxInstances,
+              }),
+              admission: Object.freeze({ _tag: "Shared" as const }),
+            }),
+            module: incusProviderModule(planned.dockerExecution),
+            runtimePlan: planned.runtime,
+            build: Object.freeze({
+              _tag: "None" as const,
+              caseKey: computeCaseKey({
+                caseKind: "prebuilt",
+                materializerRevision: INCUS_PLANNER_REVISION,
+                buildKeys: [],
+                caseParams: privateIdentity,
+              }),
+              buildKeys: [] as const,
+            }),
+            publishableIdentity: {
+              kind: "vm",
+              image: normalized.image.locator,
+              project: normalized.project,
+              storagePool: normalized.storagePool,
+              acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
+              resources: resourcesJson(normalized.resources),
+              executionDomain: planned.dockerExecution.executionDomain,
+              executionDomainId: planned.dockerExecution.executionDomainId,
+              origin,
+            },
+            privateFingerprintIdentity: {
+              provider: "incus",
+              kind: "vm",
+              image: normalized.image.locator,
+              project: normalized.project,
+              storagePool: normalized.storagePool,
+              resources: resourcesJson(normalized.resources),
+              acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
+              executionDomainId: planned.dockerExecution.executionDomainId,
+              imageFingerprint: planned.image.fingerprint,
+              origin,
+            },
           }),
-          buildKeys: [] as const,
-        }),
-        publishableIdentity: {
-          kind: "vm",
-          image: normalized.image.locator,
-          project: normalized.project,
-          storagePool: normalized.storagePool,
-          acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
-          resources: resourcesJson(normalized.resources),
-          executionDomain: planned.dockerExecution.executionDomain,
-          executionDomainId: planned.dockerExecution.executionDomainId,
-          origin,
-        },
-        privateFingerprintIdentity: {
-          provider: "incus",
-          kind: "vm",
-          image: normalized.image.locator,
-          project: normalized.project,
-          storagePool: normalized.storagePool,
-          resources: resourcesJson(normalized.resources),
-          acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
-          executionDomainId: planned.dockerExecution.executionDomainId,
-          imageFingerprint: planned.image.fingerprint,
-          origin,
-        },
-      })),
-      Effect.mapError((cause) => planningError(toPlanningError(cause))),
-    ),
+        ),
+        Effect.mapError((cause) => planningError(toPlanningError(cause))),
+      ),
   });
 }

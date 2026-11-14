@@ -3,11 +3,7 @@
 // SendFailure（契约见 docs/feature/error-classification/architecture.md）。
 
 import type { StreamEvent, Usage } from "../types.ts";
-import {
-  callClassifier,
-  failureClassOf,
-  type FailureClass,
-} from "../shared/failure-class.ts";
+import { callClassifier, failureClassOf, type FailureClass } from "../shared/failure-class.ts";
 import {
   externalCauseMessageChain,
   isExternalCause,
@@ -120,15 +116,9 @@ export interface SendFailureClassifiers {
 }
 
 /** 分类链：声明 → Adapter → 保守回退 → acceptance 门。 */
-export function resolveSendFailureClass(
-  failure: SendFailure,
-  classifiers: SendFailureClassifiers = {},
-): FailureClass {
+export function resolveSendFailureClass(failure: SendFailure, classifiers: SendFailureClassifiers = {}): FailureClass {
   const declared = failureClassOf(failure);
-  const resolved =
-    declared ??
-    callClassifier(classifiers.adapter, failure) ??
-    classifySendFailure(failure);
+  const resolved = declared ?? callClassifier(classifiers.adapter, failure) ?? classifySendFailure(failure);
   const hasStartedEvidence = failure.events !== undefined && sendAcceptanceFromEvents(failure.events) === "started";
   if (resolved.retryable && (failure.acceptance !== "rejected" || hasStartedEvidence)) {
     return { ...resolved, retryable: false };
@@ -138,17 +128,20 @@ export function resolveSendFailureClass(
 
 /** 内置 adapter 用：一旦已有 agent 产出，受理事实至少是 started。 */
 export function sendAcceptanceFromEvents(events: readonly StreamEvent[]): "started" | "unknown" {
-  return events.some((event) =>
-    (event.type === "message" && event.role === "assistant") ||
-    event.type === "thinking" ||
-    event.type === "operation.started" ||
-    event.type === "operation.finished"
+  return events.some(
+    (event) =>
+      (event.type === "message" && event.role === "assistant") ||
+      event.type === "thinking" ||
+      event.type === "operation.started" ||
+      event.type === "operation.finished",
   )
     ? "started"
     : "unknown";
 }
 
-function* structuredFacts(cause: ExternalCause | undefined): Generator<Extract<ExternalCause, { _tag: "Error" | "Object" }>> {
+function* structuredFacts(
+  cause: ExternalCause | undefined,
+): Generator<Extract<ExternalCause, { _tag: "Error" | "Object" }>> {
   let current = cause;
   while (current) {
     if (current._tag !== "ThrownValue") yield current;

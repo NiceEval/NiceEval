@@ -2,10 +2,7 @@ import { Effect } from "effect";
 
 import type { SealedAttemptAssertions } from "../../../assertions/api.ts";
 import type { AgentRun, EvalResult } from "../../types.ts";
-import {
-  sealAttemptObservabilityCaptureIdentity,
-  sealRunObservabilityCaptureIdentity,
-} from "../capture-identity.ts";
+import { sealAttemptObservabilityCaptureIdentity, sealRunObservabilityCaptureIdentity } from "../capture-identity.ts";
 import { normalizeAttemptDiagnostics } from "../diagnostics.ts";
 import { normalizeAttemptTiming } from "../timing.ts";
 import { AgentTurnsAttachmentSchema } from "../../../record/family/agent-turns/definition.ts";
@@ -26,12 +23,7 @@ import type {
   StagedSandboxCommandReceipt,
 } from "../types.ts";
 import { recordTerminalCommandResult } from "./command-lifecycle.ts";
-import {
-  agentTurnTerminal,
-  decodeReceipt,
-  receiptDiagnosticRedaction,
-  segmentIds,
-} from "./receipt-helpers.ts";
+import { agentTurnTerminal, decodeReceipt, receiptDiagnosticRedaction, segmentIds } from "./receipt-helpers.ts";
 import {
   makeAttemptEntityMinter,
   markRuntimeFailure,
@@ -73,9 +65,7 @@ function captureRunnerAttemptSourceSnapshot(
       turns: runtime.conversationTurns,
     });
     const diagnosticsNormalization = yield* normalizeAttemptDiagnostics({ result, mint: minter.mint });
-    const activitySegmentIds = segmentIds(
-      timingNormalization.timing.intervals.map((interval) => interval.intervalId),
-    );
+    const activitySegmentIds = segmentIds(timingNormalization.timing.intervals.map((interval) => interval.intervalId));
     const diagnosticSegmentIds = segmentIds(
       diagnosticsNormalization.diagnostics.map((diagnostic) => diagnostic.diagnosticId),
     );
@@ -83,63 +73,78 @@ function captureRunnerAttemptSourceSnapshot(
       return yield* Effect.fail(producerEntityIdInvalid("interval"));
     }
 
-    const agentTurnsCandidate = runtime.conversationTurns.length === 0
-      ? undefined
-      : Object.freeze({
-          state: "current" as const,
-          collection: sourceCollection([
-            { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
-            { collection: runtime.usageLimitations.collection(), stage: "adapter" },
-          ], runtime.conversationTurns.flatMap((turn) => turn.observed?.limitations ?? [])),
-          segments: Object.freeze(runtime.conversationTurns.map((turn) => Object.freeze({
-            segmentId: turn.segmentId,
-            sessionId: turn.sessionId,
-            turnId: turn.turnId,
-            sequence: turn.sequence,
-            outcome: turn.outcome ?? "interrupted",
-            terminal: agentTurnTerminal(turn),
-            items: Object.freeze(turn.observed?.items ?? []),
-            usage: Object.freeze(turn.usage.map(({ refs: _refs, ...usage }) => Object.freeze(usage))),
-          }))),
-        });
-    const agentTurns = agentTurnsCandidate === undefined
-      ? undefined
-      : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
+    const agentTurnsCandidate =
+      runtime.conversationTurns.length === 0
+        ? undefined
+        : Object.freeze({
+            state: "current" as const,
+            collection: sourceCollection(
+              [
+                { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
+                { collection: runtime.usageLimitations.collection(), stage: "adapter" },
+              ],
+              runtime.conversationTurns.flatMap((turn) => turn.observed?.limitations ?? []),
+            ),
+            segments: Object.freeze(
+              runtime.conversationTurns.map((turn) =>
+                Object.freeze({
+                  segmentId: turn.segmentId,
+                  sessionId: turn.sessionId,
+                  turnId: turn.turnId,
+                  sequence: turn.sequence,
+                  outcome: turn.outcome ?? "interrupted",
+                  terminal: agentTurnTerminal(turn),
+                  items: Object.freeze(turn.observed?.items ?? []),
+                  usage: Object.freeze(turn.usage.map(({ refs: _refs, ...usage }) => Object.freeze(usage))),
+                }),
+              ),
+            ),
+          });
+    const agentTurns =
+      agentTurnsCandidate === undefined
+        ? undefined
+        : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
 
     const commandSegments: StagedSandboxCommandReceipt[] = [];
     for (const command of runtime.commands) {
       if (command.result === undefined) return yield* Effect.fail(producerCommandRegistrationInvalid());
-      commandSegments.push(Object.freeze({
-        segmentId: command.segmentId,
-        commandId: command.commandId,
-        sequence: command.sequence,
-        turnId: null,
-        phase: command.manifest.phase,
-        invocation: command.manifest.invocation,
-        workingDirectory: command.manifest.workingDirectory,
-        outcome: command.result.outcome,
-        stdout: command.result.stdout,
-        stderr: command.result.stderr,
-      }));
+      commandSegments.push(
+        Object.freeze({
+          segmentId: command.segmentId,
+          commandId: command.commandId,
+          sequence: command.sequence,
+          turnId: null,
+          phase: command.manifest.phase,
+          invocation: command.manifest.invocation,
+          workingDirectory: command.manifest.workingDirectory,
+          outcome: command.result.outcome,
+          stdout: command.result.stdout,
+          stderr: command.result.stderr,
+        }),
+      );
     }
 
     const activitiesCandidate = Object.freeze({
-      collection: sourceCollection([
-        { collection: timingNormalization.timing.collection, stage: "runner-clock" },
-      ]),
-      segments: Object.freeze(timingNormalization.timing.intervals.map((interval, index) => Object.freeze({
-        segmentId: activitySegmentIds.get(interval.intervalId),
-        activityId: interval.intervalId,
-        sequence: index + 1,
-        phase: interval.phase,
-        label: interval.label,
-        turnId: [...timingNormalization.intervalByTurnId]
-          .find(([, intervalId]) => intervalId === interval.intervalId)?.[0] ?? null,
-        startOffsetMs: interval.startOffsetMs,
-        durationMs: interval.durationMs,
-        parentActivityId: interval.parentIntervalId,
-        outcome: interval.outcome,
-      }))),
+      collection: sourceCollection([{ collection: timingNormalization.timing.collection, stage: "runner-clock" }]),
+      segments: Object.freeze(
+        timingNormalization.timing.intervals.map((interval, index) =>
+          Object.freeze({
+            segmentId: activitySegmentIds.get(interval.intervalId),
+            activityId: interval.intervalId,
+            sequence: index + 1,
+            phase: interval.phase,
+            label: interval.label,
+            turnId:
+              [...timingNormalization.intervalByTurnId].find(
+                ([, intervalId]) => intervalId === interval.intervalId,
+              )?.[0] ?? null,
+            startOffsetMs: interval.startOffsetMs,
+            durationMs: interval.durationMs,
+            parentActivityId: interval.parentIntervalId,
+            outcome: interval.outcome,
+          }),
+        ),
+      ),
     });
     const runnerActivities = yield* decodeReceipt(
       AttemptRunnerActivitiesAttachmentSchema,
@@ -151,19 +156,25 @@ function captureRunnerAttemptSourceSnapshot(
       collection: sourceCollection([
         { collection: diagnosticsNormalization.collection, stage: "runner-diagnostic-sink" },
       ]),
-      segments: Object.freeze(diagnosticsNormalization.diagnostics.map((diagnostic, index) => Object.freeze({
-        segmentId: diagnosticSegmentIds.get(diagnostic.diagnosticId),
-        diagnosticId: diagnostic.diagnosticId,
-        sequence: index + 1,
-        kind: diagnostic.kind,
-        code: diagnostic.code,
-        phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
-        turnId: null,
-        summary: diagnostic.summary,
-        causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
-        redaction: receiptDiagnosticRedaction(diagnostic.redaction),
-        sourceFrame: diagnostic.sourceFrame,
-      }))),
+      segments: Object.freeze(
+        diagnosticsNormalization.diagnostics.map((diagnostic, index) =>
+          Object.freeze({
+            segmentId: diagnosticSegmentIds.get(diagnostic.diagnosticId),
+            diagnosticId: diagnostic.diagnosticId,
+            sequence: index + 1,
+            kind: diagnostic.kind,
+            code: diagnostic.code,
+            phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
+            turnId: null,
+            summary: diagnostic.summary,
+            causes: Object.freeze(
+              diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary })),
+            ),
+            redaction: receiptDiagnosticRedaction(diagnostic.redaction),
+            sourceFrame: diagnostic.sourceFrame,
+          }),
+        ),
+      ),
     });
     const runnerDiagnostics = yield* decodeReceipt(
       AttemptRunnerDiagnosticsAttachmentSchema,
@@ -175,12 +186,14 @@ function captureRunnerAttemptSourceSnapshot(
       ...(agentTurns === undefined ? {} : { agentTurns }),
       ...(commandSegments.length === 0 && runtime.commandLimitations.collection().state === "complete"
         ? {}
-        : { sandboxCommands: Object.freeze({
-            collection: sourceCollection([
-              { collection: runtime.commandLimitations.collection(), stage: "sandbox-wrapper" },
-            ]),
-            segments: Object.freeze(commandSegments),
-          }) }),
+        : {
+            sandboxCommands: Object.freeze({
+              collection: sourceCollection([
+                { collection: runtime.commandLimitations.collection(), stage: "sandbox-wrapper" },
+              ]),
+              segments: Object.freeze(commandSegments),
+            }),
+          }),
       runnerActivities,
       runnerDiagnostics,
     });
@@ -203,10 +216,12 @@ export function bindRunnerAttemptObservabilityCapture(
     return Effect.fail(state.failure ?? producerCaptureSealInvalid("attempt"));
   }
   return captureRunnerAttemptSourceSnapshot(result, state).pipe(
-    Effect.tap((snapshot) => Effect.sync(() => {
-      state.snapshot = snapshot;
-      storeResultRuntimeState(result, state);
-    })),
+    Effect.tap((snapshot) =>
+      Effect.sync(() => {
+        state.snapshot = snapshot;
+        storeResultRuntimeState(result, state);
+      }),
+    ),
     Effect.asVoid,
   );
 }
@@ -214,10 +229,7 @@ export function bindRunnerAttemptObservabilityCapture(
 export function createRunnerAttemptSourceReceiptsCapture(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
-}): Effect.Effect<
-  RunnerAttemptSourceReceiptsCapture,
-  RunnerObservabilityProducerError
-> {
+}): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   const capture = Effect.gen(function* () {
     const runtime = resultRuntimeState(input.result);
     if (runtime === undefined) return yield* Effect.fail(producerCaptureMissing());
@@ -229,10 +241,7 @@ export function createRunnerAttemptSourceReceiptsCapture(input: {
     return runtime.snapshot;
   });
   return capture.pipe(
-    Effect.catch((error) =>
-      isRunnerObservabilityProducerError(error)
-        ? Effect.fail(error)
-        : Effect.die(error)),
+    Effect.catch((error) => (isRunnerObservabilityProducerError(error) ? Effect.fail(error) : Effect.die(error))),
   );
 }
 

@@ -72,9 +72,9 @@ describe("codexAgent headers and Cloudflare Access support", () => {
     await (agent as { before: (sb: Sandbox, ctx: unknown) => Promise<void> }).before(sandbox, mockCtx);
 
     const configFileCall = shellCalls[0]!;
-    expect(configFileCall.script).toContain('[model_providers.s2a]');
+    expect(configFileCall.script).toContain("[model_providers.s2a]");
     expect(configFileCall.script).toContain('base_url = "https://s2a.example.com/v1"');
-    expect(configFileCall.script).toContain('[model_providers.s2a.http_headers]');
+    expect(configFileCall.script).toContain("[model_providers.s2a.http_headers]");
     expect(configFileCall.script).toContain('"X-Custom-Token" = "secret-token-123"');
     expect(configFileCall.script).toContain('"X-Organization" = "org-456"');
     expect(configFileCall.script).not.toContain("[model_providers.s2a.env_http_headers]");
@@ -101,10 +101,10 @@ describe("codexAgent headers and Cloudflare Access support", () => {
     await (agent as { before: (sb: Sandbox, ctx: unknown) => Promise<void> }).before(sandbox, mockCtx);
 
     const configFileCall = shellCalls[0]!;
-    expect(configFileCall.script).toContain('[model_providers.s2a]');
-    expect(configFileCall.script).toContain('[model_providers.s2a.http_headers]');
+    expect(configFileCall.script).toContain("[model_providers.s2a]");
+    expect(configFileCall.script).toContain("[model_providers.s2a.http_headers]");
     expect(configFileCall.script).toContain('"X-Trace" = "trace-123"');
-    expect(configFileCall.script).toContain('[model_providers.s2a.env_http_headers]');
+    expect(configFileCall.script).toContain("[model_providers.s2a.env_http_headers]");
     expect(configFileCall.script).toContain('"CF-Access-Client-Id" = "CF_ACCESS_CLIENT_ID"');
     expect(configFileCall.script).toContain('"CF-Access-Client-Secret" = "CF_ACCESS_CLIENT_SECRET"');
 
@@ -131,10 +131,10 @@ describe("codexAgent headers and Cloudflare Access support", () => {
     await (agent as { before: (sb: Sandbox, ctx: unknown) => Promise<void> }).before(sandbox, mockCtx);
 
     const configFileCall = shellCalls[0]!;
-    expect(configFileCall.script).toContain('[model_providers.s2a.http_headers]');
+    expect(configFileCall.script).toContain("[model_providers.s2a.http_headers]");
     expect(configFileCall.script).toContain('"CF-Access-Client-Id" = "custom-cf-id"');
     expect(configFileCall.script).toContain('"cf-access-client-secret" = "custom-cf-secret"');
-    expect(configFileCall.script).not.toContain('[model_providers.s2a.env_http_headers]');
+    expect(configFileCall.script).not.toContain("[model_providers.s2a.env_http_headers]");
 
     const sensitive = configFileCall.options?.sensitiveValues ?? [];
     expect(sensitive).toContain("custom-cf-id");

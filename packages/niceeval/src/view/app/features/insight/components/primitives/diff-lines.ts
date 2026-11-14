@@ -6,10 +6,14 @@ import { normalizeTurnLabel } from "./shared.ts";
 
 function renderAlignedRows(rows: readonly (readonly string[])[]): string {
   const widths = rows.reduce<number[]>((out, row) => {
-    row.forEach((cell, index) => { out[index] = Math.max(out[index] ?? 0, cell.length); });
+    row.forEach((cell, index) => {
+      out[index] = Math.max(out[index] ?? 0, cell.length);
+    });
     return out;
   }, []);
-  return rows.map((row) => row.map((cell, index) => index === row.length - 1 ? cell : cell.padEnd(widths[index])).join("  ")).join("\n");
+  return rows
+    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]))).join("  "))
+    .join("\n");
 }
 
 export type DiffChange = "added" | "modified" | "deleted";
@@ -199,9 +203,7 @@ function finalize(node: MutableNode): DiffTreeNode {
     const only = [...current.dirs.values()][0]!;
     current = { name: `${current.name}/${only.name}`, path: only.path, dirs: only.dirs, files: only.files };
   }
-  const dirs = [...current.dirs.values()]
-    .map(finalize)
-    .sort((a, b) => a.path.localeCompare(b.path));
+  const dirs = [...current.dirs.values()].map(finalize).sort((a, b) => a.path.localeCompare(b.path));
   const files = current.files;
   let fileCount = files.length;
   let added = 0;

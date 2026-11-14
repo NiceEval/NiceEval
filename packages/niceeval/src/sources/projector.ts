@@ -42,23 +42,29 @@ export function projectSourcesAttachment(
       try {
         text = strictUtf8.decode(bytes);
       } catch {
-        return yield* Effect.fail(Object.freeze({
-          code: "source-blob-utf8-invalid" as const,
-          sourceItemId: item.sourceItemId,
-        }));
+        return yield* Effect.fail(
+          Object.freeze({
+            code: "source-blob-utf8-invalid" as const,
+            sourceItemId: item.sourceItemId,
+          }),
+        );
       }
       if (createHash("sha256").update(text, "utf8").digest("hex") !== item.sha256) {
-        return yield* Effect.fail(Object.freeze({
-          code: "source-blob-digest-mismatch" as const,
-          sourceItemId: item.sourceItemId,
-        }));
+        return yield* Effect.fail(
+          Object.freeze({
+            code: "source-blob-digest-mismatch" as const,
+            sourceItemId: item.sourceItemId,
+          }),
+        );
       }
-      items.push(Object.freeze({
-        sourceItemId: item.sourceItemId,
-        path: item.path,
-        sha256: item.sha256,
-        text,
-      }));
+      items.push(
+        Object.freeze({
+          sourceItemId: item.sourceItemId,
+          path: item.path,
+          sha256: item.sha256,
+          text,
+        }),
+      );
     }
     return Object.freeze({ items: Object.freeze(items) });
   });

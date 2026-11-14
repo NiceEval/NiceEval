@@ -45,22 +45,40 @@ CREATE TABLE before_cache_snapshot_holds (
 CREATE INDEX before_cache_snapshot_holds_artifact ON before_cache_snapshot_holds(artifact_id);
 `;
 
-type SchemaObject = { readonly type: string; readonly name: string; readonly tbl_name: string; readonly sql: string | null };
-const schema = (database: DatabaseSync): readonly SchemaObject[] => database.prepare(
-  "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name IN ('before_cache_snapshots', 'before_cache_snapshot_holds') ORDER BY type, name",
-).all() as unknown as readonly SchemaObject[];
+type SchemaObject = {
+  readonly type: string;
+  readonly name: string;
+  readonly tbl_name: string;
+  readonly sql: string | null;
+};
+const schema = (database: DatabaseSync): readonly SchemaObject[] =>
+  database
+    .prepare(
+      "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE tbl_name IN ('before_cache_snapshots', 'before_cache_snapshot_holds') ORDER BY type, name",
+    )
+    .all() as unknown as readonly SchemaObject[];
 const reference = new DatabaseSync(":memory:");
 reference.exec(BEFORE_CACHE_SNAPSHOT_SCHEMA_SQL);
 const expected = schema(reference);
 reference.close();
 
-export const BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS = expected.map(({ type, name, tbl_name }) => [type, name, tbl_name] as const);
+export const BEFORE_CACHE_SNAPSHOT_SCHEMA_OBJECTS = expected.map(
+  ({ type, name, tbl_name }) => [type, name, tbl_name] as const,
+);
 
 export function assertBeforeCacheSnapshotSchema(database: DatabaseSync): void {
-  const normalize = (objects: readonly SchemaObject[]) => JSON.stringify(objects.map((object) => ({
-    ...object, sql: object.sql?.trim().replace(/;+$/u, "").replace(/\s+/gu, " ") ?? null,
-  })));
+  const normalize = (objects: readonly SchemaObject[]) =>
+    JSON.stringify(
+      objects.map((object) => ({
+        ...object,
+        sql: object.sql?.trim().replace(/;+$/u, "").replace(/\s+/gu, " ") ?? null,
+      })),
+    );
   if (normalize(schema(database)) !== normalize(expected)) {
-    throw new UserDatabaseInvalid({ code: "user-database-invalid", message: "Before cache snapshot schema does not match the current UserDatabase format", repository: "before-cache-snapshots" });
+    throw new UserDatabaseInvalid({
+      code: "user-database-invalid",
+      message: "Before cache snapshot schema does not match the current UserDatabase format",
+      repository: "before-cache-snapshots",
+    });
   }
 }

@@ -34,15 +34,7 @@ export const ExamplesCommandInputSchema = Schema.Union([
 export const TierPairReceiptSchema = Schema.Struct({
   from: Schema.String,
   to: Schema.String,
-  status: Schema.Literals([
-    "current",
-    "would-sync",
-    "synced",
-    "pending-conflict",
-    "conflict",
-    "blocked",
-    "invalid",
-  ]),
+  status: Schema.Literals(["current", "would-sync", "synced", "pending-conflict", "conflict", "blocked", "invalid"]),
   upstreamTree: Schema.optional(Schema.String),
   tierTree: Schema.optional(Schema.String),
   changed: Schema.Array(Schema.String),

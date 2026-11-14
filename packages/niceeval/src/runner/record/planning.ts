@@ -31,17 +31,9 @@ import {
   UtcMillisSchema,
 } from "../../record/codec/identifiers.ts";
 import type { RecordSlotIdentity } from "../../record/model/core.ts";
-import {
-  canonicalizeRunContext,
-  type RunContext,
-} from "../../record/model/run-context.ts";
+import { canonicalizeRunContext, type RunContext } from "../../record/model/run-context.ts";
 import { experimentHooksForRun } from "./context.ts";
-import type {
-  ExecutionIdentityDigest,
-  ExperimentId,
-  RunId,
-  UtcMillis,
-} from "../../record/model/identifiers.ts";
+import type { ExecutionIdentityDigest, ExperimentId, RunId, UtcMillis } from "../../record/model/identifiers.ts";
 
 /** Current facts supplied by physical planning; Record never reconstructs them from history. */
 export interface RunnerRecordReuseSlotInput {
@@ -115,24 +107,26 @@ function decodeId<Id>(input: {
 }): Result.Result<Id, RunnerRecordTargetIdentityInvalid> {
   const decoded = Schema.decodeUnknownResult(input.schema)(input.value);
   return Result.isFailure(decoded)
-    ? Result.fail(Object.freeze({
-        code: "runner-record-target-identity-invalid" as const,
-        kind: input.kind,
-        value: input.value,
-      }))
+    ? Result.fail(
+        Object.freeze({
+          code: "runner-record-target-identity-invalid" as const,
+          kind: input.kind,
+          value: input.value,
+        }),
+      )
     : Result.succeed(decoded.success);
 }
 
-export function runnerRecordUtcMillis(
-  value: number,
-): Result.Result<UtcMillis, RunnerRecordTargetIdentityInvalid> {
+export function runnerRecordUtcMillis(value: number): Result.Result<UtcMillis, RunnerRecordTargetIdentityInvalid> {
   const decoded = Schema.decodeUnknownResult(UtcMillisSchema)(value);
   return Result.isFailure(decoded)
-    ? Result.fail(Object.freeze({
-        code: "runner-record-target-identity-invalid" as const,
-        kind: "invocation" as const,
-        value: String(value),
-      }))
+    ? Result.fail(
+        Object.freeze({
+          code: "runner-record-target-identity-invalid" as const,
+          kind: "invocation" as const,
+          value: String(value),
+        }),
+      )
     : Result.succeed(decoded.success);
 }
 
@@ -141,9 +135,15 @@ function runContextFor(
   experimentId: ExperimentId,
   evals: readonly DiscoveredEval[],
 ): Result.Result<RunContext, RunnerRecordTargetIdentityInvalid> {
-  const plugins = [...(run.plugins ?? []), ...selectedEvalsForRun(evals, run).flatMap((evalDef) => [
-    ...(evalDef.evalGroup?.plugins ?? []), ...evalDef.plugins,
-  ])].map(pluginInstanceDataOf).map(({ name, key, identity }) => ({ name, key, identity }));
+  const plugins = [
+    ...(run.plugins ?? []),
+    ...selectedEvalsForRun(evals, run).flatMap((evalDef) => [
+      ...(evalDef.evalGroup?.plugins ?? []),
+      ...evalDef.plugins,
+    ]),
+  ]
+    .map(pluginInstanceDataOf)
+    .map(({ name, key, identity }) => ({ name, key, identity }));
   const uniquePlugins = [...new Map(plugins.map((plugin) => [JSON.stringify(plugin), plugin])).values()];
   const context = canonicalizeRunContext({
     experimentId,
@@ -159,11 +159,13 @@ function runContextFor(
     labels: run.labels ?? {},
   });
   return Result.isFailure(context)
-    ? Result.fail(Object.freeze({
-        code: "runner-record-target-identity-invalid" as const,
-        kind: "context" as const,
-        value: `invalid Run context for ${run.experimentId}`,
-      }))
+    ? Result.fail(
+        Object.freeze({
+          code: "runner-record-target-identity-invalid" as const,
+          kind: "context" as const,
+          value: `invalid Run context for ${run.experimentId}`,
+        }),
+      )
     : Result.succeed(context.success);
 }
 
@@ -179,9 +181,10 @@ function executionIdentityDigest(input: {
     attempt: input.attempt,
     input: { domain: input.reuse.inputIdentity.domain, value: input.reuse.inputIdentity.value },
     config: { domain: input.reuse.configIdentity.domain, value: input.reuse.configIdentity.value },
-    timeout: input.reuse.timeout === undefined
-      ? null
-      : { domain: input.reuse.timeout.domain, milliseconds: input.reuse.timeout.milliseconds },
+    timeout:
+      input.reuse.timeout === undefined
+        ? null
+        : { domain: input.reuse.timeout.domain, milliseconds: input.reuse.timeout.milliseconds },
   });
   return decodeId({ schema: ExecutionIdentityDigestSchema, value, kind: "digest" });
 }
@@ -202,36 +205,43 @@ export function prepareRunnerRecordReuse(
         const timeout = resolveAttemptTimeout(run, evalDef, input.config);
         const renameFingerprint = input.renameFingerprintsByKey?.get(key);
         const manifest = input.manifestsByKey?.get(key);
-        slotsByKey.set(key, Object.freeze({
-          ...moduleReuseEligibility(evalDef),
-          ...(manifest === undefined ? {} : { identityManifest: identityManifestEntry(evalDef.id, manifest) }),
-          ...(renameFingerprint === undefined ? {} : { renameFingerprint }),
-          inputIdentity: Object.freeze({
-            domain: "niceeval.input/fingerprint",
-            value: fingerprint,
-          }),
-          configIdentity: Object.freeze({
-            domain: "niceeval.config/identity",
-            value: configHash,
-          }),
-          ...(timeout === undefined ? {} : {
-            timeout: Object.freeze({
-              domain: EXECUTION_DURATION_DOMAIN,
-              milliseconds: timeout.timeoutMs,
+        slotsByKey.set(
+          key,
+          Object.freeze({
+            ...moduleReuseEligibility(evalDef),
+            ...(manifest === undefined ? {} : { identityManifest: identityManifestEntry(evalDef.id, manifest) }),
+            ...(renameFingerprint === undefined ? {} : { renameFingerprint }),
+            inputIdentity: Object.freeze({
+              domain: "niceeval.input/fingerprint",
+              value: fingerprint,
             }),
+            configIdentity: Object.freeze({
+              domain: "niceeval.config/identity",
+              value: configHash,
+            }),
+            ...(timeout === undefined
+              ? {}
+              : {
+                  timeout: Object.freeze({
+                    domain: EXECUTION_DURATION_DOMAIN,
+                    milliseconds: timeout.timeoutMs,
+                  }),
+                }),
           }),
-        }));
+        );
       }
     }
-    return Effect.succeed(Object.freeze({
-      policy: Object.freeze({
-        identity: projectTargetPolicyIdentity,
-        reuseContract: Object.freeze({ ...runnerReuseContract }),
-        rerun: input.rerun ?? "none",
-        keepSandbox: input.keepSandbox !== undefined,
+    return Effect.succeed(
+      Object.freeze({
+        policy: Object.freeze({
+          identity: projectTargetPolicyIdentity,
+          reuseContract: Object.freeze({ ...runnerReuseContract }),
+          rerun: input.rerun ?? "none",
+          keepSandbox: input.keepSandbox !== undefined,
+        }),
+        slotsByKey: new Map(slotsByKey),
       }),
-      slotsByKey: new Map(slotsByKey),
-    }));
+    );
   });
 }
 
@@ -239,10 +249,7 @@ export function planRunnerRecordRun(input: {
   readonly run: AgentRun;
   readonly evals: readonly DiscoveredEval[];
   readonly reuse: RunnerRecordReuseInput;
-}): Effect.Effect<
-  PlannedRunnerRecordRun,
-  RunnerRecordTargetInputMissing | RunnerRecordTargetIdentityInvalid
-> {
+}): Effect.Effect<PlannedRunnerRecordRun, RunnerRecordTargetInputMissing | RunnerRecordTargetIdentityInvalid> {
   return Effect.suspend<
     PlannedRunnerRecordRun,
     RunnerRecordTargetInputMissing | RunnerRecordTargetIdentityInvalid,
@@ -300,22 +307,24 @@ export function planRunnerRecordRun(input: {
         entries.push(entry);
       }
     }
-    return Effect.succeed(Object.freeze({
-      run: input.run,
-      experimentId: experimentId.success,
-      context: context.success,
-      expectedSlots: Object.freeze([...entries]
-        .map((entry) => entry.slot)
-        .sort((left, right) => left.slotId < right.slotId ? -1 : left.slotId > right.slotId ? 1 : 0)),
-      slots,
-      slotEntries: Object.freeze(entries),
-    }));
+    return Effect.succeed(
+      Object.freeze({
+        run: input.run,
+        experimentId: experimentId.success,
+        context: context.success,
+        expectedSlots: Object.freeze(
+          [...entries]
+            .map((entry) => entry.slot)
+            .sort((left, right) => (left.slotId < right.slotId ? -1 : left.slotId > right.slotId ? 1 : 0)),
+        ),
+        slots,
+        slotEntries: Object.freeze(entries),
+      }),
+    );
   });
 }
 
-export function previewRunnerRunId(
-  run: AgentRun,
-): Result.Result<RunId, RunnerRecordTargetIdentityInvalid> {
+export function previewRunnerRunId(run: AgentRun): Result.Result<RunId, RunnerRecordTargetIdentityInvalid> {
   const hash = createHash("sha256").update(run.experimentId, "utf8").digest("hex");
   return decodeId({ schema: RunIdSchema, value: `preview-${hash}`, kind: "invocation" });
 }
@@ -329,24 +338,27 @@ export function targetForRunnerRecordRun(input: {
     runId: input.runId,
     experimentId: input.planned.run.experimentId,
     startedAt: input.startedAt,
-    slots: Object.freeze(input.planned.slotEntries.map((entry) => Object.freeze({
-      runId: input.runId,
-      slotId: entry.slot.slotId,
-      experimentId: input.planned.run.experimentId,
-      evalId: entry.evalDef.id,
-      attempt: entry.attempt,
-      evaluationKind: entry.evalDef.evaluationKind,
-      executionIdentityDigest: entry.slot.executionIdentityDigest,
-      ...(entry.reuse.identityManifest === undefined ? {} : { identityManifest: entry.reuse.identityManifest }),
-      inputIdentity: entry.reuse.inputIdentity,
-      configIdentity: entry.reuse.configIdentity,
-      ...(entry.reuse.renameFingerprint === undefined ? {} : { renameFingerprint: entry.reuse.renameFingerprint }),
-      ...moduleReuseEligibility(entry.evalDef),
-      ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
-      ...(input.planned.run.adapter?.kind === "custom"
-        && input.planned.run.adapter.behaviorRevision === null
-        ? { reuseEligibility: "adapter-behavior-revision-required" as const }
-        : {}),
-    } satisfies TargetSlot))),
+    slots: Object.freeze(
+      input.planned.slotEntries.map((entry) =>
+        Object.freeze({
+          runId: input.runId,
+          slotId: entry.slot.slotId,
+          experimentId: input.planned.run.experimentId,
+          evalId: entry.evalDef.id,
+          attempt: entry.attempt,
+          evaluationKind: entry.evalDef.evaluationKind,
+          executionIdentityDigest: entry.slot.executionIdentityDigest,
+          ...(entry.reuse.identityManifest === undefined ? {} : { identityManifest: entry.reuse.identityManifest }),
+          inputIdentity: entry.reuse.inputIdentity,
+          configIdentity: entry.reuse.configIdentity,
+          ...(entry.reuse.renameFingerprint === undefined ? {} : { renameFingerprint: entry.reuse.renameFingerprint }),
+          ...moduleReuseEligibility(entry.evalDef),
+          ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
+          ...(input.planned.run.adapter?.kind === "custom" && input.planned.run.adapter.behaviorRevision === null
+            ? { reuseEligibility: "adapter-behavior-revision-required" as const }
+            : {}),
+        } satisfies TargetSlot),
+      ),
+    ),
   });
 }

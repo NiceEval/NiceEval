@@ -29,11 +29,9 @@ export function materializationScopeId(input: {
   readonly authorityFingerprint: string;
   readonly materializationProtocolVersion: number;
 }): MaterializationScopeId {
-  return createHash("sha256").update(JSON.stringify([
-    input.providerFamily,
-    input.authorityFingerprint,
-    input.materializationProtocolVersion,
-  ])).digest("hex") as MaterializationScopeId;
+  return createHash("sha256")
+    .update(JSON.stringify([input.providerFamily, input.authorityFingerprint, input.materializationProtocolVersion]))
+    .digest("hex") as MaterializationScopeId;
 }
 
 export function sandboxBuildRef(scopeId: MaterializationScopeId, buildKey: BuildKey): SandboxBuildRef {
@@ -183,85 +181,90 @@ export interface SandboxBuildCoordinator {
  * queued and running workers, while their `ensuring` clauses settle every key
  * Deferred so no consumer remains parked behind a cancelled coordinator.
  */
-export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(
-  function* (
-    works: readonly SandboxBuildWork[],
-    opts: PrepareSandboxBuildsOptions,
-  ): Effect.fn.Return<SandboxBuildCoordinator, never, import("effect").Scope.Scope> {
-    const unique = dedupeWorks(works);
-    if (unique.length === 0) {
-      const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
-      return {
-        sources: empty.sources,
-        failures: empty.failures,
-        settled: () => Effect.void,
-        done: Effect.succeed(empty),
-      };
-    }
-
-    const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
-    const records: SandboxBuildRecord[] = [];
-    const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
-    const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void>>();
-    for (const work of unique) perKey.set(work.ref, yield* Deferred.make<void>());
-    const completion = yield* Deferred.make<SandboxBuildPreparation, unknown>();
-    const scopeAbort = new AbortController();
-    yield* Effect.addFinalizer(() => Effect.sync(() => scopeAbort.abort(new Error("Sandbox build Scope closed."))));
-    const prepareSignal = combineSignals([
-      opts.signal,
-      scopeAbort.signal,
-      opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
-    ]);
-    const ctx = {
-      timing: opts.timing,
-      provider: opts.provider,
-      buildTimeoutMs: opts.buildTimeoutMs,
-      signal: prepareSignal,
-      sources,
-      records,
-      failures,
-      onActivity: opts.onActivity,
-      buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
-      buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
+export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(function* (
+  works: readonly SandboxBuildWork[],
+  opts: PrepareSandboxBuildsOptions,
+): Effect.fn.Return<SandboxBuildCoordinator, never, import("effect").Scope.Scope> {
+  const unique = dedupeWorks(works);
+  if (unique.length === 0) {
+    const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
+    return {
+      sources: empty.sources,
+      failures: empty.failures,
+      settled: () => Effect.void,
+      done: Effect.succeed(empty),
     };
-    const coordination = Effect.gen(function* () {
-      const gate = yield* Semaphore.make(Math.max(1, opts.maxConcurrency ?? 2));
-      const fibers = yield* Effect.forEach(unique, (work) =>
-        Effect.forkChild(
-          gate.withPermits(1)(prepareOne(work, ctx)).pipe(
+  }
+
+  const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
+  const records: SandboxBuildRecord[] = [];
+  const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
+  const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void>>();
+  for (const work of unique) perKey.set(work.ref, yield* Deferred.make<void>());
+  const completion = yield* Deferred.make<SandboxBuildPreparation, unknown>();
+  const scopeAbort = new AbortController();
+  yield* Effect.addFinalizer(() => Effect.sync(() => scopeAbort.abort(new Error("Sandbox build Scope closed."))));
+  const prepareSignal = combineSignals([
+    opts.signal,
+    scopeAbort.signal,
+    opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
+  ]);
+  const ctx = {
+    timing: opts.timing,
+    provider: opts.provider,
+    buildTimeoutMs: opts.buildTimeoutMs,
+    signal: prepareSignal,
+    sources,
+    records,
+    failures,
+    onActivity: opts.onActivity,
+    buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
+    buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
+  };
+  const coordination = Effect.gen(function* () {
+    const gate = yield* Semaphore.make(Math.max(1, opts.maxConcurrency ?? 2));
+    const fibers = yield* Effect.forEach(unique, (work) =>
+      Effect.forkChild(
+        gate
+          .withPermits(1)(prepareOne(work, ctx))
+          .pipe(
             // `tryPromise` interruption does not make a provider's own AbortSignal
             // fire unless we explicitly couple it to this Scope. The finalizer
             // above aborts the shared signal; this hook asks providers with a
             // separate remote cancellation API to drain as well.
-            Effect.onInterrupt(() => Effect.tryPromise({
-              try: async () => { await ctx.provider.cancel?.(work); },
-              catch: () => undefined,
-            }).pipe(Effect.ignore)),
+            Effect.onInterrupt(() =>
+              Effect.tryPromise({
+                try: async () => {
+                  await ctx.provider.cancel?.(work);
+                },
+                catch: () => undefined,
+              }).pipe(Effect.ignore),
+            ),
             // This runs for success, failure, and Scope interruption alike.
             Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
           ),
-        ));
-      const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
-      const failed = exits.find(Exit.isFailure);
-      if (failed !== undefined) return yield* Effect.failCause(failed.cause);
-      return { sources, records, failures } satisfies SandboxBuildPreparation;
-    }).pipe(
-      Effect.exit,
-      Effect.flatMap((exit) => Deferred.done(completion, exit)),
-      Effect.asVoid,
+      ),
     );
-    yield* coordination.pipe(Effect.forkScoped);
-    return {
-      sources,
-      failures,
-      settled(ref) {
-        const deferred = perKey.get(ref);
-        return deferred === undefined ? Effect.void : Deferred.await(deferred);
-      },
-      done: Deferred.await(completion),
-    };
-  },
-);
+    const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
+    const failed = exits.find(Exit.isFailure);
+    if (failed !== undefined) return yield* Effect.failCause(failed.cause);
+    return { sources, records, failures } satisfies SandboxBuildPreparation;
+  }).pipe(
+    Effect.exit,
+    Effect.flatMap((exit) => Deferred.done(completion, exit)),
+    Effect.asVoid,
+  );
+  yield* coordination.pipe(Effect.forkScoped);
+  return {
+    sources,
+    failures,
+    settled(ref) {
+      const deferred = perKey.get(ref);
+      return deferred === undefined ? Effect.void : Deferred.await(deferred);
+    },
+    done: Deferred.await(completion),
+  };
+});
 
 /**
  * 对仍需 fresh 的 BuildKey 做 Run 级共享准备,等全部 key 结算。
@@ -332,10 +335,11 @@ export function startSandboxBuilds(
     const gate = yield* Semaphore.make(maxConcurrency);
     const fibers = yield* Effect.forEach(unique, (work) =>
       Effect.forkChild(
-        gate.withPermits(1)(prepareOne(work, ctx)).pipe(
-          Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
-        ),
-      ));
+        gate
+          .withPermits(1)(prepareOne(work, ctx))
+          .pipe(Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined)))),
+      ),
+    );
     const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
     const failed = exits.find(Exit.isFailure);
     if (failed !== undefined && Exit.isFailure(failed)) return yield* Effect.failCause(failed.cause);
@@ -360,9 +364,12 @@ export function startSandboxBuilds(
  * 从 fresh attempt 依赖表扇出构建失败 → AttemptError 形状所需字段。
  * 同一 BuildKey 的所有依赖者共用同一个 timingNodeId。
  */
-export function buildFailureOrigin(
-  failure: SandboxBuildFailure,
-): { code: string; message: string; timingNodeId: string; cause?: SandboxBuildFailure["error"]["cause"] } {
+export function buildFailureOrigin(failure: SandboxBuildFailure): {
+  code: string;
+  message: string;
+  timingNodeId: string;
+  cause?: SandboxBuildFailure["error"]["cause"];
+} {
   return {
     code: failure.error.code,
     message: failure.error.message,
@@ -419,7 +426,11 @@ function prepareOne(
       ctx.buildTimeoutMs !== undefined ? AbortSignal.timeout(ctx.buildTimeoutMs) : undefined,
     ]);
 
-    const finish = (status: SandboxBuildRecord["status"], source?: SandboxBuildArtifactSource, error?: SandboxBuildRecord["error"]) => {
+    const finish = (
+      status: SandboxBuildRecord["status"],
+      source?: SandboxBuildArtifactSource,
+      error?: SandboxBuildRecord["error"],
+    ) => {
       parent.durationMs = Math.max(0, ctx.timing.offsetNow() - startOffsetMs);
       if (status === "failed" || status === "cancelled") parent.failed = true;
       const record: SandboxBuildRecord = {
@@ -461,25 +472,28 @@ function prepareOne(
       return;
     }
 
-    const finishFailure = (e: unknown): Effect.Effect<void> => Effect.gen(function* () {
-      if (keySignal.aborted || isAbortError(e)) {
-        const cancel = ctx.provider.cancel;
-        if (cancel !== undefined) {
-          yield* Effect.tryPromise({
-            try: () => cancel(work),
-            catch: () => undefined,
-          }).pipe(Effect.ignore);
+    const finishFailure = (e: unknown): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (keySignal.aborted || isAbortError(e)) {
+          const cancel = ctx.provider.cancel;
+          if (cancel !== undefined) {
+            yield* Effect.tryPromise({
+              try: () => cancel(work),
+              catch: () => undefined,
+            }).pipe(Effect.ignore);
+          }
+          finish("cancelled", undefined, abortError(keySignal, work.buildKey, e));
+          return;
         }
-        finish("cancelled", undefined, abortError(keySignal, work.buildKey, e));
-        return;
-      }
-      finish("failed", undefined, failedError(work.buildKey, e));
-    });
+        finish("failed", undefined, failedError(work.buildKey, e));
+      });
 
-    const lookup = yield* Effect.result(Effect.tryPromise({
-      try: () => ctx.provider.lookup(work, keySignal),
-      catch: (error) => error,
-    }));
+    const lookup = yield* Effect.result(
+      Effect.tryPromise({
+        try: () => ctx.provider.lookup(work, keySignal),
+        catch: (error) => error,
+      }),
+    );
     if (lookup._tag === "Failure") return yield* finishFailure(lookup.failure);
     if (lookup.success._tag === "Hit") {
       finish("hit", lookup.success.source);
@@ -491,24 +505,27 @@ function prepareOne(
     const operationId = randomUUID();
     const build = (attempt: number): Effect.Effect<SandboxBuildArtifactSource, unknown> =>
       Effect.tryPromise({
-        try: () => ctx.provider.build(work, {
-          operationId,
-          signal: keySignal,
-          timing: ctx.timing,
-          parent,
-        }),
+        try: () =>
+          ctx.provider.build(work, {
+            operationId,
+            signal: keySignal,
+            timing: ctx.timing,
+            parent,
+          }),
         catch: (error) => error,
-      }).pipe(Effect.catch((error) => {
-        const last = attempt >= ctx.buildAttempts - 1;
-        if (last || keySignal.aborted || isAbortError(error) || !isTransientBuildError(error)) {
-          return Effect.fail(error);
-        }
-        return Random.next.pipe(
-          Effect.map((jitter) => backoffDelay(ctx.buildRetryBaseMs, attempt, jitter)),
-          Effect.flatMap((delayMs) => sleep(delayMs, keySignal)),
-          Effect.flatMap(() => keySignal.aborted ? Effect.fail(error) : build(attempt + 1)),
-        );
-      }));
+      }).pipe(
+        Effect.catch((error) => {
+          const last = attempt >= ctx.buildAttempts - 1;
+          if (last || keySignal.aborted || isAbortError(error) || !isTransientBuildError(error)) {
+            return Effect.fail(error);
+          }
+          return Random.next.pipe(
+            Effect.map((jitter) => backoffDelay(ctx.buildRetryBaseMs, attempt, jitter)),
+            Effect.flatMap((delayMs) => sleep(delayMs, keySignal)),
+            Effect.flatMap(() => (keySignal.aborted ? Effect.fail(error) : build(attempt + 1))),
+          );
+        }),
+      );
     const built = yield* Effect.result(build(0));
     if (built._tag === "Failure") return yield* finishFailure(built.failure);
     finish("built", built.success);
@@ -554,7 +571,11 @@ function isTransientBuildError(e: unknown): boolean {
   );
 }
 
-function abortError(signal: AbortSignal, buildKey: BuildKey, cause?: unknown): NonNullable<SandboxBuildRecord["error"]> {
+function abortError(
+  signal: AbortSignal,
+  buildKey: BuildKey,
+  cause?: unknown,
+): NonNullable<SandboxBuildRecord["error"]> {
   const timedOut = isTimeoutReason(signal.reason);
   const code = timedOut ? "sandbox-build-timeout" : "sandbox-build-cancelled";
   const message = timedOut

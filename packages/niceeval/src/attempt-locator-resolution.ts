@@ -1,12 +1,7 @@
 import { Effect } from "effect";
 import { encodeAttemptLocator, type AttemptLocator } from "./attempt-locator.ts";
 import type { RecordReaderReadError } from "./record/reader/errors.ts";
-import type {
-  RecordReadSession,
-  RecordSelection,
-  SelectedAttemptRef,
-  SelectedRunRef,
-} from "./record/host/types.ts";
+import type { RecordReadSession, RecordSelection, SelectedAttemptRef, SelectedRunRef } from "./record/host/types.ts";
 import type { SlotId } from "./record/model/identifiers.ts";
 
 export type AttemptLocatorResolution =

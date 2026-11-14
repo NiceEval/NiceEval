@@ -35,7 +35,11 @@ import type {
   RunFeedbackState,
 } from "../types.ts";
 import type { JsonValue, Verdict } from "../../shared/types.ts";
-import type { ExpTerminalSummary, ExpDiagnosticEvent, ExpProgressEvent } from "../../experiment/host/cli/output-protocol.ts";
+import type {
+  ExpTerminalSummary,
+  ExpDiagnosticEvent,
+  ExpProgressEvent,
+} from "../../experiment/host/cli/output-protocol.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
 
 /** 连续无永久事件多久才追加一条 `progress` 心跳(cli.md「机器怎么读:--json」:「连续 30 秒
@@ -87,10 +91,11 @@ interface EvalEventBase {
   attempts: number;
 }
 
-export type EvalEvent = EvalEventBase & (
-  | { passed: number; planned?: never; unstarted?: never; reason?: never }
-  | { passed?: never; planned: number; unstarted: number; reason: "early_exit" }
-);
+export type EvalEvent = EvalEventBase &
+  (
+    | { passed: number; planned?: never; unstarted?: never; reason?: never }
+    | { passed?: never; planned: number; unstarted: number; reason: "early_exit" }
+  );
 
 export interface KeptEvent {
   event: "kept";
@@ -551,9 +556,12 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
       locator: String(event.locator),
       evalId: event.identity.evalId,
       experimentId,
-      phase: event.phase === "agent.setup" ? "agent.before"
-        : event.phase === "agent.teardown" ? "agent.after"
-        : event.phase ?? "eval.run",
+      phase:
+        event.phase === "agent.setup"
+          ? "agent.before"
+          : event.phase === "agent.teardown"
+            ? "agent.after"
+            : (event.phase ?? "eval.run"),
       reason: event.reason,
     });
     return;
@@ -608,11 +616,7 @@ function evalConclusionEvent(row: EvalConclusionRow): EvalEvent | undefined {
   return { ...base, passed: row.passed };
 }
 
-function writeEvalConclusions(
-  io: FeedbackIO,
-  pending: InvocationSummary | undefined,
-  state: RunFeedbackState,
-): void {
+function writeEvalConclusions(io: FeedbackIO, pending: InvocationSummary | undefined, state: RunFeedbackState): void {
   if (!pending) return;
   const rows = evalConclusionRows(pending.results, state.earlyExitByEval, state.diagnostics);
   for (const row of rows) {

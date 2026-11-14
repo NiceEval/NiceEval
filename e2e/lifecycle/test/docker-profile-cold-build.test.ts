@@ -3,14 +3,7 @@
 // Regression note: memory/docker-profile-doctor-inherits-dind-docker-host.md
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import {
-  command,
-  only,
-  pollUntil,
-  withProcess,
-  withProjectCopy,
-  withTempDir,
-} from "@niceeval/testkit";
+import { command, only, pollUntil, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 interface HostFixture {
@@ -26,12 +19,17 @@ interface HostJournalRecord {
   readonly event: string;
   readonly detail: Readonly<Record<string, unknown>>;
   readonly state?: {
-    readonly reservations?: Readonly<Record<string, {
-      readonly kind?: string;
-      readonly locator?: string;
-      readonly builderName?: string;
-      readonly retention?: "cache" | "ephemeral";
-    }>>;
+    readonly reservations?: Readonly<
+      Record<
+        string,
+        {
+          readonly kind?: string;
+          readonly locator?: string;
+          readonly builderName?: string;
+          readonly retention?: "cache" | "ephemeral";
+        }
+      >
+    >;
   };
 }
 
@@ -120,30 +118,53 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
       let fixture: HostFixture | undefined;
       let primaryError: unknown;
       try {
-        const setup = await sudo.run([
-          "env", `PATH=${hostPath}`,
-          "python3", fixtureScript, "setup",
-          "--root", hostRoot,
-          "--scripts", scripts!,
-          "--docker-root", dockerInfo.stdout.trim(),
-          "--user", user!,
-          "--group", id.stdout.trim(),
-        ], { timeoutMs: 60_000 });
+        const setup = await sudo.run(
+          [
+            "env",
+            `PATH=${hostPath}`,
+            "python3",
+            fixtureScript,
+            "setup",
+            "--root",
+            hostRoot,
+            "--scripts",
+            scripts!,
+            "--docker-root",
+            dockerInfo.stdout.trim(),
+            "--user",
+            user!,
+            "--group",
+            id.stdout.trim(),
+          ],
+          { timeoutMs: 60_000 },
+        );
         expect(setup.exitCode, setup.diagnostic()).toBe(0);
         fixture = JSON.parse(setup.stdout.trim().split("\n").at(-1)!) as HostFixture;
         const activeFixture = fixture;
 
         await withProcess(
           [
-            "sudo", "-n", "env", `PATH=${hostPath}`, "PYTHONDONTWRITEBYTECODE=1",
-            "python3", join(scripts!, "watchdog.py"),
-            "--control-socket", activeFixture.controlSocket,
-            "--descriptor", activeFixture.descriptor,
-            "--host-config", activeFixture.hostConfig,
-            "--docker-socket", "/run/docker.sock",
-            "--journal", activeFixture.journal,
-            "--ready-file", activeFixture.readyFile,
-            "--socket-mode", "0o600",
+            "sudo",
+            "-n",
+            "env",
+            `PATH=${hostPath}`,
+            "PYTHONDONTWRITEBYTECODE=1",
+            "python3",
+            join(scripts!, "watchdog.py"),
+            "--control-socket",
+            activeFixture.controlSocket,
+            "--descriptor",
+            activeFixture.descriptor,
+            "--host-config",
+            activeFixture.hostConfig,
+            "--docker-socket",
+            "/run/docker.sock",
+            "--journal",
+            activeFixture.journal,
+            "--ready-file",
+            activeFixture.readyFile,
+            "--socket-mode",
+            "0o600",
           ],
           { processGroup: true, timeoutMs: 330_000, graceMs: 5_000 },
           async (watchdog) => {
@@ -158,17 +179,30 @@ test("profile-bound Dockerfile cold build starts the Attempt through the public 
               }),
             ]);
 
-            const driver = await docker.run([
-              "run", "--rm", "--network", "none", "--user", "0:0",
-              "--mount", `type=bind,src=${process.cwd()},dst=${process.cwd()},readonly`,
-              "--mount", `type=bind,src=${projectRoot},dst=${projectRoot}`,
-              "--mount", `type=bind,src=${hostRoot},dst=${hostRoot}`,
-              "--mount", "type=bind,src=/run/docker.sock,dst=/run/docker.sock",
-              "--workdir", projectRoot,
-              "--env", "NICEEVAL_E2E_DOCKER_PROFILE_ALIAS=e2e-cold-build",
-              driverImage,
-              "sh", "-ec",
-              `holder_pid=''; doctor_pid=''; fault_socket=''; compat_proxy_pid=''; compat_socket=''
+            const driver = await docker.run(
+              [
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--user",
+                "0:0",
+                "--mount",
+                `type=bind,src=${process.cwd()},dst=${process.cwd()},readonly`,
+                "--mount",
+                `type=bind,src=${projectRoot},dst=${projectRoot}`,
+                "--mount",
+                `type=bind,src=${hostRoot},dst=${hostRoot}`,
+                "--mount",
+                "type=bind,src=/run/docker.sock,dst=/run/docker.sock",
+                "--workdir",
+                projectRoot,
+                "--env",
+                "NICEEVAL_E2E_DOCKER_PROFILE_ALIAS=e2e-cold-build",
+                driverImage,
+                "sh",
+                "-ec",
+                `holder_pid=''; doctor_pid=''; fault_socket=''; compat_proxy_pid=''; compat_socket=''
 cleanup_holder() { if [ -n "\${holder_pid}" ] && kill -0 "\${holder_pid}" 2>/dev/null; then kill -TERM "\${holder_pid}" 2>/dev/null || true; wait "\${holder_pid}" || true; fi; }
 cleanup_doctor() { if [ -n "\${doctor_pid}" ] && kill -0 "\${doctor_pid}" 2>/dev/null; then kill -KILL "\${doctor_pid}" 2>/dev/null || true; wait "\${doctor_pid}" || true; fi; }
 restore_fault_socket() { if [ -n "\${fault_socket}" ] && [ -S "\${fault_socket}" ]; then mv "\${fault_socket}" '${activeFixture.controlSocket}'; fi; }
@@ -313,11 +347,15 @@ if [ "$status" -ne 0 ]; then
   fi
 fi
 exit "$status"`,
-          ], { cwd: projectRoot, timeoutMs: 300_000 });
+              ],
+              { cwd: projectRoot, timeoutMs: 300_000 },
+            );
             expect(driver.exitCode, driver.diagnostic()).toBe(0);
             const evals = driver.expEvalEvents();
-            expect(only(evals, (event) => event.evalId === "docker-profile-cold-build"), driver.diagnostic())
-              .toMatchObject({ verdict: "passed" });
+            expect(
+              only(evals, (event) => event.evalId === "docker-profile-cold-build"),
+              driver.diagnostic(),
+            ).toMatchObject({ verdict: "passed" });
           },
         );
 
@@ -343,10 +381,13 @@ exit "$status"`,
           try {
             const journal = await sudo.run(["cat", fixture.journal]);
             if (journal.exitCode !== 0 && primaryError === undefined) throw new Error(journal.diagnostic());
-            const records = journal.exitCode === 0 ? journal.stdout
-              .split("\n")
-              .filter(Boolean)
-              .map((line) => JSON.parse(line) as HostJournalRecord) : [];
+            const records =
+              journal.exitCode === 0
+                ? journal.stdout
+                    .split("\n")
+                    .filter(Boolean)
+                    .map((line) => JSON.parse(line) as HostJournalRecord)
+                : [];
             const locators = new Map<string, "cache" | "ephemeral" | undefined>();
             const builderNames = new Set<string>();
             for (const record of records) {
@@ -401,10 +442,10 @@ exit "$status"`,
             cleanupErrors.push(error);
           }
           try {
-            const cleanup = await sudo.run([
-              "env", `PATH=${hostPath}`,
-              "python3", fixtureScript, "cleanup", "--root", hostRoot,
-            ], { timeoutMs: 30_000 });
+            const cleanup = await sudo.run(
+              ["env", `PATH=${hostPath}`, "python3", fixtureScript, "cleanup", "--root", hostRoot],
+              { timeoutMs: 30_000 },
+            );
             if (cleanup.exitCode !== 0) throw new Error(cleanup.diagnostic());
           } catch (error) {
             cleanupErrors.push(error);

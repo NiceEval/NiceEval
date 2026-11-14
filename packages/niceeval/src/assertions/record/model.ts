@@ -4,9 +4,7 @@ import type { AssertionEntryId } from "../identity.ts";
  * `entryId` is only stable inside one Assertions Attachment. It is not an
  * authoring key and deliberately has no cross-Attempt meaning.
  */
-export {
-  ASSERTION_ENTRY_ID_BRAND,
-} from "../identity.ts";
+export { ASSERTION_ENTRY_ID_BRAND } from "../identity.ts";
 export type { AssertionEntryId } from "../identity.ts";
 
 export type BoundedJsonPrimitive = null | boolean | number | string;
@@ -16,10 +14,7 @@ export interface BoundedJsonObject {
 }
 
 /** JSON-only material bounded before it enters a Record content source. */
-export type BoundedJsonValue =
-  | BoundedJsonPrimitive
-  | readonly BoundedJsonValue[]
-  | BoundedJsonObject;
+export type BoundedJsonValue = BoundedJsonPrimitive | readonly BoundedJsonValue[] | BoundedJsonObject;
 
 export interface AssertionDisplay {
   readonly label?: string;
@@ -68,9 +63,7 @@ export interface ThirdPartyCriterion {
 }
 
 /** Raw identity envelope used by the reader's second decode phase. */
-export type CriterionEnvelope =
-  | BuiltInCriterionEnvelope
-  | ThirdPartyCriterion;
+export type CriterionEnvelope = BuiltInCriterionEnvelope | ThirdPartyCriterion;
 
 export type CriterionOuterEnvelope = CriterionEnvelope;
 
@@ -157,7 +150,8 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "sandbox-change-scope";
       readonly data: { readonly paths: readonly string[] };
-    }  | {
+    }
+  | {
       readonly kind: "builtin";
       readonly id: "sandbox-unchanged-within";
       readonly data: { readonly paths: readonly string[] };
@@ -165,12 +159,20 @@ export type BuiltInCriterion =
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-diff-paths";
-      readonly data: { readonly operation: "not-in-diff" | "in-diff"; readonly pattern: string; readonly flags: string };
+      readonly data: {
+        readonly operation: "not-in-diff" | "in-diff";
+        readonly pattern: string;
+        readonly flags: string;
+      };
     }
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-in-diff";
-      readonly data: { readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" };
+      readonly data: {
+        readonly pattern: string;
+        readonly flags: string;
+        readonly content: "added" | "removed" | "both";
+      };
     }
   | {
       readonly kind: "builtin";
@@ -263,14 +265,14 @@ export type AssertionLimitation =
     }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
   | { readonly kind: "provider-limited" }
-  | { readonly kind: "capacity-limited"; readonly capturedItems: number; readonly knownTotalItems: number; readonly omittedBytes: number | null };
+  | {
+      readonly kind: "capacity-limited";
+      readonly capturedItems: number;
+      readonly knownTotalItems: number;
+      readonly omittedBytes: number | null;
+    };
 
-export type GateDisposition =
-  | "not-gate"
-  | "satisfied"
-  | "failed"
-  | "unavailable"
-  | "not-applicable";
+export type GateDisposition = "not-gate" | "satisfied" | "failed" | "unavailable" | "not-applicable";
 
 export interface NoScoreContribution {
   readonly state: "not-scored";
@@ -285,16 +287,10 @@ export interface EarnedScoreContribution {
 export interface UnavailableScoreContribution {
   readonly state: "unavailable";
   readonly points: number;
-  readonly reason:
-    | "source-unavailable"
-    | "evaluation-errored"
-    | "not-applicable";
+  readonly reason: "source-unavailable" | "evaluation-errored" | "not-applicable";
 }
 
-export type ScoreContribution =
-  | NoScoreContribution
-  | EarnedScoreContribution
-  | UnavailableScoreContribution;
+export type ScoreContribution = NoScoreContribution | EarnedScoreContribution | UnavailableScoreContribution;
 
 export interface AssertionCollectionReceipt {
   readonly examined: number;
@@ -310,11 +306,7 @@ export interface AssertionCollectionReceipt {
 export type { MatcherRelationStatus, MatcherSourceLocator } from "../api.ts";
 import type { MatcherSourceLocator } from "../api.ts";
 
-export type MatcherOverlayResult =
-  | "matched"
-  | "mismatched"
-  | "unavailable"
-  | "not-evaluated";
+export type MatcherOverlayResult = "matched" | "mismatched" | "unavailable" | "not-evaluated";
 
 export interface MatcherRetainedRow {
   readonly locator: MatcherSourceLocator;
@@ -336,7 +328,6 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -347,7 +338,6 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -360,7 +350,6 @@ export type MatcherSourceSnapshot =
       }[];
       readonly source: {
         readonly family: "niceeval.agent-turns";
-
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     };
@@ -411,10 +400,7 @@ export type MatcherQueryArtifact =
     }
   | {
       readonly kind: "ordered-sequence";
-      readonly sourceSnapshot: Extract<
-        MatcherSourceSnapshot,
-        { readonly scope: "turn" | "session" }
-      >;
+      readonly sourceSnapshot: Extract<MatcherSourceSnapshot, { readonly scope: "turn" | "session" }>;
       /** The current decoder proves this has between two and 64 entries. */
       readonly querySteps: readonly MatcherQueryStep[];
       readonly receipt: OrderEvaluationReceipt;
@@ -517,24 +503,56 @@ export interface AssertionDecision {
   readonly gate: GateDisposition;
 }
 
-export function sealedAssertionResult(entry: Pick<AssertionEntry<unknown>, "decision" | "contribution" | "evaluation">): SealedAssertionResult {
-  const evaluationReceipt = entry.evaluation.kind === "ordinary"
-    ? entry.evaluation.receipt
-    : entry.evaluation.kind === "matcher-current" && entry.evaluation.artifact.kind === "collection-filter"
-      ? entry.evaluation.artifact.receipt
-      : undefined;
+export function sealedAssertionResult(
+  entry: Pick<AssertionEntry<unknown>, "decision" | "contribution" | "evaluation">,
+): SealedAssertionResult {
+  const evaluationReceipt =
+    entry.evaluation.kind === "ordinary"
+      ? entry.evaluation.receipt
+      : entry.evaluation.kind === "matcher-current" && entry.evaluation.artifact.kind === "collection-filter"
+        ? entry.evaluation.artifact.receipt
+        : undefined;
   const receipt = evaluationReceipt === undefined ? {} : { receipt: evaluationReceipt };
   switch (entry.decision.result) {
     case "matched":
-      return Object.freeze({ state: "matched", gate: entry.decision.gate as "not-gate" | "satisfied", score: entry.contribution as NoScoreContribution | EarnedScoreContribution, ...receipt });
+      return Object.freeze({
+        state: "matched",
+        gate: entry.decision.gate as "not-gate" | "satisfied",
+        score: entry.contribution as NoScoreContribution | EarnedScoreContribution,
+        ...receipt,
+      });
     case "mismatched":
-      return Object.freeze({ state: "mismatched", reason: "condition-not-met", gate: entry.decision.gate as "not-gate" | "failed", score: entry.contribution as NoScoreContribution | EarnedScoreContribution, ...receipt });
+      return Object.freeze({
+        state: "mismatched",
+        reason: "condition-not-met",
+        gate: entry.decision.gate as "not-gate" | "failed",
+        score: entry.contribution as NoScoreContribution | EarnedScoreContribution,
+        ...receipt,
+      });
     case "unavailable":
-      return Object.freeze({ state: "unavailable", reason: entry.decision.reason as "evidence-unavailable" | "source-unavailable" | "redacted", gate: entry.decision.gate as "not-gate" | "unavailable", score: entry.contribution as NoScoreContribution | UnavailableScoreContribution, ...receipt });
+      return Object.freeze({
+        state: "unavailable",
+        reason: entry.decision.reason as "evidence-unavailable" | "source-unavailable" | "redacted",
+        gate: entry.decision.gate as "not-gate" | "unavailable",
+        score: entry.contribution as NoScoreContribution | UnavailableScoreContribution,
+        ...receipt,
+      });
     case "errored":
-      return Object.freeze({ state: "errored", reason: entry.decision.reason as "evaluator-failed" | "producer-interrupted" | "invalid-subject", gate: entry.decision.gate as "not-gate" | "unavailable", score: entry.contribution as NoScoreContribution | UnavailableScoreContribution, ...receipt });
+      return Object.freeze({
+        state: "errored",
+        reason: entry.decision.reason as "evaluator-failed" | "producer-interrupted" | "invalid-subject",
+        gate: entry.decision.gate as "not-gate" | "unavailable",
+        score: entry.contribution as NoScoreContribution | UnavailableScoreContribution,
+        ...receipt,
+      });
     case "not-applicable":
-      return Object.freeze({ state: "not-applicable", reason: "coverage-not-applicable", gate: entry.decision.gate as "not-gate" | "not-applicable", score: entry.contribution as NoScoreContribution | UnavailableScoreContribution, ...receipt });
+      return Object.freeze({
+        state: "not-applicable",
+        reason: "coverage-not-applicable",
+        gate: entry.decision.gate as "not-gate" | "not-applicable",
+        score: entry.contribution as NoScoreContribution | UnavailableScoreContribution,
+        ...receipt,
+      });
   }
 }
 

@@ -159,7 +159,9 @@ readonly evaluationKind: Kind;
 #### `send`
 
 ```ts
-send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<TurnHandle<Kind>>;
+send(
+  input: string | { readonly text: string; readonly files?: readonly InputFile[] },
+): Promise<TurnHandle<Kind>>;
 ```
 
 #### `sendFile`
@@ -267,10 +269,7 @@ skip(reason: string): never;
 #### `group`
 
 ```ts
-group<Value>(
-  title: string,
-  body: () => Value | PromiseLike<Value>,
-): Promise<Awaited<Value>>;
+group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
 ```
 
 #### `check`
@@ -392,13 +391,21 @@ closeQA(question: string, options?: JudgePresetOptions): MeasurementAssertionHan
 #### `closeQA`
 
 ```ts
-closeQA(selector: ToolMatch | EventMatch, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA(
+  selector: ToolMatch | EventMatch,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 #### `closeQA`
 
 ```ts
-closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA<T>(
+  selector: MaterialMatch<Context, T>,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 {/* GENERATED:END test-context */}
@@ -692,13 +699,21 @@ closeQA(question: string, options?: JudgePresetOptions): MeasurementAssertionHan
 #### `closeQA`
 
 ```ts
-closeQA(selector: ToolMatch | EventMatch, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA(
+  selector: ToolMatch | EventMatch,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 #### `closeQA`
 
 ```ts
-closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA<T>(
+  selector: MaterialMatch<Context, T>,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 {/* GENERATED:END turn-handle */}

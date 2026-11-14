@@ -36,9 +36,12 @@ export function recordedCostGaps(
 }
 
 export function combineCostGaps(gaps: readonly CostGap[]): readonly CostGap[] {
-  return CostGapSources.flatMap((source) => CostGapReasons.flatMap((reason) => {
-    const matching = gaps.filter((gap) => gap.source === source && gap.reason === reason);
-    return matching.length === 0 ? [] : [{ source, reason,
-      models: [...new Set(matching.flatMap((gap) => gap.models))].sort() }];
-  }));
+  return CostGapSources.flatMap((source) =>
+    CostGapReasons.flatMap((reason) => {
+      const matching = gaps.filter((gap) => gap.source === source && gap.reason === reason);
+      return matching.length === 0
+        ? []
+        : [{ source, reason, models: [...new Set(matching.flatMap((gap) => gap.models))].sort() }];
+    }),
+  );
 }

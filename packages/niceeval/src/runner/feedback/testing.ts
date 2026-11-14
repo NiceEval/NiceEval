@@ -14,7 +14,9 @@ export interface FakeFeedbackStream extends FeedbackStream {
   rows: number;
 }
 
-function createFakeStream(overrides: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">> = {}): FakeFeedbackStream {
+function createFakeStream(
+  overrides: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">> = {},
+): FakeFeedbackStream {
   const writes: string[] = [];
   return {
     isTTY: overrides.isTTY ?? false,

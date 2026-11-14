@@ -2,12 +2,9 @@
 import { defineEval } from "niceeval";
 import { greaterThan, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
-  description:
-    "真实 ChatCompletion 保留强制 function call 的 id/name/arguments 与 usage",
+  description: "真实 ChatCompletion 保留强制 function call 的 id/name/arguments 与 usage",
   async test(t) {
-    const turn = await t.send(
-      "run the one-request Chat Completions compatibility check",
-    );
+    const turn = await t.send("run the one-request Chat Completions compatibility check");
     await turn.succeeded().orStop();
     turn.calledTool(
       toolMatch("lookup_live_chat_fixture", {
@@ -17,25 +14,20 @@ export default defineEval({
             typeof input === "object" &&
             input !== null &&
             !Array.isArray(input) &&
-            Object.is(
-              (input as Record<string, unknown>)["marker"],
-              "chat-live-20260809",
-            ),
+            Object.is((input as Record<string, unknown>)["marker"], "chat-live-20260809"),
         ),
         status: "pending",
       }),
     );
     t.check(
       turn.events,
-      satisfies<typeof turn.events>(
-        "live Chat Completion exposes a provider call id",
-        (events) =>
-          events.some(
-            (event) =>
-              event.type === "operation.started" &&
-              event.operationId.length > 0 &&
-              event.operation.name === "lookup_live_chat_fixture",
-          ),
+      satisfies<typeof turn.events>("live Chat Completion exposes a provider call id", (events) =>
+        events.some(
+          (event) =>
+            event.type === "operation.started" &&
+            event.operationId.length > 0 &&
+            event.operation.name === "lookup_live_chat_fixture",
+        ),
       ),
     );
     t.check(turn.usage.inputTotalTokens, greaterThan(0));

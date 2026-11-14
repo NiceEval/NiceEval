@@ -43,9 +43,7 @@ export interface InspectionQuerySelectionError {
 }
 
 /** Distinguishes a missing selection from a protocol or evidence-reading failure; callers should branch on classification. */
-export type InspectionQueryError =
-  | InspectionQueryProtocolError
-  | InspectionQuerySelectionError;
+export type InspectionQueryError = InspectionQueryProtocolError | InspectionQuerySelectionError;
 
 /** Rejects an invalid fixed-operation request at the query boundary; no query execution is implied. */
 export interface InspectionOperationDecodeError extends InspectionQueryProtocolError {
@@ -62,10 +60,12 @@ export function decodeInspectionOperation(
 ): Result.Result<InspectionOperation, InspectionOperationDecodeError> {
   const decoded = decodeRequest({ operation: input });
   return Result.isFailure(decoded)
-    ? Result.fail(Object.freeze({
-      classification: "protocol/query" as const,
-      code: "inspection-request-invalid" as const,
-      reason: String(decoded.failure),
-    }))
+    ? Result.fail(
+        Object.freeze({
+          classification: "protocol/query" as const,
+          code: "inspection-request-invalid" as const,
+          reason: String(decoded.failure),
+        }),
+      )
     : Result.succeed(decoded.success.operation);
 }

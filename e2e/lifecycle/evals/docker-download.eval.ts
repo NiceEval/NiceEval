@@ -4,7 +4,9 @@ import { defineEval } from "niceeval";
 
 export default defineEval({
   async test(t) {
-    await t.sandbox.runCommandOrThrow("node", ["-e", `
+    await t.sandbox.runCommandOrThrow("node", [
+      "-e",
+      `
       const fs = require("node:fs");
       const root = "/tmp/download-source";
       for (const dir of ["nested/node_modules", "[cache]", "*literal*"]) fs.mkdirSync(root+"/"+dir,{recursive:true});
@@ -13,11 +15,12 @@ export default defineEval({
       fs.writeFileSync(root+"/*literal*/ignored.txt","ignored");
       fs.writeFileSync(root+"/cache","keep literal neighbor");
       fs.writeFileSync(root+"/keep.txt","kept 中");
-    `]);
+    `,
+    ]);
     await writeFile("download-ready", "ready");
     while (!existsSync("download-release")) {
       t.signal.throwIfAborted();
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
     await t.sandbox.downloadDirectory("/tmp/download-source", new URL("../download-output/", import.meta.url), {
       ignore: ["node_modules", "[cache]", "*literal*", "download-source"],
@@ -25,7 +28,7 @@ export default defineEval({
     await writeFile("download-done", "done");
     while (!existsSync("download-finish")) {
       t.signal.throwIfAborted();
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
   },
 });

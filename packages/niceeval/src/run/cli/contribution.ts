@@ -11,36 +11,38 @@ import {
   type CliOptionDefinition,
   type CliParsedTokens,
 } from "../../cli/application.ts";
-import {
-  CliFeatureError,
-  type CliCommandContribution,
-} from "../../cli/contribution.ts";
+import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
 import { canonicalJsonValue } from "../../inspection/canonical.ts";
 import { rawRunHost } from "../host/runtime.ts";
-import {
-  RunStateSchema,
-  type RunListDocument,
-  type RunRecoverOrphanedDocument,
-  type RunState,
-} from "../protocol.ts";
-import type {
-  RunDeleteError,
-  RunReadError,
-  RunRecoverError,
-} from "../host/index.ts";
+import { RunStateSchema, type RunListDocument, type RunRecoverOrphanedDocument, type RunState } from "../protocol.ts";
+import type { RunDeleteError, RunReadError, RunRecoverError } from "../host/index.ts";
 
-const help = (summary: string) =>
-  Object.freeze({ summary, visibility: "public" as const });
-const option = (value: CliOptionDefinition): CliOptionDefinition =>
-  Object.freeze(value);
+const help = (summary: string) => Object.freeze({ summary, visibility: "public" as const });
+const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
 
 export const RUN_CLI_OPTIONS = Object.freeze({
-  state: option({ type: "string", multiple: true, help: help("Filter by Run state; repeat to include several states (active, recovering, completed, interrupted, failed).") }),
+  state: option({
+    type: "string",
+    multiple: true,
+    help: help(
+      "Filter by Run state; repeat to include several states (active, recovering, completed, interrupted, failed).",
+    ),
+  }),
   experiment: option({ type: "string", multiple: true, help: help("Filter Runs by one Experiment ID path prefix.") }),
   limit: option({ type: "string", help: help("Show only the newest n matching Runs; requires a positive integer.") }),
-  record: option({ type: "string", help: help("Read an external canonical SQLite Record without probing local owner processes.") }),
-  orphaned: option({ type: "boolean", help: help("Recover the frozen set of Runs whose owner termination can be proved; skip live or unknown owners.") }),
-  run: option({ type: "string", multiple: true, help: help("Select an exact Run ID for export; repeat to select multiple Runs.") }),
+  record: option({
+    type: "string",
+    help: help("Read an external canonical SQLite Record without probing local owner processes."),
+  }),
+  orphaned: option({
+    type: "boolean",
+    help: help("Recover the frozen set of Runs whose owner termination can be proved; skip live or unknown owners."),
+  }),
+  run: option({
+    type: "string",
+    multiple: true,
+    help: help("Select an exact Run ID for export; repeat to select multiple Runs."),
+  }),
   out: option({ type: "string", help: help("Write the exported single-file Record to this path.") }),
   invocation: option({
     type: "string",
@@ -56,30 +58,35 @@ type Error = CliFeatureError;
 type HostFailure = RunReadError | RunDeleteError | RunRecoverError;
 
 function failure(operation: string, cause: unknown): Error {
-  const hostFailure = isHostFailure(cause) ? cause : cause instanceof SqliteRecordError
-    ? { code: cause.cause instanceof Error && cause.cause.name.startsWith("run-") ? cause.cause.name : cause.code, message: cause.message }
-    : undefined;
+  const hostFailure = isHostFailure(cause)
+    ? cause
+    : cause instanceof SqliteRecordError
+      ? {
+          code: cause.cause instanceof Error && cause.cause.name.startsWith("run-") ? cause.cause.name : cause.code,
+          message: cause.message,
+        }
+      : undefined;
   return new CliFeatureError({
     feature: "run",
     operation,
     cause,
     exitCode: 1,
-    ...(hostFailure === undefined
-      ? {}
-      : { display: `${hostFailure.code}: ${hostFailure.message}\n` }),
+    ...(hostFailure === undefined ? {} : { display: `${hostFailure.code}: ${hostFailure.message}\n` }),
   });
 }
 
 function isHostFailure(value: unknown): value is HostFailure {
-  return typeof value === "object" && value !== null &&
-    ["RunReadError", "RunDeleteError", "RunRecoverError"].includes(String(Reflect.get(value, "_tag")));
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    ["RunReadError", "RunDeleteError", "RunRecoverError"].includes(String(Reflect.get(value, "_tag")))
+  );
 }
 
 function write(channel: "stdout" | "stderr", text: string) {
   return Effect.flatMap(CliOutput, (output) =>
-    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text)).pipe(
-    Effect.mapError((cause) => failure(`write ${channel}`, cause)),
-  );
+    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text),
+  ).pipe(Effect.mapError((cause) => failure(`write ${channel}`, cause)));
 }
 
 function invocationFacts() {
@@ -99,13 +106,9 @@ function usage(message: string) {
   return write("stderr", `${message}\n`).pipe(Effect.as(1));
 }
 
-function unsupportedOption(
-  parsed: CliParsedTokens,
-  allowed: readonly string[],
-): string | undefined {
+function unsupportedOption(parsed: CliParsedTokens, allowed: readonly string[]): string | undefined {
   const permitted = new Set([...allowed, "help"]);
-  return Object.entries(parsed.values).find(([name, value]) =>
-    value !== undefined && !permitted.has(name))?.[0];
+  return Object.entries(parsed.values).find(([name, value]) => value !== undefined && !permitted.has(name))?.[0];
 }
 
 function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requirements> {
@@ -115,9 +118,12 @@ function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requi
       try: () => parser.parse(argv, RUN_CLI_OPTIONS),
       catch: (cause) => failure("parse arguments", cause),
     });
-    if (parsed.positionals[0] === "show") return yield* usage("run show is no longer supported. Use niceeval show run:<run-id>.");
+    if (parsed.positionals[0] === "show")
+      return yield* usage("run show is no longer supported. Use niceeval show run:<run-id>.");
     if (parsed.values.help === true) {
-      yield* write("stdout", `niceeval run — inspect and manage Run lifecycle
+      yield* write(
+        "stdout",
+        `niceeval run — inspect and manage Run lifecycle
 
 Usage:
   niceeval run list [--state <state>]... [--experiment <id-prefix>] [--limit <n>] [--invocation <invocation-id>] [--record <file>] [--json]
@@ -126,13 +132,16 @@ Usage:
   niceeval run recover --orphaned [--yes] [--json]
   niceeval run import <record-file> [--json]
   niceeval run export --run <run-id> [--run <run-id>...] --out <file> [--json]
-`);
+`,
+      );
       return 0;
     }
     const action = parsed.positionals[0];
     if (action === undefined || !["list", "delete", "recover", "import", "export"].includes(action)) {
-      return yield* usage(`niceeval run expects exactly one of list, delete, recover, import, or export.
-`.trimEnd());
+      return yield* usage(
+        `niceeval run expects exactly one of list, delete, recover, import, or export.
+`.trimEnd(),
+      );
     }
     const facts = yield* invocationFacts();
     const json = parsed.values.json === true;
@@ -144,17 +153,36 @@ Usage:
         if (parsed.positionals.length !== 2 || parsed.positionals[1]!.length === 0) {
           return yield* usage("niceeval run import requires one Record file.");
         }
-        const receipt = yield* importRuns(facts.cwd, parsed.positionals[1]!).pipe(Effect.mapError((cause) => failure("import", cause)));
-        if (json) yield* writeJson({ operation: "run.import", outcome: receipt.imported.length === 0 ? "already-present" : "imported", ...receipt });
-        else yield* write("stdout", `Imported ${receipt.imported.length} Runs; already-present ${receipt.alreadyPresent.length}.\n`);
+        const receipt = yield* importRuns(facts.cwd, parsed.positionals[1]!).pipe(
+          Effect.mapError((cause) => failure("import", cause)),
+        );
+        if (json)
+          yield* writeJson({
+            operation: "run.import",
+            outcome: receipt.imported.length === 0 ? "already-present" : "imported",
+            ...receipt,
+          });
+        else
+          yield* write(
+            "stdout",
+            `Imported ${receipt.imported.length} Runs; already-present ${receipt.alreadyPresent.length}.\n`,
+          );
       } else {
         const runIds = parsed.values.run;
         const out = parsed.values.out;
-        if (parsed.positionals.length !== 1 || !Array.isArray(runIds) || runIds.length === 0 ||
-          runIds.some((id) => id.length === 0) || typeof out !== "string" || out.length === 0) {
+        if (
+          parsed.positionals.length !== 1 ||
+          !Array.isArray(runIds) ||
+          runIds.length === 0 ||
+          runIds.some((id) => id.length === 0) ||
+          typeof out !== "string" ||
+          out.length === 0
+        ) {
           return yield* usage("niceeval run export requires --run <run-id> and --out <file>.");
         }
-        const receipt = yield* exportRuns(facts.cwd, runIds, out).pipe(Effect.mapError((cause) => failure("export", cause)));
+        const receipt = yield* exportRuns(facts.cwd, runIds, out).pipe(
+          Effect.mapError((cause) => failure("export", cause)),
+        );
         if (json) yield* writeJson({ operation: "run.export", outcome: "exported", ...receipt });
         else yield* write("stdout", `Exported ${receipt.runIds.length} Runs to ${out}.\n`);
       }
@@ -169,79 +197,119 @@ Usage:
       if (unsupported !== undefined) return yield* usage(`--${unsupported} is not valid with niceeval run list.`);
       const states = parsed.values.state;
       const experiments = parsed.values.experiment;
-      if (experiments !== undefined && (!Array.isArray(experiments) || experiments.length !== 1)) return yield* usage("--experiment accepts exactly one Experiment ID path prefix.");
-      if (states !== undefined && (!Array.isArray(states) || states.length === 0 || states.some((state) => !Schema.is(RunStateSchema)(state)))) {
+      if (experiments !== undefined && (!Array.isArray(experiments) || experiments.length !== 1))
+        return yield* usage("--experiment accepts exactly one Experiment ID path prefix.");
+      if (
+        states !== undefined &&
+        (!Array.isArray(states) || states.length === 0 || states.some((state) => !Schema.is(RunStateSchema)(state)))
+      ) {
         return yield* usage("--state must be active, recovering, completed, interrupted, or failed.");
       }
       const limit = parsed.values.limit;
-      if (limit !== undefined && (typeof limit !== "string" || !/^\d+$/u.test(limit) || !Number.isSafeInteger(Number(limit)) || Number(limit) < 1)) {
+      if (
+        limit !== undefined &&
+        (typeof limit !== "string" ||
+          !/^\d+$/u.test(limit) ||
+          !Number.isSafeInteger(Number(limit)) ||
+          Number(limit) < 1)
+      ) {
         return yield* usage("--limit requires a positive safe integer.");
       }
-      const listed = yield* rawRunHost.list({
-        cwd: facts.cwd,
-        ...(Array.isArray(states) ? { states: states as [RunState, ...RunState[]] } : {}),
-        ...(Array.isArray(experiments) ? { experimentIdPrefix: experiments[0]! } : {}),
-        ...(typeof limit === "string" ? { limit: Number(limit) } : {}),
-        ...(typeof parsed.values.record === "string" ? { record: parsed.values.record } : {}),
-        ...(typeof parsed.values.invocation === "string"
-          ? { invocationId: parsed.values.invocation }
-          : {}),
-      }).pipe(Effect.mapError((cause) => failure("list", cause)));
+      const listed = yield* rawRunHost
+        .list({
+          cwd: facts.cwd,
+          ...(Array.isArray(states) ? { states: states as [RunState, ...RunState[]] } : {}),
+          ...(Array.isArray(experiments) ? { experimentIdPrefix: experiments[0]! } : {}),
+          ...(typeof limit === "string" ? { limit: Number(limit) } : {}),
+          ...(typeof parsed.values.record === "string" ? { record: parsed.values.record } : {}),
+          ...(typeof parsed.values.invocation === "string" ? { invocationId: parsed.values.invocation } : {}),
+        })
+        .pipe(Effect.mapError((cause) => failure("list", cause)));
       if (json) {
-        yield* writeJson(Object.freeze({
-          operation: "run.list",
-          runs: listed.runs,
-          omitted: listed.omitted,
-          ...(listed.continuation === undefined
-            ? {}
-            : { continuation: listed.continuation }),
-        }) satisfies RunListDocument);
+        yield* writeJson(
+          Object.freeze({
+            operation: "run.list",
+            runs: listed.runs,
+            omitted: listed.omitted,
+            ...(listed.continuation === undefined ? {} : { continuation: listed.continuation }),
+          }) satisfies RunListDocument,
+        );
         return 0;
       }
       if (listed.runs.length === 0) {
-        yield* write("stdout", `No Runs found.
-`);
+        yield* write(
+          "stdout",
+          `No Runs found.
+`,
+        );
         return 0;
       }
-      yield* write("stdout", `${listed.runs.map((run) =>
-        `${run.runId}  ${run.state}  ${run.experimentId}  ${run.coverage.published}/${run.coverage.expected}  ${new Date(run.startedAt).toISOString()}${run.completedAt === undefined ? "" : `  ended ${run.completedAt}`}  ${run.invocationId}${run.owner === undefined ? "" : `  owner ${run.owner.state}${run.owner.state === "unknown" ? ` (${run.owner.reason})` : ""}  observed ${run.owner.observedAt}`}`
-      ).join("\n")}\n`);
+      yield* write(
+        "stdout",
+        `${listed.runs
+          .map(
+            (run) =>
+              `${run.runId}  ${run.state}  ${run.experimentId}  ${run.coverage.published}/${run.coverage.expected}  ${new Date(run.startedAt).toISOString()}${run.completedAt === undefined ? "" : `  ended ${run.completedAt}`}  ${run.invocationId}${run.owner === undefined ? "" : `  owner ${run.owner.state}${run.owner.state === "unknown" ? ` (${run.owner.reason})` : ""}  observed ${run.owner.observedAt}`}`,
+          )
+          .join("\n")}\n`,
+      );
       if (listed.omitted > 0) yield* write("stdout", `${listed.omitted} Runs omitted.\n`);
-      if (listed.runs.some((run) => run.owner?.state === "gone")) yield* write("stdout", "Next: niceeval run recover --orphaned\n");
+      if (listed.runs.some((run) => run.owner?.state === "gone"))
+        yield* write("stdout", "Next: niceeval run recover --orphaned\n");
       return 0;
     }
 
     if (action === "recover" && parsed.values.orphaned === true) {
-      if (parsed.positionals.length !== 1) return yield* usage("--orphaned and a positional Run ID are mutually exclusive.");
+      if (parsed.positionals.length !== 1)
+        return yield* usage("--orphaned and a positional Run ID are mutually exclusive.");
       const unsupported = unsupportedOption(parsed, ["json", "yes", "orphaned"]);
-      if (unsupported !== undefined) return yield* usage(`--${unsupported} is not valid with niceeval run recover --orphaned.`);
+      if (unsupported !== undefined)
+        return yield* usage(`--${unsupported} is not valid with niceeval run recover --orphaned.`);
       // This one pinned read freezes exact IDs before any confirmation. Each
       // mutation then enters the same actor as single-Run recovery.
-      const listed = yield* rawRunHost.list({ cwd: facts.cwd, states: ["active", "recovering"] }).pipe(Effect.mapError((cause) => failure("list orphaned", cause)));
+      const listed = yield* rawRunHost
+        .list({ cwd: facts.cwd, states: ["active", "recovering"] })
+        .pipe(Effect.mapError((cause) => failure("list orphaned", cause)));
       const selected = listed.runs.filter((run) => run.owner?.state === "gone");
-      if (json && parsed.values.yes !== true) return yield* usage("run recover --orphaned --json requires --yes; no Runs were changed.");
+      if (json && parsed.values.yes !== true)
+        return yield* usage("run recover --orphaned --json requires --yes; no Runs were changed.");
       if (!json && selected.length > 0 && parsed.values.yes !== true) {
-        yield* write("stdout", `${selected.map((run) => `${run.runId}  ${run.state}  ${run.experimentId}`).join("\n")}\n`);
+        yield* write(
+          "stdout",
+          `${selected.map((run) => `${run.runId}  ${run.state}  ${run.experimentId}`).join("\n")}\n`,
+        );
         const confirmation = yield* CliConfirmation;
-        const confirmed = yield* confirmation.confirm(`Recover ${selected.length} Runs as interrupted?`).pipe(Effect.mapError((cause) => failure("confirm recovery", cause)));
-        if (!confirmed) return yield* usage("Recovery cancelled. No Runs were changed. Use --yes to confirm noninteractively.");
+        const confirmed = yield* confirmation
+          .confirm(`Recover ${selected.length} Runs as interrupted?`)
+          .pipe(Effect.mapError((cause) => failure("confirm recovery", cause)));
+        if (!confirmed)
+          return yield* usage("Recovery cancelled. No Runs were changed. Use --yes to confirm noninteractively.");
       }
       const items: Array<RunRecoverOrphanedDocument["items"][number]> = [];
       for (const run of listed.runs) {
         if (run.owner?.state !== "gone") {
-          const reason = run.owner?.state === "unknown" ? `unknown:${run.owner.reason}` : run.owner?.state ?? "unknown:identity-not-recorded";
+          const reason =
+            run.owner?.state === "unknown"
+              ? `unknown:${run.owner.reason}`
+              : (run.owner?.state ?? "unknown:identity-not-recorded");
           items.push({ runId: run.runId, outcome: "skipped", reason });
           continue;
         }
         const result = yield* Effect.result(rawRunHost.recover({ cwd: facts.cwd, runId: run.runId }));
-        items.push(Result.isFailure(result)
-          ? { runId: run.runId, outcome: "failed", reason: result.failure.code }
-          : { runId: run.runId, outcome: "recovered" });
+        items.push(
+          Result.isFailure(result)
+            ? { runId: run.runId, outcome: "failed", reason: result.failure.code }
+            : { runId: run.runId, outcome: "recovered" },
+        );
       }
       if (json) yield* writeJson({ operation: "run.recover-orphaned", items } satisfies RunRecoverOrphanedDocument);
       else {
         if (selected.length === 0) yield* write("stdout", "No orphaned runs\n");
-        if (items.length > 0) yield* write("stdout", `${items.map((item) => `${item.runId}  ${item.outcome}${item.reason === undefined ? "" : `  ${item.reason}`}`).join("\n")}\n`);
+        if (items.length > 0)
+          yield* write(
+            "stdout",
+            `${items.map((item) => `${item.runId}  ${item.outcome}${item.reason === undefined ? "" : `  ${item.reason}`}`).join("\n")}\n`,
+          );
       }
       return items.some((item) => item.outcome === "failed") ? 1 : 0;
     }
@@ -255,40 +323,57 @@ Usage:
     if (parsed.values.yes !== true) {
       if (action === "recover" && !json) {
         const confirmation = yield* CliConfirmation;
-        const confirmed = yield* confirmation.confirm(`Recover Run ${runId} as interrupted?`).pipe(Effect.mapError((cause) => failure("confirm recovery", cause)));
+        const confirmed = yield* confirmation
+          .confirm(`Recover Run ${runId} as interrupted?`)
+          .pipe(Effect.mapError((cause) => failure("confirm recovery", cause)));
         if (confirmed) {
-          const receipt = yield* rawRunHost.recover({ cwd: facts.cwd, runId }).pipe(Effect.mapError((cause) => failure("recover", cause)));
+          const receipt = yield* rawRunHost
+            .recover({ cwd: facts.cwd, runId })
+            .pipe(Effect.mapError((cause) => failure("recover", cause)));
           yield* write("stdout", `Recovered Run ${receipt.runId} as interrupted.\n`);
           return 0;
         }
       }
       if (json) {
-        yield* writeJson(Object.freeze({
-          operation: `run.${action}`,
-          outcome: "confirmation-required",
-          runId,
-        }));
+        yield* writeJson(
+          Object.freeze({
+            operation: `run.${action}`,
+            outcome: "confirmation-required",
+            runId,
+          }),
+        );
       } else {
-        yield* write("stderr", `Run ${runId} is selected for ${action}. Review it, then rerun with --yes.
-`);
+        yield* write(
+          "stderr",
+          `Run ${runId} is selected for ${action}. Review it, then rerun with --yes.
+`,
+        );
       }
       return 1;
     }
     if (action === "delete") {
-      const receipt = yield* rawRunHost.delete({ cwd: facts.cwd, runId }).pipe(
-        Effect.mapError((cause) => failure("delete", cause)),
-      );
+      const receipt = yield* rawRunHost
+        .delete({ cwd: facts.cwd, runId })
+        .pipe(Effect.mapError((cause) => failure("delete", cause)));
       if (json) yield* writeJson(Object.freeze({ operation: "run.delete", ...receipt }));
-      else yield* write("stdout", `Deleted Run ${receipt.runId}.
-`);
+      else
+        yield* write(
+          "stdout",
+          `Deleted Run ${receipt.runId}.
+`,
+        );
       return 0;
     }
-    const receipt = yield* rawRunHost.recover({ cwd: facts.cwd, runId }).pipe(
-      Effect.mapError((cause) => failure("recover", cause)),
-    );
+    const receipt = yield* rawRunHost
+      .recover({ cwd: facts.cwd, runId })
+      .pipe(Effect.mapError((cause) => failure("recover", cause)));
     if (json) yield* writeJson(Object.freeze({ operation: "run.recover", ...receipt }));
-    else yield* write("stdout", `Recovered Run ${receipt.runId} as interrupted.
-`);
+    else
+      yield* write(
+        "stdout",
+        `Recovered Run ${receipt.runId} as interrupted.
+`,
+      );
     return 0;
   });
 }

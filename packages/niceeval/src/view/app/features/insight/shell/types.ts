@@ -31,7 +31,6 @@ export interface InsightManifest {
   readonly pages: readonly InsightPage[];
 }
 
-
 export interface BackgroundLocation {
   readonly pathname: string;
   readonly search?: string;
@@ -47,9 +46,7 @@ export interface InsightSurface {
   readonly presentation: "page" | "dialog";
 }
 
-export type InsightCloseTarget =
-  | { readonly kind: "history" }
-  | { readonly kind: "replace"; readonly route: string };
+export type InsightCloseTarget = { readonly kind: "history" } | { readonly kind: "replace"; readonly route: string };
 
 export interface InsightSurfacePlan {
   readonly background: InsightSurface;

@@ -60,7 +60,10 @@ export function positiveInteger(value: unknown, label: string, maximum: number):
   return value;
 }
 
-export function judgeRubricAndAnchors(rubricValue: unknown, anchorsValue?: unknown): {
+export function judgeRubricAndAnchors(
+  rubricValue: unknown,
+  anchorsValue?: unknown,
+): {
   readonly rubric: string;
   readonly anchors: readonly JudgeAnchor[];
 } {

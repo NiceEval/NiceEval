@@ -1,14 +1,7 @@
 import * as Result from "effect/Result";
-import {
-  nonEmptyRecordIssues,
-  recordIssue,
-  type RecordIssue,
-} from "../errors/record-errors.ts";
+import { nonEmptyRecordIssues, recordIssue, type RecordIssue } from "../errors/record-errors.ts";
 import { recordAttemptReferenceKey } from "./core.ts";
-import {
-  canonicalizeRunContext,
-  validateRunContext,
-} from "./run-context.ts";
+import { canonicalizeRunContext, validateRunContext } from "./run-context.ts";
 import type {
   AttemptDocument,
   MembershipAction,
@@ -18,15 +11,9 @@ import type {
   RunCore,
   RunDocument,
 } from "./core.ts";
-import {
-  compareCanonicalIdentity,
-} from "./identifiers.ts";
+import { compareCanonicalIdentity } from "./identifiers.ts";
 
-function appendIssues(
-  destination: RecordIssue[],
-  prefix: readonly string[],
-  nested: readonly RecordIssue[],
-): void {
+function appendIssues(destination: RecordIssue[], prefix: readonly string[], nested: readonly RecordIssue[]): void {
   for (const issue of nested) {
     destination.push(recordIssue(issue.code, [...prefix, ...issue.path]));
   }
@@ -37,9 +24,7 @@ function isStrictlyAfter(previous: string | undefined, current: string): boolean
 }
 
 /** Rejects duplicate or non-canonically ordered immutable Slot identities. */
-export function validateExpectedSlots(
-  expectedSlots: readonly RecordSlotIdentity[],
-): readonly RecordIssue[] {
+export function validateExpectedSlots(expectedSlots: readonly RecordSlotIdentity[]): readonly RecordIssue[] {
   const issues: RecordIssue[] = [];
   const seenSlotIds = new Set<string>();
   const seenEvalOrdinals = new Set<string>();
@@ -50,9 +35,7 @@ export function validateExpectedSlots(
     if (!isStrictlyAfter(previous, slot.slotId)) {
       issues.push(
         recordIssue(
-          previous === slot.slotId
-            ? "record-expected-slot-duplicate"
-            : "record-expected-slot-order-invalid",
+          previous === slot.slotId ? "record-expected-slot-duplicate" : "record-expected-slot-order-invalid",
           path,
         ),
       );
@@ -62,10 +45,7 @@ export function validateExpectedSlots(
     }
     const ordinalKey = `${slot.evalId}\u0000${String(slot.attemptOrdinal)}`;
     if (seenEvalOrdinals.has(ordinalKey)) {
-      issues.push(recordIssue(
-        "record-expected-slot-duplicate",
-        ["expectedSlots", String(index), "attemptOrdinal"],
-      ));
+      issues.push(recordIssue("record-expected-slot-duplicate", ["expectedSlots", String(index), "attemptOrdinal"]));
     }
     seenSlotIds.add(slot.slotId);
     seenEvalOrdinals.add(ordinalKey);
@@ -76,9 +56,7 @@ export function validateExpectedSlots(
 }
 
 /** Validates invariants entirely contained by the durable `run.json`. */
-export function validateRunDocument(
-  run: RunDocument,
-): readonly RecordIssue[] {
+export function validateRunDocument(run: RunDocument): readonly RecordIssue[] {
   const issues: RecordIssue[] = [];
   if (run.completedAt < run.startedAt) {
     issues.push(recordIssue("record-run-time-order-invalid", ["completedAt"]));
@@ -87,9 +65,7 @@ export function validateRunDocument(
   appendIssues(issues, ["context"], contextIssues);
   const context = canonicalizeRunContext(run.context);
   if (Result.isSuccess(context) && context.success.experimentId !== run.experimentId) {
-    issues.push(
-      recordIssue("record-run-context-experiment-mismatch", ["context", "experimentId"]),
-    );
+    issues.push(recordIssue("record-run-context-experiment-mismatch", ["context", "experimentId"]));
   }
   appendIssues(issues, [], validateExpectedSlots(run.expectedSlots));
   return Object.freeze(issues);
@@ -100,19 +76,14 @@ export function validateMemberDocument(member: {
   readonly action: MembershipAction;
   readonly attempt: RecordAttemptRef | null;
 }): readonly RecordIssue[] {
-  const requiresAttempt =
-    member.action === "executed" ||
-    member.action === "carried" ||
-    member.action === "accepted";
+  const requiresAttempt = member.action === "executed" || member.action === "carried" || member.action === "accepted";
   return requiresAttempt === (member.attempt !== null)
     ? Object.freeze([])
     : Object.freeze([recordIssue("record-member-action-invalid", ["attempt"])]);
 }
 
 /** Attempt-local shape is fully captured by its exact schema. */
-export function validateAttemptDocument(
-  _attempt: AttemptDocument,
-): readonly RecordIssue[] {
+export function validateAttemptDocument(_attempt: AttemptDocument): readonly RecordIssue[] {
   return Object.freeze([]);
 }
 
@@ -138,27 +109,20 @@ function referenceKey(ref: RecordAttemptRef): string {
   return recordAttemptReferenceKey(ref);
 }
 
-function expectedSlotsById(
-  run: RunDocument,
-): ReadonlyMap<string, RecordSlotIdentity> {
+function expectedSlotsById(run: RunDocument): ReadonlyMap<string, RecordSlotIdentity> {
   return new Map(run.expectedSlots.map((slot) => [slot.slotId, slot]));
 }
 
-function sameSlotIdentity(
-  left: RecordSlotIdentity,
-  right: RecordSlotIdentity,
-): boolean {
-  return left.slotId === right.slotId
-    && left.evalId === right.evalId
-    && left.attemptOrdinal === right.attemptOrdinal
-    && left.executionIdentityDigest === right.executionIdentityDigest;
+function sameSlotIdentity(left: RecordSlotIdentity, right: RecordSlotIdentity): boolean {
+  return (
+    left.slotId === right.slotId &&
+    left.evalId === right.evalId &&
+    left.attemptOrdinal === right.attemptOrdinal &&
+    left.executionIdentityDigest === right.executionIdentityDigest
+  );
 }
 
-function validateRunMembers(
-  runCore: RunCore,
-  runIndex: number,
-  issues: RecordIssue[],
-): void {
+function validateRunMembers(runCore: RunCore, runIndex: number, issues: RecordIssue[]): void {
   const expectedSlots = expectedSlotsById(runCore.run);
   const members = new Set<string>();
   let previous: string | undefined;
@@ -168,12 +132,10 @@ function validateRunMembers(
     appendIssues(issues, path, validateMemberDocument(member));
     if (!isStrictlyAfter(previous, member.slotId)) {
       issues.push(
-        recordIssue(
-          previous === member.slotId
-            ? "record-member-slot-duplicate"
-            : "record-member-slot-order-invalid",
-          [...path, "slotId"],
-        ),
+        recordIssue(previous === member.slotId ? "record-member-slot-duplicate" : "record-member-slot-order-invalid", [
+          ...path,
+          "slotId",
+        ]),
       );
     }
     if (members.has(member.slotId) && previous !== member.slotId) {
@@ -209,9 +171,7 @@ function validateRunMembers(
  * is only a validator input: membership remains one `members/<SlotId>.json`
  * document per item and never becomes a field in `run.json`.
  */
-export function validateRecordCore(
-  core: RecordCore,
-): readonly RecordIssue[] {
+export function validateRecordCore(core: RecordCore): readonly RecordIssue[] {
   const issues: RecordIssue[] = [];
   const runs = new Map<string, number>();
   const attempts = new Map<string, AttemptLocation>();
@@ -222,10 +182,11 @@ export function validateRecordCore(
     const prefix = runPrefix(runIndex);
     if (!isStrictlyAfter(previousRunId, runId)) {
       issues.push(
-        recordIssue(
-          previousRunId === runId ? "record-run-duplicate" : "record-run-order-invalid",
-          [...prefix, "run", "runId"],
-        ),
+        recordIssue(previousRunId === runId ? "record-run-duplicate" : "record-run-order-invalid", [
+          ...prefix,
+          "run",
+          "runId",
+        ]),
       );
     }
     if (runs.has(runId) && previousRunId !== runId) {
@@ -245,9 +206,7 @@ export function validateRecordCore(
       if (!isStrictlyAfter(previousAttemptId, attempt.attemptId)) {
         issues.push(
           recordIssue(
-            previousAttemptId === attempt.attemptId
-              ? "record-attempt-duplicate"
-              : "record-attempt-order-invalid",
+            previousAttemptId === attempt.attemptId ? "record-attempt-duplicate" : "record-attempt-order-invalid",
             [...path, "attemptId"],
           ),
         );
@@ -267,12 +226,7 @@ export function validateRecordCore(
           issues.push(recordIssue("record-attempt-eval-mismatch", [...path, "evalId"]));
         }
         if (slot.executionIdentityDigest !== attempt.executionIdentityDigest) {
-          issues.push(
-            recordIssue("record-attempt-digest-mismatch", [
-              ...path,
-              "executionIdentityDigest",
-            ]),
-          );
+          issues.push(recordIssue("record-attempt-digest-mismatch", [...path, "executionIdentityDigest"]));
         }
       }
 
@@ -300,13 +254,11 @@ export function validateRecordCore(
       // differs from the current target Slot (explicit adoption / rename).
       if (member.action !== "accepted") {
         const targetExpected = expectedSlotsById(runCore.run).get(member.slotId);
-        const originExpected = expectedSlotsById(
-          core.runs[target.runIndex]!.run,
-        ).get(target.attempt.slotId);
+        const originExpected = expectedSlotsById(core.runs[target.runIndex]!.run).get(target.attempt.slotId);
         if (
-          targetExpected === undefined
-          || originExpected === undefined
-          || !sameSlotIdentity(targetExpected, originExpected)
+          targetExpected === undefined ||
+          originExpected === undefined ||
+          !sameSlotIdentity(targetExpected, originExpected)
         ) {
           issues.push(recordIssue("record-attempt-slot-mismatch", [...path, "attempt"]));
         }

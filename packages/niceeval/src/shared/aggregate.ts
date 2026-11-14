@@ -107,7 +107,7 @@ export function fallbackExperimentLabel(result: {
   model?: string;
 }): string {
   if (result.experimentId) return displayExperimentName(result.experimentId) ?? result.experimentId;
-  if (result.model) return `${(result.adapter?.name ?? "")}/${result.model}`;
+  if (result.model) return `${result.adapter?.name ?? ""}/${result.model}`;
   return (result.adapter?.name ?? "") || "ad hoc run";
 }
 

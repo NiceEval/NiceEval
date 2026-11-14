@@ -36,7 +36,9 @@ export class ManagedProcessOutput implements AsyncIterable<ManagedProcessChunk> 
         const value = this.queued.shift();
         if (value !== undefined) return Promise.resolve({ done: false, value });
         if (this.ended) return Promise.resolve({ done: true, value: undefined });
-        return new Promise((resolve) => { this.waiter = resolve; });
+        return new Promise((resolve) => {
+          this.waiter = resolve;
+        });
       },
     };
   }

@@ -152,7 +152,9 @@ Frozen application model selections for this Attempt.
 #### `recordUsage`
 
 ```ts
-recordUsage(input: Omit<import("./adapter-usage.ts").AdapterUsageInput, "modelRole"> & { readonly modelRole?: Roles | null }): void;
+recordUsage(
+  input: Omit<import("./adapter-usage.ts").AdapterUsageInput, "modelRole"> & { readonly modelRole?: Roles | null },
+): void;
 ```
 
 #### `sealUsage`
@@ -166,7 +168,9 @@ Close application usage admission and declare whether the recorded collection is
 #### `attach`
 
 ```ts
-attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
+attach(
+  input: import("./adapter-attachments.ts").AdapterAttachmentInput,
+): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
 ```
 
 #### `recordTrace`
@@ -607,11 +611,7 @@ Use it when you need to chain several commands or branch on conditions.
 #### `runCommandOrThrow`
 
 ```ts
-runCommandOrThrow(
-  cmd: string,
-  args?: readonly string[],
-  opts?: CommandOptions,
-): Promise<SuccessfulCommandResult>;
+runCommandOrThrow(cmd: string, args?: readonly string[], opts?: CommandOptions): Promise<SuccessfulCommandResult>;
 ```
 
 Runs a single command like `runCommand`, but throws `SandboxCommandExitError` on a non-zero exit. The error message includes

@@ -115,12 +115,14 @@ export function metadataOf(instance: IncusInstance): {
 
 export function metadataMatchesIntent(instance: IncusInstance, intent: AllocationIntent): boolean {
   const meta = metadataOf(instance);
-  return meta.allocationId === intent.allocationId
-    && meta.generation === intent.generation
-    && meta.executionDomainId === intent.executionDomainId
-    && meta.artifactDigest === intent.artifactDigest
-    && meta.provisionToken === intent.provisionToken
-    && meta.executionId === intent.executionId;
+  return (
+    meta.allocationId === intent.allocationId &&
+    meta.generation === intent.generation &&
+    meta.executionDomainId === intent.executionDomainId &&
+    meta.artifactDigest === intent.artifactDigest &&
+    meta.provisionToken === intent.provisionToken &&
+    meta.executionId === intent.executionId
+  );
 }
 
 function ownerProvenDead(owner: AllocationOwner): boolean {
@@ -136,9 +138,9 @@ export function unionActiveAllocationIds(
   const ids = new Set<string>();
   for (const intent of intents) {
     if (
-      OCCUPYING_STATES.has(intent.state)
-      && intent.executionDomainId === scope.executionDomainId
-      && intent.project === scope.project
+      OCCUPYING_STATES.has(intent.state) &&
+      intent.executionDomainId === scope.executionDomainId &&
+      intent.project === scope.project
     ) {
       ids.add(intent.allocationId);
     }
@@ -146,12 +148,12 @@ export function unionActiveAllocationIds(
   for (const instance of instances) {
     const meta = metadataOf(instance);
     if (
-      meta.allocationId !== undefined
-      && meta.generation !== undefined
-      && meta.executionDomainId === scope.executionDomainId
-      && meta.artifactDigest !== undefined
-      && meta.provisionToken !== undefined
-      && meta.executionId !== undefined
+      meta.allocationId !== undefined &&
+      meta.generation !== undefined &&
+      meta.executionDomainId === scope.executionDomainId &&
+      meta.artifactDigest !== undefined &&
+      meta.provisionToken !== undefined &&
+      meta.executionId !== undefined
     ) {
       ids.add(meta.allocationId);
     }
@@ -173,10 +175,15 @@ export function countActiveAllocations(
   project: string,
   volumes: readonly IncusVolume[] = [],
 ): number {
-  return unionActiveAllocationIds(intents, instances, {
-    executionDomainId,
-    project,
-  }, volumes).size;
+  return unionActiveAllocationIds(
+    intents,
+    instances,
+    {
+      executionDomainId,
+      project,
+    },
+    volumes,
+  ).size;
 }
 
 export function volumeMetadataMatchesIntent(volume: IncusVolume, intent: AllocationIntent): boolean {
@@ -186,12 +193,14 @@ export function volumeMetadataMatchesIntent(volume: IncusVolume, intent: Allocat
   const artifactDigest = volume.config[INCUS_METADATA.artifactDigest];
   const provisionToken = volume.config[INCUS_METADATA.provisionToken];
   const executionId = volume.config[INCUS_METADATA.executionId];
-  return allocationId === intent.allocationId
-    && generation === String(intent.generation)
-    && executionDomainId === intent.executionDomainId
-    && artifactDigest === intent.artifactDigest
-    && provisionToken === intent.provisionToken
-    && executionId === intent.executionId;
+  return (
+    allocationId === intent.allocationId &&
+    generation === String(intent.generation) &&
+    executionDomainId === intent.executionDomainId &&
+    artifactDigest === intent.artifactDigest &&
+    provisionToken === intent.provisionToken &&
+    executionId === intent.executionId
+  );
 }
 
 /**
@@ -208,12 +217,14 @@ function volumeIsDependentOnExactInstance(
 ): boolean {
   if (!metadataMatchesIntent(instance, intent)) return false;
   const dockerData = instance.expandedDevices?.dockerdata;
-  return volume.type === "custom"
-    && volume.contentType === "block"
-    && dockerData?.type === "disk"
-    && dockerData.pool === intent.storagePool
-    && dockerData.source === volume.name
-    && dockerData.dependent === "true";
+  return (
+    volume.type === "custom" &&
+    volume.contentType === "block" &&
+    dockerData?.type === "disk" &&
+    dockerData.pool === intent.storagePool &&
+    dockerData.source === volume.name &&
+    dockerData.dependent === "true"
+  );
 }
 
 export async function reconcileDomain(
@@ -285,42 +296,60 @@ export async function reconcileDomain(
   for (const instance of reconciledInstances) {
     const meta = metadataOf(instance);
     if (meta.executionDomainId !== scope.executionDomainId) continue;
-    const owned = next.some((intent) =>
-      isActiveIntent(intent)
-      && intent.executionDomainId === scope.executionDomainId
-      && intent.project === scope.project
-      && metadataMatchesIntent(instance, intent)
+    const owned = next.some(
+      (intent) =>
+        isActiveIntent(intent) &&
+        intent.executionDomainId === scope.executionDomainId &&
+        intent.project === scope.project &&
+        metadataMatchesIntent(instance, intent),
     );
     if (owned) continue;
     throw incusError(
       "sandbox-allocation-lost",
       `Incus instance ${JSON.stringify(instance.name)} claims execution domain ${JSON.stringify(scope.executionDomainId)} but has no exact IncusRepository allocation intent.`,
-      ["Keep the instance in place and restore or explicitly maintain the durable registry; never infer ownership from a name or delete an unregistered object."],
+      [
+        "Keep the instance in place and restore or explicitly maintain the durable registry; never infer ownership from a name or delete an unregistered object.",
+      ],
     );
   }
   for (const volume of reconciledVolumes) {
     if (volume.config[INCUS_METADATA.executionDomainId] !== scope.executionDomainId) continue;
-    let owned = next.some((intent) => isActiveIntent(intent)
-      && intent.executionDomainId === scope.executionDomainId
-      && intent.project === scope.project
-      && volumeMetadataMatchesIntent(volume, intent));
+    let owned = next.some(
+      (intent) =>
+        isActiveIntent(intent) &&
+        intent.executionDomainId === scope.executionDomainId &&
+        intent.project === scope.project &&
+        volumeMetadataMatchesIntent(volume, intent),
+    );
     if (!owned) {
       for (const observed of next) {
-        if (observed.executionDomainId !== scope.executionDomainId || observed.project !== scope.project
-          || (observed.state !== "reserved" && observed.state !== "creating")) continue;
+        if (
+          observed.executionDomainId !== scope.executionDomainId ||
+          observed.project !== scope.project ||
+          (observed.state !== "reserved" && observed.state !== "creating")
+        )
+          continue;
         // Inventory requests are separate snapshots: a copy can appear after
         // listInstances, and its disk keeps source metadata until PATCH.
         // Re-read the exact allocation and object instead of treating that
         // acceptance window as an unregistered resource.
         const current = await readAllocationIntent(repository, observed.allocationId);
-        if (current === undefined || current.generation !== observed.generation
-          || current.executionDomainId !== scope.executionDomainId || current.project !== scope.project
-          || current.storagePool !== scope.storagePool
-          || current.dockerDataVolume !== volume.name || current.providerLocator === undefined) continue;
+        if (
+          current === undefined ||
+          current.generation !== observed.generation ||
+          current.executionDomainId !== scope.executionDomainId ||
+          current.project !== scope.project ||
+          current.storagePool !== scope.storagePool ||
+          current.dockerDataVolume !== volume.name ||
+          current.providerLocator === undefined
+        )
+          continue;
         if (current.state === "creating") {
           const instance = await control.getInstance(scope.project, current.providerLocator);
-          owned = instance !== undefined && instance.name === current.providerLocator
-            && volumeIsDependentOnExactInstance(instance, volume, current);
+          owned =
+            instance !== undefined &&
+            instance.name === current.providerLocator &&
+            volumeIsDependentOnExactInstance(instance, volume, current);
         } else if (isActiveIntent(current)) {
           // A completed PATCH may also have overtaken the volume snapshot.
           // Stable allocations must still present their own exact metadata.
@@ -334,7 +363,9 @@ export async function reconcileDomain(
     throw incusError(
       "sandbox-allocation-lost",
       `Incus volume ${JSON.stringify(volume.name)} claims execution domain ${JSON.stringify(scope.executionDomainId)} but has no exact IncusRepository allocation intent.`,
-      ["Keep the volume in place and restore or explicitly maintain the durable registry; never infer ownership from a name or delete an unregistered object."],
+      [
+        "Keep the volume in place and restore or explicitly maintain the durable registry; never infer ownership from a name or delete an unregistered object.",
+      ],
     );
   }
   return Object.freeze({
@@ -371,9 +402,10 @@ export async function destroyAllocation(
       ["Destroy only from the owning execution domain and project."],
     );
   }
-  const requested = current.state === "destroy-requested"
-    ? current
-    : await transitionAllocationIntent(repository, current, { ...current, state: "destroy-requested" });
+  const requested =
+    current.state === "destroy-requested"
+      ? current
+      : await transitionAllocationIntent(repository, current, { ...current, state: "destroy-requested" });
   const instances = await control.listInstances(project);
   const volumes = await control.listVolumes(project, requested.storagePool);
   const matchingInstance = instances.find((candidate) => metadataMatchesIntent(candidate, requested));
@@ -389,14 +421,11 @@ export async function destroyAllocation(
       ["Inspect the instance identity; NiceEval only destroys the exact allocation generation it owns."],
     );
   }
-  const inheritedCloneVolume = namedInstance !== undefined
-    && namedVolume !== undefined
-    && volumeIsDependentOnExactInstance(namedInstance, namedVolume, requested);
-  if (
-    namedVolume !== undefined
-    && !volumeMetadataMatchesIntent(namedVolume, requested)
-    && !inheritedCloneVolume
-  ) {
+  const inheritedCloneVolume =
+    namedInstance !== undefined &&
+    namedVolume !== undefined &&
+    volumeIsDependentOnExactInstance(namedInstance, namedVolume, requested);
+  if (namedVolume !== undefined && !volumeMetadataMatchesIntent(namedVolume, requested) && !inheritedCloneVolume) {
     throw incusError(
       "sandbox-destroy-incomplete",
       `Refusing to destroy Incus volume ${JSON.stringify(volumeName)} with mismatched allocation metadata.`,
@@ -409,7 +438,9 @@ export async function destroyAllocation(
       throw incusError(
         "sandbox-destroy-incomplete",
         `Incus allocation ${JSON.stringify(requested.allocationId)} still has an acceptance-unknown create operation.`,
-        ["Keep the allocation quarantined until the expected Incus object appears and can be destroyed by exact metadata."],
+        [
+          "Keep the allocation quarantined until the expected Incus object appears and can be destroyed by exact metadata.",
+        ],
       );
     }
   }
@@ -434,7 +465,9 @@ export async function destroyAllocation(
     throw incusError(
       "sandbox-destroy-incomplete",
       `Failed to prove Incus allocation ${JSON.stringify(requested.allocationId)} is absent.`,
-      ["Retry destroy from the Incus control plane; NiceEval will not mark the allocation destroyed without absent receipts for the VM and volume."],
+      [
+        "Retry destroy from the Incus control plane; NiceEval will not mark the allocation destroyed without absent receipts for the VM and volume.",
+      ],
       cause,
     );
   }

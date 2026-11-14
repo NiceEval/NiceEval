@@ -45,20 +45,32 @@ export function configuredProfile(
 ): SelectedProfile | undefined {
   if (overrides === undefined) return undefined;
   const wildcard = model.includes("/") ? `${model.slice(0, model.indexOf("/"))}/*` : undefined;
-  const selector = overrides[model] !== undefined ? model
-    : wildcard !== undefined && overrides[wildcard] !== undefined ? wildcard
-    : undefined;
+  const selector =
+    overrides[model] !== undefined
+      ? model
+      : wildcard !== undefined && overrides[wildcard] !== undefined
+        ? wildcard
+        : undefined;
   if (selector === undefined) return undefined;
   const value = overrides[selector]!;
-  if (value.basis !== undefined && value.basis !== "catalog-reference" ||
-    value.currency !== undefined && value.currency !== "USD") return undefined;
+  if (
+    (value.basis !== undefined && value.basis !== "catalog-reference") ||
+    (value.currency !== undefined && value.currency !== "USD")
+  )
+    return undefined;
   const sourceId = value.source?.id ?? "niceeval.config.pricing";
   const asOf = value.source?.asOf ?? null;
   const input = canonicalDecimalFromNumber(value.inputPerMTok);
   const output = canonicalDecimalFromNumber(value.outputPerMTok);
-  if (input === undefined || output === undefined || sourceId.trim().length === 0 ||
-    new TextEncoder().encode(sourceId).byteLength > 256 || /[\u0000-\u001f\u007f]/u.test(sourceId) ||
-    asOf !== null && (!Number.isSafeInteger(asOf) || asOf <= 0)) return undefined;
+  if (
+    input === undefined ||
+    output === undefined ||
+    sourceId.trim().length === 0 ||
+    new TextEncoder().encode(sourceId).byteLength > 256 ||
+    /[\u0000-\u001f\u007f]/u.test(sourceId) ||
+    (asOf !== null && (!Number.isSafeInteger(asOf) || asOf <= 0))
+  )
+    return undefined;
   return Object.freeze({
     basis: "catalog-reference",
     currency: "USD",
@@ -69,32 +81,38 @@ export function configuredProfile(
     ratesPerMTok: Object.freeze({
       input,
       output,
-      cacheRead: value.cacheReadPerMTok === undefined
-        ? null
-        : canonicalDecimalFromNumber(value.cacheReadPerMTok) ?? null,
-      cacheWrite: value.cacheWritePerMTok === undefined
-        ? null
-        : canonicalDecimalFromNumber(value.cacheWritePerMTok) ?? null,
+      cacheRead:
+        value.cacheReadPerMTok === undefined ? null : (canonicalDecimalFromNumber(value.cacheReadPerMTok) ?? null),
+      cacheWrite:
+        value.cacheWritePerMTok === undefined ? null : (canonicalDecimalFromNumber(value.cacheWritePerMTok) ?? null),
     }),
   });
 }
 
 function tokensFor(call: AdapterUsageCall, bucket: (typeof AdapterCallPriceBuckets)[number]): number | null {
   switch (bucket) {
-    case "input": return call.inputTokens;
-    case "output": return call.outputTokens;
-    case "cache-read": return call.cacheReadTokens;
-    case "cache-write": return call.cacheWriteTokens;
+    case "input":
+      return call.inputTokens;
+    case "output":
+      return call.outputTokens;
+    case "cache-read":
+      return call.cacheReadTokens;
+    case "cache-write":
+      return call.cacheWriteTokens;
   }
 }
 
 /** @internal Shared rates for the four mutually exclusive token buckets. */
 export function rateFor(profile: SelectedProfile, bucket: (typeof AdapterCallPriceBuckets)[number]): string | null {
   switch (bucket) {
-    case "input": return profile.ratesPerMTok.input;
-    case "output": return profile.ratesPerMTok.output;
-    case "cache-read": return profile.ratesPerMTok.cacheRead;
-    case "cache-write": return profile.ratesPerMTok.cacheWrite;
+    case "input":
+      return profile.ratesPerMTok.input;
+    case "output":
+      return profile.ratesPerMTok.output;
+    case "cache-read":
+      return profile.ratesPerMTok.cacheRead;
+    case "cache-write":
+      return profile.ratesPerMTok.cacheWrite;
   }
 }
 
@@ -134,12 +152,14 @@ function receiptFor(
     } else if (rate === null) {
       missing.push(Object.freeze({ bucket, reason: "rate-unknown" }));
     } else {
-      charges.push(Object.freeze({
-        bucket,
-        tokens,
-        ratePerMTok: rate,
-        amount: multiplyCanonicalDecimalPerMillion(rate, tokens),
-      }));
+      charges.push(
+        Object.freeze({
+          bucket,
+          tokens,
+          ratePerMTok: rate,
+          amount: multiplyCanonicalDecimalPerMillion(rate, tokens),
+        }),
+      );
     }
   }
   if (charges.length === 0) return undefined;
@@ -167,8 +187,10 @@ export function createAdapterCallPriceReceipts(
   calls: readonly AdapterUsageCall[],
   overrides: Readonly<Record<string, PriceOverride>> | undefined,
 ): readonly AdapterCallPriceReceipt[] {
-  return Object.freeze(calls.flatMap((call) => {
-    const receipt = receiptFor(call, overrides);
-    return receipt === undefined ? [] : [receipt];
-  }));
+  return Object.freeze(
+    calls.flatMap((call) => {
+      const receipt = receiptFor(call, overrides);
+      return receipt === undefined ? [] : [receipt];
+    }),
+  );
 }

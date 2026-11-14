@@ -25,7 +25,9 @@ export default externalUsage.defineEval({
         ...snapshot,
         cost: { ...snapshot.cost, amount: "0.0001" },
       });
-    } catch { rejected = true; }
+    } catch {
+      rejected = true;
+    }
     t.check(rejected, equals(true)).gate();
   },
 });

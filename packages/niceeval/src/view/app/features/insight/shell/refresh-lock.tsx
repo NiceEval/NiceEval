@@ -1,19 +1,5 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  useBlocker,
-  useNavigate,
-  type Blocker,
-  type BlockerFunction,
-  type Location,
-} from "react-router-dom";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useBlocker, useNavigate, type Blocker, type BlockerFunction, type Location } from "react-router-dom";
 
 interface NavigationIntent {
   readonly sequence: number;
@@ -59,7 +45,10 @@ interface ReleaseWaiter {
 
 const InteractionLockedContext = createContext(false);
 
-export function RefreshInteractionProvider({ locked, children }: {
+export function RefreshInteractionProvider({
+  locked,
+  children,
+}: {
   readonly locked: boolean;
   readonly children: ReactNode;
 }) {
@@ -85,26 +74,29 @@ export function useRefreshNavigationLock(): {
   const intentWaiters = useRef<IntentWaiter[]>([]);
   const releaseWaiters = useRef<ReleaseWaiter[]>([]);
   const blocking = phase !== "idle";
-  const shouldBlock = useCallback<BlockerFunction>(({ nextLocation }) => {
-    const session = sessionRef.current;
-    if (!blocking || session === undefined || !session.active || session.signal.aborted || !ownerActive.current) {
-      return false;
-    }
-    const intent = {
-      sequence: ++sequence.current,
-      source: enqueueingFallback.current ? "fallback" : "user",
-      location: nextLocation,
-    } as const;
-    session.latestIntent = intent;
-    const superseded = intentWaiters.current.filter((waiter) =>
-      waiter.session === session && waiter.intent.sequence < intent.sequence
-    );
-    intentWaiters.current = intentWaiters.current.filter((waiter) =>
-      waiter.session !== session || waiter.intent.sequence >= intent.sequence
-    );
-    for (const waiter of superseded) waiter.resolve(undefined);
-    return true;
-  }, [blocking]);
+  const shouldBlock = useCallback<BlockerFunction>(
+    ({ nextLocation }) => {
+      const session = sessionRef.current;
+      if (!blocking || session === undefined || !session.active || session.signal.aborted || !ownerActive.current) {
+        return false;
+      }
+      const intent = {
+        sequence: ++sequence.current,
+        source: enqueueingFallback.current ? "fallback" : "user",
+        location: nextLocation,
+      } as const;
+      session.latestIntent = intent;
+      const superseded = intentWaiters.current.filter(
+        (waiter) => waiter.session === session && waiter.intent.sequence < intent.sequence,
+      );
+      intentWaiters.current = intentWaiters.current.filter(
+        (waiter) => waiter.session !== session || waiter.intent.sequence >= intent.sequence,
+      );
+      for (const waiter of superseded) waiter.resolve(undefined);
+      return true;
+    },
+    [blocking],
+  );
   const blocker = useBlocker(shouldBlock);
   const blockerRef = useRef(blocker);
   blockerRef.current = blocker;
@@ -116,20 +108,26 @@ export function useRefreshNavigationLock(): {
     if (session.signal.aborted) throw session.signal.reason;
   }, []);
 
-  const waitForIntent = useCallback((session: LockSession, intent: NavigationIntent) => {
-    requireLive(session);
-    const current = blockerRef.current;
-    if (blockerMatches(current, intent)) return Promise.resolve(current);
-    return new Promise<Extract<Blocker, { readonly state: "blocked" }> | undefined>((resolve, reject) => {
-      intentWaiters.current.push({ session, intent, resolve, reject });
-    });
-  }, [requireLive]);
+  const waitForIntent = useCallback(
+    (session: LockSession, intent: NavigationIntent) => {
+      requireLive(session);
+      const current = blockerRef.current;
+      if (blockerMatches(current, intent)) return Promise.resolve(current);
+      return new Promise<Extract<Blocker, { readonly state: "blocked" }> | undefined>((resolve, reject) => {
+        intentWaiters.current.push({ session, intent, resolve, reject });
+      });
+    },
+    [requireLive],
+  );
 
-  const waitForRelease = useCallback((session: LockSession) => {
-    requireLive(session);
-    if (blockerRef.current.state === "unblocked") return Promise.resolve();
-    return new Promise<void>((resolve, reject) => releaseWaiters.current.push({ session, resolve, reject }));
-  }, [requireLive]);
+  const waitForRelease = useCallback(
+    (session: LockSession) => {
+      requireLive(session);
+      if (blockerRef.current.state === "unblocked") return Promise.resolve();
+      return new Promise<void>((resolve, reject) => releaseWaiters.current.push({ session, resolve, reject }));
+    },
+    [requireLive],
+  );
 
   const abortSession = useCallback((session: LockSession, cause: unknown) => {
     if (!session.active) return;
@@ -149,25 +147,33 @@ export function useRefreshNavigationLock(): {
     for (const waiter of rejectedReleaseWaiters) waiter.reject(cause);
   }, []);
 
-  const acquire = useCallback<AcquireRefreshNavigationLock>((signal) => {
-    if (signal.aborted) return Promise.reject(signal.reason);
-    if (!ownerActive.current || pendingInstall.current !== undefined || sessionRef.current !== undefined || phase !== "idle") {
-      return Promise.reject(new Error("A View refresh navigation lock is already active."));
-    }
-    let session: LockSession;
-    const abort = () => abortSession(session, signal.reason);
-    session = {
-      signal,
-      active: true,
-      removeAbortListener: () => signal.removeEventListener("abort", abort),
-    };
-    sessionRef.current = session;
-    signal.addEventListener("abort", abort, { once: true });
-    setPhase("locked");
-    return new Promise((resolve, reject) => {
-      pendingInstall.current = { session, resolve, reject };
-    });
-  }, [abortSession, phase]);
+  const acquire = useCallback<AcquireRefreshNavigationLock>(
+    (signal) => {
+      if (signal.aborted) return Promise.reject(signal.reason);
+      if (
+        !ownerActive.current ||
+        pendingInstall.current !== undefined ||
+        sessionRef.current !== undefined ||
+        phase !== "idle"
+      ) {
+        return Promise.reject(new Error("A View refresh navigation lock is already active."));
+      }
+      let session: LockSession;
+      const abort = () => abortSession(session, signal.reason);
+      session = {
+        signal,
+        active: true,
+        removeAbortListener: () => signal.removeEventListener("abort", abort),
+      };
+      sessionRef.current = session;
+      signal.addEventListener("abort", abort, { once: true });
+      setPhase("locked");
+      return new Promise((resolve, reject) => {
+        pendingInstall.current = { session, resolve, reject };
+      });
+    },
+    [abortSession, phase],
+  );
 
   const lockRef = useRef<RefreshNavigationLock | undefined>(undefined);
   if (lockRef.current === undefined) {
@@ -281,14 +287,18 @@ function blockerMatches(
   blocker: Blocker,
   intent: NavigationIntent,
 ): blocker is Extract<Blocker, { readonly state: "blocked" }> {
-  return blocker.state === "blocked" &&
+  return (
+    blocker.state === "blocked" &&
     blocker.location === intent.location &&
-    sameLocation(blocker.location, intent.location);
+    sameLocation(blocker.location, intent.location)
+  );
 }
 
 function sameLocation(left: Location, right: Location): boolean {
-  return left.key === right.key &&
+  return (
+    left.key === right.key &&
     left.pathname === right.pathname &&
     left.search === right.search &&
-    left.hash === right.hash;
+    left.hash === right.hash
+  );
 }

@@ -33,27 +33,21 @@ export default defineEval({
       t.calledTool("shell");
       t.check(
         turn.toolCalls,
-        satisfies(
-          "file_write 先于读回 notes.txt 的 shell",
-          (calls) => {
-            const write = calls.findIndex((call) =>
-              call.name === "file_write" && /\bnotes\.txt\b/.test(JSON.stringify(call.input)),
-            );
-            // Skill discovery may legitimately run a shell before the task.
-            // Order the file write against its readback, not that discovery.
-            const shell = calls.findIndex((call) =>
-              call.name === "shell" && /\bcat\s+(?:[^\s]*\/)?notes\.txt\b/.test(JSON.stringify(call.input)),
-            );
-            return write !== -1 && shell !== -1 && write < shell;
-          },
-        ),
+        satisfies("file_write 先于读回 notes.txt 的 shell", (calls) => {
+          const write = calls.findIndex(
+            (call) => call.name === "file_write" && /\bnotes\.txt\b/.test(JSON.stringify(call.input)),
+          );
+          // Skill discovery may legitimately run a shell before the task.
+          // Order the file write against its readback, not that discovery.
+          const shell = calls.findIndex(
+            (call) => call.name === "shell" && /\bcat\s+(?:[^\s]*\/)?notes\.txt\b/.test(JSON.stringify(call.input)),
+          );
+          return write !== -1 && shell !== -1 && write < shell;
+        }),
       );
       t.check(
         turn.toolCalls,
-        satisfies(
-          "no failed actions",
-          (calls) => calls.every((call) => call.status !== "failed"),
-        ),
+        satisfies("no failed actions", (calls) => calls.every((call) => call.status !== "failed")),
       );
     });
 
@@ -64,9 +58,9 @@ export default defineEval({
         turn.usage.costs,
         satisfies(
           "complete reported USD cost",
-          (costs) => costs.state === "complete" && costs.values.some(
-            (cost) => cost.currency === "USD" && cost.source === "reported",
-          ),
+          (costs) =>
+            costs.state === "complete" &&
+            costs.values.some((cost) => cost.currency === "USD" && cost.source === "reported"),
         ),
       );
       turn.maxCost(0.5);

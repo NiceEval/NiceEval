@@ -6,12 +6,7 @@ import type {
   BooleanAssertionRegistration,
   CapturedAssertionSnapshot,
 } from "./api.ts";
-import {
-  evaluateNumericComparison,
-  numericComparisonOf,
-  type BooleanMatch,
-  type NumericMaterial,
-} from "./match.ts";
+import { evaluateNumericComparison, numericComparisonOf, type BooleanMatch, type NumericMaterial } from "./match.ts";
 
 export type NumericCriterionSubject =
   | { readonly kind: "explicit-value" }
@@ -73,19 +68,20 @@ export function numericBooleanRegistration<Refined>(input: {
     subject: input.captured.material,
     coverage: input.captured.coverage,
     limitations: input.captured.limitations,
-    evaluate: () => Effect.sync((): BooleanAssertionEvaluation<Refined> => {
-      const result = evaluateNumericComparison(input.material, comparison);
-      if (result.state === "matched") {
-        return Object.freeze({ state: "matched" as const, value: input.matchedValue(result.value) });
-      }
-      if (result.state === "mismatched") {
-        return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic });
-      }
-      return Object.freeze({
-        state: "unavailable" as const,
-        reason: "source-unavailable" as const,
-        diagnostic: result.diagnostic,
-      });
-    }),
+    evaluate: () =>
+      Effect.sync((): BooleanAssertionEvaluation<Refined> => {
+        const result = evaluateNumericComparison(input.material, comparison);
+        if (result.state === "matched") {
+          return Object.freeze({ state: "matched" as const, value: input.matchedValue(result.value) });
+        }
+        if (result.state === "mismatched") {
+          return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic });
+        }
+        return Object.freeze({
+          state: "unavailable" as const,
+          reason: "source-unavailable" as const,
+          diagnostic: result.diagnostic,
+        });
+      }),
   });
 }

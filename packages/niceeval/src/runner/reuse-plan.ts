@@ -9,7 +9,11 @@ import { readIdentityExplanation, type HistoricalIdentityComparison } from "./id
 import { Effect, Result, Schema } from "effect";
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
 import { SqliteRecordError } from "../record/sqlite/errors.ts";
-import { detachPlanningReference, selectPlanningSources, type PlanningExactReference } from "../record/host/sqlite-host.ts";
+import {
+  detachPlanningReference,
+  selectPlanningSources,
+  type PlanningExactReference,
+} from "../record/host/sqlite-host.ts";
 import { RunIdSchema, ExperimentIdSchema, UtcMillisSchema } from "../record/codec/identifiers.ts";
 import { RecordSlotIdentitySchema } from "../record/codec/core.ts";
 import type { ReadableRunResource } from "../run/storage/types.ts";
@@ -18,9 +22,7 @@ import { hasProvenNoExperimentHooks } from "./rename-identity.ts";
 
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import { nonEmptyRecordIssues, recordIssue } from "../record/errors/record-errors.ts";
-import type {
-  AssertionsAttachment,
-} from "../record/family/assertions/definition.ts";
+import type { AssertionsAttachment } from "../record/family/assertions/definition.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import {
   readAttemptExecutionDuration,
@@ -33,10 +35,7 @@ import {
   type ComparisonResult,
   type RecordedAttemptClaim,
 } from "../eval/record/membership-provenance.ts";
-import {
-  foldRecordedAttemptVerdict,
-  type VerdictState,
-} from "../eval/record/verdict.ts";
+import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
 import type {
   RecordReadSession,
   ReadableAttempt,
@@ -55,7 +54,13 @@ import {
   type SlotId,
   type UtcMillis,
 } from "../record/model/identifiers.ts";
-import type { AttemptOutcome, AttemptDocument, MemberDocument, RunDocument, RecordSlotIdentity } from "../record/model/core.ts";
+import type {
+  AttemptOutcome,
+  AttemptDocument,
+  MemberDocument,
+  RunDocument,
+  RecordSlotIdentity,
+} from "../record/model/core.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type { EvaluationKind } from "./types.ts";
 
@@ -105,7 +110,15 @@ export interface ExecutionComparison {
   readonly reason: string;
 }
 
-type PlanningIssue = RecordIssue | { readonly code: "dynamic-module-unresolved"; readonly path: readonly string[]; readonly file: string; readonly line: number; readonly column: number };
+type PlanningIssue =
+  | RecordIssue
+  | {
+      readonly code: "dynamic-module-unresolved";
+      readonly path: readonly string[];
+      readonly file: string;
+      readonly line: number;
+      readonly column: number;
+    };
 
 export type ExecutionGapReason =
   | "no-source-run"
@@ -195,7 +208,9 @@ export interface CurrentAssessmentRun<Ref> {
     readonly state: ReadableRunResource["state"] | "deleted";
     readonly slots: ReadableRunResource["slots"];
   };
-  readonly document: Pick<RunDocument, "runId" | "experimentId" | "startedAt" | "expectedSlots"> & { readonly context?: RunDocument["context"] };
+  readonly document: Pick<RunDocument, "runId" | "experimentId" | "startedAt" | "expectedSlots"> & {
+    readonly context?: RunDocument["context"];
+  };
   readonly members: readonly {
     readonly document: MemberDocument;
     readonly bindingRevision?: number;
@@ -209,12 +224,24 @@ export interface CurrentAssessmentSource {
   readonly sourceBarrier: ExecutionSourceBarrier;
 }
 
-export type CurrentSlotAssessment<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource> = Target & (
-  | { readonly state: "reuse"; readonly adoption: "carried"; readonly source: Source; readonly comparisons: readonly ExecutionComparison[] }
-  | { readonly state: "gap"; readonly reason: ExecutionGapReason; readonly scope: ExecutionGapScope;
-      readonly issues: readonly PlanningIssue[]; readonly sourceBarrier?: ExecutionSourceBarrier;
-      readonly candidate?: Source; readonly comparisons: readonly ExecutionComparison[] }
-);
+export type CurrentSlotAssessment<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource> = Target &
+  (
+    | {
+        readonly state: "reuse";
+        readonly adoption: "carried";
+        readonly source: Source;
+        readonly comparisons: readonly ExecutionComparison[];
+      }
+    | {
+        readonly state: "gap";
+        readonly reason: ExecutionGapReason;
+        readonly scope: ExecutionGapScope;
+        readonly issues: readonly PlanningIssue[];
+        readonly sourceBarrier?: ExecutionSourceBarrier;
+        readonly candidate?: Source;
+        readonly comparisons: readonly ExecutionComparison[];
+      }
+  );
 
 export interface CurrentAssessmentAttempt {
   readonly document: AttemptDocument;
@@ -226,24 +253,54 @@ export function mergeCurrentAssessmentRuns<Ref>(
   runs: readonly CurrentAssessmentRun<Ref>[],
   resources: readonly ReadableRunResource[],
 ): Effect.Effect<readonly CurrentAssessmentRun<Ref>[], RecordIntegrityFailure> {
-  return Effect.map(Effect.forEach(resources, (resource) => {
-    const published = runs.find((run) => run.document.runId === resource.runId);
-    const lifecycle = Object.freeze({ state: resource.state, slots: resource.slots });
-    if (published !== undefined) return Effect.succeed(Object.freeze({ ...published, createdRevision: resource.createdRevision, lifecycle }));
-    return Schema.decodeUnknownEffect(Schema.Struct({
-      runId: RunIdSchema, experimentId: ExperimentIdSchema, startedAt: UtcMillisSchema,
-      expectedSlots: Schema.Array(RecordSlotIdentitySchema),
-    }))({
-      runId: resource.runId, experimentId: resource.experimentId, startedAt: Date.parse(resource.startedAt),
-      expectedSlots: resource.slots.map(({ publication: _publication, ...slot }) => slot),
-    }).pipe(
-      Effect.map((document): CurrentAssessmentRun<Ref> => Object.freeze({ createdRevision: resource.createdRevision, lifecycle, document, members: Object.freeze([]) })),
-      Effect.mapError(() => new RecordIntegrityFailure({ code: "record-integrity-failure", runId: resource.runId, reason: "core-invalid" })),
-    );
-  }, { concurrency: 1 }), (lifecycle) => Object.freeze([
-    ...lifecycle,
-    ...runs.filter((run) => !resources.some((resource) => resource.runId === run.document.runId)),
-  ]));
+  return Effect.map(
+    Effect.forEach(
+      resources,
+      (resource) => {
+        const published = runs.find((run) => run.document.runId === resource.runId);
+        const lifecycle = Object.freeze({ state: resource.state, slots: resource.slots });
+        if (published !== undefined)
+          return Effect.succeed(Object.freeze({ ...published, createdRevision: resource.createdRevision, lifecycle }));
+        return Schema.decodeUnknownEffect(
+          Schema.Struct({
+            runId: RunIdSchema,
+            experimentId: ExperimentIdSchema,
+            startedAt: UtcMillisSchema,
+            expectedSlots: Schema.Array(RecordSlotIdentitySchema),
+          }),
+        )({
+          runId: resource.runId,
+          experimentId: resource.experimentId,
+          startedAt: Date.parse(resource.startedAt),
+          expectedSlots: resource.slots.map(({ publication: _publication, ...slot }) => slot),
+        }).pipe(
+          Effect.map(
+            (document): CurrentAssessmentRun<Ref> =>
+              Object.freeze({
+                createdRevision: resource.createdRevision,
+                lifecycle,
+                document,
+                members: Object.freeze([]),
+              }),
+          ),
+          Effect.mapError(
+            () =>
+              new RecordIntegrityFailure({
+                code: "record-integrity-failure",
+                runId: resource.runId,
+                reason: "core-invalid",
+              }),
+          ),
+        );
+      },
+      { concurrency: 1 },
+    ),
+    (lifecycle) =>
+      Object.freeze([
+        ...lifecycle,
+        ...runs.filter((run) => !resources.some((resource) => resource.runId === run.document.runId)),
+      ]),
+  );
 }
 
 export type AssertionsVerdict = VerdictState;
@@ -348,9 +405,9 @@ export function validateProjectTargetReusePlanInput(input: {
   }
   const target = envelope.target as { readonly invocationId?: unknown; readonly runs?: unknown };
   if (
-    typeof target.invocationId !== "string"
-    || !isBoundedNonEmptyText(target.invocationId, PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH)
-    || !Array.isArray(target.runs)
+    typeof target.invocationId !== "string" ||
+    !isBoundedNonEmptyText(target.invocationId, PROJECT_TARGET_INVOCATION_ID_MAXIMUM_LENGTH) ||
+    !Array.isArray(target.runs)
   ) {
     return invalidPlan("invocation-id-invalid");
   }
@@ -364,17 +421,17 @@ export function validateProjectTargetReusePlanInput(input: {
     readonly keepSandbox?: unknown;
   };
   if (
-    typeof policy.identity !== "object"
-    || policy.identity === null
-    || (policy.identity as { readonly name?: unknown }).name !== PROJECT_TARGET_POLICY_NAME
-    || (policy.identity as { readonly version?: unknown }).version !== PROJECT_TARGET_POLICY_VERSION
+    typeof policy.identity !== "object" ||
+    policy.identity === null ||
+    (policy.identity as { readonly name?: unknown }).name !== PROJECT_TARGET_POLICY_NAME ||
+    (policy.identity as { readonly version?: unknown }).version !== PROJECT_TARGET_POLICY_VERSION
   ) {
     return invalidPlan("policy-unsupported");
   }
   if (
-    !isExecutionIdentity(policy.reuseContract)
-    || !isRerunOption(policy.rerun)
-    || typeof policy.keepSandbox !== "boolean"
+    !isExecutionIdentity(policy.reuseContract) ||
+    !isRerunOption(policy.rerun) ||
+    typeof policy.keepSandbox !== "boolean"
   ) {
     return invalidPlan("policy-input-invalid");
   }
@@ -410,28 +467,23 @@ export function validateProjectTargetReusePlanInput(input: {
 // @concord-implements docs/feature/experiments/architecture/cache.md
 export function planProjectTargetReuse(
   input: ProjectTargetReusePlanInput,
-): Effect.Effect<
-  ExecutionReusePlan,
-  ProjectTargetReusePlanInvalid | RecordReaderReadError
-> {
-  return Effect.suspend<
-    ExecutionReusePlan,
-    ProjectTargetReusePlanInvalid | RecordReaderReadError,
-    never
-  >(() => {
+): Effect.Effect<ExecutionReusePlan, ProjectTargetReusePlanInvalid | RecordReaderReadError> {
+  return Effect.suspend<ExecutionReusePlan, ProjectTargetReusePlanInvalid | RecordReaderReadError, never>(() => {
     const invalid = validateProjectTargetReusePlanInput(input);
     if (invalid !== undefined) return Effect.fail(invalid);
 
     return Effect.gen(function* () {
-      const selected = yield* selectPlanningSources(input.reader, flattenTargetSlots(input.target).map((slot) => ({
-        experimentId: slot.experimentId, evalId: slot.evalId, attemptOrdinal: slot.attempt, excludeRunId: slot.runId,
-      })));
-      const { selection } = selected;
-      const readable = yield* Effect.forEach(
-        selection.runRefs,
-        (ref) => input.reader.readRun(ref),
-        { concurrency: 1 },
+      const selected = yield* selectPlanningSources(
+        input.reader,
+        flattenTargetSlots(input.target).map((slot) => ({
+          experimentId: slot.experimentId,
+          evalId: slot.evalId,
+          attemptOrdinal: slot.attempt,
+          excludeRunId: slot.runId,
+        })),
       );
+      const { selection } = selected;
+      const readable = yield* Effect.forEach(selection.runRefs, (ref) => input.reader.readRun(ref), { concurrency: 1 });
       const publishedRuns: ReadableRun[] = [];
       const coreIssues: RecordIssue[] = [];
       for (const read of readable) {
@@ -439,24 +491,35 @@ export function planProjectTargetReuse(
         else if (read.state === "core-invalid") coreIssues.push(...read.issues);
       }
       const merged = yield* mergeCurrentAssessmentRuns(publishedRuns, selected.resources);
-      const runs = merged.map((run) => selected.members.has(run.document.runId)
-        ? Object.freeze({ ...run, members: selected.members.get(run.document.runId)! }) : run);
+      const runs = merged.map((run) =>
+        selected.members.has(run.document.runId)
+          ? Object.freeze({ ...run, members: selected.members.get(run.document.runId)! })
+          : run,
+      );
       const byRunId = new Map(publishedRuns.map((run) => [run.document.runId, run] as const));
       const slots: ExecutionReusePlanSlot[] = [];
       for (const target of flattenTargetSlots(input.target)) {
-        const sourceProblems = selection.problems.filter((problem) => selected.experimentByRun.get(problem.runId) === target.experimentId);
-        const scopedIssues = [...(selected.issuesByExperiment.get(target.experimentId) ?? []),
-          ...sourceProblems.map((problem) => recordIssue("record-schema-invalid", ["run", problem.runId, problem.code]))];
-        slots.push(yield* planTargetSlot({
-          reader: input.reader,
-          target,
-          policy: input.policy,
-          runs,
-          byRunId,
-          selectionHasProblem: scopedIssues.length > 0 || coreIssues.length > 0,
-          selectionProblemScope: coreIssues.length > 0 ? "target" : "experiment",
-          coreIssues: [...coreIssues, ...scopedIssues],
-        }));
+        const sourceProblems = selection.problems.filter(
+          (problem) => selected.experimentByRun.get(problem.runId) === target.experimentId,
+        );
+        const scopedIssues = [
+          ...(selected.issuesByExperiment.get(target.experimentId) ?? []),
+          ...sourceProblems.map((problem) =>
+            recordIssue("record-schema-invalid", ["run", problem.runId, problem.code]),
+          ),
+        ];
+        slots.push(
+          yield* planTargetSlot({
+            reader: input.reader,
+            target,
+            policy: input.policy,
+            runs,
+            byRunId,
+            selectionHasProblem: scopedIssues.length > 0 || coreIssues.length > 0,
+            selectionProblemScope: coreIssues.length > 0 ? "target" : "experiment",
+            coreIssues: [...coreIssues, ...scopedIssues],
+          }),
+        );
       }
       const reuse = slots.filter((slot): slot is ReusePlanSlot => slot.state === "reuse");
       const gaps = slots.filter((slot): slot is ExecutionGapSlot => slot.state === "gap");
@@ -480,22 +543,26 @@ export function planProjectTargetReuseWithoutSources(input: {
   return Effect.suspend(() => {
     const invalid = validateProjectTargetReusePlanInput(input);
     if (invalid !== undefined) return Effect.fail(invalid);
-    const gaps = Object.freeze(flattenTargetSlots(input.target).map((target) =>
-      gapSlot(target, {
-        reason: target.reuseEligibility ?? "no-source-run",
-        scope: "slot",
-        issues: [],
-        comparisons: [],
-      })
-    ));
-    return Effect.succeed(Object.freeze({
-      target: input.target,
-      policy: projectTargetPolicyIdentity,
-      effectiveOptions: effectiveOptions(input.policy),
-      slots: gaps,
-      reuse: Object.freeze([]),
-      gaps,
-    }));
+    const gaps = Object.freeze(
+      flattenTargetSlots(input.target).map((target) =>
+        gapSlot(target, {
+          reason: target.reuseEligibility ?? "no-source-run",
+          scope: "slot",
+          issues: [],
+          comparisons: [],
+        }),
+      ),
+    );
+    return Effect.succeed(
+      Object.freeze({
+        target: input.target,
+        policy: projectTargetPolicyIdentity,
+        effectiveOptions: effectiveOptions(input.policy),
+        slots: gaps,
+        reuse: Object.freeze([]),
+        gaps,
+      }),
+    );
   });
 }
 
@@ -513,36 +580,86 @@ function planTargetSlot(input: {
 }): Effect.Effect<ExecutionReusePlanSlot, RecordReaderReadError> {
   return assessCurrentTargetSlot({
     ...input,
-    readAttempt: (ref) => input.reader.readAttempt(ref).pipe(Effect.catch((error) =>
-      error instanceof RecordIntegrityFailure || error instanceof SqliteRecordError &&
-        ["record-database-invalid", "record-content-invalid", "record-seal-incomplete"].includes(error.code)
-        ? Effect.succeed({ state: "core-invalid" as const,
-          issues: nonEmptyRecordIssues([recordIssue("record-schema-invalid", ["attempt", String(ref.attemptId), error.code,
-            ...(error instanceof RecordIntegrityFailure ? [error.reason] : [])])])! })
-        : Effect.fail(error)), Effect.map((read) => read.state !== "available" ? read : {
-      state: "available" as const,
-      value: { ...read.value, publicationAvailable: read.value.ref.publicationIdentity !== undefined },
-    })),
-    readAssertions: (attempt) => planningAttachment(input.reader.read(attempt.owner, NiceEvalRecordAttachments.assertions), "assertions"),
-    readActivities: (attempt) => planningAttachment(input.reader.read(attempt.owner, NiceEvalRecordAttachments.runnerActivities.attempt), "runner-activities"),
-    readIdentityComparison: (run, target) => readIdentityExplanation({ reader: input.reader, historical: input.byRunId.get(run.document.runId)!, evalId: target.evalId, ...(target.identityManifest === undefined ? {} : { current: target.identityManifest }) }),
+    readAttempt: (ref) =>
+      input.reader.readAttempt(ref).pipe(
+        Effect.catch((error) =>
+          error instanceof RecordIntegrityFailure ||
+          (error instanceof SqliteRecordError &&
+            ["record-database-invalid", "record-content-invalid", "record-seal-incomplete"].includes(error.code))
+            ? Effect.succeed({
+                state: "core-invalid" as const,
+                issues: nonEmptyRecordIssues([
+                  recordIssue("record-schema-invalid", [
+                    "attempt",
+                    String(ref.attemptId),
+                    error.code,
+                    ...(error instanceof RecordIntegrityFailure ? [error.reason] : []),
+                  ]),
+                ])!,
+              })
+            : Effect.fail(error),
+        ),
+        Effect.map((read) =>
+          read.state !== "available"
+            ? read
+            : {
+                state: "available" as const,
+                value: { ...read.value, publicationAvailable: read.value.ref.publicationIdentity !== undefined },
+              },
+        ),
+      ),
+    readAssertions: (attempt) =>
+      planningAttachment(input.reader.read(attempt.owner, NiceEvalRecordAttachments.assertions), "assertions"),
+    readActivities: (attempt) =>
+      planningAttachment(
+        input.reader.read(attempt.owner, NiceEvalRecordAttachments.runnerActivities.attempt),
+        "runner-activities",
+      ),
+    readIdentityComparison: (run, target) =>
+      readIdentityExplanation({
+        reader: input.reader,
+        historical: input.byRunId.get(run.document.runId)!,
+        evalId: target.evalId,
+        ...(target.identityManifest === undefined ? {} : { current: target.identityManifest }),
+      }),
     sourceFor: (attempt, sourceBarrier) => {
       if (!hasPublicationIdentity(attempt)) throw new Error("Expected a published Attempt");
-      return candidateFor({ reader: input.reader, target: input.target, sourceBarrier, attempt, byRunId: input.byRunId })!.source;
+      return candidateFor({
+        reader: input.reader,
+        target: input.target,
+        sourceBarrier,
+        attempt,
+        byRunId: input.byRunId,
+      })!.source;
     },
   });
 }
 
-function planningAttachment<Value>(read: Effect.Effect<RecordAttachmentRead<Value>, RecordReaderReadError>, family: string): Effect.Effect<RecordAttachmentRead<Value>, RecordReaderReadError> {
-  return read.pipe(Effect.catch((error) => error instanceof SqliteRecordError &&
-    ["record-database-invalid", "record-content-invalid", "record-seal-incomplete"].includes(error.code)
-    ? Effect.succeed({ state: "invalid" as const,
-      issues: nonEmptyRecordIssues([recordIssue("record-schema-invalid", [family, error.code])])! })
-    : Effect.fail(error)));
+function planningAttachment<Value>(
+  read: Effect.Effect<RecordAttachmentRead<Value>, RecordReaderReadError>,
+  family: string,
+): Effect.Effect<RecordAttachmentRead<Value>, RecordReaderReadError> {
+  return read.pipe(
+    Effect.catch((error) =>
+      error instanceof SqliteRecordError &&
+      ["record-database-invalid", "record-content-invalid", "record-seal-incomplete"].includes(error.code)
+        ? Effect.succeed({
+            state: "invalid" as const,
+            issues: nonEmptyRecordIssues([recordIssue("record-schema-invalid", [family, error.code])])!,
+          })
+        : Effect.fail(error),
+    ),
+  );
 }
 
 /** Both read-only current results and execution planning use this assessment. */
-export interface CurrentAssessmentInput<Ref, Attempt extends CurrentAssessmentAttempt, Source extends CurrentAssessmentSource, Target extends CurrentTargetSlot, Error> {
+export interface CurrentAssessmentInput<
+  Ref,
+  Attempt extends CurrentAssessmentAttempt,
+  Source extends CurrentAssessmentSource,
+  Target extends CurrentTargetSlot,
+  Error,
+> {
   readonly target: Target;
   readonly policy: ProjectTargetPolicy;
   readonly runs: readonly CurrentAssessmentRun<Ref>[];
@@ -550,14 +667,27 @@ export interface CurrentAssessmentInput<Ref, Attempt extends CurrentAssessmentAt
   readonly selectionHasProblem: boolean;
   readonly selectionProblemScope?: ExecutionGapScope;
   readonly coreIssues: readonly RecordIssue[];
-  readonly readIdentityComparison?: (run: CurrentAssessmentRun<Ref>, target: Target) => Effect.Effect<HistoricalIdentityComparison, Error>;
+  readonly readIdentityComparison?: (
+    run: CurrentAssessmentRun<Ref>,
+    target: Target,
+  ) => Effect.Effect<HistoricalIdentityComparison, Error>;
   readonly readAttempt: (ref: Ref) => Effect.Effect<RecordCoreRead<Attempt>, Error>;
   readonly readAssertions: (attempt: Attempt) => Effect.Effect<RecordAttachmentRead<AssertionsAttachment>, Error>;
-  readonly readActivities: (attempt: Attempt) => Effect.Effect<RecordAttachmentRead<AttemptExecutionTimingFacts>, Error>;
+  readonly readActivities: (
+    attempt: Attempt,
+  ) => Effect.Effect<RecordAttachmentRead<AttemptExecutionTimingFacts>, Error>;
   readonly sourceFor: (attempt: Attempt, barrier: ExecutionSourceBarrier) => Source;
 }
 
-export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAttempt, Source extends CurrentAssessmentSource, Target extends CurrentTargetSlot, Error>(input: CurrentAssessmentInput<Ref, Attempt, Source, Target, Error>): Effect.Effect<CurrentSlotAssessment<Target, Source>, Error> {
+export function assessCurrentTargetSlot<
+  Ref,
+  Attempt extends CurrentAssessmentAttempt,
+  Source extends CurrentAssessmentSource,
+  Target extends CurrentTargetSlot,
+  Error,
+>(
+  input: CurrentAssessmentInput<Ref, Attempt, Source, Target, Error>,
+): Effect.Effect<CurrentSlotAssessment<Target, Source>, Error> {
   return Effect.gen(function* () {
     if (input.target.reuseEligibility !== undefined) {
       return gapSlot(input.target, {
@@ -588,9 +718,8 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
       runId: sourceRun.document.runId,
       startedAt: sourceRun.document.startedAt,
     });
-    const expected = sourceRun.document.expectedSlots.find((slot) =>
-      slot.evalId === input.target.evalId
-      && slot.attemptOrdinal === input.target.attempt
+    const expected = sourceRun.document.expectedSlots.find(
+      (slot) => slot.evalId === input.target.evalId && slot.attemptOrdinal === input.target.attempt,
     );
     if (expected === undefined) {
       return gapSlot(input.target, {
@@ -609,9 +738,18 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
         scope: "slot",
         issues: [],
         sourceBarrier,
-        comparisons: publication?.state === "pending" || publication?.state === "absent"
-          ? [comparison("core", "attempt-outcome", "unavailable", "not-comparable", publication.state === "pending" ? "pending" : publication.reason)]
-          : [],
+        comparisons:
+          publication?.state === "pending" || publication?.state === "absent"
+            ? [
+                comparison(
+                  "core",
+                  "attempt-outcome",
+                  "unavailable",
+                  "not-comparable",
+                  publication.state === "pending" ? "pending" : publication.reason,
+                ),
+              ]
+            : [],
       });
     }
     const readAttempt = yield* input.readAttempt(member.attempt);
@@ -636,7 +774,11 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
     const document = readAttempt.value.document;
     const originRun = input.byRunId.get(document.originRunId);
     const originExpected = originRun?.document.expectedSlots.find((slot) => slot.slotId === document.slotId);
-    if (originExpected === undefined || document.evalId !== originExpected.evalId || document.executionIdentityDigest !== originExpected.executionIdentityDigest) {
+    if (
+      originExpected === undefined ||
+      document.evalId !== originExpected.evalId ||
+      document.executionIdentityDigest !== originExpected.executionIdentityDigest
+    ) {
       return gapSlot(input.target, {
         reason: "source-core-invalid",
         scope: "slot",
@@ -647,54 +789,97 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
     }
     const candidate = input.sourceFor(readAttempt.value, sourceBarrier);
     let identityComparison = comparison("core", "execution-identity", "available", "match", "execution-identity-match");
-    const compareRun = (run: CurrentAssessmentRun<Ref>) => input.readIdentityComparison === undefined
-      ? Effect.succeed({ historical: undefined, explanation: explainIdentityMismatch({
-          ...(input.target.identityManifest === undefined ? {} : { current: input.target.identityManifest }),
-          ...(run.document.context === undefined ? {} : { context: run.document.context }),
-        }) })
-      : input.readIdentityComparison(run, input.target);
+    const compareRun = (run: CurrentAssessmentRun<Ref>) =>
+      input.readIdentityComparison === undefined
+        ? Effect.succeed({
+            historical: undefined,
+            explanation: explainIdentityMismatch({
+              ...(input.target.identityManifest === undefined ? {} : { current: input.target.identityManifest }),
+              ...(run.document.context === undefined ? {} : { context: run.document.context }),
+            }),
+          })
+        : input.readIdentityComparison(run, input.target);
     if (input.target.executionIdentityDigest !== expected.executionIdentityDigest) {
       const sourceIdentity = yield* compareRun(sourceRun);
       const explanation = sourceIdentity.explanation;
       return gapSlot(input.target, {
-        reason: "identity-mismatch", scope: "slot", issues: [], sourceBarrier, candidate,
+        reason: "identity-mismatch",
+        scope: "slot",
+        issues: [],
+        sourceBarrier,
+        candidate,
         comparisons: [identityMismatchComparison(explanation)],
       });
     }
     if (originExpected.executionIdentityDigest !== input.target.executionIdentityDigest) {
       const originIdentity = yield* compareRun(originRun!);
       const explanation = originIdentity.explanation;
-        const mismatch = identityMismatchComparison(explanation);
-        const pureRename = originExpected.evalId === input.target.evalId &&
-          originExpected.attemptOrdinal === input.target.attempt &&
-          executionDigestForManifestOrigin(input.target, originRun!.document.experimentId, originIdentity.historical) === originExpected.executionIdentityDigest;
-        const domainBlocked = explanation.kind === "unexplained" && explanation.diagnostic.code === "niceeval-identity-changed";
-        if (!pureRename) return gapSlot(input.target, {
+      const mismatch = identityMismatchComparison(explanation);
+      const pureRename =
+        originExpected.evalId === input.target.evalId &&
+        originExpected.attemptOrdinal === input.target.attempt &&
+        executionDigestForManifestOrigin(input.target, originRun!.document.experimentId, originIdentity.historical) ===
+          originExpected.executionIdentityDigest;
+      const domainBlocked =
+        explanation.kind === "unexplained" && explanation.diagnostic.code === "niceeval-identity-changed";
+      if (!pureRename)
+        return gapSlot(input.target, {
           reason: domainBlocked ? "identity-mismatch" : "adoption-unproven",
-          scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [mismatch],
+          scope: "slot",
+          issues: [],
+          sourceBarrier,
+          candidate,
+          comparisons: [mismatch],
         });
-        if (sourceRun.document.context === undefined || originRun!.document.context === undefined ||
-            !hasProvenNoExperimentHooks(sourceRun.document.context) ||
-            !hasProvenNoExperimentHooks(originRun!.document.context)) return gapSlot(input.target, {
-          reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [mismatch],
+      if (
+        sourceRun.document.context === undefined ||
+        originRun!.document.context === undefined ||
+        !hasProvenNoExperimentHooks(sourceRun.document.context) ||
+        !hasProvenNoExperimentHooks(originRun!.document.context)
+      )
+        return gapSlot(input.target, {
+          reason: "adoption-unproven",
+          scope: "slot",
+          issues: [],
+          sourceBarrier,
+          candidate,
+          comparisons: [mismatch],
         });
-        let witnessed = false;
-        if (member.bindingRevision !== undefined) for (const run of input.runs) {
+      let witnessed = false;
+      if (member.bindingRevision !== undefined)
+        for (const run of input.runs) {
           if (run.document.experimentId !== input.target.experimentId) continue;
-          const witnessSlot = run.document.expectedSlots.find((slot) => slot.evalId === input.target.evalId && slot.attemptOrdinal === input.target.attempt);
-          if (witnessSlot === undefined || !run.members.some((entry) =>
-            entry.document.slotId === witnessSlot.slotId && entry.document.action === "accepted" &&
-            entry.document.attempt?.originRunId === candidate.origin.runId &&
-            entry.document.attempt.attemptId === candidate.attemptId && entry.bindingRevision !== undefined &&
-            entry.bindingRevision <= member.bindingRevision!)) continue;
+          const witnessSlot = run.document.expectedSlots.find(
+            (slot) => slot.evalId === input.target.evalId && slot.attemptOrdinal === input.target.attempt,
+          );
+          if (
+            witnessSlot === undefined ||
+            !run.members.some(
+              (entry) =>
+                entry.document.slotId === witnessSlot.slotId &&
+                entry.document.action === "accepted" &&
+                entry.document.attempt?.originRunId === candidate.origin.runId &&
+                entry.document.attempt.attemptId === candidate.attemptId &&
+                entry.bindingRevision !== undefined &&
+                entry.bindingRevision <= member.bindingRevision!,
+            )
+          )
+            continue;
           if (witnessSlot.executionIdentityDigest === input.target.executionIdentityDigest) {
-            witnessed = true; break;
+            witnessed = true;
+            break;
           }
         }
-        if (!witnessed) return gapSlot(input.target, {
-          reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [mismatch],
+      if (!witnessed)
+        return gapSlot(input.target, {
+          reason: "adoption-unproven",
+          scope: "slot",
+          issues: [],
+          sourceBarrier,
+          candidate,
+          comparisons: [mismatch],
         });
-        identityComparison = mismatch;
+      identityComparison = mismatch;
     }
     const explainedIdentity = identityComparison.explanation === undefined ? [] : [identityComparison];
     const assertions = yield* input.readAssertions(readAttempt.value);
@@ -706,13 +891,10 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
         issues: problem.issues,
         sourceBarrier,
         candidate,
-        comparisons: [...explainedIdentity, comparison(
-          "niceeval.assertions",
-          "assertion-verdict",
-          problem.state,
-          "not-comparable",
-          problem.reason,
-        )],
+        comparisons: [
+          ...explainedIdentity,
+          comparison("niceeval.assertions", "assertion-verdict", problem.state, "not-comparable", problem.reason),
+        ],
       });
     }
     const verdict = recordedAttemptVerdict({
@@ -740,11 +922,22 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
       });
     }
     if (input.target.evaluationKind === "score") {
-      const score = foldRecordedAttemptScore({ outcome: readAttempt.value.document.outcome, assertions: assertions.value });
-      if (Result.isFailure(score) || score.success.state !== "complete") return gapSlot(input.target, {
-        reason: "score-incomplete", scope: "slot", issues: [], sourceBarrier, candidate,
-        comparisons: [...explainedIdentity, comparison("niceeval.assertions", "assertion-verdict", "available", "ineligible", "score-incomplete")],
+      const score = foldRecordedAttemptScore({
+        outcome: readAttempt.value.document.outcome,
+        assertions: assertions.value,
       });
+      if (Result.isFailure(score) || score.success.state !== "complete")
+        return gapSlot(input.target, {
+          reason: "score-incomplete",
+          scope: "slot",
+          issues: [],
+          sourceBarrier,
+          candidate,
+          comparisons: [
+            ...explainedIdentity,
+            comparison("niceeval.assertions", "assertion-verdict", "available", "ineligible", "score-incomplete"),
+          ],
+        });
     }
     if (verdict !== "passed" && verdict !== "failed") {
       return gapSlot(input.target, {
@@ -765,13 +958,16 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
         issues: problem.issues,
         sourceBarrier,
         candidate,
-        comparisons: [...explainedIdentity, comparison(
-          "niceeval.runner-activities",
-          "execution-duration",
-          problem.state,
-          "not-comparable",
-          problem.reason,
-        )],
+        comparisons: [
+          ...explainedIdentity,
+          comparison(
+            "niceeval.runner-activities",
+            "execution-duration",
+            problem.state,
+            "not-comparable",
+            problem.reason,
+          ),
+        ],
       });
     }
     const durationRead = readAttemptExecutionDuration(activities.value);
@@ -782,13 +978,16 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
         issues: [],
         sourceBarrier,
         candidate,
-        comparisons: [...explainedIdentity, comparison(
-          "niceeval.runner-activities",
-          "execution-duration",
-          "unavailable",
-          "not-comparable",
-          durationRead.reason,
-        )],
+        comparisons: [
+          ...explainedIdentity,
+          comparison(
+            "niceeval.runner-activities",
+            "execution-duration",
+            "unavailable",
+            "not-comparable",
+            durationRead.reason,
+          ),
+        ],
       });
     }
     const duration = durationComparison({
@@ -805,10 +1004,7 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
         comparisons: [...explainedIdentity, duration.comparison],
       });
     }
-    if (
-      input.policy.rerun === "all"
-      || (input.policy.rerun === "failed" && verdict === "failed")
-    ) {
+    if (input.policy.rerun === "all" || (input.policy.rerun === "failed" && verdict === "failed")) {
       return gapSlot(input.target, {
         reason: "rerun-requested",
         scope: "slot",
@@ -847,18 +1043,24 @@ function latestSourceRun<Ref>(
   runs: readonly CurrentAssessmentRun<Ref>[],
   target: CurrentTargetSlot,
 ): CurrentAssessmentRun<Ref> | undefined {
-  const candidates = runs.filter((run) =>
-    run.document.experimentId === target.experimentId
-    && run.lifecycle?.state !== "deleted"
-    // Execution refreshes may see their own already-created pending Run.
-    // Logical current targets have no Run identity and keep every barrier.
-    && (!("runId" in target) || run.document.runId !== target.runId)
-    && run.document.expectedSlots.some((slot) => slot.evalId === target.evalId && slot.attemptOrdinal === target.attempt)
+  const candidates = runs.filter(
+    (run) =>
+      run.document.experimentId === target.experimentId &&
+      run.lifecycle?.state !== "deleted" &&
+      // Execution refreshes may see their own already-created pending Run.
+      // Logical current targets have no Run identity and keep every barrier.
+      (!("runId" in target) || run.document.runId !== target.runId) &&
+      run.document.expectedSlots.some(
+        (slot) => slot.evalId === target.evalId && slot.attemptOrdinal === target.attempt,
+      ),
   );
-  return candidates.sort((left, right) => {
-    const a = left.createdRevision ?? 0, b = right.createdRevision ?? 0;
-    return a - b || compareCanonicalIdentity(left.document.runId, right.document.runId);
-  }).at(-1);
+  return candidates
+    .sort((left, right) => {
+      const a = left.createdRevision ?? 0,
+        b = right.createdRevision ?? 0;
+      return a - b || compareCanonicalIdentity(left.document.runId, right.document.runId);
+    })
+    .at(-1);
 }
 
 interface CandidateResolution {
@@ -882,13 +1084,11 @@ function candidateFor(input: {
   const document = input.attempt.document;
   const originRun = input.byRunId.get(document.originRunId);
   if (originRun === undefined) return undefined;
-  const originExpected = originRun.document.expectedSlots.find(
-    (slot) => slot.slotId === document.slotId,
-  );
+  const originExpected = originRun.document.expectedSlots.find((slot) => slot.slotId === document.slotId);
   if (
-    originExpected === undefined
-    || document.evalId !== originExpected.evalId
-    || document.executionIdentityDigest !== originExpected.executionIdentityDigest
+    originExpected === undefined ||
+    document.evalId !== originExpected.evalId ||
+    document.executionIdentityDigest !== originExpected.executionIdentityDigest
   ) {
     return undefined;
   }
@@ -919,9 +1119,7 @@ function attachmentProblem(input: {
 }): {
   readonly reason: Extract<
     ExecutionGapReason,
-    | "source-attachment-unavailable"
-    | "source-attachment-unsupported"
-    | "source-attachment-invalid"
+    "source-attachment-unavailable" | "source-attachment-unsupported" | "source-attachment-invalid"
   >;
   readonly state: Exclude<ExecutionComparisonSourceState, "available">;
   readonly issues: readonly RecordIssue[];
@@ -949,13 +1147,10 @@ function attachmentProblem(input: {
 }
 
 function identityMismatchComparison(explanation: IdentityExplanation): ExecutionComparison {
-  return Object.freeze({ ...comparison(
-    "core",
-    "execution-identity",
-    "available",
-    "mismatch",
-    "identity-mismatch",
-  ), explanation });
+  return Object.freeze({
+    ...comparison("core", "execution-identity", "available", "mismatch", "identity-mismatch"),
+    explanation,
+  });
 }
 
 function verdictComparison(
@@ -1050,7 +1245,16 @@ function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessm
     state: "gap" as const,
     reason: input.reason,
     scope: input.scope,
-    issues: Object.freeze([...input.issues, ...(target.reuseEligibilityFacts ?? []).map(fact => Object.freeze({ code: "dynamic-module-unresolved" as const, path: [fact.file, String(fact.line), String(fact.column)], ...fact }))]),
+    issues: Object.freeze([
+      ...input.issues,
+      ...(target.reuseEligibilityFacts ?? []).map((fact) =>
+        Object.freeze({
+          code: "dynamic-module-unresolved" as const,
+          path: [fact.file, String(fact.line), String(fact.column)],
+          ...fact,
+        }),
+      ),
+    ]),
     ...(input.sourceBarrier === undefined ? {} : { sourceBarrier: input.sourceBarrier }),
     ...(input.candidate === undefined ? {} : { candidate: input.candidate }),
     comparisons: Object.freeze([...input.comparisons]),
@@ -1073,9 +1277,7 @@ function flattenTargetSlots(target: ExecutionTarget): readonly TargetSlot[] {
 }
 
 function sourceKey(experimentId: string, evalId: string, ordinal?: string): string {
-  return ordinal === undefined
-    ? `${experimentId}\u0000${evalId}`
-    : `${experimentId}\u0000${evalId}\u0000${ordinal}`;
+  return ordinal === undefined ? `${experimentId}\u0000${evalId}` : `${experimentId}\u0000${evalId}\u0000${ordinal}`;
 }
 
 function invalidPlan(reason: ProjectTargetReusePlanInvalidReason): ProjectTargetReusePlanInvalid {
@@ -1086,13 +1288,13 @@ function isTargetRun(value: unknown): value is TargetRun {
   if (typeof value !== "object" || value === null) return false;
   const run = value as Partial<TargetRun>;
   return (
-    typeof run.runId === "string"
-    && isPortableSegment(run.runId)
-    && typeof run.experimentId === "string"
-    && isBoundedRecordIdentity(run.experimentId)
-    && typeof run.startedAt === "number"
-    && isUtcMillis(run.startedAt)
-    && Array.isArray(run.slots)
+    typeof run.runId === "string" &&
+    isPortableSegment(run.runId) &&
+    typeof run.experimentId === "string" &&
+    isBoundedRecordIdentity(run.experimentId) &&
+    typeof run.startedAt === "number" &&
+    isUtcMillis(run.startedAt) &&
+    Array.isArray(run.slots)
   );
 }
 
@@ -1100,26 +1302,26 @@ function isTargetSlot(value: unknown): value is TargetSlot {
   if (typeof value !== "object" || value === null) return false;
   const slot = value as Partial<TargetSlot>;
   return (
-    typeof slot.runId === "string"
-    && isPortableSegment(slot.runId)
-    && typeof slot.slotId === "string"
-    && isPortableSegment(slot.slotId)
-    && typeof slot.experimentId === "string"
-    && isBoundedRecordIdentity(slot.experimentId)
-    && typeof slot.evalId === "string"
-    && isBoundedRecordIdentity(slot.evalId)
-    && typeof slot.attempt === "number"
-    && Number.isSafeInteger(slot.attempt)
-    && slot.attempt >= 0
-    && (slot.evaluationKind === "pass" || slot.evaluationKind === "score")
-    && (slot.reuseEligibility === undefined
-      || slot.reuseEligibility === "adapter-behavior-revision-required"
-      || slot.reuseEligibility === "dynamic-module-unresolved")
-    && typeof slot.executionIdentityDigest === "string"
-    && isSha256Digest(slot.executionIdentityDigest)
-    && isExecutionIdentity(slot.inputIdentity)
-    && isExecutionIdentity(slot.configIdentity)
-    && (slot.timeout === undefined || isExecutionDurationLimit(slot.timeout))
+    typeof slot.runId === "string" &&
+    isPortableSegment(slot.runId) &&
+    typeof slot.slotId === "string" &&
+    isPortableSegment(slot.slotId) &&
+    typeof slot.experimentId === "string" &&
+    isBoundedRecordIdentity(slot.experimentId) &&
+    typeof slot.evalId === "string" &&
+    isBoundedRecordIdentity(slot.evalId) &&
+    typeof slot.attempt === "number" &&
+    Number.isSafeInteger(slot.attempt) &&
+    slot.attempt >= 0 &&
+    (slot.evaluationKind === "pass" || slot.evaluationKind === "score") &&
+    (slot.reuseEligibility === undefined ||
+      slot.reuseEligibility === "adapter-behavior-revision-required" ||
+      slot.reuseEligibility === "dynamic-module-unresolved") &&
+    typeof slot.executionIdentityDigest === "string" &&
+    isSha256Digest(slot.executionIdentityDigest) &&
+    isExecutionIdentity(slot.inputIdentity) &&
+    isExecutionIdentity(slot.configIdentity) &&
+    (slot.timeout === undefined || isExecutionDurationLimit(slot.timeout))
   );
 }
 
@@ -1128,8 +1330,7 @@ function isBoundedNonEmptyText(value: string, maximumLength: number): boolean {
 }
 
 function isBoundedRecordIdentity(value: string): boolean {
-  return isBoundedNonEmptyText(value, PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH)
-    && !value.includes("\u0000");
+  return isBoundedNonEmptyText(value, PROJECT_TARGET_RECORD_IDENTITY_MAXIMUM_LENGTH) && !value.includes("\u0000");
 }
 
 function isRerunOption(value: unknown): value is ProjectTargetPolicy["rerun"] {
@@ -1139,18 +1340,22 @@ function isRerunOption(value: unknown): value is ProjectTargetPolicy["rerun"] {
 function isExecutionIdentity(value: unknown): value is ExecutionIdentity {
   if (typeof value !== "object" || value === null) return false;
   const identity = value as { readonly domain?: unknown; readonly value?: unknown };
-  return typeof identity.domain === "string"
-    && isBoundedRecordIdentity(identity.domain)
-    && typeof identity.value === "string"
-    && isBoundedRecordIdentity(identity.value);
+  return (
+    typeof identity.domain === "string" &&
+    isBoundedRecordIdentity(identity.domain) &&
+    typeof identity.value === "string" &&
+    isBoundedRecordIdentity(identity.value)
+  );
 }
 
 function isExecutionDurationLimit(value: unknown): value is ExecutionDurationLimit {
   if (typeof value !== "object" || value === null) return false;
   const duration = value as { readonly domain?: unknown; readonly milliseconds?: unknown };
-  return typeof duration.domain === "string"
-    && isBoundedRecordIdentity(duration.domain)
-    && typeof duration.milliseconds === "number"
-    && Number.isFinite(duration.milliseconds)
-    && duration.milliseconds >= 0;
+  return (
+    typeof duration.domain === "string" &&
+    isBoundedRecordIdentity(duration.domain) &&
+    typeof duration.milliseconds === "number" &&
+    Number.isFinite(duration.milliseconds) &&
+    duration.milliseconds >= 0
+  );
 }

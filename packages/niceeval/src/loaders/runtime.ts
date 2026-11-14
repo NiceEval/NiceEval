@@ -9,7 +9,13 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { compilePatterns, enumerationBases, includedByPatterns, unmatchedIncludes, type CompiledPattern } from "./glob.ts";
+import {
+  compilePatterns,
+  enumerationBases,
+  includedByPatterns,
+  unmatchedIncludes,
+  type CompiledPattern,
+} from "./glob.ts";
 
 /**
  * 一次发现期求值的登记表:
@@ -67,7 +73,9 @@ export function enterLoaderDiscoveryHost(): void {
 /** Reports a loader read after discovery has closed; load data at module top level and retain it for tests and lifecycle hooks. */
 export class LoaderOutsideDiscoveryError extends Error {
   constructor(path: string) {
-    super(`Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`);
+    super(
+      `Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`,
+    );
     this.name = "LoaderOutsideDiscoveryError";
   }
 }
@@ -111,14 +119,18 @@ export async function captureLoadedFiles<T>(
       paths: [...capture.data].sort(),
       criteriaPaths: [...capture.criteria].sort(),
       privatePaths: [...capture.private].sort(),
-      origins: Object.freeze([...capture.origins.entries()]
-        .map(([sourcePath, buckets]) => Object.freeze({
-          sourcePath,
-          paths: Object.freeze([...buckets.data].sort()),
-          criteriaPaths: Object.freeze([...buckets.criteria].sort()),
-          privatePaths: Object.freeze([...buckets.private].sort()),
-        }))
-        .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath))),
+      origins: Object.freeze(
+        [...capture.origins.entries()]
+          .map(([sourcePath, buckets]) =>
+            Object.freeze({
+              sourcePath,
+              paths: Object.freeze([...buckets.data].sort()),
+              criteriaPaths: Object.freeze([...buckets.criteria].sort()),
+              privatePaths: Object.freeze([...buckets.private].sort()),
+            }),
+          )
+          .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
+      ),
       unattributed: Object.freeze({
         paths: Object.freeze([...capture.unattributed.data].sort()),
         criteriaPaths: Object.freeze([...capture.unattributed.criteria].sort()),
@@ -200,7 +212,10 @@ function resolvedPath(path: string | URL): string {
 }
 
 function fromFileUrl(url: URL): string {
-  if (url.protocol !== "file:") throw new Error(`A URL passed to a loader must use the file: protocol, but got ${url.protocol} (${url.href}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.`);
+  if (url.protocol !== "file:")
+    throw new Error(
+      `A URL passed to a loader must use the file: protocol, but got ${url.protocol} (${url.href}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.`,
+    );
   return fileURLToPath(url);
 }
 
@@ -266,7 +281,13 @@ export type CriteriaPattern = string | RelativeCriteriaPattern;
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
 export async function loadCriteria(...patterns: CriteriaPattern[]): Promise<string[]> {
-  assertLoaderTiming(patterns.map(pattern => typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`).join(" "));
+  assertLoaderTiming(
+    patterns
+      .map((pattern) =>
+        typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`,
+      )
+      .join(" "),
+  );
   return registerGlobPatterns(patterns.map(normalizeCriteriaPattern), "criteria");
 }
 
@@ -297,10 +318,7 @@ export async function loadPrivate(...patterns: string[]): Promise<string[]> {
   return registerGlobPatterns(patterns, "private");
 }
 
-async function registerGlobPatterns(
-  patterns: string[],
-  bucket: "criteria" | "private",
-): Promise<string[]> {
+async function registerGlobPatterns(patterns: string[], bucket: "criteria" | "private"): Promise<string[]> {
   assertLoaderTiming(patterns.join(" "));
   const root = process.cwd();
   const compiled = compilePatterns(patterns);
@@ -314,16 +332,23 @@ async function registerGlobPatterns(
   const missing = unmatchedIncludes(compiled, relativePaths);
   if (missing.length > 0) {
     const patterns = missing.join(" ");
-    throw new Error(bucket === "private"
-      ? `These loadPrivate patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the private files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk; letting this pass silently would drop hidden inputs from the leak gate and the fingerprint.`
-      : `These loadCriteria patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the criteria files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk, and drop the pattern if it is no longer needed; the other patterns having matches is no excuse, because letting this pass silently narrows the criteria, and narrowed criteria let an eval that should re-run keep carrying its old verdict.`);
+    throw new Error(
+      bucket === "private"
+        ? `These loadPrivate patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the private files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk; letting this pass silently would drop hidden inputs from the leak gate and the fingerprint.`
+        : `These loadCriteria patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the criteria files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk, and drop the pattern if it is no longer needed; the other patterns having matches is no excuse, because letting this pass silently narrows the criteria, and narrowed criteria let an eval that should re-run keep carrying its old verdict.`,
+    );
   }
   for (const path of relativePaths) registerCapturePath(bucket, resolve(root, path));
   return relativePaths;
 }
 
 /** 从一个枚举起点往下走,把命中 pattern 集的文件按项目根相对路径收进 out。 */
-async function collectCriteria(root: string, base: string, compiled: readonly CompiledPattern[], out: Set<string>): Promise<void> {
+async function collectCriteria(
+  root: string,
+  base: string,
+  compiled: readonly CompiledPattern[],
+  out: Set<string>,
+): Promise<void> {
   // pattern 自己就指到根外(`../`、绝对路径)时在起点上先报,不用等枚举。
   await assertInsideRoot(root, resolve(root, base), base || ".");
   // 符号链接可以指回树内,realpath 去重防环。
@@ -362,7 +387,9 @@ async function collectCriteria(root: string, base: string, compiled: readonly Co
 async function assertInsideRoot(root: string, absolute: string, shown: string): Promise<void> {
   const real = await realpath(absolute).catch(() => absolute);
   if (real !== root && !real.startsWith(`${root}${sep}`)) {
-    throw new Error(`loadCriteria matched "${shown}", which lands outside the project root (it resolves to ${real}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root ${root}, or exclude that link with a \`!\` pattern.`);
+    throw new Error(
+      `loadCriteria matched "${shown}", which lands outside the project root (it resolves to ${real}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root ${root}, or exclude that link with a \`!\` pattern.`,
+    );
   }
 }
 
@@ -381,7 +408,9 @@ export async function loadYaml<T>(path: string | URL, decode: DataDecoder<T>): P
   try {
     ({ parse } = (await import(yamlPkg)) as { parse(s: string): unknown });
   } catch {
-    throw new Error(`loadYaml("${String(path)}") needs a YAML parser: run \`pnpm add yaml\` first (or switch to loadJson with a JSON dataset).`);
+    throw new Error(
+      `loadYaml("${String(path)}") needs a YAML parser: run \`pnpm add yaml\` first (or switch to loadJson with a JSON dataset).`,
+    );
   }
   return decode(parse(raw));
 }

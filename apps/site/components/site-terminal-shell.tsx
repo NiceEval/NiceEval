@@ -36,7 +36,17 @@ export function Line({ children, className }: { children?: ReactNode; className?
 }
 
 /** 逐字打的命令行。静态分支直接给整行。 */
-export function Typed({ text, msPerChar, start, now }: { text: string; msPerChar: number; start: number; now: number }) {
+export function Typed({
+  text,
+  msPerChar,
+  start,
+  now,
+}: {
+  text: string;
+  msPerChar: number;
+  start: number;
+  now: number;
+}) {
   const animated = useContext(AnimatedContext);
   if (!animated) return <>{text}</>;
   const chars = Math.max(0, Math.floor((now - start) / msPerChar));

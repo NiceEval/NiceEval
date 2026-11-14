@@ -12,7 +12,9 @@ test.concurrent("二值裁判只给零分或满分，非法输出与服务故障
   const server = createServer((request, response) => {
     let body = "";
     request.setEncoding("utf8");
-    request.on("data", (chunk: string) => { body += chunk; });
+    request.on("data", (chunk: string) => {
+      body += chunk;
+    });
     request.on("end", () => {
       const payload = JSON.parse(body);
       const precheck = payload.messages.some((message: { content: string }) => message.content === "Precheck.");
@@ -23,18 +25,38 @@ test.concurrent("二值裁判只给零分或满分，非法输出与服务故障
         response.end(JSON.stringify({ error: { message: "Fixture access denied", type: "permission_error" } }));
         return;
       }
-      const decision = precheck ? { measurement: 1, rationale: "Precheck accepted" }
+      const decision = precheck
+        ? { measurement: 1, rationale: "Precheck accepted" }
         : { choice: material.result, rationale: `Fixture chose ${material.result}` };
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({
-        id: "binary-fixture", object: "chat.completion", created: 0, model: "judge-fixture",
-        choices: [{ index: 0, finish_reason: "tool_calls", message: {
-          role: "assistant", content: null,
-          tool_calls: [{ id: "binary-call", type: "function", function: {
-            name: payload.tool_choice.function.name, arguments: JSON.stringify(decision),
-          } }],
-        } }],
-      }));
+      response.end(
+        JSON.stringify({
+          id: "binary-fixture",
+          object: "chat.completion",
+          created: 0,
+          model: "judge-fixture",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "binary-call",
+                    type: "function",
+                    function: {
+                      name: payload.tool_choice.function.name,
+                      arguments: JSON.stringify(decision),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      );
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -42,7 +64,9 @@ test.concurrent("二值裁判只给零分或满分，非法输出与服务故障
   if (address === null || typeof address === "string") throw new Error("Missing fixture address");
   try {
     await evalE2E.case("binary-judge", async ({ paths: { projectRoot }, commands: { niceeval, tsc } }) => {
-      await writeFile(join(projectRoot, "fixtures/binary-types.mts"), `import { defineScoreEval } from "niceeval";
+      await writeFile(
+        join(projectRoot, "fixtures/binary-types.mts"),
+        `import { defineScoreEval } from "niceeval";
 import { binaryJudge, type BinaryJudgeOptions } from "niceeval/expect";
 const options: BinaryJudgeOptions = { rubric: "explicitly satisfied", maxCalls: 1, maxMaterialBytes: 1024,  };
 const rule = binaryJudge(options);
@@ -52,13 +76,24 @@ defineScoreEval({ test(t) {
 } });
 // @ts-expect-error binary classification has no numeric anchors
 binaryJudge({ rubric: "satisfied", anchors: [] });
-`);
+`,
+      );
       const types = await tsc.run([
-        "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext",
-        "--skipLibCheck", "--types", "node", "fixtures/binary-types.mts",
+        "--noEmit",
+        "--strict",
+        "--target",
+        "ES2022",
+        "--module",
+        "NodeNext",
+        "--skipLibCheck",
+        "--types",
+        "node",
+        "fixtures/binary-types.mts",
       ]);
       expect(types.exitCode, types.diagnostic()).toBe(0);
-      await writeFile(join(projectRoot, "evals/binary.eval.ts"), `
+      await writeFile(
+        join(projectRoot, "evals/binary.eval.ts"),
+        `
 import { defineScoreEval } from "niceeval";
 import { binaryJudge } from "niceeval/expect";
 const rule = binaryJudge({ rubric: "The requirement is met." });
@@ -71,22 +106,35 @@ export default defineScoreEval({ async test(t) {
   t.judge({ result: "invalid-choice" }, rule).score(5).label("Invalid output");
   t.judge({ result: "provider-failure" }, rule).score(7).label("Provider failure");
 } });
-`);
-      await writeFile(join(projectRoot, "experiments/binary.ts"), `
+`,
+      );
+      await writeFile(
+        join(projectRoot, "experiments/binary.ts"),
+        `
 import { defineExperiment } from "niceeval";
 import { defineAgent, completeEvidenceCoverage } from "niceeval/adapter";
 export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name: "binary-fixture", evidenceCoverage: completeEvidenceCoverage, send: async () => ({ status: "completed", events: [] }) }) });
-`);
-      const run = await niceeval.run(["exp", "binary", "--json"], { env: {
-        ...process.env, NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_JUDGE_KEY: "binary-fixture-key",
-      } });
+`,
+      );
+      const run = await niceeval.run(["exp", "binary", "--json"], {
+        env: {
+          ...process.env,
+          NICEEVAL_E2E_JUDGE_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          NICEEVAL_E2E_JUDGE_KEY: "binary-fixture-key",
+        },
+      });
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
       const event = only(run.expEvalEvents(), (item) => item.evalId === "binary", run.diagnostic());
       const attempt = await inspectAttempt(niceeval, projectRoot, event.locator, "attempt.get");
       expect(attempt.document.attempt.score.state).not.toBe("complete");
       expect(attempt.document.attempt.assertions.entries).toHaveLength(4);
       const digests = new Set<string>();
-      for (const [label, value] of [["Satisfied", 1], ["Not satisfied", 0], ["Invalid output", null], ["Provider failure", null]] as const) {
+      for (const [label, value] of [
+        ["Satisfied", 1],
+        ["Not satisfied", 0],
+        ["Invalid output", null],
+        ["Provider failure", null],
+      ] as const) {
         const entry = only(attempt.document.attempt.assertions.entries, (item) => item.display.label === label);
         const detail = await inspectAssertion(niceeval, projectRoot, event.locator, entry.entryId);
         const recorded = assertionEntry(detail.document, detail.receipt.diagnostic());
@@ -94,7 +142,10 @@ export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name
         expect(audit?.state, detail.receipt.diagnostic()).toBe("available");
         if (audit?.state !== "available") throw new Error("Missing binary audit");
         digests.add(audit.audit.definition.digest);
-        expect(JSON.parse(audit.audit.definition.config)).toMatchObject({ algorithm: "binary-classification", scores: { satisfied: 1, "not-satisfied": 0 } });
+        expect(JSON.parse(audit.audit.definition.config)).toMatchObject({
+          algorithm: "binary-classification",
+          scores: { satisfied: 1, "not-satisfied": 0 },
+        });
         expect(audit.audit.calls).toHaveLength(1);
         expect(audit.audit.calls[0]?.operation).toBe("classify");
         if (value === null) {
@@ -103,7 +154,11 @@ export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name
         } else {
           expect(audit.audit.result).toMatchObject({ state: "measured", value });
           expect(recorded.decision.gate).toBe(value === 1 ? "satisfied" : "failed");
-          expect(recorded.contribution).toEqual({ state: "earned", points: value === 1 ? 2 : 3, earned: value === 1 ? 2 : 0 });
+          expect(recorded.contribution).toEqual({
+            state: "earned",
+            points: value === 1 ? 2 : 3,
+            earned: value === 1 ? 2 : 0,
+          });
           expect(JSON.stringify(audit.audit.calls)).toContain(value === 1 ? "satisfied" : "not-satisfied");
           expect(JSON.stringify(recorded)).toContain(`Fixture chose ${value === 1 ? "satisfied" : "not-satisfied"}`);
         }
@@ -111,12 +166,15 @@ export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name
       expect(digests.size).toBe(1);
       expect(requests).toHaveLength(4);
       for (const body of requests) {
-        expect(JSON.parse(JSON.parse(body).messages[0].content)).toMatchObject({ operation: "classify", choices: ["satisfied", "not-satisfied"] });
+        expect(JSON.parse(JSON.parse(body).messages[0].content)).toMatchObject({
+          operation: "classify",
+          choices: ["satisfied", "not-satisfied"],
+        });
         expect(body).not.toContain("anchors");
       }
     });
   } finally {
     server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });

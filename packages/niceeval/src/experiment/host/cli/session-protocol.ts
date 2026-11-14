@@ -24,11 +24,15 @@ const InvocationCompletionSchema: Schema.Codec<InvocationCompletion> = Schema.St
   status: Schema.Literals(["complete", "incomplete", "interrupted"]),
   unstarted: NonNegativeIntegerSchema,
   earlyExitUnstarted: NonNegativeIntegerSchema,
-  reporterErrors: Schema.mutable(Schema.Array(Schema.Struct({
-    reporter: Schema.String,
-    required: Schema.Boolean,
-    message: Schema.String,
-  }))),
+  reporterErrors: Schema.mutable(
+    Schema.Array(
+      Schema.Struct({
+        reporter: Schema.String,
+        required: Schema.Boolean,
+        message: Schema.String,
+      }),
+    ),
+  ),
 });
 
 const SessionQueuedAttemptSchema: Schema.Codec<SessionQueuedAttemptRecord> = Schema.Struct({

@@ -61,7 +61,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
           name: `custom-${implementation}`,
           contract: "e2e/native-workflow/v1",
           behaviorRevision: "1",
-            cleanupTimeoutMs: 30_000,
+          cleanupTimeoutMs: 30_000,
         });
         expect(execution?.adapter).not.toHaveProperty("kind");
         expect(execution).not.toHaveProperty("application");
@@ -72,12 +72,15 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
             .trim()
             .split("\n")
             .filter(Boolean)
-            .map((line) => JSON.parse(line) as {
-              source: "event" | "result";
-              experimentId: string;
-              attempt: number;
-              adapter: unknown;
-            })
+            .map(
+              (line) =>
+                JSON.parse(line) as {
+                  source: "event" | "result";
+                  experimentId: string;
+                  attempt: number;
+                  adapter: unknown;
+                },
+            )
             .filter((entry) => entry.experimentId === experimentId);
           expect(identityEntries).toHaveLength(4);
           expect(identityEntries.map(({ source, attempt }) => `${source}:${attempt}`).sort()).toEqual([
@@ -91,7 +94,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
               name: `custom-${implementation}`,
               contract: "e2e/native-workflow/v1",
               behaviorRevision: "1",
-            cleanupTimeoutMs: 30_000,
+              cleanupTimeoutMs: 30_000,
             });
             expect(entry.adapter).not.toHaveProperty("kind");
           }
@@ -115,7 +118,10 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
           if (member.evalId === "custom-native-score") {
             expect(member.verdict).toBe("passed");
             const details = await inspectAssertionEntries(
-              niceeval, projectRoot, locator, attempt.document.attempt.assertions.entries,
+              niceeval,
+              projectRoot,
+              locator,
+              attempt.document.attempt.assertions.entries,
             );
             const entries = details.map((detail) => {
               expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
@@ -140,12 +146,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
           ]);
           const firstAssertion = attempt.document.attempt.assertions.entries[0];
           if (firstAssertion === undefined) throw new Error("custom Attempt did not publish Assertions");
-          const detail = await inspectAssertion(
-            niceeval,
-            projectRoot,
-            locator,
-            firstAssertion.entryId,
-          );
+          const detail = await inspectAssertion(niceeval, projectRoot, locator, firstAssertion.entryId);
           expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
           expect(assertionEntry(detail.document, detail.receipt.diagnostic())).toMatchObject({
             decision: { result: "matched", gate: "satisfied" },

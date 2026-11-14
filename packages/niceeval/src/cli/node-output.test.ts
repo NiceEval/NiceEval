@@ -8,9 +8,11 @@ import { NodeCliOutputLive } from "./node-application.ts";
 test("output streams handle asynchronous EPIPE after the write returns", async () => {
   for (const stream of ["stdout", "stderr"] as const) {
     const output = await Effect.runPromise(CliOutput.pipe(Effect.provide(NodeCliOutputLive)));
-    const writable = new Writable({ write(_chunk, _encoding, callback) {
-      callback(Object.assign(new Error("closed"), { code: "EPIPE" }));
-    } });
+    const writable = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback(Object.assign(new Error("closed"), { code: "EPIPE" }));
+      },
+    });
     const closed = new Promise<void>((resolve) => writable.once("close", resolve));
     const getter = vi.spyOn(process, stream, "get").mockReturnValue(writable as typeof process.stdout);
     try {
@@ -31,11 +33,15 @@ test("output streams ignore synchronous broken pipes but preserve other write fa
     try {
       const sync = stream === "stdout" ? output.writeStdoutSync : output.writeStderrSync;
       const asyncWrite = stream === "stdout" ? output.writeStdout : output.writeStderr;
-      write.mockImplementation(() => { throw Object.assign(new Error("closed"), { code: "EPIPE" }); });
+      write.mockImplementation(() => {
+        throw Object.assign(new Error("closed"), { code: "EPIPE" });
+      });
       expect(() => sync("one")).not.toThrow();
       await expect(Effect.runPromise(asyncWrite("two"))).resolves.toBeUndefined();
       const failure = Object.assign(new Error("disk failure"), { code: "EIO" });
-      write.mockImplementation(() => { throw failure; });
+      write.mockImplementation(() => {
+        throw failure;
+      });
       expect(() => sync("three")).toThrow(failure);
       expect(await Effect.runPromise(Effect.flip(asyncWrite("four")))).toMatchObject({ cause: failure });
     } finally {

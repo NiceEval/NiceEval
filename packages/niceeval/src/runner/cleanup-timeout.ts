@@ -23,14 +23,19 @@ export function withCleanupTimeout<T, Error, Requirements>(
   effect: Effect.Effect<T, Error, Requirements>,
   timeoutMs = CLEANUP_TIMEOUT_MS,
 ): Effect.Effect<T, Error | CleanupTimeoutError, Requirements> {
-  return effect.pipe(Effect.timeoutOrElse({
-    duration: timeoutMs,
-    orElse: () => Effect.fail(new CleanupTimeoutError({
-      timeoutMs,
-      message: `cleanup timed out after ${timeoutMs}ms
+  return effect.pipe(
+    Effect.timeoutOrElse({
+      duration: timeoutMs,
+      orElse: () =>
+        Effect.fail(
+          new CleanupTimeoutError({
+            timeoutMs,
+            message: `cleanup timed out after ${timeoutMs}ms
 `,
-    })),
-  }));
+          }),
+        ),
+    }),
+  );
 }
 
 /** Author / provider callback adapter; internal callers compose this Effect directly. */

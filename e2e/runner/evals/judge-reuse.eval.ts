@@ -10,5 +10,7 @@ export default nativeReuse.defineEval({
     apiKeyEnv: "NICEEVAL_E2E_REUSE_JUDGE_KEY",
     maxOutputTokens: 128,
   }),
-  test(t) { t.check({ value: t.value() }, quality).gate(1); },
+  test(t) {
+    t.check({ value: t.value() }, quality).gate(1);
+  },
 });

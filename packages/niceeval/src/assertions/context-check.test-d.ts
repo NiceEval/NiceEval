@@ -4,7 +4,12 @@ import { expectTypeOf } from "vitest";
 import type { AssertionCheck, BooleanAssertionHandle, MeasurementAssertionHandle } from "./api.ts";
 import type { ContextBooleanMatch, ContextScoreMatch, MaterialMatch } from "./context-match.ts";
 import { equals } from "./match.ts";
-import type { AgentMatchContext, AssertFirstTestContext, AssertFirstSessionHandle, AssertFirstTurnHandle } from "../context/assert-first.ts";
+import type {
+  AgentMatchContext,
+  AssertFirstTestContext,
+  AssertFirstSessionHandle,
+  AssertFirstTurnHandle,
+} from "../context/assert-first.ts";
 
 // @feature docs/feature/assertions/README.md
 export function contextualCheckTypes(
@@ -17,7 +22,9 @@ export function contextualCheckTypes(
   expectTypeOf(check(boolean)).toEqualTypeOf<BooleanAssertionHandle<"score", void>>();
   expectTypeOf(check(material)).toEqualTypeOf<BooleanAssertionHandle<"score", void>>();
   expectTypeOf(check(score)).toEqualTypeOf<MeasurementAssertionHandle<"score">>();
-  expectTypeOf(check(union)).toEqualTypeOf<BooleanAssertionHandle<"score", void> | MeasurementAssertionHandle<"score">>();
+  expectTypeOf(check(union)).toEqualTypeOf<
+    BooleanAssertionHandle<"score", void> | MeasurementAssertionHandle<"score">
+  >();
   expectTypeOf(check(1, equals(1)).orStop()).toEqualTypeOf<Promise<1>>();
   // @ts-expect-error Context is supplied by the receiver, not an explicit subject.
   check({ count: 1 }, boolean);

@@ -134,9 +134,7 @@ export type AttemptEntityMinter = <Kind extends ObservabilityEntityKind>(
 const runnerAttemptObservabilityRuntimeTypeId: unique symbol = Symbol(
   "@niceeval/o11y/RunnerAttemptObservabilityRuntime",
 );
-const runnerCommandCaptureHandleTypeId: unique symbol = Symbol(
-  "@niceeval/o11y/RunnerCommandCaptureHandle",
-);
+const runnerCommandCaptureHandleTypeId: unique symbol = Symbol("@niceeval/o11y/RunnerCommandCaptureHandle");
 
 /**
  * Opaque, Attempt-local capture authority. It deliberately has no durable
@@ -157,11 +155,11 @@ export interface CapturedCommandResult {
     | { readonly kind: "exited"; readonly exitCode: number }
     | {
         readonly kind: "terminated";
-        readonly reason: (typeof import("../../../record/family/protocol-values.ts").COMMAND_TERMINATION_REASONS)[number];
+        readonly reason: typeof import("../../../record/family/protocol-values.ts").COMMAND_TERMINATION_REASONS[number];
       }
     | {
         readonly kind: "not-started";
-        readonly reason: (typeof import("../../../record/family/protocol-values.ts").COMMAND_NOT_STARTED_REASONS)[number];
+        readonly reason: typeof import("../../../record/family/protocol-values.ts").COMMAND_NOT_STARTED_REASONS[number];
       };
   readonly stdout: StagedCommandStream;
   readonly stderr: StagedCommandStream;
@@ -218,10 +216,13 @@ interface RunCaptureState {
 
 const runnerAttemptRuntimeStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
 const runnerAttemptResultStates = new WeakMap<object, RunnerAttemptObservabilityRuntimeState>();
-const runnerCommandHandleStates = new WeakMap<object, {
-  readonly runtime: RunnerAttemptObservabilityRuntimeState;
-  readonly command: CapturedCommandRuntime;
-}>();
+const runnerCommandHandleStates = new WeakMap<
+  object,
+  {
+    readonly runtime: RunnerAttemptObservabilityRuntimeState;
+    readonly command: CapturedCommandRuntime;
+  }
+>();
 const runnerRunCaptures = new WeakMap<object, RunCaptureState>();
 
 export function runtimeState(
@@ -230,9 +231,7 @@ export function runtimeState(
   return runnerAttemptRuntimeStates.get(runtime as object);
 }
 
-export function resultRuntimeState(
-  result: EvalResult,
-): RunnerAttemptObservabilityRuntimeState | undefined {
+export function resultRuntimeState(result: EvalResult): RunnerAttemptObservabilityRuntimeState | undefined {
   return runnerAttemptResultStates.get(result);
 }
 
@@ -244,17 +243,11 @@ export function resultRuntimeStateConflicts(
   return existing !== undefined && existing !== state;
 }
 
-export function storeResultRuntimeState(
-  result: EvalResult,
-  state: RunnerAttemptObservabilityRuntimeState,
-): void {
+export function storeResultRuntimeState(result: EvalResult, state: RunnerAttemptObservabilityRuntimeState): void {
   runnerAttemptResultStates.set(result, state);
 }
 
-export function storeRunCapture(
-  run: AgentRun,
-  state: RunCaptureState,
-): void {
+export function storeRunCapture(run: AgentRun, state: RunCaptureState): void {
   runnerRunCaptures.set(run, state);
 }
 
@@ -297,11 +290,7 @@ function orderedRuntimeEntityEntropy(
 ): Uint8Array | undefined {
   const bytes = uuidEntropyBytes(uuid);
   const ordinal = runtime.nextEntityOrdinal + 1;
-  if (
-    bytes === undefined
-    || !Number.isSafeInteger(ordinal)
-    || ordinal > 0xffff_ffff
-  ) return undefined;
+  if (bytes === undefined || !Number.isSafeInteger(ordinal) || ordinal > 0xffff_ffff) return undefined;
   runtime.nextEntityOrdinal = ordinal;
   bytes[0] = (ordinal >>> 24) & 0xff;
   bytes[1] = (ordinal >>> 16) & 0xff;
@@ -327,10 +316,7 @@ export function mintRuntimeEntity<Kind extends ObservabilityEntityKind>(
     markRuntimeFailure(runtime, producerEntityIdInvalid(kind));
     return undefined;
   }
-  const minted = mintAttemptObservabilityEntity(
-    runtime.capture,
-    attemptTargetForEntity(kind, id),
-  );
+  const minted = mintAttemptObservabilityEntity(runtime.capture, attemptTargetForEntity(kind, id));
   if (minted === undefined) {
     markRuntimeFailure(runtime, producerEntityIdInvalid(kind));
     return undefined;
@@ -343,21 +329,18 @@ export function registerRuntimeEntity<Kind extends ObservabilityEntityKind>(
   kind: Kind,
   id: ObservabilityEntityIdForKind<Kind>,
 ): boolean {
-  const registered = mintAttemptObservabilityEntity(
-    runtime.capture,
-    attemptTargetForEntity(kind, id),
-  );
+  const registered = mintAttemptObservabilityEntity(runtime.capture, attemptTargetForEntity(kind, id));
   if (registered !== undefined) return true;
   markRuntimeFailure(runtime, producerEntityIdInvalid(kind));
   return false;
 }
 
-export function mintRuntimeCommand(
-  runtime: RunnerAttemptObservabilityRuntimeState,
-): {
-  readonly commandId: CommandId;
-  readonly entity: AttemptCapturedObservabilityEntity<CommandReferenceTarget>;
-} | undefined {
+export function mintRuntimeCommand(runtime: RunnerAttemptObservabilityRuntimeState):
+  | {
+      readonly commandId: CommandId;
+      readonly entity: AttemptCapturedObservabilityEntity<CommandReferenceTarget>;
+    }
+  | undefined {
   let uuid: string;
   try {
     uuid = randomUUID();
@@ -383,9 +366,7 @@ export function mintRuntimeCommand(
   return Object.freeze({ commandId, entity });
 }
 
-export function makeAttemptEntityMinter(
-  runtime: RunnerAttemptObservabilityRuntimeState,
-): {
+export function makeAttemptEntityMinter(runtime: RunnerAttemptObservabilityRuntimeState): {
   readonly mint: AttemptEntityMinter;
 } {
   return Object.freeze({
@@ -393,9 +374,7 @@ export function makeAttemptEntityMinter(
       Effect.suspend(() => {
         if (runtime.failure !== undefined) return Effect.fail(runtime.failure);
         const id = mintRuntimeEntity(runtime, kind);
-        return id === undefined
-          ? Effect.fail(runtime.failure ?? producerEntityIdInvalid(kind))
-          : Effect.succeed(id);
+        return id === undefined ? Effect.fail(runtime.failure ?? producerEntityIdInvalid(kind)) : Effect.succeed(id);
       }),
   });
 }
@@ -443,18 +422,14 @@ function mintRunEntity<Kind extends RunObservabilityEntityKind>(
   return minted === undefined ? undefined : id;
 }
 
-export function makeRunEntityMinter(
-  capture: RunObservabilityCaptureIdentity,
-): {
+export function makeRunEntityMinter(capture: RunObservabilityCaptureIdentity): {
   readonly mint: RunEntityMinter;
 } {
   return Object.freeze({
     mint: <Kind extends RunObservabilityEntityKind>(kind: Kind) =>
       Effect.suspend(() => {
         const id = mintRunEntity(capture, kind);
-        return id === undefined
-          ? Effect.fail(producerEntityIdInvalid(kind))
-          : Effect.succeed(id);
+        return id === undefined ? Effect.fail(producerEntityIdInvalid(kind)) : Effect.succeed(id);
       }),
   });
 }

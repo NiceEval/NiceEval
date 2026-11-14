@@ -43,10 +43,7 @@ export function marketplaceNamesFromList(stdout: string): string[] | undefined {
 }
 
 /** 读一次注册列表:解析成功给名字,命令非零退出或输出解析不出给 undefined(附输出末尾供报错)。 */
-async function readMarketplaceNames(
-  sb: Sandbox,
-  listCommand: string,
-): Promise<{ names?: string[]; tail: string }> {
+async function readMarketplaceNames(sb: Sandbox, listCommand: string): Promise<{ names?: string[]; tail: string }> {
   const res = await sb.runShell(listCommand);
   return {
     names: res.exitCode === 0 ? marketplaceNamesFromList(res.stdout) : undefined,

@@ -20,11 +20,7 @@ import {
   removeTeardownRegistrationIfPresentEffect,
   teardownEntryId,
 } from "../../runner/teardown-registry.ts";
-import type {
-  DiscoveredExperiment,
-  ExperimentHook,
-  ExperimentHookContext,
-} from "../../runner/types.ts";
+import type { DiscoveredExperiment, ExperimentHook, ExperimentHookContext } from "../../runner/types.ts";
 import { matchExperimentSelector } from "../../shared/aggregate.ts";
 import { ExperimentHostError } from "./types.ts";
 
@@ -39,14 +35,12 @@ import type {
   ExperimentHostAfterResult,
 } from "./types.ts";
 
-function operationError(
-  operation: ExperimentHostOperation,
-  cause: unknown,
-): ExperimentHostError {
+function operationError(operation: ExperimentHostOperation, cause: unknown): ExperimentHostError {
   if (cause instanceof ExperimentHostError) return cause;
-  const code = typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-    ? String(Reflect.get(cause, "code"))
-    : "experiment-host-operation-failed";
+  const code =
+    typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
+      ? String(Reflect.get(cause, "code"))
+      : "experiment-host-operation-failed";
   return new ExperimentHostError({
     operation,
     code,
@@ -88,29 +82,34 @@ function selectTeardowns(input: {
   return Effect.gen(function* () {
     const evals = yield* discoverEvals(input.cwd);
     const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-      select: input.experimentSelector === undefined
-        ? undefined
-        : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
+      select:
+        input.experimentSelector === undefined
+          ? undefined
+          : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
     });
-    const matched = input.experimentSelector === undefined
-      ? experiments
-      : experiments.filter((experiment) =>
-          matchExperimentSelector(experimentIds, input.experimentSelector!).includes(experiment.id));
+    const matched =
+      input.experimentSelector === undefined
+        ? experiments
+        : experiments.filter((experiment) =>
+            matchExperimentSelector(experimentIds, input.experimentSelector!).includes(experiment.id),
+          );
     return Object.freeze({
       experimentIds,
-      selected: freezeArray(matched.map((experiment) => {
-        const selection = resolveExperimentEvals({
-          experimentId: experiment.id,
-          validateModelRequirements: false,
-          selector: experiment.evals,
-          cliPatterns: [],
-          evals,
-        });
-        return Object.freeze({
-          experiment,
-          selectedEvalIds: freezeArray(selection.selectedEvalIds),
-        });
-      })),
+      selected: freezeArray(
+        matched.map((experiment) => {
+          const selection = resolveExperimentEvals({
+            experimentId: experiment.id,
+            validateModelRequirements: false,
+            selector: experiment.evals,
+            cliPatterns: [],
+            evals,
+          });
+          return Object.freeze({
+            experiment,
+            selectedEvalIds: freezeArray(selection.selectedEvalIds),
+          });
+        }),
+      ),
     });
   });
 }
@@ -131,10 +130,7 @@ function evidenceOf(record: SharedStateLeaseRecord): ExperimentHostSharedStateEv
   });
 }
 
-function noExperimentMatch(
-  selector: string,
-  selection: TeardownSelection,
-): ExperimentHostAfterInspection {
+function noExperimentMatch(selector: string, selection: TeardownSelection): ExperimentHostAfterInspection {
   return Object.freeze({
     status: "experiment-no-match" as const,
     selector,
@@ -156,10 +152,12 @@ function inspectExactRegistration(input: {
     );
     if (registration === undefined) return false;
     if (registration.host !== input.record.host) {
-      return yield* Effect.fail(new Error(
-        `teardown registration ${JSON.stringify(id)} belongs to host ${JSON.stringify(registration.host)}, ` +
-        `not immutable sharedState owner host ${JSON.stringify(input.record.host)}`,
-      ));
+      return yield* Effect.fail(
+        new Error(
+          `teardown registration ${JSON.stringify(id)} belongs to host ${JSON.stringify(registration.host)}, ` +
+            `not immutable sharedState owner host ${JSON.stringify(input.record.host)}`,
+        ),
+      );
     }
     const terminated = yield* isExactTeardownRegistrationOwnerTerminatedEffect({
       registration,
@@ -167,9 +165,9 @@ function inspectExactRegistration(input: {
       currentHost: input.currentHost,
     });
     if (!terminated) {
-      return yield* Effect.fail(new Error(
-        `teardown registration ${JSON.stringify(id)} still belongs to a live exact sharedState owner`,
-      ));
+      return yield* Effect.fail(
+        new Error(`teardown registration ${JSON.stringify(id)} still belongs to a live exact sharedState owner`),
+      );
     }
     return true;
   });
@@ -186,21 +184,21 @@ function clearExactRegistration(input: {
     const present = yield* inspectExactRegistration(input);
     if (!present) {
       if (input.expectedRegistration) {
-        return yield* Effect.fail(new Error(
-          `teardown registration ${JSON.stringify(id)} disappeared before recovery could clear it`,
-        ));
+        return yield* Effect.fail(
+          new Error(`teardown registration ${JSON.stringify(id)} disappeared before recovery could clear it`),
+        );
       }
       return;
     }
     if (!input.expectedRegistration) {
-      return yield* Effect.fail(new Error(
-        `teardown registration ${JSON.stringify(id)} appeared after recovery was claimed`,
-      ));
+      return yield* Effect.fail(
+        new Error(`teardown registration ${JSON.stringify(id)} appeared after recovery was claimed`),
+      );
     }
     if (!(yield* removeTeardownRegistrationIfPresentEffect(input.coordinationRoot, id))) {
-      return yield* Effect.fail(new Error(
-        `teardown registration ${JSON.stringify(id)} changed before recovery could clear it`,
-      ));
+      return yield* Effect.fail(
+        new Error(`teardown registration ${JSON.stringify(id)} changed before recovery could clear it`),
+      );
     }
   });
 }
@@ -223,18 +221,20 @@ function hookContext(input: {
     experimentId: input.experimentId,
     selectedEvalIds: input.selectedEvalIds,
     signal: input.signal ?? new AbortController().signal,
-    progress: (progress) => emit(input.observer, {
-      type: "experiment-progress",
-      experimentId: input.experimentId,
-      detail: progress.message,
-    }),
-    diagnostic: (diagnostic) => emit(input.observer, {
-      type: "diagnostic",
-      code: diagnostic.code,
-      level: diagnostic.level,
-      message: diagnostic.message,
-      ...(diagnostic.data === undefined ? {} : { data: Object.freeze({ ...diagnostic.data }) }),
-    }),
+    progress: (progress) =>
+      emit(input.observer, {
+        type: "experiment-progress",
+        experimentId: input.experimentId,
+        detail: progress.message,
+      }),
+    diagnostic: (diagnostic) =>
+      emit(input.observer, {
+        type: "diagnostic",
+        code: diagnostic.code,
+        level: diagnostic.level,
+        message: diagnostic.message,
+        ...(diagnostic.data === undefined ? {} : { data: Object.freeze({ ...diagnostic.data }) }),
+      }),
   };
 }
 
@@ -256,12 +256,18 @@ function runAuthorTeardown(input: {
       status: "started",
       ...(input.recovery ? { recovery: true } : {}),
     });
-    const outcome = yield* Effect.result(cleanupCallback(() => teardown(hookContext({
-      experimentId: input.experiment.id,
-      selectedEvalIds: input.selectedEvalIds,
-      ...(input.observer === undefined ? {} : { observer: input.observer }),
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-    }))));
+    const outcome = yield* Effect.result(
+      cleanupCallback(() =>
+        teardown(
+          hookContext({
+            experimentId: input.experiment.id,
+            selectedEvalIds: input.selectedEvalIds,
+            ...(input.observer === undefined ? {} : { observer: input.observer }),
+            ...(input.signal === undefined ? {} : { signal: input.signal }),
+          }),
+        ),
+      ),
+    );
     const completedAt = yield* Clock.currentTimeMillis;
     emit(input.observer, {
       type: "experiment-hook",
@@ -277,61 +283,66 @@ function runAuthorTeardown(input: {
 export function inspectTeardown(
   input: ExperimentHostAfterInspectRequest,
 ): Effect.Effect<ExperimentHostAfterInspection, ExperimentHostError, ProjectStateDatabase> {
-  return closeOperation("teardown-inspect", Effect.gen(function* () {
-    const selection = yield* selectTeardowns(input);
-    if (input.experimentSelector !== undefined && selection.selected.length === 0) {
-      return noExperimentMatch(input.experimentSelector, selection);
-    }
-    const coordinationRoot = resolve(input.cwd, input.coordinationRoot ?? ".niceeval");
-    if (input.recoveryKey !== undefined) {
-      const record = yield* readSharedStateLeaseRecoveryTargetEffect(coordinationRoot, input.recoveryKey);
-      if (record === undefined) {
-        return Object.freeze({ status: "no-evidence" as const, key: input.recoveryKey });
+  return closeOperation(
+    "teardown-inspect",
+    Effect.gen(function* () {
+      const selection = yield* selectTeardowns(input);
+      if (input.experimentSelector !== undefined && selection.selected.length === 0) {
+        return noExperimentMatch(input.experimentSelector, selection);
       }
-      const evidence = evidenceOf(record);
-      if (selection.selected.length !== 1) {
+      const coordinationRoot = resolve(input.cwd, input.coordinationRoot ?? ".niceeval");
+      if (input.recoveryKey !== undefined) {
+        const record = yield* readSharedStateLeaseRecoveryTargetEffect(coordinationRoot, input.recoveryKey);
+        if (record === undefined) {
+          return Object.freeze({ status: "no-evidence" as const, key: input.recoveryKey });
+        }
+        const evidence = evidenceOf(record);
+        if (selection.selected.length !== 1) {
+          return Object.freeze({
+            status: "selection-not-unique" as const,
+            experimentIds: freezeArray(selection.selected.map(({ experiment }) => experiment.id)),
+            evidence,
+          });
+        }
+        const target = selection.selected[0]!;
+        if (target.experiment.id !== record.experimentId) {
+          return Object.freeze({
+            status: "experiment-mismatch" as const,
+            selectedExperimentId: target.experiment.id,
+            evidence,
+          });
+        }
+        if (teardownOf(target.experiment) === undefined) {
+          return Object.freeze({
+            status: "after-required" as const,
+            experimentId: target.experiment.id,
+            evidence,
+          });
+        }
+        const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot);
         return Object.freeze({
-          status: "selection-not-unique" as const,
-          experimentIds: freezeArray(selection.selected.map(({ experiment }) => experiment.id)),
+          status: "ready" as const,
+          experimentIds: Object.freeze([target.experiment.id]),
+          orphanedRegistrations: registrations.filter(
+            ({ entry }) =>
+              entry.experimentId === target.experiment.id && isOrphanedTeardownRegistration(entry, input.currentHost),
+          ).length,
           evidence,
         });
       }
-      const target = selection.selected[0]!;
-      if (target.experiment.id !== record.experimentId) {
-        return Object.freeze({
-          status: "experiment-mismatch" as const,
-          selectedExperimentId: target.experiment.id,
-          evidence,
-        });
-      }
-      if (teardownOf(target.experiment) === undefined) {
-        return Object.freeze({
-          status: "after-required" as const,
-          experimentId: target.experiment.id,
-          evidence,
-        });
-      }
+
       const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot);
+      const selectedIds = new Set(selection.selected.map(({ experiment }) => experiment.id));
       return Object.freeze({
         status: "ready" as const,
-        experimentIds: Object.freeze([target.experiment.id]),
-        orphanedRegistrations: registrations.filter(({ entry }) =>
-          entry.experimentId === target.experiment.id &&
-          isOrphanedTeardownRegistration(entry, input.currentHost)).length,
-        evidence,
+        experimentIds: freezeArray(selectedIds),
+        orphanedRegistrations: registrations.filter(
+          ({ entry }) =>
+            selectedIds.has(entry.experimentId) && isOrphanedTeardownRegistration(entry, input.currentHost),
+        ).length,
       });
-    }
-
-    const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot);
-    const selectedIds = new Set(selection.selected.map(({ experiment }) => experiment.id));
-    return Object.freeze({
-      status: "ready" as const,
-      experimentIds: freezeArray(selectedIds),
-      orphanedRegistrations: registrations.filter(({ entry }) =>
-        selectedIds.has(entry.experimentId) &&
-        isOrphanedTeardownRegistration(entry, input.currentHost)).length,
-    });
-  }));
+    }),
+  );
 }
 
 function runExplicitRecovery(
@@ -380,9 +391,10 @@ function runExplicitRecovery(
       confirmRemoteQuiesced: true,
     });
     const claimedEvidence = evidenceOf(begun.record);
-    const registrationFailureCode = begun._tag === "AlreadyReleased"
-      ? "shared-state-recovery-already-released-registration-failed"
-      : "shared-state-recovery-registration-failed";
+    const registrationFailureCode =
+      begun._tag === "AlreadyReleased"
+        ? "shared-state-recovery-already-released-registration-failed"
+        : "shared-state-recovery-registration-failed";
     const registrationWasPresent = yield* inspectExactRegistration({
       coordinationRoot,
       record: begun.record,
@@ -432,10 +444,7 @@ function runExplicitRecovery(
       ownerToken: begun.record.ownerToken,
       recoveryId: begun.recoveryId,
       localHost: input.currentHost,
-    }).pipe(Effect.mapError((cause) => recoveryOperationError(
-      "shared-state-recovery-completion-failed",
-      cause,
-    )));
+    }).pipe(Effect.mapError((cause) => recoveryOperationError("shared-state-recovery-completion-failed", cause)));
     return Object.freeze({
       status: "recovered" as const,
       key: begun.record.key,
@@ -448,70 +457,78 @@ function runExplicitRecovery(
 export function runTeardown(
   input: ExperimentHostAfterRequest,
 ): Effect.Effect<ExperimentHostAfterResult, ExperimentHostError, ProjectStateDatabase> {
-  return closeOperation("teardown-run", Effect.gen(function* () {
-    const inspection = yield* inspectTeardown(input);
-    if (inspection.status !== "ready") return inspection;
-    const selection = yield* selectTeardowns(input);
-    if (input.recoveryKey !== undefined) {
-      if (inspection.evidence === undefined || selection.selected.length !== 1) return inspection;
-      const record = yield* readSharedStateLeaseRecoveryTargetEffect(
-        resolve(input.cwd, input.coordinationRoot ?? ".niceeval"),
-        input.recoveryKey,
-      );
-      if (record === undefined) {
-        return Object.freeze({ status: "no-evidence" as const, key: input.recoveryKey });
-      }
-      return yield* runExplicitRecovery(input, selection, record);
-    }
-
-    const coordinationRoot = resolve(input.cwd, input.coordinationRoot ?? ".niceeval");
-    const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot);
-    const results: Array<{
-      readonly experimentId: string;
-      readonly executions: number;
-      readonly outcome: "succeeded" | "failed" | "not-configured";
-      readonly error?: string;
-    }> = [];
-    for (const target of selection.selected) {
-      if (teardownOf(target.experiment) === undefined) {
-        results.push(Object.freeze({
-          experimentId: target.experiment.id,
-          executions: 0,
-          outcome: "not-configured" as const,
-        }));
-        continue;
-      }
-      const matching = registrations.filter(({ entry }) => entry.experimentId === target.experiment.id);
-      const orphaned = matching.filter(({ entry }) =>
-        isOrphanedTeardownRegistration(entry, input.currentHost));
-      const claimed = yield* Effect.all(orphaned.map(({ id }) =>
-        removeTeardownRegistrationIfPresentEffect(coordinationRoot, id)), {
-        concurrency: "unbounded",
-      });
-      const executions = matching.length === 0 ? 1 : claimed.filter(Boolean).length;
-      let failure: string | undefined;
-      for (let index = 0; index < executions; index += 1) {
-        const outcome = yield* runAuthorTeardown({
-          experiment: target.experiment,
-          selectedEvalIds: target.selectedEvalIds,
-          ...(input.observer === undefined ? {} : { observer: input.observer }),
-          ...(input.signal === undefined ? {} : { signal: input.signal }),
-          recovery: true,
-        });
-        if (outcome !== false && Result.isFailure(outcome)) {
-          failure = outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure);
+  return closeOperation(
+    "teardown-run",
+    Effect.gen(function* () {
+      const inspection = yield* inspectTeardown(input);
+      if (inspection.status !== "ready") return inspection;
+      const selection = yield* selectTeardowns(input);
+      if (input.recoveryKey !== undefined) {
+        if (inspection.evidence === undefined || selection.selected.length !== 1) return inspection;
+        const record = yield* readSharedStateLeaseRecoveryTargetEffect(
+          resolve(input.cwd, input.coordinationRoot ?? ".niceeval"),
+          input.recoveryKey,
+        );
+        if (record === undefined) {
+          return Object.freeze({ status: "no-evidence" as const, key: input.recoveryKey });
         }
+        return yield* runExplicitRecovery(input, selection, record);
       }
-      results.push(Object.freeze({
-        experimentId: target.experiment.id,
-        executions,
-        outcome: failure === undefined ? "succeeded" as const : "failed" as const,
-        ...(failure === undefined ? {} : { error: failure }),
-      }));
-    }
-    return Object.freeze({
-      status: "completed" as const,
-      experiments: freezeArray(results),
-    });
-  }));
+
+      const coordinationRoot = resolve(input.cwd, input.coordinationRoot ?? ".niceeval");
+      const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot);
+      const results: Array<{
+        readonly experimentId: string;
+        readonly executions: number;
+        readonly outcome: "succeeded" | "failed" | "not-configured";
+        readonly error?: string;
+      }> = [];
+      for (const target of selection.selected) {
+        if (teardownOf(target.experiment) === undefined) {
+          results.push(
+            Object.freeze({
+              experimentId: target.experiment.id,
+              executions: 0,
+              outcome: "not-configured" as const,
+            }),
+          );
+          continue;
+        }
+        const matching = registrations.filter(({ entry }) => entry.experimentId === target.experiment.id);
+        const orphaned = matching.filter(({ entry }) => isOrphanedTeardownRegistration(entry, input.currentHost));
+        const claimed = yield* Effect.all(
+          orphaned.map(({ id }) => removeTeardownRegistrationIfPresentEffect(coordinationRoot, id)),
+          {
+            concurrency: "unbounded",
+          },
+        );
+        const executions = matching.length === 0 ? 1 : claimed.filter(Boolean).length;
+        let failure: string | undefined;
+        for (let index = 0; index < executions; index += 1) {
+          const outcome = yield* runAuthorTeardown({
+            experiment: target.experiment,
+            selectedEvalIds: target.selectedEvalIds,
+            ...(input.observer === undefined ? {} : { observer: input.observer }),
+            ...(input.signal === undefined ? {} : { signal: input.signal }),
+            recovery: true,
+          });
+          if (outcome !== false && Result.isFailure(outcome)) {
+            failure = outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure);
+          }
+        }
+        results.push(
+          Object.freeze({
+            experimentId: target.experiment.id,
+            executions,
+            outcome: failure === undefined ? ("succeeded" as const) : ("failed" as const),
+            ...(failure === undefined ? {} : { error: failure }),
+          }),
+        );
+      }
+      return Object.freeze({
+        status: "completed" as const,
+        experiments: freezeArray(results),
+      });
+    }),
+  );
 }

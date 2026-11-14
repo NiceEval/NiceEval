@@ -6,8 +6,7 @@ export default customTimeoutCancellation.defineEval({
   async test(t) {
     const observations = t.observations;
     const { onCancellation } = t;
-    const handle = t.hasMarker("registered-before-timeout")
-      .label("取消前登记的 Assertion");
+    const handle = t.hasMarker("registered-before-timeout").label("取消前登记的 Assertion");
     t.onCancellation(() => {
       for (const [boundary, action] of [
         ["check", () => t.check("abort", equals("abort"))],

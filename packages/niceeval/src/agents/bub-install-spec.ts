@@ -20,10 +20,7 @@ export const DEFAULT_BUB_REQUIREMENT = bubRequirement(DEFAULT_BUB_VERSION);
  * Bub 自己的 PyPI metadata 没有精确锁定这两个依赖；若只钉 `bub==0.5.1`，每次安装仍会
  * 解析当天最新的客户端，使同一实验在没有配置变更时改变请求协议。
  */
-export const DEFAULT_BUB_DEPENDENCY_OVERRIDES = [
-  "any-llm-sdk==1.22.1",
-  "openai==2.31.0",
-] as const;
+export const DEFAULT_BUB_DEPENDENCY_OVERRIDES = ["any-llm-sdk==1.22.1", "openai==2.31.0"] as const;
 
 export const BUB_CHECKPOINT_SUBDIRS = [".local"] as const;
 export const BUB_INSTALL_MARKER = ".local/share/niceeval/bub-install-hash";

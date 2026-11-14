@@ -63,11 +63,7 @@ export class SandboxCommandOperationError extends Data.TaggedError("SandboxComma
 }> {}
 
 type SandboxCommandFailure = KeptSandboxRegistryError | SandboxCommandOperationError;
-export type SandboxCommandEffect<A> = Effect.Effect<
-  A,
-  SandboxCommandFailure,
-  ProjectStateDatabase
->;
+export type SandboxCommandEffect<A> = Effect.Effect<A, SandboxCommandFailure, ProjectStateDatabase>;
 
 /** 所有 provider Promise 都只在此处进入 Effect；信号由 runtime 接管，interruption 不会变成普通失败。 */
 function providerEffect<A>(operation: string, run: (signal: AbortSignal) => Promise<A>): SandboxCommandEffect<A> {
@@ -93,31 +89,27 @@ function ensuringWithTypedFinalizer<A, E, R, E2, R2>(
   return Effect.uninterruptibleMask((restore) =>
     restore(body).pipe(
       Effect.matchCauseEffect({
-        onFailure: (bodyCause) => finalizer.pipe(
-          Effect.matchCauseEffect({
-            onFailure: (finalizerCause) => Effect.failCause(Cause.combine(bodyCause, finalizerCause)),
-            onSuccess: () => Effect.failCause(bodyCause),
-          }),
-        ),
+        onFailure: (bodyCause) =>
+          finalizer.pipe(
+            Effect.matchCauseEffect({
+              onFailure: (finalizerCause) => Effect.failCause(Cause.combine(bodyCause, finalizerCause)),
+              onSuccess: () => Effect.failCause(bodyCause),
+            }),
+          ),
         onSuccess: (value) => finalizer.pipe(Effect.as(value)),
       }),
-    ));
+    ),
+  );
 }
 
 /**
  * 刷新 provider 的留存期限。没有期限的 provider 必须省略字段，而不是把
  * `expiresAt: undefined` 带进逐条目 JSON；后者既不是 JSON 值，也会被共享持久层拒绝。
  */
-function refreshedEntryState(
-  entry: KeptSandboxEntry,
-  state: KeptSandboxEntry["state"],
-  now: string,
-): KeptSandboxEntry {
+function refreshedEntryState(entry: KeptSandboxEntry, state: KeptSandboxEntry["state"], now: string): KeptSandboxEntry {
   const { expiresAt: _previousExpiresAt, ...withoutExpiresAt } = entry;
   const expiresAt = computeExpiresAt(entry.provider, now);
-  return expiresAt === undefined
-    ? { ...withoutExpiresAt, state }
-    : { ...withoutExpiresAt, state, expiresAt };
+  return expiresAt === undefined ? { ...withoutExpiresAt, state } : { ...withoutExpiresAt, state, expiresAt };
 }
 
 /** `list`/`history` 一次性面板的传输能力:是 TTY 且没有要求朴素输出时才画框
@@ -157,9 +149,9 @@ export function runSandboxCommandEffect(
     }
     switch (sub) {
       case "list":
-        return yield* (flags.orphans
+        return yield* flags.orphans
           ? listOrphansCommandEffect(root, io)
-          : listCommandEffect(root, io, panelCapabilityForFacts(facts)));
+          : listCommandEffect(root, io, panelCapabilityForFacts(facts));
       case "stop":
         return yield* stopCommandEffect(root, positionals.slice(1), flags, io);
       case "enter":
@@ -206,9 +198,15 @@ function listOrphansCommandEffect(root: string, io: SandboxCommandIo): SandboxCo
   );
 }
 
-function pruneCommandEffect(root: string, flags: SandboxCommandFlags, io: SandboxCommandIo): SandboxCommandEffect<number> {
+function pruneCommandEffect(
+  root: string,
+  flags: SandboxCommandFlags,
+  io: SandboxCommandIo,
+): SandboxCommandEffect<number> {
   return keptSandboxIdsEffect(root).pipe(
-    Effect.flatMap((keptIds) => providerEffect("prune orphan sandboxes", () => pruneOrphans(keptIds, flags.force === true))),
+    Effect.flatMap((keptIds) =>
+      providerEffect("prune orphan sandboxes", () => pruneOrphans(keptIds, flags.force === true)),
+    ),
     Effect.map((outcome) => {
       if (outcome.pruned.length === 0 && outcome.failed.length === 0) {
         io.out("No orphan sandboxes.\n");
@@ -256,9 +254,7 @@ export function orphanReminderEffect(cwd: string): SandboxCommandEffect<string |
     const root = yield* findNiceevalRootEffect(cwd);
     const keptIds = root === undefined ? new Set<string>() : yield* keptSandboxIdsEffect(root);
     const count = yield* providerEffect("count orphan sandboxes", () => dockerOrphanCount(keptIds));
-    return count === 0
-      ? undefined
-      : `${count} orphan docker sandboxes from a killed run — niceeval sandbox prune\n`;
+    return count === 0 ? undefined : `${count} orphan docker sandboxes from a killed run — niceeval sandbox prune\n`;
   });
 }
 
@@ -273,13 +269,17 @@ function resolveRegistryRootEffect(cwd: string, runFlag: string | undefined): Sa
 /** 留存注册表里还有条目时,`niceeval exp` 启动打的一行提醒(不阻塞、不清理)。 */
 export function keptSandboxReminderEffect(cwd: string): SandboxCommandEffect<string | undefined> {
   return findNiceevalRootEffect(cwd).pipe(
-    Effect.flatMap((root) => root === undefined
-      ? Effect.succeed(undefined)
-      : readKeptEntriesEffect(root).pipe(
-          Effect.map(({ entries }) => entries.length === 0
-            ? undefined
-            : `${entries.length} kept sandboxes from earlier runs — niceeval sandbox list\n`),
-        )),
+    Effect.flatMap((root) =>
+      root === undefined
+        ? Effect.succeed(undefined)
+        : readKeptEntriesEffect(root).pipe(
+            Effect.map(({ entries }) =>
+              entries.length === 0
+                ? undefined
+                : `${entries.length} kept sandboxes from earlier runs — niceeval sandbox list\n`,
+            ),
+          ),
+    ),
   );
 }
 
@@ -290,7 +290,11 @@ const LIST_ID_COL = 10;
 const LIST_PROVIDER_COL = 10;
 const LIST_STATE_COL = 10;
 
-function listCommandEffect(root: string, io: SandboxCommandIo, panel: { mode: PanelMode; width: number }): SandboxCommandEffect<number> {
+function listCommandEffect(
+  root: string,
+  io: SandboxCommandIo,
+  panel: { mode: PanelMode; width: number },
+): SandboxCommandEffect<number> {
   return Effect.gen(function* () {
     const { entries } = yield* readKeptEntriesEffect(root);
     if (entries.length === 0) {
@@ -298,13 +302,15 @@ function listCommandEffect(root: string, io: SandboxCommandIo, panel: { mode: Pa
       return 0;
     }
     const rows: PanelRow[] = [
-      { kind: "line", text: `${"ID".padEnd(LIST_ID_COL)}${"PROVIDER".padEnd(LIST_PROVIDER_COL)}${"STATE".padEnd(LIST_STATE_COL)}FROM` },
+      {
+        kind: "line",
+        text: `${"ID".padEnd(LIST_ID_COL)}${"PROVIDER".padEnd(LIST_PROVIDER_COL)}${"STATE".padEnd(LIST_STATE_COL)}FROM`,
+      },
     ];
     for (const { id, entry } of entries) {
       // STATE 是当下核对的现场状态,不是登记时的旧值。
-      const state = yield* providerEffect(
-        "inspect kept sandbox",
-        () => inspectDetached(entry.provider, entry.sandboxId),
+      const state = yield* providerEffect("inspect kept sandbox", () =>
+        inspectDetached(entry.provider, entry.sandboxId),
       );
       // unknown 是探测失败，不是可持久化的现场事实；保留上次已知状态供下次核对。
       if (state !== "unknown" && state !== entry.state) {
@@ -348,16 +354,21 @@ function resolveEntriesEffect(
       const resolved: { id: string; entry: KeptSandboxEntry }[] = [];
       for (const raw of ids) {
         const hits = entries.filter(
-          ({ id, entry }) => id === raw || id.startsWith(raw) || entry.sandboxId === raw || entry.sandboxId.startsWith(raw),
+          ({ id, entry }) =>
+            id === raw || id.startsWith(raw) || entry.sandboxId === raw || entry.sandboxId.startsWith(raw),
         );
         if (hits.length === 1) {
           resolved.push(hits[0]!);
           continue;
         }
         if (hits.length === 0) {
-          io.err(`"${raw}" is not in the kept-sandbox registry. Known: ${entries.map((e) => e.id).join(", ") || "(none)"}\n`);
+          io.err(
+            `"${raw}" is not in the kept-sandbox registry. Known: ${entries.map((e) => e.id).join(", ") || "(none)"}\n`,
+          );
         } else {
-          io.err(`"${raw}" is ambiguous; candidates: ${hits.map((h) => `${h.id} (${h.entry.sandboxId})`).join(", ")}\n`);
+          io.err(
+            `"${raw}" is ambiguous; candidates: ${hits.map((h) => `${h.id} (${h.entry.sandboxId})`).join(", ")}\n`,
+          );
         }
         return undefined;
       }
@@ -366,7 +377,12 @@ function resolveEntriesEffect(
   );
 }
 
-function stopCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: SandboxCommandIo): SandboxCommandEffect<number> {
+function stopCommandEffect(
+  root: string,
+  ids: string[],
+  flags: SandboxCommandFlags,
+  io: SandboxCommandIo,
+): SandboxCommandEffect<number> {
   return Effect.gen(function* () {
     let targets: { id: string; entry: KeptSandboxEntry }[];
     if (flags.all) {
@@ -384,23 +400,31 @@ function stopCommandEffect(root: string, ids: string[], flags: SandboxCommandFla
     for (const { id, entry } of targets) {
       const lease = yield* readKeptLeaseEffect(root, id);
       if (lease) {
-        io.err(`${entry.sandboxId} (${entry.provider}) is in use by ${lease.holder} since ${lease.acquiredAt}; not stopping.\n`);
+        io.err(
+          `${entry.sandboxId} (${entry.provider}) is in use by ${lease.holder} since ${lease.acquiredAt}; not stopping.\n`,
+        );
         code = 1;
         continue;
       }
       yield* providerEffect("destroy kept sandbox", () => destroyDetached(entry.provider, entry.sandboxId)).pipe(
-        Effect.flatMap((outcome) => removeKeptEntryEffect(root, id).pipe(
-          Effect.tap(() => Effect.sync(() => {
-            if (outcome === "stopped") io.out(`stopped ${entry.sandboxId} (${entry.provider})\n`);
-            else io.out(`${entry.sandboxId} (${entry.provider}) already gone — removed from registry\n`);
-          })),
-        )),
-        Effect.catch((error) => Effect.sync(() => {
-          // 只有实例成功销毁或确认已不存在时才移除登记项;其它错误保留条目并退出 1,
-          // 不能把仍活着的资源从管理面隐藏掉。
-          io.err(`failed to stop ${entry.sandboxId} (${entry.provider}): ${errorText(error)}\n`);
-          code = 1;
-        })),
+        Effect.flatMap((outcome) =>
+          removeKeptEntryEffect(root, id).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                if (outcome === "stopped") io.out(`stopped ${entry.sandboxId} (${entry.provider})\n`);
+                else io.out(`${entry.sandboxId} (${entry.provider}) already gone — removed from registry\n`);
+              }),
+            ),
+          ),
+        ),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            // 只有实例成功销毁或确认已不存在时才移除登记项;其它错误保留条目并退出 1,
+            // 不能把仍活着的资源从管理面隐藏掉。
+            io.err(`failed to stop ${entry.sandboxId} (${entry.provider}): ${errorText(error)}\n`);
+            code = 1;
+          }),
+        ),
       );
     }
     return code;
@@ -450,44 +474,61 @@ function enterCommandEffect(
       return providerEffect("inspect kept sandbox", () => inspectDetached(entry.provider, entry.sandboxId)).pipe(
         Effect.flatMap((state) => {
           if (state === "expired") {
-            io.err(`${entry.sandboxId} (${entry.provider}) is gone — the instance no longer exists. Clean up with: niceeval sandbox stop ${id}\n`);
+            io.err(
+              `${entry.sandboxId} (${entry.provider}) is gone — the instance no longer exists. Clean up with: niceeval sandbox stop ${id}\n`,
+            );
             return Effect.succeed(1);
           }
           if (state === "unknown") {
-            io.err(`${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.\n`);
+            io.err(
+              `${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.\n`,
+            );
             return Effect.succeed(1);
           }
-          return withLeaseEffect(root, id, entry, "enter", io, facts, () => Effect.gen(function* () {
-            yield* providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId));
-            yield* updateKeptEntryEffect(root, id, (current) => refreshedEntryState(current, "alive", new Date().toISOString()));
-            const code = yield* providerEffect(
-              "open kept sandbox shell",
-              () => openInteractiveShell(entry.provider, entry.sandboxId, entry.workdir),
-            ).pipe(Effect.catch((error) => Effect.sync(() => {
-              // 原生命令本身起不来(如未装对应 CLI):现场保持 alive,提示改用注册表里的原生命令直连。
-              io.err(
-                `failed to open an interactive shell for ${entry.sandboxId} (${entry.provider}): ${errorText(error)}${entry.enter ? `\nconnect directly instead: ${entry.enter}` : ""}\n`,
+          return withLeaseEffect(root, id, entry, "enter", io, facts, () =>
+            Effect.gen(function* () {
+              yield* providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId));
+              yield* updateKeptEntryEffect(root, id, (current) =>
+                refreshedEntryState(current, "alive", new Date().toISOString()),
               );
-              return 1;
-            })));
-            if (flags.leaveRunning) {
-              yield* updateKeptEntryEffect(root, id, { state: "alive" });
-              io.out(`left running: ${entry.sandboxId} (re-suspend with another enter, or destroy with niceeval sandbox stop ${id})\n`);
+              const code = yield* providerEffect("open kept sandbox shell", () =>
+                openInteractiveShell(entry.provider, entry.sandboxId, entry.workdir),
+              ).pipe(
+                Effect.catch((error) =>
+                  Effect.sync(() => {
+                    // 原生命令本身起不来(如未装对应 CLI):现场保持 alive,提示改用注册表里的原生命令直连。
+                    io.err(
+                      `failed to open an interactive shell for ${entry.sandboxId} (${entry.provider}): ${errorText(error)}${entry.enter ? `\nconnect directly instead: ${entry.enter}` : ""}\n`,
+                    );
+                    return 1;
+                  }),
+                ),
+              );
+              if (flags.leaveRunning) {
+                yield* updateKeptEntryEffect(root, id, { state: "alive" });
+                io.out(
+                  `left running: ${entry.sandboxId} (re-suspend with another enter, or destroy with niceeval sandbox stop ${id})\n`,
+                );
+                return code;
+              }
+              // shell 退出(含 Ctrl+C)后自动送回休眠——「休眠不烧资源」不因进去看过一眼失效。
+              yield* providerEffect("re-suspend kept sandbox", () =>
+                suspendDetached(entry.provider, entry.sandboxId),
+              ).pipe(
+                Effect.andThen(
+                  updateKeptEntryEffect(root, id, (current) =>
+                    refreshedEntryState(current, "dormant", new Date().toISOString()),
+                  ),
+                ),
+                Effect.catch((error) =>
+                  Effect.sync(() => {
+                    io.err(`failed to re-suspend ${entry.sandboxId}: ${errorText(error)}\n`);
+                  }).pipe(Effect.andThen(updateKeptEntryEffect(root, id, { state: "alive" }))),
+                ),
+              );
               return code;
-            }
-            // shell 退出(含 Ctrl+C)后自动送回休眠——「休眠不烧资源」不因进去看过一眼失效。
-            yield* providerEffect("re-suspend kept sandbox", () => suspendDetached(entry.provider, entry.sandboxId)).pipe(
-              Effect.andThen(updateKeptEntryEffect(
-                root,
-                id,
-                (current) => refreshedEntryState(current, "dormant", new Date().toISOString()),
-              )),
-              Effect.catch((error) => Effect.sync(() => {
-                io.err(`failed to re-suspend ${entry.sandboxId}: ${errorText(error)}\n`);
-              }).pipe(Effect.andThen(updateKeptEntryEffect(root, id, { state: "alive" })))),
-            );
-            return code;
-          })).pipe(Effect.map((result) => result ?? 1));
+            }),
+          ).pipe(Effect.map((result) => result ?? 1));
         }),
       );
     }),
@@ -497,8 +538,13 @@ function enterCommandEffect(
 /** 在留存现场里跑一条命令(非交互;history/diff 用)——按 provider 能力路由到 `execInDetached`。 */
 function execInKeptEffect(entry: KeptSandboxEntry, script: string): SandboxCommandEffect<string> {
   const gap = detachedCapabilityGap(entry.provider);
-  if (gap) return Effect.fail(new SandboxCommandOperationError({ operation: "execute in kept sandbox", cause: new Error(gap) }));
-  return providerEffect("execute in kept sandbox", () => execInDetached(entry.provider, entry.sandboxId, entry.workdir, script));
+  if (gap)
+    return Effect.fail(
+      new SandboxCommandOperationError({ operation: "execute in kept sandbox", cause: new Error(gap) }),
+    );
+  return providerEffect("execute in kept sandbox", () =>
+    execInDetached(entry.provider, entry.sandboxId, entry.workdir, script),
+  );
 }
 
 /** 唤醒 → 读 → 送回休眠(现场休眠中同样可用;读完不留 alive)。 */
@@ -509,31 +555,42 @@ function withWokenSandboxEffect<T>(
   fn: () => SandboxCommandEffect<T>,
 ): SandboxCommandEffect<T> {
   const gap = detachedCapabilityGap(entry.provider);
-  if (gap) return Effect.fail(new SandboxCommandOperationError({
-    operation: "access kept sandbox",
-    cause: new Error(`${entry.sandboxId}: ${gap}`),
-  }));
+  if (gap)
+    return Effect.fail(
+      new SandboxCommandOperationError({
+        operation: "access kept sandbox",
+        cause: new Error(`${entry.sandboxId}: ${gap}`),
+      }),
+    );
   return providerEffect("inspect kept sandbox", () => inspectDetached(entry.provider, entry.sandboxId)).pipe(
     Effect.flatMap((state) => {
       if (state === "expired") {
-        return Effect.fail(new SandboxCommandOperationError({
-          operation: "access kept sandbox",
-          cause: new Error(
-            `${entry.sandboxId} (${entry.provider}) is gone; the in-sandbox ledger died with it (artifacts are unaffected). Clean up with: niceeval sandbox stop ${id}`,
-          ),
-        }));
+        return Effect.fail(
+          new SandboxCommandOperationError({
+            operation: "access kept sandbox",
+            cause: new Error(
+              `${entry.sandboxId} (${entry.provider}) is gone; the in-sandbox ledger died with it (artifacts are unaffected). Clean up with: niceeval sandbox stop ${id}`,
+            ),
+          }),
+        );
       }
       if (state === "unknown") {
-        return Effect.fail(new SandboxCommandOperationError({
-          operation: "inspect kept sandbox",
-          cause: new Error(`${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.`),
-        }));
+        return Effect.fail(
+          new SandboxCommandOperationError({
+            operation: "inspect kept sandbox",
+            cause: new Error(
+              `${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.`,
+            ),
+          }),
+        );
       }
       const wasDormant = state === "dormant";
       const use = fn();
       return wasDormant
         ? ensuringWithTypedFinalizer(
-            providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId)).pipe(Effect.andThen(use)),
+            providerEffect("wake kept sandbox", () => wakeDetached(entry.provider, entry.sandboxId)).pipe(
+              Effect.andThen(use),
+            ),
             providerEffect("re-suspend kept sandbox", () => suspendDetached(entry.provider, entry.sandboxId)),
           )
         : use;
@@ -559,16 +616,23 @@ const HISTORY_EXPORT_SCRIPT = [
   "git log --reverse --format='%H %at %s' 2>/dev/null",
   "git rev-list --reverse HEAD 2>/dev/null | while IFS= read -r hash; do",
   "  printf '\\036%s\\n' \"$hash\"",
-  "  git diff --name-status \"$hash^\" \"$hash\" 2>/dev/null || true",
+  '  git diff --name-status "$hash^" "$hash" 2>/dev/null || true',
   "done",
 ].join("\n");
 
-function parseHistoryExport(out: string): { commits: { hash: string; at: number; subject: string }[]; changesByHash: Map<string, CommitFileChange[]> } {
+function parseHistoryExport(out: string): {
+  commits: { hash: string; at: number; subject: string }[];
+  changesByHash: Map<string, CommitFileChange[]>;
+} {
   const [log, ...sections] = out.split("\x1e");
-  const commits = log!.trim().split("\n").filter(Boolean).map((line) => {
-    const [hash, atRaw, ...rest] = line.split(" ");
-    return { hash: hash!, at: Number(atRaw), subject: rest.join(" ") };
-  });
+  const commits = log!
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, atRaw, ...rest] = line.split(" ");
+      return { hash: hash!, at: Number(atRaw), subject: rest.join(" ") };
+    });
   const changesByHash = new Map<string, CommitFileChange[]>();
   for (const section of sections) {
     const newline = section.indexOf("\n");
@@ -653,16 +717,23 @@ function historyCommandEffect(
           io.out(`${lines.join("\n")}\n`);
           return 0;
         }),
-        Effect.catch((error) => Effect.sync(() => {
-          io.err(`${errorText(error)}\n`);
-          return 1;
-        })),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            io.err(`${errorText(error)}\n`);
+            return 1;
+          }),
+        ),
       );
     }),
   );
 }
 
-function diffCommandEffect(root: string, ids: string[], flags: SandboxCommandFlags, io: SandboxCommandIo): SandboxCommandEffect<number> {
+function diffCommandEffect(
+  root: string,
+  ids: string[],
+  flags: SandboxCommandFlags,
+  io: SandboxCommandIo,
+): SandboxCommandEffect<number> {
   return resolveEntriesEffect(root, ids.slice(0, 1), io).pipe(
     Effect.flatMap((resolved) => {
       if (!resolved || resolved.length === 0) {
@@ -670,37 +741,42 @@ function diffCommandEffect(root: string, ids: string[], flags: SandboxCommandFla
         return Effect.succeed(1);
       }
       const { id, entry } = resolved[0]!;
-      return withWokenSandboxEffect(root, id, entry, () => Effect.gen(function* () {
-        const log = yield* execInKeptEffect(entry, `git log --reverse --format='%H %s' 2>/dev/null`);
-        const commits = log
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            const space = line.indexOf(" ");
-            return { hash: line.slice(0, space), subject: line.slice(space + 1) };
-          })
-          .filter((c) => c.subject.startsWith("agent "));
-        const wanted = flags.window !== undefined ? commits.filter((c) => c.subject === `agent ${flags.window}`) : commits;
-        if (wanted.length === 0) {
-          return flags.window !== undefined
-            ? `window "${flags.window}" not found; windows: ${commits.map((c) => c.subject.slice(6)).join(", ") || "(none)"}\n`
-            : "(no agent windows in this ledger)\n";
-        }
-        const pathArg = flags.path !== undefined ? ` -- '${flags.path.replaceAll("'", `'\\''`)}'` : "";
-        const sections: string[] = [];
-        for (const c of wanted) {
-          const patch = yield* execInKeptEffect(entry, `git diff ${c.hash}^ ${c.hash}${pathArg}`);
-          sections.push(`── window ${c.subject.slice(6)}\n${patch.trimEnd()}`);
-        }
-        return sections.join("\n\n") + "\n";
-      })).pipe(
+      return withWokenSandboxEffect(root, id, entry, () =>
+        Effect.gen(function* () {
+          const log = yield* execInKeptEffect(entry, `git log --reverse --format='%H %s' 2>/dev/null`);
+          const commits = log
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => {
+              const space = line.indexOf(" ");
+              return { hash: line.slice(0, space), subject: line.slice(space + 1) };
+            })
+            .filter((c) => c.subject.startsWith("agent "));
+          const wanted =
+            flags.window !== undefined ? commits.filter((c) => c.subject === `agent ${flags.window}`) : commits;
+          if (wanted.length === 0) {
+            return flags.window !== undefined
+              ? `window "${flags.window}" not found; windows: ${commits.map((c) => c.subject.slice(6)).join(", ") || "(none)"}\n`
+              : "(no agent windows in this ledger)\n";
+          }
+          const pathArg = flags.path !== undefined ? ` -- '${flags.path.replaceAll("'", `'\\''`)}'` : "";
+          const sections: string[] = [];
+          for (const c of wanted) {
+            const patch = yield* execInKeptEffect(entry, `git diff ${c.hash}^ ${c.hash}${pathArg}`);
+            sections.push(`── window ${c.subject.slice(6)}\n${patch.trimEnd()}`);
+          }
+          return sections.join("\n\n") + "\n";
+        }),
+      ).pipe(
         Effect.tap((out) => Effect.sync(() => io.out(out))),
         Effect.as(0),
-        Effect.catch((error) => Effect.sync(() => {
-          io.err(`${errorText(error)}\n`);
-          return 1;
-        })),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            io.err(`${errorText(error)}\n`);
+            return 1;
+          }),
+        ),
       );
     }),
   );

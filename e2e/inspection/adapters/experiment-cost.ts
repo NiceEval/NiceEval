@@ -16,9 +16,11 @@ export const experimentCost = defineAdapter({
           inputTokens: 1,
           inputTotalTokens: 1,
           outputTokens: 0,
-          ...(amount === undefined ? {} : {
-            cost: { amount, currency: "USD", source: { kind: "reported", id: "offline.receipt" } },
-          }),
+          ...(amount === undefined
+            ? {}
+            : {
+                cost: { amount, currency: "USD", source: { kind: "reported", id: "offline.receipt" } },
+              }),
         });
         ctx.sealUsage({ state: "complete" });
       },

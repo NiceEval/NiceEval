@@ -20,62 +20,63 @@ export function deterministicAgent(name: string): Agent {
   return defineAgent({
     name,
     evidenceCoverage: completeEvidenceCoverage,
-    send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
-        if (ctx.signal.aborted) {
-          throw new Error("deterministic backend aborted");
-        }
+    send: (input, ctx) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (ctx.signal.aborted) {
+            throw new Error("deterministic backend aborted");
+          }
 
-        ctx.session.capture(`cli-deterministic:${name}`);
+          ctx.session.capture(`cli-deterministic:${name}`);
 
-        if (input.text === "return a failed turn") {
-          return {
-            status: "failed",
-            events: [{ type: "error", message: DELIBERATE_TURN_FAILURE }],
-          };
-        }
+          if (input.text === "return a failed turn") {
+            return {
+              status: "failed",
+              events: [{ type: "error", message: DELIBERATE_TURN_FAILURE }],
+            };
+          }
 
-        if (/weather/i.test(input.text)) {
-          const operationId = "get-weather-1";
+          if (/weather/i.test(input.text)) {
+            const operationId = "get-weather-1";
+            return {
+              status: "completed",
+              events: [
+                {
+                  type: "operation.started",
+                  operationId,
+                  operation: {
+                    kind: "tool",
+                    name: "get_weather",
+                    input: { city: weatherFixture.city },
+                  },
+                },
+                {
+                  type: "operation.finished",
+                  operationId,
+                  kind: "tool",
+                  output: weatherFixture,
+                  status: "completed",
+                },
+                {
+                  type: "message",
+                  role: "assistant",
+                  text: `The weather in ${weatherFixture.city} is ${weatherFixture.condition}.`,
+                },
+              ],
+            };
+          }
+
+          if (input.text.includes("pty-user-progress-sentinel")) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+          }
+
           return {
             status: "completed",
-            events: [
-              {
-                type: "operation.started",
-                operationId,
-                operation: {
-                  kind: "tool",
-                  name: "get_weather",
-                  input: { city: weatherFixture.city },
-                },
-              },
-              {
-                type: "operation.finished",
-                operationId,
-                kind: "tool",
-                output: weatherFixture,
-                status: "completed",
-              },
-              {
-                type: "message",
-                role: "assistant",
-                text: `The weather in ${weatherFixture.city} is ${weatherFixture.condition}.`,
-              },
-            ],
+            events: [{ type: "message", role: "assistant", text: GREETING }],
           };
-        }
-
-        if (input.text.includes("pty-user-progress-sentinel")) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
-        }
-
-        return {
-          status: "completed",
-          events: [{ type: "message", role: "assistant", text: GREETING }],
-        };
-      },
-      catch: (cause) => cause,
-    }),
+        },
+        catch: (cause) => cause,
+      }),
   });
 }
 

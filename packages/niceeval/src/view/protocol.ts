@@ -9,10 +9,7 @@ export const ViewClosedLifecycleEventSchema = Schema.Struct({
   event: Schema.Literal("closed"),
 });
 
-export const ViewLifecycleEventSchema = Schema.Union([
-  ViewReadyLifecycleEventSchema,
-  ViewClosedLifecycleEventSchema,
-]);
+export const ViewLifecycleEventSchema = Schema.Union([ViewReadyLifecycleEventSchema, ViewClosedLifecycleEventSchema]);
 
 /** Publishes the usable View server URL after startup; server creation alone is not a ready receipt. */
 export type ViewReadyLifecycleEvent = Schema.Schema.Type<typeof ViewReadyLifecycleEventSchema>;
@@ -50,10 +47,12 @@ export function decodeViewLifecycle(input: string): readonly ViewLifecycleEvent[
       throw new Error(`View lifecycle output has invalid JSON at ${index + 1}: ${reason}`, { cause });
     }
     try {
-      events.push(Schema.decodeUnknownSync(ViewLifecycleEventSchema, {
-        errors: "all",
-        onExcessProperty: "error",
-      })(value));
+      events.push(
+        Schema.decodeUnknownSync(ViewLifecycleEventSchema, {
+          errors: "all",
+          onExcessProperty: "error",
+        })(value),
+      );
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       throw new Error(`View lifecycle output has an invalid event at ${index + 1}: ${reason}`, { cause });

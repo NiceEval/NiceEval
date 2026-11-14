@@ -16,11 +16,7 @@ export const SANDBOX_ACTION_DEBUG_ENV_VALUE = "debug-env-value-must-not-leak-91f
 export const SANDBOX_ACTION_DEBUG_STDIN = "debug-stdin-must-not-leak-4a360c\n";
 
 export function recordSandboxActionDebugSideEffect(kind: string): void {
-  appendFileSync(
-    SANDBOX_ACTION_DEBUG_SIDE_EFFECTS,
-    `${JSON.stringify({ kind })}\n`,
-    "utf8",
-  );
+  appendFileSync(SANDBOX_ACTION_DEBUG_SIDE_EFFECTS, `${JSON.stringify({ kind })}\n`, "utf8");
 }
 
 const debugAction = defineSandboxAction({
@@ -32,16 +28,17 @@ const debugAction = defineSandboxAction({
       marker,
     }),
   },
-  steps: ({ marker }) => [
-    sandboxStep.exec({
-      executable: "printf",
-      args: ["%s", marker],
-    }),
-    sandboxStep.putText({
-      path: `.debug-plan/${marker}.txt`,
-      text: marker,
-    }),
-  ] as const,
+  steps: ({ marker }) =>
+    [
+      sandboxStep.exec({
+        executable: "printf",
+        args: ["%s", marker],
+      }),
+      sandboxStep.putText({
+        path: `.debug-plan/${marker}.txt`,
+        text: marker,
+      }),
+    ] as const,
 });
 
 function prototypeSafeFingerprintAction(fingerprint: unknown) {
@@ -49,12 +46,13 @@ function prototypeSafeFingerprintAction(fingerprint: unknown) {
     id: "@niceeval/e2e-cli/prototype-safe-fingerprint",
     input: Schema.Struct({ marker: Schema.String }),
     cache: { fingerprint },
-    steps: ({ marker }) => [
-      sandboxStep.exec({
-        executable: "printf",
-        args: ["%s", marker],
-      }),
-    ] as const,
+    steps: ({ marker }) =>
+      [
+        sandboxStep.exec({
+          executable: "printf",
+          args: ["%s", marker],
+        }),
+      ] as const,
   });
 }
 
@@ -97,19 +95,13 @@ export const builtinFingerprintBeta = writeText({
   cache: { fingerprint: { fixtureRevision: "beta" } },
 });
 
-export function plannedDebugAction(
-  id: string,
-  changeFrequency: number,
-  dependsOn: readonly string[] = [],
-) {
+export function plannedDebugAction(id: string, changeFrequency: number, dependsOn: readonly string[] = []) {
   return debugAction(
     { marker: id },
     {
       id,
       changeFrequency,
-      ...(dependsOn.length === 0
-        ? {}
-        : { dependsOn: dependsOn.map((dependency) => actionRef(dependency)) }),
+      ...(dependsOn.length === 0 ? {} : { dependsOn: dependsOn.map((dependency) => actionRef(dependency)) }),
     },
   );
 }

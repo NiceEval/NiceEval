@@ -68,7 +68,6 @@ export interface ScoreMatchAudit {
 /** Carries chunked audit text with byte lengths and digest for verification; content chunks must be interpreted with their manifest. */
 export interface ScoreMatchAuditEnvelope {
   readonly manifest: {
-
     readonly byteLength: number;
     readonly digest: string;
     readonly chunkByteLengths: readonly number[];
@@ -129,8 +128,7 @@ export type ScoreMatchAuditAny = ScoreMatchAudit | TypedScoreMatchAudit | ImageS
 /** Result of validating current managed scoring audit evidence. */
 export type ScoreMatchAuditReadResult =
   | { readonly state: "available"; readonly audit: ScoreMatchAuditAny }
-  | { readonly state: "invalid" }
-;
+  | { readonly state: "invalid" };
 
 const encoder = new TextEncoder();
 

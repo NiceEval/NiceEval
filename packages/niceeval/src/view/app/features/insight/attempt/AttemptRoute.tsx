@@ -9,7 +9,10 @@ import type { Locale } from "../shell/types.ts";
 import { useCurrentGeneration } from "../data/index.ts";
 import { attemptQueryOptions } from "./data/load.ts";
 
-export function AttemptRoute({ locator, onClose }: {
+export function AttemptRoute({
+  locator,
+  onClose,
+}: {
   readonly locator: string;
   readonly onClose: () => void;
 }): ReactElement {
@@ -20,7 +23,15 @@ export function AttemptRoute({ locator, onClose }: {
   const { data: model } = useSuspenseQuery(attemptQueryOptions(generation, locator));
   const { i18n, t } = useTranslation();
   const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
-  return <AttemptDialog title={t("attempt.title")} onClose={onClose}>
-    <AttemptDetails key={`${locator}:${aspect}:${id}`} model={model} locale={locale} aspect={aspect} selectedId={id} />
-  </AttemptDialog>;
+  return (
+    <AttemptDialog title={t("attempt.title")} onClose={onClose}>
+      <AttemptDetails
+        key={`${locator}:${aspect}:${id}`}
+        model={model}
+        locale={locale}
+        aspect={aspect}
+        selectedId={id}
+      />
+    </AttemptDialog>
+  );
 }

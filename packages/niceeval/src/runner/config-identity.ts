@@ -97,9 +97,9 @@ function freezeJson<Value extends JsonValue>(value: Value): Value {
   if (Array.isArray(value)) {
     return Object.freeze(value.map((entry) => freezeJson(entry))) as Value;
   }
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)]),
-  )) as Value;
+  return Object.freeze(
+    Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)])),
+  ) as Value;
 }
 
 function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
@@ -107,28 +107,37 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
   return Object.freeze({
     ...withoutSharedState,
     adapter: identity.adapter === null ? null : Object.freeze({ ...identity.adapter }),
-    ...(identity.models === undefined ? {} : { models: Object.freeze({
-      slots: Object.freeze(Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]))),
-    }) }),
+    ...(identity.models === undefined
+      ? {}
+      : {
+          models: Object.freeze({
+            slots: Object.freeze(
+              Object.fromEntries(
+                Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]),
+              ),
+            ),
+          }),
+        }),
     model: Object.freeze(identity.model),
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
     plugins: freezeJson(identity.plugins),
     ...(sharedState === undefined ? {} : { sharedState }),
     sandboxLayer: freezeJson(identity.sandboxLayer),
-    judgeRuntime: identity.judgeRuntime._tag === "Unconfigured"
-      ? Object.freeze({ _tag: "Unconfigured" as const })
-      : Object.freeze({
-          _tag: "Configured" as const,
-          provider: identity.judgeRuntime.provider,
-          model: identity.judgeRuntime.model,
-          baseUrl: identity.judgeRuntime.baseUrl,
-          credential: Object.freeze({ ...identity.judgeRuntime.credential }),
-          timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
-          maxResponseBytes: Object.freeze(identity.judgeRuntime.maxResponseBytes),
-          ...(identity.judgeRuntime.supportsImages === true ? { supportsImages: true } : {}),
-          protocol: Object.freeze({ ...identity.judgeRuntime.protocol }),
-        }),
+    judgeRuntime:
+      identity.judgeRuntime._tag === "Unconfigured"
+        ? Object.freeze({ _tag: "Unconfigured" as const })
+        : Object.freeze({
+            _tag: "Configured" as const,
+            provider: identity.judgeRuntime.provider,
+            model: identity.judgeRuntime.model,
+            baseUrl: identity.judgeRuntime.baseUrl,
+            credential: Object.freeze({ ...identity.judgeRuntime.credential }),
+            timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
+            maxResponseBytes: Object.freeze(identity.judgeRuntime.maxResponseBytes),
+            ...(identity.judgeRuntime.supportsImages === true ? { supportsImages: true } : {}),
+            protocol: Object.freeze({ ...identity.judgeRuntime.protocol }),
+          }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
   });
 }
@@ -147,9 +156,8 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
       revision: installer.identity.revision,
     },
     installMode: installer.installMode,
-    platforms: installer.platforms === undefined
-      ? { _tag: "All" }
-      : { _tag: "Listed", values: [...installer.platforms] },
+    platforms:
+      installer.platforms === undefined ? { _tag: "All" } : { _tag: "Listed", values: [...installer.platforms] },
   };
 }
 
@@ -159,18 +167,22 @@ export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
   const agent = run.agent;
   if (agent === undefined) throw new Error("Agent AdapterRun requires its Agent execution implementation.");
   if (agent.kind === "direct") return Object.freeze([]);
-  return Object.freeze(agent.install.map((declaration, index) => freezeJson({
-    order: index,
-    // Frozen identity encoding; author spelling is normalized before this boundary.
-    ensure: {
-      agent: declaration.identity.agent,
-      version: declaration.identity.version,
-      revision: declaration.identity.revision,
-    },
-    installer: installerIdentity(
-      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, declaration.identity)),
+  return Object.freeze(
+    agent.install.map((declaration, index) =>
+      freezeJson({
+        order: index,
+        // Frozen identity encoding; author spelling is normalized before this boundary.
+        ensure: {
+          agent: declaration.identity.agent,
+          version: declaration.identity.version,
+          revision: declaration.identity.revision,
+        },
+        installer: installerIdentity(
+          agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, declaration.identity)),
+        ),
+      }),
     ),
-  })));
+  );
 }
 
 function declaredString(value: string | undefined): DeclaredConfigValue<string> {
@@ -240,7 +252,9 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
  */
 function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const out = new Map<string, JsonValue>();
-  const put = (path: string, value: JsonValue): void => { out.set(path, value); };
+  const put = (path: string, value: JsonValue): void => {
+    out.set(path, value);
+  };
   const putDeclared = <Value extends JsonValue>(path: string, value: DeclaredConfigValue<Value>): void => {
     if (value._tag === "Configured") put(path, value.value);
   };
@@ -250,7 +264,8 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
     put("adapter.name", identity.adapter.name);
     put("adapter.contract", identity.adapter.contract);
     put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
-    if (identity.adapter.cleanupTimeoutMs !== undefined) put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
+    if (identity.adapter.cleanupTimeoutMs !== undefined)
+      put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
   }
   if (identity.models !== undefined) {
     for (const [slot, selection] of Object.entries(identity.models.slots)) {
@@ -266,16 +281,18 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judgeRuntime._tag === "Configured") {
-  put("judgeRuntime.provider", identity.judgeRuntime.provider);
-  put("judgeRuntime.model", identity.judgeRuntime.model);
-  put("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
-  put("judgeRuntime.credential.kind", identity.judgeRuntime.credential.kind);
-  if (identity.judgeRuntime.credential.kind === "environment") put("judgeRuntime.credential.name", identity.judgeRuntime.credential.name);
-  put("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
-  put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
-  if (identity.judgeRuntime.supportsImages === true) put("judgeRuntime.supportsImages", true);
-  put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
-  if (identity.judgeRuntime.protocol.kind === "chat-completions") put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);
+    put("judgeRuntime.provider", identity.judgeRuntime.provider);
+    put("judgeRuntime.model", identity.judgeRuntime.model);
+    put("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
+    put("judgeRuntime.credential.kind", identity.judgeRuntime.credential.kind);
+    if (identity.judgeRuntime.credential.kind === "environment")
+      put("judgeRuntime.credential.name", identity.judgeRuntime.credential.name);
+    put("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
+    put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
+    if (identity.judgeRuntime.supportsImages === true) put("judgeRuntime.supportsImages", true);
+    put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
+    if (identity.judgeRuntime.protocol.kind === "chat-completions")
+      put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);
   }
   put("agentInstalls", [...identity.agentInstalls]);
   return out;
@@ -350,12 +367,17 @@ export function counterfactualConfigIdentity(
   let agentInstalls = current.agentInstalls;
   let adapter = current.adapter;
   let models = current.models;
-  const rollbackGroups: readonly ("adapter" | "sandboxLayer" | "plugins" | "judgeRuntime" | "agentInstalls" | "models")[] = [
-    "adapter", "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls", "models",
-  ];
+  const rollbackGroups: readonly (
+    | "adapter"
+    | "sandboxLayer"
+    | "plugins"
+    | "judgeRuntime"
+    | "agentInstalls"
+    | "models"
+  )[] = ["adapter", "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls", "models"];
   for (const group of rollbackGroups) {
-    const paths = [...differing].filter((selector) =>
-      selector === `config:${group}` || selector.startsWith(`config:${group}.`)
+    const paths = [...differing].filter(
+      (selector) => selector === `config:${group}` || selector.startsWith(`config:${group}.`),
     );
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
     if (group === "adapter") adapter = historical.adapter;
@@ -370,9 +392,7 @@ export function counterfactualConfigIdentity(
     adapter,
     ...(models === undefined ? {} : { models }),
     model: accepted.has("config:model") ? historical.model : current.model,
-    reasoningEffort: accepted.has("config:reasoningEffort")
-      ? historical.reasoningEffort
-      : current.reasoningEffort,
+    reasoningEffort: accepted.has("config:reasoningEffort") ? historical.reasoningEffort : current.reasoningEffort,
     flags,
     plugins,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,

@@ -25,10 +25,11 @@ test("Codex CLI 的 coding-task 完成并可从公开 trace 读回 command tool"
     async ({ paths }) => {
       const niceeval = command([join(paths.projectRoot, "node_modules", ".bin", "niceeval")]);
       const env = { ...process.env, NICEEVAL_HOME: join(paths.projectRoot, ".niceeval-user") };
-      const run = await niceeval.run(
-        ["exp", "baseline", "coding-task", "--rerun", "all", "--json"],
-        { cwd: paths.projectRoot, env, timeoutMs: 5 * 60_000 },
-      );
+      const run = await niceeval.run(["exp", "baseline", "coding-task", "--rerun", "all", "--json"], {
+        cwd: paths.projectRoot,
+        env,
+        timeoutMs: 5 * 60_000,
+      });
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
       const codingTask = only(
@@ -38,10 +39,8 @@ test("Codex CLI 的 coding-task 完成并可从公开 trace 读回 command tool"
       );
       expect(codingTask).toMatchObject({ verdict: "passed", attempts: 1, passed: 1 });
 
-      const queried = await (async () => await niceeval.run(
-          ["show", codingTask.locator, "execution", "--json"],
-          { cwd: paths.projectRoot, env },
-        ))();
+      const queried = await (async () =>
+        await niceeval.run(["show", codingTask.locator, "execution", "--json"], { cwd: paths.projectRoot, env }))();
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const trace = JSON.stringify(queried.attemptTrace().trace);
       expect(trace).toContain(COMMAND_SENTINEL);
