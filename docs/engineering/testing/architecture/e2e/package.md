@@ -4,12 +4,18 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 安装后的 `niceeval` binary 与 package exports 进入，不引用 checkout 源码或构建目录。NiceEval 的 CI 只使用 Node 24，
 不建立跨 Node 版本兼容矩阵。
 
+## 发布形态
+
+包只发布一份 ESM 模块图，`exports` 每个入口只有一个 ESM 文件与一份类型声明，不发布 `.cjs` 构建，也没有转发到 CommonJS 的 ESM 外壳。
+CommonJS 项目用 `require` 加载时，由 Node 24 的 `require(esm)` 取得同一份模块；`import` 与 `require` 因此观察同一份 NiceEval 模块状态。
+`require(esm)` 不接受含顶层 `await` 的模块图，所以包内源码不使用顶层 `await`；构建对此做检查，出现时失败并指出文件。
+
 ## Owner 表
 
 | Owner ID | 用户结果 | 形态 | 文件 | Lane | 历史 bug |
 | --- | --- | --- | --- | --- | --- |
 | [`#package-commonjs-init-list`](#package-commonjs-init-list) | pnpm 11 的默认 CommonJS 项目无需补运行依赖或 build approval，即可安装候选包并完成 `--version → init → list → exp --dry` | Journey E2E | `e2e/package/test/package.test.ts` | PR / release | `b44420d3`、`published-package-runtime-dependencies-missing` |
-| [`#package-inspection-public-entry`](#package-inspection-public-entry) | `niceeval/inspection` 同时交付 ESM、CommonJS 与 browser-like 纯协议入口，且不公开 Host 或带入运行时边界 | 单边界 E2E | `e2e/package/test/inspection-public-entry.test.ts` | PR / release | — |
+| [`#package-inspection-public-entry`](#package-inspection-public-entry) | `niceeval/inspection` 的 ESM `import`、CommonJS `require` 与 browser-like bundle 得到同一份纯协议入口，且不公开 Host 或带入运行时边界 | 单边界 E2E | `e2e/package/test/inspection-public-entry.test.ts` | PR / release | — |
 
 ## package-commonjs-init-list
 
@@ -17,8 +23,8 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 build script。该项目包含分别以 `.ts`、`.tsx` 导入 `niceeval` 与 `niceeval/expect` 的 Eval；安装后的 candidate
 依次执行 `--version`、`init`、`list` 与 `exp --dry`，必须发现两条 Eval 并形成 dry plan。
 
-这条 Journey 会直接杀死历史回归的任一半：bin 未注册 tsx CJS hook 时，用户 `.ts` 无法转译；exports 缺少 `require`
-条件时，config 或 Eval 无法加载包入口。两种错误都在 `list` 的进程结果上变红，不再通过 Unit 读取 bin 源码或
+这条 Journey 会直接杀死历史回归的任一半：bin 未注册 tsx CJS hook 时，用户 `.ts` 无法转译；CommonJS 的 config 或 Eval 无法经 `require(esm)`
+加载包入口时同样变红。两种错误都在 `list` 的进程结果上变红，不再通过 Unit 读取 bin 源码或
 `package.json` 结构间接猜测。
 
 同一安装边界还核对候选包的四类 dependency 字段都不声明 `@niceeval/testkit`，且 tarball 不含 `packages/testkit`。
