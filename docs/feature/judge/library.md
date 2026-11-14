@@ -383,6 +383,7 @@ interface JudgeProviderSettings {
 }
 type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
   readonly maxOutputTokens?: number;
+  readonly contextWindow?: number;
   readonly supportsImages?: boolean;
 };
 type TypesafeProviderOptions = JudgeProviderSettings & JudgeCredentials;
@@ -424,6 +425,7 @@ interface ExperimentJudgeSettings {
 | `timeoutMs` | 正安全整数，约束整条 Assertion 的 callback、请求、重试与等待 | `180_000` |
 | `maxResponseBytes` | 正安全整数，最多 256 KiB；JSON parse 前的响应硬字节上限 | `16_384` |
 | `maxOutputTokens` | 仅聊天服务工厂接受的正安全整数，传给服务端的输出 token 上限 | `1_024` |
+| `contextWindow` | 仅聊天服务工厂接受的正安全整数，所选模型可接收的最大上下文 token 数。只供 Agent Judge 与模拟用户的 pi coding agent 会话决定何时自动压缩；普通 Judge 不使用。未写时按模型名查 NiceEval 内置模型目录（与估价同一份 models.dev + LiteLLM 快照、同一套名字归一规则）；目录也没有该模型时不按阈值主动压缩，只在模型报告溢出时由 pi 压缩后重试。只有显式写出时才进入 Provider 身份，目录取得的值写入审计 | 显式值 → 内置目录 → 仅溢出时压缩 |
 | `headers` | 随每次请求发送的额外 HTTP 头映射；键名大小写保留，值逐字发出并脱敏 | 无 |
 
 未知字段、accessor 和非法选项在构造时拒绝。TypeSafe 不接受 `maxOutputTokens`，因为它的协议没有这一限制。

@@ -220,7 +220,8 @@ telemetry.collect 可以继续收口被测应用的迟到数据，但必须按�
 
 Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prompt、提供 Sandbox operations 与评分工具，其余全部是 pi coding agent 的行为。NiceEval 不实现自己的 bash/read/write/edit，不包装模型请求，不另写压缩或重试。
 
-- 宿主用 `@earendil-works/pi-coding-agent` SDK 的 `createAgentSession` 创建会话。模型只从受管 Provider 生效配置注入（Chat Completions endpoint、headers、模型 ID 与凭据），不使用 pi 默认的 provider 注册表、`~/.pi` 凭据或宿主进程变量。
+- 宿主用 `@earendil-works/pi-coding-agent` SDK 的 `createAgentSession` 创建会话。模型只从受管 Provider 生效配置注入：Chat Completions endpoint、headers、模型 ID、凭据，`maxOutputTokens` 作为 maxTokens。不使用 pi 默认的 provider 注册表、`~/.pi` 凭据或宿主进程变量。
+- 上下文上限按 [`contextWindow`](library.md#工厂与类型) 的规则取得：先用显式值，再按模型名查内置模型目录，都没有时传一个不会触发阈值压缩的值，只靠 pi 的溢出恢复。
 - 会话与宿主隔离：settings 与 session 使用内存实现，资源加载关闭全部发现（context files、skills、extensions、prompt templates、MCP），不读写宿主的 pi 配置目录。
 - 内置 `bash`、`read`、`write`、`edit` 通过 pi 的 `BashOperations`、`ReadOperations`、`WriteOperations`、`EditOperations` 接到当前 Attempt 主 Sandbox；其它内置工具不启用。`submit_evaluation` 是 `customTools` 里的自定义工具，参数校验由 NiceEval 负责。
 - 每道 `chat`、`judge` 或 `grade` 是同一个会话上的一次 `prompt()`，后面的题能看到前面的历史。以 `agent_settled` 判断 pi 不会再自动继续。
