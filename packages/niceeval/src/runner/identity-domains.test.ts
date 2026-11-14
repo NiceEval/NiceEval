@@ -42,7 +42,7 @@ type Snapshot = {
 type Sample = { readonly input: IdentityRebuildInput; readonly digests: Digests };
 
 /** Data-only fixture: the source read boundary receives captured bytes, never a project file. */
-async function calculateSample(fixture: Snapshot["samples"][number]["fixture"]): Promise<Sample> {
+async function calculateSample(fixture: Snapshot["samples"][number]["fixture"], legacy = false): Promise<Sample> {
   const adapter = defineAdapter({ name: "release-fixture", behaviorRevision: "1", create: () => ({}) });
   const definition = defineEval({ tags: fixture.tags, metadata: fixture.metadata, test: () => {} });
   const sourcePath = resolve(fixture.sourcePath);
@@ -67,15 +67,17 @@ async function calculateSample(fixture: Snapshot["samples"][number]["fixture"]):
     plan, identity: linkedRunRecordIdentity(plan), plugin,
   }, new Map([[sourcePath, Effect.succeed(fixture.sourceContent)]])));
   const configIdentity = hashConfigIdentity(configIdentityForRun(pluginRun.run, plan));
-  const input = { ...result.rebuildInput, attempt: fixture.attempt };
+  const fingerprintPayload = legacy ? { ...result.rebuildInput.fingerprintPayload, source: [[fixture.sourcePath, fixture.sourceContent]] } : result.rebuildInput.fingerprintPayload;
+  const fingerprint = hashIdentityPayload(fingerprintPayload);
+  const input = { ...result.rebuildInput, fingerprintPayload, attempt: fixture.attempt };
   return {
     input,
     digests: {
-      fingerprint: result.fingerprint,
+      fingerprint,
       configIdentity,
       slotInput: slotExecutionIdentityDigestHex({
         experimentId: fixture.experimentId, evalId: fixture.evalId, attempt: fixture.attempt,
-        input: { domain: `niceeval.input/fingerprint-v${CURRENT_IDENTITY_DOMAINS.inputIdentity}`, value: result.fingerprint },
+        input: { domain: `niceeval.input/fingerprint-v${CURRENT_IDENTITY_DOMAINS.inputIdentity}`, value: fingerprint },
         config: { domain: `niceeval.config/identity-v${CURRENT_IDENTITY_DOMAINS.configIdentity}`, value: configIdentity },
         timeout: input.timeout,
       }),
@@ -160,7 +162,7 @@ describe("identity domain release contract", () => {
       domains: historicalDomains,
       registryNames: historicalRegistry.map((entry) => entry.name),
       samples: releaseSnapshot.samples.slice(0, 2),
-    }, samples.slice(0, 2).map((sample) => ({
+    }, (await Promise.all(releaseSnapshot.samples.slice(0, 2).map(sample => calculateSample(sample.fixture, true)))).map((sample) => ({
       ...sample, input: { ...sample.input, domains: historicalDomains },
     })), historicalDomains, historicalRegistry);
     expect(FINGERPRINT_ALGORITHM_VERSION).toBe(CURRENT_IDENTITY_DOMAINS.fingerprintAlgorithm);
@@ -173,13 +175,15 @@ describe("identity domain release contract", () => {
     expect(ordinary.digests).toEqual(samples[0].digests);
     expect(ordinary.input.fingerprintPayload).not.toHaveProperty("simulatedUser");
     expect(ordinary.input.fingerprintPayload).not.toHaveProperty("agentJudge");
-    const review = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + "\n// .agentJudge(" });
+    const comment = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + "\n// agentJudge( defineSimulatedUser( .simulatedUser( defineJudge(\n" });
+    expect(comment.digests).toEqual(ordinary.digests);
+    const review = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + '\nexport const review = "agentJudge(";' });
     const reviewPayload = review.input.fingerprintPayload;
     expect(reviewPayload).toHaveProperty("agentJudge.algorithm", 7);
     const previousReviewPayload = { ...reviewPayload, agentJudge: { ...reviewPayload.agentJudge as object, algorithm: 6 } };
     expect(review.digests.fingerprint).not.toBe(hashIdentityPayload(previousReviewPayload));
     for (const selector of ["defineSimulatedUser(", ".simulatedUser("]) {
-      const user = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + "\n// " + selector });
+      const user = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + "\nexport const user = " + JSON.stringify(selector) + ";" });
       expect(user.input.fingerprintPayload).toHaveProperty("simulatedUser", {
         behavior: 1, piCodingAgent: "1.5.2", piAi: "1.5.2",
       });

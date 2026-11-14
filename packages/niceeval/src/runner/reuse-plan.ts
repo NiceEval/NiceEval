@@ -112,6 +112,8 @@ export interface ExecutionComparison {
   readonly reason: string;
 }
 
+type PlanningIssue = RecordIssue | { readonly code: "dynamic-module-unresolved"; readonly path: readonly string[]; readonly file: string; readonly line: number; readonly column: number };
+
 export type ExecutionGapReason =
   | "no-source-run"
   | "source-slot-missing"
@@ -132,6 +134,7 @@ export type ExecutionGapReason =
   | "adoption-unproven"
   | "verdict-ineligible"
   | "score-incomplete"
+  | "dynamic-module-unresolved"
   | "adapter-behavior-revision-required"
   | "rerun-requested"
   | "sandbox-retention-requested";
@@ -189,7 +192,8 @@ export interface TargetSlot {
   readonly configIdentity: ExecutionIdentity;
   readonly timeout?: ExecutionDurationLimit;
   /** Current-only eligibility fact; omitted means behavior identity is reusable. */
-  readonly reuseEligibility?: "adapter-behavior-revision-required";
+  readonly reuseEligibility?: "adapter-behavior-revision-required" | "dynamic-module-unresolved";
+  readonly reuseEligibilityFacts?: readonly { readonly file: string; readonly line: number; readonly column: number }[];
 }
 
 /** Logical current input; evaluating it never allocates durable identities. */
@@ -218,7 +222,7 @@ export interface CurrentAssessmentSource {
 export type CurrentSlotAssessment<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource> = Target & (
   | { readonly state: "reuse"; readonly adoption: "carried"; readonly source: Source; readonly comparisons: readonly ExecutionComparison[] }
   | { readonly state: "gap"; readonly reason: ExecutionGapReason; readonly scope: ExecutionGapScope;
-      readonly issues: readonly RecordIssue[]; readonly sourceBarrier?: ExecutionSourceBarrier;
+      readonly issues: readonly PlanningIssue[]; readonly sourceBarrier?: ExecutionSourceBarrier;
       readonly candidate?: Source; readonly comparisons: readonly ExecutionComparison[] }
 );
 
@@ -288,7 +292,7 @@ export interface ExecutionGapSlot extends ExecutionReusePlanSlotBase {
   readonly state: "gap";
   readonly reason: ExecutionGapReason;
   readonly scope: ExecutionGapScope;
-  readonly issues: readonly RecordIssue[];
+  readonly issues: readonly PlanningIssue[];
   readonly sourceBarrier?: ExecutionSourceBarrier;
   readonly candidate?: ExecutionReusePlanSource;
 }
@@ -1068,7 +1072,7 @@ function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessm
   input: {
     readonly reason: ExecutionGapReason;
     readonly scope: ExecutionGapScope;
-    readonly issues: readonly RecordIssue[];
+    readonly issues: readonly PlanningIssue[];
     readonly comparisons: readonly ExecutionComparison[];
     readonly sourceBarrier?: ExecutionSourceBarrier;
     readonly candidate?: Source;
@@ -1079,7 +1083,7 @@ function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessm
     state: "gap" as const,
     reason: input.reason,
     scope: input.scope,
-    issues: Object.freeze([...input.issues]),
+    issues: Object.freeze([...input.issues, ...(target.reuseEligibilityFacts ?? []).map(fact => Object.freeze({ code: "dynamic-module-unresolved" as const, path: [fact.file, String(fact.line), String(fact.column)], ...fact }))]),
     ...(input.sourceBarrier === undefined ? {} : { sourceBarrier: input.sourceBarrier }),
     ...(input.candidate === undefined ? {} : { candidate: input.candidate }),
     comparisons: Object.freeze([...input.comparisons]),
@@ -1142,7 +1146,8 @@ function isTargetSlot(value: unknown): value is TargetSlot {
     && slot.attempt >= 0
     && (slot.evaluationKind === "pass" || slot.evaluationKind === "score")
     && (slot.reuseEligibility === undefined
-      || slot.reuseEligibility === "adapter-behavior-revision-required")
+      || slot.reuseEligibility === "adapter-behavior-revision-required"
+      || slot.reuseEligibility === "dynamic-module-unresolved")
     && typeof slot.executionIdentityDigest === "string"
     && isSha256Digest(slot.executionIdentityDigest)
     && isExecutionIdentity(slot.inputIdentity)

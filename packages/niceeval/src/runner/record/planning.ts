@@ -10,6 +10,7 @@ import { pluginInstanceDataOf } from "../../plugin/contracts.ts";
 import { adapterIdentity } from "../../adapter.ts";
 import { slotExecutionIdentityDigestHex } from "../execution-identity.ts";
 import { CURRENT_IDENTITY_DOMAINS } from "../identity-domains.ts";
+import { moduleReuseEligibility } from "../module-graph.ts";
 import { cacheKey } from "../fingerprint.ts";
 import { selectedEvalsForRun } from "../eval-selection.ts";
 import { resolveAttemptTimeout } from "../timeout.ts";
@@ -46,6 +47,8 @@ import type {
 
 /** Current facts supplied by physical planning; Record never reconstructs them from history. */
 export interface RunnerRecordReuseSlotInput {
+  readonly reuseEligibility?: "dynamic-module-unresolved";
+  readonly reuseEligibilityFacts?: readonly { readonly file: string; readonly line: number; readonly column: number }[];
   readonly identityManifest?: IdentityManifestEntry;
   readonly rebuildInput?: IdentityRebuildInput;
   readonly renameRebuildInput?: (experimentId: string) => IdentityRebuildInput | undefined;
@@ -207,6 +210,7 @@ export function prepareRunnerRecordReuse(
         const rebuildInput = input.rebuildInputsByKey?.get(key);
         const pair = input.preparedPairsByKey?.get(key);
         slotsByKey.set(key, Object.freeze({
+          ...moduleReuseEligibility(evalDef),
           ...(manifest === undefined ? {} : { identityManifest: identityManifestEntry(evalDef.id, manifest) }),
           ...(rebuildInput === undefined ? {} : { rebuildInput }),
           ...(rebuildInput === undefined || pair === undefined ? {} : { renameRebuildInput: captureRenameRebuildInput(pair, rebuildInput, renameFingerprint) }),
@@ -348,6 +352,7 @@ export function targetForRunnerRecordRun(input: {
       inputIdentity: entry.reuse.inputIdentity,
       configIdentity: entry.reuse.configIdentity,
       ...(entry.reuse.renameFingerprint === undefined ? {} : { renameFingerprint: entry.reuse.renameFingerprint }),
+      ...moduleReuseEligibility(entry.evalDef),
       ...(entry.reuse.timeout === undefined ? {} : { timeout: entry.reuse.timeout }),
       ...(input.planned.run.adapter?.kind === "custom"
         && input.planned.run.adapter.behaviorRevision === null

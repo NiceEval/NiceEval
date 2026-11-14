@@ -36,6 +36,7 @@
     "current.reason.score-incomplete": "score incomplete",
     "current.reason.evidence-unavailable": "evidence unavailable",
     "current.reason.timeout-exceeded": "timeout exceeded",
+    "current.reason.dynamic-module-unresolved": "module dependencies could not be resolved",
     "current.reason.adoption-unproven": "adoption could not be verified",
     "current.previousResult": "Previous result",
     "current.next": "Next:",

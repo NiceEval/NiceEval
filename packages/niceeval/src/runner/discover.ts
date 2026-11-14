@@ -15,7 +15,6 @@ import { Data, Effect, Option, Schema } from "effect";
 import { pad4 } from "../util.ts";
 import {
   assertNoHiddenInputLeaks,
-  captureEvalSource,
   folderEntryBaseId,
   type HiddenInput,
   type LeakGateHints,
@@ -48,8 +47,10 @@ import type {
   DatasetDefinition,
 } from "../types.ts";
 import { defineEvalForContext } from "../define.ts";
+import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
 import { digestOf } from "../sandbox/identity.ts";
-import { captureSourceClosure } from "./source-closure.ts";
+import { ProjectModuleGraph, attachEvalModules, evalModules } from "./module-graph.ts";
+import { normalizedIdentity } from "./source-normalization.ts";
 import { splitByEvaluationKind } from "./eval-selection.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
@@ -481,7 +482,8 @@ interface DiscoveredEvalEntry {
 function discoverEvalEntry(
   entry: EvalEntry,
   root: string,
-  load: DiscoveryModuleLoader = cachedModuleLoader,
+  load: DiscoveryModuleLoader,
+  graph: ProjectModuleGraph,
 ): Effect.Effect<DiscoveredEvalEntry, DiscoveryError> {
   const fileLabel = relative(root, entry.file).split(sep).join("/");
   return Effect.gen(function*() {
@@ -498,7 +500,10 @@ function discoverEvalEntry(
     const module = yield* decodeEvalModule(captured.value, fileLabel);
     const expanded = yield* expandEvalExport(module.default, entry, root);
     const source = yield* Effect.tryPromise({
-      try: () => captureEvalSource(entry.file, { root }),
+      try: async () => {
+        const content = normalizeEvalSource(graph.module(entry.file).source);
+        return { path: fileLabel, content, sha256: hashEvalSource(content) };
+      },
       catch: (cause) => issue(
         fileLabel,
         "discovery.source-capture-failed",
@@ -581,6 +586,7 @@ function withLoaderProvenance(
 function propagateLoaderProvenance(
   entries: readonly DiscoveredEvalEntry[],
   root: string,
+  graph: ProjectModuleGraph,
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   return Effect.tryPromise({
     try: async () => {
@@ -608,8 +614,8 @@ function propagateLoaderProvenance(
         // Keep the old direct capture as a conservative fallback when a host
         // omits call-site frames from Error.stack.
         for (const evalDef of entry.evals) addLoaderPaths(buckets, directLoaderPaths(evalDef));
-        const closure = await captureSourceClosure(entry.sourcePath, { root });
-        const modules = new Set(closure.map(([path]) => resolve(root, path)));
+        const closure = graph.capture(entry.sourcePath);
+        const modules = new Set(closure.modules.map(fact => fact.path));
         for (const [modulePath, registered] of originPaths) {
           if (modules.has(modulePath)) addLoaderPaths(buckets, {
             paths: [...registered.data],
@@ -617,7 +623,7 @@ function propagateLoaderProvenance(
             privatePaths: [...registered.private],
           });
         }
-        evals.push(...entry.evals.map((evalDef) => withLoaderProvenance(evalDef, buckets)));
+        evals.push(...entry.evals.map((evalDef) => attachEvalModules(withLoaderProvenance(evalDef, buckets), closure)));
       }
       return Object.freeze(evals);
     },
@@ -731,11 +737,11 @@ export function discoverEvals(
   options: { freshImport?: boolean; generation?: FreshImportGeneration } = {},
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
-  const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> => Effect.gen(function*() {
+  const discoverWith = (load: DiscoveryModuleLoader, graph: ProjectModuleGraph): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> => Effect.gen(function*() {
     enterLoaderDiscoveryHost();
     const entries = yield* collectEvalEntries(dir, root);
-    const discoveredEntries = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, load));
-    const evals = yield* propagateLoaderProvenance(discoveredEntries, root);
+    const discoveredEntries = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, load, graph));
+    const evals = yield* propagateLoaderProvenance(discoveredEntries, root, graph);
     const [, leakErrors] = yield* Effect.partition(evals, (evalDef) => runLeakGate(evalDef.definition, {
       evalId: evalDef.id,
       file: relative(root, evalDef.sourcePath).split(sep).join("/"),
@@ -784,10 +790,19 @@ export function discoverEvals(
           actions: ["Split the Eval Group into one pass Group and one score Group."],
         });
       }
+      const groupProjection = yield* Effect.try({
+        try: () => graph.capture(file, { stopPaths: memberSourcePaths }),
+        catch: (cause) => issue(
+          label,
+          "discovery.source-capture-failed",
+          causeMessage(cause),
+          ["Make the Eval Group entry and its project-local helper modules readable."],
+        ),
+      });
       const groupSources = yield* Effect.tryPromise({
-        try: async () => (await captureSourceClosure(file, { root, stopPaths: memberSourcePaths })).map(([path, content]) => [
-          path,
-          path === label ? normalizeEvalGroupSource(content) : content,
+        try: async () => groupProjection.modules.map((fact) => [
+          relative(root, fact.path),
+          fact.path === file ? normalizedIdentity(normalizeEvalGroupSource(fact.normalized)) : fact.identity,
         ] as const),
         catch: (cause) => issue(
           label,
@@ -826,7 +841,7 @@ export function discoverEvals(
           return;
         }
         claimed.set(definition, id);
-        annotated.set(definition, discoverEval(definition, {
+        annotated.set(definition, attachEvalModules(discoverEval(definition, {
           ...member,
           evalGroup: Object.freeze({
             id,
@@ -838,16 +853,16 @@ export function discoverEvals(
             sourcePath: file,
             baseDir: dirname(file),
           }),
-        }));
+        }), Object.freeze({ ...evalModules(member)!, unresolved: Object.freeze([...evalModules(member)!.unresolved, ...groupProjection.unresolved]) })));
       });
     }
     if (issues.length > 0) return yield* Effect.fail(discoveryError(issues));
     return Object.freeze(evals.map((item) => annotated.get(item.definition) ?? item));
   });
-  if (options.generation !== undefined) return discoverWith(options.generation.import);
+  if (options.generation !== undefined) return discoverWith(options.generation.import, options.generation.modules);
   return Effect.scoped(
     acquireFreshImportGeneration(root).pipe(
-      Effect.flatMap((fresh) => discoverWith(fresh.import)),
+      Effect.flatMap((fresh) => discoverWith(fresh.import, fresh.modules)),
     ),
   );
 }

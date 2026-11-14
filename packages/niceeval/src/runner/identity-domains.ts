@@ -13,8 +13,8 @@ export interface IdentityDomains {
 }
 
 export const CURRENT_IDENTITY_DOMAINS: IdentityDomains = Object.freeze({
-  fingerprintAlgorithm: 5,
-  fingerprintCoverage: 3,
+  fingerprintAlgorithm: 6,
+  fingerprintCoverage: 4,
   inputIdentity: 1,
   configIdentity: 1,
   slotInput: 1,
@@ -119,6 +119,22 @@ export const IDENTITY_DOMAIN_CHANGES: readonly IdentityDomainChange[] = Object.f
     "Coverage only shrinks, so the payload hashes as before: unaffected Evals rebuild the old digest unchanged, and an Eval that drops another Eval's helper-routed file shows an identity mismatch.",
   applies: () => true,
   rebuild: (input: IdentityRebuildInput) => input,
+}, {
+  kind: "core",
+  name: "normalized-source-identity/5-to-6",
+  revision: "fingerprintAlgorithm",
+  from: 5,
+  to: 6,
+  effect: "behavior-changing",
+  summary: "Hash normalized source with the pinned native parser and ignore ordinary comments in capability selection.",
+}, {
+  kind: "core",
+  name: "parsed-module-graph/3-to-4",
+  revision: "fingerprintCoverage",
+  from: 3,
+  to: 4,
+  effect: "behavior-changing",
+  summary: "Use one parsed module graph for source identity, Group definitions and loader provenance, including literal runtime dependencies.",
 }]);
 
 export interface IdentityDomainSide {

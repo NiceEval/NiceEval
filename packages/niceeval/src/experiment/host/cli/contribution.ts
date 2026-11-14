@@ -23,7 +23,7 @@ import {
 import { renderSessionListText, renderSessionShowText } from "../../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../../runner/reuse-readback.ts";
 import { formatIdentityExplanation } from "../../../runner/feedback/identity-explanation.ts";
-import type { ExperimentHostDryComparison, ExperimentHostError } from "../types.ts";
+import type { ExperimentHostDryComparison, ExperimentHostError, ExperimentHostJsonValue } from "../types.ts";
 import { browsableExperimentPaths } from "../../../shared/aggregate.ts";
 import {
   type ExperimentHostDebugPlan,
@@ -408,7 +408,7 @@ function invocationText(result: { readonly receipt: { readonly invocationId: str
   return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nBefore caches: ${result.summary.beforeCaches.hit} hit · ${result.summary.beforeCaches.prepared} prepared · ${result.summary.beforeCaches.degraded} degraded · ${result.summary.beforeCaches.failed} failed (${result.summary.beforeCaches.total} total)\n`;
 }
 
-function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly ExperimentHostDryComparison[]; readonly reason?: string; readonly scope?: string }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
+function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly ExperimentHostDryComparison[]; readonly reason?: string; readonly scope?: string; readonly issues?: readonly ExperimentHostJsonValue[] }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
   type ProjectedSlot = {
     readonly runId: string;
     readonly slotId: string;
@@ -419,6 +419,7 @@ function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "g
     readonly comparisons: readonly ExperimentHostDryComparison[];
     readonly reason?: string;
     readonly scope?: string;
+    readonly issues?: readonly ExperimentHostJsonValue[];
   };
   const rows = new Map<string, { experimentId: string; evalId: string; evalGroupId?: string; evalGroupIndex?: number; slots: ProjectedSlot[]; readbacks: CurrentReuseReadbackSnapshot[]; locked?: true }>();
   for (const slot of plan.slots) {
@@ -434,7 +435,7 @@ function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "g
       ...slot.target,
       state: slot.state === "reuse" ? "reused" : "gap",
       comparisons: slot.comparisons,
-      ...(slot.state === "gap" ? { reason: slot.reason, scope: slot.scope } : {}),
+      ...(slot.state === "gap" ? { reason: slot.reason, scope: slot.scope, ...(slot.reason === "dynamic-module-unresolved" ? { issues: slot.issues ?? [] } : {}) } : {}),
     });
     if (plan.lockedPairs.includes(key)) row.locked = true;
     rows.set(key, row);
@@ -479,7 +480,7 @@ function dryText(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAtt
       ...gaps.map((slot) => {
         const summary = slot.reason === "identity-mismatch" || slot.reason === "adoption-unproven"
           ? explanations.get(slot.attempt)?.[0] : undefined;
-        return `gap ${slot.attempt}:${slot.reason ?? "unknown"}${summary === undefined ? "" : `: ${summary}`}`;
+        return `gap ${slot.attempt}:${slot.reason ?? "unknown"}${summary === undefined ? "" : `: ${summary}`}${slot.reason === "dynamic-module-unresolved" ? `: ${JSON.stringify(slot.issues)}` : ""}`;
       }),
     ];
     lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no slots"}`);

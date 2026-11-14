@@ -89,6 +89,7 @@ function gapReason(reason: ExecutionGapReason): Extract<InspectionProjectResult[
     case "source-member-missing": case "source-publication-unavailable": return "not-published";
     case "identity-mismatch": case "identity-domain-mismatch": return "identity-mismatch";
     case "attempt-outcome-ineligible": case "verdict-ineligible": return "outcome-ineligible";
+    case "dynamic-module-unresolved": return "dynamic-module-unresolved";
     case "score-incomplete": return "score-incomplete";
     case "timeout-exceeded": return "timeout-exceeded";
     case "adoption-unproven": return "adoption-unproven";

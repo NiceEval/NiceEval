@@ -36,6 +36,7 @@
     "current.reason.score-incomplete": "得分不完整",
     "current.reason.evidence-unavailable": "证据不可用",
     "current.reason.timeout-exceeded": "超出时限",
+    "current.reason.dynamic-module-unresolved": "无法确定模块依赖",
     "current.reason.adoption-unproven": "无法核实已采用结果",
     "current.previousResult": "上次结果",
     "current.next": "下一步：",

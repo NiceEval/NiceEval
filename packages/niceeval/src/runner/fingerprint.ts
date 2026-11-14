@@ -9,8 +9,8 @@ import { ORDINARY_JUDGE_IDENTITY_CHANGE, selectsOrdinaryJudge } from "./identity
 
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { dirname, extname, relative, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { relative, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import {
   captureLinkedRunRenameFingerprintIdentity,
@@ -46,6 +46,7 @@ import { CURRENT_IDENTITY_DOMAINS, type IdentityRebuildInput } from "./identity-
 import { hashIdentityPayload as hash, stableIdentityJson as stableJson } from "./execution-identity.ts";
 import { EXECUTION_DURATION_DOMAIN } from "../eval/record/eligibility.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
+import { ProjectModuleGraph, evalModules } from "./module-graph.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 
 /** Files that participate in a fingerprint are an explicit planning boundary. */
@@ -168,13 +169,18 @@ function fingerprintPreparedPair(
       try: () => hashConfigIdentity(identity),
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
-    const source = yield* sourceClosure(evalDef, sourceCache);
+    const closure = evalModules(evalDef) ?? (yield* Effect.flatMap(cachedRead(evalDef.sourcePath, sourceCache), source => Effect.try({
+      try: () => new ProjectModuleGraph(process.cwd()).capture(evalDef.sourcePath, { source }),
+      catch: (cause) => fingerprintFileError("read", evalDef.sourcePath, cause),
+    })));
+    const normalized = closure.modules.map(fact => [relative(process.cwd(), fact.path), fact.normalized] as const);
+    const source = closure.modules.map(fact => [relative(process.cwd(), fact.path), fact.identity] as const);
     // Opt-in only: ordinary Eval identity payloads remain byte-for-byte unchanged.
-    const selectsAgentJudge = source.some(([, content]) => /\bagentJudge\s*\(/u.test(content));
+    const selectsAgentJudge = normalized.some(([, content]) => /\bagentJudge\s*\(/u.test(content));
     if (selectsAgentJudge && pair.plan._tag === "Sandbox" && (pair.run.sandboxReuse === true || evalDef.evalGroup !== undefined || pair.run.sharedState !== undefined)) {
       return yield* Effect.fail(invariant("judge.agent-shared-sandbox: Agent Judge requires an exclusive Attempt Sandbox"));
     }
-    const selectsSimulatedUser = source.some(([, content]) => /\bdefineSimulatedUser\s*\(|\.simulatedUser\s*\(/u.test(content));
+    const selectsSimulatedUser = normalized.some(([, content]) => /\bdefineSimulatedUser\s*\(|\.simulatedUser\s*\(/u.test(content));
     const piRuntime = selectsAgentJudge || selectsSimulatedUser ? yield* Effect.sync(() => {
       try {
         const runtime = resolvePiCodingAgent();
@@ -216,7 +222,7 @@ function fingerprintPreparedPair(
         ...piRuntime,
       } } : {}),
       ...(selectsSimulatedUser ? { simulatedUser: { behavior: 1, ...piRuntime } } : {}),
-      ...(selectsOrdinaryJudge(source) ? { ordinaryJudge: { algorithm: ORDINARY_JUDGE_IDENTITY_CHANGE.algorithm } } : {}),
+      ...(selectsOrdinaryJudge(normalized) ? { ordinaryJudge: { algorithm: ORDINARY_JUDGE_IDENTITY_CHANGE.algorithm } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,
         revision: JUDGE_AUTHORING_REVISION,
@@ -254,7 +260,7 @@ function fingerprintPreparedPair(
         config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
         plan: pair.identity,
         plugins,
-        source: Object.freeze(Object.fromEntries(source.map(([path, content]) => [path, hashText(content)]))),
+        source: Object.freeze(Object.fromEntries(source)),
         data: Object.freeze(Object.fromEntries([
           ...loaderData.map(([path, content]) => [path, hashText(content)]),
           ...criteria,
@@ -379,52 +385,6 @@ function streamHashEffect(path: string): Effect.Effect<string, FingerprintFileEr
       })),
     ),
   );
-}
-
-/** 项目内静态 import 图；外部包和动态 import 有意不进入闭包。 */
-function sourceClosure(
-  evalDef: DiscoveredEval,
-  cache?: FingerprintSourceCache,
-): Effect.Effect<Array<[string, string]>, FingerprintFileError> {
-  const root = process.cwd();
-  const visited = new Set<string>();
-  const files: Array<[string, string]> = [];
-  const visit = (path: string): Effect.Effect<void, FingerprintFileError> => Effect.gen(function* () {
-    const absolute = resolve(path);
-    if (visited.has(absolute) || (!absolute.startsWith(`${root}/`) && absolute !== root)) return;
-    visited.add(absolute);
-    const content = yield* cachedRead(absolute, cache);
-    files.push([relative(root, absolute), content]);
-    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)]
-      .flatMap((match) => match[1] === undefined ? [] : [match[1]]);
-    for (const spec of specs) {
-      if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
-      const resolved = yield* resolveModule(dirname(absolute), spec);
-      if (resolved) yield* visit(resolved);
-    }
-  });
-  return Effect.andThen(
-    visit(evalDef.sourcePath),
-    Effect.sync(() => files.sort(([a], [b]) => a.localeCompare(b))),
-  );
-}
-
-function resolveModule(from: string, specifier: string): Effect.Effect<string | undefined> {
-  const raw = resolve(from, specifier);
-  const candidates = extname(raw) ? [raw] : [raw, ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx"].map((ext) => `${raw}${ext}`), ...["index.ts", "index.tsx", "index.js"].map((name) => resolve(raw, name))];
-  const findAt = (index: number): Effect.Effect<string | undefined> => {
-    const candidate = candidates[index];
-    if (candidate === undefined) return Effect.succeed(undefined);
-    return Effect.tryPromise({
-      try: () => stat(candidate),
-      // Existing behavior intentionally treats every stat failure as a missed candidate.
-      catch: (cause) => fingerprintFileError("read", candidate, cause),
-    }).pipe(
-      Effect.flatMap((info) => info?.isFile() ? Effect.succeed(candidate) : findAt(index + 1)),
-      Effect.catch(() => findAt(index + 1)),
-    );
-  };
-  return findAt(0);
 }
 
 /** 无派发项目规划：身份目标与 runner 后续真正消费的 prepared pair 来自同一产物。 */

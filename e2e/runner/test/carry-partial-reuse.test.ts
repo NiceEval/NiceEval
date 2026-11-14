@@ -156,6 +156,13 @@ test.concurrent("经共享 helper 调用 loader 时，只有调用它的 Eval �
     "carry-helper-loader-attribution",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval }, paths }) => {
+      // Both entries reach one helper through the loader's real tsconfig alias.
+      // Loader provenance and source identity must consume that same module graph.
+      writeFileSync(join(paths.projectRoot, "tsconfig.json"), JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@loader/*": ["evals/helper-loader/*"] } } }));
+      for (const name of ["alpha", "beta"]) {
+        const entry = join(paths.projectRoot, "evals/helper-loader", `${name}.eval.ts`);
+        writeFileSync(entry, readFileSync(entry, "utf8").replace('"./read-fixture.ts"', '"@loader/read-fixture"'));
+      }
       const fixtures = join(paths.projectRoot, "evals", "helper-loader", "fixtures");
       const slotStates = (plan: ExpPlanDocument) => Object.fromEntries(
         plan.matrix.map((row) => [row.evalId, row.slots.map((slot) => slot.state === "gap" ? `gap:${slot.reason}` : slot.state)]),

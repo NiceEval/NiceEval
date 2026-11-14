@@ -19,7 +19,7 @@ const ProjectIssueSchema: Schema.Codec<Schema.Json> = Schema.suspend(() => Schem
 
 export const InspectionProjectGapReasonSchema = Schema.Literals([
   "no-result", "pending", "not-published", "identity-mismatch", "outcome-ineligible",
-  "score-incomplete", "evidence-unavailable", "timeout-exceeded", "adoption-unproven",
+  "dynamic-module-unresolved", "score-incomplete", "evidence-unavailable", "timeout-exceeded", "adoption-unproven",
 ]);
 
 export const InspectionProjectPlannedAttemptSchema = Schema.Union([
