@@ -46,7 +46,8 @@ An old Attempt is reused automatically only when all of the following hold:
 - This run's `--rerun` did not ask to rerun it.
 - This run did not request real execution with `--keep-sandbox`.
 
-Changing only the Experiment's `description` or `labels` does not invalidate old results. Eval files are different: when the file content changes, that eval reruns.
+Changing only the Experiment's `description` or `labels` does not invalidate old results. Changes to an eval's executable content or actual dependencies cause that eval to rerun.
+Ordinary comments, indentation, and blank lines do not affect reuse when the normalized source stays the same.
 
 ## Control the rerun scope
 
@@ -107,6 +108,8 @@ When the run ends, the terminal's `NEXT` panel lists the Runs created this time,
 pnpm exec niceeval show run:<run-id>
 ```
 
-Both reused and rerun evals appear in this Run, and the pass rate is computed over the complete batch. Do not use `show exp:<id>` to view results before `exp` has finished; at that point there may be no published results yet.
+Both reused and rerun evals appear in this Run, and the pass rate is computed over the complete batch.
+While the run is in progress, you can also use `show run:<run-id>` to read published Attempts. Unfinished slots appear as `pending`.
+To see each slot's current stage and Sandbox instance, use `niceeval invocation show <invocation-id>`.
 
 For the full ways to view results, see [View Run Results](/tutorials/viewing-results). For how reuse and rerun decisions work, see [Runner](/explanation/runner).
