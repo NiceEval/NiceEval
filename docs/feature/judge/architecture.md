@@ -218,49 +218,33 @@ telemetry.collect 可以继续收口被测应用的迟到数据，但必须按�
 
 ### pi 与受管 Provider
 
-Agent Judge 就是一个 pi agent：NiceEval 只提供 system prompt、工具与开场材料，对话循环、模型请求、上下文与压缩都交给 pi，不另写传输或消息副本。
+Agent Judge 就是一个 pi agent：NiceEval 只定义 system prompt、工具与开场材料，其余全部直接用 pi。对话循环、模型请求、重试、上下文、压缩与 usage 都是 pi 的，NiceEval 不包装 pi 的 provider，不在请求层加钩子，也不另写传输或消息副本。
 
-- 宿主创建 pi-agent-core 的 `AgentHarness`，`models` 只含一个由受管 Provider 生效配置构造的 pi-ai 模型：Chat Completions API、生效的 endpoint、headers、模型 ID 与凭据。不使用 pi 默认的 provider 注册表或宿主进程变量选择模型、端点或凭据。
+- 宿主创建 pi-agent-core 的 `AgentHarness`。`models` 用 pi-ai 的标准构造方式，只填受管 Provider 生效配置里的 Chat Completions endpoint、headers、模型 ID 与凭据；不使用 pi 默认的 provider 注册表或宿主进程变量选择它们。
 - 工具是 pi 的 `AgentHarnessTool`：bash、read、write、edit 绑定当前 Attempt 主 Sandbox，submit_evaluation 交评分。参数校验与有限结果由 NiceEval 的工具实现负责。
-- 每道 `chat` 或 `judge` 作为一次 harness prompt 发出，同一会话复用同一个 harness 与 session，因此后面的题能看到前面的历史。
-- 审计、发送前预算与取消落在 pi 的 Provider 扩展点：NiceEval 交给 harness 的 `Models` 里只有一个 provider，它委托 pi-ai 的 openai-completions 实现发请求，并在委托前后保存请求与响应、做发送前预算、绑定会话的取消信号与期限。普通轮次与 `compact()` 的摘要请求都经 `Models` 发出，因此走同一条路径，不依赖 harness 只在普通轮次触发的 provider hooks。
-- NiceEval 在 prompt 前订阅 harness 事件、结束时取消订阅，用工具事件形成工具调用事实、用 `session_compact` 得到压缩事实。用量取 pi 返回的 usage，按受管 Provider 的显式估价计价。
-- 适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
+- 每道 `chat`、`judge` 或 `grade` 作为一次 harness prompt 发出，同一会话复用同一个 harness 与 session，后面的题能看到前面的历史。
+- 取消与期限用 pi 自己的 abort：会话期限到达或 Attempt 取消时调用 `harness.abort()`，同时终止在途 Sandbox 命令。
 - 工具结果只作为不可信 tool 内容返回，文件、命令输出和模型文字都不能升级成 system 规则。
-- 所选模型的工具能力由实际请求验证，不额外发探测请求。TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，不创建 harness。
+- 所选模型的工具能力由实际请求验证，不额外发探测请求。TypeSafe 在创建 harness 之前拒绝，零发送，结果 unavailable。
+- 适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
 
 ### 上下文与压缩
 
-会话上下文由 pi 的 session 持有。模型报告上下文溢出时（pi-ai `isContextOverflow` 判定该轮的 assistant 消息），NiceEval 调用 `harness.compact()`，按 pi 的默认设置把较早的历史压成摘要、保留最近部分，然后重发当前这道题，和 pi coding agent 的做法一致。
+会话上下文由 pi 的 session 持有。某轮 assistant 消息被 pi-ai `isContextOverflow` 判定为上下文溢出时，NiceEval 调用 `harness.compact()`，按 pi 的默认设置压缩较早的历史，然后重发当前这道题。这是 NiceEval 唯一在 pi 之外补的一步，和 pi coding agent 的做法一致。
 
-- 摘要请求同样由 pi 经同一个模型发出，计入 Judge 用量（operation `agent`）、会话期限与审计预算。
 - 压缩不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响。
 - 每次溢出最多压缩一次再重发。压缩失败、无可压缩内容，或压缩后仍然溢出时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
 - 只处理模型明确报告的溢出；静默截断输入的 Provider 无法检测。
-- 会话轨迹在发生位置写入每次压缩：触发它的轮次、压缩前 token、摘要请求与摘要文本。`show --assertions --entry <id> --full` 显示它。
 
-### 预算与关闭
+### 用量、审计与预算
 
-maxTurns 替代该算法的 maxCalls，不能隐式受普通原语默认 4 次、最多 16 次限制。
-每轮逻辑生成拥有连续 ordinal；模型请求由 pi 发出，NiceEval 不在 pi 之外另做传输重试，也不能重跑已经执行过的工具。
-材料、发送前预留、Attempt 总账与终态保留空间沿用受管 Judge owner；审计容量默认 4 MiB，定义里写了 `maxAuditBytes` 时以它为准。
-整条评审的期限由定义的 `timeoutMs` 与 Attempt 剩余期限决定，取代 Provider 的整条 Assertion 时限；单次请求时限仍归 Provider。
-实际请求含累积历史，各轮请求都按真实留存字节计账，不能只计算新增消息。
-
-工具参数、工具结果、模型响应及最终 envelope 都计入审计预算。
-执行工具之前预留参数和有界结果空间；容量不足时不执行副作用，只留 not-started 与拒绝原因。
-bash 与 read 的截断发生在形成模型可见结果之前，模型与审计看到同一个有限结果。
-完整请求、已准入模型响应与合法最终提交不能为腾空间而截断；超限锁存 unavailable。
-
-第一次合法提交锁定候选分数并关闭新动作准入；在资源收拢、审计校验成功后才能封口 measured。
-同批后续工具、pi 的自动续轮、迟到 callback 与失败后的重提交均不能重新开启 entry。
-命令非零退出、文件不存在和非法提交是可纠正的工具结果；传输与容量失败不能由模型提交掩盖。
-HTTP 400（上下文溢出除外，见[上下文与压缩](#上下文与压缩)）、模型协议损坏与框架 defect 为 errored，最终传输失败、超时与未提交为 unavailable。
-Attempt 取消保持 interruption，不转换成普通工具错误再交模型重试。
-
-关闭时同时停止 pi、abort HTTP、终止在途 Sandbox 命令树并有界等待资源释放，最后解除订阅与收回工具能力。
-不能只取消宿主 Promise 而允许 Sandbox 命令继续写入。若无法证明命令树静止，保留诊断并禁止将实例视作安全复用。
-HTTP 取消与释放沿用现有账本关闭规则，本地关闭不声称远端停止生成。
+- 用量直接取 pi 的结果：每条 assistant 消息的 usage，加上 `compact()` 返回的摘要 usage，按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。NiceEval 不逐次记录 HTTP 尝试；pi 内部的重试只体现在 pi 报告的 usage 里。
+- 审计保存 pi session 的完整内容：开场消息、每条 user / assistant 消息、工具调用参数与有限结果、压缩条目（摘要文本、压缩前 token），以及每道题的提交。它就是评审实际看到的对话，不是另行重建的请求副本。
+- `maxTurns` 计每道题的 assistant 轮次，替代 maxCalls。整次会话的期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值。
+- 审计容量默认 4 MiB（`maxAuditBytes` 可改）。轨迹超出容量时，当前与之后的评分题为 `unavailable`，已提交的题保留 measurement；不截断已写入的对话来腾空间。不做发送前的字节预留。
+- bash 与 read 的截断发生在形成工具结果之前，模型与审计看到同一个有限结果。
+- 第一次合法提交锁定这道题的分数；同批后续工具与迟到的提交不能重新打开它。命令非零退出、文件不存在和非法提交是可纠正的工具结果。
+- 模型协议损坏与框架 defect 为 errored；pi 报告的最终请求失败、超时与未提交为 unavailable。Attempt 取消保持 interruption。
 
 ### 审计与历史读取
 
@@ -275,7 +259,7 @@ HTTP 取消与释放沿用现有账本关闭规则，本地关闭不声称远端
 |---|---|
 | definition | 算法 version、canonical config、digest，以及有效 turns、期限和字节限制 |
 | input | 冻结开场材料；图片保留受管 Content 描述符、摘要和初始位置 |
-| generations | 每轮 ordinal、准入或拒绝、实际请求及逐次 HTTP 尝试、原始响应或具名失败 |
+| generations | 每轮 ordinal、pi 的 assistant 消息与 usage、具名失败 |
 | tools | 所属轮次、call id、name、原始 arguments、校验结果、执行状态、实际有限结果与截断事实 |
 | submission | 该评分题第一次合法的 SubmitEvaluationInput 与对应轮次、call id；未提交为 null |
 | result | measured、AuditFailure 或 interrupted；measured 必须与 submission 和 entry measurement 一致 |

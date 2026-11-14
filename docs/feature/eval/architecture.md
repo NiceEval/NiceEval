@@ -205,10 +205,10 @@ instructions 属于可信作者输入，不把被测 Agent 的回复提升为系
 工具 schema 使用互斥的 text / optionId 分支，校验严格拒绝未知字段，并验证 requestId 集合与当前请求一一对应。
 第一个合法提交只锁定回答候选；关闭模型动作准入、收拢 harness 与校验审计后，再复核 Session 状态并调用原 `respond` / `send` 一次。
 
-pi 上下文、Models、压缩与 HTTP 关闭沿用 [Agent Judge 的受管路径](../judge/architecture.md#pi-与受管-provider)。
+直接使用 pi，与 [Agent Judge](../judge/architecture.md#pi-与受管-provider) 相同：NiceEval 只定义 system prompt 与 `reply_to_agent`，模型请求、上下文、压缩、usage 与 abort 都是 pi 的。
 每次 reply 最多 4 轮普通生成，每次溢出最多压缩一次再重发；摘要调用不占普通轮数，但计入同一期限、审计与物理用量。
 单次 reply 的墙钟期限为定义上限与 Attempt 剩余期限的较小值，包含生成、压缩、资源收拢与下一轮发送；Provider 的单请求上限继续有效。
-模拟用户请求审计每次 reply 最多 4 MiB，累积历史按每次实际请求的完整 bytes 计量；容量不足时在新请求前拒绝，不截断已准入正文或合法提交。
+每次 reply 的审计保存 pi session 内容，最多 4 MiB；超出时这次 reply 失败（`simulated-user-failed`），不截断已写入的对话。
 
 Attempt 终止先关闭提交和新请求准入，再取消 harness 与 HTTP 并解除订阅，按已有有界关闭规则等待释放。
 迟到事件不能驱动 Session、补写已封存用量或改变 outcome。
