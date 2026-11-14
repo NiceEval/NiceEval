@@ -83,7 +83,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 ```
 
 - `plan --json` 输出 selection mode / reason、base / head、精确 Repo、host executor、能力和分片，不包含产品断言；
-- `test` 的本地默认顺序是 plan → pack NiceEval candidate → run；
+- `test` 的本地默认顺序是 plan → 准备 source candidate → run；声明 built 的 Repo 按输入摘要复用构建，tarball 形态才打包；
 - `test` 只生成一次 plan，并把该 plan 的精确 Repo ID 集传给 run；隐式 dirty diff 也不会在 run 时扩大选择；
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 合法 affected 空计划不 pack、不 build；project / metadata 非法时以 `invalid` 红灯退出；
@@ -105,7 +105,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 takeover / 最终收据。CI 的 affected lane 与 main / nightly 负责执行最终线上完整矩阵，不用作逐步试探测试标题、DOM、时序、fixture
 或公开命令的交互式调试器。
 
-同一个 candidate 的正式本地流程只做一次 plan、一次 pack / install，并按需 build 一次 Testkit。能独立推进且不共享写入或重复这套
+同一个 candidate 的正式本地流程只做一次 plan、一次候选准备与安装，并按需 build 一次 Testkit；source 不构建或打包，built 与 tarball 按输入摘要复用。能独立推进且不共享写入或重复这套
 昂贵准备的证据线立即并行；共享 retained 场景的可变动作则串行。完整运行出现红灯并需要定位时，先让该次 `test` / `run` 通过
 `--keep-workdir` 产出正式 summary，再使用：
 
@@ -137,7 +137,7 @@ pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] 
 它从 tarball 的 `package/package.json` 核对 `niceeval`、版本与精确 `v<version>` tag。
 该命令不重新 pack、不发布，也不把判断放进 workflow。
 
-Candidate 就是当前 checkout 当场生成的待发布字节，不是 registry 上另一个版本。NiceEval 不能改用 workspace link：link 会绕过
+CI 的 tarball candidate 是当前 checkout 当场生成的待发布字节，不是 registry 上另一个版本。tarball 验收不能改用 workspace link：link 会绕过
 `files`、打包生命周期、bin / exports 完整性和仓库外 dependency resolution，可能让源码树能跑而实际安装包失败。Testkit 没有这些发布承诺，
 所以采用本次 scratch 中由 checkout 源码构建的目录 snapshot。
 
