@@ -81,7 +81,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 | --- | --- |
 | `simulated-user-invalid-turn` | `foreign-turn`、`stale-turn`、`session-busy`、`waiting-without-requests` 或 `closed`；拒绝本次调用，不发模型请求或下一轮输入 |
 | `simulated-user-unsupported-provider` | `typesafe`；零发送，执行错误 |
-| `simulated-user-failed` | `provider-unconfigured`、`pi-unavailable`、`invalid-answer`、`no-answer`、`timeout`、`transport`、`context-overflow` 或 `storage`；不发送下一轮输入，执行错误 |
+| `simulated-user-failed` | `provider-unconfigured`、`pi-unavailable`、`session-failed`、`invalid-answer`、`no-answer`、`timeout`、`transport`、`context-overflow`、`defect` 或 `storage`；不发送下一轮输入，执行错误 |
 
 `simulated-user-failed` 的 reason 按失败发生在哪一层确定，与 [Agent Judge 的失败分类](../../judge/architecture.md#用量审计与预算) 同一套边界，不按错误文案匹配：
 
