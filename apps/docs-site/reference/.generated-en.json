@@ -365,5 +365,7 @@
   "cli-flags/run export/--out": "Write the exported single-file Record to this path.",
   "cli-flags/run delete,run export,run import,run list,run recover/--json": "Print Run results as JSON.",
   "cli-flags/run delete,run recover/--yes": "Confirm Run recovery or deletion.",
-  "cli-flags/run delete,run export,run import,run list,run recover/--help": "Print Run command help."
+  "cli-flags/run delete,run export,run import,run list,run recover/--help": "Print Run command help.",
+  "test-context/agentJudge": "Register a conversational Sandbox review; chat messages and scoring questions execute after ordinary assertions.",
+  "turn-handle/agentJudge": "Register a conversational Sandbox review; chat messages and scoring questions execute after ordinary assertions."
 }

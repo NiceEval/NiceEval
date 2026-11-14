@@ -496,7 +496,7 @@ const JudgeMeasurementCriterionV2Schema = Schema.Struct({
 
 const LlmMeasurementCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("llm-measurement/v1"),
+  id: Schema.Literals(["llm-measurement/v1", "agent-judge-measurement/v1"]),
   data: Schema.Struct({
     name: Schema.String,
     scale: Schema.Literal("unit-interval"),

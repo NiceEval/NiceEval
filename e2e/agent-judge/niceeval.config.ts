@@ -1,0 +1,8 @@
+import { defineConfig } from "niceeval";
+
+import { OpenAIProvider, TypesafeProvider } from "niceeval/judge";
+const judgeBaseUrl = process.env.NICEEVAL_E2E_AGENT_JUDGE_URL;
+export default defineConfig({ timeoutMs: 120_000, maxConcurrency: 4,
+  ...(judgeBaseUrl === undefined ? {} : { judgeProvider: (process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE === "typesafe" ? TypesafeProvider : OpenAIProvider)({ model: process.env.NICEEVAL_E2E_AGENT_JUDGE_MODEL ?? "agent-review-fixture", baseUrl: judgeBaseUrl,
+    apiKeyEnv: "NICEEVAL_E2E_AGENT_JUDGE_KEY", timeoutMs: 2_000, ...(process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE === "typesafe" ? {} : { maxOutputTokens: 4096 }) }) }),
+});

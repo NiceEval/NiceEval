@@ -317,6 +317,9 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         id: "llm-measurement/v1" as const,
         data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
       });
+    case "agent-judge-measurement":
+      return Object.freeze({ kind: "builtin" as const, id: "agent-judge-measurement/v1" as const,
+        data: Object.freeze({ name: criterion.name, scale: criterion.scale }) });
     case "sandbox-change-scope":
       return Object.freeze({
         kind: "builtin" as const,

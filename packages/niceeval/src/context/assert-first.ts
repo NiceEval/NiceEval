@@ -192,6 +192,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: import("../assertions/api.ts").AssertionCheck<Kind>;
+  agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
   judge: JudgeFunction<Kind>;
 } & (Kind extends "score" ? { readonly score: ScoreFunction } : {});
 
@@ -365,6 +366,7 @@ export interface AssertFirstTurnHandle<Kind extends RuntimeKind> extends AgentJu
   readonly data?: JsonValue;
   readonly usage: EvalUsage;
   check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"turn">>;
+  agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
   judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
@@ -396,6 +398,7 @@ export interface AssertFirstSessionHandle<Kind extends RuntimeKind> extends Agen
   readonly toolCalls: ManagedToolCalls<"session">;
   readonly eventOccurrences: ManagedEventOccurrences<"session">;
   check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"session">>;
+  agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
   judge: JudgeFunction<Kind>;
   succeeded(): BooleanAssertionHandle<Kind, void>;
   calledTool(match: ToolMatch | ToolOccurrenceMatch): BooleanAssertionHandle<Kind, void>;
@@ -446,6 +449,7 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetM
     body: () => Value | PromiseLike<Value>,
   ): Promise<Awaited<Value>>;
   check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"attempt">>;
+  agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
   judge: JudgeFunction<Kind>;
   readonly toolCalls: ManagedToolCalls<"attempt">;
   readonly sandbox: AssertFirstSandbox<Kind>;
@@ -1710,6 +1714,7 @@ export function createAssertFirstCoreContext(
     group: runtime.t.group,
     check,
     judge,
+    agentJudge: runtime.t.agentJudge,
     ...presets,
   };
   if (deps.evaluationKind === "score") Object.defineProperty(base, "score", { value: (runtime as AssertionsRuntime<"score">).t.score, enumerable: true });
@@ -2224,6 +2229,7 @@ export function createAssertFirstEvalContext(
       get elapsedMs() { return core.context.elapsedMs; },
       check: scopedCheck,
       judge: judge as JudgeFunction<Kind>,
+      agentJudge: core.context.agentJudge as import("../assertions/api.ts").AgentJudgeFunction<Kind>,
       ...agentJudgePresetMethods<Kind, "turn">(scopedCheck, frame),
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,
@@ -2405,6 +2411,7 @@ export function createAssertFirstEvalContext(
       get elapsedMs() { return core.context.elapsedMs; },
       check: scopedCheck,
       judge: judge as JudgeFunction<Kind>,
+      agentJudge: core.context.agentJudge as import("../assertions/api.ts").AgentJudgeFunction<Kind>,
       ...agentJudgePresetMethods<Kind, "session">(scopedCheck, frame),
       succeeded: () => succeededHandle({
         runtime: runtime as AssertionsRuntime<Kind>,

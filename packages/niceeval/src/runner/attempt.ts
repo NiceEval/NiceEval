@@ -71,7 +71,7 @@ import {
 import {
   AssertionAuthoringClosedError,
 } from "../assertions/api.ts";
-import { createAssertionsRuntime } from "../assertions/runtime.ts";
+import { createAssertionsRuntime, attachAssertionsAgentJudgeSandbox } from "../assertions/runtime.ts";
 import type {
   AssertionStopError,
   AssertionsRuntime,
@@ -3424,6 +3424,7 @@ async function runAttemptBody(
       () => state.manager.retryAttempts,
     );
     assertionState = state;
+    attachAssertionsAgentJudgeSandbox(state.assertions, usesSandbox ? rawSandbox : undefined, Boolean(run.sandboxReuse || evalDef.evalGroup || run.sharedState));
     registerAssertions(state.assertions, state);
 
     let error: AttemptError | undefined;

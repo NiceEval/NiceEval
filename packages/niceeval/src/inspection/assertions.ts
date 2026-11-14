@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/inspection/README.md
 // @concord-implements docs/feature/assertions/README.md
+import { readAgentJudgeAudit, decodeAgentJudgeEnvelope } from "../assertions/agent-judge-audit.ts";
 import { Result, Schema } from "effect";
 import { isRecordContentHandle } from "../record/attachment/content.ts";
 import type {
@@ -97,7 +98,7 @@ export function projectAttemptAssertionDetail(
   const result = closeJson(Object.freeze({
     entryId: entry.entryId,
     display: entry.display,
-    entry: projectEntry(source, entry, assertions.contents, projection === "compact"),
+    entry: projectEntry(source, entry, assertions.contents, projection === "compact", assertions.value.entries),
     sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
     check: projectCheck(entry),
     matcher: projectMatcher(entry, agentTurns, projection),
@@ -192,8 +193,44 @@ function projectEntry(
   entry: AssertionEntry,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
   deferContent = false,
+  entries: readonly AssertionEntry[] = [],
 ): InspectionJson {
   if (deferContent) return projectSealedValue(source, entry, contentMetadata, true);
+  const currentAgentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "agent-judge-measurement/v1";
+  if (currentAgentJudge) {
+    const projected = projectSealedValue(source, entry, contentMetadata, true) as Readonly<Record<string, InspectionJson>>;
+    try {
+      const readEnvelope = (candidate: AssertionEntry) => {
+        const material = candidate.materials.evidence.at(-1);
+        if (material?.kind !== "content" || material.encoding !== "json" || !isRecordContentHandle(material.content)) throw new Error("Missing Agent Judge audit");
+        const metadata = contentMetadata.get(material.content);
+        if (metadata === undefined) throw new Error("Missing Agent Judge Content");
+        const bytes = readSealedBytes(source, metadata);
+        if (bytes.byteLength !== material.byteLength) throw new Error("Invalid Agent Judge Content length");
+        return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      };
+      const raw = readEnvelope(entry);
+      const decoded = decodeAgentJudgeEnvelope(raw);
+      const root = decoded.trace.state === "inline" ? entry : entries[decoded.trace.entryIndex];
+      if (root === undefined) throw new Error("Missing Agent Judge root");
+      const rootAudit = decodeAgentJudgeEnvelope(readEnvelope(root));
+      if (rootAudit.trace.state !== "inline") throw new Error("Invalid Agent Judge root");
+      const images = rootAudit.trace.value.images.map((descriptor) => {
+        const image = root.materials.evidence[descriptor.evidenceIndex];
+        if (image?.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content)) throw new Error("Missing Agent Judge image");
+        const metadata = contentMetadata.get(image.content);
+        if (metadata === undefined) throw new Error("Missing Agent Judge image Content");
+        return { mediaType: descriptor.mediaType, bytes: readSealedBytes(source, metadata) };
+      });
+      const data = entry.criterion.value.data;
+      const name = isRecord(data) && typeof data.name === "string" ? data.name : "";
+      return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, name, observedMeasurement(entry.evaluation.observed), (index) => {
+        const candidate = entries[index];
+        if (candidate === undefined) throw new Error("Missing Agent Judge reference");
+        return readEnvelope(candidate);
+      }, images) });
+    } catch { return closeJson({ ...projected, agentJudgeAudit: { state: "invalid" } }); }
+  }
   const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";
   const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement/v1";
   if (currentScoreMatch) {

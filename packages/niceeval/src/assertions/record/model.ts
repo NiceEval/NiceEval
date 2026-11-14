@@ -170,7 +170,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "llm-measurement/v1";
+      readonly id: "llm-measurement/v1" | "agent-judge-measurement/v1";
       readonly data: {
         readonly name: string;
         readonly scale: "unit-interval";

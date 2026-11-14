@@ -1,3 +1,4 @@
+import { AgentJudgeAuditReadResultSchema } from "../assertions/agent-judge-audit.ts";
 import * as Schema from "effect/Schema";
 
 import {
@@ -150,6 +151,7 @@ const ProjectedAssertionEntrySchema = Schema.Struct({
   ...BaseProjectedAssertionEntrySchema.fields,
   judgeMaterial: Schema.optional(JudgeMaterialReadResultSchema),
   scoreMatchAudit: Schema.optional(ScoreMatchAuditReadResultSchema),
+  agentJudgeAudit: Schema.optional(AgentJudgeAuditReadResultSchema),
 });
 
 const ProjectedSourceSiteSchema = Schema.Struct({

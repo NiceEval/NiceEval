@@ -141,7 +141,7 @@ export type AssertionCriterion =
       readonly scale: "unit-interval";
     }
   | {
-      readonly kind: "managed-score-measurement";
+      readonly kind: "managed-score-measurement" | "agent-judge-measurement";
       readonly name: string;
       readonly scale: "unit-interval";
     }
@@ -788,7 +788,13 @@ export interface AssertionGroupContext {
   ): Promise<Awaited<Value>>;
 }
 
+export type AgentJudgeFunction<Kind extends AssertionEvaluationKind> = (
+  reviewer: import("./agent-judge-definition.ts").AgentJudge,
+  material: import("../judge/image.ts").JudgeMaterial,
+) => import("./agent-judge-definition.ts").AgentJudgeReview<Kind>;
+
 export interface PassAssertionsContext extends AssertionGroupContext {
+  readonly agentJudge: AgentJudgeFunction<"pass">;
   readonly evaluationKind: "pass";
   readonly check: AssertionCheck<"pass">;
 }
@@ -800,6 +806,7 @@ export interface ScoreFunction {
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
+  readonly agentJudge: AgentJudgeFunction<"score">;
   readonly evaluationKind: "score";
   readonly check: AssertionCheck<"score">;
   readonly score: ScoreFunction;

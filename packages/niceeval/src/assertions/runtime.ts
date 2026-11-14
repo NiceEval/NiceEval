@@ -70,6 +70,8 @@ import {
   type ToolMatch,
 } from "./match.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
+import { agentJudgeDefinitionOf, type AgentJudge, type AgentJudgeReview } from "./agent-judge-definition.ts";
+import { AgentJudgeSession } from "./agent-judge-gateway.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
 import { isQuantity, type Unit } from "./quantity.ts";
@@ -250,7 +252,7 @@ function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
  * only after the author phase settles. They are never evaluated by a stop barrier.
  */
 function isPostRunSandboxCriterion(criterion: AssertionCriterion): boolean {
-  return criterion.kind === "sandbox-result" || criterion.kind === "sandbox-change-scope" || criterion.kind === "sandbox-unchanged-within" || criterion.kind === "sandbox-in-diff";
+  return criterion.kind === "agent-judge-measurement" || criterion.kind === "sandbox-result" || criterion.kind === "sandbox-change-scope" || criterion.kind === "sandbox-unchanged-within" || criterion.kind === "sandbox-in-diff";
 }
 
 function isAssertionStop(value: unknown): value is AssertionStopError {
@@ -788,6 +790,13 @@ class DirectScoreHandle extends HandleBase {
 }
 
 class AssertionsRuntimeImplementation {
+  private agentJudgeSandbox?: import("../sandbox/types.ts").Sandbox;
+  private agentJudgeShared = false;
+  private readonly agentJudgeReviews: Array<{ session: AgentJudgeSession; entries: AssertionEntry[] }> = [];
+  attachAgentJudgeSandbox(sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared: boolean): void {
+    this.agentJudgeSandbox = sandbox;
+    this.agentJudgeShared = shared;
+  }
   private readonly contextReceivers = new Set<AssertionContextReceiver>();
   private readingContext = false;
   readonly t: AssertionsContext<AssertionEvaluationKind>;
@@ -813,6 +822,7 @@ class AssertionsRuntimeImplementation {
     const base = {
       evaluationKind,
       check,
+      agentJudge: this.openAgentJudge.bind(this),
       group: this.withGroup.bind(this),
     };
     runtimeByCheck.set(base.check, this);
@@ -824,6 +834,27 @@ class AssertionsRuntimeImplementation {
         ? { ...base, score: this.directScore.bind(this) }
         : base,
     ) as unknown as AssertionsContext<AssertionEvaluationKind>;
+  }
+
+  private openAgentJudge(reviewer: AgentJudge, material: import("../judge/image.ts").JudgeMaterial): AgentJudgeReview<AssertionEvaluationKind> {
+    this.assertCanRegister();
+    const definition = agentJudgeDefinitionOf(reviewer);
+    if (this.agentJudgeSandbox === undefined) throw new TypeError("judge.agent-requires-sandbox: Agent Judge requires the Attempt's main Sandbox");
+    if (this.agentJudgeShared) throw new TypeError("judge.agent-shared-sandbox: Agent Judge requires an exclusive Sandbox");
+    const session = new AgentJudgeSession(definition, material, this.agentJudgeSandbox, this.judge, this.signal,
+      this.judgeUsage === undefined ? undefined : (index) => this.judgeUsage!.forEntry(index));
+    const owner = { session, entries: [] as AssertionEntry[] };
+    this.agentJudgeReviews.push(owner);
+    return Object.freeze({
+      chat: (message: string) => { this.assertCanRegister(); session.chat(message); },
+      judge: (prompt: string, options?: { readonly anchors?: readonly import("./judge.ts").JudgeAnchor[] }) => {
+        this.assertCanRegister();
+        const index = this.entries.length;
+        const handle = this.registerMeasurement(session.register(String(index), prompt, options, index));
+        owner.entries.push(this.entries[index]!);
+        return handle;
+      },
+    }) as unknown as AgentJudgeReview<AssertionEvaluationKind>;
   }
 
   private recordSourceOccurrence(
@@ -1204,6 +1235,7 @@ class AssertionsRuntimeImplementation {
 
   private prepareStop(entry: AssertionEntry, minimum: number | undefined): void {
     this.assertMutable(entry, "orStop()");
+    if (entry.criterion.kind === "agent-judge-measurement") throw new TypeError("judge.agent-stop-unsupported: Agent Judge cannot stop author control flow");
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot stop author control flow");
     if (minimum !== undefined) {
       if (entry.kind !== "measurement") throw new TypeError("Only a measurement Assertion accepts orStop(minimum)");
@@ -1302,7 +1334,11 @@ class AssertionsRuntimeImplementation {
       if (this.sealStarted) throw new Error("Assertions are already sealing");
       this.closeAuthoring("attempt-sealing");
       this.sealStarted = true;
-      return Effect.forEach(this.entries, (entry) => this.settle(entry)).pipe(
+      const ordered = this.agentJudgeReviews.length === 0 ? this.entries : [
+        ...this.entries.filter((entry) => entry.criterion.kind !== "agent-judge-measurement"),
+        ...this.agentJudgeReviews.flatMap((review) => review.entries),
+      ];
+      return Effect.forEach(ordered, (entry) => this.settle(entry)).pipe(
         Effect.andThen(Effect.sync(() => this.finishSeal(options))),
         Effect.onInterrupt(() => Effect.sync(() => {
           this.sealStarted = false;
@@ -1909,6 +1945,13 @@ function sourceCaptureRuntime(
   runtime: AssertionsRuntime<"pass" | "score">,
 ): AssertionsRuntimeImplementation | undefined {
   return runtime instanceof AssertionsRuntimeImplementation ? runtime : undefined;
+}
+
+/** @internal Grants only the Attempt's unobserved Sandbox after Context construction. */
+export function attachAssertionsAgentJudgeSandbox(runtime: AssertionsRuntime<"pass" | "score">, sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared = false): void {
+  const implementation = sourceCaptureRuntime(runtime);
+  if (implementation === undefined) throw new TypeError("Agent Judge requires a NiceEval AssertionsRuntime");
+  implementation.attachAgentJudgeSandbox(sandbox, shared);
 }
 
 /** @internal Runner-only source observation hook; it never changes the public runtime value. */

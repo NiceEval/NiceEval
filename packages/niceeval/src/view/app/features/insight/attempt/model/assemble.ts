@@ -240,7 +240,7 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
   const observedFact = assertionObservedFact(evaluation, matcher);
   const expectedFact = assertionExpectedFact(condition);
   const explanationFact = assertionExplanationFact(entry, check);
-  const sourceFact = assertionSourceFact(materials, judgeMaterial, scoreMatchAudit);
+  const sourceFact = assertionSourceFact(materials, judgeMaterial, optionalRecord(entry.agentJudgeAudit) ?? scoreMatchAudit);
   const closed: AttemptClosedAssertionEntry = Object.freeze({
     entryId: stringField(detail, "entryId"),
     display: Object.freeze({

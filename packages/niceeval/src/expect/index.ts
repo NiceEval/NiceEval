@@ -1,6 +1,8 @@
 // niceeval/expect：只导出纯 Match factories。Fact、verdict 与 score use 由 context 负责。
 
 export { defineJudge, binaryJudge } from "../assertions/judge.ts";
+export { defineAgentJudge } from "../assertions/agent-judge-definition.ts";
+export type { AgentJudge, AgentJudgeDefinition, AgentJudgeReview } from "../assertions/agent-judge-definition.ts";
 export type { JudgeAnchor, JudgeDefinition, JudgeOptions, BinaryJudgeOptions } from "../assertions/judge.ts";
 
 export {

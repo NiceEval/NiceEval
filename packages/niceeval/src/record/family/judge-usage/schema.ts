@@ -82,7 +82,7 @@ const CallShapeSchema = Schema.Struct({
   entryId: AssertionEntryIdSchema,
   logicalOrdinal: PositiveSafeIntegerSchema,
   transmissionOrdinal: PositiveSafeIntegerSchema,
-  operation: Schema.Literals(["score", "classify", "extract", "batchClassify"]),
+  operation: Schema.Literals(["score", "classify", "extract", "batchClassify", "agent"]),
   requestModel: JudgeUsageModelSchema,
   transportProvider: Schema.Literals(["openai", "vercel", "openrouter", "typesafe"]),
   provider: Schema.NullOr(Identity),

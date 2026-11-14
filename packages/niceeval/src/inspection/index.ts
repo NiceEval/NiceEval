@@ -100,3 +100,5 @@ export {
   type InspectionTraceDetailResult,
   type InspectionTraceResult,
 } from "./results.ts";
+
+export { readAgentJudgeAudit, decodeAgentJudgeEnvelope, AgentJudgeAuditReadResultSchema, type AgentJudgeAudit, type AgentJudgeAuditReadResult, type AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";

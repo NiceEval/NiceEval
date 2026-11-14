@@ -2212,6 +2212,21 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: entry.decision.reason }]),
       ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
     ] });
+    const agentAudit = entry.agentJudgeAudit;
+    if (agentAudit?.state === "available") {
+      blocks.push({ kind: "keyValue", entries: [
+        { key: "Prompt", value: agentAudit.audit.prompt },
+        ...(agentAudit.audit.submission === null ? [] : [
+          { key: "Measurement", value: String(agentAudit.audit.submission.value.measurement) },
+          { key: "Rationale", value: agentAudit.audit.submission.value.rationale },
+          ...agentAudit.audit.submission.value.evidence.map((item) => ({ key: `Evidence (${item.kind})`, value: `${item.ref}: ${item.note}` })),
+        ]),
+      ] });
+      if (options.full) {
+        blocks.push({ kind: "table", columns: [{ header: "Turn" }, { header: "Tool" }, { header: "State" }, { header: "Arguments" }, { header: "Result" }],
+          rows: agentAudit.trace.tools.map((tool) => [String(tool.generation), tool.name, tool.state, tool.arguments, tool.result ?? "not recorded"]), overflow: "wrap" });
+      }
+    } else if (agentAudit !== undefined) blocks.push({ kind: "keyValue", entries: [{ key: "Agent Judge audit", value: agentAudit.state }] });
     if (options.full) {
       if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-change-scope/v1") {
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: entry.criterion.value.id }, { key: "Allowed paths", value: entry.criterion.value.data.paths.join(", ") }] });

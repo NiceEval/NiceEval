@@ -273,6 +273,12 @@ group<Value>(
 check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"attempt">>;
 ```
 
+#### `agentJudge`
+
+```ts
+agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
+```
+
 #### `judge`
 
 ```ts
@@ -591,6 +597,12 @@ readonly usage: EvalUsage;
 
 ```ts
 check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"turn">>;
+```
+
+#### `agentJudge`
+
+```ts
+agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
 ```
 
 #### `judge`

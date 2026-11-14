@@ -80,6 +80,7 @@ const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "evaluationKind",
   "check",
   "judge",
+  "agentJudge",
   "factuality",
   "faithfulness",
   "instructionFollowing",
@@ -243,6 +244,7 @@ type EvalContextBase<Kind extends EvaluationKind, Flags, Context> = JudgePresetM
   skip(reason: string): never;
   group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
   readonly check: AssertionCheck<Kind, Context>;
+  readonly agentJudge: import("./assertions/api.ts").AgentJudgeFunction<Kind>;
   readonly judge: <Value>(
     value: AssertionSubject<Value>,
     definition: ScoreMatch<NoInfer<Value>>,

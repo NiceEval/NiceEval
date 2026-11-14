@@ -1,0 +1,70 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-agent-judge",
+  "root": "e2e/agent-judge",
+  "tags": [
+    "kind:e2e",
+    "e2e:agent-judge"
+  ],
+  "implicitDependencies": [
+    "workspace-shared",
+    "niceeval-e2e-runner",
+    "niceeval-package-shared",
+    "niceeval-testkit",
+    "niceeval-src-fallback",
+    "niceeval-domain-o11y",
+    "niceeval-domain-agents"
+  ],
+  "targets": {
+    "e2e": {
+      "executor": "nx:selection-only",
+      "cache": false,
+      "inputs": [
+        "default"
+      ],
+      "metadata": {
+        "niceeval": {
+          "schemaVersion": 3,
+          "batch": "docker-judge",
+          "areas": [
+            "eval"
+          ],
+          "lanes": [
+            "pr",
+            "main",
+            "nightly",
+            "release"
+          ],
+          "executor": {
+            "kind": "host"
+          },
+          "command": [
+            "pnpm",
+            "--silent",
+            "run",
+            "e2e",
+            "--"
+          ],
+          "timeoutMinutes": 30,
+          "harness": {
+            "testkit": true
+          },
+          "secrets": [],
+          "requires": {
+            "runtimes": [
+              "node>=24",
+              "python>=3.11"
+            ],
+            "docker": true,
+            "platforms": [
+              "linux"
+            ]
+          },
+          "artifacts": [
+            ".niceeval/**"
+          ]
+        }
+      }
+    }
+  }
+}

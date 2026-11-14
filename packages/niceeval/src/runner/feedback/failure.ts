@@ -95,6 +95,7 @@ function criterionTitle(criterion: AssertionCriterion): string {
       return `${criterion.scope} ${criterion.occurrence} ${criterion.assertion}`;
     case "judge-measurement":
     case "managed-score-measurement":
+    case "agent-judge-measurement":
       return criterion.name;
     case "sandbox-change-scope":
       return "changes stayed within allowed paths";

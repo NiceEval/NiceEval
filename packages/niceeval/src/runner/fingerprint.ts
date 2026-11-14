@@ -39,6 +39,7 @@ import { adapterIdentity } from "../adapter.ts";
 import { CURRENT_IDENTITY_DOMAINS, type IdentityRebuildInput } from "./identity-domains.ts";
 import { hashIdentityPayload as hash, stableIdentityJson as stableJson } from "./execution-identity.ts";
 import { EXECUTION_DURATION_DOMAIN } from "../eval/record/eligibility.ts";
+import { resolveAgentJudgePi } from "../assertions/agent-judge-gateway.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 
 /** Files that participate in a fingerprint are an explicit planning boundary. */
@@ -162,6 +163,15 @@ function fingerprintPreparedPair(
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
     const source = yield* sourceClosure(evalDef, sourceCache);
+    // Opt-in only: ordinary Eval identity payloads remain byte-for-byte unchanged.
+    const selectsAgentJudge = source.some(([, content]) => /\bagentJudge\s*\(/u.test(content));
+    if (selectsAgentJudge && pair.plan._tag === "Sandbox" && (pair.run.sandboxReuse === true || evalDef.evalGroup !== undefined || pair.run.sharedState !== undefined)) {
+      return yield* Effect.fail(invariant("judge.agent-shared-sandbox: Agent Judge requires an exclusive Attempt Sandbox"));
+    }
+    const agentJudgeRuntime = selectsAgentJudge ? yield* Effect.sync(() => {
+      try { const runtime = resolveAgentJudgePi(); return { piAgentCore: runtime.coreVersion, piAi: runtime.aiVersion }; }
+      catch { return { piAgentCore: "uninstalled", piAi: "uninstalled" }; }
+    }) : undefined;
     const loaderData = yield* Effect.forEach(
       [...(evalDef.loaderDataPaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
@@ -188,6 +198,7 @@ function fingerprintPreparedPair(
     const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
+      ...(selectsAgentJudge ? { agentJudge: { algorithm: 1, prompt: 1, tools: 1, scheduling: 1, ...agentJudgeRuntime } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,
         revision: JUDGE_AUTHORING_REVISION,
