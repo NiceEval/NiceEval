@@ -142,7 +142,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           if (index !== 1) reportedCalls += trace.session.filter(raw => typeof raw === "object" && raw !== null && "message" in raw &&
             typeof raw.message === "object" && raw.message !== null && "role" in raw.message && raw.message.role === "assistant").length +
             trace.compactions.filter(compact => compact.summary !== null).length;
-          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit", "oversized-audit", "large-material"].includes(mode) || mode === "context-material" && index === 2 || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : mode === "malformed" ? "errored" : "unavailable";
+          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit", "oversized-audit", "large-material"].includes(mode) || mode === "context-material" && index === 2 || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : "unavailable";
           expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify({ result: audit.audit.result, tools: trace.tools, compactions: trace.compactions })}`).toBe(expected);
           if (mode === "context-material" && index < 2) expect(audit.audit.result).toMatchObject({ code: "judge-material-exceeds-context" });
           if (mode === "large-material" && index === 0) expect(trace.input.length).toBeGreaterThan(32 * 1024);

@@ -167,6 +167,26 @@ describe("identity domain release contract", () => {
     expect(FINGERPRINT_COVERAGE_VERSION).toBe(CURRENT_IDENTITY_DOMAINS.fingerprintCoverage);
     expect(Object.isFrozen(samples[0].input.fingerprintPayload)).toBe(true);
     expect(Object.isFrozen(samples[0].input.configIdentity)).toBe(true);
+    // Scoped behavior changes invalidate only consumers selecting that capability.
+    const fixture = releaseSnapshot.samples[0].fixture;
+    const ordinary = await calculateSample(fixture);
+    expect(ordinary.digests).toEqual(samples[0].digests);
+    expect(ordinary.input.fingerprintPayload).not.toHaveProperty("simulatedUser");
+    expect(ordinary.input.fingerprintPayload).not.toHaveProperty("agentJudge");
+    const review = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + "\n// .agentJudge(" });
+    const reviewPayload = review.input.fingerprintPayload;
+    expect(reviewPayload).toHaveProperty("agentJudge.algorithm", 7);
+    const previousReviewPayload = { ...reviewPayload, agentJudge: { ...reviewPayload.agentJudge as object, algorithm: 6 } };
+    expect(review.digests.fingerprint).not.toBe(hashIdentityPayload(previousReviewPayload));
+    for (const selector of ["defineSimulatedUser(", ".simulatedUser("]) {
+      const user = await calculateSample({ ...fixture, sourceContent: fixture.sourceContent + "\n// " + selector });
+      expect(user.input.fingerprintPayload).toHaveProperty("simulatedUser", {
+        behavior: 1, piCodingAgent: "1.5.2", piAi: "1.5.2",
+      });
+      const previous = { ...user.input.fingerprintPayload };
+      delete previous.simulatedUser;
+      expect(user.digests.fingerprint).not.toBe(hashIdentityPayload(previous));
+    }
   });
 
   it("reconstructs the retired provider cache slot without changing execution inputs", async () => {
