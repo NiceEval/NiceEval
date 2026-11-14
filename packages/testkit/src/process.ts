@@ -17,6 +17,8 @@ import {
   type RunListDocument,
 } from "./run-protocol.js";
 import {
+  decodeExpStartEvent,
+  type ExpStartEvent,
   decodeExpTerminalEvent,
   ExpDiagnosticEventSchema,
   decodeExpProgressEvent,
@@ -44,23 +46,20 @@ const NonNegativeIntegerSchema = Schema.Number.pipe(
   )),
 );
 
-/** The stream identity line emitted first by `niceeval exp --json`. */
-export const ExpStartEventSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.exp"),
-  schemaVersion: NonNegativeIntegerSchema,
-  event: Schema.Literal("start"),
-  total: NonNegativeIntegerSchema,
-  configs: NonNegativeIntegerSchema,
-  concurrency: NonNegativeIntegerSchema,
-  experimentConcurrency: Schema.optional(Schema.Record(Schema.String, NonNegativeIntegerSchema)),
-  reused: NonNegativeIntegerSchema,
-});
-
-export type ExpStartEvent = Schema.Schema.Type<typeof ExpStartEventSchema>;
-
 // Decode with the product's runtime, as for terminal receipts. The installed
 // candidate may own a separate Effect instance; do not compose its filter AST
 // into the harness's Schema runtime.
+export const ExpStartEventSchema = Schema.declare<ExpStartEvent>((input): input is ExpStartEvent => {
+  try {
+    decodeExpStartEvent(input);
+    return true;
+  } catch {
+    return false;
+  }
+}, { title: "exp start event" });
+
+export type { ExpStartEvent } from "./exp-protocol.js";
+
 const ExpProgressEventSchema = Schema.declare<ExpProgressEvent>((input): input is ExpProgressEvent => {
   try {
     decodeExpProgressEvent(input);
@@ -387,7 +386,7 @@ export class ProcessReceipt {
   private runDocument(api: string): RunDocument {
     const decoded = decodeRunDocument(this.json<unknown>());
     if (!decoded.success) {
-      throw new Error(`${api}(): stdout is not a valid niceeval.run/v1 document: ${decoded.reason}\n\n${this.diagnostic()}`);
+      throw new Error(`${api}(): stdout is not a valid Run machine document: ${decoded.reason}\n\n${this.diagnostic()}`);
     }
     return decoded.value;
   }

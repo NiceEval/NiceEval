@@ -30,7 +30,7 @@ import { ProjectConfiguration, type ProjectConfigurationService } from "../../cl
 import { openCurrentProjectSource } from "../../inspection/project-source.ts";
 import { projectInput } from "../../inspection/project-input.ts";
 import { ViewBrowser } from "../browser.ts";
-import { renderViewLifecycleEvent, VIEW_LIFECYCLE_PROTOCOL } from "../protocol.ts";
+import { renderViewLifecycleEvent } from "../protocol.ts";
 import { buildViewGeneration } from "../render.ts";
 import type { ViewGeneration, ViewTarget } from "../revision.ts";
 import { openViewServer } from "../server.ts";
@@ -139,7 +139,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
         Effect.mapError((cause) => failure("open loopback View", cause)),
       );
       yield* write("stdout", json
-        ? renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "ready", url: server.readyUrl })
+        ? renderViewLifecycleEvent({ event: "ready", url: server.readyUrl })
         : `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
@@ -149,7 +149,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
       yield* awaitAbort(interruption.invocationSignal);
       yield* server.close;
-      if (json) yield* write("stdout", renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "closed" }));
+      if (json) yield* write("stdout", renderViewLifecycleEvent({ event: "closed" }));
       return 0;
     });
 

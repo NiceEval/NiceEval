@@ -89,7 +89,6 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 
 ```ts
 interface RunRecoverOrphanedDocument {
-  readonly protocol: string;
   readonly operation: "run.recover-orphaned";
   readonly items: readonly {
     readonly runId: string;

@@ -257,7 +257,8 @@ test("等待 Docker profile 容量时保持排队且不阻塞其它 Provider", a
 
         expect(observation, "driver must capture public status while the first reservation is gated").toBeDefined();
         const session = decodeSessionShowDocument(JSON.parse(observation!.sessionShowJson));
-        expect(session).toMatchObject({ format: "niceeval.session", session: { status: "active" } });
+        expect(session).toMatchObject({ session: { status: "active" } });
+        expect(session).not.toHaveProperty("format");
         expect("experiments" in session.session).toBe(true);
         if (!("experiments" in session.session)) throw new Error("observed Session unexpectedly expired");
         const experiments = session.session.experiments;

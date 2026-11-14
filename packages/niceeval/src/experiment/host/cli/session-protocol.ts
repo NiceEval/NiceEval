@@ -68,16 +68,14 @@ const ExpiredSessionRecordSchema: Schema.Codec<ExpiredSessionRecord> = Schema.St
   heartbeatAt: Schema.optional(TimestampSchema),
 });
 
-/** The existing, unversioned `niceeval session list --json` document. */
+/** The `niceeval session list --json` document. */
 export const SessionListDocumentSchema: Schema.Codec<SessionListDocument> = Schema.Struct({
-  format: Schema.Literal("niceeval.sessions"),
   sessions: Schema.mutable(Schema.Array(SessionRecordSchema)),
   expired: Schema.mutable(Schema.Array(ExpiredSessionRecordSchema)),
 });
 
-/** The existing, unversioned `niceeval session show --json` document. */
+/** The `niceeval session show --json` document. */
 export const SessionShowDocumentSchema: Schema.Codec<SessionShowDocument> = Schema.Struct({
-  format: Schema.Literal("niceeval.session"),
   session: Schema.Union([SessionRecordSchema, ExpiredSessionRecordSchema]),
   expired: Schema.optional(Schema.Boolean),
 });

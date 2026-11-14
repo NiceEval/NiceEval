@@ -5,7 +5,7 @@ import { Schema } from "effect";
 export const ExecutionComparisonSchema = Schema.Struct({
   attachment: Schema.Literals(["core", "niceeval.assertions", "niceeval.runner-activities"]),
   recordedClaim: Schema.Literals(["execution-identity", "attempt-outcome", "assertion-verdict", "execution-duration"]),
-  sourceState: Schema.Literals(["available", "unavailable", "unsupported", "invalid", "migration-required"]),
+  sourceState: Schema.Literals(["available", "unavailable", "unsupported", "invalid"]),
   result: Schema.Literals(["match", "mismatch", "ineligible", "not-comparable"]),
   reason: Schema.String,
   explanation: Schema.optionalKey(IdentityExplanationSchema),
@@ -14,7 +14,6 @@ export const ExecutionComparisonSchema = Schema.Struct({
 const attachmentRead = <S extends Schema.ConstraintDecoder<unknown>>(value: S) => Schema.Union([
   Schema.Struct({ state: Schema.Literal("available"), value }),
   Schema.Struct({ state: Schema.Literal("not-recorded") }),
-  Schema.Struct({ state: Schema.Literal("migration-required"), family: Schema.String, fromRevision: Schema.Number, toRevision: Schema.Number, command: Schema.Literal("niceeval migrate") }),
   Schema.Struct({ state: Schema.Literal("unsupported"), family: Schema.String, revision: Schema.Number }),
   Schema.Struct({ state: Schema.Literal("invalid"), issues: Schema.Array(Schema.Unknown) }),
 ]);
@@ -60,8 +59,6 @@ const ReadbackSchema = Schema.Union([
 
 /** The complete machine document emitted by `niceeval exp --dry --json`. */
 export const ExpPlanDocumentSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.current-reuse-plan/v1"),
-  schemaVersion: Schema.Literal(1),
   total: Schema.Number,
   evals: Schema.Number,
   configs: Schema.Number,

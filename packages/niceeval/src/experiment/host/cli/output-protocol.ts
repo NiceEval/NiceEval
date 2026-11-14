@@ -8,6 +8,27 @@ const NonNegativeNumberSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isFinite(value) && value >= 0)),
 );
 
+/** The initial execution scale emitted by `niceeval exp --json`. */
+export const ExpStartEventSchema = Schema.Struct({
+  event: Schema.Literal("start"),
+  total: NonNegativeIntegerSchema,
+  configs: NonNegativeIntegerSchema,
+  concurrency: NonNegativeIntegerSchema,
+  experimentConcurrency: Schema.optional(Schema.Record(Schema.String, NonNegativeIntegerSchema)),
+  reused: NonNegativeIntegerSchema,
+});
+
+/** Carries the planned execution scale before progress or terminal events. */
+export type ExpStartEvent = Schema.Schema.Type<typeof ExpStartEventSchema>;
+
+/** Strictly decode the initial exp stream event using the candidate's Schema runtime. */
+export function decodeExpStartEvent(input: unknown): ExpStartEvent {
+  return Schema.decodeUnknownSync(ExpStartEventSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
+}
+
 export const ExpInvocationReceiptSchema = Schema.Struct({
   invocationId: Schema.String,
   createdRunIds: Schema.Array(Schema.String),
@@ -65,7 +86,7 @@ export const ExpProgressEventSchema = Schema.Struct({
   })).check(Schema.makeFilter((value) => value.length <= 64)),
   activeOmitted: NonNegativeIntegerSchema,
 });
-/** A versioned exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */
+/** An exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */
 export type ExpProgressEvent = Schema.Schema.Type<typeof ExpProgressEventSchema>;
 
 /** Strictly decodes one exp progress event and rejects unknown properties. Use this decoder at the package boundary instead of rebuilding its Schema in another runtime. */

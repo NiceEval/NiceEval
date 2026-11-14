@@ -275,7 +275,6 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
   if (identity.judgeRuntime.supportsImages === true) put("judgeRuntime.supportsImages", true);
   put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
-  put("judgeRuntime.protocol.revision", identity.judgeRuntime.protocol.revision);
   if (identity.judgeRuntime.protocol.kind === "chat-completions") put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);
   }
   put("agentInstalls", [...identity.agentInstalls]);

@@ -7,7 +7,7 @@
 // - 单一 stdout 上的 NDJSON 事件流,一行一个 JSON 对象,词法就是 JSON,没有自造 envelope
 //   语法。`stderr` 只留给 run 尚未建立前的 argv/config 错误(那些错误发生在 coordinator/renderer
 //   存在之前,根本不经过这个模块——所以这里没有任何写 `io.stderr` 的分支,不是遗漏)。
-// - 首行 `start` 携带 `format`/`schemaVersion` 标识整条流;其余事件不重复这两个字段。
+// - 首行 `start` 给出执行规模，事件由 `event` 或终态 `type` 判别。
 // - 失败/错误立即逐条追加,不做展开上限 suppression(机器逐事件消费,截断反而是信息损失,
 //   见 cli.md「'立即追加'也必须有上限」表:上限只约束人读文本)。
 // - 连续 30 秒没有永久事件才追加一条 `progress` 心跳;任意永久事件重置这个时钟。
@@ -38,13 +38,6 @@ import type { JsonValue, Verdict } from "../../shared/types.ts";
 import type { ExpTerminalSummary, ExpDiagnosticEvent, ExpProgressEvent } from "../../experiment/host/cli/output-protocol.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
 
-/** `ExpEvent`/`ExpPlanDocument` 的 `format`/`schemaVersion` —— 只在破坏性形状变更时递增
- *  (见 cli.md「事件与计划文档的 TypeScript 形状」)。 */
-const EXP_STREAM_FORMAT = "niceeval.exp";
-const EXP_PLAN_FORMAT = "niceeval.exp-plan";
-const SCHEMA_VERSION = 2;
-const EXP_PLAN_SCHEMA_VERSION = 4;
-
 /** 连续无永久事件多久才追加一条 `progress` 心跳(cli.md「机器怎么读:--json」:「连续 30 秒
  *  没有这些永久事件,才追加一条 progress 心跳」——两者合并前分别是 30s/60s,统一取 30s)。 */
 const JSON_HEARTBEAT_IDLE_MS = 30_000;
@@ -54,8 +47,6 @@ export interface JsonRendererOptions {
 }
 
 export interface StartEvent {
-  format: typeof EXP_STREAM_FORMAT;
-  schemaVersion: number;
   event: "start";
   total: number;
   configs: number;
@@ -259,8 +250,6 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           noteCheckpoint(event.at);
           const { shape, reused, experimentConcurrency } = event.plan;
           writeEvent(io, {
-            format: EXP_STREAM_FORMAT,
-            schemaVersion: SCHEMA_VERSION,
             event: "start",
             total: shape.totalAttempts,
             configs: shape.configs,
@@ -746,8 +735,6 @@ export interface JsonPlanInput {
 export function renderJsonPlanDocument(input: JsonPlanInput): string {
   const reused = input.matrix.reduce((n, row) => n + (row.reused ? 1 : 0), 0);
   return `${JSON.stringify({
-    format: EXP_PLAN_FORMAT,
-    schemaVersion: EXP_PLAN_SCHEMA_VERSION,
     total: input.total,
     evals: input.evals,
     configs: input.configs,

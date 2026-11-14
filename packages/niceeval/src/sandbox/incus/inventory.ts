@@ -53,7 +53,6 @@ export async function readArtifactInventory(repository: IncusRepository, control
 
 export function inventoryDocument(domain: IncusDomainDescriptor, inventory: ArtifactInventory) {
   return {
-    format: "niceeval.cache-inventory" as const, schemaVersion: 1 as const,
     scope: { kind: "domain" as const, domainId: domain.executionDomainId },
     domains: [{ domainId: domain.executionDomainId, backendKind: "incus-artifacts", project: domain.artifactProject, pool: domain.storagePool,
       entryCount: inventory.entries.length, storage: inventory.pool, estimate: "not additive" }],

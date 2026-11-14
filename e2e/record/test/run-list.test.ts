@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { createE2EContext } from "@niceeval/testkit";
 import { decodeRunDocument } from "niceeval/run";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { runHost } from "niceeval/run/host";
 import { expect, test } from "vitest";
 
@@ -51,7 +51,14 @@ test.concurrent("列表按新到旧过滤运行，并说明截断数量", async 
     const library = await Effect.runPromise(runHost.list({ cwd: paths.projectRoot, states: ["completed"], experimentIdPrefix: "run-list", limit: 1 }));
     expect(library).toMatchObject({ runs: [{ runId: ids[2] }], omitted: 1 });
     expect(library.runs).toHaveLength(1);
-    expect(decodeRunDocument({ protocol: "niceeval.run/v1", operation: "run.list", runs: [] }).success).toBe(false);
+    expect(decodeRunDocument({ protocol: "niceeval.run/v1", operation: "run.list", runs: [], omitted: 0 }).success).toBe(false);
+    const legacyToken = Buffer.from(JSON.stringify(["niceeval.run-continuation/v1", "old-store", 0, ids[0], null])).toString("base64url");
+    const refused = await Effect.runPromise(Effect.result(runHost.list({ cwd: paths.projectRoot, continuation: legacyToken })));
+    expect(Result.isFailure(refused)).toBe(true);
+    if (Result.isFailure(refused)) {
+      expect(refused.failure).toMatchObject({ code: "run-continuation-invalid" });
+      expect(refused.failure.message).toContain("restart run.list without continuation");
+    }
     for (const args of [["--limit", "0"], ["--limit", "1.5"], ["--state", "sleeping"]]) {
       const invalid = await niceeval.run(["run", "list", ...args, "--json"]);
       expect(invalid.exitCode, invalid.diagnostic()).not.toBe(0);

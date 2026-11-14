@@ -328,18 +328,18 @@ interface JudgeProviderIdentity {
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
   readonly protocol:
-    | { readonly kind: "chat-completions"; readonly revision: 1; readonly maxOutputTokens: number }
-    | { readonly kind: "typesafe-system-one"; readonly revision: 1 };
+    | { readonly kind: "chat-completions"; readonly maxOutputTokens: number }
+    | { readonly kind: "typesafe-system-one" };
 }
 ```
 
 该形状是可留存的配置投影，不是可恢复的 Provider 对象。Provider kind 与 protocol kind 必须匹配。
-归一化 endpoint、最终模型、凭据声明位置、执行限制和映射 revision 共同进入配置摘要、fingerprint、字段差异和实际执行投影。
+归一化 endpoint、最终模型、凭据声明位置、执行限制与 protocol kind 共同进入配置摘要、fingerprint、字段差异和实际执行投影。
 凭据值及其 hash 不进入这些投影；更换 key 值不构成评分算法变化。
 
 历史配置只按其原协议读取，不自动变成新 Provider。历史结果缺少当前 Provider identity 时不能取得当前配置的复用资格。
 RunContext 仍遵守所属严格 schema；新增身份只进入其正式 owner，不能在写入时夹带未声明字段。
-协议 revision 变化使相关结果重新求值，不能在旧 identity 下静默改变 TypeSafe 映射算法。
+影响执行的映射算法变化进入 NiceEval 实现身份，使相关结果重新求值。
 
 ## TypeSafe 请求与解码
 
@@ -396,7 +396,7 @@ question IDs 按 input 顺序派生；mapping.operation 必须等于 call.operat
 
 v2 reader 验证 mapping 与真实请求一致、响应包含全部必要结果，并从最后一次成功响应重算规范化 output。
 分数、类别、rationale 或逐项映射不一致均为 invalid；失败或中断调用不能伪造 completed。
-Definition digest 继续表示 Match 算法定义；Provider identity 的协议 revision 独立约束传输与映射解释。
+Definition digest 表示 Match 算法定义；Provider identity 保留实际传输配置，NiceEval 实现身份约束映射解释。
 任何版本的审计都保存实际 HTTP 请求正文，不用伪造的 Chat Completions envelope 替换 TypeSafe 事实。
 
 ## 验收边界

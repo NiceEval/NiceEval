@@ -48,8 +48,8 @@ export interface JudgeProviderIdentity {
   readonly contextWindow?: number;
   readonly headers?: Readonly<Record<string, string>>;
   readonly protocol:
-    | { readonly kind: "chat-completions"; readonly revision: 1; readonly maxOutputTokens: number }
-    | { readonly kind: "typesafe-system-one"; readonly revision: 1 };
+    | { readonly kind: "chat-completions"; readonly maxOutputTokens: number }
+    | { readonly kind: "typesafe-system-one" };
 }
 
 interface ProviderPrivate {
@@ -223,7 +223,6 @@ function createProvider(
     protocolKind === "chat-completions"
       ? Object.freeze({
           kind: "chat-completions" as const,
-          revision: 1 as const,
           maxOutputTokens: positiveInteger(
             input.maxOutputTokens,
             1_024,
@@ -231,7 +230,7 @@ function createProvider(
             Number.MAX_SAFE_INTEGER,
           ),
         })
-      : Object.freeze({ kind: "typesafe-system-one" as const, revision: 1 as const });
+      : Object.freeze({ kind: "typesafe-system-one" as const });
   const identity = freezeIdentity({
     provider,
     model,

@@ -42,6 +42,9 @@ export {
 } from "./cli/session-protocol.ts";
 export { decodeExecutionComparisons, decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./cli/plan-protocol.ts";
 export {
+  decodeExpStartEvent,
+  ExpStartEventSchema,
+  type ExpStartEvent,
   decodeExpTerminalEvent,
   decodeExpProgressEvent,
   type ExpProgressEvent,

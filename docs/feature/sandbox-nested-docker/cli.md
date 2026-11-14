@@ -75,7 +75,7 @@ generation、是否当前 head 与 consumer hold 数。每项另显示创建时�
 
 JSON 使用
 [Docker cache inventory](../../roadmap/sandbox-cache-lifecycle/cli.md#domain-库存) 的同一
-`niceeval.cache-inventory` 顶层，`backendKind: "incus-artifacts"`；估算字节标 `estimate`，不能相加的数字标
+库存形状，`backendKind: "incus-artifacts"`；即时输出不带版本 envelope。估算字节标 `estimate`，不能相加的数字标
 `not additive`。
 
 ### 两阶段 GC

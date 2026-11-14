@@ -149,8 +149,6 @@ function cacheCommand(
           Effect.mapError((cause) => dockerFailure("apply Docker cache GC plan", cause)),
         )) as GcOutcome;
         const document = {
-          format: "niceeval.cache-gc-outcome",
-          schemaVersion: 1,
           ...result,
           startedAt,
           finishedAt: new Date().toISOString(),
@@ -164,8 +162,6 @@ function cacheCommand(
         Effect.mapError((cause) => dockerFailure("plan Docker cache GC", cause)),
       )) as GcPlan;
       const document = {
-        format: "niceeval.cache-gc-plan",
-        schemaVersion: 1,
         plan,
         summary: { candidateCount: plan.candidates.length, exactReclaimBytes: null },
       };
@@ -190,8 +186,6 @@ function cacheCommand(
       : inventories.find((item) => item.domainId === selected.domainId)?.entries;
     if (options.json) {
       yield* output("stdout", `${JSON.stringify({
-        format: "niceeval.cache-inventory",
-        schemaVersion: 1,
         scope: selected === undefined ? { kind: "domains" } : { kind: "domain", domainId: selected.domainId },
         domains: [
           ...inventories.map(({ entries, ...domain }) => ({

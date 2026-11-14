@@ -4,6 +4,14 @@
 
 export { defineSandbox } from "../define.ts";
 export {
+  decodeDockerCacheInventoryDocument,
+  decodeDockerCacheGcPreviewDocument,
+  decodeDockerCacheGcOutcomeDocument,
+  type DockerCacheInventoryDocument,
+  type DockerCacheGcPreviewDocument,
+  type DockerCacheGcOutcomeDocument,
+} from "../docker/cache-protocol.ts";
+export {
   CustomSandboxMaterializationError,
   sandboxLayer,
   sandboxRequirements,

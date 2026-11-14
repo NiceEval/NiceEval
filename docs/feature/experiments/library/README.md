@@ -76,8 +76,8 @@ console.log(plan.experimentId, plan.evalIds);
 
 同一 `niceeval/experiment/host` 入口导出 `decodeSessionListDocument()` 与 `decodeSessionShowDocument()`。
 对应的 Schema 是 `SessionListDocumentSchema` 与 `SessionShowDocumentSchema`。
-它们严格读取当前候选的 `niceeval invocation list --json` 与 `session show --json` 文档，保留既有
-`niceeval.sessions` / `niceeval.session` discriminator，拒绝额外字段。
+它们严格读取当前候选的 `niceeval invocation list --json` 与 `session show --json` 文档。
+命令决定文档形状；输出不带 `format` 或 `schemaVersion`，解码器拒绝额外字段。
 
 调用方沿 `session.experiments` 的 `experimentId` 定位 Experiment，再沿 `attempts` 的
 `evalId` 与 `attempt` 定位排队事实；过期 Session 只含身份与时间，不假装拥有活跃 Attempt 状态。

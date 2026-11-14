@@ -13,6 +13,8 @@ test("Eval 前缀只选择命中的 Eval", async () => {
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     const plan = decodeExpPlanDocument(receipt.json());
+    expect(plan).not.toHaveProperty("format");
+    expect(plan).not.toHaveProperty("schemaVersion");
     expect(plan.matrix.map((row) => row.evalId)).toEqual(["greet/hello"]);
   });
 });

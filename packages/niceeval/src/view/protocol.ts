@@ -1,16 +1,11 @@
 import { Schema } from "effect";
 
-/** Versioned lifecycle stream written by `niceeval view --json`. */
-export const VIEW_LIFECYCLE_PROTOCOL = "niceeval.view/v1" as const;
-
 export const ViewReadyLifecycleEventSchema = Schema.Struct({
-  protocol: Schema.Literal(VIEW_LIFECYCLE_PROTOCOL),
   event: Schema.Literal("ready"),
   url: Schema.String,
 });
 
 export const ViewClosedLifecycleEventSchema = Schema.Struct({
-  protocol: Schema.Literal(VIEW_LIFECYCLE_PROTOCOL),
   event: Schema.Literal("closed"),
 });
 
@@ -23,7 +18,7 @@ export const ViewLifecycleEventSchema = Schema.Union([
 export type ViewReadyLifecycleEvent = Schema.Schema.Type<typeof ViewReadyLifecycleEventSchema>;
 /** Signals closure of a View lifecycle stream; it carries no new server URL. */
 export type ViewClosedLifecycleEvent = Schema.Schema.Type<typeof ViewClosedLifecycleEventSchema>;
-/** A versioned ready or closed event emitted by view --json as NDJSON; startup failure may produce an empty stream. */
+/** A ready or closed event emitted by view --json as NDJSON; startup failure may produce an empty stream. */
 export type ViewLifecycleEvent = Schema.Schema.Type<typeof ViewLifecycleEventSchema>;
 
 /** Serialize one lifecycle event as the single NDJSON line owned by the View CLI. */
@@ -40,19 +35,19 @@ export function renderViewLifecycleEvent(event: ViewLifecycleEvent): string {
 export function decodeViewLifecycle(input: string): readonly ViewLifecycleEvent[] {
   if (input === "") return Object.freeze([]);
   if (!input.endsWith("\n")) {
-    throw new Error("niceeval.view/v1 lifecycle output must end with a newline.");
+    throw new Error("View lifecycle output must end with a newline.");
   }
   const events: ViewLifecycleEvent[] = [];
   for (const [index, line] of input.slice(0, -1).split("\n").entries()) {
     if (line.length === 0) {
-      throw new Error(`niceeval.view/v1 lifecycle output has a blank line at ${index + 1}.`);
+      throw new Error(`View lifecycle output has a blank line at ${index + 1}.`);
     }
     let value: unknown;
     try {
       value = JSON.parse(line) as unknown;
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`niceeval.view/v1 lifecycle output has invalid JSON at ${index + 1}: ${reason}`, { cause });
+      throw new Error(`View lifecycle output has invalid JSON at ${index + 1}: ${reason}`, { cause });
     }
     try {
       events.push(Schema.decodeUnknownSync(ViewLifecycleEventSchema, {
@@ -61,7 +56,7 @@ export function decodeViewLifecycle(input: string): readonly ViewLifecycleEvent[
       })(value));
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`niceeval.view/v1 lifecycle output has an invalid event at ${index + 1}: ${reason}`, { cause });
+      throw new Error(`View lifecycle output has an invalid event at ${index + 1}: ${reason}`, { cause });
     }
   }
   return Object.freeze(events);

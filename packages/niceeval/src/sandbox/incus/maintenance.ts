@@ -93,7 +93,7 @@ async function preview(repository: IncusRepository, control: IncusControl, domai
     registrySafetyRevision: 4, policyVersion: POLICY_VERSION, observedAt: new Date(observed).toISOString(), expiresAt: new Date(observed + 15 * 60_000).toISOString(), candidates };
   await repository.saveGcPlan(plan);
   return {
-    document: { format: "niceeval.cache-gc-plan" as const, schemaVersion: 1 as const, plan, summary: { candidateCount: candidates.length, exactReclaimBytes: null } },
+    document: { plan, summary: { candidateCount: candidates.length, exactReclaimBytes: null } },
     estimates: candidates.map((candidate) => ({ entryId: candidate.entryId, bytes: inventory.entries.find((entry) => entry.intent.artifactId === candidate.entryId)?.intent.estimatedArtifactBytes ?? null })),
   };
 }
@@ -204,7 +204,7 @@ async function apply(repository: IncusRepository, control: IncusControl, domain:
     }
     const after = await control.getStoragePoolResources(domain.artifactProject, domain.storagePool).then((pool) => pool.free).catch(() => null);
     const count = (status: GcItemOutcome["status"]) => outcomes.filter((item) => item.status === status).length;
-    const document: GcOutcome = { format: "niceeval.cache-gc-outcome", schemaVersion: 1, planId, domainId: domain.executionDomainId, startedAt, finishedAt: new Date().toISOString(), outcomes,
+    const document: GcOutcome = { planId, domainId: domain.executionDomainId, startedAt, finishedAt: new Date().toISOString(), outcomes,
       summary: { deleted: count("deleted"), alreadyAbsent: count("already-absent"), skipped: count("skipped"), failed: count("failed"), notAttempted: count("not-attempted"), exactReclaimedBytes: null } };
     const envelope = { document, before, after };
     await repository.finishGcPlan(planId, JSON.stringify(envelope));

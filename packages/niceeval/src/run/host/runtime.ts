@@ -38,7 +38,7 @@ import {
   type RunSummary,
 } from "./types.ts";
 
-const CONTINUATION_PROTOCOL = "niceeval.run-continuation/v1";
+const CONTINUATION_OPERATION = "run.list";
 const EMPTY_CUTOFF = Object.freeze({
   identity: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   revision: 0,
@@ -138,7 +138,7 @@ function decodeContinuation(
   return Effect.try({
     try: () => {
       const value = JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as unknown;
-      if (!Array.isArray(value) || value.length !== 5 || value[0] !== CONTINUATION_PROTOCOL ||
+      if (!Array.isArray(value) || value.length !== 5 || value[0] !== CONTINUATION_OPERATION ||
         typeof value[1] !== "string" || !Number.isSafeInteger(value[2]) || Number(value[2]) < 0 ||
         typeof value[3] !== "string" || (value[4] !== null && typeof value[4] !== "string") ||
         value[4] !== (invocationId ?? null)) {
@@ -152,7 +152,7 @@ function decodeContinuation(
     catch: (cause) => new RunReadError({
       operation: "list",
       code: "run-continuation-invalid",
-      message: "Run continuation is invalid or belongs to a different filter.",
+      message: "Run continuation is invalid or belongs to a different filter; restart run.list without continuation.",
       cause,
     }),
   });
@@ -174,6 +174,11 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
       request.limit !== undefined && (!Number.isSafeInteger(request.limit) || request.limit < 1);
     if (invalidFilter) return Effect.fail(new RunReadError({ operation: "list", code: "run-filter-invalid", message: "Run states must be a nonempty selection of known states and limit must be a positive safe integer." }));
     if (request.record === undefined && !recordDatabaseExists(request.cwd)) {
+      if (request.continuation !== undefined) return Effect.fail(new RunReadError({
+        operation: "list",
+        code: "run-continuation-invalid",
+        message: "Run continuation has no matching Record store; restart run.list without continuation.",
+      }));
       return Effect.succeed(Object.freeze({
         operation: "run.list" as const,
         publicationCutoff: EMPTY_CUTOFF,

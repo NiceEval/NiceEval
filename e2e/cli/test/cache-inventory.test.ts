@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { decodeDockerCacheInventoryDocument, decodeDockerCacheGcPreviewDocument, decodeDockerCacheGcOutcomeDocument } from "niceeval/sandbox";
 import { cliE2E } from "./context.ts";
 
 // @feature docs/feature/sandbox/README.md
@@ -42,10 +43,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
 
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.stderr).toBe("");
-    const document = JSON.parse(result.stdout) as {
-      domains: unknown[];
-      providerObservations: Array<Record<string, unknown>>;
-    };
+    const document = decodeDockerCacheInventoryDocument(result.json<unknown>());
     expect(document).not.toHaveProperty("format");
     expect(document).not.toHaveProperty("schemaVersion");
     expect(document.domains).toEqual([{
@@ -78,12 +76,12 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
     expect(human.stdout).toContain("BuildKit · unverified shared-builder capacity");
     expect(human.stdout).toContain("NiceEval ownership unknown · not eligible for NiceEval GC");
 
-    const domainId = (document.domains[0] as { domainId: string }).domainId;
+    const domainId = document.domains[0]!.domainId;
     const detail = await niceeval.run(["docker", "cache", "inventory", "--domain", domainId, "--json"], {
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
     });
     expect(detail.exitCode, detail.diagnostic()).toBe(0);
-    expect(JSON.parse(detail.stdout)).toMatchObject({
+    expect(decodeDockerCacheInventoryDocument(detail.json<unknown>())).toMatchObject({
       scope: { kind: "domain", domainId },
       entries: [],
       providerObservations: [],
@@ -93,7 +91,7 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
     });
     expect(preview.exitCode, preview.diagnostic()).toBe(0);
-    const previewDocument = JSON.parse(preview.stdout) as { plan: { planId: string; candidates: unknown[] } };
+    const previewDocument = decodeDockerCacheGcPreviewDocument(preview.json<unknown>());
     expect(Object.keys(previewDocument).sort()).toEqual(["plan", "summary"]);
     expect(previewDocument.plan.candidates).toEqual([]);
 
@@ -101,9 +99,10 @@ test("共享 BuildKit 容量只作为未验证 Provider observation 展示", asy
       env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}`, XDG_STATE_HOME: stateRoot, NICEEVAL_HOME: niceevalHome },
     });
     expect(apply.exitCode, apply.diagnostic()).toBe(0);
-    expect(JSON.parse(apply.stdout)).toMatchObject({ outcomes: [] });
-    expect(JSON.parse(apply.stdout)).not.toHaveProperty("format");
-    expect(JSON.parse(apply.stdout)).not.toHaveProperty("schemaVersion");
+    const applied = decodeDockerCacheGcOutcomeDocument(apply.json<unknown>());
+    expect(applied).toMatchObject({ outcomes: [] });
+    expect(applied).not.toHaveProperty("format");
+    expect(applied).not.toHaveProperty("schemaVersion");
 
     for (const [name, prepare, expectedPath] of [
       [

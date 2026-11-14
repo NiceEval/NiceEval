@@ -279,8 +279,6 @@ function catalogText(catalog: { readonly experiments: readonly { readonly id: st
 
 function catalogJson(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly adapter: string | null; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
   return jsonDocument({
-    format: "niceeval.experiments",
-    schemaVersion: 1,
     experiments: catalog.experiments.map((experiment) => ({
       experimentId: experiment.id,
       ...(experiment.description === undefined ? {} : { description: experiment.description }),
@@ -506,8 +504,6 @@ function dryText(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAtt
 
 function dryJson(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAttempts: number; readonly evals: number; readonly configurations: number; readonly attempts: number }, plugins: readonly unknown[]): string {
   return jsonDocument({
-    format: "niceeval.current-reuse-plan/v1",
-    schemaVersion: 1,
     total: shape.totalAttempts,
     evals: shape.evals,
     configs: shape.configurations,
@@ -527,7 +523,7 @@ function renameText(result: ExperimentHostRenamePlan | ExperimentHostRenameResul
 }
 
 function renameJson(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
-  return jsonDocument({ format: "niceeval.experimentRename", schemaVersion: 1, ...result });
+  return jsonDocument({ ...result });
 }
 
 function parsed(argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) {

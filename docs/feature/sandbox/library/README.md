@@ -1,5 +1,9 @@
 # Sandbox ——库用法
 
+`niceeval/sandbox` 提供 `decodeDockerCacheInventoryDocument()`、`decodeDockerCacheGcPreviewDocument()` 与
+`decodeDockerCacheGcOutcomeDocument()`，严格读取同一候选的 Docker cache CLI JSON，拒绝额外字段。
+库存、预览与 apply 结果不带版本 envelope；预览内层可执行 plan 保留单一格式标记，apply 仍重新核对 ownership、digest、epoch、有效期与候选快照。
+
 `t.sandbox`(eval 作者)与 Eval / Experiment 的 `sandbox` layer 声明(选起点与 Provider)是这个功能的两个入口。
 声明面的完整契约见 [Sandbox Layer](layers.md);本篇讲运行中的 Sandbox 怎么调用,内部怎么实现见 [Architecture](../architecture/README.md)。
 

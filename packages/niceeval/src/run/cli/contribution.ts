@@ -18,7 +18,6 @@ import {
 import { canonicalJsonValue } from "../../inspection/canonical.ts";
 import { rawRunHost } from "../host/runtime.ts";
 import {
-  RUN_PROTOCOL,
   RunStateSchema,
   type RunListDocument,
   type RunRecoverOrphanedDocument,
@@ -146,7 +145,7 @@ Usage:
           return yield* usage("niceeval run import requires one Record file.");
         }
         const receipt = yield* importRuns(facts.cwd, parsed.positionals[1]!).pipe(Effect.mapError((cause) => failure("import", cause)));
-        if (json) yield* writeJson({ protocol: RUN_PROTOCOL, operation: "run.import", outcome: receipt.imported.length === 0 ? "already-present" : "imported", ...receipt });
+        if (json) yield* writeJson({ operation: "run.import", outcome: receipt.imported.length === 0 ? "already-present" : "imported", ...receipt });
         else yield* write("stdout", `Imported ${receipt.imported.length} Runs; already-present ${receipt.alreadyPresent.length}.\n`);
       } else {
         const runIds = parsed.values.run;
@@ -156,7 +155,7 @@ Usage:
           return yield* usage("niceeval run export requires --run <run-id> and --out <file>.");
         }
         const receipt = yield* exportRuns(facts.cwd, runIds, out).pipe(Effect.mapError((cause) => failure("export", cause)));
-        if (json) yield* writeJson({ protocol: RUN_PROTOCOL, operation: "run.export", outcome: "exported", ...receipt });
+        if (json) yield* writeJson({ operation: "run.export", outcome: "exported", ...receipt });
         else yield* write("stdout", `Exported ${receipt.runIds.length} Runs to ${out}.\n`);
       }
       return 0;
@@ -190,7 +189,6 @@ Usage:
       }).pipe(Effect.mapError((cause) => failure("list", cause)));
       if (json) {
         yield* writeJson(Object.freeze({
-          protocol: RUN_PROTOCOL,
           operation: "run.list",
           runs: listed.runs,
           omitted: listed.omitted,
@@ -240,7 +238,7 @@ Usage:
           ? { runId: run.runId, outcome: "failed", reason: result.failure.code }
           : { runId: run.runId, outcome: "recovered" });
       }
-      if (json) yield* writeJson({ protocol: RUN_PROTOCOL, operation: "run.recover-orphaned", items } satisfies RunRecoverOrphanedDocument);
+      if (json) yield* writeJson({ operation: "run.recover-orphaned", items } satisfies RunRecoverOrphanedDocument);
       else {
         if (selected.length === 0) yield* write("stdout", "No orphaned runs\n");
         if (items.length > 0) yield* write("stdout", `${items.map((item) => `${item.runId}  ${item.outcome}${item.reason === undefined ? "" : `  ${item.reason}`}`).join("\n")}\n`);
@@ -266,7 +264,6 @@ Usage:
       }
       if (json) {
         yield* writeJson(Object.freeze({
-          protocol: RUN_PROTOCOL,
           operation: `run.${action}`,
           outcome: "confirmation-required",
           runId,
@@ -281,7 +278,7 @@ Usage:
       const receipt = yield* rawRunHost.delete({ cwd: facts.cwd, runId }).pipe(
         Effect.mapError((cause) => failure("delete", cause)),
       );
-      if (json) yield* writeJson(Object.freeze({ protocol: RUN_PROTOCOL, operation: "run.delete", ...receipt }));
+      if (json) yield* writeJson(Object.freeze({ operation: "run.delete", ...receipt }));
       else yield* write("stdout", `Deleted Run ${receipt.runId}.
 `);
       return 0;
@@ -289,7 +286,7 @@ Usage:
     const receipt = yield* rawRunHost.recover({ cwd: facts.cwd, runId }).pipe(
       Effect.mapError((cause) => failure("recover", cause)),
     );
-    if (json) yield* writeJson(Object.freeze({ protocol: RUN_PROTOCOL, operation: "run.recover", ...receipt }));
+    if (json) yield* writeJson(Object.freeze({ operation: "run.recover", ...receipt }));
     else yield* write("stdout", `Recovered Run ${receipt.runId} as interrupted.
 `);
     return 0;

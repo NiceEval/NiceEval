@@ -11,7 +11,7 @@ import {
 } from "./protocol.ts";
 
 const recordAttachmentCatalogTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordAttachmentCatalog/v2",
+  "@niceeval/record/RecordAttachmentCatalog",
 );
 
 type AnyDefinition = RecordAttachmentDefinition<

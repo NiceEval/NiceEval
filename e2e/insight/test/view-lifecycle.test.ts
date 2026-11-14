@@ -46,7 +46,8 @@ test.concurrent("view 接受对象地址，帮助显示统一选择语法且 pla
         expect(view.signal("SIGTERM")).toBe(true);
         const closed = await view.done;
         expect(closed.timedOut, closed.diagnostic()).toBe(false);
-        expect(decodeViewLifecycle(closed.stdout).at(-1)?.event).toBe("closed");
+        expect(Object.keys(decodeViewLifecycle(closed.stdout)[0]!).sort()).toEqual(["event", "url"]);
+        expect(decodeViewLifecycle(closed.stdout).at(-1)).toEqual({ event: "closed" });
         await view.dispose();
       }
     },

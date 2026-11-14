@@ -19,10 +19,12 @@ niceeval view [<对象>] [<方面>] [<ID>] [--no-open] [--port <port>]
 | `exp:<experiment-id>` | 在 Results 中预选一个或多个 Experiment，范围与 `show exp:<experiment-id>` 相同。 |
 | `--no-open` | 准备受保护的 loopback View，但不请求 OS 打开浏览器。 |
 | `--port <port>` | 选择 `127.0.0.1` listener 的端口。 |
+| `--json` | 输出 lifecycle NDJSON：就绪后写 `{ event: "ready", url }`，受控停止时写 `{ event: "closed" }`。 |
 
-对象、方面与 ID 的写法、ID 前缀表与组合规则都与 [`niceeval show`](../inspection/cli.md#对象方面与-flag-的组合) 相同：把 `show` 换成 `view`、参数不变，就在浏览器打开同一个位置。它们在启动时于同一 `PublicationCutoff` 上校验；任一 ID 或 locator 未命中、方面与 ID 前缀不符时，命令以英文诊断写 stderr 并非零退出，不打开浏览器。`show` 的方面专属 flag（`--actor`、`--reprice` 等）、`--json`、`--record` 与断言图片不被 `view` 接受。
+对象、方面与 ID 的写法、ID 前缀表与组合规则都与 [`niceeval show`](../inspection/cli.md#对象方面与-flag-的组合) 相同：把 `show` 换成 `view`、参数不变，就在浏览器打开同一个位置。它们在启动时于同一 `PublicationCutoff` 上校验；任一 ID 或 locator 未命中、方面与 ID 前缀不符时，命令以英文诊断写 stderr 并非零退出，不打开浏览器。`show` 的方面专属 flag（`--actor`、`--reprice` 等）、`--record` 与断言图片不被 `view` 接受。
 
-完整 SPA assets、session 与读取 transport 可用后，命令向 stdout 写出一次可打开的 loopback URL。新的 publication
+完整 SPA assets、session 与读取 transport 可用后，命令向 stdout 写出一次可打开的 loopback URL。`--json` 的事件不带版本 envelope，由 `niceeval/view` 的 `decodeViewLifecycle()` 严格解码；启动失败只写 stderr。
+新的 publication
 只让页面显示更新可用；用户确认后才切换到新的 cutoff。启动或运行失败通过退出码与 stderr 反馈。
 
 启动与关闭见[制作可访问页面](use-case/insight-create-accessible-page.md#观察启动与关闭)；Run 选择见

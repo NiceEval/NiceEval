@@ -367,6 +367,10 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 
 ## `--json`
 
+运行反馈使用 NDJSON，由 `event` 或终态 `type: "receipt"` 判别。`exp list`、`--dry` 与 rename 的 JSON 各为单个文档。
+这些即时输出均不带 `protocol`、`format` 或 `schemaVersion`；同一安装候选提供严格解码器。
+`niceeval/experiment/host` 的 `decodeExpStartEvent()` 严格读取首条 `start`，其余进度与 receipt 使用各自的解码器。
+
 普通 `exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。显式 sharedState recovery 明确拒绝
 `--json`，因为它不建立 Invocation 或 receipt，也没有 NDJSON 形状。完整形态见
 [NDJSON 输出案例](output/json-stream.md)。

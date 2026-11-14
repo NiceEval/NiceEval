@@ -24,7 +24,6 @@ export const GcItemOutcomeSchema = Schema.Struct({
   message: Schema.String,
 });
 export const GcOutcomeSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.cache-gc-outcome"), schemaVersion: Schema.Literal(1),
   planId: Schema.String, domainId: Schema.String, startedAt: timestamp, finishedAt: timestamp,
   outcomes: Schema.Array(GcItemOutcomeSchema),
   summary: Schema.Struct({ deleted: integer, alreadyAbsent: integer, skipped: integer, failed: integer, notAttempted: integer, exactReclaimedBytes: Schema.NullOr(integer) }),

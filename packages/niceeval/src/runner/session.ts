@@ -91,13 +91,11 @@ export interface ExpiredSessionRecord {
 }
 
 export interface SessionListDocument {
-  format: "niceeval.sessions";
   sessions: SessionRecord[];
   expired: ExpiredSessionRecord[];
 }
 
 export interface SessionShowDocument {
-  format: "niceeval.session";
   session: SessionRecord | ExpiredSessionRecord;
   expired?: boolean;
 }
@@ -815,7 +813,7 @@ export function sessionListDocument(
       sessions.push(cloneRecord(record));
     }
   }
-  return { format: "niceeval.sessions", sessions, expired };
+  return { sessions, expired };
 }
 
 export function listSessions(
@@ -844,7 +842,6 @@ export function showSession(
       const record = resolveSessionPrefix(records, prefix);
       const expired = isSessionExpired(record, nowMs);
       return {
-        format: "niceeval.session",
         session: expired ? expiredProjection(record) : record,
         ...(expired ? { expired: true } : {}),
       };

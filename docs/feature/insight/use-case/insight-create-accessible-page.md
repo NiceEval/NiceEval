@@ -20,7 +20,8 @@ http://127.0.0.1:43173/#<one-time-credential>
 URL 中的 session material 只留在本机。浏览器关闭或收到中断后，View 关闭 listener、失效 session 并释放读取资源。
 首次打开时，浏览器用 fragment 中的一次性凭据换取该 View 实例的 HttpOnly session，并从地址栏移除凭据。
 同一浏览器可以同时打开不同端口的 View；每个实例的会话独立，打开另一个实例后，已有 Attempt 详情仍可硬刷新。
-脚本可指定独占端口、等待 HTTP 可用，并用进程退出码和 stderr 观察终态；View 不维护另一套 lifecycle machine stream。
+脚本可使用 `--json` 读取 `ready` 的 URL，等待 HTTP 可用，并在受控停止后读取 `closed`。
+事件不带 `protocol`、`format` 或 `schemaVersion`；启动失败没有 ready，通过退出码和 stderr 反馈。
 
 Results 显示 Summary cards、指标、Experiment 比较、成本 × 通过率或分数散点图，以及 Experiment → 可选 Eval 路径组 → Eval →
 Attempt table。散点图以成本为横轴，以已关闭的通过率或分数为纵轴。Run identity 作为 Attempt provenance 保留，并可打开 exact
