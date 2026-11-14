@@ -47,7 +47,7 @@
 | 工作台 | 对应页名或组件中文名 | 内部代号不是契约,读者在 API 面里找不到这个词 |  |  |
 | 当前数据集 | 按语境写 sealed cutoff、operation selection 或可编辑的外部输入 | Record 保存已经发生的事实；固定 Inspection 显式说明读取范围，不建立漂移的“当前数据集” |  |  |
 | 选集 | 按语境写 operation selection、runIds、Attempt locator 或 sealed cutoff | 固定 Inspection 直接说明选择身份与范围，不建立通用中间选择对象 |  | 候选集、自选集 |
-| dual-face | 分别写机器 query 与人读 View | 两者只共享 sealed facts，不共享 renderer、步骤或同一报告模型 |  |  |
+| dual-face | 分别写机器读的 `show --json` 与人读的 View | 两者只共享 sealed facts，不共享 renderer、步骤或同一报告模型 |  |  |
 | probe | 按实际动作写探测、检查命令或探测命令;代码字段、函数与标识符写进反引号 | 裸用英文既没有说明检查的对象,也把可读的中文术语和 API 标识符混在一起;正文应说明它探测什么或使用稳定中文名 |  | e2e-browser-scenario-probe-loop-brittleness |
 | resolve | 写具体动作:解析配置、按键查表、求值、选择实现或规范化数据;代码标识符写进反引号 | 单词本身没有说明输入经历了哪一步;正文非必要不用,代码标识符引用不受影响 |  |  |
 | Resolved | 写结果的具体名字:解析后的配置、已求值的 page——说清被做了什么 | 同 Resolve:形容词词形照样太通用,「Resolved X」没说 X 经历了哪一步 |  |  |
