@@ -64,6 +64,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(mainProduced.exitCode, mainProduced.diagnostic()).toBe(0);
       expect(mainProduced.expReceipt(), mainProduced.diagnostic()).toMatchObject({ completion: "completed" });
       const mainRunId = only(mainProduced.expReceipt().createdRunIds, () => true, mainProduced.diagnostic());
+      const addressed = await niceeval.run(["show", `run:${mainRunId}`, "--json"]);
+      expect(addressed.exitCode, addressed.diagnostic()).toBe(0);
+      expect(addressed.querySuccess("run.get").operation).toBe("run.get");
       const attempt = only(
         mainProduced.expEvalEvents(),
         (event) => event.evalId === "inspection",
