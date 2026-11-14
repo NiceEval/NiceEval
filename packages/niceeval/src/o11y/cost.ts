@@ -9,8 +9,7 @@
 // estimated 只在 result.estimatedCostUSD。查不到价就返回 undefined —— 显示 "—"
 // 而不是骗人的 $0。
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { builtinModelCatalog, lookupBuiltinModel } from "./builtin-models.ts";
 import type { PriceOverride, Usage } from "../types.ts";
 
 interface Price {
@@ -47,14 +46,7 @@ export type PricingEstimateResult =
   | { readonly state: "available"; readonly receipt: PricingEstimateReceipt }
   | { readonly state: "unavailable"; readonly reason: PricingEstimateUnavailableReason };
 
-const PRICES: globalThis.Record<string, Price> = (() => {
-  try {
-    const raw = readFileSync(fileURLToPath(new URL("./prices.json", import.meta.url)), "utf-8");
-    return (JSON.parse(raw) as { prices?: globalThis.Record<string, Price> }).prices ?? {};
-  } catch {
-    return {};
-  }
-})();
+const PRICES = builtinModelCatalog.prices;
 
 function toPrice(o: PriceOverride): Price {
   return { in: o.inputPerMTok, out: o.outputPerMTok, cacheRead: o.cacheReadPerMTok, cacheWrite: o.cacheWritePerMTok };
@@ -83,12 +75,8 @@ function lookupOverride(
  * (`anthropic/claude-…` → `claude-…`)和末尾日期版本(`…-4-5-20251001` → `…-4-5`)。
  */
 function lookupBuiltin(model: string): { readonly price: Price; readonly selector: string } | undefined {
-  if (PRICES[model]) return Object.freeze({ price: PRICES[model], selector: model });
-  const bare = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
-  if (PRICES[bare]) return Object.freeze({ price: PRICES[bare], selector: bare });
-  const undated = bare.replace(/-\d{8}$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
-  if (PRICES[undated]) return Object.freeze({ price: PRICES[undated], selector: undated });
-  return undefined;
+  const selected = lookupBuiltinModel(PRICES, model);
+  return selected === undefined ? undefined : Object.freeze({ price: selected.value, selector: selected.selector });
 }
 
 function pricingEstimateCharge(

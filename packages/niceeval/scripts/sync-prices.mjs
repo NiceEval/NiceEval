@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const LITELLM_PRICES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
+const MODELS_DEV_URL = "https://models.dev/api.json";
 const PRICE_KEYS = ["gpt-5.6-luna"];
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT = resolve(ROOT, "src/o11y/prices.json");
@@ -37,6 +38,35 @@ for (const model of PRICE_KEYS) {
   }
   catalog.prices[model] = niceEvalPrice(model, source);
 }
+
+// Keep context metadata beside prices, with the same model key lookup rules.
+// models.dev is primary; the explicit LiteLLM price overlays also own their
+// context limits. Other LiteLLM entries only fill missing model keys.
+const contextWindows = {};
+const contextLimit = value => typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+for (const [model, source] of Object.entries(upstream)) {
+  const limit = contextLimit(source?.max_input_tokens);
+  if (limit !== undefined) contextWindows[model] = limit;
+}
+const modelsResponse = await fetch(MODELS_DEV_URL);
+if (!modelsResponse.ok) throw new Error(`Unable to fetch models.dev metadata: HTTP ${modelsResponse.status}`);
+const modelProviders = await modelsResponse.json();
+for (const [provider, source] of Object.entries(modelProviders)) {
+  for (const [model, entry] of Object.entries(source.models ?? {})) {
+    const limit = contextLimit(entry.limit?.context);
+    if (limit !== undefined) {
+      contextWindows[model] = limit;
+      contextWindows[`${provider}/${model}`] = limit;
+    }
+  }
+}
+for (const model of PRICE_KEYS) {
+  const limit = contextLimit(upstream[model]?.max_input_tokens);
+  if (limit !== undefined) contextWindows[model] = limit;
+}
+catalog.contextWindows = Object.fromEntries(Object.entries(contextWindows).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
+catalog.$contextSources = { modelsDev: MODELS_DEV_URL, LiteLLM: LITELLM_PRICES_URL };
+catalog.$note = "per-1M-token USD prices; vendored snapshot from models.dev with explicit LiteLLM price overlays. contextWindows: positive safe-integer token limits from models.dev limit.context, falling back to LiteLLM max_input_tokens (never max_tokens); explicit LiteLLM price overlays also take precedence for context limits.";
 
 catalog.$priceOverlays = {
   LiteLLM: {
