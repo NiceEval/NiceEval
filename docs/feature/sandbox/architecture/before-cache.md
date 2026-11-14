@@ -144,8 +144,10 @@ type BeforeCacheSource =
 interface BeforeCacheStep {
   readonly operationId: string;
   readonly declaration: BeforeCacheDeclaration;
-  /** Base 之后到本节点每一层的 action id，按顺序排列；只用于远端 snapshot 的 replacement scope。 */
+  /** Base 之后到本节点每一层的 action id，按顺序排列；只用于 replacement scope，不进入 BeforeCacheKey。 */
   readonly positions: readonly string[];
+  /** 声明这一层 action 的 layer owner（如 `eval:<id>`）；只用于 replacement scope，不进入 BeforeCacheKey。 */
+  readonly declaringOwner: string;
   /** 纵深防御用；只在发布前比较，从不持久化。 */
   readonly knownSensitiveValues?: readonly string[];
 }
