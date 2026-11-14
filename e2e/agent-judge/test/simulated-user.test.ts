@@ -16,6 +16,7 @@ const scenario = createE2EContext({ repoId: "agent-judge", project: {
 
 // Only the external HTTP model is scripted; the installed Session and pi are real.
 // @feature docs/feature/eval/README.md
+// @issue docs/issues/simulated-user-resume-timeout.md
 test.concurrent.each(["waiting", "message", "invalid", "no-answer", "typesafe", "timeout", "cancel", "stale", "foreign", "busy", "clone", "closed", "race", "duplicate", "missing", "unknown", "both", "correct", "compact", "compact-failed", "large-session"])("Simulated user answers within its Session and retains execution evidence: %s", async mode => {
   const bodies: string[] = [];
   let ordinary = 0;
@@ -72,6 +73,8 @@ export default defineExperiment({ attempts: ${mode === "closed" ? 2 : 1}, earlyE
 async send(input, ctx) {
   await appendFile("drives.jsonl", JSON.stringify({ text: input.text, responses: input.responses, session: ctx.session.index }) + "\\n");
   if (input.text === "SLOW") await new Promise(resolve => setTimeout(resolve, 80));
+  // Answer generation has an 8s budget; the Agent continuation owns its own deadline.
+  if (${mode === "waiting"} && input.responses || ${mode === "message"} && input.text === "CONTINUE_1") await new Promise(resolve => setTimeout(resolve, 9000));
   const waiting = ${!["message", "compact", "compact-failed", "large-session"].includes(mode)} && input.text === "START";
   return { status: waiting ? "waiting" : "completed", events: waiting ? [
     { type: "input.requested", request: { id: "choice", prompt: "Allow?", options: [{ id: "allow", label: "Yes" }, { id: "deny" }] } },
