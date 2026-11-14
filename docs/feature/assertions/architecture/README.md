@@ -191,6 +191,15 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
+      readonly id: "sandbox-diff-paths/v1";
+      readonly data: {
+        readonly operation: "not-in-diff" | "in-diff";
+        readonly pattern: string;
+        readonly flags: string;
+      };
+    }
+  | {
+      readonly kind: "builtin";
       readonly id: "direct-score/v1";
       readonly data: { readonly source: "author" };
     };
@@ -206,6 +215,9 @@ type BuiltInCriterion =
 
 `sandbox-in-diff/v1` 是 `t.sandbox.inDiff(pattern, options?)` 的 criterion，`pattern` 与 `flags` 是正则的 source 与 flags，写法与 `not-in-diff` operation 的同名字段一致。
 它同样使用独立 identity；命中、未命中、elision 导致的 unavailable 与持久读回分别验收。
+
+`sandbox-diff-paths/v1` 是 `notInDiff` / `inDiff` 传 `content: "none"` 时的 criterion，只拿 pattern 与 agent 变化路径比较。
+它不向已封口的 `sandbox-result/v1` 或 `sandbox-in-diff/v1` 追加 `content` 取值，旧 reader 对新 identity 显示 `unsupported`。两种 operation 的命中、未命中、内容 elision 下仍可确定、采集失败时 unavailable 与持久读回分别验收。
 
 这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或作者 API 对象。第三方闭包不可序列化时，writer 使用诚实的 declared/unavailable 状态，不伪造 AST。criterion 以外的 materials、evaluation、decision、policy、contribution 与 explanation retention 提供本次检查的唯一审计事实。
 
