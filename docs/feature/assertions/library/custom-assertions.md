@@ -63,7 +63,6 @@ interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {
   readonly llm: {
     readonly maxCalls?: number;
     readonly maxMaterialBytes?: number;
-    readonly maxAuditBytes?: number;
   };
   readonly score: (value: T, context: ScoreMatchContext) =>
     Effect.Effect<ScoreMatchResult, E>;

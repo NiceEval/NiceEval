@@ -102,13 +102,13 @@ Boolean 和 QA 都保留完整已接纳事实；QA 另保存实际请求、响�
 
 ## 材料预留与封口收据
 
-每项断言持有一次性私有预留凭证。reader 前按 capture 字节上限、受管 audit 上限与 64 KiB 诊断空间预留。
-Boolean、存在性和本地 ContextScoreMatch 不预留 Judge audit；closeQA 使用 options 的 maxAuditBytes，受管 ContextScoreMatch 使用定义中的 llm.maxAuditBytes。
+每项断言持有一次性私有预留凭证。reader 前按 capture 字节上限与 64 KiB 诊断空间预留。
+Judge 审计不预留、不设字节上限，完整写入受管 Content（见 [Judge 预算](../../judge/architecture.md#预算与生命周期)）。
 两者都不从集合项数推导调用次数。
 
 成功登记才将凭证移交 runtime。reader 抛错、登记失败或登记前取消退还全部预留并释放临时捕获。
-捕获后按实际事实编码降低预留；在途模型仍占用审计预留。正常、零调用及取消终态均按实际封存字节结算，退还未用额度。
-已留存完整证据继续计入 Attempt 的 64 MiB 文字与审计总量；图片总量独立计账。
+捕获后按实际事实编码降低预留。正常、零调用及取消终态均按实际封存字节结算，退还未用额度。
+图片总量独立计账；Judge 审计不计入任何 Attempt 级总量。
 取消和迟到完成不能重复退款、重新增加内容或重启模型；封存字节不得超过凭证额度，拒绝原因的空间提前保留。
 
 所有终态都保留 evaluation.receipt 的 examined、matched、mismatched、unavailable、knownTotal、complete、exhaustive、decisive。

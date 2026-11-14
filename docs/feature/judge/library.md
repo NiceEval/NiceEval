@@ -77,7 +77,6 @@ interface JudgeOptions {
   readonly anchors?: readonly JudgeAnchor[];
   readonly maxCalls?: number;
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 type JudgeDefinition = ScoreMatch<unknown>;
 declare function defineJudge(options: JudgeOptions): JudgeDefinition;
@@ -119,7 +118,6 @@ declare function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition;
 interface JudgePresetOptions {
   readonly maxCalls?: number;
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 interface FactualityMaterial {
   readonly input: string;
@@ -429,7 +427,7 @@ interface ExperimentJudgeSettings {
 
 未知字段、accessor 和非法选项在构造时拒绝。TypeSafe 不接受 `maxOutputTokens`，因为它的协议没有这一限制。
 若宿主进程变量存在 `CF_ACCESS_CLIENT_ID` 与 `CF_ACCESS_CLIENT_SECRET`，Provider 在未显式声明同名头时自动追加对应 Cloudflare Access 服务头。
-响应字节限制不等价于服务端生成量或费用限制。实际响应上限还受当前 Assertion 剩余审计容量约束。
+响应字节限制不等价于服务端生成量或费用限制。
 
 ### 模型与 Provider 替换
 

@@ -26,23 +26,20 @@ owner 随规则改变维护；它不是历史 durable schema 的迁移信号。
 
 ## 预算与生命周期
 
-每个 entry 有独占执行上下文、串行调用序号、失败锁存器和审计容量。
+每个 entry 有独占执行上下文、串行调用序号和失败锁存器。
 `maxCalls` 计逻辑原语调用，默认 4，上限 16；每个调用最多 3 次传输尝试。
 裁判 Provider 的 timeout 限定该 entry 的整个高级 callback、全部步骤、重试和等待，不能每步重新获得完整期限。
 
-`maxMaterialBytes` 默认 32 KiB，上限 4 MiB。
-`maxAuditBytes` 默认 96 KiB，上限 8 MiB，包含完整最终审计 envelope 与封存事实。
-Attempt 的文字材料与 audit 总账上限为64 MiB，图片独立上限为32 MiB。
-ctx reader 执行前原子预留声明的 capture 字节、受管 audit 最大字节与有界诊断空间。
-局部布尔与确定性评分只预留 capture；未知材料、无模型终态与取消退还未用预留。
-已登记事实按完整实际字节持续计账，不能因封存释放已留存证据。
-容量拒绝登记一个有界 unavailable 事实，不调用 reader、callback 或 Provider。
+材料按所选模型放得下来约束，而不是固定字节数：
 
-每步发送前再次检查剩余容量，预留实际请求、响应硬上限和最多三次尝试的留存。
-终态事实空间提前保留。已准入请求完整留存；未准入请求只保存 not-sent、拒绝原因和有界元数据。
-预算不足时不能发送后再裁剪证据，也不能把部分步骤的结果当完整分数。
+- 上下文上限的取值与 Agent Judge 相同：Provider 显式 `contextWindow` → 按模型名查内置模型目录。发送前估算请求（规则、材料与输出预留 `maxOutputTokens`）是否放得下。
+- 放不下时，Turn 与 Session 材料按[既定优先级](library.md#turn-与-session-作为材料)裁剪到放得下；其它材料无法安全裁剪，这一项为 unavailable（`judge-material-exceeds-context`），原因写明估算值与上限。
+- 目录里也没有该模型时不做发送前估算；模型报告上下文溢出时，这一项为 unavailable（`judge-context-overflow`）。
+- 作者显式写了 `maxMaterialBytes` 时，它是额外的作者上限，超出即 unavailable；未写时没有固定字节上限。
 
-执行期预算拒绝、最终传输失败、超时和零陈述锁存 unavailable；非法输出、ID 错误和 callback defect 锁存 errored。
+审计不设字节上限，也没有 Attempt 级的材料与审计总账：每次实际请求、响应与终态完整写入受管 Content 分块，读取由 Inspection 分页。不做发送前的字节预留；只有存储写入本身失败才影响结果，归为 errored。图片仍按[图片规则](#图片捕获content-与-v3)单独限制，因为它们约束的是模型输入。
+
+材料放不下、最终传输失败、超时和零陈述锁存 unavailable；非法输出、ID 错误和 callback defect 锁存 errored。
 并发重入为 errored，不排队。callback 返回时仍有已准入调用也为 errored；运行时终止并收拢它们后才封口。
 callback 捕获失败并返回数值不能清除锁存状态。
 取消保持 Effect interruption；callback 结束、失败或 Attempt 取消时关闭执行上下文。
@@ -98,7 +95,7 @@ interface ScoreMatchAudit {
     readonly version: string;
     readonly config: string;
     readonly digest: string;
-    readonly limits: { readonly maxCalls: number; readonly maxMaterialBytes: number; readonly maxAuditBytes: number };
+    readonly limits: { readonly maxCalls: number; readonly maxMaterialBytes?: number; readonly contextWindow?: number };
   };
   readonly input: string;
   readonly calls: readonly AuditCall[];
@@ -278,7 +275,7 @@ Judge 用量给 Agent Judge 每轮模型生成使用独立 operation `agent`。
 `niceeval.judge-usage` 仍是 revision 1，只在 operation 枚举里加入 `agent`；已有的 judge-usage 附件不含它，照常按同一 schema 读取。
 不为旧版本 reader 保留向前兼容：旧版本 NiceEval 读到含 `agent` 的附件按协议错误处理。
 logicalOrdinal 对应生成轮次，transmissionOrdinal 对应该轮实际 HTTP 尝试；工具调用不增加模型请求计数。
-费用、失败和取消的结算独立于工具审计容量，审计失败不能抹去已发请求。
+费用、失败和取消的结算独立于审计写入，审计写入失败不能抹去已发请求。
 
 ### 身份与缓存
 
@@ -429,7 +426,7 @@ requestTemplate 是 canonical JSON：唯一 user content 数组首项为 canonic
 再按既有 canonical JSON 和 UTF-8 生成唯一 wire body；先计算摘要，再把同一正文交给 transport。
 文本中同名字符串不参与替换。图片顺序与文本中的 imageId 对应，不把图片说明提升为 system 规则。
 
-描述符、模板和终态计入 maxAuditBytes；raw bytes 计入图片总账；base64 膨胀后的 wire body
+描述符、模板和终态完整写入审计；raw bytes 计入图片总账；base64 膨胀后的 wire body
 受原语图片上限和材料/规则上限共同约束。已提交图片不得被静默删去。
 
 审计读取必须验证 imageId 唯一、evidence ordinal、Content digest/length、MIME 和封闭引用，
