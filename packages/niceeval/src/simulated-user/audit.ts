@@ -67,7 +67,7 @@ export async function captureSimulatedUserActivity(
   });
   const input: ExecutionTraceInput = {
     traceId: activity.id,
-    schema: { id: "niceeval.simulated-user/v1" },
+    schema: { id: "niceeval.simulated-user" },
     collection: { state: "complete", limitations: [] },
     scopes: [
       {
