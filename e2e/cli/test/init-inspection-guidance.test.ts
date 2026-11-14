@@ -23,7 +23,8 @@ test.concurrent("init 刷新全部项目指引并保留用户内容", async () =
     expect(codexSkill).toContain("name: niceeval");
     expect(codexSkill).toContain("node_modules/niceeval/INDEX.md");
     expect(codexSkill).toContain("niceeval show");
-    expect(codexSkill).toContain("niceeval query");
+    expect(codexSkill).toContain("--json");
+    expect(codexSkill).not.toContain("niceeval query");
     expect(codexSkill).toContain("niceeval view");
     const refreshed = await niceeval.run(["init"]);
     expect(refreshed.exitCode, refreshed.diagnostic()).toBe(0);

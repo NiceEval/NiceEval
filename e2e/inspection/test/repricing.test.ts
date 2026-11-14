@@ -35,6 +35,15 @@ test.concurrent("按两个价格版本重计历史成本，保留用量缺口和
         } }));
         const read = await niceeval.run(["query", "run", "--request", request]);
         expect(read.exitCode, read.diagnostic()).toBe(0);
+        const pricingPath = join(paths.projectRoot, "pricing.json");
+        const pricing = Object.fromEntries(["application-model", "inspection-fixture-v1"].map((model) => [model, {
+          inputPerMTok: 2 * multiplier, outputPerMTok: 8 * multiplier,
+          cacheReadPerMTok: multiplier, cacheWritePerMTok: 2 * multiplier, source: { id: `comparison-${multiplier}` },
+        }]));
+        await writeFile(pricingPath, JSON.stringify(pricing));
+        const shown = await niceeval.run(["show", event.locator, "--usage", "--reprice", pricingPath, "--json"]);
+        expect(shown.exitCode, shown.diagnostic()).toBe(0);
+        expect(shown.stdout).toBe(read.stdout);
         const repricing = read.querySuccess("attempt.reprice").repricing;
         expect(repricing.application).toMatchObject({
           state: "complete", collection: "complete", callCount: 1,

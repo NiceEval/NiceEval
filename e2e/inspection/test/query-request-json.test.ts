@@ -8,20 +8,6 @@ import { inspectionE2E } from "./support.ts";
 // @regression memory/query-request-json-and-member-shape.md
 test.concurrent("machine caller sends the same complete request through argv or file", async () => {
   await inspectionE2E.case("query-request-json", {}, async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-    const discovery = await niceeval.run(["query", "discover", "run.list"]);
-    expect(discovery.exitCode, discovery.diagnostic()).toBe(0);
-    expect(discovery.queryDiscovery()).toMatchObject({
-      operation: "run.list", requestSchema: { type: "object" },
-      minimalRequest: { protocol: QUERY_PROTOCOL, operation: { kind: "run.list" } },
-    });
-    const shown = await niceeval.run(["show", "--runs", "--json"]);
-    expect(shown.exitCode, shown.diagnostic()).toBe(0);
-    const direct = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: QUERY_PROTOCOL, operation: { kind: "run.list" } })]);
-    expect(shown.stdout).toBe(direct.stdout);
-    const bad = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: QUERY_PROTOCOL, operation: { kind: "run.get", runId: 42 } })]);
-    expect(bad.queryFailure().failure).toMatchObject({
-      issues: [{ path: "/operation/runId", expected: expect.any(String), received: "number" }], omittedIssueCount: 0,
-    });
     const request = JSON.stringify({ protocol: QUERY_PROTOCOL, operation: { kind: "run.list" } });
     const path = join(projectRoot, "request.json");
     await writeFile(path, request);

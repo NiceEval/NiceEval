@@ -29,6 +29,11 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
     await copyFile(join(projectRoot, ".niceeval", "record.sqlite"), recordPath);
     await rm(join(projectRoot, ".niceeval"), { recursive: true });
     await rm(join(projectRoot, "attachment-input.bin"));
+    const runList = await niceeval.run(["show", "--runs", "--json", "--record", recordPath]);
+    const directRuns = await niceeval.run(["query", "run", "--record", recordPath, "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.list" } })]);
+    expect(runList.exitCode, runList.diagnostic()).toBe(0);
+    expect(runList.stdout).toBe(directRuns.stdout);
+    expect(runList.querySuccess("run.list").runs.some(run => run.runId === originRunId)).toBe(true);
     const requestPath = join(projectRoot, "artifact.request.json");
     await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.get", runId: originRunId } }));
     const originRead = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
@@ -43,6 +48,9 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
     await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifacts", locator: canonicalLocator } }));
     const listed = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
+    const shownList = await niceeval.run(["show", canonicalLocator, "--artifacts", "--json", "--record", recordPath]);
+    expect(shownList.exitCode, shownList.diagnostic()).toBe(0);
+    expect(shownList.stdout).toBe(listed.stdout);
     const directory = listed.querySuccess("attempt.artifacts").artifacts;
     expect(directory.state).toBe("available");
     if (directory.state !== "available") throw new Error("Expected portable artifact directory");
@@ -98,6 +106,11 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
     do {
       await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator: canonicalLocator, artifactId: binaryId, offset } }));
       const read = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+      if (offset === 0) {
+        const shown = await niceeval.run(["show", canonicalLocator, "--artifacts", "--artifact", binaryId, "--json", "--record", recordPath]);
+        expect(shown.exitCode, shown.diagnostic()).toBe(0);
+        expect(shown.stdout).toBe(read.stdout);
+      }
       expect(read.exitCode, read.diagnostic()).toBe(0);
       const artifact = read.querySuccess("attempt.artifact").artifact;
       expect(artifact.state).toBe("available");
