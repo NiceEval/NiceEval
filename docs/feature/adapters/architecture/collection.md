@@ -40,8 +40,9 @@ Attempt 的断言完成后，`telemetry.collect` 收集这个 Attempt 的全部 
 | `telemetry.decode` | 解码 OTLP | span 数 |
 | `telemetry.map` | 方言映射、筛选与补全输入输出 | 保留的 span 数 |
 
-整个 `telemetry.collect` 有一个总预算，默认 30 秒。到期时停止仍在进行的子活动，保留已完成部分得到的 span，时间轨标为 partial，并写入 `telemetry-budget-exceeded` 诊断与已知字节数、span 数。
-预算到期不改变已定的 Verdict，接收器与远端连接照常释放。Sandbox 接收器先在 Sandbox 内按 trace 筛掉映射不会保留的 span，再取回宿主，避免整份噪声跨网络传输后才丢弃。
+整个 `telemetry.collect` 有一个总预算，默认 30 秒。到期时停止仍在进行的子活动，保留已经取回并解码的 span，trace 收集记一条 `telemetry-budget-exceeded` limitation，同时写入同名诊断与已知字节数、span 数。
+预算到期不改变已定的 Verdict，接收器与远端连接照常释放。
+Sandbox 接收器分块取回 span 文件，每块取回后即解码，预算到期时已解码的部分照常保留。筛选与映射只在宿主进行：Sandbox 里不一定有 Node 或其它运行时，不能假设能在里面执行筛选程序。
 
 ## 接入决策树
 
