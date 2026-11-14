@@ -459,8 +459,9 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `attempt.get` 的 result 直接带 `diagnostics.items`：每项的 phase、code、有界 summary、是否截断与可展开的 Evidence ID。
   它回答“这个 Attempt 为什么是这个结果”，读者不必再调用 `attempt.trace`；文本视图的 Failure diagnostics 只渲染这个字段，`--json` 因此给出同一批诊断。
 
-  Assertions 里有 stop condition 不满足、让后续步骤没有运行时，`attempt.get` 的 result 带 `stoppedAt`：那条 Assertion 的 entryId 与 label。
-  它从已保存的 Assertions 推出，不改变 Verdict；只停不 gate 的检查失败后 Verdict 仍可能是 `passed`。
+  `attempt.get` 的 result 带 `stoppedAt`，读自 Assertions entry 的 `control`：有 entry 为 `stopped` 时是 `{ state: "available", value: { entryId, label } }`；
+  全部 entry 的 control 都已记录且没有 `stopped` 时 value 为 `null`；有 entry 为 `not-recorded`（升级前的 Record）且没有 `stopped` 时为 `{ state: "unavailable", reason: "not-recorded" }`。
+  它不改变 Verdict；只停不 gate 的检查失败后 Verdict 仍可能是 `passed`。
   文本视图在 Verdict 下写 `Stopped at <label>; later steps did not run`，Experiment 与 Results 表在该 Attempt 的 Verdict 后标注 `stopped`。
   errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，诊断下方直接指向 `--execution` 里的命令输出。
   overview 与 `--execution` 的 `cache-degraded` 诊断显示具名降级 reason 与受影响的 Before 节点；若有远端调用错误，给出可展开的稳定 ID。

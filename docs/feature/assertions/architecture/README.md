@@ -1,14 +1,14 @@
 # Assertions —— 架构
 
-`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 4`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
+`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 5`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
 它是 [Record architecture](../../run/architecture/README.md) 定义的九个官方 durable family 之一。Record protocol 不提供全局 registry：第三方可以向自己的 Host 显式贡献独立 persistence，也可以在 Assertions entry 内提供可解释的 criterion schema，但不能扩写本 family。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与相关 sealed 事实读侧形成，不能各自变成新的持久 family。
 
 ## 版本边界
 
-`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `4`。当前领域类型不带版本后缀。Attachment 的 v1／v2／v3／v4 只存在于 package-private wire codec 与相邻 migration identity；内建 criterion 的 `/vN` 则是该 criterion 自己的 schema identity，二者不能混为一谈。
+`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `5`。当前领域类型不带版本后缀。Attachment 的 v1／v2／v3／v4／v5 只存在于 package-private wire codec 与相邻 migration identity；内建 criterion 的 `/vN` 则是该 criterion 自己的 schema identity，二者不能混为一谈。
 
-普通 writer 只写 schemaVersion `4` 的 envelope。它为新的 occurrence Assertion 统一写入 `occurrence/v2`；不会因作者调用了包装糖、未调用量词的 `ToolMatch`、量词或顺序查询而选择 `occurrence/v1`。reader 在同一个 v4 envelope 内双读下表的两个已知 occurrence criterion：
+普通 writer 只写 schemaVersion `5` 的 envelope。它为新的 occurrence Assertion 统一写入 `occurrence/v2`；不会因作者调用了包装糖、未调用量词的 `ToolMatch`、量词或顺序查询而选择 `occurrence/v1`。reader 在同一个 v5 envelope 内双读下表的两个已知 occurrence criterion：
 
 | 已封口 criterion | current writer | reader | 历史 bytes 的处置 |
 |---|---|---|---|
@@ -93,6 +93,7 @@ type AssertionEntry = {
   };
   readonly decision: AssertionDecision;
   readonly policy: AssertionDecisionPolicy;
+  readonly control: AssertionControl;
   readonly contribution: ScoreContribution;
   readonly explanationRetention: ExplanationRetention;
 };
@@ -360,6 +361,10 @@ type AssertionDecisionPolicy = {
     | { readonly state: "unavailable"; readonly reason: "not-recorded" };
 };
 
+type AssertionControl =
+  | { readonly state: "available"; readonly value: "none" | "continued" | "stopped" }
+  | { readonly state: "unavailable"; readonly reason: "not-recorded" };
+
 type ExplanationRetention =
   | { readonly state: "retained"; readonly value: AssertionFactValue }
   | { readonly state: "unavailable"; readonly reason: "not-recorded" };
@@ -371,7 +376,11 @@ type ExplanationRetention =
 
 current writer 明确形成 requirement。Pass Boolean 默认 required，既有 optional 例外仍写 optional；Pass／Score 未配置 modifier 的 measurement 与 Score 未配置 modifier 的 Boolean 写 record-only optional。显式 gate、score（包括零 points）或 stop dependency 都写 required。
 
-stop 不能被 optional 豁免；它的 unavailable／errored 会让 Attempt errored。Score 的 gate condition 不改变 contribution，因而允许同一 entry 同时保存 `failed` gate disposition 与 continuous earned contribution。
+stop 不能被 optional 豁免；它的 unavailable／errored 会让 Attempt errored。
+
+每个 entry 的 `control` 记录这条检查对后续步骤的实际影响：没有 `.orStop()` 为 `none`，有 `.orStop()` 且 condition 满足为 `continued`，condition 不满足、当前 continuation 因此停止为 `stopped`。
+它是运行时发生的事实，writer 在 `.orStop()` 结算时写入，reader 不从 policy、decision 或 source site 反推。
+`stopped` 不改变 Verdict：只停不 gate 的检查失败后，Verdict 仍按 gate 与 score 折叠。Score 的 gate condition 不改变 contribution，因而允许同一 entry 同时保存 `failed` gate disposition 与 continuous earned contribution。
 
 旧 sealed Assertions 只按已经保存的 `policy.requirement`、`policy.condition`、decision 与 contribution 折叠。reader 不按新的作者面默认值重猜旧事实，不重写旧 Record，也不增加 migration 或 schemaVersion。
 
@@ -412,7 +421,10 @@ type AssertionSourceSite = {
 
 source mapping 不能重新计算 criterion、points、gate、unavailable 或 Verdict。一个 entry 有多个 row 时，位置可以全部显示，但 Assertion summary 与 score contribution 仍按 `entryId` 只计算一次。没有 matching row、Sources 不是 `available`，或 join／坐标不成立时，source-navigation DomainView 仅把对应位置标为 `unmapped`。
 
-## revision 1 → 2 → 3 → 4 相邻迁移
+## revision 1 → 2 → 3 → 4 → 5 相邻迁移
+
+revision 4 → 5 只给每个 entry 补 `control: { state: "unavailable", reason: "not-recorded" }`；旧 Record 没有保存停止事实，迁移不从 policy 或 source site 推断。
+
 
 package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
 display、result/gate/score 与 sourceSites。
