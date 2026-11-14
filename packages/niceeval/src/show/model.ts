@@ -28,7 +28,7 @@ export type AssertionSource =
   | { readonly state: "mapped"; readonly sourceItemId: string; readonly sha256: string }
   | { readonly state: "unmapped"; readonly reason: "source-snapshot-not-recorded" | "position-unrepresentable" };
 export type CommandPhase = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["phase"];
-export type CommandOutcome = "exited" | "terminated" | "not-started";
+export type CommandOutcome = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["outcome"];
 export type Metric = { readonly state: MetricState; readonly value: number | null };
 export type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
@@ -390,7 +390,7 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
       omittedLimitationCount: value.commands.omittedLimitationCount,
       hasMore: value.commands.hasMore,
       omittedCommandCount: value.commands.omittedCommandCount,
-      items: value.commands.items.map((command) => ({ commandId: command.commandId, phase: command.phase, outcome: command.outcome.kind })),
+      items: value.commands.items.map((command) => ({ commandId: command.commandId, phase: command.phase, outcome: command.outcome })),
     },
     diagnostics: value.diagnostics,
     identities: {

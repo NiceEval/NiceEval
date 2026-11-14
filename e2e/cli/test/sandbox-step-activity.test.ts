@@ -138,3 +138,34 @@ test.concurrent.each(["both", "neither", "missing", "query", "fragment", "utf8",
     });
   },
 );
+
+// @use-case docs/feature/sandbox/use-case/sandbox-ordered-preparation.md
+test.concurrent("准备命令失败时，概览与执行页指向该命令完整保留的输出", async () => {
+  await cliE2E.case("sandbox-step-failed-output", async ({ paths, commands: { niceeval } }) => {
+    // The head marker lies far outside the bounded error tail; only the command record keeps it.
+    await writeFile(
+      join(paths.projectRoot, "fixtures/sandbox-step-activity/prepare.sh"),
+      "printf 'FAILED-OUTPUT-HEAD %0400d\\n' 0 >&2\nprintf 'FAILED-OUTPUT-TAIL\\n' >&2\nexit 7\n",
+    );
+    const run = await niceeval.run(["exp", "sandbox-step-activity", "--rerun", "all", "--json"]);
+    const event = run.expEvalEvents().find((item) => item.evalId === "sandbox-step-activity/display");
+    expect(event?.verdict, run.diagnostic()).toBe("errored");
+    const locator = event!.locator!;
+
+    const overview = await niceeval.run(["show", locator]);
+    expect(overview.exitCode, overview.diagnostic()).toBe(0);
+    expect(overview.stdout).not.toContain("FAILED-OUTPUT-HEAD");
+    expect(overview.stdout).toMatch(new RegExp(`Command output\\s+niceeval show ${locator} --execution`, "u"));
+
+    const execution = await niceeval.run(["show", locator, "--execution"]);
+    expect(execution.exitCode, execution.diagnostic()).toBe(0);
+    expect(execution.stdout).toContain("exited; code 7");
+    const expand = new RegExp(`niceeval show ${locator} --execution --expand (command_[a-z0-9]+)`, "u").exec(execution.stdout);
+    expect(expand, execution.stdout).not.toBeNull();
+
+    const detail = await niceeval.run(["show", locator, "--execution", "--expand", expand![1]!]);
+    expect(detail.exitCode, detail.diagnostic()).toBe(0);
+    expect(detail.stdout).toContain("FAILED-OUTPUT-HEAD");
+    expect(detail.stdout).toContain("FAILED-OUTPUT-TAIL");
+  });
+});

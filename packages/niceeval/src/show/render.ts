@@ -751,6 +751,8 @@ export function renderAttempt(value: AttemptView): string {
               { key: "Code", value: diagnostic.code },
               { key: "Error", value: diagnostic.summary },
               ...(diagnostic.summaryTruncated ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }] : []),
+              // Command errors carry only a bounded output tail; the command record keeps the full stdout/stderr.
+              ...(COMMAND_PHASES.has(diagnostic.phase) ? [{ key: "Command output", value: `niceeval show ${value.locator} --execution` }] : []),
             ],
           })) : [{
             kind: "keyValue" as const,
@@ -1156,9 +1158,10 @@ export function renderTrace(value: TraceView): string {
         rows: value.commands.items.map((command) => [
           command.commandId,
           command.phase,
-          command.outcome,
+          commandOutcome(command.outcome),
         ]),
       },
+      ...expandFailedCommands(value.locator, value.commands.items),
     ],
   });
   blocks.push({
@@ -1640,6 +1643,24 @@ function commandInvocation(value: CommandDetail["invocation"]): string {
 
 function workingDirectory(value: CommandDetail["workingDirectory"]): string {
   return value.kind === "project-relative" ? value.path : value.kind;
+}
+
+const COMMAND_PHASES: ReadonlySet<string> = new Set(["sandbox.prepare", "sandbox.command", "agent.install"]);
+
+/** Every command that did not exit 0 gets a copyable --expand line to its full retained output. */
+function expandFailedCommands(
+  locator: string,
+  commands: readonly { readonly commandId: string; readonly outcome: CommandDetail["outcome"] }[],
+): TerminalPanelContentBlock[] {
+  const failed = commands.filter(({ outcome }) => !(outcome.kind === "exited" && outcome.exitCode === 0));
+  if (failed.length === 0) return [];
+  return [
+    { kind: "divider", title: "Next" },
+    ...failed.map(({ commandId }): TerminalPanelContentBlock => ({
+      kind: "command",
+      command: `niceeval show ${locator} --execution --expand ${commandId}`,
+    })),
+  ];
 }
 
 function commandOutcome(value: CommandDetail["outcome"]): string {
