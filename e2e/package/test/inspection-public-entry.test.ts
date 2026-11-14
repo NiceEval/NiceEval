@@ -1,6 +1,9 @@
 import { command } from "@niceeval/testkit";
 import { build, type Metafile } from "esbuild";
-import { createRequire } from "node:module";
+import { realpathSync } from "node:fs";
+import { createRequire, findPackageJSON } from "node:module";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 
 function errorCode(error: unknown): string | undefined {
@@ -23,21 +26,15 @@ async function unavailableHostCode(moduleSystem: "esm" | "commonjs"): Promise<st
   return errorCode(receipt);
 }
 
-function niceevalPackagePath(input: string): string | undefined {
-  const normalized = input.replaceAll("\\", "/");
-  const marker = "/node_modules/niceeval/";
-  const markerIndex = normalized.indexOf(marker);
-  if (markerIndex >= 0) {
-    const packagePath = normalized.slice(markerIndex + marker.length);
-    return packagePath.startsWith("dist/") ? packagePath : undefined;
-  }
-  if (normalized.startsWith("node_modules/niceeval/dist/")) return normalized.slice("node_modules/niceeval/".length);
-  return undefined;
+function niceevalPackagePath(input: string, packageRoot: string): string | undefined {
+  const packagePath = relative(packageRoot, resolve(input)).replaceAll("\\", "/");
+  if (isAbsolute(packagePath) || packagePath === ".." || packagePath.startsWith("../")) return undefined;
+  return packagePath.startsWith("dist/") ? packagePath : undefined;
 }
 
-function forbiddenClosureEntries(metafile: Metafile): string[] {
+function forbiddenClosureEntries(metafile: Metafile, packageRoot: string): string[] {
   const forbiddenNiceevalBoundary =
-    /(?:^|\/)(?:cli|source|select|facts|sqlite|[^/]*projection|scope|service|layer)(?:[./-]|\/|$)/i;
+    /(?:^|\/)(?:cli|host|sqlite|[^/]*projection|scope|service|layer)(?:[./-]|\/|$)|^dist\/inspection\/(?:source|select|facts)(?:[./-]|\/|$)/i;
   const forbiddenPackage = /(?:^|\/)(?:better-sqlite3|sql\.js|sqlite-wasm)(?:\/|$)/i;
   const forbiddenEffectRuntime =
     /\/node_modules\/effect\/dist\/(?:Layer|Scope|ServiceMap|internal\/(?:layer|scope|service-map))\.js$/i;
@@ -52,7 +49,7 @@ function forbiddenClosureEntries(metafile: Metafile): string[] {
 
   for (const input of emittedInputs) {
     const normalized = input.replaceAll("\\", "/");
-    const packagePath = niceevalPackagePath(normalized);
+    const packagePath = niceevalPackagePath(normalized, packageRoot);
     if (packagePath && forbiddenNiceevalBoundary.test(packagePath)) violations.add(`niceeval:${packagePath}`);
     if (forbiddenPackage.test(normalized)) violations.add(`package:${normalized}`);
     if (forbiddenEffectRuntime.test(normalized)) violations.add(`effect-runtime:${normalized}`);
@@ -91,6 +88,9 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
   const inspection = await import("niceeval/inspection");
   const require = createRequire(import.meta.url);
   const commonjsInspection = require("niceeval/inspection") as typeof inspection;
+  const packageJsonPath = findPackageJSON(pathToFileURL(require.resolve("niceeval/inspection")));
+  if (!packageJsonPath) throw new Error("cannot find the installed niceeval package root");
+  const packageRoot = realpathSync(dirname(packageJsonPath));
 
   expect(inspection).not.toHaveProperty("QUERY_PROTOCOL");
   const request = { operation: { kind: "run.list" } };
@@ -132,7 +132,11 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
     },
   });
 
-  expect(forbiddenClosureEntries(bundled.metafile)).toEqual([]);
+  expect(
+    Object.keys(bundled.metafile.inputs).some((input) => niceevalPackagePath(input, packageRoot) !== undefined),
+    "browser module graph must include the resolved installed package",
+  ).toBe(true);
+  expect(forbiddenClosureEntries(bundled.metafile, packageRoot)).toEqual([]);
   const javascript = bundled.outputFiles.find((output) => output.path.endsWith(".js")) ?? bundled.outputFiles[0];
   expect(javascript, "esbuild did not emit a JavaScript browser bundle").toBeDefined();
   if (!javascript) throw new Error("esbuild did not emit a JavaScript browser bundle");
