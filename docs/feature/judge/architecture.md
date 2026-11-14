@@ -258,6 +258,8 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 - 完整轨迹经 `attempt.trace.detail` 按页读取，分页与读取上限与模拟用户会话相同；Query 的固定结果上限不因轨迹变大而提高。
 - `show --assertions --entry <id> --full` 按页取回并渲染完整轨迹。
 
+普通 Judge 的审计与材料同样不设大小上限、按同一方式读取：`attempt.assertion.detail` 对超过内联上限的审计与材料只返回 Content 引用（稳定 ID、字节数、摘要），完整内容经同一条 `attempt.trace.detail` 分页路径读取。全部 Judge 只有这一种读取大内容的方式。
+
 | 事实 | 内容与验证 |
 |---|---|
 | definition | 算法 version、canonical config、digest，以及有效 turns、期限和字节限制 |
