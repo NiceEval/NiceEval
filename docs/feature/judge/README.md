@@ -46,3 +46,5 @@ TypeSafe System One 使用自己的 `/systemone` 协议。它支持 `score`、`c
 | 用 Experiment 比较模型或 Provider | [裁判 A/B](use-case/experiment-ab.md) |
 | Assertion、两种 Eval 与结果 | [Assertions](../assertions/README.md) |
 | 配置变化怎样影响缓存 | [Experiments · Cache](../experiments/architecture/cache.md) |
+
+需要评审自己进入 Sandbox 查看文件、运行命令再评分时，使用 [Agent Judge](library.md#agent-judge--在-sandbox-里自己取证再评分)。

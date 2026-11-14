@@ -190,6 +190,115 @@ check 同步验证入口和 Match，然后生成有界 canonical JSON 快照。
 审计保存实际请求、尝试、结构化输出和最终聚合；schema、预算、取消及历史读取由 [Architecture](architecture.md) 定义。
 历史材料不会被重新解释或迁移。审计能证明经框架进行的调用，不能证明作者隐藏闭包、模型判断或外部事实正确。
 
+## Agent Judge —— 在 Sandbox 里自己取证再评分
+
+`defineJudge` 只看调用方交给它的材料。安装、重构、修复这类开放式判据，要看的东西散在被测 Sandbox 里：作者改了哪些文件、项目怎么组织、命令能不能跑。
+调用方只好先写取证脚本，收集源码、读布局、压缩到材料上限，再交给 Judge，判据的一半其实写在脚本里（[T-25](../../taste.md#t-25)、[T-33](../../taste.md#t-33)）。
+
+Agent Judge 是一个带工具的评审 agent。它在这条 Attempt 的主 Sandbox 里自己查看文件、运行命令，最后调用评分工具交出 measurement、理由与证据。
+它仍是受管 `ScoreMatch`：经 `t.check` / `t.judge` 登记，measurement 落在 `[0,1]`，`.gate()`、`.score()` 与其它 Judge 完全相同。
+
+能直接读到的事实（verdict、退出码、文件是否改动、工具调用次数）继续用确定性检查。Agent Judge 只用于需要探索和判断的开放式判据；它有随机性，换模型分数会漂移。
+
+### 定义与调用
+
+```ts
+import { defineAgentJudge } from "niceeval/expect";
+
+const layoutOwner = defineAgentJudge({
+  name: "install.layout.owner",
+  rubric: "Y 当且仅当 NiceEval 装进了适用的现有根工具项目或 workspace，保留原有包管理器与锁文件归属……",
+  anchors: [
+    { measurement: 0, description: "不满足 rubric" },
+    { measurement: 1, description: "完全满足 rubric" },
+  ],
+});
+
+export default defineScoreEval({
+  sandbox: /* … */,
+  async test(t) {
+    const turn = await t.send("把 niceeval 接入这个仓库。");
+    t.judge({ handoff: turn.reply }, layoutOwner).gate(0.5).score(2);
+  },
+});
+```
+
+```ts
+interface AgentJudgeDefinition {
+  readonly name: string;
+  readonly rubric: string;
+  readonly anchors: readonly JudgeAnchor[];   // 与 defineJudge 同形，至少两个，measurement 落在 [0,1]
+  readonly maxTurns?: number;                 // 模型轮次上限，默认 40
+  readonly timeoutMs?: number;                // 整次评审的墙钟上限，默认 10 分钟
+}
+
+declare function defineAgentJudge(definition: AgentJudgeDefinition): ScoreMatch<JudgeMaterial>;
+```
+
+- 材料可选：`t.judge(material, agentJudge)` 的材料作为评审开场上下文（例如被测 agent 的交接回复）；没有材料时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。
+- 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
+- 名字、rubric、anchors、`maxTurns`、`timeoutMs` 与工具集 revision 进入断言定义身份，改动后这条 Eval 重新规划。
+
+### 评审 agent
+
+评审 agent 由 NiceEval 在宿主进程里用 `@earendil-works/pi-agent-core` 运行（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步）。
+模型取这条 Eval 生效的 Judge Provider 与模型：`OpenAIProvider`、`OpenRouterProvider`、`VercelProvider` 走它们的 OpenAI 兼容接口；`TypesafeProvider` 不支持对话与工具，这条断言为 `unavailable`，原因 `agent-judge-unsupported-provider`。
+
+系统提示写明 rubric、anchors、评分工具的用法，以及“只根据你在 Sandbox 里亲眼看到的证据评分”。材料作为不可信 user 内容进入首条消息。
+
+工具都作用在这条 Attempt 的主 Sandbox，以 Sandbox 默认用户、默认 workdir 执行：
+
+| 工具 | 作用 |
+|---|---|
+| `bash` | `command` 交给 `sandbox.runShell`，返回退出码、stdout、stderr；单次默认 120 秒超时，输出各保留末尾 64 KiB |
+| `read` | 读一个文件，可带行范围；超过 256 KiB 截断并注明 |
+| `write` | 写入整个文件 |
+| `edit` | 对一个文件做精确字符串替换 |
+| `submit_evaluation` | 交出评分并结束评审 |
+
+工具不限制只读。评审在 `workspace.diff` 冻结之后执行，它的写入不计入被测 agent 的改动，也不改变已冻结的 diff 证据。
+
+```ts
+interface SubmitEvaluationInput {
+  readonly measurement: number;               // [0,1] 内的有限数
+  readonly rationale: string;                 // 对照 rubric 与 anchors 的理由
+  readonly evidence: readonly {               // 支撑理由的证据，至少一条
+    readonly kind: "file" | "command" | "observation";
+    readonly ref: string;                     // 文件路径、执行过的命令或观察对象
+    readonly note: string;
+  }[];
+}
+```
+
+- 第一次合法的 `submit_evaluation` 结束评审；参数不合法时工具返回错误，评审可以修正后重交。
+- 达到 `maxTurns`、`timeoutMs`，模型调用失败，或评审没有调用评分工具就停止，断言为 `unavailable`，不按零分处理。
+- 工具本身的失败（命令非零退出、文件不存在）作为工具结果返回给评审，不终止评审；Sandbox 传输失败让断言 `unavailable`。
+
+### 执行顺序
+
+`assertions.evaluate` 先求值其它全部断言，再按登记顺序逐个执行 Agent Judge，同一 Attempt 内不并发。
+后面的 Agent Judge 能看到前面评审写入的内容；需要互不影响时，rubric 里要求评审不写文件。
+
+### 审计、用量与读回
+
+- 每次模型请求按 Judge 用量登记，与其它受管 Judge 共用费用、预算与取消路径。
+- 断言审计保存完整评审轨迹：每轮模型输出、工具调用参数与结果（按上表截断）、最终提交。`niceeval show @<locator> --assertions --entry <id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
+- 理由与证据只证明评审看到了什么，不证明判断正确；判分可复核的依据是工具轨迹本身（[T-12](../../taste.md#t-12)）。
+
+### 不做什么
+
+- 不提供只读模式或工具白名单配置；需要更窄的权限时，在 rubric 里约束，或改用确定性检查。
+- 不让评审访问宿主文件、宿主网络凭据或其它 Attempt 的 Sandbox。
+- 不把 Agent Judge 当作 `defineJudge` 的替代：材料已经齐全的判据继续用 `defineJudge`，它更便宜、更稳定。
+
+### 验收
+
+- 安装后的 CLI 运行一条带 Sandbox 的 Eval：评审读取被测 agent 写的文件并提交，Assertion detail 显示 measurement、理由、证据与工具轨迹；Judge 用量出现在 `show --usage`。
+- 评审写入文件后，`show --diff` 仍只显示被测 agent 的改动。
+- 评审不调用评分工具、超过 `maxTurns`、模型返回错误：断言均为 `unavailable`，原因可读。
+- direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
+- 同一 Attempt 两个 Agent Judge 按登记顺序串行，后者能读到前者写入的文件。
+
 ## Runtime 配置
 
 裁判 Provider 是由具名工厂构造的不透明值，拥有服务端协议、默认模型、端点、凭据声明位置与执行限制。
