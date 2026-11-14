@@ -44,24 +44,24 @@ pnpm exec niceeval exp
 ## 查看一次运行
 
 ~~~sh
-pnpm exec niceeval view --run <run-id>
+pnpm exec niceeval view run:<run-id>
 ~~~
 
 项目内唯一 canonical Record 是 `<project>/.niceeval/record.sqlite`。Run 创建和每个已发布 Attempt 都立即进入它，不等待
 Run 收口。不要读取其中的内部结构，也不要从应用代码 import Record reader / writer。`view` 由内部 source adapter 和
 Inspection operations 读取它，不从文件时间猜测“最近结果”。
 
-要让 AI 或自动化发现可查询的已封口事实，使用：
+AI 或自动化读取已封口事实时，从机器 document 开始，再顺着每份 document 的 `links` 下钻：
 
 ~~~sh
-pnpm exec niceeval query discover
+pnpm exec niceeval show --json
 ~~~
 
-不带 selector 的 `view` 打开默认 overview。`query discover` 先返回 compact bootstrap；再以 operation request 查询 sealed facts。旧结果不会被删除；需要查看精确历史时使用 receipt 中的 `--run` 或 locator。
+不带对象的 `view` 打开默认 overview。旧结果不会被删除；需要查看精确历史时使用 receipt 中的 Run ID（`run:<run-id>`）或 locator。
 
 ## 读懂状态
 
-Inspection operation 保留 selection 已建立的完整分母：`--run` 使用具名 Run 的完整 expected slots，默认 selection 只把身份仍
+Inspection operation 保留 selection 已建立的完整分母：`run:<run-id>` 使用具名 Run 的完整 expected slots，默认 selection 只把身份仍
 匹配当前目标的 slots 纳入结果。selection audit 说明每个已选 slot 是下列哪一种：
 
 | 状态 | 含义 |
@@ -75,10 +75,10 @@ Attachment 状态与 slot 状态分开。页面需要的 Attachment 若未采集
 
 ## 编辑与再次查看
 
-Record 是已发布 Run facts 的持久事实集。`query` 与 `view` 使用短 reader 读取固定 cutoff，可以和 writer 并发，也能读取
+Record 是已发布 Run facts 的持久事实集。`show` 与 `view` 使用短 reader 读取固定 cutoff，可以和 writer 并发，也能读取
 `active` Run 与已经 publication 的 Attempt。
 
-每个 query result 在关闭 reader 后不再访问 Record。Insight 只保留一个完整 private generation；需要不同事实时发布新 Run
+每个 Inspection result 在关闭 reader 后不再访问 Record。Insight 只保留一个完整 private generation；需要不同事实时发布新 Run
 或在 View 中确认 refresh。
 
 canonical database 只由 Host 修改。不要手工编辑或拼接 SQLite main/WAL 文件。受控 CLI 退出会自动关闭 writer、truncate WAL
@@ -98,7 +98,7 @@ current NiceEval 会在只读打开时验证精确 schema、SQLite 完整性和�
 ## 接进 CI
 
 在 CI 中运行同一条 `niceeval exp` 命令。进程退出状态结合 Invocation completion 和 Verdict；
-机器调用方使用 `query` 的 `niceeval.query/v1` document 读取已停稳结果，不打开 Record 私有文件或 reader API。
+机器调用方使用 `show --json` 的 `niceeval.inspection/v1` document 读取已停稳结果，不打开 Record 私有文件或 reader API。
 
 ## 接着读
 

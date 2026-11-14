@@ -73,7 +73,7 @@ turn.calledTool(
 
 ## 读取与呈现不形成作者 API
 
-Record 的读取只经固定 Inspection operation 闭合，再交付给机器 `query` 或人读 `view`。
+Record 的读取只经固定 Inspection operation 闭合，再交付给 `show`（文本或 `--json`）或人读 `view`。
 不导出通用聚合、作者控制的读取管道或渲染组件 API；调用者不能自定义查询、转换或呈现协议。
 
 ## 单复数跟随指代对象
@@ -126,11 +126,11 @@ Record 的读取只经固定 Inspection operation 闭合，再交付给机器 `q
 
 ## Record、Inspection 与 Delivery 的调用形状
 
-Record source 与 selection 属于 CLI 调用点。自动化通过 `query` 发送 machine request；人通过 `view` 查看固定界面：
+Record source 与 selection 属于 CLI 调用点。自动化用 `show --json` 按对象寻址读取 document；人通过 `view` 查看固定界面：
 
 ```sh
-niceeval query run --request request.json
-niceeval view --run <run-id>
+niceeval show run:<run-id> --json
+niceeval view run:<run-id>
 ```
 
 `view` 只读取项目内 canonical `.niceeval/record.sqlite`，没有持久数据源参数；source 与 transport 规则见 [Insight CLI](feature/insight/cli.md)。
@@ -186,7 +186,7 @@ export default defineEval({
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
 按此规则，从 Record 形成 Inspection result 的 selection 属于内部 Inspection selector 边界；公开用户
-通过固定 query request 或 View selector 使用它，不把 root 字符串或 reader 暴露进 Library。
+通过 `show` 的对象寻址或 View 使用它，不把 root 字符串或 reader 暴露进 Library。
 
 `InspectionDocument` 是 `outcome` 判别联合：`discovery | success | explanation | failure`。只有完整 document 先经
 `decodeInspectionDocument(unknown)` 严格解码后，consumer 才能按 `outcome` 分支；成功或 explanation 再用具名
@@ -240,12 +240,7 @@ adoption 与 reuse 的采用动作是 Member Core 的 `action` 事实，见 [Run
 评审完整调用，而不是只读导出名：
 
 ```ts
-await writeFile("request.json", JSON.stringify({
-  protocol: "niceeval.query/v1",
-  operation: { kind: "run.get", runId },
-}));
-
-await niceeval(["query", "run", "--request", "request.json"]);
+await niceeval(["show", `run:${runId}`, "--json"]);
 ```
 
 模块说明领域，函数名说明动作，参数名说明边界，类型限制合法组合。
@@ -437,7 +432,7 @@ Sandbox 的 profile 查找函数只保留 `resolveDockerProfile` 这个名称，
 | 错误文案 `undeclared model slots` | `undeclared model roles` |
 
 `t.usage.cacheRead.rate(role?)`、`requires: { models }`、Experiment 的 `models` 与 `ctx.models` 字段名不变；
-`rate` 的参数名改为 `role`。`show`、`show --json`、`query` 输出与 `view` 中描述模型用途的字段和文案同步改为 role。
+`rate` 的参数名改为 `role`。`show`、`show --json` 输出与 `view` 中描述模型用途的字段和文案同步改为 role。
 内部类型与函数随之改名，例如 `ResolvedModelRoles`、`normalizeModelRoles`、`assertRequiredModelRoles`，源码模块改为 `model-roles.ts`。
 不保留 `defineModelSlots` 或 `modelSlot` 的 deprecated 转发；beta 期直接迁移，升级说明给出逐项替换。
 
@@ -459,7 +454,7 @@ config identity 中 `models: { version: 1, slots }` 的编码也保持原样，�
 - `Config.workspace`：没有任何读取者，是无效字段。
 - `Eval.reporters`：逐 Eval 的报告器没有使用方；报告输出属于项目级。
 - `Experiment.classifyFailure`：没有使用方，失败分类保留内建语义与 `ExperimentFatalError` / `EvalFatalError`。
-- `niceeval run show <run-id>`：与 `niceeval show --run <run-id>` 消费同一 `run.get`，保留后者作为唯一读取入口。
+- `niceeval run show <run-id>`：与 `niceeval show run:<run-id>` 消费同一 `run.get`，保留后者作为唯一读取入口。
   `run` 命令组只保留 list、delete、recover 这类 Run 生命周期动作。
 
 保留：
@@ -646,13 +641,13 @@ Plugin 元素的声明序号排在同一 owner 作者元素之后；数组顺序
 Eval 模块及其静态 import 仍按既有 sourceClosure 规则进入 fingerprint，Plugin 不绕开它。
 同一 Attempt 的生效集合里 `(name, key)` 重复时，加载期报错；这比旧 Plugin 的同 scope 检查更严格。
 
-`show --exp`、`show --json` 与 `view` 的 Experiment 信息列出生效 Plugin 的 `name`、`key` 与 `identity`。
+`show exp:<id>`、`show exp:<id> --json` 与 `view exp:<id>` 的 Experiment 信息列出生效 Plugin 的 `name`、`key` 与 `identity`。
 条件版本因此不需要另写一份 flags。Plugin identity 不进入 `ctx.flags`；Adapter 与 Eval 需要读取的条件参数仍用 flags。
 没有挂载 Plugin 的 Experiment，其 config identity 与 0.18 相同。旧 Plugin 写法迁移到新语法后不保证 carry。
 
 ### 验收
 
-全部经安装后候选的公开入口，通过 `show`、`query`、`debug` 观察，不读私有缓存目录。
+全部经安装后候选的公开入口，通过 `show`、`debug` 观察，不读私有缓存目录。
 
 - mempal 形态的 Plugin 挂在 Experiment 上，两个 Group 各两个 Eval：`group.before` 每条 lane 一次；`sandbox` 元素每条 Attempt 一次，replacement 后照常执行；workdir 内 marker 跨 Attempt 的可见性与作者 layer 相同。
 - 全部 carry 时零 Hook、零 Sandbox 创建；部分 carry、只选一个 Group 成员时只激活 fresh 的部分。
@@ -683,8 +678,8 @@ Note 不是 Assertion。Record 新增 `attempt-note` family（revision 1），�
 
 呈现：
 
-- `show @<locator>` 在 Assertion 之后列出 Notes；`--json` 与 `query` 的 Attempt 结果带 `notes`。
-- `show --exp` 对同一 label、同一单位的数值 Note，跨 Attempt 给出 count、min、median、p90、max。
+- `show @<locator>` 在 Assertion 之后列出 Notes；`show @<locator> --json` 的 Attempt 结果带 `notes`。
+- `show exp:<id>` 对同一 label、同一单位的数值 Note，跨 Attempt 给出 count、min、median、p90、max。
 - `view` 的 Attempt 详情展示同一内容。
 
 ## 数值单位
@@ -808,6 +803,6 @@ slot 在仓库里同时指 Run 的 expected 位置、全局并发名额、Adapte
 Planned attempt 与 Attempt 的关系不变：Attempt 是已发布的执行事实，Planned attempt 是 Run 对它的期望位置，
 通过 Member 以 origin 或 reference 方式绑定，未绑定时以 absence reason 收口。
 
-`query` 协议升级为 `niceeval.query/v2`，字段按上表改名，其余结构不变；`/inspection` 的 decoder 只接受 v2。
+Inspection document 的字段按上表改名，其余结构不变；`/inspection` 的 decoder 只接受当前协议 `niceeval.inspection/v1`。
 Record 的 slot 列、`RunSlotPublication` 等持久编码与 identity 编码不改，只在 projection 边界映射。
 `docs/concepts.md` 的 `执行槽位` 条目改为「计划 Attempt / Planned attempt」，所有 Feature 与公开文档同步。

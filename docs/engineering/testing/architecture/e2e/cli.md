@@ -112,7 +112,7 @@ Sandbox Provider。Sandbox 只接受自己声明的 option；例如 `sandbox lis
 对人读文本与 `--json` 两种输出形态各跑一次真实进程，在真实 stdout/stderr 上断言[Experiments CLI](../../../../feature/experiments/cli/README.md) 声明的反馈契约。`--json` 每行是一个可 `JSON.parse` 的事件对象，永不出现 ANSI 控制字符，正常事件全部落在 stdout，只有 run 建立前的错误落 stderr。非 TTY 人读文本是零 ANSI 的单一 stdout 追加流。真实 PTY smoke 证明运行期确实选择 dashboard renderer、产生光标控制与框面，并与另外两种形态给出一致的完成态判定和退出码。
 TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/experiments-runner.md)对可控 IO 的纯 renderer 输出证明；E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
 
-公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。`exp` 上已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；`--execution`、`--timing`、`--source` 只属于 `niceeval show @<locator>` 的 Attempt 读取，`exp` 的命令 schema 必须把它们当未知 flag 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
+公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。`exp` 上已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；`--execution`、`--timing`、`--source` 不是任何命令的 flag（Attempt 的这些方面写作 `niceeval show @<locator> execution` 等），`exp` 与 `show` 的命令 schema 都必须把它们当未知 flag 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
 flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明，本域只保留每类公开进程边界的一条区分力代表。
 
 #### cli-live-pty

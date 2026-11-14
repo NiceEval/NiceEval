@@ -1,12 +1,12 @@
 # Experiment 展示名称 —— CLI
 
 本方向不新增命令。
-它扩展既有 `niceeval exp list`、`niceeval exp --dry`、`niceeval exp`、机器 `niceeval query` 和人用 `niceeval view`。
+它扩展既有 `niceeval exp list`、`niceeval exp --dry`、`niceeval exp`、机器 `niceeval show --json` 和人用 `niceeval view`。
 
 Experiment 选择继续只接受 `experimentId` 的既有精确或路径前缀语义。
 `displayName` 和 `description` 不匹配 selector。
-`query` request 与 `view` 沿用现行选择契约：不传 locator 与 `--run` 时形成当前项目的全部匹配 Runs，
-可重复的精确 `--run <RunId>` 用于审计指定历史 Run。`displayName` 和 `description` 都不参与这两条选择路径。
+`show` 与 `view` 沿用现行选择契约：不写对象时形成当前项目的全部匹配 Runs，
+可重复的精确 `run:<RunId>` 用于审计指定历史 Run。`displayName` 和 `description` 都不参与这两条选择路径。
 
 ## Human 输出
 
@@ -82,7 +82,7 @@ dry 只读取当前 discovery definition 并得到展示值。
 writer lock、frozen reuse plan、budget 和 Sandbox 调度仍只按 `experimentId` 工作。
 并发 Invocation 不共享展示名称 registry，也不会因重复名称互相阻塞。
 
-`query` 和 `view` 对已选择的 published Run 读取其快照。
+`show` 和 `view` 对已选择的 published Run 读取其快照。
 它们不读取当前项目的 Experiment 源码来改写历史标题。
 terminal JSON receipt、query document 与 View 形成审计链，但它们不成为 identity 或 selection 输入。
 
@@ -100,8 +100,8 @@ terminal JSON receipt、query document 与 View 形成审计链，但它们不�
 删除短 ID、名称别名、名称唯一注册、按名称选择，以及把名称映射写入 terminal JSON receipt 的路径。
 事件 consumer 必须按 schema version 显式分流，不能探测字段猜兼容路径；receipt consumer 保持既定 canonical `createdRunIds` 与 `publicationCutoff` 契约。
 
-生产验收执行真实 `exp list`、`exp --dry --json`、`exp --json`，并验证不带 selection 的 `query run --request <request.json>` 与 `view`。
-它也验证带 Run selection 的 `query run --request <request.json>` 与 `view --run <RunId>`。
+生产验收执行真实 `exp list`、`exp --dry --json`、`exp --json`，并验证不带对象的 `show --json` 与 `view`。
+它也验证带 Run 对象的 `show run:<RunId> --json` 与 `view run:<RunId>`。
 
 验收核对所有指向 Experiment 的 JSON 位置都有 ID 与名称。terminal JSON receipt 只保留 canonical
 `createdRunIds` 与 `publicationCutoff`。重复名称不改变选择，名称改动不改变 reuse。

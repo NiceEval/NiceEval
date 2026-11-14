@@ -65,7 +65,7 @@ link。
 | 测试范围 | Eval、CLI、Runner、Run、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
-绑在一起。Adapter 测试也不能因为会调用 `exp` / `query` / `view` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
+绑在一起。Adapter 测试也不能因为会调用 `exp` / `show` / `view` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
 
 `adapter/` 是独立于功能 Repo 的 collection，不能把所有 adapter test 放入同一个叶子项目。
 `ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
@@ -212,10 +212,10 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 
 ## 数据与观察边界
 
-- CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `query run --request <request>` 读取；
-- Inspection 从 `query` 的 versioned document、`view` 的 HTTP 和浏览器读取；
+- CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `show @<locator> --json` 读取；
+- Inspection 从 `show --json` 的 versioned document、`view` 的 HTTP 和浏览器读取；
 - 内部 SQLite database 只由 CLI 运行产生并由 adapter 打开；测试只从 Run/Inspection 公开入口读取，不通过 Library API 读取内部结构或写入；
-- Adapter 从公开运行流、固定 `query` result 或 View detail 读取；
+- Adapter 从公开运行流、`show --json` result 或 View detail 读取；
 - 不直接扫描 `.niceeval/` 私有布局；无法通过 CLI / View 观察的事实属于呈现缺口，不以测试绕过；
 - 不 import 候选内部类型给测试手写 expected。
 
@@ -274,7 +274,7 @@ Eval / Experiment 集：
 
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
 
-Adapter Repo 中出现 `exp`、`query`、`view` 或代表 View 页面不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
+Adapter Repo 中出现 `exp`、`show`、`view` 或代表 View 页面不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
 公开读面的最短路径；同一 CLI 选择、View 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
 只有 converter 的 SDK 可以拥有受限 live consumer glue，但边界是机械的：raw SDK frame 原样进入候选包的公开 converter；

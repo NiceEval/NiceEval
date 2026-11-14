@@ -70,7 +70,7 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
 pnpm e2e diagnose test --from artifacts/e2e/insight/summary.json --repo insight \
   --timeout-seconds 15 -- --run test/view-snapshot.browser.spec.ts -t "打开"
 pnpm e2e diagnose exec --from artifacts/e2e/insight/summary.json --repo insight \
-  --timeout-seconds 15 -- pnpm exec niceeval query discover
+  --timeout-seconds 15 -- pnpm exec niceeval show runs --json
 
 # Owner 接管可靠性证书：case_selector 是 <file>#<Concord case id>，从 concord test list 取得；-- 后只补充其它原生参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo insight \

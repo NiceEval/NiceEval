@@ -41,7 +41,7 @@
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
 3. **用一个固定 Inspection request 核验公开结果**：
    - 每个 Adapter Repo 从本轮 Eval event 直接取一个通过 Attempt 的 locator。
-   - 独立 test 执行 `niceeval query run --request <request>`；人工浏览器路径先打开 `niceeval view --run <run-id>`，再从页面的
+   - 独立 test 执行 `niceeval show @<locator> --json`；人工浏览器路径先打开 `niceeval view run:<run-id>`，再从页面的
      Run/Attempt 导航进入 locator 对应详情。
    - request 只选择一个固定 operation，并断言一个可区分协议事实是否可达的工具或入参 sentinel。
    - 工具、Skill、session 和 usage 的完整正反矩阵留在 Eval，不再由 View text 重复评分。
@@ -50,7 +50,7 @@
 
 `eval.run`、`agent.setup` 与 `agent.send` 是通用 Runner timing，只由
 [Runner owner](../runner.md#runner-generic-timing)通过 `attempt.trace` JSON 读回。Adapter 不重复该 operation，也不把
-它当作 execution、session 或 protocol 事实。当前公开 Record / `query` 没有可把 OTel mapper 明确归因给单个 Adapter
+它当作 execution、session 或 protocol 事实。当前公开 Record / `show` 没有可把 OTel mapper 明确归因给单个 Adapter
 的 seam；mapper-specific OTel 没有可核查的公开证据，不得以日志、私有 `.niceeval` 目录文件、`telemetry.collect` 或通用
 `agent.send` 代替。
 

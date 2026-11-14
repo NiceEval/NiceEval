@@ -124,8 +124,8 @@ candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未�
 
 - 通用：`diagnostic()`、`json()`、`ndjson()`；
 - `niceeval.exp`：`expTerminal()`、`expReceipt()`、`expEvents()`、`expEvalEvents()`、`expErrorEvents()`；
-- `niceeval.query`：`queryDiscovery()`、`querySuccess(operation)`、`queryExplanation(operation)`、`queryFailure()`；
-- `niceeval.query` 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
+- `niceeval.inspection`：`inspectionSuccess(operation)`、`inspectionExplanation(operation)`、`inspectionFailure()`，读取 `show --json` 与 `show --explain` 的 document；
+- `niceeval.inspection` 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
 - `niceeval.run`：`runListDocument()`、`runGetDocument()`。
 
 
@@ -139,8 +139,8 @@ argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` �
 `niceeval.run/v1` 是例外的具名产品协议 parser：`runListDocument()` 与 `runGetDocument()` 直接调用安装候选的
 `niceeval/run` 唯一严格 decoder，并分别返回正式 `RunListDocument` 与 `RunGetDocument`。Testkit 只转出这些
 候选包类型，不维护第二套 Run Schema；错误 protocol、operation、多余字段或非法闭合集取值都由产品 decoder 拒绝，
-错误再附上同一 `ProcessReceipt` diagnostic。它们不替代 inspection 的 `runsList()` / `run()`，后两者保持读取
-`niceeval.query/v1`。
+错误再附上同一 `ProcessReceipt` diagnostic。它们不替代 inspection 的 `runsList()` / `run()`，后两者读取
+`niceeval.inspection/v1`。
 
 ### E2E 正文准入门
 
@@ -203,11 +203,11 @@ const evalEvents = assertExpEvalOutcomes(
 ```
 
 expected 数组属于调用方 owner；Testkit 只比较公开原始字段。
-CLI 退出码、`InvocationReceipt.completion`、Run 数与后续固定 `query` 或 `view` 读回仍在测试正文分别断言。
+CLI 退出码、`InvocationReceipt.completion`、Run 数与后续 `show --json` 或 `view` 读回仍在测试正文分别断言。
 
 `exactEval(events, { experimentId, evalId }, diagnostic?)` 只按这两个公开字段选取一个终局 Eval event。
 它严格拒绝零个或多个匹配，并在错误中列出全部候选复合身份和调用方提供的诊断。`locator` 是选中 event
-的输出，不参与选择；Testkit 不为 `query`、领域 expected 或 retry 增加另一层 DSL。
+的输出，不参与选择；Testkit 不为 `show`、领域 expected 或 retry 增加另一层 DSL。
 
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。

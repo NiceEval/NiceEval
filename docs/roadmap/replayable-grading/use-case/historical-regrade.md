@@ -32,8 +32,8 @@ niceeval grade --run run_01J8KQ
 ## 选择结果
 
 ```sh
-niceeval query run --request <grading-request.json>
-niceeval view --run run_01J8KQ --grading-run gr_01K4M2
+niceeval show run:run_01J8KQ --grading-run gr_01K4M2 --json
+niceeval view run:run_01J8KQ --grading-run gr_01K4M2
 ```
 
 不传 `--grading-run` 时，读面继续使用 Run 自己的 default GradingRun。

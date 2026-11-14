@@ -5,7 +5,7 @@
 Agent 会话场景使用 Direct Agent；只有文件、diff、shell 或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
 
 每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
-固定 `query` Inspection 的 versioned JSON 观察结果。
+`show --json` 的 versioned Inspection document 观察结果。
 Repo 的 15 分钟期限包含默认并行运行和资源终结。逐项启动已安装 CLI 的 values owner 保留 600 秒操作预算及 60 秒终结预算；大量工具事件的 scopes owner 保留 600 秒，二者不减少公开读回条目。
 不签入预生成结果，不从 Adapter Repo 注入 Eval，也不伪造 `Turn.events`、session 或 Sandbox ledger。某个契约分支需要不同 evidence
 时，直接增加一条目的明确的 Eval。
@@ -42,7 +42,7 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 测试从公开 Attempt readback 逐项核对结果。
 `calledTool` 还分别验证 name、input、output、status、exact count 与 at-least count；`notCalledTool` 与 `eventOrder` 也各自验证正反结果。
 
-公开 `query run --request <attempt.get request>` 必须读到这些 Assertion 与 Verdict。
+公开 `show @<locator> --json` 必须读到这些 Assertion 与 Verdict。
 
 ## eval-assertion-scopes
 
@@ -53,7 +53,7 @@ turn、session 与 attempt scope 必须以同一批真实工具事件完成断�
 不能让已经完成的 Attempt 因 Assertions document 膨胀而无法发布。owner 至少产生 10,001 个真实 normalized
 tool occurrences，涉及末尾 decisive witness、absence/exact/at-least 与 partial source unavailable。
 
-公开 `exp → query run --request <attempt.get request>` 核对 O(1) receipt 和 Assertion 的 criterion/materials/evaluation。
+公开 `exp → show @<locator> --json` 核对 O(1) receipt 和 Assertion 的 criterion/materials/evaluation。
 它还核对 decision、policy、contribution、explanationRetention 与有界 explanation，不读取私有 Record。
 
 ## eval-assertion-score

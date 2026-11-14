@@ -1,6 +1,6 @@
 # Issue 与用户反馈
 
-NiceEval 将持久事实、Inspection 问题和面向读者的界面分开。这样同一组已发布 Record 事实可以被 machine query、runtime View
+NiceEval 将持久事实、Inspection 问题和面向读者的界面分开。这样同一组已发布 Record 事实可以被 `show --json`、runtime View
 与 CI 按各自场景消费。
 
 ## 三层边界

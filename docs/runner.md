@@ -1,17 +1,17 @@
 # Runner —— 执行引擎
 
-Runner 是 `experimentHost` 后的内部执行引擎。它把已求值的 Experiment 变成完整发布的 Run，负责调度、Sandbox 生命周期与 Attempt 收尾。它通过内部 SQLite 适配器写入项目数据库，不能被 CLI 或 View 直接调用。Run 保存持久事实，固定 Inspection 操作在短读取内关闭选择和结果，`query` 与 View 各自交付该结果。
+Runner 是 `experimentHost` 后的内部执行引擎。它把已求值的 Experiment 变成完整发布的 Run，负责调度、Sandbox 生命周期与 Attempt 收尾。它通过内部 SQLite 适配器写入项目数据库，不能被 CLI 或 View 直接调用。Run 保存持久事实，固定 Inspection 操作在短读取内关闭选择和结果，`show` 与 View 各自交付该结果。
 
 ## 职责边界
 
 Experiment 配置先进入 `experimentHost`。Host 将计划交给 Runner，Runner 建立 Run 与 expected Planned attempts，执行或采用 Attempt，并在同一项目数据库内封口 Core 与固定 family 事实。
 
 查看时，内部 source adapter 在短 Record reader scope 内执行一个固定 operation，并在返回前关闭
-source、selection、sealed cutoff、partial、missing、issues 与 Evidence。machine `query` 编码显式四态的
+source、selection、sealed cutoff、partial、missing、issues 与 Evidence。`show --json` 编码显式四态的
 versioned JSON；固定 View 只消费 operation result，并在自己的 loopback session 内显示它。两者共享
 `niceeval/inspection` 的协议 Schema、类型与 decoder，都不持有 reader，也不生成静态目录。
 
-Runner 不为读取面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。调用方按 receipt 的 `createdRunIds` 通过固定 `query` request 读取结果；人可用 `view` 深读。
+Runner 不为读取面准备聚合结果，不向 receipt 复制 Verdict、locator、用量、费用或计数。调用方按 receipt 的 `createdRunIds` 通过 `show run:<run-id> --json` 读取结果；人可用 `view` 深读。
 
 ## Run、Member 与 Attempt
 
@@ -44,7 +44,7 @@ Record 是 durable fact（持久事实）面。它在项目内唯一 `.niceeval/
 
 Coordination 是运行协调面。它拥有执行去重、同一 Experiment 的 dispatch claim、`maxConcurrency`、build 和 lease。这些协调行不进入公开读取结果，也不由 reader 或终态反推。
 
-`query`、`show`、`view` 和 `exp --dry` 在固定 `PublicationCutoff` 上只读取已发布的事实与绑定。未发布 aggregate、sealing 行与晚于 cutoff 的变更对读取不可见。格式升级在项目写入口打开时自动完成，受控退出时通过 portable gate 交付可移动单文件，不设独立的手动维护命令。
+`show`、`compare`、`view` 和 `exp --dry` 在固定 `PublicationCutoff` 上只读取已发布的事实与绑定。未发布 aggregate、sealing 行与晚于 cutoff 的变更对读取不可见。格式升级在项目写入口打开时自动完成，受控退出时通过 portable gate 交付可移动单文件，不设独立的手动维护命令。
 
 ## Invocation receipt
 

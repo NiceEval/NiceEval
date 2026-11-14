@@ -4,7 +4,7 @@
 
 - [Experiments CLI](feature/experiments/cli/README.md) 定义 `exp`、`debug`、`accept`、机器反馈和 Invocation receipt。
 - [Run CLI](feature/run/cli.md) 定义 Run 生命周期、canonical Record 交付与外部 artifact 导入。
-- [Inspection CLI](feature/inspection/cli.md) 定义 machine `query` 的输入和输出。
+- [Inspection CLI](feature/inspection/cli.md) 定义 `show` 与 `compare` 的对象寻址、终端输出与机器 document。
 - [Insight CLI](feature/insight/cli.md) 定义 runtime `view` 的输入、输出与 lifecycle。
 - [Sandbox CLI](feature/sandbox/cli.md) 定义留存 Sandbox 与 provider-specific 管理入口。
 - [Nested Docker CLI](feature/sandbox-nested-docker/cli.md) 定义 Incus Provider 的 doctor、inventory 与 gc；Docker cache 与 BuildKit
@@ -31,7 +31,7 @@
 |---|---|---|
 | `list` | Eval catalog CLI | `evalHost.catalog` |
 | `check`、`exp`、`debug`、`accept`、`session` | Experiment Host CLI | `experimentHost`；session 是 ephemeral Invocation status，不是可恢复 Record |
-| `query`、`show`、`view` | Inspection / View CLI | 固定 protocol 与 selector；当前结果由 Experiment Host 准备输入；固定历史不求值源码、不隐式迁移 |
+| `show`、`compare`、`view` | Inspection / View CLI | 固定 operation 与对象寻址；当前结果由 Experiment Host 准备输入；固定历史不求值源码、不隐式迁移 |
 | `run` | Run CLI | `runHost` lifecycle operations |
 | `sandbox` | Sandbox CLI | Sandbox registry、detached provider 与 provider 自己的能力 |
 | `docker` | Docker CLI | Docker profile、image cache 与 BuildKit；不降格成通用 Sandbox API |
@@ -146,16 +146,16 @@ canonical .niceeval/record.sqlite or hostile external import
 pinned facts
   ↓ internal Inspection selector
 closed operation document
-  ├─ protocol codec → niceeval.query/v1 outcome union
+  ├─ protocol codec → niceeval.inspection/v1 outcome union
   └─ viewHost → fixed loopback View
 ```
 
-`query` 的 Node source adapter 在短 reader Scope 内打开 facts 后直接调用内部 selector；View Host
+`show` 与 `compare` 的 Node source adapter 在短 reader Scope 内打开 facts 后直接调用内部 selector；View Host
 同样调用它。`niceeval/inspection` 是两端共享的纯协议入口，不提供 Host alias、Node fallback、reader 或
 lifecycle。View Host 只拥有 session、
 revision 与 refresh；它不执行 Page、组件、静态目录或 Report 作者回调。
 
-`--run` 形成 explicit Run selection。默认本机 Show/View 使用 `project.get` 的当前目标与缺口；
+`run:<run-id>` 形成 explicit Run selection。默认本机 Show/View 使用 `project.get` 的当前目标与缺口；
 当前 Experiment 下钻也走这个 operation。`overview.get`、`experiment.get`、Run 与 locator 始终是历史读取。
 `--record <file>` 选择经过完整验证的 external source，只提供历史读取能力，不替换项目 Record、不求值当前定义。
 `project.get` 在这种 external source 上明确返回 `current-target-unavailable`。CLI 不改写历史 Run。
@@ -181,7 +181,7 @@ CLI 与 Node runtime 只提供英语人读文本。每段文案由产生该反�
 持久化的业务事实由 Experiment Host 内部的 Runner 写入 Record Core 或五个固定 family。终端与
 `--json` 可以显示这些事实的当前摘要，但不得从反馈文本反向形成 Record 数据。
 
-`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `query` 与 `createdRunIds` 读取业务数据。
+`exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show run:<run-id> --json` 按 `createdRunIds` 读取业务数据。
 
 ## 运行时与中断
 

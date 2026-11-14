@@ -20,7 +20,7 @@ Bug 修复统一按 [E2E TDD](#bug-修复的-e2e-tdd) 从公开入口的红灯�
 
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
-测试仍然要明确执行 `pnpm exec niceeval exp`，再以 `query discover / explain / run` 或 `view` 断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
+测试仍然要明确执行 `pnpm exec niceeval exp`，再以 `show`（`--json`、`--explain`）或 `view` 断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
 
 功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
 `adapter/` 是协议 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与确定性 UI Message Stream fixture 都是独立叶子 Repo，

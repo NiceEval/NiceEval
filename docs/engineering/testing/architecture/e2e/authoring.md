@@ -11,7 +11,7 @@ NiceEval 只提供候选包注入、场景 Repo 隔离与 Testkit 机械原语�
 
 ```ts
 // @feature docs/feature/inspection/README.md
-test("query run 经 pipe 交付完整文档", async () => {
+test("show --json 经 pipe 交付完整文档", async () => {
   // 完整 argv、公开观察与独立 expected 留在这里。
 });
 ```

@@ -2,26 +2,26 @@
 
 `e2e/inspection/` 验证安装后 candidate 的固定 Inspection 公开面。它只经 Node 与真实 CLI 进入，不安装 Playwright 或 Chromium。
 
-`niceeval query discover | explain | run` 交付 machine document。discover 是静态 catalog，不读取项目事实；explain 与 run 才绑定当前 project 的 Run facts 与 PublicationCutoff。每个 source-bound document 都带有不泄露路径的 `source.kind + source.sealedCutoffIdentity`。
+`niceeval show <对象> [<方面>] [<ID>] --json` 与 `--explain` 交付 machine document，绑定当前 project 的 Run facts 与 PublicationCutoff；每份 success document 带 `links`。每个 source-bound document 都带有不泄露路径的 `source.kind + source.sealedCutoffIdentity`。
 
 `show` 是固定 Inspection operation 的英文终端读面。默认当前读取使用 `project.get`，固定历史仍使用 Record operation。
-machine query / CLI 只交付英语协议面。测试不读 SQLite table、Record bytes 或源码。
+`show --json` / CLI 只交付英语协议面。测试不读 SQLite table、Record bytes 或源码。
 
 ## 公开验收边界
 
-- Machine query 保留固定 operation catalog，同一 request 从当前 project 的 PublicationCutoff 执行。
-- `show` 不保留旧显示位置 handle、`show --json` 或 `--report`。
+- `show --json` 保留固定 operation catalog，同一对象寻址从当前 project 的 PublicationCutoff 执行；`niceeval query` 不存在。
+- `show` 不保留旧显示位置 handle、旧投影 flag 或 `--report`。
 - source、trace、diff 与 artifacts 均由固定 Inspection operation 读取；消费方不得从行数或标量重算 denominator、pass rate、score、coverage 或 Evidence。
 
 ## E2E 测试 owner
 
 ### show-terminal-review
 
-`show-cli.test.ts` 是人读终端 Inspection Journey owner。它从安装后 candidate 经真实 CLI 读取已封口 Record，验证默认 Overview、重复 exact `--run`、重复 exact `--experiment`、Attempt 概览与全部五个证据切面。
+`show-cli.test.ts` 是人读终端 Inspection Journey owner。它从安装后 candidate 经真实 CLI 读取已封口 Record，验证默认 Overview、重复 exact `run:`、重复 exact `exp:`、Attempt 概览与全部五个证据切面。
 
 当前读取的代表性 fixture 先真实发布三条结果，再修改一条 Eval 并新增第四条。默认 `show` 必须显示 `Covered 2/4` 与
-`Gaps 2`，区分输入变化与没有结果；旧三条成绩不能被呈现为当前 `3/3`。固定 `--run` 仍显示原来的三条结果。
-移除 Experiment 后，它只保留在历史入口，不能贡献当前分母或分数。默认 `--experiment` 选择已删除 ID 时明确失败。
+`Gaps 2`，区分输入变化与没有结果；旧三条成绩不能被呈现为当前 `3/3`。固定 `run:<run-id>` 仍显示原来的三条结果。
+移除 Experiment 后，它只保留在历史入口，不能贡献当前分母或分数。`exp:` 选择已删除 ID 时明确失败。
 
 源码求值失败时，默认当前读取必须报告 `current-target-unavailable` 及历史入口；显式 `--record`、Run 或 locator
 仍可查看已有事实。测试用公开 Run 列表和 fixture 的外部调用计数验证读取没有发布 Run、执行 Agent 或启动 Sandbox。
@@ -31,7 +31,7 @@ overview 必须保留 operation 已选的 totals、Experiment summary 与完整 
 
 纯 Score Experiment 的 totals 与 summary 呈现 Verdict 和 Score，不生成 Pass rate；Attempt 行保留 `passed`、`failed`、`errored` 或 `skipped` Verdict。`failed + complete` 必须显示失败与 earned score，不能改写成 `scored`；mixed Results 仍并排呈现两类读数。
 
-Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行 `--source`、`--execution [--expand <stable-id>]`、`--timing`、`--usage` 与 `--diff`。
+Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff 后续命令。Journey 分别运行 `source`、`execution`（及一个 trace 稳定 ID）、`timing`、`usage` 与 `diff`，并逐条执行文本 `Next` 与 `links` 中的命令。
 
 它核对 source/Assertion facts，以及 execution 有界 outline 与其 `itemId` / `toolOccurrenceId` / `commandId` 详情。
 
@@ -41,9 +41,9 @@ Attempt 概览要给出可执行的 source、execution、timing、usage 和 diff
 
 `inspection-query.test.ts` 是 machine Inspection Journey owner。它经安装后 `exp` 产生已封口 origin Run，随后以 full carry 发布第二个 target Run，并运行 `alternate` Experiment。历史 Attempt locator 必须继续沿 origin Run 读取事实。
 
-测试再验证 compact discovery 的完整固定 catalog，并以 `query explain` 审计 selection 和 fact kinds。
+测试再验证每个固定 operation 都能由一条 `show` 命令到达，并以 `show … --explain` 审计 selection 和 fact kinds。
 
-`query run` 返回含 operation identity、behavior version、publication cutoff、issues、Evidence、usage 与 Run / Attempt 公开身份的闭合 `niceeval.query/v1` document。三个入口都以单个 canonical JSON document 交付协议与 behavior version。fixture 显式携带 conversation partial limitation；完整 usage 保留 input/output totals。
+`show --json` 返回含 operation identity、behavior version、publication cutoff、issues、Evidence、usage 与 Run / Attempt 公开身份的闭合 `niceeval.inspection/v1` document。每个 operation 各写一行 canonical JSON document，交付协议与 behavior version。fixture 显式携带 conversation partial limitation；完整 usage 保留 input/output totals。
 
 `overview.get` 必须在一次读取中关闭 `main`／`alternate` × `inspection` cell 的 latest logical-slot membership。
 

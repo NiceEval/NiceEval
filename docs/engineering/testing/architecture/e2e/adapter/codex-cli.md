@@ -10,7 +10,7 @@ Codex app-server 只是这个公开 Adapter 的内部 transport；Codex E2E 只�
 ## adapter-codex-cli-live-progress
 
 `test/live-progress.test.ts` 在私有项目副本中只运行 baseline/coding-task。它证明安装后的候选仍能通过真实 Codex CLI
-完成 coding task，并以公开 `query run` 的 `attempt.trace` 读回 command sentinel 与 shell 工具身份。
+完成 coding task，并以公开 `show @<locator> execution --json`（`attempt.trace`）读回 command sentinel 与 shell 工具身份。
 它不观察 Human TTY 的瞬时 ACTIVE frame，也不要求 provider 在特定时间段发出 item；`user:` / `tool:` active projection
 由确定性 [`adapter/local-protocol`](ui-message-stream.md#live-progress-owner) 唯一接管。
 
@@ -41,5 +41,5 @@ Codex app-server 只是这个公开 Adapter 的内部 transport；Codex E2E 只�
 - 两条 Skill Eval 使用互不重叠的 `status-report` / `skill-release-note` ID，让 live 模型断言失败时可按 CLI 前缀选择规则精确补跑一条，不扩大成本，也不替换另一条结果。
 - `repo-skill` 从 `CorrectRoadH/skills` 的固定 commit 安装 `calibre`；专用 Eval 核对安装位置、真实读取行为与命令内容。
 - Verdict test 逐条核验 `(experimentId, evalId)` 与 `passed` 数，防止少发现、少运行或全局计数抵消后假绿。
-- **CLI 读回**：独立固定 `query run --request <request>` test 只验收 coding 工具与入参的代表投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取、零 `skill.loaded` 反例以及 MCP 完整矩阵全部留在 Eval 事件断言中。
+- **CLI 读回**：独立`show @<locator> --json` test 只验收 coding 工具与入参的代表投影。Codex 没有原生 `skill.loaded`；本地与 Repo Skill 的目标读取、其它 Skill 未读取、零 `skill.loaded` 反例以及 MCP 完整矩阵全部留在 Eval 事件断言中。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。当前公开读面不能归因 Codex CLI 的 mapper-specific OTel，本 Repo 不从 execution 文字、日志或私有结果反推它。

@@ -50,8 +50,8 @@ shell 退出后 Sandbox 重新停驻，Provider 到期时间从本次使用刷�
 Verdict 时的 Agent 行为、归因 diff 与命令证据仍从 Record 读取：
 
 ```bash
-niceeval view --run <run-id>
-niceeval query run --request <attempt-request.json>
+niceeval view run:<run-id>
+niceeval show @<locator> execution
 ```
 
 View 页面再从 Run/Attempt 导航选择 `@1efw5…` 对应的 Attempt。

@@ -44,7 +44,7 @@ src/
 ├─ coordination/            # coordinationHost；execution claim 与共享资源协调
 ├─ run/                     # runHost；Run lifecycle、Attempt publication 与领域读写
 ├─ record/                  # 内部 SQLite adapter；不是公开 package 或 CLI
-├─ inspection/              # 固定第一方 operations；query 与 Insight 的唯一业务语义 owner
+├─ inspection/              # 固定第一方 operations；`show` 与 Insight 的唯一业务语义 owner
 ├─ view/                    # 第一方 Insight SPA 与 loopback Host；不提供作者组件层
 ├─ project/                 # projectHost + init contribution
 ├─ docker/cli/              # Docker 专属 profile/cache/BuildKit 命令树
@@ -124,7 +124,7 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 | Run Core | Run identity/state、expected Planned attempts、Attempt origin/reference、Member action、publication revision 与 absence | 领域语义只在 Run Feature 演进；physical SQLite schema 独立演进 | 精确解码、publication transaction、writer fencing 与 Scope-bound I/O |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
 | Inspection | 固定 typed registry、穷尽 request、四态 document、分母、limits、issues、Evidence 与三种 comparison | 当前 `project.get` 消费 Experiment Host 冻结的目标输入；历史 operation 只读已发布事实；用户不能注册公式或 SQL | `niceeval/inspection` 只导出 Schema、类型与 decoder；内部 selector 关闭 document |
-| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与 View Host 执行同一 registry operation；当前 generation 同时固定目标输入与 cutoff |
+| Insight | `show --json` document codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node `show` 与 View Host 执行同一 registry operation；当前 generation 同时固定目标输入与 cutoff |
 
 ## 公开 Host composition SDK
 
@@ -344,7 +344,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     Attempt closure、publication identity 与 origin binding。Run close 只冻结终态与 absence，最后返回
     `InvocationReceipt`。普通 `TestContext` 没有持久写入方法。
 
-    Inspection 不参与采集或落盘。Machine `query` 与 runtime `view` 的 Host
+    Inspection 不参与采集或落盘。`show` / `compare` 与 runtime `view` 的 Host
     把 pinned facts 传给同一内部 selector；当前 `project.get` 另消费 Experiment Host 冻结的目标输入。selector 关闭 selection、分母、missing、
     Evidence 与 comparison；CLI、Web 与 Testkit 使用 `niceeval/inspection` 的同一 Schema、类型与 decoder。
     Delivery 不重新读取 Run facts 或执行统计。

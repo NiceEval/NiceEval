@@ -9,7 +9,7 @@
 
 ```ts
 // @feature docs/feature/inspection/README.md
-test("query run 经 pipe 交付完整文档", async () => {})
+test("show --json 经 pipe 交付完整文档", async () => {})
 ```
 
 精确验证一个 Use Case 时改用 `// @use-case docs/feature/<feature>/use-case/<name>.md`。

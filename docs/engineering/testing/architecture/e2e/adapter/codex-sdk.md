@@ -35,7 +35,7 @@ Codex SDK 没有公开 HITL callback，因此仓库不伪造 `input.requested`�
 `handle.done` 并核验严格进程 receipt；`withProcess` 的 dispose 路径负责检查该进程组的最终终结。
 测试不声称 `ProcessReceipt` 含有不存在的 `groupCleanup` 字段。
 
-Experiment 完成后，测试只经公开 CLI 执行固定 `query run --request <request>` 和
+Experiment 完成后，测试只经公开 CLI 执行`show @<locator> --json` 和
 固定 `attempt.trace` request。读回同时检查 marker、converted tool/result，以及含随机 sentinel 的第二轮输入，
 而不读取 `.niceeval` 的私有布局。
 

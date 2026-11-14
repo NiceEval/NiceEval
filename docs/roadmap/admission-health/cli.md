@@ -28,7 +28,7 @@ identity、机器 reason code、请求 body、响应 body、token 或原始异�
 ```text
 admission  compare/codex  memory/recall  Attempt #1  endpoint/primary  healthy
 admission  compare/codex  memory/recall  Attempt #2  endpoint/primary  unhealthy
-  details: niceeval view --run 01J...
+  details: niceeval view run:01J...
 admission  endpoint/primary  6 attempts not started
 ```
 

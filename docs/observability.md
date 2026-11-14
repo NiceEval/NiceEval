@@ -201,7 +201,7 @@ payload、局部验证失败或 Record I/O failure 不会伪装成 complete 或�
 
 Inspection operation 逐 source 消费 `complete` 或 `partial` payload，并在需要 command stream 文本时通过受限 capability
 读取 inline 或 blob storage。它可以组合多个已声明 source 形成闭合结果，却不修改 Record、选择新的 owner
-或把缺失数据解释为“没有发生”。query 与 View 只消费该结果，没有私有 reader 或额外数据权限。
+或把缺失数据解释为“没有发生”。`show` 与 View 只消费该结果，没有私有 reader 或额外数据权限。
 
 五个 source family 各自拥有稳定 family identity 与 numeric persistence `revision`。current reader 只接受当前
 source-first format；旧 aggregate 不会交给 Inspection 或相邻 Attachment migration。
@@ -211,9 +211,9 @@ source-first format；旧 aggregate 不会交给 Inspection 或相邻 Attachment
 行为断言只消费自己声明的 evidence。缺少或 partial 的观测由该断言的完整度规则处理，不能解释为
 “没有发生”。它不拥有原始 Attachment，也不改变 Inspection selection 的 denominator。
 
-## 固定交付：`niceeval query` 与 `niceeval view`
+## 固定交付：`niceeval show` 与 `niceeval view`
 
-query 与 View 只消费已关闭的 operation result。它们不重新打开 Record、不重跑 Adapter mapper，也不访问 provider、网络或当前 worktree。
+`show` 与 View 只消费已关闭的 operation result。它们不重新打开 Record、不重跑 Adapter mapper，也不访问 provider、网络或当前 worktree。
 
 ## 相关阅读
 

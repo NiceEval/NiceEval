@@ -80,13 +80,10 @@ test("机器和人都能检查带 failed Verdict 的 sealed Attempt", async () =
   const run = await runProcess(/* invoke: pnpm exec niceeval exp … */);
   expect(run.exitCode, run.diagnostic()).toBe(1); // outcome
 
-  const inspection = parseJson(await runQuery({ // observe
-    operation: "attempt.get",
-    input: { runId, attemptId },
-  }));
+  const inspection = parseJson(await runProcess(/* invoke: pnpm exec niceeval show @<locator> --json */)); // observe
   expect(inspection.result.attempt.verdict).toBe("failed");
 
-  const view = await startProcess(/* invoke: pnpm exec niceeval view --run <runId> --json */);
+  const view = await startProcess(/* invoke: pnpm exec niceeval view run:<runId> --no-open */);
   const ready = await readReadyEvent(view.stdout);
 
   await expectFailedAttemptToBeVisible(ready.url, attemptId); // observe + outcome
@@ -124,7 +121,7 @@ E2E 源码关系的 `regressions` / Unit 的 `bug:` 只关联真正能杀死旧�
 预期必须独立于候选实现：
 
 - 固定 ID、sentinel、page 类别、verdict 和工具规范名来自测试字面量或签入 fixture；
-- 动态 Attempt locator 可以从固定 `query run --request <request>` 的结果取得，再用于同一 Run 的下一条公开命令；
+- 动态 Attempt locator 可以从 `show run:<run-id> --json` 的结果或其 `links` 取得，再用于同一 Run 的下一条公开命令；
 - 不调用候选的 `enumerate()` 生成“应该存在的全集”，再验证候选自己的输出；
 - 不从候选导出的 schema 常量给手写 fixture 自动升版；公开格式升级要显式修改 fixture；
 - 不把产品 parser 复制到通用命令执行器；必须解码复杂公开格式时，parser 留在对应 Repo 并有 malformed case。
